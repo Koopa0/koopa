@@ -1,7 +1,7 @@
 <!-- Header -->
 <app-page-header
-  title="Tag 管理"
-  description="管理 Canonical Tags 與 Alias 映射"
+  title="Tag Management"
+  description="Manage canonical tags and alias mappings"
 >
   @if (activeTab() === 'tags') {
   <button
@@ -10,7 +10,7 @@
     (click)="openMergeDialog()"
   >
     <lucide-icon [img]="MergeIcon" [size]="16" />
-    合併
+    Merge
   </button>
   <button
     type="button"
@@ -20,9 +20,9 @@
   >
     @if (isBackfilling()) {
     <app-loading-spinner size="sm" />
-    回填中... } @else {
+    Backfilling... } @else {
     <lucide-icon [img]="DatabaseIcon" [size]="16" />
-    回填 }
+    Backfill }
   </button>
   <button
     type="button"
@@ -30,7 +30,7 @@
     (click)="openCreateTagDialog()"
   >
     <lucide-icon [img]="PlusIcon" [size]="16" />
-    新增 Tag
+    Add Tag
   </button>
   }
   <button
@@ -90,8 +90,8 @@
       [isLoading]="isLoading()"
       [isEmpty]="sortedTags().length === 0"
       [emptyIcon]="TagsIcon"
-      emptyTitle="尚無 Tag"
-      emptyDescription="建立第一個 Canonical Tag 開始管理"
+      emptyTitle="No tags yet"
+      emptyDescription="Create the first canonical tag to get started"
     >
       <table class="w-full text-left text-sm">
         <thead class="border-b border-zinc-800 bg-zinc-900/50">
@@ -145,7 +145,7 @@
                 <button
                   type="button"
                   class="rounded-xs p-1.5 text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-300"
-                  aria-label="編輯"
+                  aria-label="Edit"
                   (click)="openEditTagDialog(tag)"
                 >
                   <lucide-icon [img]="PencilIcon" [size]="16" />
@@ -153,7 +153,7 @@
                 <button
                   type="button"
                   class="rounded-xs p-1.5 text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-red-400"
-                  aria-label="刪除"
+                  aria-label="Delete"
                   (click)="requestDeleteTag(tag)"
                 >
                   <lucide-icon [img]="Trash2Icon" [size]="16" />
@@ -172,8 +172,8 @@
     <div
       class="mb-4 rounded-xs border border-zinc-800 bg-zinc-900/30 px-4 py-3 text-xs text-zinc-500"
     >
-      Alias 映射主要由 AI 自動處理。此頁面為手動
-      fallback，僅在自動映射失敗時使用。
+      Alias mappings are primarily handled by AI. This page is a manual
+      fallback, used only when automatic mapping fails.
     </div>
 
     <!-- Alias Filters -->
@@ -205,10 +205,10 @@
     } @else if (filteredAliases().length === 0) {
     <app-empty-state
       [icon]="LinkIcon"
-      [title]="aliasFilter() === 'unmapped' ? '沒有 Unmapped Aliases'
-            : aliasFilter() === 'pending' ? '沒有 Pending Aliases'
-            : '尚無 Alias 資料'"
-      description="Obsidian sync 時會自動產生 aliases"
+      [title]="aliasFilter() === 'unmapped' ? 'No unmapped aliases'
+            : aliasFilter() === 'pending' ? 'No pending aliases'
+            : 'No alias data yet'"
+      description="Aliases are auto-generated during Obsidian sync"
     />
     } @else {
     <div class="space-y-3">
@@ -258,7 +258,7 @@
               [ngModel]="aliasMapSelections()[alias.id] || ''"
               (ngModelChange)="setAliasMapSelection(alias.id, $event)"
             >
-              <option value="" disabled>選擇 Tag...</option>
+              <option value="" disabled>Select tag...</option>
               @for (tag of tags(); track tag.id) {
               <option [value]="tag.id">{{ tag.name }} ({{ tag.slug }})</option>
               }
@@ -294,7 +294,7 @@
             <button
               type="button"
               class="rounded-xs p-1.5 text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-red-400"
-              aria-label="刪除"
+              aria-label="Delete"
               (click)="requestDeleteAlias(alias)"
             >
               <lucide-icon [img]="Trash2Icon" [size]="16" />
@@ -311,7 +311,7 @@
 <!-- Tag Create/Edit Dialog -->
 @if (isTagDialogOpen()) {
 <app-modal
-  [title]="editingTagId() ? '編輯 Tag' : '新增 Tag'"
+  [title]="editingTagId() ? 'Edit Tag' : 'Add Tag'"
   titleId="tag-dialog-title"
   (closed)="closeTagDialog()"
 >
@@ -348,7 +348,7 @@
         [ngModel]="tagForm().parent_id || ''"
         (ngModelChange)="updateTagFormField('parent_id', $event || null)"
       >
-        <option value="">無（Root Tag）</option>
+        <option value="">None (Root Tag)</option>
         @for (tag of rootTags(); track tag.id) { @if (tag.id !== editingTagId())
         {
         <option [value]="tag.id">{{ tag.name }} ({{ tag.slug }})</option>
@@ -360,7 +360,7 @@
         id="tag-description"
         rows="2"
         class="w-full rounded-xs border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 placeholder-zinc-500 focus:border-zinc-500 focus:outline-hidden"
-        placeholder="選填說明"
+        placeholder="Optional description"
         [value]="tagForm().description"
         (input)="updateTagFormField('description', $any($event.target).value)"
       ></textarea>
@@ -373,7 +373,7 @@
       (click)="closeTagDialog()"
       [disabled]="isSavingTag()"
     >
-      取消
+      Cancel
     </button>
     <button
       type="button"
@@ -383,7 +383,7 @@
     >
       @if (isSavingTag()) {
       <app-loading-spinner size="sm" />
-      儲存中... } @else { {{ editingTagId() ? '更新' : '建立' }} }
+      Saving... } @else { {{ editingTagId() ? 'Update' : 'Create' }} }
     </button>
   </div>
 </app-modal>
@@ -392,33 +392,33 @@
 <!-- Merge Dialog -->
 @if (isMergeDialogOpen()) {
 <app-modal
-  title="合併 Tags"
-  subtitle="將 Source 的 aliases、notes、events 移轉到 Target，然後刪除 Source。"
+  title="Merge Tags"
+  subtitle="Transfer aliases, notes, and events from source to target, then delete source."
   titleId="merge-dialog-title"
   (closed)="closeMergeDialog()"
 >
   <div class="space-y-4">
-    <app-form-field label="Source（要被合併的）" fieldId="merge-source">
+    <app-form-field label="Source (to be merged)" fieldId="merge-source">
       <select
         id="merge-source"
         class="w-full rounded-xs border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-300 focus:border-zinc-500 focus:outline-hidden"
         [ngModel]="mergeSourceId()"
         (ngModelChange)="mergeSourceId.set($event)"
       >
-        <option value="" disabled>選擇 Source Tag...</option>
+        <option value="" disabled>Select source tag...</option>
         @for (tag of tags(); track tag.id) {
         <option [value]="tag.id">{{ tag.name }} ({{ tag.slug }})</option>
         }
       </select>
     </app-form-field>
-    <app-form-field label="Target（保留的）" fieldId="merge-target">
+    <app-form-field label="Target (to keep)" fieldId="merge-target">
       <select
         id="merge-target"
         class="w-full rounded-xs border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-300 focus:border-zinc-500 focus:outline-hidden"
         [ngModel]="mergeTargetId()"
         (ngModelChange)="mergeTargetId.set($event)"
       >
-        <option value="" disabled>選擇 Target Tag...</option>
+        <option value="" disabled>Select target tag...</option>
         @for (tag of tags(); track tag.id) { @if (tag.id !== mergeSourceId()) {
         <option [value]="tag.id">{{ tag.name }} ({{ tag.slug }})</option>
         } }
@@ -427,7 +427,7 @@
   </div>
   @if (mergeSourceId() && mergeTargetId() && mergeSourceId() ===
   mergeTargetId()) {
-  <p class="mt-2 text-xs text-red-400">Source 和 Target 不能相同</p>
+  <p class="mt-2 text-xs text-red-400">Source and target must be different</p>
   }
   <div modal-footer class="flex justify-end gap-3">
     <button
@@ -436,7 +436,7 @@
       (click)="closeMergeDialog()"
       [disabled]="isMerging()"
     >
-      取消
+      Cancel
     </button>
     <button
       type="button"
@@ -446,7 +446,7 @@
     >
       @if (isMerging()) {
       <app-loading-spinner size="sm" />
-      合併中... } @else { 確認合併 }
+      Merging... } @else { Confirm Merge }
     </button>
   </div>
 </app-modal>

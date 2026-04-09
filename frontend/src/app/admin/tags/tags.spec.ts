@@ -1,6 +1,9 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
-import { provideHttpClientTesting, HttpTestingController } from '@angular/common/http/testing';
+import {
+  provideHttpClientTesting,
+  HttpTestingController,
+} from '@angular/common/http/testing';
 import { TagsComponent } from './tags';
 import type { ApiTag, ApiTagAlias } from '../../core/models';
 
@@ -89,7 +92,7 @@ describe('TagsComponent', () => {
     fixture.detectChanges();
 
     const emptyText = fixture.nativeElement.textContent;
-    expect(emptyText).toContain('尚無 Tag');
+    expect(emptyText).toContain('No tags yet');
   });
 
   it('should switch to aliases tab when clicking aliases tab', () => {
@@ -100,7 +103,9 @@ describe('TagsComponent', () => {
     component['switchTab']('aliases');
     fixture.detectChanges();
 
-    httpTesting.expectOne('/bff/api/admin/aliases').flush({ data: MOCK_ALIASES });
+    httpTesting
+      .expectOne('/bff/api/admin/aliases')
+      .flush({ data: MOCK_ALIASES });
     fixture.detectChanges();
 
     const cards = fixture.nativeElement.querySelectorAll('.space-y-3 > div');
@@ -113,7 +118,9 @@ describe('TagsComponent', () => {
 
     component['switchTab']('aliases');
     fixture.detectChanges();
-    httpTesting.expectOne('/bff/api/admin/aliases').flush({ data: MOCK_ALIASES });
+    httpTesting
+      .expectOne('/bff/api/admin/aliases')
+      .flush({ data: MOCK_ALIASES });
 
     component['setAliasFilter']('unmapped');
     fixture.detectChanges();
@@ -129,7 +136,9 @@ describe('TagsComponent', () => {
 
     component['switchTab']('aliases');
     fixture.detectChanges();
-    httpTesting.expectOne('/bff/api/admin/aliases').flush({ data: MOCK_ALIASES });
+    httpTesting
+      .expectOne('/bff/api/admin/aliases')
+      .flush({ data: MOCK_ALIASES });
 
     component['setAliasFilter']('pending');
     fixture.detectChanges();
@@ -148,7 +157,10 @@ describe('TagsComponent', () => {
     component['confirmDelete']();
 
     const req = httpTesting.expectOne('/bff/api/admin/tags/tag-1');
-    req.flush({ error: { code: 'CONFLICT', message: 'has references' } }, { status: 409, statusText: 'Conflict' });
+    req.flush(
+      { error: { code: 'CONFLICT', message: 'has references' } },
+      { status: 409, statusText: 'Conflict' },
+    );
 
     fixture.detectChanges();
     // Tag should still exist in the list

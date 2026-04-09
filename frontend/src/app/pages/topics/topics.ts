@@ -36,12 +36,13 @@ export class TopicsComponent implements OnInit {
 
   ngOnInit(): void {
     this.seoService.updateMeta({
-      title: '主題',
-      description: '依主題瀏覽所有技術文章、筆記與學習紀錄。',
+      title: 'Topics',
+      description: 'Browse all articles, notes, and learning records by topic.',
       ogUrl: `${environment.siteUrl}/topics`,
       jsonLd: buildCollectionPageSchema({
-        name: '主題',
-        description: '依主題瀏覽所有技術文章、筆記與學習紀錄。',
+        name: 'Topics',
+        description:
+          'Browse all articles, notes, and learning records by topic.',
         url: `${environment.siteUrl}/topics`,
       }),
     });
@@ -58,7 +59,7 @@ export class TopicsComponent implements OnInit {
           this.isLoading.set(false);
         },
         error: () => {
-          this.error.set('無法載入主題列表，請稍後再試。');
+          this.error.set('Failed to load topics. Please try again later.');
           this.isLoading.set(false);
         },
       });

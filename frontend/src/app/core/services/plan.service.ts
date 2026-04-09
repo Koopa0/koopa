@@ -14,7 +14,7 @@ import type {
   TaskAdvanceAction,
 } from '../models/admin.model';
 
-/** 規劃服務 — 目標、專案、任務待辦 */
+/** Planning service — goals, projects, task backlog */
 @Injectable({ providedIn: 'root' })
 export class PlanService {
   private readonly api = inject(ApiService);

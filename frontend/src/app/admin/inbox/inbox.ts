@@ -168,7 +168,7 @@ export class InboxComponent implements OnInit {
         },
         error: () => {
           this.isLoading.set(false);
-          this.notificationService.error('無法載入 inbox');
+          this.notificationService.error('Failed to load inbox');
         },
       });
   }
@@ -190,7 +190,7 @@ export class InboxComponent implements OnInit {
           this.captureText.set('');
           this.stats.update((s) => (s ? { ...s, total: s.total + 1 } : s));
         },
-        error: () => this.notificationService.error('捕獲失敗'),
+        error: () => this.notificationService.error('Capture failed'),
       });
   }
 
@@ -277,20 +277,20 @@ export class InboxComponent implements OnInit {
           );
           this.closeClarify();
           const labels: Record<ClarifyTarget, string> = {
-            task: '已轉為任務',
-            journal: '已寫入日誌',
-            insight: '已建立洞察',
-            discard: '已刪除',
+            task: 'Converted to task',
+            journal: 'Written to journal',
+            insight: 'Insight created',
+            discard: 'Deleted',
           };
           this.notificationService.success(labels[type]);
         },
-        error: () => this.notificationService.error('澄清失敗'),
+        error: () => this.notificationService.error('Clarification failed'),
       });
   }
 
   protected getSourceLabel(source: string): string {
     const labels: Record<string, string> = {
-      manual: '手動',
+      manual: 'Manual',
       mcp: 'MCP',
       rss: 'RSS',
     };
@@ -307,7 +307,7 @@ export class InboxComponent implements OnInit {
   }
 
   protected formatAge(hours: number): string {
-    if (hours < 1) return '剛才';
+    if (hours < 1) return 'Just now';
     if (hours < 24) return `${Math.round(hours)}h ago`;
     const days = Math.round(hours / 24);
     return `${days}d ago`;

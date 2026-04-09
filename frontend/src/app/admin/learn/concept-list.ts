@@ -10,7 +10,9 @@ import { LucideAngularModule, Brain } from 'lucide-angular';
     <div class="mx-auto max-w-3xl px-4 py-6 sm:px-6">
       <div class="mb-6">
         <h1 class="text-lg font-semibold text-zinc-100">Concepts</h1>
-        <p class="text-sm text-zinc-500">學習概念瀏覽與精通度追蹤</p>
+        <p class="text-sm text-zinc-500">
+          Learning concept browser and mastery tracking
+        </p>
       </div>
       <div
         class="rounded-sm border border-dashed border-zinc-800 px-6 py-12 text-center"
@@ -21,15 +23,17 @@ import { LucideAngularModule, Brain } from 'lucide-angular';
           class="mx-auto mb-3 text-zinc-700"
           aria-hidden="true"
         />
-        <p class="text-sm text-zinc-500 mb-1">概念列表建設中</p>
+        <p class="text-sm text-zinc-500 mb-1">
+          Concept list under construction
+        </p>
         <p class="text-xs text-zinc-600">
-          可從
+          Access individual concepts from the
           <a
             routerLink="/admin/learn/dashboard"
             class="text-zinc-400 underline hover:text-zinc-300"
             >Learning Dashboard</a
           >
-          的弱點分析進入個別概念
+          weakness analysis
         </p>
       </div>
     </div>

@@ -124,7 +124,7 @@ export class CollectedComponent implements OnInit {
           this.isLoading.set(false);
         },
         error: () => {
-          this.error.set('無法載入收集資料');
+          this.error.set('Failed to load collected items');
           this.isLoading.set(false);
         },
       });
@@ -150,14 +150,15 @@ export class CollectedComponent implements OnInit {
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: () => {
-          // 更新本地狀態
+          // Update local state
           this.items.update((list) =>
             list.map((i) =>
               i.id === item.id ? { ...i, user_feedback: feedback } : i,
             ),
           );
         },
-        error: () => this.notificationService.error('Feedback 送出失敗'),
+        error: () =>
+          this.notificationService.error('Failed to submit feedback'),
       });
   }
 
@@ -174,9 +175,9 @@ export class CollectedComponent implements OnInit {
                 : i,
             ),
           );
-          this.notificationService.success('已忽略');
+          this.notificationService.success('Ignored');
         },
-        error: () => this.notificationService.error('操作失敗'),
+        error: () => this.notificationService.error('Operation failed'),
       });
   }
 
@@ -193,9 +194,9 @@ export class CollectedComponent implements OnInit {
                 : i,
             ),
           );
-          this.notificationService.success('已加入書籤');
+          this.notificationService.success('Added to bookmarks');
         },
-        error: () => this.notificationService.error('Curate 失敗'),
+        error: () => this.notificationService.error('Curation failed'),
       });
   }
 }

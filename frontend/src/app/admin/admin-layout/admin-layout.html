@@ -1,14 +1,14 @@
-<!-- 手機版側邊欄觸發按鈕 -->
+<!-- Mobile sidebar trigger -->
 <button
   type="button"
   (click)="toggleMobileSidebar()"
   class="fixed bottom-4 right-4 z-50 flex size-12 items-center justify-center rounded-full bg-zinc-800 text-zinc-300 shadow-lg transition-colors hover:bg-zinc-700 hover:text-white md:hidden"
-  aria-label="開啟選單"
+  aria-label="Open menu"
 >
   <lucide-icon [img]="MenuIcon" [size]="20" />
 </button>
 
-<!-- 手機版背景遮罩 -->
+<!-- Mobile backdrop -->
 @if (isMobileSidebarOpen()) {
 <div
   class="fixed inset-0 z-40 bg-black/60 backdrop-blur-xs md:hidden"
@@ -17,7 +17,7 @@
 ></div>
 }
 
-<!-- 側邊欄 -->
+<!-- Sidebar -->
 <aside
   class="z-50 flex shrink-0 flex-col border-r border-zinc-800 bg-zinc-950 transition-all duration-200"
   [class]="
@@ -28,7 +28,7 @@
   role="navigation"
   aria-label="Admin navigation"
 >
-  <!-- 側邊欄頂部 -->
+  <!-- Sidebar top -->
   <div
     class="flex h-11 items-center justify-between border-b border-zinc-800 px-3"
   >
@@ -41,7 +41,7 @@
       type="button"
       (click)="toggleSidebar()"
       class="hidden rounded-xs p-1.5 text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-300 md:flex"
-      [attr.aria-label]="isSidebarOpen() ? '收合側邊欄' : '展開側邊欄'"
+      [attr.aria-label]="isSidebarOpen() ? 'Collapse sidebar' : 'Expand sidebar'"
     >
       @if (isSidebarOpen()) {
       <lucide-icon [img]="PanelLeftCloseIcon" [size]="16" />
@@ -51,11 +51,11 @@
     </button>
   </div>
 
-  <!-- 導航群組 -->
+  <!-- Navigation groups -->
   <nav class="flex-1 overflow-y-auto px-2 py-2">
     @for (group of navGroups; track group.title) {
     <div class="mb-1">
-      <!-- 群組標題（可展開收合） -->
+      <!-- Group title (collapsible) -->
       @if (group.title && (isSidebarOpen() || isMobileSidebarOpen())) { @if
       (group.collapsible) {
       <button
@@ -79,13 +79,13 @@
       </p>
       } }
 
-      <!-- 群組項目 -->
+      <!-- Group items -->
       @if (!group.collapsible || !collapsedGroups().has(group.title)) { @for
       (item of group.items; track item.route) { @if (item.disabled) {
       <span
         class="flex items-center gap-2.5 rounded-xs px-2 py-1.5 text-sm text-zinc-600 cursor-not-allowed"
         [class.justify-center]="!isSidebarOpen() && !isMobileSidebarOpen()"
-        [attr.aria-label]="(!isSidebarOpen() && !isMobileSidebarOpen()) ? item.label + ' (即將推出)' : '即將推出'"
+        [attr.aria-label]="(!isSidebarOpen() && !isMobileSidebarOpen()) ? item.label + ' (Coming soon)' : 'Coming soon'"
       >
         <lucide-icon [img]="item.icon" [size]="16" class="shrink-0" />
         @if (isSidebarOpen() || isMobileSidebarOpen()) {
@@ -122,7 +122,7 @@
     }
   </nav>
 
-  <!-- 側邊欄底部 -->
+  <!-- Sidebar bottom -->
   <div class="border-t border-zinc-800 px-2 py-2">
     <button
       type="button"
@@ -139,7 +139,7 @@
   </div>
 </aside>
 
-<!-- 主要內容區 -->
+<!-- Main content area -->
 <div class="flex-1 overflow-y-auto" style="view-transition-name: page-content">
   <router-outlet />
 </div>

@@ -31,17 +31,17 @@ const REVIEW_LEVEL_CONFIG: Record<
   ReviewLevel,
   { label: string; classes: string }
 > = {
-  auto: { label: '自動', classes: 'border-zinc-600 bg-zinc-800 text-zinc-300' },
+  auto: { label: 'Auto', classes: 'border-zinc-600 bg-zinc-800 text-zinc-300' },
   light: {
-    label: '輕度',
+    label: 'Light',
     classes: 'border-sky-700 bg-sky-900/30 text-sky-400',
   },
   standard: {
-    label: '標準',
+    label: 'Standard',
     classes: 'border-amber-700 bg-amber-900/30 text-amber-400',
   },
   strict: {
-    label: '嚴格',
+    label: 'Strict',
     classes: 'border-red-700 bg-red-900/30 text-red-400',
   },
 };
@@ -105,7 +105,7 @@ export class ReviewComponent implements OnInit {
           this.isLoading.set(false);
         },
         error: () => {
-          this.error.set('無法載入審核佇列');
+          this.error.set('Failed to load review queue');
           this.isLoading.set(false);
         },
       });
@@ -121,12 +121,12 @@ export class ReviewComponent implements OnInit {
           this.processingId.set(null);
           this.reviews.update((list) => list.filter((r) => r.id !== review.id));
           this.notificationService.success(
-            `「${review.content_title}」已核准發布`,
+            `"${review.content_title}" approved for publication`,
           );
         },
         error: () => {
           this.processingId.set(null);
-          this.notificationService.error('核准失敗');
+          this.notificationService.error('Approval failed');
         },
       });
   }
@@ -158,11 +158,13 @@ export class ReviewComponent implements OnInit {
           this.isRejecting.set(false);
           this.closeRejectDialog();
           this.reviews.update((list) => list.filter((r) => r.id !== review.id));
-          this.notificationService.success(`「${review.content_title}」已退回`);
+          this.notificationService.success(
+            `"${review.content_title}" rejected`,
+          );
         },
         error: () => {
           this.isRejecting.set(false);
-          this.notificationService.error('退回失敗');
+          this.notificationService.error('Rejection failed');
         },
       });
   }

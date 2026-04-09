@@ -13,18 +13,18 @@ interface UploadResult {
 export class UploadService {
   private readonly api = inject(ApiService);
 
-  /** 驗證檔案大小與類型，回傳錯誤訊息或 null */
+  /** Validate file size and type, return error message or null */
   validate(file: File): string | null {
     if (!ACCEPTED_TYPES.includes(file.type)) {
-      return '不支援的檔案格式，僅接受 JPEG、PNG、WebP、GIF';
+      return 'Unsupported file format. Only JPEG, PNG, WebP, and GIF are accepted';
     }
     if (file.size > MAX_FILE_SIZE) {
-      return '檔案大小不得超過 5MB';
+      return 'File size must not exceed 5MB';
     }
     return null;
   }
 
-  /** 上傳圖片至 R2，回傳 URL */
+  /** Upload image to R2, return URL */
   upload(file: File): Observable<UploadResult> {
     const formData = new FormData();
     formData.append('file', file);

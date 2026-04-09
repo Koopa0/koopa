@@ -5,9 +5,11 @@
       <div>
         <h1 class="flex items-center gap-2 text-xl font-bold text-zinc-100">
           <lucide-icon [img]="FileTextIcon" [size]="20" />
-          內容管理
+          Content Management
         </h1>
-        <p class="mt-0.5 text-xs text-zinc-500">共 {{ totalItems() }} 筆</p>
+        <p class="mt-0.5 text-xs text-zinc-500">
+          Total {{ totalItems() }} items
+        </p>
       </div>
       <button
         type="button"
@@ -15,7 +17,7 @@
         (click)="reload()"
       >
         <lucide-icon [img]="RefreshCwIcon" [size]="14" />
-        重新整理
+        Refresh
       </button>
     </div>
 
@@ -63,7 +65,7 @@
     </div>
     } @if (!isLoading() && items().length === 0) {
     <div class="py-20 text-center text-sm text-zinc-500">
-      沒有符合條件的內容
+      No matching content
     </div>
     } @if (!isLoading() && items().length > 0) {
     <div class="flex gap-0 divide-x divide-zinc-800">
@@ -87,7 +89,7 @@
                 class="text-sm font-medium leading-snug"
                 [class]="selectedItemId() === item.id ? 'text-zinc-50' : 'text-zinc-200'"
               >
-                {{ item.title || '（無標題）' }}
+                {{ item.title || '(Untitled)' }}
               </h3>
               <span
                 class="mt-0.5 shrink-0 rounded-full px-1.5 py-0.5 text-[10px] leading-none"
@@ -195,7 +197,7 @@
                 class="inline-flex items-center gap-1 rounded-xs border border-zinc-700 px-3 py-1.5 text-xs text-zinc-300 transition-colors hover:bg-zinc-800"
               >
                 <lucide-icon [img]="ExternalLinkIcon" [size]="12" />
-                編輯
+                Edit
               </a>
               <button
                 type="button"
@@ -375,7 +377,9 @@
             [size]="32"
             class="mx-auto text-zinc-700"
           />
-          <p class="mt-2 text-sm text-zinc-600">選擇一個內容查看詳情</p>
+          <p class="mt-2 text-sm text-zinc-600">
+            Select an item to view details
+          </p>
         </div>
       </div>
       }

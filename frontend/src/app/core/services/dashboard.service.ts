@@ -3,7 +3,7 @@ import { Observable } from 'rxjs';
 import { ApiService } from './api.service';
 import type { DashboardTrends } from '../models/admin.model';
 
-/** 趨勢儀表板服務 — 系統方向性指標 */
+/** Trend dashboard service — system directional metrics */
 @Injectable({ providedIn: 'root' })
 export class DashboardService {
   private readonly api = inject(ApiService);

@@ -14,7 +14,7 @@ import { LucideAngularModule, ArrowLeft, Brain } from 'lucide-angular';
         data-testid="back-to-dashboard"
       >
         <lucide-icon [img]="ArrowLeftIcon" [size]="14" />
-        返回學習儀表板
+        Back to Learning Dashboard
       </a>
 
       <div
@@ -22,11 +22,12 @@ import { LucideAngularModule, ArrowLeft, Brain } from 'lucide-angular';
       >
         <lucide-icon [img]="BrainIcon" [size]="32" class="mb-4 text-zinc-600" />
         <h1 class="text-lg font-semibold text-zinc-300 mb-2">
-          Concept Detail — 建設中
+          Concept Detail — Under Construction
         </h1>
         <p class="max-w-md text-sm text-zinc-500">
-          概念詳情頁將顯示單一概念的學習歷程，包含歷史嘗試記錄、成功率趨勢、
-          相關概念圖譜，以及 AI 觀察紀錄。
+          The concept detail page will display a single concept's learning
+          journey, including attempt history, success rate trends, related
+          concept graph, and AI observation records.
         </p>
       </div>
     </div>

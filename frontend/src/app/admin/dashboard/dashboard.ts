@@ -40,7 +40,7 @@ export class DashboardComponent implements OnInit {
   protected readonly trends = signal<DashboardTrends | null>(null);
   protected readonly isLoading = signal(true);
 
-  // 衍生狀態
+  // Derived state
   protected readonly period = computed(() => this.trends()?.period ?? '');
   protected readonly execution = computed(
     () => this.trends()?.execution ?? null,
@@ -63,19 +63,22 @@ export class DashboardComponent implements OnInit {
     () => this.trends()?.directive_health ?? null,
   );
 
-  // 摘要數字
+  // Summary numbers
   protected readonly summaryItems = computed(() => {
     const t = this.trends();
     if (!t) return [];
     return [
-      { label: '完成任務', value: t.execution.tasks_completed_this_week },
       {
-        label: '計畫達成',
+        label: 'Tasks Completed',
+        value: t.execution.tasks_completed_this_week,
+      },
+      {
+        label: 'Plan Adherence',
         value: t.plan_adherence.completion_rate_this_week,
         suffix: '%',
       },
-      { label: '本月發佈', value: t.content.published_this_month },
-      { label: '複習待辦', value: t.learning.review_backlog },
+      { label: 'Published This Month', value: t.content.published_this_month },
+      { label: 'Review Backlog', value: t.learning.review_backlog },
     ];
   });
 
@@ -119,7 +122,7 @@ export class DashboardComponent implements OnInit {
         },
         error: () => {
           this.isLoading.set(false);
-          this.notificationService.error('無法載入趨勢儀表板');
+          this.notificationService.error('Failed to load trends dashboard');
         },
       });
   }

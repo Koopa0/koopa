@@ -4,7 +4,9 @@
     <div class="flex items-center gap-3">
       <lucide-icon [img]="HammerIcon" [size]="28" class="text-zinc-500" />
       <div>
-        <h1 class="font-display text-3xl font-bold text-balance text-zinc-100">Build Log</h1>
+        <h1 class="font-display text-3xl font-bold text-balance text-zinc-100">
+          Build Log
+        </h1>
         <p class="mt-1 text-zinc-400">
           Development logs — process, decisions, and lessons learned
         </p>
@@ -34,7 +36,7 @@
         class="mt-3 rounded-sm border border-zinc-700 px-4 py-2 text-sm text-zinc-300 transition-colors hover:bg-zinc-800"
         (click)="loadBuildLogs()"
       >
-        重試
+        Retry
       </button>
     </div>
     } @else if (buildLogs().length === 0) {

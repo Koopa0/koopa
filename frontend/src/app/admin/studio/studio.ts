@@ -46,7 +46,7 @@ export class StudioComponent implements OnInit {
   protected readonly overview = signal<StudioOverview | null>(null);
   protected readonly isLoading = signal(true);
 
-  // 衍生狀態
+  // Derived state
   protected readonly openDirectives = computed(
     () => this.overview()?.open_directives ?? [],
   );
@@ -57,7 +57,7 @@ export class StudioComponent implements OnInit {
     () => this.overview()?.participants ?? [],
   );
 
-  // 常量映射 — 完整 class 字串，Tailwind JIT 無法解析動態拼接
+  // Constant maps — full class strings, Tailwind JIT cannot parse dynamic concatenation
   protected readonly PRIORITY_CLASSES: Record<DirectivePriority, string> = {
     p0: 'bg-red-900/40 text-red-400',
     p1: 'bg-amber-900/40 text-amber-400',
@@ -77,9 +77,9 @@ export class StudioComponent implements OnInit {
   };
 
   protected readonly LIFECYCLE_LABELS: Record<DirectiveLifecycle, string> = {
-    pending: '待回應',
-    acknowledged: '已接收',
-    resolved: '已解決',
+    pending: 'Pending',
+    acknowledged: 'Acknowledged',
+    resolved: 'Resolved',
   };
 
   // Lucide icons
@@ -110,7 +110,7 @@ export class StudioComponent implements OnInit {
         },
         error: () => {
           this.isLoading.set(false);
-          this.notificationService.error('無法載入 Studio 總覽');
+          this.notificationService.error('Failed to load Studio overview');
         },
       });
   }
@@ -122,10 +122,10 @@ export class StudioComponent implements OnInit {
 
   protected getCapabilityLabel(key: string): string {
     const labels: Record<string, string> = {
-      can_issue_directives: '發出指令',
-      can_receive_directives: '接收指令',
-      can_write_reports: '撰寫報告',
-      task_assignable: '可指派任務',
+      can_issue_directives: 'Issue Directives',
+      can_receive_directives: 'Receive Directives',
+      can_write_reports: 'Write Reports',
+      task_assignable: 'Task Assignable',
     };
     return labels[key] ?? key;
   }
@@ -136,22 +136,22 @@ export class StudioComponent implements OnInit {
     return [
       {
         key: 'can_issue_directives',
-        label: '發出指令',
+        label: 'Issue Directives',
         active: participant.can_issue_directives,
       },
       {
         key: 'can_receive_directives',
-        label: '接收指令',
+        label: 'Receive Directives',
         active: participant.can_receive_directives,
       },
       {
         key: 'can_write_reports',
-        label: '撰寫報告',
+        label: 'Write Reports',
         active: participant.can_write_reports,
       },
       {
         key: 'task_assignable',
-        label: '可指派',
+        label: 'Assignable',
         active: participant.task_assignable,
       },
     ];

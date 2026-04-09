@@ -29,14 +29,33 @@ import type { ApiProject, ProjectStatus } from '../../core/models';
 
 type StatusFilter = ProjectStatus | 'all';
 
-const STATUS_CONFIG: Record<ProjectStatus, { label: string; classes: string }> = {
-  planned: { label: 'Planned', classes: 'border-zinc-600 bg-zinc-800 text-zinc-300' },
-  'in-progress': { label: 'In Progress', classes: 'border-amber-800 bg-amber-900/30 text-amber-400' },
-  'on-hold': { label: 'On Hold', classes: 'border-orange-800 bg-orange-900/30 text-orange-400' },
-  completed: { label: 'Completed', classes: 'border-emerald-800 bg-emerald-900/30 text-emerald-400' },
-  maintained: { label: 'Maintained', classes: 'border-sky-800 bg-sky-900/30 text-sky-400' },
-  archived: { label: 'Archived', classes: 'border-zinc-700 bg-zinc-800 text-zinc-500' },
-};
+const STATUS_CONFIG: Record<ProjectStatus, { label: string; classes: string }> =
+  {
+    planned: {
+      label: 'Planned',
+      classes: 'border-zinc-600 bg-zinc-800 text-zinc-300',
+    },
+    'in-progress': {
+      label: 'In Progress',
+      classes: 'border-amber-800 bg-amber-900/30 text-amber-400',
+    },
+    'on-hold': {
+      label: 'On Hold',
+      classes: 'border-orange-800 bg-orange-900/30 text-orange-400',
+    },
+    completed: {
+      label: 'Completed',
+      classes: 'border-emerald-800 bg-emerald-900/30 text-emerald-400',
+    },
+    maintained: {
+      label: 'Maintained',
+      classes: 'border-sky-800 bg-sky-900/30 text-sky-400',
+    },
+    archived: {
+      label: 'Archived',
+      classes: 'border-zinc-700 bg-zinc-800 text-zinc-500',
+    },
+  };
 
 const STATUS_FILTERS: { value: StatusFilter; label: string }[] = [
   { value: 'all', label: 'All' },
@@ -84,7 +103,10 @@ export class AdminProjectsComponent implements OnInit {
     return counts;
   });
 
-  protected readonly deleteTarget = signal<{ id: string; title: string } | null>(null);
+  protected readonly deleteTarget = signal<{
+    id: string;
+    title: string;
+  } | null>(null);
   protected readonly isDeleting = signal(false);
 
   protected readonly statusFilters = STATUS_FILTERS;
@@ -115,7 +137,7 @@ export class AdminProjectsComponent implements OnInit {
           this.isLoading.set(false);
         },
         error: () => {
-          this.notificationService.error('無法載入專案');
+          this.notificationService.error('Failed to load projects');
           this.isLoading.set(false);
         },
       });
@@ -137,9 +159,11 @@ export class AdminProjectsComponent implements OnInit {
               p.id === project.id ? { ...p, is_public: newPublic } : p,
             ),
           );
-          this.notificationService.success(newPublic ? '已設為公開' : '已設為非公開');
+          this.notificationService.success(
+            newPublic ? 'Set to public' : 'Set to private',
+          );
         },
-        error: () => this.notificationService.error('更新失敗'),
+        error: () => this.notificationService.error('Update failed'),
       });
   }
 
@@ -171,14 +195,16 @@ export class AdminProjectsComponent implements OnInit {
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: () => {
-          this.projects.update((list) => list.filter((p) => p.id !== target.id));
+          this.projects.update((list) =>
+            list.filter((p) => p.id !== target.id),
+          );
           this.deleteTarget.set(null);
           this.isDeleting.set(false);
-          this.notificationService.success('已刪除');
+          this.notificationService.success('Deleted successfully');
         },
         error: () => {
           this.isDeleting.set(false);
-          this.notificationService.error('刪除失敗');
+          this.notificationService.error('Delete failed');
           this.deleteTarget.set(null);
         },
       });

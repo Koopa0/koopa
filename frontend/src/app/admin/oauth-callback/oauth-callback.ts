@@ -11,8 +11,12 @@ import { AuthService } from '../../core/services/auth.service';
   selector: 'app-oauth-callback',
   standalone: true,
   template: `
-    <div class="flex min-h-[calc(100vh-4rem)] items-center justify-center bg-zinc-950">
-      <div class="size-6 animate-spin rounded-full border-2 border-zinc-600 border-t-zinc-200"></div>
+    <div
+      class="flex min-h-[calc(100vh-4rem)] items-center justify-center bg-zinc-950"
+    >
+      <div
+        class="size-6 animate-spin rounded-full border-2 border-zinc-600 border-t-zinc-200"
+      ></div>
     </div>
   `,
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -30,7 +34,7 @@ export default class OAuthCallbackComponent implements OnInit {
     const accessToken = fragment.get('access_token');
     const refreshToken = fragment.get('refresh_token');
 
-    // 清除 URL 中的 token 避免洩漏至瀏覽器歷史和 Referer header
+    // Clear tokens from URL to prevent leaking to browser history and Referer header
     window.history.replaceState({}, '', '/admin/oauth-callback');
 
     if (accessToken && refreshToken) {

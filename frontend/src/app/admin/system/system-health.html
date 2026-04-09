@@ -7,7 +7,7 @@
   <div
     class="size-6 animate-spin rounded-full border-2 border-zinc-700 border-t-zinc-300"
   ></div>
-  <span class="sr-only">載入中...</span>
+  <span class="sr-only">Loading...</span>
 </div>
 } @else if (health(); as h) {
 
@@ -17,8 +17,8 @@
 >
   <!-- Header -->
   <div class="mb-6">
-    <h1 class="text-lg font-semibold text-zinc-100">系統健康</h1>
-    <p class="text-sm text-zinc-500">基礎設施一覽</p>
+    <h1 class="text-lg font-semibold text-zinc-100">System Health</h1>
+    <p class="text-sm text-zinc-500">Infrastructure overview</p>
   </div>
 
   <!-- 2x2 Grid -->
@@ -35,28 +35,28 @@
           class="text-amber-400"
           aria-hidden="true"
         />
-        <h2 class="text-sm font-medium text-zinc-200">Feed 健康</h2>
+        <h2 class="text-sm font-medium text-zinc-200">Feed Health</h2>
       </div>
 
       @if (feedSummary(); as feeds) {
-      <!-- 摘要 -->
+      <!-- Summary -->
       <div class="flex items-center justify-between mb-2">
         <span class="text-sm text-zinc-400">
-          {{ feeds.healthy }}/{{ feeds.total }} feeds 正常
+          {{ feeds.healthy }}/{{ feeds.total }} feeds healthy
         </span>
         <span class="text-xs tabular-nums text-zinc-500">
           {{ feedHealthPercent() }}%
         </span>
       </div>
 
-      <!-- 進度條 -->
+      <!-- Progress bar -->
       <div
         class="h-1.5 w-full overflow-hidden rounded-full bg-zinc-800 mb-3"
         role="progressbar"
         [attr.aria-valuenow]="feedHealthPercent()"
         aria-valuemin="0"
         aria-valuemax="100"
-        aria-label="Feed 健康度"
+        aria-label="Feed health"
       >
         <div
           class="h-full rounded-full transition-all duration-300"
@@ -65,7 +65,7 @@
         ></div>
       </div>
 
-      <!-- 失敗 feeds -->
+      <!-- Failing feeds -->
       @if (feeds.failing_feeds.length > 0) {
       <div class="space-y-2">
         @for (feed of feeds.failing_feeds; track feed.name) {
@@ -86,19 +86,19 @@
           </div>
           <p class="text-xs text-zinc-500 pl-[18px]">{{ feed.error }}</p>
           <p class="text-[10px] text-zinc-600 pl-[18px] mt-0.5">
-            起始：{{ feed.since | date: 'M/d HH:mm' }}
+            Since: {{ feed.since | date: 'M/d HH:mm' }}
           </p>
         </div>
         }
       </div>
       }
 
-      <!-- 連結 -->
+      <!-- Link -->
       <a
         routerLink="/admin/system/feeds"
         class="mt-3 inline-flex items-center gap-1 text-xs text-zinc-500 no-underline hover:text-zinc-300"
       >
-        管理全部 Feeds
+        Manage All Feeds
         <lucide-icon [img]="ArrowRightIcon" [size]="12" aria-hidden="true" />
       </a>
       }
@@ -116,12 +116,12 @@
           class="text-sky-400"
           aria-hidden="true"
         />
-        <h2 class="text-sm font-medium text-zinc-200">Pipeline 狀態</h2>
+        <h2 class="text-sm font-medium text-zinc-200">Pipeline Status</h2>
       </div>
 
       @if (pipelines(); as p) {
       <div class="space-y-3">
-        <!-- 狀態指示 -->
+        <!-- Status indicator -->
         <div class="flex items-center gap-2">
           @if (isPipelineHealthy()) {
           <lucide-icon
@@ -130,7 +130,7 @@
             class="text-emerald-400"
             aria-hidden="true"
           />
-          <span class="text-sm text-emerald-400">全部正常</span>
+          <span class="text-sm text-emerald-400">All healthy</span>
           } @else {
           <lucide-icon
             [img]="AlertTriangleIcon"
@@ -138,17 +138,17 @@
             class="text-red-400"
             aria-hidden="true"
           />
-          <span class="text-sm text-red-400"> {{ p.failed }} 次失敗 </span>
+          <span class="text-sm text-red-400"> {{ p.failed }} failures </span>
           }
         </div>
 
-        <!-- 統計 -->
+        <!-- Stats -->
         <div class="grid grid-cols-2 gap-3">
           <div>
             <div class="text-lg font-semibold text-zinc-200 tabular-nums">
               {{ p.recent_runs }}
             </div>
-            <div class="text-xs text-zinc-500">最近執行</div>
+            <div class="text-xs text-zinc-500">Recent runs</div>
           </div>
           <div>
             <div
@@ -157,15 +157,15 @@
             >
               {{ p.failed }}
             </div>
-            <div class="text-xs text-zinc-500">失敗次數</div>
+            <div class="text-xs text-zinc-500">Failure count</div>
           </div>
         </div>
 
-        <!-- 最後執行 -->
+        <!-- Last run -->
         @if (p.last_run_at) {
         <div class="flex items-center gap-1.5 text-xs text-zinc-500">
           <lucide-icon [img]="ClockIcon" [size]="12" aria-hidden="true" />
-          <span>最後執行：{{ p.last_run_at | date: 'M/d HH:mm' }}</span>
+          <span>Last run: {{ p.last_run_at | date: 'M/d HH:mm' }}</span>
         </div>
         }
       </div>
@@ -184,12 +184,12 @@
           class="text-violet-400"
           aria-hidden="true"
         />
-        <h2 class="text-sm font-medium text-zinc-200">AI 預算</h2>
+        <h2 class="text-sm font-medium text-zinc-200">AI Budget</h2>
       </div>
 
       @if (aiBudget(); as budget) {
       <div class="space-y-3">
-        <!-- 用量數值 -->
+        <!-- Usage -->
         <div class="flex items-baseline justify-between">
           <span class="text-lg font-semibold text-zinc-200 tabular-nums">
             {{ formatTokenCount(budget.today_tokens) }}
@@ -199,14 +199,14 @@
           </span>
         </div>
 
-        <!-- 進度條 -->
+        <!-- Progress bar -->
         <div
           class="h-2 w-full overflow-hidden rounded-full bg-zinc-800"
           role="progressbar"
           [attr.aria-valuenow]="budgetPercent()"
           aria-valuemin="0"
           aria-valuemax="100"
-          aria-label="AI 預算使用量"
+          aria-label="AI budget usage"
         >
           <div
             class="h-full rounded-full transition-all duration-300"
@@ -215,13 +215,13 @@
           ></div>
         </div>
 
-        <!-- 百分比 -->
+        <!-- Percentage -->
         <div class="text-right">
           <span
             class="text-sm font-medium tabular-nums"
             [class]="budgetTextColor()"
           >
-            {{ budgetPercent() }}% 已使用
+            {{ budgetPercent() }}% used
           </span>
         </div>
       </div>
@@ -240,7 +240,7 @@
           class="text-emerald-400"
           aria-hidden="true"
         />
-        <h2 class="text-sm font-medium text-zinc-200">資料庫</h2>
+        <h2 class="text-sm font-medium text-zinc-200">Database</h2>
       </div>
 
       @if (database(); as db) {
@@ -249,19 +249,19 @@
           <div class="text-lg font-semibold text-zinc-200 tabular-nums">
             {{ db.contents_count }}
           </div>
-          <div class="text-xs text-zinc-500">內容</div>
+          <div class="text-xs text-zinc-500">Content</div>
         </div>
         <div class="text-center">
           <div class="text-lg font-semibold text-zinc-200 tabular-nums">
             {{ db.tasks_count }}
           </div>
-          <div class="text-xs text-zinc-500">任務</div>
+          <div class="text-xs text-zinc-500">Tasks</div>
         </div>
         <div class="text-center">
           <div class="text-lg font-semibold text-zinc-200 tabular-nums">
             {{ db.notes_count }}
           </div>
-          <div class="text-xs text-zinc-500">筆記</div>
+          <div class="text-xs text-zinc-500">Notes</div>
         </div>
       </div>
       }
@@ -275,7 +275,7 @@
   <div
     class="rounded-sm border border-dashed border-zinc-800 px-6 py-12 text-center"
   >
-    <p class="text-sm text-zinc-400">無法載入系統狀態</p>
+    <p class="text-sm text-zinc-400">Failed to load system status</p>
   </div>
 </div>
 

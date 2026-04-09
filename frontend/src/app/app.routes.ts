@@ -143,7 +143,7 @@ export const routes: Routes = [
       ),
     canActivate: [adminGuard],
     children: [
-      // — 預設導向 Today —
+      // — Default redirect to Today —
       {
         path: '',
         redirectTo: 'today',
@@ -244,7 +244,7 @@ export const routes: Routes = [
         canDeactivate: [unsavedChangesGuard],
       },
 
-      // — Learn（Phase 2）—
+      // — Learn (Phase 2) —
       {
         path: 'learn',
         redirectTo: 'learn/dashboard',
@@ -286,7 +286,7 @@ export const routes: Routes = [
           ),
       },
 
-      // — Reflect（Phase 2）—
+      // — Reflect (Phase 2) —
       {
         path: 'reflect',
         redirectTo: 'reflect/daily',
@@ -317,7 +317,7 @@ export const routes: Routes = [
           import('./admin/reflect/journal').then((m) => m.JournalComponent),
       },
 
-      // — Studio（Phase 3）—
+      // — Studio (Phase 3) —
       {
         path: 'studio',
         loadComponent: () =>

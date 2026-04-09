@@ -1,4 +1,4 @@
-<!-- 系統趨勢 Dashboard -->
+<!-- System Trends Dashboard -->
 <div class="space-y-6 p-6" data-testid="dashboard-page">
   @if (isLoading()) {
   <div class="flex items-center justify-center py-20" role="status">
@@ -6,7 +6,7 @@
       class="size-6 animate-spin rounded-full border-2 border-zinc-600 border-t-zinc-300"
       aria-hidden="true"
     ></div>
-    <span class="sr-only">載入中...</span>
+    <span class="sr-only">Loading...</span>
   </div>
   } @else if (trends()) {
   <!-- Header -->
@@ -17,7 +17,7 @@
       aria-hidden="true"
     />
     <div>
-      <h1 class="text-lg font-semibold text-zinc-100">系統趨勢</h1>
+      <h1 class="text-lg font-semibold text-zinc-100">System Trends</h1>
       <p class="text-xs text-zinc-500">{{ period() }}</p>
     </div>
   </div>
@@ -36,19 +36,19 @@
 
   <!-- 2x2 Grid -->
   <div class="grid gap-4 md:grid-cols-2" data-testid="trends-grid">
-    <!-- Card 1: 執行速度 -->
+    <!-- Card 1: Velocity -->
     @if (execution(); as exec) {
     <div
       class="rounded-lg border border-zinc-800 bg-zinc-900 p-5"
       data-testid="card-execution"
     >
-      <h2 class="mb-4 text-sm font-medium text-zinc-400">執行速度</h2>
+      <h2 class="mb-4 text-sm font-medium text-zinc-400">Velocity</h2>
 
       <div class="flex items-end gap-3">
         <span class="text-3xl font-bold text-zinc-100"
           >{{ exec.tasks_completed_this_week }}</span
         >
-        <span class="mb-1 text-sm text-zinc-500">任務完成</span>
+        <span class="mb-1 text-sm text-zinc-500">Tasks completed</span>
         <div class="mb-1 ml-auto flex items-center gap-1">
           @if (exec.trend === 'up') {
           <lucide-icon
@@ -56,34 +56,34 @@
             class="size-4 text-emerald-400"
             aria-hidden="true"
           />
-          <span class="text-xs text-emerald-400">上升</span>
+          <span class="text-xs text-emerald-400">Up</span>
           } @else if (exec.trend === 'down') {
           <lucide-icon
             [img]="TrendingDownIcon"
             class="size-4 text-red-400"
             aria-hidden="true"
           />
-          <span class="text-xs text-red-400">下降</span>
+          <span class="text-xs text-red-400">Down</span>
           } @else {
           <lucide-icon
             [img]="MinusIcon"
             class="size-4 text-zinc-500"
             aria-hidden="true"
           />
-          <span class="text-xs text-zinc-500">持平</span>
+          <span class="text-xs text-zinc-500">Flat</span>
           }
         </div>
       </div>
 
       <p class="mt-1 text-xs text-zinc-600">
-        上週 {{ exec.tasks_completed_last_week }} 個
+        Last week {{ exec.tasks_completed_last_week }}
       </p>
 
       <!-- Plan adherence bar -->
       @if (planAdherence(); as pa) {
       <div class="mt-4">
         <div class="flex items-center justify-between text-xs">
-          <span class="text-zinc-500">計畫達成率</span>
+          <span class="text-zinc-500">Plan Completion Rate</span>
           <span class="font-medium text-zinc-300"
             >{{ pa.completion_rate_this_week }}%</span
           >
@@ -94,7 +94,7 @@
           [attr.aria-valuenow]="pa.completion_rate_this_week"
           aria-valuemin="0"
           aria-valuemax="100"
-          aria-label="計畫達成率"
+          aria-label="Plan Completion Rate"
         >
           <div
             class="h-1.5 rounded-full transition-all"
@@ -103,33 +103,33 @@
           ></div>
         </div>
         <p class="mt-1 text-[10px] text-zinc-600">
-          上週 {{ pa.completion_rate_last_week }}%
+          Last week {{ pa.completion_rate_last_week }}%
         </p>
       </div>
       }
     </div>
     }
 
-    <!-- Card 2: 目標健康 -->
+    <!-- Card 2: Goal Health -->
     @if (goalHealth(); as gh) {
     <div
       class="rounded-lg border border-zinc-800 bg-zinc-900 p-5"
       data-testid="card-goal-health"
     >
-      <h2 class="mb-4 text-sm font-medium text-zinc-400">目標健康</h2>
+      <h2 class="mb-4 text-sm font-medium text-zinc-400">Goal Health</h2>
 
       <div class="flex items-center gap-4">
         <div class="flex items-center gap-2">
           <span class="size-2.5 rounded-full bg-emerald-500"></span>
-          <span class="text-sm text-zinc-300">{{ gh.on_track }} 正常</span>
+          <span class="text-sm text-zinc-300">{{ gh.on_track }} On track</span>
         </div>
         <div class="flex items-center gap-2">
           <span class="size-2.5 rounded-full bg-amber-500"></span>
-          <span class="text-sm text-zinc-300">{{ gh.at_risk }} 注意</span>
+          <span class="text-sm text-zinc-300">{{ gh.at_risk }} Attention</span>
         </div>
         <div class="flex items-center gap-2">
           <span class="size-2.5 rounded-full bg-red-500"></span>
-          <span class="text-sm text-zinc-300">{{ gh.stalled }} 停滯</span>
+          <span class="text-sm text-zinc-300">{{ gh.stalled }} Stalled</span>
         </div>
       </div>
 
@@ -146,18 +146,18 @@
     </div>
     }
 
-    <!-- Card 3: 學習信號 -->
+    <!-- Card 3: Learning Signals -->
     @if (learning(); as lr) {
     <div
       class="rounded-lg border border-zinc-800 bg-zinc-900 p-5"
       data-testid="card-learning"
     >
-      <h2 class="mb-4 text-sm font-medium text-zinc-400">學習信號</h2>
+      <h2 class="mb-4 text-sm font-medium text-zinc-400">Learning Signals</h2>
 
       <div class="space-y-3">
         <!-- Weakness -->
         <div class="flex items-center justify-between">
-          <span class="text-sm text-zinc-400">弱點概念</span>
+          <span class="text-sm text-zinc-400">Weak Concepts</span>
           <div class="flex items-center gap-2">
             <span class="text-lg font-semibold text-zinc-100"
               >{{ lr.weakness_count }}</span
@@ -180,7 +180,7 @@
 
         <!-- Mastery -->
         <div class="flex items-center justify-between">
-          <span class="text-sm text-zinc-400">精熟概念</span>
+          <span class="text-sm text-zinc-400">Mastered Concepts</span>
           <div class="flex items-center gap-2">
             <span class="text-lg font-semibold text-zinc-100"
               >{{ lr.mastery_count }}</span
@@ -203,7 +203,7 @@
 
         <!-- Review backlog -->
         <div class="flex items-center justify-between">
-          <span class="text-sm text-zinc-400">複習待辦</span>
+          <span class="text-sm text-zinc-400">Reviews Due</span>
           <span
             class="text-lg font-semibold"
             [class]="lr.review_backlog > 10 ? 'text-amber-400' : 'text-zinc-100'"
@@ -215,18 +215,18 @@
     </div>
     }
 
-    <!-- Card 4: 內容 & Inbox -->
+    <!-- Card 4: Content & Inbox -->
     <div
       class="rounded-lg border border-zinc-800 bg-zinc-900 p-5"
       data-testid="card-content-inbox"
     >
-      <h2 class="mb-4 text-sm font-medium text-zinc-400">內容 & Inbox</h2>
+      <h2 class="mb-4 text-sm font-medium text-zinc-400">Content & Inbox</h2>
 
       @if (content(); as ct) {
       <!-- Content progress -->
       <div>
         <div class="flex items-center justify-between text-xs">
-          <span class="text-zinc-500">發佈進度</span>
+          <span class="text-zinc-500">Publishing Progress</span>
           <span class="font-medium text-zinc-300"
             >{{ ct.published_this_month }} / {{ ct.published_target }}</span
           >
@@ -237,7 +237,7 @@
           [attr.aria-valuenow]="ct.published_this_month"
           aria-valuemin="0"
           [attr.aria-valuemax]="ct.published_target"
-          aria-label="內容發佈進度"
+          aria-label="Publishing Progress"
         >
           <div
             class="h-1.5 rounded-full bg-sky-500 transition-all"
@@ -246,7 +246,7 @@
         </div>
         @if (ct.drafts_in_progress > 0) {
         <p class="mt-1 text-[10px] text-zinc-600">
-          {{ ct.drafts_in_progress }} 篇草稿進行中
+          {{ ct.drafts_in_progress }} drafts in progress
         </p>
         }
       </div>
@@ -280,7 +280,7 @@
           aria-hidden="true"
         />
         <span class="text-xs text-amber-400"
-          >{{ sh.stale_count }} 個 Someday 任務超過 30 天未動</span
+          >{{ sh.stale_count }} someday tasks stale for 30+ days</span
         >
       </div>
       } }
@@ -298,12 +298,12 @@
       class="size-4 text-zinc-500"
       aria-hidden="true"
     />
-    <span class="text-sm text-zinc-400">指令狀態</span>
+    <span class="text-sm text-zinc-400">Directive Status</span>
     <span class="text-sm font-medium text-zinc-200"
-      >{{ dh.open_count }} 個進行中</span
+      >{{ dh.open_count }} in progress</span
     >
     <span class="text-xs text-zinc-600"
-      >平均解決 {{ dh.avg_resolution_days }} 天</span
+      >Avg resolution {{ dh.avg_resolution_days }}d</span
     >
   </div>
   } } @else {
@@ -312,7 +312,7 @@
     <div
       class="rounded-sm border border-dashed border-zinc-800 px-6 py-12 text-center"
     >
-      <p class="text-sm text-zinc-400">無法載入趨勢資料</p>
+      <p class="text-sm text-zinc-400">Failed to load trend data</p>
     </div>
   </div>
 

@@ -1,17 +1,17 @@
 <!-- Header -->
 <section class="border-b border-zinc-800 bg-zinc-950">
   <div class="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-    <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+    <div
+      class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"
+    >
       <div>
         <h1 class="flex items-center gap-2 text-2xl font-bold text-zinc-100">
           <lucide-icon [img]="FolderOpenIcon" [size]="24" />
           Projects
         </h1>
         <p class="mt-1 text-sm text-zinc-400">
-          {{ projects().length }} 個專案
-          @if (statusCounts()['in-progress']) {
-            · {{ statusCounts()['in-progress'] }} active
-          }
+          {{ projects().length }} projects @if (statusCounts()['in-progress']) {
+          · {{ statusCounts()['in-progress'] }} active }
         </p>
       </div>
       <button
@@ -20,7 +20,7 @@
         (click)="loadProjects()"
       >
         <lucide-icon [img]="RefreshCwIcon" [size]="16" />
-        重新整理
+        Refresh
       </button>
     </div>
   </div>
@@ -31,16 +31,16 @@
   <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
     <div class="flex flex-wrap gap-2 py-3">
       @for (f of statusFilters; track f.value) {
-        <button
-          type="button"
-          class="rounded-full border px-3 py-1 text-xs transition-colors"
-          [class]="statusFilter() === f.value
+      <button
+        type="button"
+        class="rounded-full border px-3 py-1 text-xs transition-colors"
+        [class]="statusFilter() === f.value
             ? 'border-white bg-white text-zinc-900'
             : 'border-zinc-700 text-zinc-400 hover:border-zinc-500'"
-          (click)="setFilter(f.value)"
-        >
-          {{ f.label }}
-        </button>
+        (click)="setFilter(f.value)"
+      >
+        {{ f.label }}
+      </button>
       }
     </div>
   </div>
@@ -50,127 +50,145 @@
 <section class="bg-zinc-950">
   <div class="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
     @if (isLoading()) {
-      <div class="flex items-center justify-center py-16">
-        <lucide-icon [img]="Loader2Icon" [size]="24" class="animate-spin text-zinc-500" />
-      </div>
+    <div class="flex items-center justify-center py-16">
+      <lucide-icon
+        [img]="Loader2Icon"
+        [size]="24"
+        class="animate-spin text-zinc-500"
+      />
+    </div>
     } @else if (filteredProjects().length === 0) {
-      <div class="flex flex-col items-center gap-3 py-16 text-center">
-        <lucide-icon [img]="FolderOpenIcon" [size]="40" class="text-zinc-700" />
-        <h3 class="text-sm font-medium text-zinc-300">沒有符合的專案</h3>
-      </div>
+    <div class="flex flex-col items-center gap-3 py-16 text-center">
+      <lucide-icon [img]="FolderOpenIcon" [size]="40" class="text-zinc-700" />
+      <h3 class="text-sm font-medium text-zinc-300">No matching projects</h3>
+    </div>
     } @else {
-      <div class="space-y-3">
-        @for (project of filteredProjects(); track project.id) {
-          <div class="rounded-xs border border-zinc-800 bg-zinc-900/50 p-4 transition-colors hover:border-zinc-700">
-            <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-              <!-- Info -->
-              <div class="min-w-0 flex-1">
-                <div class="flex flex-wrap items-center gap-2">
-                  <span class="text-sm font-medium text-zinc-200">{{ project.title }}</span>
-                  <span
-                    class="inline-block rounded-full border px-2 py-0.5 text-xs"
-                    [class]="getStatusClass(project.status)"
-                  >
-                    {{ getStatusLabel(project.status) }}
-                  </span>
-                  @if (project.area) {
-                    <span class="rounded-xs bg-zinc-800 px-1.5 py-0.5 text-xs text-zinc-500">{{ project.area }}</span>
-                  }
-                  @if (project.featured) {
-                    <span class="text-xs text-amber-500">★</span>
-                  }
-                </div>
-                <p class="mt-1 line-clamp-1 text-xs text-zinc-500">{{ project.description }}</p>
-                <div class="mt-2 flex flex-wrap items-center gap-3 text-xs text-zinc-600">
-                  @if (project.tech_stack.length > 0) {
-                    <div class="flex flex-wrap gap-1">
-                      @for (tech of project.tech_stack.slice(0, 4); track tech) {
-                        <span class="rounded-xs bg-zinc-800 px-1.5 py-0.5 text-zinc-400">{{ tech }}</span>
-                      }
-                      @if (project.tech_stack.length > 4) {
-                        <span class="text-zinc-600">+{{ project.tech_stack.length - 4 }}</span>
-                      }
-                    </div>
-                  }
-                  @if (project.deadline) {
-                    <span>Deadline: {{ project.deadline | date: 'yyyy-MM-dd' }}</span>
-                  }
-                  @if (project.last_activity_at) {
-                    <span>Activity: {{ project.last_activity_at | date: 'MM/dd' }}</span>
-                  }
-                </div>
-              </div>
-
-              <!-- Actions -->
-              <div class="flex shrink-0 items-center gap-1">
-                <!-- Public toggle -->
-                <button
-                  type="button"
-                  class="relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-hidden"
-                  [class]="project.is_public ? 'bg-emerald-600' : 'bg-zinc-700'"
-                  role="switch"
-                  [attr.aria-checked]="project.is_public"
-                  aria-label="Toggle public"
-                  (click)="togglePublic(project)"
+    <div class="space-y-3">
+      @for (project of filteredProjects(); track project.id) {
+      <div
+        class="rounded-xs border border-zinc-800 bg-zinc-900/50 p-4 transition-colors hover:border-zinc-700"
+      >
+        <div
+          class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"
+        >
+          <!-- Info -->
+          <div class="min-w-0 flex-1">
+            <div class="flex flex-wrap items-center gap-2">
+              <span class="text-sm font-medium text-zinc-200"
+                >{{ project.title }}</span
+              >
+              <span
+                class="inline-block rounded-full border px-2 py-0.5 text-xs"
+                [class]="getStatusClass(project.status)"
+              >
+                {{ getStatusLabel(project.status) }}
+              </span>
+              @if (project.area) {
+              <span
+                class="rounded-xs bg-zinc-800 px-1.5 py-0.5 text-xs text-zinc-500"
+                >{{ project.area }}</span
+              >
+              } @if (project.featured) {
+              <span class="text-xs text-amber-500">★</span>
+              }
+            </div>
+            <p class="mt-1 line-clamp-1 text-xs text-zinc-500">
+              {{ project.description }}
+            </p>
+            <div
+              class="mt-2 flex flex-wrap items-center gap-3 text-xs text-zinc-600"
+            >
+              @if (project.tech_stack.length > 0) {
+              <div class="flex flex-wrap gap-1">
+                @for (tech of project.tech_stack.slice(0, 4); track tech) {
+                <span class="rounded-xs bg-zinc-800 px-1.5 py-0.5 text-zinc-400"
+                  >{{ tech }}</span
                 >
-                  <span
-                    class="pointer-events-none inline-block size-4 rounded-full bg-white shadow-xs ring-0 transition duration-200"
-                    [class]="project.is_public ? 'translate-x-4' : 'translate-x-0'"
-                  ></span>
-                </button>
-                @if (project.github_url) {
-                  <a
-                    [href]="project.github_url"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    class="rounded-xs p-1.5 text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-300"
-                    aria-label="GitHub"
-                  >
-                    <lucide-icon [img]="GithubIcon" [size]="16" />
-                  </a>
+                } @if (project.tech_stack.length > 4) {
+                <span class="text-zinc-600"
+                  >+{{ project.tech_stack.length - 4 }}</span
+                >
                 }
-                @if (project.live_url) {
-                  <a
-                    [href]="project.live_url"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    class="rounded-xs p-1.5 text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-300"
-                    aria-label="Live"
-                  >
-                    <lucide-icon [img]="ExternalLinkIcon" [size]="16" />
-                  </a>
-                }
-                <a
-                  [routerLink]="['/admin/project-editor', project.id]"
-                  class="rounded-xs p-1.5 text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-300"
-                  aria-label="編輯"
-                >
-                  <lucide-icon [img]="PencilIcon" [size]="16" />
-                </a>
-                <button
-                  type="button"
-                  class="rounded-xs p-1.5 text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-red-400"
-                  aria-label="刪除"
-                  (click)="requestDelete(project)"
-                >
-                  <lucide-icon [img]="Trash2Icon" [size]="16" />
-                </button>
               </div>
+              } @if (project.deadline) {
+              <span>Deadline: {{ project.deadline | date: 'yyyy-MM-dd' }}</span>
+              } @if (project.last_activity_at) {
+              <span
+                >Activity: {{ project.last_activity_at | date: 'MM/dd' }}</span
+              >
+              }
             </div>
           </div>
-        }
+
+          <!-- Actions -->
+          <div class="flex shrink-0 items-center gap-1">
+            <!-- Public toggle -->
+            <button
+              type="button"
+              class="relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-hidden"
+              [class]="project.is_public ? 'bg-emerald-600' : 'bg-zinc-700'"
+              role="switch"
+              [attr.aria-checked]="project.is_public"
+              aria-label="Toggle public"
+              (click)="togglePublic(project)"
+            >
+              <span
+                class="pointer-events-none inline-block size-4 rounded-full bg-white shadow-xs ring-0 transition duration-200"
+                [class]="project.is_public ? 'translate-x-4' : 'translate-x-0'"
+              ></span>
+            </button>
+            @if (project.github_url) {
+            <a
+              [href]="project.github_url"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="rounded-xs p-1.5 text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-300"
+              aria-label="GitHub"
+            >
+              <lucide-icon [img]="GithubIcon" [size]="16" />
+            </a>
+            } @if (project.live_url) {
+            <a
+              [href]="project.live_url"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="rounded-xs p-1.5 text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-300"
+              aria-label="Live"
+            >
+              <lucide-icon [img]="ExternalLinkIcon" [size]="16" />
+            </a>
+            }
+            <a
+              [routerLink]="['/admin/project-editor', project.id]"
+              class="rounded-xs p-1.5 text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-300"
+              aria-label="Edit"
+            >
+              <lucide-icon [img]="PencilIcon" [size]="16" />
+            </a>
+            <button
+              type="button"
+              class="rounded-xs p-1.5 text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-red-400"
+              aria-label="Delete"
+              (click)="requestDelete(project)"
+            >
+              <lucide-icon [img]="Trash2Icon" [size]="16" />
+            </button>
+          </div>
+        </div>
       </div>
+      }
+    </div>
     }
   </div>
 </section>
 
 <!-- Delete Confirm Dialog -->
 @if (deleteTarget(); as target) {
-  <app-delete-confirm-dialog
-    entityType="Project"
-    [entityTitle]="target.title"
-    [isDeleting]="isDeleting()"
-    (confirmed)="confirmDelete()"
-    (cancelled)="cancelDelete()"
-  />
+<app-delete-confirm-dialog
+  entityType="Project"
+  [entityTitle]="target.title"
+  [isDeleting]="isDeleting()"
+  (confirmed)="confirmDelete()"
+  (cancelled)="cancelDelete()"
+/>
 }

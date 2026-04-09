@@ -7,28 +7,28 @@
   <div
     class="size-6 animate-spin rounded-full border-2 border-zinc-700 border-t-zinc-300"
   ></div>
-  <span class="sr-only">載入中...</span>
+  <span class="sr-only">Loading...</span>
 </div>
 } @else if (goal(); as g) {
 
 <div data-testid="goal-detail" class="mx-auto max-w-3xl px-4 py-6 sm:px-6">
   <!-- Section 1: Header -->
   <section data-testid="goal-header" class="mb-8">
-    <!-- 返回連結 -->
+    <!-- Back link -->
     <a
       routerLink="/admin/plan/goals"
       class="mb-4 inline-flex items-center gap-1.5 text-sm text-zinc-500 no-underline transition-colors hover:text-zinc-300"
     >
       <lucide-icon [img]="ArrowLeftIcon" [size]="14" aria-hidden="true" />
-      返回目標
+      Back to goals
     </a>
 
-    <!-- 標題 -->
+    <!-- Title -->
     <h1 class="mb-3 text-xl font-semibold text-zinc-100">{{ g.title }}</h1>
 
-    <!-- 徽章列 -->
+    <!-- Badge row -->
     <div class="mb-3 flex flex-wrap items-center gap-2">
-      <!-- 狀態 -->
+      <!-- Status -->
       <span
         data-testid="status-badge"
         class="rounded-xs px-2 py-0.5 text-xs font-medium"
@@ -37,7 +37,7 @@
         {{ STATUS_LABELS[g.status] ?? g.status }}
       </span>
 
-      <!-- 健康度 -->
+      <!-- Health -->
       <span
         data-testid="health-badge"
         class="rounded-xs px-2 py-0.5 text-xs font-medium"
@@ -93,11 +93,11 @@
         type="button"
         (click)="toggleDescription()"
         class="mt-1 inline-flex items-center gap-1 text-xs text-zinc-500 transition-colors hover:text-zinc-300"
-        aria-label="展開或收合描述"
+        aria-label="Expand or collapse description"
       >
-        @if (isDescriptionExpanded()) { 收合
+        @if (isDescriptionExpanded()) { Collapse
         <lucide-icon [img]="ChevronUpIcon" [size]="12" aria-hidden="true" />
-        } @else { 展開
+        } @else { Expand
         <lucide-icon [img]="ChevronDownIcon" [size]="12" aria-hidden="true" />
         }
       </button>
@@ -110,10 +110,10 @@
   <section data-testid="milestone-timeline" class="mb-8">
     <div class="mb-3 flex items-center justify-between">
       <h2 class="text-xs font-semibold tracking-wider text-zinc-500 uppercase">
-        里程碑
+        Milestones
       </h2>
       <span class="text-xs text-zinc-600">
-        {{ milestoneDoneCount() }}/{{ milestoneTotal() }} 已完成
+        {{ milestoneDoneCount() }}/{{ milestoneTotal() }} completed
       </span>
     </div>
 
@@ -121,11 +121,11 @@
     <div
       class="rounded-sm border border-dashed border-zinc-800 px-4 py-8 text-center"
     >
-      <p class="text-sm text-zinc-600">尚無里程碑</p>
+      <p class="text-sm text-zinc-600">No milestones yet</p>
     </div>
     } @else {
     <div class="relative pl-6">
-      <!-- 垂直連接線 -->
+      <!-- Vertical connector line -->
       <div
         class="absolute left-[11px] top-1 bottom-1 w-px bg-zinc-800"
         aria-hidden="true"
@@ -137,7 +137,7 @@
           data-testid="milestone-node"
           class="relative flex items-start gap-3"
         >
-          <!-- 節點圖示 -->
+          <!-- Node icon -->
           <div class="absolute -left-6 mt-0.5 flex items-center justify-center">
             @if (ms.completed) {
             <lucide-icon
@@ -156,7 +156,7 @@
             }
           </div>
 
-          <!-- 內容 -->
+          <!-- Content -->
           <div class="min-w-0 flex-1">
             <p
               class="text-sm"
@@ -182,14 +182,14 @@
     <h2
       class="mb-3 text-xs font-semibold tracking-wider text-zinc-500 uppercase"
     >
-      關聯專案
+      Related Projects
     </h2>
 
     @if (projects().length === 0) {
     <div
       class="rounded-sm border border-dashed border-zinc-800 px-4 py-8 text-center"
     >
-      <p class="text-sm text-zinc-600">此目標尚無關聯專案</p>
+      <p class="text-sm text-zinc-600">No related projects for this goal</p>
     </div>
     } @else {
     <div class="space-y-2">
@@ -206,7 +206,7 @@
           aria-hidden="true"
         />
 
-        <!-- 專案名稱 + 狀態 -->
+        <!-- Project name + status -->
         <div class="min-w-0 flex-1">
           <div class="flex items-center gap-2">
             <span class="truncate text-sm text-zinc-200">{{ proj.title }}</span>
@@ -218,7 +218,7 @@
             </span>
           </div>
 
-          <!-- 任務進度條 -->
+          <!-- Task progress bar -->
           <div class="mt-1.5 flex items-center gap-2">
             <div
               class="h-1.5 flex-1 rounded-full bg-zinc-800 overflow-hidden"
@@ -226,7 +226,7 @@
               [attr.aria-valuenow]="proj.task_progress.done"
               aria-valuemin="0"
               [attr.aria-valuemax]="proj.task_progress.total"
-              [attr.aria-label]="proj.title + ' 任務進度'"
+              [attr.aria-label]="proj.title + ' task progress'"
             >
               <div
                 class="h-full rounded-full bg-emerald-500 transition-all"
@@ -257,7 +257,7 @@
     <h2
       class="mb-3 text-xs font-semibold tracking-wider text-zinc-500 uppercase"
     >
-      近期動態
+      Recent Activity
     </h2>
     <div class="space-y-2">
       @for (item of recentActivity(); track $index) {
@@ -285,19 +285,19 @@
 </div>
 
 } @else {
-<!-- 找不到目標 -->
+<!-- Goal not found -->
 <div class="mx-auto max-w-3xl px-4 py-6 sm:px-6">
   <a
     routerLink="/admin/plan/goals"
     class="mb-4 inline-flex items-center gap-1.5 text-sm text-zinc-500 no-underline transition-colors hover:text-zinc-300"
   >
     <lucide-icon [img]="ArrowLeftIcon" [size]="14" aria-hidden="true" />
-    返回目標
+    Back to goals
   </a>
   <div
     class="rounded-sm border border-dashed border-zinc-800 px-6 py-12 text-center"
   >
-    <p class="text-zinc-500">找不到此目標</p>
+    <p class="text-zinc-500">This goal was not found</p>
   </div>
 </div>
 }

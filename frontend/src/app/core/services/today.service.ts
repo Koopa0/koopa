@@ -7,17 +7,17 @@ import type {
   DailyPlanItem,
 } from '../models/admin.model';
 
-/** 今日計畫服務 — My Day 語意 API */
+/** Today planning service — My Day semantic API */
 @Injectable({ providedIn: 'root' })
 export class TodayService {
   private readonly api = inject(ApiService);
 
-  /** 取得今日全部脈絡：計畫項目、未完成、逾期、目標脈搏 */
+  /** Get today's full context: plan items, unfinished, overdue, goal pulse */
   getMyDayContext(): Observable<MyDayContext> {
     return this.api.getData<MyDayContext>('/api/admin/today');
   }
 
-  /** 批次規劃今日項目 */
+  /** Batch plan today's items */
   planToday(
     items: {
       task_id: string;
@@ -30,7 +30,7 @@ export class TodayService {
     });
   }
 
-  /** 解決單一每日項目（完成、推遲、放棄） */
+  /** Resolve a single daily item (complete, defer, drop) */
   resolveDailyItem(itemId: string, action: DailyItemAction): Observable<void> {
     return this.api.postVoid(`/api/admin/today/items/${itemId}/resolve`, {
       action,

@@ -17,21 +17,28 @@ import {
     <div class="mx-auto max-w-4xl px-4 py-6 sm:px-6">
       <div class="mb-6">
         <h1 class="text-lg font-semibold text-zinc-100">Content Pipeline</h1>
-        <p class="text-sm text-zinc-500">內容工作流程：草稿 → 審核 → 發佈</p>
+        <p class="text-sm text-zinc-500">
+          Content workflow: Draft → Review → Publish
+        </p>
       </div>
 
       <div class="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         @for (
           stage of [
             {
-              label: '草稿進行中',
+              label: 'Drafting',
               icon: PenLineIcon,
               count: 3,
               color: 'amber'
             },
-            { label: '審核中', icon: EyeIcon, count: 1, color: 'sky' },
-            { label: '待發佈', icon: SendIcon, count: 2, color: 'emerald' },
-            { label: '已發佈', icon: FileTextIcon, count: 12, color: 'zinc' }
+            { label: 'In Review', icon: EyeIcon, count: 1, color: 'sky' },
+            {
+              label: 'Ready to Publish',
+              icon: SendIcon,
+              count: 2,
+              color: 'emerald'
+            },
+            { label: 'Published', icon: FileTextIcon, count: 12, color: 'zinc' }
           ];
           track stage.label
         ) {
@@ -52,7 +59,7 @@ import {
             <div
               class="rounded-sm border border-dashed border-zinc-800 px-3 py-6 text-center text-xs text-zinc-600"
             >
-              內容清單建設中
+              Content list under construction
             </div>
           </div>
         }
@@ -63,7 +70,7 @@ import {
           routerLink="/admin/library/contents"
           class="inline-flex items-center gap-1 text-sm text-zinc-500 no-underline hover:text-zinc-300"
         >
-          查看所有內容
+          View all content
           <lucide-icon [img]="ChevronRightIcon" [size]="14" />
         </a>
       </div>

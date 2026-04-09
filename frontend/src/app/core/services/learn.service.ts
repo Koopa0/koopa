@@ -3,7 +3,7 @@ import { Observable } from 'rxjs';
 import { ApiService } from './api.service';
 import type { LearningDashboard } from '../models/admin.model';
 
-/** 概念深入分析 — 單一概念的學習歷程 */
+/** Concept deep analysis — learning history of a single concept */
 export interface ConceptDrilldown {
   slug: string;
   name: string;
@@ -37,7 +37,7 @@ export interface ConceptObservation {
   observed_at: string;
 }
 
-/** 學習服務 — 學習儀表板、練習 session、概念分析 */
+/** Learning service — learning dashboard, practice sessions, concept analysis */
 @Injectable({ providedIn: 'root' })
 export class LearnService {
   private readonly api = inject(ApiService);

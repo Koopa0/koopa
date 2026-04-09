@@ -26,7 +26,11 @@ import {
   contentTypeRoute,
   publicContentTypes,
 } from '../../core/models';
-import type { ApiContent, ContentType, ApiPaginationMeta } from '../../core/models';
+import type {
+  ApiContent,
+  ContentType,
+  ApiPaginationMeta,
+} from '../../core/models';
 
 const RESULTS_PER_PAGE = 12;
 const SEARCH_DEBOUNCE_MS = 300;
@@ -93,7 +97,9 @@ export class SearchComponent implements OnInit {
         const page = Number(params['page']) || 1;
 
         this.query.set(q);
-        this.typeFilter.set(type && this.availableTypes.includes(type) ? type : null);
+        this.typeFilter.set(
+          type && this.availableTypes.includes(type) ? type : null,
+        );
         this.currentPage.set(page);
 
         if (q.trim().length >= 2) {
@@ -161,7 +167,9 @@ export class SearchComponent implements OnInit {
           this.isLoading.set(false);
         },
         error: () => {
-          this.error.set('搜尋時發生錯誤，請稍後再試。');
+          this.error.set(
+            'An error occurred while searching. Please try again later.',
+          );
           this.isLoading.set(false);
         },
       });

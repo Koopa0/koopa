@@ -24,13 +24,17 @@ import {
   Tag,
 } from 'lucide-angular';
 import { environment } from '../../../environments/environment';
-import { TopicService, type RelatedTag } from '../../core/services/topic.service';
-import { SeoService } from '../../core/services/seo/seo.service';
 import {
-  CONTENT_TYPE_CONFIG,
-  contentTypeRoute,
+  TopicService,
+  type RelatedTag,
+} from '../../core/services/topic.service';
+import { SeoService } from '../../core/services/seo/seo.service';
+import { CONTENT_TYPE_CONFIG, contentTypeRoute } from '../../core/models';
+import type {
+  ApiTopic,
+  ApiContent,
+  ApiPaginationMeta,
 } from '../../core/models';
-import type { ApiTopic, ApiContent, ApiPaginationMeta } from '../../core/models';
 
 const CONTENTS_PER_PAGE = 12;
 
@@ -86,7 +90,10 @@ export class TopicDetailComponent implements OnInit {
   }
 
   protected getBadgeClasses(content: ApiContent): string {
-    return this.contentTypeConfig[content.type]?.badgeClasses ?? 'bg-zinc-800 text-zinc-400';
+    return (
+      this.contentTypeConfig[content.type]?.badgeClasses ??
+      'bg-zinc-800 text-zinc-400'
+    );
   }
 
   protected getTypeLabel(content: ApiContent): string {
@@ -130,7 +137,9 @@ export class TopicDetailComponent implements OnInit {
 
           this.seoService.updateMeta({
             title: result.topic.name,
-            description: result.topic.description || `瀏覽「${result.topic.name}」主題下的所有內容。`,
+            description:
+              result.topic.description ||
+              `Browse all content under the "${result.topic.name}" topic.`,
             ogUrl: `${environment.siteUrl}/topics/${slug}`,
           });
         },
@@ -138,7 +147,9 @@ export class TopicDetailComponent implements OnInit {
           if (err?.status === 404) {
             this.isNotFound.set(true);
           } else {
-            this.error.set('無法載入主題內容，請稍後再試。');
+            this.error.set(
+              'Failed to load topic content. Please try again later.',
+            );
           }
           this.isLoading.set(false);
         },

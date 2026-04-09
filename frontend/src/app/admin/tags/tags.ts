@@ -102,7 +102,7 @@ export class TagsComponent implements OnInit {
   private readonly notificationService = inject(NotificationService);
   private readonly destroyRef = inject(DestroyRef);
 
-  // ─── 共用狀態 ───
+  // ─── Shared state ───
   protected readonly activeTab = signal<ActiveTab>('tags');
   protected readonly tags = signal<ApiTag[]>([]);
   protected readonly isLoading = signal(false);
@@ -123,7 +123,7 @@ export class TagsComponent implements OnInit {
     this.tags().filter((t) => t.parent_id === null),
   );
 
-  /** 排序：root tags 先，每個 root 下面接它的 children */
+  /** Sorted: root tags first, each root followed by its children */
   protected readonly sortedTags = computed(() => {
     const all = this.tags();
     const roots = all
@@ -137,7 +137,7 @@ export class TagsComponent implements OnInit {
         .sort((a, b) => a.name.localeCompare(b.name));
       result.push(...children);
     }
-    // orphan tags（parent_id 指向不存在的 tag）
+    // orphan tags (parent_id points to a non-existent tag)
     const ids = new Set(result.map((t) => t.id));
     const orphans = all.filter((t) => !ids.has(t.id));
     result.push(...orphans);
@@ -170,7 +170,7 @@ export class TagsComponent implements OnInit {
       this.aliases().filter((a) => a.tag_id !== null && !a.confirmed).length,
   );
 
-  /** 追蹤每個 alias 正在選擇的 tag_id（for map dropdown） */
+  /** Track the selected tag_id for each alias (for map dropdown) */
   protected readonly aliasMapSelections = signal<Record<string, string>>({});
 
   // ─── Merge dialog ───
@@ -182,7 +182,7 @@ export class TagsComponent implements OnInit {
   // ─── Backfill ───
   protected readonly isBackfilling = signal(false);
 
-  // ─── 刪除 dialog ───
+  // ─── Delete dialog ───
   protected readonly deleteTarget = signal<DeleteTarget | null>(null);
   protected readonly isDeleting = signal(false);
 
@@ -203,7 +203,7 @@ export class TagsComponent implements OnInit {
     this.loadTags();
   }
 
-  // ─── Tab 切換 ───
+  // ─── Tab switching ───
 
   protected switchTab(tab: ActiveTab): void {
     this.activeTab.set(tab);
@@ -225,7 +225,7 @@ export class TagsComponent implements OnInit {
           this.isLoading.set(false);
         },
         error: () => {
-          this.notificationService.error('無法載入 Tags');
+          this.notificationService.error('Failed to load tags');
           this.isLoading.set(false);
         },
       });
@@ -290,7 +290,7 @@ export class TagsComponent implements OnInit {
             );
             this.isSavingTag.set(false);
             this.isTagDialogOpen.set(false);
-            this.notificationService.success('Tag 已更新');
+            this.notificationService.success('Tag updated');
           },
           error: (err) => {
             this.isSavingTag.set(false);
@@ -312,7 +312,7 @@ export class TagsComponent implements OnInit {
             this.tags.update((list) => [...list, created]);
             this.isSavingTag.set(false);
             this.isTagDialogOpen.set(false);
-            this.notificationService.success('Tag 已建立');
+            this.notificationService.success('Tag created');
           },
           error: (err) => {
             this.isSavingTag.set(false);
@@ -347,7 +347,7 @@ export class TagsComponent implements OnInit {
           this.isLoadingAliases.set(false);
         },
         error: () => {
-          this.notificationService.error('無法載入 Aliases');
+          this.notificationService.error('Failed to load aliases');
           this.isLoadingAliases.set(false);
         },
       });
@@ -395,9 +395,9 @@ export class TagsComponent implements OnInit {
             delete copy[alias.id];
             return copy;
           });
-          this.notificationService.success(`已映射 "${alias.raw_tag}"`);
+          this.notificationService.success(`Mapped "${alias.raw_tag}"`);
         },
-        error: () => this.notificationService.error('映射失敗'),
+        error: () => this.notificationService.error('Mapping failed'),
       });
   }
 
@@ -410,9 +410,9 @@ export class TagsComponent implements OnInit {
           this.aliases.update((list) =>
             list.map((a) => (a.id === alias.id ? updated : a)),
           );
-          this.notificationService.success(`已確認 "${alias.raw_tag}"`);
+          this.notificationService.success(`Confirmed "${alias.raw_tag}"`);
         },
-        error: () => this.notificationService.error('確認失敗'),
+        error: () => this.notificationService.error('Confirmation failed'),
       });
   }
 
@@ -425,9 +425,9 @@ export class TagsComponent implements OnInit {
           this.aliases.update((list) =>
             list.map((a) => (a.id === alias.id ? updated : a)),
           );
-          this.notificationService.success(`已拒絕 "${alias.raw_tag}"`);
+          this.notificationService.success(`Rejected "${alias.raw_tag}"`);
         },
-        error: () => this.notificationService.error('拒絕失敗'),
+        error: () => this.notificationService.error('Rejection failed'),
       });
   }
 
@@ -466,16 +466,16 @@ export class TagsComponent implements OnInit {
         }
         this.deleteTarget.set(null);
         this.isDeleting.set(false);
-        this.notificationService.success('已刪除');
+        this.notificationService.success('Deleted successfully');
       },
       error: (err) => {
         this.isDeleting.set(false);
         if (err?.status === 409) {
           this.notificationService.error(
-            '此 Tag 仍有 alias 或筆記引用，請先處理',
+            'This tag still has aliases or note references, please resolve them first',
           );
         } else {
-          this.notificationService.error('刪除失敗');
+          this.notificationService.error('Delete failed');
         }
         this.deleteTarget.set(null);
       },
@@ -510,13 +510,13 @@ export class TagsComponent implements OnInit {
           this.isMerging.set(false);
           this.isMergeDialogOpen.set(false);
           this.notificationService.success(
-            `合併完成：${result.aliases_moved} aliases、${result.notes_moved} notes、${result.events_moved} events 已移轉`,
+            `Merge complete: ${result.aliases_moved} aliases, ${result.notes_moved} notes, ${result.events_moved} events transferred`,
           );
           this.loadTags();
         },
         error: () => {
           this.isMerging.set(false);
-          this.notificationService.error('合併失敗');
+          this.notificationService.error('Merge failed');
         },
       });
   }
@@ -532,13 +532,13 @@ export class TagsComponent implements OnInit {
         next: (result) => {
           this.isBackfilling.set(false);
           this.notificationService.success(
-            `回填完成：處理 ${result.notes_processed} 筆記、${result.tags_mapped} mapped、${result.tags_unmapped} unmapped`,
+            `Backfill complete: processed ${result.notes_processed} notes, ${result.tags_mapped} mapped, ${result.tags_unmapped} unmapped`,
           );
           this.loadAliases();
         },
         error: () => {
           this.isBackfilling.set(false);
-          this.notificationService.error('回填失敗');
+          this.notificationService.error('Backfill failed');
         },
       });
   }
@@ -547,9 +547,9 @@ export class TagsComponent implements OnInit {
 
   private handleTagSaveError(err: { status?: number }): void {
     if (err?.status === 409) {
-      this.tagSlugError.set('此 slug 已存在');
+      this.tagSlugError.set('This slug already exists');
     } else {
-      this.notificationService.error('儲存失敗');
+      this.notificationService.error('Save failed');
     }
   }
 }

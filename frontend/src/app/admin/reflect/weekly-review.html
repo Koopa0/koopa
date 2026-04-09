@@ -7,14 +7,14 @@
   <div
     class="size-6 animate-spin rounded-full border-2 border-zinc-700 border-t-zinc-300"
   ></div>
-  <span class="sr-only">載入中...</span>
+  <span class="sr-only">Loading...</span>
 </div>
 } @else if (context(); as ctx) {
 
 <div data-testid="weekly-review-content" class="mx-auto max-w-3xl px-4 py-6 sm:px-6">
   <!-- Header -->
   <div class="mb-8">
-    <h1 class="text-lg font-semibold text-zinc-100">週報回顧</h1>
+    <h1 class="text-lg font-semibold text-zinc-100">Weekly Review</h1>
     <p class="mt-1 text-sm text-zinc-500">{{ weekRange() }}</p>
   </div>
 
@@ -24,7 +24,7 @@
     <div class="flex items-center gap-2 mb-3">
       <lucide-icon [img]="TargetIcon" [size]="14" class="text-zinc-500" aria-hidden="true" />
       <h2 class="text-xs font-semibold tracking-wider text-zinc-500 uppercase">
-        目標進展
+        Goal Progress
       </h2>
     </div>
     <div class="space-y-2">
@@ -38,7 +38,7 @@
             {{ goal.total_done }}/{{ goal.total }}
           </span>
         </div>
-        <!-- 進度條 -->
+        <!-- Progress bar -->
         <div class="h-1.5 rounded-full bg-zinc-800 overflow-hidden">
           <div
             class="h-full rounded-full bg-emerald-500 transition-all"
@@ -47,7 +47,7 @@
         </div>
         @if (goal.milestones_completed_this_week > 0) {
         <p class="mt-1.5 text-xs text-emerald-400">
-          +{{ goal.milestones_completed_this_week }} 里程碑本週完成
+          +{{ goal.milestones_completed_this_week }} milestones completed this week
         </p>
         }
       </div>
@@ -62,7 +62,7 @@
     <div class="flex items-center gap-2 mb-3">
       <lucide-icon [img]="FolderKanbanIcon" [size]="14" class="text-zinc-500" aria-hidden="true" />
       <h2 class="text-xs font-semibold tracking-wider text-zinc-500 uppercase">
-        專案健康
+        Project Health
       </h2>
     </div>
     <div class="space-y-1.5">
@@ -89,7 +89,7 @@
             {{ project.status }}
           </span>
           <span class="text-xs text-zinc-500">
-            {{ project.tasks_completed }} 完成
+            {{ project.tasks_completed }} done
           </span>
         </div>
       </div>
@@ -104,17 +104,17 @@
     <div class="flex items-center gap-2 mb-3">
       <lucide-icon [img]="BookOpenIcon" [size]="14" class="text-zinc-500" aria-hidden="true" />
       <h2 class="text-xs font-semibold tracking-wider text-zinc-500 uppercase">
-        學習摘要
+        Learning Summary
       </h2>
     </div>
     <div class="rounded-sm border border-zinc-800 bg-zinc-900/50 px-4 py-3">
       <div class="grid grid-cols-2 gap-4 mb-3">
         <div>
-          <p class="text-xs text-zinc-500">練習次數</p>
+          <p class="text-xs text-zinc-500">Practice count</p>
           <p class="text-lg font-semibold text-zinc-200">{{ learn.sessions_count }}</p>
         </div>
         <div>
-          <p class="text-xs text-zinc-500">總時間</p>
+          <p class="text-xs text-zinc-500">Total time</p>
           <p class="text-lg font-semibold text-zinc-200">{{ learn.total_minutes }} min</p>
         </div>
       </div>
@@ -158,16 +158,16 @@
     >
       <div class="flex items-center gap-2 text-xs text-zinc-500 mb-2">
         <lucide-icon [img]="FileTextIcon" [size]="14" aria-hidden="true" />
-        內容產出
+        Content Output
       </div>
       <div class="flex items-center gap-4">
         <div>
           <p class="text-xl font-semibold text-zinc-200">{{ content.published }}</p>
-          <p class="text-xs text-zinc-500">已發布</p>
+          <p class="text-xs text-zinc-500">Published</p>
         </div>
         <div>
           <p class="text-xl font-semibold text-zinc-200">{{ content.drafted }}</p>
-          <p class="text-xs text-zinc-500">草稿</p>
+          <p class="text-xs text-zinc-500">Drafts</p>
         </div>
       </div>
     </div>
@@ -181,12 +181,12 @@
     >
       <div class="flex items-center gap-2 text-xs text-zinc-500 mb-2">
         <lucide-icon [img]="InboxIcon" [size]="14" aria-hidden="true" />
-        Inbox 健康
+        Inbox Health
       </div>
       <div class="flex items-center gap-4">
         <div>
           <p class="text-sm text-zinc-400">{{ inbox.start_count }} → {{ inbox.end_count }}</p>
-          <p class="text-xs text-zinc-500">起 → 迄</p>
+          <p class="text-xs text-zinc-500">Start → End</p>
         </div>
         <div>
           <p
@@ -195,7 +195,7 @@
           >
             {{ inboxNetChange() >= 0 ? '+' : '' }}{{ inboxNetChange() }}
           </p>
-          <p class="text-xs text-zinc-500">淨變化</p>
+          <p class="text-xs text-zinc-500">Net change</p>
         </div>
       </div>
     </div>
@@ -208,7 +208,7 @@
     <div class="flex items-center gap-2 mb-3">
       <lucide-icon [img]="LightbulbIcon" [size]="14" class="text-amber-400" aria-hidden="true" />
       <h2 class="text-xs font-semibold tracking-wider text-zinc-500 uppercase">
-        待驗證洞察
+        Unverified Insights
       </h2>
     </div>
     <div class="space-y-1.5">
@@ -218,7 +218,7 @@
       >
         <p class="text-sm text-zinc-300">{{ insight.hypothesis }}</p>
         <p class="mt-1 text-xs text-amber-400/70">
-          已等待 {{ insight.age_days }} 天
+          Waiting for {{ insight.age_days }} days
         </p>
       </div>
       }
@@ -232,13 +232,13 @@
     <div class="flex items-center gap-2 mb-3">
       <lucide-icon [img]="BarChart3Icon" [size]="14" class="text-zinc-500" aria-hidden="true" />
       <h2 class="text-xs font-semibold tracking-wider text-zinc-500 uppercase">
-        週指標
+        Weekly Metrics
       </h2>
     </div>
     <div class="grid grid-cols-3 gap-3">
       <div class="rounded-sm border border-zinc-800 bg-zinc-900/50 px-3 py-3 text-center">
         <p class="text-xl font-semibold text-zinc-200">{{ m.tasks_completed }}</p>
-        <p class="text-xs text-zinc-500">任務完成</p>
+        <p class="text-xs text-zinc-500">Tasks completed</p>
       </div>
       <div class="rounded-sm border border-zinc-800 bg-zinc-900/50 px-3 py-3 text-center">
         <p class="text-xl font-semibold text-zinc-200">{{ m.commits }}</p>
@@ -257,7 +257,7 @@
 
 <div class="mx-auto max-w-3xl px-4 py-6 sm:px-6">
   <div class="rounded-sm border border-dashed border-zinc-800 px-6 py-12 text-center">
-    <p class="text-sm text-zinc-400">無法載入週報</p>
+    <p class="text-sm text-zinc-400">Failed to load weekly review</p>
   </div>
 </div>
 

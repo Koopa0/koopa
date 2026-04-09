@@ -45,7 +45,7 @@ export class LearnDashboardComponent implements OnInit {
   protected readonly dashboard = signal<LearningDashboard | null>(null);
   protected readonly isLoading = signal(true);
 
-  // 衍生狀態
+  // Derived state
   protected readonly dueReviewsCount = computed(
     () => this.dashboard()?.due_reviews_count ?? 0,
   );
@@ -67,7 +67,7 @@ export class LearnDashboardComponent implements OnInit {
 
   protected readonly hasDueReviews = computed(() => this.dueReviewsCount() > 0);
 
-  // 常量映射
+  // Constant mappings
   protected readonly DOMAIN_COLORS: Record<string, string> = {
     algorithms: 'text-violet-400',
     'system-design': 'text-sky-400',
@@ -109,7 +109,7 @@ export class LearnDashboardComponent implements OnInit {
         },
         error: () => {
           this.isLoading.set(false);
-          this.notificationService.error('無法載入學習儀表板');
+          this.notificationService.error('Failed to load learning dashboard');
         },
       });
   }

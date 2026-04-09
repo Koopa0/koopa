@@ -4,9 +4,11 @@
     <div class="flex items-center gap-3">
       <lucide-icon [img]="BookmarkIcon" [size]="28" class="text-rose-400" />
       <div>
-        <h1 class="font-display text-3xl font-bold text-balance text-zinc-100">Bookmarks</h1>
+        <h1 class="font-display text-3xl font-bold text-balance text-zinc-100">
+          Bookmarks
+        </h1>
         <p class="mt-1 text-zinc-400">
-          推薦資源與個人評語
+          Recommended resources with personal notes
         </p>
       </div>
     </div>
@@ -34,7 +36,7 @@
         class="mt-3 rounded-sm border border-zinc-700 px-4 py-2 text-sm text-zinc-300 transition-colors hover:bg-zinc-800"
         (click)="loadBookmarks()"
       >
-        重試
+        Retry
       </button>
     </div>
     } @else if (bookmarks().length === 0) {
@@ -58,7 +60,7 @@
             class="flex items-center gap-1 text-sky-400 no-underline hover:text-sky-300"
           >
             <lucide-icon [img]="ExternalLinkIcon" [size]="12" />
-            原文連結
+            Original link
           </a>
           }
         </div>
@@ -66,13 +68,13 @@
           {{ bookmark.title }}
         </h2>
         @if (bookmark.excerpt) {
-        <p class="mb-3 text-sm text-zinc-400 leading-relaxed">{{ bookmark.excerpt }}</p>
+        <p class="mb-3 text-sm text-zinc-400 leading-relaxed">
+          {{ bookmark.excerpt }}
+        </p>
         }
         <div class="flex flex-wrap gap-1.5">
           @for (tag of bookmark.tags; track tag) {
-          <span class="text-xs text-zinc-500">
-            #{{ tag }}
-          </span>
+          <span class="text-xs text-zinc-500"> #{{ tag }} </span>
           }
         </div>
       </div>

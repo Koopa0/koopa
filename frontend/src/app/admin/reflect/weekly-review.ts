@@ -42,7 +42,7 @@ export class WeeklyReviewComponent implements OnInit {
   protected readonly context = signal<WeeklyReviewContext | null>(null);
   protected readonly isLoading = signal(true);
 
-  // 衍生狀態
+  // Derived state
   protected readonly goalProgress = computed(
     () => this.context()?.goal_progress ?? [],
   );
@@ -105,7 +105,7 @@ export class WeeklyReviewComponent implements OnInit {
         },
         error: () => {
           this.isLoading.set(false);
-          this.notificationService.error('無法載入週報');
+          this.notificationService.error('Failed to load weekly review');
         },
       });
   }

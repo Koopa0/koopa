@@ -51,13 +51,13 @@ describe('UploadService', () => {
       const file = new File(['data'], 'test.bmp', { type: 'image/bmp' });
       const result = service.validate(file);
       expect(result).toBeTruthy();
-      expect(result).toContain('不支援的檔案格式');
+      expect(result).toContain('Unsupported file format');
     });
 
     it('should return error message for PDF file', () => {
       const file = new File(['data'], 'doc.pdf', { type: 'application/pdf' });
       const result = service.validate(file);
-      expect(result).toContain('不支援的檔案格式');
+      expect(result).toContain('Unsupported file format');
     });
 
     it('should return error message when file exceeds 5MB', () => {
@@ -83,7 +83,9 @@ describe('UploadService', () => {
         expect(result.url).toBe('https://r2.example.com/photo.png');
       });
 
-      const req = httpMock.expectOne((r) => r.url.includes('/api/admin/upload'));
+      const req = httpMock.expectOne((r) =>
+        r.url.includes('/api/admin/upload'),
+      );
       expect(req.request.method).toBe('POST');
       expect(req.request.body instanceof FormData).toBe(true);
       req.flush({ data: { url: 'https://r2.example.com/photo.png' } });
@@ -98,8 +100,13 @@ describe('UploadService', () => {
         },
       });
 
-      const req = httpMock.expectOne((r) => r.url.includes('/api/admin/upload'));
-      req.flush('Payload Too Large', { status: 413, statusText: 'Payload Too Large' });
+      const req = httpMock.expectOne((r) =>
+        r.url.includes('/api/admin/upload'),
+      );
+      req.flush('Payload Too Large', {
+        status: 413,
+        statusText: 'Payload Too Large',
+      });
     });
   });
 });

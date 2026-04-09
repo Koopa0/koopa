@@ -43,7 +43,7 @@ export class DailyReviewComponent implements OnInit {
   protected readonly journalText = signal('');
   protected readonly isSaving = signal(false);
 
-  // 衍生狀態
+  // Derived state
   protected readonly planVsActual = computed(
     () => this.context()?.plan_vs_actual ?? null,
   );
@@ -66,10 +66,10 @@ export class DailyReviewComponent implements OnInit {
   protected readonly summaryLine = computed(() => {
     const pva = this.planVsActual();
     if (!pva) return '';
-    const parts: string[] = [`${pva.planned} 項計劃`];
-    parts.push(`${pva.completed} 完成`);
-    if (pva.deferred > 0) parts.push(`${pva.deferred} 延遲`);
-    if (pva.dropped > 0) parts.push(`${pva.dropped} 放棄`);
+    const parts: string[] = [`${pva.planned} planned`];
+    parts.push(`${pva.completed} completed`);
+    if (pva.deferred > 0) parts.push(`${pva.deferred} deferred`);
+    if (pva.dropped > 0) parts.push(`${pva.dropped} dropped`);
     return parts.join(' · ');
   });
 
@@ -110,7 +110,7 @@ export class DailyReviewComponent implements OnInit {
         },
         error: () => {
           this.isLoading.set(false);
-          this.notificationService.error('無法載入每日回顧');
+          this.notificationService.error('Failed to load daily review');
         },
       });
   }
@@ -132,11 +132,11 @@ export class DailyReviewComponent implements OnInit {
         next: () => {
           this.isSaving.set(false);
           this.journalText.set('');
-          this.notificationService.success('反思已儲存');
+          this.notificationService.success('Reflection saved');
         },
         error: () => {
           this.isSaving.set(false);
-          this.notificationService.error('儲存失敗');
+          this.notificationService.error('Failed to save');
         },
       });
   }

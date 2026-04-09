@@ -46,7 +46,7 @@ export class TodayComponent implements OnInit {
   protected readonly context = signal<MyDayContext | null>(null);
   protected readonly isLoading = signal(true);
 
-  // 衍生狀態
+  // Derived state
   protected readonly yesterdayUnfinished = computed(
     () => this.context()?.yesterday_unfinished ?? [],
   );
@@ -92,7 +92,7 @@ export class TodayComponent implements OnInit {
     ),
   );
 
-  // 常量映射 — 避免模板 @for 迴圈中的方法呼叫
+  // Constant maps — avoid method calls in template @for loops
   protected readonly ENERGY_LABELS: Record<string, string> = {
     high: 'H',
     medium: 'M',
@@ -105,7 +105,7 @@ export class TodayComponent implements OnInit {
     low: 'text-emerald-400',
   };
 
-  // 完整 class 字串 — Tailwind JIT 無法解析動態拼接的 class
+  // Full class strings — Tailwind JIT cannot parse dynamically concatenated classes
   protected readonly AREA_CLASSES: Record<string, string> = {
     backend: 'bg-violet-900/40 text-violet-400',
     learning: 'bg-sky-900/40 text-sky-400',
@@ -147,7 +147,7 @@ export class TodayComponent implements OnInit {
         },
         error: () => {
           this.isLoading.set(false);
-          this.notificationService.error('無法載入今日 context');
+          this.notificationService.error('Failed to load today context');
         },
       });
   }
@@ -161,7 +161,7 @@ export class TodayComponent implements OnInit {
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: () => {
-          // 從本地更新狀態
+          // Update state locally
           this.context.update((ctx) => {
             if (!ctx) return ctx;
             return {
@@ -174,7 +174,7 @@ export class TodayComponent implements OnInit {
             };
           });
         },
-        error: () => this.notificationService.error('操作失敗'),
+        error: () => this.notificationService.error('Operation failed'),
       });
   }
 
@@ -192,7 +192,7 @@ export class TodayComponent implements OnInit {
             };
           });
         },
-        error: () => this.notificationService.error('操作失敗'),
+        error: () => this.notificationService.error('Operation failed'),
       });
   }
 
@@ -212,7 +212,7 @@ export class TodayComponent implements OnInit {
             };
           });
         },
-        error: () => this.notificationService.error('操作失敗'),
+        error: () => this.notificationService.error('Operation failed'),
       });
   }
 

@@ -8,12 +8,12 @@ import type {
   InsightCheck,
 } from '../models/admin.model';
 
-/** 反思服務 — 每日回顧、週報、日誌、洞察 */
+/** Reflection service — daily review, weekly review, journal, insights */
 @Injectable({ providedIn: 'root' })
 export class ReflectService {
   private readonly api = inject(ApiService);
 
-  /** 取得每日反思 context */
+  /** Get daily reflection context */
   getDailyContext(date?: string): Observable<DailyReflectionContext> {
     const params: Record<string, string> = {};
     if (date) {
@@ -25,7 +25,7 @@ export class ReflectService {
     );
   }
 
-  /** 取得週報 context */
+  /** Get weekly review context */
   getWeeklyContext(weekStart?: string): Observable<WeeklyReviewContext> {
     const params: Record<string, string> = {};
     if (weekStart) {
@@ -37,12 +37,12 @@ export class ReflectService {
     );
   }
 
-  /** 寫入日誌條目 */
+  /** Write a journal entry */
   writeJournal(entry: JournalEntry): Observable<void> {
     return this.api.postVoid('/api/admin/reflect/journal', entry);
   }
 
-  /** 取得日誌條目列表 */
+  /** Get journal entries list */
   getJournalEntries(limit?: number): Observable<JournalEntry[]> {
     const params: Record<string, string | number> = {};
     if (limit !== undefined) {
@@ -54,7 +54,7 @@ export class ReflectService {
     );
   }
 
-  /** 取得洞察列表 */
+  /** Get insights list */
   getInsights(): Observable<InsightCheck[]> {
     return this.api.getData<InsightCheck[]>('/api/admin/reflect/insights');
   }

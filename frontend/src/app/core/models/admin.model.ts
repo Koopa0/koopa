@@ -20,7 +20,7 @@ export interface MyDayContext {
   reflection_context: ReflectionContext | null;
 }
 
-/** estimated_minutes: 衍生自 tasks 表，daily_plan_items schema 沒有此欄位 */
+/** estimated_minutes: derived from tasks table, not present in daily_plan_items schema */
 export interface DailyPlanItem {
   id: string;
   task_id: string;
@@ -53,7 +53,7 @@ export interface NeedsAttention {
   stale_someday_count: number;
 }
 
-/** 昨日反思 context — 讓使用者規劃時有反思基礎 */
+/** Yesterday's reflection context — provides reflection basis for planning */
 export interface ReflectionContext {
   has_yesterday_reflection: boolean;
   reflection_excerpt: string | null;
@@ -159,7 +159,7 @@ export interface GoalSummary {
   quarter: string;
 }
 
-/** Goal detail — milestones 和 projects 是 siblings，不是 parent-child */
+/** Goal detail — milestones and projects are siblings, not parent-child */
 export interface GoalDetail {
   id: string;
   title: string;
@@ -178,7 +178,7 @@ export interface GoalDetail {
 
 export type GoalHealth = 'on-track' | 'at-risk' | 'stalled';
 
-/** Milestone — 二元完成（completed_at null = 未完成）*/
+/** Milestone — binary completion (completed_at null = not completed) */
 export interface Milestone {
   id: string;
   title: string;
@@ -187,7 +187,7 @@ export interface Milestone {
   position: number;
 }
 
-/** Project linked to goal via projects.goal_id（不經過 milestone）*/
+/** Project linked to goal via projects.goal_id (not through milestone) */
 export interface GoalProject {
   id: string;
   title: string;
@@ -533,7 +533,7 @@ export interface JournalEntry {
 
 // === Schema-aligned enums (from migrations/001_initial.up.sql) ===
 
-/** attempt.outcome — 7 值，涵蓋解題 + 沉浸式兩種範式 */
+/** attempt.outcome — 7 values, covering both problem-solving and immersive paradigms */
 export type AttemptOutcome =
   | 'solved_independent'
   | 'solved_with_hint'
@@ -554,7 +554,7 @@ export type SessionMode =
 /** attempt_observations.signal_type */
 export type ObservationSignal = 'weakness' | 'improvement' | 'mastery';
 
-/** attempt_observations.severity — 只有 weakness 才有值 */
+/** attempt_observations.severity — only has a value for weakness */
 export type ObservationSeverity = 'minor' | 'moderate' | 'critical';
 
 /** concepts.kind */
@@ -566,7 +566,7 @@ export type ItemDifficulty = 'easy' | 'medium' | 'hard';
 /** directives.priority */
 export type DirectivePriority = 'p0' | 'p1' | 'p2';
 
-/** directives lifecycle — 衍生自 schema 欄位，非獨立欄位 */
+/** directives lifecycle — derived from schema columns, not a standalone column */
 export type DirectiveLifecycle = 'pending' | 'acknowledged' | 'resolved';
 
 // === Studio (Phase 3) ===
@@ -577,7 +577,7 @@ export interface StudioOverview {
   participants: ParticipantSummary[];
 }
 
-/** 對齊 schema: directives.content (TEXT), 不是 title + description */
+/** Aligned with schema: directives.content (TEXT), not title + description */
 export interface DirectiveSummary {
   id: number;
   content: string;

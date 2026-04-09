@@ -54,7 +54,7 @@ const SEVERITY_CONFIG = {
         type="button"
         class="shrink-0 rounded-xs p-1 text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-200"
         (click)="dismissed.emit()"
-        aria-label="關閉"
+        aria-label="Close"
       >
         <lucide-icon [img]="XIcon" [size]="14" />
       </button>

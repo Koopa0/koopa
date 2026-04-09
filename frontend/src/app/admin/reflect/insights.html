@@ -7,15 +7,15 @@
   <div
     class="size-6 animate-spin rounded-full border-2 border-zinc-700 border-t-zinc-300"
   ></div>
-  <span class="sr-only">載入中...</span>
+  <span class="sr-only">Loading...</span>
 </div>
 } @else {
 
 <div data-testid="insights-content" class="mx-auto max-w-3xl px-4 py-6 sm:px-6">
   <!-- Header -->
   <div class="mb-6">
-    <h1 class="text-lg font-semibold text-zinc-100">洞察看板</h1>
-    <p class="mt-1 text-sm text-zinc-500">假設追蹤與驗證</p>
+    <h1 class="text-lg font-semibold text-zinc-100">Insights Board</h1>
+    <p class="mt-1 text-sm text-zinc-500">Hypothesis tracking and validation</p>
   </div>
 
   <!-- Filter Tabs -->
@@ -47,7 +47,7 @@
       class="mx-auto mb-2 text-zinc-700"
       aria-hidden="true"
     />
-    <p class="text-sm text-zinc-500">沒有符合條件的洞察</p>
+    <p class="text-sm text-zinc-500">No matching insights</p>
   </div>
   } @else {
   <div class="space-y-3">
@@ -84,7 +84,7 @@
       <div class="mt-2 flex items-center gap-3 pl-7 text-xs text-zinc-600">
         <span class="flex items-center gap-1">
           <lucide-icon [img]="ClockIcon" [size]="10" aria-hidden="true" />
-          {{ insight.age_days }} 天前
+          {{ insight.age_days }} days ago
         </span>
       </div>
     </div>

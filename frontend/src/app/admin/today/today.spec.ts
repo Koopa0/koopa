@@ -138,7 +138,7 @@ describe('TodayComponent', () => {
       By.css('[data-testid="overdue-banner"]'),
     );
     expect(banner).toBeTruthy();
-    expect(banner.nativeElement.textContent).toContain('逾期');
+    expect(banner.nativeElement.textContent).toContain('overdue');
   });
 
   it('should render yesterday unfinished items', () => {
@@ -214,7 +214,7 @@ describe('TodayComponent', () => {
     );
     expect(section).toBeTruthy();
     expect(section.nativeElement.textContent).toContain('4');
-    expect(section.nativeElement.textContent).toContain('未澄清 inbox');
+    expect(section.nativeElement.textContent).toContain('Unclarified inbox');
   });
 
   it('should render goal pulse with progress', () => {
@@ -284,7 +284,7 @@ describe('TodayComponent', () => {
         By.css('[data-testid="empty-plan"]'),
       );
       expect(empty).toBeTruthy();
-      expect(empty.nativeElement.textContent).toContain('尚未規劃');
+      expect(empty.nativeElement.textContent).toContain('No tasks planned');
     });
   });
 });

@@ -23,13 +23,15 @@
 <section class="bg-zinc-950">
   <div class="flex flex-col items-center gap-4 px-4 py-32 text-center">
     <lucide-icon [img]="LayersIcon" [size]="48" class="text-zinc-700" />
-    <h1 class="text-2xl font-bold text-zinc-300">找不到此主題</h1>
-    <p class="text-sm text-zinc-500">該主題不存在或已被移除</p>
+    <h1 class="text-2xl font-bold text-zinc-300">Topic not found</h1>
+    <p class="text-sm text-zinc-500">
+      This topic does not exist or has been removed
+    </p>
     <a
       routerLink="/topics"
       class="mt-2 rounded-sm bg-zinc-800 px-4 py-2 text-sm text-zinc-300 no-underline transition-colors hover:bg-zinc-700"
     >
-      返回主題列表
+      Back to topics
     </a>
   </div>
 </section>
@@ -41,7 +43,7 @@
       routerLink="/topics"
       class="rounded-sm bg-zinc-800 px-4 py-2 text-sm text-zinc-300 no-underline transition-colors hover:bg-zinc-700"
     >
-      返回主題列表
+      Back to topics
     </a>
   </div>
 </section>
@@ -55,7 +57,7 @@
       class="mb-6 inline-flex items-center gap-1 text-sm text-zinc-500 no-underline transition-colors hover:text-zinc-300"
     >
       <lucide-icon [img]="ArrowLeftIcon" [size]="14" />
-      所有主題
+      All Topics
     </a>
 
     <div class="flex items-start gap-4">
@@ -63,17 +65,13 @@
       <span class="text-4xl">{{ t.icon }}</span>
       }
       <div>
-        <h1
-          class="font-display text-3xl font-bold text-balance text-zinc-100"
-        >
+        <h1 class="font-display text-3xl font-bold text-balance text-zinc-100">
           {{ t.name }}
         </h1>
         @if (t.description) {
         <p class="mt-2 text-zinc-400">{{ t.description }}</p>
         }
-        <p class="mt-2 text-sm text-zinc-500">
-          共 {{ meta()?.total ?? 0 }} 篇內容
-        </p>
+        <p class="mt-2 text-sm text-zinc-500">{{ meta()?.total ?? 0 }} items</p>
       </div>
     </div>
   </div>
@@ -93,7 +91,7 @@
           : 'border-zinc-700 text-zinc-400 hover:border-zinc-500'"
         (click)="toggleTag('')"
       >
-        全部
+        All
       </button>
       @for (rt of relatedTags(); track rt.tag) {
       <button
@@ -119,18 +117,22 @@
     @if (filteredContents().length === 0 && contents().length === 0) {
     <div class="flex flex-col items-center gap-4 py-20 text-center">
       <lucide-icon [img]="LayersIcon" [size]="48" class="text-zinc-700" />
-      <h2 class="text-lg font-medium text-zinc-300">此主題尚無內容</h2>
-      <p class="text-sm text-zinc-500">內容發佈後將會出現在這裡</p>
+      <h2 class="text-lg font-medium text-zinc-300">
+        No content in this topic yet
+      </h2>
+      <p class="text-sm text-zinc-500">
+        Content will appear here once published
+      </p>
     </div>
     } @else if (filteredContents().length === 0) {
     <div class="flex flex-col items-center gap-4 py-12 text-center">
-      <p class="text-sm text-zinc-500">沒有符合此標籤的內容</p>
+      <p class="text-sm text-zinc-500">No content matches this tag</p>
       <button
         type="button"
         class="rounded-sm bg-zinc-800 px-4 py-2 text-sm text-zinc-300 transition-colors hover:bg-zinc-700"
         (click)="toggleTag('')"
       >
-        清除篩選
+        Clear filter
       </button>
     </div>
     } @else {
@@ -140,7 +142,9 @@
         [routerLink]="getContentRoute(content)"
         class="group block rounded-sm border border-zinc-800 bg-zinc-900/50 p-6 no-underline transition-all duration-200 hover:-translate-y-0.5 hover:border-zinc-600 hover:shadow-lg hover:shadow-zinc-950/50"
       >
-        <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div
+          class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"
+        >
           <div class="min-w-0 flex-1">
             <!-- Type badge + tags row -->
             <div class="mb-2 flex flex-wrap items-center gap-2">
@@ -168,9 +172,7 @@
 
             <!-- Excerpt -->
             @if (content.excerpt) {
-            <p
-              class="line-clamp-2 text-sm leading-relaxed text-zinc-400"
-            >
+            <p class="line-clamp-2 text-sm leading-relaxed text-zinc-400">
               {{ content.excerpt }}
             </p>
             }
@@ -185,8 +187,7 @@
               <lucide-icon [img]="CalendarIcon" [size]="12" />
               {{ content.published_at | date: 'yyyy-MM-dd' }}
             </span>
-            }
-            @if (content.reading_time_min) {
+            } @if (content.reading_time_min) {
             <span class="flex items-center gap-1">
               <lucide-icon [img]="ClockIcon" [size]="12" />
               {{ content.reading_time_min }} min
@@ -199,13 +200,8 @@
     </div>
 
     <!-- Pagination -->
-    @let cp = currentPage();
-    @let tp = totalPages();
-    @if (tp > 1) {
-    <nav
-      aria-label="Pagination"
-      class="mt-12 flex flex-col items-center gap-4"
-    >
+    @let cp = currentPage(); @let tp = totalPages(); @if (tp > 1) {
+    <nav aria-label="Pagination" class="mt-12 flex flex-col items-center gap-4">
       <div class="flex items-center gap-2">
         <button
           type="button"
@@ -244,12 +240,9 @@
           <lucide-icon [img]="ChevronRightIcon" [size]="16" />
         </button>
       </div>
-      <div class="text-xs text-zinc-500">
-        第 {{ cp }} / {{ tp }} 頁
-      </div>
+      <div class="text-xs text-zinc-500">Page {{ cp }} / {{ tp }}</div>
     </nav>
-    }
-    }
+    } }
   </div>
 </section>
 }

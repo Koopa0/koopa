@@ -63,7 +63,9 @@ describe('errorInterceptor', () => {
 
   describe('401 handling', () => {
     it('should attempt token refresh on 401 and retry the request', () => {
-      mockAuthService.refreshToken.mockReturnValue(of({ access_token: 'new-token', refresh_token: 'new-refresh' }));
+      mockAuthService.refreshToken.mockReturnValue(
+        of({ access_token: 'new-token', refresh_token: 'new-refresh' }),
+      );
       mockAuthService.accessToken = signal<string | null>('new-token');
 
       httpClient.get('/api/protected').subscribe((data) => {
@@ -75,7 +77,9 @@ describe('errorInterceptor', () => {
 
       // After refresh, the request should be retried
       const retryReq = httpMock.expectOne('/api/protected');
-      expect(retryReq.request.headers.get('Authorization')).toBe('Bearer new-token');
+      expect(retryReq.request.headers.get('Authorization')).toBe(
+        'Bearer new-token',
+      );
       retryReq.flush({ result: 'ok' });
     });
 
@@ -149,12 +153,17 @@ describe('errorInterceptor', () => {
       httpClient.get('/api/rate-limited').subscribe({
         error: (err: { status: number; statusText: string }) => {
           expect(err.status).toBe(429);
-          expect(err.statusText).toBe('請求過於頻繁，請稍後再試');
+          expect(err.statusText).toBe(
+            'Too many requests, please try again later',
+          );
         },
       });
 
       const req = httpMock.expectOne('/api/rate-limited');
-      req.flush('Too Many Requests', { status: 429, statusText: 'Too Many Requests' });
+      req.flush('Too Many Requests', {
+        status: 429,
+        statusText: 'Too Many Requests',
+      });
     });
   });
 
@@ -178,7 +187,10 @@ describe('errorInterceptor', () => {
       });
 
       const req = httpMock.expectOne('/api/broken');
-      req.flush('Server Error', { status: 500, statusText: 'Internal Server Error' });
+      req.flush('Server Error', {
+        status: 500,
+        statusText: 'Internal Server Error',
+      });
     });
 
     it('should propagate network error (status 0) to subscriber', () => {
@@ -189,7 +201,10 @@ describe('errorInterceptor', () => {
       });
 
       const req = httpMock.expectOne('/api/offline');
-      req.error(new ProgressEvent('error'), { status: 0, statusText: 'Unknown Error' });
+      req.error(new ProgressEvent('error'), {
+        status: 0,
+        statusText: 'Unknown Error',
+      });
     });
   });
 

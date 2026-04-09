@@ -113,7 +113,7 @@ export class TasksComponent implements OnInit {
         },
         error: () => {
           this.isLoading.set(false);
-          this.notificationService.error('無法載入任務');
+          this.notificationService.error('Failed to load tasks');
         },
       });
   }
@@ -141,7 +141,7 @@ export class TasksComponent implements OnInit {
             }),
           );
         },
-        error: () => this.notificationService.error('操作失敗'),
+        error: () => this.notificationService.error('Operation failed'),
       });
   }
 
@@ -156,9 +156,10 @@ export class TasksComponent implements OnInit {
               t.id === taskId ? { ...t, is_in_today_plan: true } : t,
             ),
           );
-          this.notificationService.success('已加入今日計劃');
+          this.notificationService.success('Added to today plan');
         },
-        error: () => this.notificationService.error('加入今日計劃失敗'),
+        error: () =>
+          this.notificationService.error('Failed to add to today plan'),
       });
   }
 

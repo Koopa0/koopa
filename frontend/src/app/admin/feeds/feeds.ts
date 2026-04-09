@@ -128,7 +128,7 @@ export class FeedsComponent implements OnInit {
           this.isLoading.set(false);
         },
         error: () => {
-          this.error.set('無法載入 RSS Feeds');
+          this.error.set('Failed to load RSS feeds');
           this.isLoading.set(false);
         },
       });
@@ -170,7 +170,9 @@ export class FeedsComponent implements OnInit {
   }
 
   protected onFormScheduleChange(event: Event): void {
-    this.formSchedule.set((event.target as HTMLSelectElement).value as FeedSchedule);
+    this.formSchedule.set(
+      (event.target as HTMLSelectElement).value as FeedSchedule,
+    );
   }
 
   protected toggleFormTopic(topicName: string): void {
@@ -182,7 +184,10 @@ export class FeedsComponent implements OnInit {
     }
   }
 
-  protected addFilterItem(field: 'denyPaths' | 'denyTitlePatterns' | 'allowTags' | 'denyTags', value: string): void {
+  protected addFilterItem(
+    field: 'denyPaths' | 'denyTitlePatterns' | 'allowTags' | 'denyTags',
+    value: string,
+  ): void {
     const trimmed = value.trim();
     if (!trimmed) {
       return;
@@ -199,7 +204,10 @@ export class FeedsComponent implements OnInit {
     }
   }
 
-  protected removeFilterItem(field: 'denyPaths' | 'denyTitlePatterns' | 'allowTags' | 'denyTags', index: number): void {
+  protected removeFilterItem(
+    field: 'denyPaths' | 'denyTitlePatterns' | 'allowTags' | 'denyTags',
+    index: number,
+  ): void {
     const signalMap = {
       denyPaths: this.formDenyPaths,
       denyTitlePatterns: this.formDenyTitlePatterns,
@@ -209,7 +217,10 @@ export class FeedsComponent implements OnInit {
     signalMap[field].update((list) => list.filter((_, i) => i !== index));
   }
 
-  protected onFilterKeydown(event: KeyboardEvent, field: 'denyPaths' | 'denyTitlePatterns' | 'allowTags' | 'denyTags'): void {
+  protected onFilterKeydown(
+    event: KeyboardEvent,
+    field: 'denyPaths' | 'denyTitlePatterns' | 'allowTags' | 'denyTags',
+  ): void {
     if (event.key === 'Enter') {
       event.preventDefault();
       const input = event.target as HTMLInputElement;
@@ -265,12 +276,12 @@ export class FeedsComponent implements OnInit {
           next: () => {
             this.isSaving.set(false);
             this.closeDialog();
-            this.notificationService.success('Feed 已新增');
+            this.notificationService.success('Feed added');
             this.loadFeeds();
           },
           error: () => {
             this.isSaving.set(false);
-            this.notificationService.error('新增失敗');
+            this.notificationService.error('Failed to add feed');
           },
         });
     } else {
@@ -292,12 +303,12 @@ export class FeedsComponent implements OnInit {
           next: () => {
             this.isSaving.set(false);
             this.closeDialog();
-            this.notificationService.success('Feed 已更新');
+            this.notificationService.success('Feed updated');
             this.loadFeeds();
           },
           error: () => {
             this.isSaving.set(false);
-            this.notificationService.error('更新失敗');
+            this.notificationService.error('Failed to update feed');
           },
         });
     }
@@ -309,7 +320,7 @@ export class FeedsComponent implements OnInit {
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: () => this.loadFeeds(),
-        error: () => this.notificationService.error('切換失敗'),
+        error: () => this.notificationService.error('Toggle failed'),
       });
   }
 
@@ -334,12 +345,12 @@ export class FeedsComponent implements OnInit {
         next: () => {
           this.isDeleting.set(false);
           this.deleteTarget.set(null);
-          this.notificationService.success('Feed 已刪除');
+          this.notificationService.success('Feed deleted');
           this.loadFeeds();
         },
         error: () => {
           this.isDeleting.set(false);
-          this.notificationService.error('刪除失敗');
+          this.notificationService.error('Delete failed');
         },
       });
   }
@@ -353,13 +364,13 @@ export class FeedsComponent implements OnInit {
         next: (res) => {
           this.fetchingId.set(null);
           this.notificationService.success(
-            `已抓取，新增 ${res.data.new_items} 筆`,
+            `Fetched successfully, ${res.data.new_items} new items`,
           );
           this.loadFeeds();
         },
         error: () => {
           this.fetchingId.set(null);
-          this.notificationService.error('抓取失敗');
+          this.notificationService.error('Fetch failed');
         },
       });
   }
@@ -382,5 +393,4 @@ export class FeedsComponent implements OnInit {
         return 'border-zinc-600 bg-zinc-800 text-zinc-300';
     }
   }
-
 }

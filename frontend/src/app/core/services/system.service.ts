@@ -3,12 +3,12 @@ import { Observable } from 'rxjs';
 import { ApiService } from './api.service';
 import type { SystemHealth } from '../models/admin.model';
 
-/** 系統健康服務 — 基礎設施監控 API */
+/** System health service — infrastructure monitoring API */
 @Injectable({ providedIn: 'root' })
 export class SystemService {
   private readonly api = inject(ApiService);
 
-  /** 取得系統健康狀態：feeds、pipeline、AI 預算、資料庫 */
+  /** Get system health status: feeds, pipeline, AI budget, database */
   getHealth(): Observable<SystemHealth> {
     return this.api.getData<SystemHealth>('/api/admin/system/health');
   }

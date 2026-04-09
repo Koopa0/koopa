@@ -14,7 +14,7 @@ import { LucideAngularModule, ArrowLeft, RotateCcw } from 'lucide-angular';
         data-testid="back-to-dashboard"
       >
         <lucide-icon [img]="ArrowLeftIcon" [size]="14" />
-        返回學習儀表板
+        Back to Learning Dashboard
       </a>
 
       <div
@@ -26,11 +26,12 @@ import { LucideAngularModule, ArrowLeft, RotateCcw } from 'lucide-angular';
           class="mb-4 text-zinc-600"
         />
         <h1 class="text-lg font-semibold text-zinc-300 mb-2">
-          Review Queue — 建設中
+          Review Queue — Under Construction
         </h1>
         <p class="max-w-md text-sm text-zinc-500">
-          FSRS 間隔重複複習佇列。將依據遺忘曲線排程，逐張呈現待複習卡片，
-          並根據回答品質自動調整下次複習時間。
+          FSRS spaced repetition review queue. Cards will be scheduled based on
+          the forgetting curve, presented one at a time, with the next review
+          time automatically adjusted based on answer quality.
         </p>
       </div>
     </div>

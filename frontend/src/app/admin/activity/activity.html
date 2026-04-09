@@ -1,5 +1,8 @@
 <!-- Header -->
-<app-page-header title="Activity" description="工作 Sessions 與每日活動時間線">
+<app-page-header
+  title="Activity"
+  description="Work sessions and daily activity timeline"
+>
   <button
     type="button"
     class="inline-flex items-center gap-2 rounded-xs border border-zinc-700 px-4 py-2 text-sm text-zinc-300 transition-colors hover:bg-zinc-800"
@@ -49,17 +52,17 @@
     <!-- ═══ Sessions Tab ═══ -->
     @if (activeTab() === 'sessions') {
     <div class="mb-6 flex items-center gap-4">
-      <label for="session-days" class="text-sm text-zinc-400">期間：</label>
+      <label for="session-days" class="text-sm text-zinc-400">Period:</label>
       <select
         id="session-days"
         class="rounded-xs border border-zinc-700 bg-zinc-800 px-3 py-1.5 text-sm text-zinc-300 focus:border-zinc-500 focus:outline-hidden"
         [ngModel]="sessionDays()"
         (ngModelChange)="updateSessionDays($event)"
       >
-        <option [value]="3">3 天</option>
-        <option [value]="7">7 天</option>
-        <option [value]="14">14 天</option>
-        <option [value]="30">30 天</option>
+        <option [value]="3">3 days</option>
+        <option [value]="7">7 days</option>
+        <option [value]="14">14 days</option>
+        <option [value]="30">30 days</option>
       </select>
       @if (sessions().length > 0) {
       <span class="text-xs text-zinc-600">
@@ -75,8 +78,8 @@
     } @else if (sessions().length === 0) {
     <app-empty-state
       [icon]="ClockIcon"
-      title="沒有 Session 資料"
-      description="活動事件會依 30 分鐘間隔自動分組為 sessions"
+      title="No session data"
+      description="Activity events are auto-grouped into sessions at 30-minute intervals"
     />
     } @else {
     <div class="space-y-3">
@@ -135,21 +138,21 @@
     <!-- ═══ Changelog Tab ═══ -->
     @if (activeTab() === 'changelog') {
     <div class="mb-6 flex items-center gap-4">
-      <label for="changelog-days" class="text-sm text-zinc-400">期間：</label>
+      <label for="changelog-days" class="text-sm text-zinc-400">Period:</label>
       <select
         id="changelog-days"
         class="rounded-xs border border-zinc-700 bg-zinc-800 px-3 py-1.5 text-sm text-zinc-300 focus:border-zinc-500 focus:outline-hidden"
         [ngModel]="changelogDays()"
         (ngModelChange)="updateChangelogDays($event)"
       >
-        <option [value]="7">7 天</option>
-        <option [value]="14">14 天</option>
-        <option [value]="30">30 天</option>
-        <option [value]="60">60 天</option>
+        <option [value]="7">7 days</option>
+        <option [value]="14">14 days</option>
+        <option [value]="30">30 days</option>
+        <option [value]="60">60 days</option>
       </select>
       @if (changelog().length > 0) {
       <span class="text-xs text-zinc-600">
-        {{ changelog().length }} 天 · {{ totalEvents() }} events
+        {{ changelog().length }} days · {{ totalEvents() }} events
       </span>
       }
     </div>
@@ -161,8 +164,8 @@
     } @else if (changelog().length === 0) {
     <app-empty-state
       [icon]="CalendarIcon"
-      title="沒有 Changelog 資料"
-      description="活動事件會按日期分組顯示"
+      title="No changelog data"
+      description="Activity events are grouped by date"
     />
     } @else {
     <div class="space-y-2">

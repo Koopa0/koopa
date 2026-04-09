@@ -58,7 +58,7 @@ const STATUS_CONFIG: Record<GoalStatus, { label: string; classes: string }> = {
 };
 
 const FILTER_TABS: { value: FilterTab; label: string }[] = [
-  { value: 'all', label: '全部' },
+  { value: 'all', label: 'All' },
   { value: 'active', label: 'Active' },
   { value: 'achieved', label: 'Achieved' },
   { value: 'abandoned', label: 'Abandoned' },
@@ -156,7 +156,7 @@ export class GoalsComponent implements OnInit {
           this.isLoading.set(false);
         },
         error: () => {
-          this.notificationService.error('無法載入目標');
+          this.notificationService.error('Failed to load goals');
           this.isLoading.set(false);
         },
       });
@@ -184,7 +184,7 @@ export class GoalsComponent implements OnInit {
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: () => {
-          this.notificationService.success(`「${goal.title}」狀態已更新`);
+          this.notificationService.success(`"${goal.title}" status updated`);
         },
         error: () => {
           // Rollback
@@ -193,7 +193,7 @@ export class GoalsComponent implements OnInit {
               g.id === goal.id ? { ...g, status: previousStatus } : g,
             ),
           );
-          this.notificationService.error('更新狀態失敗');
+          this.notificationService.error('Failed to update status');
         },
       });
   }
@@ -232,9 +232,9 @@ export class GoalsComponent implements OnInit {
   protected deadlineLabel(goal: ApiGoal): string {
     const days = this.deadlineDays(goal);
     if (days === null) return goal.deadline ?? '';
-    if (days < 0) return `逾期 ${Math.abs(days)} 天`;
-    if (days === 0) return '今日到期';
-    return `${days} 天後到期`;
+    if (days < 0) return `Overdue by ${Math.abs(days)} days`;
+    if (days === 0) return 'Due today';
+    return `Due in ${days} days`;
   }
 
   protected isDescriptionExpanded(goalId: string): boolean {

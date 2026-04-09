@@ -115,7 +115,7 @@ export class ActivityComponent implements OnInit {
           this.isLoadingSessions.set(false);
         },
         error: () => {
-          this.notificationService.error('無法載入 Sessions');
+          this.notificationService.error('Failed to load sessions');
           this.isLoadingSessions.set(false);
         },
       });
@@ -139,7 +139,7 @@ export class ActivityComponent implements OnInit {
           this.isLoadingChangelog.set(false);
         },
         error: () => {
-          this.notificationService.error('無法載入 Changelog');
+          this.notificationService.error('Failed to load changelog');
           this.isLoadingChangelog.set(false);
         },
       });
@@ -170,7 +170,7 @@ export class ActivityComponent implements OnInit {
     return SOURCE_CLASSES[source] ?? DEFAULT_SOURCE_CLASS;
   }
 
-  /** 從 duration 字串取得可讀格式（Go format: "1h30m0s"） */
+  /** Parse duration string into readable format (Go format: "1h30m0s") */
   protected formatDuration(duration: string): string {
     const hourMatch = duration.match(/(\d+)h/);
     const minMatch = duration.match(/(\d+)m/);

@@ -14,12 +14,7 @@ import { isPlatformBrowser } from '@angular/common';
 import { Router } from '@angular/router';
 import { Subject, debounceTime } from 'rxjs';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import {
-  trigger,
-  transition,
-  style,
-  animate,
-} from '@angular/animations';
+import { trigger, transition, style, animate } from '@angular/animations';
 import { SearchService } from '../../core/services/search.service';
 import {
   CommandPaletteService,
@@ -44,9 +39,7 @@ interface GroupedAction {
         style({ opacity: 0 }),
         animate('150ms ease-out', style({ opacity: 1 })),
       ]),
-      transition(':leave', [
-        animate('100ms ease-in', style({ opacity: 0 })),
-      ]),
+      transition(':leave', [animate('100ms ease-in', style({ opacity: 0 }))]),
     ]),
     trigger('scaleIn', [
       transition(':enter', [
@@ -74,14 +67,16 @@ export class CommandPaletteComponent {
   private readonly router = inject(Router);
   private readonly platformId = inject(PLATFORM_ID);
 
-  private readonly searchInput = viewChild<ElementRef<HTMLInputElement>>('searchInput');
-  private readonly resultsList = viewChild<ElementRef<HTMLDivElement>>('resultsList');
+  private readonly searchInput =
+    viewChild<ElementRef<HTMLInputElement>>('searchInput');
+  private readonly resultsList =
+    viewChild<ElementRef<HTMLDivElement>>('resultsList');
 
   private readonly searchSubject = new Subject<string>();
 
   protected readonly isOpen = this.paletteService.isOpen;
   protected readonly query = signal('');
-  protected readonly searchPlaceholder = '搜尋內容或快速導航...';
+  protected readonly searchPlaceholder = 'Search content or quick navigate...';
 
   /** Whether the user is typing a search query (vs browsing actions) */
   protected readonly isSearchMode = computed(() => {
@@ -100,7 +95,9 @@ export class CommandPaletteComponent {
 
     // Single character — still show actions, filtered
     return actions.filter((a) => {
-      const haystack = [a.label, a.group, ...(a.keywords ?? [])].join(' ').toLowerCase();
+      const haystack = [a.label, a.group, ...(a.keywords ?? [])]
+        .join(' ')
+        .toLowerCase();
       return haystack.includes(q);
     });
   });
@@ -117,15 +114,18 @@ export class CommandPaletteComponent {
       groups.set(action.group, items);
     }
 
-    return Array.from(groups.entries()).map(([name, items]) => ({ name, items }));
+    return Array.from(groups.entries()).map(([name, items]) => ({
+      name,
+      items,
+    }));
   });
 
   protected readonly searchResults = this.searchService.results;
   protected readonly isSearching = this.searchService.searching;
 
   /** Total selectable items count */
-  private readonly totalItems = computed(() =>
-    this.filteredActions().length + this.searchResults().length,
+  private readonly totalItems = computed(
+    () => this.filteredActions().length + this.searchResults().length,
   );
 
   /** Active highlight index — resets to 0 when items change */
@@ -169,7 +169,9 @@ export class CommandPaletteComponent {
       const list = this.resultsList()?.nativeElement;
       if (!list) return;
 
-      const item = list.querySelector(`[data-index="${idx}"]`) as HTMLElement | null;
+      const item = list.querySelector(
+        `[data-index="${idx}"]`,
+      ) as HTMLElement | null;
       if (item && typeof item.scrollIntoView === 'function') {
         item.scrollIntoView({ block: 'nearest' });
       }

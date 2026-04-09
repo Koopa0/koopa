@@ -16,7 +16,7 @@ import { RouterLink } from '@angular/router';
       <div
         class="rounded-sm border border-dashed border-zinc-800 px-6 py-12 text-center"
       >
-        <p class="text-zinc-500">Project Detail — 建設中</p>
+        <p class="text-zinc-500">Project Detail — Under construction</p>
       </div>
     </div>
   `,

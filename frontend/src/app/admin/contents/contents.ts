@@ -186,7 +186,7 @@ export class AdminContentsComponent implements OnInit {
         requestAnimationFrame(() => this.isDetailVisible.set(true));
       },
       error: () => {
-        this.notificationService.error('載入內容詳情失敗');
+        this.notificationService.error('Failed to load content details');
         this.isDetailLoading.set(false);
         this.selectedItemId.set(null);
       },
@@ -211,10 +211,11 @@ export class AdminContentsComponent implements OnInit {
           this.detailItem.set({ ...detail, is_public: updated.is_public });
         }
         this.notificationService.success(
-          `已切換為 ${updated.is_public ? 'public' : 'private'}`,
+          `Switched to ${updated.is_public ? 'public' : 'private'}`,
         );
       },
-      error: () => this.notificationService.error('切換 visibility 失敗'),
+      error: () =>
+        this.notificationService.error('Failed to toggle visibility'),
     });
   }
 

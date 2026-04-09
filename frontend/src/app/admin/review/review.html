@@ -8,10 +8,10 @@
       <div>
         <h1 class="flex items-center gap-2 text-2xl font-bold text-zinc-100">
           <lucide-icon [img]="ClipboardCheckIcon" [size]="24" />
-          審核佇列
+          Review Queue
         </h1>
         <p class="mt-1 text-sm text-zinc-400">
-          {{ reviews().length }} 筆待審核內容
+          {{ reviews().length }} items pending review
         </p>
       </div>
       <button
@@ -20,7 +20,7 @@
         (click)="loadReviews()"
       >
         <lucide-icon [img]="RefreshCwIcon" [size]="16" />
-        重新整理
+        Refresh
       </button>
     </div>
   </div>
@@ -54,8 +54,8 @@
         [size]="40"
         class="text-zinc-700"
       />
-      <h3 class="text-sm font-medium text-zinc-300">沒有待審核內容</h3>
-      <p class="text-xs text-zinc-500">所有內容都已審核完畢</p>
+      <h3 class="text-sm font-medium text-zinc-300">No items pending review</h3>
+      <p class="text-xs text-zinc-500">All content has been reviewed</p>
     </div>
     } @else {
     <!-- Review List -->
@@ -85,7 +85,7 @@
 
             <div class="mt-2 flex items-center gap-3 text-xs text-zinc-500">
               <span
-                >提交於 {{ review.submitted_at | date: 'yyyy/MM/dd HH:mm'
+                >Submitted {{ review.submitted_at | date: 'yyyy/MM/dd HH:mm'
                 }}</span
               >
               @if (review.content_slug) {
@@ -94,7 +94,7 @@
                 class="inline-flex items-center gap-1 text-zinc-400 no-underline hover:text-zinc-200"
               >
                 <lucide-icon [img]="EyeIcon" [size]="12" />
-                查看內容
+                View content
               </a>
               }
             </div>
@@ -115,7 +115,7 @@
               (click)="approveReview(review)"
             >
               <lucide-icon [img]="CheckCircle2Icon" [size]="14" />
-              核准
+              Approve
             </button>
             <button
               type="button"
@@ -123,7 +123,7 @@
               (click)="openRejectDialog(review)"
             >
               <lucide-icon [img]="XCircleIcon" [size]="14" />
-              退回
+              Reject
             </button>
             }
           </div>
@@ -154,12 +154,12 @@
     <div
       class="flex items-center justify-between border-b border-zinc-800 px-6 py-4"
     >
-      <h2 class="text-lg font-semibold text-zinc-100">退回審核</h2>
+      <h2 class="text-lg font-semibold text-zinc-100">Reject Review</h2>
       <button
         type="button"
         class="rounded-xs p-1 text-zinc-400 hover:text-zinc-200"
         (click)="closeRejectDialog()"
-        aria-label="關閉"
+        aria-label="Close"
       >
         <lucide-icon [img]="XIcon" [size]="18" />
       </button>
@@ -167,7 +167,8 @@
 
     <div class="px-6 py-4">
       <p class="mb-3 text-sm text-zinc-400">
-        退回「{{ rejectTarget()!.content_title }}」，內容將保持為草稿狀態。
+        Reject "{{ rejectTarget()!.content_title }}". The content will remain as
+        a draft.
       </p>
       <label
         for="reject-notes"
@@ -178,7 +179,7 @@
           [size]="14"
           class="mr-1 inline-block"
         />
-        備註（選填）
+        Notes (optional)
       </label>
       <textarea
         id="reject-notes"
@@ -186,7 +187,7 @@
         [value]="rejectNotes()"
         (input)="onRejectNotesChange($event)"
         class="w-full rounded-xs border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 placeholder-zinc-500 focus:border-zinc-500 focus:outline-hidden"
-        placeholder="退回原因或修改建議..."
+        placeholder="Reason for rejection or suggestions..."
       ></textarea>
     </div>
 
@@ -196,7 +197,7 @@
         class="rounded-xs border border-zinc-700 px-4 py-2 text-sm text-zinc-300 hover:bg-zinc-800"
         (click)="closeRejectDialog()"
       >
-        取消
+        Cancel
       </button>
       <button
         type="button"
@@ -206,7 +207,7 @@
       >
         @if (isRejecting()) {
         <lucide-icon [img]="Loader2Icon" [size]="14" class="animate-spin" />
-        } 確認退回
+        } Confirm Rejection
       </button>
     </div>
   </div>

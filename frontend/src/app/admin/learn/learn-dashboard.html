@@ -7,7 +7,7 @@
   <div
     class="size-6 animate-spin rounded-full border-2 border-zinc-700 border-t-zinc-300"
   ></div>
-  <span class="sr-only">載入中...</span>
+  <span class="sr-only">Loading...</span>
 </div>
 } @else if (dashboard(); as db) {
 
@@ -21,7 +21,7 @@
         class="text-violet-400"
         aria-hidden="true"
       />
-      <h1 class="text-lg font-semibold text-zinc-100">學習儀表板</h1>
+      <h1 class="text-lg font-semibold text-zinc-100">Learning Dashboard</h1>
     </div>
 
     <!-- Streak -->
@@ -38,7 +38,7 @@
       <span class="text-sm font-semibold text-amber-300">
         {{ streak().current_days }}
       </span>
-      <span class="text-xs text-amber-500">天連續</span>
+      <span class="text-xs text-amber-500">day streak</span>
     </div>
   </div>
 
@@ -58,17 +58,17 @@
       />
       <div>
         <div class="text-sm font-medium text-zinc-200">
-          {{ dueReviewsCount() }} 張卡片待複習
+          {{ dueReviewsCount() }} cards due for review
         </div>
         <div class="text-xs text-zinc-500">
-          今日到期 {{ dueReviewsToday() }} 張
+          Due today: {{ dueReviewsToday() }}
         </div>
       </div>
     </div>
     <span
       class="inline-flex items-center gap-1 rounded-sm bg-violet-900/50 px-3 py-1.5 text-xs font-medium text-violet-300"
     >
-      開始複習
+      Start review
       <lucide-icon [img]="ChevronRightIcon" [size]="14" aria-hidden="true" />
     </span>
   </a>
@@ -80,7 +80,7 @@
     <h2
       class="mb-3 text-xs font-semibold tracking-wider text-zinc-500 uppercase"
     >
-      弱點聚焦
+      Weakness Focus
     </h2>
     <div class="space-y-2">
       @for (concept of weaknessSpotlight(); track concept.concept_slug) {
@@ -110,7 +110,7 @@
                 {{ concept.domain }}
               </span>
               <span class="text-[11px] text-red-400/80">
-                {{ concept.fail_count_30d }} 次失敗 (30d)
+                {{ concept.fail_count_30d }} failures (30d)
               </span>
             </div>
           </div>
@@ -122,19 +122,19 @@
             class="text-xs"
             [class]="getDaysSinceClass(concept.days_since_practice)"
           >
-            {{ concept.days_since_practice }}d 前
+            {{ concept.days_since_practice }}d ago
           </span>
           } @else {
-          <span class="text-xs text-zinc-600">未練習</span>
+          <span class="text-xs text-zinc-600">Not practiced</span>
           }
           <a
             [routerLink]="'/admin/learn/concepts/' + concept.concept_slug"
             class="inline-flex items-center gap-1 rounded-sm bg-zinc-800 px-2 py-1 text-xs text-zinc-300 no-underline transition-colors hover:bg-zinc-700"
             data-testid="practice-concept-btn"
-            [attr.aria-label]="'開始練習 ' + concept.concept_name"
+            [attr.aria-label]="'Start practice ' + concept.concept_name"
           >
             <lucide-icon [img]="PlayIcon" [size]="12" aria-hidden="true" />
-            開始練習
+            Start practice
           </a>
         </div>
       </div>
@@ -149,7 +149,7 @@
     <h2
       class="mb-3 text-xs font-semibold tracking-wider text-zinc-500 uppercase"
     >
-      領域掌握度
+      Domain Mastery
     </h2>
     <div class="space-y-3">
       @for (domain of masteryByDomain(); track domain.domain) {
@@ -170,18 +170,18 @@
             </span>
           </div>
           <span class="text-xs text-zinc-500">
-            {{ domain.concepts_mastered }}/{{ domain.concepts_total }} 掌握
+            {{ domain.concepts_mastered }}/{{ domain.concepts_total }} mastered
           </span>
         </div>
 
-        <!-- 進度條 -->
+        <!-- Progress bar -->
         <div
           class="h-1.5 rounded-full bg-zinc-800 overflow-hidden mb-2"
           role="progressbar"
           [attr.aria-valuenow]="domain.concepts_mastered"
           aria-valuemin="0"
           [attr.aria-valuemax]="domain.concepts_total"
-          [attr.aria-label]="domain.domain + ' 領域掌握度'"
+          [attr.aria-label]="domain.domain + ' domain mastery'"
         >
           <div
             class="h-full rounded-full bg-emerald-500 transition-all"
@@ -189,16 +189,16 @@
           ></div>
         </div>
 
-        <!-- 統計標籤 -->
+        <!-- Stats labels -->
         <div class="flex gap-3 text-[11px]">
           <span class="text-emerald-400">
-            {{ domain.concepts_mastered }} 掌握
+            {{ domain.concepts_mastered }} mastered
           </span>
           @if (domain.concepts_weak > 0) {
-          <span class="text-amber-400"> {{ domain.concepts_weak }} 薄弱 </span>
+          <span class="text-amber-400"> {{ domain.concepts_weak }} weak </span>
           } @if (domain.concepts_untested > 0) {
           <span class="text-zinc-600">
-            {{ domain.concepts_untested }} 未測試
+            {{ domain.concepts_untested }} untested
           </span>
           }
         </div>
@@ -214,7 +214,7 @@
     <h2
       class="mb-3 text-xs font-semibold tracking-wider text-zinc-500 uppercase"
     >
-      最近練習
+      Recent Practice
     </h2>
     <div class="space-y-2">
       @for (session of recentSessions(); track session.id) {
@@ -248,7 +248,7 @@
   </section>
   }
 
-  <!-- Streak Detail (底部) -->
+  <!-- Streak Detail (bottom) -->
   <section
     data-testid="streak-detail"
     class="rounded-sm border border-zinc-800 bg-zinc-900/50 px-4 py-3"
@@ -261,19 +261,19 @@
           class="text-amber-400"
           aria-hidden="true"
         />
-        <span class="text-sm text-zinc-300">學習紀錄</span>
+        <span class="text-sm text-zinc-300">Learning Record</span>
       </div>
       <div class="flex items-center gap-4 text-xs">
         <div>
-          <span class="text-zinc-500">目前連續</span>
+          <span class="text-zinc-500">Current streak</span>
           <span class="ml-1 font-semibold text-amber-300">
-            {{ streak().current_days }} 天
+            {{ streak().current_days }} days
           </span>
         </div>
         <div>
-          <span class="text-zinc-500">最長紀錄</span>
+          <span class="text-zinc-500">Longest record</span>
           <span class="ml-1 font-semibold text-zinc-300">
-            {{ streak().longest }} 天
+            {{ streak().longest }} days
           </span>
         </div>
       </div>
@@ -287,7 +287,7 @@
   <div
     class="rounded-sm border border-dashed border-zinc-800 px-6 py-12 text-center"
   >
-    <p class="text-sm text-zinc-400">無法載入學習數據</p>
+    <p class="text-sm text-zinc-400">Failed to load learning data</p>
   </div>
 </div>
 

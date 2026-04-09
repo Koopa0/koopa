@@ -97,11 +97,11 @@ export class BuildLogDetailComponent implements OnInit {
 
   /** Session type display labels */
   protected readonly sessionTypeLabels: Record<string, string> = {
-    feature: '功能開發',
-    bugfix: 'Bug 修復',
-    refactor: '重構',
+    feature: 'Feature Development',
+    bugfix: 'Bug Fix',
+    refactor: 'Refactor',
     devops: 'DevOps',
-    research: '研究',
+    research: 'Research',
   };
 
   ngOnInit(): void {

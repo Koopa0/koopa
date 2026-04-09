@@ -7,7 +7,7 @@
   <div
     class="size-6 animate-spin rounded-full border-2 border-zinc-700 border-t-zinc-300"
   ></div>
-  <span class="sr-only">載入中...</span>
+  <span class="sr-only">Loading...</span>
 </div>
 } @else if (overview(); as data) {
 
@@ -21,9 +21,13 @@
         class="text-violet-400"
         aria-hidden="true"
       />
-      <h1 class="text-lg font-semibold text-zinc-100">Studio 協調中心</h1>
+      <h1 class="text-lg font-semibold text-zinc-100">
+        Studio Coordination Hub
+      </h1>
     </div>
-    <p class="text-sm text-zinc-500 pl-8">誰在做什麼、什麼待處理、什麼回來了</p>
+    <p class="text-sm text-zinc-500 pl-8">
+      Who's doing what, what's pending, what's back
+    </p>
   </div>
 
   <!-- ===== Open Directives ===== -->
@@ -36,7 +40,7 @@
         aria-hidden="true"
       />
       <h2 class="text-xs font-semibold tracking-wider text-zinc-500 uppercase">
-        進行中的指令
+        Active Directives
       </h2>
       <span
         class="ml-1 inline-flex items-center justify-center rounded-full bg-zinc-800 px-1.5 text-[10px] font-medium text-zinc-400"
@@ -56,7 +60,7 @@
         class="mx-auto mb-2 text-emerald-500"
         aria-hidden="true"
       />
-      <p class="text-sm text-zinc-600">目前沒有進行中的指令</p>
+      <p class="text-sm text-zinc-600">No active directives</p>
     </div>
     } @else {
     <div class="space-y-2">
@@ -65,7 +69,7 @@
         data-testid="directive-card"
         class="rounded-sm border border-zinc-800 bg-zinc-900/50 px-4 py-3"
       >
-        <!-- 頂部：優先級 + 狀態 + 天數 -->
+        <!-- Top: priority + status + days -->
         <div class="flex items-center gap-2 mb-2">
           <span
             class="rounded-xs px-1.5 py-0.5 text-[10px] font-bold uppercase"
@@ -85,12 +89,12 @@
           </span>
         </div>
 
-        <!-- 內容 -->
+        <!-- Content -->
         <p class="text-sm text-zinc-300 mb-2 leading-relaxed">
           {{ truncateContent(directive.content, 120) }}
         </p>
 
-        <!-- 路徑：source → target -->
+        <!-- Path: source → target -->
         <div class="flex items-center gap-1.5 text-xs text-zinc-500">
           <span class="font-medium text-zinc-400">{{ directive.source }}</span>
           <lucide-icon [img]="ArrowRightIcon" [size]="12" aria-hidden="true" />
@@ -114,7 +118,7 @@
         aria-hidden="true"
       />
       <h2 class="text-xs font-semibold tracking-wider text-zinc-500 uppercase">
-        未讀報告
+        Unread Reports
       </h2>
       <span
         class="ml-1 inline-flex items-center justify-center rounded-full bg-zinc-800 px-1.5 text-[10px] font-medium text-zinc-400"
@@ -134,7 +138,7 @@
         class="mx-auto mb-2 text-zinc-700"
         aria-hidden="true"
       />
-      <p class="text-sm text-zinc-600">沒有未讀報告</p>
+      <p class="text-sm text-zinc-600">No unread reports</p>
     </div>
     } @else {
     <div class="space-y-2">
@@ -143,7 +147,7 @@
         data-testid="report-card"
         class="rounded-sm border border-zinc-800 bg-zinc-900/50 px-4 py-3"
       >
-        <!-- 來源與日期 -->
+        <!-- Source and date -->
         <div class="flex items-center justify-between mb-2">
           <div class="flex items-center gap-2">
             <span
@@ -153,7 +157,7 @@
             </span>
             @if (report.directive_content) {
             <span class="text-xs text-zinc-600 truncate max-w-48">
-              回覆：{{ truncateContent(report.directive_content, 40) }}
+              Reply: {{ truncateContent(report.directive_content, 40) }}
             </span>
             }
           </div>
@@ -162,7 +166,7 @@
           </span>
         </div>
 
-        <!-- 報告內容 -->
+        <!-- Report content -->
         <p class="text-sm text-zinc-300 leading-relaxed">
           {{ truncateContent(report.content, 200) }}
         </p>
@@ -182,7 +186,7 @@
         aria-hidden="true"
       />
       <h2 class="text-xs font-semibold tracking-wider text-zinc-500 uppercase">
-        參與者
+        Participants
       </h2>
     </div>
 
@@ -195,7 +199,7 @@
         data-testid="participant-card"
         class="rounded-sm border border-zinc-800 bg-zinc-900/50 px-4 py-3"
       >
-        <!-- 名稱與平台 -->
+        <!-- Name and platform -->
         <div class="flex items-center justify-between mb-2">
           <span class="text-sm font-medium text-zinc-200">
             {{ participant.name }}
@@ -207,7 +211,7 @@
           </span>
         </div>
 
-        <!-- 指標 -->
+        <!-- Metrics -->
         <div class="flex items-center gap-4 mb-2.5 text-xs text-zinc-500">
           <span class="flex items-center gap-1">
             <lucide-icon
@@ -216,7 +220,7 @@
               class="text-amber-400/70"
               aria-hidden="true"
             />
-            {{ participant.active_directives }} 指令
+            {{ participant.active_directives }} directives
           </span>
           <span class="flex items-center gap-1">
             <lucide-icon
@@ -225,11 +229,11 @@
               class="text-sky-400/70"
               aria-hidden="true"
             />
-            {{ participant.recent_reports }} 報告
+            {{ participant.recent_reports }} reports
           </span>
         </div>
 
-        <!-- 能力標籤 -->
+        <!-- Capability tags -->
         <div class="flex flex-wrap gap-1">
           @for (cap of getCapabilities(participant); track cap.key) { @if
           (cap.active) {
@@ -252,7 +256,7 @@
   <div
     class="rounded-sm border border-dashed border-zinc-800 px-6 py-12 text-center"
   >
-    <p class="text-sm text-zinc-400">無法載入協作狀態</p>
+    <p class="text-sm text-zinc-400">Failed to load collaboration state</p>
   </div>
 </div>
 

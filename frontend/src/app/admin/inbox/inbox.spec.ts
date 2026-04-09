@@ -95,7 +95,7 @@ describe('InboxComponent', () => {
       By.css('[data-testid="capture-btn"]'),
     );
 
-    // 模擬輸入
+    // Simulate input
     input.nativeElement.value = 'New idea';
     input.nativeElement.dispatchEvent(new Event('input'));
     fixture.detectChanges();
@@ -105,7 +105,7 @@ describe('InboxComponent', () => {
 
     expect(inboxService.capture).toHaveBeenCalledWith('New idea');
 
-    // 新 item 應出現在列表最前
+    // New item should appear at the top of the list
     const items = fixture.debugElement.queryAll(
       By.css('[data-testid="inbox-item"]'),
     );
@@ -126,7 +126,7 @@ describe('InboxComponent', () => {
     const items = fixture.debugElement.queryAll(
       By.css('[data-testid="inbox-item"]'),
     );
-    // 點擊第一個 item 的 button
+    // Click the first item's button
     const itemBtn = items[0].query(By.css('button'));
     itemBtn.nativeElement.click();
     fixture.detectChanges();
@@ -138,7 +138,7 @@ describe('InboxComponent', () => {
   });
 
   it('should show 4 clarify type options', () => {
-    // 展開 clarify panel
+    // Open clarify panel
     const items = fixture.debugElement.queryAll(
       By.css('[data-testid="inbox-item"]'),
     );
@@ -165,20 +165,20 @@ describe('InboxComponent', () => {
   });
 
   it('should remove item from list after clarify as task', () => {
-    // 展開 clarify
+    // Open clarify
     const items = fixture.debugElement.queryAll(
       By.css('[data-testid="inbox-item"]'),
     );
     items[0].query(By.css('button')).nativeElement.click();
     fixture.detectChanges();
 
-    // 選擇 task
+    // Select task
     fixture.debugElement
       .query(By.css('[data-testid="clarify-task"]'))
       .nativeElement.click();
     fixture.detectChanges();
 
-    // 確認
+    // Confirm
     fixture.debugElement
       .query(By.css('[data-testid="clarify-confirm"]'))
       .nativeElement.click();
@@ -195,20 +195,20 @@ describe('InboxComponent', () => {
   });
 
   it('should close clarify panel when cancelled', () => {
-    // 展開
+    // Open panel
     const items = fixture.debugElement.queryAll(
       By.css('[data-testid="inbox-item"]'),
     );
     items[0].query(By.css('button')).nativeElement.click();
     fixture.detectChanges();
 
-    // 選擇 type（需要選擇才會出現 cancel 按鈕）
+    // Select a type (must select before cancel button appears)
     fixture.debugElement
       .query(By.css('[data-testid="clarify-task"]'))
       .nativeElement.click();
     fixture.detectChanges();
 
-    // 取消
+    // Cancel
     fixture.debugElement
       .query(By.css('[data-testid="clarify-cancel"]'))
       .nativeElement.click();
@@ -238,7 +238,7 @@ describe('InboxComponent', () => {
         By.css('[data-testid="inbox-empty"]'),
       );
       expect(empty).toBeTruthy();
-      expect(empty.nativeElement.textContent).toContain('Inbox 清空了');
+      expect(empty.nativeElement.textContent).toContain('Inbox is empty');
     });
   });
 });

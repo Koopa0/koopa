@@ -7,7 +7,7 @@
   <div
     class="size-6 animate-spin rounded-full border-2 border-zinc-700 border-t-zinc-300"
   ></div>
-  <span class="sr-only">載入中...</span>
+  <span class="sr-only">Loading...</span>
 </div>
 } @else if (context(); as ctx) {
 
@@ -30,10 +30,10 @@
     }
   </div>
 
-  <!-- 昨日反思 Context -->
+  <!-- Yesterday's Reflection Context -->
   @if (context()?.reflection_context?.has_yesterday_reflection) {
   <div class="mb-6 rounded-sm border border-zinc-800 bg-zinc-900/30 px-4 py-3">
-    <p class="text-xs font-medium text-zinc-500 mb-1">昨日反思</p>
+    <p class="text-xs font-medium text-zinc-500 mb-1">Yesterday's Reflection</p>
     <p class="text-sm text-zinc-400 italic">
       {{ context()?.reflection_context?.reflection_excerpt }}
     </p>
@@ -48,7 +48,7 @@
   >
     <div class="flex items-center gap-2 text-sm font-medium text-red-400">
       <lucide-icon [img]="AlertTriangleIcon" [size]="16" aria-hidden="true" />
-      <span>{{ overdueTasks().length }} 個任務已逾期</span>
+      <span>{{ overdueTasks().length }} overdue tasks</span>
     </div>
     <div class="mt-2 space-y-1.5 pl-6">
       @for (task of overdueTasks(); track task.id) {
@@ -69,7 +69,7 @@
     <h2
       class="mb-3 text-xs font-semibold tracking-wider text-zinc-500 uppercase"
     >
-      昨日未完成
+      Yesterday's Unfinished
     </h2>
     <div class="space-y-2">
       @for (item of yesterdayUnfinished(); track item.id) {
@@ -92,7 +92,7 @@
             data-testid="defer-btn"
             (click)="resolveItem(item.id, 'defer')"
             class="rounded-xs p-1.5 text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-amber-400"
-            aria-label="再做一天"
+            aria-label="Carry over"
           >
             <lucide-icon [img]="RotateCcwIcon" [size]="14" aria-hidden="true" />
           </button>
@@ -101,7 +101,7 @@
             data-testid="complete-btn"
             (click)="resolveItem(item.id, 'complete')"
             class="rounded-xs p-1.5 text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-emerald-400"
-            aria-label="已完成"
+            aria-label="Completed"
           >
             <lucide-icon [img]="CheckIcon" [size]="14" aria-hidden="true" />
           </button>
@@ -110,7 +110,7 @@
             data-testid="drop-btn"
             (click)="resolveItem(item.id, 'drop')"
             class="rounded-xs p-1.5 text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-red-400"
-            aria-label="放棄"
+            aria-label="Drop"
           >
             <lucide-icon [img]="XIcon" [size]="14" aria-hidden="true" />
           </button>
@@ -125,7 +125,7 @@
   <section class="mb-6">
     <div class="flex items-center justify-between mb-3">
       <h2 class="text-xs font-semibold tracking-wider text-zinc-500 uppercase">
-        今日計劃
+        Today's Plan
       </h2>
       @if (totalPlannedMinutes() > 0) {
       <span class="flex items-center gap-1 text-xs text-zinc-600">
@@ -140,12 +140,12 @@
       data-testid="empty-plan"
       class="rounded-sm border border-dashed border-zinc-800 px-4 py-8 text-center"
     >
-      <p class="text-sm text-zinc-600 mb-3">尚未規劃今天的任務</p>
+      <p class="text-sm text-zinc-600 mb-3">No tasks planned for today</p>
       <a
         routerLink="/admin/plan/tasks"
         class="inline-flex items-center gap-1.5 rounded-sm bg-zinc-800 px-3 py-1.5 text-sm text-zinc-300 no-underline transition-colors hover:bg-zinc-700"
       >
-        從任務清單選取
+        Pick from tasks
         <lucide-icon [img]="ArrowRightIcon" [size]="14" aria-hidden="true" />
       </a>
     </div>
@@ -159,7 +159,7 @@
           ? 'border-zinc-800/50 bg-zinc-900/30'
           : 'border-zinc-800 bg-zinc-900/50 hover:border-zinc-700'"
       >
-        <!-- 完成按鈕 -->
+        <!-- Complete button -->
         <button
           type="button"
           data-testid="plan-complete-btn"
@@ -169,14 +169,14 @@
             ? 'border-emerald-600 bg-emerald-600 text-white'
             : 'border-zinc-600 hover:border-emerald-500'"
           [disabled]="item.status === 'done'"
-          [attr.aria-label]="'完成 ' + item.title"
+          [attr.aria-label]="'Complete ' + item.title"
         >
           @if (item.status === 'done') {
           <lucide-icon [img]="CheckIcon" [size]="12" aria-hidden="true" />
           }
         </button>
 
-        <!-- 任務標題 -->
+        <!-- Task title -->
         <span
           class="flex-1 text-sm min-w-0 truncate"
           [class]="item.status === 'done' ? 'text-zinc-600 line-through' : 'text-zinc-200'"
@@ -184,7 +184,7 @@
           {{ item.title }}
         </span>
 
-        <!-- Energy 標籤 -->
+        <!-- Energy label -->
         <span
           class="shrink-0 text-[10px] font-bold"
           [class]="ENERGY_COLORS[item.energy] ?? 'text-zinc-400'"
@@ -192,20 +192,20 @@
           {{ ENERGY_LABELS[item.energy] ?? item.energy }}
         </span>
 
-        <!-- 預估時間 -->
+        <!-- Estimated time -->
         @if (item.estimated_minutes) {
         <span class="shrink-0 text-xs text-zinc-600">
           {{ item.estimated_minutes }}m
         </span>
         }
 
-        <!-- 延後按鈕 -->
+        <!-- Defer button -->
         @if (item.status !== 'done') {
         <button
           type="button"
           data-testid="plan-defer-btn"
           (click)="resolvePlanItem(item.id, 'defer')"
-          aria-label="延後此項目"
+          aria-label="Defer this item"
           class="shrink-0 rounded-xs p-0.5 text-zinc-600 transition-colors hover:text-amber-400 opacity-0 group-hover:opacity-100"
         >
           <lucide-icon [img]="RotateCcwIcon" [size]="12" aria-hidden="true" />
@@ -223,7 +223,7 @@
     <h2
       class="mb-3 text-xs font-semibold tracking-wider text-zinc-500 uppercase"
     >
-      需要注意
+      Needs Attention
     </h2>
     <div class="grid grid-cols-2 gap-2 sm:grid-cols-3">
       @if (attn.inbox_count > 0) {
@@ -239,7 +239,7 @@
         />
         <div>
           <div class="font-medium text-zinc-300">{{ attn.inbox_count }}</div>
-          <div class="text-xs text-zinc-600">未澄清 inbox</div>
+          <div class="text-xs text-zinc-600">Unclarified inbox</div>
         </div>
       </a>
       } @if (attn.pending_directives > 0) {
@@ -257,7 +257,7 @@
           <div class="font-medium text-zinc-300">
             {{ attn.pending_directives }}
           </div>
-          <div class="text-xs text-zinc-600">待回應指令</div>
+          <div class="text-xs text-zinc-600">Pending directives</div>
         </div>
       </a>
       } @if (attn.due_reviews > 0) {
@@ -273,7 +273,7 @@
         />
         <div>
           <div class="font-medium text-zinc-300">{{ attn.due_reviews }}</div>
-          <div class="text-xs text-zinc-600">待複習</div>
+          <div class="text-xs text-zinc-600">Reviews due</div>
         </div>
       </a>
       } @if (attn.stale_someday_count > 0) {
@@ -292,7 +292,7 @@
           <div class="font-medium text-zinc-300">
             {{ attn.stale_someday_count }}
           </div>
-          <div class="text-xs text-zinc-600">someday 待審查</div>
+          <div class="text-xs text-zinc-600">Someday review</div>
         </div>
       </a>
       }
@@ -305,13 +305,13 @@
   <section data-testid="goal-pulse">
     <div class="flex items-center justify-between mb-3">
       <h2 class="text-xs font-semibold tracking-wider text-zinc-500 uppercase">
-        目標脈搏
+        Goal Pulse
       </h2>
       <a
         routerLink="/admin/plan/goals"
         class="text-xs text-zinc-600 no-underline hover:text-zinc-400"
       >
-        查看全部
+        View all
       </a>
     </div>
     <div class="space-y-2">
@@ -320,7 +320,7 @@
         [routerLink]="'/admin/plan/goals/' + goal.id"
         class="flex items-center gap-3 rounded-sm border border-zinc-800 bg-zinc-900/50 px-4 py-3 no-underline transition-colors hover:border-zinc-700"
       >
-        <!-- 進度 bar -->
+        <!-- Progress bar -->
         <div class="w-16 shrink-0">
           <div
             class="h-1.5 rounded-full bg-zinc-800 overflow-hidden"
@@ -328,7 +328,7 @@
             [attr.aria-valuenow]="goal.milestones_done"
             aria-valuemin="0"
             [attr.aria-valuemax]="goal.milestones_total"
-            [attr.aria-label]="goal.title + ' 目標進度'"
+            [attr.aria-label]="goal.title + ' goal progress'"
           >
             <div
               class="h-full rounded-full bg-emerald-500 transition-all"
@@ -340,12 +340,12 @@
           </div>
         </div>
 
-        <!-- 資訊 -->
+        <!-- Info -->
         <div class="flex-1 min-w-0">
           <div class="text-sm text-zinc-200 truncate">{{ goal.title }}</div>
           @if (goal.next_milestone) {
           <div class="text-xs text-zinc-500 truncate">
-            下一步：{{ goal.next_milestone }}
+            Next: {{ goal.next_milestone }}
           </div>
           }
         </div>
@@ -375,7 +375,7 @@
 
 } @else {
 
-<!-- 無資料或 API 錯誤 -->
+<!-- No data or API error -->
 <div class="mx-auto max-w-3xl px-4 py-6 sm:px-6">
   <div class="mb-8">
     <div class="flex items-center gap-3 mb-1">
@@ -397,23 +397,23 @@
       class="mx-auto mb-3 text-zinc-700"
       aria-hidden="true"
     />
-    <p class="text-sm text-zinc-300 mb-1">今天還沒有安排任務</p>
+    <p class="text-sm text-zinc-300 mb-1">No tasks planned for today</p>
     <p class="text-xs text-zinc-500 mb-4">
-      從任務清單選取要做的事，或直接捕獲新想法
+      Pick tasks from your backlog, or capture a new idea
     </p>
     <div class="flex items-center justify-center gap-3">
       <a
         routerLink="/admin/plan/tasks"
         class="inline-flex items-center gap-1.5 rounded-sm bg-zinc-800 px-4 py-2 text-sm text-zinc-300 no-underline hover:bg-zinc-700"
       >
-        瀏覽任務
+        Browse Tasks
         <lucide-icon [img]="ArrowRightIcon" [size]="14" aria-hidden="true" />
       </a>
       <a
         routerLink="/admin/inbox"
         class="inline-flex items-center gap-1.5 rounded-sm border border-zinc-800 px-4 py-2 text-sm text-zinc-400 no-underline hover:border-zinc-700 hover:text-zinc-300"
       >
-        捕獲想法
+        Capture idea
       </a>
     </div>
   </div>

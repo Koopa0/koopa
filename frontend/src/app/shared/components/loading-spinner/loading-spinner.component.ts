@@ -8,9 +8,9 @@ import { Component, ChangeDetectionStrategy, input } from '@angular/core';
       class="animate-spin rounded-full border-current border-t-transparent"
       [class]="sizeClasses()"
       role="status"
-      aria-label="載入中"
+      aria-label="Loading"
     >
-      <span class="sr-only">載入中</span>
+      <span class="sr-only">Loading</span>
     </div>
   `,
   host: { class: 'inline-flex items-center justify-center' },

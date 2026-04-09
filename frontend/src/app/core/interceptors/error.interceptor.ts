@@ -42,11 +42,14 @@ export const errorInterceptor: HttpInterceptorFn = (req, next) => {
       }
 
       if (error.status === 429) {
-        return throwError(() => new HttpErrorResponse({
-          status: 429,
-          statusText: '請求過於頻繁，請稍後再試',
-          url: error.url ?? undefined,
-        }));
+        return throwError(
+          () =>
+            new HttpErrorResponse({
+              status: 429,
+              statusText: 'Too many requests, please try again later',
+              url: error.url ?? undefined,
+            }),
+        );
       }
 
       return throwError(() => error);
@@ -102,7 +105,12 @@ function logoutAndRedirect(authService: AuthService, router: Router) {
 
 /** Validate return URL to prevent open redirect attacks */
 function sanitizeReturnUrl(url: string): string {
-  if (!url || !url.startsWith('/') || url.startsWith('//') || url.includes('://')) {
+  if (
+    !url ||
+    !url.startsWith('/') ||
+    url.startsWith('//') ||
+    url.includes('://')
+  ) {
     return '/admin';
   }
   return url;

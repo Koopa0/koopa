@@ -40,7 +40,7 @@ export class SystemHealthComponent implements OnInit {
   protected readonly health = signal<SystemHealth | null>(null);
   protected readonly isLoading = signal(true);
 
-  // Feed 衍生狀態
+  // Feed derived state
   protected readonly feedSummary = computed(() => {
     const h = this.health();
     if (!h) return null;
@@ -52,7 +52,7 @@ export class SystemHealthComponent implements OnInit {
     return Math.round((f.healthy / f.total) * 100);
   });
 
-  // Pipeline 衍生狀態
+  // Pipeline derived state
   protected readonly pipelines = computed(
     () => this.health()?.pipelines ?? null,
   );
@@ -61,7 +61,7 @@ export class SystemHealthComponent implements OnInit {
     return p !== null && p.failed === 0;
   });
 
-  // AI Budget 衍生狀態
+  // AI Budget derived state
   protected readonly aiBudget = computed(
     () => this.health()?.ai_budget ?? null,
   );
@@ -83,7 +83,7 @@ export class SystemHealthComponent implements OnInit {
     return 'text-emerald-400';
   });
 
-  // Database 衍生狀態
+  // Database derived state
   protected readonly database = computed(() => this.health()?.database ?? null);
 
   // Lucide icons
@@ -112,7 +112,7 @@ export class SystemHealthComponent implements OnInit {
         },
         error: () => {
           this.isLoading.set(false);
-          this.notificationService.error('無法載入系統狀態');
+          this.notificationService.error('Failed to load system status');
         },
       });
   }

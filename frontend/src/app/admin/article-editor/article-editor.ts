@@ -98,7 +98,9 @@ export class ArticleEditorComponent implements OnInit, HasUnsavedChanges {
 
   // ─── AI Polish ───
   protected readonly isPolishing = signal(false);
-  protected readonly polishState = signal<'idle' | 'triggered' | 'ready' | 'error'>('idle');
+  protected readonly polishState = signal<
+    'idle' | 'triggered' | 'ready' | 'error'
+  >('idle');
   protected readonly polishedBody = signal<string | null>(null);
   protected readonly originalBody = signal<string | null>(null);
 
@@ -146,7 +148,8 @@ export class ArticleEditorComponent implements OnInit, HasUnsavedChanges {
   protected readonly CheckIcon = Check;
   protected readonly RotateCcwIcon = RotateCcw;
 
-  private readonly bodyTextarea = viewChild.required<ElementRef<HTMLTextAreaElement>>('bodyTextarea');
+  private readonly bodyTextarea =
+    viewChild.required<ElementRef<HTMLTextAreaElement>>('bodyTextarea');
 
   protected get bodyControl(): FormControl<string> {
     return this.articleForm.get('body') as FormControl<string>;
@@ -172,11 +175,9 @@ export class ArticleEditorComponent implements OnInit, HasUnsavedChanges {
         }
       });
 
-    this.articleForm.valueChanges
-      .pipe(takeUntilDestroyed())
-      .subscribe(() => {
-        this.isFormDirty.set(true);
-      });
+    this.articleForm.valueChanges.pipe(takeUntilDestroyed()).subscribe(() => {
+      this.isFormDirty.set(true);
+    });
   }
 
   hasUnsavedChanges(): boolean {
@@ -304,8 +305,7 @@ Summarize your thoughts here...
     this.isSaving.set(true);
 
     const formValue = this.articleForm.value;
-    const excerpt =
-      formValue.excerpt || this.generateExcerpt(formValue.body);
+    const excerpt = formValue.excerpt || this.generateExcerpt(formValue.body);
 
     if (this.isNewArticle()) {
       const request: ApiCreateContentRequest = {
@@ -369,10 +369,7 @@ Summarize your thoughts here...
   }
 
   private generateExcerpt(body: string): string {
-    const textContent = body
-      .replace(/[#*`]/g, '')
-      .replace(/\n/g, ' ')
-      .trim();
+    const textContent = body.replace(/[#*`]/g, '').replace(/\n/g, ' ').trim();
     return textContent.length > 150
       ? textContent.substring(0, 150) + '...'
       : textContent;
@@ -422,12 +419,12 @@ Summarize your thoughts here...
       next: (result) => {
         this.articleForm.patchValue({ cover_image: result.url });
         this.isUploading.set(false);
-        this.notificationService.success('封面圖片上傳成功');
+        this.notificationService.success('Cover image uploaded successfully');
         input.value = '';
       },
       error: () => {
         this.isUploading.set(false);
-        this.notificationService.error('圖片上傳失敗');
+        this.notificationService.error('Image upload failed');
         input.value = '';
       },
     });
@@ -437,7 +434,11 @@ Summarize your thoughts here...
     this.articleForm.patchValue({ cover_image: '' });
   }
 
-  protected insertFormatting(prefix: string, suffix: string, placeholder: string): void {
+  protected insertFormatting(
+    prefix: string,
+    suffix: string,
+    placeholder: string,
+  ): void {
     const textarea = this.bodyTextarea().nativeElement;
 
     const start = textarea.selectionStart;
@@ -446,7 +447,12 @@ Summarize your thoughts here...
     const selected = text.substring(start, end);
 
     const insertion = selected || placeholder;
-    const newText = text.substring(0, start) + prefix + insertion + suffix + text.substring(end);
+    const newText =
+      text.substring(0, start) +
+      prefix +
+      insertion +
+      suffix +
+      text.substring(end);
 
     this.articleForm.patchValue({ body: newText });
     this.updatePreview(newText);
@@ -456,9 +462,7 @@ Summarize your thoughts here...
       const cursorPos = selected
         ? start + prefix.length + selected.length + suffix.length
         : start + prefix.length;
-      const selEnd = selected
-        ? cursorPos
-        : cursorPos + placeholder.length;
+      const selEnd = selected ? cursorPos : cursorPos + placeholder.length;
       textarea.setSelectionRange(cursorPos, selected ? cursorPos : selEnd);
     }, 0);
   }
@@ -488,7 +492,9 @@ Summarize your thoughts here...
   protected triggerPolish(): void {
     const contentId = this.articleId;
     if (!contentId || this.isNewArticle()) {
-      this.notificationService.error('請先儲存文章再使用 AI 潤稿');
+      this.notificationService.error(
+        'Please save the article before using AI polish',
+      );
       return;
     }
 
@@ -497,13 +503,13 @@ Summarize your thoughts here...
 
     this.flowPolishService.triggerPolish(contentId).subscribe({
       next: () => {
-        this.notificationService.success('AI 潤稿已觸發，正在處理...');
+        this.notificationService.success('AI polish triggered, processing...');
         this.pollPolishResult(contentId);
       },
       error: () => {
         this.isPolishing.set(false);
         this.polishState.set('error');
-        this.notificationService.error('觸發 AI 潤稿失敗');
+        this.notificationService.error('Failed to trigger AI polish');
       },
     });
   }
@@ -519,7 +525,9 @@ Summarize your thoughts here...
           this.polishedBody.set(result.polished_body);
           this.polishState.set('ready');
           this.isPolishing.set(false);
-          this.notificationService.success('AI 潤稿完成，請檢視結果');
+          this.notificationService.success(
+            'AI polish complete, please review the result',
+          );
         },
         error: () => {
           if (attempt < maxAttempts) {
@@ -527,7 +535,9 @@ Summarize your thoughts here...
           } else {
             this.isPolishing.set(false);
             this.polishState.set('error');
-            this.notificationService.error('AI 潤稿超時，請稍後重試');
+            this.notificationService.error(
+              'AI polish timed out, please try again later',
+            );
           }
         },
       });
@@ -546,7 +556,7 @@ Summarize your thoughts here...
     this.polishState.set('idle');
     this.polishedBody.set(null);
     this.originalBody.set(null);
-    this.notificationService.success('已套用潤稿結果');
+    this.notificationService.success('Polish result applied');
   }
 
   protected approvePolish(): void {
@@ -558,9 +568,9 @@ Summarize your thoughts here...
     this.flowPolishService.approve(contentId).subscribe({
       next: () => {
         this.applyPolish();
-        this.notificationService.success('潤稿已核准並儲存至後端');
+        this.notificationService.success('Polish approved and saved');
       },
-      error: () => this.notificationService.error('核准失敗'),
+      error: () => this.notificationService.error('Approval failed'),
     });
   }
 

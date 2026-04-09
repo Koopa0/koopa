@@ -7,15 +7,17 @@
   <div
     class="size-6 animate-spin rounded-full border-2 border-zinc-700 border-t-zinc-300"
   ></div>
-  <span class="sr-only">載入中...</span>
+  <span class="sr-only">Loading...</span>
 </div>
 } @else {
 
 <div data-testid="journal-content" class="mx-auto max-w-3xl px-4 py-6 sm:px-6">
   <!-- Header -->
   <div class="mb-6">
-    <h1 class="text-lg font-semibold text-zinc-100">日誌時間線</h1>
-    <p class="mt-1 text-sm text-zinc-500">計劃、反思、脈絡記錄</p>
+    <h1 class="text-lg font-semibold text-zinc-100">Journal Timeline</h1>
+    <p class="mt-1 text-sm text-zinc-500">
+      Plans, reflections, context records
+    </p>
   </div>
 
   <!-- Quick Compose -->
@@ -42,9 +44,9 @@
       data-testid="journal-compose-input"
       [value]="composeBody()"
       (input)="onComposeInput($event)"
-      placeholder="寫下想法..."
+      placeholder="Write your thoughts..."
       rows="2"
-      aria-label="撰寫日誌"
+      aria-label="Write journal"
       class="w-full resize-none rounded-sm border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-zinc-200 placeholder:text-zinc-600 focus:border-zinc-600 focus:outline-hidden"
     ></textarea>
     <div class="mt-2 flex justify-end">
@@ -55,7 +57,7 @@
         [disabled]="!composeBody().trim()"
         class="rounded-sm bg-zinc-700 px-4 py-1.5 text-xs font-medium text-zinc-200 transition-colors hover:bg-zinc-600 disabled:opacity-40 disabled:cursor-not-allowed"
       >
-        儲存
+        Save
       </button>
     </div>
   </div>
@@ -89,7 +91,7 @@
       class="mx-auto mb-2 text-zinc-700"
       aria-hidden="true"
     />
-    <p class="text-sm text-zinc-500">沒有日誌記錄</p>
+    <p class="text-sm text-zinc-500">No journal entries</p>
   </div>
   } @else {
   <div class="space-y-2">

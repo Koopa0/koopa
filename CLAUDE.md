@@ -184,8 +184,8 @@ go build ./... && go vet ./... && golangci-lint run ./... && go test ./...
 | Koopa | Go API、AI Pipeline、Obsidian 整合、資料收集 |
 | Claude Code | Angular 前端、API 對接、Admin UI、設計調整 |
 
-## 語言規範
+## Language Convention
 
-- 文件和 UI 文字：繁體中文
-- 程式碼（變數、函式）：English
-- Git commits：English (Conventional Commits)
+- All text (UI, comments, documentation): English
+- Code (variables, functions): English
+- Git commits: English (Conventional Commits)

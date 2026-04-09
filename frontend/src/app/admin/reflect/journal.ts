@@ -49,11 +49,11 @@ export class JournalComponent implements OnInit {
   });
 
   protected readonly filterTabs: { key: JournalFilter; label: string }[] = [
-    { key: 'all', label: '全部' },
-    { key: 'plan', label: '計劃' },
-    { key: 'reflection', label: '反思' },
-    { key: 'context', label: '脈絡' },
-    { key: 'metrics', label: '指標' },
+    { key: 'all', label: 'All' },
+    { key: 'plan', label: 'Plan' },
+    { key: 'reflection', label: 'Reflection' },
+    { key: 'context', label: 'Context' },
+    { key: 'metrics', label: 'Metrics' },
   ];
 
   protected readonly KIND_CLASSES: Record<string, string> = {
@@ -64,10 +64,10 @@ export class JournalComponent implements OnInit {
   };
 
   protected readonly KIND_LABELS: Record<string, string> = {
-    plan: '計劃',
-    reflection: '反思',
-    context: '脈絡',
-    metrics: '指標',
+    plan: 'Plan',
+    reflection: 'Reflection',
+    context: 'Context',
+    metrics: 'Metrics',
   };
 
   // Lucide icons
@@ -93,7 +93,7 @@ export class JournalComponent implements OnInit {
         },
         error: () => {
           this.isLoading.set(false);
-          this.notificationService.error('無法載入日誌');
+          this.notificationService.error('Failed to load journal');
         },
       });
   }
@@ -124,9 +124,9 @@ export class JournalComponent implements OnInit {
             ...list,
           ]);
           this.composeBody.set('');
-          this.notificationService.success('日誌已儲存');
+          this.notificationService.success('Journal saved');
         },
-        error: () => this.notificationService.error('儲存失敗'),
+        error: () => this.notificationService.error('Failed to save'),
       });
   }
 

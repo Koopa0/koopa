@@ -14,7 +14,7 @@ import { LucideAngularModule, ArrowLeft, FlaskConical } from 'lucide-angular';
         data-testid="back-to-dashboard"
       >
         <lucide-icon [img]="ArrowLeftIcon" [size]="14" />
-        返回學習儀表板
+        Back to Learning Dashboard
       </a>
 
       <div
@@ -26,11 +26,12 @@ import { LucideAngularModule, ArrowLeft, FlaskConical } from 'lucide-angular';
           class="mb-4 text-zinc-600"
         />
         <h1 class="text-lg font-semibold text-zinc-300 mb-2">
-          Session Workspace — 建設中
+          Session Workspace — Under Construction
         </h1>
         <p class="max-w-md text-sm text-zinc-500">
-          練習工作區將支援即時記錄解題嘗試（attempts）、追蹤觀察紀錄（observations），
-          並在 session 結束時自動生成學習摘要。
+          The session workspace will support real-time recording of
+          problem-solving attempts, tracking observations, and automatically
+          generating learning summaries when the session ends.
         </p>
       </div>
     </div>

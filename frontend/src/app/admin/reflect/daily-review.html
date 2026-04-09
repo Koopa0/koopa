@@ -7,7 +7,7 @@
   <div
     class="size-6 animate-spin rounded-full border-2 border-zinc-700 border-t-zinc-300"
   ></div>
-  <span class="sr-only">載入中...</span>
+  <span class="sr-only">Loading...</span>
 </div>
 } @else if (context(); as ctx) {
 
@@ -17,7 +17,7 @@
 >
   <!-- Header -->
   <div class="mb-8">
-    <h1 class="text-lg font-semibold text-zinc-100">每日回顧</h1>
+    <h1 class="text-lg font-semibold text-zinc-100">Daily Review</h1>
     <p class="mt-1 text-sm text-zinc-500">{{ ctx.date }}</p>
   </div>
 
@@ -27,12 +27,12 @@
     <h2
       class="mb-3 text-xs font-semibold tracking-wider text-zinc-500 uppercase"
     >
-      計劃 vs 實際
+      Planned vs Actual
     </h2>
     <div class="rounded-sm border border-zinc-800 bg-zinc-900/50 px-4 py-3">
       <p class="text-sm text-zinc-200">{{ summaryLine() }}</p>
 
-      <!-- 進度條 -->
+      <!-- Progress bar -->
       <div class="mt-3 flex h-2 overflow-hidden rounded-full bg-zinc-800">
         @if (pva.completed > 0) {
         <div
@@ -55,15 +55,15 @@
       <div class="mt-2 flex gap-4 text-xs text-zinc-500">
         <span class="flex items-center gap-1">
           <span class="inline-block size-2 rounded-full bg-emerald-500"></span>
-          完成
+          Done
         </span>
         <span class="flex items-center gap-1">
           <span class="inline-block size-2 rounded-full bg-amber-500"></span>
-          延遲
+          Deferred
         </span>
         <span class="flex items-center gap-1">
           <span class="inline-block size-2 rounded-full bg-red-500"></span>
-          放棄
+          Dropped
         </span>
       </div>
     </div>
@@ -76,7 +76,7 @@
     <h2
       class="mb-3 text-xs font-semibold tracking-wider text-zinc-500 uppercase"
     >
-      已完成任務
+      Completed Tasks
     </h2>
     <div class="space-y-1.5">
       @for (task of completedTasks(); track task.id) {
@@ -110,7 +110,7 @@
     <h2
       class="mb-3 text-xs font-semibold tracking-wider text-zinc-500 uppercase"
     >
-      學習練習
+      Learning Practice
     </h2>
     <div class="space-y-1.5">
       @for (session of learningSessions(); track session.id) {
@@ -127,7 +127,7 @@
           <div class="min-w-0">
             <p class="text-sm text-zinc-200 truncate">{{ session.domain }}</p>
             <p class="text-xs text-zinc-500">
-              {{ session.solved_count }}/{{ session.attempts_count }} 解決
+              {{ session.solved_count }}/{{ session.attempts_count }} solved
             </p>
           </div>
         </div>
@@ -147,7 +147,7 @@
     <h2
       class="mb-3 text-xs font-semibold tracking-wider text-zinc-500 uppercase"
     >
-      內容變動
+      Content Changes
     </h2>
     <div class="space-y-1.5">
       @for (change of contentChanges(); track change.title) {
@@ -199,16 +199,20 @@
     >
       <div class="flex items-center gap-2 text-xs text-zinc-500 mb-1">
         <lucide-icon [img]="InboxIcon" [size]="14" aria-hidden="true" />
-        Inbox 變化
+        Inbox Changes
       </div>
       <div class="flex items-center gap-3">
-        <span class="text-sm text-zinc-400">+{{ delta.captured }} 捕獲</span>
-        <span class="text-sm text-zinc-400">-{{ delta.clarified }} 澄清</span>
+        <span class="text-sm text-zinc-400"
+          >+{{ delta.captured }} captured</span
+        >
+        <span class="text-sm text-zinc-400"
+          >-{{ delta.clarified }} clarified</span
+        >
         <span
           class="text-sm font-medium"
           [class]="delta.net > 0 ? 'text-amber-400' : delta.net < 0 ? 'text-emerald-400' : 'text-zinc-400'"
         >
-          淨 {{ delta.net >= 0 ? '+' : '' }}{{ delta.net }}
+          Net {{ delta.net >= 0 ? '+' : '' }}{{ delta.net }}
         </span>
       </div>
     </div>
@@ -220,17 +224,17 @@
     <h2
       class="mb-3 text-xs font-semibold tracking-wider text-zinc-500 uppercase"
     >
-      今日反思
+      Today's Reflection
     </h2>
     <div class="rounded-sm border border-zinc-800 bg-zinc-900/50 p-4">
       <textarea
         data-testid="reflection-textarea"
         [value]="journalText()"
         (input)="updateJournalText($event)"
-        placeholder="今天的收穫、感受、決定..."
+        placeholder="Today's takeaways, feelings, decisions..."
         rows="4"
         class="w-full resize-none rounded-sm border border-zinc-700 bg-zinc-800/50 px-3 py-2 text-sm text-zinc-200 placeholder-zinc-600 outline-hidden focus:border-zinc-500 focus:ring-1 focus:ring-zinc-500"
-        aria-label="反思內容"
+        aria-label="Reflection content"
       ></textarea>
       <div class="mt-3 flex justify-end">
         <button
@@ -239,10 +243,10 @@
           (click)="saveReflection()"
           [disabled]="!journalText().trim() || isSaving()"
           class="inline-flex items-center gap-1.5 rounded-sm bg-zinc-700 px-3 py-1.5 text-sm font-medium text-zinc-200 transition-colors hover:bg-zinc-600 disabled:cursor-not-allowed disabled:opacity-40"
-          aria-label="儲存反思"
+          aria-label="Save reflection"
         >
           <lucide-icon [img]="SendIcon" [size]="14" aria-hidden="true" />
-          @if (isSaving()) { 儲存中... } @else { 儲存反思 }
+          @if (isSaving()) { Saving... } @else { Save Reflection }
         </button>
       </div>
     </div>
@@ -255,7 +259,7 @@
   <div
     class="rounded-sm border border-dashed border-zinc-800 px-6 py-12 text-center"
   >
-    <p class="text-sm text-zinc-400">無法載入每日回顧</p>
+    <p class="text-sm text-zinc-400">Failed to load daily review</p>
   </div>
 </div>
 

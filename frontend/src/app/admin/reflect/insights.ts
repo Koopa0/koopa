@@ -45,10 +45,10 @@ export class InsightsComponent implements OnInit {
   });
 
   protected readonly filterTabs: { key: InsightFilter; label: string }[] = [
-    { key: 'all', label: '全部' },
-    { key: 'unverified', label: '未驗證' },
-    { key: 'verified', label: '已驗證' },
-    { key: 'invalidated', label: '已否定' },
+    { key: 'all', label: 'All' },
+    { key: 'unverified', label: 'Unverified' },
+    { key: 'verified', label: 'Verified' },
+    { key: 'invalidated', label: 'Invalidated' },
   ];
 
   // Lucide icons
@@ -74,7 +74,7 @@ export class InsightsComponent implements OnInit {
         },
         error: () => {
           this.isLoading.set(false);
-          this.notificationService.error('無法載入洞察');
+          this.notificationService.error('Failed to load insights');
         },
       });
   }
@@ -95,10 +95,10 @@ export class InsightsComponent implements OnInit {
 
   protected getStatusLabel(status: string): string {
     const labels: Record<string, string> = {
-      unverified: '未驗證',
-      verified: '已驗證',
-      invalidated: '已否定',
-      archived: '已封存',
+      unverified: 'Unverified',
+      verified: 'Verified',
+      invalidated: 'Invalidated',
+      archived: 'Archived',
     };
     return labels[status] ?? status;
   }

@@ -95,7 +95,7 @@ export class MarkdownService {
     html = this.highlightCode(html);
 
     // Sanitize HTML to prevent XSS attacks
-    // SSR 端跳過：dompurify 需要瀏覽器 DOM，內容來自自有後端可信任，hydration 後瀏覽器端會重新 sanitize
+    // Skip on SSR: DOMPurify requires browser DOM; content from own backend is trusted; browser-side will re-sanitize after hydration
     if (this.isBrowser) {
       html = DOMPurify.sanitize(html, PURIFY_CONFIG) as string;
     }

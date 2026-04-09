@@ -48,7 +48,7 @@ export class GoalDetailComponent implements OnInit {
   protected readonly isLoading = signal(true);
   protected readonly isDescriptionExpanded = signal(false);
 
-  // 衍生狀態
+  // Derived state
   protected readonly milestones = computed(() => {
     const g = this.goal();
     if (!g) return [];
@@ -89,12 +89,12 @@ export class GoalDetailComponent implements OnInit {
     return desc.slice(0, 120) + '...';
   });
 
-  // 常量映射
+  // Constant mappings
   protected readonly STATUS_LABELS: Record<string, string> = {
-    'not-started': '未開始',
-    'in-progress': '進行中',
-    done: '已完成',
-    abandoned: '已放棄',
+    'not-started': 'Not Started',
+    'in-progress': 'In Progress',
+    done: 'Done',
+    abandoned: 'Abandoned',
   };
 
   protected readonly STATUS_CLASSES: Record<string, string> = {
@@ -105,9 +105,9 @@ export class GoalDetailComponent implements OnInit {
   };
 
   protected readonly HEALTH_LABELS: Record<string, string> = {
-    'on-track': '正常',
-    'at-risk': '有風險',
-    stalled: '停滯',
+    'on-track': 'On Track',
+    'at-risk': 'At Risk',
+    stalled: 'Stalled',
   };
 
   protected readonly HEALTH_CLASSES: Record<string, string> = {
@@ -117,10 +117,10 @@ export class GoalDetailComponent implements OnInit {
   };
 
   protected readonly PROJECT_STATUS_LABELS: Record<string, string> = {
-    'in-progress': '進行中',
-    'on-hold': '暫停',
-    done: '已完成',
-    'not-started': '未開始',
+    'in-progress': 'In Progress',
+    'on-hold': 'On Hold',
+    done: 'Done',
+    'not-started': 'Not Started',
   };
 
   protected readonly PROJECT_STATUS_CLASSES: Record<string, string> = {
@@ -167,7 +167,7 @@ export class GoalDetailComponent implements OnInit {
         },
         error: () => {
           this.isLoading.set(false);
-          this.notificationService.error('無法載入目標詳情');
+          this.notificationService.error('Failed to load goal details');
         },
       });
   }
@@ -186,9 +186,9 @@ export class GoalDetailComponent implements OnInit {
 
   protected getDeadlineLabel(days: number | null): string {
     if (days === null) return '';
-    if (days < 0) return `已逾期 ${Math.abs(days)} 天`;
-    if (days === 0) return '今天到期';
-    return `剩餘 ${days} 天`;
+    if (days < 0) return `Overdue by ${Math.abs(days)} days`;
+    if (days === 0) return 'Due today';
+    return `${days} days remaining`;
   }
 
   protected getProjectProgress(total: number, done: number): number {

@@ -13,14 +13,22 @@ describe('HomeComponent', () => {
   let seoService: SeoService;
 
   beforeEach(async () => {
-    // @defer (on viewport) 需要 IntersectionObserver，jsdom 沒有
+    // @defer (on viewport) requires IntersectionObserver, which jsdom lacks
     if (!globalThis.IntersectionObserver) {
       globalThis.IntersectionObserver = class IntersectionObserver {
         constructor(private callback: IntersectionObserverCallback) {}
-        observe(): void { /* noop */ }
-        unobserve(): void { /* noop */ }
-        disconnect(): void { /* noop */ }
-        takeRecords(): IntersectionObserverEntry[] { return []; }
+        observe(): void {
+          /* noop */
+        }
+        unobserve(): void {
+          /* noop */
+        }
+        disconnect(): void {
+          /* noop */
+        }
+        takeRecords(): IntersectionObserverEntry[] {
+          return [];
+        }
         readonly root = null;
         readonly rootMargin = '';
         readonly thresholds: readonly number[] = [];

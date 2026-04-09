@@ -9,19 +9,15 @@ import {
 import { isPlatformBrowser } from '@angular/common';
 import { HttpClient } from '@angular/common/http';
 import { Router, ActivatedRoute, RouterLink } from '@angular/router';
-import {
-  LucideAngularModule,
-  AlertCircle,
-  Home,
-  Info,
-} from 'lucide-angular';
+import { LucideAngularModule, AlertCircle, Home, Info } from 'lucide-angular';
 import { AuthService } from '../../core/services/auth.service';
 import { SeoService } from '../../core/services/seo/seo.service';
 
 const ERROR_MESSAGES: Record<string, string> = {
-  unauthorized: '此 Google 帳號無權限存取管理後台',
-  missing_tokens: '登入失敗，請重試',
-  oauth_failed: 'Google 登入失敗，請重試',
+  unauthorized:
+    'This Google account is not authorized to access the admin panel',
+  missing_tokens: 'Login failed. Please try again',
+  oauth_failed: 'Google login failed. Please try again',
 };
 
 @Component({
@@ -59,7 +55,9 @@ export class LoginComponent implements OnInit {
 
     const error = this.route.snapshot.queryParams['error'];
     if (error) {
-      this.errorMessage.set(ERROR_MESSAGES[error] ?? '登入時發生錯誤');
+      this.errorMessage.set(
+        ERROR_MESSAGES[error] ?? 'An error occurred during login',
+      );
     }
   }
 
@@ -68,19 +66,23 @@ export class LoginComponent implements OnInit {
       return;
     }
 
-    this.http
-      .get<{ data: { url: string } }>('/bff/api/auth/google')
-      .subscribe({
-        next: (res) => {
-          const redirectUrl = new URL(res.data.url);
-          const allowedOrigins = ['https://accounts.google.com', 'https://github.com'];
-          if (allowedOrigins.some(origin => redirectUrl.origin === origin)) {
-            window.location.href = res.data.url;
-          } else {
-            this.errorMessage.set('Invalid redirect URL');
-          }
-        },
-        error: () => this.errorMessage.set('無法取得登入連結，請稍後再試'),
-      });
+    this.http.get<{ data: { url: string } }>('/bff/api/auth/google').subscribe({
+      next: (res) => {
+        const redirectUrl = new URL(res.data.url);
+        const allowedOrigins = [
+          'https://accounts.google.com',
+          'https://github.com',
+        ];
+        if (allowedOrigins.some((origin) => redirectUrl.origin === origin)) {
+          window.location.href = res.data.url;
+        } else {
+          this.errorMessage.set('Invalid redirect URL');
+        }
+      },
+      error: () =>
+        this.errorMessage.set(
+          'Unable to get login link. Please try again later',
+        ),
+    });
   }
 }

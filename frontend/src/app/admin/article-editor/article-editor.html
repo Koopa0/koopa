@@ -22,26 +22,25 @@
         <lucide-icon [img]="ArrowLeftIcon" [size]="18" />
       </button>
       <h1 class="text-base font-semibold text-zinc-200">
-        {{ isNewArticle() ? 'New' : 'Edit' }} {{ contentType() === 'essay' ? 'Essay' : 'Article' }}
+        {{ isNewArticle() ? 'New' : 'Edit' }} {{ contentType() === 'essay' ?
+        'Essay' : 'Article' }}
       </h1>
     </div>
 
     <div class="flex items-center gap-2">
       @if (!isNewArticle()) {
-        <button
-          type="button"
-          class="inline-flex items-center gap-1.5 rounded-xs border border-violet-700 px-3 py-1.5 text-sm text-violet-300 transition-colors hover:border-violet-500 hover:bg-violet-900/30 disabled:opacity-50"
-          (click)="triggerPolish()"
-          [disabled]="isPolishing() || isSaving() || polishState() === 'ready'"
-        >
-          @if (isPolishing()) {
-            <lucide-icon [img]="Loader2Icon" [size]="14" class="animate-spin" />
-            AI 潤稿中...
-          } @else {
-            <lucide-icon [img]="SparklesIcon" [size]="14" />
-            AI 潤稿
-          }
-        </button>
+      <button
+        type="button"
+        class="inline-flex items-center gap-1.5 rounded-xs border border-violet-700 px-3 py-1.5 text-sm text-violet-300 transition-colors hover:border-violet-500 hover:bg-violet-900/30 disabled:opacity-50"
+        (click)="triggerPolish()"
+        [disabled]="isPolishing() || isSaving() || polishState() === 'ready'"
+      >
+        @if (isPolishing()) {
+        <lucide-icon [img]="Loader2Icon" [size]="14" class="animate-spin" />
+        AI polishing... } @else {
+        <lucide-icon [img]="SparklesIcon" [size]="14" />
+        AI Polish }
+      </button>
       }
       <button
         type="button"
@@ -72,42 +71,48 @@
 
 <!-- AI Polish Result Banner -->
 @if (polishState() === 'ready') {
-  <section class="border-b border-violet-800 bg-violet-950/30">
-    <div class="mx-auto max-w-7xl px-4 py-4 sm:px-6 lg:px-8">
-      <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div class="flex items-center gap-2">
-          <lucide-icon [img]="SparklesIcon" [size]="18" class="text-violet-400" />
-          <span class="text-sm font-medium text-violet-200">AI 潤稿結果已就緒</span>
-          <span class="text-xs text-violet-400">請檢視差異後決定套用或捨棄</span>
-        </div>
-        <div class="flex items-center gap-2">
-          <button
-            type="button"
-            class="inline-flex items-center gap-1.5 rounded-xs border border-emerald-700 bg-emerald-900/30 px-3 py-1.5 text-sm text-emerald-400 transition-colors hover:bg-emerald-900/50"
-            (click)="approvePolish()"
-          >
-            <lucide-icon [img]="CheckIcon" [size]="14" />
-            核准並儲存
-          </button>
-          <button
-            type="button"
-            class="inline-flex items-center gap-1.5 rounded-xs border border-zinc-700 px-3 py-1.5 text-sm text-zinc-300 transition-colors hover:bg-zinc-800"
-            (click)="applyPolish()"
-          >
-            僅套用到編輯器
-          </button>
-          <button
-            type="button"
-            class="inline-flex items-center gap-1.5 rounded-xs border border-red-800 px-3 py-1.5 text-sm text-red-400 transition-colors hover:bg-red-900/30"
-            (click)="discardPolish()"
-          >
-            <lucide-icon [img]="RotateCcwIcon" [size]="14" />
-            捨棄
-          </button>
-        </div>
+<section class="border-b border-violet-800 bg-violet-950/30">
+  <div class="mx-auto max-w-7xl px-4 py-4 sm:px-6 lg:px-8">
+    <div
+      class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
+    >
+      <div class="flex items-center gap-2">
+        <lucide-icon [img]="SparklesIcon" [size]="18" class="text-violet-400" />
+        <span class="text-sm font-medium text-violet-200"
+          >AI polish result ready</span
+        >
+        <span class="text-xs text-violet-400"
+          >Review the diff and decide to apply or discard</span
+        >
+      </div>
+      <div class="flex items-center gap-2">
+        <button
+          type="button"
+          class="inline-flex items-center gap-1.5 rounded-xs border border-emerald-700 bg-emerald-900/30 px-3 py-1.5 text-sm text-emerald-400 transition-colors hover:bg-emerald-900/50"
+          (click)="approvePolish()"
+        >
+          <lucide-icon [img]="CheckIcon" [size]="14" />
+          Approve & Save
+        </button>
+        <button
+          type="button"
+          class="inline-flex items-center gap-1.5 rounded-xs border border-zinc-700 px-3 py-1.5 text-sm text-zinc-300 transition-colors hover:bg-zinc-800"
+          (click)="applyPolish()"
+        >
+          Apply to editor only
+        </button>
+        <button
+          type="button"
+          class="inline-flex items-center gap-1.5 rounded-xs border border-red-800 px-3 py-1.5 text-sm text-red-400 transition-colors hover:bg-red-900/30"
+          (click)="discardPolish()"
+        >
+          <lucide-icon [img]="RotateCcwIcon" [size]="14" />
+          Discard
+        </button>
       </div>
     </div>
-  </section>
+  </div>
+</section>
 }
 
 <section class="bg-zinc-950">
@@ -126,7 +131,9 @@
           <form [formGroup]="articleForm" class="space-y-4">
             <!-- Title -->
             <div>
-              <label for="article-title" class="mb-1 block text-xs font-medium text-zinc-400"
+              <label
+                for="article-title"
+                class="mb-1 block text-xs font-medium text-zinc-400"
                 >Title</label
               >
               <input
@@ -145,7 +152,9 @@
 
             <!-- Slug -->
             <div>
-              <label for="article-slug" class="mb-1 block text-xs font-medium text-zinc-400"
+              <label
+                for="article-slug"
+                class="mb-1 block text-xs font-medium text-zinc-400"
                 >Slug</label
               >
               <input
@@ -164,7 +173,9 @@
 
             <!-- Excerpt -->
             <div>
-              <label for="article-excerpt" class="mb-1 block text-xs font-medium text-zinc-400"
+              <label
+                for="article-excerpt"
+                class="mb-1 block text-xs font-medium text-zinc-400"
                 >Excerpt</label
               >
               <textarea
@@ -191,7 +202,9 @@
             <!-- Content Type -->
             @if (isNewArticle()) {
             <div>
-              <label for="content-type" class="mb-1 block text-xs font-medium text-zinc-400"
+              <label
+                for="content-type"
+                class="mb-1 block text-xs font-medium text-zinc-400"
                 >Type</label
               >
               <select
@@ -209,7 +222,9 @@
 
             <!-- Status -->
             <div>
-              <label for="article-status" class="mb-1 block text-xs font-medium text-zinc-400"
+              <label
+                for="article-status"
+                class="mb-1 block text-xs font-medium text-zinc-400"
                 >Status</label
               >
               <select
@@ -225,7 +240,9 @@
 
             <!-- Cover Image -->
             <div>
-              <label for="article-cover-image" class="mb-1 block text-xs font-medium text-zinc-400"
+              <label
+                for="article-cover-image"
+                class="mb-1 block text-xs font-medium text-zinc-400"
                 >Cover Image</label
               >
               @if (articleForm.get('cover_image')?.value) {
@@ -241,8 +258,8 @@
                   type="button"
                   class="absolute right-1.5 top-1.5 rounded-xs bg-zinc-900/80 p-1 text-zinc-400 transition-colors hover:bg-zinc-900 hover:text-red-400"
                   (click)="removeCoverImage()"
-                  title="移除封面圖片"
-                  aria-label="移除封面圖片"
+                  title="Remove cover image"
+                  aria-label="Remove cover image"
                 >
                   <lucide-icon [img]="Trash2Icon" [size]="14" />
                 </button>
@@ -254,12 +271,15 @@
                 [class.opacity-50]="isUploading()"
               >
                 @if (isUploading()) {
-                <lucide-icon [img]="Loader2Icon" [size]="16" class="animate-spin" />
-                上傳中...
-                } @else {
+                <lucide-icon
+                  [img]="Loader2Icon"
+                  [size]="16"
+                  class="animate-spin"
+                />
+                Uploading... } @else {
                 <lucide-icon [img]="UploadIcon" [size]="16" />
-                {{ articleForm.get('cover_image')?.value ? '更換圖片' : '上傳封面圖片' }}
-                }
+                {{ articleForm.get('cover_image')?.value ? 'Replace image' :
+                'Upload cover image' }} }
                 <input
                   id="article-cover-image"
                   type="file"
@@ -269,7 +289,7 @@
                 />
               </label>
               <p class="mt-1 text-xs text-zinc-600">
-                JPEG、PNG、WebP、GIF，最大 5MB
+                JPEG, PNG, WebP, GIF, max 5MB
               </p>
             </div>
 
@@ -282,7 +302,9 @@
               <!-- Selected Tags -->
               <div class="mb-2 flex flex-wrap gap-1.5">
                 @if (selectedTags.length === 0) {
-                <span class="text-xs text-zinc-600">Click tags below to add</span>
+                <span class="text-xs text-zinc-600"
+                  >Click tags below to add</span
+                >
                 } @else { @for (tag of selectedTags; track tag) {
                 <span
                   class="inline-flex items-center gap-1 rounded-full border border-zinc-600 bg-zinc-700 px-2 py-0.5 text-xs text-zinc-200"
@@ -301,7 +323,9 @@
 
               <!-- Available Tags -->
               <div>
-                <span class="mb-1.5 block text-xs text-zinc-600">Available tags</span>
+                <span class="mb-1.5 block text-xs text-zinc-600"
+                  >Available tags</span
+                >
                 <div class="flex flex-wrap gap-1.5">
                   @for (tag of availableTags; track tag) { @if
                   (!selectedTags.includes(tag)) {

@@ -79,7 +79,7 @@ This is an Angular 21 project specification and starter template using modern be
 
 ## Language
 
-- Documentation and comments: 繁體中文 (zh-TW)
+- Documentation and comments: English
 - Code (variables, functions, classes): English
 - Git commit messages: English (Conventional Commits)
 

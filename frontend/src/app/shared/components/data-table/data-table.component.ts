@@ -4,12 +4,12 @@ import { EmptyStateComponent } from '../empty-state/empty-state.component';
 import { FileText } from 'lucide-angular';
 
 /**
- * 通用表格容器：處理 loading/empty/error 狀態和外框樣式。
- * 表格內容（thead + tbody）透過 ng-content 投影。
+ * Generic table container: handles loading/empty/error states and frame styles.
+ * Table content (thead + tbody) is projected via ng-content.
  *
- * 用法：
+ * Usage:
  * ```html
- * <app-data-table [isLoading]="loading()" [isEmpty]="items().length === 0" emptyTitle="尚無資料">
+ * <app-data-table [isLoading]="loading()" [isEmpty]="items().length === 0" emptyTitle="No data">
  *   <table class="w-full">
  *     <thead>...</thead>
  *     <tbody>...</tbody>
@@ -57,7 +57,7 @@ export class DataTableComponent {
   readonly isLoading = input(false);
   readonly isEmpty = input(false);
   readonly error = input('');
-  readonly emptyTitle = input('尚無資料');
+  readonly emptyTitle = input('No data');
   readonly emptyDescription = input('');
   readonly emptyIcon = input(FileText);
 }

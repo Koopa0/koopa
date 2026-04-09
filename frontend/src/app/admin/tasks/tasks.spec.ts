@@ -124,7 +124,7 @@ describe('TasksComponent', () => {
   });
 
   it('should filter tasks by search query', () => {
-    // 先切到 all
+    // Switch to all tab first
     fixture.debugElement
       .query(By.css('[data-testid="tab-all"]'))
       .nativeElement.click();
@@ -158,7 +158,7 @@ describe('TasksComponent', () => {
   });
 
   it('should call advanceTask with complete when complete button clicked', () => {
-    // 切到 in-progress tab
+    // Switch to in-progress tab
     fixture.debugElement
       .query(By.css('[data-testid="tab-in-progress"]'))
       .nativeElement.click();
@@ -189,13 +189,13 @@ describe('TasksComponent', () => {
   });
 
   it('should show empty state when no tasks match filter', () => {
-    // 切到 someday
+    // Switch to someday tab
     fixture.debugElement
       .query(By.css('[data-testid="tab-someday"]'))
       .nativeElement.click();
     fixture.detectChanges();
 
-    // 搜尋不存在的東西
+    // Search for something that does not exist
     const searchInput = fixture.debugElement.query(
       By.css('[data-testid="task-search"]'),
     );
