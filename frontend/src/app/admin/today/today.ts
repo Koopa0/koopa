@@ -93,20 +93,20 @@ export class TodayComponent implements OnInit {
   );
 
   // Constant maps — avoid method calls in template @for loops
-  protected readonly ENERGY_LABELS: Record<string, string> = {
+  protected readonly ENERGY_LABELS: Record<string, string | undefined> = {
     high: 'H',
     medium: 'M',
     low: 'L',
   };
 
-  protected readonly ENERGY_COLORS: Record<string, string> = {
+  protected readonly ENERGY_COLORS: Record<string, string | undefined> = {
     high: 'text-red-400',
     medium: 'text-amber-400',
     low: 'text-emerald-400',
   };
 
   // Full class strings — Tailwind JIT cannot parse dynamically concatenated classes
-  protected readonly AREA_CLASSES: Record<string, string> = {
+  protected readonly AREA_CLASSES: Record<string, string | undefined> = {
     backend: 'bg-violet-900/40 text-violet-400',
     learning: 'bg-sky-900/40 text-sky-400',
     studio: 'bg-amber-900/40 text-amber-400',

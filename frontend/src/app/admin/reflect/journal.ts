@@ -56,14 +56,14 @@ export class JournalComponent implements OnInit {
     { key: 'metrics', label: 'Metrics' },
   ];
 
-  protected readonly KIND_CLASSES: Record<string, string> = {
+  protected readonly KIND_CLASSES: Record<string, string | undefined> = {
     plan: 'bg-sky-900/40 text-sky-400',
     reflection: 'bg-violet-900/40 text-violet-400',
     context: 'bg-amber-900/40 text-amber-400',
     metrics: 'bg-emerald-900/40 text-emerald-400',
   };
 
-  protected readonly KIND_LABELS: Record<string, string> = {
+  protected readonly KIND_LABELS: Record<string, string | undefined> = {
     plan: 'Plan',
     reflection: 'Reflection',
     context: 'Context',

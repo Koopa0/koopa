@@ -68,14 +68,14 @@ export class LearnDashboardComponent implements OnInit {
   protected readonly hasDueReviews = computed(() => this.dueReviewsCount() > 0);
 
   // Constant mappings
-  protected readonly DOMAIN_COLORS: Record<string, string> = {
+  protected readonly DOMAIN_COLORS: Record<string, string | undefined> = {
     algorithms: 'text-violet-400',
     'system-design': 'text-sky-400',
     'go-patterns': 'text-emerald-400',
     database: 'text-amber-400',
   };
 
-  protected readonly DOMAIN_BG: Record<string, string> = {
+  protected readonly DOMAIN_BG: Record<string, string | undefined> = {
     algorithms: 'bg-violet-900/40 text-violet-400',
     'system-design': 'bg-sky-900/40 text-sky-400',
     'go-patterns': 'bg-emerald-900/40 text-emerald-400',

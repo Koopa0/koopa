@@ -8,7 +8,6 @@ import {
   DestroyRef,
 } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { DatePipe } from '@angular/common';
 import {
   LucideAngularModule,
   Check,
@@ -29,7 +28,7 @@ import type { DailyReflectionContext } from '../../core/models/admin.model';
 @Component({
   selector: 'app-daily-review',
   standalone: true,
-  imports: [DatePipe, LucideAngularModule],
+  imports: [LucideAngularModule],
   templateUrl: './daily-review.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
@@ -73,7 +72,7 @@ export class DailyReviewComponent implements OnInit {
     return parts.join(' · ');
   });
 
-  protected readonly AREA_CLASSES: Record<string, string> = {
+  protected readonly AREA_CLASSES: Record<string, string | undefined> = {
     backend: 'bg-violet-900/40 text-violet-400',
     learning: 'bg-sky-900/40 text-sky-400',
     studio: 'bg-amber-900/40 text-amber-400',

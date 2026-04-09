@@ -49,13 +49,13 @@ export class TasksComponent implements OnInit {
     { key: 'all', label: 'All' },
   ];
 
-  protected readonly ENERGY_COLORS: Record<string, string> = {
+  protected readonly ENERGY_COLORS: Record<string, string | undefined> = {
     high: 'text-red-400',
     medium: 'text-amber-400',
     low: 'text-emerald-400',
   };
 
-  protected readonly PRIORITY_COLORS: Record<string, string> = {
+  protected readonly PRIORITY_COLORS: Record<string, string | undefined> = {
     urgent: 'text-red-400',
     high: 'text-amber-400',
     medium: 'text-zinc-300',

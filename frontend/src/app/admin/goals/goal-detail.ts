@@ -90,40 +90,44 @@ export class GoalDetailComponent implements OnInit {
   });
 
   // Constant mappings
-  protected readonly STATUS_LABELS: Record<string, string> = {
+  protected readonly STATUS_LABELS: Record<string, string | undefined> = {
     'not-started': 'Not Started',
     'in-progress': 'In Progress',
     done: 'Done',
     abandoned: 'Abandoned',
   };
 
-  protected readonly STATUS_CLASSES: Record<string, string> = {
+  protected readonly STATUS_CLASSES: Record<string, string | undefined> = {
     'not-started': 'bg-zinc-800 text-zinc-400',
     'in-progress': 'bg-sky-900/40 text-sky-400',
     done: 'bg-emerald-900/40 text-emerald-400',
     abandoned: 'bg-red-900/40 text-red-400',
   };
 
-  protected readonly HEALTH_LABELS: Record<string, string> = {
+  protected readonly HEALTH_LABELS: Record<string, string | undefined> = {
     'on-track': 'On Track',
     'at-risk': 'At Risk',
     stalled: 'Stalled',
   };
 
-  protected readonly HEALTH_CLASSES: Record<string, string> = {
+  protected readonly HEALTH_CLASSES: Record<string, string | undefined> = {
     'on-track': 'bg-emerald-900/40 text-emerald-400',
     'at-risk': 'bg-amber-900/40 text-amber-400',
     stalled: 'bg-red-900/40 text-red-400',
   };
 
-  protected readonly PROJECT_STATUS_LABELS: Record<string, string> = {
-    'in-progress': 'In Progress',
-    'on-hold': 'On Hold',
-    done: 'Done',
-    'not-started': 'Not Started',
-  };
+  protected readonly PROJECT_STATUS_LABELS: Record<string, string | undefined> =
+    {
+      'in-progress': 'In Progress',
+      'on-hold': 'On Hold',
+      done: 'Done',
+      'not-started': 'Not Started',
+    };
 
-  protected readonly PROJECT_STATUS_CLASSES: Record<string, string> = {
+  protected readonly PROJECT_STATUS_CLASSES: Record<
+    string,
+    string | undefined
+  > = {
     'in-progress': 'bg-sky-900/40 text-sky-400',
     'on-hold': 'bg-amber-900/40 text-amber-400',
     done: 'bg-emerald-900/40 text-emerald-400',
