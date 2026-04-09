@@ -18,7 +18,6 @@ import (
 	"github.com/Koopa0/koopa0.dev/internal/goal"
 	"github.com/Koopa0/koopa0.dev/internal/note"
 	"github.com/Koopa0/koopa0.dev/internal/project"
-	"github.com/Koopa0/koopa0.dev/internal/review"
 	"github.com/Koopa0/koopa0.dev/internal/stats"
 	"github.com/Koopa0/koopa0.dev/internal/tag"
 	"github.com/Koopa0/koopa0.dev/internal/topic"
@@ -37,7 +36,6 @@ type handlers struct {
 	tag      *tag.Handler
 	stats    *stats.Handler
 	activity *activity.Handler
-	review   *review.Handler
 	upload   *upload.Handler
 	note     *note.Handler
 	adminV2  *admin.Handler
@@ -95,12 +93,6 @@ func registerRoutes(mux *http.ServeMux, h *handlers, authMid func(http.Handler) 
 	mux.Handle("POST /api/admin/contents/{id}/publish", authMid(http.HandlerFunc(h.content.Publish)))
 	mux.Handle("POST /api/admin/contents/{id}/reject", authMid(http.HandlerFunc(h.content.Reject)))
 	mux.Handle("PATCH /api/admin/contents/{id}/is-public", authMid(http.HandlerFunc(h.content.SetIsPublic)))
-
-	// --- Admin: Review ---
-	mux.Handle("GET /api/admin/review", authMid(http.HandlerFunc(h.review.List)))
-	mux.Handle("POST /api/admin/review/{id}/approve", authMid(http.HandlerFunc(h.review.Approve)))
-	mux.Handle("POST /api/admin/review/{id}/reject", authMid(http.HandlerFunc(h.review.Reject)))
-	mux.Handle("PUT /api/admin/review/{id}/edit", authMid(http.HandlerFunc(h.review.ApproveAfterEdit)))
 
 	// --- Admin: Projects ---
 	mux.Handle("GET /api/admin/projects", authMid(http.HandlerFunc(h.project.List)))

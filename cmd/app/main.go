@@ -29,7 +29,6 @@ import (
 	"github.com/Koopa0/koopa0.dev/internal/goal"
 	"github.com/Koopa0/koopa0.dev/internal/note"
 	"github.com/Koopa0/koopa0.dev/internal/project"
-	"github.com/Koopa0/koopa0.dev/internal/review"
 	"github.com/Koopa0/koopa0.dev/internal/stats"
 	"github.com/Koopa0/koopa0.dev/internal/tag"
 	"github.com/Koopa0/koopa0.dev/internal/topic"
@@ -71,7 +70,6 @@ func run(logger *slog.Logger) error {
 	tagStore := tag.NewStore(pool)
 	statsStore := stats.NewStore(pool)
 	activityStore := activity.NewStore(pool)
-	reviewStore := review.NewStore(pool)
 	authStore := auth.NewStore(pool)
 	noteStore := note.NewStore(pool)
 
@@ -115,7 +113,6 @@ func run(logger *slog.Logger) error {
 		tag:      tag.NewHandler(tagStore, logger),
 		stats:    stats.NewHandler(statsStore, logger),
 		activity: activity.NewHandler(activityStore, logger),
-		review:   review.NewHandler(reviewStore, logger),
 		upload:   uploadHandler,
 		note:     note.NewHandler(noteStore, logger),
 		adminV2:  admin.NewHandler(pool, nil, logger),
