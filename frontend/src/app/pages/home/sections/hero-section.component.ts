@@ -35,19 +35,19 @@ import { HeroCanvasComponent } from '../../../shared/components/hero-canvas/hero
       >
         <div class="max-w-3xl">
           <p
-            class="hero-badge mb-4 inline-flex items-center gap-2 rounded-full border border-zinc-700 px-3 py-1 text-xs font-medium text-zinc-400"
+            class="hero-badge mb-4 inline-flex items-center gap-2 rounded-full border border-zinc-700 px-3 py-1 text-xs font-medium text-zinc-400 motion-safe:opacity-0"
           >
             <lucide-icon [img]="Code2Icon" [size]="12" />
             Go Backend Consultant
           </p>
           <h1
-            class="hero-title font-display text-4xl font-bold tracking-tight text-zinc-100 sm:text-5xl lg:text-6xl"
+            class="hero-title font-display text-4xl font-bold tracking-tight text-zinc-100 sm:text-5xl lg:text-6xl motion-safe:opacity-0"
           >
             Production systems that perform
             <span class="text-(--color-brand-light)">under pressure</span>
           </h1>
           <p
-            class="hero-subtitle mt-6 max-w-2xl text-lg leading-relaxed text-zinc-400"
+            class="hero-subtitle mt-6 max-w-2xl text-lg leading-relaxed text-zinc-400 motion-safe:opacity-0"
           >
             Backend architecture, performance optimization, and system design.
             Building production-grade services with Go — from diagnosis to
@@ -74,36 +74,47 @@ export class HeroSectionComponent {
 
   private async animateEntrance(): Promise<void> {
     if (!isPlatformBrowser(this.platformId)) return;
+
+    const root = this.el.nativeElement as HTMLElement;
+    const targets = root.querySelectorAll(
+      '.hero-badge, .hero-title, .hero-subtitle',
+    );
+
     const prefersReduced = window.matchMedia(
       '(prefers-reduced-motion: reduce)',
     ).matches;
-    if (prefersReduced) return;
+    if (prefersReduced) {
+      targets.forEach((el) =>
+        (el as HTMLElement).classList.remove('motion-safe:opacity-0'),
+      );
+      return;
+    }
 
     const { gsap } = await import('../../../shared/utils/gsap');
-    const root = this.el.nativeElement as HTMLElement;
 
     const badge = root.querySelector('.hero-badge');
     const title = root.querySelector('.hero-title');
     const subtitle = root.querySelector('.hero-subtitle');
     if (!badge || !title || !subtitle) return;
 
+    // Set initial state (CSS hides via opacity-0, GSAP adds y offset)
+    gsap.set(badge, { opacity: 0, y: 10 });
+    gsap.set(title, { opacity: 0, y: 14 });
+    gsap.set(subtitle, { opacity: 0, y: 10 });
+
     const tl = gsap.timeline({
-      delay: 0.2,
       onComplete: () => {
         [badge, title, subtitle].forEach((el) => {
           (el as HTMLElement).removeAttribute('style');
+          (el as HTMLElement).classList.remove('motion-safe:opacity-0');
         });
       },
     });
 
     const shared = { ease: 'power3.out' };
-    tl.from(badge, { opacity: 0, y: 10, duration: 0.5, ...shared });
-    tl.from(title, { opacity: 0, y: 14, duration: 0.55, ...shared }, '-=0.35');
-    tl.from(
-      subtitle,
-      { opacity: 0, y: 10, duration: 0.5, ...shared },
-      '-=0.35',
-    );
+    tl.to(badge, { opacity: 1, y: 0, duration: 0.5, ...shared });
+    tl.to(title, { opacity: 1, y: 0, duration: 0.55, ...shared }, '-=0.35');
+    tl.to(subtitle, { opacity: 1, y: 0, duration: 0.5, ...shared }, '-=0.35');
 
     this.destroyRef.onDestroy(() => tl.kill());
   }
