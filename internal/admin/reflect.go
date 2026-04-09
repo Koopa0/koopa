@@ -190,50 +190,6 @@ func (h *Handler) ReflectWeekly(w http.ResponseWriter, r *http.Request) {
 	api.Encode(w, http.StatusOK, out)
 }
 
-// JournalWrite handles POST /api/admin/reflect/journal.
-func (h *Handler) JournalWrite(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		Kind string `json:"kind"`
-		Body string `json:"body"`
-		Date string `json:"date,omitempty"`
-	}
-	if req2, err := api.Decode[struct {
-		Kind string `json:"kind"`
-		Body string `json:"body"`
-		Date string `json:"date,omitempty"`
-	}](w, r); err != nil {
-		return
-	} else {
-		req = req2
-	}
-
-	if req.Kind == "" || req.Body == "" {
-		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "kind and body are required")
-		return
-	}
-
-	date := h.today()
-	if req.Date != "" {
-		if d, err := time.Parse(time.DateOnly, req.Date); err == nil {
-			date = d
-		}
-	}
-
-	entry, err := h.journal.Create(r.Context(), &journal.CreateParams{
-		Kind:      journal.Kind(req.Kind),
-		Source:    "human",
-		Content:   req.Body,
-		EntryDate: date,
-	})
-	if err != nil {
-		h.logger.Error("journal write", "error", err)
-		api.Error(w, http.StatusInternalServerError, "INTERNAL", "internal error")
-		return
-	}
-
-	api.Encode(w, http.StatusCreated, entry)
-}
-
 // JournalList handles GET /api/admin/reflect/journal.
 func (h *Handler) JournalList(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
