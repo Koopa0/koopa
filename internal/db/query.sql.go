@@ -3908,7 +3908,9 @@ FROM (
         c.published_at      AS ts
     FROM contents c
     JOIN projects p ON p.id = c.project_id
-    WHERE p.goal_id = $1 AND c.published_at IS NOT NULL
+    WHERE p.goal_id = $1
+      AND c.status = 'published'
+      AND c.published_at IS NOT NULL
 ) AS activity
 ORDER BY ts DESC NULLS LAST
 LIMIT $2
@@ -7533,7 +7535,7 @@ SET status     = 'draft',
     ai_metadata = COALESCE(ai_metadata, '{}'::jsonb)
                   || jsonb_build_object(
                        'review_notes', $2::text,
-                       'review_rejected_at', to_char(now(), 'YYYY-MM-DD"T"HH24:MI:SSOF')
+                       'review_rejected_at', to_jsonb(now())
                      ),
     updated_at = now()
 WHERE id = $1
@@ -7570,9 +7572,13 @@ type RejectContentRow struct {
 	UpdatedAt      time.Time       `json:"updated_at"`
 }
 
-// Reject a content during review: send back to draft and stash reviewer notes in
-// ai_metadata.review_notes (with a review_rejected_at timestamp). Used by admin
-// ContentReviewWorkspace.
+// Reject a content during review: send back to draft and stash the latest reviewer
+// notes in ai_metadata.review_notes (with a review_rejected_at timestamp). Used by
+// admin ContentReviewWorkspace.
+//
+// Semantics: each rejection OVERWRITES review_notes with the latest reason. If
+// preserving the full rejection history becomes needed, switch to an array append
+// pattern (e.g. ai_metadata.rejection_log[]).
 func (q *Queries) RejectContent(ctx context.Context, arg RejectContentParams) (RejectContentRow, error) {
 	row := q.db.QueryRow(ctx, rejectContent, arg.ID, arg.ReviewNotes)
 	var i RejectContentRow
@@ -10829,7 +10835,7 @@ SELECT c.slug AS concept_slug, c.name AS concept_name, c.domain,
        COUNT(*) FILTER (WHERE ao.severity = 'critical') AS critical_count,
        COUNT(*) FILTER (WHERE ao.severity = 'moderate') AS moderate_count,
        COUNT(*) FILTER (WHERE ao.severity = 'minor') AS minor_count,
-       MAX(ao.created_at) AS last_seen_at
+       MAX(ao.created_at)::timestamptz AS last_seen_at
 FROM attempt_observations ao
 JOIN concepts c ON c.id = ao.concept_id
 JOIN attempts a ON a.id = ao.attempt_id
@@ -10846,15 +10852,15 @@ type WeaknessAnalysisParams struct {
 }
 
 type WeaknessAnalysisRow struct {
-	ConceptSlug     string      `json:"concept_slug"`
-	ConceptName     string      `json:"concept_name"`
-	Domain          string      `json:"domain"`
-	Category        string      `json:"category"`
-	OccurrenceCount int64       `json:"occurrence_count"`
-	CriticalCount   int64       `json:"critical_count"`
-	ModerateCount   int64       `json:"moderate_count"`
-	MinorCount      int64       `json:"minor_count"`
-	LastSeenAt      interface{} `json:"last_seen_at"`
+	ConceptSlug     string    `json:"concept_slug"`
+	ConceptName     string    `json:"concept_name"`
+	Domain          string    `json:"domain"`
+	Category        string    `json:"category"`
+	OccurrenceCount int64     `json:"occurrence_count"`
+	CriticalCount   int64     `json:"critical_count"`
+	ModerateCount   int64     `json:"moderate_count"`
+	MinorCount      int64     `json:"minor_count"`
+	LastSeenAt      time.Time `json:"last_seen_at"`
 }
 
 // Cross-pattern weakness analysis from attempt_observations.

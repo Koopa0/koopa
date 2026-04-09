@@ -98,7 +98,7 @@ SELECT c.slug AS concept_slug, c.name AS concept_name, c.domain,
        COUNT(*) FILTER (WHERE ao.severity = 'critical') AS critical_count,
        COUNT(*) FILTER (WHERE ao.severity = 'moderate') AS moderate_count,
        COUNT(*) FILTER (WHERE ao.severity = 'minor') AS minor_count,
-       MAX(ao.created_at) AS last_seen_at
+       MAX(ao.created_at)::timestamptz AS last_seen_at
 FROM attempt_observations ao
 JOIN concepts c ON c.id = ao.concept_id
 JOIN attempts a ON a.id = ao.attempt_id

@@ -124,7 +124,9 @@ FROM (
         c.published_at      AS ts
     FROM contents c
     JOIN projects p ON p.id = c.project_id
-    WHERE p.goal_id = @goal_id AND c.published_at IS NOT NULL
+    WHERE p.goal_id = @goal_id
+      AND c.status = 'published'
+      AND c.published_at IS NOT NULL
 ) AS activity
 ORDER BY ts DESC NULLS LAST
 LIMIT @max_results;

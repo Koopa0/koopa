@@ -178,15 +178,19 @@ RETURNING id, slug, title, body, excerpt, type, status, source, source_type,
 UPDATE contents SET status = 'archived', updated_at = now() WHERE id = $1;
 
 -- name: RejectContent :one
--- Reject a content during review: send back to draft and stash reviewer notes in
--- ai_metadata.review_notes (with a review_rejected_at timestamp). Used by admin
--- ContentReviewWorkspace.
+-- Reject a content during review: send back to draft and stash the latest reviewer
+-- notes in ai_metadata.review_notes (with a review_rejected_at timestamp). Used by
+-- admin ContentReviewWorkspace.
+--
+-- Semantics: each rejection OVERWRITES review_notes with the latest reason. If
+-- preserving the full rejection history becomes needed, switch to an array append
+-- pattern (e.g. ai_metadata.rejection_log[]).
 UPDATE contents
 SET status     = 'draft',
     ai_metadata = COALESCE(ai_metadata, '{}'::jsonb)
                   || jsonb_build_object(
                        'review_notes', @review_notes::text,
-                       'review_rejected_at', to_char(now(), 'YYYY-MM-DD"T"HH24:MI:SSOF')
+                       'review_rejected_at', to_jsonb(now())
                      ),
     updated_at = now()
 WHERE id = $1

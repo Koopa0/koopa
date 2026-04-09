@@ -18,14 +18,18 @@ type SeveritySummary struct {
 }
 
 // WeaknessSpotlight is the admin-facing weakness row with severity aggregation.
+// LastPracticed is the date of the most recent observation; DaysSincePractice
+// is the staleness signal computed from it.
 type WeaknessSpotlight struct {
-	ConceptSlug     string          `json:"concept_slug"`
-	ConceptName     string          `json:"concept_name"`
-	Domain          string          `json:"domain"`
-	Category        string          `json:"category"`
-	FailCount30d    int64           `json:"fail_count_30d"`
-	SeveritySummary SeveritySummary `json:"severity_summary"`
-	SeverityScore   int64           `json:"severity_score"`
+	ConceptSlug       string          `json:"concept_slug"`
+	ConceptName       string          `json:"concept_name"`
+	Domain            string          `json:"domain"`
+	Category          string          `json:"category"`
+	FailCount30d      int64           `json:"fail_count_30d"`
+	SeveritySummary   SeveritySummary `json:"severity_summary"`
+	SeverityScore     int64           `json:"severity_score"`
+	LastPracticed     string          `json:"last_practiced"`
+	DaysSincePractice int             `json:"days_since_practice"`
 }
 
 // LearnDashboard handles GET /api/admin/learn/dashboard.
@@ -69,6 +73,7 @@ func (h *Handler) LearnDashboard(w http.ResponseWriter, r *http.Request) {
 			row := &ws[i]
 			// severity_score: critical*5 + moderate*2 + minor*1 (weighted ranking).
 			score := row.CriticalCount*5 + row.ModerateCount*2 + row.MinorCount
+			daysSince := int(now.Sub(row.LastSeenAt).Hours() / 24)
 			out.WeaknessSpot[i] = WeaknessSpotlight{
 				ConceptSlug:  row.ConceptSlug,
 				ConceptName:  row.ConceptName,
@@ -80,7 +85,9 @@ func (h *Handler) LearnDashboard(w http.ResponseWriter, r *http.Request) {
 					Moderate: row.ModerateCount,
 					Minor:    row.MinorCount,
 				},
-				SeverityScore: score,
+				SeverityScore:     score,
+				LastPracticed:     row.LastSeenAt.Format(time.DateOnly),
+				DaysSincePractice: daysSince,
 			}
 		}
 	}

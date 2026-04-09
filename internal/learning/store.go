@@ -250,15 +250,18 @@ func (s *Store) ConceptMastery(ctx context.Context, domain *string, since time.T
 }
 
 // WeaknessRow represents a cross-pattern weakness analysis row.
+// LastSeenAt is the most recent attempt_observation timestamp for this
+// concept/category — used by the admin handler to compute days_since_practice.
 type WeaknessRow struct {
-	ConceptSlug     string `json:"concept_slug"`
-	ConceptName     string `json:"concept_name"`
-	Domain          string `json:"domain"`
-	Category        string `json:"category"`
-	OccurrenceCount int64  `json:"occurrence_count"`
-	CriticalCount   int64  `json:"critical_count"`
-	ModerateCount   int64  `json:"moderate_count"`
-	MinorCount      int64  `json:"minor_count"`
+	ConceptSlug     string    `json:"concept_slug"`
+	ConceptName     string    `json:"concept_name"`
+	Domain          string    `json:"domain"`
+	Category        string    `json:"category"`
+	OccurrenceCount int64     `json:"occurrence_count"`
+	CriticalCount   int64     `json:"critical_count"`
+	ModerateCount   int64     `json:"moderate_count"`
+	MinorCount      int64     `json:"minor_count"`
+	LastSeenAt      time.Time `json:"last_seen_at"`
 }
 
 // WeaknessAnalysis returns cross-pattern weakness analysis.
@@ -282,6 +285,7 @@ func (s *Store) WeaknessAnalysis(ctx context.Context, domain *string, since time
 			CriticalCount:   r.CriticalCount,
 			ModerateCount:   r.ModerateCount,
 			MinorCount:      r.MinorCount,
+			LastSeenAt:      r.LastSeenAt,
 		}
 	}
 	return result, nil
