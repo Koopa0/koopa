@@ -196,5 +196,35 @@ func registerRoutes(mux *http.ServeMux, h *handlers, authMid func(http.Handler) 
 
 		// Library
 		mux.Handle("GET /api/admin/library/pipeline", authMid(http.HandlerFunc(a.LibraryPipeline)))
+
+		// Learn
+		mux.Handle("GET /api/admin/learn/dashboard", authMid(http.HandlerFunc(a.LearnDashboard)))
+		mux.Handle("POST /api/admin/learn/sessions/start", authMid(http.HandlerFunc(a.SessionStart)))
+		mux.Handle("POST /api/admin/learn/sessions/{id}/attempt", authMid(http.HandlerFunc(a.SessionAttempt)))
+		mux.Handle("POST /api/admin/learn/sessions/{id}/end", authMid(http.HandlerFunc(a.SessionEnd)))
+		mux.Handle("GET /api/admin/learn/concepts/{slug}", authMid(http.HandlerFunc(a.ConceptDrilldown)))
+		mux.Handle("GET /api/admin/learn/review-queue", authMid(http.HandlerFunc(a.ReviewQueue)))
+
+		// Learn Plans
+		mux.Handle("GET /api/admin/learn/plans", authMid(http.HandlerFunc(a.LearnPlans)))
+		mux.Handle("GET /api/admin/learn/plans/{id}", authMid(http.HandlerFunc(a.LearnPlanDetail)))
+		mux.Handle("POST /api/admin/learn/plans/{id}/items", authMid(http.HandlerFunc(a.LearnPlanAddItems)))
+		mux.Handle("DELETE /api/admin/learn/plans/{id}/items/{item_id}", authMid(http.HandlerFunc(a.LearnPlanRemoveItem)))
+		mux.Handle("POST /api/admin/learn/plans/{id}/items/{item_id}/update", authMid(http.HandlerFunc(a.LearnPlanUpdateItem)))
+		mux.Handle("POST /api/admin/learn/plans/{id}/reorder", authMid(http.HandlerFunc(a.LearnPlanReorder)))
+		mux.Handle("PATCH /api/admin/learn/plans/{id}", authMid(http.HandlerFunc(a.LearnPlanUpdate)))
+
+		// Reflect
+		mux.Handle("GET /api/admin/reflect/daily", authMid(http.HandlerFunc(a.ReflectDaily)))
+		mux.Handle("GET /api/admin/reflect/weekly", authMid(http.HandlerFunc(a.ReflectWeekly)))
+		mux.Handle("POST /api/admin/reflect/journal", authMid(http.HandlerFunc(a.JournalWrite)))
+		mux.Handle("GET /api/admin/reflect/journal", authMid(http.HandlerFunc(a.JournalList)))
+		mux.Handle("GET /api/admin/reflect/insights", authMid(http.HandlerFunc(a.InsightsList)))
+
+		// Dashboard
+		mux.Handle("GET /api/admin/dashboard/trends", authMid(http.HandlerFunc(a.DashboardTrends)))
+
+		// Studio IPC
+		mux.Handle("GET /api/admin/studio/overview", authMid(http.HandlerFunc(a.StudioOverview)))
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 
@@ -51,6 +52,22 @@ func (s *Store) ByID(ctx context.Context, id int64) (*Report, error) {
 		return nil, fmt.Errorf("querying report %d: %w", id, err)
 	}
 	return rowToReport(&row), nil
+}
+
+// RecentReports returns reports since a given date, newest first.
+func (s *Store) RecentReports(ctx context.Context, since time.Time, limit int32) ([]Report, error) {
+	rows, err := s.q.RecentReports(ctx, db.RecentReportsParams{
+		SinceDate:  since,
+		MaxResults: limit,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("querying recent reports: %w", err)
+	}
+	result := make([]Report, len(rows))
+	for i := range rows {
+		result[i] = *rowToReport(&rows[i])
+	}
+	return result, nil
 }
 
 func rowToReport(r *db.Report) *Report {

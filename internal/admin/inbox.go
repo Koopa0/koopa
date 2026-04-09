@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/Koopa0/koopa0.dev/internal/api"
+	"github.com/Koopa0/koopa0.dev/internal/insight"
 	"github.com/Koopa0/koopa0.dev/internal/journal"
 	"github.com/Koopa0/koopa0.dev/internal/task"
 )
@@ -204,6 +205,38 @@ func (h *Handler) InboxClarify(w http.ResponseWriter, r *http.Request) {
 			"result":      "clarified",
 			"entity_type": "journal",
 			"entity_id":   entry.ID,
+		})
+
+	case "insight":
+		if req.Hypothesis == nil || *req.Hypothesis == "" {
+			api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "hypothesis is required for insight clarification")
+			return
+		}
+		if req.InvalidationCondition == nil || *req.InvalidationCondition == "" {
+			api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalidation_condition is required for insight clarification")
+			return
+		}
+		content := ""
+		if req.Body != nil {
+			content = *req.Body
+		}
+		ins, iErr := h.insights.Create(ctx, &insight.CreateParams{
+			Source:                "human",
+			Content:               content,
+			Hypothesis:            *req.Hypothesis,
+			InvalidationCondition: *req.InvalidationCondition,
+			ObservedDate:          h.today(),
+		})
+		if iErr != nil {
+			h.logger.Error("inbox clarify insight", "error", iErr)
+			api.Error(w, http.StatusInternalServerError, "INTERNAL", "internal error")
+			return
+		}
+		_ = h.tasks.Delete(ctx, taskID) // best-effort
+		api.Encode(w, http.StatusOK, map[string]any{
+			"result":      "clarified",
+			"entity_type": "insight",
+			"entity_id":   ins.ID,
 		})
 
 	default:

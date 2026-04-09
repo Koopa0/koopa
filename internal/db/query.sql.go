@@ -604,6 +604,61 @@ func (q *Queries) AttemptCountForItem(ctx context.Context, learningItemID uuid.U
 	return max_number, err
 }
 
+const attemptsByConcept = `-- name: AttemptsByConcept :many
+SELECT DISTINCT a.id, a.learning_item_id, a.outcome, a.attempted_at, a.duration_minutes,
+       li.title AS item_title, li.difficulty
+FROM attempts a
+JOIN items li ON li.id = a.learning_item_id
+JOIN item_concepts ic ON ic.learning_item_id = li.id
+WHERE ic.concept_id = $1
+ORDER BY a.attempted_at DESC
+LIMIT $2
+`
+
+type AttemptsByConceptParams struct {
+	ConceptID  uuid.UUID `json:"concept_id"`
+	MaxResults int32     `json:"max_results"`
+}
+
+type AttemptsByConceptRow struct {
+	ID              uuid.UUID `json:"id"`
+	LearningItemID  uuid.UUID `json:"learning_item_id"`
+	Outcome         string    `json:"outcome"`
+	AttemptedAt     time.Time `json:"attempted_at"`
+	DurationMinutes *int32    `json:"duration_minutes"`
+	ItemTitle       string    `json:"item_title"`
+	Difficulty      *string   `json:"difficulty"`
+}
+
+// Recent attempts on items that exercise a given concept. For concept drilldown.
+func (q *Queries) AttemptsByConcept(ctx context.Context, arg AttemptsByConceptParams) ([]AttemptsByConceptRow, error) {
+	rows, err := q.db.Query(ctx, attemptsByConcept, arg.ConceptID, arg.MaxResults)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AttemptsByConceptRow{}
+	for rows.Next() {
+		var i AttemptsByConceptRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.LearningItemID,
+			&i.Outcome,
+			&i.AttemptedAt,
+			&i.DurationMinutes,
+			&i.ItemTitle,
+			&i.Difficulty,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const attemptsBySession = `-- name: AttemptsBySession :many
 SELECT a.id, a.learning_item_id, a.session_id, a.attempt_number, a.outcome,
        a.duration_minutes, a.stuck_at, a.approach_used, a.attempted_at,
@@ -1254,6 +1309,36 @@ func (q *Queries) CompletionEventsByProjectSince(ctx context.Context, since time
 		return nil, err
 	}
 	return items, nil
+}
+
+const conceptByDomainSlug = `-- name: ConceptByDomainSlug :one
+SELECT id, slug, name, domain, kind, parent_id, tag_id, description, created_at, updated_at
+FROM concepts
+WHERE domain = $1 AND LOWER(slug) = LOWER($2)
+`
+
+type ConceptByDomainSlugParams struct {
+	Domain string `json:"domain"`
+	Slug   string `json:"slug"`
+}
+
+// Get a single concept by domain + slug for drilldown.
+func (q *Queries) ConceptByDomainSlug(ctx context.Context, arg ConceptByDomainSlugParams) (Concept, error) {
+	row := q.db.QueryRow(ctx, conceptByDomainSlug, arg.Domain, arg.Slug)
+	var i Concept
+	err := row.Scan(
+		&i.ID,
+		&i.Slug,
+		&i.Name,
+		&i.Domain,
+		&i.Kind,
+		&i.ParentID,
+		&i.TagID,
+		&i.Description,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }
 
 const conceptMastery = `-- name: ConceptMastery :many
@@ -4437,6 +4522,51 @@ func (q *Queries) ItemVariations(ctx context.Context, arg ItemVariationsParams) 
 	return items, nil
 }
 
+const itemsByConcept = `-- name: ItemsByConcept :many
+SELECT li.id, li.title, li.domain, li.difficulty, li.external_id, ic.relevance
+FROM items li
+JOIN item_concepts ic ON ic.learning_item_id = li.id
+WHERE ic.concept_id = $1
+ORDER BY ic.relevance, li.title
+`
+
+type ItemsByConceptRow struct {
+	ID         uuid.UUID `json:"id"`
+	Title      string    `json:"title"`
+	Domain     string    `json:"domain"`
+	Difficulty *string   `json:"difficulty"`
+	ExternalID *string   `json:"external_id"`
+	Relevance  string    `json:"relevance"`
+}
+
+// Items linked to a concept. For concept drilldown related_items.
+func (q *Queries) ItemsByConcept(ctx context.Context, conceptID uuid.UUID) ([]ItemsByConceptRow, error) {
+	rows, err := q.db.Query(ctx, itemsByConcept, conceptID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ItemsByConceptRow{}
+	for rows.Next() {
+		var i ItemsByConceptRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Title,
+			&i.Domain,
+			&i.Difficulty,
+			&i.ExternalID,
+			&i.Relevance,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const itemsByDate = `-- name: ItemsByDate :many
 SELECT
     dpi.id, dpi.plan_date, dpi.task_id, dpi.selected_by, dpi.position,
@@ -5260,6 +5390,68 @@ func (q *Queries) ObservationsByAttempt(ctx context.Context, attemptID uuid.UUID
 	return items, nil
 }
 
+const observationsByConcept = `-- name: ObservationsByConcept :many
+SELECT ao.id, ao.attempt_id, ao.signal_type, ao.category, ao.severity, ao.detail, ao.created_at,
+       a.outcome, a.attempted_at,
+       li.title AS item_title
+FROM attempt_observations ao
+JOIN attempts a ON a.id = ao.attempt_id
+JOIN items li ON li.id = a.learning_item_id
+WHERE ao.concept_id = $1
+ORDER BY ao.created_at DESC
+LIMIT $2
+`
+
+type ObservationsByConceptParams struct {
+	ConceptID  uuid.UUID `json:"concept_id"`
+	MaxResults int32     `json:"max_results"`
+}
+
+type ObservationsByConceptRow struct {
+	ID          uuid.UUID `json:"id"`
+	AttemptID   uuid.UUID `json:"attempt_id"`
+	SignalType  string    `json:"signal_type"`
+	Category    string    `json:"category"`
+	Severity    *string   `json:"severity"`
+	Detail      *string   `json:"detail"`
+	CreatedAt   time.Time `json:"created_at"`
+	Outcome     string    `json:"outcome"`
+	AttemptedAt time.Time `json:"attempted_at"`
+	ItemTitle   string    `json:"item_title"`
+}
+
+// Observations for a concept, newest first. For concept drilldown.
+func (q *Queries) ObservationsByConcept(ctx context.Context, arg ObservationsByConceptParams) ([]ObservationsByConceptRow, error) {
+	rows, err := q.db.Query(ctx, observationsByConcept, arg.ConceptID, arg.MaxResults)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ObservationsByConceptRow{}
+	for rows.Next() {
+		var i ObservationsByConceptRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.AttemptID,
+			&i.SignalType,
+			&i.Category,
+			&i.Severity,
+			&i.Detail,
+			&i.CreatedAt,
+			&i.Outcome,
+			&i.AttemptedAt,
+			&i.ItemTitle,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const obsidianContentSlugs = `-- name: ObsidianContentSlugs :many
 SELECT slug FROM contents WHERE source_type = 'obsidian' ORDER BY slug
 `
@@ -5277,6 +5469,48 @@ func (q *Queries) ObsidianContentSlugs(ctx context.Context) ([]string, error) {
 			return nil, err
 		}
 		items = append(items, slug)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const openDirectives = `-- name: OpenDirectives :many
+SELECT id, source, target, priority, acknowledged_at, acknowledged_by, resolved_at, resolution_report_id, content, metadata, issued_date, created_at FROM directives
+WHERE resolved_at IS NULL
+ORDER BY
+    CASE priority WHEN 'p0' THEN 0 WHEN 'p1' THEN 1 ELSE 2 END,
+    issued_date DESC
+`
+
+// All unresolved directives (for studio IPC overview).
+func (q *Queries) OpenDirectives(ctx context.Context) ([]Directive, error) {
+	rows, err := q.db.Query(ctx, openDirectives)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Directive{}
+	for rows.Next() {
+		var i Directive
+		if err := rows.Scan(
+			&i.ID,
+			&i.Source,
+			&i.Target,
+			&i.Priority,
+			&i.AcknowledgedAt,
+			&i.AcknowledgedBy,
+			&i.ResolvedAt,
+			&i.ResolutionReportID,
+			&i.Content,
+			&i.Metadata,
+			&i.IssuedDate,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -8026,6 +8260,29 @@ func (q *Queries) SessionByID(ctx context.Context, id uuid.UUID) (Session, error
 		&i.CreatedAt,
 	)
 	return i, err
+}
+
+const sessionStreak = `-- name: SessionStreak :one
+WITH daily AS (
+    SELECT DISTINCT (started_at AT TIME ZONE 'UTC')::date AS d
+    FROM sessions
+    WHERE ended_at IS NOT NULL
+),
+numbered AS (
+    SELECT d, d - (ROW_NUMBER() OVER (ORDER BY d DESC))::int AS grp
+    FROM daily
+)
+SELECT count(*)::int AS streak
+FROM numbered
+WHERE grp = (SELECT grp FROM numbered ORDER BY d DESC LIMIT 1)
+`
+
+// Count consecutive days (from today backwards) with at least one session.
+func (q *Queries) SessionStreak(ctx context.Context) (int32, error) {
+	row := q.db.QueryRow(ctx, sessionStreak)
+	var streak int32
+	err := row.Scan(&streak)
+	return streak, err
 }
 
 const sessionTimeline = `-- name: SessionTimeline :many

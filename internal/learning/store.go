@@ -506,3 +506,136 @@ func (s *Store) DueReviewCount(ctx context.Context, before time.Time) (int, erro
 	}
 	return int(n), nil
 }
+
+// Concept represents a learning concept for API responses.
+type Concept struct {
+	ID          uuid.UUID `json:"id"`
+	Slug        string    `json:"slug"`
+	Name        string    `json:"name"`
+	Domain      string    `json:"domain"`
+	Kind        string    `json:"kind"`
+	Description string    `json:"description"`
+	CreatedAt   time.Time `json:"created_at"`
+}
+
+// ConceptObservation is an observation record for concept drilldown.
+type ConceptObservation struct {
+	ID          uuid.UUID `json:"id"`
+	SignalType  string    `json:"signal_type"`
+	Category    string    `json:"category"`
+	Severity    *string   `json:"severity,omitempty"`
+	Detail      *string   `json:"detail,omitempty"`
+	CreatedAt   time.Time `json:"created_at"`
+	Outcome     string    `json:"outcome"`
+	AttemptedAt time.Time `json:"attempted_at"`
+	ItemTitle   string    `json:"item_title"`
+}
+
+// ConceptAttempt is an attempt record for concept drilldown.
+type ConceptAttempt struct {
+	ID              uuid.UUID `json:"id"`
+	ItemID          uuid.UUID `json:"item_id"`
+	Outcome         string    `json:"outcome"`
+	AttemptedAt     time.Time `json:"attempted_at"`
+	DurationMinutes *int32    `json:"duration_minutes,omitempty"`
+	ItemTitle       string    `json:"item_title"`
+	Difficulty      *string   `json:"difficulty,omitempty"`
+}
+
+// ConceptItem is an item linked to a concept.
+type ConceptItem struct {
+	ID         uuid.UUID `json:"id"`
+	Title      string    `json:"title"`
+	Domain     string    `json:"domain"`
+	Difficulty *string   `json:"difficulty,omitempty"`
+	ExternalID *string   `json:"external_id,omitempty"`
+	Relevance  string    `json:"relevance"`
+}
+
+// ConceptBySlug returns a concept by domain and slug.
+func (s *Store) ConceptBySlug(ctx context.Context, domain, slug string) (*Concept, error) {
+	row, err := s.q.ConceptByDomainSlug(ctx, db.ConceptByDomainSlugParams{
+		Domain: domain,
+		Slug:   slug,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("querying concept %s/%s: %w", domain, slug, err)
+	}
+	return &Concept{
+		ID: row.ID, Slug: row.Slug, Name: row.Name,
+		Domain: row.Domain, Kind: row.Kind, Description: row.Description,
+		CreatedAt: row.CreatedAt,
+	}, nil
+}
+
+// ObservationsByConcept returns observations for a concept, newest first.
+func (s *Store) ObservationsByConcept(ctx context.Context, conceptID uuid.UUID, limit int32) ([]ConceptObservation, error) {
+	rows, err := s.q.ObservationsByConcept(ctx, db.ObservationsByConceptParams{
+		ConceptID:  conceptID,
+		MaxResults: limit,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("querying observations for concept: %w", err)
+	}
+	result := make([]ConceptObservation, len(rows))
+	for i := range rows {
+		r := &rows[i]
+		result[i] = ConceptObservation{
+			ID: r.ID, SignalType: r.SignalType, Category: r.Category,
+			Severity: r.Severity, Detail: r.Detail, CreatedAt: r.CreatedAt,
+			Outcome: r.Outcome, AttemptedAt: r.AttemptedAt, ItemTitle: r.ItemTitle,
+		}
+	}
+	return result, nil
+}
+
+// AttemptsByConcept returns recent attempts on items exercising a concept.
+func (s *Store) AttemptsByConcept(ctx context.Context, conceptID uuid.UUID, limit int32) ([]ConceptAttempt, error) {
+	rows, err := s.q.AttemptsByConcept(ctx, db.AttemptsByConceptParams{
+		ConceptID:  conceptID,
+		MaxResults: limit,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("querying attempts for concept: %w", err)
+	}
+	result := make([]ConceptAttempt, len(rows))
+	for i := range rows {
+		r := &rows[i]
+		result[i] = ConceptAttempt{
+			ID: r.ID, ItemID: r.LearningItemID, Outcome: r.Outcome,
+			AttemptedAt: r.AttemptedAt, DurationMinutes: r.DurationMinutes,
+			ItemTitle: r.ItemTitle, Difficulty: r.Difficulty,
+		}
+	}
+	return result, nil
+}
+
+// ItemsByConcept returns items linked to a concept.
+func (s *Store) ItemsByConcept(ctx context.Context, conceptID uuid.UUID) ([]ConceptItem, error) {
+	rows, err := s.q.ItemsByConcept(ctx, conceptID)
+	if err != nil {
+		return nil, fmt.Errorf("querying items for concept: %w", err)
+	}
+	result := make([]ConceptItem, len(rows))
+	for i := range rows {
+		r := &rows[i]
+		result[i] = ConceptItem{
+			ID: r.ID, Title: r.Title, Domain: r.Domain,
+			Difficulty: r.Difficulty, ExternalID: r.ExternalID,
+			Relevance: r.Relevance,
+		}
+	}
+	return result, nil
+}
+
+// Streak returns the number of consecutive days with at least one completed session.
+func (s *Store) Streak(ctx context.Context) (int, error) {
+	n, err := s.q.SessionStreak(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("computing session streak: %w", err)
+	}
+	return int(n), nil
+}

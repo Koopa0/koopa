@@ -187,3 +187,55 @@ LIMIT @max_results;
 -- name: DueReviewCount :one
 -- Count of review cards due before a given time (for needs_attention badge).
 SELECT count(*)::int FROM review_cards WHERE due <= @due_before;
+
+-- name: ConceptByDomainSlug :one
+-- Get a single concept by domain + slug for drilldown.
+SELECT id, slug, name, domain, kind, parent_id, tag_id, description, created_at, updated_at
+FROM concepts
+WHERE domain = @domain AND LOWER(slug) = LOWER(@slug);
+
+-- name: ObservationsByConcept :many
+-- Observations for a concept, newest first. For concept drilldown.
+SELECT ao.id, ao.attempt_id, ao.signal_type, ao.category, ao.severity, ao.detail, ao.created_at,
+       a.outcome, a.attempted_at,
+       li.title AS item_title
+FROM attempt_observations ao
+JOIN attempts a ON a.id = ao.attempt_id
+JOIN items li ON li.id = a.learning_item_id
+WHERE ao.concept_id = @concept_id
+ORDER BY ao.created_at DESC
+LIMIT @max_results;
+
+-- name: AttemptsByConcept :many
+-- Recent attempts on items that exercise a given concept. For concept drilldown.
+SELECT DISTINCT a.id, a.learning_item_id, a.outcome, a.attempted_at, a.duration_minutes,
+       li.title AS item_title, li.difficulty
+FROM attempts a
+JOIN items li ON li.id = a.learning_item_id
+JOIN item_concepts ic ON ic.learning_item_id = li.id
+WHERE ic.concept_id = @concept_id
+ORDER BY a.attempted_at DESC
+LIMIT @max_results;
+
+-- name: ItemsByConcept :many
+-- Items linked to a concept. For concept drilldown related_items.
+SELECT li.id, li.title, li.domain, li.difficulty, li.external_id, ic.relevance
+FROM items li
+JOIN item_concepts ic ON ic.learning_item_id = li.id
+WHERE ic.concept_id = @concept_id
+ORDER BY ic.relevance, li.title;
+
+-- name: SessionStreak :one
+-- Count consecutive days (from today backwards) with at least one session.
+WITH daily AS (
+    SELECT DISTINCT (started_at AT TIME ZONE 'UTC')::date AS d
+    FROM sessions
+    WHERE ended_at IS NOT NULL
+),
+numbered AS (
+    SELECT d, d - (ROW_NUMBER() OVER (ORDER BY d DESC))::int AS grp
+    FROM daily
+)
+SELECT count(*)::int AS streak
+FROM numbered
+WHERE grp = (SELECT grp FROM numbered ORDER BY d DESC LIMIT 1);

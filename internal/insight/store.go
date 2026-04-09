@@ -92,6 +92,22 @@ func (s *Store) Unverified(ctx context.Context, limit int32) ([]Insight, error) 
 	return result, nil
 }
 
+// ByStatus returns insights filtered by optional status, newest first.
+func (s *Store) ByStatus(ctx context.Context, status *string, limit int32) ([]Insight, error) {
+	rows, err := s.q.InsightsByStatus(ctx, db.InsightsByStatusParams{
+		Status:     status,
+		MaxResults: limit,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("querying insights: %w", err)
+	}
+	result := make([]Insight, len(rows))
+	for i := range rows {
+		result[i] = *rowToInsight(&rows[i])
+	}
+	return result, nil
+}
+
 func rowToInsight(r *db.Insight) *Insight {
 	ins := &Insight{
 		ID:                    r.ID,

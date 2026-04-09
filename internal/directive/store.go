@@ -190,3 +190,16 @@ func (s *Store) UnackedCount(ctx context.Context) (int, error) {
 	}
 	return int(n), nil
 }
+
+// OpenDirectives returns all unresolved directives, ordered by priority then date.
+func (s *Store) OpenDirectives(ctx context.Context) ([]Directive, error) {
+	rows, err := s.q.OpenDirectives(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("querying open directives: %w", err)
+	}
+	result := make([]Directive, len(rows))
+	for i := range rows {
+		result[i] = *rowToDirective(&rows[i])
+	}
+	return result, nil
+}

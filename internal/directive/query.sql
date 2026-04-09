@@ -36,3 +36,11 @@ RETURNING *;
 -- name: UnackedCount :one
 -- Count of unacknowledged directives (for needs_attention badge).
 SELECT count(*)::int FROM directives WHERE acknowledged_at IS NULL;
+
+-- name: OpenDirectives :many
+-- All unresolved directives (for studio IPC overview).
+SELECT * FROM directives
+WHERE resolved_at IS NULL
+ORDER BY
+    CASE priority WHEN 'p0' THEN 0 WHEN 'p1' THEN 1 ELSE 2 END,
+    issued_date DESC;
