@@ -6,7 +6,6 @@ sql:
       - "internal/content/query.sql"
       - "internal/topic/query.sql"
       - "internal/project/query.sql"
-      - "internal/review/query.sql"
       - "internal/feed/entry/query.sql"
       - "internal/feed/query.sql"
       - "internal/goal/query.sql"
