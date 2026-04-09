@@ -1,6 +1,5 @@
 import { Routes } from '@angular/router';
 import { adminGuard } from './core/guards/auth.guard';
-import { unsavedChangesGuard } from './core/guards/unsaved-changes.guard';
 
 export const routes: Routes = [
   {
@@ -143,132 +142,20 @@ export const routes: Routes = [
       ),
     canActivate: [adminGuard],
     children: [
-      // — Default redirect to Today —
+      { path: '', redirectTo: 'overview', pathMatch: 'full' },
       {
-        path: '',
-        redirectTo: 'today',
-        pathMatch: 'full',
-      },
-      {
-        path: 'today',
+        path: 'overview',
         loadComponent: () =>
-          import('./admin/today/today').then((m) => m.TodayComponent),
-      },
-      {
-        path: 'dashboard',
-        loadComponent: () =>
-          import('./admin/dashboard/dashboard').then(
-            (m) => m.DashboardComponent,
-          ),
+          import('./admin/overview/overview').then((m) => m.OverviewComponent),
       },
 
-      // — Inbox —
+      // — Learn —
+      { path: 'learn', redirectTo: 'learn/weaknesses', pathMatch: 'full' },
       {
-        path: 'inbox',
+        path: 'learn/weaknesses',
         loadComponent: () =>
-          import('./admin/inbox/inbox').then((m) => m.InboxComponent),
-      },
-
-      // — Plan —
-      {
-        path: 'plan',
-        redirectTo: 'plan/goals',
-        pathMatch: 'full',
-      },
-      {
-        path: 'plan/goals',
-        loadComponent: () =>
-          import('./admin/goals/goals').then((m) => m.GoalsComponent),
-      },
-      {
-        path: 'plan/goals/:id',
-        loadComponent: () =>
-          import('./admin/goals/goal-detail').then(
-            (m) => m.GoalDetailComponent,
-          ),
-      },
-      {
-        path: 'plan/projects',
-        loadComponent: () =>
-          import('./admin/projects/projects').then(
-            (m) => m.AdminProjectsComponent,
-          ),
-      },
-      {
-        path: 'plan/projects/:id',
-        loadComponent: () =>
-          import('./admin/projects/project-detail').then(
-            (m) => m.ProjectDetailComponent,
-          ),
-      },
-      {
-        path: 'plan/tasks',
-        loadComponent: () =>
-          import('./admin/tasks/tasks').then((m) => m.TasksComponent),
-      },
-
-      // — Library —
-      {
-        path: 'library',
-        redirectTo: 'library/pipeline',
-        pathMatch: 'full',
-      },
-      {
-        path: 'library/pipeline',
-        loadComponent: () =>
-          import('./admin/library/library-pipeline').then(
-            (m) => m.LibraryPipelineComponent,
-          ),
-      },
-      {
-        path: 'library/contents',
-        loadComponent: () =>
-          import('./admin/contents/contents').then(
-            (m) => m.AdminContentsComponent,
-          ),
-      },
-      {
-        path: 'library/editor',
-        loadComponent: () =>
-          import('./admin/article-editor/article-editor').then(
-            (m) => m.ArticleEditorComponent,
-          ),
-        canDeactivate: [unsavedChangesGuard],
-      },
-      {
-        path: 'library/editor/:id',
-        loadComponent: () =>
-          import('./admin/article-editor/article-editor').then(
-            (m) => m.ArticleEditorComponent,
-          ),
-        canDeactivate: [unsavedChangesGuard],
-      },
-
-      // — Learn (Phase 2) —
-      {
-        path: 'learn',
-        redirectTo: 'learn/dashboard',
-        pathMatch: 'full',
-      },
-      {
-        path: 'learn/dashboard',
-        loadComponent: () =>
-          import('./admin/learn/learn-dashboard').then(
-            (m) => m.LearnDashboardComponent,
-          ),
-      },
-      {
-        path: 'learn/session/:id',
-        loadComponent: () =>
-          import('./admin/learn/session-workspace').then(
-            (m) => m.SessionWorkspaceComponent,
-          ),
-      },
-      {
-        path: 'learn/concepts',
-        loadComponent: () =>
-          import('./admin/learn/concept-list').then(
-            (m) => m.ConceptListComponent,
+          import('./admin/learn/weakness-map').then(
+            (m) => m.WeaknessMapComponent,
           ),
       },
       {
@@ -279,95 +166,124 @@ export const routes: Routes = [
           ),
       },
       {
-        path: 'learn/review',
+        path: 'learn/sessions',
         loadComponent: () =>
-          import('./admin/learn/review-queue').then(
-            (m) => m.ReviewQueueComponent,
+          import('./admin/learn/session-history').then(
+            (m) => m.SessionHistoryComponent,
+          ),
+      },
+      {
+        path: 'learn/plans',
+        loadComponent: () =>
+          import('./admin/learn/plans-list').then((m) => m.PlansListComponent),
+      },
+      {
+        path: 'learn/plans/:id',
+        loadComponent: () =>
+          import('./admin/learn/plan-detail').then(
+            (m) => m.PlanDetailComponent,
           ),
       },
 
-      // — Reflect (Phase 2) —
+      // — Content —
+      { path: 'content', redirectTo: 'content/pipeline', pathMatch: 'full' },
       {
-        path: 'reflect',
-        redirectTo: 'reflect/daily',
+        path: 'content/pipeline',
+        loadComponent: () =>
+          import('./admin/content/pipeline').then((m) => m.PipelineComponent),
+      },
+      {
+        path: 'content/review/:id',
+        loadComponent: () =>
+          import('./admin/content/review').then((m) => m.ReviewComponent),
+      },
+      {
+        path: 'content/library',
+        loadComponent: () =>
+          import('./admin/content/library').then((m) => m.LibraryComponent),
+      },
+      {
+        path: 'content/intelligence',
+        loadComponent: () =>
+          import('./admin/content/intelligence').then(
+            (m) => m.IntelligenceComponent,
+          ),
+      },
+
+      // — Commitments —
+      {
+        path: 'commitments',
+        redirectTo: 'commitments/goals',
         pathMatch: 'full',
       },
       {
-        path: 'reflect/daily',
+        path: 'commitments/goals',
         loadComponent: () =>
-          import('./admin/reflect/daily-review').then(
+          import('./admin/commitments/goals').then((m) => m.GoalsComponent),
+      },
+      {
+        path: 'commitments/goals/:id',
+        loadComponent: () =>
+          import('./admin/commitments/goal-detail').then(
+            (m) => m.GoalDetailComponent,
+          ),
+      },
+      {
+        path: 'commitments/projects',
+        loadComponent: () =>
+          import('./admin/commitments/projects').then(
+            (m) => m.ProjectsComponent,
+          ),
+      },
+      {
+        path: 'commitments/projects/:id',
+        loadComponent: () =>
+          import('./admin/commitments/project-detail').then(
+            (m) => m.ProjectDetailComponent,
+          ),
+      },
+      {
+        path: 'commitments/directives',
+        loadComponent: () =>
+          import('./admin/commitments/directives').then(
+            (m) => m.DirectivesComponent,
+          ),
+      },
+
+      // — Activity —
+      { path: 'activity', redirectTo: 'activity/daily', pathMatch: 'full' },
+      {
+        path: 'activity/daily',
+        loadComponent: () =>
+          import('./admin/activity/daily-review').then(
             (m) => m.DailyReviewComponent,
           ),
       },
       {
-        path: 'reflect/weekly',
+        path: 'activity/weekly',
         loadComponent: () =>
-          import('./admin/reflect/weekly-review').then(
+          import('./admin/activity/weekly-review').then(
             (m) => m.WeeklyReviewComponent,
           ),
       },
       {
-        path: 'reflect/insights',
+        path: 'activity/insights',
         loadComponent: () =>
-          import('./admin/reflect/insights').then((m) => m.InsightsComponent),
+          import('./admin/activity/insights').then((m) => m.InsightsComponent),
       },
       {
-        path: 'reflect/journal',
+        path: 'activity/journal',
         loadComponent: () =>
-          import('./admin/reflect/journal').then((m) => m.JournalComponent),
-      },
-
-      // — Studio (Phase 3) —
-      {
-        path: 'studio',
-        loadComponent: () =>
-          import('./admin/studio/studio').then((m) => m.StudioComponent),
+          import('./admin/activity/journal').then((m) => m.JournalComponent),
       },
 
       // — System —
       {
         path: 'system',
-        redirectTo: 'system/health',
-        pathMatch: 'full',
-      },
-      {
-        path: 'system/health',
         loadComponent: () =>
           import('./admin/system/system-health').then(
             (m) => m.SystemHealthComponent,
           ),
-      },
-      {
-        path: 'system/feeds',
-        loadComponent: () =>
-          import('./admin/feeds/feeds').then((m) => m.FeedsComponent),
-      },
-      {
-        path: 'system/tags',
-        loadComponent: () =>
-          import('./admin/tags/tags').then((m) => m.TagsComponent),
-      },
-      {
-        path: 'system/activity',
-        loadComponent: () =>
-          import('./admin/activity/activity').then((m) => m.ActivityComponent),
-      },
-
-      {
-        path: 'project-editor',
-        loadComponent: () =>
-          import('./admin/project-editor/project-editor').then(
-            (m) => m.ProjectEditorComponent,
-          ),
-        canDeactivate: [unsavedChangesGuard],
-      },
-      {
-        path: 'project-editor/:id',
-        loadComponent: () =>
-          import('./admin/project-editor/project-editor').then(
-            (m) => m.ProjectEditorComponent,
-          ),
-        canDeactivate: [unsavedChangesGuard],
       },
     ],
   },

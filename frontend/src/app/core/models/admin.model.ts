@@ -351,11 +351,20 @@ export interface SessionSummary {
   solved_count: number;
 }
 
+export interface SeveritySummary {
+  critical: number;
+  moderate: number;
+  minor: number;
+}
+
 export interface ConceptWeakness {
   concept_slug: string;
   concept_name: string;
   domain: string;
+  category: string;
   fail_count_30d: number;
+  severity_summary: SeveritySummary;
+  severity_score: number;
   last_practiced: string | null;
   days_since_practice: number | null;
 }
@@ -370,7 +379,6 @@ export interface DomainMastery {
 
 export interface LearningStreak {
   current_days: number;
-  longest: number;
 }
 
 // === Learning Plans ===
@@ -511,10 +519,14 @@ export interface WeeklyInboxHealth {
 }
 
 export interface InsightCheck {
-  id: string;
+  id: number;
   hypothesis: string;
+  invalidation_condition: string;
   status: InsightStatus;
+  source: string;
+  observed_date: string;
   age_days: number;
+  evidence_count: number;
 }
 
 export interface WeeklyMetrics {
@@ -526,9 +538,13 @@ export interface WeeklyMetrics {
 export type JournalKind = 'plan' | 'reflection' | 'context' | 'metrics';
 
 export interface JournalEntry {
+  id: number;
   kind: JournalKind;
-  body: string;
-  date?: string;
+  source: string;
+  content: string;
+  metadata?: Record<string, unknown>;
+  entry_date: string;
+  created_at: string;
 }
 
 // === Schema-aligned enums (from migrations/001_initial.up.sql) ===
@@ -573,8 +589,13 @@ export type DirectiveLifecycle = 'pending' | 'acknowledged' | 'resolved';
 
 export interface StudioOverview {
   open_directives: DirectiveSummary[];
-  unread_reports: ReportSummary[];
+  resolved_directives?: DirectiveSummary[];
+  recent_reports: ReportSummary[];
   participants: ParticipantSummary[];
+  stats: {
+    unacked_count: number;
+    in_progress_count: number;
+  };
 }
 
 /** Aligned with schema: directives.content (TEXT), not title + description */
@@ -585,22 +606,20 @@ export interface DirectiveSummary {
   target: string;
   priority: DirectivePriority;
   lifecycle_status: DirectiveLifecycle;
-  has_report: boolean;
-  acknowledged_at: string | null;
-  resolved_at: string | null;
+  acknowledged_at?: string;
+  resolved_at?: string;
+  resolution_report_id?: number;
   issued_date: string;
-  created_at: string;
-  days_open: number;
+  age_days: number;
+  days_to_resolution?: number;
 }
 
 export interface ReportSummary {
   id: number;
   source: string;
   content: string;
-  in_response_to: number | null;
-  directive_content: string | null;
   reported_date: string;
-  created_at: string;
+  in_response_to?: number;
 }
 
 export interface ParticipantSummary {

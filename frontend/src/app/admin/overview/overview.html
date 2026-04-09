@@ -1,0 +1,381 @@
+<!-- Overview — Situational awareness display. Read-only. Operations happen in Claude. -->
+<div class="mx-auto max-w-5xl px-4 py-6 sm:px-6">
+  <!-- Header -->
+  <div class="mb-6 flex items-center justify-between">
+    <div>
+      <h1 class="flex items-center gap-2 text-xl font-semibold text-zinc-100">
+        <lucide-icon [img]="SunIcon" [size]="20" class="text-amber-400" />
+        Overview
+      </h1>
+      @if (contextLine()) {
+      <p class="mt-1 text-sm text-zinc-500">{{ contextLine() }}</p>
+      }
+    </div>
+    @if (todayDate()) {
+    <span class="text-sm text-zinc-500"
+      >{{ todayDate() | date: 'EEEE, MMM d' }}</span
+    >
+    }
+  </div>
+
+  @if (isLoading()) {
+  <div class="space-y-4">
+    @for (_ of [1, 2, 3]; track $index) {
+    <div class="h-32 animate-pulse rounded-lg bg-zinc-800/50"></div>
+    }
+  </div>
+  } @else {
+  <!-- Attention Signals -->
+  @if (hasAttentionItems()) {
+  <div
+    class="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4"
+    data-testid="attention-signals"
+  >
+    @if (attention(); as a) { @if (a.inbox_count > 0) {
+    <div
+      class="flex items-center gap-3 rounded-lg border border-zinc-800 bg-zinc-900/50 px-4 py-3"
+    >
+      <lucide-icon
+        [img]="InboxIcon"
+        [size]="16"
+        [class]="getAttentionColor(a.inbox_count)"
+      />
+      <div>
+        <p class="text-lg font-semibold text-zinc-200">{{ a.inbox_count }}</p>
+        <p class="text-xs text-zinc-500">Inbox</p>
+      </div>
+    </div>
+    } @if (a.pending_directives > 0) {
+    <a
+      routerLink="/admin/commitments/directives"
+      class="flex items-center gap-3 rounded-lg border border-zinc-800 bg-zinc-900/50 px-4 py-3 no-underline transition-colors hover:border-zinc-700"
+    >
+      <lucide-icon
+        [img]="UsersIcon"
+        [size]="16"
+        [class]="getAttentionColor(a.pending_directives)"
+      />
+      <div>
+        <p class="text-lg font-semibold text-zinc-200">
+          {{ a.pending_directives }}
+        </p>
+        <p class="text-xs text-zinc-500">Directives</p>
+      </div>
+    </a>
+    } @if (a.due_reviews > 0) {
+    <a
+      routerLink="/admin/learn/weaknesses"
+      class="flex items-center gap-3 rounded-lg border border-zinc-800 bg-zinc-900/50 px-4 py-3 no-underline transition-colors hover:border-zinc-700"
+    >
+      <lucide-icon
+        [img]="RotateCcwIcon"
+        [size]="16"
+        [class]="getAttentionColor(a.due_reviews)"
+      />
+      <div>
+        <p class="text-lg font-semibold text-zinc-200">{{ a.due_reviews }}</p>
+        <p class="text-xs text-zinc-500">Reviews Due</p>
+      </div>
+    </a>
+    } @if (a.overdue_tasks > 0) {
+    <div
+      class="flex items-center gap-3 rounded-lg border border-zinc-800 bg-zinc-900/50 px-4 py-3"
+    >
+      <lucide-icon [img]="AlertTriangleIcon" [size]="16" class="text-red-400" />
+      <div>
+        <p class="text-lg font-semibold text-zinc-200">{{ a.overdue_tasks }}</p>
+        <p class="text-xs text-zinc-500">Overdue</p>
+      </div>
+    </div>
+    } }
+  </div>
+  }
+
+  <!-- Yesterday Unfinished — Confrontation zone -->
+  @if (yesterdayUnfinished().length > 0) {
+  <section
+    class="mb-6 rounded-lg border border-amber-500/20 bg-amber-950/10 p-4"
+    data-testid="yesterday-unfinished"
+  >
+    <h2 class="mb-3 flex items-center gap-2 text-sm font-medium text-amber-400">
+      <lucide-icon [img]="AlertTriangleIcon" [size]="14" />
+      Yesterday Unfinished — {{ yesterdayUnfinished().length }} items need your
+      decision
+    </h2>
+    <div class="space-y-2">
+      @for (item of yesterdayUnfinished(); track item.id) {
+      <div
+        class="flex items-center justify-between rounded-md bg-zinc-900/60 px-3 py-2"
+      >
+        <div class="flex items-center gap-2">
+          @if (item.energy) {
+          <span
+            class="text-xs font-medium"
+            [class]="ENERGY_COLORS[item.energy] ?? 'text-zinc-500'"
+          >
+            {{ ENERGY_LABELS[item.energy] ?? '' }}
+          </span>
+          }
+          <span class="text-sm text-zinc-300">{{ item.title }}</span>
+          @if (item.area) {
+          <span class="text-xs text-zinc-600">{{ item.area }}</span>
+          }
+        </div>
+        <span class="text-xs text-zinc-600">Resolve in Claude</span>
+      </div>
+      }
+    </div>
+  </section>
+  }
+
+  <div class="grid gap-6 lg:grid-cols-3">
+    <!-- Left Column: Today's Plan + Goal Pulse -->
+    <div class="space-y-6 lg:col-span-2">
+      <!-- Today's Plan (read-only view) -->
+      <section
+        class="rounded-lg border border-zinc-800 bg-zinc-900/50 p-4"
+        data-testid="today-plan"
+      >
+        <div class="mb-3 flex items-center justify-between">
+          <h2 class="flex items-center gap-2 text-sm font-medium text-zinc-300">
+            <lucide-icon [img]="CheckIcon" [size]="14" />
+            Today's Plan
+          </h2>
+          @if (planTotalCount() > 0) {
+          <span class="text-xs text-zinc-500">
+            {{ planDoneCount() }} / {{ planTotalCount() }} done
+          </span>
+          }
+        </div>
+
+        @if (todayPlan().length === 0) {
+        <p class="py-6 text-center text-sm text-zinc-600">
+          No plan set yet — plan your day with Claude
+        </p>
+        } @else {
+        <div class="space-y-1.5">
+          @for (item of todayPlan(); track item.id) {
+          <div
+            class="flex items-center gap-2 rounded-md px-3 py-2 transition-colors"
+            [class]="item.status === 'done' ? 'bg-emerald-950/10' : 'bg-zinc-800/30'"
+          >
+            <!-- Status indicator -->
+            @switch (item.status) { @case ('done') {
+            <lucide-icon
+              [img]="CheckIcon"
+              [size]="14"
+              class="shrink-0 text-emerald-500"
+            />
+            } @case ('deferred') {
+            <lucide-icon
+              [img]="ClockIcon"
+              [size]="14"
+              class="shrink-0 text-amber-500"
+            />
+            } @case ('dropped') {
+            <span
+              class="inline-block h-3.5 w-3.5 shrink-0 rounded-full border border-zinc-700"
+            ></span>
+            } @default {
+            <span
+              class="inline-block h-3.5 w-3.5 shrink-0 rounded-full border border-zinc-600"
+            ></span>
+            } }
+
+            <span class="flex-1 text-sm" [class]="getPlanItemStatusClass(item)">
+              {{ item.title }}
+            </span>
+
+            @if (item.energy) {
+            <span
+              class="text-xs font-medium"
+              [class]="ENERGY_COLORS[item.energy] ?? 'text-zinc-500'"
+            >
+              {{ ENERGY_LABELS[item.energy] ?? '' }}
+            </span>
+            }
+          </div>
+          }
+        </div>
+        }
+      </section>
+
+      <!-- Goal Pulse -->
+      @if (goalPulse().length > 0) {
+      <section data-testid="goal-pulse">
+        <h2
+          class="mb-3 flex items-center gap-2 text-sm font-medium text-zinc-300"
+        >
+          <lucide-icon [img]="TargetIcon" [size]="14" />
+          Goal Pulse
+        </h2>
+        <div class="grid gap-3 sm:grid-cols-2">
+          @for (goal of goalPulse(); track goal.id) {
+          <a
+            [routerLink]="['/admin/commitments/goals', goal.id]"
+            class="rounded-lg border p-4 no-underline transition-colors hover:border-zinc-700"
+            [class]="getGoalHealthColor(goal)"
+          >
+            <div class="mb-2 flex items-center justify-between">
+              <h3 class="text-sm font-medium text-zinc-200">
+                {{ goal.title }}
+              </h3>
+              @if (goal.area) {
+              <span class="text-xs text-zinc-600">{{ goal.area }}</span>
+              }
+            </div>
+
+            <!-- Milestone progress as dots -->
+            @if (goal.milestones_total > 0) {
+            <div class="mb-2 flex items-center gap-1">
+              @for (_ of [].constructor(goal.milestones_total); track $index) {
+              <span
+                class="inline-block h-2 w-2 rounded-full"
+                [class]="$index < goal.milestones_done ? 'bg-emerald-500' : 'bg-zinc-700'"
+              >
+              </span>
+              }
+              <span class="ml-1 text-xs text-zinc-500">
+                {{ goal.milestones_done }}/{{ goal.milestones_total }}
+              </span>
+            </div>
+            }
+
+            <div class="flex items-center justify-between text-xs">
+              @if (goal.next_milestone) {
+              <span class="text-zinc-500">Next: {{ goal.next_milestone }}</span>
+              } @if (goal.days_remaining !== null) {
+              <span [class]="getDeadlineUrgency(goal.days_remaining)">
+                {{ goal.days_remaining }}d left
+              </span>
+              }
+            </div>
+          </a>
+          }
+        </div>
+      </section>
+      }
+    </div>
+
+    <!-- Right Column: Trends -->
+    <div class="space-y-4">
+      <!-- Execution -->
+      @if (executionTrend(); as exec) {
+      <div class="rounded-lg border border-zinc-800 bg-zinc-900/50 p-4">
+        <div class="mb-1 flex items-center justify-between">
+          <span
+            class="text-xs font-medium uppercase tracking-wider text-zinc-500"
+            >Execution</span
+          >
+          <lucide-icon
+            [img]="getTrendIcon(exec.trend)"
+            [size]="14"
+            [class]="getTrendColor(exec.trend)"
+          />
+        </div>
+        <p class="text-2xl font-semibold text-zinc-200">
+          {{ exec.tasks_completed_this_week }}
+        </p>
+        <p class="text-xs text-zinc-500">
+          tasks this week ({{ exec.tasks_completed_last_week }} last week)
+        </p>
+      </div>
+      }
+
+      <!-- Plan Adherence -->
+      @if (planAdherence(); as pa) {
+      <div class="rounded-lg border border-zinc-800 bg-zinc-900/50 p-4">
+        <span class="text-xs font-medium uppercase tracking-wider text-zinc-500"
+          >Plan Adherence</span
+        >
+        <p class="mt-1 text-2xl font-semibold text-zinc-200">
+          {{ pa.completion_rate_this_week }}%
+        </p>
+        @if (pa.completion_rate_last_week !== undefined) {
+        <p class="text-xs text-zinc-500">
+          {{ pa.completion_rate_last_week }}% last week
+        </p>
+        }
+      </div>
+      }
+
+      <!-- Goal Health -->
+      @if (goalHealth(); as gh) {
+      <div class="rounded-lg border border-zinc-800 bg-zinc-900/50 p-4">
+        <span class="text-xs font-medium uppercase tracking-wider text-zinc-500"
+          >Goal Health</span
+        >
+        <div class="mt-2 flex items-center gap-4">
+          <div class="text-center">
+            <p class="text-lg font-semibold text-emerald-400">
+              {{ gh.on_track }}
+            </p>
+            <p class="text-xs text-zinc-500">On Track</p>
+          </div>
+          <div class="text-center">
+            <p class="text-lg font-semibold text-amber-400">{{ gh.at_risk }}</p>
+            <p class="text-xs text-zinc-500">At Risk</p>
+          </div>
+          <div class="text-center">
+            <p class="text-lg font-semibold text-red-400">{{ gh.stalled }}</p>
+            <p class="text-xs text-zinc-500">Stalled</p>
+          </div>
+        </div>
+      </div>
+      }
+
+      <!-- Learning -->
+      @if (learningTrends(); as lt) {
+      <a
+        routerLink="/admin/learn/weaknesses"
+        class="block rounded-lg border border-zinc-800 bg-zinc-900/50 p-4 no-underline transition-colors hover:border-zinc-700"
+      >
+        <div class="mb-1 flex items-center justify-between">
+          <span
+            class="text-xs font-medium uppercase tracking-wider text-zinc-500"
+            >Learning</span
+          >
+          <lucide-icon [img]="BrainIcon" [size]="14" class="text-zinc-600" />
+        </div>
+        <p class="text-2xl font-semibold text-zinc-200">
+          {{ lt.sessions_this_week }}
+        </p>
+        <p class="text-xs text-zinc-500">sessions this week</p>
+        <div class="mt-2 flex items-center gap-3 text-xs">
+          <span class="text-red-400">{{ lt.weakness_count }} weak</span>
+          <span class="text-emerald-400">{{ lt.mastery_count }} mastered</span>
+          @if (lt.review_backlog > 0) {
+          <span class="text-amber-400">{{ lt.review_backlog }} due</span>
+          }
+        </div>
+      </a>
+      }
+
+      <!-- Content -->
+      @if (contentTrends(); as ct) {
+      <a
+        routerLink="/admin/content/pipeline"
+        class="block rounded-lg border border-zinc-800 bg-zinc-900/50 p-4 no-underline transition-colors hover:border-zinc-700"
+      >
+        <div class="mb-1 flex items-center justify-between">
+          <span
+            class="text-xs font-medium uppercase tracking-wider text-zinc-500"
+            >Content</span
+          >
+          <lucide-icon [img]="FileTextIcon" [size]="14" class="text-zinc-600" />
+        </div>
+        <p class="text-2xl font-semibold text-zinc-200">
+          {{ ct.published_this_month }}
+        </p>
+        <p class="text-xs text-zinc-500">published this month</p>
+        @if (ct.drafts_in_progress > 0) {
+        <p class="mt-1 text-xs text-zinc-500">
+          {{ ct.drafts_in_progress }} drafts in progress
+        </p>
+        }
+      </a>
+      }
+    </div>
+  </div>
+  }
+</div>

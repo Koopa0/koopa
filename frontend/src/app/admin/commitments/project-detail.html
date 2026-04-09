@@ -1,0 +1,176 @@
+<!-- Project Detail — Read-only view of project status, tasks, and portfolio fields -->
+<div class="mx-auto max-w-4xl px-4 py-6 sm:px-6">
+  <a
+    routerLink="/admin/commitments/projects"
+    class="mb-4 inline-flex items-center gap-1.5 text-sm text-zinc-500 no-underline hover:text-zinc-300"
+  >
+    <lucide-icon [img]="ArrowLeftIcon" [size]="14" />
+    Back to Projects
+  </a>
+
+  @if (isLoading()) {
+  <div class="space-y-4">
+    <div class="h-20 animate-pulse rounded-lg bg-zinc-800/50"></div>
+    <div class="h-48 animate-pulse rounded-lg bg-zinc-800/50"></div>
+  </div>
+  } @else if (project(); as p) {
+  <!-- Header -->
+  <div class="mb-6">
+    <div class="flex items-center gap-3">
+      <lucide-icon [img]="FolderOpenIcon" [size]="20" class="text-zinc-400" />
+      <h1 class="text-xl font-semibold text-zinc-100">{{ p.title }}</h1>
+      <span
+        class="rounded-sm border px-2 py-0.5 text-xs"
+        [class]="getStatusColor(p.status)"
+      >
+        {{ p.status }}
+      </span>
+    </div>
+
+    @if (p.description) {
+    <p class="mt-2 text-sm text-zinc-400">{{ p.description }}</p>
+    }
+
+    <!-- Goal breadcrumb -->
+    @if (p.goal_breadcrumb) {
+    <a
+      [routerLink]="['/admin/commitments/goals', p.goal_breadcrumb.goal_id]"
+      class="mt-2 inline-flex items-center gap-1.5 text-xs text-zinc-500 no-underline hover:text-zinc-300"
+    >
+      <lucide-icon [img]="TargetIcon" [size]="12" />
+      {{ p.goal_breadcrumb.goal_title }}
+    </a>
+    }
+  </div>
+
+  <div class="grid gap-6 lg:grid-cols-3">
+    <!-- Tasks by Status (read-only display) -->
+    <div class="space-y-4 lg:col-span-2">
+      <div class="flex items-center justify-between">
+        <h2 class="text-sm font-medium text-zinc-400">Tasks</h2>
+        @if (totalTasks() > 0) {
+        <span class="text-xs text-zinc-500">
+          {{ doneTasks() }}/{{ totalTasks() }} done
+        </span>
+        }
+      </div>
+
+      @if (taskGroups().length === 0) {
+      <div
+        class="rounded-lg border border-dashed border-zinc-800 py-8 text-center"
+      >
+        <p class="text-sm text-zinc-600">No tasks for this project</p>
+        <p class="mt-1 text-xs text-zinc-700">
+          Tasks are created and advanced through Claude
+        </p>
+      </div>
+      } @else { @for (group of taskGroups(); track group.label) {
+      <div>
+        <h3
+          class="mb-2 text-xs font-medium uppercase tracking-wider"
+          [class]="group.color"
+        >
+          {{ group.label }}
+          <span class="text-zinc-700">({{ group.tasks.length }})</span>
+        </h3>
+        <div class="space-y-1">
+          @for (task of group.tasks; track task.id) {
+          <div
+            class="flex items-center justify-between rounded-md bg-zinc-900/50 px-3 py-2"
+          >
+            <span
+              class="text-sm"
+              [class]="
+                        group.label === 'Done'
+                          ? 'text-zinc-500 line-through'
+                          : 'text-zinc-300'
+                      "
+            >
+              {{ task.title }}
+            </span>
+            <div class="flex items-center gap-2">
+              @if (task.is_in_today_plan) {
+              <span
+                class="rounded-sm bg-sky-900/30 px-1.5 py-0.5 text-xs text-sky-400"
+              >
+                today
+              </span>
+              } @if (task.due) {
+              <span class="text-xs text-zinc-600">{{ task.due }}</span>
+              }
+            </div>
+          </div>
+          }
+        </div>
+      </div>
+      } }
+    </div>
+
+    <!-- Sidebar: Portfolio fields + related content -->
+    <div class="space-y-4">
+      @if (p.problem) {
+      <div class="rounded-lg border border-zinc-800 bg-zinc-900/50 p-3">
+        <h3
+          class="mb-1 text-xs font-medium uppercase tracking-wider text-zinc-500"
+        >
+          Problem
+        </h3>
+        <p class="text-sm text-zinc-300">{{ p.problem }}</p>
+      </div>
+      } @if (p.solution) {
+      <div class="rounded-lg border border-zinc-800 bg-zinc-900/50 p-3">
+        <h3
+          class="mb-1 text-xs font-medium uppercase tracking-wider text-zinc-500"
+        >
+          Solution
+        </h3>
+        <p class="text-sm text-zinc-300">{{ p.solution }}</p>
+      </div>
+      } @if (p.architecture) {
+      <div class="rounded-lg border border-zinc-800 bg-zinc-900/50 p-3">
+        <h3
+          class="mb-1 text-xs font-medium uppercase tracking-wider text-zinc-500"
+        >
+          Architecture
+        </h3>
+        <p class="text-sm text-zinc-300">{{ p.architecture }}</p>
+      </div>
+      } @if (p.related_content.length > 0) {
+      <div>
+        <h3
+          class="mb-2 text-xs font-medium uppercase tracking-wider text-zinc-500"
+        >
+          Related Content
+        </h3>
+        <div class="space-y-1">
+          @for (content of p.related_content; track content.id) {
+          <a
+            [href]="'/' + content.type + 's/' + content.slug"
+            target="_blank"
+            rel="noopener"
+            class="flex items-center justify-between rounded-md bg-zinc-900/50 px-3 py-2 text-sm text-zinc-300 no-underline transition-colors hover:bg-zinc-800"
+          >
+            <span class="truncate">{{ content.title }}</span>
+            <lucide-icon
+              [img]="ExternalLinkIcon"
+              [size]="12"
+              class="ml-2 shrink-0 text-zinc-600"
+            />
+          </a>
+          }
+        </div>
+      </div>
+      }
+    </div>
+  </div>
+
+  <p class="mt-8 text-center text-xs text-zinc-600">
+    Task creation, status changes, and project updates are managed through
+    Claude
+  </p>
+  } @else {
+  <div class="py-16 text-center">
+    <p class="text-zinc-500">Project not found</p>
+  </div>
+  }
+</div>

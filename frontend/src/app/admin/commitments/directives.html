@@ -1,0 +1,201 @@
+<!-- Directives — Read-only IPC board: HQ view of delegation status. Operations via Claude. -->
+<div class="mx-auto max-w-5xl px-4 py-6 sm:px-6">
+  <div class="mb-6">
+    <h1 class="flex items-center gap-2 text-xl font-semibold text-zinc-100">
+      <lucide-icon [img]="UsersIcon" [size]="20" class="text-zinc-400" />
+      Directives & Reports
+    </h1>
+    <p class="mt-1 text-sm text-zinc-500">
+      Inter-participant coordination — directives are issued and resolved
+      through Claude
+    </p>
+  </div>
+
+  @if (isLoading()) {
+  <div class="space-y-4">
+    @for (_ of [1, 2, 3]; track $index) {
+    <div class="h-24 animate-pulse rounded-lg bg-zinc-800/50"></div>
+    }
+  </div>
+  } @else {
+  <!-- Participants summary -->
+  @if (participants().length > 0) {
+  <section class="mb-8">
+    <h2 class="mb-3 text-sm font-medium uppercase tracking-wider text-zinc-500">
+      Participants
+    </h2>
+    <div class="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+      @for (p of participants(); track p.name) {
+      <div class="rounded-lg border border-zinc-800 bg-zinc-900/50 p-3">
+        <div class="flex items-center justify-between">
+          <div>
+            <p class="text-sm font-medium text-zinc-200">{{ p.name }}</p>
+            <p class="text-xs text-zinc-600">{{ p.platform }}</p>
+          </div>
+          <div class="flex flex-col items-end text-xs">
+            @if (p.active_directives > 0) {
+            <span class="text-amber-400">{{ p.active_directives }} open</span>
+            } @if (p.recent_reports > 0) {
+            <span class="text-zinc-500">{{ p.recent_reports }} reports</span>
+            }
+          </div>
+        </div>
+        <!-- Capability chips -->
+        <div class="mt-2 flex flex-wrap gap-1">
+          @if (canIssue(p)) {
+          <span
+            class="rounded-sm bg-zinc-800 px-1.5 py-0.5 text-xs text-zinc-500"
+          >
+            can issue
+          </span>
+          } @if (canReceive(p)) {
+          <span
+            class="rounded-sm bg-zinc-800 px-1.5 py-0.5 text-xs text-zinc-500"
+          >
+            can receive
+          </span>
+          } @if (p.can_write_reports) {
+          <span
+            class="rounded-sm bg-zinc-800 px-1.5 py-0.5 text-xs text-zinc-500"
+          >
+            reports
+          </span>
+          }
+        </div>
+      </div>
+      }
+    </div>
+  </section>
+  }
+
+  <!-- Open directives by target participant -->
+  <section class="mb-8">
+    <h2
+      class="mb-3 flex items-center gap-2 text-sm font-medium uppercase tracking-wider text-zinc-500"
+    >
+      <lucide-icon [img]="SendIcon" [size]="14" />
+      Open Directives
+    </h2>
+
+    @if (!hasOpenDirectives()) {
+    <div
+      class="rounded-lg border border-dashed border-zinc-800 py-12 text-center"
+    >
+      <lucide-icon
+        [img]="CheckCircleIcon"
+        [size]="32"
+        class="mb-3 text-zinc-700"
+      />
+      <p class="text-sm text-zinc-500">No open directives</p>
+      <p class="mt-1 text-xs text-zinc-600">
+        Issue new directives through Claude
+      </p>
+    </div>
+    } @else {
+    <div class="space-y-6">
+      @for (group of directivesByTarget(); track group.participant) {
+      <div data-testid="directive-group">
+        <!-- Target participant header -->
+        <div class="mb-2 flex items-center gap-2">
+          <h3
+            class="text-xs font-medium uppercase tracking-wider text-zinc-500"
+          >
+            → {{ group.participant }}
+          </h3>
+          <span class="text-xs text-zinc-700">
+            {{ group.directives.length }} {{ group.directives.length === 1 ?
+            'directive' : 'directives' }}
+          </span>
+        </div>
+
+        <!-- Directives -->
+        <div class="space-y-2">
+          @for (directive of group.directives; track directive.id) {
+          <div class="rounded-lg border border-zinc-800 bg-zinc-900/50 p-4">
+            <!-- Header line -->
+            <div class="mb-2 flex items-center gap-2">
+              <span
+                class="rounded-sm border px-1.5 py-0.5 text-xs"
+                [class]="getLifecycleColor(directive.lifecycle_status)"
+              >
+                {{ directive.lifecycle_status }}
+              </span>
+              <span
+                class="text-xs font-medium"
+                [class]="getPriorityColor(directive.priority)"
+              >
+                {{ directive.priority }}
+              </span>
+              <span class="text-xs text-zinc-600">
+                from {{ directive.source }}
+              </span>
+              <span
+                class="ml-auto flex items-center gap-1 text-xs"
+                [class]="getAgeColor(directive.age_days)"
+              >
+                <lucide-icon [img]="ClockIcon" [size]="10" />
+                {{ directive.age_days }}d
+              </span>
+            </div>
+
+            <!-- Content -->
+            <p class="text-sm text-zinc-300">{{ directive.content }}</p>
+
+            <!-- Resolution report indicator -->
+            @if (directive.resolution_report_id) {
+            <div class="mt-2 flex items-center gap-1.5 text-xs text-zinc-500">
+              <lucide-icon [img]="FileTextIcon" [size]="10" />
+              Resolution report filed
+            </div>
+            }
+          </div>
+          }
+        </div>
+      </div>
+      }
+    </div>
+    }
+  </section>
+
+  <!-- Recent reports -->
+  @if (reports().length > 0) {
+  <section>
+    <h2
+      class="mb-3 flex items-center gap-2 text-sm font-medium uppercase tracking-wider text-zinc-500"
+    >
+      <lucide-icon [img]="FileTextIcon" [size]="14" />
+      Recent Reports
+    </h2>
+    <div class="space-y-2">
+      @for (report of reports(); track report.id) {
+      <div class="rounded-lg border border-zinc-800 bg-zinc-900/50 p-4">
+        <div class="mb-2 flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <span class="text-xs font-medium text-zinc-400">
+              from {{ report.source }}
+            </span>
+            @if (report.in_response_to) {
+            <span class="flex items-center gap-1 text-xs text-zinc-600">
+              <lucide-icon [img]="ArrowRightIcon" [size]="10" />
+              response to directive #{{ report.in_response_to }}
+            </span>
+            }
+          </div>
+          <span class="text-xs text-zinc-600">
+            {{ report.reported_date | date: 'MMM d' }}
+          </span>
+        </div>
+        <p class="text-sm text-zinc-300">
+          {{ getReportPreview(report.content) }}
+        </p>
+      </div>
+      }
+    </div>
+  </section>
+  }
+
+  <p class="mt-8 text-center text-xs text-zinc-600">
+    Issue directives, file reports, and acknowledge work through Claude
+  </p>
+  }
+</div>

@@ -1,0 +1,139 @@
+<!-- Plan Detail — Read-only view of a learning plan's items and progress -->
+<div class="mx-auto max-w-4xl px-4 py-6 sm:px-6">
+  <a
+    routerLink="/admin/learn/plans"
+    class="mb-4 inline-flex items-center gap-1.5 text-sm text-zinc-500 no-underline hover:text-zinc-300"
+  >
+    <lucide-icon [img]="ArrowLeftIcon" [size]="14" />
+    Back to Plans
+  </a>
+
+  @if (isLoading()) {
+  <div class="space-y-4">
+    <div class="h-16 animate-pulse rounded-lg bg-zinc-800/50"></div>
+    <div class="h-64 animate-pulse rounded-lg bg-zinc-800/50"></div>
+  </div>
+  } @else if (plan(); as p) {
+  <!-- Header -->
+  <div class="mb-6">
+    <div class="flex items-center gap-3">
+      <h1 class="text-xl font-semibold text-zinc-100">{{ p.title }}</h1>
+      <span
+        class="rounded-sm border px-2 py-0.5 text-xs"
+        [class]="getStatusColor(p.status)"
+      >
+        {{ p.status }}
+      </span>
+    </div>
+    @if (p.description) {
+    <p class="mt-2 text-sm text-zinc-500">{{ p.description }}</p>
+    }
+  </div>
+
+  <!-- Progress summary -->
+  <div class="mb-6 rounded-lg border border-zinc-800 bg-zinc-900/50 p-4">
+    <div class="mb-3 flex items-center justify-between">
+      <span class="text-sm text-zinc-400">Progress</span>
+      <span class="text-sm font-medium text-zinc-200"
+        >{{ progressPercent() }}%</span
+      >
+    </div>
+    <div class="mb-3 h-2 w-full rounded-full bg-zinc-800">
+      <div
+        class="h-2 rounded-full bg-emerald-500 transition-all"
+        [style.width.%]="progressPercent()"
+      ></div>
+    </div>
+    <div class="flex items-center gap-4 text-xs text-zinc-500">
+      <span class="text-emerald-400">{{ progress().completed }} completed</span>
+      <span>{{ progress().skipped }} skipped</span>
+      <span>{{ progress().substituted }} substituted</span>
+      <span>{{ progress().planned }} remaining</span>
+    </div>
+  </div>
+
+  <!-- Item List -->
+  <div class="space-y-1">
+    @for (item of items(); track item.id) {
+    <div
+      class="flex items-center gap-3 rounded-md px-3 py-2.5"
+      [class]="
+            item.status === 'completed'
+              ? 'bg-emerald-950/10'
+              : item.status === 'skipped'
+                ? 'bg-zinc-800/20'
+                : 'bg-zinc-900/30'
+          "
+    >
+      <!-- Status icon -->
+      <lucide-icon
+        [img]="getItemStatusIcon(item)"
+        [size]="16"
+        [class]="getItemStatusColor(item)"
+      />
+
+      <!-- Position -->
+      <span class="w-6 text-right text-xs text-zinc-700"
+        >{{ item.position + 1 }}</span
+      >
+
+      <!-- Title -->
+      <span
+        class="flex-1 text-sm"
+        [class]="
+              item.status === 'completed'
+                ? 'text-zinc-500 line-through'
+                : item.status === 'skipped'
+                  ? 'text-zinc-600 line-through'
+                  : 'text-zinc-300'
+            "
+      >
+        {{ item.title }}
+      </span>
+
+      <!-- Difficulty badge -->
+      @if (item.difficulty) {
+      <span
+        class="text-xs"
+        [class]="
+                item.difficulty === 'hard'
+                  ? 'text-red-400'
+                  : item.difficulty === 'medium'
+                    ? 'text-amber-400'
+                    : 'text-emerald-400'
+              "
+      >
+        {{ item.difficulty }}
+      </span>
+      }
+
+      <!-- Reason (for completed/skipped) -->
+      @if (item.reason) {
+      <span class="max-w-48 truncate text-xs text-zinc-600"
+        >{{ item.reason }}</span
+      >
+      }
+
+      <!-- Completion date -->
+      @if (item.completed_at) {
+      <span class="text-xs text-zinc-600"
+        >{{ item.completed_at | date: "MMM d" }}</span
+      >
+      }
+    </div>
+    }
+  </div>
+
+  @if (items().length === 0) {
+  <div class="rounded-lg border border-dashed border-zinc-800 py-8 text-center">
+    <p class="text-sm text-zinc-600">No items in this plan yet</p>
+    <p class="mt-1 text-xs text-zinc-700">
+      Add items to this plan through Claude
+    </p>
+  </div>
+  } } @else {
+  <div class="py-16 text-center">
+    <p class="text-zinc-500">Plan not found</p>
+  </div>
+  }
+</div>

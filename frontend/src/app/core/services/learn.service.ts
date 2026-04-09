@@ -1,7 +1,11 @@
 import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
 import { ApiService } from './api.service';
-import type { LearningDashboard } from '../models/admin.model';
+import type {
+  LearningDashboard,
+  LearningPlanSummary,
+  LearningPlanDetail,
+} from '../models/admin.model';
 
 /** Concept deep analysis — learning history of a single concept */
 export interface ConceptDrilldown {
@@ -64,5 +68,16 @@ export class LearnService {
     return this.api.getData<ConceptDrilldown>(
       `/api/admin/learn/concepts/${slug}`,
     );
+  }
+
+  // Learning Plans
+  getPlans(): Observable<{ plans: LearningPlanSummary[] }> {
+    return this.api.getData<{ plans: LearningPlanSummary[] }>(
+      '/api/admin/learn/plans',
+    );
+  }
+
+  getPlanDetail(id: string): Observable<LearningPlanDetail> {
+    return this.api.getData<LearningPlanDetail>(`/api/admin/learn/plans/${id}`);
   }
 }

@@ -1,0 +1,191 @@
+<!-- Goal Detail — Read-only view of goal, milestones, and linked projects -->
+<div class="mx-auto max-w-4xl px-4 py-6 sm:px-6">
+  <a
+    routerLink="/admin/commitments/goals"
+    class="mb-4 inline-flex items-center gap-1.5 text-sm text-zinc-500 no-underline hover:text-zinc-300"
+  >
+    <lucide-icon [img]="ArrowLeftIcon" [size]="14" />
+    Back to Goals
+  </a>
+
+  @if (isLoading()) {
+  <div class="space-y-4">
+    <div class="h-20 animate-pulse rounded-lg bg-zinc-800/50"></div>
+    <div class="h-48 animate-pulse rounded-lg bg-zinc-800/50"></div>
+  </div>
+  } @else if (goal(); as g) {
+  <!-- Header -->
+  <div class="mb-6">
+    <div class="flex items-center gap-3">
+      <lucide-icon [img]="TargetIcon" [size]="20" class="text-zinc-400" />
+      <h1 class="text-xl font-semibold text-zinc-100">{{ g.title }}</h1>
+      <span
+        class="rounded-sm border px-2 py-0.5 text-xs"
+        [class]="getStatusColor(g.status)"
+      >
+        {{ g.status }}
+      </span>
+    </div>
+
+    <!-- Meta line: area, quarter, deadline, health -->
+    <div class="mt-2 flex flex-wrap items-center gap-3 text-xs text-zinc-500">
+      <span>{{ g.area_name }}</span>
+      @if (g.quarter) {
+      <span>•</span>
+      <span>{{ g.quarter }}</span>
+      } @if (g.deadline) {
+      <span>•</span>
+      <span>Due {{ g.deadline | date: 'MMM d, yyyy' }}</span>
+      }
+      <span>•</span>
+      <span class="font-medium" [class]="getHealthColor(g.health)">
+        {{ g.health }}
+      </span>
+    </div>
+
+    @if (g.description) {
+    <p class="mt-3 text-sm text-zinc-400">{{ g.description }}</p>
+    }
+  </div>
+
+  <div class="grid gap-6 lg:grid-cols-3">
+    <!-- Milestones (binary checkpoints) -->
+    <div class="lg:col-span-2">
+      <div class="mb-3 flex items-center justify-between">
+        <h2 class="text-sm font-medium text-zinc-400">Milestones</h2>
+        @if (milestoneProgress().total > 0) {
+        <span class="text-xs text-zinc-500">
+          {{ milestoneProgress().done }} / {{ milestoneProgress().total }} done
+        </span>
+        }
+      </div>
+
+      @if (milestones().length === 0) {
+      <div
+        class="rounded-lg border border-dashed border-zinc-800 py-8 text-center"
+      >
+        <p class="text-sm text-zinc-600">No milestones defined</p>
+        <p class="mt-1 text-xs text-zinc-700">Add milestones through Claude</p>
+      </div>
+      } @else {
+      <div class="space-y-1.5">
+        @for (milestone of milestones(); track milestone.id) {
+        <div
+          class="flex items-center gap-3 rounded-md px-3 py-2.5"
+          [class]="
+                  milestone.completed ? 'bg-emerald-950/10' : 'bg-zinc-900/30'
+                "
+        >
+          @if (milestone.completed) {
+          <lucide-icon
+            [img]="CheckIcon"
+            [size]="16"
+            class="shrink-0 text-emerald-500"
+          />
+          } @else {
+          <lucide-icon
+            [img]="CircleIcon"
+            [size]="16"
+            class="shrink-0 text-zinc-700"
+          />
+          }
+          <span
+            class="flex-1 text-sm"
+            [class]="
+                    milestone.completed
+                      ? 'text-zinc-500 line-through'
+                      : 'text-zinc-300'
+                  "
+          >
+            {{ milestone.title }}
+          </span>
+          @if (milestone.completed_at) {
+          <span class="text-xs text-zinc-600">
+            {{ milestone.completed_at | date: 'MMM d' }}
+          </span>
+          }
+        </div>
+        }
+      </div>
+      }
+
+      <!-- Recent Activity -->
+      @if (recentActivity().length > 0) {
+      <div class="mt-6">
+        <h2 class="mb-3 text-sm font-medium text-zinc-400">Recent Activity</h2>
+        <div class="space-y-1.5">
+          @for (item of recentActivity(); track $index) {
+          <div
+            class="flex items-center justify-between rounded-md bg-zinc-900/50 px-3 py-2"
+          >
+            <div class="flex items-center gap-2">
+              <span
+                class="rounded-sm bg-zinc-800 px-1.5 py-0.5 text-xs text-zinc-500"
+              >
+                {{ item.type }}
+              </span>
+              <span class="text-sm text-zinc-300">{{ item.title }}</span>
+            </div>
+            <span class="text-xs text-zinc-600">
+              {{ item.timestamp | date: 'MMM d' }}
+            </span>
+          </div>
+          }
+        </div>
+      </div>
+      }
+    </div>
+
+    <!-- Sidebar: Linked Projects -->
+    <div>
+      <h2 class="mb-3 text-sm font-medium text-zinc-400">Linked Projects</h2>
+
+      @if (projects().length === 0) {
+      <p class="text-sm text-zinc-600">No linked projects</p>
+      } @else {
+      <div class="space-y-2">
+        @for (project of projects(); track project.id) {
+        <a
+          [routerLink]="['/admin/commitments/projects', project.id]"
+          class="group block rounded-lg border border-zinc-800 bg-zinc-900/50 p-3 no-underline transition-colors hover:border-zinc-700"
+        >
+          <div class="flex items-start gap-2">
+            <lucide-icon
+              [img]="FolderOpenIcon"
+              [size]="14"
+              class="mt-0.5 shrink-0 text-zinc-600"
+            />
+            <div class="flex-1 min-w-0">
+              <p class="truncate text-sm text-zinc-300">{{ project.title }}</p>
+              <p
+                class="text-xs"
+                [class]="getProjectStatusColor(project.status)"
+              >
+                {{ project.status }}
+              </p>
+              @if (project.task_progress.total > 0) {
+              <p class="mt-1 text-xs text-zinc-600">
+                {{ project.task_progress.done }}/{{ project.task_progress.total
+                }} tasks
+              </p>
+              }
+            </div>
+          </div>
+        </a>
+        }
+      </div>
+      }
+    </div>
+  </div>
+
+  <!-- Footer hint -->
+  <p class="mt-8 text-center text-xs text-zinc-600">
+    Milestone toggles, status changes, and goal updates are managed through
+    Claude
+  </p>
+  } @else {
+  <div class="py-16 text-center">
+    <p class="text-zinc-500">Goal not found</p>
+  </div>
+  }
+</div>

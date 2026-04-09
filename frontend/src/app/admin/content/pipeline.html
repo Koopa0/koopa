@@ -1,0 +1,177 @@
+<!-- Content Pipeline — Kanban-style lifecycle stages. The review link is the ONE write operation. -->
+<div class="mx-auto max-w-5xl px-4 py-6 sm:px-6">
+  <div class="mb-6">
+    <h1 class="flex items-center gap-2 text-xl font-semibold text-zinc-100">
+      <lucide-icon [img]="PenLineIcon" [size]="20" class="text-zinc-400" />
+      Content Pipeline
+    </h1>
+    <p class="mt-1 text-sm text-zinc-500">
+      Lifecycle stages: Draft → Review → Publish
+    </p>
+  </div>
+
+  @if (isLoading()) {
+  <div class="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+    @for (_ of [1, 2, 3, 4]; track $index) {
+    <div class="h-48 animate-pulse rounded-lg bg-zinc-800/50"></div>
+    }
+  </div>
+  } @else {
+  <div class="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+    <!-- Drafts -->
+    <div class="rounded-lg border border-zinc-800 bg-zinc-900/50 p-4">
+      <div class="mb-3 flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <lucide-icon [img]="PenLineIcon" [size]="14" class="text-amber-400" />
+          <span class="text-xs font-medium text-amber-400">Drafting</span>
+        </div>
+        <span class="text-lg font-semibold text-zinc-200"
+          >{{ drafts().length }}</span
+        >
+      </div>
+      @if (drafts().length === 0) {
+      <p class="py-4 text-center text-xs text-zinc-600">No drafts</p>
+      } @else {
+      <div class="space-y-2">
+        @for (item of drafts(); track item.id) {
+        <div class="rounded-md bg-zinc-800/50 px-3 py-2">
+          <p class="text-sm text-zinc-300">{{ item.title }}</p>
+          <div class="mt-1 flex items-center gap-2">
+            <span
+              class="rounded-sm px-1.5 py-0.5 text-xs"
+              [class]="getTypeColor(item.type)"
+            >
+              {{ item.type }}
+            </span>
+            @if (item.word_count) {
+            <span class="text-xs text-zinc-600">{{ item.word_count }}w</span>
+            }
+          </div>
+        </div>
+        }
+      </div>
+      }
+    </div>
+
+    <!-- In Review -->
+    <div class="rounded-lg border border-zinc-800 bg-zinc-900/50 p-4">
+      <div class="mb-3 flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <lucide-icon [img]="EyeIcon" [size]="14" class="text-sky-400" />
+          <span class="text-xs font-medium text-sky-400">In Review</span>
+        </div>
+        <span class="text-lg font-semibold text-zinc-200"
+          >{{ inReview().length }}</span
+        >
+      </div>
+      @if (inReview().length === 0) {
+      <p class="py-4 text-center text-xs text-zinc-600">None in review</p>
+      } @else {
+      <div class="space-y-2">
+        @for (item of inReview(); track item.id) {
+        <a
+          [routerLink]="['/admin/content/review', item.id]"
+          class="block rounded-md bg-zinc-800/50 px-3 py-2 no-underline transition-colors hover:bg-zinc-800"
+        >
+          <p class="text-sm text-zinc-300">{{ item.title }}</p>
+          <div class="mt-1 flex items-center gap-2">
+            <span
+              class="rounded-sm px-1.5 py-0.5 text-xs"
+              [class]="getTypeColor(item.type)"
+            >
+              {{ item.type }}
+            </span>
+            <span class="text-xs text-sky-400">Review →</span>
+          </div>
+        </a>
+        }
+      </div>
+      }
+    </div>
+
+    <!-- Ready to Publish -->
+    <div class="rounded-lg border border-zinc-800 bg-zinc-900/50 p-4">
+      <div class="mb-3 flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <lucide-icon [img]="SendIcon" [size]="14" class="text-emerald-400" />
+          <span class="text-xs font-medium text-emerald-400">Ready</span>
+        </div>
+        <span class="text-lg font-semibold text-zinc-200"
+          >{{ readyToPublish().length }}</span
+        >
+      </div>
+      @if (readyToPublish().length === 0) {
+      <p class="py-4 text-center text-xs text-zinc-600">None ready</p>
+      } @else {
+      <div class="space-y-2">
+        @for (item of readyToPublish(); track item.id) {
+        <a
+          [routerLink]="['/admin/content/review', item.id]"
+          class="block rounded-md bg-zinc-800/50 px-3 py-2 no-underline transition-colors hover:bg-zinc-800"
+        >
+          <p class="text-sm text-zinc-300">{{ item.title }}</p>
+          <div class="mt-1 flex items-center gap-2">
+            <span
+              class="rounded-sm px-1.5 py-0.5 text-xs"
+              [class]="getTypeColor(item.type)"
+            >
+              {{ item.type }}
+            </span>
+            <span class="text-xs text-emerald-400">Publish →</span>
+          </div>
+        </a>
+        }
+      </div>
+      }
+    </div>
+
+    <!-- Recently Published -->
+    <div class="rounded-lg border border-zinc-800 bg-zinc-900/50 p-4">
+      <div class="mb-3 flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <lucide-icon [img]="FileTextIcon" [size]="14" class="text-zinc-400" />
+          <span class="text-xs font-medium text-zinc-400">Published</span>
+        </div>
+        <span class="text-lg font-semibold text-zinc-200"
+          >{{ recentlyPublished().length }}</span
+        >
+      </div>
+      @if (recentlyPublished().length === 0) {
+      <p class="py-4 text-center text-xs text-zinc-600">None yet</p>
+      } @else {
+      <div class="space-y-2">
+        @for (item of recentlyPublished(); track item.id) {
+        <div class="rounded-md bg-zinc-800/50 px-3 py-2">
+          <p class="text-sm text-zinc-300">{{ item.title }}</p>
+          <div class="mt-1 flex items-center gap-2">
+            <span
+              class="rounded-sm px-1.5 py-0.5 text-xs"
+              [class]="getTypeColor(item.type)"
+            >
+              {{ item.type }}
+            </span>
+            @if (item.published_at) {
+            <span class="text-xs text-zinc-600"
+              >{{ item.published_at | date: 'MMM d' }}</span
+            >
+            }
+          </div>
+        </div>
+        }
+      </div>
+      }
+    </div>
+  </div>
+
+  <!-- Link to full library -->
+  <div class="mt-6 text-center">
+    <a
+      routerLink="/admin/content/library"
+      class="inline-flex items-center gap-1 text-sm text-zinc-500 no-underline hover:text-zinc-300"
+    >
+      View all content
+      <lucide-icon [img]="ChevronRightIcon" [size]="14" />
+    </a>
+  </div>
+  }
+</div>

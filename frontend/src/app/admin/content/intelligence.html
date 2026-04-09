@@ -1,0 +1,128 @@
+<!-- Intelligence — RSS feed sources view. Feeds are managed via Claude/MCP. -->
+<div class="mx-auto max-w-4xl px-4 py-6 sm:px-6">
+  <div class="mb-6">
+    <h1 class="flex items-center gap-2 text-xl font-semibold text-zinc-100">
+      <lucide-icon [img]="RssIcon" [size]="20" class="text-orange-400" />
+      Intelligence Sources
+    </h1>
+    <p class="mt-1 text-sm text-zinc-500">
+      RSS feeds and external knowledge inputs — managed via Claude
+    </p>
+  </div>
+
+  @if (isLoading()) {
+  <div class="space-y-3">
+    @for (_ of [1, 2, 3]; track $index) {
+    <div class="h-16 animate-pulse rounded-lg bg-zinc-800/50"></div>
+    }
+  </div>
+  } @else {
+  <!-- Health summary -->
+  <div class="mb-6 grid grid-cols-3 gap-3">
+    <div class="rounded-lg border border-zinc-800 bg-zinc-900/50 px-4 py-3">
+      <span class="text-xs text-zinc-500">Total Feeds</span>
+      <p class="mt-1 text-lg font-semibold text-zinc-200">{{ totalFeeds() }}</p>
+    </div>
+    <div class="rounded-lg border border-zinc-800 bg-zinc-900/50 px-4 py-3">
+      <span class="text-xs text-zinc-500">Healthy</span>
+      <p class="mt-1 text-lg font-semibold text-emerald-400">
+        {{ healthyCount() }}
+      </p>
+    </div>
+    <div class="rounded-lg border border-zinc-800 bg-zinc-900/50 px-4 py-3">
+      <div class="flex items-center gap-1.5">
+        @if (failingFeeds().length > 0) {
+        <lucide-icon
+          [img]="AlertTriangleIcon"
+          [size]="12"
+          class="text-red-400"
+        />
+        }
+        <span class="text-xs text-zinc-500">Failing</span>
+      </div>
+      <p
+        class="mt-1 text-lg font-semibold"
+        [class]="failingFeeds().length > 0 ? 'text-red-400' : 'text-zinc-200'"
+      >
+        {{ failingFeeds().length }}
+      </p>
+    </div>
+  </div>
+
+  @if (feeds().length === 0) {
+  <div
+    class="flex flex-col items-center justify-center rounded-lg border border-dashed border-zinc-800 py-16 text-center"
+  >
+    <lucide-icon [img]="RssIcon" [size]="32" class="mb-3 text-zinc-700" />
+    <p class="text-sm text-zinc-500">No feeds configured</p>
+    <p class="mt-1 text-xs text-zinc-600">Add RSS feeds through Claude</p>
+  </div>
+  } @else {
+  <!-- Failing feeds first -->
+  @if (failingFeeds().length > 0) {
+  <div class="mb-6">
+    <h2 class="mb-3 flex items-center gap-2 text-sm font-medium text-red-400">
+      <lucide-icon [img]="AlertTriangleIcon" [size]="14" />
+      Failing Feeds
+    </h2>
+    <div class="space-y-2">
+      @for (feed of failingFeeds(); track feed.id) {
+      <div class="rounded-lg border border-red-900/30 bg-red-950/10 p-3">
+        <div class="flex items-center justify-between">
+          <span class="text-sm font-medium text-zinc-200">{{ feed.name }}</span>
+          <span class="text-xs text-red-400">
+            {{ feed.consecutive_failures }} failures
+          </span>
+        </div>
+        @if (feed.last_error) {
+        <p class="mt-1 truncate text-xs text-red-400/70">
+          {{ feed.last_error }}
+        </p>
+        }
+      </div>
+      }
+    </div>
+  </div>
+  }
+
+  <!-- All feeds -->
+  <div>
+    <h2 class="mb-3 text-sm font-medium text-zinc-400">All Sources</h2>
+    <div class="space-y-2">
+      @for (feed of feeds(); track feed.id) {
+      <a
+        [href]="feed.url"
+        target="_blank"
+        rel="noopener"
+        class="group flex items-center justify-between rounded-lg border border-zinc-800 bg-zinc-900/50 px-4 py-3 no-underline transition-colors hover:border-zinc-700"
+      >
+        <div class="flex-1 min-w-0">
+          <div class="flex items-center gap-2">
+            <span class="truncate text-sm font-medium text-zinc-200"
+              >{{ feed.name }}</span
+            >
+            @if (!feed.enabled) {
+            <span
+              class="rounded-sm bg-zinc-800 px-1.5 py-0.5 text-xs text-zinc-500"
+              >disabled</span
+            >
+            }
+          </div>
+          <div class="mt-1 flex items-center gap-3 text-xs text-zinc-500">
+            <span>{{ getScheduleLabel(feed.schedule) }}</span>
+            @if (feed.topics.length > 0) {
+            <span>{{ feed.topics.join(', ') }}</span>
+            }
+          </div>
+        </div>
+        <lucide-icon
+          [img]="ExternalLinkIcon"
+          [size]="14"
+          class="ml-3 shrink-0 text-zinc-700 transition-colors group-hover:text-zinc-500"
+        />
+      </a>
+      }
+    </div>
+  </div>
+  } }
+</div>

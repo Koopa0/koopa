@@ -305,23 +305,6 @@ export interface ApiCreateTopicRequest {
 
 export type ApiUpdateTopicRequest = Partial<ApiCreateTopicRequest>;
 
-/** Admin — Review */
-export type ReviewStatus = 'pending' | 'approved' | 'rejected' | 'edited';
-
-export interface ApiReviewItem {
-  id: string;
-  content_id: string;
-  review_level: ReviewLevel;
-  is_public: boolean;
-  status: ReviewStatus;
-  reviewer_notes: string | null;
-  content_title: string;
-  content_slug: string;
-  content_type: ContentType;
-  submitted_at: string;
-  reviewed_at: string | null;
-}
-
 /** Admin — RSS Feed */
 export interface FeedFilterConfig {
   deny_paths?: string[];

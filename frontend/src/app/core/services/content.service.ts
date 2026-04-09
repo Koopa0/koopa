@@ -10,6 +10,7 @@ import type {
   ApiKnowledgeGraph,
   ContentType,
 } from '../models';
+import type { ContentPipeline } from '../models/admin.model';
 
 /** Unified content API — maps to backend /api/contents */
 @Injectable({ providedIn: 'root' })
@@ -62,6 +63,11 @@ export class ContentService {
     return this.api.getListData<ApiContent>('/api/search', query);
   }
 
+  /** Admin — get content pipeline stages (drafts, in review, published) */
+  getPipeline(): Observable<ContentPipeline> {
+    return this.api.getData<ContentPipeline>('/api/admin/library/pipeline');
+  }
+
   /** Admin — get single content by ID (full fields, no is_public check) */
   adminGet(id: string): Observable<ApiContent> {
     return this.api.getData<ApiContent>(`/api/admin/contents/${id}`);
@@ -98,7 +104,7 @@ export class ContentService {
     return this.api.delete(`/api/admin/contents/${id}`);
   }
 
-  /** Admin — publish content */
+  /** Admin — publish content (approve from review) */
   publish(id: string): Observable<ApiContent> {
     return this.api.postData<ApiContent>(
       `/api/admin/contents/${id}/publish`,
@@ -106,10 +112,17 @@ export class ContentService {
     );
   }
 
-  /** Admin — toggle visibility */
+  /** Admin — reject content back to draft with reviewer notes */
+  reject(id: string, reviewerNotes: string): Observable<ApiContent> {
+    return this.api.postData<ApiContent>(`/api/admin/contents/${id}/reject`, {
+      reviewer_notes: reviewerNotes,
+    });
+  }
+
+  /** Admin — toggle is_public flag */
   setVisibility(id: string, is_public: boolean): Observable<ApiContent> {
     return this.api.patchData<ApiContent>(
-      `/api/admin/contents/${id}/visibility`,
+      `/api/admin/contents/${id}/is-public`,
       { is_public },
     );
   }
