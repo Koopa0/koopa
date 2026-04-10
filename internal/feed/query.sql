@@ -82,3 +82,7 @@ UPDATE feeds SET
     last_fetched_at = now(),
     updated_at = now()
 WHERE id = $1;
+
+-- name: InsertFlowRun :exec
+INSERT INTO flow_runs (flow_name, input, output, status, error, started_at, ended_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7);

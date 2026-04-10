@@ -8,7 +8,7 @@
 |------|---------|------------|
 | `morning_context` | 每日啟動：overdue tasks, today tasks, unacked directives, pending reports, RSS highlights | `sections?`, `date?` |
 | `reflection_context` | 晚間回顧：planned vs actual, journals | `date?` |
-| `search_knowledge` | 跨類型搜尋：articles, build logs, TILs, notes | `query`, `content_type?`, `project?`, `limit?` |
+| `search_knowledge` | 跨類型搜尋：articles, build logs, TILs, notes | `query`, `content_type?`, `project?`, `limit?`, `after?`, `before?` |
 | `goal_progress` | 目標 + 里程碑進度 | `area?`, `status?` |
 | `learning_dashboard` | 學習分析（6 views） | `domain?`, `view?`, `window_days?` (mastery defaults to 60, others 30, range 1..365), `confidence_filter?` (mastery/weaknesses only: `"high"` default, `"all"` opt-in) |
 | `attempt_history` | Per-item / per-concept / per-session attempt history (Improvement Verification Loop) | one of `item{title, domain?}` / `concept_slug` / `session_id`; `max_results?` |
@@ -35,12 +35,23 @@ Exactly one of the three required. Not-found returns `resolved: false` with empt
 | `concept` | `concept_slug` (+ `domain?`) | attempts that observed the concept, each with the matched observation inline (signal/category/severity/detail) | "What's his history with binary-search?" |
 | `session` | `session_id` | all attempts in that session, chronological | "What did I do in yesterday's session?" |
 
+### search_knowledge query syntax
+
+Uses PostgreSQL `websearch_to_tsquery('simple', query)`. Supports:
+- **Quoted phrases**: `"value semantics"` — exact phrase match
+- **AND** (default): `Go generics` — both words must appear
+- **OR**: `goroutine OR channel` — either word
+- **Exclusion**: `-draft` — exclude results containing "draft"
+- **Fallback**: if the primary query returns nothing, retries with OR semantics across all words
+
+Empty results mean "not found in published content" — not a query syntax issue.
+
 ## Capture & Structuring (3)
 
 | Tool | Purpose | Annotation |
 |------|---------|------------|
 | `capture_inbox` | Quick task capture (title only required) | additive |
-| `propose_commitment` | Propose goal/project/milestone/directive/insight/learning_plan → returns preview + token | readOnly |
+| `propose_commitment` | Propose goal/project/milestone/directive/insight/learning_plan → returns preview + token. **Insight requires**: `hypothesis`, `invalidation_condition`, `content` (warns on propose, rejects on commit) | readOnly |
 | `commit_proposal` | Submit token → writes to DB | additive |
 
 ## Execution (4)

@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sync"
 	"time"
 
 	"github.com/golang-migrate/migrate/v4"
@@ -23,6 +24,7 @@ import (
 	"github.com/Koopa0/koopa0.dev/internal/admin"
 	"github.com/Koopa0/koopa0.dev/internal/auth"
 	"github.com/Koopa0/koopa0.dev/internal/content"
+	"github.com/Koopa0/koopa0.dev/internal/db"
 	"github.com/Koopa0/koopa0.dev/internal/feed"
 	"github.com/Koopa0/koopa0.dev/internal/feed/collector"
 	"github.com/Koopa0/koopa0.dev/internal/feed/entry"
@@ -73,9 +75,14 @@ func run(logger *slog.Logger) error {
 	authStore := auth.NewStore(pool)
 	noteStore := note.NewStore(pool)
 
-	// Feed collector for manual fetch
+	// Feed collector for manual fetch + scheduled fetch
 	feedCollector := collector.New(entryStore, feedStore, logger)
 	defer feedCollector.Stop()
+
+	// Feed scheduler — background goroutine for periodic feed fetching
+	var wg sync.WaitGroup
+	feedScheduler := feed.NewScheduler(feedStore, feedCollector, db.New(pool), logger)
+	wg.Go(func() { feedScheduler.Run(ctx) })
 
 	// Upload (optional — only if R2 is configured)
 	var uploadHandler *upload.Handler
@@ -163,6 +170,7 @@ func run(logger *slog.Logger) error {
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		return fmt.Errorf("server shutdown: %w", err)
 	}
+	wg.Wait()
 	logger.Info("server stopped")
 	return nil
 }
