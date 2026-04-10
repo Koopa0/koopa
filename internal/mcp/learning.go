@@ -408,7 +408,7 @@ func (s *Server) endSession(ctx context.Context, _ *mcp.CallToolRequest, input E
 type LearningDashboardInput struct {
 	Domain           *string `json:"domain,omitempty" jsonschema_description:"Filter by domain"`
 	View             *string `json:"view,omitempty" jsonschema_description:"View: overview (default), mastery, weaknesses, retrieval, timeline, variations"`
-	Days             FlexInt `json:"days,omitempty" jsonschema_description:"Lookback period in days. Defaults: mastery=60 (one Google interview prep cycle), other views=30. 1..365."`
+	WindowDays       FlexInt `json:"window_days,omitempty" jsonschema_description:"Lookback window in days. Observations older than this are ignored. Defaults per view: mastery=60 (one Google interview prep cycle — avoids flicker for bursty practice), other views=30. Range 1..365."`
 	ConfidenceFilter *string `json:"confidence_filter,omitempty" jsonschema_description:"Only meaningful for mastery and weaknesses views. 'high' (default) restricts to directly-evidenced observations; 'all' includes coach-inferred (low confidence). Other views ignore this field."`
 }
 
@@ -548,8 +548,8 @@ func (s *Server) learningDashboard(ctx context.Context, _ *mcp.CallToolRequest, 
 		view = *input.View
 	}
 
-	days := clamp(int(input.Days), 1, 365, defaultDaysForView(view))
-	since := time.Now().AddDate(0, 0, -days)
+	windowDays := clamp(int(input.WindowDays), 1, 365, defaultDaysForView(view))
+	since := time.Now().AddDate(0, 0, -windowDays)
 
 	var domain *string
 	if input.Domain != nil && *input.Domain != "" {

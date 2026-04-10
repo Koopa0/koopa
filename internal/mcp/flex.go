@@ -80,9 +80,31 @@ var flexStringSliceSchema = &jsonschema.Schema{
 	Items: &jsonschema.Schema{Types: []string{"string"}},
 }
 
+// rawMessageSchema overrides the schema for json.RawMessage fields exposed
+// as tool inputs. Without the override, jsonschema-go introspects the
+// underlying []byte and emits a byte array shape
+// ({"type":"array","items":{"type":"integer","minimum":0,"maximum":255}}),
+// which forces every caller to hand-encode their free-form JSON as an
+// integer byte list. That is obviously not what record_attempt.metadata
+// wants — it wants "any JSON object" so callers can pass 8-step checklist
+// output like {"complexity":{"time":"O(n)"},"pattern":"hash-map"}.
+//
+// Using an empty object schema ({}) would technically accept any JSON
+// value, but clients (Claude Desktop, Cowork) render empty schemas as
+// "any" which is unhelpful UX. {"type":"object"} + explicit
+// additionalProperties:true communicates "pass a JSON object, any keys"
+// while keeping the shape self-documenting.
+var rawMessageSchema = &jsonschema.Schema{
+	Type: "object",
+	Extra: map[string]any{
+		"additionalProperties": true,
+	},
+}
+
 // flexTypeSchemas maps flex types to their schema overrides for use with
 // jsonschema.ForType's TypeSchemas option.
 var flexTypeSchemas = map[reflect.Type]*jsonschema.Schema{
 	reflect.TypeFor[FlexInt]():         flexIntSchema,
 	reflect.TypeFor[FlexStringSlice](): flexStringSliceSchema,
+	reflect.TypeFor[json.RawMessage](): rawMessageSchema,
 }

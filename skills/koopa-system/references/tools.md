@@ -10,7 +10,7 @@
 | `reflection_context` | 晚間回顧：planned vs actual, journals | `date?` |
 | `search_knowledge` | 跨類型搜尋：articles, build logs, TILs, notes | `query`, `content_type?`, `project?`, `limit?` |
 | `goal_progress` | 目標 + 里程碑進度 | `area?`, `status?` |
-| `learning_dashboard` | 學習分析（6 views） | `domain?`, `view?`, `days?` (mastery defaults to 60), `confidence_filter?` (mastery/weaknesses only: `"high"` default, `"all"` opt-in) |
+| `learning_dashboard` | 學習分析（6 views） | `domain?`, `view?`, `window_days?` (mastery defaults to 60, others 30, range 1..365), `confidence_filter?` (mastery/weaknesses only: `"high"` default, `"all"` opt-in) |
 | `attempt_history` | Per-item / per-concept / per-session attempt history (Improvement Verification Loop) | one of `item{title, domain?}` / `concept_slug` / `session_id`; `max_results?` |
 | `system_status` | Pipeline health, feed health, flow runs | `scope?` |
 

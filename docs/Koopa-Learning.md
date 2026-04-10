@@ -177,7 +177,7 @@
 
 ### 讀 dashboard 時要知道的事
 
-`learning_dashboard(view: "mastery")` 預設視窗是 **60 天**（其他 view 是 30）。原因：Koopa 的練習節奏是不均勻的（3 週密集 DP、5 週客戶案子、再回來），30 天 window 會讓剛訓完的 pattern 過幾週就被歸零成 developing，跟主觀感受嚴重背離。60 天大約對應一個 Google 面試準備循環的長度。若有需要可以用 `days` 參數覆寫。
+`learning_dashboard(view: "mastery")` 預設視窗是 **60 天**（其他 view 是 30）。原因：Koopa 的練習節奏是不均勻的（3 週密集 DP、5 週客戶案子、再回來），30 天 window 會讓剛訓完的 pattern 過幾週就被歸零成 developing，跟主觀感受嚴重背離。60 天大約對應一個 Google 面試準備循環的長度。若有需要可以用 `window_days` 參數覆寫。
 
 `confidence_filter` 預設 `"high"`。要看「包含我推斷的觀察在內，這個 concept 看起來如何」就傳 `confidence_filter: "all"`。其他 view（overview / timeline / retrieval / variations）不接受這個參數。
 
