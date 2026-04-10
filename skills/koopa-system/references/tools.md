@@ -1,8 +1,8 @@
 # MCP Tool Quick Reference
 
-22 tools, organized by workflow.
+23 tools, organized by workflow.
 
-## Query Tools (6, readOnly)
+## Query Tools (7, readOnly)
 
 | Tool | Purpose | Key Params |
 |------|---------|------------|
@@ -10,7 +10,8 @@
 | `reflection_context` | 晚間回顧：planned vs actual, journals | `date?` |
 | `search_knowledge` | 跨類型搜尋：articles, build logs, TILs, notes | `query`, `content_type?`, `project?`, `limit?` |
 | `goal_progress` | 目標 + 里程碑進度 | `area?`, `status?` |
-| `learning_dashboard` | 學習分析（6 views） | `domain?`, `view?`, `days?` |
+| `learning_dashboard` | 學習分析（6 views） | `domain?`, `view?`, `days?` (mastery defaults to 60), `confidence_filter?` (mastery/weaknesses only: `"high"` default, `"all"` opt-in) |
+| `attempt_history` | Per-item / per-concept / per-session attempt history (Improvement Verification Loop) | one of `item{title, domain?}` / `concept_slug` / `session_id`; `max_results?` |
 | `system_status` | Pipeline health, feed health, flow runs | `scope?` |
 
 ### learning_dashboard views
@@ -18,11 +19,21 @@
 | View | Returns |
 |------|---------|
 | `overview` (default) | Recent sessions list |
-| `mastery` | Per-concept weakness/improvement/mastery counts |
+| `mastery` | Per-concept signal counts + derived stage (struggling/developing/solid). < 3 filtered observations → always developing. |
 | `weaknesses` | Cross-pattern weakness analysis (category + severity) |
 | `retrieval` | Due FSRS review items |
 | `timeline` | Sessions + attempts by day |
 | `variations` | Item relation graph (easier/harder/prerequisite) |
+
+### attempt_history modes
+
+Exactly one of the three required. Not-found returns `resolved: false` with empty attempts — "never attempted" is a legal answer, not an error.
+
+| Mode | Input | Returns | Use case |
+|------|-------|---------|----------|
+| `item` | `{title, domain?}` | attempts on this specific problem, newest-first | "How did he do this problem last time?" — Improvement Verification Loop |
+| `concept` | `concept_slug` (+ `domain?`) | attempts that observed the concept, each with the matched observation inline (signal/category/severity/detail) | "What's his history with binary-search?" |
+| `session` | `session_id` | all attempts in that session, chronological | "What did I do in yesterday's session?" |
 
 ## Capture & Structuring (3)
 
@@ -41,13 +52,15 @@
 | `file_report` | Create report, optionally linked to directive | additive |
 | `acknowledge_directive` | Mark directive received | additiveIdempotent |
 
-## Learning (3)
+## Learning (3 write + 2 read elsewhere)
 
 | Tool | Purpose | Annotation |
 |------|---------|------------|
 | `start_session` | Begin learning session (domain + mode) | additive |
-| `record_attempt` | Record attempt with outcome + observations | additive |
+| `record_attempt` | Record attempt with outcome + observations. Accepts `metadata` (free-form JSON for 8-step checklist output), `fsrs_rating` (explicit recall difficulty override), `related_items[]` (variation graph links). **All observations persist** — `confidence` is a label (`"high"` default / `"low"`), not a gate. | additive |
 | `end_session` | End session, optional reflection journal | additive |
+
+Read-side counterparts: `learning_dashboard` and `attempt_history` (see Query Tools).
 
 ### Outcome semantic mapping (record_attempt)
 

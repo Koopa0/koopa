@@ -60,14 +60,18 @@ Complete source: `.claude/rules/mcp-decision-policy.md`
 | Decision record or reflection | `write_journal` |
 | Falsifiable hypothesis | `propose_commitment(type=insight)` |
 
-## Observation Confidence
+## Observation Confidence — label, not gate
 
-### High confidence (record directly)
-- Concept already exists in system
-- Signal directly evidenced by behavior
+**Every observation persists regardless of confidence.** Confidence is a column on `attempt_observations`, not a filter at write time. Dashboard `mastery` and `weaknesses` views accept `confidence_filter` (default `"high"`, opt-in `"all"`). A `< 3` filtered-observation floor in `deriveMasteryStage` prevents any single observation — including a low-confidence one — from permanently labelling a concept.
+
+### Label `high`
+- Concept already exists (or auto-creation is allowed per Concept Auto-Creation Boundary)
+- Signal **directly evidenced** by behavior (user said it, outcome proves it)
 - Category matches domain conventions
 
-### Low confidence (present to user first)
-- Concept would need auto-creation
-- Signal is inferred, not directly evidenced
-- Category is novel
+### Label `low`
+- Signal is **inferred** (coach diagnosed it, user didn't demonstrate directly)
+- Concept needs auto-creation AND the signal is itself inferred
+- Severity assessment is uncertain
+
+Do NOT skip recording a low-confidence observation — it persists for future analysis and is excluded from default reads. The old `pending_observations` roundtrip is removed; there is nothing to "confirm later."
