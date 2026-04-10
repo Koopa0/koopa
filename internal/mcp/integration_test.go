@@ -3,6 +3,7 @@
 package mcp
 
 import (
+	"fmt"
 	"log/slog"
 	"os"
 	"strings"
@@ -526,6 +527,345 @@ func TestRecordAttempt_FSRSRatingOverride(t *testing.T) {
 			t.Errorf("found %d Again ratings for item that was only ever rated Easy — race recovery is dropping the caller's rating", againCount)
 		}
 	})
+}
+
+// TestAttemptHistory exercises all three lookup modes (item, concept, session)
+// plus the negative paths. The Improvement Verification Loop in
+// docs/Koopa-Learning.md depends on these lookups behaving correctly: a
+// regression here silently breaks coaching.
+func TestAttemptHistory(t *testing.T) {
+	s := setupIntegrationServer(t)
+	ctx := t.Context()
+
+	// Seed: one session with three attempts on two items, one concept with
+	// observations on two of the three attempts.
+	_, started, err := s.startSession(ctx, nil, StartSessionInput{Domain: "leetcode", Mode: "practice"})
+	if err != nil {
+		t.Fatalf("start_session: %v", err)
+	}
+	sessionID := started.Session.ID.String()
+
+	// Attempt 1: Search in Rotated Sorted Array, needed help, weak on
+	// invariant reasoning. This is the canonical Improvement Verification
+	// Loop scenario from the audit report.
+	_, _, err = s.recordAttempt(ctx, nil, RecordAttemptInput{
+		SessionID: sessionID,
+		Item:      AttemptItem{Title: "Search in Rotated Sorted Array", ExternalID: strPtr("33")},
+		Outcome:   "needed help",
+		StuckAt:   strPtr("invariant reasoning across the rotation point"),
+		Approach:  strPtr("modified binary search with extra branch"),
+		Observations: []ObservationInput{
+			{Concept: "binary-search-partition", Signal: "weakness", Category: "approach-selection", Severity: strPtr("moderate"), Confidence: "high"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("record_attempt(1): %v", err)
+	}
+
+	// Attempt 2: same item again, this time independent. Tests that
+	// AttemptsByItem returns multiple attempts in newest-first order.
+	_, _, err = s.recordAttempt(ctx, nil, RecordAttemptInput{
+		SessionID: sessionID,
+		Item:      AttemptItem{Title: "Search in Rotated Sorted Array", ExternalID: strPtr("33")},
+		Outcome:   "got it",
+		Approach:  strPtr("clean modified binary search, no branches"),
+		Observations: []ObservationInput{
+			{Concept: "binary-search-partition", Signal: "improvement", Category: "approach-selection", Confidence: "high"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("record_attempt(2): %v", err)
+	}
+
+	// Attempt 3: different item, no observation on binary-search-partition.
+	// This attempt MUST NOT appear in by_concept results — only items with
+	// an observation on the concept count.
+	_, _, err = s.recordAttempt(ctx, nil, RecordAttemptInput{
+		SessionID: sessionID,
+		Item:      AttemptItem{Title: "Two Sum", ExternalID: strPtr("1")},
+		Outcome:   "got it",
+		Observations: []ObservationInput{
+			{Concept: "hash-map", Signal: "mastery", Category: "data-structure", Confidence: "high"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("record_attempt(3): %v", err)
+	}
+
+	t.Run("by_item returns newest-first attempts on the item", func(t *testing.T) {
+		_, out, err := s.attemptHistory(ctx, nil, AttemptHistoryInput{
+			Item: &AttemptHistoryItemRef{Title: "Search in Rotated Sorted Array"},
+		})
+		if err != nil {
+			t.Fatalf("attempt_history(item): %v", err)
+		}
+		if !out.Resolved {
+			t.Errorf("resolved = false, want true (item exists)")
+		}
+		if out.Mode != "item" {
+			t.Errorf("mode = %q, want %q", out.Mode, "item")
+		}
+		if len(out.Attempts) != 2 {
+			t.Fatalf("attempts = %d, want 2", len(out.Attempts))
+		}
+		// Newest first: attempt 2 (got it) before attempt 1 (needed help)
+		if out.Attempts[0].Outcome != "solved_independent" {
+			t.Errorf("Attempts[0].Outcome = %q, want %q", out.Attempts[0].Outcome, "solved_independent")
+		}
+		if out.Attempts[1].Outcome != "solved_with_hint" {
+			t.Errorf("Attempts[1].Outcome = %q, want %q", out.Attempts[1].Outcome, "solved_with_hint")
+		}
+		// Improvement Verification needs stuck_at and approach back.
+		if out.Attempts[1].StuckAt == nil || *out.Attempts[1].StuckAt == "" {
+			t.Error("Attempts[1].StuckAt should carry the original stuck_at narrative")
+		}
+		if out.Attempts[1].ApproachUsed == nil || *out.Attempts[1].ApproachUsed == "" {
+			t.Error("Attempts[1].ApproachUsed should carry the original approach narrative")
+		}
+		// by_item must NOT attach matched_observation (concept-only field).
+		if out.Attempts[0].Matched != nil {
+			t.Error("by_item should not populate Matched")
+		}
+	})
+
+	t.Run("by_concept attaches matched observation", func(t *testing.T) {
+		_, out, err := s.attemptHistory(ctx, nil, AttemptHistoryInput{
+			ConceptSlug: strPtr("binary-search-partition"),
+		})
+		if err != nil {
+			t.Fatalf("attempt_history(concept): %v", err)
+		}
+		if !out.Resolved {
+			t.Errorf("resolved = false, want true (concept exists)")
+		}
+		if out.Mode != "concept" {
+			t.Errorf("mode = %q, want %q", out.Mode, "concept")
+		}
+		// Two attempts observed binary-search-partition; the third (Two Sum)
+		// must NOT appear because it has no observation on this concept.
+		if len(out.Attempts) != 2 {
+			t.Fatalf("attempts = %d, want 2 (Two Sum must be excluded)", len(out.Attempts))
+		}
+		for i, a := range out.Attempts {
+			if a.Matched == nil {
+				t.Errorf("Attempts[%d].Matched is nil, want populated", i)
+				continue
+			}
+			if a.Matched.Category != "approach-selection" {
+				t.Errorf("Attempts[%d].Matched.Category = %q, want %q", i, a.Matched.Category, "approach-selection")
+			}
+		}
+	})
+
+	t.Run("by_session returns full session in chronological order", func(t *testing.T) {
+		_, out, err := s.attemptHistory(ctx, nil, AttemptHistoryInput{
+			SessionID: &sessionID,
+		})
+		if err != nil {
+			t.Fatalf("attempt_history(session): %v", err)
+		}
+		if !out.Resolved {
+			t.Errorf("resolved = false, want true")
+		}
+		if out.Mode != "session" {
+			t.Errorf("mode = %q, want %q", out.Mode, "session")
+		}
+		if len(out.Attempts) != 3 {
+			t.Fatalf("attempts = %d, want 3", len(out.Attempts))
+		}
+		// Chronological (oldest first): attempt 1 → 2 → 3
+		if out.Attempts[0].Outcome != "solved_with_hint" {
+			t.Errorf("Attempts[0].Outcome = %q, want %q", out.Attempts[0].Outcome, "solved_with_hint")
+		}
+		if out.Attempts[2].ItemTitle != "Two Sum" {
+			t.Errorf("Attempts[2].ItemTitle = %q, want %q", out.Attempts[2].ItemTitle, "Two Sum")
+		}
+	})
+
+	t.Run("by_item not found returns resolved=false", func(t *testing.T) {
+		_, out, err := s.attemptHistory(ctx, nil, AttemptHistoryInput{
+			Item: &AttemptHistoryItemRef{Title: "Never Attempted Problem"},
+		})
+		if err != nil {
+			t.Fatalf("attempt_history(missing item): %v", err)
+		}
+		if out.Resolved {
+			t.Error("resolved = true, want false (item does not exist)")
+		}
+		if len(out.Attempts) != 0 {
+			t.Errorf("attempts = %d, want 0", len(out.Attempts))
+		}
+		if out.Reason == "" {
+			t.Error("reason should explain why resolved=false")
+		}
+	})
+
+	t.Run("zero inputs errors", func(t *testing.T) {
+		_, _, err := s.attemptHistory(ctx, nil, AttemptHistoryInput{})
+		if err == nil {
+			t.Fatal("expected error for empty input, got nil")
+		}
+	})
+
+	t.Run("multiple inputs errors", func(t *testing.T) {
+		_, _, err := s.attemptHistory(ctx, nil, AttemptHistoryInput{
+			Item:        &AttemptHistoryItemRef{Title: "Two Sum"},
+			ConceptSlug: strPtr("hash-map"),
+		})
+		if err == nil {
+			t.Fatal("expected error for multiple inputs, got nil")
+		}
+	})
+
+	// Cleanup
+	if _, _, err := s.endSession(ctx, nil, EndSessionInput{SessionID: sessionID}); err != nil {
+		t.Fatalf("end_session: %v", err)
+	}
+}
+
+// TestConfidenceFilterRejectsTypos is the regression guard against dead-
+// validator drift: an earlier iteration of learningDashboard silently
+// coerced any non-"all" confidence_filter value to "high", which defeated
+// the store-layer normalizeConfidenceFilter check. This test proves the
+// validator fires end-to-end from the MCP boundary. If it starts passing
+// with a "hi" request, someone re-introduced the silent coercion.
+func TestConfidenceFilterRejectsTypos(t *testing.T) {
+	s := setupIntegrationServer(t)
+	ctx := t.Context()
+
+	_, _, err := s.learningDashboard(ctx, nil, LearningDashboardInput{
+		View:             strPtr("mastery"),
+		ConfidenceFilter: strPtr("hi"), // typo — not "high"
+	})
+	if err == nil {
+		t.Fatal("expected confidence_filter=\"hi\" to be rejected, got nil error")
+	}
+	if !strings.Contains(err.Error(), "confidence_filter") {
+		t.Errorf("error should reference confidence_filter, got: %v", err)
+	}
+}
+
+// TestObservationConfidenceInvariant covers the most important property of
+// the new "confidence is a label, not a gate" design: the mastery view's
+// weakness_count and the weaknesses view's summed occurrence_count for the
+// same concept MUST agree under the same confidence_filter. If they ever
+// drift, the dashboard is silently lying — one number for "how often does
+// this concept fail" disagrees with the breakdown of where the failures
+// happened.
+//
+// Also verifies that low-confidence observations DO persist (not silently
+// dropped like the old gate model) but are EXCLUDED from default reads
+// (preserving the old user-facing behaviour).
+func TestObservationConfidenceInvariant(t *testing.T) {
+	s := setupIntegrationServer(t)
+	ctx := t.Context()
+
+	_, started, err := s.startSession(ctx, nil, StartSessionInput{Domain: "leetcode", Mode: "practice"})
+	if err != nil {
+		t.Fatalf("start_session: %v", err)
+	}
+	sessionID := started.Session.ID.String()
+
+	// Three high-confidence weakness observations on binary-search across
+	// two categories, plus one low-confidence weakness on the same concept.
+	// Default mastery should see 3 weaknesses (the highs); confidence_filter=all
+	// should see 4. The weaknesses view should produce occurrence_counts that
+	// sum to the same number under each filter.
+	for i, obs := range []struct {
+		title    string
+		category string
+		conf     string
+	}{
+		{"Binary Search", "approach-selection", "high"},
+		{"Search Insert Position", "approach-selection", "high"},
+		{"Find Peak Element", "edge-cases", "high"},
+		{"Sqrt(x)", "approach-selection", "low"}, // low — included only when filter=all
+	} {
+		_, _, err := s.recordAttempt(ctx, nil, RecordAttemptInput{
+			SessionID: sessionID,
+			Item:      AttemptItem{Title: obs.title, ExternalID: strPtr(fmt.Sprintf("bs-%d", i))},
+			Outcome:   "needed help",
+			Observations: []ObservationInput{
+				{Concept: "binary-search", Signal: "weakness", Category: obs.category, Severity: strPtr("moderate"), Confidence: obs.conf},
+			},
+		})
+		if err != nil {
+			t.Fatalf("record_attempt(%d): %v", i, err)
+		}
+	}
+
+	// Direct DB check: low-confidence observation must have persisted.
+	var lowCount int
+	err = s.pool.QueryRow(ctx,
+		`SELECT COUNT(*) FROM attempt_observations WHERE confidence = 'low'`).Scan(&lowCount)
+	if err != nil {
+		t.Fatalf("count low observations: %v", err)
+	}
+	if lowCount != 1 {
+		t.Errorf("low-confidence observations in DB = %d, want 1 (Option C: low must persist, not drop)", lowCount)
+	}
+
+	checkInvariant := func(t *testing.T, filter string, wantWeaknessCount int64) {
+		t.Helper()
+		_, mastery, err := s.learningDashboard(ctx, nil, LearningDashboardInput{
+			Domain:           strPtr("leetcode"),
+			View:             strPtr("mastery"),
+			ConfidenceFilter: strPtr(filter),
+		})
+		if err != nil {
+			t.Fatalf("dashboard(mastery, %s): %v", filter, err)
+		}
+		_, weaknesses, err := s.learningDashboard(ctx, nil, LearningDashboardInput{
+			Domain:           strPtr("leetcode"),
+			View:             strPtr("weaknesses"),
+			ConfidenceFilter: strPtr(filter),
+		})
+		if err != nil {
+			t.Fatalf("dashboard(weaknesses, %s): %v", filter, err)
+		}
+
+		// Find binary-search row in mastery.
+		var masteryWeakness int64 = -1
+		for _, m := range mastery.Mastery {
+			if m.Slug == "binary-search" {
+				masteryWeakness = m.WeaknessCount
+				break
+			}
+		}
+		if masteryWeakness == -1 {
+			t.Fatalf("binary-search not found in mastery view (filter=%s)", filter)
+		}
+
+		// Sum binary-search occurrences across categories in weaknesses view.
+		var weaknessSum int64
+		for _, w := range weaknesses.Weaknesses {
+			if w.ConceptSlug == "binary-search" {
+				weaknessSum += w.OccurrenceCount
+			}
+		}
+
+		if masteryWeakness != weaknessSum {
+			t.Errorf("invariant broken (filter=%s): mastery.weakness_count=%d but weaknesses sum=%d",
+				filter, masteryWeakness, weaknessSum)
+		}
+		if masteryWeakness != wantWeaknessCount {
+			t.Errorf("filter=%s mastery weakness_count = %d, want %d",
+				filter, masteryWeakness, wantWeaknessCount)
+		}
+	}
+
+	t.Run("default filter (high) sees 3 weaknesses", func(t *testing.T) {
+		checkInvariant(t, "high", 3)
+	})
+
+	t.Run("filter=all surfaces the low-confidence weakness", func(t *testing.T) {
+		checkInvariant(t, "all", 4)
+	})
+
+	// Cleanup
+	if _, _, err := s.endSession(ctx, nil, EndSessionInput{SessionID: sessionID}); err != nil {
+		t.Fatalf("end_session: %v", err)
+	}
 }
 
 // Shared comparison options — ignore time fields that vary per run.

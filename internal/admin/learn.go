@@ -65,7 +65,7 @@ func (h *Handler) LearnDashboard(w http.ResponseWriter, r *http.Request) {
 		out.RecentSessions = sessions
 	}
 
-	if ws, err := h.learn.WeaknessAnalysis(ctx, nil, since30d); err == nil {
+	if ws, err := h.learn.WeaknessAnalysis(ctx, nil, since30d, "high"); err == nil {
 		out.WeaknessSpot = make([]WeaknessSpotlight, len(ws))
 		for i := range ws {
 			row := &ws[i]
@@ -90,7 +90,7 @@ func (h *Handler) LearnDashboard(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if ms, err := h.learn.ConceptMastery(ctx, nil, since30d); err == nil && ms != nil {
+	if ms, err := h.learn.ConceptMastery(ctx, nil, since30d, "high"); err == nil && ms != nil {
 		out.MasteryByDomain = ms
 	}
 
@@ -130,7 +130,7 @@ func (h *Handler) ConceptDrilldown(w http.ResponseWriter, r *http.Request) {
 
 	attempts, _ := h.learn.AttemptsByConcept(ctx, concept.ID, 20)
 	if attempts == nil {
-		attempts = []learning.ConceptAttempt{}
+		attempts = []learning.Attempt{}
 	}
 
 	items, _ := h.learn.ItemsByConcept(ctx, concept.ID)

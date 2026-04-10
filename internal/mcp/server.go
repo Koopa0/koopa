@@ -270,6 +270,12 @@ func NewServer(pool *pgxpool.Pool, logger *slog.Logger, opts ...ServerOption) *S
 	}, s.learningDashboard)
 
 	addTool(s, &mcp.Tool{
+		Name:        "attempt_history",
+		Description: "Read-side counterpart to record_attempt. Three lookup modes (exactly one required): item (title+domain — returns this problem's attempt history for Improvement Verification Loop), concept_slug (returns attempts that observed the concept, with the matched observation attached), session_id (returns all attempts for a past session). Empty result with resolved=false means the lookup target does not exist.",
+		Annotations: readOnly,
+	}, s.attemptHistory)
+
+	addTool(s, &mcp.Tool{
 		Name:        "manage_plan",
 		Description: "Learning plan lifecycle and items. Actions: add_items, remove_items (draft only), update_item (complete/skip/substitute), reorder, update_plan (activate/pause/complete/abandon), progress. The progress action returns aggregate counts plus a flat item list with plan_item_id, learning_item_id, title, position, status, phase — call it before update_item to look up plan_item_id.",
 		Annotations: destructive,

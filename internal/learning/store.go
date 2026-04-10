@@ -77,6 +77,56 @@ func (s *Store) EndSession(ctx context.Context, sessionID uuid.UUID, journalID *
 	return rowToSession(&row), nil
 }
 
+// normalizeConfidenceFilter validates and defaults the dashboard's
+// confidence filter. Empty becomes "high"; "high" and "all" pass through;
+// anything else is rejected. Without this guard a typo would silently
+// fall through the SQL predicate `(@cf = 'all' OR confidence = 'high')`
+// and produce a high-only result, masking the bug from the caller.
+func normalizeConfidenceFilter(v string) (string, error) {
+	switch v {
+	case "", "high":
+		return "high", nil
+	case "all":
+		return "all", nil
+	default:
+		return "", fmt.Errorf("%w: confidence_filter must be \"high\" or \"all\", got %q", ErrInvalidInput, v)
+	}
+}
+
+// normalizeObservationConfidence validates and defaults the per-observation
+// confidence label. Empty becomes "high"; "high" and "low" pass through;
+// anything else is rejected with ErrInvalidInput. Symmetric with
+// normalizeConfidenceFilter — without this the DB CHECK constraint would
+// catch typos as a 23514 violation deep inside the INSERT, instead of as
+// a clean validation error at the boundary.
+func normalizeObservationConfidence(v string) (string, error) {
+	switch v {
+	case "", "high":
+		return "high", nil
+	case "low":
+		return "low", nil
+	default:
+		return "", fmt.Errorf("%w: observation confidence must be \"high\" or \"low\", got %q", ErrInvalidInput, v)
+	}
+}
+
+// FindItem looks up a learning item by (domain, title) without creating
+// it. Returns ErrNotFound if the item does not exist. Used by read-only
+// tools like attempt_history that must not silently pollute the catalog.
+func (s *Store) FindItem(ctx context.Context, domain, title string) (uuid.UUID, error) {
+	row, err := s.q.FindItemByDomainTitle(ctx, db.FindItemByDomainTitleParams{
+		Domain: domain,
+		Title:  title,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return uuid.Nil, ErrNotFound
+		}
+		return uuid.Nil, fmt.Errorf("looking up item %s/%s: %w", domain, title, err)
+	}
+	return row.ID, nil
+}
+
 // FindOrCreateItem upserts a learning item by domain + external_id (or title).
 func (s *Store) FindOrCreateItem(ctx context.Context, domain, title string, externalID, difficulty *string) (uuid.UUID, error) {
 	row, err := s.q.FindOrCreateItem(ctx, db.FindOrCreateItemParams{
@@ -188,7 +238,15 @@ func (s *Store) RecordAttempt(ctx context.Context, itemID, sessionID uuid.UUID, 
 }
 
 // RecordObservation creates an observation linking an attempt to a concept.
-func (s *Store) RecordObservation(ctx context.Context, attemptID, conceptID uuid.UUID, signalType, category string, severity, detail *string) (*Observation, error) {
+// confidence is "high" (default — directly evidenced) or "low" (inferred).
+// Both persist; the dashboard filters at read time. Invalid values are
+// rejected at the boundary so a typo cannot reach the DB CHECK as a
+// 23514 violation.
+func (s *Store) RecordObservation(ctx context.Context, attemptID, conceptID uuid.UUID, signalType, category string, severity, detail *string, confidence string) (*Observation, error) {
+	normalized, err := normalizeObservationConfidence(confidence)
+	if err != nil {
+		return nil, err
+	}
 	row, err := s.q.CreateObservation(ctx, db.CreateObservationParams{
 		AttemptID:  attemptID,
 		ConceptID:  conceptID,
@@ -196,6 +254,7 @@ func (s *Store) RecordObservation(ctx context.Context, attemptID, conceptID uuid
 		Category:   category,
 		Severity:   severity,
 		Detail:     detail,
+		Confidence: normalized,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("creating observation: %w", err)
@@ -208,6 +267,7 @@ func (s *Store) RecordObservation(ctx context.Context, attemptID, conceptID uuid
 		Category:   row.Category,
 		Severity:   row.Severity,
 		Detail:     row.Detail,
+		Confidence: row.Confidence,
 	}, nil
 }
 
@@ -225,7 +285,9 @@ func (s *Store) FindOrCreateConcept(ctx context.Context, slug, name, domain, kin
 	return row.ID, nil
 }
 
-// AttemptsBySession returns all attempts for a session with item details.
+// AttemptsBySession returns all attempts for a session with item details,
+// oldest first. Backs the end_session summary and the by_session path of
+// attempt_history.
 func (s *Store) AttemptsBySession(ctx context.Context, sessionID uuid.UUID) ([]Attempt, error) {
 	rows, err := s.q.AttemptsBySession(ctx, &sessionID)
 	if err != nil {
@@ -244,6 +306,39 @@ func (s *Store) AttemptsBySession(ctx context.Context, sessionID uuid.UUID) ([]A
 			StuckAt:         r.StuckAt,
 			ApproachUsed:    r.ApproachUsed,
 			AttemptedAt:     r.AttemptedAt,
+			Metadata:        r.Metadata,
+			ItemTitle:       r.ItemTitle,
+			ItemExternalID:  r.ItemExternalID,
+		}
+	}
+	return result, nil
+}
+
+// AttemptsByItem returns recent attempts on a specific learning item,
+// newest first. Primary backing query for the Improvement Verification Loop:
+// "how did this problem go last time?". Same shape as AttemptsBySession.
+func (s *Store) AttemptsByItem(ctx context.Context, itemID uuid.UUID, limit int32) ([]Attempt, error) {
+	rows, err := s.q.AttemptsByItem(ctx, db.AttemptsByItemParams{
+		LearningItemID: itemID,
+		MaxResults:     limit,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("querying attempts for item %s: %w", itemID, err)
+	}
+	result := make([]Attempt, len(rows))
+	for i := range rows {
+		r := &rows[i]
+		result[i] = Attempt{
+			ID:              r.ID,
+			ItemID:          r.LearningItemID,
+			SessionID:       r.SessionID,
+			AttemptNumber:   r.AttemptNumber,
+			Outcome:         r.Outcome,
+			DurationMinutes: r.DurationMinutes,
+			StuckAt:         r.StuckAt,
+			ApproachUsed:    r.ApproachUsed,
+			AttemptedAt:     r.AttemptedAt,
+			Metadata:        r.Metadata,
 			ItemTitle:       r.ItemTitle,
 			ItemExternalID:  r.ItemExternalID,
 		}
@@ -292,10 +387,23 @@ type ConceptMasteryRow struct {
 // least one observation in the window — unexplored concepts are not
 // returned. Presentation-layer formatting (e.g. mastery stage derivation)
 // belongs to the caller, not this store.
-func (s *Store) ConceptMastery(ctx context.Context, domain *string, since time.Time) ([]ConceptMasteryRow, error) {
+//
+// confidenceFilter: "high" (default) or "all". Empty string is treated as
+// "high" so callers don't have to remember the default; any other value
+// is rejected with ErrInvalidInput so a typo can't silently degrade to
+// "high" via the SQL predicate. The mastery stage floor in the caller
+// MUST look at the FILTERED counts returned here, not at total
+// observations — that property is the difference between "confidence is
+// a label" and "confidence is a half-gate".
+func (s *Store) ConceptMastery(ctx context.Context, domain *string, since time.Time, confidenceFilter string) ([]ConceptMasteryRow, error) {
+	confidenceFilter, err := normalizeConfidenceFilter(confidenceFilter)
+	if err != nil {
+		return nil, err
+	}
 	rows, err := s.q.ConceptMastery(ctx, db.ConceptMasteryParams{
-		Domain: domain,
-		Since:  since,
+		Domain:           domain,
+		Since:            since,
+		ConfidenceFilter: confidenceFilter,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("querying concept mastery: %w", err)
@@ -335,11 +443,18 @@ type WeaknessRow struct {
 	LastSeenAt      time.Time `json:"last_seen_at"`
 }
 
-// WeaknessAnalysis returns cross-pattern weakness analysis.
-func (s *Store) WeaknessAnalysis(ctx context.Context, domain *string, since time.Time) ([]WeaknessRow, error) {
+// WeaknessAnalysis returns cross-pattern weakness analysis. Same
+// confidenceFilter semantics as ConceptMastery — "high" (default) or "all".
+// Invalid values are rejected with ErrInvalidInput.
+func (s *Store) WeaknessAnalysis(ctx context.Context, domain *string, since time.Time, confidenceFilter string) ([]WeaknessRow, error) {
+	confidenceFilter, err := normalizeConfidenceFilter(confidenceFilter)
+	if err != nil {
+		return nil, err
+	}
 	rows, err := s.q.WeaknessAnalysis(ctx, db.WeaknessAnalysisParams{
-		Domain: domain,
-		Since:  since,
+		Domain:           domain,
+		Since:            since,
+		ConfidenceFilter: confidenceFilter,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("querying weakness analysis: %w", err)
@@ -630,17 +745,6 @@ type ConceptObservation struct {
 	ItemTitle   string    `json:"item_title"`
 }
 
-// ConceptAttempt is an attempt record for concept drilldown.
-type ConceptAttempt struct {
-	ID              uuid.UUID `json:"id"`
-	ItemID          uuid.UUID `json:"item_id"`
-	Outcome         string    `json:"outcome"`
-	AttemptedAt     time.Time `json:"attempted_at"`
-	DurationMinutes *int32    `json:"duration_minutes,omitempty"`
-	ItemTitle       string    `json:"item_title"`
-	Difficulty      *string   `json:"difficulty,omitempty"`
-}
-
 // ConceptItem is an item linked to a concept.
 type ConceptItem struct {
 	ID         uuid.UUID `json:"id"`
@@ -691,22 +795,41 @@ func (s *Store) ObservationsByConcept(ctx context.Context, conceptID uuid.UUID, 
 	return result, nil
 }
 
-// AttemptsByConcept returns recent attempts on items exercising a concept.
-func (s *Store) AttemptsByConcept(ctx context.Context, conceptID uuid.UUID, limit int32) ([]ConceptAttempt, error) {
+// AttemptsByConcept returns recent attempts that produced an observation
+// about the given concept, newest first. Each Attempt carries a populated
+// Matched field describing the highest-priority observation that linked the
+// attempt to this concept.
+func (s *Store) AttemptsByConcept(ctx context.Context, conceptID uuid.UUID, limit int32) ([]Attempt, error) {
 	rows, err := s.q.AttemptsByConcept(ctx, db.AttemptsByConceptParams{
 		ConceptID:  conceptID,
 		MaxResults: limit,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("querying attempts for concept: %w", err)
+		return nil, fmt.Errorf("querying attempts for concept %s: %w", conceptID, err)
 	}
-	result := make([]ConceptAttempt, len(rows))
+	result := make([]Attempt, len(rows))
 	for i := range rows {
 		r := &rows[i]
-		result[i] = ConceptAttempt{
-			ID: r.ID, ItemID: r.LearningItemID, Outcome: r.Outcome,
-			AttemptedAt: r.AttemptedAt, DurationMinutes: r.DurationMinutes,
-			ItemTitle: r.ItemTitle, Difficulty: r.Difficulty,
+		result[i] = Attempt{
+			ID:              r.ID,
+			ItemID:          r.LearningItemID,
+			SessionID:       r.SessionID,
+			AttemptNumber:   r.AttemptNumber,
+			Outcome:         r.Outcome,
+			DurationMinutes: r.DurationMinutes,
+			StuckAt:         r.StuckAt,
+			ApproachUsed:    r.ApproachUsed,
+			AttemptedAt:     r.AttemptedAt,
+			Metadata:        r.Metadata,
+			ItemTitle:       r.ItemTitle,
+			ItemExternalID:  r.ItemExternalID,
+			Difficulty:      r.Difficulty,
+			Matched: &MatchedObservation{
+				Signal:   r.MatchedSignal,
+				Category: r.MatchedCategory,
+				Severity: r.MatchedSeverity,
+				Detail:   r.MatchedDetail,
+			},
 		}
 	}
 	return result, nil

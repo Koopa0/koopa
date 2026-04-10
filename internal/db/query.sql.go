@@ -596,13 +596,35 @@ func (q *Queries) AttemptCountForItem(ctx context.Context, learningItemID uuid.U
 }
 
 const attemptsByConcept = `-- name: AttemptsByConcept :many
-SELECT DISTINCT a.id, a.learning_item_id, a.outcome, a.attempted_at, a.duration_minutes,
-       li.title AS item_title, li.difficulty
-FROM attempts a
-JOIN items li ON li.id = a.learning_item_id
-JOIN item_concepts ic ON ic.learning_item_id = li.id
-WHERE ic.concept_id = $1
-ORDER BY a.attempted_at DESC
+SELECT id, learning_item_id, session_id, attempt_number, outcome,
+       duration_minutes, stuck_at, approach_used, attempted_at, metadata,
+       item_title, item_external_id, difficulty,
+       matched_signal, matched_category, matched_severity, matched_detail
+FROM (
+    SELECT DISTINCT ON (a.id)
+           a.id, a.learning_item_id, a.session_id, a.attempt_number, a.outcome,
+           a.duration_minutes, a.stuck_at, a.approach_used, a.attempted_at, a.metadata,
+           li.title AS item_title, li.external_id AS item_external_id, li.difficulty,
+           ao.signal_type AS matched_signal,
+           ao.category   AS matched_category,
+           ao.severity   AS matched_severity,
+           ao.detail     AS matched_detail
+    FROM attempts a
+    JOIN items li ON li.id = a.learning_item_id
+    JOIN attempt_observations ao ON ao.attempt_id = a.id
+    WHERE ao.concept_id = $1
+    -- Priority order when an attempt has multiple observations on the
+    -- concept: weakness signals first, then improvement, then mastery. Within
+    -- the same signal, classified severities beat NULL (NULL = unclassified,
+    -- which can only happen for weakness since the schema CHECK forbids
+    -- non-NULL severity on improvement/mastery rows). Treating NULL as
+    -- lowest is deliberate — we surface the rows where the coach left a
+    -- concrete severity note ahead of the rows where they did not.
+    ORDER BY a.id,
+             CASE ao.signal_type WHEN 'weakness' THEN 0 WHEN 'improvement' THEN 1 WHEN 'mastery' THEN 2 END,
+             CASE ao.severity WHEN 'critical' THEN 0 WHEN 'moderate' THEN 1 WHEN 'minor' THEN 2 ELSE 3 END
+) deduped
+ORDER BY attempted_at DESC
 LIMIT $2
 `
 
@@ -612,16 +634,42 @@ type AttemptsByConceptParams struct {
 }
 
 type AttemptsByConceptRow struct {
-	ID              uuid.UUID `json:"id"`
-	LearningItemID  uuid.UUID `json:"learning_item_id"`
-	Outcome         string    `json:"outcome"`
-	AttemptedAt     time.Time `json:"attempted_at"`
-	DurationMinutes *int32    `json:"duration_minutes"`
-	ItemTitle       string    `json:"item_title"`
-	Difficulty      *string   `json:"difficulty"`
+	ID              uuid.UUID  `json:"id"`
+	LearningItemID  uuid.UUID  `json:"learning_item_id"`
+	SessionID       *uuid.UUID `json:"session_id"`
+	AttemptNumber   int32      `json:"attempt_number"`
+	Outcome         string     `json:"outcome"`
+	DurationMinutes *int32     `json:"duration_minutes"`
+	StuckAt         *string    `json:"stuck_at"`
+	ApproachUsed    *string    `json:"approach_used"`
+	AttemptedAt     time.Time  `json:"attempted_at"`
+	Metadata        []byte     `json:"metadata"`
+	ItemTitle       string     `json:"item_title"`
+	ItemExternalID  *string    `json:"item_external_id"`
+	Difficulty      *string    `json:"difficulty"`
+	MatchedSignal   string     `json:"matched_signal"`
+	MatchedCategory string     `json:"matched_category"`
+	MatchedSeverity *string    `json:"matched_severity"`
+	MatchedDetail   *string    `json:"matched_detail"`
 }
 
-// Recent attempts on items that exercise a given concept. For concept drilldown.
+// Attempts that produced an observation about the given concept, newest first.
+// Each row carries the matched observation's signal/category/severity/detail
+// so the caller knows WHY this attempt is in the result set without a second
+// query.
+//
+// The inner SELECT uses DISTINCT ON (a.id) to keep one row per attempt even
+// when a single attempt recorded multiple observations on the same concept;
+// the picked observation is highest-priority by signal (weakness > improvement
+// > mastery) then severity (critical > moderate > minor). The outer SELECT
+// re-sorts by attempted_at DESC because DISTINCT ON forces the inner ORDER BY
+// to lead with a.id.
+//
+// Replaces the prior version that joined through item_concepts (a static
+// tag table that no production code path populates). The semantics changed:
+// this now returns "attempts where the user explicitly observed this
+// concept", not "attempts on items tagged with this concept". The new
+// semantics is what concept drilldown actually wants.
 func (q *Queries) AttemptsByConcept(ctx context.Context, arg AttemptsByConceptParams) ([]AttemptsByConceptRow, error) {
 	rows, err := q.db.Query(ctx, attemptsByConcept, arg.ConceptID, arg.MaxResults)
 	if err != nil {
@@ -634,11 +682,88 @@ func (q *Queries) AttemptsByConcept(ctx context.Context, arg AttemptsByConceptPa
 		if err := rows.Scan(
 			&i.ID,
 			&i.LearningItemID,
+			&i.SessionID,
+			&i.AttemptNumber,
 			&i.Outcome,
-			&i.AttemptedAt,
 			&i.DurationMinutes,
+			&i.StuckAt,
+			&i.ApproachUsed,
+			&i.AttemptedAt,
+			&i.Metadata,
 			&i.ItemTitle,
+			&i.ItemExternalID,
 			&i.Difficulty,
+			&i.MatchedSignal,
+			&i.MatchedCategory,
+			&i.MatchedSeverity,
+			&i.MatchedDetail,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const attemptsByItem = `-- name: AttemptsByItem :many
+SELECT a.id, a.learning_item_id, a.session_id, a.attempt_number, a.outcome,
+       a.duration_minutes, a.stuck_at, a.approach_used, a.attempted_at, a.metadata,
+       li.title AS item_title, li.external_id AS item_external_id
+FROM attempts a
+JOIN items li ON li.id = a.learning_item_id
+WHERE a.learning_item_id = $1
+ORDER BY a.attempted_at DESC
+LIMIT $2
+`
+
+type AttemptsByItemParams struct {
+	LearningItemID uuid.UUID `json:"learning_item_id"`
+	MaxResults     int32     `json:"max_results"`
+}
+
+type AttemptsByItemRow struct {
+	ID              uuid.UUID  `json:"id"`
+	LearningItemID  uuid.UUID  `json:"learning_item_id"`
+	SessionID       *uuid.UUID `json:"session_id"`
+	AttemptNumber   int32      `json:"attempt_number"`
+	Outcome         string     `json:"outcome"`
+	DurationMinutes *int32     `json:"duration_minutes"`
+	StuckAt         *string    `json:"stuck_at"`
+	ApproachUsed    *string    `json:"approach_used"`
+	AttemptedAt     time.Time  `json:"attempted_at"`
+	Metadata        []byte     `json:"metadata"`
+	ItemTitle       string     `json:"item_title"`
+	ItemExternalID  *string    `json:"item_external_id"`
+}
+
+// All attempts on a specific learning item, newest first. Primary backing
+// query for Improvement Verification Loop — "how did he do this problem
+// last time?". Same shape as AttemptsBySession so they share the Go DTO.
+func (q *Queries) AttemptsByItem(ctx context.Context, arg AttemptsByItemParams) ([]AttemptsByItemRow, error) {
+	rows, err := q.db.Query(ctx, attemptsByItem, arg.LearningItemID, arg.MaxResults)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AttemptsByItemRow{}
+	for rows.Next() {
+		var i AttemptsByItemRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.LearningItemID,
+			&i.SessionID,
+			&i.AttemptNumber,
+			&i.Outcome,
+			&i.DurationMinutes,
+			&i.StuckAt,
+			&i.ApproachUsed,
+			&i.AttemptedAt,
+			&i.Metadata,
+			&i.ItemTitle,
+			&i.ItemExternalID,
 		); err != nil {
 			return nil, err
 		}
@@ -652,7 +777,7 @@ func (q *Queries) AttemptsByConcept(ctx context.Context, arg AttemptsByConceptPa
 
 const attemptsBySession = `-- name: AttemptsBySession :many
 SELECT a.id, a.learning_item_id, a.session_id, a.attempt_number, a.outcome,
-       a.duration_minutes, a.stuck_at, a.approach_used, a.attempted_at,
+       a.duration_minutes, a.stuck_at, a.approach_used, a.attempted_at, a.metadata,
        li.title AS item_title, li.external_id AS item_external_id
 FROM attempts a
 JOIN items li ON li.id = a.learning_item_id
@@ -670,10 +795,13 @@ type AttemptsBySessionRow struct {
 	StuckAt         *string    `json:"stuck_at"`
 	ApproachUsed    *string    `json:"approach_used"`
 	AttemptedAt     time.Time  `json:"attempted_at"`
+	Metadata        []byte     `json:"metadata"`
 	ItemTitle       string     `json:"item_title"`
 	ItemExternalID  *string    `json:"item_external_id"`
 }
 
+// All attempts within a session, oldest first. Backs end_session summary
+// and the by_session path of attempt_history.
 func (q *Queries) AttemptsBySession(ctx context.Context, sessionID *uuid.UUID) ([]AttemptsBySessionRow, error) {
 	rows, err := q.db.Query(ctx, attemptsBySession, sessionID)
 	if err != nil {
@@ -693,6 +821,7 @@ func (q *Queries) AttemptsBySession(ctx context.Context, sessionID *uuid.UUID) (
 			&i.StuckAt,
 			&i.ApproachUsed,
 			&i.AttemptedAt,
+			&i.Metadata,
 			&i.ItemTitle,
 			&i.ItemExternalID,
 		); err != nil {
@@ -1345,13 +1474,15 @@ JOIN attempt_observations ao ON ao.concept_id = c.id
 JOIN attempts a ON a.id = ao.attempt_id
 WHERE ($1::text IS NULL OR c.domain = $1)
   AND a.attempted_at >= $2
+  AND ($3::text = 'all' OR ao.confidence = 'high')
 GROUP BY c.id
 ORDER BY total_observations DESC
 `
 
 type ConceptMasteryParams struct {
-	Domain *string   `json:"domain"`
-	Since  time.Time `json:"since"`
+	Domain           *string   `json:"domain"`
+	Since            time.Time `json:"since"`
+	ConfidenceFilter string    `json:"confidence_filter"`
 }
 
 type ConceptMasteryRow struct {
@@ -1368,11 +1499,20 @@ type ConceptMasteryRow struct {
 	LastObservedAt    time.Time `json:"last_observed_at"`
 }
 
-// Per-concept mastery with signal counts from attempt_observations.
-// Used by learning_dashboard mastery view. Stage is derived in Go (not SQL)
-// from the signal counts — see learning.deriveMasteryStage.
+// Per-concept mastery with signal counts from attempt_observations within
+// the @since window. Used by learning_dashboard mastery view.
+//
+// @confidence_filter: 'high' (default) restricts the aggregation to
+// high-confidence observations; 'all' includes both. The filter is
+// applied via WHERE so the COUNT(*) FILTER clauses see the same row set
+// and the < N observations → developing floor in deriveMasteryStage
+// looks at FILTERED counts only — that property is the difference between
+// "confidence is a label" (this design) and "confidence is a half-gate".
+//
+// Stage is derived in Go (not SQL) from the signal counts —
+// see mcp.deriveMasteryStage.
 func (q *Queries) ConceptMastery(ctx context.Context, arg ConceptMasteryParams) ([]ConceptMasteryRow, error) {
-	rows, err := q.db.Query(ctx, conceptMastery, arg.Domain, arg.Since)
+	rows, err := q.db.Query(ctx, conceptMastery, arg.Domain, arg.Since, arg.ConfidenceFilter)
 	if err != nil {
 		return nil, err
 	}
@@ -2497,9 +2637,9 @@ func (q *Queries) CreateMilestoneWithPosition(ctx context.Context, arg CreateMil
 }
 
 const createObservation = `-- name: CreateObservation :one
-INSERT INTO attempt_observations (attempt_id, concept_id, signal_type, category, severity, detail)
-VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING id, attempt_id, concept_id, signal_type, category, severity, detail, created_at
+INSERT INTO attempt_observations (attempt_id, concept_id, signal_type, category, severity, detail, confidence)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
+RETURNING id, attempt_id, concept_id, signal_type, category, severity, detail, confidence, created_at
 `
 
 type CreateObservationParams struct {
@@ -2509,9 +2649,22 @@ type CreateObservationParams struct {
 	Category   string    `json:"category"`
 	Severity   *string   `json:"severity"`
 	Detail     *string   `json:"detail"`
+	Confidence string    `json:"confidence"`
 }
 
-func (q *Queries) CreateObservation(ctx context.Context, arg CreateObservationParams) (AttemptObservation, error) {
+type CreateObservationRow struct {
+	ID         uuid.UUID `json:"id"`
+	AttemptID  uuid.UUID `json:"attempt_id"`
+	ConceptID  uuid.UUID `json:"concept_id"`
+	SignalType string    `json:"signal_type"`
+	Category   string    `json:"category"`
+	Severity   *string   `json:"severity"`
+	Detail     *string   `json:"detail"`
+	Confidence string    `json:"confidence"`
+	CreatedAt  time.Time `json:"created_at"`
+}
+
+func (q *Queries) CreateObservation(ctx context.Context, arg CreateObservationParams) (CreateObservationRow, error) {
 	row := q.db.QueryRow(ctx, createObservation,
 		arg.AttemptID,
 		arg.ConceptID,
@@ -2519,8 +2672,9 @@ func (q *Queries) CreateObservation(ctx context.Context, arg CreateObservationPa
 		arg.Category,
 		arg.Severity,
 		arg.Detail,
+		arg.Confidence,
 	)
-	var i AttemptObservation
+	var i CreateObservationRow
 	err := row.Scan(
 		&i.ID,
 		&i.AttemptID,
@@ -2529,6 +2683,7 @@ func (q *Queries) CreateObservation(ctx context.Context, arg CreateObservationPa
 		&i.Category,
 		&i.Severity,
 		&i.Detail,
+		&i.Confidence,
 		&i.CreatedAt,
 	)
 	return i, err
@@ -3653,6 +3808,46 @@ func (q *Queries) Feeds(ctx context.Context, schedule *string) ([]Feed, error) {
 		return nil, err
 	}
 	return items, nil
+}
+
+const findItemByDomainTitle = `-- name: FindItemByDomainTitle :one
+SELECT id, domain, title, external_id, difficulty, created_at, updated_at
+FROM items
+WHERE domain = $1 AND title = $2
+LIMIT 1
+`
+
+type FindItemByDomainTitleParams struct {
+	Domain string `json:"domain"`
+	Title  string `json:"title"`
+}
+
+type FindItemByDomainTitleRow struct {
+	ID         uuid.UUID `json:"id"`
+	Domain     string    `json:"domain"`
+	Title      string    `json:"title"`
+	ExternalID *string   `json:"external_id"`
+	Difficulty *string   `json:"difficulty"`
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
+}
+
+// Read-only item lookup by (domain, title). Returns ErrNotFound when the
+// item does not exist — used by attempt_history which must NOT create new
+// items (it would silently pollute the catalog from a read tool).
+func (q *Queries) FindItemByDomainTitle(ctx context.Context, arg FindItemByDomainTitleParams) (FindItemByDomainTitleRow, error) {
+	row := q.db.QueryRow(ctx, findItemByDomainTitle, arg.Domain, arg.Title)
+	var i FindItemByDomainTitleRow
+	err := row.Scan(
+		&i.ID,
+		&i.Domain,
+		&i.Title,
+		&i.ExternalID,
+		&i.Difficulty,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }
 
 const findOrCreateConcept = `-- name: FindOrCreateConcept :one
@@ -10775,13 +10970,15 @@ JOIN attempts a ON a.id = ao.attempt_id
 WHERE ao.signal_type = 'weakness'
   AND ($1::text IS NULL OR c.domain = $1)
   AND a.attempted_at >= $2
+  AND ($3::text = 'all' OR ao.confidence = 'high')
 GROUP BY c.slug, c.name, c.domain, ao.category
 ORDER BY critical_count DESC, occurrence_count DESC
 `
 
 type WeaknessAnalysisParams struct {
-	Domain *string   `json:"domain"`
-	Since  time.Time `json:"since"`
+	Domain           *string   `json:"domain"`
+	Since            time.Time `json:"since"`
+	ConfidenceFilter string    `json:"confidence_filter"`
 }
 
 type WeaknessAnalysisRow struct {
@@ -10796,10 +10993,15 @@ type WeaknessAnalysisRow struct {
 	LastSeenAt      time.Time `json:"last_seen_at"`
 }
 
-// Cross-pattern weakness analysis from attempt_observations.
-// Used by learning_dashboard weaknesses view.
+// Cross-pattern weakness analysis from attempt_observations within the
+// @since window. Used by learning_dashboard weaknesses view.
+//
+// @confidence_filter: same semantics as ConceptMastery — 'high' (default)
+// or 'all'. Aggregations that mastery returns under the same filter MUST
+// match this view's occurrence_counts for the same concept; this
+// invariant is enforced by integration test.
 func (q *Queries) WeaknessAnalysis(ctx context.Context, arg WeaknessAnalysisParams) ([]WeaknessAnalysisRow, error) {
-	rows, err := q.db.Query(ctx, weaknessAnalysis, arg.Domain, arg.Since)
+	rows, err := q.db.Query(ctx, weaknessAnalysis, arg.Domain, arg.Since, arg.ConfidenceFilter)
 	if err != nil {
 		return nil, err
 	}

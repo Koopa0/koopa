@@ -97,16 +97,15 @@ type ObservationInput struct {
 	Category   string  `json:"category" jsonschema:"required" jsonschema_description:"Domain-specific category"`
 	Severity   *string `json:"severity,omitempty" jsonschema_description:"minor, moderate, critical (weakness only)"`
 	Detail     *string `json:"detail,omitempty"`
-	Confidence string  `json:"confidence,omitempty" jsonschema_description:"high or low (default high)"`
+	Confidence string  `json:"confidence,omitempty" jsonschema_description:"high (default — directly evidenced) or low (coach inferred). Both persist; mastery and weakness views default to high only but accept confidence_filter='all'."`
 }
 
 type RecordAttemptOutput struct {
-	Attempt              learning.Attempt   `json:"attempt"`
-	ObservationsRecorded int                `json:"observations_recorded"`
-	PendingObservations  []ObservationInput `json:"pending_observations,omitempty"`
-	PlanContext          []PlanContextItem  `json:"plan_context,omitempty"`
-	RelationsLinked      int                `json:"relations_linked,omitempty"`
-	RelationWarnings     []string           `json:"relation_warnings,omitempty"`
+	Attempt              learning.Attempt  `json:"attempt"`
+	ObservationsRecorded int               `json:"observations_recorded"`
+	PlanContext          []PlanContextItem `json:"plan_context,omitempty"`
+	RelationsLinked      int               `json:"relations_linked,omitempty"`
+	RelationWarnings     []string          `json:"relation_warnings,omitempty"`
 	// FSRSReviewFailed is true when the attempt was persisted but the
 	// spaced-repetition review card update failed. The attempt itself is
 	// still valid — surface this so the caller can retry or warn the user
@@ -162,20 +161,19 @@ func (s *Server) recordAttempt(ctx context.Context, _ *mcp.CallToolRequest, inpu
 	// failures and returns a best-effort result so the caller still gets a
 	// persisted attempt record. updateFSRSReview returns a bool surfaced in
 	// the output so callers can detect silent review-card data loss.
-	recorded, pending := s.processObservations(ctx, attempt.ID, prep.domain, input.Observations)
+	recorded := s.processObservations(ctx, attempt.ID, prep.domain, input.Observations)
 	fsrsFailed := s.updateFSRSReview(ctx, prep.itemID, prep.outcome, input.FSRSRating)
 	linked, relWarnings := s.processRelatedItems(ctx, prep.itemID, prep.domain, input.RelatedItems)
 	planCtx := s.lookupPlanContext(ctx, prep.itemID)
 
 	s.logger.Info("record_attempt",
 		"session", prep.sessionID, "item", input.Item.Title, "outcome", prep.outcome,
-		"observations", recorded, "pending", len(pending), "plan_context", len(planCtx),
+		"observations", recorded, "plan_context", len(planCtx),
 		"relations_linked", linked, "relation_warnings", len(relWarnings),
 		"fsrs_review_failed", fsrsFailed)
 	return nil, RecordAttemptOutput{
 		Attempt:              *attempt,
 		ObservationsRecorded: recorded,
-		PendingObservations:  pending,
 		PlanContext:          planCtx,
 		RelationsLinked:      linked,
 		RelationWarnings:     relWarnings,
@@ -408,9 +406,10 @@ func (s *Server) endSession(ctx context.Context, _ *mcp.CallToolRequest, input E
 // --- learning_dashboard ---
 
 type LearningDashboardInput struct {
-	Domain *string `json:"domain,omitempty" jsonschema_description:"Filter by domain"`
-	View   *string `json:"view,omitempty" jsonschema_description:"View: overview (default), mastery, weaknesses, retrieval, timeline, variations"`
-	Days   FlexInt `json:"days,omitempty" jsonschema_description:"Lookback period in days (default 30)"`
+	Domain           *string `json:"domain,omitempty" jsonschema_description:"Filter by domain"`
+	View             *string `json:"view,omitempty" jsonschema_description:"View: overview (default), mastery, weaknesses, retrieval, timeline, variations"`
+	Days             FlexInt `json:"days,omitempty" jsonschema_description:"Lookback period in days. Defaults: mastery=60 (one Google interview prep cycle), other views=30. 1..365."`
+	ConfidenceFilter *string `json:"confidence_filter,omitempty" jsonschema_description:"Only meaningful for mastery and weaknesses views. 'high' (default) restricts to directly-evidenced observations; 'all' includes coach-inferred (low confidence). Other views ignore this field."`
 }
 
 type LearningDashboardOutput struct {
@@ -430,17 +429,23 @@ type LearningDashboardOutput struct {
 // evolve without touching storage.
 type MasteryStage string
 
-// Mastery stages, roughly ordered from least to most proficient.
-// StageUnexplored is not returned today because the underlying SQL query
-// uses inner joins against attempt_observations, so a concept with zero
-// observations never reaches this layer. The constant is intentionally
-// omitted rather than dead code — if the query ever switches to LEFT JOIN
-// to surface unexplored concepts, add it back explicitly.
+// Mastery stages, roughly ordered from least to most proficient. The
+// heuristic in deriveMasteryStage decides which one applies.
 const (
-	StageStruggling MasteryStage = "struggling" // weakness dominates, no mastery signals yet
-	StageDeveloping MasteryStage = "developing" // improvement signals present or mixed mastery/weakness
-	StageSolid      MasteryStage = "solid"      // mastery signals dominate
+	StageStruggling MasteryStage = "struggling" // weakness dominates with enough observations to trust the signal
+	StageDeveloping MasteryStage = "developing" // mixed signal, OR insufficient observations to label
+	StageSolid      MasteryStage = "solid"      // mastery dominates with enough observations to trust the signal
 )
+
+// minObservationsForVerdict is the floor below which a concept always
+// reports "developing" regardless of signal mix. Without it, a single
+// observation could permanently label a concept (1 weakness → struggling
+// forever, 1 mastery → solid forever) which destroys the signal.
+//
+// Three is the smallest number that lets the 2:1 ratio rules below ever
+// fire — and it matches the audit's intuition that "two data points is
+// noise, three is the start of a pattern."
+const minObservationsForVerdict = 3
 
 // MasteryRow is the dashboard representation of a concept's mastery state —
 // the raw signal counts from the learning store plus a derived stage.
@@ -459,22 +464,42 @@ type MasteryRow struct {
 	LastObservedAt    time.Time    `json:"last_observed_at"`
 }
 
-// deriveMasteryStage applies the mastery-stage heuristic to raw signal counts.
-// Rules, in priority order:
-//  1. mastery > weakness AND mastery > 0 → solid
-//  2. improvement > 0 OR (mastery > 0 AND weakness > 0) → developing
-//  3. otherwise → struggling
+// deriveMasteryStage applies the mastery-stage heuristic to filtered signal
+// counts within the dashboard window.
 //
-// Callers only reach this function for concepts with at least one observation
-// (the SQL query guarantees it), so "unexplored" is not a possible output.
+// Rules, in priority order:
+//  1. fewer than minObservationsForVerdict (3) total observations →
+//     developing. The single most important rule. It prevents one stray
+//     observation from permanently labelling a concept.
+//  2. mastery >= 2 AND mastery >= 2 * weakness → solid. Needs both
+//     absolute count (≥2 mastery) and dominance ratio (mastery double
+//     weakness). A single mastery against zero weakness is technically
+//     a 2:1 ratio but is still 1 observation against 0, so the absolute
+//     floor catches it.
+//  3. weakness >= 2 AND weakness > mastery → struggling. Same idea
+//     mirrored: need at least 2 weakness signals AND weakness must
+//     outnumber mastery (not just tie).
+//  4. anything else → developing. Includes mixed signal (4M+3W → 4
+//     mastery is not double 3 weakness, 3 weakness is not greater than 4
+//     mastery, so neither solid nor struggling fires) and improvement-led
+//     progressions (a concept with all improvements lands here too).
+//
+// CRITICAL: the (weakness, improvement, mastery) counts MUST be those
+// returned by ConceptMastery under the SAME confidence_filter as the
+// dashboard request. Looking at unfiltered totals would let a low-confidence
+// observation "unlock" a stage from below the floor — re-creating the
+// half-gate the confidence column was designed to remove.
 func deriveMasteryStage(weakness, improvement, mastery int64) MasteryStage {
+	total := weakness + improvement + mastery
 	switch {
-	case mastery > weakness && mastery > 0:
-		return StageSolid
-	case improvement > 0 || (mastery > 0 && weakness > 0):
+	case total < minObservationsForVerdict:
 		return StageDeveloping
-	default:
+	case mastery >= 2 && mastery >= 2*weakness:
+		return StageSolid
+	case weakness >= 2 && weakness > mastery:
 		return StageStruggling
+	default:
+		return StageDeveloping
 	}
 }
 
@@ -502,27 +527,55 @@ func toMasteryRows(rows []learning.ConceptMasteryRow) []MasteryRow {
 	return out
 }
 
-func (s *Server) learningDashboard(ctx context.Context, _ *mcp.CallToolRequest, input LearningDashboardInput) (*mcp.CallToolResult, LearningDashboardOutput, error) {
-	days := clamp(int(input.Days), 1, 365, 30)
-	since := time.Now().AddDate(0, 0, -days)
+// defaultDaysForView is the per-view fallback for the lookback window when
+// the caller doesn't pass `days`. Mastery defaults to 60 because that's
+// the practitioner's mental horizon for "am I still good at this pattern" —
+// roughly one Google interview prep cycle. The audit's reasoning was:
+// 30-day window makes pattern stages flicker for someone whose practice
+// is intentionally bursty (3 weeks of DP, 5 weeks of system design, then
+// back). Other views use 30 because their data is more session-grained
+// and a longer window adds noise without adding signal.
+func defaultDaysForView(view string) int {
+	if view == "mastery" {
+		return 60
+	}
+	return 30
+}
 
+func (s *Server) learningDashboard(ctx context.Context, _ *mcp.CallToolRequest, input LearningDashboardInput) (*mcp.CallToolResult, LearningDashboardOutput, error) {
 	view := "overview"
 	if input.View != nil && *input.View != "" {
 		view = *input.View
 	}
+
+	days := clamp(int(input.Days), 1, 365, defaultDaysForView(view))
+	since := time.Now().AddDate(0, 0, -days)
 
 	var domain *string
 	if input.Domain != nil && *input.Domain != "" {
 		domain = input.Domain
 	}
 
+	// confidence_filter is meaningful only on mastery and weaknesses.
+	// Pass the raw value (or empty) through to the store; normalization +
+	// validation lives in learning.normalizeConfidenceFilter so there is
+	// exactly one place that decides what is legal. Do NOT pre-coerce
+	// invalid values to "high" here — that would silently swallow typos
+	// like "hi" and make the store-side guard dead code. An invalid value
+	// will come back as learning.ErrInvalidInput and surface as a normal
+	// tool error to the caller.
+	var confidenceFilter string
+	if input.ConfidenceFilter != nil {
+		confidenceFilter = *input.ConfidenceFilter
+	}
+
 	switch view {
 	case "overview":
 		return s.dashboardOverview(ctx, domain, since)
 	case "mastery":
-		return s.dashboardMastery(ctx, domain, since)
+		return s.dashboardMastery(ctx, domain, since, confidenceFilter)
 	case "weaknesses":
-		return s.dashboardWeaknesses(ctx, domain, since)
+		return s.dashboardWeaknesses(ctx, domain, since, confidenceFilter)
 	case "retrieval":
 		return s.dashboardRetrieval(ctx, domain)
 	case "timeline":
@@ -546,8 +599,8 @@ func (s *Server) dashboardOverview(ctx context.Context, domain *string, since ti
 	}, nil
 }
 
-func (s *Server) dashboardMastery(ctx context.Context, domain *string, since time.Time) (*mcp.CallToolResult, LearningDashboardOutput, error) {
-	rows, err := s.learn.ConceptMastery(ctx, domain, since)
+func (s *Server) dashboardMastery(ctx context.Context, domain *string, since time.Time, confidenceFilter string) (*mcp.CallToolResult, LearningDashboardOutput, error) {
+	rows, err := s.learn.ConceptMastery(ctx, domain, since, confidenceFilter)
 	if err != nil {
 		return nil, LearningDashboardOutput{}, fmt.Errorf("querying concept mastery: %w", err)
 	}
@@ -559,8 +612,8 @@ func (s *Server) dashboardMastery(ctx context.Context, domain *string, since tim
 	}, nil
 }
 
-func (s *Server) dashboardWeaknesses(ctx context.Context, domain *string, since time.Time) (*mcp.CallToolResult, LearningDashboardOutput, error) {
-	rows, err := s.learn.WeaknessAnalysis(ctx, domain, since)
+func (s *Server) dashboardWeaknesses(ctx context.Context, domain *string, since time.Time, confidenceFilter string) (*mcp.CallToolResult, LearningDashboardOutput, error) {
+	rows, err := s.learn.WeaknessAnalysis(ctx, domain, since, confidenceFilter)
 	if err != nil {
 		return nil, LearningDashboardOutput{}, fmt.Errorf("querying weakness analysis: %w", err)
 	}
@@ -607,31 +660,32 @@ func (s *Server) dashboardVariations(ctx context.Context, domain *string) (*mcp.
 	}, nil
 }
 
-// processObservations records high-confidence observations and returns low-confidence ones as pending.
-func (s *Server) processObservations(ctx context.Context, attemptID uuid.UUID, domain string, observations []ObservationInput) (int, []ObservationInput) {
+// processObservations persists every observation. Confidence is an attribute,
+// not a gate — high (default) and low both write to attempt_observations and
+// the dashboard reads filter at query time via confidence_filter. This
+// replaces the prior pending-observations roundtrip which silently dropped
+// low-confidence signals on the next conversation turn.
+//
+// Per-observation failures (concept lookup, invalid confidence, insert) are
+// logged and skipped; they do not fail the surrounding attempt. Confidence
+// validation lives in learning.normalizeObservationConfidence — this path
+// passes the raw value through (empty becomes "high" inside the store) so
+// a typo like "hig" surfaces as a skipped observation with a clear warning
+// rather than being silently rewritten to "high" here.
+func (s *Server) processObservations(ctx context.Context, attemptID uuid.UUID, domain string, observations []ObservationInput) int {
 	var recorded int
-	var pending []ObservationInput
 	for i := range observations {
 		obs := &observations[i]
-		confidence := obs.Confidence
-		if confidence == "" {
-			confidence = "high"
-		}
-		if confidence == "low" {
-			pending = append(pending, *obs)
-			continue
-		}
-
 		conceptID, cErr := s.learn.FindOrCreateConcept(ctx, obs.Concept, obs.Concept, domain, "skill")
 		if cErr != nil {
 			s.logger.Warn("observation: concept creation failed", "concept", obs.Concept, "error", cErr)
 			continue
 		}
-		if _, oErr := s.learn.RecordObservation(ctx, attemptID, conceptID, obs.Signal, obs.Category, obs.Severity, obs.Detail); oErr != nil {
-			s.logger.Warn("observation: recording failed", "concept", obs.Concept, "error", oErr)
+		if _, oErr := s.learn.RecordObservation(ctx, attemptID, conceptID, obs.Signal, obs.Category, obs.Severity, obs.Detail, obs.Confidence); oErr != nil {
+			s.logger.Warn("observation: recording failed", "concept", obs.Concept, "confidence", obs.Confidence, "error", oErr)
 			continue
 		}
 		recorded++
 	}
-	return recorded, pending
+	return recorded
 }

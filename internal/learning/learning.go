@@ -5,6 +5,7 @@
 package learning
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -49,21 +50,49 @@ type Session struct {
 }
 
 // Attempt represents an attempt on a learning item within a session.
+//
+// Attempt is the unified shape for all attempt-returning paths:
+// RecordAttempt (write), AttemptsBySession / AttemptsByItem / AttemptsByConcept
+// (read). Optional fields are populated only on the paths where they make
+// sense — Difficulty and Matched are only set by AttemptsByConcept, Metadata
+// is set by every read path but absent from write returns.
 type Attempt struct {
-	ID              uuid.UUID  `json:"id"`
-	ItemID          uuid.UUID  `json:"item_id"`
-	SessionID       *uuid.UUID `json:"session_id,omitempty"`
-	AttemptNumber   int32      `json:"attempt_number"`
-	Outcome         string     `json:"outcome"`
-	DurationMinutes *int32     `json:"duration_minutes,omitempty"`
-	StuckAt         *string    `json:"stuck_at,omitempty"`
-	ApproachUsed    *string    `json:"approach_used,omitempty"`
-	AttemptedAt     time.Time  `json:"attempted_at"`
-	ItemTitle       string     `json:"item_title"`
-	ItemExternalID  *string    `json:"item_external_id,omitempty"`
+	ID              uuid.UUID           `json:"id"`
+	ItemID          uuid.UUID           `json:"item_id"`
+	SessionID       *uuid.UUID          `json:"session_id,omitempty"`
+	AttemptNumber   int32               `json:"attempt_number"`
+	Outcome         string              `json:"outcome"`
+	DurationMinutes *int32              `json:"duration_minutes,omitempty"`
+	StuckAt         *string             `json:"stuck_at,omitempty"`
+	ApproachUsed    *string             `json:"approach_used,omitempty"`
+	AttemptedAt     time.Time           `json:"attempted_at"`
+	Metadata        json.RawMessage     `json:"metadata,omitempty"`
+	ItemTitle       string              `json:"item_title"`
+	ItemExternalID  *string             `json:"item_external_id,omitempty"`
+	Difficulty      *string             `json:"difficulty,omitempty"`
+	Matched         *MatchedObservation `json:"matched_observation,omitempty"`
+}
+
+// MatchedObservation describes the highest-priority observation that linked
+// an attempt to a concept query. Populated only on AttemptsByConcept results;
+// nil on AttemptsBySession / AttemptsByItem.
+//
+// Priority when an attempt has multiple observations on the same concept:
+// signal weakness > improvement > mastery, then severity critical > moderate
+// > minor. Selected by the SQL query, not in Go.
+type MatchedObservation struct {
+	Signal   string  `json:"signal"`
+	Category string  `json:"category"`
+	Severity *string `json:"severity,omitempty"`
+	Detail   *string `json:"detail,omitempty"`
 }
 
 // Observation represents a learning signal on a concept.
+//
+// ConceptSlug and ConceptName are populated only by read-side query paths
+// (e.g. ObservationsByAttempt). On direct write returns from RecordObservation
+// they are empty — the INSERT returning clause does not join concepts. Both
+// fields stay non-pointer string for JSON-shape stability across paths.
 type Observation struct {
 	ID          uuid.UUID `json:"id"`
 	AttemptID   uuid.UUID `json:"attempt_id"`
@@ -72,8 +101,9 @@ type Observation struct {
 	Category    string    `json:"category"`
 	Severity    *string   `json:"severity,omitempty"`
 	Detail      *string   `json:"detail,omitempty"`
-	ConceptSlug string    `json:"concept_slug"`
-	ConceptName string    `json:"concept_name"`
+	Confidence  string    `json:"confidence"`
+	ConceptSlug string    `json:"concept_slug,omitempty"`
+	ConceptName string    `json:"concept_name,omitempty"`
 }
 
 // MapOutcome maps semantic outcome input to the schema enum based on session mode.

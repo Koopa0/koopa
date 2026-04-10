@@ -245,7 +245,9 @@ issued → acknowledged → resolved
 | 13 | `acknowledge_directive` | directive_id | acknowledged + directive | additiveIdempotent |
 | 14 | `track_insight` | insight_id, action (verify/invalidate/archive/add_evidence), evidence? | insight | additiveIdempotent |
 | 15 | `start_session` | domain, mode, daily_plan_item_id? | session | additive |
-| 16 | `record_attempt` | session_id, item{title, external_id?, difficulty?}, outcome, duration?, stuck_at?, approach?, observations[]? | attempt + observations_recorded + pending_observations + plan_context | additive |
+| 16 | `record_attempt` | session_id, item{title, external_id?, difficulty?}, outcome, duration?, stuck_at?, approach?, observations[]?, metadata?, fsrs_rating?, related_items[]? | attempt + observations_recorded + plan_context + relations_linked + fsrs_review_failed | additive |
+| 16a | `learning_dashboard` | view (overview/mastery/weaknesses/retrieval/timeline/variations), domain?, days?, confidence_filter? (mastery/weaknesses only) | view-specific payload | readOnly |
+| 16b | `attempt_history` | one of {item{title, domain?}, concept_slug, session_id} | mode + resolved + attempts[] | readOnly |
 | 17 | `end_session` | session_id, reflection? | session + attempts[] + duration | additive |
 | 18 | `write_journal` | kind (plan/context/reflection/metrics), content, metadata? | entry | additive |
 | 19 | `manage_content` | action (create/update/publish), title?, body?, content_type?, content_id?, project? | id + title + status | additive |

@@ -62,7 +62,7 @@ func (s *Server) weeklySummary(ctx context.Context, _ *mcp.CallToolRequest, inpu
 		return nil, WeeklySummaryOutput{}, fmt.Errorf("querying learning sessions: %w", err)
 	}
 
-	masteryRaw, err := s.learn.ConceptMastery(ctx, nil, weekStart)
+	masteryRaw, err := s.learn.ConceptMastery(ctx, nil, weekStart, "high")
 	if err != nil {
 		return nil, WeeklySummaryOutput{}, fmt.Errorf("querying concept mastery: %w", err)
 	}

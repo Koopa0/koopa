@@ -26,6 +26,15 @@ WHERE (sqlc.narg('domain')::text IS NULL OR domain = sqlc.narg('domain'))
 ORDER BY started_at DESC
 LIMIT @max_results;
 
+-- name: FindItemByDomainTitle :one
+-- Read-only item lookup by (domain, title). Returns ErrNotFound when the
+-- item does not exist — used by attempt_history which must NOT create new
+-- items (it would silently pollute the catalog from a read tool).
+SELECT id, domain, title, external_id, difficulty, created_at, updated_at
+FROM items
+WHERE domain = @domain AND title = @title
+LIMIT 1;
+
 -- name: FindOrCreateItem :one
 -- Upsert a learning item by domain + external_id (if present) or domain + title.
 INSERT INTO items (domain, title, external_id, difficulty)
@@ -52,9 +61,9 @@ SELECT COALESCE(MAX(attempt_number), 0)::int AS max_number
 FROM attempts WHERE learning_item_id = @learning_item_id;
 
 -- name: CreateObservation :one
-INSERT INTO attempt_observations (attempt_id, concept_id, signal_type, category, severity, detail)
-VALUES (@attempt_id, @concept_id, @signal_type, @category, @severity, @detail)
-RETURNING id, attempt_id, concept_id, signal_type, category, severity, detail, created_at;
+INSERT INTO attempt_observations (attempt_id, concept_id, signal_type, category, severity, detail, confidence)
+VALUES (@attempt_id, @concept_id, @signal_type, @category, @severity, @detail, @confidence)
+RETURNING id, attempt_id, concept_id, signal_type, category, severity, detail, confidence, created_at;
 
 -- name: FindOrCreateConcept :one
 -- Upsert a concept by domain + slug.
@@ -65,13 +74,28 @@ DO UPDATE SET updated_at = now()
 RETURNING id, slug, name, domain, kind, parent_id, tag_id, description, created_at, updated_at;
 
 -- name: AttemptsBySession :many
+-- All attempts within a session, oldest first. Backs end_session summary
+-- and the by_session path of attempt_history.
 SELECT a.id, a.learning_item_id, a.session_id, a.attempt_number, a.outcome,
-       a.duration_minutes, a.stuck_at, a.approach_used, a.attempted_at,
+       a.duration_minutes, a.stuck_at, a.approach_used, a.attempted_at, a.metadata,
        li.title AS item_title, li.external_id AS item_external_id
 FROM attempts a
 JOIN items li ON li.id = a.learning_item_id
 WHERE a.session_id = @session_id
 ORDER BY a.attempted_at;
+
+-- name: AttemptsByItem :many
+-- All attempts on a specific learning item, newest first. Primary backing
+-- query for Improvement Verification Loop — "how did he do this problem
+-- last time?". Same shape as AttemptsBySession so they share the Go DTO.
+SELECT a.id, a.learning_item_id, a.session_id, a.attempt_number, a.outcome,
+       a.duration_minutes, a.stuck_at, a.approach_used, a.attempted_at, a.metadata,
+       li.title AS item_title, li.external_id AS item_external_id
+FROM attempts a
+JOIN items li ON li.id = a.learning_item_id
+WHERE a.learning_item_id = @learning_item_id
+ORDER BY a.attempted_at DESC
+LIMIT @max_results;
 
 -- name: ObservationsByAttempt :many
 SELECT ao.id, ao.attempt_id, ao.concept_id, ao.signal_type, ao.category, ao.severity, ao.detail,
@@ -81,9 +105,18 @@ JOIN concepts c ON c.id = ao.concept_id
 WHERE ao.attempt_id = @attempt_id;
 
 -- name: ConceptMastery :many
--- Per-concept mastery with signal counts from attempt_observations.
--- Used by learning_dashboard mastery view. Stage is derived in Go (not SQL)
--- from the signal counts — see learning.deriveMasteryStage.
+-- Per-concept mastery with signal counts from attempt_observations within
+-- the @since window. Used by learning_dashboard mastery view.
+--
+-- @confidence_filter: 'high' (default) restricts the aggregation to
+-- high-confidence observations; 'all' includes both. The filter is
+-- applied via WHERE so the COUNT(*) FILTER clauses see the same row set
+-- and the < N observations → developing floor in deriveMasteryStage
+-- looks at FILTERED counts only — that property is the difference between
+-- "confidence is a label" (this design) and "confidence is a half-gate".
+--
+-- Stage is derived in Go (not SQL) from the signal counts —
+-- see mcp.deriveMasteryStage.
 SELECT c.id, c.slug, c.name, c.domain, c.kind,
        COUNT(*) FILTER (WHERE ao.signal_type = 'weakness') AS weakness_count,
        COUNT(*) FILTER (WHERE ao.signal_type = 'improvement') AS improvement_count,
@@ -96,12 +129,18 @@ JOIN attempt_observations ao ON ao.concept_id = c.id
 JOIN attempts a ON a.id = ao.attempt_id
 WHERE (sqlc.narg('domain')::text IS NULL OR c.domain = sqlc.narg('domain'))
   AND a.attempted_at >= @since
+  AND (@confidence_filter::text = 'all' OR ao.confidence = 'high')
 GROUP BY c.id
 ORDER BY total_observations DESC;
 
 -- name: WeaknessAnalysis :many
--- Cross-pattern weakness analysis from attempt_observations.
--- Used by learning_dashboard weaknesses view.
+-- Cross-pattern weakness analysis from attempt_observations within the
+-- @since window. Used by learning_dashboard weaknesses view.
+--
+-- @confidence_filter: same semantics as ConceptMastery — 'high' (default)
+-- or 'all'. Aggregations that mastery returns under the same filter MUST
+-- match this view's occurrence_counts for the same concept; this
+-- invariant is enforced by integration test.
 SELECT c.slug AS concept_slug, c.name AS concept_name, c.domain,
        ao.category,
        COUNT(*) AS occurrence_count,
@@ -115,6 +154,7 @@ JOIN attempts a ON a.id = ao.attempt_id
 WHERE ao.signal_type = 'weakness'
   AND (sqlc.narg('domain')::text IS NULL OR c.domain = sqlc.narg('domain'))
   AND a.attempted_at >= @since
+  AND (@confidence_filter::text = 'all' OR ao.confidence = 'high')
 GROUP BY c.slug, c.name, c.domain, ao.category
 ORDER BY critical_count DESC, occurrence_count DESC;
 
@@ -217,14 +257,52 @@ ORDER BY ao.created_at DESC
 LIMIT @max_results;
 
 -- name: AttemptsByConcept :many
--- Recent attempts on items that exercise a given concept. For concept drilldown.
-SELECT DISTINCT a.id, a.learning_item_id, a.outcome, a.attempted_at, a.duration_minutes,
-       li.title AS item_title, li.difficulty
-FROM attempts a
-JOIN items li ON li.id = a.learning_item_id
-JOIN item_concepts ic ON ic.learning_item_id = li.id
-WHERE ic.concept_id = @concept_id
-ORDER BY a.attempted_at DESC
+-- Attempts that produced an observation about the given concept, newest first.
+-- Each row carries the matched observation's signal/category/severity/detail
+-- so the caller knows WHY this attempt is in the result set without a second
+-- query.
+--
+-- The inner SELECT uses DISTINCT ON (a.id) to keep one row per attempt even
+-- when a single attempt recorded multiple observations on the same concept;
+-- the picked observation is highest-priority by signal (weakness > improvement
+-- > mastery) then severity (critical > moderate > minor). The outer SELECT
+-- re-sorts by attempted_at DESC because DISTINCT ON forces the inner ORDER BY
+-- to lead with a.id.
+--
+-- Replaces the prior version that joined through item_concepts (a static
+-- tag table that no production code path populates). The semantics changed:
+-- this now returns "attempts where the user explicitly observed this
+-- concept", not "attempts on items tagged with this concept". The new
+-- semantics is what concept drilldown actually wants.
+SELECT id, learning_item_id, session_id, attempt_number, outcome,
+       duration_minutes, stuck_at, approach_used, attempted_at, metadata,
+       item_title, item_external_id, difficulty,
+       matched_signal, matched_category, matched_severity, matched_detail
+FROM (
+    SELECT DISTINCT ON (a.id)
+           a.id, a.learning_item_id, a.session_id, a.attempt_number, a.outcome,
+           a.duration_minutes, a.stuck_at, a.approach_used, a.attempted_at, a.metadata,
+           li.title AS item_title, li.external_id AS item_external_id, li.difficulty,
+           ao.signal_type AS matched_signal,
+           ao.category   AS matched_category,
+           ao.severity   AS matched_severity,
+           ao.detail     AS matched_detail
+    FROM attempts a
+    JOIN items li ON li.id = a.learning_item_id
+    JOIN attempt_observations ao ON ao.attempt_id = a.id
+    WHERE ao.concept_id = @concept_id
+    -- Priority order when an attempt has multiple observations on the
+    -- concept: weakness signals first, then improvement, then mastery. Within
+    -- the same signal, classified severities beat NULL (NULL = unclassified,
+    -- which can only happen for weakness since the schema CHECK forbids
+    -- non-NULL severity on improvement/mastery rows). Treating NULL as
+    -- lowest is deliberate — we surface the rows where the coach left a
+    -- concrete severity note ahead of the rows where they did not.
+    ORDER BY a.id,
+             CASE ao.signal_type WHEN 'weakness' THEN 0 WHEN 'improvement' THEN 1 WHEN 'mastery' THEN 2 END,
+             CASE ao.severity WHEN 'critical' THEN 0 WHEN 'moderate' THEN 1 WHEN 'minor' THEN 2 ELSE 3 END
+) deduped
+ORDER BY attempted_at DESC
 LIMIT @max_results;
 
 -- name: ItemsByConcept :many

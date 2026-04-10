@@ -573,6 +573,8 @@ type AttemptObservation struct {
 	// Free-text evidence or explanation. NULL when the signal is self-explanatory from category alone.
 	Detail    *string   `json:"detail"`
 	CreatedAt time.Time `json:"created_at"`
+	// high (default): signal directly evidenced by the attempt outcome — user said "I forgot how X works" or repeatedly failed at X. low: coach inferred the signal from indirect evidence — user struggled with the problem and coach suspects X is the missing skill. Both persist. Dashboard mastery and weakness views default to high only; pass confidence_filter=all to include low-confidence observations.
+	Confidence string `json:"confidence"`
 }
 
 // Learning ontology — concepts, patterns, skills, and principles that can be learned, practiced, and diagnosed. Independent from tags (which handle content classification). Hierarchy via parent_id (typical: pattern contains skill, skill refines principle — but kind ordering is convention, not DDL-enforced). Mastery is a derived state computed from attempt_observations aggregation, not stored on this table.

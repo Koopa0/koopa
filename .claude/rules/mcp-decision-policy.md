@@ -159,50 +159,79 @@ Ask: **What is the expected output?**
 Attempt observations are diagnostic signals that connect attempts to concepts.
 They are **irreplaceable historical analytics** (concept_id uses RESTRICT).
 
-### High confidence — can be recorded in record_attempt directly
+**Confidence is a label, not a gate.** Every observation persists, regardless
+of confidence. The `confidence` column on `attempt_observations` records HOW
+the coach knew (directly evidenced vs inferred), and the dashboard's
+`confidence_filter` controls whether low-confidence observations contribute
+to mastery and weakness aggregations at read time. Default reads return only
+high-confidence observations; `confidence_filter=all` surfaces both.
 
-The observation qualifies as high confidence when ALL of these are true:
-- The concept already exists in the system (not auto-created in this call)
-- The signal is directly evidenced by the attempt outcome (e.g., failed to recognize binary search = weakness:pattern-recognition)
-- The category matches established domain conventions
+This replaces the prior gate model in which low-confidence observations
+were returned as `pending_observations` and dropped on the next conversation
+turn unless the AI immediately re-sent them. That model lost data
+silently — there is no `pending_observations` field on `record_attempt`
+output anymore.
 
-### Low confidence — AI presents in conversation, user confirms before recording
+### When to label `high`
 
-The observation qualifies as low confidence when ANY of these is true:
-- The concept would need to be auto-created
-- The signal is inferred rather than directly evidenced ("you might have a weakness in X")
-- The category is novel (not in established conventions for this domain)
-- The severity assessment is uncertain
+ALL of these are true:
+- The concept slug refers to a concept that already exists, OR auto-creation
+  is permissible per section 6 (leaf, same domain, kind inferable)
+- The signal is **directly evidenced** by the attempt outcome — the user said
+  "I forgot how X works" or repeatedly failed at X
+- The category matches established conventions for the domain
 
-### Implementation
+### When to label `low`
 
-`record_attempt` accepts observations in two forms:
-```
-observations: [
-  { concept: "binary-search", signal: "weakness", category: "pattern-recognition", confidence: "high" },
-  { concept: "amortized-analysis", signal: "weakness", category: "complexity-analysis", confidence: "low" }
-]
-```
+ANY of these is true:
+- The signal is **inferred** by the coach — "you struggled with this problem
+  and I suspect X is the missing skill" — even though the user did not name
+  the gap
+- The concept needs auto-creation AND the signal would otherwise have been
+  high (auto-creation alone doesn't mean low; inference does)
+- The severity assessment is uncertain (the coach is guessing critical vs
+  moderate)
 
-High-confidence observations are written to `attempt_observations` immediately.
-Low-confidence observations are returned in the response as `pending_observations`
-for the AI to present to the user. If the user confirms, a follow-up call records them.
+### Mastery floor invariant — why the gate is gone but the label still matters
+
+`deriveMasteryStage` enforces a floor: a concept with fewer than 3
+**filtered** observations always reports `developing`, regardless of signal
+mix. The filter is whatever the dashboard request asked for — high (default)
+or all. This is the property that makes `confidence` a true label rather than
+a half-gate: a single low-confidence observation cannot "unlock" a concept
+from no-data into struggling/solid, because under the default filter the low
+observation isn't counted at all.
+
+If you find yourself thinking "I'll mark this `high` even though it's
+inferred so it influences the dashboard sooner," stop. The whole point of
+the floor + filter design is that you can mark inferred signals freely
+without polluting Koopa's view of his own progress. Mark accurately. The
+analytics will surface them when there's enough data to trust.
 
 ### Concrete examples by domain
 
 **LeetCode:**
-- HIGH: User said "I forgot how binary search works on rotated arrays" → `{concept: "binary-search", signal: "weakness", category: "pattern-recognition"}`. Concept exists, signal directly stated by user.
-- HIGH: User solved Two Sum independently in 3 minutes → `{concept: "hash-map", signal: "mastery", category: "data-structure"}`. Concept exists, mastery evidenced by independent solve + speed.
-- LOW: User failed 3Sum but the AI suspects weak two-pointer skills → `{concept: "two-pointer", signal: "weakness", category: "algorithm"}`. Signal is inferred (the user didn't mention two-pointers; the AI diagnosed it). Present to user first.
-- LOW: User struggled with a problem, AI thinks a new concept "monotonic-stack" explains it but that concept doesn't exist yet → auto-creation + inference = low confidence.
+- HIGH: User said "I forgot how binary search works on rotated arrays" → `{concept: "binary-search", signal: "weakness", category: "pattern-recognition", confidence: "high"}`. Directly stated.
+- HIGH: User solved Two Sum independently in 3 minutes → `{concept: "hash-map", signal: "mastery", category: "data-structure", confidence: "high"}`. Behaviour-evidenced.
+- LOW: User failed 3Sum but the coach suspects weak two-pointer skills (the user didn't mention them) → `{concept: "two-pointer", signal: "weakness", category: "approach-selection", confidence: "low"}`. Inferred. Persists for later analysis.
+- LOW: User struggled, coach thinks a new concept "monotonic-stack" explains it → `{concept: "monotonic-stack", signal: "weakness", category: "approach-selection", confidence: "low"}`. Auto-create + inference.
 
 **Japanese:**
-- HIGH: User conjugated te-form incorrectly 3 times in a drill → `{concept: "te-form", signal: "weakness", category: "conjugation-accuracy"}`. Directly evidenced by repeated errors.
-- LOW: User struggled with a listening passage; AI infers vocabulary weakness → `{concept: "N3-vocabulary", signal: "weakness", category: "vocabulary-recall"}`. Inferred from comprehension failure, not directly evidenced.
+- HIGH: User conjugated te-form incorrectly 3 times in a drill → `{concept: "te-form", signal: "weakness", category: "conjugation-accuracy", confidence: "high"}`.
+- LOW: User struggled with a listening passage; coach infers vocabulary gap → `{concept: "N3-vocabulary", signal: "weakness", category: "vocabulary-recall", confidence: "low"}`.
 
 **System Design:**
-- HIGH: User couldn't estimate QPS for a URL shortener → `{concept: "capacity-estimation", signal: "weakness", category: "capacity-estimation"}`. Directly evidenced.
-- LOW: User's design lacked a cache layer; AI infers they don't understand caching tradeoffs → `{concept: "caching-strategy", signal: "weakness", category: "tradeoff-analysis"}`. Inferred.
+- HIGH: User couldn't estimate QPS for a URL shortener → `{concept: "capacity-estimation", signal: "weakness", category: "capacity-estimation", confidence: "high"}`.
+- LOW: User's design lacked a cache layer; coach infers caching-tradeoff gap → `{concept: "caching-strategy", signal: "weakness", category: "tradeoff-analysis", confidence: "low"}`.
+
+### Cross-reference
+
+- The mastery stage heuristic itself (rules + floor) lives in
+  `internal/mcp/learning.go::deriveMasteryStage` — the doc comment there
+  is the canonical specification for the rules.
+- The invariant that mastery and weakness views agree under the same
+  filter is enforced by integration test
+  `internal/mcp/integration_test.go::TestObservationConfidenceInvariant`.
 
 ---
 

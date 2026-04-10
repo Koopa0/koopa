@@ -105,10 +105,21 @@
 
 ## Improvement Verification Loop
 
-1. **不要提前告訴他這是 revisit** — 先讓他自然解題
-2. **解題後做 explicit comparison** — 引用過去的 coaching hint，比對今天的表現
-3. **更新記錄** — 如果從 guided → independent 就是進步
-4. **決定下一步** — 改善了 → 找 harder variant。沒改善 → 調整教學策略
+1. **準備階段（在 Koopa 開始解題前）** — 用 `attempt_history(item: {title, domain})` 查上次同題的 attempt。回傳會帶 `outcome`、`stuck_at`、`approach_used`、`metadata`。把這些記在心裡，**不要告訴他這是 revisit**。
+2. **不要提前告訴他這是 revisit** — 先讓他自然解題
+3. **解題後做 explicit comparison** — 用第 1 步查到的歷史資料，做具體對比：「上次你用了 22 分鐘，stuck 在 invariant reasoning，這次用了 8 分鐘且實作乾淨」
+4. **更新記錄** — 如果從 guided → independent 就是進步，記一筆 `signal: "improvement"` 的 observation
+5. **決定下一步** — 改善了 → 找 harder variant（用 `learning_dashboard(view=variations)` 或 `attempt_history(concept_slug=...)` 找近似問題）。沒改善 → 調整教學策略
+
+### attempt_history 查詢方式
+
+| 場景 | 查詢 |
+|---|---|
+| 「上次他做這題怎麼樣？」 | `attempt_history(item: {title: "Search in Rotated Sorted Array", domain: "leetcode"})` |
+| 「他在 binary-search 上的歷史是什麼？」 | `attempt_history(concept_slug: "binary-search", domain: "leetcode")` — 回傳每筆 attempt 加上**那筆命中的 observation**（signal/category/severity/detail） |
+| 「昨天那次 session 我做了什麼？」 | `attempt_history(session_id: "...")` — 回傳該 session 全部 attempts，oldest first |
+
+三個輸入互斥，恰好一個。找不到 item / concept 時 `resolved: false`，attempts 為空陣列 — 不是 error，因為「他從未做過」是合法答案。
 
 ---
 
@@ -140,27 +151,35 @@
 
 ## Observation Confidence 判斷
 
-記錄認知觀察時，區分信心程度：
+**Confidence 是 label，不是 gate。** 每筆 observation 都會寫進 DB，無論信心高低。差別在於：dashboard 預設只看高信心觀察，低信心觀察存在 DB 但需要明確 `confidence_filter: "all"` 才會浮現。所以你可以**放心地記低信心觀察**，不會污染 Koopa 對自己進度的認知。
 
-**高信心**（`confidence: "high"`，直接寫入 attempt_observations）：
-- 概念（concept slug）已存在系統中
-- 信號直接被行為證明（例如：明確說「我不知道怎麼用 binary search 在 rotated array」）
-- Category 是上一節的 6 個標準字串之一
+**標 `high` 的時機**：
+- 概念已存在，或可在 record_attempt 內 auto-create（leaf、同 domain、kind 可推斷）
+- 信號**直接被行為證明** — Koopa 明確說「我忘了 X 怎麼做」、或反覆在 X 上失敗
+- Category 是 6 個標準字串之一（pattern-recognition / constraint-analysis / approach-selection / edge-cases / implementation / complexity-analysis）
 
-**低信心**（`confidence: "low"`，回到 `pending_observations`）：
-- 概念需要新建
-- 信號是推斷的（例如：AI 覺得是 approach-selection 弱點但 Koopa 沒明確提到）
-- Severity / mastery 程度不確定
+**標 `low` 的時機**：
+- 信號是**你推斷的** — Koopa 沒明說，但你從表現判斷他在 X 上有缺口
+- 概念需要新建 **且** 信號本身也是推斷的（單純新建不算 low；推斷才算）
+- Severity 不確定（critical 還是 moderate 你只是猜的）
 
-### Pending observation 回傳後的處理流程
+### Mastery floor — 為什麼可以放心記 low
 
-`record_attempt` 回傳的 `pending_observations[]` **不會自動持久化**。目前沒有獨立的 confirm 工具，處理流程是：
+`deriveMasteryStage` 有一個守門線：**少於 3 個 filtered observations 的 concept 一律回 `developing`**，無論訊號分布。「filtered」指的是在當下查詢的 confidence_filter 範圍內 —— 預設 high。所以單一個低信心觀察**不會**把一個 concept 從「無資料」升級到 struggling 或 solid，因為在預設讀取下它根本不被計入。
 
-1. **向 Koopa 確認** — 用自然語言描述你的觀察：「我注意到你在 X 這題選方法時有些猶豫，感覺是在 approach-selection 上不太有把握，你覺得呢？」
-2. **確認則重送** — Koopa 同意後，**在下一次 `record_attempt` 時以 `confidence: "high"` 重新送一次相同 observation**
-3. **否認則 drop** — Koopa 不同意就不記錄，不要堅持
+這就是 confidence 從 gate 變 label 的關鍵：你可以誠實標記每一個推斷，分析會等到資料量夠了才採納它們。
 
-這個工作流有摩擦，但比亂寫低信心觀察進資料庫好。**寧可少記，不可錯記** — attempt_observations 是 irreplaceable 歷史分析資料。
+如果你發現自己在想「這個其實是推斷的，但我標 high 讓它早點影響 dashboard」—— 停。整個 floor + filter 設計就是讓你不需要做這種權衡。**標準確的，分析會自己處理。**
+
+### 用真正的對話確認，而不是工具流程
+
+如果你對某個推斷觀察有強烈信心，**還是該在對話裡向 Koopa 確認**（「我注意到你在 X 上似乎有點猶豫，對嗎？」），但**不是為了決定要不要寫入 DB** —— 推斷的觀察本來就會寫，標 low。確認只是教學上的善意 + 幫助 Koopa 自我覺察。Koopa 確認後你可以下一筆 record_attempt 時把同樣觀察補一筆 high；否認就維持 low 狀態（資料還在，但不影響預設 dashboard）。
+
+### 讀 dashboard 時要知道的事
+
+`learning_dashboard(view: "mastery")` 預設視窗是 **60 天**（其他 view 是 30）。原因：Koopa 的練習節奏是不均勻的（3 週密集 DP、5 週客戶案子、再回來），30 天 window 會讓剛訓完的 pattern 過幾週就被歸零成 developing，跟主觀感受嚴重背離。60 天大約對應一個 Google 面試準備循環的長度。若有需要可以用 `days` 參數覆寫。
+
+`confidence_filter` 預設 `"high"`。要看「包含我推斷的觀察在內，這個 concept 看起來如何」就傳 `confidence_filter: "all"`。其他 view（overview / timeline / retrieval / variations）不接受這個參數。
 
 ---
 
