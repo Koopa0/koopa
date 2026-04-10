@@ -58,28 +58,12 @@ func (s *Server) searchKnowledge(ctx context.Context, _ *mcp.CallToolRequest, in
 
 	limit := clamp(int(input.Limit), 1, 50, 20)
 
-	var ct *content.Type
-	if input.ContentType != nil && *input.ContentType != "" {
-		t := content.Type(*input.ContentType)
-		ct = &t
-	}
-
-	contents, _, err := s.contents.Search(ctx, input.Query, ct, 1, limit)
+	contents, _, err := s.contents.InternalSearch(ctx, input.Query, 1, limit)
 	if err != nil {
 		return nil, SearchKnowledgeOutput{}, fmt.Errorf("searching content: %w", err)
 	}
 
-	results := make([]SearchKnowledgeResult, 0, len(contents))
-	for i := range contents {
-		c := &contents[i]
-		if after != nil && c.CreatedAt.Before(*after) {
-			continue
-		}
-		if before != nil && c.CreatedAt.After(*before) {
-			continue
-		}
-		results = append(results, s.contentToResult(ctx, c))
-	}
+	results := s.filterContentResults(ctx, contents, input.ContentType, after, before)
 
 	// Also search notes (Obsidian knowledge notes).
 	if s.notes != nil {
@@ -97,6 +81,24 @@ func (s *Server) searchKnowledge(ctx context.Context, _ *mcp.CallToolRequest, in
 		Total:   len(results),
 		Query:   input.Query,
 	}, nil
+}
+
+func (s *Server) filterContentResults(ctx context.Context, contents []content.Content, contentType *string, after, before *time.Time) []SearchKnowledgeResult {
+	results := make([]SearchKnowledgeResult, 0, len(contents))
+	for i := range contents {
+		c := &contents[i]
+		if contentType != nil && *contentType != "" && string(c.Type) != *contentType {
+			continue
+		}
+		if after != nil && c.CreatedAt.Before(*after) {
+			continue
+		}
+		if before != nil && c.CreatedAt.After(*before) {
+			continue
+		}
+		results = append(results, s.contentToResult(ctx, c))
+	}
+	return results
 }
 
 func truncate(s string, maxLen int) string {

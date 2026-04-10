@@ -7,6 +7,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/Koopa0/koopa0.dev/internal/content"
 	"github.com/Koopa0/koopa0.dev/internal/daily"
 	"github.com/Koopa0/koopa0.dev/internal/directive"
 	"github.com/Koopa0/koopa0.dev/internal/goal"
@@ -24,7 +25,7 @@ const sectionTimeout = 15 * time.Second
 
 // MorningContextInput is the input for the morning_context tool.
 type MorningContextInput struct {
-	Sections FlexStringSlice `json:"sections,omitempty" jsonschema_description:"Sections to include (default all). Valid: tasks, goals, directives, insights, rss, plan_history"`
+	Sections FlexStringSlice `json:"sections,omitempty" jsonschema_description:"Sections to include (default all). Valid: tasks, goals, directives, insights, rss, plan_history, content_pipeline"`
 	Date     *string         `json:"date,omitempty" jsonschema_description:"Target date YYYY-MM-DD (default: today)"`
 }
 
@@ -41,6 +42,7 @@ type MorningContextOutput struct {
 	UnverifiedInsights []insight.Insight        `json:"unverified_insights"`
 	RSSHighlights      []RSSHighlight           `json:"rss_highlights"`
 	PlanHistory        []journal.Entry          `json:"plan_history"`
+	ContentPipeline    []ContentSummary         `json:"content_pipeline"`
 }
 
 // RSSHighlight is a recent high-priority RSS item.
@@ -73,51 +75,26 @@ func (s *Server) fillMorningSections(ctx context.Context, date time.Time, reques
 		has[sec] = true
 	}
 
+	// runSection launches a fill function with a per-section timeout.
 	// Each section writes to disjoint fields in out, so no mutex needed.
-	// Per-section timeout prevents one slow query from blocking the rest.
 	var wg sync.WaitGroup
-	if all || has["tasks"] {
-		wg.Go(func() {
-			secCtx, cancel := context.WithTimeout(ctx, sectionTimeout)
-			defer cancel()
-			s.fillMorningTasks(secCtx, date, out)
-		})
+	runSection := func(name string, fn func(context.Context)) {
+		if all || has[name] {
+			wg.Go(func() {
+				secCtx, cancel := context.WithTimeout(ctx, sectionTimeout)
+				defer cancel()
+				fn(secCtx)
+			})
+		}
 	}
-	if all || has["goals"] {
-		wg.Go(func() {
-			secCtx, cancel := context.WithTimeout(ctx, sectionTimeout)
-			defer cancel()
-			s.fillGoals(secCtx, out)
-		})
-	}
-	if all || has["directives"] {
-		wg.Go(func() {
-			secCtx, cancel := context.WithTimeout(ctx, sectionTimeout)
-			defer cancel()
-			s.fillDirectives(secCtx, out)
-		})
-	}
-	if all || has["insights"] {
-		wg.Go(func() {
-			secCtx, cancel := context.WithTimeout(ctx, sectionTimeout)
-			defer cancel()
-			s.fillInsights(secCtx, out)
-		})
-	}
-	if all || has["rss"] {
-		wg.Go(func() {
-			secCtx, cancel := context.WithTimeout(ctx, sectionTimeout)
-			defer cancel()
-			s.fillRSSHighlights(secCtx, date, out)
-		})
-	}
-	if all || has["plan_history"] {
-		wg.Go(func() {
-			secCtx, cancel := context.WithTimeout(ctx, sectionTimeout)
-			defer cancel()
-			s.fillPlanHistory(secCtx, date, out)
-		})
-	}
+
+	runSection("tasks", func(c context.Context) { s.fillMorningTasks(c, date, out) })
+	runSection("goals", func(c context.Context) { s.fillGoals(c, out) })
+	runSection("directives", func(c context.Context) { s.fillDirectives(c, out) })
+	runSection("insights", func(c context.Context) { s.fillInsights(c, out) })
+	runSection("rss", func(c context.Context) { s.fillRSSHighlights(c, date, out) })
+	runSection("plan_history", func(c context.Context) { s.fillPlanHistory(c, date, out) })
+	runSection("content_pipeline", func(c context.Context) { s.fillContentPipeline(c, out) })
 	wg.Wait()
 }
 
@@ -230,6 +207,19 @@ func (s *Server) fillRSSHighlights(ctx context.Context, date time.Time, out *Mor
 			CreatedAt: items[i].CollectedAt.Format(time.RFC3339),
 		})
 	}
+}
+
+func (s *Server) fillContentPipeline(ctx context.Context, out *MorningContextOutput) {
+	drafts, err := s.contents.ByStatus(ctx, string(content.StatusDraft), 20)
+	if err != nil {
+		s.logger.Warn("morning_context: content pipeline drafts", "error", err)
+		return
+	}
+	reviews, err := s.contents.ByStatus(ctx, string(content.StatusReview), 20)
+	if err != nil {
+		s.logger.Warn("morning_context: content pipeline reviews", "error", err)
+	}
+	out.ContentPipeline = toContentSummaries(append(drafts, reviews...))
 }
 
 func planItemToTaskDetail(item *daily.Item) task.PendingTaskDetail {

@@ -79,29 +79,26 @@ WHERE status = 'published' AND is_public = true
   AND (sqlc.narg('content_type')::content_type IS NULL OR type = sqlc.narg('content_type'));
 
 -- name: InternalSearchContents :many
--- Internal search without visibility filter (for MCP tools).
+-- Internal search without visibility filter (for MCP tools). Searches all statuses.
 SELECT id, slug, title, body, excerpt, type, status, source, source_type,
        series_id, series_order, review_level, is_public, project_id, ai_metadata, reading_time_min,
        cover_image, published_at, created_at, updated_at
 FROM contents
-WHERE status = 'published'
-  AND search_vector @@ websearch_to_tsquery('simple', $1)
+WHERE search_vector @@ websearch_to_tsquery('simple', $1)
 ORDER BY ts_rank(search_vector, websearch_to_tsquery('simple', $1)) DESC
 LIMIT $2 OFFSET $3;
 
 -- name: InternalSearchContentsCount :one
 SELECT COUNT(*) FROM contents
-WHERE status = 'published'
-  AND search_vector @@ websearch_to_tsquery('simple', $1);
+WHERE search_vector @@ websearch_to_tsquery('simple', $1);
 
 -- name: InternalSearchContentsOR :many
--- Internal OR search without visibility filter (for MCP tools).
+-- Internal OR search without visibility filter (for MCP tools). Searches all statuses.
 SELECT id, slug, title, body, excerpt, type, status, source, source_type,
        series_id, series_order, review_level, is_public, project_id, ai_metadata, reading_time_min,
        cover_image, published_at, created_at, updated_at
 FROM contents
-WHERE status = 'published'
-  AND search_vector @@ to_tsquery('simple', replace(plainto_tsquery('simple', $1)::text, '&', '|'))
+WHERE search_vector @@ to_tsquery('simple', replace(plainto_tsquery('simple', $1)::text, '&', '|'))
 ORDER BY ts_rank(search_vector, to_tsquery('simple', replace(plainto_tsquery('simple', $1)::text, '&', '|'))) DESC
 LIMIT $2 OFFSET $3;
 
