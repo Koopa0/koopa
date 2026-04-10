@@ -4661,7 +4661,8 @@ SELECT id, slug, title, body, excerpt, type, status, source, source_type,
        series_id, series_order, review_level, is_public, project_id, ai_metadata, reading_time_min,
        cover_image, published_at, created_at, updated_at
 FROM contents
-WHERE search_vector @@ websearch_to_tsquery('simple', $1)
+WHERE status != 'archived'
+  AND search_vector @@ websearch_to_tsquery('simple', $1)
 ORDER BY ts_rank(search_vector, websearch_to_tsquery('simple', $1)) DESC
 LIMIT $2 OFFSET $3
 `
@@ -4695,7 +4696,7 @@ type InternalSearchContentsRow struct {
 	UpdatedAt      time.Time       `json:"updated_at"`
 }
 
-// Internal search without visibility filter (for MCP tools). Searches all statuses.
+// Internal search without visibility filter (for MCP tools). Excludes archived.
 func (q *Queries) InternalSearchContents(ctx context.Context, arg InternalSearchContentsParams) ([]InternalSearchContentsRow, error) {
 	rows, err := q.db.Query(ctx, internalSearchContents, arg.WebsearchToTsquery, arg.Limit, arg.Offset)
 	if err != nil {
@@ -4739,7 +4740,8 @@ func (q *Queries) InternalSearchContents(ctx context.Context, arg InternalSearch
 
 const internalSearchContentsCount = `-- name: InternalSearchContentsCount :one
 SELECT COUNT(*) FROM contents
-WHERE search_vector @@ websearch_to_tsquery('simple', $1)
+WHERE status != 'archived'
+  AND search_vector @@ websearch_to_tsquery('simple', $1)
 `
 
 func (q *Queries) InternalSearchContentsCount(ctx context.Context, websearchToTsquery string) (int64, error) {
@@ -4754,7 +4756,8 @@ SELECT id, slug, title, body, excerpt, type, status, source, source_type,
        series_id, series_order, review_level, is_public, project_id, ai_metadata, reading_time_min,
        cover_image, published_at, created_at, updated_at
 FROM contents
-WHERE search_vector @@ to_tsquery('simple', replace(plainto_tsquery('simple', $1)::text, '&', '|'))
+WHERE status != 'archived'
+  AND search_vector @@ to_tsquery('simple', replace(plainto_tsquery('simple', $1)::text, '&', '|'))
 ORDER BY ts_rank(search_vector, to_tsquery('simple', replace(plainto_tsquery('simple', $1)::text, '&', '|'))) DESC
 LIMIT $2 OFFSET $3
 `
@@ -4788,7 +4791,7 @@ type InternalSearchContentsORRow struct {
 	UpdatedAt      time.Time       `json:"updated_at"`
 }
 
-// Internal OR search without visibility filter (for MCP tools). Searches all statuses.
+// Internal OR search without visibility filter (for MCP tools). Excludes archived.
 func (q *Queries) InternalSearchContentsOR(ctx context.Context, arg InternalSearchContentsORParams) ([]InternalSearchContentsORRow, error) {
 	rows, err := q.db.Query(ctx, internalSearchContentsOR, arg.PlaintoTsquery, arg.Limit, arg.Offset)
 	if err != nil {

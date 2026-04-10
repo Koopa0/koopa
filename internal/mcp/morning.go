@@ -210,16 +210,18 @@ func (s *Server) fillRSSHighlights(ctx context.Context, date time.Time, out *Mor
 }
 
 func (s *Server) fillContentPipeline(ctx context.Context, out *MorningContextOutput) {
-	drafts, err := s.contents.ByStatus(ctx, string(content.StatusDraft), 20)
-	if err != nil {
+	var all []content.Content
+	if drafts, err := s.contents.ByStatus(ctx, string(content.StatusDraft), 20); err == nil {
+		all = append(all, drafts...)
+	} else {
 		s.logger.Warn("morning_context: content pipeline drafts", "error", err)
-		return
 	}
-	reviews, err := s.contents.ByStatus(ctx, string(content.StatusReview), 20)
-	if err != nil {
+	if reviews, err := s.contents.ByStatus(ctx, string(content.StatusReview), 20); err == nil {
+		all = append(all, reviews...)
+	} else {
 		s.logger.Warn("morning_context: content pipeline reviews", "error", err)
 	}
-	out.ContentPipeline = toContentSummaries(append(drafts, reviews...))
+	out.ContentPipeline = toContentSummaries(all)
 }
 
 func planItemToTaskDetail(item *daily.Item) task.PendingTaskDetail {

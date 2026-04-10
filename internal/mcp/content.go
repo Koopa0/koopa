@@ -166,26 +166,43 @@ func (s *Server) mcPublishContent(ctx context.Context, input ManageContentInput)
 func (s *Server) mcListContent(ctx context.Context, input ManageContentInput) (*mcp.CallToolResult, ManageContentOutput, error) {
 	limit := clamp(int(input.Limit), 1, 50, 20)
 
-	if input.Status != nil && *input.Status != "" {
-		contents, err := s.contents.ByStatus(ctx, *input.Status, limit)
-		if err != nil {
-			return nil, ManageContentOutput{}, fmt.Errorf("listing contents: %w", err)
-		}
-		return nil, ManageContentOutput{Contents: toContentSummaries(contents), Action: "list"}, nil
-	}
-
 	var ct *content.Type
 	if input.ContentType != nil && *input.ContentType != "" {
 		t := content.Type(*input.ContentType)
 		ct = &t
 	}
+
+	// Fetch with type filter at SQL level, then apply status filter in Go.
+	// Over-fetch to compensate for post-fetch filtering.
+	fetchLimit := limit
+	if input.Status != nil && *input.Status != "" {
+		fetchLimit = min(limit*3, 50)
+	}
 	contents, _, err := s.contents.AdminContents(ctx, content.AdminFilter{
-		Page: 1, PerPage: limit, Type: ct,
+		Page: 1, PerPage: fetchLimit, Type: ct,
 	})
 	if err != nil {
 		return nil, ManageContentOutput{}, fmt.Errorf("listing contents: %w", err)
 	}
-	return nil, ManageContentOutput{Contents: toContentSummaries(contents), Action: "list"}, nil
+
+	summaries := make([]ContentSummary, 0, len(contents))
+	for i := range contents {
+		c := &contents[i]
+		if input.Status != nil && *input.Status != "" && string(c.Status) != *input.Status {
+			continue
+		}
+		summaries = append(summaries, ContentSummary{
+			ID:        c.ID.String(),
+			Title:     c.Title,
+			Type:      string(c.Type),
+			Status:    string(c.Status),
+			UpdatedAt: c.UpdatedAt.Format(time.RFC3339),
+		})
+		if len(summaries) >= limit {
+			break
+		}
+	}
+	return nil, ManageContentOutput{Contents: summaries, Action: "list"}, nil
 }
 
 func (s *Server) mcReadContent(ctx context.Context, input ManageContentInput) (*mcp.CallToolResult, ManageContentOutput, error) {
