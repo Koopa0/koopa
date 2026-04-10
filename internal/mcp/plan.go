@@ -21,7 +21,7 @@ type ManagePlanInput struct {
 	PlanID string `json:"plan_id" jsonschema:"required" jsonschema_description:"Plan UUID"`
 
 	// add_items
-	Items []ManagePlanItemInput `json:"items,omitempty" jsonschema_description:"Items to add [{learning_item_id, position, phase?}]"`
+	Items []ManagePlanItemInput `json:"items,omitempty" jsonschema_description:"Items to add [{learning_item_id OR title, position, phase?}]. Use title for items not yet attempted."`
 
 	// remove_items (draft only)
 	ItemIDs []string `json:"item_ids,omitempty" jsonschema_description:"Plan item UUIDs to remove (draft plans only)"`
@@ -38,8 +38,12 @@ type ManagePlanInput struct {
 }
 
 // ManagePlanItemInput represents a single item to add to a plan.
+// Either learning_item_id OR title must be provided. When only title is
+// given, the item is resolved via FindOrCreateItem using the plan's domain.
 type ManagePlanItemInput struct {
-	LearningItemID string  `json:"learning_item_id" jsonschema:"required"`
+	LearningItemID string  `json:"learning_item_id,omitempty" jsonschema_description:"Existing learning item UUID. Either this or title is required."`
+	Title          string  `json:"title,omitempty" jsonschema_description:"Item title for find-or-create (uses plan domain). Either this or learning_item_id is required."`
+	Difficulty     *string `json:"difficulty,omitempty" jsonschema_description:"Item difficulty (used with title-based find-or-create)"`
 	Position       int32   `json:"position" jsonschema:"required"`
 	Phase          *string `json:"phase,omitempty"`
 }
@@ -97,7 +101,9 @@ func (s *Server) mpAddItems(ctx context.Context, planID uuid.UUID, input *Manage
 		return nil, ManagePlanOutput{}, fmt.Errorf("add_items is only allowed on draft or active plans (current: %s)", p.Status)
 	}
 
-	// Parse all IDs upfront before starting transaction.
+	// Resolve all item IDs upfront before starting transaction.
+	// Each item can be identified either by learning_item_id (UUID) or by
+	// title (find-or-create using the plan's domain).
 	type parsedItem struct {
 		id    uuid.UUID
 		pos   int32
@@ -105,9 +111,22 @@ func (s *Server) mpAddItems(ctx context.Context, planID uuid.UUID, input *Manage
 	}
 	parsed := make([]parsedItem, len(input.Items))
 	for i, item := range input.Items {
-		liID, pErr := uuid.Parse(item.LearningItemID)
-		if pErr != nil {
-			return nil, ManagePlanOutput{}, fmt.Errorf("invalid learning_item_id %q: %w", item.LearningItemID, pErr)
+		var liID uuid.UUID
+		switch {
+		case item.LearningItemID != "":
+			var pErr error
+			liID, pErr = uuid.Parse(item.LearningItemID)
+			if pErr != nil {
+				return nil, ManagePlanOutput{}, fmt.Errorf("items[%d]: invalid learning_item_id %q: %w", i, item.LearningItemID, pErr)
+			}
+		case item.Title != "":
+			var fErr error
+			liID, fErr = s.learn.FindOrCreateItem(ctx, p.Domain, item.Title, nil, item.Difficulty)
+			if fErr != nil {
+				return nil, ManagePlanOutput{}, fmt.Errorf("items[%d]: resolving %q: %w", i, item.Title, fErr)
+			}
+		default:
+			return nil, ManagePlanOutput{}, fmt.Errorf("items[%d]: either learning_item_id or title is required", i)
 		}
 		parsed[i] = parsedItem{id: liID, pos: item.Position, phase: item.Phase}
 	}
