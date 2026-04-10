@@ -15,7 +15,7 @@ import (
 // --- manage_content ---
 
 type ManageContentInput struct {
-	Action      string  `json:"action" jsonschema:"required" jsonschema_description:"Action: create, update, publish, list, read"`
+	Action      string  `json:"action" jsonschema:"required" jsonschema_description:"Action: create, update, publish, list, read, bookmark_rss"`
 	ContentID   *string `json:"content_id,omitempty" jsonschema_description:"Content UUID (required for update/publish/read)"`
 	Title       *string `json:"title,omitempty" jsonschema_description:"Content title (required for create)"`
 	Body        *string `json:"body,omitempty" jsonschema_description:"Content body (markdown)"`
@@ -23,6 +23,8 @@ type ManageContentInput struct {
 	Status      *string `json:"status,omitempty" jsonschema_description:"Status filter (for list) or target status (for update): draft, review, published, archived"`
 	Project     *string `json:"project,omitempty" jsonschema_description:"Project slug/alias/title"`
 	Limit       FlexInt `json:"limit,omitempty" jsonschema_description:"Max results for list (default 20, max 50)"`
+	EntryID     *string `json:"entry_id,omitempty" jsonschema_description:"RSS feed entry UUID (required for bookmark_rss)"`
+	Comment     *string `json:"comment,omitempty" jsonschema_description:"Personal comment/annotation (for bookmark_rss)"`
 }
 
 // ContentSummary is a lightweight content record for list results.
@@ -66,8 +68,10 @@ func (s *Server) manageContent(ctx context.Context, _ *mcp.CallToolRequest, inpu
 		return s.mcListContent(ctx, input)
 	case "read":
 		return s.mcReadContent(ctx, input)
+	case "bookmark_rss":
+		return s.mcBookmarkRSS(ctx, input)
 	default:
-		return nil, ManageContentOutput{}, fmt.Errorf("invalid action %q (valid: create, update, publish, list, read)", input.Action)
+		return nil, ManageContentOutput{}, fmt.Errorf("invalid action %q (valid: create, update, publish, list, read, bookmark_rss)", input.Action)
 	}
 }
 
@@ -220,6 +224,64 @@ func (s *Server) mcReadContent(ctx context.Context, input ManageContentInput) (*
 	}
 
 	return nil, ManageContentOutput{Content: toContentDetail(c), Action: "read"}, nil
+}
+
+func (s *Server) mcBookmarkRSS(ctx context.Context, input ManageContentInput) (*mcp.CallToolResult, ManageContentOutput, error) {
+	if s.feedEntries == nil {
+		return nil, ManageContentOutput{}, fmt.Errorf("feed entries store not configured")
+	}
+	if input.EntryID == nil || *input.EntryID == "" {
+		return nil, ManageContentOutput{}, fmt.Errorf("entry_id is required for bookmark_rss")
+	}
+	entryID, err := uuid.Parse(*input.EntryID)
+	if err != nil {
+		return nil, ManageContentOutput{}, fmt.Errorf("invalid entry_id: %w", err)
+	}
+
+	item, err := s.feedEntries.Item(ctx, entryID)
+	if err != nil {
+		return nil, ManageContentOutput{}, fmt.Errorf("fetching entry: %w", err)
+	}
+
+	// Build bookmark body: source URL + optional original content + personal comment.
+	var body strings.Builder
+	fmt.Fprintf(&body, "**Source:** %s\n\n", item.SourceURL)
+	if item.OriginalContent != nil && *item.OriginalContent != "" {
+		fmt.Fprintf(&body, "**Excerpt:**\n\n%s\n\n", truncate(*item.OriginalContent, 500))
+	}
+	if input.Comment != nil && *input.Comment != "" {
+		fmt.Fprintf(&body, "**Comment:**\n\n%s\n", *input.Comment)
+	}
+
+	title := item.Title
+	if input.Title != nil && *input.Title != "" {
+		title = *input.Title
+	}
+	slug := strings.ToLower(strings.ReplaceAll(title, " ", "-"))
+
+	src := "external"
+	srcType := content.SourceExternal
+	c, err := s.contents.CreateContent(ctx, &content.CreateParams{
+		Slug:        slug,
+		Title:       title,
+		Body:        body.String(),
+		Type:        content.TypeBookmark,
+		Status:      content.StatusDraft,
+		ReviewLevel: content.ReviewLight,
+		Source:      &src,
+		SourceType:  &srcType,
+	})
+	if err != nil {
+		return nil, ManageContentOutput{}, fmt.Errorf("creating bookmark: %w", err)
+	}
+
+	// Link the RSS entry to the newly created content.
+	if err := s.feedEntries.Curate(ctx, entryID, c.ID); err != nil {
+		s.logger.Warn("bookmark_rss: failed to curate entry", "entry_id", entryID, "content_id", c.ID, "error", err)
+	}
+
+	s.logger.Info("manage_content", "action", "bookmark_rss", "id", c.ID, "entry_id", entryID)
+	return nil, ManageContentOutput{Content: toContentDetail(c), Action: "bookmark_rss"}, nil
 }
 
 func toContentDetail(c *content.Content) *ContentDetail {

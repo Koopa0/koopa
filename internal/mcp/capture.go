@@ -28,7 +28,6 @@ type CaptureInboxOutput struct {
 	Task task.Task `json:"task"`
 }
 
-//nolint:gocritic // hugeParam: input passed by value per addTool[I,O] generic contract
 func (s *Server) captureInbox(ctx context.Context, _ *mcp.CallToolRequest, input CaptureInboxInput) (*mcp.CallToolResult, CaptureInboxOutput, error) {
 	if input.Title == "" {
 		return nil, CaptureInboxOutput{}, fmt.Errorf("title is required")

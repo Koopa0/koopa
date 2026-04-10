@@ -94,7 +94,7 @@ Read-side counterparts: `learning_dashboard` and `attempt_history` (see Query To
 
 | Tool | Purpose | Annotation |
 |------|---------|------------|
-| `manage_content` | Content lifecycle: create/update/publish/bookmark_rss | additive |
+| `manage_content` | Content lifecycle: create/update/publish/list/read/bookmark_rss (6 actions, at ceiling) | additive |
 | `manage_feeds` | RSS feeds: list/add/update/remove | additive |
 
 ## Cross-session (2, readOnly)

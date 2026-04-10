@@ -77,6 +77,9 @@ linters:
         - experimental
       disabled-checks:
         - whyNoLint  # Handled by nolintlint
+      settings:
+        hugeParam:
+          sizeThreshold: 96  # MCP input structs use value types (addTool[I,O] constraint)
 
     gocyclo:
       min-complexity: 15

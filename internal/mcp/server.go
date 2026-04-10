@@ -285,7 +285,7 @@ func NewServer(pool *pgxpool.Pool, logger *slog.Logger, opts ...ServerOption) *S
 
 	addTool(s, &mcp.Tool{
 		Name:        "manage_content",
-		Description: "Content lifecycle: create (draft), update (fields+status), publish (→published), list (filter by status/type), read (full content by ID). Requires content_id for update/publish/read.",
+		Description: "Content lifecycle: create (draft), update (fields+status), publish (→published), list (filter by status/type), read (full content by ID), bookmark_rss (RSS entry → bookmark). Requires content_id for update/publish/read, entry_id for bookmark_rss.",
 		Annotations: additive,
 	}, s.manageContent)
 
