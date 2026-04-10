@@ -2,9 +2,44 @@ package learning
 
 import (
 	"testing"
+	"time"
 
 	gofsrs "github.com/open-spaced-repetition/go-fsrs/v4"
 )
+
+// TestSchedulerLongTermFirstReview is the regression guard for the FSRS
+// short-term scheduler decision (see fsrs.go newScheduler doc). With
+// EnableShortTerm=true (gofsrs default) a new card rated Good is scheduled
+// roughly 10 minutes out — the Anki "Learning state" behaviour. We want it
+// to land days out instead, because LeetCode practice has no useful
+// 10-minute re-test loop.
+//
+// If a future change reverts EnableShortTerm or moves the scheduler to a
+// short-term-friendly preset, this test fails loudly instead of letting the
+// retrieval queue fill up with same-day cards again.
+func TestSchedulerLongTermFirstReview(t *testing.T) {
+	t.Parallel()
+
+	s := newScheduler()
+	now := time.Date(2026, 4, 10, 12, 0, 0, 0, time.UTC)
+	card := s.newCard()
+
+	updated, _ := s.review(&card, gofsrs.Good, now)
+
+	gap := updated.Due.Sub(now)
+	if gap < 24*time.Hour {
+		t.Fatalf("new card + Good: due gap = %s, want >= 24h "+
+			"(short-term scheduler likely re-enabled — see fsrs.go)", gap)
+	}
+
+	// Easy should be even further out.
+	easyCard := s.newCard()
+	easyUpdated, _ := s.review(&easyCard, gofsrs.Easy, now)
+	easyGap := easyUpdated.Due.Sub(now)
+	if easyGap < gap {
+		t.Errorf("Easy gap (%s) shorter than Good gap (%s) — rating order broken", easyGap, gap)
+	}
+}
 
 func TestFSRSRatingFromInt(t *testing.T) {
 	t.Parallel()

@@ -27,13 +27,31 @@ func fsrsRatingFromInt(n int) (gofsrs.Rating, error) {
 	}
 }
 
-// scheduler wraps the FSRS algorithm with default parameters.
+// scheduler wraps the FSRS algorithm with parameters tuned for the project's
+// learning scenario (LeetCode-style practice, language drills, system design
+// reasoning). The FSRS default puts new cards through a "Learning" state with
+// short-term steps (1m / 10m) before they graduate to the multi-day Review
+// state — the Anki flashcard model where each card needs a brief re-test to
+// confirm encoding.
+//
+// That model does not match this project's use case. A LeetCode problem
+// solved_independent does not need a re-test 10 minutes later: the user is
+// not at risk of forgetting the stack implementation in the next ten minutes;
+// they are at risk of forgetting it next week. EnableShortTerm = false skips
+// the Learning state entirely so Good/Easy ratings produce the long-term
+// interval directly (~3 days for first Good, ~15 days for first Easy under
+// the default weight vector).
+//
+// Again/Hard ratings still pull cards back into near-term review, so the
+// "I couldn't solve this — show it to me again soon" behaviour is preserved.
 type scheduler struct {
 	fsrs *gofsrs.FSRS
 }
 
 func newScheduler() *scheduler {
-	return &scheduler{fsrs: gofsrs.NewFSRS(gofsrs.DefaultParam())}
+	p := gofsrs.DefaultParam()
+	p.EnableShortTerm = false
+	return &scheduler{fsrs: gofsrs.NewFSRS(p)}
 }
 
 // newCard creates a fresh FSRS card state (new card, due now).
