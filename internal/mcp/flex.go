@@ -96,9 +96,6 @@ var flexStringSliceSchema = &jsonschema.Schema{
 // while keeping the shape self-documenting.
 var rawMessageSchema = &jsonschema.Schema{
 	Type: "object",
-	Extra: map[string]any{
-		"additionalProperties": true,
-	},
 }
 
 // flexTypeSchemas maps flex types to their schema overrides for use with

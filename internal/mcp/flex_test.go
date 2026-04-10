@@ -124,6 +124,15 @@ func TestRawMessageSchemaIsObject(t *testing.T) {
 		t.Errorf("metadata schema type = %q, want %q (byte-array regression)", metaSchema.Type, "object")
 	}
 
+	// Marshal the schema to JSON — this is the exact path the MCP SDK
+	// takes when building the tools/list response. An earlier version used
+	// Extra{"additionalProperties":true} which crashed with "map key
+	// additionalProperties duplicates struct field" during marshal,
+	// breaking the entire tool list endpoint.
+	if _, err := json.Marshal(schema); err != nil {
+		t.Fatalf("schema marshal failed (MCP tool list would be broken): %v", err)
+	}
+
 	resolved, err := schema.Resolve(nil)
 	if err != nil {
 		t.Fatalf("resolving schema: %v", err)
