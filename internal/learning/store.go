@@ -110,6 +110,40 @@ func normalizeObservationConfidence(v string) (string, error) {
 	}
 }
 
+// normalizeSignal validates the observation signal type. Valid values are
+// "weakness", "improvement", and "mastery" — matching the DB CHECK
+// constraint on attempt_observations.signal_type. Rejects typos and
+// case-mismatches at the Go boundary with a descriptive error.
+func normalizeSignal(v string) (string, error) {
+	switch v {
+	case "weakness", "improvement", "mastery":
+		return v, nil
+	default:
+		return "", fmt.Errorf("%w: signal must be \"weakness\", \"improvement\", or \"mastery\", got %q", ErrInvalidInput, v)
+	}
+}
+
+// validateSeverity enforces two rules from the DB schema:
+//  1. severity values must be "minor", "moderate", or "critical"
+//  2. severity is only allowed when signal is "weakness" (chk_severity_weakness_only)
+//
+// Returns nil when severity is nil (always valid for any signal).
+func validateSeverity(signal string, severity *string) error {
+	if severity == nil {
+		return nil
+	}
+	switch *severity {
+	case "minor", "moderate", "critical":
+		// valid value — check signal constraint
+	default:
+		return fmt.Errorf("%w: severity must be \"minor\", \"moderate\", or \"critical\", got %q", ErrInvalidInput, *severity)
+	}
+	if signal != "weakness" {
+		return fmt.Errorf("%w: severity %q not allowed for signal %q (weakness only)", ErrInvalidInput, *severity, signal)
+	}
+	return nil
+}
+
 // FindItem looks up a learning item by (domain, title) without creating
 // it. Returns ErrNotFound if the item does not exist. Used by read-only
 // tools like attempt_history that must not silently pollute the catalog.
@@ -247,10 +281,17 @@ func (s *Store) RecordObservation(ctx context.Context, attemptID, conceptID uuid
 	if err != nil {
 		return nil, err
 	}
+	signal, err := normalizeSignal(signalType)
+	if err != nil {
+		return nil, err
+	}
+	if err = validateSeverity(signal, severity); err != nil { //nolint:gocritic // := triggers govet shadow; = reuse is intentional
+		return nil, err
+	}
 	row, err := s.q.CreateObservation(ctx, db.CreateObservationParams{
 		AttemptID:  attemptID,
 		ConceptID:  conceptID,
-		SignalType: signalType,
+		SignalType: signal,
 		Category:   category,
 		Severity:   severity,
 		Detail:     detail,

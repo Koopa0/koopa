@@ -1,6 +1,7 @@
 package learning
 
 import (
+	"errors"
 	"testing"
 	"time"
 
@@ -167,6 +168,77 @@ func TestMapOutcome(t *testing.T) {
 			}
 			if got != tt.want {
 				t.Errorf("MapOutcome(%q, %q) = %q, want %q", tt.mode, tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestNormalizeSignal(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		in      string
+		want    string
+		wantErr bool
+	}{
+		{name: "weakness", in: "weakness", want: "weakness"},
+		{name: "improvement", in: "improvement", want: "improvement"},
+		{name: "mastery", in: "mastery", want: "mastery"},
+		{name: "empty rejected", in: "", wantErr: true},
+		{name: "capitalized rejected", in: "Mastery", wantErr: true},
+		{name: "typo rejected", in: "weekness", wantErr: true},
+		{name: "unknown rejected", in: "progress", wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := normalizeSignal(tt.in)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("normalizeSignal(%q) error = %v, wantErr = %v", tt.in, err, tt.wantErr)
+			}
+			if err != nil && !errors.Is(err, ErrInvalidInput) {
+				t.Errorf("normalizeSignal(%q) error should wrap ErrInvalidInput, got %v", tt.in, err)
+			}
+			if err == nil && got != tt.want {
+				t.Errorf("normalizeSignal(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestValidateSeverity(t *testing.T) {
+	t.Parallel()
+
+	minor := "minor"
+	moderate := "moderate"
+	critical := "critical"
+	invalid := "severe"
+
+	tests := []struct {
+		name     string
+		signal   string
+		severity *string
+		wantErr  bool
+	}{
+		{name: "nil severity always valid", signal: "mastery", severity: nil},
+		{name: "nil severity on weakness", signal: "weakness", severity: nil},
+		{name: "minor on weakness", signal: "weakness", severity: &minor},
+		{name: "moderate on weakness", signal: "weakness", severity: &moderate},
+		{name: "critical on weakness", signal: "weakness", severity: &critical},
+		{name: "minor on mastery rejected", signal: "mastery", severity: &minor, wantErr: true},
+		{name: "minor on improvement rejected", signal: "improvement", severity: &minor, wantErr: true},
+		{name: "invalid severity value", signal: "weakness", severity: &invalid, wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			err := validateSeverity(tt.signal, tt.severity)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("validateSeverity(%q, %v) error = %v, wantErr = %v", tt.signal, tt.severity, err, tt.wantErr)
+			}
+			if err != nil && !errors.Is(err, ErrInvalidInput) {
+				t.Errorf("validateSeverity(%q, %v) error should wrap ErrInvalidInput, got %v", tt.signal, tt.severity, err)
 			}
 		})
 	}

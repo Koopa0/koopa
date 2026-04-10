@@ -103,6 +103,7 @@ type ObservationInput struct {
 type RecordAttemptOutput struct {
 	Attempt              learning.Attempt  `json:"attempt"`
 	ObservationsRecorded int               `json:"observations_recorded"`
+	ObservationWarnings  []string          `json:"observation_warnings,omitempty"`
 	PlanContext          []PlanContextItem `json:"plan_context,omitempty"`
 	RelationsLinked      int               `json:"relations_linked,omitempty"`
 	RelationWarnings     []string          `json:"relation_warnings,omitempty"`
@@ -161,19 +162,21 @@ func (s *Server) recordAttempt(ctx context.Context, _ *mcp.CallToolRequest, inpu
 	// failures and returns a best-effort result so the caller still gets a
 	// persisted attempt record. updateFSRSReview returns a bool surfaced in
 	// the output so callers can detect silent review-card data loss.
-	recorded := s.processObservations(ctx, attempt.ID, prep.domain, input.Observations)
+	recorded, obsWarnings := s.processObservations(ctx, attempt.ID, prep.domain, input.Observations)
 	fsrsFailed := s.updateFSRSReview(ctx, prep.itemID, prep.outcome, input.FSRSRating)
 	linked, relWarnings := s.processRelatedItems(ctx, prep.itemID, prep.domain, input.RelatedItems)
 	planCtx := s.lookupPlanContext(ctx, prep.itemID)
 
 	s.logger.Info("record_attempt",
 		"session", prep.sessionID, "item", input.Item.Title, "outcome", prep.outcome,
-		"observations", recorded, "plan_context", len(planCtx),
+		"observations", recorded, "observation_warnings", len(obsWarnings),
+		"plan_context", len(planCtx),
 		"relations_linked", linked, "relation_warnings", len(relWarnings),
 		"fsrs_review_failed", fsrsFailed)
 	return nil, RecordAttemptOutput{
 		Attempt:              *attempt,
 		ObservationsRecorded: recorded,
+		ObservationWarnings:  obsWarnings,
 		PlanContext:          planCtx,
 		RelationsLinked:      linked,
 		RelationWarnings:     relWarnings,
@@ -609,20 +612,21 @@ func (s *Server) dashboardVariations(ctx context.Context, domain *string) (*mcp.
 // passes the raw value through (empty becomes "high" inside the store) so
 // a typo like "hig" surfaces as a skipped observation with a clear warning
 // rather than being silently rewritten to "high" here.
-func (s *Server) processObservations(ctx context.Context, attemptID uuid.UUID, domain string, observations []ObservationInput) int {
-	var recorded int
+func (s *Server) processObservations(ctx context.Context, attemptID uuid.UUID, domain string, observations []ObservationInput) (recorded int, warnings []string) {
 	for i := range observations {
 		obs := &observations[i]
 		conceptID, cErr := s.learn.FindOrCreateConcept(ctx, obs.Concept, obs.Concept, domain, "skill")
 		if cErr != nil {
+			warnings = append(warnings, fmt.Sprintf("observations[%d] (%q): concept creation failed: %v", i, obs.Concept, cErr))
 			s.logger.Warn("observation: concept creation failed", "concept", obs.Concept, "error", cErr)
 			continue
 		}
 		if _, oErr := s.learn.RecordObservation(ctx, attemptID, conceptID, obs.Signal, obs.Category, obs.Severity, obs.Detail, obs.Confidence); oErr != nil {
+			warnings = append(warnings, fmt.Sprintf("observations[%d] (%q): record failed: %v", i, obs.Concept, oErr))
 			s.logger.Warn("observation: recording failed", "concept", obs.Concept, "confidence", obs.Confidence, "error", oErr)
 			continue
 		}
 		recorded++
 	}
-	return recorded
+	return recorded, warnings
 }
