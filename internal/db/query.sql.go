@@ -4202,6 +4202,68 @@ func (q *Queries) Goals(ctx context.Context) ([]Goal, error) {
 	return items, nil
 }
 
+const goalsByOptionalStatus = `-- name: GoalsByOptionalStatus :many
+SELECT g.id, g.title, g.description, g.status, g.area_id, g.quarter, g.deadline,
+       g.created_at, g.updated_at,
+       COALESCE(a.name, '') AS area_name,
+       (SELECT count(*) FROM milestones m WHERE m.goal_id = g.id) AS milestone_total,
+       (SELECT count(*) FROM milestones m WHERE m.goal_id = g.id AND m.completed_at IS NOT NULL) AS milestone_done
+FROM goals g
+LEFT JOIN areas a ON a.id = g.area_id
+WHERE ($1::text IS NULL OR g.status::text = $1)
+ORDER BY g.deadline NULLS LAST, g.created_at
+`
+
+type GoalsByOptionalStatusRow struct {
+	ID             uuid.UUID  `json:"id"`
+	Title          string     `json:"title"`
+	Description    string     `json:"description"`
+	Status         GoalStatus `json:"status"`
+	AreaID         *uuid.UUID `json:"area_id"`
+	Quarter        *string    `json:"quarter"`
+	Deadline       *time.Time `json:"deadline"`
+	CreatedAt      time.Time  `json:"created_at"`
+	UpdatedAt      time.Time  `json:"updated_at"`
+	AreaName       string     `json:"area_name"`
+	MilestoneTotal int64      `json:"milestone_total"`
+	MilestoneDone  int64      `json:"milestone_done"`
+}
+
+// Goals filtered by optional status, with milestone counts.
+// Pass NULL to return all statuses.
+func (q *Queries) GoalsByOptionalStatus(ctx context.Context, status *string) ([]GoalsByOptionalStatusRow, error) {
+	rows, err := q.db.Query(ctx, goalsByOptionalStatus, status)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []GoalsByOptionalStatusRow{}
+	for rows.Next() {
+		var i GoalsByOptionalStatusRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Title,
+			&i.Description,
+			&i.Status,
+			&i.AreaID,
+			&i.Quarter,
+			&i.Deadline,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.AreaName,
+			&i.MilestoneTotal,
+			&i.MilestoneDone,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const highPriorityRecentCollected = `-- name: HighPriorityRecentCollected :many
 SELECT cd.id, cd.source_url, cd.title, cd.original_content,
        cd.relevance_score, cd.status, cd.curated_content_id, cd.collected_at,

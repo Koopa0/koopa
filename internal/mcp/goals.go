@@ -14,8 +14,7 @@ import (
 
 // GoalProgressInput is the input for the goal_progress tool.
 type GoalProgressInput struct {
-	// Phase 2: basic active goals with milestone progress.
-	// Future: area filter, status filter, drift analysis.
+	Status *string `json:"status,omitempty" jsonschema_description:"Filter by goal status (default: in-progress). Use 'all' for all statuses."`
 }
 
 // GoalProgressProject is a lightweight project summary within goal progress.
@@ -38,8 +37,18 @@ type GoalProgressOutput struct {
 	Total int                `json:"total"`
 }
 
-func (s *Server) goalProgress(ctx context.Context, _ *mcp.CallToolRequest, _ GoalProgressInput) (*mcp.CallToolResult, GoalProgressOutput, error) {
-	goals, err := s.goals.ActiveGoals(ctx)
+func (s *Server) goalProgress(ctx context.Context, _ *mcp.CallToolRequest, input GoalProgressInput) (*mcp.CallToolResult, GoalProgressOutput, error) {
+	var goals []goal.ActiveGoalSummary
+	var err error
+
+	switch {
+	case input.Status != nil && *input.Status == "all":
+		goals, err = s.goals.GoalsByOptionalStatus(ctx, nil)
+	case input.Status != nil && *input.Status != "":
+		goals, err = s.goals.GoalsByOptionalStatus(ctx, input.Status)
+	default:
+		goals, err = s.goals.ActiveGoals(ctx)
+	}
 	if err != nil {
 		return nil, GoalProgressOutput{}, err
 	}

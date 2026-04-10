@@ -161,6 +161,36 @@ func (s *Store) ActiveGoals(ctx context.Context) ([]ActiveGoalSummary, error) {
 	return result, nil
 }
 
+// GoalsByOptionalStatus returns goals filtered by optional status, with milestone counts.
+// Pass nil for all statuses.
+func (s *Store) GoalsByOptionalStatus(ctx context.Context, status *string) ([]ActiveGoalSummary, error) {
+	rows, err := s.q.GoalsByOptionalStatus(ctx, status)
+	if err != nil {
+		return nil, fmt.Errorf("querying goals by status: %w", err)
+	}
+	result := make([]ActiveGoalSummary, len(rows))
+	for i := range rows {
+		r := &rows[i]
+		result[i] = ActiveGoalSummary{
+			Goal: Goal{
+				ID:          r.ID,
+				Title:       r.Title,
+				Description: r.Description,
+				Status:      Status(r.Status),
+				AreaID:      r.AreaID,
+				Quarter:     r.Quarter,
+				Deadline:    r.Deadline,
+				CreatedAt:   r.CreatedAt,
+				UpdatedAt:   r.UpdatedAt,
+			},
+			AreaName:       r.AreaName,
+			MilestoneTotal: r.MilestoneTotal,
+			MilestoneDone:  r.MilestoneDone,
+		}
+	}
+	return result, nil
+}
+
 // GoalWithArea is a goal with its area name resolved.
 type GoalWithArea struct {
 	Goal

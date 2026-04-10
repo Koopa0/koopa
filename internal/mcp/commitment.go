@@ -258,7 +258,7 @@ func (s *Server) commitGoal(ctx context.Context, fields map[string]any) (string,
 		quarterPtr = &quarter
 	}
 
-	row, err := s.goals.CreateGoal(ctx, title, description, "not-started", areaID, quarterPtr, deadline)
+	row, err := s.goals.CreateGoal(ctx, title, description, "in-progress", areaID, quarterPtr, deadline)
 	if err != nil {
 		return "", fmt.Errorf("creating goal: %w", err)
 	}
