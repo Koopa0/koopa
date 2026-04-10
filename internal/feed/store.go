@@ -34,8 +34,25 @@ func (s *Store) Feeds(ctx context.Context, schedule *string) ([]Feed, error) {
 	}
 	feeds := make([]Feed, len(rows))
 	for i := range rows {
-		r := rows[i]
-		feeds[i] = dbToFeed(&r)
+		r := &rows[i]
+		feeds[i] = Feed{
+			ID:                  r.ID,
+			URL:                 r.Url,
+			Name:                r.Name,
+			Schedule:            r.Schedule,
+			Topics:              r.Topics,
+			Enabled:             r.Enabled,
+			Priority:            r.Priority,
+			Etag:                derefStr(r.Etag),
+			LastModified:        derefStr(r.LastModified),
+			LastFetchedAt:       r.LastFetchedAt,
+			ConsecutiveFailures: int(r.ConsecutiveFailures),
+			LastError:           derefStr(r.LastError),
+			DisabledReason:      derefStr(r.DisabledReason),
+			Filter:              ParseFilterConfig(r.FilterConfig),
+			CreatedAt:           r.CreatedAt,
+			UpdatedAt:           r.UpdatedAt,
+		}
 	}
 	return feeds, nil
 }
@@ -49,7 +66,24 @@ func (s *Store) Feed(ctx context.Context, id uuid.UUID) (*Feed, error) {
 		}
 		return nil, fmt.Errorf("querying feed %s: %w", id, err)
 	}
-	f := dbToFeed(&r)
+	f := Feed{
+		ID:                  r.ID,
+		URL:                 r.Url,
+		Name:                r.Name,
+		Schedule:            r.Schedule,
+		Topics:              r.Topics,
+		Enabled:             r.Enabled,
+		Priority:            r.Priority,
+		Etag:                derefStr(r.Etag),
+		LastModified:        derefStr(r.LastModified),
+		LastFetchedAt:       r.LastFetchedAt,
+		ConsecutiveFailures: int(r.ConsecutiveFailures),
+		LastError:           derefStr(r.LastError),
+		DisabledReason:      derefStr(r.DisabledReason),
+		Filter:              ParseFilterConfig(r.FilterConfig),
+		CreatedAt:           r.CreatedAt,
+		UpdatedAt:           r.UpdatedAt,
+	}
 	return &f, nil
 }
 

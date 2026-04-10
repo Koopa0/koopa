@@ -3736,15 +3736,39 @@ func (q *Queries) EventsByTimeRange(ctx context.Context, arg EventsByTimeRangePa
 }
 
 const feedByID = `-- name: FeedByID :one
-SELECT id, url, name, schedule, enabled, priority, etag, last_modified,
-       last_fetched_at, consecutive_failures, last_error, disabled_reason,
-       filter_config, created_at, updated_at
-FROM feeds WHERE id = $1
+SELECT f.id, f.url, f.name, f.schedule, f.enabled, f.priority, f.etag, f.last_modified,
+       f.last_fetched_at, f.consecutive_failures, f.last_error, f.disabled_reason,
+       f.filter_config, f.created_at, f.updated_at,
+       COALESCE(array_agg(t.slug) FILTER (WHERE t.slug IS NOT NULL), '{}')::text[] AS topics
+FROM feeds f
+LEFT JOIN feed_topics ft ON ft.feed_id = f.id
+LEFT JOIN topics t ON t.id = ft.topic_id
+WHERE f.id = $1
+GROUP BY f.id
 `
 
-func (q *Queries) FeedByID(ctx context.Context, id uuid.UUID) (Feed, error) {
+type FeedByIDRow struct {
+	ID                  uuid.UUID       `json:"id"`
+	Url                 string          `json:"url"`
+	Name                string          `json:"name"`
+	Schedule            string          `json:"schedule"`
+	Enabled             bool            `json:"enabled"`
+	Priority            string          `json:"priority"`
+	Etag                *string         `json:"etag"`
+	LastModified        *string         `json:"last_modified"`
+	LastFetchedAt       *time.Time      `json:"last_fetched_at"`
+	ConsecutiveFailures int32           `json:"consecutive_failures"`
+	LastError           *string         `json:"last_error"`
+	DisabledReason      *string         `json:"disabled_reason"`
+	FilterConfig        json.RawMessage `json:"filter_config"`
+	CreatedAt           time.Time       `json:"created_at"`
+	UpdatedAt           time.Time       `json:"updated_at"`
+	Topics              []string        `json:"topics"`
+}
+
+func (q *Queries) FeedByID(ctx context.Context, id uuid.UUID) (FeedByIDRow, error) {
 	row := q.db.QueryRow(ctx, feedByID, id)
-	var i Feed
+	var i FeedByIDRow
 	err := row.Scan(
 		&i.ID,
 		&i.Url,
@@ -3761,28 +3785,52 @@ func (q *Queries) FeedByID(ctx context.Context, id uuid.UUID) (Feed, error) {
 		&i.FilterConfig,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Topics,
 	)
 	return i, err
 }
 
 const feeds = `-- name: Feeds :many
-SELECT id, url, name, schedule, enabled, priority, etag, last_modified,
-       last_fetched_at, consecutive_failures, last_error, disabled_reason,
-       filter_config, created_at, updated_at
-FROM feeds
-WHERE ($1::text IS NULL OR schedule = $1)
-ORDER BY created_at DESC
+SELECT f.id, f.url, f.name, f.schedule, f.enabled, f.priority, f.etag, f.last_modified,
+       f.last_fetched_at, f.consecutive_failures, f.last_error, f.disabled_reason,
+       f.filter_config, f.created_at, f.updated_at,
+       COALESCE(array_agg(t.slug) FILTER (WHERE t.slug IS NOT NULL), '{}')::text[] AS topics
+FROM feeds f
+LEFT JOIN feed_topics ft ON ft.feed_id = f.id
+LEFT JOIN topics t ON t.id = ft.topic_id
+WHERE ($1::text IS NULL OR f.schedule = $1)
+GROUP BY f.id
+ORDER BY f.created_at DESC
 `
 
-func (q *Queries) Feeds(ctx context.Context, schedule *string) ([]Feed, error) {
+type FeedsRow struct {
+	ID                  uuid.UUID       `json:"id"`
+	Url                 string          `json:"url"`
+	Name                string          `json:"name"`
+	Schedule            string          `json:"schedule"`
+	Enabled             bool            `json:"enabled"`
+	Priority            string          `json:"priority"`
+	Etag                *string         `json:"etag"`
+	LastModified        *string         `json:"last_modified"`
+	LastFetchedAt       *time.Time      `json:"last_fetched_at"`
+	ConsecutiveFailures int32           `json:"consecutive_failures"`
+	LastError           *string         `json:"last_error"`
+	DisabledReason      *string         `json:"disabled_reason"`
+	FilterConfig        json.RawMessage `json:"filter_config"`
+	CreatedAt           time.Time       `json:"created_at"`
+	UpdatedAt           time.Time       `json:"updated_at"`
+	Topics              []string        `json:"topics"`
+}
+
+func (q *Queries) Feeds(ctx context.Context, schedule *string) ([]FeedsRow, error) {
 	rows, err := q.db.Query(ctx, feeds, schedule)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []Feed{}
+	items := []FeedsRow{}
 	for rows.Next() {
-		var i Feed
+		var i FeedsRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.Url,
@@ -3799,6 +3847,7 @@ func (q *Queries) Feeds(ctx context.Context, schedule *string) ([]Feed, error) {
 			&i.FilterConfig,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.Topics,
 		); err != nil {
 			return nil, err
 		}

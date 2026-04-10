@@ -1,16 +1,25 @@
 -- name: Feeds :many
-SELECT id, url, name, schedule, enabled, priority, etag, last_modified,
-       last_fetched_at, consecutive_failures, last_error, disabled_reason,
-       filter_config, created_at, updated_at
-FROM feeds
-WHERE (sqlc.narg('schedule')::text IS NULL OR schedule = sqlc.narg('schedule'))
-ORDER BY created_at DESC;
+SELECT f.id, f.url, f.name, f.schedule, f.enabled, f.priority, f.etag, f.last_modified,
+       f.last_fetched_at, f.consecutive_failures, f.last_error, f.disabled_reason,
+       f.filter_config, f.created_at, f.updated_at,
+       COALESCE(array_agg(t.slug) FILTER (WHERE t.slug IS NOT NULL), '{}')::text[] AS topics
+FROM feeds f
+LEFT JOIN feed_topics ft ON ft.feed_id = f.id
+LEFT JOIN topics t ON t.id = ft.topic_id
+WHERE (sqlc.narg('schedule')::text IS NULL OR f.schedule = sqlc.narg('schedule'))
+GROUP BY f.id
+ORDER BY f.created_at DESC;
 
 -- name: FeedByID :one
-SELECT id, url, name, schedule, enabled, priority, etag, last_modified,
-       last_fetched_at, consecutive_failures, last_error, disabled_reason,
-       filter_config, created_at, updated_at
-FROM feeds WHERE id = $1;
+SELECT f.id, f.url, f.name, f.schedule, f.enabled, f.priority, f.etag, f.last_modified,
+       f.last_fetched_at, f.consecutive_failures, f.last_error, f.disabled_reason,
+       f.filter_config, f.created_at, f.updated_at,
+       COALESCE(array_agg(t.slug) FILTER (WHERE t.slug IS NOT NULL), '{}')::text[] AS topics
+FROM feeds f
+LEFT JOIN feed_topics ft ON ft.feed_id = f.id
+LEFT JOIN topics t ON t.id = ft.topic_id
+WHERE f.id = $1
+GROUP BY f.id;
 
 -- name: EnabledFeeds :many
 SELECT id, url, name, schedule, enabled, priority, etag, last_modified,
