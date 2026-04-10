@@ -4472,6 +4472,34 @@ func (q *Queries) InsertEventTags(ctx context.Context, arg InsertEventTagsParams
 	return err
 }
 
+const insertFlowRun = `-- name: InsertFlowRun :exec
+INSERT INTO flow_runs (flow_name, input, output, status, error, started_at, ended_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
+`
+
+type InsertFlowRunParams struct {
+	FlowName  string          `json:"flow_name"`
+	Input     []byte          `json:"input"`
+	Output    json.RawMessage `json:"output"`
+	Status    FlowStatus      `json:"status"`
+	Error     *string         `json:"error"`
+	StartedAt *time.Time      `json:"started_at"`
+	EndedAt   *time.Time      `json:"ended_at"`
+}
+
+func (q *Queries) InsertFlowRun(ctx context.Context, arg InsertFlowRunParams) error {
+	_, err := q.db.Exec(ctx, insertFlowRun,
+		arg.FlowName,
+		arg.Input,
+		arg.Output,
+		arg.Status,
+		arg.Error,
+		arg.StartedAt,
+		arg.EndedAt,
+	)
+	return err
+}
+
 const insertItemRelation = `-- name: InsertItemRelation :exec
 INSERT INTO item_relations (source_item_id, target_item_id, relation_type)
 VALUES ($1, $2, $3)
@@ -10394,7 +10422,7 @@ func (q *Queries) UpdateItemStatus(ctx context.Context, arg UpdateItemStatusPara
 	return i, err
 }
 
-const updateItemStatusByTask = `-- name: UpdateItemStatusByTask :exec
+const updateItemStatusByTask = `-- name: UpdateItemStatusByTask :execrows
 UPDATE daily_plan_items
 SET status = $1, updated_at = now()
 WHERE task_id = $2 AND plan_date = $3
@@ -10408,9 +10436,13 @@ type UpdateItemStatusByTaskParams struct {
 
 // Update the status of a daily plan item by task_id and date.
 // Used when advance_work completes a task to auto-update today's plan item.
-func (q *Queries) UpdateItemStatusByTask(ctx context.Context, arg UpdateItemStatusByTaskParams) error {
-	_, err := q.db.Exec(ctx, updateItemStatusByTask, arg.Status, arg.TaskID, arg.PlanDate)
-	return err
+// Returns rows affected so caller can distinguish "updated" from "no matching item".
+func (q *Queries) UpdateItemStatusByTask(ctx context.Context, arg UpdateItemStatusByTaskParams) (int64, error) {
+	result, err := q.db.Exec(ctx, updateItemStatusByTask, arg.Status, arg.TaskID, arg.PlanDate)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const updateNoteEmbedding = `-- name: UpdateNoteEmbedding :exec
