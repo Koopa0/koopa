@@ -151,14 +151,12 @@
           />
           <div class="min-w-0">
             <p class="truncate text-sm text-zinc-200">{{ session.domain }}</p>
-            <p class="text-xs text-zinc-500">
-              {{ session.solved_count }}/{{ session.attempts_count }} solved
-            </p>
+            <p class="text-xs text-zinc-500">{{ session.mode }}</p>
           </div>
         </div>
         <span class="flex shrink-0 items-center gap-1 text-xs text-zinc-500">
           <lucide-icon [img]="ClockIcon" [size]="12" aria-hidden="true" />
-          {{ session.duration_minutes }} min
+          {{ getDurationLabel(session) }}
         </span>
       </div>
       }

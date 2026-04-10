@@ -92,8 +92,8 @@
             {{ getScheduleLabel(feed.schedule) }}
           </td>
           <td class="px-4 py-3 text-xs text-zinc-400">
-            @if (feed.topics.length > 0) { {{ feed.topics.join(", ") }} } @else
-            {
+            @if ((feed.topics ?? []).length > 0) { {{ (feed.topics ??
+            []).join(", ") }} } @else {
             <span class="text-zinc-600">—</span>
             }
           </td>

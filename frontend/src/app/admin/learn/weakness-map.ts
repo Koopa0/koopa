@@ -4,10 +4,8 @@ import {
   inject,
   signal,
   computed,
-  OnInit,
-  DestroyRef,
 } from '@angular/core';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { toSignal } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
 import {
   LucideAngularModule,
@@ -18,13 +16,21 @@ import {
   Trophy,
   Flame,
 } from 'lucide-angular';
+import { catchError, map, of, startWith } from 'rxjs';
 import { LearnService } from '../../core/services/learn.service';
 import { NotificationService } from '../../core/services/notification.service';
+import { deriveMasteryStage } from './mastery-stage';
 import type {
   LearningDashboard,
   ConceptWeakness,
-  DomainMastery,
+  DomainMasteryView,
+  ApiSessionRow,
 } from '../../core/models/admin.model';
+
+interface DashboardState {
+  data: LearningDashboard | null;
+  isLoading: boolean;
+}
 
 @Component({
   selector: 'app-weakness-map',
@@ -33,46 +39,77 @@ import type {
   templateUrl: './weakness-map.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
-export class WeaknessMapComponent implements OnInit {
+export class WeaknessMapComponent {
   private readonly learnService = inject(LearnService);
   private readonly notificationService = inject(NotificationService);
-  private readonly destroyRef = inject(DestroyRef);
 
-  protected readonly dashboard = signal<LearningDashboard | null>(null);
-  protected readonly isLoading = signal(true);
+  private readonly state = toSignal(
+    this.learnService.getDashboard().pipe(
+      map((data): DashboardState => ({ data, isLoading: false })),
+      catchError(() => {
+        this.notificationService.error('Failed to load learning data');
+        return of<DashboardState>({ data: null, isLoading: false });
+      }),
+      startWith<DashboardState>({ data: null, isLoading: true }),
+    ),
+    { requireSync: true },
+  );
+
+  protected readonly isLoading = computed(() => this.state().isLoading);
   protected readonly selectedDomain = signal<string | null>(null);
 
   // Derived
   protected readonly weaknesses = computed(() => {
-    const all = this.dashboard()?.weakness_spotlight ?? [];
+    const all = this.state().data?.weakness_spotlight ?? [];
     const domain = this.selectedDomain();
     if (!domain) return all;
     return all.filter((w) => w.domain === domain);
   });
 
-  protected readonly masteryByDomain = computed(
-    () => this.dashboard()?.mastery_by_domain ?? [],
-  );
-
-  protected readonly domains = computed(() => {
-    const mastery = this.masteryByDomain();
-    return mastery.map((m) => m.domain);
+  protected readonly masteryByDomain = computed<DomainMasteryView[]>(() => {
+    const rows = this.state().data?.mastery_by_domain ?? [];
+    const byDomain = new Map<string, DomainMasteryView>();
+    for (const r of rows) {
+      let agg = byDomain.get(r.domain);
+      if (!agg) {
+        agg = {
+          domain: r.domain,
+          concepts_total: 0,
+          concepts_mastered: 0,
+          concepts_weak: 0,
+          concepts_developing: 0,
+        };
+        byDomain.set(r.domain, agg);
+      }
+      agg.concepts_total++;
+      const stage = deriveMasteryStage(
+        r.weakness_count,
+        r.improvement_count,
+        r.mastery_count,
+      );
+      if (stage === 'solid') agg.concepts_mastered++;
+      else if (stage === 'struggling') agg.concepts_weak++;
+      else agg.concepts_developing++;
+    }
+    return Array.from(byDomain.values()).sort((a, b) =>
+      a.domain.localeCompare(b.domain),
+    );
   });
 
   protected readonly dueReviewsCount = computed(
-    () => this.dashboard()?.due_reviews_count ?? 0,
+    () => this.state().data?.due_reviews_count ?? 0,
   );
 
   protected readonly dueReviewsToday = computed(
-    () => this.dashboard()?.due_reviews_today ?? 0,
+    () => this.state().data?.due_reviews_today ?? 0,
   );
 
   protected readonly streak = computed(
-    () => this.dashboard()?.streak ?? { current_days: 0 },
+    () => this.state().data?.streak ?? { current_days: 0 },
   );
 
   protected readonly recentSessions = computed(
-    () => this.dashboard()?.recent_sessions ?? [],
+    () => this.state().data?.recent_sessions ?? [],
   );
 
   // Icons
@@ -91,38 +128,11 @@ export class WeaknessMapComponent implements OnInit {
     go: 'bg-amber-900/40 text-amber-400 border-amber-800/50',
   };
 
-  protected readonly SIGNAL_COLORS: Record<string, string | undefined> = {
-    weakness: 'text-red-400 bg-red-950/30 border-red-800/30',
-    improvement: 'text-amber-400 bg-amber-950/30 border-amber-800/30',
-    mastery: 'text-emerald-400 bg-emerald-950/30 border-emerald-800/30',
-  };
-
-  ngOnInit(): void {
-    this.loadDashboard();
-  }
-
-  private loadDashboard(): void {
-    this.isLoading.set(true);
-    this.learnService
-      .getDashboard()
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe({
-        next: (data) => {
-          this.dashboard.set(data);
-          this.isLoading.set(false);
-        },
-        error: () => {
-          this.isLoading.set(false);
-          this.notificationService.error('Failed to load learning data');
-        },
-      });
-  }
-
   protected selectDomain(domain: string | null): void {
     this.selectedDomain.set(domain);
   }
 
-  protected getMasteryPercent(domain: DomainMastery): number {
+  protected getMasteryPercent(domain: DomainMasteryView): number {
     if (domain.concepts_total === 0) return 0;
     return Math.round((domain.concepts_mastered / domain.concepts_total) * 100);
   }
@@ -146,5 +156,17 @@ export class WeaknessMapComponent implements OnInit {
     if (days === 0) return 'Today';
     if (days === 1) return 'Yesterday';
     return `${days}d ago`;
+  }
+
+  protected getDurationLabel(session: ApiSessionRow): string {
+    if (!session.ended_at) return 'in progress';
+    const ms =
+      new Date(session.ended_at).getTime() -
+      new Date(session.started_at).getTime();
+    const mins = Math.round(ms / 60_000);
+    if (mins < 60) return `${mins}min`;
+    const h = Math.floor(mins / 60);
+    const m = mins % 60;
+    return m > 0 ? `${h}h ${m}m` : `${h}h`;
   }
 }

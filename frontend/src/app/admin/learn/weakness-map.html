@@ -127,7 +127,7 @@
         <div class="mt-2 flex items-center gap-3 text-xs text-zinc-500">
           <span>{{ domain.concepts_mastered }} mastered</span>
           <span>{{ domain.concepts_weak }} weak</span>
-          <span>{{ domain.concepts_untested }} untested</span>
+          <span>{{ domain.concepts_developing }} developing</span>
         </div>
       </button>
       } @if (masteryByDomain().length === 0) {
@@ -235,12 +235,10 @@
               >
                 {{ session.domain }}
               </span>
-              <span class="text-xs text-zinc-500">
-                {{ session.solved_count }}/{{ session.attempts_count }} solved
-              </span>
+              <span class="text-xs text-zinc-500"> {{ session.mode }} </span>
             </div>
             <span class="text-xs text-zinc-600">
-              {{ session.duration_minutes }}min
+              {{ getDurationLabel(session) }}
             </span>
           </div>
           }

@@ -22,7 +22,10 @@ import {
 } from 'lucide-angular';
 import { ReflectService } from '../../core/services/reflect.service';
 import { NotificationService } from '../../core/services/notification.service';
-import type { DailyReflectionContext } from '../../core/models/admin.model';
+import type {
+  DailyReflectionContext,
+  ApiSessionRow,
+} from '../../core/models/admin.model';
 
 @Component({
   selector: 'app-daily-review',
@@ -123,6 +126,18 @@ export class DailyReviewComponent implements OnInit {
           this.notificationService.error('Failed to load daily review');
         },
       });
+  }
+
+  protected getDurationLabel(session: ApiSessionRow): string {
+    if (!session.ended_at) return 'in progress';
+    const ms =
+      new Date(session.ended_at).getTime() -
+      new Date(session.started_at).getTime();
+    const mins = Math.round(ms / 60_000);
+    if (mins < 60) return `${mins} min`;
+    const h = Math.floor(mins / 60);
+    const m = mins % 60;
+    return m > 0 ? `${h}h ${m}m` : `${h}h`;
   }
 
   protected navigateDay(offset: number): void {

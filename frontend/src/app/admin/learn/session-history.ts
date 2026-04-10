@@ -2,20 +2,23 @@ import {
   Component,
   ChangeDetectionStrategy,
   inject,
-  signal,
   computed,
-  OnInit,
-  DestroyRef,
 } from '@angular/core';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { toSignal } from '@angular/core/rxjs-interop';
 import { DatePipe } from '@angular/common';
 import { LucideAngularModule, Clock, ChevronRight } from 'lucide-angular';
+import { catchError, map, of, startWith } from 'rxjs';
 import { LearnService } from '../../core/services/learn.service';
 import { NotificationService } from '../../core/services/notification.service';
 import type {
   LearningDashboard,
-  SessionSummary,
+  ApiSessionRow,
 } from '../../core/models/admin.model';
+
+interface DashboardState {
+  data: LearningDashboard | null;
+  isLoading: boolean;
+}
 
 @Component({
   selector: 'app-session-history',
@@ -24,17 +27,26 @@ import type {
   templateUrl: './session-history.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
-export class SessionHistoryComponent implements OnInit {
+export class SessionHistoryComponent {
   private readonly learnService = inject(LearnService);
   private readonly notificationService = inject(NotificationService);
-  private readonly destroyRef = inject(DestroyRef);
 
-  protected readonly dashboard = signal<LearningDashboard | null>(null);
-  protected readonly isLoading = signal(true);
+  private readonly state = toSignal(
+    this.learnService.getDashboard().pipe(
+      map((data): DashboardState => ({ data, isLoading: false })),
+      catchError(() => {
+        this.notificationService.error('Failed to load sessions');
+        return of<DashboardState>({ data: null, isLoading: false });
+      }),
+      startWith<DashboardState>({ data: null, isLoading: true }),
+    ),
+    { requireSync: true },
+  );
 
   protected readonly sessions = computed(
-    () => this.dashboard()?.recent_sessions ?? [],
+    () => this.state().data?.recent_sessions ?? [],
   );
+  protected readonly isLoading = computed(() => this.state().isLoading);
 
   protected readonly ClockIcon = Clock;
   protected readonly ChevronRightIcon = ChevronRight;
@@ -46,27 +58,6 @@ export class SessionHistoryComponent implements OnInit {
     go: 'bg-amber-900/40 text-amber-400 border-amber-800/50',
   };
 
-  ngOnInit(): void {
-    this.loadSessions();
-  }
-
-  private loadSessions(): void {
-    this.isLoading.set(true);
-    this.learnService
-      .getDashboard()
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe({
-        next: (data) => {
-          this.dashboard.set(data);
-          this.isLoading.set(false);
-        },
-        error: () => {
-          this.isLoading.set(false);
-          this.notificationService.error('Failed to load sessions');
-        },
-      });
-  }
-
   protected getDomainColor(domain: string): string {
     return (
       this.DOMAIN_COLORS[domain] ??
@@ -74,7 +65,15 @@ export class SessionHistoryComponent implements OnInit {
     );
   }
 
-  protected getSuccessRatio(session: SessionSummary): string {
-    return `${session.solved_count}/${session.attempts_count}`;
+  protected getDurationLabel(session: ApiSessionRow): string {
+    if (!session.ended_at) return 'in progress';
+    const ms =
+      new Date(session.ended_at).getTime() -
+      new Date(session.started_at).getTime();
+    const mins = Math.round(ms / 60_000);
+    if (mins < 60) return `${mins} minutes`;
+    const h = Math.floor(mins / 60);
+    const m = mins % 60;
+    return m > 0 ? `${h}h ${m}m` : `${h}h`;
   }
 }

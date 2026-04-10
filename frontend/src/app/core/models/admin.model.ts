@@ -336,19 +336,46 @@ export interface ContentPipelineItem {
 export interface LearningDashboard {
   due_reviews_count: number;
   due_reviews_today: number;
-  recent_sessions: SessionSummary[];
+  recent_sessions: ApiSessionRow[];
   weakness_spotlight: ConceptWeakness[];
-  mastery_by_domain: DomainMastery[];
+  mastery_by_domain: ApiConceptMasteryRow[];
   streak: LearningStreak;
 }
 
-export interface SessionSummary {
+// Actual shape returned by GET /api/admin/learn/dashboard recent_sessions.
+// Backend sends learning.Session (no attempt aggregation).
+export interface ApiSessionRow {
   id: string;
   domain: string;
+  mode: string;
   started_at: string;
-  duration_minutes: number;
-  attempts_count: number;
-  solved_count: number;
+  ended_at: string | null;
+  created_at: string;
+}
+
+// Actual shape returned by GET /api/admin/learn/dashboard mastery_by_domain.
+// Backend sends learning.ConceptMasteryRow (per-concept, not per-domain).
+export interface ApiConceptMasteryRow {
+  id: string;
+  slug: string;
+  name: string;
+  domain: string;
+  kind: string;
+  weakness_count: number;
+  improvement_count: number;
+  mastery_count: number;
+  total_observations: number;
+  first_observed_at: string;
+  last_observed_at: string;
+}
+
+// Frontend-derived aggregation of ApiConceptMasteryRow, grouped by domain.
+export interface DomainMasteryView {
+  domain: string;
+  concepts_total: number;
+  concepts_mastered: number;
+  concepts_weak: number;
+  concepts_developing: number;
 }
 
 export interface SeveritySummary {
@@ -367,14 +394,6 @@ export interface ConceptWeakness {
   severity_score: number;
   last_practiced: string | null;
   days_since_practice: number | null;
-}
-
-export interface DomainMastery {
-  domain: string;
-  concepts_total: number;
-  concepts_mastered: number;
-  concepts_weak: number;
-  concepts_untested: number;
 }
 
 export interface LearningStreak {
@@ -442,7 +461,7 @@ export interface DailyReflectionContext {
   date: string;
   plan_vs_actual: PlanVsActual;
   completed_tasks: CompletedTask[];
-  learning_sessions: SessionSummary[];
+  learning_sessions: ApiSessionRow[];
   content_changes: ContentChange[];
   commits_count: number;
   inbox_delta: InboxDelta;

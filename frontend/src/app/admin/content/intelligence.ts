@@ -2,12 +2,9 @@ import {
   Component,
   ChangeDetectionStrategy,
   inject,
-  signal,
   computed,
-  OnInit,
-  DestroyRef,
 } from '@angular/core';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { toSignal } from '@angular/core/rxjs-interop';
 import { DatePipe } from '@angular/common';
 import {
   LucideAngularModule,
@@ -15,10 +12,16 @@ import {
   AlertTriangle,
   ExternalLink,
 } from 'lucide-angular';
+import { catchError, map, of, startWith } from 'rxjs';
 import { FeedService } from '../../core/services/feed.service';
 import { NotificationService } from '../../core/services/notification.service';
 import { StatusBadgeComponent } from '../../shared/components/status-badge/status-badge.component';
 import type { ApiFeed } from '../../core/models';
+
+interface FeedState {
+  feeds: ApiFeed[];
+  isLoading: boolean;
+}
 
 @Component({
   selector: 'app-intelligence',
@@ -27,13 +30,29 @@ import type { ApiFeed } from '../../core/models';
   templateUrl: './intelligence.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
-export class IntelligenceComponent implements OnInit {
+export class IntelligenceComponent {
   private readonly feedService = inject(FeedService);
   private readonly notificationService = inject(NotificationService);
-  private readonly destroyRef = inject(DestroyRef);
 
-  protected readonly feeds = signal<ApiFeed[]>([]);
-  protected readonly isLoading = signal(true);
+  private readonly state = toSignal(
+    this.feedService.getFeeds().pipe(
+      map(
+        (response): FeedState => ({
+          feeds: response.data ?? [],
+          isLoading: false,
+        }),
+      ),
+      catchError(() => {
+        this.notificationService.error('Failed to load feed intelligence');
+        return of<FeedState>({ feeds: [], isLoading: false });
+      }),
+      startWith<FeedState>({ feeds: [], isLoading: true }),
+    ),
+    { requireSync: true },
+  );
+
+  protected readonly feeds = computed(() => this.state().feeds);
+  protected readonly isLoading = computed(() => this.state().isLoading);
 
   protected readonly enabledFeeds = computed(() =>
     this.feeds().filter((f) => f.enabled),
@@ -58,27 +77,6 @@ export class IntelligenceComponent implements OnInit {
     daily: 'Daily',
     weekly: 'Weekly',
   };
-
-  ngOnInit(): void {
-    this.loadFeeds();
-  }
-
-  private loadFeeds(): void {
-    this.isLoading.set(true);
-    this.feedService
-      .getFeeds()
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe({
-        next: (response) => {
-          this.feeds.set(response.data ?? []);
-          this.isLoading.set(false);
-        },
-        error: () => {
-          this.isLoading.set(false);
-          this.notificationService.error('Failed to load feed intelligence');
-        },
-      });
-  }
 
   protected getScheduleLabel(schedule: string): string {
     return this.SCHEDULE_LABELS[schedule] ?? schedule;

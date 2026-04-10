@@ -40,12 +40,8 @@
           {{ session.domain }}
         </span>
         <div>
-          <p class="text-sm text-zinc-300">
-            {{ getSuccessRatio(session) }} solved
-          </p>
-          <p class="text-xs text-zinc-600">
-            {{ session.duration_minutes }} minutes
-          </p>
+          <p class="text-sm text-zinc-300">{{ session.mode }}</p>
+          <p class="text-xs text-zinc-600">{{ getDurationLabel(session) }}</p>
         </div>
       </div>
       <span class="text-xs text-zinc-600"
