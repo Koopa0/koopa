@@ -253,7 +253,7 @@ func NewServer(pool *pgxpool.Pool, logger *slog.Logger, opts ...ServerOption) *S
 
 	addTool(s, &mcp.Tool{
 		Name:        "record_attempt",
-		Description: "Record an attempt within the active learning session. Accepts semantic outcomes ('got it', 'needed help', 'gave up') mapped to schema enums by session mode. Auto-creates learning items and concepts. High-confidence observations are written directly; low-confidence returned as pending.",
+		Description: "Record an attempt within the active learning session. Accepts semantic outcomes ('got it', 'needed help', 'gave up') mapped to schema enums by session mode. Auto-creates learning items and concepts. Both high and low confidence observations are persisted; dashboard filters at read time. Observation constraint: severity is only valid for signal='weakness'; passing severity on mastery/improvement will reject the entire observation (check observation_warnings in response).",
 		Annotations: additive,
 	}, s.recordAttempt)
 
@@ -265,7 +265,7 @@ func NewServer(pool *pgxpool.Pool, logger *slog.Logger, opts ...ServerOption) *S
 
 	addTool(s, &mcp.Tool{
 		Name:        "learning_dashboard",
-		Description: "Learning analytics dashboard. Views: overview (sessions list), mastery (per-concept signal counts), weaknesses (cross-pattern weakness analysis), retrieval (spaced review queue), timeline (sessions with attempt stats), variations (problem relationship graph). Filter by domain and lookback period.",
+		Description: "Learning analytics dashboard. Views: overview (sessions list), mastery (per-concept signal counts; mastery floor: <3 observations → always 'developing' regardless of signal distribution), weaknesses (cross-pattern weakness analysis by category+severity), retrieval (items with due <= now only; newly reviewed cards get future due dates and won't reappear until due), timeline (sessions with attempt stats by day), variations (problem relationship graph). Filter by domain and lookback period.",
 		Annotations: readOnly,
 	}, s.learningDashboard)
 
@@ -277,7 +277,7 @@ func NewServer(pool *pgxpool.Pool, logger *slog.Logger, opts ...ServerOption) *S
 
 	addTool(s, &mcp.Tool{
 		Name:        "manage_plan",
-		Description: "Learning plan lifecycle and items. Actions: add_items, remove_items (draft only), update_item (complete/skip/substitute), reorder, update_plan (activate/pause/complete/abandon), progress. The progress action returns aggregate counts plus a flat item list with plan_item_id, learning_item_id, title, position, status, phase — call it before update_item to look up plan_item_id.",
+		Description: "Learning plan lifecycle and items. Actions: add_items (accepts learning_item_id OR title for find-or-create using plan domain), remove_items (draft only), update_item (complete/skip/substitute), reorder, update_plan (activate/pause/complete/abandon), progress. The progress action returns aggregate counts plus a flat item list with plan_item_id, learning_item_id, title, position, status, phase — call it before update_item to look up plan_item_id.",
 		Annotations: destructive,
 	}, s.managePlan)
 
