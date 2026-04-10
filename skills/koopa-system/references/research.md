@@ -25,7 +25,7 @@
 | `goal_progress` | 研究需要了解戰略方向時 | 看 Koopa 的目標和優先事項 |
 | `learning_dashboard` | 研究涉及學習領域時 | 看 mastery, weaknesses 作為研究輸入 |
 | `manage_feeds` | 評估 RSS 訂閱品質時 | `action=list` 查看現有 feeds |
-| `propose_commitment(type=insight)` | 研究發現可驗證假說 | 必須有 hypothesis + invalidation_condition |
+| `propose_commitment(type=insight)` | 研究發現可驗證假說 | 必須有 hypothesis + invalidation_condition + content |
 
 ## Research Workflow
 
@@ -64,7 +64,8 @@ file_report(as:"research-lab",
 
 propose_commitment(as:"research-lab", type=insight,
   hypothesis="...",
-  invalidation_condition="..."
+  invalidation_condition="...",
+  content="..."
 )
   → 等 Koopa 確認
 ```
@@ -117,6 +118,13 @@ propose_commitment(as:"research-lab", type=insight,
 
 ## Knowledge Access Patterns
 
+`search_knowledge` uses PostgreSQL full-text search (`websearch_to_tsquery`). Query tips:
+- Quoted phrases: `"value semantics"` for exact match
+- Default is AND: `Go generics` requires both words
+- OR: `goroutine OR channel`
+- Exclusion: `-draft`
+- Empty results = not in published content, not a query error
+
 | Need | Tool | Query strategy |
 |------|------|---------------|
 | Koopa 寫過什麼關於 X | `search_knowledge(query="X")` | 搜尋所有類型 |
@@ -135,6 +143,30 @@ MCP 沒有報告品質驗證工具 — 品質靠你維持：
 3. **區分事實和推測** — 「確認」vs「合理推測」明確標記
 4. **偏見檢查** — 主動呈現反面觀點
 5. **可操作性** — 報告結尾必須有明確的建議行動
+
+## Mixed Research
+
+If a research request doesn't fit the four templates above, mix or customize the structure.
+**Must retain these core elements regardless of format:**
+- Source attribution for every key fact
+- Confidence level marking (high/medium/low)
+- Actionable recommendations
+- Bias check (present counterarguments)
+
+## Report Metadata Convention
+
+When calling `file_report`, include in `metadata`:
+- `report_type`: `client_research` / `tech_eval` / `market_analysis` / `knowledge_synthesis` / `mixed`
+- `recommended_for`: departments that should see this (e.g., `["content-studio"]`)
+
+This helps HQ route reports efficiently during `morning_context` without reading full content.
+
+## Insight Tracking
+
+Research Lab owns verification of its own insights. Each session start:
+1. Check `morning_context` for `unverified_insights`
+2. If you encounter relevant evidence during research, use `track_insight(action=add_evidence)` or `verify`/`invalidate`
+3. Don't let insights sit unverified indefinitely — actively evaluate when you have relevant context
 
 ## What You DON'T Do
 

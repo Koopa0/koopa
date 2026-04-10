@@ -69,6 +69,7 @@ Trackable hypotheses with falsification conditions.
 **Required fields:**
 - `hypothesis` — testable claim
 - `invalidation_condition` — what would prove it wrong
+- `content` — insight description (proposal warns if missing, commit rejects without it)
 
 **Tool:** `propose_commitment(type=insight)` → `commit_proposal` → `track_insight(action=verify|invalidate|archive|add_evidence)`
 

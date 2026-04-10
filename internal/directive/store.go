@@ -170,6 +170,32 @@ func (s *Store) Resolve(ctx context.Context, id int64, reportID *int64) (*Direct
 	return rowToDirective(&row), nil
 }
 
+// UnackedIssuedBySource returns directives issued by the caller that have not been acknowledged.
+func (s *Store) UnackedIssuedBySource(ctx context.Context, source string) ([]Directive, error) {
+	rows, err := s.q.UnackedIssuedBySource(ctx, source)
+	if err != nil {
+		return nil, fmt.Errorf("querying unacked directives issued by %s: %w", source, err)
+	}
+	result := make([]Directive, len(rows))
+	for i := range rows {
+		result[i] = *rowToDirective(&rows[i])
+	}
+	return result, nil
+}
+
+// UnresolvedIssuedBySource returns directives issued by the caller that are acknowledged but unresolved.
+func (s *Store) UnresolvedIssuedBySource(ctx context.Context, source string) ([]Directive, error) {
+	rows, err := s.q.UnresolvedIssuedBySource(ctx, source)
+	if err != nil {
+		return nil, fmt.Errorf("querying unresolved directives issued by %s: %w", source, err)
+	}
+	result := make([]Directive, len(rows))
+	for i := range rows {
+		result[i] = *rowToDirective(&rows[i])
+	}
+	return result, nil
+}
+
 // UnresolvedForTarget returns acknowledged but unresolved directives for a participant.
 func (s *Store) UnresolvedForTarget(ctx context.Context, target string) ([]Directive, error) {
 	rows, err := s.q.UnresolvedDirectivesForTarget(ctx, target)

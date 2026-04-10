@@ -20,6 +20,7 @@ import {
 } from 'lucide-angular';
 import { StudioService } from '../../core/services/studio.service';
 import { NotificationService } from '../../core/services/notification.service';
+import { ModalComponent } from '../../shared/components/modal/modal.component';
 import type {
   StudioOverview,
   DirectiveSummary,
@@ -34,7 +35,7 @@ interface DirectivesByTarget {
 @Component({
   selector: 'app-directives',
   standalone: true,
-  imports: [DatePipe, LucideAngularModule],
+  imports: [DatePipe, LucideAngularModule, ModalComponent],
   templateUrl: './directives.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
@@ -45,6 +46,7 @@ export class DirectivesComponent implements OnInit {
 
   protected readonly overview = signal<StudioOverview | null>(null);
   protected readonly isLoading = signal(true);
+  protected readonly selectedDirective = signal<DirectiveSummary | null>(null);
 
   protected readonly directives = computed(
     () => this.overview()?.open_directives ?? [],
@@ -145,5 +147,17 @@ export class DirectivesComponent implements OnInit {
 
   protected canReceive(p: ParticipantSummary): boolean {
     return p.can_receive_directives;
+  }
+
+  protected selectDirective(directive: DirectiveSummary): void {
+    this.selectedDirective.set(directive);
+  }
+
+  protected closeDetail(): void {
+    this.selectedDirective.set(null);
+  }
+
+  protected getRelatedReports(directiveId: number) {
+    return this.reports().filter((r) => r.in_response_to === directiveId);
   }
 }

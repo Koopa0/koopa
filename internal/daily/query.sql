@@ -32,9 +32,10 @@ SET status = @status, updated_at = now()
 WHERE id = @id
 RETURNING id, plan_date, task_id, selected_by, position, reason, journal_id, status, created_at, updated_at;
 
--- name: UpdateItemStatusByTask :exec
+-- name: UpdateItemStatusByTask :execrows
 -- Update the status of a daily plan item by task_id and date.
 -- Used when advance_work completes a task to auto-update today's plan item.
+-- Returns rows affected so caller can distinguish "updated" from "no matching item".
 UPDATE daily_plan_items
 SET status = @status, updated_at = now()
 WHERE task_id = @task_id AND plan_date = @plan_date;

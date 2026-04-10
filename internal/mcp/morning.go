@@ -2,10 +2,12 @@ package mcp
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/Koopa0/koopa0.dev/internal/content"
 	"github.com/Koopa0/koopa0.dev/internal/daily"
 	"github.com/Koopa0/koopa0.dev/internal/directive"
 	"github.com/Koopa0/koopa0.dev/internal/goal"
@@ -14,27 +16,33 @@ import (
 	"github.com/Koopa0/koopa0.dev/internal/task"
 )
 
+// sectionTimeout is the per-section timeout for morning_context queries.
+// Individual sections that exceed this timeout are skipped with a warning,
+// rather than causing the entire morning_context call to fail.
+const sectionTimeout = 15 * time.Second
+
 // --- morning_context ---
 
 // MorningContextInput is the input for the morning_context tool.
 type MorningContextInput struct {
-	Sections FlexStringSlice `json:"sections,omitempty" jsonschema_description:"Sections to include (default all). Valid: tasks, goals, directives, insights, rss, plan_history"`
+	Sections FlexStringSlice `json:"sections,omitempty" jsonschema_description:"Sections to include (default all). Valid: tasks, goals, directives, insights, rss, plan_history, content_pipeline"`
 	Date     *string         `json:"date,omitempty" jsonschema_description:"Target date YYYY-MM-DD (default: today)"`
 }
 
 // MorningContextOutput is the output of the morning_context tool.
 type MorningContextOutput struct {
-	Date                 string                   `json:"date"`
-	OverdueTasks         []task.PendingTaskDetail `json:"overdue_tasks"`
-	TodayTasks           []task.PendingTaskDetail `json:"today_tasks"`
-	CommittedTasks       []daily.Item             `json:"committed_tasks"`
-	UpcomingTasks        []task.PendingTaskDetail `json:"upcoming_tasks"`
-	ActiveGoals          []goal.ActiveGoalSummary `json:"active_goals"`
-	UnackedDirectives    []directive.Directive    `json:"unacked_directives"`
-	UnresolvedDirectives []directive.Directive    `json:"unresolved_directives"`
-	UnverifiedInsights   []insight.Insight        `json:"unverified_insights"`
-	RSSHighlights        []RSSHighlight           `json:"rss_highlights"`
-	PlanHistory          []journal.Entry          `json:"plan_history"`
+	Date               string                   `json:"date"`
+	OverdueTasks       []task.PendingTaskDetail `json:"overdue_tasks"`
+	TodayTasks         []task.PendingTaskDetail `json:"today_tasks"`
+	CommittedTasks     []daily.Item             `json:"committed_tasks"`
+	UpcomingTasks      []task.PendingTaskDetail `json:"upcoming_tasks"`
+	ActiveGoals        []goal.ActiveGoalSummary `json:"active_goals"`
+	DirectivesReceived []directive.Directive    `json:"directives_received"`
+	DirectivesIssued   []directive.Directive    `json:"directives_issued"`
+	UnverifiedInsights []insight.Insight        `json:"unverified_insights"`
+	RSSHighlights      []RSSHighlight           `json:"rss_highlights"`
+	PlanHistory        []journal.Entry          `json:"plan_history"`
+	ContentPipeline    []ContentSummary         `json:"content_pipeline"`
 }
 
 // RSSHighlight is a recent high-priority RSS item.
@@ -66,24 +74,28 @@ func (s *Server) fillMorningSections(ctx context.Context, date time.Time, reques
 	for _, sec := range requested {
 		has[sec] = true
 	}
-	if all || has["tasks"] {
-		s.fillMorningTasks(ctx, date, out)
+
+	// runSection launches a fill function with a per-section timeout.
+	// Each section writes to disjoint fields in out, so no mutex needed.
+	var wg sync.WaitGroup
+	runSection := func(name string, fn func(context.Context)) {
+		if all || has[name] {
+			wg.Go(func() {
+				secCtx, cancel := context.WithTimeout(ctx, sectionTimeout)
+				defer cancel()
+				fn(secCtx)
+			})
+		}
 	}
-	if all || has["goals"] {
-		s.fillGoals(ctx, out)
-	}
-	if all || has["directives"] {
-		s.fillDirectives(ctx, out)
-	}
-	if all || has["insights"] {
-		s.fillInsights(ctx, out)
-	}
-	if all || has["rss"] {
-		s.fillRSSHighlights(ctx, date, out)
-	}
-	if all || has["plan_history"] {
-		s.fillPlanHistory(ctx, date, out)
-	}
+
+	runSection("tasks", func(c context.Context) { s.fillMorningTasks(c, date, out) })
+	runSection("goals", func(c context.Context) { s.fillGoals(c, out) })
+	runSection("directives", func(c context.Context) { s.fillDirectives(c, out) })
+	runSection("insights", func(c context.Context) { s.fillInsights(c, out) })
+	runSection("rss", func(c context.Context) { s.fillRSSHighlights(c, date, out) })
+	runSection("plan_history", func(c context.Context) { s.fillPlanHistory(c, date, out) })
+	runSection("content_pipeline", func(c context.Context) { s.fillContentPipeline(c, out) })
+	wg.Wait()
 }
 
 func (s *Server) fillMorningTasks(ctx context.Context, date time.Time, out *MorningContextOutput) {
@@ -133,15 +145,29 @@ func (s *Server) fillGoals(ctx context.Context, out *MorningContextOutput) {
 
 func (s *Server) fillDirectives(ctx context.Context, out *MorningContextOutput) {
 	caller := s.callerIdentity(ctx)
+
+	// Received: directives targeting the caller (unacked + unresolved).
 	if dirs, err := s.directives.UnackedForTarget(ctx, caller); err == nil {
-		out.UnackedDirectives = dirs
+		out.DirectivesReceived = append(out.DirectivesReceived, dirs...)
 	} else {
-		s.logger.Warn("morning_context: unacked directives", "error", err)
+		s.logger.Warn("morning_context: unacked directives received", "error", err)
 	}
 	if dirs, err := s.directives.UnresolvedForTarget(ctx, caller); err == nil {
-		out.UnresolvedDirectives = dirs
+		out.DirectivesReceived = append(out.DirectivesReceived, dirs...)
 	} else {
-		s.logger.Warn("morning_context: unresolved directives", "error", err)
+		s.logger.Warn("morning_context: unresolved directives received", "error", err)
+	}
+
+	// Issued: directives the caller sent that are still open.
+	if dirs, err := s.directives.UnackedIssuedBySource(ctx, caller); err == nil {
+		out.DirectivesIssued = append(out.DirectivesIssued, dirs...)
+	} else {
+		s.logger.Warn("morning_context: unacked directives issued", "error", err)
+	}
+	if dirs, err := s.directives.UnresolvedIssuedBySource(ctx, caller); err == nil {
+		out.DirectivesIssued = append(out.DirectivesIssued, dirs...)
+	} else {
+		s.logger.Warn("morning_context: unresolved directives issued", "error", err)
 	}
 }
 
@@ -183,6 +209,21 @@ func (s *Server) fillRSSHighlights(ctx context.Context, date time.Time, out *Mor
 	}
 }
 
+func (s *Server) fillContentPipeline(ctx context.Context, out *MorningContextOutput) {
+	var all []content.Content
+	if drafts, err := s.contents.ByStatus(ctx, string(content.StatusDraft), 20); err == nil {
+		all = append(all, drafts...)
+	} else {
+		s.logger.Warn("morning_context: content pipeline drafts", "error", err)
+	}
+	if reviews, err := s.contents.ByStatus(ctx, string(content.StatusReview), 20); err == nil {
+		all = append(all, reviews...)
+	} else {
+		s.logger.Warn("morning_context: content pipeline reviews", "error", err)
+	}
+	out.ContentPipeline = toContentSummaries(all)
+}
+
 func planItemToTaskDetail(item *daily.Item) task.PendingTaskDetail {
 	return task.PendingTaskDetail{
 		ID:           item.TaskID,
@@ -194,5 +235,7 @@ func planItemToTaskDetail(item *daily.Item) task.PendingTaskDetail {
 		Assignee:     item.TaskAssignee,
 		ProjectTitle: item.ProjectTitle,
 		ProjectSlug:  item.ProjectSlug,
+		CreatedAt:    item.CreatedAt,
+		UpdatedAt:    item.UpdatedAt,
 	}
 }

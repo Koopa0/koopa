@@ -34,9 +34,11 @@
 | Action | Purpose | Key Params |
 |--------|---------|------------|
 | `create` | 建立草稿 | `title`, `body`, `content_type` (article/essay/build-log/til/note/bookmark/digest), `project?` |
-| `update` | 修改內容 | `content_id`, `title?`, `body?` |
+| `update` | 修改內容/狀態 | `content_id`, `title?`, `body?`, `status?` (draft/review/published/archived) |
 | `publish` | 發布 | `content_id` — **必須 Koopa 明確同意** |
-| `bookmark_rss` | RSS → bookmark | 從 RSS entry 建立 bookmark 記錄 |
+| `list` | 列出內容管道 | `status?`, `content_type?`, `limit?` (default 20) |
+| `read` | 讀取完整內容 | `content_id` — 回傳含 body, tags 的完整記錄 |
+| `bookmark_rss` | RSS → bookmark | `entry_id`, `comment?`, `title?` — 從 RSS entry 建 bookmark 並標記 curated |
 
 ### Content Pipeline
 
@@ -98,7 +100,10 @@ acknowledge_directive(as:"content-studio", directive_id="...")
 [發現好文章 — 通常從 morning_context RSS highlights]
 
 manage_content(as:"content-studio", action="bookmark_rss",
-  ... entry 資訊)
+  entry_id="<rss_entry_uuid>",
+  comment="為什麼值得收藏的個人評語")
+
+→ 自動建立 bookmark content + 標記 RSS entry 為 curated
 
 [如果 RSS 文章啟發了更深的文章想法]
   → 確認符合 Spear → create draft → 正常 pipeline

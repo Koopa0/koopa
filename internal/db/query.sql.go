@@ -4202,6 +4202,68 @@ func (q *Queries) Goals(ctx context.Context) ([]Goal, error) {
 	return items, nil
 }
 
+const goalsByOptionalStatus = `-- name: GoalsByOptionalStatus :many
+SELECT g.id, g.title, g.description, g.status, g.area_id, g.quarter, g.deadline,
+       g.created_at, g.updated_at,
+       COALESCE(a.name, '') AS area_name,
+       (SELECT count(*) FROM milestones m WHERE m.goal_id = g.id) AS milestone_total,
+       (SELECT count(*) FROM milestones m WHERE m.goal_id = g.id AND m.completed_at IS NOT NULL) AS milestone_done
+FROM goals g
+LEFT JOIN areas a ON a.id = g.area_id
+WHERE ($1::text IS NULL OR g.status::text = $1)
+ORDER BY g.deadline NULLS LAST, g.created_at
+`
+
+type GoalsByOptionalStatusRow struct {
+	ID             uuid.UUID  `json:"id"`
+	Title          string     `json:"title"`
+	Description    string     `json:"description"`
+	Status         GoalStatus `json:"status"`
+	AreaID         *uuid.UUID `json:"area_id"`
+	Quarter        *string    `json:"quarter"`
+	Deadline       *time.Time `json:"deadline"`
+	CreatedAt      time.Time  `json:"created_at"`
+	UpdatedAt      time.Time  `json:"updated_at"`
+	AreaName       string     `json:"area_name"`
+	MilestoneTotal int64      `json:"milestone_total"`
+	MilestoneDone  int64      `json:"milestone_done"`
+}
+
+// Goals filtered by optional status, with milestone counts.
+// Pass NULL to return all statuses.
+func (q *Queries) GoalsByOptionalStatus(ctx context.Context, status *string) ([]GoalsByOptionalStatusRow, error) {
+	rows, err := q.db.Query(ctx, goalsByOptionalStatus, status)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []GoalsByOptionalStatusRow{}
+	for rows.Next() {
+		var i GoalsByOptionalStatusRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Title,
+			&i.Description,
+			&i.Status,
+			&i.AreaID,
+			&i.Quarter,
+			&i.Deadline,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.AreaName,
+			&i.MilestoneTotal,
+			&i.MilestoneDone,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const highPriorityRecentCollected = `-- name: HighPriorityRecentCollected :many
 SELECT cd.id, cd.source_url, cd.title, cd.original_content,
        cd.relevance_score, cd.status, cd.curated_content_id, cd.collected_at,
@@ -4410,6 +4472,34 @@ func (q *Queries) InsertEventTags(ctx context.Context, arg InsertEventTagsParams
 	return err
 }
 
+const insertFlowRun = `-- name: InsertFlowRun :exec
+INSERT INTO flow_runs (flow_name, input, output, status, error, started_at, ended_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
+`
+
+type InsertFlowRunParams struct {
+	FlowName  string          `json:"flow_name"`
+	Input     []byte          `json:"input"`
+	Output    json.RawMessage `json:"output"`
+	Status    FlowStatus      `json:"status"`
+	Error     *string         `json:"error"`
+	StartedAt *time.Time      `json:"started_at"`
+	EndedAt   *time.Time      `json:"ended_at"`
+}
+
+func (q *Queries) InsertFlowRun(ctx context.Context, arg InsertFlowRunParams) error {
+	_, err := q.db.Exec(ctx, insertFlowRun,
+		arg.FlowName,
+		arg.Input,
+		arg.Output,
+		arg.Status,
+		arg.Error,
+		arg.StartedAt,
+		arg.EndedAt,
+	)
+	return err
+}
+
 const insertItemRelation = `-- name: InsertItemRelation :exec
 INSERT INTO item_relations (source_item_id, target_item_id, relation_type)
 VALUES ($1, $2, $3)
@@ -4571,7 +4661,7 @@ SELECT id, slug, title, body, excerpt, type, status, source, source_type,
        series_id, series_order, review_level, is_public, project_id, ai_metadata, reading_time_min,
        cover_image, published_at, created_at, updated_at
 FROM contents
-WHERE status = 'published'
+WHERE status != 'archived'
   AND search_vector @@ websearch_to_tsquery('simple', $1)
 ORDER BY ts_rank(search_vector, websearch_to_tsquery('simple', $1)) DESC
 LIMIT $2 OFFSET $3
@@ -4606,7 +4696,7 @@ type InternalSearchContentsRow struct {
 	UpdatedAt      time.Time       `json:"updated_at"`
 }
 
-// Internal search without visibility filter (for MCP tools).
+// Internal search without visibility filter (for MCP tools). Excludes archived.
 func (q *Queries) InternalSearchContents(ctx context.Context, arg InternalSearchContentsParams) ([]InternalSearchContentsRow, error) {
 	rows, err := q.db.Query(ctx, internalSearchContents, arg.WebsearchToTsquery, arg.Limit, arg.Offset)
 	if err != nil {
@@ -4650,7 +4740,7 @@ func (q *Queries) InternalSearchContents(ctx context.Context, arg InternalSearch
 
 const internalSearchContentsCount = `-- name: InternalSearchContentsCount :one
 SELECT COUNT(*) FROM contents
-WHERE status = 'published'
+WHERE status != 'archived'
   AND search_vector @@ websearch_to_tsquery('simple', $1)
 `
 
@@ -4666,7 +4756,7 @@ SELECT id, slug, title, body, excerpt, type, status, source, source_type,
        series_id, series_order, review_level, is_public, project_id, ai_metadata, reading_time_min,
        cover_image, published_at, created_at, updated_at
 FROM contents
-WHERE status = 'published'
+WHERE status != 'archived'
   AND search_vector @@ to_tsquery('simple', replace(plainto_tsquery('simple', $1)::text, '&', '|'))
 ORDER BY ts_rank(search_vector, to_tsquery('simple', replace(plainto_tsquery('simple', $1)::text, '&', '|'))) DESC
 LIMIT $2 OFFSET $3
@@ -4701,7 +4791,7 @@ type InternalSearchContentsORRow struct {
 	UpdatedAt      time.Time       `json:"updated_at"`
 }
 
-// Internal OR search without visibility filter (for MCP tools).
+// Internal OR search without visibility filter (for MCP tools). Excludes archived.
 func (q *Queries) InternalSearchContentsOR(ctx context.Context, arg InternalSearchContentsORParams) ([]InternalSearchContentsORRow, error) {
 	rows, err := q.db.Query(ctx, internalSearchContentsOR, arg.PlaintoTsquery, arg.Limit, arg.Offset)
 	if err != nil {
@@ -9830,6 +9920,46 @@ func (q *Queries) UnackedDirectivesForTarget(ctx context.Context, target string)
 	return items, nil
 }
 
+const unackedIssuedBySource = `-- name: UnackedIssuedBySource :many
+SELECT id, source, target, priority, acknowledged_at, acknowledged_by, resolved_at, resolution_report_id, content, metadata, issued_date, created_at FROM directives
+WHERE source = $1 AND acknowledged_at IS NULL
+ORDER BY issued_date DESC, created_at DESC
+`
+
+// Directives the caller issued that the target has not acknowledged yet.
+func (q *Queries) UnackedIssuedBySource(ctx context.Context, source string) ([]Directive, error) {
+	rows, err := q.db.Query(ctx, unackedIssuedBySource, source)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Directive{}
+	for rows.Next() {
+		var i Directive
+		if err := rows.Scan(
+			&i.ID,
+			&i.Source,
+			&i.Target,
+			&i.Priority,
+			&i.AcknowledgedAt,
+			&i.AcknowledgedBy,
+			&i.ResolvedAt,
+			&i.ResolutionReportID,
+			&i.Content,
+			&i.Metadata,
+			&i.IssuedDate,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const unresolvedDirectivesForTarget = `-- name: UnresolvedDirectivesForTarget :many
 SELECT id, source, target, priority, acknowledged_at, acknowledged_by, resolved_at, resolution_report_id, content, metadata, issued_date, created_at FROM directives
 WHERE target = $1 AND acknowledged_at IS NOT NULL AND resolved_at IS NULL
@@ -9838,6 +9968,46 @@ ORDER BY issued_date DESC, created_at DESC
 
 func (q *Queries) UnresolvedDirectivesForTarget(ctx context.Context, target string) ([]Directive, error) {
 	rows, err := q.db.Query(ctx, unresolvedDirectivesForTarget, target)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Directive{}
+	for rows.Next() {
+		var i Directive
+		if err := rows.Scan(
+			&i.ID,
+			&i.Source,
+			&i.Target,
+			&i.Priority,
+			&i.AcknowledgedAt,
+			&i.AcknowledgedBy,
+			&i.ResolvedAt,
+			&i.ResolutionReportID,
+			&i.Content,
+			&i.Metadata,
+			&i.IssuedDate,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const unresolvedIssuedBySource = `-- name: UnresolvedIssuedBySource :many
+SELECT id, source, target, priority, acknowledged_at, acknowledged_by, resolved_at, resolution_report_id, content, metadata, issued_date, created_at FROM directives
+WHERE source = $1 AND acknowledged_at IS NOT NULL AND resolved_at IS NULL
+ORDER BY issued_date DESC, created_at DESC
+`
+
+// Directives the caller issued that are acknowledged but not yet resolved.
+func (q *Queries) UnresolvedIssuedBySource(ctx context.Context, source string) ([]Directive, error) {
+	rows, err := q.db.Query(ctx, unresolvedIssuedBySource, source)
 	if err != nil {
 		return nil, err
 	}
@@ -10252,7 +10422,7 @@ func (q *Queries) UpdateItemStatus(ctx context.Context, arg UpdateItemStatusPara
 	return i, err
 }
 
-const updateItemStatusByTask = `-- name: UpdateItemStatusByTask :exec
+const updateItemStatusByTask = `-- name: UpdateItemStatusByTask :execrows
 UPDATE daily_plan_items
 SET status = $1, updated_at = now()
 WHERE task_id = $2 AND plan_date = $3
@@ -10266,9 +10436,13 @@ type UpdateItemStatusByTaskParams struct {
 
 // Update the status of a daily plan item by task_id and date.
 // Used when advance_work completes a task to auto-update today's plan item.
-func (q *Queries) UpdateItemStatusByTask(ctx context.Context, arg UpdateItemStatusByTaskParams) error {
-	_, err := q.db.Exec(ctx, updateItemStatusByTask, arg.Status, arg.TaskID, arg.PlanDate)
-	return err
+// Returns rows affected so caller can distinguish "updated" from "no matching item".
+func (q *Queries) UpdateItemStatusByTask(ctx context.Context, arg UpdateItemStatusByTaskParams) (int64, error) {
+	result, err := q.db.Exec(ctx, updateItemStatusByTask, arg.Status, arg.TaskID, arg.PlanDate)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const updateNoteEmbedding = `-- name: UpdateNoteEmbedding :exec

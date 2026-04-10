@@ -13,10 +13,11 @@ import (
 )
 
 // normalizePriority maps shorthand priority values to the DB enum.
-// Accepts: high/medium/low (direct), p1/p2/p3 (shorthand), h/m/l (abbreviation).
+// Accepts: high/medium/low (direct), p0/p1/p2/p3 (shorthand), h/m/l (abbreviation),
+// and common synonyms (critical, urgent).
 func normalizePriority(s string) string {
 	switch s {
-	case "high", "p1", "h":
+	case "high", "p0", "p1", "h", "critical", "urgent":
 		return "high"
 	case "medium", "p2", "m":
 		return "medium"
@@ -160,8 +161,8 @@ func (s *Server) advanceComplete(ctx context.Context, taskID uuid.UUID) (*mcp.Ca
 
 	// Side effect: update today's daily_plan_item if exists.
 	today := s.today()
-	if completeErr := txDayplan.CompleteByTask(ctx, taskID, today); completeErr == nil {
-		out.PlanItemUpdated = true
+	if updated, completeErr := txDayplan.CompleteByTask(ctx, taskID, today); completeErr == nil {
+		out.PlanItemUpdated = updated
 	}
 
 	// Side effect: handle recurring task.
@@ -240,6 +241,15 @@ func (s *Server) planDay(ctx context.Context, _ *mcp.CallToolRequest, input Plan
 		taskID, err := uuid.Parse(item.TaskID)
 		if err != nil {
 			return nil, PlanDayOutput{}, fmt.Errorf("invalid task_id at position %d: %w", i, err)
+		}
+
+		// Validate task exists and is plannable (not inbox — must be clarified first).
+		t, tErr := s.tasks.TaskByID(ctx, taskID)
+		if tErr != nil {
+			return nil, PlanDayOutput{}, fmt.Errorf("task %s not found: %w", item.TaskID, tErr)
+		}
+		if t.Status == task.StatusInbox {
+			return nil, PlanDayOutput{}, fmt.Errorf("task %s is in inbox status — clarify before planning", item.TaskID)
 		}
 
 		pos := item.Position

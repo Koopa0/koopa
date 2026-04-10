@@ -67,12 +67,17 @@ func (s *Store) UpdateStatus(ctx context.Context, id uuid.UUID, status Status) e
 }
 
 // CompleteByTask marks the daily plan item for a task on a given date as done.
-func (s *Store) CompleteByTask(ctx context.Context, taskID uuid.UUID, date time.Time) error {
-	return s.q.UpdateItemStatusByTask(ctx, db.UpdateItemStatusByTaskParams{
+// Returns true if a matching plan item was found and updated.
+func (s *Store) CompleteByTask(ctx context.Context, taskID uuid.UUID, date time.Time) (bool, error) {
+	n, err := s.q.UpdateItemStatusByTask(ctx, db.UpdateItemStatusByTaskParams{
 		TaskID:   taskID,
 		PlanDate: date,
 		Status:   string(StatusDone),
 	})
+	if err != nil {
+		return false, fmt.Errorf("completing daily plan item by task: %w", err)
+	}
+	return n > 0, nil
 }
 
 // Upsert inserts or updates a daily plan item (upsert on plan_date + task_id).

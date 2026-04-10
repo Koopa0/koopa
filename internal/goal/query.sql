@@ -42,6 +42,19 @@ LEFT JOIN areas a ON a.id = g.area_id
 WHERE g.status = 'in-progress'
 ORDER BY g.deadline NULLS LAST, g.created_at;
 
+-- name: GoalsByOptionalStatus :many
+-- Goals filtered by optional status, with milestone counts.
+-- Pass NULL to return all statuses.
+SELECT g.id, g.title, g.description, g.status, g.area_id, g.quarter, g.deadline,
+       g.created_at, g.updated_at,
+       COALESCE(a.name, '') AS area_name,
+       (SELECT count(*) FROM milestones m WHERE m.goal_id = g.id) AS milestone_total,
+       (SELECT count(*) FROM milestones m WHERE m.goal_id = g.id AND m.completed_at IS NOT NULL) AS milestone_done
+FROM goals g
+LEFT JOIN areas a ON a.id = g.area_id
+WHERE (sqlc.narg('status')::text IS NULL OR g.status::text = sqlc.narg('status'))
+ORDER BY g.deadline NULLS LAST, g.created_at;
+
 -- name: CreateMilestone :one
 INSERT INTO milestones (goal_id, title, description, target_deadline)
 VALUES (@goal_id, @title, @description, @target_deadline)
