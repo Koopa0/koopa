@@ -22,12 +22,22 @@ export class ApiService {
     return `${this.baseUrl}${path}`;
   }
 
-  get<T>(path: string, params?: Record<string, string | number>): Observable<ApiResponse<T>> {
-    return this.http.get<ApiResponse<T>>(this.url(path), { params: this.buildParams(params) });
+  get<T>(
+    path: string,
+    params?: Record<string, string | number>,
+  ): Observable<ApiResponse<T>> {
+    return this.http.get<ApiResponse<T>>(this.url(path), {
+      params: this.buildParams(params),
+    });
   }
 
-  getList<T>(path: string, params?: Record<string, string | number>): Observable<ApiListResponse<T>> {
-    return this.http.get<ApiListResponse<T>>(this.url(path), { params: this.buildParams(params) });
+  getList<T>(
+    path: string,
+    params?: Record<string, string | number>,
+  ): Observable<ApiListResponse<T>> {
+    return this.http.get<ApiListResponse<T>>(this.url(path), {
+      params: this.buildParams(params),
+    });
   }
 
   private buildParams(params?: Record<string, string | number>): HttpParams {
@@ -54,33 +64,67 @@ export class ApiService {
     return this.http.delete<void>(this.url(path));
   }
 
-  /** Get single item, auto-unwraps { data: T } */
-  getData<T>(path: string, params?: Record<string, string | number>): Observable<T> {
-    return this.get<T>(path, params).pipe(map((res) => res.data));
+  /**
+   * Get single item. Auto-unwraps { data: T } when present, otherwise returns
+   * the raw body. Public endpoints (content/handler.go) use api.Response{Data:}
+   * wrapping; admin endpoints (internal/admin/*) encode structs directly. This
+   * smart-unwrap lets one service method handle both contracts without
+   * duplicating 16 admin services.
+   */
+  getData<T>(
+    path: string,
+    params?: Record<string, string | number>,
+  ): Observable<T> {
+    return this.http
+      .get<
+        T | ApiResponse<T>
+      >(this.url(path), { params: this.buildParams(params) })
+      .pipe(map((res) => this.unwrap<T>(res)));
+  }
+
+  private unwrap<T>(res: T | ApiResponse<T>): T {
+    if (
+      res !== null &&
+      typeof res === 'object' &&
+      'data' in (res as object) &&
+      (res as ApiResponse<T>).data !== undefined
+    ) {
+      return (res as ApiResponse<T>).data;
+    }
+    return res as T;
   }
 
   /** Get list data, returns { data, meta } */
-  getListData<T>(path: string, params?: Record<string, string | number>): Observable<ApiListResponse<T>> {
+  getListData<T>(
+    path: string,
+    params?: Record<string, string | number>,
+  ): Observable<ApiListResponse<T>> {
     return this.getList<T>(path, params);
   }
 
-  /** POST and unwrap { data: T } */
+  /** POST and smart-unwrap { data: T } when present. */
   postData<T>(path: string, body: unknown): Observable<T> {
-    return this.post<T>(path, body).pipe(map((res) => res.data));
+    return this.http
+      .post<T | ApiResponse<T>>(this.url(path), body)
+      .pipe(map((res) => this.unwrap<T>(res)));
   }
 
   patch<T>(path: string, body: unknown): Observable<ApiResponse<T>> {
     return this.http.patch<ApiResponse<T>>(this.url(path), body);
   }
 
-  /** PATCH and unwrap { data: T } */
+  /** PATCH and smart-unwrap { data: T } when present. */
   patchData<T>(path: string, body: unknown): Observable<T> {
-    return this.patch<T>(path, body).pipe(map((res) => res.data));
+    return this.http
+      .patch<T | ApiResponse<T>>(this.url(path), body)
+      .pipe(map((res) => this.unwrap<T>(res)));
   }
 
-  /** PUT and unwrap { data: T } */
+  /** PUT and smart-unwrap { data: T } when present. */
   putData<T>(path: string, body: unknown): Observable<T> {
-    return this.put<T>(path, body).pipe(map((res) => res.data));
+    return this.http
+      .put<T | ApiResponse<T>>(this.url(path), body)
+      .pipe(map((res) => this.unwrap<T>(res)));
   }
 
   /** POST for endpoints returning 204 with no body */
@@ -88,10 +132,10 @@ export class ApiService {
     return this.http.post(this.url(path), body).pipe(map(() => undefined));
   }
 
-  /** POST multipart/form-data upload, unwrap { data: T } */
+  /** POST multipart/form-data upload, smart-unwrap { data: T } when present. */
   uploadData<T>(path: string, formData: FormData): Observable<T> {
     return this.http
-      .post<ApiResponse<T>>(this.url(path), formData)
-      .pipe(map((res) => res.data));
+      .post<T | ApiResponse<T>>(this.url(path), formData)
+      .pipe(map((res) => this.unwrap<T>(res)));
   }
 }
