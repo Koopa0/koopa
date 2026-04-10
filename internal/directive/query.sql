@@ -27,6 +27,18 @@ SELECT * FROM directives
 WHERE target = @target AND acknowledged_at IS NOT NULL AND resolved_at IS NULL
 ORDER BY issued_date DESC, created_at DESC;
 
+-- name: UnackedIssuedBySource :many
+-- Directives the caller issued that the target has not acknowledged yet.
+SELECT * FROM directives
+WHERE source = @source AND acknowledged_at IS NULL
+ORDER BY issued_date DESC, created_at DESC;
+
+-- name: UnresolvedIssuedBySource :many
+-- Directives the caller issued that are acknowledged but not yet resolved.
+SELECT * FROM directives
+WHERE source = @source AND acknowledged_at IS NOT NULL AND resolved_at IS NULL
+ORDER BY issued_date DESC, created_at DESC;
+
 -- name: ResolveDirective :one
 UPDATE directives
 SET resolved_at = now(), resolution_report_id = @resolution_report_id

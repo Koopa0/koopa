@@ -30,17 +30,17 @@ type MorningContextInput struct {
 
 // MorningContextOutput is the output of the morning_context tool.
 type MorningContextOutput struct {
-	Date                 string                   `json:"date"`
-	OverdueTasks         []task.PendingTaskDetail `json:"overdue_tasks"`
-	TodayTasks           []task.PendingTaskDetail `json:"today_tasks"`
-	CommittedTasks       []daily.Item             `json:"committed_tasks"`
-	UpcomingTasks        []task.PendingTaskDetail `json:"upcoming_tasks"`
-	ActiveGoals          []goal.ActiveGoalSummary `json:"active_goals"`
-	UnackedDirectives    []directive.Directive    `json:"unacked_directives"`
-	UnresolvedDirectives []directive.Directive    `json:"unresolved_directives"`
-	UnverifiedInsights   []insight.Insight        `json:"unverified_insights"`
-	RSSHighlights        []RSSHighlight           `json:"rss_highlights"`
-	PlanHistory          []journal.Entry          `json:"plan_history"`
+	Date               string                   `json:"date"`
+	OverdueTasks       []task.PendingTaskDetail `json:"overdue_tasks"`
+	TodayTasks         []task.PendingTaskDetail `json:"today_tasks"`
+	CommittedTasks     []daily.Item             `json:"committed_tasks"`
+	UpcomingTasks      []task.PendingTaskDetail `json:"upcoming_tasks"`
+	ActiveGoals        []goal.ActiveGoalSummary `json:"active_goals"`
+	DirectivesReceived []directive.Directive    `json:"directives_received"`
+	DirectivesIssued   []directive.Directive    `json:"directives_issued"`
+	UnverifiedInsights []insight.Insight        `json:"unverified_insights"`
+	RSSHighlights      []RSSHighlight           `json:"rss_highlights"`
+	PlanHistory        []journal.Entry          `json:"plan_history"`
 }
 
 // RSSHighlight is a recent high-priority RSS item.
@@ -168,15 +168,29 @@ func (s *Server) fillGoals(ctx context.Context, out *MorningContextOutput) {
 
 func (s *Server) fillDirectives(ctx context.Context, out *MorningContextOutput) {
 	caller := s.callerIdentity(ctx)
+
+	// Received: directives targeting the caller (unacked + unresolved).
 	if dirs, err := s.directives.UnackedForTarget(ctx, caller); err == nil {
-		out.UnackedDirectives = dirs
+		out.DirectivesReceived = append(out.DirectivesReceived, dirs...)
 	} else {
-		s.logger.Warn("morning_context: unacked directives", "error", err)
+		s.logger.Warn("morning_context: unacked directives received", "error", err)
 	}
 	if dirs, err := s.directives.UnresolvedForTarget(ctx, caller); err == nil {
-		out.UnresolvedDirectives = dirs
+		out.DirectivesReceived = append(out.DirectivesReceived, dirs...)
 	} else {
-		s.logger.Warn("morning_context: unresolved directives", "error", err)
+		s.logger.Warn("morning_context: unresolved directives received", "error", err)
+	}
+
+	// Issued: directives the caller sent that are still open.
+	if dirs, err := s.directives.UnackedIssuedBySource(ctx, caller); err == nil {
+		out.DirectivesIssued = append(out.DirectivesIssued, dirs...)
+	} else {
+		s.logger.Warn("morning_context: unacked directives issued", "error", err)
+	}
+	if dirs, err := s.directives.UnresolvedIssuedBySource(ctx, caller); err == nil {
+		out.DirectivesIssued = append(out.DirectivesIssued, dirs...)
+	} else {
+		s.logger.Warn("morning_context: unresolved directives issued", "error", err)
 	}
 }
 

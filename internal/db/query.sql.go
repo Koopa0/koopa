@@ -9830,6 +9830,46 @@ func (q *Queries) UnackedDirectivesForTarget(ctx context.Context, target string)
 	return items, nil
 }
 
+const unackedIssuedBySource = `-- name: UnackedIssuedBySource :many
+SELECT id, source, target, priority, acknowledged_at, acknowledged_by, resolved_at, resolution_report_id, content, metadata, issued_date, created_at FROM directives
+WHERE source = $1 AND acknowledged_at IS NULL
+ORDER BY issued_date DESC, created_at DESC
+`
+
+// Directives the caller issued that the target has not acknowledged yet.
+func (q *Queries) UnackedIssuedBySource(ctx context.Context, source string) ([]Directive, error) {
+	rows, err := q.db.Query(ctx, unackedIssuedBySource, source)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Directive{}
+	for rows.Next() {
+		var i Directive
+		if err := rows.Scan(
+			&i.ID,
+			&i.Source,
+			&i.Target,
+			&i.Priority,
+			&i.AcknowledgedAt,
+			&i.AcknowledgedBy,
+			&i.ResolvedAt,
+			&i.ResolutionReportID,
+			&i.Content,
+			&i.Metadata,
+			&i.IssuedDate,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const unresolvedDirectivesForTarget = `-- name: UnresolvedDirectivesForTarget :many
 SELECT id, source, target, priority, acknowledged_at, acknowledged_by, resolved_at, resolution_report_id, content, metadata, issued_date, created_at FROM directives
 WHERE target = $1 AND acknowledged_at IS NOT NULL AND resolved_at IS NULL
@@ -9838,6 +9878,46 @@ ORDER BY issued_date DESC, created_at DESC
 
 func (q *Queries) UnresolvedDirectivesForTarget(ctx context.Context, target string) ([]Directive, error) {
 	rows, err := q.db.Query(ctx, unresolvedDirectivesForTarget, target)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Directive{}
+	for rows.Next() {
+		var i Directive
+		if err := rows.Scan(
+			&i.ID,
+			&i.Source,
+			&i.Target,
+			&i.Priority,
+			&i.AcknowledgedAt,
+			&i.AcknowledgedBy,
+			&i.ResolvedAt,
+			&i.ResolutionReportID,
+			&i.Content,
+			&i.Metadata,
+			&i.IssuedDate,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const unresolvedIssuedBySource = `-- name: UnresolvedIssuedBySource :many
+SELECT id, source, target, priority, acknowledged_at, acknowledged_by, resolved_at, resolution_report_id, content, metadata, issued_date, created_at FROM directives
+WHERE source = $1 AND acknowledged_at IS NOT NULL AND resolved_at IS NULL
+ORDER BY issued_date DESC, created_at DESC
+`
+
+// Directives the caller issued that are acknowledged but not yet resolved.
+func (q *Queries) UnresolvedIssuedBySource(ctx context.Context, source string) ([]Directive, error) {
+	rows, err := q.db.Query(ctx, unresolvedIssuedBySource, source)
 	if err != nil {
 		return nil, err
 	}
