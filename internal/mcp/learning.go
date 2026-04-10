@@ -423,84 +423,21 @@ type LearningDashboardOutput struct {
 	Variations []learning.ItemRelation    `json:"variations,omitempty"`
 }
 
-// MasteryStage is a presentation-layer summary of a concept's observation
-// history. It lives in the mcp package (not learning) because it is a
-// dashboard formatting decision, not a domain invariant — the heuristic can
-// evolve without touching storage.
-type MasteryStage string
-
-// Mastery stages, roughly ordered from least to most proficient. The
-// heuristic in deriveMasteryStage decides which one applies.
-const (
-	StageStruggling MasteryStage = "struggling" // weakness dominates with enough observations to trust the signal
-	StageDeveloping MasteryStage = "developing" // mixed signal, OR insufficient observations to label
-	StageSolid      MasteryStage = "solid"      // mastery dominates with enough observations to trust the signal
-)
-
-// minObservationsForVerdict is the floor below which a concept always
-// reports "developing" regardless of signal mix. Without it, a single
-// observation could permanently label a concept (1 weakness → struggling
-// forever, 1 mastery → solid forever) which destroys the signal.
-//
-// Three is the smallest number that lets the 2:1 ratio rules below ever
-// fire — and it matches the audit's intuition that "two data points is
-// noise, three is the start of a pattern."
-const minObservationsForVerdict = 3
-
-// MasteryRow is the dashboard representation of a concept's mastery state —
+// MasteryRow is the MCP dashboard representation of a concept's mastery state —
 // the raw signal counts from the learning store plus a derived stage.
 type MasteryRow struct {
-	ID                uuid.UUID    `json:"id"`
-	Slug              string       `json:"slug"`
-	Name              string       `json:"name"`
-	Domain            string       `json:"domain"`
-	Kind              string       `json:"kind"`
-	WeaknessCount     int64        `json:"weakness_count"`
-	ImprovementCount  int64        `json:"improvement_count"`
-	MasteryCount      int64        `json:"mastery_count"`
-	TotalObservations int64        `json:"total_observations"`
-	Stage             MasteryStage `json:"stage"`
-	FirstObservedAt   time.Time    `json:"first_observed_at"`
-	LastObservedAt    time.Time    `json:"last_observed_at"`
-}
-
-// deriveMasteryStage applies the mastery-stage heuristic to filtered signal
-// counts within the dashboard window.
-//
-// Rules, in priority order:
-//  1. fewer than minObservationsForVerdict (3) total observations →
-//     developing. The single most important rule. It prevents one stray
-//     observation from permanently labelling a concept.
-//  2. mastery >= 2 AND mastery >= 2 * weakness → solid. Needs both
-//     absolute count (≥2 mastery) and dominance ratio (mastery double
-//     weakness). A single mastery against zero weakness is technically
-//     a 2:1 ratio but is still 1 observation against 0, so the absolute
-//     floor catches it.
-//  3. weakness >= 2 AND weakness > mastery → struggling. Same idea
-//     mirrored: need at least 2 weakness signals AND weakness must
-//     outnumber mastery (not just tie).
-//  4. anything else → developing. Includes mixed signal (4M+3W → 4
-//     mastery is not double 3 weakness, 3 weakness is not greater than 4
-//     mastery, so neither solid nor struggling fires) and improvement-led
-//     progressions (a concept with all improvements lands here too).
-//
-// CRITICAL: the (weakness, improvement, mastery) counts MUST be those
-// returned by ConceptMastery under the SAME confidence_filter as the
-// dashboard request. Looking at unfiltered totals would let a low-confidence
-// observation "unlock" a stage from below the floor — re-creating the
-// half-gate the confidence column was designed to remove.
-func deriveMasteryStage(weakness, improvement, mastery int64) MasteryStage {
-	total := weakness + improvement + mastery
-	switch {
-	case total < minObservationsForVerdict:
-		return StageDeveloping
-	case mastery >= 2 && mastery >= 2*weakness:
-		return StageSolid
-	case weakness >= 2 && weakness > mastery:
-		return StageStruggling
-	default:
-		return StageDeveloping
-	}
+	ID                uuid.UUID             `json:"id"`
+	Slug              string                `json:"slug"`
+	Name              string                `json:"name"`
+	Domain            string                `json:"domain"`
+	Kind              string                `json:"kind"`
+	WeaknessCount     int64                 `json:"weakness_count"`
+	ImprovementCount  int64                 `json:"improvement_count"`
+	MasteryCount      int64                 `json:"mastery_count"`
+	TotalObservations int64                 `json:"total_observations"`
+	Stage             learning.MasteryStage `json:"stage"`
+	FirstObservedAt   time.Time             `json:"first_observed_at"`
+	LastObservedAt    time.Time             `json:"last_observed_at"`
 }
 
 // toMasteryRows converts learning.ConceptMasteryRow slice (raw counts) to
@@ -519,7 +456,7 @@ func toMasteryRows(rows []learning.ConceptMasteryRow) []MasteryRow {
 			ImprovementCount:  r.ImprovementCount,
 			MasteryCount:      r.MasteryCount,
 			TotalObservations: r.TotalObservations,
-			Stage:             deriveMasteryStage(r.WeaknessCount, r.ImprovementCount, r.MasteryCount),
+			Stage:             learning.DeriveMasteryStage(r.WeaknessCount, r.ImprovementCount, r.MasteryCount),
 			FirstObservedAt:   r.FirstObservedAt,
 			LastObservedAt:    r.LastObservedAt,
 		}
