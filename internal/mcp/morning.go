@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -13,6 +14,11 @@ import (
 	"github.com/Koopa0/koopa0.dev/internal/journal"
 	"github.com/Koopa0/koopa0.dev/internal/task"
 )
+
+// sectionTimeout is the per-section timeout for morning_context queries.
+// Individual sections that exceed this timeout are skipped with a warning,
+// rather than causing the entire morning_context call to fail.
+const sectionTimeout = 15 * time.Second
 
 // --- morning_context ---
 
@@ -66,24 +72,53 @@ func (s *Server) fillMorningSections(ctx context.Context, date time.Time, reques
 	for _, sec := range requested {
 		has[sec] = true
 	}
+
+	// Each section writes to disjoint fields in out, so no mutex needed.
+	// Per-section timeout prevents one slow query from blocking the rest.
+	var wg sync.WaitGroup
 	if all || has["tasks"] {
-		s.fillMorningTasks(ctx, date, out)
+		wg.Go(func() {
+			secCtx, cancel := context.WithTimeout(ctx, sectionTimeout)
+			defer cancel()
+			s.fillMorningTasks(secCtx, date, out)
+		})
 	}
 	if all || has["goals"] {
-		s.fillGoals(ctx, out)
+		wg.Go(func() {
+			secCtx, cancel := context.WithTimeout(ctx, sectionTimeout)
+			defer cancel()
+			s.fillGoals(secCtx, out)
+		})
 	}
 	if all || has["directives"] {
-		s.fillDirectives(ctx, out)
+		wg.Go(func() {
+			secCtx, cancel := context.WithTimeout(ctx, sectionTimeout)
+			defer cancel()
+			s.fillDirectives(secCtx, out)
+		})
 	}
 	if all || has["insights"] {
-		s.fillInsights(ctx, out)
+		wg.Go(func() {
+			secCtx, cancel := context.WithTimeout(ctx, sectionTimeout)
+			defer cancel()
+			s.fillInsights(secCtx, out)
+		})
 	}
 	if all || has["rss"] {
-		s.fillRSSHighlights(ctx, date, out)
+		wg.Go(func() {
+			secCtx, cancel := context.WithTimeout(ctx, sectionTimeout)
+			defer cancel()
+			s.fillRSSHighlights(secCtx, date, out)
+		})
 	}
 	if all || has["plan_history"] {
-		s.fillPlanHistory(ctx, date, out)
+		wg.Go(func() {
+			secCtx, cancel := context.WithTimeout(ctx, sectionTimeout)
+			defer cancel()
+			s.fillPlanHistory(secCtx, date, out)
+		})
 	}
+	wg.Wait()
 }
 
 func (s *Server) fillMorningTasks(ctx context.Context, date time.Time, out *MorningContextOutput) {
