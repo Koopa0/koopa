@@ -243,5 +243,7 @@ func planItemToTaskDetail(item *daily.Item) task.PendingTaskDetail {
 		Assignee:     item.TaskAssignee,
 		ProjectTitle: item.ProjectTitle,
 		ProjectSlug:  item.ProjectSlug,
+		CreatedAt:    item.CreatedAt,
+		UpdatedAt:    item.UpdatedAt,
 	}
 }

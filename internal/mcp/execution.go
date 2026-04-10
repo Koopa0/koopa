@@ -13,10 +13,11 @@ import (
 )
 
 // normalizePriority maps shorthand priority values to the DB enum.
-// Accepts: high/medium/low (direct), p1/p2/p3 (shorthand), h/m/l (abbreviation).
+// Accepts: high/medium/low (direct), p0/p1/p2/p3 (shorthand), h/m/l (abbreviation),
+// and common synonyms (critical, urgent).
 func normalizePriority(s string) string {
 	switch s {
-	case "high", "p1", "h":
+	case "high", "p0", "p1", "h", "critical", "urgent":
 		return "high"
 	case "medium", "p2", "m":
 		return "medium"
