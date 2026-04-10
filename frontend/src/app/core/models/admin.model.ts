@@ -336,41 +336,24 @@ export interface ContentPipelineItem {
 export interface LearningDashboard {
   due_reviews_count: number;
   due_reviews_today: number;
-  recent_sessions: ApiSessionRow[];
+  recent_sessions: SessionSummary[];
   weakness_spotlight: ConceptWeakness[];
-  mastery_by_domain: ApiConceptMasteryRow[];
+  mastery_by_domain: DomainMastery[];
   streak: LearningStreak;
 }
 
-// Actual shape returned by GET /api/admin/learn/dashboard recent_sessions.
-// Backend sends learning.Session (no attempt aggregation).
-export interface ApiSessionRow {
+export interface SessionSummary {
   id: string;
   domain: string;
   mode: string;
   started_at: string;
   ended_at: string | null;
-  created_at: string;
+  duration_minutes: number;
+  attempts_count: number;
+  solved_count: number;
 }
 
-// Actual shape returned by GET /api/admin/learn/dashboard mastery_by_domain.
-// Backend sends learning.ConceptMasteryRow (per-concept, not per-domain).
-export interface ApiConceptMasteryRow {
-  id: string;
-  slug: string;
-  name: string;
-  domain: string;
-  kind: string;
-  weakness_count: number;
-  improvement_count: number;
-  mastery_count: number;
-  total_observations: number;
-  first_observed_at: string;
-  last_observed_at: string;
-}
-
-// Frontend-derived aggregation of ApiConceptMasteryRow, grouped by domain.
-export interface DomainMasteryView {
+export interface DomainMastery {
   domain: string;
   concepts_total: number;
   concepts_mastered: number;
@@ -461,7 +444,7 @@ export interface DailyReflectionContext {
   date: string;
   plan_vs_actual: PlanVsActual;
   completed_tasks: CompletedTask[];
-  learning_sessions: ApiSessionRow[];
+  learning_sessions: SessionSummary[];
   content_changes: ContentChange[];
   commits_count: number;
   inbox_delta: InboxDelta;

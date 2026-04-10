@@ -10,10 +10,7 @@ import { LucideAngularModule, Clock, ChevronRight } from 'lucide-angular';
 import { catchError, map, of, startWith } from 'rxjs';
 import { LearnService } from '../../core/services/learn.service';
 import { NotificationService } from '../../core/services/notification.service';
-import type {
-  LearningDashboard,
-  ApiSessionRow,
-} from '../../core/models/admin.model';
+import type { LearningDashboard } from '../../core/models/admin.model';
 
 interface DashboardState {
   data: LearningDashboard | null;
@@ -63,17 +60,5 @@ export class SessionHistoryComponent {
       this.DOMAIN_COLORS[domain] ??
       'bg-zinc-800/40 text-zinc-400 border-zinc-700/50'
     );
-  }
-
-  protected getDurationLabel(session: ApiSessionRow): string {
-    if (!session.ended_at) return 'in progress';
-    const ms =
-      new Date(session.ended_at).getTime() -
-      new Date(session.started_at).getTime();
-    const mins = Math.round(ms / 60_000);
-    if (mins < 60) return `${mins} minutes`;
-    const h = Math.floor(mins / 60);
-    const m = mins % 60;
-    return m > 0 ? `${h}h ${m}m` : `${h}h`;
   }
 }

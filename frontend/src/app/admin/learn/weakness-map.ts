@@ -19,12 +19,10 @@ import {
 import { catchError, map, of, startWith } from 'rxjs';
 import { LearnService } from '../../core/services/learn.service';
 import { NotificationService } from '../../core/services/notification.service';
-import { deriveMasteryStage } from './mastery-stage';
 import type {
   LearningDashboard,
   ConceptWeakness,
-  DomainMasteryView,
-  ApiSessionRow,
+  DomainMastery,
 } from '../../core/models/admin.model';
 
 interface DashboardState {
@@ -66,35 +64,9 @@ export class WeaknessMapComponent {
     return all.filter((w) => w.domain === domain);
   });
 
-  protected readonly masteryByDomain = computed<DomainMasteryView[]>(() => {
-    const rows = this.state().data?.mastery_by_domain ?? [];
-    const byDomain = new Map<string, DomainMasteryView>();
-    for (const r of rows) {
-      let agg = byDomain.get(r.domain);
-      if (!agg) {
-        agg = {
-          domain: r.domain,
-          concepts_total: 0,
-          concepts_mastered: 0,
-          concepts_weak: 0,
-          concepts_developing: 0,
-        };
-        byDomain.set(r.domain, agg);
-      }
-      agg.concepts_total++;
-      const stage = deriveMasteryStage(
-        r.weakness_count,
-        r.improvement_count,
-        r.mastery_count,
-      );
-      if (stage === 'solid') agg.concepts_mastered++;
-      else if (stage === 'struggling') agg.concepts_weak++;
-      else agg.concepts_developing++;
-    }
-    return Array.from(byDomain.values()).sort((a, b) =>
-      a.domain.localeCompare(b.domain),
-    );
-  });
+  protected readonly masteryByDomain = computed(
+    () => this.state().data?.mastery_by_domain ?? [],
+  );
 
   protected readonly dueReviewsCount = computed(
     () => this.state().data?.due_reviews_count ?? 0,
@@ -132,7 +104,7 @@ export class WeaknessMapComponent {
     this.selectedDomain.set(domain);
   }
 
-  protected getMasteryPercent(domain: DomainMasteryView): number {
+  protected getMasteryPercent(domain: DomainMastery): number {
     if (domain.concepts_total === 0) return 0;
     return Math.round((domain.concepts_mastered / domain.concepts_total) * 100);
   }
@@ -156,17 +128,5 @@ export class WeaknessMapComponent {
     if (days === 0) return 'Today';
     if (days === 1) return 'Yesterday';
     return `${days}d ago`;
-  }
-
-  protected getDurationLabel(session: ApiSessionRow): string {
-    if (!session.ended_at) return 'in progress';
-    const ms =
-      new Date(session.ended_at).getTime() -
-      new Date(session.started_at).getTime();
-    const mins = Math.round(ms / 60_000);
-    if (mins < 60) return `${mins}min`;
-    const h = Math.floor(mins / 60);
-    const m = mins % 60;
-    return m > 0 ? `${h}h ${m}m` : `${h}h`;
   }
 }

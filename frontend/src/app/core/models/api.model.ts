@@ -318,7 +318,7 @@ export interface ApiFeed {
   url: string;
   name: string;
   schedule: FeedSchedule;
-  topics: string[] | null;
+  topics: string[];
   enabled: boolean;
   etag: string;
   last_modified: string;

@@ -40,8 +40,12 @@
           {{ session.domain }}
         </span>
         <div>
-          <p class="text-sm text-zinc-300">{{ session.mode }}</p>
-          <p class="text-xs text-zinc-600">{{ getDurationLabel(session) }}</p>
+          <p class="text-sm text-zinc-300">
+            {{ session.solved_count }}/{{ session.attempts_count }} solved
+          </p>
+          <p class="text-xs text-zinc-600">
+            {{ session.duration_minutes }} minutes
+          </p>
         </div>
       </div>
       <span class="text-xs text-zinc-600"
