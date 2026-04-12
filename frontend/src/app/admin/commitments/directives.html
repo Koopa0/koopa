@@ -145,7 +145,7 @@
             <!-- Content preview (markdown, clamped) -->
             <!-- SECURITY_REVIEW: sanitized by MarkdownService + DOMPurify -->
             <div
-              class="prose prose-sm prose-invert max-w-none line-clamp-3 text-sm text-zinc-300"
+              class="prose prose-compact line-clamp-3"
               [innerHTML]="renderDirective(directive.id)"
             ></div>
 
@@ -199,7 +199,7 @@
         </div>
         <!-- SECURITY_REVIEW: sanitized by MarkdownService + DOMPurify -->
         <div
-          class="prose prose-sm prose-invert max-w-none line-clamp-3 text-sm text-zinc-300"
+          class="prose prose-compact line-clamp-3"
           [innerHTML]="renderReport(report.id)"
         ></div>
       </button>
@@ -298,7 +298,7 @@
       >
       <!-- SECURITY_REVIEW: sanitized by MarkdownService + DOMPurify -->
       <div
-        class="prose prose-sm prose-invert max-w-none text-sm leading-relaxed text-zinc-200"
+        class="prose prose-compact"
         [innerHTML]="renderDirective(d.id)"
       ></div>
     </div>
@@ -324,7 +324,7 @@
           </div>
           <!-- SECURITY_REVIEW: sanitized by MarkdownService + DOMPurify -->
           <div
-            class="prose prose-sm prose-invert max-w-none line-clamp-4 text-sm text-zinc-300"
+            class="prose prose-compact line-clamp-4"
             [innerHTML]="renderReport(report.id)"
           ></div>
         </button>
@@ -393,10 +393,7 @@
         Content
       </span>
       <!-- SECURITY_REVIEW: sanitized by MarkdownService + DOMPurify -->
-      <div
-        class="prose prose-sm prose-invert max-w-none text-sm leading-relaxed text-zinc-200"
-        [innerHTML]="renderReport(r.id)"
-      ></div>
+      <div class="prose prose-compact" [innerHTML]="renderReport(r.id)"></div>
     </div>
 
     <ng-container modal-footer>
