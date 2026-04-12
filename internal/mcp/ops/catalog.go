@@ -258,11 +258,17 @@ func ManageContent() Meta {
 }
 
 // ManageFeeds returns metadata for the RSS feed subscription multiplexer.
+//
+// Writability is Destructive because the tool exposes update (enable/
+// disable) and remove actions, both of which mutate or drop existing
+// rows. Clients that respect DestructiveHint should confirm before
+// dispatching these actions; list and add are overshadowed by the
+// strongest action in the multiplexer.
 func ManageFeeds() Meta {
 	return Meta{
 		Name:        "manage_feeds",
 		Domain:      DomainContent,
-		Writability: Additive,
+		Writability: Destructive,
 		Stability:   StabilityStable,
 		Since:       sinceV2,
 		Description: "Feed management: list, add (url+name), update (enable/disable), remove. Use for RSS feed subscription management.",
