@@ -231,9 +231,9 @@ func (s *Store) OpenDirectives(ctx context.Context) ([]Directive, error) {
 	return result, nil
 }
 
-// ResolvedDirectivesRecent returns recently resolved directives, newest first.
-func (s *Store) ResolvedDirectivesRecent(ctx context.Context, limit int32) ([]Directive, error) {
-	rows, err := s.q.ResolvedDirectivesRecent(ctx, limit)
+// ResolvedDirectivesRecent returns all resolved directives, newest first.
+func (s *Store) ResolvedDirectivesRecent(ctx context.Context) ([]Directive, error) {
+	rows, err := s.q.ResolvedDirectivesRecent(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("querying resolved directives: %w", err)
 	}

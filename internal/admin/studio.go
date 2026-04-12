@@ -8,9 +8,6 @@ import (
 	"github.com/Koopa0/koopa0.dev/internal/directive"
 )
 
-// resolvedDirectivesDefaultLimit caps the resolved directive history slice.
-const resolvedDirectivesDefaultLimit = 20
-
 type directiveSummary struct {
 	ID                 int64   `json:"id"`
 	Content            string  `json:"content"`
@@ -92,7 +89,7 @@ func (h *Handler) StudioOverview(w http.ResponseWriter, r *http.Request) {
 	// Resolved directives (optional history view).
 	if includeResolved {
 		out.ResolvedDirectives = []directiveSummary{}
-		resolved, rErr := h.directives.ResolvedDirectivesRecent(ctx, resolvedDirectivesDefaultLimit)
+		resolved, rErr := h.directives.ResolvedDirectivesRecent(ctx)
 		if rErr != nil {
 			h.logger.Warn("studio: resolved directives", "error", rErr)
 		}
@@ -101,9 +98,9 @@ func (h *Handler) StudioOverview(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Recent reports (last 30 days).
+	// All reports, newest first.
 	since := time.Now().AddDate(0, 0, -30)
-	if reports, err := h.reports.RecentReports(ctx, since, 20); err == nil {
+	if reports, err := h.reports.RecentReports(ctx); err == nil {
 		for i := range reports {
 			rpt := &reports[i]
 			contentExcerpt := rpt.Content

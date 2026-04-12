@@ -7585,18 +7585,11 @@ func (q *Queries) RecentContentsByType(ctx context.Context, arg RecentContentsBy
 const recentReports = `-- name: RecentReports :many
 SELECT id, source, in_response_to, content, metadata, reported_date, created_at
 FROM reports
-WHERE reported_date >= $1
 ORDER BY reported_date DESC, created_at DESC
-LIMIT $2
 `
 
-type RecentReportsParams struct {
-	SinceDate  time.Time `json:"since_date"`
-	MaxResults int32     `json:"max_results"`
-}
-
-func (q *Queries) RecentReports(ctx context.Context, arg RecentReportsParams) ([]Report, error) {
-	rows, err := q.db.Query(ctx, recentReports, arg.SinceDate, arg.MaxResults)
+func (q *Queries) RecentReports(ctx context.Context) ([]Report, error) {
+	rows, err := q.db.Query(ctx, recentReports)
 	if err != nil {
 		return nil, err
 	}
@@ -8114,12 +8107,11 @@ const resolvedDirectivesRecent = `-- name: ResolvedDirectivesRecent :many
 SELECT id, source, target, priority, acknowledged_at, acknowledged_by, resolved_at, resolution_report_id, content, metadata, issued_date, created_at FROM directives
 WHERE resolved_at IS NOT NULL
 ORDER BY resolved_at DESC
-LIMIT $1
 `
 
 // Resolved directives, newest resolution first. For Directive Board history view.
-func (q *Queries) ResolvedDirectivesRecent(ctx context.Context, maxResults int32) ([]Directive, error) {
-	rows, err := q.db.Query(ctx, resolvedDirectivesRecent, maxResults)
+func (q *Queries) ResolvedDirectivesRecent(ctx context.Context) ([]Directive, error) {
+	rows, err := q.db.Query(ctx, resolvedDirectivesRecent)
 	if err != nil {
 		return nil, err
 	}

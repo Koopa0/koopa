@@ -61,8 +61,7 @@ ORDER BY
 -- Resolved directives, newest resolution first. For Directive Board history view.
 SELECT * FROM directives
 WHERE resolved_at IS NOT NULL
-ORDER BY resolved_at DESC
-LIMIT @max_results;
+ORDER BY resolved_at DESC;
 
 -- name: ParticipantsForStudio :many
 -- Participants with directive and report counts for the Directive Board.

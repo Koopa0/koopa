@@ -15,6 +15,4 @@ ORDER BY reported_date DESC, created_at DESC;
 -- name: RecentReports :many
 SELECT id, source, in_response_to, content, metadata, reported_date, created_at
 FROM reports
-WHERE reported_date >= @since_date
-ORDER BY reported_date DESC, created_at DESC
-LIMIT @max_results;
+ORDER BY reported_date DESC, created_at DESC;
