@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"io"
 	"log/slog"
 	"slices"
 	"testing"
@@ -19,7 +20,7 @@ import (
 // invokes NewServer to trigger the real registration path. Tool handlers
 // are never called, so nil stores are safe.
 func TestOpsCatalogDrift(t *testing.T) {
-	s := NewServer(nil, slog.New(slog.NewTextHandler(nopWriter{}, nil)))
+	s := NewServer(nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
 
 	registered := slices.Clone(s.registeredNames)
 	catalog := make([]string, 0, len(ops.All()))
@@ -67,8 +68,3 @@ func TestOpsCatalogMetaFields(t *testing.T) {
 		})
 	}
 }
-
-// nopWriter discards slog output so the test does not pollute stderr.
-type nopWriter struct{}
-
-func (nopWriter) Write(p []byte) (int, error) { return len(p), nil }

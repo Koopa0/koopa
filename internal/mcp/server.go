@@ -74,8 +74,10 @@ type Server struct {
 	recordToolCall func(context.Context, ToolCallRecord)
 
 	// registeredNames records every tool name passed through addTool,
-	// in registration order. Populated during NewServer and consumed by
-	// the drift test that asserts parity with ops.All().
+	// in registration order. It is populated exclusively during NewServer
+	// and read only by TestOpsCatalogDrift, which asserts the sequence
+	// matches ops.All(). The field is not safe to mutate after startup
+	// and exists for drift detection, not runtime introspection.
 	registeredNames []string
 }
 
@@ -152,46 +154,48 @@ func NewServer(pool *pgxpool.Pool, logger *slog.Logger, opts ...ServerOption) *S
 	// loop. A drift test in ops_test.go asserts catalog ↔ registration parity.
 
 	// --- Phase 1: Core Lifecycle ---
-	addTool(s, toolFrom(&ops.MorningContext), s.morningContext)
-	addTool(s, toolFrom(&ops.ReflectionContext), s.reflectionContext)
-	addTool(s, toolFrom(&ops.SearchKnowledge), s.searchKnowledge)
-	addTool(s, toolFrom(&ops.CaptureInbox), s.captureInbox)
-	addTool(s, toolFrom(&ops.AdvanceWork), s.advanceWork)
-	addTool(s, toolFrom(&ops.PlanDay), s.planDay)
-	addTool(s, toolFrom(&ops.WriteJournal), s.writeJournal)
+	addTool(s, toolFrom(ops.MorningContext), s.morningContext)
+	addTool(s, toolFrom(ops.ReflectionContext), s.reflectionContext)
+	addTool(s, toolFrom(ops.SearchKnowledge), s.searchKnowledge)
+	addTool(s, toolFrom(ops.CaptureInbox), s.captureInbox)
+	addTool(s, toolFrom(ops.AdvanceWork), s.advanceWork)
+	addTool(s, toolFrom(ops.PlanDay), s.planDay)
+	addTool(s, toolFrom(ops.WriteJournal), s.writeJournal)
 
 	// --- Phase 2: Intent & IPC ---
-	addTool(s, toolFrom(&ops.ProposeCommitment), s.proposeCommitment)
-	addTool(s, toolFrom(&ops.CommitProposal), s.commitProposal)
-	addTool(s, toolFrom(&ops.GoalProgress), s.goalProgress)
-	addTool(s, toolFrom(&ops.FileReport), s.fileReport)
-	addTool(s, toolFrom(&ops.AcknowledgeDirective), s.acknowledgeDirective)
-	addTool(s, toolFrom(&ops.TrackInsight), s.trackInsight)
+	addTool(s, toolFrom(ops.ProposeCommitment), s.proposeCommitment)
+	addTool(s, toolFrom(ops.CommitProposal), s.commitProposal)
+	addTool(s, toolFrom(ops.GoalProgress), s.goalProgress)
+	addTool(s, toolFrom(ops.FileReport), s.fileReport)
+	addTool(s, toolFrom(ops.AcknowledgeDirective), s.acknowledgeDirective)
+	addTool(s, toolFrom(ops.TrackInsight), s.trackInsight)
 
 	// --- Phase 3: Learning Domain ---
-	addTool(s, toolFrom(&ops.StartSession), s.startSession)
-	addTool(s, toolFrom(&ops.RecordAttempt), s.recordAttempt)
-	addTool(s, toolFrom(&ops.EndSession), s.endSession)
-	addTool(s, toolFrom(&ops.LearningDashboard), s.learningDashboard)
-	addTool(s, toolFrom(&ops.AttemptHistory), s.attemptHistory)
-	addTool(s, toolFrom(&ops.ManagePlan), s.managePlan)
+	addTool(s, toolFrom(ops.StartSession), s.startSession)
+	addTool(s, toolFrom(ops.RecordAttempt), s.recordAttempt)
+	addTool(s, toolFrom(ops.EndSession), s.endSession)
+	addTool(s, toolFrom(ops.LearningDashboard), s.learningDashboard)
+	addTool(s, toolFrom(ops.AttemptHistory), s.attemptHistory)
+	addTool(s, toolFrom(ops.ManagePlan), s.managePlan)
 
 	// --- Phase 4: Content & Feeds ---
-	addTool(s, toolFrom(&ops.ManageContent), s.manageContent)
-	addTool(s, toolFrom(&ops.ManageFeeds), s.manageFeeds)
-	addTool(s, toolFrom(&ops.SystemStatus), s.systemStatus)
+	addTool(s, toolFrom(ops.ManageContent), s.manageContent)
+	addTool(s, toolFrom(ops.ManageFeeds), s.manageFeeds)
+	addTool(s, toolFrom(ops.SystemStatus), s.systemStatus)
 
 	// --- Extra: Cross-session & Aggregation ---
-	addTool(s, toolFrom(&ops.SessionDelta), s.sessionDelta)
-	addTool(s, toolFrom(&ops.WeeklySummary), s.weeklySummary)
+	addTool(s, toolFrom(ops.SessionDelta), s.sessionDelta)
+	addTool(s, toolFrom(ops.WeeklySummary), s.weeklySummary)
 
 	return s
 }
 
-// toolFrom converts an ops.Meta declaration into an MCP tool descriptor.
-// Handler types are bound at the call site by addTool; this helper only
-// carries the static metadata across.
-func toolFrom(m *ops.Meta) *mcp.Tool {
+// toolFrom converts an ops.Meta accessor into an MCP tool descriptor.
+// The accessor is invoked once at registration time; callers pass the
+// function value rather than a struct pointer so the catalog can stay
+// mutation-free without forcing every call site to take an address.
+func toolFrom(metaFn func() ops.Meta) *mcp.Tool {
+	m := metaFn()
 	return &mcp.Tool{
 		Name:        m.Name,
 		Description: m.Description,
@@ -202,6 +206,11 @@ func toolFrom(m *ops.Meta) *mcp.Tool {
 // annotationsFor maps a Writability label to MCP tool annotations.
 // OpenWorldHint is always false for koopa tools: all effects are local
 // to the koopa database, none call unbounded external services.
+//
+// An unknown Writability is a programming error (a typo or a new label
+// that forgot to update this switch) and panics at NewServer time —
+// before any handler can run — so the failure surfaces immediately
+// instead of hiding inside a response with missing hints.
 func annotationsFor(w ops.Writability) *mcp.ToolAnnotations {
 	closed := false
 	switch w {
@@ -228,7 +237,7 @@ func annotationsFor(w ops.Writability) *mcp.ToolAnnotations {
 			OpenWorldHint:   &closed,
 		}
 	default:
-		return &mcp.ToolAnnotations{OpenWorldHint: &closed}
+		panic("mcp: unknown ops.Writability: " + string(w))
 	}
 }
 
