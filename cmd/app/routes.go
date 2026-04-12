@@ -12,6 +12,7 @@ import (
 	"github.com/Koopa0/koopa0.dev/internal/activity"
 	"github.com/Koopa0/koopa0.dev/internal/admin"
 	"github.com/Koopa0/koopa0.dev/internal/auth"
+	"github.com/Koopa0/koopa0.dev/internal/bookmark"
 	"github.com/Koopa0/koopa0.dev/internal/content"
 	"github.com/Koopa0/koopa0.dev/internal/feed"
 	"github.com/Koopa0/koopa0.dev/internal/feed/entry"
@@ -28,6 +29,7 @@ import (
 type handlers struct {
 	auth     *auth.Handler
 	content  *content.Handler
+	bookmark *bookmark.Handler
 	project  *project.Handler
 	topic    *topic.Handler
 	feed     *feed.Handler
@@ -68,6 +70,8 @@ func registerRoutes(mux *http.ServeMux, h *handlers, authMid func(http.Handler) 
 	mux.HandleFunc("GET /api/contents/{slug}", h.content.BySlug)
 	mux.HandleFunc("GET /api/contents/by-type/{type}", h.content.ByType)
 	mux.HandleFunc("GET /api/contents/related/{slug}", h.content.Related)
+	mux.HandleFunc("GET /api/bookmarks", h.bookmark.List)
+	mux.HandleFunc("GET /api/bookmarks/{slug}", h.bookmark.BySlug)
 	mux.HandleFunc("GET /api/search", h.content.Search)
 	mux.HandleFunc("GET /api/knowledge-graph", h.content.KnowledgeGraph)
 	mux.HandleFunc("GET /api/feed/rss", h.content.RSS)
@@ -93,6 +97,12 @@ func registerRoutes(mux *http.ServeMux, h *handlers, authMid func(http.Handler) 
 	mux.Handle("POST /api/admin/contents/{id}/publish", authMid(http.HandlerFunc(h.content.Publish)))
 	mux.Handle("POST /api/admin/contents/{id}/reject", authMid(http.HandlerFunc(h.content.Reject)))
 	mux.Handle("PATCH /api/admin/contents/{id}/is-public", authMid(http.HandlerFunc(h.content.SetIsPublic)))
+
+	// --- Admin: Bookmarks (Track B M1) ---
+	mux.Handle("GET /api/admin/bookmarks", authMid(http.HandlerFunc(h.bookmark.AdminList)))
+	mux.Handle("GET /api/admin/bookmarks/{id}", authMid(http.HandlerFunc(h.bookmark.AdminGet)))
+	mux.Handle("POST /api/admin/bookmarks", authMid(http.HandlerFunc(h.bookmark.Create)))
+	mux.Handle("DELETE /api/admin/bookmarks/{id}", authMid(http.HandlerFunc(h.bookmark.Delete)))
 
 	// --- Admin: Projects ---
 	mux.Handle("GET /api/admin/projects", authMid(http.HandlerFunc(h.project.List)))

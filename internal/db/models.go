@@ -577,6 +577,53 @@ type AttemptObservation struct {
 	Confidence string `json:"confidence"`
 }
 
+// External resources curated with personal commentary. Separate from contents because bookmarks skip editorial review (curate = publish), have an external canonical URL, and do not share the first-party publish workflow. Populated by M2 backfill from contents.type=bookmark; new writes go here once M3 cuts over.
+type Bookmark struct {
+	ID uuid.UUID `json:"id"`
+	// Canonical external URL of the bookmarked resource. SEO canonical tag points to this value.
+	Url string `json:"url"`
+	// SHA-256 hex digest of the canonical URL. Dedup identity. Computed in application code before INSERT — matches feed_entries.url_hash semantics.
+	UrlHash string `json:"url_hash"`
+	// URL-safe internal identifier for bookmark permalinks on the koopa0.dev site. Distinct from the external URL.
+	Slug string `json:"slug"`
+	// Display title. May override the source title if the curator edited it at capture time.
+	Title string `json:"title"`
+	// Short excerpt from the source, typically truncated to a few sentences. Empty string when the source provided none.
+	Excerpt string `json:"excerpt"`
+	// Curator's personal commentary. The reason this bookmark is worth remembering. Empty string when no note.
+	Note string `json:"note"`
+	// How the bookmark entered the system: rss (curated from feed_entries), manual (pasted by curator), shared (received via external channel).
+	SourceType string `json:"source_type"`
+	// If source_type=rss, references the originating feed_entries row. NULL for manual/shared bookmarks. SET NULL on feed_entry deletion — bookmark survives independently.
+	SourceFeedEntryID *uuid.UUID `json:"source_feed_entry_id"`
+	// Participant id that curated the bookmark (e.g. "hq", "human"). Not an FK — participants may be renamed without rewriting history.
+	CuratedBy string `json:"curated_by"`
+	// When the bookmark was curated into koopa0.dev. Distinct from source publication date.
+	CuratedAt time.Time `json:"curated_at"`
+	// Whether this bookmark is visible on the public website. Private bookmarks are admin/MCP only.
+	IsPublic bool `json:"is_public"`
+	// When the bookmark became publicly visible. NULL = private or not yet published. Unlike contents, bookmarks typically have published_at = curated_at.
+	PublishedAt *time.Time `json:"published_at"`
+	// pgvector embedding (768d) for semantic search inclusion. Optional — backfill may leave NULL for rows whose source content was never embedded.
+	Embedding *pgvector_go.Vector `json:"embedding"`
+	// Bridge to the contents row this bookmark was backfilled from. Populated in M2 only. UNIQUE enforces 1:1 mapping during the migration window. Stays NULL for bookmarks created after M3 cutover. SET NULL if the legacy content row is ever deleted.
+	LegacyContentID *uuid.UUID `json:"legacy_content_id"`
+	CreatedAt       time.Time  `json:"created_at"`
+	UpdatedAt       time.Time  `json:"updated_at"`
+}
+
+// Junction: bookmark ↔ tag. References canonical tags resolved through the tag_aliases pipeline.
+type BookmarkTag struct {
+	BookmarkID uuid.UUID `json:"bookmark_id"`
+	TagID      uuid.UUID `json:"tag_id"`
+}
+
+// Junction: bookmark ↔ topic. Many-to-many. Topics are curated knowledge domain categories (same taxonomy as content_topics).
+type BookmarkTopic struct {
+	BookmarkID uuid.UUID `json:"bookmark_id"`
+	TopicID    uuid.UUID `json:"topic_id"`
+}
+
 // Learning ontology — concepts, patterns, skills, and principles that can be learned, practiced, and diagnosed. Independent from tags (which handle content classification). Hierarchy via parent_id (typical: pattern contains skill, skill refines principle — but kind ordering is convention, not DDL-enforced). Mastery is a derived state computed from attempt_observations aggregation, not stored on this table.
 type Concept struct {
 	ID uuid.UUID `json:"id"`

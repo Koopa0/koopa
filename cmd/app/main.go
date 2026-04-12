@@ -23,6 +23,7 @@ import (
 	"github.com/Koopa0/koopa0.dev/internal/activity"
 	"github.com/Koopa0/koopa0.dev/internal/admin"
 	"github.com/Koopa0/koopa0.dev/internal/auth"
+	"github.com/Koopa0/koopa0.dev/internal/bookmark"
 	"github.com/Koopa0/koopa0.dev/internal/content"
 	"github.com/Koopa0/koopa0.dev/internal/db"
 	"github.com/Koopa0/koopa0.dev/internal/feed"
@@ -64,6 +65,7 @@ func run(logger *slog.Logger) error {
 
 	// Stores
 	contentStore := content.NewStore(pool)
+	bookmarkStore := bookmark.NewStore(pool)
 	projectStore := project.NewStore(pool)
 	topicStore := topic.NewStore(pool)
 	feedStore := feed.NewStore(pool, logger)
@@ -112,6 +114,7 @@ func run(logger *slog.Logger) error {
 	h := &handlers{
 		auth:     authHandler,
 		content:  content.NewHandler(contentStore, cfg.SiteURL, logger),
+		bookmark: bookmark.NewHandler(bookmarkStore, logger),
 		project:  project.NewHandler(projectStore, logger),
 		topic:    topic.NewHandler(topicStore, contentStore, logger),
 		feed:     feedHandler,
