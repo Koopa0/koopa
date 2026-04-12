@@ -166,10 +166,10 @@ func (h *Handler) ReflectWeekly(w http.ResponseWriter, r *http.Request) {
 		for i := range goals {
 			g := &goals[i]
 			out.GoalProgress = append(out.GoalProgress, map[string]any{
-				"goal_title":      g.Title,
-				"milestones_done": g.MilestoneDone,
-				"total":           g.MilestoneTotal,
-				"status":          string(g.Status),
+				"goal_title":                     g.Title,
+				"milestones_completed_this_week": g.MilestoneDone,
+				"total_done":                     g.MilestoneDone,
+				"total":                          g.MilestoneTotal,
 			})
 		}
 	}
@@ -199,11 +199,20 @@ func (h *Handler) ReflectWeekly(w http.ResponseWriter, r *http.Request) {
 	if insights, err := h.insights.Unverified(ctx, 20); err == nil {
 		for i := range insights {
 			ageDays := int(time.Since(insights[i].CreatedAt).Hours() / 24)
+			ins := &insights[i]
+			evidenceCount := 0
+			if ev, ok := ins.Metadata["evidence"].([]any); ok {
+				evidenceCount = len(ev)
+			}
 			out.InsightsNeedingCheck = append(out.InsightsNeedingCheck, map[string]any{
-				"id":         insights[i].ID,
-				"hypothesis": insights[i].Hypothesis,
-				"status":     string(insights[i].Status),
-				"age_days":   ageDays,
+				"id":                     ins.ID,
+				"hypothesis":             ins.Hypothesis,
+				"invalidation_condition": ins.InvalidationCondition,
+				"status":                 string(ins.Status),
+				"source":                 ins.Source,
+				"observed_date":          ins.ObservedDate.Format(time.DateOnly),
+				"age_days":               ageDays,
+				"evidence_count":         evidenceCount,
 			})
 		}
 	}
