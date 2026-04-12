@@ -30,7 +30,7 @@ import { A11yModule } from '@angular/cdk/a11y';
       (keydown.escape)="closed.emit()"
     >
       <div
-        class="w-full rounded-xs border border-zinc-700 bg-zinc-900 shadow-lg"
+        class="flex max-h-[calc(100dvh-2rem)] w-full flex-col rounded-xs border border-zinc-700 bg-zinc-900 shadow-lg"
         [class]="maxWidthClass()"
         cdkTrapFocus
         cdkTrapFocusAutoCapture
@@ -38,7 +38,7 @@ import { A11yModule } from '@angular/cdk/a11y';
       >
         <!-- Header -->
         @if (title()) {
-          <div class="border-b border-zinc-800 px-6 py-4">
+          <div class="shrink-0 border-b border-zinc-800 px-6 py-4">
             <h3 [id]="titleId()" class="text-lg font-semibold text-zinc-100">
               {{ title() }}
             </h3>
@@ -48,13 +48,15 @@ import { A11yModule } from '@angular/cdk/a11y';
           </div>
         }
 
-        <!-- Body -->
-        <div class="px-6 py-4">
+        <!-- Body (scrollable when content overflows viewport) -->
+        <div class="min-h-0 flex-1 overflow-y-auto px-6 py-4">
           <ng-content />
         </div>
 
         <!-- Footer -->
-        <div class="flex justify-end gap-3 border-t border-zinc-800 px-6 py-4">
+        <div
+          class="flex shrink-0 justify-end gap-3 border-t border-zinc-800 px-6 py-4"
+        >
           <ng-content select="[modal-footer]" />
         </div>
       </div>
