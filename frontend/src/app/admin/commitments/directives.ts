@@ -20,10 +20,12 @@ import {
 } from 'lucide-angular';
 import { StudioService } from '../../core/services/studio.service';
 import { NotificationService } from '../../core/services/notification.service';
+import { MarkdownService } from '../../core/services/markdown.service';
 import { ModalComponent } from '../../shared/components/modal/modal.component';
 import type {
   StudioOverview,
   DirectiveSummary,
+  ReportSummary,
   ParticipantSummary,
 } from '../../core/models/admin.model';
 
@@ -42,11 +44,13 @@ interface DirectivesByTarget {
 export class DirectivesComponent implements OnInit {
   private readonly studioService = inject(StudioService);
   private readonly notificationService = inject(NotificationService);
+  private readonly markdownService = inject(MarkdownService);
   private readonly destroyRef = inject(DestroyRef);
 
   protected readonly overview = signal<StudioOverview | null>(null);
   protected readonly isLoading = signal(true);
   protected readonly selectedDirective = signal<DirectiveSummary | null>(null);
+  protected readonly selectedReport = signal<ReportSummary | null>(null);
 
   protected readonly directives = computed(
     () => this.overview()?.open_directives ?? [],
@@ -72,6 +76,33 @@ export class DirectivesComponent implements OnInit {
       participant,
       directives,
     }));
+  });
+
+  /**
+   * Parsed-HTML caches, keyed by report/directive id.
+   *
+   * SECURITY_REVIEW: content is parsed through MarkdownService which runs
+   * DOMPurify with an allow-list in the browser. The source is our own
+   * admin backend (trusted). Same pattern as pages/essay-detail,
+   * pages/article-detail, etc.
+   *
+   * Caching via computed() avoids re-parsing on every change detection
+   * cycle — parsing + highlight.js can be expensive for long reports.
+   */
+  protected readonly reportHtmlCache = computed<Map<number, string>>(() => {
+    const cache = new Map<number, string>();
+    for (const r of this.reports()) {
+      cache.set(r.id, this.markdownService.parse(r.content ?? ''));
+    }
+    return cache;
+  });
+
+  protected readonly directiveHtmlCache = computed<Map<number, string>>(() => {
+    const cache = new Map<number, string>();
+    for (const d of this.directives()) {
+      cache.set(d.id, this.markdownService.parse(d.content ?? ''));
+    }
+    return cache;
   });
 
   protected readonly hasOpenDirectives = computed(
@@ -136,9 +167,12 @@ export class DirectivesComponent implements OnInit {
     return 'text-zinc-500';
   }
 
-  protected getReportPreview(content: string, max = 160): string {
-    if (content.length <= max) return content;
-    return content.slice(0, max).trimEnd() + '…';
+  protected renderReport(id: number): string {
+    return this.reportHtmlCache().get(id) ?? '';
+  }
+
+  protected renderDirective(id: number): string {
+    return this.directiveHtmlCache().get(id) ?? '';
   }
 
   protected canIssue(p: ParticipantSummary): boolean {
@@ -157,7 +191,15 @@ export class DirectivesComponent implements OnInit {
     this.selectedDirective.set(null);
   }
 
-  protected getRelatedReports(directiveId: number) {
+  protected selectReport(report: ReportSummary): void {
+    this.selectedReport.set(report);
+  }
+
+  protected closeReportDetail(): void {
+    this.selectedReport.set(null);
+  }
+
+  protected getRelatedReports(directiveId: number): ReportSummary[] {
     return this.reports().filter((r) => r.in_response_to === directiveId);
   }
 }

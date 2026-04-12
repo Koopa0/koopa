@@ -142,8 +142,12 @@
               </span>
             </div>
 
-            <!-- Content preview -->
-            <p class="text-sm text-zinc-300">{{ directive.content }}</p>
+            <!-- Content preview (markdown, clamped) -->
+            <!-- SECURITY_REVIEW: sanitized by MarkdownService + DOMPurify -->
+            <div
+              class="prose prose-sm prose-invert max-w-none line-clamp-3 text-sm text-zinc-300"
+              [innerHTML]="renderDirective(directive.id)"
+            ></div>
 
             <!-- Resolution report indicator -->
             @if (directive.resolution_report_id) {
@@ -172,7 +176,11 @@
     </h2>
     <div class="space-y-2">
       @for (report of reports(); track report.id) {
-      <div class="rounded-lg border border-zinc-800 bg-zinc-900/50 p-4">
+      <button
+        type="button"
+        class="w-full cursor-pointer rounded-lg border border-zinc-800 bg-zinc-900/50 p-4 text-left transition-colors hover:border-zinc-700 hover:bg-zinc-800/50"
+        (click)="selectReport(report)"
+      >
         <div class="mb-2 flex items-center justify-between">
           <div class="flex items-center gap-2">
             <span class="text-xs font-medium text-zinc-400">
@@ -189,10 +197,12 @@
             {{ report.reported_date | date: 'MMM d' }}
           </span>
         </div>
-        <p class="text-sm text-zinc-300">
-          {{ getReportPreview(report.content) }}
-        </p>
-      </div>
+        <!-- SECURITY_REVIEW: sanitized by MarkdownService + DOMPurify -->
+        <div
+          class="prose prose-sm prose-invert max-w-none line-clamp-3 text-sm text-zinc-300"
+          [innerHTML]="renderReport(report.id)"
+        ></div>
+      </button>
       }
     </div>
   </section>
@@ -286,9 +296,11 @@
       <span class="mb-2 block text-xs uppercase tracking-wider text-zinc-500"
         >Content</span
       >
-      <p class="whitespace-pre-wrap text-sm leading-relaxed text-zinc-200">
-        {{ d.content }}
-      </p>
+      <!-- SECURITY_REVIEW: sanitized by MarkdownService + DOMPurify -->
+      <div
+        class="prose prose-sm prose-invert max-w-none text-sm leading-relaxed text-zinc-200"
+        [innerHTML]="renderDirective(d.id)"
+      ></div>
     </div>
 
     <!-- Related reports -->
@@ -299,17 +311,23 @@
       </span>
       <div class="space-y-2">
         @for (report of getRelatedReports(d.id); track report.id) {
-        <div class="rounded-lg border border-zinc-800 bg-zinc-950/50 p-3">
+        <button
+          type="button"
+          class="w-full cursor-pointer rounded-lg border border-zinc-800 bg-zinc-950/50 p-3 text-left transition-colors hover:border-zinc-700 hover:bg-zinc-900/50"
+          (click)="selectReport(report)"
+        >
           <div class="mb-1 flex items-center justify-between">
             <span class="text-xs text-zinc-400">from {{ report.source }}</span>
             <span class="text-xs text-zinc-600"
               >{{ report.reported_date | date: 'MMM d' }}</span
             >
           </div>
-          <p class="whitespace-pre-wrap text-sm text-zinc-300">
-            {{ report.content }}
-          </p>
-        </div>
+          <!-- SECURITY_REVIEW: sanitized by MarkdownService + DOMPurify -->
+          <div
+            class="prose prose-sm prose-invert max-w-none line-clamp-4 text-sm text-zinc-300"
+            [innerHTML]="renderReport(report.id)"
+          ></div>
+        </button>
         }
       </div>
     </div>
@@ -330,6 +348,62 @@
         type="button"
         class="rounded-sm bg-zinc-800 px-4 py-2 text-sm text-zinc-300 transition-colors hover:bg-zinc-700"
         (click)="closeDetail()"
+      >
+        Close
+      </button>
+    </ng-container>
+  </app-modal>
+  }
+
+  <!-- Report detail modal -->
+  @if (selectedReport(); as r) {
+  <app-modal
+    [title]="'Report #' + r.id"
+    maxWidth="lg"
+    titleId="report-detail-title"
+    (closed)="closeReportDetail()"
+  >
+    <!-- Meta row -->
+    <div class="mb-4 grid grid-cols-2 gap-4 text-sm sm:grid-cols-3">
+      <div>
+        <span class="text-xs uppercase tracking-wider text-zinc-500">From</span>
+        <p class="mt-0.5 text-zinc-200">{{ r.source }}</p>
+      </div>
+      <div>
+        <span class="text-xs uppercase tracking-wider text-zinc-500">
+          Reported
+        </span>
+        <p class="mt-0.5 text-zinc-300">
+          {{ r.reported_date | date: 'MMM d, y' }}
+        </p>
+      </div>
+      @if (r.in_response_to) {
+      <div>
+        <span class="text-xs uppercase tracking-wider text-zinc-500">
+          In response to
+        </span>
+        <p class="mt-0.5 text-zinc-300">directive #{{ r.in_response_to }}</p>
+      </div>
+      }
+    </div>
+
+    <!-- Content -->
+    <div class="rounded-lg border border-zinc-800 bg-zinc-950/50 p-4">
+      <span class="mb-2 block text-xs uppercase tracking-wider text-zinc-500">
+        Content
+      </span>
+      <!-- SECURITY_REVIEW: sanitized by MarkdownService + DOMPurify -->
+      <div
+        class="prose prose-sm prose-invert max-w-none text-sm leading-relaxed text-zinc-200"
+        [innerHTML]="renderReport(r.id)"
+      ></div>
+    </div>
+
+    <ng-container modal-footer>
+      <button
+        type="button"
+        class="rounded-sm bg-zinc-800 px-4 py-2 text-sm text-zinc-300 transition-colors hover:bg-zinc-700"
+        (click)="closeReportDetail()"
       >
         Close
       </button>
