@@ -41,6 +41,13 @@ BEGIN
     -- the unlikely case that two feed_entries point at the same content.
     -- Ordering by fe.collected_at ASC means the earliest curation wins,
     -- which matches the historical "first to curate" intent.
+    --
+    -- ON CONFLICT DO NOTHING (no explicit target) covers every unique
+    -- constraint on the bookmarks table — url_hash, slug, legacy_content_id.
+    -- Naming only url_hash would let a hypothetical slug duplicate abort
+    -- the whole DO block. The single write path (manage_content.bookmark_rss)
+    -- makes slug collisions improbable in practice, but the defense is
+    -- free.
     WITH inserted AS (
         INSERT INTO bookmarks (
             url, url_hash, slug, title, excerpt, note,
@@ -70,7 +77,7 @@ BEGIN
         JOIN feed_entries fe ON fe.curated_content_id = c.id
         WHERE c.type = 'bookmark'
         ORDER BY c.id, fe.collected_at ASC
-        ON CONFLICT (url_hash) DO NOTHING
+        ON CONFLICT DO NOTHING
         RETURNING legacy_content_id
     )
     SELECT COUNT(*) INTO backfilled_count FROM inserted;
@@ -106,16 +113,23 @@ BEGIN
     FROM bookmarks b
     WHERE b.legacy_content_id = c.id;
 
-    -- Step 5: report counts. orphan_count = bookmark-typed contents rows
-    -- that the JOIN did not match. Expected to be zero in practice; any
-    -- nonzero value is logged for manual M3 follow-up.
-    orphan_count := total_bookmark_contents - backfilled_count;
+    -- Step 5: report counts. orphan_count is computed directly via
+    -- NOT EXISTS so dedup skips (rows where a prior backfill already
+    -- created the target bookmark) do not inflate the orphan tally.
+    -- A "true orphan" is a contents.type='bookmark' row that has no
+    -- matching bookmark at all — the set M3 must handle manually.
+    SELECT COUNT(*) INTO orphan_count
+    FROM contents c
+    WHERE c.type = 'bookmark'
+      AND NOT EXISTS (
+          SELECT 1 FROM bookmarks b WHERE b.legacy_content_id = c.id
+      );
 
-    RAISE NOTICE 'bookmark backfill: % total contents.type=bookmark, % backfilled, % orphans (no feed_entry match)',
+    RAISE NOTICE 'bookmark backfill: % total contents.type=bookmark, % newly backfilled, % orphans (no matching bookmark)',
         total_bookmark_contents, backfilled_count, orphan_count;
 
     IF orphan_count > 0 THEN
-        RAISE NOTICE 'orphan bookmark contents (no feed_entry, left in contents for M3): %',
+        RAISE NOTICE 'orphan bookmark contents (no matching bookmark row, left in contents for M3): %',
             (SELECT array_agg(id) FROM contents c
              WHERE c.type = 'bookmark'
                AND NOT EXISTS (SELECT 1 FROM bookmarks b WHERE b.legacy_content_id = c.id));

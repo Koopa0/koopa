@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/Koopa0/koopa0.dev/internal/api"
+	"github.com/Koopa0/koopa0.dev/internal/auth"
 )
 
 // storeErrors maps store sentinel errors to HTTP responses.
@@ -41,8 +42,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	f := parseFilter(r)
 	bookmarks, total, err := h.store.Bookmarks(r.Context(), f)
 	if err != nil {
-		h.logger.Error("listing bookmarks", "error", err)
-		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to list bookmarks")
+		api.HandleError(w, h.logger, err, storeErrors...)
 		return
 	}
 	api.Encode(w, http.StatusOK, api.PagedResponse(bookmarks, total, f.Page, f.PerPage))
@@ -68,8 +68,7 @@ func (h *Handler) AdminList(w http.ResponseWriter, r *http.Request) {
 	f := parseAdminFilter(r)
 	bookmarks, total, err := h.store.AdminBookmarks(r.Context(), f)
 	if err != nil {
-		h.logger.Error("admin listing bookmarks", "error", err)
-		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to list bookmarks")
+		api.HandleError(w, h.logger, err, storeErrors...)
 		return
 	}
 	api.Encode(w, http.StatusOK, api.PagedResponse(bookmarks, total, f.Page, f.PerPage))
@@ -142,7 +141,7 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		Note:        req.Note,
 		SourceType:  req.SourceType,
 		FeedEntryID: req.FeedEntryID,
-		CuratedBy:   "admin", // admin-authenticated path
+		CuratedBy:   curatedByFromContext(r),
 		IsPublic:    req.IsPublic,
 		PublishedAt: publishedAt,
 		TopicIDs:    req.TopicIDs,
@@ -171,6 +170,19 @@ func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
 }
 
 // --- helpers ---
+
+// curatedByFromContext extracts a participant identifier for bookmark
+// attribution from the request context. Admin routes are wrapped with
+// the JWT middleware, so the authenticated email is available via
+// auth.ClaimsFromContext. When no claims are present (tests, unauthed
+// paths) fall back to a neutral "admin" label — the field is for
+// accountability, not authorization.
+func curatedByFromContext(r *http.Request) string {
+	if claims, ok := auth.ClaimsFromContext(r.Context()); ok && claims.Email != "" {
+		return claims.Email
+	}
+	return "admin"
+}
 
 func parseFilter(r *http.Request) Filter {
 	page, perPage := api.ParsePagination(r)

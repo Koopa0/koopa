@@ -63,7 +63,7 @@ LIMIT $1 OFFSET $2;
 SELECT COUNT(*) FROM bookmarks
 WHERE (sqlc.narg('is_public')::boolean IS NULL OR is_public = sqlc.narg('is_public'));
 
--- name: DeleteBookmark :exec
+-- name: DeleteBookmark :execrows
 DELETE FROM bookmarks WHERE id = $1;
 
 -- name: TopicsForBookmark :many

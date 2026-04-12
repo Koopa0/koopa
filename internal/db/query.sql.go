@@ -3416,13 +3416,16 @@ func (q *Queries) DeleteAlias(ctx context.Context, id uuid.UUID) error {
 	return err
 }
 
-const deleteBookmark = `-- name: DeleteBookmark :exec
+const deleteBookmark = `-- name: DeleteBookmark :execrows
 DELETE FROM bookmarks WHERE id = $1
 `
 
-func (q *Queries) DeleteBookmark(ctx context.Context, id uuid.UUID) error {
-	_, err := q.db.Exec(ctx, deleteBookmark, id)
-	return err
+func (q *Queries) DeleteBookmark(ctx context.Context, id uuid.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteBookmark, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const deleteBookmarkTopics = `-- name: DeleteBookmarkTopics :exec

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgerrcode"
@@ -22,6 +23,14 @@ type Store struct {
 // NewStore returns a Store backed by the given database connection.
 func NewStore(dbtx db.DBTX) *Store {
 	return &Store{dbtx: dbtx, q: db.New(dbtx)}
+}
+
+// WithTx returns a Store that uses tx for all queries. Matches the
+// project-wide convention where every feature store exposes WithTx
+// so callers can compose multi-store transactions at the handler or
+// job layer.
+func (s *Store) WithTx(tx pgx.Tx) *Store {
+	return &Store{dbtx: tx, q: s.q.WithTx(tx)}
 }
 
 // Bookmark returns a single bookmark by ID, including its topics and tags.
@@ -115,10 +124,31 @@ func (s *Store) AdminBookmarks(ctx context.Context, f AdminFilter) ([]Bookmark, 
 	return out, int(total), nil
 }
 
-// Create inserts a new bookmark. Returns ErrConflict when url_hash or slug
-// collide with an existing row.
+// Create inserts a new bookmark and attaches its topics atomically.
+// Returns ErrConflict when url_hash or slug collide with an existing row.
+//
+// The whole operation runs inside a transaction so a failure during
+// topic attach rolls back the bookmark as well. This mirrors the
+// content package's CreateContent pattern: a single logical write
+// should not leak a half-initialised row when one of its junction
+// inserts fails.
 func (s *Store) Create(ctx context.Context, p *CreateParams) (*Bookmark, error) {
-	r, err := s.q.CreateBookmark(ctx, db.CreateBookmarkParams{
+	pool, ok := s.dbtx.(interface {
+		Begin(ctx context.Context) (pgx.Tx, error)
+	})
+	if !ok {
+		return nil, fmt.Errorf("bookmark create requires a connection with begin support")
+	}
+
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("beginning transaction: %w", err)
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck // rollback is no-op after commit
+
+	qtx := s.q.WithTx(tx)
+
+	r, err := qtx.CreateBookmark(ctx, db.CreateBookmarkParams{
 		Url:               p.URL,
 		UrlHash:           p.URLHash,
 		Slug:              p.Slug,
@@ -139,12 +169,16 @@ func (s *Store) Create(ctx context.Context, p *CreateParams) (*Bookmark, error) 
 	}
 
 	for _, tid := range p.TopicIDs {
-		if err := s.q.AddBookmarkTopic(ctx, db.AddBookmarkTopicParams{
+		if topicErr := qtx.AddBookmarkTopic(ctx, db.AddBookmarkTopicParams{
 			BookmarkID: r.ID,
 			TopicID:    tid,
-		}); err != nil {
-			return nil, fmt.Errorf("attaching topic %s: %w", tid, err)
+		}); topicErr != nil {
+			return nil, fmt.Errorf("attaching topic %s: %w", tid, topicErr)
 		}
+	}
+
+	if commitErr := tx.Commit(ctx); commitErr != nil {
+		return nil, fmt.Errorf("committing bookmark create: %w", commitErr)
 	}
 
 	b := bookmarkFromCreate(&r)
@@ -154,11 +188,16 @@ func (s *Store) Create(ctx context.Context, p *CreateParams) (*Bookmark, error) 
 	return &b, nil
 }
 
-// Delete removes a bookmark. No-op on missing id; caller checks existence
-// first if it needs to distinguish.
+// Delete removes a bookmark. Returns ErrNotFound when no row with the
+// given id exists; the HTTP DELETE contract relies on this to send 404
+// rather than 204 for a missing target.
 func (s *Store) Delete(ctx context.Context, id uuid.UUID) error {
-	if err := s.q.DeleteBookmark(ctx, id); err != nil {
+	rows, err := s.q.DeleteBookmark(ctx, id)
+	if err != nil {
 		return fmt.Errorf("deleting bookmark %s: %w", id, err)
+	}
+	if rows == 0 {
+		return ErrNotFound
 	}
 	return nil
 }
@@ -239,106 +278,82 @@ func isUniqueViolation(err error) bool {
 
 // --- Row → Bookmark converters ---
 //
-// Each :one/:many query generates its own row type. The bookmark package
-// presents a single domain type, so a small converter per row type keeps
-// the rest of the store code straight.
+// sqlc generates a distinct row type per query, so each converter is a
+// one-line thunk that feeds its fields into a single assembleBookmark
+// helper. Adding a field to Bookmark means touching one site — the
+// assembler — plus the query.sql SELECT lists. The thunks remain
+// trivially correct at a glance.
+
+// assembleBookmark builds a Bookmark value from the flat field set that
+// every sqlc row type carries. Keeping the per-row thunks thin avoids
+// the drift risk of five hand-maintained converter bodies — adding a
+// column touches this one helper plus the query.sql SELECT lists.
+func assembleBookmark(
+	id uuid.UUID,
+	url, urlHash, slug, title, excerpt, note string,
+	sourceType string,
+	sourceFeedEntryID *uuid.UUID,
+	curatedBy string,
+	curatedAt time.Time,
+	isPublic bool,
+	publishedAt *time.Time,
+	createdAt, updatedAt time.Time,
+) Bookmark {
+	return Bookmark{
+		ID:                id,
+		URL:               url,
+		URLHash:           urlHash,
+		Slug:              slug,
+		Title:             title,
+		Excerpt:           excerpt,
+		Note:              note,
+		SourceType:        SourceType(sourceType),
+		SourceFeedEntryID: sourceFeedEntryID,
+		CuratedBy:         curatedBy,
+		CuratedAt:         curatedAt,
+		IsPublic:          isPublic,
+		PublishedAt:       publishedAt,
+		CreatedAt:         createdAt,
+		UpdatedAt:         updatedAt,
+	}
+}
 
 func bookmarkFromByID(r *db.BookmarkByIDRow) Bookmark {
-	return Bookmark{
-		ID:                r.ID,
-		URL:               r.Url,
-		URLHash:           r.UrlHash,
-		Slug:              r.Slug,
-		Title:             r.Title,
-		Excerpt:           r.Excerpt,
-		Note:              r.Note,
-		SourceType:        SourceType(r.SourceType),
-		SourceFeedEntryID: r.SourceFeedEntryID,
-		CuratedBy:         r.CuratedBy,
-		CuratedAt:         r.CuratedAt,
-		IsPublic:          r.IsPublic,
-		PublishedAt:       r.PublishedAt,
-		CreatedAt:         r.CreatedAt,
-		UpdatedAt:         r.UpdatedAt,
-	}
+	return assembleBookmark(
+		r.ID, r.Url, r.UrlHash, r.Slug, r.Title, r.Excerpt, r.Note,
+		r.SourceType, r.SourceFeedEntryID, r.CuratedBy, r.CuratedAt,
+		r.IsPublic, r.PublishedAt, r.CreatedAt, r.UpdatedAt,
+	)
 }
 
 func bookmarkFromBySlug(r *db.BookmarkBySlugRow) Bookmark {
-	return Bookmark{
-		ID:                r.ID,
-		URL:               r.Url,
-		URLHash:           r.UrlHash,
-		Slug:              r.Slug,
-		Title:             r.Title,
-		Excerpt:           r.Excerpt,
-		Note:              r.Note,
-		SourceType:        SourceType(r.SourceType),
-		SourceFeedEntryID: r.SourceFeedEntryID,
-		CuratedBy:         r.CuratedBy,
-		CuratedAt:         r.CuratedAt,
-		IsPublic:          r.IsPublic,
-		PublishedAt:       r.PublishedAt,
-		CreatedAt:         r.CreatedAt,
-		UpdatedAt:         r.UpdatedAt,
-	}
+	return assembleBookmark(
+		r.ID, r.Url, r.UrlHash, r.Slug, r.Title, r.Excerpt, r.Note,
+		r.SourceType, r.SourceFeedEntryID, r.CuratedBy, r.CuratedAt,
+		r.IsPublic, r.PublishedAt, r.CreatedAt, r.UpdatedAt,
+	)
 }
 
 func bookmarkFromPublic(r *db.PublicBookmarksRow) Bookmark {
-	return Bookmark{
-		ID:                r.ID,
-		URL:               r.Url,
-		URLHash:           r.UrlHash,
-		Slug:              r.Slug,
-		Title:             r.Title,
-		Excerpt:           r.Excerpt,
-		Note:              r.Note,
-		SourceType:        SourceType(r.SourceType),
-		SourceFeedEntryID: r.SourceFeedEntryID,
-		CuratedBy:         r.CuratedBy,
-		CuratedAt:         r.CuratedAt,
-		IsPublic:          r.IsPublic,
-		PublishedAt:       r.PublishedAt,
-		CreatedAt:         r.CreatedAt,
-		UpdatedAt:         r.UpdatedAt,
-	}
+	return assembleBookmark(
+		r.ID, r.Url, r.UrlHash, r.Slug, r.Title, r.Excerpt, r.Note,
+		r.SourceType, r.SourceFeedEntryID, r.CuratedBy, r.CuratedAt,
+		r.IsPublic, r.PublishedAt, r.CreatedAt, r.UpdatedAt,
+	)
 }
 
 func bookmarkFromAdmin(r *db.AdminBookmarksRow) Bookmark {
-	return Bookmark{
-		ID:                r.ID,
-		URL:               r.Url,
-		URLHash:           r.UrlHash,
-		Slug:              r.Slug,
-		Title:             r.Title,
-		Excerpt:           r.Excerpt,
-		Note:              r.Note,
-		SourceType:        SourceType(r.SourceType),
-		SourceFeedEntryID: r.SourceFeedEntryID,
-		CuratedBy:         r.CuratedBy,
-		CuratedAt:         r.CuratedAt,
-		IsPublic:          r.IsPublic,
-		PublishedAt:       r.PublishedAt,
-		CreatedAt:         r.CreatedAt,
-		UpdatedAt:         r.UpdatedAt,
-	}
+	return assembleBookmark(
+		r.ID, r.Url, r.UrlHash, r.Slug, r.Title, r.Excerpt, r.Note,
+		r.SourceType, r.SourceFeedEntryID, r.CuratedBy, r.CuratedAt,
+		r.IsPublic, r.PublishedAt, r.CreatedAt, r.UpdatedAt,
+	)
 }
 
 func bookmarkFromCreate(r *db.CreateBookmarkRow) Bookmark {
-	return Bookmark{
-		ID:                r.ID,
-		URL:               r.Url,
-		URLHash:           r.UrlHash,
-		Slug:              r.Slug,
-		Title:             r.Title,
-		Excerpt:           r.Excerpt,
-		Note:              r.Note,
-		SourceType:        SourceType(r.SourceType),
-		SourceFeedEntryID: r.SourceFeedEntryID,
-		CuratedBy:         r.CuratedBy,
-		CuratedAt:         r.CuratedAt,
-		IsPublic:          r.IsPublic,
-		PublishedAt:       r.PublishedAt,
-		CreatedAt:         r.CreatedAt,
-		UpdatedAt:         r.UpdatedAt,
-	}
+	return assembleBookmark(
+		r.ID, r.Url, r.UrlHash, r.Slug, r.Title, r.Excerpt, r.Note,
+		r.SourceType, r.SourceFeedEntryID, r.CuratedBy, r.CuratedAt,
+		r.IsPublic, r.PublishedAt, r.CreatedAt, r.UpdatedAt,
+	)
 }
