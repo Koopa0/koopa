@@ -115,30 +115,51 @@ func (h *Handler) ReflectWeekly(w http.ResponseWriter, r *http.Request) {
 	}
 	weekEnd := weekStart.AddDate(0, 0, 7)
 
+	type projectHealthItem struct {
+		Title          string `json:"title"`
+		Status         string `json:"status"`
+		TasksCompleted int    `json:"tasks_completed"`
+		Stalled        bool   `json:"stalled"`
+	}
+
 	type resp struct {
-		WeekStart       string `json:"week_start"`
-		WeekEnd         string `json:"week_end"`
-		GoalProgress    []any  `json:"goal_progress"`
+		WeekStart       string              `json:"week_start"`
+		WeekEnd         string              `json:"week_end"`
+		GoalProgress    []any               `json:"goal_progress"`
+		ProjectHealth   []projectHealthItem `json:"project_health"`
 		LearningSummary struct {
-			SessionsCount int `json:"sessions_count"`
-			TotalMinutes  int `json:"total_minutes"`
+			SessionsCount    int      `json:"sessions_count"`
+			TotalMinutes     int      `json:"total_minutes"`
+			ConceptsImproved []string `json:"concepts_improved"`
+			ConceptsDeclined []string `json:"concepts_declined"`
 		} `json:"learning_summary"`
 		ContentOutput struct {
 			Published int `json:"published"`
 			Drafted   int `json:"drafted"`
 		} `json:"content_output"`
-		Metrics struct {
-			TasksCompleted int `json:"tasks_completed"`
-		} `json:"metrics"`
+		InboxHealth struct {
+			StartCount int `json:"start_count"`
+			EndCount   int `json:"end_count"`
+			Clarified  int `json:"clarified"`
+			Captured   int `json:"captured"`
+		} `json:"inbox_health"`
 		InsightsNeedingCheck []any `json:"insights_needing_check"`
+		Metrics              struct {
+			TasksCompleted int `json:"tasks_completed"`
+			Commits        int `json:"commits"`
+			BuildLogs      int `json:"build_logs"`
+		} `json:"metrics"`
 	}
 
 	out := resp{
 		WeekStart:            weekStart.Format(time.DateOnly),
 		WeekEnd:              weekEnd.Format(time.DateOnly),
 		GoalProgress:         []any{},
+		ProjectHealth:        []projectHealthItem{},
 		InsightsNeedingCheck: []any{},
 	}
+	out.LearningSummary.ConceptsImproved = []string{}
+	out.LearningSummary.ConceptsDeclined = []string{}
 
 	// Goal progress.
 	if goals, err := h.goals.ActiveGoals(ctx); err == nil {
@@ -213,7 +234,7 @@ func (h *Handler) JournalList(w http.ResponseWriter, r *http.Request) {
 		entries = []journal.Entry{}
 	}
 
-	api.Encode(w, http.StatusOK, map[string]any{"entries": entries})
+	api.Encode(w, http.StatusOK, entries)
 }
 
 // InsightsList handles GET /api/admin/reflect/insights.
@@ -263,5 +284,5 @@ func (h *Handler) InsightsList(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	api.Encode(w, http.StatusOK, map[string]any{"insights": result})
+	api.Encode(w, http.StatusOK, result)
 }
