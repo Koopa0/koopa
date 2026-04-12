@@ -205,5 +205,8 @@ func registerRoutes(mux *http.ServeMux, h *handlers, authMid func(http.Handler) 
 
 		// Studio IPC (read-only — supports ?include_resolved=true)
 		mux.Handle("GET /api/admin/studio/overview", authMid(http.HandlerFunc(a.StudioOverview)))
+
+		// MCP tool metadata inventory (read-only — no dispatch)
+		mux.Handle("GET /api/admin/ops", authMid(http.HandlerFunc(a.Ops)))
 	}
 }

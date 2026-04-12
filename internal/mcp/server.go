@@ -25,6 +25,7 @@ import (
 	"github.com/Koopa0/koopa0.dev/internal/insight"
 	"github.com/Koopa0/koopa0.dev/internal/journal"
 	"github.com/Koopa0/koopa0.dev/internal/learning"
+	"github.com/Koopa0/koopa0.dev/internal/mcp/ops"
 	"github.com/Koopa0/koopa0.dev/internal/note"
 	"github.com/Koopa0/koopa0.dev/internal/plan"
 	"github.com/Koopa0/koopa0.dev/internal/project"
@@ -71,6 +72,11 @@ type Server struct {
 
 	// Telemetry
 	recordToolCall func(context.Context, ToolCallRecord)
+
+	// registeredNames records every tool name passed through addTool,
+	// in registration order. Populated during NewServer and consumed by
+	// the drift test that asserts parity with ops.All().
+	registeredNames []string
 }
 
 // ToolCallRecord holds telemetry data for a single tool invocation.
@@ -140,182 +146,90 @@ func NewServer(pool *pgxpool.Pool, logger *slog.Logger, opts ...ServerOption) *S
 		Version: "v2.0.0",
 	}, nil)
 
-	// Tool annotation presets.
-	f := false
-	readOnly := &mcp.ToolAnnotations{
-		ReadOnlyHint:  true,
-		OpenWorldHint: &f,
-	}
-	additive := &mcp.ToolAnnotations{
-		DestructiveHint: &f,
-		OpenWorldHint:   &f,
-	}
-	additiveIdempotent := &mcp.ToolAnnotations{
-		DestructiveHint: &f,
-		IdempotentHint:  true,
-		OpenWorldHint:   &f,
-	}
-	t := true
-	destructive := &mcp.ToolAnnotations{
-		DestructiveHint: &t,
-		OpenWorldHint:   &f,
-	}
+	// Tool metadata (name, description, annotations) is declared in the
+	// internal/mcp/ops catalog. Handler method references stay here, since
+	// each has distinct generic I/O types that cannot share a registration
+	// loop. A drift test in ops_test.go asserts catalog ↔ registration parity.
 
 	// --- Phase 1: Core Lifecycle ---
-
-	addTool(s, &mcp.Tool{
-		Name:        "morning_context",
-		Description: "Get everything needed for daily planning: overdue tasks, today's tasks, committed daily plan items, upcoming tasks, and recent plan history. Use when the user starts their day.",
-		Annotations: readOnly,
-	}, s.morningContext)
-
-	addTool(s, &mcp.Tool{
-		Name:        "reflection_context",
-		Description: "Get everything needed for evening reflection: plan vs actual completion, daily plan item outcomes, today's journal entries. Use for evening reflection or reviewing the day.",
-		Annotations: readOnly,
-	}, s.reflectionContext)
-
-	addTool(s, &mcp.Tool{
-		Name:        "search_knowledge",
-		Description: "Search across all content types: articles, build logs, TILs, notes. Filters: content_type, project, date range. Use when looking for past knowledge or content.",
-		Annotations: readOnly,
-	}, s.searchKnowledge)
-
-	addTool(s, &mcp.Tool{
-		Name:        "capture_inbox",
-		Description: "Quick task capture to inbox. Only title is required. Status is always inbox. Use when the user says 'add a task', 'remind me to', or expresses a concrete work item to capture.",
-		Annotations: additive,
-	}, s.captureInbox)
-
-	addTool(s, &mcp.Tool{
-		Name:        "advance_work",
-		Description: "Task state transitions. Actions: clarify (inbox→todo with optional project/due/priority/energy), start (todo→in-progress), complete (→done, auto-updates daily plan item), defer (→someday). Use when the user wants to progress a task.",
-		Annotations: destructive,
-	}, s.advanceWork)
-
-	addTool(s, &mcp.Tool{
-		Name:        "plan_day",
-		Description: "Set daily plan items for a date. Accepts task IDs with positions. Idempotent: re-planning replaces existing items. Use after morning_context when the user confirms their daily plan.",
-		Annotations: additiveIdempotent,
-	}, s.planDay)
-
-	addTool(s, &mcp.Tool{
-		Name:        "write_journal",
-		Description: "Create a journal entry. Kind: plan (daily plan reasoning), context (session state snapshot), reflection (review), metrics (quantitative snapshot). Use for session logging and reflection.",
-		Annotations: additive,
-	}, s.writeJournal)
+	addTool(s, toolFrom(&ops.MorningContext), s.morningContext)
+	addTool(s, toolFrom(&ops.ReflectionContext), s.reflectionContext)
+	addTool(s, toolFrom(&ops.SearchKnowledge), s.searchKnowledge)
+	addTool(s, toolFrom(&ops.CaptureInbox), s.captureInbox)
+	addTool(s, toolFrom(&ops.AdvanceWork), s.advanceWork)
+	addTool(s, toolFrom(&ops.PlanDay), s.planDay)
+	addTool(s, toolFrom(&ops.WriteJournal), s.writeJournal)
 
 	// --- Phase 2: Intent & IPC ---
-
-	addTool(s, &mcp.Tool{
-		Name:        "propose_commitment",
-		Description: "Propose creating a goal, project, milestone, directive, or insight. Returns a preview and signed proposal token. Does NOT write to the database. Use when the user wants to create a high-commitment entity — present the preview for approval before calling commit_proposal.",
-		Annotations: readOnly,
-	}, s.proposeCommitment)
-
-	addTool(s, &mcp.Tool{
-		Name:        "commit_proposal",
-		Description: "Commit a previously proposed entity using the proposal_token from propose_commitment. Creates the entity in the database. Supports optional modifications to override fields before commit.",
-		Annotations: additive,
-	}, s.commitProposal)
-
-	addTool(s, &mcp.Tool{
-		Name:        "goal_progress",
-		Description: "Show active goals with milestone progress (completed/total), area, quarter, and deadline. Use for goal reviews, weekly planning, or 'am I on track' questions.",
-		Annotations: readOnly,
-	}, s.goalProgress)
-
-	addTool(s, &mcp.Tool{
-		Name:        "file_report",
-		Description: "Create a report. Optionally links to a directive via in_response_to. Set resolve_directive=true to mark the directive as resolved (requires directive to be acknowledged first). Source must be a participant with can_write_reports. Use when a participant completes directive work and files the final deliverable.",
-		Annotations: additive,
-	}, s.fileReport)
-
-	addTool(s, &mcp.Tool{
-		Name:        "acknowledge_directive",
-		Description: "Mark a directive as acknowledged by the calling participant. Validates the caller is the target. Use when the AI picks up a directive during morning_context.",
-		Annotations: additiveIdempotent,
-	}, s.acknowledgeDirective)
-
-	addTool(s, &mcp.Tool{
-		Name:        "track_insight",
-		Description: "Update an existing insight. Actions: verify (hypothesis confirmed), invalidate (hypothesis disproven), archive (retire), add_evidence (append supporting data). Insight creation goes through propose_commitment.",
-		Annotations: additiveIdempotent,
-	}, s.trackInsight)
+	addTool(s, toolFrom(&ops.ProposeCommitment), s.proposeCommitment)
+	addTool(s, toolFrom(&ops.CommitProposal), s.commitProposal)
+	addTool(s, toolFrom(&ops.GoalProgress), s.goalProgress)
+	addTool(s, toolFrom(&ops.FileReport), s.fileReport)
+	addTool(s, toolFrom(&ops.AcknowledgeDirective), s.acknowledgeDirective)
+	addTool(s, toolFrom(&ops.TrackInsight), s.trackInsight)
 
 	// --- Phase 3: Learning Domain ---
-
-	addTool(s, &mcp.Tool{
-		Name:        "start_session",
-		Description: "Begin a learning session. Required: domain (e.g. leetcode, japanese), mode (retrieval/practice/mixed/review/reading). Validates no other active session exists. Use when the user wants to start a learning/practice session.",
-		Annotations: additive,
-	}, s.startSession)
-
-	addTool(s, &mcp.Tool{
-		Name:        "record_attempt",
-		Description: "Record an attempt within the active learning session. Accepts semantic outcomes ('got it', 'needed help', 'gave up') mapped to schema enums by session mode. Auto-creates learning items and concepts. Both high and low confidence observations are persisted; dashboard filters at read time. Observation constraint: severity is only valid for signal='weakness'; passing severity on mastery/improvement will reject the entire observation (check observation_warnings in response).",
-		Annotations: additive,
-	}, s.recordAttempt)
-
-	addTool(s, &mcp.Tool{
-		Name:        "end_session",
-		Description: "End the active learning session. Optional reflection text creates a journal entry linked to the session. Returns session summary with all attempts.",
-		Annotations: additive,
-	}, s.endSession)
-
-	addTool(s, &mcp.Tool{
-		Name:        "learning_dashboard",
-		Description: "Learning analytics dashboard. Views: overview (sessions list), mastery (per-concept signal counts; mastery floor: <3 observations → always 'developing' regardless of signal distribution), weaknesses (cross-pattern weakness analysis by category+severity), retrieval (items with due <= now only; newly reviewed cards get future due dates and won't reappear until due), timeline (sessions with attempt stats by day), variations (problem relationship graph). Filter by domain and lookback period.",
-		Annotations: readOnly,
-	}, s.learningDashboard)
-
-	addTool(s, &mcp.Tool{
-		Name:        "attempt_history",
-		Description: "Read-side counterpart to record_attempt. Three lookup modes (exactly one required): item (title+domain — returns this problem's attempt history for Improvement Verification Loop), concept_slug (returns attempts that observed the concept, with the matched observation attached), session_id (returns all attempts for a past session). Empty result with resolved=false means the lookup target does not exist.",
-		Annotations: readOnly,
-	}, s.attemptHistory)
-
-	addTool(s, &mcp.Tool{
-		Name:        "manage_plan",
-		Description: "Learning plan lifecycle and items. Actions: add_items (accepts learning_item_id OR title for find-or-create using plan domain), remove_items (draft only), update_item (complete/skip/substitute), reorder, update_plan (activate/pause/complete/abandon), progress. The progress action returns aggregate counts plus a flat item list with plan_item_id, learning_item_id, title, position, status, phase — call it before update_item to look up plan_item_id.",
-		Annotations: destructive,
-	}, s.managePlan)
+	addTool(s, toolFrom(&ops.StartSession), s.startSession)
+	addTool(s, toolFrom(&ops.RecordAttempt), s.recordAttempt)
+	addTool(s, toolFrom(&ops.EndSession), s.endSession)
+	addTool(s, toolFrom(&ops.LearningDashboard), s.learningDashboard)
+	addTool(s, toolFrom(&ops.AttemptHistory), s.attemptHistory)
+	addTool(s, toolFrom(&ops.ManagePlan), s.managePlan)
 
 	// --- Phase 4: Content & Feeds ---
-
-	addTool(s, &mcp.Tool{
-		Name:        "manage_content",
-		Description: "Content lifecycle: create (draft), update (fields+status), publish (→published), list (filter by status/type), read (full content by ID), bookmark_rss (RSS entry → bookmark). Requires content_id for update/publish/read, entry_id for bookmark_rss.",
-		Annotations: additive,
-	}, s.manageContent)
-
-	addTool(s, &mcp.Tool{
-		Name:        "manage_feeds",
-		Description: "Feed management: list, add (url+name), update (enable/disable), remove. Use for RSS feed subscription management.",
-		Annotations: additive,
-	}, s.manageFeeds)
-
-	addTool(s, &mcp.Tool{
-		Name:        "system_status",
-		Description: "System health: pipeline stats, feed health, flow run summaries. Scopes: summary (default), pipelines, flows.",
-		Annotations: readOnly,
-	}, s.systemStatus)
+	addTool(s, toolFrom(&ops.ManageContent), s.manageContent)
+	addTool(s, toolFrom(&ops.ManageFeeds), s.manageFeeds)
+	addTool(s, toolFrom(&ops.SystemStatus), s.systemStatus)
 
 	// --- Extra: Cross-session & Aggregation ---
-
-	addTool(s, &mcp.Tool{
-		Name:        "session_delta",
-		Description: "What changed since last session: tasks created/completed, journal entries, learning sessions. Default lookback: 24 hours. Use at session start to bridge context.",
-		Annotations: readOnly,
-	}, s.sessionDelta)
-
-	addTool(s, &mcp.Tool{
-		Name:        "weekly_summary",
-		Description: "Week retrospective: tasks completed, journal entries, learning sessions, concept mastery. Defaults to current week (Monday-Sunday). Use for weekly reviews.",
-		Annotations: readOnly,
-	}, s.weeklySummary)
+	addTool(s, toolFrom(&ops.SessionDelta), s.sessionDelta)
+	addTool(s, toolFrom(&ops.WeeklySummary), s.weeklySummary)
 
 	return s
+}
+
+// toolFrom converts an ops.Meta declaration into an MCP tool descriptor.
+// Handler types are bound at the call site by addTool; this helper only
+// carries the static metadata across.
+func toolFrom(m *ops.Meta) *mcp.Tool {
+	return &mcp.Tool{
+		Name:        m.Name,
+		Description: m.Description,
+		Annotations: annotationsFor(m.Writability),
+	}
+}
+
+// annotationsFor maps a Writability label to MCP tool annotations.
+// OpenWorldHint is always false for koopa tools: all effects are local
+// to the koopa database, none call unbounded external services.
+func annotationsFor(w ops.Writability) *mcp.ToolAnnotations {
+	closed := false
+	switch w {
+	case ops.ReadOnly:
+		return &mcp.ToolAnnotations{
+			ReadOnlyHint:  true,
+			OpenWorldHint: &closed,
+		}
+	case ops.Additive:
+		return &mcp.ToolAnnotations{
+			DestructiveHint: &closed,
+			OpenWorldHint:   &closed,
+		}
+	case ops.Idempotent:
+		return &mcp.ToolAnnotations{
+			DestructiveHint: &closed,
+			IdempotentHint:  true,
+			OpenWorldHint:   &closed,
+		}
+	case ops.Destructive:
+		destructive := true
+		return &mcp.ToolAnnotations{
+			DestructiveHint: &destructive,
+			OpenWorldHint:   &closed,
+		}
+	default:
+		return &mcp.ToolAnnotations{OpenWorldHint: &closed}
+	}
 }
 
 // Run starts the MCP server with the given transport and blocks until ctx is cancelled.
@@ -424,6 +338,8 @@ func addTool[I, O any](s *Server, tool *mcp.Tool, handler func(context.Context, 
 		injectCallerIdentityField(schema)
 		tool.InputSchema = schema
 	}
+
+	s.registeredNames = append(s.registeredNames, tool.Name)
 
 	s.server.AddTool(tool, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		start := time.Now()
