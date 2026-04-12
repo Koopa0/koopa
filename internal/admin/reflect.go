@@ -86,14 +86,23 @@ func (h *Handler) ReflectDaily(w http.ResponseWriter, r *http.Request) {
 	endOfDay := date.AddDate(0, 0, 1)
 	if sessions, err := h.learn.RecentSessions(ctx, nil, date, 20); err == nil {
 		for i := range sessions {
-			if sessions[i].StartedAt.Before(endOfDay) {
+			s := &sessions[i]
+			if s.StartedAt.Before(endOfDay) {
 				dur := 0
-				if sessions[i].EndedAt != nil {
-					dur = int(sessions[i].EndedAt.Sub(sessions[i].StartedAt).Minutes())
+				var endedAt string
+				if s.EndedAt != nil {
+					dur = int(s.EndedAt.Sub(s.StartedAt).Minutes())
+					endedAt = s.EndedAt.Format(time.RFC3339)
 				}
 				out.LearningSessions = append(out.LearningSessions, map[string]any{
-					"domain":           sessions[i].Domain,
+					"id":               s.ID.String(),
+					"domain":           s.Domain,
+					"mode":             string(s.Mode),
+					"started_at":       s.StartedAt.Format(time.RFC3339),
+					"ended_at":         endedAt,
 					"duration_minutes": dur,
+					"attempts_count":   0,
+					"solved_count":     0,
 				})
 			}
 		}

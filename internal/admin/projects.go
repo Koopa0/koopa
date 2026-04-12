@@ -36,14 +36,15 @@ func (h *Handler) ProjectsOverview(w http.ResponseWriter, r *http.Request) {
 	}
 
 	type projectRow struct {
-		ID             string `json:"id"`
-		Title          string `json:"title"`
-		Slug           string `json:"slug"`
-		Status         string `json:"status"`
-		Area           string `json:"area,omitempty"`
-		GoalBreadcrumb any    `json:"goal_breadcrumb,omitempty"`
-		StaleDays      int    `json:"staleness_days"`
-		LastActivityAt string `json:"last_activity_at,omitempty"`
+		ID             string       `json:"id"`
+		Title          string       `json:"title"`
+		Slug           string       `json:"slug"`
+		Status         string       `json:"status"`
+		Area           string       `json:"area,omitempty"`
+		GoalBreadcrumb any          `json:"goal_breadcrumb,omitempty"`
+		TaskProgress   TaskProgress `json:"task_progress"`
+		StaleDays      int          `json:"staleness_days"`
+		LastActivityAt string       `json:"last_activity_at,omitempty"`
 	}
 
 	// Batch fetch goal titles to avoid N+1.
@@ -108,12 +109,23 @@ func (h *Handler) ProjectDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	areaID := ""
+	if p.AreaID != nil {
+		areaID = p.AreaID.String()
+	}
+
 	resp := map[string]any{
-		"id":          p.ID.String(),
-		"title":       p.Title,
-		"slug":        p.Slug,
-		"description": p.Description,
-		"status":      string(p.Status),
+		"id":              p.ID.String(),
+		"title":           p.Title,
+		"slug":            p.Slug,
+		"description":     p.Description,
+		"status":          string(p.Status),
+		"area":            areaID,
+		"problem":         stringOrEmpty(p.Problem),
+		"solution":        stringOrEmpty(p.Solution),
+		"architecture":    stringOrEmpty(p.Architecture),
+		"recent_activity": []any{},
+		"related_content": []any{},
 	}
 
 	if p.GoalID != nil {

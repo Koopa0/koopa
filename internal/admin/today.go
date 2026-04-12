@@ -26,14 +26,15 @@ type TodayResponse struct {
 
 // PlanItemSummary is a daily plan item with denormalized task fields.
 type PlanItemSummary struct {
-	ID          string `json:"id"`
-	TaskID      string `json:"task_id"`
-	Title       string `json:"title"`
-	Area        string `json:"area,omitempty"`
-	Energy      string `json:"energy,omitempty"`
-	Position    int    `json:"position"`
-	Status      string `json:"status"`
-	PlannedDate string `json:"planned_date"`
+	ID               string `json:"id"`
+	TaskID           string `json:"task_id"`
+	Title            string `json:"title"`
+	Area             string `json:"area,omitempty"`
+	Energy           string `json:"energy,omitempty"`
+	EstimatedMinutes int    `json:"estimated_minutes"`
+	Position         int    `json:"position"`
+	Status           string `json:"status"`
+	PlannedDate      string `json:"planned_date"`
 }
 
 // TaskSummary is a lightweight task view for list endpoints.
@@ -200,6 +201,7 @@ func planItemToSummary(item *daily.Item, date time.Time) PlanItemSummary {
 		ID:          item.ID.String(),
 		TaskID:      item.TaskID.String(),
 		Title:       item.TaskTitle,
+		Area:        item.ProjectTitle,
 		Energy:      stringOrEmpty(item.TaskEnergy),
 		Position:    int(item.Position),
 		Status:      string(item.Status),
@@ -212,6 +214,7 @@ func pendingTaskToSummary(t *task.PendingTaskDetail) TaskSummary {
 		ID:           t.ID.String(),
 		Title:        t.Title,
 		Status:       string(t.Status),
+		Area:         t.ProjectTitle,
 		Priority:     stringOrEmpty(t.Priority),
 		Energy:       stringOrEmpty(t.Energy),
 		ProjectTitle: t.ProjectTitle,

@@ -26,16 +26,16 @@ type AreaGoalGroup struct {
 
 // GoalSummary is a goal with milestone progress for list views.
 type GoalSummary struct {
-	ID              string `json:"id"`
-	Title           string `json:"title"`
-	Status          string `json:"status"`
-	Deadline        string `json:"deadline,omitempty"`
-	DaysRemaining   *int   `json:"days_remaining,omitempty"`
-	MilestonesTotal int    `json:"milestones_total"`
-	MilestonesDone  int    `json:"milestones_done"`
-	NextMilestone   string `json:"next_milestone,omitempty"`
-	ProjectsCount   int    `json:"projects_count"`
-	Quarter         string `json:"quarter,omitempty"`
+	ID                 string `json:"id"`
+	Title              string `json:"title"`
+	Status             string `json:"status"`
+	Deadline           string `json:"deadline,omitempty"`
+	DaysRemaining      *int   `json:"days_remaining,omitempty"`
+	MilestonesTotal    int    `json:"milestones_total"`
+	MilestonesDone     int    `json:"milestones_done"`
+	NextMilestoneTitle string `json:"next_milestone_title,omitempty"`
+	ProjectsCount      int    `json:"projects_count"`
+	Quarter            string `json:"quarter,omitempty"`
 }
 
 // GoalsOverview handles GET /api/admin/plan/goals.
@@ -74,7 +74,12 @@ func (h *Handler) GoalsOverview(w http.ResponseWriter, r *http.Request) {
 		}
 		group, ok := areaMap[areaKey]
 		if !ok {
+			areaID := ""
+			if g.AreaID != nil {
+				areaID = g.AreaID.String()
+			}
 			group = &AreaGoalGroup{
+				AreaID:   areaID,
 				AreaName: areaKey,
 				Goals:    []GoalSummary{},
 			}
@@ -109,12 +114,19 @@ func (h *Handler) GoalsOverview(w http.ResponseWriter, r *http.Request) {
 	api.Encode(w, http.StatusOK, GoalsOverviewResponse{ByArea: result})
 }
 
+// TaskProgress is the done/total task count for a project.
+type TaskProgress struct {
+	Done  int `json:"done"`
+	Total int `json:"total"`
+}
+
 // GoalDetailResponse is the payload for GET /api/admin/plan/goals/{id}.
 type GoalDetailResponse struct {
 	ID             string             `json:"id"`
 	Title          string             `json:"title"`
 	Description    string             `json:"description"`
 	Status         string             `json:"status"`
+	AreaID         string             `json:"area_id,omitempty"`
 	AreaName       string             `json:"area_name,omitempty"`
 	Deadline       string             `json:"deadline,omitempty"`
 	Quarter        string             `json:"quarter,omitempty"`
@@ -146,9 +158,10 @@ type MilestoneSummary struct {
 
 // ProjectBrief is a lightweight project view for goal detail.
 type ProjectBrief struct {
-	ID     string `json:"id"`
-	Title  string `json:"title"`
-	Status string `json:"status"`
+	ID           string       `json:"id"`
+	Title        string       `json:"title"`
+	Status       string       `json:"status"`
+	TaskProgress TaskProgress `json:"task_progress"`
 }
 
 // GoalDetail handles GET /api/admin/plan/goals/{id}.
@@ -181,6 +194,9 @@ func (h *Handler) GoalDetail(w http.ResponseWriter, r *http.Request) {
 		CreatedAt:   g.CreatedAt.Format(time.RFC3339),
 		Health:      "on-track",
 	}
+	if g.AreaID != nil {
+		resp.AreaID = g.AreaID.String()
+	}
 	if g.AreaName != "" {
 		resp.AreaName = g.AreaName
 	}
@@ -207,15 +223,20 @@ func (h *Handler) GoalDetail(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Projects linked to this goal.
+	// Projects linked to this goal, with task progress.
 	projSummaries, _ := h.projects.SummariesByGoalIDs(ctx, []uuid.UUID{goalID})
 	resp.Projects = make([]ProjectBrief, len(projSummaries))
 	for i := range projSummaries {
-		resp.Projects[i] = ProjectBrief{
+		brief := ProjectBrief{
 			ID:     projSummaries[i].ID.String(),
 			Title:  projSummaries[i].Title,
 			Status: string(projSummaries[i].Status),
 		}
+		if grouped, tErr := h.tasks.TasksByProjectGrouped(ctx, projSummaries[i].ID); tErr == nil {
+			total := len(grouped.InProgress) + len(grouped.Todo) + len(grouped.Done)
+			brief.TaskProgress = TaskProgress{Done: len(grouped.Done), Total: total}
+		}
+		resp.Projects[i] = brief
 	}
 
 	// Recent activity (UNION across milestones, tasks, contents).
