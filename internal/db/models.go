@@ -1391,6 +1391,29 @@ type Source struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
+// Append-only historical observation layer. Each row is a frozen snapshot of what a derived view (weekly_review, etc.) looked like at computed_at, based on the evidence set captured in evidence. Never updated after insert. Never invalidated by TTL. Never written by live handlers — only by secondary consolidation processes. Readers get historical state, never current state.
+type Synthesis struct {
+	ID uuid.UUID `json:"id"`
+	// What kind of entity this synthesis describes. First slice allows only "week"; future slices extend via ALTER TABLE to add "goal", "project", "concept".
+	SubjectType string `json:"subject_type"`
+	// UUID subject identity for entity-based subjects (goal, project, concept in future slices). NULL when subject uses a string key (e.g. week). chk_syntheses_subject_identity requires at least one of subject_id or subject_key to be set.
+	SubjectID *uuid.UUID `json:"subject_id"`
+	// String subject identity for time-bucket subjects like week (ISO week key e.g. "2026-W15"). NULL when subject uses a UUID. chk_syntheses_subject_identity requires at least one of subject_id or subject_key to be set.
+	SubjectKey *string `json:"subject_key"`
+	// Which view this synthesis captures. First slice allows only "weekly_review"; future slices extend via ALTER TABLE. A (subject_type, kind) pair determines the body schema.
+	Kind string `json:"kind"`
+	// Structured snapshot payload. Shape is determined by kind — for weekly_review the Go type is synthesis.WeeklyReviewBody. NEVER a free-text LLM dump. Always a typed Go struct marshaled to JSON.
+	Body []byte `json:"body"`
+	// Reference list of primary-state ids that contributed to this snapshot. Shape: [{"type": "task", "id": "..."}, {"type": "session", "id": "..."}, ...]. Used to compute evidence_hash for dedup and (in future) reverse lookup.
+	Evidence []byte `json:"evidence"`
+	// SHA-256 hex of canonical_json(evidence). Acts as the dedup identity for append-only writes: if the same evidence set appears again, ON CONFLICT DO NOTHING skips the insert. Evidence changes between runs produce a new row (historical accumulation), not an overwrite.
+	EvidenceHash string `json:"evidence_hash"`
+	// When this snapshot was written. Never updated after insert. For the same (subject, kind), ORDER BY computed_at DESC LIMIT 1 gives the latest observation; the full ORDER BY gives the historical timeline.
+	ComputedAt time.Time `json:"computed_at"`
+	// Label identifying the writer process and invocation mode, e.g. "consolidation:weekly:manual" for a manually-triggered consolidation run. Free-text by design — this field is a label for observability, not a dispatch key. Live handlers MUST NOT write rows and MUST NOT use this field.
+	ComputedBy string `json:"computed_by"`
+}
+
 // Canonical tag registry. Fine-grained labels (two-pointers, error-handling). Auto-extracted from notes, resolved through tag_aliases pipeline.
 type Tag struct {
 	ID uuid.UUID `json:"id"`

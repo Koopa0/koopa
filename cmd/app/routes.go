@@ -210,6 +210,12 @@ func registerRoutes(mux *http.ServeMux, h *handlers, authMid func(http.Handler) 
 		mux.Handle("GET /api/admin/reflect/journal", authMid(http.HandlerFunc(a.JournalList)))
 		mux.Handle("GET /api/admin/reflect/insights", authMid(http.HandlerFunc(a.InsightsList)))
 
+		// Reflect history — retrospective view over synthesis substrate.
+		// GET is pure read: never triggers live compute, never writes.
+		// POST is the manual consolidation trigger (writes syntheses).
+		mux.Handle("GET /api/admin/reflect/history/weekly", authMid(http.HandlerFunc(a.ReflectHistoryWeekly)))
+		mux.Handle("POST /api/admin/consolidate/weekly", authMid(http.HandlerFunc(a.ConsolidateWeekly)))
+
 		// Dashboard
 		mux.Handle("GET /api/admin/dashboard/trends", authMid(http.HandlerFunc(a.DashboardTrends)))
 

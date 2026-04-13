@@ -29,6 +29,7 @@ import (
 	"github.com/Koopa0/koopa0.dev/internal/plan"
 	"github.com/Koopa0/koopa0.dev/internal/project"
 	"github.com/Koopa0/koopa0.dev/internal/report"
+	"github.com/Koopa0/koopa0.dev/internal/synthesis"
 	"github.com/Koopa0/koopa0.dev/internal/task"
 )
 
@@ -45,6 +46,7 @@ type Handler struct {
 	learn      *learning.Store
 	plans      *plan.Store
 	reports    *report.Store
+	synth      *synthesis.Store
 
 	loc    *time.Location
 	logger *slog.Logger
@@ -70,6 +72,7 @@ func NewHandler(pool *pgxpool.Pool, loc *time.Location, logger *slog.Logger) *Ha
 		learn:      learning.NewStore(pool),
 		plans:      plan.NewStore(pool),
 		reports:    report.NewStore(pool),
+		synth:      synthesis.NewStore(pool),
 		loc:        loc,
 		logger:     logger,
 	}

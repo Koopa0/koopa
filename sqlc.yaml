@@ -21,6 +21,7 @@ sql:
       - "internal/learning/query.sql"
       - "internal/plan/query.sql"
       - "internal/bookmark/query.sql"
+      - "internal/synthesis/query.sql"
     schema: "migrations/"
     gen:
       go:

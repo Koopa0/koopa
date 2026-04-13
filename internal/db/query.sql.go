@@ -2211,6 +2211,25 @@ func (q *Queries) ContentsWithoutEmbedding(ctx context.Context, lim int32) ([]Co
 	return items, nil
 }
 
+const countByKind = `-- name: CountByKind :one
+SELECT COUNT(*) FROM syntheses
+WHERE subject_type = $1 AND kind = $2
+`
+
+type CountByKindParams struct {
+	SubjectType string `json:"subject_type"`
+	Kind        string `json:"kind"`
+}
+
+// Row count for a (subject_type, kind). Used by integration tests to
+// verify invariants like "live weekly_summary leaves the table empty".
+func (q *Queries) CountByKind(ctx context.Context, arg CountByKindParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countByKind, arg.SubjectType, arg.Kind)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countEventsBySourcePrefix = `-- name: CountEventsBySourcePrefix :one
 SELECT count(*)::int FROM events
 WHERE event_type = $1
@@ -3214,6 +3233,71 @@ func (q *Queries) CreateSkipRecord(ctx context.Context, arg CreateSkipRecordPara
 		arg.Reason,
 	)
 	return err
+}
+
+const createSynthesis = `-- name: CreateSynthesis :one
+
+INSERT INTO syntheses (
+    subject_type, subject_id, subject_key, kind,
+    body, evidence, evidence_hash, computed_by
+) VALUES (
+    $1, $2, $3, $4,
+    $5, $6, $7, $8
+)
+ON CONFLICT DO NOTHING
+RETURNING id, subject_type, subject_id, subject_key, kind,
+          body, evidence, evidence_hash, computed_at, computed_by
+`
+
+type CreateSynthesisParams struct {
+	SubjectType  string     `json:"subject_type"`
+	SubjectID    *uuid.UUID `json:"subject_id"`
+	SubjectKey   *string    `json:"subject_key"`
+	Kind         string     `json:"kind"`
+	Body         []byte     `json:"body"`
+	Evidence     []byte     `json:"evidence"`
+	EvidenceHash string     `json:"evidence_hash"`
+	ComputedBy   string     `json:"computed_by"`
+}
+
+// Queries for the synthesis historical observation layer.
+//
+// This is a write-once-read-many table. No UPDATE queries. Callers use
+// CreateSynthesis with ON CONFLICT DO NOTHING for dedup semantics —
+// same evidence set will not produce a duplicate row. Different
+// evidence produces a new row, enabling historical accumulation.
+// Insert a new synthesis row. Caller must have already computed
+// evidence_hash via synthesis.ComputeEvidenceHash. ON CONFLICT on the
+// unique partial indexes (url_hash-style dedup) — either the by_key
+// or by_id partial index fires depending on which identity column is
+// populated. A conflict causes RETURNING to yield zero rows, which
+// the Go store maps to ErrNotFound and the caller interprets as
+// "already recorded with this evidence".
+func (q *Queries) CreateSynthesis(ctx context.Context, arg CreateSynthesisParams) (Synthesis, error) {
+	row := q.db.QueryRow(ctx, createSynthesis,
+		arg.SubjectType,
+		arg.SubjectID,
+		arg.SubjectKey,
+		arg.Kind,
+		arg.Body,
+		arg.Evidence,
+		arg.EvidenceHash,
+		arg.ComputedBy,
+	)
+	var i Synthesis
+	err := row.Scan(
+		&i.ID,
+		&i.SubjectType,
+		&i.SubjectID,
+		&i.SubjectKey,
+		&i.Kind,
+		&i.Body,
+		&i.Evidence,
+		&i.EvidenceHash,
+		&i.ComputedAt,
+		&i.ComputedBy,
+	)
+	return i, err
 }
 
 const createTag = `-- name: CreateTag :one
@@ -5429,6 +5513,45 @@ func (q *Queries) ItemsByDateRange(ctx context.Context, arg ItemsByDateRangePara
 		return nil, err
 	}
 	return items, nil
+}
+
+const latestBySubjectKey = `-- name: LatestBySubjectKey :one
+SELECT id, subject_type, subject_id, subject_key, kind,
+       body, evidence, evidence_hash, computed_at, computed_by
+FROM syntheses
+WHERE subject_type = $1
+  AND subject_key = $2
+  AND kind = $3
+ORDER BY computed_at DESC
+LIMIT 1
+`
+
+type LatestBySubjectKeyParams struct {
+	SubjectType string  `json:"subject_type"`
+	SubjectKey  *string `json:"subject_key"`
+	Kind        string  `json:"kind"`
+}
+
+// The most recent synthesis for a specific (subject_type, subject_key,
+// kind). Used when the reader wants "the best single snapshot we have
+// for week X" rather than the full timeline. Returns pgx.ErrNoRows on
+// no match, which the Go store maps to ErrNotFound.
+func (q *Queries) LatestBySubjectKey(ctx context.Context, arg LatestBySubjectKeyParams) (Synthesis, error) {
+	row := q.db.QueryRow(ctx, latestBySubjectKey, arg.SubjectType, arg.SubjectKey, arg.Kind)
+	var i Synthesis
+	err := row.Scan(
+		&i.ID,
+		&i.SubjectType,
+		&i.SubjectID,
+		&i.SubjectKey,
+		&i.Kind,
+		&i.Body,
+		&i.Evidence,
+		&i.EvidenceHash,
+		&i.ComputedAt,
+		&i.ComputedBy,
+	)
+	return i, err
 }
 
 const latestCollectedByRecency = `-- name: LatestCollectedByRecency :many
@@ -7828,6 +7951,64 @@ func (q *Queries) ReassignNoteTags(ctx context.Context, arg ReassignNoteTagsPara
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const recentByKind = `-- name: RecentByKind :many
+SELECT id, subject_type, subject_id, subject_key, kind,
+       body, evidence, evidence_hash, computed_at, computed_by
+FROM syntheses
+WHERE subject_type = $2
+  AND kind = $3
+  AND ($4::text IS NULL OR subject_key = $4)
+ORDER BY computed_at DESC
+LIMIT $1
+`
+
+type RecentByKindParams struct {
+	Limit       int32   `json:"limit"`
+	SubjectType string  `json:"subject_type"`
+	Kind        string  `json:"kind"`
+	SubjectKey  *string `json:"subject_key"`
+}
+
+// List recent syntheses for a (subject_type, kind) pair, newest first.
+// Used by the retrospective read endpoint to show a timeline of past
+// snapshots. Filters on subject_key optional so the caller can either
+// list all weeks or pin to one.
+func (q *Queries) RecentByKind(ctx context.Context, arg RecentByKindParams) ([]Synthesis, error) {
+	rows, err := q.db.Query(ctx, recentByKind,
+		arg.Limit,
+		arg.SubjectType,
+		arg.Kind,
+		arg.SubjectKey,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Synthesis{}
+	for rows.Next() {
+		var i Synthesis
+		if err := rows.Scan(
+			&i.ID,
+			&i.SubjectType,
+			&i.SubjectID,
+			&i.SubjectKey,
+			&i.Kind,
+			&i.Body,
+			&i.Evidence,
+			&i.EvidenceHash,
+			&i.ComputedAt,
+			&i.ComputedBy,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const recentCollectedData = `-- name: RecentCollectedData :many
