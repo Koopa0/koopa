@@ -1,8 +1,0 @@
--- Content dropped during squash.
---
--- 006 was a one-time data backfill that copied contents.type='bookmark'
--- rows into the bookmarks table created by 005. On a fresh database
--- there are no source rows to copy, so the backfill is a no-op and
--- intentionally omitted from the squashed 001. The VPS that originally
--- ran this migration already has the backfilled data; this stub only
--- preserves version 6 in schema_migrations for version-tracking.

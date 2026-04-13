@@ -1,3 +1,0 @@
--- Content squashed into 001_initial.up.sql.
--- This file remains as a version-tracking placeholder so any DB that
--- already recorded version 3 in schema_migrations stays consistent.

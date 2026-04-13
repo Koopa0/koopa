@@ -1,1 +1,0 @@
--- Content squashed into 001_initial.down.sql. See 005_bookmarks_schema.up.sql.
