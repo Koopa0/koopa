@@ -1,7 +1,3 @@
--- Improve morning_context RSS highlights query performance.
--- The HighPriorityRecent query joins feeds + feed_entries with filters on
--- feeds.priority and feed_entries.status + collected_at. Without these indexes,
--- PostgreSQL performs full table scans on both tables.
-
-CREATE INDEX idx_feeds_high_priority ON feeds(id) WHERE priority = 'high';
-CREATE INDEX idx_feed_entries_unread_recent ON feed_entries(feed_id, collected_at DESC) WHERE status = 'unread';
+-- Content squashed into 001_initial.up.sql.
+-- This file remains as a version-tracking placeholder so any DB that
+-- already recorded version 4 in schema_migrations stays consistent.

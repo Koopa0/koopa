@@ -2,6 +2,14 @@
 
 -- tool_call_logs + views removed — offloaded to Loki/Prometheus/Grafana
 
+-- Synthesis historical observation layer (Track C, squashed from 007)
+DROP TABLE IF EXISTS syntheses;
+
+-- Bookmarks split out of contents polymorphism (Track B, squashed from 005)
+DROP TABLE IF EXISTS bookmark_tags;
+DROP TABLE IF EXISTS bookmark_topics;
+DROP TABLE IF EXISTS bookmarks;
+
 -- Learning analytics + spaced repetition
 -- review_cards/review_logs must drop before items (FK dependency)
 -- plan_items must drop before plans and items (FK dependency)

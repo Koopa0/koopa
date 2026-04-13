@@ -617,6 +617,9 @@ CREATE INDEX idx_feed_entries_feed_id ON feed_entries (feed_id) WHERE feed_id IS
 CREATE INDEX idx_feed_entries_collected_at ON feed_entries (collected_at DESC);
 CREATE INDEX idx_feed_entries_unread_at ON feed_entries (collected_at DESC) WHERE status = 'unread';
 CREATE INDEX idx_feed_entries_unread_relevance ON feed_entries (relevance_score DESC) WHERE status = 'unread';
+CREATE INDEX idx_feed_entries_unread_recent ON feed_entries (feed_id, collected_at DESC) WHERE status = 'unread';
+
+CREATE INDEX idx_feeds_high_priority ON feeds(id) WHERE priority = 'high';
 
 -- ============================================================
 -- Topic monitors (was: tracking_topics)
@@ -1616,6 +1619,7 @@ CREATE TABLE attempt_observations (
     category    TEXT NOT NULL,
     severity    TEXT CHECK (severity IN ('minor', 'moderate', 'critical')),
     detail      TEXT,
+    confidence  TEXT NOT NULL DEFAULT 'high' CHECK (confidence IN ('high', 'low')),
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
 
     CONSTRAINT chk_severity_weakness_only
@@ -1649,9 +1653,19 @@ COMMENT ON COLUMN attempt_observations.severity IS
 COMMENT ON COLUMN attempt_observations.detail IS
     'Free-text evidence or explanation. NULL when the signal is self-explanatory '
     'from category alone.';
+COMMENT ON COLUMN attempt_observations.confidence IS
+    'high (default): signal directly evidenced by the attempt outcome — '
+    'user said "I forgot how X works" or repeatedly failed at X. '
+    'low: coach inferred the signal from indirect evidence — '
+    'user struggled with the problem and coach suspects X is the missing skill. '
+    'Both persist. Dashboard mastery and weakness views default to high only; '
+    'pass confidence_filter=all to include low-confidence observations.';
 
 CREATE INDEX idx_attempt_observations_concept_signal ON attempt_observations (concept_id, signal_type);
 CREATE INDEX idx_attempt_observations_attempt ON attempt_observations (attempt_id);
+CREATE INDEX idx_attempt_observations_high_confidence
+    ON attempt_observations (concept_id, created_at DESC)
+    WHERE confidence = 'high';
 
 -- Item relations: variation / prerequisite graph
 --
@@ -1954,3 +1968,135 @@ COMMENT ON COLUMN plan_items.added_at IS
 COMMENT ON COLUMN plan_items.completed_at IS
     'When this item was marked completed in the plan context. NULL until status → '
     'completed. Set by manage_plan tool call, not derived from attempts.';
+
+-- ============================================================
+-- Bookmarks — external resources curated with commentary
+-- ============================================================
+-- Split out from contents.type='bookmark' polymorphism. Bookmarks
+-- differ from first-party content: external canonical URL,
+-- curate = publish (no editorial review), no review_queue,
+-- different RSS output. See internal/bookmark package.
+
+CREATE TABLE bookmarks (
+    id                   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    url                  TEXT NOT NULL,
+    url_hash             TEXT NOT NULL,
+    slug                 TEXT NOT NULL,
+    title                TEXT NOT NULL,
+    excerpt              TEXT NOT NULL DEFAULT '',
+    note                 TEXT NOT NULL DEFAULT '',
+    source_type          TEXT NOT NULL
+        CHECK (source_type IN ('rss', 'manual', 'shared')),
+    source_feed_entry_id UUID REFERENCES feed_entries(id) ON DELETE SET NULL,
+    curated_by           TEXT NOT NULL,
+    curated_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
+    is_public            BOOLEAN NOT NULL DEFAULT true,
+    published_at         TIMESTAMPTZ,
+    embedding            vector(768),
+    legacy_content_id    UUID REFERENCES contents(id) ON DELETE SET NULL,
+    created_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+    CONSTRAINT uniq_bookmarks_url_hash UNIQUE (url_hash),
+    CONSTRAINT uniq_bookmarks_slug UNIQUE (slug),
+    CONSTRAINT uniq_bookmarks_legacy_content_id UNIQUE (legacy_content_id)
+);
+
+COMMENT ON TABLE bookmarks IS 'External resources curated with personal commentary. Separate from contents because bookmarks skip editorial review (curate = publish), have an external canonical URL, and do not share the first-party publish workflow.';
+COMMENT ON COLUMN bookmarks.url IS 'Canonical external URL of the bookmarked resource. SEO canonical tag points to this value.';
+COMMENT ON COLUMN bookmarks.url_hash IS 'SHA-256 hex digest of the canonical URL. Dedup identity. Computed in application code before INSERT — matches feed_entries.url_hash semantics.';
+COMMENT ON COLUMN bookmarks.slug IS 'URL-safe internal identifier for bookmark permalinks on the koopa0.dev site. Distinct from the external URL.';
+COMMENT ON COLUMN bookmarks.title IS 'Display title. May override the source title if the curator edited it at capture time.';
+COMMENT ON COLUMN bookmarks.excerpt IS 'Short excerpt from the source, typically truncated to a few sentences. Empty string when the source provided none.';
+COMMENT ON COLUMN bookmarks.note IS 'Curator''s personal commentary. The reason this bookmark is worth remembering. Empty string when no note.';
+COMMENT ON COLUMN bookmarks.source_type IS 'How the bookmark entered the system: rss (curated from feed_entries), manual (pasted by curator), shared (received via external channel).';
+COMMENT ON COLUMN bookmarks.source_feed_entry_id IS 'If source_type=rss, references the originating feed_entries row. NULL for manual/shared bookmarks. SET NULL on feed_entry deletion — bookmark survives independently.';
+COMMENT ON COLUMN bookmarks.curated_by IS 'Participant id that curated the bookmark (e.g. "hq", "human"). Not an FK — participants may be renamed without rewriting history.';
+COMMENT ON COLUMN bookmarks.curated_at IS 'When the bookmark was curated into koopa0.dev. Distinct from source publication date.';
+COMMENT ON COLUMN bookmarks.is_public IS 'Whether this bookmark is visible on the public website. Private bookmarks are admin/MCP only.';
+COMMENT ON COLUMN bookmarks.published_at IS 'When the bookmark became publicly visible. NULL = private or not yet published. Unlike contents, bookmarks typically have published_at = curated_at.';
+COMMENT ON COLUMN bookmarks.embedding IS 'pgvector embedding (768d) for semantic search inclusion. Optional — backfill may leave NULL for rows whose source content was never embedded.';
+COMMENT ON COLUMN bookmarks.legacy_content_id IS 'Bridge to the contents row this bookmark was backfilled from during the Track B M2 migration window. NULL on fresh installs and for bookmarks created after M3 cutover. SET NULL if the legacy content row is ever deleted. The 006_bookmarks_backfill migration (no-op after squash into 001) populated this for DBs that lived through the polymorphism split.';
+
+CREATE INDEX idx_bookmarks_published_at ON bookmarks(published_at DESC NULLS LAST)
+    WHERE is_public = true;
+CREATE INDEX idx_bookmarks_curated_at ON bookmarks(curated_at DESC);
+CREATE INDEX idx_bookmarks_source_feed_entry ON bookmarks(source_feed_entry_id)
+    WHERE source_feed_entry_id IS NOT NULL;
+CREATE INDEX idx_bookmarks_embedding_hnsw ON bookmarks USING hnsw (embedding vector_cosine_ops)
+    WITH (m = 16, ef_construction = 64);
+
+CREATE TABLE bookmark_topics (
+    bookmark_id UUID NOT NULL REFERENCES bookmarks(id) ON DELETE CASCADE,
+    topic_id    UUID NOT NULL REFERENCES topics(id) ON DELETE CASCADE,
+    PRIMARY KEY (bookmark_id, topic_id)
+);
+
+COMMENT ON TABLE bookmark_topics IS 'Junction: bookmark ↔ topic. Many-to-many. Topics are curated knowledge domain categories (same taxonomy as content_topics).';
+
+CREATE INDEX idx_bookmark_topics_topic_id ON bookmark_topics(topic_id);
+
+CREATE TABLE bookmark_tags (
+    bookmark_id UUID NOT NULL REFERENCES bookmarks(id) ON DELETE CASCADE,
+    tag_id      UUID NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+    PRIMARY KEY (bookmark_id, tag_id)
+);
+
+COMMENT ON TABLE bookmark_tags IS 'Junction: bookmark ↔ tag. References canonical tags resolved through the tag_aliases pipeline.';
+
+CREATE INDEX idx_bookmark_tags_tag_id ON bookmark_tags(tag_id);
+
+-- ============================================================
+-- Syntheses — historical observation layer for derived views
+-- ============================================================
+-- Append-only snapshot log. Written by secondary consolidation
+-- processes, read by retrospective query tools. Not a cache — no
+-- TTL, no invalidation, never overwritten. Live handlers MUST NOT
+-- write rows. See internal/synthesis and internal/consolidation.
+--
+-- First slice: only subject_type='week' and kind='weekly_review'.
+-- Extend CHECK values via ALTER TABLE when adding new subjects.
+
+CREATE TABLE syntheses (
+    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    subject_type  TEXT NOT NULL
+        CHECK (subject_type IN ('week')),
+    subject_id    UUID,
+    subject_key   TEXT,
+    kind          TEXT NOT NULL
+        CHECK (kind IN ('weekly_review')),
+    body          JSONB NOT NULL,
+    evidence      JSONB NOT NULL,
+    evidence_hash TEXT NOT NULL,
+    computed_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+    computed_by   TEXT NOT NULL,
+
+    CONSTRAINT chk_syntheses_subject_identity
+        CHECK (subject_id IS NOT NULL OR subject_key IS NOT NULL)
+);
+
+COMMENT ON TABLE syntheses IS 'Append-only historical observation layer. Each row is a frozen snapshot of what a derived view (weekly_review, etc.) looked like at computed_at, based on the evidence set captured in evidence. Never updated after insert. Never invalidated by TTL. Never written by live handlers — only by secondary consolidation processes. Readers get historical state, never current state.';
+COMMENT ON COLUMN syntheses.subject_type IS 'What kind of entity this synthesis describes. First slice allows only "week"; future slices extend via ALTER TABLE to add "goal", "project", "concept".';
+COMMENT ON COLUMN syntheses.subject_id IS 'UUID subject identity for entity-based subjects (goal, project, concept in future slices). NULL when subject uses a string key (e.g. week). chk_syntheses_subject_identity requires at least one of subject_id or subject_key to be set.';
+COMMENT ON COLUMN syntheses.subject_key IS 'String subject identity for time-bucket subjects like week (ISO week key e.g. "2026-W15"). NULL when subject uses a UUID. chk_syntheses_subject_identity requires at least one of subject_id or subject_key to be set.';
+COMMENT ON COLUMN syntheses.kind IS 'Which view this synthesis captures. First slice allows only "weekly_review"; future slices extend via ALTER TABLE. A (subject_type, kind) pair determines the body schema.';
+COMMENT ON COLUMN syntheses.body IS 'Structured snapshot payload. Shape is determined by kind — for weekly_review the Go type is synthesis.WeeklyReviewBody. NEVER a free-text LLM dump. Always a typed Go struct marshaled to JSON.';
+COMMENT ON COLUMN syntheses.evidence IS 'Reference list of primary-state ids that contributed to this snapshot. Shape: [{"type": "task", "id": "..."}, {"type": "session", "id": "..."}, ...]. Used to compute evidence_hash for dedup and (in future) reverse lookup.';
+COMMENT ON COLUMN syntheses.evidence_hash IS 'SHA-256 hex of canonical_json(evidence). Acts as the dedup identity for append-only writes: if the same evidence set appears again, ON CONFLICT DO NOTHING skips the insert. Evidence changes between runs produce a new row (historical accumulation), not an overwrite.';
+COMMENT ON COLUMN syntheses.computed_at IS 'When this snapshot was written. Never updated after insert. For the same (subject, kind), ORDER BY computed_at DESC LIMIT 1 gives the latest observation; the full ORDER BY gives the historical timeline.';
+COMMENT ON COLUMN syntheses.computed_by IS 'Label identifying the writer process and invocation mode, e.g. "consolidation:weekly:manual" for a manually-triggered consolidation run. Free-text by design — this field is a label for observability, not a dispatch key. Live handlers MUST NOT write rows and MUST NOT use this field.';
+
+CREATE UNIQUE INDEX uniq_syntheses_by_key ON syntheses
+    (subject_type, subject_key, kind, evidence_hash)
+    WHERE subject_key IS NOT NULL;
+
+CREATE UNIQUE INDEX uniq_syntheses_by_id ON syntheses
+    (subject_type, subject_id, kind, evidence_hash)
+    WHERE subject_id IS NOT NULL;
+
+CREATE INDEX idx_syntheses_recent_by_kind ON syntheses
+    (subject_type, kind, computed_at DESC);
+
+CREATE INDEX idx_syntheses_by_subject_key ON syntheses
+    (subject_type, subject_key, kind, computed_at DESC)
+    WHERE subject_key IS NOT NULL;

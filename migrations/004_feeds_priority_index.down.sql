@@ -1,2 +1,1 @@
-DROP INDEX IF EXISTS idx_feed_entries_unread_recent;
-DROP INDEX IF EXISTS idx_feeds_high_priority;
+-- Content squashed into 001_initial.down.sql. See 004_feeds_priority_index.up.sql.
