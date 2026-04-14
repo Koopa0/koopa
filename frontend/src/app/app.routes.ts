@@ -144,6 +144,20 @@ export const routes: Routes = [
     children: [
       { path: '', redirectTo: 'overview', pathMatch: 'full' },
       {
+        path: 'now',
+        loadComponent: () =>
+          import('./admin/now/now-page.component').then(
+            (m) => m.NowPageComponent,
+          ),
+      },
+      {
+        path: 'atlas',
+        loadComponent: () =>
+          import('./admin/atlas/atlas-page.component').then(
+            (m) => m.AtlasPageComponent,
+          ),
+      },
+      {
         path: 'overview',
         loadComponent: () =>
           import('./admin/overview/overview').then((m) => m.OverviewComponent),
