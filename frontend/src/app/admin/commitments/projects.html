@@ -71,8 +71,9 @@
       <div class="space-y-2">
         @for (project of group.projects; track project.id) {
         <a
-          [routerLink]="['/admin/commitments/projects', project.id]"
-          (click)="onRowClick($event, project)"
+          [routerLink]="[]"
+          [queryParams]="{ inspect: 'project:' + project.id }"
+          queryParamsHandling="merge"
           class="group block rounded-lg border border-zinc-800 bg-zinc-900/50 p-4 no-underline transition-colors hover:border-zinc-700"
           data-testid="project-row"
         >

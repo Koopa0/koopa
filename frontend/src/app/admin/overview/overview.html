@@ -212,7 +212,9 @@
         <div class="grid gap-3 sm:grid-cols-2">
           @for (goal of goalPulse(); track goal.id) {
           <a
-            [routerLink]="['/admin/commitments/goals', goal.id]"
+            [routerLink]="[]"
+            [queryParams]="{ inspect: 'goal:' + goal.id }"
+            queryParamsHandling="merge"
             class="rounded-lg border p-4 no-underline transition-colors hover:border-zinc-700"
             [class]="getGoalHealthColor(goal)"
           >

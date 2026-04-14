@@ -227,24 +227,10 @@ export const routes: Routes = [
           import('./admin/commitments/goals').then((m) => m.GoalsComponent),
       },
       {
-        path: 'commitments/goals/:id',
-        loadComponent: () =>
-          import('./admin/commitments/goal-detail').then(
-            (m) => m.GoalDetailComponent,
-          ),
-      },
-      {
         path: 'commitments/projects',
         loadComponent: () =>
           import('./admin/commitments/projects').then(
             (m) => m.ProjectsComponent,
-          ),
-      },
-      {
-        path: 'commitments/projects/:id',
-        loadComponent: () =>
-          import('./admin/commitments/project-detail').then(
-            (m) => m.ProjectDetailComponent,
           ),
       },
       {
