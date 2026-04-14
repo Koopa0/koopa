@@ -1,7 +1,7 @@
 <div class="flex h-full flex-col" data-testid="goal-inspector">
   @if (isLoading()) {
     <div
-      class="flex flex-1 items-center justify-center text-zinc-500"
+      class="flex flex-1 items-center justify-center text-zinc-400"
       role="status"
       aria-label="Loading goal"
     >
@@ -11,7 +11,7 @@
     </div>
   } @else if (hasError()) {
     <div
-      class="flex flex-1 items-center justify-center px-6 text-center text-sm text-zinc-500"
+      class="flex flex-1 items-center justify-center px-6 text-center text-sm text-zinc-400"
       role="alert"
     >
       Failed to load goal.
@@ -21,7 +21,7 @@
       @case ("overview") {
         <div class="space-y-6 p-6" data-testid="goal-overview-section">
           <header>
-            <div class="text-xs uppercase tracking-wider text-zinc-500">
+            <div class="text-xs uppercase tracking-wider text-zinc-400">
               Goal · {{ g.area_name }}
             </div>
             <h2
@@ -37,22 +37,22 @@
 
           <dl class="grid grid-cols-2 gap-4 text-xs">
             <div>
-              <dt class="text-zinc-500">Status</dt>
+              <dt class="text-zinc-400">Status</dt>
               <dd class="mt-1 font-medium text-zinc-200">{{ g.status }}</dd>
             </div>
             <div>
-              <dt class="text-zinc-500">Health</dt>
+              <dt class="text-zinc-400">Health</dt>
               <dd class="mt-1 font-medium text-zinc-200">{{ g.health }}</dd>
             </div>
             <div>
-              <dt class="text-zinc-500">Quarter</dt>
+              <dt class="text-zinc-400">Quarter</dt>
               <dd class="mt-1 font-mono font-medium text-zinc-200">
                 {{ g.quarter }}
               </dd>
             </div>
             @if (g.deadline) {
               <div>
-                <dt class="text-zinc-500">Deadline</dt>
+                <dt class="text-zinc-400">Deadline</dt>
                 <dd class="mt-1 font-medium text-zinc-200">
                   {{ g.deadline | date: "mediumDate" }}
                 </dd>
@@ -63,7 +63,7 @@
           @if (milestoneProgress(); as mp) {
             <section>
               <div class="flex items-center justify-between text-xs">
-                <span class="text-zinc-500">Milestones</span>
+                <span class="text-zinc-400">Milestones</span>
                 <span class="font-mono text-zinc-300"
                   >{{ mp.done }}/{{ mp.total }}</span
                 >
@@ -106,7 +106,7 @@
 
           @if (g.projects.length > 0) {
             <section>
-              <div class="text-xs text-zinc-500">Linked Projects</div>
+              <div class="text-xs text-zinc-400">Linked Projects</div>
               <ul class="mt-2 space-y-2">
                 @for (p of g.projects; track p.id) {
                   <li
@@ -126,16 +126,16 @@
       @case ("activity") {
         <div class="p-6" data-testid="goal-activity-section">
           @if (g.recent_activity.length === 0) {
-            <div class="text-sm text-zinc-500">No recent activity.</div>
+            <div class="text-sm text-zinc-400">No recent activity.</div>
           } @else {
             <ul class="space-y-3">
               @for (a of g.recent_activity; track $index) {
                 <li class="border-l-2 border-zinc-800 pl-3 text-sm">
-                  <div class="text-xs text-zinc-500">
+                  <div class="text-xs text-zinc-400">
                     {{ a.timestamp | date: "short" }}
                   </div>
                   <div class="text-zinc-200">{{ a.title }}</div>
-                  <div class="font-mono text-xs text-zinc-500">
+                  <div class="font-mono text-xs text-zinc-400">
                     {{ a.type }}
                   </div>
                 </li>

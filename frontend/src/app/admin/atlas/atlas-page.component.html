@@ -7,7 +7,7 @@
     data-testid="atlas-facets"
   >
     <div class="border-b border-zinc-800 px-4 py-3">
-      <div class="font-mono text-[11px] uppercase tracking-wider text-zinc-500">
+      <div class="font-mono text-[11px] uppercase tracking-wider text-zinc-400">
         Type
       </div>
       <div class="mt-2 space-y-1">
@@ -18,7 +18,7 @@
           class="flex w-full items-center justify-between rounded-sm px-2 py-1.5 text-sm transition-colors"
           [class.bg-zinc-800]="isTypeEnabled('goal')"
           [class.text-zinc-100]="isTypeEnabled('goal')"
-          [class.text-zinc-500]="!isTypeEnabled('goal')"
+          [class.text-zinc-400]="!isTypeEnabled('goal')"
           data-testid="facet-goal"
         >
           <span class="flex items-center gap-2">
@@ -34,7 +34,7 @@
           class="flex w-full items-center justify-between rounded-sm px-2 py-1.5 text-sm transition-colors"
           [class.bg-zinc-800]="isTypeEnabled('project')"
           [class.text-zinc-100]="isTypeEnabled('project')"
-          [class.text-zinc-500]="!isTypeEnabled('project')"
+          [class.text-zinc-400]="!isTypeEnabled('project')"
           data-testid="facet-project"
         >
           <span class="flex items-center gap-2">
@@ -45,7 +45,7 @@
         </button>
       </div>
     </div>
-    <p class="px-4 py-3 text-[11px] text-zinc-600">
+    <p class="px-4 py-3 text-[11px] text-zinc-400">
       Concepts, content, directives land in Phase 2.
     </p>
   </aside>
@@ -57,7 +57,7 @@
       class="flex h-12 shrink-0 items-center gap-3 border-b border-zinc-800 bg-zinc-950 px-4"
     >
       <svg
-        class="size-4 shrink-0 text-zinc-500"
+        class="size-4 shrink-0 text-zinc-400"
         fill="none"
         viewBox="0 0 24 24"
         stroke-width="2"
@@ -72,14 +72,14 @@
       </svg>
       <input
         type="text"
-        class="flex-1 bg-transparent text-sm text-zinc-100 outline-hidden placeholder:text-zinc-500"
+        class="flex-1 bg-transparent text-sm text-zinc-100 outline-hidden placeholder:text-zinc-400"
         placeholder="Search goals and projects…"
         [value]="query()"
         (input)="onSearchInput($event)"
         aria-label="Search atlas entities"
         data-testid="atlas-search"
       />
-      <span class="font-mono text-[11px] text-zinc-500">
+      <span class="font-mono text-[11px] text-zinc-400">
         {{ counts().total }} results
       </span>
     </header>
@@ -94,7 +94,7 @@
         </div>
       } @else if (filteredItems().length === 0) {
         <div
-          class="flex h-full items-center justify-center text-sm text-zinc-500"
+          class="flex h-full items-center justify-center text-sm text-zinc-400"
         >
           @if (query()) {
             No matches for "{{ query() }}".
@@ -114,14 +114,14 @@
                 [attr.data-testid]="'atlas-row-' + item.type"
               >
                 <span
-                  class="font-mono text-zinc-600"
+                  class="font-mono text-zinc-400"
                   [attr.aria-label]="item.type"
                   >{{ typeIcon(item.type) }}</span
                 >
                 <span class="min-w-0 flex-1 truncate text-zinc-200">{{
                   item.title
                 }}</span>
-                <span class="font-mono text-[11px] text-zinc-600">{{
+                <span class="font-mono text-[11px] text-zinc-400">{{
                   item.area
                 }}</span>
                 <span

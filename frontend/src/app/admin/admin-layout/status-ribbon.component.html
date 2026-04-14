@@ -7,7 +7,7 @@
   <span class="text-zinc-300">◉ koopa0 admin</span>
 
   @if (tokens(); as t) {
-    <span class="text-zinc-700">·</span>
+    <span class="text-zinc-700" aria-hidden="true">·</span>
     <span
       class="flex items-center gap-1.5"
       [class]="textClass(t.pipeline.status)"
@@ -45,10 +45,10 @@
       <span>{{ t.aiBudget.label }}</span>
     </span>
   } @else if (isLoading()) {
-    <span class="text-zinc-700">·</span>
-    <span class="text-zinc-600" data-testid="ribbon-loading">loading…</span>
+    <span class="text-zinc-700" aria-hidden="true">·</span>
+    <span class="text-zinc-400" data-testid="ribbon-loading">loading…</span>
   } @else if (hasError()) {
-    <span class="text-zinc-700">·</span>
+    <span class="text-zinc-700" aria-hidden="true">·</span>
     <span class="text-red-500" data-testid="ribbon-error">ribbon offline</span>
   }
 </header>
