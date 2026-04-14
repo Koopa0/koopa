@@ -19,6 +19,7 @@ import { KeyboardShortcutsService } from '../../core/services/keyboard-shortcuts
 import { ToastComponent } from '../../shared/toast/toast.component';
 import { InspectorService } from '../inspector/inspector.service';
 import { InspectorPanelComponent } from '../inspector/inspector-panel.component';
+import { StatusRibbonComponent } from './status-ribbon.component';
 
 interface ModeItem {
   label: string;
@@ -44,6 +45,7 @@ interface ModeItem {
     LucideAngularModule,
     ToastComponent,
     InspectorPanelComponent,
+    StatusRibbonComponent,
   ],
   templateUrl: './admin-layout.html',
   changeDetection: ChangeDetectionStrategy.OnPush,

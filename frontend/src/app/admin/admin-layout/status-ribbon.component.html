@@ -1,0 +1,54 @@
+<header
+  class="flex h-10 shrink-0 items-center gap-4 border-b border-zinc-800 bg-zinc-950 px-4 font-mono text-xs"
+  data-testid="admin-status-ribbon"
+  role="status"
+  aria-label="System status ribbon"
+>
+  <span class="text-zinc-300">◉ koopa0 admin</span>
+
+  @if (tokens(); as t) {
+    <span class="text-zinc-700">·</span>
+    <span
+      class="flex items-center gap-1.5"
+      [class]="textClass(t.pipeline.status)"
+      data-testid="ribbon-pipeline"
+    >
+      <span
+        class="size-1.5 shrink-0 rounded-full"
+        [class]="dotClass(t.pipeline.status)"
+        aria-hidden="true"
+      ></span>
+      <span>{{ t.pipeline.label }}</span>
+    </span>
+    <span
+      class="flex items-center gap-1.5"
+      [class]="textClass(t.feeds.status)"
+      data-testid="ribbon-feeds"
+    >
+      <span
+        class="size-1.5 shrink-0 rounded-full"
+        [class]="dotClass(t.feeds.status)"
+        aria-hidden="true"
+      ></span>
+      <span>{{ t.feeds.label }}</span>
+    </span>
+    <span
+      class="flex items-center gap-1.5"
+      [class]="textClass(t.aiBudget.status)"
+      data-testid="ribbon-ai-budget"
+    >
+      <span
+        class="size-1.5 shrink-0 rounded-full"
+        [class]="dotClass(t.aiBudget.status)"
+        aria-hidden="true"
+      ></span>
+      <span>{{ t.aiBudget.label }}</span>
+    </span>
+  } @else if (isLoading()) {
+    <span class="text-zinc-700">·</span>
+    <span class="text-zinc-600" data-testid="ribbon-loading">loading…</span>
+  } @else if (hasError()) {
+    <span class="text-zinc-700">·</span>
+    <span class="text-red-500" data-testid="ribbon-error">ribbon offline</span>
+  }
+</header>
