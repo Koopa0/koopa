@@ -25,8 +25,8 @@ import type {
  *   Center (Today):      today plan + goal pulse (clickable to inspector)
  *   Right  (Ambient):    weekly trends (execution, adherence, learning, content)
  *
- * Phase 1 baseline. Day 11 will pass an a11y polish on this. Day 12 will
- * delete the legacy /admin/overview page that this fully replaces.
+ * Phase 1 baseline. Replaces the legacy /admin/overview surface that
+ * was deleted as part of Day 12 cleanup.
  */
 @Component({
   selector: 'app-now-page',

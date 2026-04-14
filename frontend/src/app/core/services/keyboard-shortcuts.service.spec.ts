@@ -111,7 +111,7 @@ describe('KeyboardShortcutsService', () => {
 
   describe('admin mode switching', () => {
     it('should navigate to /admin/now when 1 is pressed inside admin', () => {
-      setupBrowser('/admin/overview');
+      setupBrowser('/admin/now');
       dispatchKey('1');
       expect(routerStub.navigate).toHaveBeenCalledWith(['/admin/now']);
     });
@@ -178,7 +178,7 @@ describe('KeyboardShortcutsService', () => {
     });
 
     it('should disable plain-key admin shortcuts when a11y mode is on', () => {
-      const service = setupBrowser('/admin/overview');
+      const service = setupBrowser('/admin/now');
       service.toggleA11yMode();
 
       dispatchKey('1');

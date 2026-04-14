@@ -142,7 +142,7 @@ export class CommandPaletteService {
             group: 'Goals',
             keywords: [area.area_name, g.quarter],
             action: () =>
-              this.router.navigate(['/admin/commitments/goals'], {
+              this.router.navigate(['/admin/atlas'], {
                 queryParams: { inspect: `goal:${g.id}` },
               }),
           })),
@@ -154,7 +154,7 @@ export class CommandPaletteService {
           group: 'Projects',
           keywords: [p.area, p.status],
           action: () =>
-            this.router.navigate(['/admin/commitments/projects'], {
+            this.router.navigate(['/admin/atlas'], {
               queryParams: { inspect: `project:${p.id}` },
             }),
         }));
