@@ -43,7 +43,23 @@
       }
     </nav>
 
-    <div class="border-t border-zinc-800 p-2">
+    <div class="flex flex-col items-center gap-1 border-t border-zinc-800 p-2">
+      <button
+        type="button"
+        (click)="toggleA11yMode()"
+        class="flex size-10 items-center justify-center rounded-sm transition-colors hover:bg-zinc-800/50"
+        [class.text-emerald-400]="a11yMode()"
+        [class.text-zinc-500]="!a11yMode()"
+        [attr.aria-label]="
+          a11yMode()
+            ? 'Disable accessibility mode (single-character shortcuts active)'
+            : 'Enable accessibility mode (disables single-character shortcuts)'
+        "
+        [attr.aria-pressed]="a11yMode()"
+        data-testid="admin-a11y-toggle"
+      >
+        <lucide-icon [img]="AccessibilityIcon" [size]="18" />
+      </button>
       <button
         type="button"
         (click)="logout()"

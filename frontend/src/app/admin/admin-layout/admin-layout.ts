@@ -7,8 +7,15 @@ import {
   RouterOutlet,
 } from '@angular/router';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { Home, Library, LogOut, LucideAngularModule } from 'lucide-angular';
+import {
+  Accessibility,
+  Home,
+  Library,
+  LogOut,
+  LucideAngularModule,
+} from 'lucide-angular';
 import { AuthService } from '../../core/services/auth.service';
+import { KeyboardShortcutsService } from '../../core/services/keyboard-shortcuts.service';
 import { ToastComponent } from '../../shared/toast/toast.component';
 import { InspectorService } from '../inspector/inspector.service';
 import { InspectorPanelComponent } from '../inspector/inspector-panel.component';
@@ -47,13 +54,17 @@ export class AdminLayoutComponent {
   private readonly route = inject(ActivatedRoute);
   private readonly authService = inject(AuthService);
   private readonly inspector = inject(InspectorService);
+  private readonly keyboardShortcuts = inject(KeyboardShortcutsService);
 
   protected readonly modes: ModeItem[] = [
     { label: 'NOW', route: '/admin/now', icon: Home, shortcut: '1' },
     { label: 'ATLAS', route: '/admin/atlas', icon: Library, shortcut: '2' },
   ];
 
+  protected readonly a11yMode = this.keyboardShortcuts.a11yMode;
+
   protected readonly LogOutIcon = LogOut;
+  protected readonly AccessibilityIcon = Accessibility;
 
   constructor() {
     // URL → InspectorService sync. Reading the `?inspect=` query param at
@@ -67,5 +78,9 @@ export class AdminLayoutComponent {
   protected logout(): void {
     this.authService.logout();
     this.router.navigate(['/']);
+  }
+
+  protected toggleA11yMode(): void {
+    this.keyboardShortcuts.toggleA11yMode();
   }
 }

@@ -416,6 +416,15 @@
 <!-- Back to Top Button -->
 <app-back-to-top />
 
+<!-- Global aria-live region — KeyboardShortcutsService writes mode-switch
+     and a11y-mode announcements here so we don't pull in CDK A11y. -->
+<div
+  id="koopa-announcer"
+  role="status"
+  aria-live="polite"
+  class="sr-only"
+></div>
+
 <!-- Command Palette (⌘/) -->
 <app-command-palette />
 
