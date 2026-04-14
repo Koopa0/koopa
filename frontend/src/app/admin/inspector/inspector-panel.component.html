@@ -1,0 +1,86 @@
+@if (isOpen() && target(); as t) {
+  <aside
+    class="fixed right-0 top-0 z-50 flex h-full w-full max-w-[480px] flex-col border-l border-zinc-800 bg-zinc-950 shadow-2xl"
+    role="complementary"
+    aria-label="Inspector panel"
+    data-testid="inspector-panel"
+  >
+    <!-- Header -->
+    <div
+      class="flex items-center justify-between border-b border-zinc-800 px-4 py-3"
+    >
+      <div
+        class="font-mono text-xs uppercase tracking-wider text-zinc-500"
+        data-testid="inspector-type"
+      >
+        {{ t.type }}
+      </div>
+      <button
+        type="button"
+        class="rounded-sm p-1 text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-100"
+        (click)="close()"
+        aria-label="Close inspector"
+        data-testid="inspector-close"
+      >
+        <lucide-icon [img]="XIcon" [size]="16" />
+      </button>
+    </div>
+
+    <!-- Tabs -->
+    <div
+      role="tablist"
+      aria-label="Inspector sections"
+      class="flex border-b border-zinc-800"
+    >
+      <button
+        role="tab"
+        type="button"
+        id="inspector-tab-overview"
+        [attr.aria-selected]="activeTab() === 'overview'"
+        aria-controls="inspector-tabpanel-overview"
+        [attr.tabindex]="activeTab() === 'overview' ? 0 : -1"
+        (click)="setTab('overview')"
+        class="flex-1 px-4 py-2 text-xs font-medium transition-colors"
+        [class.text-zinc-100]="activeTab() === 'overview'"
+        [class.bg-zinc-900]="activeTab() === 'overview'"
+        [class.text-zinc-400]="activeTab() !== 'overview'"
+        data-testid="inspector-tab-overview"
+      >
+        Overview
+      </button>
+      <button
+        role="tab"
+        type="button"
+        id="inspector-tab-activity"
+        [attr.aria-selected]="activeTab() === 'activity'"
+        aria-controls="inspector-tabpanel-activity"
+        [attr.tabindex]="activeTab() === 'activity' ? 0 : -1"
+        (click)="setTab('activity')"
+        class="flex-1 px-4 py-2 text-xs font-medium transition-colors"
+        [class.text-zinc-100]="activeTab() === 'activity'"
+        [class.bg-zinc-900]="activeTab() === 'activity'"
+        [class.text-zinc-400]="activeTab() !== 'activity'"
+        data-testid="inspector-tab-activity"
+      >
+        Activity
+      </button>
+    </div>
+
+    <!-- Tab panel -->
+    <div
+      role="tabpanel"
+      [id]="'inspector-tabpanel-' + activeTab()"
+      [attr.aria-labelledby]="'inspector-tab-' + activeTab()"
+      class="flex-1 overflow-y-auto"
+    >
+      @switch (t.type) {
+        @case ("goal") {
+          <app-goal-inspector [id]="t.id" [activeTab]="activeTab()" />
+        }
+        @case ("project") {
+          <app-project-inspector [id]="t.id" [activeTab]="activeTab()" />
+        }
+      }
+    </div>
+  </aside>
+}

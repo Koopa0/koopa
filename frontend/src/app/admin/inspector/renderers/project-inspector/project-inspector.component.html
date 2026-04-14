@@ -1,0 +1,159 @@
+<div class="flex h-full flex-col" data-testid="project-inspector">
+  @if (isLoading()) {
+    <div
+      class="flex flex-1 items-center justify-center text-zinc-500"
+      role="status"
+      aria-label="Loading project"
+    >
+      <div
+        class="size-5 animate-spin rounded-full border-2 border-zinc-700 border-t-zinc-400"
+      ></div>
+    </div>
+  } @else if (hasError()) {
+    <div
+      class="flex flex-1 items-center justify-center px-6 text-center text-sm text-zinc-500"
+      role="alert"
+    >
+      Failed to load project.
+    </div>
+  } @else if (project(); as p) {
+    @switch (activeTab()) {
+      @case ("overview") {
+        <div class="space-y-6 p-6" data-testid="project-overview-section">
+          <header>
+            <div class="text-xs uppercase tracking-wider text-zinc-500">
+              Project · {{ p.area }}
+            </div>
+            <h2
+              class="mt-1 text-lg font-semibold text-zinc-100"
+              data-testid="project-title"
+            >
+              {{ p.title }}
+            </h2>
+            @if (p.goal_breadcrumb) {
+              <div class="mt-1 text-xs text-zinc-500">
+                Goal:
+                <span class="text-zinc-400">{{
+                  p.goal_breadcrumb.goal_title
+                }}</span>
+              </div>
+            }
+            @if (p.description) {
+              <p class="mt-2 text-sm text-zinc-400">{{ p.description }}</p>
+            }
+          </header>
+
+          <dl class="grid grid-cols-2 gap-4 text-xs">
+            <div>
+              <dt class="text-zinc-500">Status</dt>
+              <dd class="mt-1 font-medium text-zinc-200">{{ p.status }}</dd>
+            </div>
+            <div>
+              <dt class="text-zinc-500">Area</dt>
+              <dd class="mt-1 font-medium text-zinc-200">{{ p.area }}</dd>
+            </div>
+          </dl>
+
+          @if (taskCounts(); as tc) {
+            <section>
+              <div class="text-xs text-zinc-500">Tasks</div>
+              <div
+                class="mt-2 grid grid-cols-4 gap-2 text-center"
+                role="list"
+                aria-label="Task counts by status"
+              >
+                <div
+                  class="rounded-md border border-zinc-800/80 bg-zinc-900/40 p-2"
+                  role="listitem"
+                >
+                  <div class="font-mono text-base text-sky-300">
+                    {{ tc.inProgress }}
+                  </div>
+                  <div class="text-xs text-zinc-500">in progress</div>
+                </div>
+                <div
+                  class="rounded-md border border-zinc-800/80 bg-zinc-900/40 p-2"
+                  role="listitem"
+                >
+                  <div class="font-mono text-base text-zinc-200">
+                    {{ tc.todo }}
+                  </div>
+                  <div class="text-xs text-zinc-500">todo</div>
+                </div>
+                <div
+                  class="rounded-md border border-zinc-800/80 bg-zinc-900/40 p-2"
+                  role="listitem"
+                >
+                  <div class="font-mono text-base text-emerald-300">
+                    {{ tc.done }}
+                  </div>
+                  <div class="text-xs text-zinc-500">done</div>
+                </div>
+                <div
+                  class="rounded-md border border-zinc-800/80 bg-zinc-900/40 p-2"
+                  role="listitem"
+                >
+                  <div class="font-mono text-base text-zinc-400">
+                    {{ tc.someday }}
+                  </div>
+                  <div class="text-xs text-zinc-500">someday</div>
+                </div>
+              </div>
+            </section>
+          }
+
+          @if (p.problem) {
+            <section>
+              <div class="text-xs uppercase tracking-wider text-zinc-500">
+                Problem
+              </div>
+              <p class="mt-1 text-sm text-zinc-300">{{ p.problem }}</p>
+            </section>
+          }
+          @if (p.solution) {
+            <section>
+              <div class="text-xs uppercase tracking-wider text-zinc-500">
+                Solution
+              </div>
+              <p class="mt-1 text-sm text-zinc-300">{{ p.solution }}</p>
+            </section>
+          }
+
+          @if (p.related_content.length > 0) {
+            <section>
+              <div class="text-xs text-zinc-500">
+                Related Content ({{ p.related_content.length }})
+              </div>
+              <ul class="mt-2 space-y-1 text-sm">
+                @for (c of p.related_content; track c.id) {
+                  <li class="text-zinc-400">{{ c.title }}</li>
+                }
+              </ul>
+            </section>
+          }
+        </div>
+      }
+      @case ("activity") {
+        <div class="p-6" data-testid="project-activity-section">
+          @if (p.recent_activity.length === 0) {
+            <div class="text-sm text-zinc-500">No recent activity.</div>
+          } @else {
+            <ul class="space-y-3">
+              @for (a of p.recent_activity; track $index) {
+                <li class="border-l-2 border-zinc-800 pl-3 text-sm">
+                  <div class="text-xs text-zinc-500">
+                    {{ a.timestamp | date: "short" }}
+                  </div>
+                  <div class="text-zinc-200">{{ a.title }}</div>
+                  <div class="font-mono text-xs text-zinc-500">
+                    {{ a.type }}
+                  </div>
+                </li>
+              }
+            </ul>
+          }
+        </div>
+      }
+    }
+  }
+</div>

@@ -72,7 +72,9 @@
         @for (project of group.projects; track project.id) {
         <a
           [routerLink]="['/admin/commitments/projects', project.id]"
+          (click)="onRowClick($event, project)"
           class="group block rounded-lg border border-zinc-800 bg-zinc-900/50 p-4 no-underline transition-colors hover:border-zinc-700"
+          data-testid="project-row"
         >
           <div class="flex items-center justify-between gap-3">
             <div class="flex-1 min-w-0">

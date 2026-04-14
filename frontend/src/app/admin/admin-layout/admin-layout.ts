@@ -6,6 +6,7 @@ import {
 } from '@angular/core';
 import { BreakpointObserver } from '@angular/cdk/layout';
 import {
+  ActivatedRoute,
   Router,
   RouterOutlet,
   RouterLink,
@@ -14,6 +15,8 @@ import {
 } from '@angular/router';
 import { filter } from 'rxjs/operators';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { InspectorService } from '../inspector/inspector.service';
+import { InspectorPanelComponent } from '../inspector/inspector-panel.component';
 import {
   LucideAngularModule,
   Sun,
@@ -67,6 +70,7 @@ interface NavGroup {
     RouterLinkActive,
     LucideAngularModule,
     ToastComponent,
+    InspectorPanelComponent,
   ],
   templateUrl: './admin-layout.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -74,8 +78,10 @@ interface NavGroup {
 })
 export class AdminLayoutComponent {
   private readonly router = inject(Router);
+  private readonly route = inject(ActivatedRoute);
   private readonly authService = inject(AuthService);
   private readonly breakpointObserver = inject(BreakpointObserver);
+  private readonly inspector = inject(InspectorService);
 
   protected readonly isSidebarOpen = signal(true);
   protected readonly isMobileSidebarOpen = signal(false);
@@ -261,6 +267,14 @@ export class AdminLayoutComponent {
           this.isSidebarOpen.set(false);
         }
       });
+
+    // URL → InspectorService sync. The inspector is the single source of
+    // truth for which entity (if any) is currently being inspected; reading
+    // the `?inspect=` query param at the layout level keeps share-link
+    // entry points working without each list page wiring its own watcher.
+    this.route.queryParamMap.pipe(takeUntilDestroyed()).subscribe((params) => {
+      this.inspector.syncFromUrl(params.get('inspect'));
+    });
   }
 
   protected toggleSidebar(): void {

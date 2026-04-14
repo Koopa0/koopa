@@ -17,6 +17,7 @@ import {
 } from 'lucide-angular';
 import { PlanService } from '../../core/services/plan.service';
 import { NotificationService } from '../../core/services/notification.service';
+import { InspectorService } from '../inspector/inspector.service';
 import type { GoalsOverview, GoalSummary } from '../../core/models/admin.model';
 
 @Component({
@@ -30,6 +31,7 @@ export class GoalsComponent implements OnInit {
   private readonly planService = inject(PlanService);
   private readonly notificationService = inject(NotificationService);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly inspector = inject(InspectorService);
 
   protected readonly overview = signal<GoalsOverview | null>(null);
   protected readonly isLoading = signal(true);
@@ -109,5 +111,24 @@ export class GoalsComponent implements OnInit {
       this.STATUS_COLORS[status] ??
       'text-zinc-400 bg-zinc-800/50 border-zinc-700'
     );
+  }
+
+  /**
+   * Plain click → open Inspector (no detail-route navigation).
+   * Modifier click (cmd/ctrl/shift/middle) → fall through to the
+   * existing routerLink so the goal detail page opens in a new tab.
+   * The legacy detail route stays mounted in Phase 0 as a safety net.
+   */
+  protected onRowClick(event: MouseEvent, goal: GoalSummary): void {
+    if (
+      event.ctrlKey ||
+      event.metaKey ||
+      event.shiftKey ||
+      event.button !== 0
+    ) {
+      return;
+    }
+    event.preventDefault();
+    this.inspector.open({ type: 'goal', id: goal.id });
   }
 }

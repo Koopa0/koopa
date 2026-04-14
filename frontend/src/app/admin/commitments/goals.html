@@ -55,8 +55,10 @@
         @for (goal of area.goals; track goal.id) {
         <a
           [routerLink]="['/admin/commitments/goals', goal.id]"
+          (click)="onRowClick($event, goal)"
           class="group block rounded-lg border bg-zinc-900/50 p-4 no-underline transition-colors"
           [class]="getGoalHealthBorder(goal)"
+          data-testid="goal-row"
         >
           <!-- Title + Status -->
           <div class="mb-2 flex items-start justify-between gap-2">

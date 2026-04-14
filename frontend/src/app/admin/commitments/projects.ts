@@ -17,6 +17,7 @@ import {
 } from 'lucide-angular';
 import { PlanService } from '../../core/services/plan.service';
 import { NotificationService } from '../../core/services/notification.service';
+import { InspectorService } from '../inspector/inspector.service';
 import type { ProjectSummary } from '../../core/models/admin.model';
 
 const STATUS_FILTERS = [
@@ -41,6 +42,7 @@ export class ProjectsComponent implements OnInit {
   private readonly planService = inject(PlanService);
   private readonly notificationService = inject(NotificationService);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly inspector = inject(InspectorService);
 
   protected readonly projects = signal<ProjectSummary[]>([]);
   protected readonly isLoading = signal(true);
@@ -126,5 +128,22 @@ export class ProjectsComponent implements OnInit {
   protected getProgressPercent(p: ProjectSummary): number {
     if (p.task_progress.total === 0) return 0;
     return Math.round((p.task_progress.done / p.task_progress.total) * 100);
+  }
+
+  /**
+   * Plain click → open Inspector. Modifier click falls through to the
+   * legacy detail route via routerLink. See goals.ts for rationale.
+   */
+  protected onRowClick(event: MouseEvent, project: ProjectSummary): void {
+    if (
+      event.ctrlKey ||
+      event.metaKey ||
+      event.shiftKey ||
+      event.button !== 0
+    ) {
+      return;
+    }
+    event.preventDefault();
+    this.inspector.open({ type: 'project', id: project.id });
   }
 }
