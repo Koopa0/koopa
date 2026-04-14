@@ -142,7 +142,7 @@ export const routes: Routes = [
       ),
     canActivate: [adminGuard],
     children: [
-      { path: '', redirectTo: 'overview', pathMatch: 'full' },
+      { path: '', redirectTo: 'now', pathMatch: 'full' },
       {
         path: 'now',
         loadComponent: () =>

@@ -1,0 +1,377 @@
+<div class="h-full overflow-y-auto" data-testid="now-page">
+  <div class="mx-auto max-w-7xl px-4 py-6 sm:px-6">
+    <header class="mb-6">
+      <div class="font-mono text-xs uppercase tracking-wider text-zinc-500">
+        NOW · {{ todayDate() }}
+      </div>
+      @if (contextLine()) {
+        <p class="mt-1 text-sm text-zinc-400">{{ contextLine() }}</p>
+      }
+    </header>
+
+    @if (isLoading()) {
+      <div class="grid gap-4 lg:grid-cols-12">
+        <div class="h-96 animate-pulse rounded-lg bg-zinc-800/50 lg:col-span-3"></div>
+        <div class="h-96 animate-pulse rounded-lg bg-zinc-800/50 lg:col-span-6"></div>
+        <div class="h-96 animate-pulse rounded-lg bg-zinc-800/50 lg:col-span-3"></div>
+      </div>
+    } @else {
+      <div class="grid gap-4 lg:grid-cols-12">
+        <!-- LEFT — Attention -->
+        <aside
+          class="space-y-4 lg:col-span-3"
+          aria-label="Attention queue"
+          data-testid="now-attention"
+        >
+          <section
+            class="rounded-lg border border-zinc-800 bg-zinc-900/50 p-4"
+          >
+            <h2
+              class="mb-3 font-mono text-[11px] uppercase tracking-wider text-zinc-500"
+            >
+              Attention
+            </h2>
+            @if (attention(); as a) {
+              <ul class="space-y-2 text-sm">
+                <li class="flex items-center justify-between">
+                  <span class="text-zinc-400">Inbox</span>
+                  <span class="font-mono text-zinc-200">{{ a.inbox_count }}</span>
+                </li>
+                <li class="flex items-center justify-between">
+                  <span class="text-zinc-400">Pending directives</span>
+                  <span
+                    class="font-mono"
+                    [class.text-amber-300]="a.pending_directives > 0"
+                    [class.text-zinc-200]="a.pending_directives === 0"
+                  >
+                    {{ a.pending_directives }}
+                  </span>
+                </li>
+                <li class="flex items-center justify-between">
+                  <span class="text-zinc-400">Due reviews</span>
+                  <span
+                    class="font-mono"
+                    [class.text-amber-300]="a.due_reviews > 0"
+                    [class.text-zinc-200]="a.due_reviews === 0"
+                  >
+                    {{ a.due_reviews }}
+                  </span>
+                </li>
+                <li class="flex items-center justify-between">
+                  <span class="text-zinc-400">Overdue tasks</span>
+                  <span
+                    class="font-mono"
+                    [class.text-red-400]="a.overdue_tasks > 0"
+                    [class.text-zinc-200]="a.overdue_tasks === 0"
+                  >
+                    {{ a.overdue_tasks }}
+                  </span>
+                </li>
+              </ul>
+            } @else {
+              <p class="text-sm text-zinc-500">No data.</p>
+            }
+            <p class="mt-3 text-[11px] text-zinc-600">
+              Unified ranked queue: Phase 2.
+            </p>
+          </section>
+
+          @if (yesterdayUnfinished().length > 0) {
+            <section
+              class="rounded-lg border border-amber-800/40 bg-amber-950/20 p-4"
+              data-testid="now-yesterday-unfinished"
+            >
+              <h2
+                class="mb-2 font-mono text-[11px] uppercase tracking-wider text-amber-300"
+              >
+                Yesterday unfinished ({{ yesterdayUnfinished().length }})
+              </h2>
+              <ul class="space-y-1 text-xs text-amber-200">
+                @for (item of yesterdayUnfinished(); track item.id) {
+                  <li class="truncate">· {{ item.title }}</li>
+                }
+              </ul>
+            </section>
+          }
+
+          @if (overdueTasks().length > 0) {
+            <section
+              class="rounded-lg border border-red-800/40 bg-red-950/20 p-4"
+              data-testid="now-overdue"
+            >
+              <h2
+                class="mb-2 font-mono text-[11px] uppercase tracking-wider text-red-300"
+              >
+                Overdue ({{ overdueTasks().length }})
+              </h2>
+              <ul class="space-y-1 text-xs text-red-200">
+                @for (task of overdueTasks(); track task.id) {
+                  <li class="truncate">· {{ task.title }}</li>
+                }
+              </ul>
+            </section>
+          }
+        </aside>
+
+        <!-- CENTER — Today Stream -->
+        <main
+          class="space-y-6 lg:col-span-6"
+          aria-label="Today stream"
+          data-testid="now-stream"
+        >
+          <!-- Today plan -->
+          <section
+            class="rounded-lg border border-zinc-800 bg-zinc-900/50 p-4"
+          >
+            <div class="mb-3 flex items-center justify-between">
+              <h2
+                class="font-mono text-[11px] uppercase tracking-wider text-zinc-500"
+              >
+                Today plan
+              </h2>
+              <span class="font-mono text-xs text-zinc-400">
+                {{ planDoneCount() }}/{{ todayPlan().length }}
+              </span>
+            </div>
+            @if (todayPlan().length === 0) {
+              <p class="text-sm text-zinc-500">
+                No plan items. Plan the day via Claude.
+              </p>
+            } @else {
+              <ul class="space-y-1.5">
+                @for (item of todayPlan(); track item.id) {
+                  <li
+                    class="flex items-center gap-3 rounded-sm px-2 py-1.5 text-sm"
+                    [class.bg-zinc-800/40]="item.status === 'done'"
+                    [class.text-zinc-500]="item.status !== 'planned'"
+                    [class.text-zinc-200]="item.status === 'planned'"
+                    [class.line-through]="item.status === 'done'"
+                  >
+                    <span
+                      class="size-2 shrink-0 rounded-full"
+                      [class.bg-emerald-500]="item.status === 'done'"
+                      [class.bg-zinc-600]="item.status === 'planned'"
+                      [class.bg-amber-500]="item.status === 'deferred'"
+                      [class.bg-zinc-700]="item.status === 'dropped'"
+                      aria-hidden="true"
+                    ></span>
+                    <span class="flex-1 truncate">{{ item.title }}</span>
+                    <span
+                      class="font-mono text-[11px]"
+                      [class]="getEnergyColor(item.energy)"
+                      [attr.aria-label]="'energy ' + item.energy"
+                      >{{ getEnergyLabel(item.energy) }}</span
+                    >
+                    <span class="font-mono text-[11px] text-zinc-600"
+                      >{{ item.area }}</span
+                    >
+                  </li>
+                }
+              </ul>
+            }
+          </section>
+
+          <!-- Goal pulse -->
+          <section
+            class="rounded-lg border border-zinc-800 bg-zinc-900/50 p-4"
+          >
+            <h2
+              class="mb-3 font-mono text-[11px] uppercase tracking-wider text-zinc-500"
+            >
+              Goal pulse ({{ goalPulse().length }})
+            </h2>
+            @if (goalPulse().length === 0) {
+              <p class="text-sm text-zinc-500">No active goals.</p>
+            } @else {
+              <ul class="space-y-2" data-testid="goal-pulse-list">
+                @for (g of goalPulse(); track g.id) {
+                  <li>
+                    <a
+                      [routerLink]="[]"
+                      [queryParams]="{ inspect: 'goal:' + g.id }"
+                      queryParamsHandling="merge"
+                      class="block rounded-md border border-zinc-800/80 bg-zinc-950 p-3 no-underline transition-colors hover:border-zinc-700"
+                      data-testid="goal-pulse-card"
+                    >
+                      <div class="flex items-start justify-between gap-2">
+                        <div class="min-w-0 flex-1">
+                          <div class="text-sm font-medium text-zinc-200">
+                            {{ g.title }}
+                          </div>
+                          @if (g.next_milestone) {
+                            <div class="mt-0.5 truncate text-xs text-zinc-500">
+                              Next: {{ g.next_milestone }}
+                            </div>
+                          }
+                        </div>
+                        @if (g.days_remaining !== null) {
+                          <span
+                            class="shrink-0 font-mono text-xs"
+                            [class]="getDeadlineUrgency(g.days_remaining)"
+                          >
+                            {{ g.days_remaining }}d
+                          </span>
+                        }
+                      </div>
+                      @if (g.milestones_total > 0) {
+                        <div class="mt-2 flex items-center gap-1">
+                          @for (
+                            _ of [].constructor(g.milestones_total);
+                            track $index
+                          ) {
+                            <span
+                              class="inline-block h-1.5 w-3 rounded-full"
+                              [class.bg-emerald-500]="
+                                $index < g.milestones_done
+                              "
+                              [class.bg-zinc-700]="
+                                $index >= g.milestones_done
+                              "
+                            ></span>
+                          }
+                          <span class="ml-1 font-mono text-[11px] text-zinc-500">
+                            {{ g.milestones_done }}/{{ g.milestones_total }}
+                          </span>
+                        </div>
+                      }
+                    </a>
+                  </li>
+                }
+              </ul>
+            }
+          </section>
+        </main>
+
+        <!-- RIGHT — Ambient -->
+        <aside
+          class="space-y-4 lg:col-span-3"
+          aria-label="Ambient state"
+          data-testid="now-ambient"
+        >
+          @if (executionTrend(); as t) {
+            <section class="rounded-lg border border-zinc-800 bg-zinc-900/50 p-4">
+              <h2
+                class="mb-2 font-mono text-[11px] uppercase tracking-wider text-zinc-500"
+              >
+                Execution
+              </h2>
+              <div class="font-mono text-2xl text-zinc-200">
+                {{ t.tasks_completed_this_week }}
+              </div>
+              <div class="text-xs text-zinc-500">tasks this week</div>
+              <div class="mt-1 text-[11px] text-zinc-600">
+                vs {{ t.tasks_completed_last_week }} last ·
+                <span
+                  class="font-mono"
+                  [class.text-emerald-400]="t.trend === 'up'"
+                  [class.text-red-400]="t.trend === 'down'"
+                  [class.text-zinc-500]="t.trend === 'stable'"
+                  >{{ t.trend }}</span
+                >
+              </div>
+            </section>
+          }
+
+          @if (planAdherence(); as a) {
+            <section class="rounded-lg border border-zinc-800 bg-zinc-900/50 p-4">
+              <h2
+                class="mb-2 font-mono text-[11px] uppercase tracking-wider text-zinc-500"
+              >
+                Plan adherence
+              </h2>
+              <div class="font-mono text-2xl text-zinc-200">
+                {{ a.completion_rate_this_week }}%
+              </div>
+              <div class="text-[11px] text-zinc-600">
+                vs {{ a.completion_rate_last_week }}% last week
+              </div>
+            </section>
+          }
+
+          @if (goalHealthTrend(); as g) {
+            <section class="rounded-lg border border-zinc-800 bg-zinc-900/50 p-4">
+              <h2
+                class="mb-2 font-mono text-[11px] uppercase tracking-wider text-zinc-500"
+              >
+                Goal health
+              </h2>
+              <div class="grid grid-cols-3 gap-2 text-center">
+                <div>
+                  <div class="font-mono text-base text-emerald-400">
+                    {{ g.on_track }}
+                  </div>
+                  <div class="text-[10px] text-zinc-500">on track</div>
+                </div>
+                <div>
+                  <div class="font-mono text-base text-amber-400">
+                    {{ g.at_risk }}
+                  </div>
+                  <div class="text-[10px] text-zinc-500">at risk</div>
+                </div>
+                <div>
+                  <div class="font-mono text-base text-red-400">
+                    {{ g.stalled }}
+                  </div>
+                  <div class="text-[10px] text-zinc-500">stalled</div>
+                </div>
+              </div>
+            </section>
+          }
+
+          @if (learningTrends(); as l) {
+            <section class="rounded-lg border border-zinc-800 bg-zinc-900/50 p-4">
+              <h2
+                class="mb-2 font-mono text-[11px] uppercase tracking-wider text-zinc-500"
+              >
+                Learning
+              </h2>
+              <ul class="space-y-1 text-xs">
+                <li class="flex justify-between">
+                  <span class="text-zinc-400">Sessions</span>
+                  <span class="font-mono text-zinc-200">{{ l.sessions_this_week }}</span>
+                </li>
+                <li class="flex justify-between">
+                  <span class="text-zinc-400">Weak concepts</span>
+                  <span class="font-mono text-zinc-200">{{ l.weakness_count }}</span>
+                </li>
+                <li class="flex justify-between">
+                  <span class="text-zinc-400">Review backlog</span>
+                  <span
+                    class="font-mono"
+                    [class.text-amber-300]="l.review_backlog > 5"
+                    [class.text-zinc-200]="l.review_backlog <= 5"
+                    >{{ l.review_backlog }}</span
+                  >
+                </li>
+              </ul>
+            </section>
+          }
+
+          @if (contentTrends(); as c) {
+            <section class="rounded-lg border border-zinc-800 bg-zinc-900/50 p-4">
+              <h2
+                class="mb-2 font-mono text-[11px] uppercase tracking-wider text-zinc-500"
+              >
+                Content
+              </h2>
+              <ul class="space-y-1 text-xs">
+                <li class="flex justify-between">
+                  <span class="text-zinc-400">Published / target</span>
+                  <span class="font-mono text-zinc-200"
+                    >{{ c.published_this_month }}/{{ c.published_target }}</span
+                  >
+                </li>
+                <li class="flex justify-between">
+                  <span class="text-zinc-400">Drafts</span>
+                  <span class="font-mono text-zinc-200">{{
+                    c.drafts_in_progress
+                  }}</span>
+                </li>
+              </ul>
+            </section>
+          }
+        </aside>
+      </div>
+    }
+  </div>
+</div>
