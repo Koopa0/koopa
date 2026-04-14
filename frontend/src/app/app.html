@@ -170,12 +170,12 @@
         type="button"
         (click)="commandPalette.open()"
         class="flex items-center gap-2 rounded-sm px-2 py-1.5 text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-100"
-        aria-label="Search (⌘K)"
+        aria-label="Search (⌘/)"
       >
         <lucide-icon [img]="SearchIcon" [size]="18" />
         <kbd
           class="hidden rounded-xs border border-zinc-700 bg-zinc-800 px-1.5 py-0.5 text-[10px] font-medium text-zinc-400 sm:inline"
-          >⌘K</kbd
+          >⌘/</kbd
         >
       </button>
 
@@ -330,7 +330,11 @@
 </header>
 
 <!-- Main Content -->
-<main id="main-content" class="flex-1" style="view-transition-name: page-content">
+<main
+  id="main-content"
+  class="flex-1"
+  style="view-transition-name: page-content"
+>
   <router-outlet />
 </main>
 
@@ -412,7 +416,7 @@
 <!-- Back to Top Button -->
 <app-back-to-top />
 
-<!-- Command Palette (⌘K) -->
+<!-- Command Palette (⌘/) -->
 <app-command-palette />
 
 <!-- Global Toast Notifications -->

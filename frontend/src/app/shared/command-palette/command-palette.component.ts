@@ -124,7 +124,7 @@ export class CommandPaletteComponent {
   protected readonly isSearching = this.searchService.searching;
 
   /** Total selectable items count */
-  private readonly totalItems = computed(
+  protected readonly totalItems = computed(
     () => this.filteredActions().length + this.searchResults().length,
   );
 
@@ -179,8 +179,9 @@ export class CommandPaletteComponent {
   }
 
   protected onGlobalKeydown(event: KeyboardEvent): void {
-    // ⌘K / Ctrl+K to toggle
-    if (event.key === 'k' && (event.metaKey || event.ctrlKey)) {
+    // ⌘/ / Ctrl+/ to toggle. Remapped from ⌘K to avoid macOS Chrome
+    // address-bar conflict (⌘K focuses URL bar in some configurations).
+    if (event.key === '/' && (event.metaKey || event.ctrlKey)) {
       event.preventDefault();
       if (this.isOpen()) {
         this.close();

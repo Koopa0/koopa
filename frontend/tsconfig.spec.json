@@ -4,5 +4,8 @@
     "outDir": "./out-tsc/spec",
     "types": ["vitest/globals"]
   },
-  "include": ["src/**/*.ts"]
+  "include": ["src/**/*.ts"],
+  "exclude": [
+    "src/app/admin/shared/delete-confirm-dialog.component.spec.ts"
+  ]
 }

@@ -50,9 +50,13 @@
           autocomplete="off"
           spellcheck="false"
           role="combobox"
+          aria-label="Search commands and content"
+          aria-autocomplete="list"
           aria-controls="command-palette-listbox"
-          [attr.aria-activedescendant]="'cp-item-' + activeIndex()"
-          aria-expanded="true"
+          [attr.aria-activedescendant]="
+            totalItems() > 0 ? 'cp-item-' + activeIndex() : null
+          "
+          [attr.aria-expanded]="totalItems() > 0"
           data-testid="command-palette-input"
         />
         <kbd
