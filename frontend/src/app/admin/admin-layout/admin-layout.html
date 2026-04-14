@@ -1,149 +1,69 @@
-<!-- Mobile sidebar trigger -->
-<button
-  type="button"
-  (click)="toggleMobileSidebar()"
-  class="fixed bottom-4 right-4 z-50 flex size-12 items-center justify-center rounded-full bg-zinc-800 text-zinc-300 shadow-lg transition-colors hover:bg-zinc-700 hover:text-white md:hidden"
-  aria-label="Open menu"
+<!-- Status Ribbon — Day 6-7 wires it to /api/admin/system/ribbon -->
+<header
+  class="flex h-10 shrink-0 items-center gap-3 border-b border-zinc-800 bg-zinc-950 px-4 font-mono text-xs text-zinc-500"
+  data-testid="admin-status-ribbon"
+  role="status"
+  aria-label="System status ribbon"
 >
-  <lucide-icon [img]="MenuIcon" [size]="20" />
-</button>
+  <span class="text-zinc-300">◉ koopa0 admin</span>
+  <span class="text-zinc-700">·</span>
+  <span class="text-zinc-600">ribbon arrives Day 6-7</span>
+</header>
 
-<!-- Mobile backdrop -->
-@if (isMobileSidebarOpen()) {
-<div
-  class="fixed inset-0 z-40 bg-black/60 backdrop-blur-xs md:hidden"
-  (click)="closeMobileSidebar()"
-  role="presentation"
-></div>
-}
-
-<!-- Sidebar -->
-<aside
-  class="z-50 flex shrink-0 flex-col border-r border-zinc-800 bg-zinc-950 transition-all duration-200"
-  [class]="
-    isMobileSidebarOpen()
-      ? 'fixed inset-y-0 left-0 w-56 top-[57px]'
-      : 'hidden md:flex ' + (isSidebarOpen() ? 'w-56' : 'w-14')
-  "
-  role="navigation"
-  aria-label="Admin navigation"
->
-  <!-- Sidebar top -->
-  <div
-    class="flex h-11 items-center justify-between border-b border-zinc-800 px-3"
+<!-- Shell: left rail + content -->
+<div class="flex min-h-0 flex-1">
+  <!-- Left rail: 2 mode icons + sign out -->
+  <aside
+    class="flex w-14 shrink-0 flex-col border-r border-zinc-800 bg-zinc-950"
+    role="navigation"
+    aria-label="Admin mode navigation"
   >
-    @if (isSidebarOpen() || isMobileSidebarOpen()) {
-    <span class="text-xs font-semibold tracking-wide text-zinc-500 uppercase"
-      >Console</span
-    >
-    }
-    <button
-      type="button"
-      (click)="toggleSidebar()"
-      class="hidden rounded-xs p-1.5 text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-300 md:flex"
-      [attr.aria-label]="isSidebarOpen() ? 'Collapse sidebar' : 'Expand sidebar'"
-    >
-      @if (isSidebarOpen()) {
-      <lucide-icon [img]="PanelLeftCloseIcon" [size]="16" />
-      } @else {
-      <lucide-icon [img]="PanelLeftIcon" [size]="16" />
+    <nav class="flex flex-1 flex-col items-center gap-1 py-3">
+      @for (mode of modes; track mode.route) {
+      <a
+        [routerLink]="mode.route"
+        routerLinkActive="bg-zinc-800/80 text-white"
+        class="group relative flex size-10 items-center justify-center rounded-sm text-zinc-400 no-underline transition-colors hover:bg-zinc-800/50 hover:text-zinc-200"
+        [attr.aria-label]="
+            mode.label + ' mode (shortcut ' + mode.shortcut + ')'
+          "
+        [attr.data-testid]="'mode-' + mode.label.toLowerCase()"
+      >
+        <lucide-icon [img]="mode.icon" [size]="18" />
+        <span
+          class="pointer-events-none absolute left-12 z-10 hidden whitespace-nowrap rounded-sm border border-zinc-700 bg-zinc-900 px-2 py-1 text-xs text-zinc-300 group-hover:block"
+        >
+          {{ mode.label }}
+          <kbd
+            class="ml-1 rounded-xs border border-zinc-700 bg-zinc-800 px-1 font-mono text-zinc-500"
+            >{{ mode.shortcut }}</kbd
+          >
+        </span>
+      </a>
       }
-    </button>
-  </div>
+    </nav>
 
-  <!-- Navigation groups -->
-  <nav class="flex-1 overflow-y-auto px-2 py-2">
-    @for (group of navGroups; track group.title) {
-    <div class="mb-1">
-      <!-- Group title (collapsible) -->
-      @if (group.title && (isSidebarOpen() || isMobileSidebarOpen())) { @if
-      (group.collapsible) {
+    <div class="border-t border-zinc-800 p-2">
       <button
         type="button"
-        (click)="toggleGroup(group.title)"
-        [attr.aria-expanded]="!collapsedGroups().has(group.title)"
-        class="flex w-full items-center justify-between px-2 py-1.5 text-[11px] font-semibold tracking-wider text-zinc-600 uppercase hover:text-zinc-400"
+        (click)="logout()"
+        class="flex size-10 items-center justify-center rounded-sm text-zinc-500 transition-colors hover:bg-zinc-800/50 hover:text-red-400"
+        aria-label="Sign out"
+        data-testid="admin-logout"
       >
-        <span>{{ group.title }}</span>
-        @if (collapsedGroups().has(group.title)) {
-        <lucide-icon [img]="ChevronRightIcon" [size]="12" />
-        } @else {
-        <lucide-icon [img]="ChevronDownIcon" [size]="12" />
-        }
+        <lucide-icon [img]="LogOutIcon" [size]="18" />
       </button>
-      } @else {
-      <p
-        class="px-2 py-1.5 text-[11px] font-semibold tracking-wider text-zinc-600 uppercase"
-      >
-        {{ group.title }}
-      </p>
-      } }
-
-      <!-- Group items -->
-      @if (!group.collapsible || !collapsedGroups().has(group.title)) { @for
-      (item of group.items; track item.route) { @if (item.disabled) {
-      <span
-        class="flex items-center gap-2.5 rounded-xs px-2 py-1.5 text-sm text-zinc-600 cursor-not-allowed"
-        [class.justify-center]="!isSidebarOpen() && !isMobileSidebarOpen()"
-        [attr.aria-label]="(!isSidebarOpen() && !isMobileSidebarOpen()) ? item.label + ' (Coming soon)' : 'Coming soon'"
-      >
-        <lucide-icon [img]="item.icon" [size]="16" class="shrink-0" />
-        @if (isSidebarOpen() || isMobileSidebarOpen()) {
-        <span>{{ item.label }}</span>
-        <span
-          class="ml-auto rounded-xs bg-zinc-800/60 px-1.5 py-0.5 text-[10px] text-zinc-600"
-        >
-          Soon
-        </span>
-        }
-      </span>
-      } @else {
-      <a
-        [routerLink]="item.route"
-        routerLinkActive="bg-zinc-800/80 text-white"
-        [routerLinkActiveOptions]="{ exact: item.exact }"
-        class="flex items-center gap-2.5 rounded-xs px-2 py-1.5 text-sm text-zinc-400 no-underline transition-colors hover:bg-zinc-800/50 hover:text-zinc-200"
-        [class.justify-center]="!isSidebarOpen() && !isMobileSidebarOpen()"
-        [attr.aria-label]="(!isSidebarOpen() && !isMobileSidebarOpen()) ? item.label : null"
-      >
-        <lucide-icon [img]="item.icon" [size]="16" class="shrink-0" />
-        @if (isSidebarOpen() || isMobileSidebarOpen()) {
-        <span>{{ item.label }}</span>
-        @if (item.badge) {
-        <span
-          class="ml-auto rounded-full bg-amber-900/40 px-1.5 py-0.5 text-[10px] font-medium text-amber-400"
-        >
-          {{ item.badge }}
-        </span>
-        } }
-      </a>
-      } } }
     </div>
-    }
-  </nav>
+  </aside>
 
-  <!-- Sidebar bottom -->
-  <div class="border-t border-zinc-800 px-2 py-2">
-    <button
-      type="button"
-      (click)="logout()"
-      class="flex w-full items-center gap-2.5 rounded-xs px-2 py-1.5 text-sm text-zinc-500 transition-colors hover:bg-zinc-800/50 hover:text-red-400"
-      [class.justify-center]="!isSidebarOpen() && !isMobileSidebarOpen()"
-      [attr.aria-label]="(!isSidebarOpen() && !isMobileSidebarOpen()) ? 'Sign out' : null"
-    >
-      <lucide-icon [img]="LogOutIcon" [size]="16" class="shrink-0" />
-      @if (isSidebarOpen() || isMobileSidebarOpen()) {
-      <span>Sign out</span>
-      }
-    </button>
-  </div>
-</aside>
-
-<!-- Main content area -->
-<div class="flex-1 overflow-y-auto" style="view-transition-name: page-content">
-  <router-outlet />
+  <!-- Main content area -->
+  <main
+    class="min-w-0 flex-1 overflow-y-auto"
+    style="view-transition-name: page-content"
+  >
+    <router-outlet />
+  </main>
 </div>
 
 <app-toast />
-
 <app-inspector-panel />

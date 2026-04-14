@@ -1,66 +1,32 @@
-import {
-  Component,
-  ChangeDetectionStrategy,
-  inject,
-  signal,
-} from '@angular/core';
-import { BreakpointObserver } from '@angular/cdk/layout';
+import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
 import {
   ActivatedRoute,
   Router,
-  RouterOutlet,
   RouterLink,
   RouterLinkActive,
-  NavigationEnd,
+  RouterOutlet,
 } from '@angular/router';
-import { filter } from 'rxjs/operators';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { InspectorService } from '../inspector/inspector.service';
-import { InspectorPanelComponent } from '../inspector/inspector-panel.component';
-import {
-  LucideAngularModule,
-  Sun,
-  Target,
-  FolderOpen,
-  BookOpen,
-  FileText,
-  PenLine,
-  Rss,
-  Inbox,
-  Menu,
-  LogOut,
-  PanelLeftClose,
-  PanelLeft,
-  ChevronDown,
-  ChevronRight,
-  Brain,
-  Clock,
-  NotebookPen,
-  CalendarCheck,
-  Lightbulb,
-  ScrollText,
-  Users,
-  HeartPulse,
-} from 'lucide-angular';
+import { Home, Library, LogOut, LucideAngularModule } from 'lucide-angular';
 import { AuthService } from '../../core/services/auth.service';
 import { ToastComponent } from '../../shared/toast/toast.component';
+import { InspectorService } from '../inspector/inspector.service';
+import { InspectorPanelComponent } from '../inspector/inspector-panel.component';
 
-interface NavItem {
+interface ModeItem {
   label: string;
   route: string;
-  icon: typeof Sun;
-  exact: boolean;
-  disabled: boolean;
-  badge?: number;
+  icon: typeof Home;
+  shortcut: string;
 }
 
-interface NavGroup {
-  title: string;
-  items: NavItem[];
-  collapsible: boolean;
-  collapsed?: boolean;
-}
-
+/**
+ * Admin shell. Top status ribbon, left rail with two mode icons (NOW,
+ * ATLAS), main router outlet, and the cross-cutting inspector panel
+ * mounted as a sibling so it survives mode switches. The legacy 6-group
+ * sidebar lived here before admin-v2 — that taxonomy was entity-oriented;
+ * the new shell is intent-oriented (NOW = what needs me, ATLAS = explore).
+ */
 @Component({
   selector: 'app-admin-layout',
   standalone: true,
@@ -74,230 +40,27 @@ interface NavGroup {
   ],
   templateUrl: './admin-layout.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  host: { class: 'flex h-[calc(100dvh-57px)]' },
+  host: { class: 'flex h-[calc(100dvh-57px)] flex-col' },
 })
 export class AdminLayoutComponent {
   private readonly router = inject(Router);
   private readonly route = inject(ActivatedRoute);
   private readonly authService = inject(AuthService);
-  private readonly breakpointObserver = inject(BreakpointObserver);
   private readonly inspector = inject(InspectorService);
 
-  protected readonly isSidebarOpen = signal(true);
-  protected readonly isMobileSidebarOpen = signal(false);
-
-  protected readonly LogOutIcon = LogOut;
-  protected readonly PanelLeftCloseIcon = PanelLeftClose;
-  protected readonly PanelLeftIcon = PanelLeft;
-  protected readonly MenuIcon = Menu;
-  protected readonly ChevronDownIcon = ChevronDown;
-  protected readonly ChevronRightIcon = ChevronRight;
-
-  protected readonly navGroups: NavGroup[] = [
-    {
-      title: '',
-      collapsible: false,
-      items: [
-        {
-          label: 'Overview',
-          route: '/admin/overview',
-          icon: Sun,
-          exact: true,
-          disabled: false,
-        },
-      ],
-    },
-    {
-      title: 'Activity',
-      collapsible: true,
-      items: [
-        {
-          label: 'Daily',
-          route: '/admin/activity/daily',
-          icon: NotebookPen,
-          exact: false,
-          disabled: false,
-        },
-        {
-          label: 'Weekly',
-          route: '/admin/activity/weekly',
-          icon: CalendarCheck,
-          exact: false,
-          disabled: false,
-        },
-        {
-          label: 'Insights',
-          route: '/admin/activity/insights',
-          icon: Lightbulb,
-          exact: false,
-          disabled: false,
-        },
-        {
-          label: 'Journal',
-          route: '/admin/activity/journal',
-          icon: ScrollText,
-          exact: false,
-          disabled: false,
-        },
-      ],
-    },
-    {
-      title: 'Commitments',
-      collapsible: true,
-      items: [
-        {
-          label: 'Goals',
-          route: '/admin/commitments/goals',
-          icon: Target,
-          exact: false,
-          disabled: false,
-        },
-        {
-          label: 'Projects',
-          route: '/admin/commitments/projects',
-          icon: FolderOpen,
-          exact: false,
-          disabled: false,
-        },
-        {
-          label: 'Directives',
-          route: '/admin/commitments/directives',
-          icon: Users,
-          exact: false,
-          disabled: false,
-        },
-      ],
-    },
-    {
-      title: 'Learn',
-      collapsible: true,
-      items: [
-        {
-          label: 'Weaknesses',
-          route: '/admin/learn/weaknesses',
-          icon: Brain,
-          exact: false,
-          disabled: false,
-        },
-        {
-          label: 'Sessions',
-          route: '/admin/learn/sessions',
-          icon: Clock,
-          exact: false,
-          disabled: false,
-        },
-        {
-          label: 'Plans',
-          route: '/admin/learn/plans',
-          icon: BookOpen,
-          exact: false,
-          disabled: false,
-        },
-      ],
-    },
-    {
-      title: 'Content',
-      collapsible: true,
-      items: [
-        {
-          label: 'Pipeline',
-          route: '/admin/content/pipeline',
-          icon: PenLine,
-          exact: false,
-          disabled: false,
-        },
-        {
-          label: 'Library',
-          route: '/admin/content/library',
-          icon: FileText,
-          exact: false,
-          disabled: false,
-        },
-        {
-          label: 'Intelligence',
-          route: '/admin/content/intelligence',
-          icon: Rss,
-          exact: false,
-          disabled: false,
-        },
-        {
-          label: 'Collected',
-          route: '/admin/content/collected',
-          icon: Inbox,
-          exact: false,
-          disabled: false,
-        },
-      ],
-    },
-    {
-      title: 'System',
-      collapsible: true,
-      collapsed: true,
-      items: [
-        {
-          label: 'Health',
-          route: '/admin/system',
-          icon: HeartPulse,
-          exact: false,
-          disabled: false,
-        },
-      ],
-    },
+  protected readonly modes: ModeItem[] = [
+    { label: 'NOW', route: '/admin/now', icon: Home, shortcut: '1' },
+    { label: 'ATLAS', route: '/admin/atlas', icon: Library, shortcut: '2' },
   ];
 
-  protected readonly collapsedGroups = signal<Set<string>>(new Set(['System']));
+  protected readonly LogOutIcon = LogOut;
 
   constructor() {
-    this.router.events
-      .pipe(
-        filter(
-          (event): event is NavigationEnd => event instanceof NavigationEnd,
-        ),
-        takeUntilDestroyed(),
-      )
-      .subscribe(() => {
-        this.isMobileSidebarOpen.set(false);
-      });
-
-    this.breakpointObserver
-      .observe(['(max-width: 767.98px)'])
-      .pipe(takeUntilDestroyed())
-      .subscribe((result) => {
-        if (result.matches) {
-          this.isSidebarOpen.set(false);
-        }
-      });
-
-    // URL → InspectorService sync. The inspector is the single source of
-    // truth for which entity (if any) is currently being inspected; reading
-    // the `?inspect=` query param at the layout level keeps share-link
-    // entry points working without each list page wiring its own watcher.
+    // URL → InspectorService sync. Reading the `?inspect=` query param at
+    // the shell level keeps share-link entry points working without each
+    // page wiring its own watcher.
     this.route.queryParamMap.pipe(takeUntilDestroyed()).subscribe((params) => {
       this.inspector.syncFromUrl(params.get('inspect'));
-    });
-  }
-
-  protected toggleSidebar(): void {
-    this.isSidebarOpen.update((v) => !v);
-  }
-
-  protected toggleMobileSidebar(): void {
-    this.isMobileSidebarOpen.update((v) => !v);
-  }
-
-  protected closeMobileSidebar(): void {
-    this.isMobileSidebarOpen.set(false);
-  }
-
-  protected toggleGroup(title: string): void {
-    this.collapsedGroups.update((set) => {
-      const next = new Set(set);
-      if (next.has(title)) {
-        next.delete(title);
-      } else {
-        next.add(title);
-      }
-      return next;
     });
   }
 
