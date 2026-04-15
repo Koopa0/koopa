@@ -27,16 +27,17 @@ const (
 
 // Goal represents a personal goal.
 type Goal struct {
-	ID           uuid.UUID  `json:"id"`
-	Title        string     `json:"title"`
-	Description  string     `json:"description"`
-	Status       Status     `json:"status"`
-	AreaID       *uuid.UUID `json:"area_id,omitempty"`
-	Quarter      *string    `json:"quarter,omitempty"`
-	Deadline     *time.Time `json:"deadline,omitempty"`
-	NotionPageID *string    `json:"notion_page_id,omitempty"`
-	CreatedAt    time.Time  `json:"created_at"`
-	UpdatedAt    time.Time  `json:"updated_at"`
+	ID               uuid.UUID  `json:"id"`
+	Title            string     `json:"title"`
+	Description      string     `json:"description"`
+	Status           Status     `json:"status"`
+	AreaID           *uuid.UUID `json:"area_id,omitempty"`
+	Quarter          *string    `json:"quarter,omitempty"`
+	Deadline         *time.Time `json:"deadline,omitempty"`
+	ExternalProvider *string    `json:"external_provider,omitempty"`
+	ExternalRef      *string    `json:"external_ref,omitempty"`
+	CreatedAt        time.Time  `json:"created_at"`
+	UpdatedAt        time.Time  `json:"updated_at"`
 }
 
 var (

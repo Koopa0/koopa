@@ -125,14 +125,14 @@ func (s *Store) ResolveTags(ctx context.Context, rawTags []string) []Resolved {
 // Uses delete-then-insert for simplicity (junction table has no extra columns).
 // Must be called within the same transaction as UpsertNote for atomicity.
 func (s *Store) SyncNoteTags(ctx context.Context, noteID int64, tagIDs []uuid.UUID) error {
-	if err := s.q.DeleteNoteTagsByNoteID(ctx, noteID); err != nil {
+	if err := s.q.DeleteNoteTagsByObsidianNoteID(ctx, noteID); err != nil {
 		return fmt.Errorf("deleting note tags for note %d: %w", noteID, err)
 	}
 	if len(tagIDs) == 0 {
 		return nil
 	}
 	if err := s.q.InsertNoteTags(ctx, db.InsertNoteTagsParams{
-		NoteID: noteID,
+		ObsidianNoteID: noteID,
 		TagIds: tagIDs,
 	}); err != nil {
 		return fmt.Errorf("inserting note tags for note %d: %w", noteID, err)
@@ -341,7 +341,7 @@ func (s *Store) BackfillNoteTags(ctx context.Context) (*BackfillResult, error) {
 		}
 		if len(mappedIDs) > 0 {
 			_ = s.q.InsertNoteTags(ctx, db.InsertNoteTagsParams{
-				NoteID: row.ID,
+				ObsidianNoteID: row.ID,
 				TagIds: mappedIDs,
 			}) // best-effort, ON CONFLICT DO NOTHING
 		}

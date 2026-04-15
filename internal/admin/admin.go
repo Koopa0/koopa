@@ -19,34 +19,33 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	agentnote "github.com/Koopa0/koopa0.dev/internal/agent/note"
 	"github.com/Koopa0/koopa0.dev/internal/content"
 	"github.com/Koopa0/koopa0.dev/internal/daily"
-	"github.com/Koopa0/koopa0.dev/internal/directive"
 	"github.com/Koopa0/koopa0.dev/internal/goal"
-	"github.com/Koopa0/koopa0.dev/internal/insight"
-	"github.com/Koopa0/koopa0.dev/internal/journal"
+	"github.com/Koopa0/koopa0.dev/internal/hypothesis"
 	"github.com/Koopa0/koopa0.dev/internal/learning"
 	"github.com/Koopa0/koopa0.dev/internal/plan"
 	"github.com/Koopa0/koopa0.dev/internal/project"
-	"github.com/Koopa0/koopa0.dev/internal/report"
-	"github.com/Koopa0/koopa0.dev/internal/synthesis"
-	"github.com/Koopa0/koopa0.dev/internal/task"
+	"github.com/Koopa0/koopa0.dev/internal/todo"
 )
 
 // Handler provides aggregate admin API endpoints.
+//
+// TODO(coordination-rebuild): restore task / artifact stores once the
+// coordination layer (internal/task, internal/message, internal/artifact) is
+// built. Studio overview (see studio.go) and any directive-history endpoint
+// will need them. Until then, those endpoints return empty shells.
 type Handler struct {
-	tasks      *task.Store
-	journal    *journal.Store
+	todos      *todo.Store
+	notes      *agentnote.Store
 	dayplan    *daily.Store
 	contents   *content.Store
 	projects   *project.Store
 	goals      *goal.Store
-	directives *directive.Store
-	insights   *insight.Store
+	hypotheses *hypothesis.Store
 	learn      *learning.Store
 	plans      *plan.Store
-	reports    *report.Store
-	synth      *synthesis.Store
 
 	loc    *time.Location
 	logger *slog.Logger
@@ -61,18 +60,15 @@ func NewHandler(pool *pgxpool.Pool, loc *time.Location, logger *slog.Logger) *Ha
 		loc = time.UTC
 	}
 	return &Handler{
-		tasks:      task.NewStore(pool),
-		journal:    journal.NewStore(pool),
+		todos:      todo.NewStore(pool),
+		notes:      agentnote.NewStore(pool),
 		dayplan:    daily.NewStore(pool),
 		contents:   content.NewStore(pool),
 		projects:   project.NewStore(pool),
 		goals:      goal.NewStore(pool),
-		directives: directive.NewStore(pool),
-		insights:   insight.NewStore(pool),
+		hypotheses: hypothesis.NewStore(pool),
 		learn:      learning.NewStore(pool),
 		plans:      plan.NewStore(pool),
-		reports:    report.NewStore(pool),
-		synth:      synthesis.NewStore(pool),
 		loc:        loc,
 		logger:     logger,
 	}

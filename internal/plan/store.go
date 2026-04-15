@@ -29,7 +29,7 @@ type CreatePlanParams struct {
 // AddItemParams holds the input for adding an item to a plan.
 type AddItemParams struct {
 	PlanID         uuid.UUID
-	LearningItemID uuid.UUID
+	LearningTargetID uuid.UUID
 	Position       int32
 	Phase          *string
 }
@@ -155,7 +155,7 @@ func (s *Store) AddItem(ctx context.Context, p AddItemParams) (*PlanItem, error)
 
 	row, err := s.q.AddPlanItem(ctx, db.AddPlanItemParams{
 		PlanID:         p.PlanID,
-		LearningItemID: p.LearningItemID,
+		LearningTargetID: p.LearningTargetID,
 		Position:       p.Position,
 		Phase:          p.Phase,
 	})
@@ -207,7 +207,7 @@ func (s *Store) ItemsByLearningItem(ctx context.Context, learningItemID uuid.UUI
 			PlanItem: PlanItem{
 				ID:                   r.ID,
 				PlanID:               r.PlanID,
-				LearningItemID:       r.LearningItemID,
+				LearningTargetID:       r.LearningTargetID,
 				Position:             r.Position,
 				Status:               ItemStatus(r.Status),
 				Phase:                r.Phase,
@@ -298,7 +298,7 @@ func (s *Store) ItemsDetailed(ctx context.Context, planID uuid.UUID) ([]PlanItem
 		out[i] = PlanItemDetail{
 			PlanItemID:           r.ID,
 			PlanID:               r.PlanID,
-			LearningItemID:       r.LearningItemID,
+			LearningTargetID:       r.LearningTargetID,
 			Position:             r.Position,
 			Status:               ItemStatus(r.Status),
 			Phase:                r.Phase,
@@ -316,7 +316,7 @@ func (s *Store) ItemsDetailed(ctx context.Context, planID uuid.UUID) ([]PlanItem
 	return out, nil
 }
 
-func rowToPlan(r *db.Plan) *Plan {
+func rowToPlan(r *db.LearningPlan) *Plan {
 	return &Plan{
 		ID:          r.ID,
 		Title:       r.Title,
@@ -332,11 +332,11 @@ func rowToPlan(r *db.Plan) *Plan {
 	}
 }
 
-func rowToItem(r *db.PlanItem) *PlanItem {
+func rowToItem(r *db.LearningPlanEntry) *PlanItem {
 	return &PlanItem{
 		ID:                   r.ID,
 		PlanID:               r.PlanID,
-		LearningItemID:       r.LearningItemID,
+		LearningTargetID:       r.LearningTargetID,
 		Position:             r.Position,
 		Status:               ItemStatus(r.Status),
 		Phase:                r.Phase,
@@ -348,7 +348,7 @@ func rowToItem(r *db.PlanItem) *PlanItem {
 	}
 }
 
-func rowsToPlans(rows []db.Plan) []Plan {
+func rowsToPlans(rows []db.LearningPlan) []Plan {
 	result := make([]Plan, len(rows))
 	for i := range rows {
 		result[i] = *rowToPlan(&rows[i])

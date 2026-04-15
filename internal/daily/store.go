@@ -25,12 +25,12 @@ func NewStore(dbtx db.DBTX) *Store {
 // Create inserts or upserts a daily plan item.
 func (s *Store) Create(ctx context.Context, p *CreateItemParams) (*Item, error) {
 	row, err := s.q.CreateItem(ctx, db.CreateItemParams{
-		PlanDate:   p.PlanDate,
-		TaskID:     p.TaskID,
-		SelectedBy: p.SelectedBy,
-		Position:   p.Position,
-		Reason:     p.Reason,
-		JournalID:  p.JournalID,
+		PlanDate:    p.PlanDate,
+		TodoID:  p.TodoID,
+		SelectedBy:  p.SelectedBy,
+		Position:    p.Position,
+		Reason:      p.Reason,
+		AgentNoteID: p.AgentNoteID,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("creating daily plan item: %w", err)
@@ -38,7 +38,7 @@ func (s *Store) Create(ctx context.Context, p *CreateItemParams) (*Item, error) 
 	return rawToItem(&row), nil
 }
 
-// ItemsByDate returns all plan items for a specific date with task details.
+// ItemsByDate returns all plan items for a specific date with todo item details.
 func (s *Store) ItemsByDate(ctx context.Context, date time.Time) ([]Item, error) {
 	rows, err := s.q.ItemsByDate(ctx, date)
 	if err != nil {
@@ -66,29 +66,29 @@ func (s *Store) UpdateStatus(ctx context.Context, id uuid.UUID, status Status) e
 	return nil
 }
 
-// CompleteByTask marks the daily plan item for a task on a given date as done.
+// CompleteByTodo marks the daily plan item for a todo on a given date as done.
 // Returns true if a matching plan item was found and updated.
-func (s *Store) CompleteByTask(ctx context.Context, taskID uuid.UUID, date time.Time) (bool, error) {
-	n, err := s.q.UpdateItemStatusByTask(ctx, db.UpdateItemStatusByTaskParams{
-		TaskID:   taskID,
-		PlanDate: date,
-		Status:   string(StatusDone),
+func (s *Store) CompleteByTodo(ctx context.Context, todoItemID uuid.UUID, date time.Time) (bool, error) {
+	n, err := s.q.UpdateItemStatusByTodo(ctx, db.UpdateItemStatusByTodoParams{
+		TodoID: todoItemID,
+		PlanDate:   date,
+		Status:     string(StatusDone),
 	})
 	if err != nil {
-		return false, fmt.Errorf("completing daily plan item by task: %w", err)
+		return false, fmt.Errorf("completing daily plan item by todo item: %w", err)
 	}
 	return n > 0, nil
 }
 
-// Upsert inserts or updates a daily plan item (upsert on plan_date + task_id).
+// Upsert inserts or updates a daily plan item (upsert on plan_date + todo_id).
 func (s *Store) Upsert(ctx context.Context, p *UpsertParams) (*Item, error) {
 	row, err := s.q.CreateItem(ctx, db.CreateItemParams{
-		PlanDate:   p.PlanDate,
-		TaskID:     p.TaskID,
-		SelectedBy: p.SelectedBy,
-		Position:   p.Position,
-		Reason:     p.Reason,
-		JournalID:  p.JournalID,
+		PlanDate:    p.PlanDate,
+		TodoID:  p.TodoID,
+		SelectedBy:  p.SelectedBy,
+		Position:    p.Position,
+		Reason:      p.Reason,
+		AgentNoteID: p.AgentNoteID,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("upserting daily plan item: %w", err)
@@ -111,7 +111,7 @@ func (s *Store) Drop(ctx context.Context, id uuid.UUID) error {
 	return s.UpdateStatus(ctx, id, StatusDropped)
 }
 
-// ItemByID returns a single daily plan item by ID (without task joins).
+// ItemByID returns a single daily plan item by ID (without todo item joins).
 func (s *Store) ItemByID(ctx context.Context, id uuid.UUID) (*Item, error) {
 	r, err := s.q.ItemByID(ctx, id)
 	if err != nil {
@@ -131,16 +131,16 @@ func (s *Store) DeletePlannedByDate(ctx context.Context, date time.Time) error {
 
 func rawToItem(r *db.DailyPlanItem) *Item {
 	return &Item{
-		ID:         r.ID,
-		PlanDate:   r.PlanDate,
-		TaskID:     r.TaskID,
-		SelectedBy: r.SelectedBy,
-		Position:   r.Position,
-		Reason:     r.Reason,
-		JournalID:  r.JournalID,
-		Status:     Status(r.Status),
-		CreatedAt:  r.CreatedAt,
-		UpdatedAt:  r.UpdatedAt,
+		ID:          r.ID,
+		PlanDate:    r.PlanDate,
+		TodoID:  r.TodoID,
+		SelectedBy:  r.SelectedBy,
+		Position:    r.Position,
+		Reason:      r.Reason,
+		AgentNoteID: r.AgentNoteID,
+		Status:      Status(r.Status),
+		CreatedAt:   r.CreatedAt,
+		UpdatedAt:   r.UpdatedAt,
 	}
 }
 
@@ -148,20 +148,20 @@ func itemsByDateRowToItem(r *db.ItemsByDateRow) Item {
 	return Item{
 		ID:           r.ID,
 		PlanDate:     r.PlanDate,
-		TaskID:       r.TaskID,
+		TodoID:   r.TodoID,
 		SelectedBy:   r.SelectedBy,
 		Position:     r.Position,
 		Reason:       r.Reason,
-		JournalID:    r.JournalID,
+		AgentNoteID:  r.AgentNoteID,
 		Status:       Status(r.Status),
 		CreatedAt:    r.CreatedAt,
 		UpdatedAt:    r.UpdatedAt,
-		TaskTitle:    r.TaskTitle,
-		TaskStatus:   string(r.TaskStatus),
-		TaskDue:      r.TaskDue,
-		TaskEnergy:   r.TaskEnergy,
-		TaskPriority: r.TaskPriority,
-		TaskAssignee: r.TaskAssignee,
+		TodoTitle:    r.TodoTitle,
+		TodoState:    string(r.TodoState),
+		TodoDue:      r.TodoDue,
+		TodoEnergy:   r.TodoEnergy,
+		TodoPriority: r.TodoPriority,
+		TodoAssignee: r.TodoAssignee,
 		ProjectTitle: r.ProjectTitle,
 		ProjectSlug:  r.ProjectSlug,
 	}

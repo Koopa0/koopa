@@ -31,17 +31,17 @@ INSERT INTO tag_aliases (raw_tag, tag_id, match_method, confirmed)
 VALUES ($1, $2, $3, false)
 ON CONFLICT (raw_tag) DO NOTHING;
 
--- name: DeleteNoteTagsByNoteID :exec
-DELETE FROM note_tags WHERE note_id = $1;
+-- name: DeleteNoteTagsByObsidianNoteID :exec
+DELETE FROM obsidian_note_tags WHERE obsidian_note_id = $1;
 
 -- name: InsertNoteTag :exec
-INSERT INTO note_tags (note_id, tag_id)
+INSERT INTO obsidian_note_tags (obsidian_note_id, tag_id)
 VALUES ($1, $2)
-ON CONFLICT (note_id, tag_id) DO NOTHING;
+ON CONFLICT (obsidian_note_id, tag_id) DO NOTHING;
 
 -- name: InsertNoteTags :exec
-INSERT INTO note_tags (note_id, tag_id)
-SELECT @note_id, unnest(@tag_ids::uuid[])
+INSERT INTO obsidian_note_tags (obsidian_note_id, tag_id)
+SELECT @obsidian_note_id, unnest(@tag_ids::uuid[])
 ON CONFLICT DO NOTHING;
 
 -- Admin: list all canonical tags ordered by name.
@@ -79,7 +79,7 @@ SELECT COUNT(*)::int AS count FROM tag_aliases WHERE tag_id = $1;
 
 -- Admin: count note-tag junctions referencing a tag.
 -- name: NoteTagCountByTagID :one
-SELECT COUNT(*)::int AS count FROM note_tags WHERE tag_id = $1;
+SELECT COUNT(*)::int AS count FROM obsidian_note_tags WHERE tag_id = $1;
 
 -- Admin: list aliases with optional unmapped filter.
 -- name: ListAliases :many
@@ -121,9 +121,9 @@ RETURNING *;
 -- name: DeleteAlias :exec
 DELETE FROM tag_aliases WHERE id = $1;
 
--- Backfill: list notes that have raw tags in JSONB.
+-- Backfill: list obsidian_notes that have raw tags in JSONB.
 -- name: NotesWithRawTags :many
-SELECT id, raw_tags FROM notes
+SELECT id, raw_tags FROM obsidian_notes
 WHERE raw_tags IS NOT NULL AND raw_tags::text != 'null' AND raw_tags::text != '[]'
 ORDER BY id;
 
@@ -142,14 +142,14 @@ UPDATE tag_aliases SET tag_id = $1 WHERE tag_aliases.tag_id = $2;
 -- Merge: delete duplicate note-tags before reassignment.
 -- name: DeleteDuplicateNoteTags :execrows
 -- $1 = source_id, $2 = target_id
-DELETE FROM note_tags
-WHERE note_tags.tag_id = $1
-  AND note_tags.note_id IN (SELECT ont.note_id FROM note_tags ont WHERE ont.tag_id = $2);
+DELETE FROM obsidian_note_tags
+WHERE obsidian_note_tags.tag_id = $1
+  AND obsidian_note_tags.obsidian_note_id IN (SELECT ont.obsidian_note_id FROM obsidian_note_tags ont WHERE ont.tag_id = $2);
 
 -- Merge: reassign remaining note-tags from source to target.
 -- name: ReassignNoteTags :execrows
 -- $1 = target_id, $2 = source_id
-UPDATE note_tags SET tag_id = $1 WHERE note_tags.tag_id = $2;
+UPDATE obsidian_note_tags SET tag_id = $1 WHERE obsidian_note_tags.tag_id = $2;
 
 -- Merge: delete duplicate event-tags before reassignment.
 -- name: DeleteDuplicateEventTags :execrows

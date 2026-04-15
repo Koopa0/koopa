@@ -43,8 +43,6 @@ func TestTypeValid_Adversarial(t *testing.T) {
 		{name: "essay", typ: TypeEssay, want: true},
 		{name: "build-log", typ: TypeBuildLog, want: true},
 		{name: "til", typ: TypeTIL, want: true},
-		{name: "note", typ: TypeNote, want: true},
-		{name: "bookmark", typ: TypeBookmark, want: true},
 		{name: "digest", typ: TypeDigest, want: true},
 	}
 

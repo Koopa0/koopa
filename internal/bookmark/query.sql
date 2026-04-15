@@ -15,13 +15,13 @@ INSERT INTO bookmarks (
 RETURNING id, url, url_hash, slug, title, excerpt, note,
           source_type, source_feed_entry_id,
           curated_by, curated_at, is_public, published_at,
-          legacy_content_id, created_at, updated_at;
+          created_at, updated_at;
 
 -- name: BookmarkByID :one
 SELECT id, url, url_hash, slug, title, excerpt, note,
        source_type, source_feed_entry_id,
        curated_by, curated_at, is_public, published_at,
-       legacy_content_id, created_at, updated_at
+       created_at, updated_at
 FROM bookmarks
 WHERE id = $1;
 
@@ -29,7 +29,7 @@ WHERE id = $1;
 SELECT id, url, url_hash, slug, title, excerpt, note,
        source_type, source_feed_entry_id,
        curated_by, curated_at, is_public, published_at,
-       legacy_content_id, created_at, updated_at
+       created_at, updated_at
 FROM bookmarks
 WHERE slug = $1 AND is_public = true;
 
@@ -37,7 +37,7 @@ WHERE slug = $1 AND is_public = true;
 SELECT id, url, url_hash, slug, title, excerpt, note,
        source_type, source_feed_entry_id,
        curated_by, curated_at, is_public, published_at,
-       legacy_content_id, created_at, updated_at
+       created_at, updated_at
 FROM bookmarks
 WHERE is_public = true
   AND (sqlc.narg('since')::timestamptz IS NULL OR curated_at >= sqlc.narg('since'))
@@ -53,7 +53,7 @@ WHERE is_public = true
 SELECT id, url, url_hash, slug, title, excerpt, note,
        source_type, source_feed_entry_id,
        curated_by, curated_at, is_public, published_at,
-       legacy_content_id, created_at, updated_at
+       created_at, updated_at
 FROM bookmarks
 WHERE (sqlc.narg('is_public')::boolean IS NULL OR is_public = sqlc.narg('is_public'))
 ORDER BY curated_at DESC

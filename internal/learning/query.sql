@@ -1,26 +1,26 @@
 -- name: CreateSession :one
-INSERT INTO sessions (domain, session_mode, daily_plan_item_id)
+INSERT INTO learning_sessions (domain, session_mode, daily_plan_item_id)
 VALUES (@domain, @session_mode, @daily_plan_item_id)
-RETURNING id, domain, session_mode, journal_id, daily_plan_item_id, started_at, ended_at, metadata, created_at;
+RETURNING id, domain, session_mode, agent_note_id, daily_plan_item_id, started_at, ended_at, metadata, created_at, updated_at;
 
 -- name: SessionByID :one
-SELECT id, domain, session_mode, journal_id, daily_plan_item_id, started_at, ended_at, metadata, created_at
-FROM sessions WHERE id = @id;
+SELECT id, domain, session_mode, agent_note_id, daily_plan_item_id, started_at, ended_at, metadata, created_at, updated_at
+FROM learning_sessions WHERE id = @id;
 
 -- name: ActiveSession :one
 -- Find a session that hasn't ended yet.
-SELECT id, domain, session_mode, journal_id, daily_plan_item_id, started_at, ended_at, metadata, created_at
-FROM sessions WHERE ended_at IS NULL
+SELECT id, domain, session_mode, agent_note_id, daily_plan_item_id, started_at, ended_at, metadata, created_at, updated_at
+FROM learning_sessions WHERE ended_at IS NULL
 ORDER BY started_at DESC LIMIT 1;
 
 -- name: EndSession :one
-UPDATE sessions SET ended_at = now(), journal_id = @journal_id
+UPDATE learning_sessions SET ended_at = now(), agent_note_id = @agent_note_id, updated_at = now()
 WHERE id = @id AND ended_at IS NULL
-RETURNING id, domain, session_mode, journal_id, daily_plan_item_id, started_at, ended_at, metadata, created_at;
+RETURNING id, domain, session_mode, agent_note_id, daily_plan_item_id, started_at, ended_at, metadata, created_at, updated_at;
 
 -- name: RecentSessions :many
-SELECT id, domain, session_mode, journal_id, daily_plan_item_id, started_at, ended_at, metadata, created_at
-FROM sessions
+SELECT id, domain, session_mode, agent_note_id, daily_plan_item_id, started_at, ended_at, metadata, created_at, updated_at
+FROM learning_sessions
 WHERE (sqlc.narg('domain')::text IS NULL OR domain = sqlc.narg('domain'))
   AND started_at >= @since
 ORDER BY started_at DESC
@@ -31,37 +31,37 @@ LIMIT @max_results;
 -- item does not exist — used by attempt_history which must NOT create new
 -- items (it would silently pollute the catalog from a read tool).
 SELECT id, domain, title, external_id, difficulty, created_at, updated_at
-FROM items
+FROM learning_targets
 WHERE domain = @domain AND title = @title
 LIMIT 1;
 
 -- name: FindOrCreateItem :one
 -- Upsert a learning item by domain + external_id (if present) or domain + title.
-INSERT INTO items (domain, title, external_id, difficulty)
+INSERT INTO learning_targets (domain, title, external_id, difficulty)
 VALUES (@domain, @title, @external_id, @difficulty)
 ON CONFLICT (domain, external_id) WHERE external_id IS NOT NULL
-DO UPDATE SET title = EXCLUDED.title, difficulty = COALESCE(EXCLUDED.difficulty, items.difficulty), updated_at = now()
-RETURNING id, domain, title, external_id, difficulty, note_id, content_id, project_id, metadata, created_at, updated_at;
+DO UPDATE SET title = EXCLUDED.title, difficulty = COALESCE(EXCLUDED.difficulty, learning_targets.difficulty), updated_at = now()
+RETURNING id, domain, title, external_id, difficulty, obsidian_note_id, content_id, project_id, metadata, created_at, updated_at;
 
 -- name: InsertItemRelation :exec
 -- Idempotent insert into item_relations. Conflicts on
--- (source_item_id, target_item_id, relation_type) are ignored so re-recording
+-- (anchor_id, related_id, relation_type) are ignored so re-recording
 -- the same relationship during a later session is safe.
-INSERT INTO item_relations (source_item_id, target_item_id, relation_type)
-VALUES (@source_item_id, @target_item_id, @relation_type)
-ON CONFLICT (source_item_id, target_item_id, relation_type) DO NOTHING;
+INSERT INTO learning_target_relations (anchor_id, related_id, relation_type)
+VALUES (@anchor_id, @related_id, @relation_type)
+ON CONFLICT (anchor_id, related_id, relation_type) DO NOTHING;
 
 -- name: CreateAttempt :one
-INSERT INTO attempts (learning_item_id, session_id, attempt_number, outcome, duration_minutes, stuck_at, approach_used, metadata)
-VALUES (@learning_item_id, @session_id, @attempt_number, @outcome, @duration_minutes, @stuck_at, @approach_used, @metadata)
-RETURNING id, learning_item_id, session_id, attempt_number, outcome, duration_minutes, stuck_at, approach_used, note_id, metadata, attempted_at, created_at;
+INSERT INTO learning_attempts (learning_target_id, session_id, attempt_number, outcome, duration_minutes, stuck_at, approach_used, metadata)
+VALUES (@learning_target_id, @session_id, @attempt_number, @outcome, @duration_minutes, @stuck_at, @approach_used, @metadata)
+RETURNING id, learning_target_id, session_id, attempt_number, outcome, duration_minutes, stuck_at, approach_used, obsidian_note_id, metadata, attempted_at, created_at;
 
 -- name: AttemptCountForItem :one
 SELECT COALESCE(MAX(attempt_number), 0)::int AS max_number
-FROM attempts WHERE learning_item_id = @learning_item_id;
+FROM learning_attempts WHERE learning_target_id = @learning_target_id;
 
 -- name: CreateObservation :one
-INSERT INTO attempt_observations (attempt_id, concept_id, signal_type, category, severity, detail, confidence)
+INSERT INTO learning_attempt_observations (attempt_id, concept_id, signal_type, category, severity, detail, confidence)
 VALUES (@attempt_id, @concept_id, @signal_type, @category, @severity, @detail, @confidence)
 RETURNING id, attempt_id, concept_id, signal_type, category, severity, detail, confidence, created_at;
 
@@ -76,11 +76,11 @@ RETURNING id, slug, name, domain, kind, parent_id, tag_id, description, created_
 -- name: AttemptsBySession :many
 -- All attempts within a session, oldest first. Backs end_session summary
 -- and the by_session path of attempt_history.
-SELECT a.id, a.learning_item_id, a.session_id, a.attempt_number, a.outcome,
+SELECT a.id, a.learning_target_id, a.session_id, a.attempt_number, a.outcome,
        a.duration_minutes, a.stuck_at, a.approach_used, a.attempted_at, a.metadata,
        li.title AS item_title, li.external_id AS item_external_id
-FROM attempts a
-JOIN items li ON li.id = a.learning_item_id
+FROM learning_attempts a
+JOIN learning_targets li ON li.id = a.learning_target_id
 WHERE a.session_id = @session_id
 ORDER BY a.attempted_at;
 
@@ -88,19 +88,19 @@ ORDER BY a.attempted_at;
 -- All attempts on a specific learning item, newest first. Primary backing
 -- query for Improvement Verification Loop — "how did he do this problem
 -- last time?". Same shape as AttemptsBySession so they share the Go DTO.
-SELECT a.id, a.learning_item_id, a.session_id, a.attempt_number, a.outcome,
+SELECT a.id, a.learning_target_id, a.session_id, a.attempt_number, a.outcome,
        a.duration_minutes, a.stuck_at, a.approach_used, a.attempted_at, a.metadata,
        li.title AS item_title, li.external_id AS item_external_id
-FROM attempts a
-JOIN items li ON li.id = a.learning_item_id
-WHERE a.learning_item_id = @learning_item_id
+FROM learning_attempts a
+JOIN learning_targets li ON li.id = a.learning_target_id
+WHERE a.learning_target_id = @learning_target_id
 ORDER BY a.attempted_at DESC
 LIMIT @max_results;
 
 -- name: ObservationsByAttempt :many
 SELECT ao.id, ao.attempt_id, ao.concept_id, ao.signal_type, ao.category, ao.severity, ao.detail,
        c.slug AS concept_slug, c.name AS concept_name
-FROM attempt_observations ao
+FROM learning_attempt_observations ao
 JOIN concepts c ON c.id = ao.concept_id
 WHERE ao.attempt_id = @attempt_id;
 
@@ -125,8 +125,8 @@ SELECT c.id, c.slug, c.name, c.domain, c.kind,
        MIN(ao.created_at)::timestamptz AS first_observed_at,
        MAX(ao.created_at)::timestamptz AS last_observed_at
 FROM concepts c
-JOIN attempt_observations ao ON ao.concept_id = c.id
-JOIN attempts a ON a.id = ao.attempt_id
+JOIN learning_attempt_observations ao ON ao.concept_id = c.id
+JOIN learning_attempts a ON a.id = ao.attempt_id
 WHERE (sqlc.narg('domain')::text IS NULL OR c.domain = sqlc.narg('domain'))
   AND a.attempted_at >= @since
   AND (@confidence_filter::text = 'all' OR ao.confidence = 'high')
@@ -148,9 +148,9 @@ SELECT c.slug AS concept_slug, c.name AS concept_name, c.domain,
        COUNT(*) FILTER (WHERE ao.severity = 'moderate') AS moderate_count,
        COUNT(*) FILTER (WHERE ao.severity = 'minor') AS minor_count,
        MAX(ao.created_at)::timestamptz AS last_seen_at
-FROM attempt_observations ao
+FROM learning_attempt_observations ao
 JOIN concepts c ON c.id = ao.concept_id
-JOIN attempts a ON a.id = ao.attempt_id
+JOIN learning_attempts a ON a.id = ao.attempt_id
 WHERE ao.signal_type = 'weakness'
   AND (sqlc.narg('domain')::text IS NULL OR c.domain = sqlc.narg('domain'))
   AND a.attempted_at >= @since
@@ -164,7 +164,7 @@ ORDER BY critical_count DESC, occurrence_count DESC;
 SELECT rc.id AS card_id, rc.due,
        li.id AS item_id, li.title, li.domain, li.difficulty, li.external_id
 FROM review_cards rc
-JOIN items li ON li.id = rc.learning_item_id
+JOIN learning_targets li ON li.id = rc.learning_target_id
 WHERE rc.due <= @due_before
   AND (sqlc.narg('domain')::text IS NULL OR li.domain = sqlc.narg('domain'))
 ORDER BY rc.due ASC
@@ -176,8 +176,8 @@ LIMIT @max_results;
 SELECT ls.id, ls.domain, ls.session_mode, ls.started_at, ls.ended_at,
        COUNT(a.id) AS attempt_count,
        COUNT(*) FILTER (WHERE a.outcome IN ('solved_independent', 'completed')) AS success_count
-FROM sessions ls
-LEFT JOIN attempts a ON a.session_id = ls.id
+FROM learning_sessions ls
+LEFT JOIN learning_attempts a ON a.session_id = ls.id
 WHERE (sqlc.narg('domain')::text IS NULL OR ls.domain = sqlc.narg('domain'))
   AND ls.started_at >= @since
 GROUP BY ls.id
@@ -189,9 +189,9 @@ ORDER BY ls.started_at DESC;
 SELECT ir.id AS relation_id, ir.relation_type,
        src.id AS source_id, src.title AS source_title, src.domain AS source_domain,
        tgt.id AS target_id, tgt.title AS target_title, tgt.domain AS target_domain
-FROM item_relations ir
-JOIN items src ON src.id = ir.source_item_id
-JOIN items tgt ON tgt.id = ir.target_item_id
+FROM learning_target_relations ir
+JOIN learning_targets src ON src.id = ir.anchor_id
+JOIN learning_targets tgt ON tgt.id = ir.related_id
 WHERE (sqlc.narg('domain')::text IS NULL OR src.domain = sqlc.narg('domain'))
 ORDER BY ir.created_at DESC
 LIMIT @max_results;
@@ -202,12 +202,12 @@ LIMIT @max_results;
 
 -- name: CardByLearningItem :one
 -- Get the review card for a learning item.
-SELECT * FROM review_cards WHERE learning_item_id = @learning_item_id;
+SELECT * FROM review_cards WHERE learning_target_id = @learning_target_id;
 
 -- name: CreateCardForItem :one
 -- Create a new FSRS review card for a learning item.
-INSERT INTO review_cards (learning_item_id, card_state, due)
-VALUES (@learning_item_id, @card_state, @due)
+INSERT INTO review_cards (learning_target_id, card_state, due)
+VALUES (@learning_target_id, @card_state, @due)
 RETURNING *;
 
 -- name: UpdateCardState :one
@@ -249,9 +249,9 @@ WHERE domain = @domain AND LOWER(slug) = LOWER(@slug);
 SELECT ao.id, ao.attempt_id, ao.signal_type, ao.category, ao.severity, ao.detail, ao.created_at,
        a.outcome, a.attempted_at,
        li.title AS item_title
-FROM attempt_observations ao
-JOIN attempts a ON a.id = ao.attempt_id
-JOIN items li ON li.id = a.learning_item_id
+FROM learning_attempt_observations ao
+JOIN learning_attempts a ON a.id = ao.attempt_id
+JOIN learning_targets li ON li.id = a.learning_target_id
 WHERE ao.concept_id = @concept_id
 ORDER BY ao.created_at DESC
 LIMIT @max_results;
@@ -274,22 +274,22 @@ LIMIT @max_results;
 -- this now returns "attempts where the user explicitly observed this
 -- concept", not "attempts on items tagged with this concept". The new
 -- semantics is what concept drilldown actually wants.
-SELECT id, learning_item_id, session_id, attempt_number, outcome,
+SELECT id, learning_target_id, session_id, attempt_number, outcome,
        duration_minutes, stuck_at, approach_used, attempted_at, metadata,
        item_title, item_external_id, difficulty,
        matched_signal, matched_category, matched_severity, matched_detail
 FROM (
     SELECT DISTINCT ON (a.id)
-           a.id, a.learning_item_id, a.session_id, a.attempt_number, a.outcome,
+           a.id, a.learning_target_id, a.session_id, a.attempt_number, a.outcome,
            a.duration_minutes, a.stuck_at, a.approach_used, a.attempted_at, a.metadata,
            li.title AS item_title, li.external_id AS item_external_id, li.difficulty,
            ao.signal_type AS matched_signal,
            ao.category   AS matched_category,
            ao.severity   AS matched_severity,
            ao.detail     AS matched_detail
-    FROM attempts a
-    JOIN items li ON li.id = a.learning_item_id
-    JOIN attempt_observations ao ON ao.attempt_id = a.id
+    FROM learning_attempts a
+    JOIN learning_targets li ON li.id = a.learning_target_id
+    JOIN learning_attempt_observations ao ON ao.attempt_id = a.id
     WHERE ao.concept_id = @concept_id
     -- Priority order when an attempt has multiple observations on the
     -- concept: weakness signals first, then improvement, then mastery. Within
@@ -308,8 +308,8 @@ LIMIT @max_results;
 -- name: ItemsByConcept :many
 -- Items linked to a concept. For concept drilldown related_items.
 SELECT li.id, li.title, li.domain, li.difficulty, li.external_id, ic.relevance
-FROM items li
-JOIN item_concepts ic ON ic.learning_item_id = li.id
+FROM learning_targets li
+JOIN learning_target_concepts ic ON ic.learning_target_id = li.id
 WHERE ic.concept_id = @concept_id
 ORDER BY ic.relevance, li.title;
 
@@ -317,7 +317,7 @@ ORDER BY ic.relevance, li.title;
 -- Count consecutive days (from today backwards) with at least one session.
 WITH daily AS (
     SELECT DISTINCT (started_at AT TIME ZONE 'UTC')::date AS d
-    FROM sessions
+    FROM learning_sessions
     WHERE ended_at IS NOT NULL
 ),
 numbered AS (

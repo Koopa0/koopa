@@ -8,7 +8,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/Koopa0/koopa0.dev/internal/content"
-	"github.com/Koopa0/koopa0.dev/internal/note"
+	"github.com/Koopa0/koopa0.dev/internal/obsidian/note"
 )
 
 // --- search_knowledge ---

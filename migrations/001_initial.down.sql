@@ -1,53 +1,59 @@
--- Reverse of 001_initial.up.sql (schema v2)
+-- Reverse of 001_initial.up.sql (coordination rebuild schema)
 
--- tool_call_logs + views removed — offloaded to Loki/Prometheus/Grafana
+-- syntheses table was removed in the coordination rebuild; nothing to drop.
 
--- Synthesis historical observation layer (Track C, squashed from 007)
-DROP TABLE IF EXISTS syntheses;
-
--- Bookmarks split out of contents polymorphism (Track B, squashed from 005)
+-- Bookmarks split out of contents polymorphism
 DROP TABLE IF EXISTS bookmark_tags;
 DROP TABLE IF EXISTS bookmark_topics;
 DROP TABLE IF EXISTS bookmarks;
 
+-- Learning plans (depends on plans, items, attempts, agents)
+DROP TABLE IF EXISTS learning_plan_entries;
+DROP TABLE IF EXISTS learning_plans;
+
+-- Agent schedule history (no FK, but drop before agents for tidiness)
+DROP TABLE IF EXISTS agent_schedule_runs;
+
 -- Learning analytics + spaced repetition
 -- review_cards/review_logs must drop before items (FK dependency)
--- plan_items must drop before plans and items (FK dependency)
-DROP TABLE IF EXISTS plan_items;
-DROP TABLE IF EXISTS plans;
-DROP TABLE IF EXISTS item_relations;
-DROP TABLE IF EXISTS attempt_observations;
-DROP TABLE IF EXISTS attempts;
-DROP TABLE IF EXISTS sessions;
-DROP TABLE IF EXISTS item_concepts;
+DROP TABLE IF EXISTS learning_target_relations;
+DROP TABLE IF EXISTS learning_attempt_observations;
+DROP TABLE IF EXISTS learning_attempts;
+DROP TABLE IF EXISTS learning_sessions;
+DROP TABLE IF EXISTS learning_target_concepts;
 DROP TABLE IF EXISTS review_logs;
 DROP TABLE IF EXISTS review_cards;
-DROP TABLE IF EXISTS items;
+DROP TABLE IF EXISTS learning_targets;
 DROP TABLE IF EXISTS concepts;
 
-DROP TABLE IF EXISTS schedule_runs;
-DROP TABLE IF EXISTS participant_schedules;
-DROP TABLE IF EXISTS reconcile_runs;
-DROP TABLE IF EXISTS insights;
-DROP TABLE IF EXISTS journal;
-DROP TABLE IF EXISTS reports;
-DROP TABLE IF EXISTS directives;
+DROP TABLE IF EXISTS drift_check_runs;
+
+-- Coordination layer: artifacts → messages → tasks (coordination) → hypotheses
+DROP TABLE IF EXISTS hypotheses;
+DROP TABLE IF EXISTS artifacts;
+DROP TABLE IF EXISTS task_messages;
+DROP TABLE IF EXISTS tasks;
+
 DROP TABLE IF EXISTS project_aliases;
 DROP TABLE IF EXISTS event_tags;
 DROP TABLE IF EXISTS events;
-DROP TABLE IF EXISTS note_links;
-DROP TABLE IF EXISTS note_tags;
-DROP TABLE IF EXISTS notes;
-DROP TABLE IF EXISTS sources;
+DROP TABLE IF EXISTS obsidian_note_links;
+DROP TABLE IF EXISTS obsidian_note_tags;
+DROP TABLE IF EXISTS obsidian_notes;
+DROP TABLE IF EXISTS sync_sources;
+
+-- Personal GTD layer
 DROP TABLE IF EXISTS daily_plan_items;
-DROP TABLE IF EXISTS task_skips;
-DROP TABLE IF EXISTS tasks;
+DROP TABLE IF EXISTS todo_skips;
+DROP TABLE IF EXISTS todos;
+DROP TABLE IF EXISTS agent_notes;
+
 DROP TABLE IF EXISTS flow_runs;
 DROP TABLE IF EXISTS topic_monitors;
 DROP TABLE IF EXISTS feed_entries;
 DROP TABLE IF EXISTS feed_topics;
 DROP TABLE IF EXISTS feeds;
-DROP TABLE IF EXISTS review_queue;
+DROP TABLE IF EXISTS editorial_queue;
 DROP TABLE IF EXISTS content_tags;
 DROP TABLE IF EXISTS content_topics;
 DROP TABLE IF EXISTS contents;
@@ -60,11 +66,15 @@ DROP TABLE IF EXISTS tags;
 DROP TABLE IF EXISTS refresh_tokens;
 DROP TABLE IF EXISTS users;
 DROP TABLE IF EXISTS topics;
-DROP TABLE IF EXISTS participant;
-DROP TABLE IF EXISTS platform;
+DROP TABLE IF EXISTS agents;
 
 DROP TYPE IF EXISTS event_type;
-DROP TYPE IF EXISTS task_status;
+DROP TYPE IF EXISTS hypothesis_state;
+DROP TYPE IF EXISTS message_role;
+DROP TYPE IF EXISTS task_state;
+DROP TYPE IF EXISTS agent_note_kind;
+DROP TYPE IF EXISTS agent_status;
+DROP TYPE IF EXISTS todo_state;
 DROP TYPE IF EXISTS project_status;
 DROP TYPE IF EXISTS goal_status;
 DROP TYPE IF EXISTS flow_status;

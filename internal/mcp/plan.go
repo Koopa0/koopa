@@ -30,7 +30,7 @@ type ManagePlanInput struct {
 	ItemID                   *string `json:"item_id,omitempty" jsonschema_description:"Plan item UUID (for update_item)"`
 	Status                   *string `json:"status,omitempty" jsonschema_description:"New status: completed, skipped, substituted (for update_item) or active, paused, completed, abandoned (for update_plan)"`
 	Reason                   *string `json:"reason,omitempty" jsonschema_description:"Why skipped/substituted"`
-	SubstituteLearningItemID *string `json:"substitute_learning_item_id,omitempty" jsonschema_description:"learning_items.id of the replacement (for status=substituted)"`
+	SubstituteLearningTargetID *string `json:"substitute_learning_item_id,omitempty" jsonschema_description:"learning_items.id of the replacement (for status=substituted)"`
 	CompletedByAttemptID     *string `json:"completed_by_attempt_id,omitempty" jsonschema_description:"Attempt UUID that informed the completion decision (policy-mandatory for AI-initiated completions)"`
 
 	// reorder
@@ -41,7 +41,7 @@ type ManagePlanInput struct {
 // Either learning_item_id OR title must be provided. When only title is
 // given, the item is resolved via FindOrCreateItem using the plan's domain.
 type ManagePlanItemInput struct {
-	LearningItemID string  `json:"learning_item_id,omitempty" jsonschema_description:"Existing learning item UUID. Either this or title is required."`
+	LearningTargetID string  `json:"learning_item_id,omitempty" jsonschema_description:"Existing learning item UUID. Either this or title is required."`
 	Title          string  `json:"title,omitempty" jsonschema_description:"Item title for find-or-create (uses plan domain). Either this or learning_item_id is required."`
 	Difficulty     *string `json:"difficulty,omitempty" jsonschema_description:"Item difficulty (used with title-based find-or-create)"`
 	Position       int32   `json:"position" jsonschema:"required"`
@@ -113,11 +113,11 @@ func (s *Server) mpAddItems(ctx context.Context, planID uuid.UUID, input *Manage
 	for i, item := range input.Items {
 		var liID uuid.UUID
 		switch {
-		case item.LearningItemID != "":
+		case item.LearningTargetID != "":
 			var pErr error
-			liID, pErr = uuid.Parse(item.LearningItemID)
+			liID, pErr = uuid.Parse(item.LearningTargetID)
 			if pErr != nil {
-				return nil, ManagePlanOutput{}, fmt.Errorf("items[%d]: invalid learning_item_id %q: %w", i, item.LearningItemID, pErr)
+				return nil, ManagePlanOutput{}, fmt.Errorf("items[%d]: invalid learning_item_id %q: %w", i, item.LearningTargetID, pErr)
 			}
 		case item.Title != "":
 			var fErr error
@@ -142,7 +142,7 @@ func (s *Server) mpAddItems(ctx context.Context, planID uuid.UUID, input *Manage
 	for _, it := range parsed {
 		_, addErr := txPlans.AddItem(ctx, plan.AddItemParams{
 			PlanID:         planID,
-			LearningItemID: it.id,
+			LearningTargetID: it.id,
 			Position:       it.pos,
 			Phase:          it.phase,
 		})
@@ -261,10 +261,10 @@ func (s *Server) mpUpdateItem(ctx context.Context, planID uuid.UUID, input *Mana
 }
 
 func (s *Server) mpSubstitute(ctx context.Context, planID, itemID uuid.UUID, input *ManagePlanInput) error {
-	if input.SubstituteLearningItemID == nil || *input.SubstituteLearningItemID == "" {
+	if input.SubstituteLearningTargetID == nil || *input.SubstituteLearningTargetID == "" {
 		return fmt.Errorf("substitute_learning_item_id is required for status=substituted")
 	}
-	subLIID, err := uuid.Parse(*input.SubstituteLearningItemID)
+	subLIID, err := uuid.Parse(*input.SubstituteLearningTargetID)
 	if err != nil {
 		return fmt.Errorf("invalid substitute_learning_item_id: %w", err)
 	}
@@ -292,7 +292,7 @@ func (s *Server) mpSubstitute(ctx context.Context, planID, itemID uuid.UUID, inp
 
 	newItem, err := txPlans.AddItem(ctx, plan.AddItemParams{
 		PlanID:         planID,
-		LearningItemID: subLIID,
+		LearningTargetID: subLIID,
 		Position:       nextPos,
 	})
 	if err != nil {

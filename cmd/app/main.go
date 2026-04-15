@@ -22,6 +22,7 @@ import (
 
 	"github.com/Koopa0/koopa0.dev/internal/activity"
 	"github.com/Koopa0/koopa0.dev/internal/admin"
+	"github.com/Koopa0/koopa0.dev/internal/agent"
 	"github.com/Koopa0/koopa0.dev/internal/auth"
 	"github.com/Koopa0/koopa0.dev/internal/bookmark"
 	"github.com/Koopa0/koopa0.dev/internal/content"
@@ -30,13 +31,18 @@ import (
 	"github.com/Koopa0/koopa0.dev/internal/feed/collector"
 	"github.com/Koopa0/koopa0.dev/internal/feed/entry"
 	"github.com/Koopa0/koopa0.dev/internal/goal"
-	"github.com/Koopa0/koopa0.dev/internal/note"
+	"github.com/Koopa0/koopa0.dev/internal/obsidian/note"
 	"github.com/Koopa0/koopa0.dev/internal/project"
 	"github.com/Koopa0/koopa0.dev/internal/stats"
 	"github.com/Koopa0/koopa0.dev/internal/tag"
 	"github.com/Koopa0/koopa0.dev/internal/topic"
 	"github.com/Koopa0/koopa0.dev/internal/upload"
 )
+
+// agentSyncTimeout caps how long startup waits for agent.SyncToTable.
+// If the DB is too slow or unreachable we fail fast rather than hang
+// the app behind a silent reconciliation.
+const agentSyncTimeout = 10 * time.Second
 
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
@@ -62,6 +68,25 @@ func run(logger *slog.Logger) error {
 	}
 	defer pool.Close()
 	logger.Info("database connected")
+
+	// Agent registry — reconcile the Go BuiltinAgents() literal with the
+	// agents table before any HTTP traffic. Missing literal entries are
+	// retired (status=retired), new ones are inserted as active. Failure
+	// here is fatal: an empty or stale agents table means Authorize() cannot
+	// resolve callers, so every MCP coordination tool would reject traffic.
+	agentRegistry := agent.NewBuiltinRegistry()
+	agentStore := agent.NewStore(pool)
+	syncCtx, syncCancel := context.WithTimeout(ctx, agentSyncTimeout)
+	syncResult, syncErr := agent.SyncToTable(syncCtx, agentRegistry, agentStore, logger)
+	syncCancel()
+	if syncErr != nil {
+		return fmt.Errorf("syncing agent registry: %w", syncErr)
+	}
+	logger.Info("agent registry synced",
+		"active", syncResult.Active,
+		"retired", syncResult.Retired,
+		"already_retired", syncResult.AlreadyRetired,
+	)
 
 	// Stores
 	contentStore := content.NewStore(pool)

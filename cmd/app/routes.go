@@ -17,7 +17,7 @@ import (
 	"github.com/Koopa0/koopa0.dev/internal/feed"
 	"github.com/Koopa0/koopa0.dev/internal/feed/entry"
 	"github.com/Koopa0/koopa0.dev/internal/goal"
-	"github.com/Koopa0/koopa0.dev/internal/note"
+	"github.com/Koopa0/koopa0.dev/internal/obsidian/note"
 	"github.com/Koopa0/koopa0.dev/internal/project"
 	"github.com/Koopa0/koopa0.dev/internal/stats"
 	"github.com/Koopa0/koopa0.dev/internal/tag"
@@ -210,11 +210,10 @@ func registerRoutes(mux *http.ServeMux, h *handlers, authMid func(http.Handler) 
 		mux.Handle("GET /api/admin/reflect/journal", authMid(http.HandlerFunc(a.JournalList)))
 		mux.Handle("GET /api/admin/reflect/insights", authMid(http.HandlerFunc(a.InsightsList)))
 
-		// Reflect history — retrospective view over synthesis substrate.
-		// GET is pure read: never triggers live compute, never writes.
-		// POST is the manual consolidation trigger (writes syntheses).
-		mux.Handle("GET /api/admin/reflect/history/weekly", authMid(http.HandlerFunc(a.ReflectHistoryWeekly)))
-		mux.Handle("POST /api/admin/consolidate/weekly", authMid(http.HandlerFunc(a.ConsolidateWeekly)))
+		// Weekly history endpoints removed in the coordination rebuild.
+		// Weekly review is now an on-demand compute via internal/weekly —
+		// the MCP weekly_summary tool handles it. If an admin endpoint is
+		// needed in future, wire weekly.Compute directly.
 
 		// Dashboard
 		mux.Handle("GET /api/admin/dashboard/trends", authMid(http.HandlerFunc(a.DashboardTrends)))

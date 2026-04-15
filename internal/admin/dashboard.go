@@ -79,7 +79,7 @@ func (h *Handler) DashboardTrends(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) fillExecution(ctx context.Context, out *trendResp, lastWeekStart, thisWeekStart time.Time) {
-	tasks, err := h.tasks.CompletedTasksDetailSince(ctx, lastWeekStart)
+	tasks, err := h.todos.CompletedItemsDetailSince(ctx, lastWeekStart)
 	if err != nil {
 		return
 	}
@@ -192,30 +192,32 @@ func (h *Handler) fillHealthCounters(ctx context.Context, out *trendResp) {
 	thisWeekStart := now.AddDate(0, 0, -int(now.Weekday()-time.Monday))
 	thisWeekStart = time.Date(thisWeekStart.Year(), thisWeekStart.Month(), thisWeekStart.Day(), 0, 0, 0, 0, h.loc)
 
-	if n, err := h.tasks.InboxCount(ctx); err == nil {
+	if n, err := h.todos.InboxCount(ctx); err == nil {
 		out.InboxHealth.CurrentCount = n
 	}
-	// CapturedThisWeek: tasks created since Monday (all statuses — a capture is any new task).
-	if created, err := h.tasks.TasksCreatedSince(ctx, thisWeekStart); err == nil {
+	// CapturedThisWeek: todo items created since Monday.
+	if created, err := h.todos.ItemsCreatedSince(ctx, thisWeekStart); err == nil {
 		out.InboxHealth.CapturedThisWeek = len(created)
 	}
 	// WeekStartCount and ClarifiedThisWeek require historical snapshots — zero for now.
 
-	if n, err := h.tasks.StaleSomedayCount(ctx, 30); err == nil {
+	if n, err := h.todos.StaleSomedayCount(ctx, 30); err == nil {
 		out.SomedayHealth.StaleCount = n
 	}
 
-	if dirs, err := h.directives.OpenDirectives(ctx); err == nil {
-		out.DirectiveHealth.OpenCount = len(dirs)
-	}
-	// AvgResolutionDays: mean days between issued_date and resolved_at.
-	if resolved, err := h.directives.ResolvedDirectivesRecent(ctx); err == nil && len(resolved) > 0 {
+	// TODO(coordination-rebuild): directive health → open task health via task.Store
+	// once the coordination task package exists. Zeroed until then.
+	out.DirectiveHealth.OpenCount = 0
+	out.DirectiveHealth.AvgResolutionDays = 0
+	if false {
+		// keep the resolved block structure for the follow-up PR to restore.
 		total := 0
+		resolved := []struct{ ResolvedAt, IssuedDate *time.Time }{}
 		for i := range resolved {
 			if resolved[i].ResolvedAt != nil {
-				total += int(resolved[i].ResolvedAt.Sub(resolved[i].IssuedDate).Hours() / 24)
+				total += int(resolved[i].ResolvedAt.Sub(*resolved[i].IssuedDate).Hours() / 24)
 			}
 		}
-		out.DirectiveHealth.AvgResolutionDays = total / len(resolved)
+		_ = total
 	}
 }

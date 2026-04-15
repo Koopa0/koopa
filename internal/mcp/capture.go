@@ -5,10 +5,9 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/Koopa0/koopa0.dev/internal/todo"
 	"github.com/google/uuid"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-
-	"github.com/Koopa0/koopa0.dev/internal/task"
 )
 
 // --- capture_inbox ---
@@ -25,7 +24,7 @@ type CaptureInboxInput struct {
 
 // CaptureInboxOutput is the output of the capture_inbox tool.
 type CaptureInboxOutput struct {
-	Task task.Task `json:"task"`
+	Task todo.Item `json:"task"`
 }
 
 func (s *Server) captureInbox(ctx context.Context, _ *mcp.CallToolRequest, input CaptureInboxInput) (*mcp.CallToolResult, CaptureInboxOutput, error) {
@@ -52,7 +51,7 @@ func (s *Server) captureInbox(ctx context.Context, _ *mcp.CallToolRequest, input
 		projectID = s.resolveProjectID(ctx, input.Project)
 	}
 
-	created, err := s.tasks.Create(ctx, &task.CreateParams{
+	created, err := s.todos.Create(ctx, &todo.CreateParams{
 		Title:       input.Title,
 		Description: input.Description,
 		ProjectID:   projectID,

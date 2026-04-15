@@ -9,7 +9,7 @@ import (
 	"github.com/Koopa0/koopa0.dev/internal/api"
 	"github.com/Koopa0/koopa0.dev/internal/daily"
 	"github.com/Koopa0/koopa0.dev/internal/goal"
-	"github.com/Koopa0/koopa0.dev/internal/task"
+	"github.com/Koopa0/koopa0.dev/internal/todo"
 )
 
 // TodayResponse is the aggregate payload for GET /api/admin/today.
@@ -128,7 +128,7 @@ func (h *Handler) fillYesterdayUnfinished(ctx context.Context, date time.Time, r
 }
 
 func (h *Handler) fillOverdueTasks(ctx context.Context, date time.Time, resp *TodayResponse) {
-	rows, err := h.tasks.OverdueTasks(ctx, date)
+	rows, err := h.todos.OverdueItems(ctx, date)
 	if err != nil {
 		h.logger.Warn("today: overdue tasks", "error", err)
 		return
@@ -143,13 +143,14 @@ func (h *Handler) fillNeedsAttention(ctx context.Context, date time.Time, resp *
 	na := &resp.NeedsAttention
 	na.OverdueTasks = len(resp.OverdueTasks)
 
-	if count, err := h.tasks.InboxCount(ctx); err == nil {
+	if count, err := h.todos.InboxCount(ctx); err == nil {
 		na.InboxCount = count
 	}
-	if count, err := h.directives.UnackedCount(ctx); err == nil {
-		na.PendingDirectives = count
-	}
-	if count, err := h.tasks.StaleSomedayCount(ctx, 30); err == nil {
+	// TODO(coordination-rebuild): restore PendingDirectives count once task.Store exists.
+	// Previously: h.directives.UnackedCount returning count of unacked directives.
+	// Leaving at zero until the new coordination task store is wired up.
+	na.PendingDirectives = 0
+	if count, err := h.todos.StaleSomedayCount(ctx, 30); err == nil {
 		na.StaleSomedayCount = count
 	}
 	if count, err := h.learn.DueReviewCount(ctx, date); err == nil {
@@ -159,7 +160,7 @@ func (h *Handler) fillNeedsAttention(ctx context.Context, date time.Time, resp *
 
 func (h *Handler) fillReflectionContext(ctx context.Context, date time.Time, resp *TodayResponse) {
 	yesterday := date.AddDate(0, 0, -1)
-	entries, err := h.journal.ReflectionForDate(ctx, yesterday)
+	entries, err := h.notes.ReflectionsForDate(ctx, yesterday)
 	if err != nil || len(entries) == 0 {
 		return
 	}
@@ -199,21 +200,21 @@ func (h *Handler) fillContextLine(_ context.Context, date time.Time, resp *Today
 func planItemToSummary(item *daily.Item, date time.Time) PlanItemSummary {
 	return PlanItemSummary{
 		ID:          item.ID.String(),
-		TaskID:      item.TaskID.String(),
-		Title:       item.TaskTitle,
+		TaskID:      item.TodoID.String(),
+		Title:       item.TodoTitle,
 		Area:        item.ProjectTitle,
-		Energy:      stringOrEmpty(item.TaskEnergy),
+		Energy:      stringOrEmpty(item.TodoEnergy),
 		Position:    int(item.Position),
 		Status:      string(item.Status),
 		PlannedDate: date.Format(time.DateOnly),
 	}
 }
 
-func pendingTaskToSummary(t *task.PendingTaskDetail) TaskSummary {
+func pendingTaskToSummary(t *todo.PendingDetail) TaskSummary {
 	s := TaskSummary{
 		ID:           t.ID.String(),
 		Title:        t.Title,
-		Status:       string(t.Status),
+		Status:       string(t.State),
 		Area:         t.ProjectTitle,
 		Priority:     stringOrEmpty(t.Priority),
 		Energy:       stringOrEmpty(t.Energy),

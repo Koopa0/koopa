@@ -9,7 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/Koopa0/koopa0.dev/internal/journal"
+	agentnote "github.com/Koopa0/koopa0.dev/internal/agent/note"
 	"github.com/Koopa0/koopa0.dev/internal/learning"
 )
 
@@ -369,23 +369,23 @@ func (s *Server) endSession(ctx context.Context, _ *mcp.CallToolRequest, input E
 		return nil, EndSessionOutput{}, fmt.Errorf("invalid session_id: %w", err)
 	}
 
-	// Optionally create reflection journal entry.
-	var journalID *int64
+	// Optionally create reflection agent_note entry.
+	var noteID *int64
 	if input.Reflection != nil && *input.Reflection != "" {
-		entry, jErr := s.journal.Create(ctx, &journal.CreateParams{
-			Kind:      journal.KindReflection,
-			Source:    s.callerIdentity(ctx),
+		entry, jErr := s.agentNotes.Create(ctx, &agentnote.CreateParams{
+			Kind:      agentnote.KindReflection,
+			Author:    s.callerIdentity(ctx),
 			Content:   *input.Reflection,
 			EntryDate: s.today(),
 		})
 		if jErr == nil {
-			journalID = &entry.ID
+			noteID = &entry.ID
 		} else {
-			s.logger.Warn("end_session: journal creation failed", "error", jErr)
+			s.logger.Warn("end_session: agent note creation failed", "error", jErr)
 		}
 	}
 
-	session, err := s.learn.EndSession(ctx, sessionID, journalID)
+	session, err := s.learn.EndSession(ctx, sessionID, noteID)
 	if err != nil {
 		return nil, EndSessionOutput{}, fmt.Errorf("ending session: %w", err)
 	}

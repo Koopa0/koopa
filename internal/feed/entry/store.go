@@ -393,68 +393,51 @@ func datumToItem(r *db.FeedEntry) Item {
 	}
 }
 
-// CollectionStats returns per-feed and global collection statistics.
-// Raw SQL is required: this aggregation joins feed_entries and feeds tables
-// with GROUP BY, which cannot be expressed efficiently via sqlc-generated queries.
-// Parameters use pgx placeholders ($1, $2), no string interpolation.
+// CollectionStats returns per-feed and global collection statistics for
+// the window [now-days, now). The optional feedID restricts both queries
+// to a single feed. Both queries are sqlc-generated.
 func (s *Store) CollectionStats(ctx context.Context, feedID *uuid.UUID, days int) (*Stats, error) {
 	cutoff := time.Now().AddDate(0, 0, -days)
 
-	// Per-feed stats
-	feedQuery := `
-		SELECT f.id, f.name,
-		       COUNT(cd.id)::int AS total_items,
-		       COALESCE(AVG(cd.relevance_score), 0) AS avg_score,
-		       MAX(cd.collected_at) AS last_collected_at
-		FROM feeds f
-		LEFT JOIN feed_entries cd ON cd.feed_id = f.id AND cd.collected_at >= $1
-	`
-	args := []any{cutoff}
-	if feedID != nil {
-		feedQuery += " WHERE f.id = $2"
-		args = append(args, *feedID)
-	}
-	feedQuery += " GROUP BY f.id, f.name ORDER BY total_items DESC"
-
-	rows, err := s.dbtx.Query(ctx, feedQuery, args...)
+	rows, err := s.q.CollectionStatsByFeed(ctx, db.CollectionStatsByFeedParams{
+		Cutoff: cutoff,
+		FeedID: feedID,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("querying per-feed stats: %w", err)
 	}
-	defer rows.Close()
-
-	var feeds []FeedStat
-	for rows.Next() {
-		var fs FeedStat
-		if err := rows.Scan(&fs.FeedID, &fs.FeedName, &fs.TotalItems, &fs.AvgScore, &fs.LastCollectedAt); err != nil {
-			return nil, fmt.Errorf("scanning feed stat: %w", err)
+	feeds := make([]FeedStat, len(rows))
+	for i := range rows {
+		var lastCollected *time.Time
+		if !rows[i].LastCollectedAt.IsZero() {
+			t := rows[i].LastCollectedAt
+			lastCollected = &t
 		}
-		feeds = append(feeds, fs)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterating feed stats: %w", err)
-	}
-
-	// Global stats
-	globalQuery := `
-		SELECT COUNT(*)::int AS total_items,
-		       COUNT(DISTINCT feed_id)::int AS total_feeds,
-		       COALESCE(AVG(relevance_score), 0) AS avg_score,
-		       COUNT(*) FILTER (WHERE status = 'unread')::int AS unread_count,
-		       COUNT(*) FILTER (WHERE status = 'curated')::int AS curated_count
-		FROM feed_entries
-		WHERE collected_at >= $1
-	`
-	globalArgs := []any{cutoff}
-	if feedID != nil {
-		globalQuery += " AND feed_id = $2"
-		globalArgs = append(globalArgs, *feedID)
+		feeds[i] = FeedStat{
+			FeedID:          rows[i].ID,
+			FeedName:        rows[i].Name,
+			TotalItems:      int(rows[i].TotalItems),
+			AvgScore:        rows[i].AvgScore,
+			LastCollectedAt: lastCollected,
+		}
 	}
 
-	var g GlobalStat
-	row := s.dbtx.QueryRow(ctx, globalQuery, globalArgs...)
-	if err := row.Scan(&g.TotalItems, &g.TotalFeeds, &g.AvgScore, &g.UnreadCount, &g.CuratedCount); err != nil {
+	g, err := s.q.CollectionStatsGlobal(ctx, db.CollectionStatsGlobalParams{
+		Cutoff: cutoff,
+		FeedID: feedID,
+	})
+	if err != nil {
 		return nil, fmt.Errorf("querying global stats: %w", err)
 	}
 
-	return &Stats{Feeds: feeds, Global: g}, nil
+	return &Stats{
+		Feeds: feeds,
+		Global: GlobalStat{
+			TotalItems:   int(g.TotalItems),
+			TotalFeeds:   int(g.TotalFeeds),
+			AvgScore:     g.AvgScore,
+			UnreadCount:  int(g.UnreadCount),
+			CuratedCount: int(g.CuratedCount),
+		},
+	}, nil
 }

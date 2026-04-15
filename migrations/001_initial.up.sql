@@ -1,12 +1,21 @@
 CREATE EXTENSION IF NOT EXISTS vector;
 
 -- ============================================================
+-- Schema conventions
+-- ============================================================
+--
+-- ============================================================
 -- Enums
 -- ============================================================
 
 CREATE TYPE content_type AS ENUM (
-    'article', 'essay', 'build-log', 'til', 'note', 'bookmark', 'digest'
+    'article', 'essay', 'build-log', 'til', 'digest'
 );
+-- Dropped in the coordination rebuild:
+--   - 'bookmark' → split out into bookmarks table (internal/bookmark)
+--   - 'note'     → collided with Obsidian notes (internal/obsidian/note)
+--                  and agent notes (internal/agent/note); contents was
+--                  never the right home for either
 
 CREATE TYPE content_status AS ENUM (
     'draft', 'review', 'published', 'archived'
@@ -40,72 +49,78 @@ CREATE TYPE project_status AS ENUM (
     'planned', 'in-progress', 'on-hold', 'completed', 'maintained', 'archived'
 );
 
-CREATE TYPE task_status AS ENUM (
-    'inbox', 'todo', 'in-progress', 'done', 'someday'
+CREATE TYPE todo_state AS ENUM (
+    'inbox', 'todo', 'in_progress', 'done', 'someday'
+);
+
+CREATE TYPE agent_status AS ENUM ('active', 'retired');
+
+CREATE TYPE agent_note_kind AS ENUM ('plan', 'context', 'reflection');
+
+CREATE TYPE task_state AS ENUM (
+    'submitted', 'working', 'completed', 'canceled'
+);
+
+CREATE TYPE message_role AS ENUM ('request', 'response');
+
+CREATE TYPE hypothesis_state AS ENUM (
+    'unverified', 'verified', 'invalidated', 'archived'
 );
 
 CREATE TYPE event_type AS ENUM (
     'note_created', 'note_updated',
     'push', 'pull_request',
-    'project_update', 'task_status_change', 'book_progress', 'goal_update',
-    'task_completed', 'content_published'
+    'project_update', 'todo_state_change', 'book_progress', 'goal_update',
+    'todo_completed', 'content_published'
 );
 
 -- ============================================================
--- Identity model: platform → participant
+-- Identity model: agents (registry projection)
 --
--- IMPORTANT: The INSERT statements below are part of the schema, not optional seed data.
--- tasks.assignee DEFAULT 'human' and all FK references to participant(name)
--- will fail if these INSERTs are missing. Do not skip them.
+-- Source of truth lives in Go: internal/agent/registry.go::BuiltinAgents().
+-- This table is a DB projection of that registry — rows are upserted at
+-- application startup by internal/agent/sync.go::SyncToTable. Capability
+-- flags are intentionally absent: authorization is enforced in Go via the
+-- agent.Authorized compile-time wrapper type, not by DB columns.
+--
+-- The table exists so that coordination entities (tasks.requester, tasks.assignee)
+-- can maintain referential integrity to a known agent identity, and so that
+-- retiring an agent leaves an auditable trace (status='retired', retired_at).
 -- ============================================================
 
-CREATE TABLE platform (
-    name        TEXT PRIMARY KEY,
-    description TEXT NOT NULL DEFAULT '',
-    created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+CREATE TABLE agents (
+    name         TEXT PRIMARY KEY,
+    display_name TEXT NOT NULL,
+    platform     TEXT NOT NULL,
+    description  TEXT NOT NULL DEFAULT '',
+    status       agent_status NOT NULL DEFAULT 'active',
+    synced_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    retired_at   TIMESTAMPTZ,
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+    CONSTRAINT chk_agent_name_format
+        CHECK (name ~ '^[a-z][a-z0-9-]*$'),
+    CONSTRAINT chk_agent_display_name_not_blank
+        CHECK (btrim(display_name) <> ''),
+    CONSTRAINT chk_agent_platform
+        CHECK (platform IN ('claude-cowork', 'claude-code', 'claude-web', 'human')),
+    CONSTRAINT chk_agent_status_retired CHECK (
+        (status = 'active'  AND retired_at IS NULL) OR
+        (status = 'retired' AND retired_at IS NOT NULL)
+    )
 );
 
-COMMENT ON TABLE platform IS 'AI environment or human context. Each platform hosts one or more participants (projects/agents).';
-COMMENT ON COLUMN platform.name IS 'Platform identifier: claude-cowork, claude-code, claude-web, human.';
-COMMENT ON COLUMN platform.description IS 'Human-readable description of this platform.';
+COMMENT ON TABLE agents IS 'DB projection of the Go BuiltinAgents() registry. Rows are upserted at startup by agent.SyncToTable. Capability flags are NOT stored here — authorization is enforced in Go via the agent.Authorized compile-time wrapper. FK targets for tasks.requester / tasks.assignee use ON DELETE RESTRICT so historical coordination records cannot dangle. Removed registry entries transition to status=retired rather than being deleted.';
+COMMENT ON COLUMN agents.name IS 'Unique agent identifier. Used as requester/assignee in tasks and as the caller identity (as: field) in MCP tool calls. Matches the Go Agent.Name literal in BuiltinAgents(). Format: lowercase, must start with a letter, alphanumeric + hyphens (chk_agent_name_format).';
+COMMENT ON COLUMN agents.display_name IS 'Human-readable label for admin UI and logs. Non-blank (chk_agent_display_name_not_blank).';
+COMMENT ON COLUMN agents.platform IS 'Execution context. Closed set: claude-cowork, claude-code, claude-web, human (chk_agent_platform). Informational label — routing decisions are driven by agent registry lookups, not this column.';
+COMMENT ON COLUMN agents.description IS 'Short role description. Empty string = no description.';
+COMMENT ON COLUMN agents.status IS 'active = currently present in BuiltinAgents(). retired = previously registered but no longer in the Go literal. chk_agent_status_retired ties retired_at to status=retired.';
+COMMENT ON COLUMN agents.synced_at IS 'When this row was last reconciled with BuiltinAgents() by agent.SyncToTable. Updated on every startup sync.';
+COMMENT ON COLUMN agents.retired_at IS 'When this agent was retired (removed from BuiltinAgents). NULL while status=active. Set by SyncToTable when the registry entry disappears.';
+COMMENT ON COLUMN agents.created_at IS 'When the row was first upserted. Useful for onboarding audit.';
 
-INSERT INTO platform(name, description) VALUES
-    ('claude-cowork', 'Claude Desktop Cowork — multi-project virtual studio'),
-    ('claude-code', 'Claude Code CLI — development agent'),
-    ('claude-web', 'Claude Web — general conversation'),
-    ('human', 'Direct human operation');
-
-CREATE TABLE participant (
-    name                    TEXT PRIMARY KEY,
-    platform                TEXT NOT NULL REFERENCES platform(name) ON DELETE RESTRICT,
-    description             TEXT NOT NULL DEFAULT '',
-    can_issue_directives    BOOLEAN NOT NULL DEFAULT false,
-    can_receive_directives  BOOLEAN NOT NULL DEFAULT false,
-    can_write_reports       BOOLEAN NOT NULL DEFAULT false,
-    task_assignable         BOOLEAN NOT NULL DEFAULT false,
-    can_own_schedules       BOOLEAN NOT NULL DEFAULT false,
-    created_at              TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-COMMENT ON TABLE participant IS 'An actor in the system — a Cowork project, a Claude Code project, or a human operator. Capability flags determine what each participant can do in the IPC protocol. DELETION: all FKs to participant(name) use ON DELETE RESTRICT — participant deletion is blocked by any referencing row across tasks, directives, reports, journal, insights, daily_plan_items, participant_schedules. Participants are seed data and should never be deleted — use capability flags to deactivate.';
-COMMENT ON COLUMN participant.name IS 'Unique identifier used as source/target in directives, source in reports/journal/insights, and assignee in tasks.';
-COMMENT ON COLUMN participant.platform IS 'Execution context (claude-cowork, claude-code, claude-web, human). Informational — routing and capability decisions are driven by capability flags, not platform name.';
-COMMENT ON COLUMN participant.description IS 'Human-readable role description for this participant.';
-COMMENT ON COLUMN participant.can_issue_directives IS 'Whether this participant can create directives. Go validation checks this flag, not platform name.';
-COMMENT ON COLUMN participant.can_receive_directives IS 'Whether this participant can be targeted by directives.';
-COMMENT ON COLUMN participant.can_write_reports IS 'Whether this participant can create reports (directive-driven or self-initiated).';
-COMMENT ON COLUMN participant.task_assignable IS 'Whether this participant can be assigned as tasks.assignee.';
-COMMENT ON COLUMN participant.can_own_schedules IS 'Whether this participant can have entries in participant_schedules. INVARIANT: if flipped true → false, Go must cascade-disable all participant_schedules for this participant.';
-
-INSERT INTO participant(name, platform, description, can_issue_directives, can_receive_directives, can_write_reports, task_assignable, can_own_schedules) VALUES
-    ('hq',              'claude-cowork', 'Studio HQ — CEO, decisions, delegation',       true,  false, true,  true,  true),
-    ('content-studio',  'claude-cowork', 'Content strategy, writing, publishing',         true,  true,  true,  true,  true),
-    ('research-lab',    'claude-cowork', 'Deep research, structured reports',              true,  true,  true,  true,  true),
-    ('learning-studio', 'claude-cowork', 'LeetCode coaching, spaced repetition',          false, true,  true,  true,  false),
-    ('koopa0.dev',      'claude-code',   'koopa0.dev development project',                false, false, false, true,  true),
-    ('go-spec',         'claude-code',   'Go spec configuration project',                 false, false, false, true,  false),
-    ('claude',          'claude-web',    'General Claude Web session',                     false, false, false, false, false),
-    ('human',           'human',         'Koopa — direct manual operation',                false, false, false, false, false);
+CREATE INDEX idx_agents_status ON agents (status);
 
 -- ============================================================
 -- Core domain: topics, tags, users
@@ -117,11 +132,14 @@ CREATE TABLE users (
     role       TEXT NOT NULL DEFAULT 'admin'
                CHECK (role IN ('admin')),
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+    CONSTRAINT chk_users_email_format
+        CHECK (email ~* '^[^@\s]+@[^@\s]+\.[^@\s]+$' AND length(email) <= 254)
 );
 
 COMMENT ON TABLE users IS 'System users. Currently single-admin only.';
-COMMENT ON COLUMN users.email IS 'Login identity. Unique.';
+COMMENT ON COLUMN users.email IS 'Login identity. Unique. Basic structural validation via chk_users_email_format (full RFC 5322 compliance is enforced at the application layer).';
 COMMENT ON COLUMN users.role IS 'Single-value placeholder. Currently only admin exists. If no second role materializes by public API launch, delete this column. CHECK uses IN() syntax for easy extension.';
 COMMENT ON COLUMN users.updated_at IS 'Application-managed. Set explicitly in UPDATE queries.';
 
@@ -130,7 +148,10 @@ CREATE TABLE refresh_tokens (
     user_id    UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     token_hash TEXT NOT NULL UNIQUE,
     expires_at TIMESTAMPTZ NOT NULL,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+    CONSTRAINT chk_refresh_token_hash_not_blank
+        CHECK (btrim(token_hash) <> '')
 );
 
 COMMENT ON TABLE refresh_tokens IS 'JWT refresh token hashes. One user may have multiple active tokens (multi-device).';
@@ -149,13 +170,18 @@ CREATE TABLE topics (
     icon        TEXT,
     sort_order  INT NOT NULL DEFAULT 0,
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+    CONSTRAINT chk_topic_slug_format
+        CHECK (slug ~ '^[a-z0-9]+(-[a-z0-9]+)*$'),
+    CONSTRAINT chk_topic_name_not_blank
+        CHECK (btrim(name) <> '')
 );
 
 COMMENT ON TABLE topics IS 'High-level knowledge domains (Go, AI, System Design). 10-20, manually managed. Used for content categorization and feed association.';
-COMMENT ON COLUMN topics.slug IS 'URL-safe identifier (e.g. system-design). Used in feed_topics and content_topics junctions.';
+COMMENT ON COLUMN topics.slug IS 'URL-safe identifier (e.g. system-design). Used in feed_topics and content_topics junctions. Format: lowercase alphanumeric segments separated by single hyphens (chk_topic_slug_format) — no consecutive or trailing hyphens.';
 COMMENT ON COLUMN topics.icon IS 'Optional emoji or icon identifier for UI display.';
-COMMENT ON COLUMN topics.sort_order IS 'Display ordering. Lower = higher priority.';
+COMMENT ON COLUMN topics.sort_order IS 'Priority tier for display ordering (lower = higher priority). Convention: sort_order is for tier-based UI placement that may have gaps; position is for sequence-based 0-based indexing within a parent. See top-of-file ordering convention block.';
 
 CREATE TABLE tags (
     id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -164,11 +190,17 @@ CREATE TABLE tags (
     parent_id   UUID REFERENCES tags(id) ON DELETE SET NULL,
     description TEXT NOT NULL DEFAULT '',
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+    CONSTRAINT chk_tag_slug_format
+        CHECK (slug ~ '^[a-z0-9]+(-[a-z0-9]+)*$'
+               OR slug ~ '^(weakness|improvement):[a-z0-9]+(-[a-z0-9]+)*$'),
+    CONSTRAINT chk_tag_name_not_blank
+        CHECK (btrim(name) <> '')
 );
 
-COMMENT ON TABLE tags IS 'Canonical tag registry. Fine-grained labels (two-pointers, error-handling). Auto-extracted from notes, resolved through tag_aliases pipeline.';
-COMMENT ON COLUMN tags.slug IS 'Canonical form (e.g. two-pointers, dp). Controlled vocabulary for LeetCode patterns, weaknesses, improvements.';
+COMMENT ON TABLE tags IS 'Canonical tag registry. Fine-grained labels (two-pointers, error-handling). Auto-extracted from obsidian notes, resolved through tag_aliases pipeline.';
+COMMENT ON COLUMN tags.slug IS 'Canonical form (e.g. two-pointers, dp). Controlled vocabulary for LeetCode patterns. Format: standard slug, OR namespaced slug like weakness:state-transition / improvement:edge-cases (chk_tag_slug_format).';
 COMMENT ON COLUMN tags.parent_id IS 'Hierarchical parent tag. SET NULL on parent deletion — orphaned tags remain valid.';
 
 CREATE INDEX idx_tags_parent ON tags(parent_id);
@@ -213,7 +245,12 @@ CREATE TABLE areas (
     icon        TEXT,
     sort_order  INT NOT NULL DEFAULT 0,
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+    CONSTRAINT chk_area_slug_format
+        CHECK (slug ~ '^[a-z0-9]+(-[a-z0-9]+)*$'),
+    CONSTRAINT chk_area_name_not_blank
+        CHECK (btrim(name) <> '')
 );
 
 COMMENT ON TABLE areas IS
@@ -240,16 +277,24 @@ COMMENT ON COLUMN areas.updated_at IS
 -- ============================================================
 
 CREATE TABLE goals (
-    id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    title          TEXT NOT NULL,
-    description    TEXT NOT NULL DEFAULT '',
-    status         goal_status NOT NULL DEFAULT 'not-started',
-    area_id        UUID REFERENCES areas(id) ON DELETE SET NULL,
-    quarter        TEXT,
-    deadline       TIMESTAMPTZ,
-    notion_page_id TEXT UNIQUE,
-    created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+    id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    title             TEXT NOT NULL,
+    description       TEXT NOT NULL DEFAULT '',
+    status            goal_status NOT NULL DEFAULT 'not-started',
+    area_id           UUID REFERENCES areas(id) ON DELETE SET NULL,
+    quarter           TEXT,
+    deadline          TIMESTAMPTZ,
+    external_provider TEXT,
+    external_ref      TEXT,
+    created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+    CONSTRAINT chk_goal_title_not_blank
+        CHECK (btrim(title) <> ''),
+    CONSTRAINT chk_goal_external_pair
+        CHECK ((external_provider IS NULL AND external_ref IS NULL)
+            OR (external_provider IS NOT NULL AND external_ref IS NOT NULL)),
+    CONSTRAINT uniq_goal_external UNIQUE (external_provider, external_ref)
 );
 
 COMMENT ON TABLE goals IS
@@ -265,9 +310,13 @@ COMMENT ON COLUMN goals.area_id IS
     'SET NULL on area deletion — goal survives unclassified. NULL = no area assigned.';
 COMMENT ON COLUMN goals.quarter IS 'Target quarter (e.g. "Q1 2026"). Free-form text. NULL = no quarter assigned.';
 COMMENT ON COLUMN goals.deadline IS 'Hard deadline if any. NULL = no deadline.';
-COMMENT ON COLUMN goals.notion_page_id IS
-    'Sync identifier for external systems (currently Notion). '
-    'UNIQUE — one goal per external page.';
+COMMENT ON COLUMN goals.external_provider IS
+    'External system this goal is synced from (e.g. "notion", "linear"). NULL = local-only. '
+    'Replaces the previous notion_page_id field — generalised because koopa0.dev is moving away '
+    'from Notion. Paired with external_ref via chk_goal_external_pair.';
+COMMENT ON COLUMN goals.external_ref IS
+    'Provider-specific identifier within external_provider (e.g. Notion page ID). '
+    'NULL = not synced. UNIQUE per provider via uniq_goal_external.';
 COMMENT ON COLUMN goals.updated_at IS 'Application-managed. Set explicitly in UPDATE queries.';
 
 CREATE INDEX idx_goals_lower_title ON goals (LOWER(title));
@@ -278,18 +327,26 @@ CREATE INDEX idx_goals_area ON goals (area_id) WHERE area_id IS NOT NULL;
 -- ============================================================
 
 CREATE TABLE milestones (
-    id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    title            TEXT NOT NULL,
-    description      TEXT NOT NULL DEFAULT '',
-    goal_id          UUID NOT NULL REFERENCES goals(id) ON DELETE CASCADE,
-    target_deadline  DATE,
-    completed_at     TIMESTAMPTZ,
-    notion_page_id   TEXT UNIQUE,
-    position         INT NOT NULL DEFAULT 0,
-    created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+    id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    title             TEXT NOT NULL,
+    description       TEXT NOT NULL DEFAULT '',
+    goal_id           UUID NOT NULL REFERENCES goals(id) ON DELETE CASCADE,
+    target_deadline   DATE,
+    completed_at      TIMESTAMPTZ,
+    external_provider TEXT,
+    external_ref      TEXT,
+    position          INT NOT NULL DEFAULT 0,
+    created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
 
-    UNIQUE (goal_id, title)
+    UNIQUE (goal_id, title),
+
+    CONSTRAINT chk_milestone_title_not_blank
+        CHECK (btrim(title) <> ''),
+    CONSTRAINT chk_milestone_external_pair
+        CHECK ((external_provider IS NULL AND external_ref IS NULL)
+            OR (external_provider IS NOT NULL AND external_ref IS NOT NULL)),
+    CONSTRAINT uniq_milestone_external UNIQUE (external_provider, external_ref)
 );
 
 CREATE INDEX idx_milestones_goal ON milestones (goal_id, position);
@@ -317,11 +374,16 @@ COMMENT ON COLUMN milestones.target_deadline IS
 COMMENT ON COLUMN milestones.completed_at IS
     'When this milestone was achieved. NULL = not yet completed. '
     'This is the sole completion indicator — no status enum.';
-COMMENT ON COLUMN milestones.notion_page_id IS
-    'Sync identifier for external systems (currently Notion). '
-    'NULL = not synced or sync not yet implemented.';
+COMMENT ON COLUMN milestones.external_provider IS
+    'External system this milestone is synced from (e.g. "notion"). NULL = local-only. '
+    'Paired with external_ref via chk_milestone_external_pair.';
+COMMENT ON COLUMN milestones.external_ref IS
+    'Provider-specific identifier within external_provider. NULL = not synced. '
+    'UNIQUE per provider via uniq_milestone_external.';
 COMMENT ON COLUMN milestones.position IS
-    'Ordering within a goal. 0-based. Represents expected sequence of achievement.';
+    'Sequence position within a goal (0-based). Convention: position is the gap-free '
+    'sequence index a row holds inside its parent; sort_order is the priority tier '
+    'used for top-level UI ordering. See top-of-file ordering convention block.';
 COMMENT ON COLUMN milestones.updated_at IS
     'Application-managed. Set explicitly in UPDATE queries.';
 
@@ -330,33 +392,47 @@ COMMENT ON COLUMN milestones.updated_at IS
 -- ============================================================
 
 CREATE TABLE projects (
-    id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    slug             TEXT NOT NULL UNIQUE,
-    title            TEXT NOT NULL,
-    description      TEXT NOT NULL DEFAULT '',
-    long_description TEXT,
-    role             TEXT,
-    tech_stack       TEXT[] NOT NULL DEFAULT '{}',
-    highlights       TEXT[] NOT NULL DEFAULT '{}',
-    problem          TEXT,
-    solution         TEXT,
-    architecture     TEXT,
-    results          TEXT,
-    github_url       TEXT,
-    live_url         TEXT,
-    featured         BOOLEAN NOT NULL DEFAULT false,
-    is_public        BOOLEAN NOT NULL DEFAULT false,
-    sort_order       INT NOT NULL DEFAULT 0,
-    status           project_status NOT NULL DEFAULT 'in-progress',
-    notion_page_id   TEXT UNIQUE,
-    repo             TEXT,
-    area_id          UUID REFERENCES areas(id) ON DELETE SET NULL,
-    goal_id          UUID REFERENCES goals(id) ON DELETE SET NULL,
-    deadline         TIMESTAMPTZ,
-    last_activity_at TIMESTAMPTZ,
-    expected_cadence TEXT CHECK (expected_cadence IN ('daily', 'weekly', 'biweekly', 'monthly')),
-    created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+    id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    slug              TEXT NOT NULL UNIQUE,
+    title             TEXT NOT NULL,
+    description       TEXT NOT NULL DEFAULT '',
+    long_description  TEXT,
+    role              TEXT,
+    tech_stack        TEXT[] NOT NULL DEFAULT '{}',
+    highlights        TEXT[] NOT NULL DEFAULT '{}',
+    problem           TEXT,
+    solution          TEXT,
+    architecture      TEXT,
+    results           TEXT,
+    github_url        TEXT,
+    live_url          TEXT,
+    featured          BOOLEAN NOT NULL DEFAULT false,
+    is_public         BOOLEAN NOT NULL DEFAULT false,
+    sort_order        INT NOT NULL DEFAULT 0,
+    status            project_status NOT NULL DEFAULT 'in-progress',
+    external_provider TEXT,
+    external_ref      TEXT,
+    repo              TEXT,
+    area_id           UUID REFERENCES areas(id) ON DELETE SET NULL,
+    goal_id           UUID REFERENCES goals(id) ON DELETE SET NULL,
+    deadline          TIMESTAMPTZ,
+    last_activity_at  TIMESTAMPTZ,
+    expected_cadence  TEXT CHECK (expected_cadence IN ('daily', 'weekly', 'biweekly', 'monthly')),
+    created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+    CONSTRAINT chk_project_slug_format
+        CHECK (slug ~ '^[a-z0-9]+(-[a-z0-9]+)*$'),
+    CONSTRAINT chk_project_title_not_blank
+        CHECK (btrim(title) <> ''),
+    CONSTRAINT chk_project_github_url
+        CHECK (github_url IS NULL OR github_url ~ '^https://github\.com/'),
+    CONSTRAINT chk_project_live_url
+        CHECK (live_url IS NULL OR live_url ~ '^https?://'),
+    CONSTRAINT chk_project_external_pair
+        CHECK ((external_provider IS NULL AND external_ref IS NULL)
+            OR (external_provider IS NOT NULL AND external_ref IS NOT NULL)),
+    CONSTRAINT uniq_project_external UNIQUE (external_provider, external_ref)
 );
 
 COMMENT ON TABLE projects IS
@@ -378,8 +454,12 @@ COMMENT ON COLUMN projects.architecture IS 'Case study: system architecture desc
 COMMENT ON COLUMN projects.results IS 'Case study: measurable outcomes.';
 COMMENT ON COLUMN projects.featured IS 'Whether to show on the public portfolio homepage.';
 COMMENT ON COLUMN projects.is_public IS 'Whether this project is visible on the public website.';
-COMMENT ON COLUMN projects.notion_page_id IS
-    'Sync identifier for external systems (currently Notion). UNIQUE — one project per external page.';
+COMMENT ON COLUMN projects.external_provider IS
+    'External system this project is synced from (e.g. "notion"). NULL = local-only. '
+    'Paired with external_ref via chk_project_external_pair.';
+COMMENT ON COLUMN projects.external_ref IS
+    'Provider-specific identifier within external_provider. NULL = not synced. '
+    'UNIQUE per provider via uniq_project_external.';
 COMMENT ON COLUMN projects.goal_id IS
     'Which goal this project serves. Nullable — a project can exist without a goal '
     '(PARA: some projects are pure Area maintenance, not goal-driven). SET NULL on goal deletion.';
@@ -406,7 +486,7 @@ CREATE TABLE contents (
     excerpt       TEXT NOT NULL DEFAULT '',
     type          content_type NOT NULL,
     status        content_status NOT NULL DEFAULT 'draft',
-    source        TEXT,
+    origin_ref    TEXT,
     source_type   source_type,
     series_id     TEXT,
     series_order  INT,
@@ -427,15 +507,19 @@ CREATE TABLE contents (
     CONSTRAINT chk_contents_series CHECK (
         (series_id IS NULL AND series_order IS NULL) OR
         (series_id IS NOT NULL AND series_order IS NOT NULL)
-    )
+    ),
+    CONSTRAINT chk_content_slug_format
+        CHECK (slug ~ '^[a-z0-9]+(-[a-z0-9]+)*$'),
+    CONSTRAINT chk_content_title_not_blank
+        CHECK (btrim(title) <> '')
 );
 
-COMMENT ON TABLE contents IS 'Published content — the finished product. Seven types share one table and one lifecycle: draft → review → published → archived.';
-COMMENT ON COLUMN contents.slug IS 'URL-safe identifier. Globally unique. Used in public URLs.';
-COMMENT ON COLUMN contents.type IS 'Content format: article, essay, build-log, til, note, bookmark, digest.';
+COMMENT ON TABLE contents IS 'Published content — the finished product. Five types share one table and one lifecycle: draft → review → published → archived.';
+COMMENT ON COLUMN contents.slug IS 'URL-safe identifier. Globally unique. Used in public URLs. Format: lowercase alphanumeric segments separated by single hyphens (chk_content_slug_format).';
+COMMENT ON COLUMN contents.type IS 'Content format: article, essay, build-log, til, digest. (note and bookmark removed in the coordination rebuild — they have their own dedicated tables.)';
 COMMENT ON COLUMN contents.status IS 'Lifecycle: draft → review → published. archived = soft delete.';
-COMMENT ON COLUMN contents.source IS 'Origin identifier — Obsidian file path, external URL, or NULL for manually created content.';
-COMMENT ON COLUMN contents.source_type IS 'Origin system classification. Different dimension from participant — this is WHERE content came from, not WHO created it.';
+COMMENT ON COLUMN contents.origin_ref IS 'Reference to the origin artifact — an Obsidian file path, an external URL, or NULL for manually created content. Renamed from contents.source to disambiguate from events.source (origin system) and tasks.requester (origin agent).';
+COMMENT ON COLUMN contents.source_type IS 'Origin system classification (obsidian, notion, ai-generated, external, manual). Distinct from origin_ref which carries the actual identifier.';
 COMMENT ON COLUMN contents.series_id IS 'Groups content into a series. Paired with series_order (chk_contents_series).';
 COMMENT ON COLUMN contents.series_order IS 'Position within the series. Paired with series_id (chk_contents_series).';
 COMMENT ON COLUMN contents.review_level IS 'AI review strictness: auto (publish immediately), light, standard, strict (human approval required).';
@@ -495,7 +579,7 @@ CREATE INDEX idx_content_tags_tag_id ON content_tags(tag_id);
 -- Review queue
 -- ============================================================
 
-CREATE TABLE review_queue (
+CREATE TABLE editorial_queue (
     id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     content_id     UUID NOT NULL REFERENCES contents(id) ON DELETE CASCADE,
     review_level   review_level NOT NULL,
@@ -509,19 +593,19 @@ CREATE TABLE review_queue (
             OR (status <> 'pending' AND reviewed_at IS NOT NULL))
 );
 
-COMMENT ON TABLE review_queue IS 'Content review workflow. One pending review per content (idx_review_queue_pending_content).';
-COMMENT ON COLUMN review_queue.content_id IS 'References content under review. ON DELETE CASCADE — content deletion removes review record.';
-COMMENT ON COLUMN review_queue.review_level IS
+COMMENT ON TABLE editorial_queue IS 'Content review workflow. One pending review per content (idx_editorial_queue_pending_content).';
+COMMENT ON COLUMN editorial_queue.content_id IS 'References content under review. ON DELETE CASCADE — content deletion removes review record.';
+COMMENT ON COLUMN editorial_queue.review_level IS
     'Snapshot of content.review_level at submission time. Does not live-update if content review_level changes.';
-COMMENT ON COLUMN review_queue.status IS
+COMMENT ON COLUMN editorial_queue.status IS
     'Lifecycle: pending → approved | rejected | edited. chk_reviewed_at_consistency ties reviewed_at to non-pending status.';
-COMMENT ON COLUMN review_queue.reviewer_notes IS 'Admin notes from the review. NULL = no notes.';
-COMMENT ON COLUMN review_queue.submitted_at IS 'When this content was submitted for review.';
-COMMENT ON COLUMN review_queue.reviewed_at IS 'When review was completed. NULL while status = pending, NOT NULL otherwise (enforced by chk_reviewed_at_consistency).';
+COMMENT ON COLUMN editorial_queue.reviewer_notes IS 'Admin notes from the review. NULL = no notes.';
+COMMENT ON COLUMN editorial_queue.submitted_at IS 'When this content was submitted for review.';
+COMMENT ON COLUMN editorial_queue.reviewed_at IS 'When review was completed. NULL while status = pending, NOT NULL otherwise (enforced by chk_reviewed_at_consistency).';
 
-CREATE INDEX idx_review_queue_status ON review_queue(status);
-CREATE INDEX idx_review_queue_content_id ON review_queue(content_id);
-CREATE UNIQUE INDEX idx_review_queue_pending_content ON review_queue (content_id) WHERE status = 'pending';
+CREATE INDEX idx_editorial_queue_status ON editorial_queue(status);
+CREATE INDEX idx_editorial_queue_content_id ON editorial_queue(content_id);
+CREATE UNIQUE INDEX idx_editorial_queue_pending_content ON editorial_queue (content_id) WHERE status = 'pending';
 
 -- ============================================================
 -- Feeds + feed entries (was: feeds + collected_data)
@@ -546,12 +630,18 @@ CREATE TABLE feeds (
     updated_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
 
     CONSTRAINT chk_enabled_reason
-        CHECK ((enabled = true AND disabled_reason IS NULL) OR (enabled = false))
+        CHECK ((enabled = true AND disabled_reason IS NULL) OR (enabled = false)),
+    CONSTRAINT chk_feed_url_scheme
+        CHECK (url ~ '^https?://'),
+    CONSTRAINT chk_feed_name_not_blank
+        CHECK (btrim(name) <> ''),
+    CONSTRAINT chk_feed_schedule
+        CHECK (schedule IN ('hourly', 'daily', 'weekly', 'biweekly', 'monthly'))
 );
 
 COMMENT ON TABLE feeds IS 'RSS/Atom feed subscriptions. Fetch pipeline pulls entries on schedule, scores relevance, and surfaces for curation.';
-COMMENT ON COLUMN feeds.url IS 'Feed URL (RSS/Atom). Unique — one subscription per URL.';
-COMMENT ON COLUMN feeds.schedule IS 'Fetch frequency: daily, weekly, etc. Used by cron scheduler.';
+COMMENT ON COLUMN feeds.url IS 'Feed URL (RSS/Atom). Unique — one subscription per URL. Must use http(s) scheme (chk_feed_url_scheme).';
+COMMENT ON COLUMN feeds.schedule IS 'Fetch cadence label (hourly | daily | weekly | biweekly | monthly), enforced by chk_feed_schedule. The Go scheduler maps each label to a concrete time interval. NOT a cron expression — for cron-format schedules see topic_monitors.schedule.';
 COMMENT ON COLUMN feeds.priority IS 'Feed importance for relevance scoring: high feeds get boosted scores.';
 COMMENT ON COLUMN feeds.etag IS 'HTTP ETag header from last fetch. NULL = never fetched or server did not return ETag.';
 COMMENT ON COLUMN feeds.last_modified IS 'HTTP Last-Modified header from last fetch. NULL = never fetched or server did not return it.';
@@ -591,7 +681,9 @@ CREATE TABLE feed_entries (
     published_at       TIMESTAMPTZ,
 
     CONSTRAINT chk_feedback_pair
-        CHECK ((user_feedback IS NULL) = (feedback_at IS NULL))
+        CHECK ((user_feedback IS NULL) = (feedback_at IS NULL)),
+    CONSTRAINT chk_feed_entry_url_hash_format
+        CHECK (url_hash ~ '^[a-f0-9]{64}$')
 );
 
 COMMENT ON TABLE feed_entries IS 'RSS feed items collected by the fetch pipeline. IMPORTANT SEMANTICS: topics are inherited from feed via feed_topics junction at QUERY TIME, not snapshot at ingestion. This means changing a feed''s topics retroactively changes all its entries'' topic associations. This is a deliberate product choice — topics represent current feed configuration, not historical classification. If historical topic tracking is needed, add feed_entry_topics snapshot table.';
@@ -634,12 +726,16 @@ CREATE TABLE topic_monitors (
     enabled    BOOLEAN NOT NULL DEFAULT true,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    UNIQUE(topic_id)
+    UNIQUE(topic_id),
+
+    CONSTRAINT chk_topic_monitor_schedule_not_blank
+        CHECK (btrim(schedule) <> '')
 );
 
 COMMENT ON TABLE topic_monitors IS 'Active monitoring rules per topic. Keywords drive web search, schedule controls frequency. One monitor per topic max. Name comes from topics.name — not duplicated here.';
 COMMENT ON COLUMN topic_monitors.keywords IS 'Search keywords for this topic. Used by monitoring pipeline to discover new content.';
 COMMENT ON COLUMN topic_monitors.sources IS 'Specific source URLs or domains to monitor for this topic.';
+COMMENT ON COLUMN topic_monitors.schedule IS 'Cron expression string (e.g. "0 */6 * * *"). Format validated by the Go scheduler — DB only enforces non-blank via chk_topic_monitor_schedule_not_blank. NOT a label like feeds.schedule.';
 
 -- ============================================================
 -- Flow runs (AI pipeline execution log)
@@ -697,107 +793,125 @@ CREATE INDEX idx_flow_runs_dedup ON flow_runs (content_id, flow_name, status) WH
 CREATE INDEX idx_flow_runs_completed ON flow_runs (content_id, flow_name, ended_at DESC) WHERE status = 'completed';
 
 -- ============================================================
--- Tasks
+-- Todos (personal GTD work list — NOT inter-agent tasks)
+--
+-- Named todos (not tasks) to free the bare word "task" for the inter-agent
+-- coordination entity (see §6.3 of docs/architecture/coordination-layer-target.md).
+-- Vocabulary discipline: "task" = agent-to-agent work unit, "todo" = personal GTD item.
 -- ============================================================
 
-CREATE TABLE tasks (
-    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    title           TEXT NOT NULL,
-    status          task_status NOT NULL DEFAULT 'todo',
-    due             DATE,
-    project_id      UUID REFERENCES projects(id) ON DELETE SET NULL,
-    notion_page_id  TEXT UNIQUE,
-    completed_at    TIMESTAMPTZ,
-    energy          TEXT CHECK (energy IN ('high', 'medium', 'low')),
-    priority        TEXT CHECK (priority IN ('high', 'medium', 'low')),
-    recur_interval  INT,
-    recur_unit      TEXT CHECK (recur_unit IN ('days', 'weeks', 'months', 'years')),
-    description     TEXT NOT NULL DEFAULT '',
-    assignee        TEXT NOT NULL DEFAULT 'human' REFERENCES participant(name) ON DELETE RESTRICT,
-    created_by      TEXT NOT NULL DEFAULT 'human' REFERENCES participant(name) ON DELETE RESTRICT,
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+CREATE TABLE todos (
+    id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    title             TEXT NOT NULL,
+    state             todo_state NOT NULL DEFAULT 'todo',
+    due               DATE,
+    project_id        UUID REFERENCES projects(id) ON DELETE SET NULL,
+    external_provider TEXT,
+    external_ref      TEXT,
+    completed_at      TIMESTAMPTZ,
+    energy            TEXT CHECK (energy IN ('high', 'medium', 'low')),
+    priority          TEXT CHECK (priority IN ('high', 'medium', 'low')),
+    recur_interval    INT,
+    recur_unit        TEXT CHECK (recur_unit IN ('days', 'weeks', 'months', 'years')),
+    description       TEXT NOT NULL DEFAULT '',
+    assignee          TEXT NOT NULL DEFAULT 'human' REFERENCES agents(name) ON DELETE RESTRICT,
+    created_by        TEXT NOT NULL DEFAULT 'human' REFERENCES agents(name) ON DELETE RESTRICT,
+    created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
 
-    CONSTRAINT chk_completed_at_consistency
-        CHECK ((status = 'done' AND completed_at IS NOT NULL)
-            OR (status <> 'done' AND completed_at IS NULL)),
-    CONSTRAINT chk_recurrence_pair
+    CONSTRAINT chk_todo_title_not_blank
+        CHECK (btrim(title) <> ''),
+    CONSTRAINT chk_todo_completed_at_consistency
+        CHECK ((state = 'done' AND completed_at IS NOT NULL)
+            OR (state <> 'done' AND completed_at IS NULL)),
+    CONSTRAINT chk_todo_recurrence_pair
         CHECK ((recur_interval IS NULL AND recur_unit IS NULL)
-            OR (recur_interval IS NOT NULL AND recur_unit IS NOT NULL AND recur_interval > 0))
+            OR (recur_interval IS NOT NULL AND recur_unit IS NOT NULL AND recur_interval > 0)),
+    CONSTRAINT chk_todo_external_pair
+        CHECK ((external_provider IS NULL AND external_ref IS NULL)
+            OR (external_provider IS NOT NULL AND external_ref IS NOT NULL)),
+    CONSTRAINT uniq_todo_external UNIQUE (external_provider, external_ref)
 );
 
-COMMENT ON TABLE tasks IS
-    'Work items with GTD-informed lifecycle. '
-    'Status: inbox (captured, not clarified) → todo (clarified, actionable) → in-progress → done. '
+COMMENT ON TABLE todos IS
+    'Personal GTD work items. Distinct from the tasks coordination entity (inter-agent work units). '
+    'Lifecycle: inbox (captured, not clarified) → todo (clarified, actionable) → in_progress → done. '
     'someday = interested but not now, reviewed in Weekly Review. '
-    'inbox tasks lack project/due/priority — clarification promotes them to todo.';
+    'inbox items lack project/due/priority — clarification promotes them to todo.';
 
-COMMENT ON COLUMN tasks.status IS
-    'GTD lifecycle: inbox → todo | someday. todo → in-progress → done. '
+COMMENT ON COLUMN todos.state IS
+    'GTD lifecycle: inbox → todo | someday. todo → in_progress → done. '
     'inbox = captured but not clarified (missing project/due/priority). '
     'someday = interested but not acting now — reviewed periodically.';
-COMMENT ON COLUMN tasks.energy IS 'Required energy level for GTD engage-by-energy. NULL = not set.';
-COMMENT ON COLUMN tasks.priority IS 'Task priority for GTD engage-by-priority. NULL = not set.';
-COMMENT ON COLUMN tasks.recur_unit IS 'Recurrence unit. NULL = non-recurring task.';
-COMMENT ON COLUMN tasks.assignee IS 'Who executes this task. FK to participant. Default human. Go layer validates participant.task_assignable = true.';
-COMMENT ON COLUMN tasks.created_by IS
-    'Which participant created or imported this task into the system. '
-    'FK to participant. Default human. '
-    'Examples: human (manual or synced from external tool), hq (morning briefing / directive).';
-COMMENT ON COLUMN tasks.updated_at IS 'Set explicitly by application in UPDATE queries. No trigger — application-managed.';
+COMMENT ON COLUMN todos.title IS 'Short summary of the todo. Non-blank (chk_todo_title_not_blank).';
+COMMENT ON COLUMN todos.due IS 'Due date. NULL = no deadline.';
+COMMENT ON COLUMN todos.project_id IS 'Optional parent project. SET NULL on project deletion — the todo survives unclassified.';
+COMMENT ON COLUMN todos.completed_at IS 'When the todo was completed. NULL unless state=done, enforced by chk_todo_completed_at_consistency.';
+COMMENT ON COLUMN todos.energy IS 'Required energy level for GTD engage-by-energy. NULL = not set.';
+COMMENT ON COLUMN todos.priority IS 'Todo priority for GTD engage-by-priority. NULL = not set.';
+COMMENT ON COLUMN todos.recur_interval IS 'Recurrence frequency count. NULL = non-recurring. Paired with recur_unit by chk_todo_recurrence_pair.';
+COMMENT ON COLUMN todos.recur_unit IS 'Recurrence unit. NULL = non-recurring todo.';
+COMMENT ON COLUMN todos.description IS 'Free-text detail. Empty string = no detail.';
+COMMENT ON COLUMN todos.assignee IS 'Agent responsible for executing this todo. FK to agents. Default human. Capability enforcement is Go-side (agent.Authorize), not DB-side.';
+COMMENT ON COLUMN todos.created_by IS
+    'Which agent created or imported this todo into the system. '
+    'FK to agents. Default human. '
+    'Examples: human (manual or synced from external tool), hq (morning briefing).';
+COMMENT ON COLUMN todos.created_at IS 'Row insertion timestamp.';
+COMMENT ON COLUMN todos.updated_at IS 'Set explicitly by application in UPDATE queries. No trigger — application-managed.';
 
-CREATE INDEX idx_tasks_active ON tasks (status) WHERE status IN ('todo', 'in-progress');
-CREATE INDEX idx_tasks_inbox ON tasks (created_at DESC) WHERE status = 'inbox';
-CREATE INDEX idx_tasks_project ON tasks (project_id) WHERE project_id IS NOT NULL;
-CREATE INDEX idx_tasks_completed ON tasks (completed_at) WHERE status = 'done';
-CREATE INDEX idx_tasks_assignee_active ON tasks (assignee, status) WHERE status <> 'done';
-CREATE INDEX idx_tasks_created_by ON tasks (created_by, created_at DESC);
+CREATE INDEX idx_todos_active ON todos (state) WHERE state IN ('todo', 'in_progress');
+CREATE INDEX idx_todos_inbox ON todos (created_at DESC) WHERE state = 'inbox';
+CREATE INDEX idx_todos_project ON todos (project_id) WHERE project_id IS NOT NULL;
+CREATE INDEX idx_todos_completed ON todos (completed_at) WHERE state = 'done';
+CREATE INDEX idx_todos_assignee_active ON todos (assignee, state) WHERE state <> 'done';
+CREATE INDEX idx_todos_created_by ON todos (created_by, created_at DESC);
 
 -- ============================================================
--- IPC: journal (was: session_notes WHERE note_type IN ('plan','context','reflection','metrics'))
+-- Agent notes (was: journal)
+-- Renamed for vocabulary precision: these are an agent's internal narrative log
+-- (plan / context / reflection), not cross-entity "IPC". Not a coordination entity.
 -- Moved before daily_plan_items so the FK can be inlined.
 -- ============================================================
 
-CREATE TABLE journal (
+CREATE TABLE agent_notes (
     id         BIGSERIAL PRIMARY KEY,
-    kind       TEXT NOT NULL CHECK (kind IN ('plan', 'context', 'reflection', 'metrics')),
-    source     TEXT NOT NULL REFERENCES participant(name) ON DELETE RESTRICT,
+    kind       agent_note_kind NOT NULL,
+    author     TEXT NOT NULL REFERENCES agents(name) ON DELETE RESTRICT,
     content    TEXT NOT NULL,
     metadata   JSONB,
     entry_date DATE NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-COMMENT ON TABLE journal IS 'Session log — plans, context snapshots, reflections, metrics. Self-directed, not cross-project.';
-COMMENT ON COLUMN journal.kind IS 'plan = daily plan. context = end-of-session state. reflection = review. metrics = quantitative snapshot.';
-COMMENT ON COLUMN journal.entry_date IS 'Date of this journal entry.';
-COMMENT ON COLUMN journal.metadata IS
+COMMENT ON TABLE agent_notes IS 'Agent''s internal narrative log — plans, context snapshots, reflections. Self-directed, not inter-agent coordination. Produced by a single agent across a session or day. metrics kind was removed in the coordination rebuild (no current writer).';
+COMMENT ON COLUMN agent_notes.kind IS 'plan = daily plan. context = end-of-session state. reflection = retrospective review.';
+COMMENT ON COLUMN agent_notes.author IS 'Which agent wrote this note. FK to agents. Renamed from "source" to disambiguate agent identity from system origin (events.source) and origin reference (contents.origin_ref).';
+COMMENT ON COLUMN agent_notes.content IS 'Free-text body of the note. Markdown allowed.';
+COMMENT ON COLUMN agent_notes.entry_date IS 'The logical date this note belongs to. May differ from created_at for backfilled notes.';
+COMMENT ON COLUMN agent_notes.metadata IS
     'Structured metadata per kind. '
-    'plan: {reasoning}. Daily task selection tracked in daily_plan_items, not here. '
-    'metrics: {tasks_planned, tasks_completed, adjustments}. '
+    'plan: {reasoning}. Daily todo selection is tracked in daily_plan_items, not here. '
     'context, reflection: no required metadata schema.';
+COMMENT ON COLUMN agent_notes.created_at IS 'Row insertion timestamp.';
 
-CREATE INDEX idx_journal_date ON journal (entry_date DESC);
-CREATE INDEX idx_journal_kind ON journal (entry_date, kind);
-
--- ============================================================
--- Daily plan items (replaces tasks.my_day boolean)
--- ============================================================
+CREATE INDEX idx_agent_notes_date ON agent_notes (entry_date DESC);
+CREATE INDEX idx_agent_notes_kind ON agent_notes (entry_date, kind);
 
 CREATE TABLE daily_plan_items (
-    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    plan_date   DATE NOT NULL,
-    task_id     UUID NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
-    selected_by TEXT NOT NULL REFERENCES participant(name) ON DELETE RESTRICT,
-    position    INT NOT NULL DEFAULT 0,
-    reason      TEXT,
-    journal_id  BIGINT REFERENCES journal(id) ON DELETE SET NULL,
-    status      TEXT NOT NULL DEFAULT 'planned'
-                CHECK (status IN ('planned', 'done', 'deferred', 'dropped')),
-    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    plan_date     DATE NOT NULL,
+    todo_id       UUID NOT NULL REFERENCES todos(id) ON DELETE CASCADE,
+    selected_by   TEXT NOT NULL REFERENCES agents(name) ON DELETE RESTRICT,
+    position      INT NOT NULL DEFAULT 0,
+    reason        TEXT,
+    agent_note_id BIGINT REFERENCES agent_notes(id) ON DELETE SET NULL,
+    status        TEXT NOT NULL DEFAULT 'planned'
+                  CHECK (status IN ('planned', 'done', 'deferred', 'dropped')),
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
 
-    UNIQUE (plan_date, task_id)
+    UNIQUE (plan_date, todo_id)
 );
 
 CREATE INDEX idx_daily_plan_items_date
@@ -807,38 +921,37 @@ CREATE INDEX idx_daily_plan_items_active
     ON daily_plan_items (plan_date DESC)
     WHERE status = 'planned';
 
-CREATE INDEX idx_daily_plan_items_task
-    ON daily_plan_items (task_id);
-CREATE INDEX idx_daily_plan_items_journal
-    ON daily_plan_items (journal_id) WHERE journal_id IS NOT NULL;
+CREATE INDEX idx_daily_plan_items_todo
+    ON daily_plan_items (todo_id);
+CREATE INDEX idx_daily_plan_items_agent_note
+    ON daily_plan_items (agent_note_id) WHERE agent_note_id IS NOT NULL;
 
 COMMENT ON TABLE daily_plan_items IS
-    'Daily commitment records. Each row represents a task selected for '
+    'Daily commitment records. Each row represents a todo item selected for '
     'a specific day''s plan. Lifecycle: planned → done | deferred | dropped. '
-    'Source of truth for "what was planned today" — replaces tasks.my_day boolean. '
-    'Re-plan uses INSERT ... ON CONFLICT (plan_date, task_id) DO UPDATE SET status = ''planned''.';
+    'Re-plan uses INSERT ... ON CONFLICT (plan_date, todo_id) DO UPDATE SET status = ''planned''.';
 
 COMMENT ON COLUMN daily_plan_items.plan_date IS
-    'The date this task was planned for. Combined with task_id forms a unique constraint — '
-    'one task can appear at most once per day.';
-COMMENT ON COLUMN daily_plan_items.task_id IS
-    'The task committed to. CASCADE on delete — if the task is removed, the plan item goes too.';
+    'The date this todo was planned for. Combined with todo_id forms a unique constraint — '
+    'one todo can appear at most once per day.';
+COMMENT ON COLUMN daily_plan_items.todo_id IS
+    'The todo committed to. CASCADE on delete — if the todo is removed, the plan item goes too.';
 COMMENT ON COLUMN daily_plan_items.selected_by IS
-    'Who added this item to the plan. Typically hq (morning briefing, cron auto-populate) '
+    'Which agent added this item to the plan. Typically hq (morning briefing, cron auto-populate) '
     'or human (manual selection via MCP tool).';
 COMMENT ON COLUMN daily_plan_items.position IS
     'Ordering within a day''s plan. 0-based. Semantic: first item = highest priority for today.';
-COMMENT ON COLUMN daily_plan_items.journal_id IS
-    'Optional link to the journal(kind=''plan'') entry that drove this planning session. '
-    'All items from the same planning session share the same journal_id. '
-    'Enables "which reasoning led to these task selections" queries. '
-    'Symmetric with sessions.journal_id — session produces journal entry, '
-    'journal_id links back. SET NULL on journal deletion.';
+COMMENT ON COLUMN daily_plan_items.agent_note_id IS
+    'Optional link to the agent_notes(kind=plan) entry that drove this planning session. '
+    'All items from the same planning session share the same agent_note_id. '
+    'Enables "which reasoning led to these todo selections" queries. '
+    'Symmetric with sessions.agent_note_id — session produces the note, '
+    'agent_note_id links back. SET NULL on note deletion.';
 COMMENT ON COLUMN daily_plan_items.reason IS
-    'Optional rationale for selecting this task today. NULL = no specific reason recorded.';
+    'Optional rationale for selecting this todo today. NULL = no specific reason recorded.';
 COMMENT ON COLUMN daily_plan_items.status IS
     'Lifecycle state. planned = committed for today. '
-    'done = completed within this day (independent of tasks.status for recurring tasks). '
+    'done = completed within this day (independent of todos.state for recurring todos). '
     'deferred = not done today, carry-over candidate for future planning. '
     'dropped = explicitly removed from plan, no intent to carry over.';
 COMMENT ON COLUMN daily_plan_items.updated_at IS
@@ -846,30 +959,32 @@ COMMENT ON COLUMN daily_plan_items.updated_at IS
     'Critical for Weekly Review analysis and cron debug.';
 
 -- ============================================================
--- Task skips (was: task_skip_log)
+-- Todo skips (was: task_skips — renamed for vocabulary discipline)
 -- ============================================================
 
-CREATE TABLE task_skips (
+CREATE TABLE todo_skips (
     id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    task_id      UUID NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+    todo_id      UUID NOT NULL REFERENCES todos(id) ON DELETE CASCADE,
     original_due DATE NOT NULL,
     skipped_date DATE NOT NULL,
     reason       TEXT NOT NULL DEFAULT 'auto-expired'
         CHECK (reason IN ('auto-expired', 'manual')),
     created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
-    UNIQUE(task_id, skipped_date)
+    UNIQUE(todo_id, skipped_date)
 );
 
-COMMENT ON TABLE task_skips IS 'Per-occurrence skip history for recurring tasks.';
-COMMENT ON COLUMN task_skips.original_due IS 'Due date when skip was detected by cron.';
-COMMENT ON COLUMN task_skips.skipped_date IS 'The occurrence date that was missed.';
-COMMENT ON COLUMN task_skips.reason IS 'auto-expired (cron detected overdue) or manual (user skipped).';
+COMMENT ON TABLE todo_skips IS 'Per-occurrence skip history for recurring todo items.';
+COMMENT ON COLUMN todo_skips.todo_id IS 'Which recurring todo was skipped. CASCADE — skips die with their todo.';
+COMMENT ON COLUMN todo_skips.original_due IS 'Due date when skip was detected by cron.';
+COMMENT ON COLUMN todo_skips.skipped_date IS 'The occurrence date that was missed.';
+COMMENT ON COLUMN todo_skips.reason IS 'auto-expired (cron detected overdue) or manual (user skipped).';
+COMMENT ON COLUMN todo_skips.created_at IS 'Row insertion timestamp.';
 
 -- ============================================================
 -- Sources (was: notion_sources — platform-agnostic)
 -- ============================================================
 
-CREATE TABLE sources (
+CREATE TABLE sync_sources (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     external_id     TEXT NOT NULL UNIQUE,
     name            TEXT NOT NULL,
@@ -887,114 +1002,133 @@ CREATE TABLE sources (
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-COMMENT ON TABLE sources IS
+COMMENT ON TABLE sync_sources IS
     'External data source sync configuration. Provider column distinguishes Notion, Linear, etc. '
     'UPGRADE PATH: when a second provider is added for the same role (e.g. Google Calendar for tasks), '
     'change UNIQUE(role) to UNIQUE(provider, role) to allow multiple sources per role.';
-COMMENT ON COLUMN sources.external_id IS 'Identifier in the external system (e.g. Notion database ID). UNIQUE — one source config per external resource.';
-COMMENT ON COLUMN sources.provider IS 'Which external platform this source connects to.';
-COMMENT ON COLUMN sources.role IS 'What kind of data this source provides. NULL = not categorized. UNIQUE partial index — one source per role.';
-COMMENT ON COLUMN sources.sync_mode IS 'Sync strategy: full (re-sync all), incremental (changes only).';
-COMMENT ON COLUMN sources.property_map IS 'Maps external properties to local fields (JSONB). Structure varies by provider and role.';
-COMMENT ON COLUMN sources.poll_interval IS 'How often to poll for changes. PostgreSQL INTERVAL type — DB validates format.';
-COMMENT ON COLUMN sources.last_synced_at IS 'Last successful sync timestamp. NULL = never synced.';
-COMMENT ON COLUMN sources.updated_at IS 'Application-managed. Set explicitly in UPDATE queries.';
+COMMENT ON COLUMN sync_sources.external_id IS 'Identifier in the external system (e.g. Notion database ID). UNIQUE — one source config per external resource.';
+COMMENT ON COLUMN sync_sources.provider IS 'Which external platform this source connects to.';
+COMMENT ON COLUMN sync_sources.role IS 'What kind of data this source provides. NULL = not categorized. UNIQUE partial index — one source per role.';
+COMMENT ON COLUMN sync_sources.sync_mode IS 'Sync strategy: full (re-sync all), incremental (changes only).';
+COMMENT ON COLUMN sync_sources.property_map IS 'Maps external properties to local fields (JSONB). Structure varies by provider and role.';
+COMMENT ON COLUMN sync_sources.poll_interval IS 'How often to poll for changes. PostgreSQL INTERVAL type — DB validates format.';
+COMMENT ON COLUMN sync_sources.last_synced_at IS 'Last successful sync timestamp. NULL = never synced.';
+COMMENT ON COLUMN sync_sources.updated_at IS 'Application-managed. Set explicitly in UPDATE queries.';
 
-CREATE INDEX idx_sources_role_enabled ON sources (role) WHERE enabled = true AND role IS NOT NULL;
-CREATE INDEX idx_sources_ext_enabled ON sources (external_id) WHERE enabled = true;
-CREATE UNIQUE INDEX idx_sources_role ON sources (role) WHERE role IS NOT NULL;
+CREATE INDEX idx_sync_sources_role_enabled ON sync_sources (role) WHERE enabled = true AND role IS NOT NULL;
+CREATE INDEX idx_sync_sources_ext_enabled ON sync_sources (external_id) WHERE enabled = true;
+CREATE UNIQUE INDEX idx_sync_sources_role ON sync_sources (role) WHERE role IS NOT NULL;
 
 -- ============================================================
--- Notes (was: obsidian_notes — platform-agnostic)
+-- Obsidian notes — knowledge artifacts synced from an Obsidian vault
+--
+-- Renamed from `notes` to `obsidian_notes` so it stands in clear
+-- contrast to `agent_notes` (agent narrative log). The Go package is
+-- `internal/obsidian/note`. Distinct from `agent_notes` in three ways:
+--   1. Source: vault file vs agent runtime
+--   2. Authorship: external (Koopa typing in Obsidian) vs internal (an agent)
+--   3. Lifecycle: synced from filesystem vs append-only narrative
 -- ============================================================
 
-CREATE TABLE notes (
-    id              BIGSERIAL PRIMARY KEY,
-    file_path       TEXT UNIQUE NOT NULL,
-    title           TEXT,
-    type            TEXT,
-    source          TEXT,
-    context         TEXT,
-    maturity        TEXT NOT NULL DEFAULT 'seed'
-                    CHECK (maturity IN ('seed', 'evergreen', 'stub', 'archived')),
-    raw_tags        JSONB,
-    difficulty      TEXT CHECK (difficulty IN ('easy', 'medium', 'hard')),
-    leetcode_id     INT,
-    book            TEXT,
-    chapter         TEXT,
-    notion_task_id  TEXT,
-    content_text    TEXT,
-    content_hash    TEXT,
-    embedding       vector(768),
-    search_vector   TSVECTOR GENERATED ALWAYS AS (
+CREATE TABLE obsidian_notes (
+    id                BIGSERIAL PRIMARY KEY,
+    file_path         TEXT UNIQUE NOT NULL,
+    title             TEXT,
+    type              TEXT,
+    provenance        TEXT,
+    context           TEXT,
+    maturity          TEXT NOT NULL DEFAULT 'seed'
+                      CHECK (maturity IN ('seed', 'evergreen', 'stub', 'archived')),
+    raw_tags          JSONB,
+    difficulty        TEXT CHECK (difficulty IN ('easy', 'medium', 'hard')),
+    leetcode_id       INT,
+    book              TEXT,
+    chapter           TEXT,
+    external_provider TEXT,
+    external_ref      TEXT,
+    content_text      TEXT,
+    content_hash      TEXT,
+    embedding         vector(768),
+    search_vector     TSVECTOR GENERATED ALWAYS AS (
         setweight(to_tsvector('simple', coalesce(title, '')), 'A') ||
         setweight(to_tsvector('simple', coalesce(left(content_text, 10000), '')), 'C')
     ) STORED,
-    git_created_at  TIMESTAMPTZ,
-    git_updated_at  TIMESTAMPTZ,
-    synced_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+    git_created_at    TIMESTAMPTZ,
+    git_updated_at    TIMESTAMPTZ,
+    synced_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
 
     CONSTRAINT chk_chapter_needs_book
-        CHECK (chapter IS NULL OR book IS NOT NULL)
+        CHECK (chapter IS NULL OR book IS NOT NULL),
+    CONSTRAINT chk_obsidian_note_content_hash_format
+        CHECK (content_hash IS NULL OR content_hash ~ '^[a-f0-9]{64}$'),
+    CONSTRAINT chk_obsidian_note_external_pair
+        CHECK ((external_provider IS NULL AND external_ref IS NULL)
+            OR (external_provider IS NOT NULL AND external_ref IS NOT NULL))
 );
 
-COMMENT ON TABLE notes IS
-    'Knowledge notes from external vaults — a major class of PARA resources '
-    '(alongside contents, feed_entries, and other reference material). '
-    'Nullable columns (title, type, source, context, content_text, content_hash, raw_tags) '
-    'represent optional frontmatter fields — NULL means the field was absent in the source file.';
-COMMENT ON COLUMN notes.maturity IS 'Zettelkasten maturity: seed (new), stub (incomplete), evergreen (mature), archived.';
-COMMENT ON COLUMN notes.raw_tags IS 'Raw frontmatter tags (JSONB array). Ingestion snapshot — canonical mapping via note_tags junction + tag_aliases pipeline.';
-COMMENT ON COLUMN notes.type IS 'Note type from frontmatter (e.g. leetcode, book-note, dev-log, til, note). Open-ended — values defined by vault conventions.';
-COMMENT ON COLUMN notes.source IS 'Knowledge source context (e.g. leetcode, claude, oreilly, ardanlabs). Not the sync origin — sync origin is the vault system (obsidian, logseq), represented implicitly by the file_path column.';
-COMMENT ON COLUMN notes.context IS 'Project or domain context (e.g. project slug). QUASI-CANONICAL — comes from frontmatter (raw), but actively used by MCP search filtering and morning_context. Not FK because vault may reference projects not yet in DB. Treat as soft reference, not pure raw field.';
-COMMENT ON COLUMN notes.difficulty IS 'Problem difficulty. Primarily for LeetCode notes.';
-COMMENT ON COLUMN notes.leetcode_id IS 'LeetCode problem number. NULL for non-LeetCode notes.';
-COMMENT ON COLUMN notes.book IS 'Book title if this note is from a book reading session.';
-COMMENT ON COLUMN notes.chapter IS 'Chapter identifier within the book.';
-COMMENT ON COLUMN notes.notion_task_id IS 'Linked Notion task ID. Used to associate notes with learning tasks.';
-COMMENT ON COLUMN notes.content_text IS 'Full text content extracted from the note file. Used for full-text search.';
-COMMENT ON COLUMN notes.content_hash IS 'SHA256 of content_text. Used for change detection during sync — skip re-processing if unchanged.';
-COMMENT ON COLUMN notes.search_vector IS
+COMMENT ON TABLE obsidian_notes IS
+    'Knowledge artifacts synced from an Obsidian vault. Renamed from `notes` '
+    'in the schema normalization pass to stand in clear contrast to agent_notes '
+    '(agent narrative log). Nullable columns (title, type, provenance, context, '
+    'content_text, content_hash, raw_tags) represent optional frontmatter fields '
+    '— NULL means the field was absent in the source file.';
+COMMENT ON COLUMN obsidian_notes.maturity IS 'Zettelkasten maturity: seed (new), stub (incomplete), evergreen (mature), archived.';
+COMMENT ON COLUMN obsidian_notes.raw_tags IS 'Raw frontmatter tags (JSONB array). Ingestion snapshot — canonical mapping via obsidian_note_tags junction + tag_aliases pipeline.';
+COMMENT ON COLUMN obsidian_notes.type IS 'Note type from frontmatter (e.g. leetcode, book-note, dev-log, til). Open-ended — values defined by vault conventions.';
+COMMENT ON COLUMN obsidian_notes.provenance IS 'Knowledge provenance label (e.g. leetcode, claude, oreilly, ardanlabs). Renamed from `source` to disambiguate from events.source (origin system) and tasks.requester (origin agent). The sync origin (vault system) is implicit in file_path.';
+COMMENT ON COLUMN obsidian_notes.context IS 'Project or domain context (e.g. project slug). QUASI-CANONICAL — comes from frontmatter (raw), but actively used by MCP search filtering and morning_context. Not FK because vault may reference projects not yet in DB. Treat as soft reference, not pure raw field.';
+COMMENT ON COLUMN obsidian_notes.difficulty IS 'Problem difficulty. Primarily for LeetCode notes.';
+COMMENT ON COLUMN obsidian_notes.leetcode_id IS 'LeetCode problem number. NULL for non-LeetCode notes.';
+COMMENT ON COLUMN obsidian_notes.book IS 'Book title if this note is from a book reading session.';
+COMMENT ON COLUMN obsidian_notes.chapter IS 'Chapter identifier within the book.';
+COMMENT ON COLUMN obsidian_notes.external_provider IS
+    'External system this note is associated with (e.g. "notion" for a linked Notion task). '
+    'NULL = standalone vault note. Paired with external_ref via chk_obsidian_note_external_pair. '
+    'Replaces the previous notion_task_id field — generalised because koopa0.dev is moving away from Notion.';
+COMMENT ON COLUMN obsidian_notes.external_ref IS
+    'Provider-specific identifier within external_provider. NULL = no external link.';
+COMMENT ON COLUMN obsidian_notes.content_text IS 'Full text content extracted from the note file. Used for full-text search.';
+COMMENT ON COLUMN obsidian_notes.content_hash IS 'SHA-256 hex of content_text (chk_obsidian_note_content_hash_format). Used for change detection during sync — skip re-processing if unchanged.';
+COMMENT ON COLUMN obsidian_notes.search_vector IS
     'Generated tsvector for full-text search. Uses ''simple'' config — same rationale as contents.search_vector.';
-COMMENT ON COLUMN notes.embedding IS 'pgvector embedding (768d) for semantic search via HNSW index.';
-COMMENT ON COLUMN notes.git_created_at IS 'File creation time from git log. NULL if not tracked by git.';
-COMMENT ON COLUMN notes.git_updated_at IS 'File last modification time from git log. NULL if not tracked by git.';
-COMMENT ON COLUMN notes.synced_at IS 'When this note was last synced from the vault.';
+COMMENT ON COLUMN obsidian_notes.embedding IS 'pgvector embedding (768d) for semantic search via HNSW index.';
+COMMENT ON COLUMN obsidian_notes.git_created_at IS 'File creation time from git log. NULL if not tracked by git.';
+COMMENT ON COLUMN obsidian_notes.git_updated_at IS 'File last modification time from git log. NULL if not tracked by git.';
+COMMENT ON COLUMN obsidian_notes.synced_at IS 'When this note was last synced from the vault.';
 
-CREATE INDEX idx_notes_type ON notes (type);
-CREATE INDEX idx_notes_context ON notes (context);
-CREATE INDEX idx_notes_search ON notes USING GIN(search_vector);
-CREATE INDEX idx_notes_embedding ON notes USING hnsw (embedding vector_cosine_ops)
+CREATE INDEX idx_obsidian_notes_type ON obsidian_notes (type);
+CREATE INDEX idx_obsidian_notes_context ON obsidian_notes (context);
+CREATE INDEX idx_obsidian_notes_search ON obsidian_notes USING GIN(search_vector);
+CREATE INDEX idx_obsidian_notes_embedding ON obsidian_notes USING hnsw (embedding vector_cosine_ops)
     WITH (m = 16, ef_construction = 64);
-CREATE INDEX idx_notes_synced_at ON notes(synced_at DESC);
+CREATE INDEX idx_obsidian_notes_synced_at ON obsidian_notes(synced_at DESC);
 
--- Junction: notes ↔ tags (was: obsidian_note_tags)
-CREATE TABLE note_tags (
-    note_id  BIGINT NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
-    tag_id   UUID NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
-    PRIMARY KEY (note_id, tag_id)
+-- Junction: obsidian_notes ↔ tags
+CREATE TABLE obsidian_note_tags (
+    obsidian_note_id  BIGINT NOT NULL REFERENCES obsidian_notes(id) ON DELETE CASCADE,
+    tag_id            UUID NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+    PRIMARY KEY (obsidian_note_id, tag_id)
 );
 
-COMMENT ON TABLE note_tags IS 'Junction: note ↔ canonical tag. Many-to-many. Tags resolved from raw_tags via tag_aliases pipeline.';
+COMMENT ON TABLE obsidian_note_tags IS 'Junction: obsidian note ↔ canonical tag. Many-to-many. Tags resolved from raw_tags via tag_aliases pipeline.';
 
-CREATE INDEX idx_note_tags_tag ON note_tags(tag_id);
+CREATE INDEX idx_obsidian_note_tags_tag ON obsidian_note_tags(tag_id);
 
--- Note wikilink edges (knowledge graph)
-CREATE TABLE note_links (
+-- Obsidian wikilink edges (knowledge graph)
+CREATE TABLE obsidian_note_links (
     id              BIGSERIAL PRIMARY KEY,
-    source_note_id  BIGINT NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
+    source_note_id  BIGINT NOT NULL REFERENCES obsidian_notes(id) ON DELETE CASCADE,
     target_path     TEXT NOT NULL,
     link_text       TEXT,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-COMMENT ON TABLE note_links IS 'Wikilink edges between notes. Drives the knowledge graph API.';
-COMMENT ON COLUMN note_links.target_path IS 'Wikilink target file path. May reference notes not yet synced — forward/broken links expected.';
+COMMENT ON TABLE obsidian_note_links IS 'Wikilink edges between obsidian notes. Drives the knowledge graph API.';
+COMMENT ON COLUMN obsidian_note_links.target_path IS 'Wikilink target file path. May reference notes not yet synced — forward/broken links expected.';
 
-CREATE INDEX idx_note_links_source ON note_links (source_note_id);
-CREATE INDEX idx_note_links_target ON note_links (target_path);
-CREATE UNIQUE INDEX idx_note_links_dedup ON note_links (source_note_id, target_path);
+CREATE INDEX idx_obsidian_note_links_source ON obsidian_note_links (source_note_id);
+CREATE INDEX idx_obsidian_note_links_target ON obsidian_note_links (target_path);
+CREATE UNIQUE INDEX idx_obsidian_note_links_dedup ON obsidian_note_links (source_note_id, target_path);
 
 -- ============================================================
 -- Events (was: activity_events)
@@ -1072,138 +1206,182 @@ COMMENT ON COLUMN project_aliases.source IS 'Where this alias was discovered (e.
 CREATE UNIQUE INDEX idx_project_aliases_lower_alias ON project_aliases (LOWER(alias));
 
 -- ============================================================
--- IPC: directives (HQ → departments)
+-- Coordination layer: tasks + task_messages + artifacts
+--
+-- Replaces the previous directives / reports pair with a unified work unit
+-- modeled on A2A's Task/Message/Artifact triad. See
+-- docs/architecture/coordination-layer-target.md §4-§6 for the full design.
+--
+-- tasks            = inter-agent work unit with an explicit lifecycle ENUM
+-- task_messages    = ordered request/response conversation turns, multi-part body
+-- artifacts        = structured deliverables, separate from conversation messages
+--
+-- Read-side bloat prevention uses three independent gates:
+--   1. Go type system — TaskSummary has no content fields (compile-time)
+--   2. Database       — chk_parts_count + chk_parts_total_size on task_messages
+--   3. API contract   — distinct Summarize() and Load() methods, no options
 -- ============================================================
 
-CREATE TABLE directives (
-    id                    BIGSERIAL PRIMARY KEY,
-    source                TEXT NOT NULL REFERENCES participant(name) ON DELETE RESTRICT,
-    target                TEXT NOT NULL REFERENCES participant(name) ON DELETE RESTRICT,
-    priority              TEXT NOT NULL CHECK (priority IN ('p0', 'p1', 'p2')),
-    acknowledged_at       TIMESTAMPTZ,
-    acknowledged_by       TEXT REFERENCES participant(name) ON DELETE RESTRICT,
-    resolved_at           TIMESTAMPTZ,
-    resolution_report_id  BIGINT,
-    content               TEXT NOT NULL,
-    metadata              JSONB,
-    issued_date           DATE NOT NULL,
-    created_at            TIMESTAMPTZ NOT NULL DEFAULT now(),
+CREATE TABLE tasks (
+    id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    requester    TEXT NOT NULL REFERENCES agents(name) ON DELETE RESTRICT,
+    assignee     TEXT NOT NULL REFERENCES agents(name) ON DELETE RESTRICT,
+    title        TEXT NOT NULL,
+    state        task_state NOT NULL DEFAULT 'submitted',
+    submitted_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    accepted_at  TIMESTAMPTZ,
+    completed_at TIMESTAMPTZ,
+    canceled_at  TIMESTAMPTZ,
+    metadata     JSONB NOT NULL DEFAULT '{}',
 
-    CONSTRAINT chk_no_self_target
-        CHECK (source <> target),
-    CONSTRAINT chk_ack_pair
-        CHECK ((acknowledged_at IS NULL AND acknowledged_by IS NULL)
-            OR (acknowledged_at IS NOT NULL AND acknowledged_by IS NOT NULL)),
-    CONSTRAINT chk_ack_must_be_target
-        CHECK (acknowledged_by IS NULL OR acknowledged_by = target),
-    CONSTRAINT chk_resolved_requires_ack
-        CHECK (resolved_at IS NULL OR acknowledged_at IS NOT NULL),
-    CONSTRAINT chk_resolution_report_requires_resolved
-        CHECK (resolution_report_id IS NULL OR resolved_at IS NOT NULL)
+    CONSTRAINT chk_task_title_not_blank
+        CHECK (btrim(title) <> ''),
+    CONSTRAINT chk_tasks_no_self_assignment
+        CHECK (requester <> assignee),
+    CONSTRAINT chk_tasks_state_timestamps CHECK (
+        (state = 'submitted' AND accepted_at IS NULL     AND completed_at IS NULL     AND canceled_at IS NULL) OR
+        (state = 'working'   AND accepted_at IS NOT NULL AND completed_at IS NULL     AND canceled_at IS NULL) OR
+        (state = 'completed' AND accepted_at IS NOT NULL AND completed_at IS NOT NULL AND canceled_at IS NULL) OR
+        (state = 'canceled'  AND canceled_at IS NOT NULL AND completed_at IS NULL)
+    )
 );
 
-COMMENT ON TABLE directives IS
-    'IPC — coordination instructions between participants. '
-    'Source must have can_issue_directives = true, target must have can_receive_directives = true (Go-validated). '
-    'For work assignment to execution agents, use tasks.assignee. '
-    'Lifecycle: issued → acknowledged → resolved. '
-    'chk_resolved_requires_ack enforces that resolution requires prior acknowledgement.';
-COMMENT ON COLUMN directives.source IS 'Who issued this directive. FK to participant. Go layer validates participant.can_issue_directives = true.';
-COMMENT ON COLUMN directives.target IS 'Recipient. NOT NULL — every directive must have a target. Go layer validates participant.can_receive_directives = true.';
-COMMENT ON COLUMN directives.priority IS 'p0 = immediate, p1 = today, p2 = this week.';
-COMMENT ON COLUMN directives.acknowledged_at IS 'When target picked up this directive. NULL = unacknowledged.';
-COMMENT ON COLUMN directives.acknowledged_by IS 'Must equal target (chk_ack_must_be_target).';
-COMMENT ON COLUMN directives.resolved_at IS
-    'When this directive was resolved (work completed or explicitly closed). '
-    'NULL = open/in-progress. chk_resolved_requires_ack ensures a directive must be '
-    'acknowledged before it can be resolved. Set by file_report or explicit resolution.';
-COMMENT ON COLUMN directives.resolution_report_id IS
-    'Optional link to the report that resolved this directive. '
-    'FK added via ALTER TABLE after reports table creation. '
-    'NULL = resolved without a specific report, or not yet resolved.';
-COMMENT ON COLUMN directives.content IS 'The directive body — what the target should do. Free-text, may contain markdown.';
-COMMENT ON COLUMN directives.issued_date IS 'Date this directive was issued.';
-COMMENT ON COLUMN directives.metadata IS
-    'Non-routing info: correlation_id (server-generated UUID for thread tracking), deadline, tags, context_refs. '
-    'UPGRADE PATH: when IPC dashboard or overdue detection is built, promote correlation_id to a first-class column.';
+COMMENT ON TABLE tasks IS
+    'Inter-agent coordination work units (NOT personal GTD todos — those live in todos). '
+    'One requester agent asks one assignee agent to do work. Lifecycle: submitted → working → completed | canceled. '
+    'chk_tasks_state_timestamps makes illegal state/timestamp combinations physically impossible at the DB layer, '
+    'independent of any Go-side validation. Conversation history is stored in task_messages; '
+    'structured deliverables in artifacts. A completed task must have at least one response message AND '
+    'at least one artifact — enforced by Go transition logic (Store.Complete), not by DB CHECK, '
+    'because the multi-table invariant cannot be expressed as a single-row constraint.';
+COMMENT ON COLUMN tasks.requester IS 'Agent that submitted the task. FK to agents — historical references never dangle. Renamed from "source" to align with A2A vocabulary and disambiguate from events.source (origin system).';
+COMMENT ON COLUMN tasks.assignee IS 'Agent expected to perform the work. FK to agents. Renamed from "target" to align with A2A vocabulary.';
+COMMENT ON COLUMN tasks.title IS 'Short human-readable task label. Non-blank (chk_task_title_not_blank).';
+COMMENT ON COLUMN tasks.state IS 'Lifecycle state. Four values: submitted (created, not yet accepted), working (assignee accepted, in flight), completed (response + artifact delivered), canceled (requester canceled). Failed/rejected/input_required are deferred — no current handler produces them.';
+COMMENT ON COLUMN tasks.submitted_at IS 'When the requester created this task. DEFAULT now() — always set at insertion time.';
+COMMENT ON COLUMN tasks.accepted_at IS 'When the assignee transitioned the task to working. NULL iff state=submitted or canceled-from-submitted (enforced by chk_tasks_state_timestamps).';
+COMMENT ON COLUMN tasks.completed_at IS 'When the assignee delivered the final response+artifact. NULL unless state=completed.';
+COMMENT ON COLUMN tasks.canceled_at IS 'When the requester canceled the task. NULL unless state=canceled. Mutually exclusive with completed_at.';
+COMMENT ON COLUMN tasks.metadata IS 'Non-routing task info: deadline, priority hint, correlation keys. JSONB for flexibility; promote fields to columns when query patterns demand it. TODO(coordination): when query patterns stabilise, promote deadline and correlation_id to first-class columns.';
 
-CREATE INDEX idx_directives_date ON directives (issued_date DESC);
-CREATE INDEX idx_directives_target ON directives (target, issued_date DESC);
-CREATE INDEX idx_directives_unacked ON directives (target, issued_date DESC)
-    WHERE acknowledged_at IS NULL;
-CREATE INDEX idx_directives_unresolved ON directives (target, issued_date DESC)
-    WHERE resolved_at IS NULL AND acknowledged_at IS NOT NULL;
+CREATE INDEX idx_tasks_assignee_open
+    ON tasks (assignee, submitted_at DESC)
+    WHERE state IN ('submitted', 'working');
+
+CREATE INDEX idx_tasks_requester_open
+    ON tasks (requester, submitted_at DESC)
+    WHERE state IN ('submitted', 'working');
+
+CREATE INDEX idx_tasks_state ON tasks (state);
 
 -- ============================================================
--- IPC: reports (departments → HQ, or self-initiated)
+-- task_messages: request/response conversation turns
+--
+-- Parts are stored as a JSONB array. Each element is an a2a.Part value
+-- (github.com/a2aproject/a2a-go/v2/a2a) serialized via its MarshalJSON —
+-- the flattened form: {"text": "..."} or {"data": {...}}. The Go layer never
+-- hand-rolls this format. See docs/architecture/coordination-layer-target.md §16.
+--
+-- chk_parts_count + chk_parts_total_size are DB-side bloat prevention.
+-- Anything that would exceed these must be stored as an artifact instead.
 -- ============================================================
 
-CREATE TABLE reports (
-    id              BIGSERIAL PRIMARY KEY,
-    source          TEXT NOT NULL REFERENCES participant(name) ON DELETE RESTRICT,
-    in_response_to  BIGINT REFERENCES directives(id) ON DELETE SET NULL,
-    content         TEXT NOT NULL,
-    metadata        JSONB,
-    reported_date   DATE NOT NULL,
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+CREATE TABLE task_messages (
+    id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    task_id    UUID NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+    role       message_role NOT NULL,
+    position   INTEGER NOT NULL,
+    parts      JSONB NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+    UNIQUE (task_id, position),
+
+    CONSTRAINT chk_task_messages_parts_count CHECK (
+        jsonb_typeof(parts) = 'array' AND
+        jsonb_array_length(parts) BETWEEN 1 AND 16
+    ),
+    CONSTRAINT chk_task_messages_parts_size CHECK (
+        pg_column_size(parts) <= 32768
+    )
 );
 
-COMMENT ON TABLE reports IS
-    'IPC — department output. No target column — report recipients are implicit: '
-    'directive-driven reports are read by the directive source; self-initiated reports '
-    'are read by HQ in morning briefing. Cardinality: one directive may have multiple '
-    'reports (progress, completion, follow-up). Directive resolution is tracked via '
-    'directives.resolved_at + directives.resolution_report_id. The resolution report '
-    'is the final deliverable; earlier reports are progress updates.';
-COMMENT ON COLUMN reports.source IS 'Who wrote this report. FK to participant. Go layer validates participant.can_write_reports = true. Expandable by setting capability flag on any participant.';
-COMMENT ON COLUMN reports.in_response_to IS 'Causal link — FK to directives(id). DB guarantees parent is a directive. Nullable for self-initiated reports (RSS scan, session summary, etc).';
-COMMENT ON COLUMN reports.reported_date IS 'Date this report was filed.';
-COMMENT ON COLUMN reports.metadata IS 'Non-routing info: correlation_id (server-copied from directive if in_response_to set), artifacts, follow_up_needed.';
+COMMENT ON TABLE task_messages IS 'Ordered request/response conversation turns on a task. Parts column is a JSONB array of a2a.Part values (flattened form). Hard size caps (16 parts max, 32 KB total) are DB-enforced bloat prevention — anything larger belongs in artifacts, not messages.';
+COMMENT ON COLUMN task_messages.task_id IS 'Parent task. CASCADE — messages die with their task.';
+COMMENT ON COLUMN task_messages.role IS 'request = message from requester to assignee. response = message from assignee back to requester. Two values only; system messages are deferred until a real use case appears.';
+COMMENT ON COLUMN task_messages.position IS 'Order within a task conversation, 0-based. UNIQUE(task_id, position) prevents duplicates and out-of-order inserts.';
+COMMENT ON COLUMN task_messages.parts IS 'JSONB array of a2a.Part values in a2a-go''s flattened format. Each part is {"text": "..."} or {"data": {...}}. Serialized/deserialized by a2a-go — Go code never hand-rolls this shape.';
+COMMENT ON COLUMN task_messages.created_at IS 'Row insertion timestamp.';
 
-CREATE INDEX idx_reports_date ON reports (reported_date DESC);
-CREATE INDEX idx_reports_directive ON reports (in_response_to) WHERE in_response_to IS NOT NULL;
-
--- Deferred FK: directives.resolution_report_id → reports(id)
--- Cannot be inline because reports is defined after directives.
-ALTER TABLE directives
-    ADD CONSTRAINT fk_directives_resolution_report
-    FOREIGN KEY (resolution_report_id) REFERENCES reports(id) ON DELETE SET NULL;
-
-CREATE INDEX idx_directives_resolution_report ON directives (resolution_report_id)
-    WHERE resolution_report_id IS NOT NULL;
+CREATE INDEX idx_task_messages_task ON task_messages (task_id, position);
 
 -- ============================================================
--- IPC: insights (was: session_notes WHERE note_type = 'insight')
+-- artifacts: structured task deliverables
+--
+-- Looser size bounds than messages (32 parts max, 256 KB total): artifacts
+-- are expected to be bigger than conversation messages, but still bounded.
+-- Anything above 256 KB belongs in external object storage with a reference
+-- part — that path is deferred until a real case shows up.
 -- ============================================================
 
-CREATE TABLE insights (
-    id                       BIGSERIAL PRIMARY KEY,
-    source                   TEXT NOT NULL REFERENCES participant(name) ON DELETE RESTRICT,
-    content                  TEXT NOT NULL,
-    status                   TEXT NOT NULL DEFAULT 'unverified'
-                             CHECK (status IN ('unverified', 'verified', 'invalidated', 'archived')),
-    hypothesis               TEXT NOT NULL,
-    invalidation_condition   TEXT NOT NULL,
-    metadata                 JSONB,
-    observed_date            DATE NOT NULL,
-    created_at               TIMESTAMPTZ NOT NULL DEFAULT now()
+CREATE TABLE artifacts (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    task_id     UUID NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+    name        TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    parts       JSONB NOT NULL,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+    CONSTRAINT chk_artifacts_parts_count CHECK (
+        jsonb_typeof(parts) = 'array' AND
+        jsonb_array_length(parts) BETWEEN 1 AND 32
+    ),
+    CONSTRAINT chk_artifacts_parts_size CHECK (
+        pg_column_size(parts) <= 262144
+    )
 );
 
-COMMENT ON TABLE insights IS 'Hypothesis tracking — AI spots patterns, records falsification conditions, system tracks evidence over time.';
-COMMENT ON COLUMN insights.source IS 'Which participant generated this insight. FK to participant.';
-COMMENT ON COLUMN insights.content IS
-    'Full narrative context for the insight. '
-    'hypothesis is the one-line prediction; content is the supporting analysis and evidence.';
-COMMENT ON COLUMN insights.status IS 'Lifecycle: unverified → verified/invalidated → archived.';
-COMMENT ON COLUMN insights.hypothesis IS 'The pattern or prediction being tracked.';
-COMMENT ON COLUMN insights.invalidation_condition IS 'What would disprove this hypothesis.';
-COMMENT ON COLUMN insights.observed_date IS 'Date this insight was observed or recorded.';
-COMMENT ON COLUMN insights.metadata IS
-    'supporting_evidence, counter_evidence, conclusion, category, project, tags. '
-    'UPGRADE PATH: when project filtering is needed, promote project to a first-class column.';
+COMMENT ON TABLE artifacts IS 'Structured deliverables produced by the target agent during or after task work. Separate from conversation messages because deliverables (research reports, document outputs) have an independent lifetime. Size bounds (32 parts, 256 KB) are looser than task_messages bounds.';
+COMMENT ON COLUMN artifacts.task_id IS 'Parent task. CASCADE — artifacts die with their task.';
+COMMENT ON COLUMN artifacts.name IS 'Short label identifying this artifact (e.g. "weekly-report", "architecture-diagram").';
+COMMENT ON COLUMN artifacts.description IS 'Optional longer description. Empty string = no description.';
+COMMENT ON COLUMN artifacts.parts IS 'JSONB array of a2a.Part values (same format as task_messages.parts). Stores the actual deliverable content.';
+COMMENT ON COLUMN artifacts.created_at IS 'Row insertion timestamp.';
 
-CREATE INDEX idx_insights_status ON insights (status);
-CREATE INDEX idx_insights_date ON insights (observed_date DESC);
+CREATE INDEX idx_artifacts_task ON artifacts (task_id, created_at);
+
+-- ============================================================
+-- Hypotheses (was: insights)
+--
+-- Falsifiable hypothesis tracker — records a one-line prediction plus the
+-- condition that would invalidate it, then accumulates evidence over time.
+-- Not a coordination entity, but kept next to tasks because the hypothesis
+-- lifecycle was historically tangled with "insight" IPC messaging.
+-- ============================================================
+
+CREATE TABLE hypotheses (
+    id                     BIGSERIAL PRIMARY KEY,
+    author                 TEXT NOT NULL REFERENCES agents(name) ON DELETE RESTRICT,
+    content                TEXT NOT NULL,
+    state                  hypothesis_state NOT NULL DEFAULT 'unverified',
+    claim                  TEXT NOT NULL,
+    invalidation_condition TEXT NOT NULL,
+    metadata               JSONB,
+    observed_date          DATE NOT NULL,
+    created_at             TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+COMMENT ON TABLE hypotheses IS 'Falsifiable hypothesis tracker (was: insights). Each row carries a one-line falsifiable claim plus the invalidation condition that would disprove it. Evidence accumulates in metadata over time until the state transitions to verified or invalidated.';
+COMMENT ON COLUMN hypotheses.author IS 'Which agent recorded the hypothesis. FK to agents. Renamed from "source" to align with agent_notes.author and disambiguate agent identity from system origin.';
+COMMENT ON COLUMN hypotheses.content IS 'Full narrative context. The claim column is the one-line prediction; content is the supporting analysis and evidence.';
+COMMENT ON COLUMN hypotheses.state IS 'Lifecycle: unverified → verified | invalidated → archived.';
+COMMENT ON COLUMN hypotheses.claim IS 'One-line falsifiable prediction. Renamed from "hypothesis" to avoid the hypotheses.hypothesis stutter.';
+COMMENT ON COLUMN hypotheses.invalidation_condition IS 'What would disprove the claim. Required — a hypothesis without an invalidation condition is not falsifiable and should not be recorded.';
+COMMENT ON COLUMN hypotheses.metadata IS 'supporting_evidence, counter_evidence, conclusion, category, project, tags. Promote fields to columns when query patterns demand it.';
+COMMENT ON COLUMN hypotheses.observed_date IS 'Date the hypothesis was first observed or recorded.';
+COMMENT ON COLUMN hypotheses.created_at IS 'Row insertion timestamp.';
+
+CREATE INDEX idx_hypotheses_state ON hypotheses (state);
+CREATE INDEX idx_hypotheses_date ON hypotheses (observed_date DESC);
 
 -- ============================================================
 -- Learning analytics: concepts, items, sessions, attempts
@@ -1239,7 +1417,12 @@ CREATE TABLE concepts (
     tag_id      UUID REFERENCES tags(id) ON DELETE SET NULL,
     description TEXT NOT NULL DEFAULT '',
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+    CONSTRAINT chk_concept_slug_format
+        CHECK (slug ~ '^[a-z0-9]+(-[a-z0-9]+)*$'),
+    CONSTRAINT chk_concept_name_not_blank
+        CHECK (btrim(name) <> '')
 );
 
 COMMENT ON TABLE concepts IS
@@ -1295,14 +1478,14 @@ CREATE INDEX idx_concepts_tag ON concepts (tag_id) WHERE tag_id IS NOT NULL;
 -- you write a note about it. A book chapter exists before you do
 -- a reading session.
 
-CREATE TABLE items (
+CREATE TABLE learning_targets (
     id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     domain      TEXT NOT NULL
                CHECK (domain = lower(btrim(domain)) AND domain <> ''),
     title       TEXT NOT NULL,
     external_id TEXT,
     difficulty  TEXT CHECK (difficulty IN ('easy', 'medium', 'hard')),
-    note_id     BIGINT REFERENCES notes(id) ON DELETE SET NULL,
+    obsidian_note_id BIGINT REFERENCES obsidian_notes(id) ON DELETE SET NULL,
     content_id  UUID REFERENCES contents(id) ON DELETE SET NULL,
     project_id  UUID REFERENCES projects(id) ON DELETE SET NULL,
     metadata    JSONB NOT NULL DEFAULT '{}',
@@ -1310,51 +1493,51 @@ CREATE TABLE items (
     updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-COMMENT ON TABLE items IS
+COMMENT ON TABLE learning_targets IS
     'Learning targets — what to learn, practice, and revisit. Lifecycle differs from '
     'notes: items follow not-attempted → practicing → mastered (learning progress), '
     'while notes follow seed → evergreen → archived (knowledge maturity). Items exist '
     'before notes are written.';
-COMMENT ON COLUMN items.domain IS
+COMMENT ON COLUMN learning_targets.domain IS
     'Learning domain (same convention as concepts.domain). Go-validated, not DB-enforced.';
-COMMENT ON COLUMN items.title IS
+COMMENT ON COLUMN learning_targets.title IS
     'Display title. LeetCode: problem name. Reading: chapter title. '
     'Japanese: grammar point or drill name.';
-COMMENT ON COLUMN items.external_id IS
+COMMENT ON COLUMN learning_targets.external_id IS
     'Provider-specific identifier. LeetCode problem number, textbook section ID, '
     'JLPT grammar point ID. NULL for custom drills without external identity. '
     'Partial unique: one item per (domain, external_id) where external_id IS NOT NULL.';
-COMMENT ON COLUMN items.difficulty IS
+COMMENT ON COLUMN learning_targets.difficulty IS
     'Generic 3-tier difficulty. Domain-specific info (JLPT N5-N1, etc.) goes in metadata. '
     'NULL = not categorized. Consistent with notes.difficulty CHECK.';
-COMMENT ON COLUMN items.note_id IS
+COMMENT ON COLUMN learning_targets.obsidian_note_id IS
     'Optional link to the item-level summary note (e.g. a LeetCode solve note). '
-    'Distinct from attempts.note_id which links to an attempt-level working note. '
+    'Distinct from learning_attempts.obsidian_note_id which links to an attempt-level working note. '
     'SET NULL on note deletion — the item persists without its note.';
-COMMENT ON COLUMN items.content_id IS
+COMMENT ON COLUMN learning_targets.content_id IS
     'Rare — for when a published article/essay is itself a learning target. '
     'Most items will not have this. SET NULL on content deletion.';
-COMMENT ON COLUMN items.project_id IS
+COMMENT ON COLUMN learning_targets.project_id IS
     'Optional PARA project association for catalog-level grouping. '
     'Plan membership and ordering is tracked via plan_items, not this FK. '
     'SET NULL on project deletion — the item persists without its project.';
-COMMENT ON COLUMN items.metadata IS
+COMMENT ON COLUMN learning_targets.metadata IS
     'Domain-specific data not needing WHERE/JOIN/GROUP BY. '
     'Not queryable — if a field needs WHERE/JOIN/GROUP BY, promote to a column. '
     'LeetCode: {problem_url, companies, frequency, constraints}. '
     'Japanese: {jlpt_level, textbook, chapter, grammar_point}. '
     'System Design: {source_book, chapter, scenario_type}. '
     'Reading: {book_title, chapter, page_range}.';
-COMMENT ON COLUMN items.updated_at IS
+COMMENT ON COLUMN learning_targets.updated_at IS
     'Application-managed. Set explicitly in UPDATE queries.';
 
-CREATE UNIQUE INDEX idx_items_domain_external
-    ON items (domain, external_id)
+CREATE UNIQUE INDEX idx_learning_targets_domain_external
+    ON learning_targets (domain, external_id)
     WHERE external_id IS NOT NULL;
-CREATE INDEX idx_items_domain ON items (domain);
-CREATE INDEX idx_items_note ON items (note_id) WHERE note_id IS NOT NULL;
-CREATE INDEX idx_items_project ON items (project_id) WHERE project_id IS NOT NULL;
-CREATE INDEX idx_items_content ON items (content_id) WHERE content_id IS NOT NULL;
+CREATE INDEX idx_learning_targets_domain ON learning_targets (domain);
+CREATE INDEX idx_learning_targets_obsidian_note ON learning_targets (obsidian_note_id) WHERE obsidian_note_id IS NOT NULL;
+CREATE INDEX idx_learning_targets_project ON learning_targets (project_id) WHERE project_id IS NOT NULL;
+CREATE INDEX idx_learning_targets_content ON learning_targets (content_id) WHERE content_id IS NOT NULL;
 
 -- ============================================================
 -- Spaced repetition: review_cards + review_logs
@@ -1364,32 +1547,34 @@ CREATE INDEX idx_items_content ON items (content_id) WHERE content_id IS NOT NUL
 -- ============================================================
 
 CREATE TABLE review_cards (
-    id                BIGSERIAL PRIMARY KEY,
-    content_id        UUID REFERENCES contents(id) ON DELETE CASCADE,
-    learning_item_id  UUID REFERENCES items(id) ON DELETE CASCADE,
-    tag_id            UUID REFERENCES tags(id) ON DELETE CASCADE,
-    card_state        JSONB NOT NULL,
-    due               TIMESTAMPTZ NOT NULL,
-    created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+    id                 BIGSERIAL PRIMARY KEY,
+    content_id         UUID REFERENCES contents(id) ON DELETE CASCADE,
+    learning_target_id UUID REFERENCES learning_targets(id) ON DELETE CASCADE,
+    tag_id             UUID REFERENCES tags(id) ON DELETE CASCADE,
+    card_state         JSONB NOT NULL,
+    due                TIMESTAMPTZ NOT NULL,
+    created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
 
     CONSTRAINT chk_review_target_exactly_one
-        CHECK (num_nonnulls(content_id, learning_item_id) = 1),
+        CHECK (num_nonnulls(content_id, learning_target_id) = 1),
     CONSTRAINT chk_tag_requires_content
-        CHECK (tag_id IS NULL OR content_id IS NOT NULL)
+        CHECK (tag_id IS NULL OR content_id IS NOT NULL),
+    CONSTRAINT chk_review_card_state_not_empty
+        CHECK (card_state <> '{}'::jsonb AND card_state <> 'null'::jsonb)
 );
 
 COMMENT ON TABLE review_cards IS
     'Spaced repetition card state. Algorithm-agnostic — currently FSRS. '
     'Two target types: content-based (article/note recall) and learning-item-based '
-    '(problem/drill retention). Exactly one of content_id or learning_item_id must be '
+    '(problem/drill retention). Exactly one of content_id or learning_target_id must be '
     'NOT NULL, enforced by chk_review_target_exactly_one. FSRS engine is target-agnostic — '
     'it operates on (card_state, rating) → new_card_state regardless of target type.';
 COMMENT ON COLUMN review_cards.content_id IS
     'Content-based review target. NULL when this card targets a learning item. '
-    'Mutually exclusive with learning_item_id (checked by chk_review_target_exactly_one). '
+    'Mutually exclusive with learning_target_id (checked by chk_review_target_exactly_one). '
     'CASCADE — deleting the content deletes its review cards.';
-COMMENT ON COLUMN review_cards.learning_item_id IS
+COMMENT ON COLUMN review_cards.learning_target_id IS
     'Learning-item-based review target (problem, drill, chapter). NULL when this card '
     'targets content. Mutually exclusive with content_id. '
     'CASCADE — deleting the item deletes its review cards.';
@@ -1416,7 +1601,7 @@ CREATE UNIQUE INDEX idx_review_cards_content_tagged
 
 -- Learning-item-based cards: one card per item.
 CREATE UNIQUE INDEX idx_review_cards_item
-    ON review_cards (learning_item_id) WHERE learning_item_id IS NOT NULL;
+    ON review_cards (learning_target_id) WHERE learning_target_id IS NOT NULL;
 
 CREATE INDEX idx_review_cards_due ON review_cards (due);
 
@@ -1445,86 +1630,90 @@ CREATE INDEX idx_review_logs_card ON review_logs (card_id, reviewed_at DESC);
 
 -- Learning item ↔ concept junction
 
-CREATE TABLE item_concepts (
-    learning_item_id UUID NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+CREATE TABLE learning_target_concepts (
+    learning_target_id UUID NOT NULL REFERENCES learning_targets(id) ON DELETE CASCADE,
     concept_id       UUID NOT NULL REFERENCES concepts(id) ON DELETE CASCADE,
     relevance        TEXT NOT NULL DEFAULT 'primary'
                      CHECK (relevance IN ('primary', 'secondary')),
     created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
-    PRIMARY KEY (learning_item_id, concept_id)
+    PRIMARY KEY (learning_target_id, concept_id)
 );
 
-COMMENT ON TABLE item_concepts IS
+COMMENT ON TABLE learning_target_concepts IS
     'Junction: which concepts a learning item exercises. A LeetCode problem''s primary '
     'concept is two-pointers; secondary might include hash-map. CASCADE on both sides — '
     'deleting an item or concept removes the association.';
-COMMENT ON COLUMN item_concepts.relevance IS
+COMMENT ON COLUMN learning_target_concepts.relevance IS
     'primary: the core concept this item drills. '
     'secondary: a supporting concept also exercised. '
     'Convention: one primary per item. Multiple primaries should be rare; '
     'if frequent, revisit the relevance model.';
 
-CREATE INDEX idx_item_concepts_concept ON item_concepts (concept_id);
+CREATE INDEX idx_learning_target_concepts_concept ON learning_target_concepts (concept_id);
 
 -- Learning sessions: orchestration boundary
 --
 -- A session has explicit start/end, a mode, and contains
--- multiple attempts. Distinct from journal (post-hoc reflection).
--- The session produces a journal entry, not the other way around.
+-- multiple attempts. Distinct from agent_notes (post-hoc narrative log).
+-- The session produces an agent_note entry, not the other way around.
 --
--- No participant column: personal scale = always Koopa. Participant
--- is traceable via journal_id → journal.source if needed.
+-- No agent column: personal scale = always Koopa. Agent identity is
+-- traceable via agent_note_id → agent_notes.author if needed.
 
-CREATE TABLE sessions (
+CREATE TABLE learning_sessions (
     id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     domain              TEXT NOT NULL
                         CHECK (domain = lower(btrim(domain)) AND domain <> ''),
     session_mode        TEXT NOT NULL
                         CHECK (session_mode IN ('retrieval', 'practice', 'mixed', 'review', 'reading')),
-    journal_id          BIGINT REFERENCES journal(id) ON DELETE SET NULL,
+    agent_note_id       BIGINT REFERENCES agent_notes(id) ON DELETE SET NULL,
     daily_plan_item_id  UUID REFERENCES daily_plan_items(id) ON DELETE SET NULL,
     started_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
     ended_at            TIMESTAMPTZ,
     metadata            JSONB NOT NULL DEFAULT '{}',
     created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
 
     CONSTRAINT chk_session_time_order
         CHECK (ended_at IS NULL OR ended_at >= started_at)
 );
 
-COMMENT ON TABLE sessions IS
+COMMENT ON TABLE learning_sessions IS
     'Session orchestration boundary — explicit start/end, mode, and attempt container. '
-    'Distinct from journal: journal is post-hoc reflection (plan, context, reflection, '
-    'metrics), sessions are in-progress orchestration. A session ending may produce a '
-    'journal(kind=''reflection'') entry, linked via journal_id. '
-    'No updated_at — sessions are write-once with ended_at set on completion.';
-COMMENT ON COLUMN sessions.domain IS
+    'Distinct from agent_notes: agent_notes are post-hoc narrative (plan, context, '
+    'reflection), sessions are in-progress orchestration. A session ending may produce '
+    'an agent_notes(kind=reflection) entry, linked via agent_note_id. '
+    'updated_at tracks mutation: ended_at and agent_note_id are written by EndSession, '
+    'and metadata may be updated mid-session by orchestration code.';
+COMMENT ON COLUMN learning_sessions.updated_at IS
+    'Application-managed. Set explicitly in UPDATE queries (notably EndSession).';
+COMMENT ON COLUMN learning_sessions.domain IS
     'Learning domain for this session (same convention as concepts.domain).';
-COMMENT ON COLUMN sessions.session_mode IS
+COMMENT ON COLUMN learning_sessions.session_mode IS
     'retrieval: recall-based testing (no hints). '
     'practice: active problem-solving with coaching. '
     'mixed: combination of retrieval and practice. '
     'review: revisiting previously solved items. '
     'reading: comprehension-focused (DDIA, O''Reilly, literary texts).';
-COMMENT ON COLUMN sessions.journal_id IS
-    'Optional link to the reflection journal entry written after the session. '
-    'The session produces the journal entry, not the other way around. '
-    'SET NULL on journal entry deletion.';
-COMMENT ON COLUMN sessions.daily_plan_item_id IS
+COMMENT ON COLUMN learning_sessions.agent_note_id IS
+    'Optional link to the reflection agent_notes entry written after the session. '
+    'The session produces the note, not the other way around. '
+    'SET NULL on note deletion.';
+COMMENT ON COLUMN learning_sessions.daily_plan_item_id IS
     'If this session was planned in the daily plan, link here. '
     'Enables plan adherence analysis. SET NULL on plan item deletion.';
-COMMENT ON COLUMN sessions.started_at IS
+COMMENT ON COLUMN learning_sessions.started_at IS
     'Session start time. DEFAULT now() for immediate starts.';
-COMMENT ON COLUMN sessions.ended_at IS
+COMMENT ON COLUMN learning_sessions.ended_at IS
     'NULL until session ends. NULL + old started_at = abandoned/crashed session.';
-COMMENT ON COLUMN sessions.metadata IS
+COMMENT ON COLUMN learning_sessions.metadata IS
     'Session orchestration details: coaching prompt used, session summary, '
     'configuration. Not queryable — stays in JSONB.';
 
-CREATE INDEX idx_sessions_started ON sessions (started_at DESC);
-CREATE INDEX idx_sessions_domain ON sessions (domain);
-CREATE INDEX idx_sessions_journal ON sessions (journal_id)
-    WHERE journal_id IS NOT NULL;
+CREATE INDEX idx_learning_sessions_started ON learning_sessions (started_at DESC);
+CREATE INDEX idx_learning_sessions_domain ON learning_sessions (domain);
+CREATE INDEX idx_learning_sessions_agent_note ON learning_sessions (agent_note_id)
+    WHERE agent_note_id IS NOT NULL;
 
 -- Attempts: individual learning attempt records
 --
@@ -1539,10 +1728,10 @@ CREATE INDEX idx_sessions_journal ON sessions (journal_id)
 --     (reading, listening, literary analysis)
 --   shared: incomplete, gave_up (work across both)
 
-CREATE TABLE attempts (
+CREATE TABLE learning_attempts (
     id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    learning_item_id  UUID NOT NULL REFERENCES items(id) ON DELETE CASCADE,
-    session_id        UUID REFERENCES sessions(id) ON DELETE SET NULL,
+    learning_target_id UUID NOT NULL REFERENCES learning_targets(id) ON DELETE CASCADE,
+    session_id        UUID REFERENCES learning_sessions(id) ON DELETE SET NULL,
     attempt_number    INT NOT NULL DEFAULT 1,
     outcome           TEXT NOT NULL
                       CHECK (outcome IN (
@@ -1553,7 +1742,7 @@ CREATE TABLE attempts (
     duration_minutes  INT,
     stuck_at          TEXT,
     approach_used     TEXT,
-    note_id           BIGINT REFERENCES notes(id) ON DELETE SET NULL,
+    obsidian_note_id  BIGINT REFERENCES obsidian_notes(id) ON DELETE SET NULL,
     metadata          JSONB NOT NULL DEFAULT '{}',
     attempted_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
     created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -1562,21 +1751,21 @@ CREATE TABLE attempts (
     CONSTRAINT chk_duration_positive CHECK (duration_minutes IS NULL OR duration_minutes > 0)
 );
 
-COMMENT ON TABLE attempts IS
+COMMENT ON TABLE learning_attempts IS
     'Individual learning attempt records. One learning item can have multiple attempts '
     '(first try, revisit, re-practice). CASCADE from items — deleting an item '
     'deletes its attempt history. No is_revisit column — derivable as attempt_number > 1. '
     'Append-only — no updated_at.';
-COMMENT ON COLUMN attempts.learning_item_id IS
+COMMENT ON COLUMN learning_attempts.learning_target_id IS
     'The learning target attempted. CASCADE — attempts are meaningless without their item.';
-COMMENT ON COLUMN attempts.session_id IS
+COMMENT ON COLUMN learning_attempts.session_id IS
     'Optional link to the session this attempt occurred in. NULL for ad-hoc attempts '
     'outside a formal session. SET NULL on session deletion.';
-COMMENT ON COLUMN attempts.attempt_number IS
+COMMENT ON COLUMN learning_attempts.attempt_number IS
     'Nth attempt at this item. 1 = first try, 2+ = revisit. Application must compute '
     'MAX(attempt_number) + 1 before inserting — DEFAULT 1 only applies to first attempts. '
-    'UNIQUE with learning_item_id enforces no duplicate numbering.';
-COMMENT ON COLUMN attempts.outcome IS
+    'UNIQUE with learning_target_id enforces no duplicate numbering.';
+COMMENT ON COLUMN learning_attempts.outcome IS
     'Two outcome paradigms coexist in this column. '
     'Problem-solving (LeetCode, drills): solved_independent (no help), '
     'solved_with_hint (nudge needed), solved_after_solution (saw answer first). '
@@ -1584,26 +1773,26 @@ COMMENT ON COLUMN attempts.outcome IS
     'completed_with_support (needed dictionary, subtitles, translation, Claude annotation). '
     'Shared across both: incomplete (partially done), gave_up (could not proceed). '
     'MCP tool layer maps domain context to the appropriate paradigm.';
-COMMENT ON COLUMN attempts.duration_minutes IS
+COMMENT ON COLUMN learning_attempts.duration_minutes IS
     'Time spent on this attempt in minutes. NULL = not tracked. Must be positive.';
-COMMENT ON COLUMN attempts.stuck_at IS
+COMMENT ON COLUMN learning_attempts.stuck_at IS
     'Free-text: where you got stuck. High cardinality, not a queryable category.';
-COMMENT ON COLUMN attempts.approach_used IS
+COMMENT ON COLUMN learning_attempts.approach_used IS
     'Free-text: what method you used. Coaching context, not a queryable enum.';
-COMMENT ON COLUMN attempts.note_id IS
-    'Optional link to an attempt-level working note. Distinct from items.note_id '
+COMMENT ON COLUMN learning_attempts.obsidian_note_id IS
+    'Optional link to an attempt-level working note. Distinct from learning_targets.obsidian_note_id '
     '(item-level summary). SET NULL on note deletion.';
-COMMENT ON COLUMN attempts.metadata IS
+COMMENT ON COLUMN learning_attempts.metadata IS
     'Narrative data: coaching hints given, alternative approaches considered, code quality '
     'observations, LLM transcript excerpts. Not queryable — stays in JSONB. '
     'If a field needs WHERE/JOIN/GROUP BY, promote to a column.';
-COMMENT ON COLUMN attempts.attempted_at IS
+COMMENT ON COLUMN learning_attempts.attempted_at IS
     'When this attempt occurred. May differ from created_at if backfilled.';
 
-CREATE UNIQUE INDEX idx_attempts_item_number ON attempts (learning_item_id, attempt_number);
-CREATE INDEX idx_attempts_item_date ON attempts (learning_item_id, attempted_at DESC);
-CREATE INDEX idx_attempts_session ON attempts (session_id) WHERE session_id IS NOT NULL;
-CREATE INDEX idx_attempts_date ON attempts (attempted_at DESC);
+CREATE UNIQUE INDEX idx_learning_attempts_item_number ON learning_attempts (learning_target_id, attempt_number);
+CREATE INDEX idx_learning_attempts_item_date ON learning_attempts (learning_target_id, attempted_at DESC);
+CREATE INDEX idx_learning_attempts_session ON learning_attempts (session_id) WHERE session_id IS NOT NULL;
+CREATE INDEX idx_learning_attempts_date ON learning_attempts (attempted_at DESC);
 
 -- Attempt observations: weakness / improvement / mastery signals
 --
@@ -1611,9 +1800,9 @@ CREATE INDEX idx_attempts_date ON attempts (attempted_at DESC);
 -- an attempt to a concept with a typed signal. Powers the
 -- drill-down weakness UI and progression tracking.
 
-CREATE TABLE attempt_observations (
+CREATE TABLE learning_attempt_observations (
     id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    attempt_id  UUID NOT NULL REFERENCES attempts(id) ON DELETE CASCADE,
+    attempt_id  UUID NOT NULL REFERENCES learning_attempts(id) ON DELETE CASCADE,
     concept_id  UUID NOT NULL REFERENCES concepts(id) ON DELETE RESTRICT,
     signal_type TEXT NOT NULL CHECK (signal_type IN ('weakness', 'improvement', 'mastery')),
     category    TEXT NOT NULL,
@@ -1626,34 +1815,34 @@ CREATE TABLE attempt_observations (
         CHECK (signal_type = 'weakness' OR severity IS NULL)
 );
 
-COMMENT ON TABLE attempt_observations IS
+COMMENT ON TABLE learning_attempt_observations IS
     'Micro-cognitive signals observed during a specific attempt on a specific concept. '
     'Powers weakness overview, progression tracking, and drill-down UI. '
     'Append-only — no updated_at. CASCADE from attempts, RESTRICT from concepts.';
-COMMENT ON COLUMN attempt_observations.attempt_id IS
+COMMENT ON COLUMN learning_attempt_observations.attempt_id IS
     'The attempt during which this signal was observed. CASCADE — observations die with their attempt.';
-COMMENT ON COLUMN attempt_observations.concept_id IS
+COMMENT ON COLUMN learning_attempt_observations.concept_id IS
     'The concept this signal pertains to. RESTRICT — cannot delete a concept that has '
     'observations. To merge concepts: UPDATE observations to surviving concept_id first, '
     'then DELETE the old concept. Observations are irreplaceable historical analytics.';
-COMMENT ON COLUMN attempt_observations.signal_type IS
+COMMENT ON COLUMN learning_attempt_observations.signal_type IS
     'weakness: something went wrong with this concept during this attempt. '
     'improvement: noticeable progress compared to previous attempts. '
     'mastery: demonstrated independent, fluent application.';
-COMMENT ON COLUMN attempt_observations.category IS
+COMMENT ON COLUMN learning_attempt_observations.category IS
     'Observation dimension. Go-validated convention, not DB ENUM — categories expand across '
     'domains. LeetCode: pattern-recognition, constraint-analysis, edge-cases, implementation, '
     'complexity-analysis, approach-selection. Japanese: conjugation-accuracy, particle-selection, '
     'listening-comprehension, vocabulary-recall. System Design: tradeoff-analysis, '
     'bottleneck-diagnosis, capacity-estimation.';
-COMMENT ON COLUMN attempt_observations.severity IS
+COMMENT ON COLUMN learning_attempt_observations.severity IS
     'Granularity within a signal. minor: forgot one edge case. moderate: correct approach, '
     'failed execution. critical: did not recognize the pattern at all. '
     'NULL for improvement/mastery signals where severity does not apply.';
-COMMENT ON COLUMN attempt_observations.detail IS
+COMMENT ON COLUMN learning_attempt_observations.detail IS
     'Free-text evidence or explanation. NULL when the signal is self-explanatory '
     'from category alone.';
-COMMENT ON COLUMN attempt_observations.confidence IS
+COMMENT ON COLUMN learning_attempt_observations.confidence IS
     'high (default): signal directly evidenced by the attempt outcome — '
     'user said "I forgot how X works" or repeatedly failed at X. '
     'low: coach inferred the signal from indirect evidence — '
@@ -1661,63 +1850,72 @@ COMMENT ON COLUMN attempt_observations.confidence IS
     'Both persist. Dashboard mastery and weakness views default to high only; '
     'pass confidence_filter=all to include low-confidence observations.';
 
-CREATE INDEX idx_attempt_observations_concept_signal ON attempt_observations (concept_id, signal_type);
-CREATE INDEX idx_attempt_observations_attempt ON attempt_observations (attempt_id);
-CREATE INDEX idx_attempt_observations_high_confidence
-    ON attempt_observations (concept_id, created_at DESC)
+CREATE INDEX idx_learning_attempt_observations_concept_signal ON learning_attempt_observations (concept_id, signal_type);
+CREATE INDEX idx_learning_attempt_observations_attempt ON learning_attempt_observations (attempt_id);
+CREATE INDEX idx_learning_attempt_observations_high_confidence
+    ON learning_attempt_observations (concept_id, created_at DESC)
     WHERE confidence = 'high';
 
--- Item relations: variation / prerequisite graph
+-- Learning target relations: variation / prerequisite graph
 --
 -- Direction convention:
---   source_item_id = the reference point
---   target_item_id = the related item
---   relation_type  = how target relates to source
+--   anchor_id  = the reference point (the target the row is "about")
+--   related_id = the other learning target related to the anchor
+--   relation_type = how related_id relates to anchor_id
 --
--- (source=42, target=167, easier_variant) means
+-- (anchor=42, related=167, easier_variant) means
 -- "167 is an easier variant of 42."
+--
+-- Why anchor/related instead of the more conventional source/target:
+-- the table name already says "learning_target", so the graph-theory
+-- column names "source/target" would create the awkward triple
+-- "learning_target_relations.target_id" where "target" means three
+-- different things at once (the table's entity, the FK target, and
+-- the directed-edge endpoint). anchor/related sidesteps the collision.
 
-CREATE TABLE item_relations (
-    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    source_item_id  UUID NOT NULL REFERENCES items(id) ON DELETE CASCADE,
-    target_item_id  UUID NOT NULL REFERENCES items(id) ON DELETE CASCADE,
-    relation_type   TEXT NOT NULL
-                    CHECK (relation_type IN (
-                        'easier_variant', 'harder_variant', 'prerequisite',
-                        'follow_up', 'same_pattern', 'similar_structure')),
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+CREATE TABLE learning_target_relations (
+    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    anchor_id     UUID NOT NULL REFERENCES learning_targets(id) ON DELETE CASCADE,
+    related_id    UUID NOT NULL REFERENCES learning_targets(id) ON DELETE CASCADE,
+    relation_type TEXT NOT NULL
+                  CHECK (relation_type IN (
+                      'easier_variant', 'harder_variant', 'prerequisite',
+                      'follow_up', 'same_pattern', 'similar_structure')),
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
 
-    CONSTRAINT chk_no_self_relation CHECK (source_item_id <> target_item_id)
+    CONSTRAINT chk_no_self_relation CHECK (anchor_id <> related_id)
 );
 
-COMMENT ON TABLE item_relations IS
-    'Directed graph of learning item relationships. Direction: source is the reference '
-    'point, target is the related item, relation_type describes how target relates to '
-    'source. Example: (source=42, target=167, easier_variant) means "167 is an easier '
+COMMENT ON TABLE learning_target_relations IS
+    'Directed graph of learning target relationships. Direction: anchor is the reference '
+    'point, related is the other target, relation_type describes how related relates to '
+    'anchor. Example: (anchor=42, related=167, easier_variant) means "167 is an easier '
     'variant of 42." CASCADE on both sides. Append-only — no updated_at. '
     'APPLICATION INVARIANT: contradictory pairs (e.g. same ordered pair with both '
     'easier_variant and harder_variant) and symmetric conflicts (e.g. mutual prerequisite) '
     'are not DDL-enforced — Go validation must prevent them during post-session analysis. '
-    'Same-domain invariant: both items must share the same domain — enforced by Go, not DB.';
-COMMENT ON COLUMN item_relations.source_item_id IS
-    'The reference item (e.g. the one you struggled with). CASCADE on deletion.';
-COMMENT ON COLUMN item_relations.target_item_id IS
-    'The related item (e.g. the easier variant to try). CASCADE on deletion.';
-COMMENT ON COLUMN item_relations.relation_type IS
-    'How target relates to source. '
-    'easier_variant: target is simpler (same concept, lower difficulty). '
-    'harder_variant: target is more complex. '
-    'prerequisite: target should be done before source '
-    '(e.g. source=hard_problem, target=easy_problem, prerequisite = '
+    'Same-domain invariant: both targets must share the same domain — enforced by Go, not DB.';
+COMMENT ON COLUMN learning_target_relations.anchor_id IS
+    'The reference target (e.g. the one you struggled with). CASCADE on deletion. '
+    'Renamed from source_item_id to avoid colliding with the table''s own "learning_target" semantics.';
+COMMENT ON COLUMN learning_target_relations.related_id IS
+    'The other target related to the anchor (e.g. the easier variant to try). CASCADE on deletion. '
+    'Renamed from target_item_id for the same reason.';
+COMMENT ON COLUMN learning_target_relations.relation_type IS
+    'How the related target relates to the anchor. '
+    'easier_variant: related is simpler (same concept, lower difficulty). '
+    'harder_variant: related is more complex. '
+    'prerequisite: related should be done before anchor '
+    '(e.g. anchor=hard_problem, related=easy_problem, prerequisite = '
     '"do easy_problem before attempting hard_problem"). '
-    'follow_up: target is a natural next step after source. '
-    'same_pattern: target uses the same core pattern. '
-    'similar_structure: target has structural similarity (different pattern).';
+    'follow_up: related is a natural next step after anchor. '
+    'same_pattern: related uses the same core pattern. '
+    'similar_structure: related has structural similarity (different pattern).';
 
-CREATE UNIQUE INDEX idx_item_relations_triple
-    ON item_relations (source_item_id, target_item_id, relation_type);
-CREATE INDEX idx_item_relations_source ON item_relations (source_item_id);
-CREATE INDEX idx_item_relations_target ON item_relations (target_item_id);
+CREATE UNIQUE INDEX idx_learning_target_relations_triple
+    ON learning_target_relations (anchor_id, related_id, relation_type);
+CREATE INDEX idx_learning_target_relations_anchor ON learning_target_relations (anchor_id);
+CREATE INDEX idx_learning_target_relations_related ON learning_target_relations (related_id);
 
 -- ============================================================
 -- Telemetry: tool_call_logs REMOVED (2026-04-04)
@@ -1730,7 +1928,7 @@ CREATE INDEX idx_item_relations_target ON item_relations (target_item_id);
 -- Reconciliation
 -- ============================================================
 
-CREATE TABLE reconcile_runs (
+CREATE TABLE drift_check_runs (
     id                  BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     started_at          TIMESTAMPTZ NOT NULL,
     completed_at        TIMESTAMPTZ,
@@ -1746,98 +1944,64 @@ CREATE TABLE reconcile_runs (
     created_at          TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-COMMENT ON TABLE reconcile_runs IS 'Weekly reconciliation run history for system health and drift trend analysis.';
-COMMENT ON COLUMN reconcile_runs.started_at IS 'When the reconciliation run began.';
-COMMENT ON COLUMN reconcile_runs.completed_at IS 'NULL until run finishes. NULL + old started_at = crashed run.';
-COMMENT ON COLUMN reconcile_runs.obsidian_missing IS 'Notes in Obsidian vault but not yet synced to DB.';
-COMMENT ON COLUMN reconcile_runs.obsidian_orphaned IS 'Notes in DB but file no longer exists in Obsidian vault.';
-COMMENT ON COLUMN reconcile_runs.notion_proj_missing IS 'Projects in Notion but not yet synced to DB.';
-COMMENT ON COLUMN reconcile_runs.notion_proj_orphan IS 'Projects in DB but no longer in Notion source.';
-COMMENT ON COLUMN reconcile_runs.notion_goal_missing IS 'Goals in Notion but not yet synced to DB.';
-COMMENT ON COLUMN reconcile_runs.notion_goal_orphan IS 'Goals in DB but no longer in Notion source.';
-COMMENT ON COLUMN reconcile_runs.total_drift IS 'Sum of all missing+orphaned counts. Zero = fully consistent.';
-COMMENT ON COLUMN reconcile_runs.error_count IS 'Number of errors encountered during the run. 0 = clean run.';
-COMMENT ON COLUMN reconcile_runs.errors IS 'JSON array of error strings from the run. NULL when error_count=0.';
+COMMENT ON TABLE drift_check_runs IS 'Weekly reconciliation run history for system health and drift trend analysis.';
+COMMENT ON COLUMN drift_check_runs.started_at IS 'When the reconciliation run began.';
+COMMENT ON COLUMN drift_check_runs.completed_at IS 'NULL until run finishes. NULL + old started_at = crashed run.';
+COMMENT ON COLUMN drift_check_runs.obsidian_missing IS 'Notes in Obsidian vault but not yet synced to DB.';
+COMMENT ON COLUMN drift_check_runs.obsidian_orphaned IS 'Notes in DB but file no longer exists in Obsidian vault.';
+COMMENT ON COLUMN drift_check_runs.notion_proj_missing IS 'Projects in Notion but not yet synced to DB.';
+COMMENT ON COLUMN drift_check_runs.notion_proj_orphan IS 'Projects in DB but no longer in Notion source.';
+COMMENT ON COLUMN drift_check_runs.notion_goal_missing IS 'Goals in Notion but not yet synced to DB.';
+COMMENT ON COLUMN drift_check_runs.notion_goal_orphan IS 'Goals in DB but no longer in Notion source.';
+COMMENT ON COLUMN drift_check_runs.total_drift IS 'Sum of all missing+orphaned counts. Zero = fully consistent.';
+COMMENT ON COLUMN drift_check_runs.error_count IS 'Number of errors encountered during the run. 0 = clean run.';
+COMMENT ON COLUMN drift_check_runs.errors IS 'JSON array of error strings from the run. NULL when error_count=0.';
 
-CREATE INDEX idx_reconcile_runs_started ON reconcile_runs(started_at DESC);
+CREATE INDEX idx_drift_check_runs_started ON drift_check_runs(started_at DESC);
 
 -- ============================================================
--- Participant schedules + run history
+-- Agent schedule run history (was: schedule_runs)
+--
+-- Schedule DEFINITIONS now live in the Go BuiltinAgents() literal under
+-- internal/agent/registry.go — the old participant_schedules table is dropped.
+-- Only the run audit log remains, keyed by a string <agent_name>:<schedule_name>
+-- pair produced by the Go dispatcher. There is no FK — Go validates the name
+-- against the registry before insert.
 -- ============================================================
 
-CREATE TABLE participant_schedules (
-    id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    participant           TEXT NOT NULL REFERENCES participant(name) ON DELETE RESTRICT,
-    name                  TEXT NOT NULL,
-    purpose               TEXT NOT NULL,
-    trigger_type          TEXT NOT NULL CHECK (trigger_type IN ('cron', 'interval', 'manual')),
-    schedule_expr         TEXT,
-    execution_backend     TEXT NOT NULL
-                          CHECK (execution_backend IN ('cowork_desktop', 'claude_code', 'github_actions', 'koopa_native')),
-    instruction_template  TEXT NOT NULL,
-    expected_outputs      TEXT[] NOT NULL DEFAULT '{}',
-    missed_run_policy     TEXT NOT NULL DEFAULT 'skip'
-                          CHECK (missed_run_policy IN ('skip', 'run_once_on_wake', 'queue_all')),
-    enabled               BOOLEAN NOT NULL DEFAULT true,
-    last_run_at           TIMESTAMPTZ,
-    last_run_status       TEXT CHECK (last_run_status IN ('success', 'failure', 'skipped')),
-    created_at            TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at            TIMESTAMPTZ NOT NULL DEFAULT now(),
+CREATE TABLE agent_schedule_runs (
+    id            BIGSERIAL PRIMARY KEY,
+    schedule_name TEXT NOT NULL,
+    status        TEXT NOT NULL CHECK (status IN ('success', 'failure', 'skipped')),
+    started_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    ended_at      TIMESTAMPTZ,
+    error         TEXT,
+    metadata      JSONB,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
 
-    CONSTRAINT chk_cron_has_expr
-        CHECK (trigger_type <> 'cron' OR schedule_expr IS NOT NULL),
-    CONSTRAINT chk_interval_has_expr
-        CHECK (trigger_type <> 'interval' OR schedule_expr IS NOT NULL),
-    CONSTRAINT chk_manual_no_expr
-        CHECK (trigger_type <> 'manual' OR schedule_expr IS NULL),
-    UNIQUE (participant, name)
-);
-
-COMMENT ON TABLE participant_schedules IS 'Participant-owned standing instructions that spawn sessions on a recurring basis. Schedule defines WHAT and WHEN; execution_backend defines WHERE and HOW.';
-COMMENT ON COLUMN participant_schedules.participant IS 'Owner. FK to participant. Go validates participant.can_own_schedules = true.';
-COMMENT ON COLUMN participant_schedules.name IS 'Human-readable schedule name (e.g. Morning Briefing, RSS Pipeline Check).';
-COMMENT ON COLUMN participant_schedules.purpose IS 'One-line description of what this schedule achieves.';
-COMMENT ON COLUMN participant_schedules.trigger_type IS 'cron = fixed times. interval = recurring period. manual = only triggered by API/UI.';
-COMMENT ON COLUMN participant_schedules.schedule_expr IS 'Cron expression for trigger_type=cron (e.g. "0 8 * * *"). Go time.Duration string for trigger_type=interval (e.g. "1h", "30m", "2h30m"). NULL for trigger_type=manual. Format validated by Go, not DB.';
-COMMENT ON COLUMN participant_schedules.execution_backend IS 'Which runtime executes this schedule. cowork_desktop = Claude Desktop Cowork. claude_code = Claude Code (cloud/desktop/loop). github_actions = GitHub CI. koopa_native = koopa server scheduler (future).';
-COMMENT ON COLUMN participant_schedules.instruction_template IS 'Prompt/instructions for the spawned session. May reference MCP tools, participant instructions, etc.';
-COMMENT ON COLUMN participant_schedules.expected_outputs IS 'Expected artifact types from each run. Convention: bare name = IPC table (directive, report, journal, insight); colon-separated = table:kind filter (journal:plan, journal:reflection). Monitoring validation is Go-side, not DB-enforced. If automated completeness checking is added, this column format becomes a contract.';
-COMMENT ON COLUMN participant_schedules.missed_run_policy IS 'Normalized catch-up intent: skip = silently miss, run_once_on_wake = catch up with one run, queue_all = run all missed occurrences. Backend support may vary — Go execution layer maps unsupported combinations to closest available behavior and logs the deviation.';
-COMMENT ON COLUMN participant_schedules.last_run_at IS 'Denormalized from schedule_runs for quick lookup. NULL = never run.';
-COMMENT ON COLUMN participant_schedules.last_run_status IS 'Denormalized from schedule_runs. NULL = never run.';
-COMMENT ON COLUMN participant_schedules.updated_at IS 'Application-managed. Set explicitly in UPDATE queries.';
-
-CREATE INDEX idx_participant_schedules_participant ON participant_schedules (participant);
-
-CREATE TABLE schedule_runs (
-    id          BIGSERIAL PRIMARY KEY,
-    schedule_id UUID NOT NULL REFERENCES participant_schedules(id) ON DELETE CASCADE,
-    status      TEXT NOT NULL CHECK (status IN ('success', 'failure', 'skipped')),
-    started_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
-    ended_at    TIMESTAMPTZ,
-    error       TEXT,
-    metadata    JSONB,
-    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
-
-    CONSTRAINT chk_error_on_failure
+    CONSTRAINT chk_agent_schedule_run_error_on_failure
         CHECK (status = 'failure' OR error IS NULL)
 );
 
-COMMENT ON TABLE schedule_runs IS 'Append-only execution history for participant_schedules. Full history from day one — enables trend analysis, hit rate, and failure diagnosis.';
-COMMENT ON COLUMN schedule_runs.status IS 'success = run completed without execution error. failure = errored. skipped = missed_run_policy decided to skip. Note: success does not guarantee expected_outputs were produced — output completeness is a separate monitoring concern.';
-COMMENT ON COLUMN schedule_runs.error IS 'Error details on failure. NULL on success/skip.';
-COMMENT ON COLUMN schedule_runs.ended_at IS
+COMMENT ON TABLE agent_schedule_runs IS 'Append-only execution history for agent-owned schedules. Schedule definitions live in the Go registry (BuiltinAgents), not in a DB table — schedule_name here is the "<agent>:<schedule>" composite key produced by the dispatcher. No FK: Go validates the name against the registry before insert.';
+COMMENT ON COLUMN agent_schedule_runs.schedule_name IS 'Composite key "<agent_name>:<schedule_name>" from the Go registry. Free text at the DB layer — historical rows survive registry edits without dangling.';
+COMMENT ON COLUMN agent_schedule_runs.status IS 'success = run completed without execution error. failure = errored. skipped = missed-run policy decided to skip. Note: success does not guarantee expected outputs were produced — output completeness is a separate monitoring concern.';
+COMMENT ON COLUMN agent_schedule_runs.started_at IS 'When the scheduled run began.';
+COMMENT ON COLUMN agent_schedule_runs.ended_at IS
     'When the run finished. NULL = still running or crashed. '
     'NULL + old started_at = abandoned/crashed run (same pattern as sessions.ended_at).';
-COMMENT ON COLUMN schedule_runs.metadata IS 'Run-specific data: produced artifact IDs, execution duration, backend-specific info.';
+COMMENT ON COLUMN agent_schedule_runs.error IS 'Error details on failure. NULL on success/skip, enforced by chk_agent_schedule_run_error_on_failure.';
+COMMENT ON COLUMN agent_schedule_runs.metadata IS 'Run-specific data: produced task IDs, execution duration, backend-specific info.';
+COMMENT ON COLUMN agent_schedule_runs.created_at IS 'Row insertion timestamp.';
 
-CREATE INDEX idx_schedule_runs_schedule ON schedule_runs (schedule_id, started_at DESC);
+CREATE INDEX idx_agent_schedule_runs_name ON agent_schedule_runs (schedule_name, started_at DESC);
+CREATE INDEX idx_agent_schedule_runs_status ON agent_schedule_runs (status, started_at DESC);
 
 -- ============================================================
 -- Learning plans: ordered, mutable curricula linking plans to items
 -- ============================================================
 
-CREATE TABLE plans (
+CREATE TABLE learning_plans (
     id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     title        TEXT NOT NULL,
     description  TEXT NOT NULL DEFAULT '',
@@ -1848,66 +2012,66 @@ CREATE TABLE plans (
                  CHECK (status IN ('draft', 'active', 'completed', 'paused', 'abandoned')),
     target_count INT CHECK (target_count IS NULL OR target_count > 0),
     plan_config  JSONB NOT NULL DEFAULT '{}',
-    created_by   TEXT NOT NULL REFERENCES participant(name) ON DELETE RESTRICT,
+    created_by   TEXT NOT NULL REFERENCES agents(name) ON DELETE RESTRICT,
     created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at   TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX idx_plans_domain ON plans (domain);
-CREATE INDEX idx_plans_goal ON plans (goal_id) WHERE goal_id IS NOT NULL;
-CREATE INDEX idx_plans_status ON plans (status) WHERE status IN ('draft', 'active');
-CREATE INDEX idx_plans_created_by ON plans (created_by);
+CREATE INDEX idx_learning_plans_domain ON learning_plans (domain);
+CREATE INDEX idx_learning_plans_goal ON learning_plans (goal_id) WHERE goal_id IS NOT NULL;
+CREATE INDEX idx_learning_plans_status ON learning_plans (status) WHERE status IN ('draft', 'active');
+CREATE INDEX idx_learning_plans_created_by ON learning_plans (created_by);
 
-COMMENT ON TABLE plans IS
+COMMENT ON TABLE learning_plans IS
     'Ordered, mutable learning curricula — a named commitment to practice a specific '
     'set of learning items. Plans serve aspirations (goals), not execution vehicles '
     '(projects). Status lifecycle: draft → active → completed/paused/abandoned. '
     'Draft = workspace/uncommitted. Active = committed curriculum being tracked '
     'against execution.';
-COMMENT ON COLUMN plans.id IS
+COMMENT ON COLUMN learning_plans.id IS
     'Primary key. Auto-generated UUID.';
-COMMENT ON COLUMN plans.title IS
+COMMENT ON COLUMN learning_plans.title IS
     'Display title (e.g., "LeetCode 200 題計畫"). Not unique — allows v1/v2 scenarios.';
-COMMENT ON COLUMN plans.description IS
+COMMENT ON COLUMN learning_plans.description IS
     'Plan description, strategy notes. Empty string = no description.';
-COMMENT ON COLUMN plans.domain IS
+COMMENT ON COLUMN learning_plans.domain IS
     'Learning domain (same convention as concepts.domain). Go-validated, not DB-enforced.';
-COMMENT ON COLUMN plans.goal_id IS
+COMMENT ON COLUMN learning_plans.goal_id IS
     'Optional aspirational target. NULL = area-level maintenance plan (no specific goal). '
     'SET NULL on goal deletion.';
-COMMENT ON COLUMN plans.status IS
+COMMENT ON COLUMN learning_plans.status IS
     'Lifecycle state. draft → active → completed. Can pause from active, abandon from '
     'draft/active/paused. Draft plans are not tracked in execution. See '
     'mcp-decision-policy.md for mutation rules per status.';
-COMMENT ON COLUMN plans.target_count IS
+COMMENT ON COLUMN learning_plans.target_count IS
     'Advisory target item count (e.g., 200). NULL = open-ended plan. Not enforced by DB.';
-COMMENT ON COLUMN plans.plan_config IS
+COMMENT ON COLUMN learning_plans.plan_config IS
     'Plan-creation parameters that do NOT need WHERE/JOIN/GROUP BY. If any field needs '
     'filtering, promote to a column. Examples: difficulty_distribution, focus_areas, '
     'pacing_notes.';
-COMMENT ON COLUMN plans.created_by IS
-    'Which participant created this plan. RESTRICT on delete — cannot remove a participant '
+COMMENT ON COLUMN learning_plans.created_by IS
+    'Which agent created this plan. FK to agents. RESTRICT on delete — cannot remove an agent '
     'who owns plans.';
-COMMENT ON COLUMN plans.created_at IS
+COMMENT ON COLUMN learning_plans.created_at IS
     'Row creation timestamp.';
-COMMENT ON COLUMN plans.updated_at IS
+COMMENT ON COLUMN learning_plans.updated_at IS
     'Application-managed. Set explicitly in UPDATE queries.';
 
-CREATE TABLE plan_items (
+CREATE TABLE learning_plan_entries (
     id                      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    plan_id                 UUID NOT NULL REFERENCES plans(id) ON DELETE CASCADE,
-    learning_item_id        UUID NOT NULL REFERENCES items(id) ON DELETE RESTRICT,
+    plan_id                 UUID NOT NULL REFERENCES learning_plans(id) ON DELETE CASCADE,
+    learning_target_id      UUID NOT NULL REFERENCES learning_targets(id) ON DELETE RESTRICT,
     position                INT NOT NULL DEFAULT 0,
     status                  TEXT NOT NULL DEFAULT 'planned'
                             CHECK (status IN ('planned', 'completed', 'skipped', 'substituted')),
     phase                   TEXT,
-    substituted_by          UUID REFERENCES plan_items(id) ON DELETE SET NULL,
-    completed_by_attempt_id UUID REFERENCES attempts(id) ON DELETE SET NULL,
+    substituted_by          UUID REFERENCES learning_plan_entries(id) ON DELETE SET NULL,
+    completed_by_attempt_id UUID REFERENCES learning_attempts(id) ON DELETE SET NULL,
     reason                  TEXT,
     added_at                TIMESTAMPTZ NOT NULL DEFAULT now(),
     completed_at            TIMESTAMPTZ,
 
-    UNIQUE (plan_id, learning_item_id),
+    UNIQUE (plan_id, learning_target_id),
     CONSTRAINT chk_substituted_by_requires_status
         CHECK (substituted_by IS NULL OR status = 'substituted'),
     CONSTRAINT chk_completed_at_requires_status
@@ -1916,56 +2080,56 @@ CREATE TABLE plan_items (
         CHECK (completed_by_attempt_id IS NULL OR status = 'completed')
 );
 
-CREATE INDEX idx_plan_items_plan ON plan_items (plan_id, position);
-CREATE INDEX idx_plan_items_item ON plan_items (learning_item_id);
-CREATE INDEX idx_plan_items_phase ON plan_items (plan_id, phase) WHERE phase IS NOT NULL;
-CREATE INDEX idx_plan_items_status ON plan_items (plan_id, status);
-CREATE INDEX idx_plan_items_attempt ON plan_items (completed_by_attempt_id)
+CREATE INDEX idx_learning_plan_entries_plan ON learning_plan_entries (plan_id, position);
+CREATE INDEX idx_learning_plan_entries_target ON learning_plan_entries (learning_target_id);
+CREATE INDEX idx_learning_plan_entries_phase ON learning_plan_entries (plan_id, phase) WHERE phase IS NOT NULL;
+CREATE INDEX idx_learning_plan_entries_status ON learning_plan_entries (plan_id, status);
+CREATE INDEX idx_learning_plan_entries_attempt ON learning_plan_entries (completed_by_attempt_id)
     WHERE completed_by_attempt_id IS NOT NULL;
 
-COMMENT ON TABLE plan_items IS
+COMMENT ON TABLE learning_plan_entries IS
     'Junction between plans and items — plan membership with ordering '
     'and per-item lifecycle. Same item can appear in multiple plans (cross-plan '
     'reuse). CASCADE from plan deletion. RESTRICT from item deletion — cannot '
     'silently remove items from a plan. Append-style with status tracking — no updated_at '
     '(status transitions are the audit trail).';
-COMMENT ON COLUMN plan_items.id IS
+COMMENT ON COLUMN learning_plan_entries.id IS
     'Primary key. Auto-generated UUID.';
-COMMENT ON COLUMN plan_items.plan_id IS
+COMMENT ON COLUMN learning_plan_entries.plan_id IS
     'Parent learning plan. CASCADE — deleting a plan removes all its items.';
-COMMENT ON COLUMN plan_items.learning_item_id IS
+COMMENT ON COLUMN learning_plan_entries.learning_target_id IS
     'The learning target included in this plan. RESTRICT on delete — cannot silently '
     'remove a plan item by deleting its catalog entry. Resolve plan references first.';
-COMMENT ON COLUMN plan_items.position IS
+COMMENT ON COLUMN learning_plan_entries.position IS
     'Ordering within the plan (0-based). NOT unique in DB — application invariant '
     'maintains uniqueness. Follows milestones and daily_plan_items pattern.';
-COMMENT ON COLUMN plan_items.status IS
+COMMENT ON COLUMN learning_plan_entries.status IS
     'Plan-item lifecycle: planned → completed (via explicit tool call after successful '
     'attempt) | skipped (plan decision to not do it) | substituted (replaced by another '
     'item). Distinct from attempt.outcome — plan_status is a plan-domain decision, not '
     'an execution result.';
-COMMENT ON COLUMN plan_items.phase IS
+COMMENT ON COLUMN learning_plan_entries.phase IS
     'Optional grouping label within the plan (e.g., "1-arrays", "phase-2-trees"). '
     'Free-text with kebab-case validation enforced in Go, not DB. NULL = no phase grouping.';
-COMMENT ON COLUMN plan_items.substituted_by IS
+COMMENT ON COLUMN learning_plan_entries.substituted_by IS
     'If status=''substituted'', points to the plan_items.id of the replacement '
     'item WITHIN THE SAME PLAN. NULL for non-substituted items. SET NULL if replacement '
     'item is deleted.';
-COMMENT ON COLUMN plan_items.completed_by_attempt_id IS
+COMMENT ON COLUMN learning_plan_entries.completed_by_attempt_id IS
     'The attempt that triggered plan-item completion. FK to attempts(id). '
     'NULL for planned/skipped/substituted items, and for manually completed items '
     '(e.g., completed outside a session or on another platform with no attempt record). '
     'Policy: when Claude marks an item completed via manage_plan, this field is MANDATORY '
     '(enforced by policy, not schema). Schema stays nullable to allow future manual/UI '
     'completion paths. SET NULL on attempt deletion — completion decision survives.';
-COMMENT ON COLUMN plan_items.reason IS
+COMMENT ON COLUMN learning_plan_entries.reason IS
     'Context for status transitions. For completed: what attempt outcome and reasoning '
     'informed the completion decision (policy-mandatory when Claude completes). '
     'For skipped/substituted: why the item was removed from active tracking. '
     'NULL for planned items only.';
-COMMENT ON COLUMN plan_items.added_at IS
+COMMENT ON COLUMN learning_plan_entries.added_at IS
     'When this item was added to the plan.';
-COMMENT ON COLUMN plan_items.completed_at IS
+COMMENT ON COLUMN learning_plan_entries.completed_at IS
     'When this item was marked completed in the plan context. NULL until status → '
     'completed. Set by manage_plan tool call, not derived from attempts.';
 
@@ -1974,7 +2138,7 @@ COMMENT ON COLUMN plan_items.completed_at IS
 -- ============================================================
 -- Split out from contents.type='bookmark' polymorphism. Bookmarks
 -- differ from first-party content: external canonical URL,
--- curate = publish (no editorial review), no review_queue,
+-- curate = publish (no editorial review), no editorial_queue,
 -- different RSS output. See internal/bookmark package.
 
 CREATE TABLE bookmarks (
@@ -1988,35 +2152,40 @@ CREATE TABLE bookmarks (
     source_type          TEXT NOT NULL
         CHECK (source_type IN ('rss', 'manual', 'shared')),
     source_feed_entry_id UUID REFERENCES feed_entries(id) ON DELETE SET NULL,
-    curated_by           TEXT NOT NULL,
+    curated_by           TEXT NOT NULL REFERENCES agents(name) ON DELETE RESTRICT,
     curated_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
     is_public            BOOLEAN NOT NULL DEFAULT true,
     published_at         TIMESTAMPTZ,
     embedding            vector(768),
-    legacy_content_id    UUID REFERENCES contents(id) ON DELETE SET NULL,
     created_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
 
     CONSTRAINT uniq_bookmarks_url_hash UNIQUE (url_hash),
     CONSTRAINT uniq_bookmarks_slug UNIQUE (slug),
-    CONSTRAINT uniq_bookmarks_legacy_content_id UNIQUE (legacy_content_id)
+    CONSTRAINT chk_bookmark_url_scheme
+        CHECK (url ~ '^https?://'),
+    CONSTRAINT chk_bookmark_url_hash_format
+        CHECK (url_hash ~ '^[a-f0-9]{64}$'),
+    CONSTRAINT chk_bookmark_slug_format
+        CHECK (slug ~ '^[a-z0-9]+(-[a-z0-9]+)*$'),
+    CONSTRAINT chk_bookmark_title_not_blank
+        CHECK (btrim(title) <> '')
 );
 
 COMMENT ON TABLE bookmarks IS 'External resources curated with personal commentary. Separate from contents because bookmarks skip editorial review (curate = publish), have an external canonical URL, and do not share the first-party publish workflow.';
-COMMENT ON COLUMN bookmarks.url IS 'Canonical external URL of the bookmarked resource. SEO canonical tag points to this value.';
-COMMENT ON COLUMN bookmarks.url_hash IS 'SHA-256 hex digest of the canonical URL. Dedup identity. Computed in application code before INSERT — matches feed_entries.url_hash semantics.';
-COMMENT ON COLUMN bookmarks.slug IS 'URL-safe internal identifier for bookmark permalinks on the koopa0.dev site. Distinct from the external URL.';
-COMMENT ON COLUMN bookmarks.title IS 'Display title. May override the source title if the curator edited it at capture time.';
+COMMENT ON COLUMN bookmarks.url IS 'Canonical external URL of the bookmarked resource. Must use http(s) scheme (chk_bookmark_url_scheme). SEO canonical tag points to this value.';
+COMMENT ON COLUMN bookmarks.url_hash IS 'SHA-256 hex digest of the canonical URL (chk_bookmark_url_hash_format — exactly 64 hex chars). Dedup identity. Computed in application code before INSERT — matches feed_entries.url_hash semantics.';
+COMMENT ON COLUMN bookmarks.slug IS 'URL-safe internal identifier for bookmark permalinks on the koopa0.dev site (chk_bookmark_slug_format). Distinct from the external URL.';
+COMMENT ON COLUMN bookmarks.title IS 'Display title. May override the source title if the curator edited it at capture time. Non-blank (chk_bookmark_title_not_blank).';
 COMMENT ON COLUMN bookmarks.excerpt IS 'Short excerpt from the source, typically truncated to a few sentences. Empty string when the source provided none.';
 COMMENT ON COLUMN bookmarks.note IS 'Curator''s personal commentary. The reason this bookmark is worth remembering. Empty string when no note.';
 COMMENT ON COLUMN bookmarks.source_type IS 'How the bookmark entered the system: rss (curated from feed_entries), manual (pasted by curator), shared (received via external channel).';
 COMMENT ON COLUMN bookmarks.source_feed_entry_id IS 'If source_type=rss, references the originating feed_entries row. NULL for manual/shared bookmarks. SET NULL on feed_entry deletion — bookmark survives independently.';
-COMMENT ON COLUMN bookmarks.curated_by IS 'Participant id that curated the bookmark (e.g. "hq", "human"). Not an FK — participants may be renamed without rewriting history.';
+COMMENT ON COLUMN bookmarks.curated_by IS 'Agent that curated the bookmark. FK to agents with ON DELETE RESTRICT — historical curation references never dangle, matching the same FK strategy as todos.assignee, agent_notes.author, hypotheses.author, etc.';
 COMMENT ON COLUMN bookmarks.curated_at IS 'When the bookmark was curated into koopa0.dev. Distinct from source publication date.';
 COMMENT ON COLUMN bookmarks.is_public IS 'Whether this bookmark is visible on the public website. Private bookmarks are admin/MCP only.';
 COMMENT ON COLUMN bookmarks.published_at IS 'When the bookmark became publicly visible. NULL = private or not yet published. Unlike contents, bookmarks typically have published_at = curated_at.';
 COMMENT ON COLUMN bookmarks.embedding IS 'pgvector embedding (768d) for semantic search inclusion. Optional — backfill may leave NULL for rows whose source content was never embedded.';
-COMMENT ON COLUMN bookmarks.legacy_content_id IS 'Bridge to the contents row this bookmark was backfilled from during the Track B M2 migration window. NULL on fresh installs and for bookmarks created after M3 cutover. SET NULL if the legacy content row is ever deleted. The 006_bookmarks_backfill migration (no-op after squash into 001) populated this for DBs that lived through the polymorphism split.';
 
 CREATE INDEX idx_bookmarks_published_at ON bookmarks(published_at DESC NULLS LAST)
     WHERE is_public = true;
@@ -2045,58 +2214,3 @@ CREATE TABLE bookmark_tags (
 COMMENT ON TABLE bookmark_tags IS 'Junction: bookmark ↔ tag. References canonical tags resolved through the tag_aliases pipeline.';
 
 CREATE INDEX idx_bookmark_tags_tag_id ON bookmark_tags(tag_id);
-
--- ============================================================
--- Syntheses — historical observation layer for derived views
--- ============================================================
--- Append-only snapshot log. Written by secondary consolidation
--- processes, read by retrospective query tools. Not a cache — no
--- TTL, no invalidation, never overwritten. Live handlers MUST NOT
--- write rows. See internal/synthesis and internal/consolidation.
---
--- First slice: only subject_type='week' and kind='weekly_review'.
--- Extend CHECK values via ALTER TABLE when adding new subjects.
-
-CREATE TABLE syntheses (
-    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    subject_type  TEXT NOT NULL
-        CHECK (subject_type IN ('week')),
-    subject_id    UUID,
-    subject_key   TEXT,
-    kind          TEXT NOT NULL
-        CHECK (kind IN ('weekly_review')),
-    body          JSONB NOT NULL,
-    evidence      JSONB NOT NULL,
-    evidence_hash TEXT NOT NULL,
-    computed_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
-    computed_by   TEXT NOT NULL,
-
-    CONSTRAINT chk_syntheses_subject_identity
-        CHECK (subject_id IS NOT NULL OR subject_key IS NOT NULL)
-);
-
-COMMENT ON TABLE syntheses IS 'Append-only historical observation layer. Each row is a frozen snapshot of what a derived view (weekly_review, etc.) looked like at computed_at, based on the evidence set captured in evidence. Never updated after insert. Never invalidated by TTL. Never written by live handlers — only by secondary consolidation processes. Readers get historical state, never current state.';
-COMMENT ON COLUMN syntheses.subject_type IS 'What kind of entity this synthesis describes. First slice allows only "week"; future slices extend via ALTER TABLE to add "goal", "project", "concept".';
-COMMENT ON COLUMN syntheses.subject_id IS 'UUID subject identity for entity-based subjects (goal, project, concept in future slices). NULL when subject uses a string key (e.g. week). chk_syntheses_subject_identity requires at least one of subject_id or subject_key to be set.';
-COMMENT ON COLUMN syntheses.subject_key IS 'String subject identity for time-bucket subjects like week (ISO week key e.g. "2026-W15"). NULL when subject uses a UUID. chk_syntheses_subject_identity requires at least one of subject_id or subject_key to be set.';
-COMMENT ON COLUMN syntheses.kind IS 'Which view this synthesis captures. First slice allows only "weekly_review"; future slices extend via ALTER TABLE. A (subject_type, kind) pair determines the body schema.';
-COMMENT ON COLUMN syntheses.body IS 'Structured snapshot payload. Shape is determined by kind — for weekly_review the Go type is synthesis.WeeklyReviewBody. NEVER a free-text LLM dump. Always a typed Go struct marshaled to JSON.';
-COMMENT ON COLUMN syntheses.evidence IS 'Reference list of primary-state ids that contributed to this snapshot. Shape: [{"type": "task", "id": "..."}, {"type": "session", "id": "..."}, ...]. Used to compute evidence_hash for dedup and (in future) reverse lookup.';
-COMMENT ON COLUMN syntheses.evidence_hash IS 'SHA-256 hex of canonical_json(evidence). Acts as the dedup identity for append-only writes: if the same evidence set appears again, ON CONFLICT DO NOTHING skips the insert. Evidence changes between runs produce a new row (historical accumulation), not an overwrite.';
-COMMENT ON COLUMN syntheses.computed_at IS 'When this snapshot was written. Never updated after insert. For the same (subject, kind), ORDER BY computed_at DESC LIMIT 1 gives the latest observation; the full ORDER BY gives the historical timeline.';
-COMMENT ON COLUMN syntheses.computed_by IS 'Label identifying the writer process and invocation mode, e.g. "consolidation:weekly:manual" for a manually-triggered consolidation run. Free-text by design — this field is a label for observability, not a dispatch key. Live handlers MUST NOT write rows and MUST NOT use this field.';
-
-CREATE UNIQUE INDEX uniq_syntheses_by_key ON syntheses
-    (subject_type, subject_key, kind, evidence_hash)
-    WHERE subject_key IS NOT NULL;
-
-CREATE UNIQUE INDEX uniq_syntheses_by_id ON syntheses
-    (subject_type, subject_id, kind, evidence_hash)
-    WHERE subject_id IS NOT NULL;
-
-CREATE INDEX idx_syntheses_recent_by_kind ON syntheses
-    (subject_type, kind, computed_at DESC);
-
-CREATE INDEX idx_syntheses_by_subject_key ON syntheses
-    (subject_type, subject_key, kind, computed_at DESC)
-    WHERE subject_key IS NOT NULL;

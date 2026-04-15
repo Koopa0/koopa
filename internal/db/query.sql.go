@@ -14,38 +14,6 @@ import (
 	pgvector_go "github.com/pgvector/pgvector-go"
 )
 
-const acknowledgeDirective = `-- name: AcknowledgeDirective :one
-UPDATE directives
-SET acknowledged_at = now(), acknowledged_by = $1
-WHERE id = $2 AND acknowledged_at IS NULL
-RETURNING id, source, target, priority, acknowledged_at, acknowledged_by, resolved_at, resolution_report_id, content, metadata, issued_date, created_at
-`
-
-type AcknowledgeDirectiveParams struct {
-	AcknowledgedBy *string `json:"acknowledged_by"`
-	ID             int64   `json:"id"`
-}
-
-func (q *Queries) AcknowledgeDirective(ctx context.Context, arg AcknowledgeDirectiveParams) (Directive, error) {
-	row := q.db.QueryRow(ctx, acknowledgeDirective, arg.AcknowledgedBy, arg.ID)
-	var i Directive
-	err := row.Scan(
-		&i.ID,
-		&i.Source,
-		&i.Target,
-		&i.Priority,
-		&i.AcknowledgedAt,
-		&i.AcknowledgedBy,
-		&i.ResolvedAt,
-		&i.ResolutionReportID,
-		&i.Content,
-		&i.Metadata,
-		&i.IssuedDate,
-		&i.CreatedAt,
-	)
-	return i, err
-}
-
 const activeGoals = `-- name: ActiveGoals :many
 SELECT g.id, g.title, g.description, g.status, g.area_id, g.quarter, g.deadline,
        g.created_at, g.updated_at,
@@ -108,20 +76,20 @@ func (q *Queries) ActiveGoals(ctx context.Context) ([]ActiveGoalsRow, error) {
 }
 
 const activePlans = `-- name: ActivePlans :many
-SELECT id, title, description, domain, goal_id, status, target_count, plan_config, created_by, created_at, updated_at FROM plans WHERE status IN ('draft', 'active')
+SELECT id, title, description, domain, goal_id, status, target_count, plan_config, created_by, created_at, updated_at FROM learning_plans WHERE status IN ('draft', 'active')
 ORDER BY updated_at DESC
 `
 
 // Plans that are draft or active (for plan management views).
-func (q *Queries) ActivePlans(ctx context.Context) ([]Plan, error) {
+func (q *Queries) ActivePlans(ctx context.Context) ([]LearningPlan, error) {
 	rows, err := q.db.Query(ctx, activePlans)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []Plan{}
+	items := []LearningPlan{}
 	for rows.Next() {
-		var i Plan
+		var i LearningPlan
 		if err := rows.Scan(
 			&i.ID,
 			&i.Title,
@@ -148,7 +116,7 @@ func (q *Queries) ActivePlans(ctx context.Context) ([]Plan, error) {
 const activeProjects = `-- name: ActiveProjects :many
 SELECT id, slug, title, description, long_description, role, tech_stack, highlights,
        problem, solution, architecture, results, github_url, live_url,
-       featured, is_public, sort_order, status, notion_page_id, repo, area_id, goal_id, deadline, last_activity_at,
+       featured, is_public, sort_order, status, external_provider, external_ref, repo, area_id, goal_id, deadline, last_activity_at,
        expected_cadence, created_at, updated_at
 FROM projects WHERE status IN ('in-progress', 'maintained')
 ORDER BY updated_at DESC
@@ -182,7 +150,8 @@ func (q *Queries) ActiveProjects(ctx context.Context) ([]Project, error) {
 			&i.IsPublic,
 			&i.SortOrder,
 			&i.Status,
-			&i.NotionPageID,
+			&i.ExternalProvider,
+			&i.ExternalRef,
 			&i.Repo,
 			&i.AreaID,
 			&i.GoalID,
@@ -203,25 +172,26 @@ func (q *Queries) ActiveProjects(ctx context.Context) ([]Project, error) {
 }
 
 const activeSession = `-- name: ActiveSession :one
-SELECT id, domain, session_mode, journal_id, daily_plan_item_id, started_at, ended_at, metadata, created_at
-FROM sessions WHERE ended_at IS NULL
+SELECT id, domain, session_mode, agent_note_id, daily_plan_item_id, started_at, ended_at, metadata, created_at, updated_at
+FROM learning_sessions WHERE ended_at IS NULL
 ORDER BY started_at DESC LIMIT 1
 `
 
 // Find a session that hasn't ended yet.
-func (q *Queries) ActiveSession(ctx context.Context) (Session, error) {
+func (q *Queries) ActiveSession(ctx context.Context) (LearningSession, error) {
 	row := q.db.QueryRow(ctx, activeSession)
-	var i Session
+	var i LearningSession
 	err := row.Scan(
 		&i.ID,
 		&i.Domain,
 		&i.SessionMode,
-		&i.JournalID,
+		&i.AgentNoteID,
 		&i.DailyPlanItemID,
 		&i.StartedAt,
 		&i.EndedAt,
 		&i.Metadata,
 		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -272,30 +242,30 @@ func (q *Queries) AddContentTopic(ctx context.Context, arg AddContentTopicParams
 }
 
 const addPlanItem = `-- name: AddPlanItem :one
-INSERT INTO plan_items (plan_id, learning_item_id, position, phase)
+INSERT INTO learning_plan_entries (plan_id, learning_target_id, position, phase)
 VALUES ($1, $2, $3, $4)
-RETURNING id, plan_id, learning_item_id, position, status, phase, substituted_by, completed_by_attempt_id, reason, added_at, completed_at
+RETURNING id, plan_id, learning_target_id, position, status, phase, substituted_by, completed_by_attempt_id, reason, added_at, completed_at
 `
 
 type AddPlanItemParams struct {
-	PlanID         uuid.UUID `json:"plan_id"`
-	LearningItemID uuid.UUID `json:"learning_item_id"`
-	Position       int32     `json:"position"`
-	Phase          *string   `json:"phase"`
+	PlanID           uuid.UUID `json:"plan_id"`
+	LearningTargetID uuid.UUID `json:"learning_target_id"`
+	Position         int32     `json:"position"`
+	Phase            *string   `json:"phase"`
 }
 
-func (q *Queries) AddPlanItem(ctx context.Context, arg AddPlanItemParams) (PlanItem, error) {
+func (q *Queries) AddPlanItem(ctx context.Context, arg AddPlanItemParams) (LearningPlanEntry, error) {
 	row := q.db.QueryRow(ctx, addPlanItem,
 		arg.PlanID,
-		arg.LearningItemID,
+		arg.LearningTargetID,
 		arg.Position,
 		arg.Phase,
 	)
-	var i PlanItem
+	var i LearningPlanEntry
 	err := row.Scan(
 		&i.ID,
 		&i.PlanID,
-		&i.LearningItemID,
+		&i.LearningTargetID,
 		&i.Position,
 		&i.Status,
 		&i.Phase,
@@ -312,7 +282,7 @@ const adminBookmarks = `-- name: AdminBookmarks :many
 SELECT id, url, url_hash, slug, title, excerpt, note,
        source_type, source_feed_entry_id,
        curated_by, curated_at, is_public, published_at,
-       legacy_content_id, created_at, updated_at
+       created_at, updated_at
 FROM bookmarks
 WHERE ($3::boolean IS NULL OR is_public = $3)
 ORDER BY curated_at DESC
@@ -339,7 +309,6 @@ type AdminBookmarksRow struct {
 	CuratedAt         time.Time  `json:"curated_at"`
 	IsPublic          bool       `json:"is_public"`
 	PublishedAt       *time.Time `json:"published_at"`
-	LegacyContentID   *uuid.UUID `json:"legacy_content_id"`
 	CreatedAt         time.Time  `json:"created_at"`
 	UpdatedAt         time.Time  `json:"updated_at"`
 }
@@ -367,7 +336,6 @@ func (q *Queries) AdminBookmarks(ctx context.Context, arg AdminBookmarksParams) 
 			&i.CuratedAt,
 			&i.IsPublic,
 			&i.PublishedAt,
-			&i.LegacyContentID,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -480,6 +448,79 @@ func (q *Queries) AdminListContentsCount(ctx context.Context, arg AdminListConte
 	var count int64
 	err := row.Scan(&count)
 	return count, err
+}
+
+const agentNoteByID = `-- name: AgentNoteByID :one
+SELECT id, kind, author, content, metadata, entry_date, created_at
+FROM agent_notes
+WHERE id = $1
+`
+
+// Get a single agent note by ID.
+func (q *Queries) AgentNoteByID(ctx context.Context, id int64) (AgentNote, error) {
+	row := q.db.QueryRow(ctx, agentNoteByID, id)
+	var i AgentNote
+	err := row.Scan(
+		&i.ID,
+		&i.Kind,
+		&i.Author,
+		&i.Content,
+		&i.Metadata,
+		&i.EntryDate,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const agentNotesByDateRange = `-- name: AgentNotesByDateRange :many
+SELECT id, kind, author, content, metadata, entry_date, created_at
+FROM agent_notes
+WHERE entry_date >= $1
+  AND entry_date <= $2
+  AND ($3::agent_note_kind IS NULL OR kind = $3::agent_note_kind)
+  AND ($4::text IS NULL OR author = $4)
+ORDER BY entry_date DESC, created_at DESC
+`
+
+type AgentNotesByDateRangeParams struct {
+	StartDate time.Time         `json:"start_date"`
+	EndDate   time.Time         `json:"end_date"`
+	Kind      NullAgentNoteKind `json:"kind"`
+	Author    *string           `json:"author"`
+}
+
+// List agent notes in a date range, optionally filtered by kind and/or author.
+func (q *Queries) AgentNotesByDateRange(ctx context.Context, arg AgentNotesByDateRangeParams) ([]AgentNote, error) {
+	rows, err := q.db.Query(ctx, agentNotesByDateRange,
+		arg.StartDate,
+		arg.EndDate,
+		arg.Kind,
+		arg.Author,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AgentNote{}
+	for rows.Next() {
+		var i AgentNote
+		if err := rows.Scan(
+			&i.ID,
+			&i.Kind,
+			&i.Author,
+			&i.Content,
+			&i.Metadata,
+			&i.EntryDate,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const aliasByCaseInsensitiveRawTag = `-- name: AliasByCaseInsensitiveRawTag :one
@@ -640,7 +681,7 @@ func (q *Queries) ArchiveContent(ctx context.Context, id uuid.UUID) error {
 }
 
 const archiveNote = `-- name: ArchiveNote :exec
-UPDATE notes SET maturity = 'archived', synced_at = now()
+UPDATE obsidian_notes SET maturity = 'archived', synced_at = now()
 WHERE file_path = $1 AND maturity != 'archived'
 `
 
@@ -649,69 +690,95 @@ func (q *Queries) ArchiveNote(ctx context.Context, filePath string) error {
 	return err
 }
 
-const archiveOrphanNotionTasks = `-- name: ArchiveOrphanNotionTasks :execrows
-UPDATE tasks SET status = 'done', completed_at = COALESCE(completed_at, now()), updated_at = now()
-WHERE notion_page_id IS NOT NULL
-  AND notion_page_id != ALL($1::text[])
-  AND status != 'done'
+const archiveOrphanTodosByProvider = `-- name: ArchiveOrphanTodosByProvider :execrows
+UPDATE todos SET state = 'done', completed_at = COALESCE(completed_at, now()), updated_at = now()
+WHERE external_provider = $1
+  AND external_ref IS NOT NULL
+  AND external_ref != ALL($2::text[])
+  AND state != 'done'
   AND (recur_interval IS NULL OR recur_interval <= 0)
 `
 
-// Mark non-recurring tasks as done if their notion_page_id is not in the active set.
-// Recurring tasks are excluded — they should never be archived by sync.
-func (q *Queries) ArchiveOrphanNotionTasks(ctx context.Context, activeIds []string) (int64, error) {
-	result, err := q.db.Exec(ctx, archiveOrphanNotionTasks, activeIds)
+type ArchiveOrphanTodosByProviderParams struct {
+	ExternalProvider *string  `json:"external_provider"`
+	ActiveIds        []string `json:"active_ids"`
+}
+
+// Mark non-recurring todos from a provider as done if their external_ref is not in the active set.
+func (q *Queries) ArchiveOrphanTodosByProvider(ctx context.Context, arg ArchiveOrphanTodosByProviderParams) (int64, error) {
+	result, err := q.db.Exec(ctx, archiveOrphanTodosByProvider, arg.ExternalProvider, arg.ActiveIds)
 	if err != nil {
 		return 0, err
 	}
 	return result.RowsAffected(), nil
 }
 
-const archiveTaskByNotionPageID = `-- name: ArchiveTaskByNotionPageID :execrows
-UPDATE tasks SET status = 'done', completed_at = COALESCE(completed_at, now()), updated_at = now()
-WHERE notion_page_id = $1 AND status != 'done'
+const archiveTodoByExternalRef = `-- name: ArchiveTodoByExternalRef :execrows
+UPDATE todos SET state = 'done', completed_at = COALESCE(completed_at, now()), updated_at = now()
+WHERE external_provider = $1 AND external_ref = $2
+  AND state != 'done'
   AND (recur_interval IS NULL OR recur_interval <= 0)
 `
 
-// Mark a single non-recurring task as done by its Notion page ID (used when Notion page is trashed).
-// Recurring tasks are excluded — they should never be archived by sync.
-func (q *Queries) ArchiveTaskByNotionPageID(ctx context.Context, notionPageID *string) (int64, error) {
-	result, err := q.db.Exec(ctx, archiveTaskByNotionPageID, notionPageID)
+type ArchiveTodoByExternalRefParams struct {
+	ExternalProvider *string `json:"external_provider"`
+	ExternalRef      *string `json:"external_ref"`
+}
+
+// Mark a single non-recurring todo as done by its (provider, ref) pair.
+func (q *Queries) ArchiveTodoByExternalRef(ctx context.Context, arg ArchiveTodoByExternalRefParams) (int64, error) {
+	result, err := q.db.Exec(ctx, archiveTodoByExternalRef, arg.ExternalProvider, arg.ExternalRef)
 	if err != nil {
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const areaIDBySlugOrName = `-- name: AreaIDBySlugOrName :one
+SELECT id FROM areas
+WHERE slug = $1 OR LOWER(name) = LOWER($1)
+LIMIT 1
+`
+
+// Resolve an area identifier (slug or display name, case-insensitive on
+// name) to its UUID. Used by propose_commitment when wiring goals or
+// projects to an area without forcing the caller to know UUIDs.
+func (q *Queries) AreaIDBySlugOrName(ctx context.Context, identifier string) (uuid.UUID, error) {
+	row := q.db.QueryRow(ctx, areaIDBySlugOrName, identifier)
+	var id uuid.UUID
+	err := row.Scan(&id)
+	return id, err
 }
 
 const attemptCountForItem = `-- name: AttemptCountForItem :one
 SELECT COALESCE(MAX(attempt_number), 0)::int AS max_number
-FROM attempts WHERE learning_item_id = $1
+FROM learning_attempts WHERE learning_target_id = $1
 `
 
-func (q *Queries) AttemptCountForItem(ctx context.Context, learningItemID uuid.UUID) (int32, error) {
-	row := q.db.QueryRow(ctx, attemptCountForItem, learningItemID)
+func (q *Queries) AttemptCountForItem(ctx context.Context, learningTargetID uuid.UUID) (int32, error) {
+	row := q.db.QueryRow(ctx, attemptCountForItem, learningTargetID)
 	var max_number int32
 	err := row.Scan(&max_number)
 	return max_number, err
 }
 
 const attemptsByConcept = `-- name: AttemptsByConcept :many
-SELECT id, learning_item_id, session_id, attempt_number, outcome,
+SELECT id, learning_target_id, session_id, attempt_number, outcome,
        duration_minutes, stuck_at, approach_used, attempted_at, metadata,
        item_title, item_external_id, difficulty,
        matched_signal, matched_category, matched_severity, matched_detail
 FROM (
     SELECT DISTINCT ON (a.id)
-           a.id, a.learning_item_id, a.session_id, a.attempt_number, a.outcome,
+           a.id, a.learning_target_id, a.session_id, a.attempt_number, a.outcome,
            a.duration_minutes, a.stuck_at, a.approach_used, a.attempted_at, a.metadata,
            li.title AS item_title, li.external_id AS item_external_id, li.difficulty,
            ao.signal_type AS matched_signal,
            ao.category   AS matched_category,
            ao.severity   AS matched_severity,
            ao.detail     AS matched_detail
-    FROM attempts a
-    JOIN items li ON li.id = a.learning_item_id
-    JOIN attempt_observations ao ON ao.attempt_id = a.id
+    FROM learning_attempts a
+    JOIN learning_targets li ON li.id = a.learning_target_id
+    JOIN learning_attempt_observations ao ON ao.attempt_id = a.id
     WHERE ao.concept_id = $1
     -- Priority order when an attempt has multiple observations on the
     -- concept: weakness signals first, then improvement, then mastery. Within
@@ -734,23 +801,23 @@ type AttemptsByConceptParams struct {
 }
 
 type AttemptsByConceptRow struct {
-	ID              uuid.UUID  `json:"id"`
-	LearningItemID  uuid.UUID  `json:"learning_item_id"`
-	SessionID       *uuid.UUID `json:"session_id"`
-	AttemptNumber   int32      `json:"attempt_number"`
-	Outcome         string     `json:"outcome"`
-	DurationMinutes *int32     `json:"duration_minutes"`
-	StuckAt         *string    `json:"stuck_at"`
-	ApproachUsed    *string    `json:"approach_used"`
-	AttemptedAt     time.Time  `json:"attempted_at"`
-	Metadata        []byte     `json:"metadata"`
-	ItemTitle       string     `json:"item_title"`
-	ItemExternalID  *string    `json:"item_external_id"`
-	Difficulty      *string    `json:"difficulty"`
-	MatchedSignal   string     `json:"matched_signal"`
-	MatchedCategory string     `json:"matched_category"`
-	MatchedSeverity *string    `json:"matched_severity"`
-	MatchedDetail   *string    `json:"matched_detail"`
+	ID               uuid.UUID  `json:"id"`
+	LearningTargetID uuid.UUID  `json:"learning_target_id"`
+	SessionID        *uuid.UUID `json:"session_id"`
+	AttemptNumber    int32      `json:"attempt_number"`
+	Outcome          string     `json:"outcome"`
+	DurationMinutes  *int32     `json:"duration_minutes"`
+	StuckAt          *string    `json:"stuck_at"`
+	ApproachUsed     *string    `json:"approach_used"`
+	AttemptedAt      time.Time  `json:"attempted_at"`
+	Metadata         []byte     `json:"metadata"`
+	ItemTitle        string     `json:"item_title"`
+	ItemExternalID   *string    `json:"item_external_id"`
+	Difficulty       *string    `json:"difficulty"`
+	MatchedSignal    string     `json:"matched_signal"`
+	MatchedCategory  string     `json:"matched_category"`
+	MatchedSeverity  *string    `json:"matched_severity"`
+	MatchedDetail    *string    `json:"matched_detail"`
 }
 
 // Attempts that produced an observation about the given concept, newest first.
@@ -781,7 +848,7 @@ func (q *Queries) AttemptsByConcept(ctx context.Context, arg AttemptsByConceptPa
 		var i AttemptsByConceptRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.LearningItemID,
+			&i.LearningTargetID,
 			&i.SessionID,
 			&i.AttemptNumber,
 			&i.Outcome,
@@ -809,41 +876,41 @@ func (q *Queries) AttemptsByConcept(ctx context.Context, arg AttemptsByConceptPa
 }
 
 const attemptsByItem = `-- name: AttemptsByItem :many
-SELECT a.id, a.learning_item_id, a.session_id, a.attempt_number, a.outcome,
+SELECT a.id, a.learning_target_id, a.session_id, a.attempt_number, a.outcome,
        a.duration_minutes, a.stuck_at, a.approach_used, a.attempted_at, a.metadata,
        li.title AS item_title, li.external_id AS item_external_id
-FROM attempts a
-JOIN items li ON li.id = a.learning_item_id
-WHERE a.learning_item_id = $1
+FROM learning_attempts a
+JOIN learning_targets li ON li.id = a.learning_target_id
+WHERE a.learning_target_id = $1
 ORDER BY a.attempted_at DESC
 LIMIT $2
 `
 
 type AttemptsByItemParams struct {
-	LearningItemID uuid.UUID `json:"learning_item_id"`
-	MaxResults     int32     `json:"max_results"`
+	LearningTargetID uuid.UUID `json:"learning_target_id"`
+	MaxResults       int32     `json:"max_results"`
 }
 
 type AttemptsByItemRow struct {
-	ID              uuid.UUID  `json:"id"`
-	LearningItemID  uuid.UUID  `json:"learning_item_id"`
-	SessionID       *uuid.UUID `json:"session_id"`
-	AttemptNumber   int32      `json:"attempt_number"`
-	Outcome         string     `json:"outcome"`
-	DurationMinutes *int32     `json:"duration_minutes"`
-	StuckAt         *string    `json:"stuck_at"`
-	ApproachUsed    *string    `json:"approach_used"`
-	AttemptedAt     time.Time  `json:"attempted_at"`
-	Metadata        []byte     `json:"metadata"`
-	ItemTitle       string     `json:"item_title"`
-	ItemExternalID  *string    `json:"item_external_id"`
+	ID               uuid.UUID  `json:"id"`
+	LearningTargetID uuid.UUID  `json:"learning_target_id"`
+	SessionID        *uuid.UUID `json:"session_id"`
+	AttemptNumber    int32      `json:"attempt_number"`
+	Outcome          string     `json:"outcome"`
+	DurationMinutes  *int32     `json:"duration_minutes"`
+	StuckAt          *string    `json:"stuck_at"`
+	ApproachUsed     *string    `json:"approach_used"`
+	AttemptedAt      time.Time  `json:"attempted_at"`
+	Metadata         []byte     `json:"metadata"`
+	ItemTitle        string     `json:"item_title"`
+	ItemExternalID   *string    `json:"item_external_id"`
 }
 
 // All attempts on a specific learning item, newest first. Primary backing
 // query for Improvement Verification Loop — "how did he do this problem
 // last time?". Same shape as AttemptsBySession so they share the Go DTO.
 func (q *Queries) AttemptsByItem(ctx context.Context, arg AttemptsByItemParams) ([]AttemptsByItemRow, error) {
-	rows, err := q.db.Query(ctx, attemptsByItem, arg.LearningItemID, arg.MaxResults)
+	rows, err := q.db.Query(ctx, attemptsByItem, arg.LearningTargetID, arg.MaxResults)
 	if err != nil {
 		return nil, err
 	}
@@ -853,7 +920,7 @@ func (q *Queries) AttemptsByItem(ctx context.Context, arg AttemptsByItemParams) 
 		var i AttemptsByItemRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.LearningItemID,
+			&i.LearningTargetID,
 			&i.SessionID,
 			&i.AttemptNumber,
 			&i.Outcome,
@@ -876,28 +943,28 @@ func (q *Queries) AttemptsByItem(ctx context.Context, arg AttemptsByItemParams) 
 }
 
 const attemptsBySession = `-- name: AttemptsBySession :many
-SELECT a.id, a.learning_item_id, a.session_id, a.attempt_number, a.outcome,
+SELECT a.id, a.learning_target_id, a.session_id, a.attempt_number, a.outcome,
        a.duration_minutes, a.stuck_at, a.approach_used, a.attempted_at, a.metadata,
        li.title AS item_title, li.external_id AS item_external_id
-FROM attempts a
-JOIN items li ON li.id = a.learning_item_id
+FROM learning_attempts a
+JOIN learning_targets li ON li.id = a.learning_target_id
 WHERE a.session_id = $1
 ORDER BY a.attempted_at
 `
 
 type AttemptsBySessionRow struct {
-	ID              uuid.UUID  `json:"id"`
-	LearningItemID  uuid.UUID  `json:"learning_item_id"`
-	SessionID       *uuid.UUID `json:"session_id"`
-	AttemptNumber   int32      `json:"attempt_number"`
-	Outcome         string     `json:"outcome"`
-	DurationMinutes *int32     `json:"duration_minutes"`
-	StuckAt         *string    `json:"stuck_at"`
-	ApproachUsed    *string    `json:"approach_used"`
-	AttemptedAt     time.Time  `json:"attempted_at"`
-	Metadata        []byte     `json:"metadata"`
-	ItemTitle       string     `json:"item_title"`
-	ItemExternalID  *string    `json:"item_external_id"`
+	ID               uuid.UUID  `json:"id"`
+	LearningTargetID uuid.UUID  `json:"learning_target_id"`
+	SessionID        *uuid.UUID `json:"session_id"`
+	AttemptNumber    int32      `json:"attempt_number"`
+	Outcome          string     `json:"outcome"`
+	DurationMinutes  *int32     `json:"duration_minutes"`
+	StuckAt          *string    `json:"stuck_at"`
+	ApproachUsed     *string    `json:"approach_used"`
+	AttemptedAt      time.Time  `json:"attempted_at"`
+	Metadata         []byte     `json:"metadata"`
+	ItemTitle        string     `json:"item_title"`
+	ItemExternalID   *string    `json:"item_external_id"`
 }
 
 // All attempts within a session, oldest first. Backs end_session summary
@@ -913,7 +980,7 @@ func (q *Queries) AttemptsBySession(ctx context.Context, sessionID *uuid.UUID) (
 		var i AttemptsBySessionRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.LearningItemID,
+			&i.LearningTargetID,
 			&i.SessionID,
 			&i.AttemptNumber,
 			&i.Outcome,
@@ -953,15 +1020,15 @@ func (q *Queries) AutoDisableFeed(ctx context.Context, arg AutoDisableFeedParams
 	return err
 }
 
-const backlogTasks = `-- name: BacklogTasks :many
-SELECT t.id, t.title, t.status, t.due, t.project_id,
+const backlogTodoItems = `-- name: BacklogTodoItems :many
+SELECT t.id, t.title, t.state, t.due, t.project_id,
        t.energy, t.priority, t.recur_interval, t.recur_unit,
        t.assignee, t.created_by, t.created_at, t.updated_at,
        COALESCE(p.title, '') AS project_title,
        COALESCE(p.slug, '') AS project_slug
-FROM tasks t
+FROM todos t
 LEFT JOIN projects p ON p.id = t.project_id
-WHERE t.status = $1::task_status
+WHERE t.state = $1::todo_state
   AND ($2::uuid IS NULL OR t.project_id = $2)
   AND ($3::text IS NULL OR t.energy = $3)
   AND ($4::text IS NULL OR t.priority = $4)
@@ -970,8 +1037,8 @@ ORDER BY t.due NULLS LAST, t.priority NULLS LAST, t.created_at DESC
 LIMIT $6
 `
 
-type BacklogTasksParams struct {
-	Status     TaskStatus `json:"status"`
+type BacklogTodoItemsParams struct {
+	State      TodoState  `json:"state"`
 	ProjectID  *uuid.UUID `json:"project_id"`
 	Energy     *string    `json:"energy"`
 	Priority   *string    `json:"priority"`
@@ -979,10 +1046,10 @@ type BacklogTasksParams struct {
 	MaxResults int32      `json:"max_results"`
 }
 
-type BacklogTasksRow struct {
+type BacklogTodoItemsRow struct {
 	ID            uuid.UUID  `json:"id"`
 	Title         string     `json:"title"`
-	Status        TaskStatus `json:"status"`
+	State         TodoState  `json:"state"`
 	Due           *time.Time `json:"due"`
 	ProjectID     *uuid.UUID `json:"project_id"`
 	Energy        *string    `json:"energy"`
@@ -997,10 +1064,10 @@ type BacklogTasksRow struct {
 	ProjectSlug   string     `json:"project_slug"`
 }
 
-// Filtered task list for admin backlog view.
-func (q *Queries) BacklogTasks(ctx context.Context, arg BacklogTasksParams) ([]BacklogTasksRow, error) {
-	rows, err := q.db.Query(ctx, backlogTasks,
-		arg.Status,
+// Filtered todo item list for admin backlog view.
+func (q *Queries) BacklogTodoItems(ctx context.Context, arg BacklogTodoItemsParams) ([]BacklogTodoItemsRow, error) {
+	rows, err := q.db.Query(ctx, backlogTodoItems,
+		arg.State,
 		arg.ProjectID,
 		arg.Energy,
 		arg.Priority,
@@ -1011,13 +1078,13 @@ func (q *Queries) BacklogTasks(ctx context.Context, arg BacklogTasksParams) ([]B
 		return nil, err
 	}
 	defer rows.Close()
-	items := []BacklogTasksRow{}
+	items := []BacklogTodoItemsRow{}
 	for rows.Next() {
-		var i BacklogTasksRow
+		var i BacklogTodoItemsRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.Title,
-			&i.Status,
+			&i.State,
 			&i.Due,
 			&i.ProjectID,
 			&i.Energy,
@@ -1045,7 +1112,7 @@ const bookmarkByID = `-- name: BookmarkByID :one
 SELECT id, url, url_hash, slug, title, excerpt, note,
        source_type, source_feed_entry_id,
        curated_by, curated_at, is_public, published_at,
-       legacy_content_id, created_at, updated_at
+       created_at, updated_at
 FROM bookmarks
 WHERE id = $1
 `
@@ -1064,7 +1131,6 @@ type BookmarkByIDRow struct {
 	CuratedAt         time.Time  `json:"curated_at"`
 	IsPublic          bool       `json:"is_public"`
 	PublishedAt       *time.Time `json:"published_at"`
-	LegacyContentID   *uuid.UUID `json:"legacy_content_id"`
 	CreatedAt         time.Time  `json:"created_at"`
 	UpdatedAt         time.Time  `json:"updated_at"`
 }
@@ -1086,7 +1152,6 @@ func (q *Queries) BookmarkByID(ctx context.Context, id uuid.UUID) (BookmarkByIDR
 		&i.CuratedAt,
 		&i.IsPublic,
 		&i.PublishedAt,
-		&i.LegacyContentID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -1097,7 +1162,7 @@ const bookmarkBySlug = `-- name: BookmarkBySlug :one
 SELECT id, url, url_hash, slug, title, excerpt, note,
        source_type, source_feed_entry_id,
        curated_by, curated_at, is_public, published_at,
-       legacy_content_id, created_at, updated_at
+       created_at, updated_at
 FROM bookmarks
 WHERE slug = $1 AND is_public = true
 `
@@ -1116,7 +1181,6 @@ type BookmarkBySlugRow struct {
 	CuratedAt         time.Time  `json:"curated_at"`
 	IsPublic          bool       `json:"is_public"`
 	PublishedAt       *time.Time `json:"published_at"`
-	LegacyContentID   *uuid.UUID `json:"legacy_content_id"`
 	CreatedAt         time.Time  `json:"created_at"`
 	UpdatedAt         time.Time  `json:"updated_at"`
 }
@@ -1138,7 +1202,6 @@ func (q *Queries) BookmarkBySlug(ctx context.Context, slug string) (BookmarkBySl
 		&i.CuratedAt,
 		&i.IsPublic,
 		&i.PublishedAt,
-		&i.LegacyContentID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -1146,7 +1209,7 @@ func (q *Queries) BookmarkBySlug(ctx context.Context, slug string) (BookmarkBySl
 }
 
 const bulkUpsertNoteLinks = `-- name: BulkUpsertNoteLinks :exec
-INSERT INTO note_links (source_note_id, target_path, link_text)
+INSERT INTO obsidian_note_links (source_note_id, target_path, link_text)
 SELECT $1, unnest($2::text[]), unnest($3::text[])
 ON CONFLICT (source_note_id, target_path) DO UPDATE SET
     link_text = EXCLUDED.link_text
@@ -1166,7 +1229,7 @@ func (q *Queries) BulkUpsertNoteLinks(ctx context.Context, arg BulkUpsertNoteLin
 }
 
 const cardByID = `-- name: CardByID :one
-SELECT id, content_id, learning_item_id, tag_id, card_state, due, created_at, updated_at FROM review_cards WHERE id = $1
+SELECT id, content_id, learning_target_id, tag_id, card_state, due, created_at, updated_at FROM review_cards WHERE id = $1
 `
 
 // Get a review card by its primary key (used after retrieval queue lookup).
@@ -1176,7 +1239,7 @@ func (q *Queries) CardByID(ctx context.Context, id int64) (ReviewCard, error) {
 	err := row.Scan(
 		&i.ID,
 		&i.ContentID,
-		&i.LearningItemID,
+		&i.LearningTargetID,
 		&i.TagID,
 		&i.CardState,
 		&i.Due,
@@ -1188,20 +1251,20 @@ func (q *Queries) CardByID(ctx context.Context, id int64) (ReviewCard, error) {
 
 const cardByLearningItem = `-- name: CardByLearningItem :one
 
-SELECT id, content_id, learning_item_id, tag_id, card_state, due, created_at, updated_at FROM review_cards WHERE learning_item_id = $1
+SELECT id, content_id, learning_target_id, tag_id, card_state, due, created_at, updated_at FROM review_cards WHERE learning_target_id = $1
 `
 
 // ============================================================
 // FSRS review cards + review logs
 // ============================================================
 // Get the review card for a learning item.
-func (q *Queries) CardByLearningItem(ctx context.Context, learningItemID *uuid.UUID) (ReviewCard, error) {
-	row := q.db.QueryRow(ctx, cardByLearningItem, learningItemID)
+func (q *Queries) CardByLearningItem(ctx context.Context, learningTargetID *uuid.UUID) (ReviewCard, error) {
+	row := q.db.QueryRow(ctx, cardByLearningItem, learningTargetID)
 	var i ReviewCard
 	err := row.Scan(
 		&i.ID,
 		&i.ContentID,
-		&i.LearningItemID,
+		&i.LearningTargetID,
 		&i.TagID,
 		&i.CardState,
 		&i.Due,
@@ -1211,40 +1274,41 @@ func (q *Queries) CardByLearningItem(ctx context.Context, learningItemID *uuid.U
 	return i, err
 }
 
-const clarifyTask = `-- name: ClarifyTask :one
-UPDATE tasks
-SET status = 'todo',
+const clarifyTodoItem = `-- name: ClarifyTodoItem :one
+UPDATE todos
+SET state = 'todo',
     priority = COALESCE($1, priority),
     energy = COALESCE($2, energy),
     due = COALESCE($3, due),
     updated_at = now()
-WHERE id = $4 AND status = 'inbox'
-RETURNING id, title, status, due, project_id, notion_page_id, completed_at, energy, priority, recur_interval, recur_unit, description, assignee, created_by, created_at, updated_at
+WHERE id = $4 AND state = 'inbox'
+RETURNING id, title, state, due, project_id, external_provider, external_ref, completed_at, energy, priority, recur_interval, recur_unit, description, assignee, created_by, created_at, updated_at
 `
 
-type ClarifyTaskParams struct {
+type ClarifyTodoItemParams struct {
 	Priority *string    `json:"priority"`
 	Energy   *string    `json:"energy"`
 	Due      *time.Time `json:"due"`
 	ID       uuid.UUID  `json:"id"`
 }
 
-// Promote inbox task to todo with clarification fields.
-func (q *Queries) ClarifyTask(ctx context.Context, arg ClarifyTaskParams) (Task, error) {
-	row := q.db.QueryRow(ctx, clarifyTask,
+// Promote inbox todo item to todo state with clarification fields.
+func (q *Queries) ClarifyTodoItem(ctx context.Context, arg ClarifyTodoItemParams) (Todo, error) {
+	row := q.db.QueryRow(ctx, clarifyTodoItem,
 		arg.Priority,
 		arg.Energy,
 		arg.Due,
 		arg.ID,
 	)
-	var i Task
+	var i Todo
 	err := row.Scan(
 		&i.ID,
 		&i.Title,
-		&i.Status,
+		&i.State,
 		&i.Due,
 		&i.ProjectID,
-		&i.NotionPageID,
+		&i.ExternalProvider,
+		&i.ExternalRef,
 		&i.CompletedAt,
 		&i.Energy,
 		&i.Priority,
@@ -1509,16 +1573,109 @@ func (q *Queries) CollectedDataCount(ctx context.Context, status NullFeedEntrySt
 	return count, err
 }
 
-const completedTasksDetailSince = `-- name: CompletedTasksDetailSince :many
+const collectionStatsByFeed = `-- name: CollectionStatsByFeed :many
+SELECT f.id, f.name,
+       COUNT(cd.id)::int AS total_items,
+       COALESCE(AVG(cd.relevance_score), 0)::float8 AS avg_score,
+       COALESCE(MAX(cd.collected_at), '0001-01-01'::timestamptz)::timestamptz AS last_collected_at
+FROM feeds f
+LEFT JOIN feed_entries cd ON cd.feed_id = f.id AND cd.collected_at >= $1
+WHERE ($2::uuid IS NULL OR f.id = $2)
+GROUP BY f.id, f.name
+ORDER BY total_items DESC
+`
+
+type CollectionStatsByFeedParams struct {
+	Cutoff time.Time  `json:"cutoff"`
+	FeedID *uuid.UUID `json:"feed_id"`
+}
+
+type CollectionStatsByFeedRow struct {
+	ID              uuid.UUID `json:"id"`
+	Name            string    `json:"name"`
+	TotalItems      int32     `json:"total_items"`
+	AvgScore        float64   `json:"avg_score"`
+	LastCollectedAt time.Time `json:"last_collected_at"`
+}
+
+// Per-feed aggregation since cutoff. Optional feed_id filter via narg.
+// last_collected_at returns zero-time for feeds that have never been
+// collected (LEFT JOIN with no matches → MAX is NULL → COALESCE to
+// epoch). Caller checks IsZero() to distinguish "never collected".
+func (q *Queries) CollectionStatsByFeed(ctx context.Context, arg CollectionStatsByFeedParams) ([]CollectionStatsByFeedRow, error) {
+	rows, err := q.db.Query(ctx, collectionStatsByFeed, arg.Cutoff, arg.FeedID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []CollectionStatsByFeedRow{}
+	for rows.Next() {
+		var i CollectionStatsByFeedRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.TotalItems,
+			&i.AvgScore,
+			&i.LastCollectedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const collectionStatsGlobal = `-- name: CollectionStatsGlobal :one
+SELECT COUNT(*)::int AS total_items,
+       COUNT(DISTINCT feed_id)::int AS total_feeds,
+       COALESCE(AVG(relevance_score), 0)::float8 AS avg_score,
+       COUNT(*) FILTER (WHERE status = 'unread')::int AS unread_count,
+       COUNT(*) FILTER (WHERE status = 'curated')::int AS curated_count
+FROM feed_entries
+WHERE collected_at >= $1
+  AND ($2::uuid IS NULL OR feed_id = $2)
+`
+
+type CollectionStatsGlobalParams struct {
+	Cutoff time.Time  `json:"cutoff"`
+	FeedID *uuid.UUID `json:"feed_id"`
+}
+
+type CollectionStatsGlobalRow struct {
+	TotalItems   int32   `json:"total_items"`
+	TotalFeeds   int32   `json:"total_feeds"`
+	AvgScore     float64 `json:"avg_score"`
+	UnreadCount  int32   `json:"unread_count"`
+	CuratedCount int32   `json:"curated_count"`
+}
+
+// Global aggregation since cutoff. Optional feed_id filter via narg.
+func (q *Queries) CollectionStatsGlobal(ctx context.Context, arg CollectionStatsGlobalParams) (CollectionStatsGlobalRow, error) {
+	row := q.db.QueryRow(ctx, collectionStatsGlobal, arg.Cutoff, arg.FeedID)
+	var i CollectionStatsGlobalRow
+	err := row.Scan(
+		&i.TotalItems,
+		&i.TotalFeeds,
+		&i.AvgScore,
+		&i.UnreadCount,
+		&i.CuratedCount,
+	)
+	return i, err
+}
+
+const completedTodoDetailSince = `-- name: CompletedTodoDetailSince :many
 SELECT t.id, t.title, t.completed_at, t.project_id,
        COALESCE(p.title, '') AS project_title
-FROM tasks t
+FROM todos t
 LEFT JOIN projects p ON t.project_id = p.id
-WHERE t.status = 'done' AND t.completed_at >= $1
+WHERE t.state = 'done' AND t.completed_at >= $1
 ORDER BY t.completed_at DESC
 `
 
-type CompletedTasksDetailSinceRow struct {
+type CompletedTodoDetailSinceRow struct {
 	ID           uuid.UUID  `json:"id"`
 	Title        string     `json:"title"`
 	CompletedAt  *time.Time `json:"completed_at"`
@@ -1526,16 +1683,16 @@ type CompletedTasksDetailSinceRow struct {
 	ProjectTitle string     `json:"project_title"`
 }
 
-// Get tasks completed since a given time with project context.
-func (q *Queries) CompletedTasksDetailSince(ctx context.Context, since *time.Time) ([]CompletedTasksDetailSinceRow, error) {
-	rows, err := q.db.Query(ctx, completedTasksDetailSince, since)
+// Get todo items completed since a given time with project context.
+func (q *Queries) CompletedTodoDetailSince(ctx context.Context, since *time.Time) ([]CompletedTodoDetailSinceRow, error) {
+	rows, err := q.db.Query(ctx, completedTodoDetailSince, since)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []CompletedTasksDetailSinceRow{}
+	items := []CompletedTodoDetailSinceRow{}
 	for rows.Next() {
-		var i CompletedTasksDetailSinceRow
+		var i CompletedTodoDetailSinceRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.Title,
@@ -1553,16 +1710,16 @@ func (q *Queries) CompletedTasksDetailSince(ctx context.Context, since *time.Tim
 	return items, nil
 }
 
-const completedTitlesSince = `-- name: CompletedTitlesSince :many
-SELECT title FROM tasks
-WHERE status = 'done' AND completed_at >= $1
+const completedTodoTitlesSince = `-- name: CompletedTodoTitlesSince :many
+SELECT title FROM todos
+WHERE state = 'done' AND completed_at >= $1
 ORDER BY completed_at DESC
 LIMIT 20
 `
 
-// Get titles of tasks completed since a given time (for metrics hint).
-func (q *Queries) CompletedTitlesSince(ctx context.Context, since *time.Time) ([]string, error) {
-	rows, err := q.db.Query(ctx, completedTitlesSince, since)
+// Get titles of todo items completed since a given time.
+func (q *Queries) CompletedTodoTitlesSince(ctx context.Context, since *time.Time) ([]string, error) {
+	rows, err := q.db.Query(ctx, completedTodoTitlesSince, since)
 	if err != nil {
 		return nil, err
 	}
@@ -1590,8 +1747,8 @@ WITH completions AS (
     FROM events
     WHERE timestamp >= $1
       AND (
-          event_type = 'task_completed'
-          OR (event_type = 'task_status_change' AND metadata->>'status' = 'Done')
+          event_type = 'todo_completed'
+          OR (event_type = 'todo_state_change' AND metadata->>'status' = 'Done')
       )
     ORDER BY COALESCE(title, ''), timestamp::date, timestamp ASC
 )
@@ -1608,10 +1765,10 @@ type CompletionEventsByProjectSinceRow struct {
 	Completed    int64  `json:"completed"`
 }
 
-// Count task completions per project from activity events since the given time.
-// Captures both one-time and recurring task completions (recurring tasks reset
-// status to "To Do" in the tasks table, making snapshot queries miss them).
-// Sources: "task_completed" events from MCP/HTTP, plus "task_status_change" events
+// Count todo completions per project from activity events since the given time.
+// Captures both one-time and recurring todo completions (recurring items reset
+// state to "todo" in the todo_items table, making snapshot queries miss them).
+// Sources: "todo_completed" events from MCP/HTTP, plus "todo_state_change" events
 // from Notion sync where metadata status is "Done".
 // Deduplicates by (title, day) to avoid double-counting when MCP complete triggers
 // a Notion webhook in the same day.
@@ -1674,8 +1831,8 @@ SELECT c.id, c.slug, c.name, c.domain, c.kind,
        MIN(ao.created_at)::timestamptz AS first_observed_at,
        MAX(ao.created_at)::timestamptz AS last_observed_at
 FROM concepts c
-JOIN attempt_observations ao ON ao.concept_id = c.id
-JOIN attempts a ON a.id = ao.attempt_id
+JOIN learning_attempt_observations ao ON ao.concept_id = c.id
+JOIN learning_attempts a ON a.id = ao.attempt_id
 WHERE ($1::text IS NULL OR c.domain = $1)
   AND a.attempted_at >= $2
   AND ($3::text = 'all' OR ao.confidence = 'high')
@@ -1791,7 +1948,7 @@ func (q *Queries) ConsumeRefreshToken(ctx context.Context, tokenHash string) (Re
 }
 
 const contentByID = `-- name: ContentByID :one
-SELECT id, slug, title, body, excerpt, type, status, source, source_type,
+SELECT id, slug, title, body, excerpt, type, status, origin_ref, source_type,
        series_id, series_order, review_level, is_public, project_id, ai_metadata, reading_time_min,
        cover_image, published_at, created_at, updated_at
 FROM contents WHERE id = $1
@@ -1805,7 +1962,7 @@ type ContentByIDRow struct {
 	Excerpt        string          `json:"excerpt"`
 	Type           ContentType     `json:"type"`
 	Status         ContentStatus   `json:"status"`
-	Source         *string         `json:"source"`
+	OriginRef      *string         `json:"origin_ref"`
 	SourceType     NullSourceType  `json:"source_type"`
 	SeriesID       *string         `json:"series_id"`
 	SeriesOrder    *int32          `json:"series_order"`
@@ -1831,7 +1988,7 @@ func (q *Queries) ContentByID(ctx context.Context, id uuid.UUID) (ContentByIDRow
 		&i.Excerpt,
 		&i.Type,
 		&i.Status,
-		&i.Source,
+		&i.OriginRef,
 		&i.SourceType,
 		&i.SeriesID,
 		&i.SeriesOrder,
@@ -1849,7 +2006,7 @@ func (q *Queries) ContentByID(ctx context.Context, id uuid.UUID) (ContentByIDRow
 }
 
 const contentBySlug = `-- name: ContentBySlug :one
-SELECT id, slug, title, body, excerpt, type, status, source, source_type,
+SELECT id, slug, title, body, excerpt, type, status, origin_ref, source_type,
        series_id, series_order, review_level, is_public, project_id, ai_metadata, reading_time_min,
        cover_image, published_at, created_at, updated_at
 FROM contents WHERE slug = $1
@@ -1863,7 +2020,7 @@ type ContentBySlugRow struct {
 	Excerpt        string          `json:"excerpt"`
 	Type           ContentType     `json:"type"`
 	Status         ContentStatus   `json:"status"`
-	Source         *string         `json:"source"`
+	OriginRef      *string         `json:"origin_ref"`
 	SourceType     NullSourceType  `json:"source_type"`
 	SeriesID       *string         `json:"series_id"`
 	SeriesOrder    *int32          `json:"series_order"`
@@ -1889,7 +2046,7 @@ func (q *Queries) ContentBySlug(ctx context.Context, slug string) (ContentBySlug
 		&i.Excerpt,
 		&i.Type,
 		&i.Status,
-		&i.Source,
+		&i.OriginRef,
 		&i.SourceType,
 		&i.SeriesID,
 		&i.SeriesOrder,
@@ -1995,7 +2152,7 @@ func (q *Queries) ContentRichTagEntries(ctx context.Context, arg ContentRichTagE
 }
 
 const contentsByStatus = `-- name: ContentsByStatus :many
-SELECT id, slug, title, body, excerpt, type, status, source, source_type,
+SELECT id, slug, title, body, excerpt, type, status, origin_ref, source_type,
        series_id, series_order, review_level, is_public, project_id, ai_metadata, reading_time_min,
        cover_image, published_at, created_at, updated_at
 FROM contents
@@ -2017,7 +2174,7 @@ type ContentsByStatusRow struct {
 	Excerpt        string          `json:"excerpt"`
 	Type           ContentType     `json:"type"`
 	Status         ContentStatus   `json:"status"`
-	Source         *string         `json:"source"`
+	OriginRef      *string         `json:"origin_ref"`
 	SourceType     NullSourceType  `json:"source_type"`
 	SeriesID       *string         `json:"series_id"`
 	SeriesOrder    *int32          `json:"series_order"`
@@ -2050,7 +2207,7 @@ func (q *Queries) ContentsByStatus(ctx context.Context, arg ContentsByStatusPara
 			&i.Excerpt,
 			&i.Type,
 			&i.Status,
-			&i.Source,
+			&i.OriginRef,
 			&i.SourceType,
 			&i.SeriesID,
 			&i.SeriesOrder,
@@ -2076,7 +2233,7 @@ func (q *Queries) ContentsByStatus(ctx context.Context, arg ContentsByStatusPara
 
 const contentsByTopicID = `-- name: ContentsByTopicID :many
 SELECT c.id, c.slug, c.title, c.body, c.excerpt, c.type, c.status,
-       c.source, c.source_type, c.series_id, c.series_order, c.review_level,
+       c.origin_ref, c.source_type, c.series_id, c.series_order, c.review_level,
        c.is_public, c.project_id, c.ai_metadata, c.reading_time_min, c.cover_image,
        c.published_at, c.created_at, c.updated_at
 FROM contents c
@@ -2100,7 +2257,7 @@ type ContentsByTopicIDRow struct {
 	Excerpt        string          `json:"excerpt"`
 	Type           ContentType     `json:"type"`
 	Status         ContentStatus   `json:"status"`
-	Source         *string         `json:"source"`
+	OriginRef      *string         `json:"origin_ref"`
 	SourceType     NullSourceType  `json:"source_type"`
 	SeriesID       *string         `json:"series_id"`
 	SeriesOrder    *int32          `json:"series_order"`
@@ -2132,7 +2289,7 @@ func (q *Queries) ContentsByTopicID(ctx context.Context, arg ContentsByTopicIDPa
 			&i.Excerpt,
 			&i.Type,
 			&i.Status,
-			&i.Source,
+			&i.OriginRef,
 			&i.SourceType,
 			&i.SeriesID,
 			&i.SeriesOrder,
@@ -2211,25 +2368,6 @@ func (q *Queries) ContentsWithoutEmbedding(ctx context.Context, lim int32) ([]Co
 	return items, nil
 }
 
-const countByKind = `-- name: CountByKind :one
-SELECT COUNT(*) FROM syntheses
-WHERE subject_type = $1 AND kind = $2
-`
-
-type CountByKindParams struct {
-	SubjectType string `json:"subject_type"`
-	Kind        string `json:"kind"`
-}
-
-// Row count for a (subject_type, kind). Used by integration tests to
-// verify invariants like "live weekly_summary leaves the table empty".
-func (q *Queries) CountByKind(ctx context.Context, arg CountByKindParams) (int64, error) {
-	row := q.db.QueryRow(ctx, countByKind, arg.SubjectType, arg.Kind)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
-}
-
 const countEventsBySourcePrefix = `-- name: CountEventsBySourcePrefix :one
 SELECT count(*)::int FROM events
 WHERE event_type = $1
@@ -2244,7 +2382,7 @@ type CountEventsBySourcePrefixParams struct {
 }
 
 // Count events matching an event_type and source_id prefix since a given time.
-// Used for double-complete detection: count today's task_completed events for a specific task.
+// Used for double-complete detection: count today's todo_completed events for a specific todo item.
 func (q *Queries) CountEventsBySourcePrefix(ctx context.Context, arg CountEventsBySourcePrefixParams) (int32, error) {
 	row := q.db.QueryRow(ctx, countEventsBySourcePrefix, arg.EventType, arg.SourcePrefix, arg.Since)
 	var column_1 int32
@@ -2252,26 +2390,62 @@ func (q *Queries) CountEventsBySourcePrefix(ctx context.Context, arg CountEvents
 	return column_1, err
 }
 
+const createAgentNote = `-- name: CreateAgentNote :one
+INSERT INTO agent_notes (kind, author, content, metadata, entry_date)
+VALUES ($1::agent_note_kind, $2, $3, $4, $5)
+RETURNING id, kind, author, content, metadata, entry_date, created_at
+`
+
+type CreateAgentNoteParams struct {
+	Kind      AgentNoteKind   `json:"kind"`
+	Author    string          `json:"author"`
+	Content   string          `json:"content"`
+	Metadata  json.RawMessage `json:"metadata"`
+	EntryDate time.Time       `json:"entry_date"`
+}
+
+// Insert an agent note entry.
+func (q *Queries) CreateAgentNote(ctx context.Context, arg CreateAgentNoteParams) (AgentNote, error) {
+	row := q.db.QueryRow(ctx, createAgentNote,
+		arg.Kind,
+		arg.Author,
+		arg.Content,
+		arg.Metadata,
+		arg.EntryDate,
+	)
+	var i AgentNote
+	err := row.Scan(
+		&i.ID,
+		&i.Kind,
+		&i.Author,
+		&i.Content,
+		&i.Metadata,
+		&i.EntryDate,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const createAttempt = `-- name: CreateAttempt :one
-INSERT INTO attempts (learning_item_id, session_id, attempt_number, outcome, duration_minutes, stuck_at, approach_used, metadata)
+INSERT INTO learning_attempts (learning_target_id, session_id, attempt_number, outcome, duration_minutes, stuck_at, approach_used, metadata)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-RETURNING id, learning_item_id, session_id, attempt_number, outcome, duration_minutes, stuck_at, approach_used, note_id, metadata, attempted_at, created_at
+RETURNING id, learning_target_id, session_id, attempt_number, outcome, duration_minutes, stuck_at, approach_used, obsidian_note_id, metadata, attempted_at, created_at
 `
 
 type CreateAttemptParams struct {
-	LearningItemID  uuid.UUID  `json:"learning_item_id"`
-	SessionID       *uuid.UUID `json:"session_id"`
-	AttemptNumber   int32      `json:"attempt_number"`
-	Outcome         string     `json:"outcome"`
-	DurationMinutes *int32     `json:"duration_minutes"`
-	StuckAt         *string    `json:"stuck_at"`
-	ApproachUsed    *string    `json:"approach_used"`
-	Metadata        []byte     `json:"metadata"`
+	LearningTargetID uuid.UUID  `json:"learning_target_id"`
+	SessionID        *uuid.UUID `json:"session_id"`
+	AttemptNumber    int32      `json:"attempt_number"`
+	Outcome          string     `json:"outcome"`
+	DurationMinutes  *int32     `json:"duration_minutes"`
+	StuckAt          *string    `json:"stuck_at"`
+	ApproachUsed     *string    `json:"approach_used"`
+	Metadata         []byte     `json:"metadata"`
 }
 
-func (q *Queries) CreateAttempt(ctx context.Context, arg CreateAttemptParams) (Attempt, error) {
+func (q *Queries) CreateAttempt(ctx context.Context, arg CreateAttemptParams) (LearningAttempt, error) {
 	row := q.db.QueryRow(ctx, createAttempt,
-		arg.LearningItemID,
+		arg.LearningTargetID,
 		arg.SessionID,
 		arg.AttemptNumber,
 		arg.Outcome,
@@ -2280,17 +2454,17 @@ func (q *Queries) CreateAttempt(ctx context.Context, arg CreateAttemptParams) (A
 		arg.ApproachUsed,
 		arg.Metadata,
 	)
-	var i Attempt
+	var i LearningAttempt
 	err := row.Scan(
 		&i.ID,
-		&i.LearningItemID,
+		&i.LearningTargetID,
 		&i.SessionID,
 		&i.AttemptNumber,
 		&i.Outcome,
 		&i.DurationMinutes,
 		&i.StuckAt,
 		&i.ApproachUsed,
-		&i.NoteID,
+		&i.ObsidianNoteID,
 		&i.Metadata,
 		&i.AttemptedAt,
 		&i.CreatedAt,
@@ -2312,7 +2486,7 @@ INSERT INTO bookmarks (
 RETURNING id, url, url_hash, slug, title, excerpt, note,
           source_type, source_feed_entry_id,
           curated_by, curated_at, is_public, published_at,
-          legacy_content_id, created_at, updated_at
+          created_at, updated_at
 `
 
 type CreateBookmarkParams struct {
@@ -2343,7 +2517,6 @@ type CreateBookmarkRow struct {
 	CuratedAt         time.Time  `json:"curated_at"`
 	IsPublic          bool       `json:"is_public"`
 	PublishedAt       *time.Time `json:"published_at"`
-	LegacyContentID   *uuid.UUID `json:"legacy_content_id"`
 	CreatedAt         time.Time  `json:"created_at"`
 	UpdatedAt         time.Time  `json:"updated_at"`
 }
@@ -2380,7 +2553,6 @@ func (q *Queries) CreateBookmark(ctx context.Context, arg CreateBookmarkParams) 
 		&i.CuratedAt,
 		&i.IsPublic,
 		&i.PublishedAt,
-		&i.LegacyContentID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -2388,25 +2560,25 @@ func (q *Queries) CreateBookmark(ctx context.Context, arg CreateBookmarkParams) 
 }
 
 const createCardForItem = `-- name: CreateCardForItem :one
-INSERT INTO review_cards (learning_item_id, card_state, due)
+INSERT INTO review_cards (learning_target_id, card_state, due)
 VALUES ($1, $2, $3)
-RETURNING id, content_id, learning_item_id, tag_id, card_state, due, created_at, updated_at
+RETURNING id, content_id, learning_target_id, tag_id, card_state, due, created_at, updated_at
 `
 
 type CreateCardForItemParams struct {
-	LearningItemID *uuid.UUID `json:"learning_item_id"`
-	CardState      []byte     `json:"card_state"`
-	Due            time.Time  `json:"due"`
+	LearningTargetID *uuid.UUID `json:"learning_target_id"`
+	CardState        []byte     `json:"card_state"`
+	Due              time.Time  `json:"due"`
 }
 
 // Create a new FSRS review card for a learning item.
 func (q *Queries) CreateCardForItem(ctx context.Context, arg CreateCardForItemParams) (ReviewCard, error) {
-	row := q.db.QueryRow(ctx, createCardForItem, arg.LearningItemID, arg.CardState, arg.Due)
+	row := q.db.QueryRow(ctx, createCardForItem, arg.LearningTargetID, arg.CardState, arg.Due)
 	var i ReviewCard
 	err := row.Scan(
 		&i.ID,
 		&i.ContentID,
-		&i.LearningItemID,
+		&i.LearningTargetID,
 		&i.TagID,
 		&i.CardState,
 		&i.Due,
@@ -2464,12 +2636,12 @@ func (q *Queries) CreateCollectedData(ctx context.Context, arg CreateCollectedDa
 }
 
 const createContent = `-- name: CreateContent :one
-INSERT INTO contents (slug, title, body, excerpt, type, status, source, source_type,
+INSERT INTO contents (slug, title, body, excerpt, type, status, origin_ref, source_type,
                       series_id, series_order, review_level, is_public, project_id, ai_metadata,
                       reading_time_min, cover_image)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14,
         $15, $16)
-RETURNING id, slug, title, body, excerpt, type, status, source, source_type,
+RETURNING id, slug, title, body, excerpt, type, status, origin_ref, source_type,
           series_id, series_order, review_level, is_public, project_id, ai_metadata, reading_time_min,
           cover_image, published_at, created_at, updated_at
 `
@@ -2481,7 +2653,7 @@ type CreateContentParams struct {
 	Excerpt        string          `json:"excerpt"`
 	Type           ContentType     `json:"type"`
 	Status         ContentStatus   `json:"status"`
-	Source         *string         `json:"source"`
+	OriginRef      *string         `json:"origin_ref"`
 	SourceType     NullSourceType  `json:"source_type"`
 	SeriesID       *string         `json:"series_id"`
 	SeriesOrder    *int32          `json:"series_order"`
@@ -2501,7 +2673,7 @@ type CreateContentRow struct {
 	Excerpt        string          `json:"excerpt"`
 	Type           ContentType     `json:"type"`
 	Status         ContentStatus   `json:"status"`
-	Source         *string         `json:"source"`
+	OriginRef      *string         `json:"origin_ref"`
 	SourceType     NullSourceType  `json:"source_type"`
 	SeriesID       *string         `json:"series_id"`
 	SeriesOrder    *int32          `json:"series_order"`
@@ -2524,7 +2696,7 @@ func (q *Queries) CreateContent(ctx context.Context, arg CreateContentParams) (C
 		arg.Excerpt,
 		arg.Type,
 		arg.Status,
-		arg.Source,
+		arg.OriginRef,
 		arg.SourceType,
 		arg.SeriesID,
 		arg.SeriesOrder,
@@ -2544,7 +2716,7 @@ func (q *Queries) CreateContent(ctx context.Context, arg CreateContentParams) (C
 		&i.Excerpt,
 		&i.Type,
 		&i.Status,
-		&i.Source,
+		&i.OriginRef,
 		&i.SourceType,
 		&i.SeriesID,
 		&i.SeriesOrder,
@@ -2557,84 +2729,6 @@ func (q *Queries) CreateContent(ctx context.Context, arg CreateContentParams) (C
 		&i.PublishedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
-	)
-	return i, err
-}
-
-const createDirective = `-- name: CreateDirective :one
-INSERT INTO directives (source, target, priority, content, metadata, issued_date)
-VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING id, source, target, priority, acknowledged_at, acknowledged_by, resolved_at, resolution_report_id, content, metadata, issued_date, created_at
-`
-
-type CreateDirectiveParams struct {
-	Source     string          `json:"source"`
-	Target     string          `json:"target"`
-	Priority   string          `json:"priority"`
-	Content    string          `json:"content"`
-	Metadata   json.RawMessage `json:"metadata"`
-	IssuedDate time.Time       `json:"issued_date"`
-}
-
-func (q *Queries) CreateDirective(ctx context.Context, arg CreateDirectiveParams) (Directive, error) {
-	row := q.db.QueryRow(ctx, createDirective,
-		arg.Source,
-		arg.Target,
-		arg.Priority,
-		arg.Content,
-		arg.Metadata,
-		arg.IssuedDate,
-	)
-	var i Directive
-	err := row.Scan(
-		&i.ID,
-		&i.Source,
-		&i.Target,
-		&i.Priority,
-		&i.AcknowledgedAt,
-		&i.AcknowledgedBy,
-		&i.ResolvedAt,
-		&i.ResolutionReportID,
-		&i.Content,
-		&i.Metadata,
-		&i.IssuedDate,
-		&i.CreatedAt,
-	)
-	return i, err
-}
-
-const createEntry = `-- name: CreateEntry :one
-INSERT INTO journal (kind, source, content, metadata, entry_date)
-VALUES ($1, $2, $3, $4, $5)
-RETURNING id, kind, source, content, metadata, entry_date, created_at
-`
-
-type CreateEntryParams struct {
-	Kind      string          `json:"kind"`
-	Source    string          `json:"source"`
-	Content   string          `json:"content"`
-	Metadata  json.RawMessage `json:"metadata"`
-	EntryDate time.Time       `json:"entry_date"`
-}
-
-// Insert a journal entry.
-func (q *Queries) CreateEntry(ctx context.Context, arg CreateEntryParams) (Journal, error) {
-	row := q.db.QueryRow(ctx, createEntry,
-		arg.Kind,
-		arg.Source,
-		arg.Content,
-		arg.Metadata,
-		arg.EntryDate,
-	)
-	var i Journal
-	err := row.Scan(
-		&i.ID,
-		&i.Kind,
-		&i.Source,
-		&i.Content,
-		&i.Metadata,
-		&i.EntryDate,
-		&i.CreatedAt,
 	)
 	return i, err
 }
@@ -2734,7 +2828,7 @@ const createGoal = `-- name: CreateGoal :one
 INSERT INTO goals (title, description, status, area_id, quarter, deadline)
 VALUES ($1, $2, $3::goal_status, $4, $5, $6)
 RETURNING id, title, description, status, area_id, quarter, deadline,
-          notion_page_id, created_at, updated_at
+          external_provider, external_ref, created_at, updated_at
 `
 
 type CreateGoalParams struct {
@@ -2765,44 +2859,45 @@ func (q *Queries) CreateGoal(ctx context.Context, arg CreateGoalParams) (Goal, e
 		&i.AreaID,
 		&i.Quarter,
 		&i.Deadline,
-		&i.NotionPageID,
+		&i.ExternalProvider,
+		&i.ExternalRef,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
 	return i, err
 }
 
-const createInsight = `-- name: CreateInsight :one
-INSERT INTO insights (source, content, hypothesis, invalidation_condition, metadata, observed_date)
+const createHypothesis = `-- name: CreateHypothesis :one
+INSERT INTO hypotheses (author, content, claim, invalidation_condition, metadata, observed_date)
 VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING id, source, content, status, hypothesis, invalidation_condition, metadata, observed_date, created_at
+RETURNING id, author, content, state, claim, invalidation_condition, metadata, observed_date, created_at
 `
 
-type CreateInsightParams struct {
-	Source                string          `json:"source"`
+type CreateHypothesisParams struct {
+	Author                string          `json:"author"`
 	Content               string          `json:"content"`
-	Hypothesis            string          `json:"hypothesis"`
+	Claim                 string          `json:"claim"`
 	InvalidationCondition string          `json:"invalidation_condition"`
 	Metadata              json.RawMessage `json:"metadata"`
 	ObservedDate          time.Time       `json:"observed_date"`
 }
 
-func (q *Queries) CreateInsight(ctx context.Context, arg CreateInsightParams) (Insight, error) {
-	row := q.db.QueryRow(ctx, createInsight,
-		arg.Source,
+func (q *Queries) CreateHypothesis(ctx context.Context, arg CreateHypothesisParams) (Hypothesis, error) {
+	row := q.db.QueryRow(ctx, createHypothesis,
+		arg.Author,
 		arg.Content,
-		arg.Hypothesis,
+		arg.Claim,
 		arg.InvalidationCondition,
 		arg.Metadata,
 		arg.ObservedDate,
 	)
-	var i Insight
+	var i Hypothesis
 	err := row.Scan(
 		&i.ID,
-		&i.Source,
+		&i.Author,
 		&i.Content,
-		&i.Status,
-		&i.Hypothesis,
+		&i.State,
+		&i.Claim,
 		&i.InvalidationCondition,
 		&i.Metadata,
 		&i.ObservedDate,
@@ -2812,46 +2907,46 @@ func (q *Queries) CreateInsight(ctx context.Context, arg CreateInsightParams) (I
 }
 
 const createItem = `-- name: CreateItem :one
-INSERT INTO daily_plan_items (plan_date, task_id, selected_by, position, reason, journal_id)
+INSERT INTO daily_plan_items (plan_date, todo_id, selected_by, position, reason, agent_note_id)
 VALUES ($1, $2, $3, $4, $5, $6)
-ON CONFLICT (plan_date, task_id) DO UPDATE SET
+ON CONFLICT (plan_date, todo_id) DO UPDATE SET
     selected_by = EXCLUDED.selected_by,
     position = EXCLUDED.position,
     reason = EXCLUDED.reason,
-    journal_id = EXCLUDED.journal_id,
+    agent_note_id = EXCLUDED.agent_note_id,
     status = 'planned',
     updated_at = now()
-RETURNING id, plan_date, task_id, selected_by, position, reason, journal_id, status, created_at, updated_at
+RETURNING id, plan_date, todo_id, selected_by, position, reason, agent_note_id, status, created_at, updated_at
 `
 
 type CreateItemParams struct {
-	PlanDate   time.Time `json:"plan_date"`
-	TaskID     uuid.UUID `json:"task_id"`
-	SelectedBy string    `json:"selected_by"`
-	Position   int32     `json:"position"`
-	Reason     *string   `json:"reason"`
-	JournalID  *int64    `json:"journal_id"`
+	PlanDate    time.Time `json:"plan_date"`
+	TodoID      uuid.UUID `json:"todo_id"`
+	SelectedBy  string    `json:"selected_by"`
+	Position    int32     `json:"position"`
+	Reason      *string   `json:"reason"`
+	AgentNoteID *int64    `json:"agent_note_id"`
 }
 
 // Insert a daily plan item.
 func (q *Queries) CreateItem(ctx context.Context, arg CreateItemParams) (DailyPlanItem, error) {
 	row := q.db.QueryRow(ctx, createItem,
 		arg.PlanDate,
-		arg.TaskID,
+		arg.TodoID,
 		arg.SelectedBy,
 		arg.Position,
 		arg.Reason,
-		arg.JournalID,
+		arg.AgentNoteID,
 	)
 	var i DailyPlanItem
 	err := row.Scan(
 		&i.ID,
 		&i.PlanDate,
-		&i.TaskID,
+		&i.TodoID,
 		&i.SelectedBy,
 		&i.Position,
 		&i.Reason,
-		&i.JournalID,
+		&i.AgentNoteID,
 		&i.Status,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -2949,7 +3044,7 @@ func (q *Queries) CreateMilestoneWithPosition(ctx context.Context, arg CreateMil
 }
 
 const createObservation = `-- name: CreateObservation :one
-INSERT INTO attempt_observations (attempt_id, concept_id, signal_type, category, severity, detail, confidence)
+INSERT INTO learning_attempt_observations (attempt_id, concept_id, signal_type, category, severity, detail, confidence)
 VALUES ($1, $2, $3, $4, $5, $6, $7)
 RETURNING id, attempt_id, concept_id, signal_type, category, severity, detail, confidence, created_at
 `
@@ -2964,19 +3059,7 @@ type CreateObservationParams struct {
 	Confidence string    `json:"confidence"`
 }
 
-type CreateObservationRow struct {
-	ID         uuid.UUID `json:"id"`
-	AttemptID  uuid.UUID `json:"attempt_id"`
-	ConceptID  uuid.UUID `json:"concept_id"`
-	SignalType string    `json:"signal_type"`
-	Category   string    `json:"category"`
-	Severity   *string   `json:"severity"`
-	Detail     *string   `json:"detail"`
-	Confidence string    `json:"confidence"`
-	CreatedAt  time.Time `json:"created_at"`
-}
-
-func (q *Queries) CreateObservation(ctx context.Context, arg CreateObservationParams) (CreateObservationRow, error) {
+func (q *Queries) CreateObservation(ctx context.Context, arg CreateObservationParams) (LearningAttemptObservation, error) {
 	row := q.db.QueryRow(ctx, createObservation,
 		arg.AttemptID,
 		arg.ConceptID,
@@ -2986,7 +3069,7 @@ func (q *Queries) CreateObservation(ctx context.Context, arg CreateObservationPa
 		arg.Detail,
 		arg.Confidence,
 	)
-	var i CreateObservationRow
+	var i LearningAttemptObservation
 	err := row.Scan(
 		&i.ID,
 		&i.AttemptID,
@@ -3002,23 +3085,23 @@ func (q *Queries) CreateObservation(ctx context.Context, arg CreateObservationPa
 }
 
 const createPlan = `-- name: CreatePlan :one
-INSERT INTO plans (title, description, domain, goal_id, status, target_count, plan_config, created_by)
+INSERT INTO learning_plans (title, description, domain, goal_id, status, target_count, plan_config, created_by)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 RETURNING id, title, description, domain, goal_id, status, target_count, plan_config, created_by, created_at, updated_at
 `
 
 type CreatePlanParams struct {
-	Title       string          `json:"title"`
-	Description string          `json:"description"`
-	Domain      string          `json:"domain"`
-	GoalID      *uuid.UUID      `json:"goal_id"`
-	Status      string          `json:"status"`
-	TargetCount *int32          `json:"target_count"`
-	PlanConfig  json.RawMessage `json:"plan_config"`
-	CreatedBy   string          `json:"created_by"`
+	Title       string     `json:"title"`
+	Description string     `json:"description"`
+	Domain      string     `json:"domain"`
+	GoalID      *uuid.UUID `json:"goal_id"`
+	Status      string     `json:"status"`
+	TargetCount *int32     `json:"target_count"`
+	PlanConfig  []byte     `json:"plan_config"`
+	CreatedBy   string     `json:"created_by"`
 }
 
-func (q *Queries) CreatePlan(ctx context.Context, arg CreatePlanParams) (Plan, error) {
+func (q *Queries) CreatePlan(ctx context.Context, arg CreatePlanParams) (LearningPlan, error) {
 	row := q.db.QueryRow(ctx, createPlan,
 		arg.Title,
 		arg.Description,
@@ -3029,7 +3112,7 @@ func (q *Queries) CreatePlan(ctx context.Context, arg CreatePlanParams) (Plan, e
 		arg.PlanConfig,
 		arg.CreatedBy,
 	)
-	var i Plan
+	var i LearningPlan
 	err := row.Scan(
 		&i.ID,
 		&i.Title,
@@ -3052,7 +3135,7 @@ INSERT INTO projects (slug, title, description, long_description, role, tech_sta
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
 RETURNING id, slug, title, description, long_description, role, tech_stack, highlights,
           problem, solution, architecture, results, github_url, live_url,
-          featured, is_public, sort_order, status, notion_page_id, repo, area_id, goal_id, deadline, last_activity_at,
+          featured, is_public, sort_order, status, external_provider, external_ref, repo, area_id, goal_id, deadline, last_activity_at,
           expected_cadence, created_at, updated_at
 `
 
@@ -3116,7 +3199,8 @@ func (q *Queries) CreateProject(ctx context.Context, arg CreateProjectParams) (P
 		&i.IsPublic,
 		&i.SortOrder,
 		&i.Status,
-		&i.NotionPageID,
+		&i.ExternalProvider,
+		&i.ExternalRef,
 		&i.Repo,
 		&i.AreaID,
 		&i.GoalID,
@@ -3145,45 +3229,10 @@ func (q *Queries) CreateRefreshToken(ctx context.Context, arg CreateRefreshToken
 	return err
 }
 
-const createReport = `-- name: CreateReport :one
-INSERT INTO reports (source, in_response_to, content, metadata, reported_date)
-VALUES ($1, $2, $3, $4, $5)
-RETURNING id, source, in_response_to, content, metadata, reported_date, created_at
-`
-
-type CreateReportParams struct {
-	Source       string          `json:"source"`
-	InResponseTo *int64          `json:"in_response_to"`
-	Content      string          `json:"content"`
-	Metadata     json.RawMessage `json:"metadata"`
-	ReportedDate time.Time       `json:"reported_date"`
-}
-
-func (q *Queries) CreateReport(ctx context.Context, arg CreateReportParams) (Report, error) {
-	row := q.db.QueryRow(ctx, createReport,
-		arg.Source,
-		arg.InResponseTo,
-		arg.Content,
-		arg.Metadata,
-		arg.ReportedDate,
-	)
-	var i Report
-	err := row.Scan(
-		&i.ID,
-		&i.Source,
-		&i.InResponseTo,
-		&i.Content,
-		&i.Metadata,
-		&i.ReportedDate,
-		&i.CreatedAt,
-	)
-	return i, err
-}
-
 const createSession = `-- name: CreateSession :one
-INSERT INTO sessions (domain, session_mode, daily_plan_item_id)
+INSERT INTO learning_sessions (domain, session_mode, daily_plan_item_id)
 VALUES ($1, $2, $3)
-RETURNING id, domain, session_mode, journal_id, daily_plan_item_id, started_at, ended_at, metadata, created_at
+RETURNING id, domain, session_mode, agent_note_id, daily_plan_item_id, started_at, ended_at, metadata, created_at, updated_at
 `
 
 type CreateSessionParams struct {
@@ -3192,110 +3241,20 @@ type CreateSessionParams struct {
 	DailyPlanItemID *uuid.UUID `json:"daily_plan_item_id"`
 }
 
-func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (Session, error) {
+func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (LearningSession, error) {
 	row := q.db.QueryRow(ctx, createSession, arg.Domain, arg.SessionMode, arg.DailyPlanItemID)
-	var i Session
+	var i LearningSession
 	err := row.Scan(
 		&i.ID,
 		&i.Domain,
 		&i.SessionMode,
-		&i.JournalID,
+		&i.AgentNoteID,
 		&i.DailyPlanItemID,
 		&i.StartedAt,
 		&i.EndedAt,
 		&i.Metadata,
 		&i.CreatedAt,
-	)
-	return i, err
-}
-
-const createSkipRecord = `-- name: CreateSkipRecord :exec
-
-INSERT INTO task_skips (task_id, original_due, skipped_date, reason)
-VALUES ($1, $2, $3, $4)
-ON CONFLICT (task_id, skipped_date) DO NOTHING
-`
-
-type CreateSkipRecordParams struct {
-	TaskID      uuid.UUID `json:"task_id"`
-	OriginalDue time.Time `json:"original_due"`
-	SkippedDate time.Time `json:"skipped_date"`
-	Reason      string    `json:"reason"`
-}
-
-// === Skip Log Queries ===
-// Insert a single skip record. ON CONFLICT ensures idempotency on cron re-run.
-func (q *Queries) CreateSkipRecord(ctx context.Context, arg CreateSkipRecordParams) error {
-	_, err := q.db.Exec(ctx, createSkipRecord,
-		arg.TaskID,
-		arg.OriginalDue,
-		arg.SkippedDate,
-		arg.Reason,
-	)
-	return err
-}
-
-const createSynthesis = `-- name: CreateSynthesis :one
-
-INSERT INTO syntheses (
-    subject_type, subject_id, subject_key, kind,
-    body, evidence, evidence_hash, computed_by
-) VALUES (
-    $1, $2, $3, $4,
-    $5, $6, $7, $8
-)
-ON CONFLICT DO NOTHING
-RETURNING id, subject_type, subject_id, subject_key, kind,
-          body, evidence, evidence_hash, computed_at, computed_by
-`
-
-type CreateSynthesisParams struct {
-	SubjectType  string     `json:"subject_type"`
-	SubjectID    *uuid.UUID `json:"subject_id"`
-	SubjectKey   *string    `json:"subject_key"`
-	Kind         string     `json:"kind"`
-	Body         []byte     `json:"body"`
-	Evidence     []byte     `json:"evidence"`
-	EvidenceHash string     `json:"evidence_hash"`
-	ComputedBy   string     `json:"computed_by"`
-}
-
-// Queries for the synthesis historical observation layer.
-//
-// This is a write-once-read-many table. No UPDATE queries. Callers use
-// CreateSynthesis with ON CONFLICT DO NOTHING for dedup semantics —
-// same evidence set will not produce a duplicate row. Different
-// evidence produces a new row, enabling historical accumulation.
-// Insert a new synthesis row. Caller must have already computed
-// evidence_hash via synthesis.ComputeEvidenceHash. ON CONFLICT on the
-// unique partial indexes (url_hash-style dedup) — either the by_key
-// or by_id partial index fires depending on which identity column is
-// populated. A conflict causes RETURNING to yield zero rows, which
-// the Go store maps to ErrNotFound and the caller interprets as
-// "already recorded with this evidence".
-func (q *Queries) CreateSynthesis(ctx context.Context, arg CreateSynthesisParams) (Synthesis, error) {
-	row := q.db.QueryRow(ctx, createSynthesis,
-		arg.SubjectType,
-		arg.SubjectID,
-		arg.SubjectKey,
-		arg.Kind,
-		arg.Body,
-		arg.Evidence,
-		arg.EvidenceHash,
-		arg.ComputedBy,
-	)
-	var i Synthesis
-	err := row.Scan(
-		&i.ID,
-		&i.SubjectType,
-		&i.SubjectID,
-		&i.SubjectKey,
-		&i.Kind,
-		&i.Body,
-		&i.Evidence,
-		&i.EvidenceHash,
-		&i.ComputedAt,
-		&i.ComputedBy,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -3334,17 +3293,17 @@ func (q *Queries) CreateTag(ctx context.Context, arg CreateTagParams) (Tag, erro
 	return i, err
 }
 
-const createTask = `-- name: CreateTask :one
-INSERT INTO tasks (title, status, due, project_id, energy, priority, description, assignee, created_by)
-VALUES ($1, $2::task_status, $3, $4, $5, $6, $7, $8, $9)
-RETURNING id, title, status, due, project_id, notion_page_id,
+const createTodoItem = `-- name: CreateTodoItem :one
+INSERT INTO todos (title, state, due, project_id, energy, priority, description, assignee, created_by)
+VALUES ($1, $2::todo_state, $3, $4, $5, $6, $7, $8, $9)
+RETURNING id, title, state, due, project_id, external_provider, external_ref,
           completed_at, energy, priority, recur_interval, recur_unit,
           description, assignee, created_by, created_at, updated_at
 `
 
-type CreateTaskParams struct {
+type CreateTodoItemParams struct {
 	Title       string     `json:"title"`
-	Status      TaskStatus `json:"status"`
+	State       TodoState  `json:"state"`
 	Due         *time.Time `json:"due"`
 	ProjectID   *uuid.UUID `json:"project_id"`
 	Energy      *string    `json:"energy"`
@@ -3354,11 +3313,11 @@ type CreateTaskParams struct {
 	CreatedBy   string     `json:"created_by"`
 }
 
-// Create a new task (v2: PostgreSQL-native, no Notion dependency).
-func (q *Queries) CreateTask(ctx context.Context, arg CreateTaskParams) (Task, error) {
-	row := q.db.QueryRow(ctx, createTask,
+// Create a new todo item.
+func (q *Queries) CreateTodoItem(ctx context.Context, arg CreateTodoItemParams) (Todo, error) {
+	row := q.db.QueryRow(ctx, createTodoItem,
 		arg.Title,
-		arg.Status,
+		arg.State,
 		arg.Due,
 		arg.ProjectID,
 		arg.Energy,
@@ -3367,14 +3326,15 @@ func (q *Queries) CreateTask(ctx context.Context, arg CreateTaskParams) (Task, e
 		arg.Assignee,
 		arg.CreatedBy,
 	)
-	var i Task
+	var i Todo
 	err := row.Scan(
 		&i.ID,
 		&i.Title,
-		&i.Status,
+		&i.State,
 		&i.Due,
 		&i.ProjectID,
-		&i.NotionPageID,
+		&i.ExternalProvider,
+		&i.ExternalRef,
 		&i.CompletedAt,
 		&i.Energy,
 		&i.Priority,
@@ -3387,6 +3347,32 @@ func (q *Queries) CreateTask(ctx context.Context, arg CreateTaskParams) (Task, e
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const createTodoSkipRecord = `-- name: CreateTodoSkipRecord :exec
+
+INSERT INTO todo_skips (todo_id, original_due, skipped_date, reason)
+VALUES ($1, $2, $3, $4)
+ON CONFLICT (todo_id, skipped_date) DO NOTHING
+`
+
+type CreateTodoSkipRecordParams struct {
+	TodoID      uuid.UUID `json:"todo_id"`
+	OriginalDue time.Time `json:"original_due"`
+	SkippedDate time.Time `json:"skipped_date"`
+	Reason      string    `json:"reason"`
+}
+
+// === Skip log queries ===
+// Insert a single skip record. ON CONFLICT ensures idempotency on cron re-run.
+func (q *Queries) CreateTodoSkipRecord(ctx context.Context, arg CreateTodoSkipRecordParams) error {
+	_, err := q.db.Exec(ctx, createTodoSkipRecord,
+		arg.TodoID,
+		arg.OriginalDue,
+		arg.SkippedDate,
+		arg.Reason,
+	)
+	return err
 }
 
 const createTopic = `-- name: CreateTopic :one
@@ -3456,37 +3442,6 @@ func (q *Queries) CurateCollected(ctx context.Context, arg CurateCollectedParams
 		&i.FeedID,
 		&i.PublishedAt,
 	)
-	return i, err
-}
-
-const dailySummaryHint = `-- name: DailySummaryHint :one
-SELECT
-    (SELECT count(*)::int FROM daily_plan_items WHERE plan_date = $1::date) AS planned_total,
-    (SELECT count(*)::int FROM daily_plan_items WHERE plan_date = $1::date AND status = 'done') AS planned_completed,
-    count(*) FILTER (WHERE status = 'done'
-        AND completed_at >= $2 AND completed_at < $3)::int AS total_completed
-FROM tasks
-WHERE status = 'done' AND completed_at >= $2 AND completed_at < $3
-`
-
-type DailySummaryHintParams struct {
-	PlanDate time.Time  `json:"plan_date"`
-	DayStart *time.Time `json:"day_start"`
-	DayEnd   *time.Time `json:"day_end"`
-}
-
-type DailySummaryHintRow struct {
-	PlannedTotal     int32 `json:"planned_total"`
-	PlannedCompleted int32 `json:"planned_completed"`
-	TotalCompleted   int32 `json:"total_completed"`
-}
-
-// Compute task metrics hint for a single day (completed counts).
-// Uses daily_plan_items for "planned" counts and tasks for completed counts.
-func (q *Queries) DailySummaryHint(ctx context.Context, arg DailySummaryHintParams) (DailySummaryHintRow, error) {
-	row := q.db.QueryRow(ctx, dailySummaryHint, arg.PlanDate, arg.DayStart, arg.DayEnd)
-	var i DailySummaryHintRow
-	err := row.Scan(&i.PlannedTotal, &i.PlannedCompleted, &i.TotalCompleted)
 	return i, err
 }
 
@@ -3582,9 +3537,9 @@ func (q *Queries) DeleteDuplicateEventTags(ctx context.Context, arg DeleteDuplic
 }
 
 const deleteDuplicateNoteTags = `-- name: DeleteDuplicateNoteTags :execrows
-DELETE FROM note_tags
-WHERE note_tags.tag_id = $1
-  AND note_tags.note_id IN (SELECT ont.note_id FROM note_tags ont WHERE ont.tag_id = $2)
+DELETE FROM obsidian_note_tags
+WHERE obsidian_note_tags.tag_id = $1
+  AND obsidian_note_tags.obsidian_note_id IN (SELECT ont.obsidian_note_id FROM obsidian_note_tags ont WHERE ont.tag_id = $2)
 `
 
 type DeleteDuplicateNoteTagsParams struct {
@@ -3622,7 +3577,7 @@ func (q *Queries) DeleteFeed(ctx context.Context, id uuid.UUID) error {
 }
 
 const deleteNoteLinksByNoteID = `-- name: DeleteNoteLinksByNoteID :exec
-DELETE FROM note_links WHERE source_note_id = $1
+DELETE FROM obsidian_note_links WHERE source_note_id = $1
 `
 
 // Remove all wikilink edges for a note before re-sync.
@@ -3631,12 +3586,12 @@ func (q *Queries) DeleteNoteLinksByNoteID(ctx context.Context, sourceNoteID int6
 	return err
 }
 
-const deleteNoteTagsByNoteID = `-- name: DeleteNoteTagsByNoteID :exec
-DELETE FROM note_tags WHERE note_id = $1
+const deleteNoteTagsByObsidianNoteID = `-- name: DeleteNoteTagsByObsidianNoteID :exec
+DELETE FROM obsidian_note_tags WHERE obsidian_note_id = $1
 `
 
-func (q *Queries) DeleteNoteTagsByNoteID(ctx context.Context, noteID int64) error {
-	_, err := q.db.Exec(ctx, deleteNoteTagsByNoteID, noteID)
+func (q *Queries) DeleteNoteTagsByObsidianNoteID(ctx context.Context, obsidianNoteID int64) error {
+	_, err := q.db.Exec(ctx, deleteNoteTagsByObsidianNoteID, obsidianNoteID)
 	return err
 }
 
@@ -3667,7 +3622,7 @@ func (q *Queries) DeleteOldIgnored(ctx context.Context, cutoff time.Time) (int64
 }
 
 const deletePlanItem = `-- name: DeletePlanItem :exec
-DELETE FROM plan_items WHERE id = $1
+DELETE FROM learning_plan_entries WHERE id = $1
 `
 
 func (q *Queries) DeletePlanItem(ctx context.Context, id uuid.UUID) error {
@@ -3676,7 +3631,7 @@ func (q *Queries) DeletePlanItem(ctx context.Context, id uuid.UUID) error {
 }
 
 const deletePlanItems = `-- name: DeletePlanItems :exec
-DELETE FROM plan_items WHERE plan_id = $1 AND id = ANY($2::uuid[])
+DELETE FROM learning_plan_entries WHERE plan_id = $1 AND id = ANY($2::uuid[])
 `
 
 type DeletePlanItemsParams struct {
@@ -3730,13 +3685,13 @@ func (q *Queries) DeleteTag(ctx context.Context, id uuid.UUID) error {
 	return err
 }
 
-const deleteTask = `-- name: DeleteTask :execrows
-DELETE FROM tasks WHERE id = $1 AND status = 'inbox'
+const deleteTodoItem = `-- name: DeleteTodoItem :execrows
+DELETE FROM todos WHERE id = $1 AND state = 'inbox'
 `
 
-// Hard delete an inbox task. Status guard prevents accidental deletion of non-inbox tasks.
-func (q *Queries) DeleteTask(ctx context.Context, id uuid.UUID) (int64, error) {
-	result, err := q.db.Exec(ctx, deleteTask, id)
+// Hard delete an inbox todo item. State guard prevents accidental deletion.
+func (q *Queries) DeleteTodoItem(ctx context.Context, id uuid.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteTodoItem, id)
 	if err != nil {
 		return 0, err
 	}
@@ -3750,30 +3705,6 @@ DELETE FROM topics WHERE id = $1
 func (q *Queries) DeleteTopic(ctx context.Context, id uuid.UUID) error {
 	_, err := q.db.Exec(ctx, deleteTopic, id)
 	return err
-}
-
-const directiveByID = `-- name: DirectiveByID :one
-SELECT id, source, target, priority, acknowledged_at, acknowledged_by, resolved_at, resolution_report_id, content, metadata, issued_date, created_at FROM directives WHERE id = $1
-`
-
-func (q *Queries) DirectiveByID(ctx context.Context, id int64) (Directive, error) {
-	row := q.db.QueryRow(ctx, directiveByID, id)
-	var i Directive
-	err := row.Scan(
-		&i.ID,
-		&i.Source,
-		&i.Target,
-		&i.Priority,
-		&i.AcknowledgedAt,
-		&i.AcknowledgedBy,
-		&i.ResolvedAt,
-		&i.ResolutionReportID,
-		&i.Content,
-		&i.Metadata,
-		&i.IssuedDate,
-		&i.CreatedAt,
-	)
-	return i, err
 }
 
 const dueReviewCount = `-- name: DueReviewCount :one
@@ -3876,102 +3807,30 @@ func (q *Queries) EnabledFeedsBySchedule(ctx context.Context, schedule string) (
 }
 
 const endSession = `-- name: EndSession :one
-UPDATE sessions SET ended_at = now(), journal_id = $1
+UPDATE learning_sessions SET ended_at = now(), agent_note_id = $1, updated_at = now()
 WHERE id = $2 AND ended_at IS NULL
-RETURNING id, domain, session_mode, journal_id, daily_plan_item_id, started_at, ended_at, metadata, created_at
+RETURNING id, domain, session_mode, agent_note_id, daily_plan_item_id, started_at, ended_at, metadata, created_at, updated_at
 `
 
 type EndSessionParams struct {
-	JournalID *int64    `json:"journal_id"`
-	ID        uuid.UUID `json:"id"`
+	AgentNoteID *int64    `json:"agent_note_id"`
+	ID          uuid.UUID `json:"id"`
 }
 
-func (q *Queries) EndSession(ctx context.Context, arg EndSessionParams) (Session, error) {
-	row := q.db.QueryRow(ctx, endSession, arg.JournalID, arg.ID)
-	var i Session
+func (q *Queries) EndSession(ctx context.Context, arg EndSessionParams) (LearningSession, error) {
+	row := q.db.QueryRow(ctx, endSession, arg.AgentNoteID, arg.ID)
+	var i LearningSession
 	err := row.Scan(
 		&i.ID,
 		&i.Domain,
 		&i.SessionMode,
-		&i.JournalID,
+		&i.AgentNoteID,
 		&i.DailyPlanItemID,
 		&i.StartedAt,
 		&i.EndedAt,
 		&i.Metadata,
 		&i.CreatedAt,
-	)
-	return i, err
-}
-
-const entriesByDateRange = `-- name: EntriesByDateRange :many
-SELECT id, kind, source, content, metadata, entry_date, created_at
-FROM journal
-WHERE entry_date >= $1
-  AND entry_date <= $2
-  AND ($3::text IS NULL OR kind = $3)
-  AND ($4::text IS NULL OR source = $4)
-ORDER BY entry_date DESC, created_at DESC
-`
-
-type EntriesByDateRangeParams struct {
-	StartDate time.Time `json:"start_date"`
-	EndDate   time.Time `json:"end_date"`
-	Kind      *string   `json:"kind"`
-	Source    *string   `json:"source"`
-}
-
-// List journal entries in a date range, optionally filtered by kind and/or source.
-func (q *Queries) EntriesByDateRange(ctx context.Context, arg EntriesByDateRangeParams) ([]Journal, error) {
-	rows, err := q.db.Query(ctx, entriesByDateRange,
-		arg.StartDate,
-		arg.EndDate,
-		arg.Kind,
-		arg.Source,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []Journal{}
-	for rows.Next() {
-		var i Journal
-		if err := rows.Scan(
-			&i.ID,
-			&i.Kind,
-			&i.Source,
-			&i.Content,
-			&i.Metadata,
-			&i.EntryDate,
-			&i.CreatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const entryByID = `-- name: EntryByID :one
-SELECT id, kind, source, content, metadata, entry_date, created_at
-FROM journal
-WHERE id = $1
-`
-
-// Get a single journal entry by ID.
-func (q *Queries) EntryByID(ctx context.Context, id int64) (Journal, error) {
-	row := q.db.QueryRow(ctx, entryByID, id)
-	var i Journal
-	err := row.Scan(
-		&i.ID,
-		&i.Kind,
-		&i.Source,
-		&i.Content,
-		&i.Metadata,
-		&i.EntryDate,
-		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -4259,7 +4118,7 @@ func (q *Queries) Feeds(ctx context.Context, schedule *string) ([]FeedsRow, erro
 
 const findItemByDomainTitle = `-- name: FindItemByDomainTitle :one
 SELECT id, domain, title, external_id, difficulty, created_at, updated_at
-FROM items
+FROM learning_targets
 WHERE domain = $1 AND title = $2
 LIMIT 1
 `
@@ -4337,11 +4196,11 @@ func (q *Queries) FindOrCreateConcept(ctx context.Context, arg FindOrCreateConce
 }
 
 const findOrCreateItem = `-- name: FindOrCreateItem :one
-INSERT INTO items (domain, title, external_id, difficulty)
+INSERT INTO learning_targets (domain, title, external_id, difficulty)
 VALUES ($1, $2, $3, $4)
 ON CONFLICT (domain, external_id) WHERE external_id IS NOT NULL
-DO UPDATE SET title = EXCLUDED.title, difficulty = COALESCE(EXCLUDED.difficulty, items.difficulty), updated_at = now()
-RETURNING id, domain, title, external_id, difficulty, note_id, content_id, project_id, metadata, created_at, updated_at
+DO UPDATE SET title = EXCLUDED.title, difficulty = COALESCE(EXCLUDED.difficulty, learning_targets.difficulty), updated_at = now()
+RETURNING id, domain, title, external_id, difficulty, obsidian_note_id, content_id, project_id, metadata, created_at, updated_at
 `
 
 type FindOrCreateItemParams struct {
@@ -4352,21 +4211,21 @@ type FindOrCreateItemParams struct {
 }
 
 // Upsert a learning item by domain + external_id (if present) or domain + title.
-func (q *Queries) FindOrCreateItem(ctx context.Context, arg FindOrCreateItemParams) (Item, error) {
+func (q *Queries) FindOrCreateItem(ctx context.Context, arg FindOrCreateItemParams) (LearningTarget, error) {
 	row := q.db.QueryRow(ctx, findOrCreateItem,
 		arg.Domain,
 		arg.Title,
 		arg.ExternalID,
 		arg.Difficulty,
 	)
-	var i Item
+	var i LearningTarget
 	err := row.Scan(
 		&i.ID,
 		&i.Domain,
 		&i.Title,
 		&i.ExternalID,
 		&i.Difficulty,
-		&i.NoteID,
+		&i.ObsidianNoteID,
 		&i.ContentID,
 		&i.ProjectID,
 		&i.Metadata,
@@ -4378,7 +4237,7 @@ func (q *Queries) FindOrCreateItem(ctx context.Context, arg FindOrCreateItemPara
 
 const goalByID = `-- name: GoalByID :one
 SELECT id, title, description, status, area_id, quarter, deadline,
-       notion_page_id, created_at, updated_at
+       external_provider, external_ref, created_at, updated_at
 FROM goals WHERE id = $1
 `
 
@@ -4393,7 +4252,8 @@ func (q *Queries) GoalByID(ctx context.Context, id uuid.UUID) (Goal, error) {
 		&i.AreaID,
 		&i.Quarter,
 		&i.Deadline,
-		&i.NotionPageID,
+		&i.ExternalProvider,
+		&i.ExternalRef,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -4402,7 +4262,7 @@ func (q *Queries) GoalByID(ctx context.Context, id uuid.UUID) (Goal, error) {
 
 const goalByIDWithArea = `-- name: GoalByIDWithArea :one
 SELECT g.id, g.title, g.description, g.status, g.area_id, g.quarter, g.deadline,
-       g.notion_page_id, g.created_at, g.updated_at,
+       g.external_provider, external_ref, g.created_at, g.updated_at,
        COALESCE(a.name, '') AS area_name
 FROM goals g
 LEFT JOIN areas a ON a.id = g.area_id
@@ -4410,17 +4270,18 @@ WHERE g.id = $1
 `
 
 type GoalByIDWithAreaRow struct {
-	ID           uuid.UUID  `json:"id"`
-	Title        string     `json:"title"`
-	Description  string     `json:"description"`
-	Status       GoalStatus `json:"status"`
-	AreaID       *uuid.UUID `json:"area_id"`
-	Quarter      *string    `json:"quarter"`
-	Deadline     *time.Time `json:"deadline"`
-	NotionPageID *string    `json:"notion_page_id"`
-	CreatedAt    time.Time  `json:"created_at"`
-	UpdatedAt    time.Time  `json:"updated_at"`
-	AreaName     string     `json:"area_name"`
+	ID               uuid.UUID  `json:"id"`
+	Title            string     `json:"title"`
+	Description      string     `json:"description"`
+	Status           GoalStatus `json:"status"`
+	AreaID           *uuid.UUID `json:"area_id"`
+	Quarter          *string    `json:"quarter"`
+	Deadline         *time.Time `json:"deadline"`
+	ExternalProvider *string    `json:"external_provider"`
+	ExternalRef      *string    `json:"external_ref"`
+	CreatedAt        time.Time  `json:"created_at"`
+	UpdatedAt        time.Time  `json:"updated_at"`
+	AreaName         string     `json:"area_name"`
 }
 
 // Get a single goal with its area name.
@@ -4435,7 +4296,8 @@ func (q *Queries) GoalByIDWithArea(ctx context.Context, id uuid.UUID) (GoalByIDW
 		&i.AreaID,
 		&i.Quarter,
 		&i.Deadline,
-		&i.NotionPageID,
+		&i.ExternalProvider,
+		&i.ExternalRef,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.AreaName,
@@ -4445,7 +4307,7 @@ func (q *Queries) GoalByIDWithArea(ctx context.Context, id uuid.UUID) (GoalByIDW
 
 const goalByTitle = `-- name: GoalByTitle :one
 SELECT id, title, description, status, area_id, quarter, deadline,
-       notion_page_id, created_at, updated_at
+       external_provider, external_ref, created_at, updated_at
 FROM goals WHERE LOWER(title) = LOWER($1)
 `
 
@@ -4461,7 +4323,8 @@ func (q *Queries) GoalByTitle(ctx context.Context, title string) (Goal, error) {
 		&i.AreaID,
 		&i.Quarter,
 		&i.Deadline,
-		&i.NotionPageID,
+		&i.ExternalProvider,
+		&i.ExternalRef,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -4488,12 +4351,12 @@ FROM (
     UNION ALL
 
     SELECT
-        'task_completed' AS activity_type,
+        'todo_completed' AS activity_type,
         t.title          AS title,
         t.id::text       AS ref_id,
         NULL::text       AS ref_slug,
         t.completed_at   AS ts
-    FROM tasks t
+    FROM todos t
     JOIN projects p ON p.id = t.project_id
     WHERE p.goal_id = $1 AND t.completed_at IS NOT NULL
 
@@ -4535,7 +4398,7 @@ type GoalRecentActivityRow struct {
 // Sources:
 //
 //	milestone_completed     — milestones.completed_at where milestone.goal_id = @goal_id
-//	task_completed          — tasks.completed_at where tasks.project_id ∈ (projects under this goal)
+//	todo_completed          — todos.completed_at where todos.project_id ∈ (projects under this goal)
 //	content_published       — contents.published_at where contents.project_id ∈ (projects under this goal)
 func (q *Queries) GoalRecentActivity(ctx context.Context, arg GoalRecentActivityParams) ([]GoalRecentActivityRow, error) {
 	rows, err := q.db.Query(ctx, goalRecentActivity, arg.GoalID, arg.MaxResults)
@@ -4565,7 +4428,7 @@ func (q *Queries) GoalRecentActivity(ctx context.Context, arg GoalRecentActivity
 
 const goals = `-- name: Goals :many
 SELECT id, title, description, status, area_id, quarter, deadline,
-       notion_page_id, created_at, updated_at
+       external_provider, external_ref, created_at, updated_at
 FROM goals ORDER BY status, deadline NULLS LAST, created_at DESC
 `
 
@@ -4586,7 +4449,8 @@ func (q *Queries) Goals(ctx context.Context) ([]Goal, error) {
 			&i.AreaID,
 			&i.Quarter,
 			&i.Deadline,
-			&i.NotionPageID,
+			&i.ExternalProvider,
+			&i.ExternalRef,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -4734,6 +4598,71 @@ func (q *Queries) HighPriorityRecentCollected(ctx context.Context, arg HighPrior
 	return items, nil
 }
 
+const hypothesesByState = `-- name: HypothesesByState :many
+SELECT id, author, content, state, claim, invalidation_condition, metadata, observed_date, created_at
+FROM hypotheses
+WHERE ($1::hypothesis_state IS NULL OR state = $1::hypothesis_state)
+ORDER BY observed_date DESC, created_at DESC
+LIMIT $2
+`
+
+type HypothesesByStateParams struct {
+	State      NullHypothesisState `json:"state"`
+	MaxResults int32               `json:"max_results"`
+}
+
+func (q *Queries) HypothesesByState(ctx context.Context, arg HypothesesByStateParams) ([]Hypothesis, error) {
+	rows, err := q.db.Query(ctx, hypothesesByState, arg.State, arg.MaxResults)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Hypothesis{}
+	for rows.Next() {
+		var i Hypothesis
+		if err := rows.Scan(
+			&i.ID,
+			&i.Author,
+			&i.Content,
+			&i.State,
+			&i.Claim,
+			&i.InvalidationCondition,
+			&i.Metadata,
+			&i.ObservedDate,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const hypothesisByID = `-- name: HypothesisByID :one
+SELECT id, author, content, state, claim, invalidation_condition, metadata, observed_date, created_at
+FROM hypotheses WHERE id = $1
+`
+
+func (q *Queries) HypothesisByID(ctx context.Context, id int64) (Hypothesis, error) {
+	row := q.db.QueryRow(ctx, hypothesisByID, id)
+	var i Hypothesis
+	err := row.Scan(
+		&i.ID,
+		&i.Author,
+		&i.Content,
+		&i.State,
+		&i.Claim,
+		&i.InvalidationCondition,
+		&i.Metadata,
+		&i.ObservedDate,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const ignoreCollected = `-- name: IgnoreCollected :exec
 UPDATE feed_entries SET status = 'ignored' WHERE id = $1
 `
@@ -4743,39 +4672,28 @@ func (q *Queries) IgnoreCollected(ctx context.Context, id uuid.UUID) error {
 	return err
 }
 
-const inboxCount = `-- name: InboxCount :one
-SELECT count(*)::int FROM tasks WHERE status = 'inbox'
+const inboxTodoItems = `-- name: InboxTodoItems :many
+SELECT id, title, state, due, project_id, external_provider, external_ref, completed_at, energy, priority, recur_interval, recur_unit, description, assignee, created_by, created_at, updated_at FROM todos WHERE state = 'inbox' ORDER BY created_at DESC
 `
 
-// Count of tasks in inbox status (for needs_attention badge).
-func (q *Queries) InboxCount(ctx context.Context) (int32, error) {
-	row := q.db.QueryRow(ctx, inboxCount)
-	var column_1 int32
-	err := row.Scan(&column_1)
-	return column_1, err
-}
-
-const inboxTasks = `-- name: InboxTasks :many
-SELECT id, title, status, due, project_id, notion_page_id, completed_at, energy, priority, recur_interval, recur_unit, description, assignee, created_by, created_at, updated_at FROM tasks WHERE status = 'inbox' ORDER BY created_at DESC
-`
-
-// List all inbox tasks, newest first.
-func (q *Queries) InboxTasks(ctx context.Context) ([]Task, error) {
-	rows, err := q.db.Query(ctx, inboxTasks)
+// List all inbox todo items, newest first.
+func (q *Queries) InboxTodoItems(ctx context.Context) ([]Todo, error) {
+	rows, err := q.db.Query(ctx, inboxTodoItems)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []Task{}
+	items := []Todo{}
 	for rows.Next() {
-		var i Task
+		var i Todo
 		if err := rows.Scan(
 			&i.ID,
 			&i.Title,
-			&i.Status,
+			&i.State,
 			&i.Due,
 			&i.ProjectID,
-			&i.NotionPageID,
+			&i.ExternalProvider,
+			&i.ExternalRef,
 			&i.CompletedAt,
 			&i.Energy,
 			&i.Priority,
@@ -4899,54 +4817,54 @@ func (q *Queries) InsertFlowRun(ctx context.Context, arg InsertFlowRunParams) er
 }
 
 const insertItemRelation = `-- name: InsertItemRelation :exec
-INSERT INTO item_relations (source_item_id, target_item_id, relation_type)
+INSERT INTO learning_target_relations (anchor_id, related_id, relation_type)
 VALUES ($1, $2, $3)
-ON CONFLICT (source_item_id, target_item_id, relation_type) DO NOTHING
+ON CONFLICT (anchor_id, related_id, relation_type) DO NOTHING
 `
 
 type InsertItemRelationParams struct {
-	SourceItemID uuid.UUID `json:"source_item_id"`
-	TargetItemID uuid.UUID `json:"target_item_id"`
+	AnchorID     uuid.UUID `json:"anchor_id"`
+	RelatedID    uuid.UUID `json:"related_id"`
 	RelationType string    `json:"relation_type"`
 }
 
 // Idempotent insert into item_relations. Conflicts on
-// (source_item_id, target_item_id, relation_type) are ignored so re-recording
+// (anchor_id, related_id, relation_type) are ignored so re-recording
 // the same relationship during a later session is safe.
 func (q *Queries) InsertItemRelation(ctx context.Context, arg InsertItemRelationParams) error {
-	_, err := q.db.Exec(ctx, insertItemRelation, arg.SourceItemID, arg.TargetItemID, arg.RelationType)
+	_, err := q.db.Exec(ctx, insertItemRelation, arg.AnchorID, arg.RelatedID, arg.RelationType)
 	return err
 }
 
 const insertNoteTag = `-- name: InsertNoteTag :exec
-INSERT INTO note_tags (note_id, tag_id)
+INSERT INTO obsidian_note_tags (obsidian_note_id, tag_id)
 VALUES ($1, $2)
-ON CONFLICT (note_id, tag_id) DO NOTHING
+ON CONFLICT (obsidian_note_id, tag_id) DO NOTHING
 `
 
 type InsertNoteTagParams struct {
-	NoteID int64     `json:"note_id"`
-	TagID  uuid.UUID `json:"tag_id"`
+	ObsidianNoteID int64     `json:"obsidian_note_id"`
+	TagID          uuid.UUID `json:"tag_id"`
 }
 
 func (q *Queries) InsertNoteTag(ctx context.Context, arg InsertNoteTagParams) error {
-	_, err := q.db.Exec(ctx, insertNoteTag, arg.NoteID, arg.TagID)
+	_, err := q.db.Exec(ctx, insertNoteTag, arg.ObsidianNoteID, arg.TagID)
 	return err
 }
 
 const insertNoteTags = `-- name: InsertNoteTags :exec
-INSERT INTO note_tags (note_id, tag_id)
+INSERT INTO obsidian_note_tags (obsidian_note_id, tag_id)
 SELECT $1, unnest($2::uuid[])
 ON CONFLICT DO NOTHING
 `
 
 type InsertNoteTagsParams struct {
-	NoteID int64       `json:"note_id"`
-	TagIds []uuid.UUID `json:"tag_ids"`
+	ObsidianNoteID int64       `json:"obsidian_note_id"`
+	TagIds         []uuid.UUID `json:"tag_ids"`
 }
 
 func (q *Queries) InsertNoteTags(ctx context.Context, arg InsertNoteTagsParams) error {
-	_, err := q.db.Exec(ctx, insertNoteTags, arg.NoteID, arg.TagIds)
+	_, err := q.db.Exec(ctx, insertNoteTags, arg.ObsidianNoteID, arg.TagIds)
 	return err
 }
 
@@ -4989,73 +4907,8 @@ func (q *Queries) InsertUnmappedAlias(ctx context.Context, rawTag string) error 
 	return err
 }
 
-const insightByID = `-- name: InsightByID :one
-SELECT id, source, content, status, hypothesis, invalidation_condition, metadata, observed_date, created_at
-FROM insights WHERE id = $1
-`
-
-func (q *Queries) InsightByID(ctx context.Context, id int64) (Insight, error) {
-	row := q.db.QueryRow(ctx, insightByID, id)
-	var i Insight
-	err := row.Scan(
-		&i.ID,
-		&i.Source,
-		&i.Content,
-		&i.Status,
-		&i.Hypothesis,
-		&i.InvalidationCondition,
-		&i.Metadata,
-		&i.ObservedDate,
-		&i.CreatedAt,
-	)
-	return i, err
-}
-
-const insightsByStatus = `-- name: InsightsByStatus :many
-SELECT id, source, content, status, hypothesis, invalidation_condition, metadata, observed_date, created_at
-FROM insights
-WHERE ($1::text IS NULL OR status = $1)
-ORDER BY observed_date DESC, created_at DESC
-LIMIT $2
-`
-
-type InsightsByStatusParams struct {
-	Status     *string `json:"status"`
-	MaxResults int32   `json:"max_results"`
-}
-
-func (q *Queries) InsightsByStatus(ctx context.Context, arg InsightsByStatusParams) ([]Insight, error) {
-	rows, err := q.db.Query(ctx, insightsByStatus, arg.Status, arg.MaxResults)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []Insight{}
-	for rows.Next() {
-		var i Insight
-		if err := rows.Scan(
-			&i.ID,
-			&i.Source,
-			&i.Content,
-			&i.Status,
-			&i.Hypothesis,
-			&i.InvalidationCondition,
-			&i.Metadata,
-			&i.ObservedDate,
-			&i.CreatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const internalSearchContents = `-- name: InternalSearchContents :many
-SELECT id, slug, title, body, excerpt, type, status, source, source_type,
+SELECT id, slug, title, body, excerpt, type, status, origin_ref, source_type,
        series_id, series_order, review_level, is_public, project_id, ai_metadata, reading_time_min,
        cover_image, published_at, created_at, updated_at
 FROM contents
@@ -5079,7 +4932,7 @@ type InternalSearchContentsRow struct {
 	Excerpt        string          `json:"excerpt"`
 	Type           ContentType     `json:"type"`
 	Status         ContentStatus   `json:"status"`
-	Source         *string         `json:"source"`
+	OriginRef      *string         `json:"origin_ref"`
 	SourceType     NullSourceType  `json:"source_type"`
 	SeriesID       *string         `json:"series_id"`
 	SeriesOrder    *int32          `json:"series_order"`
@@ -5112,7 +4965,7 @@ func (q *Queries) InternalSearchContents(ctx context.Context, arg InternalSearch
 			&i.Excerpt,
 			&i.Type,
 			&i.Status,
-			&i.Source,
+			&i.OriginRef,
 			&i.SourceType,
 			&i.SeriesID,
 			&i.SeriesOrder,
@@ -5150,7 +5003,7 @@ func (q *Queries) InternalSearchContentsCount(ctx context.Context, websearchToTs
 }
 
 const internalSearchContentsOR = `-- name: InternalSearchContentsOR :many
-SELECT id, slug, title, body, excerpt, type, status, source, source_type,
+SELECT id, slug, title, body, excerpt, type, status, origin_ref, source_type,
        series_id, series_order, review_level, is_public, project_id, ai_metadata, reading_time_min,
        cover_image, published_at, created_at, updated_at
 FROM contents
@@ -5174,7 +5027,7 @@ type InternalSearchContentsORRow struct {
 	Excerpt        string          `json:"excerpt"`
 	Type           ContentType     `json:"type"`
 	Status         ContentStatus   `json:"status"`
-	Source         *string         `json:"source"`
+	OriginRef      *string         `json:"origin_ref"`
 	SourceType     NullSourceType  `json:"source_type"`
 	SeriesID       *string         `json:"series_id"`
 	SeriesOrder    *int32          `json:"series_order"`
@@ -5207,7 +5060,7 @@ func (q *Queries) InternalSearchContentsOR(ctx context.Context, arg InternalSear
 			&i.Excerpt,
 			&i.Type,
 			&i.Status,
-			&i.Source,
+			&i.OriginRef,
 			&i.SourceType,
 			&i.SeriesID,
 			&i.SeriesOrder,
@@ -5244,7 +5097,7 @@ func (q *Queries) IsAliasRejected(ctx context.Context, rawTag string) (bool, err
 }
 
 const itemByID = `-- name: ItemByID :one
-SELECT id, plan_date, task_id, selected_by, position, reason, journal_id, status, created_at, updated_at
+SELECT id, plan_date, todo_id, selected_by, position, reason, agent_note_id, status, created_at, updated_at
 FROM daily_plan_items WHERE id = $1
 `
 
@@ -5255,11 +5108,11 @@ func (q *Queries) ItemByID(ctx context.Context, id uuid.UUID) (DailyPlanItem, er
 	err := row.Scan(
 		&i.ID,
 		&i.PlanDate,
-		&i.TaskID,
+		&i.TodoID,
 		&i.SelectedBy,
 		&i.Position,
 		&i.Reason,
-		&i.JournalID,
+		&i.AgentNoteID,
 		&i.Status,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -5271,9 +5124,9 @@ const itemVariations = `-- name: ItemVariations :many
 SELECT ir.id AS relation_id, ir.relation_type,
        src.id AS source_id, src.title AS source_title, src.domain AS source_domain,
        tgt.id AS target_id, tgt.title AS target_title, tgt.domain AS target_domain
-FROM item_relations ir
-JOIN items src ON src.id = ir.source_item_id
-JOIN items tgt ON tgt.id = ir.target_item_id
+FROM learning_target_relations ir
+JOIN learning_targets src ON src.id = ir.anchor_id
+JOIN learning_targets tgt ON tgt.id = ir.related_id
 WHERE ($1::text IS NULL OR src.domain = $1)
 ORDER BY ir.created_at DESC
 LIMIT $2
@@ -5328,8 +5181,8 @@ func (q *Queries) ItemVariations(ctx context.Context, arg ItemVariationsParams) 
 
 const itemsByConcept = `-- name: ItemsByConcept :many
 SELECT li.id, li.title, li.domain, li.difficulty, li.external_id, ic.relevance
-FROM items li
-JOIN item_concepts ic ON ic.learning_item_id = li.id
+FROM learning_targets li
+JOIN learning_target_concepts ic ON ic.learning_target_id = li.id
 WHERE ic.concept_id = $1
 ORDER BY ic.relevance, li.title
 `
@@ -5373,13 +5226,13 @@ func (q *Queries) ItemsByConcept(ctx context.Context, conceptID uuid.UUID) ([]It
 
 const itemsByDate = `-- name: ItemsByDate :many
 SELECT
-    dpi.id, dpi.plan_date, dpi.task_id, dpi.selected_by, dpi.position,
-    dpi.reason, dpi.journal_id, dpi.status, dpi.created_at, dpi.updated_at,
-    t.title AS task_title, t.status AS task_status, t.due AS task_due,
-    t.energy AS task_energy, t.priority AS task_priority, t.assignee AS task_assignee,
+    dpi.id, dpi.plan_date, dpi.todo_id, dpi.selected_by, dpi.position,
+    dpi.reason, dpi.agent_note_id, dpi.status, dpi.created_at, dpi.updated_at,
+    t.title AS todo_title, t.state AS todo_state, t.due AS todo_due,
+    t.energy AS todo_energy, t.priority AS todo_priority, t.assignee AS todo_assignee,
     COALESCE(p.title, '') AS project_title, COALESCE(p.slug, '') AS project_slug
 FROM daily_plan_items dpi
-JOIN tasks t ON t.id = dpi.task_id
+JOIN todos t ON t.id = dpi.todo_id
 LEFT JOIN projects p ON p.id = t.project_id
 WHERE dpi.plan_date = $1
 ORDER BY dpi.position
@@ -5388,25 +5241,25 @@ ORDER BY dpi.position
 type ItemsByDateRow struct {
 	ID           uuid.UUID  `json:"id"`
 	PlanDate     time.Time  `json:"plan_date"`
-	TaskID       uuid.UUID  `json:"task_id"`
+	TodoID       uuid.UUID  `json:"todo_id"`
 	SelectedBy   string     `json:"selected_by"`
 	Position     int32      `json:"position"`
 	Reason       *string    `json:"reason"`
-	JournalID    *int64     `json:"journal_id"`
+	AgentNoteID  *int64     `json:"agent_note_id"`
 	Status       string     `json:"status"`
 	CreatedAt    time.Time  `json:"created_at"`
 	UpdatedAt    time.Time  `json:"updated_at"`
-	TaskTitle    string     `json:"task_title"`
-	TaskStatus   TaskStatus `json:"task_status"`
-	TaskDue      *time.Time `json:"task_due"`
-	TaskEnergy   *string    `json:"task_energy"`
-	TaskPriority *string    `json:"task_priority"`
-	TaskAssignee string     `json:"task_assignee"`
+	TodoTitle    string     `json:"todo_title"`
+	TodoState    TodoState  `json:"todo_state"`
+	TodoDue      *time.Time `json:"todo_due"`
+	TodoEnergy   *string    `json:"todo_energy"`
+	TodoPriority *string    `json:"todo_priority"`
+	TodoAssignee string     `json:"todo_assignee"`
 	ProjectTitle string     `json:"project_title"`
 	ProjectSlug  string     `json:"project_slug"`
 }
 
-// Get all daily plan items for a specific date, joined with task details.
+// Get all daily plan items for a specific date, joined with todo item details.
 func (q *Queries) ItemsByDate(ctx context.Context, planDate time.Time) ([]ItemsByDateRow, error) {
 	rows, err := q.db.Query(ctx, itemsByDate, planDate)
 	if err != nil {
@@ -5419,20 +5272,20 @@ func (q *Queries) ItemsByDate(ctx context.Context, planDate time.Time) ([]ItemsB
 		if err := rows.Scan(
 			&i.ID,
 			&i.PlanDate,
-			&i.TaskID,
+			&i.TodoID,
 			&i.SelectedBy,
 			&i.Position,
 			&i.Reason,
-			&i.JournalID,
+			&i.AgentNoteID,
 			&i.Status,
 			&i.CreatedAt,
 			&i.UpdatedAt,
-			&i.TaskTitle,
-			&i.TaskStatus,
-			&i.TaskDue,
-			&i.TaskEnergy,
-			&i.TaskPriority,
-			&i.TaskAssignee,
+			&i.TodoTitle,
+			&i.TodoState,
+			&i.TodoDue,
+			&i.TodoEnergy,
+			&i.TodoPriority,
+			&i.TodoAssignee,
 			&i.ProjectTitle,
 			&i.ProjectSlug,
 		); err != nil {
@@ -5448,12 +5301,12 @@ func (q *Queries) ItemsByDate(ctx context.Context, planDate time.Time) ([]ItemsB
 
 const itemsByDateRange = `-- name: ItemsByDateRange :many
 SELECT
-    dpi.id, dpi.plan_date, dpi.task_id, dpi.selected_by, dpi.position,
-    dpi.reason, dpi.journal_id, dpi.status, dpi.created_at, dpi.updated_at,
-    t.title AS task_title, t.status AS task_status,
+    dpi.id, dpi.plan_date, dpi.todo_id, dpi.selected_by, dpi.position,
+    dpi.reason, dpi.agent_note_id, dpi.status, dpi.created_at, dpi.updated_at,
+    t.title AS todo_title, t.state AS todo_state,
     COALESCE(p.title, '') AS project_title
 FROM daily_plan_items dpi
-JOIN tasks t ON t.id = dpi.task_id
+JOIN todos t ON t.id = dpi.todo_id
 LEFT JOIN projects p ON p.id = t.project_id
 WHERE dpi.plan_date >= $1 AND dpi.plan_date <= $2
 ORDER BY dpi.plan_date DESC, dpi.position
@@ -5465,19 +5318,19 @@ type ItemsByDateRangeParams struct {
 }
 
 type ItemsByDateRangeRow struct {
-	ID           uuid.UUID  `json:"id"`
-	PlanDate     time.Time  `json:"plan_date"`
-	TaskID       uuid.UUID  `json:"task_id"`
-	SelectedBy   string     `json:"selected_by"`
-	Position     int32      `json:"position"`
-	Reason       *string    `json:"reason"`
-	JournalID    *int64     `json:"journal_id"`
-	Status       string     `json:"status"`
-	CreatedAt    time.Time  `json:"created_at"`
-	UpdatedAt    time.Time  `json:"updated_at"`
-	TaskTitle    string     `json:"task_title"`
-	TaskStatus   TaskStatus `json:"task_status"`
-	ProjectTitle string     `json:"project_title"`
+	ID           uuid.UUID `json:"id"`
+	PlanDate     time.Time `json:"plan_date"`
+	TodoID       uuid.UUID `json:"todo_id"`
+	SelectedBy   string    `json:"selected_by"`
+	Position     int32     `json:"position"`
+	Reason       *string   `json:"reason"`
+	AgentNoteID  *int64    `json:"agent_note_id"`
+	Status       string    `json:"status"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
+	TodoTitle    string    `json:"todo_title"`
+	TodoState    TodoState `json:"todo_state"`
+	ProjectTitle string    `json:"project_title"`
 }
 
 // Get daily plan items for a date range (e.g., yesterday's unfinished for morning_context).
@@ -5493,16 +5346,16 @@ func (q *Queries) ItemsByDateRange(ctx context.Context, arg ItemsByDateRangePara
 		if err := rows.Scan(
 			&i.ID,
 			&i.PlanDate,
-			&i.TaskID,
+			&i.TodoID,
 			&i.SelectedBy,
 			&i.Position,
 			&i.Reason,
-			&i.JournalID,
+			&i.AgentNoteID,
 			&i.Status,
 			&i.CreatedAt,
 			&i.UpdatedAt,
-			&i.TaskTitle,
-			&i.TaskStatus,
+			&i.TodoTitle,
+			&i.TodoState,
 			&i.ProjectTitle,
 		); err != nil {
 			return nil, err
@@ -5515,41 +5368,26 @@ func (q *Queries) ItemsByDateRange(ctx context.Context, arg ItemsByDateRangePara
 	return items, nil
 }
 
-const latestBySubjectKey = `-- name: LatestBySubjectKey :one
-SELECT id, subject_type, subject_id, subject_key, kind,
-       body, evidence, evidence_hash, computed_at, computed_by
-FROM syntheses
-WHERE subject_type = $1
-  AND subject_key = $2
-  AND kind = $3
-ORDER BY computed_at DESC
+const latestAgentNoteByKind = `-- name: LatestAgentNoteByKind :one
+SELECT id, kind, author, content, metadata, entry_date, created_at
+FROM agent_notes
+WHERE kind = $1::agent_note_kind
+ORDER BY entry_date DESC, created_at DESC
 LIMIT 1
 `
 
-type LatestBySubjectKeyParams struct {
-	SubjectType string  `json:"subject_type"`
-	SubjectKey  *string `json:"subject_key"`
-	Kind        string  `json:"kind"`
-}
-
-// The most recent synthesis for a specific (subject_type, subject_key,
-// kind). Used when the reader wants "the best single snapshot we have
-// for week X" rather than the full timeline. Returns pgx.ErrNoRows on
-// no match, which the Go store maps to ErrNotFound.
-func (q *Queries) LatestBySubjectKey(ctx context.Context, arg LatestBySubjectKeyParams) (Synthesis, error) {
-	row := q.db.QueryRow(ctx, latestBySubjectKey, arg.SubjectType, arg.SubjectKey, arg.Kind)
-	var i Synthesis
+// Get the most recent agent note of a specific kind.
+func (q *Queries) LatestAgentNoteByKind(ctx context.Context, kind AgentNoteKind) (AgentNote, error) {
+	row := q.db.QueryRow(ctx, latestAgentNoteByKind, kind)
+	var i AgentNote
 	err := row.Scan(
 		&i.ID,
-		&i.SubjectType,
-		&i.SubjectID,
-		&i.SubjectKey,
 		&i.Kind,
-		&i.Body,
-		&i.Evidence,
-		&i.EvidenceHash,
-		&i.ComputedAt,
-		&i.ComputedBy,
+		&i.Author,
+		&i.Content,
+		&i.Metadata,
+		&i.EntryDate,
+		&i.CreatedAt,
 	)
 	return i, err
 }
@@ -5695,28 +5533,51 @@ func (q *Queries) LatestCollectedData(ctx context.Context, arg LatestCollectedDa
 	return items, nil
 }
 
-const latestEntryByKind = `-- name: LatestEntryByKind :one
-SELECT id, kind, source, content, metadata, entry_date, created_at
-FROM journal
-WHERE kind = $1
-ORDER BY entry_date DESC, created_at DESC
-LIMIT 1
+const listAgents = `-- name: ListAgents :many
+SELECT name, display_name, platform, description, status, synced_at, retired_at
+FROM agents
+ORDER BY name
 `
 
-// Get the most recent journal entry of a specific kind.
-func (q *Queries) LatestEntryByKind(ctx context.Context, kind string) (Journal, error) {
-	row := q.db.QueryRow(ctx, latestEntryByKind, kind)
-	var i Journal
-	err := row.Scan(
-		&i.ID,
-		&i.Kind,
-		&i.Source,
-		&i.Content,
-		&i.Metadata,
-		&i.EntryDate,
-		&i.CreatedAt,
-	)
-	return i, err
+type ListAgentsRow struct {
+	Name        string      `json:"name"`
+	DisplayName string      `json:"display_name"`
+	Platform    string      `json:"platform"`
+	Description string      `json:"description"`
+	Status      AgentStatus `json:"status"`
+	SyncedAt    time.Time   `json:"synced_at"`
+	RetiredAt   *time.Time  `json:"retired_at"`
+}
+
+// Snapshot of every row in the agents table, ordered by name. Used by
+// agent.SyncToTable to reconcile the Go BuiltinAgents() literal against
+// the DB projection.
+func (q *Queries) ListAgents(ctx context.Context) ([]ListAgentsRow, error) {
+	rows, err := q.db.Query(ctx, listAgents)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListAgentsRow{}
+	for rows.Next() {
+		var i ListAgentsRow
+		if err := rows.Scan(
+			&i.Name,
+			&i.DisplayName,
+			&i.Platform,
+			&i.Description,
+			&i.Status,
+			&i.SyncedAt,
+			&i.RetiredAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listAliases = `-- name: ListAliases :many
@@ -5755,7 +5616,7 @@ func (q *Queries) ListAliases(ctx context.Context) ([]TagAlias, error) {
 const listByStatus = `-- name: ListByStatus :many
 SELECT id, slug, title, description, long_description, role, tech_stack, highlights,
        problem, solution, architecture, results, github_url, live_url,
-       featured, is_public, sort_order, status, notion_page_id, repo, area_id, goal_id, deadline, last_activity_at,
+       featured, is_public, sort_order, status, external_provider, external_ref, repo, area_id, goal_id, deadline, last_activity_at,
        expected_cadence, created_at, updated_at
 FROM projects
 WHERE CASE $1::text
@@ -5795,7 +5656,8 @@ func (q *Queries) ListByStatus(ctx context.Context, statusFilter string) ([]Proj
 			&i.IsPublic,
 			&i.SortOrder,
 			&i.Status,
-			&i.NotionPageID,
+			&i.ExternalProvider,
+			&i.ExternalRef,
 			&i.Repo,
 			&i.AreaID,
 			&i.GoalID,
@@ -5963,18 +5825,18 @@ func (q *Queries) MilestonesByGoal(ctx context.Context, goalID uuid.UUID) ([]Mil
 }
 
 const noteByFilePath = `-- name: NoteByFilePath :one
-SELECT id, file_path, title, type, source, context, maturity, raw_tags, difficulty, leetcode_id, book, chapter, notion_task_id, content_text, content_hash, embedding, search_vector, git_created_at, git_updated_at, synced_at FROM notes WHERE file_path = $1
+SELECT id, file_path, title, type, provenance, context, maturity, raw_tags, difficulty, leetcode_id, book, chapter, external_provider, external_ref, content_text, content_hash, embedding, search_vector, git_created_at, git_updated_at, synced_at FROM obsidian_notes WHERE file_path = $1
 `
 
-func (q *Queries) NoteByFilePath(ctx context.Context, filePath string) (Note, error) {
+func (q *Queries) NoteByFilePath(ctx context.Context, filePath string) (ObsidianNote, error) {
 	row := q.db.QueryRow(ctx, noteByFilePath, filePath)
-	var i Note
+	var i ObsidianNote
 	err := row.Scan(
 		&i.ID,
 		&i.FilePath,
 		&i.Title,
 		&i.Type,
-		&i.Source,
+		&i.Provenance,
 		&i.Context,
 		&i.Maturity,
 		&i.RawTags,
@@ -5982,7 +5844,8 @@ func (q *Queries) NoteByFilePath(ctx context.Context, filePath string) (Note, er
 		&i.LeetcodeID,
 		&i.Book,
 		&i.Chapter,
-		&i.NotionTaskID,
+		&i.ExternalProvider,
+		&i.ExternalRef,
 		&i.ContentText,
 		&i.ContentHash,
 		&i.Embedding,
@@ -5995,7 +5858,7 @@ func (q *Queries) NoteByFilePath(ctx context.Context, filePath string) (Note, er
 }
 
 const noteContentHash = `-- name: NoteContentHash :one
-SELECT content_hash FROM notes WHERE file_path = $1
+SELECT content_hash FROM obsidian_notes WHERE file_path = $1
 `
 
 func (q *Queries) NoteContentHash(ctx context.Context, filePath string) (*string, error) {
@@ -6006,7 +5869,7 @@ func (q *Queries) NoteContentHash(ctx context.Context, filePath string) (*string
 }
 
 const noteTagCountByTagID = `-- name: NoteTagCountByTagID :one
-SELECT COUNT(*)::int AS count FROM note_tags WHERE tag_id = $1
+SELECT COUNT(*)::int AS count FROM obsidian_note_tags WHERE tag_id = $1
 `
 
 // Admin: count note-tag junctions referencing a tag.
@@ -6018,9 +5881,9 @@ func (q *Queries) NoteTagCountByTagID(ctx context.Context, tagID uuid.UUID) (int
 }
 
 const notesByTypeAndContext = `-- name: NotesByTypeAndContext :many
-SELECT id, file_path, title, type, source, context, maturity, raw_tags,
+SELECT id, file_path, title, type, provenance, context, maturity, raw_tags,
        difficulty, book, chapter, content_text, synced_at
-FROM notes
+FROM obsidian_notes
 WHERE type = $1
   AND (maturity IS NULL OR maturity != 'archived')
   AND ($2::text IS NULL OR context = $2)
@@ -6039,7 +5902,7 @@ type NotesByTypeAndContextRow struct {
 	FilePath    string          `json:"file_path"`
 	Title       *string         `json:"title"`
 	Type        *string         `json:"type"`
-	Source      *string         `json:"source"`
+	Provenance  *string         `json:"provenance"`
 	Context     *string         `json:"context"`
 	Maturity    string          `json:"maturity"`
 	RawTags     json.RawMessage `json:"raw_tags"`
@@ -6050,7 +5913,7 @@ type NotesByTypeAndContextRow struct {
 	SyncedAt    time.Time       `json:"synced_at"`
 }
 
-// List notes by type, optionally filtered by context. Used for decision-log retrieval.
+// List obsidian_notes by type, optionally filtered by context. Used for decision-log retrieval.
 func (q *Queries) NotesByTypeAndContext(ctx context.Context, arg NotesByTypeAndContextParams) ([]NotesByTypeAndContextRow, error) {
 	rows, err := q.db.Query(ctx, notesByTypeAndContext, arg.NoteType, arg.FilterContext, arg.MaxResults)
 	if err != nil {
@@ -6065,7 +5928,7 @@ func (q *Queries) NotesByTypeAndContext(ctx context.Context, arg NotesByTypeAndC
 			&i.FilePath,
 			&i.Title,
 			&i.Type,
-			&i.Source,
+			&i.Provenance,
 			&i.Context,
 			&i.Maturity,
 			&i.RawTags,
@@ -6086,7 +5949,7 @@ func (q *Queries) NotesByTypeAndContext(ctx context.Context, arg NotesByTypeAndC
 }
 
 const notesWithRawTags = `-- name: NotesWithRawTags :many
-SELECT id, raw_tags FROM notes
+SELECT id, raw_tags FROM obsidian_notes
 WHERE raw_tags IS NOT NULL AND raw_tags::text != 'null' AND raw_tags::text != '[]'
 ORDER BY id
 `
@@ -6096,7 +5959,7 @@ type NotesWithRawTagsRow struct {
 	RawTags json.RawMessage `json:"raw_tags"`
 }
 
-// Backfill: list notes that have raw tags in JSONB.
+// Backfill: list obsidian_notes that have raw tags in JSONB.
 func (q *Queries) NotesWithRawTags(ctx context.Context) ([]NotesWithRawTagsRow, error) {
 	rows, err := q.db.Query(ctx, notesWithRawTags)
 	if err != nil {
@@ -6119,7 +5982,7 @@ func (q *Queries) NotesWithRawTags(ctx context.Context) ([]NotesWithRawTagsRow, 
 
 const notesWithoutEmbedding = `-- name: NotesWithoutEmbedding :many
 SELECT id, file_path, title, content_text
-FROM notes
+FROM obsidian_notes
 WHERE embedding IS NULL AND (maturity IS NULL OR maturity != 'archived')
 ORDER BY synced_at DESC
 LIMIT $1
@@ -6132,7 +5995,7 @@ type NotesWithoutEmbeddingRow struct {
 	ContentText *string `json:"content_text"`
 }
 
-// Find notes that need embedding generation.
+// Find obsidian_notes that need embedding generation.
 func (q *Queries) NotesWithoutEmbedding(ctx context.Context, batchSize int32) ([]NotesWithoutEmbeddingRow, error) {
 	rows, err := q.db.Query(ctx, notesWithoutEmbedding, batchSize)
 	if err != nil {
@@ -6158,35 +6021,10 @@ func (q *Queries) NotesWithoutEmbedding(ctx context.Context, batchSize int32) ([
 	return items, nil
 }
 
-const notionTaskPageIDs = `-- name: NotionTaskPageIDs :many
-SELECT notion_page_id FROM tasks WHERE notion_page_id IS NOT NULL ORDER BY title
-`
-
-// List all Notion page IDs for tasks.
-func (q *Queries) NotionTaskPageIDs(ctx context.Context) ([]*string, error) {
-	rows, err := q.db.Query(ctx, notionTaskPageIDs)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []*string{}
-	for rows.Next() {
-		var notion_page_id *string
-		if err := rows.Scan(&notion_page_id); err != nil {
-			return nil, err
-		}
-		items = append(items, notion_page_id)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const observationsByAttempt = `-- name: ObservationsByAttempt :many
 SELECT ao.id, ao.attempt_id, ao.concept_id, ao.signal_type, ao.category, ao.severity, ao.detail,
        c.slug AS concept_slug, c.name AS concept_name
-FROM attempt_observations ao
+FROM learning_attempt_observations ao
 JOIN concepts c ON c.id = ao.concept_id
 WHERE ao.attempt_id = $1
 `
@@ -6237,9 +6075,9 @@ const observationsByConcept = `-- name: ObservationsByConcept :many
 SELECT ao.id, ao.attempt_id, ao.signal_type, ao.category, ao.severity, ao.detail, ao.created_at,
        a.outcome, a.attempted_at,
        li.title AS item_title
-FROM attempt_observations ao
-JOIN attempts a ON a.id = ao.attempt_id
-JOIN items li ON li.id = a.learning_item_id
+FROM learning_attempt_observations ao
+JOIN learning_attempts a ON a.id = ao.attempt_id
+JOIN learning_targets li ON li.id = a.learning_target_id
 WHERE ao.concept_id = $1
 ORDER BY ao.created_at DESC
 LIMIT $2
@@ -6319,78 +6157,37 @@ func (q *Queries) ObsidianContentSlugs(ctx context.Context) ([]string, error) {
 	return items, nil
 }
 
-const openDirectives = `-- name: OpenDirectives :many
-SELECT id, source, target, priority, acknowledged_at, acknowledged_by, resolved_at, resolution_report_id, content, metadata, issued_date, created_at FROM directives
-WHERE resolved_at IS NULL
-ORDER BY
-    CASE priority WHEN 'p0' THEN 0 WHEN 'p1' THEN 1 ELSE 2 END,
-    issued_date DESC
-`
+const overdueRecurringTodoItems = `-- name: OverdueRecurringTodoItems :many
 
-// All unresolved directives (for studio IPC overview).
-func (q *Queries) OpenDirectives(ctx context.Context) ([]Directive, error) {
-	rows, err := q.db.Query(ctx, openDirectives)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []Directive{}
-	for rows.Next() {
-		var i Directive
-		if err := rows.Scan(
-			&i.ID,
-			&i.Source,
-			&i.Target,
-			&i.Priority,
-			&i.AcknowledgedAt,
-			&i.AcknowledgedBy,
-			&i.ResolvedAt,
-			&i.ResolutionReportID,
-			&i.Content,
-			&i.Metadata,
-			&i.IssuedDate,
-			&i.CreatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const overdueRecurringTasks = `-- name: OverdueRecurringTasks :many
-
-SELECT id, title, status, due, project_id, notion_page_id,
+SELECT id, title, state, due, project_id, external_provider, external_ref,
        completed_at, energy, priority, recur_interval, recur_unit,
        description, assignee, created_by, created_at, updated_at
-FROM tasks
-WHERE status != 'done'
+FROM todos
+WHERE state != 'done'
   AND recur_interval IS NOT NULL AND recur_interval > 0
   AND due < $1
 ORDER BY due ASC
 `
 
-// === Recurring Task System Queries ===
-// Get all overdue recurring tasks (due < today, not done).
-func (q *Queries) OverdueRecurringTasks(ctx context.Context, today *time.Time) ([]Task, error) {
-	rows, err := q.db.Query(ctx, overdueRecurringTasks, today)
+// === Recurring todo item queries ===
+// Get all overdue recurring todo items (due < today, not done).
+func (q *Queries) OverdueRecurringTodoItems(ctx context.Context, today *time.Time) ([]Todo, error) {
+	rows, err := q.db.Query(ctx, overdueRecurringTodoItems, today)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []Task{}
+	items := []Todo{}
 	for rows.Next() {
-		var i Task
+		var i Todo
 		if err := rows.Scan(
 			&i.ID,
 			&i.Title,
-			&i.Status,
+			&i.State,
 			&i.Due,
 			&i.ProjectID,
-			&i.NotionPageID,
+			&i.ExternalProvider,
+			&i.ExternalRef,
 			&i.CompletedAt,
 			&i.Energy,
 			&i.Priority,
@@ -6412,23 +6209,23 @@ func (q *Queries) OverdueRecurringTasks(ctx context.Context, today *time.Time) (
 	return items, nil
 }
 
-const overdueTasks = `-- name: OverdueTasks :many
-SELECT t.id, t.title, t.status, t.due, t.project_id,
+const overdueTodoItems = `-- name: OverdueTodoItems :many
+SELECT t.id, t.title, t.state, t.due, t.project_id,
        t.energy, t.priority, t.recur_interval, t.recur_unit,
        t.assignee, t.created_by, t.created_at, t.updated_at,
        COALESCE(p.title, '') AS project_title,
        COALESCE(p.slug, '') AS project_slug
-FROM tasks t
+FROM todos t
 LEFT JOIN projects p ON p.id = t.project_id
-WHERE t.status NOT IN ('done', 'someday', 'inbox')
+WHERE t.state NOT IN ('done', 'someday', 'inbox')
   AND t.due IS NOT NULL AND t.due < $1
 ORDER BY t.due, t.priority NULLS LAST
 `
 
-type OverdueTasksRow struct {
+type OverdueTodoItemsRow struct {
 	ID            uuid.UUID  `json:"id"`
 	Title         string     `json:"title"`
-	Status        TaskStatus `json:"status"`
+	State         TodoState  `json:"state"`
 	Due           *time.Time `json:"due"`
 	ProjectID     *uuid.UUID `json:"project_id"`
 	Energy        *string    `json:"energy"`
@@ -6443,20 +6240,20 @@ type OverdueTasksRow struct {
 	ProjectSlug   string     `json:"project_slug"`
 }
 
-// Tasks past due that are not done (for morning_context).
-func (q *Queries) OverdueTasks(ctx context.Context, today *time.Time) ([]OverdueTasksRow, error) {
-	rows, err := q.db.Query(ctx, overdueTasks, today)
+// Todo items past due that are not done (for morning_context).
+func (q *Queries) OverdueTodoItems(ctx context.Context, today *time.Time) ([]OverdueTodoItemsRow, error) {
+	rows, err := q.db.Query(ctx, overdueTodoItems, today)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []OverdueTasksRow{}
+	items := []OverdueTodoItemsRow{}
 	for rows.Next() {
-		var i OverdueTasksRow
+		var i OverdueTodoItemsRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.Title,
-			&i.Status,
+			&i.State,
 			&i.Due,
 			&i.ProjectID,
 			&i.Energy,
@@ -6480,136 +6277,32 @@ func (q *Queries) OverdueTasks(ctx context.Context, today *time.Time) ([]Overdue
 	return items, nil
 }
 
-const participantByName = `-- name: ParticipantByName :one
-SELECT name, platform, description, can_issue_directives, can_receive_directives,
-       can_write_reports, task_assignable, can_own_schedules
-FROM participant WHERE name = $1
-`
-
-type ParticipantByNameRow struct {
-	Name                 string `json:"name"`
-	Platform             string `json:"platform"`
-	Description          string `json:"description"`
-	CanIssueDirectives   bool   `json:"can_issue_directives"`
-	CanReceiveDirectives bool   `json:"can_receive_directives"`
-	CanWriteReports      bool   `json:"can_write_reports"`
-	TaskAssignable       bool   `json:"task_assignable"`
-	CanOwnSchedules      bool   `json:"can_own_schedules"`
-}
-
-func (q *Queries) ParticipantByName(ctx context.Context, name string) (ParticipantByNameRow, error) {
-	row := q.db.QueryRow(ctx, participantByName, name)
-	var i ParticipantByNameRow
-	err := row.Scan(
-		&i.Name,
-		&i.Platform,
-		&i.Description,
-		&i.CanIssueDirectives,
-		&i.CanReceiveDirectives,
-		&i.CanWriteReports,
-		&i.TaskAssignable,
-		&i.CanOwnSchedules,
-	)
-	return i, err
-}
-
-const participantsForStudio = `-- name: ParticipantsForStudio :many
-SELECT
-    p.name,
-    p.platform,
-    p.can_issue_directives,
-    p.can_receive_directives,
-    p.can_write_reports,
-    p.task_assignable,
-    p.can_own_schedules,
-    COALESCE(ad.cnt, 0)::int AS active_directives,
-    COALESCE(rr.cnt, 0)::int AS recent_reports
-FROM participant p
-LEFT JOIN (
-    SELECT target, count(*)::int AS cnt
-    FROM directives
-    WHERE resolved_at IS NULL
-    GROUP BY target
-) ad ON ad.target = p.name
-LEFT JOIN (
-    SELECT source, count(*)::int AS cnt
-    FROM reports
-    WHERE reported_date >= $1
-    GROUP BY source
-) rr ON rr.source = p.name
-ORDER BY p.name
-`
-
-type ParticipantsForStudioRow struct {
-	Name                 string `json:"name"`
-	Platform             string `json:"platform"`
-	CanIssueDirectives   bool   `json:"can_issue_directives"`
-	CanReceiveDirectives bool   `json:"can_receive_directives"`
-	CanWriteReports      bool   `json:"can_write_reports"`
-	TaskAssignable       bool   `json:"task_assignable"`
-	CanOwnSchedules      bool   `json:"can_own_schedules"`
-	ActiveDirectives     int32  `json:"active_directives"`
-	RecentReports        int32  `json:"recent_reports"`
-}
-
-// Participants with directive and report counts for the Directive Board.
-// active_directives = unresolved directives where this participant is the target.
-// recent_reports = reports written by this participant since @since.
-func (q *Queries) ParticipantsForStudio(ctx context.Context, since time.Time) ([]ParticipantsForStudioRow, error) {
-	rows, err := q.db.Query(ctx, participantsForStudio, since)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []ParticipantsForStudioRow{}
-	for rows.Next() {
-		var i ParticipantsForStudioRow
-		if err := rows.Scan(
-			&i.Name,
-			&i.Platform,
-			&i.CanIssueDirectives,
-			&i.CanReceiveDirectives,
-			&i.CanWriteReports,
-			&i.TaskAssignable,
-			&i.CanOwnSchedules,
-			&i.ActiveDirectives,
-			&i.RecentReports,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const pendingTasks = `-- name: PendingTasks :many
-SELECT id, title, status, due, project_id, notion_page_id,
+const pendingTodoItems = `-- name: PendingTodoItems :many
+SELECT id, title, state, due, project_id, external_provider, external_ref,
        completed_at, energy, priority, recur_interval, recur_unit,
        description, assignee, created_by, created_at, updated_at
-FROM tasks WHERE status != 'done'
+FROM todos WHERE state != 'done'
 ORDER BY due NULLS LAST, created_at
 `
 
-// List tasks that are not done, ordered by due date.
-func (q *Queries) PendingTasks(ctx context.Context) ([]Task, error) {
-	rows, err := q.db.Query(ctx, pendingTasks)
+// List todo items that are not done, ordered by due date.
+func (q *Queries) PendingTodoItems(ctx context.Context) ([]Todo, error) {
+	rows, err := q.db.Query(ctx, pendingTodoItems)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []Task{}
+	items := []Todo{}
 	for rows.Next() {
-		var i Task
+		var i Todo
 		if err := rows.Scan(
 			&i.ID,
 			&i.Title,
-			&i.Status,
+			&i.State,
 			&i.Due,
 			&i.ProjectID,
-			&i.NotionPageID,
+			&i.ExternalProvider,
+			&i.ExternalRef,
 			&i.CompletedAt,
 			&i.Energy,
 			&i.Priority,
@@ -6631,33 +6324,34 @@ func (q *Queries) PendingTasks(ctx context.Context) ([]Task, error) {
 	return items, nil
 }
 
-const pendingTasksByTitle = `-- name: PendingTasksByTitle :many
-SELECT id, title, status, due, project_id, notion_page_id,
+const pendingTodoItemsByTitle = `-- name: PendingTodoItemsByTitle :many
+SELECT id, title, state, due, project_id, external_provider, external_ref,
        completed_at, energy, priority, recur_interval, recur_unit,
        description, assignee, created_by, created_at, updated_at
-FROM tasks
-WHERE status != 'done' AND title ILIKE '%' || $1 || '%'
+FROM todos
+WHERE state != 'done' AND title ILIKE '%' || $1 || '%'
 ORDER BY due NULLS LAST, updated_at ASC
 LIMIT 10
 `
 
-// Find pending tasks matching a title (case-insensitive contains).
-func (q *Queries) PendingTasksByTitle(ctx context.Context, searchTitle *string) ([]Task, error) {
-	rows, err := q.db.Query(ctx, pendingTasksByTitle, searchTitle)
+// Find pending todo items matching a title (case-insensitive contains).
+func (q *Queries) PendingTodoItemsByTitle(ctx context.Context, searchTitle *string) ([]Todo, error) {
+	rows, err := q.db.Query(ctx, pendingTodoItemsByTitle, searchTitle)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []Task{}
+	items := []Todo{}
 	for rows.Next() {
-		var i Task
+		var i Todo
 		if err := rows.Scan(
 			&i.ID,
 			&i.Title,
-			&i.Status,
+			&i.State,
 			&i.Due,
 			&i.ProjectID,
-			&i.NotionPageID,
+			&i.ExternalProvider,
+			&i.ExternalRef,
 			&i.CompletedAt,
 			&i.Energy,
 			&i.Priority,
@@ -6679,15 +6373,15 @@ func (q *Queries) PendingTasksByTitle(ctx context.Context, searchTitle *string) 
 	return items, nil
 }
 
-const pendingTasksWithProject = `-- name: PendingTasksWithProject :many
-SELECT t.id, t.title, t.status, t.due, t.project_id,
+const pendingTodoItemsWithProject = `-- name: PendingTodoItemsWithProject :many
+SELECT t.id, t.title, t.state, t.due, t.project_id,
        t.energy, t.priority, t.recur_interval, t.recur_unit,
        t.assignee, t.created_at, t.updated_at,
        COALESCE(p.title, '') AS project_title,
        COALESCE(p.slug, '') AS project_slug
-FROM tasks t
+FROM todos t
 LEFT JOIN projects p ON t.project_id = p.id
-WHERE t.status != 'done'
+WHERE t.state != 'done'
   AND ($1::text IS NULL OR p.slug = $1)
   AND ($2::text IS NULL OR t.assignee = $2)
 ORDER BY
@@ -6697,16 +6391,16 @@ ORDER BY
 LIMIT $3
 `
 
-type PendingTasksWithProjectParams struct {
+type PendingTodoItemsWithProjectParams struct {
 	ProjectSlug *string `json:"project_slug"`
 	Assignee    *string `json:"assignee"`
 	MaxResults  int32   `json:"max_results"`
 }
 
-type PendingTasksWithProjectRow struct {
+type PendingTodoItemsWithProjectRow struct {
 	ID            uuid.UUID  `json:"id"`
 	Title         string     `json:"title"`
-	Status        TaskStatus `json:"status"`
+	State         TodoState  `json:"state"`
 	Due           *time.Time `json:"due"`
 	ProjectID     *uuid.UUID `json:"project_id"`
 	Energy        *string    `json:"energy"`
@@ -6720,20 +6414,20 @@ type PendingTasksWithProjectRow struct {
 	ProjectSlug   string     `json:"project_slug"`
 }
 
-// List pending tasks with project info, sorted by deadline priority then last-touched.
-func (q *Queries) PendingTasksWithProject(ctx context.Context, arg PendingTasksWithProjectParams) ([]PendingTasksWithProjectRow, error) {
-	rows, err := q.db.Query(ctx, pendingTasksWithProject, arg.ProjectSlug, arg.Assignee, arg.MaxResults)
+// List pending todo items with project info.
+func (q *Queries) PendingTodoItemsWithProject(ctx context.Context, arg PendingTodoItemsWithProjectParams) ([]PendingTodoItemsWithProjectRow, error) {
+	rows, err := q.db.Query(ctx, pendingTodoItemsWithProject, arg.ProjectSlug, arg.Assignee, arg.MaxResults)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []PendingTasksWithProjectRow{}
+	items := []PendingTodoItemsWithProjectRow{}
 	for rows.Next() {
-		var i PendingTasksWithProjectRow
+		var i PendingTodoItemsWithProjectRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.Title,
-			&i.Status,
+			&i.State,
 			&i.Due,
 			&i.ProjectID,
 			&i.Energy,
@@ -6757,12 +6451,12 @@ func (q *Queries) PendingTasksWithProject(ctx context.Context, arg PendingTasksW
 }
 
 const plan = `-- name: Plan :one
-SELECT id, title, description, domain, goal_id, status, target_count, plan_config, created_by, created_at, updated_at FROM plans WHERE id = $1
+SELECT id, title, description, domain, goal_id, status, target_count, plan_config, created_by, created_at, updated_at FROM learning_plans WHERE id = $1
 `
 
-func (q *Queries) Plan(ctx context.Context, id uuid.UUID) (Plan, error) {
+func (q *Queries) Plan(ctx context.Context, id uuid.UUID) (LearningPlan, error) {
 	row := q.db.QueryRow(ctx, plan, id)
-	var i Plan
+	var i LearningPlan
 	err := row.Scan(
 		&i.ID,
 		&i.Title,
@@ -6780,16 +6474,16 @@ func (q *Queries) Plan(ctx context.Context, id uuid.UUID) (Plan, error) {
 }
 
 const planItem = `-- name: PlanItem :one
-SELECT id, plan_id, learning_item_id, position, status, phase, substituted_by, completed_by_attempt_id, reason, added_at, completed_at FROM plan_items WHERE id = $1
+SELECT id, plan_id, learning_target_id, position, status, phase, substituted_by, completed_by_attempt_id, reason, added_at, completed_at FROM learning_plan_entries WHERE id = $1
 `
 
-func (q *Queries) PlanItem(ctx context.Context, id uuid.UUID) (PlanItem, error) {
+func (q *Queries) PlanItem(ctx context.Context, id uuid.UUID) (LearningPlanEntry, error) {
 	row := q.db.QueryRow(ctx, planItem, id)
-	var i PlanItem
+	var i LearningPlanEntry
 	err := row.Scan(
 		&i.ID,
 		&i.PlanID,
-		&i.LearningItemID,
+		&i.LearningTargetID,
 		&i.Position,
 		&i.Status,
 		&i.Phase,
@@ -6803,24 +6497,24 @@ func (q *Queries) PlanItem(ctx context.Context, id uuid.UUID) (PlanItem, error) 
 }
 
 const planItems = `-- name: PlanItems :many
-SELECT id, plan_id, learning_item_id, position, status, phase, substituted_by, completed_by_attempt_id, reason, added_at, completed_at FROM plan_items WHERE plan_id = $1
+SELECT id, plan_id, learning_target_id, position, status, phase, substituted_by, completed_by_attempt_id, reason, added_at, completed_at FROM learning_plan_entries WHERE plan_id = $1
 ORDER BY position
 `
 
 // All items in a plan, ordered by position.
-func (q *Queries) PlanItems(ctx context.Context, planID uuid.UUID) ([]PlanItem, error) {
+func (q *Queries) PlanItems(ctx context.Context, planID uuid.UUID) ([]LearningPlanEntry, error) {
 	rows, err := q.db.Query(ctx, planItems, planID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []PlanItem{}
+	items := []LearningPlanEntry{}
 	for rows.Next() {
-		var i PlanItem
+		var i LearningPlanEntry
 		if err := rows.Scan(
 			&i.ID,
 			&i.PlanID,
-			&i.LearningItemID,
+			&i.LearningTargetID,
 			&i.Position,
 			&i.Status,
 			&i.Phase,
@@ -6841,19 +6535,19 @@ func (q *Queries) PlanItems(ctx context.Context, planID uuid.UUID) ([]PlanItem, 
 }
 
 const planItemsByLearningItem = `-- name: PlanItemsByLearningItem :many
-SELECT lpi.id, lpi.plan_id, lpi.learning_item_id, lpi.position, lpi.status, lpi.phase,
+SELECT lpi.id, lpi.plan_id, lpi.learning_target_id, lpi.position, lpi.status, lpi.phase,
        lpi.substituted_by, lpi.completed_by_attempt_id, lpi.reason, lpi.added_at, lpi.completed_at,
        lp.title AS plan_title
-FROM plan_items lpi
-JOIN plans lp ON lp.id = lpi.plan_id
-WHERE lpi.learning_item_id = $1
+FROM learning_plan_entries lpi
+JOIN learning_plans lp ON lp.id = lpi.plan_id
+WHERE lpi.learning_target_id = $1
   AND lp.status = 'active'
 `
 
 type PlanItemsByLearningItemRow struct {
 	ID                   uuid.UUID  `json:"id"`
 	PlanID               uuid.UUID  `json:"plan_id"`
-	LearningItemID       uuid.UUID  `json:"learning_item_id"`
+	LearningTargetID     uuid.UUID  `json:"learning_target_id"`
 	Position             int32      `json:"position"`
 	Status               string     `json:"status"`
 	Phase                *string    `json:"phase"`
@@ -6867,8 +6561,8 @@ type PlanItemsByLearningItemRow struct {
 
 // Find plan items for a learning_item across ACTIVE plans only.
 // Used by record_attempt to provide plan context. Excludes draft/paused/completed/abandoned.
-func (q *Queries) PlanItemsByLearningItem(ctx context.Context, learningItemID uuid.UUID) ([]PlanItemsByLearningItemRow, error) {
-	rows, err := q.db.Query(ctx, planItemsByLearningItem, learningItemID)
+func (q *Queries) PlanItemsByLearningItem(ctx context.Context, learningTargetID uuid.UUID) ([]PlanItemsByLearningItemRow, error) {
+	rows, err := q.db.Query(ctx, planItemsByLearningItem, learningTargetID)
 	if err != nil {
 		return nil, err
 	}
@@ -6879,7 +6573,7 @@ func (q *Queries) PlanItemsByLearningItem(ctx context.Context, learningItemID uu
 		if err := rows.Scan(
 			&i.ID,
 			&i.PlanID,
-			&i.LearningItemID,
+			&i.LearningTargetID,
 			&i.Position,
 			&i.Status,
 			&i.Phase,
@@ -6901,14 +6595,14 @@ func (q *Queries) PlanItemsByLearningItem(ctx context.Context, learningItemID uu
 }
 
 const planItemsDetailed = `-- name: PlanItemsDetailed :many
-SELECT lpi.id, lpi.plan_id, lpi.learning_item_id, lpi.position, lpi.status, lpi.phase,
+SELECT lpi.id, lpi.plan_id, lpi.learning_target_id, lpi.position, lpi.status, lpi.phase,
        lpi.substituted_by, lpi.completed_by_attempt_id, lpi.reason, lpi.added_at, lpi.completed_at,
        li.title       AS item_title,
        li.domain      AS item_domain,
        li.difficulty  AS item_difficulty,
        li.external_id AS item_external_id
-FROM plan_items lpi
-JOIN items li ON li.id = lpi.learning_item_id
+FROM learning_plan_entries lpi
+JOIN learning_targets li ON li.id = lpi.learning_target_id
 WHERE lpi.plan_id = $1
 ORDER BY lpi.position
 `
@@ -6916,7 +6610,7 @@ ORDER BY lpi.position
 type PlanItemsDetailedRow struct {
 	ID                   uuid.UUID  `json:"id"`
 	PlanID               uuid.UUID  `json:"plan_id"`
-	LearningItemID       uuid.UUID  `json:"learning_item_id"`
+	LearningTargetID     uuid.UUID  `json:"learning_target_id"`
 	Position             int32      `json:"position"`
 	Status               string     `json:"status"`
 	Phase                *string    `json:"phase"`
@@ -6946,7 +6640,7 @@ func (q *Queries) PlanItemsDetailed(ctx context.Context, planID uuid.UUID) ([]Pl
 		if err := rows.Scan(
 			&i.ID,
 			&i.PlanID,
-			&i.LearningItemID,
+			&i.LearningTargetID,
 			&i.Position,
 			&i.Status,
 			&i.Phase,
@@ -6977,7 +6671,7 @@ SELECT
     count(*) FILTER (WHERE status = 'skipped')::int AS skipped,
     count(*) FILTER (WHERE status = 'substituted')::int AS substituted,
     count(*) FILTER (WHERE status = 'planned')::int AS remaining
-FROM plan_items WHERE plan_id = $1
+FROM learning_plan_entries WHERE plan_id = $1
 `
 
 type PlanProgressRow struct {
@@ -7003,7 +6697,7 @@ func (q *Queries) PlanProgress(ctx context.Context, planID uuid.UUID) (PlanProgr
 }
 
 const plansByDomain = `-- name: PlansByDomain :many
-SELECT id, title, description, domain, goal_id, status, target_count, plan_config, created_by, created_at, updated_at FROM plans
+SELECT id, title, description, domain, goal_id, status, target_count, plan_config, created_by, created_at, updated_at FROM learning_plans
 WHERE domain = $1
   AND ($2::text IS NULL OR status = $2)
 ORDER BY created_at DESC
@@ -7015,15 +6709,15 @@ type PlansByDomainParams struct {
 }
 
 // Filter plans by domain, optionally by status.
-func (q *Queries) PlansByDomain(ctx context.Context, arg PlansByDomainParams) ([]Plan, error) {
+func (q *Queries) PlansByDomain(ctx context.Context, arg PlansByDomainParams) ([]LearningPlan, error) {
 	rows, err := q.db.Query(ctx, plansByDomain, arg.Domain, arg.Status)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []Plan{}
+	items := []LearningPlan{}
 	for rows.Next() {
-		var i Plan
+		var i LearningPlan
 		if err := rows.Scan(
 			&i.ID,
 			&i.Title,
@@ -7048,19 +6742,19 @@ func (q *Queries) PlansByDomain(ctx context.Context, arg PlansByDomainParams) ([
 }
 
 const plansByGoal = `-- name: PlansByGoal :many
-SELECT id, title, description, domain, goal_id, status, target_count, plan_config, created_by, created_at, updated_at FROM plans WHERE goal_id = $1
+SELECT id, title, description, domain, goal_id, status, target_count, plan_config, created_by, created_at, updated_at FROM learning_plans WHERE goal_id = $1
 ORDER BY created_at DESC
 `
 
-func (q *Queries) PlansByGoal(ctx context.Context, goalID *uuid.UUID) ([]Plan, error) {
+func (q *Queries) PlansByGoal(ctx context.Context, goalID *uuid.UUID) ([]LearningPlan, error) {
 	rows, err := q.db.Query(ctx, plansByGoal, goalID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []Plan{}
+	items := []LearningPlan{}
 	for rows.Next() {
-		var i Plan
+		var i LearningPlan
 		if err := rows.Scan(
 			&i.ID,
 			&i.Title,
@@ -7088,7 +6782,7 @@ const projectByAlias = `-- name: ProjectByAlias :one
 SELECT p.id, p.slug, p.title, p.description, p.long_description, p.role,
        p.tech_stack, p.highlights, p.problem, p.solution, p.architecture,
        p.results, p.github_url, p.live_url, p.featured, p.is_public, p.sort_order,
-       p.status, p.notion_page_id, p.repo, p.area_id, p.goal_id, p.deadline, p.last_activity_at,
+       p.status, p.external_provider, external_ref, p.repo, p.area_id, p.goal_id, p.deadline, p.last_activity_at,
        p.expected_cadence, p.created_at, p.updated_at
 FROM project_aliases pa
 JOIN projects p ON p.id = pa.project_id
@@ -7118,7 +6812,8 @@ func (q *Queries) ProjectByAlias(ctx context.Context, alias string) (Project, er
 		&i.IsPublic,
 		&i.SortOrder,
 		&i.Status,
-		&i.NotionPageID,
+		&i.ExternalProvider,
+		&i.ExternalRef,
 		&i.Repo,
 		&i.AreaID,
 		&i.GoalID,
@@ -7134,7 +6829,7 @@ func (q *Queries) ProjectByAlias(ctx context.Context, alias string) (Project, er
 const projectByID = `-- name: ProjectByID :one
 SELECT id, slug, title, description, long_description, role, tech_stack, highlights,
        problem, solution, architecture, results, github_url, live_url,
-       featured, is_public, sort_order, status, notion_page_id, repo, area_id, goal_id, deadline, last_activity_at,
+       featured, is_public, sort_order, status, external_provider, external_ref, repo, area_id, goal_id, deadline, last_activity_at,
        expected_cadence, created_at, updated_at
 FROM projects WHERE id = $1
 `
@@ -7161,7 +6856,8 @@ func (q *Queries) ProjectByID(ctx context.Context, id uuid.UUID) (Project, error
 		&i.IsPublic,
 		&i.SortOrder,
 		&i.Status,
-		&i.NotionPageID,
+		&i.ExternalProvider,
+		&i.ExternalRef,
 		&i.Repo,
 		&i.AreaID,
 		&i.GoalID,
@@ -7177,7 +6873,7 @@ func (q *Queries) ProjectByID(ctx context.Context, id uuid.UUID) (Project, error
 const projectByRepo = `-- name: ProjectByRepo :one
 SELECT id, slug, title, description, long_description, role, tech_stack, highlights,
        problem, solution, architecture, results, github_url, live_url,
-       featured, is_public, sort_order, status, notion_page_id, repo, area_id, goal_id, deadline, last_activity_at,
+       featured, is_public, sort_order, status, external_provider, external_ref, repo, area_id, goal_id, deadline, last_activity_at,
        expected_cadence, created_at, updated_at
 FROM projects WHERE repo = $1
 `
@@ -7204,7 +6900,8 @@ func (q *Queries) ProjectByRepo(ctx context.Context, repo *string) (Project, err
 		&i.IsPublic,
 		&i.SortOrder,
 		&i.Status,
-		&i.NotionPageID,
+		&i.ExternalProvider,
+		&i.ExternalRef,
 		&i.Repo,
 		&i.AreaID,
 		&i.GoalID,
@@ -7220,7 +6917,7 @@ func (q *Queries) ProjectByRepo(ctx context.Context, repo *string) (Project, err
 const projectBySlug = `-- name: ProjectBySlug :one
 SELECT id, slug, title, description, long_description, role, tech_stack, highlights,
        problem, solution, architecture, results, github_url, live_url,
-       featured, is_public, sort_order, status, notion_page_id, repo, area_id, goal_id, deadline, last_activity_at,
+       featured, is_public, sort_order, status, external_provider, external_ref, repo, area_id, goal_id, deadline, last_activity_at,
        expected_cadence, created_at, updated_at
 FROM projects WHERE slug = $1
 `
@@ -7247,7 +6944,8 @@ func (q *Queries) ProjectBySlug(ctx context.Context, slug string) (Project, erro
 		&i.IsPublic,
 		&i.SortOrder,
 		&i.Status,
-		&i.NotionPageID,
+		&i.ExternalProvider,
+		&i.ExternalRef,
 		&i.Repo,
 		&i.AreaID,
 		&i.GoalID,
@@ -7263,7 +6961,7 @@ func (q *Queries) ProjectBySlug(ctx context.Context, slug string) (Project, erro
 const projectByTitle = `-- name: ProjectByTitle :one
 SELECT id, slug, title, description, long_description, role, tech_stack, highlights,
        problem, solution, architecture, results, github_url, live_url,
-       featured, is_public, sort_order, status, notion_page_id, repo, area_id, goal_id, deadline, last_activity_at,
+       featured, is_public, sort_order, status, external_provider, external_ref, repo, area_id, goal_id, deadline, last_activity_at,
        expected_cadence, created_at, updated_at
 FROM projects WHERE LOWER(title) = LOWER($1)
 `
@@ -7291,7 +6989,8 @@ func (q *Queries) ProjectByTitle(ctx context.Context, lower string) (Project, er
 		&i.IsPublic,
 		&i.SortOrder,
 		&i.Status,
-		&i.NotionPageID,
+		&i.ExternalProvider,
+		&i.ExternalRef,
 		&i.Repo,
 		&i.AreaID,
 		&i.GoalID,
@@ -7352,7 +7051,7 @@ func (q *Queries) ProjectSummariesByGoalIDs(ctx context.Context, goalIds []uuid.
 const projects = `-- name: Projects :many
 SELECT id, slug, title, description, long_description, role, tech_stack, highlights,
        problem, solution, architecture, results, github_url, live_url,
-       featured, is_public, sort_order, status, notion_page_id, repo, area_id, goal_id, deadline, last_activity_at,
+       featured, is_public, sort_order, status, external_provider, external_ref, repo, area_id, goal_id, deadline, last_activity_at,
        expected_cadence, created_at, updated_at
 FROM projects ORDER BY featured DESC, sort_order, title
 `
@@ -7385,7 +7084,8 @@ func (q *Queries) Projects(ctx context.Context) ([]Project, error) {
 			&i.IsPublic,
 			&i.SortOrder,
 			&i.Status,
-			&i.NotionPageID,
+			&i.ExternalProvider,
+			&i.ExternalRef,
 			&i.Repo,
 			&i.AreaID,
 			&i.GoalID,
@@ -7409,7 +7109,7 @@ const publicBookmarks = `-- name: PublicBookmarks :many
 SELECT id, url, url_hash, slug, title, excerpt, note,
        source_type, source_feed_entry_id,
        curated_by, curated_at, is_public, published_at,
-       legacy_content_id, created_at, updated_at
+       created_at, updated_at
 FROM bookmarks
 WHERE is_public = true
   AND ($3::timestamptz IS NULL OR curated_at >= $3)
@@ -7437,7 +7137,6 @@ type PublicBookmarksRow struct {
 	CuratedAt         time.Time  `json:"curated_at"`
 	IsPublic          bool       `json:"is_public"`
 	PublishedAt       *time.Time `json:"published_at"`
-	LegacyContentID   *uuid.UUID `json:"legacy_content_id"`
 	CreatedAt         time.Time  `json:"created_at"`
 	UpdatedAt         time.Time  `json:"updated_at"`
 }
@@ -7465,7 +7164,6 @@ func (q *Queries) PublicBookmarks(ctx context.Context, arg PublicBookmarksParams
 			&i.CuratedAt,
 			&i.IsPublic,
 			&i.PublishedAt,
-			&i.LegacyContentID,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -7495,7 +7193,7 @@ func (q *Queries) PublicBookmarksCount(ctx context.Context, since *time.Time) (i
 const publicProjects = `-- name: PublicProjects :many
 SELECT id, slug, title, description, long_description, role, tech_stack, highlights,
        problem, solution, architecture, results, github_url, live_url,
-       featured, is_public, sort_order, status, notion_page_id, repo, area_id, goal_id, deadline, last_activity_at,
+       featured, is_public, sort_order, status, external_provider, external_ref, repo, area_id, goal_id, deadline, last_activity_at,
        expected_cadence, created_at, updated_at
 FROM projects WHERE is_public = true
 ORDER BY featured DESC, sort_order, title
@@ -7529,7 +7227,8 @@ func (q *Queries) PublicProjects(ctx context.Context) ([]Project, error) {
 			&i.IsPublic,
 			&i.SortOrder,
 			&i.Status,
-			&i.NotionPageID,
+			&i.ExternalProvider,
+			&i.ExternalRef,
 			&i.Repo,
 			&i.AreaID,
 			&i.GoalID,
@@ -7552,7 +7251,7 @@ func (q *Queries) PublicProjects(ctx context.Context) ([]Project, error) {
 const publishContent = `-- name: PublishContent :one
 UPDATE contents SET status = 'published', published_at = now(), updated_at = now()
 WHERE id = $1
-RETURNING id, slug, title, body, excerpt, type, status, source, source_type,
+RETURNING id, slug, title, body, excerpt, type, status, origin_ref, source_type,
           series_id, series_order, review_level, is_public, project_id, ai_metadata, reading_time_min,
           cover_image, published_at, created_at, updated_at
 `
@@ -7565,7 +7264,7 @@ type PublishContentRow struct {
 	Excerpt        string          `json:"excerpt"`
 	Type           ContentType     `json:"type"`
 	Status         ContentStatus   `json:"status"`
-	Source         *string         `json:"source"`
+	OriginRef      *string         `json:"origin_ref"`
 	SourceType     NullSourceType  `json:"source_type"`
 	SeriesID       *string         `json:"series_id"`
 	SeriesOrder    *int32          `json:"series_order"`
@@ -7591,7 +7290,7 @@ func (q *Queries) PublishContent(ctx context.Context, id uuid.UUID) (PublishCont
 		&i.Excerpt,
 		&i.Type,
 		&i.Status,
-		&i.Source,
+		&i.OriginRef,
 		&i.SourceType,
 		&i.SeriesID,
 		&i.SeriesOrder,
@@ -7622,7 +7321,7 @@ func (q *Queries) PublishedContentCountSince(ctx context.Context, publishedAt *t
 }
 
 const publishedContents = `-- name: PublishedContents :many
-SELECT id, slug, title, body, excerpt, type, status, source, source_type,
+SELECT id, slug, title, body, excerpt, type, status, origin_ref, source_type,
        series_id, series_order, review_level, is_public, project_id, ai_metadata, reading_time_min,
        cover_image, published_at, created_at, updated_at
 FROM contents
@@ -7648,7 +7347,7 @@ type PublishedContentsRow struct {
 	Excerpt        string          `json:"excerpt"`
 	Type           ContentType     `json:"type"`
 	Status         ContentStatus   `json:"status"`
-	Source         *string         `json:"source"`
+	OriginRef      *string         `json:"origin_ref"`
 	SourceType     NullSourceType  `json:"source_type"`
 	SeriesID       *string         `json:"series_id"`
 	SeriesOrder    *int32          `json:"series_order"`
@@ -7685,7 +7384,7 @@ func (q *Queries) PublishedContents(ctx context.Context, arg PublishedContentsPa
 			&i.Excerpt,
 			&i.Type,
 			&i.Status,
-			&i.Source,
+			&i.OriginRef,
 			&i.SourceType,
 			&i.SeriesID,
 			&i.SeriesOrder,
@@ -7710,7 +7409,7 @@ func (q *Queries) PublishedContents(ctx context.Context, arg PublishedContentsPa
 }
 
 const publishedContentsByDateRange = `-- name: PublishedContentsByDateRange :many
-SELECT id, slug, title, body, excerpt, type, status, source, source_type,
+SELECT id, slug, title, body, excerpt, type, status, origin_ref, source_type,
        series_id, series_order, review_level, is_public, project_id, ai_metadata, reading_time_min,
        cover_image, published_at, created_at, updated_at
 FROM contents
@@ -7734,7 +7433,7 @@ type PublishedContentsByDateRangeRow struct {
 	Excerpt        string          `json:"excerpt"`
 	Type           ContentType     `json:"type"`
 	Status         ContentStatus   `json:"status"`
-	Source         *string         `json:"source"`
+	OriginRef      *string         `json:"origin_ref"`
 	SourceType     NullSourceType  `json:"source_type"`
 	SeriesID       *string         `json:"series_id"`
 	SeriesOrder    *int32          `json:"series_order"`
@@ -7766,7 +7465,7 @@ func (q *Queries) PublishedContentsByDateRange(ctx context.Context, arg Publishe
 			&i.Excerpt,
 			&i.Type,
 			&i.Status,
-			&i.Source,
+			&i.OriginRef,
 			&i.SourceType,
 			&i.SeriesID,
 			&i.SeriesOrder,
@@ -7935,7 +7634,7 @@ func (q *Queries) ReassignEventTags(ctx context.Context, arg ReassignEventTagsPa
 }
 
 const reassignNoteTags = `-- name: ReassignNoteTags :execrows
-UPDATE note_tags SET tag_id = $1 WHERE note_tags.tag_id = $2
+UPDATE obsidian_note_tags SET tag_id = $1 WHERE obsidian_note_tags.tag_id = $2
 `
 
 type ReassignNoteTagsParams struct {
@@ -7951,64 +7650,6 @@ func (q *Queries) ReassignNoteTags(ctx context.Context, arg ReassignNoteTagsPara
 		return 0, err
 	}
 	return result.RowsAffected(), nil
-}
-
-const recentByKind = `-- name: RecentByKind :many
-SELECT id, subject_type, subject_id, subject_key, kind,
-       body, evidence, evidence_hash, computed_at, computed_by
-FROM syntheses
-WHERE subject_type = $2
-  AND kind = $3
-  AND ($4::text IS NULL OR subject_key = $4)
-ORDER BY computed_at DESC
-LIMIT $1
-`
-
-type RecentByKindParams struct {
-	Limit       int32   `json:"limit"`
-	SubjectType string  `json:"subject_type"`
-	Kind        string  `json:"kind"`
-	SubjectKey  *string `json:"subject_key"`
-}
-
-// List recent syntheses for a (subject_type, kind) pair, newest first.
-// Used by the retrospective read endpoint to show a timeline of past
-// snapshots. Filters on subject_key optional so the caller can either
-// list all weeks or pin to one.
-func (q *Queries) RecentByKind(ctx context.Context, arg RecentByKindParams) ([]Synthesis, error) {
-	rows, err := q.db.Query(ctx, recentByKind,
-		arg.Limit,
-		arg.SubjectType,
-		arg.Kind,
-		arg.SubjectKey,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []Synthesis{}
-	for rows.Next() {
-		var i Synthesis
-		if err := rows.Scan(
-			&i.ID,
-			&i.SubjectType,
-			&i.SubjectID,
-			&i.SubjectKey,
-			&i.Kind,
-			&i.Body,
-			&i.Evidence,
-			&i.EvidenceHash,
-			&i.ComputedAt,
-			&i.ComputedBy,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
 }
 
 const recentCollectedData = `-- name: RecentCollectedData :many
@@ -8082,7 +7723,7 @@ func (q *Queries) RecentCollectedData(ctx context.Context, arg RecentCollectedDa
 }
 
 const recentContentsByType = `-- name: RecentContentsByType :many
-SELECT id, slug, title, body, excerpt, type, status, source, source_type,
+SELECT id, slug, title, body, excerpt, type, status, origin_ref, source_type,
        series_id, series_order, review_level, is_public, project_id, ai_metadata, reading_time_min,
        cover_image, published_at, created_at, updated_at
 FROM contents
@@ -8106,7 +7747,7 @@ type RecentContentsByTypeRow struct {
 	Excerpt        string          `json:"excerpt"`
 	Type           ContentType     `json:"type"`
 	Status         ContentStatus   `json:"status"`
-	Source         *string         `json:"source"`
+	OriginRef      *string         `json:"origin_ref"`
 	SourceType     NullSourceType  `json:"source_type"`
 	SeriesID       *string         `json:"series_id"`
 	SeriesOrder    *int32          `json:"series_order"`
@@ -8140,7 +7781,7 @@ func (q *Queries) RecentContentsByType(ctx context.Context, arg RecentContentsBy
 			&i.Excerpt,
 			&i.Type,
 			&i.Status,
-			&i.Source,
+			&i.OriginRef,
 			&i.SourceType,
 			&i.SeriesID,
 			&i.SeriesOrder,
@@ -8164,43 +7805,9 @@ func (q *Queries) RecentContentsByType(ctx context.Context, arg RecentContentsBy
 	return items, nil
 }
 
-const recentReports = `-- name: RecentReports :many
-SELECT id, source, in_response_to, content, metadata, reported_date, created_at
-FROM reports
-ORDER BY reported_date DESC, created_at DESC
-`
-
-func (q *Queries) RecentReports(ctx context.Context) ([]Report, error) {
-	rows, err := q.db.Query(ctx, recentReports)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []Report{}
-	for rows.Next() {
-		var i Report
-		if err := rows.Scan(
-			&i.ID,
-			&i.Source,
-			&i.InResponseTo,
-			&i.Content,
-			&i.Metadata,
-			&i.ReportedDate,
-			&i.CreatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const recentSessions = `-- name: RecentSessions :many
-SELECT id, domain, session_mode, journal_id, daily_plan_item_id, started_at, ended_at, metadata, created_at
-FROM sessions
+SELECT id, domain, session_mode, agent_note_id, daily_plan_item_id, started_at, ended_at, metadata, created_at, updated_at
+FROM learning_sessions
 WHERE ($1::text IS NULL OR domain = $1)
   AND started_at >= $2
 ORDER BY started_at DESC
@@ -8213,25 +7820,26 @@ type RecentSessionsParams struct {
 	MaxResults int32     `json:"max_results"`
 }
 
-func (q *Queries) RecentSessions(ctx context.Context, arg RecentSessionsParams) ([]Session, error) {
+func (q *Queries) RecentSessions(ctx context.Context, arg RecentSessionsParams) ([]LearningSession, error) {
 	rows, err := q.db.Query(ctx, recentSessions, arg.Domain, arg.Since, arg.MaxResults)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []Session{}
+	items := []LearningSession{}
 	for rows.Next() {
-		var i Session
+		var i LearningSession
 		if err := rows.Scan(
 			&i.ID,
 			&i.Domain,
 			&i.SessionMode,
-			&i.JournalID,
+			&i.AgentNoteID,
 			&i.DailyPlanItemID,
 			&i.StartedAt,
 			&i.EndedAt,
 			&i.Metadata,
 			&i.CreatedAt,
+			&i.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -8243,35 +7851,36 @@ func (q *Queries) RecentSessions(ctx context.Context, arg RecentSessionsParams) 
 	return items, nil
 }
 
-const recurringTaskByProject = `-- name: RecurringTaskByProject :one
-SELECT id, title, status, due, project_id, notion_page_id,
+const recurringTodoItemByProject = `-- name: RecurringTodoItemByProject :one
+SELECT id, title, state, due, project_id, external_provider, external_ref,
        completed_at, energy, priority, recur_interval, recur_unit,
        description, assignee, created_by, created_at, updated_at
-FROM tasks
+FROM todos
 WHERE project_id = $1
-  AND status != 'done'
+  AND state != 'done'
   AND recur_interval IS NOT NULL AND recur_interval > 0
   AND due <= $2
 ORDER BY due ASC NULLS LAST
 LIMIT 1
 `
 
-type RecurringTaskByProjectParams struct {
+type RecurringTodoItemByProjectParams struct {
 	ProjectID *uuid.UUID `json:"project_id"`
 	Today     *time.Time `json:"today"`
 }
 
-// Find a recurring pending task under a given project that is due today or overdue.
-func (q *Queries) RecurringTaskByProject(ctx context.Context, arg RecurringTaskByProjectParams) (Task, error) {
-	row := q.db.QueryRow(ctx, recurringTaskByProject, arg.ProjectID, arg.Today)
-	var i Task
+// Find a recurring pending todo item under a given project that is due today or overdue.
+func (q *Queries) RecurringTodoItemByProject(ctx context.Context, arg RecurringTodoItemByProjectParams) (Todo, error) {
+	row := q.db.QueryRow(ctx, recurringTodoItemByProject, arg.ProjectID, arg.Today)
+	var i Todo
 	err := row.Scan(
 		&i.ID,
 		&i.Title,
-		&i.Status,
+		&i.State,
 		&i.Due,
 		&i.ProjectID,
-		&i.NotionPageID,
+		&i.ExternalProvider,
+		&i.ExternalRef,
 		&i.CompletedAt,
 		&i.Energy,
 		&i.Priority,
@@ -8286,34 +7895,35 @@ func (q *Queries) RecurringTaskByProject(ctx context.Context, arg RecurringTaskB
 	return i, err
 }
 
-const recurringTasksDueToday = `-- name: RecurringTasksDueToday :many
-SELECT id, title, status, due, project_id, notion_page_id,
+const recurringTodoItemsDueToday = `-- name: RecurringTodoItemsDueToday :many
+SELECT id, title, state, due, project_id, external_provider, external_ref,
        completed_at, energy, priority, recur_interval, recur_unit,
        description, assignee, created_by, created_at, updated_at
-FROM tasks
-WHERE status != 'done'
+FROM todos
+WHERE state != 'done'
   AND recur_interval IS NOT NULL AND recur_interval > 0
   AND due <= $1
 ORDER BY due ASC
 `
 
-// Get recurring tasks due on or before today.
-func (q *Queries) RecurringTasksDueToday(ctx context.Context, today *time.Time) ([]Task, error) {
-	rows, err := q.db.Query(ctx, recurringTasksDueToday, today)
+// Get recurring todo items due on or before today.
+func (q *Queries) RecurringTodoItemsDueToday(ctx context.Context, today *time.Time) ([]Todo, error) {
+	rows, err := q.db.Query(ctx, recurringTodoItemsDueToday, today)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []Task{}
+	items := []Todo{}
 	for rows.Next() {
-		var i Task
+		var i Todo
 		if err := rows.Scan(
 			&i.ID,
 			&i.Title,
-			&i.Status,
+			&i.State,
 			&i.Due,
 			&i.ProjectID,
-			&i.NotionPageID,
+			&i.ExternalProvider,
+			&i.ExternalRef,
 			&i.CompletedAt,
 			&i.Energy,
 			&i.Priority,
@@ -8335,27 +7945,27 @@ func (q *Queries) RecurringTasksDueToday(ctx context.Context, today *time.Time) 
 	return items, nil
 }
 
-const reflectionForDate = `-- name: ReflectionForDate :many
-SELECT id, kind, source, content, metadata, entry_date, created_at
-FROM journal
+const reflectionNotesForDate = `-- name: ReflectionNotesForDate :many
+SELECT id, kind, author, content, metadata, entry_date, created_at
+FROM agent_notes
 WHERE kind = 'reflection' AND entry_date = $1
 ORDER BY created_at DESC
 `
 
-// Get reflection journal entries for a specific date.
-func (q *Queries) ReflectionForDate(ctx context.Context, entryDate time.Time) ([]Journal, error) {
-	rows, err := q.db.Query(ctx, reflectionForDate, entryDate)
+// Get reflection notes for a specific date.
+func (q *Queries) ReflectionNotesForDate(ctx context.Context, entryDate time.Time) ([]AgentNote, error) {
+	rows, err := q.db.Query(ctx, reflectionNotesForDate, entryDate)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []Journal{}
+	items := []AgentNote{}
 	for rows.Next() {
-		var i Journal
+		var i AgentNote
 		if err := rows.Scan(
 			&i.ID,
 			&i.Kind,
-			&i.Source,
+			&i.Author,
 			&i.Content,
 			&i.Metadata,
 			&i.EntryDate,
@@ -8426,7 +8036,7 @@ SET status     = 'draft',
                      ),
     updated_at = now()
 WHERE id = $1
-RETURNING id, slug, title, body, excerpt, type, status, source, source_type,
+RETURNING id, slug, title, body, excerpt, type, status, origin_ref, source_type,
           series_id, series_order, review_level, is_public, project_id, ai_metadata, reading_time_min,
           cover_image, published_at, created_at, updated_at
 `
@@ -8444,7 +8054,7 @@ type RejectContentRow struct {
 	Excerpt        string          `json:"excerpt"`
 	Type           ContentType     `json:"type"`
 	Status         ContentStatus   `json:"status"`
-	Source         *string         `json:"source"`
+	OriginRef      *string         `json:"origin_ref"`
 	SourceType     NullSourceType  `json:"source_type"`
 	SeriesID       *string         `json:"series_id"`
 	SeriesOrder    *int32          `json:"series_order"`
@@ -8477,7 +8087,7 @@ func (q *Queries) RejectContent(ctx context.Context, arg RejectContentParams) (R
 		&i.Excerpt,
 		&i.Type,
 		&i.Status,
-		&i.Source,
+		&i.OriginRef,
 		&i.SourceType,
 		&i.SeriesID,
 		&i.SeriesOrder,
@@ -8536,60 +8146,6 @@ func (q *Queries) RelatedTagsForTopic(ctx context.Context, arg RelatedTagsForTop
 	return items, nil
 }
 
-const reportByID = `-- name: ReportByID :one
-SELECT id, source, in_response_to, content, metadata, reported_date, created_at
-FROM reports WHERE id = $1
-`
-
-func (q *Queries) ReportByID(ctx context.Context, id int64) (Report, error) {
-	row := q.db.QueryRow(ctx, reportByID, id)
-	var i Report
-	err := row.Scan(
-		&i.ID,
-		&i.Source,
-		&i.InResponseTo,
-		&i.Content,
-		&i.Metadata,
-		&i.ReportedDate,
-		&i.CreatedAt,
-	)
-	return i, err
-}
-
-const reportsByDirective = `-- name: ReportsByDirective :many
-SELECT id, source, in_response_to, content, metadata, reported_date, created_at
-FROM reports WHERE in_response_to = $1
-ORDER BY reported_date DESC, created_at DESC
-`
-
-func (q *Queries) ReportsByDirective(ctx context.Context, directiveID *int64) ([]Report, error) {
-	rows, err := q.db.Query(ctx, reportsByDirective, directiveID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []Report{}
-	for rows.Next() {
-		var i Report
-		if err := rows.Scan(
-			&i.ID,
-			&i.Source,
-			&i.InResponseTo,
-			&i.Content,
-			&i.Metadata,
-			&i.ReportedDate,
-			&i.CreatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const resetFeedFailure = `-- name: ResetFeedFailure :exec
 UPDATE feeds SET
     consecutive_failures = 0,
@@ -8612,33 +8168,34 @@ func (q *Queries) ResetFeedFailure(ctx context.Context, arg ResetFeedFailurePara
 	return err
 }
 
-const resetRecurringTask = `-- name: ResetRecurringTask :one
-UPDATE tasks SET
+const resetRecurringTodoItem = `-- name: ResetRecurringTodoItem :one
+UPDATE todos SET
     due = $1,
-    status = 'todo',
+    state = 'todo',
     updated_at = now()
 WHERE id = $2
-RETURNING id, title, status, due, project_id, notion_page_id,
+RETURNING id, title, state, due, project_id, external_provider, external_ref,
           completed_at, energy, priority, recur_interval, recur_unit,
           description, assignee, created_by, created_at, updated_at
 `
 
-type ResetRecurringTaskParams struct {
+type ResetRecurringTodoItemParams struct {
 	Due *time.Time `json:"due"`
 	ID  uuid.UUID  `json:"id"`
 }
 
-// Reset a recurring task after completion: advance due, reset status to todo.
-func (q *Queries) ResetRecurringTask(ctx context.Context, arg ResetRecurringTaskParams) (Task, error) {
-	row := q.db.QueryRow(ctx, resetRecurringTask, arg.Due, arg.ID)
-	var i Task
+// Reset a recurring todo item after completion: advance due, reset state to todo.
+func (q *Queries) ResetRecurringTodoItem(ctx context.Context, arg ResetRecurringTodoItemParams) (Todo, error) {
+	row := q.db.QueryRow(ctx, resetRecurringTodoItem, arg.Due, arg.ID)
+	var i Todo
 	err := row.Scan(
 		&i.ID,
 		&i.Title,
-		&i.Status,
+		&i.State,
 		&i.Due,
 		&i.ProjectID,
-		&i.NotionPageID,
+		&i.ExternalProvider,
+		&i.ExternalRef,
 		&i.CompletedAt,
 		&i.Energy,
 		&i.Priority,
@@ -8653,83 +8210,31 @@ func (q *Queries) ResetRecurringTask(ctx context.Context, arg ResetRecurringTask
 	return i, err
 }
 
-const resolveDirective = `-- name: ResolveDirective :one
-UPDATE directives
-SET resolved_at = now(), resolution_report_id = $1
-WHERE id = $2 AND acknowledged_at IS NOT NULL AND resolved_at IS NULL
-RETURNING id, source, target, priority, acknowledged_at, acknowledged_by, resolved_at, resolution_report_id, content, metadata, issued_date, created_at
+const retireAgent = `-- name: RetireAgent :execrows
+UPDATE agents
+SET status     = 'retired',
+    retired_at = COALESCE(retired_at, now()),
+    synced_at  = now()
+WHERE name = $1
 `
 
-type ResolveDirectiveParams struct {
-	ResolutionReportID *int64 `json:"resolution_report_id"`
-	ID                 int64  `json:"id"`
-}
-
-func (q *Queries) ResolveDirective(ctx context.Context, arg ResolveDirectiveParams) (Directive, error) {
-	row := q.db.QueryRow(ctx, resolveDirective, arg.ResolutionReportID, arg.ID)
-	var i Directive
-	err := row.Scan(
-		&i.ID,
-		&i.Source,
-		&i.Target,
-		&i.Priority,
-		&i.AcknowledgedAt,
-		&i.AcknowledgedBy,
-		&i.ResolvedAt,
-		&i.ResolutionReportID,
-		&i.Content,
-		&i.Metadata,
-		&i.IssuedDate,
-		&i.CreatedAt,
-	)
-	return i, err
-}
-
-const resolvedDirectivesRecent = `-- name: ResolvedDirectivesRecent :many
-SELECT id, source, target, priority, acknowledged_at, acknowledged_by, resolved_at, resolution_report_id, content, metadata, issued_date, created_at FROM directives
-WHERE resolved_at IS NOT NULL
-ORDER BY resolved_at DESC
-`
-
-// Resolved directives, newest resolution first. For Directive Board history view.
-func (q *Queries) ResolvedDirectivesRecent(ctx context.Context) ([]Directive, error) {
-	rows, err := q.db.Query(ctx, resolvedDirectivesRecent)
+// Mark an existing agent row as retired. No-op if already retired
+// (retired_at preserved via COALESCE). Returns rows-affected so the
+// caller can detect "retired a row that was never registered" vs
+// "no such agent".
+func (q *Queries) RetireAgent(ctx context.Context, name string) (int64, error) {
+	result, err := q.db.Exec(ctx, retireAgent, name)
 	if err != nil {
-		return nil, err
+		return 0, err
 	}
-	defer rows.Close()
-	items := []Directive{}
-	for rows.Next() {
-		var i Directive
-		if err := rows.Scan(
-			&i.ID,
-			&i.Source,
-			&i.Target,
-			&i.Priority,
-			&i.AcknowledgedAt,
-			&i.AcknowledgedBy,
-			&i.ResolvedAt,
-			&i.ResolutionReportID,
-			&i.Content,
-			&i.Metadata,
-			&i.IssuedDate,
-			&i.CreatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
+	return result.RowsAffected(), nil
 }
 
 const retrievalQueue = `-- name: RetrievalQueue :many
 SELECT rc.id AS card_id, rc.due,
        li.id AS item_id, li.title, li.domain, li.difficulty, li.external_id
 FROM review_cards rc
-JOIN items li ON li.id = rc.learning_item_id
+JOIN learning_targets li ON li.id = rc.learning_target_id
 WHERE rc.due <= $1
   AND ($2::text IS NULL OR li.domain = $2)
 ORDER BY rc.due ASC
@@ -8825,7 +8330,7 @@ func (q *Queries) ReviewLogsByCard(ctx context.Context, arg ReviewLogsByCardPara
 }
 
 const searchContents = `-- name: SearchContents :many
-SELECT id, slug, title, body, excerpt, type, status, source, source_type,
+SELECT id, slug, title, body, excerpt, type, status, origin_ref, source_type,
        series_id, series_order, review_level, is_public, project_id, ai_metadata, reading_time_min,
        cover_image, published_at, created_at, updated_at
 FROM contents
@@ -8851,7 +8356,7 @@ type SearchContentsRow struct {
 	Excerpt        string          `json:"excerpt"`
 	Type           ContentType     `json:"type"`
 	Status         ContentStatus   `json:"status"`
-	Source         *string         `json:"source"`
+	OriginRef      *string         `json:"origin_ref"`
 	SourceType     NullSourceType  `json:"source_type"`
 	SeriesID       *string         `json:"series_id"`
 	SeriesOrder    *int32          `json:"series_order"`
@@ -8888,7 +8393,7 @@ func (q *Queries) SearchContents(ctx context.Context, arg SearchContentsParams) 
 			&i.Excerpt,
 			&i.Type,
 			&i.Status,
-			&i.Source,
+			&i.OriginRef,
 			&i.SourceType,
 			&i.SeriesID,
 			&i.SeriesOrder,
@@ -8932,7 +8437,7 @@ func (q *Queries) SearchContentsCount(ctx context.Context, arg SearchContentsCou
 }
 
 const searchContentsOR = `-- name: SearchContentsOR :many
-SELECT id, slug, title, body, excerpt, type, status, source, source_type,
+SELECT id, slug, title, body, excerpt, type, status, origin_ref, source_type,
        series_id, series_order, review_level, is_public, project_id, ai_metadata, reading_time_min,
        cover_image, published_at, created_at, updated_at
 FROM contents
@@ -8958,7 +8463,7 @@ type SearchContentsORRow struct {
 	Excerpt        string          `json:"excerpt"`
 	Type           ContentType     `json:"type"`
 	Status         ContentStatus   `json:"status"`
-	Source         *string         `json:"source"`
+	OriginRef      *string         `json:"origin_ref"`
 	SourceType     NullSourceType  `json:"source_type"`
 	SeriesID       *string         `json:"series_id"`
 	SeriesOrder    *int32          `json:"series_order"`
@@ -8996,7 +8501,7 @@ func (q *Queries) SearchContentsOR(ctx context.Context, arg SearchContentsORPara
 			&i.Excerpt,
 			&i.Type,
 			&i.Status,
-			&i.Source,
+			&i.OriginRef,
 			&i.SourceType,
 			&i.SeriesID,
 			&i.SeriesOrder,
@@ -9040,12 +8545,12 @@ func (q *Queries) SearchContentsORCount(ctx context.Context, arg SearchContentsO
 }
 
 const searchNotesByFilters = `-- name: SearchNotesByFilters :many
-SELECT id, file_path, title, type, source, context, maturity, raw_tags,
+SELECT id, file_path, title, type, provenance, context, maturity, raw_tags,
        difficulty, book, chapter, content_text, synced_at
-FROM notes
+FROM obsidian_notes
 WHERE (maturity IS NULL OR maturity != 'archived')
   AND ($1::text IS NULL OR type = $1)
-  AND ($2::text IS NULL OR source = $2)
+  AND ($2::text IS NULL OR provenance = $2)
   AND ($3::text IS NULL OR context = $3)
   AND ($4::text IS NULL OR book = $4)
   AND ($5::timestamptz IS NULL OR synced_at >= $5)
@@ -9055,13 +8560,13 @@ LIMIT $7
 `
 
 type SearchNotesByFiltersParams struct {
-	FilterType    *string    `json:"filter_type"`
-	FilterSource  *string    `json:"filter_source"`
-	FilterContext *string    `json:"filter_context"`
-	FilterBook    *string    `json:"filter_book"`
-	After         *time.Time `json:"after"`
-	Before        *time.Time `json:"before"`
-	MaxResults    int32      `json:"max_results"`
+	FilterType       *string    `json:"filter_type"`
+	FilterProvenance *string    `json:"filter_provenance"`
+	FilterContext    *string    `json:"filter_context"`
+	FilterBook       *string    `json:"filter_book"`
+	After            *time.Time `json:"after"`
+	Before           *time.Time `json:"before"`
+	MaxResults       int32      `json:"max_results"`
 }
 
 type SearchNotesByFiltersRow struct {
@@ -9069,7 +8574,7 @@ type SearchNotesByFiltersRow struct {
 	FilePath    string          `json:"file_path"`
 	Title       *string         `json:"title"`
 	Type        *string         `json:"type"`
-	Source      *string         `json:"source"`
+	Provenance  *string         `json:"provenance"`
 	Context     *string         `json:"context"`
 	Maturity    string          `json:"maturity"`
 	RawTags     json.RawMessage `json:"raw_tags"`
@@ -9080,11 +8585,11 @@ type SearchNotesByFiltersRow struct {
 	SyncedAt    time.Time       `json:"synced_at"`
 }
 
-// Filter notes by frontmatter fields and date range. NULL parameters are ignored.
+// Filter obsidian_notes by frontmatter fields and date range. NULL parameters are ignored.
 func (q *Queries) SearchNotesByFilters(ctx context.Context, arg SearchNotesByFiltersParams) ([]SearchNotesByFiltersRow, error) {
 	rows, err := q.db.Query(ctx, searchNotesByFilters,
 		arg.FilterType,
-		arg.FilterSource,
+		arg.FilterProvenance,
 		arg.FilterContext,
 		arg.FilterBook,
 		arg.After,
@@ -9103,7 +8608,7 @@ func (q *Queries) SearchNotesByFilters(ctx context.Context, arg SearchNotesByFil
 			&i.FilePath,
 			&i.Title,
 			&i.Type,
-			&i.Source,
+			&i.Provenance,
 			&i.Context,
 			&i.Maturity,
 			&i.RawTags,
@@ -9124,10 +8629,10 @@ func (q *Queries) SearchNotesByFilters(ctx context.Context, arg SearchNotesByFil
 }
 
 const searchNotesBySimilarity = `-- name: SearchNotesBySimilarity :many
-SELECT id, file_path, title, type, source, context, maturity, raw_tags,
+SELECT id, file_path, title, type, provenance, context, maturity, raw_tags,
        difficulty, book, chapter, content_text, synced_at,
        (1 - (embedding <=> $1::vector))::float8 AS similarity
-FROM notes
+FROM obsidian_notes
 WHERE embedding IS NOT NULL
   AND (maturity IS NULL OR maturity != 'archived')
 ORDER BY embedding <=> $1::vector
@@ -9144,7 +8649,7 @@ type SearchNotesBySimilarityRow struct {
 	FilePath    string          `json:"file_path"`
 	Title       *string         `json:"title"`
 	Type        *string         `json:"type"`
-	Source      *string         `json:"source"`
+	Provenance  *string         `json:"provenance"`
 	Context     *string         `json:"context"`
 	Maturity    string          `json:"maturity"`
 	RawTags     json.RawMessage `json:"raw_tags"`
@@ -9156,7 +8661,7 @@ type SearchNotesBySimilarityRow struct {
 	Similarity  float64         `json:"similarity"`
 }
 
-// Semantic search: find notes closest to a query embedding vector.
+// Semantic search: find obsidian_notes closest to a query embedding vector.
 func (q *Queries) SearchNotesBySimilarity(ctx context.Context, arg SearchNotesBySimilarityParams) ([]SearchNotesBySimilarityRow, error) {
 	rows, err := q.db.Query(ctx, searchNotesBySimilarity, arg.QueryEmbedding, arg.MaxResults)
 	if err != nil {
@@ -9171,7 +8676,7 @@ func (q *Queries) SearchNotesBySimilarity(ctx context.Context, arg SearchNotesBy
 			&i.FilePath,
 			&i.Title,
 			&i.Type,
-			&i.Source,
+			&i.Provenance,
 			&i.Context,
 			&i.Maturity,
 			&i.RawTags,
@@ -9193,10 +8698,10 @@ func (q *Queries) SearchNotesBySimilarity(ctx context.Context, arg SearchNotesBy
 }
 
 const searchNotesByText = `-- name: SearchNotesByText :many
-SELECT id, file_path, title, type, source, context, maturity, raw_tags,
+SELECT id, file_path, title, type, provenance, context, maturity, raw_tags,
        difficulty, book, chapter, content_text, synced_at,
        ts_rank(search_vector, websearch_to_tsquery('simple', $1)) AS rank
-FROM notes
+FROM obsidian_notes
 WHERE search_vector @@ websearch_to_tsquery('simple', $1)
   AND (maturity IS NULL OR maturity != 'archived')
 ORDER BY rank DESC
@@ -9213,7 +8718,7 @@ type SearchNotesByTextRow struct {
 	FilePath    string          `json:"file_path"`
 	Title       *string         `json:"title"`
 	Type        *string         `json:"type"`
-	Source      *string         `json:"source"`
+	Provenance  *string         `json:"provenance"`
 	Context     *string         `json:"context"`
 	Maturity    string          `json:"maturity"`
 	RawTags     json.RawMessage `json:"raw_tags"`
@@ -9225,7 +8730,7 @@ type SearchNotesByTextRow struct {
 	Rank        float32         `json:"rank"`
 }
 
-// Full-text search on notes using the search_vector GIN index.
+// Full-text search on obsidian_notes using the search_vector GIN index.
 // Uses websearch_to_tsquery('simple', ...) for user-friendly query syntax.
 func (q *Queries) SearchNotesByText(ctx context.Context, arg SearchNotesByTextParams) ([]SearchNotesByTextRow, error) {
 	rows, err := q.db.Query(ctx, searchNotesByText, arg.Query, arg.MaxResults)
@@ -9241,7 +8746,7 @@ func (q *Queries) SearchNotesByText(ctx context.Context, arg SearchNotesByTextPa
 			&i.FilePath,
 			&i.Title,
 			&i.Type,
-			&i.Source,
+			&i.Provenance,
 			&i.Context,
 			&i.Maturity,
 			&i.RawTags,
@@ -9262,28 +8767,28 @@ func (q *Queries) SearchNotesByText(ctx context.Context, arg SearchNotesByTextPa
 	return items, nil
 }
 
-const searchTasks = `-- name: SearchTasks :many
-SELECT t.id, t.title, t.status, t.due, t.project_id,
+const searchTodoItems = `-- name: SearchTodoItems :many
+SELECT t.id, t.title, t.state, t.due, t.project_id,
        t.energy, t.priority, t.recur_interval, t.recur_unit,
        t.assignee, t.completed_at, t.description, t.created_at, t.updated_at,
        COALESCE(p.title, '') AS project_title,
        COALESCE(p.slug, '') AS project_slug
-FROM tasks t
+FROM todos t
 LEFT JOIN projects p ON t.project_id = p.id
 WHERE ($1::text IS NULL OR (t.title ILIKE '%' || $1 || '%' OR t.description ILIKE '%' || $1 || '%'))
   AND ($2::text IS NULL OR p.slug = $2)
   AND ($3::text IS NULL OR
        CASE $3
-           WHEN 'pending' THEN t.status != 'done'
-           WHEN 'done' THEN t.status = 'done'
+           WHEN 'pending' THEN t.state != 'done'
+           WHEN 'done' THEN t.state = 'done'
            ELSE true
        END)
   AND ($4::text IS NULL OR t.assignee = $4)
   AND ($5::timestamptz IS NULL OR t.completed_at >= $5)
   AND ($6::timestamptz IS NULL OR t.completed_at < $6)
 ORDER BY
-    CASE WHEN t.status != 'done' THEN 0 ELSE 1 END,
-    CASE WHEN t.status != 'done' THEN
+    CASE WHEN t.state != 'done' THEN 0 ELSE 1 END,
+    CASE WHEN t.state != 'done' THEN
         CASE WHEN t.due IS NOT NULL THEN 0 ELSE 1 END
     ELSE 2 END,
     t.due ASC NULLS LAST,
@@ -9292,20 +8797,20 @@ ORDER BY
 LIMIT $7
 `
 
-type SearchTasksParams struct {
+type SearchTodoItemsParams struct {
 	Query           *string    `json:"query"`
 	ProjectSlug     *string    `json:"project_slug"`
-	StatusFilter    *string    `json:"status_filter"`
+	StateFilter     *string    `json:"state_filter"`
 	Assignee        *string    `json:"assignee"`
 	CompletedAfter  *time.Time `json:"completed_after"`
 	CompletedBefore *time.Time `json:"completed_before"`
 	MaxResults      int32      `json:"max_results"`
 }
 
-type SearchTasksRow struct {
+type SearchTodoItemsRow struct {
 	ID            uuid.UUID  `json:"id"`
 	Title         string     `json:"title"`
-	Status        TaskStatus `json:"status"`
+	State         TodoState  `json:"state"`
 	Due           *time.Time `json:"due"`
 	ProjectID     *uuid.UUID `json:"project_id"`
 	Energy        *string    `json:"energy"`
@@ -9321,12 +8826,12 @@ type SearchTasksRow struct {
 	ProjectSlug   string     `json:"project_slug"`
 }
 
-// Search tasks by title/description with optional filters. Used by search_tasks MCP tool.
-func (q *Queries) SearchTasks(ctx context.Context, arg SearchTasksParams) ([]SearchTasksRow, error) {
-	rows, err := q.db.Query(ctx, searchTasks,
+// Search todo items by title/description with optional filters.
+func (q *Queries) SearchTodoItems(ctx context.Context, arg SearchTodoItemsParams) ([]SearchTodoItemsRow, error) {
+	rows, err := q.db.Query(ctx, searchTodoItems,
 		arg.Query,
 		arg.ProjectSlug,
-		arg.StatusFilter,
+		arg.StateFilter,
 		arg.Assignee,
 		arg.CompletedAfter,
 		arg.CompletedBefore,
@@ -9336,13 +8841,13 @@ func (q *Queries) SearchTasks(ctx context.Context, arg SearchTasksParams) ([]Sea
 		return nil, err
 	}
 	defer rows.Close()
-	items := []SearchTasksRow{}
+	items := []SearchTodoItemsRow{}
 	for rows.Next() {
-		var i SearchTasksRow
+		var i SearchTodoItemsRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.Title,
-			&i.Status,
+			&i.State,
 			&i.Due,
 			&i.ProjectID,
 			&i.Energy,
@@ -9368,23 +8873,24 @@ func (q *Queries) SearchTasks(ctx context.Context, arg SearchTasksParams) ([]Sea
 }
 
 const sessionByID = `-- name: SessionByID :one
-SELECT id, domain, session_mode, journal_id, daily_plan_item_id, started_at, ended_at, metadata, created_at
-FROM sessions WHERE id = $1
+SELECT id, domain, session_mode, agent_note_id, daily_plan_item_id, started_at, ended_at, metadata, created_at, updated_at
+FROM learning_sessions WHERE id = $1
 `
 
-func (q *Queries) SessionByID(ctx context.Context, id uuid.UUID) (Session, error) {
+func (q *Queries) SessionByID(ctx context.Context, id uuid.UUID) (LearningSession, error) {
 	row := q.db.QueryRow(ctx, sessionByID, id)
-	var i Session
+	var i LearningSession
 	err := row.Scan(
 		&i.ID,
 		&i.Domain,
 		&i.SessionMode,
-		&i.JournalID,
+		&i.AgentNoteID,
 		&i.DailyPlanItemID,
 		&i.StartedAt,
 		&i.EndedAt,
 		&i.Metadata,
 		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -9392,7 +8898,7 @@ func (q *Queries) SessionByID(ctx context.Context, id uuid.UUID) (Session, error
 const sessionStreak = `-- name: SessionStreak :one
 WITH daily AS (
     SELECT DISTINCT (started_at AT TIME ZONE 'UTC')::date AS d
-    FROM sessions
+    FROM learning_sessions
     WHERE ended_at IS NOT NULL
 ),
 numbered AS (
@@ -9416,8 +8922,8 @@ const sessionTimeline = `-- name: SessionTimeline :many
 SELECT ls.id, ls.domain, ls.session_mode, ls.started_at, ls.ended_at,
        COUNT(a.id) AS attempt_count,
        COUNT(*) FILTER (WHERE a.outcome IN ('solved_independent', 'completed')) AS success_count
-FROM sessions ls
-LEFT JOIN attempts a ON a.session_id = ls.id
+FROM learning_sessions ls
+LEFT JOIN learning_attempts a ON a.session_id = ls.id
 WHERE ($1::text IS NULL OR ls.domain = $1)
   AND ls.started_at >= $2
 GROUP BY ls.id
@@ -9577,67 +9083,577 @@ func (q *Queries) SimilarTILs(ctx context.Context, arg SimilarTILsParams) ([]Sim
 	return items, nil
 }
 
-const skipCountByTask = `-- name: SkipCountByTask :one
-SELECT count(*)::int FROM task_skips
-WHERE task_id = $1 AND skipped_date >= $2
+const staleSomedayTodoCount = `-- name: StaleSomedayTodoCount :one
+SELECT count(*)::int FROM todos
+WHERE state = 'someday' AND updated_at < $1
 `
 
-type SkipCountByTaskParams struct {
-	TaskID uuid.UUID `json:"task_id"`
-	Since  time.Time `json:"since"`
-}
-
-// Count skips for a specific task within a date range.
-func (q *Queries) SkipCountByTask(ctx context.Context, arg SkipCountByTaskParams) (int32, error) {
-	row := q.db.QueryRow(ctx, skipCountByTask, arg.TaskID, arg.Since)
+// Count of someday todo items not updated in N days (GTD review signal).
+func (q *Queries) StaleSomedayTodoCount(ctx context.Context, staleBefore time.Time) (int32, error) {
+	row := q.db.QueryRow(ctx, staleSomedayTodoCount, staleBefore)
 	var column_1 int32
 	err := row.Scan(&column_1)
 	return column_1, err
 }
 
-const skipHistoryByProject = `-- name: SkipHistoryByProject :many
-SELECT sl.id, sl.task_id, sl.original_due, sl.skipped_date, sl.reason, sl.created_at,
-       t.title AS task_title
-FROM task_skips sl
-JOIN tasks t ON t.id = sl.task_id
-WHERE t.project_id = $1
-  AND sl.skipped_date >= $2
-ORDER BY sl.skipped_date DESC
+const statsActivityBySource = `-- name: StatsActivityBySource :many
+SELECT source, COUNT(*)::int AS count
+FROM events
+GROUP BY source
 `
 
-type SkipHistoryByProjectParams struct {
-	ProjectID *uuid.UUID `json:"project_id"`
-	Since     time.Time  `json:"since"`
+type StatsActivityBySourceRow struct {
+	Source string `json:"source"`
+	Count  int32  `json:"count"`
 }
 
-type SkipHistoryByProjectRow struct {
-	ID          uuid.UUID `json:"id"`
-	TaskID      uuid.UUID `json:"task_id"`
-	OriginalDue time.Time `json:"original_due"`
-	SkippedDate time.Time `json:"skipped_date"`
-	Reason      string    `json:"reason"`
-	CreatedAt   time.Time `json:"created_at"`
-	TaskTitle   string    `json:"task_title"`
-}
-
-// Get skip history for all tasks under a project within a date range.
-func (q *Queries) SkipHistoryByProject(ctx context.Context, arg SkipHistoryByProjectParams) ([]SkipHistoryByProjectRow, error) {
-	rows, err := q.db.Query(ctx, skipHistoryByProject, arg.ProjectID, arg.Since)
+func (q *Queries) StatsActivityBySource(ctx context.Context) ([]StatsActivityBySourceRow, error) {
+	rows, err := q.db.Query(ctx, statsActivityBySource)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []SkipHistoryByProjectRow{}
+	items := []StatsActivityBySourceRow{}
 	for rows.Next() {
-		var i SkipHistoryByProjectRow
+		var i StatsActivityBySourceRow
+		if err := rows.Scan(&i.Source, &i.Count); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const statsActivityWindow = `-- name: StatsActivityWindow :one
+SELECT COUNT(*)::int AS total,
+       COUNT(*) FILTER (WHERE timestamp > now() - interval '24 hours')::int AS last_24h,
+       COUNT(*) FILTER (WHERE timestamp > now() - interval '7 days')::int AS last_7d
+FROM events
+`
+
+type StatsActivityWindowRow struct {
+	Total   int32 `json:"total"`
+	Last24h int32 `json:"last_24h"`
+	Last7d  int32 `json:"last_7d"`
+}
+
+func (q *Queries) StatsActivityWindow(ctx context.Context) (StatsActivityWindowRow, error) {
+	row := q.db.QueryRow(ctx, statsActivityWindow)
+	var i StatsActivityWindowRow
+	err := row.Scan(&i.Total, &i.Last24h, &i.Last7d)
+	return i, err
+}
+
+const statsContentsByStatusType = `-- name: StatsContentsByStatusType :many
+
+SELECT status::text AS status, type::text AS type, COUNT(*)::int AS count
+FROM contents
+GROUP BY status, type
+`
+
+type StatsContentsByStatusTypeRow struct {
+	Status string `json:"status"`
+	Type   string `json:"type"`
+	Count  int32  `json:"count"`
+}
+
+// Stats package queries. All cross-table aggregation for the admin
+// dashboard lives here. Names are prefixed `Stats` to avoid collision
+// with feature-package queries in the shared sqlc namespace.
+func (q *Queries) StatsContentsByStatusType(ctx context.Context) ([]StatsContentsByStatusTypeRow, error) {
+	rows, err := q.db.Query(ctx, statsContentsByStatusType)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []StatsContentsByStatusTypeRow{}
+	for rows.Next() {
+		var i StatsContentsByStatusTypeRow
+		if err := rows.Scan(&i.Status, &i.Type, &i.Count); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const statsDatabaseCounts = `-- name: StatsDatabaseCounts :one
+SELECT
+    (SELECT COUNT(*) FROM contents)::int AS contents_count,
+    (SELECT COUNT(*) FROM todos)::int AS todos_count,
+    (SELECT COUNT(*) FROM obsidian_notes)::int AS notes_count
+`
+
+type StatsDatabaseCountsRow struct {
+	ContentsCount int32 `json:"contents_count"`
+	TodosCount    int32 `json:"todos_count"`
+	NotesCount    int32 `json:"notes_count"`
+}
+
+// Core entity counts for SystemHealth. todos replaces the old
+// GTD tasks table; the new tasks table is the inter-agent coordination
+// entity and is intentionally NOT counted here (it would mix two
+// entirely different concepts of "task").
+func (q *Queries) StatsDatabaseCounts(ctx context.Context) (StatsDatabaseCountsRow, error) {
+	row := q.db.QueryRow(ctx, statsDatabaseCounts)
+	var i StatsDatabaseCountsRow
+	err := row.Scan(&i.ContentsCount, &i.TodosCount, &i.NotesCount)
+	return i, err
+}
+
+const statsEditorialQueueCounts = `-- name: StatsEditorialQueueCounts :one
+SELECT COUNT(*)::int AS total,
+       COUNT(*) FILTER (WHERE status = 'pending')::int AS pending
+FROM editorial_queue
+`
+
+type StatsEditorialQueueCountsRow struct {
+	Total   int32 `json:"total"`
+	Pending int32 `json:"pending"`
+}
+
+func (q *Queries) StatsEditorialQueueCounts(ctx context.Context) (StatsEditorialQueueCountsRow, error) {
+	row := q.db.QueryRow(ctx, statsEditorialQueueCounts)
+	var i StatsEditorialQueueCountsRow
+	err := row.Scan(&i.Total, &i.Pending)
+	return i, err
+}
+
+const statsEventsByArea = `-- name: StatsEventsByArea :many
+SELECT COALESCE(a.name, 'unset') AS area, COUNT(*)::int AS count
+FROM events ae
+LEFT JOIN projects p ON ae.project = p.slug
+   OR (p.repo IS NOT NULL AND p.repo != '' AND ae.project = p.repo)
+LEFT JOIN areas a ON a.id = p.area_id
+WHERE ae.timestamp > now() - make_interval(days => $1::int)
+GROUP BY a.name
+`
+
+type StatsEventsByAreaRow struct {
+	Area  string `json:"area"`
+	Count int32  `json:"count"`
+}
+
+// Activity events grouped by the area of their associated project.
+// Project lookup matches by project slug or repo. Events without a
+// project, or whose project has no area, appear as 'unset'.
+func (q *Queries) StatsEventsByArea(ctx context.Context, days int32) ([]StatsEventsByAreaRow, error) {
+	rows, err := q.db.Query(ctx, statsEventsByArea, days)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []StatsEventsByAreaRow{}
+	for rows.Next() {
+		var i StatsEventsByAreaRow
+		if err := rows.Scan(&i.Area, &i.Count); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const statsFailingFeeds = `-- name: StatsFailingFeeds :many
+SELECT name, COALESCE(last_error, '') AS last_error, last_fetched_at
+FROM feeds
+WHERE consecutive_failures > 0
+ORDER BY consecutive_failures DESC, name
+`
+
+type StatsFailingFeedsRow struct {
+	Name          string     `json:"name"`
+	LastError     string     `json:"last_error"`
+	LastFetchedAt *time.Time `json:"last_fetched_at"`
+}
+
+func (q *Queries) StatsFailingFeeds(ctx context.Context) ([]StatsFailingFeedsRow, error) {
+	rows, err := q.db.Query(ctx, statsFailingFeeds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []StatsFailingFeedsRow{}
+	for rows.Next() {
+		var i StatsFailingFeedsRow
+		if err := rows.Scan(&i.Name, &i.LastError, &i.LastFetchedAt); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const statsFeedCounts = `-- name: StatsFeedCounts :one
+SELECT COUNT(*)::int AS total, COUNT(*) FILTER (WHERE enabled)::int AS enabled
+FROM feeds
+`
+
+type StatsFeedCountsRow struct {
+	Total   int32 `json:"total"`
+	Enabled int32 `json:"enabled"`
+}
+
+func (q *Queries) StatsFeedCounts(ctx context.Context) (StatsFeedCountsRow, error) {
+	row := q.db.QueryRow(ctx, statsFeedCounts)
+	var i StatsFeedCountsRow
+	err := row.Scan(&i.Total, &i.Enabled)
+	return i, err
+}
+
+const statsFeedEntriesByStatus = `-- name: StatsFeedEntriesByStatus :many
+SELECT status::text AS status, COUNT(*)::int AS count
+FROM feed_entries
+GROUP BY status
+`
+
+type StatsFeedEntriesByStatusRow struct {
+	Status string `json:"status"`
+	Count  int32  `json:"count"`
+}
+
+func (q *Queries) StatsFeedEntriesByStatus(ctx context.Context) ([]StatsFeedEntriesByStatusRow, error) {
+	rows, err := q.db.Query(ctx, statsFeedEntriesByStatus)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []StatsFeedEntriesByStatusRow{}
+	for rows.Next() {
+		var i StatsFeedEntriesByStatusRow
+		if err := rows.Scan(&i.Status, &i.Count); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const statsFeedHealthCounts = `-- name: StatsFeedHealthCounts :one
+SELECT
+    COUNT(*)::int AS total,
+    COUNT(*) FILTER (WHERE consecutive_failures = 0)::int AS healthy,
+    COUNT(*) FILTER (WHERE consecutive_failures > 0)::int AS failing
+FROM feeds
+`
+
+type StatsFeedHealthCountsRow struct {
+	Total   int32 `json:"total"`
+	Healthy int32 `json:"healthy"`
+	Failing int32 `json:"failing"`
+}
+
+func (q *Queries) StatsFeedHealthCounts(ctx context.Context) (StatsFeedHealthCountsRow, error) {
+	row := q.db.QueryRow(ctx, statsFeedHealthCounts)
+	var i StatsFeedHealthCountsRow
+	err := row.Scan(&i.Total, &i.Healthy, &i.Failing)
+	return i, err
+}
+
+const statsFeedHealthSummary = `-- name: StatsFeedHealthSummary :one
+SELECT
+    COUNT(*)::int AS total,
+    COUNT(*) FILTER (WHERE enabled)::int AS enabled,
+    COUNT(*) FILTER (WHERE consecutive_failures > 0)::int AS failing_feeds
+FROM feeds
+`
+
+type StatsFeedHealthSummaryRow struct {
+	Total        int32 `json:"total"`
+	Enabled      int32 `json:"enabled"`
+	FailingFeeds int32 `json:"failing_feeds"`
+}
+
+func (q *Queries) StatsFeedHealthSummary(ctx context.Context) (StatsFeedHealthSummaryRow, error) {
+	row := q.db.QueryRow(ctx, statsFeedHealthSummary)
+	var i StatsFeedHealthSummaryRow
+	err := row.Scan(&i.Total, &i.Enabled, &i.FailingFeeds)
+	return i, err
+}
+
+const statsFlowRunsByStatus = `-- name: StatsFlowRunsByStatus :many
+SELECT status::text AS status, COUNT(*)::int AS count
+FROM flow_runs
+GROUP BY status
+`
+
+type StatsFlowRunsByStatusRow struct {
+	Status string `json:"status"`
+	Count  int32  `json:"count"`
+}
+
+func (q *Queries) StatsFlowRunsByStatus(ctx context.Context) ([]StatsFlowRunsByStatusRow, error) {
+	rows, err := q.db.Query(ctx, statsFlowRunsByStatus)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []StatsFlowRunsByStatusRow{}
+	for rows.Next() {
+		var i StatsFlowRunsByStatusRow
+		if err := rows.Scan(&i.Status, &i.Count); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const statsFlowRunsSummary = `-- name: StatsFlowRunsSummary :one
+SELECT
+    COUNT(*)::int AS total,
+    COUNT(*) FILTER (WHERE status = 'completed')::int AS completed,
+    COUNT(*) FILTER (WHERE status = 'failed')::int AS failed,
+    COUNT(*) FILTER (WHERE status = 'running')::int AS running
+FROM flow_runs
+WHERE created_at >= $1
+  AND ($2::text IS NULL OR flow_name = $2)
+  AND ($3::flow_status IS NULL OR status = $3::flow_status)
+`
+
+type StatsFlowRunsSummaryParams struct {
+	Since    time.Time      `json:"since"`
+	FlowName *string        `json:"flow_name"`
+	Status   NullFlowStatus `json:"status"`
+}
+
+type StatsFlowRunsSummaryRow struct {
+	Total     int32 `json:"total"`
+	Completed int32 `json:"completed"`
+	Failed    int32 `json:"failed"`
+	Running   int32 `json:"running"`
+}
+
+// Aggregate flow run counts since cutoff, with optional flow_name and status filters.
+func (q *Queries) StatsFlowRunsSummary(ctx context.Context, arg StatsFlowRunsSummaryParams) (StatsFlowRunsSummaryRow, error) {
+	row := q.db.QueryRow(ctx, statsFlowRunsSummary, arg.Since, arg.FlowName, arg.Status)
+	var i StatsFlowRunsSummaryRow
+	err := row.Scan(
+		&i.Total,
+		&i.Completed,
+		&i.Failed,
+		&i.Running,
+	)
+	return i, err
+}
+
+const statsGoalsByArea = `-- name: StatsGoalsByArea :many
+SELECT COALESCE(a.name, 'unset') AS area, COUNT(*)::int AS count
+FROM goals g
+LEFT JOIN areas a ON a.id = g.area_id
+WHERE g.status IN ('not-started', 'in-progress')
+GROUP BY a.name
+`
+
+type StatsGoalsByAreaRow struct {
+	Area  string `json:"area"`
+	Count int32  `json:"count"`
+}
+
+// Active goals (not started or in progress) grouped by area name.
+// Goals without an area appear as 'unset'.
+func (q *Queries) StatsGoalsByArea(ctx context.Context) ([]StatsGoalsByAreaRow, error) {
+	rows, err := q.db.Query(ctx, statsGoalsByArea)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []StatsGoalsByAreaRow{}
+	for rows.Next() {
+		var i StatsGoalsByAreaRow
+		if err := rows.Scan(&i.Area, &i.Count); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const statsNoteGrowth = `-- name: StatsNoteGrowth :one
+SELECT
+    (COALESCE(o.total, 0) + COALESCE(c.total, 0))::int AS total,
+    (COALESCE(o.last_week, 0) + COALESCE(c.last_week, 0))::int AS last_week,
+    (COALESCE(o.last_month, 0) + COALESCE(c.last_month, 0))::int AS last_month
+FROM
+    (SELECT COUNT(*) AS total,
+        COUNT(*) FILTER (WHERE synced_at > now() - interval '7 days') AS last_week,
+        COUNT(*) FILTER (WHERE synced_at > now() - interval '30 days') AS last_month
+     FROM obsidian_notes) o,
+    (SELECT COUNT(*) AS total,
+        COUNT(*) FILTER (WHERE created_at > now() - interval '7 days') AS last_week,
+        COUNT(*) FILTER (WHERE created_at > now() - interval '30 days') AS last_month
+     FROM contents WHERE type = 'til') c
+`
+
+type StatsNoteGrowthRow struct {
+	Total     int32 `json:"total"`
+	LastWeek  int32 `json:"last_week"`
+	LastMonth int32 `json:"last_month"`
+}
+
+// Combined note count from obsidian_notes table + TIL entries from contents.
+// obsidian_notes uses synced_at; contents uses created_at.
+func (q *Queries) StatsNoteGrowth(ctx context.Context) (StatsNoteGrowthRow, error) {
+	row := q.db.QueryRow(ctx, statsNoteGrowth)
+	var i StatsNoteGrowthRow
+	err := row.Scan(&i.Total, &i.LastWeek, &i.LastMonth)
+	return i, err
+}
+
+const statsNoteGrowthByType = `-- name: StatsNoteGrowthByType :many
+SELECT type, SUM(cnt)::int AS count FROM (
+    SELECT COALESCE(type, 'unknown') AS type, COUNT(*) AS cnt FROM obsidian_notes GROUP BY type
+    UNION ALL
+    SELECT 'til' AS type, COUNT(*) AS cnt FROM contents WHERE type = 'til'
+) combined
+GROUP BY type
+`
+
+type StatsNoteGrowthByTypeRow struct {
+	Type  string `json:"type"`
+	Count int32  `json:"count"`
+}
+
+// By-type breakdown across obsidian_notes + TIL contents.
+func (q *Queries) StatsNoteGrowthByType(ctx context.Context) ([]StatsNoteGrowthByTypeRow, error) {
+	rows, err := q.db.Query(ctx, statsNoteGrowthByType)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []StatsNoteGrowthByTypeRow{}
+	for rows.Next() {
+		var i StatsNoteGrowthByTypeRow
+		if err := rows.Scan(&i.Type, &i.Count); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const statsNotesByType = `-- name: StatsNotesByType :many
+SELECT COALESCE(type, 'unknown') AS type, COUNT(*)::int AS count
+FROM obsidian_notes
+GROUP BY type
+`
+
+type StatsNotesByTypeRow struct {
+	Type  string `json:"type"`
+	Count int32  `json:"count"`
+}
+
+func (q *Queries) StatsNotesByType(ctx context.Context) ([]StatsNotesByTypeRow, error) {
+	rows, err := q.db.Query(ctx, statsNotesByType)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []StatsNotesByTypeRow{}
+	for rows.Next() {
+		var i StatsNotesByTypeRow
+		if err := rows.Scan(&i.Type, &i.Count); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const statsPipelineActivityRecent = `-- name: StatsPipelineActivityRecent :one
+SELECT
+    COUNT(*)::int AS recent_runs,
+    COUNT(*) FILTER (WHERE status = 'failed')::int AS failed,
+    MAX(created_at) AS last_run_at
+FROM flow_runs
+WHERE created_at >= $1
+`
+
+type StatsPipelineActivityRecentRow struct {
+	RecentRuns int32       `json:"recent_runs"`
+	Failed     int32       `json:"failed"`
+	LastRunAt  interface{} `json:"last_run_at"`
+}
+
+// 24h pipeline activity snapshot for SystemHealth.
+func (q *Queries) StatsPipelineActivityRecent(ctx context.Context, since time.Time) (StatsPipelineActivityRecentRow, error) {
+	row := q.db.QueryRow(ctx, statsPipelineActivityRecent, since)
+	var i StatsPipelineActivityRecentRow
+	err := row.Scan(&i.RecentRuns, &i.Failed, &i.LastRunAt)
+	return i, err
+}
+
+const statsPipelineSummaries = `-- name: StatsPipelineSummaries :many
+SELECT
+    flow_name,
+    COUNT(*)::int AS total,
+    COUNT(*) FILTER (WHERE status = 'completed')::int AS completed,
+    COUNT(*) FILTER (WHERE status = 'failed')::int AS failed,
+    COUNT(*) FILTER (WHERE status = 'running')::int AS running,
+    MAX(created_at) AS last_run_at,
+    (array_agg(status::text ORDER BY created_at DESC))[1] AS last_status
+FROM flow_runs
+WHERE created_at >= $1
+GROUP BY flow_name
+ORDER BY flow_name
+`
+
+type StatsPipelineSummariesRow struct {
+	FlowName   string      `json:"flow_name"`
+	Total      int32       `json:"total"`
+	Completed  int32       `json:"completed"`
+	Failed     int32       `json:"failed"`
+	Running    int32       `json:"running"`
+	LastRunAt  interface{} `json:"last_run_at"`
+	LastStatus interface{} `json:"last_status"`
+}
+
+// Per-flow-name aggregate over a time window, plus the last status seen
+// (the array_agg trick returns the most recent row by created_at DESC).
+func (q *Queries) StatsPipelineSummaries(ctx context.Context, since time.Time) ([]StatsPipelineSummariesRow, error) {
+	rows, err := q.db.Query(ctx, statsPipelineSummaries, since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []StatsPipelineSummariesRow{}
+	for rows.Next() {
+		var i StatsPipelineSummariesRow
 		if err := rows.Scan(
-			&i.ID,
-			&i.TaskID,
-			&i.OriginalDue,
-			&i.SkippedDate,
-			&i.Reason,
-			&i.CreatedAt,
-			&i.TaskTitle,
+			&i.FlowName,
+			&i.Total,
+			&i.Completed,
+			&i.Failed,
+			&i.Running,
+			&i.LastRunAt,
+			&i.LastStatus,
 		); err != nil {
 			return nil, err
 		}
@@ -9649,36 +9665,84 @@ func (q *Queries) SkipHistoryByProject(ctx context.Context, arg SkipHistoryByPro
 	return items, nil
 }
 
-const skipHistoryByTask = `-- name: SkipHistoryByTask :many
-SELECT id, task_id, original_due, skipped_date, reason, created_at
-FROM task_skips
-WHERE task_id = $1
-  AND skipped_date >= $2
-ORDER BY skipped_date DESC
+const statsProjectsByStatus = `-- name: StatsProjectsByStatus :many
+SELECT status::text AS status, COUNT(*)::int AS count
+FROM projects
+GROUP BY status
 `
 
-type SkipHistoryByTaskParams struct {
-	TaskID uuid.UUID `json:"task_id"`
-	Since  time.Time `json:"since"`
+type StatsProjectsByStatusRow struct {
+	Status string `json:"status"`
+	Count  int32  `json:"count"`
 }
 
-// Get skip history for a specific task within a date range.
-func (q *Queries) SkipHistoryByTask(ctx context.Context, arg SkipHistoryByTaskParams) ([]TaskSkip, error) {
-	rows, err := q.db.Query(ctx, skipHistoryByTask, arg.TaskID, arg.Since)
+func (q *Queries) StatsProjectsByStatus(ctx context.Context) ([]StatsProjectsByStatusRow, error) {
+	rows, err := q.db.Query(ctx, statsProjectsByStatus)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []TaskSkip{}
+	items := []StatsProjectsByStatusRow{}
 	for rows.Next() {
-		var i TaskSkip
+		var i StatsProjectsByStatusRow
+		if err := rows.Scan(&i.Status, &i.Count); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const statsRecentFlowRuns = `-- name: StatsRecentFlowRuns :many
+SELECT id, flow_name, status::text AS status, error, created_at, ended_at
+FROM flow_runs
+WHERE created_at >= $1
+  AND ($2::text IS NULL OR flow_name = $2)
+  AND ($3::flow_status IS NULL OR status = $3::flow_status)
+ORDER BY created_at DESC
+LIMIT $4
+`
+
+type StatsRecentFlowRunsParams struct {
+	Since      time.Time      `json:"since"`
+	FlowName   *string        `json:"flow_name"`
+	Status     NullFlowStatus `json:"status"`
+	MaxResults int32          `json:"max_results"`
+}
+
+type StatsRecentFlowRunsRow struct {
+	ID        uuid.UUID  `json:"id"`
+	FlowName  string     `json:"flow_name"`
+	Status    string     `json:"status"`
+	Error     *string    `json:"error"`
+	CreatedAt time.Time  `json:"created_at"`
+	EndedAt   *time.Time `json:"ended_at"`
+}
+
+func (q *Queries) StatsRecentFlowRuns(ctx context.Context, arg StatsRecentFlowRunsParams) ([]StatsRecentFlowRunsRow, error) {
+	rows, err := q.db.Query(ctx, statsRecentFlowRuns,
+		arg.Since,
+		arg.FlowName,
+		arg.Status,
+		arg.MaxResults,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []StatsRecentFlowRunsRow{}
+	for rows.Next() {
+		var i StatsRecentFlowRunsRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.TaskID,
-			&i.OriginalDue,
-			&i.SkippedDate,
-			&i.Reason,
+			&i.FlowName,
+			&i.Status,
+			&i.Error,
 			&i.CreatedAt,
+			&i.EndedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -9690,17 +9754,106 @@ func (q *Queries) SkipHistoryByTask(ctx context.Context, arg SkipHistoryByTaskPa
 	return items, nil
 }
 
-const staleSomedayCount = `-- name: StaleSomedayCount :one
-SELECT count(*)::int FROM tasks
-WHERE status = 'someday' AND updated_at < $1
+const statsSyncSourceCounts = `-- name: StatsSyncSourceCounts :one
+SELECT COUNT(*)::int AS total, COUNT(*) FILTER (WHERE enabled)::int AS enabled
+FROM sync_sources
 `
 
-// Count of someday tasks not updated in N days (GTD review signal).
-func (q *Queries) StaleSomedayCount(ctx context.Context, staleBefore time.Time) (int32, error) {
-	row := q.db.QueryRow(ctx, staleSomedayCount, staleBefore)
-	var column_1 int32
-	err := row.Scan(&column_1)
-	return column_1, err
+type StatsSyncSourceCountsRow struct {
+	Total   int32 `json:"total"`
+	Enabled int32 `json:"enabled"`
+}
+
+func (q *Queries) StatsSyncSourceCounts(ctx context.Context) (StatsSyncSourceCountsRow, error) {
+	row := q.db.QueryRow(ctx, statsSyncSourceCounts)
+	var i StatsSyncSourceCountsRow
+	err := row.Scan(&i.Total, &i.Enabled)
+	return i, err
+}
+
+const statsTagCounts = `-- name: StatsTagCounts :one
+SELECT
+    (SELECT COUNT(*) FROM tags)::int AS canonical,
+    (SELECT COUNT(*) FROM tag_aliases)::int AS aliases,
+    (SELECT COUNT(*) FROM tag_aliases WHERE NOT confirmed)::int AS unconfirmed
+`
+
+type StatsTagCountsRow struct {
+	Canonical   int32 `json:"canonical"`
+	Aliases     int32 `json:"aliases"`
+	Unconfirmed int32 `json:"unconfirmed"`
+}
+
+func (q *Queries) StatsTagCounts(ctx context.Context) (StatsTagCountsRow, error) {
+	row := q.db.QueryRow(ctx, statsTagCounts)
+	var i StatsTagCountsRow
+	err := row.Scan(&i.Canonical, &i.Aliases, &i.Unconfirmed)
+	return i, err
+}
+
+const statsTopTags = `-- name: StatsTopTags :many
+SELECT name, SUM(cnt)::int AS count FROM (
+    SELECT t.name, COUNT(ont.note_id) AS cnt
+    FROM tags t
+    JOIN obsidian_note_tags ont ON ont.tag_id = t.id
+    GROUP BY t.id, t.name
+    UNION ALL
+    SELECT t.name, COUNT(ct.content_id) AS cnt
+    FROM tags t
+    JOIN content_tags ct ON ct.tag_id = t.id
+    JOIN contents c ON c.id = ct.content_id
+    WHERE c.type = 'til'
+    GROUP BY t.id, t.name
+) combined
+GROUP BY name
+ORDER BY count DESC
+LIMIT 10
+`
+
+type StatsTopTagsRow struct {
+	Name  string `json:"name"`
+	Count int32  `json:"count"`
+}
+
+// Top tags by combined usage across obsidian_note_tags and content_tags (TIL only).
+func (q *Queries) StatsTopTags(ctx context.Context) ([]StatsTopTagsRow, error) {
+	rows, err := q.db.Query(ctx, statsTopTags)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []StatsTopTagsRow{}
+	for rows.Next() {
+		var i StatsTopTagsRow
+		if err := rows.Scan(&i.Name, &i.Count); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const statsWeeklyActivity = `-- name: StatsWeeklyActivity :one
+SELECT
+    COUNT(*) FILTER (WHERE timestamp > now() - interval '7 days')::int AS this_week,
+    COUNT(*) FILTER (WHERE timestamp > now() - interval '14 days' AND timestamp <= now() - interval '7 days')::int AS last_week
+FROM events
+`
+
+type StatsWeeklyActivityRow struct {
+	ThisWeek int32 `json:"this_week"`
+	LastWeek int32 `json:"last_week"`
+}
+
+// Compares this week (last 7 days) vs last week (7-14 days ago).
+func (q *Queries) StatsWeeklyActivity(ctx context.Context) (StatsWeeklyActivityRow, error) {
+	row := q.db.QueryRow(ctx, statsWeeklyActivity)
+	var i StatsWeeklyActivityRow
+	err := row.Scan(&i.ThisWeek, &i.LastWeek)
+	return i, err
 }
 
 const tagByID = `-- name: TagByID :one
@@ -9876,24 +10029,30 @@ func (q *Queries) TagsForContents(ctx context.Context, dollar_1 []uuid.UUID) ([]
 	return items, nil
 }
 
-const taskByID = `-- name: TaskByID :one
-SELECT id, title, status, due, project_id, notion_page_id,
+const todoByExternalRef = `-- name: TodoByExternalRef :one
+SELECT id, title, state, due, project_id, external_provider, external_ref,
        completed_at, energy, priority, recur_interval, recur_unit,
        description, assignee, created_by, created_at, updated_at
-FROM tasks WHERE id = $1
+FROM todos WHERE external_provider = $1 AND external_ref = $2
 `
 
-// Get a task by ID.
-func (q *Queries) TaskByID(ctx context.Context, id uuid.UUID) (Task, error) {
-	row := q.db.QueryRow(ctx, taskByID, id)
-	var i Task
+type TodoByExternalRefParams struct {
+	ExternalProvider *string `json:"external_provider"`
+	ExternalRef      *string `json:"external_ref"`
+}
+
+// Get a todo by its (external_provider, external_ref) pair.
+func (q *Queries) TodoByExternalRef(ctx context.Context, arg TodoByExternalRefParams) (Todo, error) {
+	row := q.db.QueryRow(ctx, todoByExternalRef, arg.ExternalProvider, arg.ExternalRef)
+	var i Todo
 	err := row.Scan(
 		&i.ID,
 		&i.Title,
-		&i.Status,
+		&i.State,
 		&i.Due,
 		&i.ProjectID,
-		&i.NotionPageID,
+		&i.ExternalProvider,
+		&i.ExternalRef,
 		&i.CompletedAt,
 		&i.Energy,
 		&i.Priority,
@@ -9908,62 +10067,133 @@ func (q *Queries) TaskByID(ctx context.Context, id uuid.UUID) (Task, error) {
 	return i, err
 }
 
-const taskByNotionPageID = `-- name: TaskByNotionPageID :one
-SELECT id, title, status, due, project_id, notion_page_id,
-       completed_at, energy, priority, recur_interval, recur_unit,
-       description, assignee, created_by, created_at, updated_at
-FROM tasks WHERE notion_page_id = $1
+const todoDailySummaryHint = `-- name: TodoDailySummaryHint :one
+SELECT
+    (SELECT count(*)::int FROM daily_plan_items WHERE plan_date = $1::date) AS planned_total,
+    (SELECT count(*)::int FROM daily_plan_items WHERE plan_date = $1::date AND status = 'done') AS planned_completed,
+    count(*) FILTER (WHERE state = 'done'
+        AND completed_at >= $2 AND completed_at < $3)::int AS total_completed
+FROM todos
+WHERE state = 'done' AND completed_at >= $2 AND completed_at < $3
 `
 
-// Get a task by its Notion page ID.
-func (q *Queries) TaskByNotionPageID(ctx context.Context, notionPageID *string) (Task, error) {
-	row := q.db.QueryRow(ctx, taskByNotionPageID, notionPageID)
-	var i Task
-	err := row.Scan(
-		&i.ID,
-		&i.Title,
-		&i.Status,
-		&i.Due,
-		&i.ProjectID,
-		&i.NotionPageID,
-		&i.CompletedAt,
-		&i.Energy,
-		&i.Priority,
-		&i.RecurInterval,
-		&i.RecurUnit,
-		&i.Description,
-		&i.Assignee,
-		&i.CreatedBy,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
+type TodoDailySummaryHintParams struct {
+	PlanDate time.Time  `json:"plan_date"`
+	DayStart *time.Time `json:"day_start"`
+	DayEnd   *time.Time `json:"day_end"`
+}
+
+type TodoDailySummaryHintRow struct {
+	PlannedTotal     int32 `json:"planned_total"`
+	PlannedCompleted int32 `json:"planned_completed"`
+	TotalCompleted   int32 `json:"total_completed"`
+}
+
+// Compute completion metrics hint for a single day.
+func (q *Queries) TodoDailySummaryHint(ctx context.Context, arg TodoDailySummaryHintParams) (TodoDailySummaryHintRow, error) {
+	row := q.db.QueryRow(ctx, todoDailySummaryHint, arg.PlanDate, arg.DayStart, arg.DayEnd)
+	var i TodoDailySummaryHintRow
+	err := row.Scan(&i.PlannedTotal, &i.PlannedCompleted, &i.TotalCompleted)
 	return i, err
 }
 
-const tasks = `-- name: Tasks :many
-SELECT id, title, status, due, project_id, notion_page_id,
-       completed_at, energy, priority, recur_interval, recur_unit,
-       description, assignee, created_by, created_at, updated_at
-FROM tasks ORDER BY status, due NULLS LAST, created_at DESC
+const todoExternalRefsByProvider = `-- name: TodoExternalRefsByProvider :many
+SELECT external_ref FROM todos
+WHERE external_provider = $1 AND external_ref IS NOT NULL
+ORDER BY title
 `
 
-// List all tasks ordered by status and due date.
-func (q *Queries) Tasks(ctx context.Context) ([]Task, error) {
-	rows, err := q.db.Query(ctx, tasks)
+// List all external_ref values for todos synced from a specific provider.
+func (q *Queries) TodoExternalRefsByProvider(ctx context.Context, externalProvider *string) ([]*string, error) {
+	rows, err := q.db.Query(ctx, todoExternalRefsByProvider, externalProvider)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []Task{}
+	items := []*string{}
 	for rows.Next() {
-		var i Task
+		var external_ref *string
+		if err := rows.Scan(&external_ref); err != nil {
+			return nil, err
+		}
+		items = append(items, external_ref)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const todoInboxCount = `-- name: TodoInboxCount :one
+SELECT count(*)::int FROM todos WHERE state = 'inbox'
+`
+
+// Count of todo items in inbox state (for needs_attention badge).
+func (q *Queries) TodoInboxCount(ctx context.Context) (int32, error) {
+	row := q.db.QueryRow(ctx, todoInboxCount)
+	var column_1 int32
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
+const todoItemByID = `-- name: TodoItemByID :one
+SELECT id, title, state, due, project_id, external_provider, external_ref,
+       completed_at, energy, priority, recur_interval, recur_unit,
+       description, assignee, created_by, created_at, updated_at
+FROM todos WHERE id = $1
+`
+
+// Get a todo item by ID.
+func (q *Queries) TodoItemByID(ctx context.Context, id uuid.UUID) (Todo, error) {
+	row := q.db.QueryRow(ctx, todoItemByID, id)
+	var i Todo
+	err := row.Scan(
+		&i.ID,
+		&i.Title,
+		&i.State,
+		&i.Due,
+		&i.ProjectID,
+		&i.ExternalProvider,
+		&i.ExternalRef,
+		&i.CompletedAt,
+		&i.Energy,
+		&i.Priority,
+		&i.RecurInterval,
+		&i.RecurUnit,
+		&i.Description,
+		&i.Assignee,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const todoItems = `-- name: TodoItems :many
+SELECT id, title, state, due, project_id, external_provider, external_ref,
+       completed_at, energy, priority, recur_interval, recur_unit,
+       description, assignee, created_by, created_at, updated_at
+FROM todos ORDER BY state, due NULLS LAST, created_at DESC
+`
+
+// List all todo items ordered by state and due date.
+func (q *Queries) TodoItems(ctx context.Context) ([]Todo, error) {
+	rows, err := q.db.Query(ctx, todoItems)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Todo{}
+	for rows.Next() {
+		var i Todo
 		if err := rows.Scan(
 			&i.ID,
 			&i.Title,
-			&i.Status,
+			&i.State,
 			&i.Due,
 			&i.ProjectID,
-			&i.NotionPageID,
+			&i.ExternalProvider,
+			&i.ExternalRef,
 			&i.CompletedAt,
 			&i.Energy,
 			&i.Priority,
@@ -9985,14 +10215,14 @@ func (q *Queries) Tasks(ctx context.Context) ([]Task, error) {
 	return items, nil
 }
 
-const tasksByProjectGrouped = `-- name: TasksByProjectGrouped :many
-SELECT t.id, t.title, t.status, t.due, t.energy, t.priority,
+const todoItemsByProjectGrouped = `-- name: TodoItemsByProjectGrouped :many
+SELECT t.id, t.title, t.state, t.due, t.energy, t.priority,
        t.assignee, t.created_at, t.updated_at
-FROM tasks t
+FROM todos t
 WHERE t.project_id = $1
 ORDER BY
-    CASE t.status
-        WHEN 'in-progress' THEN 0
+    CASE t.state
+        WHEN 'in_progress' THEN 0
         WHEN 'todo' THEN 1
         WHEN 'inbox' THEN 2
         WHEN 'someday' THEN 3
@@ -10002,10 +10232,10 @@ ORDER BY
     t.due NULLS LAST, t.created_at DESC
 `
 
-type TasksByProjectGroupedRow struct {
+type TodoItemsByProjectGroupedRow struct {
 	ID        uuid.UUID  `json:"id"`
 	Title     string     `json:"title"`
-	Status    TaskStatus `json:"status"`
+	State     TodoState  `json:"state"`
 	Due       *time.Time `json:"due"`
 	Energy    *string    `json:"energy"`
 	Priority  *string    `json:"priority"`
@@ -10014,20 +10244,20 @@ type TasksByProjectGroupedRow struct {
 	UpdatedAt time.Time  `json:"updated_at"`
 }
 
-// Tasks for a project, used for admin project detail grouping by status.
-func (q *Queries) TasksByProjectGrouped(ctx context.Context, projectID *uuid.UUID) ([]TasksByProjectGroupedRow, error) {
-	rows, err := q.db.Query(ctx, tasksByProjectGrouped, projectID)
+// Todo items for a project, used for admin project detail grouping by state.
+func (q *Queries) TodoItemsByProjectGrouped(ctx context.Context, projectID *uuid.UUID) ([]TodoItemsByProjectGroupedRow, error) {
+	rows, err := q.db.Query(ctx, todoItemsByProjectGrouped, projectID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []TasksByProjectGroupedRow{}
+	items := []TodoItemsByProjectGroupedRow{}
 	for rows.Next() {
-		var i TasksByProjectGroupedRow
+		var i TodoItemsByProjectGroupedRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.Title,
-			&i.Status,
+			&i.State,
 			&i.Due,
 			&i.Energy,
 			&i.Priority,
@@ -10045,16 +10275,16 @@ func (q *Queries) TasksByProjectGrouped(ctx context.Context, projectID *uuid.UUI
 	return items, nil
 }
 
-const tasksCreatedSince = `-- name: TasksCreatedSince :many
+const todoItemsCreatedSince = `-- name: TodoItemsCreatedSince :many
 SELECT t.id, t.title, t.created_at, t.project_id,
        COALESCE(p.title, '') AS project_title
-FROM tasks t
+FROM todos t
 LEFT JOIN projects p ON t.project_id = p.id
 WHERE t.created_at >= $1
 ORDER BY t.created_at DESC
 `
 
-type TasksCreatedSinceRow struct {
+type TodoItemsCreatedSinceRow struct {
 	ID           uuid.UUID  `json:"id"`
 	Title        string     `json:"title"`
 	CreatedAt    time.Time  `json:"created_at"`
@@ -10062,16 +10292,16 @@ type TasksCreatedSinceRow struct {
 	ProjectTitle string     `json:"project_title"`
 }
 
-// Get tasks created since a given time with project context.
-func (q *Queries) TasksCreatedSince(ctx context.Context, since time.Time) ([]TasksCreatedSinceRow, error) {
-	rows, err := q.db.Query(ctx, tasksCreatedSince, since)
+// Get todo items created since a given time with project context.
+func (q *Queries) TodoItemsCreatedSince(ctx context.Context, since time.Time) ([]TodoItemsCreatedSinceRow, error) {
+	rows, err := q.db.Query(ctx, todoItemsCreatedSince, since)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []TasksCreatedSinceRow{}
+	items := []TodoItemsCreatedSinceRow{}
 	for rows.Next() {
-		var i TasksCreatedSinceRow
+		var i TodoItemsCreatedSinceRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.Title,
@@ -10089,28 +10319,28 @@ func (q *Queries) TasksCreatedSince(ctx context.Context, since time.Time) ([]Tas
 	return items, nil
 }
 
-const tasksDueInRange = `-- name: TasksDueInRange :many
-SELECT t.id, t.title, t.status, t.due, t.project_id,
+const todoItemsDueInRange = `-- name: TodoItemsDueInRange :many
+SELECT t.id, t.title, t.state, t.due, t.project_id,
        t.energy, t.priority, t.recur_interval, t.recur_unit,
        t.assignee, t.created_by, t.created_at, t.updated_at,
        COALESCE(p.title, '') AS project_title,
        COALESCE(p.slug, '') AS project_slug
-FROM tasks t
+FROM todos t
 LEFT JOIN projects p ON p.id = t.project_id
-WHERE t.status NOT IN ('done', 'someday', 'inbox')
+WHERE t.state NOT IN ('done', 'someday', 'inbox')
   AND t.due > $1 AND t.due <= $2
 ORDER BY t.due, t.priority NULLS LAST
 `
 
-type TasksDueInRangeParams struct {
+type TodoItemsDueInRangeParams struct {
 	StartDate *time.Time `json:"start_date"`
 	EndDate   *time.Time `json:"end_date"`
 }
 
-type TasksDueInRangeRow struct {
+type TodoItemsDueInRangeRow struct {
 	ID            uuid.UUID  `json:"id"`
 	Title         string     `json:"title"`
-	Status        TaskStatus `json:"status"`
+	State         TodoState  `json:"state"`
 	Due           *time.Time `json:"due"`
 	ProjectID     *uuid.UUID `json:"project_id"`
 	Energy        *string    `json:"energy"`
@@ -10125,20 +10355,20 @@ type TasksDueInRangeRow struct {
 	ProjectSlug   string     `json:"project_slug"`
 }
 
-// Tasks due within a date range (for morning_context upcoming_tasks).
-func (q *Queries) TasksDueInRange(ctx context.Context, arg TasksDueInRangeParams) ([]TasksDueInRangeRow, error) {
-	rows, err := q.db.Query(ctx, tasksDueInRange, arg.StartDate, arg.EndDate)
+// Todo items due within a date range (for morning_context upcoming section).
+func (q *Queries) TodoItemsDueInRange(ctx context.Context, arg TodoItemsDueInRangeParams) ([]TodoItemsDueInRangeRow, error) {
+	rows, err := q.db.Query(ctx, todoItemsDueInRange, arg.StartDate, arg.EndDate)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []TasksDueInRangeRow{}
+	items := []TodoItemsDueInRangeRow{}
 	for rows.Next() {
-		var i TasksDueInRangeRow
+		var i TodoItemsDueInRangeRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.Title,
-			&i.Status,
+			&i.State,
 			&i.Due,
 			&i.ProjectID,
 			&i.Energy,
@@ -10162,23 +10392,23 @@ func (q *Queries) TasksDueInRange(ctx context.Context, arg TasksDueInRangeParams
 	return items, nil
 }
 
-const tasksDueOn = `-- name: TasksDueOn :many
-SELECT t.id, t.title, t.status, t.due, t.project_id,
+const todoItemsDueOn = `-- name: TodoItemsDueOn :many
+SELECT t.id, t.title, t.state, t.due, t.project_id,
        t.energy, t.priority, t.recur_interval, t.recur_unit,
        t.assignee, t.created_by, t.created_at, t.updated_at,
        COALESCE(p.title, '') AS project_title,
        COALESCE(p.slug, '') AS project_slug
-FROM tasks t
+FROM todos t
 LEFT JOIN projects p ON p.id = t.project_id
-WHERE t.status NOT IN ('done', 'someday', 'inbox')
+WHERE t.state NOT IN ('done', 'someday', 'inbox')
   AND t.due = $1
 ORDER BY t.priority NULLS LAST, t.created_at
 `
 
-type TasksDueOnRow struct {
+type TodoItemsDueOnRow struct {
 	ID            uuid.UUID  `json:"id"`
 	Title         string     `json:"title"`
-	Status        TaskStatus `json:"status"`
+	State         TodoState  `json:"state"`
 	Due           *time.Time `json:"due"`
 	ProjectID     *uuid.UUID `json:"project_id"`
 	Energy        *string    `json:"energy"`
@@ -10193,20 +10423,20 @@ type TasksDueOnRow struct {
 	ProjectSlug   string     `json:"project_slug"`
 }
 
-// Tasks due on a specific date that are not done (for morning_context today_tasks).
-func (q *Queries) TasksDueOn(ctx context.Context, targetDate *time.Time) ([]TasksDueOnRow, error) {
-	rows, err := q.db.Query(ctx, tasksDueOn, targetDate)
+// Todo items due on a specific date (for morning_context today section).
+func (q *Queries) TodoItemsDueOn(ctx context.Context, targetDate *time.Time) ([]TodoItemsDueOnRow, error) {
+	rows, err := q.db.Query(ctx, todoItemsDueOn, targetDate)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []TasksDueOnRow{}
+	items := []TodoItemsDueOnRow{}
 	for rows.Next() {
-		var i TasksDueOnRow
+		var i TodoItemsDueOnRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.Title,
-			&i.Status,
+			&i.State,
 			&i.Due,
 			&i.ProjectID,
 			&i.Energy,
@@ -10219,6 +10449,119 @@ func (q *Queries) TasksDueOn(ctx context.Context, targetDate *time.Time) ([]Task
 			&i.UpdatedAt,
 			&i.ProjectTitle,
 			&i.ProjectSlug,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const todoSkipCountByItem = `-- name: TodoSkipCountByItem :one
+SELECT count(*)::int FROM todo_skips
+WHERE todo_id = $1 AND skipped_date >= $2
+`
+
+type TodoSkipCountByItemParams struct {
+	TodoID uuid.UUID `json:"todo_id"`
+	Since  time.Time `json:"since"`
+}
+
+// Count skips for a specific todo item within a date range.
+func (q *Queries) TodoSkipCountByItem(ctx context.Context, arg TodoSkipCountByItemParams) (int32, error) {
+	row := q.db.QueryRow(ctx, todoSkipCountByItem, arg.TodoID, arg.Since)
+	var column_1 int32
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
+const todoSkipHistoryByItem = `-- name: TodoSkipHistoryByItem :many
+SELECT id, todo_id, original_due, skipped_date, reason, created_at
+FROM todo_skips
+WHERE todo_id = $1
+  AND skipped_date >= $2
+ORDER BY skipped_date DESC
+`
+
+type TodoSkipHistoryByItemParams struct {
+	TodoID uuid.UUID `json:"todo_id"`
+	Since  time.Time `json:"since"`
+}
+
+// Get skip history for a specific todo item within a date range.
+func (q *Queries) TodoSkipHistoryByItem(ctx context.Context, arg TodoSkipHistoryByItemParams) ([]TodoSkip, error) {
+	rows, err := q.db.Query(ctx, todoSkipHistoryByItem, arg.TodoID, arg.Since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []TodoSkip{}
+	for rows.Next() {
+		var i TodoSkip
+		if err := rows.Scan(
+			&i.ID,
+			&i.TodoID,
+			&i.OriginalDue,
+			&i.SkippedDate,
+			&i.Reason,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const todoSkipHistoryByProject = `-- name: TodoSkipHistoryByProject :many
+SELECT sl.id, sl.todo_id, sl.original_due, sl.skipped_date, sl.reason, sl.created_at,
+       t.title AS item_title
+FROM todo_skips sl
+JOIN todos t ON t.id = sl.todo_id
+WHERE t.project_id = $1
+  AND sl.skipped_date >= $2
+ORDER BY sl.skipped_date DESC
+`
+
+type TodoSkipHistoryByProjectParams struct {
+	ProjectID *uuid.UUID `json:"project_id"`
+	Since     time.Time  `json:"since"`
+}
+
+type TodoSkipHistoryByProjectRow struct {
+	ID          uuid.UUID `json:"id"`
+	TodoID      uuid.UUID `json:"todo_id"`
+	OriginalDue time.Time `json:"original_due"`
+	SkippedDate time.Time `json:"skipped_date"`
+	Reason      string    `json:"reason"`
+	CreatedAt   time.Time `json:"created_at"`
+	ItemTitle   string    `json:"item_title"`
+}
+
+// Get skip history for all todo items under a project within a date range.
+func (q *Queries) TodoSkipHistoryByProject(ctx context.Context, arg TodoSkipHistoryByProjectParams) ([]TodoSkipHistoryByProjectRow, error) {
+	rows, err := q.db.Query(ctx, todoSkipHistoryByProject, arg.ProjectID, arg.Since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []TodoSkipHistoryByProjectRow{}
+	for rows.Next() {
+		var i TodoSkipHistoryByProjectRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.TodoID,
+			&i.OriginalDue,
+			&i.SkippedDate,
+			&i.Reason,
+			&i.CreatedAt,
+			&i.ItemTitle,
 		); err != nil {
 			return nil, err
 		}
@@ -10576,199 +10919,29 @@ func (q *Queries) TopicsForContents(ctx context.Context, dollar_1 []uuid.UUID) (
 	return items, nil
 }
 
-const unackedCount = `-- name: UnackedCount :one
-SELECT count(*)::int FROM directives WHERE acknowledged_at IS NULL
-`
-
-// Count of unacknowledged directives (for needs_attention badge).
-func (q *Queries) UnackedCount(ctx context.Context) (int32, error) {
-	row := q.db.QueryRow(ctx, unackedCount)
-	var column_1 int32
-	err := row.Scan(&column_1)
-	return column_1, err
-}
-
-const unackedDirectivesForTarget = `-- name: UnackedDirectivesForTarget :many
-SELECT id, source, target, priority, acknowledged_at, acknowledged_by, resolved_at, resolution_report_id, content, metadata, issued_date, created_at FROM directives
-WHERE target = $1 AND acknowledged_at IS NULL
-ORDER BY issued_date DESC, created_at DESC
-`
-
-func (q *Queries) UnackedDirectivesForTarget(ctx context.Context, target string) ([]Directive, error) {
-	rows, err := q.db.Query(ctx, unackedDirectivesForTarget, target)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []Directive{}
-	for rows.Next() {
-		var i Directive
-		if err := rows.Scan(
-			&i.ID,
-			&i.Source,
-			&i.Target,
-			&i.Priority,
-			&i.AcknowledgedAt,
-			&i.AcknowledgedBy,
-			&i.ResolvedAt,
-			&i.ResolutionReportID,
-			&i.Content,
-			&i.Metadata,
-			&i.IssuedDate,
-			&i.CreatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const unackedIssuedBySource = `-- name: UnackedIssuedBySource :many
-SELECT id, source, target, priority, acknowledged_at, acknowledged_by, resolved_at, resolution_report_id, content, metadata, issued_date, created_at FROM directives
-WHERE source = $1 AND acknowledged_at IS NULL
-ORDER BY issued_date DESC, created_at DESC
-`
-
-// Directives the caller issued that the target has not acknowledged yet.
-func (q *Queries) UnackedIssuedBySource(ctx context.Context, source string) ([]Directive, error) {
-	rows, err := q.db.Query(ctx, unackedIssuedBySource, source)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []Directive{}
-	for rows.Next() {
-		var i Directive
-		if err := rows.Scan(
-			&i.ID,
-			&i.Source,
-			&i.Target,
-			&i.Priority,
-			&i.AcknowledgedAt,
-			&i.AcknowledgedBy,
-			&i.ResolvedAt,
-			&i.ResolutionReportID,
-			&i.Content,
-			&i.Metadata,
-			&i.IssuedDate,
-			&i.CreatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const unresolvedDirectivesForTarget = `-- name: UnresolvedDirectivesForTarget :many
-SELECT id, source, target, priority, acknowledged_at, acknowledged_by, resolved_at, resolution_report_id, content, metadata, issued_date, created_at FROM directives
-WHERE target = $1 AND acknowledged_at IS NOT NULL AND resolved_at IS NULL
-ORDER BY issued_date DESC, created_at DESC
-`
-
-func (q *Queries) UnresolvedDirectivesForTarget(ctx context.Context, target string) ([]Directive, error) {
-	rows, err := q.db.Query(ctx, unresolvedDirectivesForTarget, target)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []Directive{}
-	for rows.Next() {
-		var i Directive
-		if err := rows.Scan(
-			&i.ID,
-			&i.Source,
-			&i.Target,
-			&i.Priority,
-			&i.AcknowledgedAt,
-			&i.AcknowledgedBy,
-			&i.ResolvedAt,
-			&i.ResolutionReportID,
-			&i.Content,
-			&i.Metadata,
-			&i.IssuedDate,
-			&i.CreatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const unresolvedIssuedBySource = `-- name: UnresolvedIssuedBySource :many
-SELECT id, source, target, priority, acknowledged_at, acknowledged_by, resolved_at, resolution_report_id, content, metadata, issued_date, created_at FROM directives
-WHERE source = $1 AND acknowledged_at IS NOT NULL AND resolved_at IS NULL
-ORDER BY issued_date DESC, created_at DESC
-`
-
-// Directives the caller issued that are acknowledged but not yet resolved.
-func (q *Queries) UnresolvedIssuedBySource(ctx context.Context, source string) ([]Directive, error) {
-	rows, err := q.db.Query(ctx, unresolvedIssuedBySource, source)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []Directive{}
-	for rows.Next() {
-		var i Directive
-		if err := rows.Scan(
-			&i.ID,
-			&i.Source,
-			&i.Target,
-			&i.Priority,
-			&i.AcknowledgedAt,
-			&i.AcknowledgedBy,
-			&i.ResolvedAt,
-			&i.ResolutionReportID,
-			&i.Content,
-			&i.Metadata,
-			&i.IssuedDate,
-			&i.CreatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const unverifiedInsights = `-- name: UnverifiedInsights :many
-SELECT id, source, content, status, hypothesis, invalidation_condition, metadata, observed_date, created_at
-FROM insights
-WHERE status = 'unverified'
+const unverifiedHypotheses = `-- name: UnverifiedHypotheses :many
+SELECT id, author, content, state, claim, invalidation_condition, metadata, observed_date, created_at
+FROM hypotheses
+WHERE state = 'unverified'
 ORDER BY observed_date DESC, created_at DESC
 LIMIT $1
 `
 
-func (q *Queries) UnverifiedInsights(ctx context.Context, maxResults int32) ([]Insight, error) {
-	rows, err := q.db.Query(ctx, unverifiedInsights, maxResults)
+func (q *Queries) UnverifiedHypotheses(ctx context.Context, maxResults int32) ([]Hypothesis, error) {
+	rows, err := q.db.Query(ctx, unverifiedHypotheses, maxResults)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []Insight{}
+	items := []Hypothesis{}
 	for rows.Next() {
-		var i Insight
+		var i Hypothesis
 		if err := rows.Scan(
 			&i.ID,
-			&i.Source,
+			&i.Author,
 			&i.Content,
-			&i.Status,
-			&i.Hypothesis,
+			&i.State,
+			&i.Claim,
 			&i.InvalidationCondition,
 			&i.Metadata,
 			&i.ObservedDate,
@@ -10788,7 +10961,7 @@ const updateCardState = `-- name: UpdateCardState :one
 UPDATE review_cards
 SET card_state = $1, due = $2, updated_at = now()
 WHERE id = $3
-RETURNING id, content_id, learning_item_id, tag_id, card_state, due, created_at, updated_at
+RETURNING id, content_id, learning_target_id, tag_id, card_state, due, created_at, updated_at
 `
 
 type UpdateCardStateParams struct {
@@ -10804,7 +10977,7 @@ func (q *Queries) UpdateCardState(ctx context.Context, arg UpdateCardStateParams
 	err := row.Scan(
 		&i.ID,
 		&i.ContentID,
-		&i.LearningItemID,
+		&i.LearningTargetID,
 		&i.TagID,
 		&i.CardState,
 		&i.Due,
@@ -10836,7 +11009,7 @@ UPDATE contents SET
     excerpt = COALESCE($5, excerpt),
     type = COALESCE($6::content_type, type),
     status = COALESCE($7::content_status, status),
-    source = COALESCE($8, source),
+    origin_ref = COALESCE($8, origin_ref),
     source_type = COALESCE($9::source_type, source_type),
     series_id = COALESCE($10, series_id),
     series_order = COALESCE($11, series_order),
@@ -10848,7 +11021,7 @@ UPDATE contents SET
     cover_image = COALESCE($17, cover_image),
     updated_at = now()
 WHERE id = $1
-RETURNING id, slug, title, body, excerpt, type, status, source, source_type,
+RETURNING id, slug, title, body, excerpt, type, status, origin_ref, source_type,
           series_id, series_order, review_level, is_public, project_id, ai_metadata, reading_time_min,
           cover_image, published_at, created_at, updated_at
 `
@@ -10861,7 +11034,7 @@ type UpdateContentParams struct {
 	Excerpt        *string           `json:"excerpt"`
 	ContentType    NullContentType   `json:"content_type"`
 	Status         NullContentStatus `json:"status"`
-	Source         *string           `json:"source"`
+	OriginRef      *string           `json:"origin_ref"`
 	SourceType     NullSourceType    `json:"source_type"`
 	SeriesID       *string           `json:"series_id"`
 	SeriesOrder    *int32            `json:"series_order"`
@@ -10881,7 +11054,7 @@ type UpdateContentRow struct {
 	Excerpt        string          `json:"excerpt"`
 	Type           ContentType     `json:"type"`
 	Status         ContentStatus   `json:"status"`
-	Source         *string         `json:"source"`
+	OriginRef      *string         `json:"origin_ref"`
 	SourceType     NullSourceType  `json:"source_type"`
 	SeriesID       *string         `json:"series_id"`
 	SeriesOrder    *int32          `json:"series_order"`
@@ -10905,7 +11078,7 @@ func (q *Queries) UpdateContent(ctx context.Context, arg UpdateContentParams) (U
 		arg.Excerpt,
 		arg.ContentType,
 		arg.Status,
-		arg.Source,
+		arg.OriginRef,
 		arg.SourceType,
 		arg.SeriesID,
 		arg.SeriesOrder,
@@ -10925,7 +11098,7 @@ func (q *Queries) UpdateContent(ctx context.Context, arg UpdateContentParams) (U
 		&i.Excerpt,
 		&i.Type,
 		&i.Status,
-		&i.Source,
+		&i.OriginRef,
 		&i.SourceType,
 		&i.SeriesID,
 		&i.SeriesOrder,
@@ -11015,7 +11188,7 @@ UPDATE goals SET
     updated_at = now()
 WHERE id = $2
 RETURNING id, title, description, status, area_id, quarter, deadline,
-          notion_page_id, created_at, updated_at
+          external_provider, external_ref, created_at, updated_at
 `
 
 type UpdateGoalStatusParams struct {
@@ -11035,33 +11208,34 @@ func (q *Queries) UpdateGoalStatus(ctx context.Context, arg UpdateGoalStatusPara
 		&i.AreaID,
 		&i.Quarter,
 		&i.Deadline,
-		&i.NotionPageID,
+		&i.ExternalProvider,
+		&i.ExternalRef,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
 	return i, err
 }
 
-const updateInsightMetadata = `-- name: UpdateInsightMetadata :one
-UPDATE insights SET metadata = $1
+const updateHypothesisMetadata = `-- name: UpdateHypothesisMetadata :one
+UPDATE hypotheses SET metadata = $1
 WHERE id = $2
-RETURNING id, source, content, status, hypothesis, invalidation_condition, metadata, observed_date, created_at
+RETURNING id, author, content, state, claim, invalidation_condition, metadata, observed_date, created_at
 `
 
-type UpdateInsightMetadataParams struct {
+type UpdateHypothesisMetadataParams struct {
 	Metadata json.RawMessage `json:"metadata"`
 	ID       int64           `json:"id"`
 }
 
-func (q *Queries) UpdateInsightMetadata(ctx context.Context, arg UpdateInsightMetadataParams) (Insight, error) {
-	row := q.db.QueryRow(ctx, updateInsightMetadata, arg.Metadata, arg.ID)
-	var i Insight
+func (q *Queries) UpdateHypothesisMetadata(ctx context.Context, arg UpdateHypothesisMetadataParams) (Hypothesis, error) {
+	row := q.db.QueryRow(ctx, updateHypothesisMetadata, arg.Metadata, arg.ID)
+	var i Hypothesis
 	err := row.Scan(
 		&i.ID,
-		&i.Source,
+		&i.Author,
 		&i.Content,
-		&i.Status,
-		&i.Hypothesis,
+		&i.State,
+		&i.Claim,
 		&i.InvalidationCondition,
 		&i.Metadata,
 		&i.ObservedDate,
@@ -11070,26 +11244,26 @@ func (q *Queries) UpdateInsightMetadata(ctx context.Context, arg UpdateInsightMe
 	return i, err
 }
 
-const updateInsightStatus = `-- name: UpdateInsightStatus :one
-UPDATE insights SET status = $1
+const updateHypothesisState = `-- name: UpdateHypothesisState :one
+UPDATE hypotheses SET state = $1::hypothesis_state
 WHERE id = $2
-RETURNING id, source, content, status, hypothesis, invalidation_condition, metadata, observed_date, created_at
+RETURNING id, author, content, state, claim, invalidation_condition, metadata, observed_date, created_at
 `
 
-type UpdateInsightStatusParams struct {
-	Status string `json:"status"`
-	ID     int64  `json:"id"`
+type UpdateHypothesisStateParams struct {
+	State HypothesisState `json:"state"`
+	ID    int64           `json:"id"`
 }
 
-func (q *Queries) UpdateInsightStatus(ctx context.Context, arg UpdateInsightStatusParams) (Insight, error) {
-	row := q.db.QueryRow(ctx, updateInsightStatus, arg.Status, arg.ID)
-	var i Insight
+func (q *Queries) UpdateHypothesisState(ctx context.Context, arg UpdateHypothesisStateParams) (Hypothesis, error) {
+	row := q.db.QueryRow(ctx, updateHypothesisState, arg.State, arg.ID)
+	var i Hypothesis
 	err := row.Scan(
 		&i.ID,
-		&i.Source,
+		&i.Author,
 		&i.Content,
-		&i.Status,
-		&i.Hypothesis,
+		&i.State,
+		&i.Claim,
 		&i.InvalidationCondition,
 		&i.Metadata,
 		&i.ObservedDate,
@@ -11102,7 +11276,7 @@ const updateItemStatus = `-- name: UpdateItemStatus :one
 UPDATE daily_plan_items
 SET status = $1, updated_at = now()
 WHERE id = $2
-RETURNING id, plan_date, task_id, selected_by, position, reason, journal_id, status, created_at, updated_at
+RETURNING id, plan_date, todo_id, selected_by, position, reason, agent_note_id, status, created_at, updated_at
 `
 
 type UpdateItemStatusParams struct {
@@ -11117,11 +11291,11 @@ func (q *Queries) UpdateItemStatus(ctx context.Context, arg UpdateItemStatusPara
 	err := row.Scan(
 		&i.ID,
 		&i.PlanDate,
-		&i.TaskID,
+		&i.TodoID,
 		&i.SelectedBy,
 		&i.Position,
 		&i.Reason,
-		&i.JournalID,
+		&i.AgentNoteID,
 		&i.Status,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -11129,23 +11303,23 @@ func (q *Queries) UpdateItemStatus(ctx context.Context, arg UpdateItemStatusPara
 	return i, err
 }
 
-const updateItemStatusByTask = `-- name: UpdateItemStatusByTask :execrows
+const updateItemStatusByTodo = `-- name: UpdateItemStatusByTodo :execrows
 UPDATE daily_plan_items
 SET status = $1, updated_at = now()
-WHERE task_id = $2 AND plan_date = $3
+WHERE todo_id = $2 AND plan_date = $3
 `
 
-type UpdateItemStatusByTaskParams struct {
+type UpdateItemStatusByTodoParams struct {
 	Status   string    `json:"status"`
-	TaskID   uuid.UUID `json:"task_id"`
+	TodoID   uuid.UUID `json:"todo_id"`
 	PlanDate time.Time `json:"plan_date"`
 }
 
-// Update the status of a daily plan item by task_id and date.
-// Used when advance_work completes a task to auto-update today's plan item.
+// Update the status of a daily plan item by todo_id and date.
+// Used when advance_work completes a todo item to auto-update today's plan item.
 // Returns rows affected so caller can distinguish "updated" from "no matching item".
-func (q *Queries) UpdateItemStatusByTask(ctx context.Context, arg UpdateItemStatusByTaskParams) (int64, error) {
-	result, err := q.db.Exec(ctx, updateItemStatusByTask, arg.Status, arg.TaskID, arg.PlanDate)
+func (q *Queries) UpdateItemStatusByTodo(ctx context.Context, arg UpdateItemStatusByTodoParams) (int64, error) {
+	result, err := q.db.Exec(ctx, updateItemStatusByTodo, arg.Status, arg.TodoID, arg.PlanDate)
 	if err != nil {
 		return 0, err
 	}
@@ -11153,7 +11327,7 @@ func (q *Queries) UpdateItemStatusByTask(ctx context.Context, arg UpdateItemStat
 }
 
 const updateNoteEmbedding = `-- name: UpdateNoteEmbedding :exec
-UPDATE notes SET embedding = $2 WHERE id = $1
+UPDATE obsidian_notes SET embedding = $2 WHERE id = $1
 `
 
 type UpdateNoteEmbeddingParams struct {
@@ -11168,7 +11342,7 @@ func (q *Queries) UpdateNoteEmbedding(ctx context.Context, arg UpdateNoteEmbeddi
 }
 
 const updatePlanItemPosition = `-- name: UpdatePlanItemPosition :execrows
-UPDATE plan_items SET position = $1 WHERE id = $2
+UPDATE learning_plan_entries SET position = $1 WHERE id = $2
 `
 
 type UpdatePlanItemPositionParams struct {
@@ -11185,11 +11359,11 @@ func (q *Queries) UpdatePlanItemPosition(ctx context.Context, arg UpdatePlanItem
 }
 
 const updatePlanItemStatus = `-- name: UpdatePlanItemStatus :one
-UPDATE plan_items
+UPDATE learning_plan_entries
 SET status = $1, reason = $2, completed_at = $3,
     substituted_by = $4, completed_by_attempt_id = $5
 WHERE id = $6
-RETURNING id, plan_id, learning_item_id, position, status, phase, substituted_by, completed_by_attempt_id, reason, added_at, completed_at
+RETURNING id, plan_id, learning_target_id, position, status, phase, substituted_by, completed_by_attempt_id, reason, added_at, completed_at
 `
 
 type UpdatePlanItemStatusParams struct {
@@ -11201,7 +11375,7 @@ type UpdatePlanItemStatusParams struct {
 	ID                   uuid.UUID  `json:"id"`
 }
 
-func (q *Queries) UpdatePlanItemStatus(ctx context.Context, arg UpdatePlanItemStatusParams) (PlanItem, error) {
+func (q *Queries) UpdatePlanItemStatus(ctx context.Context, arg UpdatePlanItemStatusParams) (LearningPlanEntry, error) {
 	row := q.db.QueryRow(ctx, updatePlanItemStatus,
 		arg.Status,
 		arg.Reason,
@@ -11210,11 +11384,11 @@ func (q *Queries) UpdatePlanItemStatus(ctx context.Context, arg UpdatePlanItemSt
 		arg.CompletedByAttemptID,
 		arg.ID,
 	)
-	var i PlanItem
+	var i LearningPlanEntry
 	err := row.Scan(
 		&i.ID,
 		&i.PlanID,
-		&i.LearningItemID,
+		&i.LearningTargetID,
 		&i.Position,
 		&i.Status,
 		&i.Phase,
@@ -11228,7 +11402,7 @@ func (q *Queries) UpdatePlanItemStatus(ctx context.Context, arg UpdatePlanItemSt
 }
 
 const updatePlanStatus = `-- name: UpdatePlanStatus :one
-UPDATE plans SET status = $1, updated_at = now()
+UPDATE learning_plans SET status = $1, updated_at = now()
 WHERE id = $2
 RETURNING id, title, description, domain, goal_id, status, target_count, plan_config, created_by, created_at, updated_at
 `
@@ -11238,9 +11412,9 @@ type UpdatePlanStatusParams struct {
 	ID     uuid.UUID `json:"id"`
 }
 
-func (q *Queries) UpdatePlanStatus(ctx context.Context, arg UpdatePlanStatusParams) (Plan, error) {
+func (q *Queries) UpdatePlanStatus(ctx context.Context, arg UpdatePlanStatusParams) (LearningPlan, error) {
 	row := q.db.QueryRow(ctx, updatePlanStatus, arg.Status, arg.ID)
-	var i Plan
+	var i LearningPlan
 	err := row.Scan(
 		&i.ID,
 		&i.Title,
@@ -11280,7 +11454,7 @@ UPDATE projects SET
 WHERE id = $1
 RETURNING id, slug, title, description, long_description, role, tech_stack, highlights,
           problem, solution, architecture, results, github_url, live_url,
-          featured, is_public, sort_order, status, notion_page_id, repo, area_id, goal_id, deadline, last_activity_at,
+          featured, is_public, sort_order, status, external_provider, external_ref, repo, area_id, goal_id, deadline, last_activity_at,
           expected_cadence, created_at, updated_at
 `
 
@@ -11346,7 +11520,8 @@ func (q *Queries) UpdateProject(ctx context.Context, arg UpdateProjectParams) (P
 		&i.IsPublic,
 		&i.SortOrder,
 		&i.Status,
-		&i.NotionPageID,
+		&i.ExternalProvider,
+		&i.ExternalRef,
 		&i.Repo,
 		&i.AreaID,
 		&i.GoalID,
@@ -11368,7 +11543,7 @@ UPDATE projects SET
 WHERE id = $4
 RETURNING id, slug, title, description, long_description, role, tech_stack, highlights,
           problem, solution, architecture, results, github_url, live_url,
-          featured, is_public, sort_order, status, notion_page_id, repo, area_id, goal_id, deadline, last_activity_at,
+          featured, is_public, sort_order, status, external_provider, external_ref, repo, area_id, goal_id, deadline, last_activity_at,
           expected_cadence, created_at, updated_at
 `
 
@@ -11407,7 +11582,8 @@ func (q *Queries) UpdateProjectStatus(ctx context.Context, arg UpdateProjectStat
 		&i.IsPublic,
 		&i.SortOrder,
 		&i.Status,
-		&i.NotionPageID,
+		&i.ExternalProvider,
+		&i.ExternalRef,
 		&i.Repo,
 		&i.AreaID,
 		&i.GoalID,
@@ -11461,10 +11637,10 @@ func (q *Queries) UpdateTag(ctx context.Context, arg UpdateTagParams) (Tag, erro
 	return i, err
 }
 
-const updateTask = `-- name: UpdateTask :one
-UPDATE tasks SET
+const updateTodoItem = `-- name: UpdateTodoItem :one
+UPDATE todos SET
     title        = COALESCE($1, title),
-    status       = COALESCE($2::task_status, status),
+    state        = COALESCE($2::todo_state, state),
     due          = COALESCE($3, due),
     energy       = COALESCE($4, energy),
     priority     = COALESCE($5, priority),
@@ -11472,33 +11648,33 @@ UPDATE tasks SET
     description  = COALESCE($7, description),
     assignee     = COALESCE($8, assignee),
     completed_at = CASE
-        WHEN $2::task_status = 'done' AND completed_at IS NULL THEN now()
+        WHEN $2::todo_state = 'done' AND completed_at IS NULL THEN now()
         ELSE completed_at
     END,
     updated_at = now()
 WHERE id = $9
-RETURNING id, title, status, due, project_id, notion_page_id,
+RETURNING id, title, state, due, project_id, external_provider, external_ref,
           completed_at, energy, priority, recur_interval, recur_unit,
           description, assignee, created_by, created_at, updated_at
 `
 
-type UpdateTaskParams struct {
-	NewTitle       *string        `json:"new_title"`
-	Status         NullTaskStatus `json:"status"`
-	Due            *time.Time     `json:"due"`
-	Energy         *string        `json:"energy"`
-	Priority       *string        `json:"priority"`
-	NewProjectID   *uuid.UUID     `json:"new_project_id"`
-	NewDescription *string        `json:"new_description"`
-	Assignee       *string        `json:"assignee"`
-	ID             uuid.UUID      `json:"id"`
+type UpdateTodoItemParams struct {
+	NewTitle       *string       `json:"new_title"`
+	State          NullTodoState `json:"state"`
+	Due            *time.Time    `json:"due"`
+	Energy         *string       `json:"energy"`
+	Priority       *string       `json:"priority"`
+	NewProjectID   *uuid.UUID    `json:"new_project_id"`
+	NewDescription *string       `json:"new_description"`
+	Assignee       *string       `json:"assignee"`
+	ID             uuid.UUID     `json:"id"`
 }
 
-// Update arbitrary task fields. Only non-null parameters are applied.
-func (q *Queries) UpdateTask(ctx context.Context, arg UpdateTaskParams) (Task, error) {
-	row := q.db.QueryRow(ctx, updateTask,
+// Update arbitrary todo item fields. Only non-null parameters are applied.
+func (q *Queries) UpdateTodoItem(ctx context.Context, arg UpdateTodoItemParams) (Todo, error) {
+	row := q.db.QueryRow(ctx, updateTodoItem,
 		arg.NewTitle,
-		arg.Status,
+		arg.State,
 		arg.Due,
 		arg.Energy,
 		arg.Priority,
@@ -11507,14 +11683,15 @@ func (q *Queries) UpdateTask(ctx context.Context, arg UpdateTaskParams) (Task, e
 		arg.Assignee,
 		arg.ID,
 	)
-	var i Task
+	var i Todo
 	err := row.Scan(
 		&i.ID,
 		&i.Title,
-		&i.Status,
+		&i.State,
 		&i.Due,
 		&i.ProjectID,
-		&i.NotionPageID,
+		&i.ExternalProvider,
+		&i.ExternalRef,
 		&i.CompletedAt,
 		&i.Energy,
 		&i.Priority,
@@ -11529,54 +11706,55 @@ func (q *Queries) UpdateTask(ctx context.Context, arg UpdateTaskParams) (Task, e
 	return i, err
 }
 
-const updateTaskDue = `-- name: UpdateTaskDue :execrows
-UPDATE tasks SET due = $1, updated_at = now() WHERE id = $2
+const updateTodoItemDue = `-- name: UpdateTodoItemDue :execrows
+UPDATE todos SET due = $1, updated_at = now() WHERE id = $2
 `
 
-type UpdateTaskDueParams struct {
+type UpdateTodoItemDueParams struct {
 	Due *time.Time `json:"due"`
 	ID  uuid.UUID  `json:"id"`
 }
 
-// Update only the due date for a task (used by cron advance and complete_task recurring reset).
-func (q *Queries) UpdateTaskDue(ctx context.Context, arg UpdateTaskDueParams) (int64, error) {
-	result, err := q.db.Exec(ctx, updateTaskDue, arg.Due, arg.ID)
+// Update only the due date for a todo item.
+func (q *Queries) UpdateTodoItemDue(ctx context.Context, arg UpdateTodoItemDueParams) (int64, error) {
+	result, err := q.db.Exec(ctx, updateTodoItemDue, arg.Due, arg.ID)
 	if err != nil {
 		return 0, err
 	}
 	return result.RowsAffected(), nil
 }
 
-const updateTaskStatus = `-- name: UpdateTaskStatus :one
-UPDATE tasks SET
-    status       = $1::task_status,
+const updateTodoItemState = `-- name: UpdateTodoItemState :one
+UPDATE todos SET
+    state        = $1::todo_state,
     completed_at = CASE
-        WHEN $1::task_status = 'done' AND completed_at IS NULL THEN now()
+        WHEN $1::todo_state = 'done' AND completed_at IS NULL THEN now()
         ELSE completed_at
     END,
     updated_at = now()
 WHERE id = $2
-RETURNING id, title, status, due, project_id, notion_page_id,
+RETURNING id, title, state, due, project_id, external_provider, external_ref,
           completed_at, energy, priority, recur_interval, recur_unit,
           description, assignee, created_by, created_at, updated_at
 `
 
-type UpdateTaskStatusParams struct {
-	Status TaskStatus `json:"status"`
-	ID     uuid.UUID  `json:"id"`
+type UpdateTodoItemStateParams struct {
+	State TodoState `json:"state"`
+	ID    uuid.UUID `json:"id"`
 }
 
-// Update a task's status. Sets completed_at on transition to done.
-func (q *Queries) UpdateTaskStatus(ctx context.Context, arg UpdateTaskStatusParams) (Task, error) {
-	row := q.db.QueryRow(ctx, updateTaskStatus, arg.Status, arg.ID)
-	var i Task
+// Update a todo item's state. Sets completed_at on transition to done.
+func (q *Queries) UpdateTodoItemState(ctx context.Context, arg UpdateTodoItemStateParams) (Todo, error) {
+	row := q.db.QueryRow(ctx, updateTodoItemState, arg.State, arg.ID)
+	var i Todo
 	err := row.Scan(
 		&i.ID,
 		&i.Title,
-		&i.Status,
+		&i.State,
 		&i.Due,
 		&i.ProjectID,
-		&i.NotionPageID,
+		&i.ExternalProvider,
+		&i.ExternalRef,
 		&i.CompletedAt,
 		&i.Energy,
 		&i.Priority,
@@ -11635,20 +11813,52 @@ func (q *Queries) UpdateTopic(ctx context.Context, arg UpdateTopicParams) (Topic
 	return i, err
 }
 
+const upsertAgent = `-- name: UpsertAgent :exec
+INSERT INTO agents (name, display_name, platform, description, status, synced_at, retired_at)
+VALUES ($1, $2, $3, $4, 'active', now(), NULL)
+ON CONFLICT (name) DO UPDATE SET
+    display_name = EXCLUDED.display_name,
+    platform     = EXCLUDED.platform,
+    description  = EXCLUDED.description,
+    status       = 'active',
+    synced_at    = now(),
+    retired_at   = NULL
+`
+
+type UpsertAgentParams struct {
+	Name        string `json:"name"`
+	DisplayName string `json:"display_name"`
+	Platform    string `json:"platform"`
+	Description string `json:"description"`
+}
+
+// Write an active agent row. ON CONFLICT clears any previous retirement —
+// a registered agent is always active after sync. Called once per entry
+// in BuiltinAgents() during startup reconciliation.
+func (q *Queries) UpsertAgent(ctx context.Context, arg UpsertAgentParams) error {
+	_, err := q.db.Exec(ctx, upsertAgent,
+		arg.Name,
+		arg.DisplayName,
+		arg.Platform,
+		arg.Description,
+	)
+	return err
+}
+
 const upsertNote = `-- name: UpsertNote :one
-INSERT INTO notes (
-    file_path, title, type, source, context, maturity, raw_tags,
-    difficulty, leetcode_id, book, chapter, notion_task_id,
+INSERT INTO obsidian_notes (
+    file_path, title, type, provenance, context, maturity, raw_tags,
+    difficulty, leetcode_id, book, chapter, external_provider, external_ref,
     content_text, content_hash, synced_at
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7,
-    $8, $9, $10, $11, $12,
-    $13, $14, now()
+    $8, $9, $10, $11, $12, $13,
+    $14, $15, now()
 )
 ON CONFLICT (file_path) DO UPDATE SET
     title = EXCLUDED.title,
     type = EXCLUDED.type,
-    source = EXCLUDED.source,
+    provenance = EXCLUDED.provenance,
     context = EXCLUDED.context,
     maturity = EXCLUDED.maturity,
     raw_tags = EXCLUDED.raw_tags,
@@ -11656,36 +11866,38 @@ ON CONFLICT (file_path) DO UPDATE SET
     leetcode_id = EXCLUDED.leetcode_id,
     book = EXCLUDED.book,
     chapter = EXCLUDED.chapter,
-    notion_task_id = EXCLUDED.notion_task_id,
+    external_provider = EXCLUDED.external_provider,
+    external_ref = EXCLUDED.external_ref,
     content_text = EXCLUDED.content_text,
     content_hash = EXCLUDED.content_hash,
     synced_at = now()
-RETURNING id, file_path, title, type, source, context, maturity, raw_tags, difficulty, leetcode_id, book, chapter, notion_task_id, content_text, content_hash, embedding, search_vector, git_created_at, git_updated_at, synced_at
+RETURNING id, file_path, title, type, provenance, context, maturity, raw_tags, difficulty, leetcode_id, book, chapter, external_provider, external_ref, content_text, content_hash, embedding, search_vector, git_created_at, git_updated_at, synced_at
 `
 
 type UpsertNoteParams struct {
-	FilePath     string          `json:"file_path"`
-	Title        *string         `json:"title"`
-	Type         *string         `json:"type"`
-	Source       *string         `json:"source"`
-	Context      *string         `json:"context"`
-	Maturity     string          `json:"maturity"`
-	RawTags      json.RawMessage `json:"raw_tags"`
-	Difficulty   *string         `json:"difficulty"`
-	LeetcodeID   *int32          `json:"leetcode_id"`
-	Book         *string         `json:"book"`
-	Chapter      *string         `json:"chapter"`
-	NotionTaskID *string         `json:"notion_task_id"`
-	ContentText  *string         `json:"content_text"`
-	ContentHash  *string         `json:"content_hash"`
+	FilePath         string          `json:"file_path"`
+	Title            *string         `json:"title"`
+	Type             *string         `json:"type"`
+	Provenance       *string         `json:"provenance"`
+	Context          *string         `json:"context"`
+	Maturity         string          `json:"maturity"`
+	RawTags          json.RawMessage `json:"raw_tags"`
+	Difficulty       *string         `json:"difficulty"`
+	LeetcodeID       *int32          `json:"leetcode_id"`
+	Book             *string         `json:"book"`
+	Chapter          *string         `json:"chapter"`
+	ExternalProvider *string         `json:"external_provider"`
+	ExternalRef      *string         `json:"external_ref"`
+	ContentText      *string         `json:"content_text"`
+	ContentHash      *string         `json:"content_hash"`
 }
 
-func (q *Queries) UpsertNote(ctx context.Context, arg UpsertNoteParams) (Note, error) {
+func (q *Queries) UpsertNote(ctx context.Context, arg UpsertNoteParams) (ObsidianNote, error) {
 	row := q.db.QueryRow(ctx, upsertNote,
 		arg.FilePath,
 		arg.Title,
 		arg.Type,
-		arg.Source,
+		arg.Provenance,
 		arg.Context,
 		arg.Maturity,
 		arg.RawTags,
@@ -11693,17 +11905,18 @@ func (q *Queries) UpsertNote(ctx context.Context, arg UpsertNoteParams) (Note, e
 		arg.LeetcodeID,
 		arg.Book,
 		arg.Chapter,
-		arg.NotionTaskID,
+		arg.ExternalProvider,
+		arg.ExternalRef,
 		arg.ContentText,
 		arg.ContentHash,
 	)
-	var i Note
+	var i ObsidianNote
 	err := row.Scan(
 		&i.ID,
 		&i.FilePath,
 		&i.Title,
 		&i.Type,
-		&i.Source,
+		&i.Provenance,
 		&i.Context,
 		&i.Maturity,
 		&i.RawTags,
@@ -11711,7 +11924,8 @@ func (q *Queries) UpsertNote(ctx context.Context, arg UpsertNoteParams) (Note, e
 		&i.LeetcodeID,
 		&i.Book,
 		&i.Chapter,
-		&i.NotionTaskID,
+		&i.ExternalProvider,
+		&i.ExternalRef,
 		&i.ContentText,
 		&i.ContentHash,
 		&i.Embedding,
@@ -11724,7 +11938,7 @@ func (q *Queries) UpsertNote(ctx context.Context, arg UpsertNoteParams) (Note, e
 }
 
 const upsertNoteLink = `-- name: UpsertNoteLink :exec
-INSERT INTO note_links (source_note_id, target_path, link_text)
+INSERT INTO obsidian_note_links (source_note_id, target_path, link_text)
 VALUES ($1, $2, $3)
 ON CONFLICT (source_note_id, target_path) DO UPDATE SET
     link_text = EXCLUDED.link_text
@@ -11742,28 +11956,26 @@ func (q *Queries) UpsertNoteLink(ctx context.Context, arg UpsertNoteLinkParams) 
 	return err
 }
 
-const upsertTaskByNotionPageID = `-- name: UpsertTaskByNotionPageID :one
-INSERT INTO tasks (title, status, due, project_id, notion_page_id, completed_at,
+const upsertTodoByExternalRef = `-- name: UpsertTodoByExternalRef :one
+INSERT INTO todos (title, state, due, project_id, external_provider, external_ref, completed_at,
                    energy, priority, recur_interval, recur_unit, description, assignee)
-VALUES ($1, $2::task_status, $3, $4, $5,
-        CASE WHEN $2::task_status = 'done' THEN now() ELSE NULL END,
-        $6, $7, $8, $9, $10, $11)
-ON CONFLICT (notion_page_id) DO UPDATE SET
+VALUES ($1, $2::todo_state, $3, $4, $5, $6,
+        CASE WHEN $2::todo_state = 'done' THEN now() ELSE NULL END,
+        $7, $8, $9, $10, $11, $12)
+ON CONFLICT (external_provider, external_ref) DO UPDATE SET
     title          = EXCLUDED.title,
-    status         = EXCLUDED.status,
+    state          = EXCLUDED.state,
     due            = CASE
-        -- For recurring tasks, don't overwrite local due if it's ahead of incoming Notion due.
-        -- This prevents hourly SyncAll from reverting cron's due date advance.
-        WHEN tasks.recur_interval IS NOT NULL AND tasks.recur_interval > 0
-             AND tasks.due IS NOT NULL AND EXCLUDED.due IS NOT NULL
-             AND tasks.due > EXCLUDED.due
-        THEN tasks.due
+        WHEN todos.recur_interval IS NOT NULL AND todos.recur_interval > 0
+             AND todos.due IS NOT NULL AND EXCLUDED.due IS NOT NULL
+             AND todos.due > EXCLUDED.due
+        THEN todos.due
         ELSE EXCLUDED.due
     END,
     project_id     = EXCLUDED.project_id,
     completed_at   = CASE
-        WHEN EXCLUDED.status = 'done' AND tasks.completed_at IS NULL THEN now()
-        ELSE tasks.completed_at
+        WHEN EXCLUDED.state = 'done' AND todos.completed_at IS NULL THEN now()
+        ELSE todos.completed_at
     END,
     energy         = EXCLUDED.energy,
     priority       = EXCLUDED.priority,
@@ -11772,33 +11984,37 @@ ON CONFLICT (notion_page_id) DO UPDATE SET
     description    = EXCLUDED.description,
     assignee       = EXCLUDED.assignee,
     updated_at     = now()
-RETURNING id, title, status, due, project_id, notion_page_id,
+RETURNING id, title, state, due, project_id, external_provider, external_ref,
           completed_at, energy, priority, recur_interval, recur_unit,
           description, assignee, created_by, created_at, updated_at
 `
 
-type UpsertTaskByNotionPageIDParams struct {
-	Title         string     `json:"title"`
-	Status        TaskStatus `json:"status"`
-	Due           *time.Time `json:"due"`
-	ProjectID     *uuid.UUID `json:"project_id"`
-	NotionPageID  *string    `json:"notion_page_id"`
-	Energy        *string    `json:"energy"`
-	Priority      *string    `json:"priority"`
-	RecurInterval *int32     `json:"recur_interval"`
-	RecurUnit     *string    `json:"recur_unit"`
-	Description   string     `json:"description"`
-	Assignee      string     `json:"assignee"`
+type UpsertTodoByExternalRefParams struct {
+	Title            string     `json:"title"`
+	State            TodoState  `json:"state"`
+	Due              *time.Time `json:"due"`
+	ProjectID        *uuid.UUID `json:"project_id"`
+	ExternalProvider *string    `json:"external_provider"`
+	ExternalRef      *string    `json:"external_ref"`
+	Energy           *string    `json:"energy"`
+	Priority         *string    `json:"priority"`
+	RecurInterval    *int32     `json:"recur_interval"`
+	RecurUnit        *string    `json:"recur_unit"`
+	Description      string     `json:"description"`
+	Assignee         string     `json:"assignee"`
 }
 
-// Upsert a task from Notion sync. completed_at is set by the DB on first transition to done.
-func (q *Queries) UpsertTaskByNotionPageID(ctx context.Context, arg UpsertTaskByNotionPageIDParams) (Task, error) {
-	row := q.db.QueryRow(ctx, upsertTaskByNotionPageID,
+// Upsert a todo from external sync (Notion, Linear, etc.). completed_at is set
+// by the DB on first transition to done. Conflict resolved on the
+// (external_provider, external_ref) composite uniqueness.
+func (q *Queries) UpsertTodoByExternalRef(ctx context.Context, arg UpsertTodoByExternalRefParams) (Todo, error) {
+	row := q.db.QueryRow(ctx, upsertTodoByExternalRef,
 		arg.Title,
-		arg.Status,
+		arg.State,
 		arg.Due,
 		arg.ProjectID,
-		arg.NotionPageID,
+		arg.ExternalProvider,
+		arg.ExternalRef,
 		arg.Energy,
 		arg.Priority,
 		arg.RecurInterval,
@@ -11806,14 +12022,15 @@ func (q *Queries) UpsertTaskByNotionPageID(ctx context.Context, arg UpsertTaskBy
 		arg.Description,
 		arg.Assignee,
 	)
-	var i Task
+	var i Todo
 	err := row.Scan(
 		&i.ID,
 		&i.Title,
-		&i.Status,
+		&i.State,
 		&i.Due,
 		&i.ProjectID,
-		&i.NotionPageID,
+		&i.ExternalProvider,
+		&i.ExternalRef,
 		&i.CompletedAt,
 		&i.Energy,
 		&i.Priority,
@@ -11894,9 +12111,9 @@ SELECT c.slug AS concept_slug, c.name AS concept_name, c.domain,
        COUNT(*) FILTER (WHERE ao.severity = 'moderate') AS moderate_count,
        COUNT(*) FILTER (WHERE ao.severity = 'minor') AS minor_count,
        MAX(ao.created_at)::timestamptz AS last_seen_at
-FROM attempt_observations ao
+FROM learning_attempt_observations ao
 JOIN concepts c ON c.id = ao.concept_id
-JOIN attempts a ON a.id = ao.attempt_id
+JOIN learning_attempts a ON a.id = ao.attempt_id
 WHERE ao.signal_type = 'weakness'
   AND ($1::text IS NULL OR c.domain = $1)
   AND a.attempted_at >= $2

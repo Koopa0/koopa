@@ -214,7 +214,10 @@ func TestFileReport_Validation(t *testing.T) {
 		input   FileReportInput
 		wantErr string
 	}{
-		{name: "empty content", input: FileReportInput{}, wantErr: "content is required"},
+		// TODO(coordination-rebuild): restore the "content is required" validation
+		// case once file_report is rewired to task.Store.Complete + artifact.Store.
+		// Until then the handler returns ErrCoordinationRebuildPending unconditionally.
+		{name: "empty content", input: FileReportInput{}, wantErr: "coordination rebuild in progress"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -238,7 +241,10 @@ func TestAcknowledgeDirective_Validation(t *testing.T) {
 		input   AcknowledgeDirectiveInput
 		wantErr string
 	}{
-		{name: "zero id", input: AcknowledgeDirectiveInput{}, wantErr: "valid directive_id is required"},
+		// TODO(coordination-rebuild): restore the "valid directive_id is required"
+		// validation case once acknowledge_directive is rewired to task.Store.Accept.
+		// Until then the handler returns ErrCoordinationRebuildPending unconditionally.
+		{name: "zero id", input: AcknowledgeDirectiveInput{}, wantErr: "coordination rebuild in progress"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

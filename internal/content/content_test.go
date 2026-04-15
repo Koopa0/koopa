@@ -21,9 +21,10 @@ func TestTypeValid(t *testing.T) {
 		{name: "essay", typ: TypeEssay, want: true},
 		{name: "build-log", typ: TypeBuildLog, want: true},
 		{name: "til", typ: TypeTIL, want: true},
-		{name: "note", typ: TypeNote, want: true},
-		{name: "bookmark", typ: TypeBookmark, want: true},
 		{name: "digest", typ: TypeDigest, want: true},
+		// note and bookmark dropped from the enum — should now be invalid.
+		{name: "dropped: note", typ: "note", want: false},
+		{name: "dropped: bookmark", typ: "bookmark", want: false},
 		{name: "empty string is invalid", typ: "", want: false},
 		{name: "unknown type is invalid", typ: "podcast", want: false},
 		{name: "case sensitive", typ: "Article", want: false},
@@ -131,8 +132,6 @@ func TestContentTypeConstants(t *testing.T) {
 		TypeEssay:    "essay",
 		TypeBuildLog: "build-log",
 		TypeTIL:      "til",
-		TypeNote:     "note",
-		TypeBookmark: "bookmark",
 		TypeDigest:   "digest",
 	}
 

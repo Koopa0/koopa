@@ -215,7 +215,8 @@ func (s *Store) ByID(ctx context.Context, id uuid.UUID) (*GoalWithArea, error) {
 			AreaID:       r.AreaID,
 			Quarter:      r.Quarter,
 			Deadline:     r.Deadline,
-			NotionPageID: r.NotionPageID,
+			ExternalProvider: r.ExternalProvider,
+			ExternalRef:      r.ExternalRef,
 			CreatedAt:    r.CreatedAt,
 			UpdatedAt:    r.UpdatedAt,
 		},
@@ -389,8 +390,23 @@ func rowToGoal(r *db.Goal) Goal {
 		AreaID:       r.AreaID,
 		Quarter:      r.Quarter,
 		Deadline:     r.Deadline,
-		NotionPageID: r.NotionPageID,
+		ExternalProvider: r.ExternalProvider,
+			ExternalRef:      r.ExternalRef,
 		CreatedAt:    r.CreatedAt,
 		UpdatedAt:    r.UpdatedAt,
 	}
+}
+
+// AreaIDBySlugOrName resolves an area slug or case-insensitive name to a
+// UUID. Returns ErrNotFound if no area matches. Used by propose_commitment
+// when the caller passes an area identifier instead of a UUID.
+func (s *Store) AreaIDBySlugOrName(ctx context.Context, identifier string) (uuid.UUID, error) {
+	id, err := s.q.AreaIDBySlugOrName(ctx, identifier)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return uuid.Nil, ErrNotFound
+		}
+		return uuid.Nil, fmt.Errorf("resolving area %q: %w", identifier, err)
+	}
+	return id, nil
 }

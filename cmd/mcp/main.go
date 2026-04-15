@@ -20,8 +20,12 @@ import (
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 
+	"github.com/Koopa0/koopa0.dev/internal/agent"
 	"github.com/Koopa0/koopa0.dev/internal/mcp"
 )
+
+// agentSyncTimeout bounds the startup reconciliation of the agents table.
+const agentSyncTimeout = 10 * time.Second
 
 func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
@@ -43,6 +47,23 @@ func run(ctx context.Context, cfg *config, logger *slog.Logger) error {
 	}
 	defer pool.Close()
 
+	// Reconcile the Go agent registry against the agents table before
+	// any MCP traffic. Same rationale as cmd/app/main.go: Authorize()
+	// depends on the in-memory registry reflecting DB retirement state.
+	agentRegistry := agent.NewBuiltinRegistry()
+	agentStore := agent.NewStore(pool)
+	syncCtx, syncCancel := context.WithTimeout(ctx, agentSyncTimeout)
+	syncResult, syncErr := agent.SyncToTable(syncCtx, agentRegistry, agentStore, logger)
+	syncCancel()
+	if syncErr != nil {
+		return fmt.Errorf("syncing agent registry: %w", syncErr)
+	}
+	logger.Info("agent registry synced",
+		"active", syncResult.Active,
+		"retired", syncResult.Retired,
+		"already_retired", syncResult.AlreadyRetired,
+	)
+
 	taipeiLoc, locErr := time.LoadLocation("Asia/Taipei")
 	if locErr != nil {
 		return fmt.Errorf("loading Asia/Taipei timezone: %w", locErr)
@@ -51,6 +72,7 @@ func run(ctx context.Context, cfg *config, logger *slog.Logger) error {
 	server := mcp.NewServer(pool, logger,
 		mcp.WithLocation(taipeiLoc),
 		mcp.WithParticipant(cfg.Participant),
+		mcp.WithRegistry(agentRegistry),
 	)
 
 	switch cfg.Transport {

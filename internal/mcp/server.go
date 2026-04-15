@@ -16,22 +16,21 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/Koopa0/koopa0.dev/internal/agent"
+	agentnote "github.com/Koopa0/koopa0.dev/internal/agent/note"
 	"github.com/Koopa0/koopa0.dev/internal/content"
 	"github.com/Koopa0/koopa0.dev/internal/daily"
-	"github.com/Koopa0/koopa0.dev/internal/directive"
 	"github.com/Koopa0/koopa0.dev/internal/feed"
 	"github.com/Koopa0/koopa0.dev/internal/feed/entry"
 	"github.com/Koopa0/koopa0.dev/internal/goal"
-	"github.com/Koopa0/koopa0.dev/internal/insight"
-	"github.com/Koopa0/koopa0.dev/internal/journal"
+	"github.com/Koopa0/koopa0.dev/internal/hypothesis"
 	"github.com/Koopa0/koopa0.dev/internal/learning"
 	"github.com/Koopa0/koopa0.dev/internal/mcp/ops"
-	"github.com/Koopa0/koopa0.dev/internal/note"
+	"github.com/Koopa0/koopa0.dev/internal/obsidian/note"
 	"github.com/Koopa0/koopa0.dev/internal/plan"
 	"github.com/Koopa0/koopa0.dev/internal/project"
-	"github.com/Koopa0/koopa0.dev/internal/report"
 	"github.com/Koopa0/koopa0.dev/internal/stats"
-	"github.com/Koopa0/koopa0.dev/internal/task"
+	"github.com/Koopa0/koopa0.dev/internal/todo"
 )
 
 // Server is the MCP v2 server exposing workflow-driven tools.
@@ -39,18 +38,26 @@ type Server struct {
 	server *mcp.Server
 
 	// Phase 1 stores
-	tasks    *task.Store
-	journal  *journal.Store
-	dayplan  *daily.Store
-	contents *content.Store
-	projects *project.Store
-	notes    *note.Store
+	todos      *todo.Store
+	agentNotes *agentnote.Store
+	dayplan    *daily.Store
+	contents   *content.Store
+	projects   *project.Store
+	notes      *note.Store
 
 	// Phase 2 stores
 	goals      *goal.Store
-	directives *directive.Store
-	reports    *report.Store
-	insights   *insight.Store
+	hypotheses *hypothesis.Store
+	// TODO(coordination-rebuild): add *task.Store, *message.Store, *artifact.Store
+	// once the coordination packages exist. The propose_commitment(directive),
+	// acknowledge_directive, and file_report handlers currently return
+	// ErrNotImplemented placeholders — they'll dispatch through these stores
+	// in the follow-up PR.
+
+	// Agent registry — source of truth for capability enforcement via
+	// agent.Authorize. Wired in from cmd/app/main.go so the CLI and tests
+	// can inject custom rosters when needed.
+	registry *agent.Registry
 
 	// Phase 3 stores
 	learn *learning.Store
@@ -109,19 +116,25 @@ func WithTelemetry(recorder func(context.Context, ToolCallRecord)) ServerOption 
 	return func(s *Server) { s.recordToolCall = recorder }
 }
 
+// WithRegistry injects a pre-built agent registry. Required in production
+// because callers of mutation tools must be resolved against it; optional in
+// tests that use the default BuiltinAgents.
+func WithRegistry(r *agent.Registry) ServerOption {
+	return func(s *Server) { s.registry = r }
+}
+
 // NewServer creates an MCP v2 server. All stores are created from the pool.
 func NewServer(pool *pgxpool.Pool, logger *slog.Logger, opts ...ServerOption) *Server {
 	s := &Server{
-		tasks:       task.NewStore(pool),
-		journal:     journal.NewStore(pool),
+		todos:       todo.NewStore(pool),
+		agentNotes:  agentnote.NewStore(pool),
 		dayplan:     daily.NewStore(pool),
 		contents:    content.NewStore(pool),
 		projects:    project.NewStore(pool),
 		notes:       note.NewStore(pool),
 		goals:       goal.NewStore(pool),
-		directives:  directive.NewStore(pool),
-		reports:     report.NewStore(pool),
-		insights:    insight.NewStore(pool),
+		hypotheses:  hypothesis.NewStore(pool),
+		registry:    agent.NewBuiltinRegistry(),
 		learn:       learning.NewStore(pool),
 		plans:       plan.NewStore(pool),
 		feedEntries: entry.NewStore(pool),

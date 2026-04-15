@@ -137,9 +137,9 @@ func (h *Handler) ProjectDetail(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Tasks by status.
-	tasksByStatus, _ := h.tasks.TasksByProjectGrouped(ctx, projID)
-	resp["tasks_by_status"] = tasksByStatus
+	// Todo items by state.
+	todosByState, _ := h.todos.ItemsByProjectGrouped(ctx, projID)
+	resp["tasks_by_status"] = todosByState
 
 	api.Encode(w, http.StatusOK, resp)
 }

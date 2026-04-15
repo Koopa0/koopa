@@ -80,7 +80,7 @@ func (s *Store) Content(ctx context.Context, id uuid.UUID) (*Content, error) {
 
 	c := rowToContent(contentRow{
 		ID: r.ID, Slug: r.Slug, Title: r.Title, Body: r.Body, Excerpt: r.Excerpt,
-		Type: r.Type, Status: r.Status, Source: r.Source, SourceType: r.SourceType,
+		Type: r.Type, Status: r.Status, OriginRef: r.OriginRef, SourceType: r.SourceType,
 		SeriesID: r.SeriesID, SeriesOrder: r.SeriesOrder, ReviewLevel: r.ReviewLevel,
 		IsPublic: r.IsPublic, ProjectID: r.ProjectID, AiMetadata: r.AiMetadata,
 		ReadingTimeMin: r.ReadingTimeMin, CoverImage: r.CoverImage, PublishedAt: r.PublishedAt,
@@ -130,7 +130,7 @@ func (s *Store) Contents(ctx context.Context, f Filter) ([]Content, int, error) 
 		r := rows[i]
 		contents[i] = rowToContent(contentRow{
 			ID: r.ID, Slug: r.Slug, Title: r.Title, Body: r.Body, Excerpt: r.Excerpt,
-			Type: r.Type, Status: r.Status, Source: r.Source, SourceType: r.SourceType,
+			Type: r.Type, Status: r.Status, OriginRef: r.OriginRef, SourceType: r.SourceType,
 			SeriesID: r.SeriesID, SeriesOrder: r.SeriesOrder, ReviewLevel: r.ReviewLevel,
 			IsPublic: r.IsPublic, ProjectID: r.ProjectID, AiMetadata: r.AiMetadata,
 			ReadingTimeMin: r.ReadingTimeMin, CoverImage: r.CoverImage, PublishedAt: r.PublishedAt,
@@ -170,7 +170,7 @@ func (s *Store) ByStatus(ctx context.Context, status string, limit int) ([]Conte
 		r := &rows[i]
 		contents[i] = rowToContent(contentRow{
 			ID: r.ID, Slug: r.Slug, Title: r.Title, Body: r.Body, Excerpt: r.Excerpt,
-			Type: r.Type, Status: r.Status, Source: r.Source, SourceType: r.SourceType,
+			Type: r.Type, Status: r.Status, OriginRef: r.OriginRef, SourceType: r.SourceType,
 			SeriesID: r.SeriesID, SeriesOrder: r.SeriesOrder, ReviewLevel: r.ReviewLevel,
 			IsPublic: r.IsPublic, ProjectID: r.ProjectID, AiMetadata: r.AiMetadata,
 			ReadingTimeMin: r.ReadingTimeMin, CoverImage: r.CoverImage, PublishedAt: r.PublishedAt,
@@ -236,7 +236,7 @@ func (s *Store) ContentBySlug(ctx context.Context, slug string) (*Content, error
 
 	c := rowToContent(contentRow{
 		ID: r.ID, Slug: r.Slug, Title: r.Title, Body: r.Body, Excerpt: r.Excerpt,
-		Type: r.Type, Status: r.Status, Source: r.Source, SourceType: r.SourceType,
+		Type: r.Type, Status: r.Status, OriginRef: r.OriginRef, SourceType: r.SourceType,
 		SeriesID: r.SeriesID, SeriesOrder: r.SeriesOrder, ReviewLevel: r.ReviewLevel,
 		IsPublic: r.IsPublic, ProjectID: r.ProjectID, AiMetadata: r.AiMetadata,
 		ReadingTimeMin: r.ReadingTimeMin, CoverImage: r.CoverImage, PublishedAt: r.PublishedAt,
@@ -280,7 +280,7 @@ func (s *Store) ContentsByTopicID(ctx context.Context, topicID uuid.UUID, page, 
 		r := rows[i]
 		contents[i] = rowToContent(contentRow{
 			ID: r.ID, Slug: r.Slug, Title: r.Title, Body: r.Body, Excerpt: r.Excerpt,
-			Type: r.Type, Status: r.Status, Source: r.Source, SourceType: r.SourceType,
+			Type: r.Type, Status: r.Status, OriginRef: r.OriginRef, SourceType: r.SourceType,
 			SeriesID: r.SeriesID, SeriesOrder: r.SeriesOrder, ReviewLevel: r.ReviewLevel,
 			IsPublic: r.IsPublic, ProjectID: r.ProjectID, AiMetadata: r.AiMetadata,
 			ReadingTimeMin: r.ReadingTimeMin, CoverImage: r.CoverImage, PublishedAt: r.PublishedAt,
@@ -328,7 +328,7 @@ func (s *Store) Search(ctx context.Context, query string, contentType *Type, pag
 		r := &rows[i]
 		contents[i] = rowToContent(contentRow{
 			ID: r.ID, Slug: r.Slug, Title: r.Title, Body: r.Body, Excerpt: r.Excerpt,
-			Type: r.Type, Status: r.Status, Source: r.Source, SourceType: r.SourceType,
+			Type: r.Type, Status: r.Status, OriginRef: r.OriginRef, SourceType: r.SourceType,
 			SeriesID: r.SeriesID, SeriesOrder: r.SeriesOrder, ReviewLevel: r.ReviewLevel,
 			IsPublic: r.IsPublic, ProjectID: r.ProjectID, AiMetadata: r.AiMetadata,
 			ReadingTimeMin: r.ReadingTimeMin, CoverImage: r.CoverImage, PublishedAt: r.PublishedAt,
@@ -375,7 +375,7 @@ func (s *Store) SearchOR(ctx context.Context, query string, contentType *Type, p
 		r := &rows[i]
 		contents[i] = rowToContent(contentRow{
 			ID: r.ID, Slug: r.Slug, Title: r.Title, Body: r.Body, Excerpt: r.Excerpt,
-			Type: r.Type, Status: r.Status, Source: r.Source, SourceType: r.SourceType,
+			Type: r.Type, Status: r.Status, OriginRef: r.OriginRef, SourceType: r.SourceType,
 			SeriesID: r.SeriesID, SeriesOrder: r.SeriesOrder, ReviewLevel: r.ReviewLevel,
 			IsPublic: r.IsPublic, ProjectID: r.ProjectID, AiMetadata: r.AiMetadata,
 			ReadingTimeMin: r.ReadingTimeMin, CoverImage: r.CoverImage, PublishedAt: r.PublishedAt,
@@ -418,7 +418,7 @@ func (s *Store) InternalSearch(ctx context.Context, query string, page, perPage 
 		r := &rows[i]
 		contents[i] = rowToContent(contentRow{
 			ID: r.ID, Slug: r.Slug, Title: r.Title, Body: r.Body, Excerpt: r.Excerpt,
-			Type: r.Type, Status: r.Status, Source: r.Source, SourceType: r.SourceType,
+			Type: r.Type, Status: r.Status, OriginRef: r.OriginRef, SourceType: r.SourceType,
 			SeriesID: r.SeriesID, SeriesOrder: r.SeriesOrder, ReviewLevel: r.ReviewLevel,
 			IsPublic: r.IsPublic, ProjectID: r.ProjectID, AiMetadata: r.AiMetadata,
 			ReadingTimeMin: r.ReadingTimeMin, CoverImage: r.CoverImage, PublishedAt: r.PublishedAt,
@@ -456,7 +456,7 @@ func (s *Store) InternalSearchOR(ctx context.Context, query string, page, perPag
 		r := &rows[i]
 		contents[i] = rowToContent(contentRow{
 			ID: r.ID, Slug: r.Slug, Title: r.Title, Body: r.Body, Excerpt: r.Excerpt,
-			Type: r.Type, Status: r.Status, Source: r.Source, SourceType: r.SourceType,
+			Type: r.Type, Status: r.Status, OriginRef: r.OriginRef, SourceType: r.SourceType,
 			SeriesID: r.SeriesID, SeriesOrder: r.SeriesOrder, ReviewLevel: r.ReviewLevel,
 			IsPublic: r.IsPublic, ProjectID: r.ProjectID, AiMetadata: r.AiMetadata,
 			ReadingTimeMin: r.ReadingTimeMin, CoverImage: r.CoverImage, PublishedAt: r.PublishedAt,
@@ -491,7 +491,7 @@ func (s *Store) RecentByType(ctx context.Context, contentType Type, since time.T
 		r := &rows[i]
 		contents[i] = rowToContent(contentRow{
 			ID: r.ID, Slug: r.Slug, Title: r.Title, Body: r.Body, Excerpt: r.Excerpt,
-			Type: r.Type, Status: r.Status, Source: r.Source, SourceType: r.SourceType,
+			Type: r.Type, Status: r.Status, OriginRef: r.OriginRef, SourceType: r.SourceType,
 			SeriesID: r.SeriesID, SeriesOrder: r.SeriesOrder, ReviewLevel: r.ReviewLevel,
 			IsPublic: r.IsPublic, ProjectID: r.ProjectID, AiMetadata: r.AiMetadata,
 			ReadingTimeMin: r.ReadingTimeMin, CoverImage: r.CoverImage, PublishedAt: r.PublishedAt,
@@ -634,7 +634,7 @@ func (s *Store) PublishedByDateRange(ctx context.Context, start, end time.Time) 
 		r := &rows[i]
 		contents[i] = rowToContent(contentRow{
 			ID: r.ID, Slug: r.Slug, Title: r.Title, Body: r.Body, Excerpt: r.Excerpt,
-			Type: r.Type, Status: r.Status, Source: r.Source, SourceType: r.SourceType,
+			Type: r.Type, Status: r.Status, OriginRef: r.OriginRef, SourceType: r.SourceType,
 			SeriesID: r.SeriesID, SeriesOrder: r.SeriesOrder, ReviewLevel: r.ReviewLevel,
 			IsPublic: r.IsPublic, ProjectID: r.ProjectID, AiMetadata: r.AiMetadata,
 			ReadingTimeMin: r.ReadingTimeMin, CoverImage: r.CoverImage, PublishedAt: r.PublishedAt,
@@ -709,7 +709,7 @@ func (s *Store) CreateContent(ctx context.Context, p *CreateParams) (*Content, e
 		Excerpt:        p.Excerpt,
 		Type:           db.ContentType(p.Type),
 		Status:         db.ContentStatus(p.Status),
-		Source:         p.Source,
+		OriginRef:      p.OriginRef,
 		SourceType:     nullSourceType(p.SourceType),
 		SeriesID:       p.SeriesID,
 		SeriesOrder:    seriesOrder,
@@ -742,7 +742,7 @@ func (s *Store) CreateContent(ctx context.Context, p *CreateParams) (*Content, e
 
 	c := rowToContent(contentRow{
 		ID: r.ID, Slug: r.Slug, Title: r.Title, Body: r.Body, Excerpt: r.Excerpt,
-		Type: r.Type, Status: r.Status, Source: r.Source, SourceType: r.SourceType,
+		Type: r.Type, Status: r.Status, OriginRef: r.OriginRef, SourceType: r.SourceType,
 		SeriesID: r.SeriesID, SeriesOrder: r.SeriesOrder, ReviewLevel: r.ReviewLevel,
 		IsPublic: r.IsPublic, ProjectID: r.ProjectID, AiMetadata: r.AiMetadata,
 		ReadingTimeMin: r.ReadingTimeMin, CoverImage: r.CoverImage, PublishedAt: r.PublishedAt,
@@ -806,7 +806,7 @@ func (s *Store) UpdateContent(ctx context.Context, id uuid.UUID, p *UpdateParams
 		Excerpt:        p.Excerpt,
 		ContentType:    nullContentType(p.Type),
 		Status:         nullContentStatus(p.Status),
-		Source:         p.Source,
+		OriginRef:      p.OriginRef,
 		SourceType:     nullSourceType(p.SourceType),
 		SeriesID:       p.SeriesID,
 		SeriesOrder:    seriesOrder,
@@ -847,7 +847,7 @@ func (s *Store) UpdateContent(ctx context.Context, id uuid.UUID, p *UpdateParams
 
 	c := rowToContent(contentRow{
 		ID: r.ID, Slug: r.Slug, Title: r.Title, Body: r.Body, Excerpt: r.Excerpt,
-		Type: r.Type, Status: r.Status, Source: r.Source, SourceType: r.SourceType,
+		Type: r.Type, Status: r.Status, OriginRef: r.OriginRef, SourceType: r.SourceType,
 		SeriesID: r.SeriesID, SeriesOrder: r.SeriesOrder, ReviewLevel: r.ReviewLevel,
 		IsPublic: r.IsPublic, ProjectID: r.ProjectID, AiMetadata: r.AiMetadata,
 		ReadingTimeMin: r.ReadingTimeMin, CoverImage: r.CoverImage, PublishedAt: r.PublishedAt,
@@ -971,7 +971,7 @@ func (s *Store) PublishContent(ctx context.Context, id uuid.UUID) (*Content, err
 
 	c := rowToContent(contentRow{
 		ID: r.ID, Slug: r.Slug, Title: r.Title, Body: r.Body, Excerpt: r.Excerpt,
-		Type: r.Type, Status: r.Status, Source: r.Source, SourceType: r.SourceType,
+		Type: r.Type, Status: r.Status, OriginRef: r.OriginRef, SourceType: r.SourceType,
 		SeriesID: r.SeriesID, SeriesOrder: r.SeriesOrder, ReviewLevel: r.ReviewLevel,
 		IsPublic: r.IsPublic, ProjectID: r.ProjectID, AiMetadata: r.AiMetadata,
 		ReadingTimeMin: r.ReadingTimeMin, CoverImage: r.CoverImage, PublishedAt: r.PublishedAt,
@@ -1009,7 +1009,7 @@ func (s *Store) RejectContent(ctx context.Context, id uuid.UUID, reviewerNotes s
 
 	c := rowToContent(contentRow{
 		ID: r.ID, Slug: r.Slug, Title: r.Title, Body: r.Body, Excerpt: r.Excerpt,
-		Type: r.Type, Status: r.Status, Source: r.Source, SourceType: r.SourceType,
+		Type: r.Type, Status: r.Status, OriginRef: r.OriginRef, SourceType: r.SourceType,
 		SeriesID: r.SeriesID, SeriesOrder: r.SeriesOrder, ReviewLevel: r.ReviewLevel,
 		IsPublic: r.IsPublic, ProjectID: r.ProjectID, AiMetadata: r.AiMetadata,
 		ReadingTimeMin: r.ReadingTimeMin, CoverImage: r.CoverImage, PublishedAt: r.PublishedAt,
@@ -1072,7 +1072,7 @@ type contentRow struct {
 	Excerpt        string
 	Type           db.ContentType
 	Status         db.ContentStatus
-	Source         *string
+	OriginRef      *string
 	SourceType     db.NullSourceType
 	SeriesID       *string
 	SeriesOrder    *int32
@@ -1096,7 +1096,7 @@ func rowToContent(r contentRow) Content { //nolint:gocritic // hugeParam: struct
 		Excerpt:        r.Excerpt,
 		Type:           Type(r.Type),
 		Status:         Status(r.Status),
-		Source:         r.Source,
+		OriginRef:      r.OriginRef,
 		SourceType:     nullSourceTypeToPtr(r.SourceType),
 		ReviewLevel:    ReviewLevel(r.ReviewLevel),
 		IsPublic:       r.IsPublic,

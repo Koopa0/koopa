@@ -61,7 +61,7 @@ type Plan struct {
 type PlanItem struct {
 	ID                   uuid.UUID  `json:"id"`
 	PlanID               uuid.UUID  `json:"plan_id"`
-	LearningItemID       uuid.UUID  `json:"learning_item_id"`
+	LearningTargetID     uuid.UUID  `json:"learning_target_id"`
 	Position             int32      `json:"position"`
 	Status               ItemStatus `json:"status"`
 	Phase                *string    `json:"phase,omitempty"`
@@ -83,11 +83,11 @@ type PlanItemWithTitle struct {
 // It is flat (no embedded PlanItem) so the JSON field name for the plan-item
 // primary key is explicitly `plan_item_id` — the exact identifier callers pass
 // back in update_item. Embedding PlanItem would serialize its ID as "id" and
-// create ambiguity with LearningItemID.
+// create ambiguity with LearningTargetID.
 type PlanItemDetail struct {
 	PlanItemID           uuid.UUID  `json:"plan_item_id"`
 	PlanID               uuid.UUID  `json:"plan_id"`
-	LearningItemID       uuid.UUID  `json:"learning_item_id"`
+	LearningTargetID     uuid.UUID  `json:"learning_target_id"`
 	Position             int32      `json:"position"`
 	Status               ItemStatus `json:"status"`
 	Phase                *string    `json:"phase,omitempty"`

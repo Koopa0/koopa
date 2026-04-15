@@ -15,6 +15,91 @@ import (
 	pgvector_go "github.com/pgvector/pgvector-go"
 )
 
+type AgentNoteKind string
+
+const (
+	AgentNoteKindPlan       AgentNoteKind = "plan"
+	AgentNoteKindContext    AgentNoteKind = "context"
+	AgentNoteKindReflection AgentNoteKind = "reflection"
+)
+
+func (e *AgentNoteKind) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = AgentNoteKind(s)
+	case string:
+		*e = AgentNoteKind(s)
+	default:
+		return fmt.Errorf("unsupported scan type for AgentNoteKind: %T", src)
+	}
+	return nil
+}
+
+type NullAgentNoteKind struct {
+	AgentNoteKind AgentNoteKind `json:"agent_note_kind"`
+	Valid         bool          `json:"valid"` // Valid is true if AgentNoteKind is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullAgentNoteKind) Scan(value interface{}) error {
+	if value == nil {
+		ns.AgentNoteKind, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.AgentNoteKind.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullAgentNoteKind) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.AgentNoteKind), nil
+}
+
+type AgentStatus string
+
+const (
+	AgentStatusActive  AgentStatus = "active"
+	AgentStatusRetired AgentStatus = "retired"
+)
+
+func (e *AgentStatus) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = AgentStatus(s)
+	case string:
+		*e = AgentStatus(s)
+	default:
+		return fmt.Errorf("unsupported scan type for AgentStatus: %T", src)
+	}
+	return nil
+}
+
+type NullAgentStatus struct {
+	AgentStatus AgentStatus `json:"agent_status"`
+	Valid       bool        `json:"valid"` // Valid is true if AgentStatus is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullAgentStatus) Scan(value interface{}) error {
+	if value == nil {
+		ns.AgentStatus, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.AgentStatus.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullAgentStatus) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.AgentStatus), nil
+}
+
 type ContentStatus string
 
 const (
@@ -66,8 +151,6 @@ const (
 	ContentTypeEssay    ContentType = "essay"
 	ContentTypeBuildLog ContentType = "build-log"
 	ContentTypeTil      ContentType = "til"
-	ContentTypeNote     ContentType = "note"
-	ContentTypeBookmark ContentType = "bookmark"
 	ContentTypeDigest   ContentType = "digest"
 )
 
@@ -114,10 +197,10 @@ const (
 	EventTypePush             EventType = "push"
 	EventTypePullRequest      EventType = "pull_request"
 	EventTypeProjectUpdate    EventType = "project_update"
-	EventTypeTaskStatusChange EventType = "task_status_change"
+	EventTypeTodoStateChange  EventType = "todo_state_change"
 	EventTypeBookProgress     EventType = "book_progress"
 	EventTypeGoalUpdate       EventType = "goal_update"
-	EventTypeTaskCompleted    EventType = "task_completed"
+	EventTypeTodoCompleted    EventType = "todo_completed"
 	EventTypeContentPublished EventType = "content_published"
 )
 
@@ -287,6 +370,92 @@ func (ns NullGoalStatus) Value() (driver.Value, error) {
 		return nil, nil
 	}
 	return string(ns.GoalStatus), nil
+}
+
+type HypothesisState string
+
+const (
+	HypothesisStateUnverified  HypothesisState = "unverified"
+	HypothesisStateVerified    HypothesisState = "verified"
+	HypothesisStateInvalidated HypothesisState = "invalidated"
+	HypothesisStateArchived    HypothesisState = "archived"
+)
+
+func (e *HypothesisState) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = HypothesisState(s)
+	case string:
+		*e = HypothesisState(s)
+	default:
+		return fmt.Errorf("unsupported scan type for HypothesisState: %T", src)
+	}
+	return nil
+}
+
+type NullHypothesisState struct {
+	HypothesisState HypothesisState `json:"hypothesis_state"`
+	Valid           bool            `json:"valid"` // Valid is true if HypothesisState is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullHypothesisState) Scan(value interface{}) error {
+	if value == nil {
+		ns.HypothesisState, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.HypothesisState.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullHypothesisState) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.HypothesisState), nil
+}
+
+type MessageRole string
+
+const (
+	MessageRoleRequest  MessageRole = "request"
+	MessageRoleResponse MessageRole = "response"
+)
+
+func (e *MessageRole) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = MessageRole(s)
+	case string:
+		*e = MessageRole(s)
+	default:
+		return fmt.Errorf("unsupported scan type for MessageRole: %T", src)
+	}
+	return nil
+}
+
+type NullMessageRole struct {
+	MessageRole MessageRole `json:"message_role"`
+	Valid       bool        `json:"valid"` // Valid is true if MessageRole is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullMessageRole) Scan(value interface{}) error {
+	if value == nil {
+		ns.MessageRole, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.MessageRole.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullMessageRole) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.MessageRole), nil
 }
 
 type ProjectStatus string
@@ -468,49 +637,149 @@ func (ns NullSourceType) Value() (driver.Value, error) {
 	return string(ns.SourceType), nil
 }
 
-type TaskStatus string
+type TaskState string
 
 const (
-	TaskStatusInbox      TaskStatus = "inbox"
-	TaskStatusTodo       TaskStatus = "todo"
-	TaskStatusInProgress TaskStatus = "in-progress"
-	TaskStatusDone       TaskStatus = "done"
-	TaskStatusSomeday    TaskStatus = "someday"
+	TaskStateSubmitted TaskState = "submitted"
+	TaskStateWorking   TaskState = "working"
+	TaskStateCompleted TaskState = "completed"
+	TaskStateCanceled  TaskState = "canceled"
 )
 
-func (e *TaskStatus) Scan(src interface{}) error {
+func (e *TaskState) Scan(src interface{}) error {
 	switch s := src.(type) {
 	case []byte:
-		*e = TaskStatus(s)
+		*e = TaskState(s)
 	case string:
-		*e = TaskStatus(s)
+		*e = TaskState(s)
 	default:
-		return fmt.Errorf("unsupported scan type for TaskStatus: %T", src)
+		return fmt.Errorf("unsupported scan type for TaskState: %T", src)
 	}
 	return nil
 }
 
-type NullTaskStatus struct {
-	TaskStatus TaskStatus `json:"task_status"`
-	Valid      bool       `json:"valid"` // Valid is true if TaskStatus is not NULL
+type NullTaskState struct {
+	TaskState TaskState `json:"task_state"`
+	Valid     bool      `json:"valid"` // Valid is true if TaskState is not NULL
 }
 
 // Scan implements the Scanner interface.
-func (ns *NullTaskStatus) Scan(value interface{}) error {
+func (ns *NullTaskState) Scan(value interface{}) error {
 	if value == nil {
-		ns.TaskStatus, ns.Valid = "", false
+		ns.TaskState, ns.Valid = "", false
 		return nil
 	}
 	ns.Valid = true
-	return ns.TaskStatus.Scan(value)
+	return ns.TaskState.Scan(value)
 }
 
 // Value implements the driver Valuer interface.
-func (ns NullTaskStatus) Value() (driver.Value, error) {
+func (ns NullTaskState) Value() (driver.Value, error) {
 	if !ns.Valid {
 		return nil, nil
 	}
-	return string(ns.TaskStatus), nil
+	return string(ns.TaskState), nil
+}
+
+type TodoState string
+
+const (
+	TodoStateInbox      TodoState = "inbox"
+	TodoStateTodo       TodoState = "todo"
+	TodoStateInProgress TodoState = "in_progress"
+	TodoStateDone       TodoState = "done"
+	TodoStateSomeday    TodoState = "someday"
+)
+
+func (e *TodoState) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = TodoState(s)
+	case string:
+		*e = TodoState(s)
+	default:
+		return fmt.Errorf("unsupported scan type for TodoState: %T", src)
+	}
+	return nil
+}
+
+type NullTodoState struct {
+	TodoState TodoState `json:"todo_state"`
+	Valid     bool      `json:"valid"` // Valid is true if TodoState is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullTodoState) Scan(value interface{}) error {
+	if value == nil {
+		ns.TodoState, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.TodoState.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullTodoState) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.TodoState), nil
+}
+
+// DB projection of the Go BuiltinAgents() registry. Rows are upserted at startup by agent.SyncToTable. Capability flags are NOT stored here — authorization is enforced in Go via the agent.Authorized compile-time wrapper. FK targets for tasks.requester / tasks.assignee use ON DELETE RESTRICT so historical coordination records cannot dangle. Removed registry entries transition to status=retired rather than being deleted.
+type Agent struct {
+	// Unique agent identifier. Used as requester/assignee in tasks and as the caller identity (as: field) in MCP tool calls. Matches the Go Agent.Name literal in BuiltinAgents(). Format: lowercase, must start with a letter, alphanumeric + hyphens (chk_agent_name_format).
+	Name string `json:"name"`
+	// Human-readable label for admin UI and logs. Non-blank (chk_agent_display_name_not_blank).
+	DisplayName string `json:"display_name"`
+	// Execution context. Closed set: claude-cowork, claude-code, claude-web, human (chk_agent_platform). Informational label — routing decisions are driven by agent registry lookups, not this column.
+	Platform string `json:"platform"`
+	// Short role description. Empty string = no description.
+	Description string `json:"description"`
+	// active = currently present in BuiltinAgents(). retired = previously registered but no longer in the Go literal. chk_agent_status_retired ties retired_at to status=retired.
+	Status AgentStatus `json:"status"`
+	// When this row was last reconciled with BuiltinAgents() by agent.SyncToTable. Updated on every startup sync.
+	SyncedAt time.Time `json:"synced_at"`
+	// When this agent was retired (removed from BuiltinAgents). NULL while status=active. Set by SyncToTable when the registry entry disappears.
+	RetiredAt *time.Time `json:"retired_at"`
+	// When the row was first upserted. Useful for onboarding audit.
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// Agent's internal narrative log — plans, context snapshots, reflections. Self-directed, not inter-agent coordination. Produced by a single agent across a session or day. metrics kind was removed in the coordination rebuild (no current writer).
+type AgentNote struct {
+	ID int64 `json:"id"`
+	// plan = daily plan. context = end-of-session state. reflection = retrospective review.
+	Kind AgentNoteKind `json:"kind"`
+	// Which agent wrote this note. FK to agents. Renamed from "source" to disambiguate agent identity from system origin (events.source) and origin reference (contents.origin_ref).
+	Author string `json:"author"`
+	// Free-text body of the note. Markdown allowed.
+	Content string `json:"content"`
+	// Structured metadata per kind. plan: {reasoning}. Daily todo selection is tracked in daily_plan_items, not here. context, reflection: no required metadata schema.
+	Metadata json.RawMessage `json:"metadata"`
+	// The logical date this note belongs to. May differ from created_at for backfilled notes.
+	EntryDate time.Time `json:"entry_date"`
+	// Row insertion timestamp.
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// Append-only execution history for agent-owned schedules. Schedule definitions live in the Go registry (BuiltinAgents), not in a DB table — schedule_name here is the "<agent>:<schedule>" composite key produced by the dispatcher. No FK: Go validates the name against the registry before insert.
+type AgentScheduleRun struct {
+	ID int64 `json:"id"`
+	// Composite key "<agent_name>:<schedule_name>" from the Go registry. Free text at the DB layer — historical rows survive registry edits without dangling.
+	ScheduleName string `json:"schedule_name"`
+	// success = run completed without execution error. failure = errored. skipped = missed-run policy decided to skip. Note: success does not guarantee expected outputs were produced — output completeness is a separate monitoring concern.
+	Status string `json:"status"`
+	// When the scheduled run began.
+	StartedAt time.Time `json:"started_at"`
+	// When the run finished. NULL = still running or crashed. NULL + old started_at = abandoned/crashed run (same pattern as sessions.ended_at).
+	EndedAt *time.Time `json:"ended_at"`
+	// Error details on failure. NULL on success/skip, enforced by chk_agent_schedule_run_error_on_failure.
+	Error *string `json:"error"`
+	// Run-specific data: produced task IDs, execution duration, backend-specific info.
+	Metadata json.RawMessage `json:"metadata"`
+	// Row insertion timestamp.
+	CreatedAt time.Time `json:"created_at"`
 }
 
 // PARA Areas of Responsibility — ongoing domains requiring sustained attention. Unlike projects (which complete), areas persist indefinitely. Each area has a standard to maintain, not a goal to achieve. Goals and projects reference areas via FK.
@@ -531,62 +800,31 @@ type Area struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
-// Individual learning attempt records. One learning item can have multiple attempts (first try, revisit, re-practice). CASCADE from items — deleting an item deletes its attempt history. No is_revisit column — derivable as attempt_number > 1. Append-only — no updated_at.
-type Attempt struct {
+// Structured deliverables produced by the target agent during or after task work. Separate from conversation messages because deliverables (research reports, document outputs) have an independent lifetime. Size bounds (32 parts, 256 KB) are looser than task_messages bounds.
+type Artifact struct {
 	ID uuid.UUID `json:"id"`
-	// The learning target attempted. CASCADE — attempts are meaningless without their item.
-	LearningItemID uuid.UUID `json:"learning_item_id"`
-	// Optional link to the session this attempt occurred in. NULL for ad-hoc attempts outside a formal session. SET NULL on session deletion.
-	SessionID *uuid.UUID `json:"session_id"`
-	// Nth attempt at this item. 1 = first try, 2+ = revisit. Application must compute MAX(attempt_number) + 1 before inserting — DEFAULT 1 only applies to first attempts. UNIQUE with learning_item_id enforces no duplicate numbering.
-	AttemptNumber int32 `json:"attempt_number"`
-	// Two outcome paradigms coexist in this column. Problem-solving (LeetCode, drills): solved_independent (no help), solved_with_hint (nudge needed), solved_after_solution (saw answer first). Immersive (reading, listening, literary analysis): completed (finished independently), completed_with_support (needed dictionary, subtitles, translation, Claude annotation). Shared across both: incomplete (partially done), gave_up (could not proceed). MCP tool layer maps domain context to the appropriate paradigm.
-	Outcome string `json:"outcome"`
-	// Time spent on this attempt in minutes. NULL = not tracked. Must be positive.
-	DurationMinutes *int32 `json:"duration_minutes"`
-	// Free-text: where you got stuck. High cardinality, not a queryable category.
-	StuckAt *string `json:"stuck_at"`
-	// Free-text: what method you used. Coaching context, not a queryable enum.
-	ApproachUsed *string `json:"approach_used"`
-	// Optional link to an attempt-level working note. Distinct from items.note_id (item-level summary). SET NULL on note deletion.
-	NoteID *int64 `json:"note_id"`
-	// Narrative data: coaching hints given, alternative approaches considered, code quality observations, LLM transcript excerpts. Not queryable — stays in JSONB. If a field needs WHERE/JOIN/GROUP BY, promote to a column.
-	Metadata []byte `json:"metadata"`
-	// When this attempt occurred. May differ from created_at if backfilled.
-	AttemptedAt time.Time `json:"attempted_at"`
-	CreatedAt   time.Time `json:"created_at"`
-}
-
-// Micro-cognitive signals observed during a specific attempt on a specific concept. Powers weakness overview, progression tracking, and drill-down UI. Append-only — no updated_at. CASCADE from attempts, RESTRICT from concepts.
-type AttemptObservation struct {
-	ID uuid.UUID `json:"id"`
-	// The attempt during which this signal was observed. CASCADE — observations die with their attempt.
-	AttemptID uuid.UUID `json:"attempt_id"`
-	// The concept this signal pertains to. RESTRICT — cannot delete a concept that has observations. To merge concepts: UPDATE observations to surviving concept_id first, then DELETE the old concept. Observations are irreplaceable historical analytics.
-	ConceptID uuid.UUID `json:"concept_id"`
-	// weakness: something went wrong with this concept during this attempt. improvement: noticeable progress compared to previous attempts. mastery: demonstrated independent, fluent application.
-	SignalType string `json:"signal_type"`
-	// Observation dimension. Go-validated convention, not DB ENUM — categories expand across domains. LeetCode: pattern-recognition, constraint-analysis, edge-cases, implementation, complexity-analysis, approach-selection. Japanese: conjugation-accuracy, particle-selection, listening-comprehension, vocabulary-recall. System Design: tradeoff-analysis, bottleneck-diagnosis, capacity-estimation.
-	Category string `json:"category"`
-	// Granularity within a signal. minor: forgot one edge case. moderate: correct approach, failed execution. critical: did not recognize the pattern at all. NULL for improvement/mastery signals where severity does not apply.
-	Severity *string `json:"severity"`
-	// Free-text evidence or explanation. NULL when the signal is self-explanatory from category alone.
-	Detail    *string   `json:"detail"`
+	// Parent task. CASCADE — artifacts die with their task.
+	TaskID uuid.UUID `json:"task_id"`
+	// Short label identifying this artifact (e.g. "weekly-report", "architecture-diagram").
+	Name string `json:"name"`
+	// Optional longer description. Empty string = no description.
+	Description string `json:"description"`
+	// JSONB array of a2a.Part values (same format as task_messages.parts). Stores the actual deliverable content.
+	Parts []byte `json:"parts"`
+	// Row insertion timestamp.
 	CreatedAt time.Time `json:"created_at"`
-	// high (default): signal directly evidenced by the attempt outcome — user said "I forgot how X works" or repeatedly failed at X. low: coach inferred the signal from indirect evidence — user struggled with the problem and coach suspects X is the missing skill. Both persist. Dashboard mastery and weakness views default to high only; pass confidence_filter=all to include low-confidence observations.
-	Confidence string `json:"confidence"`
 }
 
-// External resources curated with personal commentary. Separate from contents because bookmarks skip editorial review (curate = publish), have an external canonical URL, and do not share the first-party publish workflow. Populated by M2 backfill from contents.type=bookmark; new writes go here once M3 cuts over.
+// External resources curated with personal commentary. Separate from contents because bookmarks skip editorial review (curate = publish), have an external canonical URL, and do not share the first-party publish workflow.
 type Bookmark struct {
 	ID uuid.UUID `json:"id"`
-	// Canonical external URL of the bookmarked resource. SEO canonical tag points to this value.
+	// Canonical external URL of the bookmarked resource. Must use http(s) scheme (chk_bookmark_url_scheme). SEO canonical tag points to this value.
 	Url string `json:"url"`
-	// SHA-256 hex digest of the canonical URL. Dedup identity. Computed in application code before INSERT — matches feed_entries.url_hash semantics.
+	// SHA-256 hex digest of the canonical URL (chk_bookmark_url_hash_format — exactly 64 hex chars). Dedup identity. Computed in application code before INSERT — matches feed_entries.url_hash semantics.
 	UrlHash string `json:"url_hash"`
-	// URL-safe internal identifier for bookmark permalinks on the koopa0.dev site. Distinct from the external URL.
+	// URL-safe internal identifier for bookmark permalinks on the koopa0.dev site (chk_bookmark_slug_format). Distinct from the external URL.
 	Slug string `json:"slug"`
-	// Display title. May override the source title if the curator edited it at capture time.
+	// Display title. May override the source title if the curator edited it at capture time. Non-blank (chk_bookmark_title_not_blank).
 	Title string `json:"title"`
 	// Short excerpt from the source, typically truncated to a few sentences. Empty string when the source provided none.
 	Excerpt string `json:"excerpt"`
@@ -596,7 +834,7 @@ type Bookmark struct {
 	SourceType string `json:"source_type"`
 	// If source_type=rss, references the originating feed_entries row. NULL for manual/shared bookmarks. SET NULL on feed_entry deletion — bookmark survives independently.
 	SourceFeedEntryID *uuid.UUID `json:"source_feed_entry_id"`
-	// Participant id that curated the bookmark (e.g. "hq", "human"). Not an FK — participants may be renamed without rewriting history.
+	// Agent that curated the bookmark. FK to agents with ON DELETE RESTRICT — historical curation references never dangle, matching the same FK strategy as todos.assignee, agent_notes.author, hypotheses.author, etc.
 	CuratedBy string `json:"curated_by"`
 	// When the bookmark was curated into koopa0.dev. Distinct from source publication date.
 	CuratedAt time.Time `json:"curated_at"`
@@ -606,10 +844,8 @@ type Bookmark struct {
 	PublishedAt *time.Time `json:"published_at"`
 	// pgvector embedding (768d) for semantic search inclusion. Optional — backfill may leave NULL for rows whose source content was never embedded.
 	Embedding *pgvector_go.Vector `json:"embedding"`
-	// Bridge to the contents row this bookmark was backfilled from. Populated in M2 only. UNIQUE enforces 1:1 mapping during the migration window. Stays NULL for bookmarks created after M3 cutover. SET NULL if the legacy content row is ever deleted.
-	LegacyContentID *uuid.UUID `json:"legacy_content_id"`
-	CreatedAt       time.Time  `json:"created_at"`
-	UpdatedAt       time.Time  `json:"updated_at"`
+	CreatedAt time.Time           `json:"created_at"`
+	UpdatedAt time.Time           `json:"updated_at"`
 }
 
 // Junction: bookmark ↔ tag. References canonical tags resolved through the tag_aliases pipeline.
@@ -646,21 +882,21 @@ type Concept struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
-// Published content — the finished product. Seven types share one table and one lifecycle: draft → review → published → archived.
+// Published content — the finished product. Five types share one table and one lifecycle: draft → review → published → archived.
 type Content struct {
 	ID uuid.UUID `json:"id"`
-	// URL-safe identifier. Globally unique. Used in public URLs.
+	// URL-safe identifier. Globally unique. Used in public URLs. Format: lowercase alphanumeric segments separated by single hyphens (chk_content_slug_format).
 	Slug    string `json:"slug"`
 	Title   string `json:"title"`
 	Body    string `json:"body"`
 	Excerpt string `json:"excerpt"`
-	// Content format: article, essay, build-log, til, note, bookmark, digest.
+	// Content format: article, essay, build-log, til, digest. (note and bookmark removed in the coordination rebuild — they have their own dedicated tables.)
 	Type ContentType `json:"type"`
 	// Lifecycle: draft → review → published. archived = soft delete.
 	Status ContentStatus `json:"status"`
-	// Origin identifier — Obsidian file path, external URL, or NULL for manually created content.
-	Source *string `json:"source"`
-	// Origin system classification. Different dimension from participant — this is WHERE content came from, not WHO created it.
+	// Reference to the origin artifact — an Obsidian file path, an external URL, or NULL for manually created content. Renamed from contents.source to disambiguate from events.source (origin system) and tasks.requester (origin agent).
+	OriginRef *string `json:"origin_ref"`
+	// Origin system classification (obsidian, notion, ai-generated, external, manual). Distinct from origin_ref which carries the actual identifier.
 	SourceType NullSourceType `json:"source_type"`
 	// Groups content into a series. Paired with series_order (chk_contents_series).
 	SeriesID *string `json:"series_id"`
@@ -701,52 +937,71 @@ type ContentTopic struct {
 	TopicID   uuid.UUID `json:"topic_id"`
 }
 
-// Daily commitment records. Each row represents a task selected for a specific day's plan. Lifecycle: planned → done | deferred | dropped. Source of truth for "what was planned today" — replaces tasks.my_day boolean. Re-plan uses INSERT ... ON CONFLICT (plan_date, task_id) DO UPDATE SET status = 'planned'.
+// Daily commitment records. Each row represents a todo item selected for a specific day's plan. Lifecycle: planned → done | deferred | dropped. Re-plan uses INSERT ... ON CONFLICT (plan_date, todo_id) DO UPDATE SET status = 'planned'.
 type DailyPlanItem struct {
 	ID uuid.UUID `json:"id"`
-	// The date this task was planned for. Combined with task_id forms a unique constraint — one task can appear at most once per day.
+	// The date this todo was planned for. Combined with todo_id forms a unique constraint — one todo can appear at most once per day.
 	PlanDate time.Time `json:"plan_date"`
-	// The task committed to. CASCADE on delete — if the task is removed, the plan item goes too.
-	TaskID uuid.UUID `json:"task_id"`
-	// Who added this item to the plan. Typically hq (morning briefing, cron auto-populate) or human (manual selection via MCP tool).
+	// The todo committed to. CASCADE on delete — if the todo is removed, the plan item goes too.
+	TodoID uuid.UUID `json:"todo_id"`
+	// Which agent added this item to the plan. Typically hq (morning briefing, cron auto-populate) or human (manual selection via MCP tool).
 	SelectedBy string `json:"selected_by"`
 	// Ordering within a day's plan. 0-based. Semantic: first item = highest priority for today.
 	Position int32 `json:"position"`
-	// Optional rationale for selecting this task today. NULL = no specific reason recorded.
+	// Optional rationale for selecting this todo today. NULL = no specific reason recorded.
 	Reason *string `json:"reason"`
-	// Optional link to the journal(kind='plan') entry that drove this planning session. All items from the same planning session share the same journal_id. Enables "which reasoning led to these task selections" queries. Symmetric with sessions.journal_id — session produces journal entry, journal_id links back. SET NULL on journal deletion.
-	JournalID *int64 `json:"journal_id"`
-	// Lifecycle state. planned = committed for today. done = completed within this day (independent of tasks.status for recurring tasks). deferred = not done today, carry-over candidate for future planning. dropped = explicitly removed from plan, no intent to carry over.
+	// Optional link to the agent_notes(kind=plan) entry that drove this planning session. All items from the same planning session share the same agent_note_id. Enables "which reasoning led to these todo selections" queries. Symmetric with sessions.agent_note_id — session produces the note, agent_note_id links back. SET NULL on note deletion.
+	AgentNoteID *int64 `json:"agent_note_id"`
+	// Lifecycle state. planned = committed for today. done = completed within this day (independent of todos.state for recurring todos). deferred = not done today, carry-over candidate for future planning. dropped = explicitly removed from plan, no intent to carry over.
 	Status    string    `json:"status"`
 	CreatedAt time.Time `json:"created_at"`
 	// Application-managed. Tracks when status last changed. Critical for Weekly Review analysis and cron debug.
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
-// IPC — coordination instructions between participants. Source must have can_issue_directives = true, target must have can_receive_directives = true (Go-validated). For work assignment to execution agents, use tasks.assignee. Lifecycle: issued → acknowledged → resolved. chk_resolved_requires_ack enforces that resolution requires prior acknowledgement.
-type Directive struct {
+// Weekly reconciliation run history for system health and drift trend analysis.
+type DriftCheckRun struct {
 	ID int64 `json:"id"`
-	// Who issued this directive. FK to participant. Go layer validates participant.can_issue_directives = true.
-	Source string `json:"source"`
-	// Recipient. NOT NULL — every directive must have a target. Go layer validates participant.can_receive_directives = true.
-	Target string `json:"target"`
-	// p0 = immediate, p1 = today, p2 = this week.
-	Priority string `json:"priority"`
-	// When target picked up this directive. NULL = unacknowledged.
-	AcknowledgedAt *time.Time `json:"acknowledged_at"`
-	// Must equal target (chk_ack_must_be_target).
-	AcknowledgedBy *string `json:"acknowledged_by"`
-	// When this directive was resolved (work completed or explicitly closed). NULL = open/in-progress. chk_resolved_requires_ack ensures a directive must be acknowledged before it can be resolved. Set by file_report or explicit resolution.
-	ResolvedAt *time.Time `json:"resolved_at"`
-	// Optional link to the report that resolved this directive. FK added via ALTER TABLE after reports table creation. NULL = resolved without a specific report, or not yet resolved.
-	ResolutionReportID *int64 `json:"resolution_report_id"`
-	// The directive body — what the target should do. Free-text, may contain markdown.
-	Content string `json:"content"`
-	// Non-routing info: correlation_id (server-generated UUID for thread tracking), deadline, tags, context_refs. UPGRADE PATH: when IPC dashboard or overdue detection is built, promote correlation_id to a first-class column.
-	Metadata json.RawMessage `json:"metadata"`
-	// Date this directive was issued.
-	IssuedDate time.Time `json:"issued_date"`
-	CreatedAt  time.Time `json:"created_at"`
+	// When the reconciliation run began.
+	StartedAt time.Time `json:"started_at"`
+	// NULL until run finishes. NULL + old started_at = crashed run.
+	CompletedAt *time.Time `json:"completed_at"`
+	// Notes in Obsidian vault but not yet synced to DB.
+	ObsidianMissing int32 `json:"obsidian_missing"`
+	// Notes in DB but file no longer exists in Obsidian vault.
+	ObsidianOrphaned int32 `json:"obsidian_orphaned"`
+	// Projects in Notion but not yet synced to DB.
+	NotionProjMissing int32 `json:"notion_proj_missing"`
+	// Projects in DB but no longer in Notion source.
+	NotionProjOrphan int32 `json:"notion_proj_orphan"`
+	// Goals in Notion but not yet synced to DB.
+	NotionGoalMissing int32 `json:"notion_goal_missing"`
+	// Goals in DB but no longer in Notion source.
+	NotionGoalOrphan int32 `json:"notion_goal_orphan"`
+	// Sum of all missing+orphaned counts. Zero = fully consistent.
+	TotalDrift int32 `json:"total_drift"`
+	// Number of errors encountered during the run. 0 = clean run.
+	ErrorCount int32 `json:"error_count"`
+	// JSON array of error strings from the run. NULL when error_count=0.
+	Errors    json.RawMessage `json:"errors"`
+	CreatedAt time.Time       `json:"created_at"`
+}
+
+// Content review workflow. One pending review per content (idx_editorial_queue_pending_content).
+type EditorialQueue struct {
+	ID uuid.UUID `json:"id"`
+	// References content under review. ON DELETE CASCADE — content deletion removes review record.
+	ContentID uuid.UUID `json:"content_id"`
+	// Snapshot of content.review_level at submission time. Does not live-update if content review_level changes.
+	ReviewLevel ReviewLevel `json:"review_level"`
+	// Lifecycle: pending → approved | rejected | edited. chk_reviewed_at_consistency ties reviewed_at to non-pending status.
+	Status ReviewStatus `json:"status"`
+	// Admin notes from the review. NULL = no notes.
+	ReviewerNotes *string `json:"reviewer_notes"`
+	// When this content was submitted for review.
+	SubmittedAt time.Time `json:"submitted_at"`
+	// When review was completed. NULL while status = pending, NOT NULL otherwise (enforced by chk_reviewed_at_consistency).
+	ReviewedAt *time.Time `json:"reviewed_at"`
 }
 
 // Unified event log from all sources (GitHub, Notion, Obsidian sync, MCP, cron).
@@ -784,10 +1039,10 @@ type EventTag struct {
 // RSS/Atom feed subscriptions. Fetch pipeline pulls entries on schedule, scores relevance, and surfaces for curation.
 type Feed struct {
 	ID uuid.UUID `json:"id"`
-	// Feed URL (RSS/Atom). Unique — one subscription per URL.
+	// Feed URL (RSS/Atom). Unique — one subscription per URL. Must use http(s) scheme (chk_feed_url_scheme).
 	Url  string `json:"url"`
 	Name string `json:"name"`
-	// Fetch frequency: daily, weekly, etc. Used by cron scheduler.
+	// Fetch cadence label (hourly | daily | weekly | biweekly | monthly), enforced by chk_feed_schedule. The Go scheduler maps each label to a concrete time interval. NOT a cron expression — for cron-format schedules see topic_monitors.schedule.
 	Schedule string `json:"schedule"`
 	Enabled  bool   `json:"enabled"`
 	// Feed importance for relevance scoring: high feeds get boosted scores.
@@ -885,225 +1140,84 @@ type Goal struct {
 	Quarter *string `json:"quarter"`
 	// Hard deadline if any. NULL = no deadline.
 	Deadline *time.Time `json:"deadline"`
-	// Sync identifier for external systems (currently Notion). UNIQUE — one goal per external page.
-	NotionPageID *string   `json:"notion_page_id"`
-	CreatedAt    time.Time `json:"created_at"`
+	// External system this goal is synced from (e.g. "notion", "linear"). NULL = local-only. Replaces the previous notion_page_id field — generalised because koopa0.dev is moving away from Notion. Paired with external_ref via chk_goal_external_pair.
+	ExternalProvider *string `json:"external_provider"`
+	// Provider-specific identifier within external_provider (e.g. Notion page ID). NULL = not synced. UNIQUE per provider via uniq_goal_external.
+	ExternalRef *string   `json:"external_ref"`
+	CreatedAt   time.Time `json:"created_at"`
 	// Application-managed. Set explicitly in UPDATE queries.
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
-// Hypothesis tracking — AI spots patterns, records falsification conditions, system tracks evidence over time.
-type Insight struct {
+// Falsifiable hypothesis tracker (was: insights). Each row carries a one-line falsifiable claim plus the invalidation condition that would disprove it. Evidence accumulates in metadata over time until the state transitions to verified or invalidated.
+type Hypothesis struct {
 	ID int64 `json:"id"`
-	// Which participant generated this insight. FK to participant.
-	Source string `json:"source"`
-	// Full narrative context for the insight. hypothesis is the one-line prediction; content is the supporting analysis and evidence.
+	// Which agent recorded the hypothesis. FK to agents. Renamed from "source" to align with agent_notes.author and disambiguate agent identity from system origin.
+	Author string `json:"author"`
+	// Full narrative context. The claim column is the one-line prediction; content is the supporting analysis and evidence.
 	Content string `json:"content"`
-	// Lifecycle: unverified → verified/invalidated → archived.
-	Status string `json:"status"`
-	// The pattern or prediction being tracked.
-	Hypothesis string `json:"hypothesis"`
-	// What would disprove this hypothesis.
+	// Lifecycle: unverified → verified | invalidated → archived.
+	State HypothesisState `json:"state"`
+	// One-line falsifiable prediction. Renamed from "hypothesis" to avoid the hypotheses.hypothesis stutter.
+	Claim string `json:"claim"`
+	// What would disprove the claim. Required — a hypothesis without an invalidation condition is not falsifiable and should not be recorded.
 	InvalidationCondition string `json:"invalidation_condition"`
-	// supporting_evidence, counter_evidence, conclusion, category, project, tags. UPGRADE PATH: when project filtering is needed, promote project to a first-class column.
+	// supporting_evidence, counter_evidence, conclusion, category, project, tags. Promote fields to columns when query patterns demand it.
 	Metadata json.RawMessage `json:"metadata"`
-	// Date this insight was observed or recorded.
+	// Date the hypothesis was first observed or recorded.
 	ObservedDate time.Time `json:"observed_date"`
-	CreatedAt    time.Time `json:"created_at"`
+	// Row insertion timestamp.
+	CreatedAt time.Time `json:"created_at"`
 }
 
-// Learning targets — what to learn, practice, and revisit. Lifecycle differs from notes: items follow not-attempted → practicing → mastered (learning progress), while notes follow seed → evergreen → archived (knowledge maturity). Items exist before notes are written.
-type Item struct {
+// Individual learning attempt records. One learning item can have multiple attempts (first try, revisit, re-practice). CASCADE from items — deleting an item deletes its attempt history. No is_revisit column — derivable as attempt_number > 1. Append-only — no updated_at.
+type LearningAttempt struct {
 	ID uuid.UUID `json:"id"`
-	// Learning domain (same convention as concepts.domain). Go-validated, not DB-enforced.
-	Domain string `json:"domain"`
-	// Display title. LeetCode: problem name. Reading: chapter title. Japanese: grammar point or drill name.
-	Title string `json:"title"`
-	// Provider-specific identifier. LeetCode problem number, textbook section ID, JLPT grammar point ID. NULL for custom drills without external identity. Partial unique: one item per (domain, external_id) where external_id IS NOT NULL.
-	ExternalID *string `json:"external_id"`
-	// Generic 3-tier difficulty. Domain-specific info (JLPT N5-N1, etc.) goes in metadata. NULL = not categorized. Consistent with notes.difficulty CHECK.
-	Difficulty *string `json:"difficulty"`
-	// Optional link to the item-level summary note (e.g. a LeetCode solve note). Distinct from attempts.note_id which links to an attempt-level working note. SET NULL on note deletion — the item persists without its note.
-	NoteID *int64 `json:"note_id"`
-	// Rare — for when a published article/essay is itself a learning target. Most items will not have this. SET NULL on content deletion.
-	ContentID *uuid.UUID `json:"content_id"`
-	// Optional PARA project association for catalog-level grouping. Plan membership and ordering is tracked via plan_items, not this FK. SET NULL on project deletion — the item persists without its project.
-	ProjectID *uuid.UUID `json:"project_id"`
-	// Domain-specific data not needing WHERE/JOIN/GROUP BY. Not queryable — if a field needs WHERE/JOIN/GROUP BY, promote to a column. LeetCode: {problem_url, companies, frequency, constraints}. Japanese: {jlpt_level, textbook, chapter, grammar_point}. System Design: {source_book, chapter, scenario_type}. Reading: {book_title, chapter, page_range}.
-	Metadata  []byte    `json:"metadata"`
-	CreatedAt time.Time `json:"created_at"`
-	// Application-managed. Set explicitly in UPDATE queries.
-	UpdatedAt time.Time `json:"updated_at"`
+	// The learning target attempted. CASCADE — attempts are meaningless without their item.
+	LearningTargetID uuid.UUID `json:"learning_target_id"`
+	// Optional link to the session this attempt occurred in. NULL for ad-hoc attempts outside a formal session. SET NULL on session deletion.
+	SessionID *uuid.UUID `json:"session_id"`
+	// Nth attempt at this item. 1 = first try, 2+ = revisit. Application must compute MAX(attempt_number) + 1 before inserting — DEFAULT 1 only applies to first attempts. UNIQUE with learning_target_id enforces no duplicate numbering.
+	AttemptNumber int32 `json:"attempt_number"`
+	// Two outcome paradigms coexist in this column. Problem-solving (LeetCode, drills): solved_independent (no help), solved_with_hint (nudge needed), solved_after_solution (saw answer first). Immersive (reading, listening, literary analysis): completed (finished independently), completed_with_support (needed dictionary, subtitles, translation, Claude annotation). Shared across both: incomplete (partially done), gave_up (could not proceed). MCP tool layer maps domain context to the appropriate paradigm.
+	Outcome string `json:"outcome"`
+	// Time spent on this attempt in minutes. NULL = not tracked. Must be positive.
+	DurationMinutes *int32 `json:"duration_minutes"`
+	// Free-text: where you got stuck. High cardinality, not a queryable category.
+	StuckAt *string `json:"stuck_at"`
+	// Free-text: what method you used. Coaching context, not a queryable enum.
+	ApproachUsed *string `json:"approach_used"`
+	// Optional link to an attempt-level working note. Distinct from learning_targets.obsidian_note_id (item-level summary). SET NULL on note deletion.
+	ObsidianNoteID *int64 `json:"obsidian_note_id"`
+	// Narrative data: coaching hints given, alternative approaches considered, code quality observations, LLM transcript excerpts. Not queryable — stays in JSONB. If a field needs WHERE/JOIN/GROUP BY, promote to a column.
+	Metadata []byte `json:"metadata"`
+	// When this attempt occurred. May differ from created_at if backfilled.
+	AttemptedAt time.Time `json:"attempted_at"`
+	CreatedAt   time.Time `json:"created_at"`
 }
 
-// Junction: which concepts a learning item exercises. A LeetCode problem's primary concept is two-pointers; secondary might include hash-map. CASCADE on both sides — deleting an item or concept removes the association.
-type ItemConcept struct {
-	LearningItemID uuid.UUID `json:"learning_item_id"`
-	ConceptID      uuid.UUID `json:"concept_id"`
-	// primary: the core concept this item drills. secondary: a supporting concept also exercised. Convention: one primary per item. Multiple primaries should be rare; if frequent, revisit the relevance model.
-	Relevance string    `json:"relevance"`
-	CreatedAt time.Time `json:"created_at"`
-}
-
-// Directed graph of learning item relationships. Direction: source is the reference point, target is the related item, relation_type describes how target relates to source. Example: (source=42, target=167, easier_variant) means "167 is an easier variant of 42." CASCADE on both sides. Append-only — no updated_at. APPLICATION INVARIANT: contradictory pairs (e.g. same ordered pair with both easier_variant and harder_variant) and symmetric conflicts (e.g. mutual prerequisite) are not DDL-enforced — Go validation must prevent them during post-session analysis. Same-domain invariant: both items must share the same domain — enforced by Go, not DB.
-type ItemRelation struct {
+// Micro-cognitive signals observed during a specific attempt on a specific concept. Powers weakness overview, progression tracking, and drill-down UI. Append-only — no updated_at. CASCADE from attempts, RESTRICT from concepts.
+type LearningAttemptObservation struct {
 	ID uuid.UUID `json:"id"`
-	// The reference item (e.g. the one you struggled with). CASCADE on deletion.
-	SourceItemID uuid.UUID `json:"source_item_id"`
-	// The related item (e.g. the easier variant to try). CASCADE on deletion.
-	TargetItemID uuid.UUID `json:"target_item_id"`
-	// How target relates to source. easier_variant: target is simpler (same concept, lower difficulty). harder_variant: target is more complex. prerequisite: target should be done before source (e.g. source=hard_problem, target=easy_problem, prerequisite = "do easy_problem before attempting hard_problem"). follow_up: target is a natural next step after source. same_pattern: target uses the same core pattern. similar_structure: target has structural similarity (different pattern).
-	RelationType string    `json:"relation_type"`
-	CreatedAt    time.Time `json:"created_at"`
-}
-
-// Session log — plans, context snapshots, reflections, metrics. Self-directed, not cross-project.
-type Journal struct {
-	ID int64 `json:"id"`
-	// plan = daily plan. context = end-of-session state. reflection = review. metrics = quantitative snapshot.
-	Kind    string `json:"kind"`
-	Source  string `json:"source"`
-	Content string `json:"content"`
-	// Structured metadata per kind. plan: {reasoning}. Daily task selection tracked in daily_plan_items, not here. metrics: {tasks_planned, tasks_completed, adjustments}. context, reflection: no required metadata schema.
-	Metadata json.RawMessage `json:"metadata"`
-	// Date of this journal entry.
-	EntryDate time.Time `json:"entry_date"`
-	CreatedAt time.Time `json:"created_at"`
-}
-
-// Goal progress checkpoints — binary completion markers within a goal. Milestones and projects are siblings under a goal: a project advances a goal through work, a milestone marks progress. Completion determined by completed_at IS NOT NULL — no separate status column. Goal progress = completed milestones / total milestones (advisory, not auto-derived). NOT OKR Key Results — milestones are binary (done/not-done), not quantitative metrics with target_value/current_value.
-type Milestone struct {
-	ID uuid.UUID `json:"id"`
-	// Descriptive, measurable checkpoint name (e.g. "N3 合格", "API layer complete"). UNIQUE per goal — no duplicate milestone names within the same goal.
-	Title string `json:"title"`
-	// Detail on what this milestone means and how to measure achievement. Empty string = no detail provided.
-	Description string `json:"description"`
-	// Parent goal. NOT NULL — every milestone must belong to a goal. CASCADE on delete.
-	GoalID uuid.UUID `json:"goal_id"`
-	// Target completion date. NULL = no time target (pure checkpoint). Enables mid-goal on-track/at-risk analysis in weekly summary.
-	TargetDeadline *time.Time `json:"target_deadline"`
-	// When this milestone was achieved. NULL = not yet completed. This is the sole completion indicator — no status enum.
-	CompletedAt *time.Time `json:"completed_at"`
-	// Sync identifier for external systems (currently Notion). NULL = not synced or sync not yet implemented.
-	NotionPageID *string `json:"notion_page_id"`
-	// Ordering within a goal. 0-based. Represents expected sequence of achievement.
-	Position  int32     `json:"position"`
-	CreatedAt time.Time `json:"created_at"`
-	// Application-managed. Set explicitly in UPDATE queries.
-	UpdatedAt time.Time `json:"updated_at"`
-}
-
-// Knowledge notes from external vaults — a major class of PARA resources (alongside contents, feed_entries, and other reference material). Nullable columns (title, type, source, context, content_text, content_hash, raw_tags) represent optional frontmatter fields — NULL means the field was absent in the source file.
-type Note struct {
-	ID       int64   `json:"id"`
-	FilePath string  `json:"file_path"`
-	Title    *string `json:"title"`
-	// Note type from frontmatter (e.g. leetcode, book-note, dev-log, til, note). Open-ended — values defined by vault conventions.
-	Type *string `json:"type"`
-	// Knowledge source context (e.g. leetcode, claude, oreilly, ardanlabs). Not the sync origin — sync origin is the vault system (obsidian, logseq), represented implicitly by the file_path column.
-	Source *string `json:"source"`
-	// Project or domain context (e.g. project slug). QUASI-CANONICAL — comes from frontmatter (raw), but actively used by MCP search filtering and morning_context. Not FK because vault may reference projects not yet in DB. Treat as soft reference, not pure raw field.
-	Context *string `json:"context"`
-	// Zettelkasten maturity: seed (new), stub (incomplete), evergreen (mature), archived.
-	Maturity string `json:"maturity"`
-	// Raw frontmatter tags (JSONB array). Ingestion snapshot — canonical mapping via note_tags junction + tag_aliases pipeline.
-	RawTags json.RawMessage `json:"raw_tags"`
-	// Problem difficulty. Primarily for LeetCode notes.
-	Difficulty *string `json:"difficulty"`
-	// LeetCode problem number. NULL for non-LeetCode notes.
-	LeetcodeID *int32 `json:"leetcode_id"`
-	// Book title if this note is from a book reading session.
-	Book *string `json:"book"`
-	// Chapter identifier within the book.
-	Chapter *string `json:"chapter"`
-	// Linked Notion task ID. Used to associate notes with learning tasks.
-	NotionTaskID *string `json:"notion_task_id"`
-	// Full text content extracted from the note file. Used for full-text search.
-	ContentText *string `json:"content_text"`
-	// SHA256 of content_text. Used for change detection during sync — skip re-processing if unchanged.
-	ContentHash *string `json:"content_hash"`
-	// pgvector embedding (768d) for semantic search via HNSW index.
-	Embedding *pgvector_go.Vector `json:"embedding"`
-	// Generated tsvector for full-text search. Uses 'simple' config — same rationale as contents.search_vector.
-	SearchVector string `json:"search_vector"`
-	// File creation time from git log. NULL if not tracked by git.
-	GitCreatedAt *time.Time `json:"git_created_at"`
-	// File last modification time from git log. NULL if not tracked by git.
-	GitUpdatedAt *time.Time `json:"git_updated_at"`
-	// When this note was last synced from the vault.
-	SyncedAt time.Time `json:"synced_at"`
-}
-
-// Wikilink edges between notes. Drives the knowledge graph API.
-type NoteLink struct {
-	ID           int64 `json:"id"`
-	SourceNoteID int64 `json:"source_note_id"`
-	// Wikilink target file path. May reference notes not yet synced — forward/broken links expected.
-	TargetPath string    `json:"target_path"`
-	LinkText   *string   `json:"link_text"`
+	// The attempt during which this signal was observed. CASCADE — observations die with their attempt.
+	AttemptID uuid.UUID `json:"attempt_id"`
+	// The concept this signal pertains to. RESTRICT — cannot delete a concept that has observations. To merge concepts: UPDATE observations to surviving concept_id first, then DELETE the old concept. Observations are irreplaceable historical analytics.
+	ConceptID uuid.UUID `json:"concept_id"`
+	// weakness: something went wrong with this concept during this attempt. improvement: noticeable progress compared to previous attempts. mastery: demonstrated independent, fluent application.
+	SignalType string `json:"signal_type"`
+	// Observation dimension. Go-validated convention, not DB ENUM — categories expand across domains. LeetCode: pattern-recognition, constraint-analysis, edge-cases, implementation, complexity-analysis, approach-selection. Japanese: conjugation-accuracy, particle-selection, listening-comprehension, vocabulary-recall. System Design: tradeoff-analysis, bottleneck-diagnosis, capacity-estimation.
+	Category string `json:"category"`
+	// Granularity within a signal. minor: forgot one edge case. moderate: correct approach, failed execution. critical: did not recognize the pattern at all. NULL for improvement/mastery signals where severity does not apply.
+	Severity *string `json:"severity"`
+	// Free-text evidence or explanation. NULL when the signal is self-explanatory from category alone.
+	Detail *string `json:"detail"`
+	// high (default): signal directly evidenced by the attempt outcome — user said "I forgot how X works" or repeatedly failed at X. low: coach inferred the signal from indirect evidence — user struggled with the problem and coach suspects X is the missing skill. Both persist. Dashboard mastery and weakness views default to high only; pass confidence_filter=all to include low-confidence observations.
+	Confidence string    `json:"confidence"`
 	CreatedAt  time.Time `json:"created_at"`
 }
 
-// Junction: note ↔ canonical tag. Many-to-many. Tags resolved from raw_tags via tag_aliases pipeline.
-type NoteTag struct {
-	NoteID int64     `json:"note_id"`
-	TagID  uuid.UUID `json:"tag_id"`
-}
-
-// An actor in the system — a Cowork project, a Claude Code project, or a human operator. Capability flags determine what each participant can do in the IPC protocol. DELETION: all FKs to participant(name) use ON DELETE RESTRICT — participant deletion is blocked by any referencing row across tasks, directives, reports, journal, insights, daily_plan_items, participant_schedules. Participants are seed data and should never be deleted — use capability flags to deactivate.
-type Participant struct {
-	// Unique identifier used as source/target in directives, source in reports/journal/insights, and assignee in tasks.
-	Name string `json:"name"`
-	// Execution context (claude-cowork, claude-code, claude-web, human). Informational — routing and capability decisions are driven by capability flags, not platform name.
-	Platform string `json:"platform"`
-	// Human-readable role description for this participant.
-	Description string `json:"description"`
-	// Whether this participant can create directives. Go validation checks this flag, not platform name.
-	CanIssueDirectives bool `json:"can_issue_directives"`
-	// Whether this participant can be targeted by directives.
-	CanReceiveDirectives bool `json:"can_receive_directives"`
-	// Whether this participant can create reports (directive-driven or self-initiated).
-	CanWriteReports bool `json:"can_write_reports"`
-	// Whether this participant can be assigned as tasks.assignee.
-	TaskAssignable bool `json:"task_assignable"`
-	// Whether this participant can have entries in participant_schedules. INVARIANT: if flipped true → false, Go must cascade-disable all participant_schedules for this participant.
-	CanOwnSchedules bool      `json:"can_own_schedules"`
-	CreatedAt       time.Time `json:"created_at"`
-}
-
-// Participant-owned standing instructions that spawn sessions on a recurring basis. Schedule defines WHAT and WHEN; execution_backend defines WHERE and HOW.
-type ParticipantSchedule struct {
-	ID uuid.UUID `json:"id"`
-	// Owner. FK to participant. Go validates participant.can_own_schedules = true.
-	Participant string `json:"participant"`
-	// Human-readable schedule name (e.g. Morning Briefing, RSS Pipeline Check).
-	Name string `json:"name"`
-	// One-line description of what this schedule achieves.
-	Purpose string `json:"purpose"`
-	// cron = fixed times. interval = recurring period. manual = only triggered by API/UI.
-	TriggerType string `json:"trigger_type"`
-	// Cron expression for trigger_type=cron (e.g. "0 8 * * *"). Go time.Duration string for trigger_type=interval (e.g. "1h", "30m", "2h30m"). NULL for trigger_type=manual. Format validated by Go, not DB.
-	ScheduleExpr *string `json:"schedule_expr"`
-	// Which runtime executes this schedule. cowork_desktop = Claude Desktop Cowork. claude_code = Claude Code (cloud/desktop/loop). github_actions = GitHub CI. koopa_native = koopa server scheduler (future).
-	ExecutionBackend string `json:"execution_backend"`
-	// Prompt/instructions for the spawned session. May reference MCP tools, participant instructions, etc.
-	InstructionTemplate string `json:"instruction_template"`
-	// Expected artifact types from each run. Convention: bare name = IPC table (directive, report, journal, insight); colon-separated = table:kind filter (journal:plan, journal:reflection). Monitoring validation is Go-side, not DB-enforced. If automated completeness checking is added, this column format becomes a contract.
-	ExpectedOutputs []string `json:"expected_outputs"`
-	// Normalized catch-up intent: skip = silently miss, run_once_on_wake = catch up with one run, queue_all = run all missed occurrences. Backend support may vary — Go execution layer maps unsupported combinations to closest available behavior and logs the deviation.
-	MissedRunPolicy string `json:"missed_run_policy"`
-	Enabled         bool   `json:"enabled"`
-	// Denormalized from schedule_runs for quick lookup. NULL = never run.
-	LastRunAt *time.Time `json:"last_run_at"`
-	// Denormalized from schedule_runs. NULL = never run.
-	LastRunStatus *string   `json:"last_run_status"`
-	CreatedAt     time.Time `json:"created_at"`
-	// Application-managed. Set explicitly in UPDATE queries.
-	UpdatedAt time.Time `json:"updated_at"`
-}
-
 // Ordered, mutable learning curricula — a named commitment to practice a specific set of learning items. Plans serve aspirations (goals), not execution vehicles (projects). Status lifecycle: draft → active → completed/paused/abandoned. Draft = workspace/uncommitted. Active = committed curriculum being tracked against execution.
-type Plan struct {
+type LearningPlan struct {
 	// Primary key. Auto-generated UUID.
 	ID uuid.UUID `json:"id"`
 	// Display title (e.g., "LeetCode 200 題計畫"). Not unique — allows v1/v2 scenarios.
@@ -1119,8 +1233,8 @@ type Plan struct {
 	// Advisory target item count (e.g., 200). NULL = open-ended plan. Not enforced by DB.
 	TargetCount *int32 `json:"target_count"`
 	// Plan-creation parameters that do NOT need WHERE/JOIN/GROUP BY. If any field needs filtering, promote to a column. Examples: difficulty_distribution, focus_areas, pacing_notes.
-	PlanConfig json.RawMessage `json:"plan_config"`
-	// Which participant created this plan. RESTRICT on delete — cannot remove a participant who owns plans.
+	PlanConfig []byte `json:"plan_config"`
+	// Which agent created this plan. FK to agents. RESTRICT on delete — cannot remove an agent who owns plans.
 	CreatedBy string `json:"created_by"`
 	// Row creation timestamp.
 	CreatedAt time.Time `json:"created_at"`
@@ -1129,13 +1243,13 @@ type Plan struct {
 }
 
 // Junction between plans and items — plan membership with ordering and per-item lifecycle. Same item can appear in multiple plans (cross-plan reuse). CASCADE from plan deletion. RESTRICT from item deletion — cannot silently remove items from a plan. Append-style with status tracking — no updated_at (status transitions are the audit trail).
-type PlanItem struct {
+type LearningPlanEntry struct {
 	// Primary key. Auto-generated UUID.
 	ID uuid.UUID `json:"id"`
 	// Parent learning plan. CASCADE — deleting a plan removes all its items.
 	PlanID uuid.UUID `json:"plan_id"`
 	// The learning target included in this plan. RESTRICT on delete — cannot silently remove a plan item by deleting its catalog entry. Resolve plan references first.
-	LearningItemID uuid.UUID `json:"learning_item_id"`
+	LearningTargetID uuid.UUID `json:"learning_target_id"`
 	// Ordering within the plan (0-based). NOT unique in DB — application invariant maintains uniqueness. Follows milestones and daily_plan_items pattern.
 	Position int32 `json:"position"`
 	// Plan-item lifecycle: planned → completed (via explicit tool call after successful attempt) | skipped (plan decision to not do it) | substituted (replaced by another item). Distinct from attempt.outcome — plan_status is a plan-domain decision, not an execution result.
@@ -1154,13 +1268,154 @@ type PlanItem struct {
 	CompletedAt *time.Time `json:"completed_at"`
 }
 
-// AI environment or human context. Each platform hosts one or more participants (projects/agents).
-type Platform struct {
-	// Platform identifier: claude-cowork, claude-code, claude-web, human.
-	Name string `json:"name"`
-	// Human-readable description of this platform.
-	Description string    `json:"description"`
-	CreatedAt   time.Time `json:"created_at"`
+// Session orchestration boundary — explicit start/end, mode, and attempt container. Distinct from agent_notes: agent_notes are post-hoc narrative (plan, context, reflection), sessions are in-progress orchestration. A session ending may produce an agent_notes(kind=reflection) entry, linked via agent_note_id. updated_at tracks mutation: ended_at and agent_note_id are written by EndSession, and metadata may be updated mid-session by orchestration code.
+type LearningSession struct {
+	ID uuid.UUID `json:"id"`
+	// Learning domain for this session (same convention as concepts.domain).
+	Domain string `json:"domain"`
+	// retrieval: recall-based testing (no hints). practice: active problem-solving with coaching. mixed: combination of retrieval and practice. review: revisiting previously solved items. reading: comprehension-focused (DDIA, O'Reilly, literary texts).
+	SessionMode string `json:"session_mode"`
+	// Optional link to the reflection agent_notes entry written after the session. The session produces the note, not the other way around. SET NULL on note deletion.
+	AgentNoteID *int64 `json:"agent_note_id"`
+	// If this session was planned in the daily plan, link here. Enables plan adherence analysis. SET NULL on plan item deletion.
+	DailyPlanItemID *uuid.UUID `json:"daily_plan_item_id"`
+	// Session start time. DEFAULT now() for immediate starts.
+	StartedAt time.Time `json:"started_at"`
+	// NULL until session ends. NULL + old started_at = abandoned/crashed session.
+	EndedAt *time.Time `json:"ended_at"`
+	// Session orchestration details: coaching prompt used, session summary, configuration. Not queryable — stays in JSONB.
+	Metadata  []byte    `json:"metadata"`
+	CreatedAt time.Time `json:"created_at"`
+	// Application-managed. Set explicitly in UPDATE queries (notably EndSession).
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// Learning targets — what to learn, practice, and revisit. Lifecycle differs from notes: items follow not-attempted → practicing → mastered (learning progress), while notes follow seed → evergreen → archived (knowledge maturity). Items exist before notes are written.
+type LearningTarget struct {
+	ID uuid.UUID `json:"id"`
+	// Learning domain (same convention as concepts.domain). Go-validated, not DB-enforced.
+	Domain string `json:"domain"`
+	// Display title. LeetCode: problem name. Reading: chapter title. Japanese: grammar point or drill name.
+	Title string `json:"title"`
+	// Provider-specific identifier. LeetCode problem number, textbook section ID, JLPT grammar point ID. NULL for custom drills without external identity. Partial unique: one item per (domain, external_id) where external_id IS NOT NULL.
+	ExternalID *string `json:"external_id"`
+	// Generic 3-tier difficulty. Domain-specific info (JLPT N5-N1, etc.) goes in metadata. NULL = not categorized. Consistent with notes.difficulty CHECK.
+	Difficulty *string `json:"difficulty"`
+	// Optional link to the item-level summary note (e.g. a LeetCode solve note). Distinct from learning_attempts.obsidian_note_id which links to an attempt-level working note. SET NULL on note deletion — the item persists without its note.
+	ObsidianNoteID *int64 `json:"obsidian_note_id"`
+	// Rare — for when a published article/essay is itself a learning target. Most items will not have this. SET NULL on content deletion.
+	ContentID *uuid.UUID `json:"content_id"`
+	// Optional PARA project association for catalog-level grouping. Plan membership and ordering is tracked via plan_items, not this FK. SET NULL on project deletion — the item persists without its project.
+	ProjectID *uuid.UUID `json:"project_id"`
+	// Domain-specific data not needing WHERE/JOIN/GROUP BY. Not queryable — if a field needs WHERE/JOIN/GROUP BY, promote to a column. LeetCode: {problem_url, companies, frequency, constraints}. Japanese: {jlpt_level, textbook, chapter, grammar_point}. System Design: {source_book, chapter, scenario_type}. Reading: {book_title, chapter, page_range}.
+	Metadata  []byte    `json:"metadata"`
+	CreatedAt time.Time `json:"created_at"`
+	// Application-managed. Set explicitly in UPDATE queries.
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// Junction: which concepts a learning item exercises. A LeetCode problem's primary concept is two-pointers; secondary might include hash-map. CASCADE on both sides — deleting an item or concept removes the association.
+type LearningTargetConcept struct {
+	LearningTargetID uuid.UUID `json:"learning_target_id"`
+	ConceptID        uuid.UUID `json:"concept_id"`
+	// primary: the core concept this item drills. secondary: a supporting concept also exercised. Convention: one primary per item. Multiple primaries should be rare; if frequent, revisit the relevance model.
+	Relevance string    `json:"relevance"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// Directed graph of learning target relationships. Direction: anchor is the reference point, related is the other target, relation_type describes how related relates to anchor. Example: (anchor=42, related=167, easier_variant) means "167 is an easier variant of 42." CASCADE on both sides. Append-only — no updated_at. APPLICATION INVARIANT: contradictory pairs (e.g. same ordered pair with both easier_variant and harder_variant) and symmetric conflicts (e.g. mutual prerequisite) are not DDL-enforced — Go validation must prevent them during post-session analysis. Same-domain invariant: both targets must share the same domain — enforced by Go, not DB.
+type LearningTargetRelation struct {
+	ID uuid.UUID `json:"id"`
+	// The reference target (e.g. the one you struggled with). CASCADE on deletion. Renamed from source_item_id to avoid colliding with the table's own "learning_target" semantics.
+	AnchorID uuid.UUID `json:"anchor_id"`
+	// The other target related to the anchor (e.g. the easier variant to try). CASCADE on deletion. Renamed from target_item_id for the same reason.
+	RelatedID uuid.UUID `json:"related_id"`
+	// How the related target relates to the anchor. easier_variant: related is simpler (same concept, lower difficulty). harder_variant: related is more complex. prerequisite: related should be done before anchor (e.g. anchor=hard_problem, related=easy_problem, prerequisite = "do easy_problem before attempting hard_problem"). follow_up: related is a natural next step after anchor. same_pattern: related uses the same core pattern. similar_structure: related has structural similarity (different pattern).
+	RelationType string    `json:"relation_type"`
+	CreatedAt    time.Time `json:"created_at"`
+}
+
+// Goal progress checkpoints — binary completion markers within a goal. Milestones and projects are siblings under a goal: a project advances a goal through work, a milestone marks progress. Completion determined by completed_at IS NOT NULL — no separate status column. Goal progress = completed milestones / total milestones (advisory, not auto-derived). NOT OKR Key Results — milestones are binary (done/not-done), not quantitative metrics with target_value/current_value.
+type Milestone struct {
+	ID uuid.UUID `json:"id"`
+	// Descriptive, measurable checkpoint name (e.g. "N3 合格", "API layer complete"). UNIQUE per goal — no duplicate milestone names within the same goal.
+	Title string `json:"title"`
+	// Detail on what this milestone means and how to measure achievement. Empty string = no detail provided.
+	Description string `json:"description"`
+	// Parent goal. NOT NULL — every milestone must belong to a goal. CASCADE on delete.
+	GoalID uuid.UUID `json:"goal_id"`
+	// Target completion date. NULL = no time target (pure checkpoint). Enables mid-goal on-track/at-risk analysis in weekly summary.
+	TargetDeadline *time.Time `json:"target_deadline"`
+	// When this milestone was achieved. NULL = not yet completed. This is the sole completion indicator — no status enum.
+	CompletedAt *time.Time `json:"completed_at"`
+	// External system this milestone is synced from (e.g. "notion"). NULL = local-only. Paired with external_ref via chk_milestone_external_pair.
+	ExternalProvider *string `json:"external_provider"`
+	// Provider-specific identifier within external_provider. NULL = not synced. UNIQUE per provider via uniq_milestone_external.
+	ExternalRef *string `json:"external_ref"`
+	// Sequence position within a goal (0-based). Convention: position is the gap-free sequence index a row holds inside its parent; sort_order is the priority tier used for top-level UI ordering. See top-of-file ordering convention block.
+	Position  int32     `json:"position"`
+	CreatedAt time.Time `json:"created_at"`
+	// Application-managed. Set explicitly in UPDATE queries.
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// Knowledge artifacts synced from an Obsidian vault. Renamed from `notes` in the schema normalization pass to stand in clear contrast to agent_notes (agent narrative log). Nullable columns (title, type, provenance, context, content_text, content_hash, raw_tags) represent optional frontmatter fields — NULL means the field was absent in the source file.
+type ObsidianNote struct {
+	ID       int64   `json:"id"`
+	FilePath string  `json:"file_path"`
+	Title    *string `json:"title"`
+	// Note type from frontmatter (e.g. leetcode, book-note, dev-log, til). Open-ended — values defined by vault conventions.
+	Type *string `json:"type"`
+	// Knowledge provenance label (e.g. leetcode, claude, oreilly, ardanlabs). Renamed from `source` to disambiguate from events.source (origin system) and tasks.requester (origin agent). The sync origin (vault system) is implicit in file_path.
+	Provenance *string `json:"provenance"`
+	// Project or domain context (e.g. project slug). QUASI-CANONICAL — comes from frontmatter (raw), but actively used by MCP search filtering and morning_context. Not FK because vault may reference projects not yet in DB. Treat as soft reference, not pure raw field.
+	Context *string `json:"context"`
+	// Zettelkasten maturity: seed (new), stub (incomplete), evergreen (mature), archived.
+	Maturity string `json:"maturity"`
+	// Raw frontmatter tags (JSONB array). Ingestion snapshot — canonical mapping via obsidian_note_tags junction + tag_aliases pipeline.
+	RawTags json.RawMessage `json:"raw_tags"`
+	// Problem difficulty. Primarily for LeetCode notes.
+	Difficulty *string `json:"difficulty"`
+	// LeetCode problem number. NULL for non-LeetCode notes.
+	LeetcodeID *int32 `json:"leetcode_id"`
+	// Book title if this note is from a book reading session.
+	Book *string `json:"book"`
+	// Chapter identifier within the book.
+	Chapter *string `json:"chapter"`
+	// External system this note is associated with (e.g. "notion" for a linked Notion task). NULL = standalone vault note. Paired with external_ref via chk_obsidian_note_external_pair. Replaces the previous notion_task_id field — generalised because koopa0.dev is moving away from Notion.
+	ExternalProvider *string `json:"external_provider"`
+	// Provider-specific identifier within external_provider. NULL = no external link.
+	ExternalRef *string `json:"external_ref"`
+	// Full text content extracted from the note file. Used for full-text search.
+	ContentText *string `json:"content_text"`
+	// SHA-256 hex of content_text (chk_obsidian_note_content_hash_format). Used for change detection during sync — skip re-processing if unchanged.
+	ContentHash *string `json:"content_hash"`
+	// pgvector embedding (768d) for semantic search via HNSW index.
+	Embedding *pgvector_go.Vector `json:"embedding"`
+	// Generated tsvector for full-text search. Uses 'simple' config — same rationale as contents.search_vector.
+	SearchVector interface{} `json:"search_vector"`
+	// File creation time from git log. NULL if not tracked by git.
+	GitCreatedAt *time.Time `json:"git_created_at"`
+	// File last modification time from git log. NULL if not tracked by git.
+	GitUpdatedAt *time.Time `json:"git_updated_at"`
+	// When this note was last synced from the vault.
+	SyncedAt time.Time `json:"synced_at"`
+}
+
+// Wikilink edges between obsidian notes. Drives the knowledge graph API.
+type ObsidianNoteLink struct {
+	ID           int64 `json:"id"`
+	SourceNoteID int64 `json:"source_note_id"`
+	// Wikilink target file path. May reference notes not yet synced — forward/broken links expected.
+	TargetPath string    `json:"target_path"`
+	LinkText   *string   `json:"link_text"`
+	CreatedAt  time.Time `json:"created_at"`
+}
+
+// Junction: obsidian note ↔ canonical tag. Many-to-many. Tags resolved from raw_tags via tag_aliases pipeline.
+type ObsidianNoteTag struct {
+	ObsidianNoteID int64     `json:"obsidian_note_id"`
+	TagID          uuid.UUID `json:"tag_id"`
 }
 
 // PARA projects — short-term efforts with a clear outcome. Projects and milestones are siblings under a goal: a project may advance a goal without mapping to a specific milestone. Includes portfolio/case study fields for public display.
@@ -1193,8 +1448,10 @@ type Project struct {
 	IsPublic  bool          `json:"is_public"`
 	SortOrder int32         `json:"sort_order"`
 	Status    ProjectStatus `json:"status"`
-	// Sync identifier for external systems (currently Notion). UNIQUE — one project per external page.
-	NotionPageID *string `json:"notion_page_id"`
+	// External system this project is synced from (e.g. "notion"). NULL = local-only. Paired with external_ref via chk_project_external_pair.
+	ExternalProvider *string `json:"external_provider"`
+	// Provider-specific identifier within external_provider. NULL = not synced. UNIQUE per provider via uniq_project_external.
+	ExternalRef *string `json:"external_ref"`
 	// GitHub repository full name (e.g. Koopa0/koopa0.dev). Used by activity event resolution and webhook routing.
 	Repo *string `json:"repo"`
 	// PARA Area of Responsibility. FK to areas. SET NULL on area deletion. NULL = unclassified.
@@ -1223,34 +1480,6 @@ type ProjectAlias struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
-// Weekly reconciliation run history for system health and drift trend analysis.
-type ReconcileRun struct {
-	ID int64 `json:"id"`
-	// When the reconciliation run began.
-	StartedAt time.Time `json:"started_at"`
-	// NULL until run finishes. NULL + old started_at = crashed run.
-	CompletedAt *time.Time `json:"completed_at"`
-	// Notes in Obsidian vault but not yet synced to DB.
-	ObsidianMissing int32 `json:"obsidian_missing"`
-	// Notes in DB but file no longer exists in Obsidian vault.
-	ObsidianOrphaned int32 `json:"obsidian_orphaned"`
-	// Projects in Notion but not yet synced to DB.
-	NotionProjMissing int32 `json:"notion_proj_missing"`
-	// Projects in DB but no longer in Notion source.
-	NotionProjOrphan int32 `json:"notion_proj_orphan"`
-	// Goals in Notion but not yet synced to DB.
-	NotionGoalMissing int32 `json:"notion_goal_missing"`
-	// Goals in DB but no longer in Notion source.
-	NotionGoalOrphan int32 `json:"notion_goal_orphan"`
-	// Sum of all missing+orphaned counts. Zero = fully consistent.
-	TotalDrift int32 `json:"total_drift"`
-	// Number of errors encountered during the run. 0 = clean run.
-	ErrorCount int32 `json:"error_count"`
-	// JSON array of error strings from the run. NULL when error_count=0.
-	Errors    json.RawMessage `json:"errors"`
-	CreatedAt time.Time       `json:"created_at"`
-}
-
 // JWT refresh token hashes. One user may have multiple active tokens (multi-device).
 type RefreshToken struct {
 	ID uuid.UUID `json:"id"`
@@ -1263,28 +1492,13 @@ type RefreshToken struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
-// IPC — department output. No target column — report recipients are implicit: directive-driven reports are read by the directive source; self-initiated reports are read by HQ in morning briefing. Cardinality: one directive may have multiple reports (progress, completion, follow-up). Directive resolution is tracked via directives.resolved_at + directives.resolution_report_id. The resolution report is the final deliverable; earlier reports are progress updates.
-type Report struct {
-	ID int64 `json:"id"`
-	// Who wrote this report. FK to participant. Go layer validates participant.can_write_reports = true. Expandable by setting capability flag on any participant.
-	Source string `json:"source"`
-	// Causal link — FK to directives(id). DB guarantees parent is a directive. Nullable for self-initiated reports (RSS scan, session summary, etc).
-	InResponseTo *int64 `json:"in_response_to"`
-	Content      string `json:"content"`
-	// Non-routing info: correlation_id (server-copied from directive if in_response_to set), artifacts, follow_up_needed.
-	Metadata json.RawMessage `json:"metadata"`
-	// Date this report was filed.
-	ReportedDate time.Time `json:"reported_date"`
-	CreatedAt    time.Time `json:"created_at"`
-}
-
-// Spaced repetition card state. Algorithm-agnostic — currently FSRS. Two target types: content-based (article/note recall) and learning-item-based (problem/drill retention). Exactly one of content_id or learning_item_id must be NOT NULL, enforced by chk_review_target_exactly_one. FSRS engine is target-agnostic — it operates on (card_state, rating) → new_card_state regardless of target type.
+// Spaced repetition card state. Algorithm-agnostic — currently FSRS. Two target types: content-based (article/note recall) and learning-item-based (problem/drill retention). Exactly one of content_id or learning_target_id must be NOT NULL, enforced by chk_review_target_exactly_one. FSRS engine is target-agnostic — it operates on (card_state, rating) → new_card_state regardless of target type.
 type ReviewCard struct {
 	ID int64 `json:"id"`
-	// Content-based review target. NULL when this card targets a learning item. Mutually exclusive with learning_item_id (checked by chk_review_target_exactly_one). CASCADE — deleting the content deletes its review cards.
+	// Content-based review target. NULL when this card targets a learning item. Mutually exclusive with learning_target_id (checked by chk_review_target_exactly_one). CASCADE — deleting the content deletes its review cards.
 	ContentID *uuid.UUID `json:"content_id"`
 	// Learning-item-based review target (problem, drill, chapter). NULL when this card targets content. Mutually exclusive with content_id. CASCADE — deleting the item deletes its review cards.
-	LearningItemID *uuid.UUID `json:"learning_item_id"`
+	LearningTargetID *uuid.UUID `json:"learning_target_id"`
 	// Canonical tag for per-concept review within content-based cards. NULL = whole-content review. Only meaningful when content_id IS NOT NULL, enforced by chk_tag_requires_content. CASCADE on tag deletion — SET NULL would risk violating idx_review_cards_content_whole unique constraint if a whole-content card already exists for the same content. Application layer should warn before tag deletion (FSRS state is lost).
 	TagID *uuid.UUID `json:"tag_id"`
 	// Serialized algorithm state (Due, Stability, Difficulty, Reps, Lapses). Opaque to SQL.
@@ -1313,61 +1527,8 @@ type ReviewLog struct {
 	ReviewedAt time.Time `json:"reviewed_at"`
 }
 
-// Content review workflow. One pending review per content (idx_review_queue_pending_content).
-type ReviewQueue struct {
-	ID uuid.UUID `json:"id"`
-	// References content under review. ON DELETE CASCADE — content deletion removes review record.
-	ContentID uuid.UUID `json:"content_id"`
-	// Snapshot of content.review_level at submission time. Does not live-update if content review_level changes.
-	ReviewLevel ReviewLevel `json:"review_level"`
-	// Lifecycle: pending → approved | rejected | edited. chk_reviewed_at_consistency ties reviewed_at to non-pending status.
-	Status ReviewStatus `json:"status"`
-	// Admin notes from the review. NULL = no notes.
-	ReviewerNotes *string `json:"reviewer_notes"`
-	// When this content was submitted for review.
-	SubmittedAt time.Time `json:"submitted_at"`
-	// When review was completed. NULL while status = pending, NOT NULL otherwise (enforced by chk_reviewed_at_consistency).
-	ReviewedAt *time.Time `json:"reviewed_at"`
-}
-
-// Append-only execution history for participant_schedules. Full history from day one — enables trend analysis, hit rate, and failure diagnosis.
-type ScheduleRun struct {
-	ID         int64     `json:"id"`
-	ScheduleID uuid.UUID `json:"schedule_id"`
-	// success = run completed without execution error. failure = errored. skipped = missed_run_policy decided to skip. Note: success does not guarantee expected_outputs were produced — output completeness is a separate monitoring concern.
-	Status    string    `json:"status"`
-	StartedAt time.Time `json:"started_at"`
-	// When the run finished. NULL = still running or crashed. NULL + old started_at = abandoned/crashed run (same pattern as sessions.ended_at).
-	EndedAt *time.Time `json:"ended_at"`
-	// Error details on failure. NULL on success/skip.
-	Error *string `json:"error"`
-	// Run-specific data: produced artifact IDs, execution duration, backend-specific info.
-	Metadata  json.RawMessage `json:"metadata"`
-	CreatedAt time.Time       `json:"created_at"`
-}
-
-// Session orchestration boundary — explicit start/end, mode, and attempt container. Distinct from journal: journal is post-hoc reflection (plan, context, reflection, metrics), sessions are in-progress orchestration. A session ending may produce a journal(kind='reflection') entry, linked via journal_id. No updated_at — sessions are write-once with ended_at set on completion.
-type Session struct {
-	ID uuid.UUID `json:"id"`
-	// Learning domain for this session (same convention as concepts.domain).
-	Domain string `json:"domain"`
-	// retrieval: recall-based testing (no hints). practice: active problem-solving with coaching. mixed: combination of retrieval and practice. review: revisiting previously solved items. reading: comprehension-focused (DDIA, O'Reilly, literary texts).
-	SessionMode string `json:"session_mode"`
-	// Optional link to the reflection journal entry written after the session. The session produces the journal entry, not the other way around. SET NULL on journal entry deletion.
-	JournalID *int64 `json:"journal_id"`
-	// If this session was planned in the daily plan, link here. Enables plan adherence analysis. SET NULL on plan item deletion.
-	DailyPlanItemID *uuid.UUID `json:"daily_plan_item_id"`
-	// Session start time. DEFAULT now() for immediate starts.
-	StartedAt time.Time `json:"started_at"`
-	// NULL until session ends. NULL + old started_at = abandoned/crashed session.
-	EndedAt *time.Time `json:"ended_at"`
-	// Session orchestration details: coaching prompt used, session summary, configuration. Not queryable — stays in JSONB.
-	Metadata  []byte    `json:"metadata"`
-	CreatedAt time.Time `json:"created_at"`
-}
-
 // External data source sync configuration. Provider column distinguishes Notion, Linear, etc. UPGRADE PATH: when a second provider is added for the same role (e.g. Google Calendar for tasks), change UNIQUE(role) to UNIQUE(provider, role) to allow multiple sources per role.
-type Source struct {
+type SyncSource struct {
 	ID uuid.UUID `json:"id"`
 	// Identifier in the external system (e.g. Notion database ID). UNIQUE — one source config per external resource.
 	ExternalID  string `json:"external_id"`
@@ -1391,33 +1552,10 @@ type Source struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
-// Append-only historical observation layer. Each row is a frozen snapshot of what a derived view (weekly_review, etc.) looked like at computed_at, based on the evidence set captured in evidence. Never updated after insert. Never invalidated by TTL. Never written by live handlers — only by secondary consolidation processes. Readers get historical state, never current state.
-type Synthesis struct {
-	ID uuid.UUID `json:"id"`
-	// What kind of entity this synthesis describes. First slice allows only "week"; future slices extend via ALTER TABLE to add "goal", "project", "concept".
-	SubjectType string `json:"subject_type"`
-	// UUID subject identity for entity-based subjects (goal, project, concept in future slices). NULL when subject uses a string key (e.g. week). chk_syntheses_subject_identity requires at least one of subject_id or subject_key to be set.
-	SubjectID *uuid.UUID `json:"subject_id"`
-	// String subject identity for time-bucket subjects like week (ISO week key e.g. "2026-W15"). NULL when subject uses a UUID. chk_syntheses_subject_identity requires at least one of subject_id or subject_key to be set.
-	SubjectKey *string `json:"subject_key"`
-	// Which view this synthesis captures. First slice allows only "weekly_review"; future slices extend via ALTER TABLE. A (subject_type, kind) pair determines the body schema.
-	Kind string `json:"kind"`
-	// Structured snapshot payload. Shape is determined by kind — for weekly_review the Go type is synthesis.WeeklyReviewBody. NEVER a free-text LLM dump. Always a typed Go struct marshaled to JSON.
-	Body []byte `json:"body"`
-	// Reference list of primary-state ids that contributed to this snapshot. Shape: [{"type": "task", "id": "..."}, {"type": "session", "id": "..."}, ...]. Used to compute evidence_hash for dedup and (in future) reverse lookup.
-	Evidence []byte `json:"evidence"`
-	// SHA-256 hex of canonical_json(evidence). Acts as the dedup identity for append-only writes: if the same evidence set appears again, ON CONFLICT DO NOTHING skips the insert. Evidence changes between runs produce a new row (historical accumulation), not an overwrite.
-	EvidenceHash string `json:"evidence_hash"`
-	// When this snapshot was written. Never updated after insert. For the same (subject, kind), ORDER BY computed_at DESC LIMIT 1 gives the latest observation; the full ORDER BY gives the historical timeline.
-	ComputedAt time.Time `json:"computed_at"`
-	// Label identifying the writer process and invocation mode, e.g. "consolidation:weekly:manual" for a manually-triggered consolidation run. Free-text by design — this field is a label for observability, not a dispatch key. Live handlers MUST NOT write rows and MUST NOT use this field.
-	ComputedBy string `json:"computed_by"`
-}
-
-// Canonical tag registry. Fine-grained labels (two-pointers, error-handling). Auto-extracted from notes, resolved through tag_aliases pipeline.
+// Canonical tag registry. Fine-grained labels (two-pointers, error-handling). Auto-extracted from obsidian notes, resolved through tag_aliases pipeline.
 type Tag struct {
 	ID uuid.UUID `json:"id"`
-	// Canonical form (e.g. two-pointers, dp). Controlled vocabulary for LeetCode patterns, weaknesses, improvements.
+	// Canonical form (e.g. two-pointers, dp). Controlled vocabulary for LeetCode patterns. Format: standard slug, OR namespaced slug like weakness:state-transition / improvement:edge-cases (chk_tag_slug_format).
 	Slug string `json:"slug"`
 	Name string `json:"name"`
 	// Hierarchical parent tag. SET NULL on parent deletion — orphaned tags remain valid.
@@ -1443,56 +1581,104 @@ type TagAlias struct {
 	CreatedAt   time.Time  `json:"created_at"`
 }
 
-// Work items with GTD-informed lifecycle. Status: inbox (captured, not clarified) → todo (clarified, actionable) → in-progress → done. someday = interested but not now, reviewed in Weekly Review. inbox tasks lack project/due/priority — clarification promotes them to todo.
+// Inter-agent coordination work units (NOT personal GTD todos — those live in todos). One requester agent asks one assignee agent to do work. Lifecycle: submitted → working → completed | canceled. chk_tasks_state_timestamps makes illegal state/timestamp combinations physically impossible at the DB layer, independent of any Go-side validation. Conversation history is stored in task_messages; structured deliverables in artifacts. A completed task must have at least one response message AND at least one artifact — enforced by Go transition logic (Store.Complete), not by DB CHECK, because the multi-table invariant cannot be expressed as a single-row constraint.
 type Task struct {
-	ID    uuid.UUID `json:"id"`
-	Title string    `json:"title"`
-	// GTD lifecycle: inbox → todo | someday. todo → in-progress → done. inbox = captured but not clarified (missing project/due/priority). someday = interested but not acting now — reviewed periodically.
-	Status       TaskStatus `json:"status"`
-	Due          *time.Time `json:"due"`
-	ProjectID    *uuid.UUID `json:"project_id"`
-	NotionPageID *string    `json:"notion_page_id"`
-	CompletedAt  *time.Time `json:"completed_at"`
+	ID uuid.UUID `json:"id"`
+	// Agent that submitted the task. FK to agents — historical references never dangle. Renamed from "source" to align with A2A vocabulary and disambiguate from events.source (origin system).
+	Requester string `json:"requester"`
+	// Agent expected to perform the work. FK to agents. Renamed from "target" to align with A2A vocabulary.
+	Assignee string `json:"assignee"`
+	// Short human-readable task label. Non-blank (chk_task_title_not_blank).
+	Title string `json:"title"`
+	// Lifecycle state. Four values: submitted (created, not yet accepted), working (assignee accepted, in flight), completed (response + artifact delivered), canceled (requester canceled). Failed/rejected/input_required are deferred — no current handler produces them.
+	State TaskState `json:"state"`
+	// When the requester created this task. DEFAULT now() — always set at insertion time.
+	SubmittedAt time.Time `json:"submitted_at"`
+	// When the assignee transitioned the task to working. NULL iff state=submitted or canceled-from-submitted (enforced by chk_tasks_state_timestamps).
+	AcceptedAt *time.Time `json:"accepted_at"`
+	// When the assignee delivered the final response+artifact. NULL unless state=completed.
+	CompletedAt *time.Time `json:"completed_at"`
+	// When the requester canceled the task. NULL unless state=canceled. Mutually exclusive with completed_at.
+	CanceledAt *time.Time `json:"canceled_at"`
+	// Non-routing task info: deadline, priority hint, correlation keys. JSONB for flexibility; promote fields to columns when query patterns demand it. TODO(coordination): when query patterns stabilise, promote deadline and correlation_id to first-class columns.
+	Metadata []byte `json:"metadata"`
+}
+
+// Ordered request/response conversation turns on a task. Parts column is a JSONB array of a2a.Part values (flattened form). Hard size caps (16 parts max, 32 KB total) are DB-enforced bloat prevention — anything larger belongs in artifacts, not messages.
+type TaskMessage struct {
+	ID uuid.UUID `json:"id"`
+	// Parent task. CASCADE — messages die with their task.
+	TaskID uuid.UUID `json:"task_id"`
+	// request = message from requester to assignee. response = message from assignee back to requester. Two values only; system messages are deferred until a real use case appears.
+	Role MessageRole `json:"role"`
+	// Order within a task conversation, 0-based. UNIQUE(task_id, position) prevents duplicates and out-of-order inserts.
+	Position int32 `json:"position"`
+	// JSONB array of a2a.Part values in a2a-go's flattened format. Each part is {"text": "..."} or {"data": {...}}. Serialized/deserialized by a2a-go — Go code never hand-rolls this shape.
+	Parts []byte `json:"parts"`
+	// Row insertion timestamp.
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// Personal GTD work items. Distinct from the tasks coordination entity (inter-agent work units). Lifecycle: inbox (captured, not clarified) → todo (clarified, actionable) → in_progress → done. someday = interested but not now, reviewed in Weekly Review. inbox items lack project/due/priority — clarification promotes them to todo.
+type Todo struct {
+	ID uuid.UUID `json:"id"`
+	// Short summary of the todo. Non-blank (chk_todo_title_not_blank).
+	Title string `json:"title"`
+	// GTD lifecycle: inbox → todo | someday. todo → in_progress → done. inbox = captured but not clarified (missing project/due/priority). someday = interested but not acting now — reviewed periodically.
+	State TodoState `json:"state"`
+	// Due date. NULL = no deadline.
+	Due *time.Time `json:"due"`
+	// Optional parent project. SET NULL on project deletion — the todo survives unclassified.
+	ProjectID        *uuid.UUID `json:"project_id"`
+	ExternalProvider *string    `json:"external_provider"`
+	ExternalRef      *string    `json:"external_ref"`
+	// When the todo was completed. NULL unless state=done, enforced by chk_todo_completed_at_consistency.
+	CompletedAt *time.Time `json:"completed_at"`
 	// Required energy level for GTD engage-by-energy. NULL = not set.
 	Energy *string `json:"energy"`
-	// Task priority for GTD engage-by-priority. NULL = not set.
-	Priority      *string `json:"priority"`
-	RecurInterval *int32  `json:"recur_interval"`
-	// Recurrence unit. NULL = non-recurring task.
-	RecurUnit   *string `json:"recur_unit"`
-	Description string  `json:"description"`
-	// Who executes this task. FK to participant. Default human. Go layer validates participant.task_assignable = true.
+	// Todo priority for GTD engage-by-priority. NULL = not set.
+	Priority *string `json:"priority"`
+	// Recurrence frequency count. NULL = non-recurring. Paired with recur_unit by chk_todo_recurrence_pair.
+	RecurInterval *int32 `json:"recur_interval"`
+	// Recurrence unit. NULL = non-recurring todo.
+	RecurUnit *string `json:"recur_unit"`
+	// Free-text detail. Empty string = no detail.
+	Description string `json:"description"`
+	// Agent responsible for executing this todo. FK to agents. Default human. Capability enforcement is Go-side (agent.Authorize), not DB-side.
 	Assignee string `json:"assignee"`
-	// Which participant created or imported this task into the system. FK to participant. Default human. Examples: human (manual or synced from external tool), hq (morning briefing / directive).
-	CreatedBy string    `json:"created_by"`
+	// Which agent created or imported this todo into the system. FK to agents. Default human. Examples: human (manual or synced from external tool), hq (morning briefing).
+	CreatedBy string `json:"created_by"`
+	// Row insertion timestamp.
 	CreatedAt time.Time `json:"created_at"`
 	// Set explicitly by application in UPDATE queries. No trigger — application-managed.
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
-// Per-occurrence skip history for recurring tasks.
-type TaskSkip struct {
-	ID     uuid.UUID `json:"id"`
-	TaskID uuid.UUID `json:"task_id"`
+// Per-occurrence skip history for recurring todo items.
+type TodoSkip struct {
+	ID uuid.UUID `json:"id"`
+	// Which recurring todo was skipped. CASCADE — skips die with their todo.
+	TodoID uuid.UUID `json:"todo_id"`
 	// Due date when skip was detected by cron.
 	OriginalDue time.Time `json:"original_due"`
 	// The occurrence date that was missed.
 	SkippedDate time.Time `json:"skipped_date"`
 	// auto-expired (cron detected overdue) or manual (user skipped).
-	Reason    string    `json:"reason"`
+	Reason string `json:"reason"`
+	// Row insertion timestamp.
 	CreatedAt time.Time `json:"created_at"`
 }
 
 // High-level knowledge domains (Go, AI, System Design). 10-20, manually managed. Used for content categorization and feed association.
 type Topic struct {
 	ID uuid.UUID `json:"id"`
-	// URL-safe identifier (e.g. system-design). Used in feed_topics and content_topics junctions.
+	// URL-safe identifier (e.g. system-design). Used in feed_topics and content_topics junctions. Format: lowercase alphanumeric segments separated by single hyphens (chk_topic_slug_format) — no consecutive or trailing hyphens.
 	Slug        string `json:"slug"`
 	Name        string `json:"name"`
 	Description string `json:"description"`
 	// Optional emoji or icon identifier for UI display.
 	Icon *string `json:"icon"`
-	// Display ordering. Lower = higher priority.
+	// Priority tier for display ordering (lower = higher priority). Convention: sort_order is for tier-based UI placement that may have gaps; position is for sequence-based 0-based indexing within a parent. See top-of-file ordering convention block.
 	SortOrder int32     `json:"sort_order"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
@@ -1505,7 +1691,8 @@ type TopicMonitor struct {
 	// Search keywords for this topic. Used by monitoring pipeline to discover new content.
 	Keywords []string `json:"keywords"`
 	// Specific source URLs or domains to monitor for this topic.
-	Sources   []string  `json:"sources"`
+	Sources []string `json:"sources"`
+	// Cron expression string (e.g. "0 */6 * * *"). Format validated by the Go scheduler — DB only enforces non-blank via chk_topic_monitor_schedule_not_blank. NOT a label like feeds.schedule.
 	Schedule  string    `json:"schedule"`
 	Enabled   bool      `json:"enabled"`
 	CreatedAt time.Time `json:"created_at"`
@@ -1515,7 +1702,7 @@ type TopicMonitor struct {
 // System users. Currently single-admin only.
 type User struct {
 	ID uuid.UUID `json:"id"`
-	// Login identity. Unique.
+	// Login identity. Unique. Basic structural validation via chk_users_email_format (full RFC 5322 compliance is enforced at the application layer).
 	Email string `json:"email"`
 	// Single-value placeholder. Currently only admin exists. If no second role materializes by public API launch, delete this column. CHECK uses IN() syntax for easy extension.
 	Role      string    `json:"role"`

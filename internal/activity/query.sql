@@ -62,17 +62,17 @@ DELETE FROM events WHERE timestamp < @cutoff;
 
 -- name: CountEventsBySourcePrefix :one
 -- Count events matching an event_type and source_id prefix since a given time.
--- Used for double-complete detection: count today's task_completed events for a specific task.
+-- Used for double-complete detection: count today's todo_completed events for a specific todo item.
 SELECT count(*)::int FROM events
 WHERE event_type = @event_type
   AND source_id LIKE @source_prefix || '%'
   AND timestamp >= @since;
 
 -- name: CompletionEventsByProjectSince :many
--- Count task completions per project from activity events since the given time.
--- Captures both one-time and recurring task completions (recurring tasks reset
--- status to "To Do" in the tasks table, making snapshot queries miss them).
--- Sources: "task_completed" events from MCP/HTTP, plus "task_status_change" events
+-- Count todo completions per project from activity events since the given time.
+-- Captures both one-time and recurring todo completions (recurring items reset
+-- state to "todo" in the todo_items table, making snapshot queries miss them).
+-- Sources: "todo_completed" events from MCP/HTTP, plus "todo_state_change" events
 -- from Notion sync where metadata status is "Done".
 -- Deduplicates by (title, day) to avoid double-counting when MCP complete triggers
 -- a Notion webhook in the same day.
@@ -84,8 +84,8 @@ WITH completions AS (
     FROM events
     WHERE timestamp >= @since
       AND (
-          event_type = 'task_completed'
-          OR (event_type = 'task_status_change' AND metadata->>'status' = 'Done')
+          event_type = 'todo_completed'
+          OR (event_type = 'todo_state_change' AND metadata->>'status' = 'Done')
       )
     ORDER BY COALESCE(title, ''), timestamp::date, timestamp ASC
 )

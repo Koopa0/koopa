@@ -5,7 +5,7 @@
 // first-party content (article / essay / build-log / til / note /
 // digest) in several load-bearing ways: they have an external canonical
 // URL, they skip editorial review (curate = publish), they do not
-// participate in review_queue, and their RSS surface differs from
+// participate in editorial_queue, and their RSS surface differs from
 // first-party articles. See migrations/005_bookmarks_schema.up.sql
 // for the schema and the Next phase design pass for the rationale.
 //

@@ -3,49 +3,49 @@ package mcp
 import (
 	"testing"
 
-	"github.com/Koopa0/koopa0.dev/internal/task"
+	"github.com/Koopa0/koopa0.dev/internal/todo"
 )
 
 func TestValidateTransition(t *testing.T) {
 	tests := []struct {
-		from    task.Status
+		name    string
+		from    todo.State
 		action  string
 		wantErr bool
 	}{
 		// inbox: can clarify or defer
-		{task.StatusInbox, "clarify", false},
-		{task.StatusInbox, "defer", false},
-		{task.StatusInbox, "start", true},
-		{task.StatusInbox, "complete", true},
+		{name: "inbox clarify", from: todo.StateInbox, action: "clarify", wantErr: false},
+		{name: "inbox defer", from: todo.StateInbox, action: "defer", wantErr: false},
+		{name: "inbox start", from: todo.StateInbox, action: "start", wantErr: true},
+		{name: "inbox complete", from: todo.StateInbox, action: "complete", wantErr: true},
 
 		// todo: can start, complete, or defer
-		{task.StatusTodo, "start", false},
-		{task.StatusTodo, "complete", false},
-		{task.StatusTodo, "defer", false},
-		{task.StatusTodo, "clarify", true},
+		{name: "todo start", from: todo.StateTodo, action: "start", wantErr: false},
+		{name: "todo complete", from: todo.StateTodo, action: "complete", wantErr: false},
+		{name: "todo defer", from: todo.StateTodo, action: "defer", wantErr: false},
+		{name: "todo clarify", from: todo.StateTodo, action: "clarify", wantErr: true},
 
-		// in-progress: can complete or defer
-		{task.StatusInProgress, "complete", false},
-		{task.StatusInProgress, "defer", false},
-		{task.StatusInProgress, "start", true},
-		{task.StatusInProgress, "clarify", true},
+		// in_progress: can complete or defer
+		{name: "in_progress complete", from: todo.StateInProgress, action: "complete", wantErr: false},
+		{name: "in_progress defer", from: todo.StateInProgress, action: "defer", wantErr: false},
+		{name: "in_progress start", from: todo.StateInProgress, action: "start", wantErr: true},
+		{name: "in_progress clarify", from: todo.StateInProgress, action: "clarify", wantErr: true},
 
 		// someday: can clarify or start
-		{task.StatusSomeday, "clarify", false},
-		{task.StatusSomeday, "start", false},
-		{task.StatusSomeday, "complete", true},
-		{task.StatusSomeday, "defer", true},
+		{name: "someday clarify", from: todo.StateSomeday, action: "clarify", wantErr: false},
+		{name: "someday start", from: todo.StateSomeday, action: "start", wantErr: false},
+		{name: "someday complete", from: todo.StateSomeday, action: "complete", wantErr: true},
+		{name: "someday defer", from: todo.StateSomeday, action: "defer", wantErr: true},
 
 		// done: no transitions
-		{task.StatusDone, "clarify", true},
-		{task.StatusDone, "start", true},
-		{task.StatusDone, "complete", true},
-		{task.StatusDone, "defer", true},
+		{name: "done clarify", from: todo.StateDone, action: "clarify", wantErr: true},
+		{name: "done start", from: todo.StateDone, action: "start", wantErr: true},
+		{name: "done complete", from: todo.StateDone, action: "complete", wantErr: true},
+		{name: "done defer", from: todo.StateDone, action: "defer", wantErr: true},
 	}
 
 	for _, tt := range tests {
-		name := string(tt.from) + " → " + tt.action
-		t.Run(name, func(t *testing.T) {
+		t.Run(tt.name, func(t *testing.T) {
 			err := validateTransition(tt.from, tt.action)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("validateTransition(%q, %q) error = %v, wantErr = %v", tt.from, tt.action, err, tt.wantErr)

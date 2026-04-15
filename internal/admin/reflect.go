@@ -4,9 +4,10 @@ import (
 	"net/http"
 	"time"
 
+	agentnote "github.com/Koopa0/koopa0.dev/internal/agent/note"
 	"github.com/Koopa0/koopa0.dev/internal/api"
 	"github.com/Koopa0/koopa0.dev/internal/daily"
-	"github.com/Koopa0/koopa0.dev/internal/journal"
+	"github.com/Koopa0/koopa0.dev/internal/hypothesis"
 )
 
 // ReflectDaily handles GET /api/admin/reflect/daily?date=2026-04-08.
@@ -68,15 +69,15 @@ func (h *Handler) ReflectDaily(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Completed tasks.
-	if tasks, err := h.tasks.CompletedTasksDetailSince(ctx, date); err == nil {
+	// Completed todo items.
+	if todos, err := h.todos.CompletedItemsDetailSince(ctx, date); err == nil {
 		endOfDay := date.AddDate(0, 0, 1)
-		for i := range tasks {
-			if tasks[i].CompletedAt != nil && tasks[i].CompletedAt.Before(endOfDay) {
+		for i := range todos {
+			if todos[i].CompletedAt != nil && todos[i].CompletedAt.Before(endOfDay) {
 				out.CompletedTasks = append(out.CompletedTasks, completedTask{
-					ID:    tasks[i].ID.String(),
-					Title: tasks[i].Title,
-					Area:  tasks[i].ProjectTitle,
+					ID:    todos[i].ID.String(),
+					Title: todos[i].Title,
+					Area:  todos[i].ProjectTitle,
 				})
 			}
 		}
@@ -195,31 +196,31 @@ func (h *Handler) ReflectWeekly(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Task completions.
-	if tasks, err := h.tasks.CompletedTasksDetailSince(ctx, weekStart); err == nil {
-		for i := range tasks {
-			if tasks[i].CompletedAt != nil && tasks[i].CompletedAt.Before(weekEnd) {
+	// Todo completions.
+	if todos, err := h.todos.CompletedItemsDetailSince(ctx, weekStart); err == nil {
+		for i := range todos {
+			if todos[i].CompletedAt != nil && todos[i].CompletedAt.Before(weekEnd) {
 				out.Metrics.TasksCompleted++
 			}
 		}
 	}
 
-	// Insights needing check.
-	if insights, err := h.insights.Unverified(ctx, 20); err == nil {
-		for i := range insights {
-			ageDays := int(time.Since(insights[i].CreatedAt).Hours() / 24)
-			ins := &insights[i]
+	// Hypotheses needing check (was: insights).
+	if records, err := h.hypotheses.Unverified(ctx, 20); err == nil {
+		for i := range records {
+			ageDays := int(time.Since(records[i].CreatedAt).Hours() / 24)
+			rec := &records[i]
 			evidenceCount := 0
-			if ev, ok := ins.Metadata["evidence"].([]any); ok {
+			if ev, ok := rec.Metadata["evidence"].([]any); ok {
 				evidenceCount = len(ev)
 			}
 			out.InsightsNeedingCheck = append(out.InsightsNeedingCheck, map[string]any{
-				"id":                     ins.ID,
-				"hypothesis":             ins.Hypothesis,
-				"invalidation_condition": ins.InvalidationCondition,
-				"status":                 string(ins.Status),
-				"source":                 ins.Source,
-				"observed_date":          ins.ObservedDate.Format(time.DateOnly),
+				"id":                     rec.ID,
+				"hypothesis":             rec.Claim,
+				"invalidation_condition": rec.InvalidationCondition,
+				"status":                 string(rec.State),
+				"source":                 rec.Author,
+				"observed_date":          rec.ObservedDate.Format(time.DateOnly),
 				"age_days":               ageDays,
 				"evidence_count":         evidenceCount,
 			})
@@ -230,44 +231,54 @@ func (h *Handler) ReflectWeekly(w http.ResponseWriter, r *http.Request) {
 }
 
 // JournalList handles GET /api/admin/reflect/journal.
+//
+// TODO(coordination-rebuild): rename endpoint to /api/admin/reflect/notes
+// once the admin frontend catches up. Keeping the URL path stable during
+// the rebuild so the frontend dispatch does not break.
 func (h *Handler) JournalList(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	q := r.URL.Query()
 
-	kind := q.Get("kind")
-	since := h.today().AddDate(0, -1, 0) // default: last month
+	kindRaw := q.Get("kind")
+	since := h.today().AddDate(0, -1, 0)
 
-	var kindPtr, sourcePtr *string
-	if kind != "" {
-		kindPtr = &kind
+	var kindPtr *agentnote.Kind
+	var sourcePtr *string
+	if kindRaw != "" {
+		k := agentnote.Kind(kindRaw)
+		kindPtr = &k
 	}
 
-	entries, err := h.journal.EntriesByDateRange(ctx, since, time.Now(), kindPtr, sourcePtr)
+	notes, err := h.notes.NotesInRange(ctx, since, time.Now(), kindPtr, sourcePtr)
 	if err != nil {
-		h.logger.Error("journal list", "error", err)
+		h.logger.Error("notes list", "error", err)
 		api.Error(w, http.StatusInternalServerError, "INTERNAL", "internal error")
 		return
 	}
-	if entries == nil {
-		entries = []journal.Entry{}
+	if notes == nil {
+		notes = []agentnote.Note{}
 	}
 
-	api.Encode(w, http.StatusOK, entries)
+	api.Encode(w, http.StatusOK, notes)
 }
 
 // InsightsList handles GET /api/admin/reflect/insights.
+//
+// TODO(coordination-rebuild): rename endpoint path to /api/admin/reflect/hypotheses
+// once the admin frontend catches up. Kept under the old URL during the rebuild.
 func (h *Handler) InsightsList(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	status := r.URL.Query().Get("status")
-	var statusPtr *string
-	if status != "" {
-		statusPtr = &status
+	stateRaw := r.URL.Query().Get("status")
+	var statePtr *hypothesis.State
+	if stateRaw != "" {
+		s := hypothesis.State(stateRaw)
+		statePtr = &s
 	}
 
-	insights, err := h.insights.ByStatus(ctx, statusPtr, 50)
+	records, err := h.hypotheses.ByState(ctx, statePtr, 50)
 	if err != nil {
-		h.logger.Error("insights list", "error", err)
+		h.logger.Error("hypotheses list", "error", err)
 		api.Error(w, http.StatusInternalServerError, "INTERNAL", "internal error")
 		return
 	}
@@ -283,21 +294,21 @@ func (h *Handler) InsightsList(w http.ResponseWriter, r *http.Request) {
 		EvidenceCount         int    `json:"evidence_count"`
 	}
 
-	result := make([]insightSummary, len(insights))
-	for i := range insights {
-		ins := &insights[i]
+	result := make([]insightSummary, len(records))
+	for i := range records {
+		rec := &records[i]
 		evidenceCount := 0
-		if ev, ok := ins.Metadata["evidence"].([]any); ok {
+		if ev, ok := rec.Metadata["evidence"].([]any); ok {
 			evidenceCount = len(ev)
 		}
 		result[i] = insightSummary{
-			ID:                    ins.ID,
-			Hypothesis:            ins.Hypothesis,
-			InvalidationCondition: ins.InvalidationCondition,
-			Status:                string(ins.Status),
-			Source:                ins.Source,
-			ObservedDate:          ins.ObservedDate.Format(time.DateOnly),
-			AgeDays:               int(time.Since(ins.CreatedAt).Hours() / 24),
+			ID:                    rec.ID,
+			Hypothesis:            rec.Claim,
+			InvalidationCondition: rec.InvalidationCondition,
+			Status:                string(rec.State),
+			Source:                rec.Author,
+			ObservedDate:          rec.ObservedDate.Format(time.DateOnly),
+			AgeDays:               int(time.Since(rec.CreatedAt).Hours() / 24),
 			EvidenceCount:         evidenceCount,
 		}
 	}

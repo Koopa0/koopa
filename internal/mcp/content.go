@@ -226,62 +226,21 @@ func (s *Server) mcReadContent(ctx context.Context, input ManageContentInput) (*
 	return nil, ManageContentOutput{Content: toContentDetail(c), Action: "read"}, nil
 }
 
-func (s *Server) mcBookmarkRSS(ctx context.Context, input ManageContentInput) (*mcp.CallToolResult, ManageContentOutput, error) {
-	if s.feedEntries == nil {
-		return nil, ManageContentOutput{}, fmt.Errorf("feed entries store not configured")
-	}
-	if input.EntryID == nil || *input.EntryID == "" {
-		return nil, ManageContentOutput{}, fmt.Errorf("entry_id is required for bookmark_rss")
-	}
-	entryID, err := uuid.Parse(*input.EntryID)
-	if err != nil {
-		return nil, ManageContentOutput{}, fmt.Errorf("invalid entry_id: %w", err)
-	}
-
-	item, err := s.feedEntries.Item(ctx, entryID)
-	if err != nil {
-		return nil, ManageContentOutput{}, fmt.Errorf("fetching entry: %w", err)
-	}
-
-	// Build bookmark body: source URL + optional original content + personal comment.
-	var body strings.Builder
-	fmt.Fprintf(&body, "**Source:** %s\n\n", item.SourceURL)
-	if item.OriginalContent != nil && *item.OriginalContent != "" {
-		fmt.Fprintf(&body, "**Excerpt:**\n\n%s\n\n", truncate(*item.OriginalContent, 500))
-	}
-	if input.Comment != nil && *input.Comment != "" {
-		fmt.Fprintf(&body, "**Comment:**\n\n%s\n", *input.Comment)
-	}
-
-	title := item.Title
-	if input.Title != nil && *input.Title != "" {
-		title = *input.Title
-	}
-	slug := strings.ToLower(strings.ReplaceAll(title, " ", "-"))
-
-	src := "external"
-	srcType := content.SourceExternal
-	c, err := s.contents.CreateContent(ctx, &content.CreateParams{
-		Slug:        slug,
-		Title:       title,
-		Body:        body.String(),
-		Type:        content.TypeBookmark,
-		Status:      content.StatusDraft,
-		ReviewLevel: content.ReviewLight,
-		Source:      &src,
-		SourceType:  &srcType,
-	})
-	if err != nil {
-		return nil, ManageContentOutput{}, fmt.Errorf("creating bookmark: %w", err)
-	}
-
-	// Link the RSS entry to the newly created content.
-	if err := s.feedEntries.Curate(ctx, entryID, c.ID); err != nil {
-		s.logger.Warn("bookmark_rss: failed to curate entry", "entry_id", entryID, "content_id", c.ID, "error", err)
-	}
-
-	s.logger.Info("manage_content", "action", "bookmark_rss", "id", c.ID, "entry_id", entryID)
-	return nil, ManageContentOutput{Content: toContentDetail(c), Action: "bookmark_rss"}, nil
+func (s *Server) mcBookmarkRSS(_ context.Context, _ ManageContentInput) (*mcp.CallToolResult, ManageContentOutput, error) {
+	// TODO(coordination-rebuild): rewire bookmark_rss to bookmark.Store.Create.
+	//
+	// The original implementation wrote a contents row with type='bookmark'.
+	// The bookmarks table now lives separately (internal/bookmark) and the
+	// 'bookmark' value was dropped from the content_type enum. The correct
+	// path is:
+	//   1. Inject *bookmark.Store into Server (alongside contents)
+	//   2. Build a bookmark.CreateParams from the feed entry: URL/URLHash,
+	//      slug, title, excerpt, note (input.Comment), source_type=rss,
+	//      feed_entry_id, curated_by=callerIdentity
+	//   3. bookmarkStore.Create(ctx, params)
+	//   4. feedEntries.Curate(ctx, entryID, bookmark.ID) — the curate
+	//      target column may need to switch from contents.id to bookmarks.id
+	return nil, ManageContentOutput{}, fmt.Errorf("bookmark_rss: %w", ErrCoordinationRebuildPending)
 }
 
 func toContentDetail(c *content.Content) *ContentDetail {

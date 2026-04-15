@@ -130,3 +130,29 @@ LIMIT @max_results;
 -- name: DeleteOldIgnored :execrows
 -- Cleanup: delete ignored collected data older than the given cutoff.
 DELETE FROM feed_entries WHERE status = 'ignored' AND collected_at < @cutoff;
+
+-- name: CollectionStatsByFeed :many
+-- Per-feed aggregation since cutoff. Optional feed_id filter via narg.
+-- last_collected_at returns zero-time for feeds that have never been
+-- collected (LEFT JOIN with no matches → MAX is NULL → COALESCE to
+-- epoch). Caller checks IsZero() to distinguish "never collected".
+SELECT f.id, f.name,
+       COUNT(cd.id)::int AS total_items,
+       COALESCE(AVG(cd.relevance_score), 0)::float8 AS avg_score,
+       COALESCE(MAX(cd.collected_at), '0001-01-01'::timestamptz)::timestamptz AS last_collected_at
+FROM feeds f
+LEFT JOIN feed_entries cd ON cd.feed_id = f.id AND cd.collected_at >= @cutoff
+WHERE (sqlc.narg('feed_id')::uuid IS NULL OR f.id = sqlc.narg('feed_id'))
+GROUP BY f.id, f.name
+ORDER BY total_items DESC;
+
+-- name: CollectionStatsGlobal :one
+-- Global aggregation since cutoff. Optional feed_id filter via narg.
+SELECT COUNT(*)::int AS total_items,
+       COUNT(DISTINCT feed_id)::int AS total_feeds,
+       COALESCE(AVG(relevance_score), 0)::float8 AS avg_score,
+       COUNT(*) FILTER (WHERE status = 'unread')::int AS unread_count,
+       COUNT(*) FILTER (WHERE status = 'curated')::int AS curated_count
+FROM feed_entries
+WHERE collected_at >= @cutoff
+  AND (sqlc.narg('feed_id')::uuid IS NULL OR feed_id = sqlc.narg('feed_id'));

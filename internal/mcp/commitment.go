@@ -9,8 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/Koopa0/koopa0.dev/internal/directive"
-	"github.com/Koopa0/koopa0.dev/internal/insight"
+	"github.com/Koopa0/koopa0.dev/internal/hypothesis"
 	"github.com/Koopa0/koopa0.dev/internal/plan"
 	"github.com/Koopa0/koopa0.dev/internal/project"
 )
@@ -88,10 +87,7 @@ func (s *Server) resolveGoalFields(ctx context.Context, f map[string]any) []stri
 	}
 	// Resolve area slug/name → area_id UUID
 	if areaSlug, ok := f["area"].(string); ok && areaSlug != "" {
-		var areaID uuid.UUID
-		err := s.pool.QueryRow(ctx,
-			`SELECT id FROM areas WHERE slug = $1 OR LOWER(name) = LOWER($1)`, areaSlug,
-		).Scan(&areaID)
+		areaID, err := s.goals.AreaIDBySlugOrName(ctx, areaSlug)
 		if err == nil {
 			f["area_id"] = areaID.String()
 			delete(f, "area")
@@ -332,7 +328,7 @@ func (s *Server) commitMilestone(ctx context.Context, fields map[string]any) (st
 	return row.ID.String(), nil
 }
 
-func (s *Server) commitDirective(ctx context.Context, fields map[string]any) (string, error) {
+func (s *Server) commitDirective(_ context.Context, fields map[string]any) (string, error) {
 	source, _ := fields["source"].(string)
 	target, _ := fields["target"].(string)
 	priority, _ := fields["priority"].(string)
@@ -350,26 +346,25 @@ func (s *Server) commitDirective(ctx context.Context, fields map[string]any) (st
 		metadata, _ = json.Marshal(m)
 	}
 
-	d, err := s.directives.Create(ctx, &directive.CreateParams{
-		Source:     source,
-		Target:     target,
-		Priority:   priority,
-		Content:    content,
-		Metadata:   metadata,
-		IssuedDate: s.today(),
-	})
-	if err != nil {
-		return "", fmt.Errorf("creating directive: %w", err)
-	}
-	return fmt.Sprintf("%d", d.ID), nil
+	// TODO(coordination-rebuild): rewire to task.Store.Submit(auth, ...).
+	// Capability enforcement must go through agent.Authorize(
+	//     ctx, s.registry, s.callerIdentity(ctx), agent.ActionSubmitTask,
+	// ) before this call. Returning ErrCoordinationRebuildPending until the
+	// coordination task package exists.
+	_ = source
+	_ = target
+	_ = priority
+	_ = content
+	_ = metadata
+	return "", fmt.Errorf("commitDirective: %w", ErrCoordinationRebuildPending)
 }
 
 func (s *Server) commitInsight(ctx context.Context, fields map[string]any) (string, error) {
-	hypothesis, _ := fields["hypothesis"].(string)
+	hyp, _ := fields["hypothesis"].(string)
 	invalidation, _ := fields["invalidation_condition"].(string)
 	content, _ := fields["content"].(string)
 
-	if hypothesis == "" || invalidation == "" || content == "" {
+	if hyp == "" || invalidation == "" || content == "" {
 		return "", fmt.Errorf("hypothesis, invalidation_condition, and content are required for insight")
 	}
 
@@ -378,18 +373,18 @@ func (s *Server) commitInsight(ctx context.Context, fields map[string]any) (stri
 		metadata, _ = json.Marshal(m)
 	}
 
-	ins, err := s.insights.Create(ctx, &insight.CreateParams{
-		Source:                s.callerIdentity(ctx),
+	rec, err := s.hypotheses.Create(ctx, &hypothesis.CreateParams{
+		Author:                s.callerIdentity(ctx),
 		Content:               content,
-		Hypothesis:            hypothesis,
+		Claim:                 hyp,
 		InvalidationCondition: invalidation,
 		Metadata:              metadata,
 		ObservedDate:          s.today(),
 	})
 	if err != nil {
-		return "", fmt.Errorf("creating insight: %w", err)
+		return "", fmt.Errorf("creating hypothesis: %w", err)
 	}
-	return fmt.Sprintf("%d", ins.ID), nil
+	return fmt.Sprintf("%d", rec.ID), nil
 }
 
 func (s *Server) resolveLearningPlanFields(ctx context.Context, f map[string]any) []string {

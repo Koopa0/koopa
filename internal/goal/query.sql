@@ -1,6 +1,6 @@
 -- name: Goals :many
 SELECT id, title, description, status, area_id, quarter, deadline,
-       notion_page_id, created_at, updated_at
+       external_provider, external_ref, created_at, updated_at
 FROM goals ORDER BY status, deadline NULLS LAST, created_at DESC;
 
 -- name: UpdateGoalStatus :one
@@ -10,12 +10,12 @@ UPDATE goals SET
     updated_at = now()
 WHERE id = @id
 RETURNING id, title, description, status, area_id, quarter, deadline,
-          notion_page_id, created_at, updated_at;
+          external_provider, external_ref, created_at, updated_at;
 
 -- name: GoalByTitle :one
 -- Find a goal by case-insensitive title match.
 SELECT id, title, description, status, area_id, quarter, deadline,
-       notion_page_id, created_at, updated_at
+       external_provider, external_ref, created_at, updated_at
 FROM goals WHERE LOWER(title) = LOWER(@title);
 
 -- name: CreateGoal :one
@@ -23,11 +23,11 @@ FROM goals WHERE LOWER(title) = LOWER(@title);
 INSERT INTO goals (title, description, status, area_id, quarter, deadline)
 VALUES (@title, @description, @status::goal_status, @area_id, @quarter, @deadline)
 RETURNING id, title, description, status, area_id, quarter, deadline,
-          notion_page_id, created_at, updated_at;
+          external_provider, external_ref, created_at, updated_at;
 
 -- name: GoalByID :one
 SELECT id, title, description, status, area_id, quarter, deadline,
-       notion_page_id, created_at, updated_at
+       external_provider, external_ref, created_at, updated_at
 FROM goals WHERE id = @id;
 
 -- name: ActiveGoals :many
@@ -63,7 +63,7 @@ RETURNING id, goal_id, title, description, target_deadline, completed_at, positi
 -- name: GoalByIDWithArea :one
 -- Get a single goal with its area name.
 SELECT g.id, g.title, g.description, g.status, g.area_id, g.quarter, g.deadline,
-       g.notion_page_id, g.created_at, g.updated_at,
+       g.external_provider, external_ref, g.created_at, g.updated_at,
        COALESCE(a.name, '') AS area_name
 FROM goals g
 LEFT JOIN areas a ON a.id = g.area_id
@@ -97,7 +97,7 @@ RETURNING id, goal_id, title, description, target_deadline, completed_at, positi
 --
 -- Sources:
 --   milestone_completed     — milestones.completed_at where milestone.goal_id = @goal_id
---   task_completed          — tasks.completed_at where tasks.project_id ∈ (projects under this goal)
+--   todo_completed          — todos.completed_at where todos.project_id ∈ (projects under this goal)
 --   content_published       — contents.published_at where contents.project_id ∈ (projects under this goal)
 SELECT
     activity_type::text AS activity_type,
@@ -118,12 +118,12 @@ FROM (
     UNION ALL
 
     SELECT
-        'task_completed' AS activity_type,
+        'todo_completed' AS activity_type,
         t.title          AS title,
         t.id::text       AS ref_id,
         NULL::text       AS ref_slug,
         t.completed_at   AS ts
-    FROM tasks t
+    FROM todos t
     JOIN projects p ON p.id = t.project_id
     WHERE p.goal_id = @goal_id AND t.completed_at IS NOT NULL
 
@@ -143,3 +143,11 @@ FROM (
 ) AS activity
 ORDER BY ts DESC NULLS LAST
 LIMIT @max_results;
+
+-- name: AreaIDBySlugOrName :one
+-- Resolve an area identifier (slug or display name, case-insensitive on
+-- name) to its UUID. Used by propose_commitment when wiring goals or
+-- projects to an area without forcing the caller to know UUIDs.
+SELECT id FROM areas
+WHERE slug = @identifier OR LOWER(name) = LOWER(@identifier)
+LIMIT 1;

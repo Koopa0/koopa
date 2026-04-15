@@ -1,8 +1,8 @@
 // Package daily provides daily plan item storage.
 //
-// Daily plan items represent tasks committed to a specific day's plan.
+// Daily plan items represent todo items committed to a specific day's plan.
 // They are the source of truth for "what was planned today" — distinct
-// from tasks themselves (which track work lifecycle).
+// from todo_items themselves (which track GTD lifecycle).
 package daily
 
 import (
@@ -25,44 +25,44 @@ const (
 	StatusDropped  Status = "dropped"
 )
 
-// Item represents a daily plan item with joined task details.
+// Item represents a daily plan item with joined todo item details.
 type Item struct {
 	ID           uuid.UUID  `json:"id"`
 	PlanDate     time.Time  `json:"plan_date"`
-	TaskID       uuid.UUID  `json:"task_id"`
+	TodoID   uuid.UUID  `json:"todo_id"`
 	SelectedBy   string     `json:"selected_by"`
 	Position     int32      `json:"position"`
 	Reason       *string    `json:"reason,omitempty"`
-	JournalID    *int64     `json:"journal_id,omitempty"`
+	AgentNoteID  *int64     `json:"agent_note_id,omitempty"`
 	Status       Status     `json:"status"`
 	CreatedAt    time.Time  `json:"created_at"`
 	UpdatedAt    time.Time  `json:"updated_at"`
-	TaskTitle    string     `json:"task_title"`
-	TaskStatus   string     `json:"task_status"`
-	TaskDue      *time.Time `json:"task_due,omitempty"`
-	TaskEnergy   *string    `json:"task_energy,omitempty"`
-	TaskPriority *string    `json:"task_priority,omitempty"`
-	TaskAssignee string     `json:"task_assignee"`
+	TodoTitle    string     `json:"todo_title"`
+	TodoState    string     `json:"todo_state"`
+	TodoDue      *time.Time `json:"todo_due,omitempty"`
+	TodoEnergy   *string    `json:"todo_energy,omitempty"`
+	TodoPriority *string    `json:"todo_priority,omitempty"`
+	TodoAssignee string     `json:"todo_assignee"`
 	ProjectTitle string     `json:"project_title"`
 	ProjectSlug  string     `json:"project_slug"`
 }
 
 // CreateItemParams holds the parameters for creating a daily plan item.
 type CreateItemParams struct {
-	PlanDate   time.Time
-	TaskID     uuid.UUID
-	SelectedBy string
-	Position   int32
-	Reason     *string
-	JournalID  *int64
+	PlanDate    time.Time
+	TodoID  uuid.UUID
+	SelectedBy  string
+	Position    int32
+	Reason      *string
+	AgentNoteID *int64
 }
 
 // UpsertParams holds the parameters for upserting a daily plan item.
 type UpsertParams struct {
-	PlanDate   time.Time
-	TaskID     uuid.UUID
-	SelectedBy string
-	Position   int32
-	Reason     *string
-	JournalID  *int64
+	PlanDate    time.Time
+	TodoID  uuid.UUID
+	SelectedBy  string
+	Position    int32
+	Reason      *string
+	AgentNoteID *int64
 }

@@ -62,11 +62,11 @@ func (s *Store) ActiveSession(ctx context.Context) (*Session, error) {
 	return rowToSession(&row), nil
 }
 
-// EndSession ends the active session. Optionally links a journal entry.
-func (s *Store) EndSession(ctx context.Context, sessionID uuid.UUID, journalID *int64) (*Session, error) {
+// EndSession ends the active session. Optionally links an agent_note entry.
+func (s *Store) EndSession(ctx context.Context, sessionID uuid.UUID, agentNoteID *int64) (*Session, error) {
 	row, err := s.q.EndSession(ctx, db.EndSessionParams{
-		ID:        sessionID,
-		JournalID: journalID,
+		ID:          sessionID,
+		AgentNoteID: agentNoteID,
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -225,8 +225,8 @@ func (s *Store) LinkItems(ctx context.Context, sourceID, targetID uuid.UUID, rel
 		return fmt.Errorf("%w: unknown relation_type %q", ErrInvalidInput, relation)
 	}
 	if err := s.q.InsertItemRelation(ctx, db.InsertItemRelationParams{
-		SourceItemID: sourceID,
-		TargetItemID: targetID,
+		AnchorID: sourceID,
+		RelatedID: targetID,
 		RelationType: string(relation),
 	}); err != nil {
 		return fmt.Errorf("inserting item relation: %w", err)
@@ -246,7 +246,7 @@ func (s *Store) RecordAttempt(ctx context.Context, itemID, sessionID uuid.UUID, 
 		metadata = json.RawMessage("{}")
 	}
 	row, err := s.q.CreateAttempt(ctx, db.CreateAttemptParams{
-		LearningItemID:  itemID,
+		LearningTargetID:  itemID,
 		SessionID:       &sessionID,
 		AttemptNumber:   maxNum + 1,
 		Outcome:         outcome,
@@ -260,7 +260,7 @@ func (s *Store) RecordAttempt(ctx context.Context, itemID, sessionID uuid.UUID, 
 	}
 	return &Attempt{
 		ID:              row.ID,
-		ItemID:          row.LearningItemID,
+		ItemID:          row.LearningTargetID,
 		SessionID:       row.SessionID,
 		AttemptNumber:   row.AttemptNumber,
 		Outcome:         row.Outcome,
@@ -339,7 +339,7 @@ func (s *Store) AttemptsBySession(ctx context.Context, sessionID uuid.UUID) ([]A
 		r := &rows[i]
 		result[i] = Attempt{
 			ID:              r.ID,
-			ItemID:          r.LearningItemID,
+			ItemID:          r.LearningTargetID,
 			SessionID:       r.SessionID,
 			AttemptNumber:   r.AttemptNumber,
 			Outcome:         r.Outcome,
@@ -360,7 +360,7 @@ func (s *Store) AttemptsBySession(ctx context.Context, sessionID uuid.UUID) ([]A
 // "how did this problem go last time?". Same shape as AttemptsBySession.
 func (s *Store) AttemptsByItem(ctx context.Context, itemID uuid.UUID, limit int32) ([]Attempt, error) {
 	rows, err := s.q.AttemptsByItem(ctx, db.AttemptsByItemParams{
-		LearningItemID: itemID,
+		LearningTargetID: itemID,
 		MaxResults:     limit,
 	})
 	if err != nil {
@@ -371,7 +371,7 @@ func (s *Store) AttemptsByItem(ctx context.Context, itemID uuid.UUID, limit int3
 		r := &rows[i]
 		result[i] = Attempt{
 			ID:              r.ID,
-			ItemID:          r.LearningItemID,
+			ItemID:          r.LearningTargetID,
 			SessionID:       r.SessionID,
 			AttemptNumber:   r.AttemptNumber,
 			Outcome:         r.Outcome,
@@ -629,12 +629,12 @@ func (s *Store) ItemVariations(ctx context.Context, domain *string, limit int32)
 	return result, nil
 }
 
-func rowToSession(r *db.Session) *Session {
+func rowToSession(r *db.LearningSession) *Session {
 	return &Session{
 		ID:              r.ID,
 		Domain:          r.Domain,
 		Mode:            Mode(r.SessionMode),
-		JournalID:       r.JournalID,
+		AgentNoteID:     r.AgentNoteID,
 		DailyPlanItemID: r.DailyPlanItemID,
 		StartedAt:       r.StartedAt,
 		EndedAt:         r.EndedAt,
@@ -720,7 +720,7 @@ func (s *Store) createAndReviewCard(ctx context.Context, itemID uuid.UUID, ratin
 	}
 
 	row, err := s.q.CreateCardForItem(ctx, db.CreateCardForItemParams{
-		LearningItemID: &itemID,
+		LearningTargetID: &itemID,
 		CardState:      state,
 		Due:            updated.Due,
 	})
@@ -853,7 +853,7 @@ func (s *Store) AttemptsByConcept(ctx context.Context, conceptID uuid.UUID, limi
 		r := &rows[i]
 		result[i] = Attempt{
 			ID:              r.ID,
-			ItemID:          r.LearningItemID,
+			ItemID:          r.LearningTargetID,
 			SessionID:       r.SessionID,
 			AttemptNumber:   r.AttemptNumber,
 			Outcome:         r.Outcome,

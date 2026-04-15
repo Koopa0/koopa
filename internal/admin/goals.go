@@ -232,7 +232,7 @@ func (h *Handler) GoalDetail(w http.ResponseWriter, r *http.Request) {
 			Title:  projSummaries[i].Title,
 			Status: string(projSummaries[i].Status),
 		}
-		if grouped, tErr := h.tasks.TasksByProjectGrouped(ctx, projSummaries[i].ID); tErr == nil {
+		if grouped, tErr := h.todos.ItemsByProjectGrouped(ctx, projSummaries[i].ID); tErr == nil {
 			total := len(grouped.InProgress) + len(grouped.Todo) + len(grouped.Done)
 			brief.TaskProgress = TaskProgress{Done: len(grouped.Done), Total: total}
 		}

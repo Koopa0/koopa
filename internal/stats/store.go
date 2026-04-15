@@ -1,10 +1,6 @@
+// Package stats aggregates cross-feature statistics for the admin
+// dashboard. All queries are sqlc-generated; see internal/stats/query.sql.
 package stats
-
-// Raw SQL is required here: stats aggregation spans 11 tables across different
-// feature packages. sqlc cannot express cross-table COUNT aggregation efficiently,
-// and creating per-table sqlc queries would duplicate the logic already in each
-// feature's own query.sql. Parameters are passed via pgx placeholders ($1), no
-// string interpolation of user input.
 
 import (
 	"context"
@@ -13,7 +9,6 @@ import (
 	"slices"
 	"time"
 
-	"github.com/google/uuid"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/Koopa0/koopa0.dev/internal/db"
@@ -21,12 +16,12 @@ import (
 
 // Store aggregates stats from all platform tables.
 type Store struct {
-	dbtx db.DBTX
+	q *db.Queries
 }
 
 // NewStore returns a Store backed by the given database connection.
 func NewStore(dbtx db.DBTX) *Store {
-	return &Store{dbtx: dbtx}
+	return &Store{q: db.New(dbtx)}
 }
 
 // Overview returns aggregated stats across all platform data sources.
@@ -60,159 +55,132 @@ func (s *Store) Overview(ctx context.Context) (*Overview, error) {
 }
 
 func (s *Store) queryContentStats(ctx context.Context, cs *ContentStats) error {
-	rows, err := s.dbtx.Query(ctx, `SELECT status::text, type::text, COUNT(*) FROM contents GROUP BY status, type`)
+	rows, err := s.q.StatsContentsByStatusType(ctx)
 	if err != nil {
-		return err
+		return fmt.Errorf("contents stats: %w", err)
 	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var status, ctype string
-		var count int
-		if err := rows.Scan(&status, &ctype, &count); err != nil {
-			return err
-		}
+	for i := range rows {
+		count := int(rows[i].Count)
 		cs.Total += count
-		cs.ByStatus[status] += count
-		cs.ByType[ctype] += count
-		if status == "published" {
+		cs.ByStatus[rows[i].Status] += count
+		cs.ByType[rows[i].Type] += count
+		if rows[i].Status == "published" {
 			cs.Published += count
 		}
 	}
-	return rows.Err()
+	return nil
 }
 
 func (s *Store) queryCollectedStats(ctx context.Context, cs *CollectedStats) error {
-	rows, err := s.dbtx.Query(ctx, `SELECT status::text, COUNT(*) FROM feed_entries GROUP BY status`)
+	rows, err := s.q.StatsFeedEntriesByStatus(ctx)
 	if err != nil {
-		return err
+		return fmt.Errorf("feed_entries stats: %w", err)
 	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var status string
-		var count int
-		if err := rows.Scan(&status, &count); err != nil {
-			return err
-		}
+	for i := range rows {
+		count := int(rows[i].Count)
 		cs.Total += count
-		cs.ByStatus[status] += count
+		cs.ByStatus[rows[i].Status] += count
 	}
-	return rows.Err()
+	return nil
 }
 
 func (s *Store) queryFeedStats(ctx context.Context, fs *FeedStats) error {
-	return s.dbtx.QueryRow(ctx,
-		`SELECT COUNT(*), COUNT(*) FILTER (WHERE enabled) FROM feeds`,
-	).Scan(&fs.Total, &fs.Enabled)
+	row, err := s.q.StatsFeedCounts(ctx)
+	if err != nil {
+		return fmt.Errorf("feeds stats: %w", err)
+	}
+	fs.Total = int(row.Total)
+	fs.Enabled = int(row.Enabled)
+	return nil
 }
 
 func (s *Store) queryFlowRunStats(ctx context.Context, fs *FlowRunStats) error {
-	rows, err := s.dbtx.Query(ctx, `SELECT status::text, COUNT(*) FROM flow_runs GROUP BY status`)
+	rows, err := s.q.StatsFlowRunsByStatus(ctx)
 	if err != nil {
-		return err
+		return fmt.Errorf("flow_runs stats: %w", err)
 	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var status string
-		var count int
-		if err := rows.Scan(&status, &count); err != nil {
-			return err
-		}
+	for i := range rows {
+		count := int(rows[i].Count)
 		fs.Total += count
-		fs.ByStatus[status] += count
+		fs.ByStatus[rows[i].Status] += count
 	}
-	return rows.Err()
+	return nil
 }
 
 func (s *Store) queryProjectStats(ctx context.Context, ps *ProjectStats) error {
-	rows, err := s.dbtx.Query(ctx, `SELECT status::text, COUNT(*) FROM projects GROUP BY status`)
+	rows, err := s.q.StatsProjectsByStatus(ctx)
 	if err != nil {
-		return err
+		return fmt.Errorf("projects stats: %w", err)
 	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var status string
-		var count int
-		if err := rows.Scan(&status, &count); err != nil {
-			return err
-		}
+	for i := range rows {
+		count := int(rows[i].Count)
 		ps.Total += count
-		ps.ByStatus[status] += count
+		ps.ByStatus[rows[i].Status] += count
 	}
-	return rows.Err()
+	return nil
 }
 
 func (s *Store) queryReviewStats(ctx context.Context, rs *ReviewStats) error {
-	return s.dbtx.QueryRow(ctx,
-		`SELECT COUNT(*), COUNT(*) FILTER (WHERE status = 'pending') FROM review_queue`,
-	).Scan(&rs.Total, &rs.Pending)
+	row, err := s.q.StatsEditorialQueueCounts(ctx)
+	if err != nil {
+		return fmt.Errorf("editorial_queue stats: %w", err)
+	}
+	rs.Total = int(row.Total)
+	rs.Pending = int(row.Pending)
+	return nil
 }
 
 func (s *Store) queryNoteStats(ctx context.Context, ns *NoteStats) error {
-	rows, err := s.dbtx.Query(ctx, `SELECT COALESCE(type, 'unknown'), COUNT(*) FROM notes GROUP BY type`)
+	rows, err := s.q.StatsNotesByType(ctx)
 	if err != nil {
-		return err
+		return fmt.Errorf("notes stats: %w", err)
 	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var ntype string
-		var count int
-		if err := rows.Scan(&ntype, &count); err != nil {
-			return err
-		}
+	for i := range rows {
+		count := int(rows[i].Count)
 		ns.Total += count
-		ns.ByType[ntype] += count
+		ns.ByType[rows[i].Type] += count
 	}
-	return rows.Err()
+	return nil
 }
 
 func (s *Store) queryActivityStats(ctx context.Context, as *ActivityStats) error {
-	err := s.dbtx.QueryRow(ctx, `
-		SELECT
-			COUNT(*),
-			COUNT(*) FILTER (WHERE timestamp > now() - interval '24 hours'),
-			COUNT(*) FILTER (WHERE timestamp > now() - interval '7 days')
-		FROM events`,
-	).Scan(&as.Total, &as.Last24h, &as.Last7d)
+	window, err := s.q.StatsActivityWindow(ctx)
 	if err != nil {
-		return err
+		return fmt.Errorf("activity window: %w", err)
 	}
+	as.Total = int(window.Total)
+	as.Last24h = int(window.Last24h)
+	as.Last7d = int(window.Last7d)
 
-	rows, err := s.dbtx.Query(ctx, `SELECT source, COUNT(*) FROM events GROUP BY source`)
+	rows, err := s.q.StatsActivityBySource(ctx)
 	if err != nil {
-		return err
+		return fmt.Errorf("activity by source: %w", err)
 	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var source string
-		var count int
-		if err := rows.Scan(&source, &count); err != nil {
-			return err
-		}
-		as.BySource[source] += count
+	for i := range rows {
+		as.BySource[rows[i].Source] += int(rows[i].Count)
 	}
-	return rows.Err()
+	return nil
 }
 
 func (s *Store) querySourceStats(ctx context.Context, ss *SourceStats) error {
-	// v2: notion_sources removed. Sources table tracks generic sync sources.
-	return s.dbtx.QueryRow(ctx,
-		`SELECT COUNT(*), COUNT(*) FILTER (WHERE enabled) FROM sources`,
-	).Scan(&ss.Total, &ss.Enabled)
+	row, err := s.q.StatsSyncSourceCounts(ctx)
+	if err != nil {
+		return fmt.Errorf("sync_sources stats: %w", err)
+	}
+	ss.Total = int(row.Total)
+	ss.Enabled = int(row.Enabled)
+	return nil
 }
 
 func (s *Store) queryTagStats(ctx context.Context, ts *TagStats) error {
-	return s.dbtx.QueryRow(ctx, `
-		SELECT
-			(SELECT COUNT(*) FROM tags),
-			(SELECT COUNT(*) FROM tag_aliases),
-			(SELECT COUNT(*) FROM tag_aliases WHERE NOT confirmed)`,
-	).Scan(&ts.Canonical, &ts.Aliases, &ts.Unconfirmed)
+	row, err := s.q.StatsTagCounts(ctx)
+	if err != nil {
+		return fmt.Errorf("tag stats: %w", err)
+	}
+	ts.Canonical = int(row.Canonical)
+	ts.Aliases = int(row.Aliases)
+	ts.Unconfirmed = int(row.Unconfirmed)
+	return nil
 }
 
 // Drift compares activity distribution (last N days) vs active goals by area.
@@ -235,61 +203,32 @@ func (s *Store) Drift(ctx context.Context, days int) (*DriftReport, error) {
 	}, nil
 }
 
-func (s *Store) queryGoalsByArea(ctx context.Context) (map[string]int, int, error) { //nolint:gocritic // named results conflict with local := declarations
-	rows, err := s.dbtx.Query(ctx, `
-		SELECT COALESCE(a.name, 'unset'), COUNT(*)
-		FROM goals g
-		LEFT JOIN areas a ON a.id = g.area_id
-		WHERE g.status IN ('not-started', 'in-progress')
-		GROUP BY a.name`)
+func (s *Store) queryGoalsByArea(ctx context.Context) (map[string]int, int, error) { //nolint:gocritic // 3 returns are values+total+error, named returns would shadow local := bindings
+	rows, err := s.q.StatsGoalsByArea(ctx)
 	if err != nil {
 		return nil, 0, fmt.Errorf("querying goals by area: %w", err)
 	}
-	defer rows.Close()
-
 	byArea := map[string]int{}
 	total := 0
-	for rows.Next() {
-		var area string
-		var count int
-		if err := rows.Scan(&area, &count); err != nil {
-			return nil, 0, err
-		}
-		byArea[area] = count
+	for i := range rows {
+		count := int(rows[i].Count)
+		byArea[rows[i].Area] = count
 		total += count
-	}
-	if err := rows.Err(); err != nil {
-		return nil, 0, err
 	}
 	return byArea, total, nil
 }
 
-func (s *Store) queryEventsByArea(ctx context.Context, days int) (map[string]int, int, error) { //nolint:gocritic // named results conflict with local := declarations
-	rows, err := s.dbtx.Query(ctx, `
-		SELECT COALESCE(a.name, 'unset'), COUNT(*)
-		FROM events ae
-		LEFT JOIN projects p ON ae.project = p.slug OR (p.repo IS NOT NULL AND p.repo != '' AND ae.project = p.repo)
-		LEFT JOIN areas a ON a.id = p.area_id
-		WHERE ae.timestamp > now() - make_interval(days => $1)
-		GROUP BY a.name`, days)
+func (s *Store) queryEventsByArea(ctx context.Context, days int) (map[string]int, int, error) { //nolint:gocritic // 3 returns are values+total+error, named returns would shadow local := bindings
+	rows, err := s.q.StatsEventsByArea(ctx, int32(days)) // #nosec G115 -- bounded by caller
 	if err != nil {
 		return nil, 0, fmt.Errorf("querying events by area: %w", err)
 	}
-	defer rows.Close()
-
 	byArea := map[string]int{}
 	total := 0
-	for rows.Next() {
-		var area string
-		var count int
-		if err := rows.Scan(&area, &count); err != nil {
-			return nil, 0, err
-		}
-		byArea[area] = count
+	for i := range rows {
+		count := int(rows[i].Count)
+		byArea[rows[i].Area] = count
 		total += count
-	}
-	if err := rows.Err(); err != nil {
-		return nil, 0, err
 	}
 	return byArea, total, nil
 }
@@ -349,123 +288,98 @@ func computeAreaDrift(goalsByArea map[string]int, totalGoals int, eventsByArea m
 // FlowRunsSince returns flow run counts by status since the given time,
 // optionally filtered by flow name and status.
 func (s *Store) FlowRunsSince(ctx context.Context, since time.Time, flowName, status *string) (*FlowStatusSummary, error) {
-	row := s.dbtx.QueryRow(ctx, `
-		SELECT
-			COUNT(*),
-			COUNT(*) FILTER (WHERE status = 'completed'),
-			COUNT(*) FILTER (WHERE status = 'failed'),
-			COUNT(*) FILTER (WHERE status = 'running')
-		FROM flow_runs
-		WHERE created_at >= $1
-			AND ($2::text IS NULL OR flow_name = $2)
-			AND ($3::flow_status IS NULL OR status = $3::flow_status)`,
-		since, flowName, status)
-
-	var fs FlowStatusSummary
-	if err := row.Scan(&fs.Total, &fs.Completed, &fs.Failed, &fs.Running); err != nil {
+	row, err := s.q.StatsFlowRunsSummary(ctx, db.StatsFlowRunsSummaryParams{
+		Since:    since,
+		FlowName: flowName,
+		Status:   nullFlowStatus(status),
+	})
+	if err != nil {
 		return nil, fmt.Errorf("querying flow run stats since %v: %w", since, err)
 	}
-	return &fs, nil
+	return &FlowStatusSummary{
+		Total:     int(row.Total),
+		Completed: int(row.Completed),
+		Failed:    int(row.Failed),
+		Running:   int(row.Running),
+	}, nil
+}
+
+// nullFlowStatus converts an optional status string to db.NullFlowStatus.
+// Used by FlowRunsSince and RecentFlowRuns to convert handler-level
+// optional filters into the sqlc-generated nullable enum type.
+func nullFlowStatus(s *string) db.NullFlowStatus {
+	if s == nil {
+		return db.NullFlowStatus{}
+	}
+	return db.NullFlowStatus{FlowStatus: db.FlowStatus(*s), Valid: true}
 }
 
 // FeedHealth returns feed health summary including failing feed count.
 func (s *Store) FeedHealth(ctx context.Context) (*FeedHealthSummary, error) {
-	row := s.dbtx.QueryRow(ctx, `
-		SELECT
-			COUNT(*),
-			COUNT(*) FILTER (WHERE enabled),
-			COUNT(*) FILTER (WHERE consecutive_failures > 0)
-		FROM feeds`)
-
-	var fh FeedHealthSummary
-	if err := row.Scan(&fh.Total, &fh.Enabled, &fh.FailingFeeds); err != nil {
+	row, err := s.q.StatsFeedHealthSummary(ctx)
+	if err != nil {
 		return nil, fmt.Errorf("querying feed health: %w", err)
 	}
-	return &fh, nil
+	return &FeedHealthSummary{
+		Total:        int(row.Total),
+		Enabled:      int(row.Enabled),
+		FailingFeeds: int(row.FailingFeeds),
+	}, nil
 }
 
 // RecentFlowRuns returns recent flow runs within a time window,
 // optionally filtered by flow name and status.
 func (s *Store) RecentFlowRuns(ctx context.Context, since time.Time, flowName, status *string, limit int) ([]RecentFlowRun, error) {
-	rows, err := s.dbtx.Query(ctx, `
-		SELECT id, flow_name, status::text, error, created_at, ended_at
-		FROM flow_runs
-		WHERE created_at >= $1
-			AND ($2::text IS NULL OR flow_name = $2)
-			AND ($3::flow_status IS NULL OR status = $3::flow_status)
-		ORDER BY created_at DESC
-		LIMIT $4`,
-		since, flowName, status, limit)
+	rows, err := s.q.StatsRecentFlowRuns(ctx, db.StatsRecentFlowRunsParams{
+		Since:      since,
+		FlowName:   flowName,
+		Status:     nullFlowStatus(status),
+		MaxResults: int32(limit), // #nosec G115 -- bounded by caller
+	})
 	if err != nil {
 		return nil, fmt.Errorf("querying recent flow runs: %w", err)
 	}
-	defer rows.Close()
-
-	var runs []RecentFlowRun
-	for rows.Next() {
-		var r RecentFlowRun
-		var id uuid.UUID
-		var createdAt time.Time
-		var endedAt *time.Time
-		if err := rows.Scan(&id, &r.FlowName, &r.Status, &r.Error, &createdAt, &endedAt); err != nil {
-			return nil, err
+	runs := make([]RecentFlowRun, 0, len(rows))
+	for i := range rows {
+		r := RecentFlowRun{
+			ID:        rows[i].ID.String(),
+			FlowName:  rows[i].FlowName,
+			Status:    rows[i].Status,
+			Error:     rows[i].Error,
+			CreatedAt: rows[i].CreatedAt.Format(time.RFC3339),
 		}
-		r.ID = id.String()
-		r.CreatedAt = createdAt.Format(time.RFC3339)
-		if endedAt != nil {
-			s := endedAt.Format(time.RFC3339)
+		if rows[i].EndedAt != nil {
+			s := rows[i].EndedAt.Format(time.RFC3339)
 			r.EndedAt = &s
 		}
 		runs = append(runs, r)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	if runs == nil {
-		runs = []RecentFlowRun{}
 	}
 	return runs, nil
 }
 
 // PipelineSummaries returns per-flow-name aggregated stats within a time window.
 func (s *Store) PipelineSummaries(ctx context.Context, since time.Time) ([]PipelineSummary, error) {
-	rows, err := s.dbtx.Query(ctx, `
-		SELECT
-			flow_name,
-			COUNT(*),
-			COUNT(*) FILTER (WHERE status = 'completed'),
-			COUNT(*) FILTER (WHERE status = 'failed'),
-			COUNT(*) FILTER (WHERE status = 'running'),
-			MAX(created_at),
-			(array_agg(status::text ORDER BY created_at DESC))[1]
-		FROM flow_runs
-		WHERE created_at >= $1
-		GROUP BY flow_name
-		ORDER BY flow_name`,
-		since)
+	rows, err := s.q.StatsPipelineSummaries(ctx, since)
 	if err != nil {
 		return nil, fmt.Errorf("querying pipeline summaries: %w", err)
 	}
-	defer rows.Close()
-
-	var summaries []PipelineSummary
-	for rows.Next() {
-		var ps PipelineSummary
-		var lastRunAt *time.Time
-		if err := rows.Scan(&ps.FlowName, &ps.Total, &ps.Completed, &ps.Failed, &ps.Running, &lastRunAt, &ps.LastStatus); err != nil {
-			return nil, err
+	summaries := make([]PipelineSummary, 0, len(rows))
+	for i := range rows {
+		ps := PipelineSummary{
+			FlowName:  rows[i].FlowName,
+			Total:     int(rows[i].Total),
+			Completed: int(rows[i].Completed),
+			Failed:    int(rows[i].Failed),
+			Running:   int(rows[i].Running),
 		}
-		if lastRunAt != nil {
-			s := lastRunAt.Format(time.RFC3339)
+		if str, ok := rows[i].LastStatus.(string); ok && str != "" {
+			ps.LastStatus = &str
+		}
+		if t, ok := rows[i].LastRunAt.(time.Time); ok && !t.IsZero() {
+			s := t.Format(time.RFC3339)
 			ps.LastRunAt = &s
 		}
 		summaries = append(summaries, ps)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	if summaries == nil {
-		summaries = []PipelineSummary{}
 	}
 	return summaries, nil
 }
@@ -479,33 +393,27 @@ func (s *Store) Learning(ctx context.Context) (*LearningDashboard, error) {
 	}
 
 	// Each section is independent — partial failures return zeros so the
-	// tool always returns a response even when some tables are empty or
-	// missing (e.g. obsidian sync not yet configured).
+	// tool always returns a response even when some tables are empty.
 	var hasData bool
 
-	// Note growth (notes + contents TIL entries)
 	if err := s.learningNoteGrowth(ctx, ld); err != nil {
 		slog.Warn("learning: note growth query failed, returning zeros", "error", err)
 	} else {
 		hasData = true
 	}
 
-	// Weekly activity comparison (events)
 	if err := s.learningWeeklyActivity(ctx, ld); err != nil {
 		slog.Warn("learning: weekly activity query failed, returning zeros", "error", err)
 	} else {
 		hasData = true
 	}
 
-	// Top tags by count (note_tags + contents TIL tags)
 	if err := s.learningTopTags(ctx, ld); err != nil {
 		slog.Warn("learning: top tags query failed, returning zeros", "error", err)
 	} else {
 		hasData = true
 	}
 
-	// If none of the queries succeeded, report the error — likely a
-	// database connectivity issue rather than empty tables.
 	if !hasData {
 		return nil, fmt.Errorf("all learning queries failed: check database connectivity and migration status")
 	}
@@ -514,59 +422,31 @@ func (s *Store) Learning(ctx context.Context) (*LearningDashboard, error) {
 }
 
 func (s *Store) learningNoteGrowth(ctx context.Context, ld *LearningDashboard) error {
-	// Aggregate from BOTH notes AND contents (TIL entries).
-	// notes uses synced_at; contents uses created_at.
-	err := s.dbtx.QueryRow(ctx, `
-		SELECT
-			COALESCE(o.total, 0) + COALESCE(c.total, 0),
-			COALESCE(o.last_week, 0) + COALESCE(c.last_week, 0),
-			COALESCE(o.last_month, 0) + COALESCE(c.last_month, 0)
-		FROM
-			(SELECT COUNT(*) AS total,
-				COUNT(*) FILTER (WHERE synced_at > now() - interval '7 days') AS last_week,
-				COUNT(*) FILTER (WHERE synced_at > now() - interval '30 days') AS last_month
-			 FROM notes) o,
-			(SELECT COUNT(*) AS total,
-				COUNT(*) FILTER (WHERE created_at > now() - interval '7 days') AS last_week,
-				COUNT(*) FILTER (WHERE created_at > now() - interval '30 days') AS last_month
-			 FROM contents WHERE type = 'til') c
-	`).Scan(&ld.Notes.Total, &ld.Notes.LastWeek, &ld.Notes.LastMonth)
+	row, err := s.q.StatsNoteGrowth(ctx)
 	if err != nil {
 		return fmt.Errorf("note growth: %w", err)
 	}
+	ld.Notes.Total = int(row.Total)
+	ld.Notes.LastWeek = int(row.LastWeek)
+	ld.Notes.LastMonth = int(row.LastMonth)
 
-	// By-type breakdown: notes types + TIL count from contents.
-	noteRows, err := s.dbtx.Query(ctx, `
-		SELECT type, SUM(cnt)::int FROM (
-			SELECT COALESCE(type, 'unknown') AS type, COUNT(*) AS cnt FROM notes GROUP BY type
-			UNION ALL
-			SELECT 'til' AS type, COUNT(*) AS cnt FROM contents WHERE type = 'til'
-		) combined
-		GROUP BY type`)
+	rows, err := s.q.StatsNoteGrowthByType(ctx)
 	if err != nil {
 		return fmt.Errorf("notes by type: %w", err)
 	}
-	defer noteRows.Close()
-	for noteRows.Next() {
-		var ntype string
-		var count int
-		if scanErr := noteRows.Scan(&ntype, &count); scanErr != nil {
-			return scanErr
-		}
-		ld.Notes.ByType[ntype] = count
+	for i := range rows {
+		ld.Notes.ByType[rows[i].Type] = int(rows[i].Count)
 	}
-	return noteRows.Err()
+	return nil
 }
 
 func (s *Store) learningWeeklyActivity(ctx context.Context, ld *LearningDashboard) error {
-	err := s.dbtx.QueryRow(ctx, `
-		SELECT
-			COUNT(*) FILTER (WHERE timestamp > now() - interval '7 days'),
-			COUNT(*) FILTER (WHERE timestamp > now() - interval '14 days' AND timestamp <= now() - interval '7 days')
-		FROM events`).Scan(&ld.Activity.ThisWeek, &ld.Activity.LastWeek)
+	row, err := s.q.StatsWeeklyActivity(ctx)
 	if err != nil {
 		return fmt.Errorf("weekly activity: %w", err)
 	}
+	ld.Activity.ThisWeek = int(row.ThisWeek)
+	ld.Activity.LastWeek = int(row.LastWeek)
 
 	switch {
 	case ld.Activity.ThisWeek > ld.Activity.LastWeek:
@@ -580,36 +460,17 @@ func (s *Store) learningWeeklyActivity(ctx context.Context, ld *LearningDashboar
 }
 
 func (s *Store) learningTopTags(ctx context.Context, ld *LearningDashboard) error {
-	// Aggregate tags from BOTH note_tags and content_tags junction tables.
-	tagRows, err := s.dbtx.Query(ctx, `
-		SELECT name, SUM(cnt)::int AS total FROM (
-			SELECT t.name, COUNT(ont.note_id) AS cnt
-			FROM tags t
-			JOIN note_tags ont ON ont.tag_id = t.id
-			GROUP BY t.id, t.name
-			UNION ALL
-			SELECT t.name, COUNT(ct.content_id) AS cnt
-			FROM tags t
-			JOIN content_tags ct ON ct.tag_id = t.id
-			JOIN contents c ON c.id = ct.content_id
-			WHERE c.type = 'til'
-			GROUP BY t.id, t.name
-		) combined
-		GROUP BY name
-		ORDER BY total DESC
-		LIMIT 10`)
+	rows, err := s.q.StatsTopTags(ctx)
 	if err != nil {
 		return fmt.Errorf("top tags: %w", err)
 	}
-	defer tagRows.Close()
-	for tagRows.Next() {
-		var tc TagCount
-		if scanErr := tagRows.Scan(&tc.Name, &tc.Count); scanErr != nil {
-			return scanErr
-		}
-		ld.TopTags = append(ld.TopTags, tc)
+	for i := range rows {
+		ld.TopTags = append(ld.TopTags, TagCount{
+			Name:  rows[i].Name,
+			Count: int(rows[i].Count),
+		})
 	}
-	return tagRows.Err()
+	return nil
 }
 
 // SystemHealth returns the snapshot consumed by the admin SystemHealthComponent.
@@ -625,72 +486,48 @@ func (s *Store) SystemHealth(ctx context.Context) (*SystemHealthSnapshot, error)
 		Database:  DatabaseStats{},
 	}
 
-	// Feed counts: total, healthy (consecutive_failures = 0), failing (> 0).
-	if err := s.dbtx.QueryRow(ctx, `
-		SELECT
-			COUNT(*),
-			COUNT(*) FILTER (WHERE consecutive_failures = 0),
-			COUNT(*) FILTER (WHERE consecutive_failures > 0)
-		FROM feeds`,
-	).Scan(&out.Feeds.Total, &out.Feeds.Healthy, &out.Feeds.Failing); err != nil {
+	feedCounts, err := s.q.StatsFeedHealthCounts(ctx)
+	if err != nil {
 		return nil, fmt.Errorf("querying feed counts: %w", err)
 	}
+	out.Feeds.Total = int(feedCounts.Total)
+	out.Feeds.Healthy = int(feedCounts.Healthy)
+	out.Feeds.Failing = int(feedCounts.Failing)
 
-	// Failing feed details. last_fetched_at is used as a proxy for "since"
-	// (when this feed last attempted and failed) — the schema does not
-	// track a dedicated first_failed_at column.
-	failingRows, err := s.dbtx.Query(ctx, `
-		SELECT name, COALESCE(last_error, ''), last_fetched_at
-		FROM feeds
-		WHERE consecutive_failures > 0
-		ORDER BY consecutive_failures DESC, name`)
+	failingRows, err := s.q.StatsFailingFeeds(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("querying failing feeds: %w", err)
 	}
-	defer failingRows.Close()
-	for failingRows.Next() {
-		var ff FailingFeed
-		var since *time.Time
-		if scanErr := failingRows.Scan(&ff.Name, &ff.Error, &since); scanErr != nil {
-			return nil, fmt.Errorf("scanning failing feed: %w", scanErr)
+	for i := range failingRows {
+		ff := FailingFeed{
+			Name:  failingRows[i].Name,
+			Error: failingRows[i].LastError,
 		}
-		if since != nil {
-			ff.Since = since.Format(time.RFC3339)
+		if failingRows[i].LastFetchedAt != nil {
+			ff.Since = failingRows[i].LastFetchedAt.Format(time.RFC3339)
 		}
 		out.Feeds.FailingFeeds = append(out.Feeds.FailingFeeds, ff)
 	}
-	if err := failingRows.Err(); err != nil {
-		return nil, fmt.Errorf("iterating failing feeds: %w", err)
-	}
 
-	// Pipeline activity: last 24h flow runs and most recent run timestamp.
 	since := time.Now().Add(-24 * time.Hour)
-	var lastRunAt *time.Time
-	if err := s.dbtx.QueryRow(ctx, `
-		SELECT
-			COUNT(*),
-			COUNT(*) FILTER (WHERE status = 'failed'),
-			MAX(created_at)
-		FROM flow_runs
-		WHERE created_at >= $1`,
-		since,
-	).Scan(&out.Pipelines.RecentRuns, &out.Pipelines.Failed, &lastRunAt); err != nil {
+	pipeline, err := s.q.StatsPipelineActivityRecent(ctx, since)
+	if err != nil {
 		return nil, fmt.Errorf("querying pipeline activity: %w", err)
 	}
-	if lastRunAt != nil {
-		s := lastRunAt.Format(time.RFC3339)
+	out.Pipelines.RecentRuns = int(pipeline.RecentRuns)
+	out.Pipelines.Failed = int(pipeline.Failed)
+	if t, ok := pipeline.LastRunAt.(time.Time); ok && !t.IsZero() {
+		s := t.Format(time.RFC3339)
 		out.Pipelines.LastRunAt = &s
 	}
 
-	// Database entity counts. Single-row scalar subqueries keep this to one round trip.
-	if err := s.dbtx.QueryRow(ctx, `
-		SELECT
-			(SELECT COUNT(*) FROM contents),
-			(SELECT COUNT(*) FROM tasks),
-			(SELECT COUNT(*) FROM notes)`,
-	).Scan(&out.Database.ContentsCount, &out.Database.TasksCount, &out.Database.NotesCount); err != nil {
+	dbCounts, err := s.q.StatsDatabaseCounts(ctx)
+	if err != nil {
 		return nil, fmt.Errorf("querying database counts: %w", err)
 	}
+	out.Database.ContentsCount = int(dbCounts.ContentsCount)
+	out.Database.TasksCount = int(dbCounts.TodosCount)
+	out.Database.NotesCount = int(dbCounts.NotesCount)
 
 	return out, nil
 }

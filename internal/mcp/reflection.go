@@ -6,8 +6,8 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	agentnote "github.com/Koopa0/koopa0.dev/internal/agent/note"
 	"github.com/Koopa0/koopa0.dev/internal/daily"
-	"github.com/Koopa0/koopa0.dev/internal/journal"
 )
 
 // --- reflection_context ---
@@ -19,14 +19,14 @@ type ReflectionContextInput struct {
 
 // ReflectionContextOutput is the output of the reflection_context tool.
 type ReflectionContextOutput struct {
-	Date           string          `json:"date"`
-	PlannedItems   []daily.Item    `json:"planned_items"`
-	CompletedCount int             `json:"completed_count"`
-	DeferredCount  int             `json:"deferred_count"`
-	PlannedCount   int             `json:"planned_count"`
-	CompletionRate float64         `json:"completion_rate"`
-	TodayJournals  []journal.Entry `json:"today_journals"`
-	TodayPlan      *journal.Entry  `json:"today_plan,omitempty"`
+	Date           string            `json:"date"`
+	PlannedItems   []daily.Item      `json:"planned_items"`
+	CompletedCount int               `json:"completed_count"`
+	DeferredCount  int               `json:"deferred_count"`
+	PlannedCount   int               `json:"planned_count"`
+	CompletionRate float64           `json:"completion_rate"`
+	TodayJournals  []agentnote.Note `json:"today_journals"`
+	TodayPlan      *agentnote.Note  `json:"today_plan,omitempty"`
 }
 
 func (s *Server) reflectionContext(ctx context.Context, _ *mcp.CallToolRequest, input ReflectionContextInput) (*mcp.CallToolResult, ReflectionContextOutput, error) {
@@ -41,7 +41,6 @@ func (s *Server) reflectionContext(ctx context.Context, _ *mcp.CallToolRequest, 
 
 	out := ReflectionContextOutput{Date: date.Format(time.DateOnly)}
 
-	// Today's daily plan items with status
 	if items, err := s.dayplan.ItemsByDate(ctx, date); err == nil {
 		out.PlannedItems = items
 		for i := range items {
@@ -64,17 +63,16 @@ func (s *Server) reflectionContext(ctx context.Context, _ *mcp.CallToolRequest, 
 		s.logger.Warn("reflection_context: plan items", "error", err)
 	}
 
-	// Today's journal entries
-	if entries, err := s.journal.EntriesByDateRange(ctx, date, date, nil, nil); err == nil {
+	if entries, err := s.agentNotes.NotesInRange(ctx, date, date, nil, nil); err == nil {
 		out.TodayJournals = entries
 		for i := range entries {
-			if entries[i].Kind == journal.KindPlan {
+			if entries[i].Kind == agentnote.KindPlan {
 				out.TodayPlan = &entries[i]
 				break
 			}
 		}
 	} else {
-		s.logger.Warn("reflection_context: journals", "error", err)
+		s.logger.Warn("reflection_context: notes", "error", err)
 	}
 
 	return nil, out, nil
