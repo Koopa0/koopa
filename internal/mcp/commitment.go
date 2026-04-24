@@ -58,31 +58,57 @@ type ProposeCommitmentOutput struct {
 	ProposalToken string         `json:"proposal_token"`
 }
 
+// proposeCommitment is the Wave-1 multiplexer. Deprecated 2026-04-24 in
+// favor of the per-type flat propose_* tools. Shim forwards to the typed
+// handler path via proposeEntity, logs a deprecation warning, and
+// prepends a caller-visible deprecation note to Warnings. Scheduled
+// removal: 2026-05-08 (tracked in .agents/shim-removal-checklist-2026-05-08.md).
 func (s *Server) proposeCommitment(ctx context.Context, _ *mcp.CallToolRequest, input ProposeCommitmentInput) (*mcp.CallToolResult, ProposeCommitmentOutput, error) {
-	switch input.Type {
+	s.logger.Warn("propose_commitment is deprecated — use propose_<type> directly",
+		"caller", s.callerIdentity(ctx),
+		"type", input.Type,
+		"sunset", "2026-05-08",
+	)
+	out, err := s.proposeEntity(ctx, input.Type, input.Fields)
+	if err != nil {
+		return nil, ProposeCommitmentOutput{}, err
+	}
+	out.Warnings = append([]string{
+		"propose_commitment is deprecated — use propose_" + input.Type + " directly. Removal scheduled 2026-05-08.",
+	}, out.Warnings...)
+	return nil, out, nil
+}
+
+// proposeEntity is the internal workhorse shared by the deprecated
+// propose_commitment shim and the seven flat propose_* tools. Centralizes
+// the type-validate → resolve-fields → sign-proposal dance so each
+// typed handler stays small.
+//
+// The 'type' parameter comes from the tool call site (each flat tool
+// knows its own type) or from the shim's input.Type field. Fields is
+// the map form resolveProposalFields accepts — flat tools pack their
+// typed input into this shape before calling through.
+func (s *Server) proposeEntity(ctx context.Context, entityType string, fields map[string]any) (ProposeCommitmentOutput, error) {
+	switch entityType {
 	case "goal", "project", "milestone", "directive", "hypothesis", "learning_plan", "learning_domain":
 		// valid
 	default:
-		return nil, ProposeCommitmentOutput{}, fmt.Errorf("invalid type %q (valid: goal, project, milestone, directive, hypothesis, learning_plan, learning_domain)", input.Type)
+		return ProposeCommitmentOutput{}, fmt.Errorf("invalid type %q (valid: goal, project, milestone, directive, hypothesis, learning_plan, learning_domain)", entityType)
 	}
 
-	// Resolve references and validate fields. A resolver error means the
-	// proposal cannot be signed — informational drift (fuzzy name misses,
-	// optional fields absent) still returns via warnings so the caller can
-	// decide whether to retry with a correction.
-	resolved, warnings, err := s.resolveProposalFields(ctx, input.Type, input.Fields)
+	resolved, warnings, err := s.resolveProposalFields(ctx, entityType, fields)
 	if err != nil {
-		return nil, ProposeCommitmentOutput{}, fmt.Errorf("proposal rejected: %w", err)
+		return ProposeCommitmentOutput{}, fmt.Errorf("proposal rejected: %w", err)
 	}
 
-	token, err := signProposal(s.proposalSecret, input.Type, resolved)
+	token, err := signProposal(s.proposalSecret, entityType, resolved)
 	if err != nil {
-		return nil, ProposeCommitmentOutput{}, fmt.Errorf("signing proposal: %w", err)
+		return ProposeCommitmentOutput{}, fmt.Errorf("signing proposal: %w", err)
 	}
 
-	s.logger.Info("propose_commitment", "type", input.Type)
-	return nil, ProposeCommitmentOutput{
-		Type:          input.Type,
+	s.logger.Info("propose_commitment", "type", entityType)
+	return ProposeCommitmentOutput{
+		Type:          entityType,
 		Preview:       resolved,
 		Warnings:      warnings,
 		ProposalToken: token,

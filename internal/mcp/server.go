@@ -199,6 +199,13 @@ func NewServer(pool *pgxpool.Pool, logger *slog.Logger, opts ...ServerOption) *S
 
 	// --- Intent & a2a ---
 	addTool(s, toolFrom(ops.ProposeCommitment), s.proposeCommitment)
+	addTool(s, toolFrom(ops.ProposeGoal), s.proposeGoal)
+	addTool(s, toolFrom(ops.ProposeProject), s.proposeProject)
+	addTool(s, toolFrom(ops.ProposeMilestone), s.proposeMilestone)
+	addTool(s, toolFrom(ops.ProposeDirective), s.proposeDirective)
+	addTool(s, toolFrom(ops.ProposeHypothesis), s.proposeHypothesis)
+	addTool(s, toolFrom(ops.ProposeLearningPlan), s.proposeLearningPlan)
+	addTool(s, toolFrom(ops.ProposeLearningDomain), s.proposeLearningDomain)
 	addTool(s, toolFrom(ops.CommitProposal), s.commitProposal)
 	addTool(s, toolFrom(ops.GoalProgress), s.goalProgress)
 	addTool(s, toolFrom(ops.FileReport), s.fileReport)

@@ -113,15 +113,106 @@ func QueryAgentNotes() Meta {
 	}
 }
 
-// ProposeCommitment returns metadata for the high-commitment entity preview tool.
+// ProposeCommitment returns metadata for the deprecated Wave-1 multiplexer.
+// Forwards to the typed flat handlers (propose_goal, propose_directive, …)
+// during the 2-week deprecation window (2026-04-24 → 2026-05-08). Removal
+// is tracked in .agents/shim-removal-checklist-2026-05-08.md.
 func ProposeCommitment() Meta {
 	return Meta{
 		Name:        "propose_commitment",
 		Domain:      DomainMeta,
 		Writability: ReadOnly,
-		Stability:   StabilityStable,
+		Stability:   StabilityDeprecated,
 		Since:       since,
-		Description: "Propose creating a goal, project, milestone, directive, hypothesis, learning_plan, or learning_domain. Returns a preview and signed proposal token. Does NOT write to the database. Use when the user wants to create a high-commitment entity — present the preview for approval before calling commit_proposal.",
+		Description: "DEPRECATED 2026-04-24 (sunset 2026-05-08) — use propose_goal, propose_project, propose_milestone, propose_directive, propose_hypothesis, propose_learning_plan, propose_learning_domain. Shim forwards to the typed handler based on the type field; warnings array carries a caller-visible deprecation notice. Migrate call sites to the flat tool whose name matches the type you were passing.",
+	}
+}
+
+// ProposeGoal returns metadata for the flat propose_goal tool.
+func ProposeGoal() Meta {
+	return Meta{
+		Name:        "propose_goal",
+		Domain:      DomainMeta,
+		Writability: ReadOnly,
+		Stability:   StabilityStable,
+		Since:       "1.1.0",
+		Description: "Propose a goal (quarterly or multi-quarter commitment, optionally scoped to an area and given a target deadline). Returns a preview + signed proposal token — does NOT write to the database. Requires commit_proposal to finalize.",
+	}
+}
+
+// ProposeProject returns metadata for the flat propose_project tool.
+func ProposeProject() Meta {
+	return Meta{
+		Name:        "propose_project",
+		Domain:      DomainMeta,
+		Writability: ReadOnly,
+		Stability:   StabilityStable,
+		Since:       "1.1.0",
+		Description: "Propose a project (concrete work unit that can be linked to a goal and an area). Returns a preview + signed proposal token — does NOT write to the database. Requires commit_proposal to finalize.",
+	}
+}
+
+// ProposeMilestone returns metadata for the flat propose_milestone tool.
+func ProposeMilestone() Meta {
+	return Meta{
+		Name:        "propose_milestone",
+		Domain:      DomainMeta,
+		Writability: ReadOnly,
+		Stability:   StabilityStable,
+		Since:       "1.1.0",
+		Description: "Propose a milestone (progress marker scoped to a parent goal, with an optional target deadline). Returns a preview + signed proposal token — does NOT write to the database. Requires commit_proposal to finalize.",
+	}
+}
+
+// ProposeDirective returns metadata for the flat propose_directive tool.
+// FieldEnums advertises the priority enum structurally.
+func ProposeDirective() Meta {
+	return Meta{
+		Name:        "propose_directive",
+		Domain:      DomainMeta,
+		Writability: ReadOnly,
+		Stability:   StabilityStable,
+		Since:       "1.1.0",
+		Description: "Propose a directive (inter-agent work request targeting a named agent, carrying an a2a.Part array as request_parts). Returns a preview + signed proposal token — does NOT write to the database. Requires commit_proposal to finalize. Capability pre-check (SubmitTasks) runs at propose time; unauthorized callers fail fast without producing a signed token.",
+		FieldEnums: map[string][]string{
+			"priority": {"high", "medium", "low"},
+		},
+	}
+}
+
+// ProposeHypothesis returns metadata for the flat propose_hypothesis tool.
+func ProposeHypothesis() Meta {
+	return Meta{
+		Name:        "propose_hypothesis",
+		Domain:      DomainMeta,
+		Writability: ReadOnly,
+		Stability:   StabilityStable,
+		Since:       "1.1.0",
+		Description: "Propose a hypothesis (falsifiable claim with an invalidation condition and narrative content). Returns a preview + signed proposal token — does NOT write to the database. Requires commit_proposal to finalize. Per mcp-decision-policy §4, hypotheses must carry a concrete invalidation_condition; narrative reflections without a falsifiable claim belong in write_agent_note(kind=reflection) instead.",
+	}
+}
+
+// ProposeLearningPlan returns metadata for the flat propose_learning_plan tool.
+func ProposeLearningPlan() Meta {
+	return Meta{
+		Name:        "propose_learning_plan",
+		Domain:      DomainMeta,
+		Writability: ReadOnly,
+		Stability:   StabilityStable,
+		Since:       "1.1.0",
+		Description: "Propose a learning plan (committed curriculum with a title + domain + optional parent goal). Returns a preview + signed proposal token — does NOT write to the database. Requires commit_proposal to finalize. Plan entries are added via manage_plan after the plan commits.",
+	}
+}
+
+// ProposeLearningDomain returns metadata for the flat propose_learning_domain tool.
+func ProposeLearningDomain() Meta {
+	return Meta{
+		Name:        "propose_learning_domain",
+		Domain:      DomainMeta,
+		Writability: ReadOnly,
+		Stability:   StabilityStable,
+		Since:       "1.1.0",
+		Description: "Propose a learning domain (FK target for concepts/targets/sessions/plans — e.g. 'leetcode', 'japanese'). Returns a preview + signed proposal token — does NOT write to the database. Requires commit_proposal to finalize. Slug must match pattern ^[a-z][a-z0-9-]*$.",
 	}
 }
 
@@ -533,6 +624,13 @@ func All() []Meta {
 		WriteAgentNote(),
 		QueryAgentNotes(),
 		ProposeCommitment(),
+		ProposeGoal(),
+		ProposeProject(),
+		ProposeMilestone(),
+		ProposeDirective(),
+		ProposeHypothesis(),
+		ProposeLearningPlan(),
+		ProposeLearningDomain(),
 		CommitProposal(),
 		GoalProgress(),
 		FileReport(),
