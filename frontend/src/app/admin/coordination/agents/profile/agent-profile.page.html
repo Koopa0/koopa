@@ -1,0 +1,315 @@
+@if (isLoading()) {
+  <div class="flex flex-1 items-center justify-center" data-testid="agent-loading">
+    <div
+      class="size-5 animate-spin rounded-full border-2 border-zinc-700 border-t-zinc-300"
+      aria-label="Loading agent"
+    ></div>
+  </div>
+} @else if (hasError()) {
+  <div
+    class="flex flex-1 items-center justify-center p-8 text-center"
+    data-testid="agent-error"
+  >
+    <div>
+      <p class="mb-2 text-sm text-red-400">Failed to load agent.</p>
+      <button
+        type="button"
+        (click)="back()"
+        class="rounded-sm border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-xs text-zinc-300 transition-colors hover:bg-zinc-800"
+      >
+        Back to list
+      </button>
+    </div>
+  </div>
+} @else if (agent(); as a) {
+  <article
+    class="mx-auto flex w-full max-w-4xl flex-col gap-5 px-6 py-8"
+    data-testid="agent-profile"
+  >
+    <!-- Hero -->
+    <header class="border-b border-zinc-800 pb-4" data-testid="agent-hero">
+      <h1 class="mb-1 font-display text-2xl font-semibold text-zinc-100">
+        {{ a.display_name }}
+      </h1>
+      <div
+        class="flex flex-wrap items-center gap-x-4 gap-y-1 font-mono text-[11px] text-zinc-500"
+      >
+        <span class="text-zinc-300">{{ a.name }}</span>
+        <span>{{ a.platform }}</span>
+        <span
+          class="capitalize"
+          [class.text-emerald-300]="a.status === 'active'"
+          [class.text-zinc-500]="a.status === 'retired'"
+        >
+          {{ a.status }}
+        </span>
+        @if (a.schedule_human_readable) {
+          <span>{{ a.schedule_human_readable }}</span>
+        }
+        @if (a.last_task_accepted_at) {
+          <span>
+            last accepted {{ a.last_task_accepted_at | date: 'short' }}
+          </span>
+        }
+      </div>
+      <p class="mt-2 whitespace-pre-wrap text-sm text-zinc-300">
+        {{ a.description }}
+      </p>
+    </header>
+
+    <!-- Capabilities -->
+    <section
+      class="rounded-sm border border-zinc-800 p-5"
+      aria-labelledby="agent-capabilities-heading"
+      data-testid="agent-capabilities"
+    >
+      <h2
+        id="agent-capabilities-heading"
+        class="mb-3 font-mono text-[10px] uppercase tracking-wider text-zinc-500"
+      >
+        Capabilities
+      </h2>
+      <ul class="flex flex-wrap gap-2 text-xs">
+        <li
+          class="rounded-xs border px-2 py-0.5"
+          [class.border-emerald-700]="a.capability.submit_tasks"
+          [class.bg-emerald-900/30]="a.capability.submit_tasks"
+          [class.text-emerald-300]="a.capability.submit_tasks"
+          [class.border-zinc-800]="!a.capability.submit_tasks"
+          [class.bg-zinc-900]="!a.capability.submit_tasks"
+          [class.text-zinc-500]="!a.capability.submit_tasks"
+        >
+          submit_tasks
+        </li>
+        <li
+          class="rounded-xs border px-2 py-0.5"
+          [class.border-emerald-700]="a.capability.receive_tasks"
+          [class.bg-emerald-900/30]="a.capability.receive_tasks"
+          [class.text-emerald-300]="a.capability.receive_tasks"
+          [class.border-zinc-800]="!a.capability.receive_tasks"
+          [class.bg-zinc-900]="!a.capability.receive_tasks"
+          [class.text-zinc-500]="!a.capability.receive_tasks"
+        >
+          receive_tasks
+        </li>
+        <li
+          class="rounded-xs border px-2 py-0.5"
+          [class.border-emerald-700]="a.capability.publish_artifacts"
+          [class.bg-emerald-900/30]="a.capability.publish_artifacts"
+          [class.text-emerald-300]="a.capability.publish_artifacts"
+          [class.border-zinc-800]="!a.capability.publish_artifacts"
+          [class.bg-zinc-900]="!a.capability.publish_artifacts"
+          [class.text-zinc-500]="!a.capability.publish_artifacts"
+        >
+          publish_artifacts
+        </li>
+      </ul>
+    </section>
+
+    <!-- Tabs -->
+    <div
+      class="flex border-b border-zinc-800"
+      role="tablist"
+      aria-label="Agent profile sections"
+      data-testid="agent-tabs"
+    >
+      <button
+        role="tab"
+        type="button"
+        [attr.aria-selected]="activeTab() === 'workload'"
+        (click)="setTab('workload')"
+        class="px-4 py-2 text-xs font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500"
+        [class.text-zinc-100]="activeTab() === 'workload'"
+        [class.border-b-2]="activeTab() === 'workload'"
+        [class.border-sky-500]="activeTab() === 'workload'"
+        [class.text-zinc-500]="activeTab() !== 'workload'"
+        data-testid="agent-tab-workload"
+      >
+        Workload
+      </button>
+      <button
+        role="tab"
+        type="button"
+        [attr.aria-selected]="activeTab() === 'notes'"
+        (click)="setTab('notes')"
+        class="px-4 py-2 text-xs font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500"
+        [class.text-zinc-100]="activeTab() === 'notes'"
+        [class.border-b-2]="activeTab() === 'notes'"
+        [class.border-sky-500]="activeTab() === 'notes'"
+        [class.text-zinc-500]="activeTab() !== 'notes'"
+        data-testid="agent-tab-notes"
+      >
+        Context notes
+      </button>
+    </div>
+
+    @if (activeTab() === 'workload') {
+      <section aria-labelledby="agent-workload-heading" data-testid="agent-workload">
+        <h2 id="agent-workload-heading" class="sr-only">Workload</h2>
+
+        @if (tasks(); as t) {
+          <div class="grid gap-4 md:grid-cols-2">
+            <!-- As assignee -->
+            <div>
+              <h3 class="mb-2 font-mono text-[10px] uppercase tracking-wider text-zinc-500">
+                As assignee
+                <span class="ml-1 text-zinc-600">({{ t.as_assignee.length }})</span>
+              </h3>
+              <ul class="space-y-1">
+                @for (task of t.as_assignee; track task.id) {
+                  <li>
+                    <a
+                      [routerLink]="['/admin/coordination/tasks', task.id]"
+                      class="block rounded-xs border border-zinc-900 bg-zinc-950/30 px-3 py-2 transition-colors hover:border-sky-800 hover:bg-zinc-900/40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500"
+                    >
+                      <div class="truncate text-sm text-zinc-200">
+                        {{ task.title }}
+                      </div>
+                      <div class="font-mono text-[10px] text-zinc-500">
+                        {{ task.state }} · from {{ task.source }} ·
+                        {{ task.submitted_at | date: 'short' }}
+                      </div>
+                    </a>
+                  </li>
+                } @empty {
+                  <li class="text-xs text-zinc-500">No tasks assigned.</li>
+                }
+              </ul>
+            </div>
+
+            <!-- As creator -->
+            <div>
+              <h3 class="mb-2 font-mono text-[10px] uppercase tracking-wider text-zinc-500">
+                As creator
+                <span class="ml-1 text-zinc-600">({{ t.as_creator.length }})</span>
+              </h3>
+              <ul class="space-y-1">
+                @for (task of t.as_creator; track task.id) {
+                  <li>
+                    <a
+                      [routerLink]="['/admin/coordination/tasks', task.id]"
+                      class="block rounded-xs border border-zinc-900 bg-zinc-950/30 px-3 py-2 transition-colors hover:border-sky-800 hover:bg-zinc-900/40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500"
+                    >
+                      <div class="truncate text-sm text-zinc-200">
+                        {{ task.title }}
+                      </div>
+                      <div class="font-mono text-[10px] text-zinc-500">
+                        {{ task.state }} · to {{ task.target }} ·
+                        {{ task.submitted_at | date: 'short' }}
+                      </div>
+                    </a>
+                  </li>
+                } @empty {
+                  <li class="text-xs text-zinc-500">No tasks submitted.</li>
+                }
+              </ul>
+            </div>
+          </div>
+
+          <!-- Recent artifacts -->
+          <div class="mt-5">
+            <h3 class="mb-2 font-mono text-[10px] uppercase tracking-wider text-zinc-500">
+              Recent artifacts
+              <span class="ml-1 text-zinc-600">
+                ({{ t.recent_artifacts.length }})
+              </span>
+            </h3>
+            @if (t.recent_artifacts.length === 0) {
+              <p class="text-xs text-zinc-500">No artifacts yet.</p>
+            } @else {
+              <ul class="space-y-1">
+                @for (art of t.recent_artifacts; track art.id) {
+                  <li
+                    class="flex items-center justify-between gap-3 rounded-xs border border-zinc-900 bg-zinc-950/30 px-3 py-2"
+                  >
+                    <div class="min-w-0 flex-1">
+                      <div class="truncate text-sm text-zinc-200">
+                        {{ art.name }}
+                      </div>
+                      @if (art.task_title) {
+                        <a
+                          [routerLink]="['/admin/coordination/tasks', art.task_id]"
+                          class="font-mono text-[10px] text-zinc-500 hover:text-sky-300"
+                        >
+                          via {{ art.task_title }}
+                        </a>
+                      }
+                    </div>
+                    <span class="shrink-0 font-mono text-[10px] text-zinc-500">
+                      {{ art.created_at | date: 'short' }}
+                    </span>
+                  </li>
+                }
+              </ul>
+            }
+          </div>
+        } @else {
+          <p class="text-xs text-zinc-500">Loading workload…</p>
+        }
+      </section>
+    }
+
+    @if (activeTab() === 'notes') {
+      <section aria-labelledby="agent-notes-heading" data-testid="agent-notes">
+        <h2 id="agent-notes-heading" class="sr-only">Context notes</h2>
+
+        @if (notesUnavailable()) {
+          <div
+            class="rounded-sm border border-dashed border-zinc-800 p-4 text-center"
+            data-testid="agent-notes-unavailable"
+          >
+            <p class="mb-1 font-mono text-[10px] uppercase tracking-wider text-zinc-500">
+              Notes pending
+            </p>
+            <p class="text-xs text-zinc-500">
+              The agent notes endpoint is not live yet. Notes will appear
+              once the backend wraps query_agent_notes.
+            </p>
+          </div>
+        } @else if (notesTransientError()) {
+          <div
+            role="alert"
+            class="rounded-sm border border-amber-900 bg-amber-950/20 p-4 text-center"
+            data-testid="agent-notes-error"
+          >
+            <p class="text-xs text-amber-300">Couldn't load notes.</p>
+          </div>
+        } @else if (notes().length === 0) {
+          <p class="text-xs text-zinc-500">No notes recorded.</p>
+        } @else {
+          <ul class="space-y-3">
+            @for (note of notes(); track note.id) {
+              <li class="rounded-sm border border-zinc-800 bg-zinc-900/40 p-4">
+                <header class="mb-2 flex items-center gap-2 font-mono text-[11px]">
+                  <span
+                    class="uppercase"
+                    [class]="noteKindClass(note.kind)"
+                  >
+                    {{ note.kind }}
+                  </span>
+                  <span class="text-zinc-500">
+                    {{ note.actor }} · {{ note.created_at | date: 'short' }}
+                  </span>
+                </header>
+                <p class="whitespace-pre-wrap text-sm text-zinc-200">
+                  {{ note.body_md }}
+                </p>
+              </li>
+            }
+          </ul>
+        }
+      </section>
+    }
+
+    <div class="pt-4">
+      <button
+        type="button"
+        (click)="back()"
+        class="rounded-sm px-3 py-1.5 text-xs text-zinc-400 transition-colors hover:text-zinc-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500"
+        data-testid="agent-action-back"
+      >
+        Back to list
+      </button>
+    </div>
+  </article>
+}

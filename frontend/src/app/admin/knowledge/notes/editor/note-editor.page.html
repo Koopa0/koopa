@@ -1,0 +1,224 @@
+@if (isLoading()) {
+  <div class="flex flex-1 items-center justify-center" data-testid="note-loading">
+    <div
+      class="size-5 animate-spin rounded-full border-2 border-zinc-700 border-t-zinc-300"
+      aria-label="Loading note"
+    ></div>
+  </div>
+} @else if (endpointsUnavailable()) {
+  <div
+    class="flex flex-1 items-center justify-center p-8 text-center"
+    data-testid="note-endpoints-pending"
+  >
+    <div class="max-w-md">
+      <p class="mb-1 font-mono text-[10px] uppercase tracking-wider text-zinc-500">
+        Endpoints pending
+      </p>
+      <p class="mb-4 text-xs text-zinc-500">
+        /api/admin/knowledge/notes is not live yet. The editor
+        activates once the endpoint ships.
+      </p>
+      <button
+        type="button"
+        (click)="cancel()"
+        class="rounded-sm border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-xs text-zinc-300 transition-colors hover:bg-zinc-800"
+      >
+        Back to list
+      </button>
+    </div>
+  </div>
+} @else if (hasError()) {
+  <div
+    class="flex flex-1 items-center justify-center p-8 text-center"
+    data-testid="note-error"
+  >
+    <div>
+      <p class="mb-2 text-sm text-red-400">Failed to load note.</p>
+      <button
+        type="button"
+        (click)="cancel()"
+        class="rounded-sm border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-xs text-zinc-300 transition-colors hover:bg-zinc-800"
+      >
+        Back to list
+      </button>
+    </div>
+  </div>
+} @else if (note(); as n) {
+  <form
+    [formGroup]="form"
+    class="flex min-h-0 flex-1"
+    data-testid="note-editor"
+    (ngSubmit)="save()"
+  >
+    <!-- Main: title + markdown body -->
+    <section
+      class="flex min-w-0 flex-1 flex-col border-r border-zinc-800"
+      aria-label="Note body"
+    >
+      <div class="flex flex-col gap-2 border-b border-zinc-800 px-6 py-4">
+        <label class="sr-only" for="note-title">Title</label>
+        <input
+          id="note-title"
+          type="text"
+          formControlName="title"
+          class="border-0 bg-transparent p-0 font-display text-2xl font-semibold text-zinc-100 placeholder:text-zinc-600 focus:outline-hidden focus:ring-0"
+          placeholder="Untitled note"
+          data-testid="note-title"
+        />
+        <div class="flex items-center gap-3 font-mono text-[11px] text-zinc-500">
+          <span data-testid="note-slug">{{ n.slug }}</span>
+          <span aria-hidden="true">·</span>
+          <span class="capitalize">{{ n.kind }}</span>
+          <span aria-hidden="true">·</span>
+          <span class="capitalize">{{ maturityLabel(n.maturity) }}</span>
+          @if (hasUnsavedChanges()) {
+            <span aria-hidden="true">·</span>
+            <span class="text-amber-400" data-testid="note-dirty">
+              Unsaved changes
+            </span>
+          }
+        </div>
+      </div>
+
+      <label class="sr-only" for="note-body">Body (markdown)</label>
+      <textarea
+        id="note-body"
+        formControlName="body"
+        class="min-h-0 flex-1 resize-none bg-transparent px-6 py-4 font-mono text-sm leading-relaxed text-zinc-200 placeholder:text-zinc-600 focus:outline-hidden"
+        placeholder="# Start writing…"
+        data-testid="note-body"
+        spellcheck="false"
+      ></textarea>
+    </section>
+
+    <!-- Sidebar -->
+    <aside
+      class="flex w-80 shrink-0 flex-col overflow-y-auto border-l border-zinc-900 bg-zinc-950/50"
+      aria-label="Note metadata"
+      data-testid="note-sidebar"
+    >
+      <!-- Metadata -->
+      <div class="border-b border-zinc-800 p-5">
+        <h3
+          class="mb-3 font-mono text-[10px] uppercase tracking-wider text-zinc-500"
+        >
+          Metadata
+        </h3>
+        <div class="mb-3 flex flex-col gap-1">
+          <label for="note-kind" class="text-[11px] text-zinc-400">Kind</label>
+          <select
+            id="note-kind"
+            formControlName="kind"
+            class="rounded-xs border border-zinc-800 bg-zinc-900 px-2 py-1.5 text-xs text-zinc-200 focus:border-sky-600 focus:outline-hidden"
+            data-testid="note-kind"
+          >
+            @for (opt of kindOptions; track opt.value) {
+              <option [value]="opt.value">{{ opt.label }}</option>
+            }
+          </select>
+        </div>
+
+        <div class="mb-3 flex flex-col gap-1">
+          <label for="note-concepts" class="text-[11px] text-zinc-400">
+            Concept slugs (comma-separated)
+          </label>
+          <input
+            id="note-concepts"
+            type="text"
+            formControlName="conceptSlugs"
+            class="rounded-xs border border-zinc-800 bg-zinc-900 px-2 py-1.5 text-xs text-zinc-200 focus:border-sky-600 focus:outline-hidden"
+            data-testid="note-concepts"
+          />
+        </div>
+
+        <div class="flex flex-col gap-1">
+          <label for="note-targets" class="text-[11px] text-zinc-400">
+            Target IDs (comma-separated)
+          </label>
+          <input
+            id="note-targets"
+            type="text"
+            formControlName="targetIds"
+            class="rounded-xs border border-zinc-800 bg-zinc-900 px-2 py-1.5 text-xs text-zinc-200 focus:border-sky-600 focus:outline-hidden"
+            data-testid="note-targets"
+          />
+        </div>
+      </div>
+
+      <!-- Maturity ladder -->
+      <div class="border-b border-zinc-800 p-5">
+        <h3
+          class="mb-3 font-mono text-[10px] uppercase tracking-wider text-zinc-500"
+        >
+          Maturity
+        </h3>
+        <ul class="space-y-1" data-testid="note-maturity-ladder">
+          @for (step of maturityLadder; track step) {
+            <li>
+              <button
+                type="button"
+                (click)="setMaturity(step)"
+                [disabled]="isActioning() || step === n.maturity"
+                class="flex w-full items-center gap-2 rounded-xs border px-2 py-1.5 text-left text-xs transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500 disabled:cursor-not-allowed"
+                [class.border-sky-700]="step === n.maturity"
+                [class.bg-sky-900/30]="step === n.maturity"
+                [class.text-sky-300]="step === n.maturity"
+                [class.border-zinc-800]="step !== n.maturity"
+                [class.bg-zinc-900]="step !== n.maturity"
+                [class.text-zinc-300]="step !== n.maturity"
+                [attr.data-testid]="'note-maturity-' + step"
+              >
+                <span
+                  class="inline-block size-1.5 rounded-full"
+                  [class]="maturityDotClass(step)"
+                  aria-hidden="true"
+                ></span>
+                <span class="flex-1">{{ maturityLabel(step) }}</span>
+                @if (step === n.maturity) {
+                  <span class="font-mono text-[10px] text-sky-400">current</span>
+                }
+              </button>
+            </li>
+          }
+        </ul>
+        <p class="mt-2 text-[11px] text-zinc-500">
+          Updates to maturity go through a separate audit endpoint; backward
+          moves ask for confirmation.
+        </p>
+      </div>
+
+      <!-- System -->
+      <div class="p-5">
+        <h3
+          class="mb-3 font-mono text-[10px] uppercase tracking-wider text-zinc-500"
+        >
+          System
+        </h3>
+        <dl class="space-y-1.5 text-[11px]">
+          <div class="flex items-center justify-between">
+            <dt class="text-zinc-500">ID</dt>
+            <dd class="truncate font-mono text-zinc-400">
+              {{ n.id.slice(0, 8) }}
+            </dd>
+          </div>
+          <div class="flex items-center justify-between">
+            <dt class="text-zinc-500">Created by</dt>
+            <dd class="font-mono text-zinc-400">{{ n.actor }}</dd>
+          </div>
+          <div class="flex items-center justify-between">
+            <dt class="text-zinc-500">Created</dt>
+            <dd class="font-mono text-zinc-400">
+              {{ n.created_at | date: 'short' }}
+            </dd>
+          </div>
+          <div class="flex items-center justify-between">
+            <dt class="text-zinc-500">Updated</dt>
+            <dd class="font-mono text-zinc-400">
+              {{ n.updated_at | date: 'short' }}
+            </dd>
+          </div>
+        </dl>
+      </div>
+    </aside>
+  </form>
+}

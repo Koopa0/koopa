@@ -1,0 +1,88 @@
+<!-- Header -->
+<section class="border-b border-zinc-800 bg-zinc-950">
+  <div class="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
+    <a
+      routerLink="/articles"
+      class="mb-4 inline-flex items-center gap-1.5 text-sm text-zinc-500 no-underline transition-colors hover:text-zinc-300"
+    >
+      <lucide-icon [img]="ArrowLeftIcon" [size]="14" />
+      Back to Articles
+    </a>
+    <div class="flex items-center gap-3">
+      <lucide-icon [img]="TagIcon" [size]="24" class="text-zinc-500" />
+      <h1 class="font-display text-3xl font-bold text-zinc-100">{{ tagName() }}</h1>
+    </div>
+    @if (!isLoading()) {
+    <p class="mt-2 text-zinc-400">{{ contents().length }} related posts</p>
+    }
+  </div>
+</section>
+
+<section class="bg-zinc-950">
+  <div class="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+    @if (isLoading()) {
+    <div class="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+      @for (_ of [1, 2, 3]; track _) {
+      <app-skeleton variant="card" />
+      }
+    </div>
+    } @else if (contents().length > 0) {
+    <!-- Contents Grid -->
+    <div class="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+      @for (item of contents(); track item.id) {
+      <a
+        [routerLink]="'/articles/' + item.slug"
+        class="group rounded-sm border border-zinc-800 bg-zinc-900/50 p-6 no-underline transition-all duration-200 hover:-translate-y-1 hover:border-zinc-600 hover:shadow-lg hover:shadow-zinc-950/50"
+      >
+        <h3
+          class="mb-3 text-lg font-semibold text-zinc-100 group-hover:text-white"
+        >
+          {{ item.title }}
+        </h3>
+        <p class="mb-4 line-clamp-2 text-sm text-zinc-400">
+          {{ item.excerpt }}
+        </p>
+        <div class="flex flex-wrap items-center gap-4 text-xs text-zinc-500">
+          <span class="flex items-center gap-1">
+            <lucide-icon [img]="CalendarIcon" [size]="12" />
+            {{ item.published_at | date: 'MMM d, yyyy' }}
+          </span>
+          <span class="flex items-center gap-1">
+            <lucide-icon [img]="ClockIcon" [size]="12" />
+            {{ item.reading_time_min }} min
+          </span>
+        </div>
+        <div class="mt-4 flex flex-wrap gap-2">
+          @for (tag of item.tags; track tag) {
+          <span
+            class="rounded-sm px-2 py-0.5 text-xs"
+            [class]="
+              tag === tagName()
+                ? 'bg-zinc-700 text-zinc-200'
+                : 'bg-zinc-800 text-zinc-400'
+            "
+          >
+            {{ tag }}
+          </span>
+          }
+        </div>
+      </a>
+      }
+    </div>
+    } @else {
+    <!-- Empty State -->
+    <div class="flex flex-col items-center gap-4 py-20 text-center">
+      <lucide-icon [img]="FileTextIcon" [size]="48" class="text-zinc-700" />
+      <h3 class="text-lg font-medium text-zinc-300">
+        No content found for "{{ tagName() }}"
+      </h3>
+      <a
+        routerLink="/articles"
+        class="rounded-sm bg-zinc-800 px-4 py-2 text-sm text-zinc-300 no-underline transition-colors hover:bg-zinc-700"
+      >
+        Browse All Articles
+      </a>
+    </div>
+    }
+  </div>
+</section>

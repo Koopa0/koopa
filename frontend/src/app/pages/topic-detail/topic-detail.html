@@ -1,0 +1,248 @@
+@if (isLoading()) {
+<!-- Loading skeleton -->
+<section class="border-b border-zinc-800 bg-zinc-950">
+  <div class="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
+    <div class="mb-2 h-8 w-1/3 animate-pulse rounded-sm bg-zinc-800"></div>
+    <div class="h-5 w-2/3 animate-pulse rounded-sm bg-zinc-800"></div>
+  </div>
+</section>
+<section class="bg-zinc-950">
+  <div class="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
+    <div class="space-y-4">
+      @for (_ of [1, 2, 3, 4]; track _) {
+      <div class="animate-pulse rounded-sm border border-zinc-800 p-6">
+        <div class="mb-2 h-4 w-1/4 rounded-sm bg-zinc-800"></div>
+        <div class="mb-3 h-6 w-3/4 rounded-sm bg-zinc-800"></div>
+        <div class="h-4 w-full rounded-sm bg-zinc-800"></div>
+      </div>
+      }
+    </div>
+  </div>
+</section>
+} @else if (isNotFound()) {
+<section class="bg-zinc-950">
+  <div class="flex flex-col items-center gap-4 px-4 py-32 text-center">
+    <lucide-icon [img]="LayersIcon" [size]="48" class="text-zinc-700" />
+    <h1 class="text-2xl font-bold text-zinc-300">Topic not found</h1>
+    <p class="text-sm text-zinc-500">
+      This topic does not exist or has been removed
+    </p>
+    <a
+      routerLink="/topics"
+      class="mt-2 rounded-sm bg-zinc-800 px-4 py-2 text-sm text-zinc-300 no-underline transition-colors hover:bg-zinc-700"
+    >
+      Back to topics
+    </a>
+  </div>
+</section>
+} @else if (error()) {
+<section class="bg-zinc-950">
+  <div class="flex flex-col items-center gap-4 px-4 py-32 text-center">
+    <p class="text-zinc-500">{{ error() }}</p>
+    <a
+      routerLink="/topics"
+      class="rounded-sm bg-zinc-800 px-4 py-2 text-sm text-zinc-300 no-underline transition-colors hover:bg-zinc-700"
+    >
+      Back to topics
+    </a>
+  </div>
+</section>
+} @else if (topic(); as t) {
+<!-- Header -->
+<section class="border-b border-zinc-800 bg-zinc-950">
+  <div class="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
+    <!-- Back link -->
+    <a
+      routerLink="/topics"
+      class="mb-6 inline-flex items-center gap-1 text-sm text-zinc-500 no-underline transition-colors hover:text-zinc-300"
+    >
+      <lucide-icon [img]="ArrowLeftIcon" [size]="14" />
+      All Topics
+    </a>
+
+    <div class="flex items-start gap-4">
+      @if (t.icon) {
+      <span class="text-4xl">{{ t.icon }}</span>
+      }
+      <div>
+        <h1 class="font-display text-3xl font-bold text-balance text-zinc-100">
+          {{ t.name }}
+        </h1>
+        @if (t.description) {
+        <p class="mt-2 text-zinc-400">{{ t.description }}</p>
+        }
+        <p class="mt-2 text-sm text-zinc-500">{{ meta()?.total ?? 0 }} items</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Related Tags -->
+@if (relatedTags().length > 0) {
+<section class="border-b border-zinc-800 bg-zinc-950">
+  <div class="mx-auto max-w-7xl px-4 py-4 sm:px-6 lg:px-8">
+    <div class="flex flex-wrap items-center gap-2">
+      <lucide-icon [img]="TagIcon" [size]="14" class="text-zinc-500" />
+      <button
+        type="button"
+        class="rounded-full border px-3 py-1 text-xs transition-colors"
+        [class]="selectedTag() === null
+          ? 'border-white bg-white text-zinc-900'
+          : 'border-zinc-700 text-zinc-400 hover:border-zinc-500'"
+        (click)="toggleTag('')"
+      >
+        All
+      </button>
+      @for (rt of relatedTags(); track rt.tag) {
+      <button
+        type="button"
+        class="rounded-full border px-3 py-1 text-xs transition-colors"
+        [class]="selectedTag() === rt.tag
+          ? 'border-white bg-white text-zinc-900'
+          : 'border-zinc-700 text-zinc-400 hover:border-zinc-500'"
+        (click)="toggleTag(rt.tag)"
+      >
+        {{ rt.tag }}
+        <span class="ml-1 text-zinc-500">{{ rt.count }}</span>
+      </button>
+      }
+    </div>
+  </div>
+</section>
+}
+
+<!-- Content list -->
+<section class="bg-zinc-950">
+  <div class="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
+    @if (filteredContents().length === 0 && contents().length === 0) {
+    <div class="flex flex-col items-center gap-4 py-20 text-center">
+      <lucide-icon [img]="LayersIcon" [size]="48" class="text-zinc-700" />
+      <h2 class="text-lg font-medium text-zinc-300">
+        No content in this topic yet
+      </h2>
+      <p class="text-sm text-zinc-500">
+        Content will appear here once published
+      </p>
+    </div>
+    } @else if (filteredContents().length === 0) {
+    <div class="flex flex-col items-center gap-4 py-12 text-center">
+      <p class="text-sm text-zinc-500">No content matches this tag</p>
+      <button
+        type="button"
+        class="rounded-sm bg-zinc-800 px-4 py-2 text-sm text-zinc-300 transition-colors hover:bg-zinc-700"
+        (click)="toggleTag('')"
+      >
+        Clear filter
+      </button>
+    </div>
+    } @else {
+    <div class="space-y-4">
+      @for (content of filteredContents(); track content.id) {
+      <a
+        [routerLink]="getContentRoute(content)"
+        class="group block rounded-sm border border-zinc-800 bg-zinc-900/50 p-6 no-underline transition-all duration-200 hover:-translate-y-0.5 hover:border-zinc-600 hover:shadow-lg hover:shadow-zinc-950/50"
+      >
+        <div
+          class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"
+        >
+          <div class="min-w-0 flex-1">
+            <!-- Type badge + tags row -->
+            <div class="mb-2 flex flex-wrap items-center gap-2">
+              <span
+                class="inline-flex rounded-sm border px-2 py-0.5 text-xs font-medium"
+                [class]="getBadgeClasses(content)"
+              >
+                {{ getTypeLabel(content) }}
+              </span>
+              @for (tag of content.tags; track tag) {
+              <span
+                class="rounded-sm bg-zinc-800 px-1.5 py-0.5 text-xs text-zinc-400"
+              >
+                {{ tag }}
+              </span>
+              }
+            </div>
+
+            <!-- Title -->
+            <h2
+              class="mb-1 text-lg font-semibold text-zinc-100 group-hover:text-white"
+            >
+              {{ content.title }}
+            </h2>
+
+            <!-- Excerpt -->
+            @if (content.excerpt) {
+            <p class="line-clamp-2 text-sm leading-relaxed text-zinc-400">
+              {{ content.excerpt }}
+            </p>
+            }
+          </div>
+
+          <!-- Meta -->
+          <div
+            class="flex shrink-0 items-center gap-3 text-xs text-zinc-500 sm:flex-col sm:items-end sm:gap-1"
+          >
+            @if (content.published_at) {
+            <span class="flex items-center gap-1">
+              <lucide-icon [img]="CalendarIcon" [size]="12" />
+              {{ content.published_at | date: 'yyyy-MM-dd' }}
+            </span>
+            } @if (content.reading_time_min) {
+            <span class="flex items-center gap-1">
+              <lucide-icon [img]="ClockIcon" [size]="12" />
+              {{ content.reading_time_min }} min
+            </span>
+            }
+          </div>
+        </div>
+      </a>
+      }
+    </div>
+
+    <!-- Pagination -->
+    @let cp = currentPage(); @let tp = totalPages(); @if (tp > 1) {
+    <nav aria-label="Pagination" class="mt-12 flex flex-col items-center gap-4">
+      <div class="flex items-center gap-2">
+        <button
+          type="button"
+          class="rounded-sm p-2 text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-200 focus-visible:ring-2 focus-visible:ring-zinc-400 focus-visible:outline-hidden disabled:opacity-30"
+          [disabled]="cp === 1"
+          (click)="onPageChange(cp - 1)"
+          aria-label="Previous page"
+        >
+          <lucide-icon [img]="ChevronLeftIcon" [size]="16" />
+        </button>
+
+        @for (page of pageArray(); track page) {
+        <button
+          type="button"
+          class="rounded-sm px-3 py-1 text-sm transition-colors focus-visible:ring-2 focus-visible:ring-zinc-400 focus-visible:outline-hidden"
+          [class]="
+            cp === page
+              ? 'bg-zinc-700 text-white'
+              : 'text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200'
+          "
+          (click)="onPageChange(page)"
+          [attr.aria-current]="cp === page ? 'page' : null"
+          [attr.aria-label]="'Page ' + page"
+        >
+          {{ page }}
+        </button>
+        }
+
+        <button
+          type="button"
+          class="rounded-sm p-2 text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-200 focus-visible:ring-2 focus-visible:ring-zinc-400 focus-visible:outline-hidden disabled:opacity-30"
+          [disabled]="cp === tp"
+          (click)="onPageChange(cp + 1)"
+          aria-label="Next page"
+        >
+          <lucide-icon [img]="ChevronRightIcon" [size]="16" />
+        </button>
+      </div>
+      <div class="text-xs text-zinc-500">Page {{ cp }} / {{ tp }}</div>
+    </nav>
+    } }
+  </div>
+</section>
+}

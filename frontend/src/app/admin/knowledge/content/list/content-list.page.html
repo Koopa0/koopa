@@ -1,0 +1,152 @@
+<div class="flex min-w-0 flex-1 flex-col px-6 py-5">
+  <!-- Filter chips -->
+  <div class="mb-4 flex flex-wrap items-center gap-x-4 gap-y-2">
+    <div
+      class="flex flex-wrap items-center gap-1"
+      role="toolbar"
+      aria-label="Filter by type"
+      data-testid="content-filter-type"
+    >
+      <span class="mr-1 font-mono text-[10px] uppercase tracking-wider text-zinc-500">
+        Type
+      </span>
+      @for (chip of typeChips; track chip.value) {
+        <button
+          type="button"
+          (click)="setTypeFilter(chip.value)"
+          class="h-7 rounded-xs border px-2.5 text-[11px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500"
+          [class.border-sky-700]="typeFilter() === chip.value"
+          [class.bg-sky-900/30]="typeFilter() === chip.value"
+          [class.text-sky-300]="typeFilter() === chip.value"
+          [class.border-zinc-800]="typeFilter() !== chip.value"
+          [class.bg-zinc-900]="typeFilter() !== chip.value"
+          [class.text-zinc-400]="typeFilter() !== chip.value"
+          [attr.aria-pressed]="typeFilter() === chip.value"
+          [attr.data-testid]="'content-filter-type-' + chip.value"
+        >
+          {{ chip.label }}
+        </button>
+      }
+    </div>
+
+    <div
+      class="flex flex-wrap items-center gap-1"
+      role="toolbar"
+      aria-label="Filter by status"
+      data-testid="content-filter-status"
+    >
+      <span class="mr-1 font-mono text-[10px] uppercase tracking-wider text-zinc-500">
+        Status
+      </span>
+      @for (chip of statusChips; track chip.value) {
+        <button
+          type="button"
+          (click)="setStatusFilter(chip.value)"
+          class="h-7 rounded-xs border px-2.5 text-[11px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500"
+          [class.border-sky-700]="statusFilter() === chip.value"
+          [class.bg-sky-900/30]="statusFilter() === chip.value"
+          [class.text-sky-300]="statusFilter() === chip.value"
+          [class.border-zinc-800]="statusFilter() !== chip.value"
+          [class.bg-zinc-900]="statusFilter() !== chip.value"
+          [class.text-zinc-400]="statusFilter() !== chip.value"
+          [attr.aria-pressed]="statusFilter() === chip.value"
+          [attr.data-testid]="'content-filter-status-' + chip.value"
+        >
+          {{ chip.label }}
+        </button>
+      }
+    </div>
+
+    <span
+      class="ml-auto font-mono text-[11px] text-zinc-500"
+      aria-live="polite"
+      data-testid="content-count"
+    >
+      Showing {{ total() }} {{ total() === 1 ? 'item' : 'items' }}
+    </span>
+  </div>
+
+  <!-- Error banner -->
+  @if (hasError()) {
+    <div
+      role="alert"
+      class="mb-3 rounded-xs border border-red-800 bg-red-900/20 px-3 py-2 text-xs text-red-300"
+      data-testid="content-list-error"
+    >
+      Couldn't load content. Try switching a filter or reload the page.
+    </div>
+  }
+
+  <!-- Table -->
+  <app-data-table
+    [isLoading]="isLoading()"
+    [isEmpty]="isEmpty()"
+    emptyTitle="No content matches these filters"
+    emptyDescription="Relax the type or status filter, or create a draft via Cowork."
+  >
+    <table class="w-full text-sm" data-testid="content-list-table">
+      <thead>
+        <tr
+          class="border-b border-zinc-800 text-left font-mono text-[10px] uppercase tracking-wider text-zinc-500"
+        >
+          <th scope="col" class="px-3 py-2 font-normal">Title</th>
+          <th scope="col" class="px-3 py-2 font-normal">Type</th>
+          <th scope="col" class="px-3 py-2 font-normal">Topic</th>
+          <th scope="col" class="px-3 py-2 font-normal">Actor</th>
+          <th scope="col" class="px-3 py-2 font-normal">Status</th>
+          <th scope="col" class="px-3 py-2 font-normal">Public</th>
+          <th scope="col" class="px-3 py-2 font-normal">Updated</th>
+          <th scope="col" class="px-3 py-2 font-normal">ID</th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (row of rows(); let i = $index; track row.id) {
+          <tr
+            #row
+            [attr.tabindex]="rowTabIndex(i)"
+            class="cursor-pointer border-b border-zinc-900 transition-colors hover:bg-zinc-800/40 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-sky-500"
+            [class.bg-zinc-800/40]="i === focusedIndex()"
+            (click)="openRow(row)"
+            (keydown.enter)="openRow(row)"
+            (focus)="focusedIndex.set(i)"
+            [attr.data-testid]="'content-list-row-' + i"
+          >
+            <td class="truncate px-3 py-2 text-zinc-100">{{ row.title }}</td>
+            <td class="px-3 py-2">
+              <span
+                class="inline-block rounded-xs border px-2 py-0.5 font-mono text-[10px] uppercase"
+                [class]="typeBadgeClass(row.type)"
+              >
+                {{ typeLabel(row.type) }}
+              </span>
+            </td>
+            <td class="truncate px-3 py-2 text-zinc-400">{{ topicLabel(row) }}</td>
+            <td class="px-3 py-2 font-mono text-[11px] text-zinc-500">—</td>
+            <td class="px-3 py-2">
+              <span
+                class="inline-flex items-center gap-1.5 text-xs capitalize"
+                [class]="statusTextClass(row.status)"
+              >
+                <span
+                  class="inline-block size-1.5 rounded-full"
+                  [class]="statusDotClass(row.status)"
+                  aria-hidden="true"
+                ></span>
+                {{ row.status }}
+              </span>
+            </td>
+            <td class="px-3 py-2 text-zinc-400">
+              {{ row.is_public ? 'yes' : '—' }}
+            </td>
+            <td class="px-3 py-2 text-zinc-400">
+              {{ row.updated_at | date: 'short' }}
+            </td>
+            <td class="px-3 py-2 font-mono text-[11px] text-zinc-500">
+              {{ row.id.slice(0, 8) }}
+            </td>
+          </tr>
+        }
+      </tbody>
+    </table>
+  </app-data-table>
+</div>

@@ -1,0 +1,264 @@
+<!-- Tabs -->
+<div class="flex border-b border-zinc-800" role="tablist" aria-label="Task inspector tabs">
+  <button
+    role="tab"
+    type="button"
+    [attr.aria-selected]="activeTab() === 'overview'"
+    (click)="setTab('overview')"
+    class="flex-1 px-4 py-2.5 text-xs font-medium transition-colors"
+    [class.text-zinc-100]="activeTab() === 'overview'"
+    [class.border-b-2]="activeTab() === 'overview'"
+    [class.border-amber-500]="activeTab() === 'overview'"
+    [class.text-zinc-500]="activeTab() !== 'overview'"
+  >
+    Overview
+  </button>
+  <button
+    role="tab"
+    type="button"
+    [attr.aria-selected]="activeTab() === 'thread'"
+    (click)="setTab('thread')"
+    class="flex-1 px-4 py-2.5 text-xs font-medium transition-colors"
+    [class.text-zinc-100]="activeTab() === 'thread'"
+    [class.border-b-2]="activeTab() === 'thread'"
+    [class.border-amber-500]="activeTab() === 'thread'"
+    [class.text-zinc-500]="activeTab() !== 'thread'"
+  >
+    Thread
+  </button>
+  <button
+    role="tab"
+    type="button"
+    [attr.aria-selected]="activeTab() === 'artifacts'"
+    (click)="setTab('artifacts')"
+    class="flex-1 px-4 py-2.5 text-xs font-medium transition-colors"
+    [class.text-zinc-100]="activeTab() === 'artifacts'"
+    [class.border-b-2]="activeTab() === 'artifacts'"
+    [class.border-amber-500]="activeTab() === 'artifacts'"
+    [class.text-zinc-500]="activeTab() !== 'artifacts'"
+  >
+    Artifacts
+  </button>
+</div>
+
+<!-- Body -->
+@if (isLoading()) {
+  <div class="flex flex-1 items-center justify-center">
+    <div class="size-5 animate-spin rounded-full border-2 border-zinc-700 border-t-zinc-400"></div>
+  </div>
+} @else if (hasError()) {
+  <div class="flex flex-1 items-center justify-center p-6">
+    <p class="text-sm text-red-400">Failed to load task.</p>
+  </div>
+} @else if (task(); as t) {
+  <div class="flex-1 overflow-y-auto">
+    @if (activeTab() === 'overview') {
+      <div class="space-y-4 px-5 py-4">
+        <h3 class="font-display text-base font-semibold text-zinc-100">{{ t.title }}</h3>
+
+        <!-- Source → Target -->
+        <div class="flex items-center gap-2 text-sm">
+          <span class="rounded-full border border-zinc-700 bg-zinc-800 px-2 py-0.5 text-xs text-zinc-300">{{ t.source }}</span>
+          <span class="text-zinc-600">→</span>
+          <span class="rounded-full border border-zinc-700 bg-zinc-800 px-2 py-0.5 text-xs text-zinc-300">{{ t.target }}</span>
+        </div>
+
+        <!-- State badge -->
+        <div>
+          <span
+            class="inline-block rounded-full border px-2 py-0.5 text-xs"
+            [class.border-emerald-800]="t.state === 'completed'"
+            [class.bg-emerald-900/30]="t.state === 'completed'"
+            [class.text-emerald-400]="t.state === 'completed'"
+            [class.border-amber-800]="t.state === 'working' || t.state === 'revision_requested'"
+            [class.bg-amber-900/30]="t.state === 'working' || t.state === 'revision_requested'"
+            [class.text-amber-400]="t.state === 'working' || t.state === 'revision_requested'"
+            [class.border-zinc-700]="t.state === 'submitted' || t.state === 'canceled'"
+            [class.bg-zinc-800]="t.state === 'submitted' || t.state === 'canceled'"
+            [class.text-zinc-400]="t.state === 'submitted' || t.state === 'canceled'"
+          >
+            {{ t.state }}
+          </span>
+        </div>
+
+        <!-- Timeline -->
+        <div class="space-y-2">
+          <h4 class="text-xs font-semibold uppercase tracking-wider text-zinc-500">Timeline</h4>
+          <dl class="space-y-1 text-sm">
+            <div class="flex justify-between">
+              <dt class="text-zinc-500">Submitted</dt>
+              <dd class="text-zinc-200">{{ t.submitted_at | date: 'medium' }}</dd>
+            </div>
+            @if (t.accepted_at) {
+              <div class="flex justify-between">
+                <dt class="text-zinc-500">Accepted</dt>
+                <dd class="text-zinc-200">{{ t.accepted_at | date: 'medium' }}</dd>
+              </div>
+            }
+            @if (t.completed_at) {
+              <div class="flex justify-between">
+                <dt class="text-zinc-500">Completed</dt>
+                <dd class="text-zinc-200">{{ t.completed_at | date: 'medium' }}</dd>
+              </div>
+            }
+            @if (t.revision_requested_at) {
+              <div class="flex justify-between">
+                <dt class="text-zinc-500">Revision requested</dt>
+                <dd class="text-zinc-200">{{ t.revision_requested_at | date: 'medium' }}</dd>
+              </div>
+            }
+            @if (t.canceled_at) {
+              <div class="flex justify-between">
+                <dt class="text-zinc-500">Canceled</dt>
+                <dd class="text-zinc-200">{{ t.canceled_at | date: 'medium' }}</dd>
+              </div>
+            }
+          </dl>
+        </div>
+      </div>
+    }
+
+    @if (activeTab() === 'thread') {
+      <div class="px-5 py-4">
+        @if (messages().length === 0) {
+          <p class="text-sm text-zinc-500">No messages.</p>
+        } @else {
+          <div class="space-y-3">
+            @for (msg of messages(); track msg.id) {
+              <div
+                class="rounded-md border p-3"
+                [class.border-sky-900/50]="msg.role === 'request'"
+                [class.bg-sky-950/20]="msg.role === 'request'"
+                [class.border-zinc-800]="msg.role === 'response'"
+                [class.bg-zinc-900/50]="msg.role === 'response'"
+              >
+                <div class="mb-1 flex items-center gap-2">
+                  <span
+                    class="rounded-sm px-1.5 py-0.5 text-[10px] font-semibold uppercase"
+                    [class.bg-sky-900/50]="msg.role === 'request'"
+                    [class.text-sky-400]="msg.role === 'request'"
+                    [class.bg-zinc-800]="msg.role === 'response'"
+                    [class.text-zinc-400]="msg.role === 'response'"
+                  >
+                    {{ msg.role }}
+                  </span>
+                  <span class="text-[10px] text-zinc-500">{{ msg.created_at | date: 'short' }}</span>
+                </div>
+                @for (part of msg.parts; track $index) {
+                  @if (part.text) {
+                    <p class="whitespace-pre-wrap text-sm leading-relaxed text-zinc-300">{{ part.text }}</p>
+                  } @else {
+                    <div class="mt-1 rounded-sm bg-zinc-800 px-2 py-1 text-xs text-zinc-400">
+                      [data: {{ part.data?.mimeType }}]
+                    </div>
+                  }
+                }
+              </div>
+            }
+          </div>
+        }
+      </div>
+    }
+
+    @if (activeTab() === 'artifacts') {
+      <div class="px-5 py-4">
+        @if (artifacts().length === 0) {
+          <p class="text-sm text-zinc-500">No artifacts.</p>
+        } @else {
+          <div class="space-y-3">
+            @for (artifact of artifacts(); track artifact.id) {
+              <div class="rounded-md border border-zinc-800 bg-zinc-900/50 p-3">
+                <h4 class="text-sm font-medium text-zinc-100">{{ artifact.name }}</h4>
+                @if (artifact.description) {
+                  <p class="mt-0.5 text-xs text-zinc-400">{{ artifact.description }}</p>
+                }
+                <div class="mt-2 space-y-1">
+                  @for (part of artifact.parts; track $index) {
+                    @if (part.text) {
+                      <div class="whitespace-pre-wrap rounded-sm bg-zinc-900 p-2 text-xs text-zinc-300">{{ part.text }}</div>
+                    } @else {
+                      <div class="rounded-sm bg-zinc-800 px-2 py-1 text-xs text-zinc-400">
+                        [data: {{ part.data?.mimeType }}]
+                      </div>
+                    }
+                  }
+                </div>
+                <div class="mt-2 text-[10px] text-zinc-500">{{ artifact.created_at | date: 'short' }}</div>
+              </div>
+            }
+          </div>
+        }
+      </div>
+    }
+  </div>
+
+  <!-- Action bar -->
+  @if (isReviewable()) {
+    <div class="border-t border-zinc-800 px-5 py-3">
+      <div class="flex items-center gap-2">
+        <button
+          type="button"
+          class="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white shadow-xs transition-colors hover:bg-emerald-500 disabled:opacity-50"
+          [disabled]="isActioning()"
+          (click)="approve()"
+        >
+          Approve
+        </button>
+        @if (!isReplyExpanded()) {
+          <button
+            type="button"
+            class="rounded-md px-3 py-2 text-sm text-zinc-400 transition-colors hover:text-zinc-200 disabled:opacity-50"
+            [disabled]="isActioning()"
+            (click)="toggleReply()"
+          >
+            Reply
+          </button>
+        }
+        <button
+          type="button"
+          class="rounded-md bg-amber-900/80 px-4 py-2 text-sm font-medium text-amber-200 transition-colors hover:bg-amber-800 disabled:opacity-50"
+          [disabled]="isActioning()"
+          (click)="requestRevision()"
+        >
+          Request Revision
+        </button>
+      </div>
+
+      @if (isReplyExpanded()) {
+        <div class="mt-3 space-y-2">
+          <textarea
+            aria-label="Reply to agent"
+            class="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 placeholder-zinc-500 outline-hidden focus:border-zinc-500 focus:ring-1 focus:ring-zinc-500"
+            rows="3"
+            placeholder="Your reply to the agent..."
+            [value]="replyText()"
+            (input)="replyText.set(readTextarea($event))"
+          ></textarea>
+          <div class="flex gap-2">
+            <button
+              type="button"
+              class="rounded-md bg-sky-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-sky-500 disabled:opacity-50"
+              [disabled]="!replyText().trim() || isActioning()"
+              (click)="sendReply()"
+            >
+              Send Reply
+            </button>
+            <button
+              type="button"
+              class="rounded-md px-3 py-1.5 text-xs text-zinc-400 transition-colors hover:text-zinc-200"
+              (click)="toggleReply()"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      }
+    </div>
+  }
+
+  @if (isWaiting()) {
+    <div class="flex items-center border-t border-zinc-800 px-5 py-3">
+      <span class="text-sm text-zinc-500">{{ statusMessage() }}</span>
+    </div>
+  }
+}

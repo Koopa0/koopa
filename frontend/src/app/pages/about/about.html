@@ -1,0 +1,128 @@
+<!-- Hero Section -->
+<section class="relative overflow-hidden border-b border-zinc-800 bg-zinc-950">
+  <div
+    class="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-(--color-brand)/10 via-zinc-950 to-zinc-950"
+  ></div>
+  <div class="relative mx-auto max-w-4xl px-4 py-20 sm:px-6 lg:px-8">
+    <div class="flex flex-col items-center gap-6 sm:flex-row sm:gap-8">
+      <div class="shrink-0">
+        <img
+          src="/logo.png"
+          alt="Koopa Profile"
+          width="120"
+          height="120"
+          class="size-28"
+        />
+      </div>
+      <div class="text-center sm:text-left">
+        <h1 class="font-display text-3xl font-bold text-zinc-100">Koopa</h1>
+        <p class="mt-1 text-lg text-zinc-400">Software Engineer</p>
+        <p
+          class="mt-1 flex items-center justify-center gap-1 text-sm text-zinc-500 sm:justify-start"
+        >
+          <lucide-icon [img]="MapPinIcon" [size]="14" />
+          Taipei, Taiwan
+        </p>
+        <p class="mt-3 max-w-md text-sm leading-relaxed text-zinc-400">
+          Building modern web applications with Go, Angular, and cloud-native
+          technologies. This site is my personal knowledge engine — input,
+          process, output.
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Skills -->
+<section class="border-b border-zinc-800 bg-zinc-900/30">
+  <div class="mx-auto max-w-4xl px-4 py-20 sm:px-6 lg:px-8">
+    <div class="mb-12">
+      <h2 class="font-display text-3xl font-bold text-zinc-100">Skills</h2>
+      <p class="mt-3 text-zinc-400">Technologies and tools I work with</p>
+    </div>
+    <div class="grid grid-cols-1 gap-6 sm:grid-cols-3">
+      @for (skill of skills; track skill.category) {
+      <div
+        class="rounded-sm border border-zinc-800 bg-zinc-900/50 p-6 transition-all duration-300 hover:-translate-y-1 hover:border-zinc-600 hover:shadow-lg hover:shadow-zinc-950/50"
+      >
+        <h3 class="mb-3 text-sm font-semibold text-zinc-200">
+          {{ skill.category }}
+        </h3>
+        <div class="flex flex-wrap gap-2">
+          @for (item of skill.items; track item) {
+          <span
+            class="rounded-sm bg-zinc-800 px-2.5 py-1 text-sm text-zinc-300 transition-colors hover:bg-zinc-700 hover:text-zinc-100"
+          >
+            {{ item }}
+          </span>
+          }
+        </div>
+      </div>
+      }
+    </div>
+  </div>
+</section>
+
+<!-- Contact -->
+<section class="bg-zinc-950">
+  <div class="mx-auto max-w-4xl px-4 py-20 sm:px-6 lg:px-8">
+    <div class="mb-12">
+      <h2 class="font-display text-3xl font-bold text-zinc-100">Contact</h2>
+      <p class="mt-3 text-zinc-400">
+        Feel free to reach out through any channel
+      </p>
+    </div>
+    <div class="grid grid-cols-1 gap-6 sm:grid-cols-2">
+      <a
+        href="mailto:contact@koopa0.dev"
+        class="flex items-center gap-3 rounded-sm border border-zinc-800 bg-zinc-900/50 p-6 text-zinc-400 no-underline transition-all duration-300 hover:-translate-y-1 hover:border-zinc-600 hover:shadow-lg hover:shadow-zinc-950/50 hover:text-zinc-200"
+      >
+        <lucide-icon [img]="MailIcon" [size]="20" />
+        <div>
+          <div class="text-sm font-medium text-zinc-300">Email</div>
+          <div class="text-xs text-zinc-500">contact&#64;koopa0.dev</div>
+        </div>
+      </a>
+      <a
+        href="https://github.com/koopa0"
+        target="_blank"
+        rel="noopener noreferrer"
+        class="flex items-center gap-3 rounded-sm border border-zinc-800 bg-zinc-900/50 p-6 text-zinc-400 no-underline transition-all duration-300 hover:-translate-y-1 hover:border-zinc-600 hover:shadow-lg hover:shadow-zinc-950/50 hover:text-zinc-200"
+      >
+        <lucide-icon [img]="GithubIcon" [size]="20" />
+        <div>
+          <div class="text-sm font-medium text-zinc-300">GitHub</div>
+          <div class="text-xs text-zinc-500">github.com/koopa0</div>
+        </div>
+      </a>
+      <a
+        href="https://www.linkedin.com/in/koopa-chen-70a4651ba/"
+        target="_blank"
+        rel="noopener noreferrer"
+        class="flex items-center gap-3 rounded-sm border border-zinc-800 bg-zinc-900/50 p-6 text-zinc-400 no-underline transition-all duration-300 hover:-translate-y-1 hover:border-zinc-600 hover:shadow-lg hover:shadow-zinc-950/50 hover:text-zinc-200"
+      >
+        <lucide-icon [img]="LinkedinIcon" [size]="20" />
+        <div>
+          <div class="text-sm font-medium text-zinc-300">LinkedIn</div>
+          <div class="text-xs text-zinc-500">Koopa Chen</div>
+        </div>
+      </a>
+      <a
+        href="https://x.com/Koopa012426"
+        target="_blank"
+        rel="noopener noreferrer"
+        class="flex items-center gap-3 rounded-sm border border-zinc-800 bg-zinc-900/50 p-6 text-zinc-400 no-underline transition-all duration-300 hover:-translate-y-1 hover:border-zinc-600 hover:shadow-lg hover:shadow-zinc-950/50 hover:text-zinc-200"
+      >
+        <svg class="size-5" viewBox="0 0 24 24" fill="currentColor">
+          <path
+            d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"
+          />
+        </svg>
+        <div>
+          <div class="text-sm font-medium text-zinc-300">X</div>
+          <div class="text-xs text-zinc-500">&#64;Koopa012426</div>
+        </div>
+      </a>
+    </div>
+  </div>
+</section>

@@ -1,0 +1,214 @@
+@if (isLoading()) {
+  <div class="flex flex-1 items-center justify-center" data-testid="task-timeline-loading">
+    <div
+      class="size-5 animate-spin rounded-full border-2 border-zinc-700 border-t-zinc-300"
+      aria-label="Loading task"
+    ></div>
+  </div>
+} @else if (hasError()) {
+  <div
+    class="flex flex-1 items-center justify-center p-8 text-center"
+    data-testid="task-timeline-error"
+  >
+    <div>
+      <p class="mb-2 text-sm text-red-400">Failed to load task.</p>
+      <button
+        type="button"
+        (click)="back()"
+        class="rounded-sm border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-xs text-zinc-300 transition-colors hover:bg-zinc-800"
+      >
+        Back to list
+      </button>
+    </div>
+  </div>
+} @else if (task(); as t) {
+  <div class="flex min-h-0 flex-1" data-testid="task-timeline">
+    <!-- Main: hero + messages -->
+    <section
+      class="flex min-w-0 flex-1 flex-col border-r border-zinc-800"
+      aria-label="Task conversation"
+    >
+      <!-- Hero -->
+      <header
+        class="border-b border-zinc-800 px-6 py-4"
+        data-testid="task-hero"
+      >
+        <h1 class="mb-2 font-display text-lg font-semibold text-zinc-100">
+          {{ t.title }}
+        </h1>
+        <div class="flex flex-wrap items-center gap-x-4 gap-y-1 font-mono text-[11px] text-zinc-500">
+          <span class="flex items-center gap-1.5">
+            <span
+              class="inline-block size-1.5 rounded-full"
+              [class]="stateDotClass(t.state)"
+              aria-hidden="true"
+            ></span>
+            <span class="text-zinc-300">{{ stateLabel(t.state) }}</span>
+          </span>
+          <span>{{ t.source }} → {{ t.target }}</span>
+          <span>submitted {{ t.submitted_at | date: 'short' }}</span>
+          @if (t.completed_at) {
+            <span>completed {{ t.completed_at | date: 'short' }}</span>
+          }
+        </div>
+      </header>
+
+      <!-- Messages timeline -->
+      <div
+        class="flex-1 space-y-4 overflow-y-auto px-6 py-5"
+        data-testid="task-messages"
+      >
+        @if (messages().length === 0) {
+          <p class="text-sm text-zinc-500">No messages yet.</p>
+        }
+        @for (msg of messages(); track msg.id) {
+          <article
+            class="rounded-sm border border-zinc-800 bg-zinc-900/40 p-4"
+            [attr.data-testid]="'task-message-' + msg.role"
+            [attr.aria-label]="msg.role + ' message'"
+          >
+            <header class="mb-2 flex items-center gap-3 font-mono text-[11px]">
+              <span
+                class="rounded-xs border px-2 py-0.5 uppercase"
+                [class.border-sky-700]="msg.role === 'request'"
+                [class.bg-sky-900/30]="msg.role === 'request'"
+                [class.text-sky-300]="msg.role === 'request'"
+                [class.border-emerald-700]="msg.role === 'response'"
+                [class.bg-emerald-900/30]="msg.role === 'response'"
+                [class.text-emerald-300]="msg.role === 'response'"
+              >
+                {{ msg.role }}
+              </span>
+              <span class="text-zinc-500">
+                {{ msg.created_at | date: 'short' }}
+              </span>
+            </header>
+            <div class="space-y-2 text-sm text-zinc-200">
+              @for (part of msg.parts; track $index) {
+                @let txt = textFromPart(part);
+                @if (txt) {
+                  <p class="whitespace-pre-wrap">{{ txt }}</p>
+                } @else {
+                  <div
+                    class="rounded-xs border border-zinc-800 bg-zinc-950 px-3 py-2 font-mono text-[11px] text-zinc-400"
+                  >
+                    [data part · {{ dataMime(part) }}]
+                  </div>
+                }
+              }
+            </div>
+          </article>
+        }
+      </div>
+
+      <!-- Action bar -->
+      <footer
+        class="border-t border-zinc-800 px-6 py-3"
+        data-testid="task-actions"
+      >
+        <label for="task-reply-draft" class="sr-only">Reply message</label>
+        <textarea
+          id="task-reply-draft"
+          [value]="replyDraft()"
+          (input)="replyDraft.set(readTextarea($event))"
+          rows="2"
+          [placeholder]="draftPlaceholder()"
+          class="mb-2 w-full resize-y rounded-xs border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-600 focus:border-sky-600 focus:outline-hidden"
+          data-testid="task-reply-draft"
+        ></textarea>
+
+        <div class="flex flex-wrap items-center gap-2">
+          @if (canReply()) {
+            <button
+              type="button"
+              (click)="reply()"
+              [disabled]="isActioning() || !replyDraft().trim()"
+              class="rounded-sm bg-sky-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-sky-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500 disabled:cursor-not-allowed disabled:bg-sky-900/60 disabled:text-sky-300"
+              data-testid="task-action-reply"
+            >
+              Send reply
+            </button>
+          }
+          @if (canRequestRevision()) {
+            <button
+              type="button"
+              (click)="requestRevision()"
+              [disabled]="isActioning()"
+              class="rounded-sm px-3 py-1.5 text-xs font-medium text-amber-300 transition-colors hover:bg-amber-950/40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500 disabled:cursor-not-allowed"
+              data-testid="task-action-request-revision"
+            >
+              Request revision
+            </button>
+          }
+          @if (canApprove()) {
+            <button
+              type="button"
+              (click)="approve()"
+              [disabled]="isActioning()"
+              class="rounded-sm bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-emerald-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500 disabled:cursor-not-allowed disabled:bg-emerald-900/60"
+              data-testid="task-action-approve"
+            >
+              Approve
+            </button>
+          }
+          @if (canCancel()) {
+            <button
+              type="button"
+              (click)="cancel()"
+              [disabled]="isActioning()"
+              class="rounded-sm px-3 py-1.5 text-xs font-medium text-red-300 transition-colors hover:bg-red-950/40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500 disabled:cursor-not-allowed"
+              data-testid="task-action-cancel"
+            >
+              Cancel task
+            </button>
+          }
+          <button
+            type="button"
+            (click)="back()"
+            class="ml-auto rounded-sm px-3 py-1.5 text-xs text-zinc-400 transition-colors hover:text-zinc-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500"
+            data-testid="task-action-back"
+          >
+            Back to list
+          </button>
+        </div>
+      </footer>
+    </section>
+
+    <!-- Side: artifacts -->
+    <aside
+      class="flex w-80 shrink-0 flex-col overflow-y-auto border-l border-zinc-900 bg-zinc-950/50"
+      aria-label="Artifacts"
+      data-testid="task-artifacts"
+    >
+      <header class="border-b border-zinc-800 px-5 py-4">
+        <h2 class="font-mono text-[10px] uppercase tracking-wider text-zinc-500">
+          Artifacts
+        </h2>
+        <p class="mt-1 text-xs text-zinc-400">
+          {{ artifacts().length }}
+          {{ artifacts().length === 1 ? 'item' : 'items' }}
+        </p>
+      </header>
+      <ul class="divide-y divide-zinc-900">
+        @for (a of artifacts(); track a.id) {
+          <li class="px-5 py-3">
+            <div class="mb-1 text-sm font-medium text-zinc-100">
+              {{ a.name }}
+            </div>
+            @if (a.description) {
+              <p class="mb-1 text-xs text-zinc-400">{{ a.description }}</p>
+            }
+            <div class="font-mono text-[10px] text-zinc-500">
+              {{ a.created_at | date: 'short' }} · {{ a.parts.length }}
+              {{ a.parts.length === 1 ? 'part' : 'parts' }}
+            </div>
+          </li>
+        } @empty {
+          <li class="px-5 py-6 text-center text-xs text-zinc-500">
+            No artifacts on this task yet.
+          </li>
+        }
+      </ul>
+    </aside>
+  </div>
+}

@@ -1,0 +1,154 @@
+<!-- Tabs -->
+<div
+  class="flex border-b border-zinc-800"
+  role="tablist"
+  aria-label="Hypothesis inspector tabs"
+>
+  <button
+    role="tab"
+    type="button"
+    [attr.aria-selected]="activeTab() === 'claim'"
+    (click)="setTab('claim')"
+    class="flex-1 px-4 py-2.5 text-xs font-medium transition-colors"
+    [class.text-zinc-100]="activeTab() === 'claim'"
+    [class.border-b-2]="activeTab() === 'claim'"
+    [class.border-purple-500]="activeTab() === 'claim'"
+    [class.text-zinc-500]="activeTab() !== 'claim'"
+  >
+    Claim
+  </button>
+  <button
+    role="tab"
+    type="button"
+    [attr.aria-selected]="activeTab() === 'evidence'"
+    (click)="setTab('evidence')"
+    class="flex-1 px-4 py-2.5 text-xs font-medium transition-colors"
+    [class.text-zinc-100]="activeTab() === 'evidence'"
+    [class.border-b-2]="activeTab() === 'evidence'"
+    [class.border-purple-500]="activeTab() === 'evidence'"
+    [class.text-zinc-500]="activeTab() !== 'evidence'"
+  >
+    Evidence
+  </button>
+</div>
+
+<!-- Body -->
+@if (isLoading()) {
+  <div class="flex flex-1 items-center justify-center">
+    <div
+      class="size-5 animate-spin rounded-full border-2 border-zinc-700 border-t-zinc-400"
+    ></div>
+  </div>
+} @else if (hasError()) {
+  <div class="flex flex-1 items-center justify-center p-6">
+    <p class="text-sm text-red-400">Failed to load hypothesis.</p>
+  </div>
+} @else if (hypothesis(); as h) {
+  <div class="flex-1 overflow-y-auto">
+    @if (activeTab() === "claim") {
+      <div class="space-y-4 px-5 py-4">
+        <!-- Claim -->
+        <div>
+          <h4
+            class="mb-1 text-xs font-semibold uppercase tracking-wider text-zinc-500"
+          >
+            Claim
+          </h4>
+          <p class="text-sm font-medium text-zinc-100">{{ h.claim }}</p>
+        </div>
+
+        <!-- Invalidation condition -->
+        <div>
+          <h4
+            class="mb-1 text-xs font-semibold uppercase tracking-wider text-zinc-500"
+          >
+            Invalidation Condition
+          </h4>
+          <p class="text-sm text-zinc-300">{{ h.invalidation_condition }}</p>
+        </div>
+
+        <!-- Full content / context -->
+        @if (h.content) {
+          <div>
+            <h4
+              class="mb-1 text-xs font-semibold uppercase tracking-wider text-zinc-500"
+            >
+              Context
+            </h4>
+            <p
+              class="whitespace-pre-wrap text-sm leading-relaxed text-zinc-400"
+            >
+              {{ h.content }}
+            </p>
+          </div>
+        }
+
+        <!-- Metadata -->
+        <dl class="space-y-1 text-sm">
+          <div class="flex justify-between">
+            <dt class="text-zinc-500">State</dt>
+            <dd class="text-zinc-200">{{ h.state }}</dd>
+          </div>
+          <div class="flex justify-between">
+            <dt class="text-zinc-500">Author</dt>
+            <dd class="text-zinc-200">{{ h.created_by }}</dd>
+          </div>
+          <div class="flex justify-between">
+            <dt class="text-zinc-500">Observed</dt>
+            <dd class="text-zinc-200">
+              {{ h.observed_date | date: "mediumDate" }}
+            </dd>
+          </div>
+        </dl>
+      </div>
+    }
+
+    @if (activeTab() === "evidence") {
+      <div class="px-5 py-4">
+        @if (evidence().length === 0) {
+          <p class="text-sm text-zinc-500">No evidence recorded yet.</p>
+        } @else {
+          <div class="space-y-3">
+            @for (item of evidence(); track $index) {
+              <div class="rounded-md border border-zinc-800 bg-zinc-900/50 p-3">
+                <pre class="whitespace-pre-wrap text-xs text-zinc-300">{{
+                  item | json
+                }}</pre>
+              </div>
+            }
+          </div>
+        }
+      </div>
+    }
+  </div>
+
+  <!-- Action bar -->
+  @if (isActionable()) {
+    <div class="flex items-center gap-2 border-t border-zinc-800 px-5 py-3">
+      <button
+        type="button"
+        class="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white shadow-xs transition-colors hover:bg-emerald-500 disabled:opacity-50"
+        [disabled]="isActioning()"
+        (click)="verify()"
+      >
+        Verify
+      </button>
+      <button
+        type="button"
+        class="rounded-md bg-red-900/80 px-4 py-2 text-sm font-medium text-red-200 transition-colors hover:bg-red-800 disabled:opacity-50"
+        [disabled]="isActioning()"
+        (click)="invalidate()"
+      >
+        Invalidate
+      </button>
+      <div class="flex-1"></div>
+      <button
+        type="button"
+        class="text-xs text-zinc-500 transition-colors hover:text-zinc-300"
+        (click)="archive()"
+      >
+        Archive
+      </button>
+    </div>
+  }
+}

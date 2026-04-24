@@ -1,0 +1,186 @@
+// Command mcp runs a Model Context Protocol server, exposing the koopa
+// knowledge engine as workflow-driven tools.
+//
+// Transport is selected by the MCP_TRANSPORT env var:
+//   - "http" (default): Streamable HTTP on MCP_PORT (default 8081), requires MCP_TOKEN
+//   - "stdio": stdio transport for local Claude Code usage
+package main
+
+import (
+	"context"
+	"fmt"
+	"log/slog"
+	"net/http"
+	"os"
+	"os/signal"
+	"time"
+
+	"github.com/jackc/pgx/v5/pgxpool"
+	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
+	"golang.org/x/oauth2"
+	"golang.org/x/oauth2/google"
+
+	"github.com/Koopa0/koopa/internal/agent"
+	"github.com/Koopa0/koopa/internal/embedder"
+	"github.com/Koopa0/koopa/internal/mcp"
+)
+
+// agentSyncTimeout bounds the startup reconciliation of the agents table.
+const agentSyncTimeout = 10 * time.Second
+
+func main() {
+	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	cfg := loadConfig(logger)
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	err := run(ctx, &cfg, logger)
+	stop()
+	if err != nil {
+		logger.Error("MCP server stopped", "error", err)
+		os.Exit(1)
+	}
+}
+
+func run(ctx context.Context, cfg *config, logger *slog.Logger) error {
+	pool, err := connectDB(ctx, cfg.DatabaseURL)
+	if err != nil {
+		return err
+	}
+	defer pool.Close()
+
+	// Reconcile the Go agent registry against the agents table before
+	// any MCP traffic. Same rationale as cmd/app/main.go: Authorize()
+	// depends on the in-memory registry reflecting DB retirement state.
+	agentRegistry := agent.NewBuiltinRegistry()
+	agentStore := agent.NewStore(pool)
+	syncCtx, syncCancel := context.WithTimeout(ctx, agentSyncTimeout)
+	syncResult, syncErr := agent.SyncToTable(syncCtx, agentRegistry, agentStore, logger)
+	syncCancel()
+	if syncErr != nil {
+		return fmt.Errorf("syncing agent registry: %w", syncErr)
+	}
+	logger.Info("agent registry synced",
+		"active", syncResult.Active,
+		"retired", syncResult.Retired,
+		"already_retired", syncResult.AlreadyRetired,
+	)
+
+	taipeiLoc, locErr := time.LoadLocation("Asia/Taipei")
+	if locErr != nil {
+		return fmt.Errorf("loading Asia/Taipei timezone: %w", locErr)
+	}
+
+	opts := []mcp.ServerOption{
+		mcp.WithLocation(taipeiLoc),
+		mcp.WithCallerAgent(cfg.CallerAgent),
+		mcp.WithRegistry(agentRegistry),
+	}
+	// Enable search_knowledge semantic branch when Gemini is configured.
+	// Embedder construction fails fast on an invalid client setup; FTS-only
+	// is always the safe fallback when the key is absent.
+	if cfg.GeminiAPIKey != "" {
+		emb, embErr := embedder.New(ctx, cfg.GeminiAPIKey)
+		if embErr != nil {
+			return fmt.Errorf("initializing gemini embedder: %w", embErr)
+		}
+		opts = append(opts, mcp.WithEmbedder(emb))
+		logger.Info("search_knowledge hybrid mode enabled (embedder wired)")
+	} else {
+		logger.Info("search_knowledge running FTS-only (GEMINI_API_KEY unset)")
+	}
+	server := mcp.NewServer(pool, logger, opts...)
+
+	switch cfg.Transport {
+	case "stdio":
+		logger.Info("starting MCP v2 server over stdio")
+		return server.Run(ctx, &mcpsdk.StdioTransport{})
+	case "http":
+		return runHTTP(ctx, cfg, server, logger)
+	default:
+		return fmt.Errorf("unknown MCP_TRANSPORT: %q (use \"http\" or \"stdio\")", cfg.Transport)
+	}
+}
+
+func connectDB(ctx context.Context, databaseURL string) (*pgxpool.Pool, error) {
+	poolCfg, err := pgxpool.ParseConfig(databaseURL)
+	if err != nil {
+		return nil, fmt.Errorf("parsing DATABASE_URL: %w", err)
+	}
+	poolCfg.MaxConns = 5
+
+	pool, err := pgxpool.NewWithConfig(ctx, poolCfg)
+	if err != nil {
+		return nil, fmt.Errorf("connecting to database: %w", err)
+	}
+
+	if err := pool.Ping(ctx); err != nil {
+		pool.Close()
+		return nil, fmt.Errorf("pinging database: %w", err)
+	}
+	return pool, nil
+}
+
+func runHTTP(ctx context.Context, cfg *config, server *mcp.Server, logger *slog.Logger) error {
+	if cfg.MCPToken == "" {
+		return fmt.Errorf("MCP_TOKEN is required for HTTP transport")
+	}
+	if cfg.GoogleClientID == "" || cfg.GoogleClientSecret == "" || cfg.AdminEmail == "" {
+		return fmt.Errorf("GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, and ADMIN_EMAIL are required for HTTP transport")
+	}
+
+	oauth := mcp.NewAuth(mcp.AuthConfig{
+		StaticToken: cfg.MCPToken,
+		AdminEmail:  cfg.AdminEmail,
+		BaseURL:     cfg.MCPBaseURL,
+		GoogleOAuth: &oauth2.Config{
+			ClientID:     cfg.GoogleClientID,
+			ClientSecret: cfg.GoogleClientSecret,
+			RedirectURL:  cfg.MCPBaseURL + "/oauth/google/callback",
+			Scopes:       []string{"openid", "email"},
+			Endpoint:     google.Endpoint,
+		},
+	}, logger)
+
+	handler := server.HTTPHandler()
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = fmt.Fprint(w, "ok")
+	})
+	mux.HandleFunc("GET /favicon.ico", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "https://koopa0.dev/favicon.ico", http.StatusMovedPermanently)
+	})
+	mux.HandleFunc("GET /.well-known/oauth-authorization-server", func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "" {
+			http.NotFound(w, r)
+			return
+		}
+		oauth.Metadata(w, r)
+	})
+	mux.HandleFunc("/oauth/authorize", oauth.Authorize)
+	mux.HandleFunc("GET /oauth/google/callback", oauth.GoogleCallback)
+	mux.HandleFunc("POST /oauth/token", oauth.Token)
+	mux.HandleFunc("POST /oauth/register", oauth.Register)
+	mux.Handle("/mcp", mcp.BearerAuth(handler, oauth))
+
+	httpServer := &http.Server{
+		Addr:              ":" + cfg.Port,
+		Handler:           mux,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       10 * time.Second,
+		WriteTimeout:      120 * time.Second,
+		IdleTimeout:       600 * time.Second,
+	}
+
+	go func() {
+		<-ctx.Done()
+		close(oauth.Done)
+		_ = httpServer.Close()
+	}()
+
+	logger.Info("starting MCP v2 server over HTTP", "port", cfg.Port)
+	if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		return fmt.Errorf("http server: %w", err)
+	}
+	return nil
+}

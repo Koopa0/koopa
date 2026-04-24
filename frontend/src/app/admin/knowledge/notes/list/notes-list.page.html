@@ -1,0 +1,166 @@
+<div class="flex min-w-0 flex-1 flex-col px-6 py-5">
+  <!-- Filter chips -->
+  <div class="mb-4 flex flex-col gap-2">
+    <div
+      class="flex flex-wrap items-center gap-1"
+      role="toolbar"
+      aria-label="Filter by kind"
+      data-testid="notes-filter-kind"
+    >
+      <span
+        class="mr-1 font-mono text-[10px] uppercase tracking-wider text-zinc-500"
+      >
+        Kind
+      </span>
+      @for (chip of kindChips; track chip.value) {
+        <button
+          type="button"
+          (click)="setKindFilter(chip.value)"
+          class="h-7 rounded-xs border px-2.5 text-[11px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500"
+          [class.border-sky-700]="kindFilter() === chip.value"
+          [class.bg-sky-900/30]="kindFilter() === chip.value"
+          [class.text-sky-300]="kindFilter() === chip.value"
+          [class.border-zinc-800]="kindFilter() !== chip.value"
+          [class.bg-zinc-900]="kindFilter() !== chip.value"
+          [class.text-zinc-400]="kindFilter() !== chip.value"
+          [attr.aria-pressed]="kindFilter() === chip.value"
+          [attr.data-testid]="'notes-filter-kind-' + chip.value"
+        >
+          {{ chip.label }}
+        </button>
+      }
+    </div>
+    <div
+      class="flex flex-wrap items-center gap-1"
+      role="toolbar"
+      aria-label="Filter by maturity"
+      data-testid="notes-filter-maturity"
+    >
+      <span
+        class="mr-1 font-mono text-[10px] uppercase tracking-wider text-zinc-500"
+      >
+        Maturity
+      </span>
+      @for (chip of maturityChips; track chip.value) {
+        <button
+          type="button"
+          (click)="setMaturityFilter(chip.value)"
+          class="h-7 rounded-xs border px-2.5 text-[11px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500"
+          [class.border-sky-700]="maturityFilter() === chip.value"
+          [class.bg-sky-900/30]="maturityFilter() === chip.value"
+          [class.text-sky-300]="maturityFilter() === chip.value"
+          [class.border-zinc-800]="maturityFilter() !== chip.value"
+          [class.bg-zinc-900]="maturityFilter() !== chip.value"
+          [class.text-zinc-400]="maturityFilter() !== chip.value"
+          [attr.aria-pressed]="maturityFilter() === chip.value"
+          [attr.data-testid]="'notes-filter-maturity-' + chip.value"
+        >
+          {{ chip.label }}
+        </button>
+      }
+      <span
+        class="ml-auto font-mono text-[11px] text-zinc-500"
+        aria-live="polite"
+        data-testid="notes-count"
+      >
+        Showing {{ total() }} {{ total() === 1 ? 'note' : 'notes' }}
+      </span>
+    </div>
+  </div>
+
+  @if (endpointsUnavailable()) {
+    <div
+      class="mb-3 rounded-sm border border-dashed border-zinc-800 p-4 text-center"
+      data-testid="notes-endpoints-pending"
+    >
+      <p class="mb-1 font-mono text-[10px] uppercase tracking-wider text-zinc-500">
+        Endpoints pending
+      </p>
+      <p class="text-xs text-zinc-500">
+        /api/admin/knowledge/notes is not live yet. Notes render once
+        the endpoint ships.
+      </p>
+    </div>
+  } @else if (hasError()) {
+    <div
+      role="alert"
+      class="mb-3 rounded-xs border border-red-800 bg-red-900/20 px-3 py-2 text-xs text-red-300"
+      data-testid="notes-list-error"
+    >
+      Couldn't load notes.
+    </div>
+  }
+
+  <app-data-table
+    [isLoading]="isLoading()"
+    [isEmpty]="isEmpty() && !endpointsUnavailable()"
+    emptyTitle="No notes match these filters"
+    emptyDescription="Agents create notes via Cowork's create_note tool; switch filters or wait for seed content."
+  >
+    <table class="w-full text-sm" data-testid="notes-list-table">
+      <thead>
+        <tr
+          class="border-b border-zinc-800 text-left font-mono text-[10px] uppercase tracking-wider text-zinc-500"
+        >
+          <th scope="col" class="px-3 py-2 font-normal">Kind</th>
+          <th scope="col" class="px-3 py-2 font-normal">Title</th>
+          <th scope="col" class="px-3 py-2 font-normal">Maturity</th>
+          <th scope="col" class="px-3 py-2 font-normal">Actor</th>
+          <th scope="col" class="px-3 py-2 font-normal">Concepts</th>
+          <th scope="col" class="px-3 py-2 font-normal">Updated</th>
+          <th scope="col" class="px-3 py-2 font-normal">ID</th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (row of rows(); let i = $index; track row.id) {
+          <tr
+            #row
+            [attr.tabindex]="rowTabIndex(i)"
+            class="cursor-pointer border-b border-zinc-900 transition-colors hover:bg-zinc-800/40 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-sky-500"
+            [class.bg-zinc-800/40]="i === focusedIndex()"
+            (click)="openRow(row)"
+            (keydown.enter)="openRow(row)"
+            (focus)="focusedIndex.set(i)"
+            [attr.data-testid]="'notes-list-row-' + i"
+          >
+            <td class="px-3 py-2">
+              <span
+                class="inline-block rounded-xs border border-indigo-700 bg-indigo-900/30 px-2 py-0.5 font-mono text-[10px] uppercase text-indigo-300"
+              >
+                {{ kindShort(row.kind) }}
+              </span>
+            </td>
+            <td class="max-w-lg truncate px-3 py-2 text-zinc-100">
+              {{ row.title }}
+            </td>
+            <td class="px-3 py-2">
+              <span
+                class="inline-flex items-center gap-1.5 text-xs capitalize"
+                [class]="maturityTextClass(row.maturity)"
+              >
+                <span
+                  class="inline-block size-1.5 rounded-full"
+                  [class]="maturityDotClass(row.maturity)"
+                  aria-hidden="true"
+                ></span>
+                {{ row.maturity.replace('_', ' ') }}
+              </span>
+            </td>
+            <td class="px-3 py-2 font-mono text-[11px] text-zinc-400">
+              {{ row.actor }}
+            </td>
+            <td class="px-3 py-2 truncate text-zinc-400">
+              {{ conceptsLabel(row) }}
+            </td>
+            <td class="px-3 py-2 text-zinc-400">
+              {{ row.updated_at | date: 'short' }}
+            </td>
+            <td class="px-3 py-2 font-mono text-[11px] text-zinc-500">
+              {{ row.id.slice(0, 8) }}
+            </td>
+          </tr>
+        }
+      </tbody>
+    </table>
+  </app-data-table>
+</div>

@@ -1,0 +1,126 @@
+// Package plan provides learning plan management — ordered, mutable curricula
+// that track which learning targets to practice and in what order.
+package plan
+
+import (
+	"encoding/json"
+	"errors"
+	"fmt"
+	"regexp"
+	"time"
+
+	"github.com/google/uuid"
+)
+
+var (
+	// ErrNotFound indicates the requested plan or plan entry does not exist.
+	ErrNotFound = errors.New("plan: not found")
+	// ErrConflict indicates a uniqueness or state conflict.
+	ErrConflict = errors.New("plan: conflict")
+)
+
+// Status represents a plan lifecycle state.
+type Status string
+
+// Plan lifecycle statuses: draft → active → completed/paused/abandoned.
+const (
+	StatusDraft     Status = "draft"
+	StatusActive    Status = "active"
+	StatusCompleted Status = "completed"
+	StatusPaused    Status = "paused"
+	StatusAbandoned Status = "abandoned"
+)
+
+// EntryStatus represents a plan entry lifecycle state.
+type EntryStatus string
+
+// Plan entry statuses: planned → completed/skipped/substituted.
+const (
+	EntryPlanned     EntryStatus = "planned"
+	EntryCompleted   EntryStatus = "completed"
+	EntrySkipped     EntryStatus = "skipped"
+	EntrySubstituted EntryStatus = "substituted"
+)
+
+// Plan represents an ordered learning curriculum.
+type Plan struct {
+	ID          uuid.UUID       `json:"id"`
+	Title       string          `json:"title"`
+	Description string          `json:"description"`
+	Domain      string          `json:"domain"`
+	GoalID      *uuid.UUID      `json:"goal_id,omitempty"`
+	Status      Status          `json:"status"`
+	TargetCount *int32          `json:"target_count,omitempty"`
+	PlanConfig  json.RawMessage `json:"plan_config"`
+	CreatedBy   string          `json:"created_by"`
+	CreatedAt   time.Time       `json:"created_at"`
+	UpdatedAt   time.Time       `json:"updated_at"`
+}
+
+// Entry represents a single row in a learning plan's ordered sequence.
+// Matches the learning_plan_entries table.
+type Entry struct {
+	ID                   uuid.UUID   `json:"id"`
+	PlanID               uuid.UUID   `json:"plan_id"`
+	LearningTargetID     uuid.UUID   `json:"learning_target_id"`
+	Position             int32       `json:"position"`
+	Status               EntryStatus `json:"status"`
+	Phase                *string     `json:"phase,omitempty"`
+	SubstitutedBy        *uuid.UUID  `json:"substituted_by,omitempty"`
+	CompletedByAttemptID *uuid.UUID  `json:"completed_by_attempt_id,omitempty"`
+	Reason               *string     `json:"reason,omitempty"`
+	AddedAt              time.Time   `json:"added_at"`
+	CompletedAt          *time.Time  `json:"completed_at,omitempty"`
+}
+
+// EntryWithTitle extends Entry with the parent plan's title,
+// used when querying plan entries by learning target.
+type EntryWithTitle struct {
+	Entry
+	PlanTitle string `json:"plan_title"`
+}
+
+// EntryDetail is the plan-entry projection returned by manage_plan(progress).
+// It is flat (no embedded Entry) so the JSON field name for the plan-entry
+// primary key is explicitly `plan_entry_id` — the exact identifier callers pass
+// back in update_entry. Embedding Entry would serialize its ID as "id" and
+// create ambiguity with LearningTargetID.
+type EntryDetail struct {
+	PlanEntryID          uuid.UUID   `json:"plan_entry_id"`
+	PlanID               uuid.UUID   `json:"plan_id"`
+	LearningTargetID     uuid.UUID   `json:"learning_target_id"`
+	Position             int32       `json:"position"`
+	Status               EntryStatus `json:"status"`
+	Phase                *string     `json:"phase,omitempty"`
+	SubstitutedBy        *uuid.UUID  `json:"substituted_by,omitempty"`
+	CompletedByAttemptID *uuid.UUID  `json:"completed_by_attempt_id,omitempty"`
+	Reason               *string     `json:"reason,omitempty"`
+	AddedAt              time.Time   `json:"added_at"`
+	CompletedAt          *time.Time  `json:"completed_at,omitempty"`
+
+	TargetTitle      string  `json:"target_title"`
+	TargetDomain     string  `json:"target_domain"`
+	TargetDifficulty *string `json:"target_difficulty,omitempty"`
+	TargetExternalID *string `json:"target_external_id,omitempty"`
+}
+
+// Progress summarises a plan's entry completion counts.
+type Progress struct {
+	Total       int32 `json:"total"`
+	Completed   int32 `json:"completed"`
+	Skipped     int32 `json:"skipped"`
+	Substituted int32 `json:"substituted"`
+	Remaining   int32 `json:"remaining"`
+}
+
+var phaseRe = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
+
+// ValidatePhase checks that a phase label follows kebab-case convention
+// (lowercase alphanumeric segments separated by hyphens, e.g. "1-arrays", "phase-2-trees").
+// It returns a non-nil error if phase is empty, contains uppercase, spaces, underscores, or consecutive hyphens.
+func ValidatePhase(phase string) error {
+	if !phaseRe.MatchString(phase) {
+		return fmt.Errorf("invalid phase %q: must be kebab-case (e.g. 1-arrays, phase-2-trees)", phase)
+	}
+	return nil
+}

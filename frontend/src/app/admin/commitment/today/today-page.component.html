@@ -1,0 +1,244 @@
+@if (isLoading()) {
+  <div
+    class="flex flex-1 items-center justify-center"
+    data-testid="today-loading"
+  >
+    <div
+      class="size-5 animate-spin rounded-full border-2 border-zinc-700 border-t-zinc-300"
+      aria-label="Loading Today"
+    ></div>
+  </div>
+} @else if (vm(); as v) {
+  <div class="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-6 px-6 py-8">
+    <!-- Date strap -->
+    <div
+      class="flex items-baseline justify-between border-b border-zinc-800 pb-3"
+    >
+      <h1
+        class="font-display text-2xl font-semibold text-zinc-100"
+        data-testid="today-date"
+      >
+        Today · {{ v.date | date: 'fullDate' }}
+      </h1>
+      <span class="font-mono text-[11px] text-zinc-500">
+        commitment / today
+      </span>
+    </div>
+
+    <!-- HERO: Awaiting judgment (hidden when empty) -->
+    @if (hasJudgment()) {
+      <section
+        class="rounded-sm border border-amber-900/40 bg-amber-950/10 p-5"
+        aria-labelledby="today-judgment-heading"
+        data-testid="today-hero"
+      >
+        <header class="mb-3 flex items-center justify-between">
+          <h2
+            id="today-judgment-heading"
+            class="font-mono text-[11px] uppercase tracking-wider text-amber-300"
+          >
+            Awaiting your judgment
+          </h2>
+          <span class="font-mono text-xs text-amber-200">
+            {{ v.awaitingJudgment.length }}
+          </span>
+        </header>
+        <ul class="divide-y divide-zinc-800/80">
+          @for (row of v.awaitingJudgment; track row.kind + ':' + row.id) {
+            <li class="flex items-start gap-3 py-2.5">
+              <span
+                class="mt-0.5 min-w-12 font-mono text-[10px] font-semibold uppercase tracking-wider text-zinc-500"
+                aria-hidden="true"
+              >
+                {{ row.badge }}
+              </span>
+              <div class="min-w-0 flex-1">
+                <button
+                  type="button"
+                  (click)="openJudgmentRow(row)"
+                  [disabled]="!row.route"
+                  class="w-full truncate text-left text-sm text-zinc-100 transition-colors hover:text-sky-300 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500 disabled:cursor-default disabled:hover:text-zinc-100"
+                  [attr.data-testid]="'today-judgment-row-' + row.kind"
+                >
+                  {{ row.title }}
+                </button>
+                <div class="truncate font-mono text-[11px] text-zinc-500">
+                  {{ row.subtitle }}
+                </div>
+              </div>
+              <span
+                class="shrink-0 font-mono text-[11px] text-zinc-500"
+                [attr.aria-label]="row.ageDays + ' days old'"
+              >
+                {{ row.ageDays }}d
+              </span>
+            </li>
+          }
+        </ul>
+      </section>
+    }
+
+    <!-- PLAN -->
+    @if (hasPlan() && v.plan; as plan) {
+      <section
+        class="rounded-sm border border-zinc-800 p-5"
+        aria-labelledby="today-plan-heading"
+        data-testid="today-plan"
+      >
+        <header class="mb-3 flex flex-wrap items-baseline gap-3">
+          <h2
+            id="today-plan-heading"
+            class="font-mono text-[11px] uppercase tracking-wider text-zinc-500"
+          >
+            Today's plan
+          </h2>
+          <span class="font-mono text-xs text-zinc-300">
+            {{ plan.done }} / {{ plan.total }} done
+          </span>
+          @if (plan.overdue > 0) {
+            <span
+              class="font-mono text-xs text-amber-400"
+              [attr.aria-label]="plan.overdue + ' overdue'"
+            >
+              · {{ plan.overdue }} overdue
+            </span>
+          }
+          <div class="ml-auto h-1.5 w-32 overflow-hidden rounded-full bg-zinc-800">
+            <div
+              class="h-full bg-sky-500 transition-all"
+              [style.width.%]="planProgressPercent(plan.done, plan.total)"
+            ></div>
+          </div>
+        </header>
+
+        <div
+          class="mb-3 font-mono text-sm tracking-wider text-zinc-300"
+          aria-hidden="true"
+          data-testid="today-plan-glyphs"
+        >
+          @for (glyph of planGlyphs(); track $index) {
+            <span class="mx-0.5">{{ glyph }}</span>
+          }
+        </div>
+
+        @if (topActivePlanItems().length > 0) {
+          <ul
+            class="space-y-1 text-sm text-zinc-200"
+            data-testid="today-plan-active"
+          >
+            @for (item of topActivePlanItems(); track item.id) {
+              <li class="flex items-baseline gap-2">
+                <span
+                  class="font-mono text-[11px] text-zinc-500"
+                  aria-hidden="true"
+                >
+                  ▸
+                </span>
+                <span class="truncate">{{ item.todo_title }}</span>
+              </li>
+            }
+          </ul>
+        }
+      </section>
+    }
+
+    <!-- DUE REVIEWS -->
+    @if (hasReviews()) {
+      <section
+        class="flex items-center justify-between rounded-sm border border-zinc-800 p-5"
+        aria-labelledby="today-reviews-heading"
+        data-testid="today-reviews"
+      >
+        <div>
+          <h2
+            id="today-reviews-heading"
+            class="font-mono text-[11px] uppercase tracking-wider text-zinc-500"
+          >
+            Due reviews
+          </h2>
+          <p class="mt-1 text-sm text-zinc-200">
+            {{ v.dueReviewsCount }} cards due today.
+          </p>
+        </div>
+        <a
+          routerLink="/admin/learning"
+          class="rounded-sm border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-xs text-zinc-300 transition-colors hover:border-sky-700 hover:text-sky-300 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500"
+          data-testid="today-reviews-cta"
+        >
+          Start session →
+        </a>
+      </section>
+    }
+
+    <!-- WARNINGS -->
+    @if (hasWarnings()) {
+      <section
+        aria-labelledby="today-warnings-heading"
+        data-testid="today-warnings"
+      >
+        <h2
+          id="today-warnings-heading"
+          class="mb-2 font-mono text-[11px] uppercase tracking-wider text-zinc-500"
+        >
+          Warnings
+        </h2>
+        <ul class="space-y-1.5">
+          @for (w of v.warnings; track $index) {
+            <li
+              class="flex items-baseline gap-2 rounded-sm border px-3 py-2 text-xs"
+              [class.border-amber-900]="w.severity === 'warn'"
+              [class.bg-amber-950/10]="w.severity === 'warn'"
+              [class.text-amber-200]="w.severity === 'warn'"
+              [class.border-red-900]="w.severity === 'error'"
+              [class.bg-red-950/10]="w.severity === 'error'"
+              [class.text-red-300]="w.severity === 'error'"
+            >
+              <span class="font-mono uppercase" aria-hidden="true">
+                {{ w.severity === 'error' ? '✕' : '⚠' }}
+              </span>
+              <span class="font-mono text-[10px] uppercase opacity-70">
+                {{ w.source }}
+              </span>
+              <span class="flex-1">{{ w.message }}</span>
+            </li>
+          }
+        </ul>
+      </section>
+    }
+
+    <!-- Fully-quiet fallback -->
+    @if (!hasJudgment() && !hasPlan() && !hasReviews() && !hasWarnings()) {
+      <section
+        class="flex flex-1 flex-col items-center justify-center rounded-sm border border-dashed border-zinc-800 p-10 text-center"
+        data-testid="today-empty"
+      >
+        <p class="mb-2 font-mono text-xs uppercase tracking-wider text-zinc-500">
+          Nothing on deck
+        </p>
+        <p class="mb-5 max-w-md text-sm text-zinc-300">
+          No judgments awaiting, no plan queued, no reviews due.
+        </p>
+        <div class="flex flex-wrap justify-center gap-2" data-testid="today-empty-cta">
+          <a
+            routerLink="/admin/commitment/todos"
+            class="rounded-sm border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-xs text-zinc-200 transition-colors hover:border-sky-700 hover:text-sky-300 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500"
+          >
+            Capture a todo →
+          </a>
+          <a
+            routerLink="/admin/knowledge/content"
+            class="rounded-sm border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-xs text-zinc-200 transition-colors hover:border-sky-700 hover:text-sky-300 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500"
+          >
+            Browse content →
+          </a>
+          <a
+            routerLink="/admin/learning"
+            class="rounded-sm border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-xs text-zinc-200 transition-colors hover:border-sky-700 hover:text-sky-300 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500"
+          >
+            Open Learning →
+          </a>
+        </div>
+      </section>
+    }
+  </div>
+}

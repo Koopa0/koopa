@@ -1,0 +1,185 @@
+<div class="mx-auto flex w-full max-w-3xl flex-1 flex-col gap-4 px-6 py-6">
+  <!-- Header -->
+  <div
+    class="flex flex-wrap items-baseline justify-between gap-2"
+    data-testid="feed-triage-header"
+  >
+    <h1 class="font-display text-xl font-semibold text-zinc-100">
+      Feed triage
+    </h1>
+    <div class="font-mono text-[11px] text-zinc-500" aria-live="polite">
+      {{ remaining() }} remaining
+    </div>
+  </div>
+
+  <!-- Loading / error / empty -->
+  @if (isLoading()) {
+  <div
+    class="flex flex-1 items-center justify-center"
+    data-testid="feed-triage-loading"
+  >
+    <div
+      class="size-5 animate-spin rounded-full border-2 border-zinc-700 border-t-zinc-300"
+      aria-label="Loading entries"
+    ></div>
+  </div>
+  } @else if (hasError()) {
+  <div
+    role="alert"
+    class="rounded-xs border border-red-800 bg-red-900/20 px-3 py-2 text-xs text-red-300"
+    data-testid="feed-triage-error"
+  >
+    Couldn't load feed entries.
+  </div>
+  } @else if (current(); as entry) {
+  <!-- Active card -->
+  <article
+    class="flex flex-col gap-4 rounded-sm border border-zinc-800 bg-zinc-900/40 p-6"
+    data-testid="feed-triage-card"
+  >
+    <header
+      class="flex flex-wrap items-baseline gap-3 font-mono text-[11px] text-zinc-500"
+    >
+      @if (entry.relevance_score !== null) {
+      <span
+        class="text-amber-300"
+        [attr.aria-label]="'Relevance ' + entry.relevance_score"
+        data-testid="feed-triage-relevance"
+      >
+        {{ relevanceDots(entry.relevance_score) }} {{
+        entry.relevance_score.toFixed(2) }}
+      </span>
+      }
+      <span>{{ entry.feed.name }}</span>
+      @if (entry.published_at) {
+      <span>published {{ entry.published_at | date: 'short' }}</span>
+      } @else {
+      <span>collected {{ entry.collected_at | date: 'short' }}</span>
+      }
+    </header>
+
+    <h2
+      class="font-display text-xl font-semibold text-zinc-100"
+      data-testid="feed-triage-title"
+    >
+      <a
+        [href]="entry.source_url"
+        target="_blank"
+        rel="noopener noreferrer"
+        class="transition-colors hover:text-sky-300"
+      >
+        {{ entry.title }}
+      </a>
+    </h2>
+
+    @if (entry.excerpt) {
+    <p
+      class="whitespace-pre-wrap text-sm leading-relaxed text-zinc-300"
+      data-testid="feed-triage-excerpt"
+    >
+      {{ entry.excerpt }}
+    </p>
+    } @if (entry.topic_slugs.length > 0) {
+    <div class="flex flex-wrap gap-1" data-testid="feed-triage-topics">
+      @for (topic of entry.topic_slugs; track topic) {
+      <span
+        class="rounded-full border border-zinc-700 bg-zinc-800 px-2 py-0.5 font-mono text-[10px] text-zinc-400"
+      >
+        {{ topic }}
+      </span>
+      }
+    </div>
+    }
+
+    <!-- Actions -->
+    <footer class="flex flex-wrap items-center gap-2">
+      <button
+        type="button"
+        (click)="openSource()"
+        [disabled]="isActioning()"
+        class="flex items-center gap-2 rounded-sm bg-sky-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-sky-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500 disabled:cursor-not-allowed"
+        title="Open the source URL in a new tab. Drafting & curate linkage live in Cowork until the quick-create dialog ships."
+        data-testid="feed-triage-action-open"
+      >
+        Open source
+        <kbd
+          class="rounded-xs border border-sky-500/60 bg-black/20 px-1 font-mono text-[10px]"
+          aria-hidden="true"
+        >
+          D
+        </kbd>
+      </button>
+      <button
+        type="button"
+        (click)="ignore()"
+        [disabled]="isActioning()"
+        class="flex items-center gap-2 rounded-sm border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-xs text-zinc-200 transition-colors hover:border-red-700 hover:text-red-300 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500 disabled:cursor-not-allowed"
+        data-testid="feed-triage-action-ignore"
+      >
+        Ignore
+        <kbd
+          class="rounded-xs border border-zinc-600 bg-black/20 px-1 font-mono text-[10px]"
+          aria-hidden="true"
+        >
+          I
+        </kbd>
+      </button>
+
+      <div class="mx-3 h-4 w-px bg-zinc-800" aria-hidden="true"></div>
+
+      <button
+        type="button"
+        (click)="feedback('up')"
+        [disabled]="isActioning()"
+        class="rounded-sm px-2 py-1 text-xs text-zinc-400 transition-colors hover:text-emerald-300 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500 disabled:cursor-not-allowed"
+        title="Relevant"
+        aria-label="Mark as relevant"
+        data-testid="feed-triage-feedback-up"
+      >
+        👍 Relevant
+      </button>
+      <button
+        type="button"
+        (click)="feedback('down')"
+        [disabled]="isActioning()"
+        class="rounded-sm px-2 py-1 text-xs text-zinc-400 transition-colors hover:text-red-300 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500 disabled:cursor-not-allowed"
+        title="Not relevant"
+        aria-label="Mark as not relevant"
+        data-testid="feed-triage-feedback-down"
+      >
+        👎 Not
+      </button>
+
+      <button
+        type="button"
+        (click)="rewindLast()"
+        class="ml-auto flex items-center gap-2 rounded-sm px-2 py-1 text-xs text-zinc-400 transition-colors hover:text-zinc-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500"
+        title="Re-examine the previous entry. Does not undo the backend action."
+        data-testid="feed-triage-action-rewind"
+      >
+        Back
+        <kbd
+          class="rounded-xs border border-zinc-700 bg-black/20 px-1 font-mono text-[10px]"
+          aria-hidden="true"
+        >
+          U
+        </kbd>
+      </button>
+    </footer>
+  </article>
+  } @else {
+  <!-- Caught-up state -->
+  <section
+    class="flex flex-1 flex-col items-center justify-center rounded-sm border border-dashed border-zinc-800 p-10 text-center"
+    data-testid="feed-triage-empty"
+  >
+    <p class="mb-2 font-mono text-xs uppercase tracking-wider text-zinc-500">
+      Inbox zero
+    </p>
+    <p class="max-w-md text-sm text-zinc-300">
+      All unread feed entries are handled. Come back when the pipeline collects
+      more.
+    </p>
+  </section>
+  }
+</div>

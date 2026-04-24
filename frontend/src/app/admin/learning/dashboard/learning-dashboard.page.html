@@ -1,0 +1,298 @@
+<div class="flex min-w-0 flex-1 flex-col gap-5 px-6 py-6">
+  @if (isLoading()) {
+    <div
+      class="flex flex-1 items-center justify-center"
+      data-testid="learning-loading"
+    >
+      <div
+        class="size-5 animate-spin rounded-full border-2 border-zinc-700 border-t-zinc-300"
+        aria-label="Loading dashboard"
+      ></div>
+    </div>
+  } @else if (endpointsUnavailable()) {
+    <div
+      class="flex flex-1 items-center justify-center rounded-sm border border-dashed border-zinc-800 p-10 text-center"
+      data-testid="learning-endpoints-pending"
+    >
+      <div class="max-w-md">
+        <p
+          class="mb-1 font-mono text-[10px] uppercase tracking-wider text-zinc-500"
+        >
+          Endpoints pending
+        </p>
+        <p class="text-xs text-zinc-500">
+          /api/admin/learning/dashboard is not live yet. The three
+          cards (concepts / due today / recent observations) populate
+          once the endpoint ships.
+        </p>
+      </div>
+    </div>
+  } @else if (hasError()) {
+    <div
+      role="alert"
+      class="rounded-xs border border-red-800 bg-red-900/20 px-3 py-2 text-xs text-red-300"
+      data-testid="learning-error"
+    >
+      Couldn't load dashboard.
+    </div>
+  } @else if (vm(); as v) {
+    <!-- Top chrome: confidence filter + summary counts -->
+    <div
+      class="flex flex-wrap items-baseline gap-4"
+      data-testid="learning-chrome"
+    >
+      <div
+        class="flex items-center gap-1"
+        role="toolbar"
+        aria-label="Observation confidence filter"
+      >
+        <span
+          class="mr-1 font-mono text-[10px] uppercase tracking-wider text-zinc-500"
+        >
+          Confidence
+        </span>
+        @for (value of confidenceFilterOptions; track value) {
+          <button
+            type="button"
+            (click)="setConfidenceFilter(value)"
+            class="h-7 rounded-xs border px-2.5 text-[11px] font-medium capitalize transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500"
+            [class.border-sky-700]="confidenceFilter() === value"
+            [class.bg-sky-900/30]="confidenceFilter() === value"
+            [class.text-sky-300]="confidenceFilter() === value"
+            [class.border-zinc-800]="confidenceFilter() !== value"
+            [class.bg-zinc-900]="confidenceFilter() !== value"
+            [class.text-zinc-400]="confidenceFilter() !== value"
+            [attr.aria-pressed]="confidenceFilter() === value"
+            [attr.data-testid]="'learning-filter-confidence-' + value"
+          >
+            {{ value }}
+          </button>
+        }
+      </div>
+
+      <div
+        class="ml-auto flex items-center gap-3 font-mono text-[11px] text-zinc-500"
+        data-testid="learning-counts"
+      >
+        <span>{{ v.concepts.count_total }} concepts</span>
+        <span aria-hidden="true">·</span>
+        <span class="text-red-300"
+          >{{ masteryCounts().struggling }} struggling</span
+        >
+        <span aria-hidden="true">·</span>
+        <span class="text-sky-300"
+          >{{ masteryCounts().developing }} developing</span
+        >
+        <span aria-hidden="true">·</span>
+        <span class="text-emerald-300"
+          >{{ masteryCounts().solid }} solid</span
+        >
+      </div>
+    </div>
+
+    <!-- 3-card grid -->
+    <div class="grid flex-1 gap-5 lg:grid-cols-3">
+      <!-- Card 1: Concepts -->
+      <section
+        class="flex min-h-0 flex-col rounded-sm border border-zinc-800"
+        aria-labelledby="concepts-card-heading"
+        data-testid="learning-card-concepts"
+      >
+        <header
+          class="flex items-baseline justify-between border-b border-zinc-800 px-4 py-3"
+        >
+          <h2
+            id="concepts-card-heading"
+            class="font-mono text-[11px] uppercase tracking-wider text-zinc-400"
+          >
+            Concepts
+          </h2>
+          <a
+            routerLink="/admin/learning/concepts"
+            class="font-mono text-[10px] text-zinc-500 transition-colors hover:text-sky-300 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500"
+          >
+            View all →
+          </a>
+        </header>
+        @if (v.concepts.rows.length === 0) {
+          <p class="px-4 py-6 text-xs text-zinc-500">
+            No concepts tracked yet.
+          </p>
+        } @else {
+          <ul class="flex-1 divide-y divide-zinc-900 overflow-y-auto">
+            @for (c of v.concepts.rows; track c.slug) {
+              <li>
+                <button
+                  type="button"
+                  (click)="openConcept(c.slug)"
+                  class="flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-zinc-800/40 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-sky-500"
+                  [attr.data-testid]="'learning-concept-' + c.slug"
+                >
+                  <div class="min-w-0 flex-1">
+                    <div class="truncate text-sm text-zinc-100">
+                      {{ c.slug }}
+                    </div>
+                    <div
+                      class="font-mono text-[11px] text-zinc-500"
+                    >
+                      {{ c.kind }} · {{ c.domain }} · {{ c.obs_count }} obs
+                    </div>
+                  </div>
+                  <div
+                    class="h-1.5 w-16 shrink-0 overflow-hidden rounded-full bg-zinc-800"
+                    [attr.aria-label]="
+                      'Mastery ' +
+                      masteryStagePercent(c.mastery_value) +
+                      '%'
+                    "
+                  >
+                    <div
+                      class="h-full"
+                      [class]="masteryStageColor(c.mastery_stage)"
+                      [style.width.%]="masteryStagePercent(c.mastery_value)"
+                    ></div>
+                  </div>
+                </button>
+              </li>
+            }
+          </ul>
+        }
+      </section>
+
+      <!-- Card 2: Due today (FSRS) -->
+      <section
+        class="flex min-h-0 flex-col rounded-sm border border-zinc-800"
+        aria-labelledby="due-card-heading"
+        data-testid="learning-card-due"
+      >
+        <header
+          class="flex items-baseline justify-between border-b border-zinc-800 px-4 py-3"
+        >
+          <h2
+            id="due-card-heading"
+            class="font-mono text-[11px] uppercase tracking-wider text-zinc-400"
+          >
+            Due today
+          </h2>
+          <span class="font-mono text-[10px] text-zinc-500">
+            {{ v.due_today.count }}
+            {{ v.due_today.count === 1 ? 'card' : 'cards' }}
+          </span>
+        </header>
+        @if (v.due_today.items.length === 0) {
+          <p class="px-4 py-6 text-xs text-zinc-500">
+            Nothing due — queue is caught up.
+          </p>
+        } @else {
+          <ul class="flex-1 divide-y divide-zinc-900 overflow-y-auto">
+            @for (item of v.due_today.items; track item.card_id) {
+              <li class="px-4 py-3">
+                <div class="mb-1 flex items-baseline justify-between gap-2">
+                  <div class="min-w-0 flex-1 truncate text-sm text-zinc-100">
+                    {{ item.target.title }}
+                  </div>
+                  <span
+                    class="shrink-0 font-mono text-[10px] text-zinc-500"
+                  >
+                    retention
+                    {{ item.retention.toFixed(2) }}
+                  </span>
+                </div>
+                <div class="mb-2 font-mono text-[10px] text-zinc-500">
+                  {{ item.domain }}
+                  @if (item.last_reviewed_at) {
+                    · last {{ item.last_reviewed_at | date: 'short' }}
+                  }
+                </div>
+                <div
+                  class="flex flex-wrap gap-1"
+                  role="group"
+                  aria-label="FSRS rating"
+                >
+                  @for (r of ratings; track r) {
+                    <button
+                      type="button"
+                      (click)="recordReview(item.card_id, r)"
+                      [disabled]="ratingInFlight() === item.card_id"
+                      class="rounded-xs border border-zinc-700 bg-zinc-900 px-2 py-0.5 text-[11px] capitalize transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500 disabled:cursor-not-allowed disabled:opacity-50"
+                      [class]="ratingClass(r)"
+                      [attr.data-testid]="
+                        'learning-review-' + item.card_id + '-' + r
+                      "
+                    >
+                      {{ r }}
+                    </button>
+                  }
+                </div>
+              </li>
+            }
+          </ul>
+        }
+      </section>
+
+      <!-- Card 3: Recent observations -->
+      <section
+        class="flex min-h-0 flex-col rounded-sm border border-zinc-800"
+        aria-labelledby="obs-card-heading"
+        data-testid="learning-card-observations"
+      >
+        <header
+          class="flex items-baseline justify-between border-b border-zinc-800 px-4 py-3"
+        >
+          <h2
+            id="obs-card-heading"
+            class="font-mono text-[11px] uppercase tracking-wider text-zinc-400"
+          >
+            Recent observations
+          </h2>
+          <span class="font-mono text-[10px] text-zinc-500">
+            {{ v.recent_observations.length }}
+          </span>
+        </header>
+        @if (v.recent_observations.length === 0) {
+          <p class="px-4 py-6 text-xs text-zinc-500">
+            No observations in the current filter window.
+          </p>
+        } @else {
+          <ul class="flex-1 divide-y divide-zinc-900 overflow-y-auto">
+            @for (obs of v.recent_observations; track obs.id) {
+              <li class="px-4 py-2.5">
+                <div
+                  class="mb-0.5 flex flex-wrap items-center gap-2 font-mono text-[10px]"
+                >
+                  <span
+                    class="uppercase"
+                    [class.text-amber-300]="obs.signal === 'weakness'"
+                    [class.text-sky-300]="obs.signal === 'improvement'"
+                    [class.text-emerald-300]="obs.signal === 'mastery'"
+                  >
+                    {{ obs.signal }}
+                  </span>
+                  <span class="text-zinc-500">{{ obs.category }}</span>
+                  @if (obs.confidence === 'low') {
+                    <span
+                      class="rounded-xs border border-zinc-700 bg-zinc-800 px-1 text-zinc-400"
+                    >
+                      low
+                    </span>
+                  }
+                  <button
+                    type="button"
+                    (click)="openConcept(obs.concept_slug)"
+                    class="text-zinc-400 transition-colors hover:text-sky-300 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500"
+                  >
+                    {{ obs.concept_slug }}
+                  </button>
+                </div>
+                <p class="text-xs text-zinc-300">{{ obs.body }}</p>
+                <div class="mt-1 font-mono text-[10px] text-zinc-600">
+                  {{ obs.created_at | date: 'short' }}
+                </div>
+              </li>
+            }
+          </ul>
+        }
+      </section>
+    </div>
+  }
+</div>

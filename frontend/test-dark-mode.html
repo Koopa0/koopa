@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <title>深色模式測試</title>
+    <style>
+        body { margin: 0; padding: 20px; font-family: Arial, sans-serif; }
+        .test-container { display: flex; gap: 20px; }
+        .mode-box { flex: 1; padding: 20px; border: 2px solid #ccc; }
+        button { padding: 10px 20px; margin: 10px 0; cursor: pointer; }
+    </style>
+</head>
+<body>
+    <h1>深色模式測試頁面</h1>
+    <button onclick="toggleTheme()">切換深淺模式</button>
+    <p>當前模式: <span id="current-mode">淺色</span></p>
+    
+    <div class="test-container">
+        <div class="mode-box">
+            <h2>淺色模式預期</h2>
+            <ul>
+                <li>導航欄: 藍色漸變</li>
+                <li>Banner: 明亮藍色漸變</li>
+                <li>頁腳: 深灰色 (#1e293b)</li>
+            </ul>
+        </div>
+        <div class="mode-box">
+            <h2>深色模式預期</h2>
+            <ul>
+                <li>導航欄: 深灰藍色 (#1e293b → #334155)</li>
+                <li>Banner: 深灰藍色 (#1e293b → #334155)</li>
+                <li>頁腳: 深灰藍色 (#1e293b)</li>
+            </ul>
+        </div>
+    </div>
+    
+    <script>
+        let isDark = false;
+        function toggleTheme() {
+            isDark = !isDark;
+            document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
+            document.getElementById('current-mode').textContent = isDark ? '深色' : '淺色';
+        }
+    </script>
+</body>
+</html>

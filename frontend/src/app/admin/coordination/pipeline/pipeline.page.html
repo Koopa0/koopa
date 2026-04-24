@@ -1,0 +1,240 @@
+<div class="flex min-w-0 flex-1 flex-col gap-5 px-6 py-5">
+  @if (isLoading()) {
+    <div class="flex flex-1 items-center justify-center" data-testid="pipeline-loading">
+      <div class="size-5 animate-spin rounded-full border-2 border-zinc-700 border-t-zinc-300" aria-label="Loading process runs"></div>
+    </div>
+  } @else if (endpointsUnavailable()) {
+    <div class="flex flex-1 items-center justify-center rounded-sm border border-dashed border-zinc-800 p-10 text-center" data-testid="pipeline-endpoints-pending">
+      <div class="max-w-md">
+        <p class="mb-1 font-mono text-[10px] uppercase tracking-wider text-zinc-500">Endpoints pending</p>
+        <p class="text-xs text-zinc-500">
+          Summary cards, stage tables, and the runs list populate once
+          /api/admin/coordination/process-runs is live.
+        </p>
+      </div>
+    </div>
+  } @else if (hasError()) {
+    <div
+      role="alert"
+      class="rounded-xs border border-red-800 bg-red-900/20 px-3 py-2 text-xs text-red-300"
+      data-testid="pipeline-error"
+    >
+      Couldn't load process runs.
+    </div>
+  } @else if (vm(); as v) {
+    <!-- Summary cards -->
+    <section aria-labelledby="pipeline-summary-heading" data-testid="pipeline-summary">
+      <h2 id="pipeline-summary-heading" class="sr-only">Pipeline summary</h2>
+      <div class="grid gap-3 md:grid-cols-4">
+        <div class="rounded-sm border border-zinc-800 bg-zinc-900/40 px-4 py-3">
+          <div class="font-mono text-[10px] uppercase tracking-wider text-zinc-500">
+            24h success rate
+          </div>
+          <div
+            class="mt-1 font-mono text-xl"
+            [class]="summaryStateClass(v.summary.success_rate_24h.state)"
+          >
+            {{ v.summary.success_rate_24h.value }}%
+          </div>
+        </div>
+        <div class="rounded-sm border border-zinc-800 bg-zinc-900/40 px-4 py-3">
+          <div class="font-mono text-[10px] uppercase tracking-wider text-zinc-500">
+            Avg latency
+          </div>
+          <div class="mt-1 font-mono text-xl text-zinc-200">
+            {{ v.summary.avg_latency_seconds }}s
+          </div>
+        </div>
+        <div class="rounded-sm border border-zinc-800 bg-zinc-900/40 px-4 py-3">
+          <div class="font-mono text-[10px] uppercase tracking-wider text-zinc-500">
+            In retry
+          </div>
+          <div
+            class="mt-1 font-mono text-xl"
+            [class]="summaryStateClass(v.summary.in_retry.state)"
+          >
+            {{ v.summary.in_retry.value }}
+          </div>
+        </div>
+        <div class="rounded-sm border border-zinc-800 bg-zinc-900/40 px-4 py-3">
+          <div class="font-mono text-[10px] uppercase tracking-wider text-zinc-500">
+            Failed last hour
+          </div>
+          <div
+            class="mt-1 font-mono text-xl"
+            [class]="summaryStateClass(v.summary.failed_last_hour.state)"
+          >
+            {{ v.summary.failed_last_hour.value }}
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Stage summaries -->
+    @if (stages().length > 0) {
+      <section
+        class="rounded-sm border border-zinc-800"
+        aria-labelledby="pipeline-stages-heading"
+        data-testid="pipeline-stages"
+      >
+        <header class="border-b border-zinc-800 px-4 py-2">
+          <h2
+            id="pipeline-stages-heading"
+            class="font-mono text-[10px] uppercase tracking-wider text-zinc-500"
+          >
+            Stages
+          </h2>
+        </header>
+        <div class="grid divide-y divide-zinc-800 md:grid-cols-4 md:divide-x md:divide-y-0">
+          @for (stage of stages(); track stage.name) {
+            <div class="px-4 py-3" [attr.data-testid]="'pipeline-stage-' + stage.name">
+              <div class="mb-2 flex items-center justify-between">
+                <div class="flex items-center gap-1.5">
+                  <span
+                    class="inline-block size-1.5 rounded-full"
+                    [class]="statusDot(stage.status)"
+                    aria-hidden="true"
+                  ></span>
+                  <span
+                    class="font-mono text-[11px] capitalize"
+                    [class]="statusText(stage.status)"
+                  >{{ stage.name }}</span>
+                </div>
+                <span
+                  class="font-mono text-[10px]"
+                  [class.text-emerald-300]="stage.pct_ok >= 90"
+                  [class.text-amber-300]="stage.pct_ok >= 70 && stage.pct_ok < 90"
+                  [class.text-red-300]="stage.pct_ok < 70"
+                >
+                  {{ stage.pct_ok }}%
+                </span>
+              </div>
+              <ul class="space-y-1 text-xs">
+                @for (row of stage.rows; track row[0]) {
+                  <li class="flex items-baseline justify-between gap-2">
+                    <span class="text-zinc-400">{{ row[0] }}</span>
+                    <span
+                      class="font-mono"
+                      [class]="cellStateClass(row[2])"
+                    >{{ row[1] ?? '—' }}</span>
+                  </li>
+                }
+              </ul>
+            </div>
+          }
+        </div>
+      </section>
+    }
+
+    <!-- Runs table -->
+    <section
+      class="rounded-sm border border-zinc-800"
+      aria-labelledby="pipeline-runs-heading"
+      data-testid="pipeline-runs"
+    >
+      <header class="flex flex-wrap items-center gap-3 border-b border-zinc-800 px-4 py-2">
+        <h2
+          id="pipeline-runs-heading"
+          class="font-mono text-[10px] uppercase tracking-wider text-zinc-500"
+        >Recent runs</h2>
+        <div class="flex flex-wrap items-center gap-1" role="toolbar" aria-label="Filter by status">
+          @for (chip of statusChips; track chip.value) {
+            <button
+              type="button"
+              (click)="setStatusFilter(chip.value)"
+              class="h-6 rounded-xs border px-2 text-[10px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500"
+              [class.border-sky-700]="statusFilter() === chip.value"
+              [class.bg-sky-900/30]="statusFilter() === chip.value"
+              [class.text-sky-300]="statusFilter() === chip.value"
+              [class.border-zinc-800]="statusFilter() !== chip.value"
+              [class.bg-zinc-900]="statusFilter() !== chip.value"
+              [class.text-zinc-400]="statusFilter() !== chip.value"
+              [attr.aria-pressed]="statusFilter() === chip.value"
+            >{{ chip.label }}</button>
+          }
+        </div>
+        <span class="ml-auto font-mono text-[10px] text-zinc-500">{{ total() }} total</span>
+      </header>
+      @if (runs().length === 0) {
+        <p class="px-4 py-6 text-xs text-zinc-500">No runs match this filter.</p>
+      } @else {
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="border-b border-zinc-800 text-left font-mono text-[10px] uppercase tracking-wider text-zinc-500">
+                <th scope="col" class="px-3 py-2 font-normal">When</th>
+                <th scope="col" class="px-3 py-2 font-normal">Kind</th>
+                <th scope="col" class="px-3 py-2 font-normal">Subsystem / source</th>
+                <th scope="col" class="px-3 py-2 font-normal">Items</th>
+                <th scope="col" class="px-3 py-2 font-normal">Duration</th>
+                <th scope="col" class="px-3 py-2 font-normal">Status</th>
+                <th scope="col" class="px-3 py-2 font-normal">ID</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (run of runs(); track run.id) {
+                <tr
+                  class="border-b border-zinc-900 transition-colors hover:bg-zinc-800/40"
+                  [class.bg-red-950/10]="run.status === 'failed'"
+                >
+                  <td class="px-3 py-2 font-mono text-[11px] text-zinc-400">{{ run.when }}</td>
+                  <td class="px-3 py-2 font-mono text-[11px] text-zinc-400">{{ run.kind }}</td>
+                  <td class="px-3 py-2 truncate text-zinc-300">{{ describe(run) }}</td>
+                  <td class="px-3 py-2 font-mono text-[11px] text-zinc-400">{{ run.items ?? '—' }}</td>
+                  <td class="px-3 py-2 font-mono text-[11px] text-zinc-400">{{ run.duration ?? '—' }}</td>
+                  <td class="px-3 py-2">
+                    <span
+                      class="inline-flex items-center gap-1.5 text-xs capitalize"
+                      [class]="statusText(run.status)"
+                    >
+                      <span class="inline-block size-1.5 rounded-full" [class]="statusDot(run.status)" aria-hidden="true"></span>
+                      {{ run.status }}
+                    </span>
+                  </td>
+                  <td class="px-3 py-2 font-mono text-[11px] text-zinc-500">{{ run.id }}</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      }
+    </section>
+
+    <!-- Failures panel -->
+    @if (failures().length > 0) {
+      <section
+        class="rounded-sm border border-red-900/60 bg-red-950/10"
+        aria-labelledby="pipeline-failures-heading"
+        data-testid="pipeline-failures"
+      >
+        <header class="border-b border-red-900/40 px-4 py-2">
+          <h2
+            id="pipeline-failures-heading"
+            class="font-mono text-[10px] uppercase tracking-wider text-red-300"
+          >
+            Failures ({{ failures().length }})
+          </h2>
+        </header>
+        <ul class="divide-y divide-red-900/30">
+          @for (run of failures(); track run.id) {
+            <li class="px-4 py-3">
+              <div class="flex items-baseline justify-between gap-3">
+                <div class="min-w-0 flex-1">
+                  <div class="truncate text-sm text-zinc-200">
+                    {{ run.kind }} · {{ describe(run) || '—' }}
+                  </div>
+                  @if (run.error) {
+                    <div class="mt-1 text-xs text-red-300">{{ run.error }}</div>
+                  }
+                </div>
+                <div class="shrink-0 font-mono text-[10px] text-zinc-500">
+                  {{ run.when }} · {{ run.id }}
+                </div>
+              </div>
+            </li>
+          }
+        </ul>
+      </section>
+    }
+  }
+</div>

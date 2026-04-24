@@ -1,0 +1,8 @@
+frontend/
+docs/
+.git/
+.github/
+.claude/
+*.md
+.env
+.env.*

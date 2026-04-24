@@ -1,0 +1,116 @@
+<!-- Header -->
+<section class="border-b border-zinc-800 bg-zinc-950">
+  <div class="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
+    <h1 class="font-display text-3xl font-bold text-balance text-zinc-100">
+      Projects
+    </h1>
+    <p class="mt-2 text-zinc-400">
+      Open-source and personal projects spanning backend services, CLI tools,
+      and full-stack apps
+    </p>
+  </div>
+</section>
+
+<section class="bg-zinc-950">
+  <div class="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
+    @if (isLoading()) {
+    <div class="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+      <span class="sr-only">Loading...</span>
+      @for (_ of [1, 2, 3]; track _) {
+      <div class="animate-pulse rounded-sm border border-zinc-800 p-6">
+        <div class="mb-4 h-6 w-3/4 rounded-sm bg-zinc-800"></div>
+        <div class="mb-4 h-16 rounded-sm bg-zinc-800"></div>
+        <div class="h-4 w-1/2 rounded-sm bg-zinc-800"></div>
+      </div>
+      }
+    </div>
+    } @else if (error()) {
+    <div class="text-center">
+      <p class="text-zinc-500">{{ error() }}</p>
+      <button
+        type="button"
+        class="mt-3 rounded-sm border border-zinc-700 px-4 py-2 text-sm text-zinc-300 transition-colors hover:bg-zinc-800"
+        (click)="loadProjects()"
+      >
+        Retry
+      </button>
+    </div>
+    } @else if (filteredProjects().length > 0) {
+    <!-- Projects Grid -->
+    <div class="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+      @for (project of filteredProjects(); track project.id) {
+      <div
+        class="group flex flex-col rounded-sm border border-zinc-800 bg-zinc-900/50 p-6 transition-all duration-200 hover:-translate-y-1 hover:border-zinc-600 hover:shadow-lg hover:shadow-zinc-950/50"
+      >
+        <!-- Header -->
+        <div class="mb-4">
+          <h2 class="text-lg font-semibold">
+            <a
+              [routerLink]="['/projects', project.slug]"
+              class="text-zinc-100 no-underline hover:text-white"
+            >
+              {{ project.title }}
+            </a>
+          </h2>
+        </div>
+
+        <!-- Description -->
+        <p class="mb-4 flex-1 text-sm leading-relaxed text-zinc-400">
+          {{ project.description }}
+        </p>
+
+        <!-- Tech Stack -->
+        <div class="mb-4 flex flex-wrap gap-1.5">
+          @for (tech of project.tech_stack; track tech) {
+          <span
+            class="rounded-sm bg-zinc-800 px-2 py-0.5 text-xs text-zinc-400"
+          >
+            {{ tech }}
+          </span>
+          }
+        </div>
+
+        <!-- Links -->
+        <div class="flex items-center gap-3 border-t border-zinc-800 pt-4">
+          @if (project.github_url) {
+          <a
+            [href]="project.github_url"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="inline-flex items-center gap-1.5 text-xs text-zinc-500 no-underline transition-colors hover:text-zinc-200"
+          >
+            <lucide-icon [img]="GithubIcon" [size]="14" />
+            Source
+          </a>
+          } @if (project.live_url) {
+          <a
+            [href]="project.live_url"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="inline-flex items-center gap-1.5 text-xs text-zinc-500 no-underline transition-colors hover:text-zinc-200"
+          >
+            <lucide-icon [img]="ExternalLinkIcon" [size]="14" />
+            Live Demo
+          </a>
+          }
+          <a
+            [routerLink]="['/projects', project.slug]"
+            class="ml-auto inline-flex items-center gap-1 text-xs text-zinc-500 no-underline transition-colors hover:text-zinc-200"
+          >
+            Details
+            <lucide-icon [img]="ArrowRightIcon" [size]="14" />
+          </a>
+        </div>
+      </div>
+      }
+    </div>
+    } @else {
+    <!-- Empty State -->
+    <div class="flex flex-col items-center gap-4 py-20 text-center">
+      <lucide-icon [img]="FolderOpenIcon" [size]="48" class="text-zinc-700" />
+      <p class="text-lg font-medium text-zinc-300">No projects yet</p>
+      <p class="text-sm text-zinc-500">Stay tuned</p>
+    </div>
+    }
+  </div>
+</section>

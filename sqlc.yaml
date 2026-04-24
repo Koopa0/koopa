@@ -1,0 +1,96 @@
+version: "2"
+sql:
+  - engine: "postgresql"
+    queries:
+      - "internal/auth/query.sql"
+      - "internal/content/query.sql"
+      - "internal/topic/query.sql"
+      - "internal/project/query.sql"
+      - "internal/feed/entry/query.sql"
+      - "internal/feed/query.sql"
+      - "internal/goal/query.sql"
+      - "internal/tag/query.sql"
+      - "internal/activity/query.sql"
+      - "internal/todo/query.sql"
+      - "internal/agent/note/query.sql"
+      - "internal/agent/query.sql"
+      - "internal/agent/task/query.sql"
+      - "internal/agent/artifact/query.sql"
+      - "internal/daily/query.sql"
+      - "internal/stats/query.sql"
+      - "internal/learning/query.sql"
+      - "internal/learning/hypothesis/query.sql"
+      - "internal/learning/plan/query.sql"
+      - "internal/learning/fsrs/query.sql"
+      - "internal/bookmark/query.sql"
+      - "internal/note/query.sql"
+    schema: "migrations/"
+    gen:
+      go:
+        package: "db"
+        out: "internal/db"
+        sql_package: "pgx/v5"
+        emit_json_tags: true
+        emit_empty_slices: true
+        emit_pointers_for_null_types: true
+        overrides:
+          - db_type: "uuid"
+            go_type: "github.com/google/uuid.UUID"
+          - db_type: "uuid"
+            go_type:
+              import: "github.com/google/uuid"
+              type: "UUID"
+              pointer: true
+            nullable: true
+          - db_type: "timestamptz"
+            go_type:
+              type: "Time"
+              import: "time"
+          - db_type: "timestamptz"
+            go_type:
+              import: "time"
+              type: "Time"
+              pointer: true
+            nullable: true
+          - db_type: "date"
+            go_type:
+              type: "Time"
+              import: "time"
+          - db_type: "date"
+            go_type:
+              import: "time"
+              type: "Time"
+              pointer: true
+            nullable: true
+          - db_type: "pg_catalog.text[]"
+            go_type:
+              type: "[]string"
+          - db_type: "jsonb"
+            go_type:
+              type: "RawMessage"
+              import: "encoding/json"
+            nullable: true
+          - db_type: "vector"
+            go_type:
+              import: "github.com/pgvector/pgvector-go"
+              type: "Vector"
+          - db_type: "vector"
+            go_type:
+              import: "github.com/pgvector/pgvector-go"
+              type: "Vector"
+              pointer: true
+            nullable: true
+          # tsvector GENERATED columns — never written from Go, map to string
+          - column: "contents.search_vector"
+            go_type: "string"
+          - column: "notes.search_vector"
+            go_type: "string"
+          # non-nullable JSONB → json.RawMessage
+          - column: "feeds.filter_config"
+            go_type:
+              import: "encoding/json"
+              type: "RawMessage"
+          - column: "learning_plans.plan_config"
+            go_type:
+              import: "encoding/json"
+              type: "RawMessage"

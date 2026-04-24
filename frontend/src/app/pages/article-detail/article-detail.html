@@ -1,0 +1,146 @@
+@if (isLoading()) {
+<section class="bg-zinc-950">
+  <div
+    class="mx-auto flex max-w-4xl flex-col items-center justify-center gap-3 px-4 py-20 text-zinc-400"
+  >
+    <div
+      class="size-8 animate-spin rounded-full border-2 border-zinc-700 border-t-zinc-400"
+    ></div>
+    <p class="text-sm">Loading article...</p>
+  </div>
+</section>
+} @else if (error()) {
+<section class="bg-zinc-950">
+  <div
+    class="mx-auto flex max-w-4xl flex-col items-center justify-center gap-4 px-4 py-20 text-center"
+  >
+    <lucide-icon [img]="AlertCircleIcon" [size]="48" class="text-red-500" />
+    <p class="text-xl font-semibold text-zinc-100">Failed to Load</p>
+    <p class="text-sm text-zinc-400">{{ error() }}</p>
+    <button
+      type="button"
+      class="inline-flex items-center gap-2 rounded-sm border border-zinc-700 px-4 py-2 text-sm text-zinc-300 transition-colors hover:border-zinc-500 hover:text-white"
+      (click)="goBack()"
+    >
+      <lucide-icon [img]="ArrowLeftIcon" [size]="16" />
+      Back
+    </button>
+  </div>
+</section>
+} @else if (article()) {
+<!-- Article Header -->
+<section class="border-b border-zinc-800 bg-zinc-950">
+  <div class="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:px-8">
+    <!-- Navigation -->
+    <div class="mb-6 flex items-center justify-between">
+      <button
+        type="button"
+        class="inline-flex items-center gap-1 text-sm text-zinc-400 transition-colors hover:text-zinc-200"
+        (click)="goBack()"
+      >
+        <lucide-icon [img]="ArrowLeftIcon" [size]="16" />
+        Back
+      </button>
+      <button
+        type="button"
+        class="inline-flex items-center gap-1 rounded-sm border border-zinc-700 px-3 py-1.5 text-sm text-zinc-400 transition-colors hover:border-zinc-500 hover:text-zinc-200"
+        (click)="shareArticle()"
+      >
+        @if (isCopied()) {
+        <lucide-icon [img]="CheckIcon" [size]="14" />
+        Copied } @else {
+        <lucide-icon [img]="Share2Icon" [size]="14" />
+        Share }
+      </button>
+    </div>
+
+    <!-- Tags -->
+    <div class="mb-4 flex flex-wrap gap-2">
+      @for (tag of article()!.tags; track tag) {
+      <span
+        class="rounded-full border border-zinc-700 px-3 py-0.5 text-xs text-zinc-400"
+      >
+        {{ tag }}
+      </span>
+      }
+    </div>
+
+    <!-- Title -->
+    <h1 class="font-display mb-6 text-3xl font-bold text-balance sm:text-4xl text-zinc-100">
+      {{ article()!.title }}
+    </h1>
+
+    <!-- Meta -->
+    <div class="flex flex-wrap items-center gap-4 text-sm text-zinc-500">
+      <span class="flex items-center gap-1">
+        <lucide-icon [img]="CalendarIcon" [size]="14" />
+        {{ article()!.published_at | date: 'MMM d, yyyy' }}
+      </span>
+      <span class="flex items-center gap-1">
+        <lucide-icon [img]="ClockIcon" [size]="14" />
+        {{ article()!.reading_time_min }} min read
+      </span>
+    </div>
+  </div>
+</section>
+
+<!-- Article Body -->
+<section class="bg-zinc-950">
+  <div class="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
+    <div class="flex gap-8">
+      <!-- TOC Sidebar -->
+      <aside class="hidden w-56 shrink-0 xl:block">
+        <div class="sticky top-20">
+          <app-table-of-contents [content]="rawHtml()" />
+        </div>
+      </aside>
+      <!-- Content -->
+      <div class="min-w-0 max-w-4xl flex-1">
+        <div class="prose" [innerHTML]="parsedContent()"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Related Articles -->
+<section class="bg-zinc-950">
+  <div class="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:px-8">
+    <app-related-articles [articles]="relatedArticles()" />
+  </div>
+</section>
+
+<!-- Article Footer -->
+<section class="border-t border-zinc-800 bg-zinc-950">
+  <div class="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:px-8">
+    <div class="flex flex-wrap items-center justify-between gap-4">
+      <div class="flex items-center gap-3">
+        <button
+          type="button"
+          class="inline-flex items-center gap-2 rounded-sm bg-white px-4 py-2 text-sm font-semibold text-zinc-900 transition-colors hover:bg-zinc-200"
+          (click)="shareArticle()"
+        >
+          @if (isCopied()) {
+          <lucide-icon [img]="CheckIcon" [size]="16" />
+          Link Copied } @else {
+          <lucide-icon [img]="Share2Icon" [size]="16" />
+          Share Article }
+        </button>
+        <button
+          type="button"
+          class="inline-flex items-center gap-2 rounded-sm border border-zinc-700 px-4 py-2 text-sm text-zinc-300 transition-colors hover:border-zinc-500 hover:text-white"
+          (click)="goBack()"
+        >
+          <lucide-icon [img]="ArrowLeftIcon" [size]="16" />
+          Back to List
+        </button>
+      </div>
+
+      @if (article()!.updated_at !== article()!.published_at) {
+      <p class="text-xs text-zinc-500">
+        Last updated: {{ article()!.updated_at | date: 'MMM d, yyyy HH:mm' }}
+      </p>
+      }
+    </div>
+  </div>
+</section>
+}

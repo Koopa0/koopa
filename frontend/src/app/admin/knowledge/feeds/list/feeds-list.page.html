@@ -1,0 +1,144 @@
+<div class="flex min-w-0 flex-1 flex-col px-6 py-5">
+  <!-- Filter chips -->
+  <div class="mb-4 flex flex-wrap items-center gap-x-4 gap-y-2">
+    <div
+      class="flex flex-wrap items-center gap-1"
+      role="toolbar"
+      aria-label="Filter by health"
+      data-testid="feeds-filter-health"
+    >
+      <span
+        class="mr-1 font-mono text-[10px] uppercase tracking-wider text-zinc-500"
+      >
+        Health
+      </span>
+      @for (value of healthChips; track value) {
+        <button
+          type="button"
+          (click)="setHealthFilter(value)"
+          class="h-7 rounded-xs border px-2.5 text-[11px] font-medium capitalize transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500"
+          [class.border-sky-700]="healthFilter() === value"
+          [class.bg-sky-900/30]="healthFilter() === value"
+          [class.text-sky-300]="healthFilter() === value"
+          [class.border-zinc-800]="healthFilter() !== value"
+          [class.bg-zinc-900]="healthFilter() !== value"
+          [class.text-zinc-400]="healthFilter() !== value"
+          [attr.aria-pressed]="healthFilter() === value"
+          [attr.data-testid]="'feeds-filter-health-' + value"
+        >
+          {{ value }}
+        </button>
+      }
+    </div>
+
+    <span
+      class="ml-auto font-mono text-[11px] text-zinc-500"
+      aria-live="polite"
+      data-testid="feeds-count"
+    >
+      Showing {{ total() }} {{ total() === 1 ? 'feed' : 'feeds' }}
+    </span>
+  </div>
+
+  @if (hasError()) {
+    <div
+      role="alert"
+      class="mb-3 rounded-xs border border-red-800 bg-red-900/20 px-3 py-2 text-xs text-red-300"
+      data-testid="feeds-list-error"
+    >
+      Couldn't load feeds.
+    </div>
+  }
+
+  <app-data-table
+    [isLoading]="isLoading()"
+    [isEmpty]="isEmpty()"
+    emptyTitle="No feeds match this filter"
+    emptyDescription="Add a feed via the admin API to start receiving entries."
+  >
+    <table class="w-full text-sm" data-testid="feeds-list-table">
+      <thead>
+        <tr
+          class="border-b border-zinc-800 text-left font-mono text-[10px] uppercase tracking-wider text-zinc-500"
+        >
+          <th scope="col" class="px-3 py-2 font-normal">Name</th>
+          <th scope="col" class="px-3 py-2 font-normal">URL</th>
+          <th scope="col" class="px-3 py-2 font-normal">Schedule</th>
+          <th scope="col" class="px-3 py-2 font-normal">Health</th>
+          <th scope="col" class="px-3 py-2 font-normal">Last fetched</th>
+          <th scope="col" class="px-3 py-2 font-normal">Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (row of rows(); track row.id) {
+          <tr
+            class="border-b border-zinc-900 transition-colors hover:bg-zinc-800/40"
+            [class.bg-red-950/10]="
+              row.enabled && row.consecutive_failures > 0
+            "
+            [attr.data-testid]="'feeds-list-row-' + row.id"
+          >
+            <td class="px-3 py-2 text-zinc-100">{{ row.name }}</td>
+            <td class="truncate px-3 py-2 font-mono text-[11px] text-zinc-500">
+              <a
+                [href]="row.url"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="transition-colors hover:text-sky-300"
+              >
+                {{ row.url }}
+              </a>
+            </td>
+            <td class="px-3 py-2 font-mono text-[11px] text-zinc-400 capitalize">
+              {{ row.schedule }}
+            </td>
+            <td class="px-3 py-2">
+              <span
+                class="inline-flex items-center gap-1.5 text-xs"
+                [class]="healthTextClass(row)"
+              >
+                <span
+                  class="inline-block size-1.5 rounded-full"
+                  [class]="healthDotClass(row)"
+                  aria-hidden="true"
+                ></span>
+                {{ healthLabel(row) }}
+                @if (row.consecutive_failures > 0) {
+                  <span class="font-mono text-[10px] text-zinc-500">
+                    ×{{ row.consecutive_failures }}
+                  </span>
+                }
+              </span>
+              @if (row.last_error) {
+                <div
+                  class="mt-0.5 truncate text-[10px] text-red-400"
+                  [title]="row.last_error"
+                >
+                  {{ row.last_error }}
+                </div>
+              }
+            </td>
+            <td class="px-3 py-2 text-zinc-400">
+              {{
+                row.last_fetched_at
+                  ? (row.last_fetched_at | date: 'short')
+                  : '—'
+              }}
+            </td>
+            <td class="px-3 py-2">
+              <button
+                type="button"
+                (click)="fetchNow(row)"
+                [disabled]="fetchingId() === row.id"
+                class="rounded-xs border border-zinc-700 bg-zinc-900 px-2 py-1 text-[11px] text-zinc-300 transition-colors hover:border-sky-700 hover:text-sky-300 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500 disabled:cursor-not-allowed disabled:opacity-50"
+                [attr.data-testid]="'feeds-list-fetch-' + row.id"
+              >
+                {{ fetchingId() === row.id ? 'Queuing…' : 'Fetch now' }}
+              </button>
+            </td>
+          </tr>
+        }
+      </tbody>
+    </table>
+  </app-data-table>
+</div>

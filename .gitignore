@@ -1,0 +1,62 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Frontend (Angular)
+frontend/node_modules/
+frontend/dist/
+frontend/.angular/
+
+# Backend (Go)
+backend/bin/
+backend/tmp/
+backend/vendor/
+
+# Claude
+.claude/
+.mcp.json
+
+# Other AI tools
+.codex/
+.gemini/
+.agents/
+.cursor/
+.zed/
+
+# Secrets reference (local only)
+SECRETS.md
+
+# Per-tool agent instruction files (local only — tool-specific, not
+# shared history). Each contributor generates their own from .claude/
+# rules and personal preferences.
+CLAUDE.md
+AGENTS.md
+
+# Build artifacts
+/app
+/mcp
+bin/
+*.exe
+
+# Personal / Cowork agent operating docs — kept local, not public.
+# These describe individual AI-agent personas, content strategy, and
+# learning-playbook material that is operational to one human, not a
+# shared-repo contract. The public-facing technical artifacts stay in
+# docs/ (backend-semantic-contract.md, LEARNING-CONTRACT.md).
+docs/Koopa-HQ.md
+docs/Koopa-Content-Studio.md
+docs/Koopa-Research-Lab.md
+docs/Koopa-Learning.md
+docs/narrative-rewrite-scope.md

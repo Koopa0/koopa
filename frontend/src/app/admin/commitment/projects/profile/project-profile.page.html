@@ -1,0 +1,280 @@
+@if (isLoading()) {
+<div
+  class="flex flex-1 items-center justify-center"
+  data-testid="project-loading"
+>
+  <div
+    class="size-5 animate-spin rounded-full border-2 border-zinc-700 border-t-zinc-300"
+    aria-label="Loading project"
+  ></div>
+</div>
+} @else if (hasError()) {
+<div
+  class="flex flex-1 items-center justify-center p-8 text-center"
+  data-testid="project-error"
+>
+  <div>
+    <p class="mb-2 text-sm text-red-400">Failed to load project.</p>
+    <button
+      type="button"
+      (click)="back()"
+      class="rounded-sm border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-xs text-zinc-300 transition-colors hover:bg-zinc-800"
+    >
+      Back to list
+    </button>
+  </div>
+</div>
+} @else if (project(); as p) {
+<article
+  class="mx-auto flex w-full max-w-5xl flex-col gap-6 px-6 py-8"
+  data-testid="project-profile"
+>
+  <!-- Hero -->
+  <header class="border-b border-zinc-800 pb-4" data-testid="project-hero">
+    @if (p.goal_breadcrumb; as bc) {
+    <button
+      type="button"
+      (click)="openGoal(bc.goal_id)"
+      class="mb-1 text-[11px] text-zinc-500 transition-colors hover:text-sky-300 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500"
+      data-testid="project-goal-breadcrumb"
+    >
+      ← {{ bc.goal_title }}
+    </button>
+    }
+    <h1 class="mb-2 font-display text-2xl font-semibold text-zinc-100">
+      {{ p.title }}
+    </h1>
+    <div
+      class="flex flex-wrap items-center gap-x-4 gap-y-1 font-mono text-[11px] text-zinc-500"
+    >
+      <span class="capitalize text-zinc-300">
+        {{ p.status.replaceAll('_', ' ') }}
+      </span>
+      <span>{{ p.area }}</span>
+      <span>{{ p.slug }}</span>
+    </div>
+  </header>
+
+  <div class="flex items-center justify-between">
+    <div class="flex items-center gap-3">
+      <span class="font-mono text-[11px] text-zinc-400">
+        Todos: {{ todoTotals().done }} / {{ todoTotals().total }} done
+      </span>
+      <div class="h-1.5 w-48 overflow-hidden rounded-full bg-zinc-800">
+        <div
+          class="h-full bg-sky-500 transition-all"
+          [style.width.%]="todoPercent()"
+        ></div>
+      </div>
+    </div>
+    <button
+      type="button"
+      (click)="back()"
+      class="rounded-sm px-3 py-1.5 text-xs text-zinc-400 transition-colors hover:text-zinc-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500"
+      data-testid="project-action-back"
+    >
+      Back to list
+    </button>
+  </div>
+
+  <!-- Overview -->
+  @if (p.description) {
+  <section
+    class="rounded-sm border border-zinc-800 p-5"
+    aria-labelledby="project-overview-heading"
+    data-testid="project-overview"
+  >
+    <h2
+      id="project-overview-heading"
+      class="mb-3 font-mono text-[10px] uppercase tracking-wider text-zinc-500"
+    >
+      Overview
+    </h2>
+    <p class="whitespace-pre-wrap text-sm text-zinc-200">{{ p.description }}</p>
+  </section>
+  }
+
+  <!-- Facets: Problem / Solution / Architecture -->
+  @if (p.problem || p.solution || p.architecture) {
+  <div class="grid gap-4 md:grid-cols-3">
+    @if (p.problem) {
+    <section
+      class="rounded-sm border border-zinc-800 p-4"
+      data-testid="project-problem"
+    >
+      <h3
+        class="mb-2 font-mono text-[10px] uppercase tracking-wider text-zinc-500"
+      >
+        Problem
+      </h3>
+      <p class="whitespace-pre-wrap text-xs text-zinc-300">{{ p.problem }}</p>
+    </section>
+    } @if (p.solution) {
+    <section
+      class="rounded-sm border border-zinc-800 p-4"
+      data-testid="project-solution"
+    >
+      <h3
+        class="mb-2 font-mono text-[10px] uppercase tracking-wider text-zinc-500"
+      >
+        Solution
+      </h3>
+      <p class="whitespace-pre-wrap text-xs text-zinc-300">{{ p.solution }}</p>
+    </section>
+    } @if (p.architecture) {
+    <section
+      class="rounded-sm border border-zinc-800 p-4"
+      data-testid="project-architecture"
+    >
+      <h3
+        class="mb-2 font-mono text-[10px] uppercase tracking-wider text-zinc-500"
+      >
+        Architecture
+      </h3>
+      <p class="whitespace-pre-wrap text-xs text-zinc-300">
+        {{ p.architecture }}
+      </p>
+    </section>
+    }
+  </div>
+  }
+
+  <!-- Todos by state -->
+  <section
+    class="rounded-sm border border-zinc-800 p-5"
+    aria-labelledby="project-todos-heading"
+    data-testid="project-todos"
+  >
+    <h2
+      id="project-todos-heading"
+      class="mb-3 font-mono text-[10px] uppercase tracking-wider text-zinc-500"
+    >
+      Todos
+    </h2>
+    <div class="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+      @for (col of todoColumns; track col.key) {
+      <div data-testid="project-todo-column">
+        <h3
+          class="mb-2 font-mono text-[10px] uppercase tracking-wider text-zinc-400"
+        >
+          {{ col.label }}
+          <span class="ml-1 text-zinc-600">
+            ({{ todosForColumn(col).length }})
+          </span>
+        </h3>
+        <ul class="space-y-1.5">
+          @for (t of todosForColumn(col); track t.id) {
+          <li
+            class="rounded-xs border border-zinc-900 bg-zinc-950/30 px-2 py-1.5"
+          >
+            <div class="truncate text-xs text-zinc-200">{{ t.title }}</div>
+            <div
+              class="flex items-center gap-2 font-mono text-[10px] text-zinc-500"
+            >
+              @if (t.priority) {
+              <span class="capitalize">{{ t.priority }}</span>
+              } @if (t.due) {
+              <span>· due {{ t.due | date: 'shortDate' }}</span>
+              } @if (t.is_in_today_plan) {
+              <span class="text-amber-400">· today</span>
+              }
+            </div>
+          </li>
+          } @empty {
+          <li class="text-[11px] italic text-zinc-600">empty</li>
+          }
+        </ul>
+      </div>
+      }
+    </div>
+  </section>
+
+  <!-- Related content -->
+  @if (p.related_content.length > 0) {
+  <section
+    class="rounded-sm border border-zinc-800 p-5"
+    aria-labelledby="project-related-content-heading"
+    data-testid="project-related-content"
+  >
+    <h2
+      id="project-related-content-heading"
+      class="mb-3 font-mono text-[10px] uppercase tracking-wider text-zinc-500"
+    >
+      Related content
+    </h2>
+    <ul class="space-y-1">
+      @for (c of p.related_content; track c.id) {
+      <li
+        class="flex items-center justify-between gap-3 border-l border-zinc-800 pl-3"
+      >
+        <a
+          [routerLink]="['/admin/knowledge/content', c.id, 'edit']"
+          class="min-w-0 flex-1 truncate text-sm text-zinc-200 transition-colors hover:text-sky-300 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500"
+        >
+          {{ c.title }}
+        </a>
+        <span class="font-mono text-[10px] uppercase text-zinc-500">
+          {{ c.type }}
+        </span>
+      </li>
+      }
+    </ul>
+  </section>
+  }
+
+  <!-- Recent activity -->
+  @if (p.recent_activity.length > 0) {
+  <section
+    class="rounded-sm border border-zinc-800 p-5"
+    aria-labelledby="project-activity-heading"
+    data-testid="project-activity"
+  >
+    <h2
+      id="project-activity-heading"
+      class="mb-3 font-mono text-[10px] uppercase tracking-wider text-zinc-500"
+    >
+      Recent activity
+    </h2>
+    <ul class="space-y-1.5">
+      @for (ev of p.recent_activity; track $index) {
+      <li class="flex items-baseline gap-3 border-l border-zinc-800 pl-3">
+        <span class="shrink-0 font-mono text-[11px] uppercase text-zinc-500">
+          {{ ev.type }}
+        </span>
+        <span class="min-w-0 flex-1 truncate text-sm text-zinc-300">
+          {{ ev.title }}
+        </span>
+        <span class="shrink-0 font-mono text-[11px] text-zinc-500">
+          {{ ev.timestamp | date: 'short' }}
+        </span>
+      </li>
+      }
+    </ul>
+  </section>
+  }
+
+  <!-- System -->
+  <section
+    class="rounded-sm border border-zinc-800 p-5"
+    aria-labelledby="project-system-heading"
+    data-testid="project-system"
+  >
+    <h2
+      id="project-system-heading"
+      class="mb-3 font-mono text-[10px] uppercase tracking-wider text-zinc-500"
+    >
+      System
+    </h2>
+    <dl class="grid grid-cols-2 gap-x-6 gap-y-1.5 text-[11px]">
+      <div class="contents">
+        <dt class="text-zinc-500">ID</dt>
+        <dd class="truncate font-mono text-zinc-400">{{ p.id }}</dd>
+      </div>
+      <div class="contents">
+        <dt class="text-zinc-500">Slug</dt>
+        <dd class="font-mono text-zinc-400">{{ p.slug }}</dd>
+      </div>
+    </dl>
+  </section>
+</article>
+}

@@ -1,0 +1,67 @@
+name: Deploy to VPS
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            cd ~/koopa
+            git pull origin main
+
+            # Silence Grafana alerts during deploy (5 min)
+            export $(grep GRAFANA_ADMIN_PASSWORD ~/server/observability/.env)
+            SILENCE_ID=$(curl -sf -X POST http://localhost:3000/api/alertmanager/grafana/api/v2/silences \
+              -H "Authorization: Basic $(echo -n admin:${GRAFANA_ADMIN_PASSWORD} | base64)" \
+              -H "Content-Type: application/json" \
+              -d "{
+                \"matchers\": [{\"name\": \"severity\", \"value\": \".*\", \"isRegex\": true}],
+                \"startsAt\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",
+                \"endsAt\": \"$(date -u -d '+5 min' +%Y-%m-%dT%H:%M:%SZ)\",
+                \"createdBy\": \"ci-cd\",
+                \"comment\": \"Deploy silence\"
+              }" 2>/dev/null | jq -r '.silenceID' 2>/dev/null) || true
+
+            docker compose up -d --build
+            docker image prune -f
+
+            # Post-deploy health check
+            echo "Waiting for services to be ready..."
+            for svc in backend mcp; do
+              case $svc in
+                backend) endpoint="http://localhost:8080/healthz" ;;
+                mcp)     endpoint="http://localhost:8081/healthz" ;;
+              esac
+              for i in $(seq 1 30); do
+                if docker compose exec -T $svc wget -qO- $endpoint > /dev/null 2>&1; then
+                  echo "$svc healthy after ${i}s"
+                  break
+                fi
+                if [ "$i" -eq 30 ]; then
+                  echo "ERROR: $svc failed health check after 30s"
+                  docker compose logs $svc --tail 20
+                  exit 1
+                fi
+                sleep 1
+              done
+            done
+
+            # Expire silence early after deploy completes
+            if [ -n "$SILENCE_ID" ] && [ "$SILENCE_ID" != "null" ]; then
+              curl -sf -X DELETE "http://localhost:3000/api/alertmanager/grafana/api/v2/silence/${SILENCE_ID}" \
+                -H "Authorization: Basic $(echo -n admin:${GRAFANA_ADMIN_PASSWORD} | base64)" 2>/dev/null || true
+            fi

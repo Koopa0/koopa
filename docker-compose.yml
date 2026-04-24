@@ -1,0 +1,142 @@
+services:
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - '127.0.0.1:4000:4000'
+    environment:
+      - NODE_ENV=production
+      - PORT=4000
+      - SITE_URL=https://koopa0.dev
+      - BACKEND_URL=http://backend:8080
+    depends_on:
+      - backend
+    networks:
+      - frontend
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    mem_limit: 256m
+
+  postgres:
+    image: pgvector/pgvector:pg17
+    command:
+      - "postgres"
+      - "-c"
+      - "log_min_duration_statement=500"
+      - "-c"
+      - "log_statement=none"
+    environment:
+      POSTGRES_DB: blog
+      POSTGRES_USER: koopa
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - backend
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U koopa -d blog"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    shm_size: 256mb
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+      - SETGID
+      - SETUID
+    mem_limit: 512m
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      DATABASE_URL: postgres://koopa:${POSTGRES_PASSWORD:-changeme}@postgres:5432/blog?sslmode=disable
+      JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
+      CORS_ORIGIN: https://koopa0.dev
+      SITE_URL: https://koopa0.dev
+      R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID}
+      R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY}
+      R2_ENDPOINT: ${R2_ENDPOINT}
+      R2_BUCKET: ${R2_BUCKET:-blog}
+      R2_PUBLIC_URL: ${R2_PUBLIC_URL}
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      LINE_CHANNEL_TOKEN: ${LINE_CHANNEL_TOKEN}
+      LINE_USER_ID: ${LINE_USER_ID}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
+      GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI}
+      ADMIN_EMAIL: ${ADMIN_EMAIL}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - frontend
+      - backend
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    mem_limit: 256m
+
+  mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile.mcp
+    environment:
+      DATABASE_URL: postgres://koopa:${POSTGRES_PASSWORD:-changeme}@postgres:5432/blog?sslmode=disable
+      MCP_TOKEN: ${MCP_TOKEN}
+      MCP_TRANSPORT: http
+      MCP_PORT: "8081"
+      MCP_BASE_URL: https://mcp.koopa0.dev
+      ORM_JWT: ${ORM_JWT}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
+      ADMIN_EMAIL: ${ADMIN_EMAIL}
+      ADMIN_API_URL: http://backend:8080
+      JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - '127.0.0.1:8081:8081'
+    networks:
+      - backend
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    mem_limit: 128m
+
+volumes:
+  pgdata:
+
+networks:
+  frontend:
+    name: blog_frontend
+  backend:
+    name: blog_backend

@@ -1,0 +1,147 @@
+version: "2"
+
+linters:
+  enable:
+    # Error handling
+    - errcheck # Detect unchecked errors
+    - errorlint # Error wrapping and comparison
+    - errname # Sentinel error naming
+
+    # Static analysis
+    - staticcheck # Comprehensive static analysis (SA*, S*, ST*, QF*)
+    - govet # Official go vet
+    - gocritic # Additional code checks
+
+    # Security
+    - gosec # Security vulnerability scan
+
+    # Code quality
+    - ineffassign # Ineffectual assignments
+    - unused # Unused variables/functions
+    - unconvert # Unnecessary type conversions
+    - unparam # Unused function parameters
+    - wastedassign # Wasted assignments
+
+    # Style
+    - misspell # Spelling errors
+    - whitespace # Whitespace issues
+
+    # Go version specific
+    - copyloopvar # Go 1.22+ loop variable copy
+    - intrange # Go 1.22+ integer range
+
+    # Complexity
+    - gocyclo # Cyclomatic complexity
+    - gocognit # Cognitive complexity
+    - nestif # Nested if depth
+
+    # Other
+    - exhaustive # Switch exhaustiveness
+    - prealloc # Slice pre-allocation suggestions
+    - nolintlint # nolint directive format
+    - forbidigo # Forbidden identifiers / call patterns
+
+  settings:
+    errcheck:
+      check-type-assertions: true
+      check-blank: false
+      exclude-functions:
+        - (io.Closer).Close
+        - (net/http.ResponseWriter).Write
+        - io.Copy
+        - io/io.Copy
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln
+
+    staticcheck:
+      checks:
+        - "all"
+        - "-SA1019" # Allow deprecated APIs for incremental migration
+
+    govet:
+      enable-all: true
+      disable:
+        - fieldalignment
+        - shadow # Go idiom is "err" everywhere — shadowing inside closures/inner scopes is preferable to inventing cErr/gErr/dErr variants just to satisfy the linter.
+
+    gosec:
+      excludes:
+        - G104 # Handled by errcheck
+      config:
+        G306: "0644" # File permissions
+
+    gocritic:
+      enabled-tags:
+        - diagnostic
+        - style
+        - performance
+        - experimental
+      disabled-checks:
+        - whyNoLint # Handled by nolintlint
+      settings:
+        hugeParam:
+          sizeThreshold: 96 # MCP input structs use value types (addTool[I,O] constraint)
+
+    gocyclo:
+      min-complexity: 15
+
+    gocognit:
+      min-complexity: 20
+
+    nestif:
+      min-complexity: 4
+
+    exhaustive:
+      default-signifies-exhaustive: true
+
+    nolintlint:
+      require-explanation: true
+      require-specific: true
+
+    forbidigo:
+      forbid:
+        - pattern: '\.Begin\(ctx\)'
+          msg: "stores and handlers must not Begin transactions; tx comes from ActorMiddleware or withActorTx via WithTx(tx)"
+      analyze-types: false
+      exclude-godoc-examples: false
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+  exclude-dirs:
+    - vendor
+
+  exclude-rules:
+    # Test files allow higher complexity and flexible helpers
+    - path: _test\.go$
+      linters:
+        - gocyclo
+        - gocognit
+        - errcheck
+        - unparam
+
+    # Generated code skipped
+    - path: internal/db/
+      linters:
+        - all
+
+    # Legitimate tx-opening sites: the two entry points that own tx +
+    # actor-GUC binding. Everyone else routes through them via WithTx(tx).
+    - path: internal/api/middleware\.go
+      linters:
+        - forbidigo
+    - path: internal/mcp/tx\.go
+      linters:
+        - forbidigo
+    # Feed store uses s.dbtx.(pgx.Tx) to fail-fast with ErrNotTransactional
+    # when multi-step writes get a non-tx store — this is tx-status READ,
+    # not Begin. The pattern doesn't call .Begin(ctx) anyway but excluded
+    # for documentation continuity.
+    - path: internal/feed/store\.go
+      linters:
+        - forbidigo
+    # Test code may legitimately open tx for setup/fixtures.
+    - path: _test\.go$
+      linters:
+        - forbidigo

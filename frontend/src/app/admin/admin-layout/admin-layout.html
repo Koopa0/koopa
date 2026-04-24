@@ -1,0 +1,147 @@
+<!-- Shell: 220px nav rail + (Topbar + router-outlet) -->
+<div class="flex min-h-0 flex-1">
+  <aside
+    class="flex w-[220px] shrink-0 flex-col border-r border-zinc-800 bg-zinc-950"
+    role="navigation"
+    aria-label="Admin navigation"
+  >
+    <!-- Brand -->
+    <div
+      class="flex items-center gap-2.5 border-b border-zinc-900 px-3 py-4"
+      data-testid="admin-nav-brand"
+    >
+      <div
+        class="grid size-6 place-items-center rounded-xs bg-sky-900/40 text-xs font-bold text-sky-300"
+        aria-hidden="true"
+      >
+        K
+      </div>
+      <div class="min-w-0">
+        <div class="truncate font-display text-sm font-semibold text-zinc-100">
+          koopa.admin
+        </div>
+        <div class="font-mono text-[10px] text-zinc-500">local · dark</div>
+      </div>
+    </div>
+
+    <!-- Nav groups -->
+    <nav class="flex-1 overflow-y-auto px-2 py-2">
+      @for (group of navGroups; track group.label) {
+      <div
+        class="mt-3 px-2 pb-1 pt-2 font-mono text-[10px] uppercase tracking-[0.08em] text-zinc-600"
+      >
+        {{ group.label }}
+      </div>
+      @for (item of group.items; track item.route) {
+      <a
+        [routerLink]="item.route"
+        routerLinkActive="bg-sky-950/40 text-sky-300"
+        #rla="routerLinkActive"
+        class="group relative flex h-8 items-center gap-2 rounded-xs px-2 text-xs text-zinc-400 no-underline transition-colors hover:bg-zinc-800/50 hover:text-zinc-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500"
+        [attr.aria-current]="rla.isActive ? 'page' : null"
+        [attr.title]="
+              item.shortcutHint
+                ? item.label + ' — press ' + item.shortcutHint
+                : item.label
+            "
+        [attr.data-testid]="item.testId"
+      >
+        @if (rla.isActive) {
+        <span
+          class="absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-full bg-sky-500"
+          aria-hidden="true"
+          data-testid="admin-nav-active-bar"
+        ></span>
+        }
+        <lucide-icon [img]="item.icon" [size]="14" />
+        <span class="truncate">{{ item.label }}</span>
+        @let count = countFor(item); @if (count !== null) {
+        <span
+          class="ml-auto font-mono text-[10px] text-zinc-500"
+          data-testid="admin-nav-count"
+        >
+          {{ count }}
+        </span>
+        }
+      </a>
+      } }
+    </nav>
+
+    <!-- Bottom: settings + user summary -->
+    <div class="border-t border-zinc-800 px-2 py-2">
+      <a
+        routerLink="/admin/settings"
+        routerLinkActive="bg-sky-950/40 text-sky-300"
+        class="flex h-8 items-center gap-2 rounded-xs px-2 text-xs text-zinc-400 no-underline transition-colors hover:bg-zinc-800/50 hover:text-zinc-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500"
+        data-testid="admin-nav-settings"
+      >
+        <lucide-icon [img]="SettingsIcon" [size]="14" />
+        <span>Settings</span>
+      </a>
+
+      <div
+        class="mt-1 flex items-center gap-2.5 border-t border-zinc-900 px-2 py-3"
+        data-testid="admin-nav-user"
+      >
+        <div
+          class="grid size-6 place-items-center rounded-xs bg-sky-900/40 font-mono text-[10px] font-semibold text-sky-300"
+          aria-hidden="true"
+        >
+          H
+        </div>
+        <div class="min-w-0 flex-1">
+          <div class="text-xs text-zinc-200">human</div>
+          <div
+            class="flex items-center gap-1 font-mono text-[10px] text-zinc-500"
+          >
+            <span
+              class="inline-block size-1.5 rounded-full bg-emerald-500"
+              aria-hidden="true"
+            ></span>
+            <span>agents available</span>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          (click)="toggleA11yMode()"
+          class="grid size-7 place-items-center rounded-xs transition-colors hover:bg-zinc-800/50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500"
+          [class.text-emerald-400]="a11yMode()"
+          [class.text-zinc-500]="!a11yMode()"
+          [attr.aria-label]="
+            a11yMode()
+              ? 'Disable accessibility mode (single-character shortcuts active)'
+              : 'Enable accessibility mode (disables single-character shortcuts)'
+          "
+          [attr.aria-pressed]="a11yMode()"
+          data-testid="admin-a11y-toggle"
+        >
+          <lucide-icon [img]="AccessibilityIcon" [size]="14" />
+        </button>
+        <button
+          type="button"
+          (click)="logout()"
+          class="grid size-7 place-items-center rounded-xs text-zinc-500 transition-colors hover:bg-zinc-800/50 hover:text-red-400 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500"
+          aria-label="Sign out"
+          data-testid="admin-logout"
+        >
+          <lucide-icon [img]="LogOutIcon" [size]="14" />
+        </button>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Content column: Topbar + main -->
+  <div class="flex min-w-0 flex-1 flex-col">
+    <app-admin-topbar />
+    <main
+      class="min-w-0 flex-1 overflow-y-auto"
+      style="view-transition-name: admin-page-content"
+    >
+      <router-outlet />
+    </main>
+  </div>
+</div>
+
+<app-toast />
+<app-inspector-panel />

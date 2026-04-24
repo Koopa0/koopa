@@ -1,0 +1,146 @@
+<div class="flex min-w-0 flex-1 flex-col px-6 py-5">
+  <!-- Filter chips -->
+  <div class="mb-4 flex flex-wrap items-center gap-x-4 gap-y-2">
+    <div
+      class="flex flex-wrap items-center gap-1"
+      role="toolbar"
+      aria-label="Filter by capture channel"
+      data-testid="bookmarks-filter-channel"
+    >
+      <span
+        class="mr-1 font-mono text-[10px] uppercase tracking-wider text-zinc-500"
+      >
+        Channel
+      </span>
+      @for (value of channelChips; track value) {
+        <button
+          type="button"
+          (click)="setChannel(value)"
+          class="h-7 rounded-xs border px-2.5 text-[11px] font-medium capitalize transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500"
+          [class.border-sky-700]="channelFilter() === value"
+          [class.bg-sky-900/30]="channelFilter() === value"
+          [class.text-sky-300]="channelFilter() === value"
+          [class.border-zinc-800]="channelFilter() !== value"
+          [class.bg-zinc-900]="channelFilter() !== value"
+          [class.text-zinc-400]="channelFilter() !== value"
+          [attr.aria-pressed]="channelFilter() === value"
+          [attr.data-testid]="'bookmarks-filter-channel-' + value"
+        >
+          {{ value }}
+        </button>
+      }
+    </div>
+
+    <div
+      class="flex flex-wrap items-center gap-1"
+      role="toolbar"
+      aria-label="Filter by visibility"
+      data-testid="bookmarks-filter-visibility"
+    >
+      <span
+        class="mr-1 font-mono text-[10px] uppercase tracking-wider text-zinc-500"
+      >
+        Visibility
+      </span>
+      @for (value of visibilityChips; track value) {
+        <button
+          type="button"
+          (click)="setVisibility(value)"
+          class="h-7 rounded-xs border px-2.5 text-[11px] font-medium capitalize transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500"
+          [class.border-sky-700]="visibilityFilter() === value"
+          [class.bg-sky-900/30]="visibilityFilter() === value"
+          [class.text-sky-300]="visibilityFilter() === value"
+          [class.border-zinc-800]="visibilityFilter() !== value"
+          [class.bg-zinc-900]="visibilityFilter() !== value"
+          [class.text-zinc-400]="visibilityFilter() !== value"
+          [attr.aria-pressed]="visibilityFilter() === value"
+          [attr.data-testid]="'bookmarks-filter-visibility-' + value"
+        >
+          {{ value }}
+        </button>
+      }
+    </div>
+
+    <span
+      class="ml-auto font-mono text-[11px] text-zinc-500"
+      aria-live="polite"
+      data-testid="bookmarks-count"
+    >
+      Showing {{ total() }}
+      {{ total() === 1 ? 'bookmark' : 'bookmarks' }}
+    </span>
+  </div>
+
+  @if (hasError()) {
+    <div
+      role="alert"
+      class="mb-3 rounded-xs border border-red-800 bg-red-900/20 px-3 py-2 text-xs text-red-300"
+      data-testid="bookmarks-list-error"
+    >
+      Couldn't load bookmarks.
+    </div>
+  }
+
+  <app-data-table
+    [isLoading]="isLoading()"
+    [isEmpty]="isEmpty()"
+    emptyTitle="No bookmarks match these filters"
+    emptyDescription="Bookmarks come from the RSS triage flow or manual capture."
+  >
+    <table class="w-full text-sm" data-testid="bookmarks-list-table">
+      <thead>
+        <tr
+          class="border-b border-zinc-800 text-left font-mono text-[10px] uppercase tracking-wider text-zinc-500"
+        >
+          <th scope="col" class="px-3 py-2 font-normal">Title</th>
+          <th scope="col" class="px-3 py-2 font-normal">Host</th>
+          <th scope="col" class="px-3 py-2 font-normal">Topic</th>
+          <th scope="col" class="px-3 py-2 font-normal">Actor</th>
+          <th scope="col" class="px-3 py-2 font-normal">Channel</th>
+          <th scope="col" class="px-3 py-2 font-normal">Public</th>
+          <th scope="col" class="px-3 py-2 font-normal">Updated</th>
+          <th scope="col" class="px-3 py-2 font-normal">ID</th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (row of rows(); let i = $index; track row.id) {
+          <tr
+            #row
+            [attr.tabindex]="rowTabIndex(i)"
+            class="cursor-pointer border-b border-zinc-900 transition-colors hover:bg-zinc-800/40 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-sky-500"
+            [class.bg-zinc-800/40]="i === focusedIndex()"
+            (click)="openRow(row)"
+            (keydown.enter)="openRow(row)"
+            (focus)="focusedIndex.set(i)"
+            [attr.data-testid]="'bookmarks-list-row-' + i"
+          >
+            <td class="max-w-md truncate px-3 py-2 text-zinc-100">
+              {{ row.title }}
+            </td>
+            <td class="truncate px-3 py-2 font-mono text-[11px] text-zinc-400">
+              {{ row.host ?? '—' }}
+            </td>
+            <td class="truncate px-3 py-2 text-zinc-400">
+              {{ topicLabel(row.topics) }}
+            </td>
+            <td class="px-3 py-2 font-mono text-[11px] text-zinc-400">
+              {{ row.curated_by }}
+            </td>
+            <td class="px-3 py-2 font-mono text-[11px] text-zinc-400 capitalize">
+              {{ row.capture_channel }}
+            </td>
+            <td class="px-3 py-2 text-zinc-400">
+              {{ row.is_public ? 'yes' : '—' }}
+            </td>
+            <td class="px-3 py-2 text-zinc-400">
+              {{ row.updated_at | date: 'short' }}
+            </td>
+            <td class="px-3 py-2 font-mono text-[11px] text-zinc-500">
+              {{ row.id.slice(0, 8) }}
+            </td>
+          </tr>
+        }
+      </tbody>
+    </table>
+  </app-data-table>
+</div>

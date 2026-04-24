@@ -1,0 +1,258 @@
+<div class="flex h-full flex-col" data-testid="concept-inspector">
+  @if (isLoading()) {
+    <div
+      class="flex flex-1 items-center justify-center text-zinc-400"
+      role="status"
+      aria-label="Loading concept"
+    >
+      <div
+        class="motion-reduce:animate-none size-5 animate-spin rounded-full border-2 border-zinc-700 border-t-zinc-400"
+      ></div>
+    </div>
+  } @else if (hasError()) {
+    <div
+      class="flex flex-1 items-center justify-center px-6 text-center text-sm text-zinc-400"
+      role="alert"
+    >
+      Failed to load concept.
+    </div>
+  } @else if (concept(); as c) {
+    <div class="space-y-5 p-6" data-testid="concept-overview-section">
+      <!-- Header: name + copy slug button + subtitle -->
+      <header class="space-y-1">
+        <div class="flex items-start justify-between gap-3">
+          <h2
+            class="font-display text-base font-semibold leading-tight text-zinc-100"
+            data-testid="concept-name"
+          >
+            {{ c.name }}
+          </h2>
+          <button
+            type="button"
+            class="motion-reduce:transition-none flex shrink-0 items-center gap-1 rounded-xs border border-zinc-800 bg-zinc-900/50 px-2 py-1 text-xs text-zinc-400 transition-colors hover:border-zinc-700 hover:text-zinc-200"
+            [cdkCopyToClipboard]="c.slug"
+            (cdkCopyToClipboardCopied)="onCopyConceptSlug()"
+            aria-label="Copy concept slug to clipboard"
+            data-testid="concept-copy-slug"
+          >
+            @if (justCopied()) {
+              <span aria-hidden="true">✓</span>
+              <span>copied</span>
+            } @else {
+              <lucide-icon [img]="CopyIcon" [size]="12" aria-hidden="true" />
+              <span>slug</span>
+            }
+          </button>
+        </div>
+        <p class="text-xs text-zinc-400" data-testid="concept-subtitle">
+          <span>{{ c.kind }}</span>
+          <span aria-hidden="true"> · </span>
+          <span>{{ c.domain }}</span>
+          <span aria-hidden="true"> · </span>
+          <span [class]="stageClass()" data-testid="concept-stage">
+            {{ c.mastery_stage }}
+          </span>
+        </p>
+      </header>
+
+      <!-- Description: hide-if-null -->
+      @if (c.description) {
+        <p
+          class="text-sm leading-relaxed text-zinc-200"
+          data-testid="concept-description"
+        >
+          {{ c.description }}
+        </p>
+      }
+
+      <!-- Parent concept link: hide-if-null -->
+      @if (c.parent_concept; as parent) {
+        <p class="text-xs text-zinc-400" data-testid="concept-parent">
+          Parent:
+          <button
+            type="button"
+            class="motion-reduce:transition-none font-mono text-zinc-300 transition-colors hover:text-zinc-100"
+            (click)="inspector.open({ type: 'concept', id: parent.id })"
+            [attr.aria-label]="
+              'Open parent concept ' + parent.slug + ' in inspector'
+            "
+            data-testid="concept-parent-link"
+          >
+            {{ parent.slug }}
+          </button>
+        </p>
+      }
+
+      <!-- MASTERY section -->
+      <section
+        class="border-t border-zinc-800 pt-4"
+        data-testid="concept-mastery-section"
+      >
+        <h3
+          class="text-xs font-semibold uppercase tracking-wider text-zinc-400"
+        >
+          Mastery
+        </h3>
+        <p
+          class="mt-1 text-sm text-zinc-200"
+          data-testid="concept-mastery-counts"
+        >
+          {{ c.mastery_counts.weakness }} weakness ·
+          {{ c.mastery_counts.improvement }} improvement ·
+          {{ c.mastery_counts.mastery }} mastery
+        </p>
+        <p class="text-xs text-zinc-400">
+          ({{ c.mastery_counts.total }}
+          {{ c.mastery_counts.total === 1 ? "observation" : "observations" }},
+          high confidence)
+        </p>
+      </section>
+
+      <!-- RECENT ATTEMPTS section -->
+      <section
+        class="border-t border-zinc-800 pt-4"
+        data-testid="concept-attempts-section"
+      >
+        <h3
+          class="text-xs font-semibold uppercase tracking-wider text-zinc-400"
+        >
+          Recent attempts
+        </h3>
+        @if (c.recent_attempts.length > 0) {
+          <ul
+            class="mt-2 space-y-1 text-xs"
+            data-testid="concept-attempts-list"
+          >
+            @for (att of c.recent_attempts; track att.id) {
+              <li class="flex flex-wrap items-center gap-2">
+                <span class="font-mono text-zinc-500">
+                  {{ att.attempted_at | date: "yyyy-MM-dd" }}
+                </span>
+                <span [attr.aria-label]="outcome(att.outcome).label">
+                  <span aria-hidden="true">{{
+                    outcome(att.outcome).icon
+                  }}</span>
+                </span>
+                <span class="text-zinc-300">
+                  {{ outcome(att.outcome).label }}
+                </span>
+                @if (att.duration_minutes) {
+                  <span class="font-mono text-zinc-500">
+                    {{ att.duration_minutes }}min
+                  </span>
+                }
+                <span class="truncate text-zinc-400">
+                  {{ att.target_title }}
+                </span>
+              </li>
+            }
+          </ul>
+        } @else {
+          <p class="sr-only" data-testid="concept-no-attempts-sr">
+            No recent attempts for this concept.
+          </p>
+        }
+      </section>
+
+      <!-- OBSERVATIONS section -->
+      @if (observationGroups().length > 0 || c.low_confidence_count > 0) {
+        <section
+          class="border-t border-zinc-800 pt-4"
+          data-testid="concept-observations-section"
+        >
+          <h3
+            class="text-xs font-semibold uppercase tracking-wider text-zinc-400"
+          >
+            Observations
+          </h3>
+
+          <!-- High-confidence groups -->
+          @for (group of observationGroups(); track group.signal_type) {
+            <div
+              class="mt-3"
+              [attr.data-testid]="'obs-group-' + group.signal_type"
+            >
+              <h4 [class]="signalLabelClass(group.signal_type)">
+                {{ group.label }}
+              </h4>
+              <ul class="mt-1 space-y-2 text-sm">
+                @for (obs of group.high; track obs.id) {
+                  <li>
+                    <p class="text-xs text-zinc-400">
+                      {{ obs.category }}
+                      @if (obs.severity) {
+                        <span aria-hidden="true"> · </span>
+                        severity:
+                        <span [class]="severityClass(obs.severity)">
+                          {{ obs.severity }}
+                        </span>
+                      }
+                    </p>
+                    @if (obs.detail) {
+                      <p class="text-zinc-300">{{ obs.detail }}</p>
+                    }
+                  </li>
+                }
+              </ul>
+            </div>
+          }
+
+          <!-- Low-confidence disclosure (CSS-native, no state) -->
+          @if (c.low_confidence_count > 0) {
+            <details
+              class="mt-3 text-xs"
+              data-testid="concept-low-confidence-details"
+            >
+              <summary
+                class="motion-reduce:transition-none cursor-pointer text-zinc-400 transition-colors hover:text-zinc-200"
+              >
+                Show {{ c.low_confidence_count }} AI-inferred
+                {{
+                  c.low_confidence_count === 1 ? "observation" : "observations"
+                }}
+                (low confidence)
+              </summary>
+              <div class="mt-2 space-y-2 pl-4">
+                @for (obs of c.low_confidence_observations; track obs.id) {
+                  <div>
+                    <p class="text-xs text-zinc-400">
+                      <span [class]="signalLabelClass(obs.signal_type)">
+                        {{ obs.signal_type }}
+                      </span>
+                      <span aria-hidden="true"> · </span>
+                      {{ obs.category }}
+                    </p>
+                    @if (obs.detail) {
+                      <p class="text-zinc-300">{{ obs.detail }}</p>
+                    }
+                  </div>
+                }
+              </div>
+            </details>
+          }
+        </section>
+      }
+
+      <!-- Tail link to Atlas filtered by concept -->
+      @if (c.targets_exercising_count > 0) {
+        <a
+          [routerLink]="['/admin/atlas']"
+          [queryParams]="{ type: 'learning_target', concept: c.slug }"
+          class="motion-reduce:transition-none block border-t border-zinc-800 pt-3 text-sm text-sky-400 transition-colors hover:text-sky-300"
+          [attr.aria-label]="
+            'View ' +
+            c.targets_exercising_count +
+            ' learning targets exercising ' +
+            c.slug +
+            ' in Atlas'
+          "
+          data-testid="concept-targets-link"
+        >
+          View {{ c.targets_exercising_count }} learning
+          {{ c.targets_exercising_count === 1 ? "target" : "targets" }}
+          exercising {{ c.slug }} →
+        </a>
+      }
+    </div>
+  }
+</div>

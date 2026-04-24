@@ -1,0 +1,165 @@
+<div class="flex h-full flex-col" data-testid="agent-inspector">
+  @if (isLoading()) {
+    <div
+      class="flex flex-1 items-center justify-center text-zinc-400"
+      role="status"
+      aria-label="Loading agent"
+    >
+      <div
+        class="motion-reduce:animate-none size-5 animate-spin rounded-full border-2 border-zinc-700 border-t-zinc-400"
+      ></div>
+    </div>
+  } @else if (hasError()) {
+    <div
+      class="flex flex-1 items-center justify-center px-6 text-center text-sm text-zinc-400"
+      role="alert"
+    >
+      Failed to load agent.
+    </div>
+  } @else if (agent(); as a) {
+    <div class="space-y-5 p-6" data-testid="agent-overview-section">
+      <!-- System agent warning -->
+      @if (isSystemAgent()) {
+        <div
+          class="rounded-md border border-amber-800 bg-amber-950/30 px-3 py-2 text-xs text-amber-300"
+          role="status"
+          data-testid="agent-system-warning"
+        >
+          This is a fallback identity for database-level writes (pg_cron, manual
+          ops). Appearance in activity logs may indicate a bug.
+        </div>
+      }
+
+      <!-- Header: display_name + copy name button -->
+      <header class="space-y-1">
+        <div class="flex items-start justify-between gap-3">
+          <h2
+            class="font-display text-base font-semibold leading-tight text-zinc-100"
+            [class.line-through]="a.status === 'retired'"
+            [class.decoration-amber-700]="a.status === 'retired'"
+            data-testid="agent-display-name"
+          >
+            {{ a.display_name }}
+          </h2>
+          <button
+            type="button"
+            class="motion-reduce:transition-none flex shrink-0 items-center gap-1 rounded-xs border border-zinc-800 bg-zinc-900/50 px-2 py-1 text-xs text-zinc-400 transition-colors hover:border-zinc-700 hover:text-zinc-200"
+            [cdkCopyToClipboard]="a.name"
+            (cdkCopyToClipboardCopied)="onCopyAgentName()"
+            aria-label="Copy agent name to clipboard"
+            data-testid="agent-copy-name"
+          >
+            @if (justCopied()) {
+              <span aria-hidden="true">✓</span>
+              <span>copied</span>
+            } @else {
+              <lucide-icon [img]="CopyIcon" [size]="12" aria-hidden="true" />
+              <span>name</span>
+            }
+          </button>
+        </div>
+        <p class="text-xs text-zinc-400" data-testid="agent-subtitle">
+          <span class="font-mono text-zinc-300">{{ a.name }}</span>
+          <span aria-hidden="true"> · </span>
+          <span>{{ a.platform }}</span>
+          @if (a.status === "retired" && a.retired_at) {
+            <span aria-hidden="true"> · </span>
+            <span class="text-amber-400"
+              >retired {{ a.retired_at | date: "mediumDate" }}</span
+            >
+          }
+        </p>
+      </header>
+
+      <!-- Description: prose body, hide-if-null -->
+      @if (a.description) {
+        <p
+          class="text-sm leading-relaxed text-zinc-200"
+          data-testid="agent-description"
+        >
+          {{ a.description }}
+        </p>
+      }
+
+      <!-- Facts dl: hide-if-null -->
+      <dl
+        class="grid grid-cols-[120px_1fr] gap-y-1 text-sm"
+        data-testid="agent-facts"
+      >
+        @if (capabilityText(); as cap) {
+          <dt class="text-zinc-400">Capabilities</dt>
+          <dd class="text-zinc-200" data-testid="agent-capabilities">
+            {{ cap }}
+          </dd>
+        }
+        @if (scheduleText(); as sched) {
+          <dt class="text-zinc-400">Schedule</dt>
+          <dd class="text-zinc-200" data-testid="agent-schedule">
+            {{ sched }}
+          </dd>
+        }
+        <dt class="text-zinc-400">Status</dt>
+        <dd>
+          <span [class]="statusClass()" data-testid="agent-status">
+            {{ a.status }}
+          </span>
+        </dd>
+        @if (a.last_task_accepted_at) {
+          <dt class="text-zinc-400">Last task</dt>
+          <dd
+            class="font-mono text-xs text-zinc-300"
+            data-testid="agent-last-task"
+          >
+            {{ a.last_task_accepted_at | date: "short" }}
+          </dd>
+        }
+      </dl>
+
+      <!-- Power-user disclosure: raw cron expression -->
+      @if (a.schedule?.expr) {
+        <details class="text-xs" data-testid="agent-cron-details">
+          <summary
+            class="motion-reduce:transition-none cursor-pointer text-zinc-500 transition-colors hover:text-zinc-300"
+          >
+            Show cron expression
+          </summary>
+          <div class="mt-1 pl-4">
+            <code class="font-mono text-zinc-300">{{ a.schedule?.expr }}</code>
+            @if (a.schedule?.backend) {
+              <span class="text-zinc-500">
+                · runs in {{ a.schedule?.backend }}</span
+              >
+            }
+          </div>
+        </details>
+      }
+
+      <!-- Tail link to Atlas filtered by assignee — replaces task list tab -->
+      @if (a.open_task_count > 0) {
+        <a
+          [routerLink]="['/admin/atlas']"
+          [queryParams]="{ assignee: a.name }"
+          class="motion-reduce:transition-none block border-t border-zinc-800 pt-3 text-sm text-sky-400 transition-colors hover:text-sky-300"
+          [attr.aria-label]="
+            'View ' +
+            a.open_task_count +
+            ' open tasks for ' +
+            a.name +
+            ' in Atlas'
+          "
+          data-testid="agent-open-tasks-link"
+        >
+          View {{ a.open_task_count }} open
+          {{ a.open_task_count === 1 ? "task" : "tasks" }} for {{ a.name }} →
+        </a>
+      } @else {
+        <p
+          class="border-t border-zinc-800 pt-3 text-sm text-zinc-500"
+          data-testid="agent-no-open-tasks"
+        >
+          No open tasks for this agent.
+        </p>
+      }
+    </div>
+  }
+</div>

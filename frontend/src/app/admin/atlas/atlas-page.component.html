@@ -1,0 +1,155 @@
+<div class="flex h-full" data-testid="atlas-page">
+  <!-- Left facet rail -->
+  <aside
+    class="hidden w-56 shrink-0 overflow-y-auto border-r border-zinc-800 bg-zinc-950 p-4 lg:block"
+    role="navigation"
+    aria-label="Atlas facets"
+    data-testid="atlas-facets"
+  >
+    <!-- Type facets -->
+    <div class="mb-4">
+      <h3 class="mb-2 text-[10px] font-semibold uppercase tracking-widest text-zinc-500">
+        Type
+      </h3>
+      <div class="space-y-1">
+        @for (facet of typeFacets; track facet.type) {
+          <button
+            type="button"
+            (click)="toggleType(facet.type)"
+            [attr.aria-pressed]="isTypeEnabled(facet.type)"
+            class="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm transition-colors"
+            [class.bg-zinc-800]="isTypeEnabled(facet.type)"
+            [class.text-zinc-100]="isTypeEnabled(facet.type)"
+            [class.text-zinc-400]="!isTypeEnabled(facet.type)"
+            [attr.data-testid]="'facet-' + facet.type"
+          >
+            <span
+              class="flex size-5 items-center justify-center rounded text-[9px] font-bold"
+              [class]="meta(facet.type).bgClass + ' ' + meta(facet.type).textClass"
+            >
+              {{ meta(facet.type).abbrev }}
+            </span>
+            <span class="flex-1 text-left">{{ facet.label }}</span>
+            <span class="font-mono text-xs text-zinc-500">{{ typeCount(facet.type) }}</span>
+          </button>
+        }
+      </div>
+    </div>
+
+    <!-- Governance posture facets -->
+    <div class="mb-4">
+      <h3 class="mb-2 text-[10px] font-semibold uppercase tracking-widest text-zinc-500">
+        Posture
+      </h3>
+      <div class="space-y-1">
+        @for (facet of postureFacets; track facet.posture) {
+          <button
+            type="button"
+            (click)="togglePosture(facet.posture)"
+            [attr.aria-pressed]="isPostureEnabled(facet.posture)"
+            class="flex w-full items-center justify-between rounded-sm px-2 py-1.5 text-sm transition-colors"
+            [class.bg-zinc-800]="isPostureEnabled(facet.posture)"
+            [class.text-zinc-100]="isPostureEnabled(facet.posture)"
+            [class.text-zinc-400]="!isPostureEnabled(facet.posture)"
+          >
+            <span>{{ facet.label }}</span>
+          </button>
+        }
+      </div>
+    </div>
+  </aside>
+
+  <!-- Main list -->
+  <main class="flex min-w-0 flex-1 flex-col">
+    <!-- Search header -->
+    <header class="flex h-12 shrink-0 items-center gap-3 border-b border-zinc-800 bg-zinc-950 px-4">
+      <svg
+        class="size-4 shrink-0 text-zinc-400"
+        fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"
+        aria-hidden="true"
+      >
+        <path stroke-linecap="round" stroke-linejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" />
+      </svg>
+      <input
+        type="text"
+        class="flex-1 bg-transparent text-sm text-zinc-100 outline-hidden placeholder:text-zinc-400"
+        placeholder="Search all entities..."
+        [value]="query()"
+        (input)="onSearchInput($event)"
+        aria-label="Search atlas entities"
+        data-testid="atlas-search"
+      />
+      <span class="font-mono text-[11px] text-zinc-400">
+        {{ counts().total }} results
+      </span>
+    </header>
+
+    <!-- Results list -->
+    <div class="min-h-0 flex-1 overflow-y-auto">
+      @if (isLoading()) {
+        <div class="space-y-1 p-4">
+          @for (_ of [1, 2, 3, 4, 5]; track $index) {
+            <div class="h-12 animate-pulse rounded-lg bg-zinc-800/50"></div>
+          }
+        </div>
+      } @else if (filteredItems().length === 0) {
+        <div class="flex h-full items-center justify-center text-sm text-zinc-400">
+          @if (query()) {
+            No matches for "{{ query() }}".
+          } @else {
+            No entities match the selected filters.
+          }
+        </div>
+      } @else {
+        <div class="space-y-1 p-4" data-testid="atlas-results">
+          @for (item of filteredItems(); track item.type + ':' + item.id) {
+            <button
+              type="button"
+              class="group flex w-full items-center gap-3 rounded-lg border border-zinc-800 bg-zinc-900/50 px-4 py-3 text-left transition-colors hover:border-zinc-700 hover:bg-zinc-900"
+              (click)="openInspector(item)"
+              [attr.data-testid]="'atlas-row-' + item.type"
+            >
+              <!-- Type badge -->
+              <span
+                class="flex size-6 items-center justify-center rounded text-[9px] font-bold"
+                [class]="meta(item.type).bgClass + ' ' + meta(item.type).textClass"
+                [attr.aria-label]="meta(item.type).label"
+              >
+                {{ meta(item.type).abbrev }}
+              </span>
+              <!-- Title + subtitle -->
+              <div class="min-w-0 flex-1">
+                <span class="truncate text-sm font-medium text-zinc-100">{{ item.title }}</span>
+                <div class="mt-0.5 flex items-center gap-2 text-xs text-zinc-500">
+                  <span>{{ item.area }}</span>
+                  <span
+                    class="inline-block rounded-full border px-1.5 py-0.5 text-[9px]"
+                    [class.border-emerald-800]="item.posture === 'canonical'"
+                    [class.bg-emerald-900/30]="item.posture === 'canonical'"
+                    [class.text-emerald-400]="item.posture === 'canonical'"
+                    [class.border-sky-800]="item.posture === 'working'"
+                    [class.bg-sky-900/30]="item.posture === 'working'"
+                    [class.text-sky-400]="item.posture === 'working'"
+                    [class.border-zinc-700]="item.posture === 'candidate'"
+                    [class.bg-zinc-800]="item.posture === 'candidate'"
+                    [class.text-zinc-400]="item.posture === 'candidate'"
+                  >
+                    {{ item.status }}
+                  </span>
+                </div>
+              </div>
+              <!-- Chevron -->
+              <svg
+                class="size-4 shrink-0 text-zinc-600 transition-colors group-hover:text-zinc-400"
+                fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"
+                aria-hidden="true"
+              >
+                <path d="m9 18 6-6-6-6" />
+              </svg>
+            </button>
+          }
+        </div>
+      }
+    </div>
+  </main>
+</div>

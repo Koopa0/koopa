@@ -1,0 +1,81 @@
+@if (isLoading()) {
+<div class="mx-auto max-w-3xl px-4 py-12">
+  <div class="animate-pulse space-y-4">
+    <div class="h-8 w-3/4 rounded-sm bg-zinc-800"></div>
+    <div class="h-4 w-1/2 rounded-sm bg-zinc-800"></div>
+    <div class="mt-8 h-64 rounded-sm bg-zinc-800"></div>
+  </div>
+</div>
+} @else if (error()) {
+<div class="flex min-h-[50vh] items-center justify-center">
+  <p class="text-zinc-500">{{ error() }}</p>
+</div>
+} @else {
+<article class="bg-zinc-950">
+  <!-- Header -->
+  <section class="border-b border-zinc-800">
+    <div class="mx-auto max-w-3xl px-4 py-8 sm:px-6">
+      <button
+        type="button"
+        (click)="goBack()"
+        class="mb-6 flex items-center gap-1 text-sm text-zinc-500 transition-colors hover:text-zinc-300"
+      >
+        <lucide-icon [img]="ArrowLeftIcon" [size]="14" />
+        Back
+      </button>
+
+      <h1 class="font-display text-3xl font-bold tracking-tight text-zinc-100">
+        {{ buildLog()!.title }}
+      </h1>
+
+      <!-- Meta row: date, reading time, session type, project -->
+      <div class="mt-4 flex flex-wrap items-center gap-3 text-sm text-zinc-500">
+        <span class="flex items-center gap-1">
+          <lucide-icon [img]="CalendarIcon" [size]="14" />
+          {{ buildLog()!.published_at | date: 'yyyy-MM-dd' }}
+        </span>
+        <span class="flex items-center gap-1">
+          <lucide-icon [img]="ClockIcon" [size]="14" />
+          {{ buildLog()!.reading_time_min }} min read
+        </span>
+        @if (meta().sessionType; as sessionType) {
+        <span
+          class="inline-flex items-center gap-1 rounded-full bg-indigo-500/10 px-2.5 py-0.5 text-xs font-medium text-indigo-400 ring-1 ring-indigo-500/20"
+        >
+          <lucide-icon [img]="HammerIcon" [size]="12" />
+          {{ sessionTypeLabels[sessionType] || sessionType }}
+        </span>
+        } @if (meta().project; as project) {
+        <span
+          class="inline-flex items-center rounded-full bg-zinc-800 px-2.5 py-0.5 text-xs font-medium text-zinc-300 ring-1 ring-zinc-700"
+        >
+          {{ project }}
+        </span>
+        }
+      </div>
+
+      <!-- Tags -->
+      @if (meta().tags.length > 0) {
+      <div class="mt-3 flex flex-wrap items-center gap-1.5">
+        <lucide-icon [img]="TagIcon" [size]="14" class="text-zinc-600" />
+        @for (tag of meta().tags; track tag) {
+        <span
+          class="inline-flex items-center rounded-md bg-zinc-800/50 px-2 py-0.5 text-xs text-zinc-400 ring-1 ring-zinc-700/50"
+        >
+          {{ tag }}
+        </span>
+        }
+      </div>
+      }
+    </div>
+  </section>
+
+  <!-- Content -->
+  <div class="mx-auto max-w-3xl px-4 py-8 sm:px-6">
+    <div
+      class="build-log-prose prose prose-invert max-w-none prose-headings:text-zinc-100 prose-h2:mt-10 prose-h2:border-b prose-h2:border-zinc-800 prose-h2:pb-2 prose-h2:text-xl prose-h2:font-semibold prose-p:text-zinc-300 prose-p:leading-relaxed prose-a:text-indigo-400 prose-a:no-underline hover:prose-a:underline prose-strong:text-zinc-200 prose-code:rounded prose-code:bg-zinc-800 prose-code:px-1.5 prose-code:py-0.5 prose-code:text-sm prose-code:text-zinc-300 prose-code:before:content-none prose-code:after:content-none prose-li:text-zinc-300 prose-li:marker:text-zinc-600"
+      [innerHTML]="parsedContent()"
+    ></div>
+  </div>
+</article>
+}

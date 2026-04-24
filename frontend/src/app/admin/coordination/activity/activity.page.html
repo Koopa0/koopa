@@ -1,0 +1,162 @@
+<div class="flex min-w-0 flex-1 flex-col px-6 py-5">
+  <!-- Filter chips -->
+  <div class="mb-4 flex flex-col gap-2">
+    <div
+      class="flex flex-wrap items-center gap-1"
+      role="toolbar"
+      aria-label="Filter by entity type"
+      data-testid="activity-filter-entity"
+    >
+      <span
+        class="mr-1 font-mono text-[10px] uppercase tracking-wider text-zinc-500"
+      >
+        Entity
+      </span>
+      @for (chip of entityChips; track chip.value) {
+        <button
+          type="button"
+          (click)="setEntityFilter(chip.value)"
+          class="h-7 rounded-xs border px-2.5 text-[11px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500"
+          [class.border-sky-700]="entityFilter() === chip.value"
+          [class.bg-sky-900/30]="entityFilter() === chip.value"
+          [class.text-sky-300]="entityFilter() === chip.value"
+          [class.border-zinc-800]="entityFilter() !== chip.value"
+          [class.bg-zinc-900]="entityFilter() !== chip.value"
+          [class.text-zinc-400]="entityFilter() !== chip.value"
+          [attr.aria-pressed]="entityFilter() === chip.value"
+          [attr.data-testid]="'activity-filter-entity-' + chip.value"
+        >
+          {{ chip.label }}
+        </button>
+      }
+    </div>
+    <div
+      class="flex flex-wrap items-center gap-1"
+      role="toolbar"
+      aria-label="Filter by change kind"
+      data-testid="activity-filter-kind"
+    >
+      <span
+        class="mr-1 font-mono text-[10px] uppercase tracking-wider text-zinc-500"
+      >
+        Kind
+      </span>
+      @for (chip of kindChips; track chip.value) {
+        <button
+          type="button"
+          (click)="setKindFilter(chip.value)"
+          class="h-7 rounded-xs border px-2.5 text-[11px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500"
+          [class.border-sky-700]="kindFilter() === chip.value"
+          [class.bg-sky-900/30]="kindFilter() === chip.value"
+          [class.text-sky-300]="kindFilter() === chip.value"
+          [class.border-zinc-800]="kindFilter() !== chip.value"
+          [class.bg-zinc-900]="kindFilter() !== chip.value"
+          [class.text-zinc-400]="kindFilter() !== chip.value"
+          [attr.aria-pressed]="kindFilter() === chip.value"
+          [attr.data-testid]="'activity-filter-kind-' + chip.value"
+        >
+          {{ chip.label }}
+        </button>
+      }
+      <span
+        class="ml-auto font-mono text-[11px] text-zinc-500"
+        aria-live="polite"
+        data-testid="activity-count"
+      >
+        Showing {{ total() }}
+        {{ total() === 1 ? 'event' : 'events' }}
+      </span>
+    </div>
+  </div>
+
+  @if (hasError()) {
+    <div
+      role="alert"
+      class="mb-3 rounded-xs border border-red-800 bg-red-900/20 px-3 py-2 text-xs text-red-300"
+      data-testid="activity-error"
+    >
+      Couldn't load activity changelog.
+    </div>
+  }
+
+  @if (isLoading()) {
+    <div
+      class="flex flex-1 items-center justify-center"
+      data-testid="activity-loading"
+    >
+      <div
+        class="size-5 animate-spin rounded-full border-2 border-zinc-700 border-t-zinc-300"
+        aria-label="Loading activity"
+      ></div>
+    </div>
+  } @else if (isEmpty()) {
+    <div
+      class="flex flex-1 items-center justify-center rounded-sm border border-dashed border-zinc-800 p-10 text-center"
+      data-testid="activity-empty"
+    >
+      <p class="max-w-md text-sm text-zinc-300">
+        No activity in this filter window.
+      </p>
+    </div>
+  } @else {
+    <!-- Day-grouped timeline -->
+    <div class="space-y-6" data-testid="activity-timeline">
+      @for (day of days(); track day.date) {
+        <section aria-label="Events on {{ day.date }}">
+          <header
+            class="sticky top-0 z-10 mb-2 flex items-baseline gap-3 border-b border-zinc-800 bg-zinc-950/90 py-1 font-mono text-[11px] text-zinc-400 backdrop-blur-sm"
+          >
+            <span>{{ day.date | date: 'mediumDate' }}</span>
+            <span class="text-zinc-600">·</span>
+            <span class="text-zinc-500">
+              {{ day.event_count }}
+              {{ day.event_count === 1 ? 'event' : 'events' }}
+            </span>
+          </header>
+          <ul class="space-y-1">
+            @for (ev of day.events; track ev.id) {
+              <li>
+                <button
+                  type="button"
+                  (click)="openEvent(ev)"
+                  [disabled]="!canOpen(ev)"
+                  class="flex w-full items-center gap-3 rounded-xs border border-transparent px-2 py-1.5 text-left transition-colors hover:border-zinc-800 hover:bg-zinc-900/50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500 disabled:cursor-default"
+                  [attr.data-testid]="'activity-event-' + ev.id"
+                >
+                  <span
+                    class="inline-block size-1.5 shrink-0 rounded-full"
+                    [class]="kindDotClass(ev.change_kind)"
+                    aria-hidden="true"
+                  ></span>
+                  <span class="shrink-0 font-mono text-[11px] text-zinc-500">
+                    {{ ev.timestamp | date: 'HH:mm' }}
+                  </span>
+                  <span
+                    class="shrink-0 font-mono text-[10px] uppercase text-zinc-400"
+                  >
+                    {{ ev.entity_type }}
+                  </span>
+                  <span
+                    class="shrink-0 font-mono text-[10px] text-zinc-500"
+                  >
+                    {{ ev.change_kind }}
+                  </span>
+                  <span class="min-w-0 flex-1 truncate text-sm text-zinc-200">
+                    {{ ev.title }}
+                  </span>
+                  @if (ev.actor) {
+                    <span
+                      class="shrink-0 font-mono text-[11px] text-zinc-500"
+                    >
+                      {{ ev.actor }}
+                    </span>
+                  }
+                </button>
+              </li>
+            }
+          </ul>
+        </section>
+      }
+    </div>
+  }
+</div>

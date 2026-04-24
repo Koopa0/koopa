@@ -1,0 +1,233 @@
+@if (isLoading() && !content()) {
+<div
+  class="flex flex-1 items-center justify-center"
+  data-testid="editor-loading"
+>
+  <div
+    class="size-5 animate-spin rounded-full border-2 border-zinc-700 border-t-zinc-300"
+    aria-label="Loading content"
+  ></div>
+</div>
+} @else if (hasError()) {
+<div
+  class="flex flex-1 items-center justify-center p-8 text-center"
+  data-testid="editor-error"
+>
+  <div>
+    <p class="mb-2 text-sm text-red-400">Failed to load content.</p>
+    <button
+      type="button"
+      (click)="cancel()"
+      class="rounded-sm border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-xs text-zinc-300 transition-colors hover:bg-zinc-800"
+    >
+      Back to list
+    </button>
+  </div>
+</div>
+} @else if (content(); as c) {
+<form
+  [formGroup]="form"
+  class="flex min-h-0 flex-1"
+  data-testid="content-editor"
+  (ngSubmit)="save()"
+>
+  <!-- Main: title + markdown body -->
+  <section
+    class="flex min-w-0 flex-1 flex-col border-r border-zinc-800"
+    aria-label="Content body"
+  >
+    <div class="flex flex-col gap-2 border-b border-zinc-800 px-6 py-4">
+      <label class="sr-only" for="content-title">Title</label>
+      <input
+        id="content-title"
+        type="text"
+        formControlName="title"
+        class="border-0 bg-transparent p-0 font-display text-2xl font-semibold text-zinc-100 placeholder:text-zinc-600 focus:outline-hidden focus:ring-0"
+        placeholder="Untitled"
+        data-testid="editor-title"
+      />
+      <div class="flex items-center gap-3 font-mono text-[11px] text-zinc-500">
+        <span data-testid="editor-slug">{{ c.slug }}</span>
+        <span aria-hidden="true">·</span>
+        <span class="capitalize">{{ c.status }}</span>
+        @if (form.dirty) {
+        <span aria-hidden="true">·</span>
+        <span class="text-amber-400" data-testid="editor-dirty">
+          Unsaved changes
+        </span>
+        }
+      </div>
+    </div>
+
+    <label class="sr-only" for="content-body">Body (markdown)</label>
+    <textarea
+      id="content-body"
+      formControlName="body"
+      class="min-h-0 flex-1 resize-none bg-transparent px-6 py-4 font-mono text-sm leading-relaxed text-zinc-200 placeholder:text-zinc-600 focus:outline-hidden"
+      placeholder="# Start writing…"
+      data-testid="editor-body"
+      spellcheck="false"
+    ></textarea>
+  </section>
+
+  <!-- Sidebar: metadata -->
+  <aside
+    class="flex w-80 shrink-0 flex-col overflow-y-auto border-l border-zinc-900 bg-zinc-950/50"
+    aria-label="Content metadata"
+    data-testid="editor-sidebar"
+  >
+    <!-- Metadata section -->
+    <div class="border-b border-zinc-800 p-5">
+      <h3
+        class="mb-3 font-mono text-[10px] uppercase tracking-wider text-zinc-500"
+      >
+        Metadata
+      </h3>
+
+      <div class="mb-3 flex flex-col gap-1">
+        <label for="content-type" class="text-[11px] text-zinc-400">Type</label>
+        <select
+          id="content-type"
+          formControlName="type"
+          class="rounded-xs border border-zinc-800 bg-zinc-900 px-2 py-1.5 text-xs text-zinc-200 focus:border-sky-600 focus:outline-hidden"
+          data-testid="editor-type"
+        >
+          @for (opt of typeOptions; track opt.value) {
+          <option [value]="opt.value">{{ opt.label }}</option>
+          }
+        </select>
+      </div>
+
+      <div class="mb-3 flex flex-col gap-1">
+        <label for="content-excerpt" class="text-[11px] text-zinc-400">
+          Excerpt
+        </label>
+        <textarea
+          id="content-excerpt"
+          formControlName="excerpt"
+          rows="2"
+          class="rounded-xs border border-zinc-800 bg-zinc-900 px-2 py-1.5 text-xs text-zinc-200 focus:border-sky-600 focus:outline-hidden"
+          data-testid="editor-excerpt"
+        ></textarea>
+      </div>
+
+      <div class="mb-3 flex flex-col gap-1">
+        <label for="content-tags" class="text-[11px] text-zinc-400">
+          Tags (comma-separated)
+        </label>
+        <input
+          id="content-tags"
+          type="text"
+          formControlName="tags"
+          class="rounded-xs border border-zinc-800 bg-zinc-900 px-2 py-1.5 text-xs text-zinc-200 focus:border-sky-600 focus:outline-hidden"
+          data-testid="editor-tags"
+        />
+      </div>
+
+      <div class="mb-3 flex flex-col gap-1">
+        <label for="content-cover" class="text-[11px] text-zinc-400">
+          Cover image URL
+        </label>
+        <input
+          id="content-cover"
+          type="text"
+          formControlName="coverImage"
+          class="rounded-xs border border-zinc-800 bg-zinc-900 px-2 py-1.5 text-xs text-zinc-200 focus:border-sky-600 focus:outline-hidden"
+          data-testid="editor-cover"
+        />
+      </div>
+
+      <div class="flex flex-col gap-1">
+        <label for="content-reading" class="text-[11px] text-zinc-400">
+          Reading time (min)
+        </label>
+        <input
+          id="content-reading"
+          type="number"
+          formControlName="readingTimeMin"
+          min="0"
+          class="rounded-xs border border-zinc-800 bg-zinc-900 px-2 py-1.5 text-xs text-zinc-200 focus:border-sky-600 focus:outline-hidden"
+          data-testid="editor-reading-time"
+        />
+      </div>
+    </div>
+
+    <!-- AI metadata (advisory; read-only per contract — never edited here) -->
+    <div class="border-b border-zinc-800 p-5">
+      <h3
+        class="mb-3 font-mono text-[10px] uppercase tracking-wider text-zinc-500"
+      >
+        AI metadata
+        <span class="ml-1 text-zinc-600" aria-label="Advisory">(advisory)</span>
+      </h3>
+      @if (aiSummary(c); as summary) {
+      <p class="mb-2 text-xs text-zinc-300" data-testid="editor-ai-summary">
+        {{ summary }}
+      </p>
+      } @else {
+      <p class="text-xs text-zinc-600">No AI summary available.</p>
+      } @if (aiQualityScore(c); as score) {
+      <div class="flex items-center justify-between text-[11px] text-zinc-400">
+        <span>Quality score</span>
+        <span class="font-mono text-zinc-200">{{ score }}</span>
+      </div>
+      }
+    </div>
+
+    <!-- Publishing -->
+    <div class="border-b border-zinc-800 p-5">
+      <h3
+        class="mb-3 font-mono text-[10px] uppercase tracking-wider text-zinc-500"
+      >
+        Publishing
+      </h3>
+      <label class="mb-3 flex items-center gap-2 text-xs text-zinc-300">
+        <input
+          type="checkbox"
+          formControlName="isPublic"
+          class="rounded-xs border-zinc-700 bg-zinc-900 text-sky-600 focus:ring-sky-600"
+          data-testid="editor-is-public"
+        />
+        Publicly visible
+      </label>
+      @if (c.published_at) {
+      <div class="flex items-center justify-between text-[11px] text-zinc-400">
+        <span>Published at</span>
+        <span class="font-mono text-zinc-300">
+          {{ c.published_at | date: 'short' }}
+        </span>
+      </div>
+      }
+    </div>
+
+    <!-- System -->
+    <div class="p-5">
+      <h3
+        class="mb-3 font-mono text-[10px] uppercase tracking-wider text-zinc-500"
+      >
+        System
+      </h3>
+      <dl class="space-y-1.5 text-[11px]">
+        <div class="flex items-center justify-between">
+          <dt class="text-zinc-500">ID</dt>
+          <dd class="truncate font-mono text-zinc-400">
+            {{ c.id.slice(0, 8) }}
+          </dd>
+        </div>
+        <div class="flex items-center justify-between">
+          <dt class="text-zinc-500">Created</dt>
+          <dd class="font-mono text-zinc-400">
+            {{ c.created_at | date: 'short' }}
+          </dd>
+        </div>
+        <div class="flex items-center justify-between">
+          <dt class="text-zinc-500">Updated</dt>
+          <dd class="font-mono text-zinc-400">
+            {{ c.updated_at | date: 'short' }}
+          </dd>
+        </div>
+      </dl>
+    </div>
+  </aside>
+</form>
+}

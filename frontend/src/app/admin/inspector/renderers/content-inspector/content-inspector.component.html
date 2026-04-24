@@ -1,0 +1,255 @@
+<!-- Tabs -->
+<div
+  class="flex border-b border-zinc-800"
+  role="tablist"
+  aria-label="Content inspector tabs"
+>
+  <button
+    role="tab"
+    type="button"
+    [attr.aria-selected]="activeTab() === 'preview'"
+    (click)="setTab('preview')"
+    class="flex-1 px-4 py-2.5 text-xs font-medium transition-colors"
+    [class.text-zinc-100]="activeTab() === 'preview'"
+    [class.border-b-2]="activeTab() === 'preview'"
+    [class.border-sky-500]="activeTab() === 'preview'"
+    [class.text-zinc-500]="activeTab() !== 'preview'"
+    data-testid="content-tab-preview"
+  >
+    Preview
+  </button>
+  <button
+    role="tab"
+    type="button"
+    [attr.aria-selected]="activeTab() === 'metadata'"
+    (click)="setTab('metadata')"
+    class="flex-1 px-4 py-2.5 text-xs font-medium transition-colors"
+    [class.text-zinc-100]="activeTab() === 'metadata'"
+    [class.border-b-2]="activeTab() === 'metadata'"
+    [class.border-sky-500]="activeTab() === 'metadata'"
+    [class.text-zinc-500]="activeTab() !== 'metadata'"
+    data-testid="content-tab-metadata"
+  >
+    Metadata
+  </button>
+</div>
+
+<!-- Body -->
+@if (isLoading()) {
+  <div class="flex flex-1 items-center justify-center">
+    <div
+      class="size-5 animate-spin rounded-full border-2 border-zinc-700 border-t-zinc-400"
+    ></div>
+  </div>
+} @else if (hasError()) {
+  <div class="flex flex-1 items-center justify-center p-6">
+    <p class="text-sm text-red-400">Failed to load content.</p>
+  </div>
+} @else if (content(); as c) {
+  <div class="flex-1 overflow-y-auto">
+    @if (activeTab() === "preview") {
+      <!-- Preview: rendered prose -->
+      <article
+        class="prose prose-compact px-5 py-4"
+        data-testid="content-preview"
+      >
+        <h1>{{ c.title }}</h1>
+        @if (c.excerpt) {
+          <p class="text-zinc-400 italic">{{ c.excerpt }}</p>
+        }
+        <!-- Body rendered as plain text for now; Markdown rendering -->
+        <div class="whitespace-pre-wrap text-sm leading-relaxed text-zinc-300">
+          {{ c.body }}
+        </div>
+      </article>
+    }
+
+    @if (activeTab() === "metadata") {
+      <div class="space-y-3 px-5 py-4" data-testid="content-metadata">
+        <dl class="space-y-2 text-sm">
+          <div class="flex justify-between">
+            <dt class="text-zinc-500">Type</dt>
+            <dd class="text-zinc-200">{{ c.type }}</dd>
+          </div>
+          <div class="flex justify-between">
+            <dt class="text-zinc-500">Status</dt>
+            <dd class="text-zinc-200">{{ c.status }}</dd>
+          </div>
+          <div class="flex justify-between">
+            <dt class="text-zinc-500">Public</dt>
+            <dd class="text-zinc-200">{{ c.is_public ? "Yes" : "No" }}</dd>
+          </div>
+          <div class="flex justify-between">
+            <dt class="text-zinc-500">Reading Time</dt>
+            <dd class="text-zinc-200">{{ c.reading_time_min }} min</dd>
+          </div>
+          <div class="flex justify-between">
+            <dt class="text-zinc-500">Slug</dt>
+            <dd class="font-mono text-xs text-zinc-300">{{ c.slug }}</dd>
+          </div>
+          @if (c.source_type) {
+            <div class="flex justify-between">
+              <dt class="text-zinc-500">Origin</dt>
+              <dd class="text-zinc-200">{{ c.source_type }}</dd>
+            </div>
+          }
+          <div class="flex justify-between">
+            <dt class="text-zinc-500">Created</dt>
+            <dd class="text-zinc-200">{{ c.created_at | date: "medium" }}</dd>
+          </div>
+          <div class="flex justify-between">
+            <dt class="text-zinc-500">Updated</dt>
+            <dd class="text-zinc-200">{{ c.updated_at | date: "medium" }}</dd>
+          </div>
+          @if (c.published_at) {
+            <div class="flex justify-between">
+              <dt class="text-zinc-500">Published</dt>
+              <dd class="text-zinc-200">
+                {{ c.published_at | date: "medium" }}
+              </dd>
+            </div>
+          }
+        </dl>
+
+        @if (c.tags.length > 0) {
+          <div>
+            <h4
+              class="mb-1 text-xs font-semibold uppercase tracking-wider text-zinc-500"
+            >
+              Tags
+            </h4>
+            <div class="flex flex-wrap gap-1">
+              @for (tag of c.tags; track tag) {
+                <span
+                  class="rounded-full border border-zinc-700 bg-zinc-800 px-2 py-0.5 text-[10px] text-zinc-400"
+                  >{{ tag }}</span
+                >
+              }
+            </div>
+          </div>
+        }
+
+        @if (c.topics.length > 0) {
+          <div>
+            <h4
+              class="mb-1 text-xs font-semibold uppercase tracking-wider text-zinc-500"
+            >
+              Topics
+            </h4>
+            <div class="flex flex-wrap gap-1">
+              @for (topic of c.topics; track topic.id) {
+                <span
+                  class="rounded-full border border-sky-800 bg-sky-900/30 px-2 py-0.5 text-[10px] text-sky-400"
+                  >{{ topic.name }}</span
+                >
+              }
+            </div>
+          </div>
+        }
+
+        @if (reviewNotes(); as notes) {
+          <div>
+            <h4
+              class="mb-1 text-xs font-semibold uppercase tracking-wider text-zinc-500"
+            >
+              Last Review Notes
+            </h4>
+            <p
+              class="rounded-md border border-zinc-800 bg-zinc-900 p-3 text-xs text-zinc-400"
+            >
+              {{ notes }}
+            </p>
+          </div>
+        }
+      </div>
+    }
+  </div>
+
+  <!-- Action Bar -->
+  @if (isReviewable()) {
+    <div
+      class="border-t border-zinc-800 px-5 py-3"
+      data-testid="content-actions"
+    >
+      <div class="flex items-center gap-2">
+        <button
+          type="button"
+          class="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white shadow-xs transition-colors hover:bg-emerald-500 disabled:opacity-50"
+          [disabled]="isActioning()"
+          (click)="publish()"
+          data-testid="content-publish"
+        >
+          Publish
+        </button>
+
+        @if (!isRejectExpanded()) {
+          <button
+            type="button"
+            class="rounded-md bg-red-900/80 px-4 py-2 text-sm font-medium text-red-200 transition-colors hover:bg-red-800"
+            (click)="toggleReject()"
+            data-testid="content-reject-toggle"
+          >
+            Reject ▾
+          </button>
+        }
+
+        <div class="flex-1"></div>
+
+        <span class="flex items-center gap-2 text-xs text-zinc-400">
+          <span id="content-public-label">Public</span>
+          <button
+            type="button"
+            role="switch"
+            class="relative inline-flex h-5 w-9 items-center rounded-full transition-colors"
+            [class.bg-emerald-600]="c.is_public"
+            [class.bg-zinc-700]="!c.is_public"
+            [attr.aria-checked]="c.is_public"
+            aria-labelledby="content-public-label"
+            [disabled]="isActioning()"
+            (click)="togglePublic()"
+            data-testid="content-public-toggle"
+          >
+            <span
+              class="inline-block size-4 rounded-full bg-white transition-transform"
+              [class.translate-x-4]="c.is_public"
+              [class.translate-x-0.5]="!c.is_public"
+            ></span>
+          </button>
+        </span>
+      </div>
+
+      <!-- Reject notes (expanded) -->
+      @if (isRejectExpanded()) {
+        <div class="mt-3 space-y-2">
+          <textarea
+            aria-label="Reason for rejection"
+            class="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 placeholder-zinc-500 outline-hidden focus:border-zinc-500 focus:ring-1 focus:ring-zinc-500"
+            rows="3"
+            placeholder="Reason for rejection (required)..."
+            [value]="rejectNotes()"
+            (input)="rejectNotes.set(readTextarea($event))"
+            data-testid="content-reject-notes"
+          ></textarea>
+          <div class="flex gap-2">
+            <button
+              type="button"
+              class="rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-red-500 disabled:opacity-50"
+              [disabled]="!rejectNotes().trim() || isActioning()"
+              (click)="reject()"
+              data-testid="content-reject-confirm"
+            >
+              Reject with notes
+            </button>
+            <button
+              type="button"
+              class="rounded-md px-3 py-1.5 text-xs text-zinc-400 transition-colors hover:text-zinc-200"
+              (click)="toggleReject()"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      }
+    </div>
+  }
+}

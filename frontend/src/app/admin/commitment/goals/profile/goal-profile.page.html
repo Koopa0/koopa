@@ -1,0 +1,305 @@
+@if (isLoading()) {
+  <div class="flex flex-1 items-center justify-center" data-testid="goal-loading">
+    <div
+      class="size-5 animate-spin rounded-full border-2 border-zinc-700 border-t-zinc-300"
+      aria-label="Loading goal"
+    ></div>
+  </div>
+} @else if (hasError()) {
+  <div
+    class="flex flex-1 items-center justify-center p-8 text-center"
+    data-testid="goal-error"
+  >
+    <div>
+      <p class="mb-2 text-sm text-red-400">Failed to load goal.</p>
+      <button
+        type="button"
+        (click)="back()"
+        class="rounded-sm border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-xs text-zinc-300 transition-colors hover:bg-zinc-800"
+      >
+        Back to list
+      </button>
+    </div>
+  </div>
+} @else if (goal(); as g) {
+  <article
+    class="mx-auto flex w-full max-w-4xl flex-col gap-6 px-6 py-8"
+    data-testid="goal-profile"
+  >
+    <!-- Hero -->
+    <header
+      class="border-b border-zinc-800 pb-4"
+      data-testid="goal-hero"
+    >
+      <h1 class="mb-2 font-display text-2xl font-semibold text-zinc-100">
+        {{ g.title }}
+      </h1>
+      <div class="flex flex-wrap items-center gap-x-4 gap-y-1 font-mono text-[11px] text-zinc-500">
+        <span class="flex items-center gap-1.5">
+          <span
+            class="inline-block size-1.5 rounded-full"
+            [class]="statusDotClass(g.status)"
+            aria-hidden="true"
+          ></span>
+          <span class="text-zinc-300">{{ statusLabel(g.status) }}</span>
+        </span>
+        <span>{{ g.area_name }}</span>
+        @if (g.quarter) {
+          <span>{{ g.quarter }}</span>
+        }
+        @if (g.deadline) {
+          <span>due {{ g.deadline | date: 'shortDate' }}</span>
+        }
+        @if (g.health) {
+          <span [class]="healthClass(g.health)">
+            {{ healthLabel(g.health) }}
+          </span>
+        }
+      </div>
+    </header>
+
+    <!-- Actions bar -->
+    <div
+      class="flex flex-wrap items-center gap-2"
+      role="group"
+      aria-label="Goal actions"
+      data-testid="goal-actions"
+    >
+      <div class="relative" data-testid="goal-status-dropdown">
+        <button
+          type="button"
+          (click)="toggleStatusMenu()"
+          [disabled]="isActioning()"
+          [attr.aria-expanded]="isStatusMenuOpen()"
+          class="rounded-sm border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-xs text-zinc-200 transition-colors hover:border-sky-700 hover:text-sky-300 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500 disabled:cursor-not-allowed"
+          data-testid="goal-status-toggle"
+        >
+          Update status ▾
+        </button>
+        @if (isStatusMenuOpen()) {
+          <div
+            class="fixed inset-0 z-40"
+            aria-hidden="true"
+            (click)="closeStatusMenu()"
+            (keydown.escape)="closeStatusMenu()"
+          ></div>
+          <ul
+            class="absolute left-0 top-9 z-50 min-w-48 rounded-sm border border-zinc-800 bg-zinc-950 py-1 shadow-xs"
+            data-testid="goal-status-menu"
+          >
+            @for (opt of statusOptions; track opt) {
+              <li>
+                <button
+                  type="button"
+                  (click)="updateStatus(opt)"
+                  [disabled]="opt === g.status"
+                  class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-zinc-300 transition-colors hover:bg-zinc-800/80 focus-visible:bg-zinc-800/80 focus-visible:outline-hidden disabled:cursor-not-allowed disabled:text-zinc-600"
+                  [attr.data-testid]="'goal-status-option-' + opt"
+                >
+                  <span
+                    class="inline-block size-1.5 rounded-full"
+                    [class]="statusDotClass(opt)"
+                    aria-hidden="true"
+                  ></span>
+                  <span class="flex-1">{{ statusLabel(opt) }}</span>
+                  @if (opt === g.status) {
+                    <span class="font-mono text-[10px] text-zinc-500">current</span>
+                  }
+                </button>
+              </li>
+            }
+          </ul>
+        }
+      </div>
+      <button
+        type="button"
+        (click)="back()"
+        class="ml-auto rounded-sm px-3 py-1.5 text-xs text-zinc-400 transition-colors hover:text-zinc-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500"
+        data-testid="goal-action-back"
+      >
+        Back to list
+      </button>
+    </div>
+
+    <!-- Overview -->
+    @if (g.description) {
+      <section
+        class="rounded-sm border border-zinc-800 p-5"
+        aria-labelledby="goal-overview-heading"
+        data-testid="goal-overview"
+      >
+        <h2
+          id="goal-overview-heading"
+          class="mb-3 font-mono text-[10px] uppercase tracking-wider text-zinc-500"
+        >
+          Overview
+        </h2>
+        <p class="whitespace-pre-wrap text-sm text-zinc-200">
+          {{ g.description }}
+        </p>
+      </section>
+    }
+
+    <!-- Milestones -->
+    <section
+      class="rounded-sm border border-zinc-800 p-5"
+      aria-labelledby="goal-milestones-heading"
+      data-testid="goal-milestones"
+    >
+      <header class="mb-3 flex items-center gap-3">
+        <h2
+          id="goal-milestones-heading"
+          class="font-mono text-[10px] uppercase tracking-wider text-zinc-500"
+        >
+          Milestones
+        </h2>
+        <span class="font-mono text-[11px] text-zinc-400">
+          {{ milestonePercent() }}% done
+        </span>
+        <div class="ml-auto h-1.5 w-32 overflow-hidden rounded-full bg-zinc-800">
+          <div
+            class="h-full bg-sky-500 transition-all"
+            [style.width.%]="milestonePercent()"
+          ></div>
+        </div>
+      </header>
+      @if (g.milestones.length === 0) {
+        <p class="text-xs text-zinc-500">No milestones yet.</p>
+      } @else {
+        <ul class="space-y-1.5 text-sm">
+          @for (m of g.milestones; track m.id) {
+            <li class="flex items-baseline gap-2">
+              <span
+                class="inline-block size-4 shrink-0 rounded-xs border text-center text-[10px] leading-4"
+                [class.border-emerald-700]="m.completed"
+                [class.bg-emerald-900/30]="m.completed"
+                [class.text-emerald-300]="m.completed"
+                [class.border-zinc-700]="!m.completed"
+                [class.text-transparent]="!m.completed"
+                aria-hidden="true"
+              >
+                ✓
+              </span>
+              <span
+                class="flex-1"
+                [class.text-zinc-200]="!m.completed"
+                [class.text-zinc-500]="m.completed"
+                [class.line-through]="m.completed"
+              >
+                {{ m.title }}
+              </span>
+              @if (m.completed_at) {
+                <span class="font-mono text-[11px] text-zinc-500">
+                  {{ m.completed_at | date: 'shortDate' }}
+                </span>
+              }
+            </li>
+          }
+        </ul>
+      }
+    </section>
+
+    <!-- Linked projects -->
+    <section
+      class="rounded-sm border border-zinc-800 p-5"
+      aria-labelledby="goal-projects-heading"
+      data-testid="goal-projects"
+    >
+      <h2
+        id="goal-projects-heading"
+        class="mb-3 font-mono text-[10px] uppercase tracking-wider text-zinc-500"
+      >
+        Linked projects
+      </h2>
+      @if (g.projects.length === 0) {
+        <p class="text-xs text-zinc-500">No projects linked to this goal.</p>
+      } @else {
+        <ul class="space-y-2">
+          @for (p of g.projects; track p.id) {
+            <li>
+              <button
+                type="button"
+                (click)="openProject(p.id)"
+                class="flex w-full items-center justify-between gap-3 rounded-xs border border-zinc-900 bg-zinc-950/30 px-3 py-2 text-left transition-colors hover:border-sky-800 hover:bg-zinc-900/40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500"
+                [attr.data-testid]="'goal-project-' + p.id"
+              >
+                <span class="min-w-0 flex-1 truncate text-sm text-zinc-200">
+                  {{ p.title }}
+                </span>
+                <span class="font-mono text-[11px] text-zinc-500">
+                  {{ p.task_progress.done }} / {{ p.task_progress.total }} todos
+                </span>
+                <span class="font-mono text-[11px] text-zinc-500 capitalize">
+                  {{ p.status }}
+                </span>
+              </button>
+            </li>
+          }
+        </ul>
+      }
+    </section>
+
+    <!-- Recent activity -->
+    @if (g.recent_activity.length > 0) {
+      <section
+        class="rounded-sm border border-zinc-800 p-5"
+        aria-labelledby="goal-activity-heading"
+        data-testid="goal-activity"
+      >
+        <h2
+          id="goal-activity-heading"
+          class="mb-3 font-mono text-[10px] uppercase tracking-wider text-zinc-500"
+        >
+          Recent activity
+        </h2>
+        <ul class="space-y-1.5">
+          @for (ev of g.recent_activity; track $index) {
+            <li class="flex items-baseline gap-3 border-l border-zinc-800 pl-3">
+              <span class="shrink-0 font-mono text-[11px] uppercase text-zinc-500">
+                {{ ev.type }}
+              </span>
+              <span class="min-w-0 flex-1 truncate text-sm text-zinc-300">
+                {{ ev.title }}
+              </span>
+              <span class="shrink-0 font-mono text-[11px] text-zinc-500">
+                {{ ev.timestamp | date: 'short' }}
+              </span>
+            </li>
+          }
+        </ul>
+      </section>
+    }
+
+    <!-- System -->
+    <section
+      class="rounded-sm border border-zinc-800 p-5"
+      aria-labelledby="goal-system-heading"
+      data-testid="goal-system"
+    >
+      <h2
+        id="goal-system-heading"
+        class="mb-3 font-mono text-[10px] uppercase tracking-wider text-zinc-500"
+      >
+        System
+      </h2>
+      <dl class="grid grid-cols-2 gap-x-6 gap-y-1.5 text-[11px]">
+        <div class="contents">
+          <dt class="text-zinc-500">ID</dt>
+          <dd class="truncate font-mono text-zinc-400">{{ g.id }}</dd>
+        </div>
+        <div class="contents">
+          <dt class="text-zinc-500">Created</dt>
+          <dd class="font-mono text-zinc-400">
+            {{ g.created_at | date: 'medium' }}
+          </dd>
+        </div>
+        <div class="contents">
+          <dt class="text-zinc-500">Area</dt>
+          <dd class="font-mono text-zinc-400">
+            {{ g.area_name }} ({{ g.area_id }})
+          </dd>
+        </div>
+      </dl>
+    </section>
+  </article>
+}

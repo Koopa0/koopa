@@ -1,0 +1,144 @@
+<div class="flex min-w-0 flex-1 flex-col px-6 py-5">
+  <div class="mb-4 flex flex-wrap items-center gap-x-4 gap-y-2">
+    <div
+      class="flex flex-wrap items-center gap-1"
+      role="toolbar"
+      aria-label="Filter by kind"
+      data-testid="concepts-filter-kind"
+    >
+      <span
+        class="mr-1 font-mono text-[10px] uppercase tracking-wider text-zinc-500"
+      >Kind</span>
+      @for (chip of kindChips; track chip.value) {
+        <button
+          type="button"
+          (click)="setKindFilter(chip.value)"
+          class="h-7 rounded-xs border px-2.5 text-[11px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500"
+          [class.border-sky-700]="kindFilter() === chip.value"
+          [class.bg-sky-900/30]="kindFilter() === chip.value"
+          [class.text-sky-300]="kindFilter() === chip.value"
+          [class.border-zinc-800]="kindFilter() !== chip.value"
+          [class.bg-zinc-900]="kindFilter() !== chip.value"
+          [class.text-zinc-400]="kindFilter() !== chip.value"
+          [attr.aria-pressed]="kindFilter() === chip.value"
+        >{{ chip.label }}</button>
+      }
+    </div>
+    <div
+      class="flex flex-wrap items-center gap-1"
+      role="toolbar"
+      aria-label="Filter by mastery"
+      data-testid="concepts-filter-stage"
+    >
+      <span
+        class="mr-1 font-mono text-[10px] uppercase tracking-wider text-zinc-500"
+      >Mastery</span>
+      @for (chip of stageChips; track chip.value) {
+        <button
+          type="button"
+          (click)="setStageFilter(chip.value)"
+          class="h-7 rounded-xs border px-2.5 text-[11px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500"
+          [class.border-sky-700]="stageFilter() === chip.value"
+          [class.bg-sky-900/30]="stageFilter() === chip.value"
+          [class.text-sky-300]="stageFilter() === chip.value"
+          [class.border-zinc-800]="stageFilter() !== chip.value"
+          [class.bg-zinc-900]="stageFilter() !== chip.value"
+          [class.text-zinc-400]="stageFilter() !== chip.value"
+          [attr.aria-pressed]="stageFilter() === chip.value"
+        >{{ chip.label }}</button>
+      }
+    </div>
+    <span
+      class="ml-auto font-mono text-[11px] text-zinc-500"
+      aria-live="polite"
+    >Showing {{ total() }} {{ total() === 1 ? 'concept' : 'concepts' }}</span>
+  </div>
+
+  @if (endpointsUnavailable()) {
+    <div
+      class="mb-3 rounded-sm border border-dashed border-zinc-800 p-4 text-center"
+      data-testid="concepts-endpoints-pending"
+    >
+      <p class="mb-1 font-mono text-[10px] uppercase tracking-wider text-zinc-500">
+        Endpoints pending
+      </p>
+      <p class="text-xs text-zinc-500">
+        /api/admin/learning/concepts is not live yet.
+      </p>
+    </div>
+  } @else if (hasError()) {
+    <div
+      role="alert"
+      class="mb-3 rounded-xs border border-red-800 bg-red-900/20 px-3 py-2 text-xs text-red-300"
+    >
+      Couldn't load concepts.
+    </div>
+  }
+
+  <app-data-table
+    [isLoading]="isLoading()"
+    [isEmpty]="isEmpty() && !endpointsUnavailable()"
+    emptyTitle="No concepts match these filters"
+    emptyDescription="Concepts are seeded by record_attempt; adjust filters or start a learning session."
+  >
+    <table class="w-full text-sm">
+      <thead>
+        <tr class="border-b border-zinc-800 text-left font-mono text-[10px] uppercase tracking-wider text-zinc-500">
+          <th scope="col" class="px-3 py-2 font-normal">Slug</th>
+          <th scope="col" class="px-3 py-2 font-normal">Kind</th>
+          <th scope="col" class="px-3 py-2 font-normal">Domain</th>
+          <th scope="col" class="px-3 py-2 font-normal">Mastery</th>
+          <th scope="col" class="px-3 py-2 font-normal">W / I / M</th>
+          <th scope="col" class="px-3 py-2 font-normal">Obs</th>
+          <th scope="col" class="px-3 py-2 font-normal">Next due</th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (row of rows(); let i = $index; track row.slug) {
+          <tr
+            #row
+            [attr.tabindex]="rowTabIndex(i)"
+            class="cursor-pointer border-b border-zinc-900 transition-colors hover:bg-zinc-800/40 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-sky-500"
+            [class.bg-zinc-800/40]="i === focusedIndex()"
+            (click)="openRow(row)"
+            (keydown.enter)="openRow(row)"
+            (focus)="focusedIndex.set(i)"
+            [attr.data-testid]="'concepts-list-row-' + i"
+          >
+            <td class="px-3 py-2 text-zinc-100">{{ row.slug }}</td>
+            <td class="px-3 py-2 font-mono text-[11px] text-zinc-400 capitalize">{{ row.kind }}</td>
+            <td class="px-3 py-2 text-zinc-400">{{ row.domain }}</td>
+            <td class="px-3 py-2">
+              <span
+                class="inline-flex items-center gap-1.5 text-xs capitalize"
+                [class]="stageText(row.mastery_stage)"
+              >
+                <span
+                  class="inline-block size-1.5 rounded-full"
+                  [class]="stageDot(row.mastery_stage)"
+                  aria-hidden="true"
+                ></span>
+                {{ row.mastery_stage }}
+              </span>
+            </td>
+            <td class="px-3 py-2 font-mono text-[11px] text-zinc-400">
+              <span class="text-amber-300">{{ row.mastery_counts.weakness }}</span>
+              /
+              <span class="text-sky-300">{{ row.mastery_counts.improvement }}</span>
+              /
+              <span class="text-emerald-300">{{ row.mastery_counts.mastery }}</span>
+            </td>
+            <td class="px-3 py-2 font-mono text-[11px] text-zinc-400">{{ row.obs_count }}</td>
+            <td class="px-3 py-2 text-zinc-400">
+              {{
+                row.next_due_target
+                  ? (row.next_due_target.title + ' · ' + (row.next_due_target.due_at ?? '—'))
+                  : '—'
+              }}
+            </td>
+          </tr>
+        }
+      </tbody>
+    </table>
+  </app-data-table>
+</div>

@@ -1,0 +1,92 @@
+<!-- Header -->
+<section class="border-b border-zinc-800 bg-zinc-950">
+  <div class="mx-auto max-w-4xl px-4 py-12 sm:px-6 lg:px-8">
+    <h1 class="font-display text-3xl font-bold text-balance text-zinc-100">
+      Today I Learned
+    </h1>
+    <p class="mt-2 text-zinc-400">
+      Daily learning notes — bite-sized technical discoveries
+    </p>
+  </div>
+</section>
+
+<section class="bg-zinc-950">
+  <div class="mx-auto max-w-4xl px-4 py-12 sm:px-6 lg:px-8">
+    <!-- Tag Filter -->
+    @if (allTags().length > 0) {
+    <div class="mb-8 flex flex-wrap gap-2">
+      <button
+        type="button"
+        (click)="selectTag(null)"
+        class="rounded-sm px-3 py-1.5 text-xs font-medium transition-colors focus-visible:ring-2 focus-visible:ring-zinc-400 focus-visible:outline-hidden"
+        [class]="selectedTag() === null
+          ? 'bg-zinc-100 text-zinc-900'
+          : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700 hover:text-zinc-200'"
+        [attr.aria-pressed]="selectedTag() === null"
+      >
+        All
+      </button>
+      @for (tag of allTags(); track tag) {
+      <button
+        type="button"
+        (click)="selectTag(tag)"
+        class="rounded-sm px-3 py-1.5 text-xs font-medium transition-colors focus-visible:ring-2 focus-visible:ring-zinc-400 focus-visible:outline-hidden"
+        [class]="selectedTag() === tag
+          ? 'bg-zinc-100 text-zinc-900'
+          : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700 hover:text-zinc-200'"
+        [attr.aria-pressed]="selectedTag() === tag"
+      >
+        {{ tag }}
+      </button>
+      }
+    </div>
+    } @if (isLoading()) {
+    <div class="space-y-6">
+      @for (_ of [1, 2, 3]; track _) {
+      <div class="animate-pulse rounded-sm border border-zinc-800 p-6">
+        <div class="mb-2 h-4 w-1/4 rounded-sm bg-zinc-800"></div>
+        <div class="mb-3 h-6 w-3/4 rounded-sm bg-zinc-800"></div>
+        <div class="h-4 w-full rounded-sm bg-zinc-800"></div>
+      </div>
+      }
+    </div>
+    } @else if (error()) {
+    <p class="text-center text-zinc-500">{{ error() }}</p>
+    } @else if (filteredTils().length === 0) {
+    <p class="py-20 text-center text-zinc-500">No TIL entries yet</p>
+    } @else {
+    <div class="space-y-6">
+      @for (til of filteredTils(); track til.id) {
+      <a
+        [routerLink]="'/til/' + til.slug"
+        class="group block rounded-sm border border-zinc-800 bg-zinc-900/50 p-6 no-underline transition-all duration-200 hover:-translate-y-1 hover:border-zinc-600 hover:shadow-lg hover:shadow-zinc-950/50"
+      >
+        <div
+          class="mb-2 flex flex-wrap items-center gap-2 text-xs text-zinc-500"
+        >
+          <span class="flex items-center gap-1">
+            <lucide-icon [img]="CalendarIcon" [size]="12" />
+            {{ til.published_at | date: 'MMM d, yyyy' }}
+          </span>
+          @for (tag of til.tags; track tag) {
+          <span
+            class="flex items-center gap-1 rounded-sm bg-zinc-800 px-1.5 py-0.5"
+          >
+            {{ tag }}
+          </span>
+          }
+        </div>
+        <h2
+          class="mb-2 text-lg font-semibold text-zinc-100 group-hover:text-white"
+        >
+          {{ til.title }}
+        </h2>
+        <p class="line-clamp-2 text-sm leading-relaxed text-zinc-400">
+          {{ til.excerpt }}
+        </p>
+      </a>
+      }
+    </div>
+    }
+  </div>
+</section>

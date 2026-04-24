@@ -1,0 +1,42 @@
+<div class="fixed bottom-4 right-4 z-50 flex flex-col gap-2" aria-live="polite">
+  @for (notification of notifications(); track notification.id) {
+    <div
+      @toastSlideIn
+      class="flex min-w-72 items-center justify-between gap-3 rounded-sm border-l-4 px-4 py-3 text-sm shadow-lg backdrop-blur-sm"
+      [class.border-emerald-500]="notification.type === 'success'"
+      [class.bg-emerald-900/20]="notification.type === 'success'"
+      [class.text-emerald-400]="notification.type === 'success'"
+      [class.border-red-500]="notification.type === 'error'"
+      [class.bg-red-900/20]="notification.type === 'error'"
+      [class.text-red-400]="notification.type === 'error'"
+      [class.border-sky-500]="notification.type === 'undo'"
+      [class.bg-zinc-800]="notification.type === 'undo'"
+      [class.text-zinc-200]="notification.type === 'undo'"
+      [class.border-zinc-400]="notification.type === 'info'"
+      [class.bg-zinc-900]="notification.type === 'info'"
+      [class.text-zinc-300]="notification.type === 'info'"
+      role="status"
+    >
+      <span>{{ notification.message }}</span>
+      <div class="flex shrink-0 items-center gap-2">
+        @if (notification.type === 'undo') {
+          <button
+            type="button"
+            class="font-medium text-sky-400 transition-colors hover:text-sky-300"
+            (click)="notificationService.triggerUndo(notification.id)"
+          >
+            Undo
+          </button>
+        }
+        <button
+          type="button"
+          class="shrink-0 rounded-sm p-0.5 transition-colors hover:bg-zinc-700"
+          aria-label="Close notification"
+          (click)="notificationService.dismiss(notification.id)"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+        </button>
+      </div>
+    </div>
+  }
+</div>

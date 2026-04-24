@@ -1,0 +1,118 @@
+<div class="flex min-w-0 flex-1 flex-col px-6 py-5">
+  <!-- Filter chips -->
+  <div class="mb-4 flex flex-wrap items-center gap-x-4 gap-y-2">
+    <div
+      class="flex flex-wrap items-center gap-1"
+      role="toolbar"
+      aria-label="Filter by state"
+      data-testid="hypotheses-filter-state"
+    >
+      <span
+        class="mr-1 font-mono text-[10px] uppercase tracking-wider text-zinc-500"
+      >
+        State
+      </span>
+      @for (chip of stateChips; track chip.value) {
+        <button
+          type="button"
+          (click)="setStateFilter(chip.value)"
+          class="h-7 rounded-xs border px-2.5 text-[11px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500"
+          [class.border-sky-700]="stateFilter() === chip.value"
+          [class.bg-sky-900/30]="stateFilter() === chip.value"
+          [class.text-sky-300]="stateFilter() === chip.value"
+          [class.border-zinc-800]="stateFilter() !== chip.value"
+          [class.bg-zinc-900]="stateFilter() !== chip.value"
+          [class.text-zinc-400]="stateFilter() !== chip.value"
+          [attr.aria-pressed]="stateFilter() === chip.value"
+          [attr.data-testid]="'hypotheses-filter-state-' + chip.value"
+        >
+          {{ chip.label }}
+        </button>
+      }
+    </div>
+
+    <span
+      class="ml-auto font-mono text-[11px] text-zinc-500"
+      aria-live="polite"
+      data-testid="hypotheses-count"
+    >
+      Showing {{ total() }}
+      {{ total() === 1 ? 'hypothesis' : 'hypotheses' }}
+    </span>
+  </div>
+
+  @if (hasError()) {
+    <div
+      role="alert"
+      class="mb-3 rounded-xs border border-red-800 bg-red-900/20 px-3 py-2 text-xs text-red-300"
+      data-testid="hypotheses-list-error"
+    >
+      Couldn't load hypotheses.
+    </div>
+  }
+
+  <app-data-table
+    [isLoading]="isLoading()"
+    [isEmpty]="isEmpty()"
+    emptyTitle="No hypotheses match this filter"
+    emptyDescription="Agents propose hypotheses via Cowork; switch state or wait for learning signals."
+  >
+    <table class="w-full text-sm" data-testid="hypotheses-list-table">
+      <thead>
+        <tr
+          class="border-b border-zinc-800 text-left font-mono text-[10px] uppercase tracking-wider text-zinc-500"
+        >
+          <th scope="col" class="px-3 py-2 font-normal">Claim</th>
+          <th scope="col" class="px-3 py-2 font-normal">State</th>
+          <th scope="col" class="px-3 py-2 font-normal">Created by</th>
+          <th scope="col" class="px-3 py-2 font-normal">Observed</th>
+          <th scope="col" class="px-3 py-2 font-normal">Created</th>
+          <th scope="col" class="px-3 py-2 font-normal">ID</th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (row of rows(); let i = $index; track row.id) {
+          <tr
+            #row
+            [attr.tabindex]="rowTabIndex(i)"
+            class="cursor-pointer border-b border-zinc-900 transition-colors hover:bg-zinc-800/40 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-sky-500"
+            [class.bg-zinc-800/40]="i === focusedIndex()"
+            (click)="openRow(row)"
+            (keydown.enter)="openRow(row)"
+            (focus)="focusedIndex.set(i)"
+            [attr.data-testid]="'hypotheses-list-row-' + i"
+          >
+            <td class="max-w-xl truncate px-3 py-2 text-zinc-100">
+              {{ row.claim }}
+            </td>
+            <td class="px-3 py-2">
+              <span
+                class="inline-flex items-center gap-1.5 text-xs capitalize"
+                [class]="stateTextClass(row.state)"
+              >
+                <span
+                  class="inline-block size-1.5 rounded-full"
+                  [class]="stateDotClass(row.state)"
+                  aria-hidden="true"
+                ></span>
+                {{ row.state }}
+              </span>
+            </td>
+            <td class="px-3 py-2 font-mono text-[11px] text-zinc-400">
+              {{ row.created_by }}
+            </td>
+            <td class="px-3 py-2 text-zinc-400">
+              {{ row.observed_date | date: 'shortDate' }}
+            </td>
+            <td class="px-3 py-2 text-zinc-400">
+              {{ row.created_at | date: 'short' }}
+            </td>
+            <td class="px-3 py-2 font-mono text-[11px] text-zinc-500">
+              {{ row.id.slice(0, 8) }}
+            </td>
+          </tr>
+        }
+      </tbody>
+    </table>
+  </app-data-table>
+</div>

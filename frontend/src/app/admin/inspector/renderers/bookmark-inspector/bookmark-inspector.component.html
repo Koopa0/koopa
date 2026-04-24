@@ -1,0 +1,205 @@
+<div class="flex h-full flex-col" data-testid="bookmark-inspector">
+  @if (isLoading()) {
+    <div
+      class="flex flex-1 items-center justify-center text-zinc-400"
+      role="status"
+      aria-label="Loading bookmark"
+    >
+      <div
+        class="motion-reduce:animate-none size-5 animate-spin rounded-full border-2 border-zinc-700 border-t-zinc-400"
+      ></div>
+    </div>
+  } @else if (hasError()) {
+    <div
+      class="flex flex-1 items-center justify-center px-6 text-center text-sm text-zinc-400"
+      role="alert"
+    >
+      Failed to load bookmark.
+    </div>
+  } @else if (bookmark(); as b) {
+    <div class="space-y-5 p-6" data-testid="bookmark-overview-section">
+      <!-- Header: title + copy URL button + subtitle (host · public/private) -->
+      <header class="space-y-1">
+        <div class="flex items-start justify-between gap-3">
+          <h2
+            class="font-display text-base font-semibold leading-tight text-zinc-100"
+            data-testid="bookmark-title"
+          >
+            {{ b.title }}
+          </h2>
+          <button
+            type="button"
+            class="motion-reduce:transition-none flex shrink-0 items-center gap-1 rounded-xs border border-zinc-800 bg-zinc-900/50 px-2 py-1 text-xs text-zinc-400 transition-colors hover:border-zinc-700 hover:text-zinc-200"
+            [cdkCopyToClipboard]="b.url"
+            (cdkCopyToClipboardCopied)="onCopyBookmarkUrl()"
+            aria-label="Copy bookmark URL to clipboard"
+            data-testid="bookmark-copy-url"
+          >
+            @if (justCopied()) {
+              <span aria-hidden="true">✓</span>
+              <span>copied</span>
+            } @else {
+              <lucide-icon [img]="CopyIcon" [size]="12" aria-hidden="true" />
+              <span>url</span>
+            }
+          </button>
+        </div>
+        <p class="text-xs text-zinc-400" data-testid="bookmark-subtitle">
+          @if (b.host) {
+            <span class="font-mono">{{ b.host }}</span>
+            <span aria-hidden="true"> · </span>
+          }
+          @if (b.is_public) {
+            <span class="text-emerald-400" data-testid="bookmark-is-public"
+              >Public</span
+            >
+            @if (b.published_at) {
+              <span aria-hidden="true"> · </span>
+              <span>published {{ b.published_at | date: "mediumDate" }}</span>
+            }
+          } @else {
+            <span class="text-zinc-500" data-testid="bookmark-is-private"
+              >Private</span
+            >
+          }
+        </p>
+      </header>
+
+      <!-- External URL: clickable, truncated, full in title/aria-label -->
+      <a
+        [attr.href]="b.url"
+        target="_blank"
+        rel="noopener noreferrer nofollow"
+        class="motion-reduce:transition-none focus:outline-2 focus:outline-sky-500 flex items-center gap-1 truncate text-sm text-sky-400 transition-colors hover:text-sky-300"
+        [attr.title]="b.url"
+        [attr.aria-label]="'Open ' + b.url + ' in new tab'"
+        data-testid="bookmark-external-link"
+      >
+        <span aria-hidden="true">↗</span>
+        <span class="truncate font-mono">{{ truncatedUrl() }}</span>
+      </a>
+
+      <!-- Note + Excerpt as semantic <dl> peers -->
+      @if (b.note || b.excerpt) {
+        <dl class="space-y-3" data-testid="bookmark-prose">
+          @if (b.note) {
+            <div data-testid="bookmark-note">
+              <dt
+                class="text-xs font-semibold uppercase tracking-wider text-zinc-400"
+              >
+                Why I saved it
+              </dt>
+              <dd
+                class="mt-1 whitespace-pre-wrap text-sm leading-relaxed text-zinc-200"
+              >
+                {{ b.note }}
+              </dd>
+            </div>
+          }
+          @if (b.excerpt) {
+            <div data-testid="bookmark-excerpt">
+              <dt
+                class="text-xs font-semibold uppercase tracking-wider text-zinc-400"
+              >
+                From the page
+              </dt>
+              <dd
+                class="mt-1 whitespace-pre-wrap text-sm leading-relaxed text-zinc-200"
+              >
+                {{ b.excerpt }}
+              </dd>
+            </div>
+          }
+        </dl>
+      }
+
+      <!-- Topics + Tags chip rows (hide-if-empty per row) -->
+      @if (b.topics.length > 0 || b.tags.length > 0) {
+        <dl class="space-y-2 text-sm" data-testid="bookmark-classification">
+          @if (b.topics.length > 0) {
+            <div data-testid="bookmark-topics">
+              <dt
+                class="text-xs font-semibold uppercase tracking-wider text-zinc-400"
+              >
+                Topics
+              </dt>
+              <dd class="mt-1 flex flex-wrap gap-1.5">
+                @for (topic of b.topics; track topic.id) {
+                  <span
+                    class="rounded-full bg-zinc-800 px-2 py-0.5 text-xs text-zinc-200"
+                  >
+                    #{{ topic.slug }}
+                  </span>
+                }
+              </dd>
+            </div>
+          }
+          @if (b.tags.length > 0) {
+            <div data-testid="bookmark-tags">
+              <dt
+                class="text-xs font-semibold uppercase tracking-wider text-zinc-400"
+              >
+                Tags
+              </dt>
+              <dd class="mt-1 flex flex-wrap gap-1.5">
+                @for (tag of b.tags; track tag) {
+                  <span
+                    class="rounded-full bg-zinc-800 px-2 py-0.5 text-xs text-zinc-200"
+                  >
+                    #{{ tag }}
+                  </span>
+                }
+              </dd>
+            </div>
+          }
+        </dl>
+      }
+
+      <!-- Tail lines (conditional, hide-if-default) -->
+      @if (b.source_feed_entry_id || showCaptureChannel() || showCuratedBy()) {
+        <div
+          class="space-y-1 border-t border-zinc-800 pt-3 text-xs text-zinc-400"
+          data-testid="bookmark-attribution"
+        >
+          @if (b.source_feed_entry_id && b.source_feed_name) {
+            <p class="italic" data-testid="bookmark-feed-source">
+              Captured from RSS: {{ b.source_feed_name }}
+            </p>
+          }
+          @if (showCaptureChannel()) {
+            <p data-testid="bookmark-capture-channel">
+              Captured via {{ b.capture_channel }}
+            </p>
+          }
+          @if (showCuratedBy()) {
+            <p data-testid="bookmark-curated-by">
+              Curated by:
+              <span class="font-mono text-zinc-300">{{ b.curated_by }}</span>
+            </p>
+          }
+        </div>
+      }
+
+      <!-- Footer: timestamps -->
+      <dl
+        class="space-y-0.5 border-t border-zinc-800 pt-3 text-xs"
+        data-testid="bookmark-timestamps"
+      >
+        <div class="flex justify-between">
+          <dt class="text-zinc-400">Saved</dt>
+          <dd class="font-mono text-zinc-300">
+            {{ b.curated_at | date: "yyyy-MM-dd" }}
+          </dd>
+        </div>
+        @if (showUpdated()) {
+          <div class="flex justify-between">
+            <dt class="text-zinc-400">Updated</dt>
+            <dd class="font-mono text-zinc-300">
+              {{ b.updated_at | date: "yyyy-MM-dd" }}
+            </dd>
+          </div>
+        }
+      </dl>
+    </div>
+  }
+</div>

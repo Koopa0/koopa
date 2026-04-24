@@ -1,0 +1,488 @@
+<div class="h-full overflow-y-auto" data-testid="now-page">
+  <div class="mx-auto max-w-5xl px-6 py-8">
+
+    <!-- ===== JUDGMENT QUEUE (hero when items present) ===== -->
+    @if (isQueueLoading()) {
+      <div class="mb-8 space-y-2">
+        <div class="h-6 w-48 animate-pulse motion-reduce:animate-none rounded-xs bg-zinc-800/50"></div>
+        <div class="h-14 animate-pulse motion-reduce:animate-none rounded-lg bg-zinc-800/50"></div>
+        <div class="h-14 animate-pulse motion-reduce:animate-none rounded-lg bg-zinc-800/50"></div>
+      </div>
+    } @else if (hasQueue()) {
+      <section aria-label="Judgment queue" class="mb-8" data-testid="judgment-queue">
+        <div class="mb-2 flex items-baseline justify-between">
+          <h2 class="font-display text-lg font-semibold tracking-tight text-zinc-100">
+            Awaiting Your Judgment
+          </h2>
+          <span class="text-xs font-mono text-zinc-500">
+            {{ queueItems().length }} {{ queueItems().length === 1 ? 'item' : 'items' }}
+          </span>
+        </div>
+        <div class="space-y-1">
+          @for (item of queueItems(); track item.id) {
+            <button
+              type="button"
+              class="group flex w-full items-center gap-3 rounded-lg border border-zinc-800 bg-zinc-900/50 px-4 py-3 text-left transition-colors hover:border-zinc-700 hover:bg-zinc-900"
+              (click)="openInspector(item)"
+              [attr.data-testid]="'queue-item-' + item.type"
+            >
+              <!-- Type badge -->
+              <span
+                class="flex size-7 items-center justify-center rounded-md text-sm font-semibold"
+                [class]="meta(item.type).bgClass + ' ' + meta(item.type).textClass"
+                [attr.aria-label]="meta(item.type).label"
+              >
+                {{ meta(item.type).abbrev }}
+              </span>
+              <!-- Title + subtitle -->
+              <div class="min-w-0 flex-1">
+                <div class="truncate text-sm font-medium text-zinc-100">
+                  {{ item.title }}
+                </div>
+                <div class="mt-0.5 text-xs text-zinc-500">
+                  {{ item.subtitle }}
+                </div>
+              </div>
+              <!-- Age -->
+              <span class="shrink-0 text-xs text-zinc-500">
+                {{ item.age_days }}d
+              </span>
+              <!-- Chevron -->
+              <svg
+                class="size-4 shrink-0 text-zinc-500 transition-colors group-hover:text-zinc-300"
+                fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"
+                aria-hidden="true"
+              >
+                <path d="m9 18 6-6-6-6" />
+              </svg>
+            </button>
+          }
+        </div>
+      </section>
+    }
+
+    <!-- ===== OVERVIEW GRID ===== -->
+    <section
+      aria-label="System overview"
+      data-testid="overview-grid"
+    >
+      <div class="grid grid-cols-4 gap-3">
+        <!-- TODAY PLAN — 2 cols (daily driver) -->
+        <div
+          class="col-span-2 rounded-lg border border-zinc-800 bg-zinc-900/30"
+          [class.p-5]="!hasQueue()"
+          [class.p-4]="hasQueue()"
+          data-testid="cell-today-plan"
+        >
+          <div class="mb-3 flex items-baseline justify-between">
+            <h3
+              class="text-xs font-semibold uppercase tracking-wider text-zinc-500"
+              [class.font-display]="!hasQueue()"
+              [class.text-base]="!hasQueue()"
+              [class.text-zinc-100]="!hasQueue()"
+            >
+              <span class="inline-flex items-center gap-1.5">
+                Today Plan
+                @if (dailyPlanCellState().state !== 'ok') {
+                  <span
+                    class="text-amber-400"
+                    role="img"
+                    aria-label="warning"
+                    data-testid="cell-warn-today-plan"
+                    >&#9888;</span
+                  >
+                }
+              </span>
+            </h3>
+            @if (dailyPlan(); as plan) {
+              <span
+                class="font-mono text-zinc-400"
+                [class.text-sm]="!hasQueue()"
+                [class.text-xs]="hasQueue()"
+              >
+                {{ plan.done }}/{{ plan.total }} done
+              </span>
+            } @else {
+              <span class="font-mono text-xs text-zinc-500">—</span>
+            }
+          </div>
+
+          @if (dailyPlanResource.status() === 'loading') {
+            <div class="h-12 animate-pulse motion-reduce:animate-none rounded-xs bg-zinc-800/30"></div>
+          } @else if (dailyPlan(); as plan) {
+            @if (plan.total === 0) {
+              <p class="text-sm text-zinc-500">Nothing planned for today.</p>
+            } @else {
+              <!-- Compact glyph bar -->
+              <div
+                class="mb-2 flex items-center gap-0.5 font-mono text-base text-zinc-300"
+                [attr.aria-label]="
+                  plan.done +
+                  ' done, ' +
+                  (plan.total - plan.done) +
+                  ' remaining'
+                "
+              >
+                @for (g of dailyPlanGlyphs(); track $index) {
+                  <span
+                    [class.text-emerald-400]="g === '✓'"
+                    [class.text-sky-400]="g === '●'"
+                    [class.text-zinc-500]="g === '·'"
+                    >{{ g }}</span
+                  >
+                }
+              </div>
+              <ul class="space-y-0.5 text-xs text-zinc-400">
+                @for (item of dailyPlanTopActive(); track item.id) {
+                  <li>
+                    <button
+                      type="button"
+                      class="block w-full truncate text-left transition-colors hover:text-zinc-100"
+                      (click)="inspector.open({ type: 'todo', id: item.id })"
+                      [attr.aria-label]="'Open ' + item.title + ' in inspector'"
+                      [attr.data-testid]="'today-plan-item-' + item.id"
+                    >
+                      <span aria-hidden="true">·&nbsp;</span>{{ item.title }}
+                    </button>
+                  </li>
+                }
+              </ul>
+            }
+          } @else {
+            <p class="text-sm text-zinc-500">Unavailable.</p>
+          }
+
+          <!-- Cell-state reason line — always-rendered live region per a11y -->
+          <div role="status" aria-live="polite" aria-atomic="true">
+            @if (
+              dailyPlanCellState().state !== 'ok' && dailyPlanCellState().reason
+            ) {
+              <p
+                class="mt-2 text-xs"
+                [class.text-amber-300]="dailyPlanCellState().state === 'warn'"
+                [class.text-red-300]="dailyPlanCellState().state === 'error'"
+              >
+                {{ dailyPlanCellState().reason }}
+              </p>
+            }
+          </div>
+        </div>
+
+        <!-- GOALS — 2 cols (daily driver) -->
+        <div
+          class="col-span-2 rounded-lg border border-zinc-800 bg-zinc-900/30"
+          [class.p-5]="!hasQueue()"
+          [class.p-4]="hasQueue()"
+        >
+          <div class="mb-3 flex items-baseline justify-between">
+            <h3
+              class="text-xs font-semibold uppercase tracking-wider text-zinc-500"
+              [class.font-display]="!hasQueue()"
+              [class.text-base]="!hasQueue()"
+              [class.text-zinc-100]="!hasQueue()"
+            >
+              Goals
+            </h3>
+          </div>
+          @if (goalsResource.status() === 'loading') {
+            <div class="h-12 animate-pulse motion-reduce:animate-none rounded-xs bg-zinc-800/30"></div>
+          } @else if (activeGoals().length === 0) {
+            <p class="text-sm text-zinc-500">No active goals.</p>
+          } @else {
+            <div class="space-y-2">
+              @for (g of activeGoals(); track g.id) {
+                <button
+                  type="button"
+                  class="flex w-full items-center justify-between text-left transition-colors hover:text-zinc-100"
+                  (click)="inspector.open({ type: 'goal', id: g.id })"
+                >
+                  <span class="text-sm text-zinc-200">{{ g.title }}</span>
+                  <div class="flex items-center gap-2">
+                    @if (g.milestones_total > 0) {
+                      <div class="h-1.5 w-24 rounded-full bg-zinc-800">
+                        <div
+                          class="h-1.5 rounded-full bg-sky-500"
+                          [style.width.%]="milestonePercent(g.milestones_done, g.milestones_total)"
+                        ></div>
+                      </div>
+                      <span class="text-xs font-mono text-zinc-400">
+                        {{ g.milestones_done }}/{{ g.milestones_total }}
+                      </span>
+                    } @else {
+                      <span
+                        class="inline-block rounded-full border px-2 py-0.5 text-[10px]"
+                        [class.border-emerald-800]="g.status === 'in_progress'"
+                        [class.bg-emerald-900/30]="g.status === 'in_progress'"
+                        [class.text-emerald-400]="g.status === 'in_progress'"
+                        [class.border-zinc-700]="g.status !== 'in_progress'"
+                        [class.bg-zinc-800]="g.status !== 'in_progress'"
+                        [class.text-zinc-400]="g.status !== 'in_progress'"
+                      >
+                        {{ g.status }}
+                      </span>
+                    }
+                  </div>
+                </button>
+              }
+            </div>
+          }
+        </div>
+
+        <!-- CONTENT — 1 col -->
+        <div
+          class="rounded-lg border border-zinc-800 bg-zinc-900/30 p-4"
+          data-testid="cell-content"
+        >
+          <h3
+            class="mb-2 text-xs font-semibold uppercase tracking-wider text-zinc-500"
+          >
+            <span class="inline-flex items-center gap-1.5">
+              Content
+              @if (contentCellState().state !== 'ok') {
+                <span
+                  class="text-amber-400"
+                  role="img"
+                  aria-label="warning"
+                  data-testid="cell-warn-content"
+                  >&#9888;</span
+                >
+              }
+            </span>
+          </h3>
+          @if (contentCountsResource.status() === 'loading') {
+            <div class="h-12 animate-pulse motion-reduce:animate-none rounded-xs bg-zinc-800/30"></div>
+          } @else {
+            <div class="space-y-1 text-sm">
+              <div class="flex justify-between">
+                <span class="text-zinc-400">drafts</span>
+                <span class="font-mono text-zinc-300">{{
+                  contentCounts().drafts
+                }}</span>
+              </div>
+              <div class="flex justify-between">
+                <span class="text-zinc-400">in review</span>
+                <span class="font-mono text-zinc-300">{{
+                  contentCounts().inReview
+                }}</span>
+              </div>
+            </div>
+          }
+          <div role="status" aria-live="polite" aria-atomic="true">
+            @if (
+              contentCellState().state !== 'ok' && contentCellState().reason
+            ) {
+              <p
+                class="mt-2 text-xs"
+                [class.text-amber-300]="contentCellState().state === 'warn'"
+                [class.text-red-300]="contentCellState().state === 'error'"
+              >
+                {{ contentCellState().reason }}
+              </p>
+            }
+          </div>
+        </div>
+
+        <!-- LEARNING — 1 col -->
+        <div
+          class="rounded-lg border border-zinc-800 bg-zinc-900/30 p-4"
+          data-testid="cell-learning"
+        >
+          <h3
+            class="mb-2 text-xs font-semibold uppercase tracking-wider text-zinc-500"
+          >
+            <span class="inline-flex items-center gap-1.5">
+              Learning
+              @if (learningCellState().state !== 'ok') {
+                <span
+                  class="text-amber-400"
+                  role="img"
+                  aria-label="warning"
+                  data-testid="cell-warn-learning"
+                  >&#9888;</span
+                >
+              }
+            </span>
+          </h3>
+
+          @if (learningResource.status() === 'loading') {
+            <div class="h-12 animate-pulse motion-reduce:animate-none rounded-xs bg-zinc-800/30"></div>
+          } @else if (learning(); as l) {
+            <div class="space-y-1 text-sm">
+              <!-- Exception-only: the weak-signal row appears only when there is one. -->
+              @if (learningWeakTotal() > 0) {
+                <div class="flex items-center justify-between">
+                  <span class="text-amber-400"
+                    >{{ learningWeakTotal() }} weak</span
+                  >
+                </div>
+              }
+              <div class="flex items-center justify-between">
+                <span class="text-zinc-400">due review</span>
+                <span class="font-mono text-zinc-300">{{ l.due_reviews }}</span>
+              </div>
+              <div class="flex items-center justify-between">
+                <span class="text-zinc-400">streak</span>
+                <span class="font-mono text-zinc-300">{{ l.streak_days }}d</span>
+              </div>
+            </div>
+          } @else {
+            <p class="text-xs text-zinc-500">Unavailable.</p>
+          }
+
+          <div role="status" aria-live="polite" aria-atomic="true">
+            @if (
+              learningCellState().state !== 'ok' && learningCellState().reason
+            ) {
+              <p
+                class="mt-2 text-xs"
+                [class.text-amber-300]="learningCellState().state === 'warn'"
+                [class.text-red-300]="learningCellState().state === 'error'"
+              >
+                {{ learningCellState().reason }}
+              </p>
+            }
+          </div>
+        </div>
+
+        <!-- AGENTS — 1 col -->
+        <div
+          class="rounded-lg border border-zinc-800 bg-zinc-900/30 p-4"
+          data-testid="cell-agents"
+        >
+          <h3
+            class="mb-2 text-xs font-semibold uppercase tracking-wider text-zinc-500"
+          >
+            <span class="inline-flex items-center gap-1.5">
+              Agents
+              @if (agentsCellState().state !== 'ok') {
+                <span
+                  class="text-amber-400"
+                  role="img"
+                  aria-label="warning"
+                  data-testid="cell-warn-agents"
+                  >&#9888;</span
+                >
+              }
+            </span>
+          </h3>
+
+          @if (agentsResource.status() === 'loading') {
+            <div class="h-12 animate-pulse motion-reduce:animate-none rounded-xs bg-zinc-800/30"></div>
+          } @else if (visibleAgents().length === 0) {
+            <p class="text-xs text-zinc-500">No active agents.</p>
+          } @else {
+            <ul class="space-y-1 text-sm">
+              @for (a of visibleAgents(); track a.name) {
+                <li>
+                  <button
+                    type="button"
+                    class="flex w-full items-center justify-between text-left transition-colors hover:text-zinc-100"
+                    (click)="inspector.open({ type: 'agent', id: a.name })"
+                    [attr.aria-label]="
+                      'Open ' + a.display_name + ' in inspector'
+                    "
+                    [attr.data-testid]="'agent-row-' + a.name"
+                  >
+                    <span class="truncate text-zinc-400">{{ a.name }}</span>
+                    @switch (a.activity_state) {
+                      @case ('blocked') {
+                        <span
+                          class="inline-flex items-center gap-1 font-mono text-xs text-amber-400"
+                        >
+                          <span aria-hidden="true">&#9888;</span>
+                          blocked
+                        </span>
+                      }
+                      @case ('active') {
+                        <span class="font-mono text-xs text-emerald-400"
+                          >active</span
+                        >
+                      }
+                      @default {
+                        <span class="font-mono text-xs text-zinc-500"
+                          >idle</span
+                        >
+                      }
+                    }
+                  </button>
+                </li>
+              }
+            </ul>
+          }
+
+          <div role="status" aria-live="polite" aria-atomic="true">
+            @if (
+              agentsCellState().state !== 'ok' && agentsCellState().reason
+            ) {
+              <p
+                class="mt-2 text-xs"
+                [class.text-amber-300]="agentsCellState().state === 'warn'"
+                [class.text-red-300]="agentsCellState().state === 'error'"
+              >
+                {{ agentsCellState().reason }}
+              </p>
+            }
+          </div>
+        </div>
+
+        <!-- SYSTEM — 1 col -->
+        <div class="rounded-lg border border-zinc-800 bg-zinc-900/30 p-4">
+          <h3 class="mb-2 text-xs font-semibold uppercase tracking-wider text-zinc-500">System</h3>
+          @if (systemResource.status() === 'loading') {
+            <div class="h-12 animate-pulse motion-reduce:animate-none rounded-xs bg-zinc-800/30"></div>
+          } @else if (system(); as s) {
+            <div class="space-y-1 text-sm">
+              <div class="flex items-center gap-1.5">
+                @if (s.pipelines.failed === 0) {
+                  <span class="inline-block size-1.5 rounded-full bg-emerald-400"></span>
+                  <span class="text-zinc-400">pipeline ok</span>
+                } @else {
+                  <span class="inline-block size-1.5 rounded-full bg-red-400"></span>
+                  <span class="text-red-400">{{ s.pipelines.failed }} failed</span>
+                }
+              </div>
+              <div class="flex items-center gap-1.5">
+                @if (s.feeds.failing === 0) {
+                  <span class="inline-block size-1.5 rounded-full bg-emerald-400"></span>
+                  <span class="text-zinc-400">feeds {{ s.feeds.healthy }}/{{ s.feeds.total }}</span>
+                } @else {
+                  <span class="inline-block size-1.5 rounded-full bg-amber-400"></span>
+                  <span class="text-amber-400">{{ s.feeds.failing }} failing</span>
+                }
+              </div>
+            </div>
+          } @else {
+            <p class="text-xs text-zinc-500">Unavailable.</p>
+          }
+        </div>
+      </div>
+
+      <!-- Time toggle -->
+      <div class="mt-3 flex justify-end">
+        <div class="inline-flex rounded-md border border-zinc-800">
+          <button
+            type="button"
+            class="rounded-l-md px-3 py-1 text-xs font-medium transition-colors"
+            [class.bg-zinc-800]="timeMode() === 'now'"
+            [class.text-zinc-200]="timeMode() === 'now'"
+            [class.text-zinc-500]="timeMode() !== 'now'"
+            (click)="setTimeMode('now')"
+          >
+            Now
+          </button>
+          <button
+            type="button"
+            class="rounded-r-md px-3 py-1 text-xs transition-colors"
+            [class.bg-zinc-800]="timeMode() === 'week'"
+            [class.text-zinc-200]="timeMode() === 'week'"
+            [class.text-zinc-500]="timeMode() !== 'week'"
+            (click)="setTimeMode('week')"
+          >
+            This Week
+          </button>
+        </div>
+      </div>
+    </section>
+
+  </div>
+</div>

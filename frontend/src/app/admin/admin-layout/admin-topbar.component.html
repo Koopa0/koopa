@@ -1,0 +1,129 @@
+@let ctx = context();
+
+<div class="flex min-w-0 flex-1 items-baseline gap-3">
+  @if (ctx.title) {
+    <h1
+      class="truncate text-sm font-semibold text-zinc-100"
+      data-testid="topbar-title"
+    >
+      {{ ctx.title }}
+    </h1>
+  }
+
+  @if (ctx.crumbs && ctx.crumbs.length > 0) {
+    <nav
+      aria-label="Breadcrumb"
+      class="flex min-w-0 items-baseline gap-1 truncate font-mono text-[11px] text-zinc-500"
+      data-testid="topbar-crumbs"
+    >
+      @for (crumb of ctx.crumbs; track $index) {
+        @if ($index > 0) {
+          <span aria-hidden="true">/</span>
+        }
+        <span class="truncate">{{ crumb }}</span>
+      }
+    </nav>
+  }
+</div>
+
+<button
+  type="button"
+  (click)="openSearch()"
+  class="flex items-center gap-2 rounded-sm border border-zinc-800 bg-zinc-900 px-3 py-1.5 text-[11px] text-zinc-400 transition-colors hover:border-zinc-700 hover:text-zinc-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500"
+  aria-label="Open search (Cmd+K)"
+  data-testid="topbar-search"
+>
+  <lucide-icon [img]="SearchIcon" [size]="13" />
+  <span>Search…</span>
+  <kbd
+    class="rounded-xs border border-zinc-700 bg-zinc-800 px-1 font-mono text-[10px] text-zinc-400"
+    aria-hidden="true"
+  >
+    ⌘K
+  </kbd>
+</button>
+
+@if (ctx.actions && ctx.actions.length > 0) {
+  <div
+    class="flex items-center gap-2"
+    role="group"
+    aria-label="Page actions"
+    data-testid="topbar-actions"
+  >
+    @for (action of ctx.actions; track action.id) {
+      <button
+        type="button"
+        (click)="runAction(action)"
+        [disabled]="action.disabled"
+        [class]="actionClasses()[action.kind ?? 'secondary']"
+        class="flex items-center gap-1.5 rounded-sm px-3 py-1.5 text-xs font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500 disabled:cursor-not-allowed"
+        [attr.data-testid]="'topbar-action-' + action.id"
+      >
+        <span>{{ action.label }}</span>
+        @if (action.shortcutHint) {
+          <kbd
+            class="rounded-xs border border-zinc-500/60 bg-black/20 px-1 font-mono text-[10px] opacity-70"
+            aria-hidden="true"
+          >
+            {{ action.shortcutHint }}
+          </kbd>
+        }
+      </button>
+    }
+  </div>
+}
+
+@if (hasOverflow()) {
+  <div class="relative" data-testid="topbar-overflow">
+    <button
+      type="button"
+      (click)="toggleOverflow()"
+      class="grid size-8 place-items-center rounded-sm text-zinc-400 transition-colors hover:bg-zinc-800/80 hover:text-zinc-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500"
+      aria-label="More actions"
+      [attr.aria-expanded]="overflowOpen()"
+      data-testid="topbar-overflow-toggle"
+    >
+      <lucide-icon [img]="OverflowIcon" [size]="16" />
+    </button>
+
+    @if (overflowOpen()) {
+      <!--
+        Backdrop catches outside clicks + Escape. Plain div (non-interactive)
+        so aria-hidden is valid; click/keydown still fire on it.
+      -->
+      <div
+        class="fixed inset-0 z-40"
+        aria-hidden="true"
+        (click)="closeOverflow()"
+        (keydown.escape)="closeOverflow()"
+      ></div>
+      <ul
+        class="absolute right-0 top-10 z-50 min-w-48 rounded-sm border border-zinc-800 bg-zinc-950 py-1 shadow-xs"
+        data-testid="topbar-overflow-menu"
+      >
+        @for (action of ctx.overflowActions; track action.id) {
+          <li>
+            <button
+              type="button"
+              (click)="runAction(action)"
+              [disabled]="action.disabled"
+              class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-zinc-300 transition-colors hover:bg-zinc-800/80 focus-visible:bg-zinc-800/80 focus-visible:outline-hidden disabled:cursor-not-allowed disabled:text-zinc-600"
+              [class.text-red-300]="action.kind === 'destructive'"
+              [attr.data-testid]="'topbar-overflow-action-' + action.id"
+            >
+              <span class="flex-1">{{ action.label }}</span>
+              @if (action.shortcutHint) {
+                <kbd
+                  class="rounded-xs border border-zinc-700 bg-zinc-900 px-1 font-mono text-[10px] text-zinc-500"
+                  aria-hidden="true"
+                >
+                  {{ action.shortcutHint }}
+                </kbd>
+              }
+            </button>
+          </li>
+        }
+      </ul>
+    }
+  </div>
+}

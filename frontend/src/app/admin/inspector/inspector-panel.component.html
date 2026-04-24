@@ -1,0 +1,71 @@
+@if (isOpen() && target(); as t) {
+  <aside
+    class="fixed right-0 top-0 z-50 flex h-full w-full max-w-[480px] flex-col border-l border-zinc-800 bg-zinc-950 shadow-2xl"
+    role="complementary"
+    aria-label="Inspector panel"
+    data-testid="inspector-panel"
+  >
+    <!-- Header: type badge + close -->
+    <div
+      class="flex items-center justify-between border-b border-zinc-800 px-5 py-3"
+    >
+      <div class="flex items-center gap-2">
+        <span
+          class="flex size-6 items-center justify-center rounded-md text-xs font-semibold"
+          [class]="meta(t.type).bgClass + ' ' + meta(t.type).textClass"
+          [attr.aria-label]="meta(t.type).label"
+        >
+          {{ meta(t.type).abbrev }}
+        </span>
+        <span
+          class="font-mono text-xs uppercase tracking-wider text-zinc-400"
+          data-testid="inspector-type"
+        >
+          {{ meta(t.type).label }}
+        </span>
+      </div>
+      <button
+        type="button"
+        class="rounded-sm p-1 text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-100"
+        (click)="close()"
+        aria-label="Close inspector"
+        data-testid="inspector-close"
+      >
+        <lucide-icon [img]="XIcon" [size]="16" />
+      </button>
+    </div>
+
+    <!-- Renderer: each handles its own tabs, body, and action bar -->
+    <div class="flex min-h-0 flex-1 flex-col">
+      @switch (t.type) {
+        @case ("content") {
+          <app-content-inspector [id]="t.id" />
+        }
+        @case ("hypothesis") {
+          <app-hypothesis-inspector [id]="t.id" />
+        }
+        @case ("task") {
+          <app-task-inspector [id]="t.id" />
+        }
+        @case ("goal") {
+          <app-goal-inspector [id]="t.id" />
+        }
+        @case ("project") {
+          <app-project-inspector [id]="t.id" />
+        }
+        @case ("todo") {
+          <app-todo-inspector [id]="t.id" />
+        }
+        @case ("agent") {
+          <app-agent-inspector [id]="t.id" />
+        }
+        @case ("concept") {
+          <app-concept-inspector [id]="t.id" />
+        }
+        @case ("bookmark") {
+          <app-bookmark-inspector [id]="t.id" />
+        }
+      }
+    </div>
+  </aside>
+}

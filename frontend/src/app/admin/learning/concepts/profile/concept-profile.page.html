@@ -1,0 +1,254 @@
+@if (isLoading()) {
+  <div class="flex flex-1 items-center justify-center" data-testid="concept-loading">
+    <div
+      class="size-5 animate-spin rounded-full border-2 border-zinc-700 border-t-zinc-300"
+      aria-label="Loading concept"
+    ></div>
+  </div>
+} @else if (endpointsUnavailable()) {
+  <div
+    class="flex flex-1 items-center justify-center p-8 text-center"
+    data-testid="concept-endpoints-pending"
+  >
+    <div class="max-w-md">
+      <p class="mb-1 font-mono text-[10px] uppercase tracking-wider text-zinc-500">
+        Endpoints pending
+      </p>
+      <p class="mb-4 text-xs text-zinc-500">
+        /api/admin/learning/concepts/:slug is not live yet.
+      </p>
+      <button
+        type="button"
+        (click)="back()"
+        class="rounded-sm border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-xs text-zinc-300 transition-colors hover:bg-zinc-800"
+      >
+        Back to list
+      </button>
+    </div>
+  </div>
+} @else if (hasError()) {
+  <div class="flex flex-1 items-center justify-center p-8 text-center" data-testid="concept-error">
+    <div>
+      <p class="mb-2 text-sm text-red-400">Failed to load concept.</p>
+      <button
+        type="button"
+        (click)="back()"
+        class="rounded-sm border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-xs text-zinc-300 transition-colors hover:bg-zinc-800"
+      >
+        Back to list
+      </button>
+    </div>
+  </div>
+} @else if (concept(); as c) {
+  <article
+    class="mx-auto flex w-full max-w-4xl flex-col gap-5 px-6 py-8"
+    data-testid="concept-profile"
+  >
+    <!-- Hero -->
+    <header class="border-b border-zinc-800 pb-4">
+      <h1 class="mb-1 font-display text-2xl font-semibold text-zinc-100">
+        {{ c.slug }}
+      </h1>
+      <div class="flex flex-wrap items-center gap-x-4 gap-y-1 font-mono text-[11px] text-zinc-500">
+        <span class="flex items-center gap-1.5">
+          <span class="inline-block size-1.5 rounded-full" [class]="stageDot(c.mastery_stage)" aria-hidden="true"></span>
+          <span [class]="stageText(c.mastery_stage)">{{ c.mastery_stage }}</span>
+        </span>
+        <span class="capitalize">{{ c.kind }}</span>
+        <span>{{ c.domain }}</span>
+        <span>{{ c.obs_count }} obs</span>
+        @if (c.parent; as p) {
+          <a [routerLink]="['/admin/learning/concepts', p.slug]" class="text-zinc-400 hover:text-sky-300">
+            parent: {{ p.name }}
+          </a>
+        }
+      </div>
+    </header>
+
+    <!-- Mastery evidence -->
+    <section class="rounded-sm border border-zinc-800 p-5">
+      <header class="mb-3 flex flex-wrap items-baseline gap-3">
+        <h2 class="font-mono text-[10px] uppercase tracking-wider text-zinc-500">
+          Mastery evidence
+        </h2>
+        <div class="ml-auto flex items-center gap-1" role="toolbar" aria-label="Confidence filter">
+          @for (value of confidenceFilterOptions; track value) {
+            <button
+              type="button"
+              (click)="setConfidenceFilter(value)"
+              class="h-6 rounded-xs border px-2 text-[10px] font-medium capitalize transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500"
+              [class.border-sky-700]="confidenceFilter() === value"
+              [class.bg-sky-900/30]="confidenceFilter() === value"
+              [class.text-sky-300]="confidenceFilter() === value"
+              [class.border-zinc-800]="confidenceFilter() !== value"
+              [class.bg-zinc-900]="confidenceFilter() !== value"
+              [class.text-zinc-400]="confidenceFilter() !== value"
+              [attr.aria-pressed]="confidenceFilter() === value"
+            >{{ value }}</button>
+          }
+        </div>
+      </header>
+      <div class="grid grid-cols-3 gap-3 font-mono text-xs">
+        <div class="rounded-xs border border-amber-900 bg-amber-950/10 px-3 py-2">
+          <div class="text-[10px] uppercase text-amber-400">Weakness</div>
+          <div class="text-lg text-amber-200">{{ c.mastery_counts.weakness }}</div>
+          @if (c.low_confidence_counts.weakness > 0) {
+            <div class="text-[10px] text-zinc-500">+{{ c.low_confidence_counts.weakness }} low-conf</div>
+          }
+        </div>
+        <div class="rounded-xs border border-sky-900 bg-sky-950/10 px-3 py-2">
+          <div class="text-[10px] uppercase text-sky-400">Improvement</div>
+          <div class="text-lg text-sky-200">{{ c.mastery_counts.improvement }}</div>
+          @if (c.low_confidence_counts.improvement > 0) {
+            <div class="text-[10px] text-zinc-500">+{{ c.low_confidence_counts.improvement }} low-conf</div>
+          }
+        </div>
+        <div class="rounded-xs border border-emerald-900 bg-emerald-950/10 px-3 py-2">
+          <div class="text-[10px] uppercase text-emerald-400">Mastery</div>
+          <div class="text-lg text-emerald-200">{{ c.mastery_counts.mastery }}</div>
+          @if (c.low_confidence_counts.mastery > 0) {
+            <div class="text-[10px] text-zinc-500">+{{ c.low_confidence_counts.mastery }} low-conf</div>
+          }
+        </div>
+      </div>
+    </section>
+
+    <!-- Hierarchy / relations -->
+    @if (c.children.length > 0 || c.relations.length > 0) {
+      <section class="rounded-sm border border-zinc-800 p-5" data-testid="concept-hierarchy">
+        <h2 class="mb-3 font-mono text-[10px] uppercase tracking-wider text-zinc-500">
+          Hierarchy &amp; relations
+        </h2>
+        @if (c.children.length > 0) {
+          <div class="mb-2">
+            <div class="mb-1 font-mono text-[10px] uppercase text-zinc-500">Children</div>
+            <div class="flex flex-wrap gap-1">
+              @for (child of c.children; track child.slug) {
+                <a
+                  [routerLink]="['/admin/learning/concepts', child.slug]"
+                  class="rounded-xs border border-zinc-800 bg-zinc-900 px-2 py-0.5 text-xs text-zinc-300 transition-colors hover:border-sky-700 hover:text-sky-300 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500"
+                >{{ child.name }}</a>
+              }
+            </div>
+          </div>
+        }
+        @if (c.relations.length > 0) {
+          <div>
+            <div class="mb-1 font-mono text-[10px] uppercase text-zinc-500">Related</div>
+            <ul class="space-y-1">
+              @for (rel of c.relations; track rel.type + ':' + rel.concept.slug) {
+                <li class="flex items-center gap-2 text-xs">
+                  <span class="font-mono text-[10px] uppercase text-zinc-500">{{ rel.type }}</span>
+                  <a
+                    [routerLink]="['/admin/learning/concepts', rel.concept.slug]"
+                    class="text-zinc-300 transition-colors hover:text-sky-300 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500"
+                  >{{ rel.concept.name }}</a>
+                </li>
+              }
+            </ul>
+          </div>
+        }
+      </section>
+    }
+
+    <!-- Linked notes / contents -->
+    @if (c.linked_notes.length > 0 || c.linked_contents.length > 0) {
+      <section class="rounded-sm border border-zinc-800 p-5" data-testid="concept-linked">
+        <h2 class="mb-3 font-mono text-[10px] uppercase tracking-wider text-zinc-500">
+          Linked writing
+        </h2>
+        @if (c.linked_notes.length > 0) {
+          <div class="mb-3">
+            <div class="mb-1 font-mono text-[10px] uppercase text-zinc-500">Notes</div>
+            <ul class="space-y-1">
+              @for (n of c.linked_notes; track n.id) {
+                <li>
+                  <a
+                    [routerLink]="['/admin/knowledge/notes', n.id, 'edit']"
+                    class="flex items-center justify-between gap-2 rounded-xs border border-zinc-900 bg-zinc-950/30 px-2 py-1 transition-colors hover:border-sky-800 hover:bg-zinc-900/40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500"
+                  >
+                    <span class="min-w-0 flex-1 truncate text-sm text-zinc-200">{{ n.title }}</span>
+                    <span class="shrink-0 font-mono text-[10px] text-zinc-500">{{ n.kind }} · {{ n.maturity }}</span>
+                  </a>
+                </li>
+              }
+            </ul>
+          </div>
+        }
+        @if (c.linked_contents.length > 0) {
+          <div>
+            <div class="mb-1 font-mono text-[10px] uppercase text-zinc-500">Contents</div>
+            <ul class="space-y-1">
+              @for (cn of c.linked_contents; track cn.id) {
+                <li>
+                  <a
+                    [routerLink]="['/admin/knowledge/content', cn.id, 'edit']"
+                    class="flex items-center justify-between gap-2 rounded-xs border border-zinc-900 bg-zinc-950/30 px-2 py-1 transition-colors hover:border-sky-800 hover:bg-zinc-900/40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500"
+                  >
+                    <span class="min-w-0 flex-1 truncate text-sm text-zinc-200">{{ cn.title }}</span>
+                    <span class="shrink-0 font-mono text-[10px] uppercase text-zinc-500">{{ cn.type }}</span>
+                  </a>
+                </li>
+              }
+            </ul>
+          </div>
+        }
+      </section>
+    }
+
+    <!-- Recent attempts -->
+    @if (c.recent_attempts.length > 0) {
+      <section class="rounded-sm border border-zinc-800 p-5" data-testid="concept-attempts">
+        <h2 class="mb-3 font-mono text-[10px] uppercase tracking-wider text-zinc-500">
+          Recent attempts
+        </h2>
+        <ul class="space-y-1">
+          @for (a of c.recent_attempts; track a.id) {
+            <li class="flex items-baseline justify-between gap-3 border-l border-zinc-800 pl-3">
+              <span class="min-w-0 flex-1 truncate text-sm text-zinc-200">{{ a.target_title }}</span>
+              <span class="shrink-0 font-mono text-[10px] text-zinc-500">
+                {{ a.outcome }} · {{ a.created_at | date: 'short' }}
+              </span>
+            </li>
+          }
+        </ul>
+      </section>
+    }
+
+    <!-- Observations -->
+    @if (c.recent_observations.length > 0) {
+      <section class="rounded-sm border border-zinc-800 p-5" data-testid="concept-observations">
+        <h2 class="mb-3 font-mono text-[10px] uppercase tracking-wider text-zinc-500">
+          Recent observations
+        </h2>
+        <ul class="space-y-2">
+          @for (obs of c.recent_observations; track obs.id) {
+            <li class="rounded-xs border border-zinc-900 bg-zinc-950/30 p-3">
+              <div class="mb-1 flex flex-wrap items-center gap-2 font-mono text-[11px]">
+                <span
+                  class="uppercase"
+                  [class.text-amber-300]="obs.signal === 'weakness'"
+                  [class.text-sky-300]="obs.signal === 'improvement'"
+                  [class.text-emerald-300]="obs.signal === 'mastery'"
+                >{{ obs.signal }}</span>
+                <span class="text-zinc-400">{{ obs.category }}</span>
+                @if (obs.confidence === 'low') {
+                  <span class="rounded-xs border border-zinc-700 bg-zinc-800 px-1 text-zinc-400">low</span>
+                }
+              </div>
+              <p class="whitespace-pre-wrap text-sm text-zinc-200">{{ obs.body }}</p>
+            </li>
+          }
+        </ul>
+      </section>
+    }
+
+    <div class="pt-4">
+      <button
+        type="button"
+        (click)="back()"
+        class="rounded-sm px-3 py-1.5 text-xs text-zinc-400 transition-colors hover:text-zinc-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500"
+      >Back to list</button>
+    </div>
+  </article>
+}

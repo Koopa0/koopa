@@ -1,0 +1,429 @@
+@if (isLoading()) {
+  <div class="flex flex-1 items-center justify-center" data-testid="hypothesis-loading">
+    <div
+      class="size-5 animate-spin rounded-full border-2 border-zinc-700 border-t-zinc-300"
+      aria-label="Loading hypothesis"
+    ></div>
+  </div>
+} @else if (hasError()) {
+  <div
+    class="flex flex-1 items-center justify-center p-8 text-center"
+    data-testid="hypothesis-error"
+  >
+    <div>
+      <p class="mb-2 text-sm text-red-400">Failed to load hypothesis.</p>
+      <button
+        type="button"
+        (click)="back()"
+        class="rounded-sm border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-xs text-zinc-300 transition-colors hover:bg-zinc-800"
+      >
+        Back to list
+      </button>
+    </div>
+  </div>
+} @else if (hypothesis(); as h) {
+  <article
+    class="mx-auto flex w-full max-w-4xl flex-col gap-6 px-6 py-8"
+    data-testid="hypothesis-profile"
+  >
+    <!-- Hero -->
+    <header
+      class="border-b border-zinc-800 pb-4"
+      data-testid="hypothesis-hero"
+    >
+      <h1 class="mb-3 font-display text-2xl font-semibold leading-snug text-zinc-100">
+        {{ h.claim }}
+      </h1>
+      <div class="flex flex-wrap items-center gap-x-4 gap-y-1 font-mono text-[11px] text-zinc-500">
+        <span class="flex items-center gap-1.5">
+          <span
+            class="inline-block size-1.5 rounded-full"
+            [class]="stateDotClass(h.state)"
+            aria-hidden="true"
+          ></span>
+          <span [class]="stateTextClass(h.state)">{{ h.state }}</span>
+        </span>
+        <span>by {{ h.created_by }}</span>
+        <span>created {{ h.created_at | date: 'short' }}</span>
+        @if (h.observed_date) {
+          <span>observed {{ h.observed_date | date: 'shortDate' }}</span>
+        }
+      </div>
+    </header>
+
+    <!-- Actions bar -->
+    <div
+      class="flex flex-wrap items-center gap-2"
+      role="group"
+      aria-label="Hypothesis actions"
+      data-testid="hypothesis-actions"
+    >
+      <button
+        type="button"
+        (click)="toggleEvidenceForm()"
+        [disabled]="isActioning()"
+        class="rounded-sm border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-xs text-zinc-200 transition-colors hover:border-sky-700 hover:text-sky-300 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500 disabled:cursor-not-allowed"
+        data-testid="hypothesis-action-add-evidence"
+      >
+        {{ isEvidenceFormOpen() ? 'Close evidence form' : 'Add evidence' }}
+      </button>
+
+      @if (canVerify()) {
+        <button
+          type="button"
+          (click)="verify()"
+          [disabled]="isActioning()"
+          class="rounded-sm bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-emerald-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500 disabled:cursor-not-allowed disabled:bg-emerald-900/60"
+          data-testid="hypothesis-action-verify"
+        >
+          Verify
+        </button>
+      }
+      @if (canInvalidate()) {
+        <button
+          type="button"
+          (click)="invalidate()"
+          [disabled]="isActioning()"
+          class="rounded-sm px-3 py-1.5 text-xs font-medium text-red-300 transition-colors hover:bg-red-950/40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500 disabled:cursor-not-allowed"
+          data-testid="hypothesis-action-invalidate"
+        >
+          Invalidate
+        </button>
+      }
+      @if (canArchive()) {
+        <button
+          type="button"
+          (click)="archive()"
+          [disabled]="isActioning()"
+          class="rounded-sm px-3 py-1.5 text-xs text-zinc-400 transition-colors hover:text-zinc-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500 disabled:cursor-not-allowed"
+          data-testid="hypothesis-action-archive"
+        >
+          Archive
+        </button>
+      }
+      <button
+        type="button"
+        (click)="back()"
+        class="ml-auto rounded-sm px-3 py-1.5 text-xs text-zinc-400 transition-colors hover:text-zinc-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500"
+        data-testid="hypothesis-action-back"
+      >
+        Back to list
+      </button>
+    </div>
+
+    <!-- Inline evidence form -->
+    @if (isEvidenceFormOpen()) {
+      <section
+        class="rounded-sm border border-zinc-800 bg-zinc-900/40 p-4"
+        aria-labelledby="hypothesis-evidence-heading"
+        data-testid="hypothesis-evidence-form"
+      >
+        <h2
+          id="hypothesis-evidence-heading"
+          class="mb-3 font-mono text-[10px] uppercase tracking-wider text-zinc-500"
+        >
+          New evidence
+        </h2>
+        <!--
+          Native `<input type="radio">` elements visually styled as
+          pill buttons — gives free keyboard (arrow keys, Home/End) +
+          screen-reader semantics per WAI-ARIA radiogroup pattern.
+          See: `angular-conventions.md` CDK A11y checklist.
+        -->
+        <fieldset class="mb-3 flex gap-2 border-0 p-0">
+          <legend class="sr-only">Evidence kind</legend>
+          <label
+            class="flex h-7 cursor-pointer items-center rounded-xs border px-2.5 text-[11px] font-medium transition-colors has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-sky-500"
+            [class.border-emerald-700]="evidenceKind() === 'supporting'"
+            [class.bg-emerald-900/30]="evidenceKind() === 'supporting'"
+            [class.text-emerald-300]="evidenceKind() === 'supporting'"
+            [class.border-zinc-800]="evidenceKind() !== 'supporting'"
+            [class.bg-zinc-900]="evidenceKind() !== 'supporting'"
+            [class.text-zinc-400]="evidenceKind() !== 'supporting'"
+          >
+            <input
+              type="radio"
+              name="evidence-kind"
+              value="supporting"
+              class="sr-only"
+              [checked]="evidenceKind() === 'supporting'"
+              (change)="setEvidenceKind('supporting')"
+              data-testid="hypothesis-evidence-kind-supporting"
+            />
+            Supporting
+          </label>
+          <label
+            class="flex h-7 cursor-pointer items-center rounded-xs border px-2.5 text-[11px] font-medium transition-colors has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-sky-500"
+            [class.border-red-700]="evidenceKind() === 'counter'"
+            [class.bg-red-900/30]="evidenceKind() === 'counter'"
+            [class.text-red-300]="evidenceKind() === 'counter'"
+            [class.border-zinc-800]="evidenceKind() !== 'counter'"
+            [class.bg-zinc-900]="evidenceKind() !== 'counter'"
+            [class.text-zinc-400]="evidenceKind() !== 'counter'"
+          >
+            <input
+              type="radio"
+              name="evidence-kind"
+              value="counter"
+              class="sr-only"
+              [checked]="evidenceKind() === 'counter'"
+              (change)="setEvidenceKind('counter')"
+              data-testid="hypothesis-evidence-kind-counter"
+            />
+            Counter
+          </label>
+        </fieldset>
+        <label class="sr-only" for="evidence-body">Evidence body</label>
+        <textarea
+          id="evidence-body"
+          [value]="evidenceBody()"
+          (input)="evidenceBody.set(readTextarea($event))"
+          rows="3"
+          placeholder="What did you observe that supports or contradicts this claim?"
+          class="mb-2 w-full resize-y rounded-sm border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-600 focus:border-sky-600 focus:outline-hidden"
+          data-testid="hypothesis-evidence-body"
+        ></textarea>
+        <button
+          type="button"
+          (click)="submitEvidence()"
+          [disabled]="isActioning() || !evidenceBody().trim()"
+          class="rounded-sm bg-sky-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-sky-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500 disabled:cursor-not-allowed disabled:bg-sky-900/60 disabled:text-sky-300"
+          data-testid="hypothesis-evidence-submit"
+        >
+          Record evidence
+        </button>
+      </section>
+    }
+
+    <!-- Overview -->
+    <section
+      class="rounded-sm border border-zinc-800 p-5"
+      aria-labelledby="hypothesis-overview-heading"
+      data-testid="hypothesis-overview"
+    >
+      <h2
+        id="hypothesis-overview-heading"
+        class="mb-3 font-mono text-[10px] uppercase tracking-wider text-zinc-500"
+      >
+        Overview
+      </h2>
+      @if (h.invalidation_condition) {
+        <dl class="space-y-2 text-sm">
+          <div>
+            <dt class="text-[11px] text-zinc-500">Invalidation condition</dt>
+            <dd class="whitespace-pre-wrap text-zinc-200">
+              {{ h.invalidation_condition }}
+            </dd>
+          </div>
+        </dl>
+      } @else {
+        <p class="text-xs text-zinc-500">
+          No invalidation condition recorded.
+        </p>
+      }
+    </section>
+
+    @if (lineageUnavailable()) {
+      <section
+        class="rounded-sm border border-dashed border-zinc-800 p-4 text-center"
+        data-testid="hypothesis-lineage-unavailable"
+      >
+        <p class="mb-1 font-mono text-[10px] uppercase tracking-wider text-zinc-500">
+          Lineage pending
+        </p>
+        <p class="text-xs text-zinc-500">
+          Origin, evidence, and linked observations will appear once the
+          backend ships the /lineage endpoint.
+        </p>
+      </section>
+    } @else if (lineageTransientError()) {
+      <section
+        role="alert"
+        class="rounded-sm border border-amber-900 bg-amber-950/20 p-4 text-center"
+        data-testid="hypothesis-lineage-error"
+      >
+        <p class="text-xs text-amber-300">
+          Couldn't load lineage. Retry the page or wait for the next
+          refresh.
+        </p>
+      </section>
+    } @else if (lineage(); as lin) {
+      <!-- Origin -->
+      @if (lin.origin?.session || lin.origin?.attempts?.length) {
+        <section
+          class="rounded-sm border border-zinc-800 p-5"
+          aria-labelledby="hypothesis-origin-heading"
+          data-testid="hypothesis-origin"
+        >
+          <h2
+            id="hypothesis-origin-heading"
+            class="mb-3 font-mono text-[10px] uppercase tracking-wider text-zinc-500"
+          >
+            Origin
+          </h2>
+          @if (lin.origin?.session; as session) {
+            <div class="mb-3 flex items-center justify-between">
+              <div class="text-sm text-zinc-200">
+                Session · {{ session.domain }} · {{ session.mode }}
+                <div class="font-mono text-[11px] text-zinc-500">
+                  {{ session.started_at | date: 'short' }} —
+                  {{ session.ended_at ? (session.ended_at | date: 'short') : 'ongoing' }}
+                </div>
+              </div>
+              @if (sessionRouteReady) {
+                <button
+                  type="button"
+                  (click)="openSession()"
+                  class="rounded-sm border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-xs text-zinc-200 transition-colors hover:border-sky-700 hover:text-sky-300 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500"
+                  data-testid="hypothesis-origin-open-session"
+                >
+                  Open session →
+                </button>
+              } @else {
+                <span
+                  class="rounded-sm border border-dashed border-zinc-800 px-3 py-1.5 font-mono text-[10px] text-zinc-500"
+                  title="Session timeline lands in a follow-up (ships with /admin/learning/sessions)"
+                >
+                  session view pending
+                </span>
+              }
+            </div>
+          }
+          @let attempts = lin.origin?.attempts ?? [];
+          @if (attempts.length > 0) {
+            <ul class="space-y-1.5 text-sm" data-testid="hypothesis-origin-attempts">
+              @for (a of attempts; track a.id) {
+                <li class="flex items-baseline justify-between gap-3 border-t border-zinc-900 pt-1.5 first:border-t-0 first:pt-0">
+                  <span class="min-w-0 flex-1 truncate text-zinc-200">
+                    {{ a.target_title }}
+                  </span>
+                  <span class="font-mono text-[11px] text-zinc-500">
+                    {{ a.outcome }}
+                    @if (a.duration_minutes !== null && a.duration_minutes !== undefined) {
+                      · {{ a.duration_minutes }} min
+                    }
+                  </span>
+                </li>
+              }
+            </ul>
+          }
+        </section>
+      }
+
+      <!-- Evidence trail -->
+      <section
+        class="rounded-sm border border-zinc-800 p-5"
+        aria-labelledby="hypothesis-evidence-heading-trail"
+        data-testid="hypothesis-evidence-trail"
+      >
+        <h2
+          id="hypothesis-evidence-heading-trail"
+          class="mb-3 font-mono text-[10px] uppercase tracking-wider text-zinc-500"
+        >
+          Evidence trail
+        </h2>
+        @if (lin.evidence_log.length === 0) {
+          <p class="text-xs text-zinc-500">No evidence added yet.</p>
+        } @else {
+          <ul class="space-y-3">
+            @for (ev of lin.evidence_log; track ev.id) {
+              <li class="border-l-2 pl-3"
+                [class.border-emerald-700]="ev.type === 'supporting'"
+                [class.border-red-700]="ev.type === 'counter'"
+              >
+                <div class="mb-0.5 flex items-center gap-2 font-mono text-[11px]">
+                  <span
+                    [class.text-emerald-300]="ev.type === 'supporting'"
+                    [class.text-red-300]="ev.type === 'counter'"
+                  >
+                    {{ ev.type }}
+                  </span>
+                  <span class="text-zinc-500">
+                    by {{ ev.actor }} · {{ ev.added_at | date: 'short' }}
+                  </span>
+                </div>
+                <p class="whitespace-pre-wrap text-sm text-zinc-200">
+                  {{ ev.body }}
+                </p>
+              </li>
+            }
+          </ul>
+        }
+      </section>
+
+      <!-- Linked observations -->
+      <section
+        class="rounded-sm border border-zinc-800 p-5"
+        aria-labelledby="hypothesis-observations-heading"
+        data-testid="hypothesis-observations"
+      >
+        <h2
+          id="hypothesis-observations-heading"
+          class="mb-3 font-mono text-[10px] uppercase tracking-wider text-zinc-500"
+        >
+          Linked observations
+        </h2>
+        @if (lin.observations.length === 0) {
+          <p class="text-xs text-zinc-500">No linked observations yet.</p>
+        } @else {
+          <ul class="space-y-2">
+            @for (obs of lin.observations; track obs.id) {
+              <li class="rounded-xs border border-zinc-900 bg-zinc-950/30 p-3">
+                <div class="mb-1 flex flex-wrap items-center gap-2 font-mono text-[11px]">
+                  <span
+                    class="uppercase"
+                    [class.text-amber-300]="obs.signal_type === 'weakness'"
+                    [class.text-sky-300]="obs.signal_type === 'improvement'"
+                    [class.text-emerald-300]="obs.signal_type === 'mastery'"
+                  >
+                    {{ obs.signal_type }}
+                  </span>
+                  <span class="text-zinc-400">{{ obs.category }}</span>
+                  @if (obs.severity) {
+                    <span class="text-zinc-500">· {{ obs.severity }}</span>
+                  }
+                  @if (obs.concept_name) {
+                    <span class="text-zinc-500">· {{ obs.concept_name }}</span>
+                  }
+                </div>
+                <p class="whitespace-pre-wrap text-sm text-zinc-200">
+                  {{ obs.detail }}
+                </p>
+              </li>
+            }
+          </ul>
+        }
+      </section>
+    }
+
+    <!-- System -->
+    <section
+      class="rounded-sm border border-zinc-800 p-5"
+      aria-labelledby="hypothesis-system-heading"
+      data-testid="hypothesis-system"
+    >
+      <h2
+        id="hypothesis-system-heading"
+        class="mb-3 font-mono text-[10px] uppercase tracking-wider text-zinc-500"
+      >
+        System
+      </h2>
+      <dl class="grid grid-cols-2 gap-x-6 gap-y-1.5 text-[11px]">
+        <div class="contents">
+          <dt class="text-zinc-500">ID</dt>
+          <dd class="truncate font-mono text-zinc-400">{{ h.id }}</dd>
+        </div>
+        <div class="contents">
+          <dt class="text-zinc-500">Created by</dt>
+          <dd class="font-mono text-zinc-400">{{ h.created_by }}</dd>
+        </div>
+        <div class="contents">
+          <dt class="text-zinc-500">Created</dt>
+          <dd class="font-mono text-zinc-400">
+            {{ h.created_at | date: 'medium' }}
+          </dd>
+        </div>
+      </dl>
+    </section>
+  </article>
+}
