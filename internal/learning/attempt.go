@@ -141,3 +141,60 @@ func (s *Store) AttemptsByLearningTarget(ctx context.Context, targetID uuid.UUID
 	}
 	return result, nil
 }
+
+// AttachObservations populates Attempt.Observations for each attempt in
+// the slice, preserving the attempt order the caller passed in. Batches
+// the fetch via ObservationsByAttemptIDs (one round-trip regardless of
+// attempt count) so callers paying for the observation layer get bounded
+// cost — attempt_history uses this for the refined-b shape where every
+// mode surfaces observations and the concept-mode matched_observation_id
+// is a pointer into this list.
+//
+// Observations within each attempt come in Position ASC, matching the
+// coach-insertion order recorded at record_attempt time.
+//
+// Attempts with zero observations receive an empty (non-nil) slice so
+// downstream JSON consumers iterating Observations never hit a nil
+// dereference. No-op when attempts is empty.
+func (s *Store) AttachObservations(ctx context.Context, attempts []Attempt) error {
+	if len(attempts) == 0 {
+		return nil
+	}
+
+	ids := make([]uuid.UUID, len(attempts))
+	for i := range attempts {
+		ids[i] = attempts[i].ID
+	}
+
+	rows, err := s.q.ObservationsByAttemptIDs(ctx, ids)
+	if err != nil {
+		return fmt.Errorf("fetching observations for %d attempts: %w", len(attempts), err)
+	}
+
+	byAttempt := make(map[uuid.UUID][]Observation, len(attempts))
+	for i := range rows {
+		r := &rows[i]
+		byAttempt[r.AttemptID] = append(byAttempt[r.AttemptID], Observation{
+			ID:          r.ID,
+			AttemptID:   r.AttemptID,
+			ConceptID:   r.ConceptID,
+			SignalType:  r.SignalType,
+			Category:    r.Category,
+			Severity:    r.Severity,
+			Detail:      r.Detail,
+			Confidence:  r.Confidence,
+			Position:    r.Position,
+			ConceptSlug: r.ConceptSlug,
+			ConceptName: r.ConceptName,
+		})
+	}
+
+	for i := range attempts {
+		if obs, ok := byAttempt[attempts[i].ID]; ok {
+			attempts[i].Observations = obs
+		} else {
+			attempts[i].Observations = []Observation{}
+		}
+	}
+	return nil
+}

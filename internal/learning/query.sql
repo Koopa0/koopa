@@ -114,9 +114,9 @@ SELECT id, learning_target_id, session_id, attempt_number, paradigm, outcome,
 FROM learning_attempts WHERE id = @id;
 
 -- name: CreateObservation :one
-INSERT INTO learning_attempt_observations (attempt_id, concept_id, signal_type, category, severity, detail, confidence)
-VALUES (@attempt_id, @concept_id, @signal_type, @category, @severity, @detail, @confidence)
-RETURNING id, attempt_id, concept_id, signal_type, category, severity, detail, confidence, created_at;
+INSERT INTO learning_attempt_observations (attempt_id, concept_id, signal_type, category, severity, detail, confidence, position)
+VALUES (@attempt_id, @concept_id, @signal_type, @category, @severity, @detail, @confidence, @position)
+RETURNING id, attempt_id, concept_id, signal_type, category, severity, detail, confidence, position, created_at;
 
 -- name: FindOrCreateConcept :one
 -- Upsert a concept by domain + slug.
@@ -151,11 +151,32 @@ ORDER BY a.attempted_at DESC
 LIMIT @max_results;
 
 -- name: ObservationsByAttempt :many
+-- All observations on a single attempt, in coach-insertion order
+-- (position ASC). Kept alongside ObservationsByAttemptIDs — callers
+-- fetching a single attempt's observations use this for a one-element
+-- ANY(::uuid[]) equivalent without the array dance.
 SELECT ao.id, ao.attempt_id, ao.concept_id, ao.signal_type, ao.category, ao.severity, ao.detail,
+       ao.confidence, ao.position,
        c.slug AS concept_slug, c.name AS concept_name
 FROM learning_attempt_observations ao
 JOIN concepts c ON c.id = ao.concept_id
-WHERE ao.attempt_id = @attempt_id;
+WHERE ao.attempt_id = @attempt_id
+ORDER BY ao.position ASC;
+
+-- name: ObservationsByAttemptIDs :many
+-- Batched observation fetch for attempt_history — all three modes
+-- (target / concept_slug / session_id) use this after loading attempts
+-- to populate Attempt.Observations. Returns one row per observation,
+-- ordered by (attempt_id, position ASC) so each attempt's observations
+-- come in the coach-recorded insertion order. Empty @attempt_ids
+-- array produces zero rows cleanly.
+SELECT ao.id, ao.attempt_id, ao.concept_id, ao.signal_type, ao.category, ao.severity, ao.detail,
+       ao.confidence, ao.position,
+       c.slug AS concept_slug, c.name AS concept_name
+FROM learning_attempt_observations ao
+JOIN concepts c ON c.id = ao.concept_id
+WHERE ao.attempt_id = ANY(@attempt_ids::uuid[])
+ORDER BY ao.attempt_id, ao.position ASC;
 
 -- name: ConceptMastery :many
 -- Per-concept mastery with signal counts from attempt_observations within
@@ -318,47 +339,44 @@ ORDER BY ao.created_at DESC
 LIMIT @max_results;
 
 -- name: AttemptsByConcept :many
--- Attempts that produced an observation about the given concept, newest first.
--- Each row carries the matched observation's signal/category/severity/detail
--- so the caller knows WHY this attempt is in the result set without a second
--- query.
+-- Attempts that produced an observation about the given concept, newest
+-- first. Each row carries a matched_observation_id pointer — the id of
+-- the highest-priority observation on that attempt that linked it to
+-- the queried concept. The caller uses this pointer to locate which
+-- observation in Attempt.Observations drove the match.
 --
--- The inner SELECT uses DISTINCT ON (a.id) to keep one row per attempt even
--- when a single attempt recorded multiple observations on the same concept;
--- the picked observation is highest-priority by signal (weakness > improvement
--- > mastery) then severity (critical > moderate > minor). The outer SELECT
--- re-sorts by attempted_at DESC because DISTINCT ON forces the inner ORDER BY
--- to lead with a.id.
+-- Shape note: the full set of observations (including the matched one)
+-- is fetched separately via ObservationsByAttemptIDs and assembled in
+-- Go. This query intentionally does NOT duplicate observation payload
+-- here — one authoritative shape (Observation) across all code paths,
+-- no MatchedObservation parallel struct.
 --
--- Replaces the prior version that joined through item_concepts (a static
--- tag table that no production code path populates). The semantics changed:
--- this now returns "attempts where the user explicitly observed this
--- concept", not "attempts on items tagged with this concept". The new
--- semantics is what concept drilldown actually wants.
+-- The inner SELECT uses DISTINCT ON (a.id) to keep one row per attempt
+-- even when a single attempt recorded multiple observations on the same
+-- concept; the picked observation is highest-priority by signal (weakness
+-- > improvement > mastery) then severity (critical > moderate > minor).
+-- The outer SELECT re-sorts by attempted_at DESC because DISTINCT ON
+-- forces the inner ORDER BY to lead with a.id.
+--
+-- Priority order when an attempt has multiple observations on the
+-- concept: weakness signals first, then improvement, then mastery.
+-- Within the same signal, classified severities beat NULL (NULL =
+-- unclassified, which can only happen for weakness since the schema
+-- CHECK forbids non-NULL severity on improvement/mastery rows).
 SELECT id, learning_target_id, session_id, attempt_number, paradigm, outcome,
        duration_minutes, stuck_at, approach_used, attempted_at, metadata,
        target_title, target_external_id, difficulty,
-       matched_signal, matched_category, matched_severity, matched_detail
+       matched_observation_id
 FROM (
     SELECT DISTINCT ON (a.id)
            a.id, a.learning_target_id, a.session_id, a.attempt_number, a.paradigm, a.outcome,
            a.duration_minutes, a.stuck_at, a.approach_used, a.attempted_at, a.metadata,
            lt.title AS target_title, lt.external_id AS target_external_id, lt.difficulty,
-           ao.signal_type AS matched_signal,
-           ao.category   AS matched_category,
-           ao.severity   AS matched_severity,
-           ao.detail     AS matched_detail
+           ao.id AS matched_observation_id
     FROM learning_attempts a
     JOIN learning_targets lt ON lt.id = a.learning_target_id
     JOIN learning_attempt_observations ao ON ao.attempt_id = a.id
     WHERE ao.concept_id = @concept_id
-    -- Priority order when an attempt has multiple observations on the
-    -- concept: weakness signals first, then improvement, then mastery. Within
-    -- the same signal, classified severities beat NULL (NULL = unclassified,
-    -- which can only happen for weakness since the schema CHECK forbids
-    -- non-NULL severity on improvement/mastery rows). Treating NULL as
-    -- lowest is deliberate — we surface the rows where the coach left a
-    -- concrete severity note ahead of the rows where they did not.
     ORDER BY a.id,
              CASE ao.signal_type WHEN 'weakness' THEN 0 WHEN 'improvement' THEN 1 WHEN 'mastery' THEN 2 END,
              CASE ao.severity WHEN 'critical' THEN 0 WHEN 'moderate' THEN 1 WHEN 'minor' THEN 2 ELSE 3 END

@@ -1004,8 +1004,10 @@ type LearningAttemptObservation struct {
 	// Free-text evidence or explanation. NULL when the signal is self-explanatory from category alone.
 	Detail *string `json:"detail"`
 	// high (default): signal directly evidenced by the attempt outcome — user said "I forgot how X works" or repeatedly failed at X. low: coach inferred the signal from indirect evidence — user struggled with the problem and coach suspects X is the missing skill. Both persist. Dashboard mastery and weakness views default to high only; pass confidence_filter=all to include low-confidence observations.
-	Confidence string    `json:"confidence"`
-	CreatedAt  time.Time `json:"created_at"`
+	Confidence string `json:"confidence"`
+	// Zero-based insertion order within the attempt. Application-assigned at record_attempt time (the array index of the observation in the request). Enables coach-insertion ordering on attempt_history reads — created_at ties within a transaction (PG now() is txn-start-constant) and id is gen_random_uuid (v4, random), so neither alone preserves insertion order. DEFAULT 0 is a schema-level guard; application code always sets position explicitly. Historical rows backfilled via ROW_NUMBER() over (created_at, id) before this column shipped — best-effort, not true insertion order for pre-existing data.
+	Position  int32     `json:"position"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 // Closed set of learning domains. FK target for concepts.domain, learning_targets.domain, learning_sessions.domain, and learning_plans.domain. Adding a domain requires INSERT here first.

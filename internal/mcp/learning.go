@@ -698,7 +698,7 @@ func (s *Server) processObservations(ctx context.Context, attemptID uuid.UUID, d
 			s.logger.Warn("observation: concept creation failed", "concept", obs.Concept, "error", err)
 			continue
 		}
-		if _, err := s.learn.RecordObservation(ctx, attemptID, conceptID, obs.Signal, obs.Category, obs.Severity, obs.Detail, obs.Confidence); err != nil {
+		if _, err := s.learn.RecordObservation(ctx, attemptID, conceptID, obs.Signal, obs.Category, obs.Severity, obs.Detail, obs.Confidence, int32(i)); err != nil {
 			warnings = append(warnings, fmt.Sprintf("observations[%d] (%q): record failed: %v", i, obs.Concept, err))
 			s.logger.Warn("observation: recording failed", "concept", obs.Concept, "confidence", obs.Confidence, "error", err)
 			continue

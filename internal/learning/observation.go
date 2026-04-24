@@ -81,7 +81,15 @@ func validateSeverity(signal string, severity *string) error {
 // Both persist; the dashboard filters at read time. Invalid values are
 // rejected at the boundary so a typo cannot reach the DB CHECK as a
 // 23514 violation.
-func (s *Store) RecordObservation(ctx context.Context, attemptID, conceptID uuid.UUID, signalType, category string, severity, detail *string, confidence string) (*Observation, error) {
+//
+// position is the zero-based insertion order within the attempt (the
+// array index of the observation in the caller's record_attempt
+// request). Read-side queries return observations ordered by position
+// ASC so consumers see them in coach-written order. Passing a negative
+// position would trip chk_learning_attempt_observations_position_nonneg
+// in the DB, but the caller is the only source of truth for intended
+// ordering — this function does not defensively clamp.
+func (s *Store) RecordObservation(ctx context.Context, attemptID, conceptID uuid.UUID, signalType, category string, severity, detail *string, confidence string, position int32) (*Observation, error) {
 	normalized, err := normalizeObservationConfidence(confidence)
 	if err != nil {
 		return nil, err
@@ -101,6 +109,7 @@ func (s *Store) RecordObservation(ctx context.Context, attemptID, conceptID uuid
 		Severity:   severity,
 		Detail:     detail,
 		Confidence: normalized,
+		Position:   position,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("creating observation: %w", err)
@@ -114,5 +123,6 @@ func (s *Store) RecordObservation(ctx context.Context, attemptID, conceptID uuid
 		Severity:   row.Severity,
 		Detail:     row.Detail,
 		Confidence: row.Confidence,
+		Position:   row.Position,
 	}, nil
 }
