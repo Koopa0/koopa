@@ -22,10 +22,12 @@
 package mcp
 
 import (
+	"encoding/json"
 	"log/slog"
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -1298,5 +1300,276 @@ func TestLearningSessionEnded_FiresActivityTrigger(t *testing.T) {
 
 	if got := latestActivityChangeKind(t, "learning_session", sessionID); got != "completed" {
 		t.Errorf("activity_events.change_kind = %q, want %q", got, "completed")
+	}
+}
+
+// --- session_progress ---
+//
+// Covers the four invariants from Plan C:
+//  1. No active session → {active: false, reason} and no LastEnded fields
+//     when the DB has never seen a session.
+//  2. Active session with zero attempts → Active=true, AttemptCount=0,
+//     ElapsedSeconds < 60s, empty slug + category distributions.
+//  3. Active session with attempts → aggregates reflect SQL rollup.
+//  4. After end_session → {active: false} but LastEndedSessionID + Ended
+//     pointers populated (the affordance path).
+
+func TestIntegration_SessionProgress_NoActive(t *testing.T) {
+	s := setupServer(t)
+
+	_, out, err := callHandler(t, s.sessionProgress, SessionProgressInput{})
+	if err != nil {
+		t.Fatalf("sessionProgress: %v", err)
+	}
+
+	if out.Active {
+		t.Errorf("Active = true, want false")
+	}
+	if out.Reason == "" {
+		t.Error("Reason is empty — expected human-readable explanation")
+	}
+	if out.LastEndedSessionID != nil {
+		t.Errorf("LastEndedSessionID = %v, want nil on fresh DB", *out.LastEndedSessionID)
+	}
+	if out.LastEndedAt != nil {
+		t.Errorf("LastEndedAt = %v, want nil on fresh DB", *out.LastEndedAt)
+	}
+	if out.SessionID != nil {
+		t.Errorf("SessionID leaked on !Active = %v", *out.SessionID)
+	}
+	if out.StartedAt != nil {
+		t.Errorf("StartedAt leaked on !Active = %v", *out.StartedAt)
+	}
+}
+
+func TestIntegration_SessionProgress_ActiveEmpty(t *testing.T) {
+	s := setupServer(t)
+
+	_, sess, err := callHandler(t, s.startSession, StartSessionInput{
+		Domain: "leetcode",
+		Mode:   "practice",
+	})
+	if err != nil {
+		t.Fatalf("startSession: %v", err)
+	}
+
+	_, out, err := callHandler(t, s.sessionProgress, SessionProgressInput{})
+	if err != nil {
+		t.Fatalf("sessionProgress: %v", err)
+	}
+
+	if !out.Active {
+		t.Fatal("Active = false on a freshly-started session")
+	}
+	if out.SessionID == nil || *out.SessionID != sess.Session.ID {
+		t.Errorf("SessionID = %v, want %v", out.SessionID, sess.Session.ID)
+	}
+	if out.StartedAt == nil {
+		t.Error("StartedAt is nil on active session")
+	}
+	if out.AttemptCount != 0 {
+		t.Errorf("AttemptCount = %d, want 0", out.AttemptCount)
+	}
+	if out.ElapsedSeconds < 0 || out.ElapsedSeconds > 60 {
+		t.Errorf("ElapsedSeconds = %d, want 0..60 for just-started session", out.ElapsedSeconds)
+	}
+	if len(out.ParadigmDistribution) != 2 {
+		t.Errorf("ParadigmDistribution len = %d, want 2 (problem_solving + immersive, both zero)", len(out.ParadigmDistribution))
+	}
+	for _, p := range out.ParadigmDistribution {
+		if p.Count != 0 || p.TotalMinutes != 0 {
+			t.Errorf("ParadigmDistribution[%q] = {count:%d minutes:%d}, want both zero on empty session", p.Paradigm, p.Count, p.TotalMinutes)
+		}
+	}
+	// Empty distributions must be non-nil (per-handler allocated) so JSON
+	// emits [] instead of null. Nil would break callers that iterate.
+	if out.ConceptSlugDistribution == nil {
+		t.Error("ConceptSlugDistribution is nil on empty active session (want empty slice)")
+	}
+	if out.ObservationCategoryDistribution == nil {
+		t.Error("ObservationCategoryDistribution is nil on empty active session (want empty slice)")
+	}
+	if len(out.ConceptSlugDistribution) != 0 {
+		t.Errorf("ConceptSlugDistribution len = %d, want 0", len(out.ConceptSlugDistribution))
+	}
+	if len(out.ObservationCategoryDistribution) != 0 {
+		t.Errorf("ObservationCategoryDistribution len = %d, want 0", len(out.ObservationCategoryDistribution))
+	}
+
+	// Wire-shape guard: on Active=true, encoding/json MUST emit every
+	// active-path key even at zero value. Integration tests checking
+	// Go struct fields alone miss omitempty-drop regressions — a JS
+	// consumer iterating response.concept_slug_distribution must not
+	// hit undefined.
+	buf, err := json.Marshal(out)
+	if err != nil {
+		t.Fatalf("json.Marshal(out): %v", err)
+	}
+	var wire map[string]json.RawMessage
+	if err := json.Unmarshal(buf, &wire); err != nil {
+		t.Fatalf("json.Unmarshal shape probe: %v", err)
+	}
+	for _, key := range []string{
+		"session_id", "domain", "mode", "started_at",
+		"elapsed_seconds", "elapsed_display", "attempt_count",
+		"paradigm_distribution", "concept_slug_distribution",
+		"observation_category_distribution",
+	} {
+		if _, ok := wire[key]; !ok {
+			t.Errorf("JSON output missing key %q on Active=true path (omitempty regression?)", key)
+		}
+	}
+}
+
+func TestIntegration_SessionProgress_WithAttempts(t *testing.T) {
+	s := setupServer(t)
+
+	_, sess, err := callHandler(t, s.startSession, StartSessionInput{
+		Domain: "leetcode",
+		Mode:   "mixed",
+	})
+	if err != nil {
+		t.Fatalf("startSession: %v", err)
+	}
+
+	problemSolvingDur := FlexInt(12)
+	_, _, err = callHandler(t, s.recordAttempt, RecordAttemptInput{
+		SessionID: sess.Session.ID.String(),
+		Target:    AttemptTarget{Title: "Two Sum"},
+		Outcome:   "solved_with_hint",
+		Duration:  &problemSolvingDur,
+		Observations: []ObservationInput{
+			{Concept: "hash-lookup", Signal: "weakness", Category: "pattern-recognition", Confidence: "high"},
+			{Concept: "array-indexing", Signal: "mastery", Category: "implementation", Confidence: "high"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("recordAttempt problem_solving: %v", err)
+	}
+
+	immersiveDur := FlexInt(30)
+	_, _, err = callHandler(t, s.recordAttempt, RecordAttemptInput{
+		SessionID: sess.Session.ID.String(),
+		Target:    AttemptTarget{Title: "DDIA Chapter 3"},
+		Outcome:   "completed",
+		Duration:  &immersiveDur,
+		Observations: []ObservationInput{
+			{Concept: "log-structured-storage", Signal: "mastery", Category: "implementation", Confidence: "high"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("recordAttempt immersive: %v", err)
+	}
+
+	_, out, err := callHandler(t, s.sessionProgress, SessionProgressInput{})
+	if err != nil {
+		t.Fatalf("sessionProgress: %v", err)
+	}
+
+	if !out.Active {
+		t.Fatal("Active = false after recording two attempts")
+	}
+	if out.AttemptCount != 2 {
+		t.Errorf("AttemptCount = %d, want 2", out.AttemptCount)
+	}
+
+	pByName := map[string]SessionProgressParadigm{}
+	for _, p := range out.ParadigmDistribution {
+		pByName[p.Paradigm] = p
+	}
+	if got := pByName["problem_solving"]; got.Count != 1 || got.TotalMinutes != int64(problemSolvingDur) {
+		t.Errorf("problem_solving paradigm = {count:%d minutes:%d}, want {1 %d}", got.Count, got.TotalMinutes, problemSolvingDur)
+	}
+	if got := pByName["immersive"]; got.Count != 1 || got.TotalMinutes != int64(immersiveDur) {
+		t.Errorf("immersive paradigm = {count:%d minutes:%d}, want {1 %d}", got.Count, got.TotalMinutes, immersiveDur)
+	}
+
+	if len(out.ConceptSlugDistribution) != 3 {
+		t.Errorf("ConceptSlugDistribution len = %d, want 3 (hash-lookup, array-indexing, log-structured-storage)", len(out.ConceptSlugDistribution))
+	}
+	// Verify sort: count DESC, slug ASC. Three entries, all count=1 →
+	// slug ASC tie-break. Expect "array-indexing", "hash-lookup",
+	// "log-structured-storage" in that order.
+	wantSlugs := []string{"array-indexing", "hash-lookup", "log-structured-storage"}
+	for i, w := range wantSlugs {
+		if i >= len(out.ConceptSlugDistribution) {
+			break
+		}
+		if got := out.ConceptSlugDistribution[i].Slug; got != w {
+			t.Errorf("ConceptSlugDistribution[%d].Slug = %q, want %q", i, got, w)
+		}
+	}
+
+	// Observation category distribution: 1 weakness (pattern-recognition),
+	// 2 mastery (implementation × 2). Sort: weakness before mastery.
+	if len(out.ObservationCategoryDistribution) != 2 {
+		t.Errorf("ObservationCategoryDistribution len = %d, want 2", len(out.ObservationCategoryDistribution))
+	}
+	if got := out.ObservationCategoryDistribution[0].SignalType; got != "weakness" {
+		t.Errorf("first category signal = %q, want 'weakness' (sort order)", got)
+	}
+	if got := out.ObservationCategoryDistribution[0].Category; got != "pattern-recognition" {
+		t.Errorf("first category.category = %q, want 'pattern-recognition'", got)
+	}
+}
+
+func TestIntegration_SessionProgress_LastEndedSurfaced(t *testing.T) {
+	s := setupServer(t)
+
+	_, sess, err := callHandler(t, s.startSession, StartSessionInput{
+		Domain: "leetcode",
+		Mode:   "practice",
+	})
+	if err != nil {
+		t.Fatalf("startSession: %v", err)
+	}
+
+	_, _, err = callHandler(t, s.recordAttempt, RecordAttemptInput{
+		SessionID: sess.Session.ID.String(),
+		Target:    AttemptTarget{Title: "Binary Search"},
+		Outcome:   "solved_independent",
+	})
+	if err != nil {
+		t.Fatalf("recordAttempt: %v", err)
+	}
+
+	_, end, err := callHandler(t, s.endSession, EndSessionInput{
+		SessionID: sess.Session.ID.String(),
+	})
+	if err != nil {
+		t.Fatalf("endSession: %v", err)
+	}
+	if end.Session.EndedAt == nil {
+		t.Fatal("endSession did not populate EndedAt")
+	}
+
+	_, out, err := callHandler(t, s.sessionProgress, SessionProgressInput{})
+	if err != nil {
+		t.Fatalf("sessionProgress: %v", err)
+	}
+
+	if out.Active {
+		t.Fatal("Active = true after end_session")
+	}
+	if out.LastEndedSessionID == nil {
+		t.Fatal("LastEndedSessionID is nil after end_session — affordance path broken")
+	}
+	if *out.LastEndedSessionID != sess.Session.ID {
+		t.Errorf("LastEndedSessionID = %v, want %v (the just-ended session)", *out.LastEndedSessionID, sess.Session.ID)
+	}
+	if out.LastEndedAt == nil {
+		t.Error("LastEndedAt is nil after end_session")
+	}
+	// Affordance is identity-only; aggregate fields MUST stay zero.
+	if out.AttemptCount != 0 {
+		t.Errorf("AttemptCount = %d on !Active path, want 0 (affordance is NOT a fallback)", out.AttemptCount)
+	}
+	if len(out.ConceptSlugDistribution) != 0 {
+		t.Errorf("ConceptSlugDistribution leaked on !Active path (len=%d)", len(out.ConceptSlugDistribution))
+	}
+	// Sanity: the LastEndedAt should be in the last minute (we just ended
+	// it). Tolerance is generous to avoid CI flakes.
+	if d := time.Since(*out.LastEndedAt); d < 0 || d > time.Minute {
+		t.Errorf("LastEndedAt delta = %v, want within 1m (we just ended)", d)
 	}
 }
