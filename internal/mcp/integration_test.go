@@ -1573,3 +1573,308 @@ func TestIntegration_SessionProgress_LastEndedSurfaced(t *testing.T) {
 		t.Errorf("LastEndedAt delta = %v, want within 1m (we just ended)", d)
 	}
 }
+
+// --- attempt_history (Plan B — observations + confidence on all modes) ---
+//
+// Covers the refined-b shape locked by learning-studio:
+//  - Every mode (target / concept_slug / session_id) returns observations[]
+//    on each attempt with confidence label populated.
+//  - concept_slug mode additionally populates matched_observation_id as a
+//    pointer into the observations list (no parallel MatchedObservation
+//    struct).
+//  - observations are ordered by coach-insertion (position ASC), not by
+//    concept slug, created_at, or id.
+//  - include_observations=false skips the observation fetch; concept_slug
+//    mode preserves matched_observation_id regardless.
+//  - Sort order invariants: target/concept DESC, session ASC.
+
+func TestIntegration_AttemptHistory_TargetMode_IncludesObservations(t *testing.T) {
+	s := setupServer(t)
+
+	_, sess, err := callHandler(t, s.startSession, StartSessionInput{
+		Domain: "leetcode",
+		Mode:   "practice",
+	})
+	if err != nil {
+		t.Fatalf("startSession: %v", err)
+	}
+
+	_, _, err = callHandler(t, s.recordAttempt, RecordAttemptInput{
+		SessionID: sess.Session.ID.String(),
+		Target:    AttemptTarget{Title: "Two Sum"},
+		Outcome:   "solved_with_hint",
+		Observations: []ObservationInput{
+			// Deliberate non-alphabetical insertion order: z-last, a-first, m-middle.
+			// If the read path sorted by slug we'd see [a, m, z]; Position sort
+			// preserves insertion order [z, a, m].
+			{Concept: "z-last-slug", Signal: "weakness", Category: "pattern-recognition", Confidence: "low"},
+			{Concept: "a-first-slug", Signal: "mastery", Category: "implementation", Confidence: "high"},
+			{Concept: "m-middle-slug", Signal: "improvement", Category: "approach-selection", Confidence: "high"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("recordAttempt: %v", err)
+	}
+
+	// Wall-time smoke guard per Plan B Amendment B3. IVL runs on every
+	// revisit; regression past ~100ms would compound into friction fast.
+	// Not a benchmark — a defensive threshold. Bump if CI flakes.
+	start := time.Now()
+	_, out, err := callHandler(t, s.attemptHistory, AttemptHistoryInput{
+		Target: &AttemptHistoryTargetRef{Title: "Two Sum"},
+	})
+	elapsed := time.Since(start)
+	if err != nil {
+		t.Fatalf("attemptHistory target: %v", err)
+	}
+	if !out.Resolved {
+		t.Fatal("Resolved = false on existing target")
+	}
+	if len(out.Attempts) != 1 {
+		t.Fatalf("Attempts len = %d, want 1", len(out.Attempts))
+	}
+	got := out.Attempts[0]
+	if len(got.Observations) != 3 {
+		t.Fatalf("Observations len = %d, want 3", len(got.Observations))
+	}
+	wantOrder := []string{"z-last-slug", "a-first-slug", "m-middle-slug"}
+	for i, want := range wantOrder {
+		if got.Observations[i].ConceptSlug != want {
+			t.Errorf("Observations[%d].ConceptSlug = %q, want %q (coach-insertion order)", i, got.Observations[i].ConceptSlug, want)
+		}
+		if got.Observations[i].Position != int32(i) {
+			t.Errorf("Observations[%d].Position = %d, want %d", i, got.Observations[i].Position, i)
+		}
+	}
+	// Confidence label carried through: first obs was "low", others "high".
+	if got.Observations[0].Confidence != "low" {
+		t.Errorf("Observations[0].Confidence = %q, want low", got.Observations[0].Confidence)
+	}
+	if got.Observations[1].Confidence != "high" {
+		t.Errorf("Observations[1].Confidence = %q, want high", got.Observations[1].Confidence)
+	}
+	// target mode does not populate matched_observation_id.
+	if got.MatchedObservationID != nil {
+		t.Errorf("MatchedObservationID = %v, want nil on target mode", *got.MatchedObservationID)
+	}
+	if elapsed > 150*time.Millisecond {
+		t.Errorf("attempt_history target mode took %v, want < 150ms (IVL hot path smoke)", elapsed)
+	}
+}
+
+func TestIntegration_AttemptHistory_ConceptMode_MatchedObservationID(t *testing.T) {
+	s := setupServer(t)
+
+	_, sess, err := callHandler(t, s.startSession, StartSessionInput{
+		Domain: "leetcode",
+		Mode:   "practice",
+	})
+	if err != nil {
+		t.Fatalf("startSession: %v", err)
+	}
+
+	_, _, err = callHandler(t, s.recordAttempt, RecordAttemptInput{
+		SessionID: sess.Session.ID.String(),
+		Target:    AttemptTarget{Title: "Longest Substring"},
+		Outcome:   "solved_with_hint",
+		Observations: []ObservationInput{
+			{Concept: "sliding-window-variable", Signal: "weakness", Category: "pattern-recognition", Confidence: "low"},
+			{Concept: "hash-set-uniqueness", Signal: "mastery", Category: "implementation", Confidence: "high"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("recordAttempt: %v", err)
+	}
+
+	_, out, err := callHandler(t, s.attemptHistory, AttemptHistoryInput{
+		ConceptSlug: strPtr("sliding-window-variable"),
+	})
+	if err != nil {
+		t.Fatalf("attemptHistory concept: %v", err)
+	}
+	if !out.Resolved {
+		t.Fatal("Resolved = false on existing concept")
+	}
+	if len(out.Attempts) != 1 {
+		t.Fatalf("Attempts len = %d, want 1", len(out.Attempts))
+	}
+	got := out.Attempts[0]
+	if got.MatchedObservationID == nil {
+		t.Fatal("MatchedObservationID is nil on concept mode")
+	}
+	if len(got.Observations) != 2 {
+		t.Fatalf("Observations len = %d, want 2", len(got.Observations))
+	}
+	// matched_observation_id MUST point into the observations list — find it.
+	var matchedSlug string
+	for _, o := range got.Observations {
+		if o.ID == *got.MatchedObservationID {
+			matchedSlug = o.ConceptSlug
+			break
+		}
+	}
+	if matchedSlug != "sliding-window-variable" {
+		t.Errorf("matched_observation_id points to %q, want sliding-window-variable (the queried concept)", matchedSlug)
+	}
+}
+
+func TestIntegration_AttemptHistory_SessionMode_Observations(t *testing.T) {
+	s := setupServer(t)
+
+	_, sess, err := callHandler(t, s.startSession, StartSessionInput{
+		Domain: "leetcode",
+		Mode:   "practice",
+	})
+	if err != nil {
+		t.Fatalf("startSession: %v", err)
+	}
+
+	_, _, err = callHandler(t, s.recordAttempt, RecordAttemptInput{
+		SessionID: sess.Session.ID.String(),
+		Target:    AttemptTarget{Title: "Reverse Linked List"},
+		Outcome:   "solved_independent",
+		Observations: []ObservationInput{
+			{Concept: "pointer-swap-invariant", Signal: "mastery", Category: "implementation", Confidence: "high"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("recordAttempt: %v", err)
+	}
+
+	_, out, err := callHandler(t, s.attemptHistory, AttemptHistoryInput{
+		SessionID: strPtr(sess.Session.ID.String()),
+	})
+	if err != nil {
+		t.Fatalf("attemptHistory session: %v", err)
+	}
+	if len(out.Attempts) != 1 {
+		t.Fatalf("Attempts len = %d, want 1", len(out.Attempts))
+	}
+	if len(out.Attempts[0].Observations) != 1 {
+		t.Errorf("Observations len = %d, want 1", len(out.Attempts[0].Observations))
+	}
+	if out.Attempts[0].Observations[0].Confidence != "high" {
+		t.Errorf("Observations[0].Confidence = %q, want high", out.Attempts[0].Observations[0].Confidence)
+	}
+	if out.Attempts[0].MatchedObservationID != nil {
+		t.Errorf("MatchedObservationID = %v, want nil on session mode", *out.Attempts[0].MatchedObservationID)
+	}
+}
+
+func TestIntegration_AttemptHistory_IncludeObservationsFalse(t *testing.T) {
+	s := setupServer(t)
+
+	_, sess, err := callHandler(t, s.startSession, StartSessionInput{
+		Domain: "leetcode",
+		Mode:   "practice",
+	})
+	if err != nil {
+		t.Fatalf("startSession: %v", err)
+	}
+
+	_, _, err = callHandler(t, s.recordAttempt, RecordAttemptInput{
+		SessionID: sess.Session.ID.String(),
+		Target:    AttemptTarget{Title: "Valid Parentheses"},
+		Outcome:   "solved_independent",
+		Observations: []ObservationInput{
+			{Concept: "stack-matching", Signal: "mastery", Category: "pattern-recognition", Confidence: "high"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("recordAttempt: %v", err)
+	}
+
+	includeFalse := false
+
+	// target mode — observations empty, matched_observation_id always nil.
+	_, outTarget, err := callHandler(t, s.attemptHistory, AttemptHistoryInput{
+		Target:              &AttemptHistoryTargetRef{Title: "Valid Parentheses"},
+		IncludeObservations: &includeFalse,
+	})
+	if err != nil {
+		t.Fatalf("attemptHistory target include=false: %v", err)
+	}
+	if len(outTarget.Attempts) != 1 {
+		t.Fatalf("target attempts len = %d, want 1", len(outTarget.Attempts))
+	}
+	if len(outTarget.Attempts[0].Observations) != 0 {
+		t.Errorf("target include=false: Observations len = %d, want 0", len(outTarget.Attempts[0].Observations))
+	}
+
+	// concept mode — observations empty, but matched_observation_id MUST
+	// stay populated because the query match info comes from the primary
+	// SQL query, not the secondary observation fetch.
+	_, outConcept, err := callHandler(t, s.attemptHistory, AttemptHistoryInput{
+		ConceptSlug:         strPtr("stack-matching"),
+		IncludeObservations: &includeFalse,
+	})
+	if err != nil {
+		t.Fatalf("attemptHistory concept include=false: %v", err)
+	}
+	if len(outConcept.Attempts) != 1 {
+		t.Fatalf("concept attempts len = %d, want 1", len(outConcept.Attempts))
+	}
+	if len(outConcept.Attempts[0].Observations) != 0 {
+		t.Errorf("concept include=false: Observations len = %d, want 0", len(outConcept.Attempts[0].Observations))
+	}
+	if outConcept.Attempts[0].MatchedObservationID == nil {
+		t.Error("concept include=false: MatchedObservationID is nil, want populated (pointer should survive include=false)")
+	}
+}
+
+func TestIntegration_AttemptHistory_SortInvariants(t *testing.T) {
+	s := setupServer(t)
+
+	_, sess, err := callHandler(t, s.startSession, StartSessionInput{
+		Domain: "leetcode",
+		Mode:   "practice",
+	})
+	if err != nil {
+		t.Fatalf("startSession: %v", err)
+	}
+
+	// Record 3 attempts on the same target. target mode must return them
+	// newest first (DESC); session mode must return them oldest first (ASC).
+	for i := 1; i <= 3; i++ {
+		_, _, err := callHandler(t, s.recordAttempt, RecordAttemptInput{
+			SessionID: sess.Session.ID.String(),
+			Target:    AttemptTarget{Title: "Climbing Stairs"},
+			Outcome:   "solved_independent",
+		})
+		if err != nil {
+			t.Fatalf("recordAttempt %d: %v", i, err)
+		}
+	}
+
+	_, targetOut, err := callHandler(t, s.attemptHistory, AttemptHistoryInput{
+		Target: &AttemptHistoryTargetRef{Title: "Climbing Stairs"},
+	})
+	if err != nil {
+		t.Fatalf("attemptHistory target: %v", err)
+	}
+	if len(targetOut.Attempts) != 3 {
+		t.Fatalf("target attempts = %d, want 3", len(targetOut.Attempts))
+	}
+	// AttemptNumber increments monotonically (1, 2, 3); DESC means [3, 2, 1].
+	for i, wantNum := range []int32{3, 2, 1} {
+		if targetOut.Attempts[i].AttemptNumber != wantNum {
+			t.Errorf("target mode DESC: Attempts[%d].AttemptNumber = %d, want %d", i, targetOut.Attempts[i].AttemptNumber, wantNum)
+		}
+	}
+
+	_, sessionOut, err := callHandler(t, s.attemptHistory, AttemptHistoryInput{
+		SessionID: strPtr(sess.Session.ID.String()),
+	})
+	if err != nil {
+		t.Fatalf("attemptHistory session: %v", err)
+	}
+	if len(sessionOut.Attempts) != 3 {
+		t.Fatalf("session attempts = %d, want 3", len(sessionOut.Attempts))
+	}
+	// session_id mode ASC means [1, 2, 3].
+	for i, wantNum := range []int32{1, 2, 3} {
+		if sessionOut.Attempts[i].AttemptNumber != wantNum {
+			t.Errorf("session mode ASC: Attempts[%d].AttemptNumber = %d, want %d", i, sessionOut.Attempts[i].AttemptNumber, wantNum)
+		}
+	}
+}
