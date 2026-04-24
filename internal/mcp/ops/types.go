@@ -60,4 +60,12 @@ type Meta struct {
 	Stability   Stability   `json:"stability"`
 	Since       string      `json:"since"`
 	Description string      `json:"description"`
+	// FieldEnums declares structured enum values per JSON property name
+	// for fields the Go jsonschema tag mechanism cannot express. Applied
+	// in addTool post-processing against the generated schema: for each
+	// (field, values) pair, if the generated schema has a top-level
+	// property with that name, its .Enum is populated. Clients reading
+	// tools/list see the enum structurally and can render a selector
+	// without parsing Description prose. Empty map = no enum injection.
+	FieldEnums map[string][]string `json:"field_enums,omitempty"`
 }

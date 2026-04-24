@@ -400,6 +400,9 @@ func toolResultText(text string) *mcp.CallToolResult {
 // If tool.InputSchema is nil, addTool generates the schema with FlexInt support.
 // Array fields in the schema are post-processed to remove nullable type
 // (Go slices generate ["null","array"] but MCP clients may stringify nullable arrays).
+// Enum values declared on ops.Meta.FieldEnums are injected into matching
+// top-level properties so `tools/list` advertises valid values structurally
+// without forcing clients to parse Description prose.
 func addTool[I, O any](s *Server, tool *mcp.Tool, handler func(context.Context, *mcp.CallToolRequest, I) (*mcp.CallToolResult, O, error)) {
 	if tool.InputSchema == nil {
 		var zero I
@@ -411,6 +414,7 @@ func addTool[I, O any](s *Server, tool *mcp.Tool, handler func(context.Context, 
 		}
 		fixNullableArrays(schema)
 		injectCallerIdentityField(schema)
+		injectFieldEnums(schema, tool.Name)
 		tool.InputSchema = schema
 	}
 
@@ -502,6 +506,35 @@ func fixNullableArrays(s *jsonschema.Schema) {
 		if len(prop.Properties) > 0 {
 			fixNullableArrays(prop)
 		}
+	}
+}
+
+// injectFieldEnums applies ops.Meta.FieldEnums to the generated schema —
+// for each (field, values) pair whose field matches a top-level property,
+// set that property's .Enum slice. Looked up by tool name against
+// ops.All() so addTool stays agnostic about the specific catalog shape.
+// Absent meta or empty FieldEnums is a no-op.
+func injectFieldEnums(schema *jsonschema.Schema, toolName string) {
+	var meta *ops.Meta
+	for i, m := range ops.All() {
+		if m.Name == toolName {
+			meta = &ops.All()[i]
+			break
+		}
+	}
+	if meta == nil || len(meta.FieldEnums) == 0 || schema.Properties == nil {
+		return
+	}
+	for field, values := range meta.FieldEnums {
+		prop, ok := schema.Properties[field]
+		if !ok || prop == nil {
+			continue
+		}
+		enumAny := make([]any, len(values))
+		for i, v := range values {
+			enumAny[i] = v
+		}
+		prop.Enum = enumAny
 	}
 }
 

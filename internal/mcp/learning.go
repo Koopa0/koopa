@@ -127,7 +127,13 @@ type ObservationInput struct {
 }
 
 type RecordAttemptOutput struct {
-	Attempt              learning.Attempt   `json:"attempt"`
+	Attempt learning.Attempt `json:"attempt"`
+	// CanonicalOutcome echoes the storage-form outcome that the caller's
+	// input mapped to. record_attempt accepts semantic synonyms (e.g.
+	// "needed help" → solved_with_hint); without this field the coach
+	// must introspect Attempt.Outcome to see what got normalized. Always
+	// populated; no omitempty.
+	CanonicalOutcome     string             `json:"canonical_outcome"`
 	ObservationsRecorded int                `json:"observations_recorded"`
 	ObservationWarnings  []string           `json:"observation_warnings,omitempty"`
 	PlanContext          []PlanContextEntry `json:"plan_context,omitempty"`
@@ -207,6 +213,7 @@ func (s *Server) recordAttempt(ctx context.Context, _ *mcp.CallToolRequest, inpu
 		"fsrs_review_failed", fsrsFailed)
 	return nil, RecordAttemptOutput{
 		Attempt:              *attempt,
+		CanonicalOutcome:     prep.outcome,
 		ObservationsRecorded: recorded,
 		ObservationWarnings:  obsWarnings,
 		PlanContext:          planCtx,
@@ -486,6 +493,15 @@ type LearningDashboardInput struct {
 	DueWithinHours   FlexInt `json:"due_within_hours,omitempty" jsonschema_description:"Retrieval view only. Extends the due cutoff into the future so the caller can preview what is due within the next N hours — e.g. 24 to find cards due by tomorrow. Default 0 = only cards already due now. Range 0..168 (one week). Other views ignore this field."`
 }
 
+// LearningDashboardOutput is the dashboard tool's response.
+//
+// The struct tags on this type do NOT reflect the actual JSON output.
+// MarshalJSON below is authoritative — it emits only the view-
+// specific field (always as []T, never nil), plus view and total.
+// Other views' fields are stripped to keep payload lean. When adding a
+// field, update MarshalJSON's switch or the tests will skip coverage
+// of the new view. The tags here are for Go-side scanning/reflection;
+// the wire format is what MarshalJSON writes.
 type LearningDashboardOutput struct {
 	View       string                     `json:"view"`
 	Total      int                        `json:"total"`
@@ -495,6 +511,42 @@ type LearningDashboardOutput struct {
 	Retrieval  []learning.RetrievalTarget `json:"retrieval,omitempty"`
 	Timeline   []learning.TimelineSession `json:"timeline,omitempty"`
 	Variations []learning.TargetRelation  `json:"variations,omitempty"`
+}
+
+// MarshalJSON emits {view, total, <view_key>: [...]} — the view-specific
+// slice is always present (as [] on empty) and other view keys are
+// absent. This keeps the wire shape stable regardless of whether the
+// view has data, so a client iterating response.mastery never hits
+// undefined or the wrong-key branch.
+//
+//nolint:gocritic // hugeParam: stdlib json.Marshaler interface takes value receiver
+func (o LearningDashboardOutput) MarshalJSON() ([]byte, error) {
+	base := map[string]any{"view": o.View, "total": o.Total}
+	switch o.View {
+	case "overview":
+		base["sessions"] = ensureSlice(o.Sessions)
+	case "mastery":
+		base["mastery"] = ensureSlice(o.Mastery)
+	case "weaknesses":
+		base["weaknesses"] = ensureSlice(o.Weaknesses)
+	case "retrieval":
+		base["retrieval"] = ensureSlice(o.Retrieval)
+	case "timeline":
+		base["timeline"] = ensureSlice(o.Timeline)
+	case "variations":
+		base["variations"] = ensureSlice(o.Variations)
+	}
+	return json.Marshal(base)
+}
+
+// ensureSlice converts a nil slice to an empty one of the same type so
+// encoding/json emits `[]` instead of `null`. Callers iterating the
+// result must not hit a nil dereference.
+func ensureSlice[T any](s []T) []T {
+	if s == nil {
+		return []T{}
+	}
+	return s
 }
 
 // MasteryRow is the MCP dashboard representation of a concept's mastery state —

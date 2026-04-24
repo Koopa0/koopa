@@ -210,6 +210,11 @@ func StartSession() Meta {
 }
 
 // RecordAttempt returns metadata for the in-session attempt recorder.
+// FieldEnums lists every accepted outcome value — both canonical DB
+// enums (solved_independent, solved_with_hint, ...) and the semantic
+// synonyms the coach is encouraged to type ("got it", "needed help",
+// ...). Sourced from learning.mapProblemSolving + learning.mapImmersive;
+// kept in sync by TestRecordAttemptEnumsCoverSynonyms.
 func RecordAttempt() Meta {
 	return Meta{
 		Name:        "record_attempt",
@@ -217,7 +222,25 @@ func RecordAttempt() Meta {
 		Writability: Additive,
 		Stability:   StabilityStable,
 		Since:       since,
-		Description: "Record an attempt within the active learning session. Accepts semantic outcomes ('got it', 'needed help', 'gave up') mapped to schema enums by session mode. Auto-creates learning targets and concepts. Both high and low confidence observations are persisted; dashboard filters at read time. Observation constraint: severity is only valid for signal='weakness'; passing severity on mastery/improvement will reject the entire observation (check observation_warnings in response).",
+		Description: "Record an attempt within the active learning session. Accepts semantic outcomes ('got it', 'needed help', 'gave up') mapped to schema enums by session mode. Response echoes canonical_outcome alongside the input so the coach sees the normalized storage form. Auto-creates learning targets and concepts. Both high and low confidence observations are persisted; dashboard filters at read time. Observation constraint: severity is only valid for signal='weakness'; passing severity on mastery/improvement will reject the entire observation (check observation_warnings in response).",
+		FieldEnums: map[string][]string{
+			"outcome": {
+				// Canonical DB-stored values.
+				"solved_independent", "solved_with_hint", "solved_after_solution",
+				"completed", "completed_with_support",
+				"incomplete", "gave_up",
+				// Semantic synonyms — problem_solving.
+				"got it", "solved it", "nailed it",
+				"needed help", "needed a hint", "got help",
+				"saw answer", "saw the answer", "saw the answer first",
+				"didn't finish", "not done",
+				"gave up", "stuck",
+				// Semantic synonyms — immersive (overlap with problem_solving
+				// for shared outcomes; duplicates are acceptable in the enum
+				// list since JSON Schema treats enum as a set).
+				"finished", "done", "needed support",
+			},
+		},
 	}
 }
 
@@ -234,6 +257,8 @@ func EndSession() Meta {
 }
 
 // LearningDashboard returns metadata for the learning analytics dashboard.
+// FieldEnums advertises the view + confidence_filter enums so tools/list
+// callers see valid values structurally without parsing Description prose.
 func LearningDashboard() Meta {
 	return Meta{
 		Name:        "learning_dashboard",
@@ -241,7 +266,11 @@ func LearningDashboard() Meta {
 		Writability: ReadOnly,
 		Stability:   StabilityStable,
 		Since:       since,
-		Description: "Learning analytics dashboard. Views: overview (sessions list), mastery (per-concept signal counts; mastery floor: <3 observations → always 'developing' regardless of signal distribution), weaknesses (cross-pattern weakness analysis by category+severity), retrieval (items with due <= now only; newly reviewed cards get future due dates and won't reappear until due), timeline (sessions with attempt stats by day), variations (problem relationship graph). Filter by domain and lookback period.",
+		Description: "Learning analytics dashboard. Views: overview (sessions list), mastery (per-concept signal counts; mastery floor: <3 observations → always 'developing' regardless of signal distribution), weaknesses (cross-pattern weakness analysis by category+severity), retrieval (items with due <= now only; newly reviewed cards get future due dates and won't reappear until due), timeline (sessions with attempt stats by day), variations (problem relationship graph). Filter by domain and lookback period. Response shape is stable across views: {view, total, <view_key>: [...]} — the view-specific array is always present (empty [] on no data), other view keys are absent.",
+		FieldEnums: map[string][]string{
+			"view":              {"overview", "mastery", "weaknesses", "retrieval", "timeline", "variations"},
+			"confidence_filter": {"high", "all"},
+		},
 	}
 }
 
