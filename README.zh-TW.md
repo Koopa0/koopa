@@ -7,14 +7,17 @@
 </p>
 
 <p align="center">
-  <p align="center">
-    <img src="https://img.shields.io/badge/Go-00ADD8?style=flat&logo=go&logoColor=white" alt="Go"/>
-    <img src="https://img.shields.io/badge/PostgreSQL-4169E1?style=flat&logo=postgresql&logoColor=white" alt="PostgreSQL"/>
-    <img src="https://img.shields.io/badge/Angular-DD0031?style=flat&logo=angular&logoColor=white" alt="Angular"/>
-    <img src="https://img.shields.io/badge/MCP-Claude-7F77DD?style=flat" alt="MCP"/>
-    <img src="https://img.shields.io/badge/pgvector-1536d-378ADD?style=flat" alt="pgvector"/>
-    <img src="https://img.shields.io/badge/FSRS-spaced_repetition-1D9E75?style=flat" alt="FSRS"/>
-  </p>
+  <a href="https://go.dev"><img src="https://img.shields.io/badge/Go-1.26.1+-00ADD8?style=flat&logo=go&logoColor=white" alt="Go 1.26.1+"/></a>
+  <a href="https://goreportcard.com/report/github.com/Koopa0/koopa"><img src="https://goreportcard.com/badge/github.com/Koopa0/koopa" alt="Go Report Card"/></a>
+  <a href="https://github.com/Koopa0/koopa/actions/workflows/ci.yml"><img src="https://github.com/Koopa0/koopa/actions/workflows/ci.yml/badge.svg" alt="CI"/></a>
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/PostgreSQL-4169E1?style=flat&logo=postgresql&logoColor=white" alt="PostgreSQL"/>
+  <img src="https://img.shields.io/badge/Angular-DD0031?style=flat&logo=angular&logoColor=white" alt="Angular"/>
+  <img src="https://img.shields.io/badge/MCP-Claude-7F77DD?style=flat" alt="MCP"/>
+  <img src="https://img.shields.io/badge/pgvector-1536d-378ADD?style=flat" alt="pgvector"/>
+  <img src="https://img.shields.io/badge/FSRS-spaced_repetition-1D9E75?style=flat" alt="FSRS"/>
 </p>
 
 **koopa** 是一個預設私有的個人作業系統，讓多個 AI agent 共享同一套語意運行時 — AI 讀取的是你的狀態，不是你的 prompt。

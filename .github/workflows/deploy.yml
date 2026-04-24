@@ -21,7 +21,11 @@ jobs:
           key: ${{ secrets.VPS_SSH_KEY }}
           script: |
             cd ~/koopa
-            git pull origin main
+            # fetch + hard reset instead of pull — production always mirrors
+            # origin exactly, survives force-push / history rewrites, and
+            # refuses to get stuck on divergent branches.
+            git fetch origin
+            git reset --hard origin/main
 
             # Silence Grafana alerts during deploy (5 min)
             export $(grep GRAFANA_ADMIN_PASSWORD ~/server/observability/.env)
