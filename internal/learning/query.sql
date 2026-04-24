@@ -454,3 +454,72 @@ numbered AS (
 SELECT count(*)::int AS streak
 FROM numbered
 WHERE grp = (SELECT grp FROM numbered ORDER BY d DESC LIMIT 1);
+
+-- ============================================================
+-- session_progress — in-session aggregate queries for the
+-- currently-active learning session. Backs MCP session_progress
+-- tool. Per-session rowset is tiny (2-10 attempts / 5-30
+-- observations); queries rely on idx_learning_attempts_session +
+-- idx_learning_attempt_observations_attempt for filter/join.
+-- ============================================================
+
+-- name: SessionProgressStats :one
+-- Single-row aggregate for the session: attempt count, paradigm split
+-- (problem_solving vs immersive), and total minutes per paradigm.
+-- Returns a row even with zero attempts (all counts zero).
+SELECT
+    COUNT(*)::bigint AS attempt_count,
+    COUNT(*) FILTER (WHERE paradigm = 'problem_solving')::bigint AS problem_solving_count,
+    COUNT(*) FILTER (WHERE paradigm = 'immersive')::bigint       AS immersive_count,
+    COALESCE(SUM(duration_minutes) FILTER (WHERE paradigm = 'problem_solving'), 0)::bigint AS problem_solving_minutes,
+    COALESCE(SUM(duration_minutes) FILTER (WHERE paradigm = 'immersive'), 0)::bigint       AS immersive_minutes
+FROM learning_attempts
+WHERE session_id = @session_id;
+
+-- name: SessionProgressConceptDist :many
+-- Observation rollup by specific concept for the session. One row per
+-- (slug, name, kind) touched. Sorted count DESC, slug ASC so ties are
+-- deterministic.
+SELECT c.slug, c.name, c.kind::text AS kind, COUNT(*)::bigint AS observation_count
+FROM learning_attempt_observations ao
+JOIN learning_attempts a ON a.id = ao.attempt_id
+JOIN concepts c          ON c.id = ao.concept_id
+WHERE a.session_id = @session_id
+GROUP BY c.slug, c.name, c.kind
+ORDER BY observation_count DESC, c.slug ASC;
+
+-- name: SessionProgressCategoryDist :many
+-- Observation rollup by (signal_type, category) for the session. Sort
+-- order: weakness first (dashboards emphasize weaknesses), then
+-- improvement, then mastery; within each signal, count DESC; within
+-- each count, category ASC.
+--
+-- observation_count in ORDER BY is an alias reference, not a column name —
+-- PostgreSQL permits alias references in ORDER BY as a non-standard
+-- extension. ELSE 99 routes any future signal_type enum value to the end
+-- of the sort rather than silently dropping it.
+SELECT ao.signal_type, ao.category, COUNT(*)::bigint AS observation_count
+FROM learning_attempt_observations ao
+JOIN learning_attempts a ON a.id = ao.attempt_id
+WHERE a.session_id = @session_id
+GROUP BY ao.signal_type, ao.category
+ORDER BY
+    CASE ao.signal_type
+        WHEN 'weakness'    THEN 1
+        WHEN 'improvement' THEN 2
+        WHEN 'mastery'     THEN 3
+        ELSE 99
+    END,
+    observation_count DESC,
+    ao.category ASC;
+
+-- name: LastEndedSession :one
+-- Most recent ended session for the {active: false} affordance path of
+-- session_progress — lets the caller pivot to
+-- attempt_history(session_id=...) without a separate lookup. Returns
+-- pgx.ErrNoRows if no session was ever ended.
+SELECT id, domain, session_mode, agent_note_id, daily_plan_item_id, started_at, ended_at, metadata, created_at, updated_at
+FROM learning_sessions
+WHERE ended_at IS NOT NULL
+ORDER BY ended_at DESC
+LIMIT 1;

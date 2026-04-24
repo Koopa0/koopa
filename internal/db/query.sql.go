@@ -5779,6 +5779,36 @@ func (q *Queries) ItemsByDateRange(ctx context.Context, arg ItemsByDateRangePara
 	return items, nil
 }
 
+const lastEndedSession = `-- name: LastEndedSession :one
+SELECT id, domain, session_mode, agent_note_id, daily_plan_item_id, started_at, ended_at, metadata, created_at, updated_at
+FROM learning_sessions
+WHERE ended_at IS NOT NULL
+ORDER BY ended_at DESC
+LIMIT 1
+`
+
+// Most recent ended session for the {active: false} affordance path of
+// session_progress — lets the caller pivot to
+// attempt_history(session_id=...) without a separate lookup. Returns
+// pgx.ErrNoRows if no session was ever ended.
+func (q *Queries) LastEndedSession(ctx context.Context) (LearningSession, error) {
+	row := q.db.QueryRow(ctx, lastEndedSession)
+	var i LearningSession
+	err := row.Scan(
+		&i.ID,
+		&i.Domain,
+		&i.SessionMode,
+		&i.AgentNoteID,
+		&i.DailyPlanItemID,
+		&i.StartedAt,
+		&i.EndedAt,
+		&i.Metadata,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const latestAgentNoteByKind = `-- name: LatestAgentNoteByKind :one
 SELECT id, kind, created_by, content, metadata, entry_date, created_at
 FROM agent_notes
@@ -9626,6 +9656,146 @@ func (q *Queries) SessionByID(ctx context.Context, id uuid.UUID) (LearningSessio
 		&i.Metadata,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const sessionProgressCategoryDist = `-- name: SessionProgressCategoryDist :many
+SELECT ao.signal_type, ao.category, COUNT(*)::bigint AS observation_count
+FROM learning_attempt_observations ao
+JOIN learning_attempts a ON a.id = ao.attempt_id
+WHERE a.session_id = $1
+GROUP BY ao.signal_type, ao.category
+ORDER BY
+    CASE ao.signal_type
+        WHEN 'weakness'    THEN 1
+        WHEN 'improvement' THEN 2
+        WHEN 'mastery'     THEN 3
+        ELSE 99
+    END,
+    observation_count DESC,
+    ao.category ASC
+`
+
+type SessionProgressCategoryDistRow struct {
+	SignalType       string `json:"signal_type"`
+	Category         string `json:"category"`
+	ObservationCount int64  `json:"observation_count"`
+}
+
+// Observation rollup by (signal_type, category) for the session. Sort
+// order: weakness first (dashboards emphasize weaknesses), then
+// improvement, then mastery; within each signal, count DESC; within
+// each count, category ASC.
+//
+// observation_count in ORDER BY is an alias reference, not a column name —
+// PostgreSQL permits alias references in ORDER BY as a non-standard
+// extension. ELSE 99 routes any future signal_type enum value to the end
+// of the sort rather than silently dropping it.
+func (q *Queries) SessionProgressCategoryDist(ctx context.Context, sessionID uuid.UUID) ([]SessionProgressCategoryDistRow, error) {
+	rows, err := q.db.Query(ctx, sessionProgressCategoryDist, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []SessionProgressCategoryDistRow{}
+	for rows.Next() {
+		var i SessionProgressCategoryDistRow
+		if err := rows.Scan(&i.SignalType, &i.Category, &i.ObservationCount); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const sessionProgressConceptDist = `-- name: SessionProgressConceptDist :many
+SELECT c.slug, c.name, c.kind::text AS kind, COUNT(*)::bigint AS observation_count
+FROM learning_attempt_observations ao
+JOIN learning_attempts a ON a.id = ao.attempt_id
+JOIN concepts c          ON c.id = ao.concept_id
+WHERE a.session_id = $1
+GROUP BY c.slug, c.name, c.kind
+ORDER BY observation_count DESC, c.slug ASC
+`
+
+type SessionProgressConceptDistRow struct {
+	Slug             string `json:"slug"`
+	Name             string `json:"name"`
+	Kind             string `json:"kind"`
+	ObservationCount int64  `json:"observation_count"`
+}
+
+// Observation rollup by specific concept for the session. One row per
+// (slug, name, kind) touched. Sorted count DESC, slug ASC so ties are
+// deterministic.
+func (q *Queries) SessionProgressConceptDist(ctx context.Context, sessionID uuid.UUID) ([]SessionProgressConceptDistRow, error) {
+	rows, err := q.db.Query(ctx, sessionProgressConceptDist, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []SessionProgressConceptDistRow{}
+	for rows.Next() {
+		var i SessionProgressConceptDistRow
+		if err := rows.Scan(
+			&i.Slug,
+			&i.Name,
+			&i.Kind,
+			&i.ObservationCount,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const sessionProgressStats = `-- name: SessionProgressStats :one
+
+SELECT
+    COUNT(*)::bigint AS attempt_count,
+    COUNT(*) FILTER (WHERE paradigm = 'problem_solving')::bigint AS problem_solving_count,
+    COUNT(*) FILTER (WHERE paradigm = 'immersive')::bigint       AS immersive_count,
+    COALESCE(SUM(duration_minutes) FILTER (WHERE paradigm = 'problem_solving'), 0)::bigint AS problem_solving_minutes,
+    COALESCE(SUM(duration_minutes) FILTER (WHERE paradigm = 'immersive'), 0)::bigint       AS immersive_minutes
+FROM learning_attempts
+WHERE session_id = $1
+`
+
+type SessionProgressStatsRow struct {
+	AttemptCount          int64 `json:"attempt_count"`
+	ProblemSolvingCount   int64 `json:"problem_solving_count"`
+	ImmersiveCount        int64 `json:"immersive_count"`
+	ProblemSolvingMinutes int64 `json:"problem_solving_minutes"`
+	ImmersiveMinutes      int64 `json:"immersive_minutes"`
+}
+
+// ============================================================
+// session_progress — in-session aggregate queries for the
+// currently-active learning session. Backs MCP session_progress
+// tool. Per-session rowset is tiny (2-10 attempts / 5-30
+// observations); queries rely on idx_learning_attempts_session +
+// idx_learning_attempt_observations_attempt for filter/join.
+// ============================================================
+// Single-row aggregate for the session: attempt count, paradigm split
+// (problem_solving vs immersive), and total minutes per paradigm.
+// Returns a row even with zero attempts (all counts zero).
+func (q *Queries) SessionProgressStats(ctx context.Context, sessionID uuid.UUID) (SessionProgressStatsRow, error) {
+	row := q.db.QueryRow(ctx, sessionProgressStats, sessionID)
+	var i SessionProgressStatsRow
+	err := row.Scan(
+		&i.AttemptCount,
+		&i.ProblemSolvingCount,
+		&i.ImmersiveCount,
+		&i.ProblemSolvingMinutes,
+		&i.ImmersiveMinutes,
 	)
 	return i, err
 }
