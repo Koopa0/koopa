@@ -686,7 +686,7 @@ func TestHandler_Create_DefaultsApplied(t *testing.T) {
 	// does NOT return a 400 for the missing optional fields.
 	// We use recover to catch the panic from nil store.
 	func() {
-		defer func() { recover() }() //nolint:errcheck // expected panic from nil store
+		defer func() { recover() }()
 		h.Create(w, req)
 	}()
 
@@ -719,7 +719,7 @@ func TestHandler_BySlug_ReturnsJSON(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	func() {
-		defer func() { recover() }() //nolint:errcheck // expected panic from nil store
+		defer func() { recover() }()
 		h.PublicBySlug(w, req)
 	}()
 

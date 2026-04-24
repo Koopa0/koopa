@@ -13,21 +13,31 @@ import (
 // attempt_history is the read-side counterpart to record_attempt. It exists
 // to make the Improvement Verification Loop executable in real sessions:
 // when the user revisits a problem, the coach needs to know "how did this
-// go last time?" — outcome, stuck_at, approach, and any 8-step metadata.
+// go last time?" — outcome, stuck_at, approach, 8-step metadata, and —
+// on every mode — the full observation list per attempt so the coach can
+// see which concepts were flagged (with confidence label) without a
+// second query.
 //
 // Three entry points (exactly one required):
 //
 //   - target   — by title + domain. Looks up the learning target via
 //     find-by-domain-and-title (NOT find-or-create — this is a read tool;
-//     creating targets here would silently pollute the catalog). Backs the
-//     core "this problem last time" query.
+//     creating targets here would silently pollute the catalog). Primary
+//     IVL entry point: "how did this problem go last time?"
 //   - concept  — by concept slug. Returns attempts that produced an
-//     observation about that concept, plus the matched observation's
-//     signal/category/severity/detail so the caller can see WHY each
-//     attempt is in the result set.
+//     observation about that concept. Each returned attempt carries a
+//     matched_observation_id pointer indicating which observation in
+//     Attempt.Observations drove the query match.
 //   - session  — by session UUID. Returns attempts for a specific past
-//     session in chronological order. Solves the "what did I do yesterday"
-//     review use case that end_session's one-shot response cannot.
+//     session in chronological order.
+//
+// Sort order (documented invariant, enforced by the backing SQL queries):
+//   - target     — attempted_at DESC (newest first)
+//   - concept    — attempted_at DESC (newest first)
+//   - session_id — attempted_at ASC  (oldest first, time axis)
+//
+// Observations within each attempt are always returned in Position ASC
+// (coach-insertion order recorded at record_attempt time).
 //
 // Returning empty lists with resolved=false is the design for "not found":
 // "the user has never attempted this problem" is a legal answer to
@@ -37,10 +47,19 @@ import (
 // Exactly one of {target, concept_slug, session_id} must be provided.
 type AttemptHistoryInput struct {
 	Target      *AttemptHistoryTargetRef `json:"target,omitempty" jsonschema_description:"Look up by learning target (title+domain). Mutually exclusive with concept_slug and session_id."`
-	ConceptSlug *string                  `json:"concept_slug,omitempty" jsonschema_description:"Look up by concept slug. Returns attempts that explicitly observed this concept, with the matched observation attached. Mutually exclusive with target and session_id."`
+	ConceptSlug *string                  `json:"concept_slug,omitempty" jsonschema_description:"Look up by concept slug. Returns attempts that explicitly observed this concept, with matched_observation_id on each attempt pointing into its observations list. Mutually exclusive with target and session_id."`
 	SessionID   *string                  `json:"session_id,omitempty" jsonschema_description:"Look up all attempts within a specific past session, oldest first. Mutually exclusive with target and concept_slug."`
 	Domain      *string                  `json:"domain,omitempty" jsonschema_description:"Domain for concept_slug lookup (defaults to 'leetcode'). Ignored for target (which carries its own domain) and session_id."`
 	MaxResults  FlexInt                  `json:"max_results,omitempty" jsonschema_description:"Max attempts to return (default 10, max 100). Ignored for session_id which always returns the full session."`
+	// IncludeObservations defaults to true — every attempt carries its full
+	// observation list with confidence labels. Aggregate callers (dashboards,
+	// weekly rollups) that only need attempt-level summary can pass false to
+	// skip the secondary batch fetch. concept_slug mode always keeps
+	// matched_observation_id populated even when observations are skipped;
+	// the pointer dangles in that case (the observation exists in DB but
+	// isn't in this response), so callers that need to display the matched
+	// observation should keep include_observations=true.
+	IncludeObservations *bool `json:"include_observations,omitempty" jsonschema_description:"Whether to populate observations[] on each attempt. Default true. Pass false for aggregate/summary callers that don't need per-observation detail. concept_slug mode preserves matched_observation_id regardless, but the pointer dangles when observations are skipped."`
 }
 
 // AttemptHistoryTargetRef identifies a learning target by title + domain.
@@ -84,22 +103,23 @@ func (s *Server) attemptHistory(ctx context.Context, _ *mcp.CallToolRequest, inp
 	}
 
 	limit := int32(clamp(int(input.MaxResults), 1, 100, 10)) //nolint:gosec // G115: clamped to 1..100
+	includeObs := input.IncludeObservations == nil || *input.IncludeObservations
 
 	switch {
 	case input.Target != nil:
-		return s.attemptHistoryByTarget(ctx, input.Target, limit)
+		return s.attemptHistoryByTarget(ctx, input.Target, limit, includeObs)
 	case input.ConceptSlug != nil:
 		domain := "leetcode"
 		if input.Domain != nil && *input.Domain != "" {
 			domain = *input.Domain
 		}
-		return s.attemptHistoryByConcept(ctx, domain, *input.ConceptSlug, limit)
+		return s.attemptHistoryByConcept(ctx, domain, *input.ConceptSlug, limit, includeObs)
 	default:
-		return s.attemptHistoryBySession(ctx, *input.SessionID)
+		return s.attemptHistoryBySession(ctx, *input.SessionID, includeObs)
 	}
 }
 
-func (s *Server) attemptHistoryByTarget(ctx context.Context, ref *AttemptHistoryTargetRef, limit int32) (*mcp.CallToolResult, AttemptHistoryOutput, error) {
+func (s *Server) attemptHistoryByTarget(ctx context.Context, ref *AttemptHistoryTargetRef, limit int32, includeObs bool) (*mcp.CallToolResult, AttemptHistoryOutput, error) {
 	if ref.Title == "" {
 		return nil, AttemptHistoryOutput{}, fmt.Errorf("attempt_history: target.title is required")
 	}
@@ -128,6 +148,11 @@ func (s *Server) attemptHistoryByTarget(ctx context.Context, ref *AttemptHistory
 	if attempts == nil {
 		attempts = []learning.Attempt{}
 	}
+	if includeObs {
+		if err := s.learn.AttachObservations(ctx, attempts); err != nil {
+			return nil, AttemptHistoryOutput{}, fmt.Errorf("attempt_history: %w", err)
+		}
+	}
 	return nil, AttemptHistoryOutput{
 		Mode:     "target",
 		Resolved: true,
@@ -136,7 +161,7 @@ func (s *Server) attemptHistoryByTarget(ctx context.Context, ref *AttemptHistory
 	}, nil
 }
 
-func (s *Server) attemptHistoryByConcept(ctx context.Context, domain, slug string, limit int32) (*mcp.CallToolResult, AttemptHistoryOutput, error) {
+func (s *Server) attemptHistoryByConcept(ctx context.Context, domain, slug string, limit int32, includeObs bool) (*mcp.CallToolResult, AttemptHistoryOutput, error) {
 	concept, err := s.learn.ConceptBySlug(ctx, domain, slug)
 	if err != nil {
 		return nil, AttemptHistoryOutput{
@@ -154,6 +179,11 @@ func (s *Server) attemptHistoryByConcept(ctx context.Context, domain, slug strin
 	if attempts == nil {
 		attempts = []learning.Attempt{}
 	}
+	if includeObs {
+		if err := s.learn.AttachObservations(ctx, attempts); err != nil {
+			return nil, AttemptHistoryOutput{}, fmt.Errorf("attempt_history: %w", err)
+		}
+	}
 	return nil, AttemptHistoryOutput{
 		Mode:     "concept",
 		Resolved: true,
@@ -162,7 +192,7 @@ func (s *Server) attemptHistoryByConcept(ctx context.Context, domain, slug strin
 	}, nil
 }
 
-func (s *Server) attemptHistoryBySession(ctx context.Context, sessionIDStr string) (*mcp.CallToolResult, AttemptHistoryOutput, error) {
+func (s *Server) attemptHistoryBySession(ctx context.Context, sessionIDStr string, includeObs bool) (*mcp.CallToolResult, AttemptHistoryOutput, error) {
 	sessionID, err := uuid.Parse(sessionIDStr)
 	if err != nil {
 		return nil, AttemptHistoryOutput{}, fmt.Errorf("attempt_history: invalid session_id: %w", err)
@@ -174,6 +204,11 @@ func (s *Server) attemptHistoryBySession(ctx context.Context, sessionIDStr strin
 	}
 	if attempts == nil {
 		attempts = []learning.Attempt{}
+	}
+	if includeObs {
+		if err := s.learn.AttachObservations(ctx, attempts); err != nil {
+			return nil, AttemptHistoryOutput{}, fmt.Errorf("attempt_history: %w", err)
+		}
 	}
 	// Sessions are validated by existence — empty result on a real session
 	// (never had attempts recorded) returns resolved=true with an empty list.

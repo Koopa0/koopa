@@ -7,7 +7,6 @@ import (
 	"github.com/google/go-cmp/cmp"
 )
 
-//nolint:gocognit // test complexity is acceptable for comprehensive table-driven tests
 func TestProposalRoundTrip(t *testing.T) {
 	secret := []byte("test-secret-32-bytes-long-enough")
 

@@ -136,7 +136,6 @@ func assertEventCount(t *testing.T, sessions []Session, idx, want int) {
 
 // TestGroupSessions_Adversarial adds boundary and adversarial cases beyond the happy-path table.
 //
-//nolint:gocognit,gocyclo // adversarial table; high branch count is intentional
 func TestGroupSessions_Adversarial(t *testing.T) {
 	t.Parallel()
 

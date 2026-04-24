@@ -7,7 +7,6 @@ import (
 	"github.com/google/go-cmp/cmp"
 )
 
-//nolint:gocognit // table-driven test; loop body asserts shape across many cases
 func TestGroupChangelog(t *testing.T) {
 	t.Parallel()
 

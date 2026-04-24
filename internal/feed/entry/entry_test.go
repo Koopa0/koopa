@@ -254,7 +254,6 @@ func TestHandler_SubmitFeedback_InvalidFeedbackValue(t *testing.T) {
 	}
 }
 
-//nolint:gocognit // table-driven HTTP handler coverage; splitting duplicates setup
 func TestHandler_List_QueryParams(t *testing.T) {
 	t.Parallel()
 

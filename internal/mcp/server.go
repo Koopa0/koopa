@@ -199,6 +199,13 @@ func NewServer(pool *pgxpool.Pool, logger *slog.Logger, opts ...ServerOption) *S
 
 	// --- Intent & a2a ---
 	addTool(s, toolFrom(ops.ProposeCommitment), s.proposeCommitment)
+	addTool(s, toolFrom(ops.ProposeGoal), s.proposeGoal)
+	addTool(s, toolFrom(ops.ProposeProject), s.proposeProject)
+	addTool(s, toolFrom(ops.ProposeMilestone), s.proposeMilestone)
+	addTool(s, toolFrom(ops.ProposeDirective), s.proposeDirective)
+	addTool(s, toolFrom(ops.ProposeHypothesis), s.proposeHypothesis)
+	addTool(s, toolFrom(ops.ProposeLearningPlan), s.proposeLearningPlan)
+	addTool(s, toolFrom(ops.ProposeLearningDomain), s.proposeLearningDomain)
 	addTool(s, toolFrom(ops.CommitProposal), s.commitProposal)
 	addTool(s, toolFrom(ops.GoalProgress), s.goalProgress)
 	addTool(s, toolFrom(ops.FileReport), s.fileReport)
@@ -214,6 +221,7 @@ func NewServer(pool *pgxpool.Pool, logger *slog.Logger, opts ...ServerOption) *S
 	addTool(s, toolFrom(ops.RecommendNextTarget), s.recommendNextTarget)
 	addTool(s, toolFrom(ops.AttemptHistory), s.attemptHistory)
 	addTool(s, toolFrom(ops.ManagePlan), s.managePlan)
+	addTool(s, toolFrom(ops.SessionProgress), s.sessionProgress)
 
 	// --- Content lifecycle (flat tools) ---
 	addTool(s, toolFrom(ops.CreateContent), s.createContentTool)
@@ -399,6 +407,9 @@ func toolResultText(text string) *mcp.CallToolResult {
 // If tool.InputSchema is nil, addTool generates the schema with FlexInt support.
 // Array fields in the schema are post-processed to remove nullable type
 // (Go slices generate ["null","array"] but MCP clients may stringify nullable arrays).
+// Enum values declared on ops.Meta.FieldEnums are injected into matching
+// top-level properties so `tools/list` advertises valid values structurally
+// without forcing clients to parse Description prose.
 func addTool[I, O any](s *Server, tool *mcp.Tool, handler func(context.Context, *mcp.CallToolRequest, I) (*mcp.CallToolResult, O, error)) {
 	if tool.InputSchema == nil {
 		var zero I
@@ -410,6 +421,7 @@ func addTool[I, O any](s *Server, tool *mcp.Tool, handler func(context.Context, 
 		}
 		fixNullableArrays(schema)
 		injectCallerIdentityField(schema)
+		injectFieldEnums(schema, tool.Name)
 		tool.InputSchema = schema
 	}
 
@@ -501,6 +513,35 @@ func fixNullableArrays(s *jsonschema.Schema) {
 		if len(prop.Properties) > 0 {
 			fixNullableArrays(prop)
 		}
+	}
+}
+
+// injectFieldEnums applies ops.Meta.FieldEnums to the generated schema —
+// for each (field, values) pair whose field matches a top-level property,
+// set that property's .Enum slice. Looked up by tool name against
+// ops.All() so addTool stays agnostic about the specific catalog shape.
+// Absent meta or empty FieldEnums is a no-op.
+func injectFieldEnums(schema *jsonschema.Schema, toolName string) {
+	var meta *ops.Meta
+	for i, m := range ops.All() {
+		if m.Name == toolName {
+			meta = &ops.All()[i]
+			break
+		}
+	}
+	if meta == nil || len(meta.FieldEnums) == 0 || schema.Properties == nil {
+		return
+	}
+	for field, values := range meta.FieldEnums {
+		prop, ok := schema.Properties[field]
+		if !ok || prop == nil {
+			continue
+		}
+		enumAny := make([]any, len(values))
+		for i, v := range values {
+			enumAny[i] = v
+		}
+		prop.Enum = enumAny
 	}
 }
 

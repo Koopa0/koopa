@@ -20,7 +20,7 @@ jobs:
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           script: |
-            cd ~/koopa
+            cd ~/koopa0.dev
             # fetch + hard reset instead of pull — production always mirrors
             # origin exactly, survives force-push / history rewrites, and
             # refuses to get stuck on divergent branches.

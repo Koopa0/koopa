@@ -300,7 +300,6 @@ func TestAppendTopN(t *testing.T) {
 
 // TestBuildGraphFromTopics verifies node/link generation from content nodes.
 //
-//nolint:gocognit,gocyclo // graph-shape assertions; splitting loses readability
 func TestBuildGraphFromTopics(t *testing.T) {
 	t.Parallel()
 

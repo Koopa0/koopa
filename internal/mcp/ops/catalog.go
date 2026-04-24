@@ -113,15 +113,106 @@ func QueryAgentNotes() Meta {
 	}
 }
 
-// ProposeCommitment returns metadata for the high-commitment entity preview tool.
+// ProposeCommitment returns metadata for the deprecated Wave-1 multiplexer.
+// Forwards to the typed flat handlers (propose_goal, propose_directive, …)
+// during the 2-week deprecation window (2026-04-24 → 2026-05-08). Removal
+// is tracked in .agents/shim-removal-checklist-2026-05-08.md.
 func ProposeCommitment() Meta {
 	return Meta{
 		Name:        "propose_commitment",
 		Domain:      DomainMeta,
 		Writability: ReadOnly,
-		Stability:   StabilityStable,
+		Stability:   StabilityDeprecated,
 		Since:       since,
-		Description: "Propose creating a goal, project, milestone, directive, hypothesis, learning_plan, or learning_domain. Returns a preview and signed proposal token. Does NOT write to the database. Use when the user wants to create a high-commitment entity — present the preview for approval before calling commit_proposal.",
+		Description: "DEPRECATED 2026-04-24 (sunset 2026-05-08) — use propose_goal, propose_project, propose_milestone, propose_directive, propose_hypothesis, propose_learning_plan, propose_learning_domain. Shim forwards to the typed handler based on the type field; warnings array carries a caller-visible deprecation notice. Migrate call sites to the flat tool whose name matches the type you were passing.",
+	}
+}
+
+// ProposeGoal returns metadata for the flat propose_goal tool.
+func ProposeGoal() Meta {
+	return Meta{
+		Name:        "propose_goal",
+		Domain:      DomainMeta,
+		Writability: ReadOnly,
+		Stability:   StabilityStable,
+		Since:       "1.1.0",
+		Description: "Propose a goal (quarterly or multi-quarter commitment, optionally scoped to an area and given a target deadline). Returns a preview + signed proposal token — does NOT write to the database. Requires commit_proposal to finalize.",
+	}
+}
+
+// ProposeProject returns metadata for the flat propose_project tool.
+func ProposeProject() Meta {
+	return Meta{
+		Name:        "propose_project",
+		Domain:      DomainMeta,
+		Writability: ReadOnly,
+		Stability:   StabilityStable,
+		Since:       "1.1.0",
+		Description: "Propose a project (concrete work unit that can be linked to a goal and an area). Returns a preview + signed proposal token — does NOT write to the database. Requires commit_proposal to finalize.",
+	}
+}
+
+// ProposeMilestone returns metadata for the flat propose_milestone tool.
+func ProposeMilestone() Meta {
+	return Meta{
+		Name:        "propose_milestone",
+		Domain:      DomainMeta,
+		Writability: ReadOnly,
+		Stability:   StabilityStable,
+		Since:       "1.1.0",
+		Description: "Propose a milestone (progress marker scoped to a parent goal, with an optional target deadline). Returns a preview + signed proposal token — does NOT write to the database. Requires commit_proposal to finalize.",
+	}
+}
+
+// ProposeDirective returns metadata for the flat propose_directive tool.
+// FieldEnums advertises the priority enum structurally.
+func ProposeDirective() Meta {
+	return Meta{
+		Name:        "propose_directive",
+		Domain:      DomainMeta,
+		Writability: ReadOnly,
+		Stability:   StabilityStable,
+		Since:       "1.1.0",
+		Description: "Propose a directive (inter-agent work request targeting a named agent, carrying an a2a.Part array as request_parts). Returns a preview + signed proposal token — does NOT write to the database. Requires commit_proposal to finalize. Capability pre-check (SubmitTasks) runs at propose time; unauthorized callers fail fast without producing a signed token.",
+		FieldEnums: map[string][]string{
+			"priority": {"high", "medium", "low"},
+		},
+	}
+}
+
+// ProposeHypothesis returns metadata for the flat propose_hypothesis tool.
+func ProposeHypothesis() Meta {
+	return Meta{
+		Name:        "propose_hypothesis",
+		Domain:      DomainMeta,
+		Writability: ReadOnly,
+		Stability:   StabilityStable,
+		Since:       "1.1.0",
+		Description: "Propose a hypothesis (falsifiable claim with an invalidation condition and narrative content). Returns a preview + signed proposal token — does NOT write to the database. Requires commit_proposal to finalize. Per mcp-decision-policy §4, hypotheses must carry a concrete invalidation_condition; narrative reflections without a falsifiable claim belong in write_agent_note(kind=reflection) instead.",
+	}
+}
+
+// ProposeLearningPlan returns metadata for the flat propose_learning_plan tool.
+func ProposeLearningPlan() Meta {
+	return Meta{
+		Name:        "propose_learning_plan",
+		Domain:      DomainMeta,
+		Writability: ReadOnly,
+		Stability:   StabilityStable,
+		Since:       "1.1.0",
+		Description: "Propose a learning plan (committed curriculum with a title + domain + optional parent goal). Returns a preview + signed proposal token — does NOT write to the database. Requires commit_proposal to finalize. Plan entries are added via manage_plan after the plan commits.",
+	}
+}
+
+// ProposeLearningDomain returns metadata for the flat propose_learning_domain tool.
+func ProposeLearningDomain() Meta {
+	return Meta{
+		Name:        "propose_learning_domain",
+		Domain:      DomainMeta,
+		Writability: ReadOnly,
+		Stability:   StabilityStable,
+		Since:       "1.1.0",
+		Description: "Propose a learning domain (FK target for concepts/targets/sessions/plans — e.g. 'leetcode', 'japanese'). Returns a preview + signed proposal token — does NOT write to the database. Requires commit_proposal to finalize. Slug must match pattern ^[a-z][a-z0-9-]*$.",
 	}
 }
 
@@ -210,6 +301,11 @@ func StartSession() Meta {
 }
 
 // RecordAttempt returns metadata for the in-session attempt recorder.
+// FieldEnums lists every accepted outcome value — both canonical DB
+// enums (solved_independent, solved_with_hint, ...) and the semantic
+// synonyms the coach is encouraged to type ("got it", "needed help",
+// ...). Sourced from learning.mapProblemSolving + learning.mapImmersive;
+// kept in sync by TestRecordAttemptEnumsCoverSynonyms.
 func RecordAttempt() Meta {
 	return Meta{
 		Name:        "record_attempt",
@@ -217,7 +313,25 @@ func RecordAttempt() Meta {
 		Writability: Additive,
 		Stability:   StabilityStable,
 		Since:       since,
-		Description: "Record an attempt within the active learning session. Accepts semantic outcomes ('got it', 'needed help', 'gave up') mapped to schema enums by session mode. Auto-creates learning targets and concepts. Both high and low confidence observations are persisted; dashboard filters at read time. Observation constraint: severity is only valid for signal='weakness'; passing severity on mastery/improvement will reject the entire observation (check observation_warnings in response).",
+		Description: "Record an attempt within the active learning session. Accepts semantic outcomes ('got it', 'needed help', 'gave up') mapped to schema enums by session mode. Response echoes canonical_outcome alongside the input so the coach sees the normalized storage form. Auto-creates learning targets and concepts. Both high and low confidence observations are persisted; dashboard filters at read time. Observation constraint: severity is only valid for signal='weakness'; passing severity on mastery/improvement will reject the entire observation (check observation_warnings in response).",
+		FieldEnums: map[string][]string{
+			"outcome": {
+				// Canonical DB-stored values.
+				"solved_independent", "solved_with_hint", "solved_after_solution",
+				"completed", "completed_with_support",
+				"incomplete", "gave_up",
+				// Semantic synonyms — problem_solving.
+				"got it", "solved it", "nailed it",
+				"needed help", "needed a hint", "got help",
+				"saw answer", "saw the answer", "saw the answer first",
+				"didn't finish", "not done",
+				"gave up", "stuck",
+				// Semantic synonyms — immersive (overlap with problem_solving
+				// for shared outcomes; duplicates are acceptable in the enum
+				// list since JSON Schema treats enum as a set).
+				"finished", "done", "needed support",
+			},
+		},
 	}
 }
 
@@ -234,6 +348,8 @@ func EndSession() Meta {
 }
 
 // LearningDashboard returns metadata for the learning analytics dashboard.
+// FieldEnums advertises the view + confidence_filter enums so tools/list
+// callers see valid values structurally without parsing Description prose.
 func LearningDashboard() Meta {
 	return Meta{
 		Name:        "learning_dashboard",
@@ -241,7 +357,11 @@ func LearningDashboard() Meta {
 		Writability: ReadOnly,
 		Stability:   StabilityStable,
 		Since:       since,
-		Description: "Learning analytics dashboard. Views: overview (sessions list), mastery (per-concept signal counts; mastery floor: <3 observations → always 'developing' regardless of signal distribution), weaknesses (cross-pattern weakness analysis by category+severity), retrieval (items with due <= now only; newly reviewed cards get future due dates and won't reappear until due), timeline (sessions with attempt stats by day), variations (problem relationship graph). Filter by domain and lookback period.",
+		Description: "Learning analytics dashboard. Views: overview (sessions list), mastery (per-concept signal counts; mastery floor: <3 observations → always 'developing' regardless of signal distribution), weaknesses (cross-pattern weakness analysis by category+severity), retrieval (items with due <= now only; newly reviewed cards get future due dates and won't reappear until due), timeline (sessions with attempt stats by day), variations (problem relationship graph). Filter by domain and lookback period. Response shape is stable across views: {view, total, <view_key>: [...]} — the view-specific array is always present (empty [] on no data), other view keys are absent.",
+		FieldEnums: map[string][]string{
+			"view":              {"overview", "mastery", "weaknesses", "retrieval", "timeline", "variations"},
+			"confidence_filter": {"high", "all"},
+		},
 	}
 }
 
@@ -266,7 +386,7 @@ func AttemptHistory() Meta {
 		Writability: ReadOnly,
 		Stability:   StabilityStable,
 		Since:       since,
-		Description: "Read-side counterpart to record_attempt. Three lookup modes (exactly one required): item (title+domain — returns this problem's attempt history for Improvement Verification Loop), concept_slug (returns attempts that observed the concept, with the matched observation attached), session_id (returns all attempts for a past session). Empty result with resolved=false means the lookup target does not exist.",
+		Description: "Read-side counterpart to record_attempt. Three lookup modes (exactly one required): target (title+domain — primary Improvement Verification Loop entry for 'how did this problem go last time'), concept_slug (returns attempts that observed the concept), session_id (returns all attempts for a past session, oldest first). Every returned attempt carries its full observations list (each with confidence label) and — on concept_slug mode — a matched_observation_id pointer into that list indicating which observation drove the query match. Observations within each attempt are ordered by coach-insertion (position ASC). Sort order: target/concept_slug DESC, session_id ASC. Empty result with resolved=false means the lookup target does not exist. Example (concept_slug, include_observations=false): {\"mode\":\"concept\",\"resolved\":true,\"attempts\":[{\"id\":\"...\",\"outcome\":\"solved_with_hint\",\"observations\":null,\"matched_observation_id\":\"obs-uuid\"}]} — matched_observation_id is still populated because the query did match an observation even though the list is skipped; pass include_observations=true (default) to see the observation itself.",
 	}
 }
 
@@ -279,6 +399,18 @@ func ManagePlan() Meta {
 		Stability:   StabilityStable,
 		Since:       since,
 		Description: "Learning plan lifecycle and entries. Actions: add_entries (accepts learning_target_id OR title for find-or-create using plan domain), remove_entries (draft only), update_entry (complete/skip/substitute), reorder, update_plan (activate/pause/complete/abandon), progress. The progress action returns aggregate counts plus a flat entry list with plan_entry_id, learning_target_id, title, position, status, phase — call it before update_entry to look up plan_entry_id.",
+	}
+}
+
+// SessionProgress returns metadata for the in-session aggregate tool.
+func SessionProgress() Meta {
+	return Meta{
+		Name:        "session_progress",
+		Domain:      DomainLearning,
+		Writability: ReadOnly,
+		Stability:   StabilityStable,
+		Since:       "1.1.0",
+		Description: "In-session aggregate for the currently-active learning session: attempt count, elapsed time, paradigm distribution (problem_solving vs immersive with total minutes), concept slug distribution, and observation category (signal_type × category) distribution. Scope is the ACTIVE session only — when no session is active, returns {active: false, last_ended_session_id, last_ended_at} so the caller can pivot to attempt_history(session_id=...) for past-session review; this is an affordance, not a fallback, and aggregate fields are NOT populated for the ended session. Does NOT return concept kind distribution (pattern/skill/principle) because kind is currently auto-assigned to 'skill' for all session-created concepts; tracking would be trivial noise — see HERMES W-10 if kind discrimination becomes meaningful. paradigm_distribution is informational only — most sessions are single-paradigm by design, so do not infer mixing-ratio intent from a 0/N split. Distinct from session_delta, which is a 24h pan-feature snapshot (todos + agent notes + session count) not scoped to any learning_session.",
 	}
 }
 
@@ -492,6 +624,13 @@ func All() []Meta {
 		WriteAgentNote(),
 		QueryAgentNotes(),
 		ProposeCommitment(),
+		ProposeGoal(),
+		ProposeProject(),
+		ProposeMilestone(),
+		ProposeDirective(),
+		ProposeHypothesis(),
+		ProposeLearningPlan(),
+		ProposeLearningDomain(),
 		CommitProposal(),
 		GoalProgress(),
 		FileReport(),
@@ -505,6 +644,7 @@ func All() []Meta {
 		RecommendNextTarget(),
 		AttemptHistory(),
 		ManagePlan(),
+		SessionProgress(),
 		CreateContent(),
 		UpdateContent(),
 		SubmitContentForReview(),

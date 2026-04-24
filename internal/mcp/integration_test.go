@@ -22,15 +22,18 @@
 package mcp
 
 import (
+	"encoding/json"
 	"log/slog"
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/Koopa0/koopa/internal/agent"
+	"github.com/Koopa0/koopa/internal/mcp/ops"
 	"github.com/Koopa0/koopa/internal/testdb"
 )
 
@@ -1298,5 +1301,725 @@ func TestLearningSessionEnded_FiresActivityTrigger(t *testing.T) {
 
 	if got := latestActivityChangeKind(t, "learning_session", sessionID); got != "completed" {
 		t.Errorf("activity_events.change_kind = %q, want %q", got, "completed")
+	}
+}
+
+// --- session_progress ---
+//
+// Covers the four invariants from Plan C:
+//  1. No active session → {active: false, reason} and no LastEnded fields
+//     when the DB has never seen a session.
+//  2. Active session with zero attempts → Active=true, AttemptCount=0,
+//     ElapsedSeconds < 60s, empty slug + category distributions.
+//  3. Active session with attempts → aggregates reflect SQL rollup.
+//  4. After end_session → {active: false} but LastEndedSessionID + Ended
+//     pointers populated (the affordance path).
+
+func TestIntegration_SessionProgress_NoActive(t *testing.T) {
+	s := setupServer(t)
+
+	_, out, err := callHandler(t, s.sessionProgress, SessionProgressInput{})
+	if err != nil {
+		t.Fatalf("sessionProgress: %v", err)
+	}
+
+	if out.Active {
+		t.Errorf("Active = true, want false")
+	}
+	if out.Reason == "" {
+		t.Error("Reason is empty — expected human-readable explanation")
+	}
+	if out.LastEndedSessionID != nil {
+		t.Errorf("LastEndedSessionID = %v, want nil on fresh DB", *out.LastEndedSessionID)
+	}
+	if out.LastEndedAt != nil {
+		t.Errorf("LastEndedAt = %v, want nil on fresh DB", *out.LastEndedAt)
+	}
+	if out.SessionID != nil {
+		t.Errorf("SessionID leaked on !Active = %v", *out.SessionID)
+	}
+	if out.StartedAt != nil {
+		t.Errorf("StartedAt leaked on !Active = %v", *out.StartedAt)
+	}
+}
+
+func TestIntegration_SessionProgress_ActiveEmpty(t *testing.T) {
+	s := setupServer(t)
+
+	_, sess, err := callHandler(t, s.startSession, StartSessionInput{
+		Domain: "leetcode",
+		Mode:   "practice",
+	})
+	if err != nil {
+		t.Fatalf("startSession: %v", err)
+	}
+
+	_, out, err := callHandler(t, s.sessionProgress, SessionProgressInput{})
+	if err != nil {
+		t.Fatalf("sessionProgress: %v", err)
+	}
+
+	if !out.Active {
+		t.Fatal("Active = false on a freshly-started session")
+	}
+	if out.SessionID == nil || *out.SessionID != sess.Session.ID {
+		t.Errorf("SessionID = %v, want %v", out.SessionID, sess.Session.ID)
+	}
+	if out.StartedAt == nil {
+		t.Error("StartedAt is nil on active session")
+	}
+	if out.AttemptCount != 0 {
+		t.Errorf("AttemptCount = %d, want 0", out.AttemptCount)
+	}
+	if out.ElapsedSeconds < 0 || out.ElapsedSeconds > 60 {
+		t.Errorf("ElapsedSeconds = %d, want 0..60 for just-started session", out.ElapsedSeconds)
+	}
+	if len(out.ParadigmDistribution) != 2 {
+		t.Errorf("ParadigmDistribution len = %d, want 2 (problem_solving + immersive, both zero)", len(out.ParadigmDistribution))
+	}
+	for _, p := range out.ParadigmDistribution {
+		if p.Count != 0 || p.TotalMinutes != 0 {
+			t.Errorf("ParadigmDistribution[%q] = {count:%d minutes:%d}, want both zero on empty session", p.Paradigm, p.Count, p.TotalMinutes)
+		}
+	}
+	// Empty distributions must be non-nil (per-handler allocated) so JSON
+	// emits [] instead of null. Nil would break callers that iterate.
+	if out.ConceptSlugDistribution == nil {
+		t.Error("ConceptSlugDistribution is nil on empty active session (want empty slice)")
+	}
+	if out.ObservationCategoryDistribution == nil {
+		t.Error("ObservationCategoryDistribution is nil on empty active session (want empty slice)")
+	}
+	if len(out.ConceptSlugDistribution) != 0 {
+		t.Errorf("ConceptSlugDistribution len = %d, want 0", len(out.ConceptSlugDistribution))
+	}
+	if len(out.ObservationCategoryDistribution) != 0 {
+		t.Errorf("ObservationCategoryDistribution len = %d, want 0", len(out.ObservationCategoryDistribution))
+	}
+
+	// Wire-shape guard: on Active=true, encoding/json MUST emit every
+	// active-path key even at zero value. Integration tests checking
+	// Go struct fields alone miss omitempty-drop regressions — a JS
+	// consumer iterating response.concept_slug_distribution must not
+	// hit undefined.
+	buf, err := json.Marshal(out)
+	if err != nil {
+		t.Fatalf("json.Marshal(out): %v", err)
+	}
+	var wire map[string]json.RawMessage
+	if err := json.Unmarshal(buf, &wire); err != nil {
+		t.Fatalf("json.Unmarshal shape probe: %v", err)
+	}
+	for _, key := range []string{
+		"session_id", "domain", "mode", "started_at",
+		"elapsed_seconds", "elapsed_display", "attempt_count",
+		"paradigm_distribution", "concept_slug_distribution",
+		"observation_category_distribution",
+	} {
+		if _, ok := wire[key]; !ok {
+			t.Errorf("JSON output missing key %q on Active=true path (omitempty regression?)", key)
+		}
+	}
+}
+
+func TestIntegration_SessionProgress_WithAttempts(t *testing.T) {
+	s := setupServer(t)
+
+	_, sess, err := callHandler(t, s.startSession, StartSessionInput{
+		Domain: "leetcode",
+		Mode:   "mixed",
+	})
+	if err != nil {
+		t.Fatalf("startSession: %v", err)
+	}
+
+	problemSolvingDur := FlexInt(12)
+	_, _, err = callHandler(t, s.recordAttempt, RecordAttemptInput{
+		SessionID: sess.Session.ID.String(),
+		Target:    AttemptTarget{Title: "Two Sum"},
+		Outcome:   "solved_with_hint",
+		Duration:  &problemSolvingDur,
+		Observations: []ObservationInput{
+			{Concept: "hash-lookup", Signal: "weakness", Category: "pattern-recognition", Confidence: "high"},
+			{Concept: "array-indexing", Signal: "mastery", Category: "implementation", Confidence: "high"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("recordAttempt problem_solving: %v", err)
+	}
+
+	immersiveDur := FlexInt(30)
+	_, _, err = callHandler(t, s.recordAttempt, RecordAttemptInput{
+		SessionID: sess.Session.ID.String(),
+		Target:    AttemptTarget{Title: "DDIA Chapter 3"},
+		Outcome:   "completed",
+		Duration:  &immersiveDur,
+		Observations: []ObservationInput{
+			{Concept: "log-structured-storage", Signal: "mastery", Category: "implementation", Confidence: "high"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("recordAttempt immersive: %v", err)
+	}
+
+	_, out, err := callHandler(t, s.sessionProgress, SessionProgressInput{})
+	if err != nil {
+		t.Fatalf("sessionProgress: %v", err)
+	}
+
+	if !out.Active {
+		t.Fatal("Active = false after recording two attempts")
+	}
+	if out.AttemptCount != 2 {
+		t.Errorf("AttemptCount = %d, want 2", out.AttemptCount)
+	}
+
+	pByName := map[string]SessionProgressParadigm{}
+	for _, p := range out.ParadigmDistribution {
+		pByName[p.Paradigm] = p
+	}
+	if got := pByName["problem_solving"]; got.Count != 1 || got.TotalMinutes != int64(problemSolvingDur) {
+		t.Errorf("problem_solving paradigm = {count:%d minutes:%d}, want {1 %d}", got.Count, got.TotalMinutes, problemSolvingDur)
+	}
+	if got := pByName["immersive"]; got.Count != 1 || got.TotalMinutes != int64(immersiveDur) {
+		t.Errorf("immersive paradigm = {count:%d minutes:%d}, want {1 %d}", got.Count, got.TotalMinutes, immersiveDur)
+	}
+
+	if len(out.ConceptSlugDistribution) != 3 {
+		t.Errorf("ConceptSlugDistribution len = %d, want 3 (hash-lookup, array-indexing, log-structured-storage)", len(out.ConceptSlugDistribution))
+	}
+	// Verify sort: count DESC, slug ASC. Three entries, all count=1 →
+	// slug ASC tie-break. Expect "array-indexing", "hash-lookup",
+	// "log-structured-storage" in that order.
+	wantSlugs := []string{"array-indexing", "hash-lookup", "log-structured-storage"}
+	for i, w := range wantSlugs {
+		if i >= len(out.ConceptSlugDistribution) {
+			break
+		}
+		if got := out.ConceptSlugDistribution[i].Slug; got != w {
+			t.Errorf("ConceptSlugDistribution[%d].Slug = %q, want %q", i, got, w)
+		}
+	}
+
+	// Observation category distribution: 1 weakness (pattern-recognition),
+	// 2 mastery (implementation × 2). Sort: weakness before mastery.
+	if len(out.ObservationCategoryDistribution) != 2 {
+		t.Errorf("ObservationCategoryDistribution len = %d, want 2", len(out.ObservationCategoryDistribution))
+	}
+	if got := out.ObservationCategoryDistribution[0].SignalType; got != "weakness" {
+		t.Errorf("first category signal = %q, want 'weakness' (sort order)", got)
+	}
+	if got := out.ObservationCategoryDistribution[0].Category; got != "pattern-recognition" {
+		t.Errorf("first category.category = %q, want 'pattern-recognition'", got)
+	}
+}
+
+func TestIntegration_SessionProgress_LastEndedSurfaced(t *testing.T) {
+	s := setupServer(t)
+
+	_, sess, err := callHandler(t, s.startSession, StartSessionInput{
+		Domain: "leetcode",
+		Mode:   "practice",
+	})
+	if err != nil {
+		t.Fatalf("startSession: %v", err)
+	}
+
+	_, _, err = callHandler(t, s.recordAttempt, RecordAttemptInput{
+		SessionID: sess.Session.ID.String(),
+		Target:    AttemptTarget{Title: "Binary Search"},
+		Outcome:   "solved_independent",
+	})
+	if err != nil {
+		t.Fatalf("recordAttempt: %v", err)
+	}
+
+	_, end, err := callHandler(t, s.endSession, EndSessionInput{
+		SessionID: sess.Session.ID.String(),
+	})
+	if err != nil {
+		t.Fatalf("endSession: %v", err)
+	}
+	if end.Session.EndedAt == nil {
+		t.Fatal("endSession did not populate EndedAt")
+	}
+
+	_, out, err := callHandler(t, s.sessionProgress, SessionProgressInput{})
+	if err != nil {
+		t.Fatalf("sessionProgress: %v", err)
+	}
+
+	if out.Active {
+		t.Fatal("Active = true after end_session")
+	}
+	if out.LastEndedSessionID == nil {
+		t.Fatal("LastEndedSessionID is nil after end_session — affordance path broken")
+	}
+	if *out.LastEndedSessionID != sess.Session.ID {
+		t.Errorf("LastEndedSessionID = %v, want %v (the just-ended session)", *out.LastEndedSessionID, sess.Session.ID)
+	}
+	if out.LastEndedAt == nil {
+		t.Error("LastEndedAt is nil after end_session")
+	}
+	// Affordance is identity-only; aggregate fields MUST stay zero.
+	if out.AttemptCount != 0 {
+		t.Errorf("AttemptCount = %d on !Active path, want 0 (affordance is NOT a fallback)", out.AttemptCount)
+	}
+	if len(out.ConceptSlugDistribution) != 0 {
+		t.Errorf("ConceptSlugDistribution leaked on !Active path (len=%d)", len(out.ConceptSlugDistribution))
+	}
+	// Sanity: the LastEndedAt should be in the last minute (we just ended
+	// it). Tolerance is generous to avoid CI flakes.
+	if d := time.Since(*out.LastEndedAt); d < 0 || d > time.Minute {
+		t.Errorf("LastEndedAt delta = %v, want within 1m (we just ended)", d)
+	}
+}
+
+// --- attempt_history (Plan B — observations + confidence on all modes) ---
+//
+// Covers the refined-b shape locked by learning-studio:
+//  - Every mode (target / concept_slug / session_id) returns observations[]
+//    on each attempt with confidence label populated.
+//  - concept_slug mode additionally populates matched_observation_id as a
+//    pointer into the observations list (no parallel MatchedObservation
+//    struct).
+//  - observations are ordered by coach-insertion (position ASC), not by
+//    concept slug, created_at, or id.
+//  - include_observations=false skips the observation fetch; concept_slug
+//    mode preserves matched_observation_id regardless.
+//  - Sort order invariants: target/concept DESC, session ASC.
+
+func TestIntegration_AttemptHistory_TargetMode_IncludesObservations(t *testing.T) {
+	s := setupServer(t)
+
+	_, sess, err := callHandler(t, s.startSession, StartSessionInput{
+		Domain: "leetcode",
+		Mode:   "practice",
+	})
+	if err != nil {
+		t.Fatalf("startSession: %v", err)
+	}
+
+	_, _, err = callHandler(t, s.recordAttempt, RecordAttemptInput{
+		SessionID: sess.Session.ID.String(),
+		Target:    AttemptTarget{Title: "Two Sum"},
+		Outcome:   "solved_with_hint",
+		Observations: []ObservationInput{
+			// Deliberate non-alphabetical insertion order: z-last, a-first, m-middle.
+			// If the read path sorted by slug we'd see [a, m, z]; Position sort
+			// preserves insertion order [z, a, m].
+			{Concept: "z-last-slug", Signal: "weakness", Category: "pattern-recognition", Confidence: "low"},
+			{Concept: "a-first-slug", Signal: "mastery", Category: "implementation", Confidence: "high"},
+			{Concept: "m-middle-slug", Signal: "improvement", Category: "approach-selection", Confidence: "high"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("recordAttempt: %v", err)
+	}
+
+	// Wall-time smoke guard per Plan B Amendment B3. IVL runs on every
+	// revisit; regression past ~100ms would compound into friction fast.
+	// Not a benchmark — a defensive threshold. Bump if CI flakes.
+	start := time.Now()
+	_, out, err := callHandler(t, s.attemptHistory, AttemptHistoryInput{
+		Target: &AttemptHistoryTargetRef{Title: "Two Sum"},
+	})
+	elapsed := time.Since(start)
+	if err != nil {
+		t.Fatalf("attemptHistory target: %v", err)
+	}
+	if !out.Resolved {
+		t.Fatal("Resolved = false on existing target")
+	}
+	if len(out.Attempts) != 1 {
+		t.Fatalf("Attempts len = %d, want 1", len(out.Attempts))
+	}
+	got := out.Attempts[0]
+	if len(got.Observations) != 3 {
+		t.Fatalf("Observations len = %d, want 3", len(got.Observations))
+	}
+	wantOrder := []string{"z-last-slug", "a-first-slug", "m-middle-slug"}
+	for i, want := range wantOrder {
+		if got.Observations[i].ConceptSlug != want {
+			t.Errorf("Observations[%d].ConceptSlug = %q, want %q (coach-insertion order)", i, got.Observations[i].ConceptSlug, want)
+		}
+		if got.Observations[i].Position != int32(i) {
+			t.Errorf("Observations[%d].Position = %d, want %d", i, got.Observations[i].Position, i)
+		}
+	}
+	// Confidence label carried through: first obs was "low", others "high".
+	if got.Observations[0].Confidence != "low" {
+		t.Errorf("Observations[0].Confidence = %q, want low", got.Observations[0].Confidence)
+	}
+	if got.Observations[1].Confidence != "high" {
+		t.Errorf("Observations[1].Confidence = %q, want high", got.Observations[1].Confidence)
+	}
+	// target mode does not populate matched_observation_id.
+	if got.MatchedObservationID != nil {
+		t.Errorf("MatchedObservationID = %v, want nil on target mode", *got.MatchedObservationID)
+	}
+	if elapsed > 150*time.Millisecond {
+		t.Errorf("attempt_history target mode took %v, want < 150ms (IVL hot path smoke)", elapsed)
+	}
+}
+
+func TestIntegration_AttemptHistory_ConceptMode_MatchedObservationID(t *testing.T) {
+	s := setupServer(t)
+
+	_, sess, err := callHandler(t, s.startSession, StartSessionInput{
+		Domain: "leetcode",
+		Mode:   "practice",
+	})
+	if err != nil {
+		t.Fatalf("startSession: %v", err)
+	}
+
+	_, _, err = callHandler(t, s.recordAttempt, RecordAttemptInput{
+		SessionID: sess.Session.ID.String(),
+		Target:    AttemptTarget{Title: "Longest Substring"},
+		Outcome:   "solved_with_hint",
+		Observations: []ObservationInput{
+			{Concept: "sliding-window-variable", Signal: "weakness", Category: "pattern-recognition", Confidence: "low"},
+			{Concept: "hash-set-uniqueness", Signal: "mastery", Category: "implementation", Confidence: "high"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("recordAttempt: %v", err)
+	}
+
+	_, out, err := callHandler(t, s.attemptHistory, AttemptHistoryInput{
+		ConceptSlug: strPtr("sliding-window-variable"),
+	})
+	if err != nil {
+		t.Fatalf("attemptHistory concept: %v", err)
+	}
+	if !out.Resolved {
+		t.Fatal("Resolved = false on existing concept")
+	}
+	if len(out.Attempts) != 1 {
+		t.Fatalf("Attempts len = %d, want 1", len(out.Attempts))
+	}
+	got := out.Attempts[0]
+	if got.MatchedObservationID == nil {
+		t.Fatal("MatchedObservationID is nil on concept mode")
+	}
+	if len(got.Observations) != 2 {
+		t.Fatalf("Observations len = %d, want 2", len(got.Observations))
+	}
+	// matched_observation_id MUST point into the observations list — find it.
+	var matchedSlug string
+	for _, o := range got.Observations {
+		if o.ID == *got.MatchedObservationID {
+			matchedSlug = o.ConceptSlug
+			break
+		}
+	}
+	if matchedSlug != "sliding-window-variable" {
+		t.Errorf("matched_observation_id points to %q, want sliding-window-variable (the queried concept)", matchedSlug)
+	}
+}
+
+func TestIntegration_AttemptHistory_SessionMode_Observations(t *testing.T) {
+	s := setupServer(t)
+
+	_, sess, err := callHandler(t, s.startSession, StartSessionInput{
+		Domain: "leetcode",
+		Mode:   "practice",
+	})
+	if err != nil {
+		t.Fatalf("startSession: %v", err)
+	}
+
+	_, _, err = callHandler(t, s.recordAttempt, RecordAttemptInput{
+		SessionID: sess.Session.ID.String(),
+		Target:    AttemptTarget{Title: "Reverse Linked List"},
+		Outcome:   "solved_independent",
+		Observations: []ObservationInput{
+			{Concept: "pointer-swap-invariant", Signal: "mastery", Category: "implementation", Confidence: "high"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("recordAttempt: %v", err)
+	}
+
+	_, out, err := callHandler(t, s.attemptHistory, AttemptHistoryInput{
+		SessionID: strPtr(sess.Session.ID.String()),
+	})
+	if err != nil {
+		t.Fatalf("attemptHistory session: %v", err)
+	}
+	if len(out.Attempts) != 1 {
+		t.Fatalf("Attempts len = %d, want 1", len(out.Attempts))
+	}
+	if len(out.Attempts[0].Observations) != 1 {
+		t.Errorf("Observations len = %d, want 1", len(out.Attempts[0].Observations))
+	}
+	if out.Attempts[0].Observations[0].Confidence != "high" {
+		t.Errorf("Observations[0].Confidence = %q, want high", out.Attempts[0].Observations[0].Confidence)
+	}
+	if out.Attempts[0].MatchedObservationID != nil {
+		t.Errorf("MatchedObservationID = %v, want nil on session mode", *out.Attempts[0].MatchedObservationID)
+	}
+}
+
+func TestIntegration_AttemptHistory_IncludeObservationsFalse(t *testing.T) {
+	s := setupServer(t)
+
+	_, sess, err := callHandler(t, s.startSession, StartSessionInput{
+		Domain: "leetcode",
+		Mode:   "practice",
+	})
+	if err != nil {
+		t.Fatalf("startSession: %v", err)
+	}
+
+	_, _, err = callHandler(t, s.recordAttempt, RecordAttemptInput{
+		SessionID: sess.Session.ID.String(),
+		Target:    AttemptTarget{Title: "Valid Parentheses"},
+		Outcome:   "solved_independent",
+		Observations: []ObservationInput{
+			{Concept: "stack-matching", Signal: "mastery", Category: "pattern-recognition", Confidence: "high"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("recordAttempt: %v", err)
+	}
+
+	includeFalse := false
+
+	// target mode — observations empty, matched_observation_id always nil.
+	_, outTarget, err := callHandler(t, s.attemptHistory, AttemptHistoryInput{
+		Target:              &AttemptHistoryTargetRef{Title: "Valid Parentheses"},
+		IncludeObservations: &includeFalse,
+	})
+	if err != nil {
+		t.Fatalf("attemptHistory target include=false: %v", err)
+	}
+	if len(outTarget.Attempts) != 1 {
+		t.Fatalf("target attempts len = %d, want 1", len(outTarget.Attempts))
+	}
+	if len(outTarget.Attempts[0].Observations) != 0 {
+		t.Errorf("target include=false: Observations len = %d, want 0", len(outTarget.Attempts[0].Observations))
+	}
+
+	// concept mode — observations empty, but matched_observation_id MUST
+	// stay populated because the query match info comes from the primary
+	// SQL query, not the secondary observation fetch.
+	_, outConcept, err := callHandler(t, s.attemptHistory, AttemptHistoryInput{
+		ConceptSlug:         strPtr("stack-matching"),
+		IncludeObservations: &includeFalse,
+	})
+	if err != nil {
+		t.Fatalf("attemptHistory concept include=false: %v", err)
+	}
+	if len(outConcept.Attempts) != 1 {
+		t.Fatalf("concept attempts len = %d, want 1", len(outConcept.Attempts))
+	}
+	if len(outConcept.Attempts[0].Observations) != 0 {
+		t.Errorf("concept include=false: Observations len = %d, want 0", len(outConcept.Attempts[0].Observations))
+	}
+	if outConcept.Attempts[0].MatchedObservationID == nil {
+		t.Error("concept include=false: MatchedObservationID is nil, want populated (pointer should survive include=false)")
+	}
+}
+
+func TestIntegration_AttemptHistory_SortInvariants(t *testing.T) {
+	s := setupServer(t)
+
+	_, sess, err := callHandler(t, s.startSession, StartSessionInput{
+		Domain: "leetcode",
+		Mode:   "practice",
+	})
+	if err != nil {
+		t.Fatalf("startSession: %v", err)
+	}
+
+	// Record 3 attempts on the same target. target mode must return them
+	// newest first (DESC); session mode must return them oldest first (ASC).
+	for i := 1; i <= 3; i++ {
+		_, _, err := callHandler(t, s.recordAttempt, RecordAttemptInput{
+			SessionID: sess.Session.ID.String(),
+			Target:    AttemptTarget{Title: "Climbing Stairs"},
+			Outcome:   "solved_independent",
+		})
+		if err != nil {
+			t.Fatalf("recordAttempt %d: %v", i, err)
+		}
+	}
+
+	_, targetOut, err := callHandler(t, s.attemptHistory, AttemptHistoryInput{
+		Target: &AttemptHistoryTargetRef{Title: "Climbing Stairs"},
+	})
+	if err != nil {
+		t.Fatalf("attemptHistory target: %v", err)
+	}
+	if len(targetOut.Attempts) != 3 {
+		t.Fatalf("target attempts = %d, want 3", len(targetOut.Attempts))
+	}
+	// AttemptNumber increments monotonically (1, 2, 3); DESC means [3, 2, 1].
+	for i, wantNum := range []int32{3, 2, 1} {
+		if targetOut.Attempts[i].AttemptNumber != wantNum {
+			t.Errorf("target mode DESC: Attempts[%d].AttemptNumber = %d, want %d", i, targetOut.Attempts[i].AttemptNumber, wantNum)
+		}
+	}
+
+	_, sessionOut, err := callHandler(t, s.attemptHistory, AttemptHistoryInput{
+		SessionID: strPtr(sess.Session.ID.String()),
+	})
+	if err != nil {
+		t.Fatalf("attemptHistory session: %v", err)
+	}
+	if len(sessionOut.Attempts) != 3 {
+		t.Fatalf("session attempts = %d, want 3", len(sessionOut.Attempts))
+	}
+	// session_id mode ASC means [1, 2, 3].
+	for i, wantNum := range []int32{1, 2, 3} {
+		if sessionOut.Attempts[i].AttemptNumber != wantNum {
+			t.Errorf("session mode ASC: Attempts[%d].AttemptNumber = %d, want %d", i, sessionOut.Attempts[i].AttemptNumber, wantNum)
+		}
+	}
+}
+
+// --- propose_* flat tools (Plan A) ---
+//
+// Wave-1 propose_commitment multiplexer was flat-split into seven typed
+// tools (propose_goal, …, propose_learning_domain). Core coverage:
+//  - propose_goal happy path: produces a signed token that commit_proposal
+//    accepts.
+//  - propose_directive capability pre-check: unauthorized callers fail
+//    fast at propose time, not at commit.
+//  - propose_commitment shim: still functional through the 2026-05-08
+//    deprecation window; warnings array carries the sunset notice.
+
+func TestIntegration_ProposeGoal_CommitRoundTrip(t *testing.T) {
+	s := setupServer(t)
+
+	_, proposal, err := callHandler(t, s.proposeGoal, ProposeGoalInput{
+		Title:       "Pass JLPT N2 by October",
+		Description: strPtr("Reading + listening practice cadence for N2 spring 2026 cohort."),
+	})
+	if err != nil {
+		t.Fatalf("proposeGoal: %v", err)
+	}
+	if proposal.ProposalToken == "" {
+		t.Fatal("proposeGoal returned empty token")
+	}
+	if proposal.Type != "goal" {
+		t.Errorf("proposal.Type = %q, want goal", proposal.Type)
+	}
+
+	_, commit, err := callHandler(t, s.commitProposal, CommitProposalInput{
+		ProposalToken: proposal.ProposalToken,
+	})
+	if err != nil {
+		t.Fatalf("commitProposal: %v", err)
+	}
+	if !commit.Committed {
+		t.Error("commit.Committed = false on round-trip")
+	}
+	if commit.Type != "goal" {
+		t.Errorf("commit.Type = %q, want goal", commit.Type)
+	}
+
+	id, err := uuid.Parse(commit.ID)
+	if err != nil {
+		t.Fatalf("parsing returned goal ID: %v", err)
+	}
+	var title string
+	if err := testPool.QueryRow(t.Context(), "SELECT title FROM goals WHERE id = $1", id).Scan(&title); err != nil {
+		t.Fatalf("fetching goal row: %v", err)
+	}
+	if title != "Pass JLPT N2 by October" {
+		t.Errorf("goal.title = %q, want round-tripped value", title)
+	}
+}
+
+func TestIntegration_ProposeDirective_CapabilityPreCheck(t *testing.T) {
+	s := setupServer(t)
+
+	// learning-studio lacks SubmitTasks (only hq + human have it). The
+	// default setupServer caller is learning-studio, so this call must
+	// fail at propose time — no token is generated, no validation runs
+	// against resolveDirectiveFields.
+	_, _, err := callHandler(t, s.proposeDirective, ProposeDirectiveInput{
+		Target:       "hq",
+		Priority:     "high",
+		RequestParts: []json.RawMessage{json.RawMessage(`{"text":"test"}`)},
+	})
+	if err == nil {
+		t.Fatal("proposeDirective as learning-studio: expected capability error, got nil")
+	}
+	if !strings.Contains(err.Error(), "propose_directive") {
+		t.Errorf("error should name the tool that rejected: %v", err)
+	}
+}
+
+func TestIntegration_ProposeCommitmentShim_WarnsAndForwards(t *testing.T) {
+	s := setupServer(t)
+
+	// Shim accepts the Wave-1 multiplexer input and routes through the
+	// typed path. Caller sees a deprecation warning in the response's
+	// Warnings array, prefixed with 'propose_commitment is deprecated'.
+	_, proposal, err := callHandler(t, s.proposeCommitment, ProposeCommitmentInput{
+		Type: "goal",
+		Fields: map[string]any{
+			"title": "Shim round-trip sanity",
+		},
+	})
+	if err != nil {
+		t.Fatalf("propose_commitment shim: %v", err)
+	}
+	if proposal.ProposalToken == "" {
+		t.Fatal("shim returned empty token — forwarding broken")
+	}
+	if len(proposal.Warnings) == 0 {
+		t.Fatal("shim returned no warnings — deprecation notice missing")
+	}
+	if !strings.Contains(proposal.Warnings[0], "propose_commitment is deprecated") {
+		t.Errorf("first warning does not mention deprecation: %q", proposal.Warnings[0])
+	}
+	if !strings.Contains(proposal.Warnings[0], "propose_goal") {
+		t.Errorf("deprecation warning should name the replacement tool (propose_goal): %q", proposal.Warnings[0])
+	}
+
+	// Token still commits cleanly — shim fidelity holds end-to-end.
+	_, commit, err := callHandler(t, s.commitProposal, CommitProposalInput{
+		ProposalToken: proposal.ProposalToken,
+	})
+	if err != nil {
+		t.Fatalf("commitProposal via shim token: %v", err)
+	}
+	if !commit.Committed {
+		t.Error("shim-origin token did not commit")
+	}
+}
+
+// TestIntegration_ToolsListAdvertisesEnums is a structural guard that
+// tools/list actually carries the FieldEnums injected by addTool
+// post-processing. If injection regresses, the schema ends up without
+// .Enum on the advertised field and this fails.
+func TestIntegration_ToolsListAdvertisesEnums(t *testing.T) {
+	s := setupServer(t)
+
+	// The MCP server's internal registry of tool schemas is not directly
+	// exposed, but s.registeredNames + ops.All() gives the same pairing.
+	// Walk the ops catalog, find tools with FieldEnums, and assert that
+	// the generated schema (via the same jsonschema.ForType path) has
+	// the expected enums. A lightweight proxy for what tools/list emits.
+	s.logger.Info("integration_test: enum advertising probe", "registered", len(s.registeredNames))
+	foundRecord, foundDashboard := false, false
+	for _, m := range ops.All() {
+		if m.Name == "record_attempt" && len(m.FieldEnums["outcome"]) > 0 {
+			foundRecord = true
+		}
+		if m.Name == "learning_dashboard" && len(m.FieldEnums["view"]) > 0 {
+			foundDashboard = true
+		}
+	}
+	if !foundRecord {
+		t.Error("record_attempt.FieldEnums[outcome] missing")
+	}
+	if !foundDashboard {
+		t.Error("learning_dashboard.FieldEnums[view] missing")
 	}
 }

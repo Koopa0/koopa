@@ -1975,10 +1975,13 @@ CREATE TABLE learning_attempt_observations (
     severity    TEXT CHECK (severity IN ('minor', 'moderate', 'critical')),
     detail      TEXT,
     confidence  TEXT NOT NULL DEFAULT 'high' CHECK (confidence IN ('high', 'low')),
+    position    INT NOT NULL DEFAULT 0,
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
 
     CONSTRAINT chk_severity_weakness_only
-        CHECK (signal_type = 'weakness' OR severity IS NULL)
+        CHECK (signal_type = 'weakness' OR severity IS NULL),
+    CONSTRAINT chk_learning_attempt_observations_position_nonneg
+        CHECK (position >= 0)
 );
 
 COMMENT ON TABLE learning_attempt_observations IS
@@ -2008,6 +2011,16 @@ COMMENT ON COLUMN learning_attempt_observations.severity IS
 COMMENT ON COLUMN learning_attempt_observations.detail IS
     'Free-text evidence or explanation. NULL when the signal is self-explanatory '
     'from category alone.';
+COMMENT ON COLUMN learning_attempt_observations.position IS
+    'Zero-based insertion order within the attempt. Application-assigned at '
+    'record_attempt time (the array index of the observation in the request). '
+    'Enables coach-insertion ordering on attempt_history reads — created_at '
+    'ties within a transaction (PG now() is txn-start-constant) and id is '
+    'gen_random_uuid (v4, random), so neither alone preserves insertion '
+    'order. DEFAULT 0 is a schema-level guard; application code always sets '
+    'position explicitly. Historical rows backfilled via ROW_NUMBER() over '
+    '(created_at, id) before this column shipped — best-effort, not true '
+    'insertion order for pre-existing data.';
 COMMENT ON COLUMN learning_attempt_observations.confidence IS
     'high (default): signal directly evidenced by the attempt outcome — '
     'user said "I forgot how X works" or repeatedly failed at X. '

@@ -235,9 +235,13 @@ func (s *Store) ObservationsByConcept(ctx context.Context, conceptID uuid.UUID, 
 }
 
 // AttemptsByConcept returns recent attempts that produced an observation
-// about the given concept, newest first. Each Attempt carries a populated
-// Matched field describing the highest-priority observation that linked the
-// attempt to this concept.
+// about the given concept, newest first. Each Attempt carries a
+// MatchedObservationID pointer — the id of the highest-priority
+// observation on that attempt that linked it to this concept. Callers
+// wanting the full observations list on each attempt should invoke
+// AttachObservations afterward; this method intentionally does not
+// bundle the two fetches so the cost of the observation batch is
+// explicit at the call site.
 func (s *Store) AttemptsByConcept(ctx context.Context, conceptID uuid.UUID, limit int32) ([]Attempt, error) {
 	rows, err := s.q.AttemptsByConcept(ctx, db.AttemptsByConceptParams{
 		ConceptID:  conceptID,
@@ -249,26 +253,22 @@ func (s *Store) AttemptsByConcept(ctx context.Context, conceptID uuid.UUID, limi
 	result := make([]Attempt, len(rows))
 	for i := range rows {
 		r := &rows[i]
+		matchID := r.MatchedObservationID
 		result[i] = Attempt{
-			ID:               r.ID,
-			LearningTargetID: r.LearningTargetID,
-			SessionID:        r.SessionID,
-			AttemptNumber:    r.AttemptNumber,
-			Outcome:          r.Outcome,
-			DurationMinutes:  r.DurationMinutes,
-			StuckAt:          r.StuckAt,
-			ApproachUsed:     r.ApproachUsed,
-			AttemptedAt:      r.AttemptedAt,
-			Metadata:         r.Metadata,
-			TargetTitle:      r.TargetTitle,
-			TargetExternalID: r.TargetExternalID,
-			Difficulty:       r.Difficulty,
-			Matched: &MatchedObservation{
-				Signal:   r.MatchedSignal,
-				Category: r.MatchedCategory,
-				Severity: r.MatchedSeverity,
-				Detail:   r.MatchedDetail,
-			},
+			ID:                   r.ID,
+			LearningTargetID:     r.LearningTargetID,
+			SessionID:            r.SessionID,
+			AttemptNumber:        r.AttemptNumber,
+			Outcome:              r.Outcome,
+			DurationMinutes:      r.DurationMinutes,
+			StuckAt:              r.StuckAt,
+			ApproachUsed:         r.ApproachUsed,
+			AttemptedAt:          r.AttemptedAt,
+			Metadata:             r.Metadata,
+			TargetTitle:          r.TargetTitle,
+			TargetExternalID:     r.TargetExternalID,
+			Difficulty:           r.Difficulty,
+			MatchedObservationID: &matchID,
 		}
 	}
 	return result, nil

@@ -83,48 +83,56 @@ type Session struct {
 //
 // Attempt is the unified shape for all attempt-returning paths:
 // RecordAttempt (write), AttemptsBySession / AttemptsByLearningTarget /
-// AttemptsByConcept (read). Optional fields are populated only on the paths
-// where they make sense — Difficulty and Matched are only set by
-// AttemptsByConcept, Metadata is set by every read path but absent from
-// write returns.
-type Attempt struct {
-	ID               uuid.UUID           `json:"id"`
-	LearningTargetID uuid.UUID           `json:"learning_target_id"`
-	SessionID        uuid.UUID           `json:"session_id"`
-	AttemptNumber    int32               `json:"attempt_number"`
-	Paradigm         Paradigm            `json:"paradigm"`
-	Outcome          string              `json:"outcome"`
-	DurationMinutes  *int32              `json:"duration_minutes,omitempty"`
-	StuckAt          *string             `json:"stuck_at,omitempty"`
-	ApproachUsed     *string             `json:"approach_used,omitempty"`
-	AttemptedAt      time.Time           `json:"attempted_at"`
-	Metadata         json.RawMessage     `json:"metadata,omitempty"`
-	TargetTitle      string              `json:"target_title"`
-	TargetExternalID *string             `json:"target_external_id,omitempty"`
-	Difficulty       *string             `json:"difficulty,omitempty"`
-	Matched          *MatchedObservation `json:"matched_observation,omitempty"`
-}
-
-// MatchedObservation describes the highest-priority observation that linked
-// an attempt to a concept query. Populated only on AttemptsByConcept results;
-// nil on AttemptsBySession / AttemptsByLearningTarget.
+// AttemptsByConcept (read). Optional fields are populated only on the
+// paths where they make sense — Difficulty is only set by AttemptsByConcept,
+// MatchedObservationID is only set by AttemptsByConcept and points into
+// Observations to indicate which one drove the query match, Metadata is
+// set by every read path but absent from write returns.
 //
-// Priority when an attempt has multiple observations on the same concept:
-// signal weakness > improvement > mastery, then severity critical > moderate
-// > minor. Selected by the SQL query, not in Go.
-type MatchedObservation struct {
-	Signal   string  `json:"signal"`
-	Category string  `json:"category"`
-	Severity *string `json:"severity,omitempty"`
-	Detail   *string `json:"detail,omitempty"`
+// Observations is populated only on attempt_history read paths that opt
+// into the observation fetch (include_observations=true on
+// AttemptHistoryInput). On direct writes from RecordAttempt the slice
+// is nil; on reads with include_observations=false the slice is nil too.
+// Elements within Observations are ordered by coach-insertion (position
+// ASC) so downstream consumers see them in the order the coach wrote
+// them via record_attempt, not alphabetical by concept or chronological
+// by created_at (which ties within a transaction).
+type Attempt struct {
+	ID                   uuid.UUID       `json:"id"`
+	LearningTargetID     uuid.UUID       `json:"learning_target_id"`
+	SessionID            uuid.UUID       `json:"session_id"`
+	AttemptNumber        int32           `json:"attempt_number"`
+	Paradigm             Paradigm        `json:"paradigm"`
+	Outcome              string          `json:"outcome"`
+	DurationMinutes      *int32          `json:"duration_minutes,omitempty"`
+	StuckAt              *string         `json:"stuck_at,omitempty"`
+	ApproachUsed         *string         `json:"approach_used,omitempty"`
+	AttemptedAt          time.Time       `json:"attempted_at"`
+	Metadata             json.RawMessage `json:"metadata,omitempty"`
+	TargetTitle          string          `json:"target_title"`
+	TargetExternalID     *string         `json:"target_external_id,omitempty"`
+	Difficulty           *string         `json:"difficulty,omitempty"`
+	Observations         []Observation   `json:"observations,omitempty"`
+	MatchedObservationID *uuid.UUID      `json:"matched_observation_id,omitempty"`
 }
 
 // Observation represents a learning signal on a concept.
 //
 // ConceptSlug and ConceptName are populated only by read-side query paths
-// (e.g. ObservationsByAttempt). On direct write returns from RecordObservation
-// they are empty — the INSERT returning clause does not join concepts. Both
-// fields stay non-pointer string for JSON-shape stability across paths.
+// (e.g. ObservationsByAttempt, ObservationsByAttemptIDs). On direct write
+// returns from RecordObservation they are empty — the INSERT returning
+// clause does not join concepts. Both fields stay non-pointer string for
+// JSON-shape stability across paths.
+//
+// Confidence is a label, not a gate — both "high" and "low" persist per
+// .claude/rules/mcp-decision-policy.md §5. Read-side filters (dashboard
+// confidence_filter) decide whether low-confidence observations contribute
+// to aggregation; attempt_history surfaces every observation regardless.
+//
+// Position is zero-based insertion order within the attempt (the index
+// of the observation in the record_attempt request). Read paths return
+// observations in Position ASC so consumers see them in coach-written
+// order.
 type Observation struct {
 	ID          uuid.UUID `json:"id"`
 	AttemptID   uuid.UUID `json:"attempt_id"`
@@ -134,6 +142,7 @@ type Observation struct {
 	Severity    *string   `json:"severity,omitempty"`
 	Detail      *string   `json:"detail,omitempty"`
 	Confidence  string    `json:"confidence"`
+	Position    int32     `json:"position"`
 	ConceptSlug string    `json:"concept_slug,omitempty"`
 	ConceptName string    `json:"concept_name,omitempty"`
 }
