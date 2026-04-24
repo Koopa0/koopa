@@ -118,12 +118,17 @@ propose_commitment(as:"research-lab", type=hypothesis,
 
 ## Knowledge Access Patterns
 
-`search_knowledge` uses PostgreSQL full-text search (`websearch_to_tsquery`). Query tips:
+`search_knowledge` runs hybrid retrieval on contents (FTS via
+`websearch_to_tsquery` + pgvector cosine similarity, merged via RRF k=60)
+and FTS-only on notes. Sees all statuses — internal search surface, not
+public. Query tips:
+
 - Quoted phrases: `"value semantics"` for exact match
 - Default is AND: `Go generics` requires both words
 - OR: `goroutine OR channel`
 - Exclusion: `-draft`
-- Empty results = not in published content, not a query error
+- Semantic branch auto-falls-back when Gemini is unavailable / times out
+- Empty results = not found, not a query syntax error
 
 | Need | Tool | Query strategy |
 |------|------|---------------|
