@@ -266,7 +266,7 @@ func AttemptHistory() Meta {
 		Writability: ReadOnly,
 		Stability:   StabilityStable,
 		Since:       since,
-		Description: "Read-side counterpart to record_attempt. Three lookup modes (exactly one required): item (title+domain — returns this problem's attempt history for Improvement Verification Loop), concept_slug (returns attempts that observed the concept, with the matched observation attached), session_id (returns all attempts for a past session). Empty result with resolved=false means the lookup target does not exist.",
+		Description: "Read-side counterpart to record_attempt. Three lookup modes (exactly one required): target (title+domain — primary Improvement Verification Loop entry for 'how did this problem go last time'), concept_slug (returns attempts that observed the concept), session_id (returns all attempts for a past session, oldest first). Every returned attempt carries its full observations list (each with confidence label) and — on concept_slug mode — a matched_observation_id pointer into that list indicating which observation drove the query match. Observations within each attempt are ordered by coach-insertion (position ASC). Sort order: target/concept_slug DESC, session_id ASC. Empty result with resolved=false means the lookup target does not exist. Example (concept_slug, include_observations=false): {\"mode\":\"concept\",\"resolved\":true,\"attempts\":[{\"id\":\"...\",\"outcome\":\"solved_with_hint\",\"observations\":null,\"matched_observation_id\":\"obs-uuid\"}]} — matched_observation_id is still populated because the query did match an observation even though the list is skipped; pass include_observations=true (default) to see the observation itself.",
 	}
 }
 
