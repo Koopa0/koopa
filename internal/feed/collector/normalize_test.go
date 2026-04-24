@@ -237,7 +237,6 @@ func TestScore_AdversarialInputs(t *testing.T) {
 
 // TestNormalizeKeywords_Adversarial covers security and boundary inputs.
 //
-//nolint:gocognit // adversarial table; branch count is the point of the test
 func TestNormalizeKeywords_Adversarial(t *testing.T) {
 	t.Parallel()
 

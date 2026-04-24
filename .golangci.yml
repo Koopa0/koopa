@@ -106,42 +106,46 @@ linters:
       analyze-types: false
       exclude-godoc-examples: false
 
+  # golangci-lint v2 moved exclusions out of top-level `issues:` into
+  # `linters.exclusions`. `paths` replaces the old `issues.exclude-dirs`;
+  # `rules` replaces `issues.exclude-rules`. Semantics are unchanged.
+  exclusions:
+    paths:
+      - vendor
+    rules:
+      # Test files allow higher complexity and flexible helpers
+      - path: _test\.go$
+        linters:
+          - gocyclo
+          - gocognit
+          - errcheck
+          - unparam
+
+      # Generated code skipped
+      - path: internal/db/
+        linters:
+          - all
+
+      # Legitimate tx-opening sites: the two entry points that own tx +
+      # actor-GUC binding. Everyone else routes through them via WithTx(tx).
+      - path: internal/api/middleware\.go
+        linters:
+          - forbidigo
+      - path: internal/mcp/tx\.go
+        linters:
+          - forbidigo
+      # Feed store uses s.dbtx.(pgx.Tx) to fail-fast with ErrNotTransactional
+      # when multi-step writes get a non-tx store — this is tx-status READ,
+      # not Begin. The pattern doesn't call .Begin(ctx) anyway but excluded
+      # for documentation continuity.
+      - path: internal/feed/store\.go
+        linters:
+          - forbidigo
+      # Test code may legitimately open tx for setup/fixtures.
+      - path: _test\.go$
+        linters:
+          - forbidigo
+
 issues:
   max-issues-per-linter: 0
   max-same-issues: 0
-  exclude-dirs:
-    - vendor
-
-  exclude-rules:
-    # Test files allow higher complexity and flexible helpers
-    - path: _test\.go$
-      linters:
-        - gocyclo
-        - gocognit
-        - errcheck
-        - unparam
-
-    # Generated code skipped
-    - path: internal/db/
-      linters:
-        - all
-
-    # Legitimate tx-opening sites: the two entry points that own tx +
-    # actor-GUC binding. Everyone else routes through them via WithTx(tx).
-    - path: internal/api/middleware\.go
-      linters:
-        - forbidigo
-    - path: internal/mcp/tx\.go
-      linters:
-        - forbidigo
-    # Feed store uses s.dbtx.(pgx.Tx) to fail-fast with ErrNotTransactional
-    # when multi-step writes get a non-tx store — this is tx-status READ,
-    # not Begin. The pattern doesn't call .Begin(ctx) anyway but excluded
-    # for documentation continuity.
-    - path: internal/feed/store\.go
-      linters:
-        - forbidigo
-    # Test code may legitimately open tx for setup/fixtures.
-    - path: _test\.go$
-      linters:
-        - forbidigo
