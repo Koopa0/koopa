@@ -282,6 +282,18 @@ func ManagePlan() Meta {
 	}
 }
 
+// SessionProgress returns metadata for the in-session aggregate tool.
+func SessionProgress() Meta {
+	return Meta{
+		Name:        "session_progress",
+		Domain:      DomainLearning,
+		Writability: ReadOnly,
+		Stability:   StabilityStable,
+		Since:       "1.1.0",
+		Description: "In-session aggregate for the currently-active learning session: attempt count, elapsed time, paradigm distribution (problem_solving vs immersive with total minutes), concept slug distribution, and observation category (signal_type × category) distribution. Scope is the ACTIVE session only — when no session is active, returns {active: false, last_ended_session_id, last_ended_at} so the caller can pivot to attempt_history(session_id=...) for past-session review; this is an affordance, not a fallback, and aggregate fields are NOT populated for the ended session. Does NOT return concept kind distribution (pattern/skill/principle) because kind is currently auto-assigned to 'skill' for all session-created concepts; tracking would be trivial noise — see HERMES W-10 if kind discrimination becomes meaningful. paradigm_distribution is informational only — most sessions are single-paradigm by design, so do not infer mixing-ratio intent from a 0/N split. Distinct from session_delta, which is a 24h pan-feature snapshot (todos + agent notes + session count) not scoped to any learning_session.",
+	}
+}
+
 // Content tools — flat per-intent design.
 // 8 separate tools instead of one manage_content multiplexer. Rationale:
 // actions have divergent input schemas + mixed authorization (publish is
@@ -505,6 +517,7 @@ func All() []Meta {
 		RecommendNextTarget(),
 		AttemptHistory(),
 		ManagePlan(),
+		SessionProgress(),
 		CreateContent(),
 		UpdateContent(),
 		SubmitContentForReview(),
