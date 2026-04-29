@@ -65,6 +65,9 @@ type UpdateContentInput struct {
 }
 
 func (s *Server) updateContentTool(ctx context.Context, _ *mcp.CallToolRequest, input UpdateContentInput) (*mcp.CallToolResult, ManageContentOutput, error) {
+	if input.Status != nil && *input.Status != "" && !isValidContentStatus(*input.Status) {
+		return nil, ManageContentOutput{}, fmt.Errorf("status must be one of: draft, review, published, archived (got %q)", *input.Status)
+	}
 	internal := ManageContentInput{
 		ContentID:   &input.ContentID,
 		Title:       input.Title,
@@ -169,6 +172,9 @@ type ListContentInput struct {
 }
 
 func (s *Server) listContentTool(ctx context.Context, _ *mcp.CallToolRequest, input ListContentInput) (*mcp.CallToolResult, ManageContentOutput, error) {
+	if input.Status != nil && *input.Status != "" && !isValidContentStatus(*input.Status) {
+		return nil, ManageContentOutput{}, fmt.Errorf("status must be one of: draft, review, published, archived (got %q)", *input.Status)
+	}
 	internal := ManageContentInput{
 		ContentType: input.ContentType,
 		Status:      input.Status,

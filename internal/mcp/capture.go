@@ -34,6 +34,9 @@ func (s *Server) captureInbox(ctx context.Context, _ *mcp.CallToolRequest, input
 	if input.Title == "" {
 		return nil, CaptureInboxOutput{}, fmt.Errorf("title is required")
 	}
+	if input.Energy != nil && *input.Energy != "" && !isValidEnergy(*input.Energy) {
+		return nil, CaptureInboxOutput{}, fmt.Errorf("energy must be one of: high, medium, low (got %q)", *input.Energy)
+	}
 
 	var due *time.Time
 	if input.Due != nil && *input.Due != "" {

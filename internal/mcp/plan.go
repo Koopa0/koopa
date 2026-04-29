@@ -264,6 +264,9 @@ func (s *Server) updatePlanEntry(ctx context.Context, planID uuid.UUID, input *M
 	if input.Status == nil || *input.Status == "" {
 		return nil, ManagePlanOutput{}, fmt.Errorf("status is required for update_entry")
 	}
+	if !isValidPlanEntryStatus(*input.Status) {
+		return nil, ManagePlanOutput{}, fmt.Errorf("status for update_entry must be one of: completed, skipped, substituted (got %q)", *input.Status)
+	}
 
 	p, err := s.plans.Plan(ctx, planID)
 	if err != nil {
@@ -384,6 +387,9 @@ func (s *Server) reorderPlanEntries(ctx context.Context, planID uuid.UUID, input
 func (s *Server) updatePlan(ctx context.Context, planID uuid.UUID, input *ManagePlanInput) (*mcp.CallToolResult, ManagePlanOutput, error) {
 	if input.Status == nil || *input.Status == "" {
 		return nil, ManagePlanOutput{}, fmt.Errorf("status is required for update_plan")
+	}
+	if !isValidPlanStatus(*input.Status) {
+		return nil, ManagePlanOutput{}, fmt.Errorf("status for update_plan must be one of: active, paused, completed, abandoned (got %q)", *input.Status)
 	}
 
 	// Fetch current plan to validate transition.

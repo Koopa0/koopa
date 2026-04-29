@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/google/uuid"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -38,6 +39,10 @@ type GoalProgressOutput struct {
 }
 
 func (s *Server) goalProgress(ctx context.Context, _ *mcp.CallToolRequest, input GoalProgressInput) (*mcp.CallToolResult, GoalProgressOutput, error) {
+	if input.Status != nil && *input.Status != "" && !isValidGoalStatusFilter(*input.Status) {
+		return nil, GoalProgressOutput{}, fmt.Errorf("status must be one of: all, not_started, in_progress, done, abandoned, on_hold (got %q)", *input.Status)
+	}
+
 	var goals []goal.ActiveGoalSummary
 	var err error
 

@@ -247,6 +247,61 @@ func isValidTaskPriority(p string) bool {
 	}
 }
 
+// isValidEnergy mirrors the todos.energy CHECK in 001_initial.up.sql.
+// Used by capture_inbox and advance_work(action=clarify).
+func isValidEnergy(e string) bool {
+	switch e {
+	case "high", "medium", "low":
+		return true
+	default:
+		return false
+	}
+}
+
+// isValidContentStatus mirrors the contents.status CHECK.
+func isValidContentStatus(s string) bool {
+	switch s {
+	case "draft", "review", "published", "archived":
+		return true
+	default:
+		return false
+	}
+}
+
+// isValidPlanEntryStatus mirrors the values manage_plan(action=update_entry)
+// is allowed to write to learning_plan_entries.status.
+func isValidPlanEntryStatus(s string) bool {
+	switch s {
+	case "completed", "skipped", "substituted":
+		return true
+	default:
+		return false
+	}
+}
+
+// isValidPlanStatus mirrors the values manage_plan(action=update_plan) is
+// allowed to write to learning_plans.status.
+func isValidPlanStatus(s string) bool {
+	switch s {
+	case "active", "paused", "completed", "abandoned":
+		return true
+	default:
+		return false
+	}
+}
+
+// isValidGoalStatusFilter accepts the read-side filter values for goals.
+// "all" is a UI sentinel meaning "every status"; the rest mirror the
+// goals.status CHECK.
+func isValidGoalStatusFilter(s string) bool {
+	switch s {
+	case "all", "not_started", "in_progress", "done", "abandoned", "on_hold":
+		return true
+	default:
+		return false
+	}
+}
+
 //nolint:unparam // uniform (warnings, err) signature with sibling resolve*Fields
 func resolveHypothesisFields(f map[string]any) (warnings []string, err error) {
 	if claim, ok := f["claim"].(string); !ok || claim == "" {

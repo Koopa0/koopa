@@ -114,6 +114,10 @@ func validateTransition(current todo.State, action string) error {
 }
 
 func (s *Server) advanceClarify(ctx context.Context, itemID uuid.UUID, input AdvanceWorkInput) (*mcp.CallToolResult, AdvanceWorkOutput, error) {
+	if input.Energy != nil && *input.Energy != "" && !isValidEnergy(*input.Energy) {
+		return nil, AdvanceWorkOutput{}, fmt.Errorf("energy must be one of: high, medium, low (got %q)", *input.Energy)
+	}
+
 	params := &todo.UpdateParams{ID: itemID}
 
 	newState := todo.StateTodo
@@ -126,8 +130,11 @@ func (s *Server) advanceClarify(ctx context.Context, itemID uuid.UUID, input Adv
 		}
 		params.Due = &t
 	}
-	if input.Priority != nil {
+	if input.Priority != nil && *input.Priority != "" {
 		p := normalizePriority(*input.Priority)
+		if !isValidTaskPriority(p) {
+			return nil, AdvanceWorkOutput{}, fmt.Errorf("priority must be one of: high, medium, low (got %q)", *input.Priority)
+		}
 		params.Priority = &p
 	}
 	params.Energy = input.Energy
@@ -276,7 +283,7 @@ func (s *Server) createPlanItem(ctx context.Context, item PlanDayItem, i int, da
 		return fmt.Errorf("todo item %s not found: %w", item.TaskID, err)
 	}
 	if t.State == todo.StateInbox {
-		return fmt.Errorf("todo item %s is in inbox state — clarify before planning", item.TaskID)
+		return fmt.Errorf("todo item %s is in inbox state — call advance_work(action=\"clarify\", task_id=%q) first to promote it to state=todo before planning", item.TaskID, item.TaskID)
 	}
 	pos := item.Position
 	if pos == 0 {
