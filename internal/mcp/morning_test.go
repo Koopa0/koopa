@@ -14,6 +14,34 @@ import (
 	"github.com/Koopa0/koopa/internal/todo"
 )
 
+// TestPlanDayOutput_ItemsRemovedNeverNull guards the json-api invariant
+// for the items_removed field on plan_day's output: even when no plan
+// existed for the date, the slice must marshal to [] not null. plan_day
+// is idempotent and re-callable; client code that iterates items_removed
+// to surface "what got displaced" cannot tolerate a nil here.
+func TestPlanDayOutput_ItemsRemovedNeverNull(t *testing.T) {
+	t.Parallel()
+
+	out := PlanDayOutput{
+		Date:         time.Now().Format(time.DateOnly),
+		ItemsCreated: 0,
+		Items:        []daily.Item{},
+		ItemsRemoved: []daily.RemovedItem{},
+	}
+
+	b, err := json.Marshal(out)
+	if err != nil {
+		t.Fatalf("json.Marshal(out) error = %v, want nil", err)
+	}
+	got := string(b)
+	if strings.Contains(got, `"items_removed":null`) {
+		t.Errorf("PlanDayOutput JSON has items_removed=null, want []: %s", got)
+	}
+	if strings.Contains(got, `"items":null`) {
+		t.Errorf("PlanDayOutput JSON has items=null, want []: %s", got)
+	}
+}
+
 // TestMorningContextOutput_AllSlicesMarshalAsEmptyArray locks in the
 // json-api invariant that every list field on MorningContextOutput must
 // serialise to [] (never null) regardless of which sections were

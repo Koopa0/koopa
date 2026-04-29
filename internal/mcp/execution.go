@@ -233,6 +233,11 @@ type PlanDayOutput struct {
 	Date         string       `json:"date"`
 	ItemsCreated int          `json:"items_created"`
 	Items        []daily.Item `json:"items"`
+	// ItemsRemoved lists the 'planned' items that were displaced when this
+	// call replaced an existing plan for the date. Empty when no plan
+	// existed yet or the existing plan was already empty. Always [], never
+	// null — callers can rely on len() without a nil check.
+	ItemsRemoved []daily.RemovedItem `json:"items_removed"`
 }
 
 // resolvePlanDate parses the optional caller-supplied date, falling back to
@@ -311,7 +316,8 @@ func (s *Server) planDay(ctx context.Context, _ *mcp.CallToolRequest, input Plan
 		return nil, PlanDayOutput{}, err
 	}
 
-	if err := s.dayplan.DeletePlannedByDate(ctx, date); err != nil {
+	removed, err := s.dayplan.DeletePlannedByDate(ctx, date)
+	if err != nil {
 		return nil, PlanDayOutput{}, fmt.Errorf("clearing existing plan: %w", err)
 	}
 
@@ -331,10 +337,11 @@ func (s *Server) planDay(ctx context.Context, _ *mcp.CallToolRequest, input Plan
 		return nil, PlanDayOutput{}, fmt.Errorf("fetching created plan items: %w", err)
 	}
 
-	s.logger.Info("plan_day", "date", date.Format(time.DateOnly), "items", len(items))
+	s.logger.Info("plan_day", "date", date.Format(time.DateOnly), "items", len(items), "items_removed", len(removed))
 	return nil, PlanDayOutput{
 		Date:         date.Format(time.DateOnly),
 		ItemsCreated: len(items),
 		Items:        items,
+		ItemsRemoved: removed,
 	}, nil
 }
