@@ -653,8 +653,8 @@ type ActivityEvent struct {
 	// When the change happened. DEFAULT now() since triggers fire synchronously.
 	OccurredAt time.Time `json:"occurred_at"`
 	// Change-specific structured data: before/after values, transition reasons, related entity IDs. Schema varies by (entity_type, change_kind) pair.
-	Payload   []byte    `json:"payload"`
-	CreatedAt time.Time `json:"created_at"`
+	Payload   json.RawMessage `json:"payload"`
+	CreatedAt time.Time       `json:"created_at"`
 }
 
 // DB projection of the Go BuiltinAgents() registry. Rows are upserted at startup by agent.SyncToTable. Capability flags are NOT stored here — authorization is enforced in Go via the agent.Authorized compile-time wrapper. FK targets for coordination references (tasks, agent_notes, learning_hypotheses) use ON DELETE RESTRICT so historical records cannot dangle. Removed registry entries transition to status=retired rather than being deleted.
@@ -726,7 +726,7 @@ type Artifact struct {
 	// Optional longer description. Empty string = no description.
 	Description string `json:"description"`
 	// JSONB array of a2a.Part values (same format as task_messages.parts). Stores the actual deliverable content.
-	Parts []byte `json:"parts"`
+	Parts json.RawMessage `json:"parts"`
 	// Row insertion timestamp.
 	CreatedAt time.Time `json:"created_at"`
 }
@@ -982,7 +982,7 @@ type LearningAttempt struct {
 	// Free-text: what method you used. Coaching context, not a queryable enum.
 	ApproachUsed *string `json:"approach_used"`
 	// Narrative data: coaching hints given, alternative approaches considered, code quality observations, LLM transcript excerpts. Not queryable — stays in JSONB. If a field needs WHERE/JOIN/GROUP BY, promote to a column.
-	Metadata []byte `json:"metadata"`
+	Metadata json.RawMessage `json:"metadata"`
 	// When this attempt occurred. May differ from created_at if backfilled.
 	AttemptedAt time.Time `json:"attempted_at"`
 	CreatedAt   time.Time `json:"created_at"`
@@ -1119,8 +1119,8 @@ type LearningSession struct {
 	// NULL until session ends. NULL + old started_at = abandoned/crashed session.
 	EndedAt *time.Time `json:"ended_at"`
 	// Session orchestration details: coaching prompt used, session summary, configuration. Not queryable — stays in JSONB.
-	Metadata  []byte    `json:"metadata"`
-	CreatedAt time.Time `json:"created_at"`
+	Metadata  json.RawMessage `json:"metadata"`
+	CreatedAt time.Time       `json:"created_at"`
 	// Application-managed. Set explicitly in UPDATE queries (notably EndSession).
 	UpdatedAt time.Time `json:"updated_at"`
 }
@@ -1137,8 +1137,8 @@ type LearningTarget struct {
 	// Generic 3-tier difficulty. Domain-specific info (JLPT N5-N1, etc.) goes in metadata. NULL = not categorized.
 	Difficulty *string `json:"difficulty"`
 	// Domain-specific data not needing WHERE/JOIN/GROUP BY. Not queryable — if a field needs WHERE/JOIN/GROUP BY, promote to a column. LeetCode: {problem_url, companies, frequency, constraints}. Japanese: {jlpt_level, textbook, chapter, grammar_point}. System Design: {source_book, chapter, scenario_type}. Reading: {book_title, chapter, page_range}.
-	Metadata  []byte    `json:"metadata"`
-	CreatedAt time.Time `json:"created_at"`
+	Metadata  json.RawMessage `json:"metadata"`
+	CreatedAt time.Time       `json:"created_at"`
 	// Application-managed. Set explicitly in UPDATE queries.
 	UpdatedAt time.Time `json:"updated_at"`
 }
@@ -1269,8 +1269,8 @@ type ProcessRun struct {
 	// When execution completed/failed/skipped. NULL while pending or running. NULL + old started_at = abandoned/crashed run.
 	EndedAt *time.Time `json:"ended_at"`
 	// Kind-specific fields not warranting promotion. crawl: { source_url, item_count, http_status }. agent_schedule: { produced_task_ids, missed_run_policy }. Promote to a column when a field needs WHERE/JOIN/GROUP BY ≥ 3 times in queries.
-	Metadata  []byte    `json:"metadata"`
-	CreatedAt time.Time `json:"created_at"`
+	Metadata  json.RawMessage `json:"metadata"`
+	CreatedAt time.Time       `json:"created_at"`
 }
 
 // PARA projects — planning aggregate, execution vehicles. Short-term efforts with clear outcomes. Projects and milestones are siblings under a goal: a project may advance a goal without mapping to a specific milestone. Public portfolio/case-study fields live in project_profiles (1:1).
@@ -1360,7 +1360,7 @@ type ReviewCard struct {
 	// Learning target (problem, drill, chapter). CASCADE on target deletion. Unique (uq_review_cards_learning_target) — one card per target.
 	LearningTargetID uuid.UUID `json:"learning_target_id"`
 	// Serialized FSRS state (Due, Stability, Difficulty, Reps, Lapses). Opaque to SQL.
-	CardState []byte `json:"card_state"`
+	CardState json.RawMessage `json:"card_state"`
 	// Denormalized from card_state for index-based due-date queries.
 	Due time.Time `json:"due"`
 	// When the last attempt-driven FSRS review for this card failed to apply. NULL = never drifted. Paired with last_drift_reason by chk_review_card_drift_pair. Cleared on next successful review. Consumers (retrieval view) surface a drift_suspect flag when this is set and more recent than the last attempt.
@@ -1444,7 +1444,7 @@ type Task struct {
 	// When a human reviewer requested changes on a completed task. NULL unless state=revision_requested. Cleared when re-entering working after revision.
 	RevisionRequestedAt *time.Time `json:"revision_requested_at"`
 	// Non-routing task info: correlation keys, opaque payload hints. Promote a field to a column when WHERE/JOIN/GROUP BY usage exceeds 3 occurrences.
-	Metadata []byte `json:"metadata"`
+	Metadata json.RawMessage `json:"metadata"`
 }
 
 // Ordered request/response conversation turns on a task. Parts column is a JSONB array of a2a.Part values (flattened form). Hard size caps (16 parts max, 32 KB total) are DB-enforced bloat prevention — anything larger belongs in artifacts, not messages.
@@ -1457,7 +1457,7 @@ type TaskMessage struct {
 	// Order within a task conversation, 0-based. UNIQUE(task_id, position) prevents duplicates and out-of-order inserts.
 	Position int32 `json:"position"`
 	// JSONB array of a2a.Part values in a2a-go's flattened format. Each part is {"text": "..."} or {"data": {...}}. Serialized/deserialized by a2a-go — Go code never hand-rolls this shape.
-	Parts []byte `json:"parts"`
+	Parts json.RawMessage `json:"parts"`
 	// Row insertion timestamp.
 	CreatedAt time.Time `json:"created_at"`
 }

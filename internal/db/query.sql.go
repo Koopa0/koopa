@@ -593,9 +593,9 @@ RETURNING id, created_by, content, state, claim, invalidation_condition, metadat
 `
 
 type AppendHypothesisEvidenceParams struct {
-	EvidenceKey string    `json:"evidence_key"`
-	Entry       []byte    `json:"entry"`
-	ID          uuid.UUID `json:"id"`
+	EvidenceKey string          `json:"evidence_key"`
+	Entry       json.RawMessage `json:"entry"`
+	ID          uuid.UUID       `json:"id"`
 }
 
 // Atomically appends a JSON entry to metadata->evidence_key (e.g.
@@ -641,9 +641,9 @@ RETURNING id, task_id, role, position, parts, created_at
 `
 
 type AppendTaskMessageParams struct {
-	TaskID uuid.UUID   `json:"task_id"`
-	Role   MessageRole `json:"role"`
-	Parts  []byte      `json:"parts"`
+	TaskID uuid.UUID       `json:"task_id"`
+	Role   MessageRole     `json:"role"`
+	Parts  json.RawMessage `json:"parts"`
 }
 
 // Append a message to a task, computing position = MAX(position) + 1
@@ -867,17 +867,17 @@ FROM learning_attempts WHERE id = $1
 `
 
 type AttemptByIDRow struct {
-	ID               uuid.UUID `json:"id"`
-	LearningTargetID uuid.UUID `json:"learning_target_id"`
-	SessionID        uuid.UUID `json:"session_id"`
-	AttemptNumber    int32     `json:"attempt_number"`
-	Paradigm         string    `json:"paradigm"`
-	Outcome          string    `json:"outcome"`
-	DurationMinutes  *int32    `json:"duration_minutes"`
-	StuckAt          *string   `json:"stuck_at"`
-	ApproachUsed     *string   `json:"approach_used"`
-	AttemptedAt      time.Time `json:"attempted_at"`
-	Metadata         []byte    `json:"metadata"`
+	ID               uuid.UUID       `json:"id"`
+	LearningTargetID uuid.UUID       `json:"learning_target_id"`
+	SessionID        uuid.UUID       `json:"session_id"`
+	AttemptNumber    int32           `json:"attempt_number"`
+	Paradigm         string          `json:"paradigm"`
+	Outcome          string          `json:"outcome"`
+	DurationMinutes  *int32          `json:"duration_minutes"`
+	StuckAt          *string         `json:"stuck_at"`
+	ApproachUsed     *string         `json:"approach_used"`
+	AttemptedAt      time.Time       `json:"attempted_at"`
+	Metadata         json.RawMessage `json:"metadata"`
 }
 
 // Fetch a single attempt with its learning_target_id for target-alignment
@@ -943,21 +943,21 @@ type AttemptsByConceptParams struct {
 }
 
 type AttemptsByConceptRow struct {
-	ID                   uuid.UUID `json:"id"`
-	LearningTargetID     uuid.UUID `json:"learning_target_id"`
-	SessionID            uuid.UUID `json:"session_id"`
-	AttemptNumber        int32     `json:"attempt_number"`
-	Paradigm             string    `json:"paradigm"`
-	Outcome              string    `json:"outcome"`
-	DurationMinutes      *int32    `json:"duration_minutes"`
-	StuckAt              *string   `json:"stuck_at"`
-	ApproachUsed         *string   `json:"approach_used"`
-	AttemptedAt          time.Time `json:"attempted_at"`
-	Metadata             []byte    `json:"metadata"`
-	TargetTitle          string    `json:"target_title"`
-	TargetExternalID     *string   `json:"target_external_id"`
-	Difficulty           *string   `json:"difficulty"`
-	MatchedObservationID uuid.UUID `json:"matched_observation_id"`
+	ID                   uuid.UUID       `json:"id"`
+	LearningTargetID     uuid.UUID       `json:"learning_target_id"`
+	SessionID            uuid.UUID       `json:"session_id"`
+	AttemptNumber        int32           `json:"attempt_number"`
+	Paradigm             string          `json:"paradigm"`
+	Outcome              string          `json:"outcome"`
+	DurationMinutes      *int32          `json:"duration_minutes"`
+	StuckAt              *string         `json:"stuck_at"`
+	ApproachUsed         *string         `json:"approach_used"`
+	AttemptedAt          time.Time       `json:"attempted_at"`
+	Metadata             json.RawMessage `json:"metadata"`
+	TargetTitle          string          `json:"target_title"`
+	TargetExternalID     *string         `json:"target_external_id"`
+	Difficulty           *string         `json:"difficulty"`
+	MatchedObservationID uuid.UUID       `json:"matched_observation_id"`
 }
 
 // Attempts that produced an observation about the given concept, newest
@@ -1037,19 +1037,19 @@ type AttemptsByLearningTargetParams struct {
 }
 
 type AttemptsByLearningTargetRow struct {
-	ID               uuid.UUID `json:"id"`
-	LearningTargetID uuid.UUID `json:"learning_target_id"`
-	SessionID        uuid.UUID `json:"session_id"`
-	AttemptNumber    int32     `json:"attempt_number"`
-	Paradigm         string    `json:"paradigm"`
-	Outcome          string    `json:"outcome"`
-	DurationMinutes  *int32    `json:"duration_minutes"`
-	StuckAt          *string   `json:"stuck_at"`
-	ApproachUsed     *string   `json:"approach_used"`
-	AttemptedAt      time.Time `json:"attempted_at"`
-	Metadata         []byte    `json:"metadata"`
-	TargetTitle      string    `json:"target_title"`
-	TargetExternalID *string   `json:"target_external_id"`
+	ID               uuid.UUID       `json:"id"`
+	LearningTargetID uuid.UUID       `json:"learning_target_id"`
+	SessionID        uuid.UUID       `json:"session_id"`
+	AttemptNumber    int32           `json:"attempt_number"`
+	Paradigm         string          `json:"paradigm"`
+	Outcome          string          `json:"outcome"`
+	DurationMinutes  *int32          `json:"duration_minutes"`
+	StuckAt          *string         `json:"stuck_at"`
+	ApproachUsed     *string         `json:"approach_used"`
+	AttemptedAt      time.Time       `json:"attempted_at"`
+	Metadata         json.RawMessage `json:"metadata"`
+	TargetTitle      string          `json:"target_title"`
+	TargetExternalID *string         `json:"target_external_id"`
 }
 
 // All attempts on a specific learning target, newest first. Primary backing
@@ -1100,19 +1100,19 @@ ORDER BY a.attempted_at
 `
 
 type AttemptsBySessionRow struct {
-	ID               uuid.UUID `json:"id"`
-	LearningTargetID uuid.UUID `json:"learning_target_id"`
-	SessionID        uuid.UUID `json:"session_id"`
-	AttemptNumber    int32     `json:"attempt_number"`
-	Paradigm         string    `json:"paradigm"`
-	Outcome          string    `json:"outcome"`
-	DurationMinutes  *int32    `json:"duration_minutes"`
-	StuckAt          *string   `json:"stuck_at"`
-	ApproachUsed     *string   `json:"approach_used"`
-	AttemptedAt      time.Time `json:"attempted_at"`
-	Metadata         []byte    `json:"metadata"`
-	TargetTitle      string    `json:"target_title"`
-	TargetExternalID *string   `json:"target_external_id"`
+	ID               uuid.UUID       `json:"id"`
+	LearningTargetID uuid.UUID       `json:"learning_target_id"`
+	SessionID        uuid.UUID       `json:"session_id"`
+	AttemptNumber    int32           `json:"attempt_number"`
+	Paradigm         string          `json:"paradigm"`
+	Outcome          string          `json:"outcome"`
+	DurationMinutes  *int32          `json:"duration_minutes"`
+	StuckAt          *string         `json:"stuck_at"`
+	ApproachUsed     *string         `json:"approach_used"`
+	AttemptedAt      time.Time       `json:"attempted_at"`
+	Metadata         json.RawMessage `json:"metadata"`
+	TargetTitle      string          `json:"target_title"`
+	TargetExternalID *string         `json:"target_external_id"`
 }
 
 // All attempts within a session, oldest first. Backs end_session summary
@@ -2479,15 +2479,15 @@ RETURNING id, learning_target_id, session_id, attempt_number, paradigm, outcome,
 `
 
 type CreateAttemptParams struct {
-	LearningTargetID uuid.UUID `json:"learning_target_id"`
-	SessionID        uuid.UUID `json:"session_id"`
-	AttemptNumber    int32     `json:"attempt_number"`
-	Paradigm         string    `json:"paradigm"`
-	Outcome          string    `json:"outcome"`
-	DurationMinutes  *int32    `json:"duration_minutes"`
-	StuckAt          *string   `json:"stuck_at"`
-	ApproachUsed     *string   `json:"approach_used"`
-	Metadata         []byte    `json:"metadata"`
+	LearningTargetID uuid.UUID       `json:"learning_target_id"`
+	SessionID        uuid.UUID       `json:"session_id"`
+	AttemptNumber    int32           `json:"attempt_number"`
+	Paradigm         string          `json:"paradigm"`
+	Outcome          string          `json:"outcome"`
+	DurationMinutes  *int32          `json:"duration_minutes"`
+	StuckAt          *string         `json:"stuck_at"`
+	ApproachUsed     *string         `json:"approach_used"`
+	Metadata         json.RawMessage `json:"metadata"`
 }
 
 func (q *Queries) CreateAttempt(ctx context.Context, arg CreateAttemptParams) (LearningAttempt, error) {
@@ -2614,9 +2614,9 @@ RETURNING id, learning_target_id, card_state, due, last_sync_drift_at, last_drif
 `
 
 type CreateCardForLearningTargetParams struct {
-	LearningTargetID uuid.UUID `json:"learning_target_id"`
-	CardState        []byte    `json:"card_state"`
-	Due              time.Time `json:"due"`
+	LearningTargetID uuid.UUID       `json:"learning_target_id"`
+	CardState        json.RawMessage `json:"card_state"`
+	Due              time.Time       `json:"due"`
 }
 
 // Create a new FSRS review card for a learning target.
@@ -3344,12 +3344,12 @@ RETURNING id, created_by, assignee, title, state, deadline, priority, submitted_
 `
 
 type CreateTaskParams struct {
-	CreatedBy string     `json:"created_by"`
-	Assignee  string     `json:"assignee"`
-	Title     string     `json:"title"`
-	Deadline  *time.Time `json:"deadline"`
-	Priority  *string    `json:"priority"`
-	Metadata  []byte     `json:"metadata"`
+	CreatedBy string          `json:"created_by"`
+	Assignee  string          `json:"assignee"`
+	Title     string          `json:"title"`
+	Deadline  *time.Time      `json:"deadline"`
+	Priority  *string         `json:"priority"`
+	Metadata  json.RawMessage `json:"metadata"`
 }
 
 // Insert a new task in 'submitted' state. The chk_tasks_no_self_assignment
@@ -4081,16 +4081,16 @@ type EventsByFiltersParams struct {
 }
 
 type EventsByFiltersRow struct {
-	ID         uuid.UUID `json:"id"`
-	EntityID   string    `json:"entity_id"`
-	Timestamp  time.Time `json:"timestamp"`
-	ChangeKind string    `json:"change_kind"`
-	EntityType string    `json:"entity_type"`
-	Actor      string    `json:"actor"`
-	Project    *string   `json:"project"`
-	Title      *string   `json:"title"`
-	Metadata   []byte    `json:"metadata"`
-	CreatedAt  time.Time `json:"created_at"`
+	ID         uuid.UUID       `json:"id"`
+	EntityID   string          `json:"entity_id"`
+	Timestamp  time.Time       `json:"timestamp"`
+	ChangeKind string          `json:"change_kind"`
+	EntityType string          `json:"entity_type"`
+	Actor      string          `json:"actor"`
+	Project    *string         `json:"project"`
+	Title      *string         `json:"title"`
+	Metadata   json.RawMessage `json:"metadata"`
+	CreatedAt  time.Time       `json:"created_at"`
 }
 
 // List activity events within a time range with optional entity_type, project,
@@ -4160,16 +4160,16 @@ type EventsByTimeRangeParams struct {
 }
 
 type EventsByTimeRangeRow struct {
-	ID         uuid.UUID `json:"id"`
-	EntityID   string    `json:"entity_id"`
-	Timestamp  time.Time `json:"timestamp"`
-	ChangeKind string    `json:"change_kind"`
-	EntityType string    `json:"entity_type"`
-	Actor      string    `json:"actor"`
-	Project    *string   `json:"project"`
-	Title      *string   `json:"title"`
-	Metadata   []byte    `json:"metadata"`
-	CreatedAt  time.Time `json:"created_at"`
+	ID         uuid.UUID       `json:"id"`
+	EntityID   string          `json:"entity_id"`
+	Timestamp  time.Time       `json:"timestamp"`
+	ChangeKind string          `json:"change_kind"`
+	EntityType string          `json:"entity_type"`
+	Actor      string          `json:"actor"`
+	Project    *string         `json:"project"`
+	Title      *string         `json:"title"`
+	Metadata   json.RawMessage `json:"metadata"`
+	CreatedAt  time.Time       `json:"created_at"`
 }
 
 // List activity events within a time range, ordered by timestamp descending.
@@ -5284,11 +5284,11 @@ RETURNING id, task_id, created_by, name, description, parts, created_at
 `
 
 type InsertArtifactParams struct {
-	TaskID      *uuid.UUID `json:"task_id"`
-	CreatedBy   *string    `json:"created_by"`
-	Name        string     `json:"name"`
-	Description string     `json:"description"`
-	Parts       []byte     `json:"parts"`
+	TaskID      *uuid.UUID      `json:"task_id"`
+	CreatedBy   *string         `json:"created_by"`
+	Name        string          `json:"name"`
+	Description string          `json:"description"`
+	Parts       json.RawMessage `json:"parts"`
 }
 
 // Insert a structured deliverable, optionally bound to a task. The
@@ -12044,9 +12044,9 @@ RETURNING id, learning_target_id, card_state, due, last_sync_drift_at, last_drif
 `
 
 type UpdateCardStateParams struct {
-	CardState []byte    `json:"card_state"`
-	Due       time.Time `json:"due"`
-	ID        uuid.UUID `json:"id"`
+	CardState json.RawMessage `json:"card_state"`
+	Due       time.Time       `json:"due"`
+	ID        uuid.UUID       `json:"id"`
 }
 
 // Update card state and due date after a review. Clears drift markers since

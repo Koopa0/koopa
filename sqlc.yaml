@@ -69,6 +69,10 @@ sql:
             go_type:
               type: "RawMessage"
               import: "encoding/json"
+          - db_type: "jsonb"
+            go_type:
+              type: "RawMessage"
+              import: "encoding/json"
             nullable: true
           - db_type: "vector"
             go_type:
