@@ -61,10 +61,23 @@ func (s *Server) morningContext(ctx context.Context, _ *mcp.CallToolRequest, inp
 		date = t
 	}
 
+	// Initialize every list field to empty slice so that JSON marshalling
+	// always emits []. Sections that are not requested (or that fail to
+	// load) leave their field as the zero-length slice rather than null —
+	// the json-api rule requires lists to be [] not null.
 	out := MorningContextOutput{
 		Date:                 date.Format(time.DateOnly),
+		OverdueTasks:         []todo.PendingDetail{},
+		TodayTasks:           []todo.PendingDetail{},
+		CommittedTasks:       []daily.Item{},
+		UpcomingTasks:        []todo.PendingDetail{},
+		ActiveGoals:          []goal.ActiveGoalSummary{},
 		PendingTasksReceived: []task.Task{},
 		PendingTasksIssued:   []task.Task{},
+		UnverifiedHypotheses: []hypothesis.Record{},
+		RSSHighlights:        []RSSHighlight{},
+		PlanHistory:          []agentnote.Note{},
+		ContentPipeline:      []ContentSummary{},
 	}
 	s.fillMorningSections(ctx, date, input.Sections, &out)
 	return nil, out, nil
