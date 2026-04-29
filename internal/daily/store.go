@@ -139,9 +139,23 @@ func (s *Store) ItemByID(ctx context.Context, id uuid.UUID) (*Item, error) {
 }
 
 // DeletePlannedByDate removes only 'planned' items for a date (re-planning).
-// Preserves done/deferred/dropped items as historical records.
-func (s *Store) DeletePlannedByDate(ctx context.Context, date time.Time) error {
-	return s.q.DeletePlannedItemsByDate(ctx, date)
+// Preserves done/deferred/dropped items as historical records. Returns the
+// removed rows (id + todo_id + title) so callers can surface "what was
+// displaced" when plan_day idempotently replaces an existing plan.
+func (s *Store) DeletePlannedByDate(ctx context.Context, date time.Time) ([]RemovedItem, error) {
+	rows, err := s.q.DeletePlannedItemsByDate(ctx, date)
+	if err != nil {
+		return nil, fmt.Errorf("deleting planned items for %s: %w", date.Format(time.DateOnly), err)
+	}
+	out := make([]RemovedItem, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, RemovedItem{
+			ID:        r.ID,
+			TodoID:    r.TodoID,
+			TodoTitle: r.TodoTitle,
+		})
+	}
+	return out, nil
 }
 
 func rawToItem(r *db.DailyPlanItem) *Item {

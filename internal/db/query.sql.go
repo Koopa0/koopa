@@ -3745,15 +3745,46 @@ func (q *Queries) DeletePlanEntry(ctx context.Context, id uuid.UUID) error {
 	return err
 }
 
-const deletePlannedItemsByDate = `-- name: DeletePlannedItemsByDate :exec
-DELETE FROM daily_plan_items WHERE plan_date = $1 AND status = 'planned'
+const deletePlannedItemsByDate = `-- name: DeletePlannedItemsByDate :many
+WITH deleted AS (
+    DELETE FROM daily_plan_items
+    WHERE plan_date = $1 AND status = 'planned'
+    RETURNING id, todo_id
+)
+SELECT d.id, d.todo_id, t.title AS todo_title
+FROM deleted d
+JOIN todos t ON t.id = d.todo_id
 `
+
+type DeletePlannedItemsByDateRow struct {
+	ID        uuid.UUID `json:"id"`
+	TodoID    uuid.UUID `json:"todo_id"`
+	TodoTitle string    `json:"todo_title"`
+}
 
 // Remove only 'planned' items for a date (used when re-planning).
 // Preserves done/deferred/dropped items as historical records.
-func (q *Queries) DeletePlannedItemsByDate(ctx context.Context, planDate time.Time) error {
-	_, err := q.db.Exec(ctx, deletePlannedItemsByDate, planDate)
-	return err
+// Returns the removed rows so callers can surface "what was displaced"
+// when plan_day idempotently replaces an existing plan; the JOIN to
+// todos exposes the title without forcing a second round-trip.
+func (q *Queries) DeletePlannedItemsByDate(ctx context.Context, planDate time.Time) ([]DeletePlannedItemsByDateRow, error) {
+	rows, err := q.db.Query(ctx, deletePlannedItemsByDate, planDate)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []DeletePlannedItemsByDateRow{}
+	for rows.Next() {
+		var i DeletePlannedItemsByDateRow
+		if err := rows.Scan(&i.ID, &i.TodoID, &i.TodoTitle); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const deleteProfile = `-- name: DeleteProfile :exec

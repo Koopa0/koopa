@@ -58,7 +58,17 @@ ORDER BY dpi.plan_date DESC, dpi.position;
 SELECT id, plan_date, todo_id, selected_by, position, reason, agent_note_id, status, created_at, updated_at
 FROM daily_plan_items WHERE id = @id;
 
--- name: DeletePlannedItemsByDate :exec
+-- name: DeletePlannedItemsByDate :many
 -- Remove only 'planned' items for a date (used when re-planning).
 -- Preserves done/deferred/dropped items as historical records.
-DELETE FROM daily_plan_items WHERE plan_date = @plan_date AND status = 'planned';
+-- Returns the removed rows so callers can surface "what was displaced"
+-- when plan_day idempotently replaces an existing plan; the JOIN to
+-- todos exposes the title without forcing a second round-trip.
+WITH deleted AS (
+    DELETE FROM daily_plan_items
+    WHERE plan_date = @plan_date AND status = 'planned'
+    RETURNING id, todo_id
+)
+SELECT d.id, d.todo_id, t.title AS todo_title
+FROM deleted d
+JOIN todos t ON t.id = d.todo_id;

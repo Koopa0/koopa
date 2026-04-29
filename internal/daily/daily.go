@@ -25,6 +25,16 @@ const (
 	StatusDropped  Status = "dropped"
 )
 
+// RemovedItem describes a daily plan item that DeletePlannedByDate
+// removed during re-planning. It carries just enough context (todo_id
+// + title) for plan_day callers to surface "what got displaced" without
+// re-querying the todos table.
+type RemovedItem struct {
+	ID        uuid.UUID `json:"id"`
+	TodoID    uuid.UUID `json:"todo_id"`
+	TodoTitle string    `json:"todo_title"`
+}
+
 // Item represents a daily plan item with joined todo item details.
 type Item struct {
 	ID           uuid.UUID  `json:"id"`
