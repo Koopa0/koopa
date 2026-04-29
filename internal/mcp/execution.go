@@ -211,13 +211,13 @@ func (s *Server) advanceComplete(ctx context.Context, itemID uuid.UUID) (*mcp.Ca
 // PlanDayInput is the input for the plan_day tool.
 type PlanDayInput struct {
 	Date        *string       `json:"date,omitempty" jsonschema_description:"Plan date YYYY-MM-DD (default: today)"`
-	Items       []PlanDayItem `json:"items" jsonschema:"required" jsonschema_description:"Todo items to plan for the day"`
+	Items       []PlanDayItem `json:"items" jsonschema:"required" jsonschema_description:"Todo items to plan for the day. Each todo MUST already be in state=todo (not inbox/done/someday). Inbox-state items are rejected — promote them first via advance_work(action=clarify). plan_day is idempotent for the given date: re-calling with a different items list replaces existing 'planned' rows for that date and reports the displaced items in items_removed."`
 	AgentNoteID *string       `json:"agent_note_id,omitempty" jsonschema_description:"Optional agent_note UUID that drove this planning session"`
 }
 
 // PlanDayItem is a single item in the plan_day input.
 type PlanDayItem struct {
-	TaskID   string `json:"task_id" jsonschema:"required" jsonschema_description:"Todo item UUID"`
+	TaskID   string `json:"task_id" jsonschema:"required" jsonschema_description:"Todo item UUID. The todo must be in state=todo; inbox/done/someday are rejected."`
 	Position int    `json:"position,omitempty" jsonschema_description:"Position in plan (0-based, lower = higher priority)"`
 }
 

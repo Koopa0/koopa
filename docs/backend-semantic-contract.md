@@ -108,8 +108,8 @@ naming quibble.
 - **directive** — **vocabulary label only, not a structural entity**. A
   task whose expected output is a report and whose target exercises
   autonomous judgment. At the MCP boundary the agent uses
-  `propose_commitment(type=directive)` / `acknowledge_directive` /
-  `file_report`; in the DB it is a plain `tasks` row. No `kind`
+  `propose_directive` / `acknowledge_directive` / `file_report`; in the
+  DB it is a plain `tasks` row. No `kind`
   discriminator today. If behavior diverges in the future, a
   `tasks.kind` column gets added then.
 - **task_message** — an ordered request/response turn on a task
@@ -310,7 +310,7 @@ Frontend relevance flags:
 | `agents` | Actor identity registry | Go literal → `SyncToTable` at startup. Never via MCP or admin UI. | Capability flags live in Go, NOT in DB. | All `created_by` / `actor` / `assignee` FKs. | Upsert at boot; retire on removal (status=`retired`). | support |
 | `users` + `refresh_tokens` | Login identity | `internal/auth` handlers | Single admin today. RBAC is explicitly a future concern, not designed. | None (auth is its own island). | Create on first login; rotate refresh tokens. | internal |
 | `areas` | PARA area lookup | Human-only (admin UI). Never via MCP. | Persistent; never "completes". | `goals.area_id`, `projects.area_id` (both SET NULL on delete). | Static. | primary |
-| `goals` | Aspirational outcome | MCP `propose_commitment(type=goal)` → `commit_proposal`; admin UI. | Status is manual; not auto-derived. | 1:N milestones, 1:N projects, 0:N learning_plans. | not_started → in_progress → done / abandoned / on_hold. | primary |
+| `goals` | Aspirational outcome | MCP `propose_goal` → `commit_proposal`; admin UI. | Status is manual; not auto-derived. | 1:N milestones, 1:N projects, 0:N learning_plans. | not_started → in_progress → done / abandoned / on_hold. | primary |
 | `milestones` | Goal progress checkpoint | MCP proposal; admin UI. | Binary completion (`completed_at`); no target/current values. | Belongs to exactly one goal (CASCADE). | One-shot: incomplete → completed (via `completed_at`). | primary |
 | `projects` | PARA execution vehicle | MCP proposal; admin UI. | Separate lifecycle from goals. | Optional goal link; 1:1 project_profile; 0:N contents; 0:N todos. | planned → in_progress → completed \| archived, plus on_hold / maintained. | primary |
 | `project_profiles` | Public portfolio facet | Admin UI only. | Existence ≠ visibility (`is_public` gates). | 1:1 project (CASCADE). | Independent edits; cannot be `is_public=true` when owning project is archived. | primary (public site); internal (admin) |
@@ -325,7 +325,7 @@ Frontend relevance flags:
 | `topics` | Curated domain lookup | Admin UI. | ~10-20, manually managed. | Junction to contents, feeds, bookmarks. | Static. | support |
 | `tags` | Fine-grained label | Admin UI. Raw tags resolved via `tag_aliases`. | Tags classify content only; NOT for learning diagnosis. | Self-referencing hierarchy; junctions to contents, bookmarks. | Static registry. | support |
 | `tag_aliases` | raw→canonical mapping | Admin UI (manual) + auto-resolver (auto-*). | Unmapped/rejected rows are legitimate states. | Resolves to `tags.id`. | raw received → auto or admin resolution → confirmed. | internal |
-| `learning_domains` | Closed lookup | Seed + `propose_commitment(type=learning_domain)`. | Bootstrap via migration 002. | FK target for concepts, targets, sessions, plans. | Static per domain. | support |
+| `learning_domains` | Closed lookup | Seed + `propose_learning_domain`. | Bootstrap via migration 002. | FK target for concepts, targets, sessions, plans. | Static per domain. | support |
 | `concepts` | Learning ontology node | MCP proposal for structural changes; `record_attempt` auto-creates leaf-only same-domain concepts. | Mastery is derived, not stored. | learning_target_concepts, note_concepts, content_concepts, observations. | Static hierarchy. | primary (mastery views) |
 | `learning_targets` | What to learn | MCP `record_attempt` find-or-create; `manage_plan(add_entries)`; admin. | Independent of notes. | learning_target_concepts, learning_target_notes, learning_target_contents, learning_target_relations, review_cards, learning_attempts. | Static; `metadata` JSONB for domain-specific fields. | primary |
 | `learning_sessions` | Orchestration boundary | MCP `start_session` / `end_session`. | At most one active. | 1:N attempts; optional agent_note(kind=reflection) link; optional daily_plan_item link. | started → ended. | primary |
@@ -334,11 +334,11 @@ Frontend relevance flags:
 | `observation_categories` | Category slug registry | Seed. | FK enforces typo-free GROUP BY. | Referenced by observations. | Static. | internal |
 | `learning_plans` | Ordered curriculum | MCP proposal. | Only `active` is tracked in execution. | 0:N learning_plan_entries; optional goal link. | draft → active → completed / paused / abandoned. | primary |
 | `learning_plan_entries` | Plan ↔ target with order + lifecycle | MCP `manage_plan`. | Substitution forms a DAG (trigger-enforced). | Belongs to plan (CASCADE); target (RESTRICT). | planned → completed / skipped / substituted. | primary |
-| `learning_hypotheses` | Falsifiable learning-domain claim | MCP `propose_commitment(type=hypothesis)` / `track_hypothesis`. | LEARNING-only; do not use for non-learning claims. | Optional evidence FKs into attempts / observations. | unverified → verified / invalidated → archived. | primary |
+| `learning_hypotheses` | Falsifiable learning-domain claim | MCP `propose_hypothesis` / `track_hypothesis`. | LEARNING-only; do not use for non-learning claims. | Optional evidence FKs into attempts / observations. | unverified → verified / invalidated → archived. | primary |
 | `learning_target_relations` | Target relation graph | `record_attempt` side effect; MCP. | Same-domain only (trigger). Symmetric types auto-insert reverse edge. | N:N on learning_targets. | Append-only triples. | support |
 | `review_cards` | FSRS state per target | System-managed (`internal/learning/fsrs`). Never via MCP. | Exactly one per target. | 1:1 target (CASCADE); 1:N review_logs. | FSRS-managed; drift markers (`last_sync_drift_at`) flag desync. | primary (review schedule) |
 | `review_logs` | FSRS history | System-managed. Never via MCP. | Append-only; retained indefinitely. | 1:N card. | Append-only. | internal |
-| `tasks` | Inter-agent work unit | MCP `propose_commitment(type=directive)` / `acknowledge_directive` / `file_report`; admin UI (Reply, RequestRevision). | Completion requires ≥1 response + ≥1 artifact (trigger). Source ≠ target. | 1:N task_messages; 1:N artifacts. | submitted → working → completed / canceled, plus revision cycle. | primary |
+| `tasks` | Inter-agent work unit | MCP `propose_directive` / `acknowledge_directive` / `file_report`; admin UI (Reply, RequestRevision). | Completion requires ≥1 response + ≥1 artifact (trigger). Source ≠ target. | 1:N task_messages; 1:N artifacts. | submitted → working → completed / canceled, plus revision cycle. | primary |
 | `task_messages` | Request/response turn | Via `task.Store.Submit` + `Complete` + `Reply`. | Bounds: 16 parts, 32 KB (DB-enforced). | Belongs to a task (CASCADE). | Append-only. | support |
 | `artifacts` | Structured deliverable | MCP `file_report`. | Bounds: 32 parts, 256 KB. Task-bound or standalone. | Optional task (CASCADE). | Append-only. | primary |
 | `agent_notes` | Agent narrative log | MCP `write_agent_note`. | Self-directed; three kinds with enforced binding (plan → daily_plan_item, reflection → learning_session). | Optional link FROM daily_plan_item and learning_session (not the other way). | Append-only. | support |
@@ -539,8 +539,8 @@ created_at") is NOT supported.
   fetch-now / delete.
 - **feed_entry**: mark read / curate → content / curate → bookmark /
   ignore / submit feedback.
-- **task**: submit (via propose_commitment directive) / accept
-  (acknowledge_directive) / reply / request revision / file report
+- **task**: submit (via `propose_directive`) / accept
+  (`acknowledge_directive`) / reply / request revision / file report
   (complete) / cancel.
 - **learning_session**: start / end (carrying a reflection).
 - **learning_plan**: propose / commit / update status / add entries /
@@ -588,7 +588,7 @@ created_at") is NOT supported.
 
 | Concept | DB column / table | Go type / field | MCP tool / JSON field | UI label (suggested) |
 |---|---|---|---|---|
-| Inter-agent work | `tasks` | `task.Task`; `Source` / `Target` fields map to `created_by` / `assignee` | `propose_commitment(type=directive)`, `acknowledge_directive`, `file_report` | "Task" (default) or "Directive" (when framed as autonomous-report) |
+| Inter-agent work | `tasks` | `task.Task`; `Source` / `Target` fields map to `created_by` / `assignee` | `propose_directive`, `acknowledge_directive`, `file_report` | "Task" (default) or "Directive" (when framed as autonomous-report) |
 | Personal work item | `todos` | `todo.Item` | `capture_inbox`, `advance_work` | "Todo" |
 | Today's commitment | `daily_plan_items` | `daily.PlanItem` | `plan_day` | "Daily plan" / "Today" |
 | Agent narrative | `agent_notes` | `agent/note.Note` | `write_agent_note`, `query_agent_notes` | "Agent note" (never bare "note") |
@@ -603,7 +603,7 @@ created_at") is NOT supported.
 | Concept | `concepts` | `learning.Concept` (via store helpers) | — (referenced by slug) | "Concept" |
 | Target | `learning_targets` | `learning.Target` | — (referenced by id) | "Learning target" / domain-specific: "Problem", "Chapter", etc. |
 | Review card | `review_cards` | `fsrs.Card` | — (internal) | "Review" |
-| Hypothesis | `learning_hypotheses` | `hypothesis.Hypothesis` | `propose_commitment(type=hypothesis)`, `track_hypothesis` | "Hypothesis" |
+| Hypothesis | `learning_hypotheses` | `hypothesis.Hypothesis` | `propose_hypothesis`, `track_hypothesis` | "Hypothesis" |
 | Priority (task/todo) | `tasks.priority` / `todos.priority` CHECK `{high, medium, low}` | — | field value ∈ `{"high","medium","low"}` | Priority chip |
 
 ### Forbidden / retired vocabulary
@@ -722,7 +722,7 @@ violate the current semantics.
 16. **No silent concept creation for non-leaf / cross-domain cases**.
     `record_attempt` auto-creates concepts only if leaf, same-domain,
     inferable kind. Structural changes go through
-    `propose_commitment`.
+    `propose_hypothesis` (or admin UI for non-claim-shaped changes).
 
 ### Vocabulary
 
@@ -753,9 +753,8 @@ that touches them as needing explicit decision.
    not-yet-propagated.*
 
 2. **`learning_domains` lifecycle**. New domains can be proposed at
-   runtime via `propose_commitment(type=learning_domain)` but there
-   is no retire / deactivate flow beyond the `active` flag. No UI
-   for it today.
+   runtime via `propose_learning_domain` but there is no retire /
+   deactivate flow beyond the `active` flag. No UI for it today.
 
 3. **`agent_notes.metadata` schema**. Per-kind metadata structure
    (e.g. `plan → {reasoning}`) is policy-mandatory, not

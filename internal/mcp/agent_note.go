@@ -47,7 +47,7 @@ const queryAgentNotesMaxLimit = 200
 
 // WriteAgentNoteInput is the input for the write_agent_note tool.
 type WriteAgentNoteInput struct {
-	Kind     string         `json:"kind" jsonschema:"required" jsonschema_description:"Entry kind: plan, context, or reflection"`
+	Kind     string         `json:"kind" jsonschema:"required" jsonschema_description:"Note category — pick exactly one. plan: forward-looking commitment narrative (what I plan to do next, what I'm choosing not to do, planning rationale). context: state/decision snapshot at a point in time (what I just decided and why, current understanding of the situation, hand-off context for future me). reflection: backward-looking analysis (what happened, what worked, what didn't, lessons drawn). Each note is self-directed memory; never a message to another agent — for inter-agent coordination use task / task_message / artifact instead."`
 	Content  string         `json:"content" jsonschema:"required" jsonschema_description:"Agent note content (markdown)"`
 	Metadata map[string]any `json:"metadata,omitempty" jsonschema_description:"Per-kind structured metadata. plan: {reasoning}. context/reflection: freeform."`
 }
