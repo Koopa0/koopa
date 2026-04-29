@@ -6,9 +6,9 @@
 //   - file_report           — target agent completes a task with a
 //     response message + artifact (atomic).
 //
-// The propose_commitment(type=directive) source side of the protocol
-// lives in commitment.go because it shares the two-phase proposal token
-// plumbing with the non-directive commitment types.
+// The propose_directive source side of the protocol lives in
+// propose_flat.go (and shares the proposal-token plumbing in
+// commitment.go with the non-directive commitment types).
 
 package mcp
 

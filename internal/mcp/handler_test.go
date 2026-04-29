@@ -133,40 +133,15 @@ func TestWriteAgentNote_Validation(t *testing.T) {
 	}
 }
 
-// --- propose_commitment ---
+// --- propose_goal (representative happy path for the typed propose tools) ---
 
-func TestProposeCommitment_Validation(t *testing.T) {
+func TestProposeGoal_HappyPath(t *testing.T) {
 	s := newTestServer()
-	tests := []struct {
-		name    string
-		input   ProposeCommitmentInput
-		wantErr string
-	}{
-		{name: "invalid type", input: ProposeCommitmentInput{Type: "invalid"}, wantErr: "invalid type"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			_, _, err := callHandler(t, s.proposeCommitment, tt.input)
-			if err == nil {
-				t.Fatal("expected error, got nil")
-			}
-			if !contains(err.Error(), tt.wantErr) {
-				t.Errorf("error = %q, want containing %q", err, tt.wantErr)
-			}
-		})
-	}
-}
-
-func TestProposeCommitment_GoalHappyPath(t *testing.T) {
-	s := newTestServer()
-	input := ProposeCommitmentInput{
-		Type: "goal",
-		Fields: map[string]any{
-			"title":       "Pass JLPT N2",
-			"description": "Japanese language proficiency",
-		},
-	}
-	_, out, err := callHandler(t, s.proposeCommitment, input)
+	desc := "Japanese language proficiency"
+	_, out, err := callHandler(t, s.proposeGoal, ProposeGoalInput{
+		Title:       "Pass JLPT N2",
+		Description: &desc,
+	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -657,7 +632,13 @@ func TestToolSchemaGeneration(t *testing.T) {
 		{"AdvanceWorkInput", testSchema[AdvanceWorkInput]},
 		{"PlanDayInput", testSchema[PlanDayInput]},
 		{"WriteAgentNoteInput", testSchema[WriteAgentNoteInput]},
-		{"ProposeCommitmentInput", testSchema[ProposeCommitmentInput]},
+		{"ProposeGoalInput", testSchema[ProposeGoalInput]},
+		{"ProposeProjectInput", testSchema[ProposeProjectInput]},
+		{"ProposeMilestoneInput", testSchema[ProposeMilestoneInput]},
+		{"ProposeDirectiveInput", testSchema[ProposeDirectiveInput]},
+		{"ProposeHypothesisInput", testSchema[ProposeHypothesisInput]},
+		{"ProposeLearningPlanInput", testSchema[ProposeLearningPlanInput]},
+		{"ProposeLearningDomainInput", testSchema[ProposeLearningDomainInput]},
 		{"CommitProposalInput", testSchema[CommitProposalInput]},
 		{"FileReportInput", testSchema[FileReportInput]},
 		{"AcknowledgeDirectiveInput", testSchema[AcknowledgeDirectiveInput]},

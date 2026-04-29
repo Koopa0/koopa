@@ -198,7 +198,6 @@ func NewServer(pool *pgxpool.Pool, logger *slog.Logger, opts ...ServerOption) *S
 	addTool(s, toolFrom(ops.QueryAgentNotes), s.queryAgentNotes)
 
 	// --- Intent & a2a ---
-	addTool(s, toolFrom(ops.ProposeCommitment), s.proposeCommitment)
 	addTool(s, toolFrom(ops.ProposeGoal), s.proposeGoal)
 	addTool(s, toolFrom(ops.ProposeProject), s.proposeProject)
 	addTool(s, toolFrom(ops.ProposeMilestone), s.proposeMilestone)

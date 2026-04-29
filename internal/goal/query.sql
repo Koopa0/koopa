@@ -146,8 +146,8 @@ LIMIT @max_results;
 
 -- name: AreaIDBySlugOrName :one
 -- Resolve an area identifier (slug or display name, case-insensitive on
--- name) to its UUID. Used by propose_commitment when wiring goals or
--- projects to an area without forcing the caller to know UUIDs.
+-- name) to its UUID. Used by propose_goal / propose_project when
+-- wiring an area without forcing the caller to know UUIDs.
 SELECT id FROM areas
 WHERE slug = @identifier OR LOWER(name) = LOWER(@identifier)
 LIMIT 1;

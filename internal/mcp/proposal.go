@@ -1,5 +1,5 @@
 // proposal.go implements the HMAC-signed proposal token used by the
-// two-phase commit pattern (propose_commitment → commit_proposal).
+// two-phase commit pattern (propose_<type> → commit_proposal).
 //
 // A proposal token is base64(payload).base64(hmac-sha256(payload)).
 // Key properties:

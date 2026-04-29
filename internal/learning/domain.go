@@ -28,8 +28,8 @@ func (s *Store) CreateDomain(ctx context.Context, slug, name string) (*Domain, e
 }
 
 // DomainExists reports whether a learning_domains row with the given slug
-// exists. Used by propose_commitment(type=learning_domain) to reject
-// duplicates before the INSERT fires a unique-violation round trip.
+// exists. Used by propose_learning_domain to reject duplicates before
+// the INSERT fires a unique-violation round trip.
 func (s *Store) DomainExists(ctx context.Context, slug string) (bool, error) {
 	exists, err := s.q.LearningDomainExists(ctx, slug)
 	if err != nil {

@@ -48,7 +48,7 @@ var (
 
 // Domain is a learning domain (FK target for concepts, targets, sessions,
 // plans). Closed set bootstrapped via migration 002, extended at runtime
-// through propose_commitment(type=learning_domain).
+// through propose_learning_domain.
 type Domain struct {
 	Slug      string    `json:"slug"`
 	Name      string    `json:"name"`

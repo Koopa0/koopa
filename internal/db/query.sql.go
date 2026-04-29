@@ -741,8 +741,8 @@ LIMIT 1
 `
 
 // Resolve an area identifier (slug or display name, case-insensitive on
-// name) to its UUID. Used by propose_commitment when wiring goals or
-// projects to an area without forcing the caller to know UUIDs.
+// name) to its UUID. Used by propose_goal / propose_project when
+// wiring an area without forcing the caller to know UUIDs.
 func (q *Queries) AreaIDBySlugOrName(ctx context.Context, identifier string) (uuid.UUID, error) {
 	row := q.db.QueryRow(ctx, areaIDBySlugOrName, identifier)
 	var id uuid.UUID

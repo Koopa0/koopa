@@ -113,21 +113,6 @@ func QueryAgentNotes() Meta {
 	}
 }
 
-// ProposeCommitment returns metadata for the deprecated Wave-1 multiplexer.
-// Forwards to the typed flat handlers (propose_goal, propose_directive, …)
-// during the 2-week deprecation window (2026-04-24 → 2026-05-08). Removal
-// is tracked in .agents/shim-removal-checklist-2026-05-08.md.
-func ProposeCommitment() Meta {
-	return Meta{
-		Name:        "propose_commitment",
-		Domain:      DomainMeta,
-		Writability: ReadOnly,
-		Stability:   StabilityDeprecated,
-		Since:       since,
-		Description: "DEPRECATED 2026-04-24 (sunset 2026-05-08) — use propose_goal, propose_project, propose_milestone, propose_directive, propose_hypothesis, propose_learning_plan, propose_learning_domain. Shim forwards to the typed handler based on the type field; warnings array carries a caller-visible deprecation notice. Migrate call sites to the flat tool whose name matches the type you were passing.",
-	}
-}
-
 // ProposeGoal returns metadata for the flat propose_goal tool.
 func ProposeGoal() Meta {
 	return Meta{
@@ -224,7 +209,7 @@ func CommitProposal() Meta {
 		Writability: Additive,
 		Stability:   StabilityStable,
 		Since:       since,
-		Description: "Commit a previously proposed entity using the proposal_token from propose_commitment. Creates the entity in the database. Supports optional modifications to override fields before commit.",
+		Description: "Commit a previously proposed entity using the proposal_token from any propose_<type> tool. Creates the entity in the database. Supports optional modifications to override fields before commit.",
 	}
 }
 
@@ -284,7 +269,7 @@ func TrackHypothesis() Meta {
 		Writability: Idempotent,
 		Stability:   StabilityStable,
 		Since:       since,
-		Description: "Update an existing hypothesis. Actions: verify (claim confirmed), invalidate (claim disproven), archive (retire), add_evidence (append supporting data). Hypothesis creation goes through propose_commitment.",
+		Description: "Update an existing hypothesis. Actions: verify (claim confirmed), invalidate (claim disproven), archive (retire), add_evidence (append supporting data). Hypothesis creation goes through propose_hypothesis.",
 	}
 }
 
@@ -623,7 +608,6 @@ func All() []Meta {
 		PlanDay(),
 		WriteAgentNote(),
 		QueryAgentNotes(),
-		ProposeCommitment(),
 		ProposeGoal(),
 		ProposeProject(),
 		ProposeMilestone(),

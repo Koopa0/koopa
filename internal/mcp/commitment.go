@@ -1,19 +1,14 @@
-// commitment.go holds the two-phase commitment MCP tools:
-// propose_commitment and commit_proposal. This is the approved pattern
-// for any entity that requires explicit human endorsement — goal,
-// project, milestone, hypothesis, learning_plan, directive. See
-// .claude/rules/mcp-decision-policy.md §8 for the proposal-first
-// matrix.
-//
-// Why a multiplexer here but flat tools elsewhere (content):
-//   - All commitment types share the same workflow (propose → preview
-//     → commit) and the same proposal-token plumbing.
-//   - Action set is fixed (the Type discriminator is closed).
-//   - Splitting would duplicate the proposal-token validator six times.
+// commitment.go holds the two-phase commitment MCP tools: the seven
+// typed propose_<type> tools (in propose_flat.go) and commit_proposal
+// (here). This is the approved pattern for any entity that requires
+// explicit human endorsement — goal, project, milestone, hypothesis,
+// learning_plan, learning_domain, directive. See
+// .claude/rules/mcp-decision-policy.md §8 for the proposal-first matrix.
 //
 // The HMAC signing/verification lives in proposal.go. This file owns
-// per-Type field validation and the commit branch that turns a
-// verified token into a domain entity insert.
+// per-type field validation (resolveProposalFields and its siblings)
+// and the commit branch that turns a verified token into a domain
+// entity insert.
 
 package mcp
 
@@ -44,72 +39,44 @@ import (
 // us return a specific error instead of a generic CheckViolation from PG.
 var learningDomainSlugPattern = regexp.MustCompile(`^[a-z][a-z0-9-]*$`)
 
-// --- propose_commitment ---
-
-// ProposeCommitmentInput is the input for the propose_commitment tool.
-type ProposeCommitmentInput struct {
-	Type   string         `json:"type" jsonschema:"required" jsonschema_description:"Entity type: goal, project, milestone, directive, hypothesis, learning_plan"`
-	Fields map[string]any `json:"fields" jsonschema:"required" jsonschema_description:"Type-specific fields"`
-}
-
-// ProposeCommitmentOutput is the output of the propose_commitment tool.
-type ProposeCommitmentOutput struct {
+// ProposeOutput is the response shape shared by every typed
+// propose_<type> tool. Preview echoes the resolved fields the caller
+// will commit; ProposalToken is the HMAC-signed payload that
+// commit_proposal verifies.
+type ProposeOutput struct {
 	Type          string         `json:"type"`
 	Preview       map[string]any `json:"preview"`
 	Warnings      []string       `json:"warnings"`
 	ProposalToken string         `json:"proposal_token"`
 }
 
-// proposeCommitment is the Wave-1 multiplexer. Deprecated 2026-04-24 in
-// favor of the per-type flat propose_* tools. Shim forwards to the typed
-// handler path via proposeEntity, logs a deprecation warning, and
-// prepends a caller-visible deprecation note to Warnings. Scheduled
-// removal: 2026-05-08 (tracked in .agents/shim-removal-checklist-2026-05-08.md).
-func (s *Server) proposeCommitment(ctx context.Context, _ *mcp.CallToolRequest, input ProposeCommitmentInput) (*mcp.CallToolResult, ProposeCommitmentOutput, error) {
-	s.logger.Warn("propose_commitment is deprecated — use propose_<type> directly",
-		"caller", s.callerIdentity(ctx),
-		"type", input.Type,
-		"sunset", "2026-05-08",
-	)
-	out, err := s.proposeEntity(ctx, input.Type, input.Fields)
-	if err != nil {
-		return nil, ProposeCommitmentOutput{}, err
-	}
-	out.Warnings = append([]string{
-		"propose_commitment is deprecated — use propose_" + input.Type + " directly. Removal scheduled 2026-05-08.",
-	}, out.Warnings...)
-	return nil, out, nil
-}
-
-// proposeEntity is the internal workhorse shared by the deprecated
-// propose_commitment shim and the seven flat propose_* tools. Centralizes
-// the type-validate → resolve-fields → sign-proposal dance so each
-// typed handler stays small.
-//
-// The 'type' parameter comes from the tool call site (each flat tool
-// knows its own type) or from the shim's input.Type field. Fields is
-// the map form resolveProposalFields accepts — flat tools pack their
-// typed input into this shape before calling through.
-func (s *Server) proposeEntity(ctx context.Context, entityType string, fields map[string]any) (ProposeCommitmentOutput, error) {
+// proposeEntity is the internal workhorse the seven flat propose_*
+// tools share. Centralizes the type-validate → resolve-fields →
+// sign-proposal dance so each typed handler stays small. The 'type'
+// parameter comes from the tool call site (each flat tool knows its
+// own type). Fields is the map form resolveProposalFields accepts —
+// flat tools pack their typed input into this shape before calling
+// through.
+func (s *Server) proposeEntity(ctx context.Context, entityType string, fields map[string]any) (ProposeOutput, error) {
 	switch entityType {
 	case "goal", "project", "milestone", "directive", "hypothesis", "learning_plan", "learning_domain":
 		// valid
 	default:
-		return ProposeCommitmentOutput{}, fmt.Errorf("invalid type %q (valid: goal, project, milestone, directive, hypothesis, learning_plan, learning_domain)", entityType)
+		return ProposeOutput{}, fmt.Errorf("invalid type %q (valid: goal, project, milestone, directive, hypothesis, learning_plan, learning_domain)", entityType)
 	}
 
 	resolved, warnings, err := s.resolveProposalFields(ctx, entityType, fields)
 	if err != nil {
-		return ProposeCommitmentOutput{}, fmt.Errorf("proposal rejected: %w", err)
+		return ProposeOutput{}, fmt.Errorf("proposal rejected: %w", err)
 	}
 
 	token, err := signProposal(s.proposalSecret, entityType, resolved)
 	if err != nil {
-		return ProposeCommitmentOutput{}, fmt.Errorf("signing proposal: %w", err)
+		return ProposeOutput{}, fmt.Errorf("signing proposal: %w", err)
 	}
 
-	s.logger.Info("propose_commitment", "type", entityType)
-	return ProposeCommitmentOutput{
+	s.logger.Info("propose_entity", "type", entityType)
+	return ProposeOutput{
 		Type:          entityType,
 		Preview:       resolved,
 		Warnings:      warnings,
@@ -119,7 +86,7 @@ func (s *Server) proposeEntity(ctx context.Context, entityType string, fields ma
 
 // resolveProposalFields validates and resolves references in proposal fields.
 // Returns err when a required field is missing or fails structural validation;
-// propose_commitment must NOT sign a token in that case. Warnings communicate
+// proposeEntity must NOT sign a token in that case. Warnings communicate
 // non-fatal drift (fuzzy lookups, optional fields absent) that the caller may
 // address before commit.
 func (s *Server) resolveProposalFields(ctx context.Context, entityType string, fields map[string]any) (resolved map[string]any, warnings []string, err error) {
@@ -235,20 +202,11 @@ func (s *Server) resolveDirectiveFields(ctx context.Context, f map[string]any) (
 	if _, ok := f["request_parts"]; !ok {
 		return nil, fmt.Errorf(`request_parts is required for directive (array of a2a.Part: [{"text":"..."}] or [{"data":{...}}])`)
 	}
-	// Title is auto-extracted from request_parts[0].text. The typed
-	// proposeDirective handler does this up front so unauthorized callers
-	// fail fast on a strict shape; the deprecated propose_commitment
-	// shim doesn't, so we run the extraction here if it didn't.
+	// Title is auto-extracted from request_parts[0].text by the typed
+	// proposeDirective handler at the MCP boundary. By the time we
+	// reach here it is always set; absence indicates validator drift.
 	if title, ok := f["title"].(string); !ok || strings.TrimSpace(title) == "" {
-		rawParts, perr := extractRawPartsField(f, "request_parts")
-		if perr != nil {
-			return nil, fmt.Errorf("extracting title: %w", perr)
-		}
-		extracted, perr := extractTitleFromFirstTextPart(rawParts)
-		if perr != nil {
-			return nil, fmt.Errorf("extracting title: %w", perr)
-		}
-		f["title"] = extracted
+		return nil, fmt.Errorf("directive title was not extracted from request_parts[0].text (validator drift)")
 	}
 	return warnings, nil
 }
@@ -337,7 +295,7 @@ func resolveHypothesisFields(f map[string]any) (warnings []string, err error) {
 
 // CommitProposalInput is the input for the commit_proposal tool.
 type CommitProposalInput struct {
-	ProposalToken string         `json:"proposal_token" jsonschema:"required" jsonschema_description:"Token from propose_commitment"`
+	ProposalToken string         `json:"proposal_token" jsonschema:"required" jsonschema_description:"Token returned by any propose_<type> tool"`
 	Modifications map[string]any `json:"modifications,omitempty" jsonschema_description:"Optional field overrides before commit"`
 }
 

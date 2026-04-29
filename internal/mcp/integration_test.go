@@ -169,7 +169,7 @@ func TestIntegration_ColdStart_StartSession(t *testing.T) {
 	}
 }
 
-// --- 3. propose_commitment(learning_plan) → commit_proposal ---
+// --- 3. propose_learning_plan → commit_proposal ---
 
 // TestIntegration_ColdStart_CommitLearningPlan was Learning's third failure
 // mode: commit step hit learning_plans_domain_fkey for the same reason. It
@@ -177,18 +177,15 @@ func TestIntegration_ColdStart_StartSession(t *testing.T) {
 func TestIntegration_ColdStart_CommitLearningPlan(t *testing.T) {
 	s := setupServer(t)
 
-	_, proposal, err := callHandler(t, s.proposeCommitment, ProposeCommitmentInput{
-		Type: "learning_plan",
-		Fields: map[string]any{
-			"title":  "Binary Search 14-Day Drill",
-			"domain": "leetcode",
-		},
+	_, proposal, err := callHandler(t, s.proposeLearningPlan, ProposeLearningPlanInput{
+		Title:  "Binary Search 14-Day Drill",
+		Domain: "leetcode",
 	})
 	if err != nil {
-		t.Fatalf("proposeCommitment: %v", err)
+		t.Fatalf("proposeLearningPlan: %v", err)
 	}
 	if proposal.ProposalToken == "" {
-		t.Fatal("proposeCommitment returned empty token")
+		t.Fatal("proposeLearningPlan returned empty token")
 	}
 
 	_, commit, err := callHandler(t, s.commitProposal, CommitProposalInput{
@@ -335,66 +332,75 @@ func TestIntegration_ActorFallbackToSystem(t *testing.T) {
 
 // --- 7. Proposal validator rejects missing required — no token ---
 
-// TestIntegration_ProposalValidator covers W4's symmetry guarantee. A
-// propose_commitment call with a structurally invalid payload must return
-// an error AND must NOT emit a proposal token. The table-driven cases
-// walk each entity type whose required-field list grew in W4; a regression
-// here is how the pre-W4 'warn-and-sign' bug used to work.
+// TestIntegration_ProposalValidator covers the W4 symmetry guarantee.
+// A typed propose_<type> call with a structurally invalid payload must
+// return an error AND must NOT emit a proposal token. Each closure
+// invokes the typed handler so the field set under test matches the
+// handler's actual schema; a regression here is how the pre-W4
+// 'warn-and-sign' bug used to work.
 func TestIntegration_ProposalValidator_MissingRequired_NoToken(t *testing.T) {
 	s := setupServer(t)
 
 	cases := []struct {
 		name       string
-		entity     string
-		fields     map[string]any
+		propose    func() (ProposeOutput, error)
 		wantErrSub string
 	}{
 		{
-			name:       "goal without title",
-			entity:     "goal",
-			fields:     map[string]any{},
+			name: "goal without title",
+			propose: func() (ProposeOutput, error) {
+				_, out, err := callHandler(t, s.proposeGoal, ProposeGoalInput{})
+				return out, err
+			},
 			wantErrSub: "title is required for goal",
 		},
 		{
-			name:       "project without slug",
-			entity:     "project",
-			fields:     map[string]any{"title": "x"},
+			name: "project without slug",
+			propose: func() (ProposeOutput, error) {
+				_, out, err := callHandler(t, s.proposeProject, ProposeProjectInput{Title: "x"})
+				return out, err
+			},
 			wantErrSub: "slug is required for project",
 		},
 		{
-			name:       "milestone without goal",
-			entity:     "milestone",
-			fields:     map[string]any{"title": "x"},
+			name: "milestone without goal",
+			propose: func() (ProposeOutput, error) {
+				_, out, err := callHandler(t, s.proposeMilestone, ProposeMilestoneInput{Title: "x"})
+				return out, err
+			},
 			wantErrSub: "goal",
 		},
 		{
-			name:       "learning_plan without domain",
-			entity:     "learning_plan",
-			fields:     map[string]any{"title": "x"},
+			name: "learning_plan without domain",
+			propose: func() (ProposeOutput, error) {
+				_, out, err := callHandler(t, s.proposeLearningPlan, ProposeLearningPlanInput{Title: "x"})
+				return out, err
+			},
 			wantErrSub: "domain is required for learning_plan",
 		},
 		{
-			name:       "learning_domain with bad slug format",
-			entity:     "learning_domain",
-			fields:     map[string]any{"slug": "Not Kebab", "name": "X"},
+			name: "learning_domain with bad slug format",
+			propose: func() (ProposeOutput, error) {
+				_, out, err := callHandler(t, s.proposeLearningDomain, ProposeLearningDomainInput{Slug: "Not Kebab", Name: "X"})
+				return out, err
+			},
 			wantErrSub: "invalid slug",
 		},
 		{
-			name:       "hypothesis without claim",
-			entity:     "hypothesis",
-			fields:     map[string]any{"invalidation_condition": "x", "content": "y"},
+			name: "hypothesis without claim",
+			propose: func() (ProposeOutput, error) {
+				_, out, err := callHandler(t, s.proposeHypothesis, ProposeHypothesisInput{InvalidationCondition: "x", Content: "y"})
+				return out, err
+			},
 			wantErrSub: "claim is required for hypothesis",
 		},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			_, out, err := callHandler(t, s.proposeCommitment, ProposeCommitmentInput{
-				Type:   tc.entity,
-				Fields: tc.fields,
-			})
+			out, err := tc.propose()
 			if err == nil {
-				t.Fatalf("proposeCommitment(%s): expected error, got token=%q", tc.entity, out.ProposalToken)
+				t.Fatalf("propose: expected error, got token=%q", out.ProposalToken)
 			}
 			if !strings.Contains(err.Error(), tc.wantErrSub) {
 				t.Errorf("error = %q, want containing %q", err, tc.wantErrSub)
@@ -406,25 +412,22 @@ func TestIntegration_ProposalValidator_MissingRequired_NoToken(t *testing.T) {
 	}
 }
 
-// --- 8. propose_commitment(learning_domain) — W3 runtime addition ---
+// --- 8. propose_learning_domain — W3 runtime addition ---
 
 // TestIntegration_ProposeLearningDomain rounds out the W3 feature: a runtime
 // domain is proposed, committed, and immediately usable as a session FK.
 func TestIntegration_ProposeLearningDomain(t *testing.T) {
 	s := setupServer(t)
 
-	_, proposal, err := callHandler(t, s.proposeCommitment, ProposeCommitmentInput{
-		Type: "learning_domain",
-		Fields: map[string]any{
-			"slug": "rust",
-			"name": "Rust",
-		},
+	_, proposal, err := callHandler(t, s.proposeLearningDomain, ProposeLearningDomainInput{
+		Slug: "rust",
+		Name: "Rust",
 	})
 	if err != nil {
-		t.Fatalf("proposeCommitment(learning_domain): %v", err)
+		t.Fatalf("proposeLearningDomain: %v", err)
 	}
 	if proposal.ProposalToken == "" {
-		t.Fatal("proposeCommitment returned empty token")
+		t.Fatal("proposeLearningDomain returned empty token")
 	}
 
 	_, commit, err := callHandler(t, s.commitProposal, CommitProposalInput{
@@ -611,12 +614,9 @@ func TestIntegration_UpdateEntry_AlignsAttemptToTarget(t *testing.T) {
 	}
 
 	// Build a plan on T1 (Two Sum) and activate it.
-	_, proposal, err := callHandler(t, s.proposeCommitment, ProposeCommitmentInput{
-		Type: "learning_plan",
-		Fields: map[string]any{
-			"title":  "Hash-map Drill",
-			"domain": "leetcode",
-		},
+	_, proposal, err := callHandler(t, s.proposeLearningPlan, ProposeLearningPlanInput{
+		Title:  "Hash-map Drill",
+		Domain: "leetcode",
 	})
 	if err != nil {
 		t.Fatalf("propose plan: %v", err)
@@ -1880,16 +1880,16 @@ func TestIntegration_AttemptHistory_SortInvariants(t *testing.T) {
 	}
 }
 
-// --- propose_* flat tools (Plan A) ---
+// --- propose_* flat tools ---
 //
-// Wave-1 propose_commitment multiplexer was flat-split into seven typed
-// tools (propose_goal, …, propose_learning_domain). Core coverage:
+// The seven typed propose tools (propose_goal, propose_project,
+// propose_milestone, propose_directive, propose_hypothesis,
+// propose_learning_plan, propose_learning_domain) all sign through the
+// shared proposeEntity workhorse. Core coverage here:
 //  - propose_goal happy path: produces a signed token that commit_proposal
 //    accepts.
 //  - propose_directive capability pre-check: unauthorized callers fail
 //    fast at propose time, not at commit.
-//  - propose_commitment shim: still functional through the 2026-05-08
-//    deprecation window; warnings array carries the sunset notice.
 
 func TestIntegration_ProposeGoal_CommitRoundTrip(t *testing.T) {
 	s := setupServer(t)
@@ -1951,46 +1951,6 @@ func TestIntegration_ProposeDirective_CapabilityPreCheck(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "propose_directive") {
 		t.Errorf("error should name the tool that rejected: %v", err)
-	}
-}
-
-func TestIntegration_ProposeCommitmentShim_WarnsAndForwards(t *testing.T) {
-	s := setupServer(t)
-
-	// Shim accepts the Wave-1 multiplexer input and routes through the
-	// typed path. Caller sees a deprecation warning in the response's
-	// Warnings array, prefixed with 'propose_commitment is deprecated'.
-	_, proposal, err := callHandler(t, s.proposeCommitment, ProposeCommitmentInput{
-		Type: "goal",
-		Fields: map[string]any{
-			"title": "Shim round-trip sanity",
-		},
-	})
-	if err != nil {
-		t.Fatalf("propose_commitment shim: %v", err)
-	}
-	if proposal.ProposalToken == "" {
-		t.Fatal("shim returned empty token — forwarding broken")
-	}
-	if len(proposal.Warnings) == 0 {
-		t.Fatal("shim returned no warnings — deprecation notice missing")
-	}
-	if !strings.Contains(proposal.Warnings[0], "propose_commitment is deprecated") {
-		t.Errorf("first warning does not mention deprecation: %q", proposal.Warnings[0])
-	}
-	if !strings.Contains(proposal.Warnings[0], "propose_goal") {
-		t.Errorf("deprecation warning should name the replacement tool (propose_goal): %q", proposal.Warnings[0])
-	}
-
-	// Token still commits cleanly — shim fidelity holds end-to-end.
-	_, commit, err := callHandler(t, s.commitProposal, CommitProposalInput{
-		ProposalToken: proposal.ProposalToken,
-	})
-	if err != nil {
-		t.Fatalf("commitProposal via shim token: %v", err)
-	}
-	if !commit.Committed {
-		t.Error("shim-origin token did not commit")
 	}
 }
 

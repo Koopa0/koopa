@@ -9,24 +9,24 @@
 //   - propose_learning_plan
 //   - propose_learning_domain
 //
-// Why flat instead of the original propose_commitment(type, fields) multiplexer:
-// the seven entity types have fundamentally different required-field sets
+// Why flat instead of a single propose(type, fields) multiplexer: the
+// seven entity types have fundamentally different required-field sets
 // (goal needs area, directive needs target + priority + request_parts,
-// hypothesis needs claim + invalidation_condition + content, …). The SDK's
-// jsonschema:"required" tag on a typed struct generates required:[...] in
-// tools/list natively, so each flat tool advertises its own contract
-// without hand-written oneOf. This is the "discriminator-by-entity"
-// case per .claude/rules/mcp-decision-policy.md §10. commit_proposal
-// stays a single tool — the signed token carries Type and routes on
-// commit side; only propose is split.
+// hypothesis needs claim + invalidation_condition + content, …). The
+// SDK's jsonschema:"required" tag on a typed struct generates
+// required:[...] in tools/list natively, so each flat tool advertises
+// its own contract without hand-written oneOf. This is the
+// "discriminator-by-entity" case per
+// .claude/rules/mcp-decision-policy.md §10. commit_proposal stays a
+// single tool — the signed token carries Type and routes on the commit
+// side; only propose is split.
 //
 // Implementation split mirrors content_tools.go:
-//   - propose_flat.go (this file) — MCP boundary: one typed input struct
-//     + one thin handler per entity. Handlers pack typed input into the
-//     map form proposeEntity consumes.
+//   - propose_flat.go (this file) — MCP boundary: one typed input
+//     struct + one thin handler per entity. Handlers pack typed input
+//     into the map form proposeEntity consumes.
 //   - commitment.go                — internal workhorse (proposeEntity
-//     + resolve*Fields + signProposal). Also hosts the deprecated
-//     propose_commitment shim that forwards to proposeEntity.
+//     + resolve*Fields + signProposal) and commit_proposal.
 //
 // propose_directive has a capability pre-check (SubmitTasks) at the
 // handler boundary — it was commit-time in the multiplexer era, which
@@ -58,7 +58,7 @@ type ProposeGoalInput struct {
 	Description *string `json:"description,omitempty" jsonschema_description:"Optional description."`
 }
 
-func (s *Server) proposeGoal(ctx context.Context, _ *mcp.CallToolRequest, input ProposeGoalInput) (*mcp.CallToolResult, ProposeCommitmentOutput, error) {
+func (s *Server) proposeGoal(ctx context.Context, _ *mcp.CallToolRequest, input ProposeGoalInput) (*mcp.CallToolResult, ProposeOutput, error) {
 	fields := map[string]any{"title": input.Title}
 	if input.Area != nil {
 		fields["area"] = *input.Area
@@ -77,7 +77,7 @@ func (s *Server) proposeGoal(ctx context.Context, _ *mcp.CallToolRequest, input 
 	}
 	out, err := s.proposeEntity(ctx, "goal", fields)
 	if err != nil {
-		return nil, ProposeCommitmentOutput{}, err
+		return nil, ProposeOutput{}, err
 	}
 	return nil, out, nil
 }
@@ -97,7 +97,7 @@ type ProposeProjectInput struct {
 	AreaID      *string `json:"area_id,omitempty" jsonschema_description:"Resolved area UUID."`
 }
 
-func (s *Server) proposeProject(ctx context.Context, _ *mcp.CallToolRequest, input ProposeProjectInput) (*mcp.CallToolResult, ProposeCommitmentOutput, error) {
+func (s *Server) proposeProject(ctx context.Context, _ *mcp.CallToolRequest, input ProposeProjectInput) (*mcp.CallToolResult, ProposeOutput, error) {
 	fields := map[string]any{"title": input.Title, "slug": input.Slug}
 	if input.Description != nil {
 		fields["description"] = *input.Description
@@ -116,7 +116,7 @@ func (s *Server) proposeProject(ctx context.Context, _ *mcp.CallToolRequest, inp
 	}
 	out, err := s.proposeEntity(ctx, "project", fields)
 	if err != nil {
-		return nil, ProposeCommitmentOutput{}, err
+		return nil, ProposeOutput{}, err
 	}
 	return nil, out, nil
 }
@@ -134,7 +134,7 @@ type ProposeMilestoneInput struct {
 	Deadline    *string `json:"deadline,omitempty" jsonschema_description:"Target deadline as ISO date YYYY-MM-DD."`
 }
 
-func (s *Server) proposeMilestone(ctx context.Context, _ *mcp.CallToolRequest, input ProposeMilestoneInput) (*mcp.CallToolResult, ProposeCommitmentOutput, error) {
+func (s *Server) proposeMilestone(ctx context.Context, _ *mcp.CallToolRequest, input ProposeMilestoneInput) (*mcp.CallToolResult, ProposeOutput, error) {
 	fields := map[string]any{"title": input.Title}
 	if input.GoalTitle != nil {
 		fields["goal_title"] = *input.GoalTitle
@@ -150,7 +150,7 @@ func (s *Server) proposeMilestone(ctx context.Context, _ *mcp.CallToolRequest, i
 	}
 	out, err := s.proposeEntity(ctx, "milestone", fields)
 	if err != nil {
-		return nil, ProposeCommitmentOutput{}, err
+		return nil, ProposeOutput{}, err
 	}
 	return nil, out, nil
 }
@@ -175,10 +175,10 @@ type ProposeDirectiveInput struct {
 // fast-fails the unauthorized caller before we allocate a signed token.
 //
 //nolint:gocritic // hugeParam: input passed by value per addTool[I,O] generic contract
-func (s *Server) proposeDirective(ctx context.Context, _ *mcp.CallToolRequest, input ProposeDirectiveInput) (*mcp.CallToolResult, ProposeCommitmentOutput, error) {
+func (s *Server) proposeDirective(ctx context.Context, _ *mcp.CallToolRequest, input ProposeDirectiveInput) (*mcp.CallToolResult, ProposeOutput, error) {
 	caller := agent.Name(s.callerIdentity(ctx))
 	if _, err := agent.Authorize(ctx, s.registry, caller, agent.ActionSubmitTask); err != nil {
-		return nil, ProposeCommitmentOutput{}, fmt.Errorf("propose_directive: %w", err)
+		return nil, ProposeOutput{}, fmt.Errorf("propose_directive: %w", err)
 	}
 
 	// Strict contract: first request_part MUST be a text part with
@@ -187,7 +187,7 @@ func (s *Server) proposeDirective(ctx context.Context, _ *mcp.CallToolRequest, i
 	// without paying a propose+commit round-trip.
 	title, err := extractTitleFromFirstTextPart(input.RequestParts)
 	if err != nil {
-		return nil, ProposeCommitmentOutput{}, fmt.Errorf("propose_directive: %w", err)
+		return nil, ProposeOutput{}, fmt.Errorf("propose_directive: %w", err)
 	}
 
 	fields := map[string]any{
@@ -205,14 +205,14 @@ func (s *Server) proposeDirective(ctx context.Context, _ *mcp.CallToolRequest, i
 		// raw message through unchanged.
 		var m any
 		if err := json.Unmarshal(input.Metadata, &m); err != nil {
-			return nil, ProposeCommitmentOutput{}, fmt.Errorf("propose_directive: metadata is not valid JSON: %w", err)
+			return nil, ProposeOutput{}, fmt.Errorf("propose_directive: metadata is not valid JSON: %w", err)
 		}
 		fields["metadata"] = m
 	}
 
 	out, err := s.proposeEntity(ctx, "directive", fields)
 	if err != nil {
-		return nil, ProposeCommitmentOutput{}, err
+		return nil, ProposeOutput{}, err
 	}
 	return nil, out, nil
 }
@@ -228,7 +228,7 @@ type ProposeHypothesisInput struct {
 	Content               string `json:"content" jsonschema:"required" jsonschema_description:"Full hypothesis narrative (context, reasoning)."`
 }
 
-func (s *Server) proposeHypothesis(ctx context.Context, _ *mcp.CallToolRequest, input ProposeHypothesisInput) (*mcp.CallToolResult, ProposeCommitmentOutput, error) {
+func (s *Server) proposeHypothesis(ctx context.Context, _ *mcp.CallToolRequest, input ProposeHypothesisInput) (*mcp.CallToolResult, ProposeOutput, error) {
 	fields := map[string]any{
 		"claim":                  input.Claim,
 		"invalidation_condition": input.InvalidationCondition,
@@ -236,7 +236,7 @@ func (s *Server) proposeHypothesis(ctx context.Context, _ *mcp.CallToolRequest, 
 	}
 	out, err := s.proposeEntity(ctx, "hypothesis", fields)
 	if err != nil {
-		return nil, ProposeCommitmentOutput{}, err
+		return nil, ProposeOutput{}, err
 	}
 	return nil, out, nil
 }
@@ -253,7 +253,7 @@ type ProposeLearningPlanInput struct {
 	GoalID      *string `json:"goal_id,omitempty" jsonschema_description:"Optional parent goal UUID."`
 }
 
-func (s *Server) proposeLearningPlan(ctx context.Context, _ *mcp.CallToolRequest, input ProposeLearningPlanInput) (*mcp.CallToolResult, ProposeCommitmentOutput, error) {
+func (s *Server) proposeLearningPlan(ctx context.Context, _ *mcp.CallToolRequest, input ProposeLearningPlanInput) (*mcp.CallToolResult, ProposeOutput, error) {
 	fields := map[string]any{"title": input.Title, "domain": input.Domain}
 	if input.Description != nil {
 		fields["description"] = *input.Description
@@ -263,7 +263,7 @@ func (s *Server) proposeLearningPlan(ctx context.Context, _ *mcp.CallToolRequest
 	}
 	out, err := s.proposeEntity(ctx, "learning_plan", fields)
 	if err != nil {
-		return nil, ProposeCommitmentOutput{}, err
+		return nil, ProposeOutput{}, err
 	}
 	return nil, out, nil
 }
@@ -279,14 +279,14 @@ type ProposeLearningDomainInput struct {
 	Description *string `json:"description,omitempty" jsonschema_description:"Optional description (metadata only; not stored on learning_domains today — surfaces as a warning)."`
 }
 
-func (s *Server) proposeLearningDomain(ctx context.Context, _ *mcp.CallToolRequest, input ProposeLearningDomainInput) (*mcp.CallToolResult, ProposeCommitmentOutput, error) {
+func (s *Server) proposeLearningDomain(ctx context.Context, _ *mcp.CallToolRequest, input ProposeLearningDomainInput) (*mcp.CallToolResult, ProposeOutput, error) {
 	fields := map[string]any{"slug": input.Slug, "name": input.Name}
 	if input.Description != nil {
 		fields["description"] = *input.Description
 	}
 	out, err := s.proposeEntity(ctx, "learning_domain", fields)
 	if err != nil {
-		return nil, ProposeCommitmentOutput{}, err
+		return nil, ProposeOutput{}, err
 	}
 	return nil, out, nil
 }

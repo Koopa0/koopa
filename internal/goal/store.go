@@ -416,8 +416,9 @@ func rowToGoal(r *db.Goal) Goal {
 }
 
 // AreaIDBySlugOrName resolves an area slug or case-insensitive name to a
-// UUID. Returns ErrNotFound if no area matches. Used by propose_commitment
-// when the caller passes an area identifier instead of a UUID.
+// UUID. Returns ErrNotFound if no area matches. Used by propose_goal /
+// propose_project when the caller passes an area identifier instead of
+// a UUID.
 func (s *Store) AreaIDBySlugOrName(ctx context.Context, identifier string) (uuid.UUID, error) {
 	id, err := s.q.AreaIDBySlugOrName(ctx, identifier)
 	if err != nil {
