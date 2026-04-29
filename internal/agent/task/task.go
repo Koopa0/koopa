@@ -19,6 +19,7 @@
 package task
 
 import (
+	"encoding/json"
 	"errors"
 	"time"
 
@@ -57,19 +58,19 @@ const (
 // — the mapping happens inside store.go and query.sql, never escaping
 // outside this package.
 type Task struct {
-	ID                  uuid.UUID  `json:"id"`
-	Source              string     `json:"source"`
-	Target              string     `json:"target"`
-	Title               string     `json:"title"`
-	State               State      `json:"state"`
-	Deadline            *time.Time `json:"deadline,omitempty"`
-	Priority            *string    `json:"priority,omitempty"`
-	SubmittedAt         time.Time  `json:"submitted_at"`
-	AcceptedAt          *time.Time `json:"accepted_at,omitempty"`
-	CompletedAt         *time.Time `json:"completed_at,omitempty"`
-	CanceledAt          *time.Time `json:"canceled_at,omitempty"`
-	RevisionRequestedAt *time.Time `json:"revision_requested_at,omitempty"`
-	Metadata            []byte     `json:"metadata,omitempty"`
+	ID                  uuid.UUID       `json:"id"`
+	Source              string          `json:"source"`
+	Target              string          `json:"target"`
+	Title               string          `json:"title"`
+	State               State           `json:"state"`
+	Deadline            *time.Time      `json:"deadline,omitempty"`
+	Priority            *string         `json:"priority,omitempty"`
+	SubmittedAt         time.Time       `json:"submitted_at"`
+	AcceptedAt          *time.Time      `json:"accepted_at,omitempty"`
+	CompletedAt         *time.Time      `json:"completed_at,omitempty"`
+	CanceledAt          *time.Time      `json:"canceled_at,omitempty"`
+	RevisionRequestedAt *time.Time      `json:"revision_requested_at,omitempty"`
+	Metadata            json.RawMessage `json:"metadata,omitempty"`
 }
 
 // Message is a single request/response turn on a task. Parts are a2a-go
@@ -97,7 +98,7 @@ type SubmitInput struct {
 	Deadline     *time.Time // optional
 	Priority     *string    // optional: "high" | "medium" | "low"
 	RequestParts []*a2a.Part
-	Metadata     []byte // optional; nil → '{}'
+	Metadata     json.RawMessage // optional; nil → '{}'
 }
 
 // CompleteInput holds the input for Store.Complete. Both response message
