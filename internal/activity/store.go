@@ -2,7 +2,6 @@ package activity
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"time"
 
@@ -47,7 +46,7 @@ func (s *Store) EventsByTimeRange(ctx context.Context, start, end time.Time) ([]
 			Actor:      r.Actor,
 			Project:    r.Project,
 			Title:      r.Title,
-			Metadata:   json.RawMessage(r.Metadata),
+			Metadata:   r.Metadata,
 			CreatedAt:  r.CreatedAt,
 		}
 	}
@@ -88,7 +87,7 @@ func (s *Store) EventsByFilters(ctx context.Context, start, end time.Time, entit
 			Actor:      r.Actor,
 			Project:    r.Project,
 			Title:      r.Title,
-			Metadata:   json.RawMessage(r.Metadata),
+			Metadata:   r.Metadata,
 			CreatedAt:  r.CreatedAt,
 		}
 	}

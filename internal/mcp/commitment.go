@@ -22,6 +22,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -232,6 +234,21 @@ func (s *Server) resolveDirectiveFields(ctx context.Context, f map[string]any) (
 	// objects and the task store parses through a2a-go at the boundary.
 	if _, ok := f["request_parts"]; !ok {
 		return nil, fmt.Errorf(`request_parts is required for directive (array of a2a.Part: [{"text":"..."}] or [{"data":{...}}])`)
+	}
+	// Title is auto-extracted from request_parts[0].text. The typed
+	// proposeDirective handler does this up front so unauthorized callers
+	// fail fast on a strict shape; the deprecated propose_commitment
+	// shim doesn't, so we run the extraction here if it didn't.
+	if title, ok := f["title"].(string); !ok || strings.TrimSpace(title) == "" {
+		rawParts, perr := extractRawPartsField(f, "request_parts")
+		if perr != nil {
+			return nil, fmt.Errorf("extracting title: %w", perr)
+		}
+		extracted, perr := extractTitleFromFirstTextPart(rawParts)
+		if perr != nil {
+			return nil, fmt.Errorf("extracting title: %w", perr)
+		}
+		f["title"] = extracted
 	}
 	return warnings, nil
 }
@@ -547,9 +564,10 @@ func (s *Server) commitDirective(ctx context.Context, fields map[string]any) (st
 		return "", fmt.Errorf("commitDirective: request_parts: %w", err)
 	}
 
-	title, _ := fields["title"].(string)
-	if title == "" {
-		title = "Directive"
+	title, ok := fields["title"].(string)
+	if !ok || strings.TrimSpace(title) == "" {
+		s.propValidatorDrift("directive", "title")
+		return "", fmt.Errorf("commitDirective: title is missing or empty (validator drift — propose_directive should have extracted it from request_parts[0].text)")
 	}
 
 	var metadata json.RawMessage
@@ -580,6 +598,53 @@ func (s *Server) commitDirective(ctx context.Context, fields map[string]any) (st
 		return "", fmt.Errorf("commitDirective: %w", err)
 	}
 	return t.ID.String(), nil
+}
+
+// directiveTitleMaxRunes caps the auto-extracted directive title at a
+// length that fits the morning_context summary view without truncation
+// in transit. Inputs longer than this get rune-truncated with an
+// ellipsis suffix; the full text remains in request_parts[0].text.
+const directiveTitleMaxRunes = 200
+
+// extractTitleFromFirstTextPart returns the title to attach to a
+// directive task. The contract is strict: the first request_part MUST
+// be a text part with non-empty text after trim. Anything else
+// (data-only first part, missing parts, malformed JSON, blank text) is
+// rejected at propose time with a 422-style error so the caller learns
+// the invariant before the proposal token is ever signed.
+//
+// Long titles are rune-truncated to directiveTitleMaxRunes and suffixed
+// with "…" so the original semantics survives in request_parts.
+func extractTitleFromFirstTextPart(parts []json.RawMessage) (string, error) {
+	if len(parts) == 0 {
+		return "", fmt.Errorf("request_parts is empty; first part must be a text part with non-empty text")
+	}
+	var first map[string]any
+	if err := json.Unmarshal(parts[0], &first); err != nil {
+		return "", fmt.Errorf("request_parts[0] is not a valid JSON object: %w", err)
+	}
+	rawText, ok := first["text"]
+	if !ok {
+		keys := make([]string, 0, len(first))
+		for k := range first {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		return "", fmt.Errorf("request_parts[0] must be a text part (have key %q with string value); got keys %v", "text", keys)
+	}
+	txt, ok := rawText.(string)
+	if !ok {
+		return "", fmt.Errorf("request_parts[0].text must be a string; got %T", rawText)
+	}
+	txt = strings.TrimSpace(txt)
+	if txt == "" {
+		return "", fmt.Errorf("request_parts[0].text is empty after trim; provide a meaningful first sentence — it becomes the directive title")
+	}
+	runes := []rune(txt)
+	if len(runes) > directiveTitleMaxRunes {
+		txt = string(runes[:directiveTitleMaxRunes]) + "…"
+	}
+	return txt, nil
 }
 
 // extractRawPartsField reads a `fields[key]` that should be an array of
