@@ -133,12 +133,18 @@ type RecordAttemptOutput struct {
 	// "needed help" → solved_with_hint); without this field the coach
 	// must introspect Attempt.Outcome to see what got normalized. Always
 	// populated; no omitempty.
-	CanonicalOutcome     string             `json:"canonical_outcome"`
-	ObservationsRecorded int                `json:"observations_recorded"`
-	ObservationWarnings  []string           `json:"observation_warnings,omitempty"`
-	PlanContext          []PlanContextEntry `json:"plan_context,omitempty"`
-	RelationsLinked      int                `json:"relations_linked,omitempty"`
-	RelationWarnings     []string           `json:"relation_warnings,omitempty"`
+	CanonicalOutcome     string `json:"canonical_outcome"`
+	ObservationsRecorded int    `json:"observations_recorded"`
+	// Slice and counter fields below intentionally omit `omitempty`:
+	// when they are absent from a response, callers cannot distinguish
+	// "the operation produced no warnings / no links" from "the field
+	// got dropped because it was zero-valued." Always emitting the
+	// canonical empty value (`[]` for slices, `0` for counters) makes
+	// the response shape stable regardless of input.
+	ObservationWarnings []string           `json:"observation_warnings"`
+	PlanContext         []PlanContextEntry `json:"plan_context"`
+	RelationsLinked     int                `json:"relations_linked"`
+	RelationWarnings    []string           `json:"relation_warnings"`
 	// FSRSRatingApplied echoes the FSRS rating (1=Again, 2=Hard, 3=Good,
 	// 4=Easy) the server actually used when advancing the spaced-repetition
 	// queue for this attempt. When the caller supplied an fsrs_rating
@@ -215,6 +221,21 @@ func (s *Server) recordAttempt(ctx context.Context, _ *mcp.CallToolRequest, inpu
 	fsrsRating, fsrsFailed := s.updateFSRSReview(ctx, prep.itemID, prep.outcome, input.FSRSRating)
 	linked, relWarnings := s.processRelatedTargets(ctx, prep.itemID, prep.domain, input.RelatedTargets)
 	planCtx := s.lookupPlanContext(ctx, prep.itemID)
+
+	// Ensure slice fields serialise as [] (not null) so callers can
+	// distinguish "happened, no warnings/entries" from a field that was
+	// dropped. The helpers above return nil when nothing fired (zero
+	// observations / zero relations / no plan context) and the json-api
+	// rule in this project forbids null on list fields.
+	if obsWarnings == nil {
+		obsWarnings = []string{}
+	}
+	if relWarnings == nil {
+		relWarnings = []string{}
+	}
+	if planCtx == nil {
+		planCtx = []PlanContextEntry{}
+	}
 
 	s.logger.Info("record_attempt",
 		"session", prep.sessionID, "target", input.Target.Title, "outcome", prep.outcome,
