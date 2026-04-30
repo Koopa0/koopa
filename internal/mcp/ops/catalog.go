@@ -221,7 +221,7 @@ func GoalProgress() Meta {
 		Writability: ReadOnly,
 		Stability:   StabilityStable,
 		Since:       since,
-		Description: "Show active goals with milestone progress (completed/total), area, quarter, and deadline. Use for goal reviews, weekly planning, or 'am I on track' questions.",
+		Description: "Deep goal view: each active goal with its full milestone hierarchy (id/title/completed_at/target_deadline) AND its linked projects. This is the structural complement to morning_context.active_goals (which carries only the goal-summary level: title/area/quarter/deadline/milestone counts). Use goal_progress when you need milestone-level visibility or to see which projects are wired under a goal. For the daily briefing's headline counts, morning_context.active_goals is enough — calling both is redundant.",
 	}
 }
 
@@ -566,7 +566,7 @@ func SystemStatus() Meta {
 		Writability: ReadOnly,
 		Stability:   StabilityStable,
 		Since:       since,
-		Description: "System health: pipeline stats, feed health, flow run summaries. Scopes: summary (default), pipelines, flows.",
+		Description: "Snapshot of ingestion / pipeline / data health. Response sections: 'contents' = published-content counts by status and type; 'collected' = RSS feed_entries (total + by_status: unread/read/curated/ignored — a high 'unread' means RSS items haven't been triaged yet); 'feeds' = feed subscription health (total/enabled, auto-disabled feeds count against enabled); 'process_runs' = cron / pipeline run audit by kind (e.g. crawl, embed); 'projects' / 'notes' / 'activity' / 'tags' = catalog stats. Use when investigating ingestion or pipeline issues — for daily todo / goal data, morning_context covers it.",
 	}
 }
 
