@@ -22,8 +22,25 @@ const sectionTimeout = 15 * time.Second
 // --- morning_context ---
 
 // MorningContextInput is the input for the morning_context tool.
+//
+// Sections is a STRICT filter: when non-empty, only the listed groups
+// are populated and every other response field stays at its empty-slice
+// default. Omit Sections (or pass an empty list) to populate every
+// group — that is the typical morning-briefing call.
+//
+// Group → response field mapping:
+//
+//	"tasks"            → overdue_tasks, today_tasks, committed_tasks, upcoming_tasks
+//	"goals"            → active_goals
+//	"pending_tasks"    → pending_tasks_received, pending_tasks_issued
+//	"hypotheses"       → unverified_hypotheses
+//	"rss"              → rss_highlights
+//	"plan_history"     → plan_history
+//	"content_pipeline" → content_pipeline
+//
+// Unknown group names are ignored silently (no error, no warning).
 type MorningContextInput struct {
-	Sections FlexStringSlice `json:"sections,omitempty" jsonschema_description:"Sections to include (default all). Valid: tasks, goals, pending_tasks, hypotheses, rss, plan_history, content_pipeline"`
+	Sections FlexStringSlice `json:"sections,omitempty" jsonschema_description:"Strict filter on which groups to populate (default: all). Omit or pass [] to get the full briefing. Group key → response fields populated: 'tasks' → overdue_tasks/today_tasks/committed_tasks/upcoming_tasks; 'goals' → active_goals; 'pending_tasks' → pending_tasks_received/pending_tasks_issued; 'hypotheses' → unverified_hypotheses; 'rss' → rss_highlights; 'plan_history' → plan_history; 'content_pipeline' → content_pipeline. Unknown keys silently ignored. Non-listed groups stay [] so JSON shape is stable across calls."`
 	Date     *string         `json:"date,omitempty" jsonschema_description:"Target date YYYY-MM-DD (default: today)"`
 }
 
