@@ -44,9 +44,14 @@ WITH first_request_text AS (
     WHERE tm.role = 'request'
     ORDER BY tm.task_id, tm.position ASC
 )
+-- tasks has no updated_at column. State-machine timestamps
+-- (submitted_at, accepted_at, completed_at, canceled_at,
+-- revision_requested_at) are the audit trail; bumping them here would
+-- forge state transitions. The title rewrite is metadata-only, so no
+-- timestamp update applies. activity_events captures the title change
+-- via the AFTER trigger on tasks.
 UPDATE tasks t
-SET title = LEFT(btrim(frt.extracted_text), 200),
-    updated_at = now()
+SET title = LEFT(btrim(frt.extracted_text), 200)
 FROM first_request_text frt
 WHERE t.id = frt.task_id
   AND t.title = 'Directive'
