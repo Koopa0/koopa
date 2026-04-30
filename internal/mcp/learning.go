@@ -536,11 +536,11 @@ func (s *Server) endSession(ctx context.Context, _ *mcp.CallToolRequest, input E
 // --- learning_dashboard ---
 
 type LearningDashboardInput struct {
-	Domain           *string `json:"domain,omitempty" jsonschema_description:"Filter by domain"`
-	View             *string `json:"view,omitempty" jsonschema_description:"View: overview (default), mastery, weaknesses, retrieval, timeline, variations"`
-	WindowDays       FlexInt `json:"window_days,omitempty" jsonschema_description:"Lookback window in days. Observations older than this are ignored. Defaults per view: mastery=60 (one Google interview prep cycle — avoids flicker for bursty practice), other views=30. Range 1..365."`
-	ConfidenceFilter *string `json:"confidence_filter,omitempty" jsonschema_description:"Only meaningful for mastery and weaknesses views. 'high' (default) restricts to directly-evidenced observations; 'all' includes coach-inferred (low confidence). Other views ignore this field."`
-	DueWithinHours   FlexInt `json:"due_within_hours,omitempty" jsonschema_description:"Retrieval view only. Extends the due cutoff into the future so the caller can preview what is due within the next N hours — e.g. 24 to find cards due by tomorrow. Default 0 = only cards already due now. Range 0..168 (one week). Other views ignore this field."`
+	Domain           *string  `json:"domain,omitempty" jsonschema_description:"Filter by domain"`
+	View             *string  `json:"view,omitempty" jsonschema_description:"View: overview (default), mastery, weaknesses, retrieval, timeline, variations"`
+	WindowDays       FlexInt  `json:"window_days,omitempty" jsonschema_description:"Lookback window in days. Observations older than this are ignored. Defaults per view: mastery=60 (one Google interview prep cycle — avoids flicker for bursty practice), other views=30. Range 1..365."`
+	ConfidenceFilter *string  `json:"confidence_filter,omitempty" jsonschema_description:"Only meaningful for mastery and weaknesses views. 'high' (default) restricts to directly-evidenced observations; 'all' includes coach-inferred (low confidence). Other views ignore this field."`
+	DueWithinHours   *FlexInt `json:"due_within_hours,omitempty" jsonschema_description:"Retrieval view only. Extends the due cutoff into the future so the caller can preview what is due within the next N hours. Default 24 (today's review window — includes items due now plus those becoming due over the next day, the typical morning-review usage). Pass 0 for strict 'due-right-now' (use to confirm zero overdue items). Pass up to 168 (one week) for broader pre-review planning. Other views ignore this field."`
 }
 
 // LearningDashboardOutput is the dashboard tool's response.
@@ -682,7 +682,20 @@ func (s *Server) learningDashboard(ctx context.Context, _ *mcp.CallToolRequest, 
 		confidenceFilter = *input.ConfidenceFilter
 	}
 
-	dueWithinHours := clamp(int(input.DueWithinHours), 0, 168, 0)
+	// Pointer-not-pointer: nil DueWithinHours means caller did not supply
+	// the field, which falls through to the 24h default ('today's review
+	// window'). An explicit 0 is preserved as strict 'due-right-now'
+	// because the *FlexInt indirection lets us distinguish unset from
+	// zero — clamp's def-on-zero behaviour would otherwise merge the two.
+	dueWithinHours := 24
+	if input.DueWithinHours != nil {
+		dueWithinHours = int(*input.DueWithinHours)
+		if dueWithinHours < 0 {
+			dueWithinHours = 0
+		} else if dueWithinHours > 168 {
+			dueWithinHours = 168
+		}
+	}
 
 	switch view {
 	case "overview":
