@@ -222,6 +222,29 @@ func (s *Server) acknowledgeDirective(ctx context.Context, _ *mcp.CallToolReques
 		return nil, AcknowledgeDirectiveOutput{}, fmt.Errorf("acknowledge_directive: %w", err)
 	}
 
+	// Pre-flight: load the task so non-existent IDs and wrong-state /
+	// wrong-target IDs return distinct errors. Without this lookup the
+	// store's Accept SQL ('UPDATE … WHERE id=$1 AND state=submitted')
+	// returns no rows for both 'no such task' and 'task already
+	// accepted', which the store then maps to ErrConflict — leaving
+	// callers staring at 'task: conflict' for an unparseable mix of
+	// causes. The pre-flight cost is one extra SELECT only on the
+	// happy path; failure paths get a clear message instead of a
+	// generic state-machine error.
+	existing, err := s.tasks.Task(ctx, taskID)
+	if err != nil {
+		if errors.Is(err, task.ErrNotFound) {
+			return nil, AcknowledgeDirectiveOutput{}, fmt.Errorf("acknowledge_directive: task %s not found", taskID)
+		}
+		return nil, AcknowledgeDirectiveOutput{}, fmt.Errorf("acknowledge_directive: loading task: %w", err)
+	}
+	if existing.Target != string(caller) {
+		return nil, AcknowledgeDirectiveOutput{}, fmt.Errorf("acknowledge_directive: caller %q is not the task target (%q); only the assignee can accept a directive", caller, existing.Target)
+	}
+	if existing.State != task.StateSubmitted {
+		return nil, AcknowledgeDirectiveOutput{}, fmt.Errorf("acknowledge_directive: task %s is in state %q; acknowledge only works on tasks in 'submitted' state", taskID, existing.State)
+	}
+
 	var accepted *task.Task
 	err = s.withActorTx(ctx, func(tx pgx.Tx) error {
 		var err error
