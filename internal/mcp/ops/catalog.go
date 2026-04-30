@@ -25,7 +25,7 @@ func MorningContext() Meta {
 		Writability: ReadOnly,
 		Stability:   StabilityStable,
 		Since:       since,
-		Description: "Single-call daily-planning briefing: overdue tasks, today's tasks, committed daily plan items, upcoming tasks, active goals, pending directives, unverified hypotheses, RSS highlights, plan history, content pipeline. Scope is today (not since-last-session). For mid-day catch-up after a break, use session_delta instead. For week-level retrospective, use weekly_summary.",
+		Description: "Single-call daily-planning briefing: overdue tasks, today's tasks, committed daily plan items, upcoming tasks, active goals, pending directives, unverified hypotheses, recent RSS items from feeds tagged priority=high (NOT relevance-ranked despite the rss_highlights field name — for ranked retrieval use search_knowledge), plan history, content pipeline. Scope is today (not since-last-session). For mid-day catch-up after a break, use session_delta instead. For week-level retrospective, use weekly_summary.",
 	}
 }
 
@@ -54,6 +54,8 @@ func SearchKnowledge() Meta {
 }
 
 // CaptureInbox returns metadata for the GTD inbox capture tool.
+// FieldEnums advertises the energy enum structurally so callers do not
+// have to discover the closed value set by trial-and-error.
 func CaptureInbox() Meta {
 	return Meta{
 		Name:        "capture_inbox",
@@ -62,10 +64,16 @@ func CaptureInbox() Meta {
 		Stability:   StabilityStable,
 		Since:       since,
 		Description: "Quick task capture to inbox. Only title is required. Status is always inbox. Use when the user says 'add a task', 'remind me to', or expresses a concrete work item to capture.",
+		FieldEnums: map[string][]string{
+			"energy": {"high", "medium", "low"},
+		},
 	}
 }
 
 // AdvanceWork returns metadata for the GTD task lifecycle transitions.
+// FieldEnums advertises the action / priority / energy enums
+// structurally — they are closed value sets enforced by the handler,
+// and surfacing them in tools/list saves callers a 422 round-trip.
 func AdvanceWork() Meta {
 	return Meta{
 		Name:        "advance_work",
@@ -74,6 +82,11 @@ func AdvanceWork() Meta {
 		Stability:   StabilityStable,
 		Since:       since,
 		Description: "Personal-todo state transitions. Actions: clarify (inbox→todo, supply project/due/priority/energy to make it actionable; required before plan_day will accept the todo), start (todo→in_progress), complete (→done; if the todo is on today's daily plan, the matching plan_item is auto-marked done in the same transaction; recurring todos are auto-reset to next due date), defer (→someday).",
+		FieldEnums: map[string][]string{
+			"action":   {"clarify", "start", "complete", "defer"},
+			"priority": {"high", "medium", "low"},
+			"energy":   {"high", "medium", "low"},
+		},
 	}
 }
 

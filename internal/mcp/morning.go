@@ -60,7 +60,13 @@ type MorningContextOutput struct {
 	ContentPipeline      []ContentSummary         `json:"content_pipeline"`
 }
 
-// RSSHighlight is a recent high-priority RSS item.
+// RSSHighlight is a recent feed_entries row from a feed whose
+// priority='high'. The "highlight" name is historical: nothing about
+// the row is relevance-scored or curated — it is recency-ordered and
+// filtered by the feed's pre-tagged priority. A prolific high-priority
+// feed will fill all 10 slots. For ranked retrieval, callers use
+// search_knowledge; the morning briefing surfaces these as a
+// situational-awareness signal, not a recommendation.
 type RSSHighlight struct {
 	Title     string `json:"title"`
 	URL       string `json:"url"`
