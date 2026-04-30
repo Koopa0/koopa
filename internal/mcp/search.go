@@ -93,7 +93,11 @@ func (s *Server) searchKnowledge(ctx context.Context, _ *mcp.CallToolRequest, in
 	limit := clamp(int(input.Limit), 1, 50, 20)
 	wantContent, wantNote := selectSources(input.SourceTypes)
 
-	var results []SearchKnowledgeResult
+	// Initialise as empty slice (not nil) so the JSON envelope serialises
+	// to "results":[] when both branches return no rows. The json-api
+	// rule forbids null on list fields; relying on append-from-nil would
+	// emit null when nothing matches.
+	results := []SearchKnowledgeResult{}
 
 	if wantContent {
 		merged, cErr := s.contentHybridSearch(ctx, input.Query, limit)
