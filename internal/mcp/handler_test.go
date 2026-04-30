@@ -93,7 +93,7 @@ func TestPlanDay_Validation(t *testing.T) {
 		input   PlanDayInput
 		wantErr string
 	}{
-		{name: "empty items", input: PlanDayInput{}, wantErr: "items is required"},
+		{name: "empty items", input: PlanDayInput{}, wantErr: "items must contain at least one todo"},
 		{name: "invalid date", input: PlanDayInput{
 			Items: []PlanDayItem{{TaskID: "550e8400-e29b-41d4-a716-446655440000"}},
 			Date:  strPtr("bad-date"),
