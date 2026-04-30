@@ -25,7 +25,7 @@ func MorningContext() Meta {
 		Writability: ReadOnly,
 		Stability:   StabilityStable,
 		Since:       since,
-		Description: "Get everything needed for daily planning: overdue tasks, today's tasks, committed daily plan items, upcoming tasks, and recent plan history. Use when the user starts their day.",
+		Description: "Single-call daily-planning briefing: overdue tasks, today's tasks, committed daily plan items, upcoming tasks, active goals, pending directives, unverified hypotheses, RSS highlights, plan history, content pipeline. Scope is today (not since-last-session). For mid-day catch-up after a break, use session_delta instead. For week-level retrospective, use weekly_summary.",
 	}
 }
 
@@ -37,7 +37,7 @@ func ReflectionContext() Meta {
 		Writability: ReadOnly,
 		Stability:   StabilityStable,
 		Since:       since,
-		Description: "Get everything needed for evening reflection: plan vs actual completion, daily plan item outcomes, today's agent notes. Use for evening reflection or reviewing the day.",
+		Description: "End-of-day retrospective: plan vs actual completion, daily plan item outcomes, today's agent notes. Day-level scope (today only) — for week-level retrospective use weekly_summary; for since-last-session activity use session_delta.",
 	}
 }
 
@@ -73,7 +73,7 @@ func AdvanceWork() Meta {
 		Writability: Destructive,
 		Stability:   StabilityStable,
 		Since:       since,
-		Description: "Task state transitions. Actions: clarify (inbox→todo with optional project/due/priority/energy), start (todo→in_progress), complete (→done, auto-updates daily plan item), defer (→someday). Use when the user wants to progress a task.",
+		Description: "Personal-todo state transitions. Actions: clarify (inbox→todo, supply project/due/priority/energy to make it actionable; required before plan_day will accept the todo), start (todo→in_progress), complete (→done; if the todo is on today's daily plan, the matching plan_item is auto-marked done in the same transaction; recurring todos are auto-reset to next due date), defer (→someday).",
 	}
 }
 
@@ -85,7 +85,7 @@ func PlanDay() Meta {
 		Writability: Idempotent,
 		Stability:   StabilityStable,
 		Since:       since,
-		Description: "Set daily plan items for a date. Accepts task IDs with positions. Idempotent: re-planning replaces existing items. Use after morning_context when the user confirms their daily plan.",
+		Description: "Set the day's plan as one atomic replacement. Each todo MUST already be in state=todo (inbox/done/someday rejected — promote inbox via advance_work(action=clarify) first). The items list MUST be non-empty; to leave the day unplanned, do not call plan_day at all. The whole call (delete-existing + insert-new) runs in one transaction, so any per-item validation failure rolls back to the previous plan. items_removed reports todos that were in the previous plan but are NOT in the new list (true displacements only — todos carried over with the same task_id are not reported as removed even though their plan_item row gets a new id).",
 	}
 }
 
@@ -158,7 +158,7 @@ func ProposeDirective() Meta {
 		Writability: ReadOnly,
 		Stability:   StabilityStable,
 		Since:       "1.1.0",
-		Description: "Propose a directive (inter-agent work request targeting a named agent, carrying an a2a.Part array as request_parts). Returns a preview + signed proposal token — does NOT write to the database. Requires commit_proposal to finalize. Capability pre-check (SubmitTasks) runs at propose time; unauthorized callers fail fast without producing a signed token.",
+		Description: "Propose a directive (inter-agent work request targeting a named agent, carrying an a2a.Part array as request_parts). The first request_part MUST be a text part — its text becomes the directive title (server extracts up to 200 runes; data-only first parts are rejected at propose time). Returns a preview + signed proposal token — does NOT write to the database. Requires commit_proposal to finalize. Capability pre-check (SubmitTasks) runs at propose time; unauthorized callers fail fast without producing a signed token.",
 		FieldEnums: map[string][]string{
 			"priority": {"high", "medium", "low"},
 		},
@@ -578,7 +578,7 @@ func SessionDelta() Meta {
 		Writability: ReadOnly,
 		Stability:   StabilityStable,
 		Since:       since,
-		Description: "Activity snapshot since a point in time: todos created, todos completed, agent notes written, and learning session count. Returns what happened in the window (not a diff between two sessions, and not scoped to any learning_session). Default lookback: 24 hours. Use at session start to see what's new since you last worked.",
+		Description: "Activity snapshot since a point in time: todos created, todos completed, agent notes written, and learning session count. Returns what happened in the window (not a diff between two sessions, and not scoped to any learning_session). Default lookback: 24 hours. Use when reopening a session mid-day after a break — for the morning briefing call morning_context (today-scoped, broader sections) instead.",
 	}
 }
 
@@ -590,7 +590,7 @@ func WeeklySummary() Meta {
 		Writability: ReadOnly,
 		Stability:   StabilityStable,
 		Since:       since,
-		Description: "Week retrospective: todos completed, agent notes grouped by kind, learning session count and domains, concept mastery. Defaults to current week (Monday-Sunday). Use for weekly reviews.",
+		Description: "Week-level retrospective: todos completed, agent notes grouped by kind, learning session count and domains, concept mastery. Defaults to current week (Monday-Sunday). Use Monday for last week's review or any time you need cross-day patterns. For today only, use reflection_context. For since-last-session activity, use session_delta.",
 	}
 }
 
