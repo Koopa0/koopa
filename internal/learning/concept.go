@@ -259,6 +259,7 @@ func (s *Store) AttemptsByConcept(ctx context.Context, conceptID uuid.UUID, limi
 			LearningTargetID:     r.LearningTargetID,
 			SessionID:            r.SessionID,
 			AttemptNumber:        r.AttemptNumber,
+			Paradigm:             Paradigm(r.Paradigm),
 			Outcome:              r.Outcome,
 			DurationMinutes:      r.DurationMinutes,
 			StuckAt:              r.StuckAt,
