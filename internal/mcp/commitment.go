@@ -667,7 +667,7 @@ func (s *Server) commitHypothesis(ctx context.Context, fields map[string]any) (s
 	if err != nil {
 		return "", fmt.Errorf("creating hypothesis: %w", err)
 	}
-	return fmt.Sprintf("%d", rec.ID), nil
+	return rec.ID.String(), nil
 }
 
 // resolveLearningDomainFields validates a proposed learning_domain before the
