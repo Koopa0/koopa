@@ -303,11 +303,18 @@ func (s *Server) proposeLearningPlan(ctx context.Context, _ *mcp.CallToolRequest
 // propose_learning_domain
 // ---------------------------------------------------------------
 
+// ProposeLearningDomainInput intentionally has no description field.
+// learning_domains is a closed lookup table (slug, name, active,
+// canonical_writeup_kind) with no description column. A previous version
+// of this schema accepted description and surfaced a "field will be
+// ignored" warning at propose time — that pattern was a polite lie.
+// Now the field is removed from the input contract; if descriptions
+// become useful (e.g. admin UI listing), add the column then update
+// this struct.
 type ProposeLearningDomainInput struct {
-	As          string  `json:"as,omitempty" jsonschema_description:"Self-identification."`
-	Slug        string  `json:"slug" jsonschema:"required" jsonschema_description:"Domain slug — lowercase, kebab-case, matches pattern ^[a-z][a-z0-9-]*$."`
-	Name        string  `json:"name" jsonschema:"required" jsonschema_description:"Display name."`
-	Description *string `json:"description,omitempty" jsonschema_description:"Optional description (metadata only; not stored on learning_domains today — surfaces as a warning)."`
+	As   string `json:"as,omitempty" jsonschema_description:"Self-identification."`
+	Slug string `json:"slug" jsonschema:"required" jsonschema_description:"Domain slug — lowercase, kebab-case, matches pattern ^[a-z][a-z0-9-]*$."`
+	Name string `json:"name" jsonschema:"required" jsonschema_description:"Display name."`
 }
 
 func (s *Server) proposeLearningDomain(ctx context.Context, _ *mcp.CallToolRequest, input ProposeLearningDomainInput) (*mcp.CallToolResult, ProposeOutput, error) {
@@ -315,9 +322,6 @@ func (s *Server) proposeLearningDomain(ctx context.Context, _ *mcp.CallToolReque
 		return nil, ProposeOutput{}, err
 	}
 	fields := map[string]any{"slug": input.Slug, "name": input.Name}
-	if input.Description != nil {
-		fields["description"] = *input.Description
-	}
 	out, err := s.proposeEntity(ctx, "learning_domain", fields)
 	if err != nil {
 		return nil, ProposeOutput{}, err

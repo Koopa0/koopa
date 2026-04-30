@@ -456,9 +456,6 @@ func (s *Server) commitProject(ctx context.Context, fields map[string]any) (stri
 		}
 	}
 
-	_ = goalID // goal/area linking via project update — not supported in CreateParams yet
-	_ = areaID
-
 	var p *project.Project
 	err := s.withActorTx(ctx, func(tx pgx.Tx) error {
 		var err error
@@ -467,6 +464,8 @@ func (s *Server) commitProject(ctx context.Context, fields map[string]any) (stri
 			Title:       title,
 			Description: description,
 			Status:      project.StatusPlanned,
+			GoalID:      goalID,
+			AreaID:      areaID,
 		})
 		return err
 	})
@@ -697,11 +696,13 @@ func (s *Server) commitHypothesis(ctx context.Context, fields map[string]any) (s
 	return rec.ID.String(), nil
 }
 
-// resolveLearningDomainFields validates a proposed learning_domain before the
-// token is signed. Structural errors (missing or malformed slug/name,
-// duplicate slug) reject the proposal; unknown fields like description —
-// which the table lacks — surface as warnings so a caller carrying extra
-// metadata does not lose data silently.
+// resolveLearningDomainFields validates a proposed learning_domain before
+// the token is signed. Structural errors (missing or malformed slug/name,
+// duplicate slug) reject the proposal. The table only has slug + name +
+// active + canonical_writeup_kind; the input contract removed the
+// description field rather than accept it and silently drop it.
+//
+//nolint:unparam // uniform (warnings, err) signature with sibling resolve*Fields
 func (s *Server) resolveLearningDomainFields(ctx context.Context, f map[string]any) (warnings []string, err error) {
 	slug, _ := f["slug"].(string)
 	if slug == "" {
@@ -721,10 +722,7 @@ func (s *Server) resolveLearningDomainFields(ctx context.Context, f map[string]a
 	if exists {
 		return nil, fmt.Errorf("learning_domain %q already exists — no action needed", slug)
 	}
-	if _, ok := f["description"]; ok {
-		warnings = append(warnings, "learning_domains has no description column; field will be ignored")
-	}
-	return warnings, nil
+	return nil, nil
 }
 
 func (s *Server) commitLearningDomain(ctx context.Context, fields map[string]any) (string, error) {
