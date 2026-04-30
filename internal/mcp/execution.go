@@ -306,7 +306,15 @@ func (s *Server) createPlanItem(ctx context.Context, item PlanDayItem, i int, da
 	return nil
 }
 
+// planDay assembles a day's daily_plan_items. Only HQ (the morning
+// briefing role) and the human owner author daily plans. The other
+// cowork agents have their own work queues — content-studio's
+// content_pipeline, research-lab's directive backlog, learning-studio's
+// FSRS schedule — and do not participate in daily_plan_items.
 func (s *Server) planDay(ctx context.Context, _ *mcp.CallToolRequest, input PlanDayInput) (*mcp.CallToolResult, PlanDayOutput, error) {
+	if err := s.requireAuthor(ctx, "plan_day", "hq"); err != nil {
+		return nil, PlanDayOutput{}, err
+	}
 	if len(input.Items) == 0 {
 		return nil, PlanDayOutput{}, fmt.Errorf("items is required (at least one todo item)")
 	}

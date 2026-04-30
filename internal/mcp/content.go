@@ -22,7 +22,6 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/Koopa0/koopa/internal/agent"
 	"github.com/Koopa0/koopa/internal/content"
 )
 
@@ -260,6 +259,13 @@ func createWarnings(input *ManageContentInput, learningTargetID *uuid.UUID, conc
 	return warnings
 }
 
+// createContent is intentionally open to all callers — any agent (and
+// any caller without `as`, falling back to the server default) may
+// draft a content row in status=draft. The editorial pipeline gates
+// the dangerous transition (review → published) at publish_content,
+// not at create. Front-end review and human curation handle quality;
+// the create surface trusts the writer because every draft is private
+// until publish.
 func (s *Server) createContent(ctx context.Context, input *ManageContentInput) (*mcp.CallToolResult, ManageContentOutput, error) {
 	if err := validateCreateContentFields(input); err != nil {
 		return nil, ManageContentOutput{}, err
@@ -387,23 +393,15 @@ func (s *Server) publishContent(ctx context.Context, input *ManageContentInput) 
 		return nil, ManageContentOutput{}, fmt.Errorf("invalid content_id: %w", err)
 	}
 
-	// Authorization gate : publishing is
-	// human-only.
-	//  1. Require an explicit `as` field — the server default ('human')
-	//     MUST NOT bypass the check, or any MCP caller that omits `as`
-	//     would silently inherit publish authority.
-	//  2. Look the caller up in the agent registry and assert
-	//     Platform == "human". This avoids hardcoding a name literal —
-	//     if a future trusted auto-publisher agent is added with
-	//     Platform="human" it gets publish authority automatically.
-	explicit, callerName := s.ExplicitCallerIdentity(ctx)
-	if !explicit {
-		return nil, ManageContentOutput{}, fmt.Errorf("publish_content: refusing without explicit `as` field")
+	// Publishing transitions content from review → published, which is
+	// a human-only act per the editorial lifecycle (agent drafts and
+	// submits for review; human publishes). See authz.go for why
+	// requireExplicitHuman refuses the server default rather than
+	// accepting it.
+	if err := s.requireExplicitHuman(ctx, "publish_content"); err != nil {
+		return nil, ManageContentOutput{}, err
 	}
-	caller, ok := s.registry.Lookup(agent.Name(callerName))
-	if !ok || caller.Platform != "human" {
-		return nil, ManageContentOutput{}, fmt.Errorf("publish_content: caller %q is not authorized (human-only)", callerName)
-	}
+	_, callerName := s.ExplicitCallerIdentity(ctx)
 
 	var c *content.Content
 	err = s.withActorTx(ctx, func(tx pgx.Tx) error {

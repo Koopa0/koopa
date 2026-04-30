@@ -306,10 +306,37 @@ type CommitProposalOutput struct {
 	Committed bool   `json:"committed"`
 }
 
+// commitProposal turns a verified proposal token into a domain insert.
+// The two-phase pattern's load-bearing semantic is "agent drafts, human
+// confirms" — without enforcement here the propose+token machinery is
+// theatre, since any caller carrying a valid token could finalize the
+// write.
+//
+// The gate dispatches on payload.Type:
+//
+//   - directive: inter-agent coordination, NOT a commitment to Koopa.
+//     HQ commits its own delegation tokens in the same session. The
+//     existing SubmitTasks capability check inside commitDirective is
+//     the right gate; layering a human requirement on top would force
+//     Koopa to confirm every cross-agent task and turn HQ into a
+//     paperwork bottleneck.
+//
+//   - goal / project / milestone / hypothesis / learning_plan /
+//     learning_domain: each reshapes Koopa's commitment surface in some
+//     way (quarterly horizon, multi-week scope, falsifiable claim
+//     tracker, learning taxonomy). These commit only with explicit
+//     human authority via requireExplicitHuman — see authz.go for why
+//     "explicit" matters.
 func (s *Server) commitProposal(ctx context.Context, _ *mcp.CallToolRequest, input CommitProposalInput) (*mcp.CallToolResult, CommitProposalOutput, error) {
 	payload, err := verifyProposal(s.proposalSecret, input.ProposalToken)
 	if err != nil {
 		return nil, CommitProposalOutput{}, fmt.Errorf("invalid proposal: %w", err)
+	}
+
+	if payload.Type != "directive" {
+		if err := s.requireExplicitHuman(ctx, "commit_proposal of "+payload.Type); err != nil {
+			return nil, CommitProposalOutput{}, err
+		}
 	}
 
 	// Apply modifications.

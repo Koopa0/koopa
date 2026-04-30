@@ -28,9 +28,25 @@
 //   - commitment.go                — internal workhorse (proposeEntity
 //     + resolve*Fields + signProposal) and commit_proposal.
 //
-// propose_directive has a capability pre-check (SubmitTasks) at the
-// handler boundary — it was commit-time in the multiplexer era, which
-// wasted proposal signing round-trips for unauthorized callers.
+// # Authorization gates
+//
+// Each propose_<type> handler enforces an author allowlist before
+// signing a token. Unauthorized callers fast-fail without paying the
+// proposal-signing round-trip — the same fast-fail discipline
+// propose_directive uses for SubmitTasks. The allowlists are:
+//
+//   - propose_directive:        SubmitTasks capability (existing)
+//   - propose_goal/project/milestone: hq, content-studio, research-lab
+//     (strategic commitment proposers)
+//   - propose_hypothesis:       hq, learning-studio, research-lab
+//     (the three roles that observe falsifiable claims)
+//   - propose_learning_plan:    learning-studio
+//     (learning curriculum is its operational domain)
+//   - propose_learning_domain:  learning-studio, hq
+//     (operational AND strategic — HQ may add a domain at quarter
+//     planning even if learning-studio drives day-to-day plans)
+//
+// Human is implicit on every list — see authz.go.
 
 package mcp
 
@@ -59,6 +75,9 @@ type ProposeGoalInput struct {
 }
 
 func (s *Server) proposeGoal(ctx context.Context, _ *mcp.CallToolRequest, input ProposeGoalInput) (*mcp.CallToolResult, ProposeOutput, error) {
+	if err := s.requireAuthor(ctx, "propose_goal", "hq", "content-studio", "research-lab"); err != nil {
+		return nil, ProposeOutput{}, err
+	}
 	fields := map[string]any{"title": input.Title}
 	if input.Area != nil {
 		fields["area"] = *input.Area
@@ -98,6 +117,9 @@ type ProposeProjectInput struct {
 }
 
 func (s *Server) proposeProject(ctx context.Context, _ *mcp.CallToolRequest, input ProposeProjectInput) (*mcp.CallToolResult, ProposeOutput, error) {
+	if err := s.requireAuthor(ctx, "propose_project", "hq", "content-studio", "research-lab"); err != nil {
+		return nil, ProposeOutput{}, err
+	}
 	fields := map[string]any{"title": input.Title, "slug": input.Slug}
 	if input.Description != nil {
 		fields["description"] = *input.Description
@@ -135,6 +157,9 @@ type ProposeMilestoneInput struct {
 }
 
 func (s *Server) proposeMilestone(ctx context.Context, _ *mcp.CallToolRequest, input ProposeMilestoneInput) (*mcp.CallToolResult, ProposeOutput, error) {
+	if err := s.requireAuthor(ctx, "propose_milestone", "hq", "content-studio", "research-lab"); err != nil {
+		return nil, ProposeOutput{}, err
+	}
 	fields := map[string]any{"title": input.Title}
 	if input.GoalTitle != nil {
 		fields["goal_title"] = *input.GoalTitle
@@ -229,6 +254,9 @@ type ProposeHypothesisInput struct {
 }
 
 func (s *Server) proposeHypothesis(ctx context.Context, _ *mcp.CallToolRequest, input ProposeHypothesisInput) (*mcp.CallToolResult, ProposeOutput, error) {
+	if err := s.requireAuthor(ctx, "propose_hypothesis", "hq", "learning-studio", "research-lab"); err != nil {
+		return nil, ProposeOutput{}, err
+	}
 	fields := map[string]any{
 		"claim":                  input.Claim,
 		"invalidation_condition": input.InvalidationCondition,
@@ -254,6 +282,9 @@ type ProposeLearningPlanInput struct {
 }
 
 func (s *Server) proposeLearningPlan(ctx context.Context, _ *mcp.CallToolRequest, input ProposeLearningPlanInput) (*mcp.CallToolResult, ProposeOutput, error) {
+	if err := s.requireAuthor(ctx, "propose_learning_plan", "learning-studio"); err != nil {
+		return nil, ProposeOutput{}, err
+	}
 	fields := map[string]any{"title": input.Title, "domain": input.Domain}
 	if input.Description != nil {
 		fields["description"] = *input.Description
@@ -280,6 +311,9 @@ type ProposeLearningDomainInput struct {
 }
 
 func (s *Server) proposeLearningDomain(ctx context.Context, _ *mcp.CallToolRequest, input ProposeLearningDomainInput) (*mcp.CallToolResult, ProposeOutput, error) {
+	if err := s.requireAuthor(ctx, "propose_learning_domain", "learning-studio", "hq"); err != nil {
+		return nil, ProposeOutput{}, err
+	}
 	fields := map[string]any{"slug": input.Slug, "name": input.Name}
 	if input.Description != nil {
 		fields["description"] = *input.Description

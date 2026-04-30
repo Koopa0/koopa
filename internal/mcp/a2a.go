@@ -137,7 +137,19 @@ func (s *Server) fileReportWithTask(ctx context.Context, caller agent.Name, inpu
 	}, nil
 }
 
+// fileReportStandalone creates an artifact not bound to any task. The
+// allowlist names the cowork agents whose work has a "standalone
+// publishable artifact" shape: content-studio (quarterly content
+// reports), research-lab (industry scans without a directive),
+// learning-studio (weekly learning summaries). HQ has PublishArtifacts
+// capability but no business reason to publish standalone artifacts —
+// its outputs are agent_notes (plan/reflection) and read-side aggregates
+// (weekly_summary), not artifacts. Excluding HQ here prevents drift
+// where HQ accidentally creates artifacts that nobody reads.
 func (s *Server) fileReportStandalone(ctx context.Context, caller agent.Name, input FileReportInput, artifactParts []*a2a.Part) (*mcp.CallToolResult, FileReportOutput, error) {
+	if err := s.requireAuthor(ctx, "file_report (standalone)", "content-studio", "research-lab", "learning-studio"); err != nil {
+		return nil, FileReportOutput{}, err
+	}
 	auth, err := agent.Authorize(ctx, s.registry, caller, agent.ActionPublishArtifact)
 	if err != nil {
 		return nil, FileReportOutput{}, fmt.Errorf("file_report: %w", err)

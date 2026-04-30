@@ -8,6 +8,23 @@
 // runtime log on internal/agent/note. Keeping the filename parallel to
 // the Go package structure (internal/note here, internal/agent/note
 // there) is intentional.
+//
+// # Authorization stance — intentionally open
+//
+// All three handlers (create_note, update_note, update_note_maturity)
+// accept any registered caller without an author allowlist. Notes form
+// the AI-for-human / human-for-human knowledge layer: any agent that
+// observes something note-worthy may write it down, and the
+// front-end review surface (maturity transitions, curation tools) is
+// where quality is enforced — not at the write boundary. Restricting
+// authorship would force agents to launder their observations through
+// agent_notes(kind=context|reflection) and lose the slug-addressable
+// knowledge graph that notes provide.
+//
+// This contrasts with content (publish_content gated to human) and with
+// commit_proposal (high-commitment types gated to human). Notes are not
+// commitments and never publish; the looser rule is intentional, not
+// an oversight.
 
 package mcp
 
