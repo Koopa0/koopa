@@ -120,7 +120,7 @@ func (s *Server) recommendNextTarget(ctx context.Context, _ *mcp.CallToolRequest
 		}, nil
 	}
 
-	candidates := s.buildCandidatesFromWeaknesses(ctx, domain, weaknesses, recentPatterns)
+	candidates, report := s.buildCandidatesFromWeaknesses(ctx, domain, weaknesses, recentPatterns)
 
 	// Soft relaxation: if the interleaving filter wiped every
 	// candidate, retry without it so the coach still gets SOMETHING
@@ -128,33 +128,21 @@ func (s *Server) recommendNextTarget(ctx context.Context, _ *mcp.CallToolRequest
 	// empty_reason so the caller can note it to the user.
 	relaxedFilter := false
 	if len(candidates) == 0 && len(recentPatterns) > 0 {
-		candidates = s.buildCandidatesFromWeaknesses(ctx, domain, weaknesses, nil)
+		candidates, report = s.buildCandidatesFromWeaknesses(ctx, domain, weaknesses, nil)
 		relaxedFilter = true
 	}
 
 	if len(candidates) == 0 {
-		// Multiple paths land here; the previous single-line reason
-		// asserted "no untried variations were recorded" which was
-		// misleading when the actual cause was "weakness anchors don't
-		// match any recorded related_targets" — variations had been
-		// recorded but on non-weakness concepts. Spell out every cause
-		// so the coach can pick the right remediation.
-		const causes = "possible causes: " +
-			"(a) weakness concepts have no recorded attempts, so no anchor targets exist; " +
-			"(b) anchor targets exist but no learning_target_relations were recorded from them; " +
-			"(c) every related target has already been attempted; " +
-			"(d) recorded relations connect non-weakness concepts (a variation hung off a concept that did not surface as a weakness)"
-		var reason string
-		if relaxedFilter {
-			reason = "weaknesses exist but no candidate variations passed filters even after relaxing interleaving — " + causes
-		} else {
-			reason = "weaknesses exist but no candidate variations passed filters — " + causes +
-				"; or (e) all candidates shared a pattern with this session's recent attempts (interleaving filter)"
-		}
+		// HQ Round 2 audit found that listing every possible cause was
+		// honest but operationally useless — coaches still had to run
+		// their own diagnostic to know which case applied. The probe
+		// report tracks per-weakness disposition so we can name the
+		// dominant cause (and only fall back to "multiple causes" when
+		// the dispositions actually mix).
 		return nil, RecommendNextTargetOutput{
 			Candidates:     []Candidate{},
 			RecentPatterns: recentPatterns,
-			EmptyReason:    reason,
+			EmptyReason:    emptyReasonFromProbe(report, relaxedFilter),
 		}, nil
 	}
 
@@ -251,6 +239,76 @@ func extractMetadataPattern(raw json.RawMessage) string {
 	return holder.Pattern
 }
 
+// probeReport accumulates per-weakness diagnostics so the empty-result
+// path can name the actual cause rather than listing every possibility.
+// HQ Round 2 audit found that the previous "list all four causes" message
+// was technically honest but operationally useless — coaches had to
+// re-run their own diagnostic to figure out which case applied.
+//
+// Counters are weakness-keyed (not variation-keyed): each weakness
+// contributes exactly once to whichever counter best describes its
+// disposition. WithAcceptedVariations means the weakness produced ≥1
+// candidate; the others are the three failure modes.
+type probeReport struct {
+	weaknessesProbed       int
+	noAnchorAttempts       int // weakness concept has zero recorded attempts
+	noVariations           int // anchors exist but the catalog has no relations from them
+	allVariationsRejected  int // variations existed but every one was filtered (anchor mismatch / already attempted / interleaving)
+	withAcceptedVariations int // produced ≥1 candidate
+}
+
+// emptyReasonFromProbe produces a precise empty_reason string from a
+// probe report. The dominant disposition (largest counter) names the
+// cause; mixed dispositions surface their breakdown rather than
+// arbitrarily picking one. The interleaving suffix is appended only
+// when the soft-relax retry already fired and still came back empty
+// — otherwise interleaving may not be the primary cause and
+// mentioning it would mislead.
+func emptyReasonFromProbe(r probeReport, relaxedFilter bool) string {
+	if r.weaknessesProbed == 0 {
+		return "no weakness concepts to probe (the prior branch should have caught this — empty weakness slice)"
+	}
+
+	var message string
+	switch {
+	case r.noAnchorAttempts == r.weaknessesProbed:
+		message = fmt.Sprintf(
+			"all %d weakness concepts have no recorded attempts — the variation graph has no anchors to fan out from. record observations on these concepts via record_attempt to seed the recommendation pool.",
+			r.noAnchorAttempts,
+		)
+	case r.noVariations == r.weaknessesProbed:
+		message = fmt.Sprintf(
+			"%d weakness concepts have anchor attempts but the catalog has no learning_target_relations from those anchors. record related_targets on future attempts (or admin-side seed the relation graph).",
+			r.weaknessesProbed,
+		)
+	case r.allVariationsRejected == r.weaknessesProbed:
+		message = fmt.Sprintf(
+			"%d weakness concepts surfaced variations, but every one was rejected by acceptVariation. likely causes: every related target has already been attempted, or recorded relations connect non-weakness anchors (a variation hung off a concept that did not surface as a weakness in this window).",
+			r.weaknessesProbed,
+		)
+	case r.noAnchorAttempts >= r.noVariations && r.noAnchorAttempts >= r.allVariationsRejected:
+		message = fmt.Sprintf(
+			"dominant cause: %d of %d weakness concepts have no recorded attempts (no anchors). %d had anchors but no variations, %d had variations all rejected. start by recording observations on the unanchored concepts.",
+			r.noAnchorAttempts, r.weaknessesProbed, r.noVariations, r.allVariationsRejected,
+		)
+	case r.noVariations >= r.allVariationsRejected:
+		message = fmt.Sprintf(
+			"dominant cause: %d of %d weakness concepts have anchor attempts but no recorded relations. %d had no anchors, %d had variations all rejected. record related_targets on future attempts to widen the candidate pool.",
+			r.noVariations, r.weaknessesProbed, r.noAnchorAttempts, r.allVariationsRejected,
+		)
+	default:
+		message = fmt.Sprintf(
+			"dominant cause: %d of %d weakness concepts surfaced variations that were all rejected by acceptVariation (already attempted, anchor mismatch, or interleaving). %d had no anchors, %d had no variations.",
+			r.allVariationsRejected, r.weaknessesProbed, r.noAnchorAttempts, r.noVariations,
+		)
+	}
+
+	if relaxedFilter {
+		message = "relaxed interleaving filter and still empty — " + message
+	}
+	return message
+}
+
 // buildCandidatesFromWeaknesses walks the weakness list, looks up each
 // weakness concept's practiced targets, and fans out into the variation
 // graph to find untried related targets. Candidates are deduped by
@@ -260,7 +318,10 @@ func extractMetadataPattern(raw json.RawMessage) string {
 // The walk stops at recommendWeaknessesTopN because the weakness list is
 // already severity-ordered; a 6th-ranked weakness is rarely the right
 // source for the next problem.
-func (s *Server) buildCandidatesFromWeaknesses(ctx context.Context, domain string, weaknesses []learning.WeaknessRow, recentPatterns []string) []Candidate {
+//
+// Returns the candidate slice plus a probeReport so the caller can emit
+// a precise empty_reason naming the dominant cause.
+func (s *Server) buildCandidatesFromWeaknesses(ctx context.Context, domain string, weaknesses []learning.WeaknessRow, recentPatterns []string) ([]Candidate, probeReport) {
 	excludeSet := map[string]struct{}{}
 	for _, p := range recentPatterns {
 		excludeSet[p] = struct{}{}
@@ -273,44 +334,70 @@ func (s *Server) buildCandidatesFromWeaknesses(ctx context.Context, domain strin
 
 	seenTargets := map[uuid.UUID]struct{}{}
 	candidates := make([]Candidate, 0, topN*2)
+	report := probeReport{weaknessesProbed: topN}
 
 	for i := range topN {
-		c := s.candidatesForWeakness(ctx, domain, &weaknesses[i], seenTargets, excludeSet)
+		c, disp := s.candidatesForWeakness(ctx, domain, &weaknesses[i], seenTargets, excludeSet)
 		candidates = append(candidates, c...)
+		switch disp {
+		case dispProduced:
+			report.withAcceptedVariations++
+		case dispNoAnchorAttempts:
+			report.noAnchorAttempts++
+		case dispNoVariations:
+			report.noVariations++
+		case dispAllRejected:
+			report.allVariationsRejected++
+		}
 	}
 
-	return candidates
+	return candidates, report
 }
+
+// weaknessDisposition labels the terminal state of a single weakness
+// probe. Used by buildCandidatesFromWeaknesses to aggregate counters
+// without re-walking the variation graph.
+type weaknessDisposition int
+
+const (
+	dispProduced         weaknessDisposition = iota // ≥1 candidate emitted
+	dispNoAnchorAttempts                            // no attempts on the weakness concept
+	dispNoVariations                                // anchors exist but variation catalog returned empty
+	dispAllRejected                                 // variations existed but every one failed acceptVariation
+)
 
 // candidatesForWeakness is the per-weakness body of buildCandidates, factored
 // out so the outer loop stays simple. Mutates seenTargets so callers can
 // dedupe across weaknesses. Returns whatever candidates this weakness
-// surfaced; DB lookup failures log and produce zero results without
-// failing the outer walk.
+// surfaced plus a disposition label naming why; DB lookup failures log
+// and produce zero results without failing the outer walk.
 func (s *Server) candidatesForWeakness(
 	ctx context.Context,
 	domain string,
 	w *learning.WeaknessRow,
 	seenTargets map[uuid.UUID]struct{},
 	excludeSet map[string]struct{},
-) []Candidate {
+) ([]Candidate, weaknessDisposition) {
 	concept, err := s.learn.ConceptBySlug(ctx, w.Domain, w.ConceptSlug)
 	if err != nil {
 		s.logger.Warn("recommend_next_target: concept lookup failed", "slug", w.ConceptSlug, "error", err)
-		return nil
+		return nil, dispNoAnchorAttempts
 	}
 	attempts, err := s.learn.AttemptsByConcept(ctx, concept.ID, recommendAttemptsPerConc)
 	if err != nil {
 		s.logger.Warn("recommend_next_target: attempts-by-concept lookup failed", "concept_id", concept.ID, "error", err)
-		return nil
+		return nil, dispNoAnchorAttempts
 	}
 	if len(attempts) == 0 {
-		return nil
+		return nil, dispNoAnchorAttempts
 	}
 	variations, err := s.learn.TargetVariations(ctx, &domain, recommendVariationsLimit)
 	if err != nil {
 		s.logger.Warn("recommend_next_target: variations lookup failed", "domain", domain, "error", err)
-		return nil
+		return nil, dispNoVariations
+	}
+	if len(variations) == 0 {
+		return nil, dispNoVariations
 	}
 
 	anchorIDs := attemptTargetSet(attempts)
@@ -334,7 +421,10 @@ func (s *Server) candidatesForWeakness(
 			Reason:         fmt.Sprintf("struggling on %s; %s is a %s of %s (never attempted)", w.ConceptSlug, rel.RelatedTitle, rel.RelationType, rel.AnchorTitle),
 		})
 	}
-	return out
+	if len(out) == 0 {
+		return nil, dispAllRejected
+	}
+	return out, dispProduced
 }
 
 // acceptVariation encapsulates the five disqualifying checks for a

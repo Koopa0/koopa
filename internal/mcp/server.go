@@ -481,6 +481,14 @@ func (s *Server) logToolCall(_ context.Context, name string, dur time.Duration, 
 }
 
 // clamp constrains v to [lo, hi], returning def if v is 0.
+//
+// All current callers pass lo=1 (limits / counts / window sizes that
+// must be at least 1). The parameter stays in the signature because
+// the next caller that emerges from a Phase 2 redesign may legitimately
+// want lo=0 (a "0 means strict" semantic) and forcing such a caller to
+// re-introduce the parameter would be churn for no gain.
+//
+//nolint:unparam // lo=1 across current callers; signature reserved for non-1 callers.
 func clamp(v, lo, hi, def int) int {
 	if v == 0 {
 		return def
