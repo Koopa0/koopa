@@ -133,9 +133,23 @@ func (s *Server) recommendNextTarget(ctx context.Context, _ *mcp.CallToolRequest
 	}
 
 	if len(candidates) == 0 {
-		reason := "weaknesses exist but no untried variations were recorded — record related_targets on attempts to build the variation graph"
+		// Multiple paths land here; the previous single-line reason
+		// asserted "no untried variations were recorded" which was
+		// misleading when the actual cause was "weakness anchors don't
+		// match any recorded related_targets" — variations had been
+		// recorded but on non-weakness concepts. Spell out every cause
+		// so the coach can pick the right remediation.
+		const causes = "possible causes: " +
+			"(a) weakness concepts have no recorded attempts, so no anchor targets exist; " +
+			"(b) anchor targets exist but no learning_target_relations were recorded from them; " +
+			"(c) every related target has already been attempted; " +
+			"(d) recorded relations connect non-weakness concepts (a variation hung off a concept that did not surface as a weakness)"
+		var reason string
 		if relaxedFilter {
-			reason = "no candidates even after relaxing interleaving filter — " + reason
+			reason = "weaknesses exist but no candidate variations passed filters even after relaxing interleaving — " + causes
+		} else {
+			reason = "weaknesses exist but no candidate variations passed filters — " + causes +
+				"; or (e) all candidates shared a pattern with this session's recent attempts (interleaving filter)"
 		}
 		return nil, RecommendNextTargetOutput{
 			Candidates:     []Candidate{},
