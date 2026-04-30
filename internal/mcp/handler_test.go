@@ -10,15 +10,20 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/Koopa0/koopa/internal/agent"
 	"github.com/Koopa0/koopa/internal/learning"
 )
 
-// newTestServer creates a Server with no stores — only useful for validation tests
-// that fail before any DB call.
+// newTestServer creates a Server with no stores — only useful for validation
+// tests that fail before any DB call. The default caller is "human" so the
+// authorization helpers in authz.go (requireAuthor, requireExplicitHuman) do
+// not gate validation paths from running. Tests that need a non-human caller
+// override callerAgent or pass `as` via context.
 func newTestServer() *Server {
 	return &Server{
 		logger:         slog.Default(),
-		callerAgent:    "test",
+		callerAgent:    "human",
+		registry:       agent.NewBuiltinRegistry(),
 		proposalSecret: []byte("test-secret-32-bytes-long-enough"),
 		loc:            time.UTC,
 	}
