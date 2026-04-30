@@ -80,11 +80,20 @@ type Project struct {
 }
 
 // CreateParams holds the parameters for creating a project.
+//
+// GoalID and AreaID are optional links to the parent goal / area. When
+// supplied at creation time the project is wired in one INSERT — there
+// is no separate Update call needed for the link to land, and
+// goal_progress / area listings see the new project on the next read.
+// Callers that do not know the parent (scaffolding, admin UI form
+// without a selection) pass nil for both.
 type CreateParams struct {
-	Slug        string `json:"slug"`
-	Title       string `json:"title"`
-	Description string `json:"description"`
-	Status      Status `json:"status"`
+	Slug        string     `json:"slug"`
+	Title       string     `json:"title"`
+	Description string     `json:"description"`
+	Status      Status     `json:"status"`
+	GoalID      *uuid.UUID `json:"goal_id,omitempty"`
+	AreaID      *uuid.UUID `json:"area_id,omitempty"`
 }
 
 // UpdateParams holds the parameters for updating a project.
@@ -343,13 +352,16 @@ func (s *Store) ProjectBySlug(ctx context.Context, slug string) (*Project, error
 	return &p, nil
 }
 
-// CreateProject inserts a new project.
+// CreateProject inserts a new project. GoalID and AreaID may be nil,
+// in which case the project lands without parent links.
 func (s *Store) CreateProject(ctx context.Context, p *CreateParams) (*Project, error) {
 	r, err := s.q.CreateProject(ctx, db.CreateProjectParams{
 		Slug:        p.Slug,
 		Title:       p.Title,
 		Description: p.Description,
 		Status:      db.ProjectStatus(p.Status),
+		GoalID:      p.GoalID,
+		AreaID:      p.AreaID,
 	})
 	if err != nil {
 		if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok && pgErr.Code == pgerrcode.UniqueViolation {

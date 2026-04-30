@@ -3218,8 +3218,8 @@ func (q *Queries) CreatePlan(ctx context.Context, arg CreatePlanParams) (Learnin
 }
 
 const createProject = `-- name: CreateProject :one
-INSERT INTO projects (slug, title, description, status)
-VALUES ($1, $2, $3, $4)
+INSERT INTO projects (slug, title, description, status, goal_id, area_id)
+VALUES ($1, $2, $3, $4, $5, $6)
 RETURNING id, slug, title, description, status, repo, area_id, goal_id, deadline, last_activity_at,
           expected_cadence, created_at, updated_at
 `
@@ -3229,14 +3229,22 @@ type CreateProjectParams struct {
 	Title       string        `json:"title"`
 	Description string        `json:"description"`
 	Status      ProjectStatus `json:"status"`
+	GoalID      *uuid.UUID    `json:"goal_id"`
+	AreaID      *uuid.UUID    `json:"area_id"`
 }
 
+// Insert a new project. goal_id and area_id are optional links to the
+// parent goal / area; when supplied at create time the project shows up
+// under goal_progress.projects on the next read without needing a
+// separate UpdateProject call.
 func (q *Queries) CreateProject(ctx context.Context, arg CreateProjectParams) (Project, error) {
 	row := q.db.QueryRow(ctx, createProject,
 		arg.Slug,
 		arg.Title,
 		arg.Description,
 		arg.Status,
+		arg.GoalID,
+		arg.AreaID,
 	)
 	var i Project
 	err := row.Scan(

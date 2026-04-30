@@ -42,8 +42,12 @@ SELECT id, slug, title, description, status, repo, area_id, goal_id, deadline, l
 FROM projects WHERE repo = $1;
 
 -- name: CreateProject :one
-INSERT INTO projects (slug, title, description, status)
-VALUES ($1, $2, $3, $4)
+-- Insert a new project. goal_id and area_id are optional links to the
+-- parent goal / area; when supplied at create time the project shows up
+-- under goal_progress.projects on the next read without needing a
+-- separate UpdateProject call.
+INSERT INTO projects (slug, title, description, status, goal_id, area_id)
+VALUES ($1, $2, $3, $4, sqlc.narg('goal_id'), sqlc.narg('area_id'))
 RETURNING id, slug, title, description, status, repo, area_id, goal_id, deadline, last_activity_at,
           expected_cadence, created_at, updated_at;
 
