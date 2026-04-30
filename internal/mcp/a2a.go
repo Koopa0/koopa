@@ -96,6 +96,14 @@ func (s *Server) fileReport(ctx context.Context, _ *mcp.CallToolRequest, input F
 	return s.fileReportStandalone(ctx, caller, input, artifactParts)
 }
 
+// fileReportWithTask completes a task atomically: caller MUST be the
+// task's assignee (target). Without the assignee check the only signal
+// a non-target caller would see is the task store's generic
+// ErrConflict (the TransitionTaskToCompleted UPDATE matches no rows
+// when state isn't 'working'). That error is ambiguous between "task
+// in wrong state" and "wrong caller". Loading the task first and
+// asserting caller == assignee gives an unambiguous error before the
+// store ever runs.
 func (s *Server) fileReportWithTask(ctx context.Context, caller agent.Name, input FileReportInput, artifactParts []*a2a.Part) (*mcp.CallToolResult, FileReportOutput, error) {
 	responseParts, err := parseA2AParts(input.ResponseParts)
 	if err != nil {
@@ -110,6 +118,20 @@ func (s *Server) fileReportWithTask(ctx context.Context, caller agent.Name, inpu
 	auth, err := agent.Authorize(ctx, s.registry, caller, agent.ActionCompleteTask)
 	if err != nil {
 		return nil, FileReportOutput{}, fmt.Errorf("file_report: %w", err)
+	}
+
+	existing, err := s.tasks.Task(ctx, taskID)
+	if err != nil {
+		if errors.Is(err, task.ErrNotFound) {
+			return nil, FileReportOutput{}, fmt.Errorf("file_report: task %s not found", taskID)
+		}
+		return nil, FileReportOutput{}, fmt.Errorf("file_report: loading task: %w", err)
+	}
+	if existing.Target != string(caller) {
+		return nil, FileReportOutput{}, fmt.Errorf("file_report: caller %q is not the task target (%q); only the assignee can complete a task", caller, existing.Target)
+	}
+	if existing.State != task.StateWorking {
+		return nil, FileReportOutput{}, fmt.Errorf("file_report: task %s is in state %q; complete only works on tasks in 'working' state (call acknowledge_directive first to move submitted → working)", taskID, existing.State)
 	}
 
 	var completed *task.Task
