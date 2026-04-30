@@ -31,7 +31,7 @@ const mcpMaxEvidenceSize = 32 * 1024
 type TrackHypothesisInput struct {
 	HypothesisID            string         `json:"hypothesis_id" jsonschema:"required" jsonschema_description:"Hypothesis UUID to update"`
 	Action                  string         `json:"action" jsonschema:"required" jsonschema_description:"Action: verify, invalidate, archive, add_evidence"`
-	Evidence                map[string]any `json:"evidence,omitempty" jsonschema_description:"Evidence data (for add_evidence action)"`
+	Evidence                map[string]any `json:"evidence,omitempty" jsonschema_description:"Evidence entry for add_evidence action. MUST include type=\"supporting\"|\"counter\"; other fields (observation, weight, source) are caller-defined and persisted as-is. Max 32 KB serialized."`
 	ResolvedByAttemptID     *string        `json:"resolved_by_attempt_id,omitempty" jsonschema_description:"Attempt UUID that resolved the hypothesis (for verify/invalidate)"`
 	ResolvedByObservationID *string        `json:"resolved_by_observation_id,omitempty" jsonschema_description:"Observation UUID that resolved the hypothesis (for verify/invalidate)"`
 	ResolutionSummary       *string        `json:"resolution_summary,omitempty" jsonschema_description:"Free-text summary of how the hypothesis was resolved (for verify/invalidate, max 2 KB)"`
