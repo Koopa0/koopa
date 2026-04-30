@@ -89,6 +89,49 @@ func TestRatingFromOutcome(t *testing.T) {
 	}
 }
 
+// TestPublicRatingFromOutcome verifies the exported RatingFromOutcome
+// returns the int form of the same mapping, suitable for echoing in MCP
+// responses. Coverage mirrors TestRatingFromOutcome so a future change
+// to one mapping cannot land without updating both.
+func TestPublicRatingFromOutcome(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		outcome string
+		want    int
+		wantErr bool
+	}{
+		{name: "solved_independent → 3 (Good)", outcome: "solved_independent", want: 3},
+		{name: "completed → 3 (Good)", outcome: "completed", want: 3},
+		{name: "solved_with_hint → 2 (Hard)", outcome: "solved_with_hint", want: 2},
+		{name: "solved_after_solution → 2 (Hard)", outcome: "solved_after_solution", want: 2},
+		{name: "completed_with_support → 2 (Hard)", outcome: "completed_with_support", want: 2},
+		{name: "incomplete → 1 (Again)", outcome: "incomplete", want: 1},
+		{name: "gave_up → 1 (Again)", outcome: "gave_up", want: 1},
+		{name: "unknown outcome → ErrUnknownOutcome", outcome: "bogus_outcome", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := RatingFromOutcome(tt.outcome)
+			if tt.wantErr {
+				if !errors.Is(err, ErrUnknownOutcome) {
+					t.Errorf("RatingFromOutcome(%q) error = %v, want ErrUnknownOutcome", tt.outcome, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("RatingFromOutcome(%q) error = %v, want nil", tt.outcome, err)
+			}
+			if got != tt.want {
+				t.Errorf("RatingFromOutcome(%q) = %d, want %d", tt.outcome, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestFSRSRatingFromInt(t *testing.T) {
 	t.Parallel()
 

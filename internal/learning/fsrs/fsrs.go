@@ -111,3 +111,16 @@ func ratingFromOutcome(outcome string) (gofsrs.Rating, error) {
 		return 0, fmt.Errorf("%w: %q (vocabulary drift between Go and schema)", ErrUnknownOutcome, outcome)
 	}
 }
+
+// RatingFromOutcome is the public sibling of ratingFromOutcome. Exposed
+// so callers can echo "what rating ReviewByOutcome will / did derive"
+// without duplicating the mapping or actually performing the review.
+// Returns the FSRS 1..4 integer rating (Again=1, Hard=2, Good=3,
+// Easy=4) and ErrUnknownOutcome for outcomes outside the schema enum.
+func RatingFromOutcome(outcome string) (int, error) {
+	r, err := ratingFromOutcome(outcome)
+	if err != nil {
+		return 0, err
+	}
+	return int(r), nil
+}

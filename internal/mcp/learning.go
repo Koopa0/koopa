@@ -139,6 +139,15 @@ type RecordAttemptOutput struct {
 	PlanContext          []PlanContextEntry `json:"plan_context,omitempty"`
 	RelationsLinked      int                `json:"relations_linked,omitempty"`
 	RelationWarnings     []string           `json:"relation_warnings,omitempty"`
+	// FSRSRatingApplied echoes the FSRS rating (1=Again, 2=Hard, 3=Good,
+	// 4=Easy) the server actually used when advancing the spaced-repetition
+	// queue for this attempt. When the caller supplied an fsrs_rating
+	// override this field repeats that value back, so the coach can verify
+	// the override reached the server without a follow-up query. When no
+	// override was supplied the field shows the rating derived from
+	// outcome via fsrs.RatingFromOutcome. nil only when the outcome was
+	// unknown to the bridge (no rating could be determined).
+	FSRSRatingApplied *int `json:"fsrs_rating_applied,omitempty"`
 	// FSRSReviewFailed is true when the attempt was persisted but the
 	// spaced-repetition review card update failed. The attempt itself is
 	// still valid — surface this so the caller can retry or warn the user
@@ -198,10 +207,12 @@ func (s *Server) recordAttempt(ctx context.Context, _ *mcp.CallToolRequest, inpu
 
 	// Side effects: none of these fail the attempt — each helper logs its own
 	// failures and returns a best-effort result so the caller still gets a
-	// persisted attempt record. updateFSRSReview returns a bool surfaced in
-	// the output so callers can detect silent review-card data loss.
+	// persisted attempt record. updateFSRSReview returns the rating it
+	// applied (so callers can verify a fsrs_rating override was received)
+	// plus a failed flag (so callers can detect silent review-card data
+	// loss).
 	recorded, obsWarnings := s.processObservations(ctx, attempt.ID, prep.domain, input.Observations)
-	fsrsFailed := s.updateFSRSReview(ctx, prep.itemID, prep.outcome, input.FSRSRating)
+	fsrsRating, fsrsFailed := s.updateFSRSReview(ctx, prep.itemID, prep.outcome, input.FSRSRating)
 	linked, relWarnings := s.processRelatedTargets(ctx, prep.itemID, prep.domain, input.RelatedTargets)
 	planCtx := s.lookupPlanContext(ctx, prep.itemID)
 
@@ -219,6 +230,7 @@ func (s *Server) recordAttempt(ctx context.Context, _ *mcp.CallToolRequest, inpu
 		PlanContext:          planCtx,
 		RelationsLinked:      linked,
 		RelationWarnings:     relWarnings,
+		FSRSRatingApplied:    fsrsRating,
 		FSRSReviewFailed:     fsrsFailed,
 	}, nil
 }
@@ -335,25 +347,42 @@ func (s *Server) lookupPlanContext(ctx context.Context, targetID uuid.UUID) []Pl
 
 // updateFSRSReview applies a spaced-repetition review for itemID. When
 // override is non-nil it is used directly (1..4 rating); otherwise the
-// outcome string is mapped to a rating via the learning store.
+// outcome string is mapped to a rating via fsrs.RatingFromOutcome.
 //
-// Returns true when the review card update failed — the attempt is still
-// persisted, but the FSRS queue was not advanced. On failure, the card row
-// is stamped via fsrs.MarkDrift so the retrieval view can raise a
-// drift_suspect flag to the consumer; this turns silent scheduling drift
-// into a visible signal. The bool return is retained so the tool response
-// can surface the same signal immediately.
-func (s *Server) updateFSRSReview(ctx context.Context, targetID uuid.UUID, outcome string, override *FlexInt) bool {
+// Returns the rating actually applied and a "failed" flag.
+//
+//   - applied is non-nil whenever a rating was determined — even when the
+//     subsequent ReviewByRating / ReviewByOutcome call failed, we still
+//     surface the rating the caller's input would have produced so the
+//     coach can verify "did the override I sent reach the server" without
+//     a second query.
+//   - applied is nil only on the unknown-outcome path (no override, and
+//     the outcome string is outside the enum) — there is no rating to
+//     echo because the bridge function rejected the outcome.
+//   - failed=true means the FSRS queue was NOT advanced. The attempt row
+//     is still persisted, and the card row is stamped via fsrs.MarkDrift
+//     so the retrieval view raises a drift_suspect flag.
+func (s *Server) updateFSRSReview(ctx context.Context, targetID uuid.UUID, outcome string, override *FlexInt) (applied *int, failed bool) {
 	now := time.Now()
 	if override != nil {
 		rating := int(*override)
 		if _, err := s.fsrs.ReviewByRating(ctx, targetID, rating, now); err != nil {
 			s.logger.Warn("record_attempt: fsrs review (override) failed", "target_id", targetID, "rating", rating, "error", err)
 			s.markFSRSDrift(ctx, targetID, "rating_override_failed")
-			return true
+			return &rating, true
 		}
-		return false
+		return &rating, false
 	}
+
+	derived, derivErr := fsrs.RatingFromOutcome(outcome)
+	if derivErr != nil {
+		// Unknown outcome — no rating to echo. ReviewByOutcome will return
+		// the same error; let it run so the drift marker still fires.
+		s.logger.Warn("record_attempt: fsrs review failed", "target_id", targetID, "reason", "unknown_outcome", "error", derivErr)
+		s.markFSRSDrift(ctx, targetID, "unknown_outcome")
+		return nil, true
+	}
+
 	if _, err := s.fsrs.ReviewByOutcome(ctx, targetID, outcome, now); err != nil {
 		// outcome is user-controlled — log only the sentinel branch so the
 		// raw value never reaches the log stream.
@@ -363,9 +392,9 @@ func (s *Server) updateFSRSReview(ctx context.Context, targetID uuid.UUID, outco
 		}
 		s.logger.Warn("record_attempt: fsrs review failed", "target_id", targetID, "reason", reason, "error", err)
 		s.markFSRSDrift(ctx, targetID, reason)
-		return true
+		return &derived, true
 	}
-	return false
+	return &derived, false
 }
 
 // markFSRSDrift stamps the drift marker and logs any failure or silent
