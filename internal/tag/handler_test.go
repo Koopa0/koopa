@@ -639,48 +639,6 @@ func TestHandler_Merge_SelfMerge(t *testing.T) {
 	}
 }
 
-// TestHandler_ListAliases_QueryParam verifies that the ?unmapped=true query
-// parameter is parsed correctly. Both paths reach the nil store, so this test
-// verifies the routing logic only. Full behavior is covered by integration tests.
-func TestHandler_ListAliases_QueryParam(t *testing.T) {
-	t.Parallel()
-
-	// With nil store, both branches will panic. We just verify the handler
-	// parses the query param and routes correctly: no 400 response is produced.
-	// The test uses deferred recovery to catch the nil-store panic.
-	//
-	// This validates: handler does not short-circuit on valid inputs.
-	cases := []struct {
-		query string
-		desc  string
-	}{
-		{query: "", desc: "no query param → lists all aliases"},
-		{query: "?unmapped=true", desc: "unmapped=true → filters unmapped aliases"},
-		{query: "?unmapped=false", desc: "unmapped=false → lists all aliases"},
-	}
-
-	for _, tc := range cases {
-		t.Run(tc.desc, func(t *testing.T) {
-			t.Parallel()
-
-			h := newHandler()
-			req := httptest.NewRequest(http.MethodGet, "/", http.NoBody)
-			w := httptest.NewRecorder()
-
-			// Nil store will panic; recover and verify no 4xx was written before the panic.
-			func() {
-				defer func() { _ = recover() }()
-				h.ListAliases(w, req)
-			}()
-
-			// If a response was written before the panic, it must not be a 400.
-			if w.Code == http.StatusBadRequest {
-				t.Errorf("ListAliases(%q) returned 400 unexpectedly\nbody: %s", tc.query, w.Body.String())
-			}
-		})
-	}
-}
-
 // TestHandler_Create_ContentType verifies the response content-type header.
 // A 400 from validation must include Content-Type: application/json.
 func TestHandler_Create_ContentType(t *testing.T) {
