@@ -46,3 +46,44 @@ func TestClampDurationMinutes(t *testing.T) {
 		})
 	}
 }
+
+// TestResolveDueWithinHours pins the absent-vs-explicit-zero contract for the
+// retrieval-view window. The bug class commit b2e08cc fixed: a plain int
+// caller field collapses unset and zero into the same value, so an explicit
+// "due right now" request silently became "default window". The *FlexInt
+// indirection — and the resolver below — is the structural guarantee that
+// keeps the two distinct.
+func TestResolveDueWithinHours(t *testing.T) {
+	t.Parallel()
+
+	flex := func(n int) *FlexInt {
+		v := FlexInt(n)
+		return &v
+	}
+
+	tests := []struct {
+		name string
+		in   *FlexInt
+		want int
+	}{
+		{name: "nil input defaults to 24h", in: nil, want: 24},
+		{name: "explicit zero preserved as strict due-now", in: flex(0), want: 0},
+		{name: "lower positive", in: flex(1), want: 1},
+		{name: "typical morning window", in: flex(24), want: 24},
+		{name: "week-ahead upper bound", in: flex(168), want: 168},
+		{name: "above cap clamps to 168", in: flex(169), want: 168},
+		{name: "absurd positive clamps to 168", in: flex(99999), want: 168},
+		{name: "negative one clamps to 0", in: flex(-1), want: 0},
+		{name: "absurd negative clamps to 0", in: flex(-9999), want: 0},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := resolveDueWithinHours(tt.in)
+			if got != tt.want {
+				t.Errorf("resolveDueWithinHours(%v) = %d, want %d", tt.in, got, tt.want)
+			}
+		})
+	}
+}

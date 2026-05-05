@@ -121,7 +121,7 @@ type ManageContentOutput struct {
 	Content         *ContentDetail    `json:"content,omitempty"`
 	Contents        []ContentSummary  `json:"contents,omitempty"`
 	Action          string            `json:"action"`
-	ContentWarnings []string          `json:"content_warnings,omitempty"`
+	ContentWarnings []string          `json:"content_warnings"`
 	SlugConflict    *SlugConflictInfo `json:"slug_conflict,omitempty"`
 }
 

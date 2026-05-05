@@ -311,7 +311,7 @@ func RecordAttempt() Meta {
 		Writability: Additive,
 		Stability:   StabilityStable,
 		Since:       since,
-		Description: "Record an attempt within the active learning session. Accepts semantic outcomes ('got it', 'needed help', 'gave up') mapped to schema enums by session mode. Response echoes canonical_outcome alongside the input so the coach sees the normalized storage form. Auto-creates learning targets and concepts. Both high and low confidence observations are persisted; dashboard filters at read time. Observation constraint: severity is only valid for signal='weakness'; passing severity on mastery/improvement will reject the entire observation (check observation_warnings in response).",
+		Description: "Record an attempt within the active learning session. Accepts semantic outcomes ('got it', 'needed help', 'gave up') mapped to schema enums by session mode. Response echoes canonical_outcome alongside the input so the coach sees the normalized storage form. Auto-creates learning targets and concepts. Both high and low confidence observations are persisted; dashboard filters at read time. Partial-write contract: observations are validated per-element. Severity is only valid for signal='weakness'; passing severity on mastery/improvement rejects that observation only — sibling observations still try independently and the attempt row plus FSRS rating still persist. observations_recorded < input length is therefore a legal state; rejected indices are named in observation_warnings.",
 		FieldEnums: map[string][]string{
 			"outcome": {
 				// Canonical DB-stored values.

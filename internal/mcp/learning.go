@@ -141,6 +141,16 @@ type RecordAttemptOutput struct {
 	// got dropped because it was zero-valued." Always emitting the
 	// canonical empty value (`[]` for slices, `0` for counters) makes
 	// the response shape stable regardless of input.
+	//
+	// Partial-write contract: ObservationsRecorded < len(input.Observations)
+	// is a legal state, not an error. Observations are validated per-element
+	// (e.g. severity-on-mastery violations); a rejected element is named in
+	// ObservationWarnings by its input index, sibling elements still try
+	// independently, and the attempt row plus FSRS rating still persist.
+	// Callers reconcile by comparing ObservationsRecorded against input
+	// length and reading ObservationWarnings for rejected indices. Same
+	// per-element semantics apply to RelatedTargets / RelationsLinked /
+	// RelationWarnings.
 	ObservationWarnings []string           `json:"observation_warnings"`
 	PlanContext         []PlanContextEntry `json:"plan_context"`
 	RelationsLinked     int                `json:"relations_linked"`
@@ -337,6 +347,26 @@ func clampDurationMinutes(d *FlexInt) *int32 {
 	}
 	v := int32(m) // #nosec G115 — clamped to 1..1440 above
 	return &v
+}
+
+// resolveDueWithinHours applies the retrieval-view window contract: nil input
+// (caller did not supply due_within_hours) defaults to 24 hours — the typical
+// morning-review window. An explicit FlexInt(0) survives as strict
+// "due-right-now" because the *FlexInt indirection lets us distinguish unset
+// from zero (a plain int would collapse the two). Negative values clamp to 0;
+// values above 168 (one week) clamp to 168.
+func resolveDueWithinHours(in *FlexInt) int {
+	if in == nil {
+		return 24
+	}
+	h := int(*in)
+	if h < 0 {
+		return 0
+	}
+	if h > 168 {
+		return 168
+	}
+	return h
 }
 
 // lookupPlanContext returns the active plan entries that contain targetID, so
@@ -682,20 +712,7 @@ func (s *Server) learningDashboard(ctx context.Context, _ *mcp.CallToolRequest, 
 		confidenceFilter = *input.ConfidenceFilter
 	}
 
-	// Pointer-not-pointer: nil DueWithinHours means caller did not supply
-	// the field, which falls through to the 24h default ('today's review
-	// window'). An explicit 0 is preserved as strict 'due-right-now'
-	// because the *FlexInt indirection lets us distinguish unset from
-	// zero — clamp's def-on-zero behaviour would otherwise merge the two.
-	dueWithinHours := 24
-	if input.DueWithinHours != nil {
-		dueWithinHours = int(*input.DueWithinHours)
-		if dueWithinHours < 0 {
-			dueWithinHours = 0
-		} else if dueWithinHours > 168 {
-			dueWithinHours = 168
-		}
-	}
+	dueWithinHours := resolveDueWithinHours(input.DueWithinHours)
 
 	switch view {
 	case "overview":
