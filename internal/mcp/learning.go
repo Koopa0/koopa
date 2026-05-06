@@ -913,9 +913,12 @@ func (s *Server) processObservations(ctx context.Context, attemptID uuid.UUID, d
 	if catErr != nil {
 		// Failure here means the category list is unknown for this call;
 		// fall back to allowing every category and let any FK violation
-		// surface as a wrapped warning per-observation. We log so a real
-		// outage shows up rather than being silently swallowed.
+		// surface as a wrapped warning per-observation. Surface the skip
+		// as a top-level warning so the caller doesn't silently pay the
+		// raw-DB-error cost without knowing why pre-validation didn't
+		// catch a typo.
 		s.logger.Warn("observation: failed to load category list, skipping pre-validation", "domain", domain, "error", catErr)
+		warnings = append(warnings, fmt.Sprintf("category pre-validation skipped for domain %q: %v — typo'd categories will reach the DB and may surface as raw FK errors instead of named values", domain, catErr))
 		validCategories = nil
 	}
 

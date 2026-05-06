@@ -134,15 +134,34 @@ func (s *Store) EndSession(ctx context.Context, sessionID uuid.UUID, agentNoteID
 		ID:          sessionID,
 		AgentNoteID: agentNoteID,
 	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return s.handleEndSessionRace(ctx, sessionID)
+	}
 	if err != nil {
-		// Race: another caller ended this session between our lookup and
-		// the UPDATE. Treat as ErrAlreadyEnded for the caller.
-		if errors.Is(err, pgx.ErrNoRows) {
-			return existing, ErrAlreadyEnded
-		}
 		return nil, fmt.Errorf("ending session: %w", err)
 	}
 	return rowToSession(&row), nil
+}
+
+// handleEndSessionRace recovers from the case where another caller ended
+// the session between EndSession's pre-flight SessionByID and the UPDATE
+// (UPDATE returns pgx.ErrNoRows because ended_at is no longer NULL). We
+// re-fetch the row so the returned snapshot reflects the now-ended state;
+// the pre-flight `existing` row has EndedAt == nil and would contradict
+// the ErrAlreadyEnded sentinel. The extra query runs only on this race
+// path, never on the happy path.
+func (s *Store) handleEndSessionRace(ctx context.Context, sessionID uuid.UUID) (*Session, error) {
+	fresh, err := s.SessionByID(ctx, sessionID)
+	if errors.Is(err, ErrNotFound) {
+		// Pre-flight saw the row, UPDATE saw no rows, re-fetch can't find
+		// it: someone deleted the session. Surface ErrNotFound so the
+		// caller stops chasing a stale id.
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("re-fetching session after race: %w", err)
+	}
+	return fresh, ErrAlreadyEnded
 }
 
 // RecentSessions returns recent sessions, optionally filtered by domain.
