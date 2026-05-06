@@ -8,7 +8,7 @@ import type { SystemHealth } from '../models/admin.model';
 export class SystemService {
   private readonly api = inject(ApiService);
 
-  /** Get system health status: feeds, pipeline, AI budget, database */
+  /** Get system health status: feeds, pipeline, database */
   getHealth(): Observable<SystemHealth> {
     return this.api.getData<SystemHealth>('/api/admin/system/health');
   }

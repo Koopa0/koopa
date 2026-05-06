@@ -10144,7 +10144,7 @@ const statsDatabaseCounts = `-- name: StatsDatabaseCounts :one
 SELECT
     (SELECT COUNT(*) FROM contents)::int AS contents_count,
     (SELECT COUNT(*) FROM todos)::int AS todos_count,
-    (SELECT COUNT(*) FROM contents WHERE type = 'note')::int AS notes_count
+    (SELECT COUNT(*) FROM notes)::int AS notes_count
 `
 
 type StatsDatabaseCountsRow struct {
@@ -10156,6 +10156,8 @@ type StatsDatabaseCountsRow struct {
 // Core entity counts for SystemHealth. todos is the personal GTD store;
 // the inter-agent coordination tasks table is intentionally NOT counted
 // here (it would mix two entirely different concepts with the same word).
+// notes lives in its own table (Phase 2 entry extracted Zettelkasten
+// notes from the old contents.type='note' polymorphism).
 func (q *Queries) StatsDatabaseCounts(ctx context.Context) (StatsDatabaseCountsRow, error) {
 	row := q.db.QueryRow(ctx, statsDatabaseCounts)
 	var i StatsDatabaseCountsRow

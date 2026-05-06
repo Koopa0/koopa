@@ -32,7 +32,7 @@ func (s *Server) systemStatus(ctx context.Context, _ *mcp.CallToolRequest, input
 
 	health, err := s.stats.SystemHealth(ctx)
 	if err != nil {
-		return nil, SystemStatusOutput{}, fmt.Errorf("querying system status: %w", err)
+		return nil, SystemStatusOutput{Scope: scope}, fmt.Errorf("querying system health: %w", err)
 	}
 
 	return nil, SystemStatusOutput{
