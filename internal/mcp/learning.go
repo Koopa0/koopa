@@ -121,7 +121,7 @@ type ObservationInput struct {
 	Concept    string  `json:"concept" jsonschema:"required" jsonschema_description:"Concept slug"`
 	Signal     string  `json:"signal" jsonschema:"required" jsonschema_description:"weakness, improvement, or mastery"`
 	Category   string  `json:"category" jsonschema:"required" jsonschema_description:"Domain-specific category"`
-	Severity   *string `json:"severity,omitempty" jsonschema_description:"minor, moderate, or critical. WEAKNESS SIGNAL ONLY — setting severity on an improvement or mastery observation causes that observation to be skipped with a message in observation_warnings (the rest of the attempt still persists). Leave unset for non-weakness signals."`
+	Severity   *string `json:"severity,omitempty" jsonschema_description:"minor, moderate, or critical. WEAKNESS SIGNAL ONLY — setting severity on an improvement or mastery observation causes that observation to be rejected and not persisted, with a 'rejected and not persisted' warning naming the offending index in observation_warnings (the rest of the attempt still persists). Leave unset for non-weakness signals."`
 	Detail     *string `json:"detail,omitempty"`
 	Confidence string  `json:"confidence,omitempty" jsonschema_description:"high (default — directly evidenced) or low (coach inferred). Both persist; mastery and weakness views default to high only but accept confidence_filter='all'."`
 }
@@ -830,12 +830,12 @@ func (s *Server) processObservations(ctx context.Context, attemptID uuid.UUID, d
 		obs := &observations[i]
 		conceptID, err := s.learn.FindOrCreateConcept(ctx, obs.Concept, obs.Concept, domain, "skill")
 		if err != nil {
-			warnings = append(warnings, fmt.Sprintf("observations[%d] (%q): concept creation failed: %v", i, obs.Concept, err))
+			warnings = append(warnings, fmt.Sprintf("observations[%d] (%q): rejected and not persisted — concept creation failed: %v", i, obs.Concept, err))
 			s.logger.Warn("observation: concept creation failed", "concept", obs.Concept, "error", err)
 			continue
 		}
 		if _, err := s.learn.RecordObservation(ctx, attemptID, conceptID, obs.Signal, obs.Category, obs.Severity, obs.Detail, obs.Confidence, int32(i)); err != nil {
-			warnings = append(warnings, fmt.Sprintf("observations[%d] (%q): record failed: %v", i, obs.Concept, err))
+			warnings = append(warnings, fmt.Sprintf("observations[%d] (%q): rejected and not persisted — %v", i, obs.Concept, err))
 			s.logger.Warn("observation: recording failed", "concept", obs.Concept, "confidence", obs.Confidence, "error", err)
 			continue
 		}
