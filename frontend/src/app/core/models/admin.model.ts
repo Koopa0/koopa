@@ -279,10 +279,11 @@ export type ItemDifficulty = 'easy' | 'medium' | 'hard';
 // === System health ===
 
 /**
- * GET /api/admin/system/health envelope. `state` warns when any feed
- * is failing or when 24h pipeline_runs.failed > 0.
+ * GET /api/admin/system/health envelope. Per-domain health is read off
+ * the sub-shapes (feeds.failing > 0, pipelines.failed > 0); there is no
+ * top-level state aggregate.
  */
-export interface SystemHealth extends CellState {
+export interface SystemHealth {
   feeds: FeedHealth;
   pipelines: PipelineHealth;
   database: DatabaseStats;

@@ -11,7 +11,6 @@ import type { SystemHealth } from '../models/admin.model';
 
 function fullHealth(overrides: Partial<SystemHealth> = {}): SystemHealth {
   return {
-    state: 'ok',
     feeds: {
       total: 25,
       healthy: 25,
