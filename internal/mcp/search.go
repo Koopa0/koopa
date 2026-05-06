@@ -46,9 +46,9 @@ const (
 // SearchKnowledgeInput is the input for the search_knowledge tool.
 type SearchKnowledgeInput struct {
 	Query       string   `json:"query" jsonschema:"required" jsonschema_description:"Search query text"`
-	ContentType *string  `json:"content_type,omitempty" jsonschema_description:"Filter by content type: article, essay, build-log, til, digest (applies only to source_type=content)."`
-	NoteKind    *string  `json:"note_kind,omitempty" jsonschema_description:"Filter by note kind: solve-note, concept-note, debug-postmortem, decision-log, reading-note, musing (applies only to source_type=note)."`
-	SourceTypes []string `json:"source_types,omitempty" jsonschema_description:"Filter by source: 'content' (articles/essays/etc), 'note' (Zettelkasten). Default: both."`
+	ContentType *string  `json:"content_type,omitempty" jsonschema_description:"Filter by content type: article, essay, build-log, til, digest. Implies source_types=[\"content\"]; notes are excluded automatically. Mutually exclusive with note_kind."`
+	NoteKind    *string  `json:"note_kind,omitempty" jsonschema_description:"Filter by note kind: solve-note, concept-note, debug-postmortem, decision-log, reading-note, musing. Implies source_types=[\"note\"]; content is excluded automatically. Mutually exclusive with content_type."`
+	SourceTypes []string `json:"source_types,omitempty" jsonschema_description:"Filter by source: 'content' (articles/essays/etc), 'note' (Zettelkasten). Default: both. Overridden by content_type or note_kind if either is set."`
 	Project     *string  `json:"project,omitempty" jsonschema_description:"Filter by project slug/alias/title (content only)."`
 	After       *string  `json:"after,omitempty" jsonschema_description:"Filter: created after YYYY-MM-DD (exclusive)."`
 	Before      *string  `json:"before,omitempty" jsonschema_description:"Filter: created before YYYY-MM-DD (exclusive)."`
@@ -90,8 +90,24 @@ func (s *Server) searchKnowledge(ctx context.Context, _ *mcp.CallToolRequest, in
 		return nil, SearchKnowledgeOutput{}, fmt.Errorf("invalid before date: %w", err)
 	}
 
+	hasContentTypeFilter := input.ContentType != nil && *input.ContentType != ""
+	hasNoteKindFilter := input.NoteKind != nil && *input.NoteKind != ""
+	if hasContentTypeFilter && hasNoteKindFilter {
+		return nil, SearchKnowledgeOutput{}, fmt.Errorf("content_type and note_kind are mutually exclusive — content_type filters articles/essays/etc; note_kind filters notes")
+	}
+
 	limit := clamp(int(input.Limit), 1, 50, 20)
 	wantContent, wantNote := selectSources(input.SourceTypes)
+	// A type-specific filter implies the corresponding source. Caller's
+	// mental model is "I asked for articles, why did notes leak in?" —
+	// passing content_type narrows to the content branch even if
+	// source_types was unset (default both). Symmetric for note_kind.
+	if hasContentTypeFilter {
+		wantNote = false
+	}
+	if hasNoteKindFilter {
+		wantContent = false
+	}
 
 	// Initialise as empty slice (not nil) so the JSON envelope serialises
 	// to "results":[] when both branches return no rows. The json-api

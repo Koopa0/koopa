@@ -49,7 +49,7 @@ func SearchKnowledge() Meta {
 		Writability: ReadOnly,
 		Stability:   StabilityStable,
 		Since:       since,
-		Description: "Search across all content types: articles, build logs, TILs, notes. Filters: content_type, project, date range. Use when looking for past knowledge or content.",
+		Description: "Search across content (articles, build logs, TILs, etc.) and notes (Zettelkasten). Filters: source_types (default both), content_type (implies content-only; mutex with note_kind), note_kind (implies note-only; mutex with content_type), project, date range. Use when looking for past knowledge or content.",
 	}
 }
 
