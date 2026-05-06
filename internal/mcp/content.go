@@ -118,10 +118,17 @@ type SlugConflictInfo struct {
 }
 
 type ManageContentOutput struct {
-	Content         *ContentDetail    `json:"content,omitempty"`
-	Contents        []ContentSummary  `json:"contents,omitempty"`
-	Action          string            `json:"action"`
-	ContentWarnings []string          `json:"content_warnings"`
+	Content  *ContentDetail   `json:"content,omitempty"`
+	Contents []ContentSummary `json:"contents,omitempty"`
+	Action   string           `json:"action"`
+	// ContentWarnings is create-only. Only the createContent path emits warnings
+	// (slug normalization, etc.) — every other action (update, publish, list,
+	// read, archive, submit_for_review, revert_to_draft, slug_conflict-on-create)
+	// constructs ManageContentOutput without setting this field. omitempty is
+	// therefore the correct shape: present (possibly empty) on create, absent on
+	// every other action. Contrast with learning.go's RecordAttemptOutput where
+	// every action can produce warnings, so always-present is the right pattern.
+	ContentWarnings []string          `json:"content_warnings,omitempty"`
 	SlugConflict    *SlugConflictInfo `json:"slug_conflict,omitempty"`
 }
 
