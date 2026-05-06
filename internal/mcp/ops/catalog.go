@@ -222,7 +222,7 @@ func CommitProposal() Meta {
 		Writability: Additive,
 		Stability:   StabilityStable,
 		Since:       since,
-		Description: "Commit a previously proposed entity using the proposal_token from any propose_<type> tool. Creates the entity in the database. Supports optional modifications to override fields before commit.",
+		Description: "Commit a previously proposed entity using the proposal_token from any propose_<type> tool. Creates the entity in the database. Supports optional modifications to override fields before commit. Token expires 10 minutes after issuance (and is invalidated by server restart since the HMAC secret regenerates) — re-propose to get a new token if the commit is delayed beyond that window.",
 	}
 }
 
