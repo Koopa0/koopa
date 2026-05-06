@@ -34,10 +34,27 @@ import (
 	"github.com/Koopa0/koopa/internal/project"
 )
 
-// learningDomainSlugPattern mirrors the CHECK constraint on
-// learning_domains.slug at migrations/001:1519. Validating client-side lets
-// us return a specific error instead of a generic CheckViolation from PG.
-var learningDomainSlugPattern = regexp.MustCompile(`^[a-z][a-z0-9-]*$`)
+// slugPattern mirrors every chk_*_slug_format CHECK constraint in
+// migrations/001 (learning_domains, concepts, contents, tags, topics,
+// observation_categories, ...). Validating client-side lets handlers
+// return a specific error instead of a generic CheckViolation from PG.
+//
+// If a future migration changes the schema rule, update this regex in
+// the same commit so client-side and server-side stay aligned.
+var slugPattern = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
+
+// validateSlug returns an error suitable for caller-facing messages
+// when s does not match slugPattern. fieldName is the human-readable
+// name to show ("concept slug", "content slug", "observation category").
+// Returns nil for valid slugs. The error wording is intentionally close
+// to commitment.go::resolveLearningDomainFields so all slug rejections
+// look the same regardless of which entity the caller was creating.
+func validateSlug(fieldName, s string) error {
+	if slugPattern.MatchString(s) {
+		return nil
+	}
+	return fmt.Errorf("invalid %s %q: must be lowercase kebab-case (pattern: %s)", fieldName, s, slugPattern.String())
+}
 
 // ProposeOutput is the response shape shared by every typed
 // propose_<type> tool. Preview echoes the resolved fields the caller
@@ -708,8 +725,8 @@ func (s *Server) resolveLearningDomainFields(ctx context.Context, f map[string]a
 	if slug == "" {
 		return nil, fmt.Errorf("slug is required for learning_domain")
 	}
-	if !learningDomainSlugPattern.MatchString(slug) {
-		return nil, fmt.Errorf("invalid slug %q: must be lowercase kebab-case starting with a letter (pattern: %s)", slug, learningDomainSlugPattern.String())
+	if err := validateSlug("learning_domain slug", slug); err != nil {
+		return nil, err
 	}
 	name, _ := f["name"].(string)
 	if name == "" {

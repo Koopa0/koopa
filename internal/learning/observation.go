@@ -9,6 +9,18 @@ import (
 	"github.com/Koopa0/koopa/internal/db"
 )
 
+// ObservationCategoriesByDomain returns the closed set of category slugs
+// valid for the given domain. Used by record_attempt at the MCP layer to
+// pre-validate obs.category before INSERT so a typo produces an
+// actionable error rather than a raw 23503 FK violation.
+func (s *Store) ObservationCategoriesByDomain(ctx context.Context, domain string) ([]string, error) {
+	rows, err := s.q.ObservationCategoriesByDomain(ctx, domain)
+	if err != nil {
+		return nil, fmt.Errorf("listing observation categories for domain %q: %w", domain, err)
+	}
+	return rows, nil
+}
+
 // normalizeConfidenceFilter validates and defaults the dashboard's
 // confidence filter. Empty becomes "high"; "high" and "all" pass through;
 // anything else is rejected. Without this guard a typo would silently

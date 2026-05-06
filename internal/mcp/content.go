@@ -160,6 +160,11 @@ func validateCreateContentFields(input *ManageContentInput) error {
 	if input.Maturity != nil && *input.Maturity != "" {
 		return fmt.Errorf("maturity is not a content field — notes are a separate entity. Use manage_note")
 	}
+	if input.Slug != nil && *input.Slug != "" {
+		if err := validateSlug("content slug", *input.Slug); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 

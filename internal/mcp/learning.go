@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/google/uuid"
@@ -825,9 +826,36 @@ func (s *Server) dashboardVariations(ctx context.Context, domain *string) (*mcp.
 // passes the raw value through (empty becomes "high" inside the store) so
 // a typo like "hig" surfaces as a skipped observation with a clear warning
 // rather than being silently rewritten to "high" here.
+//
+// Pre-validation: concept slug format and observation category membership
+// are checked at this boundary so a malformed input produces an actionable
+// warning ("category 'X' not valid for domain 'Y'; valid: ...") rather
+// than a raw SQLSTATE 23514 / 23503 leak from the store. The category set
+// is fetched once per call.
 func (s *Server) processObservations(ctx context.Context, attemptID uuid.UUID, domain string, observations []ObservationInput) (recorded int, warnings []string) {
+	validCategories, catErr := s.learn.ObservationCategoriesByDomain(ctx, domain)
+	if catErr != nil {
+		// Failure here means the category list is unknown for this call;
+		// fall back to allowing every category and let any FK violation
+		// surface as a wrapped warning per-observation. We log so a real
+		// outage shows up rather than being silently swallowed.
+		s.logger.Warn("observation: failed to load category list, skipping pre-validation", "domain", domain, "error", catErr)
+		validCategories = nil
+	}
+
 	for i := range observations {
 		obs := &observations[i]
+
+		if err := validateSlug("concept slug", obs.Concept); err != nil {
+			warnings = append(warnings, fmt.Sprintf("observations[%d] (%q): rejected and not persisted — %v", i, obs.Concept, err))
+			continue
+		}
+
+		if validCategories != nil && !slices.Contains(validCategories, obs.Category) {
+			warnings = append(warnings, fmt.Sprintf("observations[%d] (%q): rejected and not persisted — category %q not valid for domain %q. Valid categories: %v", i, obs.Concept, obs.Category, domain, validCategories))
+			continue
+		}
+
 		conceptID, err := s.learn.FindOrCreateConcept(ctx, obs.Concept, obs.Concept, domain, "skill")
 		if err != nil {
 			warnings = append(warnings, fmt.Sprintf("observations[%d] (%q): rejected and not persisted — concept creation failed: %v", i, obs.Concept, err))

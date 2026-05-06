@@ -118,6 +118,17 @@ INSERT INTO learning_attempt_observations (attempt_id, concept_id, signal_type, 
 VALUES (@attempt_id, @concept_id, @signal_type, @category, @severity, @detail, @confidence, @position)
 RETURNING id, attempt_id, concept_id, signal_type, category, severity, detail, confidence, position, created_at;
 
+-- name: ObservationCategoriesByDomain :many
+-- Lists valid observation_categories.slug values for a given domain. Used
+-- by record_attempt to pre-validate obs.category at the MCP boundary so
+-- a typo produces an actionable error ("category 'X' not valid for domain
+-- 'leetcode'; valid: ...") instead of a raw 23503 FK violation from the
+-- INSERT. Domain filter is required — the closed taxonomy is per-domain.
+SELECT slug
+FROM observation_categories
+WHERE domain = @domain
+ORDER BY slug;
+
 -- name: FindOrCreateConcept :one
 -- Upsert a concept by domain + slug.
 INSERT INTO concepts (slug, name, domain, kind)

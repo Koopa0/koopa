@@ -6931,6 +6931,38 @@ func (q *Queries) NotesForTarget(ctx context.Context, targetID uuid.UUID) ([]Not
 	return items, nil
 }
 
+const observationCategoriesByDomain = `-- name: ObservationCategoriesByDomain :many
+SELECT slug
+FROM observation_categories
+WHERE domain = $1
+ORDER BY slug
+`
+
+// Lists valid observation_categories.slug values for a given domain. Used
+// by record_attempt to pre-validate obs.category at the MCP boundary so
+// a typo produces an actionable error ("category 'X' not valid for domain
+// 'leetcode'; valid: ...") instead of a raw 23503 FK violation from the
+// INSERT. Domain filter is required — the closed taxonomy is per-domain.
+func (q *Queries) ObservationCategoriesByDomain(ctx context.Context, domain string) ([]string, error) {
+	rows, err := q.db.Query(ctx, observationCategoriesByDomain, domain)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var slug string
+		if err := rows.Scan(&slug); err != nil {
+			return nil, err
+		}
+		items = append(items, slug)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const observationsByAttempt = `-- name: ObservationsByAttempt :many
 SELECT ao.id, ao.attempt_id, ao.concept_id, ao.signal_type, ao.category, ao.severity, ao.detail,
        ao.confidence, ao.position,
