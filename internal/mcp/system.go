@@ -16,8 +16,8 @@ type SystemStatusInput struct {
 }
 
 type SystemStatusOutput struct {
-	Scope    string          `json:"scope"`
-	Overview *stats.Overview `json:"overview,omitempty"`
+	Scope  string                      `json:"scope"`
+	Health *stats.SystemHealthSnapshot `json:"health,omitempty"`
 }
 
 func (s *Server) systemStatus(ctx context.Context, _ *mcp.CallToolRequest, input SystemStatusInput) (*mcp.CallToolResult, SystemStatusOutput, error) {
@@ -30,13 +30,13 @@ func (s *Server) systemStatus(ctx context.Context, _ *mcp.CallToolRequest, input
 		return nil, SystemStatusOutput{Scope: scope}, fmt.Errorf("stats store not configured")
 	}
 
-	overview, err := s.stats.Overview(ctx)
+	health, err := s.stats.SystemHealth(ctx)
 	if err != nil {
 		return nil, SystemStatusOutput{}, fmt.Errorf("querying system status: %w", err)
 	}
 
 	return nil, SystemStatusOutput{
-		Scope:    scope,
-		Overview: overview,
+		Scope:  scope,
+		Health: health,
 	}, nil
 }

@@ -584,7 +584,7 @@ func SystemStatus() Meta {
 		Writability: ReadOnly,
 		Stability:   StabilityStable,
 		Since:       since,
-		Description: "Snapshot of ingestion / pipeline / data health. Response sections: 'contents' = published-content counts by status and type; 'collected' = RSS feed_entries (total + by_status: unread/read/curated/ignored — a high 'unread' means RSS items haven't been triaged yet); 'feeds' = feed subscription health (total/enabled, auto-disabled feeds count against enabled); 'process_runs' = cron / pipeline run audit by kind (e.g. crawl, embed); 'projects' / 'notes' / 'activity' / 'tags' = catalog stats. Use when investigating ingestion or pipeline issues — for daily todo / goal data, morning_context covers it.",
+		Description: "Operational health snapshot. Response sections: 'feeds' = feed subscription health (total/healthy/failing + failing_feeds[] with name/error/since); 'pipelines' = 24h process_runs aggregate (recent_runs/failed/last_run_at); 'database' = core entity counts (contents/todos/notes). Use when investigating ingestion or pipeline issues — for catalog stats by type, query the admin /system/stats endpoint; for daily todo / goal data, morning_context covers it.",
 	}
 }
 
