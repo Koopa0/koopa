@@ -151,6 +151,10 @@ type RecordAttemptOutput struct {
 	// length and reading ObservationWarnings for rejected indices. Same
 	// per-element semantics apply to RelatedTargets / RelationsLinked /
 	// RelationWarnings.
+	//
+	// The partial-write contract above is also surfaced to MCP clients
+	// via internal/mcp/ops/catalog.go::RecordAttempt() Description —
+	// keep both in sync when changing the contract.
 	ObservationWarnings []string           `json:"observation_warnings"`
 	PlanContext         []PlanContextEntry `json:"plan_context"`
 	RelationsLinked     int                `json:"relations_linked"`
