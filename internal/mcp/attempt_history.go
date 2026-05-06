@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/google/uuid"
@@ -198,6 +199,23 @@ func (s *Server) attemptHistoryBySession(ctx context.Context, sessionIDStr strin
 		return nil, AttemptHistoryOutput{}, fmt.Errorf("attempt_history: invalid session_id: %w", err)
 	}
 
+	// Existence check first so a non-existent session_id surfaces as
+	// resolved=false (matching target/concept modes), not as
+	// resolved=true with empty attempts. The lookup is one extra query
+	// but the asymmetry was a real caller-side bug — "no attempts"
+	// vs "no session" are different bugs to debug.
+	if _, err := s.learn.SessionByID(ctx, sessionID); err != nil {
+		if errors.Is(err, learning.ErrNotFound) {
+			return nil, AttemptHistoryOutput{
+				Mode:     "session",
+				Resolved: false,
+				Reason:   fmt.Sprintf("session %s not found", sessionID),
+				Attempts: []learning.Attempt{},
+			}, nil
+		}
+		return nil, AttemptHistoryOutput{}, fmt.Errorf("attempt_history: %w", err)
+	}
+
 	attempts, err := s.learn.AttemptsBySession(ctx, sessionID)
 	if err != nil {
 		return nil, AttemptHistoryOutput{}, fmt.Errorf("attempt_history: %w", err)
@@ -210,11 +228,6 @@ func (s *Server) attemptHistoryBySession(ctx context.Context, sessionIDStr strin
 			return nil, AttemptHistoryOutput{}, fmt.Errorf("attempt_history: %w", err)
 		}
 	}
-	// Sessions are validated by existence — empty result on a real session
-	// (never had attempts recorded) returns resolved=true with an empty list.
-	// We can't distinguish "session never existed" from "session had zero
-	// attempts" with the current store API; both yield empty. Adding a
-	// sessions.exists check for this edge case is not worth the round-trip.
 	return nil, AttemptHistoryOutput{
 		Mode:     "session",
 		Resolved: true,

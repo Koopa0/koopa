@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"time"
@@ -91,10 +92,16 @@ func (s *Server) recommendNextTarget(ctx context.Context, _ *mcp.CallToolRequest
 
 	active, err := s.learn.ActiveSession(ctx)
 	if err != nil {
-		return nil, RecommendNextTargetOutput{}, fmt.Errorf("no active session: %w", err)
+		// ErrNoActive already says "no active session" — return it without
+		// a redundant outer wrap so callers don't read
+		// "no active session: learning: no active session".
+		if errors.Is(err, learning.ErrNoActive) {
+			return nil, RecommendNextTargetOutput{}, err
+		}
+		return nil, RecommendNextTargetOutput{}, fmt.Errorf("checking active session: %w", err)
 	}
 	if active.ID != sessionID {
-		return nil, RecommendNextTargetOutput{}, fmt.Errorf("%w: session %s is not the active session", learning.ErrInvalidInput, sessionID)
+		return nil, RecommendNextTargetOutput{}, fmt.Errorf("%w: session %s is not the active session (active session is %s)", learning.ErrInvalidInput, sessionID, active.ID)
 	}
 
 	domain := active.Domain

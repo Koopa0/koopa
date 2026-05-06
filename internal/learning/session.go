@@ -112,14 +112,33 @@ func (s *Store) ActiveSession(ctx context.Context) (*Session, error) {
 }
 
 // EndSession ends the active session. Optionally links an agent_note entry.
+//
+// Returns:
+//   - ErrNotFound: no session with that id exists
+//   - ErrAlreadyEnded: session exists but ended_at is set (already ended)
+//
+// The single-UPDATE-with-WHERE-clause pattern collapses both states into
+// pgx.ErrNoRows, so we look up the row first to give the caller an
+// actionable diagnostic — "id you sent doesn't exist" vs "you're racing
+// with another caller / your local state is stale" are different bugs.
 func (s *Store) EndSession(ctx context.Context, sessionID uuid.UUID, agentNoteID *uuid.UUID) (*Session, error) {
+	existing, err := s.SessionByID(ctx, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	if existing.EndedAt != nil {
+		return existing, ErrAlreadyEnded
+	}
+
 	row, err := s.q.EndSession(ctx, db.EndSessionParams{
 		ID:          sessionID,
 		AgentNoteID: agentNoteID,
 	})
 	if err != nil {
+		// Race: another caller ended this session between our lookup and
+		// the UPDATE. Treat as ErrAlreadyEnded for the caller.
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, ErrAlreadyEnded
+			return existing, ErrAlreadyEnded
 		}
 		return nil, fmt.Errorf("ending session: %w", err)
 	}

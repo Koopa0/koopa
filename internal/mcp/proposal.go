@@ -108,7 +108,7 @@ func verifyProposal(secret []byte, token string) (*proposalPayload, error) {
 	mac.Write(data)
 	expected := mac.Sum(nil)
 	if !hmac.Equal(sig, expected) {
-		return nil, fmt.Errorf("proposal token signature invalid")
+		return nil, fmt.Errorf("proposal token signature mismatch — token may have been tampered with or issued by a previous server instance (HMAC secret regenerates on restart)")
 	}
 
 	// Decode payload.
@@ -119,7 +119,8 @@ func verifyProposal(secret []byte, token string) (*proposalPayload, error) {
 
 	// Check expiry.
 	if time.Now().Unix() > payload.ExpiresAt {
-		return nil, fmt.Errorf("proposal token expired (issued %s, TTL %s)",
+		return nil, fmt.Errorf("proposal token expired at %s (issued %s, TTL %s) — re-propose to get a new token",
+			time.Unix(payload.ExpiresAt, 0).Format(time.RFC3339),
 			time.Unix(payload.IssuedAt, 0).Format(time.RFC3339), proposalTTL)
 	}
 

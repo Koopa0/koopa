@@ -73,6 +73,14 @@ func (s *Server) startSession(ctx context.Context, _ *mcp.CallToolRequest, input
 
 	session, zombie, err := s.learn.StartSession(ctx, input.Domain, mode, planItemID)
 	if err != nil {
+		// On ErrActiveExists, surface the active session's id so the caller
+		// can end it and retry without an extra dashboard query. The lookup
+		// is one query on the error path only.
+		if errors.Is(err, learning.ErrActiveExists) {
+			if active, aErr := s.learn.ActiveSession(ctx); aErr == nil {
+				return nil, StartSessionOutput{ZombieEnded: zombie}, fmt.Errorf("active session %s exists; end it first", active.ID)
+			}
+		}
 		return nil, StartSessionOutput{ZombieEnded: zombie}, fmt.Errorf("starting session: %w", err)
 	}
 
@@ -288,12 +296,9 @@ func (s *Server) prepareAttempt(ctx context.Context, input *RecordAttemptInput) 
 		return attemptPrep{}, fmt.Errorf("%w: invalid session_id: %w", learning.ErrInvalidInput, err)
 	}
 
-	session, err := s.learn.ActiveSession(ctx)
+	session, err := s.resolveAttemptSession(ctx, sessionID)
 	if err != nil {
-		return attemptPrep{}, fmt.Errorf("no active session: %w", err)
-	}
-	if session.ID != sessionID {
-		return attemptPrep{}, fmt.Errorf("%w: session %s is not the active session", learning.ErrInvalidInput, sessionID)
+		return attemptPrep{}, err
 	}
 
 	paradigm, outcome, err := learning.MapOutcome(session.Mode, input.Outcome)
@@ -549,7 +554,16 @@ func (s *Server) endSession(ctx context.Context, _ *mcp.CallToolRequest, input E
 
 	session, err := s.learn.EndSession(ctx, sessionID, noteID)
 	if err != nil {
-		return nil, EndSessionOutput{}, fmt.Errorf("ending session: %w", err)
+		switch {
+		case errors.Is(err, learning.ErrNotFound):
+			return nil, EndSessionOutput{}, fmt.Errorf("session %s not found", sessionID)
+		case errors.Is(err, learning.ErrAlreadyEnded) && session != nil && session.EndedAt != nil:
+			return nil, EndSessionOutput{}, fmt.Errorf("session %s was already ended at %s", sessionID, session.EndedAt.Format(time.RFC3339))
+		case errors.Is(err, learning.ErrAlreadyEnded):
+			return nil, EndSessionOutput{}, fmt.Errorf("session %s was already ended", sessionID)
+		default:
+			return nil, EndSessionOutput{}, fmt.Errorf("ending session: %w", err)
+		}
 	}
 
 	attempts, _ := s.learn.AttemptsBySession(ctx, sessionID)
@@ -588,14 +602,15 @@ type LearningDashboardInput struct {
 // of the new view. The tags here are for Go-side scanning/reflection;
 // the wire format is what MarshalJSON writes.
 type LearningDashboardOutput struct {
-	View       string                     `json:"view"`
-	Total      int                        `json:"total"`
-	Sessions   []learning.Session         `json:"sessions,omitempty"`
-	Mastery    []MasteryRow               `json:"mastery,omitempty"`
-	Weaknesses []learning.WeaknessRow     `json:"weaknesses,omitempty"`
-	Retrieval  []learning.RetrievalTarget `json:"retrieval,omitempty"`
-	Timeline   []learning.TimelineSession `json:"timeline,omitempty"`
-	Variations []learning.TargetRelation  `json:"variations,omitempty"`
+	View          string                     `json:"view"`
+	Total         int                        `json:"total"`
+	DomainWarning string                     `json:"domain_warning,omitempty"`
+	Sessions      []learning.Session         `json:"sessions,omitempty"`
+	Mastery       []MasteryRow               `json:"mastery,omitempty"`
+	Weaknesses    []learning.WeaknessRow     `json:"weaknesses,omitempty"`
+	Retrieval     []learning.RetrievalTarget `json:"retrieval,omitempty"`
+	Timeline      []learning.TimelineSession `json:"timeline,omitempty"`
+	Variations    []learning.TargetRelation  `json:"variations,omitempty"`
 }
 
 // MarshalJSON emits {view, total, <view_key>: [...]} — the view-specific
@@ -607,6 +622,9 @@ type LearningDashboardOutput struct {
 //nolint:gocritic // hugeParam: stdlib json.Marshaler interface takes value receiver
 func (o LearningDashboardOutput) MarshalJSON() ([]byte, error) {
 	base := map[string]any{"view": o.View, "total": o.Total}
+	if o.DomainWarning != "" {
+		base["domain_warning"] = o.DomainWarning
+	}
 	switch o.View {
 	case "overview":
 		base["sessions"] = ensureSlice(o.Sessions)
@@ -700,8 +718,19 @@ func (s *Server) learningDashboard(ctx context.Context, _ *mcp.CallToolRequest, 
 	since := time.Now().AddDate(0, 0, -windowDays)
 
 	var domain *string
+	var domainWarning string
 	if input.Domain != nil && *input.Domain != "" {
 		domain = input.Domain
+		// Check the domain exists so an unknown slug surfaces as a warning
+		// next to the empty result instead of looking like "you have no
+		// activity in that domain". One extra query, but only when the
+		// caller passed a domain filter — happy path is unaffected.
+		exists, dErr := s.learn.DomainExists(ctx, *input.Domain)
+		if dErr != nil {
+			s.logger.Warn("learning_dashboard: domain existence check failed", "domain", *input.Domain, "error", dErr)
+		} else if !exists {
+			domainWarning = fmt.Sprintf("domain %q not found in learning_domains; result is empty because the slug is unknown, not because the domain has no activity", *input.Domain)
+		}
 	}
 
 	// confidence_filter is meaningful only on mastery and weaknesses.
@@ -719,99 +748,144 @@ func (s *Server) learningDashboard(ctx context.Context, _ *mcp.CallToolRequest, 
 
 	dueWithinHours := resolveDueWithinHours(input.DueWithinHours)
 
+	var (
+		result LearningDashboardOutput
+		err    error
+	)
 	switch view {
 	case "overview":
-		return s.dashboardOverview(ctx, domain, since)
+		result, err = s.dashboardOverview(ctx, domain, since)
 	case "mastery":
-		return s.dashboardMastery(ctx, domain, since, confidenceFilter)
+		result, err = s.dashboardMastery(ctx, domain, since, confidenceFilter)
 	case "weaknesses":
-		return s.dashboardWeaknesses(ctx, domain, since, confidenceFilter)
+		result, err = s.dashboardWeaknesses(ctx, domain, since, confidenceFilter)
 	case "retrieval":
-		return s.dashboardRetrieval(ctx, domain, dueWithinHours)
+		result, err = s.dashboardRetrieval(ctx, domain, dueWithinHours)
 	case "timeline":
-		return s.dashboardTimeline(ctx, domain, since)
+		result, err = s.dashboardTimeline(ctx, domain, since)
 	case "variations":
-		return s.dashboardVariations(ctx, domain)
+		result, err = s.dashboardVariations(ctx, domain)
 	default:
 		return nil, LearningDashboardOutput{}, fmt.Errorf("unknown view %q", view)
 	}
+	if err == nil {
+		result.DomainWarning = domainWarning
+	}
+	return nil, result, err
 }
 
-func (s *Server) dashboardOverview(ctx context.Context, domain *string, since time.Time) (*mcp.CallToolResult, LearningDashboardOutput, error) {
+func (s *Server) dashboardOverview(ctx context.Context, domain *string, since time.Time) (LearningDashboardOutput, error) {
 	sessions, err := s.learn.RecentSessions(ctx, domain, since, 50)
 	if err != nil {
-		return nil, LearningDashboardOutput{}, fmt.Errorf("querying sessions: %w", err)
+		return LearningDashboardOutput{}, fmt.Errorf("querying sessions: %w", err)
 	}
-	return nil, LearningDashboardOutput{
+	return LearningDashboardOutput{
 		View:     "overview",
 		Sessions: sessions,
 		Total:    len(sessions),
 	}, nil
 }
 
-func (s *Server) dashboardMastery(ctx context.Context, domain *string, since time.Time, confidenceFilter string) (*mcp.CallToolResult, LearningDashboardOutput, error) {
+func (s *Server) dashboardMastery(ctx context.Context, domain *string, since time.Time, confidenceFilter string) (LearningDashboardOutput, error) {
 	rows, err := s.learn.ConceptMastery(ctx, domain, since, confidenceFilter)
 	if err != nil {
-		return nil, LearningDashboardOutput{}, fmt.Errorf("querying concept mastery: %w", err)
+		return LearningDashboardOutput{}, fmt.Errorf("querying concept mastery: %w", err)
 	}
 	mastery := toMasteryRows(rows)
-	return nil, LearningDashboardOutput{
+	return LearningDashboardOutput{
 		View:    "mastery",
 		Mastery: mastery,
 		Total:   len(mastery),
 	}, nil
 }
 
-func (s *Server) dashboardWeaknesses(ctx context.Context, domain *string, since time.Time, confidenceFilter string) (*mcp.CallToolResult, LearningDashboardOutput, error) {
+func (s *Server) dashboardWeaknesses(ctx context.Context, domain *string, since time.Time, confidenceFilter string) (LearningDashboardOutput, error) {
 	rows, err := s.learn.WeaknessAnalysis(ctx, domain, since, confidenceFilter)
 	if err != nil {
-		return nil, LearningDashboardOutput{}, fmt.Errorf("querying weakness analysis: %w", err)
+		return LearningDashboardOutput{}, fmt.Errorf("querying weakness analysis: %w", err)
 	}
-	return nil, LearningDashboardOutput{
+	return LearningDashboardOutput{
 		View:       "weaknesses",
 		Weaknesses: rows,
 		Total:      len(rows),
 	}, nil
 }
 
-func (s *Server) dashboardRetrieval(ctx context.Context, domain *string, dueWithinHours int) (*mcp.CallToolResult, LearningDashboardOutput, error) {
+func (s *Server) dashboardRetrieval(ctx context.Context, domain *string, dueWithinHours int) (LearningDashboardOutput, error) {
 	// due_within_hours extends the cutoff into the future — 0 keeps the
 	// original behavior (only cards already due). Clamp happens at the
 	// caller; this method just applies it.
 	dueBefore := time.Now().Add(time.Duration(dueWithinHours) * time.Hour)
 	items, err := s.learn.RetrievalQueue(ctx, domain, dueBefore, 50)
 	if err != nil {
-		return nil, LearningDashboardOutput{}, fmt.Errorf("querying retrieval queue: %w", err)
+		return LearningDashboardOutput{}, fmt.Errorf("querying retrieval queue: %w", err)
 	}
-	return nil, LearningDashboardOutput{
+	return LearningDashboardOutput{
 		View:      "retrieval",
 		Retrieval: items,
 		Total:     len(items),
 	}, nil
 }
 
-func (s *Server) dashboardTimeline(ctx context.Context, domain *string, since time.Time) (*mcp.CallToolResult, LearningDashboardOutput, error) {
+func (s *Server) dashboardTimeline(ctx context.Context, domain *string, since time.Time) (LearningDashboardOutput, error) {
 	sessions, err := s.learn.SessionTimeline(ctx, domain, since)
 	if err != nil {
-		return nil, LearningDashboardOutput{}, fmt.Errorf("querying session timeline: %w", err)
+		return LearningDashboardOutput{}, fmt.Errorf("querying session timeline: %w", err)
 	}
-	return nil, LearningDashboardOutput{
+	return LearningDashboardOutput{
 		View:     "timeline",
 		Timeline: sessions,
 		Total:    len(sessions),
 	}, nil
 }
 
-func (s *Server) dashboardVariations(ctx context.Context, domain *string) (*mcp.CallToolResult, LearningDashboardOutput, error) {
+func (s *Server) dashboardVariations(ctx context.Context, domain *string) (LearningDashboardOutput, error) {
 	relations, err := s.learn.TargetVariations(ctx, domain, 100)
 	if err != nil {
-		return nil, LearningDashboardOutput{}, fmt.Errorf("querying target variations: %w", err)
+		return LearningDashboardOutput{}, fmt.Errorf("querying target variations: %w", err)
 	}
-	return nil, LearningDashboardOutput{
+	return LearningDashboardOutput{
 		View:       "variations",
 		Variations: relations,
 		Total:      len(relations),
 	}, nil
+}
+
+// resolveAttemptSession returns the active session iff sessionID matches it,
+// otherwise produces a caller-facing error that distinguishes the three
+// failure modes (id not found / id ended / wrong session is active). The
+// extra SessionByID lookup runs only on error paths so the happy-path
+// query count is unchanged.
+func (s *Server) resolveAttemptSession(ctx context.Context, sessionID uuid.UUID) (*learning.Session, error) {
+	active, err := s.learn.ActiveSession(ctx)
+	if err != nil {
+		// No active session at all. Look up sessionID directly so we can
+		// say whether the caller has a stale id, an ended id, or really
+		// hit the no-active-session path.
+		looked, lookupErr := s.learn.SessionByID(ctx, sessionID)
+		switch {
+		case lookupErr == nil && looked.EndedAt != nil:
+			return nil, fmt.Errorf("%w: session %s was ended at %s; start a new one", learning.ErrInvalidInput, sessionID, looked.EndedAt.Format(time.RFC3339))
+		case errors.Is(lookupErr, learning.ErrNotFound):
+			return nil, fmt.Errorf("%w: session %s not found", learning.ErrInvalidInput, sessionID)
+		default:
+			return nil, fmt.Errorf("no active session: %w", err)
+		}
+	}
+	if active.ID == sessionID {
+		return active, nil
+	}
+	// There IS an active session, just not the one the caller named.
+	// Surface the active session id so the caller can self-correct.
+	looked, lookupErr := s.learn.SessionByID(ctx, sessionID)
+	switch {
+	case errors.Is(lookupErr, learning.ErrNotFound):
+		return nil, fmt.Errorf("%w: session %s not found (active session is %s)", learning.ErrInvalidInput, sessionID, active.ID)
+	case lookupErr == nil && looked.EndedAt != nil:
+		return nil, fmt.Errorf("%w: session %s was ended at %s (active session is %s)", learning.ErrInvalidInput, sessionID, looked.EndedAt.Format(time.RFC3339), active.ID)
+	default:
+		return nil, fmt.Errorf("%w: session %s is not the active session (active session is %s)", learning.ErrInvalidInput, sessionID, active.ID)
+	}
 }
 
 // processObservations persists every observation. Confidence is an attribute,
