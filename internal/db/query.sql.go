@@ -1960,6 +1960,37 @@ func (q *Queries) ConceptsForNotes(ctx context.Context, dollar_1 []uuid.UUID) ([
 	return items, nil
 }
 
+const conceptsTouchedBetween = `-- name: ConceptsTouchedBetween :one
+SELECT
+    COUNT(DISTINCT ao.concept_id) FILTER (WHERE ao.confidence = 'high')::int AS concepts_touched_high,
+    COUNT(DISTINCT ao.concept_id)::int                                       AS concepts_touched_all
+FROM learning_attempt_observations ao
+JOIN learning_attempts a ON a.id = ao.attempt_id
+WHERE a.attempted_at >= $1
+  AND a.attempted_at < $2
+`
+
+type ConceptsTouchedBetweenParams struct {
+	StartAt time.Time `json:"start_at"`
+	EndAt   time.Time `json:"end_at"`
+}
+
+type ConceptsTouchedBetweenRow struct {
+	ConceptsTouchedHigh int32 `json:"concepts_touched_high"`
+	ConceptsTouchedAll  int32 `json:"concepts_touched_all"`
+}
+
+// Counts distinct concepts observed in attempts within [start_at, end_at).
+// Returns both high-confidence-only and all-confidence counts so the caller
+// (weekly_summary) can show both metrics. The difference is the number of
+// low-confidence observations not yet behavior-validated.
+func (q *Queries) ConceptsTouchedBetween(ctx context.Context, arg ConceptsTouchedBetweenParams) (ConceptsTouchedBetweenRow, error) {
+	row := q.db.QueryRow(ctx, conceptsTouchedBetween, arg.StartAt, arg.EndAt)
+	var i ConceptsTouchedBetweenRow
+	err := row.Scan(&i.ConceptsTouchedHigh, &i.ConceptsTouchedAll)
+	return i, err
+}
+
 const confirmAlias = `-- name: ConfirmAlias :one
 UPDATE tag_aliases SET
     confirmed = true,

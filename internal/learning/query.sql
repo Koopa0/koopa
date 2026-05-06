@@ -207,6 +207,19 @@ WHERE (sqlc.narg('domain')::text IS NULL OR c.domain = sqlc.narg('domain'))
 GROUP BY c.id
 ORDER BY total_observations DESC;
 
+-- name: ConceptsTouchedBetween :one
+-- Counts distinct concepts observed in attempts within [start_at, end_at).
+-- Returns both high-confidence-only and all-confidence counts so the caller
+-- (weekly_summary) can show both metrics. The difference is the number of
+-- low-confidence observations not yet behavior-validated.
+SELECT
+    COUNT(DISTINCT ao.concept_id) FILTER (WHERE ao.confidence = 'high')::int AS concepts_touched_high,
+    COUNT(DISTINCT ao.concept_id)::int                                       AS concepts_touched_all
+FROM learning_attempt_observations ao
+JOIN learning_attempts a ON a.id = ao.attempt_id
+WHERE a.attempted_at >= @start_at
+  AND a.attempted_at < @end_at;
+
 -- name: WeaknessAnalysis :many
 -- Cross-pattern weakness analysis from attempt_observations within the
 -- @since window. Used by learning_dashboard weaknesses view.

@@ -133,6 +133,21 @@ func (s *Store) ConceptBySlug(ctx context.Context, domain, slug string) (*Concep
 	}, nil
 }
 
+// ConceptsTouchedCount returns (high_only, all) distinct concept counts for
+// attempts in the [start, end) window. Drives weekly_summary.concepts_touched
+// (high) and concepts_touched_all (calibration metric — difference is the
+// number of low-confidence observations not yet behavior-validated).
+func (s *Store) ConceptsTouchedCount(ctx context.Context, start, end time.Time) (high, all int, err error) {
+	row, err := s.q.ConceptsTouchedBetween(ctx, db.ConceptsTouchedBetweenParams{
+		StartAt: start,
+		EndAt:   end,
+	})
+	if err != nil {
+		return 0, 0, fmt.Errorf("querying concepts touched: %w", err)
+	}
+	return int(row.ConceptsTouchedHigh), int(row.ConceptsTouchedAll), nil
+}
+
 // ConceptMastery returns per-concept mastery with signal counts and
 // first/last observation timestamps. Rows contain only concepts with at
 // least one observation in the window — unexplored concepts are not

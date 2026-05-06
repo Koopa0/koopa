@@ -30,17 +30,24 @@ import (
 )
 
 // Review is the structured output of Compute for a single week.
+//
+// ConceptsTouched counts distinct concepts observed via high-confidence
+// observations (matches dashboard mastery default). ConceptsTouchedAll
+// counts the same window without the confidence filter; the difference
+// (all - high) is the number of low-confidence observations the coach
+// has logged but not yet behavior-validated — useful for self-calibration.
 type Review struct {
-	WeekStart       string         `json:"week_start"`
-	WeekEnd         string         `json:"week_end"`
-	TodosCreated    int            `json:"todos_created"`
-	TodosCompleted  []TodoRef      `json:"todos_completed"`
-	JournalCount    int            `json:"journal_count"`
-	JournalKinds    map[string]int `json:"journal_kinds"`
-	SessionCount    int            `json:"session_count"`
-	SessionDomains  []string       `json:"session_domains"`
-	ConceptsTouched int            `json:"concepts_touched"`
-	Computed        ComputedStats  `json:"computed"`
+	WeekStart          string         `json:"week_start"`
+	WeekEnd            string         `json:"week_end"`
+	TodosCreated       int            `json:"todos_created"`
+	TodosCompleted     []TodoRef      `json:"todos_completed"`
+	JournalCount       int            `json:"journal_count"`
+	JournalKinds       map[string]int `json:"journal_kinds"`
+	SessionCount       int            `json:"session_count"`
+	SessionDomains     []string       `json:"session_domains"`
+	ConceptsTouched    int            `json:"concepts_touched"`
+	ConceptsTouchedAll int            `json:"concepts_touched_all"`
+	Computed           ComputedStats  `json:"computed"`
 }
 
 // TodoRef is a lightweight reference to a completed todo item inside
@@ -109,6 +116,11 @@ func Compute(
 	}
 	weekSessions := filterSessionsToWeek(sessionsAll, weekStart, weekEnd)
 
+	conceptsHigh, conceptsAll, err := sessions.ConceptsTouchedCount(ctx, weekStart, weekEnd)
+	if err != nil {
+		return Review{}, fmt.Errorf("reading concepts touched: %w", err)
+	}
+
 	noteKinds := map[string]int{}
 	for i := range weekNotes {
 		noteKinds[string(weekNotes[i].Kind)]++
@@ -124,17 +136,18 @@ func Compute(
 	}
 
 	return Review{
-		WeekStart:       weekStart.Format(time.DateOnly),
-		WeekEnd:         weekEnd.Format(time.DateOnly),
-		TodosCreated:    createdInWeek,
-		TodosCompleted:  todoRefs,
-		JournalCount:    len(weekNotes),
-		JournalKinds:    noteKinds,
-		SessionCount:    len(weekSessions),
-		SessionDomains:  distinctDomains(weekSessions),
-		ConceptsTouched: 0, // reserved for future slice — requires attempt_observations scan
+		WeekStart:          weekStart.Format(time.DateOnly),
+		WeekEnd:            weekEnd.Format(time.DateOnly),
+		TodosCreated:       createdInWeek,
+		TodosCompleted:     todoRefs,
+		JournalCount:       len(weekNotes),
+		JournalKinds:       noteKinds,
+		SessionCount:       len(weekSessions),
+		SessionDomains:     distinctDomains(weekSessions),
+		ConceptsTouched:    conceptsHigh,
+		ConceptsTouchedAll: conceptsAll,
 		Computed: ComputedStats{
-			DistinctWorkDays: distinctWorkDaysFrom(completed),
+			DistinctWorkDays: distinctWorkDays(completed, weekSessions),
 		},
 	}, nil
 }
@@ -178,8 +191,9 @@ type completedRef struct {
 }
 
 type sessionRef struct {
-	ID     string
-	Domain string
+	ID        string
+	Domain    string
+	StartedAt time.Time
 }
 
 func filterCompletedToWeek(all []todo.CompletedDetail, weekStart, weekEnd time.Time) []completedRef {
@@ -207,8 +221,9 @@ func filterSessionsToWeek(all []learning.Session, weekStart, weekEnd time.Time) 
 			continue
 		}
 		out = append(out, sessionRef{
-			ID:     s.ID.String(),
-			Domain: s.Domain,
+			ID:        s.ID.String(),
+			Domain:    s.Domain,
+			StartedAt: s.StartedAt,
 		})
 	}
 	return out
@@ -227,10 +242,18 @@ func distinctDomains(sessions []sessionRef) []string {
 	return out
 }
 
-func distinctWorkDaysFrom(completed []completedRef) int {
+// distinctWorkDays returns the count of calendar dates in the week that show
+// at least one work signal. A date counts if either a todo was completed on
+// it or a learning session was started on it. Pure-todo or pure-session weeks
+// both register correctly; previously the metric only saw todo completions
+// and read 0 for session-only weeks.
+func distinctWorkDays(completed []completedRef, sessions []sessionRef) int {
 	days := map[string]struct{}{}
 	for i := range completed {
 		days[completed[i].CompletedAt.Format(time.DateOnly)] = struct{}{}
+	}
+	for i := range sessions {
+		days[sessions[i].StartedAt.Format(time.DateOnly)] = struct{}{}
 	}
 	return len(days)
 }
