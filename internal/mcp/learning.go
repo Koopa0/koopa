@@ -557,10 +557,12 @@ func (s *Server) endSession(ctx context.Context, _ *mcp.CallToolRequest, input E
 		switch {
 		case errors.Is(err, learning.ErrNotFound):
 			return nil, EndSessionOutput{}, fmt.Errorf("session %s not found", sessionID)
-		case errors.Is(err, learning.ErrAlreadyEnded) && session != nil && session.EndedAt != nil:
-			return nil, EndSessionOutput{}, fmt.Errorf("session %s was already ended at %s", sessionID, session.EndedAt.Format(time.RFC3339))
 		case errors.Is(err, learning.ErrAlreadyEnded):
-			return nil, EndSessionOutput{}, fmt.Errorf("session %s was already ended", sessionID)
+			// learning.Store.EndSession always returns a non-nil session
+			// alongside ErrAlreadyEnded — both the pre-flight branch and
+			// the race branch carry the loaded row. EndedAt is populated
+			// for any already-ended row by definition.
+			return nil, EndSessionOutput{}, fmt.Errorf("session %s was already ended at %s", sessionID, session.EndedAt.Format(time.RFC3339))
 		default:
 			return nil, EndSessionOutput{}, fmt.Errorf("ending session: %w", err)
 		}
@@ -937,7 +939,7 @@ func (s *Server) processObservations(ctx context.Context, attemptID uuid.UUID, d
 			continue
 		}
 		if _, err := s.learn.RecordObservation(ctx, attemptID, conceptID, obs.Signal, obs.Category, obs.Severity, obs.Detail, obs.Confidence, int32(i)); err != nil {
-			warnings = append(warnings, fmt.Sprintf("observations[%d] (%q): rejected and not persisted — %v", i, obs.Concept, err))
+			warnings = append(warnings, fmt.Sprintf("observations[%d] (%q): rejected and not persisted — recording failed: %v", i, obs.Concept, err))
 			s.logger.Warn("observation: recording failed", "concept", obs.Concept, "confidence", obs.Confidence, "error", err)
 			continue
 		}

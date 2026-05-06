@@ -39,6 +39,13 @@ import (
 // observation_categories, ...). Validating client-side lets handlers
 // return a specific error instead of a generic CheckViolation from PG.
 //
+// Replaced an earlier learningDomainSlugPattern (^[a-z][a-z0-9-]*$) which
+// drifted from the schema in two directions: it required a letter as the
+// first character (the schema allows leading digits — e.g. "n2-grammar"
+// is a legal slug) and it allowed trailing/consecutive hyphens (the
+// schema rejects both). The canonical form below is strictly aligned
+// with the DB so a slug accepted here is always accepted by INSERT.
+//
 // If a future migration changes the schema rule, update this regex in
 // the same commit so client-side and server-side stay aligned.
 var slugPattern = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
