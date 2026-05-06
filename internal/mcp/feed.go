@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -40,10 +41,60 @@ type ManageFeedsInput struct {
 	Enabled  *bool    `json:"enabled,omitempty" jsonschema_description:"Enable/disable feed (for update)"`
 }
 
+// FeedSummary is the wire shape for manage_feeds responses. Strips
+// admin / pipeline-internal fields that the MCP caller doesn't need:
+// filter_config, etag, last_modified, consecutive_failures, last_error,
+// disabled_reason, created_at, updated_at. The HTTP admin endpoint
+// (internal/feed/handler.go) returns the full feed.Feed for callers
+// that DO need pipeline diagnostics. Keeping the MCP payload narrow
+// matches the role boundary: agents schedule and inspect by name, not
+// by HTTP cache headers.
+type FeedSummary struct {
+	ID            uuid.UUID  `json:"id"`
+	URL           string     `json:"url"`
+	Name          string     `json:"name"`
+	Schedule      string     `json:"schedule"`
+	Topics        []string   `json:"topics"`
+	Enabled       bool       `json:"enabled"`
+	Priority      string     `json:"priority"`
+	LastFetchedAt *time.Time `json:"last_fetched_at,omitempty"`
+}
+
+// ManageFeedsOutput is the response shape for manage_feeds actions.
+//
+// Feeds is initialised to []FeedSummary{} (not nil) for the list action
+// so the JSON envelope serialises to "feeds":[] when no rows match.
+// json-api rule forbids null on list fields. Total carries the
+// feeds-array length so callers don't have to count.
 type ManageFeedsOutput struct {
-	Feeds  []feed.Feed `json:"feeds,omitempty"`
-	Feed   *feed.Feed  `json:"feed,omitempty"`
-	Action string      `json:"action"`
+	Feeds  []FeedSummary `json:"feeds"`
+	Total  int           `json:"total"`
+	Feed   *FeedSummary  `json:"feed,omitempty"`
+	Action string        `json:"action"`
+}
+
+// toFeedSummary converts a store-side feed.Feed into the wire shape.
+func toFeedSummary(f *feed.Feed) FeedSummary {
+	return FeedSummary{
+		ID:            f.ID,
+		URL:           f.URL,
+		Name:          f.Name,
+		Schedule:      f.Schedule,
+		Topics:        f.Topics,
+		Enabled:       f.Enabled,
+		Priority:      f.Priority,
+		LastFetchedAt: f.LastFetchedAt,
+	}
+}
+
+// toFeedSummaries converts a slice of feed.Feed into the wire shape,
+// preserving order and never returning nil.
+func toFeedSummaries(feeds []feed.Feed) []FeedSummary {
+	out := make([]FeedSummary, len(feeds))
+	for i := range feeds {
+		out[i] = toFeedSummary(&feeds[i])
+	}
+	return out
 }
 
 func (s *Server) manageFeeds(ctx context.Context, _ *mcp.CallToolRequest, input ManageFeedsInput) (*mcp.CallToolResult, ManageFeedsOutput, error) {
@@ -69,7 +120,8 @@ func (s *Server) listFeeds(ctx context.Context) (*mcp.CallToolResult, ManageFeed
 	if err != nil {
 		return nil, ManageFeedsOutput{}, fmt.Errorf("listing feeds: %w", err)
 	}
-	return nil, ManageFeedsOutput{Feeds: feeds, Action: "list"}, nil
+	summaries := toFeedSummaries(feeds)
+	return nil, ManageFeedsOutput{Feeds: summaries, Total: len(summaries), Action: "list"}, nil
 }
 
 func (s *Server) addFeed(ctx context.Context, input ManageFeedsInput) (*mcp.CallToolResult, ManageFeedsOutput, error) {
@@ -111,7 +163,8 @@ func (s *Server) addFeed(ctx context.Context, input ManageFeedsInput) (*mcp.Call
 		return nil, ManageFeedsOutput{}, fmt.Errorf("adding feed: %w", err)
 	}
 	s.logger.Info("manage_feeds", "action", "add", "id", f.ID, "name", f.Name)
-	return nil, ManageFeedsOutput{Feed: f, Action: "add"}, nil
+	summary := toFeedSummary(f)
+	return nil, ManageFeedsOutput{Feed: &summary, Action: "add"}, nil
 }
 
 func (s *Server) updateFeed(ctx context.Context, input ManageFeedsInput) (*mcp.CallToolResult, ManageFeedsOutput, error) {
@@ -147,7 +200,8 @@ func (s *Server) updateFeed(ctx context.Context, input ManageFeedsInput) (*mcp.C
 		return nil, ManageFeedsOutput{}, fmt.Errorf("updating feed: %w", err)
 	}
 	s.logger.Info("manage_feeds", "action", "update", "id", id)
-	return nil, ManageFeedsOutput{Feed: f, Action: "update"}, nil
+	summary := toFeedSummary(f)
+	return nil, ManageFeedsOutput{Feed: &summary, Action: "update"}, nil
 }
 
 func (s *Server) removeFeed(ctx context.Context, input ManageFeedsInput) (*mcp.CallToolResult, ManageFeedsOutput, error) {

@@ -572,7 +572,7 @@ func ManageFeeds() Meta {
 		Writability: Destructive,
 		Stability:   StabilityStable,
 		Since:       since,
-		Description: "Feed management: list, add (url+name), update (enable/disable), remove. Use for RSS feed subscription management.",
+		Description: "Feed management: list, add (url+name+schedule), update (enable/disable, retopic), remove. Returns the agent-facing FeedSummary shape (id, url, name, schedule, topics, enabled, priority, last_fetched_at) — admin/pipeline-internal fields (filter_config, etag, last_modified, consecutive_failures, last_error, disabled_reason) are omitted. The HTTP admin endpoint serves the full feed.Feed for callers that need pipeline diagnostics.",
 	}
 }
 
