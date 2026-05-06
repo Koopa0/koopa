@@ -22,6 +22,7 @@
 package mcp
 
 import (
+	"context"
 	"encoding/json"
 	"log/slog"
 	"os"
@@ -31,6 +32,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/Koopa0/koopa/internal/agent"
 	"github.com/Koopa0/koopa/internal/mcp/ops"
@@ -621,7 +623,7 @@ func TestIntegration_UpdateEntry_AlignsAttemptToTarget(t *testing.T) {
 	if err != nil {
 		t.Fatalf("propose plan: %v", err)
 	}
-	_, commit, err := callHandler(t, s.commitProposal, CommitProposalInput{
+	_, commit, err := callHandlerAs(t, "human", s.commitProposal, CommitProposalInput{
 		ProposalToken: proposal.ProposalToken,
 	})
 	if err != nil {
@@ -688,6 +690,225 @@ func TestIntegration_UpdateEntry_AlignsAttemptToTarget(t *testing.T) {
 		Reason:               &reason,
 	}); err != nil {
 		t.Fatalf("update_entry with aligned attempt: %v", err)
+	}
+}
+
+// callHandlerAs invokes the handler with an explicit caller identity in
+// context, simulating an MCP request that included `as: "<agent>"`.
+// Required for handlers gated on requireExplicitHuman (publish_content,
+// commit_proposal of high-commitment types) — callHandler alone falls
+// through to the server default and the gate refuses.
+func callHandlerAs[I, O any](t *testing.T, agent string, handler func(context.Context, *mcp.CallToolRequest, I) (*mcp.CallToolResult, O, error), input I) (*mcp.CallToolResult, O, error) {
+	t.Helper()
+	ctx := context.WithValue(t.Context(), callerKey{}, agent)
+	return handler(ctx, nil, input)
+}
+
+func boolPtr(b bool) *bool { return &b }
+
+// TestIntegration_UpdateEntry_CompletionPolicy exercises the policy
+// enforcement added in B4: completion now hard-rejects missing
+// completed_by_attempt_id and missing reason, with a force=true escape
+// hatch that requires a "manual override:" reason of >= 30 characters.
+//
+// This replaces the previous behavior where missing
+// completed_by_attempt_id only logged a warning, leaving plan-progress
+// metrics with quiet-bypass entries.
+func TestIntegration_UpdateEntry_CompletionPolicy(t *testing.T) {
+	s := setupServer(t)
+
+	_, sess, err := callHandler(t, s.startSession, StartSessionInput{
+		Domain: "leetcode",
+		Mode:   "practice",
+	})
+	if err != nil {
+		t.Fatalf("startSession: %v", err)
+	}
+
+	// Build a plan + one entry on a recorded target, plus a stranded
+	// entry whose target has no attempt (simulating a retconned plan).
+	_, attempt, err := callHandler(t, s.recordAttempt, RecordAttemptInput{
+		SessionID: sess.Session.ID.String(),
+		Target:    AttemptTarget{Title: "Two Sum"},
+		Outcome:   "solved_independent",
+	})
+	if err != nil {
+		t.Fatalf("recordAttempt: %v", err)
+	}
+
+	_, proposal, err := callHandler(t, s.proposeLearningPlan, ProposeLearningPlanInput{
+		Title:  "Completion Policy Drill",
+		Domain: "leetcode",
+	})
+	if err != nil {
+		t.Fatalf("propose plan: %v", err)
+	}
+	_, commit, err := callHandlerAs(t, "human", s.commitProposal, CommitProposalInput{
+		ProposalToken: proposal.ProposalToken,
+	})
+	if err != nil {
+		t.Fatalf("commit plan: %v", err)
+	}
+
+	if _, _, err := callHandler(t, s.managePlan, ManagePlanInput{
+		Action: "add_entries",
+		PlanID: commit.ID,
+		Entries: []ManagePlanEntryInput{
+			{Title: "Two Sum", Position: 1},
+			{Title: "Stranded Target", Position: 2},
+		},
+	}); err != nil {
+		t.Fatalf("add_entries: %v", err)
+	}
+
+	active := "active"
+	if _, _, err := callHandler(t, s.managePlan, ManagePlanInput{
+		Action: "update_plan",
+		PlanID: commit.ID,
+		Status: &active,
+	}); err != nil {
+		t.Fatalf("activate plan: %v", err)
+	}
+
+	rows, err := testPool.Query(t.Context(),
+		"SELECT id, position FROM learning_plan_entries WHERE plan_id = $1 ORDER BY position", commit.ID)
+	if err != nil {
+		t.Fatalf("locating entries: %v", err)
+	}
+	defer rows.Close()
+	var twoSumEntryID, strandedEntryID string
+	for rows.Next() {
+		var id string
+		var pos int32
+		if err := rows.Scan(&id, &pos); err != nil {
+			t.Fatalf("scan entry: %v", err)
+		}
+		if pos == 1 {
+			twoSumEntryID = id
+		} else {
+			strandedEntryID = id
+		}
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("iterating entries: %v", err)
+	}
+	if twoSumEntryID == "" || strandedEntryID == "" {
+		t.Fatalf("entry lookup incomplete: twoSum=%q stranded=%q", twoSumEntryID, strandedEntryID)
+	}
+
+	completed := "completed"
+	attemptID := attempt.Attempt.ID.String()
+	tt := []struct {
+		name    string
+		input   ManagePlanInput
+		wantSub string
+	}{
+		{
+			name: "missing reason rejects",
+			input: ManagePlanInput{
+				Action:               "update_entry",
+				PlanID:               commit.ID,
+				EntryID:              &twoSumEntryID,
+				Status:               &completed,
+				CompletedByAttemptID: &attemptID,
+			},
+			wantSub: "reason is required",
+		},
+		{
+			name: "blank reason rejects",
+			input: ManagePlanInput{
+				Action:               "update_entry",
+				PlanID:               commit.ID,
+				EntryID:              &twoSumEntryID,
+				Status:               &completed,
+				CompletedByAttemptID: &attemptID,
+				Reason:               strPtr("   "),
+			},
+			wantSub: "reason is required",
+		},
+		{
+			name: "missing attempt id rejects without force",
+			input: ManagePlanInput{
+				Action:  "update_entry",
+				PlanID:  commit.ID,
+				EntryID: &twoSumEntryID,
+				Status:  &completed,
+				Reason:  strPtr("solved on second attempt"),
+			},
+			wantSub: "completed_by_attempt_id is required",
+		},
+		{
+			name: "force without manual override prefix rejects",
+			input: ManagePlanInput{
+				Action:  "update_entry",
+				PlanID:  commit.ID,
+				EntryID: &strandedEntryID,
+				Status:  &completed,
+				Reason:  strPtr("just trust me on this one ok thanks"),
+				Force:   boolPtr(true),
+			},
+			wantSub: "manual override:",
+		},
+		{
+			name: "force with prefix but too short rejects",
+			input: ManagePlanInput{
+				Action:  "update_entry",
+				PlanID:  commit.ID,
+				EntryID: &strandedEntryID,
+				Status:  &completed,
+				Reason:  strPtr("manual override: nope"),
+				Force:   boolPtr(true),
+			},
+			wantSub: "≥ 30 characters",
+		},
+		{
+			name: "reason exceeding cap rejects",
+			input: ManagePlanInput{
+				Action:               "update_entry",
+				PlanID:               commit.ID,
+				EntryID:              &twoSumEntryID,
+				Status:               &completed,
+				CompletedByAttemptID: &attemptID,
+				Reason:               strPtr(strings.Repeat("a", 1025)),
+			},
+			wantSub: "exceeds 1024 characters",
+		},
+	}
+	for _, tc := range tt {
+		t.Run(tc.name, func(t *testing.T) {
+			_, _, err := callHandler(t, s.managePlan, tc.input)
+			if err == nil {
+				t.Fatalf("expected rejection, got nil")
+			}
+			if !strings.Contains(err.Error(), tc.wantSub) {
+				t.Errorf("error = %q, want containing %q", err, tc.wantSub)
+			}
+		})
+	}
+
+	// Force-completion of stranded entry succeeds with a long, prefixed
+	// reason — the escape hatch path.
+	if _, _, err := callHandler(t, s.managePlan, ManagePlanInput{
+		Action:  "update_entry",
+		PlanID:  commit.ID,
+		EntryID: &strandedEntryID,
+		Status:  &completed,
+		Reason:  strPtr("manual override: target was retconned during plan migration on 2026-05-06"),
+		Force:   boolPtr(true),
+	}); err != nil {
+		t.Fatalf("force-completion with valid override reason: %v", err)
+	}
+
+	// Persisted reason MUST carry the manual override prefix so audit
+	// greps for forced completions reliably hit.
+	var persistedReason string
+	if err := testPool.QueryRow(t.Context(),
+		"SELECT reason FROM learning_plan_entries WHERE id = $1", strandedEntryID,
+	).Scan(&persistedReason); err != nil {
+		t.Fatalf("re-fetching reason: %v", err)
+	}
+	if !strings.HasPrefix(persistedReason, "manual override:") {
+		t.Errorf("persisted reason = %q, want prefix %q", persistedReason, "manual override:")
 	}
 }
 

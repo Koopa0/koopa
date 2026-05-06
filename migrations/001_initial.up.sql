@@ -2331,9 +2331,8 @@ CREATE TABLE learning_plan_entries (
     CONSTRAINT chk_substituted_by_not_self
         CHECK (substituted_by IS NULL OR substituted_by <> id),
     CONSTRAINT chk_completed_at_requires_status
-        CHECK (completed_at IS NULL OR status = 'completed'),
-    CONSTRAINT chk_completed_by_attempt_requires_status
-        CHECK (status <> 'completed' OR completed_by_attempt_id IS NOT NULL)
+        CHECK ((status <> 'completed' AND completed_at IS NULL)
+            OR (status = 'completed' AND completed_at IS NOT NULL))
 );
 
 CREATE INDEX idx_learning_plan_entries_plan ON learning_plan_entries (plan_id, position);
@@ -2814,7 +2813,8 @@ BEGIN
             jsonb_build_object('from', OLD.status, 'to', NEW.status,
                                'plan_id', NEW.plan_id,
                                'learning_target_id', NEW.learning_target_id,
-                               'completed_by_attempt_id', NEW.completed_by_attempt_id));
+                               'completed_by_attempt_id', NEW.completed_by_attempt_id,
+                               'reason', NEW.reason));
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;

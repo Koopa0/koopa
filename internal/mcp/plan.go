@@ -20,7 +20,9 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -46,9 +48,10 @@ type ManagePlanInput struct {
 	// update_entry
 	EntryID                    *string `json:"entry_id,omitempty" jsonschema_description:"Plan entry UUID (for update_entry)"`
 	Status                     *string `json:"status,omitempty" jsonschema_description:"New status: completed, skipped, substituted (for update_entry) or active, paused, completed, abandoned (for update_plan)"`
-	Reason                     *string `json:"reason,omitempty" jsonschema_description:"Why skipped/substituted"`
+	Reason                     *string `json:"reason,omitempty" jsonschema_description:"Justification for the transition. REQUIRED and non-blank when status=completed; this is the audit trail per mcp-decision-policy §13. When force=true, reason MUST start with the literal text manual override: (no surrounding quotes) and be ≥ 30 characters. Reason is capped at 1024 characters."`
 	SubstituteLearningTargetID *string `json:"substitute_learning_target_id,omitempty" jsonschema_description:"learning_targets.id of the replacement (for status=substituted)"`
-	CompletedByAttemptID       *string `json:"completed_by_attempt_id,omitempty" jsonschema_description:"Attempt UUID that informed the completion decision (policy-mandatory for AI-initiated completions)"`
+	CompletedByAttemptID       *string `json:"completed_by_attempt_id,omitempty" jsonschema_description:"Attempt UUID that informed the completion decision. REQUIRED when status=completed unless force=true. The attempt's learning_target_id MUST match the plan entry's — misaligned IDs are rejected so the audit trail stays trustworthy."`
+	Force                      *bool   `json:"force,omitempty" jsonschema_description:"Escape hatch for status=completed when no aligned attempt exists (plan retconned, target migrated, etc.). When true, completed_by_attempt_id may be omitted, but reason MUST start with the literal text manual override: (no surrounding quotes) and be ≥ 30 characters so the deviation is loud in the audit trail. Use sparingly — the normal path provides verifiable evidence; force replaces evidence with a written justification."`
 
 	// reorder
 	Positions []ManagePlanPositionInput `json:"positions,omitempty" jsonschema_description:"[{entry_id, position}] for reordering"`
@@ -217,14 +220,100 @@ func (s *Server) removePlanEntries(ctx context.Context, planID uuid.UUID, input 
 	}, nil
 }
 
+// trimOptional applies strings.TrimSpace through an optional string,
+// preserving nil. Used to normalise caller-supplied reason fields so
+// audit text doesn't carry copy-paste leading/trailing whitespace.
+func trimOptional(s *string) *string {
+	if s == nil {
+		return nil
+	}
+	t := strings.TrimSpace(*s)
+	return &t
+}
+
+// forceReasonPrefix is the required leader on the reason string when
+// completion is forced via input.Force. The prefix makes audit-log greps
+// for the literal text `manual override:` reliable across the plan
+// lifecycle. Caller-facing messages refer to it without surrounding
+// quotes so a copy-paste of the hint produces a string that actually
+// matches HasPrefix.
+const forceReasonPrefix = "manual override:"
+
+// forceReasonMinLength is the minimum reason length when force=true.
+// The threshold sets a "did you actually write a justification" bar that
+// "ok" / "n/a" cannot clear, without forcing prose every time.
+const forceReasonMinLength = 30
+
+// reasonMaxLength caps the reason string so a misbehaving caller can't
+// stuff structured logs by passing a multi-megabyte justification. The
+// cap is generous (1 KB) — any legitimate audit reason fits well under.
+const reasonMaxLength = 1024
+
+// validateCompleteEntryReason enforces the reason-string contract for
+// status=completed transitions. Normal path requires non-blank text;
+// forced path requires both forceReasonPrefix and forceReasonMinLength
+// so the manual override is structurally distinguishable from a normal
+// completion in audit-log greps. Both paths reject reasons over
+// reasonMaxLength.
+func validateCompleteEntryReason(reason string, forced bool) error {
+	if utf8.RuneCountInString(reason) > reasonMaxLength {
+		return fmt.Errorf("%w: reason exceeds %d characters (got %d) — keep audit text concise", learning.ErrInvalidInput, reasonMaxLength, utf8.RuneCountInString(reason))
+	}
+	if !forced {
+		if reason == "" {
+			return fmt.Errorf("%w: reason is required when marking entry completed (audit-trail policy mcp-decision-policy.md §13)", learning.ErrInvalidInput)
+		}
+		return nil
+	}
+	if !strings.HasPrefix(reason, forceReasonPrefix) {
+		return fmt.Errorf("%w: force=true requires reason to start with the literal text %s (got %q)", learning.ErrInvalidInput, forceReasonPrefix, reason)
+	}
+	if n := utf8.RuneCountInString(reason); n < forceReasonMinLength {
+		return fmt.Errorf("%w: force=true requires reason length ≥ %d characters (got %d)", learning.ErrInvalidInput, forceReasonMinLength, n)
+	}
+	return nil
+}
+
 // prepareCompleteEntryParams fills the completion-specific fields on params
-// (CompletedAt, CompletedByAttemptID) and enforces the target-alignment
-// audit for completed_by_attempt_id — the attempt MUST be on the plan
-// entry's learning_target. Without this check, the audit trail is just
-// "Claude said it was done" with no verifiable connection between attempt
-// evidence and plan entry. Misaligned completions are rejected outright
-// so plan progress metrics stay trustworthy.
+// (CompletedAt, CompletedByAttemptID) and enforces the audit-trail policy
+// for plan-entry completion (mcp-decision-policy §13).
+//
+// Normal path (force=false / unset):
+//   - completed_by_attempt_id REQUIRED — hard reject if missing.
+//   - reason REQUIRED and non-blank.
+//   - The attempt's learning_target_id MUST match the plan entry's. The
+//     alignment check is the audit trail: every completion has verifiable
+//     evidence in learning_attempts. Without this, "Claude said it was
+//     done" is unfalsifiable.
+//
+// Force path (force=true):
+//   - Designed for the rare cases where no aligned attempt exists (plan
+//     retconned, target migrated, completion logged out of band).
+//   - completed_by_attempt_id MAY be nil; alignment check is skipped.
+//   - reason MUST start with forceReasonPrefix and meet
+//     forceReasonMinLength so the deviation is a loud audit signal,
+//     not a quiet bypass.
+//
+// activity_events.payload carries 'reason' (audit_learning_plan_entries
+// trigger), so the audit distinction between forced and evidence-backed
+// completions is structurally visible in the append-only log: a forced
+// row has reason starting with forceReasonPrefix, an evidence-backed
+// row carries the coach's free-text justification. completed_by_attempt_id
+// is also in the payload — null on the force path, non-null otherwise.
 func (s *Server) prepareCompleteEntryParams(ctx context.Context, planID, entryID uuid.UUID, input *ManagePlanInput, params *plan.UpdateEntryStatusParams) error {
+	reason := ""
+	if input.Reason != nil {
+		reason = strings.TrimSpace(*input.Reason)
+	}
+	forced := input.Force != nil && *input.Force
+	if err := validateCompleteEntryReason(reason, forced); err != nil {
+		return err
+	}
+	// Persist the trimmed reason so the audit log doesn't carry trailing
+	// whitespace from caller-side string concatenation. CompletedAt is
+	// set after validation passes so a rejected call doesn't leave a
+	// half-populated params struct that a future refactor might leak.
+	params.Reason = &reason
 	now := time.Now()
 	params.CompletedAt = &now
 
@@ -235,9 +324,12 @@ func (s *Server) prepareCompleteEntryParams(ctx context.Context, planID, entryID
 	params.CompletedByAttemptID = aid
 
 	if aid == nil {
-		s.logger.Warn("manage_plan: completed without attempt id",
-			"plan_id", planID, "entry_id", entryID)
-		return nil
+		if forced {
+			s.logger.Info("manage_plan: forced completion without attempt id",
+				"plan_id", planID, "entry_id", entryID, "reason", reason)
+			return nil
+		}
+		return fmt.Errorf("%w: completed_by_attempt_id is required when marking entry completed (use force=true with a reason starting with %s if no aligned attempt exists)", learning.ErrInvalidInput, forceReasonPrefix)
 	}
 
 	entry, err := s.plans.Entry(ctx, entryID)
@@ -287,7 +379,7 @@ func (s *Server) updatePlanEntry(ctx context.Context, planID uuid.UUID, input *M
 		params := plan.UpdateEntryStatusParams{
 			ID:     entryID,
 			Status: status,
-			Reason: input.Reason,
+			Reason: trimOptional(input.Reason),
 		}
 		if status == plan.EntryCompleted {
 			if err := s.prepareCompleteEntryParams(ctx, planID, entryID, input, &params); err != nil {
