@@ -39,7 +39,6 @@ import (
 	"github.com/Koopa0/koopa/internal/project"
 	"github.com/Koopa0/koopa/internal/search"
 	"github.com/Koopa0/koopa/internal/stats"
-	"github.com/Koopa0/koopa/internal/systemhealth"
 	"github.com/Koopa0/koopa/internal/tag"
 	"github.com/Koopa0/koopa/internal/today"
 	"github.com/Koopa0/koopa/internal/todo"
@@ -49,33 +48,32 @@ import (
 
 // handlers holds all handler dependencies for route registration.
 type handlers struct {
-	auth         *auth.Handler
-	content      *content.Handler
-	bookmark     *bookmark.Handler
-	project      *project.Handler
-	topic        *topic.Handler
-	feed         *feed.Handler
-	entry        *entry.Handler
-	goal         *goal.Handler
-	tag          *tag.Handler
-	stats        *stats.Handler
-	activity     *activity.Handler
-	upload       *upload.Handler
-	hypothesis   *hypothesis.Handler
-	task         *agenttask.Handler
-	agent        *agent.Handler
-	daily        *daily.Handler
-	learning     *learning.Handler
-	note         *note.Handler
-	todo         *todo.Handler
-	plan         *learningplan.Handler
-	fsrs         *fsrs.Handler
-	agentNote    *agentnote.Handler
-	today        *today.Handler
-	search       *search.Handler
-	systemHealth *systemhealth.Handler
-	pool         *pgxpool.Pool
-	logger       *slog.Logger
+	auth       *auth.Handler
+	content    *content.Handler
+	bookmark   *bookmark.Handler
+	project    *project.Handler
+	topic      *topic.Handler
+	feed       *feed.Handler
+	entry      *entry.Handler
+	goal       *goal.Handler
+	tag        *tag.Handler
+	stats      *stats.Handler
+	activity   *activity.Handler
+	upload     *upload.Handler
+	hypothesis *hypothesis.Handler
+	task       *agenttask.Handler
+	agent      *agent.Handler
+	daily      *daily.Handler
+	learning   *learning.Handler
+	note       *note.Handler
+	todo       *todo.Handler
+	plan       *learningplan.Handler
+	fsrs       *fsrs.Handler
+	agentNote  *agentnote.Handler
+	today      *today.Handler
+	search     *search.Handler
+	pool       *pgxpool.Pool
+	logger     *slog.Logger
 }
 
 // registerRoutes registers all API routes on the given mux.
@@ -267,10 +265,10 @@ func registerRoutes(
 	mux.Handle("GET /api/admin/system/stats/learning", authMid(http.HandlerFunc(h.stats.Learning)))
 
 	// --- Admin: System / Health ---
-	// Served out of internal/systemhealth — the 4-domain envelope is a
-	// cross-domain aggregate and lives in its own package so stats can
-	// stay focused on the advanced admin dashboard aggregates.
-	mux.Handle("GET /api/admin/system/health", authMid(http.HandlerFunc(h.systemHealth.Check)))
+	// Served out of internal/stats — the snapshot consumed by the admin
+	// shell (ribbon, today warnings, nav counters): feeds, pipelines,
+	// database counts.
+	mux.Handle("GET /api/admin/system/health", authMid(http.HandlerFunc(h.stats.Health)))
 
 	// --- Admin: Search ---
 	// Composed across content and note sources in internal/search; each

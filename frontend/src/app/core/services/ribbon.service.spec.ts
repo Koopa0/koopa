@@ -5,7 +5,6 @@ import {
   RibbonService,
   derivePipeline,
   deriveFeeds,
-  deriveBudget,
 } from './ribbon.service';
 import { SystemService } from './system.service';
 import type { SystemHealth } from '../models/admin.model';
@@ -24,13 +23,9 @@ function fullHealth(overrides: Partial<SystemHealth> = {}): SystemHealth {
       failed: 0,
       last_run_at: '2026-04-13T10:00:00Z',
     },
-    ai_budget: {
-      today_tokens: 1000,
-      daily_limit: 10000,
-    },
     database: {
       contents_count: 100,
-      tasks_count: 50,
+      todos_count: 50,
       notes_count: 25,
     },
     ...overrides,
@@ -117,34 +112,3 @@ describe('deriveFeeds', () => {
   });
 });
 
-describe('deriveBudget', () => {
-  it('should mark ok below 70%', () => {
-    expect(deriveBudget(fullHealth())).toEqual({
-      label: 'ai 10%',
-      status: 'ok',
-    });
-  });
-
-  it('should mark warn at 70-89%', () => {
-    const h = fullHealth({
-      ai_budget: { today_tokens: 7500, daily_limit: 10000 },
-    });
-    expect(deriveBudget(h).status).toBe('warn');
-    expect(deriveBudget(h).label).toBe('ai 75%');
-  });
-
-  it('should mark error at 90% and above', () => {
-    const h = fullHealth({
-      ai_budget: { today_tokens: 9500, daily_limit: 10000 },
-    });
-    expect(deriveBudget(h).status).toBe('error');
-    expect(deriveBudget(h).label).toBe('ai 95%');
-  });
-
-  it('should handle zero daily limit without dividing by zero', () => {
-    const h = fullHealth({
-      ai_budget: { today_tokens: 0, daily_limit: 0 },
-    });
-    expect(deriveBudget(h)).toEqual({ label: 'ai —', status: 'ok' });
-  });
-});

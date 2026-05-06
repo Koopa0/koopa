@@ -61,6 +61,20 @@ func (h *Handler) Learning(w http.ResponseWriter, r *http.Request) {
 	api.Encode(w, http.StatusOK, api.Response{Data: dashboard})
 }
 
+// Health handles GET /api/admin/system/health. Returns the canonical
+// system snapshot consumed by the admin shell ribbon, today warnings,
+// and nav counters: feed health, recent pipeline runs, and core entity
+// counts.
+func (h *Handler) Health(w http.ResponseWriter, r *http.Request) {
+	snapshot, err := h.store.SystemHealth(r.Context())
+	if err != nil {
+		h.logger.Error("querying system health", "error", err)
+		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to query system health")
+		return
+	}
+	api.Encode(w, http.StatusOK, api.Response{Data: snapshot})
+}
+
 // ProcessRunsCell is a {value, state, reason?} cell used in the
 // process-runs summary — the same cell-state envelope the
 // system-health surface uses.

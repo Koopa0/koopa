@@ -21,7 +21,6 @@ export interface RibbonToken {
 export interface RibbonTokens {
   pipeline: RibbonToken;
   feeds: RibbonToken;
-  aiBudget: RibbonToken;
 }
 
 const POLL_INTERVAL_MS = 30_000;
@@ -50,18 +49,6 @@ export function deriveFeeds(h: SystemHealth): RibbonToken {
   if (pct < 90) status = 'error';
   else if (pct < 100) status = 'warn';
   return { label: `feeds ${pct}%`, status };
-}
-
-export function deriveBudget(h: SystemHealth): RibbonToken {
-  const limit = h.ai_budget.daily_limit;
-  if (limit <= 0) {
-    return { label: 'ai —', status: 'ok' };
-  }
-  const pct = Math.round((h.ai_budget.today_tokens / limit) * 100);
-  let status: RibbonStatus = 'ok';
-  if (pct >= 90) status = 'error';
-  else if (pct >= 70) status = 'warn';
-  return { label: `ai ${pct}%`, status };
 }
 
 /**
@@ -100,7 +87,6 @@ export class RibbonService {
     return {
       pipeline: derivePipeline(h),
       feeds: deriveFeeds(h),
-      aiBudget: deriveBudget(h),
     };
   });
 

@@ -43,7 +43,6 @@ import (
 	"github.com/Koopa0/koopa/internal/project"
 	"github.com/Koopa0/koopa/internal/search"
 	"github.com/Koopa0/koopa/internal/stats"
-	"github.com/Koopa0/koopa/internal/systemhealth"
 	"github.com/Koopa0/koopa/internal/tag"
 	"github.com/Koopa0/koopa/internal/today"
 	"github.com/Koopa0/koopa/internal/todo"
@@ -185,12 +184,6 @@ func run(logger *slog.Logger) error {
 			content.NewSearchSource(contentStore),
 			note.NewSearchSource(noteStore),
 		}, logger),
-		systemHealth: systemhealth.NewHandler(
-			statsFeedHealth{store: statsStore},
-			statsProcessRunSuccess{store: statsStore},
-			statsContentCount{store: statsStore},
-			logger,
-		),
 		pool:   pool,
 		logger: logger,
 	}

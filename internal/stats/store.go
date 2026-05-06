@@ -463,16 +463,14 @@ func (s *Store) learningTopTags(ctx context.Context, ld *LearningDashboard) erro
 	return nil
 }
 
-// SystemHealth returns the snapshot consumed by the admin SystemHealthComponent.
+// SystemHealth returns the snapshot served at GET /api/admin/system/health.
 //
 // Composes feed health, recent pipeline activity (last 24h), and core entity
-// counts. AI budget tracking is not yet implemented — those fields return
-// zero placeholders so the frontend contract holds.
+// counts.
 func (s *Store) SystemHealth(ctx context.Context) (*SystemHealthSnapshot, error) {
 	out := &SystemHealthSnapshot{
 		Feeds:     FeedHealth{FailingFeeds: []FailingFeed{}},
 		Pipelines: PipelineHealth{},
-		AIBudget:  AIBudget{},
 		Database:  DatabaseStats{},
 	}
 

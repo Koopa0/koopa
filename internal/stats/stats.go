@@ -179,13 +179,11 @@ type ProcessRunNameSummary struct {
 	LastStatus *string `json:"last_status,omitempty"`
 }
 
-// SystemHealthSnapshot is the legacy shape used by the Store layer for
-// internal dashboards. The admin /system/health surface now lives in
-// internal/systemhealth and returns its own 4-domain envelope.
+// SystemHealthSnapshot is the wire shape served at GET /api/admin/system/health.
+// Consumed by the admin shell ribbon, today warnings, and nav counters.
 type SystemHealthSnapshot struct {
 	Feeds     FeedHealth     `json:"feeds"`
 	Pipelines PipelineHealth `json:"pipelines"`
-	AIBudget  AIBudget       `json:"ai_budget"`
 	Database  DatabaseStats  `json:"database"`
 }
 
@@ -212,15 +210,6 @@ type PipelineHealth struct {
 	RecentRuns int     `json:"recent_runs"`
 	Failed     int     `json:"failed"`
 	LastRunAt  *string `json:"last_run_at"`
-}
-
-// AIBudget is the AI token budget section of SystemHealthSnapshot.
-// Not yet wired to a real source — both fields return zero. Reserved
-// for the SystemHealthComponent contract so the frontend does not need
-// a conditional rendering branch.
-type AIBudget struct {
-	TodayTokens int `json:"today_tokens"`
-	DailyLimit  int `json:"daily_limit"`
 }
 
 // DatabaseStats is the database section of SystemHealthSnapshot.

@@ -285,7 +285,6 @@ export type ItemDifficulty = 'easy' | 'medium' | 'hard';
 export interface SystemHealth extends CellState {
   feeds: FeedHealth;
   pipelines: PipelineHealth;
-  ai_budget: AiBudget;
   database: DatabaseStats;
 }
 
@@ -308,13 +307,8 @@ export interface PipelineHealth {
   last_run_at: string | null;
 }
 
-export interface AiBudget {
-  today_tokens: number;
-  daily_limit: number;
-}
-
 export interface DatabaseStats {
   contents_count: number;
-  tasks_count: number;
+  todos_count: number;
   notes_count: number;
 }
