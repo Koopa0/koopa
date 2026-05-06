@@ -10359,12 +10359,16 @@ func (q *Queries) StatsGoalsByArea(ctx context.Context) ([]StatsGoalsByAreaRow, 
 }
 
 const statsNoteGrowth = `-- name: StatsNoteGrowth :one
+WITH knowledge AS (
+    SELECT created_at FROM notes
+    UNION ALL
+    SELECT created_at FROM contents WHERE type = 'til'
+)
 SELECT
     COUNT(*)::int AS total,
     COUNT(*) FILTER (WHERE created_at > now() - interval '7 days')::int AS last_week,
     COUNT(*) FILTER (WHERE created_at > now() - interval '30 days')::int AS last_month
-FROM contents
-WHERE type IN ('note', 'til')
+FROM knowledge
 `
 
 type StatsNoteGrowthRow struct {
@@ -10373,8 +10377,10 @@ type StatsNoteGrowthRow struct {
 	LastMonth int32 `json:"last_month"`
 }
 
-// Knowledge-artifact growth across the unified contents table. Counts
-// both `note` and `til` types (the two short-form knowledge formats).
+// Short-form knowledge growth: Zettelkasten notes (notes table) plus
+// TIL contents. Phase 2 entry split notes out of contents — the two
+// short-form formats now live in separate tables and the union here
+// reassembles the dashboard view.
 func (q *Queries) StatsNoteGrowth(ctx context.Context) (StatsNoteGrowthRow, error) {
 	row := q.db.QueryRow(ctx, statsNoteGrowth)
 	var i StatsNoteGrowthRow
@@ -10670,7 +10676,7 @@ SELECT t.name, COUNT(ct.content_id)::int AS count
 FROM tags t
 JOIN content_tags ct ON ct.tag_id = t.id
 JOIN contents c ON c.id = ct.content_id
-WHERE c.type IN ('note', 'til')
+WHERE c.type = 'til'
 GROUP BY t.id, t.name
 ORDER BY count DESC
 LIMIT 10
@@ -10681,8 +10687,8 @@ type StatsTopTagsRow struct {
 	Count int32  `json:"count"`
 }
 
-// Top tags across short-form knowledge content (note + til), ranked by
-// usage. Uses content_tags exclusively after the unification.
+// Top tags across TIL contents, ranked by usage. notes table has no
+// tag relationships post Phase 2 entry — tags here count TILs only.
 func (q *Queries) StatsTopTags(ctx context.Context) ([]StatsTopTagsRow, error) {
 	rows, err := q.db.Query(ctx, statsTopTags)
 	if err != nil {

@@ -118,14 +118,20 @@ GROUP BY name
 ORDER BY name;
 
 -- name: StatsNoteGrowth :one
--- Knowledge-artifact growth across the unified contents table. Counts
--- both `note` and `til` types (the two short-form knowledge formats).
+-- Short-form knowledge growth: Zettelkasten notes (notes table) plus
+-- TIL contents. Phase 2 entry split notes out of contents — the two
+-- short-form formats now live in separate tables and the union here
+-- reassembles the dashboard view.
+WITH knowledge AS (
+    SELECT created_at FROM notes
+    UNION ALL
+    SELECT created_at FROM contents WHERE type = 'til'
+)
 SELECT
     COUNT(*)::int AS total,
     COUNT(*) FILTER (WHERE created_at > now() - interval '7 days')::int AS last_week,
     COUNT(*) FILTER (WHERE created_at > now() - interval '30 days')::int AS last_month
-FROM contents
-WHERE type IN ('note', 'til');
+FROM knowledge;
 
 -- name: StatsWeeklyActivity :one
 -- Compares this week (last 7 days) vs last week (7-14 days ago).
@@ -135,13 +141,13 @@ SELECT
 FROM activity_events;
 
 -- name: StatsTopTags :many
--- Top tags across short-form knowledge content (note + til), ranked by
--- usage. Uses content_tags exclusively after the unification.
+-- Top tags across TIL contents, ranked by usage. notes table has no
+-- tag relationships post Phase 2 entry — tags here count TILs only.
 SELECT t.name, COUNT(ct.content_id)::int AS count
 FROM tags t
 JOIN content_tags ct ON ct.tag_id = t.id
 JOIN contents c ON c.id = ct.content_id
-WHERE c.type IN ('note', 'til')
+WHERE c.type = 'til'
 GROUP BY t.id, t.name
 ORDER BY count DESC
 LIMIT 10;
