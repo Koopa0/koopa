@@ -48,10 +48,10 @@ type ManagePlanInput struct {
 	// update_entry
 	EntryID                    *string `json:"entry_id,omitempty" jsonschema_description:"Plan entry UUID (for update_entry)"`
 	Status                     *string `json:"status,omitempty" jsonschema_description:"New status: completed, skipped, substituted (for update_entry) or active, paused, completed, abandoned (for update_plan)"`
-	Reason                     *string `json:"reason,omitempty" jsonschema_description:"Justification for the transition. REQUIRED and non-blank when status=completed; this is the audit trail per mcp-decision-policy §13. When force=true, reason MUST start with the literal text manual override: (no surrounding quotes) and be ≥ 30 characters. Reason is capped at 1024 characters."`
+	Reason                     *string `json:"reason,omitempty" jsonschema_description:"Justification for the transition. REQUIRED and non-blank when status=completed; this is the audit trail per mcp-decision-policy §13. When force=true, reason MUST start with the literal text manual override: (no surrounding quotes) and be ≥ 60 characters. Reason is capped at 1024 characters."`
 	SubstituteLearningTargetID *string `json:"substitute_learning_target_id,omitempty" jsonschema_description:"learning_targets.id of the replacement (for status=substituted)"`
 	CompletedByAttemptID       *string `json:"completed_by_attempt_id,omitempty" jsonschema_description:"Attempt UUID that informed the completion decision. REQUIRED when status=completed unless force=true. The attempt's learning_target_id MUST match the plan entry's — misaligned IDs are rejected so the audit trail stays trustworthy."`
-	Force                      *bool   `json:"force,omitempty" jsonschema_description:"Escape hatch for status=completed when no aligned attempt exists (plan retconned, target migrated, etc.). When true, completed_by_attempt_id may be omitted, but reason MUST start with the literal text manual override: (no surrounding quotes) and be ≥ 30 characters so the deviation is loud in the audit trail. Use sparingly — the normal path provides verifiable evidence; force replaces evidence with a written justification."`
+	Force                      *bool   `json:"force,omitempty" jsonschema_description:"Escape hatch for status=completed when no aligned attempt exists (plan retconned, target migrated, etc.). When true, completed_by_attempt_id may be omitted, but reason MUST start with the literal text manual override: (no surrounding quotes) and be ≥ 60 characters so the deviation is loud in the audit trail. Use sparingly — the normal path provides verifiable evidence; force replaces evidence with a written justification."`
 
 	// reorder
 	Positions []ManagePlanPositionInput `json:"positions,omitempty" jsonschema_description:"[{entry_id, position}] for reordering"`
@@ -264,9 +264,18 @@ func trimOptional(s *string) *string {
 const forceReasonPrefix = "manual override:"
 
 // forceReasonMinLength is the minimum reason length when force=true.
-// The threshold sets a "did you actually write a justification" bar that
-// "ok" / "n/a" cannot clear, without forcing prose every time.
-const forceReasonMinLength = 30
+// 60 is chosen for audit-log readability rather than caller ergonomics:
+// force completions are rare (escape hatch for plan retcon / target
+// migration), but every one ends up grep'd later by Koopa during
+// weekly review. A reason that lands under 60 runes tends to be a
+// vague tag ("manual override: target retcon") that requires the
+// reader to join activity_events back to source rows; a reason that
+// reaches 60 typically self-explains the what/which. Asymmetric cost:
+// caller pays 30s extra writing once, reader saves 5min reconstruction
+// per visit — the right side to optimise. Dial down to 45 if 60 feels
+// too tight in practice; dialing up later breaks any short reasons
+// already written, while dialing down does not.
+const forceReasonMinLength = 60
 
 // reasonMaxLength caps the reason string so a misbehaving caller can't
 // stuff structured logs by passing a multi-megabyte justification. The

@@ -849,7 +849,7 @@ func TestIntegration_TrackHypothesis_Resolve_Validation(t *testing.T) {
 // TestIntegration_UpdateEntry_CompletionPolicy exercises the policy
 // enforcement added in B4: completion now hard-rejects missing
 // completed_by_attempt_id and missing reason, with a force=true escape
-// hatch that requires a "manual override:" reason of >= 30 characters.
+// hatch that requires a "manual override:" reason of >= 60 characters.
 //
 // This replaces the previous behavior where missing
 // completed_by_attempt_id only logged a warning, leaving plan-progress
@@ -999,7 +999,24 @@ func TestIntegration_UpdateEntry_CompletionPolicy(t *testing.T) {
 				Reason:  strPtr("manual override: nope"),
 				Force:   boolPtr(true),
 			},
-			wantSub: "≥ 30 characters",
+			wantSub: "≥ 60 characters",
+		},
+		{
+			// Boundary guard: 35-char "vague tag" reasons that would
+			// have passed under the older 30-rune floor must now reject.
+			// If a future dial-down to 45 happens, this case relaxes to
+			// the new floor; further dialing-down to 30 would force a
+			// rewrite of this test (intentional).
+			name: "force at 35 chars below 60 floor rejects",
+			input: ManagePlanInput{
+				Action:  "update_entry",
+				PlanID:  commit.ID,
+				EntryID: &strandedEntryID,
+				Status:  &completed,
+				Reason:  strPtr("manual override: target retcon done"),
+				Force:   boolPtr(true),
+			},
+			wantSub: "≥ 60 characters",
 		},
 		{
 			name: "reason exceeding cap rejects",
