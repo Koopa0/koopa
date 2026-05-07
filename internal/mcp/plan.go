@@ -220,6 +220,30 @@ func (s *Server) removePlanEntries(ctx context.Context, planID uuid.UUID, input 
 	}, nil
 }
 
+// validateUpdateEntryInput runs the cheap up-front checks for
+// update_entry: entry_id and status presence, status enum membership,
+// and the force-only-with-completed rule. Plan-state and entry-id
+// parsing happen separately because they require store calls.
+func validateUpdateEntryInput(input *ManagePlanInput) error {
+	if input.EntryID == nil || *input.EntryID == "" {
+		return fmt.Errorf("entry_id is required for update_entry")
+	}
+	if input.Status == nil || *input.Status == "" {
+		return fmt.Errorf("status is required for update_entry")
+	}
+	if !isValidPlanEntryStatus(*input.Status) {
+		return fmt.Errorf("status for update_entry must be one of: completed, skipped, substituted (got %q)", *input.Status)
+	}
+	// force is only meaningful for status=completed; reject elsewhere
+	// so a caller who mistakenly leaves the flag set on a different
+	// transition gets an explicit error instead of a silently-ignored
+	// override request.
+	if input.Force != nil && *input.Force && *input.Status != string(plan.EntryCompleted) {
+		return fmt.Errorf("force=true is only valid with status=completed (got status=%q)", *input.Status)
+	}
+	return nil
+}
+
 // trimOptional applies strings.TrimSpace through an optional string,
 // preserving nil. Used to normalise caller-supplied reason fields so
 // audit text doesn't carry copy-paste leading/trailing whitespace.
@@ -350,14 +374,8 @@ func (s *Server) prepareCompleteEntryParams(ctx context.Context, planID, entryID
 }
 
 func (s *Server) updatePlanEntry(ctx context.Context, planID uuid.UUID, input *ManagePlanInput) (*mcp.CallToolResult, ManagePlanOutput, error) {
-	if input.EntryID == nil || *input.EntryID == "" {
-		return nil, ManagePlanOutput{}, fmt.Errorf("entry_id is required for update_entry")
-	}
-	if input.Status == nil || *input.Status == "" {
-		return nil, ManagePlanOutput{}, fmt.Errorf("status is required for update_entry")
-	}
-	if !isValidPlanEntryStatus(*input.Status) {
-		return nil, ManagePlanOutput{}, fmt.Errorf("status for update_entry must be one of: completed, skipped, substituted (got %q)", *input.Status)
+	if err := validateUpdateEntryInput(input); err != nil {
+		return nil, ManagePlanOutput{}, err
 	}
 
 	p, err := s.plans.Plan(ctx, planID)

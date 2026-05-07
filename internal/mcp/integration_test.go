@@ -759,6 +759,27 @@ func TestIntegration_AdvanceWork_SelfBound(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("advance_work as human override: %v", err)
 	}
+
+	// Unregistered caller name hits the registry-Lookup fail branch in
+	// requireTodoOwner. Without this test, a future refactor that
+	// changes Lookup semantics could regress the fail-closed contract
+	// without CI noticing.
+	_, captured3, err := callHandler(t, s.captureInbox, CaptureInboxInput{
+		Title: "unregistered caller test",
+	})
+	if err != nil {
+		t.Fatalf("captureInbox #3: %v", err)
+	}
+	_, _, err = callHandlerAs(t, "ghost-agent", s.advanceWork, AdvanceWorkInput{
+		TaskID: captured3.Task.ID.String(),
+		Action: "defer",
+	})
+	if err == nil {
+		t.Fatal("advance_work as unregistered caller succeeded — registry check is not firing")
+	}
+	if !strings.Contains(err.Error(), "not registered") {
+		t.Errorf("error = %q, want containing %q", err, "not registered")
+	}
 }
 
 // TestIntegration_UpdateEntry_CompletionPolicy exercises the policy
@@ -927,6 +948,21 @@ func TestIntegration_UpdateEntry_CompletionPolicy(t *testing.T) {
 				Reason:               strPtr(strings.Repeat("a", 1025)),
 			},
 			wantSub: "exceeds 1024 characters",
+		},
+		{
+			// L2 review M3: force=true on non-completed status was a UX
+			// foot-gun (silently ignored). Now hard-rejected so an LLM
+			// that mistakenly leaves the flag set learns immediately.
+			name: "force=true with status=skipped rejects",
+			input: ManagePlanInput{
+				Action:  "update_entry",
+				PlanID:  commit.ID,
+				EntryID: &twoSumEntryID,
+				Status:  strPtr("skipped"),
+				Reason:  strPtr("manual override: this should still reject because skipped"),
+				Force:   boolPtr(true),
+			},
+			wantSub: "force=true is only valid with status=completed",
 		},
 	}
 	for _, tc := range tt {

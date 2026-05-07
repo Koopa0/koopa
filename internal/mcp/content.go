@@ -146,14 +146,22 @@ type ManageContentOutput struct {
 // LearningDashboardOutput.
 func (o ManageContentOutput) MarshalJSON() ([]byte, error) {
 	base := map[string]any{"action": o.Action}
-	if o.Action == "list" {
+	switch o.Action {
+	case "list":
 		base["contents"] = ensureSlice(o.Contents)
 		base["total"] = o.Total
-	} else if o.Content != nil {
-		base["content"] = o.Content
-	}
-	if len(o.ContentWarnings) > 0 {
-		base["content_warnings"] = o.ContentWarnings
+	case "create":
+		// ContentWarnings is create-only and ALWAYS present (possibly
+		// empty) per the field's doc comment. ensureSlice keeps the
+		// shape stable even when the create path emits zero warnings.
+		base["content_warnings"] = ensureSlice(o.ContentWarnings)
+		if o.Content != nil {
+			base["content"] = o.Content
+		}
+	default:
+		if o.Content != nil {
+			base["content"] = o.Content
+		}
 	}
 	if o.SlugConflict != nil {
 		base["slug_conflict"] = o.SlugConflict

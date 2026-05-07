@@ -102,6 +102,16 @@ func (s *Server) requireExplicitHuman(ctx context.Context, op string) error {
 // the loaded row's value, not a re-derived one — the caller's snapshot
 // is authoritative for this check.
 //
+// Like requireAuthor, this gate uses callerIdentity (not
+// ExplicitCallerIdentity) — the server-default-human path inherits the
+// override consistent with the rest of the author/self axis. If
+// KOOPA_MCP_CALLER_AGENT is ever made multi-tenant, the author/self
+// gates as a whole need to be reviewed; this gate is not special.
+//
+// The error message intentionally does NOT name the original creator
+// to avoid leaking row attribution to non-owner callers (the audit log
+// carries the full picture; the wire reply doesn't need to).
+//
 // This is the §4 Self axis from the package doc applied at the
 // advance_work boundary. authorization-matrix.md was previously
 // annotated "Currently open; future: caller == created_by"; this gate
@@ -118,7 +128,7 @@ func (s *Server) requireTodoOwner(ctx context.Context, owner string) error {
 	if caller.Platform == "human" {
 		return nil
 	}
-	return fmt.Errorf("advance_work: caller %q is not the todo owner (created_by=%q); only the creator or human override may advance it", name, owner)
+	return fmt.Errorf("advance_work: caller %q is not the todo owner; only the creator or human override may advance it", name)
 }
 
 // requireAuthor gates an operation to a domain-specific allowlist of

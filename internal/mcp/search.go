@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sort"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -326,12 +327,16 @@ func filterNoteResults(notes []note.Note, kindFilter *string, after, before *tim
 	return out
 }
 
-// truncate cuts s to at most n runes, appending ellipsis if truncated.
+// truncate cuts s to at most n runes, appending an ellipsis if
+// truncated. Rune-counted (not byte-counted) so a multi-byte UTF-8
+// body — Koopa writes Chinese; CJK runes are 3 bytes — never gets
+// split mid-rune into invalid UTF-8.
 func truncate(s string, n int) string {
-	if len(s) <= n {
+	if utf8.RuneCountInString(s) <= n {
 		return s
 	}
-	return s[:n] + "…"
+	runes := []rune(s)
+	return string(runes[:n]) + "…"
 }
 
 func (s *Server) filterContentResults(ctx context.Context, contents []content.Content, contentType *string, after, before *time.Time) []SearchKnowledgeResult {
