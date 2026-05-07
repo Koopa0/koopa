@@ -13,6 +13,7 @@ package mcp
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -117,9 +118,15 @@ type SlugConflictInfo struct {
 	ContentID string `json:"content_id"`
 }
 
+// ManageContentOutput is the response shape for every content tool
+// (create, update, publish, archive, submit_for_review,
+// revert_to_draft, list, read). The struct tags here are informational;
+// MarshalJSON below decides actual per-action emission. The list action
+// always emits contents:[] and total; other actions omit those keys.
 type ManageContentOutput struct {
 	Content  *ContentDetail   `json:"content,omitempty"`
 	Contents []ContentSummary `json:"contents,omitempty"`
+	Total    int              `json:"total,omitempty"`
 	Action   string           `json:"action"`
 	// ContentWarnings is create-only. Only the createContent path emits warnings
 	// (slug normalization, etc.) — every other action (update, publish, list,
@@ -130,6 +137,28 @@ type ManageContentOutput struct {
 	// every action can produce warnings, so always-present is the right pattern.
 	ContentWarnings []string          `json:"content_warnings,omitempty"`
 	SlugConflict    *SlugConflictInfo `json:"slug_conflict,omitempty"`
+}
+
+// MarshalJSON enforces the per-action wire shape. The list action always
+// emits contents:[] (never null, never absent) and total alongside it.
+// Other actions omit those fields entirely so create/update/etc.
+// responses don't carry empty list noise. Mirrors the pattern used by
+// LearningDashboardOutput.
+func (o ManageContentOutput) MarshalJSON() ([]byte, error) {
+	base := map[string]any{"action": o.Action}
+	if o.Action == "list" {
+		base["contents"] = ensureSlice(o.Contents)
+		base["total"] = o.Total
+	} else if o.Content != nil {
+		base["content"] = o.Content
+	}
+	if len(o.ContentWarnings) > 0 {
+		base["content_warnings"] = o.ContentWarnings
+	}
+	if o.SlugConflict != nil {
+		base["slug_conflict"] = o.SlugConflict
+	}
+	return json.Marshal(base)
 }
 
 // manage_content multiplexer removed in the notes/content split — 8 flat per-intent
@@ -471,7 +500,7 @@ func (s *Server) listContent(ctx context.Context, input *ManageContentInput) (*m
 			break
 		}
 	}
-	return nil, ManageContentOutput{Contents: summaries, Action: "list"}, nil
+	return nil, ManageContentOutput{Contents: summaries, Total: len(summaries), Action: "list"}, nil
 }
 
 func (s *Server) readContent(ctx context.Context, input *ManageContentInput) (*mcp.CallToolResult, ManageContentOutput, error) {
