@@ -782,6 +782,70 @@ func TestIntegration_AdvanceWork_SelfBound(t *testing.T) {
 	}
 }
 
+// TestIntegration_TrackHypothesis_Resolve_Validation covers the
+// resolve-path field validation that previously lived in
+// handler_test.go's TestTrackHypothesis_Validation. After Wave 1 added
+// a pre-flight existence check to resolveHypothesis (so a typo'd
+// hypothesis_id surfaces as 'not found' before missing-evidence
+// errors), the unit test required a nil-guard hack on s.hypotheses;
+// #13 removed that hack and migrated the field-validation cases here
+// where a real hypothesis row can be seeded.
+func TestIntegration_TrackHypothesis_Resolve_Validation(t *testing.T) {
+	s := setupServer(t)
+
+	_, proposal, err := callHandler(t, s.proposeHypothesis, ProposeHypothesisInput{
+		Claim:                 "test claim for validation harness",
+		InvalidationCondition: "evidence X disproves the claim",
+		Content:               "Seeded by TestIntegration_TrackHypothesis_Resolve_Validation so the resolve-path validators have a real row to look up.",
+	})
+	if err != nil {
+		t.Fatalf("propose hypothesis: %v", err)
+	}
+	_, commit, err := callHandlerAs(t, "human", s.commitProposal, CommitProposalInput{
+		ProposalToken: proposal.ProposalToken,
+	})
+	if err != nil {
+		t.Fatalf("commit hypothesis: %v", err)
+	}
+	hypothesisID := commit.ID
+	bigSummary := strings.Repeat("a", 2*1024+1)
+
+	tests := []struct {
+		name    string
+		input   TrackHypothesisInput
+		wantErr string
+	}{
+		// verify/invalidate must carry at least one evidence source.
+		{name: "verify no evidence", input: TrackHypothesisInput{HypothesisID: hypothesisID, Action: "verify"}, wantErr: "at least one of"},
+		{name: "invalidate no evidence", input: TrackHypothesisInput{HypothesisID: hypothesisID, Action: "invalidate"}, wantErr: "at least one of"},
+		{name: "verify blank summary only", input: TrackHypothesisInput{HypothesisID: hypothesisID, Action: "verify", ResolutionSummary: strPtr("   ")}, wantErr: "at least one of"},
+		// Malformed evidence UUIDs surface before the "at least one" check.
+		{name: "verify bad attempt_id", input: TrackHypothesisInput{HypothesisID: hypothesisID, Action: "verify", ResolvedByAttemptID: strPtr("not-a-uuid"), ResolutionSummary: strPtr("ok")}, wantErr: "invalid resolved_by_attempt_id"},
+		{name: "verify bad observation_id", input: TrackHypothesisInput{HypothesisID: hypothesisID, Action: "invalidate", ResolvedByObservationID: strPtr("nope"), ResolutionSummary: strPtr("ok")}, wantErr: "invalid resolved_by_observation_id"},
+		{name: "verify summary too large", input: TrackHypothesisInput{HypothesisID: hypothesisID, Action: "verify", ResolutionSummary: &bigSummary}, wantErr: "resolution_summary too large"},
+		// Control characters in resolution_summary rejected per security.md.
+		{name: "verify summary with NUL", input: TrackHypothesisInput{HypothesisID: hypothesisID, Action: "verify", ResolutionSummary: strPtr("solved\x00cleanly")}, wantErr: "control characters"},
+		{name: "verify summary with ESC", input: TrackHypothesisInput{HypothesisID: hypothesisID, Action: "verify", ResolutionSummary: strPtr("\x1b[31mred")}, wantErr: "control characters"},
+		// uuid.Parse internals must NOT leak to MCP callers — the field
+		// name alone is reported.
+		{name: "verify attempt error does not leak uuid.Parse", input: TrackHypothesisInput{HypothesisID: hypothesisID, Action: "verify", ResolvedByAttemptID: strPtr("abc")}, wantErr: "invalid resolved_by_attempt_id"},
+		// Pre-flight existence check fires before field validation. A
+		// typo'd id rejects with 'not found' even when fields are missing.
+		{name: "nonexistent id rejects before field validation", input: TrackHypothesisInput{HypothesisID: "00000000-0000-0000-0000-000000000099", Action: "verify"}, wantErr: "not found"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, err := callHandler(t, s.trackHypothesis, tt.input)
+			if err == nil {
+				t.Fatal("expected error, got nil")
+			}
+			if !strings.Contains(err.Error(), tt.wantErr) {
+				t.Errorf("error = %q, want containing %q", err, tt.wantErr)
+			}
+		})
+	}
+}
+
 // TestIntegration_UpdateEntry_CompletionPolicy exercises the policy
 // enforcement added in B4: completion now hard-rejects missing
 // completed_by_attempt_id and missing reason, with a force=true escape

@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
-	"strings"
 	"testing"
 	"time"
 
@@ -271,10 +270,15 @@ func TestAcknowledgeDirective_Validation(t *testing.T) {
 
 // --- track_hypothesis ---
 
+// TestTrackHypothesis_Validation covers the cheap dispatch-path
+// validations that fire BEFORE resolveHypothesis' pre-flight existence
+// check (and therefore don't need a real hypothesis row).
+// Resolve-path field validation moved to
+// TestIntegration_TrackHypothesis_Resolve_Validation in integration_test.go
+// after #13 removed the nil-guard in hypothesis.go.
 func TestTrackHypothesis_Validation(t *testing.T) {
 	s := newTestServer()
 	validID := "00000000-0000-0000-0000-000000000001"
-	bigSummary := strings.Repeat("a", 2*1024+1)
 	tests := []struct {
 		name    string
 		input   TrackHypothesisInput
@@ -282,25 +286,11 @@ func TestTrackHypothesis_Validation(t *testing.T) {
 	}{
 		{name: "zero id", input: TrackHypothesisInput{Action: "verify"}, wantErr: "invalid hypothesis_id"},
 		{name: "invalid action", input: TrackHypothesisInput{HypothesisID: validID, Action: "bad"}, wantErr: "invalid action"},
-		// verify/invalidate must carry at least one evidence source.
-		{name: "verify no evidence", input: TrackHypothesisInput{HypothesisID: validID, Action: "verify"}, wantErr: "at least one of"},
-		{name: "invalidate no evidence", input: TrackHypothesisInput{HypothesisID: validID, Action: "invalidate"}, wantErr: "at least one of"},
-		{name: "verify blank summary only", input: TrackHypothesisInput{HypothesisID: validID, Action: "verify", ResolutionSummary: strPtr("   ")}, wantErr: "at least one of"},
-		// Malformed evidence UUIDs surface before the "at least one" check
-		// so the rejection is loud even when a summary is also present.
-		{name: "verify bad attempt_id", input: TrackHypothesisInput{HypothesisID: validID, Action: "verify", ResolvedByAttemptID: strPtr("not-a-uuid"), ResolutionSummary: strPtr("ok")}, wantErr: "invalid resolved_by_attempt_id"},
-		{name: "verify bad observation_id", input: TrackHypothesisInput{HypothesisID: validID, Action: "invalidate", ResolvedByObservationID: strPtr("nope"), ResolutionSummary: strPtr("ok")}, wantErr: "invalid resolved_by_observation_id"},
-		{name: "verify summary too large", input: TrackHypothesisInput{HypothesisID: validID, Action: "verify", ResolutionSummary: &bigSummary}, wantErr: "resolution_summary too large"},
-		// Control characters in resolution_summary rejected per security.md.
-		{name: "verify summary with NUL", input: TrackHypothesisInput{HypothesisID: validID, Action: "verify", ResolutionSummary: strPtr("solved\x00cleanly")}, wantErr: "control characters"},
-		{name: "verify summary with ESC", input: TrackHypothesisInput{HypothesisID: validID, Action: "verify", ResolutionSummary: strPtr("\x1b[31mred")}, wantErr: "control characters"},
-		// add_evidence validation: missing / invalid type must not reach the store.
+		// add_evidence validation runs entirely on the input before any
+		// store call, so it stays in the unit suite.
 		{name: "add_evidence nil evidence", input: TrackHypothesisInput{HypothesisID: validID, Action: "add_evidence"}, wantErr: "evidence is required"},
 		{name: "add_evidence missing type", input: TrackHypothesisInput{HypothesisID: validID, Action: "add_evidence", Evidence: map[string]any{"note": "no type"}}, wantErr: "supporting or counter"},
 		{name: "add_evidence invalid type", input: TrackHypothesisInput{HypothesisID: validID, Action: "add_evidence", Evidence: map[string]any{"type": "bogus"}}, wantErr: "supporting or counter"},
-		// Also verify the reverse: uuid.Parse internals ("invalid UUID length: ...")
-		// must NOT leak to MCP callers — the field name alone is reported.
-		{name: "verify attempt error does not leak uuid.Parse", input: TrackHypothesisInput{HypothesisID: validID, Action: "verify", ResolvedByAttemptID: strPtr("abc")}, wantErr: "invalid resolved_by_attempt_id"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -71,16 +71,16 @@ func (s *Server) trackHypothesis(ctx context.Context, _ *mcp.CallToolRequest, in
 func (s *Server) resolveHypothesis(ctx context.Context, id uuid.UUID, state hypothesis.State, input TrackHypothesisInput) (*mcp.CallToolResult, TrackHypothesisOutput, error) {
 	// Pre-flight existence check so a typo'd id surfaces as
 	// "hypothesis not found" before the field-level validator complains
-	// about missing resolved_by_attempt_id / resolution_summary. The
-	// nil-guard lets validation-only handler tests stub Server without
-	// wiring a real hypotheses store.
-	if s.hypotheses != nil {
-		if _, err := s.hypotheses.RecordByID(ctx, id); err != nil {
-			if errors.Is(err, hypothesis.ErrNotFound) {
-				return nil, TrackHypothesisOutput{}, fmt.Errorf("hypothesis %s not found", id)
-			}
-			return nil, TrackHypothesisOutput{}, fmt.Errorf("looking up hypothesis: %w", err)
+	// about missing resolved_by_attempt_id / resolution_summary. Tests
+	// that exercise field validation must seed a real hypothesis row
+	// (see TestIntegration_TrackHypothesis_Resolve_Validation) — the
+	// previous nil-guard branch was a smell flagged by go-reviewer in
+	// the Wave 1 review and removed in #13.
+	if _, err := s.hypotheses.RecordByID(ctx, id); err != nil {
+		if errors.Is(err, hypothesis.ErrNotFound) {
+			return nil, TrackHypothesisOutput{}, fmt.Errorf("hypothesis %s not found", id)
 		}
+		return nil, TrackHypothesisOutput{}, fmt.Errorf("looking up hypothesis: %w", err)
 	}
 
 	params, err := parseResolveInput(input)
