@@ -75,6 +75,10 @@ func (s *Server) advanceWork(ctx context.Context, _ *mcp.CallToolRequest, input 
 		return nil, AdvanceWorkOutput{}, fmt.Errorf("todo item not found: %w", err)
 	}
 
+	if err := s.requireTodoOwner(ctx, current.CreatedBy); err != nil {
+		return nil, AdvanceWorkOutput{}, err
+	}
+
 	if err := validateTransition(current.State, input.Action); err != nil {
 		return nil, AdvanceWorkOutput{}, err
 	}

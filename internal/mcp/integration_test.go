@@ -706,6 +706,61 @@ func callHandlerAs[I, O any](t *testing.T, agent string, handler func(context.Co
 
 func boolPtr(b bool) *bool { return &b }
 
+// TestIntegration_AdvanceWork_SelfBound verifies the C1 self-bound
+// rule: a caller may transition only the todos they themselves
+// created, except when Platform=human (the human owner is the
+// universal override). Reproduces the cowork audit case where
+// learning-studio successfully ran advance_work(complete) on an
+// hq-created todo — that is now rejected.
+func TestIntegration_AdvanceWork_SelfBound(t *testing.T) {
+	s := setupServer(t)
+
+	// Create a todo as learning-studio (setupServer default callerAgent).
+	_, captured, err := callHandler(t, s.captureInbox, CaptureInboxInput{
+		Title: "self-bound test",
+	})
+	if err != nil {
+		t.Fatalf("captureInbox: %v", err)
+	}
+	todoID := captured.Task.ID.String()
+
+	// Other agent must be rejected. hq is registered with Platform=
+	// claude-cowork, not human, so the override does not apply.
+	_, _, err = callHandlerAs(t, "hq", s.advanceWork, AdvanceWorkInput{
+		TaskID: todoID,
+		Action: "defer",
+	})
+	if err == nil {
+		t.Fatal("advance_work as hq accepted a learning-studio-owned todo — self-bound check is not firing")
+	}
+	if !strings.Contains(err.Error(), "not the todo owner") {
+		t.Errorf("error = %q, want containing %q", err, "not the todo owner")
+	}
+
+	// Original creator (learning-studio) succeeds.
+	if _, _, err := callHandler(t, s.advanceWork, AdvanceWorkInput{
+		TaskID: todoID,
+		Action: "defer",
+	}); err != nil {
+		t.Fatalf("advance_work as creator: %v", err)
+	}
+
+	// Human override succeeds even when caller != creator. Use a
+	// different todo because the previous one is now in someday state.
+	_, captured2, err := callHandler(t, s.captureInbox, CaptureInboxInput{
+		Title: "human-override test",
+	})
+	if err != nil {
+		t.Fatalf("captureInbox #2: %v", err)
+	}
+	if _, _, err := callHandlerAs(t, "human", s.advanceWork, AdvanceWorkInput{
+		TaskID: captured2.Task.ID.String(),
+		Action: "defer",
+	}); err != nil {
+		t.Fatalf("advance_work as human override: %v", err)
+	}
+}
+
 // TestIntegration_UpdateEntry_CompletionPolicy exercises the policy
 // enforcement added in B4: completion now hard-rejects missing
 // completed_by_attempt_id and missing reason, with a force=true escape

@@ -167,7 +167,14 @@ dispatches on `payload.Type`:
 |---|---|---|---|---|---|
 | `plan_day` | — | — | hq | — | HQ daily ritual; other agents have their own work queues |
 | `capture_inbox` | — | — | — | — | Open (caller's own todo) |
-| `advance_work` | — | — | — | — | Currently open; future: caller == created_by |
+| `advance_work` | — | — | — | **caller == created_by** | Self-bound: only the todo's creator may advance it; Platform=human override permitted |
+
+### Feeds
+
+| Tool | Capability | Platform | Author | Self | Effective rule |
+|---|---|---|---|---|---|
+| `manage_feeds(list)` | — | — | — | — | Open (read-only, returns FeedSummary — admin/pipeline-internal fields stripped) |
+| `manage_feeds(add/update/remove)` | — | — | — | — | Open |
 
 ---
 
