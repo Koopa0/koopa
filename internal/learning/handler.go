@@ -70,7 +70,7 @@ func (h *Handler) Summary(w http.ResponseWriter, r *http.Request) {
 	}
 
 	since := time.Now().Add(-masteryLookback)
-	rows, err := h.store.ConceptMastery(ctx, nil, since, "high")
+	rows, err := h.store.ConceptMastery(ctx, nil, since, nil, "high")
 	if err != nil {
 		h.logger.Error("querying concept mastery", "error", err)
 		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to query mastery")
@@ -142,7 +142,7 @@ func (h *Handler) Dashboard(w http.ResponseWriter, r *http.Request) {
 		resp.StreakDays = streak
 	}
 
-	if rows, err := h.store.ConceptMastery(ctx, domain, since, confidenceFilter); err != nil {
+	if rows, err := h.store.ConceptMastery(ctx, domain, since, nil, confidenceFilter); err != nil {
 		h.logger.Warn("dashboard: concept mastery failed", "error", err)
 	} else {
 		resp.Concepts = rows
@@ -179,7 +179,7 @@ func (h *Handler) ConceptsList(w http.ResponseWriter, r *http.Request) {
 	}
 
 	since := time.Now().Add(-masteryLookback)
-	rows, err := h.store.ConceptMastery(r.Context(), domain, since, confidenceFilter)
+	rows, err := h.store.ConceptMastery(r.Context(), domain, since, nil, confidenceFilter)
 	if err != nil {
 		h.logger.Error("listing concepts", "error", err)
 		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to list concepts")

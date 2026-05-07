@@ -789,7 +789,7 @@ func (s *Server) dashboardOverview(ctx context.Context, domain *string, since ti
 }
 
 func (s *Server) dashboardMastery(ctx context.Context, domain *string, since time.Time, confidenceFilter string) (LearningDashboardOutput, error) {
-	rows, err := s.learn.ConceptMastery(ctx, domain, since, confidenceFilter)
+	rows, err := s.learn.ConceptMastery(ctx, domain, since, nil, confidenceFilter)
 	if err != nil {
 		return LearningDashboardOutput{}, fmt.Errorf("querying concept mastery: %w", err)
 	}

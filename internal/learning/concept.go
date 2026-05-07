@@ -161,7 +161,11 @@ func (s *Store) ConceptsTouchedCount(ctx context.Context, start, end time.Time) 
 // MUST look at the FILTERED counts returned here, not at total
 // observations — that property is the difference between "confidence is
 // a label" and "confidence is a half-gate".
-func (s *Store) ConceptMastery(ctx context.Context, domain *string, since time.Time, confidenceFilter string) ([]ConceptMasteryRow, error) {
+// ConceptMastery accepts an optional `until` upper bound. Pass nil for
+// "no upper bound" (current-snapshot semantics — what learning_dashboard
+// wants). Pass &weekEnd for retrospective per-week semantics so the
+// returned counts don't include observations from later weeks.
+func (s *Store) ConceptMastery(ctx context.Context, domain *string, since time.Time, until *time.Time, confidenceFilter string) ([]ConceptMasteryRow, error) {
 	confidenceFilter, err := normalizeConfidenceFilter(confidenceFilter)
 	if err != nil {
 		return nil, err
@@ -169,6 +173,7 @@ func (s *Store) ConceptMastery(ctx context.Context, domain *string, since time.T
 	rows, err := s.q.ConceptMastery(ctx, db.ConceptMasteryParams{
 		Domain:           domain,
 		Since:            since,
+		Until:            until,
 		ConfidenceFilter: confidenceFilter,
 	})
 	if err != nil {

@@ -44,7 +44,14 @@ func (s *Server) weeklySummary(ctx context.Context, _ *mcp.CallToolRequest, inpu
 		return nil, WeeklySummaryOutput{}, fmt.Errorf("computing weekly review: %w", err)
 	}
 
-	masteryRaw, err := s.learn.ConceptMastery(ctx, nil, weekStart, "high")
+	// Snapshot mastery as of end-of-week. Without the upper bound a
+	// historical week_of=2026-W17 query would return mastery counts
+	// that include observations made in W18, W19, …, NOW — i.e. the
+	// "weekly" snapshot would silently morph into a current snapshot.
+	// Codex flagged this in the Phase 2 audit as a real correctness
+	// regression on retrospective queries.
+	weekEnd := weekStart.AddDate(0, 0, 7)
+	masteryRaw, err := s.learn.ConceptMastery(ctx, nil, weekStart, &weekEnd, "high")
 	if err != nil {
 		return nil, WeeklySummaryOutput{}, fmt.Errorf("querying concept mastery: %w", err)
 	}

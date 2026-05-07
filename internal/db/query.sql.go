@@ -1768,15 +1768,17 @@ JOIN learning_attempt_observations ao ON ao.concept_id = c.id
 JOIN learning_attempts a ON a.id = ao.attempt_id
 WHERE ($1::text IS NULL OR c.domain = $1)
   AND a.attempted_at >= $2
-  AND ($3::text = 'all' OR ao.confidence = 'high')
+  AND ($3::timestamptz IS NULL OR a.attempted_at < $3::timestamptz)
+  AND ($4::text = 'all' OR ao.confidence = 'high')
 GROUP BY c.id
 ORDER BY total_observations DESC
 `
 
 type ConceptMasteryParams struct {
-	Domain           *string   `json:"domain"`
-	Since            time.Time `json:"since"`
-	ConfidenceFilter string    `json:"confidence_filter"`
+	Domain           *string    `json:"domain"`
+	Since            time.Time  `json:"since"`
+	Until            *time.Time `json:"until"`
+	ConfidenceFilter string     `json:"confidence_filter"`
 }
 
 type ConceptMasteryRow struct {
@@ -1793,8 +1795,11 @@ type ConceptMasteryRow struct {
 	LastObservedAt    time.Time   `json:"last_observed_at"`
 }
 
-// Per-concept mastery with signal counts from attempt_observations within
-// the @since window. Used by learning_dashboard mastery view.
+// Per-concept mastery with signal counts from attempt_observations
+// within (@since, @until]. Used by learning_dashboard mastery view
+// (@until=NULL → "up to now") and weekly_summary (@until=weekEnd → "as
+// of end of that week"; without an upper bound a historical week_of
+// request would eat data from later weeks).
 //
 // @confidence_filter: 'high' (default) restricts the aggregation to
 // high-confidence observations; 'all' includes both. The filter is
@@ -1806,7 +1811,12 @@ type ConceptMasteryRow struct {
 // Stage is derived in Go (not SQL) from the signal counts —
 // see mcp.deriveMasteryStage.
 func (q *Queries) ConceptMastery(ctx context.Context, arg ConceptMasteryParams) ([]ConceptMasteryRow, error) {
-	rows, err := q.db.Query(ctx, conceptMastery, arg.Domain, arg.Since, arg.ConfidenceFilter)
+	rows, err := q.db.Query(ctx, conceptMastery,
+		arg.Domain,
+		arg.Since,
+		arg.Until,
+		arg.ConfidenceFilter,
+	)
 	if err != nil {
 		return nil, err
 	}

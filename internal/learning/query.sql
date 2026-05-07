@@ -190,8 +190,11 @@ WHERE ao.attempt_id = ANY(@attempt_ids::uuid[])
 ORDER BY ao.attempt_id, ao.position ASC;
 
 -- name: ConceptMastery :many
--- Per-concept mastery with signal counts from attempt_observations within
--- the @since window. Used by learning_dashboard mastery view.
+-- Per-concept mastery with signal counts from attempt_observations
+-- within (@since, @until]. Used by learning_dashboard mastery view
+-- (@until=NULL → "up to now") and weekly_summary (@until=weekEnd → "as
+-- of end of that week"; without an upper bound a historical week_of
+-- request would eat data from later weeks).
 --
 -- @confidence_filter: 'high' (default) restricts the aggregation to
 -- high-confidence observations; 'all' includes both. The filter is
@@ -214,6 +217,7 @@ JOIN learning_attempt_observations ao ON ao.concept_id = c.id
 JOIN learning_attempts a ON a.id = ao.attempt_id
 WHERE (sqlc.narg('domain')::text IS NULL OR c.domain = sqlc.narg('domain'))
   AND a.attempted_at >= @since
+  AND (sqlc.narg('until')::timestamptz IS NULL OR a.attempted_at < sqlc.narg('until')::timestamptz)
   AND (@confidence_filter::text = 'all' OR ao.confidence = 'high')
 GROUP BY c.id
 ORDER BY total_observations DESC;
