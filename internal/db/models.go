@@ -790,8 +790,14 @@ type Concept struct {
 	// Self-referencing hierarchy. SET NULL on parent deletion — children become roots. Acyclicity is enforced by trg_concepts_acyclicity. Same-domain invariant is enforced by trg_concepts_parent_domain. kind ordering (pattern > skill > principle) is CONVENTION, not DDL. A kind='skill' concept with a kind='pattern' parent is typical; the reverse (pattern with skill parent) is semantically odd but not rejected by the schema. Queries that assume a fixed kind root (e.g. "list top-level patterns for leetcode") MUST filter by kind AND parent_id IS NULL; do NOT rely on kind being monotonic up the hierarchy. Cross-kind edges are legitimate — e.g. the Japanese domain where a principle (N3 grammar) subsumes a skill (te-form conjugation).
 	ParentID *uuid.UUID `json:"parent_id"`
 	// Optional elaboration. Empty string default — not nullable.
-	Description string    `json:"description"`
-	CreatedAt   time.Time `json:"created_at"`
+	Description string `json:"description"`
+	// Agent that first created this concept. NOT NULL. FK to agents(name). Default is intentionally absent — every INSERT must thread a real caller; the FindOrCreateConcept Store method enforces this, ON CONFLICT preserves the original creator (does not overwrite). Used by manage_concepts for U2 self-bound archive (caller == created_by + Platform=human override).
+	CreatedBy string `json:"created_by"`
+	// Soft-delete timestamp. NULL = live; non-NULL = archived. All read paths (recommend_next_target, learning_dashboard, attempt_history, weekly_summary) filter WHERE archived_at IS NULL by default. Reversible via manage_concepts(action=unarchive_concept). Paired with archive_batch_id so cascade-archived rows know which batch to unarchive together.
+	ArchivedAt *time.Time `json:"archived_at"`
+	// Groups rows archived by the same manage_concepts(action=archive_concept) call so unarchive can reverse exactly that batch (not all archived rows). NULL when row is live; NULL also when row is archived but predates batch-aware archive (manual SQL). Paired with archived_at via CHECK.
+	ArchiveBatchID *uuid.UUID `json:"archive_batch_id"`
+	CreatedAt      time.Time  `json:"created_at"`
 	// Application-managed. Set explicitly in UPDATE queries.
 	UpdatedAt time.Time `json:"updated_at"`
 }
@@ -969,7 +975,7 @@ type LearningAttempt struct {
 	LearningTargetID uuid.UUID `json:"learning_target_id"`
 	// The session this attempt occurred in. NOT NULL — every attempt must live in a session. ON DELETE RESTRICT — sessions with attempts cannot be deleted; end them instead.
 	SessionID uuid.UUID `json:"session_id"`
-	// Nth attempt at this item. 1 = first try, 2+ = revisit. Application must compute MAX(attempt_number) + 1 before inserting — DEFAULT 1 only applies to first attempts. UNIQUE with learning_target_id enforces no duplicate numbering.
+	// Nth attempt against this target across all sessions (per-TARGET, NOT per-session). 1 = first try ever on this learning_target_id, 2+ = revisit. The Improvement Verification Loop in Koopa-Learning.md depends on this per-target semantics: comparing attempt N vs attempt N-1 of the same target is the core coaching signal. For session-scoped progress (how many attempts in THIS session), use session_progress.attempt_count or len(attempt_history(session_id=...).attempts). Application must compute MAX(attempt_number) + 1 before inserting — DEFAULT 1 only applies to first attempts. UNIQUE with learning_target_id enforces no duplicate numbering.
 	AttemptNumber int32 `json:"attempt_number"`
 	// Paradigm of the attempt. Own column so a new paradigm extends by (enum value + joint CHECK arm) instead of by re-auditing every outcome-filtered query. problem_solving: LeetCode, grammar drills, Japanese output practice — outcome expresses how much help the learner needed. immersive: DDIA reading, literary analysis, listening practice — outcome expresses whether comprehension was self-sustained. Extending: add enum value + add joint CHECK arm with that paradigm's outcome vocabulary.
 	Paradigm string `json:"paradigm"`
@@ -1137,8 +1143,14 @@ type LearningTarget struct {
 	// Generic 3-tier difficulty. Domain-specific info (JLPT N5-N1, etc.) goes in metadata. NULL = not categorized.
 	Difficulty *string `json:"difficulty"`
 	// Domain-specific data not needing WHERE/JOIN/GROUP BY. Not queryable — if a field needs WHERE/JOIN/GROUP BY, promote to a column. LeetCode: {problem_url, companies, frequency, constraints}. Japanese: {jlpt_level, textbook, chapter, grammar_point}. System Design: {source_book, chapter, scenario_type}. Reading: {book_title, chapter, page_range}.
-	Metadata  json.RawMessage `json:"metadata"`
-	CreatedAt time.Time       `json:"created_at"`
+	Metadata json.RawMessage `json:"metadata"`
+	// Agent that first created this target. NOT NULL. FK to agents(name). Same semantics as concepts.created_by — FindOrCreateTarget threads the caller; ON CONFLICT preserves the original creator; manage_targets uses this column for U2 self-bound archive.
+	CreatedBy string `json:"created_by"`
+	// Soft-delete timestamp. NULL = live; non-NULL = archived. Reversible. Read paths default to WHERE archived_at IS NULL — see concepts.archived_at for the full filter inventory.
+	ArchivedAt *time.Time `json:"archived_at"`
+	// Groups rows archived together. Same semantics as concepts.archive_batch_id. manage_targets cascades into learning_target_relations using this batch id, so unarchive_target restores exactly the relations that were cascaded.
+	ArchiveBatchID *uuid.UUID `json:"archive_batch_id"`
+	CreatedAt      time.Time  `json:"created_at"`
 	// Application-managed. Set explicitly in UPDATE queries.
 	UpdatedAt time.Time `json:"updated_at"`
 }
@@ -1174,8 +1186,14 @@ type LearningTargetRelation struct {
 	// The target related to anchor. CASCADE on deletion.
 	RelatedID uuid.UUID `json:"related_id"`
 	// Directed types (anchor → related reads one-way): easier_variant (related is simpler), harder_variant (related is more complex), prerequisite (related should be done before anchor), follow_up (related is a natural next step after anchor). Symmetric types (A-related-to-B ⇔ B-related-to-A): same_pattern (same core pattern), similar_structure (structural similarity, different pattern). The reverse edge of a symmetric insert is auto-created by trg_learning_target_relations_symmetry — callers insert one direction only.
-	RelationType string    `json:"relation_type"`
-	CreatedAt    time.Time `json:"created_at"`
+	RelationType string `json:"relation_type"`
+	// Agent that recorded this relation. NOT NULL. FK to agents(name). The symmetry trigger propagates created_by onto the auto-inserted reverse edge so both directions trace to the same author.
+	CreatedBy string `json:"created_by"`
+	// Soft-delete timestamp. Cascade-archived when a parent target is archived. Symmetric relation types (same_pattern, similar_structure) archive both directions together so the graph never holds a half-edge.
+	ArchivedAt *time.Time `json:"archived_at"`
+	// Groups rows cascaded together by a single manage_targets archive call. unarchive_target uses this batch id to restore exactly the relations that were cascaded — NOT every relation involving the target.
+	ArchiveBatchID *uuid.UUID `json:"archive_batch_id"`
+	CreatedAt      time.Time  `json:"created_at"`
 }
 
 // Goal progress checkpoints — binary completion markers within a goal. Milestones and projects are siblings under a goal: a project advances a goal through work, a milestone marks progress. Completion determined by completed_at IS NOT NULL — no separate status column. Goal progress = completed milestones / total milestones (advisory, not auto-derived). NOT OKR Key Results — milestones are binary (done/not-done), not quantitative metrics with target_value/current_value.

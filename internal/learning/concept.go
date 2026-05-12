@@ -80,13 +80,17 @@ type WeaknessRow struct {
 	LastSeenAt      time.Time `json:"last_seen_at"`
 }
 
-// FindOrCreateConcept upserts a concept by domain + slug.
-func (s *Store) FindOrCreateConcept(ctx context.Context, slug, name, domain, kind string) (uuid.UUID, error) {
+// FindOrCreateConcept upserts a concept by domain + slug. createdBy is
+// captured on first INSERT only — ON CONFLICT preserves the original
+// author (a re-resolve by a different agent does not overwrite). The
+// §B U2 self-bound archive rule reads this column.
+func (s *Store) FindOrCreateConcept(ctx context.Context, slug, name, domain, kind, createdBy string) (uuid.UUID, error) {
 	row, err := s.q.FindOrCreateConcept(ctx, db.FindOrCreateConceptParams{
-		Slug:   slug,
-		Name:   name,
-		Domain: domain,
-		Kind:   db.ConceptKind(kind),
+		Slug:      slug,
+		Name:      name,
+		Domain:    domain,
+		Kind:      db.ConceptKind(kind),
+		CreatedBy: createdBy,
 	})
 	if err != nil {
 		return uuid.Nil, fmt.Errorf("finding/creating concept: %w", err)

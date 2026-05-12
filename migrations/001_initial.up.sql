@@ -1432,20 +1432,26 @@ COMMENT ON COLUMN learning_domains.canonical_writeup_kind IS
 -- classification; concepts handle mastery tracking and weakness diagnosis.
 
 CREATE TABLE concepts (
-    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    slug        TEXT NOT NULL,
-    name        TEXT NOT NULL,
-    domain      TEXT NOT NULL REFERENCES learning_domains(slug) ON DELETE RESTRICT,
-    kind        concept_kind NOT NULL,
-    parent_id   UUID REFERENCES concepts(id) ON DELETE SET NULL,
-    description TEXT NOT NULL DEFAULT '',
-    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    slug              TEXT NOT NULL,
+    name              TEXT NOT NULL,
+    domain            TEXT NOT NULL REFERENCES learning_domains(slug) ON DELETE RESTRICT,
+    kind              concept_kind NOT NULL,
+    parent_id         UUID REFERENCES concepts(id) ON DELETE SET NULL,
+    description       TEXT NOT NULL DEFAULT '',
+    created_by        TEXT NOT NULL REFERENCES agents(name) ON UPDATE CASCADE,
+    archived_at       TIMESTAMPTZ,
+    archive_batch_id  UUID,
+    created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
 
     CONSTRAINT chk_concept_slug_format
         CHECK (slug ~ '^[a-z0-9]+(-[a-z0-9]+)*$'),
     CONSTRAINT chk_concept_name_not_blank
-        CHECK (btrim(name) <> '')
+        CHECK (btrim(name) <> ''),
+    CONSTRAINT chk_concept_archive_batch_paired
+        CHECK ((archived_at IS NULL AND archive_batch_id IS NULL)
+            OR (archived_at IS NOT NULL))
 );
 
 COMMENT ON TABLE concepts IS
@@ -1481,6 +1487,23 @@ COMMENT ON COLUMN concepts.parent_id IS
     'principle (N3 grammar) subsumes a skill (te-form conjugation).';
 COMMENT ON COLUMN concepts.description IS
     'Optional elaboration. Empty string default — not nullable.';
+COMMENT ON COLUMN concepts.created_by IS
+    'Agent that first created this concept. NOT NULL. FK to agents(name). '
+    'Default is intentionally absent — every INSERT must thread a real caller; '
+    'the FindOrCreateConcept Store method enforces this, ON CONFLICT preserves '
+    'the original creator (does not overwrite). Used by manage_concepts for U2 '
+    'self-bound archive (caller == created_by + Platform=human override).';
+COMMENT ON COLUMN concepts.archived_at IS
+    'Soft-delete timestamp. NULL = live; non-NULL = archived. All read paths '
+    '(recommend_next_target, learning_dashboard, attempt_history, weekly_summary) '
+    'filter WHERE archived_at IS NULL by default. Reversible via '
+    'manage_concepts(action=unarchive_concept). Paired with archive_batch_id so '
+    'cascade-archived rows know which batch to unarchive together.';
+COMMENT ON COLUMN concepts.archive_batch_id IS
+    'Groups rows archived by the same manage_concepts(action=archive_concept) '
+    'call so unarchive can reverse exactly that batch (not all archived rows). '
+    'NULL when row is live; NULL also when row is archived but predates '
+    'batch-aware archive (manual SQL). Paired with archived_at via CHECK.';
 COMMENT ON COLUMN concepts.updated_at IS
     'Application-managed. Set explicitly in UPDATE queries.';
 
@@ -1535,14 +1558,21 @@ CREATE UNIQUE INDEX idx_content_concepts_one_primary
 -- a reading session.
 
 CREATE TABLE learning_targets (
-    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    domain      TEXT NOT NULL REFERENCES learning_domains(slug) ON DELETE RESTRICT,
-    title       TEXT NOT NULL,
-    external_id TEXT,
-    difficulty  TEXT CHECK (difficulty IN ('easy', 'medium', 'hard')),
-    metadata    JSONB NOT NULL DEFAULT '{}',
-    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+    id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    domain            TEXT NOT NULL REFERENCES learning_domains(slug) ON DELETE RESTRICT,
+    title             TEXT NOT NULL,
+    external_id       TEXT,
+    difficulty        TEXT CHECK (difficulty IN ('easy', 'medium', 'hard')),
+    metadata          JSONB NOT NULL DEFAULT '{}',
+    created_by        TEXT NOT NULL REFERENCES agents(name) ON UPDATE CASCADE,
+    archived_at       TIMESTAMPTZ,
+    archive_batch_id  UUID,
+    created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+    CONSTRAINT chk_learning_target_archive_batch_paired
+        CHECK ((archived_at IS NULL AND archive_batch_id IS NULL)
+            OR (archived_at IS NOT NULL))
 );
 
 COMMENT ON TABLE learning_targets IS
@@ -1572,12 +1602,30 @@ COMMENT ON COLUMN learning_targets.metadata IS
     'Japanese: {jlpt_level, textbook, chapter, grammar_point}. '
     'System Design: {source_book, chapter, scenario_type}. '
     'Reading: {book_title, chapter, page_range}.';
+COMMENT ON COLUMN learning_targets.created_by IS
+    'Agent that first created this target. NOT NULL. FK to agents(name). '
+    'Same semantics as concepts.created_by — FindOrCreateTarget threads the '
+    'caller; ON CONFLICT preserves the original creator; manage_targets uses '
+    'this column for U2 self-bound archive.';
+COMMENT ON COLUMN learning_targets.archived_at IS
+    'Soft-delete timestamp. NULL = live; non-NULL = archived. Reversible. '
+    'Read paths default to WHERE archived_at IS NULL — see concepts.archived_at '
+    'for the full filter inventory.';
+COMMENT ON COLUMN learning_targets.archive_batch_id IS
+    'Groups rows archived together. Same semantics as concepts.archive_batch_id. '
+    'manage_targets cascades into learning_target_relations using this batch id, '
+    'so unarchive_target restores exactly the relations that were cascaded.';
 COMMENT ON COLUMN learning_targets.updated_at IS
     'Application-managed. Set explicitly in UPDATE queries.';
 
 CREATE UNIQUE INDEX idx_learning_targets_domain_external
     ON learning_targets (domain, external_id)
     WHERE external_id IS NOT NULL;
+-- Default read path: WHERE archived_at IS NULL. Partial index speeds up
+-- the common case (live targets) without indexing archived rows that
+-- read paths skip.
+CREATE INDEX idx_learning_targets_live ON learning_targets (domain)
+    WHERE archived_at IS NULL;
 
 -- Title-only rows canonicalise on (domain, title). Pairs with the
 -- external-id partial above: together they cover both resolution paths
@@ -2058,16 +2106,22 @@ CREATE INDEX idx_learning_attempt_observations_high_confidence
 -- the directed-edge endpoint). anchor/related sidesteps the collision.
 
 CREATE TABLE learning_target_relations (
-    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    anchor_id     UUID NOT NULL REFERENCES learning_targets(id) ON DELETE CASCADE,
-    related_id    UUID NOT NULL REFERENCES learning_targets(id) ON DELETE CASCADE,
-    relation_type TEXT NOT NULL
-                  CHECK (relation_type IN (
-                      'easier_variant', 'harder_variant', 'prerequisite',
-                      'follow_up', 'same_pattern', 'similar_structure')),
-    created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    anchor_id         UUID NOT NULL REFERENCES learning_targets(id) ON DELETE CASCADE,
+    related_id        UUID NOT NULL REFERENCES learning_targets(id) ON DELETE CASCADE,
+    relation_type     TEXT NOT NULL
+                      CHECK (relation_type IN (
+                          'easier_variant', 'harder_variant', 'prerequisite',
+                          'follow_up', 'same_pattern', 'similar_structure')),
+    created_by        TEXT NOT NULL REFERENCES agents(name) ON UPDATE CASCADE,
+    archived_at       TIMESTAMPTZ,
+    archive_batch_id  UUID,
+    created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
 
-    CONSTRAINT chk_no_self_relation CHECK (anchor_id <> related_id)
+    CONSTRAINT chk_no_self_relation CHECK (anchor_id <> related_id),
+    CONSTRAINT chk_relation_archive_batch_paired
+        CHECK ((archived_at IS NULL AND archive_batch_id IS NULL)
+            OR (archived_at IS NOT NULL))
 );
 
 COMMENT ON TABLE learning_target_relations IS
@@ -2090,11 +2144,27 @@ COMMENT ON COLUMN learning_target_relations.relation_type IS
     'pattern), similar_structure (structural similarity, different pattern). '
     'The reverse edge of a symmetric insert is auto-created by '
     'trg_learning_target_relations_symmetry — callers insert one direction only.';
+COMMENT ON COLUMN learning_target_relations.created_by IS
+    'Agent that recorded this relation. NOT NULL. FK to agents(name). '
+    'The symmetry trigger propagates created_by onto the auto-inserted reverse '
+    'edge so both directions trace to the same author.';
+COMMENT ON COLUMN learning_target_relations.archived_at IS
+    'Soft-delete timestamp. Cascade-archived when a parent target is archived. '
+    'Symmetric relation types (same_pattern, similar_structure) archive both '
+    'directions together so the graph never holds a half-edge.';
+COMMENT ON COLUMN learning_target_relations.archive_batch_id IS
+    'Groups rows cascaded together by a single manage_targets archive call. '
+    'unarchive_target uses this batch id to restore exactly the relations '
+    'that were cascaded — NOT every relation involving the target.';
 
 CREATE UNIQUE INDEX idx_learning_target_relations_triple
     ON learning_target_relations (anchor_id, related_id, relation_type);
 CREATE INDEX idx_learning_target_relations_anchor ON learning_target_relations (anchor_id);
 CREATE INDEX idx_learning_target_relations_related ON learning_target_relations (related_id);
+-- Default read path filters archived rows. Partial index keeps the live
+-- graph fast; archived rows show up only when include_archived=true.
+CREATE INDEX idx_learning_target_relations_live ON learning_target_relations (anchor_id, related_id)
+    WHERE archived_at IS NULL;
 
 -- ============================================================
 -- Learning subsystem invariants enforced via triggers
@@ -2177,8 +2247,8 @@ CREATE TRIGGER trg_learning_target_relations_domain
 CREATE OR REPLACE FUNCTION enforce_learning_target_relation_symmetry() RETURNS TRIGGER AS $$
 BEGIN
     IF NEW.relation_type IN ('same_pattern', 'similar_structure') THEN
-        INSERT INTO learning_target_relations (anchor_id, related_id, relation_type)
-        VALUES (NEW.related_id, NEW.anchor_id, NEW.relation_type)
+        INSERT INTO learning_target_relations (anchor_id, related_id, relation_type, created_by)
+        VALUES (NEW.related_id, NEW.anchor_id, NEW.relation_type, NEW.created_by)
         ON CONFLICT (anchor_id, related_id, relation_type) DO NOTHING;
     END IF;
     RETURN NULL;

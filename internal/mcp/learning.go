@@ -310,7 +310,7 @@ func (s *Server) prepareAttempt(ctx context.Context, input *RecordAttemptInput) 
 	if input.Target.Domain != nil && *input.Target.Domain != "" {
 		domain = *input.Target.Domain
 	}
-	itemID, err := s.learn.FindOrCreateTarget(ctx, domain, input.Target.Title, input.Target.ExternalID, input.Target.Difficulty)
+	itemID, err := s.learn.FindOrCreateTarget(ctx, domain, input.Target.Title, input.Target.ExternalID, input.Target.Difficulty, s.callerIdentity(ctx))
 	if err != nil {
 		return attemptPrep{}, err
 	}
@@ -486,6 +486,7 @@ func (s *Server) processRelatedTargets(ctx context.Context, sourceID uuid.UUID, 
 	if len(items) == 0 {
 		return 0, nil
 	}
+	caller := s.callerIdentity(ctx)
 	for i := range items {
 		ri := &items[i]
 		if ri.Title == "" {
@@ -502,12 +503,12 @@ func (s *Server) processRelatedTargets(ctx context.Context, sourceID uuid.UUID, 
 			warnings = append(warnings, fmt.Sprintf("related_targets[%d] (%q): cross-domain relation rejected (source=%q, target=%q). learning_target_relations is intentionally per-domain — for cross-domain isomorphism, use propose_hypothesis (if the connection is falsifiable) or write_agent_note(kind=context) (if it's an ad-hoc observation worth keeping)", i, ri.Title, sourceDomain, *ri.Domain))
 			continue
 		}
-		targetID, err := s.learn.FindOrCreateTarget(ctx, sourceDomain, ri.Title, ri.ExternalID, ri.Difficulty)
+		targetID, err := s.learn.FindOrCreateTarget(ctx, sourceDomain, ri.Title, ri.ExternalID, ri.Difficulty, caller)
 		if err != nil {
 			warnings = append(warnings, fmt.Sprintf("related_targets[%d] (%q): find-or-create failed: %v", i, ri.Title, err))
 			continue
 		}
-		if err := s.learn.LinkTargets(ctx, sourceID, targetID, learning.RelationType(ri.RelationType)); err != nil {
+		if err := s.learn.LinkTargets(ctx, sourceID, targetID, learning.RelationType(ri.RelationType), caller); err != nil {
 			warnings = append(warnings, fmt.Sprintf("related_targets[%d] (%q): link failed: %v", i, ri.Title, err))
 			continue
 		}
@@ -973,6 +974,7 @@ func (s *Server) resolveAttemptSession(ctx context.Context, sessionID uuid.UUID)
 // than a raw SQLSTATE 23514 / 23503 leak from the store. The category set
 // is fetched once per call.
 func (s *Server) processObservations(ctx context.Context, attemptID uuid.UUID, domain string, observations []ObservationInput) (recorded int, warnings []string) {
+	caller := s.callerIdentity(ctx)
 	validCategories, catErr := s.learn.ObservationCategoriesByDomain(ctx, domain)
 	if catErr != nil {
 		// Failure here means the category list is unknown for this call;
@@ -999,7 +1001,7 @@ func (s *Server) processObservations(ctx context.Context, attemptID uuid.UUID, d
 			continue
 		}
 
-		conceptID, err := s.learn.FindOrCreateConcept(ctx, obs.Concept, obs.Concept, domain, "skill")
+		conceptID, err := s.learn.FindOrCreateConcept(ctx, obs.Concept, obs.Concept, domain, "skill", caller)
 		if err != nil {
 			warnings = append(warnings, fmt.Sprintf("observations[%d] (%q): rejected and not persisted — concept creation failed: %v", i, obs.Concept, err))
 			s.logger.Warn("observation: concept creation failed", "concept", obs.Concept, "error", err)

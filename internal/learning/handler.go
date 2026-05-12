@@ -397,7 +397,11 @@ func (h *Handler) RecordAttempt(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	targetID, err := store.FindOrCreateTarget(r.Context(), req.Domain, req.TargetTitle, req.ExternalID, req.Difficulty)
+	// Admin HTTP path = Koopa (human). The MCP path threads caller
+	// identity from the `as` field; the admin path has no such field
+	// because the REST endpoint is admin-only and Koopa is the sole
+	// user (per the registry's single-human-platform invariant).
+	targetID, err := store.FindOrCreateTarget(r.Context(), req.Domain, req.TargetTitle, req.ExternalID, req.Difficulty, "human")
 	if err != nil {
 		h.logger.Error("resolving learning target", "error", err)
 		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to resolve target")

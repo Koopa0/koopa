@@ -82,18 +82,27 @@ LIMIT 1;
 
 -- name: FindOrCreateLearningTarget :one
 -- Upsert a learning target by domain + external_id (if present) or domain + title.
-INSERT INTO learning_targets (domain, title, external_id, difficulty)
-VALUES (@domain, @title, @external_id, @difficulty)
+-- created_by is captured on INSERT; ON CONFLICT preserves the original creator
+-- (the column is intentionally absent from the UPDATE list). This matters for
+-- the §B U2 self-bound archive rule — the row's first-touch agent retains
+-- archival authority regardless of which agent later re-resolves the target.
+INSERT INTO learning_targets (domain, title, external_id, difficulty, created_by)
+VALUES (@domain, @title, @external_id, @difficulty, @created_by)
 ON CONFLICT (domain, external_id) WHERE external_id IS NOT NULL
 DO UPDATE SET title = EXCLUDED.title, difficulty = COALESCE(EXCLUDED.difficulty, learning_targets.difficulty), updated_at = now()
-RETURNING id, domain, title, external_id, difficulty, metadata, created_at, updated_at;
+RETURNING id, domain, title, external_id, difficulty, metadata, created_by, archived_at, archive_batch_id, created_at, updated_at;
 
 -- name: InsertLearningTargetRelation :exec
 -- Idempotent insert into learning_target_relations. Conflicts on
 -- (anchor_id, related_id, relation_type) are ignored so re-recording
--- the same relationship during a later session is safe.
-INSERT INTO learning_target_relations (anchor_id, related_id, relation_type)
-VALUES (@anchor_id, @related_id, @relation_type)
+-- the same relationship during a later session is safe. created_by is
+-- captured on first insert; conflicts preserve the original author (the
+-- column is absent from the UPDATE clause, and DO NOTHING means no
+-- UPDATE runs at all). The symmetry trigger propagates created_by onto
+-- the auto-inserted reverse edge so both directions trace to the same
+-- author.
+INSERT INTO learning_target_relations (anchor_id, related_id, relation_type, created_by)
+VALUES (@anchor_id, @related_id, @relation_type, @created_by)
 ON CONFLICT (anchor_id, related_id, relation_type) DO NOTHING;
 
 -- name: CreateAttempt :one
@@ -130,12 +139,15 @@ WHERE domain = @domain
 ORDER BY slug;
 
 -- name: FindOrCreateConcept :one
--- Upsert a concept by domain + slug.
-INSERT INTO concepts (slug, name, domain, kind)
-VALUES (@slug, @name, @domain, @kind)
+-- Upsert a concept by domain + slug. created_by captured on first
+-- INSERT; ON CONFLICT preserves the original author (column absent from
+-- the UPDATE list). The U2 archive rule reads created_by, so a re-
+-- resolved concept never loses its first-touch agent.
+INSERT INTO concepts (slug, name, domain, kind, created_by)
+VALUES (@slug, @name, @domain, @kind, @created_by)
 ON CONFLICT (domain, LOWER(slug))
 DO UPDATE SET updated_at = now()
-RETURNING id, slug, name, domain, kind, parent_id, description, created_at, updated_at;
+RETURNING id, slug, name, domain, kind, parent_id, description, created_by, archived_at, archive_batch_id, created_at, updated_at;
 
 -- name: AttemptsBySession :many
 -- All attempts within a session, oldest first. Backs end_session summary

@@ -152,7 +152,7 @@ func (s *Store) FindTarget(ctx context.Context, domain, title string) (uuid.UUID
 // callers that both miss the SELECT-first lookup will race to INSERT; the
 // loser's INSERT fails with 23505, and the retry below re-reads and
 // returns the winner's row. No duplicate survives the race.
-func (s *Store) FindOrCreateTarget(ctx context.Context, domain, title string, externalID, difficulty *string) (uuid.UUID, error) {
+func (s *Store) FindOrCreateTarget(ctx context.Context, domain, title string, externalID, difficulty *string, createdBy string) (uuid.UUID, error) {
 	titleOnly := externalID == nil || *externalID == ""
 	if titleOnly {
 		if id, err := s.FindTarget(ctx, domain, title); err == nil {
@@ -166,6 +166,7 @@ func (s *Store) FindOrCreateTarget(ctx context.Context, domain, title string, ex
 		Title:      title,
 		ExternalID: externalID,
 		Difficulty: difficulty,
+		CreatedBy:  createdBy,
 	})
 	if err == nil {
 		return row.ID, nil
@@ -209,7 +210,7 @@ func (s *Store) resolveTitleOnlyRace(ctx context.Context, domain, title string, 
 //
 // Idempotent: conflicts on (anchor, related, relation) are ignored so the
 // same pair can be re-linked from a later session without error.
-func (s *Store) LinkTargets(ctx context.Context, anchorID, relatedID uuid.UUID, relation RelationType) error {
+func (s *Store) LinkTargets(ctx context.Context, anchorID, relatedID uuid.UUID, relation RelationType, createdBy string) error {
 	if anchorID == relatedID {
 		return fmt.Errorf("%w: cannot link target %s to itself", ErrInvalidInput, anchorID)
 	}
@@ -219,6 +220,7 @@ func (s *Store) LinkTargets(ctx context.Context, anchorID, relatedID uuid.UUID, 
 	if err := s.q.InsertLearningTargetRelation(ctx, db.InsertLearningTargetRelationParams{
 		AnchorID:     anchorID,
 		RelatedID:    relatedID,
+		CreatedBy:    createdBy,
 		RelationType: string(relation),
 	}); err != nil {
 		return fmt.Errorf("inserting learning target relation: %w", err)

@@ -148,7 +148,7 @@ func (s *Server) addPlanEntries(ctx context.Context, planID uuid.UUID, input *Ma
 			}
 		case entry.Title != "":
 			var err error
-			ltID, err = s.learn.FindOrCreateTarget(ctx, p.Domain, entry.Title, entry.ExternalID, entry.Difficulty)
+			ltID, err = s.learn.FindOrCreateTarget(ctx, p.Domain, entry.Title, entry.ExternalID, entry.Difficulty, s.callerIdentity(ctx))
 			if err != nil {
 				return nil, ManagePlanOutput{}, fmt.Errorf("entries[%d]: resolving %q: %w", i, entry.Title, err)
 			}

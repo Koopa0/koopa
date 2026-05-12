@@ -1737,10 +1737,22 @@ type ConceptByDomainSlugParams struct {
 	Slug   string `json:"slug"`
 }
 
+type ConceptByDomainSlugRow struct {
+	ID          uuid.UUID   `json:"id"`
+	Slug        string      `json:"slug"`
+	Name        string      `json:"name"`
+	Domain      string      `json:"domain"`
+	Kind        ConceptKind `json:"kind"`
+	ParentID    *uuid.UUID  `json:"parent_id"`
+	Description string      `json:"description"`
+	CreatedAt   time.Time   `json:"created_at"`
+	UpdatedAt   time.Time   `json:"updated_at"`
+}
+
 // Get a single concept by domain + slug for drilldown.
-func (q *Queries) ConceptByDomainSlug(ctx context.Context, arg ConceptByDomainSlugParams) (Concept, error) {
+func (q *Queries) ConceptByDomainSlug(ctx context.Context, arg ConceptByDomainSlugParams) (ConceptByDomainSlugRow, error) {
 	row := q.db.QueryRow(ctx, conceptByDomainSlug, arg.Domain, arg.Slug)
-	var i Concept
+	var i ConceptByDomainSlugRow
 	err := row.Scan(
 		&i.ID,
 		&i.Slug,
@@ -4665,27 +4677,32 @@ func (q *Queries) Feeds(ctx context.Context, schedule *string) ([]FeedsRow, erro
 }
 
 const findOrCreateConcept = `-- name: FindOrCreateConcept :one
-INSERT INTO concepts (slug, name, domain, kind)
-VALUES ($1, $2, $3, $4)
+INSERT INTO concepts (slug, name, domain, kind, created_by)
+VALUES ($1, $2, $3, $4, $5)
 ON CONFLICT (domain, LOWER(slug))
 DO UPDATE SET updated_at = now()
-RETURNING id, slug, name, domain, kind, parent_id, description, created_at, updated_at
+RETURNING id, slug, name, domain, kind, parent_id, description, created_by, archived_at, archive_batch_id, created_at, updated_at
 `
 
 type FindOrCreateConceptParams struct {
-	Slug   string      `json:"slug"`
-	Name   string      `json:"name"`
-	Domain string      `json:"domain"`
-	Kind   ConceptKind `json:"kind"`
+	Slug      string      `json:"slug"`
+	Name      string      `json:"name"`
+	Domain    string      `json:"domain"`
+	Kind      ConceptKind `json:"kind"`
+	CreatedBy string      `json:"created_by"`
 }
 
-// Upsert a concept by domain + slug.
+// Upsert a concept by domain + slug. created_by captured on first
+// INSERT; ON CONFLICT preserves the original author (column absent from
+// the UPDATE list). The U2 archive rule reads created_by, so a re-
+// resolved concept never loses its first-touch agent.
 func (q *Queries) FindOrCreateConcept(ctx context.Context, arg FindOrCreateConceptParams) (Concept, error) {
 	row := q.db.QueryRow(ctx, findOrCreateConcept,
 		arg.Slug,
 		arg.Name,
 		arg.Domain,
 		arg.Kind,
+		arg.CreatedBy,
 	)
 	var i Concept
 	err := row.Scan(
@@ -4696,6 +4713,9 @@ func (q *Queries) FindOrCreateConcept(ctx context.Context, arg FindOrCreateConce
 		&i.Kind,
 		&i.ParentID,
 		&i.Description,
+		&i.CreatedBy,
+		&i.ArchivedAt,
+		&i.ArchiveBatchID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -4703,11 +4723,11 @@ func (q *Queries) FindOrCreateConcept(ctx context.Context, arg FindOrCreateConce
 }
 
 const findOrCreateLearningTarget = `-- name: FindOrCreateLearningTarget :one
-INSERT INTO learning_targets (domain, title, external_id, difficulty)
-VALUES ($1, $2, $3, $4)
+INSERT INTO learning_targets (domain, title, external_id, difficulty, created_by)
+VALUES ($1, $2, $3, $4, $5)
 ON CONFLICT (domain, external_id) WHERE external_id IS NOT NULL
 DO UPDATE SET title = EXCLUDED.title, difficulty = COALESCE(EXCLUDED.difficulty, learning_targets.difficulty), updated_at = now()
-RETURNING id, domain, title, external_id, difficulty, metadata, created_at, updated_at
+RETURNING id, domain, title, external_id, difficulty, metadata, created_by, archived_at, archive_batch_id, created_at, updated_at
 `
 
 type FindOrCreateLearningTargetParams struct {
@@ -4715,15 +4735,21 @@ type FindOrCreateLearningTargetParams struct {
 	Title      string  `json:"title"`
 	ExternalID *string `json:"external_id"`
 	Difficulty *string `json:"difficulty"`
+	CreatedBy  string  `json:"created_by"`
 }
 
 // Upsert a learning target by domain + external_id (if present) or domain + title.
+// created_by is captured on INSERT; ON CONFLICT preserves the original creator
+// (the column is intentionally absent from the UPDATE list). This matters for
+// the §B U2 self-bound archive rule — the row's first-touch agent retains
+// archival authority regardless of which agent later re-resolves the target.
 func (q *Queries) FindOrCreateLearningTarget(ctx context.Context, arg FindOrCreateLearningTargetParams) (LearningTarget, error) {
 	row := q.db.QueryRow(ctx, findOrCreateLearningTarget,
 		arg.Domain,
 		arg.Title,
 		arg.ExternalID,
 		arg.Difficulty,
+		arg.CreatedBy,
 	)
 	var i LearningTarget
 	err := row.Scan(
@@ -4733,6 +4759,9 @@ func (q *Queries) FindOrCreateLearningTarget(ctx context.Context, arg FindOrCrea
 		&i.ExternalID,
 		&i.Difficulty,
 		&i.Metadata,
+		&i.CreatedBy,
+		&i.ArchivedAt,
+		&i.ArchiveBatchID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -5447,8 +5476,8 @@ func (q *Queries) InsertFeedTopics(ctx context.Context, arg InsertFeedTopicsPara
 }
 
 const insertLearningTargetRelation = `-- name: InsertLearningTargetRelation :exec
-INSERT INTO learning_target_relations (anchor_id, related_id, relation_type)
-VALUES ($1, $2, $3)
+INSERT INTO learning_target_relations (anchor_id, related_id, relation_type, created_by)
+VALUES ($1, $2, $3, $4)
 ON CONFLICT (anchor_id, related_id, relation_type) DO NOTHING
 `
 
@@ -5456,13 +5485,24 @@ type InsertLearningTargetRelationParams struct {
 	AnchorID     uuid.UUID `json:"anchor_id"`
 	RelatedID    uuid.UUID `json:"related_id"`
 	RelationType string    `json:"relation_type"`
+	CreatedBy    string    `json:"created_by"`
 }
 
 // Idempotent insert into learning_target_relations. Conflicts on
 // (anchor_id, related_id, relation_type) are ignored so re-recording
-// the same relationship during a later session is safe.
+// the same relationship during a later session is safe. created_by is
+// captured on first insert; conflicts preserve the original author (the
+// column is absent from the UPDATE clause, and DO NOTHING means no
+// UPDATE runs at all). The symmetry trigger propagates created_by onto
+// the auto-inserted reverse edge so both directions trace to the same
+// author.
 func (q *Queries) InsertLearningTargetRelation(ctx context.Context, arg InsertLearningTargetRelationParams) error {
-	_, err := q.db.Exec(ctx, insertLearningTargetRelation, arg.AnchorID, arg.RelatedID, arg.RelationType)
+	_, err := q.db.Exec(ctx, insertLearningTargetRelation,
+		arg.AnchorID,
+		arg.RelatedID,
+		arg.RelationType,
+		arg.CreatedBy,
+	)
 	return err
 }
 
