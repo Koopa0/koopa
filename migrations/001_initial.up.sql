@@ -1896,9 +1896,14 @@ COMMENT ON COLUMN learning_attempts.session_id IS
     'The session this attempt occurred in. NOT NULL — every attempt must live in a '
     'session. ON DELETE RESTRICT — sessions with attempts cannot be deleted; end them instead.';
 COMMENT ON COLUMN learning_attempts.attempt_number IS
-    'Nth attempt at this item. 1 = first try, 2+ = revisit. Application must compute '
-    'MAX(attempt_number) + 1 before inserting — DEFAULT 1 only applies to first attempts. '
-    'UNIQUE with learning_target_id enforces no duplicate numbering.';
+    'Nth attempt against this target across all sessions (per-TARGET, NOT per-session). '
+    '1 = first try ever on this learning_target_id, 2+ = revisit. The Improvement '
+    'Verification Loop in Koopa-Learning.md depends on this per-target semantics: '
+    'comparing attempt N vs attempt N-1 of the same target is the core coaching signal. '
+    'For session-scoped progress (how many attempts in THIS session), use '
+    'session_progress.attempt_count or len(attempt_history(session_id=...).attempts). '
+    'Application must compute MAX(attempt_number) + 1 before inserting — DEFAULT 1 only '
+    'applies to first attempts. UNIQUE with learning_target_id enforces no duplicate numbering.';
 COMMENT ON COLUMN learning_attempts.paradigm IS
     'Paradigm of the attempt. Own column so a new paradigm extends by '
     '(enum value + joint CHECK arm) instead of by re-auditing every '
