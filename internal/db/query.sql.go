@@ -1729,7 +1729,7 @@ func (q *Queries) CompletedTodoTitlesSince(ctx context.Context, since *time.Time
 const conceptByDomainSlug = `-- name: ConceptByDomainSlug :one
 SELECT id, slug, name, domain, kind, parent_id, description, created_at, updated_at
 FROM concepts
-WHERE domain = $1 AND LOWER(slug) = LOWER($2)
+WHERE domain = $1 AND LOWER(slug) = LOWER($2) AND archived_at IS NULL
 `
 
 type ConceptByDomainSlugParams struct {
@@ -1749,7 +1749,9 @@ type ConceptByDomainSlugRow struct {
 	UpdatedAt   time.Time   `json:"updated_at"`
 }
 
-// Get a single concept by domain + slug for drilldown.
+// Get a single concept by domain + slug for drilldown. Live-only — an
+// archived concept surfaces through attempt_history's archived branch,
+// not through this lookup.
 func (q *Queries) ConceptByDomainSlug(ctx context.Context, arg ConceptByDomainSlugParams) (ConceptByDomainSlugRow, error) {
 	row := q.db.QueryRow(ctx, conceptByDomainSlug, arg.Domain, arg.Slug)
 	var i ConceptByDomainSlugRow
@@ -1778,7 +1780,8 @@ SELECT c.id, c.slug, c.name, c.domain, c.kind,
 FROM concepts c
 JOIN learning_attempt_observations ao ON ao.concept_id = c.id
 JOIN learning_attempts a ON a.id = ao.attempt_id
-WHERE ($1::text IS NULL OR c.domain = $1)
+WHERE c.archived_at IS NULL
+  AND ($1::text IS NULL OR c.domain = $1)
   AND a.attempted_at >= $2
   AND ($3::timestamptz IS NULL OR a.attempted_at < $3::timestamptz)
   AND ($4::text = 'all' OR ao.confidence = 'high')
@@ -1897,7 +1900,7 @@ func (q *Queries) ConceptRefsForNote(ctx context.Context, noteID uuid.UUID) ([]C
 }
 
 const conceptsBySlug = `-- name: ConceptsBySlug :many
-SELECT id, slug FROM concepts WHERE slug = ANY($1::text[])
+SELECT id, slug FROM concepts WHERE slug = ANY($1::text[]) AND archived_at IS NULL
 `
 
 type ConceptsBySlugRow struct {
@@ -1907,7 +1910,10 @@ type ConceptsBySlugRow struct {
 
 // Batch-resolve concept IDs by slug (cross-domain). Returns one row per matched
 // slug. Unmatched slugs produce no row — callers compare result count vs input
-// count to detect missing slugs.
+// count to detect missing slugs. Archived concepts are NOT returned so an
+// archived concept slug looks identical to "never existed" — callers may
+// need to disambiguate via the live ConceptByDomainSlug + a follow-up
+// archived lookup if necessary.
 func (q *Queries) ConceptsBySlug(ctx context.Context, slugs []string) ([]ConceptsBySlugRow, error) {
 	rows, err := q.db.Query(ctx, conceptsBySlug, slugs)
 	if err != nil {
@@ -1988,8 +1994,10 @@ SELECT
     COUNT(DISTINCT ao.concept_id)::int                                       AS concepts_touched_all
 FROM learning_attempt_observations ao
 JOIN learning_attempts a ON a.id = ao.attempt_id
+JOIN concepts c          ON c.id = ao.concept_id
 WHERE a.attempted_at >= $1
   AND a.attempted_at < $2
+  AND c.archived_at IS NULL
 `
 
 type ConceptsTouchedBetweenParams struct {
@@ -4771,7 +4779,7 @@ func (q *Queries) FindOrCreateLearningTarget(ctx context.Context, arg FindOrCrea
 const findTargetByDomainTitle = `-- name: FindTargetByDomainTitle :one
 SELECT id, domain, title, external_id, difficulty, created_at, updated_at
 FROM learning_targets
-WHERE domain = $1 AND title = $2
+WHERE domain = $1 AND title = $2 AND archived_at IS NULL
 LIMIT 1
 `
 
@@ -4791,8 +4799,11 @@ type FindTargetByDomainTitleRow struct {
 }
 
 // Read-only target lookup by (domain, title). Returns ErrNotFound when the
-// target does not exist — used by attempt_history which must NOT create new
-// targets (it would silently pollute the catalog from a read tool).
+// target does not exist OR is archived — used by attempt_history which
+// must NOT create new targets (it would silently pollute the catalog from
+// a read tool). Archived targets surface via attempt_history's archived
+// branch (resolved=false, reason='archived'); this query is for live-only
+// resolution.
 func (q *Queries) FindTargetByDomainTitle(ctx context.Context, arg FindTargetByDomainTitleParams) (FindTargetByDomainTitleRow, error) {
 	row := q.db.QueryRow(ctx, findTargetByDomainTitle, arg.Domain, arg.Title)
 	var i FindTargetByDomainTitleRow
@@ -6148,7 +6159,10 @@ JOIN learning_targets anchor ON anchor.id = ltr.anchor_id
 JOIN learning_targets related ON related.id = ltr.related_id
 LEFT JOIN target_last_attempt tla ON tla.learning_target_id = related.id
 LEFT JOIN target_attempt_counts tc ON tc.learning_target_id = related.id
-WHERE ($1::text IS NULL OR anchor.domain = $1)
+WHERE ltr.archived_at IS NULL
+  AND anchor.archived_at IS NULL
+  AND related.archived_at IS NULL
+  AND ($1::text IS NULL OR anchor.domain = $1)
 ORDER BY ltr.created_at DESC
 LIMIT $2
 `
@@ -6225,6 +6239,7 @@ SELECT lt.id, lt.title, lt.domain, lt.difficulty, lt.external_id, ltc.relevance
 FROM learning_targets lt
 JOIN learning_target_concepts ltc ON ltc.learning_target_id = lt.id
 WHERE ltc.concept_id = $1
+  AND lt.archived_at IS NULL
 ORDER BY ltc.relevance, lt.title
 `
 
@@ -6237,7 +6252,9 @@ type LearningTargetsByConceptRow struct {
 	Relevance  string    `json:"relevance"`
 }
 
-// Learning targets linked to a concept. For concept drilldown related targets.
+// Learning targets linked to a concept. For concept drilldown related
+// targets — live-only. Archived targets stay attached to the concept
+// (the junction row is preserved) but don't surface in the drilldown.
 func (q *Queries) LearningTargetsByConcept(ctx context.Context, conceptID uuid.UUID) ([]LearningTargetsByConceptRow, error) {
 	rows, err := q.db.Query(ctx, learningTargetsByConcept, conceptID)
 	if err != nil {
@@ -9397,6 +9414,7 @@ SELECT rc.id AS card_id, rc.due,
 FROM review_cards rc
 JOIN learning_targets lt ON lt.id = rc.learning_target_id
 WHERE rc.due <= $1
+  AND lt.archived_at IS NULL
   AND ($2::text IS NULL OR lt.domain = $2)
 ORDER BY rc.due ASC
 LIMIT $3
@@ -13345,6 +13363,7 @@ FROM learning_attempt_observations ao
 JOIN concepts c ON c.id = ao.concept_id
 JOIN learning_attempts a ON a.id = ao.attempt_id
 WHERE ao.signal_type = 'weakness'
+  AND c.archived_at IS NULL
   AND ($1::text IS NULL OR c.domain = $1)
   AND a.attempted_at >= $2
   AND ($3::text = 'all' OR ao.confidence = 'high')
