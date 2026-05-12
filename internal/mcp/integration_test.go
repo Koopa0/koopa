@@ -782,6 +782,83 @@ func TestIntegration_AdvanceWork_SelfBound(t *testing.T) {
 	}
 }
 
+// TestIntegration_EndSession_NoOrphanReflection guards F-NEW1: a
+// failed end_session call (against a not-found id or an already-ended
+// session) must not write the reflection text into agent_notes. The
+// previous handler created the reflection unconditionally before
+// calling the store; three repeated end_session calls produced three
+// reflection rows even though only the first succeeded — orphans that
+// then poll into morning_context / session_delta /
+// query_agent_notes.
+//
+// Coverage scope: this test covers orphan-by-mistake (the Phase 3
+// audit finding). The race-window orphan-by-race scenario
+// (concurrent end after pre-flight passes) is documented as an
+// accepted residual in the handler's race-trade-off comment and is
+// NOT exercised here — testcontainers does not race two concurrent
+// calls. If race behavior changes, that path needs its own test.
+func TestIntegration_EndSession_NoOrphanReflection(t *testing.T) {
+	s := setupServer(t)
+
+	_, sess, err := callHandler(t, s.startSession, StartSessionInput{
+		Domain: "leetcode",
+		Mode:   "practice",
+	})
+	if err != nil {
+		t.Fatalf("startSession: %v", err)
+	}
+
+	beforeCount := countReflectionNotes(t)
+
+	// First call succeeds — one reflection should land.
+	if _, _, err := callHandler(t, s.endSession, EndSessionInput{
+		SessionID:  sess.Session.ID.String(),
+		Reflection: strPtr("first call should land this reflection"),
+	}); err != nil {
+		t.Fatalf("first end_session: %v", err)
+	}
+	if got, want := countReflectionNotes(t), beforeCount+1; got != want {
+		t.Fatalf("after first end_session: reflection rows = %d, want %d (before=%d)", got, want, beforeCount)
+	}
+
+	// Second call against the same (now-ended) id MUST fail AND MUST
+	// NOT write another reflection.
+	if _, _, err := callHandler(t, s.endSession, EndSessionInput{
+		SessionID:  sess.Session.ID.String(),
+		Reflection: strPtr("second call should NOT land — session is ended"),
+	}); err == nil {
+		t.Fatal("second end_session: expected already-ended error, got nil")
+	}
+	if got, want := countReflectionNotes(t), beforeCount+1; got != want {
+		t.Errorf("after second end_session: reflection rows = %d, want %d (before=%d) — orphan reflection written by failed end_session", got, want, beforeCount)
+	}
+
+	// Third call against a bogus id MUST fail AND MUST NOT write
+	// another reflection.
+	if _, _, err := callHandler(t, s.endSession, EndSessionInput{
+		SessionID:  "00000000-0000-0000-0000-000000000099",
+		Reflection: strPtr("third call should NOT land — session does not exist"),
+	}); err == nil {
+		t.Fatal("third end_session: expected not-found error, got nil")
+	}
+	if got, want := countReflectionNotes(t), beforeCount+1; got != want {
+		t.Errorf("after third end_session: reflection rows = %d, want %d (before=%d) — orphan reflection written by not-found end_session", got, want, beforeCount)
+	}
+}
+
+// countReflectionNotes returns the current row count of
+// agent_notes WHERE kind='reflection'. Used by F-NEW1's guard test.
+func countReflectionNotes(t *testing.T) int {
+	t.Helper()
+	var n int
+	if err := testPool.QueryRow(t.Context(),
+		"SELECT count(*) FROM agent_notes WHERE kind = 'reflection'",
+	).Scan(&n); err != nil {
+		t.Fatalf("counting reflection notes: %v", err)
+	}
+	return n
+}
+
 // TestIntegration_TrackHypothesis_Resolve_Validation covers the
 // resolve-path field validation that previously lived in
 // handler_test.go's TestTrackHypothesis_Validation. After Wave 1 added

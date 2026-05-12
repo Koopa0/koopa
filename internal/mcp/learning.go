@@ -535,20 +535,71 @@ func (s *Server) endSession(ctx context.Context, _ *mcp.CallToolRequest, input E
 		return nil, EndSessionOutput{}, fmt.Errorf("invalid session_id: %w", err)
 	}
 
-	// Optionally create reflection agent_note entry.
+	// Pre-flight: ensure the session exists AND is active before
+	// creating the reflection note. Without this, an end_session call
+	// against a not-found or already-ended session would still write
+	// the reflection text into agent_notes — producing orphan
+	// reflections (no linked session) that pollute morning_context /
+	// session_delta / query_agent_notes. Phase 3 audit found three
+	// repeated end_session calls each created a reflection note even
+	// though only the first succeeded.
+	//
+	// Race trade-off: another caller can end the session between this
+	// check and EndSession below. That window is sub-millisecond. The
+	// race is acceptable in this codebase because:
+	//   1. No other cowork agent has a write path to learning_sessions
+	//      — learning-studio is the sole MCP end_session caller. The
+	//      admin HTTP handler in internal/learning/handler.go is the
+	//      only other writer and is human-driven (Koopa via admin UI);
+	//      cowork-vs-admin concurrency is rare and would resolve to
+	//      the same already-ended error on either side.
+	//   2. Conversation is serialised at the agent level — a single
+	//      agent does not issue two concurrent end_session calls.
+	//   3. The "one active session at a time" invariant (uq_learning_
+	//      sessions_one_active) prevents fan-out concurrency.
+	// A full fix would push note creation into the same tx as
+	// EndSession (Design 2/3 in the F-NEW1 proposal). Both options
+	// either couple learning.Store to agent_notes (violates
+	// feedback_split_by_semantics) or add handler-level tx
+	// orchestration for a never-observed race — not worth the coupling.
+	// The orphan-by-race window is honest doc; the orphan-by-mistake
+	// window (the actual Phase 3 finding) is closed.
+	existing, err := s.learn.SessionByID(ctx, sessionID)
+	switch {
+	case errors.Is(err, learning.ErrNotFound):
+		// Terminal translation: caller never branches on
+		// learning.ErrNotFound past this point, so %s (not %w) is
+		// deliberate — the message is the entire contract.
+		return nil, EndSessionOutput{}, fmt.Errorf("session %s not found", sessionID)
+	case err != nil:
+		return nil, EndSessionOutput{}, fmt.Errorf("looking up session %s: %w", sessionID, err)
+	case existing.EndedAt != nil:
+		return nil, EndSessionOutput{}, fmt.Errorf("session %s was already ended at %s", sessionID, existing.EndedAt.Format(time.RFC3339))
+	}
+
+	// Optionally create reflection agent_note entry. Reached only when
+	// the session above is active; orphan-by-mistake closed.
 	var noteID *uuid.UUID
 	if input.Reflection != nil && *input.Reflection != "" {
-		entry, err := s.agentNotes.Create(ctx, &agentnote.CreateParams{
+		entry, noteErr := s.agentNotes.Create(ctx, &agentnote.CreateParams{
 			Kind:      agentnote.KindReflection,
 			CreatedBy: s.callerIdentity(ctx),
 			Content:   *input.Reflection,
 			EntryDate: s.today(),
 		})
-		if err == nil {
+		if noteErr == nil {
 			v := entry.ID
 			noteID = &v
 		} else {
-			s.logger.Warn("end_session: agent note creation failed", "error", err)
+			// best-effort: the reflection note is annotation, not core
+			// to ending the session. Log the failure and proceed
+			// without a linked note — caller's EndSessionOutput.Session
+			// will carry agent_note_id=nil; they may follow up with
+			// write_agent_note(kind=reflection) if the reflection is
+			// load-bearing. Hard-failing end_session on a note write
+			// would couple the session lifecycle to agent_notes
+			// availability without a payoff.
+			s.logger.Warn("end_session: agent note creation failed", "error", noteErr)
 		}
 	}
 
@@ -558,11 +609,24 @@ func (s *Server) endSession(ctx context.Context, _ *mcp.CallToolRequest, input E
 		case errors.Is(err, learning.ErrNotFound):
 			return nil, EndSessionOutput{}, fmt.Errorf("session %s not found", sessionID)
 		case errors.Is(err, learning.ErrAlreadyEnded):
-			// learning.Store.EndSession always returns a non-nil session
-			// alongside ErrAlreadyEnded — both the pre-flight branch and
-			// the race branch carry the loaded row. EndedAt is populated
-			// for any already-ended row by definition.
-			return nil, EndSessionOutput{}, fmt.Errorf("session %s was already ended at %s", sessionID, session.EndedAt.Format(time.RFC3339))
+			// learning.Store.EndSession is documented to return a
+			// non-nil session alongside ErrAlreadyEnded (both the
+			// pre-flight branch and the race branch carry the loaded
+			// row; handleEndSessionRace returns ErrNotFound separately
+			// when the row was deleted). The nil guard below is
+			// defensive against a future contract loosening — if it
+			// fires we lose the timestamp but the caller still gets a
+			// useful error message.
+			endedAt := "unknown"
+			if session != nil && session.EndedAt != nil {
+				endedAt = session.EndedAt.Format(time.RFC3339)
+				s.logger.Warn("end_session: raced with concurrent end after pre-flight passed",
+					"session_id", sessionID, "ended_at", session.EndedAt)
+			} else {
+				s.logger.Warn("end_session: ErrAlreadyEnded with nil session — store contract violation",
+					"session_id", sessionID)
+			}
+			return nil, EndSessionOutput{}, fmt.Errorf("session %s was already ended at %s", sessionID, endedAt)
 		default:
 			return nil, EndSessionOutput{}, fmt.Errorf("ending session: %w", err)
 		}
