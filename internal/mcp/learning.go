@@ -99,8 +99,8 @@ type RecordAttemptInput struct {
 	Target         AttemptTarget        `json:"target" jsonschema:"required" jsonschema_description:"Learning target"`
 	Outcome        string               `json:"outcome" jsonschema:"required" jsonschema_description:"Semantic (got it, needed help, etc) or raw enum"`
 	Duration       *FlexInt             `json:"duration_minutes,omitempty" jsonschema_description:"Time spent in minutes"`
-	StuckAt        *string              `json:"stuck_at,omitempty" jsonschema_description:"Where you got stuck (free text)"`
-	Approach       *string              `json:"approach_used,omitempty" jsonschema_description:"Approach used (free text)"`
+	StuckAt        *string              `json:"stuck_at,omitempty" jsonschema_description:"Where you got stuck. Plain free-text — DO NOT wrap in extra quotes or JSON-escape the content. Example: sliding window pattern, didn't think about termination check on shrink. The MCP transport handles JSON escaping; sending '\"naive O(n^2)...\"' (with surrounding quotes) persists literal quotes in the DB."`
+	Approach       *string              `json:"approach_used,omitempty" jsonschema_description:"Approach used. Plain free-text — same escape-level guidance as stuck_at. Example: two-pointer opposite ends, with hashmap for dedup."`
 	Observations   []ObservationInput   `json:"observations,omitempty" jsonschema_description:"Concept observations"`
 	Metadata       json.RawMessage      `json:"metadata,omitempty" jsonschema_description:"Free-form JSON for 8-step checklist outputs: complexity {time,space}, pattern, related problem slugs, solve context. Persisted on attempts.metadata. Reserved keys by convention (not enforced): 'pattern' (string, feeds recommend_next_target interleaving filter), 'recommended_by' (string: 'tool' | 'coach' | 'self'; when the attempt follows a recommend_next_target suggestion, set 'tool' so recommendation effectiveness can be audited later)."`
 	FSRSRating     *FlexInt             `json:"fsrs_rating,omitempty" jsonschema_description:"Optional FSRS recall-difficulty override. 1=Again, 2=Hard, 3=Good, 4=Easy. When set, this replaces the outcome-derived rating for spaced repetition scheduling. Use when recall difficulty diverges from solve outcome — e.g. solved but painful recall, or needed help but core concept is solid. Accepts int (2) or string (\"2\") for transports that stringify ints."`
@@ -499,7 +499,7 @@ func (s *Server) processRelatedTargets(ctx context.Context, sourceID uuid.UUID, 
 		// Cross-domain rejection moved to this layer — source domain is already
 		// in scope from prepareAttempt, no DB lookup needed.
 		if ri.Domain != nil && *ri.Domain != "" && *ri.Domain != sourceDomain {
-			warnings = append(warnings, fmt.Sprintf("related_targets[%d] (%q): cross-domain relation rejected (source=%q, target=%q)", i, ri.Title, sourceDomain, *ri.Domain))
+			warnings = append(warnings, fmt.Sprintf("related_targets[%d] (%q): cross-domain relation rejected (source=%q, target=%q). learning_target_relations is intentionally per-domain — for cross-domain isomorphism, use propose_hypothesis (if the connection is falsifiable) or write_agent_note(kind=context) (if it's an ad-hoc observation worth keeping)", i, ri.Title, sourceDomain, *ri.Domain))
 			continue
 		}
 		targetID, err := s.learn.FindOrCreateTarget(ctx, sourceDomain, ri.Title, ri.ExternalID, ri.Difficulty)

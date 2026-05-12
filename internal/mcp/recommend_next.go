@@ -290,7 +290,7 @@ func emptyReasonFromProbe(r probeReport, relaxedFilter bool) string {
 		)
 	case r.allVariationsRejected == r.weaknessesProbed:
 		message = fmt.Sprintf(
-			"%d weakness concepts surfaced variations, but every one was rejected by acceptVariation. likely causes: every related target has already been attempted, or recorded relations connect non-weakness anchors (a variation hung off a concept that did not surface as a weakness in this window).",
+			"%d weakness concepts surfaced variations, but every one was rejected by acceptVariation. likely causes: every related target has already been attempted, or recorded relations connect non-weakness anchors (a variation hung off a concept that did not surface as a weakness in this window). next step: fall back to manual selection via learning_dashboard(view=\"variations\") to see the relation graph, or record more diverse attempts to broaden the weakness pool.",
 			r.weaknessesProbed,
 		)
 	case r.noAnchorAttempts >= r.noVariations && r.noAnchorAttempts >= r.allVariationsRejected:
@@ -305,7 +305,7 @@ func emptyReasonFromProbe(r probeReport, relaxedFilter bool) string {
 		)
 	default:
 		message = fmt.Sprintf(
-			"dominant cause: %d of %d weakness concepts surfaced variations that were all rejected by acceptVariation (already attempted, anchor mismatch, or interleaving). %d had no anchors, %d had no variations.",
+			"dominant cause: %d of %d weakness concepts surfaced variations that were all rejected by acceptVariation (already attempted, anchor mismatch, or interleaving). %d had no anchors, %d had no variations. next step: target whichever bar is largest — record more attempts for the no-anchor concepts and record related_targets on future attempts to grow the relation graph.",
 			r.allVariationsRejected, r.weaknessesProbed, r.noAnchorAttempts, r.noVariations,
 		)
 	}

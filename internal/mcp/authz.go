@@ -86,7 +86,11 @@ func (s *Server) requireExplicitHuman(ctx context.Context, op string) error {
 		return fmt.Errorf("%s: caller %q is not registered", op, name)
 	}
 	if caller.Platform != "human" {
-		return fmt.Errorf("%s: caller %q is not authorized (human-only)", op, name)
+		// Hand-off hint: if the caller has a proposal_token in hand,
+		// the right path is to keep the token in conversation context
+		// and ask Koopa (or HQ) to commit. Tokens live 10 minutes per
+		// proposal.go; longer hand-offs should re-propose.
+		return fmt.Errorf("%s: caller %q is not authorized (human-only). Keep the proposal_token in conversation and ask Koopa or HQ to commit (token lives 10 minutes; re-propose if stale)", op, name)
 	}
 	return nil
 }
