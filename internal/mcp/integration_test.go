@@ -223,7 +223,11 @@ func TestIntegration_ColdStart_CommitLearningPlan(t *testing.T) {
 		t.Fatal("proposeLearningPlan returned empty token")
 	}
 
-	_, commit, err := callHandler(t, s.commitProposal, CommitProposalInput{
+	// commit_proposal of high-commitment entities (incl. learning_plan)
+	// requires Platform=human via requireExplicitHuman. The setupServer
+	// default caller is learning-studio; switch to "human" via
+	// callHandlerAs so the gate passes.
+	_, commit, err := callHandlerAs(t, "human", s.commitProposal, CommitProposalInput{
 		ProposalToken: proposal.ProposalToken,
 	})
 	if err != nil {
@@ -381,10 +385,17 @@ func TestIntegration_ProposalValidator_MissingRequired_NoToken(t *testing.T) {
 		propose    func() (ProposeOutput, error)
 		wantErrSub string
 	}{
+		// propose_goal / propose_project / propose_milestone have an
+		// author allowlist (hq, content-studio, research-lab). The
+		// setupServer default caller is learning-studio, which would
+		// fast-fail the allowlist before reaching input validation —
+		// defeating the test's purpose (assert input validation fires
+		// before token signing). Use callHandlerAs("hq") so the
+		// allowlist passes and the test exercises the actual validator.
 		{
 			name: "goal without title",
 			propose: func() (ProposeOutput, error) {
-				_, out, err := callHandler(t, s.proposeGoal, ProposeGoalInput{})
+				_, out, err := callHandlerAs(t, "hq", s.proposeGoal, ProposeGoalInput{})
 				return out, err
 			},
 			wantErrSub: "title is required for goal",
@@ -392,7 +403,7 @@ func TestIntegration_ProposalValidator_MissingRequired_NoToken(t *testing.T) {
 		{
 			name: "project without slug",
 			propose: func() (ProposeOutput, error) {
-				_, out, err := callHandler(t, s.proposeProject, ProposeProjectInput{Title: "x"})
+				_, out, err := callHandlerAs(t, "hq", s.proposeProject, ProposeProjectInput{Title: "x"})
 				return out, err
 			},
 			wantErrSub: "slug is required for project",
@@ -400,7 +411,7 @@ func TestIntegration_ProposalValidator_MissingRequired_NoToken(t *testing.T) {
 		{
 			name: "milestone without goal",
 			propose: func() (ProposeOutput, error) {
-				_, out, err := callHandler(t, s.proposeMilestone, ProposeMilestoneInput{Title: "x"})
+				_, out, err := callHandlerAs(t, "hq", s.proposeMilestone, ProposeMilestoneInput{Title: "x"})
 				return out, err
 			},
 			wantErrSub: "goal",
@@ -414,12 +425,17 @@ func TestIntegration_ProposalValidator_MissingRequired_NoToken(t *testing.T) {
 			wantErrSub: "domain is required for learning_plan",
 		},
 		{
+			// B3 commit d81a0b0 added the field name to the slug error
+			// message ('invalid learning_domain slug ...') so the assert
+			// switched from the generic 'invalid slug' to the field-qualified
+			// form. Without 'learning_domain' the substring would still match
+			// the generic phrasing if it ever returns.
 			name: "learning_domain with bad slug format",
 			propose: func() (ProposeOutput, error) {
-				_, out, err := callHandler(t, s.proposeLearningDomain, ProposeLearningDomainInput{Slug: "Not Kebab", Name: "X"})
+				_, out, err := callHandlerAs(t, "hq", s.proposeLearningDomain, ProposeLearningDomainInput{Slug: "Not Kebab", Name: "X"})
 				return out, err
 			},
-			wantErrSub: "invalid slug",
+			wantErrSub: "invalid learning_domain slug",
 		},
 		{
 			name: "hypothesis without claim",
@@ -465,7 +481,8 @@ func TestIntegration_ProposeLearningDomain(t *testing.T) {
 		t.Fatal("proposeLearningDomain returned empty token")
 	}
 
-	_, commit, err := callHandler(t, s.commitProposal, CommitProposalInput{
+	// commit_proposal(learning_domain) is human-only.
+	_, commit, err := callHandlerAs(t, "human", s.commitProposal, CommitProposalInput{
 		ProposalToken: proposal.ProposalToken,
 	})
 	if err != nil {
@@ -1983,9 +2000,12 @@ func TestLearningPlanEntryStatusChange_FiresActivityTrigger(t *testing.T) {
 	setupServer(t)
 
 	// The seed learning_domain 'leetcode' is populated by migration 002.
+	// created_by is required NOT NULL after §B; use 'human' to mirror
+	// the admin HTTP path's caller-identity convention.
 	var targetID uuid.UUID
 	err := testPool.QueryRow(t.Context(),
-		`INSERT INTO learning_targets (domain, title) VALUES ('leetcode', 'trigger target')
+		`INSERT INTO learning_targets (domain, title, created_by)
+		 VALUES ('leetcode', 'trigger target', 'human')
 		 RETURNING id`,
 	).Scan(&targetID)
 	if err != nil {
@@ -2643,7 +2663,10 @@ func TestIntegration_AttemptHistory_SortInvariants(t *testing.T) {
 func TestIntegration_ProposeGoal_CommitRoundTrip(t *testing.T) {
 	s := setupServer(t)
 
-	_, proposal, err := callHandler(t, s.proposeGoal, ProposeGoalInput{
+	// propose_goal's author allowlist excludes learning-studio
+	// (setupServer's default caller); use hq which is on the
+	// hq/content-studio/research-lab list per authorization-matrix.md.
+	_, proposal, err := callHandlerAs(t, "hq", s.proposeGoal, ProposeGoalInput{
 		Title:       "Pass JLPT N2 by October",
 		Description: strPtr("Reading + listening practice cadence for N2 spring 2026 cohort."),
 	})
@@ -2657,7 +2680,9 @@ func TestIntegration_ProposeGoal_CommitRoundTrip(t *testing.T) {
 		t.Errorf("proposal.Type = %q, want goal", proposal.Type)
 	}
 
-	_, commit, err := callHandler(t, s.commitProposal, CommitProposalInput{
+	// commit_proposal(goal) is human-only via requireExplicitHuman; the
+	// "hq committed its own proposal" round-trip pattern lives separately.
+	_, commit, err := callHandlerAs(t, "human", s.commitProposal, CommitProposalInput{
 		ProposalToken: proposal.ProposalToken,
 	})
 	if err != nil {
