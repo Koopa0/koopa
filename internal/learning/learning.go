@@ -34,11 +34,12 @@ func (s *Store) WithTx(tx pgx.Tx) *Store {
 }
 
 var (
-	ErrNotFound     = errors.New("learning: not found")
-	ErrConflict     = errors.New("learning: conflict")
-	ErrActiveExists = errors.New("learning: active session exists")
-	ErrNoActive     = errors.New("learning: no active session")
-	ErrAlreadyEnded = errors.New("learning: session already ended")
+	ErrNotFound        = errors.New("learning: not found")
+	ErrConflict        = errors.New("learning: conflict")
+	ErrActiveExists    = errors.New("learning: active session exists")
+	ErrNoActive        = errors.New("learning: no active session")
+	ErrAlreadyEnded    = errors.New("learning: session already ended")
+	ErrAlreadyArchived = errors.New("learning: entity already archived")
 	// ErrInvalidInput marks caller-side input validation failures (bad UUID,
 	// oversized metadata, unknown relation_type, etc). Wrapped with %w so
 	// callers can classify validation failures for logging/metrics via

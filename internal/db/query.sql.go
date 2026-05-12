@@ -734,6 +734,95 @@ func (q *Queries) ArchiveContentReturning(ctx context.Context, id uuid.UUID) (Ar
 	return i, err
 }
 
+const archiveRelationsForTarget = `-- name: ArchiveRelationsForTarget :many
+UPDATE learning_target_relations
+SET archived_at = now(), archive_batch_id = $1
+WHERE (anchor_id = $2 OR related_id = $2)
+  AND archived_at IS NULL
+RETURNING id, anchor_id, related_id, relation_type, created_by,
+          archived_at, archive_batch_id, created_at
+`
+
+type ArchiveRelationsForTargetParams struct {
+	BatchID  *uuid.UUID `json:"batch_id"`
+	TargetID uuid.UUID  `json:"target_id"`
+}
+
+// Cascades archive onto every live relation that references the target
+// as anchor OR related, tagging them with the same batch id. The
+// symmetric-relation reverse edge (auto-inserted by the
+// enforce_learning_target_relation_symmetry trigger for same_pattern /
+// similar_structure) is the same row pattern with anchor/related
+// swapped, so it gets caught by the OR clause naturally — no separate
+// query needed. Returns the affected rows so the handler can include
+// them in the cascaded_relations response.
+func (q *Queries) ArchiveRelationsForTarget(ctx context.Context, arg ArchiveRelationsForTargetParams) ([]LearningTargetRelation, error) {
+	rows, err := q.db.Query(ctx, archiveRelationsForTarget, arg.BatchID, arg.TargetID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []LearningTargetRelation{}
+	for rows.Next() {
+		var i LearningTargetRelation
+		if err := rows.Scan(
+			&i.ID,
+			&i.AnchorID,
+			&i.RelatedID,
+			&i.RelationType,
+			&i.CreatedBy,
+			&i.ArchivedAt,
+			&i.ArchiveBatchID,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const archiveTargetReturn = `-- name: ArchiveTargetReturn :one
+UPDATE learning_targets
+SET archived_at = now(), archive_batch_id = $1, updated_at = now()
+WHERE id = $2 AND archived_at IS NULL
+RETURNING id, domain, title, external_id, difficulty, metadata,
+          created_by, archived_at, archive_batch_id, created_at, updated_at
+`
+
+type ArchiveTargetReturnParams struct {
+	BatchID *uuid.UUID `json:"batch_id"`
+	ID      uuid.UUID  `json:"id"`
+}
+
+// Soft-deletes a target, marking archived_at and tagging it with
+// archive_batch_id. The batch id ties the target to the relations
+// archived in the same call (see ArchiveRelationsForTarget) so a
+// future unarchive_target call can restore exactly the cascade
+// group, not every relation involving the target. Returns the
+// updated row.
+func (q *Queries) ArchiveTargetReturn(ctx context.Context, arg ArchiveTargetReturnParams) (LearningTarget, error) {
+	row := q.db.QueryRow(ctx, archiveTargetReturn, arg.BatchID, arg.ID)
+	var i LearningTarget
+	err := row.Scan(
+		&i.ID,
+		&i.Domain,
+		&i.Title,
+		&i.ExternalID,
+		&i.Difficulty,
+		&i.Metadata,
+		&i.CreatedBy,
+		&i.ArchivedAt,
+		&i.ArchiveBatchID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const areaIDBySlugOrName = `-- name: AreaIDBySlugOrName :one
 SELECT id FROM areas
 WHERE slug = $1 OR LOWER(name) = LOWER($1)
@@ -11118,6 +11207,36 @@ func (q *Queries) TagsForContents(ctx context.Context, dollar_1 []uuid.UUID) ([]
 		return nil, err
 	}
 	return items, nil
+}
+
+const targetByID = `-- name: TargetByID :one
+SELECT id, domain, title, external_id, difficulty, metadata,
+       created_by, archived_at, archive_batch_id, created_at, updated_at
+FROM learning_targets
+WHERE id = $1
+`
+
+// Full-row lookup by primary key including archive state. Used by
+// manage_targets for ownership/archive-eligibility checks. Does NOT
+// filter archived rows — the caller branches on archived_at to decide
+// whether to reject or proceed (unarchive path).
+func (q *Queries) TargetByID(ctx context.Context, id uuid.UUID) (LearningTarget, error) {
+	row := q.db.QueryRow(ctx, targetByID, id)
+	var i LearningTarget
+	err := row.Scan(
+		&i.ID,
+		&i.Domain,
+		&i.Title,
+		&i.ExternalID,
+		&i.Difficulty,
+		&i.Metadata,
+		&i.CreatedBy,
+		&i.ArchivedAt,
+		&i.ArchiveBatchID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }
 
 const targetRefsForNote = `-- name: TargetRefsForNote :many

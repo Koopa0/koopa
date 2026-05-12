@@ -83,6 +83,45 @@ FROM learning_targets
 WHERE domain = @domain AND title = @title AND archived_at IS NULL
 LIMIT 1;
 
+-- name: TargetByID :one
+-- Full-row lookup by primary key including archive state. Used by
+-- manage_targets for ownership/archive-eligibility checks. Does NOT
+-- filter archived rows — the caller branches on archived_at to decide
+-- whether to reject or proceed (unarchive path).
+SELECT id, domain, title, external_id, difficulty, metadata,
+       created_by, archived_at, archive_batch_id, created_at, updated_at
+FROM learning_targets
+WHERE id = @id;
+
+-- name: ArchiveTargetReturn :one
+-- Soft-deletes a target, marking archived_at and tagging it with
+-- archive_batch_id. The batch id ties the target to the relations
+-- archived in the same call (see ArchiveRelationsForTarget) so a
+-- future unarchive_target call can restore exactly the cascade
+-- group, not every relation involving the target. Returns the
+-- updated row.
+UPDATE learning_targets
+SET archived_at = now(), archive_batch_id = @batch_id, updated_at = now()
+WHERE id = @id AND archived_at IS NULL
+RETURNING id, domain, title, external_id, difficulty, metadata,
+          created_by, archived_at, archive_batch_id, created_at, updated_at;
+
+-- name: ArchiveRelationsForTarget :many
+-- Cascades archive onto every live relation that references the target
+-- as anchor OR related, tagging them with the same batch id. The
+-- symmetric-relation reverse edge (auto-inserted by the
+-- enforce_learning_target_relation_symmetry trigger for same_pattern /
+-- similar_structure) is the same row pattern with anchor/related
+-- swapped, so it gets caught by the OR clause naturally — no separate
+-- query needed. Returns the affected rows so the handler can include
+-- them in the cascaded_relations response.
+UPDATE learning_target_relations
+SET archived_at = now(), archive_batch_id = @batch_id
+WHERE (anchor_id = @target_id OR related_id = @target_id)
+  AND archived_at IS NULL
+RETURNING id, anchor_id, related_id, relation_type, created_by,
+          archived_at, archive_batch_id, created_at;
+
 -- name: FindOrCreateLearningTarget :one
 -- Upsert a learning target by domain + external_id (if present) or domain + title.
 -- created_by is captured on INSERT; ON CONFLICT preserves the original creator

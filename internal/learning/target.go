@@ -228,6 +228,135 @@ func (s *Store) LinkTargets(ctx context.Context, anchorID, relatedID uuid.UUID, 
 	return nil
 }
 
+// Target is the full row shape (live + archived metadata). Returned by
+// TargetByID for archive-eligibility / ownership checks. Live read
+// paths use narrower DTOs that don't expose archive bookkeeping.
+type Target struct {
+	ID             uuid.UUID
+	Domain         string
+	Title          string
+	ExternalID     *string
+	Difficulty     *string
+	CreatedBy      string
+	ArchivedAt     *time.Time
+	ArchiveBatchID *uuid.UUID
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+}
+
+// IsArchived reports whether the target row is currently archived.
+// Structural shortcut — a future caller reading only the Target type
+// (not the COMMENT on ArchivedAt) sees the archive-state branch
+// without needing to know the column nullability convention.
+func (t *Target) IsArchived() bool { return t.ArchivedAt != nil }
+
+// ArchivedTarget is the post-archive row returned by ArchiveTarget. The
+// batch_id ties together the target + its cascaded relations so
+// unarchive_target can restore exactly that group.
+type ArchivedTarget struct {
+	ID             uuid.UUID
+	Domain         string
+	Title          string
+	ArchivedAt     time.Time
+	ArchiveBatchID uuid.UUID
+}
+
+// ArchivedRelation is one row included in the cascaded_relations list
+// of an archive response. Carries enough fields for the caller to
+// re-display "what got archived alongside the target" without a second
+// lookup.
+type ArchivedRelation struct {
+	ID             uuid.UUID
+	AnchorID       uuid.UUID
+	RelatedID      uuid.UUID
+	RelationType   string
+	ArchivedAt     time.Time
+	ArchiveBatchID uuid.UUID
+}
+
+// TargetByID returns the full row including archive metadata. Returns
+// ErrNotFound when the target does not exist. Does NOT filter archived
+// rows — callers branch on ArchivedAt to decide archive vs unarchive
+// vs reject. Used by manage_targets for ownership + state checks.
+func (s *Store) TargetByID(ctx context.Context, id uuid.UUID) (*Target, error) {
+	row, err := s.q.TargetByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("querying target %s: %w", id, err)
+	}
+	return &Target{
+		ID:             row.ID,
+		Domain:         row.Domain,
+		Title:          row.Title,
+		ExternalID:     row.ExternalID,
+		Difficulty:     row.Difficulty,
+		CreatedBy:      row.CreatedBy,
+		ArchivedAt:     row.ArchivedAt,
+		ArchiveBatchID: row.ArchiveBatchID,
+		CreatedAt:      row.CreatedAt,
+		UpdatedAt:      row.UpdatedAt,
+	}, nil
+}
+
+// ArchiveTarget soft-deletes a target. When cascadeRelations is true,
+// every live learning_target_relations row that references the target
+// as anchor OR related is archived in the same batch (returned in
+// cascaded). The symmetric-reverse edge auto-created by the symmetry
+// trigger sits in the same anchor|related set, so it gets caught
+// naturally without a separate query.
+//
+// Returns ErrAlreadyArchived when the target's archived_at is already
+// set (idempotent rejection — UPDATE WHERE archived_at IS NULL returns
+// zero rows). The caller MUST pre-flight via TargetByID for ownership
+// + state — that contract lives at the handler layer.
+//
+// The batch_id is caller-supplied so the unarchive path can restore
+// exactly this group. Generate a fresh UUID per archive call.
+func (s *Store) ArchiveTarget(ctx context.Context, targetID, batchID uuid.UUID, cascadeRelations bool) (*ArchivedTarget, []ArchivedRelation, error) {
+	row, err := s.q.ArchiveTargetReturn(ctx, db.ArchiveTargetReturnParams{
+		ID:      targetID,
+		BatchID: &batchID,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil, ErrAlreadyArchived
+		}
+		return nil, nil, fmt.Errorf("archiving target %s: %w", targetID, err)
+	}
+	archived := &ArchivedTarget{
+		ID:             row.ID,
+		Domain:         row.Domain,
+		Title:          row.Title,
+		ArchivedAt:     *row.ArchivedAt,
+		ArchiveBatchID: *row.ArchiveBatchID,
+	}
+	if !cascadeRelations {
+		return archived, nil, nil
+	}
+	relRows, err := s.q.ArchiveRelationsForTarget(ctx, db.ArchiveRelationsForTargetParams{
+		BatchID:  &batchID,
+		TargetID: targetID,
+	})
+	if err != nil {
+		return nil, nil, fmt.Errorf("cascading relations archive for %s: %w", targetID, err)
+	}
+	cascaded := make([]ArchivedRelation, len(relRows))
+	for i := range relRows {
+		r := &relRows[i]
+		cascaded[i] = ArchivedRelation{
+			ID:             r.ID,
+			AnchorID:       r.AnchorID,
+			RelatedID:      r.RelatedID,
+			RelationType:   r.RelationType,
+			ArchivedAt:     *r.ArchivedAt,
+			ArchiveBatchID: *r.ArchiveBatchID,
+		}
+	}
+	return archived, cascaded, nil
+}
+
 // TargetVariations returns the problem relationship graph for learning targets.
 func (s *Store) TargetVariations(ctx context.Context, domain *string, limit int32) ([]TargetRelation, error) {
 	rows, err := s.q.LearningTargetVariations(ctx, db.LearningTargetVariationsParams{
