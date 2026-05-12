@@ -129,6 +129,39 @@ func activityActorFor(t *testing.T, entityType string, entityID uuid.UUID) strin
 // was unset and the fallback 'system' wasn't in agents. After W1 (seed)
 // and W2 (withActorTx) this must write both the todo and the audit row
 // with actor = learning-studio.
+// TestIntegration_SystemStatus_LearningCounts verifies the F-3
+// addition: system_status's database section now includes four
+// learning-domain counts (attempts / sessions / concepts /
+// fsrs_cards) alongside the existing knowledge-side counts.
+// Phase 1 audit reported that learning-studio had to query multiple
+// dashboard views to confirm "is the learning surface populated";
+// system_status now answers it directly.
+func TestIntegration_SystemStatus_LearningCounts(t *testing.T) {
+	s := setupServer(t)
+
+	_, out, err := callHandler(t, s.systemStatus, SystemStatusInput{})
+	if err != nil {
+		t.Fatalf("systemStatus: %v", err)
+	}
+	if out.Health == nil {
+		t.Fatal("systemStatus: Health is nil")
+	}
+	db := out.Health.Database
+	// All four fields must serialise (even if zero) — the wire shape
+	// is the contract. We're not asserting specific counts because
+	// other tests in this suite seed varying state; we're asserting
+	// the fields exist and are reachable through the wire shape.
+	_ = db.AttemptsCount
+	_ = db.SessionsCount
+	_ = db.ConceptsCount
+	_ = db.FsrsCardsCount
+	// Negative counts would mean an int overflow or a SQL bug.
+	if db.AttemptsCount < 0 || db.SessionsCount < 0 || db.ConceptsCount < 0 || db.FsrsCardsCount < 0 {
+		t.Errorf("learning counts must be non-negative: attempts=%d sessions=%d concepts=%d fsrs=%d",
+			db.AttemptsCount, db.SessionsCount, db.ConceptsCount, db.FsrsCardsCount)
+	}
+}
+
 func TestIntegration_ColdStart_CaptureInbox(t *testing.T) {
 	s := setupServer(t)
 

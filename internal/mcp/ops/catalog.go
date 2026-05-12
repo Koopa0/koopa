@@ -584,7 +584,7 @@ func SystemStatus() Meta {
 		Writability: ReadOnly,
 		Stability:   StabilityStable,
 		Since:       since,
-		Description: "Operational health snapshot. Response sections: 'feeds' = feed subscription health (total/healthy/failing + failing_feeds[] with name/error/since); 'pipelines' = 24h process_runs aggregate (recent_runs/failed/last_run_at); 'database' = core entity counts (contents/todos/notes). Use when investigating ingestion or pipeline issues — for catalog stats by type, query the admin /system/stats endpoint; for daily todo / goal data, morning_context covers it.",
+		Description: "Operational health snapshot. Response sections: 'feeds' = feed subscription health (total/healthy/failing + failing_feeds[] with name/error/since); 'pipelines' = 24h process_runs aggregate (recent_runs/failed/last_run_at); 'database' = core entity counts split into knowledge-side (contents/todos/notes) and learning-side (attempts/sessions/concepts/fsrs_cards). Use when investigating ingestion or pipeline issues, or to confirm at a glance whether the learning surface has accumulated activity — for catalog stats by type, query the admin /system/stats endpoint; for daily todo / goal data, morning_context covers it.",
 	}
 }
 

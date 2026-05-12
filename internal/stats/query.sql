@@ -169,10 +169,17 @@ ORDER BY consecutive_failures DESC, name;
 -- Activity snapshot across ALL process_runs kinds within a time window.
 -- Used by SystemHealth.Pipelines which represents the overall background
 -- processing subsystem, not any single kind.
+--
+-- last_run_at uses COALESCE to Go's zero time ('0001-01-01 00:00:00+00')
+-- because MAX(created_at) over an empty set returns NULL, which a
+-- non-null time.Time scan rejects. The Go-side handler checks IsZero()
+-- to translate the sentinel back into a nil JSON field on the wire —
+-- callers see last_run_at: null when there's been no activity, not an
+-- ancient year-1 date.
 SELECT
     COUNT(*)::int AS recent_runs,
     COUNT(*) FILTER (WHERE status = 'failed')::int AS failed,
-    MAX(created_at)::timestamptz AS last_run_at
+    COALESCE(MAX(created_at), '0001-01-01 00:00:00+00'::timestamptz)::timestamptz AS last_run_at
 FROM process_runs
 WHERE created_at >= @since;
 
@@ -182,7 +189,17 @@ WHERE created_at >= @since;
 -- here (it would mix two entirely different concepts with the same word).
 -- notes lives in its own table (Phase 2 entry extracted Zettelkasten
 -- notes from the old contents.type='note' polymorphism).
+--
+-- Learning-domain counts added in F-3 follow-up: a learning-studio
+-- audit reported the previous shape made the learning surface invisible
+-- in system_status. attempts/sessions/concepts/fsrs covers the four
+-- top-level entities a learning coach checks for "is the system
+-- populated yet". One query, not four, keeps the round-trip at 1.
 SELECT
-    (SELECT COUNT(*) FROM contents)::int AS contents_count,
-    (SELECT COUNT(*) FROM todos)::int AS todos_count,
-    (SELECT COUNT(*) FROM notes)::int AS notes_count;
+    (SELECT COUNT(*) FROM contents)::int                 AS contents_count,
+    (SELECT COUNT(*) FROM todos)::int                    AS todos_count,
+    (SELECT COUNT(*) FROM notes)::int                    AS notes_count,
+    (SELECT COUNT(*) FROM learning_attempts)::int        AS attempts_count,
+    (SELECT COUNT(*) FROM learning_sessions)::int        AS sessions_count,
+    (SELECT COUNT(*) FROM concepts)::int                 AS concepts_count,
+    (SELECT COUNT(*) FROM review_cards)::int             AS fsrs_cards_count;
