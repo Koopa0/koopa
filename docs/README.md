@@ -28,6 +28,7 @@ be updated):
 | `agent-roster.md` | 5 (operational) | **No** — agent roster reference | Authoritative roster is `internal/agent/registry.go::BuiltinAgents()`. |
 | `audit/*.md` | 6 (historical) | **No** — point-in-time review | Findings reflect repo state at the dated moment; verify before acting. |
 | `audit-prompts/*.md` | 6 (historical) | **No** — past audit-session prompts | Session inputs, not contracts. |
+| `audit-verification-protocol.md` | process (meta) | **N/A** — process rule | How to run audits / verification / reconciliation; defines what counts as evidence + the marker rules. Read before any such task. |
 
 Out of `docs/` but in the order: `migrations/*.sql` (tier 1),
 `internal/`+`cmd/` (tier 2), `internal/mcp/ops/catalog.go` +

@@ -39,6 +39,12 @@ surface where a behavior is observed but its intent is unverified MUST add an
 behavior as canonical. Closing an §8 entry requires explicit human resolution
 in the same session — not inference from "the code does X."
 
+> *Reconciliation work — by any contributor, human or AI — that touches
+> contract surfaces follows the rules in `docs/audit-verification-protocol.md`. That
+> protocol defines what counts as evidence, how open-question markers
+> propagate across mirror surfaces, and the descriptive/normative
+> distinction stated above.*
+
 Companion documents (do not duplicate their scope here):
 
 - The **entity catalogue + cross-entity relationships** live in §3 of THIS
