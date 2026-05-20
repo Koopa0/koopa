@@ -22,7 +22,7 @@
 
 **koopa** is a private-by-default personal OS where multiple AI agents share a semantic runtime — so the AI reads your state, not your prompts.
 
-It's 8 a.m. Studio HQ writes today's briefing by reading yesterday's unfinished daily plan, this week's goal progress, overdue learning-target reviews, and the RSS highlights the ingest pipeline scored overnight. You haven't typed a word yet. At 2 p.m. Content Studio checks the content pipeline — drafts ready for review, topics without coverage, articles aging without refresh — and files a report if something needs your attention. Each agent runs on its own cron, each produces durable artifacts, and every mutation is attributed to the agent that made it. You wake up, read the briefings, decide what to act on, and reject what you don't want. The system does not decide for you. It gives you structure to decide faster.
+It's 8 a.m. Studio HQ writes today's briefing by reading yesterday's unfinished daily plan, this week's goal progress, overdue learning-target reviews, and the RSS highlights the ingest pipeline collected overnight. You haven't typed a word yet. At 2 p.m. Content Studio checks the content pipeline — drafts ready for review, topics without coverage, articles aging without refresh — and files a report if something needs your attention. Each agent runs on its own cron, each produces durable artifacts, and every mutation is attributed to the agent that made it. You wake up, read the briefings, decide what to act on, and reject what you don't want. The system does not decide for you. It gives you structure to decide faster.
 
 ## Why this exists
 
@@ -70,7 +70,7 @@ The vocabulary splits are load-bearing. `task` is inter-agent work; `todo` is pe
 
 ## Knowledge retrieval
 
-Every piece of knowledge is queryable by any agent through MCP. `search_knowledge` runs **hybrid retrieval** — PostgreSQL full-text search (tsvector with websearch syntax, GIN-indexed) _and_ pgvector semantic search (1536-dimension `gemini-embedding-2-preview` via Matryoshka truncation, HNSW-indexed) — and merges results with reciprocal rank fusion. Agents find content that matches by keyword _and_ content that matches by meaning, without choosing a strategy.
+Published content and Zettelkasten notes are queryable by any agent through MCP via `search_knowledge` (bookmarks carry embeddings but are not wired into the search corpus — whether to wire them in is an open decision; see `docs/backend-semantic-contract.md` §8). It runs **hybrid retrieval** — PostgreSQL full-text search (tsvector with websearch syntax, GIN-indexed) _and_ pgvector semantic search (1536-dimension `gemini-embedding-2-preview` via Matryoshka truncation, HNSW-indexed) — and merges results with reciprocal rank fusion. Agents find content that matches by keyword _and_ content that matches by meaning, without choosing a strategy.
 
 Agent notes are keyword-searchable by kind, author, date range, and full-text query. Cross-session context is recoverable: "find what I wrote about embedding pipelines in the last month" is a tool call, not a scroll through a log.
 

@@ -159,7 +159,7 @@ func TestGoogleCallback_MissingCode(t *testing.T) {
 // ─── Refresh handler ──────────────────────────────────────────────────────────
 
 // These tests exercise handler decoding / validation logic. Real store
-// behaviour is tested in store_integration_test.go. Per interface-golden-rule.md
+// behaviour has no dedicated in-package integration test yet. Per interface-golden-rule.md
 // we don't introduce a production interface just for test doubles — the
 // Refresh handler tests below fake the DB via the in-test testHandler builder.
 

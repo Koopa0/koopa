@@ -152,4 +152,4 @@ layers — it is the only tool that joins them.
   constraints/triggers.
 - `.claude/rules/mcp-decision-policy.md` — which tool writes which entity,
   proposal vs direct commit, agent-note kind binding.
-- `docs/SYSTEM-SEMANTICS.md` — system-wide domain model + entity catalogue.
+- `docs/backend-semantic-contract.md` §3 — system-wide domain model + entity catalogue (formerly `docs/SYSTEM-SEMANTICS.md`, now merged there).

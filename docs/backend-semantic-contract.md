@@ -4,22 +4,50 @@ Authoritative semantic baseline for all parties working on or around the
 koopa backend: backend engineering, frontend / mission-control spec,
 Claude Design UI/UX, and MCP agent authors.
 
-**Contract authority order** (higher binds lower):
+**Contract authority order** (higher binds lower — when two sources
+disagree, the higher tier wins and the lower MUST be updated):
 
-1. `migrations/001_initial.up.sql` — the schema. If this document
-   contradicts the schema, the schema wins and this document must be
-   updated.
-2. Go code under `internal/` — the reference implementation of the
-   schema.
-3. `.claude/rules/mcp-decision-policy.md` — MCP behavior rules.
-4. This document — the shared vocabulary and contract consumers see.
-5. README / skill docs — consumer-facing narrative; never load-bearing.
+1. **Schema / migrations + DB constraints** (`migrations/*.sql`) — the
+   structural truth. CHECKs, triggers, and FKs are the last word on what
+   states are legal.
+2. **Go code + tests** (`internal/`, `cmd/`) — the reference
+   implementation. Tests pin observable behavior; when prose disagrees
+   with a passing test, the test wins.
+3. **MCP ops catalog + tool descriptions** (`internal/mcp/ops/catalog.go`)
+   and **MCP behavior policy** (`.claude/rules/mcp-decision-policy.md`) —
+   the live tool surface and the rules for which tool fires when.
+4. **This document** (backend semantic contract) — the shared vocabulary
+   and cross-entity contract consumers see.
+5. **Skills / agent operational docs** (`skills/koopa-system/`,
+   `docs/Koopa-*.md`) — derived operational guidance for the cowork
+   agents; never structural truth.
+6. **Historical docs** (`docs/audit/`, `docs/audit-prompts/`) —
+   point-in-time records. NOT runtime truth; read for context only.
+
+**Authority order resolves descriptive conflicts only.** When code/schema
+and prose disagree about *what the system currently does*, the higher tier
+wins and the lower tier MUST be updated to describe reality. This does NOT
+resolve **normative questions** — whether the observed behavior is intended,
+whether it should be kept, removed, or changed. The fact that code exhibits
+a behavior is **never sufficient** to declare that behavior settled design.
+
+Normative questions are recorded in §8 (Open Ambiguities) and resolved only
+by the human owner in an explicit decision session. Reconciliation work
+(whether by a human contributor or an AI assistant) that touches a contract
+surface where a behavior is observed but its intent is unverified MUST add an
+§8 entry and a "see §8 #N" pointer at the surface, rather than asserting the
+behavior as canonical. Closing an §8 entry requires explicit human resolution
+in the same session — not inference from "the code does X."
 
 Companion documents (do not duplicate their scope here):
 
-- `docs/SYSTEM-SEMANTICS.md` — entity catalogue + cross-entity relationships.
+- The **entity catalogue + cross-entity relationships** live in §3 of THIS
+  document. (The former `docs/SYSTEM-SEMANTICS.md` was merged here; no
+  separate file exists — do not cite that path.)
 - `docs/LEARNING-CONTRACT.md` — FSRS retention vs concept mastery split.
 - `.claude/rules/mcp-decision-policy.md` — which tool fires when, proposal vs direct-commit.
+- **MCP tool parameter reference**: `skills/koopa-system/references/tools.md`
+  (the former `docs/MCP-TOOLS-v2.md`).
 
 ---
 
@@ -319,7 +347,7 @@ Frontend relevance flags:
 | `todo_skips` | Missed recurrence | Background cron (not MCP). | Mutually exclusive with `daily_plan_items.status='dropped'` for same (todo_id, date). | 1:1 todo (CASCADE). | Append-only. | support |
 | `contents` | Public-facing published writing | MCP `create_content` / `update_content` / `submit_content_for_review` / `publish_content` (human-only) / `archive_content` / `revert_content_to_draft`; admin UI. | Publishing is atomic 3-field flip. | 0:N content_topics, 0:N content_tags, 0:N content_concepts, optional project link. | draft → review → published → archived, plus revert-to-draft from review. | primary |
 | `notes` | Private knowledge artifact | MCP `create_note` / `update_note` / `update_note_maturity`; admin UI. | No publish state; matures in place. | 0:N note_concepts, 0:N learning_target_notes. | seed → stub → evergreen → needs_revision → archived (not terminal one-way). | primary |
-| `bookmarks` | External URL + commentary | Admin UI (`internal/bookmark`). MCP does NOT create bookmarks — the `manage_content(bookmark_rss)` path was removed. | Curate = publish (default `is_public=true`). | Optional `source_feed_entry_id`. | Create only; mutual-exclusion with feed_entry→content curation. | primary |
+| `bookmarks` | External URL + commentary | Admin UI (`internal/bookmark`). MCP does NOT create bookmarks — the `manage_content(bookmark_rss)` path was removed. | Curate = publish (default `is_public=true`). | Optional `source_feed_entry_id`. | Create / delete; a `PUT .../{id}` edit path (title/excerpt/note + topics/tags) exists in code but its intent is UNDECIDED (see §8 open question). Mutual-exclusion with feed_entry→content curation. | primary |
 | `feeds` | RSS subscription | Admin UI + MCP `manage_feeds`. | Schedule is a cadence label, not cron. | 0:N feed_topics, 0:N feed_entries. | Create → fetched repeatedly; auto-disable after consecutive failures. | primary (admin only) |
 | `feed_entries` | Collected RSS item | Background fetch pipeline. Admin UI curates. | A given entry → content OR bookmark, never both. | Optional feed (`feed_id` SET NULL on feed delete). | unread → read → curated / ignored. | primary (admin only) |
 | `topics` | Curated domain lookup | Admin UI. | ~10-20, manually managed. | Junction to contents, feeds, bookmarks. | Static. | support |
@@ -533,8 +561,11 @@ created_at") is NOT supported.
   when published).
 - **note**: create / update body-title / update maturity (separate
   action so maturity transitions have their own audit).
-- **bookmark**: create (curate = publish) / delete. No edit workflow
-  today.
+- **bookmark**: create (curate = publish) / delete. A `PUT
+  /api/admin/knowledge/bookmarks/{id}` edit endpoint (title/excerpt/note +
+  topics/tags) exists in code, but whether bookmarks should be editable at
+  all — vs deliberately Create-only / immutable — is an OPEN decision (§8).
+  No draft→review stage.
 - **feed**: create / update schedule-or-topics / enable / disable /
   fetch-now / delete.
 - **feed_entry**: mark read / curate → content / curate → bookmark /
@@ -618,9 +649,15 @@ Do not use these terms in new code, schema, API, or UI copy:
 - **`weakness:xxx` / `improvement:xxx`** — retired namespaced tag slugs.
   Weakness diagnosis runs through `concepts` + `learning_attempt_observations`,
   not tags.
-- **`p0` / `p1` / `p2` priority scale** — retired. The single scale is
-  `high | medium | low` to match the `tasks.priority` CHECK. The MCP
-  boundary rejects anything else (no alias).
+- **`p0` / `p1` / `p2` as a CANONICAL / STORED scale** — not used. The
+  stored scale is `high | medium | low` (the `tasks.priority` /
+  `todos.priority` CHECK). NOTE (reconciled 2026-05-20, code is authority):
+  the MCP input normalizer `internal/mcp/execution.go::normalizePriority`
+  DOES accept `p0`–`p3` and `h`/`m`/`l` as input shorthand and maps them to
+  the canonical scale — they are **accepted aliases at the input boundary,
+  not rejected**. Do not persist or surface `p0/p1/p2` as canonical values
+  in schema, API responses, or UI copy. (Whether to keep accepting these
+  aliases at all is an OPEN decision — see §8 #10.)
 - **`resolve_directive=true`** — phantom parameter. Never existed in
   `FileReportInput`. `file_report` with `in_response_to` set already
   completes the task.
@@ -732,9 +769,11 @@ violate the current semantics.
 18. **Do not invent new `process_runs.kind` values casually**. Adding
     one requires both the schema CHECK update and a coherent story
     for `subsystem` (required iff `kind='agent_schedule'`).
-19. **Do not reintroduce `flow` / `bookmark_rss` /
-    `resolve_directive` / `p0/p1/p2`** in any new code, query, or UI
-    copy. These are explicitly retired (§6).
+19. **Do not reintroduce `flow` / `bookmark_rss` / `resolve_directive`**
+    in any new code, query, or UI copy — these are fully removed.
+    (`p0/p1/p2` are a special case: accepted as input shorthand by
+    `normalizePriority` but never a canonical stored value — see §6. Do
+    not store or surface them as canonical.)
 
 ---
 
@@ -786,10 +825,36 @@ that touches them as needing explicit decision.
    are documented in `.claude/rules/mcp-decision-policy.md §14`
    (when behavior diverges). Not a current plan.
 
-9. **Bookmark edit flow**. Bookmark creation is final today — there
-   is no admin endpoint to update a bookmark's `note` or `title`
-   after curation. If UI needs this, a backend edit endpoint and
-   audit behavior need design first.
+9. **Bookmark edit flow** — *open / unresolved*. The contract historically
+   specified bookmarks as Create-only (immutable after curation). However a
+   `PUT /api/admin/knowledge/bookmarks/{id}` → `bookmark.Handler.Update` →
+   `UpdateBookmark` endpoint EXISTS in code, patching `title` / `excerpt` /
+   `note` (+ topics/tags via the Go layer; `url` / `url_hash` / `slug` /
+   `curated_by` / `is_public` / `published_at` are not editable). **Undecided:**
+   is this endpoint intended (→ bookmarks are Create+edit; update the
+   lifecycle docs in §3/§5 to match) OR a forgotten implementation to be
+   REMOVED to honor a deliberate Create-only design? This is a product
+   decision for the human — it must NOT be resolved by "the code exists"
+   alone. Tracked in audit §12.1 S-1 / §11; resolve in a dedicated decision
+   session.
+
+10. **`p0` / `p1` / `p2` priority aliases — keep or remove.**
+    `normalizePriority` (`internal/mcp/execution.go`) accepts `p0`–`p3` and
+    `h`/`m`/`l` as input shorthand (§6 records this as *current behavior*).
+    Whether to KEEP the aliases or REMOVE them to honor the original
+    `high|medium|low`-only intent is undecided. Audit §3-F6. §6 states the
+    fact; this item tracks the decision.
+
+11. **Bookmark in the `search_knowledge` corpus.** Bookmarks carry an
+    `embedding` column + HNSW index but are NOT wired into `search_knowledge`
+    (corpus = content + notes only). Whether to wire them in (using the
+    existing embeddings) or stop building bookmark embeddings is undecided.
+    Audit §12.1 S-2. README (en + zh-TW) states the status quo and points here.
+
+12. **Feed AI scoring — implement or not.** The RSS scoring pipeline is not
+    active (`internal/feed/entry/query.sql`: "scoring pipeline not yet active,
+    all items have score=0"); highlights are recency/priority-ordered. Whether
+    to implement relevance scoring is undecided. Audit §12.1 S-3.
 
 ---
 

@@ -56,7 +56,7 @@ type FeedStats struct {
 }
 
 // ProcessRunStats holds process_runs counts by status for a single kind
-// (flow or agent_schedule). Used as the value type in Overview.ProcessRuns map.
+// (crawl or agent_schedule). Used as the value type in Overview.ProcessRuns map.
 type ProcessRunStats struct {
 	Total    int            `json:"total"`
 	ByStatus map[string]int `json:"by_status"`

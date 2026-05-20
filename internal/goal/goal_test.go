@@ -174,10 +174,11 @@ func TestRegression_GoalStatusValidation(t *testing.T) {
 
 // ---------------------------------------------------------------------------
 // Handler.List — nil store panics (validation: none, store called immediately)
-// Store interaction tests are in store_integration_test.go and server_test.go.
+// Store interaction (success paths needing a real store) has no dedicated
+// in-package integration test yet.
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
 // Handler.UpdateStatus success path — requires real store.
-// Tested via server_test.go integration tests.
+// Not yet covered by an in-package integration test.
 // ---------------------------------------------------------------------------

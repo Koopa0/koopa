@@ -2719,7 +2719,7 @@ type CreateBookmarkRow struct {
 	UpdatedAt         time.Time  `json:"updated_at"`
 }
 
-// Queries for the bookmark package. See migrations/005_bookmarks_schema.up.sql
+// Queries for the bookmark package. See migrations/001_initial.up.sql
 // for the table definition. url_hash / slug uniqueness is enforced by
 // constraints; callers rely on pgerrcode 23505 → ErrConflict mapping.
 func (q *Queries) CreateBookmark(ctx context.Context, arg CreateBookmarkParams) (CreateBookmarkRow, error) {

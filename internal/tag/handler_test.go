@@ -6,7 +6,7 @@ package tag
 // and routing logic that lives in the handler itself.
 //
 // Handler tests that require a real store (create/update/delete success paths)
-// are covered by the integration tests in store_integration_test.go.
+// are covered by the integration tests in integration_test.go.
 
 import (
 	"encoding/json"

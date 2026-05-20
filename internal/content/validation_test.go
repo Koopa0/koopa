@@ -711,7 +711,7 @@ func keysOf(m map[string]json.RawMessage) []string {
 // by default (IsPublic == false), so the gate fires correctly without explicit setup.
 //
 // Full end-to-end enforcement is covered by the integration tests in
-// store_integration_test.go.
+// integration_test.go.
 func TestRegression_BySlug_PrivateContentReturns404(t *testing.T) {
 	t.Parallel()
 

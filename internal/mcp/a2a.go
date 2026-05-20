@@ -300,8 +300,9 @@ func (s *Server) taskDetail(ctx context.Context, _ *mcp.CallToolRequest, input T
 	// Authorization: caller must be the task source or target. Agent
 	// notes belonging to the target remain private — this tool only
 	// exposes the coordination surface (task / message / artifact),
-	// never the target's self-directed narrative. Rejected-design
-	// reasoning in docs/narrative-rewrite-scope.md §8.10.
+	// never the target's self-directed narrative. Why agent_notes stay
+	// private to their author: docs/backend-semantic-contract.md §2
+	// (agent_note) + .claude/rules/mcp-decision-policy.md §14.
 	caller := s.callerIdentity(ctx)
 	if caller != t.Source && caller != t.Target {
 		return nil, TaskDetailOutput{}, fmt.Errorf("task_detail: %w", task.ErrNotFound)
