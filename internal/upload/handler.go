@@ -35,7 +35,7 @@ func NewHandler(client *s3.Client, bucket, publicURL string, logger *slog.Logger
 func (h *Handler) Upload(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxFileSize+1024) // extra room for multipart headers
 
-	if err := r.ParseMultipartForm(maxFileSize); err != nil {
+	if err := r.ParseMultipartForm(maxFileSize); err != nil { //nolint:gosec // G120 false positive: r.Body is bounded by http.MaxBytesReader on line 36 above
 		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "file exceeds 5MB limit")
 		return
 	}
