@@ -377,7 +377,7 @@ func assembleBookmark(
 	}
 }
 
-func bookmarkFromByID(r *db.BookmarkByIDRow) Bookmark {
+func bookmarkFromByID(r *db.Bookmark) Bookmark {
 	return assembleBookmark(
 		r.ID, r.Url, r.UrlHash, r.Slug, r.Title, r.Excerpt, r.Note,
 		r.CaptureChannel, r.SourceFeedEntryID, r.CuratedBy, r.CuratedAt,
@@ -385,7 +385,7 @@ func bookmarkFromByID(r *db.BookmarkByIDRow) Bookmark {
 	)
 }
 
-func bookmarkFromBySlug(r *db.BookmarkBySlugRow) Bookmark {
+func bookmarkFromBySlug(r *db.Bookmark) Bookmark {
 	return assembleBookmark(
 		r.ID, r.Url, r.UrlHash, r.Slug, r.Title, r.Excerpt, r.Note,
 		r.CaptureChannel, r.SourceFeedEntryID, r.CuratedBy, r.CuratedAt,
@@ -393,7 +393,7 @@ func bookmarkFromBySlug(r *db.BookmarkBySlugRow) Bookmark {
 	)
 }
 
-func bookmarkFromPublic(r *db.PublicBookmarksRow) Bookmark {
+func bookmarkFromPublic(r *db.Bookmark) Bookmark {
 	return assembleBookmark(
 		r.ID, r.Url, r.UrlHash, r.Slug, r.Title, r.Excerpt, r.Note,
 		r.CaptureChannel, r.SourceFeedEntryID, r.CuratedBy, r.CuratedAt,
@@ -401,7 +401,7 @@ func bookmarkFromPublic(r *db.PublicBookmarksRow) Bookmark {
 	)
 }
 
-func bookmarkFromList(r *db.ListBookmarksRow) Bookmark {
+func bookmarkFromList(r *db.Bookmark) Bookmark {
 	return assembleBookmark(
 		r.ID, r.Url, r.UrlHash, r.Slug, r.Title, r.Excerpt, r.Note,
 		r.CaptureChannel, r.SourceFeedEntryID, r.CuratedBy, r.CuratedAt,
@@ -409,7 +409,7 @@ func bookmarkFromList(r *db.ListBookmarksRow) Bookmark {
 	)
 }
 
-func bookmarkFromCreate(r *db.CreateBookmarkRow) Bookmark {
+func bookmarkFromCreate(r *db.Bookmark) Bookmark {
 	return assembleBookmark(
 		r.ID, r.Url, r.UrlHash, r.Slug, r.Title, r.Excerpt, r.Note,
 		r.CaptureChannel, r.SourceFeedEntryID, r.CuratedBy, r.CuratedAt,
@@ -417,7 +417,7 @@ func bookmarkFromCreate(r *db.CreateBookmarkRow) Bookmark {
 	)
 }
 
-func bookmarkFromUpdate(r *db.UpdateBookmarkRow) Bookmark {
+func bookmarkFromUpdate(r *db.Bookmark) Bookmark {
 	return assembleBookmark(
 		r.ID, r.Url, r.UrlHash, r.Slug, r.Title, r.Excerpt, r.Note,
 		r.CaptureChannel, r.SourceFeedEntryID, r.CuratedBy, r.CuratedAt,

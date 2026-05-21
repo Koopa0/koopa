@@ -2516,7 +2516,6 @@ CREATE TABLE bookmarks (
     curated_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
     is_public            BOOLEAN NOT NULL DEFAULT true,
     published_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
-    embedding            vector(1536),
     created_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
 
@@ -2545,15 +2544,12 @@ COMMENT ON COLUMN bookmarks.curated_by IS 'Agent that curated the bookmark. FK t
 COMMENT ON COLUMN bookmarks.curated_at IS 'When the bookmark was curated into the system.';
 COMMENT ON COLUMN bookmarks.is_public IS 'Whether this bookmark is visible on the public website. Defaults to true — curate = publish.';
 COMMENT ON COLUMN bookmarks.published_at IS 'When the bookmark was published. Defaults to now() at row creation since creating a bookmark is the act of publishing.';
-COMMENT ON COLUMN bookmarks.embedding IS 'pgvector embedding (1536d) from gemini-embedding-2-preview. Must match internal/embedder.Dimension or pgvector rejects writes.';
 
 CREATE INDEX idx_bookmarks_published_at ON bookmarks(published_at DESC NULLS LAST)
     WHERE is_public = true;
 CREATE INDEX idx_bookmarks_curated_at ON bookmarks(curated_at DESC);
 CREATE INDEX idx_bookmarks_source_feed_entry ON bookmarks(source_feed_entry_id)
     WHERE source_feed_entry_id IS NOT NULL;
-CREATE INDEX idx_bookmarks_embedding_hnsw ON bookmarks USING hnsw (embedding vector_cosine_ops)
-    WITH (m = 16, ef_construction = 64);
 
 CREATE TABLE bookmark_topics (
     bookmark_id UUID NOT NULL REFERENCES bookmarks(id) ON DELETE CASCADE,

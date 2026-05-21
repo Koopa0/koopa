@@ -758,10 +758,8 @@ type Bookmark struct {
 	IsPublic bool `json:"is_public"`
 	// When the bookmark was published. Defaults to now() at row creation since creating a bookmark is the act of publishing.
 	PublishedAt time.Time `json:"published_at"`
-	// pgvector embedding (1536d) from gemini-embedding-2-preview. Must match internal/embedder.Dimension or pgvector rejects writes.
-	Embedding *pgvector_go.Vector `json:"embedding"`
-	CreatedAt time.Time           `json:"created_at"`
-	UpdatedAt time.Time           `json:"updated_at"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 // Junction: bookmark ↔ tag. References canonical tags resolved through the tag_aliases pipeline.

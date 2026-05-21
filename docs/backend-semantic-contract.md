@@ -851,16 +851,32 @@ that touches them as needing explicit decision.
     `high|medium|low`-only intent is undecided. Audit §3-F6. §6 states the
     fact; this item tracks the decision.
 
-11. **Bookmark in the `search_knowledge` corpus.** Bookmarks carry an
-    `embedding` column + HNSW index but are NOT wired into `search_knowledge`
-    (corpus = content + notes only). Whether to wire them in (using the
-    existing embeddings) or stop building bookmark embeddings is undecided.
-    Audit §12.1 S-2. README (en + zh-TW) states the status quo and points here.
+11. Bookmark in the search_knowledge corpus — resolved (excluded),
+    2026-05-21, by Koopa. Bookmarks are not a search_knowledge corpus
+    member and never were: no SourceTypeBookmark has ever existed in
+    internal/mcp/search.go, and bookmarks have no search_vector column
+    (only contents and notes do). The dormant `bookmarks.embedding`
+    column + idx_bookmarks_embedding_hnsw index were a future hook
+    from 1e9c596 (M1) that was never followed up; they were removed
+    in this resolution. Bookmark is a curate-equals-publish external
+    resource surfaced via its own read endpoints, not a searchable
+    knowledge source. If bookmark semantic search is wanted in future,
+    it is a deliberate new feature (embedding write path + FTS column
+    + search branch + ranking design), not a re-wiring of existing
+    infrastructure.
 
 12. **Feed AI scoring — implement or not.** The RSS scoring pipeline is not
     active (`internal/feed/entry/query.sql`: "scoring pipeline not yet active,
     all items have score=0"); highlights are recency/priority-ordered. Whether
     to implement relevance scoring is undecided. Audit §12.1 S-3.
+
+13. Embedding write subsystem dormant. The stored-embedding write
+    path is not wired for any table: contents.embedding is read by
+    the semantic branch (content/query.sql:87,90,251,258) but never
+    written; notes.embedding is read by nothing (notes.Search is
+    FTS-only) and never written. Whether to activate the write
+    subsystem (and which tables to include) is a platform-level
+    open question, categorically distinct from #11.
 
 ---
 

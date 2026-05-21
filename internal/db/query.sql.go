@@ -1353,27 +1353,9 @@ FROM bookmarks
 WHERE id = $1
 `
 
-type BookmarkByIDRow struct {
-	ID                uuid.UUID  `json:"id"`
-	Url               string     `json:"url"`
-	UrlHash           string     `json:"url_hash"`
-	Slug              string     `json:"slug"`
-	Title             string     `json:"title"`
-	Excerpt           string     `json:"excerpt"`
-	Note              string     `json:"note"`
-	CaptureChannel    string     `json:"capture_channel"`
-	SourceFeedEntryID *uuid.UUID `json:"source_feed_entry_id"`
-	CuratedBy         string     `json:"curated_by"`
-	CuratedAt         time.Time  `json:"curated_at"`
-	IsPublic          bool       `json:"is_public"`
-	PublishedAt       time.Time  `json:"published_at"`
-	CreatedAt         time.Time  `json:"created_at"`
-	UpdatedAt         time.Time  `json:"updated_at"`
-}
-
-func (q *Queries) BookmarkByID(ctx context.Context, id uuid.UUID) (BookmarkByIDRow, error) {
+func (q *Queries) BookmarkByID(ctx context.Context, id uuid.UUID) (Bookmark, error) {
 	row := q.db.QueryRow(ctx, bookmarkByID, id)
-	var i BookmarkByIDRow
+	var i Bookmark
 	err := row.Scan(
 		&i.ID,
 		&i.Url,
@@ -1403,27 +1385,9 @@ FROM bookmarks
 WHERE slug = $1 AND is_public = true
 `
 
-type BookmarkBySlugRow struct {
-	ID                uuid.UUID  `json:"id"`
-	Url               string     `json:"url"`
-	UrlHash           string     `json:"url_hash"`
-	Slug              string     `json:"slug"`
-	Title             string     `json:"title"`
-	Excerpt           string     `json:"excerpt"`
-	Note              string     `json:"note"`
-	CaptureChannel    string     `json:"capture_channel"`
-	SourceFeedEntryID *uuid.UUID `json:"source_feed_entry_id"`
-	CuratedBy         string     `json:"curated_by"`
-	CuratedAt         time.Time  `json:"curated_at"`
-	IsPublic          bool       `json:"is_public"`
-	PublishedAt       time.Time  `json:"published_at"`
-	CreatedAt         time.Time  `json:"created_at"`
-	UpdatedAt         time.Time  `json:"updated_at"`
-}
-
-func (q *Queries) BookmarkBySlug(ctx context.Context, slug string) (BookmarkBySlugRow, error) {
+func (q *Queries) BookmarkBySlug(ctx context.Context, slug string) (Bookmark, error) {
 	row := q.db.QueryRow(ctx, bookmarkBySlug, slug)
-	var i BookmarkBySlugRow
+	var i Bookmark
 	err := row.Scan(
 		&i.ID,
 		&i.Url,
@@ -2701,28 +2665,10 @@ type CreateBookmarkParams struct {
 	PublishedAt       time.Time  `json:"published_at"`
 }
 
-type CreateBookmarkRow struct {
-	ID                uuid.UUID  `json:"id"`
-	Url               string     `json:"url"`
-	UrlHash           string     `json:"url_hash"`
-	Slug              string     `json:"slug"`
-	Title             string     `json:"title"`
-	Excerpt           string     `json:"excerpt"`
-	Note              string     `json:"note"`
-	CaptureChannel    string     `json:"capture_channel"`
-	SourceFeedEntryID *uuid.UUID `json:"source_feed_entry_id"`
-	CuratedBy         string     `json:"curated_by"`
-	CuratedAt         time.Time  `json:"curated_at"`
-	IsPublic          bool       `json:"is_public"`
-	PublishedAt       time.Time  `json:"published_at"`
-	CreatedAt         time.Time  `json:"created_at"`
-	UpdatedAt         time.Time  `json:"updated_at"`
-}
-
 // Queries for the bookmark package. See migrations/001_initial.up.sql
 // for the table definition. url_hash / slug uniqueness is enforced by
 // constraints; callers rely on pgerrcode 23505 → ErrConflict mapping.
-func (q *Queries) CreateBookmark(ctx context.Context, arg CreateBookmarkParams) (CreateBookmarkRow, error) {
+func (q *Queries) CreateBookmark(ctx context.Context, arg CreateBookmarkParams) (Bookmark, error) {
 	row := q.db.QueryRow(ctx, createBookmark,
 		arg.Url,
 		arg.UrlHash,
@@ -2736,7 +2682,7 @@ func (q *Queries) CreateBookmark(ctx context.Context, arg CreateBookmarkParams) 
 		arg.IsPublic,
 		arg.PublishedAt,
 	)
-	var i CreateBookmarkRow
+	var i Bookmark
 	err := row.Scan(
 		&i.ID,
 		&i.Url,
@@ -6468,35 +6414,17 @@ type ListBookmarksParams struct {
 	IsPublic *bool `json:"is_public"`
 }
 
-type ListBookmarksRow struct {
-	ID                uuid.UUID  `json:"id"`
-	Url               string     `json:"url"`
-	UrlHash           string     `json:"url_hash"`
-	Slug              string     `json:"slug"`
-	Title             string     `json:"title"`
-	Excerpt           string     `json:"excerpt"`
-	Note              string     `json:"note"`
-	CaptureChannel    string     `json:"capture_channel"`
-	SourceFeedEntryID *uuid.UUID `json:"source_feed_entry_id"`
-	CuratedBy         string     `json:"curated_by"`
-	CuratedAt         time.Time  `json:"curated_at"`
-	IsPublic          bool       `json:"is_public"`
-	PublishedAt       time.Time  `json:"published_at"`
-	CreatedAt         time.Time  `json:"created_at"`
-	UpdatedAt         time.Time  `json:"updated_at"`
-}
-
 // Full bookmark listing without visibility restriction. Admin surface
 // uses this; is_public becomes an optional filter (NULL = all).
-func (q *Queries) ListBookmarks(ctx context.Context, arg ListBookmarksParams) ([]ListBookmarksRow, error) {
+func (q *Queries) ListBookmarks(ctx context.Context, arg ListBookmarksParams) ([]Bookmark, error) {
 	rows, err := q.db.Query(ctx, listBookmarks, arg.Limit, arg.Offset, arg.IsPublic)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []ListBookmarksRow{}
+	items := []Bookmark{}
 	for rows.Next() {
-		var i ListBookmarksRow
+		var i Bookmark
 		if err := rows.Scan(
 			&i.ID,
 			&i.Url,
@@ -8437,33 +8365,15 @@ type PublicBookmarksParams struct {
 	Since  *time.Time `json:"since"`
 }
 
-type PublicBookmarksRow struct {
-	ID                uuid.UUID  `json:"id"`
-	Url               string     `json:"url"`
-	UrlHash           string     `json:"url_hash"`
-	Slug              string     `json:"slug"`
-	Title             string     `json:"title"`
-	Excerpt           string     `json:"excerpt"`
-	Note              string     `json:"note"`
-	CaptureChannel    string     `json:"capture_channel"`
-	SourceFeedEntryID *uuid.UUID `json:"source_feed_entry_id"`
-	CuratedBy         string     `json:"curated_by"`
-	CuratedAt         time.Time  `json:"curated_at"`
-	IsPublic          bool       `json:"is_public"`
-	PublishedAt       time.Time  `json:"published_at"`
-	CreatedAt         time.Time  `json:"created_at"`
-	UpdatedAt         time.Time  `json:"updated_at"`
-}
-
-func (q *Queries) PublicBookmarks(ctx context.Context, arg PublicBookmarksParams) ([]PublicBookmarksRow, error) {
+func (q *Queries) PublicBookmarks(ctx context.Context, arg PublicBookmarksParams) ([]Bookmark, error) {
 	rows, err := q.db.Query(ctx, publicBookmarks, arg.Limit, arg.Offset, arg.Since)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []PublicBookmarksRow{}
+	items := []Bookmark{}
 	for rows.Next() {
-		var i PublicBookmarksRow
+		var i Bookmark
 		if err := rows.Scan(
 			&i.ID,
 			&i.Url,
@@ -12307,37 +12217,19 @@ type UpdateBookmarkParams struct {
 	Note    *string   `json:"note"`
 }
 
-type UpdateBookmarkRow struct {
-	ID                uuid.UUID  `json:"id"`
-	Url               string     `json:"url"`
-	UrlHash           string     `json:"url_hash"`
-	Slug              string     `json:"slug"`
-	Title             string     `json:"title"`
-	Excerpt           string     `json:"excerpt"`
-	Note              string     `json:"note"`
-	CaptureChannel    string     `json:"capture_channel"`
-	SourceFeedEntryID *uuid.UUID `json:"source_feed_entry_id"`
-	CuratedBy         string     `json:"curated_by"`
-	CuratedAt         time.Time  `json:"curated_at"`
-	IsPublic          bool       `json:"is_public"`
-	PublishedAt       time.Time  `json:"published_at"`
-	CreatedAt         time.Time  `json:"created_at"`
-	UpdatedAt         time.Time  `json:"updated_at"`
-}
-
 // Partial update of editable fields. URL, url_hash, slug, capture_channel,
 // curated_by, is_public, published_at are identity / lifecycle fields that
 // do not participate in this path. Topics and tags are re-attached by the
 // Go layer through DeleteBookmarkTopics + AddBookmarkTopic and the tag
 // equivalents, so they are not updated here.
-func (q *Queries) UpdateBookmark(ctx context.Context, arg UpdateBookmarkParams) (UpdateBookmarkRow, error) {
+func (q *Queries) UpdateBookmark(ctx context.Context, arg UpdateBookmarkParams) (Bookmark, error) {
 	row := q.db.QueryRow(ctx, updateBookmark,
 		arg.ID,
 		arg.Title,
 		arg.Excerpt,
 		arg.Note,
 	)
-	var i UpdateBookmarkRow
+	var i Bookmark
 	err := row.Scan(
 		&i.ID,
 		&i.Url,

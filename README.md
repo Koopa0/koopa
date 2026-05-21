@@ -70,7 +70,7 @@ The vocabulary splits are load-bearing. `task` is inter-agent work; `todo` is pe
 
 ## Knowledge retrieval
 
-Published content and Zettelkasten notes are queryable by any agent through MCP via `search_knowledge` (bookmarks carry embeddings but are not wired into the search corpus — whether to wire them in is an open decision; see `docs/backend-semantic-contract.md` §8). It runs **hybrid retrieval** — PostgreSQL full-text search (tsvector with websearch syntax, GIN-indexed) _and_ pgvector semantic search (1536-dimension `gemini-embedding-2-preview` via Matryoshka truncation, HNSW-indexed) — and merges results with reciprocal rank fusion. Agents find content that matches by keyword _and_ content that matches by meaning, without choosing a strategy.
+Published content and Zettelkasten notes are queryable by any agent through MCP via `search_knowledge`. It runs **hybrid retrieval** — PostgreSQL full-text search (tsvector with websearch syntax, GIN-indexed) _and_ pgvector semantic search (1536-dimension `gemini-embedding-2-preview` via Matryoshka truncation, HNSW-indexed) — and merges results with reciprocal rank fusion. Agents find content that matches by keyword _and_ content that matches by meaning, without choosing a strategy.
 
 Agent notes are keyword-searchable by kind, author, date range, and full-text query. Cross-session context is recoverable: "find what I wrote about embedding pipelines in the last month" is a tool call, not a scroll through a log.
 
