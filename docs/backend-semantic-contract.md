@@ -865,6 +865,12 @@ that touches them as needing explicit decision.
     + search branch + ranking design), not a re-wiring of existing
     infrastructure.
 
+    Note: a dormant `KindBookmark` enum value exists in the admin
+    global-search Kind taxonomy (internal/search/search.go:23) but
+    has no wired Source adapter. The phrase "not a searchable
+    knowledge source" in this resolution refers to the actual wired
+    state; the dormant enum is tracked separately as §8 #14.
+
 12. **Feed AI scoring — implement or not.** The RSS scoring pipeline is not
     active (`internal/feed/entry/query.sql`: "scoring pipeline not yet active,
     all items have score=0"); highlights are recency/priority-ordered. Whether
@@ -877,6 +883,24 @@ that touches them as needing explicit decision.
     FTS-only) and never written. Whether to activate the write
     subsystem (and which tables to include) is a platform-level
     open question, categorically distinct from #11.
+
+14. Admin global-search Kind taxonomy contains declared-but-unwired
+    kinds. The admin global-search surface (internal/search/search.go,
+    serving GET /api/admin/search via cmd/app/main.go:183-185)
+    declares nine Kind values: KindContent and KindNote are wired
+    with Source adapters; KindBookmark, KindHypothesis, KindConcept,
+    KindTask, KindGoal, KindTodo, and KindProject are declared but
+    have no wired Source adapter. This is a taxonomy question (why
+    does the admin search enum advertise capabilities the system
+    does not deliver?), categorically distinct from #11 (which was
+    a membership question about bookmark in MCP search_knowledge,
+    now resolved) and from #13 (which is an infrastructure-
+    activation question about the embedding write subsystem).
+    Folding this into #11 would pull a resolved single-entity
+    exclusion back into an undecided multi-entity taxonomy question.
+    Whether to wire each Kind or remove the unused declarations is
+    undecided. Discovered during acceptance review of commit
+    77ea409.
 
 ---
 
