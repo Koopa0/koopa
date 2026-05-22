@@ -80,7 +80,14 @@ func (s *Store) AllPublishedSlugs(ctx context.Context) ([]Content, error) {
 	return contents, nil
 }
 
-// PublishContent sets content status to published.
+// PublishContent sets content status to published, is_public=true, and
+// published_at — at the store layer this is UNCONDITIONAL (no source-status
+// guard). The review-gated transition (only status=review may publish;
+// already-published is an idempotent no-op; draft/archived are rejected) is
+// enforced at the call boundary — see mcp.Server.publishContent (Track 1D
+// state-guard) which reads the row and branches before invoking this method.
+// Callers that need the gate MUST go through that boundary, not call this
+// directly on an unvalidated id.
 func (s *Store) PublishContent(ctx context.Context, id uuid.UUID) (*Content, error) {
 	r, err := s.q.PublishContent(ctx, id)
 	if err != nil {

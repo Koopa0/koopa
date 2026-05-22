@@ -23,6 +23,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/Koopa0/koopa/internal/content"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -61,12 +62,15 @@ type UpdateContentInput struct {
 	Body        *string `json:"body,omitempty"`
 	Slug        *string `json:"slug,omitempty"`
 	ContentType *string `json:"content_type,omitempty" jsonschema_description:"Change content type (rare)."`
-	Status      *string `json:"status,omitempty" jsonschema_description:"Change status (any of: draft, review, published, archived). Prefer the lifecycle tools for transitions — this is for direct admin override."`
+	// Status is accepted only to REJECT it: update_content is fields-only and
+	// does not move the lifecycle. Sending a status here returns an error
+	// pointing at the dedicated transition tools.
+	Status *string `json:"status,omitempty" jsonschema_description:"REJECTED. update_content does not change status — use submit_content_for_review / revert_content_to_draft / publish_content / archive_content for lifecycle transitions."`
 }
 
 func (s *Server) updateContentTool(ctx context.Context, _ *mcp.CallToolRequest, input UpdateContentInput) (*mcp.CallToolResult, ManageContentOutput, error) {
-	if input.Status != nil && *input.Status != "" && !isValidContentStatus(*input.Status) {
-		return nil, ManageContentOutput{}, fmt.Errorf("status must be one of: draft, review, published, archived (got %q)", *input.Status)
+	if input.Status != nil && *input.Status != "" {
+		return nil, ManageContentOutput{}, fmt.Errorf("update_content does not change status — use submit_content_for_review, revert_content_to_draft, publish_content, or archive_content for lifecycle transitions")
 	}
 	internal := ManageContentInput{
 		ContentID:   &input.ContentID,
@@ -74,7 +78,7 @@ func (s *Server) updateContentTool(ctx context.Context, _ *mcp.CallToolRequest, 
 		Body:        input.Body,
 		Slug:        input.Slug,
 		ContentType: input.ContentType,
-		Status:      input.Status,
+		// Status intentionally NOT forwarded — update_content is fields-only.
 	}
 	return s.updateContent(ctx, &internal)
 }
@@ -92,12 +96,13 @@ func (s *Server) submitContentForReviewTool(ctx context.Context, _ *mcp.CallTool
 	if input.ContentID == "" {
 		return nil, ManageContentOutput{}, fmt.Errorf("content_id is required")
 	}
-	status := "review"
-	internal := ManageContentInput{
-		ContentID: &input.ContentID,
-		Status:    &status,
+	// draft → review; review → review idempotent no-op; published/archived/other rejected.
+	c, err := s.transitionContentStatus(ctx, input.ContentID, content.StatusReview, content.StatusDraft)
+	if err != nil {
+		return nil, ManageContentOutput{}, mapContentTransitionErr(err, input.ContentID,
+			"submit_content_for_review", "must be in draft state (already-review is an idempotent no-op)")
 	}
-	return s.updateContent(ctx, &internal)
+	return nil, ManageContentOutput{Content: toContentDetail(c), Action: "submit_for_review"}, nil
 }
 
 // ---------------------------------------------------------------
@@ -113,12 +118,13 @@ func (s *Server) revertContentToDraftTool(ctx context.Context, _ *mcp.CallToolRe
 	if input.ContentID == "" {
 		return nil, ManageContentOutput{}, fmt.Errorf("content_id is required")
 	}
-	status := "draft"
-	internal := ManageContentInput{
-		ContentID: &input.ContentID,
-		Status:    &status,
+	// review → draft; draft → draft idempotent no-op; published/archived/other rejected.
+	c, err := s.transitionContentStatus(ctx, input.ContentID, content.StatusDraft, content.StatusReview)
+	if err != nil {
+		return nil, ManageContentOutput{}, mapContentTransitionErr(err, input.ContentID,
+			"revert_content_to_draft", "must be in review state (already-draft is an idempotent no-op)")
 	}
-	return s.updateContent(ctx, &internal)
+	return nil, ManageContentOutput{Content: toContentDetail(c), Action: "revert_to_draft"}, nil
 }
 
 // ---------------------------------------------------------------
@@ -127,7 +133,7 @@ func (s *Server) revertContentToDraftTool(ctx context.Context, _ *mcp.CallToolRe
 
 type PublishContentInput struct {
 	As        string `json:"as,omitempty" jsonschema_description:"Self-identification. MUST be an explicit human agent name — the server default does NOT confer publish authority."`
-	ContentID string `json:"content_id" jsonschema:"required" jsonschema_description:"Content UUID to publish (must be in status=review)."`
+	ContentID string `json:"content_id" jsonschema:"required" jsonschema_description:"Content UUID to publish. Review-gated: only status=review transitions to published. Already-published is an idempotent no-op; draft/archived are rejected (status=review required)."`
 }
 
 func (s *Server) publishContentTool(ctx context.Context, _ *mcp.CallToolRequest, input PublishContentInput) (*mcp.CallToolResult, ManageContentOutput, error) {
@@ -151,12 +157,15 @@ func (s *Server) archiveContentTool(ctx context.Context, _ *mcp.CallToolRequest,
 	if input.ContentID == "" {
 		return nil, ManageContentOutput{}, fmt.Errorf("content_id is required")
 	}
-	status := "archived"
-	internal := ManageContentInput{
-		ContentID: &input.ContentID,
-		Status:    &status,
+	// draft/review → archived; archived → archived idempotent no-op. Published
+	// is rejected: depublication is a separate lifecycle decision and must not
+	// be hidden inside archive_content.
+	c, err := s.transitionContentStatus(ctx, input.ContentID, content.StatusArchived, content.StatusDraft, content.StatusReview)
+	if err != nil {
+		return nil, ManageContentOutput{}, mapContentTransitionErr(err, input.ContentID,
+			"archive_content", "must be in draft or review state; published content must be depublished separately before archiving")
 	}
-	return s.updateContent(ctx, &internal)
+	return nil, ManageContentOutput{Content: toContentDetail(c), Action: "archive"}, nil
 }
 
 // ---------------------------------------------------------------

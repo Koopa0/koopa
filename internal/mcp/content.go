@@ -2,7 +2,10 @@
 // MCP tools declared in content_tools.go. It defines the shared
 // ManageContentInput shape, the per-transition internal methods
 // (createContent, updateContent, publishContent, …), and the
-// publish-authority guard (publish requires an explicit `as: "human"`).
+// publish-authority guard (publish requires an explicit `as: "human"`)
+// plus the publish state guard (review-gated: only status=review
+// transitions; already-published is an idempotent no-op; draft/archived
+// are rejected).
 //
 // Why the split: the MCP surface is flat, but the internal logic
 // branches on the transition being requested. Keeping the branch logic
@@ -16,6 +19,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -75,14 +79,6 @@ var (
 		"build-log": {},
 		"til":       {},
 		"digest":    {},
-	}
-	// Matches the content_status enum. The 'review' state was reinstated in
-	// schema cleanup as Claude → human publish handoff signal.
-	validStatuses = map[string]struct{}{
-		"draft":     {},
-		"review":    {},
-		"published": {},
-		"archived":  {},
 	}
 )
 
@@ -214,11 +210,10 @@ func validateUpdateContentFields(input *ManageContentInput) error {
 			return fmt.Errorf("invalid content_type %q (one of: article, essay, build-log, til, digest)", *input.ContentType)
 		}
 	}
-	if input.Status != nil && *input.Status != "" {
-		if _, ok := validStatuses[*input.Status]; !ok {
-			return fmt.Errorf("invalid status %q (one of: draft, review, published, archived)", *input.Status)
-		}
-	}
+	// No status validation here: update_content is fields-only. updateContentTool
+	// rejects any status field at the boundary (Track 1E-correction), and this
+	// internal method never forwards a status to the store — so validating one
+	// here would be dead code that misleads readers.
 	if input.NoteKind != nil && *input.NoteKind != "" {
 		return fmt.Errorf("note_kind is not a content field — notes are a separate entity. Use manage_note")
 	}
@@ -398,21 +393,21 @@ func (s *Server) updateContent(ctx context.Context, input *ManageContentInput) (
 		ct = &t
 	}
 
-	var st *content.Status
-	if input.Status != nil && *input.Status != "" {
-		cs := content.Status(*input.Status)
-		st = &cs
-	}
-
+	// update_content is fields-only: it MUST NOT change status. Status
+	// transitions are owned by the dedicated lifecycle tools
+	// (submit_content_for_review / revert_content_to_draft / publish_content /
+	// archive_content via transitionContentStatus / publishContent). The tool
+	// boundary (updateContentTool) rejects a status field; here we structurally
+	// never forward one to the store, so even an internal caller cannot move
+	// status through this path.
 	var c *content.Content
 	err = s.withActorTx(ctx, func(tx pgx.Tx) error {
 		var err error
 		c, err = content.NewStore(tx).UpdateContent(ctx, id, &content.UpdateParams{
-			Title:  input.Title,
-			Body:   input.Body,
-			Type:   ct,
-			Status: st,
-			Slug:   input.Slug,
+			Title: input.Title,
+			Body:  input.Body,
+			Type:  ct,
+			Slug:  input.Slug,
 		})
 		return err
 	})
@@ -442,31 +437,117 @@ func (s *Server) publishContent(ctx context.Context, input *ManageContentInput) 
 		return nil, ManageContentOutput{}, fmt.Errorf("invalid content_id: %w", err)
 	}
 
-	// Publishing transitions content from review → published, which is
-	// a human-only act per the editorial lifecycle (agent drafts and
-	// submits for review; human publishes). See authz.go for why
-	// requireExplicitHuman refuses the server default rather than
-	// accepting it.
+	// Publishing is a human-only REVIEW transition per the editorial
+	// lifecycle (agent drafts and submits for review; human publishes).
+	// See authz.go for why requireExplicitHuman refuses the server default.
 	if err := s.requireExplicitHuman(ctx, "publish_content"); err != nil {
 		return nil, ManageContentOutput{}, err
 	}
 	_, callerName := s.ExplicitCallerIdentity(ctx)
 
+	// State guard (read-then-act inside the actor tx). publish_content is
+	// review-gated: only a review row transitions. An already-published row
+	// is an idempotent no-op (no mutation → no second 'published' audit
+	// event). Any other state (draft, archived, …) is rejected without
+	// mutating the row. The store's PublishContent UPDATE itself has no
+	// status guard, so the gate lives here at the tool boundary — matching
+	// the contents.status COMMENT ("enforced at MCP tool boundary").
 	var c *content.Content
 	err = s.withActorTx(ctx, func(tx pgx.Tx) error {
-		var err error
-		c, err = content.NewStore(tx).PublishContent(ctx, id)
-		return err
+		store := content.NewStore(tx)
+		current, err := store.Content(ctx, id)
+		if err != nil {
+			return err // ErrNotFound mapped below
+		}
+		switch current.Status {
+		case content.StatusReview:
+			c, err = store.PublishContent(ctx, id)
+			return err
+		case content.StatusPublished:
+			c = current // idempotent no-op
+			return nil
+		default:
+			return content.ErrInvalidState
+		}
 	})
 	if err != nil {
 		if errors.Is(err, content.ErrNotFound) {
 			return nil, ManageContentOutput{}, fmt.Errorf("content %s not found", id)
+		}
+		if errors.Is(err, content.ErrInvalidState) {
+			return nil, ManageContentOutput{}, fmt.Errorf("content %s is not in review state; publish requires status=review", id)
 		}
 		return nil, ManageContentOutput{}, fmt.Errorf("publishing content: %w", err)
 	}
 
 	s.logger.Info("manage_content", "action", "publish", "id", c.ID, "caller", callerName)
 	return nil, ManageContentOutput{Content: toContentDetail(c), Action: "publish"}, nil
+}
+
+// transitionContentStatus enforces a guarded content lifecycle transition at
+// the MCP tool boundary — the canonical enforcement point (catalog.go and
+// docs/testing/content-lifecycle-mcp-contract.md describe the intended
+// semantics; this is where they are made real). It reads the current row
+// inside the actor tx and:
+//
+//   - if already in target: returns the row unchanged (idempotent no-op — no
+//     mutation, so the audit trigger fires no second state_changed/archived event);
+//   - if the current status is an allowed source: applies the status change
+//     (audit trigger fires exactly one event);
+//   - otherwise: returns content.ErrInvalidState WITHOUT mutating the row.
+//
+// content.ErrNotFound propagates for a missing id; a malformed UUID returns a
+// validation error. The mutation uses the generic UpdateContent(status=target)
+// — safe because the allowed transitions (draft↔review, draft/review→archived)
+// never set published_at, so chk_content_publication cannot fire. This mirrors
+// publishContent's read-then-act pattern (Track 1D); the same small race window
+// applies and is acceptable for these low-frequency admin operations.
+func (s *Server) transitionContentStatus(ctx context.Context, idStr string, target content.Status, allowed ...content.Status) (*content.Content, error) {
+	id, err := uuid.Parse(idStr)
+	if err != nil {
+		return nil, fmt.Errorf("invalid content_id: %w", err)
+	}
+	var out *content.Content
+	txErr := s.withActorTx(ctx, func(tx pgx.Tx) error {
+		store := content.NewStore(tx)
+		current, err := store.Content(ctx, id)
+		if err != nil {
+			return err // ErrNotFound mapped by the caller
+		}
+		if current.Status == target {
+			out = current // idempotent no-op
+			return nil
+		}
+		if slices.Contains(allowed, current.Status) {
+			updated, uErr := store.UpdateContent(ctx, id, &content.UpdateParams{Status: &target})
+			if uErr != nil {
+				return uErr
+			}
+			out = updated
+			return nil
+		}
+		return content.ErrInvalidState
+	})
+	return out, txErr
+}
+
+// mapContentTransitionErr converts the sentinels from transitionContentStatus
+// into client-facing tool errors. op is the tool name; requirement names the
+// allowed source state(s) for the invalid-state message.
+//
+// Chain discipline: the two known sentinels (ErrNotFound, ErrInvalidState) are
+// DELIBERATELY rendered as terminal client messages without %w — they are the
+// final string the MCP caller sees and nothing above branches on them. Only the
+// unexpected/internal fall-through wraps with %w to preserve the chain for
+// server-side diagnosis.
+func mapContentTransitionErr(err error, idStr, op, requirement string) error {
+	if errors.Is(err, content.ErrNotFound) {
+		return fmt.Errorf("content %s not found", idStr)
+	}
+	if errors.Is(err, content.ErrInvalidState) {
+		return fmt.Errorf("%s: content %s %s", op, idStr, requirement)
+	}
+	return fmt.Errorf("%s: %w", op, err)
 }
 
 func (s *Server) listContent(ctx context.Context, input *ManageContentInput) (*mcp.CallToolResult, ManageContentOutput, error) {

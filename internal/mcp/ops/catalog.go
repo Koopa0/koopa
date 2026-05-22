@@ -458,7 +458,7 @@ func UpdateContent() Meta {
 		Writability: Additive,
 		Stability:   StabilityStable,
 		Since:       since,
-		Description: "Update editable fields on a content row. Any field may be omitted. Slug rename triggers slug_conflict path on collision. Does not change status — use submit_content_for_review / revert_content_to_draft / publish_content / archive_content for lifecycle transitions.",
+		Description: "Update editable fields (title/body/slug/type) on a content row. Any field may be omitted. Slug rename triggers slug_conflict path on collision. Fields-only: it does NOT change status — passing a status is rejected. Use submit_content_for_review / revert_content_to_draft / publish_content / archive_content for lifecycle transitions.",
 	}
 }
 
@@ -470,7 +470,7 @@ func SubmitContentForReview() Meta {
 		Writability: Additive,
 		Stability:   StabilityStable,
 		Since:       since,
-		Description: "Transition a draft content row to status=review. The Claude → human publish handoff signal: content is done on Claude's side and awaits human publish or revert.",
+		Description: "Lifecycle transition draft → review (the Claude → human publish handoff signal: content is done on Claude's side and awaits human publish or revert). review → review is an idempotent no-op (no second event). Rejected from published / archived / any non-draft state (invalid_state, no mutation).",
 	}
 }
 
@@ -482,7 +482,7 @@ func RevertContentToDraft() Meta {
 		Writability: Additive,
 		Stability:   StabilityStable,
 		Since:       since,
-		Description: "Transition a review content row back to status=draft. Use when the draft needs more work after it was submitted for review.",
+		Description: "Lifecycle transition review → draft (use when content needs more work after being submitted for review). draft → draft is an idempotent no-op (no second event). Rejected from published / archived / any non-review state (invalid_state, no mutation).",
 	}
 }
 
@@ -494,7 +494,7 @@ func PublishContent() Meta {
 		Writability: Destructive,
 		Stability:   StabilityStable,
 		Since:       since,
-		Description: "HUMAN-ONLY. Publish a review content row: status='published', is_public=true, published_at=now(). Requires explicit `as` field + registry Platform='human' — the server default does NOT confer publish authority.",
+		Description: "HUMAN-ONLY. Publish a review content row: status='published', is_public=true, published_at=now(). Requires explicit `as` field + registry Platform='human' — the server default does NOT confer publish authority. published → published is an idempotent no-op (no second event). Rejected from draft / archived (invalid_state, no mutation).",
 	}
 }
 
@@ -506,7 +506,7 @@ func ArchiveContent() Meta {
 		Writability: Destructive,
 		Stability:   StabilityStable,
 		Since:       since,
-		Description: "Archive a content row (any state → archived). Terminal soft-delete; use for content that shouldn't appear in listings but whose audit trail must survive.",
+		Description: "Soft-delete a content row by archiving it. Allowed: draft → archived, review → archived. archived → archived is an idempotent no-op (no second event). PUBLISHED content is rejected (invalid_state, no mutation) — depublication is a separate lifecycle decision and must not be hidden inside archive_content. Archived rows keep their audit trail.",
 	}
 }
 
