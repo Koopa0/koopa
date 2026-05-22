@@ -49,7 +49,7 @@ func SearchKnowledge() Meta {
 		Writability: ReadOnly,
 		Stability:   StabilityStable,
 		Since:       since,
-		Description: "Search across content (articles, build logs, TILs, etc.) and notes (Zettelkasten). Filters: source_types (default both), content_type (implies content-only; mutex with note_kind), note_kind (implies note-only; mutex with content_type), project, date range. Use when looking for past knowledge or content.",
+		Description: "Search across content (articles, build logs, TILs, etc.) and notes (Zettelkasten) — i.e. what we KNOW. Filters: source_types (default both), content_type (implies content-only; mutex with note_kind), note_kind (implies note-only; mutex with content_type), project, date range. Does NOT cover agent_notes (your runtime plan/context/reflection breadcrumbs) — to recall what you DECIDED/PLANNED/REFLECTED, use query_agent_notes instead.",
 	}
 }
 
@@ -122,7 +122,7 @@ func QueryAgentNotes() Meta {
 		Writability: ReadOnly,
 		Stability:   StabilityStable,
 		Since:       since,
-		Description: "Recall prior agent notes across date ranges. Filters: kind (plan|context|reflection), since/until (YYYY-MM-DD, default last 90 days), author. Use when conversation context no longer contains a note you wrote earlier — session reflections, plan reasoning, context snapshots. Ordered newest-first.",
+		Description: "Recall prior agent notes — your runtime breadcrumbs of what you DECIDED/PLANNED/REFLECTED — across date ranges. Filters: kind (plan|context|reflection), since/until (YYYY-MM-DD, default last 90 days), author. Use when conversation context no longer contains a note you wrote earlier — session reflections, plan reasoning, context snapshots. For published knowledge or content (what we KNOW), use search_knowledge instead. Ordered newest-first.",
 	}
 }
 

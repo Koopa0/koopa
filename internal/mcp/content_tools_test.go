@@ -123,11 +123,13 @@ func TestPublishContent_GatePrecedesDB(t *testing.T) {
 // DB-backed transitions, audit, and idempotency live in
 // integration_test.go (//go:build integration).
 //
-// The lifecycle tools (create/update/submit/revert/archive) are open to any
-// caller — there is no per-tool human gate (publish_content is the only
-// human-gated content tool, covered separately). So these tests assert
-// validation/error contracts, not capability gates. strPtr is the shared
-// helper from handler_test.go.
+// create_content / update_content are author-allowlisted (content-studio,
+// learning-studio, + human implicit); submit/revert/archive remain open;
+// publish_content is human-gated (covered separately). The validation tests
+// below run as newTestServer()'s default caller ("human"), which clears the
+// author gate, so they exercise the validation/error contract rather than the
+// gate. The gate itself is pinned by TestContentLifecycle_AuthorGatePrecedesDB.
+// strPtr is the shared helper from handler_test.go.
 
 func TestContentLifecycle_CreateValidation(t *testing.T) {
 	tests := []struct {
@@ -140,6 +142,10 @@ func TestContentLifecycle_CreateValidation(t *testing.T) {
 		{name: "missing content_type", title: "T", ctype: "", wantErrSub: "content_type is required"},
 		{name: "invalid content_type", title: "T", ctype: "bookmark", wantErrSub: "invalid content_type"},
 		{name: "note content_type rejected", title: "T", ctype: "note", wantErrSub: "no longer valid"},
+		// GAP-C: a non-ASCII / punctuated title with no explicit slug derives
+		// a non-conforming slug ("[test]-標題"); the handler must return a
+		// caller-facing message, not leak the PG chk_content_slug_format error.
+		{name: "non-ascii title yields invalid derived slug", title: "[TEST] 標題", ctype: "article", wantErrSub: "must be lowercase kebab-case"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -177,6 +183,47 @@ func TestContentLifecycle_UpdateValidation(t *testing.T) {
 			_, _, err := s.updateContentTool(t.Context(), nil, tt.input)
 			if err == nil || !strings.Contains(err.Error(), tt.wantErrSub) {
 				t.Fatalf("updateContentTool(%+v) err = %v, want substring %q", tt.input, err, tt.wantErrSub)
+			}
+		})
+	}
+}
+
+// TestContentLifecycle_AuthorGatePrecedesDB pins the author allowlist on
+// create_content / update_content: blocked agents (hq, research-lab) are
+// refused before any DB access, and an allowed agent (content-studio /
+// learning-studio) clears the gate — proven by reaching field validation
+// rather than the allowlist rejection. newTestServer() has a nil pool, so a
+// caller that cleared the gate AND passed validation would panic on the tx;
+// every case here stops before it.
+func TestContentLifecycle_AuthorGatePrecedesDB(t *testing.T) {
+	tests := []struct {
+		name       string
+		as         string
+		create     bool // true → create_content, false → update_content
+		wantErrSub string
+	}{
+		{name: "create rejects hq", as: "hq", create: true, wantErrSub: "author allowlist"},
+		{name: "create rejects research-lab", as: "research-lab", create: true, wantErrSub: "author allowlist"},
+		{name: "update rejects hq", as: "hq", create: false, wantErrSub: "author allowlist"},
+		// Allowed authors clear the gate and reach field validation instead
+		// of the allowlist rejection.
+		{name: "create allows content-studio", as: "content-studio", create: true, wantErrSub: "title is required"},
+		{name: "create allows learning-studio", as: "learning-studio", create: true, wantErrSub: "title is required"},
+		{name: "update allows content-studio", as: "content-studio", create: false, wantErrSub: "content_id is required"},
+		{name: "update allows learning-studio", as: "learning-studio", create: false, wantErrSub: "content_id is required"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := newTestServer() // nil pool — every case stops before the tx
+			ctx := context.WithValue(t.Context(), callerKey{}, tt.as)
+			var err error
+			if tt.create {
+				_, _, err = s.createContentTool(ctx, nil, CreateContentInput{})
+			} else {
+				_, _, err = s.updateContentTool(ctx, nil, UpdateContentInput{})
+			}
+			if err == nil || !strings.Contains(err.Error(), tt.wantErrSub) {
+				t.Fatalf("createContent=%v as=%q err = %v, want substring %q", tt.create, tt.as, err, tt.wantErrSub)
 			}
 		})
 	}

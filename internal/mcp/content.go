@@ -220,6 +220,16 @@ func validateUpdateContentFields(input *ManageContentInput) error {
 	if input.Maturity != nil && *input.Maturity != "" {
 		return fmt.Errorf("maturity is not a content field — notes are a separate entity. Use manage_note")
 	}
+	// Mirror createContent's slug validation (handler-consistency): a
+	// caller-supplied slug is rejected here with a caller-facing message
+	// rather than leaking the chk_content_slug_format CheckViolation from
+	// PG. update has no title-derived fallback — it only writes a slug the
+	// caller explicitly sent — so this single check covers the path.
+	if input.Slug != nil && *input.Slug != "" {
+		if err := validateSlug("content slug", *input.Slug); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -303,15 +313,31 @@ func createWarnings(input *ManageContentInput, learningTargetID *uuid.UUID, conc
 	return warnings
 }
 
-// createContent is intentionally open to all callers — any agent (and
-// any caller without `as`, falling back to the server default) may
-// draft a content row in status=draft. The editorial pipeline gates
-// the dangerous transition (review → published) at publish_content,
-// not at create. Front-end review and human curation handle quality;
-// the create surface trusts the writer because every draft is private
-// until publish.
+// createContent drafts a content row in status=draft. Authoring is gated
+// by the author allowlist: content-studio and learning-studio are the
+// cowork agents whose role is producing content; human is always implicit
+// (see authz.go::requireAuthor). Other agents (hq, research-lab) route
+// content work to content-studio via a directive rather than drafting
+// directly. The separate dangerous transition (review → published) is
+// human-gated at publish_content; every draft is private until then.
 func (s *Server) createContent(ctx context.Context, input *ManageContentInput) (*mcp.CallToolResult, ManageContentOutput, error) {
+	if err := s.requireAuthor(ctx, "create_content", "content-studio", "learning-studio"); err != nil {
+		return nil, ManageContentOutput{}, err
+	}
 	if err := validateCreateContentFields(input); err != nil {
+		return nil, ManageContentOutput{}, err
+	}
+
+	// Validate the slug we will actually insert before any I/O.
+	// validateCreateContentFields already checks a caller-supplied slug, but
+	// the title-derived fallback (deriveCreateSlug) can still produce a
+	// non-conforming slug for non-ASCII or punctuated titles ("[TEST] 標題" →
+	// "[test]-標題") — without this check that surfaces as a raw
+	// chk_content_slug_format CheckViolation from PG instead of a caller-facing
+	// message. Kept above resolveConceptIDs so a bad slug fails fast without
+	// spending a DB round-trip.
+	slug := deriveCreateSlug(input)
+	if err := validateSlug("content slug", slug); err != nil {
 		return nil, ManageContentOutput{}, err
 	}
 
@@ -342,7 +368,7 @@ func (s *Server) createContent(ctx context.Context, input *ManageContentInput) (
 	txErr := s.withActorTx(ctx, func(tx pgx.Tx) error {
 		var createErr error
 		c, createErr = content.NewStore(tx).CreateContent(ctx, &content.CreateParams{
-			Slug:      deriveCreateSlug(input),
+			Slug:      slug,
 			Title:     *input.Title,
 			Body:      body,
 			Type:      content.Type(*input.ContentType),
@@ -375,6 +401,9 @@ func (s *Server) createContent(ctx context.Context, input *ManageContentInput) (
 }
 
 func (s *Server) updateContent(ctx context.Context, input *ManageContentInput) (*mcp.CallToolResult, ManageContentOutput, error) {
+	if err := s.requireAuthor(ctx, "update_content", "content-studio", "learning-studio"); err != nil {
+		return nil, ManageContentOutput{}, err
+	}
 	if input.ContentID == nil || *input.ContentID == "" {
 		return nil, ManageContentOutput{}, fmt.Errorf("content_id is required for update")
 	}

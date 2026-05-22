@@ -100,21 +100,25 @@ would defeat the gate.
 Read the columns left-to-right: each row names a write tool, the axes
 that gate it, and the rule.
 
-### Knowledge layer — intentionally open
+### Knowledge layer
 
-Notes and content are write-rich, curate-late by design. Restricting
-authorship would force agents to launder observations through
-agent_notes and lose the slug-addressable knowledge graph that notes
-provide. Front-end review, maturity transitions, and the publish gate
-handle quality.
+Notes are write-rich, curate-late by design and open to any registered
+caller — restricting authorship would force agents to launder
+observations through agent_notes and lose the slug-addressable knowledge
+graph that notes provide. Content authoring is narrower: only the two
+roles that produce content (content-studio, learning-studio) plus the
+implicit human may draft or update a `content` row. Other agents
+(hq, research-lab) route content work to content-studio via a directive
+rather than drafting directly. Front-end review, maturity transitions,
+and the publish gate handle quality.
 
 | Tool | Capability | Platform | Author | Self | Effective rule |
 |---|---|---|---|---|---|
 | `create_note` | — | — | — | — | Open to any registered caller |
 | `update_note` | — | — | — | — | Open |
 | `update_note_maturity` | — | — | — | — | Open |
-| `create_content` | — | — | — | — | Open (drafts are private until publish) |
-| `update_content` | — | — | — | — | Open |
+| `create_content` | — | — | content-studio, learning-studio | — | Author allowlist (+ human implicit) |
+| `update_content` | — | — | content-studio, learning-studio | — | Author allowlist (+ human implicit) |
 | `submit_content_for_review` | — | — | — | — | Open |
 | `revert_content_to_draft` | — | — | — | — | Open |
 | `archive_content` | — | — | — | — | Open |
@@ -256,13 +260,17 @@ This contrasts with content (publish gated to human) and with
 commit_proposal (high-commitment types gated to human). Notes are not
 commitments and never publish.
 
-### Content authorship — open, with human-only publish
+### Content authorship — allowlisted, with human-only publish
 
-Same philosophy as notes. Any agent may draft a `content` row in
-`status=draft`. The dangerous transition (review → published) is gated
-at `publish_content`. Front-end review and human curation handle
-quality; the create surface trusts the writer because every draft is
-private until publish.
+Content authoring is gated to the two roles whose job is producing it:
+content-studio and learning-studio (human always implicit). hq and
+research-lab are excluded — they coordinate content work through a
+directive to content-studio rather than drafting directly. This is
+defense-in-depth for autonomous operation: hq runs unattended (cron),
+and its largest anti-pattern is acting where it should delegate, so the
+boundary is an enforced gate rather than soft self-discipline. The
+separate dangerous transition (review → published) is gated at
+`publish_content` (human-only); every draft is private until then.
 
 ---
 
