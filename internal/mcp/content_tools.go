@@ -93,6 +93,9 @@ type SubmitContentForReviewInput struct {
 }
 
 func (s *Server) submitContentForReviewTool(ctx context.Context, _ *mcp.CallToolRequest, input SubmitContentForReviewInput) (*mcp.CallToolResult, ManageContentOutput, error) {
+	if err := s.requireAuthor(ctx, "submit_content_for_review", "content-studio", "learning-studio"); err != nil {
+		return nil, ManageContentOutput{}, err
+	}
 	if input.ContentID == "" {
 		return nil, ManageContentOutput{}, fmt.Errorf("content_id is required")
 	}
@@ -115,6 +118,9 @@ type RevertContentToDraftInput struct {
 }
 
 func (s *Server) revertContentToDraftTool(ctx context.Context, _ *mcp.CallToolRequest, input RevertContentToDraftInput) (*mcp.CallToolResult, ManageContentOutput, error) {
+	if err := s.requireAuthor(ctx, "revert_content_to_draft", "content-studio", "learning-studio"); err != nil {
+		return nil, ManageContentOutput{}, err
+	}
 	if input.ContentID == "" {
 		return nil, ManageContentOutput{}, fmt.Errorf("content_id is required")
 	}
@@ -154,6 +160,9 @@ type ArchiveContentInput struct {
 }
 
 func (s *Server) archiveContentTool(ctx context.Context, _ *mcp.CallToolRequest, input ArchiveContentInput) (*mcp.CallToolResult, ManageContentOutput, error) {
+	if err := s.requireAuthor(ctx, "archive_content", "content-studio", "learning-studio"); err != nil {
+		return nil, ManageContentOutput{}, err
+	}
 	if input.ContentID == "" {
 		return nil, ManageContentOutput{}, fmt.Errorf("content_id is required")
 	}

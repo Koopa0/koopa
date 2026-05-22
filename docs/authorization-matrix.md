@@ -107,10 +107,12 @@ caller — restricting authorship would force agents to launder
 observations through agent_notes and lose the slug-addressable knowledge
 graph that notes provide. Content authoring is narrower: only the two
 roles that produce content (content-studio, learning-studio) plus the
-implicit human may draft or update a `content` row. Other agents
-(hq, research-lab) route content work to content-studio via a directive
-rather than drafting directly. Front-end review, maturity transitions,
-and the publish gate handle quality.
+implicit human may touch a `content` row's authoring lifecycle —
+create, update, and the draft↔review↔archived transitions
+(`submit_content_for_review`, `revert_content_to_draft`,
+`archive_content`). Other agents (hq, research-lab) route content work
+to content-studio via a directive rather than acting directly.
+Front-end review and the publish gate handle quality.
 
 | Tool | Capability | Platform | Author | Self | Effective rule |
 |---|---|---|---|---|---|
@@ -119,9 +121,9 @@ and the publish gate handle quality.
 | `update_note_maturity` | — | — | — | — | Open |
 | `create_content` | — | — | content-studio, learning-studio | — | Author allowlist (+ human implicit) |
 | `update_content` | — | — | content-studio, learning-studio | — | Author allowlist (+ human implicit) |
-| `submit_content_for_review` | — | — | — | — | Open |
-| `revert_content_to_draft` | — | — | — | — | Open |
-| `archive_content` | — | — | — | — | Open |
+| `submit_content_for_review` | — | — | content-studio, learning-studio | — | Author allowlist (+ human implicit) |
+| `revert_content_to_draft` | — | — | content-studio, learning-studio | — | Author allowlist (+ human implicit) |
+| `archive_content` | — | — | content-studio, learning-studio | — | Author allowlist (+ human implicit) |
 | `list_content` / `read_content` | — | — | — | — | Open (read-only) |
 
 ### Publish gate
@@ -262,15 +264,24 @@ commitments and never publish.
 
 ### Content authorship — allowlisted, with human-only publish
 
-Content authoring is gated to the two roles whose job is producing it:
-content-studio and learning-studio (human always implicit). hq and
-research-lab are excluded — they coordinate content work through a
-directive to content-studio rather than drafting directly. This is
+The entire content authoring lifecycle is gated to the two roles whose
+job is producing it: content-studio and learning-studio (human always
+implicit). This covers create, update, and the draft↔review↔archived
+transitions (`submit_content_for_review`, `revert_content_to_draft`,
+`archive_content`) — not just the create surface. hq and research-lab
+are excluded throughout: they coordinate content work through a
+directive to content-studio rather than acting directly. This is
 defense-in-depth for autonomous operation: hq runs unattended (cron),
 and its largest anti-pattern is acting where it should delegate, so the
-boundary is an enforced gate rather than soft self-discipline. The
-separate dangerous transition (review → published) is gated at
-`publish_content` (human-only); every draft is private until then.
+boundary is an enforced gate rather than soft self-discipline. Gating
+only create/update would have left the asymmetry that an hq blocked from
+drafting could still push existing content through review or archive it
+— same drift risk, one layer up. The coordinator exception ("Koopa asks
+hq to handle a handoff") is satisfied by hq *directing* content-studio
+to submit/revert, not by hq flipping the status itself, so no legitimate
+workflow is broken. The separate dangerous transition (review →
+published) stays gated at `publish_content` (human-only) as the top
+layer; every draft is private until then.
 
 ---
 

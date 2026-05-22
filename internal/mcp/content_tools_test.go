@@ -123,13 +123,14 @@ func TestPublishContent_GatePrecedesDB(t *testing.T) {
 // DB-backed transitions, audit, and idempotency live in
 // integration_test.go (//go:build integration).
 //
-// create_content / update_content are author-allowlisted (content-studio,
-// learning-studio, + human implicit); submit/revert/archive remain open;
-// publish_content is human-gated (covered separately). The validation tests
-// below run as newTestServer()'s default caller ("human"), which clears the
-// author gate, so they exercise the validation/error contract rather than the
-// gate. The gate itself is pinned by TestContentLifecycle_AuthorGatePrecedesDB.
-// strPtr is the shared helper from handler_test.go.
+// The whole content authoring lifecycle — create/update plus the
+// submit/revert/archive transitions — is author-allowlisted (content-studio,
+// learning-studio, + human implicit); publish_content is human-gated (covered
+// separately). The validation tests below run as newTestServer()'s default
+// caller ("human"), which clears the author gate, so they exercise the
+// validation/error contract rather than the gate. The gate itself is pinned by
+// TestContentLifecycle_AuthorGatePrecedesDB. strPtr is the shared helper from
+// handler_test.go.
 
 func TestContentLifecycle_CreateValidation(t *testing.T) {
 	tests := []struct {
@@ -188,44 +189,75 @@ func TestContentLifecycle_UpdateValidation(t *testing.T) {
 	}
 }
 
-// TestContentLifecycle_AuthorGatePrecedesDB pins the author allowlist on
-// create_content / update_content: blocked agents (hq, research-lab) are
-// refused before any DB access, and an allowed agent (content-studio /
-// learning-studio) clears the gate — proven by reaching field validation
-// rather than the allowlist rejection. newTestServer() has a nil pool, so a
-// caller that cleared the gate AND passed validation would panic on the tx;
-// every case here stops before it.
+// TestContentLifecycle_AuthorGatePrecedesDB pins the author allowlist across
+// the whole authoring lifecycle — create, update, and the submit/revert/archive
+// transitions: blocked agents (hq, research-lab) are refused before any DB
+// access, and an allowed agent (content-studio / learning-studio) clears the
+// gate — proven by reaching field validation rather than the allowlist
+// rejection. newTestServer() has a nil pool, so a caller that cleared the gate
+// AND passed validation would panic on the tx; every case here stops before it.
 func TestContentLifecycle_AuthorGatePrecedesDB(t *testing.T) {
-	tests := []struct {
-		name       string
-		as         string
-		create     bool // true → create_content, false → update_content
-		wantErrSub string
-	}{
-		{name: "create rejects hq", as: "hq", create: true, wantErrSub: "author allowlist"},
-		{name: "create rejects research-lab", as: "research-lab", create: true, wantErrSub: "author allowlist"},
-		{name: "update rejects hq", as: "hq", create: false, wantErrSub: "author allowlist"},
-		// Allowed authors clear the gate and reach field validation instead
-		// of the allowlist rejection.
-		{name: "create allows content-studio", as: "content-studio", create: true, wantErrSub: "title is required"},
-		{name: "create allows learning-studio", as: "learning-studio", create: true, wantErrSub: "title is required"},
-		{name: "update allows content-studio", as: "content-studio", create: false, wantErrSub: "content_id is required"},
-		{name: "update allows learning-studio", as: "learning-studio", create: false, wantErrSub: "content_id is required"},
+	// invoke dispatches to a lifecycle tool with empty input, so an allowed
+	// caller stops at the first field check (create → title; the rest →
+	// content_id) and a blocked caller stops at the gate.
+	invoke := func(t *testing.T, s *Server, tool string, ctx context.Context) error {
+		t.Helper()
+		switch tool {
+		case "create":
+			_, _, err := s.createContentTool(ctx, nil, CreateContentInput{})
+			return err
+		case "update":
+			_, _, err := s.updateContentTool(ctx, nil, UpdateContentInput{})
+			return err
+		case "submit":
+			_, _, err := s.submitContentForReviewTool(ctx, nil, SubmitContentForReviewInput{})
+			return err
+		case "revert":
+			_, _, err := s.revertContentToDraftTool(ctx, nil, RevertContentToDraftInput{})
+			return err
+		case "archive":
+			_, _, err := s.archiveContentTool(ctx, nil, ArchiveContentInput{})
+			return err
+		default:
+			t.Fatalf("unknown tool %q", tool)
+			return nil
+		}
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			s := newTestServer() // nil pool — every case stops before the tx
-			ctx := context.WithValue(t.Context(), callerKey{}, tt.as)
-			var err error
-			if tt.create {
-				_, _, err = s.createContentTool(ctx, nil, CreateContentInput{})
-			} else {
-				_, _, err = s.updateContentTool(ctx, nil, UpdateContentInput{})
-			}
-			if err == nil || !strings.Contains(err.Error(), tt.wantErrSub) {
-				t.Fatalf("createContent=%v as=%q err = %v, want substring %q", tt.create, tt.as, err, tt.wantErrSub)
+
+	allowedErr := func(tool string) string {
+		if tool == "create" {
+			return "title is required"
+		}
+		return "content_id is required"
+	}
+
+	tools := []string{"create", "update", "submit", "revert", "archive"}
+	for _, tool := range tools {
+		t.Run(tool+" rejects hq", func(t *testing.T) {
+			s := newTestServer() // nil pool — gate stops the call before the tx
+			ctx := context.WithValue(t.Context(), callerKey{}, "hq")
+			if err := invoke(t, s, tool, ctx); err == nil || !strings.Contains(err.Error(), "author allowlist") {
+				t.Fatalf("%s as=hq err = %v, want author allowlist rejection", tool, err)
 			}
 		})
+		t.Run(tool+" rejects research-lab", func(t *testing.T) {
+			s := newTestServer()
+			ctx := context.WithValue(t.Context(), callerKey{}, "research-lab")
+			if err := invoke(t, s, tool, ctx); err == nil || !strings.Contains(err.Error(), "author allowlist") {
+				t.Fatalf("%s as=research-lab err = %v, want author allowlist rejection", tool, err)
+			}
+		})
+		// Allowed authors clear the gate and reach field validation instead of
+		// the allowlist rejection.
+		for _, as := range []string{"content-studio", "learning-studio"} {
+			t.Run(tool+" allows "+as, func(t *testing.T) {
+				s := newTestServer()
+				ctx := context.WithValue(t.Context(), callerKey{}, as)
+				if err := invoke(t, s, tool, ctx); err == nil || !strings.Contains(err.Error(), allowedErr(tool)) {
+					t.Fatalf("%s as=%s err = %v, want substring %q", tool, as, err, allowedErr(tool))
+				}
+			})
+		}
 	}
 }
 
