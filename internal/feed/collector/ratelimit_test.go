@@ -277,3 +277,19 @@ func FuzzDomainFromURL(f *testing.F) {
 		_ = domainFromURL(input)
 	})
 }
+
+// Benchmark for domainFromURL (consolidated from bench_test.go).
+// BenchmarkNormalizeURL and BenchmarkHashURL removed — the canonicaliser is
+// now internal/url.Canonical / Hash, with benchmarks (if any) owned by that
+// package. Collector no longer implements its own URL normalisation.
+
+// BenchmarkDomainFromURL measures domain extraction — called per rate-limit Wait.
+func BenchmarkDomainFromURL(b *testing.B) {
+	b.ReportAllocs()
+
+	url := "https://example.com/feed/atom.xml?format=rss"
+
+	for b.Loop() {
+		domainFromURL(url)
+	}
+}

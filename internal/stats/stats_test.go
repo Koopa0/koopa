@@ -15,6 +15,7 @@ package stats
 // which validates the control-flow paths inside the store methods without a live DB.
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -642,4 +643,89 @@ func assertErrorCode(t *testing.T, w *httptest.ResponseRecorder, wantCode string
 	if diff := cmp.Diff(wantCode, body.Error.Code); diff != "" {
 		t.Errorf("error code mismatch (-want +got):\n%s", diff)
 	}
+}
+
+// Track 1B — Today fan-out wire contract.
+//
+// GET /api/admin/system/health is one of the six Today fan-out sources.
+// SystemService.getHealth() → TodayService buildWarnings() consumes
+// feeds.failing_feeds[].name / .error and pipelines.failed. These marshaling
+// tests pin those nested wire field names (and the null-vs-empty rule on
+// failing_feeds) without a database.
+
+func TestSystemHealthSnapshotWireContract(t *testing.T) {
+	snap := SystemHealthSnapshot{
+		Feeds:     FeedHealth{FailingFeeds: []FailingFeed{{Name: "Go Blog", Error: "timeout"}}},
+		Pipelines: PipelineHealth{Failed: 2},
+	}
+	keys := healthWireKeys(t, snap)
+
+	for _, want := range []string{"feeds", "pipelines", "database"} {
+		if _, ok := keys[want]; !ok {
+			t.Errorf("SystemHealthSnapshot missing wire field %q", want)
+		}
+	}
+
+	feeds := healthSub(t, keys["feeds"])
+	if _, ok := feeds["failing_feeds"]; !ok {
+		t.Fatal("feeds.failing_feeds missing")
+	}
+	ff := healthFirstItem(t, feeds["failing_feeds"])
+	for _, want := range []string{"name", "error"} {
+		if _, ok := ff[want]; !ok {
+			t.Errorf("failing_feeds[].%s missing (TodayService buildWarnings consumes it)", want)
+		}
+	}
+
+	pipes := healthSub(t, keys["pipelines"])
+	if _, ok := pipes["failed"]; !ok {
+		t.Error("pipelines.failed missing (TodayService buildWarnings consumes it)")
+	}
+}
+
+// TestFailingFeedsEmptyIsArrayNotNull pins null-vs-empty: the store
+// initializes FailingFeeds to a non-nil slice, so a healthy system serializes
+// "failing_feeds":[] per the json-api rule, never null.
+func TestFailingFeedsEmptyIsArrayNotNull(t *testing.T) {
+	b, err := json.Marshal(FeedHealth{FailingFeeds: []FailingFeed{}})
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if !bytes.Contains(b, []byte(`"failing_feeds":[]`)) {
+		t.Errorf("empty FeedHealth must serialize \"failing_feeds\":[], got %s", b)
+	}
+}
+
+func healthWireKeys(t *testing.T, v any) map[string]json.RawMessage {
+	t.Helper()
+	b, err := json.Marshal(v)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(b, &m); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	return m
+}
+
+func healthSub(t *testing.T, raw json.RawMessage) map[string]json.RawMessage {
+	t.Helper()
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &m); err != nil {
+		t.Fatalf("unmarshal sub-object: %v", err)
+	}
+	return m
+}
+
+func healthFirstItem(t *testing.T, raw json.RawMessage) map[string]json.RawMessage {
+	t.Helper()
+	var arr []map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &arr); err != nil {
+		t.Fatalf("unmarshal array: %v", err)
+	}
+	if len(arr) == 0 {
+		t.Fatal("array empty")
+	}
+	return arr[0]
 }
