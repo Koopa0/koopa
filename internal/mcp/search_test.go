@@ -1,12 +1,21 @@
 package mcp
 
 import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"regexp"
+	"runtime"
 	"slices"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
+	"gopkg.in/yaml.v3"
 
 	"github.com/Koopa0/koopa/internal/content"
+	"github.com/Koopa0/koopa/internal/note"
 )
 
 // Stable per-index IDs so tests don't depend on random UUID generation.
@@ -95,6 +104,656 @@ func TestRrfMerge_AllIDsPresentUnderLimit(t *testing.T) {
 	for _, w := range want {
 		if !slices.Contains(gotIDs, w) {
 			t.Errorf("rrfMerge missing %s; got = %v", w, gotIDs)
+		}
+	}
+}
+
+// ============================================================================
+// Consolidated from search_contract_test.go (Track-1K test-file consolidation).
+// ============================================================================
+
+// search_contract_test.go holds the pre-DB (nil-store) contract units for
+// search_knowledge: input validation that fires before any store call, and
+// the source_types resolution helper. DB-backed corpus / envelope / filter /
+// degradation coverage lives in search_integration_test.go.
+//
+// Ranking is deliberately NOT exercised anywhere (Track 1G hard boundary —
+// search relevance/ordering is a separate, undecided contract). These units
+// assert error contracts and source selection only.
+
+// TestSearchKnowledge_Validation pins the handler validation paths that return
+// before search_knowledge touches the content/note stores. newTestServer has
+// nil stores, so any case here that reached a store would panic — the fact
+// that these return a clean error proves the rejection is pre-store.
+func TestSearchKnowledge_Validation(t *testing.T) {
+	s := newTestServer()
+	tests := []struct {
+		name    string
+		input   SearchKnowledgeInput
+		wantErr string
+	}{
+		{name: "missing query", input: SearchKnowledgeInput{}, wantErr: "query is required"},
+		{
+			name:    "malformed after date",
+			input:   SearchKnowledgeInput{Query: "go", After: strPtr("not-a-date")},
+			wantErr: "invalid after date",
+		},
+		{
+			name:    "malformed before date",
+			input:   SearchKnowledgeInput{Query: "go", Before: strPtr("13/2026")},
+			wantErr: "invalid before date",
+		},
+		{
+			name: "content_type and note_kind are mutually exclusive",
+			input: SearchKnowledgeInput{
+				Query:       "go",
+				ContentType: strPtr("article"),
+				NoteKind:    strPtr("solve-note"),
+			},
+			wantErr: "mutually exclusive",
+		},
+		{
+			name:    "unsupported content_type rejected",
+			input:   SearchKnowledgeInput{Query: "go", ContentType: strPtr("banana-not-a-type")},
+			wantErr: "unsupported content_type",
+		},
+		{
+			name:    "unsupported note_kind rejected",
+			input:   SearchKnowledgeInput{Query: "go", NoteKind: strPtr("banana-not-a-kind")},
+			wantErr: "unsupported note_kind",
+		},
+		{
+			name:    "unknown source_type rejected",
+			input:   SearchKnowledgeInput{Query: "go", SourceTypes: []string{"bookmark"}},
+			wantErr: "unsupported source_type",
+		},
+		{
+			name:    "mixed valid and invalid source_types rejected",
+			input:   SearchKnowledgeInput{Query: "go", SourceTypes: []string{SourceTypeContent, "task"}},
+			wantErr: "unsupported source_type",
+		},
+		{
+			name:    "project filter rejected as unsupported",
+			input:   SearchKnowledgeInput{Query: "go", Project: strPtr("koopa")},
+			wantErr: "unsupported_filter",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, err := callHandler(t, s.searchKnowledge, tt.input)
+			if err == nil {
+				t.Fatal("expected error, got nil")
+			}
+			if !contains(err.Error(), tt.wantErr) {
+				t.Errorf("error = %q, want containing %q", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+// TestSelectSources documents the source_types → (wantContent, wantNote)
+// resolution contract for the VALID token set. Unknown tokens never reach
+// selectSources in production — they are rejected upstream by
+// validateSourceTypes (see TestSearchKnowledge_SourceTypeValidation and the
+// "unknown source_type rejected" cases in TestSearchKnowledge_Validation). The
+// two trailing cases pin selectSources's defensive tolerance of an already-
+// validated input only.
+func TestSelectSources(t *testing.T) {
+	tests := []struct {
+		name        string
+		filter      []string
+		wantContent bool
+		wantNote    bool
+	}{
+		{name: "nil = both", filter: nil, wantContent: true, wantNote: true},
+		{name: "empty = both", filter: []string{}, wantContent: true, wantNote: true},
+		{name: "content only", filter: []string{SourceTypeContent}, wantContent: true, wantNote: false},
+		{name: "note only", filter: []string{SourceTypeNote}, wantContent: false, wantNote: true},
+		{name: "both explicit", filter: []string{SourceTypeContent, SourceTypeNote}, wantContent: true, wantNote: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotContent, gotNote := selectSources(tt.filter)
+			if gotContent != tt.wantContent || gotNote != tt.wantNote {
+				t.Errorf("selectSources(%v) = (content=%v, note=%v), want (content=%v, note=%v)",
+					tt.filter, gotContent, gotNote, tt.wantContent, tt.wantNote)
+			}
+		})
+	}
+}
+
+// TestSearchKnowledge_SourceTypeValidation pins the strict source_types
+// contract: only {content, note} are accepted; any other token (typo or an
+// unsupported corpus) is a validation error, and an all-unknown list does NOT
+// degrade to a silent empty success. Empty/nil is valid (resolves to both).
+func TestSearchKnowledge_SourceTypeValidation(t *testing.T) {
+	tests := []struct {
+		name    string
+		filter  []string
+		wantErr bool
+	}{
+		{name: "nil accepted", filter: nil, wantErr: false},
+		{name: "empty accepted", filter: []string{}, wantErr: false},
+		{name: "content accepted", filter: []string{SourceTypeContent}, wantErr: false},
+		{name: "note accepted", filter: []string{SourceTypeNote}, wantErr: false},
+		{name: "both accepted", filter: []string{SourceTypeContent, SourceTypeNote}, wantErr: false},
+		{name: "single unknown rejected", filter: []string{"bookmark"}, wantErr: true},
+		{name: "all unknown rejected", filter: []string{"bookmark", "task"}, wantErr: true},
+		{name: "mixed valid and invalid rejected", filter: []string{SourceTypeContent, "task"}, wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateSourceTypes(tt.filter)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("validateSourceTypes(%v) error = %v, wantErr = %v", tt.filter, err, tt.wantErr)
+			}
+		})
+	}
+}
+
+// TestSearchKnowledge_DateBoundaryFilter pins the whole-day-inclusive date
+// semantics at the same-day boundary, the case Track 1G left untested. With
+// after=D and before=D, a row created at ANY instant during day D — including
+// 00:00:00 and 23:59:59 — must be kept, while the last instant of D-1 and the
+// first instant of D+1 must be dropped. Exercises the real bound construction
+// (parseDateStart / parseDateEnd) and the filter comparison together. No order
+// or ranking assertion.
+func TestSearchKnowledge_DateBoundaryFilter(t *testing.T) {
+	loc := time.UTC
+	const day = "2026-05-22"
+
+	after, err := parseDateStart(strPtr(day), loc)
+	if err != nil {
+		t.Fatalf("parseDateStart(%q): %v", day, err)
+	}
+	before, err := parseDateEnd(strPtr(day), loc)
+	if err != nil {
+		t.Fatalf("parseDateEnd(%q): %v", day, err)
+	}
+
+	at := func(s string) time.Time {
+		ts, perr := time.ParseInLocation(time.RFC3339, s, loc)
+		if perr != nil {
+			t.Fatalf("parse %q: %v", s, perr)
+		}
+		return ts
+	}
+
+	tests := []struct {
+		name    string
+		created time.Time
+		wantIn  bool
+	}{
+		{name: "start of day D kept", created: at("2026-05-22T00:00:00Z"), wantIn: true},
+		{name: "midday D kept", created: at("2026-05-22T12:30:00Z"), wantIn: true},
+		{name: "last second of D kept", created: at("2026-05-22T23:59:59Z"), wantIn: true},
+		{name: "last second of D-1 dropped", created: at("2026-05-21T23:59:59Z"), wantIn: false},
+		{name: "start of D+1 dropped", created: at("2026-05-23T00:00:00Z"), wantIn: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			notes := []note.Note{{ID: uuid.New(), Kind: note.KindConcept, CreatedAt: tt.created}}
+			got := filterNoteResults(notes, nil, after, before)
+			gotIn := len(got) == 1
+			if gotIn != tt.wantIn {
+				t.Errorf("before=after=%s, created=%s: kept=%v, want %v",
+					day, tt.created.Format(time.RFC3339), gotIn, tt.wantIn)
+			}
+		})
+	}
+}
+
+// ============================================================================
+// Consolidated from search_relevance_fixture_test.go (Track-1K test-file consolidation).
+// ============================================================================
+
+// fixtureIDPattern matches the stable id format used by the judgment set: a
+// category prefix that starts with a letter and may contain digits (KN, NEG,
+// FLT, LRN, PLAN, and A2A — the coordination prefix carries a digit), a dash,
+// and a two-digit number. Reconciled with search-relevance-fixture-schema.md §2
+// in Track 1L: the schema now documents this same grammar
+// (`^[A-Z][A-Z0-9]{1,3}-[0-9]{2}$`), which admits `A2A`.
+var fixtureIDPattern = regexp.MustCompile(`^[A-Z][A-Z0-9]{1,3}-\d{2}$`)
+
+// automationPossibleValues is the quoted-string enum after the Track 1K doc
+// cleanup. A YAML boolean (the old `false`) is rejected before reaching here.
+var automationPossibleValues = map[string]bool{"yes": true, "no": true, "partial": true}
+
+// expectedOutcomeValues is the deterministic-outcome enum (schema §2). The
+// tier-1 evaluator branches on results / empty / validation_error; judgment is
+// the human-label class and is never tier-1 runnable.
+var expectedOutcomeValues = map[string]bool{
+	"results": true, "empty": true, "validation_error": true, "judgment": true,
+}
+
+// searchFixtureFilters mirrors the filter subset of SearchKnowledgeInput
+// (search.go) a fixture may set. YAML keys match the wire `filters` object
+// (schema §4). An absent key leaves the field at its zero value.
+type searchFixtureFilters struct {
+	SourceTypes []string `yaml:"source_types"`
+	ContentType string   `yaml:"content_type"`
+	NoteKind    string   `yaml:"note_kind"`
+	Project     string   `yaml:"project"`
+	After       string   `yaml:"after"`
+	Before      string   `yaml:"before"`
+	Limit       int      `yaml:"limit"`
+}
+
+// searchFixture is one normalized YAML fixture block. Only loader/evaluator-
+// relevant fields are decoded; report-only criteria are kept for the run log.
+// The yes/no-valued human-judgment fields are intentionally not decoded — they
+// resolve to YAML strings here but carry no tier-1 meaning.
+type searchFixture struct {
+	FixtureID          string
+	Query              string
+	ScenarioCategory   string
+	ExpectedOutcome    string
+	Filters            searchFixtureFilters
+	SeedRequirements   []string
+	AutomationPossible string
+	DateAnchor         string
+	ShouldNotAppear    string // should_not_appear_criteria — report only
+	Notes              string
+}
+
+// judgmentSetPath resolves the normalized judgment set relative to THIS source
+// file via runtime.Caller, so the loader works regardless of the test working
+// directory.
+func judgmentSetPath() string {
+	_, thisFile, _, _ := runtime.Caller(0)
+	return filepath.Join(filepath.Dir(thisFile), "..", "..",
+		"docs", "testing", "search-relevance-judgment-set.md")
+}
+
+// extractYAMLBlocks returns the body of every ```yaml fenced block in md, in
+// document order. Headings and surrounding prose are ignored — only fenced
+// yaml is a fixture (workflow §6.0: read the block, not the prose).
+func extractYAMLBlocks(md string) []string {
+	lines := strings.Split(md, "\n")
+	var blocks []string
+	start := -1 // index of the first body line of the open block, or -1
+	for i, ln := range lines {
+		trimmed := strings.TrimSpace(ln)
+		switch {
+		case start < 0 && trimmed == "```yaml":
+			start = i + 1
+		case start >= 0 && trimmed == "```":
+			blocks = append(blocks, strings.Join(lines[start:i], "\n"))
+			start = -1
+		}
+	}
+	return blocks
+}
+
+// parseSearchFixtureBlock decodes one normalized YAML block into a searchFixture
+// and validates the schema invariants the loader depends on. It requires the
+// exact keys fixture_id, query, filters, seed_requirements, automation_possible
+// to be PRESENT (not inferred), rejects an automation_possible that is not a
+// quoted-string enum member, and never recovers a value from prose.
+func parseSearchFixtureBlock(block string) (searchFixture, error) {
+	var raw map[string]yaml.Node
+	if err := yaml.Unmarshal([]byte(block), &raw); err != nil {
+		return searchFixture{}, fmt.Errorf("yaml unmarshal: %w", err)
+	}
+
+	for _, key := range []string{"fixture_id", "query", "filters", "seed_requirements", "automation_possible"} {
+		if _, ok := raw[key]; !ok {
+			return searchFixture{}, fmt.Errorf("missing required field %q", key)
+		}
+	}
+
+	var fx searchFixture
+
+	// yaml.Node.Decode is a pointer method; a map index is not addressable, so
+	// each node is copied to a local before decoding.
+	idNode := raw["fixture_id"]
+	if err := idNode.Decode(&fx.FixtureID); err != nil {
+		return searchFixture{}, fmt.Errorf("fixture_id: %w", err)
+	}
+	if !fixtureIDPattern.MatchString(fx.FixtureID) {
+		return searchFixture{}, fmt.Errorf("fixture_id %q does not match %s", fx.FixtureID, fixtureIDPattern)
+	}
+
+	queryNode := raw["query"]
+	if err := queryNode.Decode(&fx.Query); err != nil {
+		return searchFixture{}, fmt.Errorf("%s: query: %w", fx.FixtureID, err)
+	}
+	if strings.TrimSpace(fx.Query) == "" {
+		return searchFixture{}, fmt.Errorf("%s: query is empty", fx.FixtureID)
+	}
+
+	// automation_possible must be a quoted string (tag !!str) in the enum.
+	// An unquoted YAML boolean (tag !!bool — the pre-cleanup `false`) is
+	// rejected here so the vocabulary stays {"yes","no","partial"}.
+	ap := raw["automation_possible"]
+	if ap.Tag != "!!str" {
+		return searchFixture{}, fmt.Errorf("%s: automation_possible must be a quoted string, got YAML %s", fx.FixtureID, ap.Tag)
+	}
+	fx.AutomationPossible = ap.Value
+	if !automationPossibleValues[fx.AutomationPossible] {
+		return searchFixture{}, fmt.Errorf("%s: unsupported automation_possible %q (want \"yes\"|\"no\"|\"partial\")", fx.FixtureID, fx.AutomationPossible)
+	}
+
+	filtersNode := raw["filters"]
+	if err := filtersNode.Decode(&fx.Filters); err != nil {
+		return searchFixture{}, fmt.Errorf("%s: filters: %w", fx.FixtureID, err)
+	}
+	seedNode := raw["seed_requirements"]
+	if err := seedNode.Decode(&fx.SeedRequirements); err != nil {
+		return searchFixture{}, fmt.Errorf("%s: seed_requirements: %w", fx.FixtureID, err)
+	}
+
+	if n, ok := raw["expected_outcome"]; ok {
+		if err := n.Decode(&fx.ExpectedOutcome); err != nil {
+			return searchFixture{}, fmt.Errorf("%s: expected_outcome: %w", fx.FixtureID, err)
+		}
+		if fx.ExpectedOutcome != "" && !expectedOutcomeValues[fx.ExpectedOutcome] {
+			return searchFixture{}, fmt.Errorf("%s: unsupported expected_outcome %q", fx.FixtureID, fx.ExpectedOutcome)
+		}
+	}
+	if n, ok := raw["scenario_category"]; ok {
+		_ = n.Decode(&fx.ScenarioCategory)
+	}
+	if n, ok := raw["date_anchor"]; ok {
+		_ = n.Decode(&fx.DateAnchor)
+	}
+	if n, ok := raw["should_not_appear_criteria"]; ok {
+		_ = n.Decode(&fx.ShouldNotAppear)
+	}
+	if n, ok := raw["notes"]; ok {
+		_ = n.Decode(&fx.Notes)
+	}
+
+	return fx, nil
+}
+
+// parseJudgmentSet extracts and parses every normalized fixture block from md.
+// It is the pure core (no filesystem, no testing) so it can be unit-tested with
+// synthetic input.
+func parseJudgmentSet(md string) ([]searchFixture, error) {
+	blocks := extractYAMLBlocks(md)
+	if len(blocks) == 0 {
+		return nil, fmt.Errorf("no ```yaml fixture blocks found")
+	}
+	fixtures := make([]searchFixture, 0, len(blocks))
+	for i, b := range blocks {
+		fx, err := parseSearchFixtureBlock(b)
+		if err != nil {
+			return nil, fmt.Errorf("block %d: %w", i+1, err)
+		}
+		fixtures = append(fixtures, fx)
+	}
+	return fixtures, nil
+}
+
+// loadSearchFixtures reads and parses the on-disk judgment set. It fatals the
+// test on any read or parse error — a malformed fixture is a fixture bug to fix
+// in the judgment set, never something the loader guesses around (workflow §6.0).
+func loadSearchFixtures(t *testing.T) []searchFixture {
+	t.Helper()
+	path := judgmentSetPath()
+	//nolint:gosec // G304: fixed repo-relative path from runtime.Caller, not user input
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read judgment set %s: %v", path, err)
+	}
+	fixtures, err := parseJudgmentSet(string(data))
+	if err != nil {
+		t.Fatalf("parse judgment set %s: %v", path, err)
+	}
+	return fixtures
+}
+
+// skippedFixture records a fixture excluded from the tier-1 run and why.
+type skippedFixture struct {
+	FixtureID string
+	Reason    string
+}
+
+// selectTier1 partitions fixtures into the tier-1 mechanical subset and the
+// skipped remainder. A fixture is selected iff automation_possible == "yes" AND
+// its prefix is NEG or FLT. Both conditions are checked independently so the
+// skip reason is precise even if the two ever diverge.
+func selectTier1(fixtures []searchFixture) (selected []searchFixture, skipped []skippedFixture) {
+	for i := range fixtures {
+		fx := &fixtures[i]
+		prefix, _, _ := strings.Cut(fx.FixtureID, "-")
+		isNegFlt := prefix == "NEG" || prefix == "FLT"
+		switch {
+		case fx.AutomationPossible != "yes":
+			skipped = append(skipped, skippedFixture{
+				FixtureID: fx.FixtureID,
+				Reason:    fmt.Sprintf("automation_possible=%q — needs a human label or is manual/product-routing (not tier-1)", fx.AutomationPossible),
+			})
+		case !isNegFlt:
+			skipped = append(skipped, skippedFixture{
+				FixtureID: fx.FixtureID,
+				Reason:    fmt.Sprintf("prefix %q is not a NEG/FLT mechanical control", prefix),
+			})
+		default:
+			selected = append(selected, *fx)
+		}
+	}
+	return selected, skipped
+}
+
+// --- parser tests (no DB; run by `go test ./internal/mcp`) ---
+
+// TestSearchFixtures_ParseAllBlocks loads the real judgment set and asserts the
+// full set parses, every block carries the required fields, and the counts
+// match the coverage summary (33 fixtures total).
+func TestSearchFixtures_ParseAllBlocks(t *testing.T) {
+	fixtures := loadSearchFixtures(t)
+
+	// 33 = KN(5) + LRN(5) + PLAN(5) + A2A(5) + NEG(5) + FLT(8), per the
+	// judgment-set coverage summary at the Track 1K snapshot.
+	const wantTotal = 33
+	if len(fixtures) != wantTotal {
+		t.Errorf("parsed %d fixtures, want %d", len(fixtures), wantTotal)
+	}
+
+	seen := map[string]bool{}
+	for i := range fixtures {
+		fx := &fixtures[i]
+		if !fixtureIDPattern.MatchString(fx.FixtureID) {
+			t.Errorf("fixture_id %q invalid", fx.FixtureID)
+		}
+		if seen[fx.FixtureID] {
+			t.Errorf("duplicate fixture_id %q", fx.FixtureID)
+		}
+		seen[fx.FixtureID] = true
+		if strings.TrimSpace(fx.Query) == "" {
+			t.Errorf("%s: empty query", fx.FixtureID)
+		}
+		if !automationPossibleValues[fx.AutomationPossible] {
+			t.Errorf("%s: automation_possible=%q not in enum", fx.FixtureID, fx.AutomationPossible)
+		}
+		if fx.ExpectedOutcome != "" && !expectedOutcomeValues[fx.ExpectedOutcome] {
+			t.Errorf("%s: expected_outcome=%q not in enum", fx.FixtureID, fx.ExpectedOutcome)
+		}
+	}
+}
+
+// TestSearchFixtures_RejectInvalidVocabulary pins that the parser refuses any
+// block that violates the loader contract — chiefly an automation_possible that
+// is not a quoted-string enum member (the Track 1K doc-cleanup invariant), plus
+// missing required keys and a bad fixture_id.
+func TestSearchFixtures_RejectInvalidVocabulary(t *testing.T) {
+	const valid = `fixture_id: NEG-09
+query: "zqxprobe"
+filters: {}
+seed_requirements: [X-1]
+automation_possible: "yes"
+expected_outcome: empty`
+
+	tests := []struct {
+		name  string
+		block string
+	}{
+		{
+			name: "automation_possible unquoted bool false",
+			block: `fixture_id: NEG-09
+query: "zqxprobe"
+filters: {}
+seed_requirements: [X-1]
+automation_possible: false`,
+		},
+		{
+			name: "automation_possible unquoted bool true",
+			block: `fixture_id: NEG-09
+query: "zqxprobe"
+filters: {}
+seed_requirements: [X-1]
+automation_possible: true`,
+		},
+		{
+			name: "automation_possible unknown string",
+			block: `fixture_id: NEG-09
+query: "zqxprobe"
+filters: {}
+seed_requirements: [X-1]
+automation_possible: "maybe"`,
+		},
+		{
+			name: "missing query",
+			block: `fixture_id: NEG-09
+filters: {}
+seed_requirements: [X-1]
+automation_possible: "yes"`,
+		},
+		{
+			name: "missing filters",
+			block: `fixture_id: NEG-09
+query: "zqxprobe"
+seed_requirements: [X-1]
+automation_possible: "yes"`,
+		},
+		{
+			name: "missing seed_requirements",
+			block: `fixture_id: NEG-09
+query: "zqxprobe"
+filters: {}
+automation_possible: "yes"`,
+		},
+		{
+			name: "missing automation_possible",
+			block: `fixture_id: NEG-09
+query: "zqxprobe"
+filters: {}
+seed_requirements: [X-1]`,
+		},
+		{
+			name: "bad fixture_id",
+			block: `fixture_id: neg-9
+query: "zqxprobe"
+filters: {}
+seed_requirements: [X-1]
+automation_possible: "yes"`,
+		},
+		{
+			name: "empty query",
+			block: `fixture_id: NEG-09
+query: ""
+filters: {}
+seed_requirements: [X-1]
+automation_possible: "yes"`,
+		},
+	}
+
+	// Sanity: the valid control parses.
+	if _, err := parseSearchFixtureBlock(valid); err != nil {
+		t.Fatalf("control block must parse, got %v", err)
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if _, err := parseSearchFixtureBlock(tt.block); err == nil {
+				t.Errorf("parseSearchFixtureBlock(%s) = nil error, want rejection", tt.name)
+			}
+		})
+	}
+}
+
+// TestSearchFixtures_SelectNegFltOnly asserts the tier-1 selection is exactly
+// NEG-01..05 + FLT-01..08, and that every other fixture is skipped with a
+// reason. This is the boundary that keeps natural-language and product-gap
+// fixtures out of the mechanical run.
+func TestSearchFixtures_SelectNegFltOnly(t *testing.T) {
+	fixtures := loadSearchFixtures(t)
+	selected, skipped := selectTier1(fixtures)
+
+	got := make([]string, 0, len(selected))
+	for i := range selected {
+		fx := &selected[i]
+		got = append(got, fx.FixtureID)
+		if fx.AutomationPossible != "yes" {
+			t.Errorf("selected %s has automation_possible=%q, want \"yes\"", fx.FixtureID, fx.AutomationPossible)
+		}
+		if p, _, _ := strings.Cut(fx.FixtureID, "-"); p != "NEG" && p != "FLT" {
+			t.Errorf("selected %s has non-NEG/FLT prefix", fx.FixtureID)
+		}
+	}
+
+	want := []string{
+		"NEG-01", "NEG-02", "NEG-03", "NEG-04", "NEG-05",
+		"FLT-01", "FLT-02", "FLT-03", "FLT-04", "FLT-05", "FLT-06", "FLT-07", "FLT-08",
+	}
+	wantSet := map[string]bool{}
+	for _, id := range want {
+		wantSet[id] = true
+	}
+	if len(got) != len(want) {
+		t.Errorf("selected %d fixtures %v, want %d %v", len(got), got, len(want), want)
+	}
+	for _, id := range got {
+		if !wantSet[id] {
+			t.Errorf("unexpected fixture %q in tier-1 selection", id)
+		}
+	}
+
+	if len(skipped) != len(fixtures)-len(want) {
+		t.Errorf("skipped %d, want %d", len(skipped), len(fixtures)-len(want))
+	}
+	for _, sk := range skipped {
+		if strings.TrimSpace(sk.Reason) == "" {
+			t.Errorf("skipped %s has no reason", sk.FixtureID)
+		}
+	}
+}
+
+// TestSearchRelevanceHarness_NoRankingAssertions guards the hard scope boundary
+// (search-relevance-evaluation-workflow.md §7): the tier-1 search-relevance
+// evaluator — TestIntegration_SearchRelevance_Tier1 and its scoreResults /
+// tier1Expectations helpers, consolidated into integration_test.go — asserts
+// only contract criteria (presence / absence / narrowing / rejection / empty),
+// never ranking metrics.
+//
+// It scans integration_test.go for ranking-METRIC identifiers (the unambiguous
+// signal). It deliberately does NOT forbid positional result indexing like
+// Results[0]: reading a field off a result is not a ranking claim, and other
+// integration tests use it legitimately. The prose word "rank" is likewise not
+// scanned — it appears in the no-ranking disclaimers. The fixture parser (also
+// consolidated, into search_test.go) makes no result assertions, so it is not
+// scanned — and scanning this file would self-match the forbidden list below.
+func TestSearchRelevanceHarness_NoRankingAssertions(t *testing.T) {
+	_, thisFile, _, _ := runtime.Caller(0)
+	integrationFile := filepath.Join(filepath.Dir(thisFile), "integration_test.go")
+	//nolint:gosec // G304: fixed repo-relative path from runtime.Caller, not user input
+	src, err := os.ReadFile(integrationFile)
+	if err != nil {
+		t.Fatalf("read integration source %s: %v", integrationFile, err)
+	}
+	text := string(src)
+
+	// Identifiers that only appear when someone computes or asserts a ranking
+	// metric — never in a contract assertion or a disclaimer comment.
+	forbidden := []string{
+		"nDCG", "ndcg", "NDCG", "MRR", "precision@", "recall@",
+		"ExpectedRank", "expected_rank", "expectedTop", "topResult",
+	}
+	for _, tok := range forbidden {
+		if strings.Contains(text, tok) {
+			t.Errorf("integration_test.go contains ranking-metric construct %q — the search-relevance tier-1 evaluator must not assert ranking", tok)
 		}
 	}
 }

@@ -47,12 +47,12 @@ const (
 // SearchKnowledgeInput is the input for the search_knowledge tool.
 type SearchKnowledgeInput struct {
 	Query       string   `json:"query" jsonschema:"required" jsonschema_description:"Search query text"`
-	ContentType *string  `json:"content_type,omitempty" jsonschema_description:"Filter by content type: article, essay, build-log, til, digest. Implies source_types=[\"content\"]; notes are excluded automatically. Mutually exclusive with note_kind."`
-	NoteKind    *string  `json:"note_kind,omitempty" jsonschema_description:"Filter by note kind: solve-note, concept-note, debug-postmortem, decision-log, reading-note, musing. Implies source_types=[\"note\"]; content is excluded automatically. Mutually exclusive with content_type."`
-	SourceTypes []string `json:"source_types,omitempty" jsonschema_description:"Filter by source: 'content' (articles/essays/etc), 'note' (Zettelkasten). Default: both. Overridden by content_type or note_kind if either is set."`
-	Project     *string  `json:"project,omitempty" jsonschema_description:"Filter by project slug/alias/title (content only)."`
-	After       *string  `json:"after,omitempty" jsonschema_description:"Filter: created after YYYY-MM-DD (exclusive)."`
-	Before      *string  `json:"before,omitempty" jsonschema_description:"Filter: created before YYYY-MM-DD (exclusive)."`
+	ContentType *string  `json:"content_type,omitempty" jsonschema_description:"Filter by content type: article, essay, build-log, til, digest. An unknown value is rejected. Implies source_types=[\"content\"]; notes are excluded automatically. Mutually exclusive with note_kind."`
+	NoteKind    *string  `json:"note_kind,omitempty" jsonschema_description:"Filter by note kind: solve-note, concept-note, debug-postmortem, decision-log, reading-note, musing. An unknown value is rejected. Implies source_types=[\"note\"]; content is excluded automatically. Mutually exclusive with content_type."`
+	SourceTypes []string `json:"source_types,omitempty" jsonschema_description:"Filter by source: 'content' (articles/essays/etc), 'note' (Zettelkasten). Default: both. Any token outside {content, note} is rejected. Overridden by content_type or note_kind if either is set."`
+	Project     *string  `json:"project,omitempty" jsonschema_description:"NOT SUPPORTED — passing a non-empty value is rejected as an unsupported_filter. Reserved for a future content-only project filter."`
+	After       *string  `json:"after,omitempty" jsonschema_description:"Filter by created date YYYY-MM-DD: keep rows created on or after the whole of this day (server timezone, UTC by default)."`
+	Before      *string  `json:"before,omitempty" jsonschema_description:"Filter by created date YYYY-MM-DD: keep rows created on or before the whole of this day, i.e. through 23:59:59 of the date (server timezone, UTC by default)."`
 	Limit       FlexInt  `json:"limit,omitempty" jsonschema_description:"Max results (default 20, max 50)."`
 }
 
@@ -78,23 +78,17 @@ type SearchKnowledgeOutput struct {
 }
 
 func (s *Server) searchKnowledge(ctx context.Context, _ *mcp.CallToolRequest, input SearchKnowledgeInput) (*mcp.CallToolResult, SearchKnowledgeOutput, error) {
-	if input.Query == "" {
-		return nil, SearchKnowledgeOutput{}, fmt.Errorf("query is required")
+	if err := validateSearchKnowledgeInput(input); err != nil {
+		return nil, SearchKnowledgeOutput{}, err
 	}
 
-	after, err := parseOptionalDate(input.After)
+	after, err := parseDateStart(input.After, s.loc)
 	if err != nil {
 		return nil, SearchKnowledgeOutput{}, fmt.Errorf("invalid after date: %w", err)
 	}
-	before, err := parseOptionalDate(input.Before)
+	before, err := parseDateEnd(input.Before, s.loc)
 	if err != nil {
 		return nil, SearchKnowledgeOutput{}, fmt.Errorf("invalid before date: %w", err)
-	}
-
-	hasContentTypeFilter := input.ContentType != nil && *input.ContentType != ""
-	hasNoteKindFilter := input.NoteKind != nil && *input.NoteKind != ""
-	if hasContentTypeFilter && hasNoteKindFilter {
-		return nil, SearchKnowledgeOutput{}, fmt.Errorf("content_type and note_kind are mutually exclusive — content_type filters articles/essays/etc; note_kind filters notes")
 	}
 
 	limit := clamp(int(input.Limit), 1, 50, 20)
@@ -103,10 +97,10 @@ func (s *Server) searchKnowledge(ctx context.Context, _ *mcp.CallToolRequest, in
 	// mental model is "I asked for articles, why did notes leak in?" —
 	// passing content_type narrows to the content branch even if
 	// source_types was unset (default both). Symmetric for note_kind.
-	if hasContentTypeFilter {
+	if input.ContentType != nil && *input.ContentType != "" {
 		wantNote = false
 	}
-	if hasNoteKindFilter {
+	if input.NoteKind != nil && *input.NoteKind != "" {
 		wantContent = false
 	}
 
@@ -283,8 +277,11 @@ func rrfMerge(fts, sem []content.Content, limit int) []content.Content {
 	return out
 }
 
-// selectSources resolves the source_types filter. Empty list = both sources.
-// Named wantContent / wantNote to avoid shadowing the internal/content package.
+// selectSources resolves the source_types filter into branch flags. Empty
+// list = both sources. Tokens are assumed already validated by
+// validateSourceTypes, so any unrecognized token here is a no-op rather than
+// an error. Named wantContent / wantNote to avoid shadowing the
+// internal/content package.
 func selectSources(filter []string) (wantContent, wantNote bool) {
 	if len(filter) == 0 {
 		return true, true
@@ -311,7 +308,9 @@ func filterNoteResults(notes []note.Note, kindFilter *string, after, before *tim
 		if after != nil && n.CreatedAt.Before(*after) {
 			continue
 		}
-		if before != nil && n.CreatedAt.After(*before) {
+		// before is the exclusive upper bound (start of the day after the
+		// requested date), so the whole requested day is kept.
+		if before != nil && !n.CreatedAt.Before(*before) {
 			continue
 		}
 		out = append(out, SearchKnowledgeResult{
@@ -349,7 +348,9 @@ func (s *Server) filterContentResults(ctx context.Context, contents []content.Co
 		if after != nil && c.CreatedAt.Before(*after) {
 			continue
 		}
-		if before != nil && c.CreatedAt.After(*before) {
+		// before is the exclusive upper bound (start of the day after the
+		// requested date), so the whole requested day is kept.
+		if before != nil && !c.CreatedAt.Before(*before) {
 			continue
 		}
 		results = append(results, s.contentToResult(ctx, c))
@@ -377,13 +378,91 @@ func (s *Server) contentToResult(ctx context.Context, c *content.Content) Search
 	}
 }
 
-func parseOptionalDate(s *string) (*time.Time, error) {
+// parseDateStart parses an optional YYYY-MM-DD date as the start of that day
+// (00:00:00) in loc — the inclusive lower bound for the `after` filter. Whole
+// content created on or after the named day is kept. nil/empty input returns
+// (nil, nil) — caller treats as "no lower bound".
+func parseDateStart(s *string, loc *time.Location) (*time.Time, error) {
 	if s == nil || *s == "" {
 		return nil, nil
 	}
-	t, err := time.Parse(time.DateOnly, *s)
+	t, err := time.ParseInLocation(time.DateOnly, *s, loc)
 	if err != nil {
 		return nil, err
 	}
 	return &t, nil
+}
+
+// parseDateEnd parses an optional YYYY-MM-DD date as the start of the NEXT day
+// in loc — the exclusive upper bound for the `before` filter. This makes
+// `before=D` whole-day inclusive: a row created at any time during D is kept,
+// while D+1 onward is dropped. nil/empty input returns (nil, nil).
+func parseDateEnd(s *string, loc *time.Location) (*time.Time, error) {
+	if s == nil || *s == "" {
+		return nil, nil
+	}
+	t, err := time.ParseInLocation(time.DateOnly, *s, loc)
+	if err != nil {
+		return nil, err
+	}
+	end := t.AddDate(0, 0, 1)
+	return &end, nil
+}
+
+// validateSearchKnowledgeInput runs the pre-store filter validation for
+// search_knowledge — required query, strict enum filters, source-type tokens,
+// the content_type⊕note_kind mutex, and the unsupported project filter —
+// returning the first violation. Date parsing stays in the handler because it
+// needs the server timezone and produces values the handler consumes.
+func validateSearchKnowledgeInput(input SearchKnowledgeInput) error {
+	if input.Query == "" {
+		return fmt.Errorf("query is required")
+	}
+
+	hasContentTypeFilter := input.ContentType != nil && *input.ContentType != ""
+	hasNoteKindFilter := input.NoteKind != nil && *input.NoteKind != ""
+
+	// Enum filters reject unknown values. The allowed sets (content.Type,
+	// note.Kind) are closed and stable, so an out-of-enum value is a caller
+	// bug — not a legitimate zero-result. Rejecting keeps "unsupported
+	// filter" distinguishable from "no match" and matches create_content,
+	// which already rejects invalid content types.
+	if hasContentTypeFilter && !content.Type(*input.ContentType).Valid() {
+		return fmt.Errorf("unsupported content_type %q (supported: article, essay, build-log, til, digest)", *input.ContentType)
+	}
+	if hasNoteKindFilter && !note.Kind(*input.NoteKind).Valid() {
+		return fmt.Errorf("unsupported note_kind %q (supported: solve-note, concept-note, debug-postmortem, decision-log, reading-note, musing)", *input.NoteKind)
+	}
+	if hasContentTypeFilter && hasNoteKindFilter {
+		return fmt.Errorf("content_type and note_kind are mutually exclusive — content_type filters articles/essays/etc; note_kind filters notes")
+	}
+
+	if err := validateSourceTypes(input.SourceTypes); err != nil {
+		return err
+	}
+
+	// project is declared in the schema but has no retrieval path. Rather
+	// than silently ignore it (a caller passing project would get unfiltered
+	// results and never know), reject it as an unsupported filter until a
+	// real content-only project filter is wired.
+	if input.Project != nil && *input.Project != "" {
+		return fmt.Errorf("unsupported_filter: project is not supported by search_knowledge")
+	}
+
+	return nil
+}
+
+// validateSourceTypes rejects any source token outside the supported corpus
+// set {content, note}. An unknown token (a typo, or an unsupported corpus like
+// "bookmark"/"task") is a caller error, not a silent no-op: returning it as an
+// error keeps "unsupported filter" distinguishable from "no results".
+func validateSourceTypes(filter []string) error {
+	for _, t := range filter {
+		switch t {
+		case SourceTypeContent, SourceTypeNote:
+		default:
+			return fmt.Errorf("unsupported source_type %q (supported: content, note)", t)
+		}
+	}
+	return nil
 }

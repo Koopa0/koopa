@@ -23,9 +23,14 @@ package mcp
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"log/slog"
+	"maps"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -35,7 +40,10 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/Koopa0/koopa/internal/agent"
+	"github.com/Koopa0/koopa/internal/agent/task"
+	"github.com/Koopa0/koopa/internal/content"
 	"github.com/Koopa0/koopa/internal/mcp/ops"
+	"github.com/Koopa0/koopa/internal/note"
 	"github.com/Koopa0/koopa/internal/testdb"
 )
 
@@ -83,6 +91,7 @@ func truncateApplicationTables(t *testing.T) {
 		"todos",
 		"agent_notes",
 		"contents",
+		"notes",
 		"bookmarks",
 		"milestones",
 		"goals",
@@ -2756,4 +2765,2207 @@ func TestIntegration_ToolsListAdvertisesEnums(t *testing.T) {
 	if !foundDashboard {
 		t.Error("learning_dashboard.FieldEnums[view] missing")
 	}
+}
+
+// Track 1D Batch 1 — publish_content contract (DB-backed dimensions).
+//
+// These testcontainers-backed tests pin the dimensions a DB-free test cannot:
+//   - handler behavior  (success response: Action + Content.Status)
+//   - DB write          (atomic flip: status/is_public/published_at — note
+//                        is_public + published_at are NOT in the tool response,
+//                        only in the row, so they are verified via SQL)
+//   - activity/audit     (trg_contents_audit writes one change_kind='published'
+//                        row with actor = the explicit human caller)
+//   - empty/not-found    (ErrNotFound → "content … not found")
+//   - idempotency         (re-publish: no error, no NEW audit row — actual
+//                        contract: the store has no status guard and the audit
+//                        trigger only fires on a real status change)
+//
+// Run with: go test -tags=integration ./internal/mcp/...
+
+// seedContent inserts a content row in the given status directly via SQL (no
+// koopa.actor set, so the INSERT audit row is attributed to 'system' — that is
+// the seed event, distinct from the publish event under test). Returns the id.
+func seedContent(t *testing.T, slug, status string) uuid.UUID {
+	t.Helper()
+	var id uuid.UUID
+	err := testPool.QueryRow(t.Context(),
+		`INSERT INTO contents (slug, title, body, type, status)
+		 VALUES ($1, $2, 'body', 'article', $3) RETURNING id`,
+		slug, "Title "+slug, status,
+	).Scan(&id)
+	if err != nil {
+		t.Fatalf("seedContent(%q, %q): %v", slug, status, err)
+	}
+	return id
+}
+
+// contentRowState reads the publish-relevant columns the tool response does
+// NOT expose, so the DB side effect can be asserted independently.
+func contentRowState(t *testing.T, id uuid.UUID) (status string, isPublic bool, publishedAt *time.Time) {
+	t.Helper()
+	if err := testPool.QueryRow(t.Context(),
+		`SELECT status, is_public, published_at FROM contents WHERE id = $1`, id,
+	).Scan(&status, &isPublic, &publishedAt); err != nil {
+		t.Fatalf("contentRowState(%s): %v", id, err)
+	}
+	return status, isPublic, publishedAt
+}
+
+func publishedEventCount(t *testing.T, id uuid.UUID) int {
+	t.Helper()
+	var n int
+	if err := testPool.QueryRow(t.Context(),
+		`SELECT count(*) FROM activity_events
+		 WHERE entity_type = 'content' AND entity_id = $1 AND change_kind = 'published'`, id,
+	).Scan(&n); err != nil {
+		t.Fatalf("publishedEventCount(%s): %v", id, err)
+	}
+	return n
+}
+
+// TestIntegration_PublishContent_Success covers the happy path end-to-end:
+// review → published by an explicit human caller. Asserts the handler response,
+// the atomic DB flip, and the audit row + actor attribution.
+func TestIntegration_PublishContent_Success(t *testing.T) {
+	s := setupServer(t)
+	id := seedContent(t, "publish-success", "review")
+
+	_, out, err := callHandlerAs(t, "human", s.publishContentTool, PublishContentInput{
+		ContentID: id.String(),
+	})
+	if err != nil {
+		t.Fatalf("publish_content(as=human, review content) = %v, want success", err)
+	}
+
+	// Handler behavior: response fragment.
+	if out.Action != "publish" {
+		t.Errorf("Action = %q, want %q", out.Action, "publish")
+	}
+	if out.Content == nil {
+		t.Fatal("response Content is nil")
+	}
+	if out.Content.Status != "published" {
+		t.Errorf("Content.Status = %q, want %q", out.Content.Status, "published")
+	}
+
+	// DB side effect: the atomic flip (is_public + published_at are NOT in the
+	// tool response — verify them on the row).
+	status, isPublic, publishedAt := contentRowState(t, id)
+	if status != "published" {
+		t.Errorf("db status = %q, want %q", status, "published")
+	}
+	if !isPublic {
+		t.Error("db is_public = false, want true (publishing makes public)")
+	}
+	if publishedAt == nil {
+		t.Error("db published_at = NULL, want non-NULL")
+	}
+
+	// activity/audit + actor attribution: exactly one published event, by the
+	// explicit human caller — NOT 'system' (which would mean koopa.actor leaked).
+	if got := publishedEventCount(t, id); got != 1 {
+		t.Errorf("published activity_events = %d, want 1", got)
+	}
+	if actor := activityActorFor(t, "content", id); actor != "human" {
+		t.Errorf("activity_events.actor = %q, want %q", actor, "human")
+	}
+}
+
+// TestIntegration_PublishContent_NotFound: a well-formed but absent id, by a
+// valid human caller, returns the not-found error contract (gate passes first,
+// then the store's ErrNotFound maps through).
+func TestIntegration_PublishContent_NotFound(t *testing.T) {
+	s := setupServer(t)
+	missing := uuid.New()
+
+	_, _, err := callHandlerAs(t, "human", s.publishContentTool, PublishContentInput{
+		ContentID: missing.String(),
+	})
+	if err == nil {
+		t.Fatalf("publish_content(missing id) = nil, want not-found error")
+	}
+	if got := err.Error(); !strings.Contains(got, "not found") {
+		t.Errorf("error = %q, want it to report not-found", got)
+	}
+}
+
+// TestIntegration_PublishContent_RepublishNoNewAuditRow pins the ACTUAL
+// idempotency contract: PublishContent has no status guard, so re-publishing an
+// already-published row succeeds (no error) and re-runs the UPDATE, but the
+// audit trigger only fires on a real status change (NEW.status DISTINCT FROM
+// OLD.status), so NO second 'published' event is written.
+//
+// This is a characterization test of observed behavior, not an assertion that
+// re-publish SHOULD be a no-op — see the readiness report's idempotency note.
+func TestIntegration_PublishContent_RepublishNoNewAuditRow(t *testing.T) {
+	s := setupServer(t)
+	id := seedContent(t, "publish-idempotent", "review")
+
+	if _, _, err := callHandlerAs(t, "human", s.publishContentTool, PublishContentInput{ContentID: id.String()}); err != nil {
+		t.Fatalf("first publish: %v", err)
+	}
+	if got := publishedEventCount(t, id); got != 1 {
+		t.Fatalf("after first publish: published events = %d, want 1", got)
+	}
+
+	// Re-publish the already-published row.
+	if _, out, err := callHandlerAs(t, "human", s.publishContentTool, PublishContentInput{ContentID: id.String()}); err != nil {
+		t.Fatalf("re-publish: %v, want no error (no status guard)", err)
+	} else if out.Content == nil || out.Content.Status != "published" {
+		t.Errorf("re-publish status = %v, want published", out.Content)
+	}
+
+	if status, isPublic, _ := contentRowState(t, id); status != "published" || !isPublic {
+		t.Errorf("after re-publish: status=%q is_public=%v, want published/true", status, isPublic)
+	}
+	// The contract under test: no NEW audit row on re-publish.
+	if got := publishedEventCount(t, id); got != 1 {
+		t.Errorf("after re-publish: published events = %d, want 1 (trigger fires only on status change)", got)
+	}
+}
+
+// TestIntegration_PublishContent_RejectsNonReviewStates pins the state-guard
+// decision (2026-05-22): publish_content is review-gated. Publishing a draft or
+// an archived row is rejected with an invalid-state error, the row is NOT
+// mutated, and NO 'published' activity event is written. (The seed INSERT
+// writes a 'created' event with actor='system'; we assert only that no
+// 'published' event appears.)
+func TestIntegration_PublishContent_RejectsNonReviewStates(t *testing.T) {
+	tests := []struct {
+		name      string
+		slug      string
+		seedState string
+	}{
+		{name: "draft rejected", slug: "publish-reject-draft", seedState: "draft"},
+		{name: "archived rejected", slug: "publish-reject-archived", seedState: "archived"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := setupServer(t)
+			id := seedContent(t, tt.slug, tt.seedState)
+
+			_, _, err := callHandlerAs(t, "human", s.publishContentTool, PublishContentInput{
+				ContentID: id.String(),
+			})
+			if err == nil {
+				t.Fatalf("publish_content(%s) = nil, want invalid-state rejection", tt.seedState)
+			}
+			if !strings.Contains(err.Error(), "not in review state") {
+				t.Errorf("error = %q, want it to report the review-state requirement", err.Error())
+			}
+
+			// Row must be untouched.
+			status, isPublic, publishedAt := contentRowState(t, id)
+			if status != tt.seedState {
+				t.Errorf("db status = %q, want unchanged %q", status, tt.seedState)
+			}
+			if isPublic {
+				t.Errorf("db is_public = true, want false (rejected publish must not mutate)")
+			}
+			if publishedAt != nil {
+				t.Errorf("db published_at = %v, want NULL (rejected publish must not set it)", publishedAt)
+			}
+			// No published audit event on the rejection path.
+			if got := publishedEventCount(t, id); got != 0 {
+				t.Errorf("published activity_events = %d, want 0 (rejected publish writes no event)", got)
+			}
+		})
+	}
+}
+
+// Track 1E — content lifecycle contract (DB-backed dimensions).
+//
+// Pins the create/update/submit/revert/archive transitions against a real DB:
+// success transitions + audit + actor, and the CHECK-enforced rejections of
+// illegal transitions (characterized, not blessed — see
+// docs/testing/content-lifecycle-mcp-contract.md for the Human-decision flags).
+// publish_content is unchanged (Track 1D); draft→published stays blocked.
+//
+// Reuses harness from integration_test.go (setupServer, callHandler,
+// callHandlerAs, activityActorFor) and publish_content_integration_test.go
+// (seedContent, contentRowState). Default caller is "learning-studio".
+//
+// Run with: go test -tags=integration ./internal/mcp/...
+
+// contentEventCountByKind counts activity_events rows for a content of a given
+// change_kind — used to assert "a transition wrote (or did NOT write) an event".
+func contentEventCountByKind(t *testing.T, id uuid.UUID, kind string) int {
+	t.Helper()
+	var n int
+	if err := testPool.QueryRow(t.Context(),
+		`SELECT count(*) FROM activity_events
+		 WHERE entity_type='content' AND entity_id=$1 AND change_kind=$2`, id, kind,
+	).Scan(&n); err != nil {
+		t.Fatalf("contentEventCountByKind(%s,%s): %v", id, kind, err)
+	}
+	return n
+}
+
+// seedPublished produces a genuinely-published row (status=published,
+// is_public=true, published_at set) by going through the tested publish path:
+// seed a review row, then publish_content as the human via the caller's server
+// (s already came from setupServer; we must not re-truncate). Returns the id.
+func seedPublished(t *testing.T, s *Server, slug string) uuid.UUID {
+	t.Helper()
+	id := seedContent(t, slug, "review")
+	if _, _, err := callHandlerAs(t, "human", s.publishContentTool, PublishContentInput{ContentID: id.String()}); err != nil {
+		t.Fatalf("seedPublished publish: %v", err)
+	}
+	return id
+}
+
+func TestIntegration_CreateContent_Draft(t *testing.T) {
+	s := setupServer(t)
+
+	_, out, err := callHandler(t, s.createContentTool, CreateContentInput{
+		Title:       "Value semantics in Go",
+		ContentType: "article",
+	})
+	if err != nil {
+		t.Fatalf("create_content: %v", err)
+	}
+	if out.Action != "create" || out.Content == nil {
+		t.Fatalf("create_content out = %+v, want action=create with content", out)
+	}
+	if out.Content.Status != "draft" {
+		t.Errorf("created status = %q, want draft", out.Content.Status)
+	}
+	id := uuid.MustParse(out.Content.ID)
+
+	if status, _, _ := contentRowState(t, id); status != "draft" {
+		t.Errorf("db status = %q, want draft", status)
+	}
+	if got := contentEventCountByKind(t, id, "created"); got != 1 {
+		t.Errorf("created events = %d, want 1", got)
+	}
+	if actor := activityActorFor(t, "content", id); actor != "learning-studio" {
+		t.Errorf("created actor = %q, want learning-studio", actor)
+	}
+}
+
+func TestIntegration_CreateContent_SlugConflict(t *testing.T) {
+	s := setupServer(t)
+	slug := "dup-slug"
+
+	if _, _, err := callHandler(t, s.createContentTool, CreateContentInput{
+		Title: "First", ContentType: "article", Slug: &slug,
+	}); err != nil {
+		t.Fatalf("first create: %v", err)
+	}
+	_, out, err := callHandler(t, s.createContentTool, CreateContentInput{
+		Title: "Second", ContentType: "article", Slug: &slug,
+	})
+	if err != nil {
+		t.Fatalf("second create returned error, want SlugConflict (no error): %v", err)
+	}
+	if out.SlugConflict == nil || out.SlugConflict.Slug != slug {
+		t.Fatalf("second create SlugConflict = %+v, want slug=%q", out.SlugConflict, slug)
+	}
+	// Only one row exists for the slug.
+	var n int
+	if err := testPool.QueryRow(t.Context(), `SELECT count(*) FROM contents WHERE slug=$1`, slug).Scan(&n); err != nil {
+		t.Fatalf("count: %v", err)
+	}
+	if n != 1 {
+		t.Errorf("rows with slug %q = %d, want 1 (conflict must not create a second)", slug, n)
+	}
+}
+
+// TestIntegration_UpdateContent covers the fields-only contract: title/body/
+// slug edits succeed and write NO status event; a status field is rejected
+// (Track 1E-correction) with no mutation; not-found and slug-conflict behave.
+func TestIntegration_UpdateContent(t *testing.T) {
+	t.Run("field edit succeeds without a status event", func(t *testing.T) {
+		s := setupServer(t)
+		id := seedContent(t, "update-field", "draft")
+		newTitle := "Updated Title"
+		_, out, err := callHandler(t, s.updateContentTool, UpdateContentInput{ContentID: id.String(), Title: &newTitle})
+		if err != nil {
+			t.Fatalf("update_content: %v", err)
+		}
+		if out.Content == nil || out.Content.Title != newTitle {
+			t.Errorf("updated title = %v, want %q", out.Content, newTitle)
+		}
+		if status, _, _ := contentRowState(t, id); status != "draft" {
+			t.Errorf("status = %q, want unchanged draft", status)
+		}
+		if got := contentEventCountByKind(t, id, "state_changed"); got != 0 {
+			t.Errorf("state_changed events = %d, want 0 (field-only update writes no status event)", got)
+		}
+	})
+
+	t.Run("status change is rejected with no mutation or event", func(t *testing.T) {
+		s := setupServer(t)
+		id := seedContent(t, "update-reject-status", "draft")
+		review := "review"
+		_, _, err := callHandler(t, s.updateContentTool, UpdateContentInput{ContentID: id.String(), Status: &review})
+		if err == nil || !strings.Contains(err.Error(), "does not change status") {
+			t.Fatalf("update_content(status) = %v, want 'does not change status' rejection", err)
+		}
+		if status, _, _ := contentRowState(t, id); status != "draft" {
+			t.Errorf("status after rejected status-change = %q, want unchanged draft", status)
+		}
+		if got := contentEventCountByKind(t, id, "state_changed"); got != 0 {
+			t.Errorf("state_changed events = %d, want 0", got)
+		}
+	})
+
+	t.Run("not found", func(t *testing.T) {
+		s := setupServer(t)
+		title := "x"
+		_, _, err := callHandler(t, s.updateContentTool, UpdateContentInput{ContentID: uuid.New().String(), Title: &title})
+		if err == nil || !strings.Contains(err.Error(), "not found") {
+			t.Fatalf("update_content(missing) = %v, want not-found error", err)
+		}
+	})
+
+	t.Run("slug conflict surfaces without error", func(t *testing.T) {
+		s := setupServer(t)
+		_ = seedContent(t, "taken-slug", "draft")
+		id := seedContent(t, "free-slug", "draft")
+		taken := "taken-slug"
+		_, out, err := callHandler(t, s.updateContentTool, UpdateContentInput{ContentID: id.String(), Slug: &taken})
+		if err != nil {
+			t.Fatalf("update_content slug rename = %v, want SlugConflict (no error)", err)
+		}
+		if out.SlugConflict == nil || out.SlugConflict.Slug != taken {
+			t.Errorf("SlugConflict = %+v, want slug=%q", out.SlugConflict, taken)
+		}
+	})
+}
+
+// TestIntegration_SubmitForReview pins the corrected contract: draft→review
+// succeeds (event + actor); review→review is an idempotent no-op (no second
+// event); published/archived are rejected as a clean invalid_state with no
+// mutation or event.
+func TestIntegration_SubmitForReview(t *testing.T) {
+	t.Run("draft to review succeeds with event and actor", func(t *testing.T) {
+		s := setupServer(t)
+		id := seedContent(t, "submit-ok", "draft")
+		_, out, err := callHandler(t, s.submitContentForReviewTool, SubmitContentForReviewInput{ContentID: id.String()})
+		if err != nil {
+			t.Fatalf("submit(draft): %v", err)
+		}
+		if out.Content == nil || out.Content.Status != "review" {
+			t.Errorf("status = %v, want review", out.Content)
+		}
+		if status, _, _ := contentRowState(t, id); status != "review" {
+			t.Errorf("db status = %q, want review", status)
+		}
+		if got := contentEventCountByKind(t, id, "state_changed"); got != 1 {
+			t.Errorf("state_changed events = %d, want 1", got)
+		}
+		if actor := activityActorFor(t, "content", id); actor != "learning-studio" {
+			t.Errorf("actor = %q, want learning-studio", actor)
+		}
+	})
+	t.Run("review to review is an idempotent no-op", func(t *testing.T) {
+		s := setupServer(t)
+		id := seedContent(t, "submit-idem", "review")
+		_, out, err := callHandler(t, s.submitContentForReviewTool, SubmitContentForReviewInput{ContentID: id.String()})
+		if err != nil {
+			t.Fatalf("submit(review) = %v, want idempotent no-op", err)
+		}
+		if out.Content == nil || out.Content.Status != "review" {
+			t.Errorf("status = %v, want review", out.Content)
+		}
+		if got := contentEventCountByKind(t, id, "state_changed"); got != 0 {
+			t.Errorf("state_changed events = %d, want 0 (idempotent no-op)", got)
+		}
+	})
+	t.Run("published is rejected", func(t *testing.T) {
+		s := setupServer(t)
+		id := seedPublished(t, s, "submit-reject-pub")
+		_, _, err := callHandler(t, s.submitContentForReviewTool, SubmitContentForReviewInput{ContentID: id.String()})
+		assertTransitionRejected(t, id, err, "published", "state_changed")
+	})
+	t.Run("archived is rejected", func(t *testing.T) {
+		s := setupServer(t)
+		id := seedContent(t, "submit-reject-arch", "archived")
+		_, _, err := callHandler(t, s.submitContentForReviewTool, SubmitContentForReviewInput{ContentID: id.String()})
+		assertTransitionRejected(t, id, err, "archived", "state_changed")
+	})
+	t.Run("not found", func(t *testing.T) {
+		s := setupServer(t)
+		_, _, err := callHandler(t, s.submitContentForReviewTool, SubmitContentForReviewInput{ContentID: uuid.New().String()})
+		if err == nil || !strings.Contains(err.Error(), "not found") {
+			t.Fatalf("submit(missing) = %v, want not-found", err)
+		}
+	})
+}
+
+// TestIntegration_RevertToDraft mirrors submit: review→draft succeeds;
+// draft→draft idempotent no-op; published/archived rejected.
+func TestIntegration_RevertToDraft(t *testing.T) {
+	t.Run("review to draft succeeds with event and actor", func(t *testing.T) {
+		s := setupServer(t)
+		id := seedContent(t, "revert-ok", "review")
+		_, out, err := callHandler(t, s.revertContentToDraftTool, RevertContentToDraftInput{ContentID: id.String()})
+		if err != nil {
+			t.Fatalf("revert(review): %v", err)
+		}
+		if out.Content == nil || out.Content.Status != "draft" {
+			t.Errorf("status = %v, want draft", out.Content)
+		}
+		if got := contentEventCountByKind(t, id, "state_changed"); got != 1 {
+			t.Errorf("state_changed events = %d, want 1", got)
+		}
+		if actor := activityActorFor(t, "content", id); actor != "learning-studio" {
+			t.Errorf("actor = %q, want learning-studio", actor)
+		}
+	})
+	t.Run("draft to draft is an idempotent no-op", func(t *testing.T) {
+		s := setupServer(t)
+		id := seedContent(t, "revert-idem", "draft")
+		_, out, err := callHandler(t, s.revertContentToDraftTool, RevertContentToDraftInput{ContentID: id.String()})
+		if err != nil {
+			t.Fatalf("revert(draft) = %v, want idempotent no-op", err)
+		}
+		if out.Content == nil || out.Content.Status != "draft" {
+			t.Errorf("status = %v, want draft", out.Content)
+		}
+		if got := contentEventCountByKind(t, id, "state_changed"); got != 0 {
+			t.Errorf("state_changed events = %d, want 0 (idempotent no-op)", got)
+		}
+	})
+	t.Run("published is rejected", func(t *testing.T) {
+		s := setupServer(t)
+		id := seedPublished(t, s, "revert-reject-pub")
+		_, _, err := callHandler(t, s.revertContentToDraftTool, RevertContentToDraftInput{ContentID: id.String()})
+		assertTransitionRejected(t, id, err, "published", "state_changed")
+	})
+	t.Run("archived is rejected", func(t *testing.T) {
+		s := setupServer(t)
+		id := seedContent(t, "revert-reject-arch", "archived")
+		_, _, err := callHandler(t, s.revertContentToDraftTool, RevertContentToDraftInput{ContentID: id.String()})
+		assertTransitionRejected(t, id, err, "archived", "state_changed")
+	})
+	t.Run("not found", func(t *testing.T) {
+		s := setupServer(t)
+		_, _, err := callHandler(t, s.revertContentToDraftTool, RevertContentToDraftInput{ContentID: uuid.New().String()})
+		if err == nil || !strings.Contains(err.Error(), "not found") {
+			t.Fatalf("revert(missing) = %v, want not-found", err)
+		}
+	})
+}
+
+// TestIntegration_ArchiveContent: draft→archived and review→archived succeed;
+// archived→archived idempotent; published is rejected (depublication is a
+// separate decision, NOT hidden in archive_content).
+func TestIntegration_ArchiveContent(t *testing.T) {
+	t.Run("draft to archived succeeds, then idempotent", func(t *testing.T) {
+		s := setupServer(t)
+		id := seedContent(t, "archive-draft", "draft")
+		if _, out, err := callHandler(t, s.archiveContentTool, ArchiveContentInput{ContentID: id.String()}); err != nil {
+			t.Fatalf("archive(draft): %v", err)
+		} else if out.Content == nil || out.Content.Status != "archived" {
+			t.Errorf("status = %v, want archived", out.Content)
+		}
+		if status, _, _ := contentRowState(t, id); status != "archived" {
+			t.Errorf("db status = %q, want archived", status)
+		}
+		if got := contentEventCountByKind(t, id, "archived"); got != 1 {
+			t.Errorf("archived events = %d, want 1", got)
+		}
+		if actor := activityActorFor(t, "content", id); actor != "learning-studio" {
+			t.Errorf("actor = %q, want learning-studio", actor)
+		}
+		// archived → archived idempotent no-op: no second event.
+		if _, _, err := callHandler(t, s.archiveContentTool, ArchiveContentInput{ContentID: id.String()}); err != nil {
+			t.Fatalf("archive(already archived) = %v, want no-op success", err)
+		}
+		if got := contentEventCountByKind(t, id, "archived"); got != 1 {
+			t.Errorf("archived events after re-archive = %d, want 1 (no second event)", got)
+		}
+	})
+	t.Run("review to archived succeeds", func(t *testing.T) {
+		s := setupServer(t)
+		id := seedContent(t, "archive-review", "review")
+		if _, out, err := callHandler(t, s.archiveContentTool, ArchiveContentInput{ContentID: id.String()}); err != nil {
+			t.Fatalf("archive(review): %v", err)
+		} else if out.Content == nil || out.Content.Status != "archived" {
+			t.Errorf("status = %v, want archived", out.Content)
+		}
+		if got := contentEventCountByKind(t, id, "archived"); got != 1 {
+			t.Errorf("archived events = %d, want 1", got)
+		}
+	})
+	t.Run("published is rejected", func(t *testing.T) {
+		s := setupServer(t)
+		id := seedPublished(t, s, "archive-reject-pub")
+		_, _, err := callHandler(t, s.archiveContentTool, ArchiveContentInput{ContentID: id.String()})
+		assertTransitionRejected(t, id, err, "published", "archived")
+	})
+	t.Run("not found", func(t *testing.T) {
+		s := setupServer(t)
+		_, _, err := callHandler(t, s.archiveContentTool, ArchiveContentInput{ContentID: uuid.New().String()})
+		if err == nil || !strings.Contains(err.Error(), "not found") {
+			t.Fatalf("archive(missing) = %v, want not-found", err)
+		}
+	})
+}
+
+// assertTransitionRejected verifies a lifecycle transition was rejected with a
+// CLEAN invalid_state error (Track 1E-correction — not a raw DB CHECK leak),
+// the row's status is unchanged, and no audit event of forbiddenKind was added.
+func assertTransitionRejected(t *testing.T, id uuid.UUID, err error, wantStatus, forbiddenKind string) {
+	t.Helper()
+	if err == nil {
+		t.Fatalf("illegal transition = nil error, want rejection")
+	}
+	if !strings.Contains(err.Error(), "must be in") {
+		t.Errorf("rejection error = %q, want a clean invalid-state message (not a raw DB error)", err)
+	}
+	if status, _, _ := contentRowState(t, id); status != wantStatus {
+		t.Errorf("status after rejected transition = %q, want unchanged %q", status, wantStatus)
+	}
+	if got := contentEventCountByKind(t, id, forbiddenKind); got != 0 {
+		t.Errorf("%s events after rejected transition = %d, want 0", forbiddenKind, got)
+	}
+}
+
+// ============================================================================
+// Consolidated from a2a_integration_test.go (Track-1K test-file consolidation).
+// ============================================================================
+
+// =========================================================================
+// Section: A2A directive/report chain — helpers
+// =========================================================================
+
+// seedSubmittedTask inserts a task in the default 'submitted' state plus its
+// initial request message, mirroring what commit_proposal(directive) produces.
+// Returns the task id. createdBy and assignee must be distinct registry agents
+// (chk_tasks_no_self_assignment).
+func seedSubmittedTask(t *testing.T, createdBy, assignee, title string) uuid.UUID {
+	t.Helper()
+	var id uuid.UUID
+	if err := testPool.QueryRow(t.Context(),
+		`INSERT INTO tasks (created_by, assignee, title)
+		 VALUES ($1, $2, $3) RETURNING id`,
+		createdBy, assignee, title,
+	).Scan(&id); err != nil {
+		t.Fatalf("seeding task: %v", err)
+	}
+	if _, err := testPool.Exec(t.Context(),
+		`INSERT INTO task_messages (task_id, role, position, parts)
+		 VALUES ($1, 'request', 0, '[{"text":"please do the work"}]'::jsonb)`,
+		id,
+	); err != nil {
+		t.Fatalf("seeding request message: %v", err)
+	}
+	return id
+}
+
+// taskRow returns the (state, created_by, assignee) for a task.
+func taskRow(t *testing.T, id uuid.UUID) (state, createdBy, assignee string) {
+	t.Helper()
+	if err := testPool.QueryRow(t.Context(),
+		`SELECT state, created_by, assignee FROM tasks WHERE id = $1`, id,
+	).Scan(&state, &createdBy, &assignee); err != nil {
+		t.Fatalf("reading task %s: %v", id, err)
+	}
+	return state, createdBy, assignee
+}
+
+func taskAcceptedAtSet(t *testing.T, id uuid.UUID) bool {
+	t.Helper()
+	var set bool
+	if err := testPool.QueryRow(t.Context(),
+		`SELECT accepted_at IS NOT NULL FROM tasks WHERE id = $1`, id,
+	).Scan(&set); err != nil {
+		t.Fatalf("reading accepted_at for %s: %v", id, err)
+	}
+	return set
+}
+
+func taskCount(t *testing.T) int {
+	t.Helper()
+	var n int
+	if err := testPool.QueryRow(t.Context(), `SELECT count(*) FROM tasks`).Scan(&n); err != nil {
+		t.Fatalf("counting tasks: %v", err)
+	}
+	return n
+}
+
+func messageCount(t *testing.T, taskID uuid.UUID, role string) int {
+	t.Helper()
+	var n int
+	if err := testPool.QueryRow(t.Context(),
+		`SELECT count(*) FROM task_messages WHERE task_id = $1 AND role = $2`, taskID, role,
+	).Scan(&n); err != nil {
+		t.Fatalf("counting %s messages for %s: %v", role, taskID, err)
+	}
+	return n
+}
+
+func artifactCountForTask(t *testing.T, taskID uuid.UUID) int {
+	t.Helper()
+	var n int
+	if err := testPool.QueryRow(t.Context(),
+		`SELECT count(*) FROM artifacts WHERE task_id = $1`, taskID,
+	).Scan(&n); err != nil {
+		t.Fatalf("counting artifacts for %s: %v", taskID, err)
+	}
+	return n
+}
+
+// taskEventCount counts activity_events of a given change_kind for a task.
+func taskEventCount(t *testing.T, taskID uuid.UUID, kind string) int {
+	t.Helper()
+	var n int
+	if err := testPool.QueryRow(t.Context(),
+		`SELECT count(*) FROM activity_events
+		 WHERE entity_type = 'task' AND entity_id = $1 AND change_kind = $2`,
+		taskID, kind,
+	).Scan(&n); err != nil {
+		t.Fatalf("counting %s events for task %s: %v", kind, taskID, err)
+	}
+	return n
+}
+
+// allTaskEventCount counts every task-typed activity_events row in the DB.
+// Used to assert that a standalone artifact produces no task audit row.
+func allTaskEventCount(t *testing.T) int {
+	t.Helper()
+	var n int
+	if err := testPool.QueryRow(t.Context(),
+		`SELECT count(*) FROM activity_events WHERE entity_type = 'task'`,
+	).Scan(&n); err != nil {
+		t.Fatalf("counting task events: %v", err)
+	}
+	return n
+}
+
+// standaloneArtifact returns (task_id, created_by) for an artifact row.
+func standaloneArtifact(t *testing.T, id uuid.UUID) (taskID *uuid.UUID, createdBy string) {
+	t.Helper()
+	if err := testPool.QueryRow(t.Context(),
+		`SELECT task_id, created_by FROM artifacts WHERE id = $1`, id,
+	).Scan(&taskID, &createdBy); err != nil {
+		t.Fatalf("reading artifact %s: %v", id, err)
+	}
+	return taskID, createdBy
+}
+
+// mustAck acknowledges as the default caller (learning-studio = target).
+func mustAck(t *testing.T, s *Server, taskID uuid.UUID) {
+	t.Helper()
+	if _, _, err := callHandler(t, s.acknowledgeDirective,
+		AcknowledgeDirectiveInput{DirectiveID: taskID.String()}); err != nil {
+		t.Fatalf("acknowledge_directive: %v", err)
+	}
+}
+
+// mustReport files a task-bound report as the default caller (learning-studio).
+func mustReport(t *testing.T, s *Server, taskID uuid.UUID) {
+	t.Helper()
+	if _, _, err := callHandler(t, s.fileReport, FileReportInput{
+		InResponseTo:  taskID.String(),
+		ResponseParts: []json.RawMessage{json.RawMessage(`{"text":"done"}`)},
+		Artifact: &FileReportArtifactInput{
+			Name:  "deliverable",
+			Parts: []json.RawMessage{json.RawMessage(`{"text":"the result"}`)},
+		},
+	}); err != nil {
+		t.Fatalf("file_report: %v", err)
+	}
+}
+
+// =========================================================================
+// Section: A2A happy path — propose → commit → ack → report → detail
+// =========================================================================
+
+// TestIntegration_A2A_DirectiveReportChain_HappyPath walks the full MCP chain
+// and asserts every load-bearing side effect: the directive task row, the
+// acknowledgement transition, the report's response message + artifact, the
+// report↔directive linkage (artifacts.task_id), the activity_events audit
+// trail, actor attribution at each step, and task_detail's bundled view.
+func TestIntegration_A2A_DirectiveReportChain_HappyPath(t *testing.T) {
+	s := setupServer(t) // default caller = learning-studio
+
+	// --- propose_directive (as hq; hq holds SubmitTasks) ---
+	_, prop, err := callHandlerAs(t, "hq", s.proposeDirective, ProposeDirectiveInput{
+		Target:       "learning-studio",
+		Priority:     "high",
+		RequestParts: []json.RawMessage{json.RawMessage(`{"text":"Research NATS exactly-once delivery"}`)},
+	})
+	if err != nil {
+		t.Fatalf("propose_directive: %v", err)
+	}
+	if prop.Type != "directive" || prop.ProposalToken == "" {
+		t.Fatalf("propose output = %+v, want type=directive with a token", prop)
+	}
+	// Propose writes nothing — no tasks row until commit.
+	if n := taskCount(t); n != 0 {
+		t.Fatalf("tasks rows after propose = %d, want 0 (propose is read-only)", n)
+	}
+
+	// --- commit_proposal (as hq; directive commit is capability-gated, not human-gated) ---
+	_, commit, err := callHandlerAs(t, "hq", s.commitProposal, CommitProposalInput{ProposalToken: prop.ProposalToken})
+	if err != nil {
+		t.Fatalf("commit_proposal: %v", err)
+	}
+	if !commit.Committed || commit.Type != "directive" {
+		t.Fatalf("commit output = %+v, want directive committed", commit)
+	}
+	taskID := uuid.MustParse(commit.ID)
+
+	if state, by, assignee := taskRow(t, taskID); state != "submitted" || by != "hq" || assignee != "learning-studio" {
+		t.Errorf("task row = (state=%s, by=%s, assignee=%s), want (submitted, hq, learning-studio)", state, by, assignee)
+	}
+	if n := messageCount(t, taskID, "request"); n != 1 {
+		t.Errorf("request messages after commit = %d, want 1", n)
+	}
+	if k := latestActivityChangeKind(t, "task", taskID); k != "created" {
+		t.Errorf("commit audit change_kind = %q, want created", k)
+	}
+	if a := activityActorFor(t, "task", taskID); a != "hq" {
+		t.Errorf("commit audit actor = %q, want hq", a)
+	}
+
+	// --- acknowledge_directive (as target learning-studio = default caller) ---
+	_, ack, err := callHandler(t, s.acknowledgeDirective, AcknowledgeDirectiveInput{DirectiveID: taskID.String()})
+	if err != nil {
+		t.Fatalf("acknowledge_directive: %v", err)
+	}
+	if ack.State != "working" || ack.AcknowledgedBy != "learning-studio" {
+		t.Errorf("ack output = %+v, want state=working acknowledged_by=learning-studio", ack)
+	}
+	if state, _, _ := taskRow(t, taskID); state != "working" {
+		t.Errorf("post-ack state = %q, want working", state)
+	}
+	if !taskAcceptedAtSet(t, taskID) {
+		t.Error("post-ack accepted_at is NULL, want set")
+	}
+	if k := latestActivityChangeKind(t, "task", taskID); k != "state_changed" {
+		t.Errorf("ack audit change_kind = %q, want state_changed", k)
+	}
+
+	// --- file_report (as target learning-studio; holds PublishArtifacts) ---
+	_, rep, err := callHandler(t, s.fileReport, FileReportInput{
+		InResponseTo:  taskID.String(),
+		ResponseParts: []json.RawMessage{json.RawMessage(`{"text":"Done — see artifact"}`)},
+		Artifact: &FileReportArtifactInput{
+			Name:  "nats-research",
+			Parts: []json.RawMessage{json.RawMessage(`{"data":{"summary":"jetstream exactly-once","sources":3}}`)},
+		},
+	})
+	if err != nil {
+		t.Fatalf("file_report: %v", err)
+	}
+	if !rep.Completed || rep.State != "completed" || rep.TaskID != taskID.String() {
+		t.Errorf("report output = %+v, want completed for task %s", rep, taskID)
+	}
+	// Contract: the task-bound path deliberately does NOT surface the artifact
+	// id (task.Complete does not return it) — task_id is the anchor. Pin the
+	// empty value so a future change that starts populating it is caught.
+	if rep.ArtifactID != "" {
+		t.Errorf("task-bound report ArtifactID = %q, want empty (task_id is the anchor)", rep.ArtifactID)
+	}
+	if state, _, _ := taskRow(t, taskID); state != "completed" {
+		t.Errorf("post-report state = %q, want completed", state)
+	}
+	if n := messageCount(t, taskID, "response"); n != 1 {
+		t.Errorf("response messages after report = %d, want 1", n)
+	}
+	if n := artifactCountForTask(t, taskID); n != 1 {
+		t.Errorf("artifacts linked to task after report = %d, want 1", n)
+	}
+	if k := latestActivityChangeKind(t, "task", taskID); k != "completed" {
+		t.Errorf("report audit change_kind = %q, want completed", k)
+	}
+	if a := activityActorFor(t, "task", taskID); a != "learning-studio" {
+		t.Errorf("completion audit actor = %q, want learning-studio", a)
+	}
+
+	// --- task_detail (as source hq) returns the full linked bundle ---
+	_, detail, err := callHandlerAs(t, "hq", s.taskDetail, TaskDetailInput{TaskID: taskID.String()})
+	if err != nil {
+		t.Fatalf("task_detail: %v", err)
+	}
+	if detail.Task.ID != taskID || detail.Task.State != task.StateCompleted {
+		t.Errorf("detail.Task = (id=%s, state=%s), want (%s, completed)", detail.Task.ID, detail.Task.State, taskID)
+	}
+	if len(detail.Messages) != 2 {
+		t.Errorf("detail messages = %d, want 2 (request + response)", len(detail.Messages))
+	}
+	if len(detail.Artifacts) != 1 {
+		t.Fatalf("detail artifacts = %d, want 1", len(detail.Artifacts))
+	}
+	// Report↔directive linkage: the artifact is bound to this exact task.
+	if detail.Artifacts[0].TaskID == nil || *detail.Artifacts[0].TaskID != taskID {
+		t.Errorf("artifact.task_id = %v, want %s (report↔directive linkage)", detail.Artifacts[0].TaskID, taskID)
+	}
+}
+
+// =========================================================================
+// Section: Duplicate acknowledgement
+// =========================================================================
+
+// TestIntegration_A2A_DuplicateAcknowledge pins the idempotency contract:
+// the first ack moves submitted→working; a second ack on the now-working task
+// is rejected with a wrong-state error, does NOT re-transition, and produces
+// no second activity_events row. (Characterized, not a human-decision gap.)
+func TestIntegration_A2A_DuplicateAcknowledge(t *testing.T) {
+	s := setupServer(t)
+	taskID := seedSubmittedTask(t, "hq", "learning-studio", "dup-ack fixture")
+
+	if _, _, err := callHandler(t, s.acknowledgeDirective,
+		AcknowledgeDirectiveInput{DirectiveID: taskID.String()}); err != nil {
+		t.Fatalf("first acknowledge_directive: %v", err)
+	}
+
+	_, _, err := callHandler(t, s.acknowledgeDirective, AcknowledgeDirectiveInput{DirectiveID: taskID.String()})
+	if err == nil {
+		t.Fatal("second acknowledge_directive succeeded; want a wrong-state conflict")
+	}
+	if !strings.Contains(err.Error(), "submitted") {
+		t.Errorf("second ack error = %v, want a 'submitted' wrong-state message", err)
+	}
+	if state, _, _ := taskRow(t, taskID); state != "working" {
+		t.Errorf("state after rejected re-ack = %q, want working (no re-transition)", state)
+	}
+	if n := taskEventCount(t, taskID, "state_changed"); n != 1 {
+		t.Errorf("state_changed events = %d, want 1 (no duplicate audit row on rejected re-ack)", n)
+	}
+}
+
+// =========================================================================
+// Section: Report without directive (standalone)
+// =========================================================================
+
+// TestIntegration_A2A_ReportWithoutDirective covers the unsolicited-report
+// path: file_report with no in_response_to creates a standalone artifact for
+// an allowlisted author (content-studio / research-lab / learning-studio) and
+// is rejected for hq (excluded from the allowlist despite holding
+// PublishArtifacts).
+func TestIntegration_A2A_ReportWithoutDirective(t *testing.T) {
+	t.Run("standalone supported for an allowlisted author", func(t *testing.T) {
+		s := setupServer(t)
+		_, rep, err := callHandlerAs(t, "content-studio", s.fileReport, FileReportInput{
+			Artifact: &FileReportArtifactInput{
+				Name:  "industry-scan",
+				Parts: []json.RawMessage{json.RawMessage(`{"text":"weekly scan summary"}`)},
+			},
+		})
+		if err != nil {
+			t.Fatalf("standalone file_report: %v", err)
+		}
+		if rep.State != "standalone" {
+			t.Errorf("standalone report State = %q, want standalone", rep.State)
+		}
+		if rep.Completed {
+			t.Error("standalone report Completed = true, want false")
+		}
+		if rep.ArtifactID == "" {
+			t.Error("standalone report ArtifactID is empty, want a generated id")
+		}
+		aid := uuid.MustParse(rep.ArtifactID)
+		if tid, by := standaloneArtifact(t, aid); tid != nil || by != "content-studio" {
+			t.Errorf("standalone artifact = (task_id=%v, by=%s), want (nil, content-studio)", tid, by)
+		}
+		// A standalone artifact has no audit trigger and entity_type='artifact'
+		// is not whitelisted in activity_events — so no task event is produced.
+		if n := allTaskEventCount(t); n != 0 {
+			t.Errorf("task activity_events after standalone report = %d, want 0", n)
+		}
+	})
+
+	t.Run("hq is excluded from the standalone allowlist", func(t *testing.T) {
+		s := setupServer(t)
+		_, _, err := callHandlerAs(t, "hq", s.fileReport, FileReportInput{
+			Artifact: &FileReportArtifactInput{
+				Name:  "hq-artifact",
+				Parts: []json.RawMessage{json.RawMessage(`{"text":"should be rejected"}`)},
+			},
+		})
+		if err == nil {
+			t.Fatal("hq standalone file_report succeeded; want allowlist rejection")
+		}
+	})
+}
+
+// =========================================================================
+// Section: Wrong actor (capability-passing non-party)
+// =========================================================================
+
+// TestIntegration_A2A_WrongActor verifies actor-level enforcement EXISTS on
+// the mutating coordination tools: a caller that holds the required capability
+// but is not the task's target is rejected, and the task is not mutated.
+func TestIntegration_A2A_WrongActor(t *testing.T) {
+	t.Run("acknowledge by a non-target with ReceiveTasks is rejected", func(t *testing.T) {
+		s := setupServer(t)
+		taskID := seedSubmittedTask(t, "hq", "learning-studio", "wrong-actor ack")
+		// research-lab HAS ReceiveTasks (passes the capability gate) but is not
+		// the target — so it reaches and fails the assignee check.
+		_, _, err := callHandlerAs(t, "research-lab", s.acknowledgeDirective,
+			AcknowledgeDirectiveInput{DirectiveID: taskID.String()})
+		if err == nil {
+			t.Fatal("research-lab acknowledged a task it is not the target of; want rejection")
+		}
+		if !strings.Contains(err.Error(), "not the task target") {
+			t.Errorf("wrong-actor ack error = %v, want 'not the task target'", err)
+		}
+		if state, _, _ := taskRow(t, taskID); state != "submitted" {
+			t.Errorf("state after rejected ack = %q, want submitted (no transition)", state)
+		}
+	})
+
+	t.Run("file_report by a non-target with PublishArtifacts is rejected", func(t *testing.T) {
+		s := setupServer(t)
+		taskID := seedSubmittedTask(t, "hq", "learning-studio", "wrong-actor report")
+		mustAck(t, s, taskID) // legitimate target moves it to working
+
+		// research-lab HAS PublishArtifacts (passes the capability gate) but is
+		// not the target.
+		_, _, err := callHandlerAs(t, "research-lab", s.fileReport, FileReportInput{
+			InResponseTo:  taskID.String(),
+			ResponseParts: []json.RawMessage{json.RawMessage(`{"text":"intruder report"}`)},
+			Artifact:      &FileReportArtifactInput{Name: "x", Parts: []json.RawMessage{json.RawMessage(`{"text":"x"}`)}},
+		})
+		if err == nil {
+			t.Fatal("research-lab completed a task it is not the target of; want rejection")
+		}
+		if !strings.Contains(err.Error(), "not the task target") {
+			t.Errorf("wrong-actor report error = %v, want 'not the task target'", err)
+		}
+		if state, _, _ := taskRow(t, taskID); state != "working" {
+			t.Errorf("state after rejected report = %q, want working (no completion)", state)
+		}
+		if n := artifactCountForTask(t, taskID); n != 0 {
+			t.Errorf("artifacts after rejected report = %d, want 0", n)
+		}
+	})
+}
+
+// =========================================================================
+// Section: Not-found / stale reference
+// =========================================================================
+
+// TestIntegration_A2A_NotFound verifies that a well-formed but non-existent
+// task id is rejected with a not-found shape across all three id-taking tools.
+func TestIntegration_A2A_NotFound(t *testing.T) {
+	s := setupServer(t)
+	missing := uuid.New().String()
+
+	t.Run("acknowledge a nonexistent directive", func(t *testing.T) {
+		// learning-studio holds ReceiveTasks → passes capability, reaches lookup.
+		_, _, err := callHandler(t, s.acknowledgeDirective, AcknowledgeDirectiveInput{DirectiveID: missing})
+		if err == nil || !strings.Contains(err.Error(), "not found") {
+			t.Fatalf("acknowledge_directive(missing) error = %v, want 'not found'", err)
+		}
+	})
+
+	t.Run("file_report with a nonexistent in_response_to", func(t *testing.T) {
+		// learning-studio holds PublishArtifacts → passes capability, reaches lookup.
+		_, _, err := callHandler(t, s.fileReport, FileReportInput{
+			InResponseTo:  missing,
+			ResponseParts: []json.RawMessage{json.RawMessage(`{"text":"x"}`)},
+			Artifact:      &FileReportArtifactInput{Name: "x", Parts: []json.RawMessage{json.RawMessage(`{"text":"x"}`)}},
+		})
+		if err == nil || !strings.Contains(err.Error(), "not found") {
+			t.Fatalf("file_report(missing task) error = %v, want 'not found'", err)
+		}
+	})
+
+	t.Run("task_detail of a nonexistent id", func(t *testing.T) {
+		_, _, err := callHandler(t, s.taskDetail, TaskDetailInput{TaskID: missing})
+		if err == nil || !strings.Contains(err.Error(), "not found") {
+			t.Fatalf("task_detail(missing) error = %v, want 'not found'", err)
+		}
+	})
+}
+
+// =========================================================================
+// Section: State transition edge cases
+// =========================================================================
+
+// TestIntegration_A2A_StateEdgeCases pins the well-defined wrong-state
+// rejections: report-before-ack, a second report after completion (one report
+// per directive via the MCP path), and acknowledge after completion.
+func TestIntegration_A2A_StateEdgeCases(t *testing.T) {
+	t.Run("report before ack is rejected (working state required)", func(t *testing.T) {
+		s := setupServer(t)
+		taskID := seedSubmittedTask(t, "hq", "learning-studio", "report-before-ack")
+		_, _, err := callHandler(t, s.fileReport, FileReportInput{
+			InResponseTo:  taskID.String(),
+			ResponseParts: []json.RawMessage{json.RawMessage(`{"text":"too early"}`)},
+			Artifact:      &FileReportArtifactInput{Name: "x", Parts: []json.RawMessage{json.RawMessage(`{"text":"x"}`)}},
+		})
+		if err == nil || !strings.Contains(err.Error(), "working") {
+			t.Fatalf("report-before-ack error = %v, want a 'working' state message", err)
+		}
+		if state, _, _ := taskRow(t, taskID); state != "submitted" {
+			t.Errorf("state after rejected early report = %q, want submitted", state)
+		}
+		if n := artifactCountForTask(t, taskID); n != 0 {
+			t.Errorf("artifacts after rejected early report = %d, want 0", n)
+		}
+	})
+
+	t.Run("second report after completion is rejected (one report per directive via MCP)", func(t *testing.T) {
+		s := setupServer(t)
+		taskID := seedSubmittedTask(t, "hq", "learning-studio", "double-report")
+		mustAck(t, s, taskID)
+		mustReport(t, s, taskID)
+
+		_, _, err := callHandler(t, s.fileReport, FileReportInput{
+			InResponseTo:  taskID.String(),
+			ResponseParts: []json.RawMessage{json.RawMessage(`{"text":"again"}`)},
+			Artifact:      &FileReportArtifactInput{Name: "x2", Parts: []json.RawMessage{json.RawMessage(`{"text":"x2"}`)}},
+		})
+		if err == nil || !strings.Contains(err.Error(), "working") {
+			t.Fatalf("second report error = %v, want a 'working' state message (task already completed)", err)
+		}
+		// The completed task keeps exactly one report (re-completion is the
+		// HTTP-admin revision cycle, not an MCP path).
+		if n := artifactCountForTask(t, taskID); n != 1 {
+			t.Errorf("artifacts after rejected second report = %d, want 1", n)
+		}
+		if n := messageCount(t, taskID, "response"); n != 1 {
+			t.Errorf("response messages after rejected second report = %d, want 1", n)
+		}
+	})
+
+	t.Run("acknowledge after completion is rejected (submitted state required)", func(t *testing.T) {
+		s := setupServer(t)
+		taskID := seedSubmittedTask(t, "hq", "learning-studio", "ack-after-complete")
+		mustAck(t, s, taskID)
+		mustReport(t, s, taskID)
+
+		_, _, err := callHandler(t, s.acknowledgeDirective, AcknowledgeDirectiveInput{DirectiveID: taskID.String()})
+		if err == nil || !strings.Contains(err.Error(), "submitted") {
+			t.Fatalf("acknowledge-after-completion error = %v, want a 'submitted' state message", err)
+		}
+	})
+}
+
+// ============================================================================
+// Consolidated from search_integration_test.go (Track-1K test-file consolidation).
+// ============================================================================
+
+// --- seeding helpers ---
+
+// seedSearchContent inserts a content row whose title and body both contain
+// term, so websearch_to_tsquery('simple', term) matches via the generated
+// search_vector. status is caller-chosen; 'draft' proves the INTERNAL search
+// path (status != 'archived', no is_public gate) includes non-public rows.
+func seedSearchContent(t *testing.T, slug, term, status string) uuid.UUID {
+	t.Helper()
+	var id uuid.UUID
+	if err := testPool.QueryRow(t.Context(),
+		`INSERT INTO contents (slug, title, body, type, status)
+		 VALUES ($1, $2, $3, 'article', $4) RETURNING id`,
+		slug, term+" article", term+" "+term+" body", status,
+	).Scan(&id); err != nil {
+		t.Fatalf("seedSearchContent(%q): %v", slug, err)
+	}
+	return id
+}
+
+// seedSearchContentAt inserts a content row like seedSearchContent but with an
+// explicit created_at, so date-boundary tests can place a row at a precise
+// instant within a day. status defaults to 'draft' (internal-search visible).
+func seedSearchContentAt(t *testing.T, slug, term string, createdAt time.Time) uuid.UUID {
+	t.Helper()
+	var id uuid.UUID
+	if err := testPool.QueryRow(t.Context(),
+		`INSERT INTO contents (slug, title, body, type, status, created_at)
+		 VALUES ($1, $2, $3, 'article', 'draft', $4) RETURNING id`,
+		slug, term+" article", term+" "+term+" body", createdAt,
+	).Scan(&id); err != nil {
+		t.Fatalf("seedSearchContentAt(%q): %v", slug, err)
+	}
+	return id
+}
+
+// seedSearchNote inserts a Zettelkasten note whose title and body contain term.
+// kind must be a valid note_kind enum value.
+func seedSearchNote(t *testing.T, slug, term, kind string) uuid.UUID {
+	t.Helper()
+	var id uuid.UUID
+	if err := testPool.QueryRow(t.Context(),
+		`INSERT INTO notes (slug, title, body, kind, created_by)
+		 VALUES ($1, $2, $3, $4, 'learning-studio') RETURNING id`,
+		slug, term+" note", term+" note body", kind,
+	).Scan(&id); err != nil {
+		t.Fatalf("seedSearchNote(%q): %v", slug, err)
+	}
+	return id
+}
+
+// seedSearchAgentNote inserts an agent_notes row containing term. agent_notes
+// is FTS-indexed (idx_agent_notes_search) with the same search_vector
+// mechanism as contents/notes — making it the strongest adversarial control
+// for the corpus boundary: if search_knowledge accidentally unioned it, this
+// is the leak that would surface.
+func seedSearchAgentNote(t *testing.T, term string) {
+	t.Helper()
+	if _, err := testPool.Exec(t.Context(),
+		`INSERT INTO agent_notes (kind, created_by, content, entry_date)
+		 VALUES ('context', 'learning-studio', $1, CURRENT_DATE)`,
+		term+" agent note content",
+	); err != nil {
+		t.Fatalf("seedSearchAgentNote: %v", err)
+	}
+}
+
+// seedSearchTask inserts a coordination task whose title contains term.
+func seedSearchTask(t *testing.T, term string) {
+	t.Helper()
+	if _, err := testPool.Exec(t.Context(),
+		`INSERT INTO tasks (created_by, assignee, title)
+		 VALUES ('hq', 'learning-studio', $1)`,
+		term+" task title",
+	); err != nil {
+		t.Fatalf("seedSearchTask: %v", err)
+	}
+}
+
+// seedSearchBookmark inserts a bookmark whose title contains term. url_hash is
+// derived as sha256(slug) hex (64 lowercase hex chars — matches the schema
+// CHECK and the uniq_bookmarks_url_hash constraint) so the helper stays correct
+// if a future test seeds more than one bookmark per truncate cycle.
+func seedSearchBookmark(t *testing.T, slug, term string) {
+	t.Helper()
+	sum := sha256.Sum256([]byte(slug))
+	if _, err := testPool.Exec(t.Context(),
+		`INSERT INTO bookmarks (url, url_hash, slug, title, capture_channel, curated_by)
+		 VALUES ('https://example.com/' || $1, $2, $1, $3, 'manual', 'learning-studio')`,
+		slug, hex.EncodeToString(sum[:]), term+" bookmark title",
+	); err != nil {
+		t.Fatalf("seedSearchBookmark: %v", err)
+	}
+}
+
+// assertSearchResultShape checks the stable required fields of a single result
+// envelope item. Does not assert order or relevance.
+func assertSearchResultShape(t *testing.T, r *SearchKnowledgeResult) {
+	t.Helper()
+	if r.ID == "" {
+		t.Errorf("result.id empty: %+v", r)
+	}
+	if r.Title == "" {
+		t.Errorf("result.title empty: %+v", r)
+	}
+	if r.Slug == "" {
+		t.Errorf("result.slug empty: %+v", r)
+	}
+	if r.CreatedAt == "" {
+		t.Errorf("result.created_at empty: %+v", r)
+	} else if _, err := time.Parse(time.RFC3339, r.CreatedAt); err != nil {
+		t.Errorf("result.created_at %q not RFC3339: %v", r.CreatedAt, err)
+	}
+	switch r.SourceType {
+	case SourceTypeContent:
+		if r.ContentType == "" {
+			t.Errorf("content result missing content_type: %+v", r)
+		}
+	case SourceTypeNote:
+		if r.NoteKind == "" {
+			t.Errorf("note result missing note_kind: %+v", r)
+		}
+	default:
+		t.Errorf("unknown source_type %q (corpus is content|note only)", r.SourceType)
+	}
+}
+
+// --- corpus inclusion ---
+
+// TestIntegration_SearchKnowledge_CorpusInclusion seeds one content row and one
+// note matching a unique term and asserts both corpora surface, each with a
+// stable result shape and the correct source_type. No order assertion.
+func TestIntegration_SearchKnowledge_CorpusInclusion(t *testing.T) {
+	s := setupServer(t)
+	const term = "zqxincl"
+	cID := seedSearchContent(t, "sk-incl-content", term, "draft")
+	nID := seedSearchNote(t, "sk-incl-note", term, "concept-note")
+
+	_, out, err := callHandler(t, s.searchKnowledge, SearchKnowledgeInput{Query: term})
+	if err != nil {
+		t.Fatalf("searchKnowledge(%q) = %v, want success", term, err)
+	}
+
+	// Envelope invariants.
+	if out.Query != term {
+		t.Errorf("out.Query = %q, want %q", out.Query, term)
+	}
+	if out.Total != len(out.Results) {
+		t.Errorf("out.Total = %d, want len(results) = %d", out.Total, len(out.Results))
+	}
+
+	var sawContent, sawNote bool
+	for i := range out.Results {
+		r := &out.Results[i]
+		assertSearchResultShape(t, r)
+		switch r.ID {
+		case cID.String():
+			sawContent = true
+			if r.SourceType != SourceTypeContent {
+				t.Errorf("content row source_type = %q, want %q", r.SourceType, SourceTypeContent)
+			}
+		case nID.String():
+			sawNote = true
+			if r.SourceType != SourceTypeNote {
+				t.Errorf("note row source_type = %q, want %q", r.SourceType, SourceTypeNote)
+			}
+		}
+	}
+	if !sawContent {
+		t.Error("content corpus not represented in results (expected the seeded content row)")
+	}
+	if !sawNote {
+		t.Error("note corpus not represented in results (expected the seeded note)")
+	}
+}
+
+// --- corpus exclusion ---
+
+// TestIntegration_SearchKnowledge_CorpusExclusion seeds confusable non-corpus
+// entities (agent_note, task, bookmark) that all match the query term, plus one
+// in-corpus content row, and asserts the non-corpus entities never leak into
+// search_knowledge results. The in-corpus content row presence guards against a
+// vacuous pass (a non-matching term would make exclusion trivially true).
+func TestIntegration_SearchKnowledge_CorpusExclusion(t *testing.T) {
+	s := setupServer(t)
+	const term = "zqxexcl"
+	seedSearchContent(t, "sk-excl-content", term, "draft")
+	seedSearchAgentNote(t, term)
+	seedSearchTask(t, term)
+	seedSearchBookmark(t, "sk-excl-bookmark", term)
+
+	_, out, err := callHandler(t, s.searchKnowledge, SearchKnowledgeInput{Query: term})
+	if err != nil {
+		t.Fatalf("searchKnowledge(%q) = %v, want success", term, err)
+	}
+
+	if len(out.Results) == 0 {
+		t.Fatal("expected at least the in-corpus content row; got 0 — term not matching, exclusion assertion would be vacuous")
+	}
+	for _, r := range out.Results {
+		if r.SourceType != SourceTypeContent && r.SourceType != SourceTypeNote {
+			t.Errorf("non-corpus entity leaked: source_type = %q", r.SourceType)
+		}
+		// agent_note / task / bookmark titles carry these markers.
+		for _, leak := range []string{"agent note content", "task title", "bookmark title"} {
+			if strings.Contains(r.Title, leak) {
+				t.Errorf("excluded entity leaked into results via title %q (marker %q)", r.Title, leak)
+			}
+		}
+	}
+}
+
+// --- empty result + envelope ---
+
+// TestIntegration_SearchKnowledge_EmptyResult searches a nonsense term against a
+// non-empty corpus and asserts a successful empty envelope: results:[] (not
+// null), total 0, no error. The JSON marshal check pins the json-api nil-vs-[]
+// rule directly on the wire shape.
+func TestIntegration_SearchKnowledge_EmptyResult(t *testing.T) {
+	s := setupServer(t)
+	seedSearchContent(t, "sk-empty-content", "presentterm", "draft")
+
+	const nonsense = "zzzznomatchqqqq"
+	_, out, err := callHandler(t, s.searchKnowledge, SearchKnowledgeInput{Query: nonsense})
+	if err != nil {
+		t.Fatalf("searchKnowledge(nonsense) = %v, want success with empty results", err)
+	}
+	if len(out.Results) != 0 {
+		t.Errorf("len(results) = %d, want 0", len(out.Results))
+	}
+	if out.Total != 0 {
+		t.Errorf("out.Total = %d, want 0", out.Total)
+	}
+	if out.Query != nonsense {
+		t.Errorf("out.Query = %q, want %q", out.Query, nonsense)
+	}
+
+	b, mErr := json.Marshal(out)
+	if mErr != nil {
+		t.Fatalf("marshal output: %v", mErr)
+	}
+	if !strings.Contains(string(b), `"results":[]`) {
+		t.Errorf("empty envelope must encode results as [], not null: %s", b)
+	}
+}
+
+// --- filter: content_type ---
+
+// TestIntegration_SearchKnowledge_ContentTypeFilter pins three behaviors:
+// (1) a valid content_type narrows to the content branch and excludes notes;
+// (2) a valid-but-unmatched content_type yields empty (no error);
+// (3) an UNKNOWN content_type is rejected with a validation error (Track 1I
+//
+//	decision — strict enum validation, consistent with create_content; replaces
+//	the Track 1G silent-empty characterization).
+func TestIntegration_SearchKnowledge_ContentTypeFilter(t *testing.T) {
+	s := setupServer(t)
+	const term = "zqxctf"
+	seedSearchContent(t, "sk-ctf-content", term, "draft") // type=article
+	seedSearchNote(t, "sk-ctf-note", term, "concept-note")
+
+	t.Run("article narrows to content, excludes notes", func(t *testing.T) {
+		article := "article"
+		_, out, err := callHandler(t, s.searchKnowledge, SearchKnowledgeInput{Query: term, ContentType: &article})
+		if err != nil {
+			t.Fatalf("content_type=article: %v", err)
+		}
+		if len(out.Results) == 0 {
+			t.Fatal("content_type=article should still match the seeded article")
+		}
+		for _, r := range out.Results {
+			if r.SourceType != SourceTypeContent {
+				t.Errorf("content_type=article leaked source_type %q", r.SourceType)
+			}
+		}
+	})
+
+	t.Run("valid unmatched type yields empty", func(t *testing.T) {
+		essay := "essay"
+		_, out, err := callHandler(t, s.searchKnowledge, SearchKnowledgeInput{Query: term, ContentType: &essay})
+		if err != nil {
+			t.Fatalf("content_type=essay: %v", err)
+		}
+		if len(out.Results) != 0 {
+			t.Errorf("content_type=essay (no essay seeded) = %d results, want 0", len(out.Results))
+		}
+	})
+
+	t.Run("unknown type is rejected with a validation error", func(t *testing.T) {
+		bogus := "banana-not-a-type"
+		_, _, err := callHandler(t, s.searchKnowledge, SearchKnowledgeInput{Query: term, ContentType: &bogus})
+		if err == nil {
+			t.Fatal("unknown content_type must be rejected, not silently empty (Track 1I)")
+		}
+		if !strings.Contains(err.Error(), "unsupported content_type") {
+			t.Errorf("error = %q, want containing %q", err, "unsupported content_type")
+		}
+	})
+}
+
+// --- filter: note_kind ---
+
+// TestIntegration_SearchKnowledge_NoteKindFilter mirrors the content_type cases
+// for notes: a valid note_kind narrows to the note branch and excludes content;
+// a valid-but-unmatched note_kind yields empty.
+func TestIntegration_SearchKnowledge_NoteKindFilter(t *testing.T) {
+	s := setupServer(t)
+	const term = "zqxnkf"
+	seedSearchContent(t, "sk-nkf-content", term, "draft")
+	seedSearchNote(t, "sk-nkf-note", term, "concept-note")
+
+	t.Run("concept-note narrows to notes, excludes content", func(t *testing.T) {
+		ck := "concept-note"
+		_, out, err := callHandler(t, s.searchKnowledge, SearchKnowledgeInput{Query: term, NoteKind: &ck})
+		if err != nil {
+			t.Fatalf("note_kind=concept-note: %v", err)
+		}
+		if len(out.Results) == 0 {
+			t.Fatal("note_kind=concept-note should match the seeded note")
+		}
+		for _, r := range out.Results {
+			if r.SourceType != SourceTypeNote {
+				t.Errorf("note_kind filter leaked source_type %q", r.SourceType)
+			}
+		}
+	})
+
+	t.Run("unmatched kind yields empty", func(t *testing.T) {
+		sn := "solve-note"
+		_, out, err := callHandler(t, s.searchKnowledge, SearchKnowledgeInput{Query: term, NoteKind: &sn})
+		if err != nil {
+			t.Fatalf("note_kind=solve-note: %v", err)
+		}
+		if len(out.Results) != 0 {
+			t.Errorf("note_kind=solve-note (none seeded) = %d results, want 0", len(out.Results))
+		}
+	})
+}
+
+// --- filter: date range ---
+
+// TestIntegration_SearchKnowledge_DateFilter seeds a row created "now" and
+// proves the after/before window bounds it. Uses relative UTC dates so the
+// assertion is deterministic regardless of wall clock. No order assertion.
+func TestIntegration_SearchKnowledge_DateFilter(t *testing.T) {
+	s := setupServer(t)
+	const term = "zqxdate"
+	seedSearchContent(t, "sk-date-content", term, "draft")
+
+	now := time.Now().UTC()
+	yesterday := now.AddDate(0, 0, -1).Format(time.DateOnly)
+	tomorrow := now.AddDate(0, 0, 1).Format(time.DateOnly)
+
+	t.Run("window enclosing now keeps the row", func(t *testing.T) {
+		_, out, err := callHandler(t, s.searchKnowledge, SearchKnowledgeInput{Query: term, After: &yesterday, Before: &tomorrow})
+		if err != nil {
+			t.Fatalf("after=yesterday before=tomorrow: %v", err)
+		}
+		if len(out.Results) == 0 {
+			t.Error("row created now must fall within [yesterday, tomorrow]")
+		}
+	})
+
+	t.Run("before=yesterday excludes a now row", func(t *testing.T) {
+		_, out, err := callHandler(t, s.searchKnowledge, SearchKnowledgeInput{Query: term, Before: &yesterday})
+		if err != nil {
+			t.Fatalf("before=yesterday: %v", err)
+		}
+		if len(out.Results) != 0 {
+			t.Errorf("before=yesterday must exclude the now row; got %d", len(out.Results))
+		}
+	})
+
+	t.Run("after=tomorrow excludes a now row", func(t *testing.T) {
+		_, out, err := callHandler(t, s.searchKnowledge, SearchKnowledgeInput{Query: term, After: &tomorrow})
+		if err != nil {
+			t.Fatalf("after=tomorrow: %v", err)
+		}
+		if len(out.Results) != 0 {
+			t.Errorf("after=tomorrow must exclude the now row; got %d", len(out.Results))
+		}
+	})
+}
+
+// --- limit cap ---
+
+// TestIntegration_SearchKnowledge_LimitCaps seeds three matching content rows
+// and asserts limit=1 caps the result count (and total == len(results)), while
+// the default limit (omitted → 20) returns all three. Asserts counts only,
+// never which rows — the cap is a count contract, not a ranking one.
+func TestIntegration_SearchKnowledge_LimitCaps(t *testing.T) {
+	s := setupServer(t)
+	const term = "zqxlim"
+	seedSearchContent(t, "sk-lim-1", term, "draft")
+	seedSearchContent(t, "sk-lim-2", term, "draft")
+	seedSearchContent(t, "sk-lim-3", term, "draft")
+
+	t.Run("limit=1 caps to one", func(t *testing.T) {
+		_, out, err := callHandler(t, s.searchKnowledge, SearchKnowledgeInput{Query: term, Limit: FlexInt(1)})
+		if err != nil {
+			t.Fatalf("limit=1: %v", err)
+		}
+		if len(out.Results) != 1 {
+			t.Errorf("limit=1 → %d results, want 1", len(out.Results))
+		}
+		if out.Total != 1 {
+			t.Errorf("out.Total = %d, want 1 (total == len(results))", out.Total)
+		}
+	})
+
+	t.Run("default limit returns all three", func(t *testing.T) {
+		// Exact count is load-bearing on seed-term uniqueness: setupServer
+		// truncates contents+notes per test, and every term in this file uses a
+		// distinct "zqx…" prefix, so only the three rows seeded above match.
+		_, out, err := callHandler(t, s.searchKnowledge, SearchKnowledgeInput{Query: term})
+		if err != nil {
+			t.Fatalf("default limit: %v", err)
+		}
+		if len(out.Results) != 3 {
+			t.Errorf("default limit → %d results, want 3", len(out.Results))
+		}
+	})
+}
+
+// --- semantic-branch degradation (embedder nil) ---
+
+// TestIntegration_SearchKnowledge_EmbedderNilDegradation pins the production
+// fallback path: when no embedder is wired (GEMINI_API_KEY unset — the harness
+// default), search_knowledge runs FTS-only and still returns matching content
+// with no error. The embedder-present-but-FAILING path is not exercised here:
+// embedder is a concrete *embedder.Embedder with no interface seam, and project
+// rules forbid introducing a single-impl interface purely for test injection
+// (see report §coverage). FTS-only is the realistic, default deployment shape.
+func TestIntegration_SearchKnowledge_EmbedderNilDegradation(t *testing.T) {
+	s := setupServer(t)
+	if s.embedder != nil {
+		t.Fatal("harness must run search_knowledge with no embedder (FTS-only); embedder was wired")
+	}
+
+	const term = "zqxdegr"
+	seedSearchContent(t, "sk-degr-content", term, "draft")
+
+	_, out, err := callHandler(t, s.searchKnowledge, SearchKnowledgeInput{Query: term})
+	if err != nil {
+		t.Fatalf("FTS-only search must succeed with nil embedder: %v", err)
+	}
+	if len(out.Results) == 0 {
+		t.Error("FTS-only search must still return the matching content row")
+	}
+}
+
+// --- date filter: whole-day inclusive boundary (Track 1I) ---
+
+// TestIntegration_SearchKnowledge_DateBoundaryInclusive proves the whole-day
+// inclusive semantics end-to-end against real timestamptz rows. Three rows are
+// seeded on the same day D (start, midday, last second) plus neighbors on D-1
+// and D+1. The handler runs with the harness default timezone (UTC). It asserts
+// that after=D and before=D each keep the entire day D and exclude the
+// neighbors — pinning that `before=D` includes rows created during D (the
+// same-day case Track 1G left untested), not just rows before D's start.
+// Counts/membership only; no order assertion.
+func TestIntegration_SearchKnowledge_DateBoundaryInclusive(t *testing.T) {
+	s := setupServer(t)
+	const term = "zqxbound"
+	const day = "2026-05-22"
+
+	mkUTC := func(s string) time.Time {
+		ts, err := time.ParseInLocation(time.RFC3339, s, time.UTC)
+		if err != nil {
+			t.Fatalf("parse %q: %v", s, err)
+		}
+		return ts
+	}
+
+	startD := seedSearchContentAt(t, "sk-bound-start", term, mkUTC("2026-05-22T00:00:00Z"))
+	midD := seedSearchContentAt(t, "sk-bound-mid", term, mkUTC("2026-05-22T12:30:00Z"))
+	endD := seedSearchContentAt(t, "sk-bound-end", term, mkUTC("2026-05-22T23:59:59Z"))
+	prevDay := seedSearchContentAt(t, "sk-bound-prev", term, mkUTC("2026-05-21T23:59:59Z"))
+	nextDay := seedSearchContentAt(t, "sk-bound-next", term, mkUTC("2026-05-23T00:00:00Z"))
+
+	ids := func(out SearchKnowledgeOutput) map[string]bool {
+		m := make(map[string]bool, len(out.Results))
+		for _, r := range out.Results {
+			m[r.ID] = true
+		}
+		return m
+	}
+
+	t.Run("before=D includes the whole of day D, excludes D+1", func(t *testing.T) {
+		d := day
+		_, out, err := callHandler(t, s.searchKnowledge, SearchKnowledgeInput{Query: term, Before: &d})
+		if err != nil {
+			t.Fatalf("before=%s: %v", day, err)
+		}
+		got := ids(out)
+		for _, want := range []uuid.UUID{startD, midD, endD, prevDay} {
+			if !got[want.String()] {
+				t.Errorf("before=%s must keep row %s (created on/before D)", day, want)
+			}
+		}
+		if got[nextDay.String()] {
+			t.Errorf("before=%s must exclude the D+1 row %s", day, nextDay)
+		}
+	})
+
+	t.Run("after=D includes the whole of day D, excludes D-1", func(t *testing.T) {
+		d := day
+		_, out, err := callHandler(t, s.searchKnowledge, SearchKnowledgeInput{Query: term, After: &d})
+		if err != nil {
+			t.Fatalf("after=%s: %v", day, err)
+		}
+		got := ids(out)
+		for _, want := range []uuid.UUID{startD, midD, endD, nextDay} {
+			if !got[want.String()] {
+				t.Errorf("after=%s must keep row %s (created on/after D start)", day, want)
+			}
+		}
+		if got[prevDay.String()] {
+			t.Errorf("after=%s must exclude the D-1 row %s", day, prevDay)
+		}
+	})
+
+	t.Run("after=D and before=D keep exactly day D", func(t *testing.T) {
+		d := day
+		_, out, err := callHandler(t, s.searchKnowledge, SearchKnowledgeInput{Query: term, After: &d, Before: &d})
+		if err != nil {
+			t.Fatalf("after=before=%s: %v", day, err)
+		}
+		got := ids(out)
+		for _, want := range []uuid.UUID{startD, midD, endD} {
+			if !got[want.String()] {
+				t.Errorf("after=before=%s must keep day-D row %s", day, want)
+			}
+		}
+		for _, drop := range []uuid.UUID{prevDay, nextDay} {
+			if got[drop.String()] {
+				t.Errorf("after=before=%s must exclude off-day row %s", day, drop)
+			}
+		}
+	})
+}
+
+// --- source_types filter: end-to-end (Track 1I) ---
+
+// TestIntegration_SearchKnowledge_SourceTypesEndToEnd closes the coverage gap
+// flagged in the search-product contract: source_types selection was only unit-
+// tested (TestSelectSources). It seeds one content row and one note matching the
+// same term and asserts source_types=[content] returns only the content row,
+// source_types=[note] only the note, both returns both, and an unknown token is
+// rejected at the handler with an error (not a silent empty success).
+func TestIntegration_SearchKnowledge_SourceTypesEndToEnd(t *testing.T) {
+	s := setupServer(t)
+	const term = "zqxsrc"
+	cID := seedSearchContent(t, "sk-src-content", term, "draft")
+	nID := seedSearchNote(t, "sk-src-note", term, "concept-note")
+
+	t.Run("content only returns content, excludes note", func(t *testing.T) {
+		_, out, err := callHandler(t, s.searchKnowledge, SearchKnowledgeInput{Query: term, SourceTypes: []string{SourceTypeContent}})
+		if err != nil {
+			t.Fatalf("source_types=[content]: %v", err)
+		}
+		if len(out.Results) != 1 || out.Results[0].ID != cID.String() {
+			t.Errorf("source_types=[content] = %d results, want exactly the content row %s", len(out.Results), cID)
+		}
+	})
+
+	t.Run("note only returns note, excludes content", func(t *testing.T) {
+		_, out, err := callHandler(t, s.searchKnowledge, SearchKnowledgeInput{Query: term, SourceTypes: []string{SourceTypeNote}})
+		if err != nil {
+			t.Fatalf("source_types=[note]: %v", err)
+		}
+		if len(out.Results) != 1 || out.Results[0].ID != nID.String() {
+			t.Errorf("source_types=[note] = %d results, want exactly the note %s", len(out.Results), nID)
+		}
+	})
+
+	t.Run("both returns content and note", func(t *testing.T) {
+		_, out, err := callHandler(t, s.searchKnowledge, SearchKnowledgeInput{Query: term, SourceTypes: []string{SourceTypeContent, SourceTypeNote}})
+		if err != nil {
+			t.Fatalf("source_types=[content,note]: %v", err)
+		}
+		// Exact count is load-bearing on seed-term uniqueness: setupServer
+		// truncates contents+notes per test, and "zqxsrc" is unique to this
+		// test, so only the one content row + one note seeded above match.
+		if len(out.Results) != 2 {
+			t.Errorf("source_types=[content,note] = %d results, want 2", len(out.Results))
+		}
+	})
+
+	t.Run("unknown source_type rejected, not silent empty", func(t *testing.T) {
+		_, _, err := callHandler(t, s.searchKnowledge, SearchKnowledgeInput{Query: term, SourceTypes: []string{"bookmark"}})
+		if err == nil {
+			t.Fatal("unknown source_type must error, not return empty success")
+		}
+		if !strings.Contains(err.Error(), "unsupported source_type") {
+			t.Errorf("error = %q, want containing %q", err, "unsupported source_type")
+		}
+	})
+}
+
+// --- project filter rejection: end-to-end (Track 1I) ---
+
+// TestIntegration_SearchKnowledge_ProjectRejected pins that a non-empty project
+// filter is rejected at the MCP handler boundary with an unsupported_filter
+// error, against a corpus that WOULD match the query — proving the rejection is
+// the project field, not an empty corpus. An empty project value is ignored
+// (treated as absent) and the search succeeds.
+func TestIntegration_SearchKnowledge_ProjectRejected(t *testing.T) {
+	s := setupServer(t)
+	const term = "zqxproj"
+	seedSearchContent(t, "sk-proj-content", term, "draft")
+
+	t.Run("non-empty project rejected", func(t *testing.T) {
+		p := "koopa"
+		_, _, err := callHandler(t, s.searchKnowledge, SearchKnowledgeInput{Query: term, Project: &p})
+		if err == nil {
+			t.Fatal("non-empty project must be rejected as unsupported_filter")
+		}
+		if !strings.Contains(err.Error(), "unsupported_filter") {
+			t.Errorf("error = %q, want containing %q", err, "unsupported_filter")
+		}
+	})
+
+	t.Run("empty project ignored, search succeeds", func(t *testing.T) {
+		empty := ""
+		_, out, err := callHandler(t, s.searchKnowledge, SearchKnowledgeInput{Query: term, Project: &empty})
+		if err != nil {
+			t.Fatalf("empty project must be treated as absent: %v", err)
+		}
+		if len(out.Results) == 0 {
+			t.Error("empty project must not filter out the matching content row")
+		}
+	})
+}
+
+// ============================================================================
+// Consolidated from search_relevance_eval_test.go (Track-1K test-file consolidation).
+// ============================================================================
+
+// --- tier-1 seed loaders (synthetic; mirror search-relevance-seed-plan.md) ---
+
+// seedRelContent inserts a contents row whose title and body both carry term so
+// websearch_to_tsquery('simple', term) matches. type/status are caller-chosen.
+// A non-published status leaves published_at NULL (chk_content_publication).
+func seedRelContent(t *testing.T, slug, term, ctype, status string, createdAt *time.Time) uuid.UUID {
+	t.Helper()
+	var id uuid.UUID
+	var err error
+	if createdAt != nil {
+		err = testPool.QueryRow(t.Context(),
+			`INSERT INTO contents (slug, title, body, type, status, created_at)
+			 VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+			slug, term+" title", term+" "+term+" body", ctype, status, *createdAt,
+		).Scan(&id)
+	} else {
+		err = testPool.QueryRow(t.Context(),
+			`INSERT INTO contents (slug, title, body, type, status)
+			 VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+			slug, term+" title", term+" "+term+" body", ctype, status,
+		).Scan(&id)
+	}
+	if err != nil {
+		t.Fatalf("seedRelContent(%q): %v", slug, err)
+	}
+	return id
+}
+
+// seedRelNote inserts a notes row carrying term, with caller-chosen kind and
+// maturity (so the archived-note asymmetry control can set maturity='archived').
+func seedRelNote(t *testing.T, slug, term, kind, maturity string) uuid.UUID {
+	t.Helper()
+	var id uuid.UUID
+	if err := testPool.QueryRow(t.Context(),
+		`INSERT INTO notes (slug, title, body, kind, maturity, created_by)
+		 VALUES ($1, $2, $3, $4, $5, 'learning-studio') RETURNING id`,
+		slug, term+" note", term+" note body", kind, maturity,
+	).Scan(&id); err != nil {
+		t.Fatalf("seedRelNote(%q): %v", slug, err)
+	}
+	return id
+}
+
+// seedRelAgentNote inserts an agent_notes row carrying term. agent_notes is
+// FTS-indexed with the same mechanism as notes — the strongest adversarial
+// control: if search_knowledge ever unioned it, this is the leak that surfaces.
+func seedRelAgentNote(t *testing.T, term string) {
+	t.Helper()
+	if _, err := testPool.Exec(t.Context(),
+		`INSERT INTO agent_notes (kind, created_by, content, entry_date)
+		 VALUES ('context', 'learning-studio', $1, CURRENT_DATE)`,
+		term+" agent note content",
+	); err != nil {
+		t.Fatalf("seedRelAgentNote: %v", err)
+	}
+}
+
+// seedRelTask inserts a tasks row carrying term in its title.
+func seedRelTask(t *testing.T, term string) {
+	t.Helper()
+	if _, err := testPool.Exec(t.Context(),
+		`INSERT INTO tasks (created_by, assignee, title)
+		 VALUES ('hq', 'learning-studio', $1)`,
+		term+" task title",
+	); err != nil {
+		t.Fatalf("seedRelTask: %v", err)
+	}
+}
+
+// seedRelArtifact inserts a standalone artifacts row carrying term in a text
+// part. Artifacts have NO FTS path at all (search-relevance-seed-plan.md §3c);
+// seeding one keeps the NEG-02 control faithful to the seed plan even though it
+// can only ever be empty in search_knowledge.
+func seedRelArtifact(t *testing.T, term string) {
+	t.Helper()
+	parts := fmt.Sprintf(`[{"text":%q}]`, term+" artifact part")
+	if _, err := testPool.Exec(t.Context(),
+		`INSERT INTO artifacts (created_by, name, description, parts)
+		 VALUES ('learning-studio', $1, '', $2::jsonb)`,
+		term+" artifact", parts,
+	); err != nil {
+		t.Fatalf("seedRelArtifact: %v", err)
+	}
+}
+
+// relSeeder seeds one seed_id row and reports whether it has a stable id worth
+// pinning in the evaluator (content/note do; non-corpus controls do not).
+type relSeeder func(t *testing.T) (uuid.UUID, bool)
+
+// tier1SeederRegistry maps every seed_id reachable by the NEG/FLT subset to a
+// seeder. Terms match the fixtures' verbatim queries exactly. Only the seeds
+// needed by NEG-01..05 / FLT-01..08 are registered (Track 1K scope).
+func tier1SeederRegistry() map[string]relSeeder {
+	// at parses a fixed RFC3339 seed timestamp; the strings are compile-time
+	// constants, so a parse error is a typo in this file — surfaced via the
+	// seeder's own *testing.T rather than a panic.
+	at := func(t *testing.T, rfc3339 string) *time.Time {
+		t.Helper()
+		ts, err := time.Parse(time.RFC3339, rfc3339)
+		if err != nil {
+			t.Fatalf("tier1SeederRegistry: bad timestamp %q: %v", rfc3339, err)
+		}
+		return &ts
+	}
+	noID := func(seed func(*testing.T)) relSeeder {
+		return func(t *testing.T) (uuid.UUID, bool) { seed(t); return uuid.Nil, false }
+	}
+	withID := func(seed func(*testing.T) uuid.UUID) relSeeder {
+		return func(t *testing.T) (uuid.UUID, bool) { return seed(t), true }
+	}
+
+	return map[string]relSeeder{
+		// NEG controls (corpus boundary).
+		"T-NEG":  noID(func(t *testing.T) { seedRelTask(t, "zqxtaskonly") }),
+		"AR-NEG": noID(func(t *testing.T) { seedRelArtifact(t, "zqxartonly") }),
+		"AN-NEG": noID(func(t *testing.T) { seedRelAgentNote(t, "zqxagentonly") }),
+		"C-ARCHIVED": withID(func(t *testing.T) uuid.UUID {
+			return seedRelContent(t, "rel-c-archived", "zqxarchcontent", "article", "archived", nil)
+		}),
+		"N-ARCHIVED": withID(func(t *testing.T) uuid.UUID {
+			return seedRelNote(t, "rel-n-archived", "zqxarchnote", "reading-note", "archived")
+		}),
+
+		// FLT-01/02 — source_types narrowing.
+		"C-SRC": withID(func(t *testing.T) uuid.UUID { return seedRelContent(t, "rel-c-src", "zqxsrc", "article", "draft", nil) }),
+		"N-SRC": withID(func(t *testing.T) uuid.UUID { return seedRelNote(t, "rel-n-src", "zqxsrc", "concept-note", "seed") }),
+
+		// FLT-03 — content_type narrowing.
+		"C-CTF-ARTICLE": withID(func(t *testing.T) uuid.UUID {
+			return seedRelContent(t, "rel-c-ctf-article", "zqxctf", "article", "draft", nil)
+		}),
+		"C-CTF-ESSAY": withID(func(t *testing.T) uuid.UUID {
+			return seedRelContent(t, "rel-c-ctf-essay", "zqxctf", "essay", "draft", nil)
+		}),
+		"N-CTF": withID(func(t *testing.T) uuid.UUID { return seedRelNote(t, "rel-n-ctf", "zqxctf", "concept-note", "seed") }),
+
+		// FLT-04 — note_kind narrowing.
+		"N-NKF-SOLVE": withID(func(t *testing.T) uuid.UUID { return seedRelNote(t, "rel-n-nkf-solve", "zqxnkf", "solve-note", "seed") }),
+		"N-NKF-CONCEPT": withID(func(t *testing.T) uuid.UUID {
+			return seedRelNote(t, "rel-n-nkf-concept", "zqxnkf", "concept-note", "seed")
+		}),
+		"C-NKF": withID(func(t *testing.T) uuid.UUID { return seedRelContent(t, "rel-c-nkf", "zqxnkf", "article", "draft", nil) }),
+
+		// FLT-05 — whole-day-inclusive date window, anchor 2026-05-22 (UTC).
+		"C-DAY-START": withID(func(t *testing.T) uuid.UUID {
+			return seedRelContent(t, "rel-c-day-start", "zqxbound", "article", "draft", at(t, "2026-05-22T00:00:00Z"))
+		}),
+		"C-DAY-MID": withID(func(t *testing.T) uuid.UUID {
+			return seedRelContent(t, "rel-c-day-mid", "zqxbound", "article", "draft", at(t, "2026-05-22T12:30:00Z"))
+		}),
+		"C-DAY-END": withID(func(t *testing.T) uuid.UUID {
+			return seedRelContent(t, "rel-c-day-end", "zqxbound", "article", "draft", at(t, "2026-05-22T23:59:59Z"))
+		}),
+		"C-DAY-PREV": withID(func(t *testing.T) uuid.UUID {
+			return seedRelContent(t, "rel-c-day-prev", "zqxbound", "article", "draft", at(t, "2026-05-21T23:59:59Z"))
+		}),
+		"C-DAY-NEXT": withID(func(t *testing.T) uuid.UUID {
+			return seedRelContent(t, "rel-c-day-next", "zqxbound", "article", "draft", at(t, "2026-05-23T00:00:00Z"))
+		}),
+
+		// FLT-06/07/08 — rejection probes share C-VALID (proves the rejection
+		// is the filter, not an empty corpus).
+		"C-VALID": withID(func(t *testing.T) uuid.UUID {
+			return seedRelContent(t, "rel-c-valid", "zqxreject", "article", "draft", nil)
+		}),
+	}
+}
+
+// requiredSeedIDs is the sorted union of seed_ids referenced by the selected
+// fixtures' seed_requirements.
+func requiredSeedIDs(selected []searchFixture) []string {
+	set := map[string]struct{}{}
+	for i := range selected {
+		for _, s := range selected[i].SeedRequirements {
+			set[s] = struct{}{}
+		}
+	}
+	return slices.Sorted(maps.Keys(set))
+}
+
+// seedTier1Corpus seeds every required seed_id once and returns the id of each
+// content/note row (the rows the evaluator pins by id). It fatals if a required
+// seed has no registered seeder — that is a coverage gap, not a guess.
+func seedTier1Corpus(t *testing.T, required []string, registry map[string]relSeeder) map[string]uuid.UUID {
+	t.Helper()
+	ids := map[string]uuid.UUID{}
+	for _, seedID := range required {
+		seed, ok := registry[seedID]
+		if !ok {
+			t.Fatalf("no seeder registered for required seed_id %q", seedID)
+		}
+		if id, hasID := seed(t); hasID {
+			ids[seedID] = id
+		}
+	}
+	return ids
+}
+
+// --- evaluator ---
+
+// tier1Expectation is the per-fixture test oracle for the `results` outcome:
+// which seeded rows must appear / be absent, and the narrowing every returned
+// row must satisfy. Empty fields mean "no constraint". Derived from
+// search-relevance-seed-plan.md §4 (reviewed); empty/validation_error fixtures
+// need no entry — their outcome branch in evaluateFixture is self-pinning. A
+// results-outcome fixture missing here fails loudly (see the oracle guard).
+type tier1Expectation struct {
+	mustAppear     []string // seed_ids that must be in results
+	mustBeAbsent   []string // seed_ids that must NOT be in results
+	allSourceType  string   // every result.SourceType must equal this
+	allContentType string   // every result.ContentType must equal this
+	allNoteKind    string   // every result.NoteKind must equal this
+}
+
+var tier1Expectations = map[string]tier1Expectation{
+	"NEG-05": {mustAppear: []string{"N-ARCHIVED"}, allSourceType: SourceTypeNote},
+	"FLT-01": {mustAppear: []string{"C-SRC"}, mustBeAbsent: []string{"N-SRC"}, allSourceType: SourceTypeContent},
+	"FLT-02": {mustAppear: []string{"N-SRC"}, mustBeAbsent: []string{"C-SRC"}, allSourceType: SourceTypeNote},
+	"FLT-03": {mustAppear: []string{"C-CTF-ARTICLE"}, mustBeAbsent: []string{"C-CTF-ESSAY", "N-CTF"}, allSourceType: SourceTypeContent, allContentType: "article"},
+	"FLT-04": {mustAppear: []string{"N-NKF-SOLVE"}, mustBeAbsent: []string{"N-NKF-CONCEPT", "C-NKF"}, allSourceType: SourceTypeNote, allNoteKind: "solve-note"},
+	"FLT-05": {mustAppear: []string{"C-DAY-START", "C-DAY-MID", "C-DAY-END"}, mustBeAbsent: []string{"C-DAY-PREV", "C-DAY-NEXT"}},
+}
+
+// evalOutcome is the structured result for one fixture run.
+type evalOutcome struct {
+	FixtureID       string
+	Status          string // pass | fail | skip
+	Reason          string
+	ObservedIDs     []string
+	ObservedTypes   []string
+	ExpectedSummary string
+}
+
+// expectedRejectionSubstring derives, from the structured filters alone, the
+// substring the handler's validation error must contain. It mirrors
+// validateSearchKnowledgeInput — no prose is read.
+func expectedRejectionSubstring(f *searchFixtureFilters) string {
+	if f.Project != "" {
+		return "unsupported_filter"
+	}
+	for _, st := range f.SourceTypes {
+		if st != SourceTypeContent && st != SourceTypeNote {
+			return "unsupported source_type"
+		}
+	}
+	if f.ContentType != "" && !content.Type(f.ContentType).Valid() {
+		return "unsupported content_type"
+	}
+	if f.NoteKind != "" && !note.Kind(f.NoteKind).Valid() {
+		return "unsupported note_kind"
+	}
+	return ""
+}
+
+// buildSearchInput maps a fixture's verbatim query + structured filters onto a
+// SearchKnowledgeInput, exactly as specified — no inference.
+func buildSearchInput(fx *searchFixture) SearchKnowledgeInput {
+	in := SearchKnowledgeInput{Query: fx.Query}
+	f := &fx.Filters
+	if len(f.SourceTypes) > 0 {
+		in.SourceTypes = f.SourceTypes
+	}
+	if f.ContentType != "" {
+		ct := f.ContentType
+		in.ContentType = &ct
+	}
+	if f.NoteKind != "" {
+		nk := f.NoteKind
+		in.NoteKind = &nk
+	}
+	if f.Project != "" {
+		p := f.Project
+		in.Project = &p
+	}
+	if f.After != "" {
+		a := f.After
+		in.After = &a
+	}
+	if f.Before != "" {
+		b := f.Before
+		in.Before = &b
+	}
+	if f.Limit > 0 {
+		in.Limit = FlexInt(f.Limit)
+	}
+	return in
+}
+
+func observedResults(out SearchKnowledgeOutput) (ids, types []string) {
+	for i := range out.Results {
+		ids = append(ids, out.Results[i].ID)
+		types = append(types, out.Results[i].SourceType)
+	}
+	return ids, types
+}
+
+func summarizeExpectation(e *tier1Expectation) string {
+	var parts []string
+	if len(e.mustAppear) > 0 {
+		parts = append(parts, "present="+strings.Join(e.mustAppear, ","))
+	}
+	if len(e.mustBeAbsent) > 0 {
+		parts = append(parts, "absent="+strings.Join(e.mustBeAbsent, ","))
+	}
+	if e.allSourceType != "" {
+		parts = append(parts, "all source_type="+e.allSourceType)
+	}
+	if e.allContentType != "" {
+		parts = append(parts, "all content_type="+e.allContentType)
+	}
+	if e.allNoteKind != "" {
+		parts = append(parts, "all note_kind="+e.allNoteKind)
+	}
+	if len(parts) == 0 {
+		return "≥1 result"
+	}
+	return strings.Join(parts, "; ")
+}
+
+// evaluateFixture runs one fixture's query+filters through search_knowledge and
+// scores ONLY mechanical criteria per its expected_outcome. It never asserts
+// rank order or relevance.
+func evaluateFixture(t *testing.T, s *Server, fx *searchFixture, ids map[string]uuid.UUID) evalOutcome {
+	t.Helper()
+	_, out, err := callHandler(t, s.searchKnowledge, buildSearchInput(fx))
+	oc := evalOutcome{FixtureID: fx.FixtureID}
+
+	switch fx.ExpectedOutcome {
+	case "validation_error":
+		sub := expectedRejectionSubstring(&fx.Filters)
+		oc.ExpectedSummary = fmt.Sprintf("validation error containing %q", sub)
+		switch {
+		case err == nil:
+			oc.Status, oc.Reason = "fail", "expected a validation error, got success"
+		case sub != "" && !strings.Contains(err.Error(), sub):
+			oc.Status, oc.Reason = "fail", fmt.Sprintf("error %q missing expected substring %q", err.Error(), sub)
+		default:
+			oc.Status, oc.Reason = "pass", "rejected before any store call"
+		}
+
+	case "empty":
+		oc.ExpectedSummary = "empty success — no corpus leak"
+		oc.ObservedIDs, oc.ObservedTypes = observedResults(out)
+		switch {
+		case err != nil:
+			oc.Status, oc.Reason = "fail", fmt.Sprintf("expected empty success, got error: %v", err)
+		case len(out.Results) != 0:
+			oc.Status, oc.Reason = "fail", fmt.Sprintf("expected 0 results (no leak), got %d", len(out.Results))
+		default:
+			oc.Status, oc.Reason = "pass", "no leak from the non-corpus / archived seed"
+		}
+
+	case "results":
+		// A results-outcome fixture MUST have an oracle entry; without one the
+		// run would silently assert nothing beyond "≥1 result". Fail loudly.
+		exp, ok := tier1Expectations[fx.FixtureID]
+		oc.ObservedIDs, oc.ObservedTypes = observedResults(out)
+		if !ok {
+			oc.Status = "fail"
+			oc.Reason = "expected_outcome=results but no tier1Expectations oracle entry"
+			return oc
+		}
+		oc.ExpectedSummary = summarizeExpectation(&exp)
+		oc.Status, oc.Reason = scoreResults(out, err, &exp, ids)
+
+	default:
+		oc.Status = "skip"
+		oc.Reason = fmt.Sprintf("expected_outcome %q is not tier-1 mechanical", fx.ExpectedOutcome)
+	}
+	return oc
+}
+
+// scoreResults applies the `results` expectation: success, ≥1 row, required
+// rows present, excluded rows absent, and the per-result narrowing. Membership
+// checks are by seed id (timezone-robust); narrowing checks are by result field
+// — never by rank.
+func scoreResults(out SearchKnowledgeOutput, err error, exp *tier1Expectation, ids map[string]uuid.UUID) (status, reason string) {
+	if err != nil {
+		return "fail", fmt.Sprintf("expected results, got error: %v", err)
+	}
+	if len(out.Results) == 0 {
+		return "fail", "expected ≥1 result, got 0 (zero-result-with-match)"
+	}
+	got := map[string]bool{}
+	for i := range out.Results {
+		got[out.Results[i].ID] = true
+	}
+	for _, key := range exp.mustAppear {
+		if !got[ids[key].String()] {
+			return "fail", fmt.Sprintf("required row %s absent from results", key)
+		}
+	}
+	for _, key := range exp.mustBeAbsent {
+		if got[ids[key].String()] {
+			return "fail", fmt.Sprintf("excluded row %s leaked into results", key)
+		}
+	}
+	for i := range out.Results {
+		r := &out.Results[i]
+		if exp.allSourceType != "" && r.SourceType != exp.allSourceType {
+			return "fail", fmt.Sprintf("result %s source_type=%q, want %q", r.ID, r.SourceType, exp.allSourceType)
+		}
+		if exp.allContentType != "" && r.ContentType != exp.allContentType {
+			return "fail", fmt.Sprintf("result %s content_type=%q, want %q", r.ID, r.ContentType, exp.allContentType)
+		}
+		if exp.allNoteKind != "" && r.NoteKind != exp.allNoteKind {
+			return "fail", fmt.Sprintf("result %s note_kind=%q, want %q", r.ID, r.NoteKind, exp.allNoteKind)
+		}
+	}
+	return "pass", "narrowing + presence/absence hold"
+}
+
+// --- the tier-1 run ---
+
+// TestIntegration_SearchRelevance_Tier1 is the fixture loader / evaluation
+// harness for the tier-1 mechanical subset. It parses the judgment set, selects
+// NEG-01..05 / FLT-01..08, confirms every required seed resolves, seeds the
+// corpus once into the integration testcontainer, and evaluates each fixture
+// mechanically. No ranking, relevance, or vector behavior is asserted.
+func TestIntegration_SearchRelevance_Tier1(t *testing.T) {
+	fixtures := loadSearchFixtures(t)
+	selected, skipped := selectTier1(fixtures)
+
+	t.Logf("tier-1 selection: %d fixtures; skipped %d non-tier-1 fixtures", len(selected), len(skipped))
+	for _, sk := range skipped {
+		t.Logf("  skip %-7s — %s", sk.FixtureID, sk.Reason)
+	}
+
+	registry := tier1SeederRegistry()
+	required := requiredSeedIDs(selected)
+
+	t.Run("seed references resolve", func(t *testing.T) {
+		for _, seedID := range required {
+			if _, ok := registry[seedID]; !ok {
+				t.Errorf("seed_id %q required by a selected fixture has no registered seeder", seedID)
+			}
+		}
+	})
+
+	s := setupServer(t)
+	ids := seedTier1Corpus(t, required, registry)
+
+	// Evaluate and collect OUTSIDE t.Run so the shared outcomes slice is never
+	// touched from a subtest closure — the run is sequential today, but keeping
+	// the append off the closure removes a latent data race if a future edit
+	// adds t.Parallel(). The named subtest carries only the per-fixture assertion.
+	outcomes := make([]evalOutcome, 0, len(selected))
+	for i := range selected {
+		fx := &selected[i]
+		oc := evaluateFixture(t, s, fx, ids)
+		outcomes = append(outcomes, oc)
+		t.Run(fx.FixtureID, func(t *testing.T) {
+			if oc.Status != "pass" {
+				t.Errorf("%s [%s]: %s\n  expected: %s\n  observed ids:   %v\n  observed types: %v",
+					oc.FixtureID, oc.Status, oc.Reason, oc.ExpectedSummary, oc.ObservedIDs, oc.ObservedTypes)
+			}
+		})
+	}
+
+	logTier1Results(t, outcomes)
+}
+
+// logTier1Results writes the structured per-fixture result table to the test
+// log: fixture_id, status, reason, observed ids/types, expected summary.
+func logTier1Results(t *testing.T, outcomes []evalOutcome) {
+	t.Helper()
+	var b strings.Builder
+	b.WriteString("\n=== Tier-1 fixture evaluation results ===\n")
+	var pass, fail, skip int
+	for i := range outcomes {
+		oc := &outcomes[i]
+		switch oc.Status {
+		case "pass":
+			pass++
+		case "fail":
+			fail++
+		default:
+			skip++
+		}
+		fmt.Fprintf(&b, "%-7s %-5s %s\n", oc.FixtureID, oc.Status, oc.Reason)
+		fmt.Fprintf(&b, "         expected: %s\n", oc.ExpectedSummary)
+		fmt.Fprintf(&b, "         observed: ids=%v types=%v\n", oc.ObservedIDs, oc.ObservedTypes)
+	}
+	fmt.Fprintf(&b, "totals: %d pass, %d fail, %d skip (of %d)\n", pass, fail, skip, len(outcomes))
+	t.Log(b.String())
 }
