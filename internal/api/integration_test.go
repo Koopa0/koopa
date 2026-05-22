@@ -214,7 +214,10 @@ func TestActorMiddleware_PropagatesHumanActor(t *testing.T) {
 
 	logger := slog.Default()
 	bookmarkStore := bookmark.NewStore(testPool)
-	h := bookmark.NewHandler(bookmarkStore, logger)
+	// Create does not consult the topic/tag resolvers (caller supplies TopicIDs
+	// directly); nil is the documented value for Create-only wiring — see
+	// bookmark.NewHandler. This test exercises actor propagation, not mapping.
+	h := bookmark.NewHandler(bookmarkStore, nil, nil, logger)
 
 	mid := api.ActorMiddleware(testPool, "human", logger)
 	wrapped := mid(http.HandlerFunc(h.Create))

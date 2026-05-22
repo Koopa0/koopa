@@ -81,7 +81,10 @@ func TestBookmarkCreate_NoFKViolation(t *testing.T) {
 
 	logger := slog.Default()
 	store := bookmark.NewStore(testPool)
-	h := bookmark.NewHandler(store, logger)
+	// Create does not consult the topic/tag resolvers (caller supplies TopicIDs
+	// directly); nil is the documented value for Create-only wiring — see
+	// NewHandler. This test exercises the actor/FK path, not topic/tag mapping.
+	h := bookmark.NewHandler(store, nil, nil, logger)
 
 	mid := api.ActorMiddleware(testPool, "human", logger)
 	wrapped := mid(http.HandlerFunc(h.Create))
