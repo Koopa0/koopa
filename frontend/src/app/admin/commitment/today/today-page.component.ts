@@ -63,26 +63,19 @@ export class TodayPageComponent {
     () => (this.vm()?.warnings ?? []).length > 0,
   );
 
+  // Glyphs + active-item filtering derive only from the daily_plan_items
+  // lifecycle (`status`, mapped from the backend `state`). The earlier
+  // `todo_state` ('in_progress') branch was removed: the daily-plan endpoint
+  // does not emit a todo GTD state, so that branch never fired in production
+  // (see TodayService.BackendDailyPlanItem / Track 1B-correction).
   protected readonly planGlyphs = computed(() => {
     const items = this.vm()?.plan?.items ?? [];
-    return items.slice(0, 8).map((item) => {
-      if (item.status === 'done') return '✓';
-      if (item.status === 'planned' && item.todo_state === 'in_progress')
-        return '●';
-      if (item.status === 'deferred' || item.status === 'dropped') return '·';
-      return '·';
-    });
+    return items.slice(0, 8).map((item) => (item.status === 'done' ? '✓' : '·'));
   });
 
   protected readonly topActivePlanItems = computed(() => {
     const items = this.vm()?.plan?.items ?? [];
-    return items
-      .filter(
-        (it) =>
-          it.status === 'planned' &&
-          (it.todo_state === 'todo' || it.todo_state === 'in_progress'),
-      )
-      .slice(0, 2);
+    return items.filter((it) => it.status === 'planned').slice(0, 2);
   });
 
   constructor() {

@@ -10,7 +10,6 @@ import { SystemService } from '../../../core/services/system.service';
 import type { ApiContent } from '../../../core/models/api.model';
 import type {
   CoordinationTask,
-  DailyPlanItem,
   DailyPlanResponse,
   Hypothesis,
   LearningSummary,
@@ -39,9 +38,40 @@ const CONTENT_TYPE_BADGE: Record<ApiContent['type'], string> = {
   digest: 'DGT',
 };
 
+/**
+ * BackendDailyPlanItem is the REAL wire shape of an item in
+ * GET /api/admin/commitment/daily-plan (internal/daily/handler.go PlanItem) —
+ * `title` + `state` (the daily_plan_items lifecycle), NOT the legacy
+ * `DailyPlanItem` model (todo_title/todo_state/status/position) that
+ * now-page.component still uses. Track 1B found the legacy model is fictional
+ * relative to this endpoint; rather than change the global model (and the
+ * now-page blast radius), TodayService maps the real shape locally.
+ */
+interface BackendDailyPlanItem {
+  id: string;
+  todo_id: string;
+  title: string;
+  state: string; // planned | done | deferred | dropped
+  priority?: string;
+  reason?: string;
+  due_date?: string;
+  completed_at?: string;
+  selected_by: string;
+}
+
+/** TodayPlanItem is the view-model the Today plan region renders. Fields are
+ *  derived only from real backend fields — no dependence on todo_title /
+ *  todo_state / position, which the daily-plan endpoint does not emit. */
+export interface TodayPlanItem {
+  id: string;
+  title: string;
+  /** daily_plan_items lifecycle, mapped from backend `state`. */
+  status: string;
+}
+
 export interface PlanSummary {
   date: string;
-  items: DailyPlanItem[];
+  items: TodayPlanItem[];
   total: number;
   done: number;
   overdue: number;
@@ -134,13 +164,19 @@ export class TodayService {
 
   private plan(): Observable<PlanSummary | null> {
     return this.dailyPlanService.today().pipe(
-      map((r: DailyPlanResponse) => ({
-        date: r.date,
-        items: r.items,
-        total: r.total,
-        done: r.done,
-        overdue: r.overdue_count,
-      })),
+      map((r: DailyPlanResponse): PlanSummary => {
+        // The daily-plan endpoint emits BackendDailyPlanItem (title/state); the
+        // DailyPlanResponse model types items as the legacy DailyPlanItem, so
+        // read through the real wire shape and map to the Today view-model.
+        const backendItems = r.items as unknown as BackendDailyPlanItem[];
+        return {
+          date: r.date,
+          items: backendItems.map(toTodayPlanItem),
+          total: r.total,
+          done: r.done,
+          overdue: r.overdue_count,
+        };
+      }),
       catchError(() => of<PlanSummary | null>(null)),
     );
   }
@@ -156,6 +192,10 @@ export class TodayService {
       .getHealth()
       .pipe(catchError(() => of<SystemHealth | null>(null)));
   }
+}
+
+function toTodayPlanItem(it: BackendDailyPlanItem): TodayPlanItem {
+  return { id: it.id, title: it.title, status: it.state };
 }
 
 function todayIso(): string {
