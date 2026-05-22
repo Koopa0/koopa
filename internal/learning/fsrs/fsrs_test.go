@@ -25,7 +25,10 @@ func TestSchedulerLongTermFirstReview(t *testing.T) {
 	now := time.Date(2026, 4, 10, 12, 0, 0, 0, time.UTC)
 	card := s.newCard()
 
-	updated, _ := s.review(&card, gofsrs.Good, now)
+	updated, _, _, err := s.review(&card, gofsrs.Good, now)
+	if err != nil {
+		t.Fatalf("review(new card, Good) error = %v, want nil", err)
+	}
 
 	gap := updated.Due.Sub(now)
 	if gap < 24*time.Hour {
@@ -35,7 +38,10 @@ func TestSchedulerLongTermFirstReview(t *testing.T) {
 
 	// Easy should be even further out.
 	easyCard := s.newCard()
-	easyUpdated, _ := s.review(&easyCard, gofsrs.Easy, now)
+	easyUpdated, _, _, err := s.review(&easyCard, gofsrs.Easy, now)
+	if err != nil {
+		t.Fatalf("review(new card, Easy) error = %v, want nil", err)
+	}
 	easyGap := easyUpdated.Due.Sub(now)
 	if easyGap < gap {
 		t.Errorf("Easy gap (%s) shorter than Good gap (%s) — rating order broken", easyGap, gap)

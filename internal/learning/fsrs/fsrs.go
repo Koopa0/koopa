@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"time"
 
 	gofsrs "github.com/open-spaced-repetition/go-fsrs/v4"
@@ -73,11 +74,41 @@ func (s *scheduler) newCard() gofsrs.Card {
 	return gofsrs.NewCard()
 }
 
-// review applies a rating to a card and returns the updated state + review log.
-// Accepts pointer to avoid copying the 104-byte Card struct.
-func (s *scheduler) review(card *gofsrs.Card, rating gofsrs.Rating, now time.Time) (gofsrs.Card, gofsrs.ReviewLog) {
-	info := s.fsrs.Next(*card, now, rating) // gofsrs.Next takes value — dereference here
-	return info.Card, info.ReviewLog
+// review applies a rating to a card and returns the updated state, the review
+// log, and the days elapsed since the card's previous review. Accepts pointer
+// to avoid copying the Card struct.
+//
+// go-fsrs v4 dropped ReviewLog.ElapsedDays, so the adapter derives elapsed days
+// from the pre-review card's LastReview — the same quantity the library uses
+// internally. gofsrs.Next now returns an error for an invalid card state or
+// rating; the adapter wraps and propagates it so a malformed card surfaces as
+// drift rather than a silently wrong schedule.
+func (s *scheduler) review(card *gofsrs.Card, rating gofsrs.Rating, now time.Time) (gofsrs.Card, gofsrs.ReviewLog, uint64, error) {
+	elapsed := elapsedDays(card, now)
+	info, err := s.fsrs.Next(*card, now, rating) // gofsrs.Next takes value — dereference here
+	if err != nil {
+		return gofsrs.Card{}, gofsrs.ReviewLog{}, 0, fmt.Errorf("scheduling card review: %w", err)
+	}
+	return info.Card, info.ReviewLog, elapsed, nil
+}
+
+// elapsedDays returns the whole days between the card's previous review and now
+// (UTC date boundaries, floored, clamped at 0). A new or never-reviewed card
+// has a zero LastReview and yields 0. Mirrors go-fsrs' internal dateDiffInDays
+// so review_logs.elapsed_days matches the interval the library schedules on.
+func elapsedDays(card *gofsrs.Card, now time.Time) uint64 {
+	if card.State == gofsrs.New || card.LastReview.IsZero() {
+		return 0
+	}
+	lr := card.LastReview.UTC()
+	last := time.Date(lr.Year(), lr.Month(), lr.Day(), 0, 0, 0, 0, time.UTC)
+	n := now.UTC()
+	cur := time.Date(n.Year(), n.Month(), n.Day(), 0, 0, 0, 0, time.UTC)
+	hours := cur.Sub(last).Hours()
+	if hours < 0 {
+		return 0
+	}
+	return uint64(math.Floor(hours / 24))
 }
 
 // marshalCardState serializes an FSRS Card to JSON for card_state JSONB column.

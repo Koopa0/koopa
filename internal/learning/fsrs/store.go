@@ -82,7 +82,10 @@ func (s *Store) reviewWithRating(ctx context.Context, targetID uuid.UUID, rating
 		return time.Time{}, fmt.Errorf("unmarshaling card state for card %s: %w", row.ID, err)
 	}
 
-	updated, rl := s.sched.review(&cardState, rating, now)
+	updated, rl, elapsed, err := s.sched.review(&cardState, rating, now)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("scheduling review for card %s: %w", row.ID, err)
+	}
 	state, err := marshalCardState(&updated)
 	if err != nil {
 		return time.Time{}, fmt.Errorf("marshaling card state: %w", err)
@@ -96,7 +99,7 @@ func (s *Store) reviewWithRating(ctx context.Context, targetID uuid.UUID, rating
 		return time.Time{}, fmt.Errorf("updating review card %s: %w", row.ID, err)
 	}
 
-	if err := s.writeReviewLog(ctx, row.ID, rl, now); err != nil {
+	if err := s.writeReviewLog(ctx, row.ID, &rl, elapsed, now); err != nil {
 		return time.Time{}, fmt.Errorf("writing review log for card %s: %w", row.ID, err)
 	}
 
@@ -127,7 +130,10 @@ func (s *Store) MarkDrift(ctx context.Context, targetID uuid.UUID, reason string
 // catches the unique violation and falls back to reviewing the existing card.
 func (s *Store) createAndReviewCard(ctx context.Context, targetID uuid.UUID, rating gofsrs.Rating, now time.Time) (time.Time, error) {
 	newCard := s.sched.newCard()
-	updated, rl := s.sched.review(&newCard, rating, now)
+	updated, rl, elapsed, err := s.sched.review(&newCard, rating, now)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("scheduling review for new card on target %s: %w", targetID, err)
+	}
 
 	state, err := marshalCardState(&updated)
 	if err != nil {
@@ -148,20 +154,22 @@ func (s *Store) createAndReviewCard(ctx context.Context, targetID uuid.UUID, rat
 		return time.Time{}, fmt.Errorf("creating review card for target %s: %w", targetID, err)
 	}
 
-	if err := s.writeReviewLog(ctx, row.ID, rl, now); err != nil {
+	if err := s.writeReviewLog(ctx, row.ID, &rl, elapsed, now); err != nil {
 		return time.Time{}, err
 	}
 
 	return updated.Due, nil
 }
 
-// writeReviewLog appends a review log entry for an FSRS card review.
-func (s *Store) writeReviewLog(ctx context.Context, cardID uuid.UUID, rl gofsrs.ReviewLog, now time.Time) error {
+// writeReviewLog appends a review log entry for an FSRS card review. elapsed is
+// the days since the card's previous review, derived by scheduler.review since
+// go-fsrs v4 no longer reports it on ReviewLog.
+func (s *Store) writeReviewLog(ctx context.Context, cardID uuid.UUID, rl *gofsrs.ReviewLog, elapsed uint64, now time.Time) error {
 	return s.q.InsertReviewLog(ctx, db.InsertReviewLogParams{
 		CardID:        cardID,
 		Rating:        int32(rl.Rating),
 		ScheduledDays: int32(rl.ScheduledDays), //nolint:gosec // G115: FSRS ScheduledDays is small (days), never exceeds int32
-		ElapsedDays:   int32(rl.ElapsedDays),   //nolint:gosec // G115: FSRS ElapsedDays is small (days), never exceeds int32
+		ElapsedDays:   int32(elapsed),          //nolint:gosec // G115: elapsed days is small (days since last review), never exceeds int32
 		State:         int32(rl.State),
 		ReviewedAt:    now,
 	})
