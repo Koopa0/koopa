@@ -25,11 +25,11 @@ handler sequence).
 
 | Tool | Key params | Returns |
 |---|---|---|
-| `morning_context` | `sections?`, `date?` | Session-start bundle: unacknowledged directives, today's plan, overdue todos, pending artifacts, RSS highlights, unverified hypotheses |
+| `morning_context` | `sections?`, `date?` | Session-start bundle: unacknowledged directives, today's plan, overdue todos, pending artifacts, RSS highlights, unverified hypotheses. When `sections` is omitted, server consults a per-agent allowlist (e.g. `learning-studio` defaults to `tasks` + `pending_tasks` + `hypotheses` + `plan_history`, skipping rss + content_pipeline); unlisted callers still get all sections. Explicit `sections` always wins. |
 | `reflection_context` | `date?` | Session-end bundle: planned vs actual, agent notes written today |
-| `session_delta` | `since?` | Activity snapshot since a point in time: todos created, todos completed, agent notes, learning session count. Not a session-to-session diff; not scoped to any learning_session. Default lookback 24h. |
+| `session_delta` | `since?` | Activity snapshot since a point in time: todos created, todos completed, agent notes, learning session count. Not a session-to-session diff; not scoped to any learning_session. Default `since` is yesterday-midnight in Asia/Taipei (calendar-day aligned with `s.today()`); window width therefore varies with wall-clock (up to ~47h at TPE 23:00). Explicit ISO `since` overrides. |
 | `weekly_summary` | `week_of?` | Week retrospective: todos completed, agent notes by kind, learning session count + domains, concept mastery. Defaults to current ISO week. |
-| `system_status` | `scope?` | Pipeline health, feed health, process_runs by kind (`crawl` / `agent_schedule`). |
+| `system_status` | `scope?` | Pipeline health, feed health, process_runs by kind (`crawl` / `agent_schedule`). Response also carries `build: {sha, built_at, version}` so auditors can pin a response to the exact commit that produced it. |
 | `search_knowledge` | `query`, `source_types?`, `content_type?`, `note_kind?`, `project?`, `after?`, `before?`, `limit?` | Hybrid retrieval over contents (FTS + pgvector) and notes (FTS). See Search section below. |
 
 ### `search_knowledge` hybrid retrieval
@@ -112,7 +112,7 @@ The inter-agent work triad: `task` + `task_message` + `artifact`. Completion req
 | Tool | Key params | Annotation |
 |---|---|---|
 | `acknowledge_directive` | `directive_id` | Idempotent. Caller must be the target — validated via `agent.ActionAcceptTask`. |
-| `file_report` | `in_response_to?`, `artifact_parts`, `response_message_parts?` | Idempotent. Task-bound (with `in_response_to`): response message + artifact + state transition atomic. Standalone (without): free artifact via `artifact.Store.Add`. |
+| `file_report` | `in_response_to?`, `artifact_parts`, `response_message_parts?` | Idempotent. Task-bound (with `in_response_to`): response message + artifact + state transition atomic. Standalone (without): free artifact via `artifact.Store.Add`. **Part shape (HERMES F-15)**: each part in `artifact_parts` / `response_message_parts` is an a2a Part with EXACTLY ONE of `text` (string) / `raw` (base64) / `data` (any JSON) / `url` (string); optional siblings `filename`, `mediaType`, `metadata`. Top-level `type` and unknown keys are silently dropped by a2a-go — for structured payloads use `{"data":{...}}`, NOT `{"type":"observation","text":"..."}` (that stores as plain Text with no error). Rejection errors carry `valid keys: text, raw, data, url ...`. |
 | `task_detail` | `task_id` | Read-only. Returns `{task, messages, artifacts}`. Caller must be source or target (else `not_found`). Artifacts are task-bound only; `agent_notes` are not exposed. |
 
 ---
@@ -130,7 +130,7 @@ The inter-agent work triad: `task` + `task_message` + `artifact`. Completion req
 | Tool | Key params | Annotation |
 |---|---|---|
 | `start_session` | `domain`, `mode` (`retrieval` / `practice` / `mixed` / `review` / `reading`) | Additive. At most one active session globally (partial unique index). Auto-ends the prior session if idle > 12h (returns `zombie_ended`). |
-| `record_attempt` | `target{title, external_id, domain}`, `outcome`, `time_spent_minutes`, `stuck_at?`, `approach_used?`, `metadata?`, `fsrs_rating?`, `observations?[]`, `related_targets?[]` | Additive. Requires an active session. `outcome` values are paradigm-specific (see per-domain playbook). |
+| `record_attempt` | `target{title, external_id, domain}`, `outcome`, `time_spent_minutes`, `stuck_at?`, `approach_used?`, `metadata?`, `fsrs_rating?`, `observations?[]`, `related_targets?[]` | Additive. Requires an active session. `outcome` values are paradigm-specific (see per-domain playbook). Response surfaces `concepts: [{slug, id}]` (one per resolved observation, deduped), `related_targets_resolved: [{id, title}]` (one per successfully-linked related target), and `fsrs_card: {id, due_at}` (touched review card; omitted entirely when `fsrs_review_failed=true` so callers gate on the flag, not on a null card). Chain follow-up reads without re-resolving slugs. |
 | `end_session` | `session_id`, `summary?` | Idempotent. |
 | `learning_dashboard` | `view` (`overview` / `mastery` / `weaknesses` / `retrieval` / `timeline` / `variations`), `domain?`, `window_days?`, `confidence_filter?`, `due_within_hours?` | Read-only. See views below. |
 | `recommend_next_target` | `session_id`, `count?`, `domain?`, `exclude_patterns?[]` | Read-only. Returns candidates[], each with `source_concept` + `relation_type` + `anchor`. |
