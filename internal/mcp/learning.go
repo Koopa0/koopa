@@ -135,6 +135,39 @@ type ObservationInput struct {
 	Confidence string  `json:"confidence,omitempty" jsonschema_description:"high (default — directly evidenced) or low (coach inferred). Both persist; mastery and weakness views default to high only but accept confidence_filter='all'."`
 }
 
+// ConceptRef is the slug + id pair surfaced to callers in the
+// record_attempt response so they can chain follow-up reads (mastery,
+// FSRS, observations) without re-resolving slug → id. auto_created is
+// intentionally omitted — distinguishing INSERT from UPDATE in
+// PostgreSQL upsert RETURNING is fragile (the xmax trick does not work
+// for ON CONFLICT DO UPDATE; the created_at = updated_at heuristic
+// races with concurrent writes). Add later if a concrete consumer
+// needs it.
+type ConceptRef struct {
+	Slug string `json:"slug"`
+	ID   string `json:"id"`
+}
+
+// RelatedTargetRef is the resolved id + title for a related target
+// successfully linked by record_attempt. Missing entries (resolution
+// failed, link skipped) surface in relation_warnings; this slice only
+// reports the linked ones.
+type RelatedTargetRef struct {
+	ID    string `json:"id"`
+	Title string `json:"title"`
+}
+
+// FSRSCardRef is the touched review_cards row's id + next due
+// timestamp. Returned only when the FSRS scheduling step succeeded —
+// on failure FSRSReviewFailed=true and this field is omitted (no
+// null or zero-valued placeholder). Lets the coach surface "next
+// review due Mon 10am" without a follow-up CardByLearningTarget
+// query.
+type FSRSCardRef struct {
+	ID    string    `json:"id"`
+	DueAt time.Time `json:"due_at"`
+}
+
 type RecordAttemptOutput struct {
 	Attempt learning.Attempt `json:"attempt"`
 	// CanonicalOutcome echoes the storage-form outcome that the caller's
@@ -182,6 +215,23 @@ type RecordAttemptOutput struct {
 	// still valid — surface this so the caller can retry or warn the user
 	// instead of silently losing a review tick.
 	FSRSReviewFailed bool `json:"fsrs_review_failed,omitempty"`
+	// Concepts is one entry per observation that resolved to a concept
+	// (slug + id). Lets the caller drill into mastery / FSRS for those
+	// concepts without re-resolving slug → id. Empty when no
+	// observations were submitted or every one was rejected; rejected
+	// indices stay in ObservationWarnings.
+	Concepts []ConceptRef `json:"concepts"`
+	// FSRSCard is the touched review_cards row's id + next due
+	// timestamp. Omitted when FSRSReviewFailed=true so callers never
+	// receive stale or zero-valued card data — check FSRSReviewFailed
+	// first, then read FSRSCard.
+	FSRSCard *FSRSCardRef `json:"fsrs_card,omitempty"`
+	// RelatedTargetsResolved is one entry per related_target that was
+	// successfully linked (id + title). Rejected entries (cross-domain,
+	// unknown relation_type, link failure) stay in RelationWarnings.
+	// Always emitted as [] when empty — same partial-write contract as
+	// ObservationWarnings.
+	RelatedTargetsResolved []RelatedTargetRef `json:"related_targets_resolved"`
 }
 
 // maxMetadataBytes caps the attempts.metadata JSONB payload to keep
@@ -239,17 +289,19 @@ func (s *Server) recordAttempt(ctx context.Context, _ *mcp.CallToolRequest, inpu
 	// persisted attempt record. updateFSRSReview returns the rating it
 	// applied (so callers can verify a fsrs_rating override was received)
 	// plus a failed flag (so callers can detect silent review-card data
-	// loss).
-	recorded, obsWarnings := s.processObservations(ctx, attempt.ID, prep.domain, input.Observations)
-	fsrsRating, fsrsFailed := s.updateFSRSReview(ctx, prep.itemID, prep.outcome, input.FSRSRating)
-	linked, relWarnings := s.processRelatedTargets(ctx, prep.itemID, prep.domain, input.RelatedTargets)
+	// loss) and, on success, the touched card's id + due timestamp so the
+	// caller can surface fsrs_card.due_at without an extra query.
+	recorded, obsWarnings, concepts := s.processObservations(ctx, attempt.ID, prep.domain, input.Observations)
+	fsrsRating, fsrsFailed, fsrsCard := s.updateFSRSReview(ctx, prep.itemID, prep.outcome, input.FSRSRating)
+	linked, relWarnings, relResolved := s.processRelatedTargets(ctx, prep.itemID, prep.domain, input.RelatedTargets)
 	planCtx := s.lookupPlanContext(ctx, prep.itemID)
 
 	// Ensure slice fields serialise as [] (not null) so callers can
 	// distinguish "happened, no warnings/entries" from a field that was
 	// dropped. The helpers above return nil when nothing fired (zero
 	// observations / zero relations / no plan context) and the json-api
-	// rule in this project forbids null on list fields.
+	// rule in this project forbids null on list fields. Concepts and
+	// RelatedTargetsResolved follow the same rule.
 	if obsWarnings == nil {
 		obsWarnings = []string{}
 	}
@@ -259,6 +311,12 @@ func (s *Server) recordAttempt(ctx context.Context, _ *mcp.CallToolRequest, inpu
 	if planCtx == nil {
 		planCtx = []PlanContextEntry{}
 	}
+	if concepts == nil {
+		concepts = []ConceptRef{}
+	}
+	if relResolved == nil {
+		relResolved = []RelatedTargetRef{}
+	}
 
 	s.logger.Info("record_attempt",
 		"session", prep.sessionID, "target", input.Target.Title, "outcome", prep.outcome,
@@ -267,15 +325,18 @@ func (s *Server) recordAttempt(ctx context.Context, _ *mcp.CallToolRequest, inpu
 		"relations_linked", linked, "relation_warnings", len(relWarnings),
 		"fsrs_review_failed", fsrsFailed)
 	return nil, RecordAttemptOutput{
-		Attempt:              *attempt,
-		CanonicalOutcome:     prep.outcome,
-		ObservationsRecorded: recorded,
-		ObservationWarnings:  obsWarnings,
-		PlanContext:          planCtx,
-		RelationsLinked:      linked,
-		RelationWarnings:     relWarnings,
-		FSRSRatingApplied:    fsrsRating,
-		FSRSReviewFailed:     fsrsFailed,
+		Attempt:                *attempt,
+		CanonicalOutcome:       prep.outcome,
+		ObservationsRecorded:   recorded,
+		ObservationWarnings:    obsWarnings,
+		PlanContext:            planCtx,
+		RelationsLinked:        linked,
+		RelationWarnings:       relWarnings,
+		FSRSRatingApplied:      fsrsRating,
+		FSRSReviewFailed:       fsrsFailed,
+		Concepts:               concepts,
+		FSRSCard:               fsrsCard,
+		RelatedTargetsResolved: relResolved,
 	}, nil
 }
 
@@ -410,7 +471,8 @@ func (s *Server) lookupPlanContext(ctx context.Context, targetID uuid.UUID) []Pl
 // override is non-nil it is used directly (1..4 rating); otherwise the
 // outcome string is mapped to a rating via fsrs.RatingFromOutcome.
 //
-// Returns the rating actually applied and a "failed" flag.
+// Returns the rating actually applied, a "failed" flag, and (on success)
+// the touched card's id + due timestamp.
 //
 //   - applied is non-nil whenever a rating was determined — even when the
 //     subsequent ReviewByRating / ReviewByOutcome call failed, we still
@@ -423,16 +485,20 @@ func (s *Server) lookupPlanContext(ctx context.Context, targetID uuid.UUID) []Pl
 //   - failed=true means the FSRS queue was NOT advanced. The attempt row
 //     is still persisted, and the card row is stamped via fsrs.MarkDrift
 //     so the retrieval view raises a drift_suspect flag.
-func (s *Server) updateFSRSReview(ctx context.Context, targetID uuid.UUID, outcome string, override *FlexInt) (applied *int, failed bool) {
+//   - card is non-nil only when failed=false; on failure we omit the card
+//     entirely so the caller can rely on (failed=true ⇒ card=nil) and
+//     surface fsrs_review_failed instead of garbage card data.
+func (s *Server) updateFSRSReview(ctx context.Context, targetID uuid.UUID, outcome string, override *FlexInt) (applied *int, failed bool, card *FSRSCardRef) {
 	now := time.Now()
 	if override != nil {
 		rating := int(*override)
-		if _, err := s.fsrs.ReviewByRating(ctx, targetID, rating, now); err != nil {
+		cardID, dueAt, err := s.fsrs.ReviewByRating(ctx, targetID, rating, now)
+		if err != nil {
 			s.logger.Warn("record_attempt: fsrs review (override) failed", "target_id", targetID, "rating", rating, "error", err)
 			s.markFSRSDrift(ctx, targetID, "rating_override_failed")
-			return &rating, true
+			return &rating, true, nil
 		}
-		return &rating, false
+		return &rating, false, &FSRSCardRef{ID: cardID.String(), DueAt: dueAt}
 	}
 
 	derived, derivErr := fsrs.RatingFromOutcome(outcome)
@@ -441,10 +507,11 @@ func (s *Server) updateFSRSReview(ctx context.Context, targetID uuid.UUID, outco
 		// the same error; let it run so the drift marker still fires.
 		s.logger.Warn("record_attempt: fsrs review failed", "target_id", targetID, "reason", "unknown_outcome", "error", derivErr)
 		s.markFSRSDrift(ctx, targetID, "unknown_outcome")
-		return nil, true
+		return nil, true, nil
 	}
 
-	if _, err := s.fsrs.ReviewByOutcome(ctx, targetID, outcome, now); err != nil {
+	cardID, dueAt, err := s.fsrs.ReviewByOutcome(ctx, targetID, outcome, now)
+	if err != nil {
 		// outcome is user-controlled — log only the sentinel branch so the
 		// raw value never reaches the log stream.
 		reason := "review_failed"
@@ -453,9 +520,9 @@ func (s *Server) updateFSRSReview(ctx context.Context, targetID uuid.UUID, outco
 		}
 		s.logger.Warn("record_attempt: fsrs review failed", "target_id", targetID, "reason", reason, "error", err)
 		s.markFSRSDrift(ctx, targetID, reason)
-		return &derived, true
+		return &derived, true, nil
 	}
-	return &derived, false
+	return &derived, false, &FSRSCardRef{ID: cardID.String(), DueAt: dueAt}
 }
 
 // markFSRSDrift stamps the drift marker and logs any failure or silent
@@ -482,9 +549,9 @@ func (s *Server) markFSRSDrift(ctx context.Context, targetID uuid.UUID, reason s
 // overrides with a different domain the entry is rejected as a cross-domain
 // relation. Because the target is then resolved via FindOrCreateTarget with
 // sourceDomain, the inserted row is guaranteed same-domain by construction.
-func (s *Server) processRelatedTargets(ctx context.Context, sourceID uuid.UUID, sourceDomain string, items []RelatedTargetInput) (linked int, warnings []string) {
+func (s *Server) processRelatedTargets(ctx context.Context, sourceID uuid.UUID, sourceDomain string, items []RelatedTargetInput) (linked int, warnings []string, resolved []RelatedTargetRef) {
 	if len(items) == 0 {
-		return 0, nil
+		return 0, nil, nil
 	}
 	caller := s.callerIdentity(ctx)
 	for i := range items {
@@ -513,8 +580,9 @@ func (s *Server) processRelatedTargets(ctx context.Context, sourceID uuid.UUID, 
 			continue
 		}
 		linked++
+		resolved = append(resolved, RelatedTargetRef{ID: targetID.String(), Title: ri.Title})
 	}
-	return linked, warnings
+	return linked, warnings, resolved
 }
 
 // --- end_session ---
@@ -973,7 +1041,7 @@ func (s *Server) resolveAttemptSession(ctx context.Context, sessionID uuid.UUID)
 // warning ("category 'X' not valid for domain 'Y'; valid: ...") rather
 // than a raw SQLSTATE 23514 / 23503 leak from the store. The category set
 // is fetched once per call.
-func (s *Server) processObservations(ctx context.Context, attemptID uuid.UUID, domain string, observations []ObservationInput) (recorded int, warnings []string) {
+func (s *Server) processObservations(ctx context.Context, attemptID uuid.UUID, domain string, observations []ObservationInput) (recorded int, warnings []string, concepts []ConceptRef) {
 	caller := s.callerIdentity(ctx)
 	validCategories, catErr := s.learn.ObservationCategoriesByDomain(ctx, domain)
 	if catErr != nil {
@@ -987,6 +1055,11 @@ func (s *Server) processObservations(ctx context.Context, attemptID uuid.UUID, d
 		warnings = append(warnings, fmt.Sprintf("category pre-validation skipped for domain %q: %v — typo'd categories will reach the DB and may surface as raw FK errors instead of named values", domain, catErr))
 		validCategories = nil
 	}
+
+	// Dedupe concepts by slug — a coach typically lists the same concept
+	// across multiple observations of the same attempt, but the response
+	// shouldn't repeat the (slug, id) pair.
+	seen := make(map[string]struct{}, len(observations))
 
 	for i := range observations {
 		obs := &observations[i]
@@ -1013,6 +1086,10 @@ func (s *Server) processObservations(ctx context.Context, attemptID uuid.UUID, d
 			continue
 		}
 		recorded++
+		if _, dup := seen[obs.Concept]; !dup {
+			seen[obs.Concept] = struct{}{}
+			concepts = append(concepts, ConceptRef{Slug: obs.Concept, ID: conceptID.String()})
+		}
 	}
-	return recorded, warnings
+	return recorded, warnings, concepts
 }

@@ -328,6 +328,92 @@ func TestIntegration_ColdStart_RecordAttempt(t *testing.T) {
 	}
 }
 
+// TestIntegration_RecordAttempt_DownstreamIds pins REQ-4: the record_attempt
+// response surfaces concepts[], fsrs_card{id,due_at}, and
+// related_targets_resolved[] so the coach can chain mastery / FSRS reads
+// without re-resolving slugs or running CardByLearningTarget. Per the
+// 2026-05-23 verdict on D3: fsrs_card MUST carry both id and due_at on
+// success (omitted entirely on failure via omitempty); the response is
+// purely additive (Invariant 7) and FSRS scheduling stays outside the
+// attempt transaction (Invariant 4).
+func TestIntegration_RecordAttempt_DownstreamIds(t *testing.T) {
+	s := setupServer(t)
+
+	_, sess, err := callHandler(t, s.startSession, StartSessionInput{
+		Domain: "leetcode",
+		Mode:   "practice",
+	})
+	if err != nil {
+		t.Fatalf("startSession: %v", err)
+	}
+
+	_, rec, err := callHandler(t, s.recordAttempt, RecordAttemptInput{
+		SessionID: sess.Session.ID.String(),
+		Target: AttemptTarget{
+			Title: "Two Sum",
+		},
+		Outcome: "solved_independent",
+		Observations: []ObservationInput{
+			{
+				Concept:    "hash-lookup",
+				Signal:     "mastery",
+				Category:   "pattern-recognition",
+				Confidence: "high",
+			},
+		},
+		RelatedTargets: []RelatedTargetInput{
+			{
+				Title:        "Two Sum II",
+				RelationType: "harder_variant",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("recordAttempt: %v", err)
+	}
+
+	// Concepts: the one observation resolved to hash-lookup; its id must
+	// be a non-nil UUID. We're not asserting a specific value — the point
+	// is that the slug→id pair is plumbed to the response.
+	if len(rec.Concepts) != 1 {
+		t.Fatalf("Concepts len = %d, want 1 (one observation submitted)", len(rec.Concepts))
+	}
+	if rec.Concepts[0].Slug != "hash-lookup" {
+		t.Errorf("Concepts[0].Slug = %q, want %q", rec.Concepts[0].Slug, "hash-lookup")
+	}
+	if _, parseErr := uuid.Parse(rec.Concepts[0].ID); parseErr != nil {
+		t.Errorf("Concepts[0].ID = %q is not a valid UUID: %v", rec.Concepts[0].ID, parseErr)
+	}
+
+	// RelatedTargetsResolved: the one related target was linked; surface
+	// id + title so the caller can chain a follow-up read.
+	if len(rec.RelatedTargetsResolved) != 1 {
+		t.Fatalf("RelatedTargetsResolved len = %d, want 1 (one related_target submitted)", len(rec.RelatedTargetsResolved))
+	}
+	if rec.RelatedTargetsResolved[0].Title != "Two Sum II" {
+		t.Errorf("RelatedTargetsResolved[0].Title = %q, want %q", rec.RelatedTargetsResolved[0].Title, "Two Sum II")
+	}
+	if _, parseErr := uuid.Parse(rec.RelatedTargetsResolved[0].ID); parseErr != nil {
+		t.Errorf("RelatedTargetsResolved[0].ID = %q is not a valid UUID: %v", rec.RelatedTargetsResolved[0].ID, parseErr)
+	}
+
+	// FSRSCard: solved_independent maps to FSRS rating Good → ReviewByOutcome
+	// must succeed against a freshly created card. Both id and due_at must
+	// populate; FSRSReviewFailed must be false.
+	if rec.FSRSReviewFailed {
+		t.Errorf("FSRSReviewFailed = true, want false (solved_independent should not drift)")
+	}
+	if rec.FSRSCard == nil {
+		t.Fatal("FSRSCard = nil, want populated when FSRSReviewFailed=false")
+	}
+	if _, parseErr := uuid.Parse(rec.FSRSCard.ID); parseErr != nil {
+		t.Errorf("FSRSCard.ID = %q is not a valid UUID: %v", rec.FSRSCard.ID, parseErr)
+	}
+	if rec.FSRSCard.DueAt.IsZero() {
+		t.Errorf("FSRSCard.DueAt is zero — successful FSRS schedule must populate due_at")
+	}
+}
+
 // --- 5. end_session ---
 
 // TestIntegration_ColdStart_EndSession verifies the lifecycle close works —

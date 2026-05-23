@@ -38,13 +38,17 @@ func (s *Store) WithTx(tx pgx.Tx) *Store {
 // from the learning/attempt domain; this method converts it to an FSRS rating
 // via ratingFromOutcome.
 //
+// Returns (cardID, dueAt, err). cardID is the review_cards.id touched by
+// this call — useful to MCP callers that want to surface fsrs_card.id in
+// their response without an extra CardByLearningTarget round-trip.
+//
 // The card update + review log insert are atomic via the store's underlying
 // DBTX. Callers using a pool get auto-commit per statement; callers using a
 // tx get full atomicity.
-func (s *Store) ReviewByOutcome(ctx context.Context, targetID uuid.UUID, outcome string, now time.Time) (time.Time, error) {
+func (s *Store) ReviewByOutcome(ctx context.Context, targetID uuid.UUID, outcome string, now time.Time) (uuid.UUID, time.Time, error) {
 	rating, err := ratingFromOutcome(outcome)
 	if err != nil {
-		return time.Time{}, err
+		return uuid.Nil, time.Time{}, err
 	}
 	return s.reviewWithRating(ctx, targetID, rating, now)
 }
@@ -55,12 +59,14 @@ func (s *Store) ReviewByOutcome(ctx context.Context, targetID uuid.UUID, outcome
 // — e.g. the attempt was solved_independent but recall was painful (rating=2),
 // or needed_help but core concept is solid (rating=3).
 //
+// Returns (cardID, dueAt, err) for symmetry with ReviewByOutcome.
+//
 // Validation errors are wrapped so callers can distinguish an invalid rating
 // (user/input error) from a DB failure (infrastructure error).
-func (s *Store) ReviewByRating(ctx context.Context, targetID uuid.UUID, rating int, now time.Time) (time.Time, error) {
+func (s *Store) ReviewByRating(ctx context.Context, targetID uuid.UUID, rating int, now time.Time) (uuid.UUID, time.Time, error) {
 	fr, err := fsrsRatingFromInt(rating)
 	if err != nil {
-		return time.Time{}, fmt.Errorf("invalid fsrs rating: %w", err)
+		return uuid.Nil, time.Time{}, fmt.Errorf("invalid fsrs rating: %w", err)
 	}
 	return s.reviewWithRating(ctx, targetID, fr, now)
 }
@@ -68,27 +74,27 @@ func (s *Store) ReviewByRating(ctx context.Context, targetID uuid.UUID, rating i
 // reviewWithRating is the shared implementation behind ReviewByOutcome and
 // ReviewByRating. It takes a resolved gofsrs.Rating so both code paths
 // converge without re-doing card lookup or state marshaling.
-func (s *Store) reviewWithRating(ctx context.Context, targetID uuid.UUID, rating gofsrs.Rating, now time.Time) (time.Time, error) {
+func (s *Store) reviewWithRating(ctx context.Context, targetID uuid.UUID, rating gofsrs.Rating, now time.Time) (uuid.UUID, time.Time, error) {
 	row, err := s.q.CardByLearningTarget(ctx, targetID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return s.createAndReviewCard(ctx, targetID, rating, now)
 	}
 	if err != nil {
-		return time.Time{}, fmt.Errorf("querying card for target %s: %w", targetID, err)
+		return uuid.Nil, time.Time{}, fmt.Errorf("querying card for target %s: %w", targetID, err)
 	}
 
 	cardState, err := unmarshalCardState(row.CardState)
 	if err != nil {
-		return time.Time{}, fmt.Errorf("unmarshaling card state for card %s: %w", row.ID, err)
+		return uuid.Nil, time.Time{}, fmt.Errorf("unmarshaling card state for card %s: %w", row.ID, err)
 	}
 
 	updated, rl, elapsed, err := s.sched.review(&cardState, rating, now)
 	if err != nil {
-		return time.Time{}, fmt.Errorf("scheduling review for card %s: %w", row.ID, err)
+		return uuid.Nil, time.Time{}, fmt.Errorf("scheduling review for card %s: %w", row.ID, err)
 	}
 	state, err := marshalCardState(&updated)
 	if err != nil {
-		return time.Time{}, fmt.Errorf("marshaling card state: %w", err)
+		return uuid.Nil, time.Time{}, fmt.Errorf("marshaling card state: %w", err)
 	}
 
 	if _, err := s.q.UpdateCardState(ctx, db.UpdateCardStateParams{
@@ -96,14 +102,14 @@ func (s *Store) reviewWithRating(ctx context.Context, targetID uuid.UUID, rating
 		Due:       updated.Due,
 		ID:        row.ID,
 	}); err != nil {
-		return time.Time{}, fmt.Errorf("updating review card %s: %w", row.ID, err)
+		return uuid.Nil, time.Time{}, fmt.Errorf("updating review card %s: %w", row.ID, err)
 	}
 
 	if err := s.writeReviewLog(ctx, row.ID, &rl, elapsed, now); err != nil {
-		return time.Time{}, fmt.Errorf("writing review log for card %s: %w", row.ID, err)
+		return uuid.Nil, time.Time{}, fmt.Errorf("writing review log for card %s: %w", row.ID, err)
 	}
 
-	return updated.Due, nil
+	return row.ID, updated.Due, nil
 }
 
 // MarkDrift stamps last_sync_drift_at on the card backing the given target.
@@ -128,16 +134,18 @@ func (s *Store) MarkDrift(ctx context.Context, targetID uuid.UUID, reason string
 // createAndReviewCard creates a new FSRS card and immediately reviews it.
 // Handles TOCTOU race: if another goroutine created the card concurrently,
 // catches the unique violation and falls back to reviewing the existing card.
-func (s *Store) createAndReviewCard(ctx context.Context, targetID uuid.UUID, rating gofsrs.Rating, now time.Time) (time.Time, error) {
+// Returns (cardID, dueAt, err) — the cardID is the row.ID just created, or
+// (on TOCTOU retry) whatever reviewWithRating resolved to.
+func (s *Store) createAndReviewCard(ctx context.Context, targetID uuid.UUID, rating gofsrs.Rating, now time.Time) (uuid.UUID, time.Time, error) {
 	newCard := s.sched.newCard()
 	updated, rl, elapsed, err := s.sched.review(&newCard, rating, now)
 	if err != nil {
-		return time.Time{}, fmt.Errorf("scheduling review for new card on target %s: %w", targetID, err)
+		return uuid.Nil, time.Time{}, fmt.Errorf("scheduling review for new card on target %s: %w", targetID, err)
 	}
 
 	state, err := marshalCardState(&updated)
 	if err != nil {
-		return time.Time{}, fmt.Errorf("marshaling card state: %w", err)
+		return uuid.Nil, time.Time{}, fmt.Errorf("marshaling card state: %w", err)
 	}
 
 	row, err := s.q.CreateCardForLearningTarget(ctx, db.CreateCardForLearningTargetParams{
@@ -151,14 +159,14 @@ func (s *Store) createAndReviewCard(ctx context.Context, targetID uuid.UUID, rat
 		if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok && pgErr.Code == pgerrcode.UniqueViolation {
 			return s.reviewWithRating(ctx, targetID, rating, now)
 		}
-		return time.Time{}, fmt.Errorf("creating review card for target %s: %w", targetID, err)
+		return uuid.Nil, time.Time{}, fmt.Errorf("creating review card for target %s: %w", targetID, err)
 	}
 
 	if err := s.writeReviewLog(ctx, row.ID, &rl, elapsed, now); err != nil {
-		return time.Time{}, err
+		return uuid.Nil, time.Time{}, err
 	}
 
-	return updated.Due, nil
+	return row.ID, updated.Due, nil
 }
 
 // writeReviewLog appends a review log entry for an FSRS card review. elapsed is

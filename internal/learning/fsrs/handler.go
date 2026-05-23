@@ -85,7 +85,7 @@ func (h *Handler) Review(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	nextDue, err := store.ReviewByRating(r.Context(), targetID, rating, time.Now())
+	_, nextDue, err := store.ReviewByRating(r.Context(), targetID, rating, time.Now())
 	if err != nil {
 		h.logger.Error("recording review", "card_id", cardID, "error", err)
 		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to record review")

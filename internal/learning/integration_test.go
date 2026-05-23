@@ -232,7 +232,7 @@ func TestDriftSignal_UnknownOutcome_SurfacedInRetrievalQueue(t *testing.T) {
 	// Baseline: successful review creates a review_cards row. Without an
 	// existing card, MarkDrift is a silent no-op — drift_suspect has
 	// nowhere to land.
-	baselineDue, err := fsrsStore.ReviewByOutcome(ctx, targetID, "solved_independent", now)
+	_, baselineDue, err := fsrsStore.ReviewByOutcome(ctx, targetID, "solved_independent", now)
 	if err != nil {
 		t.Fatalf("baseline ReviewByOutcome: %v", err)
 	}
@@ -242,7 +242,7 @@ func TestDriftSignal_UnknownOutcome_SurfacedInRetrievalQueue(t *testing.T) {
 
 	// Unknown outcome → sentinel must bubble up.
 	driftTime := now.Add(time.Hour)
-	_, err = fsrsStore.ReviewByOutcome(ctx, targetID, "bogus_outcome_value", driftTime)
+	_, _, err = fsrsStore.ReviewByOutcome(ctx, targetID, "bogus_outcome_value", driftTime)
 	if !errors.Is(err, fsrs.ErrUnknownOutcome) {
 		t.Fatalf("ReviewByOutcome(unknown) error = %v, want ErrUnknownOutcome", err)
 	}
@@ -290,7 +290,7 @@ func TestDriftSignal_UnknownOutcome_SurfacedInRetrievalQueue(t *testing.T) {
 	// A subsequent successful review must clear drift (forgiveness path —
 	// drift is marked, never sticky).
 	clearTime := driftTime.Add(time.Hour)
-	if _, err := fsrsStore.ReviewByOutcome(ctx, targetID, "solved_independent", clearTime); err != nil {
+	if _, _, err := fsrsStore.ReviewByOutcome(ctx, targetID, "solved_independent", clearTime); err != nil {
 		t.Fatalf("clearing ReviewByOutcome: %v", err)
 	}
 
