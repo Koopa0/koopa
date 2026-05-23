@@ -1,12 +1,24 @@
 FROM golang:1.26.1-alpine3.23 AS builder
 
+RUN apk add --no-cache git
+
 WORKDIR /app
 
 COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
-RUN CGO_ENABLED=0 go build -o /app/mcp ./cmd/mcp
+
+# Build-time identity injected via -ldflags. See Dockerfile (app binary) for
+# the matching wiring — the MCP binary and the API binary stamp from the
+# same internal/build package so system_status.build matches across both.
+ARG BUILD_SHA
+ARG BUILD_VERSION=v0.0.0-dev
+RUN SHA="${BUILD_SHA:-$(git rev-parse HEAD 2>/dev/null || echo dev)}" \
+    && BUILT_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    && CGO_ENABLED=0 go build \
+        -ldflags="-X github.com/Koopa0/koopa/internal/build.SHA=${SHA} -X github.com/Koopa0/koopa/internal/build.BuiltAt=${BUILT_AT} -X github.com/Koopa0/koopa/internal/build.Version=${BUILD_VERSION}" \
+        -o /app/mcp ./cmd/mcp
 
 FROM alpine:3.21
 

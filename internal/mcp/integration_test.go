@@ -155,6 +155,12 @@ func TestIntegration_SystemStatus_LearningCounts(t *testing.T) {
 	if out.Health == nil {
 		t.Fatal("systemStatus: Health is nil")
 	}
+	// Build identity must always populate — auditors rely on it to confirm
+	// which commit produced the response. Even an unstamped local build
+	// returns the "dev" defaults, never empty strings.
+	if out.Build.SHA == "" || out.Build.BuiltAt == "" || out.Build.Version == "" {
+		t.Errorf("systemStatus: Build has empty field: %+v", out.Build)
+	}
 	db := out.Health.Database
 	// All four fields must serialise (even if zero) — the wire shape
 	// is the contract. We're not asserting specific counts because
