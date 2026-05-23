@@ -19,6 +19,35 @@ import (
 // sectionTimeout is the per-section timeout for morning_context queries.
 const sectionTimeout = 15 * time.Second
 
+// defaultSectionsByAgent maps a caller agent name to the morning_context
+// sections it gets when the caller doesn't supply `sections` explicitly.
+// Callers not listed here keep the historical "all sections" default.
+// Explicit `sections` always wins over this map.
+//
+// This exists because callers like learning-studio routinely paid the
+// token cost of unrelated sections (e.g. 10 Google Developers Blog RSS
+// items) before learning to pass an explicit sections list. The map is
+// the single auditable point where per-agent defaults live — DO NOT
+// scatter the per-agent override logic across the section fillers.
+// Section names must match the runSection labels in fillMorningSections.
+var defaultSectionsByAgent = map[string][]string{
+	"learning-studio": {"tasks", "pending_tasks", "hypotheses", "plan_history"},
+}
+
+// resolveDefaultSections returns the section set to use when the caller
+// omitted `sections`. nil means "fall through to the historical all-
+// sections default" — callers must distinguish nil (use all) from an
+// empty-but-non-nil slice (which would be wrong; the map intentionally
+// never returns an empty slice). Pass the resolved caller identity, not
+// the raw context — keeps this function unit-testable.
+func resolveDefaultSections(caller string) []string {
+	defaults, ok := defaultSectionsByAgent[caller]
+	if !ok {
+		return nil
+	}
+	return defaults
+}
+
 // --- morning_context ---
 
 // MorningContextInput is the input for the morning_context tool.
@@ -84,6 +113,18 @@ func (s *Server) morningContext(ctx context.Context, _ *mcp.CallToolRequest, inp
 		date = t
 	}
 
+	// If the caller omitted sections, consult the per-agent allowlist
+	// before falling through to "all sections". Explicit input.Sections
+	// always wins. Resolved here (not inside fillMorningSections) so the
+	// dispatcher sees a uniform shape — caller-aware behavior is
+	// contained to this one site.
+	sections := input.Sections
+	if len(sections) == 0 {
+		if defaults := resolveDefaultSections(s.callerIdentity(ctx)); defaults != nil {
+			sections = FlexStringSlice(defaults)
+		}
+	}
+
 	// Initialize every list field to empty slice so that JSON marshalling
 	// always emits []. Sections that are not requested (or that fail to
 	// load) leave their field as the zero-length slice rather than null —
@@ -102,7 +143,7 @@ func (s *Server) morningContext(ctx context.Context, _ *mcp.CallToolRequest, inp
 		PlanHistory:          []agentnote.Note{},
 		ContentPipeline:      []ContentSummary{},
 	}
-	s.fillMorningSections(ctx, date, input.Sections, &out)
+	s.fillMorningSections(ctx, date, sections, &out)
 	return nil, out, nil
 }
 

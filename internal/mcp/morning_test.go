@@ -90,3 +90,49 @@ func TestMorningContextOutput_AllSlicesMarshalAsEmptyArray(t *testing.T) {
 		}
 	}
 }
+
+// TestResolveDefaultSections pins the per-agent allowlist contract for
+// REQ-5: an unlisted caller falls through to "all sections" semantics
+// (nil return), and learning-studio explicitly skips rss +
+// content_pipeline so the morning-briefing token cost stays focused on
+// learning-relevant signals. Explicit input.Sections is handled by
+// morningContext, not this function — this only locks the map.
+func TestResolveDefaultSections(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name   string
+		caller string
+		want   []string
+	}{
+		{name: "unlisted caller falls through to all", caller: "hq", want: nil},
+		{name: "empty caller falls through to all", caller: "", want: nil},
+		{
+			name:   "learning-studio gets focused subset",
+			caller: "learning-studio",
+			want:   []string{"tasks", "pending_tasks", "hypotheses", "plan_history"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := resolveDefaultSections(tt.caller)
+			if len(got) != len(tt.want) {
+				t.Fatalf("resolveDefaultSections(%q) len = %d, want %d (got=%v)", tt.caller, len(got), len(tt.want), got)
+			}
+			for i, w := range tt.want {
+				if got[i] != w {
+					t.Errorf("resolveDefaultSections(%q)[%d] = %q, want %q", tt.caller, i, got[i], w)
+				}
+			}
+			// learning-studio's set must NEVER include rss or content_pipeline
+			// regardless of how the map grows — these are the noise the
+			// brief specifically wanted to silence.
+			if tt.caller == "learning-studio" {
+				for _, sec := range got {
+					if sec == "rss" || sec == "content_pipeline" {
+						t.Errorf("resolveDefaultSections(learning-studio) included %q — REQ-5 wanted that noise gone", sec)
+					}
+				}
+			}
+		})
+	}
+}
