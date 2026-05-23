@@ -111,6 +111,9 @@ func WriteAgentNote() Meta {
 		Stability:   StabilityStable,
 		Since:       since,
 		Description: "Create an agent note. Kind: plan (daily plan reasoning), context (session state snapshot), reflection (retrospective review). Use for session logging and reflection.",
+		FieldEnums: map[string][]string{
+			"kind": {"plan", "context", "reflection"},
+		},
 	}
 }
 
@@ -299,6 +302,9 @@ func StartSession() Meta {
 		Stability:   StabilityStable,
 		Since:       since,
 		Description: "Begin a learning session. Required: domain (e.g. leetcode, japanese), mode (retrieval/practice/mixed/review/reading). Validates no other active session exists. Use when the user wants to start a learning/practice session.",
+		FieldEnums: map[string][]string{
+			"mode": {"retrieval", "practice", "mixed", "review", "reading"},
+		},
 	}
 }
 
@@ -406,6 +412,9 @@ func ManagePlan() Meta {
 		Stability:   StabilityStable,
 		Since:       since,
 		Description: "Learning plan lifecycle and entries. Actions: add_entries (accepts learning_target_id OR title for find-or-create using plan domain), remove_entries (draft only), update_entry (complete/skip/substitute), reorder, update_plan (activate/pause/complete/abandon), progress. The progress action returns aggregate counts plus a flat entry list with plan_entry_id, learning_target_id, title, position, status, phase — call it before update_entry to look up plan_entry_id. Completing an entry (status=completed) requires a non-blank reason and a completed_by_attempt_id whose learning_target matches the entry's; mismatched IDs are rejected. Use force=true with a reason starting with 'manual override:' (≥60 chars) when no aligned attempt exists — the prefix is the audit signal for retroactive completions.",
+		FieldEnums: map[string][]string{
+			"action": {"add_entries", "remove_entries", "update_entry", "reorder", "update_plan", "progress"},
+		},
 	}
 }
 
@@ -451,6 +460,9 @@ func CreateContent() Meta {
 		Stability:   StabilityStable,
 		Since:       since,
 		Description: "Create a new content row in status=draft. type is one of: article, essay, build-log, til, digest. Notes are NOT a content type — use create_note. Slug collisions surface as output.slug_conflict (caller can pick a new slug or switch to update_content).",
+		FieldEnums: map[string][]string{
+			"content_type": {"article", "essay", "build-log", "til", "digest"},
+		},
 	}
 }
 
@@ -573,6 +585,9 @@ func UpdateNoteMaturity() Meta {
 		Stability:   StabilityStable,
 		Since:       since,
 		Description: "Transition a note's maturity state. to_maturity one of: seed, stub, evergreen, needs_revision, archived. Any transition permitted (including recovery from archived).",
+		FieldEnums: map[string][]string{
+			"to_maturity": {"seed", "stub", "evergreen", "needs_revision", "archived"},
+		},
 	}
 }
 
@@ -591,6 +606,10 @@ func ManageFeeds() Meta {
 		Stability:   StabilityStable,
 		Since:       since,
 		Description: "Feed management: list, add (url+name+schedule), update (enable/disable, retopic), remove. Returns the agent-facing FeedSummary shape (id, url, name, schedule, topics, enabled, priority, last_fetched_at) — admin/pipeline-internal fields (filter_config, etag, last_modified, consecutive_failures, last_error, disabled_reason) are omitted. The HTTP admin endpoint serves the full feed.Feed for callers that need pipeline diagnostics.",
+		FieldEnums: map[string][]string{
+			"action":   {"list", "add", "update", "remove"},
+			"schedule": {"hourly", "daily", "weekly", "biweekly", "monthly"},
+		},
 	}
 }
 

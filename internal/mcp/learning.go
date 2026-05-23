@@ -494,7 +494,7 @@ func (s *Server) processRelatedTargets(ctx context.Context, sourceID uuid.UUID, 
 			continue
 		}
 		if !learning.ValidRelationType(learning.RelationType(ri.RelationType)) {
-			warnings = append(warnings, fmt.Sprintf("related_targets[%d] (%q): unknown relation_type %q", i, ri.Title, ri.RelationType))
+			warnings = append(warnings, fmt.Sprintf("related_targets[%d] (%q): unknown relation_type %q (valid: easier_variant, harder_variant, prerequisite, follow_up, same_pattern, similar_structure)", i, ri.Title, ri.RelationType))
 			continue
 		}
 		// Cross-domain rejection moved to this layer — source domain is already

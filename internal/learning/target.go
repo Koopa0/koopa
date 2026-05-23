@@ -215,7 +215,7 @@ func (s *Store) LinkTargets(ctx context.Context, anchorID, relatedID uuid.UUID, 
 		return fmt.Errorf("%w: cannot link target %s to itself", ErrInvalidInput, anchorID)
 	}
 	if !ValidRelationType(relation) {
-		return fmt.Errorf("%w: unknown relation_type %q", ErrInvalidInput, relation)
+		return fmt.Errorf("%w: unknown relation_type %q (valid: easier_variant, harder_variant, prerequisite, follow_up, same_pattern, similar_structure)", ErrInvalidInput, relation)
 	}
 	if err := s.q.InsertLearningTargetRelation(ctx, db.InsertLearningTargetRelationParams{
 		AnchorID:     anchorID,
