@@ -15,7 +15,7 @@ import (
 
 // SessionDeltaInput is the input for the session_delta tool.
 type SessionDeltaInput struct {
-	Since *string `json:"since,omitempty" jsonschema_description:"ISO date YYYY-MM-DD to look back from (default: 24 hours ago)"`
+	Since *string `json:"since,omitempty" jsonschema_description:"ISO date YYYY-MM-DD to look back from (default: yesterday-midnight in the server's timezone, Asia/Taipei)"`
 }
 
 // SessionDeltaOutput is the output of the session_delta tool.
@@ -28,7 +28,16 @@ type SessionDeltaOutput struct {
 }
 
 func (s *Server) sessionDelta(ctx context.Context, _ *mcp.CallToolRequest, input SessionDeltaInput) (*mcp.CallToolResult, SessionDeltaOutput, error) {
-	since := time.Now().Add(-24 * time.Hour)
+	// Default window is calendar-day aligned in the server's timezone:
+	// since=yesterday-midnight (TPE), until=today-midnight (TPE). This
+	// matches an agent's "since yesterday" mental model and pairs with
+	// the date-typed AgentNotesByDateRange query so an end_session
+	// reflection note created today cannot fall outside the range
+	// purely because of UTC truncation in the implicit
+	// timestamptz→date coercion. Explicit ISO `since` still overrides.
+	today := s.today()
+	since := today.AddDate(0, 0, -1)
+	until := today
 	if input.Since != nil && *input.Since != "" {
 		t, err := time.Parse(time.DateOnly, *input.Since)
 		if err != nil {
@@ -47,7 +56,7 @@ func (s *Server) sessionDelta(ctx context.Context, _ *mcp.CallToolRequest, input
 		return nil, SessionDeltaOutput{}, fmt.Errorf("querying completed todo items: %w", err)
 	}
 
-	notes, err := s.agentNotes.NotesInRange(ctx, since, time.Now(), nil, nil)
+	notes, err := s.agentNotes.NotesInRange(ctx, since, until, nil, nil)
 	if err != nil {
 		return nil, SessionDeltaOutput{}, fmt.Errorf("querying agent notes: %w", err)
 	}

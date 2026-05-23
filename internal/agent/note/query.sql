@@ -12,10 +12,16 @@ WHERE id = @id;
 
 -- name: AgentNotesByDateRange :many
 -- List agent notes in a date range, optionally filtered by kind and/or created_by.
+-- Explicit ::date casts on @start_date / @end_date keep the comparison
+-- date-typed end-to-end. Without them pgx sends the time.Time as
+-- timestamptz, PG promotes entry_date (DATE) to timestamptz at session
+-- midnight UTC, and a same-day note stored from a Taipei-zoned writer
+-- can fall outside the range purely because of UTC truncation. See
+-- learning-studio brief REQ-3 (2026-05-23).
 SELECT id, kind, created_by, content, metadata, entry_date, created_at
 FROM agent_notes
-WHERE entry_date >= @start_date
-  AND entry_date <= @end_date
+WHERE entry_date >= @start_date::date
+  AND entry_date <= @end_date::date
   AND (sqlc.narg('kind')::agent_note_kind IS NULL OR kind = sqlc.narg('kind')::agent_note_kind)
   AND (sqlc.narg('created_by')::text IS NULL OR created_by = sqlc.narg('created_by'))
 ORDER BY entry_date DESC, created_at DESC;

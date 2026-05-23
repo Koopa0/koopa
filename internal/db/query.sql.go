@@ -330,8 +330,8 @@ func (q *Queries) AgentNoteByID(ctx context.Context, id uuid.UUID) (AgentNoteByI
 const agentNotesByDateRange = `-- name: AgentNotesByDateRange :many
 SELECT id, kind, created_by, content, metadata, entry_date, created_at
 FROM agent_notes
-WHERE entry_date >= $1
-  AND entry_date <= $2
+WHERE entry_date >= $1::date
+  AND entry_date <= $2::date
   AND ($3::agent_note_kind IS NULL OR kind = $3::agent_note_kind)
   AND ($4::text IS NULL OR created_by = $4)
 ORDER BY entry_date DESC, created_at DESC
@@ -355,6 +355,12 @@ type AgentNotesByDateRangeRow struct {
 }
 
 // List agent notes in a date range, optionally filtered by kind and/or created_by.
+// Explicit ::date casts on @start_date / @end_date keep the comparison
+// date-typed end-to-end. Without them pgx sends the time.Time as
+// timestamptz, PG promotes entry_date (DATE) to timestamptz at session
+// midnight UTC, and a same-day note stored from a Taipei-zoned writer
+// can fall outside the range purely because of UTC truncation. See
+// learning-studio brief REQ-3 (2026-05-23).
 func (q *Queries) AgentNotesByDateRange(ctx context.Context, arg AgentNotesByDateRangeParams) ([]AgentNotesByDateRangeRow, error) {
 	rows, err := q.db.Query(ctx, agentNotesByDateRange,
 		arg.StartDate,

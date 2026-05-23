@@ -354,6 +354,62 @@ func TestIntegration_ColdStart_EndSession(t *testing.T) {
 	}
 }
 
+// TestIntegration_SessionDelta_FindsEndSessionReflection guards REQ-3 from
+// the learning-studio 2026-05-23 brief: end_session(reflection=...) creates
+// an agent_note with entry_date=s.today() (Taipei midnight). session_delta
+// must surface that note in its agent_notes response — before the fix the
+// note was excluded at TPE-morning calls because AgentNotesByDateRange
+// compared the DATE column against time.Now() timestamptz params, and the
+// implicit timestamptz→date coercion in UTC could shift the stored date
+// outside the wall-clock-relative window.
+//
+// The fix has two parts (delta.go + query.sql): the SQL now casts
+// @start_date/@end_date with ::date for date-typed comparison, and the
+// handler bounds the default window by s.today() instead of time.Now() so
+// both sides go through the same TPE-midnight semantics. This test
+// exercises the workflow without manipulating the clock — the contract is
+// "create then delta finds it", and the test will catch a regression of
+// either side most of the time.
+func TestIntegration_SessionDelta_FindsEndSessionReflection(t *testing.T) {
+	s := setupServer(t)
+
+	_, sess, err := callHandler(t, s.startSession, StartSessionInput{
+		Domain: "go",
+		Mode:   "reading",
+	})
+	if err != nil {
+		t.Fatalf("startSession: %v", err)
+	}
+
+	reflection := "fixed REQ-3 today; the tz boundary made my note disappear"
+	_, _, err = callHandler(t, s.endSession, EndSessionInput{
+		SessionID:  sess.Session.ID.String(),
+		Reflection: &reflection,
+	})
+	if err != nil {
+		t.Fatalf("endSession: %v", err)
+	}
+
+	_, delta, err := callHandler(t, s.sessionDelta, SessionDeltaInput{})
+	if err != nil {
+		t.Fatalf("sessionDelta: %v", err)
+	}
+
+	var found bool
+	for i := range delta.AgentNotes {
+		if delta.AgentNotes[i].Content == reflection {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("sessionDelta: end_session reflection missing from AgentNotes (got %d notes, since=%s)", len(delta.AgentNotes), delta.Since)
+	}
+	if delta.SessionCount < 1 {
+		t.Errorf("sessionDelta: SessionCount = %d, want >= 1 (the session we just ended)", delta.SessionCount)
+	}
+}
+
 // --- 6. Actor fallback — 'system' must resolve ---
 
 // TestIntegration_ActorFallbackToSystem guards the safety net. withActorTx
