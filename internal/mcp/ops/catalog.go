@@ -238,7 +238,11 @@ func GoalProgress() Meta {
 	}
 }
 
-// FileReport returns metadata for the a2a artifact filing tool.
+// FileReport returns metadata for the a2a artifact filing tool. The
+// description includes the a2a Part shape contract — top-level `type`
+// is silently dropped by a2a-go, so callers who want structured payloads
+// must use `{"data":{...}}` not `{"type":"...","text":"..."}`. See
+// HERMES F-15 (2026-05-23).
 func FileReport() Meta {
 	return Meta{
 		Name:        "file_report",
@@ -246,7 +250,7 @@ func FileReport() Meta {
 		Writability: Additive,
 		Stability:   StabilityStable,
 		Since:       since,
-		Description: "File a structured artifact. Two modes: (1) with in_response_to — completes the referenced task by attaching a response message and artifact, then transitions the task to completed; (2) without in_response_to — creates a standalone artifact attributed to the caller. Caller identity is resolved via the 'as' field. Requires PublishArtifacts capability.",
+		Description: "File a structured artifact. Two modes: (1) with in_response_to — completes the referenced task by attaching a response message and artifact, then transitions the task to completed; (2) without in_response_to — creates a standalone artifact attributed to the caller. Caller identity is resolved via the 'as' field. Requires PublishArtifacts capability. Each Part in artifact.parts / response_parts is an a2a Part with EXACTLY ONE of text/raw/data/url; top-level 'type' is silently ignored — use {\"data\":{...}} for structured payloads, not {\"type\":\"...\",\"text\":\"...\"}.",
 	}
 }
 

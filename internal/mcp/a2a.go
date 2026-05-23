@@ -28,6 +28,12 @@ import (
 	"github.com/Koopa0/koopa/internal/agent/task"
 )
 
+// partKeysHint is appended to every parseA2AParts error so the upstream
+// a2a-go failure ("unknown part content type: [type concept ...]" lists
+// the caller's bad keys, not the allowed ones) becomes actionable.
+// See learning-studio brief REQ-1 + HERMES F-15 (2026-05-23).
+const partKeysHint = `valid keys: text, raw, data, url (exactly one per part). For structured payloads use {"data":{...}} — top-level "type" and other unknown keys are silently ignored by a2a-go.`
+
 // parseA2AParts deserializes a wire-side JSON array of a2a.Part values
 // into typed Go values. This is the single entry point for wire→in-memory
 // Part conversion across the MCP layer.
@@ -36,7 +42,7 @@ func parseA2AParts(raw []json.RawMessage) ([]*a2a.Part, error) {
 	for i, r := range raw {
 		var p a2a.Part
 		if err := json.Unmarshal(r, &p); err != nil {
-			return nil, fmt.Errorf("parts[%d]: %w", i, err)
+			return nil, fmt.Errorf("parts[%d]: %w; %s", i, err, partKeysHint)
 		}
 		out = append(out, &p)
 	}
@@ -50,7 +56,7 @@ func parseA2AParts(raw []json.RawMessage) ([]*a2a.Part, error) {
 type FileReportArtifactInput struct {
 	Name        string            `json:"name" jsonschema:"required" jsonschema_description:"Short artifact label (e.g. 'weekly-report', 'architecture-diagram')"`
 	Description string            `json:"description,omitempty" jsonschema_description:"Optional longer description"`
-	Parts       []json.RawMessage `json:"parts" jsonschema:"required" jsonschema_description:"Artifact content as a2a.Part JSON objects: [{\"text\":\"...\"}] or [{\"data\":{...}}]"`
+	Parts       []json.RawMessage `json:"parts" jsonschema:"required" jsonschema_description:"Artifact content as a2a Part objects. Each element MUST contain EXACTLY ONE of: text (string), raw (base64 string), data (any JSON value), url (string). Optional siblings: filename, mediaType, metadata. WARNING: top-level 'type' and other unknown keys are silently ignored by a2a-go — for structured payloads use {\"data\":{...}}, NOT {\"type\":\"observation\",\"text\":\"...\"} (that stores as plain Text with no error). Examples: [{\"text\":\"summary prose\"}], [{\"data\":{\"signal\":\"weakness\",\"concept\":\"binary-search\"}}], [{\"url\":\"https://...\",\"mediaType\":\"image/png\"}]."`
 }
 
 // FileReportInput is the input for the file_report tool.
@@ -64,7 +70,7 @@ type FileReportArtifactInput struct {
 // the caller — no task is involved.
 type FileReportInput struct {
 	InResponseTo  string                   `json:"in_response_to,omitempty" jsonschema_description:"Task UUID this report responds to. Omit for self-initiated artifacts."`
-	ResponseParts []json.RawMessage        `json:"response_parts,omitempty" jsonschema_description:"Response message parts (required when in_response_to is set)."`
+	ResponseParts []json.RawMessage        `json:"response_parts,omitempty" jsonschema_description:"Response message parts (required when in_response_to is set). Same a2a Part shape as artifact.parts — exactly one of text/raw/data/url per element."`
 	Artifact      *FileReportArtifactInput `json:"artifact" jsonschema:"required" jsonschema_description:"The structured deliverable."`
 }
 
