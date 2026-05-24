@@ -207,7 +207,7 @@ func TestStore_CreateTag_DuplicateSlug(t *testing.T) {
 	}
 
 	_, err := s.CreateTag(ctx, params)
-	if err != ErrConflict {
+	if !errors.Is(err, ErrConflict) {
 		t.Fatalf("CreateTag(duplicate slug) = %v, want ErrConflict", err)
 	}
 }
@@ -216,7 +216,7 @@ func TestStore_Tag_NotFound(t *testing.T) {
 	s := setup(t)
 
 	_, err := s.Tag(t.Context(), uuid.New())
-	if err != ErrNotFound {
+	if !errors.Is(err, ErrNotFound) {
 		t.Fatalf("Tag(missing ID) = %v, want ErrNotFound", err)
 	}
 }
@@ -286,7 +286,7 @@ func TestStore_UpdateTag_NotFound(t *testing.T) {
 	_, err := s.UpdateTag(t.Context(), uuid.New(), &UpdateParams{
 		Name: &newName,
 	})
-	if err != ErrNotFound {
+	if !errors.Is(err, ErrNotFound) {
 		t.Fatalf("UpdateTag(missing ID) = %v, want ErrNotFound", err)
 	}
 }
@@ -301,7 +301,7 @@ func TestStore_UpdateTag_DuplicateSlug(t *testing.T) {
 	// Attempt to update tagB's slug to tagA's slug.
 	newSlug := "slug-a"
 	_, err := s.UpdateTag(ctx, tagB.ID, &UpdateParams{Slug: &newSlug})
-	if err != ErrConflict {
+	if !errors.Is(err, ErrConflict) {
 		t.Fatalf("UpdateTag(duplicate slug) = %v, want ErrConflict", err)
 	}
 }
@@ -318,7 +318,7 @@ func TestStore_DeleteTag(t *testing.T) {
 
 	// Verify the tag is gone.
 	_, err := s.Tag(ctx, created.ID)
-	if err != ErrNotFound {
+	if !errors.Is(err, ErrNotFound) {
 		t.Fatalf("Tag(%s) after delete = %v, want ErrNotFound", created.ID, err)
 	}
 }
@@ -437,7 +437,7 @@ func TestStore_MergeTags(t *testing.T) {
 
 	// Source tag should be deleted.
 	_, err = s.Tag(ctx, source.ID)
-	if err != ErrNotFound {
+	if !errors.Is(err, ErrNotFound) {
 		t.Fatalf("Tag(%s) after merge = %v, want ErrNotFound", source.ID, err)
 	}
 
@@ -470,7 +470,7 @@ func TestStore_MergeTags_WithAlias(t *testing.T) {
 
 	// Source tag should be deleted.
 	_, err = s.Tag(ctx, source.ID)
-	if err != ErrNotFound {
+	if !errors.Is(err, ErrNotFound) {
 		t.Fatalf("Tag(%s) after merge = %v, want ErrNotFound", source.ID, err)
 	}
 }
@@ -574,7 +574,7 @@ func TestStore_DeleteTag_HasReferences(t *testing.T) {
 	s.ResolveTag(ctx, "Referenced-Tag")
 
 	err := s.DeleteTag(ctx, created.ID)
-	if err != ErrHasReferences {
+	if !errors.Is(err, ErrHasReferences) {
 		t.Fatalf("DeleteTag(tag with alias) = %v, want ErrHasReferences", err)
 	}
 }

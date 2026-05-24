@@ -564,7 +564,7 @@ func TestStore_ContentBySlug(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			got, err := s.ContentBySlug(ctx, tt.slug)
 			if tt.wantErr != nil {
-				if err != tt.wantErr {
+				if !errors.Is(err, tt.wantErr) {
 					t.Fatalf("ContentBySlug(%q) error = %v, want %v", tt.slug, err, tt.wantErr)
 				}
 				return
@@ -586,7 +586,7 @@ func TestStore_Content_NotFound(t *testing.T) {
 	s := setup(t)
 
 	_, err := s.Content(t.Context(), uuid.New())
-	if err != ErrNotFound {
+	if !errors.Is(err, ErrNotFound) {
 		t.Fatalf("Content(missing ID) = %v, want ErrNotFound", err)
 	}
 }
@@ -631,7 +631,7 @@ func TestStore_PublishContent_NotFound(t *testing.T) {
 	s := setup(t)
 
 	_, err := s.PublishContent(t.Context(), uuid.New())
-	if err != ErrNotFound {
+	if !errors.Is(err, ErrNotFound) {
 		t.Fatalf("PublishContent(missing ID) = %v, want ErrNotFound", err)
 	}
 }
@@ -643,7 +643,7 @@ func TestStore_UpdateContent_NotFound(t *testing.T) {
 	_, err := s.UpdateContent(t.Context(), uuid.New(), &UpdateParams{
 		Title: &newTitle,
 	})
-	if err != ErrNotFound {
+	if !errors.Is(err, ErrNotFound) {
 		t.Fatalf("UpdateContent(missing ID) = %v, want ErrNotFound", err)
 	}
 }
