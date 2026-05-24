@@ -2,10 +2,10 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -139,9 +139,11 @@ func TestHttpMetrics_RouteLabel(t *testing.T) {
 }
 
 // TestHttpMetrics_RecordsDespitePanic confirms the defer-based observation
-// fires even when the inner handler panics. Without defer, panics would
-// produce no data point and p99 would look artificially good during
-// incidents (which is exactly when we need the data most).
+// fires even when the inner handler panics, AND stamps status="500" so
+// alerts on status=~"5.." see panicked requests as errors. Without the
+// status stamp, sr.code would still be the default 200 (the panicking
+// handler never reached WriteHeader) and the metric would silently
+// classify panics as successful — the opposite of the design goal.
 func TestHttpMetrics_RecordsDespitePanic(t *testing.T) {
 	mw, reader := testMeter(t)
 	panicHandler := http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
@@ -149,7 +151,7 @@ func TestHttpMetrics_RecordsDespitePanic(t *testing.T) {
 	})
 	// recovery wraps OUTSIDE httpMetrics so panic is caught after our defer.
 	// Discard logs from recovery — we expect the panic and don't want noise.
-	silent := slog.New(slog.NewTextHandler(&strings.Builder{}, nil))
+	silent := slog.New(slog.NewTextHandler(io.Discard, nil))
 	handler := recovery(silent)(mw(panicHandler))
 
 	req := httptest.NewRequest("GET", "/boom", http.NoBody)
@@ -168,6 +170,10 @@ func TestHttpMetrics_RecordsDespitePanic(t *testing.T) {
 	if sum.DataPoints[0].Value != 1 {
 		t.Errorf("counter value = %d, want 1", sum.DataPoints[0].Value)
 	}
+	status, _ := sum.DataPoints[0].Attributes.Value(attribute.Key("status"))
+	if got := status.AsString(); got != "500" {
+		t.Errorf("status on panic = %q, want %q (alerts on 5xx would miss panics)", got, "500")
+	}
 
 	hist := findMetric(t, rm, "http.server.request.duration")
 	hd := hist.Data.(metricdata.Histogram[float64])
@@ -176,6 +182,41 @@ func TestHttpMetrics_RecordsDespitePanic(t *testing.T) {
 	}
 	if hd.DataPoints[0].Count != 1 {
 		t.Errorf("histogram count = %d, want 1", hd.DataPoints[0].Count)
+	}
+	histStatus, _ := hd.DataPoints[0].Attributes.Value(attribute.Key("status"))
+	if got := histStatus.AsString(); got != "500" {
+		t.Errorf("histogram status on panic = %q, want %q", got, "500")
+	}
+}
+
+// TestHttpMetrics_SkipsInfraRoutes confirms /metrics, /healthz, /readyz
+// produce no data point so high-volume scrape and uptime traffic doesn't
+// drown out user-facing request observations.
+func TestHttpMetrics_SkipsInfraRoutes(t *testing.T) {
+	for _, path := range []string{"/metrics", "/healthz", "/readyz"} {
+		t.Run(path, func(t *testing.T) {
+			mw, reader := testMeter(t)
+			handler := mw(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(http.StatusOK)
+			}))
+			req := httptest.NewRequest("GET", path, http.NoBody)
+			handler.ServeHTTP(httptest.NewRecorder(), req)
+
+			var rm metricdata.ResourceMetrics
+			if err := reader.Collect(t.Context(), &rm); err != nil {
+				t.Fatalf("collect: %v", err)
+			}
+			for _, sm := range rm.ScopeMetrics {
+				for _, m := range sm.Metrics {
+					if m.Name == "http.requests" {
+						sum := m.Data.(metricdata.Sum[int64])
+						if len(sum.DataPoints) > 0 {
+							t.Errorf("scrape on %s produced %d data points, want 0", path, len(sum.DataPoints))
+						}
+					}
+				}
+			}
+		})
 	}
 }
 

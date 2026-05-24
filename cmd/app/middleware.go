@@ -190,9 +190,29 @@ func httpMetrics(meter metric.Meter) (func(http.Handler) http.Handler, error) {
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Skip noisy infrastructure routes: /metrics is scraped every
+			// 15s, /healthz and /readyz get hit by external uptime checks.
+			// Instrumenting them would flood the aggregation with traffic
+			// that tells us nothing about user-facing latency.
+			switch r.URL.Path {
+			case "/metrics", "/healthz", "/readyz":
+				next.ServeHTTP(w, r)
+				return
+			}
+
 			start := time.Now()
 			sr := &statusRecorder{ResponseWriter: w, code: http.StatusOK}
 			defer func() {
+				// On panic, the inner handler may not have reached
+				// WriteHeader so sr.code is still 200. Stamp 500 here so
+				// the metric reflects what the outer recovery middleware
+				// will write to the client. Without this, status="200"
+				// is recorded for panicked requests and alerts on
+				// status=~"5.." silently miss panic storms.
+				rec := recover()
+				if rec != nil {
+					sr.code = http.StatusInternalServerError
+				}
 				route := r.Pattern
 				if route == "" {
 					route = "unknown"
@@ -204,6 +224,9 @@ func httpMetrics(meter metric.Meter) (func(http.Handler) http.Handler, error) {
 				)
 				duration.Record(r.Context(), time.Since(start).Seconds(), attrs)
 				requests.Add(r.Context(), 1, attrs)
+				if rec != nil {
+					panic(rec)
+				}
 			}()
 			next.ServeHTTP(sr, r)
 		})
