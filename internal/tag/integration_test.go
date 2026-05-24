@@ -365,10 +365,8 @@ func TestStore_ResolveTag(t *testing.T) {
 				if *result.TagID != created.ID {
 					t.Errorf("ResolveTag(%q) tag_id = %s, want %s", tt.rawTag, *result.TagID, created.ID)
 				}
-			} else {
-				if result.TagID != nil {
-					t.Errorf("ResolveTag(%q) tag_id = %s, want nil", tt.rawTag, *result.TagID)
-				}
+			} else if result.TagID != nil {
+				t.Errorf("ResolveTag(%q) tag_id = %s, want nil", tt.rawTag, *result.TagID)
 			}
 		})
 	}

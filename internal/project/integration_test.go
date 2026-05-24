@@ -79,9 +79,9 @@ func newDetailHandler(t *testing.T) *project.Handler {
 // decodes the response body into the pinned wire envelope + Detail shape.
 // Returns the decoded detail plus the HTTP status so assertions stay
 // explicit about 200 vs 404 branches.
-func callDetail(t *testing.T, h *project.Handler, id string) (project.Detail, int) {
+func callDetail(t *testing.T, h *project.Handler, id string) (detail project.Detail, status int) {
 	t.Helper()
-	req := httptest.NewRequest(http.MethodGet, "/api/admin/projects/"+id, nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/admin/projects/"+id, http.NoBody)
 	req.SetPathValue("id", id)
 	w := httptest.NewRecorder()
 	h.Detail(w, req)

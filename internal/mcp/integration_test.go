@@ -905,9 +905,9 @@ func TestIntegration_UpdateEntry_AlignsAttemptToTarget(t *testing.T) {
 // Required for handlers gated on requireExplicitHuman (publish_content,
 // commit_proposal of high-commitment types) — callHandler alone falls
 // through to the server default and the gate refuses.
-func callHandlerAs[I, O any](t *testing.T, agent string, handler func(context.Context, *mcp.CallToolRequest, I) (*mcp.CallToolResult, O, error), input I) (*mcp.CallToolResult, O, error) {
+func callHandlerAs[I, O any](t *testing.T, as string, handler func(context.Context, *mcp.CallToolRequest, I) (*mcp.CallToolResult, O, error), input I) (*mcp.CallToolResult, O, error) {
 	t.Helper()
-	ctx := context.WithValue(t.Context(), callerKey{}, agent)
+	ctx := context.WithValue(t.Context(), callerKey{}, as)
 	return handler(ctx, nil, input)
 }
 
@@ -1772,8 +1772,8 @@ func TestIntegration_RecommendNextTarget_HappyPath(t *testing.T) {
 	// MinObservationsForVerdict floor so DeriveMasteryStage returns
 	// struggling and WeaknessAnalysis surfaces the concept.
 	severityCritical := "critical"
-	for i := 0; i < 3; i++ {
-		title := "anchor-" + string(rune('A'+i)) //nolint:gocritic // trivially safe ASCII construction for test titles
+	for i := range 3 {
+		title := "anchor-" + string(rune('A'+i))
 		_, _, err := callHandler(t, s.recordAttempt, RecordAttemptInput{
 			SessionID: sess.Session.ID.String(),
 			Target:    AttemptTarget{Title: title},

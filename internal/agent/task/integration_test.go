@@ -55,7 +55,7 @@ func TestMain(m *testing.M) {
 // the literal 'system' when koopa.actor is unset, and activity_events.actor
 // is an FK into agents(name). testdb doesn't run BuiltinAgents() sync,
 // so without this explicit seed the audit INSERT fails with 23503.
-func seedAgents(t *testing.T) (string, string) {
+func seedAgents(t *testing.T) (source, target string) {
 	t.Helper()
 	ctx := t.Context()
 	if _, err := testPool.Exec(ctx,
@@ -64,8 +64,8 @@ func seedAgents(t *testing.T) (string, string) {
 		 ON CONFLICT (name) DO NOTHING`); err != nil {
 		t.Fatalf("seedAgents(system): %v", err)
 	}
-	source := "test-source"
-	target := "test-target"
+	source = "test-source"
+	target = "test-target"
 	for _, name := range []string{source, target} {
 		_, err := testPool.Exec(ctx,
 			`INSERT INTO agents (name, display_name, platform, description)
@@ -115,7 +115,7 @@ func appendInTx(ctx context.Context, store *Store, taskID uuid.UUID) error {
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
 	}
-	defer tx.Rollback(ctx) //nolint:errcheck // no-op after commit
+	defer func() { _ = tx.Rollback(ctx) }() // no-op after commit; rollback errcheck satisfied via blank identifier
 
 	if _, err := tx.Exec(ctx, "SELECT set_config('koopa.actor', 'test-target', true)"); err != nil {
 		return fmt.Errorf("bind koopa.actor: %w", err)
