@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"go.opentelemetry.io/otel/metric"
 
 	"github.com/Koopa0/koopa/internal/activity"
 	"github.com/Koopa0/koopa/internal/agent"
@@ -74,6 +75,13 @@ type handlers struct {
 	search     *search.Handler
 	pool       *pgxpool.Pool
 	logger     *slog.Logger
+
+	// Observability (Task 1: bootstrap, used by later tasks).
+	// meterProvider is consumed by Task 3 (httpMetrics middleware) and
+	// Task 7 (background goroutine instrumentation). metricsHandler is
+	// mounted at GET /metrics in Task 5.
+	meterProvider  metric.MeterProvider
+	metricsHandler http.Handler
 }
 
 // registerRoutes registers all API routes on the given mux.

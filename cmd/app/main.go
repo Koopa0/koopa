@@ -69,6 +69,23 @@ func run(logger *slog.Logger) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 
+	meterProvider, metricsHandler, observabilityShutdown, err := setupObservability(ctx, observabilityConfig{
+		Enabled:        cfg.ObservabilityEnabled,
+		ServiceName:    "koopa-app",
+		ServiceVersion: cfg.ServiceVersion,
+		Environment:    cfg.Environment,
+	}, logger)
+	if err != nil {
+		return fmt.Errorf("setting up observability: %w", err)
+	}
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if shutdownErr := observabilityShutdown(shutdownCtx); shutdownErr != nil {
+			logger.Warn("observability shutdown failed", "error", shutdownErr)
+		}
+	}()
+
 	if err := runMigrations(cfg.DatabaseURL, logger); err != nil {
 		return err
 	}
@@ -184,8 +201,10 @@ func run(logger *slog.Logger) error {
 			content.NewSearchSource(contentStore),
 			note.NewSearchSource(noteStore),
 		}, logger),
-		pool:   pool,
-		logger: logger,
+		pool:           pool,
+		logger:         logger,
+		meterProvider:  meterProvider,
+		metricsHandler: metricsHandler,
 	}
 
 	authMid := auth.Middleware(cfg.JWTSecret)

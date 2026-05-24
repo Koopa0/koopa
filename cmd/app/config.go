@@ -43,6 +43,22 @@ type config struct {
 
 	// Site URL for RSS/sitemap
 	SiteURL string
+
+	// Observability — see cmd/app/observability.go.
+	// ObservabilityEnabled is the master kill switch. When false, /metrics
+	// returns 404 and the OTel MeterProvider is a no-op. Implies disabling
+	// QueryTracingEnabled (all-or-nothing per design).
+	ObservabilityEnabled bool
+	// QueryTracingEnabled gates otelpgx wiring on the pgxpool. Adds ~2 allocs
+	// per query under no-op provider; keep off in benchmarks. Requires
+	// ObservabilityEnabled=true.
+	QueryTracingEnabled bool
+	// ServiceVersion populates the OTel resource attribute service.version.
+	// Defaults to "dev"; production deploys should set KOOPA_VERSION to the
+	// build SHA or release tag.
+	ServiceVersion string
+	// Environment populates the OTel resource attribute deployment.environment.name.
+	Environment string
 }
 
 func loadConfig(logger *slog.Logger) config {
@@ -61,8 +77,26 @@ func loadConfig(logger *slog.Logger) config {
 		R2Bucket:           os.Getenv("R2_BUCKET"),
 		R2PublicURL:        os.Getenv("R2_PUBLIC_URL"),
 		SiteURL:            envOr("SITE_URL", "https://koopa0.dev"),
+
+		ObservabilityEnabled: envBoolOr("KOOPA_OBSERVABILITY_ENABLED", true),
+		QueryTracingEnabled:  envBoolOr("KOOPA_QUERY_TRACING_ENABLED", false),
+		ServiceVersion:       envOr("KOOPA_VERSION", "dev"),
+		Environment:          envOr("KOOPA_ENV", "dev"),
 	}
 	return cfg
+}
+
+func envBoolOr(key string, fallback bool) bool {
+	switch os.Getenv(key) {
+	case "":
+		return fallback
+	case "true", "1", "yes":
+		return true
+	case "false", "0", "no":
+		return false
+	default:
+		return fallback
+	}
 }
 
 func requireEnv(key string, logger *slog.Logger) string {
