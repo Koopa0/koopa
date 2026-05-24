@@ -20,9 +20,14 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"fmt"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"time"
+
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
 )
 
 // requestIDKey is the unexported context key for the request ID.
@@ -139,4 +144,62 @@ func chain(h http.Handler, mws ...func(http.Handler) http.Handler) http.Handler 
 		h = mws[i](h)
 	}
 	return h
+}
+
+// httpMetrics wraps an http.Handler with OTel histogram + counter
+// recording. The observation runs in a deferred function so a panicking
+// inner handler still produces a data point: the outer recovery
+// middleware catches the panic AFTER our defer fires.
+//
+// Labels (identical on both instruments — co-aggregation must work):
+//   - method: raw HTTP method (e.g. "GET")
+//   - route:  r.Pattern (the matched ServeMux template, e.g.
+//     "GET /api/contents/{slug}"). Falls back to "unknown" when no
+//     pattern matched (404s).
+//   - status: raw 3-digit status code as a string (e.g. "200", "500").
+//     NOT quantized — existing Grafana alerts use status=~"5.." regex
+//     which matches raw codes only.
+//
+// Wiring contract: this middleware MUST sit between the ServeMux and the
+// final handler (i.e. the ServeMux dispatches into it) so r.Pattern is
+// populated by the time our defer fires. In Go 1.22+ ServeMux mutates
+// r.Pattern in place on the original request pointer, so a single wrap
+// around the mux works — no per-route wiring change required.
+func httpMetrics(meter metric.Meter) (func(http.Handler) http.Handler, error) {
+	duration, err := meter.Float64Histogram(
+		"http.server.request.duration",
+		metric.WithUnit("s"),
+		metric.WithDescription("Duration of HTTP server requests"),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("creating duration histogram: %w", err)
+	}
+	requests, err := meter.Int64Counter(
+		"http.requests",
+		metric.WithDescription("Count of HTTP server requests"),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("creating requests counter: %w", err)
+	}
+
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			start := time.Now()
+			sr := &statusRecorder{ResponseWriter: w, code: http.StatusOK}
+			defer func() {
+				route := r.Pattern
+				if route == "" {
+					route = "unknown"
+				}
+				attrs := metric.WithAttributes(
+					attribute.String("method", r.Method),
+					attribute.String("route", route),
+					attribute.String("status", strconv.Itoa(sr.code)),
+				)
+				duration.Record(r.Context(), time.Since(start).Seconds(), attrs)
+				requests.Add(r.Context(), 1, attrs)
+			}()
+			next.ServeHTTP(sr, r)
+		})
+	}, nil
 }
