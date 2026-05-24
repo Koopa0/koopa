@@ -400,18 +400,8 @@ func (s *Store) PublicContents(ctx context.Context, f PublicFilter) ([]Content, 
 		ids[i] = r.ID
 	}
 
-	// batch fetch topics and tags for all contents in a single query
-	topicMap, err := s.topicsForContents(ctx, ids)
-	if err != nil {
+	if err := s.attachBatchTopicsAndTags(ctx, contents, ids); err != nil {
 		return nil, 0, err
-	}
-	tagMap, err := s.tagsForContents(ctx, ids)
-	if err != nil {
-		return nil, 0, err
-	}
-	for i := range contents {
-		contents[i].Topics = topicMap[contents[i].ID]
-		contents[i].Tags = tagMap[contents[i].ID]
 	}
 
 	return contents, int(countRow), nil
@@ -484,12 +474,8 @@ func (s *Store) ContentsByTopicID(ctx context.Context, topicID uuid.UUID, page, 
 		ids[i] = r.ID
 	}
 
-	tagMap, err := s.tagsForContents(ctx, ids)
-	if err != nil {
+	if err := s.attachBatchTopicsAndTags(ctx, contents, ids); err != nil {
 		return nil, 0, err
-	}
-	for i := range contents {
-		contents[i].Tags = tagMap[contents[i].ID]
 	}
 
 	return contents, int(count), nil
@@ -693,6 +679,30 @@ func (s *Store) DeleteContent(ctx context.Context, id uuid.UUID) error {
 	return nil
 }
 
+// attachBatchTopicsAndTags populates Topics and Tags for a list of content
+// rows with two batch queries instead of 2N round-trips. Every entry in
+// out gets non-nil Topics / Tags slices (the loaders pre-init empty
+// slices for IDs with zero rows), so the wire shape is always [] rather
+// than null. ids must be aligned with out: ids[i] is the ID of out[i].
+func (s *Store) attachBatchTopicsAndTags(ctx context.Context, out []Content, ids []uuid.UUID) error {
+	if len(out) == 0 {
+		return nil
+	}
+	topicMap, err := s.topicsForContents(ctx, ids)
+	if err != nil {
+		return err
+	}
+	tagMap, err := s.tagsForContents(ctx, ids)
+	if err != nil {
+		return err
+	}
+	for i := range out {
+		out[i].Topics = topicMap[out[i].ID]
+		out[i].Tags = tagMap[out[i].ID]
+	}
+	return nil
+}
+
 // TopicsForContent returns topic references for a content item.
 func (s *Store) TopicsForContent(ctx context.Context, contentID uuid.UUID) ([]TopicRef, error) {
 	rows, err := s.q.TopicsForContent(ctx, contentID)
@@ -707,7 +717,11 @@ func (s *Store) TopicsForContent(ctx context.Context, contentID uuid.UUID) ([]To
 }
 
 // topicsForContents fetches topics for multiple content IDs in a single query,
-// returning a map from content ID to topic refs.
+// returning a map from content ID to topic refs. Every requested ID is
+// guaranteed to be present in the result map — IDs with zero topics map to
+// an empty (non-nil) slice so JSON marshaling emits "topics": [] rather
+// than "topics": null. Callers can assign the map value directly to a
+// Content.Topics field without a nil check.
 func (s *Store) topicsForContents(ctx context.Context, ids []uuid.UUID) (map[uuid.UUID][]TopicRef, error) {
 	if len(ids) == 0 {
 		return map[uuid.UUID][]TopicRef{}, nil
@@ -717,6 +731,9 @@ func (s *Store) topicsForContents(ctx context.Context, ids []uuid.UUID) (map[uui
 		return nil, fmt.Errorf("batch querying topics: %w", err)
 	}
 	result := make(map[uuid.UUID][]TopicRef, len(ids))
+	for _, id := range ids {
+		result[id] = []TopicRef{}
+	}
 	for _, r := range rows {
 		result[r.ContentID] = append(result[r.ContentID], TopicRef{ID: r.ID, Slug: r.Slug, Name: r.Name})
 	}
@@ -737,7 +754,11 @@ func (s *Store) TagsForContent(ctx context.Context, contentID uuid.UUID) ([]stri
 }
 
 // tagsForContents fetches tags for multiple content IDs in a single query,
-// returning a map from content ID to tag slugs.
+// returning a map from content ID to tag slugs. Every requested ID is
+// guaranteed to be present in the result map — IDs with zero tags map to
+// an empty (non-nil) slice so JSON marshaling emits "tags": [] rather
+// than "tags": null. Callers can assign the map value directly to a
+// Content.Tags field without a nil check.
 func (s *Store) tagsForContents(ctx context.Context, ids []uuid.UUID) (map[uuid.UUID][]string, error) {
 	if len(ids) == 0 {
 		return map[uuid.UUID][]string{}, nil
@@ -747,6 +768,9 @@ func (s *Store) tagsForContents(ctx context.Context, ids []uuid.UUID) (map[uuid.
 		return nil, fmt.Errorf("batch querying tags: %w", err)
 	}
 	result := make(map[uuid.UUID][]string, len(ids))
+	for _, id := range ids {
+		result[id] = []string{}
+	}
 	for _, r := range rows {
 		result[r.ContentID] = append(result[r.ContentID], r.Slug)
 	}

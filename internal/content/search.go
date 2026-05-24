@@ -47,12 +47,8 @@ func (s *Store) Search(ctx context.Context, query string, contentType *Type, pag
 		ids[i] = r.ID
 	}
 
-	tagMap, err := s.tagsForContents(ctx, ids)
-	if err != nil {
+	if err := s.attachBatchTopicsAndTags(ctx, contents, ids); err != nil {
 		return nil, 0, err
-	}
-	for i := range contents {
-		contents[i].Tags = tagMap[contents[i].ID]
 	}
 
 	return contents, int(count), nil
@@ -91,12 +87,8 @@ func (s *Store) InternalSearch(ctx context.Context, query string, page, perPage 
 		ids[i] = r.ID
 	}
 
-	tagMap, err := s.tagsForContents(ctx, ids)
-	if err != nil {
+	if err := s.attachBatchTopicsAndTags(ctx, contents, ids); err != nil {
 		return nil, 0, err
-	}
-	for i := range contents {
-		contents[i].Tags = tagMap[contents[i].ID]
 	}
 
 	return contents, int(count), nil

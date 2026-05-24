@@ -84,12 +84,8 @@ func (s *Store) InternalSemanticSearch(ctx context.Context, queryEmbedding pgvec
 		})
 		ids[i] = r.ID
 	}
-	tagMap, err := s.tagsForContents(ctx, ids)
-	if err != nil {
+	if err := s.attachBatchTopicsAndTags(ctx, contents, ids); err != nil {
 		return nil, err
-	}
-	for i := range contents {
-		contents[i].Tags = tagMap[contents[i].ID]
 	}
 	return contents, nil
 }

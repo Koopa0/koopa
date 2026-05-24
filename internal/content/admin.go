@@ -51,6 +51,7 @@ func (s *Store) Contents(ctx context.Context, f Filter) ([]Content, int, error) 
 	}
 
 	contents := make([]Content, len(rows))
+	ids := make([]uuid.UUID, len(rows))
 	for i := range rows {
 		r := rows[i]
 		contents[i] = Content{
@@ -67,6 +68,11 @@ func (s *Store) Contents(ctx context.Context, f Filter) ([]Content, int, error) 
 			CreatedAt:      r.CreatedAt,
 			UpdatedAt:      r.UpdatedAt,
 		}
+		ids[i] = r.ID
+	}
+
+	if err := s.attachBatchTopicsAndTags(ctx, contents, ids); err != nil {
+		return nil, 0, err
 	}
 
 	return contents, int(countRow), nil
