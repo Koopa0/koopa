@@ -235,7 +235,7 @@ export class ContentListPageComponent {
   }
 
   protected topicLabel(row: ApiContent): string {
-    return row.topics[0]?.name ?? '—';
+    return row.topics?.[0]?.name ?? '—';
   }
 
   /**
