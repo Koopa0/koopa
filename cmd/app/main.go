@@ -14,10 +14,13 @@ import (
 	"sync"
 	"time"
 
+	"github.com/exaring/otelpgx"
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/pgx/v5"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
+	"go.opentelemetry.io/otel/metric"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/Koopa0/koopa/internal/activity"
@@ -90,7 +93,7 @@ func run(logger *slog.Logger) error {
 		return err
 	}
 
-	pool, err := connectDB(ctx, cfg.DatabaseURL)
+	pool, err := setupPool(ctx, cfg.DatabaseURL, cfg.queryTracingOn(), meterProvider, logger)
 	if err != nil {
 		return err
 	}
@@ -278,7 +281,11 @@ func run(logger *slog.Logger) error {
 	return nil
 }
 
-func connectDB(ctx context.Context, databaseURL string) (*pgxpool.Pool, error) {
+// connectDB opens the pgxpool. When tracer is non-nil, it is set on the
+// pool's ConnConfig so otelpgx can record per-query spans + metrics. The
+// caller decides whether observability is enabled; connectDB just wires
+// the tracer it is handed.
+func connectDB(ctx context.Context, databaseURL string, tracer pgx.QueryTracer) (*pgxpool.Pool, error) {
 	poolCfg, err := pgxpool.ParseConfig(databaseURL)
 	if err != nil {
 		return nil, fmt.Errorf("parsing DATABASE_URL: %w", err)
@@ -287,6 +294,9 @@ func connectDB(ctx context.Context, databaseURL string) (*pgxpool.Pool, error) {
 	poolCfg.MinConns = 2
 	poolCfg.MaxConnIdleTime = 5 * time.Minute
 	poolCfg.HealthCheckPeriod = 30 * time.Second
+	if tracer != nil {
+		poolCfg.ConnConfig.Tracer = tracer
+	}
 
 	pool, err := pgxpool.NewWithConfig(ctx, poolCfg)
 	if err != nil {
@@ -295,6 +305,32 @@ func connectDB(ctx context.Context, databaseURL string) (*pgxpool.Pool, error) {
 	if pingErr := pool.Ping(ctx); pingErr != nil {
 		pool.Close()
 		return nil, fmt.Errorf("pinging database: %w", pingErr)
+	}
+	return pool, nil
+}
+
+// setupPool opens the pgxpool with an optional otelpgx tracer and, when
+// enabled, registers the pool-stats collector. The single boolean folds
+// the all-or-nothing kill-switch check (Q3): the caller decides whether
+// observability + query tracing are both on. Pool-stats registration
+// failure is logged but not fatal — stats are nice-to-have, not a
+// startup invariant.
+func setupPool(ctx context.Context, dbURL string, queryTracingOn bool, mp metric.MeterProvider, logger *slog.Logger) (*pgxpool.Pool, error) {
+	var tracer pgx.QueryTracer
+	if queryTracingOn {
+		tracer = otelpgx.NewTracer(
+			otelpgx.WithMeterProvider(mp),
+			otelpgx.WithTrimSQLInSpanName(),
+		)
+	}
+	pool, err := connectDB(ctx, dbURL, tracer)
+	if err != nil {
+		return nil, err
+	}
+	if queryTracingOn {
+		if statsErr := otelpgx.RecordStats(pool, otelpgx.WithStatsMeterProvider(mp)); statsErr != nil {
+			logger.Warn("otelpgx pool stats registration failed", "error", statsErr)
+		}
 	}
 	return pool, nil
 }

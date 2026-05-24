@@ -86,6 +86,15 @@ func loadConfig(logger *slog.Logger) config {
 	return cfg
 }
 
+// queryTracingOn folds the all-or-nothing kill-switch semantics (Q3):
+// otelpgx wiring is gated by BOTH ObservabilityEnabled and
+// QueryTracingEnabled. Keeping this as a method lets callers express
+// intent without re-deriving the AND at every site (which also keeps
+// cyclomatic complexity of run() under the lint cap).
+func (c *config) queryTracingOn() bool {
+	return c.ObservabilityEnabled && c.QueryTracingEnabled
+}
+
 func envBoolOr(key string, fallback bool) bool {
 	switch os.Getenv(key) {
 	case "":
