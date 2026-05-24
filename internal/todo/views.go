@@ -159,7 +159,10 @@ func (s *Store) InboxItems(ctx context.Context) ([]Item, error) {
 }
 
 // BacklogItems returns a filtered list for the admin backlog view.
-func (s *Store) BacklogItems(ctx context.Context, state, projectID, energy, priority, search string, limit int) ([]PendingDetail, error) {
+// Empty state, projectID, energy, priority, search, or sort are treated
+// as "no filter / default ordering" so the admin UI can request the full
+// backlog without sending every field.
+func (s *Store) BacklogItems(ctx context.Context, state, projectID, energy, priority, search, sort string, limit int) ([]PendingDetail, error) {
 	var projID *uuid.UUID
 	if projectID != "" {
 		id, err := uuid.Parse(projectID)
@@ -167,7 +170,7 @@ func (s *Store) BacklogItems(ctx context.Context, state, projectID, energy, prio
 			projID = &id
 		}
 	}
-	var energyPtr, priorityPtr, searchPtr *string
+	var energyPtr, priorityPtr, searchPtr, sortPtr *string
 	if energy != "" {
 		energyPtr = &energy
 	}
@@ -178,13 +181,22 @@ func (s *Store) BacklogItems(ctx context.Context, state, projectID, energy, prio
 		escaped := escapeILIKE(search)
 		searchPtr = &escaped
 	}
+	if sort != "" {
+		sortPtr = &sort
+	}
+
+	stateParam := db.NullTodoState{}
+	if state != "" {
+		stateParam = db.NullTodoState{TodoState: db.TodoState(state), Valid: true}
+	}
 
 	rows, err := s.q.BacklogTodoItems(ctx, db.BacklogTodoItemsParams{
-		State:      db.TodoState(state),
+		State:      stateParam,
 		ProjectID:  projID,
 		Energy:     energyPtr,
 		Priority:   priorityPtr,
 		Search:     searchPtr,
+		Sort:       sortPtr,
 		MaxResults: int32(limit), // #nosec G115 -- bounded by caller
 	})
 	if err != nil {

@@ -1272,22 +1272,28 @@ SELECT t.id, t.title, t.state, t.due, t.project_id,
        COALESCE(p.slug, '') AS project_slug
 FROM todos t
 LEFT JOIN projects p ON p.id = t.project_id
-WHERE t.state = $1::todo_state
+WHERE ($1::todo_state IS NULL OR t.state = $1::todo_state)
   AND ($2::uuid IS NULL OR t.project_id = $2)
   AND ($3::text IS NULL OR t.energy = $3)
   AND ($4::text IS NULL OR t.priority = $4)
   AND ($5::text IS NULL OR t.title ILIKE '%' || $5 || '%')
-ORDER BY t.due NULLS LAST, t.priority NULLS LAST, t.created_at DESC
-LIMIT $6
+ORDER BY
+  CASE WHEN $6::text = 'priority' THEN
+    CASE t.priority WHEN 'high' THEN 0 WHEN 'medium' THEN 1 WHEN 'low' THEN 2 ELSE 3 END
+  END NULLS LAST,
+  CASE WHEN $6::text = 'created_at' THEN t.created_at::timestamptz END DESC NULLS LAST,
+  t.due NULLS LAST, t.priority NULLS LAST, t.created_at DESC
+LIMIT $7
 `
 
 type BacklogTodoItemsParams struct {
-	State      TodoState  `json:"state"`
-	ProjectID  *uuid.UUID `json:"project_id"`
-	Energy     *string    `json:"energy"`
-	Priority   *string    `json:"priority"`
-	Search     *string    `json:"search"`
-	MaxResults int32      `json:"max_results"`
+	State      NullTodoState `json:"state"`
+	ProjectID  *uuid.UUID    `json:"project_id"`
+	Energy     *string       `json:"energy"`
+	Priority   *string       `json:"priority"`
+	Search     *string       `json:"search"`
+	Sort       *string       `json:"sort"`
+	MaxResults int32         `json:"max_results"`
 }
 
 type BacklogTodoItemsRow struct {
@@ -1315,6 +1321,7 @@ func (q *Queries) BacklogTodoItems(ctx context.Context, arg BacklogTodoItemsPara
 		arg.Energy,
 		arg.Priority,
 		arg.Search,
+		arg.Sort,
 		arg.MaxResults,
 	)
 	if err != nil {

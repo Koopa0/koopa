@@ -312,12 +312,17 @@ SELECT t.id, t.title, t.state, t.due, t.project_id,
        COALESCE(p.slug, '') AS project_slug
 FROM todos t
 LEFT JOIN projects p ON p.id = t.project_id
-WHERE t.state = @state::todo_state
+WHERE (sqlc.narg('state')::todo_state IS NULL OR t.state = sqlc.narg('state')::todo_state)
   AND (sqlc.narg('project_id')::uuid IS NULL OR t.project_id = sqlc.narg('project_id'))
   AND (sqlc.narg('energy')::text IS NULL OR t.energy = sqlc.narg('energy'))
   AND (sqlc.narg('priority')::text IS NULL OR t.priority = sqlc.narg('priority'))
   AND (sqlc.narg('search')::text IS NULL OR t.title ILIKE '%' || sqlc.narg('search') || '%')
-ORDER BY t.due NULLS LAST, t.priority NULLS LAST, t.created_at DESC
+ORDER BY
+  CASE WHEN sqlc.narg('sort')::text = 'priority' THEN
+    CASE t.priority WHEN 'high' THEN 0 WHEN 'medium' THEN 1 WHEN 'low' THEN 2 ELSE 3 END
+  END NULLS LAST,
+  CASE WHEN sqlc.narg('sort')::text = 'created_at' THEN t.created_at::timestamptz END DESC NULLS LAST,
+  t.due NULLS LAST, t.priority NULLS LAST, t.created_at DESC
 LIMIT @max_results;
 
 -- name: TodoItemsByProjectGrouped :many

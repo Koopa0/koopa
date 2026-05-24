@@ -67,8 +67,9 @@ type listResponse struct {
 
 // List handles GET /api/admin/commitment/todos.
 // Query params: state, project (uuid), priority, energy, q, limit,
-// due_before (YYYY-MM-DD). due_before is applied in Go after the SQL
-// query returns.
+// due_before (YYYY-MM-DD), sort. due_before is applied in Go after the
+// SQL query returns. Unknown sort values silently fall back to the
+// default ordering (due → priority → created_at).
 func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	state := q.Get("state")
@@ -76,6 +77,13 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	priority := q.Get("priority")
 	energy := q.Get("energy")
 	search := q.Get("q")
+	sort := q.Get("sort")
+	switch sort {
+	case "", "due", "priority", "created_at":
+		// allowed
+	default:
+		sort = ""
+	}
 	limit := 100
 	if v := q.Get("per_page"); v != "" {
 		if n := parsePosInt(v, 100); n > 0 && n <= 200 {
@@ -83,7 +91,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	rows, err := h.store.BacklogItems(r.Context(), state, project, energy, priority, search, limit)
+	rows, err := h.store.BacklogItems(r.Context(), state, project, energy, priority, search, sort, limit)
 	if err != nil {
 		h.logger.Error("listing todos", "error", err)
 		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to list todos")
