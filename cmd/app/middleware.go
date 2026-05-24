@@ -90,9 +90,15 @@ func (sr *statusRecorder) Unwrap() http.ResponseWriter {
 }
 
 // logging logs each request with method, path, status, and duration.
+// Skips the /metrics scrape path because Prometheus polls it every 15s
+// and the resulting log spam drowns out real request logs in Loki.
 func logging(logger *slog.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/metrics" {
+				next.ServeHTTP(w, r)
+				return
+			}
 			start := time.Now()
 			sr := &statusRecorder{ResponseWriter: w, code: http.StatusOK}
 			next.ServeHTTP(sr, r)
