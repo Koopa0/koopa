@@ -223,7 +223,19 @@ func run(logger *slog.Logger) error {
 	mux := http.NewServeMux()
 	registerRoutes(mux, h, authMid, adminMid)
 
-	handler := chain(mux,
+	// Wrap mux INSIDE the outer middleware chain: httpMetrics's deferred
+	// observation reads r.Pattern, which ServeMux populates in place
+	// before invoking the matched handler (Go 1.22+). Sitting outside the
+	// recovery middleware would mean panics skip our metric; sitting at
+	// this position means recovery still catches the panic AFTER our
+	// defer fires. See cmd/app/middleware.go::httpMetrics.
+	metricsMW, err := httpMetrics(meterProvider.Meter("koopa-app"))
+	if err != nil {
+		return fmt.Errorf("creating http metrics middleware: %w", err)
+	}
+	instrumentedMux := metricsMW(mux)
+
+	handler := chain(instrumentedMux,
 		recovery(logger),
 		requestID,
 		cors(cfg.CORSOrigin),
