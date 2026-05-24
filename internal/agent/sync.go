@@ -4,6 +4,10 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"time"
+
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
 )
 
 // SyncResult summarizes the outcome of a SyncToTable run. Returned for
@@ -33,7 +37,7 @@ type SyncResult struct {
 // The function takes a context with a short timeout so a slow or unresponsive
 // DB does not hang startup indefinitely — the caller is expected to provide
 // one.
-func SyncToTable(ctx context.Context, r *Registry, store *Store, logger *slog.Logger) (SyncResult, error) {
+func SyncToTable(ctx context.Context, r *Registry, store *Store, mp metric.MeterProvider, logger *slog.Logger) (SyncResult, error) {
 	if r == nil || store == nil {
 		return SyncResult{}, fmt.Errorf("agent sync: registry and store must be non-nil")
 	}
@@ -41,19 +45,10 @@ func SyncToTable(ctx context.Context, r *Registry, store *Store, logger *slog.Lo
 		logger = slog.Default()
 	}
 
-	registered := r.All()
-	registeredNames := namesSet(registered)
-
-	result, err := upsertAll(ctx, store, registered)
+	startedAt := time.Now()
+	result, err := syncCore(ctx, r, store, logger)
+	recordSyncMetrics(ctx, mp, startedAt, err, logger)
 	if err != nil {
-		return result, err
-	}
-
-	if err := retireAbsent(ctx, store, registeredNames, &result, logger); err != nil {
-		return result, err
-	}
-
-	if err := propagateStatusBack(ctx, store, r, registeredNames, logger); err != nil {
 		return result, err
 	}
 
@@ -64,6 +59,63 @@ func SyncToTable(ctx context.Context, r *Registry, store *Store, logger *slog.Lo
 	)
 
 	return result, nil
+}
+
+// syncCore performs the three-phase sync (upsert / retire / propagate)
+// and returns the populated result. Separated so SyncToTable's outer
+// orchestration (timing, metrics, structured log) doesn't tangle with
+// the actual reconciliation steps.
+func syncCore(ctx context.Context, r *Registry, store *Store, logger *slog.Logger) (SyncResult, error) {
+	registered := r.All()
+	registeredNames := namesSet(registered)
+
+	result, err := upsertAll(ctx, store, registered)
+	if err != nil {
+		return result, err
+	}
+	if err := retireAbsent(ctx, store, registeredNames, &result, logger); err != nil {
+		return result, err
+	}
+	if err := propagateStatusBack(ctx, store, r, registeredNames, logger); err != nil {
+		return result, err
+	}
+	return result, nil
+}
+
+// recordSyncMetrics emits a single counter + histogram observation for a
+// SyncToTable run. mp may be nil for tests that don't care about
+// observability; in that case the call is a no-op. Instrument creation
+// failure is logged but not fatal — startup must not fail because metrics
+// wiring broke.
+func recordSyncMetrics(ctx context.Context, mp metric.MeterProvider, startedAt time.Time, runErr error, logger *slog.Logger) {
+	if mp == nil {
+		return
+	}
+	meter := mp.Meter("github.com/Koopa0/koopa/internal/agent")
+	attempts, err := meter.Int64Counter(
+		"agent.registry.sync.attempts",
+		metric.WithDescription("Number of agent registry sync runs by outcome"),
+	)
+	if err != nil {
+		logger.Warn("agent sync metrics: counter create failed", "error", err)
+		return
+	}
+	duration, err := meter.Float64Histogram(
+		"agent.registry.sync.duration",
+		metric.WithUnit("s"),
+		metric.WithDescription("Duration of agent registry sync"),
+	)
+	if err != nil {
+		logger.Warn("agent sync metrics: histogram create failed", "error", err)
+		return
+	}
+	outcome := "success"
+	if runErr != nil {
+		outcome = "failure"
+	}
+	attrs := metric.WithAttributes(attribute.String("outcome", outcome))
+	attempts.Add(ctx, 1, attrs)
+	duration.Record(ctx, time.Since(startedAt).Seconds(), attrs)
 }
 
 func namesSet(agents []Agent) map[Name]struct{} {

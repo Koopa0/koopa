@@ -78,7 +78,7 @@ func TestMain(m *testing.M) {
 	// every bookmark insert fails with 23503 before the middleware
 	// contract can be exercised. Matches cmd/app/main.go startup.
 	registry := agent.NewBuiltinRegistry()
-	if _, err := agent.SyncToTable(context.Background(), registry, agent.NewStore(pool), slog.Default()); err != nil {
+	if _, err := agent.SyncToTable(context.Background(), registry, agent.NewStore(pool), nil, slog.Default()); err != nil {
 		slog.Default().Error("agent.SyncToTable", "error", err)
 		cleanup()
 		os.Exit(1)

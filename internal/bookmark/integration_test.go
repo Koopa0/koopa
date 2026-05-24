@@ -46,7 +46,7 @@ func TestMain(m *testing.M) {
 	// the V3 fix cannot be validated because even the happy path would
 	// fail FK check.
 	registry := agent.NewBuiltinRegistry()
-	if _, err := agent.SyncToTable(context.Background(), registry, agent.NewStore(pool), slog.Default()); err != nil {
+	if _, err := agent.SyncToTable(context.Background(), registry, agent.NewStore(pool), nil, slog.Default()); err != nil {
 		slog.Default().Error("agent.SyncToTable", "error", err)
 		cleanup()
 		os.Exit(1)

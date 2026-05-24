@@ -45,7 +45,7 @@ func TestMain(m *testing.M) {
 	// hypotheses.created_by FKs onto agents; without the registry seeded,
 	// seedHypothesis below fails 23503 before it can set up the test.
 	registry := agent.NewBuiltinRegistry()
-	if _, err := agent.SyncToTable(context.Background(), registry, agent.NewStore(pool), slog.Default()); err != nil {
+	if _, err := agent.SyncToTable(context.Background(), registry, agent.NewStore(pool), nil, slog.Default()); err != nil {
 		slog.Default().Error("agent.SyncToTable", "error", err)
 		cleanup()
 		os.Exit(1)

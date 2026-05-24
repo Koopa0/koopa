@@ -54,7 +54,9 @@ func run(ctx context.Context, cfg *config, logger *slog.Logger) error {
 	agentRegistry := agent.NewBuiltinRegistry()
 	agentStore := agent.NewStore(pool)
 	syncCtx, syncCancel := context.WithTimeout(ctx, agentSyncTimeout)
-	syncResult, syncErr := agent.SyncToTable(syncCtx, agentRegistry, agentStore, logger)
+	// MCP server doesn't have observability wired (cmd/app does); pass nil
+	// MeterProvider so recordSyncMetrics is a no-op.
+	syncResult, syncErr := agent.SyncToTable(syncCtx, agentRegistry, agentStore, nil, logger)
 	syncCancel()
 	if syncErr != nil {
 		return fmt.Errorf("syncing agent registry: %w", syncErr)

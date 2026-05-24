@@ -49,7 +49,7 @@ func TestMain(m *testing.M) {
 	// inserts included) fails with 23503. Reconcile the builtin registry
 	// once per suite, same as cmd/mcp/main.go does at startup.
 	registry := agent.NewBuiltinRegistry()
-	if _, err := agent.SyncToTable(context.Background(), registry, agent.NewStore(pool), slog.Default()); err != nil {
+	if _, err := agent.SyncToTable(context.Background(), registry, agent.NewStore(pool), nil, slog.Default()); err != nil {
 		slog.Default().Error("agent.SyncToTable", "error", err)
 		cleanup()
 		os.Exit(1)

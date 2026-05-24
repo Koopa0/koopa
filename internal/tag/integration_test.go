@@ -32,7 +32,7 @@ func TestMain(m *testing.M) {
 	// registry so TestStore_MergeTags_PreservesContentAndBookmarkAttachments
 	// can insert a bookmark row without a 23503 FK violation.
 	registry := agent.NewBuiltinRegistry()
-	if _, err := agent.SyncToTable(context.Background(), registry, agent.NewStore(pool), slog.Default()); err != nil {
+	if _, err := agent.SyncToTable(context.Background(), registry, agent.NewStore(pool), nil, slog.Default()); err != nil {
 		slog.Default().Error("agent.SyncToTable", "error", err)
 		cleanup()
 		os.Exit(1)

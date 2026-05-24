@@ -67,7 +67,7 @@ func setupServer(t *testing.T) *Server {
 	truncateApplicationTables(t)
 	registry := agent.NewBuiltinRegistry()
 	agentStore := agent.NewStore(testPool)
-	if _, err := agent.SyncToTable(t.Context(), registry, agentStore, slog.Default()); err != nil {
+	if _, err := agent.SyncToTable(t.Context(), registry, agentStore, nil, slog.Default()); err != nil {
 		t.Fatalf("agent.SyncToTable: %v", err)
 	}
 	return NewServer(testPool, slog.Default(),

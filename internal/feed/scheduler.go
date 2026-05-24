@@ -19,6 +19,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
 
 	"github.com/Koopa0/koopa/internal/db"
 )
@@ -52,17 +54,46 @@ type Scheduler struct {
 	logger   *slog.Logger
 	// 15 min tick: fine-grained enough for hourly (1h) without excessive DB load.
 	tick time.Duration
+
+	// Per-fetch observability. attempts is incremented once per FetchFeed
+	// call regardless of outcome (success/failure carried as a label);
+	// duration histograms the same call. Background fetches are invisible
+	// to the HTTP request histogram, so without these the 1s p99 spikes
+	// from a single slow RSS source would have nowhere to surface.
+	attempts metric.Int64Counter
+	duration metric.Float64Histogram
 }
 
-// NewScheduler returns a Scheduler that checks for due feeds every tick interval.
-func NewScheduler(feeds *Store, fetcher ManualFetcher, recorder CrawlRunRecorder, logger *slog.Logger) *Scheduler {
+// NewScheduler returns a Scheduler that checks for due feeds every tick
+// interval. Returns an error if instrument creation fails — failure to
+// observe is a structural bug, not a runtime condition the app can
+// degrade through.
+func NewScheduler(feeds *Store, fetcher ManualFetcher, recorder CrawlRunRecorder, mp metric.MeterProvider, logger *slog.Logger) (*Scheduler, error) {
+	meter := mp.Meter("github.com/Koopa0/koopa/internal/feed")
+	attempts, err := meter.Int64Counter(
+		"feed.fetch.attempts",
+		metric.WithDescription("Number of feed fetch attempts by outcome"),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("feed scheduler attempts counter: %w", err)
+	}
+	duration, err := meter.Float64Histogram(
+		"feed.fetch.duration",
+		metric.WithUnit("s"),
+		metric.WithDescription("Duration of feed fetch attempts"),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("feed scheduler duration histogram: %w", err)
+	}
 	return &Scheduler{
 		feeds:    feeds,
 		fetcher:  fetcher,
 		recorder: recorder,
 		logger:   logger,
 		tick:     15 * time.Minute,
-	}
+		attempts: attempts,
+		duration: duration,
+	}, nil
 }
 
 // Run blocks until ctx is cancelled, checking for due feeds on each tick.
@@ -120,6 +151,16 @@ func (s *Scheduler) fetchSchedule(ctx context.Context, schedule string, interval
 
 		startedAt := time.Now()
 		ids, fetchErr := s.fetcher.FetchFeed(ctx, f)
+		outcome := "success"
+		if fetchErr != nil {
+			outcome = "failure"
+		}
+		attrs := metric.WithAttributes(
+			attribute.String("schedule", schedule),
+			attribute.String("outcome", outcome),
+		)
+		s.attempts.Add(ctx, 1, attrs)
+		s.duration.Record(ctx, time.Since(startedAt).Seconds(), attrs)
 		s.recordFlowRun(ctx, f, ids, fetchErr, startedAt)
 
 		if fetchErr != nil {

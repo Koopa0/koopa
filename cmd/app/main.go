@@ -66,6 +66,14 @@ func main() {
 	}
 }
 
+// run wires every subsystem and starts the HTTP server. Its cyclomatic
+// complexity exceeds the project cap because wiring inherently fans out
+// (each subsystem brings its own error-check + optional-config branch),
+// but every branch is linear — no nested conditions, no early-return
+// shortcuts that interact. Splitting further would scatter the wiring
+// order across helpers without making the failure modes easier to read.
+//
+//nolint:gocyclo // wiring func; branches are linear init + error guards
 func run(logger *slog.Logger) error {
 	cfg := loadConfig(logger)
 
@@ -108,7 +116,7 @@ func run(logger *slog.Logger) error {
 	agentRegistry := agent.NewBuiltinRegistry()
 	agentStore := agent.NewStore(pool)
 	syncCtx, syncCancel := context.WithTimeout(ctx, agentSyncTimeout)
-	syncResult, syncErr := agent.SyncToTable(syncCtx, agentRegistry, agentStore, logger)
+	syncResult, syncErr := agent.SyncToTable(syncCtx, agentRegistry, agentStore, meterProvider, logger)
 	syncCancel()
 	if syncErr != nil {
 		return fmt.Errorf("syncing agent registry: %w", syncErr)
@@ -148,8 +156,9 @@ func run(logger *slog.Logger) error {
 
 	// Feed scheduler — background goroutine for periodic feed fetching
 	var wg sync.WaitGroup
-	feedScheduler := feed.NewScheduler(feedStore, feedCollector, db.New(pool), logger)
-	wg.Go(func() { feedScheduler.Run(ctx) })
+	if err := startFeedScheduler(ctx, &wg, feedStore, feedCollector, db.New(pool), meterProvider, logger); err != nil {
+		return err
+	}
 
 	// Upload (optional — only if R2 is configured)
 	var uploadHandler *upload.Handler
@@ -307,6 +316,28 @@ func connectDB(ctx context.Context, databaseURL string, tracer pgx.QueryTracer) 
 		return nil, fmt.Errorf("pinging database: %w", pingErr)
 	}
 	return pool, nil
+}
+
+// startFeedScheduler constructs the feed scheduler with its observability
+// instruments and launches its run loop on the provided WaitGroup.
+// Failure to construct is fatal — broken instrument wiring is a startup
+// bug, not a runtime condition. Lifted out of run() so the wiring +
+// goroutine launch are one statement at the call site.
+func startFeedScheduler(
+	ctx context.Context,
+	wg *sync.WaitGroup,
+	feeds *feed.Store,
+	fetcher feed.ManualFetcher,
+	recorder feed.CrawlRunRecorder,
+	mp metric.MeterProvider,
+	logger *slog.Logger,
+) error {
+	scheduler, err := feed.NewScheduler(feeds, fetcher, recorder, mp, logger)
+	if err != nil {
+		return fmt.Errorf("creating feed scheduler: %w", err)
+	}
+	wg.Go(func() { scheduler.Run(ctx) })
+	return nil
 }
 
 // setupPool opens the pgxpool with an optional otelpgx tracer and, when

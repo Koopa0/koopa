@@ -47,7 +47,7 @@ func TestMain(m *testing.M) {
 	// for every test that inserts via a handler path (or via seedTarget,
 	// which references the 'leetcode' domain from migration 002).
 	registry := agent.NewBuiltinRegistry()
-	if _, err := agent.SyncToTable(context.Background(), registry, agent.NewStore(pool), slog.Default()); err != nil {
+	if _, err := agent.SyncToTable(context.Background(), registry, agent.NewStore(pool), nil, slog.Default()); err != nil {
 		slog.Default().Error("agent.SyncToTable", "error", err)
 		cleanup()
 		os.Exit(1)
