@@ -77,9 +77,26 @@ func setupObservability(
 		return nil, nil, nil, fmt.Errorf("creating prometheus exporter: %w", err)
 	}
 
+	// View: rename http.server.request.duration → http.request.duration
+	// (Prom exporter then emits http_request_duration_seconds_*) AND apply
+	// custom histogram boundaries dense in the 100-500ms range to give
+	// usable p95/p99 interpolation at koopa's observed 200ms median.
+	// Default OTel boundaries have only 3 edges between 100ms and 500ms,
+	// which would leave p99 with ±150ms interpolation error.
+	httpDurationView := sdkmetric.NewView(
+		sdkmetric.Instrument{Name: "http.server.request.duration"},
+		sdkmetric.Stream{
+			Name: "http.request.duration",
+			Aggregation: sdkmetric.AggregationExplicitBucketHistogram{
+				Boundaries: []float64{0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.4, 0.5, 0.75, 1.0, 2.0, 5.0},
+			},
+		},
+	)
+
 	provider := sdkmetric.NewMeterProvider(
 		sdkmetric.WithResource(res),
 		sdkmetric.WithReader(exporter),
+		sdkmetric.WithView(httpDurationView),
 	)
 	otel.SetMeterProvider(provider)
 
