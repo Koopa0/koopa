@@ -48,6 +48,13 @@ type observabilityConfig struct {
 // main.go wire the values unconditionally — flipping
 // KOOPA_OBSERVABILITY_ENABLED=false requires only a process restart, no
 // code path changes.
+//
+// Shutdown order assumption: exports are PULL-based (Prometheus scrapes
+// /metrics), so Shutdown's job is releasing resources, not flushing
+// queued data — losing the last <scrape-interval of observations on
+// shutdown is inherent to pull and not a leak. If this is ever switched
+// to OTLP push, the shutdown defer in run() must move BEFORE
+// pool.Close() and wg.Wait() to flush the final window.
 func setupObservability(
 	ctx context.Context,
 	cfg observabilityConfig,

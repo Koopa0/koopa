@@ -19,7 +19,6 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
-	"go.opentelemetry.io/otel/metric"
 
 	"github.com/Koopa0/koopa/internal/activity"
 	"github.com/Koopa0/koopa/internal/agent"
@@ -76,11 +75,10 @@ type handlers struct {
 	pool       *pgxpool.Pool
 	logger     *slog.Logger
 
-	// Observability (Task 1: bootstrap, used by later tasks).
-	// meterProvider is consumed by Task 3 (httpMetrics middleware) and
-	// Task 7 (background goroutine instrumentation). metricsHandler is
-	// mounted at GET /metrics in Task 5.
-	meterProvider  metric.MeterProvider
+	// metricsHandler is mounted at GET /metrics by registerRoutes. The
+	// MeterProvider itself is consumed via a local var in main.go (passed
+	// to httpMetrics and background-goroutine constructors at wire time)
+	// — no handler reads it from the struct, so it doesn't live here.
 	metricsHandler http.Handler
 }
 

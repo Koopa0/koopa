@@ -221,7 +221,6 @@ func run(logger *slog.Logger) error {
 		}, logger),
 		pool:           pool,
 		logger:         logger,
-		meterProvider:  meterProvider,
 		metricsHandler: metricsHandler,
 	}
 
