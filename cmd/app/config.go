@@ -88,9 +88,13 @@ func loadConfig(logger *slog.Logger) config {
 
 // queryTracingOn folds the all-or-nothing kill-switch semantics (Q3):
 // otelpgx wiring is gated by BOTH ObservabilityEnabled and
-// QueryTracingEnabled. Keeping this as a method lets callers express
-// intent without re-deriving the AND at every site (which also keeps
-// cyclomatic complexity of run() under the lint cap).
+// QueryTracingEnabled.
+//
+// Pointer receiver despite config's value-semantic usage elsewhere
+// (loadConfig returns by value, run() holds it by value) because
+// gocritic's hugeParam fires on receivers >80B and config is 264B.
+// Lint preference overrides receiver-consistency convention here; this
+// is the only method on config so the asymmetry is contained.
 func (c *config) queryTracingOn() bool {
 	return c.ObservabilityEnabled && c.QueryTracingEnabled
 }

@@ -156,7 +156,13 @@ func run(logger *slog.Logger) error {
 
 	// Feed scheduler — background goroutine for periodic feed fetching
 	var wg sync.WaitGroup
-	if err := startFeedScheduler(ctx, &wg, feedStore, feedCollector, db.New(pool), meterProvider, logger); err != nil {
+	if err := startFeedScheduler(ctx, &wg, feedSchedulerDeps{
+		Feeds:    feedStore,
+		Fetcher:  feedCollector,
+		Recorder: db.New(pool),
+		MP:       meterProvider,
+		Logger:   logger,
+	}); err != nil {
 		return err
 	}
 
@@ -318,21 +324,23 @@ func connectDB(ctx context.Context, databaseURL string, tracer pgx.QueryTracer) 
 	return pool, nil
 }
 
+// feedSchedulerDeps bundles the wiring dependencies for
+// startFeedScheduler so the helper stays at ≤5 parameters per
+// .claude/rules/go-philosophy.md.
+type feedSchedulerDeps struct {
+	Feeds    *feed.Store
+	Fetcher  feed.ManualFetcher
+	Recorder feed.CrawlRunRecorder
+	MP       metric.MeterProvider
+	Logger   *slog.Logger
+}
+
 // startFeedScheduler constructs the feed scheduler with its observability
 // instruments and launches its run loop on the provided WaitGroup.
 // Failure to construct is fatal — broken instrument wiring is a startup
-// bug, not a runtime condition. Lifted out of run() so the wiring +
-// goroutine launch are one statement at the call site.
-func startFeedScheduler(
-	ctx context.Context,
-	wg *sync.WaitGroup,
-	feeds *feed.Store,
-	fetcher feed.ManualFetcher,
-	recorder feed.CrawlRunRecorder,
-	mp metric.MeterProvider,
-	logger *slog.Logger,
-) error {
-	scheduler, err := feed.NewScheduler(feeds, fetcher, recorder, mp, logger)
+// bug, not a runtime condition.
+func startFeedScheduler(ctx context.Context, wg *sync.WaitGroup, deps feedSchedulerDeps) error {
+	scheduler, err := feed.NewScheduler(deps.Feeds, deps.Fetcher, deps.Recorder, deps.MP, deps.Logger)
 	if err != nil {
 		return fmt.Errorf("creating feed scheduler: %w", err)
 	}
