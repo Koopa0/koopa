@@ -83,6 +83,9 @@ services:
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
       GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI}
       ADMIN_EMAIL: ${ADMIN_EMAIL}
+      KOOPA_OBSERVABILITY_ENABLED: "true"
+      KOOPA_QUERY_TRACING_ENABLED: "true"
+      KOOPA_ENV: production
     depends_on:
       postgres:
         condition: service_healthy
