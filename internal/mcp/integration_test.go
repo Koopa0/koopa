@@ -4796,6 +4796,39 @@ func tier1SeederRegistry() map[string]relSeeder {
 		"C-VALID": withID(func(t *testing.T) uuid.UUID {
 			return seedRelContent(t, "rel-c-valid", "zqxreject", "article", "draft", nil)
 		}),
+
+		// FLT-01..04 — typed corpus rows the new judgment-set fixtures refer to
+		// by generic seed_ids. Term "go" matches the fixtures' verbatim query.
+		"content:article:any": withID(func(t *testing.T) uuid.UUID {
+			return seedRelContent(t, "rel-c-article-any", "go", "article", "draft", nil)
+		}),
+		"content:til:any": withID(func(t *testing.T) uuid.UUID {
+			return seedRelContent(t, "rel-c-til-any", "go", "til", "draft", nil)
+		}),
+		"note:concept-note:any": withID(func(t *testing.T) uuid.UUID {
+			return seedRelNote(t, "rel-n-concept-any", "go", "concept-note", "seed")
+		}),
+		"note:solve-note:any": withID(func(t *testing.T) uuid.UUID {
+			return seedRelNote(t, "rel-n-solve-any", "go", "solve-note", "seed")
+		}),
+
+		// FLT-05 — dated articles bracketing the after=2026-01-01 / before=2026-03-31
+		// window. The -2025-12-01 row sits before the window; -2026-02-15 sits inside.
+		"content:article:dated-2025-12-01": withID(func(t *testing.T) uuid.UUID {
+			return seedRelContent(t, "rel-c-article-2025-12-01", "go", "article", "draft", at(t, "2025-12-01T00:00:00Z"))
+		}),
+		"content:article:dated-2026-02-15": withID(func(t *testing.T) uuid.UUID {
+			return seedRelContent(t, "rel-c-article-2026-02-15", "go", "article", "draft", at(t, "2026-02-15T00:00:00Z"))
+		}),
+
+		// FLT-06 — enough matching articles that limit=5 actually caps a non-empty
+		// remainder. 12 > 10 leaves room for any future stricter "10-plus" reading.
+		"content:article:bulk-10-plus": noID(func(t *testing.T) {
+			for i := range 12 {
+				slug := fmt.Sprintf("rel-c-bulk-%02d", i)
+				seedRelContent(t, slug, "go", "article", "draft", nil)
+			}
+		}),
 	}
 }
 
@@ -4832,26 +4865,62 @@ func seedTier1Corpus(t *testing.T, required []string, registry map[string]relSee
 // --- evaluator ---
 
 // tier1Expectation is the per-fixture test oracle for the `results` outcome:
-// which seeded rows must appear / be absent, and the narrowing every returned
-// row must satisfy. Empty fields mean "no constraint". Derived from
-// search-relevance-seed-plan.md §4 (reviewed); empty/validation_error fixtures
-// need no entry — their outcome branch in evaluateFixture is self-pinning. A
-// results-outcome fixture missing here fails loudly (see the oracle guard).
+// which seeded rows must appear / be absent, the narrowing every returned row
+// must satisfy, and an optional exact result count (used to verify limit-cap
+// behavior). Empty / zero fields mean "no constraint". Keys reference seed_ids
+// from docs/testing/search-relevance-judgment-set.md; empty/validation_error
+// fixtures need no entry — their outcome branch in evaluateFixture is
+// self-pinning. A results-outcome fixture missing here fails loudly (see the
+// oracle guard).
 type tier1Expectation struct {
 	mustAppear     []string // seed_ids that must be in results
 	mustBeAbsent   []string // seed_ids that must NOT be in results
 	allSourceType  string   // every result.SourceType must equal this
 	allContentType string   // every result.ContentType must equal this
 	allNoteKind    string   // every result.NoteKind must equal this
+	exactCount     int      // if non-zero, len(results) must equal this — used for limit-cap fixtures
 }
 
+// tier1Expectations is keyed by fixture_id. Each entry pins the rows the
+// fixture's seed_requirements explicitly name, so the oracle stays aligned
+// with the judgment-set declaration rather than incidental corpus state.
 var tier1Expectations = map[string]tier1Expectation{
-	"NEG-05": {mustAppear: []string{"N-ARCHIVED"}, allSourceType: SourceTypeNote},
-	"FLT-01": {mustAppear: []string{"C-SRC"}, mustBeAbsent: []string{"N-SRC"}, allSourceType: SourceTypeContent},
-	"FLT-02": {mustAppear: []string{"N-SRC"}, mustBeAbsent: []string{"C-SRC"}, allSourceType: SourceTypeNote},
-	"FLT-03": {mustAppear: []string{"C-CTF-ARTICLE"}, mustBeAbsent: []string{"C-CTF-ESSAY", "N-CTF"}, allSourceType: SourceTypeContent, allContentType: "article"},
-	"FLT-04": {mustAppear: []string{"N-NKF-SOLVE"}, mustBeAbsent: []string{"N-NKF-CONCEPT", "C-NKF"}, allSourceType: SourceTypeNote, allNoteKind: "solve-note"},
-	"FLT-05": {mustAppear: []string{"C-DAY-START", "C-DAY-MID", "C-DAY-END"}, mustBeAbsent: []string{"C-DAY-PREV", "C-DAY-NEXT"}},
+	// FLT-01: content_type=article filters out the til content and the note.
+	"FLT-01": {
+		mustAppear:     []string{"content:article:any"},
+		mustBeAbsent:   []string{"content:til:any", "note:solve-note:any"},
+		allSourceType:  SourceTypeContent,
+		allContentType: "article",
+	},
+	// FLT-02: content_type=til filters out the plain article.
+	"FLT-02": {
+		mustAppear:     []string{"content:til:any"},
+		mustBeAbsent:   []string{"content:article:any"},
+		allSourceType:  SourceTypeContent,
+		allContentType: "til",
+	},
+	// FLT-03: note_kind=solve-note implies source_types=[note] and excludes content.
+	"FLT-03": {
+		mustAppear:    []string{"note:solve-note:any"},
+		mustBeAbsent:  []string{"content:article:any"},
+		allSourceType: SourceTypeNote,
+		allNoteKind:   "solve-note",
+	},
+	// FLT-04: source_types=[content] filters out every seeded note.
+	"FLT-04": {
+		mustAppear:    []string{"content:article:any"},
+		mustBeAbsent:  []string{"note:concept-note:any"},
+		allSourceType: SourceTypeContent,
+	},
+	// FLT-05: after=2026-01-01 / before=2026-03-31 admits the 2026-02-15 row
+	// and rejects the 2025-12-01 row. No source-type / type narrowing applies.
+	"FLT-05": {
+		mustAppear:   []string{"content:article:dated-2026-02-15"},
+		mustBeAbsent: []string{"content:article:dated-2025-12-01"},
+	},
+	// FLT-06: limit=5 with >5 matching rows must return exactly 5. The bulk
+	// seeder inserts 12 articles, so matching count > limit is guaranteed.
+	"FLT-06": {exactCount: 5},
 }
 
 // evalOutcome is the structured result for one fixture run.
@@ -4929,6 +4998,9 @@ func observedResults(out SearchKnowledgeOutput) (ids, types []string) {
 
 func summarizeExpectation(e *tier1Expectation) string {
 	var parts []string
+	if e.exactCount > 0 {
+		parts = append(parts, fmt.Sprintf("exactly %d results", e.exactCount))
+	}
 	if len(e.mustAppear) > 0 {
 		parts = append(parts, "present="+strings.Join(e.mustAppear, ","))
 	}
@@ -5010,6 +5082,9 @@ func evaluateFixture(t *testing.T, s *Server, fx *searchFixture, ids map[string]
 func scoreResults(out SearchKnowledgeOutput, err error, exp *tier1Expectation, ids map[string]uuid.UUID) (status, reason string) {
 	if err != nil {
 		return "fail", fmt.Sprintf("expected results, got error: %v", err)
+	}
+	if exp.exactCount > 0 && len(out.Results) != exp.exactCount {
+		return "fail", fmt.Sprintf("expected exactly %d results (limit cap), got %d", exp.exactCount, len(out.Results))
 	}
 	if len(out.Results) == 0 {
 		return "fail", "expected ≥1 result, got 0 (zero-result-with-match)"
