@@ -43,14 +43,18 @@ func setup(t *testing.T) *Store {
 	// Seed the 'system' agent so the contents/learning_attempts AFTER
 	// triggers (which INSERT into activity_events with actor=current_actor()
 	// and fall back to 'system' when koopa.actor is not SET LOCAL) do not
-	// hit activity_events_actor_fkey. In production cmd/mcp wires this via
-	// agent.SyncToTable(BuiltinAgents()); integration tests don't boot the
-	// MCP server so the seed is done directly.
+	// hit activity_events_actor_fkey. Seed 'human' too so fixtures that
+	// need an explicit caller identity for created_by (concepts, learning
+	// targets) can FK against it — this mirrors the admin HTTP path's
+	// caller-identity convention used in internal/mcp's integration tests.
+	// In production cmd/mcp wires this via agent.SyncToTable(BuiltinAgents());
+	// integration tests don't boot the MCP server so the seed is done directly.
 	if _, err := testPool.Exec(t.Context(),
 		`INSERT INTO agents (name, display_name, platform)
-		 VALUES ('system', 'System', 'system')
+		 VALUES ('system', 'System', 'system'),
+		        ('human', 'Human', 'human')
 		 ON CONFLICT (name) DO NOTHING`); err != nil {
-		t.Fatalf("seeding system agent: %v", err)
+		t.Fatalf("seeding agents: %v", err)
 	}
 	return NewStore(testPool)
 }
@@ -66,7 +70,8 @@ func seedConcept(t *testing.T, pool *pgxpool.Pool, domain, slug, name, kind stri
 	t.Helper()
 	var id uuid.UUID
 	err := pool.QueryRow(t.Context(),
-		`INSERT INTO concepts (domain, slug, name, kind) VALUES ($1, $2, $3, $4) RETURNING id`,
+		`INSERT INTO concepts (domain, slug, name, kind, created_by)
+		 VALUES ($1, $2, $3, $4, 'human') RETURNING id`,
 		domain, slug, name, kind,
 	).Scan(&id)
 	if err != nil {

@@ -69,8 +69,8 @@ func seedTarget(t *testing.T, title string) uuid.UUID {
 	t.Helper()
 	var id uuid.UUID
 	err := testPool.QueryRow(t.Context(),
-		`INSERT INTO learning_targets (domain, title, external_id)
-		 VALUES ('leetcode', $1, $2)
+		`INSERT INTO learning_targets (domain, title, external_id, created_by)
+		 VALUES ('leetcode', $1, $2, 'human')
 		 RETURNING id`,
 		title, t.Name()+"::"+title,
 	).Scan(&id)
@@ -134,8 +134,8 @@ func TestSymmetricRelation_InsertsReverseEdge(t *testing.T) {
 	b := seedTarget(t, "B-symmetric")
 
 	if _, err := testPool.Exec(t.Context(),
-		`INSERT INTO learning_target_relations (anchor_id, related_id, relation_type)
-		 VALUES ($1, $2, 'same_pattern')`,
+		`INSERT INTO learning_target_relations (anchor_id, related_id, relation_type, created_by)
+		 VALUES ($1, $2, 'same_pattern', 'human')`,
 		a, b,
 	); err != nil {
 		t.Fatalf("inserting forward edge: %v", err)
@@ -156,8 +156,8 @@ func TestDirectedRelation_LeavesReverseEmpty(t *testing.T) {
 	b := seedTarget(t, "B-directed")
 
 	if _, err := testPool.Exec(t.Context(),
-		`INSERT INTO learning_target_relations (anchor_id, related_id, relation_type)
-		 VALUES ($1, $2, 'easier_variant')`,
+		`INSERT INTO learning_target_relations (anchor_id, related_id, relation_type, created_by)
+		 VALUES ($1, $2, 'easier_variant', 'human')`,
 		a, b,
 	); err != nil {
 		t.Fatalf("inserting directed edge: %v", err)
@@ -180,16 +180,16 @@ func TestSymmetricRelation_ReverseInsertIdempotent(t *testing.T) {
 	b := seedTarget(t, "B-idempotent")
 
 	if _, err := testPool.Exec(t.Context(),
-		`INSERT INTO learning_target_relations (anchor_id, related_id, relation_type)
-		 VALUES ($1, $2, 'similar_structure')`,
+		`INSERT INTO learning_target_relations (anchor_id, related_id, relation_type, created_by)
+		 VALUES ($1, $2, 'similar_structure', 'human')`,
 		a, b,
 	); err != nil {
 		t.Fatalf("inserting first direction: %v", err)
 	}
 
 	if _, err := testPool.Exec(t.Context(),
-		`INSERT INTO learning_target_relations (anchor_id, related_id, relation_type)
-		 VALUES ($1, $2, 'similar_structure')
+		`INSERT INTO learning_target_relations (anchor_id, related_id, relation_type, created_by)
+		 VALUES ($1, $2, 'similar_structure', 'human')
 		 ON CONFLICT DO NOTHING`,
 		b, a,
 	); err != nil {
