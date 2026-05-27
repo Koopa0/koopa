@@ -2,6 +2,9 @@ package learning
 
 import (
 	"encoding/json"
+	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -270,5 +273,249 @@ func TestMasteryValueFormula(t *testing.T) {
 					tt.mastery, tt.total, got, tt.want)
 			}
 		})
+	}
+}
+
+// TestConceptsListWireContract pins the wire shape of one row in
+// GET /api/admin/learning/concepts. Marshalled white-box from a
+// constructed ConceptListRow — no DB. A rename of any JSON tag breaks
+// the Angular concepts catalog page silently.
+func TestConceptsListWireContract(t *testing.T) {
+	dueAt := time.Date(2026, 4, 25, 12, 0, 0, 0, time.UTC)
+	parent := "two-pointers"
+
+	row := ConceptListRow{
+		Slug:         "sliding-window",
+		Kind:         "pattern",
+		Domain:       "leetcode",
+		MasteryStage: StageDeveloping,
+		MasteryCounts: SignalCounts{
+			Weakness:    5,
+			Improvement: 2,
+			Mastery:     7,
+		},
+		ObsCount:   14,
+		ParentSlug: &parent,
+		NextDueTarget: &ConceptListNextDueTarget{
+			ID:    uuid.New(),
+			Title: "LC 76",
+			DueAt: &dueAt,
+		},
+	}
+
+	b, err := json.Marshal(row)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var top map[string]json.RawMessage
+	if err := json.Unmarshal(b, &top); err != nil {
+		t.Fatalf("unmarshal top: %v", err)
+	}
+	for _, want := range []string{
+		"slug", "kind", "domain", "mastery_stage", "mastery_counts",
+		"obs_count", "parent_slug", "next_due_target",
+	} {
+		if _, ok := top[want]; !ok {
+			t.Errorf("ConceptListRow missing wire field %q", want)
+		}
+	}
+
+	var counts map[string]json.RawMessage
+	if err := json.Unmarshal(top["mastery_counts"], &counts); err != nil {
+		t.Fatalf("unmarshal mastery_counts: %v", err)
+	}
+	for _, want := range []string{"weakness", "improvement", "mastery"} {
+		if _, ok := counts[want]; !ok {
+			t.Errorf("mastery_counts missing wire field %q", want)
+		}
+	}
+
+	var target map[string]json.RawMessage
+	if err := json.Unmarshal(top["next_due_target"], &target); err != nil {
+		t.Fatalf("unmarshal next_due_target: %v", err)
+	}
+	for _, want := range []string{"id", "title", "due_at"} {
+		if _, ok := target[want]; !ok {
+			t.Errorf("next_due_target missing wire field %q", want)
+		}
+	}
+}
+
+// TestConceptsListWireContract_NullableFields_AreNullNotOmitted —
+// parent_slug and next_due_target are required wire fields; their
+// "absent" state is JSON null, NOT omission. A row with no parent and
+// no review cards must still expose both keys.
+func TestConceptsListWireContract_NullableFields_AreNullNotOmitted(t *testing.T) {
+	row := ConceptListRow{
+		Slug:          "isolated",
+		Kind:          "pattern",
+		Domain:        "leetcode",
+		MasteryStage:  StageDeveloping,
+		MasteryCounts: SignalCounts{},
+		ObsCount:      0,
+		ParentSlug:    nil,
+		NextDueTarget: nil,
+	}
+	b, err := json.Marshal(row)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	got := string(b)
+	for _, want := range []string{
+		`"parent_slug":null`,
+		`"next_due_target":null`,
+	} {
+		if !contains(got, want) {
+			t.Errorf("expected %q in encoded row\nfull JSON: %s", want, got)
+		}
+	}
+}
+
+// TestConceptDetailWireContract pins the wire shape of the
+// /concepts/{slug} detail response. Stub arrays (relations,
+// linked_notes, linked_contents) MUST encode as `[]`, never null or
+// omitted, so the frontend can iterate without a presence check.
+func TestConceptDetailWireContract(t *testing.T) {
+	now := time.Date(2026, 4, 23, 12, 0, 0, 0, time.UTC)
+	resp := ConceptDetailResponse{
+		Slug:         "sliding-window",
+		Kind:         "pattern",
+		Domain:       "leetcode",
+		Name:         "Sliding Window",
+		Description:  "Linear-window pattern over a sequence.",
+		MasteryStage: StageDeveloping,
+		MasteryCounts: SignalCounts{
+			Weakness: 5, Improvement: 2, Mastery: 7,
+		},
+		LowConfidenceCounts: SignalCounts{
+			Weakness: 2, Improvement: 0, Mastery: 1,
+		},
+		Parent:         &NamedConcept{Slug: "two-pointers", Name: "Two Pointers"},
+		Children:       []NamedConcept{{Slug: "fixed-window", Name: "Fixed Window"}},
+		Relations:      []ConceptDetailRelation{},
+		LinkedNotes:    []ConceptDetailLinkedNote{},
+		LinkedContents: []ConceptDetailLinkedContent{},
+		RecentAttempts: []ConceptDetailRecentAttempt{
+			{ID: uuid.New(), TargetTitle: "LC 76", Outcome: "solved_independent", CreatedAt: now},
+		},
+		RecentObservations: []DashboardRecentObservation{
+			{ID: uuid.New(), Signal: "weakness", Category: "state-transition",
+				Body: "missed base case", Domain: "leetcode", ConceptSlug: "sliding-window",
+				Confidence: "high", CreatedAt: now},
+		},
+	}
+
+	b, err := json.Marshal(resp)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var top map[string]json.RawMessage
+	if err := json.Unmarshal(b, &top); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	for _, want := range []string{
+		"slug", "kind", "domain", "name", "description",
+		"mastery_stage", "mastery_counts", "low_confidence_counts",
+		"parent", "children", "relations", "linked_notes",
+		"linked_contents", "recent_attempts", "recent_observations",
+	} {
+		if _, ok := top[want]; !ok {
+			t.Errorf("ConceptDetailResponse missing wire field %q", want)
+		}
+	}
+
+	// Stub arrays MUST be `[]`, never null.
+	asString := string(b)
+	for _, want := range []string{
+		`"relations":[]`,
+		`"linked_notes":[]`,
+		`"linked_contents":[]`,
+	} {
+		if !contains(asString, want) {
+			t.Errorf("expected stub field encoded as []: %q\nfull JSON: %s", want, asString)
+		}
+	}
+	for _, never := range []string{
+		`"relations":null`,
+		`"linked_notes":null`,
+		`"linked_contents":null`,
+	} {
+		if contains(asString, never) {
+			t.Errorf("forbidden null encoding: %q\nfull JSON: %s", never, asString)
+		}
+	}
+
+	// recent_attempts slim shape — exactly four fields, no leakage.
+	var attempts []map[string]json.RawMessage
+	if err := json.Unmarshal(top["recent_attempts"], &attempts); err != nil {
+		t.Fatalf("unmarshal recent_attempts: %v", err)
+	}
+	if len(attempts) != 1 {
+		t.Fatalf("recent_attempts len = %d, want 1", len(attempts))
+	}
+	for _, want := range []string{"id", "target_title", "outcome", "created_at"} {
+		if _, ok := attempts[0][want]; !ok {
+			t.Errorf("recent_attempts row missing wire field %q", want)
+		}
+	}
+	for _, forbidden := range []string{"metadata", "external_id", "paradigm", "duration_minutes", "session_id"} {
+		if _, present := attempts[0][forbidden]; present {
+			t.Errorf("recent_attempts row leaks forbidden field %q", forbidden)
+		}
+	}
+
+	// recent_observations field names (dashboard-compatible).
+	var obs []map[string]json.RawMessage
+	if err := json.Unmarshal(top["recent_observations"], &obs); err != nil {
+		t.Fatalf("unmarshal recent_observations: %v", err)
+	}
+	if len(obs) != 1 {
+		t.Fatalf("recent_observations len = %d, want 1", len(obs))
+	}
+	for _, want := range []string{"id", "signal", "category", "body", "domain", "concept_slug", "confidence", "created_at"} {
+		if _, ok := obs[0][want]; !ok {
+			t.Errorf("recent_observations row missing wire field %q", want)
+		}
+	}
+	for _, forbidden := range []string{"signal_type", "detail", "severity"} {
+		if _, present := obs[0][forbidden]; present {
+			t.Errorf("recent_observations row leaks legacy field %q", forbidden)
+		}
+	}
+}
+
+// TestConceptDetail_MissingDomainReturns400 pins handler-level rejection.
+// No DB needed — the handler short-circuits before any store call when
+// `domain` is absent. The store is nil here on purpose; if the handler
+// ever stops short-circuiting, a nil-deref will surface as a panic
+// instead of silently 500.
+func TestConceptDetail_MissingDomainReturns400(t *testing.T) {
+	h := &Handler{logger: slog.Default()}
+	req := httptest.NewRequest(http.MethodGet, "/api/admin/learning/concepts/sliding-window", http.NoBody)
+	req.SetPathValue("slug", "sliding-window")
+	w := httptest.NewRecorder()
+	h.ConceptDetail(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("ConceptDetail without domain status = %d, want %d", w.Code, http.StatusBadRequest)
+	}
+	var body map[string]map[string]string
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode error body: %v", err)
+	}
+	if got := body["error"]["code"]; got != "BAD_REQUEST" {
+		t.Errorf("error.code = %q, want %q", got, "BAD_REQUEST")
+	}
+}
+
+// TestConceptsList_RejectsInvalidMasteryStage — unknown
+// mastery_stage values are a 400, NOT a silent empty-result.
+func TestConceptsList_RejectsInvalidMasteryStage(t *testing.T) {
+	h := &Handler{logger: slog.Default()}
+	req := httptest.NewRequest(http.MethodGet, "/api/admin/learning/concepts?mastery_stage=bogus", http.NoBody)
+	w := httptest.NewRecorder()
+	h.ConceptsList(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("ConceptsList(mastery_stage=bogus) status = %d, want %d", w.Code, http.StatusBadRequest)
 	}
 }

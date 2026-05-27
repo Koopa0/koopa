@@ -433,6 +433,146 @@ WHERE ao.concept_id = @concept_id
 ORDER BY ao.created_at DESC
 LIMIT @max_results;
 
+-- name: ConceptsForList :many
+-- One row per non-archived concept matching the domain/kind/q filters.
+-- LEFT JOIN against learning_attempt_observations so concepts with zero
+-- observations in the (since, now) window still appear with all counts
+-- zero — this is the catalog view, not the dashboard's
+-- observation-backed shape.
+--
+-- @confidence_filter ('high' default | 'all') is applied inside the
+-- LEFT JOIN's ON clause so unmatched-by-filter observations are simply
+-- not joined, instead of eliminating the concept from the result set.
+--
+-- next_due_target_* come from concept_earliest_card, a CTE that picks the
+-- earliest-due review card across every live learning_target linked to
+-- the concept. NULL on every column when the concept has no linked
+-- targets with cards.
+--
+-- parent_slug is the concept's parent slug, NULL for root concepts.
+WITH concept_earliest_card AS (
+    SELECT DISTINCT ON (ltc.concept_id)
+           ltc.concept_id,
+           lt.id    AS target_id,
+           lt.title AS target_title,
+           rc.due   AS due_at
+    FROM learning_target_concepts ltc
+    JOIN review_cards rc      ON rc.learning_target_id = ltc.learning_target_id
+    JOIN learning_targets lt  ON lt.id = ltc.learning_target_id
+    WHERE lt.archived_at IS NULL
+    ORDER BY ltc.concept_id, rc.due ASC
+)
+SELECT c.id, c.slug, c.name, c.domain, c.kind,
+       parent.slug AS parent_slug,
+       COUNT(ao.id) FILTER (WHERE ao.signal_type = 'weakness')    AS weakness_count,
+       COUNT(ao.id) FILTER (WHERE ao.signal_type = 'improvement') AS improvement_count,
+       COUNT(ao.id) FILTER (WHERE ao.signal_type = 'mastery')     AS mastery_count,
+       COUNT(ao.id)                                               AS total_observations,
+       cec.target_id    AS next_due_target_id,
+       cec.target_title AS next_due_target_title,
+       cec.due_at       AS next_due_at
+FROM concepts c
+LEFT JOIN concepts parent ON parent.id = c.parent_id
+LEFT JOIN learning_attempt_observations ao
+       ON ao.concept_id = c.id
+      AND (@confidence_filter::text = 'all' OR ao.confidence = 'high')
+LEFT JOIN learning_attempts a
+       ON a.id = ao.attempt_id
+      AND a.attempted_at >= @since
+LEFT JOIN concept_earliest_card cec ON cec.concept_id = c.id
+WHERE c.archived_at IS NULL
+  AND (sqlc.narg('domain')::text IS NULL OR c.domain = sqlc.narg('domain'))
+  AND (sqlc.narg('kind')::text   IS NULL OR c.kind::text = sqlc.narg('kind'))
+  AND (sqlc.narg('q')::text      IS NULL
+       OR c.name ILIKE '%' || sqlc.narg('q')::text || '%'
+       OR c.slug ILIKE '%' || sqlc.narg('q')::text || '%')
+GROUP BY c.id, parent.slug, cec.target_id, cec.target_title, cec.due_at
+ORDER BY c.domain ASC, c.slug ASC;
+
+-- name: ConceptMasteryCountsForConcept :one
+-- Two-axis signal counts for a single concept, returned in one round
+-- trip. Filtered counts honour the caller's confidence_filter
+-- ('high' default | 'all') and drive mastery_stage via
+-- DeriveMasteryStage. Low-only counts are independent of the filter so
+-- the dashboard's "low_confidence_counts" field is always populated
+-- with the same number regardless of confidence_filter.
+SELECT
+    COUNT(*) FILTER (WHERE (@confidence_filter::text = 'all' OR ao.confidence = 'high')
+                       AND ao.signal_type = 'weakness')    AS weakness_count,
+    COUNT(*) FILTER (WHERE (@confidence_filter::text = 'all' OR ao.confidence = 'high')
+                       AND ao.signal_type = 'improvement') AS improvement_count,
+    COUNT(*) FILTER (WHERE (@confidence_filter::text = 'all' OR ao.confidence = 'high')
+                       AND ao.signal_type = 'mastery')     AS mastery_count,
+    COUNT(*) FILTER (WHERE ao.confidence = 'low'
+                       AND ao.signal_type = 'weakness')    AS low_weakness_count,
+    COUNT(*) FILTER (WHERE ao.confidence = 'low'
+                       AND ao.signal_type = 'improvement') AS low_improvement_count,
+    COUNT(*) FILTER (WHERE ao.confidence = 'low'
+                       AND ao.signal_type = 'mastery')     AS low_mastery_count
+FROM learning_attempt_observations ao
+WHERE ao.concept_id = @concept_id;
+
+-- name: ConceptParentChildren :many
+-- Returns one row per linked concept tagged by role: 'parent' (zero or
+-- one row, from concepts.parent_id) and 'child' (zero or more rows, the
+-- inverse). Single round trip via UNION ALL. Both sides skip archived
+-- rows so a soft-deleted parent or child does not surface in the UI.
+SELECT 'parent'::text AS role, p.slug, p.name
+FROM concepts c
+JOIN concepts p ON p.id = c.parent_id
+WHERE c.id = @concept_id AND p.archived_at IS NULL
+UNION ALL
+SELECT 'child'::text AS role, ch.slug, ch.name
+FROM concepts ch
+WHERE ch.parent_id = @concept_id AND ch.archived_at IS NULL
+ORDER BY role ASC, slug ASC;
+
+-- name: RecentObservationsByConcept :many
+-- Concept-scoped recent observations with the dashboard's wire field
+-- shape (signal_type/detail get renamed to signal/body in Go). Joins
+-- concepts for the slug + domain side fields so the response carries
+-- everything a §4.1 recent_observations row needs without a second
+-- lookup. COALESCE collapses NULL detail to '' since body is
+-- non-nullable on the wire.
+SELECT ao.id,
+       ao.signal_type,
+       ao.category,
+       COALESCE(ao.detail, '')::text AS body,
+       c.domain,
+       c.slug AS concept_slug,
+       ao.confidence,
+       ao.created_at
+FROM learning_attempt_observations ao
+JOIN concepts c ON c.id = ao.concept_id
+WHERE ao.concept_id = @concept_id
+ORDER BY ao.created_at DESC
+LIMIT @max_results;
+
+-- name: RecentAttemptsByConceptSlim :many
+-- Slim attempt projection for /concepts/:slug detail. Returns just
+-- (id, target_title, outcome, attempted_at) — no metadata, no
+-- external_id, no paradigm — so the wire payload stays small.
+-- DISTINCT ON dedups attempts that recorded multiple observations on
+-- the same concept; priority within an attempt is weakness > improvement
+-- > mastery so the surfaced row matches the highest-signal observation.
+SELECT id, target_title, outcome, attempted_at
+FROM (
+    SELECT DISTINCT ON (a.id)
+           a.id,
+           lt.title AS target_title,
+           a.outcome,
+           a.attempted_at,
+           ao.signal_type
+    FROM learning_attempts a
+    JOIN learning_targets lt              ON lt.id = a.learning_target_id
+    JOIN learning_attempt_observations ao ON ao.attempt_id = a.id
+    WHERE ao.concept_id = @concept_id
+    ORDER BY a.id,
+             CASE ao.signal_type WHEN 'weakness' THEN 0 WHEN 'improvement' THEN 1 WHEN 'mastery' THEN 2 END
+) deduped
+ORDER BY attempted_at DESC
+LIMIT @max_results;
+
 -- name: DashboardConceptRows :many
 -- Per-concept mastery rows for /learning/dashboard concepts.rows.
 -- INNER JOIN against learning_attempt_observations keeps the dashboard

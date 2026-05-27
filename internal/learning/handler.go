@@ -242,75 +242,93 @@ func (h *Handler) populateDashboardReviews(ctx context.Context, resp *DashboardR
 
 // --- Concepts ---
 
+const (
+	// conceptDetailRecentLimit caps recent_attempts + recent_observations
+	// on the /concepts/{slug} detail response. 20 is plenty for the UI;
+	// older entries are reachable through dedicated history endpoints.
+	conceptDetailRecentLimit = 20
+)
+
+// validMasteryStages is the closed set the /concepts mastery_stage
+// filter accepts. Anything outside it is a 400 — better than a silent
+// "filter matches nothing because the typed value is unknown".
+var validMasteryStages = map[string]struct{}{
+	"struggling": {},
+	"developing": {},
+	"solid":      {},
+}
+
 // ConceptsList handles GET /api/admin/learning/concepts.
-// Query params: domain, mastery_stage (filtered in Go), confidence_filter.
+// Query params: domain, kind, mastery_stage (comma-list, filtered in
+// Go after DeriveMasteryStage), q (substring match on name/slug),
+// confidence_filter.
 func (h *Handler) ConceptsList(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
-	confidenceFilter := q.Get("confidence_filter")
-	if confidenceFilter == "" {
-		confidenceFilter = "high"
+	filter := ConceptListFilter{
+		Domain:           q.Get("domain"),
+		Kind:             q.Get("kind"),
+		Q:                q.Get("q"),
+		ConfidenceFilter: q.Get("confidence_filter"),
 	}
-	var domain *string
-	if v := q.Get("domain"); v != "" {
-		domain = &v
+	if filter.ConfidenceFilter == "" {
+		filter.ConfidenceFilter = "high"
+	}
+	if v := strings.TrimSpace(q.Get("mastery_stage")); v != "" {
+		raw := strings.Split(v, ",")
+		stages := make([]string, 0, len(raw))
+		for _, s := range raw {
+			s = strings.TrimSpace(s)
+			if s == "" {
+				continue
+			}
+			if _, ok := validMasteryStages[s]; !ok {
+				api.Error(w, http.StatusBadRequest, "BAD_REQUEST",
+					"mastery_stage must be a comma-separated subset of {struggling, developing, solid}")
+				return
+			}
+			stages = append(stages, s)
+		}
+		filter.MasteryStages = stages
 	}
 
 	since := time.Now().Add(-masteryLookback)
-	rows, err := h.store.ConceptMastery(r.Context(), domain, since, nil, confidenceFilter)
+	rows, err := h.store.ConceptsList(r.Context(), filter, since)
 	if err != nil {
 		h.logger.Error("listing concepts", "error", err)
 		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to list concepts")
 		return
 	}
 	if rows == nil {
-		rows = []ConceptMasteryRow{}
+		rows = []ConceptListRow{}
 	}
 	api.Encode(w, http.StatusOK, api.Response{Data: rows})
 }
 
-// ConceptProfile is the detail shape for GET /concepts/:slug.
-type ConceptProfile struct {
-	*Concept
-	Observations []ConceptObservation `json:"observations"`
-	Attempts     []Attempt            `json:"attempts"`
-	Targets      []ConceptTarget      `json:"targets"`
-}
-
 // ConceptDetail handles GET /api/admin/learning/concepts/{slug}.
-// Query params: domain (optional; disambiguates slug across domains).
+// Query params: domain (required), confidence_filter.
 func (h *Handler) ConceptDetail(w http.ResponseWriter, r *http.Request) {
 	slug := r.PathValue("slug")
 	if slug == "" {
 		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "slug is required")
 		return
 	}
-	domain := r.URL.Query().Get("domain")
+	q := r.URL.Query()
+	domain := q.Get("domain")
 	if domain == "" {
 		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "domain query param is required to disambiguate concept slug")
 		return
 	}
+	confidenceFilter := q.Get("confidence_filter")
+	if confidenceFilter == "" {
+		confidenceFilter = "high"
+	}
 
-	c, err := h.store.ConceptBySlug(r.Context(), domain, slug)
+	resp, err := h.store.ConceptDetail(r.Context(), domain, slug, confidenceFilter, conceptDetailRecentLimit)
 	if err != nil {
 		api.HandleError(w, h.logger, err, storeErrors...)
 		return
 	}
-	profile := ConceptProfile{
-		Concept:      c,
-		Observations: []ConceptObservation{},
-		Attempts:     []Attempt{},
-		Targets:      []ConceptTarget{},
-	}
-	if obs, oerr := h.store.ObservationsByConcept(r.Context(), c.ID, 50); oerr == nil {
-		profile.Observations = obs
-	}
-	if atts, aerr := h.store.AttemptsByConcept(r.Context(), c.ID, 50); aerr == nil {
-		profile.Attempts = atts
-	}
-	if tgts, err := h.store.TargetsByConcept(r.Context(), c.ID); err == nil {
-		profile.Targets = tgts
-	}
-	api.Encode(w, http.StatusOK, api.Response{Data: profile})
+	api.Encode(w, http.StatusOK, api.Response{Data: resp})
 }
 
 // --- Sessions ---

@@ -1928,6 +1928,100 @@ func (q *Queries) ConceptMastery(ctx context.Context, arg ConceptMasteryParams) 
 	return items, nil
 }
 
+const conceptMasteryCountsForConcept = `-- name: ConceptMasteryCountsForConcept :one
+SELECT
+    COUNT(*) FILTER (WHERE ($1::text = 'all' OR ao.confidence = 'high')
+                       AND ao.signal_type = 'weakness')    AS weakness_count,
+    COUNT(*) FILTER (WHERE ($1::text = 'all' OR ao.confidence = 'high')
+                       AND ao.signal_type = 'improvement') AS improvement_count,
+    COUNT(*) FILTER (WHERE ($1::text = 'all' OR ao.confidence = 'high')
+                       AND ao.signal_type = 'mastery')     AS mastery_count,
+    COUNT(*) FILTER (WHERE ao.confidence = 'low'
+                       AND ao.signal_type = 'weakness')    AS low_weakness_count,
+    COUNT(*) FILTER (WHERE ao.confidence = 'low'
+                       AND ao.signal_type = 'improvement') AS low_improvement_count,
+    COUNT(*) FILTER (WHERE ao.confidence = 'low'
+                       AND ao.signal_type = 'mastery')     AS low_mastery_count
+FROM learning_attempt_observations ao
+WHERE ao.concept_id = $2
+`
+
+type ConceptMasteryCountsForConceptParams struct {
+	ConfidenceFilter string    `json:"confidence_filter"`
+	ConceptID        uuid.UUID `json:"concept_id"`
+}
+
+type ConceptMasteryCountsForConceptRow struct {
+	WeaknessCount       int64 `json:"weakness_count"`
+	ImprovementCount    int64 `json:"improvement_count"`
+	MasteryCount        int64 `json:"mastery_count"`
+	LowWeaknessCount    int64 `json:"low_weakness_count"`
+	LowImprovementCount int64 `json:"low_improvement_count"`
+	LowMasteryCount     int64 `json:"low_mastery_count"`
+}
+
+// Two-axis signal counts for a single concept, returned in one round
+// trip. Filtered counts honour the caller's confidence_filter
+// ('high' default | 'all') and drive mastery_stage via
+// DeriveMasteryStage. Low-only counts are independent of the filter so
+// the dashboard's "low_confidence_counts" field is always populated
+// with the same number regardless of confidence_filter.
+func (q *Queries) ConceptMasteryCountsForConcept(ctx context.Context, arg ConceptMasteryCountsForConceptParams) (ConceptMasteryCountsForConceptRow, error) {
+	row := q.db.QueryRow(ctx, conceptMasteryCountsForConcept, arg.ConfidenceFilter, arg.ConceptID)
+	var i ConceptMasteryCountsForConceptRow
+	err := row.Scan(
+		&i.WeaknessCount,
+		&i.ImprovementCount,
+		&i.MasteryCount,
+		&i.LowWeaknessCount,
+		&i.LowImprovementCount,
+		&i.LowMasteryCount,
+	)
+	return i, err
+}
+
+const conceptParentChildren = `-- name: ConceptParentChildren :many
+SELECT 'parent'::text AS role, p.slug, p.name
+FROM concepts c
+JOIN concepts p ON p.id = c.parent_id
+WHERE c.id = $1 AND p.archived_at IS NULL
+UNION ALL
+SELECT 'child'::text AS role, ch.slug, ch.name
+FROM concepts ch
+WHERE ch.parent_id = $1 AND ch.archived_at IS NULL
+ORDER BY role ASC, slug ASC
+`
+
+type ConceptParentChildrenRow struct {
+	Role string `json:"role"`
+	Slug string `json:"slug"`
+	Name string `json:"name"`
+}
+
+// Returns one row per linked concept tagged by role: 'parent' (zero or
+// one row, from concepts.parent_id) and 'child' (zero or more rows, the
+// inverse). Single round trip via UNION ALL. Both sides skip archived
+// rows so a soft-deleted parent or child does not surface in the UI.
+func (q *Queries) ConceptParentChildren(ctx context.Context, conceptID uuid.UUID) ([]ConceptParentChildrenRow, error) {
+	rows, err := q.db.Query(ctx, conceptParentChildren, conceptID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ConceptParentChildrenRow{}
+	for rows.Next() {
+		var i ConceptParentChildrenRow
+		if err := rows.Scan(&i.Role, &i.Slug, &i.Name); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const conceptRefsForNote = `-- name: ConceptRefsForNote :many
 SELECT c.id, c.slug, c.name
 FROM note_concepts nc
@@ -1990,6 +2084,127 @@ func (q *Queries) ConceptsBySlug(ctx context.Context, slugs []string) ([]Concept
 	for rows.Next() {
 		var i ConceptsBySlugRow
 		if err := rows.Scan(&i.ID, &i.Slug); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const conceptsForList = `-- name: ConceptsForList :many
+WITH concept_earliest_card AS (
+    SELECT DISTINCT ON (ltc.concept_id)
+           ltc.concept_id,
+           lt.id    AS target_id,
+           lt.title AS target_title,
+           rc.due   AS due_at
+    FROM learning_target_concepts ltc
+    JOIN review_cards rc      ON rc.learning_target_id = ltc.learning_target_id
+    JOIN learning_targets lt  ON lt.id = ltc.learning_target_id
+    WHERE lt.archived_at IS NULL
+    ORDER BY ltc.concept_id, rc.due ASC
+)
+SELECT c.id, c.slug, c.name, c.domain, c.kind,
+       parent.slug AS parent_slug,
+       COUNT(ao.id) FILTER (WHERE ao.signal_type = 'weakness')    AS weakness_count,
+       COUNT(ao.id) FILTER (WHERE ao.signal_type = 'improvement') AS improvement_count,
+       COUNT(ao.id) FILTER (WHERE ao.signal_type = 'mastery')     AS mastery_count,
+       COUNT(ao.id)                                               AS total_observations,
+       cec.target_id    AS next_due_target_id,
+       cec.target_title AS next_due_target_title,
+       cec.due_at       AS next_due_at
+FROM concepts c
+LEFT JOIN concepts parent ON parent.id = c.parent_id
+LEFT JOIN learning_attempt_observations ao
+       ON ao.concept_id = c.id
+      AND ($1::text = 'all' OR ao.confidence = 'high')
+LEFT JOIN learning_attempts a
+       ON a.id = ao.attempt_id
+      AND a.attempted_at >= $2
+LEFT JOIN concept_earliest_card cec ON cec.concept_id = c.id
+WHERE c.archived_at IS NULL
+  AND ($3::text IS NULL OR c.domain = $3)
+  AND ($4::text   IS NULL OR c.kind::text = $4)
+  AND ($5::text      IS NULL
+       OR c.name ILIKE '%' || $5::text || '%'
+       OR c.slug ILIKE '%' || $5::text || '%')
+GROUP BY c.id, parent.slug, cec.target_id, cec.target_title, cec.due_at
+ORDER BY c.domain ASC, c.slug ASC
+`
+
+type ConceptsForListParams struct {
+	ConfidenceFilter string    `json:"confidence_filter"`
+	Since            time.Time `json:"since"`
+	Domain           *string   `json:"domain"`
+	Kind             *string   `json:"kind"`
+	Q                *string   `json:"q"`
+}
+
+type ConceptsForListRow struct {
+	ID                 uuid.UUID   `json:"id"`
+	Slug               string      `json:"slug"`
+	Name               string      `json:"name"`
+	Domain             string      `json:"domain"`
+	Kind               ConceptKind `json:"kind"`
+	ParentSlug         *string     `json:"parent_slug"`
+	WeaknessCount      int64       `json:"weakness_count"`
+	ImprovementCount   int64       `json:"improvement_count"`
+	MasteryCount       int64       `json:"mastery_count"`
+	TotalObservations  int64       `json:"total_observations"`
+	NextDueTargetID    *uuid.UUID  `json:"next_due_target_id"`
+	NextDueTargetTitle *string     `json:"next_due_target_title"`
+	NextDueAt          *time.Time  `json:"next_due_at"`
+}
+
+// One row per non-archived concept matching the domain/kind/q filters.
+// LEFT JOIN against learning_attempt_observations so concepts with zero
+// observations in the (since, now) window still appear with all counts
+// zero — this is the catalog view, not the dashboard's
+// observation-backed shape.
+//
+// @confidence_filter ('high' default | 'all') is applied inside the
+// LEFT JOIN's ON clause so unmatched-by-filter observations are simply
+// not joined, instead of eliminating the concept from the result set.
+//
+// next_due_target_* come from concept_earliest_card, a CTE that picks the
+// earliest-due review card across every live learning_target linked to
+// the concept. NULL on every column when the concept has no linked
+// targets with cards.
+//
+// parent_slug is the concept's parent slug, NULL for root concepts.
+func (q *Queries) ConceptsForList(ctx context.Context, arg ConceptsForListParams) ([]ConceptsForListRow, error) {
+	rows, err := q.db.Query(ctx, conceptsForList,
+		arg.ConfidenceFilter,
+		arg.Since,
+		arg.Domain,
+		arg.Kind,
+		arg.Q,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ConceptsForListRow{}
+	for rows.Next() {
+		var i ConceptsForListRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Slug,
+			&i.Name,
+			&i.Domain,
+			&i.Kind,
+			&i.ParentSlug,
+			&i.WeaknessCount,
+			&i.ImprovementCount,
+			&i.MasteryCount,
+			&i.TotalObservations,
+			&i.NextDueTargetID,
+			&i.NextDueTargetTitle,
+			&i.NextDueAt,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -9168,6 +9383,69 @@ func (q *Queries) RecentArtifacts(ctx context.Context, maxResults int32) ([]Arti
 	return items, nil
 }
 
+const recentAttemptsByConceptSlim = `-- name: RecentAttemptsByConceptSlim :many
+SELECT id, target_title, outcome, attempted_at
+FROM (
+    SELECT DISTINCT ON (a.id)
+           a.id,
+           lt.title AS target_title,
+           a.outcome,
+           a.attempted_at,
+           ao.signal_type
+    FROM learning_attempts a
+    JOIN learning_targets lt              ON lt.id = a.learning_target_id
+    JOIN learning_attempt_observations ao ON ao.attempt_id = a.id
+    WHERE ao.concept_id = $1
+    ORDER BY a.id,
+             CASE ao.signal_type WHEN 'weakness' THEN 0 WHEN 'improvement' THEN 1 WHEN 'mastery' THEN 2 END
+) deduped
+ORDER BY attempted_at DESC
+LIMIT $2
+`
+
+type RecentAttemptsByConceptSlimParams struct {
+	ConceptID  uuid.UUID `json:"concept_id"`
+	MaxResults int32     `json:"max_results"`
+}
+
+type RecentAttemptsByConceptSlimRow struct {
+	ID          uuid.UUID `json:"id"`
+	TargetTitle string    `json:"target_title"`
+	Outcome     string    `json:"outcome"`
+	AttemptedAt time.Time `json:"attempted_at"`
+}
+
+// Slim attempt projection for /concepts/:slug detail. Returns just
+// (id, target_title, outcome, attempted_at) — no metadata, no
+// external_id, no paradigm — so the wire payload stays small.
+// DISTINCT ON dedups attempts that recorded multiple observations on
+// the same concept; priority within an attempt is weakness > improvement
+// > mastery so the surfaced row matches the highest-signal observation.
+func (q *Queries) RecentAttemptsByConceptSlim(ctx context.Context, arg RecentAttemptsByConceptSlimParams) ([]RecentAttemptsByConceptSlimRow, error) {
+	rows, err := q.db.Query(ctx, recentAttemptsByConceptSlim, arg.ConceptID, arg.MaxResults)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []RecentAttemptsByConceptSlimRow{}
+	for rows.Next() {
+		var i RecentAttemptsByConceptSlimRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.TargetTitle,
+			&i.Outcome,
+			&i.AttemptedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const recentFeedEntries = `-- name: RecentFeedEntries :many
 SELECT cd.id, cd.source_url, cd.title, cd.original_content,
        cd.relevance_score, cd.status, cd.curated_content_id, cd.collected_at,
@@ -9227,6 +9505,73 @@ func (q *Queries) RecentFeedEntries(ctx context.Context, arg RecentFeedEntriesPa
 			&i.FeedID,
 			&i.PublishedAt,
 			&i.FeedName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const recentObservationsByConcept = `-- name: RecentObservationsByConcept :many
+SELECT ao.id,
+       ao.signal_type,
+       ao.category,
+       COALESCE(ao.detail, '')::text AS body,
+       c.domain,
+       c.slug AS concept_slug,
+       ao.confidence,
+       ao.created_at
+FROM learning_attempt_observations ao
+JOIN concepts c ON c.id = ao.concept_id
+WHERE ao.concept_id = $1
+ORDER BY ao.created_at DESC
+LIMIT $2
+`
+
+type RecentObservationsByConceptParams struct {
+	ConceptID  uuid.UUID `json:"concept_id"`
+	MaxResults int32     `json:"max_results"`
+}
+
+type RecentObservationsByConceptRow struct {
+	ID          uuid.UUID `json:"id"`
+	SignalType  string    `json:"signal_type"`
+	Category    string    `json:"category"`
+	Body        string    `json:"body"`
+	Domain      string    `json:"domain"`
+	ConceptSlug string    `json:"concept_slug"`
+	Confidence  string    `json:"confidence"`
+	CreatedAt   time.Time `json:"created_at"`
+}
+
+// Concept-scoped recent observations with the dashboard's wire field
+// shape (signal_type/detail get renamed to signal/body in Go). Joins
+// concepts for the slug + domain side fields so the response carries
+// everything a §4.1 recent_observations row needs without a second
+// lookup. COALESCE collapses NULL detail to ” since body is
+// non-nullable on the wire.
+func (q *Queries) RecentObservationsByConcept(ctx context.Context, arg RecentObservationsByConceptParams) ([]RecentObservationsByConceptRow, error) {
+	rows, err := q.db.Query(ctx, recentObservationsByConcept, arg.ConceptID, arg.MaxResults)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []RecentObservationsByConceptRow{}
+	for rows.Next() {
+		var i RecentObservationsByConceptRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.SignalType,
+			&i.Category,
+			&i.Body,
+			&i.Domain,
+			&i.ConceptSlug,
+			&i.Confidence,
+			&i.CreatedAt,
 		); err != nil {
 			return nil, err
 		}
