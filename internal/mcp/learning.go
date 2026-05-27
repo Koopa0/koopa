@@ -367,9 +367,15 @@ func (s *Server) prepareAttempt(ctx context.Context, input *RecordAttemptInput) 
 		return attemptPrep{}, err
 	}
 
+	// The primary attempt target inherits the session's domain. An explicit
+	// input.Target.Domain is honored only when it equals session.Domain —
+	// any mismatch is rejected up-front so the call cannot silently create
+	// a target (and auto-create concepts) in a different domain than the
+	// active session. Related targets keep their own explicit cross-domain
+	// rules in processRelatedTargets; this guard is for the primary target.
 	domain := session.Domain
-	if input.Target.Domain != nil && *input.Target.Domain != "" {
-		domain = *input.Target.Domain
+	if input.Target.Domain != nil && *input.Target.Domain != "" && *input.Target.Domain != session.Domain {
+		return attemptPrep{}, fmt.Errorf("%w: target.domain %q does not match active session domain %q; the primary attempt target inherits the session's domain (omit target.domain, or pass the session's domain). For cross-domain isomorphism use propose_hypothesis or write_agent_note(kind=context)", learning.ErrInvalidInput, *input.Target.Domain, session.Domain)
 	}
 	itemID, err := s.learn.FindOrCreateTarget(ctx, domain, input.Target.Title, input.Target.ExternalID, input.Target.Difficulty, s.callerIdentity(ctx))
 	if err != nil {

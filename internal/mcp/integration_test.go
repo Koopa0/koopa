@@ -26,6 +26,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"maps"
@@ -42,6 +43,7 @@ import (
 	"github.com/Koopa0/koopa/internal/agent"
 	"github.com/Koopa0/koopa/internal/agent/task"
 	"github.com/Koopa0/koopa/internal/content"
+	"github.com/Koopa0/koopa/internal/learning"
 	"github.com/Koopa0/koopa/internal/mcp/ops"
 	"github.com/Koopa0/koopa/internal/note"
 	"github.com/Koopa0/koopa/internal/testdb"
@@ -777,6 +779,180 @@ func TestIntegration_FindOrCreateTarget_TitleCanonicalises(t *testing.T) {
 	}
 	if count != 1 {
 		t.Errorf("learning_targets count = %d, want 1 (title canonicalisation failed)", count)
+	}
+}
+
+// TestIntegration_RecordAttempt_PrimaryTargetCrossDomain pins the Phase 1E
+// semantic boundary: the primary attempt target inherits the active session's
+// domain. record_attempt MUST reject an explicit input.Target.Domain that
+// disagrees with session.Domain — otherwise a single call could silently
+// create a learning_target (and auto-create concepts) in a domain unrelated
+// to the session, polluting both surfaces.
+//
+// The test asserts three properties:
+//
+//  1. The call returns an error wrapping learning.ErrInvalidInput.
+//  2. No learning_target row landed in either domain (the rejected
+//     domain or the session domain). FindOrCreateTarget is not reached.
+//  3. No concept, observation, or attempt row landed for the rejected
+//     call — i.e. the rejection happens before any side effect.
+//
+// Related targets still follow processRelatedTargets' cross-domain rule;
+// this test is scoped to the primary target.
+func TestIntegration_RecordAttempt_PrimaryTargetCrossDomain(t *testing.T) {
+	s := setupServer(t)
+
+	_, sess, err := callHandler(t, s.startSession, StartSessionInput{
+		Domain: "leetcode",
+		Mode:   "practice",
+	})
+	if err != nil {
+		t.Fatalf("startSession: %v", err)
+	}
+
+	mismatchedDomain := "japanese"
+	_, _, err = callHandler(t, s.recordAttempt, RecordAttemptInput{
+		SessionID: sess.Session.ID.String(),
+		Target: AttemptTarget{
+			Title:  "Two Sum",
+			Domain: &mismatchedDomain,
+		},
+		Outcome: "solved_independent",
+		Observations: []ObservationInput{
+			{
+				Concept:    "hash-lookup",
+				Signal:     "mastery",
+				Category:   "pattern-recognition",
+				Confidence: "high",
+			},
+		},
+	})
+	if err == nil {
+		t.Fatal("recordAttempt accepted cross-domain primary target; expected rejection")
+	}
+	if !errors.Is(err, learning.ErrInvalidInput) {
+		t.Errorf("error = %v, want wrap of learning.ErrInvalidInput", err)
+	}
+
+	// No target rows for the offending title in either domain — rejection
+	// must happen before FindOrCreateTarget.
+	var targetCount int
+	if err := testPool.QueryRow(t.Context(),
+		`SELECT COUNT(*) FROM learning_targets WHERE title = 'Two Sum' AND domain IN ('leetcode', 'japanese')`,
+	).Scan(&targetCount); err != nil {
+		t.Fatalf("counting learning_targets: %v", err)
+	}
+	if targetCount != 0 {
+		t.Errorf("learning_targets rows for rejected attempt = %d, want 0", targetCount)
+	}
+
+	// No concept row for hash-lookup — observation pre-validation must
+	// not have created one.
+	var conceptCount int
+	if err := testPool.QueryRow(t.Context(),
+		`SELECT COUNT(*) FROM concepts WHERE slug = 'hash-lookup'`,
+	).Scan(&conceptCount); err != nil {
+		t.Fatalf("counting concepts: %v", err)
+	}
+	if conceptCount != 0 {
+		t.Errorf("concepts rows for rejected attempt = %d, want 0", conceptCount)
+	}
+
+	// No attempt and no observation rows landed for this session.
+	var attemptCount int
+	if err := testPool.QueryRow(t.Context(),
+		`SELECT COUNT(*) FROM learning_attempts WHERE session_id = $1`, sess.Session.ID,
+	).Scan(&attemptCount); err != nil {
+		t.Fatalf("counting learning_attempts: %v", err)
+	}
+	if attemptCount != 0 {
+		t.Errorf("learning_attempts rows = %d, want 0 (rejection must precede write)", attemptCount)
+	}
+	var obsCount int
+	if err := testPool.QueryRow(t.Context(),
+		`SELECT COUNT(*) FROM learning_attempt_observations`,
+	).Scan(&obsCount); err != nil {
+		t.Fatalf("counting observations: %v", err)
+	}
+	if obsCount != 0 {
+		t.Errorf("learning_attempt_observations rows = %d, want 0", obsCount)
+	}
+}
+
+// TestIntegration_RecordAttempt_PrimaryTargetDomainEqualsSession is the
+// acceptance counterpart: passing input.Target.Domain that equals the
+// session's domain must be accepted, and the resulting target row carries
+// the session's domain.
+func TestIntegration_RecordAttempt_PrimaryTargetDomainEqualsSession(t *testing.T) {
+	s := setupServer(t)
+
+	_, sess, err := callHandler(t, s.startSession, StartSessionInput{
+		Domain: "leetcode",
+		Mode:   "practice",
+	})
+	if err != nil {
+		t.Fatalf("startSession: %v", err)
+	}
+
+	matchingDomain := "leetcode"
+	_, rec, err := callHandler(t, s.recordAttempt, RecordAttemptInput{
+		SessionID: sess.Session.ID.String(),
+		Target: AttemptTarget{
+			Title:  "Valid Anagram",
+			Domain: &matchingDomain,
+		},
+		Outcome: "solved_independent",
+	})
+	if err != nil {
+		t.Fatalf("recordAttempt: %v", err)
+	}
+	if rec.Attempt.ID == uuid.Nil {
+		t.Fatal("recordAttempt returned zero attempt ID despite matching domain")
+	}
+
+	var targetDomain string
+	if err := testPool.QueryRow(t.Context(),
+		`SELECT domain FROM learning_targets WHERE id = $1`, rec.Attempt.LearningTargetID,
+	).Scan(&targetDomain); err != nil {
+		t.Fatalf("reading learning_target: %v", err)
+	}
+	if targetDomain != "leetcode" {
+		t.Errorf("learning_targets.domain = %q, want %q", targetDomain, "leetcode")
+	}
+}
+
+// TestIntegration_RecordAttempt_PrimaryTargetDomainOmitted pins the default
+// path: when input.Target.Domain is omitted, the primary target inherits
+// the active session's domain. This is the historic happy path; explicit
+// coverage guards against future regressions in the new conditional.
+func TestIntegration_RecordAttempt_PrimaryTargetDomainOmitted(t *testing.T) {
+	s := setupServer(t)
+
+	_, sess, err := callHandler(t, s.startSession, StartSessionInput{
+		Domain: "leetcode",
+		Mode:   "practice",
+	})
+	if err != nil {
+		t.Fatalf("startSession: %v", err)
+	}
+
+	_, rec, err := callHandler(t, s.recordAttempt, RecordAttemptInput{
+		SessionID: sess.Session.ID.String(),
+		Target:    AttemptTarget{Title: "Maximum Subarray"},
+		Outcome:   "solved_independent",
+	})
+	if err != nil {
+		t.Fatalf("recordAttempt: %v", err)
+	}
+
+	var targetDomain string
+	if err := testPool.QueryRow(t.Context(),
+		`SELECT domain FROM learning_targets WHERE id = $1`, rec.Attempt.LearningTargetID,
+	).Scan(&targetDomain); err != nil {
+		t.Fatalf("reading learning_target: %v", err)
+	}
+	if targetDomain != "leetcode" {
+		t.Errorf("learning_targets.domain = %q, want %q (session inheritance)", targetDomain, "leetcode")
 	}
 }
 
