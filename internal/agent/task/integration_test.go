@@ -19,11 +19,14 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"sync"
 	"testing"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/google/uuid"
+	"github.com/jackc/pgerrcode"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/Koopa0/koopa/internal/agent"
@@ -293,5 +296,271 @@ func TestAppendMessage_ConcurrentAssigns_SerializedPositions(t *testing.T) {
 		if messages[i].Position != int32(i) {
 			t.Errorf("message[%d].Position = %d, want %d", i, messages[i].Position, i)
 		}
+	}
+}
+
+// countTaskArtifacts returns the number of artifacts attached to a task.
+// Uses raw SQL to keep the assertion independent of the artifact.Store API
+// shape — the trigger this test polices is a DB-layer invariant.
+func countTaskArtifacts(t *testing.T, taskID uuid.UUID) int {
+	t.Helper()
+	var n int
+	if err := testPool.QueryRow(t.Context(),
+		`SELECT COUNT(*) FROM artifacts WHERE task_id = $1`, taskID,
+	).Scan(&n); err != nil {
+		t.Fatalf("counting artifacts for task %s: %v", taskID, err)
+	}
+	return n
+}
+
+// countTaskResponseMessages returns the number of role='response' messages
+// on a task. Same rationale as countTaskArtifacts.
+func countTaskResponseMessages(t *testing.T, taskID uuid.UUID) int {
+	t.Helper()
+	var n int
+	if err := testPool.QueryRow(t.Context(),
+		`SELECT COUNT(*) FROM task_messages WHERE task_id = $1 AND role = 'response'`, taskID,
+	).Scan(&n); err != nil {
+		t.Fatalf("counting response messages for task %s: %v", taskID, err)
+	}
+	return n
+}
+
+// TestCompletionWithoutArtifactRejected pins the trg_tasks_completion_requires_outputs
+// invariant at the DB layer. Store.Complete is type-bound to require both a
+// response message and an artifact, so the only way to reach the trigger
+// without outputs is to bypass the Go API. This test does exactly that: it
+// drives the bare state UPDATE via raw SQL on a working task that has a
+// response message but no artifact, and asserts the trigger fires.
+//
+// Rationale: the type-level guarantee in CompleteInput is not the source of
+// truth — the DB trigger is. If a future refactor introduces a separate
+// transition path that forgets one of the outputs, this regression test
+// catches it. The setup is intentionally minimal-but-valid (Submit + Accept
+// + AppendMessage all succeed) so any failure points at the semantic
+// invariant rather than malformed inputs.
+func TestCompletionWithoutArtifactRejected(t *testing.T) {
+	store, registry := setup(t)
+	seedAgents(t)
+	ctx := t.Context()
+
+	submitAuth, err := agent.Authorize(ctx, registry, "test-source", agent.ActionSubmitTask)
+	if err != nil {
+		t.Fatalf("authorize submit: %v", err)
+	}
+	created, err := store.Submit(ctx, submitAuth, &SubmitInput{
+		Source:       "test-source",
+		Target:       "test-target",
+		Title:        "completion-no-artifact",
+		RequestParts: textParts("do the thing"),
+	})
+	if err != nil {
+		t.Fatalf("Submit: %v", err)
+	}
+
+	acceptAuth, err := agent.Authorize(ctx, registry, "test-target", agent.ActionAcceptTask)
+	if err != nil {
+		t.Fatalf("authorize accept: %v", err)
+	}
+	if _, err := store.Accept(ctx, acceptAuth, created.ID); err != nil {
+		t.Fatalf("Accept: %v", err)
+	}
+
+	// Append a response message — alone it does NOT satisfy the trigger,
+	// which requires both a response and an artifact. This isolates the
+	// failure mode (artifact missing) from "no response either" so the
+	// asserted trigger message points at the right invariant.
+	if _, err := store.AppendMessage(ctx, created.ID, RoleResponse, textParts("done")); err != nil {
+		t.Fatalf("AppendMessage response: %v", err)
+	}
+	if got := countTaskResponseMessages(t, created.ID); got != 1 {
+		t.Fatalf("setup precondition: response count = %d, want 1", got)
+	}
+	if got := countTaskArtifacts(t, created.ID); got != 0 {
+		t.Fatalf("setup precondition: artifact count = %d, want 0", got)
+	}
+
+	// Bypass Store.Complete (which is type-bound to require artifact parts)
+	// and drive the state UPDATE through raw SQL. The BEFORE UPDATE OF
+	// state trigger counts artifacts on this task_id and must raise P0001.
+	_, err = testPool.Exec(ctx,
+		`UPDATE tasks SET state = 'completed', completed_at = now() WHERE id = $1`,
+		created.ID,
+	)
+	if err == nil {
+		t.Fatalf("UPDATE tasks state=completed without artifact: err = nil, want trigger rejection")
+	}
+	pgErr, ok := errors.AsType[*pgconn.PgError](err)
+	if !ok {
+		t.Fatalf("UPDATE error = %T %v, want *pgconn.PgError from trg_tasks_completion_requires_outputs", err, err)
+	}
+	if pgErr.Code != pgerrcode.RaiseException {
+		t.Errorf("pg error code = %q, want %q (P0001 from trigger RAISE EXCEPTION)", pgErr.Code, pgerrcode.RaiseException)
+	}
+	if !strings.Contains(pgErr.Message, "cannot transition to completed") {
+		t.Errorf("pg error message = %q, want it to contain %q", pgErr.Message, "cannot transition to completed")
+	}
+
+	// Rejection must leave the task in working state, with completed_at unset.
+	got, err := store.Task(ctx, created.ID)
+	if err != nil {
+		t.Fatalf("Task: %v", err)
+	}
+	if got.State != StateWorking {
+		t.Errorf("state after rejected transition = %q, want %q", got.State, StateWorking)
+	}
+	if got.CompletedAt != nil {
+		t.Errorf("completed_at after rejection = %v, want nil", got.CompletedAt)
+	}
+	if countTaskArtifacts(t, created.ID) != 0 {
+		t.Errorf("artifact count after rejection != 0 — rejected UPDATE must not have created side effects")
+	}
+}
+
+// TestRevisionRequestedLifecycle covers the completed → revision_requested
+// → working → completed round-trip. The chk_tasks_state_timestamps CHECK
+// pins tight (state, timestamp) invariants at every hop:
+//
+//   - completed:            completed_at NOT NULL, revision_requested_at NULL
+//   - revision_requested:   completed_at NOT NULL, revision_requested_at NOT NULL
+//   - working (post-Reaccept): completed_at NULL, revision_requested_at NULL
+//   - completed (re-Complete): completed_at NOT NULL again
+//
+// Reaccept (ReacceptTask query) clears both completed_at and
+// revision_requested_at so the working CHECK arm holds. Re-Complete
+// satisfies trg_tasks_completion_requires_outputs by inserting a fresh
+// response message + artifact; the trigger counts cumulative outputs on the
+// task, so the existing first-cycle rows also count toward the ≥1 totals.
+func TestRevisionRequestedLifecycle(t *testing.T) {
+	store, registry := setup(t)
+	seedAgents(t)
+	ctx := t.Context()
+
+	submitAuth, err := agent.Authorize(ctx, registry, "test-source", agent.ActionSubmitTask)
+	if err != nil {
+		t.Fatalf("authorize submit: %v", err)
+	}
+	created, err := store.Submit(ctx, submitAuth, &SubmitInput{
+		Source:       "test-source",
+		Target:       "test-target",
+		Title:        "revision round-trip",
+		RequestParts: textParts("first request"),
+	})
+	if err != nil {
+		t.Fatalf("Submit: %v", err)
+	}
+
+	acceptAuth, err := agent.Authorize(ctx, registry, "test-target", agent.ActionAcceptTask)
+	if err != nil {
+		t.Fatalf("authorize accept: %v", err)
+	}
+	if _, err := store.Accept(ctx, acceptAuth, created.ID); err != nil {
+		t.Fatalf("Accept: %v", err)
+	}
+
+	completeAuth, err := agent.Authorize(ctx, registry, "test-target", agent.ActionCompleteTask)
+	if err != nil {
+		t.Fatalf("authorize complete: %v", err)
+	}
+	firstCompleted, err := store.Complete(ctx, completeAuth, &CompleteInput{
+		TaskID:        created.ID,
+		ResponseParts: textParts("first delivery"),
+		ArtifactName:  "first-report",
+		ArtifactDesc:  "initial deliverable",
+		ArtifactParts: textParts("first artifact content"),
+	})
+	if err != nil {
+		t.Fatalf("first Complete: %v", err)
+	}
+	if firstCompleted.State != StateCompleted {
+		t.Fatalf("after first Complete: state = %q, want %q", firstCompleted.State, StateCompleted)
+	}
+	if firstCompleted.CompletedAt == nil {
+		t.Fatal("after first Complete: completed_at is nil, want non-nil")
+	}
+	if firstCompleted.RevisionRequestedAt != nil {
+		t.Errorf("after first Complete: revision_requested_at = %v, want nil", firstCompleted.RevisionRequestedAt)
+	}
+	if got := countTaskResponseMessages(t, created.ID); got != 1 {
+		t.Errorf("after first Complete: response count = %d, want 1", got)
+	}
+	if got := countTaskArtifacts(t, created.ID); got != 1 {
+		t.Errorf("after first Complete: artifact count = %d, want 1", got)
+	}
+	firstCompletedAt := *firstCompleted.CompletedAt
+
+	// Source-side: request a revision. The chk_tasks_state_timestamps CHECK
+	// arm for revision_requested requires completed_at to remain populated.
+	revisionAuth, err := agent.Authorize(ctx, registry, "test-source", agent.ActionRequestRevision)
+	if err != nil {
+		t.Fatalf("authorize request_revision: %v", err)
+	}
+	revRequested, err := store.RequestRevision(ctx, revisionAuth, created.ID)
+	if err != nil {
+		t.Fatalf("RequestRevision: %v", err)
+	}
+	if revRequested.State != StateRevisionRequested {
+		t.Errorf("after RequestRevision: state = %q, want %q", revRequested.State, StateRevisionRequested)
+	}
+	if revRequested.CompletedAt == nil || !revRequested.CompletedAt.Equal(firstCompletedAt) {
+		t.Errorf("after RequestRevision: completed_at = %v, want preserved value %v", revRequested.CompletedAt, firstCompletedAt)
+	}
+	if revRequested.RevisionRequestedAt == nil {
+		t.Error("after RequestRevision: revision_requested_at is nil, want non-nil")
+	}
+
+	// Assignee-side: pick the revision back up. ReacceptTask clears both
+	// completed_at and revision_requested_at so the working CHECK holds.
+	reacceptAuth, err := agent.Authorize(ctx, registry, "test-target", agent.ActionReacceptTask)
+	if err != nil {
+		t.Fatalf("authorize reaccept: %v", err)
+	}
+	reaccepted, err := store.Reaccept(ctx, reacceptAuth, created.ID)
+	if err != nil {
+		t.Fatalf("Reaccept: %v", err)
+	}
+	if reaccepted.State != StateWorking {
+		t.Errorf("after Reaccept: state = %q, want %q", reaccepted.State, StateWorking)
+	}
+	if reaccepted.AcceptedAt == nil {
+		t.Error("after Reaccept: accepted_at is nil, want preserved from original Accept")
+	}
+	if reaccepted.CompletedAt != nil {
+		t.Errorf("after Reaccept: completed_at = %v, want nil (cleared)", reaccepted.CompletedAt)
+	}
+	if reaccepted.RevisionRequestedAt != nil {
+		t.Errorf("after Reaccept: revision_requested_at = %v, want nil (cleared)", reaccepted.RevisionRequestedAt)
+	}
+
+	// Second Complete cycle. The trigger again gates the state UPDATE; the
+	// new response + artifact rows ensure cumulative counts stay ≥1, so the
+	// transition succeeds.
+	secondCompleted, err := store.Complete(ctx, completeAuth, &CompleteInput{
+		TaskID:        created.ID,
+		ResponseParts: textParts("revised delivery"),
+		ArtifactName:  "second-report",
+		ArtifactDesc:  "post-revision deliverable",
+		ArtifactParts: textParts("second artifact content"),
+	})
+	if err != nil {
+		t.Fatalf("second Complete: %v", err)
+	}
+	if secondCompleted.State != StateCompleted {
+		t.Errorf("after second Complete: state = %q, want %q", secondCompleted.State, StateCompleted)
+	}
+	if secondCompleted.CompletedAt == nil {
+		t.Fatal("after second Complete: completed_at is nil, want non-nil")
+	}
+	if !secondCompleted.CompletedAt.After(firstCompletedAt) {
+		t.Errorf("after second Complete: completed_at = %v, want strictly after first completion %v", secondCompleted.CompletedAt, firstCompletedAt)
+	}
+	if secondCompleted.RevisionRequestedAt != nil {
+		t.Errorf("after second Complete: revision_requested_at = %v, want nil", secondCompleted.RevisionRequestedAt)
+	}
+	if got := countTaskResponseMessages(t, created.ID); got != 2 {
+		t.Errorf("after second Complete: response count = %d, want 2", got)
+	}
+	if got := countTaskArtifacts(t, created.ID); got != 2 {
+		t.Errorf("after second Complete: artifact count = %d, want 2", got)
 	}
 }
