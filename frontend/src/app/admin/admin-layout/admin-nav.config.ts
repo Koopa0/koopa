@@ -30,6 +30,14 @@ export interface AdminNavItem {
   shortcutHint: string;
   /** Stable test id; avoids computing one from the label at render time. */
   testId: string;
+  /**
+   * Require an exact URL match for the active-state highlight. Set this
+   * on "index" routes whose URL is a prefix of sibling nav items (e.g.
+   * `/admin/learning` is a prefix of `/admin/learning/concepts`); without
+   * it, RouterLinkActive's default prefix match keeps the index item
+   * highlighted on every descendant route.
+   */
+  exact?: boolean;
 }
 
 export interface AdminNavGroup {
@@ -125,6 +133,7 @@ export const ADMIN_NAV: readonly AdminNavGroup[] = [
         icon: Brain,
         shortcutHint: 'G L',
         testId: 'admin-nav-learning',
+        exact: true,
       },
       {
         label: 'Concepts',

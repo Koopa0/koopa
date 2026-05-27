@@ -36,6 +36,7 @@
       <a
         [routerLink]="item.route"
         routerLinkActive="bg-sky-950/40 text-sky-300"
+        [routerLinkActiveOptions]="{ exact: item.exact ?? false }"
         #rla="routerLinkActive"
         class="group relative flex h-8 items-center gap-2 rounded-xs px-2 text-xs text-zinc-400 no-underline transition-colors hover:bg-zinc-800/50 hover:text-zinc-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500"
         [attr.aria-current]="rla.isActive ? 'page' : null"
