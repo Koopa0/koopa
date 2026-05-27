@@ -56,9 +56,13 @@
         </span>
         <span class="capitalize">{{ c.kind }}</span>
         <span>{{ c.domain }}</span>
-        <span>{{ c.obs_count }} obs</span>
+        <span>{{ obsCount() }} obs</span>
         @if (c.parent; as p) {
-          <a [routerLink]="['/admin/learning/concepts', p.slug]" class="text-zinc-400 hover:text-sky-300">
+          <a
+            [routerLink]="['/admin/learning/concepts', p.slug]"
+            [queryParams]="{ domain: c.domain }"
+            class="text-zinc-400 hover:text-sky-300"
+          >
             parent: {{ p.name }}
           </a>
         }
@@ -126,6 +130,7 @@
               @for (child of c.children; track child.slug) {
                 <a
                   [routerLink]="['/admin/learning/concepts', child.slug]"
+                  [queryParams]="{ domain: c.domain }"
                   class="rounded-xs border border-zinc-800 bg-zinc-900 px-2 py-0.5 text-xs text-zinc-300 transition-colors hover:border-sky-700 hover:text-sky-300 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500"
                 >{{ child.name }}</a>
               }
@@ -141,6 +146,7 @@
                   <span class="font-mono text-[10px] uppercase text-zinc-500">{{ rel.type }}</span>
                   <a
                     [routerLink]="['/admin/learning/concepts', rel.concept.slug]"
+                    [queryParams]="{ domain: c.domain }"
                     class="text-zinc-300 transition-colors hover:text-sky-300 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500"
                   >{{ rel.concept.name }}</a>
                 </li>

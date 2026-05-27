@@ -148,7 +148,9 @@ export class ConceptsListPageComponent {
   }
 
   protected openRow(row: ConceptRow): void {
-    this.router.navigate(['/admin/learning/concepts', row.slug]);
+    this.router.navigate(['/admin/learning/concepts', row.slug], {
+      queryParams: { domain: row.domain },
+    });
   }
 
   protected rowTabIndex(i: number): number {

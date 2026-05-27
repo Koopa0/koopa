@@ -119,8 +119,10 @@ export class LearningDashboardPageComponent {
     return RATING_CLASS[r];
   }
 
-  protected openConcept(slug: string): void {
-    this.router.navigate(['/admin/learning/concepts', slug]);
+  protected openConcept(slug: string, domain: string): void {
+    this.router.navigate(['/admin/learning/concepts', slug], {
+      queryParams: { domain },
+    });
   }
 
   protected recordReview(cardId: string, rating: ReviewRating): void {

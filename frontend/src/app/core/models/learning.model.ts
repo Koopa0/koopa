@@ -55,6 +55,8 @@ export interface DashboardObservation {
 }
 
 export interface DashboardOverview {
+  streak_days: number;
+  due_reviews_count: number;
   concepts: {
     count_total: number;
     counts_by_domain: Record<string, number>;
@@ -109,7 +111,21 @@ export interface ConceptRecentAttempt {
   created_at: string;
 }
 
-export interface ConceptProfile extends ConceptRow {
+/**
+ * Concept detail wire shape returned by GET /concepts/:slug?domain=...
+ * Intentionally NOT extending ConceptRow: the detail endpoint omits
+ * obs_count / parent_slug / next_due_target (those are list-only concerns)
+ * and adds name / description / low_confidence_counts plus the structural
+ * sub-objects below.
+ */
+export interface ConceptProfile {
+  slug: string;
+  kind: ConceptKind;
+  domain: LearningDomain;
+  name: string;
+  description: string;
+  mastery_stage: MasteryStage;
+  mastery_counts: MasteryCounts;
   low_confidence_counts: MasteryCounts;
   parent: { slug: string; name: string } | null;
   children: { slug: string; name: string }[];

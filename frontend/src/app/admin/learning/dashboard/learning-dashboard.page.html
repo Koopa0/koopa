@@ -124,7 +124,7 @@
               <li>
                 <button
                   type="button"
-                  (click)="openConcept(c.slug)"
+                  (click)="openConcept(c.slug, c.domain)"
                   class="flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-zinc-800/40 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-sky-500"
                   [attr.data-testid]="'learning-concept-' + c.slug"
                 >
@@ -278,7 +278,7 @@
                   }
                   <button
                     type="button"
-                    (click)="openConcept(obs.concept_slug)"
+                    (click)="openConcept(obs.concept_slug, obs.domain)"
                     class="text-zinc-400 transition-colors hover:text-sky-300 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500"
                   >
                     {{ obs.concept_slug }}

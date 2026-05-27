@@ -81,11 +81,12 @@ export class LearningService {
 
   concept(
     slug: string,
+    domain: string,
     confidenceFilter: ObservationConfidence | 'all' = 'high',
   ): Observable<ConceptProfile> {
     return this.api.getData<ConceptProfile>(
       `/api/admin/learning/concepts/${slug}`,
-      { confidence_filter: confidenceFilter },
+      { domain, confidence_filter: confidenceFilter },
     );
   }
 

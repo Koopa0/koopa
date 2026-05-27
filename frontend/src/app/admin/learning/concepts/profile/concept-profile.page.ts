@@ -57,6 +57,12 @@ export class ConceptProfilePageComponent {
     { initialValue: '' },
   );
 
+  // Backend requires (domain, slug) to disambiguate the concept row.
+  private readonly domainFromQuery = toSignal(
+    this.route.queryParamMap.pipe(map((p) => p.get('domain') ?? '')),
+    { initialValue: '' },
+  );
+
   protected readonly confidenceFilterOptions: readonly (
     | ObservationConfidence
     | 'all'
@@ -68,17 +74,27 @@ export class ConceptProfilePageComponent {
 
   protected readonly resource = rxResource<
     ConceptProfile,
-    { slug: string; filter: ObservationConfidence | 'all' }
+    { slug: string; domain: string; filter: ObservationConfidence | 'all' }
   >({
     params: () => ({
       slug: this.slugFromRoute(),
+      domain: this.domainFromQuery(),
       filter: this.confidenceFilter(),
     }),
     stream: ({ params }) =>
-      this.learningService.concept(params.slug, params.filter),
+      this.learningService.concept(params.slug, params.domain, params.filter),
   });
 
   protected readonly concept = computed(() => this.resource.value());
+
+  // BE detail endpoint omits obs_count; derive from mastery_counts so the
+  // hero "N obs" badge stays consistent with the three-bucket evidence card.
+  protected readonly obsCount = computed(() => {
+    const c = this.concept();
+    if (!c) return 0;
+    const m = c.mastery_counts;
+    return m.weakness + m.improvement + m.mastery;
+  });
   protected readonly isLoading = computed(
     () => this.resource.status() === 'loading' && !this.concept(),
   );
