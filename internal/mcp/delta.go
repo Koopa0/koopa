@@ -66,11 +66,51 @@ func (s *Server) sessionDelta(ctx context.Context, _ *mcp.CallToolRequest, input
 		return nil, SessionDeltaOutput{}, fmt.Errorf("querying learning sessions: %w", err)
 	}
 
-	return nil, SessionDeltaOutput{
-		Since:          since.Format(time.DateOnly),
+	return nil, newSessionDeltaOutput(
+		since.Format(time.DateOnly),
+		created,
+		completed,
+		notes,
+		len(sessions),
+	), nil
+}
+
+// newSessionDeltaOutput is the canonical builder for SessionDeltaOutput.
+// It normalizes nil slices to empty slices so the response satisfies the
+// JSON-api invariant that lists encode as `[]` not `null`, regardless of
+// upstream store nil behavior.
+//
+// SessionDeltaOutput has no custom MarshalJSON (cf. LearningDashboardOutput
+// which uses ensureSlice), so a direct struct literal with nil slice fields
+// would emit `null` for those fields — a wire-contract violation since
+// clients iterate them unconditionally.
+//
+// The sessionDelta handler MUST construct SessionDeltaOutput through this
+// builder, never via a direct struct literal. The regression guard is
+// TestNewSessionDeltaOutput_NilSlicesBecomeEmptyArrays, which exercises
+// this function directly. Mirrors the defensive initialization pattern in
+// morningContext (morning.go:132-145).
+func newSessionDeltaOutput(
+	since string,
+	created []todo.CreatedDetail,
+	completed []todo.CompletedDetail,
+	notes []agentnote.Note,
+	sessionCount int,
+) SessionDeltaOutput {
+	if created == nil {
+		created = []todo.CreatedDetail{}
+	}
+	if completed == nil {
+		completed = []todo.CompletedDetail{}
+	}
+	if notes == nil {
+		notes = []agentnote.Note{}
+	}
+	return SessionDeltaOutput{
+		Since:          since,
 		TodosCreated:   created,
 		TodosCompleted: completed,
 		AgentNotes:     notes,
-		SessionCount:   len(sessions),
-	}, nil
+		SessionCount:   sessionCount,
+	}
 }

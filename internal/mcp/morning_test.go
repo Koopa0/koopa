@@ -2,6 +2,8 @@ package mcp
 
 import (
 	"encoding/json"
+	"maps"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -12,6 +14,8 @@ import (
 	"github.com/Koopa0/koopa/internal/goal"
 	"github.com/Koopa0/koopa/internal/learning/hypothesis"
 	"github.com/Koopa0/koopa/internal/todo"
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/uuid"
 )
 
 // TestPlanDayOutput_ItemsRemovedNeverNull guards the json-api invariant
@@ -131,6 +135,168 @@ func TestResolveDefaultSections(t *testing.T) {
 					if sec == "rss" || sec == "content_pipeline" {
 						t.Errorf("resolveDefaultSections(learning-studio) included %q — REQ-5 wanted that noise gone", sec)
 					}
+				}
+			}
+		})
+	}
+}
+
+// TestMorningContextOutput_PopulatedWireShape pins the wire-level key set
+// that morning_context emits. The companion test above
+// (TestMorningContextOutput_AllSlicesMarshalAsEmptyArray) only proves that
+// list fields don't become null on the zero value; this test additionally
+// asserts (a) the exact key set, (b) each list-bearing field carries the
+// expected JSON name when populated, and (c) populating one section
+// doesn't bleed into other sections' fields.
+//
+// Concrete element values are deliberately NOT pinned — only key presence
+// and slice cardinality. Element shapes belong to their owning packages
+// (todo, daily, agent_note, hypothesis, goal, task, content).
+func TestMorningContextOutput_PopulatedWireShape(t *testing.T) {
+	t.Parallel()
+
+	// expectedTopLevelKeys is the canonical set of keys morning_context
+	// must always emit (every list field plus `date`). Adding to this
+	// list is a wire-shape change and should fail this test until the
+	// constant is updated in the same PR.
+	expectedTopLevelKeys := []string{
+		"date",
+		"overdue_tasks",
+		"today_tasks",
+		"committed_tasks",
+		"upcoming_tasks",
+		"active_goals",
+		"pending_tasks_received",
+		"pending_tasks_issued",
+		"unverified_hypotheses",
+		"rss_highlights",
+		"plan_history",
+		"content_pipeline",
+	}
+
+	type fieldExpectation struct {
+		key string
+		// len asserts the marshaled JSON value is an array of exactly this length.
+		len int
+	}
+
+	tests := []struct {
+		name   string
+		out    MorningContextOutput
+		expect []fieldExpectation
+	}{
+		{
+			name: "zero — every list field is [] not null",
+			out: MorningContextOutput{
+				Date:                 "2026-05-27",
+				OverdueTasks:         []todo.PendingDetail{},
+				TodayTasks:           []todo.PendingDetail{},
+				CommittedTasks:       []daily.Item{},
+				UpcomingTasks:        []todo.PendingDetail{},
+				ActiveGoals:          []goal.ActiveGoalSummary{},
+				PendingTasksReceived: []task.Task{},
+				PendingTasksIssued:   []task.Task{},
+				UnverifiedHypotheses: []hypothesis.Record{},
+				RSSHighlights:        []RSSHighlight{},
+				PlanHistory:          []agentnote.Note{},
+				ContentPipeline:      []ContentSummary{},
+			},
+			expect: []fieldExpectation{
+				{"overdue_tasks", 0},
+				{"today_tasks", 0},
+				{"committed_tasks", 0},
+				{"upcoming_tasks", 0},
+				{"active_goals", 0},
+				{"pending_tasks_received", 0},
+				{"pending_tasks_issued", 0},
+				{"unverified_hypotheses", 0},
+				{"rss_highlights", 0},
+				{"plan_history", 0},
+				{"content_pipeline", 0},
+			},
+		},
+		{
+			name: "tasks section populated — only task-bearing keys carry data, others stay []",
+			out: MorningContextOutput{
+				Date: "2026-05-27",
+				OverdueTasks: []todo.PendingDetail{
+					{ID: uuid.New(), Title: "ship audit memo"},
+				},
+				TodayTasks:           []todo.PendingDetail{{ID: uuid.New(), Title: "review draft"}},
+				CommittedTasks:       []daily.Item{},
+				UpcomingTasks:        []todo.PendingDetail{},
+				ActiveGoals:          []goal.ActiveGoalSummary{},
+				PendingTasksReceived: []task.Task{},
+				PendingTasksIssued:   []task.Task{},
+				UnverifiedHypotheses: []hypothesis.Record{},
+				RSSHighlights:        []RSSHighlight{},
+				PlanHistory:          []agentnote.Note{},
+				ContentPipeline:      []ContentSummary{},
+			},
+			expect: []fieldExpectation{
+				{"overdue_tasks", 1},
+				{"today_tasks", 1},
+				{"committed_tasks", 0},
+				{"upcoming_tasks", 0},
+				{"active_goals", 0},
+			},
+		},
+		{
+			name: "rss section populated — RSSHighlights uses local DTO shape",
+			out: MorningContextOutput{
+				Date:                 "2026-05-27",
+				OverdueTasks:         []todo.PendingDetail{},
+				TodayTasks:           []todo.PendingDetail{},
+				CommittedTasks:       []daily.Item{},
+				UpcomingTasks:        []todo.PendingDetail{},
+				ActiveGoals:          []goal.ActiveGoalSummary{},
+				PendingTasksReceived: []task.Task{},
+				PendingTasksIssued:   []task.Task{},
+				UnverifiedHypotheses: []hypothesis.Record{},
+				RSSHighlights: []RSSHighlight{
+					{Title: "Go 1.27 preview", URL: "https://example/g127", FeedName: "Go Blog", CreatedAt: "2026-05-26T10:00:00Z"},
+				},
+				PlanHistory:     []agentnote.Note{},
+				ContentPipeline: []ContentSummary{},
+			},
+			expect: []fieldExpectation{
+				{"rss_highlights", 1},
+				{"overdue_tasks", 0},
+				{"plan_history", 0},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			parsed := marshalToKeyMap(t, tt.out)
+
+			// (a) canonical key set must match — catches field renames + missing fields
+			gotKeys := slices.Sorted(maps.Keys(parsed))
+			wantKeys := slices.Sorted(slices.Values(expectedTopLevelKeys))
+			if diff := cmp.Diff(wantKeys, gotKeys); diff != "" {
+				t.Errorf("MorningContextOutput top-level key set mismatch (-want +got):\n%s", diff)
+			}
+
+			// (b)+(c) per-field cardinality on the cases that pinned it
+			for _, exp := range tt.expect {
+				raw, ok := parsed[exp.key]
+				if !ok {
+					t.Errorf("MorningContextOutput missing key %q", exp.key)
+					continue
+				}
+				if strings.Contains(string(raw), `null`) && string(raw) == "null" {
+					t.Errorf("MorningContextOutput[%q] = null, want JSON array of len %d", exp.key, exp.len)
+					continue
+				}
+				var arr []json.RawMessage
+				if err := json.Unmarshal(raw, &arr); err != nil {
+					t.Errorf("MorningContextOutput[%q] is not a JSON array: %v (raw=%s)", exp.key, err, raw)
+					continue
+				}
+				if len(arr) != exp.len {
+					t.Errorf("MorningContextOutput[%q] len = %d, want %d", exp.key, len(arr), exp.len)
 				}
 			}
 		})
