@@ -53,9 +53,18 @@ type actorKey struct{}
 // forgets to call store.WithTx(tx), the store falls back to a fresh
 // pool connection whose session has NO koopa.actor set. The audit
 // trigger's current_actor() falls through to the literal 'system' agent.
-// This is documented as a handler-wiring bug and caught by integration
-// test TestActorProvenance_AdminMutation, which asserts every admin
-// mutation lands an activity_events row with actor != 'system'.
+// This handler-wiring bug class is demonstrated end-to-end on one
+// representative route (bookmark Create) by two integration tests in
+// internal/api/integration_test.go:
+// TestActorMiddleware_PropagatesHumanActor (happy path, asserts
+// actor='human') and
+// TestActorMiddleware_SilentDegradation_WhenWithTxForgotten (failure
+// mode, asserts a forgetful handler produces actor='system').
+// Per-feature integration tests are expected to assert actor
+// provenance for their own audited mutation paths. A single universal
+// admin-route sweep is intentionally deferred per the header doc in
+// integration_test.go — it would duplicate cmd/app/main.go wiring in
+// test scaffolding and rot.
 //
 // Why not promote current_actor() to RAISE EXCEPTION at SQL level:
 // pg_cron jobs legitimately write without Go middleware, and their
@@ -132,10 +141,14 @@ func ActorMiddleware(pool *pgxpool.Pool, actor string, logger *slog.Logger) func
 //
 // Handlers wrapped by ActorMiddleware should expect ok=true. If ok=false
 // in an admin handler, that is a wiring bug — log and fall back to the
-// bare store (audit trigger will record 'system' actor, and
-// TestActorProvenance_AdminMutation will catch it in CI). Production
-// traffic is not blocked, but the broken path is made visible in tests
-// rather than silently degrading forever.
+// bare store; the audit trigger will record 'system' actor. The
+// failure mode is observable thanks to
+// TestActorMiddleware_SilentDegradation_WhenWithTxForgotten in
+// internal/api/integration_test.go, which directly demonstrates a
+// forgetful handler producing actor='system'. New admin routes are
+// expected to add their own actor-provenance assertion in the
+// feature's integration suite — there is no single universal CI guard
+// for every route.
 func TxFromContext(ctx context.Context) (pgx.Tx, bool) {
 	tx, ok := ctx.Value(txKey{}).(pgx.Tx)
 	return tx, ok
