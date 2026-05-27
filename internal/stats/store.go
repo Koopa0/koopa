@@ -380,6 +380,27 @@ func (s *Store) ProcessRunsByName(ctx context.Context, since time.Time, kind str
 	return summaries, nil
 }
 
+// LastAgentScheduleRuns returns the most recent observed started_at per
+// agent across rows where process_runs.kind='agent_schedule'. The map key
+// is the agent identifier extracted from process_runs.name (the
+// "<agent>:<schedule>" composite); the value is the latest started_at.
+//
+// Agents that have never executed a schedule are absent from the returned
+// map. Callers that need a complete view (including built-in agents with a
+// declared Schedule that have not yet run) must overlay the registry —
+// this method reports observed data only and does not synthesize entries.
+func (s *Store) LastAgentScheduleRuns(ctx context.Context) (map[string]time.Time, error) {
+	rows, err := s.q.StatsLastAgentScheduleRuns(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("querying last agent_schedule runs: %w", err)
+	}
+	out := make(map[string]time.Time, len(rows))
+	for i := range rows {
+		out[rows[i].AgentName] = rows[i].LastRunAt
+	}
+	return out, nil
+}
+
 // Learning returns aggregated learning metrics for the admin dashboard.
 func (s *Store) Learning(ctx context.Context) (*LearningDashboard, error) {
 	ld := &LearningDashboard{

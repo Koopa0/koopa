@@ -183,6 +183,19 @@ SELECT
 FROM process_runs
 WHERE created_at >= @since;
 
+-- name: StatsLastAgentScheduleRuns :many
+-- Latest started_at per agent across all agent_schedule runs.
+-- process_runs.name format is "<agent>:<schedule>" (see migration COMMENT on
+-- process_runs.name); split_part extracts the agent identifier. Rows whose
+-- started_at is NULL (still pending) are skipped so the result reports only
+-- runs the external scheduler has actually begun.
+SELECT split_part(name, ':', 1)::text   AS agent_name,
+       MAX(started_at)::timestamptz     AS last_run_at
+FROM process_runs
+WHERE kind = 'agent_schedule'
+  AND started_at IS NOT NULL
+GROUP BY split_part(name, ':', 1);
+
 -- name: StatsDatabaseCounts :one
 -- Core entity counts for SystemHealth. todos is the personal GTD store;
 -- the inter-agent coordination tasks table is intentionally NOT counted

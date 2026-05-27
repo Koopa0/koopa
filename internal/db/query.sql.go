@@ -11115,6 +11115,45 @@ func (q *Queries) StatsGoalsByArea(ctx context.Context) ([]StatsGoalsByAreaRow, 
 	return items, nil
 }
 
+const statsLastAgentScheduleRuns = `-- name: StatsLastAgentScheduleRuns :many
+SELECT split_part(name, ':', 1)::text   AS agent_name,
+       MAX(started_at)::timestamptz     AS last_run_at
+FROM process_runs
+WHERE kind = 'agent_schedule'
+  AND started_at IS NOT NULL
+GROUP BY split_part(name, ':', 1)
+`
+
+type StatsLastAgentScheduleRunsRow struct {
+	AgentName string    `json:"agent_name"`
+	LastRunAt time.Time `json:"last_run_at"`
+}
+
+// Latest started_at per agent across all agent_schedule runs.
+// process_runs.name format is "<agent>:<schedule>" (see migration COMMENT on
+// process_runs.name); split_part extracts the agent identifier. Rows whose
+// started_at is NULL (still pending) are skipped so the result reports only
+// runs the external scheduler has actually begun.
+func (q *Queries) StatsLastAgentScheduleRuns(ctx context.Context) ([]StatsLastAgentScheduleRunsRow, error) {
+	rows, err := q.db.Query(ctx, statsLastAgentScheduleRuns)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []StatsLastAgentScheduleRunsRow{}
+	for rows.Next() {
+		var i StatsLastAgentScheduleRunsRow
+		if err := rows.Scan(&i.AgentName, &i.LastRunAt); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const statsNoteGrowth = `-- name: StatsNoteGrowth :one
 WITH knowledge AS (
     SELECT created_at FROM notes
