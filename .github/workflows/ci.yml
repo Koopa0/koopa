@@ -50,3 +50,53 @@ jobs:
       - uses: golangci/golangci-lint-action@v7
         with:
           version: latest
+
+  sqlc-drift:
+    name: sqlc drift
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+          cache: true
+
+      - name: Install sqlc
+        run: go install github.com/sqlc-dev/sqlc/cmd/sqlc@v1.30.0
+
+      - name: sqlc generate
+        run: sqlc generate
+
+      - name: Fail on drift
+        run: |
+          if ! git diff --exit-code -- internal/db/; then
+            echo "::error::sqlc generate produced changes. Run sqlc generate locally and commit the generated files."
+            exit 1
+          fi
+
+  frontend:
+    name: Frontend build + lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: npm ci
+        run: npm ci
+
+      - name: npm run lint
+        run: npm run lint
+
+      - name: npm run build
+        run: npm run build
