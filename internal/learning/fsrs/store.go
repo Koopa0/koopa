@@ -2,6 +2,7 @@ package fsrs
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -190,4 +191,26 @@ func (s *Store) DueCount(ctx context.Context, before time.Time) (int, error) {
 		return 0, fmt.Errorf("counting due reviews: %w", err)
 	}
 	return int(n), nil
+}
+
+// Retention returns the FSRS retrievability (probability of recall now)
+// for a serialized review_cards.card_state row. The dashboard surfaces
+// this as the per-due-card "retention" field.
+//
+// Returns 0 when the card has never been reviewed (state=New or zero
+// LastReview), or when the state JSON is malformed, or when go-fsrs
+// rejects the state (invalid stability). Errors are swallowed
+// deliberately: a single corrupt card_state row should not 500 the whole
+// dashboard. The reverse path — a successful review writes its own card
+// state — is what produces the eventual non-zero value.
+func (s *Store) Retention(state json.RawMessage, now time.Time) float64 {
+	card, err := unmarshalCardState(state)
+	if err != nil {
+		return 0
+	}
+	r, err := s.sched.fsrs.GetRetrievability(card, now)
+	if err != nil {
+		return 0
+	}
+	return r
 }

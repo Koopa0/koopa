@@ -3647,6 +3647,253 @@ func (q *Queries) CurateFeedEntry(ctx context.Context, arg CurateFeedEntryParams
 	return i, err
 }
 
+const dashboardConceptRows = `-- name: DashboardConceptRows :many
+WITH concept_next_due AS (
+    SELECT ltc.concept_id, MIN(rc.due)::timestamptz AS next_due
+    FROM learning_target_concepts ltc
+    JOIN review_cards rc     ON rc.learning_target_id = ltc.learning_target_id
+    JOIN learning_targets lt ON lt.id = ltc.learning_target_id
+    WHERE lt.archived_at IS NULL
+    GROUP BY ltc.concept_id
+)
+SELECT c.id, c.slug, c.name, c.domain, c.kind,
+       COUNT(*) FILTER (WHERE ao.signal_type = 'weakness')    AS weakness_count,
+       COUNT(*) FILTER (WHERE ao.signal_type = 'improvement') AS improvement_count,
+       COUNT(*) FILTER (WHERE ao.signal_type = 'mastery')     AS mastery_count,
+       COUNT(*)                                               AS total_observations,
+       cnd.next_due
+FROM concepts c
+JOIN learning_attempt_observations ao ON ao.concept_id = c.id
+JOIN learning_attempts a              ON a.id = ao.attempt_id
+LEFT JOIN concept_next_due cnd        ON cnd.concept_id = c.id
+WHERE c.archived_at IS NULL
+  AND ($1::text IS NULL OR c.domain = $1)
+  AND a.attempted_at >= $2
+  AND ($3::text = 'all' OR ao.confidence = 'high')
+GROUP BY c.id, cnd.next_due
+ORDER BY total_observations DESC, c.slug ASC
+`
+
+type DashboardConceptRowsParams struct {
+	Domain           *string   `json:"domain"`
+	Since            time.Time `json:"since"`
+	ConfidenceFilter string    `json:"confidence_filter"`
+}
+
+type DashboardConceptRowsRow struct {
+	ID                uuid.UUID   `json:"id"`
+	Slug              string      `json:"slug"`
+	Name              string      `json:"name"`
+	Domain            string      `json:"domain"`
+	Kind              ConceptKind `json:"kind"`
+	WeaknessCount     int64       `json:"weakness_count"`
+	ImprovementCount  int64       `json:"improvement_count"`
+	MasteryCount      int64       `json:"mastery_count"`
+	TotalObservations int64       `json:"total_observations"`
+	NextDue           *time.Time  `json:"next_due"`
+}
+
+// Per-concept mastery rows for /learning/dashboard concepts.rows.
+// INNER JOIN against learning_attempt_observations keeps the dashboard
+// observation-backed — concepts with zero observations in the (since, now)
+// window do not appear (separate decision from /concepts list which
+// LEFT-JOINs to include unobserved concepts).
+//
+// next_due is the earliest review_cards.due across every learning_target
+// linked to the concept via learning_target_concepts. NULL when the
+// concept has no live targets with cards. Pre-aggregated in the
+// concept_next_due CTE then LEFT JOINed so sqlc infers nullability —
+// sqlc cannot infer NULLability from a bare correlated subquery, but a
+// LEFT JOIN against a CTE with a casted aggregate gives it a *time.Time
+// in Go.
+//
+// @confidence_filter mirrors ConceptMastery: 'high' (default) or 'all'.
+// Stage derivation lives in Go (mastery.DeriveMasteryStage), and the
+// floor applies only to the stage — mastery_value is a raw ratio derived
+// in Go (mastery.MasteryValue).
+func (q *Queries) DashboardConceptRows(ctx context.Context, arg DashboardConceptRowsParams) ([]DashboardConceptRowsRow, error) {
+	rows, err := q.db.Query(ctx, dashboardConceptRows, arg.Domain, arg.Since, arg.ConfidenceFilter)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []DashboardConceptRowsRow{}
+	for rows.Next() {
+		var i DashboardConceptRowsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Slug,
+			&i.Name,
+			&i.Domain,
+			&i.Kind,
+			&i.WeaknessCount,
+			&i.ImprovementCount,
+			&i.MasteryCount,
+			&i.TotalObservations,
+			&i.NextDue,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const dashboardDueReviews = `-- name: DashboardDueReviews :many
+WITH card_last_review AS (
+    SELECT rl.card_id, MAX(rl.reviewed_at)::timestamptz AS last_reviewed_at
+    FROM review_logs rl
+    GROUP BY rl.card_id
+)
+SELECT rc.id                AS card_id,
+       rc.due,
+       rc.card_state,
+       lt.id                AS target_id,
+       lt.title             AS target_title,
+       lt.domain            AS domain,
+       clr.last_reviewed_at
+FROM review_cards rc
+JOIN learning_targets lt        ON lt.id = rc.learning_target_id
+LEFT JOIN card_last_review clr  ON clr.card_id = rc.id
+WHERE rc.due <= $1
+  AND lt.archived_at IS NULL
+  AND ($2::text IS NULL OR lt.domain = $2)
+ORDER BY rc.due ASC
+LIMIT $3
+`
+
+type DashboardDueReviewsParams struct {
+	DueBefore  time.Time `json:"due_before"`
+	Domain     *string   `json:"domain"`
+	MaxResults int32     `json:"max_results"`
+}
+
+type DashboardDueReviewsRow struct {
+	CardID         uuid.UUID       `json:"card_id"`
+	Due            time.Time       `json:"due"`
+	CardState      json.RawMessage `json:"card_state"`
+	TargetID       uuid.UUID       `json:"target_id"`
+	TargetTitle    string          `json:"target_title"`
+	Domain         string          `json:"domain"`
+	LastReviewedAt *time.Time      `json:"last_reviewed_at"`
+}
+
+// Due review cards for /learning/dashboard due_today.items.
+// Per-row fields:
+//
+//	card_state — opaque FSRS state JSONB; the Go layer extracts Stability
+//	             and computes retrievability via fsrs.Store.Retention.
+//	last_reviewed_at — MAX(review_logs.reviewed_at) for the card.
+//	             NULL when the card has never been reviewed (fresh card
+//	             inserted by a record_attempt flow without an immediate
+//	             review log).
+//
+// last_reviewed_at is pre-aggregated in the card_last_review CTE then
+// LEFT JOINed. Same reason as DashboardConceptRows.next_due — the
+// LEFT-JOIN-against-CTE shape is what makes sqlc emit *time.Time
+// instead of falling back to interface{}.
+func (q *Queries) DashboardDueReviews(ctx context.Context, arg DashboardDueReviewsParams) ([]DashboardDueReviewsRow, error) {
+	rows, err := q.db.Query(ctx, dashboardDueReviews, arg.DueBefore, arg.Domain, arg.MaxResults)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []DashboardDueReviewsRow{}
+	for rows.Next() {
+		var i DashboardDueReviewsRow
+		if err := rows.Scan(
+			&i.CardID,
+			&i.Due,
+			&i.CardState,
+			&i.TargetID,
+			&i.TargetTitle,
+			&i.Domain,
+			&i.LastReviewedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const dashboardRecentObservations = `-- name: DashboardRecentObservations :many
+SELECT ao.id,
+       ao.signal_type,
+       ao.category,
+       COALESCE(ao.detail, '')::text AS body,
+       c.domain,
+       c.slug AS concept_slug,
+       ao.confidence,
+       ao.created_at
+FROM learning_attempt_observations ao
+JOIN concepts c          ON c.id = ao.concept_id
+JOIN learning_attempts a ON a.id = ao.attempt_id
+WHERE c.archived_at IS NULL
+  AND ($1::text IS NULL OR c.domain = $1)
+  AND ($2::text = 'all' OR ao.confidence = 'high')
+ORDER BY ao.created_at DESC
+LIMIT $3
+`
+
+type DashboardRecentObservationsParams struct {
+	Domain           *string `json:"domain"`
+	ConfidenceFilter string  `json:"confidence_filter"`
+	MaxResults       int32   `json:"max_results"`
+}
+
+type DashboardRecentObservationsRow struct {
+	ID          uuid.UUID `json:"id"`
+	SignalType  string    `json:"signal_type"`
+	Category    string    `json:"category"`
+	Body        string    `json:"body"`
+	Domain      string    `json:"domain"`
+	ConceptSlug string    `json:"concept_slug"`
+	Confidence  string    `json:"confidence"`
+	CreatedAt   time.Time `json:"created_at"`
+}
+
+// Recent observations for /learning/dashboard recent_observations.
+// Field renames at the wire boundary (signal_type → signal, detail →
+// body) happen in Go — the SQL preserves the schema names so this query
+// can also feed non-dashboard paths if needed. COALESCE on detail
+// collapses NULL → ” to match the wire contract that 'body' is a
+// non-nullable string.
+func (q *Queries) DashboardRecentObservations(ctx context.Context, arg DashboardRecentObservationsParams) ([]DashboardRecentObservationsRow, error) {
+	rows, err := q.db.Query(ctx, dashboardRecentObservations, arg.Domain, arg.ConfidenceFilter, arg.MaxResults)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []DashboardRecentObservationsRow{}
+	for rows.Next() {
+		var i DashboardRecentObservationsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.SignalType,
+			&i.Category,
+			&i.Body,
+			&i.Domain,
+			&i.ConceptSlug,
+			&i.Confidence,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const deleteAlias = `-- name: DeleteAlias :exec
 DELETE FROM tag_aliases WHERE id = $1
 `

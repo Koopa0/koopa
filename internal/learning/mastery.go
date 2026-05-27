@@ -61,6 +61,23 @@ func DeriveMasteryStage(weakness, improvement, mastery int64) MasteryStage {
 	}
 }
 
+// MasteryValue is the raw ratio of mastery signals to total observations,
+// under the same (domain, confidence_filter, window) scope used to source
+// the counts. Returns 0.0 when total == 0.
+//
+// The MinObservationsForVerdict floor that protects DeriveMasteryStage
+// does NOT apply here. Mastery value is a presentation-layer scalar — a
+// single observation with one mastery signal yields 1.0, and the
+// dashboard renders that honestly. The "label vs. half-gate" property
+// only matters for the stage decision; for a percentage, the raw ratio
+// is what callers want.
+func MasteryValue(mastery, total int64) float64 {
+	if total <= 0 {
+		return 0
+	}
+	return float64(mastery) / float64(total)
+}
+
 // DomainMastery is a per-domain aggregation of concept mastery stages.
 type DomainMastery struct {
 	Domain             string `json:"domain"`
