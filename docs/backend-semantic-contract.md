@@ -262,14 +262,19 @@ them wrong is a semantic bug, not a naming quibble.
   `agent.Agent` literal (`Schedule{Name, Trigger, Expr, Backend, Purpose}`,
   `registry.go:27-33` etc.). E.g. `hq` runs `morning-briefing` at `0 8 * * *`
   on `cowork_desktop`. **Lives in Go, not the DB.** Only 4 of 9 agents carry a
-  schedule. **Open Question** §7: the schedule literal is metadata only — no
-  backend scheduler executes it; external Cowork desktop does.
+  schedule. **DECIDED (Phase 1D, 2026-05-27):** the schedule literal is
+  metadata only and the backend has **no internal scheduler** — execution is
+  driven by the external Cowork/Desktop runner. This repo owns the registry
+  metadata, the schema, and the `process_runs(kind='agent_schedule')` audit
+  row; it does not own scheduled execution.
 - **schedule run** — a single execution of an external agent schedule,
   recorded in `process_runs` with `kind='agent_schedule'` and a non-null
   `subsystem` (`chk_process_runs_subsystem_iff_agent_schedule`, `798-799`).
   The sibling kind `crawl` is for internal fetch/collector runs (RSS).
-  *Is not* a `task`. **Open Question** §7: whether external schedule runs are
-  actually being written to `process_runs` today is unverified (§6).
+  *Is not* a `task`. **Status (Phase 1D, 2026-05-27):** whether the external
+  runner is actively writing these rows today is **not yet observable from
+  this repo** — adding a read-side observability surface (e.g. "last
+  schedule run per agent") is a follow-up task, separate from this decision.
 
 ---
 
@@ -303,7 +308,7 @@ signal (`ops/types.go:28-42`). Below, tools are grouped by their declared
 
 | Tool | Writability | Caller | Side effect | Enforcement |
 |---|---|---|---|---|
-| `search_knowledge` | ReadOnly | any registered | none | — (FTS + optional semantic; see §6) |
+| `search_knowledge` | ReadOnly | any registered | none | FTS-backed today; hybrid pgvector + RRF is planned and gated on the embedder write/backfill pipeline (§6D, §7 #1) |
 | `create_content` / `update_content` / `submit_content_for_review` / `revert_content_to_draft` / `archive_content` | Additive/Destructive | any registered | content row + state | **Open** authorship; lifecycle CHECKs in schema |
 | `publish_content` | Destructive | **human only** | atomic publish flip | `requireExplicitHuman` (`authz.go`); explicit `as` + Platform=human (`authorization-matrix.md:126`) |
 | `list_content` / `read_content` | ReadOnly | any | none | — |
@@ -311,8 +316,9 @@ signal (`ops/types.go:28-42`). Below, tools are grouped by their declared
 | `manage_feeds` | Destructive | any registered | feed CRUD (list/add/update/remove) | Open; returns stripped FeedSummary |
 
 **Semantics for testing:** content publish is the one hard human gate in this
-group; search is read-only and currently FTS-dominant (§6). `manage_feeds` is
-a multiplexer (≤4 actions, one entity) — Destructive because it includes
+group; search is read-only and **FTS-only in production today** — the hybrid
+pgvector + RRF path is planned, not active (§6D, §7 #1). `manage_feeds` is a
+multiplexer (≤4 actions, one entity) — Destructive because it includes
 update/remove.
 
 ### Group: PARA / GTD / OKR (`DomainDaily`, `DomainMeta`)
@@ -455,7 +461,7 @@ Confidence levels used below:
 
 | Feature | Reality | Evidence |
 |---|---|---|
-| **Document embedding write path** | **No automatic document-embedding write path was found.** `embedder.Embed()` is defined (`embedder.go:65`) but has no production call site; app-created `content`/`note` rows therefore behave **FTS-only** unless embeddings are externally/backfill-populated. The vector-*read* path is real (`InternalSemanticSearch`, `content/public.go:104-115`) and *would* return rows if embeddings were backfilled — so "no write path" must not be conflated with "semantic branch can never return rows". | `search.go:182-235` (only `EmbedQuery`); no `Embed()` call site; cols `migrations/001_initial.up.sql:495,573` |
+| **Document embedding write path** | **No automatic document-embedding write path exists — this is the current decision, not a TODO.** `embedder.Embed()` is defined (`embedder.go:65`) but has no production call site; app-created `content`/`note` rows therefore behave **FTS-only** unless embeddings are externally/backfill-populated. The vector-*read* path is real (`InternalSemanticSearch`, `content/public.go:104-115`) and *would* return rows if embeddings were backfilled — so "no write path" must not be conflated with "semantic branch can never return rows". **Decided (Phase 1D, 2026-05-27):** keep schema, indexes, and embedder package in place; do not implement write/backfill until agent recall ceilings on FTS are observed in practice. `search_knowledge` is documented as FTS-backed today. | `search.go:182-235` (only `EmbedQuery`); no `Embed()` call site; cols `migrations/001_initial.up.sql:495,573` |
 | **Feed AI relevance scoring** | Not active — "scoring pipeline not yet active, all items have score=0"; highlights recency/priority-ordered | `internal/feed/entry/query.sql` |
 | **Admin global-search Kind taxonomy** | `internal/search/search.go` declares 9 Kinds; only `KindContent` + `KindNote` are wired; `KindBookmark/Hypothesis/Concept/Task/Goal/Todo/Project` declared-but-unwired | `internal/search/search.go` |
 
@@ -529,10 +535,14 @@ schema- or policy-enforced; see the cited constraints in §3/§5.)
 
 ### Open Questions (require human decision)
 
-1. **Search product contract** — activate the document-embedding write path
-   (and for which tables) or commit to FTS-only; and decide cross-source
-   ranking (recency-final, as today, vs fused relevance). Blocks meaningful
-   hybrid-search testing.
+1. **Search product contract** — **DECIDED (Phase 1D, 2026-05-27): FTS-only
+   is the current production behavior** of `search_knowledge`. Hybrid
+   pgvector + RRF is **planned**, deferred until the document-embedding
+   write/backfill pipeline lands. Schema, HNSW indexes, embedder package,
+   and the RRF merge code remain in place for future activation. Trigger
+   for revisiting: observed agent recall ceilings on FTS (e.g. ≥3 incidents
+   where a known-relevant document was not retrieved). Cross-source ranking
+   (recency-final vs fused relevance) is part of the deferred design.
 2. **Bookmark edit flow** — the `PUT /api/admin/knowledge/bookmarks/{id}`
    endpoint exists; are bookmarks Create-only/immutable or Create+edit? Must
    NOT be resolved by "the code exists" alone.
@@ -549,10 +559,15 @@ schema- or policy-enforced; see the cited constraints in §3/§5.)
    policy-only + tolerant readers?
 9. **"session_note" as a first-class entity** — formalize, or keep as a label
    over `agent_notes(kind=context|reflection)`?
-10. **External `schedule` execution + `schedule run` recording** — the
-    per-agent `Schedule` literal is metadata only; is any `process_runs`
-    `kind='agent_schedule'` row actually being written by the external Cowork
-    desktop, and is that path observable?
+10. **External `schedule` execution + `schedule run` recording** —
+    **DECIDED (Phase 1D, 2026-05-27): scheduled execution is owned by the
+    external Cowork/Desktop runner.** This repo provides the agent registry
+    metadata, the schema, and the `process_runs(kind='agent_schedule')`
+    audit row. **No internal scheduler is planned at this time.** Whether
+    the external runner is actively writing those rows is not yet
+    observable from this repo; adding a read-side observability surface
+    (e.g. "last schedule run per agent" in `system_status`) is a follow-up
+    task, deliberately separate from this ownership decision.
 11. **Task `revision_requested` payload contract** — request-revision body
     shape (message vs artifact vs free text) is not codified.
 12. **`contents.ai_metadata` consumer contract** — documented shape

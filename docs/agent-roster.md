@@ -2,6 +2,12 @@
 
 > **Status**: outline / skeleton。每節描述應放什麼內容，內容尚未填入。
 > 第一版填入內容前請 review 結構。
+>
+> **Scheduling note (Phase 1D, 2026-05-27):** 每個 agent 的 `Schedule` literal
+> 是 metadata，**執行由外部 Cowork/Desktop runner 驅動**，不是這個 repo 自己跑
+> 的。Backend 持有的是 registry metadata、schema、以及
+> `process_runs(kind='agent_schedule')` audit row。詳見
+> `docs/backend-semantic-contract.md` §3（schedule）與 §7 #10。
 
 ## 導言
 
@@ -36,9 +42,10 @@
 - Studio 隱喻：HQ 是 CEO，三個是部門
 - 三個結構性差異
    - capability bit 不同 → 能做什麼是編譯期決定
-   - schedule **可選**（`hq` / `content-studio` / `research-lab` 有 cron；
-     `learning-studio` 與其他都 on-demand）
-   - role prompt 不同 → 行為紀律不同r
+   - schedule **可選**（`hq` / `content-studio` / `research-lab` 有 cron 字串；
+     `learning-studio` 與其他都 on-demand）— 注意：schedule **是 metadata，
+     由外部 Cowork/Desktop runner 執行**，這個 repo 不跑 scheduler
+   - role prompt 不同 → 行為紀律不同
 - 不在這份 doc：proposal-first 政策、maturity assessment
   （→ `.claude/rules/mcp-decision-policy.md`）
 

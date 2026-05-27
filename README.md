@@ -7,9 +7,9 @@
 </p>
 
 <p align="center">
-  <a href="https://go.dev"><img src="https://img.shields.io/badge/Go-1.26.1+-00ADD8?style=flat&logo=go&logoColor=white" alt="Go 1.26.1+"/></a>
-  <a href="https://goreportcard.com/report/github.com/Koopa0/koopa"><img src="https://goreportcard.com/badge/github.com/Koopa0/koopa" alt="Go Report Card"/></a>
-  <a href="https://github.com/Koopa0/koopa/actions/workflows/ci.yml"><img src="https://github.com/Koopa0/koopa/actions/workflows/ci.yml/badge.svg" alt="CI"/></a>
+  <img src="https://img.shields.io/badge/status-private%20portfolio-555?style=flat" alt="Status: private portfolio"/>
+  <img src="https://img.shields.io/badge/license-All%20Rights%20Reserved-555?style=flat" alt="License: All Rights Reserved"/>
+  <img src="https://img.shields.io/badge/Go-1.26.1+-00ADD8?style=flat&logo=go&logoColor=white" alt="Go 1.26.1+"/>
 </p>
 
 <p align="center">
@@ -20,9 +20,15 @@
   <img src="https://img.shields.io/badge/FSRS-spaced_repetition-1D9E75?style=flat" alt="FSRS"/>
 </p>
 
+> **Status: private portfolio / source-visible reference — not open source yet.**
+> See [LICENSE](LICENSE): All Rights Reserved. The code is published for portfolio
+> and reference reading; it is not open for external use, fork, or contribution
+> at this time. There is no CONTRIBUTING / SECURITY / issue-tracker process —
+> this is a single-admin system by design, not a community project.
+
 **koopa** is a private-by-default personal OS where multiple AI agents share a semantic runtime — so the AI reads your state, not your prompts.
 
-It's 8 a.m. Studio HQ writes today's briefing by reading yesterday's unfinished daily plan, this week's goal progress, overdue learning-target reviews, and the RSS highlights the ingest pipeline collected overnight. You haven't typed a word yet. At 2 p.m. Content Studio checks the content pipeline — drafts ready for review, topics without coverage, articles aging without refresh — and files a report if something needs your attention. Each agent runs on its own cron, each produces durable artifacts, and every mutation is attributed to the agent that made it. You wake up, read the briefings, decide what to act on, and reject what you don't want. The system does not decide for you. It gives you structure to decide faster.
+It's 8 a.m. Studio HQ writes today's briefing by reading yesterday's unfinished daily plan, this week's goal progress, overdue learning-target reviews, and the RSS highlights the ingest pipeline collected overnight. You haven't typed a word yet. At 2 p.m. Content Studio checks the content pipeline — drafts ready for review, topics without coverage, articles aging without refresh — and files a report if something needs your attention. Each agent runs on its own declared cadence — fired by an external Cowork/Desktop runner against the schedules pinned in this repo's agent registry — each produces durable artifacts, and every mutation is attributed to the agent that made it. You wake up, read the briefings, decide what to act on, and reject what you don't want. The system does not decide for you. It gives you structure to decide faster.
 
 ## Why this exists
 
@@ -50,7 +56,7 @@ Three structural invariants make the system's guarantees real, not aspirational:
 
 ### Autonomy with a gate
 
-Agents run on their own schedules — HQ at 8 a.m., Content Studio at 2 p.m., Research Lab on industry scans. They can propose goals, suggest projects, submit tasks to each other. But **they cannot directly create high-commitment entities**. Goals, projects, milestones, hypotheses, learning plans, directives — all go through a two-step `propose_commitment` → `commit_proposal` sequence with a signed token. The agent drafts; you confirm. Ownership of your agenda stays with you.
+Each agent declares its own cadence — HQ at 8 a.m., Content Studio at 2 p.m., Research Lab on weekly industry scans — in the Go agent registry (`internal/agent/registry.go::BuiltinAgents()`). **Execution of those schedules is driven by an external Cowork/Desktop runner, not by this repo**; the backend owns the registry metadata, the schema, and the `process_runs` audit table that records each external run. The agents can propose goals, suggest projects, submit tasks to each other. But **they cannot directly create high-commitment entities**. Goals, projects, milestones, hypotheses, learning plans, directives — all go through a two-step `propose_commitment` → `commit_proposal` sequence with a signed token. The agent drafts; you confirm. Ownership of your agenda stays with you.
 
 The design choice underneath: AI can run autonomously _because_ there is a proposal gate. Without the gate, autonomy would flood your system with entities you never decided to commit to. With the gate, autonomy is useful — agents surface options, you keep the call.
 
@@ -70,7 +76,7 @@ The vocabulary splits are load-bearing. `task` is inter-agent work; `todo` is pe
 
 ## Knowledge retrieval
 
-Published content and Zettelkasten notes are queryable by any agent through MCP via `search_knowledge`. It runs **hybrid retrieval** — PostgreSQL full-text search (tsvector with websearch syntax, GIN-indexed) _and_ pgvector semantic search (1536-dimension `gemini-embedding-2-preview` via Matryoshka truncation, HNSW-indexed) — and merges results with reciprocal rank fusion. Agents find content that matches by keyword _and_ content that matches by meaning, without choosing a strategy.
+Published content and Zettelkasten notes are queryable by any agent through MCP via `search_knowledge`. **Today it runs PostgreSQL full-text search** (tsvector with websearch syntax, GIN-indexed) over content and notes. The pgvector schema, HNSW indexes, and embedder package are in place, but the document-embedding write/backfill pipeline and reciprocal-rank-fusion merge path are not active yet. The hybrid lexical + semantic + RRF path is **planned**, to be activated once an embedder write/backfill pipeline lands.
 
 Agent notes are keyword-searchable by kind, author, date range, and full-text query. Cross-session context is recoverable: "find what I wrote about embedding pipelines in the last month" is a tool call, not a scroll through a log.
 
@@ -88,7 +94,7 @@ Four capabilities that a stateless chatbot cannot offer, two from each axis:
 
 **Agents see the same state.** When HQ writes a morning briefing at 8 a.m., it reads the same daily_plan, the same open todos, the same goal progress that Content Studio saw at 2 p.m. the day before. There is no "what did I tell the other agent"; there is only the schema.
 
-**Scheduler-driven agents compose.** Research Lab's overnight industry scan writes a `tasks` row with an artifact; Content Studio reads it the next afternoon and suggests an article topic; HQ surfaces the suggestion in your morning briefing. Each agent ran independently on its own cron — the coordination is the shared state, not a message bus.
+**Externally-scheduled agents compose.** Research Lab's overnight industry scan writes a `tasks` row with an artifact; Content Studio reads it the next afternoon and suggests an article topic; HQ surfaces the suggestion in your morning briefing. Each agent ran independently when fired by the external Cowork/Desktop runner — the coordination is the shared state in this backend, not a message bus or an in-repo scheduler.
 
 **Morning briefings grounded in yesterday.** HQ doesn't ask what you did. It reads yesterday's daily plan, checks which items completed / deferred / dropped, surfaces open todos, shows goal progress against milestones. The briefing is generated from state, not from your recollection.
 
@@ -100,19 +106,25 @@ This is a single-admin system by design. No RBAC, no multi-tenant, no "share wit
 
 ## Tech stack
 
-| Layer             | Choice                                                     |
-| ----------------- | ---------------------------------------------------------- |
-| Backend           | Go 1.26+ (stdlib-first), PostgreSQL 17, pgx/v5, sqlc       |
-| Embedding         | `gemini-embedding-2-preview` (1536d Matryoshka) + pgvector |
-| Search            | Hybrid (tsvector websearch + pgvector HNSW, RRF merge)     |
-| Frontend          | Angular 21 (SSR), Tailwind CSS v4                          |
-| AI collaboration  | Claude (Cowork + Code), MCP (more than 30 workflow tools)  |
-| Spaced repetition | FSRS algorithm (short-term steps disabled)                 |
-| Cache             | Ristretto (in-memory, single machine)                      |
-| Object storage    | Cloudflare R2 (S3-compatible)                              |
+| Layer             | Choice                                                                                                                                       |
+| ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| Backend           | Go 1.26+ (stdlib-first), PostgreSQL 17, pgx/v5, sqlc                                                                                         |
+| Search (today)    | PostgreSQL FTS (tsvector + websearch + GIN)                                                                                                  |
+| Search (planned)  | Hybrid lexical + pgvector HNSW with RRF merge — schema, indexes, and merge code in place; pending an embedder write/backfill pipeline        |
+| Embedding         | `gemini-embedding-2-preview` (1536d Matryoshka) target; pgvector columns + HNSW indexes in place; no production write path yet (see Search)  |
+| Scheduling        | Agent cadences declared in `internal/agent/registry.go::BuiltinAgents()`; execution driven by an external Cowork/Desktop runner; audited via `process_runs(kind='agent_schedule')` |
+| Frontend          | Angular 21 (SSR), Tailwind CSS v4                                                                                                            |
+| AI collaboration  | Claude (Cowork + Code), MCP (more than 30 workflow tools)                                                                                    |
+| Spaced repetition | FSRS algorithm (short-term steps disabled)                                                                                                   |
+| Cache             | Ristretto (in-memory, single machine)                                                                                                        |
+| Object storage    | Cloudflare R2 (S3-compatible)                                                                                                                |
 
 ---
 
 ## License
 
-This repository contains personal content and infrastructure. All rights reserved.
+**All Rights Reserved** — see [LICENSE](LICENSE).
+
+This repository is published for portfolio and reference reading only. No permission is granted, express or implied, to use, copy, modify, merge, publish, distribute, sublicense, or sell copies of the software, documentation, or any part of this repository. Viewing on GitHub does not constitute a grant of any rights.
+
+This is a single-admin system by design, not a community project. There is no CONTRIBUTING, SECURITY, or issue-template process at this time, and external contributions are not being accepted. To request permission for a specific use, contact the copyright holder.

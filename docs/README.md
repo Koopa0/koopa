@@ -1,5 +1,11 @@
 # `docs/` — index, authority, and what counts as runtime truth
 
+> **Project status (Phase 1D, 2026-05-27):** koopa is a **private portfolio /
+> source-visible reference repository**, not open source. See the root
+> [README.md](../README.md) and [LICENSE](../LICENSE). The docs below describe
+> the system that exists for the single admin and the closed agent set; they
+> are not contributor onboarding material.
+
 This index tells a reader (human or agent) **which documents bind behavior
 and which are context only**. It does not duplicate content — it points.
 
