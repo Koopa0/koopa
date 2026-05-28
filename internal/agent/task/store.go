@@ -155,6 +155,9 @@ func (s *Store) Cancel(ctx context.Context, auth agent.Authorized, id uuid.UUID)
 
 // RequestRevision transitions a completed task to revision_requested.
 // Only the source agent should call this after reviewing the deliverable.
+// Acknowledged completed tasks are final and yield ErrConflict — the
+// underlying RequestRevisionTask query gates on acknowledged_at IS NULL
+// so the rejection happens below the handler layer (all surfaces agree).
 func (s *Store) RequestRevision(ctx context.Context, auth agent.Authorized, id uuid.UUID) (*Task, error) {
 	if err := mustHaveAction(auth, agent.ActionRequestRevision); err != nil {
 		return nil, err
@@ -165,6 +168,76 @@ func (s *Store) RequestRevision(ctx context.Context, auth agent.Authorized, id u
 			return nil, ErrConflict
 		}
 		return nil, fmt.Errorf("request revision: %w", err)
+	}
+	return rowToTask(&row), nil
+}
+
+// Acknowledge records source-side final acceptance of a completed task.
+// The caller MUST be the task source (created_by); the store enforces
+// this independently of any handler preflight check.
+//
+// Allowed only when state='completed' AND acknowledged_at IS NULL AND
+// caller == created_by. Returns:
+//   - ErrNotFound if the task does not exist
+//   - agent.ErrForbidden if the caller is not the task source
+//   - ErrConflict if the task is not in completed state
+//   - ErrAlreadyAcknowledged if acknowledged_at is already set
+//
+// On success, sets acknowledged_at = now() and acknowledged_by = caller.
+// If notes is non-empty, appends one RoleResponse message in the same
+// transaction. Empty notes append no message — the schema columns carry
+// the acknowledgement signal, not the message body.
+//
+// CALLER CONTRACT: must be invoked through a tx-bound Store (WithTx).
+// The LockTaskForApprove row lock and the AppendTaskMessage write only
+// hold their invariants when run in one transaction. On a pool-backed
+// Store the gating checks still execute but the lock releases between
+// statements, so a concurrent ack could race. Admin HTTP routes get
+// the tx via api.ActorMiddleware; MCP entry points wrap calls in
+// withActorTx.
+func (s *Store) Acknowledge(ctx context.Context, auth agent.Authorized, id uuid.UUID, notes string) (*Task, error) {
+	if err := mustHaveAction(auth, agent.ActionApproveTask); err != nil {
+		return nil, err
+	}
+
+	locked, err := s.q.LockTaskForApprove(ctx, id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("acknowledge: lock task: %w", err)
+	}
+	if locked.CreatedBy != string(auth.Caller()) {
+		return nil, fmt.Errorf("%w: %s is not task source", agent.ErrForbidden, auth.Caller())
+	}
+	if locked.State != db.TaskState(StateCompleted) {
+		return nil, ErrConflict
+	}
+	if locked.AcknowledgedAt != nil {
+		return nil, ErrAlreadyAcknowledged
+	}
+
+	caller := string(auth.Caller())
+	row, err := s.q.AcknowledgeTask(ctx, db.AcknowledgeTaskParams{
+		ID:             id,
+		AcknowledgedBy: &caller,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			// The locked read above already cleared the gates; reaching
+			// here means another tx slipped between our gate and our
+			// UPDATE despite the FOR UPDATE lock (e.g. statement-level
+			// rollback). Treat as ErrAlreadyAcknowledged so the caller
+			// gets a stable 409 instead of a 500.
+			return nil, ErrAlreadyAcknowledged
+		}
+		return nil, mapInsertErr("acknowledge", err)
+	}
+
+	if notes != "" {
+		if _, err := s.AppendMessage(ctx, id, RoleResponse, []*a2a.Part{a2a.NewTextPart(notes)}); err != nil {
+			return nil, fmt.Errorf("acknowledge: append note: %w", err)
+		}
 	}
 	return rowToTask(&row), nil
 }
@@ -370,6 +443,31 @@ func (s *Store) CompletedPaged(ctx context.Context, page, perPage int) ([]Task, 
 	return out, int(total), nil
 }
 
+// AwaitingApprovalPaged returns paginated completed tasks that have not
+// yet been source-acknowledged — the "awaiting your judgment" inbox.
+// Acknowledged completed tasks are excluded on purpose; those live in
+// CompletedPaged. Backed by idx_tasks_awaiting_approval.
+func (s *Store) AwaitingApprovalPaged(ctx context.Context, page, perPage int) ([]Task, int, error) {
+	total, err := s.q.AwaitingApprovalPagedCount(ctx)
+	if err != nil {
+		return nil, 0, fmt.Errorf("counting awaiting-approval tasks: %w", err)
+	}
+
+	offset := (page - 1) * perPage
+	rows, err := s.q.AwaitingApprovalPaged(ctx, db.AwaitingApprovalPagedParams{
+		PageLimit:  int32(perPage), //nolint:gosec // G115: clamped by api.ParsePagination (max 100)
+		PageOffset: int32(offset),  //nolint:gosec // G115: page*perPage bounded by pagination limits
+	})
+	if err != nil {
+		return nil, 0, fmt.Errorf("listing awaiting-approval tasks: %w", err)
+	}
+	out := make([]Task, len(rows))
+	for i := range rows {
+		out[i] = *rowToTask(&rows[i])
+	}
+	return out, int(total), nil
+}
+
 // AppendMessage adds a message to a task's conversation thread. Position
 // is computed from the current message count. This method does not require
 // agent.Authorized because the admin handler gates access via JWT middleware
@@ -427,6 +525,8 @@ func rowToTask(r *db.Task) *Task {
 		CompletedAt:         r.CompletedAt,
 		CanceledAt:          r.CanceledAt,
 		RevisionRequestedAt: r.RevisionRequestedAt,
+		AcknowledgedAt:      r.AcknowledgedAt,
+		AcknowledgedBy:      r.AcknowledgedBy,
 		Metadata:            r.Metadata,
 	}
 }

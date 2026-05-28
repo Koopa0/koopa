@@ -51,6 +51,21 @@
             <span>completed {{ t.completed_at | date: 'short' }}</span>
           }
         </div>
+        @if (approvedMeta(); as ack) {
+          <p
+            class="mt-2 inline-flex items-center gap-1.5 rounded-xs border border-emerald-700 bg-emerald-900/30 px-2 py-0.5 font-mono text-[11px] text-emerald-300"
+            data-testid="task-approved-badge"
+          >
+            <span aria-hidden="true">✓</span>
+            <span>
+              Approved
+              @if (ack.by) {
+                by {{ ack.by }}
+              }
+              · {{ ack.at | date: 'short' }}
+            </span>
+          </p>
+        }
       </header>
 
       <!-- Messages timeline -->

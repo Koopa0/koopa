@@ -18,7 +18,7 @@ const acceptTask = `-- name: AcceptTask :one
 UPDATE tasks
 SET state = 'working', accepted_at = now()
 WHERE id = $1 AND state = 'submitted'
-RETURNING id, created_by, assignee, title, state, deadline, priority, submitted_at, accepted_at, completed_at, canceled_at, revision_requested_at, metadata
+RETURNING id, created_by, assignee, title, state, deadline, priority, submitted_at, accepted_at, completed_at, canceled_at, revision_requested_at, metadata, acknowledged_at, acknowledged_by
 `
 
 // Transition a task from submitted → working. The chk_tasks_state_timestamps
@@ -42,6 +42,49 @@ func (q *Queries) AcceptTask(ctx context.Context, id uuid.UUID) (Task, error) {
 		&i.CanceledAt,
 		&i.RevisionRequestedAt,
 		&i.Metadata,
+		&i.AcknowledgedAt,
+		&i.AcknowledgedBy,
+	)
+	return i, err
+}
+
+const acknowledgeTask = `-- name: AcknowledgeTask :one
+UPDATE tasks
+SET acknowledged_at = now(), acknowledged_by = $1
+WHERE id = $2 AND state = 'completed' AND acknowledged_at IS NULL
+RETURNING id, created_by, assignee, title, state, deadline, priority, submitted_at, accepted_at, completed_at, canceled_at, revision_requested_at, metadata, acknowledged_at, acknowledged_by
+`
+
+type AcknowledgeTaskParams struct {
+	AcknowledgedBy *string   `json:"acknowledged_by"`
+	ID             uuid.UUID `json:"id"`
+}
+
+// Stamp acknowledged_at / acknowledged_by on a completed, unacknowledged
+// task. The caller MUST have run LockTaskForApprove in the same tx and
+// verified (state, ack, source) — the WHERE clause here is a structural
+// safety net, not the primary gate. The chk_tasks_acknowledged_pair CHECK
+// guarantees acknowledged_by is set together with acknowledged_at and
+// only on a completed task.
+func (q *Queries) AcknowledgeTask(ctx context.Context, arg AcknowledgeTaskParams) (Task, error) {
+	row := q.db.QueryRow(ctx, acknowledgeTask, arg.AcknowledgedBy, arg.ID)
+	var i Task
+	err := row.Scan(
+		&i.ID,
+		&i.CreatedBy,
+		&i.Assignee,
+		&i.Title,
+		&i.State,
+		&i.Deadline,
+		&i.Priority,
+		&i.SubmittedAt,
+		&i.AcceptedAt,
+		&i.CompletedAt,
+		&i.CanceledAt,
+		&i.RevisionRequestedAt,
+		&i.Metadata,
+		&i.AcknowledgedAt,
+		&i.AcknowledgedBy,
 	)
 	return i, err
 }
@@ -481,7 +524,7 @@ func (q *Queries) AliasesByExactRawTags(ctx context.Context, rawTags []string) (
 }
 
 const allOpenTasks = `-- name: AllOpenTasks :many
-SELECT id, created_by, assignee, title, state, deadline, priority, submitted_at, accepted_at, completed_at, canceled_at, revision_requested_at, metadata
+SELECT id, created_by, assignee, title, state, deadline, priority, submitted_at, accepted_at, completed_at, canceled_at, revision_requested_at, metadata, acknowledged_at, acknowledged_by
 FROM tasks
 WHERE state IN ('submitted', 'working', 'revision_requested')
 ORDER BY submitted_at DESC
@@ -512,6 +555,8 @@ func (q *Queries) AllOpenTasks(ctx context.Context, maxResults int32) ([]Task, e
 			&i.CanceledAt,
 			&i.RevisionRequestedAt,
 			&i.Metadata,
+			&i.AcknowledgedAt,
+			&i.AcknowledgedBy,
 		); err != nil {
 			return nil, err
 		}
@@ -1264,6 +1309,71 @@ func (q *Queries) AutoDisableFeed(ctx context.Context, arg AutoDisableFeedParams
 	return err
 }
 
+const awaitingApprovalPaged = `-- name: AwaitingApprovalPaged :many
+SELECT id, created_by, assignee, title, state, deadline, priority, submitted_at, accepted_at, completed_at, canceled_at, revision_requested_at, metadata, acknowledged_at, acknowledged_by
+FROM tasks
+WHERE state = 'completed' AND acknowledged_at IS NULL
+ORDER BY completed_at DESC NULLS LAST
+LIMIT $2 OFFSET $1
+`
+
+type AwaitingApprovalPagedParams struct {
+	PageOffset int32 `json:"page_offset"`
+	PageLimit  int32 `json:"page_limit"`
+}
+
+// Completed tasks that have not yet been source-acknowledged — the
+// "awaiting your judgment" inbox. Excludes already-acknowledged
+// completed tasks; those live in CompletedTasksPaged history.
+// Backed by idx_tasks_awaiting_approval (partial index).
+func (q *Queries) AwaitingApprovalPaged(ctx context.Context, arg AwaitingApprovalPagedParams) ([]Task, error) {
+	rows, err := q.db.Query(ctx, awaitingApprovalPaged, arg.PageOffset, arg.PageLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Task{}
+	for rows.Next() {
+		var i Task
+		if err := rows.Scan(
+			&i.ID,
+			&i.CreatedBy,
+			&i.Assignee,
+			&i.Title,
+			&i.State,
+			&i.Deadline,
+			&i.Priority,
+			&i.SubmittedAt,
+			&i.AcceptedAt,
+			&i.CompletedAt,
+			&i.CanceledAt,
+			&i.RevisionRequestedAt,
+			&i.Metadata,
+			&i.AcknowledgedAt,
+			&i.AcknowledgedBy,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const awaitingApprovalPagedCount = `-- name: AwaitingApprovalPagedCount :one
+SELECT COUNT(*) FROM tasks
+WHERE state = 'completed' AND acknowledged_at IS NULL
+`
+
+func (q *Queries) AwaitingApprovalPagedCount(ctx context.Context) (int64, error) {
+	row := q.db.QueryRow(ctx, awaitingApprovalPagedCount)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const backlogTodoItems = `-- name: BacklogTodoItems :many
 SELECT t.id, t.title, t.state, t.due, t.project_id,
        t.energy, t.priority, t.recur_interval, t.recur_unit,
@@ -1425,7 +1535,7 @@ const cancelTask = `-- name: CancelTask :one
 UPDATE tasks
 SET state = 'canceled', canceled_at = now()
 WHERE id = $1 AND state IN ('submitted', 'working')
-RETURNING id, created_by, assignee, title, state, deadline, priority, submitted_at, accepted_at, completed_at, canceled_at, revision_requested_at, metadata
+RETURNING id, created_by, assignee, title, state, deadline, priority, submitted_at, accepted_at, completed_at, canceled_at, revision_requested_at, metadata, acknowledged_at, acknowledged_by
 `
 
 // Mark a task canceled. Allowed from submitted or working; the
@@ -1447,6 +1557,8 @@ func (q *Queries) CancelTask(ctx context.Context, id uuid.UUID) (Task, error) {
 		&i.CanceledAt,
 		&i.RevisionRequestedAt,
 		&i.Metadata,
+		&i.AcknowledgedAt,
+		&i.AcknowledgedBy,
 	)
 	return i, err
 }
@@ -1661,7 +1773,7 @@ func (q *Queries) CollectionStatsGlobal(ctx context.Context, arg CollectionStats
 }
 
 const completedTasksPaged = `-- name: CompletedTasksPaged :many
-SELECT id, created_by, assignee, title, state, deadline, priority, submitted_at, accepted_at, completed_at, canceled_at, revision_requested_at, metadata
+SELECT id, created_by, assignee, title, state, deadline, priority, submitted_at, accepted_at, completed_at, canceled_at, revision_requested_at, metadata, acknowledged_at, acknowledged_by
 FROM tasks
 WHERE state = 'completed'
 ORDER BY completed_at DESC NULLS LAST
@@ -1673,7 +1785,9 @@ type CompletedTasksPagedParams struct {
 	PageLimit  int32 `json:"page_limit"`
 }
 
-// Admin paginated completed tasks.
+// Admin paginated completed tasks. Includes acknowledged completed tasks
+// on purpose — this is the completed-history view. Awaiting-judgment
+// consumers should use AwaitingApprovalPaged instead.
 func (q *Queries) CompletedTasksPaged(ctx context.Context, arg CompletedTasksPagedParams) ([]Task, error) {
 	rows, err := q.db.Query(ctx, completedTasksPaged, arg.PageOffset, arg.PageLimit)
 	if err != nil {
@@ -1697,6 +1811,8 @@ func (q *Queries) CompletedTasksPaged(ctx context.Context, arg CompletedTasksPag
 			&i.CanceledAt,
 			&i.RevisionRequestedAt,
 			&i.Metadata,
+			&i.AcknowledgedAt,
+			&i.AcknowledgedBy,
 		); err != nil {
 			return nil, err
 		}
@@ -3672,7 +3788,7 @@ func (q *Queries) CreateTag(ctx context.Context, arg CreateTagParams) (Tag, erro
 const createTask = `-- name: CreateTask :one
 INSERT INTO tasks (created_by, assignee, title, deadline, priority, metadata)
 VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING id, created_by, assignee, title, state, deadline, priority, submitted_at, accepted_at, completed_at, canceled_at, revision_requested_at, metadata
+RETURNING id, created_by, assignee, title, state, deadline, priority, submitted_at, accepted_at, completed_at, canceled_at, revision_requested_at, metadata, acknowledged_at, acknowledged_by
 `
 
 type CreateTaskParams struct {
@@ -3711,6 +3827,8 @@ func (q *Queries) CreateTask(ctx context.Context, arg CreateTaskParams) (Task, e
 		&i.CanceledAt,
 		&i.RevisionRequestedAt,
 		&i.Metadata,
+		&i.AcknowledgedAt,
+		&i.AcknowledgedBy,
 	)
 	return i, err
 }
@@ -7167,6 +7285,34 @@ func (q *Queries) LockTaskForAppend(ctx context.Context, taskID uuid.UUID) error
 	return err
 }
 
+const lockTaskForApprove = `-- name: LockTaskForApprove :one
+SELECT id, created_by, state, acknowledged_at FROM tasks WHERE id = $1 FOR UPDATE
+`
+
+type LockTaskForApproveRow struct {
+	ID             uuid.UUID  `json:"id"`
+	CreatedBy      string     `json:"created_by"`
+	State          TaskState  `json:"state"`
+	AcknowledgedAt *time.Time `json:"acknowledged_at"`
+}
+
+// Acquire a row-level lock and read the gating columns for Acknowledge.
+// The caller checks created_by / state / acknowledged_at in Go to produce
+// distinct sentinel errors (ErrForbidden / ErrConflict / ErrAlreadyAcknowledged)
+// instead of collapsing them into a single ErrConflict. Held until the
+// enclosing transaction commits or rolls back.
+func (q *Queries) LockTaskForApprove(ctx context.Context, id uuid.UUID) (LockTaskForApproveRow, error) {
+	row := q.db.QueryRow(ctx, lockTaskForApprove, id)
+	var i LockTaskForApproveRow
+	err := row.Scan(
+		&i.ID,
+		&i.CreatedBy,
+		&i.State,
+		&i.AcknowledgedAt,
+	)
+	return i, err
+}
+
 const mapAlias = `-- name: MapAlias :one
 UPDATE tag_aliases SET
     tag_id = $2,
@@ -7707,7 +7853,7 @@ func (q *Queries) ObservationsByConcept(ctx context.Context, arg ObservationsByC
 }
 
 const openTasksForAssignee = `-- name: OpenTasksForAssignee :many
-SELECT id, created_by, assignee, title, state, deadline, priority, submitted_at, accepted_at, completed_at, canceled_at, revision_requested_at, metadata
+SELECT id, created_by, assignee, title, state, deadline, priority, submitted_at, accepted_at, completed_at, canceled_at, revision_requested_at, metadata, acknowledged_at, acknowledged_by
 FROM tasks
 WHERE assignee = $1 AND state IN ('submitted', 'working', 'revision_requested')
 ORDER BY submitted_at DESC
@@ -7745,6 +7891,8 @@ func (q *Queries) OpenTasksForAssignee(ctx context.Context, arg OpenTasksForAssi
 			&i.CanceledAt,
 			&i.RevisionRequestedAt,
 			&i.Metadata,
+			&i.AcknowledgedAt,
+			&i.AcknowledgedBy,
 		); err != nil {
 			return nil, err
 		}
@@ -7757,7 +7905,7 @@ func (q *Queries) OpenTasksForAssignee(ctx context.Context, arg OpenTasksForAssi
 }
 
 const openTasksForCreator = `-- name: OpenTasksForCreator :many
-SELECT id, created_by, assignee, title, state, deadline, priority, submitted_at, accepted_at, completed_at, canceled_at, revision_requested_at, metadata
+SELECT id, created_by, assignee, title, state, deadline, priority, submitted_at, accepted_at, completed_at, canceled_at, revision_requested_at, metadata, acknowledged_at, acknowledged_by
 FROM tasks
 WHERE created_by = $1 AND state IN ('submitted', 'working', 'revision_requested')
 ORDER BY submitted_at DESC
@@ -7794,6 +7942,8 @@ func (q *Queries) OpenTasksForCreator(ctx context.Context, arg OpenTasksForCreat
 			&i.CanceledAt,
 			&i.RevisionRequestedAt,
 			&i.Metadata,
+			&i.AcknowledgedAt,
+			&i.AcknowledgedBy,
 		); err != nil {
 			return nil, err
 		}
@@ -7806,7 +7956,7 @@ func (q *Queries) OpenTasksForCreator(ctx context.Context, arg OpenTasksForCreat
 }
 
 const openTasksPaged = `-- name: OpenTasksPaged :many
-SELECT id, created_by, assignee, title, state, deadline, priority, submitted_at, accepted_at, completed_at, canceled_at, revision_requested_at, metadata
+SELECT id, created_by, assignee, title, state, deadline, priority, submitted_at, accepted_at, completed_at, canceled_at, revision_requested_at, metadata, acknowledged_at, acknowledged_by
 FROM tasks
 WHERE state IN ('submitted', 'working', 'revision_requested')
 ORDER BY submitted_at DESC
@@ -7842,6 +7992,8 @@ func (q *Queries) OpenTasksPaged(ctx context.Context, arg OpenTasksPagedParams) 
 			&i.CanceledAt,
 			&i.RevisionRequestedAt,
 			&i.Metadata,
+			&i.AcknowledgedAt,
+			&i.AcknowledgedBy,
 		); err != nil {
 			return nil, err
 		}
@@ -9264,7 +9416,7 @@ const reacceptTask = `-- name: ReacceptTask :one
 UPDATE tasks
 SET state = 'working', completed_at = NULL, revision_requested_at = NULL
 WHERE id = $1 AND state = 'revision_requested'
-RETURNING id, created_by, assignee, title, state, deadline, priority, submitted_at, accepted_at, completed_at, canceled_at, revision_requested_at, metadata
+RETURNING id, created_by, assignee, title, state, deadline, priority, submitted_at, accepted_at, completed_at, canceled_at, revision_requested_at, metadata, acknowledged_at, acknowledged_by
 `
 
 // Transition revision_requested → working. The assignee picks up the revision.
@@ -9286,6 +9438,8 @@ func (q *Queries) ReacceptTask(ctx context.Context, id uuid.UUID) (Task, error) 
 		&i.CanceledAt,
 		&i.RevisionRequestedAt,
 		&i.Metadata,
+		&i.AcknowledgedAt,
+		&i.AcknowledgedBy,
 	)
 	return i, err
 }
@@ -9584,7 +9738,7 @@ func (q *Queries) RecentObservationsByConcept(ctx context.Context, arg RecentObs
 }
 
 const recentResolvedTasks = `-- name: RecentResolvedTasks :many
-SELECT id, created_by, assignee, title, state, deadline, priority, submitted_at, accepted_at, completed_at, canceled_at, revision_requested_at, metadata
+SELECT id, created_by, assignee, title, state, deadline, priority, submitted_at, accepted_at, completed_at, canceled_at, revision_requested_at, metadata, acknowledged_at, acknowledged_by
 FROM tasks
 WHERE state IN ('completed', 'canceled')
 ORDER BY COALESCE(completed_at, canceled_at) DESC
@@ -9615,6 +9769,8 @@ func (q *Queries) RecentResolvedTasks(ctx context.Context, maxResults int32) ([]
 			&i.CanceledAt,
 			&i.RevisionRequestedAt,
 			&i.Metadata,
+			&i.AcknowledgedAt,
+			&i.AcknowledgedBy,
 		); err != nil {
 			return nil, err
 		}
@@ -9898,12 +10054,15 @@ func (q *Queries) RelatedTagsForTopic(ctx context.Context, arg RelatedTagsForTop
 const requestRevisionTask = `-- name: RequestRevisionTask :one
 UPDATE tasks
 SET state = 'revision_requested', revision_requested_at = now()
-WHERE id = $1 AND state = 'completed'
-RETURNING id, created_by, assignee, title, state, deadline, priority, submitted_at, accepted_at, completed_at, canceled_at, revision_requested_at, metadata
+WHERE id = $1 AND state = 'completed' AND acknowledged_at IS NULL
+RETURNING id, created_by, assignee, title, state, deadline, priority, submitted_at, accepted_at, completed_at, canceled_at, revision_requested_at, metadata, acknowledged_at, acknowledged_by
 `
 
 // Transition completed → revision_requested. Only the task creator (source)
 // should call this after reviewing the deliverable. Sets revision_requested_at.
+// Acknowledged completed tasks are final and cannot be revised — the
+// acknowledged_at IS NULL guard rejects them with no rows updated, which
+// the store maps to ErrConflict.
 func (q *Queries) RequestRevisionTask(ctx context.Context, id uuid.UUID) (Task, error) {
 	row := q.db.QueryRow(ctx, requestRevisionTask, id)
 	var i Task
@@ -9921,6 +10080,8 @@ func (q *Queries) RequestRevisionTask(ctx context.Context, id uuid.UUID) (Task, 
 		&i.CanceledAt,
 		&i.RevisionRequestedAt,
 		&i.Metadata,
+		&i.AcknowledgedAt,
+		&i.AcknowledgedBy,
 	)
 	return i, err
 }
@@ -12032,7 +12193,7 @@ func (q *Queries) TargetRefsForNote(ctx context.Context, noteID uuid.UUID) ([]Ta
 }
 
 const taskByID = `-- name: TaskByID :one
-SELECT id, created_by, assignee, title, state, deadline, priority, submitted_at, accepted_at, completed_at, canceled_at, revision_requested_at, metadata
+SELECT id, created_by, assignee, title, state, deadline, priority, submitted_at, accepted_at, completed_at, canceled_at, revision_requested_at, metadata, acknowledged_at, acknowledged_by
 FROM tasks WHERE id = $1
 `
 
@@ -12053,6 +12214,8 @@ func (q *Queries) TaskByID(ctx context.Context, id uuid.UUID) (Task, error) {
 		&i.CanceledAt,
 		&i.RevisionRequestedAt,
 		&i.Metadata,
+		&i.AcknowledgedAt,
+		&i.AcknowledgedBy,
 	)
 	return i, err
 }
@@ -12093,7 +12256,7 @@ func (q *Queries) TaskMessages(ctx context.Context, taskID uuid.UUID) ([]TaskMes
 }
 
 const tasksPaged = `-- name: TasksPaged :many
-SELECT id, created_by, assignee, title, state, deadline, priority, submitted_at, accepted_at, completed_at, canceled_at, revision_requested_at, metadata
+SELECT id, created_by, assignee, title, state, deadline, priority, submitted_at, accepted_at, completed_at, canceled_at, revision_requested_at, metadata, acknowledged_at, acknowledged_by
 FROM tasks
 WHERE ($1::task_state IS NULL OR state = $1::task_state)
 ORDER BY submitted_at DESC
@@ -12130,6 +12293,8 @@ func (q *Queries) TasksPaged(ctx context.Context, arg TasksPagedParams) ([]Task,
 			&i.CanceledAt,
 			&i.RevisionRequestedAt,
 			&i.Metadata,
+			&i.AcknowledgedAt,
+			&i.AcknowledgedBy,
 		); err != nil {
 			return nil, err
 		}
@@ -12970,7 +13135,7 @@ const transitionTaskToCompleted = `-- name: TransitionTaskToCompleted :one
 UPDATE tasks
 SET state = 'completed', completed_at = now()
 WHERE id = $1 AND state = 'working'
-RETURNING id, created_by, assignee, title, state, deadline, priority, submitted_at, accepted_at, completed_at, canceled_at, revision_requested_at, metadata
+RETURNING id, created_by, assignee, title, state, deadline, priority, submitted_at, accepted_at, completed_at, canceled_at, revision_requested_at, metadata, acknowledged_at, acknowledged_by
 `
 
 // Flip a task from working → completed. The trg_tasks_completion_requires_outputs
@@ -12995,6 +13160,8 @@ func (q *Queries) TransitionTaskToCompleted(ctx context.Context, id uuid.UUID) (
 		&i.CanceledAt,
 		&i.RevisionRequestedAt,
 		&i.Metadata,
+		&i.AcknowledgedAt,
+		&i.AcknowledgedBy,
 	)
 	return i, err
 }

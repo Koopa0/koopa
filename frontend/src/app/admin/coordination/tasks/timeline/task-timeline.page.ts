@@ -110,17 +110,32 @@ export class TaskTimelinePageComponent {
     );
   });
 
-  // Request-revision is only valid once the task is completed: the
-  // human has the artifact in hand and wants to push back. Widen this
-  // gate only if the backend policy changes.
+  // Request-revision is only valid once the task is completed AND not yet
+  // source-acknowledged. Once acknowledged the deliverable is final and
+  // revision must go through a fresh task — the store enforces the same
+  // invariant via RequestRevisionTask's acknowledged_at IS NULL guard.
   protected readonly canRequestRevision = computed(() => {
     const t = this.task();
-    return !!t && t.state === 'completed';
+    return !!t && t.state === 'completed' && !t.acknowledged_at;
   });
 
+  // Approve is allowed only once: completed + unacked. After ack the
+  // button hides — the store would 409 anyway, but hiding it keeps the
+  // UI honest. Source-binding (caller == created_by) is enforced server
+  // side; we don't replicate that gate here because the actor isn't
+  // available in this scope.
   protected readonly canApprove = computed(() => {
     const t = this.task();
-    return !!t && t.state === 'completed';
+    return !!t && t.state === 'completed' && !t.acknowledged_at;
+  });
+
+  // Acknowledgement metadata for the badge under the hero. Present only
+  // when the task has been acked; the template uses it to render
+  // "Approved by X · <timestamp>".
+  protected readonly approvedMeta = computed(() => {
+    const t = this.task();
+    if (!t || !t.acknowledged_at) return null;
+    return { at: t.acknowledged_at, by: t.acknowledged_by ?? null };
   });
 
   // Cancel ends the task without a response message. Valid for

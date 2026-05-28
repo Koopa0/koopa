@@ -70,6 +70,8 @@ type Task struct {
 	CompletedAt         *time.Time      `json:"completed_at,omitempty"`
 	CanceledAt          *time.Time      `json:"canceled_at,omitempty"`
 	RevisionRequestedAt *time.Time      `json:"revision_requested_at,omitempty"`
+	AcknowledgedAt      *time.Time      `json:"acknowledged_at,omitempty"`
+	AcknowledgedBy      *string         `json:"acknowledged_by,omitempty"`
 	Metadata            json.RawMessage `json:"metadata,omitempty"`
 }
 
@@ -135,4 +137,12 @@ var (
 	// if the underlying tx is interrupted between inserts and the state
 	// transition.
 	ErrCompletionOutputsMissing = errors.New("task: completion requires response message and artifact")
+
+	// ErrAlreadyAcknowledged is returned when Acknowledge is called against
+	// a task whose acknowledged_at is already set. The handler maps this to
+	// HTTP 409 so callers can distinguish "first ack succeeded" from "another
+	// caller already acked." Distinct from ErrConflict because the UX intent
+	// differs: re-approve should be idempotent-safe but visible, not a hard
+	// error.
+	ErrAlreadyAcknowledged = errors.New("task: already acknowledged")
 )

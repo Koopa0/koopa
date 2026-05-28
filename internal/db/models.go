@@ -644,7 +644,7 @@ type ActivityEvent struct {
 	EntityTitle *string `json:"entity_title"`
 	// Slug of the entity AT THE TIME of the event, for slug-addressable types (content, bookmark, note, project). NULL otherwise.
 	EntitySlug *string `json:"entity_slug"`
-	// Closed set of mutation kinds. created = INSERT. state_changed = enum/status transition. completed/published/archived = specific terminal transitions worth distinguishing. updated = generic field change.
+	// Closed set of mutation kinds. created = INSERT. state_changed = enum/status transition. completed/published/archived = specific terminal transitions worth distinguishing. acknowledged = source-side final acceptance of a completed task (state stays completed). updated = generic field change.
 	ChangeKind string `json:"change_kind"`
 	// Optional project association for project-scoped activity feeds. SET NULL on project deletion.
 	ProjectID *uuid.UUID `json:"project_id"`
@@ -1461,6 +1461,10 @@ type Task struct {
 	RevisionRequestedAt *time.Time `json:"revision_requested_at"`
 	// Non-routing task info: correlation keys, opaque payload hints. Promote a field to a column when WHERE/JOIN/GROUP BY usage exceeds 3 occurrences.
 	Metadata json.RawMessage `json:"metadata"`
+	// Source-side final acceptance of the current completed result. NULL until the source agent calls /approve on a completed, unacknowledged task. A non-NULL value means: this delivery is accepted, the task is closed for revisions, and the awaiting-judgment inbox should not show it.
+	AcknowledgedAt *time.Time `json:"acknowledged_at"`
+	// Agent that acknowledged the task. Must equal tasks.created_by — enforced at the store layer, not at the schema, because the FK can only check agents(name) existence. NULL together with acknowledged_at.
+	AcknowledgedBy *string `json:"acknowledged_by"`
 }
 
 // Ordered request/response conversation turns on a task. Parts column is a JSONB array of a2a.Part values (flattened form). Hard size caps (16 parts max, 32 KB total) are DB-enforced bloat prevention — anything larger belongs in artifacts, not messages.

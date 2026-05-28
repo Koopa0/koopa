@@ -156,9 +156,15 @@ export class TodayService {
   }
 
   private completedTasks(): Observable<CoordinationTask[]> {
-    return this.taskService
-      .completed()
-      .pipe(catchError(() => of<CoordinationTask[]>([])));
+    // Awaiting-judgment semantics: a task that has been source-acknowledged
+    // (acknowledged_at set) is final and must not appear in the inbox. The
+    // /completed endpoint is the completed-history view and intentionally
+    // includes acked tasks; we filter client-side until backend Today
+    // fan-out switches to a dedicated awaiting-approval source.
+    return this.taskService.completed().pipe(
+      map((rows) => rows.filter((t) => !t.acknowledged_at)),
+      catchError(() => of<CoordinationTask[]>([])),
+    );
   }
 
   private plan(): Observable<PlanSummary | null> {

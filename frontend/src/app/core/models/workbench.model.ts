@@ -119,6 +119,15 @@ export interface CoordinationTask {
   completed_at?: string;
   canceled_at?: string;
   revision_requested_at?: string;
+  /**
+   * Set when the source agent has acknowledged a completed task as final.
+   * Drives the "Awaiting your judgment" inbox (only unacked completed
+   * tasks appear) and disables the Approve / Request revision buttons in
+   * the task timeline. Acknowledgement is durable on the tasks row, not
+   * derived from messages.
+   */
+  acknowledged_at?: string;
+  acknowledged_by?: string;
   metadata?: Record<string, unknown>;
 }
 

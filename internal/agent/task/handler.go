@@ -5,6 +5,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strings"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/google/uuid"
@@ -18,6 +19,7 @@ import (
 var storeErrors = []api.ErrMap{
 	{Target: ErrNotFound, Status: http.StatusNotFound, Code: "NOT_FOUND", Message: "task not found"},
 	{Target: ErrConflict, Status: http.StatusConflict, Code: "CONFLICT", Message: "task conflict"},
+	{Target: ErrAlreadyAcknowledged, Status: http.StatusConflict, Code: "ALREADY_ACKNOWLEDGED", Message: "task already acknowledged"},
 	{Target: ErrInvalidInput, Status: http.StatusBadRequest, Code: "BAD_REQUEST", Message: "invalid input"},
 	{Target: ErrCompletionOutputsMissing, Status: http.StatusConflict, Code: "COMPLETION_MISSING_OUTPUTS", Message: "completion requires a response message and artifact"},
 	{Target: agent.ErrUnknownAgent, Status: http.StatusBadRequest, Code: "UNKNOWN_AGENT", Message: "unknown agent"},
@@ -193,17 +195,21 @@ func (h *Handler) Submit(w http.ResponseWriter, r *http.Request) {
 }
 
 // Approve handles POST /api/admin/coordination/tasks/{id}/approve.
-// Tasks have no `approved` state, so approval appends a response message
-// acknowledging the completion and returns the task. Approval is an
-// acknowledgement event, not a state transition.
 //
-// No agent.Authorize call: Approve goes through task.Store.AppendMessage,
-// which is the same path as Reply and carries no compile-time capability
-// gate. The task state machine itself is not advanced here — any agent
-// that can reach this route (JWT + adminMid) may record an approval
-// message. If a future multi-agent deployment needs to restrict who can
-// approve, lift this to an explicit ActionApproveTask on agent.Capability
-// and put the mutation behind Authorize.
+// Records source-side final acceptance of a completed task: sets
+// tasks.acknowledged_at and tasks.acknowledged_by, optionally appending
+// a single response message with the caller's notes inside the same tx.
+// Empty / whitespace-only notes append no message — the schema columns
+// carry the acknowledgement signal, not the message body.
+//
+// Allowed only when:
+//   - state = 'completed'
+//   - acknowledged_at IS NULL
+//   - caller (from api.ActorFromContext) equals tasks.created_by
+//
+// The caller / source match is enforced at the store layer
+// (Store.Acknowledge), not just here, so MCP and any future surface
+// reach the same conclusion. Already-acknowledged tasks return 409.
 func (h *Handler) Approve(w http.ResponseWriter, r *http.Request) {
 	id, err := uuid.Parse(r.PathValue("id"))
 	if err != nil {
@@ -219,21 +225,22 @@ func (h *Handler) Approve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	actor, ok := api.ActorFromContext(r.Context())
+	if !ok {
+		actor = "human"
+	}
+	auth, err := agent.Authorize(r.Context(), h.registry, agent.Name(actor), agent.ActionApproveTask)
+	if err != nil {
+		api.HandleError(w, h.logger, err, storeErrors...)
+		return
+	}
+
 	store := h.store
 	if tx, ok := api.TxFromContext(r.Context()); ok {
 		store = h.store.WithTx(tx)
 	}
 
-	notes := body.Notes
-	if notes == "" {
-		notes = "Approved."
-	}
-	if _, err := store.AppendMessage(r.Context(), id, RoleResponse, []*a2a.Part{a2a.NewTextPart(notes)}); err != nil {
-		api.HandleError(w, h.logger, err, storeErrors...)
-		return
-	}
-
-	t, err := store.Task(r.Context(), id)
+	t, err := store.Acknowledge(r.Context(), auth, id, strings.TrimSpace(body.Notes))
 	if err != nil {
 		api.HandleError(w, h.logger, err, storeErrors...)
 		return

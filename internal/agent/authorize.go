@@ -58,12 +58,18 @@ const (
 	// ActionReacceptTask authorizes task.Store.Reaccept. The assignee picks up
 	// a revision-requested task. Uses ReceiveTasks capability.
 	ActionReacceptTask Action = "reaccept_task"
+	// ActionApproveTask authorizes task.Store.Acknowledge. The source agent
+	// records final acceptance of a completed deliverable. Uses SubmitTasks
+	// capability (creator-side action, like Cancel and RequestRevision); the
+	// store additionally enforces caller == task.created_by so a capable but
+	// unrelated agent cannot acknowledge someone else's task.
+	ActionApproveTask Action = "approve_task"
 )
 
 // Allows reports whether this Capability permits the given action.
 func (c Capability) Allows(action Action) bool {
 	switch action {
-	case ActionSubmitTask, ActionCancelTask, ActionRequestRevision:
+	case ActionSubmitTask, ActionCancelTask, ActionRequestRevision, ActionApproveTask:
 		return c.SubmitTasks
 	case ActionAcceptTask, ActionReacceptTask:
 		return c.ReceiveTasks

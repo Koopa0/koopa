@@ -47,6 +47,18 @@ func TestCapabilityAllows(t *testing.T) {
 			want:       true,
 		},
 		{
+			name:       "approve task uses SubmitTasks",
+			capability: Capability{SubmitTasks: true},
+			action:     ActionApproveTask,
+			want:       true,
+		},
+		{
+			name:       "approve task denied without SubmitTasks",
+			capability: Capability{ReceiveTasks: true, PublishArtifacts: true},
+			action:     ActionApproveTask,
+			want:       false,
+		},
+		{
 			name:       "empty capability denies submit",
 			capability: Capability{},
 			action:     ActionSubmitTask,
@@ -159,6 +171,17 @@ func TestAuthorize(t *testing.T) {
 			name:    "research-lab cannot submit",
 			caller:  "research-lab",
 			action:  ActionSubmitTask,
+			wantErr: ErrForbidden,
+		},
+		{
+			name:   "hq can approve (SubmitTasks)",
+			caller: "hq",
+			action: ActionApproveTask,
+		},
+		{
+			name:    "research-lab cannot approve (no SubmitTasks)",
+			caller:  "research-lab",
+			action:  ActionApproveTask,
 			wantErr: ErrForbidden,
 		},
 		{
