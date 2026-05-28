@@ -24,12 +24,9 @@ interface SocialLink {
       <div
         class="relative mx-auto max-w-7xl px-4 py-20 text-center sm:px-6 lg:px-8"
       >
-        <h2 class="font-display text-3xl font-bold text-zinc-100">
-          Have a Backend Challenge?
-        </h2>
+        <h2 class="font-display text-3xl font-bold text-zinc-100">Find me</h2>
         <p class="mx-auto mt-4 max-w-xl text-zinc-400">
-          Whether it's performance issues, architecture decisions, or scaling
-          bottlenecks — let's talk.
+          GitHub, X, LinkedIn, or email — whichever you prefer.
         </p>
         <div class="mt-10 flex items-center justify-center gap-4">
           @for (link of socialLinks; track link.name) {

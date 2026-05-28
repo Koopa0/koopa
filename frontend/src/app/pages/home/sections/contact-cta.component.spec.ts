@@ -38,7 +38,7 @@ describe('ContactCtaComponent', () => {
   it('should render section heading', () => {
     const h2 = fixture.nativeElement.querySelector('h2');
     expect(h2).not.toBeNull();
-    expect(h2.textContent).toContain('Have a Backend Challenge?');
+    expect(h2.textContent).toContain('Find me');
   });
 
   it('should render all social link buttons', () => {

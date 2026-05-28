@@ -24,11 +24,11 @@ describe('HeroSectionComponent', () => {
   it('should render hero heading', () => {
     const h1 = fixture.nativeElement.querySelector('h1');
     expect(h1).not.toBeNull();
-    expect(h1.textContent).toContain('Production systems that perform');
+    expect(h1.textContent).toContain('Backend and AI infrastructure');
   });
 
   it('should render role badge', () => {
     const badge = fixture.nativeElement.querySelector('p');
-    expect(badge.textContent).toContain('Go Backend Consultant');
+    expect(badge.textContent).toContain('Backend / AI infrastructure');
   });
 });

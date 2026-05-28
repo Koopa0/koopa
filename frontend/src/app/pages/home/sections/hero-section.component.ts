@@ -38,20 +38,20 @@ import { HeroCanvasComponent } from '../../../shared/components/hero-canvas/hero
             class="hero-badge mb-4 inline-flex items-center gap-2 rounded-full border border-zinc-700 px-3 py-1 text-xs font-medium text-zinc-400 motion-safe:opacity-0"
           >
             <lucide-icon [img]="Code2Icon" [size]="12" />
-            Go Backend Consultant
+            Backend / AI infrastructure
           </p>
           <h1
             class="hero-title font-display text-4xl font-bold tracking-tight text-zinc-100 sm:text-5xl lg:text-6xl motion-safe:opacity-0"
           >
-            Production systems that perform
-            <span class="text-(--color-brand-light)">under pressure</span>
+            Backend and AI infrastructure,
+            <span class="text-(--color-brand-light)">written down</span>.
           </h1>
           <p
             class="hero-subtitle mt-6 max-w-2xl text-lg leading-relaxed text-zinc-400 motion-safe:opacity-0"
           >
-            Backend architecture, performance optimization, and system design.
-            Building production-grade services with Go — from diagnosis to
-            delivery.
+            Articles, build logs, and technical notes on production Go services,
+            AI infrastructure, and the private semantic system that powers this
+            site.
           </p>
         </div>
       </div>
