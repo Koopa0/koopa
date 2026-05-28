@@ -3,9 +3,11 @@
 // This file is the only place in the MCP binary permitted to call
 // os.Getenv (see .claude/rules/go-philosophy.md). It also owns the
 // default CallerAgent selection: unless overridden by the env var,
-// every incoming tool call is attributed to "human" — the safest
-// default, because capability checks are enforced against the caller's
-// agent row, not against the transport.
+// every incoming tool call without an explicit `as` field is
+// attributed to "unknown" — a zero-privilege agent registered in
+// agent.BuiltinAgents(). The earlier default of "human" silently
+// granted full human authority to any caller that forgot to set `as`,
+// which was the fail-open trap CF-02 closed.
 package main
 
 import (
@@ -37,11 +39,15 @@ func loadConfig(logger *slog.Logger) config {
 
 	cfg.DatabaseURL = requireEnv("DATABASE_URL", logger)
 
-	// Default caller agent: "human" (safest default).
-	// Each Cowork project's instructions tell the AI to pass as: "hq"
-	// in tool calls. The server trusts the caller's self-identification
-	// and validates via capability flags, not transport identity.
-	cfg.CallerAgent = envOr("KOOPA_MCP_CALLER_AGENT", "human")
+	// Default caller agent: "unknown" — fail-closed. Each Cowork project's
+	// instructions tell the AI to pass as: "hq" (or its real agent name)
+	// in every tool call. A client that forgets ends up attributed to the
+	// zero-privilege "unknown" agent, which agent.Authorize / requireAuthor
+	// / requireExplicitHuman all refuse. Override only when the deployment
+	// genuinely has a single legitimate default (e.g. a personal-use
+	// deploy where all calls are from Koopa) — pin to "human" explicitly
+	// in that case rather than relying on the prior implicit default.
+	cfg.CallerAgent = envOr("KOOPA_MCP_CALLER_AGENT", "unknown")
 
 	// HTTP transport requires MCP_TOKEN + Google OAuth
 	cfg.MCPToken = os.Getenv("MCP_TOKEN")

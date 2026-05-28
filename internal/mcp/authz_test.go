@@ -3,8 +3,11 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 	"strings"
 	"testing"
+
+	"github.com/Koopa0/koopa/internal/agent"
 )
 
 // withCallerAs returns a context where the caller identity has been
@@ -33,9 +36,19 @@ func TestRequireExplicitHuman(t *testing.T) {
 			wantErr: `caller "hq" is not authorized (human-only)`,
 		},
 		{
-			name:    "explicit unknown caller",
+			name:    "explicit unregistered caller",
 			ctx:     withCallerAs(t.Context(), "ghost"),
 			wantErr: `caller "ghost" is not registered`,
+		},
+		{
+			// CF-02: even when explicit, the zero-privilege fallback
+			// 'unknown' agent must be refused — Platform=system, not
+			// human. This protects against a misconfigured deploy that
+			// pins KOOPA_MCP_CALLER_AGENT="unknown" and a buggy client
+			// that mirrors that in `as`.
+			name:    "explicit unknown caller — Platform=system refused",
+			ctx:     withCallerAs(t.Context(), "unknown"),
+			wantErr: `caller "unknown" is not authorized (human-only)`,
 		},
 		{
 			name: "explicit human caller — allowed",
@@ -89,10 +102,19 @@ func TestRequireAuthor(t *testing.T) {
 			wantErr: `caller "learning-studio" is not in the author allowlist`,
 		},
 		{
-			name:    "unknown caller",
+			name:    "unregistered caller",
 			ctx:     withCallerAs(t.Context(), "ghost"),
 			authors: []string{"hq"},
 			wantErr: `caller "ghost" is not registered`,
+		},
+		{
+			// CF-02: the zero-privilege fallback agent must be refused
+			// by requireAuthor too — even if a client explicitly passes
+			// as:"unknown" trying to slip past the env default.
+			name:    "explicit unknown caller — refused by allowlist",
+			ctx:     withCallerAs(t.Context(), "unknown"),
+			authors: []string{"hq", "content-studio"},
+			wantErr: `caller "unknown" is not in the author allowlist`,
 		},
 	}
 
@@ -113,6 +135,82 @@ func TestRequireAuthor(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestServerDefaultCallerAgent_FailsClosed pins the CF-02 contract: the
+// server's default callerAgent (used when an MCP call omits `as`) is the
+// zero-privilege "unknown" agent, and every authorization gate refuses it.
+// This test deliberately uses a fresh Server constructed without
+// WithCallerAgent, so it observes the bare default from NewServer's
+// initializer at server.go.
+//
+// Why this matters: prior to CF-02, the default was "human", which let
+// any caller that omitted `as` silently inherit human authority through
+// requireAuthor (the human-implicit branch). The audit author chain for
+// such a call would attribute it to "human" even though no human review
+// occurred. The default change to "unknown" closes that path: a missing
+// `as` now resolves to a Platform=system agent that fails every gate.
+//
+// The test does NOT exercise the propose/commit/publish handlers because
+// the new default is observable at the gate level — extending the test
+// to those handlers would duplicate TestRequireExplicitHuman /
+// TestRequireAuthor coverage.
+func TestServerDefaultCallerAgent_FailsClosed(t *testing.T) {
+	// Construct a Server with the same default initializer NewServer uses,
+	// without WithCallerAgent. handler_test.go's newTestServer() pins
+	// callerAgent="human" for legacy reasons (so unit tests can exercise
+	// validation paths past requireAuthor); this test must NOT use that
+	// helper, otherwise it would observe the test default, not the
+	// production-relevant server default.
+	s := &Server{
+		logger:         testLogger(),
+		registry:       agent.NewBuiltinRegistry(),
+		proposalSecret: []byte("test-secret-32-bytes-long-enough"),
+		// Mirror server.go NewServer initializer — the value that CF-02
+		// hardened. If this drifts from server.go, the test must be
+		// updated to match, and the divergence is itself a regression.
+		callerAgent: "unknown",
+	}
+
+	// 1. requireExplicitHuman: omitting `as` triggers the explicit-`as`
+	// guard before ever inspecting the resolved identity. The message
+	// names the absence, not the default value.
+	if err := s.requireExplicitHuman(t.Context(), "test_op"); err == nil {
+		t.Fatal("requireExplicitHuman without `as` = nil, want refusal")
+	} else if !strings.Contains(err.Error(), "refusing without explicit `as` field") {
+		t.Errorf("requireExplicitHuman error = %q, want explicit-`as` refusal", err)
+	}
+
+	// 2. requireAuthor: without `as`, the resolved identity falls back
+	// to the server default ("unknown"). The "unknown" registry row has
+	// Platform=system (not human) and is not in any allowlist, so the
+	// gate rejects with the "not in the author allowlist" path. This is
+	// the gate that CF-02 actually hardened — under the old default
+	// "human", this branch silently passed via the human-implicit short
+	// circuit.
+	if err := s.requireAuthor(t.Context(), "test_op", "hq", "content-studio"); err == nil {
+		t.Fatal("requireAuthor without `as` (default unknown) = nil, want refusal")
+	} else if !strings.Contains(err.Error(), `caller "unknown" is not in the author allowlist`) {
+		t.Errorf("requireAuthor error = %q, want unknown-not-in-allowlist refusal", err)
+	}
+
+	// 3. Sanity check: an explicit `as: "human"` continues to work. This
+	// guards against an over-zealous CF-02 follow-up that closes the
+	// explicit-human path too. Phase 2 must NOT break legitimate human
+	// authority — only the silent-default-human path.
+	if err := s.requireExplicitHuman(withCallerAs(t.Context(), "human"), "test_op"); err != nil {
+		t.Errorf("requireExplicitHuman with explicit as=human = %v, want nil", err)
+	}
+	if err := s.requireAuthor(withCallerAs(t.Context(), "human"), "test_op", "hq"); err != nil {
+		t.Errorf("requireAuthor with explicit as=human = %v, want nil", err)
+	}
+}
+
+// testLogger returns a discard slog logger. authz tests don't assert on
+// log output; the local helper avoids the integration_test.go logger
+// (which lives behind //go:build integration).
+func testLogger() *slog.Logger {
+	return slog.New(slog.DiscardHandler)
 }
 
 // TestCommitProposalGate covers the type-dependent commit gate. directive

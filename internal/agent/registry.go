@@ -123,6 +123,27 @@ func BuiltinAgents() []Agent {
 			Description: "Database-level writes without Go caller context — pg_cron jobs, manual ops, or fallback when koopa.actor is unset",
 			Capability:  Capability{},
 		},
+		{
+			// Zero-privilege fallback for MCP calls that omit the `as`
+			// field. Lives at the SERVER default (server.go callerAgent
+			// + cmd/mcp KOOPA_MCP_CALLER_AGENT default) so a caller that
+			// forgot to identify itself cannot inherit human or any
+			// cowork-agent privileges through the env-var backdoor. Has
+			// no Capability flags (so coordination mutations refuse it
+			// via agent.Authorize) and Platform != "human" (so
+			// requireExplicitHuman refuses it). Distinct from "system":
+			// "system" attributes DB-level writes that bypass the Go
+			// actor middleware; "unknown" attributes MCP calls whose
+			// Go middleware DID run but received no identity. Surfacing
+			// "unknown" as actor in activity_events is a client-side
+			// red flag — the cowork project instruction must include
+			// `as: "<agent_name>"` on every tool call.
+			Name:        "unknown",
+			DisplayName: "Unknown caller",
+			Platform:    "system",
+			Description: "Zero-privilege fallback for MCP calls without an `as` field. Real agents MUST self-identify per project instructions — surfacing 'unknown' as actor signals a client that forgot to pass `as`.",
+			Capability:  Capability{},
+		},
 	}
 }
 

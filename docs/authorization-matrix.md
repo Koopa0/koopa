@@ -43,9 +43,16 @@ check (in `authz.go::requireExplicitHuman`):
 
 1. The caller MUST supply an explicit `as` field. The MCP server has a
    default caller agent (env `KOOPA_MCP_CALLER_AGENT`, default
-   `"human"`). A handler that accepts the default would let any client
-   that omits `as` silently inherit human authority. `ExplicitCallerIdentity`
-   distinguishes "explicit human" from "default human".
+   `"unknown"` since CF-02 hardening). Even if a future deploy overrides
+   the default back to `"human"`, `requireExplicitHuman` refuses ANY
+   default-fall-through — `ExplicitCallerIdentity` distinguishes
+   "explicit `as` was supplied" from "fell through to server default",
+   and the gate rejects the latter regardless of what the default
+   points to. The `"unknown"` agent itself is zero-privilege (no
+   Capability flags, Platform `system`) so even the requireAuthor gate
+   refuses it, closing the prior fail-open where the env default
+   silently granted human authority to any client that forgot to set
+   `as`.
 2. The registry row for the caller MUST have `Platform == "human"`. We
    check the platform attribute, not a hardcoded name, so a future
    trusted auto-publisher agent registered with `Platform="human"`

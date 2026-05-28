@@ -163,7 +163,15 @@ func NewServer(pool *pgxpool.Pool, logger *slog.Logger, opts ...ServerOption) *S
 		stats:       stats.NewStore(pool),
 		pool:        pool,
 		logger:      logger,
-		callerAgent: "human",
+		// Zero-privilege fallback. cmd/mcp/main.go normally overrides this
+		// via WithCallerAgent(KOOPA_MCP_CALLER_AGENT). A NewServer without
+		// the option lands on "unknown" — by design, so a caller that omits
+		// `as` cannot inherit any cowork-agent or human privileges through
+		// the server default. The unknown agent is registered in
+		// agent.BuiltinAgents() with zero Capability and Platform=system so
+		// every gate (requireExplicitHuman, requireAuthor, agent.Authorize)
+		// refuses it.
+		callerAgent: "unknown",
 		loc:         time.UTC,
 	}
 	// Auto-generate proposal HMAC secret. Ephemeral — proposals don't survive restarts.

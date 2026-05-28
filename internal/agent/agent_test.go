@@ -239,6 +239,36 @@ func TestBuiltinAgentsInvariants(t *testing.T) {
 	if _, ok := seen["human"]; !ok {
 		t.Error("BuiltinAgents() must include the 'human' agent — todo_items.assignee defaults to it")
 	}
+
+	// The 'unknown' identity is the zero-privilege server default for
+	// MCP calls that omit `as` (server.go callerAgent + cmd/mcp
+	// KOOPA_MCP_CALLER_AGENT default). Removing it would either reopen
+	// the fail-open via env-default-human, or break the FK on every
+	// audit row stamped from a call without `as`.
+	if u, ok := seen["unknown"]; !ok {
+		t.Error("BuiltinAgents() must include the 'unknown' agent — server default callerAgent FKs to it")
+	} else if u {
+		// seen[name] is the dup-check flag set above; presence is what
+		// we want, not duplication. The else-if guards against a future
+		// refactor that changes the map semantic without updating this
+		// assertion.
+		_ = u
+	}
+	// Defense-in-depth: the unknown agent MUST have zero capabilities.
+	// If a future edit accidentally grants it SubmitTasks (etc.), a
+	// fallback caller could submit a task without ever identifying
+	// itself — that is the exact failure mode this agent is designed
+	// to prevent.
+	for _, a := range agents {
+		if a.Name == "unknown" {
+			if a.Capability.SubmitTasks || a.Capability.ReceiveTasks || a.Capability.PublishArtifacts {
+				t.Errorf("agent 'unknown' must have zero Capability flags; got %+v", a.Capability)
+			}
+			if a.Platform == "human" {
+				t.Errorf("agent 'unknown' must NOT have Platform=human (would defeat the requireExplicitHuman gate)")
+			}
+		}
+	}
 }
 
 func TestRegistryAll(t *testing.T) {

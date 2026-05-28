@@ -204,7 +204,7 @@ Feed schedule values: `hourly` / `daily` / `weekly` / `biweekly` / `monthly`. Au
 
 ## Cross-cutting rules
 
-**Caller identity**: every tool accepts optional `as: "<agent_name>"`. Server trusts the `as` value, validates via the Go `agent.Capability` registered in `BuiltinAgents()`. Default caller is from env `KOOPA_MCP_CALLER_AGENT` (commonly `"human"`).
+**Caller identity**: every tool accepts optional `as: "<agent_name>"`. Server trusts the `as` value, validates via the Go `agent.Capability` registered in `BuiltinAgents()`. Default caller is from env `KOOPA_MCP_CALLER_AGENT` (default `"unknown"` — a zero-privilege fallback agent). Tools gated by `requireExplicitHuman` (publish_content, commit_proposal of high-commitment entities) refuse the default regardless of its value — the `as` field MUST be supplied explicitly.
 
 **Proposal tokens**: HMAC-signed, ephemeral (lost on restart). Fields are fully validated at propose-time — missing required fields refuse to emit a token.
 

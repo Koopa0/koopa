@@ -48,12 +48,22 @@
 // # Why explicit `as` matters for human-only gates
 //
 // The MCP server has a default caller agent (cmd/mcp/config.go:
-// KOOPA_MCP_CALLER_AGENT, default "human"). Operations gated by
-// requireAuthor are content with the default — server-default human is
-// still human. Operations gated by requireExplicitHuman refuse the
-// default: a tool call that omits `as` MUST NOT silently inherit human
-// authority, because that turns the env var into a backdoor. The
-// distinction matters specifically for commit_proposal of
+// KOOPA_MCP_CALLER_AGENT, default "unknown" since CF-02). The
+// "unknown" agent is zero-privilege (no Capability flags, Platform
+// != "human"), so a tool call that omits `as` cannot pass
+// requireExplicitHuman OR requireAuthor: the former rejects because
+// `as` was not explicit, the latter rejects because "unknown" is
+// neither human nor in any author allowlist.
+//
+// requireExplicitHuman additionally enforces that the caller supplied
+// `as` explicitly — even an explicit `as: "human"` is required for
+// operations like publish_content. This double-gate exists so a
+// future env-default override (e.g. KOOPA_MCP_CALLER_AGENT="human"
+// for a personal-use deploy) cannot reopen the fail-open path that
+// CF-02 closed: requireExplicitHuman refuses ALL default-fall-through
+// regardless of what the default points to.
+//
+// The distinction matters specifically for commit_proposal of
 // high-commitment entities and for publish_content, where human
 // review is the load-bearing semantic — not a configuration default.
 
