@@ -10477,6 +10477,185 @@ func (q *Queries) SearchTodoItems(ctx context.Context, arg SearchTodoItemsParams
 	return items, nil
 }
 
+const selfAuditAttemptOutcomeRate = `-- name: SelfAuditAttemptOutcomeRate :one
+
+SELECT
+    COUNT(*) FILTER (WHERE outcome = 'solved_after_solution')::bigint AS solved_after_solution_count,
+    COUNT(*)::bigint                                                   AS problem_solving_attempt_count
+FROM learning_attempts
+WHERE paradigm = 'problem_solving'
+  AND attempted_at >= $1
+  AND attempted_at < $2
+`
+
+type SelfAuditAttemptOutcomeRateParams struct {
+	StartAt time.Time `json:"start_at"`
+	EndAt   time.Time `json:"end_at"`
+}
+
+type SelfAuditAttemptOutcomeRateRow struct {
+	SolvedAfterSolutionCount   int64 `json:"solved_after_solution_count"`
+	ProblemSolvingAttemptCount int64 `json:"problem_solving_attempt_count"`
+}
+
+// ============================================================
+// weekly_summary self_audit — verification metrics for the Phase 2 fixes
+// (CF-04 skip-reason audit, CF-06 solved_after_solution mapping). Scope
+// is intentionally narrow: counts that prove "behavior is changing" or
+// "force/anti-pattern usage is rare". See learning-studio audit
+// decisions memo §E for the P0 metric rationale; recommendation
+// acceptance rate is deliberately NOT here because it needs new
+// tracking infrastructure (memo §E.4).
+// ============================================================
+// Returns solved_after_solution numerator + problem_solving denominator
+// for [start, end). The denominator is paradigm-scoped to
+// problem_solving because solved_after_solution is a paradigm-scoped
+// outcome (chk_learning_attempts_paradigm_outcome). Mixing in immersive
+// attempts would dilute the rate artificially.
+func (q *Queries) SelfAuditAttemptOutcomeRate(ctx context.Context, arg SelfAuditAttemptOutcomeRateParams) (SelfAuditAttemptOutcomeRateRow, error) {
+	row := q.db.QueryRow(ctx, selfAuditAttemptOutcomeRate, arg.StartAt, arg.EndAt)
+	var i SelfAuditAttemptOutcomeRateRow
+	err := row.Scan(&i.SolvedAfterSolutionCount, &i.ProblemSolvingAttemptCount)
+	return i, err
+}
+
+const selfAuditLearningPlanForceCount = `-- name: SelfAuditLearningPlanForceCount :one
+SELECT COUNT(*)::bigint AS count
+FROM activity_events
+WHERE entity_type = 'learning_plan_entry'
+  AND change_kind = 'completed'
+  AND COALESCE(payload->>'reason', '') LIKE 'manual override:%'
+  AND occurred_at >= $1
+  AND occurred_at < $2
+`
+
+type SelfAuditLearningPlanForceCountParams struct {
+	StartAt time.Time `json:"start_at"`
+	EndAt   time.Time `json:"end_at"`
+}
+
+// Counts force-mode plan-entry completions in [start, end). The
+// 'manual override:' reason prefix is the audit signal for force=true
+// completions per mcp-decision-policy.md §13: the prefix is required by
+// validateCompleteEntryReason (internal/mcp/plan.go) and stamped into
+// activity_events.payload.reason by the audit_learning_plan_entries
+// trigger. Used by weekly_summary.self_audit to verify whether the
+// force-mode escape hatch is being used routinely (it should not be).
+func (q *Queries) SelfAuditLearningPlanForceCount(ctx context.Context, arg SelfAuditLearningPlanForceCountParams) (int64, error) {
+	row := q.db.QueryRow(ctx, selfAuditLearningPlanForceCount, arg.StartAt, arg.EndAt)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const selfAuditLearningPlanSkippedHistogram = `-- name: SelfAuditLearningPlanSkippedHistogram :many
+SELECT
+    COALESCE(NULLIF(split_part(payload->>'reason', ':', 1), ''), 'unclassified')::text AS prefix,
+    COUNT(*)::bigint AS count
+FROM activity_events
+WHERE entity_type = 'learning_plan_entry'
+  AND change_kind = 'state_changed'
+  AND payload->>'to' = 'skipped'
+  AND occurred_at >= $1
+  AND occurred_at < $2
+GROUP BY prefix
+ORDER BY count DESC, prefix ASC
+`
+
+type SelfAuditLearningPlanSkippedHistogramParams struct {
+	StartAt time.Time `json:"start_at"`
+	EndAt   time.Time `json:"end_at"`
+}
+
+type SelfAuditLearningPlanSkippedHistogramRow struct {
+	Prefix string `json:"prefix"`
+	Count  int64  `json:"count"`
+}
+
+// Skipped-entry counts grouped by reason prefix in [start, end). The
+// prefix is the substring before the first ':' in payload->>'reason';
+// an empty / NULL / colon-less reason resolves to 'unclassified'.
+// audit_learning_plan_entries records state_changed (not 'completed')
+// for status='skipped'; pairing change_kind='state_changed' with
+// payload->>'to'='skipped' is the unique trigger signature for a skip
+// transition. Used by weekly_summary.self_audit to surface the skip-
+// reason taxonomy without scattering string-split logic in Go.
+func (q *Queries) SelfAuditLearningPlanSkippedHistogram(ctx context.Context, arg SelfAuditLearningPlanSkippedHistogramParams) ([]SelfAuditLearningPlanSkippedHistogramRow, error) {
+	rows, err := q.db.Query(ctx, selfAuditLearningPlanSkippedHistogram, arg.StartAt, arg.EndAt)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []SelfAuditLearningPlanSkippedHistogramRow{}
+	for rows.Next() {
+		var i SelfAuditLearningPlanSkippedHistogramRow
+		if err := rows.Scan(&i.Prefix, &i.Count); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const selfAuditRepeatedConcepts = `-- name: SelfAuditRepeatedConcepts :many
+SELECT c.slug AS concept_slug,
+       COUNT(DISTINCT a.id)::bigint AS attempt_count
+FROM learning_attempt_observations ao
+JOIN learning_attempts a ON a.id = ao.attempt_id
+JOIN concepts c          ON c.id = ao.concept_id
+WHERE a.attempted_at >= $1
+  AND a.attempted_at < $2
+  AND c.archived_at IS NULL
+GROUP BY c.slug
+HAVING COUNT(DISTINCT a.id) >= $3::bigint
+ORDER BY attempt_count DESC, c.slug ASC
+`
+
+type SelfAuditRepeatedConceptsParams struct {
+	StartAt  time.Time `json:"start_at"`
+	EndAt    time.Time `json:"end_at"`
+	MinCount int64     `json:"min_count"`
+}
+
+type SelfAuditRepeatedConceptsRow struct {
+	ConceptSlug  string `json:"concept_slug"`
+	AttemptCount int64  `json:"attempt_count"`
+}
+
+// Concepts touched by >= @min_count distinct attempts in [start, end).
+// Counting unit is distinct attempts (NOT observations) because a
+// single attempt with multiple observations on the same concept should
+// count once — the metric is "did the user repeatedly practise this
+// concept", not "how chatty are the observations".
+// Excludes archived concepts. Sorted attempt_count DESC then slug ASC
+// for deterministic ordering on ties.
+// min_count is cast to bigint explicitly because the project sqlc.yaml
+// maps the default `uuid` override onto any unannotated named parameter
+// — without the cast sqlc would resolve @min_count as uuid.UUID and the
+// query wouldn't even compile in Go.
+func (q *Queries) SelfAuditRepeatedConcepts(ctx context.Context, arg SelfAuditRepeatedConceptsParams) ([]SelfAuditRepeatedConceptsRow, error) {
+	rows, err := q.db.Query(ctx, selfAuditRepeatedConcepts, arg.StartAt, arg.EndAt, arg.MinCount)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []SelfAuditRepeatedConceptsRow{}
+	for rows.Next() {
+		var i SelfAuditRepeatedConceptsRow
+		if err := rows.Scan(&i.ConceptSlug, &i.AttemptCount); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const sessionByID = `-- name: SessionByID :one
 SELECT id, domain, session_mode, agent_note_id, daily_plan_item_id, started_at, ended_at, metadata, created_at, updated_at
 FROM learning_sessions WHERE id = $1

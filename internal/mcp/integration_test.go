@@ -1973,6 +1973,307 @@ func TestIntegration_UpdateEntry_SkipPolicy(t *testing.T) {
 	}
 }
 
+// TestIntegration_WeeklySummary_SelfAuditBlock exercises the CF-08 P0
+// self_audit metrics surfaced by weekly_summary. Seeds enough real
+// activity through production MCP handlers (so the audit triggers
+// fire naturally) to assert each of the four P0 metrics:
+//
+//   - force_true_count — one force-mode completion via manage_plan
+//     update_entry with force=true and a "manual override:" reason.
+//   - solved_after_solution_rate / counts — record_attempt calls with
+//     a mix of problem_solving outcomes; the rate is the
+//     solved_after_solution numerator over total problem_solving
+//     attempts in the window.
+//   - same_concept_repeated_within_week — three distinct attempts
+//     observing the same concept; one extra concept stays below the
+//     threshold so the test also proves the filter rejects sub-threshold
+//     concepts.
+//   - skipped_count + skip_reason_prefix_histogram — two skips with
+//     differently-prefixed reasons that bucket distinctly.
+//
+// The test does NOT bypass the production audit-trigger path —
+// activity_events rows are written by the triggers via the same SQL
+// that runs in production. This matches the existing
+// TestLearningPlanEntryStatusChange_FiresActivityTrigger pattern
+// (using real handler calls instead of direct UPDATE) so the queries
+// are exercised against authentic trigger output, not test
+// fixtures.
+func TestIntegration_WeeklySummary_SelfAuditBlock(t *testing.T) {
+	s := setupServer(t)
+
+	// 1. Build a plan with four entries so we can: force-complete one,
+	//    skip two with different reason prefixes, and leave the
+	//    fourth alone (regression guard: not every entry should
+	//    contribute to the audit signal).
+	_, planProposal, err := callHandler(t, s.proposeLearningPlan, ProposeLearningPlanInput{
+		Title:  "Self-Audit Test Plan",
+		Domain: "leetcode",
+	})
+	if err != nil {
+		t.Fatalf("propose plan: %v", err)
+	}
+	_, planCommit, err := callHandlerAs(t, "human", s.commitProposal, CommitProposalInput{
+		ProposalToken: planProposal.ProposalToken,
+	})
+	if err != nil {
+		t.Fatalf("commit plan: %v", err)
+	}
+
+	if _, _, err := callHandler(t, s.managePlan, ManagePlanInput{
+		Action: "add_entries",
+		PlanID: planCommit.ID,
+		Entries: []ManagePlanEntryInput{
+			{Title: "SA Target Alpha", Position: 1},
+			{Title: "SA Target Beta", Position: 2},
+			{Title: "SA Target Gamma", Position: 3},
+			{Title: "SA Target Delta", Position: 4},
+		},
+	}); err != nil {
+		t.Fatalf("add_entries: %v", err)
+	}
+
+	active := "active"
+	if _, _, err := callHandler(t, s.managePlan, ManagePlanInput{
+		Action: "update_plan",
+		PlanID: planCommit.ID,
+		Status: &active,
+	}); err != nil {
+		t.Fatalf("activate plan: %v", err)
+	}
+
+	rows, err := testPool.Query(t.Context(),
+		"SELECT id, position FROM learning_plan_entries WHERE plan_id = $1 ORDER BY position", planCommit.ID)
+	if err != nil {
+		t.Fatalf("locating entries: %v", err)
+	}
+	defer rows.Close()
+	var entryAlpha, entryBeta, entryGamma, entryDelta string
+	for rows.Next() {
+		var id string
+		var pos int32
+		if err := rows.Scan(&id, &pos); err != nil {
+			t.Fatalf("scan entry: %v", err)
+		}
+		switch pos {
+		case 1:
+			entryAlpha = id
+		case 2:
+			entryBeta = id
+		case 3:
+			entryGamma = id
+		case 4:
+			entryDelta = id
+		}
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("iterating entries: %v", err)
+	}
+	if entryAlpha == "" || entryBeta == "" || entryGamma == "" || entryDelta == "" {
+		t.Fatalf("entry lookup incomplete: Alpha=%q Beta=%q Gamma=%q Delta=%q",
+			entryAlpha, entryBeta, entryGamma, entryDelta)
+	}
+
+	// 2. Start a learning session and record attempts. Outcome mix:
+	//    - 2 solved_after_solution (the CF-06 signal we want to count)
+	//    - 1 solved_independent
+	//    - 1 solved_with_hint
+	//    → numerator=2, denominator=4, rate=0.5
+	_, sess, err := callHandler(t, s.startSession, StartSessionInput{
+		Domain: "leetcode",
+		Mode:   "practice",
+	})
+	if err != nil {
+		t.Fatalf("startSession: %v", err)
+	}
+	sessionID := sess.Session.ID.String()
+
+	// Three attempts share concept "self-audit-repeated-x" (≥3 threshold).
+	// One attempt observes "self-audit-singleton-y" only — below threshold.
+	makeAttempt := func(title, outcome, conceptSlug string) {
+		t.Helper()
+		_, _, err := callHandler(t, s.recordAttempt, RecordAttemptInput{
+			SessionID: sessionID,
+			Target:    AttemptTarget{Title: title},
+			Outcome:   outcome,
+			Observations: []ObservationInput{{
+				Concept:  conceptSlug,
+				Signal:   "weakness",
+				Category: "pattern-recognition",
+				Severity: strPtr("minor"),
+			}},
+		})
+		if err != nil {
+			t.Fatalf("record_attempt(%q, %q, %q): %v", title, outcome, conceptSlug, err)
+		}
+	}
+	makeAttempt("SA Attempt 1", "solved_after_solution", "self-audit-repeated-x")
+	makeAttempt("SA Attempt 2", "solved_independent", "self-audit-repeated-x")
+	makeAttempt("SA Attempt 3", "solved_after_solution", "self-audit-repeated-x")
+	makeAttempt("SA Attempt 4", "solved_with_hint", "self-audit-singleton-y")
+
+	if _, _, err := callHandler(t, s.endSession, EndSessionInput{SessionID: sessionID}); err != nil {
+		t.Fatalf("endSession: %v", err)
+	}
+
+	// 3. Force-complete one entry (the CF-04 audit signal we want to
+	// count). Need an aligned attempt for the entry's target — easiest
+	// path is to use force=true, which skips the alignment check at
+	// the cost of requiring a manual-override-prefixed reason ≥60
+	// runes.
+	completed := "completed"
+	if _, _, err := callHandler(t, s.managePlan, ManagePlanInput{
+		Action:  "update_entry",
+		PlanID:  planCommit.ID,
+		EntryID: &entryAlpha,
+		Status:  &completed,
+		Reason:  strPtr("manual override: SA test exercises the force-mode escape hatch deliberately"),
+		Force:   boolPtr(true),
+	}); err != nil {
+		t.Fatalf("force-complete Alpha: %v", err)
+	}
+
+	// 4. Skip two entries with reasons that bucket distinctly under
+	// split_part(reason, ':', 1):
+	//   - "solved offline: pre-plan attempt"  → prefix "solved offline"
+	//   - "target archived: cascade cleanup"  → prefix "target archived"
+	// Both prefixes are length-1 buckets, so the histogram is sorted
+	// count DESC then prefix ASC — "solved offline" < "target archived"
+	// alphabetically, so the expected order is [solved offline, target archived].
+	skipped := "skipped"
+	if _, _, err := callHandler(t, s.managePlan, ManagePlanInput{
+		Action:  "update_entry",
+		PlanID:  planCommit.ID,
+		EntryID: &entryBeta,
+		Status:  &skipped,
+		Reason:  strPtr("solved offline: pre-plan attempt closed this manually"),
+	}); err != nil {
+		t.Fatalf("skip Beta: %v", err)
+	}
+	if _, _, err := callHandler(t, s.managePlan, ManagePlanInput{
+		Action:  "update_entry",
+		PlanID:  planCommit.ID,
+		EntryID: &entryGamma,
+		Status:  &skipped,
+		Reason:  strPtr("target archived: cascade cleanup during refactor"),
+	}); err != nil {
+		t.Fatalf("skip Gamma: %v", err)
+	}
+	// entryDelta intentionally left in status=planned — regression
+	// guard that an untouched entry contributes nothing.
+
+	// 5. Call weekly_summary for the current week (default) and
+	// assert each self_audit field.
+	_, out, err := callHandler(t, s.weeklySummary, WeeklySummaryInput{})
+	if err != nil {
+		t.Fatalf("weeklySummary: %v", err)
+	}
+	got := out.SelfAudit
+
+	if got.ForceTrueCount != 1 {
+		t.Errorf("ForceTrueCount = %d, want 1", got.ForceTrueCount)
+	}
+	if got.SolvedAfterSolutionCount != 2 {
+		t.Errorf("SolvedAfterSolutionCount = %d, want 2", got.SolvedAfterSolutionCount)
+	}
+	if got.AttemptCount != 4 {
+		t.Errorf("AttemptCount = %d, want 4 (all problem_solving attempts in the window)", got.AttemptCount)
+	}
+	wantRate := 2.0 / 4.0
+	if got.SolvedAfterSolutionRate != wantRate {
+		t.Errorf("SolvedAfterSolutionRate = %v, want %v", got.SolvedAfterSolutionRate, wantRate)
+	}
+
+	// Repeated concept: only "self-audit-repeated-x" should appear
+	// because it crosses the 3-attempt threshold. "self-audit-singleton-y"
+	// has 1 attempt and MUST be absent.
+	foundRepeated := false
+	for _, r := range got.SameConceptRepeatedWithinWeek {
+		if r.Concept == "self-audit-repeated-x" {
+			foundRepeated = true
+			if r.Count != 3 {
+				t.Errorf("SameConceptRepeatedWithinWeek[self-audit-repeated-x] count = %d, want 3", r.Count)
+			}
+		}
+		if r.Concept == "self-audit-singleton-y" {
+			t.Errorf("SameConceptRepeatedWithinWeek includes singleton concept (count would be 1, below threshold %d)",
+				selfAuditConceptRepetitionThreshold)
+		}
+	}
+	if !foundRepeated {
+		t.Errorf("SameConceptRepeatedWithinWeek missing self-audit-repeated-x; got %+v",
+			got.SameConceptRepeatedWithinWeek)
+	}
+
+	if got.SkippedCount != 2 {
+		t.Errorf("SkippedCount = %d, want 2", got.SkippedCount)
+	}
+	// Histogram: two buckets, each count=1, sorted by count DESC then
+	// prefix ASC. "solved offline" < "target archived" alphabetically.
+	wantHistogram := []struct {
+		prefix string
+		count  int64
+	}{
+		{"solved offline", 1},
+		{"target archived", 1},
+	}
+	if len(got.SkipReasonPrefixHistogram) != len(wantHistogram) {
+		t.Fatalf("SkipReasonPrefixHistogram length = %d, want %d; got %+v",
+			len(got.SkipReasonPrefixHistogram), len(wantHistogram), got.SkipReasonPrefixHistogram)
+	}
+	for i, want := range wantHistogram {
+		gotBucket := got.SkipReasonPrefixHistogram[i]
+		if gotBucket.Prefix != want.prefix {
+			t.Errorf("SkipReasonPrefixHistogram[%d].Prefix = %q, want %q", i, gotBucket.Prefix, want.prefix)
+		}
+		if gotBucket.Count != want.count {
+			t.Errorf("SkipReasonPrefixHistogram[%d].Count = %d, want %d", i, gotBucket.Count, want.count)
+		}
+	}
+}
+
+// TestIntegration_WeeklySummary_SelfAuditEmptyWeek verifies the
+// zero-state contract: a brand-new week with no MCP writes emits a
+// self_audit block where every counter is zero and every slice is
+// `[]` (NOT nil). Cowork agents iterating the response must never
+// hit a nil slice — that's the load-bearing wire-shape rule from
+// json-api.md.
+func TestIntegration_WeeklySummary_SelfAuditEmptyWeek(t *testing.T) {
+	s := setupServer(t)
+
+	_, out, err := callHandler(t, s.weeklySummary, WeeklySummaryInput{})
+	if err != nil {
+		t.Fatalf("weeklySummary on empty week: %v", err)
+	}
+	got := out.SelfAudit
+
+	if got.ForceTrueCount != 0 || got.SolvedAfterSolutionCount != 0 || got.AttemptCount != 0 || got.SkippedCount != 0 {
+		t.Errorf("expected all counters to be 0 on empty week; got %+v", got)
+	}
+	if got.SolvedAfterSolutionRate != 0.0 {
+		t.Errorf("SolvedAfterSolutionRate = %v, want 0.0 when denominator is 0", got.SolvedAfterSolutionRate)
+	}
+	if got.SameConceptRepeatedWithinWeek == nil {
+		t.Error("SameConceptRepeatedWithinWeek = nil, want []")
+	}
+	if got.SkipReasonPrefixHistogram == nil {
+		t.Error("SkipReasonPrefixHistogram = nil, want []")
+	}
+
+	// Wire-shape check: the JSON-marshalled response must encode the
+	// slice fields as `[]` not `null`. This pins the rule even if a
+	// future refactor switches the in-memory representation.
+	raw, err := json.Marshal(out)
+	if err != nil {
+		t.Fatalf("marshal output: %v", err)
+	}
+	if !strings.Contains(string(raw), `"same_concept_repeated_within_week":[]`) {
+		t.Errorf("encoded response missing `same_concept_repeated_within_week\":[]`; got %s", raw)
+	}
+	if !strings.Contains(string(raw), `"skip_reason_prefix_histogram":[]`) {
+		t.Errorf("encoded response missing `skip_reason_prefix_histogram\":[]`; got %s", raw)
+	}
+}
+
 // --- query_agent_notes ---
 
 // TestIntegration_QueryAgentNotes_FiltersAcrossDates seeds three notes

@@ -46,3 +46,40 @@ WHERE a.occurred_at >= @start_time AND a.occurred_at < @end_time
   AND (sqlc.narg('filter_actors')::text[] IS NULL OR a.actor = ANY(sqlc.narg('filter_actors')::text[]))
 ORDER BY a.occurred_at DESC
 LIMIT @max_results;
+
+-- name: SelfAuditLearningPlanForceCount :one
+-- Counts force-mode plan-entry completions in [start, end). The
+-- 'manual override:' reason prefix is the audit signal for force=true
+-- completions per mcp-decision-policy.md §13: the prefix is required by
+-- validateCompleteEntryReason (internal/mcp/plan.go) and stamped into
+-- activity_events.payload.reason by the audit_learning_plan_entries
+-- trigger. Used by weekly_summary.self_audit to verify whether the
+-- force-mode escape hatch is being used routinely (it should not be).
+SELECT COUNT(*)::bigint AS count
+FROM activity_events
+WHERE entity_type = 'learning_plan_entry'
+  AND change_kind = 'completed'
+  AND COALESCE(payload->>'reason', '') LIKE 'manual override:%'
+  AND occurred_at >= @start_at
+  AND occurred_at < @end_at;
+
+-- name: SelfAuditLearningPlanSkippedHistogram :many
+-- Skipped-entry counts grouped by reason prefix in [start, end). The
+-- prefix is the substring before the first ':' in payload->>'reason';
+-- an empty / NULL / colon-less reason resolves to 'unclassified'.
+-- audit_learning_plan_entries records state_changed (not 'completed')
+-- for status='skipped'; pairing change_kind='state_changed' with
+-- payload->>'to'='skipped' is the unique trigger signature for a skip
+-- transition. Used by weekly_summary.self_audit to surface the skip-
+-- reason taxonomy without scattering string-split logic in Go.
+SELECT
+    COALESCE(NULLIF(split_part(payload->>'reason', ':', 1), ''), 'unclassified')::text AS prefix,
+    COUNT(*)::bigint AS count
+FROM activity_events
+WHERE entity_type = 'learning_plan_entry'
+  AND change_kind = 'state_changed'
+  AND payload->>'to' = 'skipped'
+  AND occurred_at >= @start_at
+  AND occurred_at < @end_at
+GROUP BY prefix
+ORDER BY count DESC, prefix ASC;

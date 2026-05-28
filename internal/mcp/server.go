@@ -16,6 +16,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/Koopa0/koopa/internal/activity"
 	"github.com/Koopa0/koopa/internal/agent"
 	"github.com/Koopa0/koopa/internal/agent/artifact"
 	agentnote "github.com/Koopa0/koopa/internal/agent/note"
@@ -66,6 +67,11 @@ type Server struct {
 	learn *learning.Store
 	plans *plan.Store
 	fsrs  *fsrs.Store
+
+	// Activity (audit log) — read-only consumer for weekly_summary
+	// self_audit metrics. Writes happen via AFTER triggers on covered
+	// tables, not via this store.
+	activity *activity.Store
 
 	// Content and feeds
 	feeds       *feed.Store
@@ -158,6 +164,7 @@ func NewServer(pool *pgxpool.Pool, logger *slog.Logger, opts ...ServerOption) *S
 		learn:       learning.NewStore(pool),
 		plans:       plan.NewStore(pool),
 		fsrs:        fsrs.NewStore(pool),
+		activity:    activity.NewStore(pool),
 		feedEntries: entry.NewStore(pool),
 		feeds:       feed.NewStore(pool, logger),
 		stats:       stats.NewStore(pool),

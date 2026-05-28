@@ -881,3 +881,51 @@ FROM learning_sessions
 WHERE ended_at IS NOT NULL
 ORDER BY ended_at DESC
 LIMIT 1;
+
+-- ============================================================
+-- weekly_summary self_audit — verification metrics for the Phase 2 fixes
+-- (CF-04 skip-reason audit, CF-06 solved_after_solution mapping). Scope
+-- is intentionally narrow: counts that prove "behavior is changing" or
+-- "force/anti-pattern usage is rare". See learning-studio audit
+-- decisions memo §E for the P0 metric rationale; recommendation
+-- acceptance rate is deliberately NOT here because it needs new
+-- tracking infrastructure (memo §E.4).
+-- ============================================================
+
+-- name: SelfAuditAttemptOutcomeRate :one
+-- Returns solved_after_solution numerator + problem_solving denominator
+-- for [start, end). The denominator is paradigm-scoped to
+-- problem_solving because solved_after_solution is a paradigm-scoped
+-- outcome (chk_learning_attempts_paradigm_outcome). Mixing in immersive
+-- attempts would dilute the rate artificially.
+SELECT
+    COUNT(*) FILTER (WHERE outcome = 'solved_after_solution')::bigint AS solved_after_solution_count,
+    COUNT(*)::bigint                                                   AS problem_solving_attempt_count
+FROM learning_attempts
+WHERE paradigm = 'problem_solving'
+  AND attempted_at >= @start_at
+  AND attempted_at < @end_at;
+
+-- name: SelfAuditRepeatedConcepts :many
+-- Concepts touched by >= @min_count distinct attempts in [start, end).
+-- Counting unit is distinct attempts (NOT observations) because a
+-- single attempt with multiple observations on the same concept should
+-- count once — the metric is "did the user repeatedly practise this
+-- concept", not "how chatty are the observations".
+-- Excludes archived concepts. Sorted attempt_count DESC then slug ASC
+-- for deterministic ordering on ties.
+-- min_count is cast to bigint explicitly because the project sqlc.yaml
+-- maps the default `uuid` override onto any unannotated named parameter
+-- — without the cast sqlc would resolve @min_count as uuid.UUID and the
+-- query wouldn't even compile in Go.
+SELECT c.slug AS concept_slug,
+       COUNT(DISTINCT a.id)::bigint AS attempt_count
+FROM learning_attempt_observations ao
+JOIN learning_attempts a ON a.id = ao.attempt_id
+JOIN concepts c          ON c.id = ao.concept_id
+WHERE a.attempted_at >= @start_at
+  AND a.attempted_at < @end_at
+  AND c.archived_at IS NULL
+GROUP BY c.slug
+HAVING COUNT(DISTINCT a.id) >= @min_count::bigint
+ORDER BY attempt_count DESC, c.slug ASC;

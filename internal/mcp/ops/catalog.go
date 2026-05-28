@@ -675,7 +675,7 @@ func WeeklySummary() Meta {
 		Writability: ReadOnly,
 		Stability:   StabilityStable,
 		Since:       since,
-		Description: "Week-level retrospective: todos completed, agent notes grouped by kind, learning session count and domains, concept mastery. Defaults to current week (Monday-Sunday). Use Monday for last week's review or any time you need cross-day patterns. For today only, use reflection_context. For since-last-session activity, use session_delta.",
+		Description: "Week-level retrospective: todos completed, agent notes grouped by kind, learning session count and domains, concept mastery, and the self_audit block (P0 verification metrics for the Phase 2 audit fixes — force_true_count, solved_after_solution_rate + counts, same_concept_repeated_within_week with threshold >= 3 distinct attempts, skipped_count + skip_reason_prefix_histogram). Defaults to current week (Monday-Sunday). Use Monday for last week's review or any time you need cross-day patterns. For today only, use reflection_context. For since-last-session activity, use session_delta. self_audit is always emitted (slice fields are [] when empty); recommendation_acceptance_rate is intentionally deferred because it requires new tracking infrastructure (see audit decisions memo §E.4).",
 	}
 }
 
