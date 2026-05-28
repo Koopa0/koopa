@@ -102,6 +102,11 @@ export const routes: Routes = [
       import('./pages/about/about').then((m) => m.AboutComponent),
   },
   {
+    path: 'uses',
+    loadComponent: () =>
+      import('./pages/uses/uses').then((m) => m.UsesComponent),
+  },
+  {
     path: 'privacy',
     loadComponent: () =>
       import('./pages/privacy/privacy').then((m) => m.PrivacyComponent),
