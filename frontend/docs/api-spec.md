@@ -1157,7 +1157,7 @@ Tags 目前**只是 content 的 metadata**，不是公開瀏覽軸：每個 publ
 明確契約立場（今天）：
 
 - **沒有公開 `/api/tags` endpoint.** Backend 只有 admin tag CRUD 在 `/api/admin/knowledge/tags` 下（§3.7）。公開路由表（routes.go:127-143）沒有任何 `tags` 路徑。
-- **沒有公開 `/tags/:tag` browse route.** Frontend SPA 不再註冊 tag 瀏覽頁（先前曾有，已決定移除；owner decision memo 見 `frontend/docs/frontend/tag-route-owner-decision.md`）。
+- **沒有公開 `/tags/:tag` browse route.** Frontend SPA 不再註冊 tag 瀏覽頁（先前曾有，已於 2026-05-28 移除；前端品質 gate 見 `frontend/docs/frontend/frontend-quality-protocol.md` Gate 1）。
 - **`?tag=` 在 `/api/contents` 上 backend 靜默忽略.** 來源：`internal/content/public.go::parsePublicFilter` 未讀 `tag` query param；`internal/content/content.go::PublicFilter` struct 沒有 `Tag` 欄位。任何 client 傳 `?tag=foo` 會拿到未過濾的最新列表（與 `?tag=` 不存在的行為一致），這**不是 bug，是契約**：tag 不是 public list filter。
 - **Tag chips 可作為 label 渲染，不是公開導航.** Content row 的 `tags` 欄位可顯示為**不可點擊的 label**；把它們當成公開導航目標（例如 `routerLink="/tags/" + tag`）不在目前的公開契約內。新增 tag 連結前必須先決定 §11.7 是否升級為公開瀏覽軸，並先加上 backend 對應 endpoint。
 
