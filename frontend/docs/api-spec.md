@@ -4,10 +4,15 @@
 > 結構以 4 個 domain 為主軸（Commitment / Knowledge / Learning / Coordination），加上跨切面的 Activity / System / Auth / Search。
 > 每個 endpoint 標：狀態（`✓ existing` / `🔨 new` / `🔧 extend`）、消費它的 UI surface。
 
-**版本**：v2.2 — 2026-05-27
+**版本**：v2.3 — 2026-05-28
 **語意來源**：`migrations/001_initial.up.sql`、`docs/backend-semantic-contract.md`
-**base URL**：`/api/admin/*`（除 auth 與公開 API）
-**認證**：所有 `/api/admin/*` 需 JWT via `Authorization: Bearer <token>`。mutation 路徑需 admin middleware（actor tx binding）。
+**base URL**：admin 路徑用 `/api/admin/*`；公開站對外 GET surface 用 `/api/*`（不含 `/admin/`）— 完整契約見 §11.
+**認證**：所有 `/api/admin/*` 需 JWT via `Authorization: Bearer <token>`。mutation 路徑需 admin middleware（actor tx binding）。`/api/*` 公開 surface 無認證（§11）。
+
+**v2.3 changelog**：
+- 新增 §11 "Public site contract" — 文件化公開站對外的 `/api/*` GET surface（content / topic / project / bookmark / search / knowledge-graph / RSS / sitemap），逐條標註 frontend service consumer 與 backend route 證據；frontend 未消費的 endpoint 顯式標記。
+- §11.7 explicit ruling: tags 為 content metadata，無公開 `/api/tags` endpoint、無公開 `/tags/:tag` browse route、`?tag=` 在 `/api/contents` 上 backend 靜默忽略。Frontend tag chips 可作為 label 渲染，但不是公開導航。
+- 既有 §11 版本歷史 renumber 至 §12。
 
 **v2.2 changelog**：
 - §4.1 dashboard：將 `streak_days` / `due_reviews_count` 升為頂層欄位（之前隱含），文件化 `mastery_value` 公式 = `mastery_count / total_observations`（無 floor;floor 由 `mastery_stage` 表達）
@@ -1092,8 +1097,77 @@ v1 api-spec 曾列過、v2 移除：
 
 ---
 
-## 11. 版本歷史
+## 11. Public site contract
 
+> 公開站對外的 `/api/*` GET surface（不含 `/api/admin/*` 與 `/api/auth/*`）。
+> Read-only — 沒有任何公開 mutation endpoint。
+> 來源：`cmd/app/routes.go` 中 `--- Public API ---` 區塊（routes.go:127-143）。
+> Frontend consumer 證據：`frontend/src/app/core/services/{content,topic,project,bookmark}.service.ts`。
+> 此章節**不**重複 §1.1 的 envelope / pagination / time format 規則 —— 公開列表 endpoint 同樣遵守 `{data, total, page, per_page}` 形狀（§1.1、§11.4 注意例外）。
+
+### 11.1 Content
+
+| Endpoint | Frontend consumer | Notes |
+|---|---|---|
+| `GET /api/contents` | `ContentService.listPublished` (`content.service.ts:32`) | Published-and-public 內容列表。支援 `?page=`、`?per_page=`、`?type=`、`?since=`。**重要**：`?tag=` 目前 backend 靜默忽略，見 §11.7。 |
+| `GET /api/contents/{slug}` | `ContentService.bySlug` (`content.service.ts:37`) | 單一 content by slug。 |
+| `GET /api/contents/by-type/{type}` | `ContentService.listByType` (`content.service.ts:49`) | 按 content type 過濾的列表（`article` / `essay` / `build-log` / `til` / `digest`）。 |
+| `GET /api/contents/related/{slug}` | `ContentService.related` (`content.service.ts:160`) | 給定 slug 的相關內容。 |
+
+### 11.2 Topics
+
+| Endpoint | Frontend consumer | Notes |
+|---|---|---|
+| `GET /api/topics` | `TopicService.list` (`topic.service.ts:24`) | 所有 public topics。 |
+| `GET /api/topics/{slug}` | `TopicService.bySlug` (`topic.service.ts:37`) | Topic detail + 其下的 contents（list 形狀，envelope 與 §1.1 一致）。 |
+
+### 11.3 Projects
+
+| Endpoint | Frontend consumer | Notes |
+|---|---|---|
+| `GET /api/projects` | `ProjectService.list` (`project.service.ts:16`) | Public project list。 |
+| `GET /api/projects/{slug}` | `ProjectService.bySlug` (`project.service.ts:26`) | 單一 project by slug。 |
+| `GET /api/portfolio` | **Frontend SPA 目前未消費** (`grep -r 'api/portfolio' frontend/src` 無命中)。 | Backend `project.PublicPortfolio` handler 已註冊；用途 uncertain — 可能為未來 portfolio landing page 或 SSR meta 預留，未消費於本次 audit 範圍內。 |
+
+### 11.4 Bookmarks
+
+| Endpoint | Frontend consumer | Notes |
+|---|---|---|
+| `GET /api/bookmarks` | `BookmarkService.listPublic` (`bookmark.service.ts:39`) | Public bookmark list。 |
+| `GET /api/bookmarks/{slug}` | **Frontend SPA 目前未消費** (`grep -r 'api/bookmarks/' frontend/src` 在公開路徑無命中)。 | Backend `bookmark.PublicBySlug` handler 已註冊；frontend 目前沒有單一 bookmark detail page 路由。 |
+
+### 11.5 Search and knowledge graph
+
+| Endpoint | Frontend consumer | Notes |
+|---|---|---|
+| `GET /api/search` | `ContentService.search` (`content.service.ts:63`) | 公開 search（跨 published content）。回傳 envelope 同 §1.1 list 規格。 |
+| `GET /api/knowledge-graph` | `ContentService.knowledgeGraph` (`content.service.ts:166`) | Knowledge graph 的 nodes / edges 給公開 knowledge-graph view 用（非分頁 envelope —— 整張圖一次回傳）。 |
+
+### 11.6 RSS / Sitemap
+
+| Endpoint | Frontend consumer | Notes |
+|---|---|---|
+| `GET /api/feed/rss` | **不被 frontend SPA 消費** — 給外部 feed reader 用。 | 回傳 RSS XML（`Content-Type: application/rss+xml` 或 `application/xml`，由 handler 決定）。 |
+| `GET /api/feed/sitemap` | **不被 frontend SPA 消費** — 給搜尋引擎 crawler 用。 | 回傳 sitemap XML。 |
+
+### 11.7 Tags are content metadata only (today)
+
+Tags 目前**只是 content 的 metadata**，不是公開瀏覽軸：每個 public content row 帶 `tags: string[]` 欄位（admin 端 row 形狀見 §3.1，public `/api/contents` row 同形）。
+
+明確契約立場（今天）：
+
+- **沒有公開 `/api/tags` endpoint.** Backend 只有 admin tag CRUD 在 `/api/admin/knowledge/tags` 下（§3.7）。公開路由表（routes.go:127-143）沒有任何 `tags` 路徑。
+- **沒有公開 `/tags/:tag` browse route.** Frontend SPA 不再註冊 tag 瀏覽頁（先前曾有，已決定移除；owner decision memo 見 `frontend/docs/frontend/tag-route-owner-decision.md`）。
+- **`?tag=` 在 `/api/contents` 上 backend 靜默忽略.** 來源：`internal/content/public.go::parsePublicFilter` 未讀 `tag` query param；`internal/content/content.go::PublicFilter` struct 沒有 `Tag` 欄位。任何 client 傳 `?tag=foo` 會拿到未過濾的最新列表（與 `?tag=` 不存在的行為一致），這**不是 bug，是契約**：tag 不是 public list filter。
+- **Tag chips 可作為 label 渲染，不是公開導航.** Content row 的 `tags` 欄位可顯示為**不可點擊的 label**；把它們當成公開導航目標（例如 `routerLink="/tags/" + tag`）不在目前的公開契約內。新增 tag 連結前必須先決定 §11.7 是否升級為公開瀏覽軸，並先加上 backend 對應 endpoint。
+
+要把 tag 升級為一級公開瀏覽軸，需要新增 backend endpoints（如 `GET /api/tags`、`GET /api/tags/{tag}`）、schema-level 的公開化（公開可見的 tag 統計、tag→content 投影）、以及對應 frontend service + tests。這些目前都不存在；spec 不預留 reserved 路徑。
+
+---
+
+## 12. 版本歷史
+
+- **v2.3 (2026-05-28)**：新增 §11 "Public site contract" — 文件化公開站對外的 `/api/*` GET surface（content / topic / project / bookmark / search / knowledge-graph / RSS / sitemap）；顯式標記 frontend 目前未消費的 endpoint（`/api/portfolio`、`/api/bookmarks/{slug}`、`/api/feed/rss`、`/api/feed/sitemap`）；鎖定 §11.7 tags-as-metadata-only ruling（無 `/api/tags`、無 `/tags/:tag` route、`?tag=` 靜默忽略）。既有 §11 版本歷史 renumber 至 §12。
 - **v2.1 (2026-04-24)**：鎖 rename 策略為「直接切換，不留 alias」（§10.1）；鎖 MCP 與 REST 解耦策略為 (b) + 兩個共用 invariant（`changelog.Record` helper + `transitions.go` 狀態機）（§10.4）；補上 §2.7 todo detail、§2.12 daily-plan、§4.21 learning summary 三個原本前端在呼叫但 spec 未文件化的 endpoint.
 - **v2 (2026-04-23)**：按 4-domain 重組；退場 v1 的 mode-based 章節（NOW/ATLAS/REWIND/STREAM/STUDIO）；明確列出不需要的 endpoint.
 - v1：前一版本已歸檔（git history）.
