@@ -9,7 +9,8 @@
     "test": "ng test",
     "test:watch": "ng test --watch",
     "lint": "ng lint",
-    "e2e": "npx playwright test"
+    "e2e": "npx playwright test",
+    "check:quality": "bash scripts/check-frontend-quality.sh"
   },
   "private": true,
   "dependencies": {
