@@ -60,10 +60,6 @@ export const routes: Routes = [
       ),
   },
   {
-    path: 'tags/:tag',
-    loadComponent: () => import('./pages/tag/tag').then((m) => m.TagComponent),
-  },
-  {
     path: 'til',
     loadComponent: () =>
       import('./pages/tils/tils').then((m) => m.TilsComponent),
