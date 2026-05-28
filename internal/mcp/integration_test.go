@@ -2027,6 +2027,7 @@ func TestIntegration_WeeklySummary_SelfAuditBlock(t *testing.T) {
 			{Title: "SA Target Beta", Position: 2},
 			{Title: "SA Target Gamma", Position: 3},
 			{Title: "SA Target Delta", Position: 4},
+			{Title: "SA Target Epsilon", Position: 5},
 		},
 	}); err != nil {
 		t.Fatalf("add_entries: %v", err)
@@ -2047,7 +2048,7 @@ func TestIntegration_WeeklySummary_SelfAuditBlock(t *testing.T) {
 		t.Fatalf("locating entries: %v", err)
 	}
 	defer rows.Close()
-	var entryAlpha, entryBeta, entryGamma, entryDelta string
+	var entryAlpha, entryBeta, entryGamma, entryDelta, entryEpsilon string
 	for rows.Next() {
 		var id string
 		var pos int32
@@ -2063,14 +2064,16 @@ func TestIntegration_WeeklySummary_SelfAuditBlock(t *testing.T) {
 			entryGamma = id
 		case 4:
 			entryDelta = id
+		case 5:
+			entryEpsilon = id
 		}
 	}
 	if err := rows.Err(); err != nil {
 		t.Fatalf("iterating entries: %v", err)
 	}
-	if entryAlpha == "" || entryBeta == "" || entryGamma == "" || entryDelta == "" {
-		t.Fatalf("entry lookup incomplete: Alpha=%q Beta=%q Gamma=%q Delta=%q",
-			entryAlpha, entryBeta, entryGamma, entryDelta)
+	if entryAlpha == "" || entryBeta == "" || entryGamma == "" || entryDelta == "" || entryEpsilon == "" {
+		t.Fatalf("entry lookup incomplete: Alpha=%q Beta=%q Gamma=%q Delta=%q Epsilon=%q",
+			entryAlpha, entryBeta, entryGamma, entryDelta, entryEpsilon)
 	}
 
 	// 2. Start a learning session and record attempts. Outcome mix:
@@ -2132,20 +2135,27 @@ func TestIntegration_WeeklySummary_SelfAuditBlock(t *testing.T) {
 		t.Fatalf("force-complete Alpha: %v", err)
 	}
 
-	// 4. Skip two entries with reasons that bucket distinctly under
-	// split_part(reason, ':', 1):
-	//   - "solved offline: pre-plan attempt"  → prefix "solved offline"
-	//   - "target archived: cascade cleanup"  → prefix "target archived"
-	// Both prefixes are length-1 buckets, so the histogram is sorted
-	// count DESC then prefix ASC — "solved offline" < "target archived"
-	// alphabetically, so the expected order is [solved offline, target archived].
+	// 4. Skip two entries with reasons that follow the 'skipped:' soft
+	// convention from the audit-decisions memo §F.1.d. The histogram
+	// must extract the text AFTER 'skipped:', so:
+	//
+	//   - "skipped: solved offline"  → bucket "solved offline"
+	//   - "skipped: target archived" → bucket "target archived"
+	//
+	// Critically, an EARLIER draft of this query used split_part(reason,
+	// ':', 1) which would have collapsed BOTH of these conforming
+	// reasons into a single bucket "skipped" — making the histogram
+	// useless for distinguishing skip categories. This test seeds the
+	// convention deliberately so that bucket-by-prefix-only would have
+	// produced len(histogram)==1 (and would fail the assertion below
+	// that the histogram has 2 distinct buckets).
 	skipped := "skipped"
 	if _, _, err := callHandler(t, s.managePlan, ManagePlanInput{
 		Action:  "update_entry",
 		PlanID:  planCommit.ID,
 		EntryID: &entryBeta,
 		Status:  &skipped,
-		Reason:  strPtr("solved offline: pre-plan attempt closed this manually"),
+		Reason:  strPtr("skipped: solved offline"),
 	}); err != nil {
 		t.Fatalf("skip Beta: %v", err)
 	}
@@ -2154,9 +2164,23 @@ func TestIntegration_WeeklySummary_SelfAuditBlock(t *testing.T) {
 		PlanID:  planCommit.ID,
 		EntryID: &entryGamma,
 		Status:  &skipped,
-		Reason:  strPtr("target archived: cascade cleanup during refactor"),
+		Reason:  strPtr("skipped: target archived"),
 	}); err != nil {
 		t.Fatalf("skip Gamma: %v", err)
+	}
+	// Skip Epsilon with a NON-CONFORMING reason (no 'skipped:' prefix).
+	// Must bucket under 'unclassified' per the contract. Without this
+	// case, the histogram would only assert the in-convention path
+	// and a future change that broke the ELSE branch ('unclassified'
+	// fallback) would go undetected.
+	if _, _, err := callHandler(t, s.managePlan, ManagePlanInput{
+		Action:  "update_entry",
+		PlanID:  planCommit.ID,
+		EntryID: &entryEpsilon,
+		Status:  &skipped,
+		Reason:  strPtr("plan retconned during refactor"),
+	}); err != nil {
+		t.Fatalf("skip Epsilon: %v", err)
 	}
 	// entryDelta intentionally left in status=planned — regression
 	// guard that an untouched entry contributes nothing.
@@ -2204,20 +2228,34 @@ func TestIntegration_WeeklySummary_SelfAuditBlock(t *testing.T) {
 			got.SameConceptRepeatedWithinWeek)
 	}
 
-	if got.SkippedCount != 2 {
-		t.Errorf("SkippedCount = %d, want 2", got.SkippedCount)
+	if got.SkippedCount != 3 {
+		t.Errorf("SkippedCount = %d, want 3", got.SkippedCount)
 	}
-	// Histogram: two buckets, each count=1, sorted by count DESC then
-	// prefix ASC. "solved offline" < "target archived" alphabetically.
+	// Histogram contract:
+	//   - 'skipped: solved offline'       → bucket 'solved offline'
+	//   - 'skipped: target archived'      → bucket 'target archived'
+	//   - 'plan retconned during refactor' → bucket 'unclassified' (no 'skipped:' prefix)
+	//
+	// Three distinct buckets, each count=1. Sorted count DESC then
+	// prefix ASC; alphabetically 'solved offline' < 'target archived'
+	// < 'unclassified', so the order is determined.
+	//
+	// Regression guard: if a future change reverted to
+	// split_part(reason, ':', 1), both conforming reasons would
+	// collapse into a single 'skipped' bucket with count=2 — the
+	// length check below would see 2 buckets, not 3, and fail. Also,
+	// 'skipped' would appear as a Prefix value, which the per-bucket
+	// assertions explicitly reject.
 	wantHistogram := []struct {
 		prefix string
 		count  int64
 	}{
 		{"solved offline", 1},
 		{"target archived", 1},
+		{"unclassified", 1},
 	}
 	if len(got.SkipReasonPrefixHistogram) != len(wantHistogram) {
-		t.Fatalf("SkipReasonPrefixHistogram length = %d, want %d; got %+v",
+		t.Fatalf("SkipReasonPrefixHistogram length = %d, want %d (regression guard: split-before-colon would yield 2 buckets including 'skipped' for the conforming reasons — that is the bug this test catches); got %+v",
 			len(got.SkipReasonPrefixHistogram), len(wantHistogram), got.SkipReasonPrefixHistogram)
 	}
 	for i, want := range wantHistogram {
@@ -2227,6 +2265,12 @@ func TestIntegration_WeeklySummary_SelfAuditBlock(t *testing.T) {
 		}
 		if gotBucket.Count != want.count {
 			t.Errorf("SkipReasonPrefixHistogram[%d].Count = %d, want %d", i, gotBucket.Count, want.count)
+		}
+		// Explicit anti-bug assertion: the 'skipped' bucket name must
+		// NEVER appear in the histogram. If it does, the SQL is
+		// extracting before-first-colon again.
+		if gotBucket.Prefix == "skipped" {
+			t.Errorf("SkipReasonPrefixHistogram[%d] = prefix 'skipped' — this is the collapse-on-convention bug from CF-08 P0 draft 1. SQL must extract AFTER 'skipped:', not before.", i)
 		}
 	}
 }

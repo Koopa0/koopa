@@ -10550,7 +10550,11 @@ func (q *Queries) SelfAuditLearningPlanForceCount(ctx context.Context, arg SelfA
 
 const selfAuditLearningPlanSkippedHistogram = `-- name: SelfAuditLearningPlanSkippedHistogram :many
 SELECT
-    COALESCE(NULLIF(split_part(payload->>'reason', ':', 1), ''), 'unclassified')::text AS prefix,
+    CASE
+        WHEN payload->>'reason' LIKE 'skipped:%' THEN
+            COALESCE(NULLIF(TRIM(SUBSTRING(payload->>'reason' FROM 9)), ''), 'unclassified')
+        ELSE 'unclassified'
+    END::text AS prefix,
     COUNT(*)::bigint AS count
 FROM activity_events
 WHERE entity_type = 'learning_plan_entry'
@@ -10572,14 +10576,32 @@ type SelfAuditLearningPlanSkippedHistogramRow struct {
 	Count  int64  `json:"count"`
 }
 
-// Skipped-entry counts grouped by reason prefix in [start, end). The
-// prefix is the substring before the first ':' in payload->>'reason';
-// an empty / NULL / colon-less reason resolves to 'unclassified'.
-// audit_learning_plan_entries records state_changed (not 'completed')
-// for status='skipped'; pairing change_kind='state_changed' with
-// payload->>'to'='skipped' is the unique trigger signature for a skip
-// transition. Used by weekly_summary.self_audit to surface the skip-
-// reason taxonomy without scattering string-split logic in Go.
+// Skipped-entry counts grouped by the normalized text AFTER the
+// 'skipped:' convention prefix in payload->>'reason'.
+//
+// Bucketing contract (must stay in sync with the SelfAudit docstring
+// and the ops catalog WeeklySummary description):
+//   - Reason matching '^skipped:\s*<text>' → prefix is <text> trimmed.
+//     Example: 'skipped: solved offline' → 'solved offline'.
+//   - Reason that does NOT start with 'skipped:' → 'unclassified'.
+//   - Reason that is empty, NULL, or only whitespace after the
+//     'skipped:' prefix → 'unclassified'.
+//
+// This deliberately collapses non-conforming reasons into a single
+// 'unclassified' bucket so the histogram reports the rate of
+// convention adherence as a side effect. It does NOT collapse all
+// conforming reasons into 'skipped' — that bug shipped in the first
+// draft of CF-08 P0 (split_part-before-colon) and was caught in
+// review before push.
+//
+// 'skipped:' is 8 characters; SUBSTRING(... FROM 9) skips it. TRIM
+// removes any whitespace between the prefix and the category text so
+// 'skipped: foo' and 'skipped:foo' bucket identically.
+//
+// audit_learning_plan_entries records change_kind='state_changed' (not
+// 'completed') for status='skipped'; pairing change_kind='state_changed'
+// with payload->>'to'='skipped' is the unique trigger signature for a
+// skip transition.
 func (q *Queries) SelfAuditLearningPlanSkippedHistogram(ctx context.Context, arg SelfAuditLearningPlanSkippedHistogramParams) ([]SelfAuditLearningPlanSkippedHistogramRow, error) {
 	rows, err := q.db.Query(ctx, selfAuditLearningPlanSkippedHistogram, arg.StartAt, arg.EndAt)
 	if err != nil {

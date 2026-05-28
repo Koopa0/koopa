@@ -8,13 +8,26 @@ import (
 	"github.com/Koopa0/koopa/internal/db"
 )
 
-// SkipReasonPrefix is one bucket of the weekly skip-reason histogram —
-// the soft prefix of activity_events.payload->>'reason' for
-// learning_plan_entry rows that transitioned to status='skipped' in the
-// window. The prefix is the substring before the first ':' in the
-// reason text; entries with empty / NULL / colon-less reasons resolve
-// to "unclassified" inside the SQL (so the histogram is always a
-// closed set the caller doesn't need to special-case).
+// SkipReasonPrefix is one bucket of the weekly skip-reason histogram.
+// Sources from activity_events.payload->>'reason' for learning_plan_entry
+// rows that transitioned to status='skipped' in the window.
+//
+// Bucketing convention (locked by the SQL — see
+// SelfAuditLearningPlanSkippedHistogram in query.sql):
+//
+//   - Reason starting with the literal 'skipped:' → Prefix is the
+//     trimmed text AFTER 'skipped:'. Example:
+//     'skipped: solved offline' → 'solved offline'.
+//   - Reason that does not start with 'skipped:' → 'unclassified'.
+//   - Reason that is empty / NULL / whitespace-only after 'skipped:' →
+//     'unclassified'.
+//
+// The 'skipped:' soft convention is documented in the learning-studio
+// audit decisions memo §F.1.d as a coaching hint, not a server-enforced
+// rule — CF-04 only mandates non-blank reason text, not a specific
+// prefix. The histogram therefore reports BOTH the in-convention
+// categories AND the share of non-conforming reasons (as the
+// 'unclassified' bucket).
 type SkipReasonPrefix struct {
 	Prefix string `json:"prefix"`
 	Count  int64  `json:"count"`

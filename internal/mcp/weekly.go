@@ -100,11 +100,26 @@ type SelfAudit struct {
 	SkippedCount int64 `json:"skipped_count"`
 
 	// SkipReasonPrefixHistogram is the per-prefix breakdown of
-	// SkippedCount. The prefix is the substring before the first ':'
-	// in the skip reason; entries without a colon resolve to
-	// "unclassified". CF-04 now requires non-blank skip reasons, so a
-	// healthy histogram should rarely contain "unclassified" rows
-	// (only pre-CF-04 historical data or future divergence).
+	// SkippedCount. Bucketing follows the 'skipped:' soft convention
+	// documented in the learning-studio audit decisions memo §F.1.d:
+	//
+	//   - 'skipped: solved offline'  → prefix 'solved offline'
+	//   - 'skipped: target archived' → prefix 'target archived'
+	//   - 'plan retconned'           → prefix 'unclassified' (no
+	//     'skipped:' prefix — non-conforming)
+	//   - 'skipped:'  / 'skipped: '  → prefix 'unclassified' (empty
+	//     after the prefix)
+	//
+	// The 'unclassified' bucket therefore reports BOTH empty-after-
+	// prefix reasons AND reasons that did not adopt the convention —
+	// the share of 'unclassified' is itself a useful signal of
+	// convention adherence. CF-04 mandates only that the reason be
+	// non-blank, not that it follow the prefix convention, so
+	// 'unclassified' is a legitimate steady-state bucket; it should
+	// shrink as learning-studio adopts the convention.
+	//
+	// The bucketing logic is locked in
+	// internal/activity/query.sql::SelfAuditLearningPlanSkippedHistogram.
 	SkipReasonPrefixHistogram []activity.SkipReasonPrefix `json:"skip_reason_prefix_histogram"`
 }
 
