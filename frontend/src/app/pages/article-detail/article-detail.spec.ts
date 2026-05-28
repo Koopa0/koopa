@@ -27,7 +27,7 @@ describe('ArticleDetailComponent', () => {
   });
 
   it('should create', () => {
-    fixture.componentRef.setInput('id', 'test-article');
+    fixture.componentRef.setInput('slug', 'test-article');
     fixture.detectChanges();
     expect(component).toBeTruthy();
   });

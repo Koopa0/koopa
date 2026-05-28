@@ -48,8 +48,8 @@ import { RelatedArticlesComponent } from '../../shared/related-articles/related-
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class ArticleDetailComponent implements OnInit {
-  /** Route param: articles/:id */
-  readonly id = input.required<string>();
+  /** Route param: articles/:slug */
+  readonly slug = input.required<string>();
 
   private readonly location = inject(Location);
   private readonly articleService = inject(ArticleService);
@@ -104,7 +104,7 @@ export class ArticleDetailComponent implements OnInit {
   }
 
   ngOnInit(): void {
-    this.loadArticle(this.id());
+    this.loadArticle(this.slug());
   }
 
   protected loadArticle(slug: string): void {

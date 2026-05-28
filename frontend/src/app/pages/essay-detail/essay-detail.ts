@@ -47,8 +47,8 @@ import { RelatedArticlesComponent } from '../../shared/related-articles/related-
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class EssayDetailComponent implements OnInit {
-  /** Route param: essays/:id */
-  readonly id = input.required<string>();
+  /** Route param: essays/:slug */
+  readonly slug = input.required<string>();
 
   private readonly location = inject(Location);
   private readonly contentService = inject(ContentService);
@@ -101,7 +101,7 @@ export class EssayDetailComponent implements OnInit {
   }
 
   ngOnInit(): void {
-    this.loadEssay(this.id());
+    this.loadEssay(this.slug());
   }
 
   protected loadEssay(slug: string): void {

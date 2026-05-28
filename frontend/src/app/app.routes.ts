@@ -17,7 +17,7 @@ export const routes: Routes = [
       import('./pages/articles/articles').then((m) => m.ArticlesComponent),
   },
   {
-    path: 'articles/:id',
+    path: 'articles/:slug',
     loadComponent: () =>
       import('./pages/article-detail/article-detail').then(
         (m) => m.ArticleDetailComponent,
@@ -29,7 +29,7 @@ export const routes: Routes = [
       import('./pages/essays/essays').then((m) => m.EssaysComponent),
   },
   {
-    path: 'essays/:id',
+    path: 'essays/:slug',
     loadComponent: () =>
       import('./pages/essay-detail/essay-detail').then(
         (m) => m.EssayDetailComponent,
