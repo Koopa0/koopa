@@ -1790,6 +1790,189 @@ func TestIntegration_UpdateEntry_CompletionPolicy(t *testing.T) {
 	}
 }
 
+// TestIntegration_UpdateEntry_SkipPolicy exercises the skip-path reason
+// requirement added for CF-04: status=skipped now requires a non-blank
+// reason for audit-trail parity with status=completed. Without it,
+// cross-agent review cannot distinguish "skipped because solved offline"
+// from "skipped because plan retconned" — the policy gap that pushed
+// agents toward force=true (wrong tool for normal skip).
+func TestIntegration_UpdateEntry_SkipPolicy(t *testing.T) {
+	s := setupServer(t)
+
+	// Single-entry plan is enough — skip path does not need a recorded
+	// attempt, only an active plan with an entry to skip.
+	_, proposal, err := callHandler(t, s.proposeLearningPlan, ProposeLearningPlanInput{
+		Title:  "Skip Policy Drill",
+		Domain: "leetcode",
+	})
+	if err != nil {
+		t.Fatalf("propose plan: %v", err)
+	}
+	_, commit, err := callHandlerAs(t, "human", s.commitProposal, CommitProposalInput{
+		ProposalToken: proposal.ProposalToken,
+	})
+	if err != nil {
+		t.Fatalf("commit plan: %v", err)
+	}
+
+	if _, _, err := callHandler(t, s.managePlan, ManagePlanInput{
+		Action: "add_entries",
+		PlanID: commit.ID,
+		Entries: []ManagePlanEntryInput{
+			{Title: "Skip Target A", Position: 1},
+			{Title: "Skip Target B", Position: 2},
+			{Title: "Skip Target C", Position: 3},
+		},
+	}); err != nil {
+		t.Fatalf("add_entries: %v", err)
+	}
+
+	active := "active"
+	if _, _, err := callHandler(t, s.managePlan, ManagePlanInput{
+		Action: "update_plan",
+		PlanID: commit.ID,
+		Status: &active,
+	}); err != nil {
+		t.Fatalf("activate plan: %v", err)
+	}
+
+	rows, err := testPool.Query(t.Context(),
+		"SELECT id, position FROM learning_plan_entries WHERE plan_id = $1 ORDER BY position", commit.ID)
+	if err != nil {
+		t.Fatalf("locating entries: %v", err)
+	}
+	defer rows.Close()
+	var entryA, entryB, entryC string
+	for rows.Next() {
+		var id string
+		var pos int32
+		if err := rows.Scan(&id, &pos); err != nil {
+			t.Fatalf("scan entry: %v", err)
+		}
+		switch pos {
+		case 1:
+			entryA = id
+		case 2:
+			entryB = id
+		case 3:
+			entryC = id
+		}
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("iterating entries: %v", err)
+	}
+	if entryA == "" || entryB == "" || entryC == "" {
+		t.Fatalf("entry lookup incomplete: A=%q B=%q C=%q", entryA, entryB, entryC)
+	}
+
+	skipped := "skipped"
+	tt := []struct {
+		name    string
+		input   ManagePlanInput
+		wantSub string
+	}{
+		{
+			name: "skip without reason rejects",
+			input: ManagePlanInput{
+				Action:  "update_entry",
+				PlanID:  commit.ID,
+				EntryID: &entryA,
+				Status:  &skipped,
+			},
+			wantSub: "reason is required when marking entry skipped",
+		},
+		{
+			name: "skip with empty-string reason rejects",
+			input: ManagePlanInput{
+				Action:  "update_entry",
+				PlanID:  commit.ID,
+				EntryID: &entryA,
+				Status:  &skipped,
+				Reason:  strPtr(""),
+			},
+			wantSub: "reason is required when marking entry skipped",
+		},
+		{
+			name: "skip with whitespace-only reason rejects",
+			input: ManagePlanInput{
+				Action:  "update_entry",
+				PlanID:  commit.ID,
+				EntryID: &entryA,
+				Status:  &skipped,
+				Reason:  strPtr("   \t\n"),
+			},
+			wantSub: "reason is required when marking entry skipped",
+		},
+		{
+			name: "skip with reason exceeding cap rejects",
+			input: ManagePlanInput{
+				Action:  "update_entry",
+				PlanID:  commit.ID,
+				EntryID: &entryA,
+				Status:  &skipped,
+				Reason:  strPtr(strings.Repeat("a", 1025)),
+			},
+			wantSub: "exceeds 1024 characters",
+		},
+	}
+	for _, tc := range tt {
+		t.Run(tc.name, func(t *testing.T) {
+			_, _, err := callHandler(t, s.managePlan, tc.input)
+			if err == nil {
+				t.Fatalf("expected rejection, got nil")
+			}
+			if !strings.Contains(err.Error(), tc.wantSub) {
+				t.Errorf("error = %q, want containing %q", err, tc.wantSub)
+			}
+		})
+	}
+
+	// Happy path: skip with a valid reason succeeds. Verify the entry
+	// row is updated to status=skipped and the trimmed reason is
+	// persisted (leading/trailing whitespace stripped).
+	if _, _, err := callHandler(t, s.managePlan, ManagePlanInput{
+		Action:  "update_entry",
+		PlanID:  commit.ID,
+		EntryID: &entryB,
+		Status:  &skipped,
+		Reason:  strPtr("  koopa solved this offline before the plan was committed  "),
+	}); err != nil {
+		t.Fatalf("skip with valid reason: %v", err)
+	}
+
+	var status, persistedReason string
+	if err := testPool.QueryRow(t.Context(),
+		"SELECT status, reason FROM learning_plan_entries WHERE id = $1", entryB,
+	).Scan(&status, &persistedReason); err != nil {
+		t.Fatalf("re-fetching skipped entry: %v", err)
+	}
+	if status != "skipped" {
+		t.Errorf("status = %q, want %q", status, "skipped")
+	}
+	if persistedReason != "koopa solved this offline before the plan was committed" {
+		t.Errorf("persisted reason = %q, want trimmed body without surrounding whitespace", persistedReason)
+	}
+
+	// Regression guard: the pre-existing "force=true with status=skipped
+	// rejects" case (line ~1743) must still fire on the force gate before
+	// the new skip-reason validation runs. If validateSkipEntryReason ever
+	// moved ahead of validateUpdateEntryInput, this case would surface a
+	// "reason is required" error instead of the expected force-only error,
+	// and the diagnostic ordering would silently regress.
+	if _, _, err := callHandler(t, s.managePlan, ManagePlanInput{
+		Action:  "update_entry",
+		PlanID:  commit.ID,
+		EntryID: &entryC,
+		Status:  &skipped,
+		Reason:  strPtr("ignored because force gate fires first"),
+		Force:   boolPtr(true),
+	}); err == nil {
+		t.Fatal("expected force=true with skipped to reject, got nil")
+	} else if !strings.Contains(err.Error(), "force=true is only valid with status=completed") {
+		t.Errorf("force+skip error = %q, want force-only gate to fire first", err)
+	}
+}
+
 // --- query_agent_notes ---
 
 // TestIntegration_QueryAgentNotes_FiltersAcrossDates seeds three notes

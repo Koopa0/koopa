@@ -48,7 +48,7 @@ type ManagePlanInput struct {
 	// update_entry
 	EntryID                    *string `json:"entry_id,omitempty" jsonschema_description:"Plan entry UUID (for update_entry)"`
 	Status                     *string `json:"status,omitempty" jsonschema_description:"New status: completed, skipped, substituted (for update_entry) or active, paused, completed, abandoned (for update_plan)"`
-	Reason                     *string `json:"reason,omitempty" jsonschema_description:"Justification for the transition. REQUIRED and non-blank when status=completed; this is the audit trail per mcp-decision-policy §13. When force=true, reason MUST start with the literal text manual override: (no surrounding quotes) and be ≥ 60 characters. Reason is capped at 1024 characters."`
+	Reason                     *string `json:"reason,omitempty" jsonschema_description:"Justification for the transition. REQUIRED and non-blank when status=completed OR status=skipped; this is the audit trail per mcp-decision-policy §13 (skip is a decision — cross-agent review needs to know why an active plan entry was dropped). When force=true (completed only), reason MUST start with the literal text manual override: (no surrounding quotes) and be ≥ 60 characters. Reason is capped at 1024 characters."`
 	SubstituteLearningTargetID *string `json:"substitute_learning_target_id,omitempty" jsonschema_description:"learning_targets.id of the replacement (for status=substituted)"`
 	CompletedByAttemptID       *string `json:"completed_by_attempt_id,omitempty" jsonschema_description:"Attempt UUID that informed the completion decision. REQUIRED when status=completed unless force=true. The attempt's learning_target_id MUST match the plan entry's — misaligned IDs are rejected so the audit trail stays trustworthy."`
 	Force                      *bool   `json:"force,omitempty" jsonschema_description:"Escape hatch for status=completed when no aligned attempt exists (plan retconned, target migrated, etc.). When true, completed_by_attempt_id may be omitted, but reason MUST start with the literal text manual override: (no surrounding quotes) and be ≥ 60 characters so the deviation is loud in the audit trail. Use sparingly — the normal path provides verifiable evidence; force replaces evidence with a written justification."`
@@ -282,6 +282,28 @@ const forceReasonMinLength = 60
 // cap is generous (1 KB) — any legitimate audit reason fits well under.
 const reasonMaxLength = 1024
 
+// validateSkipEntryReason enforces the non-blank reason requirement for
+// status=skipped transitions. Audit-trail parity with completed: cross-agent
+// review must distinguish "skipped because solved offline" from "skipped
+// because target archived" from "skipped because plan retconned". Skip is
+// rare in normal usage; the friction of one sentence is dwarfed by the
+// value of reconstructing decisions weeks later (mcp-decision-policy §13).
+//
+// Unlike completion, skip has no force-mode escape hatch — the "no aligned
+// attempt exists" justification for completion forces doesn't apply to
+// skip (skip means "we did not do this", not "we did this but the evidence
+// is somewhere else"). A skip with no rationale should not be auditable
+// as anything other than missing data.
+func validateSkipEntryReason(reason string) error {
+	if reason == "" {
+		return fmt.Errorf("%w: reason is required when marking entry skipped (audit-trail policy mcp-decision-policy §13 — skip is a decision; cross-agent review needs to know why an active plan entry was dropped)", learning.ErrInvalidInput)
+	}
+	if utf8.RuneCountInString(reason) > reasonMaxLength {
+		return fmt.Errorf("%w: reason exceeds %d characters (got %d) — keep audit text concise", learning.ErrInvalidInput, reasonMaxLength, utf8.RuneCountInString(reason))
+	}
+	return nil
+}
+
 // validateCompleteEntryReason enforces the reason-string contract for
 // status=completed transitions. Normal path requires non-blank text;
 // forced path requires both forceReasonPrefix and forceReasonMinLength
@@ -402,16 +424,31 @@ func (s *Server) updatePlanEntry(ctx context.Context, planID uuid.UUID, input *M
 
 	status := plan.EntryStatus(*input.Status)
 	switch status {
-	case plan.EntryCompleted, plan.EntrySkipped:
+	case plan.EntryCompleted:
 		params := plan.UpdateEntryStatusParams{
 			ID:     entryID,
 			Status: status,
 			Reason: trimOptional(input.Reason),
 		}
-		if status == plan.EntryCompleted {
-			if err := s.prepareCompleteEntryParams(ctx, planID, entryID, input, &params); err != nil {
-				return nil, ManagePlanOutput{}, err
-			}
+		if err := s.prepareCompleteEntryParams(ctx, planID, entryID, input, &params); err != nil {
+			return nil, ManagePlanOutput{}, err
+		}
+		if _, err = s.plans.UpdateEntryStatus(ctx, params); err != nil {
+			return nil, ManagePlanOutput{}, fmt.Errorf("updating entry to %s: %w", status, err)
+		}
+
+	case plan.EntrySkipped:
+		reason := ""
+		if input.Reason != nil {
+			reason = strings.TrimSpace(*input.Reason)
+		}
+		if err := validateSkipEntryReason(reason); err != nil {
+			return nil, ManagePlanOutput{}, err
+		}
+		params := plan.UpdateEntryStatusParams{
+			ID:     entryID,
+			Status: status,
+			Reason: &reason,
 		}
 		if _, err = s.plans.UpdateEntryStatus(ctx, params); err != nil {
 			return nil, ManagePlanOutput{}, fmt.Errorf("updating entry to %s: %w", status, err)
