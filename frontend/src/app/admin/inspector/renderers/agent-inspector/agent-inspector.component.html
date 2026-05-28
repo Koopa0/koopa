@@ -134,18 +134,17 @@
         </details>
       }
 
-      <!-- Tail link to Atlas filtered by assignee — replaces task list tab -->
+      <!-- Tail link to the agent profile — surfaces this agent's task workload. -->
       @if (a.open_task_count > 0) {
         <a
-          [routerLink]="['/admin/atlas']"
-          [queryParams]="{ assignee: a.name }"
+          [routerLink]="['/admin/coordination/agents', a.name]"
           class="motion-reduce:transition-none block border-t border-zinc-800 pt-3 text-sm text-sky-400 transition-colors hover:text-sky-300"
           [attr.aria-label]="
             'View ' +
             a.open_task_count +
             ' open tasks for ' +
             a.name +
-            ' in Atlas'
+            ' in agent profile'
           "
           data-testid="agent-open-tasks-link"
         >

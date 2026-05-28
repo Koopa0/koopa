@@ -187,7 +187,7 @@ describe('AgentInspectorComponent', () => {
     expect(subtitle?.textContent).toContain('retired');
   });
 
-  it('should render tail link with N open tasks pointing to Atlas filtered', async () => {
+  it('should render tail link with N open tasks pointing to agent profile', async () => {
     setupFixture();
     await loadAndSettle(baseAgent);
 
@@ -195,7 +195,7 @@ describe('AgentInspectorComponent', () => {
       '[data-testid="agent-open-tasks-link"]',
     );
     expect(link?.textContent).toContain('View 3 open tasks for hq');
-    // routerLink resolves to /admin/atlas with queryParams assignee=hq
+    // routerLink resolves to /admin/coordination/agents/hq (agent profile).
     expect(link?.getAttribute('aria-label')).toContain('open tasks for hq');
   });
 

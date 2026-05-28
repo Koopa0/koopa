@@ -233,18 +233,17 @@
         </section>
       }
 
-      <!-- Tail link to Atlas filtered by concept -->
+      <!-- Tail link to the concept profile — surfaces this concept's targets and evidence. -->
       @if (c.targets_exercising_count > 0) {
         <a
-          [routerLink]="['/admin/atlas']"
-          [queryParams]="{ type: 'learning_target', concept: c.slug }"
+          [routerLink]="['/admin/learning/concepts', c.slug]"
           class="motion-reduce:transition-none block border-t border-zinc-800 pt-3 text-sm text-sky-400 transition-colors hover:text-sky-300"
           [attr.aria-label]="
             'View ' +
             c.targets_exercising_count +
             ' learning targets exercising ' +
             c.slug +
-            ' in Atlas'
+            ' in concept profile'
           "
           data-testid="concept-targets-link"
         >
