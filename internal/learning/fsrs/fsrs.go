@@ -125,6 +125,21 @@ func unmarshalCardState(data json.RawMessage) (gofsrs.Card, error) {
 
 // ratingFromOutcome maps an attempt outcome string to an FSRS rating.
 // Bridges the learning domain (attempt outcomes) and the SRS domain (ratings).
+//
+// Mapping semantics:
+//   - Good: independent recall (solved_independent, completed). The user
+//     produced the answer/work without external help; FSRS schedules the
+//     long interval that proves retention.
+//   - Hard: partial recall after limited assistance (solved_with_hint,
+//     completed_with_support). The user retrieved most of the structure
+//     but needed a nudge; FSRS pulls the card forward to retest the gap.
+//   - Again: no independent retrieval (incomplete, gave_up,
+//     solved_after_solution). The card is rescheduled as if encoding just
+//     started. solved_after_solution sits here intentionally — copying
+//     or reading a full solution is solution-exposure, not recall, so
+//     treating it as Hard (the prior mapping) would build a false retention
+//     curve and surface in the retrieval queue as "already practised".
+//
 // Returns an error for unknown outcomes so a new outcome value added to the
 // schema enum cannot silently fall through to Again and reset FSRS intervals
 // on every attempt. The caller routes the error to review_cards.last_sync_drift_at
@@ -134,9 +149,9 @@ func ratingFromOutcome(outcome string) (gofsrs.Rating, error) {
 	switch outcome {
 	case "solved_independent", "completed":
 		return gofsrs.Good, nil
-	case "solved_with_hint", "completed_with_support", "solved_after_solution":
+	case "solved_with_hint", "completed_with_support":
 		return gofsrs.Hard, nil
-	case "incomplete", "gave_up":
+	case "incomplete", "gave_up", "solved_after_solution":
 		return gofsrs.Again, nil
 	default:
 		return 0, fmt.Errorf("%w: %q (vocabulary drift between Go and schema)", ErrUnknownOutcome, outcome)

@@ -66,8 +66,11 @@ func TestRatingFromOutcome(t *testing.T) {
 		{name: "solved_independent → Good", outcome: "solved_independent", want: gofsrs.Good},
 		{name: "completed → Good", outcome: "completed", want: gofsrs.Good},
 		{name: "solved_with_hint → Hard", outcome: "solved_with_hint", want: gofsrs.Hard},
-		{name: "solved_after_solution → Hard", outcome: "solved_after_solution", want: gofsrs.Hard},
 		{name: "completed_with_support → Hard", outcome: "completed_with_support", want: gofsrs.Hard},
+		// solved_after_solution is solution-exposure, not recall; FSRS
+		// reschedules the card from a near-new state instead of the false
+		// retention curve the prior Hard mapping produced.
+		{name: "solved_after_solution → Again", outcome: "solved_after_solution", want: gofsrs.Again},
 		{name: "incomplete → Again", outcome: "incomplete", want: gofsrs.Again},
 		{name: "gave_up → Again", outcome: "gave_up", want: gofsrs.Again},
 		{name: "unknown outcome → ErrUnknownOutcome", outcome: "bogus_outcome", wantErr: true},
@@ -111,8 +114,8 @@ func TestPublicRatingFromOutcome(t *testing.T) {
 		{name: "solved_independent → 3 (Good)", outcome: "solved_independent", want: 3},
 		{name: "completed → 3 (Good)", outcome: "completed", want: 3},
 		{name: "solved_with_hint → 2 (Hard)", outcome: "solved_with_hint", want: 2},
-		{name: "solved_after_solution → 2 (Hard)", outcome: "solved_after_solution", want: 2},
 		{name: "completed_with_support → 2 (Hard)", outcome: "completed_with_support", want: 2},
+		{name: "solved_after_solution → 1 (Again, solution exposure)", outcome: "solved_after_solution", want: 1},
 		{name: "incomplete → 1 (Again)", outcome: "incomplete", want: 1},
 		{name: "gave_up → 1 (Again)", outcome: "gave_up", want: 1},
 		{name: "unknown outcome → ErrUnknownOutcome", outcome: "bogus_outcome", wantErr: true},
