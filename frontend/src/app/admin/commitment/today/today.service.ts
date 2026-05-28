@@ -39,13 +39,12 @@ const CONTENT_TYPE_BADGE: Record<ApiContent['type'], string> = {
 };
 
 /**
- * BackendDailyPlanItem is the REAL wire shape of an item in
- * GET /api/admin/commitment/daily-plan (internal/daily/handler.go PlanItem) —
- * `title` + `state` (the daily_plan_items lifecycle), NOT the legacy
- * `DailyPlanItem` model (todo_title/todo_state/status/position) that
- * now-page.component still uses. Track 1B found the legacy model is fictional
- * relative to this endpoint; rather than change the global model (and the
- * now-page blast radius), TodayService maps the real shape locally.
+ * BackendDailyPlanItem is the wire shape returned by
+ * GET /api/admin/commitment/daily-plan (internal/daily/handler.go PlanItem):
+ * `title` + `state` (the daily_plan_items lifecycle). It diverges from the
+ * shared `DailyPlanItem` model (todo_title/todo_state/status/position);
+ * TodayService maps the real shape locally rather than mutating the shared
+ * model.
  */
 interface BackendDailyPlanItem {
   id: string;
