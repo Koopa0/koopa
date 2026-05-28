@@ -35,7 +35,7 @@ This protocol defines the seven quality gates that every change to `frontend/` m
 ### Assertions
 
 - No public template (`src/app/pages/**`) links to a private `/admin/**` route via `routerLink` or `href`.
-- No public template links to a route that does not exist in `app.routes.ts`.
+- No template, service, or component **outside `src/app/admin/**`** uses a static link or navigation whose first path segment does not exist as a top-level route in `app.routes.ts`. Caught regression classes: a public top-nav `routerLink="/notes"` with no `/notes` route, a command-palette `navigate('/uses')` issued before the `/uses` route was registered.
 - `app.routes.ts` and `app.routes.server.ts` agree on which paths exist; SSR `serverRoutes` should not register paths that don't have a corresponding `routes` entry, and removed routes must be removed from both files. **Full route-table parity between the two files is not automated in v1** — only known high-risk drift patterns (e.g. the previously-removed `tags/:tag` path) are grep-checked. Broader parity is a manual review concern.
 - Dynamic `routerLink` expressions that construct paths from string concatenation (e.g. `[routerLink]="'/x/' + slug"`) are reviewed for the slug source — if the slug can be attacker-influenced and the route is privileged, that is a Gate 2 escalation.
 
@@ -45,6 +45,7 @@ This protocol defines the seven quality gates that every change to `frontend/` m
 - `src/app/pages/**` contains no reference to `/tags/` (the `/tags/:tag` route was removed on 2026-05-28; tag chips are content metadata only — see `api-spec.md` §11.7).
 - `src/app/app.routes.ts` does not reintroduce a `tags/:tag` path.
 - `src/app/app.routes.server.ts` does not reintroduce a `tags/:tag` path.
+- Files under `src/app/**` (excluding `src/app/admin/**`) do not contain static link or navigation literals whose first path segment is outside the allowlist of top-level routes declared in `app.routes.ts`. Supported reference forms: `routerLink="/X"`, `[routerLink]="['/X', …]"`, `[routerLink]="'/X'"` (including `'/X/' + …` concatenation), `href="/X"` (internal absolute only), `navigate(['/X', …])`, `navigate('/X')`, `navigateByUrl('/X')`. The allowlist lives in `scripts/check-frontend-quality.sh::PUBLIC_ROOT_ALLOWLIST` — keep it in sync with `app.routes.ts` whenever a top-level public route is added or removed. `admin` is in the allowlist so authenticated public-shell shortcuts (e.g. the `app.html` admin dashboard icon, palette admin quick-jumps) do not false-fire; the `pages/**` → `/admin` check above keeps the public site itself free of admin links.
 
 ### Manual review (per PR)
 
@@ -205,7 +206,8 @@ This runs `scripts/check-frontend-quality.sh`, which implements:
 | 4 | `pages/**` does not contain `/tags/` | 1 |
 | 5 | `app.routes.ts` does not contain `tags/:tag` | 1 |
 | 6 | `app.routes.server.ts` does not contain `tags/:tag` | 1 |
-| 7 | `app.routes.server.ts` keeps `admin` / `admin/**` on `RenderMode.Client` | 1, 2 |
+| 7 | Public link/navigation literals in `src/app/**` (outside `admin/`) target a known route segment | 1 |
+| 8 | `app.routes.server.ts` keeps `admin` / `admin/**` on `RenderMode.Client` | 1, 2 |
 
 Exit code is non-zero if any check fails. Output lists offending file:line for each failure.
 
@@ -217,6 +219,13 @@ Exit code is non-zero if any check fails. Output lists offending file:line for e
   - String literals assembled at runtime (`'/' + 'admin'` — unlikely but not detected).
   - Imports rewritten via TypeScript path aliases. None are currently configured for `admin/`. **If a path alias covering `admin/` (or any other public/private boundary) is introduced, the public/private import-boundary check in `scripts/check-frontend-quality.sh` MUST be updated in the same PR that lands the alias, before the alias is merged.** Landing an alias first creates a silent gap in Gate 2.
   - Comments containing forbidden strings — these will be flagged. Acceptable: comments referring to removed routes should be cleaned up.
+- The public route-existence check (table row 7) is intentionally a string-literal grep, not an AST scan. Known limitations:
+  - **Template literals** (`navigate(\`/foo/${id}\`)`, `[routerLink]="\`/foo/${slug}\`"`) are not detected. A bad template-literal target is invisible.
+  - **Variable / method-call arguments** (`navigate(entry.path)`, `[routerLink]="routeFor(x)"`, `this.router.navigate([target.path])`) are not detected. The check assumes the variable resolves to a valid path; that contract is a manual review concern.
+  - **Only the first path segment is validated.** `/articles/anything-here` passes because `articles` is allowed; deep-path correctness (e.g. a stale `/articles/old-handle` after a slug rename) is a manual concern.
+  - **Allowlist drift.** The allowlist is a hand-maintained list in the script. Adding or removing a top-level route in `app.routes.ts` requires updating `PUBLIC_ROOT_ALLOWLIST` in the same change. The protocol does not auto-derive the allowlist from `app.routes.ts` — that would require TypeScript parsing.
+  - **Comments and string-typed test fixtures.** A `routerLink="/notes"` in a `.spec.ts` fixture or in a TS comment will be flagged. Acceptable: dead string references should be cleaned up, not preserved as comments.
+  - **Files under `src/app/admin/**` are not scanned by this check.** Admin-to-admin link correctness is left to per-page review and lint; the gate's purpose is public-shell hygiene.
 - Gates 3, 4, 5, 6, 7 are NOT covered by the script. They depend on per-PR review against the canonical API and backend contracts (`frontend/docs/api-spec.md`, `docs/backend-semantic-contract.md`). Ad-hoc audit artifacts (page-semantics surveys, reality snapshots, etc.) may be generated on request when a specific question warrants one, but they are session deliverables — they should not be committed as permanent docs, because they go stale and become misleading load-bearing references.
 - No CI integration is configured today. The protocol is enforced by the owner running `npm run check:quality` and the L1 reviewers in the agent workflow.
 - The check script is not a hook — it does not block file writes or commits. Promotion to a pre-commit hook is a future option once the script has settled.
