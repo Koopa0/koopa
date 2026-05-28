@@ -44,6 +44,57 @@ func TestTaskDetail_Validation(t *testing.T) {
 	}
 }
 
+// TestRequestRevision_Validation covers the pre-DB parsing boundary so a
+// malformed directive_id fails fast with a clear error rather than hitting
+// the registry / store layer. Same DB-free dimension as TestTaskDetail_Validation.
+func TestRequestRevision_Validation(t *testing.T) {
+	s := newTestServer()
+	tests := []struct {
+		name    string
+		input   RequestRevisionInput
+		wantErr string
+	}{
+		{name: "empty directive_id", input: RequestRevisionInput{}, wantErr: "invalid directive_id"},
+		{name: "malformed directive_id", input: RequestRevisionInput{DirectiveID: "not-a-uuid"}, wantErr: "invalid directive_id"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, err := callHandler(t, s.requestRevision, tt.input)
+			if err == nil {
+				t.Fatal("expected error, got nil")
+			}
+			if !contains(err.Error(), tt.wantErr) {
+				t.Errorf("error = %q, want containing %q", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+// TestReaccept_Validation mirrors TestRequestRevision_Validation for the
+// reaccept tool — parsing-boundary rejection of a missing or bad UUID.
+func TestReaccept_Validation(t *testing.T) {
+	s := newTestServer()
+	tests := []struct {
+		name    string
+		input   ReacceptInput
+		wantErr string
+	}{
+		{name: "empty directive_id", input: ReacceptInput{}, wantErr: "invalid directive_id"},
+		{name: "malformed directive_id", input: ReacceptInput{DirectiveID: "not-a-uuid"}, wantErr: "invalid directive_id"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, err := callHandler(t, s.reaccept, tt.input)
+			if err == nil {
+				t.Fatal("expected error, got nil")
+			}
+			if !contains(err.Error(), tt.wantErr) {
+				t.Errorf("error = %q, want containing %q", err, tt.wantErr)
+			}
+		})
+	}
+}
+
 // TestParseA2APartsAccepts pins the four canonical a2a Part shapes that
 // callers may send (text / raw / data / url) and the optional sibling
 // fields that may accompany them. This is the consumer-facing contract;

@@ -369,13 +369,22 @@ surface in `observation_warnings` while siblings and the attempt row persist.
 | `file_report(in_response_to)` | Additive | PublishArtifacts + task target | response message + artifact + `→completed` (atomic) | capability + self |
 | `file_report(standalone)` | Additive | PublishArtifacts; allowlist excludes hq | free-standing artifact | `requireAuthor` (content-studio, research-lab, learning-studio) |
 | `task_detail` | ReadOnly | source or target only | none; returns not_found to non-parties | self (party check) |
+| `request_revision` | Destructive | SubmitTasks + task source | `completed→revision_requested`, stamps `revision_requested_at`, preserves `completed_at`; optional trimmed reason appended as a response message in the same `withActorTx` | capability + self (source) |
+| `reaccept` | Idempotent | ReceiveTasks + task target | `revision_requested→working`, clears `completed_at` and `revision_requested_at` | capability + self (target) |
 | `write_agent_note` / `query_agent_notes` | Additive / ReadOnly | any | agent_note row / read | self-directed |
 
 **Semantics for testing:** the directive lifecycle is the core IPC contract.
 Completion is trigger-enforced to require both a response message and an
 artifact (`1366-1391`); `acknowledge_directive` is Idempotent (re-accept of a
 non-submitted task → ErrConflict, tested). `task_detail` must not leak tasks
-the caller is not party to.
+the caller is not party to. The revision cycle (`request_revision` →
+`reaccept`) is MCP exposure of the already-existing
+`completed → revision_requested → working` lifecycle in
+`internal/agent/task` — no schema or store change; the MCP layer adds the
+caller-source / caller-target self-bound checks that the SQL transitions
+alone cannot encode, and runs the optional `request_revision` reason append
+atomically with the state transition under `withActorTx` so a failed
+transition rolls back the message.
 
 ### Group: audit / provenance
 

@@ -1,10 +1,16 @@
 // a2a.go holds the coordination-layer MCP tools that translate between
-// a2a-go's Part shape and internal/agent/task. Three tool handlers live
+// a2a-go's Part shape and internal/agent/task. Five tool handlers live
 // here:
 //
 //   - acknowledge_directive — target agent accepts an assigned task.
 //   - file_report           — target agent completes a task with a
 //     response message + artifact (atomic).
+//   - task_detail           — read-side bundle (task + messages + artifacts).
+//   - request_revision      — source agent moves a completed task back to
+//     revision_requested with an optional response-message reason
+//     (atomic with the transition).
+//   - reaccept              — target agent picks up a revision-requested
+//     task and moves it back to working.
 //
 // The propose_directive source side of the protocol lives in
 // propose_flat.go (and shares the proposal-token plumbing in
@@ -17,6 +23,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/google/uuid"
@@ -331,5 +338,167 @@ func (s *Server) taskDetail(ctx context.Context, _ *mcp.CallToolRequest, input T
 		Task:      *t,
 		Messages:  messages,
 		Artifacts: artifacts,
+	}, nil
+}
+
+// --- request_revision ---
+
+// RequestRevisionInput is the input for the request_revision tool.
+//
+// Caller identity is resolved via callerIdentity(ctx) (the "as" field
+// or server default). The caller must be the task's source AND hold the
+// SubmitTasks capability — capability gates at the type system level,
+// the source-bound check runs in the handler.
+type RequestRevisionInput struct {
+	DirectiveID string  `json:"directive_id" jsonschema:"required" jsonschema_description:"Task UUID of the completed directive to send back for revision"`
+	Reason      *string `json:"reason,omitempty" jsonschema_description:"Optional explanation. When non-empty after trimming, appended as a response message in the same transaction as the state transition — if the transition fails, the reason is rolled back."`
+}
+
+// RequestRevisionOutput is the output of the request_revision tool.
+//
+// ReasonAppended reports whether the optional reason was persisted; it
+// is false when the caller omitted reason or supplied only whitespace,
+// so the caller can distinguish "no reason provided" from "reason was
+// silently dropped".
+type RequestRevisionOutput struct {
+	TaskID         string `json:"task_id"`
+	RequestedBy    string `json:"requested_by"`
+	State          string `json:"state"`
+	ReasonAppended bool   `json:"reason_appended"`
+}
+
+func (s *Server) requestRevision(ctx context.Context, _ *mcp.CallToolRequest, input RequestRevisionInput) (*mcp.CallToolResult, RequestRevisionOutput, error) {
+	taskID, err := uuid.Parse(input.DirectiveID)
+	if err != nil {
+		return nil, RequestRevisionOutput{}, fmt.Errorf("request_revision: invalid directive_id: %w", err)
+	}
+
+	caller := agent.Name(s.callerIdentity(ctx))
+	auth, err := agent.Authorize(ctx, s.registry, caller, agent.ActionRequestRevision)
+	if err != nil {
+		return nil, RequestRevisionOutput{}, fmt.Errorf("request_revision: %w", err)
+	}
+
+	// Pre-flight load: distinct errors for not-found, wrong source, wrong
+	// state. Without it, the SQL UPDATE narrowing on state='completed' would
+	// collapse all three into a generic ErrConflict. Mirrors the
+	// acknowledge_directive / file_report preflight pattern.
+	existing, err := s.tasks.Task(ctx, taskID)
+	if err != nil {
+		if errors.Is(err, task.ErrNotFound) {
+			return nil, RequestRevisionOutput{}, fmt.Errorf("request_revision: task %s not found", taskID)
+		}
+		return nil, RequestRevisionOutput{}, fmt.Errorf("request_revision: loading task: %w", err)
+	}
+	if existing.Source != string(caller) {
+		return nil, RequestRevisionOutput{}, fmt.Errorf("request_revision: caller %q is not the task source (%q); only the source can request a revision", caller, existing.Source)
+	}
+	if existing.State != task.StateCompleted {
+		return nil, RequestRevisionOutput{}, fmt.Errorf("request_revision: task %s is in state %q; request_revision only works on tasks in 'completed' state", taskID, existing.State)
+	}
+
+	// Atomicity contract: reason append (if any) and the state transition
+	// run in the same actor-bound transaction. A failed transition rolls
+	// back the message, so callers cannot leave an orphaned reason on a
+	// task that didn't actually transition.
+	var (
+		revised        *task.Task
+		reasonAppended bool
+	)
+	trimmedReason := ""
+	if input.Reason != nil {
+		trimmedReason = strings.TrimSpace(*input.Reason)
+	}
+
+	err = s.withActorTx(ctx, func(tx pgx.Tx) error {
+		store := s.tasks.WithTx(tx)
+		if trimmedReason != "" {
+			if _, err := store.AppendMessage(ctx, taskID, task.RoleResponse, []*a2a.Part{a2a.NewTextPart(trimmedReason)}); err != nil {
+				return err
+			}
+			reasonAppended = true
+		}
+		t, err := store.RequestRevision(ctx, auth, taskID)
+		if err != nil {
+			return err
+		}
+		revised = t
+		return nil
+	})
+	if err != nil {
+		return nil, RequestRevisionOutput{}, fmt.Errorf("request_revision: %w", err)
+	}
+
+	s.logger.Info("request_revision", "task_id", taskID, "by", caller, "reason_appended", reasonAppended)
+	return nil, RequestRevisionOutput{
+		TaskID:         revised.ID.String(),
+		RequestedBy:    string(caller),
+		State:          string(revised.State),
+		ReasonAppended: reasonAppended,
+	}, nil
+}
+
+// --- reaccept ---
+
+// ReacceptInput is the input for the reaccept tool.
+//
+// Caller identity is resolved via callerIdentity(ctx). The caller must
+// be the task's target AND hold ReceiveTasks; capability gates at the
+// type system, the target-bound check runs in the handler.
+type ReacceptInput struct {
+	DirectiveID string `json:"directive_id" jsonschema:"required" jsonschema_description:"Task UUID of the revision_requested directive to pick back up"`
+}
+
+// ReacceptOutput is the output of the reaccept tool.
+type ReacceptOutput struct {
+	TaskID       string `json:"task_id"`
+	ReacceptedBy string `json:"reaccepted_by"`
+	State        string `json:"state"`
+}
+
+func (s *Server) reaccept(ctx context.Context, _ *mcp.CallToolRequest, input ReacceptInput) (*mcp.CallToolResult, ReacceptOutput, error) {
+	taskID, err := uuid.Parse(input.DirectiveID)
+	if err != nil {
+		return nil, ReacceptOutput{}, fmt.Errorf("reaccept: invalid directive_id: %w", err)
+	}
+
+	caller := agent.Name(s.callerIdentity(ctx))
+	auth, err := agent.Authorize(ctx, s.registry, caller, agent.ActionReacceptTask)
+	if err != nil {
+		return nil, ReacceptOutput{}, fmt.Errorf("reaccept: %w", err)
+	}
+
+	existing, err := s.tasks.Task(ctx, taskID)
+	if err != nil {
+		if errors.Is(err, task.ErrNotFound) {
+			return nil, ReacceptOutput{}, fmt.Errorf("reaccept: task %s not found", taskID)
+		}
+		return nil, ReacceptOutput{}, fmt.Errorf("reaccept: loading task: %w", err)
+	}
+	if existing.Target != string(caller) {
+		return nil, ReacceptOutput{}, fmt.Errorf("reaccept: caller %q is not the task target (%q); only the assignee can reaccept a revision", caller, existing.Target)
+	}
+	if existing.State != task.StateRevisionRequested {
+		return nil, ReacceptOutput{}, fmt.Errorf("reaccept: task %s is in state %q; reaccept only works on tasks in 'revision_requested' state", taskID, existing.State)
+	}
+
+	var reaccepted *task.Task
+	err = s.withActorTx(ctx, func(tx pgx.Tx) error {
+		t, err := s.tasks.WithTx(tx).Reaccept(ctx, auth, taskID)
+		if err != nil {
+			return err
+		}
+		reaccepted = t
+		return nil
+	})
+	if err != nil {
+		return nil, ReacceptOutput{}, fmt.Errorf("reaccept: %w", err)
+	}
+
+	s.logger.Info("reaccept", "task_id", taskID, "by", caller)
+	return nil, ReacceptOutput{
+		TaskID:       reaccepted.ID.String(),
+		ReacceptedBy: string(caller),
+		State:        string(reaccepted.State),
 	}, nil
 }

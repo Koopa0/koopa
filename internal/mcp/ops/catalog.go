@@ -281,6 +281,36 @@ func TaskDetail() Meta {
 	}
 }
 
+// RequestRevision returns metadata for the source-side revision-request tool.
+// Writability is Destructive: the transition completed → revision_requested
+// moves a finalized task back into an in-flight state; the optional reason
+// append is additive but the lifecycle move dominates the label.
+func RequestRevision() Meta {
+	return Meta{
+		Name:        "request_revision",
+		Domain:      DomainA2A,
+		Writability: Destructive,
+		Stability:   StabilityStable,
+		Since:       "1.2.0",
+		Description: "Source-side request for revision of a completed directive/task. Transitions completed → revision_requested and stamps revision_requested_at while preserving completed_at. Caller must be the task source and hold SubmitTasks. Optional reason (after trimming) is appended as a response message in the same transaction as the state transition — a failed transition rolls the reason back. Use after reviewing a file_report when the deliverable needs changes; the assignee re-enters the queue via the task's open-task listing and picks it up with reaccept.",
+	}
+}
+
+// Reaccept returns metadata for the target-side revision-pickup tool.
+// Writability is Idempotent: a second call after success returns ErrConflict
+// (the SQL WHERE narrows to state='revision_requested' and matches no rows),
+// same shape as acknowledge_directive.
+func Reaccept() Meta {
+	return Meta{
+		Name:        "reaccept",
+		Domain:      DomainA2A,
+		Writability: Idempotent,
+		Stability:   StabilityStable,
+		Since:       "1.2.0",
+		Description: "Target-side acceptance of a revision request. Transitions revision_requested → working and clears both completed_at and revision_requested_at so the task can be re-completed via file_report. Caller must be the task target and hold ReceiveTasks. Wrong-state calls (working / completed / submitted) are rejected with a state-mismatch error; the duplicate-call shape mirrors acknowledge_directive.",
+	}
+}
+
 // TrackHypothesis returns metadata for the hypothesis lifecycle update tool.
 func TrackHypothesis() Meta {
 	return Meta{
@@ -675,6 +705,8 @@ func All() []Meta {
 		FileReport(),
 		AcknowledgeDirective(),
 		TaskDetail(),
+		RequestRevision(),
+		Reaccept(),
 		TrackHypothesis(),
 		StartSession(),
 		RecordAttempt(),

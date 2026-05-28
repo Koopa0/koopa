@@ -166,6 +166,8 @@ dispatches on `payload.Type`:
 | `file_report(in_response_to=...)` | **PublishArtifacts** | — | — | task target | Capability + caller is the target completing the task |
 | `file_report(standalone)` | **PublishArtifacts** | — | content-studio, research-lab, learning-studio | — | Capability + author allowlist (excludes hq) |
 | `task_detail` | — | — | — | source or target | Caller must be a party to the task |
+| `request_revision` | **SubmitTasks** | — | — | task source | Capability + caller is the source; transition `completed → revision_requested`. Optional reason appended as a response message in the same actor-bound tx as the transition. |
+| `reaccept` | **ReceiveTasks** | — | — | task target | Capability + caller is the assigned target; transition `revision_requested → working`, clears `completed_at` and `revision_requested_at`. |
 
 ### Daily plan & GTD
 

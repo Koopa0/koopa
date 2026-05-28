@@ -4165,6 +4165,361 @@ func TestIntegration_A2A_StateEdgeCases(t *testing.T) {
 	})
 }
 
+// =========================================================================
+// Section: A2A revision cycle — request_revision / reaccept
+// =========================================================================
+
+// taskTimestampSet reports whether the given timestamp column on a task is
+// non-NULL. Used by the revision-cycle tests to assert that completed_at and
+// revision_requested_at are stamped/cleared at the right transitions.
+// column MUST be a literal from the helper's call sites (completed_at,
+// revision_requested_at) — it is interpolated into the SQL because pgx does
+// not parameterize identifiers. Caller controls the input.
+func taskTimestampSet(t *testing.T, taskID uuid.UUID, column string) bool {
+	t.Helper()
+	var set bool
+	// #nosec G201 -- column is a literal from this file's callers, never user input.
+	q := "SELECT " + column + " IS NOT NULL FROM tasks WHERE id = $1"
+	if err := testPool.QueryRow(t.Context(), q, taskID).Scan(&set); err != nil {
+		t.Fatalf("reading %s for %s: %v", column, taskID, err)
+	}
+	return set
+}
+
+// TestIntegration_A2A_RevisionCycle_HappyPath drives a directive through the
+// full revision round-trip via MCP: ack → report → request_revision (with
+// reason) → reaccept → second report. Each hop verifies the state, the
+// timestamp invariants (completed_at preserved on RequestRevision, both
+// cleared on Reaccept), and the cumulative response-message / artifact
+// counts. The reason text travels into task_messages so the audit thread
+// keeps a chronologically coherent "why-revise" turn.
+func TestIntegration_A2A_RevisionCycle_HappyPath(t *testing.T) {
+	s := setupServer(t)
+	taskID := seedSubmittedTask(t, "hq", "learning-studio", "revision cycle through mcp")
+
+	// First report cycle. mustAck/mustReport drive as learning-studio (the
+	// default test caller); we'll switch to hq for the source-side revision.
+	mustAck(t, s, taskID)
+	mustReport(t, s, taskID)
+
+	if state, _, _ := taskRow(t, taskID); state != "completed" {
+		t.Fatalf("pre-revision state = %q, want completed", state)
+	}
+	if !taskTimestampSet(t, taskID, "completed_at") {
+		t.Fatal("pre-revision: completed_at is NULL, want set")
+	}
+
+	// Source-side: hq requests a revision with an explanatory reason. The
+	// reason is appended in the same withActorTx as the state transition.
+	const reason = "needs more detail on the third paragraph"
+	_, rev, err := callHandlerAs(t, "hq", s.requestRevision, RequestRevisionInput{
+		DirectiveID: taskID.String(),
+		Reason:      strPtr(reason),
+	})
+	if err != nil {
+		t.Fatalf("request_revision: %v", err)
+	}
+	if rev.State != "revision_requested" {
+		t.Errorf("request_revision output state = %q, want revision_requested", rev.State)
+	}
+	if !rev.ReasonAppended {
+		t.Error("request_revision output reason_appended = false, want true")
+	}
+	if rev.RequestedBy != "hq" {
+		t.Errorf("request_revision output requested_by = %q, want hq", rev.RequestedBy)
+	}
+	if state, _, _ := taskRow(t, taskID); state != "revision_requested" {
+		t.Errorf("post-request_revision state = %q, want revision_requested", state)
+	}
+	if !taskTimestampSet(t, taskID, "completed_at") {
+		t.Error("post-request_revision: completed_at = NULL, want preserved")
+	}
+	if !taskTimestampSet(t, taskID, "revision_requested_at") {
+		t.Error("post-request_revision: revision_requested_at = NULL, want set")
+	}
+
+	// The reason landed as a response message. After the first report there
+	// is one response message; after request_revision there should be two
+	// (first report's response + the revision reason).
+	if n := messageCount(t, taskID, "response"); n != 2 {
+		t.Errorf("response messages after request_revision = %d, want 2", n)
+	}
+	if actor := activityActorFor(t, "task", taskID); actor != "hq" {
+		t.Errorf("latest task audit actor after request_revision = %q, want hq", actor)
+	}
+
+	// Target-side: learning-studio picks the revision back up.
+	_, react, err := callHandler(t, s.reaccept, ReacceptInput{DirectiveID: taskID.String()})
+	if err != nil {
+		t.Fatalf("reaccept: %v", err)
+	}
+	if react.State != "working" {
+		t.Errorf("reaccept output state = %q, want working", react.State)
+	}
+	if react.ReacceptedBy != "learning-studio" {
+		t.Errorf("reaccept output reaccepted_by = %q, want learning-studio", react.ReacceptedBy)
+	}
+	if state, _, _ := taskRow(t, taskID); state != "working" {
+		t.Errorf("post-reaccept state = %q, want working", state)
+	}
+	if taskTimestampSet(t, taskID, "completed_at") {
+		t.Error("post-reaccept: completed_at not cleared, want NULL")
+	}
+	if taskTimestampSet(t, taskID, "revision_requested_at") {
+		t.Error("post-reaccept: revision_requested_at not cleared, want NULL")
+	}
+
+	// Second report cycle — exercises the trigger-enforced completion
+	// requirements after the round-trip. Cumulative outputs satisfy the
+	// trigger's ≥1 response + ≥1 artifact bound automatically.
+	mustReport(t, s, taskID)
+	if state, _, _ := taskRow(t, taskID); state != "completed" {
+		t.Errorf("final state = %q, want completed", state)
+	}
+	if n := artifactCountForTask(t, taskID); n != 2 {
+		t.Errorf("final artifact count = %d, want 2 (one per Complete)", n)
+	}
+	// Two response messages from the two file_reports + one reason message = 3.
+	if n := messageCount(t, taskID, "response"); n != 3 {
+		t.Errorf("final response messages = %d, want 3 (two reports + one reason)", n)
+	}
+}
+
+// TestIntegration_A2A_RequestRevision_AuthorizationRejection pins the
+// auth/state rejection paths: a SubmitTasks-capable non-source caller is
+// rejected with "not the task source"; a no-capability caller is rejected
+// by agent.Authorize; a wrong-state call is rejected without appending the
+// reason.
+func TestIntegration_A2A_RequestRevision_AuthorizationRejection(t *testing.T) {
+	t.Run("non-source caller with SubmitTasks is rejected", func(t *testing.T) {
+		s := setupServer(t)
+		taskID := seedSubmittedTask(t, "hq", "learning-studio", "non-source revision attempt")
+		mustAck(t, s, taskID)
+		mustReport(t, s, taskID)
+		responsesBefore := messageCount(t, taskID, "response")
+
+		// content-studio HAS SubmitTasks (passes capability) but is not the
+		// task source. Supply a reason so we can verify the failed transition
+		// rolled back the message append.
+		_, _, err := callHandlerAs(t, "content-studio", s.requestRevision, RequestRevisionInput{
+			DirectiveID: taskID.String(),
+			Reason:      strPtr("trying to muscle in on a directive I didn't issue"),
+		})
+		if err == nil {
+			t.Fatal("non-source request_revision succeeded; want rejection")
+		}
+		if !strings.Contains(err.Error(), "not the task source") {
+			t.Errorf("non-source error = %v, want 'not the task source'", err)
+		}
+		if state, _, _ := taskRow(t, taskID); state != "completed" {
+			t.Errorf("state after rejected request_revision = %q, want completed", state)
+		}
+		if n := messageCount(t, taskID, "response"); n != responsesBefore {
+			t.Errorf("response messages after rejected request_revision = %d, want %d (reason must not be appended)", n, responsesBefore)
+		}
+	})
+
+	t.Run("caller without SubmitTasks is rejected at capability layer", func(t *testing.T) {
+		s := setupServer(t)
+		taskID := seedSubmittedTask(t, "hq", "learning-studio", "no-cap revision attempt")
+		mustAck(t, s, taskID)
+		mustReport(t, s, taskID)
+
+		// learning-studio has ReceiveTasks + PublishArtifacts but no SubmitTasks.
+		_, _, err := callHandlerAs(t, "learning-studio", s.requestRevision, RequestRevisionInput{
+			DirectiveID: taskID.String(),
+		})
+		if err == nil {
+			t.Fatal("learning-studio request_revision succeeded; want capability rejection")
+		}
+		// agent.Authorize wraps ErrForbidden — surfaces as "capability denied" in the chain.
+		if !strings.Contains(err.Error(), "capability denied") {
+			t.Errorf("no-cap error = %v, want 'capability denied'", err)
+		}
+		if state, _, _ := taskRow(t, taskID); state != "completed" {
+			t.Errorf("state after rejected request_revision = %q, want completed", state)
+		}
+	})
+
+	t.Run("wrong state rejected (working task)", func(t *testing.T) {
+		s := setupServer(t)
+		taskID := seedSubmittedTask(t, "hq", "learning-studio", "wrong-state revision attempt")
+		mustAck(t, s, taskID) // submitted → working, no report yet
+
+		responsesBefore := messageCount(t, taskID, "response")
+		_, _, err := callHandlerAs(t, "hq", s.requestRevision, RequestRevisionInput{
+			DirectiveID: taskID.String(),
+			Reason:      strPtr("too early to revise"),
+		})
+		if err == nil {
+			t.Fatal("request_revision on working task succeeded; want wrong-state rejection")
+		}
+		if !strings.Contains(err.Error(), "completed") {
+			t.Errorf("wrong-state error = %v, want a 'completed' state message", err)
+		}
+		if state, _, _ := taskRow(t, taskID); state != "working" {
+			t.Errorf("state after rejected request_revision = %q, want working", state)
+		}
+		if n := messageCount(t, taskID, "response"); n != responsesBefore {
+			t.Errorf("response messages after wrong-state request_revision = %d, want %d (reason must not be appended on wrong-state)", n, responsesBefore)
+		}
+	})
+}
+
+// TestIntegration_A2A_Reaccept_AuthorizationRejection mirrors the
+// request_revision rejection coverage: non-target-with-cap rejection,
+// no-capability rejection, and wrong-state rejection.
+func TestIntegration_A2A_Reaccept_AuthorizationRejection(t *testing.T) {
+	// Helper: build a task and drive it all the way to revision_requested.
+	driveToRevisionRequested := func(t *testing.T, s *Server, title string) uuid.UUID {
+		t.Helper()
+		taskID := seedSubmittedTask(t, "hq", "learning-studio", title)
+		mustAck(t, s, taskID)
+		mustReport(t, s, taskID)
+		_, _, err := callHandlerAs(t, "hq", s.requestRevision, RequestRevisionInput{
+			DirectiveID: taskID.String(),
+		})
+		if err != nil {
+			t.Fatalf("setup: request_revision: %v", err)
+		}
+		return taskID
+	}
+
+	t.Run("non-target caller with ReceiveTasks is rejected", func(t *testing.T) {
+		s := setupServer(t)
+		taskID := driveToRevisionRequested(t, s, "non-target reaccept attempt")
+
+		// research-lab HAS ReceiveTasks (passes capability) but is not the target.
+		_, _, err := callHandlerAs(t, "research-lab", s.reaccept, ReacceptInput{
+			DirectiveID: taskID.String(),
+		})
+		if err == nil {
+			t.Fatal("non-target reaccept succeeded; want rejection")
+		}
+		if !strings.Contains(err.Error(), "not the task target") {
+			t.Errorf("non-target error = %v, want 'not the task target'", err)
+		}
+		if state, _, _ := taskRow(t, taskID); state != "revision_requested" {
+			t.Errorf("state after rejected reaccept = %q, want revision_requested", state)
+		}
+	})
+
+	t.Run("caller without ReceiveTasks is rejected at capability layer", func(t *testing.T) {
+		s := setupServer(t)
+		taskID := driveToRevisionRequested(t, s, "no-cap reaccept attempt")
+
+		// hq holds SubmitTasks + PublishArtifacts but no ReceiveTasks.
+		_, _, err := callHandlerAs(t, "hq", s.reaccept, ReacceptInput{
+			DirectiveID: taskID.String(),
+		})
+		if err == nil {
+			t.Fatal("hq reaccept succeeded; want capability rejection")
+		}
+		if !strings.Contains(err.Error(), "capability denied") {
+			t.Errorf("no-cap error = %v, want 'capability denied'", err)
+		}
+	})
+
+	t.Run("wrong state rejected (completed task)", func(t *testing.T) {
+		s := setupServer(t)
+		taskID := seedSubmittedTask(t, "hq", "learning-studio", "wrong-state reaccept attempt")
+		mustAck(t, s, taskID)
+		mustReport(t, s, taskID) // task is completed, not revision_requested
+
+		_, _, err := callHandler(t, s.reaccept, ReacceptInput{
+			DirectiveID: taskID.String(),
+		})
+		if err == nil {
+			t.Fatal("reaccept on completed task succeeded; want wrong-state rejection")
+		}
+		if !strings.Contains(err.Error(), "revision_requested") {
+			t.Errorf("wrong-state error = %v, want a 'revision_requested' state message", err)
+		}
+		if state, _, _ := taskRow(t, taskID); state != "completed" {
+			t.Errorf("state after rejected reaccept = %q, want completed", state)
+		}
+	})
+}
+
+// TestIntegration_A2A_RequestRevision_ReasonAppendAtomicity proves that the
+// reason message and the state transition share a single withActorTx scope.
+// First call succeeds (reason appended + transition). Second call fires the
+// reason append inside the tx, then RequestRevision rejects on wrong state;
+// the resulting Rollback discards the reason message. The visible response
+// count after the rejected second call equals the post-first-call count.
+func TestIntegration_A2A_RequestRevision_ReasonAppendAtomicity(t *testing.T) {
+	s := setupServer(t)
+	taskID := seedSubmittedTask(t, "hq", "learning-studio", "revision atomicity")
+	mustAck(t, s, taskID)
+	mustReport(t, s, taskID)
+
+	// First request_revision succeeds: reason appended + transition.
+	const firstReason = "first round of revisions"
+	if _, _, err := callHandlerAs(t, "hq", s.requestRevision, RequestRevisionInput{
+		DirectiveID: taskID.String(),
+		Reason:      strPtr(firstReason),
+	}); err != nil {
+		t.Fatalf("first request_revision: %v", err)
+	}
+	if state, _, _ := taskRow(t, taskID); state != "revision_requested" {
+		t.Fatalf("after first revision: state = %q, want revision_requested", state)
+	}
+	responsesAfterFirst := messageCount(t, taskID, "response")
+	// Sanity: 1 from file_report + 1 reason = 2.
+	if responsesAfterFirst != 2 {
+		t.Fatalf("after first revision: response messages = %d, want 2", responsesAfterFirst)
+	}
+
+	// Second request_revision is wrong-state — the task is now
+	// revision_requested, not completed. The reason append runs inside the
+	// same tx, RequestRevision fails, and Rollback must wipe the message.
+	const secondReason = "this reason must never persist"
+	_, _, err := callHandlerAs(t, "hq", s.requestRevision, RequestRevisionInput{
+		DirectiveID: taskID.String(),
+		Reason:      strPtr(secondReason),
+	})
+	if err == nil {
+		t.Fatal("second request_revision on revision_requested task succeeded; want wrong-state rejection")
+	}
+	if !strings.Contains(err.Error(), "completed") {
+		t.Errorf("second request_revision error = %v, want a 'completed' state message", err)
+	}
+	if n := messageCount(t, taskID, "response"); n != responsesAfterFirst {
+		t.Errorf("response messages after rejected second revision = %d, want %d (atomicity: reason must roll back with failed transition)", n, responsesAfterFirst)
+	}
+	// And the second reason must not appear anywhere in any response message.
+	if found := responseTextContains(t, taskID, secondReason); found {
+		t.Errorf("response messages still contain rolled-back reason %q; want no trace", secondReason)
+	}
+}
+
+// responseTextContains reports whether any response message on the task
+// contains the given substring in any text part. Used by the atomicity test
+// to prove a rolled-back reason left no trace.
+func responseTextContains(t *testing.T, taskID uuid.UUID, needle string) bool {
+	t.Helper()
+	rows, err := testPool.Query(t.Context(),
+		`SELECT parts FROM task_messages WHERE task_id = $1 AND role = 'response'`, taskID,
+	)
+	if err != nil {
+		t.Fatalf("reading response messages for %s: %v", taskID, err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var raw []byte
+		if err := rows.Scan(&raw); err != nil {
+			t.Fatalf("scanning parts: %v", err)
+		}
+		if strings.Contains(string(raw), needle) {
+			return true
+		}
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("iterating parts: %v", err)
+	}
+	return false
+}
+
 // ============================================================================
 // Consolidated from search_integration_test.go (Track-1K test-file consolidation).
 // ============================================================================
