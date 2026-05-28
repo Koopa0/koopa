@@ -25,11 +25,6 @@ test.describe('Site Navigation', () => {
     }
   });
 
-  test('should navigate to notes page', async ({ page }) => {
-    await page.goto('/notes');
-    await expect(page.locator('h1')).toContainText(/Notes/i);
-  });
-
   test('should navigate to build logs page', async ({ page }) => {
     await page.goto('/build-logs');
     await expect(page.locator('h1')).toContainText(/Build Log/i);

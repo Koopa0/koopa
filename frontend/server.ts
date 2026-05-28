@@ -69,7 +69,6 @@ const STATIC_ROUTES: Array<{
   { path: '/articles', changefreq: 'daily', priority: '0.9' },
   { path: '/projects', changefreq: 'weekly', priority: '0.8' },
   { path: '/til', changefreq: 'daily', priority: '0.7' },
-  { path: '/notes', changefreq: 'weekly', priority: '0.6' },
   { path: '/resume', changefreq: 'monthly', priority: '0.7' },
   { path: '/uses', changefreq: 'monthly', priority: '0.5' },
   { path: '/about', changefreq: 'monthly', priority: '0.7' },
@@ -95,7 +94,6 @@ const TYPE_ROUTE_PREFIX: Record<string, string> = {
   article: '/articles',
   essay: '/essays',
   til: '/til',
-  note: '/notes',
 };
 
 /** 從後端取得所有已發布內容，帶快取避免頻繁請求 */
@@ -163,7 +161,6 @@ app.get('/sitemap.xml', async (_req, res) => {
     article: '0.7',
     essay: '0.6',
     til: '0.4',
-    note: '0.4',
   };
 
   const contentUrls = contents
