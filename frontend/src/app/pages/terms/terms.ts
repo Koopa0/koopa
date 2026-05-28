@@ -18,8 +18,9 @@ export class TermsComponent implements OnInit {
 
   ngOnInit(): void {
     this.seoService.updateMeta({
-      title: 'Terms of Service',
-      description: 'Terms of service for koopa0.dev — rules and conditions for using this website.',
+      title: 'Terms',
+      description:
+        'Use, citation, and attribution notes for koopa0.dev — a single-owner personal website.',
       ogUrl: `${environment.siteUrl}/terms`,
     });
   }

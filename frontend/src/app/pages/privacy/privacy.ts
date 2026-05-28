@@ -18,8 +18,9 @@ export class PrivacyComponent implements OnInit {
 
   ngOnInit(): void {
     this.seoService.updateMeta({
-      title: 'Privacy Policy',
-      description: 'Privacy policy for koopa0.dev — how we collect, use, and protect your information.',
+      title: 'Privacy',
+      description:
+        'Privacy notes for koopa0.dev — a single-owner personal website. What is logged, what is not tracked.',
       ogUrl: `${environment.siteUrl}/privacy`,
     });
   }
