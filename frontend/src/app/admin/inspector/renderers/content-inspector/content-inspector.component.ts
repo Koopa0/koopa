@@ -57,10 +57,14 @@ export class ContentInspectorComponent {
     () => this.resource.status() === 'error',
   );
 
-  protected readonly isReviewable = computed(() => {
-    const c = this.content();
-    return c?.status === 'review' || c?.status === 'draft';
-  });
+  // The action bar (Publish + Revert to draft) applies only while the row is
+  // in review — mirrors the editor topbar. Publishing from draft/archived is
+  // rejected by the backend (content.Store.PublishFromReview, Policy B), and
+  // revert-to-draft is itself a review-only transition, so neither button is
+  // offered for a draft.
+  protected readonly isReviewable = computed(
+    () => this.content()?.status === 'review',
+  );
 
   protected readonly reviewNotes = computed(() => {
     const meta = this.content()?.ai_metadata;

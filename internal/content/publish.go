@@ -80,14 +80,41 @@ func (s *Store) AllPublishedSlugs(ctx context.Context) ([]Content, error) {
 	return contents, nil
 }
 
+// PublishFromReview is the canonical, state-guarded publish transition shared
+// by every caller boundary — the HTTP admin publish handler and the MCP
+// publish_content tool both route through it so the editorial gate cannot
+// drift between transports. The policy (Policy B):
+//
+//   - review    → published   promote (sets is_public + published_at)
+//   - published → published    idempotent no-op (returns the row unchanged,
+//     so no second 'published' mutation or audit event is emitted)
+//   - draft, archived, …       ErrInvalidState
+//   - missing id               ErrNotFound
+//
+// It reads the current row then acts; callers already run inside an admin /
+// actor transaction, so the read and the conditional write share one tx. The
+// promotion delegates to PublishContent once the source state is validated.
+func (s *Store) PublishFromReview(ctx context.Context, id uuid.UUID) (*Content, error) {
+	current, err := s.Content(ctx, id)
+	if err != nil {
+		return nil, err // pgx.ErrNoRows already mapped to ErrNotFound by Content
+	}
+	switch current.Status {
+	case StatusReview:
+		return s.PublishContent(ctx, id)
+	case StatusPublished:
+		return current, nil // idempotent: already published, no re-mutation
+	default:
+		return nil, ErrInvalidState
+	}
+}
+
 // PublishContent sets content status to published, is_public=true, and
 // published_at — at the store layer this is UNCONDITIONAL (no source-status
-// guard). The review-gated transition (only status=review may publish;
-// already-published is an idempotent no-op; draft/archived are rejected) is
-// enforced at the call boundary — see mcp.Server.publishContent (Track 1D
-// state-guard) which reads the row and branches before invoking this method.
-// Callers that need the gate MUST go through that boundary, not call this
-// directly on an unvalidated id.
+// guard). It is the low-level mutation that PublishFromReview delegates to
+// once the source state has been validated. Callers that need the editorial
+// gate (review-only, published-idempotent, draft/archived-rejected) MUST go
+// through PublishFromReview, not call this directly on an unvalidated id.
 func (s *Store) PublishContent(ctx context.Context, id uuid.UUID) (*Content, error) {
 	r, err := s.q.PublishContent(ctx, id)
 	if err != nil {

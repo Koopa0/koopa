@@ -474,30 +474,18 @@ func (s *Server) publishContent(ctx context.Context, input *ManageContentInput) 
 	}
 	_, callerName := s.ExplicitCallerIdentity(ctx)
 
-	// State guard (read-then-act inside the actor tx). publish_content is
-	// review-gated: only a review row transitions. An already-published row
-	// is an idempotent no-op (no mutation → no second 'published' audit
-	// event). Any other state (draft, archived, …) is rejected without
-	// mutating the row. The store's PublishContent UPDATE itself has no
-	// status guard, so the gate lives here at the tool boundary — matching
-	// the contents.status COMMENT ("enforced at MCP tool boundary").
+	// State guard. publish_content is review-gated: only a review row
+	// transitions, an already-published row is an idempotent no-op, and any
+	// other state (draft, archived, …) is rejected without mutating the row.
+	// The policy lives in content.Store.PublishFromReview — the single
+	// enforcement point shared with the HTTP admin publish handler so the two
+	// boundaries cannot drift. Runs inside the actor tx for correct audit
+	// attribution.
 	var c *content.Content
 	err = s.withActorTx(ctx, func(tx pgx.Tx) error {
-		store := content.NewStore(tx)
-		current, err := store.Content(ctx, id)
-		if err != nil {
-			return err // ErrNotFound mapped below
-		}
-		switch current.Status {
-		case content.StatusReview:
-			c, err = store.PublishContent(ctx, id)
-			return err
-		case content.StatusPublished:
-			c = current // idempotent no-op
-			return nil
-		default:
-			return content.ErrInvalidState
-		}
+		var pErr error
+		c, pErr = content.NewStore(tx).PublishFromReview(ctx, id)
+		return pErr
 	})
 	if err != nil {
 		if errors.Is(err, content.ErrNotFound) {

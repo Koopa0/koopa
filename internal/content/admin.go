@@ -185,7 +185,12 @@ func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// Publish handles POST /api/admin/contents/{id}/publish.
+// Publish handles POST /api/admin/knowledge/content/{id}/publish.
+// State-guarded per the editorial lifecycle (Policy B): only a review row is
+// promoted; an already-published row is an idempotent success; draft and
+// archived are rejected with 400 INVALID_STATE. The gate lives in
+// content.Store.PublishFromReview, shared with the MCP publish_content tool so
+// the two boundaries cannot diverge.
 func (h *Handler) Publish(w http.ResponseWriter, r *http.Request) {
 	id, err := uuid.Parse(r.PathValue("id"))
 	if err != nil {
@@ -197,7 +202,7 @@ func (h *Handler) Publish(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	c, err := h.store.WithTx(tx).PublishContent(r.Context(), id)
+	c, err := h.store.WithTx(tx).PublishFromReview(r.Context(), id)
 	if err != nil {
 		api.HandleError(w, h.logger, err, storeErrors...)
 		return
