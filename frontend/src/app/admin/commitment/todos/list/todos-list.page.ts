@@ -267,8 +267,8 @@ export class TodosListPageComponent {
         this._isActioning.set(false);
         const status = err instanceof HttpErrorResponse ? err.status : null;
         if (status === 404 || status === 405 || status === 501) {
-          this.notifications.info(
-            'Endpoint not yet available in backend (create todo).',
+          this.notifications.error(
+            'Could not capture the todo — please refresh and try again.',
           );
         } else {
           this.notifications.error('Failed to capture.');
@@ -292,8 +292,8 @@ export class TodosListPageComponent {
         if (status === 400) {
           this.notifications.error('Illegal state transition.');
         } else if (status === 404 || status === 405 || status === 501) {
-          this.notifications.info(
-            'Endpoint not yet available in backend (advance todo).',
+          this.notifications.error(
+            'Could not update the todo — please refresh and try again.',
           );
         } else {
           this.notifications.error(`Failed to ${action}.`);

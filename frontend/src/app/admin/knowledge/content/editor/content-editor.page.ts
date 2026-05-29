@@ -64,10 +64,10 @@ const CONTENT_TYPE_OPTIONS: readonly {
  * buttons (Cancel / Save draft / Revert to draft / Publish) plus an
  * overflow menu (Send for review / Archive).
  *
- * Endpoints — `submit-for-review`, `revert-to-draft`, and `archive`
- * may not be live yet. The component tolerates 404 / 405 via
- * {@link handleMissingEndpoint}: the toast is explicit that the endpoint
- * is pending in the backend; the editor state does not change.
+ * Actions — `submit-for-review`, `revert-to-draft`, and `archive` are
+ * backed by live backend routes. On failure (including an unexpected
+ * 404 / 405 / 501) {@link handleMissingEndpoint} surfaces an error toast
+ * asking the operator to retry; the editor state does not change.
  *
  * Keyboard:
  *   ⌘S        — save draft
@@ -372,17 +372,16 @@ export class ContentEditorPageComponent {
   }
 
   /**
-   * A 404/405/501 on a endpoint means the backend has not yet landed
-   * it (405 = route exists but wrong verb; 501 = gateway returns "Not
-   * Implemented"). Surface a clear info toast rather than a generic
-   * failure so the operator knows the UI is ready and the API is
-   * pending.
+   * Surface a failed content action as an error toast. The backend
+   * routes exist, so a 404/405/501 here is an unexpected failure (a
+   * routing/proxy mismatch or a missing record) rather than a pending
+   * endpoint — the message tells the operator to refresh and retry.
    */
   private handleMissingEndpoint(err: unknown, name: string): void {
     const status = httpStatus(err);
     if (status === 404 || status === 405 || status === 501) {
-      this.notifications.info(
-        `Endpoint not yet available in backend (${name}).`,
+      this.notifications.error(
+        `Could not ${name.replace('-', ' ')} — please refresh and try again.`,
       );
       return;
     }

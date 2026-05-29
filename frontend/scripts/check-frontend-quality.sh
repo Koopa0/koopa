@@ -233,6 +233,66 @@ else
   report_pass "Gate 2 — admin routes in app.routes.server.ts must use RenderMode.Client"
 fi
 
+# ---- Gate 3: stale false-negative availability copy ----
+#
+# Each admin surface below backs a LIVE backend route (cmd/app/routes.go) with
+# a matching frontend service. Copy claiming the route/endpoint "is not live
+# yet" / "Endpoint not yet available" / "Endpoints pending" is a false negative
+# that misleads operators and future agents about the real product state. This
+# gate guards the files cleaned in the stale-availability-copy task against
+# regression.
+#
+# It intentionally does NOT forbid legitimate copy where a backend route exists
+# but the UI feature is deferred — e.g. "edit UI is not built yet"
+# (bookmark edit panel), "not yet wired" (feed-triage quick-create dialog), or
+# the "Coming soon" route placeholder. Only phrases that falsely deny a live
+# route are listed.
+STALE_COPY_FILES=(
+  "src/app/admin/commitment/todos/list/todos-list.page.html"
+  "src/app/admin/commitment/todos/list/todos-list.page.ts"
+  "src/app/admin/coordination/agents/profile/agent-profile.page.html"
+  "src/app/admin/coordination/agents/profile/agent-profile.page.ts"
+  "src/app/admin/coordination/pipeline/pipeline.page.html"
+  "src/app/admin/coordination/tasks/timeline/task-timeline.page.ts"
+  "src/app/admin/knowledge/bookmarks/list/bookmarks-list.page.ts"
+  "src/app/admin/knowledge/content/editor/content-editor.page.ts"
+  "src/app/admin/knowledge/notes/editor/note-editor.page.html"
+  "src/app/admin/knowledge/notes/editor/note-editor.page.ts"
+  "src/app/admin/knowledge/notes/list/notes-list.page.html"
+  "src/app/admin/knowledge/notes/list/notes-list.page.ts"
+  "src/app/admin/learning/concepts/list/concepts-list.page.html"
+  "src/app/admin/learning/concepts/profile/concept-profile.page.html"
+  "src/app/admin/learning/dashboard/learning-dashboard.page.html"
+  "src/app/admin/learning/dashboard/learning-dashboard.page.ts"
+  "src/app/admin/learning/hypotheses/profile/hypothesis-profile.page.html"
+  "src/app/admin/learning/hypotheses/profile/hypothesis-profile.page.ts"
+  "src/app/admin/learning/plans/timeline/plan-timeline.page.html"
+  "src/app/admin/learning/sessions/timeline/session-timeline.page.html"
+)
+
+# Phrases that falsely claim a known-live route/endpoint is unavailable.
+STALE_COPY_PATTERN='not live yet|is not live|[Ee]ndpoint[s]? not yet available|[Ee]ndpoints pending|once the (endpoint|backend) (ships|wraps)|(Notes|Lineage) pending'
+
+stale_copy_hits=""
+for rel in "${STALE_COPY_FILES[@]}"; do
+  f="$FRONTEND_ROOT/$rel"
+  if [ ! -f "$f" ]; then
+    echo "ERROR  Gate 3 references missing file: $rel" >&2
+    exit 2
+  fi
+  hit=$(grep -nE "$STALE_COPY_PATTERN" "$f" 2>/dev/null || true)
+  if [ -n "$hit" ]; then
+    stale_copy_hits+="$rel"$'\n'"$hit"$'\n'
+  fi
+done
+
+if [ -n "$stale_copy_hits" ]; then
+  report_fail "Gate 3 — changed admin surfaces must not claim a live route is 'not live'" \
+    "$stale_copy_hits"
+else
+  report_pass "Gate 3 — changed admin surfaces must not claim a live route is 'not live'"
+fi
+
 echo "----------------------------------------------------------------------"
 echo "Summary: ${PASS_COUNT} passed, ${FAIL_COUNT} failed"
 

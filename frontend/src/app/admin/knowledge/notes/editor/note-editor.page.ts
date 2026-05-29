@@ -323,8 +323,8 @@ export class NoteEditorPageComponent {
     this._isActioning.set(false);
     const status = err instanceof HttpErrorResponse ? err.status : null;
     if (status === 404 || status === 405 || status === 501) {
-      this.notifications.info(
-        `Endpoint not yet available in backend (${name}).`,
+      this.notifications.error(
+        `Could not ${name.replace('-', ' ')} — please refresh and try again.`,
       );
       return;
     }

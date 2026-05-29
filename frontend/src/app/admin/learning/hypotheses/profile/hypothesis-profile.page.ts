@@ -46,10 +46,10 @@ type EvidenceKind = 'supporting' | 'counter';
  * → System.
  *
  * Origin / Evidence / Observations come from
- * `/api/admin/learning/hypotheses/:id/lineage`. That endpoint degrades
- * gracefully: on 404/405/501 the Hero + Overview stay live so the
- * admin action bar still works, with a 'Lineage pending' card in
- * place of the missing sections.
+ * `/api/admin/learning/hypotheses/:id/lineage`. The page degrades
+ * gracefully: on an unexpected 404/405/501 the Hero + Overview stay
+ * live so the admin action bar still works, with a "couldn't load"
+ * card in place of the lineage sections.
  */
 @Component({
   selector: 'app-hypothesis-profile-page',
@@ -94,9 +94,9 @@ export class HypothesisProfilePageComponent {
     () => this.hypothesisResource.status() === 'error',
   );
   /**
-   * "Pending" only when the backend returns 404/405/501 — the endpoint
-   * isn't live yet. Transient 5xx / network errors fall through to the
-   * regular error path so they don't masquerade as missing API.
+   * True only when the lineage endpoint returns an unexpected
+   * 404/405/501. Transient 5xx / network errors fall through to the
+   * regular error path so the two failure modes stay distinct.
    */
   protected readonly lineageUnavailable = computed(() => {
     if (this.lineageResource.status() !== 'error') return false;

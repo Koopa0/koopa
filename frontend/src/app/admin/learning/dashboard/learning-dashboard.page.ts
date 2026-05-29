@@ -32,8 +32,8 @@ const RATING_CLASS: Record<ReviewRating, string> = {
 /**
  * Learning Dashboard / Three cards from
  * the overview view: Concepts, Due today (FSRS), Recent observations.
- * All backing endpoints are ; the page degrades gracefully when
- * the backend 404/405/501s.
+ * All backing endpoints are live; on an unexpected 404/405/501 the
+ * page shows a "couldn't load" error state.
  */
 @Component({
   selector: 'app-learning-dashboard-page',
@@ -138,8 +138,8 @@ export class LearningDashboardPageComponent {
         this._ratingInFlight.set(null);
         const status = err instanceof HttpErrorResponse ? err.status : null;
         if (status === 404 || status === 405 || status === 501) {
-          this.notifications.info(
-            'Endpoint not yet available in backend (review).',
+          this.notifications.error(
+            'Could not record the review — please refresh and try again.',
           );
         } else {
           this.notifications.error('Failed to record review.');

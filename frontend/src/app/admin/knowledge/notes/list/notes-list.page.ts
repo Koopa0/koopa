@@ -74,8 +74,8 @@ const KIND_SHORT: Record<NoteKind, string> = {
 };
 
 /**
- * Notes list. When the list endpoint returns 404/405/501 the page
- * renders an 'Endpoints pending' banner instead of an empty table.
+ * Notes list. On an unexpected 404/405/501 from the list endpoint the
+ * page renders a "couldn't load" banner instead of an empty table.
  *
  * Columns: Kind / Title / Maturity / Actor / Concepts / Updated / ID.
  * Row click opens the editor.

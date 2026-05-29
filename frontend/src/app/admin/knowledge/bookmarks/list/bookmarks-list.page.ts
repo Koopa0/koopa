@@ -42,8 +42,8 @@ const VISIBILITY_CHIPS: readonly VisibilityFilter[] = [
  * column. Row click opens the source URL in a new tab; hosts / tags
  * are displayed as metadata columns.
  *
- * No side panel edit yet — the PUT endpoint is not live; a dedicated
- * edit route will land once the backend ships it.
+ * No side panel edit yet — the PUT route exists, but the dedicated
+ * edit UI is not built yet.
  */
 @Component({
   selector: 'app-bookmarks-list-page',

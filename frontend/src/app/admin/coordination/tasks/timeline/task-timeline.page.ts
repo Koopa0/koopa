@@ -301,8 +301,8 @@ export class TaskTimelinePageComponent {
   private handleMissingEndpoint(err: unknown, name: string): void {
     const status = err instanceof HttpErrorResponse ? err.status : null;
     if (status === 404 || status === 405 || status === 501) {
-      this.notifications.info(
-        `Endpoint not yet available in backend (${name}).`,
+      this.notifications.error(
+        `Could not ${name} — please refresh and try again.`,
       );
       return;
     }

@@ -76,7 +76,7 @@ export class AgentProfilePageComponent {
     () => this.agentResource.status() === 'error',
   );
 
-  /** True when the notes endpoint returns 404/405/501 (not yet live). */
+  /** True when the notes endpoint returns an unexpected 404/405/501. */
   protected readonly notesUnavailable = computed(() => {
     if (this.notesResource.status() !== 'error') return false;
     const err = this.notesResource.error();
