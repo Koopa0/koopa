@@ -25,6 +25,7 @@ func newTestServer() *Server {
 		registry:       agent.NewBuiltinRegistry(),
 		proposalSecret: []byte("test-secret-32-bytes-long-enough"),
 		loc:            time.UTC,
+		nonces:         newNonceStore(),
 	}
 }
 
@@ -182,6 +183,71 @@ func TestCommitProposal_Validation(t *testing.T) {
 				t.Errorf("error = %q, want containing %q", err, tt.wantErr)
 			}
 		})
+	}
+}
+
+// TestCommitProposal_DirectiveAuthBeforeConsume is the regression guard for
+// finding #2: directive authorization (ActionSubmitTask) must run BEFORE the
+// nonce is consumed, so an unauthorized caller cannot burn a legitimate
+// proposer's token. Before the fix consume ran first and commitDirective failed
+// authorization afterwards, leaving the token spent — a DoS on the proposer.
+func TestCommitProposal_DirectiveAuthBeforeConsume(t *testing.T) {
+	s := newTestServer()
+
+	// A valid directive token. Fields can be empty: in the buggy ordering the
+	// nonce is consumed before commitEntity runs at all, so the token is burned
+	// regardless of downstream field validity — which is exactly the bug.
+	token, err := signProposal(s.proposalSecret, "directive", map[string]any{})
+	if err != nil {
+		t.Fatalf("signProposal: %v", err)
+	}
+
+	// learning-studio holds ReceiveTasks|PublishArtifacts but NOT SubmitTasks,
+	// so it is not authorized to commit a directive.
+	unauthCtx := withCallerAs(t.Context(), "learning-studio")
+	if _, _, cErr := s.commitProposal(unauthCtx, nil, CommitProposalInput{ProposalToken: token}); cErr == nil {
+		t.Fatal("unauthorized directive commit = nil error, want authorization rejection")
+	}
+
+	// The nonce must NOT have been consumed by the failed attempt: a fresh
+	// claim of the same nonce must still succeed. (The probe itself consumes
+	// it, which is fine — the assertion is only whether it was still free.)
+	payload, err := verifyProposal(s.proposalSecret, token)
+	if err != nil {
+		t.Fatalf("verifyProposal: %v", err)
+	}
+	if !s.nonces.consume(payload.Nonce, payload.ExpiresAt+60, time.Now().Unix()) {
+		t.Error("unauthorized directive commit consumed the nonce — authorization must run before consume")
+	}
+}
+
+// TestCommitProposal_FailureAfterConsumeIsExplicit is the regression guard for
+// finding #3: when commitEntity fails AFTER the nonce is consumed, the returned
+// error must make the spent-token state explicit (the caller must re-propose),
+// not surface the bare downstream error as if the token were still usable. The
+// single-use-on-claim semantics are unchanged; only the error is clarified.
+func TestCommitProposal_FailureAfterConsumeIsExplicit(t *testing.T) {
+	s := newTestServer()
+
+	// A goal token with no title passes the human gate and the nonce consume,
+	// then commitGoal fails on the missing required field BEFORE any DB call —
+	// exercising the post-consume failure path deterministically.
+	token, err := signProposal(s.proposalSecret, "goal", map[string]any{})
+	if err != nil {
+		t.Fatalf("signProposal: %v", err)
+	}
+	humanCtx := withCallerAs(t.Context(), "human")
+	_, _, err = s.commitProposal(humanCtx, nil, CommitProposalInput{ProposalToken: token})
+	if err == nil {
+		t.Fatal("commit of an invalid goal = nil error, want failure")
+	}
+	// Explicit about the spent token + how to recover.
+	if !contains(err.Error(), "consumed") || !contains(err.Error(), "re-propose") {
+		t.Errorf("post-consume failure error = %q, want it to state the token was consumed and to re-propose", err)
+	}
+	// The underlying cause is preserved (wrapped, not replaced).
+	if !contains(err.Error(), "title is required") {
+		t.Errorf("post-consume failure error = %q, want it to preserve the underlying cause", err)
 	}
 }
 

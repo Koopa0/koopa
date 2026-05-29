@@ -357,10 +357,28 @@ func (s *Server) commitProposal(ctx context.Context, _ *mcp.CallToolRequest, inp
 		return nil, CommitProposalOutput{}, fmt.Errorf("invalid proposal: %w", err)
 	}
 
-	if payload.Type != "directive" {
-		if err := s.requireExplicitHuman(ctx, "commit_proposal of "+payload.Type); err != nil {
-			return nil, CommitProposalOutput{}, err
+	// All authorization MUST complete before the nonce is consumed, so an
+	// unauthorized attempt can never burn a legitimate proposer's token (the
+	// consume is single-use-on-claim; a burned token is dead until expiry).
+	// directive is capability-gated (HQ delegation, not a human commitment) and
+	// must be checked here — commitDirective re-checks the same capability at
+	// the store boundary, but that runs after consume and so cannot be the gate.
+	// Every other type requires explicit human authority.
+	if payload.Type == "directive" {
+		caller := agent.Name(s.callerIdentity(ctx))
+		if _, err := agent.Authorize(ctx, s.registry, caller, agent.ActionSubmitTask); err != nil {
+			return nil, CommitProposalOutput{}, fmt.Errorf("commit_proposal of directive: %w", err)
 		}
+	} else if err := s.requireExplicitHuman(ctx, "commit_proposal of "+payload.Type); err != nil {
+		return nil, CommitProposalOutput{}, err
+	}
+
+	// Consume the token's nonce — the replay defense, and always the LAST step
+	// after authorization passes. A valid token commits at most once: the claim
+	// is atomic, so a replay (sequential or concurrent) is rejected here with a
+	// clear error rather than silently creating a second entity.
+	if !s.nonces.consume(payload.Nonce, payload.ExpiresAt+int64(proposalNonceRetention.Seconds()), time.Now().Unix()) {
+		return nil, CommitProposalOutput{}, fmt.Errorf("proposal_already_committed: this proposal token has already been committed; re-propose to make another change")
 	}
 
 	// Apply modifications.
@@ -371,7 +389,11 @@ func (s *Server) commitProposal(ctx context.Context, _ *mcp.CallToolRequest, inp
 
 	id, err := s.commitEntity(ctx, payload.Type, fields)
 	if err != nil {
-		return nil, CommitProposalOutput{}, err
+		// The nonce is already consumed (single-use-on-claim), so this token is
+		// now spent — surface that explicitly rather than returning the bare
+		// downstream error as if a retry with the same token were possible.
+		// %w preserves the underlying cause for errors.Is/As callers.
+		return nil, CommitProposalOutput{}, fmt.Errorf("commit failed after the proposal token was consumed; the token is now spent — re-propose to retry: %w", err)
 	}
 
 	s.logger.Info("commit_proposal", "type", payload.Type, "id", id)

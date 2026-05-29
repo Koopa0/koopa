@@ -33,6 +33,8 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -6250,4 +6252,176 @@ func logTier1Results(t *testing.T, outcomes []evalOutcome) {
 	}
 	fmt.Fprintf(&b, "totals: %d pass, %d fail, %d skip (of %d)\n", pass, fail, skip, len(outcomes))
 	t.Log(b.String())
+}
+
+// --- proposal-commit replay guard (security regression) ---
+
+// TestIntegration_CommitProposal_NonceReplayRejected is the T1 regression
+// guard for the proposal-token replay vulnerability: a single valid token,
+// committed twice within its TTL, must create exactly ONE entity. The second
+// commit must be rejected with a clear proposal_already_committed error — not
+// silently create a duplicate goal, not return 500. Before the nonce-consume
+// fix this produced two goal rows.
+func TestIntegration_CommitProposal_NonceReplayRejected(t *testing.T) {
+	s := setupServer(t)
+
+	const title = "Replay Guard Goal"
+	_, proposal, err := callHandlerAs(t, "hq", s.proposeGoal, ProposeGoalInput{Title: title})
+	if err != nil {
+		t.Fatalf("proposeGoal: %v", err)
+	}
+	if proposal.ProposalToken == "" {
+		t.Fatal("empty proposal token")
+	}
+
+	// First commit succeeds (goal is human-only — commit as human).
+	_, commit, err := callHandlerAs(t, "human", s.commitProposal, CommitProposalInput{
+		ProposalToken: proposal.ProposalToken,
+	})
+	if err != nil {
+		t.Fatalf("first commitProposal: %v", err)
+	}
+	if !commit.Committed {
+		t.Fatal("first commit: Committed = false")
+	}
+
+	// Second commit of the SAME token must be rejected as a replay.
+	_, _, replayErr := callHandlerAs(t, "human", s.commitProposal, CommitProposalInput{
+		ProposalToken: proposal.ProposalToken,
+	})
+	if replayErr == nil {
+		t.Fatal("second commit of the same token must be rejected, got nil error")
+	}
+	if !strings.Contains(replayErr.Error(), "proposal_already_committed") {
+		t.Errorf("replay error = %q, want containing %q", replayErr, "proposal_already_committed")
+	}
+
+	// Exactly one goal row must exist — the replay created no duplicate.
+	var count int
+	if err := testPool.QueryRow(t.Context(),
+		"SELECT count(*) FROM goals WHERE title = $1", title,
+	).Scan(&count); err != nil {
+		t.Fatalf("counting goals: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("goals with title %q = %d, want 1 (replay created duplicates)", title, count)
+	}
+}
+
+// TestIntegration_CommitProposal_ConcurrentCommitOnce pins the TOCTOU-safety
+// of the nonce consume: when N goroutines commit the SAME valid token
+// simultaneously, exactly one must succeed and exactly one goal row may exist.
+// A check-then-write nonce guard would let multiple goroutines pass the
+// "not yet committed" check and each insert a row; the atomic claim must not.
+// Run with -race to surface any data race in the nonce store.
+func TestIntegration_CommitProposal_ConcurrentCommitOnce(t *testing.T) {
+	s := setupServer(t)
+
+	const title = "Concurrent Guard Goal"
+	_, proposal, err := callHandlerAs(t, "hq", s.proposeGoal, ProposeGoalInput{Title: title})
+	if err != nil {
+		t.Fatalf("proposeGoal: %v", err)
+	}
+
+	const n = 8
+	humanCtx := context.WithValue(t.Context(), callerKey{}, "human")
+	input := CommitProposalInput{ProposalToken: proposal.ProposalToken}
+
+	var (
+		wg          sync.WaitGroup
+		successes   atomic.Int64
+		alreadyDone atomic.Int64
+		otherErrs   atomic.Int64
+	)
+	// Release all goroutines at once to maximise the race window.
+	start := make(chan struct{})
+	for range n {
+		wg.Go(func() {
+			<-start
+			_, out, cErr := s.commitProposal(humanCtx, nil, input)
+			switch {
+			case cErr == nil && out.Committed:
+				successes.Add(1)
+			case cErr != nil && strings.Contains(cErr.Error(), "proposal_already_committed"):
+				alreadyDone.Add(1)
+			default:
+				otherErrs.Add(1)
+				t.Errorf("unexpected commit outcome: committed=%v err=%v", out.Committed, cErr)
+			}
+		})
+	}
+	close(start)
+	wg.Wait()
+
+	if got := successes.Load(); got != 1 {
+		t.Errorf("successful commits = %d, want exactly 1", got)
+	}
+	if got := alreadyDone.Load(); got != n-1 {
+		t.Errorf("proposal_already_committed rejections = %d, want %d", got, n-1)
+	}
+	if got := otherErrs.Load(); got != 0 {
+		t.Errorf("unexpected (non-replay) errors = %d, want 0", got)
+	}
+
+	var count int
+	if err := testPool.QueryRow(t.Context(),
+		"SELECT count(*) FROM goals WHERE title = $1", title,
+	).Scan(&count); err != nil {
+		t.Fatalf("counting goals: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("goals with title %q = %d, want 1 (concurrent replay created duplicates)", title, count)
+	}
+}
+
+// TestIntegration_CommitProposal_DirectiveUnauthorizedDoesNotBurnToken is the
+// end-to-end guard for finding #2: an unauthorized commit attempt on a directive
+// token must fail WITHOUT consuming the nonce, so the legitimate proposer can
+// still commit the same token. Before the fix the unauthorized attempt burned
+// the nonce (consume ran before the SubmitTasks check), DoSing the proposal.
+func TestIntegration_CommitProposal_DirectiveUnauthorizedDoesNotBurnToken(t *testing.T) {
+	s := setupServer(t)
+
+	_, prop, err := callHandlerAs(t, "hq", s.proposeDirective, ProposeDirectiveInput{
+		Target:       "learning-studio",
+		Priority:     "high",
+		RequestParts: []json.RawMessage{json.RawMessage(`{"text":"Research replay-safe commit"}`)},
+	})
+	if err != nil {
+		t.Fatalf("propose_directive: %v", err)
+	}
+	if prop.ProposalToken == "" {
+		t.Fatal("empty proposal token")
+	}
+
+	// Unauthorized commit: learning-studio lacks SubmitTasks. Must fail, must
+	// not create a task, and must not be a replay rejection (which would mean
+	// the nonce was consumed before the auth check).
+	_, _, unauthErr := callHandlerAs(t, "learning-studio", s.commitProposal, CommitProposalInput{
+		ProposalToken: prop.ProposalToken,
+	})
+	if unauthErr == nil {
+		t.Fatal("unauthorized directive commit = nil error, want authorization rejection")
+	}
+	if strings.Contains(unauthErr.Error(), "proposal_already_committed") {
+		t.Errorf("unauthorized commit returned already_committed = %q — it consumed the nonce before auth", unauthErr)
+	}
+	if n := taskCount(t); n != 0 {
+		t.Fatalf("tasks after failed unauthorized commit = %d, want 0", n)
+	}
+
+	// The legitimate proposer (hq holds SubmitTasks) can still commit the SAME
+	// token — proving the unauthorized attempt did not burn it.
+	_, commit, err := callHandlerAs(t, "hq", s.commitProposal, CommitProposalInput{
+		ProposalToken: prop.ProposalToken,
+	})
+	if err != nil {
+		t.Fatalf("authorized commit after unauthorized attempt: %v", err)
+	}
+	if !commit.Committed || commit.Type != "directive" {
+		t.Errorf("authorized commit = %+v, want directive committed", commit)
+	}
+	if n := taskCount(t); n != 1 {
+		t.Errorf("tasks after authorized commit = %d, want 1", n)
+	}
 }

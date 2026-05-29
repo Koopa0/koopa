@@ -1,6 +1,8 @@
 package mcp
 
 import (
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -135,6 +137,49 @@ func TestProposalExpiry(t *testing.T) {
 	}
 }
 
+// TestProposalFutureIssuedAtRejected pins the expiry lower bound: a token
+// whose issued-at is unreasonably in the future must be rejected. ExpiresAt is
+// set consistently (iat + TTL) so the existing now>exp upper-bound check passes
+// — only an explicit issued-at lower bound can reject this token. Without it a
+// future-dated token sails through verification and stays "valid" for its whole
+// (future) TTL window.
+func TestProposalFutureIssuedAtRejected(t *testing.T) {
+	secret := []byte("test-secret-32-bytes-long-enough")
+	now := time.Now()
+
+	future := proposalPayload{
+		Type:      "goal",
+		Fields:    map[string]any{"title": "future"},
+		IssuedAt:  now.Add(1 * time.Hour).Unix(),
+		ExpiresAt: now.Add(1*time.Hour + proposalTTL).Unix(),
+		Nonce:     "future-nonce",
+	}
+	tok, err := encodeToken(secret, future)
+	if err != nil {
+		t.Fatalf("encodeToken: %v", err)
+	}
+	if _, err := verifyProposal(secret, tok); err == nil {
+		t.Fatal("token with issued-at far in the future should be rejected")
+	}
+
+	// A token issued within the allowed clock-skew margin must still verify —
+	// the lower bound rejects implausible future timestamps, not ordinary skew.
+	skewed := proposalPayload{
+		Type:      "goal",
+		Fields:    map[string]any{"title": "slight skew"},
+		IssuedAt:  now.Add(5 * time.Second).Unix(),
+		ExpiresAt: now.Add(5*time.Second + proposalTTL).Unix(),
+		Nonce:     "skew-nonce",
+	}
+	skewTok, err := encodeToken(secret, skewed)
+	if err != nil {
+		t.Fatalf("encodeToken (skew): %v", err)
+	}
+	if _, err := verifyProposal(secret, skewTok); err != nil {
+		t.Fatalf("token within clock-skew margin should verify, got: %v", err)
+	}
+}
+
 func TestProposalTamper(t *testing.T) {
 	secret := []byte("test-secret-32-bytes-long-enough")
 
@@ -170,6 +215,61 @@ func TestProposalTamper(t *testing.T) {
 				t.Fatalf("tampered token %q should be rejected", tt.name)
 			}
 		})
+	}
+}
+
+// TestNonceStore_ConsumeOnceThenReject pins the single-use contract: the first
+// consume of a nonce wins, every subsequent consume of the same nonce is
+// rejected while the entry is still retained.
+func TestNonceStore_ConsumeOnceThenReject(t *testing.T) {
+	n := newNonceStore()
+	now := time.Now().Unix()
+	retain := now + 600
+
+	if !n.consume("nonce-a", retain, now) {
+		t.Fatal("first consume of nonce-a should win")
+	}
+	if n.consume("nonce-a", retain, now) {
+		t.Error("second consume of nonce-a should be rejected (replay)")
+	}
+	// A different nonce is unaffected.
+	if !n.consume("nonce-b", retain, now) {
+		t.Error("first consume of a distinct nonce-b should win")
+	}
+	// Once the retention window passes, the nonce is evicted and the SAME
+	// nonce value could be claimed again — by then its token is long expired
+	// and rejected upstream by verifyProposal, so this is safe.
+	if !n.consume("nonce-a", retain, retain+1) {
+		t.Error("after retention window, an evicted nonce should be claimable again")
+	}
+}
+
+// TestNonceStore_ConcurrentConsumeExactlyOne is the TOCTOU-safety guard for the
+// nonce claim: when many goroutines race to consume the same nonce, exactly one
+// must win. Run with -race to surface any data race in the store itself. This
+// is the deterministic, DB-free counterpart to the concurrent integration test.
+func TestNonceStore_ConcurrentConsumeExactlyOne(t *testing.T) {
+	n := newNonceStore()
+	now := time.Now().Unix()
+	retain := now + 600
+
+	const goroutines = 64
+	var wins atomic.Int64
+	var wg sync.WaitGroup
+	start := make(chan struct{})
+	for range goroutines {
+		wg.Go(func() {
+			<-start
+			if n.consume("contended-nonce", retain, now) {
+				wins.Add(1)
+			}
+		})
+	}
+	close(start)
+	wg.Wait()
+
+	if got := wins.Load(); got != 1 {
+		t.Errorf("concurrent consume winners = %d, want exactly 1", got)
 	}
 }
 

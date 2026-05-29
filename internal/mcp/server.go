@@ -90,6 +90,7 @@ type Server struct {
 	callerAgent    string         // calling agent name (from env)
 	loc            *time.Location // user timezone for day boundaries
 	proposalSecret []byte         // HMAC key for proposal tokens
+	nonces         *nonceStore    // consumed proposal nonces — replay defense for commit_proposal
 	logger         *slog.Logger
 
 	// Telemetry
@@ -180,6 +181,7 @@ func NewServer(pool *pgxpool.Pool, logger *slog.Logger, opts ...ServerOption) *S
 		// refuses it.
 		callerAgent: "unknown",
 		loc:         time.UTC,
+		nonces:      newNonceStore(),
 	}
 	// Auto-generate proposal HMAC secret. Ephemeral — proposals don't survive restarts.
 	secret := make([]byte, 32)
