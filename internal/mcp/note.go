@@ -73,6 +73,9 @@ type CreateNoteInput struct {
 }
 
 func (s *Server) createNote(ctx context.Context, _ *mcp.CallToolRequest, input CreateNoteInput) (*mcp.CallToolResult, NoteReply, error) {
+	if err := s.requireRegisteredCaller(ctx, "create_note"); err != nil {
+		return nil, NoteReply{}, err
+	}
 	if input.Slug == "" {
 		return nil, NoteReply{}, fmt.Errorf("slug is required")
 	}
@@ -123,6 +126,9 @@ type UpdateNoteInput struct {
 }
 
 func (s *Server) updateNote(ctx context.Context, _ *mcp.CallToolRequest, input UpdateNoteInput) (*mcp.CallToolResult, NoteReply, error) {
+	if err := s.requireRegisteredCaller(ctx, "update_note"); err != nil {
+		return nil, NoteReply{}, err
+	}
 	if input.NoteID == "" {
 		return nil, NoteReply{}, fmt.Errorf("note_id is required")
 	}
@@ -176,6 +182,9 @@ type UpdateNoteMaturityInput struct {
 }
 
 func (s *Server) updateNoteMaturity(ctx context.Context, _ *mcp.CallToolRequest, input UpdateNoteMaturityInput) (*mcp.CallToolResult, NoteReply, error) {
+	if err := s.requireRegisteredCaller(ctx, "update_note_maturity"); err != nil {
+		return nil, NoteReply{}, err
+	}
 	if input.NoteID == "" {
 		return nil, NoteReply{}, fmt.Errorf("note_id is required")
 	}

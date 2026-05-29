@@ -58,6 +58,9 @@ type WriteAgentNoteOutput struct {
 }
 
 func (s *Server) writeAgentNote(ctx context.Context, _ *mcp.CallToolRequest, input WriteAgentNoteInput) (*mcp.CallToolResult, WriteAgentNoteOutput, error) {
+	if err := s.requireRegisteredCaller(ctx, "write_agent_note"); err != nil {
+		return nil, WriteAgentNoteOutput{}, err
+	}
 	if input.Content == "" {
 		return nil, WriteAgentNoteOutput{}, fmt.Errorf("content is required")
 	}

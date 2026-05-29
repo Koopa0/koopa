@@ -170,3 +170,52 @@ func (s *Server) requireAuthor(ctx context.Context, op string, authors ...string
 	}
 	return fmt.Errorf("%s: caller %q is not in the author allowlist (allowed: human, %v)", op, name, authors)
 }
+
+// unknownAgent is the zero-privilege fallback identity assigned when an MCP
+// call omits `as`. It mirrors cmd/mcp/config.go's KOOPA_MCP_CALLER_AGENT
+// default and the agent.BuiltinAgents() "unknown" row, which is registered
+// ONLY so the audit-trigger actor FK resolves — it is not a real author.
+const unknownAgent = "unknown"
+
+// requireRegisteredCaller is the weakest identity gate in the package: it
+// asserts only that a mutating call carries a KNOWN author, not that the
+// author holds any particular capability or platform. It exists for the
+// write tools that previously had no identity gate at all (capture_inbox,
+// write_agent_note, track_hypothesis, start_session, record_attempt,
+// end_session, manage_plan, create_note, update_note, update_note_maturity,
+// manage_feeds), where an unregistered or unidentified caller could write to
+// the knowledge base / settings.
+//
+// It reuses the same registry requireAuthor / requireExplicitHuman /
+// agent.Authorize already consult — no parallel map — and refuses two
+// callers:
+//
+//   - an `as` value naming no registry row (a typo or fabricated name):
+//     the "is not registered" message matches requireAuthor's;
+//   - the unknownAgent sentinel, which is the server default when `as` is
+//     omitted (and the value a buggy client might mirror explicitly).
+//     "unknown" is registered, so Lookup alone would admit it — but it
+//     means "the caller did not identify itself" and is therefore not a
+//     known author; a knowledge-base / settings write attributed to it is
+//     refused. This mirrors the fail-closed posture CF-02 established for
+//     requireExplicitHuman / requireAuthor (both already reject "unknown"
+//     via the platform / allowlist axis).
+//
+// Unlike requireExplicitHuman, this gate reads callerIdentity (not
+// ExplicitCallerIdentity): a personal-use deploy that pins
+// KOOPA_MCP_CALLER_AGENT="human" (per config.go) is a real registered author
+// and is admitted without an explicit `as`. Only the fail-closed "unknown"
+// default is refused.
+//
+// Capability subdivision — which registered agent may write WHICH entity —
+// is intentionally out of scope here.
+func (s *Server) requireRegisteredCaller(ctx context.Context, op string) error {
+	name := s.callerIdentity(ctx)
+	if _, ok := s.registry.Lookup(agent.Name(name)); !ok {
+		return fmt.Errorf("%s: caller %q is not registered", op, name)
+	}
+	if name == unknownAgent {
+		return fmt.Errorf("%s: caller %q is the zero-privilege fallback (call omitted `as`); writes require a known author", op, name)
+	}
+	return nil
+}

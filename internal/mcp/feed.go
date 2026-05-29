@@ -101,6 +101,14 @@ func (s *Server) manageFeeds(ctx context.Context, _ *mcp.CallToolRequest, input 
 	if s.feeds == nil {
 		return nil, ManageFeedsOutput{}, fmt.Errorf("feed store not configured")
 	}
+	// Identity gate on the mutating actions only; list is read-only and
+	// stays open (consistent with the package's read tier). manage_feeds
+	// is Destructive — add/update/remove must carry a known author.
+	if input.Action != "list" {
+		if err := s.requireRegisteredCaller(ctx, "manage_feeds"); err != nil {
+			return nil, ManageFeedsOutput{}, err
+		}
+	}
 	switch input.Action {
 	case "list":
 		return s.listFeeds(ctx)

@@ -49,6 +49,9 @@ type StartSessionOutput struct {
 }
 
 func (s *Server) startSession(ctx context.Context, _ *mcp.CallToolRequest, input StartSessionInput) (*mcp.CallToolResult, StartSessionOutput, error) {
+	if err := s.requireRegisteredCaller(ctx, "start_session"); err != nil {
+		return nil, StartSessionOutput{}, err
+	}
 	if input.Domain == "" {
 		return nil, StartSessionOutput{}, fmt.Errorf("domain is required")
 	}
@@ -267,6 +270,9 @@ type attemptPrep struct {
 
 //nolint:gocritic // hugeParam: input passed by value per addTool[I,O] generic contract
 func (s *Server) recordAttempt(ctx context.Context, _ *mcp.CallToolRequest, input RecordAttemptInput) (*mcp.CallToolResult, RecordAttemptOutput, error) {
+	if err := s.requireRegisteredCaller(ctx, "record_attempt"); err != nil {
+		return nil, RecordAttemptOutput{}, err
+	}
 	prep, err := s.prepareAttempt(ctx, &input)
 	if err != nil {
 		return nil, RecordAttemptOutput{}, err
@@ -605,6 +611,9 @@ type EndSessionOutput struct {
 }
 
 func (s *Server) endSession(ctx context.Context, _ *mcp.CallToolRequest, input EndSessionInput) (*mcp.CallToolResult, EndSessionOutput, error) {
+	if err := s.requireRegisteredCaller(ctx, "end_session"); err != nil {
+		return nil, EndSessionOutput{}, err
+	}
 	sessionID, err := uuid.Parse(input.SessionID)
 	if err != nil {
 		return nil, EndSessionOutput{}, fmt.Errorf("invalid session_id: %w", err)

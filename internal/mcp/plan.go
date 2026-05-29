@@ -97,6 +97,14 @@ func (s *Server) managePlan(ctx context.Context, _ *mcp.CallToolRequest, input M
 		return nil, ManagePlanOutput{}, fmt.Errorf("invalid plan_id: %w", err)
 	}
 
+	// Identity gate on the mutating actions only; progress is read-only
+	// and stays open (consistent with the package's read tier).
+	if input.Action != "progress" {
+		if err := s.requireRegisteredCaller(ctx, "manage_plan"); err != nil {
+			return nil, ManagePlanOutput{}, err
+		}
+	}
+
 	switch input.Action {
 	case "add_entries":
 		return s.addPlanEntries(ctx, planID, &input)

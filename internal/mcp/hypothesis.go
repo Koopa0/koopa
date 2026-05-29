@@ -44,6 +44,9 @@ type TrackHypothesisOutput struct {
 }
 
 func (s *Server) trackHypothesis(ctx context.Context, _ *mcp.CallToolRequest, input TrackHypothesisInput) (*mcp.CallToolResult, TrackHypothesisOutput, error) {
+	if err := s.requireRegisteredCaller(ctx, "track_hypothesis"); err != nil {
+		return nil, TrackHypothesisOutput{}, err
+	}
 	id, err := uuid.Parse(input.HypothesisID)
 	if err != nil {
 		return nil, TrackHypothesisOutput{}, fmt.Errorf("invalid hypothesis_id: %w", err)
