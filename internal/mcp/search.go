@@ -1,9 +1,11 @@
 package mcp
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"time"
 	"unicode/utf8"
@@ -104,18 +106,18 @@ func (s *Server) searchKnowledge(ctx context.Context, _ *mcp.CallToolRequest, in
 		wantContent = false
 	}
 
-	// Initialise as empty slice (not nil) so the JSON envelope serialises
-	// to "results":[] when both branches return no rows. The json-api
-	// rule forbids null on list fields; relying on append-from-nil would
-	// emit null when nothing matches.
-	results := []SearchKnowledgeResult{}
+	// Each branch returns rows already ordered by its own relevance score
+	// (content: fused RRF rank; notes: ts_rank). The two scores live on
+	// incompatible scales, so the cross-source merge fuses by rank position
+	// rather than comparing raw scores — see mergeByRelevance.
+	var contentResults, noteResults []SearchKnowledgeResult
 
 	if wantContent {
 		merged, cErr := s.contentHybridSearch(ctx, input.Query, limit)
 		if cErr != nil {
 			return nil, SearchKnowledgeOutput{}, fmt.Errorf("searching content: %w", cErr)
 		}
-		results = append(results, s.filterContentResults(ctx, merged, input.ContentType, after, before)...)
+		contentResults = s.filterContentResults(ctx, merged, input.ContentType, after, before)
 	}
 
 	if wantNote {
@@ -123,23 +125,64 @@ func (s *Server) searchKnowledge(ctx context.Context, _ *mcp.CallToolRequest, in
 		if nErr != nil {
 			return nil, SearchKnowledgeOutput{}, fmt.Errorf("searching notes: %w", nErr)
 		}
-		results = append(results, filterNoteResults(notes, input.NoteKind, after, before)...)
+		noteResults = filterNoteResults(notes, input.NoteKind, after, before)
 	}
 
-	// Scope: union by insertion, then cap by limit. UI ranking
-	// across sources (relevance + recency weighting)
-	sort.SliceStable(results, func(i, j int) bool {
-		return results[i].CreatedAt > results[j].CreatedAt
-	})
-	if len(results) > limit {
-		results = results[:limit]
-	}
+	results := mergeByRelevance(contentResults, noteResults, limit)
 
 	return nil, SearchKnowledgeOutput{
 		Results: results,
 		Total:   len(results),
 		Query:   input.Query,
 	}, nil
+}
+
+// mergeByRelevance fuses the two already-relevance-ranked branch result
+// lists into a single ranking, capped at limit. Each branch arrives ordered
+// by its own relevance score — content by fused RRF rank, notes by ts_rank —
+// and those scores live on incompatible scales, so raw scores are never
+// compared across branches. Instead each result is scored by its RANK
+// POSITION within its own branch via reciprocal rank fusion: a result at
+// branch rank r (1-based) scores 1/(rrfK + r), regardless of which branch
+// produced it. This interleaves the two relevance orders fairly — the leader
+// of each branch ties, then the runners-up tie, and so on.
+//
+// CreatedAt (newer first) is a deterministic tie-breaker ONLY; it never
+// outranks a more relevant result. The result envelope is always non-nil
+// (JSON serialises to "results":[] when empty) — the json-api rule forbids
+// null on list fields.
+func mergeByRelevance(contentResults, noteResults []SearchKnowledgeResult, limit int) []SearchKnowledgeResult {
+	type scored struct {
+		result SearchKnowledgeResult
+		score  float64
+	}
+	ranked := make([]scored, 0, len(contentResults)+len(noteResults))
+	accumulate := func(branch []SearchKnowledgeResult) {
+		for i := range branch {
+			ranked = append(ranked, scored{
+				result: branch[i],
+				score:  1.0 / (rrfK + float64(i+1)),
+			})
+		}
+	}
+	accumulate(contentResults)
+	accumulate(noteResults)
+
+	slices.SortStableFunc(ranked, func(a, b scored) int {
+		if c := cmp.Compare(b.score, a.score); c != 0 {
+			return c // higher fused rank score first
+		}
+		return cmp.Compare(b.result.CreatedAt, a.result.CreatedAt) // newer first on a tie
+	})
+
+	results := make([]SearchKnowledgeResult, 0, min(len(ranked), limit))
+	for i := range ranked {
+		if i >= limit {
+			break
+		}
+		results = append(results, ranked[i].result)
+	}
+	return results
 }
 
 // contentHybridSearch runs FTS + semantic branches in parallel and merges

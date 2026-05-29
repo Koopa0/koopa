@@ -108,6 +108,71 @@ func TestRrfMerge_AllIDsPresentUnderLimit(t *testing.T) {
 	}
 }
 
+// TestMergeByRelevance_RelevanceBeatsRecency is the regression guard for the
+// cross-source merge: the merge MUST preserve each branch's relevance order
+// and never let recency dominate it. The branches arrive already ranked by
+// their own relevance score (content: fused RRF; notes: ts_rank) on
+// incompatible scales, so mergeByRelevance fuses by rank POSITION (RRF), with
+// CreatedAt only as a tie-breaker.
+//
+// Scenario (the historical bug: union re-sorted newest-first, discarding rank):
+//   - doc A: created earliest, query term ~12× → highest relevance → branch rank 0
+//   - doc B: created latest,   query term  1× → lowest  relevance → branch rank 1
+//
+// search(term) MUST return A before B. The old recency sort returned B first.
+func TestMergeByRelevance_RelevanceBeatsRecency(t *testing.T) {
+	mkResult := func(id byte, createdAt string) SearchKnowledgeResult {
+		return SearchKnowledgeResult{
+			ID:         testID(id).String(),
+			SourceType: SourceTypeContent,
+			CreatedAt:  createdAt,
+		}
+	}
+	// Branch order encodes relevance: A (12× term) outranks B (1× term), so A
+	// is first in the relevance-ranked branch slice. A is also the OLDEST and
+	// B the NEWEST — the case where recency and relevance disagree.
+	docA := mkResult(0xA, "2026-01-01T00:00:00Z") // earliest, most relevant
+	docB := mkResult(0xB, "2026-05-01T00:00:00Z") // latest, least relevant
+	contentResults := []SearchKnowledgeResult{docA, docB}
+
+	got := mergeByRelevance(contentResults, nil, 20)
+
+	rankOf := func(id string) int {
+		for i := range got {
+			if got[i].ID == id {
+				return i
+			}
+		}
+		return -1
+	}
+	rankA, rankB := rankOf(docA.ID), rankOf(docB.ID)
+	if rankA == -1 || rankB == -1 {
+		t.Fatalf("merge dropped a doc: A rank=%d, B rank=%d (got %d results)", rankA, rankB, len(got))
+	}
+	if rankA >= rankB {
+		t.Errorf("merge ordered A (most relevant, oldest) at rank %d and B (least relevant, newest) at rank %d; want A before B — relevance must beat recency",
+			rankA, rankB)
+	}
+}
+
+// TestMergeByRelevance_RecencyTieBreaks pins recency as a minor tie-breaker:
+// when two results carry the SAME branch rank (one leads the content branch,
+// one leads the note branch), the newer one comes first. This confirms
+// recency still participates — just never above relevance.
+func TestMergeByRelevance_RecencyTieBreaks(t *testing.T) {
+	older := SearchKnowledgeResult{ID: testID(1).String(), SourceType: SourceTypeContent, CreatedAt: "2026-01-01T00:00:00Z"}
+	newer := SearchKnowledgeResult{ID: testID(2).String(), SourceType: SourceTypeNote, CreatedAt: "2026-05-01T00:00:00Z"}
+
+	// Each leads its own branch → both at branch rank 0 → relevance tie.
+	got := mergeByRelevance([]SearchKnowledgeResult{older}, []SearchKnowledgeResult{newer}, 20)
+	if len(got) != 2 {
+		t.Fatalf("len(got) = %d, want 2", len(got))
+	}
+	if got[0].ID != newer.ID {
+		t.Errorf("rank-tie order: got[0] = %s, want %s (newer wins the tie)", got[0].ID, newer.ID)
+	}
+}
+
 // ============================================================================
 // Consolidated from search_contract_test.go (Track-1K test-file consolidation).
 // ============================================================================
@@ -117,9 +182,13 @@ func TestRrfMerge_AllIDsPresentUnderLimit(t *testing.T) {
 // the source_types resolution helper. DB-backed corpus / envelope / filter /
 // degradation coverage lives in search_integration_test.go.
 //
-// Ranking is deliberately NOT exercised anywhere (Track 1G hard boundary —
-// search relevance/ordering is a separate, undecided contract). These units
-// assert error contracts and source selection only.
+// These units assert error contracts and source selection only. Cross-source
+// merge ordering — once the undecided contract Track 1G fenced off — is now a
+// decided contract, exercised by TestMergeByRelevance_* above (relevance beats
+// recency; recency only tie-breaks). The Track 1G boundary remains intact for
+// the DB-backed tier-1 evaluator, which still asserts presence/absence/
+// narrowing only, never ranking METRICS (guarded by
+// TestSearchRelevanceHarness_NoRankingAssertions).
 
 // TestSearchKnowledge_Validation pins the handler validation paths that return
 // before search_knowledge touches the content/note stores. newTestServer has
