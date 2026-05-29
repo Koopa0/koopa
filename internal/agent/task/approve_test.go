@@ -429,6 +429,49 @@ func TestAcknowledgeAuditEvent(t *testing.T) {
 	}
 }
 
+// TestTodayAwaitingSource_ExcludesAcknowledged proves the today adapter
+// returns only completed + unacknowledged tasks, with the exclusion
+// applied server-side by AwaitingApprovalPaged (not by any caller-side
+// filter). It also locks the task.Task → today.JudgmentTask projection:
+// JudgmentTask.Source maps the task source (created_by) and
+// JudgmentTask.Assignee maps the task target (assignee column).
+func TestTodayAwaitingSource_ExcludesAcknowledged(t *testing.T) {
+	store, registry := setup(t)
+	seedAgents(t)
+	ctx := t.Context()
+
+	unacked := completedFixture(t, store, registry)
+	acked := completedFixture(t, store, registry)
+
+	approveAuth, err := agent.Authorize(ctx, registry, "test-source", agent.ActionApproveTask)
+	if err != nil {
+		t.Fatalf("authorize approve: %v", err)
+	}
+	if _, err := approveInTx(ctx, store, "test-source", "", acked, approveAuth); err != nil {
+		t.Fatalf("Acknowledge: %v", err)
+	}
+
+	got, err := NewTodayAwaitingSource(store).AwaitingApproval(ctx, 50)
+	if err != nil {
+		t.Fatalf("AwaitingApproval: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("AwaitingApproval len = %d, want 1 (acked task excluded server-side)", len(got))
+	}
+	if got[0].ID != unacked {
+		t.Errorf("AwaitingApproval[0].ID = %s, want unacked task %s", got[0].ID, unacked)
+	}
+	if got[0].Source != "test-source" {
+		t.Errorf("JudgmentTask.Source = %q, want %q (task source / created_by)", got[0].Source, "test-source")
+	}
+	if got[0].Assignee != "test-target" {
+		t.Errorf("JudgmentTask.Assignee = %q, want %q (task target / assignee)", got[0].Assignee, "test-target")
+	}
+	if got[0].CompletedAt == nil {
+		t.Error("JudgmentTask.CompletedAt = nil, want non-nil for a completed task")
+	}
+}
+
 // TestAcknowledgeMissingTask: a non-existent task ID returns ErrNotFound,
 // not ErrConflict. The locked-read produces pgx.ErrNoRows which the
 // store translates explicitly.

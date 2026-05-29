@@ -214,7 +214,20 @@ func run(logger *slog.Logger) error {
 		plan:       learningplan.NewHandler(planStore, logger),
 		fsrs:       fsrs.NewHandler(fsrsStore, logger),
 		agentNote:  agentnote.NewHandler(agentNoteStore, logger),
-		today:      today.NewHandler(dailyStore, logger),
+		// Today wires only the awaiting-approval task source for now. The
+		// remaining six sources (content review queue, unverified
+		// hypotheses, planning note, FSRS due-count, feed / goal warnings)
+		// are intentionally parked follow-ups: their nil readers leave the
+		// matching response sections at their initialized empty state.
+		today: today.NewHandler(dailyStore, logger).WithSources(
+			nil, // contentQueue — parked follow-up
+			nil, // hypotheses — parked follow-up
+			agenttask.NewTodayAwaitingSource(taskStore),
+			nil, // plannings — parked follow-up
+			nil, // dueReviews — parked follow-up
+			nil, // feeds — parked follow-up
+			nil, // staleGoals — parked follow-up
+		),
 		search: search.NewHandler([]search.Source{
 			content.NewSearchSource(contentStore),
 			note.NewSearchSource(noteStore),
