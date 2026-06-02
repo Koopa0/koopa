@@ -137,7 +137,6 @@ func assertEventCount(t *testing.T, sessions []Session, idx, want int) {
 }
 
 // TestGroupSessions_Adversarial adds boundary and adversarial cases beyond the happy-path table.
-//
 func TestGroupSessions_Adversarial(t *testing.T) {
 	t.Parallel()
 

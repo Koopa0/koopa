@@ -1,5 +1,3 @@
--- Copyright 2026 Koopa. All rights reserved.
-
 -- name: EventsByTimeRange :many
 -- List activity events within a time range, ordered by timestamp descending.
 -- Sources exclusively from activity_events (internal entity state changes

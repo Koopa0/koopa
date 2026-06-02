@@ -1,5 +1,3 @@
--- Copyright 2026 Koopa. All rights reserved.
-
 -- name: Feeds :many
 SELECT f.id, f.url, f.name, f.schedule, f.enabled, f.priority, f.etag, f.last_modified,
        f.last_fetched_at, f.consecutive_failures, f.last_error, f.disabled_reason,

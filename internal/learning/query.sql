@@ -1,5 +1,3 @@
--- Copyright 2026 Koopa. All rights reserved.
-
 -- name: CreateLearningDomain :one
 INSERT INTO learning_domains (slug, name)
 VALUES (@slug, @name)

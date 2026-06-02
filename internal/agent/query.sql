@@ -1,5 +1,3 @@
--- Copyright 2026 Koopa. All rights reserved.
-
 -- name: ListAgents :many
 -- Snapshot of every row in the agents table, ordered by name. Used by
 -- agent.SyncToTable to reconcile the Go BuiltinAgents() literal against

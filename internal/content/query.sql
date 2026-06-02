@@ -1,5 +1,3 @@
--- Copyright 2026 Koopa. All rights reserved.
-
 -- name: ContentByID :one
 SELECT id, slug, title, body, excerpt, type, status,
        series_id, series_order, is_public, project_id, ai_metadata, reading_time_min,

@@ -238,7 +238,6 @@ func TestScore_AdversarialInputs(t *testing.T) {
 }
 
 // TestNormalizeKeywords_Adversarial covers security and boundary inputs.
-//
 func TestNormalizeKeywords_Adversarial(t *testing.T) {
 	t.Parallel()
 

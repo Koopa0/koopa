@@ -1,5 +1,3 @@
--- Copyright 2026 Koopa. All rights reserved.
-
 -- name: CreateTodoItem :one
 -- Create a new todo item.
 INSERT INTO todos (title, state, due, project_id, energy, priority, description, created_by)

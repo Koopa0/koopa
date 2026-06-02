@@ -1,5 +1,3 @@
--- Copyright 2026 Koopa. All rights reserved.
-
 -- name: UserByEmail :one
 SELECT id, email, created_at, updated_at
 FROM users
