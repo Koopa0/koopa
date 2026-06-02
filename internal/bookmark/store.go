@@ -18,12 +18,13 @@ import (
 
 // Store handles database operations for bookmarks.
 type Store struct {
-	q *db.Queries
+	dbtx db.DBTX
+	q    *db.Queries
 }
 
 // NewStore returns a Store backed by the given database connection.
 func NewStore(dbtx db.DBTX) *Store {
-	return &Store{q: db.New(dbtx)}
+	return &Store{dbtx: dbtx, q: db.New(dbtx)}
 }
 
 // WithTx returns a Store bound to tx for all queries. Used by callers
@@ -31,7 +32,7 @@ func NewStore(dbtx db.DBTX) *Store {
 // (HTTP) or mcp.Server.withActorTx (MCP). The tx carries koopa.actor
 // so audit triggers attribute mutations correctly.
 func (s *Store) WithTx(tx pgx.Tx) *Store {
-	return &Store{q: s.q.WithTx(tx)}
+	return &Store{dbtx: tx, q: s.q.WithTx(tx)}
 }
 
 // Bookmark returns a single bookmark by ID, including its topics and tags.
@@ -141,6 +142,15 @@ func (s *Store) Bookmarks(ctx context.Context, f Filter) ([]Bookmark, int, error
 // row, or when trg_bookmarks_curation_exclusion fires (the referenced
 // feed_entry is already curated as first-party content).
 func (s *Store) Create(ctx context.Context, p *CreateParams) (*Bookmark, error) {
+	// Atomicity: the bookmark row plus one bookmark_topics row per TopicID
+	// must commit as a unit. Reject a non-tx store before the first write so
+	// a topic-attach failure cannot orphan the bookmark row.
+	if len(p.TopicIDs) > 0 {
+		if _, ok := s.dbtx.(pgx.Tx); !ok {
+			return nil, ErrNotTransactional
+		}
+	}
+
 	r, err := s.q.CreateBookmark(ctx, db.CreateBookmarkParams{
 		Url:               p.URL,
 		UrlHash:           p.URLHash,
@@ -190,6 +200,15 @@ func (s *Store) Create(ctx context.Context, p *CreateParams) (*Bookmark, error) 
 // rewrite to be atomic; the admin HTTP handler routes via ActorMiddleware
 // which supplies the tx. Returns ErrNotFound when id does not resolve.
 func (s *Store) Update(ctx context.Context, id uuid.UUID, p UpdateParams) (*Bookmark, error) {
+	// Atomicity: when TopicIDs or TagIDs is non-nil the update does
+	// DELETE-then-INSERT on the junction alongside the row UPDATE; reject a
+	// non-tx store so the replacement cannot half-apply.
+	if p.TopicIDs != nil || p.TagIDs != nil {
+		if _, ok := s.dbtx.(pgx.Tx); !ok {
+			return nil, ErrNotTransactional
+		}
+	}
+
 	r, err := s.q.UpdateBookmark(ctx, db.UpdateBookmarkParams{
 		ID:      id,
 		Title:   p.Title,

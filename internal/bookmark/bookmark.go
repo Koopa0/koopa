@@ -130,4 +130,12 @@ var (
 
 	// ErrConflict indicates a duplicate url_hash or slug.
 	ErrConflict = errors.New("bookmark: conflict")
+
+	// ErrNotTransactional indicates a multi-row write (the bookmark row plus
+	// its bookmark_topics / bookmark_tags junctions) was invoked on a
+	// non-transactional store. Admin HTTP routes always bind a tx via
+	// api.ActorMiddleware; surfacing this as an error turns a wiring bug
+	// into a loud failure instead of a silent partial write. Mirrors
+	// feed.Store and content.Store.
+	ErrNotTransactional = errors.New("bookmark: mutation requires a transactional store")
 )
