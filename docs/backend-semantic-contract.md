@@ -47,7 +47,7 @@ It is **all of the following, with explicit boundaries** (§4):
 | **PARA / GTD / OKR-ish system** | areas, goals, milestones, projects, todos, daily plan | `internal/goal/`, `internal/project/`, `internal/todo/`, `internal/daily/` |
 | **Learning analytics engine** | domains, concepts, targets, sessions, attempts, observations, FSRS review | `internal/learning/` (incl. `internal/learning/fsrs/`) |
 | **Agent coordination layer (IPC)** | tasks, task_messages, artifacts, agent_notes | `internal/agent/task/`, `internal/agent/artifact/`, `internal/mcp/agent_note.go` |
-| **MCP tool surface** | 45 tools across 7 domains | `internal/mcp/ops/catalog.go:633-681` (canonical list) |
+| **MCP tool surface** | 47 tools across 7 domains | `internal/mcp/ops/catalog.go::All()` (canonical list) |
 | **Knowledge / search system** | content, notes, bookmarks, topics, tags, feeds; hybrid search | `internal/content/`, `internal/note/`, `internal/search/`, `internal/mcp/search.go` |
 
 It is **NOT**: a multi-user product, an RBAC system, a public CMS with
@@ -83,7 +83,7 @@ and are resolved only by the human owner.
 |---|---|---|---|
 | **Schema + DB constraints** | `migrations/001_initial.up.sql`, `002_seed.up.sql` | **Authoritative** | CHECKs, triggers, FKs are the last word on legal states. 2920 + 13k lines. |
 | **Go code + tests** | `internal/`, `cmd/` | **Authoritative** (reference impl) | A passing test pins observable behavior. When prose disagrees with a green test, the test wins. |
-| **MCP ops catalog** | `internal/mcp/ops/catalog.go` | **Authoritative** (tool surface) | The 45-tool `All()` list (`catalog.go:633-681`) is canonical; drift-tested against handler registration (`ops/types.go:9-11`, `ops_catalog_test.go`). |
+| **MCP ops catalog** | `internal/mcp/ops/catalog.go` | **Authoritative** (tool surface) | The 47-tool `All()` list is canonical; drift-tested against handler registration (`ops/types.go:9-11`, `ops_catalog_test.go`). |
 | **MCP decision policy** | `.claude/rules/mcp-decision-policy.md` | **Advisory→Authoritative for routing** | Defines which tool fires when. Defers to schema. |
 | **Authorization matrix** | `docs/authorization-matrix.md` | **Derived** | Projection of `internal/mcp/authz.go` + `agent/authorize.go`. Code wins on conflict (`authorization-matrix.md:10-13`). |
 | **sqlc-generated code** | `internal/db/` | **Derived** | Generated from `query.sql` files; never hand-edited. |
@@ -257,7 +257,7 @@ them wrong is a semantic bug, not a naming quibble.
 
 - **MCP tool** — a registered handler in the MCP server, described by an
   `ops.Meta` (`ops/types.go:56-71`): name, domain, writability, stability,
-  since, description, field enums. 45 tools (`catalog.go:633-681`).
+  since, description, field enums. 47 tools (`catalog.go::All()`).
 - **schedule** — a per-agent recurring trigger declared on the Go
   `agent.Agent` literal (`Schedule{Name, Trigger, Expr, Backend, Purpose}`,
   `registry.go:27-33` etc.). E.g. `hq` runs `morning-briefing` at `0 8 * * *`
@@ -297,7 +297,7 @@ The named confusions and their resolutions, each grounded.
 
 ## 5. MCP tool semantics
 
-The canonical inventory is `internal/mcp/ops/catalog.go::All()` — **45 tools**.
+The canonical inventory is `internal/mcp/ops/catalog.go::All()` — **47 tools**.
 Each tool's `Writability` (`ReadOnly | Additive | Idempotent | Destructive`)
 maps to MCP `ToolAnnotations` at registration and is the machine-readable risk
 signal (`ops/types.go:28-42`). Below, tools are grouped by their declared
@@ -451,7 +451,7 @@ Confidence levels used below:
 
 | Claim | Confidence | Evidence |
 |---|---|---|
-| The 45-tool catalog matches handler registration | surface-tested (**parity only**) | `ops_catalog_test.go:22-33` compares *names only* — proves registration completeness, **not** per-tool contract behavior |
+| The 47-tool catalog matches handler registration | surface-tested (**parity only**) | `ops_catalog_test.go:22-33` compares *names only* — proves registration completeness, **not** per-tool contract behavior |
 | `search_knowledge` RRF merge + filter mutex logic | surface-tested (unit, no DB) | `search_test.go` — 4 unit tests on the merge function; no end-to-end search |
 | Content/note write tools (`archive_content`, `create_note`, `update_note`, `update_note_maturity`, `manage_plan`) input validation | surface-tested | `handler_test.go` — validation only, limited business-logic integration |
 
