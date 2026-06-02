@@ -590,6 +590,28 @@ schema- or policy-enforced; see the cited constraints in §3/§5.)
     `task_state` has no `blocked` value. Remove from the Today view, define as
     a read-side derived condition, or add a structural state. Until decided,
     do NOT test it as implemented.
+16. **`recommend_next_target` ranking policy** — design-only, not implemented.
+    Current ranker does not incorporate FSRS-due, breadth cap, or
+    explainability. Direction: mixed coaching recommendation by session mode.
+    Do NOT patch the ranker until decisions land on session-mode source, FSRS
+    join shape, `recommendation_type` taxonomy, breadth cap, backward-compatible
+    response envelope, and fixture matrix. (audit memo: CF-01.)
+17. **`record_attempt` observation `concept_kind`** — design-only, not
+    implemented. Auto-created concepts default to `skill`; the
+    pattern/skill/principle distinction is not persisted. Direction: optional
+    `concept_kind` on `record_attempt` for **new-concept creation only**.
+    Existing concept `kind` MUST NOT be overwritten; conflict policy is
+    "warn but keep existing". `parent_id` / hierarchy stays proposal-first per
+    §5 — never direct-write via `record_attempt`. (audit memo: CF-03.)
+18. **Directive `reject` / `defer` transitions** — deferred. Conceptually
+    accepted, but should be bundled with the next task-lifecycle migration
+    (see also Q#4 `directive` discriminator). Not a standalone change.
+    (audit memo: CF-07.)
+19. **`weekly_summary.self_audit.recommendation_acceptance_rate`** — deferred.
+    P0 self-audit shipped (`weekly_summary.self_audit`); the
+    `recommendation_acceptance_rate` metric is explicitly out of scope until a
+    recommendation→adoption link is added (no schema or write-path support
+    today). (audit memo: CF-08 remainder.)
 
 ### Track 1 inputs (carried out of Track 0; not started here)
 
