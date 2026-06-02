@@ -1,3 +1,5 @@
+// Copyright 2026 Koopa. All rights reserved.
+
 // authz.go holds the runtime authorization helpers used by handlers in
 // this package. Authorization in the koopa MCP server is layered along
 // four orthogonal axes; each gate enforces exactly one axis. Keeping the

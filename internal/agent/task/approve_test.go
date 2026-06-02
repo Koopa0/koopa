@@ -1,3 +1,5 @@
+// Copyright 2026 Koopa. All rights reserved.
+
 //go:build integration
 
 // approve_test.go covers Store.Acknowledge — the source-side final

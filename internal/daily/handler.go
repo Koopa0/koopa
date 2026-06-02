@@ -1,3 +1,5 @@
+// Copyright 2026 Koopa. All rights reserved.
+
 // handler.go holds the daily plan HTTP handlers. The Today aggregate
 // that composes across multiple domains lives in internal/today.
 

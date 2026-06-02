@@ -1,3 +1,5 @@
+// Copyright 2026 Koopa. All rights reserved.
+
 // handler.go holds the admin HTTP handler for FSRS review recording.
 // Other fsrs.Store responsibilities (card creation, drift marking)
 // are system-internal — they fire from attempt recording and scheduler

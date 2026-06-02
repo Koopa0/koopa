@@ -1,3 +1,5 @@
+// Copyright 2026 Koopa. All rights reserved.
+
 // Package topic provides topic management for content categorization.
 package topic
 

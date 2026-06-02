@@ -1,3 +1,5 @@
+// Copyright 2026 Koopa. All rights reserved.
+
 // store.go holds every Store method for the goal package — goals,
 // milestones, and the cross-table RecentActivity UNION. Kept in one
 // file because Milestone and ActivityItem are read-only siblings of

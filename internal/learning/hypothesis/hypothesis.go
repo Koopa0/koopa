@@ -1,3 +1,5 @@
+// Copyright 2026 Koopa. All rights reserved.
+
 // Package hypothesis provides falsifiable hypothesis tracking.
 //
 // A hypothesis carries a one-line claim plus the invalidation condition

@@ -1,3 +1,5 @@
+-- Copyright 2026 Koopa. All rights reserved.
+
 -- name: CreateItem :one
 -- Insert a daily plan item.
 INSERT INTO daily_plan_items (plan_date, todo_id, selected_by, position, reason, agent_note_id)

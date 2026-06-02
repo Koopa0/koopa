@@ -1,3 +1,5 @@
+-- Copyright 2026 Koopa. All rights reserved.
+
 -- name: InsertArtifact :one
 -- Insert a structured deliverable, optionally bound to a task. The
 -- chk_artifacts_parts_count and chk_artifacts_parts_size CHECKs run here;

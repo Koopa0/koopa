@@ -1,3 +1,5 @@
+// Copyright 2026 Koopa. All rights reserved.
+
 // note.go holds the Zettelkasten note MCP tools: create_note,
 // update_note, update_note_maturity. Three flat handlers, no
 // multiplexer (policy: `.claude/rules/mcp-decision-policy.md` §10 —

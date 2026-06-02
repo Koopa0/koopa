@@ -1,3 +1,5 @@
+// Copyright 2026 Koopa. All rights reserved.
+
 // handler.go holds the admin HTTP handlers for learning plans.
 //
 // Plan / entry lifecycle decisions stay centralized in the Store — the

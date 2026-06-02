@@ -1,3 +1,5 @@
+// Copyright 2026 Koopa. All rights reserved.
+
 package tag
 
 // Handler tests cover the HTTP layer of the tag package.

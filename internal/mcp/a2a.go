@@ -1,3 +1,5 @@
+// Copyright 2026 Koopa. All rights reserved.
+
 // a2a.go holds the coordination-layer MCP tools that translate between
 // a2a-go's Part shape and internal/agent/task. Five tool handlers live
 // here:

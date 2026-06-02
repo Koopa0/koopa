@@ -1,3 +1,5 @@
+// Copyright 2026 Koopa. All rights reserved.
+
 // Package bookmark provides storage and HTTP handlers for external
 // resources that the curator recommends with a personal note.
 //

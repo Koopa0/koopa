@@ -1,3 +1,5 @@
+// Copyright 2026 Koopa. All rights reserved.
+
 // syndication.go owns the RSS feed and sitemap output — the
 // machine-readable projections of published content. Split from
 // public.go so HTML-shaped handlers don't live next to XML-shaped

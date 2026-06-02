@@ -1,3 +1,5 @@
+// Copyright 2026 Koopa. All rights reserved.
+
 // commitment.go holds the two-phase commitment MCP tools: the seven
 // typed propose_<type> tools (in propose_flat.go) and commit_proposal
 // (here). This is the approved pattern for any entity that requires

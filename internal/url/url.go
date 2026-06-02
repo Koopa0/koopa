@@ -1,3 +1,5 @@
+// Copyright 2026 Koopa. All rights reserved.
+
 // Package url provides a canonical form for external URLs and its SHA-256
 // hash, used as dedup identity across tables that store external URLs
 // (feed_entries.url_hash and bookmarks.url_hash). A single authoritative

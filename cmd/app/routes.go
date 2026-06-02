@@ -1,3 +1,5 @@
+// Copyright 2026 Koopa. All rights reserved.
+
 // routes.go wires every HTTP route to its handler and chooses the right
 // middleware shape per route. It is the one place that knows the full
 // route table of the public API and admin API.

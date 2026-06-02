@@ -1,3 +1,5 @@
+// Copyright 2026 Koopa. All rights reserved.
+
 // Package plan provides learning plan management — ordered, mutable curricula
 // that track which learning targets to practice and in what order.
 package plan

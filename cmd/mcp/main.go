@@ -1,3 +1,5 @@
+// Copyright 2026 Koopa. All rights reserved.
+
 // Command mcp runs a Model Context Protocol server, exposing the koopa
 // knowledge engine as workflow-driven tools.
 //

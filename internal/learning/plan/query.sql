@@ -1,3 +1,5 @@
+-- Copyright 2026 Koopa. All rights reserved.
+
 -- name: CreatePlan :one
 INSERT INTO learning_plans (title, description, domain, goal_id, status, target_count, plan_config, created_by)
 VALUES (@title, @description, @domain, @goal_id, @status, @target_count, @plan_config, @created_by)

@@ -1,3 +1,5 @@
+-- Copyright 2026 Koopa. All rights reserved.
+
 -- name: AliasesByExactRawTags :many
 -- Batch resolve: find all exact alias matches for a list of raw tags.
 SELECT * FROM tag_aliases WHERE raw_tag = ANY(@raw_tags::text[]) AND tag_id IS NOT NULL;

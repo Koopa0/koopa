@@ -1,3 +1,5 @@
+// Copyright 2026 Koopa. All rights reserved.
+
 // Package activity records and queries activity events from all sources.
 // Package activity records and queries activity events from all sources.
 package activity

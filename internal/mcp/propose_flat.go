@@ -1,3 +1,5 @@
+// Copyright 2026 Koopa. All rights reserved.
+
 // propose_flat.go is the MCP surface for the commitment-proposal workflow —
 // seven flat tool handlers, one per entity type:
 //

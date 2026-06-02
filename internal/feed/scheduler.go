@@ -1,3 +1,5 @@
+// Copyright 2026 Koopa. All rights reserved.
+
 // scheduler.go owns the in-process periodic feed-fetcher loop. Launched
 // as a background goroutine from cmd/app/main.go, it wakes every 15
 // minutes, walks every schedule type (hourly → monthly), and invokes

@@ -1,3 +1,5 @@
+// Copyright 2026 Koopa. All rights reserved.
+
 // config.go owns the env→struct translation for the MCP server.
 //
 // This file is the only place in the MCP binary permitted to call

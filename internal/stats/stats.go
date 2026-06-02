@@ -1,3 +1,5 @@
+// Copyright 2026 Koopa. All rights reserved.
+
 // Package stats provides aggregated platform statistics for the admin
 // dashboard. It is a READ-ONLY aggregator — no writes, no mutations.
 // Every method runs N independent queries against existing feature

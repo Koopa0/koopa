@@ -1,3 +1,5 @@
+// Copyright 2026 Koopa. All rights reserved.
+
 // store.go holds Store methods for the feeds table and the
 // feed_topics junction.
 //

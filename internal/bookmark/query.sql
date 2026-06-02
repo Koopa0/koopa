@@ -1,3 +1,5 @@
+-- Copyright 2026 Koopa. All rights reserved.
+
 -- Queries for the bookmark package. See migrations/001_initial.up.sql
 -- for the table definition. url_hash / slug uniqueness is enforced by
 -- constraints; callers rely on pgerrcode 23505 → ErrConflict mapping.

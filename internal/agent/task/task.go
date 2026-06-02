@@ -1,3 +1,5 @@
+// Copyright 2026 Koopa. All rights reserved.
+
 // Package task owns the inter-agent coordination tasks table, plus the
 // task_messages conversation log that travels with it. A task is a single
 // unit of work one agent asks another to do; its lifecycle is

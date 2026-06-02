@@ -1,3 +1,5 @@
+// Copyright 2026 Koopa. All rights reserved.
+
 // Package weekly computes a weekly review snapshot on demand from primary
 // state. It replaces the former internal/synthesis (read layer over the
 // syntheses table) and internal/consolidation (write layer that produced

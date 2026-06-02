@@ -1,3 +1,5 @@
+// Copyright 2026 Koopa. All rights reserved.
+
 // store.go holds Store methods for daily_plan_items.
 //
 // Naming quirks worth knowing before adding callers:

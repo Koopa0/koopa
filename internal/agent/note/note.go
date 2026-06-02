@@ -1,3 +1,5 @@
+// Copyright 2026 Koopa. All rights reserved.
+
 // Package note provides an agent's internal narrative log — plans,
 // context snapshots, and reflections. Agent-private notes, not cross-agent
 // coordination (which lives in internal/agent/task).

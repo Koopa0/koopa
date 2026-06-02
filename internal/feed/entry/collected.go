@@ -1,3 +1,5 @@
+// Copyright 2026 Koopa. All rights reserved.
+
 // Package entry manages externally collected data items from RSS feeds
 // and other sources, including curation, feedback, and collection statistics.
 package entry

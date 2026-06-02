@@ -1,3 +1,5 @@
+// Copyright 2026 Koopa. All rights reserved.
+
 // flex.go defines input types that tolerate a client-side serialization
 // quirk: Cowork (and some other MCP clients) sends every tool parameter
 // as a string, even when the declared JSON schema says number or array.

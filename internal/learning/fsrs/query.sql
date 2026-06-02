@@ -1,3 +1,5 @@
+-- Copyright 2026 Koopa. All rights reserved.
+
 -- name: CardByLearningTarget :one
 -- Get the review card for a learning target.
 SELECT * FROM review_cards WHERE learning_target_id = @learning_target_id;

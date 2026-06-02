@@ -1,3 +1,5 @@
+// Copyright 2026 Koopa. All rights reserved.
+
 package learning
 
 // MasteryStage is a summary of a concept's observation history derived from

@@ -1,3 +1,5 @@
+// Copyright 2026 Koopa. All rights reserved.
+
 // admin.go holds the authenticated admin HTTP handlers and the
 // Contents store method they share. All mutation paths —
 // Create / Update / Delete / SetIsPublic — go through adminMid in

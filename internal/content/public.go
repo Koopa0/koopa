@@ -1,3 +1,5 @@
+// Copyright 2026 Koopa. All rights reserved.
+
 // public.go holds the unauthenticated HTTP handlers — the read-only
 // surface served to end users via the Angular frontend. Admin handlers
 // live in admin.go. The split is deliberate: a reader reviewing "what

@@ -1,3 +1,5 @@
+// Copyright 2026 Koopa. All rights reserved.
+
 // Package content provides content management for the knowledge engine.
 package content
 

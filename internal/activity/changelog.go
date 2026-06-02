@@ -1,3 +1,5 @@
+// Copyright 2026 Koopa. All rights reserved.
+
 package activity
 
 // GroupChangelog groups sorted events (newest-first) by calendar date.

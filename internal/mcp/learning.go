@@ -1,3 +1,5 @@
+// Copyright 2026 Koopa. All rights reserved.
+
 // learning.go holds the learning-session lifecycle MCP tools:
 // start_session, record_attempt, end_session, learning_dashboard.
 // Supporting tools with narrower scope live in siblings:

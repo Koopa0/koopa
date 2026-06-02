@@ -1,3 +1,5 @@
+// Copyright 2026 Koopa. All rights reserved.
+
 // Package feed provides RSS/Atom feed management for external content collection.
 package feed
 

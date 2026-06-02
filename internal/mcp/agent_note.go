@@ -1,3 +1,5 @@
+// Copyright 2026 Koopa. All rights reserved.
+
 // agent_note.go holds the write_agent_note and query_agent_notes MCP
 // tools. These operate on the internal/agent/note Zettelkasten-adjacent
 // runtime log — plans, context snapshots, reflections — NOT on

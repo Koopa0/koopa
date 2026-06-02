@@ -1,3 +1,5 @@
+// Copyright 2026 Koopa. All rights reserved.
+
 package ops
 
 // since marks the project-wide baseline version for all tools shipped with

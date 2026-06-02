@@ -1,3 +1,5 @@
+// Copyright 2026 Koopa. All rights reserved.
+
 // Package today composes the admin Today dashboard — a cross-domain
 // aggregate over content review, hypothesis judgment, task approval,
 // daily plan items, agent_note planning entries, FSRS due reviews, and

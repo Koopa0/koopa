@@ -1,3 +1,5 @@
+// Copyright 2026 Koopa. All rights reserved.
+
 package mcp
 
 // oauth_adversarial_test.go — adversarial tests for the OAuth 2.1 provider.

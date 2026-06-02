@@ -1,3 +1,5 @@
+// Copyright 2026 Koopa. All rights reserved.
+
 // ratelimit.go owns per-domain rate limiting for feed fetches — one
 // golang.org/x/time/rate limiter per host, with a background goroutine
 // that evicts entries idle >30 minutes so the map doesn't grow

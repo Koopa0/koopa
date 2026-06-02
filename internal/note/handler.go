@@ -1,3 +1,5 @@
+// Copyright 2026 Koopa. All rights reserved.
+
 // handler.go holds the admin HTTP handlers for the Zettelkasten note
 // surface. All mutation routes are wired through adminMid in
 // cmd/app/routes.go, so the per-request tx in context carries

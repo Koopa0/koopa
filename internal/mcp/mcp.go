@@ -1,3 +1,5 @@
+// Copyright 2026 Koopa. All rights reserved.
+
 // Package mcp provides an MCP (Model Context Protocol) server exposing
 // the koopa knowledge engine as workflow-driven tools.
 //

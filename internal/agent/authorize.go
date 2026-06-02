@@ -1,3 +1,5 @@
+// Copyright 2026 Koopa. All rights reserved.
+
 // authorize.go defines the compile-time capability gate.
 //
 // The central type is Authorized — a value that proves Authorize() was

@@ -1,3 +1,5 @@
+-- Copyright 2026 Koopa. All rights reserved.
+
 -- name: CreateHypothesis :one
 INSERT INTO learning_hypotheses (created_by, content, claim, invalidation_condition, metadata, observed_date)
 VALUES (@created_by, @content, @claim, @invalidation_condition, @metadata, @observed_date)

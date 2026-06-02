@@ -1,3 +1,5 @@
+-- Copyright 2026 Koopa. All rights reserved.
+
 -- Stats package queries. All cross-table aggregation for the admin
 -- dashboard lives here. Names are prefixed `Stats` to avoid collision
 -- with feature-package queries in the shared sqlc namespace.

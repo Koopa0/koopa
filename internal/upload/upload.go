@@ -1,3 +1,5 @@
+// Copyright 2026 Koopa. All rights reserved.
+
 // Package upload handles file uploads to Cloudflare R2.
 //
 // Surface is one endpoint (POST /api/admin/upload). Safety rails:

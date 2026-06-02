@@ -1,3 +1,5 @@
+// Copyright 2026 Koopa. All rights reserved.
+
 // content.go contains the internal workhorses behind the flat content
 // MCP tools declared in content_tools.go. It defines the shared
 // ManageContentInput shape, the per-transition internal methods

@@ -1,3 +1,5 @@
+// Copyright 2026 Koopa. All rights reserved.
+
 package upload_test
 
 import (

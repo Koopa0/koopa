@@ -1,3 +1,5 @@
+// Copyright 2026 Koopa. All rights reserved.
+
 // Package agent is the single source of truth for the koopa agent
 // registry, the compile-time capability gate, and the startup-time projection
 // into the agents table.

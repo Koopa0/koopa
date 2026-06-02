@@ -1,3 +1,5 @@
+// Copyright 2026 Koopa. All rights reserved.
+
 // Package build exposes the running binary's build identity (commit SHA,
 // build time, version). Values are injected via -ldflags at link time —
 // see Dockerfile / Dockerfile.mcp. Defaults keep `go build ./...` useful

@@ -1,3 +1,5 @@
+// Copyright 2026 Koopa. All rights reserved.
+
 // Package tag provides canonical tag management and normalization for the knowledge system.
 package tag
 

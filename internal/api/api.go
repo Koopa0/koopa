@@ -1,3 +1,5 @@
+// Copyright 2026 Koopa. All rights reserved.
+
 // Package api provides shared HTTP response helpers for all handlers.
 package api
 

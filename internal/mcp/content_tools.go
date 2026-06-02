@@ -1,3 +1,5 @@
+// Copyright 2026 Koopa. All rights reserved.
+
 // content_tools.go is the MCP surface for the content lifecycle — eight
 // flat tool handlers (create_content, update_content,
 // submit_content_for_review, revert_content_to_draft, publish_content,

@@ -1,3 +1,5 @@
+// Copyright 2026 Koopa. All rights reserved.
+
 // plan.go holds the manage_plan multiplexer tool for learning plans.
 //
 // manage_plan is at the approved 6-action ceiling (add_entries,

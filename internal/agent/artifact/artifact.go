@@ -1,3 +1,5 @@
+// Copyright 2026 Koopa. All rights reserved.
+
 // Package artifact owns the artifacts table — structured deliverables
 // attached to coordination tasks. Distinct from task_messages: a message is
 // a conversation turn (1..16 parts, ≤32 KB), an artifact is a deliverable

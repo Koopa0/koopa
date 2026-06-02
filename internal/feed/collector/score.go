@@ -1,3 +1,5 @@
+// Copyright 2026 Koopa. All rights reserved.
+
 // score.go owns the relevance-scoring heuristic for collected items.
 // `coreKeywords` are high-weight topics for koopa's positioning —
 // matches against those receive 2x weight. If the positioning

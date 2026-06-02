@@ -1,3 +1,5 @@
+// Copyright 2026 Koopa. All rights reserved.
+
 // Package learning provides learning session orchestration.
 //
 // A session has explicit start/end, a mode, and contains attempts.

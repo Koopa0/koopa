@@ -1,3 +1,5 @@
+// Copyright 2026 Koopa. All rights reserved.
+
 // graph.go owns the knowledge-graph derivation — pgvector similarity
 // queries + the topic/edge graph builders served to the admin UI. The
 // core types and CRUD live in content.go; this file is where embedding

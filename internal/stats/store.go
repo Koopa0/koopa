@@ -1,3 +1,5 @@
+// Copyright 2026 Koopa. All rights reserved.
+
 // Package stats aggregates cross-feature statistics for the admin
 // dashboard. All queries are sqlc-generated; see internal/stats/query.sql.
 package stats

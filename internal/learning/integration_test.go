@@ -1,3 +1,5 @@
+// Copyright 2026 Koopa. All rights reserved.
+
 //go:build integration
 
 // integration_test.go bundles every testcontainers-backed test for the

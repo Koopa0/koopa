@@ -1,3 +1,5 @@
+// Copyright 2026 Koopa. All rights reserved.
+
 // proposal.go implements the HMAC-signed proposal token used by the
 // two-phase commit pattern (propose_<type> → commit_proposal).
 //

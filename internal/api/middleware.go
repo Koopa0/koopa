@@ -1,3 +1,5 @@
+// Copyright 2026 Koopa. All rights reserved.
+
 // middleware.go holds ActorMiddleware — the per-request tx wrapper
 // that binds koopa.actor and stashes the tx in context via
 // TxFromContext. Handlers on the adminMid chain (cmd/app/routes.go)

@@ -1,3 +1,5 @@
+// Copyright 2026 Koopa. All rights reserved.
+
 // tx.go holds the one helper that binds koopa.actor to a pgx
 // transaction's lifetime. Every MCP handler that mutates a table
 // covered by an audit_* trigger goes through withActorTx so the trigger

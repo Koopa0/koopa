@@ -1,3 +1,5 @@
+// Copyright 2026 Koopa. All rights reserved.
+
 // handler.go exposes the agent_note runtime log over HTTP — the
 // /coordination/agents/{name}/notes route, rendered as the notes tab
 // on each agent's profile page.

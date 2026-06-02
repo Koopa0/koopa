@@ -1,3 +1,5 @@
+// Copyright 2026 Koopa. All rights reserved.
+
 //go:build integration
 
 // dashboard_integration_test.go covers the GET /api/admin/learning/dashboard

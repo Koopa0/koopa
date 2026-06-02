@@ -1,3 +1,5 @@
+// Copyright 2026 Koopa. All rights reserved.
+
 // execution.go holds the handler + inputs for advance_work (todo
 // state machine), plan_day (daily plan assembly), and the shared
 // priority normalizer.

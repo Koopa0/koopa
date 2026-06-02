@@ -1,3 +1,5 @@
+// Copyright 2026 Koopa. All rights reserved.
+
 // publish.go owns the publication-related store methods: state-based
 // reads (ByStatus, PublishedForRSS, AllPublishedSlugs) and the
 // PublishContent mutation that promotes a draft to published. The

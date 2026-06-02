@@ -1,3 +1,5 @@
+// Copyright 2026 Koopa. All rights reserved.
+
 // middleware.go holds the app server's general-purpose HTTP middleware
 // (request ID, recovery, logging, CORS, security headers) and the chain
 // composer that assembles them.

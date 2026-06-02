@@ -1,3 +1,5 @@
+// Copyright 2026 Koopa. All rights reserved.
+
 // history.go owns read-only reporting queries over the historical
 // record of todos — completed-since, created-since, full-text search.
 // Split from todo.go so the core lifecycle surface stays focused and

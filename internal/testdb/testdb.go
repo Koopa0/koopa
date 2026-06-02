@@ -1,3 +1,5 @@
+// Copyright 2026 Koopa. All rights reserved.
+
 // Package testdb provides a shared PostgreSQL testcontainer for integration tests.
 // It starts a pgvector-enabled PostgreSQL container, applies real migrations,
 // and returns a connection pool. Use with //go:build integration tests only.

@@ -1,3 +1,5 @@
+// Copyright 2026 Koopa. All rights reserved.
+
 // target_admin.go holds the manage_targets tool for learning target
 // lifecycle operations. Currently only archive_target is wired;
 // unarchive_target and richer actions land in follow-up commits per

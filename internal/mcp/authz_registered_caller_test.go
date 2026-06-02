@@ -1,3 +1,5 @@
+// Copyright 2026 Koopa. All rights reserved.
+
 //go:build integration
 
 // authz_registered_caller_test.go is the behavioural confirmation for the

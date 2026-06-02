@@ -1,3 +1,5 @@
+// Copyright 2026 Koopa. All rights reserved.
+
 // handler.go holds the admin HTTP handlers for personal GTD todos.
 // Every mutation route runs under adminMid in cmd/app/routes.go so the
 // per-request tx in context carries koopa.actor and the audit trigger

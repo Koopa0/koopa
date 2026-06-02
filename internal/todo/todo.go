@@ -1,3 +1,5 @@
+// Copyright 2026 Koopa. All rights reserved.
+
 // Package todo provides personal GTD work-item tracking.
 //
 // Named todo (not task) to free the bare word "task" for the inter-agent

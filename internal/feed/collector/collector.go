@@ -1,3 +1,5 @@
+// Copyright 2026 Koopa. All rights reserved.
+
 // Package collector fetches RSS feeds and writes new items to feed_entries.
 package collector
 

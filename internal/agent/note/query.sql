@@ -1,3 +1,5 @@
+-- Copyright 2026 Koopa. All rights reserved.
+
 -- name: CreateAgentNote :one
 -- Insert an agent note entry.
 INSERT INTO agent_notes (kind, created_by, content, metadata, entry_date)

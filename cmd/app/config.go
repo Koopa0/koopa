@@ -1,3 +1,5 @@
+// Copyright 2026 Koopa. All rights reserved.
+
 // config.go owns the env→struct translation for the app server.
 //
 // This file is the only place in the entire app binary that may call

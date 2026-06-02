@@ -1,3 +1,5 @@
+-- Copyright 2026 Koopa. All rights reserved.
+
 -- name: Goals :many
 SELECT id, title, description, status, area_id, quarter, deadline,
        created_at, updated_at

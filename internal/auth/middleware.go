@@ -1,3 +1,5 @@
+// Copyright 2026 Koopa. All rights reserved.
+
 // middleware.go holds the JWT access-token validator that gates every
 // admin route. Ordering note (enforced by cmd/app/routes.go): this
 // middleware composes OUTSIDE api.ActorMiddleware so JWT validation

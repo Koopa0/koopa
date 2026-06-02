@@ -1,3 +1,5 @@
+// Copyright 2026 Koopa. All rights reserved.
+
 // Package ops holds the static catalog of MCP tool metadata.
 //
 // This package is intentionally dependency-free: it imports no database,

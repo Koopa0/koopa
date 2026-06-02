@@ -1,3 +1,5 @@
+// Copyright 2026 Koopa. All rights reserved.
+
 // Package daily provides daily plan item storage.
 //
 // Daily plan items represent todo items committed to a specific day's plan.

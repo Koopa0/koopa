@@ -1,3 +1,5 @@
+// Copyright 2026 Koopa. All rights reserved.
+
 //go:build integration
 
 // Integration coverage for the hypothesis verify runtime fix (V2). A

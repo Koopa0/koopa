@@ -1,3 +1,5 @@
+// Copyright 2026 Koopa. All rights reserved.
+
 // Package fsrs implements spaced repetition scheduling on top of go-fsrs.
 //
 // This package owns the review_cards and review_logs tables. It is a distinct

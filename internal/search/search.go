@@ -1,3 +1,5 @@
+// Copyright 2026 Koopa. All rights reserved.
+
 // Package search composes the admin global search endpoint. The package
 // itself does not own any storage — it defines a narrow Source interface
 // that every searchable domain implements, and merges their results at

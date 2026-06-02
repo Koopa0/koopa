@@ -1,3 +1,5 @@
+// Copyright 2026 Koopa. All rights reserved.
+
 // recurring.go owns recurrence semantics for todos. Completing a
 // recurring todo fires RecurringDoneHandler which schedules the next
 // cycle; OverdueRecurringItems / RecurringItemsDueToday feed the

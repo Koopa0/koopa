@@ -1,3 +1,5 @@
+-- Copyright 2026 Koopa. All rights reserved.
+
 -- name: CreateTask :one
 -- Insert a new task in 'submitted' state. The chk_tasks_no_self_assignment
 -- and chk_task_title_not_blank CHECKs run here; CHECK violations bubble up

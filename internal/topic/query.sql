@@ -1,3 +1,5 @@
+-- Copyright 2026 Koopa. All rights reserved.
+
 -- name: Topics :many
 SELECT t.id, t.slug, t.name, t.description, t.icon, t.sort_order, t.created_at, t.updated_at,
        COUNT(ct.content_id) FILTER (WHERE c.status = 'published') AS content_count

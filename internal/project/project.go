@@ -1,3 +1,5 @@
+// Copyright 2026 Koopa. All rights reserved.
+
 // Package project provides project planning and public portfolio profiles.
 //
 // File map:

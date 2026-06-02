@@ -1,3 +1,5 @@
+// Copyright 2026 Koopa. All rights reserved.
+
 // store.go holds the Store for tags + tag_aliases, including:
 //
 //   - ResolveTag / ResolveTags — the 4-step normalization pipeline

@@ -1,3 +1,5 @@
+-- Copyright 2026 Koopa. All rights reserved.
+
 -- Queries for the note package. See migrations/001_initial.up.sql for the
 -- notes table + note_concepts junction. slug uniqueness is enforced by the
 -- UNIQUE constraint on notes.slug; callers rely on pgerrcode 23505 →

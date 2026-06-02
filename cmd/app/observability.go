@@ -1,3 +1,5 @@
+// Copyright 2026 Koopa. All rights reserved.
+
 // observability.go bootstraps the OTel SDK with a Prometheus exporter so
 // that the VPS Prometheus scrape job (job=blog-backend) can pull the
 // process's metrics from GET /metrics.

@@ -1,3 +1,5 @@
+// Copyright 2026 Koopa. All rights reserved.
+
 // Package auth provides Google OAuth 2.0 login, JWT access tokens, and refresh token rotation.
 package auth
 

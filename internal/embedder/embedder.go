@@ -1,3 +1,5 @@
+// Copyright 2026 Koopa. All rights reserved.
+
 // Package embedder generates vector embeddings for knowledge content.
 //
 // Backed by Google's gemini-embedding-2-preview model at 1536 dimensions

@@ -1,3 +1,5 @@
+// Copyright 2026 Koopa. All rights reserved.
+
 // Package note provides storage for Zettelkasten knowledge artifacts.
 //
 // Notes are Koopa-private knowledge artifacts with a maturity-based lifecycle
