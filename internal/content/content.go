@@ -221,6 +221,13 @@ var (
 	// SubmitForReview (draft→review) and RevertToDraft (review→draft)
 	// surface this when the conditional UPDATE matches zero rows.
 	ErrInvalidState = errors.New("content: invalid state for transition")
+
+	// ErrNotTransactional indicates a multi-row write (the content row plus
+	// the content_topics / content_concepts junctions) was invoked on a
+	// non-transactional store. Production admin routes always bind a tx via
+	// api.ActorMiddleware; surfacing this as a 500 turns a wiring bug into a
+	// loud failure instead of a silent partial write. Mirrors feed.Store.
+	ErrNotTransactional = errors.New("content: mutation requires a transactional store")
 )
 
 // SlugConflictError is returned by CreateContent when the new slug collides
@@ -255,12 +262,13 @@ func nullContentStatus(s *Status) db.NullContentStatus {
 
 // Store handles database operations for content.
 type Store struct {
-	q *db.Queries
+	dbtx db.DBTX
+	q    *db.Queries
 }
 
 // NewStore returns a Store backed by the given database connection.
 func NewStore(dbtx db.DBTX) *Store {
-	return &Store{q: db.New(dbtx)}
+	return &Store{dbtx: dbtx, q: db.New(dbtx)}
 }
 
 // WithTx returns a Store bound to tx for all queries. Used by callers
@@ -268,7 +276,7 @@ func NewStore(dbtx db.DBTX) *Store {
 // (HTTP) or mcp.Server.withActorTx (MCP). The tx carries koopa.actor
 // so audit triggers attribute mutations correctly.
 func (s *Store) WithTx(tx pgx.Tx) *Store {
-	return &Store{q: s.q.WithTx(tx)}
+	return &Store{dbtx: tx, q: s.q.WithTx(tx)}
 }
 
 // mapInsertConflict converts a PostgreSQL unique-violation (23505) into a
@@ -495,6 +503,16 @@ func (s *Store) ContentsByTopicID(ctx context.Context, topicID uuid.UUID, page, 
 // Koopa-Learning.md Step 9 revisit policy). Other unique violations
 // return the bare ErrConflict.
 func (s *Store) CreateContent(ctx context.Context, p *CreateParams) (*Content, error) {
+	// Atomicity: the content row plus its content_topics / content_concepts
+	// junction rows must be written on one transaction so a junction failure
+	// rolls back the row. Reject a non-tx store before any write rather than
+	// leaving an orphan row with partial junctions.
+	if len(p.TopicIDs) > 0 || len(p.Concepts) > 0 {
+		if _, ok := s.dbtx.(pgx.Tx); !ok {
+			return nil, ErrNotTransactional
+		}
+	}
+
 	var seriesOrder *int32
 	if p.SeriesOrder != nil {
 		v := int32(*p.SeriesOrder) // #nosec G115 -- series order is a small sequential value, not user-controlled
@@ -587,6 +605,15 @@ func (s *Store) CreateContent(ctx context.Context, p *CreateParams) (*Content, e
 // the caller owns the transaction boundary. Pass a pgx.Tx when you need
 // atomic update + topic replacement.
 func (s *Store) UpdateContent(ctx context.Context, id uuid.UUID, p *UpdateParams) (*Content, error) {
+	// Atomicity: when TopicIDs is non-nil the update does DELETE-then-INSERT
+	// on content_topics alongside the content UPDATE; reject a non-tx store
+	// so the topic replacement cannot half-apply.
+	if p.TopicIDs != nil {
+		if _, ok := s.dbtx.(pgx.Tx); !ok {
+			return nil, ErrNotTransactional
+		}
+	}
+
 	var readingTimeMin *int32
 	if p.ReadingTimeMin != nil {
 		v := int32(*p.ReadingTimeMin) // #nosec G115 -- reading time in minutes is bounded, not user-controlled
