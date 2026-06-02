@@ -29,11 +29,11 @@ jobs:
       - name: go vet
         run: go vet ./...
 
-      # Unit tests only — integration tests (//go:build integration)
-      # need a live PostgreSQL via testcontainers and run on demand, not
-      # in the first-signal CI lane.
-      - name: go test
-        run: go test ./...
+      # Unit lane with the race detector (security.md mandates -race).
+      # Integration tests (//go:build integration) need a live PostgreSQL via
+      # testcontainers; a dedicated integration CI lane is added separately.
+      - name: go test (race)
+        run: go test -race ./...
 
   lint:
     name: golangci-lint
@@ -49,7 +49,8 @@ jobs:
 
       - uses: golangci/golangci-lint-action@v7
         with:
-          version: latest
+          # Pinned for reproducible lint results (was `latest`, non-reproducible).
+          version: v2.12.2
 
   sqlc-drift:
     name: sqlc drift
