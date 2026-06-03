@@ -283,6 +283,18 @@ func TaskDetail() Meta {
 	}
 }
 
+// ListMyTasks returns metadata for the caller's open-task queue read.
+func ListMyTasks() Meta {
+	return Meta{
+		Name:        "list_my_tasks",
+		Domain:      DomainA2A,
+		Writability: ReadOnly,
+		Stability:   StabilityStable,
+		Since:       since,
+		Description: "List your open coordination tasks without needing a task id or the full morning_context briefing. Returns two disjoint lists: received (tasks assigned to you — your inbox) and issued (tasks you created — your outbox), each covering submitted, working, and revision_requested states. Scoped to the calling agent (as). Read-only.",
+	}
+}
+
 // RequestRevision returns metadata for the source-side revision-request tool.
 // Writability is Destructive: the transition completed → revision_requested
 // moves a finalized task back into an in-flight state; the optional reason
@@ -707,6 +719,7 @@ func All() []Meta {
 		FileReport(),
 		AcknowledgeDirective(),
 		TaskDetail(),
+		ListMyTasks(),
 		RequestRevision(),
 		Reaccept(),
 		TrackHypothesis(),

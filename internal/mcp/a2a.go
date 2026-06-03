@@ -343,6 +343,46 @@ func (s *Server) taskDetail(ctx context.Context, _ *mcp.CallToolRequest, input T
 	}, nil
 }
 
+// --- list_my_tasks ---
+
+// ListMyTasksInput is the input for the list_my_tasks tool. The caller is
+// taken from the request identity (the `as` field), not a struct field.
+type ListMyTasksInput struct {
+	Limit int `json:"limit,omitempty" jsonschema_description:"Max tasks per direction (received/issued), 1-50, default 20"`
+}
+
+// ListMyTasksOutput is the caller's open-task queue, split into received
+// (tasks assigned to the caller — the inbox) and issued (tasks the caller
+// created — the outbox). The two lists are disjoint: tasks.created_by <>
+// assignee is CHECK-enforced, so no task appears in both.
+type ListMyTasksOutput struct {
+	Received []task.Task `json:"received"`
+	Issued   []task.Task `json:"issued"`
+}
+
+// listMyTasks returns the calling agent's open coordination tasks in both
+// directions. It exists because the only prior ways to see one's queue were
+// the heavy morning_context aggregate (and only learning-studio had a
+// per-agent default that scoped it) or task_detail, which needs a known id
+// and cannot enumerate. Open states are submitted, working, and
+// revision_requested (see task.Store.OpenForAssignee / OpenForCreator).
+func (s *Server) listMyTasks(ctx context.Context, _ *mcp.CallToolRequest, input ListMyTasksInput) (*mcp.CallToolResult, ListMyTasksOutput, error) {
+	caller := s.callerIdentity(ctx)
+	limit := int32(clamp(input.Limit, 1, 50, 20))
+
+	received, err := s.tasks.OpenForAssignee(ctx, caller, limit)
+	if err != nil {
+		return nil, ListMyTasksOutput{}, fmt.Errorf("list_my_tasks: received: %w", err)
+	}
+	issued, err := s.tasks.OpenForCreator(ctx, caller, limit)
+	if err != nil {
+		return nil, ListMyTasksOutput{}, fmt.Errorf("list_my_tasks: issued: %w", err)
+	}
+
+	s.logger.Info("list_my_tasks", "by", caller, "received", len(received), "issued", len(issued))
+	return nil, ListMyTasksOutput{Received: received, Issued: issued}, nil
+}
+
 // --- request_revision ---
 
 // RequestRevisionInput is the input for the request_revision tool.

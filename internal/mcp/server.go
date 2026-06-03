@@ -229,6 +229,7 @@ func NewServer(pool *pgxpool.Pool, logger *slog.Logger, opts ...ServerOption) *S
 	addTool(s, toolFrom(ops.FileReport), s.fileReport)
 	addTool(s, toolFrom(ops.AcknowledgeDirective), s.acknowledgeDirective)
 	addTool(s, toolFrom(ops.TaskDetail), s.taskDetail)
+	addTool(s, toolFrom(ops.ListMyTasks), s.listMyTasks)
 	addTool(s, toolFrom(ops.RequestRevision), s.requestRevision)
 	addTool(s, toolFrom(ops.Reaccept), s.reaccept)
 	addTool(s, toolFrom(ops.TrackHypothesis), s.trackHypothesis)
