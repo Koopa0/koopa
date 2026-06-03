@@ -2,6 +2,10 @@
 
 package ops
 
+// Regenerate the tool-inventory block in the koopa-system skills manual
+// (references/tools.md) from this catalog whenever the tool surface changes.
+//go:generate go run ./gen
+
 // since marks the project-wide baseline version for all tools shipped with
 // the initial MCP surface. New tools added later should carry their own
 // Since literal.

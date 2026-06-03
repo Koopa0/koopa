@@ -1,23 +1,81 @@
 # MCP Tool Reference
 
-37 tools. Authoritative source: `internal/mcp/ops/catalog.go::All()` (the
-drift test in `ops_catalog_test.go` locks this file against the registered
-handler sequence).
+Authoritative source: `internal/mcp/ops/catalog.go::All()`. The inventory
+below is GENERATED from it (`go generate ./internal/mcp/ops`); the per-domain
+usage detail further down — params, search mechanics, coordination patterns —
+is hand-maintained.
 
-## Groups at a glance
+## Tool inventory
 
-| Group | Count | Nature |
-|---|---|---|
-| Context suppliers | 6 | Read-only situational awareness |
-| GTD (todos + daily plan) | 3 | Personal work capture + execution |
-| Commitment gateway | 3 | Proposal-first for goals / projects / milestones / directives / hypotheses / learning plans / learning domains |
-| Agent notes | 2 | Self-directed narrative log (never A2A) |
-| Coordination (a2a) | 3 | Inter-agent task / report / lineage |
-| Hypothesis | 1 | Falsifiable claim lifecycle |
-| Learning | 7 | Session / attempt / plan / analytics |
-| Content lifecycle | 8 | Flat per-intent CRUD + editorial |
-| Notes (Zettelkasten) | 3 | Maturity-based knowledge artifacts |
-| Feeds / system | 1 | RSS subscription management |
+<!-- GENERATED:TOOL-INVENTORY START — run: go generate ./internal/mcp/ops -->
+
+> Generated from `internal/mcp/ops/catalog.go::All()` — do NOT edit by hand.
+> Run `go generate ./internal/mcp/ops` after any change to the tool surface;
+> the drift test `TestToolInventoryDocInSync` fails CI if this is stale.
+
+**47 tools** across 7 domains.
+
+| Domain | Count |
+|---|---|
+| `query` | 7 |
+| `daily` | 3 |
+| `a2a` | 6 |
+| `meta` | 10 |
+| `learning` | 7 |
+| `content` | 11 |
+| `system` | 3 |
+| **Total** | **47** |
+
+| Tool | Domain | Writability | Purpose |
+|---|---|---|---|
+| `attempt_history` | `query` | read_only | Read-side counterpart to record_attempt |
+| `goal_progress` | `query` | read_only | Deep goal view: each active goal with its full milestone hierarchy (id/title/completed_at/target_deadline) AND its linked projects |
+| `learning_dashboard` | `query` | read_only | Learning analytics dashboard |
+| `morning_context` | `query` | read_only | Single-call daily-planning briefing |
+| `query_agent_notes` | `query` | read_only | Recall prior agent notes |
+| `reflection_context` | `query` | read_only | End-of-day retrospective: plan vs actual completion, daily plan item outcomes, today's agent notes |
+| `search_knowledge` | `query` | read_only | Search across content (articles, build logs, TILs, etc.) and notes (Zettelkasten) |
+| `advance_work` | `daily` | destructive | Personal-todo state transitions |
+| `capture_inbox` | `daily` | additive | Quick task capture to inbox |
+| `plan_day` | `daily` | idempotent | Set the day's plan as one atomic replacement |
+| `acknowledge_directive` | `a2a` | idempotent | Mark a task as acknowledged by the calling agent |
+| `file_report` | `a2a` | additive | File a structured artifact |
+| `list_my_tasks` | `a2a` | read_only | List your open coordination tasks without needing a task id or the full morning_context briefing |
+| `reaccept` | `a2a` | idempotent | Target-side acceptance of a revision request |
+| `request_revision` | `a2a` | destructive | Source-side request for revision of a completed directive/task |
+| `task_detail` | `a2a` | read_only | Fetch a single task with its full message history and artifacts |
+| `commit_proposal` | `meta` | additive | Commit a previously proposed entity using the proposal_token from any propose_<type> tool |
+| `propose_directive` | `meta` | read_only | Propose a directive (inter-agent work request targeting a named agent, carrying an a2a.Part array as request_parts) |
+| `propose_goal` | `meta` | read_only | Propose a goal (quarterly or multi-quarter commitment, optionally scoped to an area and given a target deadline) |
+| `propose_hypothesis` | `meta` | read_only | Propose a hypothesis (falsifiable claim with an invalidation condition and narrative content) |
+| `propose_learning_domain` | `meta` | read_only | Propose a learning domain (FK target for concepts/targets/sessions/plans |
+| `propose_learning_plan` | `meta` | read_only | Propose a learning plan (committed curriculum with a title + domain + optional parent goal) |
+| `propose_milestone` | `meta` | read_only | Propose a milestone (progress marker scoped to a parent goal, with an optional target deadline) |
+| `propose_project` | `meta` | read_only | Propose a project (concrete work unit that can be linked to a goal and an area) |
+| `track_hypothesis` | `meta` | idempotent | Update an existing hypothesis |
+| `write_agent_note` | `meta` | additive | Create an agent note |
+| `archive_learning_target` | `learning` | destructive | Archive a learning target (soft-delete) |
+| `end_session` | `learning` | additive | End the active learning session |
+| `manage_plan` | `learning` | destructive | Learning plan lifecycle and entries |
+| `recommend_next_target` | `learning` | read_only | Recommend the next learning target during an active session |
+| `record_attempt` | `learning` | additive | Record an attempt within the active learning session |
+| `session_progress` | `learning` | read_only | In-session aggregate for the currently-active learning session: attempt count, elapsed time, paradigm distribution (problem_solving vs immersive with… |
+| `start_session` | `learning` | additive | Begin a learning session |
+| `archive_content` | `content` | destructive | Soft-delete a content row by archiving it |
+| `create_content` | `content` | additive | Create a new content row in status=draft |
+| `create_note` | `content` | additive | Create a Zettelkasten note (notes table) |
+| `list_content` | `content` | read_only | List content rows with optional filters (type, status, project) |
+| `manage_feeds` | `content` | destructive | Feed management: list, add (url+name+schedule), update (enable/disable, retopic), remove |
+| `publish_content` | `content` | destructive | HUMAN-ONLY |
+| `read_content` | `content` | read_only | Fetch a single content row with full body by ID. |
+| `set_content_review_state` | `content` | additive | Set a content row's review state |
+| `update_content` | `content` | additive | Update editable fields (title/body/slug/type) on a content row |
+| `update_note` | `content` | additive | Update editable fields (slug / title / body / kind) on a note |
+| `update_note_maturity` | `content` | additive | Transition a note's maturity state |
+| `session_delta` | `system` | read_only | Activity snapshot since a point in time: todos created, todos completed, agent notes written, and learning session count |
+| `system_status` | `system` | read_only | Operational health snapshot |
+| `weekly_summary` | `system` | read_only | Week-level retrospective: todos completed, agent notes grouped by kind, learning session count and domains, concept mastery, and the self_audit block… |
+<!-- GENERATED:TOOL-INVENTORY END -->
 
 ---
 
