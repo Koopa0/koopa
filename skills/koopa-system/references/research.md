@@ -12,7 +12,7 @@
 |------|------|-------|
 | `morning_context` | 開始工作 | 看 unacked directives（你的待辦指令） |
 | `acknowledge_directive` | 收到指令 | 標記你收到了，進入工作狀態 |
-| `file_report` | 交付研究報告 | `in_response_to=directive_id` 連結到指令 |
+| `file_report` | 交付研究報告 | `in_response_to=task_id` 連結到指令 |
 | `search_knowledge` | 查 Koopa 過去的知識 | 搜尋 articles, notes, TILs, build logs |
 | `write_agent_note` | 記錄研究過程 | `kind=context`（session 結束時） |
 
@@ -35,7 +35,7 @@
 morning_context(as:"research-lab")
   → 看到 unacked directive from HQ
 
-acknowledge_directive(as:"research-lab", directive_id="...")
+acknowledge_directive(as:"research-lab", task_id="...")
   → 標記收到
 
 [研究階段]
@@ -44,7 +44,7 @@ acknowledge_directive(as:"research-lab", directive_id="...")
   → 結構化分析
 
 file_report(as:"research-lab",
-  in_response_to="directive_id",
+  in_response_to="task_id",
   content="# 研究報告: [主題]\n\n## 核心發現\n..."
 )
   → directive 自動 resolved

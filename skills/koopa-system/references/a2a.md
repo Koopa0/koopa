@@ -39,8 +39,8 @@ Cross-agent instructions with accountability.
 | Phase | Tool | Who |
 |---|---|---|
 | Issue | `propose_commitment(type=directive)` → `commit_proposal` | Source (must have `SubmitTasks`) |
-| Acknowledge | `acknowledge_directive(directive_id)` | Target (must have `ReceiveTasks`). Transitions the task to `working`. |
-| Resolve | `file_report(in_response_to=directive_id, response_parts=[...], artifact={...})` | Target (must have `CompleteTasks`). Creates a response message + artifact and flips the task to `completed`. |
+| Acknowledge | `acknowledge_directive(task_id)` | Target (must have `ReceiveTasks`). Transitions the task to `working`. |
+| Resolve | `file_report(in_response_to=task_id, response_parts=[...], artifact={...})` | Target (must have `CompleteTasks`). Creates a response message + artifact and flips the task to `completed`. |
 
 **Rules**:
 - Source ≠ target (no self-issue)
@@ -135,11 +135,11 @@ HQ:       propose_commitment(type=directive,
             priority="medium",
             request_parts=[{"text": "寫一篇 Go generics best practices 文章"}])
 HQ:       commit_proposal(token)
-Content:  acknowledge_directive(directive_id)
+Content:  acknowledge_directive(task_id)
 Content:  [work]
 Content:  create_content(...)
 Content:  file_report(
-            in_response_to=directive_id,
+            in_response_to=task_id,
             response_parts=[{"text": "文章已發布: [標題]"}],
             artifact={
               name: "article-delivery",
@@ -158,10 +158,10 @@ HQ:        propose_commitment(type=directive,
                {"data": {"deadline": "2026-04-20", "depth": "exhaustive"}}
              ])
 HQ:        commit_proposal(token)
-Research:  acknowledge_directive(directive_id)
+Research:  acknowledge_directive(task_id)
 Research:  [research + external sources]
 Research:  file_report(
-             in_response_to=directive_id,
+             in_response_to=task_id,
              response_parts=[{"text": "研究完成，摘要在 artifact"}],
              artifact={
                name: "nats-exactly-once-report",

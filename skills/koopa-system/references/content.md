@@ -15,8 +15,8 @@ Capability：`SubmitTasks`, `ReceiveTasks`, `PublishArtifacts`（權威來源：
 | `task_detail` | 要看某個 task 的 message + artifacts + state | caller 必須是 source 或 target |
 | `create_content` | 建立草稿 | `type`, `title`, `body` — 進 `draft` |
 | `update_content` | 編輯 draft / review | `id`, field patches — 不能改 status |
-| `submit_content_for_review` | 草稿 → review | `id` — 準備給 Koopa 審 |
-| `revert_content_to_draft` | review → draft | `id` — 審後要再改 |
+| `set_content_review_state(state="review")` | 草稿 → review | `id` — 準備給 Koopa 審 |
+| `set_content_review_state(state="draft")` | review → draft | `id` — 審後要再改 |
 | `archive_content` | → archived | `id` — 過期或收回 |
 | `list_content` | 管道盤點 | `type?`, `status?`, `project?` — 內部視角，看得到所有 status |
 | `read_content` | 讀完整內文 | `id` — 含 body + metadata |
@@ -28,7 +28,7 @@ Capability：`SubmitTasks`, `ReceiveTasks`, `PublishArtifacts`（權威來源：
 
 | Tool | Why |
 |------|-----|
-| `publish_content` | 發布是人類決策 — 只有 `as: "human"` 通過。你只能 `submit_content_for_review`，由 Koopa 執行 publish。 |
+| `publish_content` | 發布是人類決策 — 只有 `as: "human"` 通過。你只能 `set_content_review_state(state="review")`，由 Koopa 執行 publish。 |
 
 ### Secondary Tools
 
@@ -47,8 +47,8 @@ Capability：`SubmitTasks`, `ReceiveTasks`, `PublishArtifacts`（權威來源：
 ```
 create_content      draft
 update_content      draft / review
-submit_content_for_review   draft → review
-revert_content_to_draft     review → draft
+set_content_review_state(state="review")   draft → review
+set_content_review_state(state="draft")     review → draft
 publish_content (human-only) review → published  (atomic: status + is_public + published_at)
 archive_content             any → archived (demotes is_public)
 ```
@@ -69,7 +69,7 @@ archive_content             any → archived (demotes is_public)
   update_content(as:"content-studio", id="...", body="完整內容...")
 
 [送審]
-  submit_content_for_review(as:"content-studio", id="...")
+  set_content_review_state(state="review")(as:"content-studio", id="...")
   → status=review
   → 向 Koopa 展示修改差異、等待審閱
 
@@ -88,7 +88,7 @@ archive_content             any → archived (demotes is_public)
 morning_context(as:"content-studio")
   → 看到 unacked directive from HQ: "寫一篇 Go generics 文章"
 
-acknowledge_directive(as:"content-studio", directive_id="...")
+acknowledge_directive(as:"content-studio", task_id="...")
 
 task_detail(as:"content-studio", task_id="...")
   → 看完整 request message 掌握 HQ 要什麼
@@ -104,7 +104,7 @@ task_detail(as:"content-studio", task_id="...")
   update_content(as:"content-studio", id="...", body="...")
 
 [送審 → Koopa 審 → Koopa 發布]
-  submit_content_for_review(as:"content-studio", id="...")
+  set_content_review_state(state="review")(as:"content-studio", id="...")
 
 [完成回報]
   file_report(as:"content-studio",
