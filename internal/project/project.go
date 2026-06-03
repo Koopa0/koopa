@@ -233,6 +233,14 @@ var (
 
 	// ErrConflict indicates a duplicate slug or primary key conflict.
 	ErrConflict = errors.New("project: conflict")
+
+	// ErrNotTransactional indicates an archival transition (which also
+	// demotes the project_profile) was invoked on a non-transactional
+	// store. The status UPDATE and the profile demote must commit as a
+	// unit; a pool-backed store cannot guarantee that. Admin HTTP routes
+	// bind a tx via api.ActorMiddleware. Mirrors feed.Store, content.Store,
+	// and bookmark.Store.
+	ErrNotTransactional = errors.New("project: archival requires a transactional store")
 )
 
 // nullProjectStatus converts a *Status to db.NullProjectStatus.
@@ -245,12 +253,13 @@ func nullProjectStatus(s *Status) db.NullProjectStatus {
 
 // Store handles database operations for projects.
 type Store struct {
-	q *db.Queries
+	dbtx db.DBTX
+	q    *db.Queries
 }
 
 // NewStore returns a Store backed by the given database connection.
 func NewStore(dbtx db.DBTX) *Store {
-	return &Store{q: db.New(dbtx)}
+	return &Store{dbtx: dbtx, q: db.New(dbtx)}
 }
 
 // WithTx returns a Store bound to tx for all queries. Used by callers
@@ -258,7 +267,7 @@ func NewStore(dbtx db.DBTX) *Store {
 // (HTTP) or mcp.Server.withActorTx (MCP). The tx carries koopa.actor
 // so audit triggers attribute mutations correctly.
 func (s *Store) WithTx(tx pgx.Tx) *Store {
-	return &Store{q: s.q.WithTx(tx)}
+	return &Store{dbtx: tx, q: s.q.WithTx(tx)}
 }
 
 // Projects returns all projects ordered by featured status and sort order.
@@ -465,14 +474,26 @@ func (s *Store) ProjectByRepo(ctx context.Context, repo string) (*Project, error
 // archive_project_profile() trigger — per .claude/rules/postgres-patterns.md
 // business logic belongs in Go.
 //
-// CALLER CONTRACT: the status update and the profile demote must commit
-// as a unit. Callers that need atomicity (admin HTTP path) MUST pass a
-// tx-bound Store via WithTx(tx); ActorMiddleware supplies the tx. On a
-// pool-backed Store the two writes run on separate connections and a
-// mid-step failure leaves the project status flipped but the profile
-// still public — acceptable only for contexts (tests, offline MCP)
-// where that divergence is surfaced loudly.
+// CALLER CONTRACT: a transition into archived performs two writes (the
+// status UPDATE plus the profile demote) that must commit as a unit, so
+// an archival on a non-transactional store is rejected with
+// ErrNotTransactional before any write — a pool-backed Store cannot keep
+// the two writes atomic. Admin HTTP callers get the tx via
+// ActorMiddleware; tests and offline callers must open their own.
+// Non-archival transitions are a single UPDATE and run on any store.
 func (s *Store) UpdateStatus(ctx context.Context, id uuid.UUID, status Status, description, expectedCadence *string) (*Project, error) {
+	// A transition into archived also demotes the project_profile; the two
+	// writes must be atomic. Reject a non-tx store before the first write.
+	// We pre-check on the target status (not the post-UPDATE old→new delta)
+	// because on a pool the first write would already have committed by the
+	// time we learn it was a real transition. A no-op archived→archived
+	// call is conservatively required to be transactional too.
+	if status == StatusArchived {
+		if _, ok := s.dbtx.(pgx.Tx); !ok {
+			return nil, ErrNotTransactional
+		}
+	}
+
 	r, err := s.q.UpdateProjectStatus(ctx, db.UpdateProjectStatusParams{
 		ID:              id,
 		Status:          db.ProjectStatus(status),
