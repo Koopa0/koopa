@@ -113,6 +113,7 @@ type Filter struct {
 	Type     *Type
 	Status   *Status
 	IsPublic *bool
+	Project  *uuid.UUID
 }
 
 // ConceptRef is a concept link on a content row with its relevance label.

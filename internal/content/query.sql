@@ -106,6 +106,7 @@ FROM contents
 WHERE (sqlc.narg('content_type')::content_type IS NULL OR type = sqlc.narg('content_type'))
   AND (sqlc.narg('content_status')::content_status IS NULL OR status = sqlc.narg('content_status'))
   AND (sqlc.narg('is_public')::bool IS NULL OR is_public = sqlc.narg('is_public'))
+  AND (sqlc.narg('project_id')::uuid IS NULL OR project_id = sqlc.narg('project_id'))
 ORDER BY created_at DESC
 LIMIT $1 OFFSET $2;
 
@@ -113,7 +114,8 @@ LIMIT $1 OFFSET $2;
 SELECT COUNT(*) FROM contents
 WHERE (sqlc.narg('content_type')::content_type IS NULL OR type = sqlc.narg('content_type'))
   AND (sqlc.narg('content_status')::content_status IS NULL OR status = sqlc.narg('content_status'))
-  AND (sqlc.narg('is_public')::bool IS NULL OR is_public = sqlc.narg('is_public'));
+  AND (sqlc.narg('is_public')::bool IS NULL OR is_public = sqlc.narg('is_public'))
+  AND (sqlc.narg('project_id')::uuid IS NULL OR project_id = sqlc.narg('project_id'));
 
 -- name: AllPublishedSlugs :many
 SELECT slug, type, updated_at

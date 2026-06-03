@@ -2869,16 +2869,23 @@ SELECT COUNT(*) FROM contents
 WHERE ($1::content_type IS NULL OR type = $1)
   AND ($2::content_status IS NULL OR status = $2)
   AND ($3::bool IS NULL OR is_public = $3)
+  AND ($4::uuid IS NULL OR project_id = $4)
 `
 
 type CountContentsParams struct {
 	ContentType   NullContentType   `json:"content_type"`
 	ContentStatus NullContentStatus `json:"content_status"`
 	IsPublic      *bool             `json:"is_public"`
+	ProjectID     *uuid.UUID        `json:"project_id"`
 }
 
 func (q *Queries) CountContents(ctx context.Context, arg CountContentsParams) (int64, error) {
-	row := q.db.QueryRow(ctx, countContents, arg.ContentType, arg.ContentStatus, arg.IsPublic)
+	row := q.db.QueryRow(ctx, countContents,
+		arg.ContentType,
+		arg.ContentStatus,
+		arg.IsPublic,
+		arg.ProjectID,
+	)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -7099,6 +7106,7 @@ FROM contents
 WHERE ($3::content_type IS NULL OR type = $3)
   AND ($4::content_status IS NULL OR status = $4)
   AND ($5::bool IS NULL OR is_public = $5)
+  AND ($6::uuid IS NULL OR project_id = $6)
 ORDER BY created_at DESC
 LIMIT $1 OFFSET $2
 `
@@ -7109,6 +7117,7 @@ type ListContentsParams struct {
 	ContentType   NullContentType   `json:"content_type"`
 	ContentStatus NullContentStatus `json:"content_status"`
 	IsPublic      *bool             `json:"is_public"`
+	ProjectID     *uuid.UUID        `json:"project_id"`
 }
 
 type ListContentsRow struct {
@@ -7134,6 +7143,7 @@ func (q *Queries) ListContents(ctx context.Context, arg ListContentsParams) ([]L
 		arg.ContentType,
 		arg.ContentStatus,
 		arg.IsPublic,
+		arg.ProjectID,
 	)
 	if err != nil {
 		return nil, err

@@ -584,8 +584,20 @@ func (s *Server) listContent(ctx context.Context, input *ManageContentInput) (*m
 	if input.Status != nil && *input.Status != "" {
 		fetchLimit = min(limit*3, 50)
 	}
+	var projectID *uuid.UUID
+	if input.Project != nil && *input.Project != "" {
+		projectID = s.resolveProjectID(ctx, *input.Project)
+		if projectID == nil {
+			// Requested project does not resolve — return empty rather than
+			// silently widening to all content. Before this fix the project
+			// filter was dropped entirely; honoring it means an unknown
+			// project matches nothing, not everything.
+			return nil, ManageContentOutput{Contents: []ContentSummary{}, Total: 0, Action: "list"}, nil
+		}
+	}
+
 	contents, _, err := s.contents.Contents(ctx, content.Filter{
-		Page: 1, PerPage: fetchLimit, Type: ct,
+		Page: 1, PerPage: fetchLimit, Type: ct, Project: projectID,
 	})
 	if err != nil {
 		return nil, ManageContentOutput{}, fmt.Errorf("listing contents: %w", err)

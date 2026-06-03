@@ -38,6 +38,7 @@ func (s *Store) Contents(ctx context.Context, f Filter) ([]Content, int, error) 
 		ContentType:   ct,
 		ContentStatus: cs,
 		IsPublic:      f.IsPublic,
+		ProjectID:     f.Project,
 	})
 	if err != nil {
 		return nil, 0, fmt.Errorf("listing contents: %w", err)
@@ -47,6 +48,7 @@ func (s *Store) Contents(ctx context.Context, f Filter) ([]Content, int, error) 
 		ContentType:   ct,
 		ContentStatus: cs,
 		IsPublic:      f.IsPublic,
+		ProjectID:     f.Project,
 	})
 	if err != nil {
 		return nil, 0, fmt.Errorf("counting contents: %w", err)
