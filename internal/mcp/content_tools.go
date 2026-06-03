@@ -1,9 +1,9 @@
 // Copyright 2026 Koopa. All rights reserved.
 
-// content_tools.go is the MCP surface for the content lifecycle — eight
+// content_tools.go is the MCP surface for the content lifecycle — seven
 // flat tool handlers (create_content, update_content,
-// submit_content_for_review, revert_content_to_draft, publish_content,
-// archive_content, list_content, read_content). Each has its own
+// set_content_review_state, publish_content, archive_content,
+// list_content, read_content). Each has its own
 // narrow input struct and its own MCP annotations (via
 // ops.CreateContent / ops.PublishContent / …).
 //
@@ -67,12 +67,12 @@ type UpdateContentInput struct {
 	// Status is accepted only to REJECT it: update_content is fields-only and
 	// does not move the lifecycle. Sending a status here returns an error
 	// pointing at the dedicated transition tools.
-	Status *string `json:"status,omitempty" jsonschema_description:"REJECTED. update_content does not change status — use submit_content_for_review / revert_content_to_draft / publish_content / archive_content for lifecycle transitions."`
+	Status *string `json:"status,omitempty" jsonschema_description:"REJECTED. update_content does not change status — use set_content_review_state / publish_content / archive_content for lifecycle transitions."`
 }
 
 func (s *Server) updateContentTool(ctx context.Context, _ *mcp.CallToolRequest, input UpdateContentInput) (*mcp.CallToolResult, ManageContentOutput, error) {
 	if input.Status != nil && *input.Status != "" {
-		return nil, ManageContentOutput{}, fmt.Errorf("update_content does not change status — use submit_content_for_review, revert_content_to_draft, publish_content, or archive_content for lifecycle transitions")
+		return nil, ManageContentOutput{}, fmt.Errorf("update_content does not change status — use set_content_review_state, publish_content, or archive_content for lifecycle transitions")
 	}
 	internal := ManageContentInput{
 		ContentID:   &input.ContentID,
