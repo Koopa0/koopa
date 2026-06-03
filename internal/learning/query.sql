@@ -85,7 +85,7 @@ LIMIT 1;
 
 -- name: TargetByID :one
 -- Full-row lookup by primary key including archive state. Used by
--- manage_targets for ownership/archive-eligibility checks. Does NOT
+-- archive_learning_target for ownership/archive-eligibility checks. Does NOT
 -- filter archived rows — the caller branches on archived_at to decide
 -- whether to reject or proceed (unarchive path).
 SELECT id, domain, title, external_id, difficulty, metadata,

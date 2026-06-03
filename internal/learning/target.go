@@ -279,7 +279,7 @@ type ArchivedRelation struct {
 // TargetByID returns the full row including archive metadata. Returns
 // ErrNotFound when the target does not exist. Does NOT filter archived
 // rows — callers branch on ArchivedAt to decide archive vs unarchive
-// vs reject. Used by manage_targets for ownership + state checks.
+// vs reject. Used by archive_learning_target for ownership + state checks.
 func (s *Store) TargetByID(ctx context.Context, id uuid.UUID) (*Target, error) {
 	row, err := s.q.TargetByID(ctx, id)
 	if err != nil {

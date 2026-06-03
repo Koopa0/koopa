@@ -267,7 +267,7 @@ Goal profile detail. 既有 `GET /api/admin/goals/:id`.
 
 #### `POST /api/admin/knowledge/content/:id/submit-for-review`  🔨 new
 
-Wraps MCP `submit_content_for_review`. draft → review 唯一路徑。
+Wraps MCP `set_content_review_state(state='review')`. draft → review 唯一路徑。
 **Body**：`{}`（空）
 **Response**：200 + updated content.
 **Error**：400 if status != draft.
@@ -275,7 +275,7 @@ Wraps MCP `submit_content_for_review`. draft → review 唯一路徑。
 
 #### `POST /api/admin/knowledge/content/:id/revert-to-draft`  🔨 new
 
-Wraps MCP `revert_content_to_draft`. review → draft，相當於 "reject".
+Wraps MCP `set_content_review_state(state='draft')`. review → draft，相當於 "reject".
 **Body**：`{ "reviewer_notes": "?" }`（可選；若給則寫入 `ai_metadata.review_notes`）
 **Response**：200 + updated content.
 **Error**：400 if status != review.

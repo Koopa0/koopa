@@ -511,7 +511,7 @@ CREATE TABLE contents (
         CHECK (NOT is_public OR status = 'published')
 );
 
-COMMENT ON TABLE contents IS 'First-party publishable knowledge layer. Five content types (article, essay, build-log, til, digest) share one editorial lifecycle: draft → review → published → archived. The review state is a two-actor handoff signal — Claude marks a draft ready (submit_content_for_review), human admin publishes (publish_content). Notes (Zettelkasten) live in a separate notes table with maturity-based lifecycle — intentionally not mixed here. published status and published_at are tied by chk_content_publication; is_public requires published by chk_content_public_requires_published.';
+COMMENT ON TABLE contents IS 'First-party publishable knowledge layer. Five content types (article, essay, build-log, til, digest) share one editorial lifecycle: draft → review → published → archived. The review state is a two-actor handoff signal — Claude marks a draft ready (set_content_review_state), human admin publishes (publish_content). Notes (Zettelkasten) live in a separate notes table with maturity-based lifecycle — intentionally not mixed here. published status and published_at are tied by chk_content_publication; is_public requires published by chk_content_public_requires_published.';
 COMMENT ON COLUMN contents.slug IS 'URL-safe identifier. Globally unique. Used in public URLs. Format: lowercase alphanumeric segments separated by single hyphens (chk_content_slug_format).';
 COMMENT ON COLUMN contents.type IS 'Content format: article, essay, build-log, til, digest. All are public-facing first-party content going through the review lifecycle. Notes are NOT a content type — they live in the notes table.';
 COMMENT ON COLUMN contents.status IS 'Lifecycle: draft → review → published. review = Claude-submitted, awaiting human publish. archived = soft delete. Transition review → published is human-admin only (enforced at MCP tool boundary).';
@@ -1605,7 +1605,7 @@ COMMENT ON COLUMN learning_targets.metadata IS
 COMMENT ON COLUMN learning_targets.created_by IS
     'Agent that first created this target. NOT NULL. FK to agents(name). '
     'Same semantics as concepts.created_by — FindOrCreateTarget threads the '
-    'caller; ON CONFLICT preserves the original creator; manage_targets uses '
+    'caller; ON CONFLICT preserves the original creator; archive_learning_target uses '
     'this column for U2 self-bound archive.';
 COMMENT ON COLUMN learning_targets.archived_at IS
     'Soft-delete timestamp. NULL = live; non-NULL = archived. Reversible. '
@@ -1613,7 +1613,7 @@ COMMENT ON COLUMN learning_targets.archived_at IS
     'for the full filter inventory.';
 COMMENT ON COLUMN learning_targets.archive_batch_id IS
     'Groups rows archived together. Same semantics as concepts.archive_batch_id. '
-    'manage_targets cascades into learning_target_relations using this batch id, '
+    'archive_learning_target cascades into learning_target_relations using this batch id, '
     'so unarchive_target restores exactly the relations that were cascaded.';
 COMMENT ON COLUMN learning_targets.updated_at IS
     'Application-managed. Set explicitly in UPDATE queries.';
@@ -2153,7 +2153,7 @@ COMMENT ON COLUMN learning_target_relations.archived_at IS
     'Symmetric relation types (same_pattern, similar_structure) archive both '
     'directions together so the graph never holds a half-edge.';
 COMMENT ON COLUMN learning_target_relations.archive_batch_id IS
-    'Groups rows cascaded together by a single manage_targets archive call. '
+    'Groups rows cascaded together by a single archive_learning_target archive call. '
     'unarchive_target uses this batch id to restore exactly the relations '
     'that were cascaded — NOT every relation involving the target.';
 
