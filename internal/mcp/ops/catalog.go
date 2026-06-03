@@ -462,17 +462,16 @@ func ManagePlan() Meta {
 	}
 }
 
-// ManageTargets returns metadata for the learning_targets lifecycle
-// multiplexer. Stage 1 ships archive_target only; unarchive_target +
-// list operations follow in subsequent C2 commits.
-func ManageTargets() Meta {
+// ArchiveLearningTarget returns metadata for the flat learning-target
+// archive tool (formerly the single-action manage_targets multiplexer).
+func ArchiveLearningTarget() Meta {
 	return Meta{
-		Name:        "manage_targets",
+		Name:        "archive_learning_target",
 		Domain:      DomainLearning,
 		Writability: Destructive,
 		Stability:   StabilityStable,
 		Since:       since,
-		Description: "Learning target lifecycle. Action: archive_target (soft-deletes a target and, when cascade_relations=true (default), every learning_target_relations row referencing it; the symmetric-reverse edge for same_pattern/similar_structure is auto-cascaded because it sits in the same anchor|related filter). Returns the archived target plus a cascaded_relations list so the caller can show 'what got archived alongside the target' without a follow-up query. Authorization is U2 self-bound — caller must equal the target's created_by, with Platform=human as universal override. Archive is reversible (unarchive_target arrives in a follow-up commit); the archive_batch_id stamped on every cascaded row scopes the unarchive to exactly this batch, not every relation involving the target.",
+		Description: "Archive a learning target (soft-delete). When cascade_relations=true (default), every learning_target_relations row referencing it is archived too; the symmetric-reverse edge for same_pattern/similar_structure is auto-cascaded because it sits in the same anchor|related filter. Returns the archived target plus a cascaded_relations list so the caller can show 'what got archived alongside the target' without a follow-up query. Authorization is U2 self-bound — caller must equal the target's created_by, with Platform=human as universal override. Archive is reversible; the archive_batch_id stamped on every cascaded row scopes a future unarchive to exactly this batch, not every relation involving the target.",
 	}
 }
 
@@ -730,7 +729,7 @@ func All() []Meta {
 		RecommendNextTarget(),
 		AttemptHistory(),
 		ManagePlan(),
-		ManageTargets(),
+		ArchiveLearningTarget(),
 		SessionProgress(),
 		CreateContent(),
 		UpdateContent(),

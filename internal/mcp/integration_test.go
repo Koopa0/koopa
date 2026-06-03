@@ -1138,9 +1138,8 @@ func TestIntegration_ManageTargets_ArchiveHappyPath(t *testing.T) {
 		t.Fatalf("locating related target: %v", err)
 	}
 
-	_, out, err := callHandler(t, s.manageTargets, ManageTargetsInput{
-		Action:   "archive_target",
-		TargetID: &targetID,
+	_, out, err := callHandler(t, s.archiveLearningTarget, ArchiveLearningTargetInput{
+		TargetID: targetID,
 		Reason:   strPtr("audit run cleanup"),
 	})
 	if err != nil {
@@ -1207,9 +1206,8 @@ func TestIntegration_ManageTargets_ArchiveNoCascade(t *testing.T) {
 	}
 
 	noCascade := false
-	_, out, err := callHandler(t, s.manageTargets, ManageTargetsInput{
-		Action:           "archive_target",
-		TargetID:         &targetID,
+	_, out, err := callHandler(t, s.archiveLearningTarget, ArchiveLearningTargetInput{
+		TargetID:         targetID,
 		CascadeRelations: &noCascade,
 	})
 	if err != nil {
@@ -1270,9 +1268,8 @@ func TestIntegration_ManageTargets_ArchiveOwnership(t *testing.T) {
 	}
 
 	// hq tries to archive — rejected by U2.
-	_, _, err = callHandlerAs(t, "hq", s.manageTargets, ManageTargetsInput{
-		Action:   "archive_target",
-		TargetID: &targetID,
+	_, _, err = callHandlerAs(t, "hq", s.archiveLearningTarget, ArchiveLearningTargetInput{
+		TargetID: targetID,
 	})
 	if err == nil {
 		t.Fatal("hq archived a learning-studio-owned target — U2 self-bound check is not firing")
@@ -1282,9 +1279,8 @@ func TestIntegration_ManageTargets_ArchiveOwnership(t *testing.T) {
 	}
 
 	// human override succeeds even though created_by=learning-studio.
-	if _, _, err := callHandlerAs(t, "human", s.manageTargets, ManageTargetsInput{
-		Action:   "archive_target",
-		TargetID: &targetID,
+	if _, _, err := callHandlerAs(t, "human", s.archiveLearningTarget, ArchiveLearningTargetInput{
+		TargetID: targetID,
 	}); err != nil {
 		t.Fatalf("archive as human override: %v", err)
 	}
@@ -1320,16 +1316,14 @@ func TestIntegration_ManageTargets_ArchiveAlreadyArchived(t *testing.T) {
 		t.Fatalf("locating target: %v", err)
 	}
 
-	if _, _, err := callHandler(t, s.manageTargets, ManageTargetsInput{
-		Action:   "archive_target",
-		TargetID: &targetID,
+	if _, _, err := callHandler(t, s.archiveLearningTarget, ArchiveLearningTargetInput{
+		TargetID: targetID,
 	}); err != nil {
 		t.Fatalf("first archive: %v", err)
 	}
 
-	_, _, err = callHandler(t, s.manageTargets, ManageTargetsInput{
-		Action:   "archive_target",
-		TargetID: &targetID,
+	_, _, err = callHandler(t, s.archiveLearningTarget, ArchiveLearningTargetInput{
+		TargetID: targetID,
 	})
 	if err == nil {
 		t.Fatal("double archive: expected already-archived error, got nil")
