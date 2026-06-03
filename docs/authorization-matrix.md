@@ -116,8 +116,7 @@ graph that notes provide. Content authoring is narrower: only the two
 roles that produce content (content-studio, learning-studio) plus the
 implicit human may touch a `content` row's authoring lifecycle —
 create, update, and the draft↔review↔archived transitions
-(`submit_content_for_review`, `revert_content_to_draft`,
-`archive_content`). Other agents (hq, research-lab) route content work
+(`set_content_review_state`, `archive_content`). Other agents (hq, research-lab) route content work
 to content-studio via a directive rather than acting directly.
 Front-end review and the publish gate handle quality.
 
@@ -128,8 +127,7 @@ Front-end review and the publish gate handle quality.
 | `update_note_maturity` | — | — | — | — | Open |
 | `create_content` | — | — | content-studio, learning-studio | — | Author allowlist (+ human implicit) |
 | `update_content` | — | — | content-studio, learning-studio | — | Author allowlist (+ human implicit) |
-| `submit_content_for_review` | — | — | content-studio, learning-studio | — | Author allowlist (+ human implicit) |
-| `revert_content_to_draft` | — | — | content-studio, learning-studio | — | Author allowlist (+ human implicit) |
+| `set_content_review_state` | — | — | content-studio, learning-studio | — | Author allowlist (+ human implicit) |
 | `archive_content` | — | — | content-studio, learning-studio | — | Author allowlist (+ human implicit) |
 | `list_content` / `read_content` | — | — | — | — | Open (read-only) |
 
@@ -276,8 +274,8 @@ commitments and never publish.
 The entire content authoring lifecycle is gated to the two roles whose
 job is producing it: content-studio and learning-studio (human always
 implicit). This covers create, update, and the draft↔review↔archived
-transitions (`submit_content_for_review`, `revert_content_to_draft`,
-`archive_content`) — not just the create surface. hq and research-lab
+transitions (`set_content_review_state`, `archive_content`) — not just
+the create surface. hq and research-lab
 are excluded throughout: they coordinate content work through a
 directive to content-studio rather than acting directly. This is
 defense-in-depth for autonomous operation: hq runs unattended (cron),

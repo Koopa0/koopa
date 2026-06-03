@@ -309,7 +309,7 @@ signal (`ops/types.go:28-42`). Below, tools are grouped by their declared
 | Tool | Writability | Caller | Side effect | Enforcement |
 |---|---|---|---|---|
 | `search_knowledge` | ReadOnly | any registered | none | FTS-backed today; hybrid pgvector + RRF is planned and gated on the embedder write/backfill pipeline (§6D, §7 #1) |
-| `create_content` / `update_content` / `submit_content_for_review` / `revert_content_to_draft` / `archive_content` | Additive/Destructive | any registered | content row + state | **Open** authorship; lifecycle CHECKs in schema |
+| `create_content` / `update_content` / `set_content_review_state` / `archive_content` | Additive/Destructive | any registered | content row + state | **Open** authorship; lifecycle CHECKs in schema |
 | `publish_content` | Destructive | **human only** | atomic publish flip | `requireExplicitHuman` (`authz.go`); explicit `as` + Platform=human (`authorization-matrix.md:126`) |
 | `list_content` / `read_content` | ReadOnly | any | none | — |
 | `create_note` / `update_note` / `update_note_maturity` | Additive | any registered | note row / maturity | Open (`authorization-matrix.md:113-116`) |
@@ -352,7 +352,7 @@ regenerates) (`catalog.go:225`). High-commitment commits are human-gated.
 | `attempt_history` | ReadOnly | none | 3 lookup modes (target/concept/session) |
 | `session_progress` | ReadOnly | none | active-session aggregate |
 | `manage_plan` | Destructive | plan entries lifecycle (6 actions) | completion requires `completed_by_attempt_id` + reason, or `force=true` with `manual override:` prefix (`mcp-decision-policy.md §13`) |
-| `manage_targets` | Destructive | archive target + cascade relations | self-bound U2; Platform=human override (`catalog.go:411-419`) |
+| `archive_learning_target` | Destructive | archive target + cascade relations | self-bound U2; Platform=human override (`catalog.go`) |
 
 **Semantics for testing:** `record_attempt` partial-write contract is the
 single most test-worthy learning behavior — rejected observation indices must
@@ -445,7 +445,7 @@ Confidence levels used below:
 | `propose_*`→`commit_proposal` round-trip + proposal validation | claim-tested | `TestIntegration_ProposeGoal_CommitRoundTrip`, `TestIntegration_ProposalValidator` |
 | `propose_directive` capability pre-check rejects non-`SubmitTasks` callers | claim-tested | `TestIntegration_ProposeDirective_CapabilityPreCheck` |
 | `task_detail` returns not_found to non-parties (no existence leak) | claim-tested | `TestIntegration_TaskDetail_*` |
-| `manage_targets` archive + cascade + self-bound auth | claim-tested | 4 integration tests |
+| `archive_learning_target` archive + cascade + self-bound auth | claim-tested | 4 integration tests |
 
 ### B. Implemented and only SURFACE-tested (parity/validation, not semantics)
 
@@ -526,7 +526,7 @@ The endpoints exist — this is no longer an open existence question:
 
 | Domain | Must test before trusting |
 |---|---|
-| **MCP tools** | Catalog parity is **already surface-tested** (names only, `ops_catalog_test.go`) — that is not a contract test. Add claim-level contract tests for all 45 (the 4 untested aggregate readers first); writability annotation matches actual side effect; `propose_*` writes nothing; token expiry + restart invalidation + tamper rejection; per-tool authorization gate (human-only publish, capability pre-checks, self-bound advance_work/manage_targets). |
+| **MCP tools** | Catalog parity is **already surface-tested** (names only, `ops_catalog_test.go`) — that is not a contract test. Add claim-level contract tests for all 45 (the 4 untested aggregate readers first); writability annotation matches actual side effect; `propose_*` writes nothing; token expiry + restart invalidation + tamper rejection; per-tool authorization gate (human-only publish, capability pre-checks, self-bound advance_work/archive_learning_target). |
 | **Search** | Decide the search product contract (Open Question #1) THEN integration-test the hybrid path with real pgvector; until then, test and document FTS-only behavior + graceful degradation when embedder nil/timeout (`search.go:198-207`). Add ranking-judgment tests (Scenario 6). |
 | **Agent coordination** | Directive full lifecycle incl. **revision cycle**; duplicate ack idempotency; **duplicate report** behavior; report-without-directive (standalone) authorization; completion-**without**-artifact rejection; `task_detail` non-party leak; a2a part size/count cap rejection (`1307-1346`). |
 | **Learning analytics** | `record_attempt` partial-write per-element rejection; mastery floor (<3 filtered obs → `developing`); confidence-filter read semantics; concept auto-creation boundary (leaf, same-domain only; cross-domain → rejected by trigger `2190`); plan-entry completion audit-trail enforcement (`mcp-decision-policy.md §13`). Needs a deterministic fixture matrix (see Scenario 4). |
