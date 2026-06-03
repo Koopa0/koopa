@@ -114,6 +114,7 @@ The inter-agent work triad: `task` + `task_message` + `artifact`. Completion req
 | `acknowledge_directive` | `task_id` | Idempotent. Caller must be the target — validated via `agent.ActionAcceptTask`. |
 | `file_report` | `in_response_to?`, `artifact_parts`, `response_message_parts?` | Idempotent. Task-bound (with `in_response_to`): response message + artifact + state transition atomic. Standalone (without): free artifact via `artifact.Store.Add`. **Part shape (HERMES F-15)**: each part in `artifact_parts` / `response_message_parts` is an a2a Part with EXACTLY ONE of `text` (string) / `raw` (base64) / `data` (any JSON) / `url` (string); optional siblings `filename`, `mediaType`, `metadata`. Top-level `type` and unknown keys are silently dropped by a2a-go — for structured payloads use `{"data":{...}}`, NOT `{"type":"observation","text":"..."}` (that stores as plain Text with no error). Rejection errors carry `valid keys: text, raw, data, url ...`. |
 | `task_detail` | `task_id` | Read-only. Returns `{task, messages, artifacts}`. Caller must be source or target (else `not_found`). Artifacts are task-bound only; `agent_notes` are not exposed. |
+| `list_my_tasks` | `limit?` | Read-only. Returns `{received, issued}` — your open tasks as assignee (inbox) and as creator (outbox), each covering `submitted` / `working` / `revision_requested`. Caller from `as`; no `task_id` needed (unlike `task_detail`, which cannot enumerate). |
 
 ---
 

@@ -47,6 +47,8 @@ Cross-agent instructions with accountability.
 - A task cannot reach `completed` without at least one response message and one artifact — the DB enforces this via trigger.
 - Priority: `high` | `medium` | `low` (matches `tasks.priority` CHECK). No P0/P1/P2 alias — the schema has one scale and the MCP layer rejects any other value.
 
+**Seeing your queue**: `list_my_tasks(limit?)` returns your open directives in both directions without needing a `task_id` — `received` (assigned to you, awaiting your acknowledge/work/report) and `issued` (you created, awaiting the target's response). Covers `submitted` / `working` / `revision_requested`. Use it instead of the heavy `morning_context` when you only need your task queue.
+
 ### 2. Artifacts (task-bound or standalone)
 
 Structured deliverables. Two modes:
