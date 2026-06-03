@@ -31,7 +31,6 @@ MUST be updated):
 | `LEARNING-CONTRACT.md` | 4 (canonical companion) | **Yes** — FSRS vs concept-mastery split | — |
 | `authorization-matrix.md` | 4 (canonical companion) | **Yes** — MCP write-tool authorization | Four-axis model. |
 | `Koopa-HQ.md`, `Koopa-Content-Studio.md`, `Koopa-Research-Lab.md`, `Koopa-Learning.md` | 5 (operational) | **No** — agent identity/operating guidance | **Owned by the respective cowork agent.** Not structural truth; do not derive schema/behavior from them. |
-| `agent-roster.md` | 5 (operational) | **No** — agent roster reference | Authoritative roster is `internal/agent/registry.go::BuiltinAgents()`. |
 | `audit/*.md` | 6 (historical) | **No** — point-in-time review | Findings reflect repo state at the dated moment; verify before acting. |
 | `audit-prompts/*.md` | 6 (historical) | **No** — past audit-session prompts | Session inputs, not contracts. |
 
