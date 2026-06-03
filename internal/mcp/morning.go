@@ -61,7 +61,7 @@ func resolveDefaultSections(caller string) []string {
 //
 // Group → response field mapping:
 //
-//	"tasks"            → overdue_tasks, today_tasks, committed_tasks, upcoming_tasks
+//	"tasks"            → overdue_todos, today_todos, committed_todos, upcoming_todos
 //	"goals"            → active_goals
 //	"pending_tasks"    → pending_tasks_received, pending_tasks_issued
 //	"hypotheses"       → unverified_hypotheses
@@ -71,17 +71,17 @@ func resolveDefaultSections(caller string) []string {
 //
 // Unknown group names are ignored silently (no error, no warning).
 type MorningContextInput struct {
-	Sections FlexStringSlice `json:"sections,omitempty" jsonschema_description:"Strict filter on which groups to populate (default: all). Omit or pass [] to get the full briefing. Group key → response fields populated: 'tasks' → overdue_tasks/today_tasks/committed_tasks/upcoming_tasks; 'goals' → active_goals; 'pending_tasks' → pending_tasks_received/pending_tasks_issued; 'hypotheses' → unverified_hypotheses; 'rss' → rss_highlights; 'plan_history' → plan_history; 'content_pipeline' → content_pipeline. Unknown keys silently ignored. Non-listed groups stay [] so JSON shape is stable across calls."`
+	Sections FlexStringSlice `json:"sections,omitempty" jsonschema_description:"Strict filter on which groups to populate (default: all). Omit or pass [] to get the full briefing. Group key → response fields populated: 'tasks' → overdue_todos/today_todos/committed_todos/upcoming_todos; 'goals' → active_goals; 'pending_tasks' → pending_tasks_received/pending_tasks_issued; 'hypotheses' → unverified_hypotheses; 'rss' → rss_highlights; 'plan_history' → plan_history; 'content_pipeline' → content_pipeline. Unknown keys silently ignored. Non-listed groups stay [] so JSON shape is stable across calls."`
 	Date     *string         `json:"date,omitempty" jsonschema_description:"Target date YYYY-MM-DD (default: today)"`
 }
 
 // MorningContextOutput is the output of the morning_context tool.
 type MorningContextOutput struct {
 	Date                 string                   `json:"date"`
-	OverdueTasks         []todo.PendingDetail     `json:"overdue_tasks"`
-	TodayTasks           []todo.PendingDetail     `json:"today_tasks"`
-	CommittedTasks       []daily.Item             `json:"committed_tasks"`
-	UpcomingTasks        []todo.PendingDetail     `json:"upcoming_tasks"`
+	OverdueTodos         []todo.PendingDetail     `json:"overdue_todos"`
+	TodayTodos           []todo.PendingDetail     `json:"today_todos"`
+	CommittedTodos       []daily.Item             `json:"committed_todos"`
+	UpcomingTodos        []todo.PendingDetail     `json:"upcoming_todos"`
 	ActiveGoals          []goal.ActiveGoalSummary `json:"active_goals"`
 	PendingTasksReceived []task.Task              `json:"pending_tasks_received"`
 	PendingTasksIssued   []task.Task              `json:"pending_tasks_issued"`
@@ -133,10 +133,10 @@ func (s *Server) morningContext(ctx context.Context, _ *mcp.CallToolRequest, inp
 	// the json-api rule requires lists to be [] not null.
 	out := MorningContextOutput{
 		Date:                 date.Format(time.DateOnly),
-		OverdueTasks:         []todo.PendingDetail{},
-		TodayTasks:           []todo.PendingDetail{},
-		CommittedTasks:       []daily.Item{},
-		UpcomingTasks:        []todo.PendingDetail{},
+		OverdueTodos:         []todo.PendingDetail{},
+		TodayTodos:           []todo.PendingDetail{},
+		CommittedTodos:       []daily.Item{},
+		UpcomingTodos:        []todo.PendingDetail{},
 		ActiveGoals:          []goal.ActiveGoalSummary{},
 		PendingTasksReceived: []task.Task{},
 		PendingTasksIssued:   []task.Task{},
@@ -179,26 +179,26 @@ func (s *Server) fillMorningSections(ctx context.Context, date time.Time, reques
 
 func (s *Server) fillMorningTasks(ctx context.Context, date time.Time, out *MorningContextOutput) {
 	if rows, err := s.todos.OverdueItems(ctx, date); err == nil {
-		out.OverdueTasks = rows
+		out.OverdueTodos = rows
 	} else {
 		s.logger.Warn("morning_context: overdue todo items", "error", err)
 	}
 
 	if rows, err := s.todos.ItemsDueOn(ctx, date); err == nil {
-		out.TodayTasks = rows
+		out.TodayTodos = rows
 	} else {
 		s.logger.Warn("morning_context: today todo items", "error", err)
 	}
 
 	if items, err := s.dayplan.ItemsByDate(ctx, date); err == nil {
-		out.CommittedTasks = items
+		out.CommittedTodos = items
 	} else {
 		s.logger.Warn("morning_context: committed todo items", "error", err)
 	}
 
 	weekEnd := date.AddDate(0, 0, 7)
 	if rows, err := s.todos.ItemsDueInRange(ctx, date, weekEnd); err == nil {
-		out.UpcomingTasks = rows
+		out.UpcomingTodos = rows
 	} else {
 		s.logger.Warn("morning_context: upcoming todo items", "error", err)
 	}
@@ -208,7 +208,7 @@ func (s *Server) fillMorningTasks(ctx context.Context, date time.Time, out *Morn
 	if items, err := s.dayplan.ItemsByDate(ctx, yesterday); err == nil {
 		for i := range items {
 			if items[i].Status == daily.StatusPlanned {
-				out.OverdueTasks = append(out.OverdueTasks, planItemToPendingDetail(&items[i]))
+				out.OverdueTodos = append(out.OverdueTodos, planItemToPendingDetail(&items[i]))
 			}
 		}
 	}
