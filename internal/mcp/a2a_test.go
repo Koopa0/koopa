@@ -56,8 +56,8 @@ func TestRequestRevision_Validation(t *testing.T) {
 		input   RequestRevisionInput
 		wantErr string
 	}{
-		{name: "empty directive_id", input: RequestRevisionInput{}, wantErr: "invalid directive_id"},
-		{name: "malformed directive_id", input: RequestRevisionInput{DirectiveID: "not-a-uuid"}, wantErr: "invalid directive_id"},
+		{name: "empty directive_id", input: RequestRevisionInput{}, wantErr: "invalid task_id"},
+		{name: "malformed directive_id", input: RequestRevisionInput{TaskID: "not-a-uuid"}, wantErr: "invalid task_id"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -81,8 +81,8 @@ func TestReaccept_Validation(t *testing.T) {
 		input   ReacceptInput
 		wantErr string
 	}{
-		{name: "empty directive_id", input: ReacceptInput{}, wantErr: "invalid directive_id"},
-		{name: "malformed directive_id", input: ReacceptInput{DirectiveID: "not-a-uuid"}, wantErr: "invalid directive_id"},
+		{name: "empty directive_id", input: ReacceptInput{}, wantErr: "invalid task_id"},
+		{name: "malformed directive_id", input: ReacceptInput{TaskID: "not-a-uuid"}, wantErr: "invalid task_id"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -4308,7 +4308,7 @@ func standaloneArtifact(t *testing.T, id uuid.UUID) (taskID *uuid.UUID, createdB
 func mustAck(t *testing.T, s *Server, taskID uuid.UUID) {
 	t.Helper()
 	if _, _, err := callHandler(t, s.acknowledgeDirective,
-		AcknowledgeDirectiveInput{DirectiveID: taskID.String()}); err != nil {
+		AcknowledgeDirectiveInput{TaskID: taskID.String()}); err != nil {
 		t.Fatalf("acknowledge_directive: %v", err)
 	}
 }
@@ -4381,7 +4381,7 @@ func TestIntegration_A2A_DirectiveReportChain_HappyPath(t *testing.T) {
 	}
 
 	// --- acknowledge_directive (as target learning-studio = default caller) ---
-	_, ack, err := callHandler(t, s.acknowledgeDirective, AcknowledgeDirectiveInput{DirectiveID: taskID.String()})
+	_, ack, err := callHandler(t, s.acknowledgeDirective, AcknowledgeDirectiveInput{TaskID: taskID.String()})
 	if err != nil {
 		t.Fatalf("acknowledge_directive: %v", err)
 	}
@@ -4468,11 +4468,11 @@ func TestIntegration_A2A_DuplicateAcknowledge(t *testing.T) {
 	taskID := seedSubmittedTask(t, "hq", "learning-studio", "dup-ack fixture")
 
 	if _, _, err := callHandler(t, s.acknowledgeDirective,
-		AcknowledgeDirectiveInput{DirectiveID: taskID.String()}); err != nil {
+		AcknowledgeDirectiveInput{TaskID: taskID.String()}); err != nil {
 		t.Fatalf("first acknowledge_directive: %v", err)
 	}
 
-	_, _, err := callHandler(t, s.acknowledgeDirective, AcknowledgeDirectiveInput{DirectiveID: taskID.String()})
+	_, _, err := callHandler(t, s.acknowledgeDirective, AcknowledgeDirectiveInput{TaskID: taskID.String()})
 	if err == nil {
 		t.Fatal("second acknowledge_directive succeeded; want a wrong-state conflict")
 	}
@@ -4556,7 +4556,7 @@ func TestIntegration_A2A_WrongActor(t *testing.T) {
 		// research-lab HAS ReceiveTasks (passes the capability gate) but is not
 		// the target — so it reaches and fails the assignee check.
 		_, _, err := callHandlerAs(t, "research-lab", s.acknowledgeDirective,
-			AcknowledgeDirectiveInput{DirectiveID: taskID.String()})
+			AcknowledgeDirectiveInput{TaskID: taskID.String()})
 		if err == nil {
 			t.Fatal("research-lab acknowledged a task it is not the target of; want rejection")
 		}
@@ -4607,7 +4607,7 @@ func TestIntegration_A2A_NotFound(t *testing.T) {
 
 	t.Run("acknowledge a nonexistent directive", func(t *testing.T) {
 		// learning-studio holds ReceiveTasks → passes capability, reaches lookup.
-		_, _, err := callHandler(t, s.acknowledgeDirective, AcknowledgeDirectiveInput{DirectiveID: missing})
+		_, _, err := callHandler(t, s.acknowledgeDirective, AcknowledgeDirectiveInput{TaskID: missing})
 		if err == nil || !strings.Contains(err.Error(), "not found") {
 			t.Fatalf("acknowledge_directive(missing) error = %v, want 'not found'", err)
 		}
@@ -4690,7 +4690,7 @@ func TestIntegration_A2A_StateEdgeCases(t *testing.T) {
 		mustAck(t, s, taskID)
 		mustReport(t, s, taskID)
 
-		_, _, err := callHandler(t, s.acknowledgeDirective, AcknowledgeDirectiveInput{DirectiveID: taskID.String()})
+		_, _, err := callHandler(t, s.acknowledgeDirective, AcknowledgeDirectiveInput{TaskID: taskID.String()})
 		if err == nil || !strings.Contains(err.Error(), "submitted") {
 			t.Fatalf("acknowledge-after-completion error = %v, want a 'submitted' state message", err)
 		}
@@ -4745,8 +4745,8 @@ func TestIntegration_A2A_RevisionCycle_HappyPath(t *testing.T) {
 	// reason is appended in the same withActorTx as the state transition.
 	const reason = "needs more detail on the third paragraph"
 	_, rev, err := callHandlerAs(t, "hq", s.requestRevision, RequestRevisionInput{
-		DirectiveID: taskID.String(),
-		Reason:      strPtr(reason),
+		TaskID: taskID.String(),
+		Reason: strPtr(reason),
 	})
 	if err != nil {
 		t.Fatalf("request_revision: %v", err)
@@ -4781,7 +4781,7 @@ func TestIntegration_A2A_RevisionCycle_HappyPath(t *testing.T) {
 	}
 
 	// Target-side: learning-studio picks the revision back up.
-	_, react, err := callHandler(t, s.reaccept, ReacceptInput{DirectiveID: taskID.String()})
+	_, react, err := callHandler(t, s.reaccept, ReacceptInput{TaskID: taskID.String()})
 	if err != nil {
 		t.Fatalf("reaccept: %v", err)
 	}
@@ -4834,8 +4834,8 @@ func TestIntegration_A2A_RequestRevision_AuthorizationRejection(t *testing.T) {
 		// task source. Supply a reason so we can verify the failed transition
 		// rolled back the message append.
 		_, _, err := callHandlerAs(t, "content-studio", s.requestRevision, RequestRevisionInput{
-			DirectiveID: taskID.String(),
-			Reason:      strPtr("trying to muscle in on a directive I didn't issue"),
+			TaskID: taskID.String(),
+			Reason: strPtr("trying to muscle in on a directive I didn't issue"),
 		})
 		if err == nil {
 			t.Fatal("non-source request_revision succeeded; want rejection")
@@ -4859,7 +4859,7 @@ func TestIntegration_A2A_RequestRevision_AuthorizationRejection(t *testing.T) {
 
 		// learning-studio has ReceiveTasks + PublishArtifacts but no SubmitTasks.
 		_, _, err := callHandlerAs(t, "learning-studio", s.requestRevision, RequestRevisionInput{
-			DirectiveID: taskID.String(),
+			TaskID: taskID.String(),
 		})
 		if err == nil {
 			t.Fatal("learning-studio request_revision succeeded; want capability rejection")
@@ -4880,8 +4880,8 @@ func TestIntegration_A2A_RequestRevision_AuthorizationRejection(t *testing.T) {
 
 		responsesBefore := messageCount(t, taskID, "response")
 		_, _, err := callHandlerAs(t, "hq", s.requestRevision, RequestRevisionInput{
-			DirectiveID: taskID.String(),
-			Reason:      strPtr("too early to revise"),
+			TaskID: taskID.String(),
+			Reason: strPtr("too early to revise"),
 		})
 		if err == nil {
 			t.Fatal("request_revision on working task succeeded; want wrong-state rejection")
@@ -4909,7 +4909,7 @@ func TestIntegration_A2A_Reaccept_AuthorizationRejection(t *testing.T) {
 		mustAck(t, s, taskID)
 		mustReport(t, s, taskID)
 		_, _, err := callHandlerAs(t, "hq", s.requestRevision, RequestRevisionInput{
-			DirectiveID: taskID.String(),
+			TaskID: taskID.String(),
 		})
 		if err != nil {
 			t.Fatalf("setup: request_revision: %v", err)
@@ -4923,7 +4923,7 @@ func TestIntegration_A2A_Reaccept_AuthorizationRejection(t *testing.T) {
 
 		// research-lab HAS ReceiveTasks (passes capability) but is not the target.
 		_, _, err := callHandlerAs(t, "research-lab", s.reaccept, ReacceptInput{
-			DirectiveID: taskID.String(),
+			TaskID: taskID.String(),
 		})
 		if err == nil {
 			t.Fatal("non-target reaccept succeeded; want rejection")
@@ -4942,7 +4942,7 @@ func TestIntegration_A2A_Reaccept_AuthorizationRejection(t *testing.T) {
 
 		// hq holds SubmitTasks + PublishArtifacts but no ReceiveTasks.
 		_, _, err := callHandlerAs(t, "hq", s.reaccept, ReacceptInput{
-			DirectiveID: taskID.String(),
+			TaskID: taskID.String(),
 		})
 		if err == nil {
 			t.Fatal("hq reaccept succeeded; want capability rejection")
@@ -4959,7 +4959,7 @@ func TestIntegration_A2A_Reaccept_AuthorizationRejection(t *testing.T) {
 		mustReport(t, s, taskID) // task is completed, not revision_requested
 
 		_, _, err := callHandler(t, s.reaccept, ReacceptInput{
-			DirectiveID: taskID.String(),
+			TaskID: taskID.String(),
 		})
 		if err == nil {
 			t.Fatal("reaccept on completed task succeeded; want wrong-state rejection")
@@ -4988,8 +4988,8 @@ func TestIntegration_A2A_RequestRevision_ReasonAppendAtomicity(t *testing.T) {
 	// First request_revision succeeds: reason appended + transition.
 	const firstReason = "first round of revisions"
 	if _, _, err := callHandlerAs(t, "hq", s.requestRevision, RequestRevisionInput{
-		DirectiveID: taskID.String(),
-		Reason:      strPtr(firstReason),
+		TaskID: taskID.String(),
+		Reason: strPtr(firstReason),
 	}); err != nil {
 		t.Fatalf("first request_revision: %v", err)
 	}
@@ -5007,8 +5007,8 @@ func TestIntegration_A2A_RequestRevision_ReasonAppendAtomicity(t *testing.T) {
 	// same tx, RequestRevision fails, and Rollback must wipe the message.
 	const secondReason = "this reason must never persist"
 	_, _, err := callHandlerAs(t, "hq", s.requestRevision, RequestRevisionInput{
-		DirectiveID: taskID.String(),
-		Reason:      strPtr(secondReason),
+		TaskID: taskID.String(),
+		Reason: strPtr(secondReason),
 	})
 	if err == nil {
 		t.Fatal("second request_revision on revision_requested task succeeded; want wrong-state rejection")

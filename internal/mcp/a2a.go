@@ -215,7 +215,7 @@ func (s *Server) fileReportStandalone(ctx context.Context, caller agent.Name, in
 
 // AcknowledgeDirectiveInput is the input for the acknowledge_directive tool.
 type AcknowledgeDirectiveInput struct {
-	DirectiveID string `json:"directive_id" jsonschema:"required" jsonschema_description:"Task UUID of the directive to acknowledge"`
+	TaskID string `json:"task_id" jsonschema:"required" jsonschema_description:"Task UUID of the directive to acknowledge"`
 }
 
 // AcknowledgeDirectiveOutput is the output of the acknowledge_directive tool.
@@ -226,9 +226,9 @@ type AcknowledgeDirectiveOutput struct {
 }
 
 func (s *Server) acknowledgeDirective(ctx context.Context, _ *mcp.CallToolRequest, input AcknowledgeDirectiveInput) (*mcp.CallToolResult, AcknowledgeDirectiveOutput, error) {
-	taskID, err := uuid.Parse(input.DirectiveID)
+	taskID, err := uuid.Parse(input.TaskID)
 	if err != nil {
-		return nil, AcknowledgeDirectiveOutput{}, fmt.Errorf("acknowledge_directive: invalid directive_id: %w", err)
+		return nil, AcknowledgeDirectiveOutput{}, fmt.Errorf("acknowledge_directive: invalid task_id: %w", err)
 	}
 
 	caller := agent.Name(s.callerIdentity(ctx))
@@ -392,8 +392,8 @@ func (s *Server) listMyTasks(ctx context.Context, _ *mcp.CallToolRequest, input 
 // SubmitTasks capability — capability gates at the type system level,
 // the source-bound check runs in the handler.
 type RequestRevisionInput struct {
-	DirectiveID string  `json:"directive_id" jsonschema:"required" jsonschema_description:"Task UUID of the completed directive to send back for revision"`
-	Reason      *string `json:"reason,omitempty" jsonschema_description:"Optional explanation. When non-empty after trimming, appended as a response message in the same transaction as the state transition — if the transition fails, the reason is rolled back."`
+	TaskID string  `json:"task_id" jsonschema:"required" jsonschema_description:"Task UUID of the completed directive to send back for revision"`
+	Reason *string `json:"reason,omitempty" jsonschema_description:"Optional explanation. When non-empty after trimming, appended as a response message in the same transaction as the state transition — if the transition fails, the reason is rolled back."`
 }
 
 // RequestRevisionOutput is the output of the request_revision tool.
@@ -410,9 +410,9 @@ type RequestRevisionOutput struct {
 }
 
 func (s *Server) requestRevision(ctx context.Context, _ *mcp.CallToolRequest, input RequestRevisionInput) (*mcp.CallToolResult, RequestRevisionOutput, error) {
-	taskID, err := uuid.Parse(input.DirectiveID)
+	taskID, err := uuid.Parse(input.TaskID)
 	if err != nil {
-		return nil, RequestRevisionOutput{}, fmt.Errorf("request_revision: invalid directive_id: %w", err)
+		return nil, RequestRevisionOutput{}, fmt.Errorf("request_revision: invalid task_id: %w", err)
 	}
 
 	caller := agent.Name(s.callerIdentity(ctx))
@@ -488,7 +488,7 @@ func (s *Server) requestRevision(ctx context.Context, _ *mcp.CallToolRequest, in
 // be the task's target AND hold ReceiveTasks; capability gates at the
 // type system, the target-bound check runs in the handler.
 type ReacceptInput struct {
-	DirectiveID string `json:"directive_id" jsonschema:"required" jsonschema_description:"Task UUID of the revision_requested directive to pick back up"`
+	TaskID string `json:"task_id" jsonschema:"required" jsonschema_description:"Task UUID of the revision_requested directive to pick back up"`
 }
 
 // ReacceptOutput is the output of the reaccept tool.
@@ -499,9 +499,9 @@ type ReacceptOutput struct {
 }
 
 func (s *Server) reaccept(ctx context.Context, _ *mcp.CallToolRequest, input ReacceptInput) (*mcp.CallToolResult, ReacceptOutput, error) {
-	taskID, err := uuid.Parse(input.DirectiveID)
+	taskID, err := uuid.Parse(input.TaskID)
 	if err != nil {
-		return nil, ReacceptOutput{}, fmt.Errorf("reaccept: invalid directive_id: %w", err)
+		return nil, ReacceptOutput{}, fmt.Errorf("reaccept: invalid task_id: %w", err)
 	}
 
 	caller := agent.Name(s.callerIdentity(ctx))

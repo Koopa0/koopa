@@ -320,8 +320,8 @@ func TestAcknowledgeDirective_Validation(t *testing.T) {
 		input   AcknowledgeDirectiveInput
 		wantErr string
 	}{
-		{name: "empty id", input: AcknowledgeDirectiveInput{}, wantErr: "invalid directive_id"},
-		{name: "bad uuid", input: AcknowledgeDirectiveInput{DirectiveID: "not-a-uuid"}, wantErr: "invalid directive_id"},
+		{name: "empty id", input: AcknowledgeDirectiveInput{}, wantErr: "invalid task_id"},
+		{name: "bad uuid", input: AcknowledgeDirectiveInput{TaskID: "not-a-uuid"}, wantErr: "invalid task_id"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
