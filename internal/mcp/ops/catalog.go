@@ -321,7 +321,7 @@ func TrackHypothesis() Meta {
 		Writability: Idempotent,
 		Stability:   StabilityStable,
 		Since:       since,
-		Description: "Update an existing hypothesis. Actions: verify (claim confirmed), invalidate (claim disproven), archive (retire), add_evidence (append supporting data). Hypothesis creation goes through propose_hypothesis.",
+		Description: "Update an existing hypothesis. add_evidence (append supporting data) is the routine, repeatable action. verify (claim confirmed) and invalidate (claim disproven) are TERMINAL one-way verdicts — human-judgment calls, not casual updates; archive retires it. Hypothesis creation goes through propose_hypothesis.",
 	}
 }
 
