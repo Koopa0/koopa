@@ -426,7 +426,7 @@ func (s *Server) updateContent(ctx context.Context, input *ManageContentInput) (
 
 	// update_content is fields-only: it MUST NOT change status. Status
 	// transitions are owned by the dedicated lifecycle tools
-	// (submit_content_for_review / revert_content_to_draft / publish_content /
+	// (set_content_review_state / publish_content /
 	// archive_content via transitionContentStatus / publishContent). The tool
 	// boundary (updateContentTool) rejects a status field; here we structurally
 	// never forward one to the store, so even an internal caller cannot move

@@ -3993,7 +3993,7 @@ func TestIntegration_SubmitForReview(t *testing.T) {
 	t.Run("draft to review succeeds with event and actor", func(t *testing.T) {
 		s := setupServer(t)
 		id := seedContent(t, "submit-ok", "draft")
-		_, out, err := callHandler(t, s.submitContentForReviewTool, SubmitContentForReviewInput{ContentID: id.String()})
+		_, out, err := callHandler(t, s.setContentReviewState, SetContentReviewStateInput{ContentID: id.String(), State: "review"})
 		if err != nil {
 			t.Fatalf("submit(draft): %v", err)
 		}
@@ -4013,7 +4013,7 @@ func TestIntegration_SubmitForReview(t *testing.T) {
 	t.Run("review to review is an idempotent no-op", func(t *testing.T) {
 		s := setupServer(t)
 		id := seedContent(t, "submit-idem", "review")
-		_, out, err := callHandler(t, s.submitContentForReviewTool, SubmitContentForReviewInput{ContentID: id.String()})
+		_, out, err := callHandler(t, s.setContentReviewState, SetContentReviewStateInput{ContentID: id.String(), State: "review"})
 		if err != nil {
 			t.Fatalf("submit(review) = %v, want idempotent no-op", err)
 		}
@@ -4027,18 +4027,18 @@ func TestIntegration_SubmitForReview(t *testing.T) {
 	t.Run("published is rejected", func(t *testing.T) {
 		s := setupServer(t)
 		id := seedPublished(t, s, "submit-reject-pub")
-		_, _, err := callHandler(t, s.submitContentForReviewTool, SubmitContentForReviewInput{ContentID: id.String()})
+		_, _, err := callHandler(t, s.setContentReviewState, SetContentReviewStateInput{ContentID: id.String(), State: "review"})
 		assertTransitionRejected(t, id, err, "published", "state_changed")
 	})
 	t.Run("archived is rejected", func(t *testing.T) {
 		s := setupServer(t)
 		id := seedContent(t, "submit-reject-arch", "archived")
-		_, _, err := callHandler(t, s.submitContentForReviewTool, SubmitContentForReviewInput{ContentID: id.String()})
+		_, _, err := callHandler(t, s.setContentReviewState, SetContentReviewStateInput{ContentID: id.String(), State: "review"})
 		assertTransitionRejected(t, id, err, "archived", "state_changed")
 	})
 	t.Run("not found", func(t *testing.T) {
 		s := setupServer(t)
-		_, _, err := callHandler(t, s.submitContentForReviewTool, SubmitContentForReviewInput{ContentID: uuid.New().String()})
+		_, _, err := callHandler(t, s.setContentReviewState, SetContentReviewStateInput{ContentID: uuid.New().String(), State: "review"})
 		if err == nil || !strings.Contains(err.Error(), "not found") {
 			t.Fatalf("submit(missing) = %v, want not-found", err)
 		}
@@ -4051,7 +4051,7 @@ func TestIntegration_RevertToDraft(t *testing.T) {
 	t.Run("review to draft succeeds with event and actor", func(t *testing.T) {
 		s := setupServer(t)
 		id := seedContent(t, "revert-ok", "review")
-		_, out, err := callHandler(t, s.revertContentToDraftTool, RevertContentToDraftInput{ContentID: id.String()})
+		_, out, err := callHandler(t, s.setContentReviewState, SetContentReviewStateInput{ContentID: id.String(), State: "draft"})
 		if err != nil {
 			t.Fatalf("revert(review): %v", err)
 		}
@@ -4068,7 +4068,7 @@ func TestIntegration_RevertToDraft(t *testing.T) {
 	t.Run("draft to draft is an idempotent no-op", func(t *testing.T) {
 		s := setupServer(t)
 		id := seedContent(t, "revert-idem", "draft")
-		_, out, err := callHandler(t, s.revertContentToDraftTool, RevertContentToDraftInput{ContentID: id.String()})
+		_, out, err := callHandler(t, s.setContentReviewState, SetContentReviewStateInput{ContentID: id.String(), State: "draft"})
 		if err != nil {
 			t.Fatalf("revert(draft) = %v, want idempotent no-op", err)
 		}
@@ -4082,18 +4082,18 @@ func TestIntegration_RevertToDraft(t *testing.T) {
 	t.Run("published is rejected", func(t *testing.T) {
 		s := setupServer(t)
 		id := seedPublished(t, s, "revert-reject-pub")
-		_, _, err := callHandler(t, s.revertContentToDraftTool, RevertContentToDraftInput{ContentID: id.String()})
+		_, _, err := callHandler(t, s.setContentReviewState, SetContentReviewStateInput{ContentID: id.String(), State: "draft"})
 		assertTransitionRejected(t, id, err, "published", "state_changed")
 	})
 	t.Run("archived is rejected", func(t *testing.T) {
 		s := setupServer(t)
 		id := seedContent(t, "revert-reject-arch", "archived")
-		_, _, err := callHandler(t, s.revertContentToDraftTool, RevertContentToDraftInput{ContentID: id.String()})
+		_, _, err := callHandler(t, s.setContentReviewState, SetContentReviewStateInput{ContentID: id.String(), State: "draft"})
 		assertTransitionRejected(t, id, err, "archived", "state_changed")
 	})
 	t.Run("not found", func(t *testing.T) {
 		s := setupServer(t)
-		_, _, err := callHandler(t, s.revertContentToDraftTool, RevertContentToDraftInput{ContentID: uuid.New().String()})
+		_, _, err := callHandler(t, s.setContentReviewState, SetContentReviewStateInput{ContentID: uuid.New().String(), State: "draft"})
 		if err == nil || !strings.Contains(err.Error(), "not found") {
 			t.Fatalf("revert(missing) = %v, want not-found", err)
 		}

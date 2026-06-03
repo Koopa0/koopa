@@ -517,31 +517,19 @@ func UpdateContent() Meta {
 		Writability: Additive,
 		Stability:   StabilityStable,
 		Since:       since,
-		Description: "Update editable fields (title/body/slug/type) on a content row. Any field may be omitted. Slug rename triggers slug_conflict path on collision. Fields-only: it does NOT change status — passing a status is rejected. Use submit_content_for_review / revert_content_to_draft / publish_content / archive_content for lifecycle transitions.",
+		Description: "Update editable fields (title/body/slug/type) on a content row. Any field may be omitted. Slug rename triggers slug_conflict path on collision. Fields-only: it does NOT change status — passing a status is rejected. Use set_content_review_state / publish_content / archive_content for lifecycle transitions.",
 	}
 }
 
-// SubmitContentForReview returns metadata for submit_content_for_review.
-func SubmitContentForReview() Meta {
+// SetContentReviewState returns metadata for set_content_review_state.
+func SetContentReviewState() Meta {
 	return Meta{
-		Name:        "submit_content_for_review",
+		Name:        "set_content_review_state",
 		Domain:      DomainContent,
 		Writability: Additive,
 		Stability:   StabilityStable,
 		Since:       since,
-		Description: "Lifecycle transition draft → review (the Claude → human publish handoff signal: content is done on Claude's side and awaits human publish or revert). review → review is an idempotent no-op (no second event). Rejected from published / archived / any non-draft state (invalid_state, no mutation).",
-	}
-}
-
-// RevertContentToDraft returns metadata for revert_content_to_draft.
-func RevertContentToDraft() Meta {
-	return Meta{
-		Name:        "revert_content_to_draft",
-		Domain:      DomainContent,
-		Writability: Additive,
-		Stability:   StabilityStable,
-		Since:       since,
-		Description: "Lifecycle transition review → draft (use when content needs more work after being submitted for review). draft → draft is an idempotent no-op (no second event). Rejected from published / archived / any non-review state (invalid_state, no mutation).",
+		Description: "Set a content row's review state. state='review' submits a draft for review (the Claude → human publish handoff signal — content is done on Claude's side and awaits human publish or revert); state='draft' reverts a review item back to draft for more work. The target state is an idempotent no-op when already there (no second event). Rejected from published / archived / any state that isn't the required source (invalid_state, no mutation).",
 	}
 }
 
@@ -733,8 +721,7 @@ func All() []Meta {
 		SessionProgress(),
 		CreateContent(),
 		UpdateContent(),
-		SubmitContentForReview(),
-		RevertContentToDraft(),
+		SetContentReviewState(),
 		PublishContent(),
 		ArchiveContent(),
 		ListContent(),

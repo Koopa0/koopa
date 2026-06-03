@@ -86,53 +86,47 @@ func (s *Server) updateContentTool(ctx context.Context, _ *mcp.CallToolRequest, 
 }
 
 // ---------------------------------------------------------------
-// submit_content_for_review
+// set_content_review_state  (draft <-> review toggle)
 // ---------------------------------------------------------------
 
-type SubmitContentForReviewInput struct {
+type SetContentReviewStateInput struct {
 	As        string `json:"as,omitempty" jsonschema_description:"Self-identification."`
-	ContentID string `json:"content_id" jsonschema:"required" jsonschema_description:"Content UUID to transition draft → review."`
+	ContentID string `json:"content_id" jsonschema:"required" jsonschema_description:"Content UUID whose review state to set."`
+	State     string `json:"state" jsonschema:"required" jsonschema_description:"Target review state: 'review' (submit a draft for review) or 'draft' (revert a review item back to draft). Both are idempotent no-ops when already in the target state; published/archived/other are rejected."`
 }
 
-func (s *Server) submitContentForReviewTool(ctx context.Context, _ *mcp.CallToolRequest, input SubmitContentForReviewInput) (*mcp.CallToolResult, ManageContentOutput, error) {
-	if err := s.requireAuthor(ctx, "submit_content_for_review", "content-studio", "learning-studio"); err != nil {
+// setContentReviewState merges the former submit_content_for_review and
+// revert_content_to_draft tools — a reversible draft<->review toggle whose
+// two directions had byte-identical input + auth, so the direction is a
+// parameter (state) rather than two tool names. publish/archive stay flat
+// because their auth and allowed source-states genuinely diverge.
+func (s *Server) setContentReviewState(ctx context.Context, _ *mcp.CallToolRequest, input SetContentReviewStateInput) (*mcp.CallToolResult, ManageContentOutput, error) {
+	if err := s.requireAuthor(ctx, "set_content_review_state", "content-studio", "learning-studio"); err != nil {
 		return nil, ManageContentOutput{}, err
 	}
 	if input.ContentID == "" {
 		return nil, ManageContentOutput{}, fmt.Errorf("content_id is required")
 	}
-	// draft → review; review → review idempotent no-op; published/archived/other rejected.
-	c, err := s.transitionContentStatus(ctx, input.ContentID, content.StatusReview, content.StatusDraft)
-	if err != nil {
-		return nil, ManageContentOutput{}, mapContentTransitionErr(err, input.ContentID,
-			"submit_content_for_review", "must be in draft state (already-review is an idempotent no-op)")
+	switch input.State {
+	case "review":
+		// draft → review; review → review idempotent no-op; published/archived/other rejected.
+		c, err := s.transitionContentStatus(ctx, input.ContentID, content.StatusReview, content.StatusDraft)
+		if err != nil {
+			return nil, ManageContentOutput{}, mapContentTransitionErr(err, input.ContentID,
+				"set_content_review_state", "must be in draft state to enter review (already-review is an idempotent no-op)")
+		}
+		return nil, ManageContentOutput{Content: toContentDetail(c), Action: "submit_for_review"}, nil
+	case "draft":
+		// review → draft; draft → draft idempotent no-op; published/archived/other rejected.
+		c, err := s.transitionContentStatus(ctx, input.ContentID, content.StatusDraft, content.StatusReview)
+		if err != nil {
+			return nil, ManageContentOutput{}, mapContentTransitionErr(err, input.ContentID,
+				"set_content_review_state", "must be in review state to revert to draft (already-draft is an idempotent no-op)")
+		}
+		return nil, ManageContentOutput{Content: toContentDetail(c), Action: "revert_to_draft"}, nil
+	default:
+		return nil, ManageContentOutput{}, fmt.Errorf("invalid state %q (valid: review, draft)", input.State)
 	}
-	return nil, ManageContentOutput{Content: toContentDetail(c), Action: "submit_for_review"}, nil
-}
-
-// ---------------------------------------------------------------
-// revert_content_to_draft
-// ---------------------------------------------------------------
-
-type RevertContentToDraftInput struct {
-	As        string `json:"as,omitempty" jsonschema_description:"Self-identification."`
-	ContentID string `json:"content_id" jsonschema:"required" jsonschema_description:"Content UUID to transition review → draft."`
-}
-
-func (s *Server) revertContentToDraftTool(ctx context.Context, _ *mcp.CallToolRequest, input RevertContentToDraftInput) (*mcp.CallToolResult, ManageContentOutput, error) {
-	if err := s.requireAuthor(ctx, "revert_content_to_draft", "content-studio", "learning-studio"); err != nil {
-		return nil, ManageContentOutput{}, err
-	}
-	if input.ContentID == "" {
-		return nil, ManageContentOutput{}, fmt.Errorf("content_id is required")
-	}
-	// review → draft; draft → draft idempotent no-op; published/archived/other rejected.
-	c, err := s.transitionContentStatus(ctx, input.ContentID, content.StatusDraft, content.StatusReview)
-	if err != nil {
-		return nil, ManageContentOutput{}, mapContentTransitionErr(err, input.ContentID,
-			"revert_content_to_draft", "must be in review state (already-draft is an idempotent no-op)")
-	}
-	return nil, ManageContentOutput{Content: toContentDetail(c), Action: "revert_to_draft"}, nil
 }
 
 // ---------------------------------------------------------------

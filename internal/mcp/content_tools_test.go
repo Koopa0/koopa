@@ -212,10 +212,10 @@ func TestContentLifecycle_AuthorGatePrecedesDB(t *testing.T) {
 			_, _, err := s.updateContentTool(ctx, nil, UpdateContentInput{})
 			return err
 		case "submit":
-			_, _, err := s.submitContentForReviewTool(ctx, nil, SubmitContentForReviewInput{})
+			_, _, err := s.setContentReviewState(ctx, nil, SetContentReviewStateInput{State: "review"})
 			return err
 		case "revert":
-			_, _, err := s.revertContentToDraftTool(ctx, nil, RevertContentToDraftInput{})
+			_, _, err := s.setContentReviewState(ctx, nil, SetContentReviewStateInput{State: "draft"})
 			return err
 		case "archive":
 			_, _, err := s.archiveContentTool(ctx, nil, ArchiveContentInput{})
@@ -272,10 +272,10 @@ func TestContentLifecycle_TransitionToolsValidation(t *testing.T) {
 	invoke := func(s *Server, tool, id string) error {
 		switch tool {
 		case "submit":
-			_, _, err := s.submitContentForReviewTool(t.Context(), nil, SubmitContentForReviewInput{ContentID: id})
+			_, _, err := s.setContentReviewState(t.Context(), nil, SetContentReviewStateInput{ContentID: id, State: "review"})
 			return err
 		case "revert":
-			_, _, err := s.revertContentToDraftTool(t.Context(), nil, RevertContentToDraftInput{ContentID: id})
+			_, _, err := s.setContentReviewState(t.Context(), nil, SetContentReviewStateInput{ContentID: id, State: "draft"})
 			return err
 		default: // archive
 			_, _, err := s.archiveContentTool(t.Context(), nil, ArchiveContentInput{ContentID: id})
