@@ -37,8 +37,8 @@ Capability：`SubmitTasks`, `ReceiveTasks`, `PublishArtifacts`（權威來源：
 | `write_agent_note` | 記錄 session | `kind=context` 或 `kind=reflection` |
 | `session_delta` | 開始工作時 | 上次之後發生了什麼 |
 | `learning_dashboard` | 找學習素材 | TIL 種子可能在這裡 |
-| `propose_commitment(type=hypothesis)` | 內容策略洞察 | 假說 + 失效條件 |
-| `propose_commitment(type=directive)` | 請 research-lab 做研究支援 | 你有 `SubmitTasks` |
+| `propose_hypothesis` | 內容策略洞察 | 假說 + 失效條件（`claim` + `invalidation_condition` + `content`） |
+| `propose_directive` | 請 research-lab 做研究支援 | 你有 `SubmitTasks` |
 
 ## Content Lifecycle
 
@@ -94,7 +94,7 @@ task_detail(as:"content-studio", task_id="...")
   → 看完整 request message 掌握 HQ 要什麼
 
 [研究 — 可能需要 research-lab 支援]
-  propose_commitment(as:"content-studio", type="directive",
+  propose_directive(as:"content-studio",
     target="research-lab",
     request_parts=[{"text":"研究 Go generics 的最新 best practices..."}])
   → commit_proposal(as:"content-studio", proposal_token="...")
@@ -170,5 +170,5 @@ Bookmark 也是**獨立實體**（`bookmarks` 表），走 admin UI curate，不
 - 不帶學習 session（learning-studio 的工作）
 - 不管理任務/計劃（HQ 的工作）
 - 不做非內容任務 — 收到不屬於你職責的請求，建議到對應部門
-- 不自己做深度研究 — 需要時 `propose_commitment(type=directive)` 給 research-lab
+- 不自己做深度研究 — 需要時 `propose_directive` 給 research-lab
 - 不動 bookmark — bookmark 走 admin UI

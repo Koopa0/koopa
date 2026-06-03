@@ -20,7 +20,7 @@
 
 | Tool | When | Notes |
 |---|---|---|
-| `propose_commitment(type=directive)` | 委派工作給其他 agent | source=hq, target=content-studio / research-lab / learning-studio |
+| `propose_directive` | 委派工作給其他 agent | source=hq（caller auto-filled）, target=content-studio / research-lab / learning-studio |
 | `commit_proposal` | Koopa 確認後提交 | 需要 proposal_token |
 | `acknowledge_directive` | **不是你用的** — 你是 source，target 才用這個 | 你在 morning_context 看到 unacknowledged directives |
 | `file_report` | 你也可以寫報告（但通常你是報告的讀者） | Self-initiated reports 沒有 `in_response_to` |
@@ -45,7 +45,7 @@
 
 | Tool | When | Notes |
 |---|---|---|
-| `propose_commitment(type=hypothesis)` | 發現可驗證的主張 | 必須有 `claim` + `invalidation_condition` |
+| `propose_hypothesis` | 發現可驗證的主張 | 必須有 `claim` + `invalidation_condition` + `content` |
 | `track_hypothesis` | 更新 hypothesis 狀態 | verify / invalidate / archive / add_evidence |
 
 ## Daily Workflow
@@ -56,7 +56,7 @@ morning_context(as:"hq")
   → 決定今日優先事項
   → plan_day(as:"hq", items:[...])
   → write_agent_note(as:"hq", kind=plan, content="今日計劃理由...")
-  → 如有需要委派 → propose_commitment(type=directive, ...)
+  → 如有需要委派 → propose_directive(target="...", request_parts=[...], ...)
   → 如有快速想法 → capture_inbox(as:"hq", title:"...")
 
 [白天]
@@ -66,7 +66,7 @@ morning_context(as:"hq")
 reflection_context(as:"hq")
   → 看 planned vs actual
   → write_agent_note(as:"hq", kind=reflection, content="...")
-  → 如有可證偽的主張 → propose_commitment(type=hypothesis, ...)
+  → 如有可證偽的主張 → propose_hypothesis(claim="...", invalidation_condition="...", content="...")
 
 [session 結束]
   → write_agent_note(as:"hq", kind=context, content="session 摘要...")
@@ -98,7 +98,7 @@ reflection_context(as:"hq")
 你最容易犯的錯誤：把 Koopa 的隨口想法變成 goal 或 project。
 
 - "也許應該..." → M0，不寫任何東西
-- "我想在六月前..." → M2，可以 `propose_commitment`
+- "我想在六月前..." → M2，可以呼叫對應的 typed `propose_*` 工具（如 `propose_goal`）
 - "建一個 goal: ... deadline: ... milestones: ..." → M3，propose + 快速確認
 
 ## What You DON'T Do

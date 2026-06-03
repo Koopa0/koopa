@@ -7,7 +7,7 @@ Part encoding; persistence is the tasks / task_messages / artifacts tables.
 **Naming vs structure**: the words "directive" and "task" at the MCP tool
 boundary name the same row. The database has a single `tasks` table with
 no kind discriminator. A directive is simply a task whose expected output
-is a report (target exercises autonomous judgment). Use `propose_commitment(type=directive)`
+is a report (target exercises autonomous judgment). Use `propose_directive`
 when that metaphor fits; call it a "task" in code and activity feeds.
 See `.claude/rules/mcp-decision-policy.md §14` for the tool-selection test.
 
@@ -38,7 +38,7 @@ Cross-agent instructions with accountability.
 
 | Phase | Tool | Who |
 |---|---|---|
-| Issue | `propose_commitment(type=directive)` → `commit_proposal` | Source (must have `SubmitTasks`) |
+| Issue | `propose_directive` → `commit_proposal` | Source (must have `SubmitTasks`) |
 | Acknowledge | `acknowledge_directive(task_id)` | Target (must have `ReceiveTasks`). Transitions the task to `working`. |
 | Resolve | `file_report(in_response_to=task_id, response_parts=[...], artifact={...})` | Target (must have `CompleteTasks`). Creates a response message + artifact and flips the task to `completed`. |
 
@@ -95,13 +95,13 @@ Trackable falsifiable claims.
 - `invalidation_condition` — what evidence would disprove it
 - `content` — supporting narrative
 
-`propose_commitment` rejects at propose-time if `claim`,
+`propose_hypothesis` rejects at propose-time if `claim`,
 `invalidation_condition`, or `content` is blank or missing — no token
 is signed. Commit-side keeps a defensive check that logs
 `proposal validator drift` if it ever fires.
 
 **Tools**:
-- Create: `propose_commitment(type=hypothesis)` → `commit_proposal`
+- Create: `propose_hypothesis` → `commit_proposal`
 - Update: `track_hypothesis(action=verify | invalidate | archive | add_evidence)`
 
 **Not a hypothesis**: "今天效率不錯" (no claim). "最近 DP 做得不好"
@@ -124,7 +124,7 @@ You can mix both in one array. Example payload for a research directive:
 ```
 
 Never hand-roll this shape beyond these two cases. The tools `file_report`,
-`propose_commitment(type=directive)`, and related take parts as plain JSON
+`propose_directive`, and related take parts as plain JSON
 arrays and the server deserializes through a2a-go at the boundary.
 
 ## Common coordination patterns
@@ -132,7 +132,7 @@ arrays and the server deserializes through a2a-go at the boundary.
 ### HQ delegates to Content Studio
 
 ```
-HQ:       propose_commitment(type=directive,
+HQ:       propose_directive(
             target="content-studio",
             priority="medium",
             request_parts=[{"text": "寫一篇 Go generics best practices 文章"}])
@@ -152,7 +152,7 @@ Content:  file_report(
 ### HQ delegates to Research Lab
 
 ```
-HQ:        propose_commitment(type=directive,
+HQ:        propose_directive(
              target="research-lab",
              priority="high",
              request_parts=[

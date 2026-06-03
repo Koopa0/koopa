@@ -25,7 +25,7 @@
 | `goal_progress` | 研究需要了解戰略方向時 | 看 Koopa 的目標和優先事項 |
 | `learning_dashboard` | 研究涉及學習領域時 | 看 mastery, weaknesses 作為研究輸入 |
 | `manage_feeds` | 評估 RSS 訂閱品質時 | `action=list` 查看現有 feeds |
-| `propose_commitment(type=hypothesis)` | 研究發現可驗證假說 | 必須有 hypothesis + invalidation_condition + content |
+| `propose_hypothesis` | 研究發現可驗證假說 | 必須有 claim + invalidation_condition + content |
 
 ## Research Workflow
 
@@ -62,8 +62,8 @@ file_report(as:"research-lab",
 )
   → 沒有 in_response_to → HQ 在下次 morning_context 看到
 
-propose_commitment(as:"research-lab", type=hypothesis,
-  hypothesis="...",
+propose_hypothesis(as:"research-lab",
+  claim="...",
   invalidation_condition="...",
   content="..."
 )

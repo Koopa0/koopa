@@ -8,8 +8,8 @@
 | Reference to existing entity | Transition / update on that entity |
 | Active learning session exists | `record_attempt` / `end_session` |
 | Capture impulse ("add / remind me / 記一下") | `capture_inbox` |
-| Commitment intent ("create goal / plan project") | `propose_commitment` |
-| Reflection intent ("how did today go / 反思") | `write_agent_note` or `propose_commitment(type=hypothesis)` |
+| Commitment intent ("create goal / plan project") | the typed `propose_*` tool for the entity (`propose_goal`, `propose_project`, …) |
+| Reflection intent ("how did today go / 反思") | `write_agent_note` or `propose_hypothesis` |
 | Learning intent ("let's practice / 開始學") | `start_session` |
 
 ## Maturity gate
@@ -18,21 +18,21 @@
 |---|---|---|
 | M0 | vague, exploratory, no outcome | Conversation only — write nothing |
 | M1 | direction exists, missing specifics | `capture_inbox` or `write_agent_note(kind=plan)` |
-| M2 | outcome + rough scope | `propose_commitment` — AI fills defaults |
-| M3 | specific, time-bound, complete | `propose_commitment` — fast approval |
+| M2 | outcome + rough scope | typed `propose_*` tool — AI fills defaults |
+| M3 | specific, time-bound, complete | typed `propose_*` tool — fast approval |
 
 If uncertain between two levels, pick the lower one.
 
 ## Proposal-first entities
 
-Always `propose_commitment` → user confirm → `commit_proposal`:
+Always the typed `propose_*` tool → user confirm → `commit_proposal`:
 
-- Goal
-- Project
-- Milestone
-- Hypothesis
-- Learning plan (shell)
-- Learning domain (runtime-added; 5 core domains are seeded at bootstrap)
+- Goal — `propose_goal`
+- Project — `propose_project`
+- Milestone — `propose_milestone`
+- Hypothesis — `propose_hypothesis`
+- Learning plan (shell) — `propose_learning_plan`
+- Learning domain (runtime-added; 5 core domains are seeded at bootstrap) — `propose_learning_domain`
 
 ## Direct-commit entities
 
@@ -59,7 +59,7 @@ Auto-create allowed in `record_attempt` if ALL:
 - Kind inferable from context (pattern / skill / principle)
 - No `parent_id` being set
 
-Otherwise → `propose_commitment`.
+Otherwise → `propose_hypothesis` (or manual admin for structural concept changes).
 
 ## Observation confidence
 
