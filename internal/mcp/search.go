@@ -79,6 +79,11 @@ type SearchKnowledgeOutput struct {
 	Results []SearchKnowledgeResult `json:"results"`
 	Total   int                     `json:"total"`
 	Query   string                  `json:"query"`
+	// SearchedCorpus lists the source types actually queried ("content",
+	// "note"). It lets a caller read a 0-result response as "found none in
+	// these corpora" rather than "does not exist". agent_notes are never in
+	// this corpus by design — recall of your own breadcrumbs is query_agent_notes.
+	SearchedCorpus []string `json:"searched_corpus"`
 }
 
 func (s *Server) searchKnowledge(ctx context.Context, _ *mcp.CallToolRequest, input SearchKnowledgeInput) (*mcp.CallToolResult, SearchKnowledgeOutput, error) {
@@ -132,10 +137,19 @@ func (s *Server) searchKnowledge(ctx context.Context, _ *mcp.CallToolRequest, in
 
 	results := mergeByRelevance(contentResults, noteResults, limit)
 
+	searchedCorpus := make([]string, 0, 2)
+	if wantContent {
+		searchedCorpus = append(searchedCorpus, "content")
+	}
+	if wantNote {
+		searchedCorpus = append(searchedCorpus, "note")
+	}
+
 	return nil, SearchKnowledgeOutput{
-		Results: results,
-		Total:   len(results),
-		Query:   input.Query,
+		Results:        results,
+		Total:          len(results),
+		Query:          input.Query,
+		SearchedCorpus: searchedCorpus,
 	}, nil
 }
 
