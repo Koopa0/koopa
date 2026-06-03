@@ -30,7 +30,7 @@ MUST be updated):
 | `backend-semantic-contract.md` | 4 (canonical) | **Yes** — shared vocabulary + cross-entity contract | 7 sections (§1–§7): core domain vocabulary is §3, domain boundaries §4, MCP tool semantics §5. |
 | `LEARNING-CONTRACT.md` | 4 (canonical companion) | **Yes** — FSRS vs concept-mastery split | — |
 | `authorization-matrix.md` | 4 (canonical companion) | **Yes** — MCP write-tool authorization | Four-axis model. |
-| `Koopa-HQ.md`, `Koopa-Content-Studio.md`, `Koopa-Research-Lab.md`, `Koopa-Learning.md` | 5 (operational) | **No** — agent identity/operating guidance | **Owned by the respective cowork agent.** Not structural truth; do not derive schema/behavior from them. |
+| `Koopa-Research-Lab.md` | 5 (operational) | **No** — agent identity/operating guidance | **Owned by research-lab** — its only operating doc (no live cowork-dir copy yet). The hq / content-studio / learning agent docs were removed from `docs/`; their live SSOT is each cowork project's own `CLAUDE.md`. Not structural truth. |
 | `audit/*.md` | 6 (historical) | **No** — point-in-time review | Findings reflect repo state at the dated moment; verify before acting. |
 | `audit-prompts/*.md` | 6 (historical) | **No** — past audit-session prompts | Session inputs, not contracts. |
 
