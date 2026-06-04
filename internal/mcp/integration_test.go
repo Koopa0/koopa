@@ -50,6 +50,7 @@ import (
 	"github.com/Koopa0/koopa/internal/learning"
 	"github.com/Koopa0/koopa/internal/mcp/ops"
 	"github.com/Koopa0/koopa/internal/note"
+	"github.com/Koopa0/koopa/internal/research"
 	"github.com/Koopa0/koopa/internal/testdb"
 )
 
@@ -114,6 +115,8 @@ func truncateApplicationTables(t *testing.T) {
 		"learning_target_relations",
 		"learning_targets",
 		"concepts",
+		"reports",
+		"research_assignments",
 	}
 	sql := "TRUNCATE " + strings.Join(tables, ", ") + " RESTART IDENTITY CASCADE"
 	if _, err := testPool.Exec(t.Context(), sql); err != nil {
@@ -1092,6 +1095,165 @@ func callHandlerAs[I, O any](t *testing.T, as string, handler func(context.Conte
 }
 
 func boolPtr(b bool) *bool { return &b }
+
+// TestIntegration_ReportLane_FanOut exercises the fan-out report lane end to
+// end through the MCP handlers: HQ dispatches a research assignment, the
+// assignee files a low-trust report that fulfills it, and the report is
+// immediately searchable (badged low_trust). It also pins the author gate on
+// assign_research and the absence of any acceptance/file_report step.
+func TestIntegration_ReportLane_FanOut(t *testing.T) {
+	s := setupServer(t)
+
+	// assign_research is author-gated to hq (+ human). The default caller
+	// (learning-studio) must be rejected.
+	if _, _, err := callHandler(t, s.assignResearch, AssignResearchInput{
+		Topic:      "should fail",
+		AssignedTo: "research-lab",
+	}); err == nil {
+		t.Error("assignResearch as default caller (learning-studio) succeeded; want author-gate rejection")
+	}
+
+	// HQ dispatches.
+	_, assigned, err := callHandlerAs(t, "hq", s.assignResearch, AssignResearchInput{
+		Topic:      "survey RRF tuning",
+		AssignedTo: "research-lab",
+	})
+	if err != nil {
+		t.Fatalf("assignResearch as hq: %v", err)
+	}
+	if assigned.Assignment == nil || assigned.Assignment.Status != string(research.StatusOpen) {
+		t.Fatalf("new assignment = %+v, want status open", assigned.Assignment)
+	}
+
+	// The assignee files the report — no accept_task, no file_report. The
+	// report's creation IS the fulfillment.
+	_, filed, err := callHandlerAs(t, "research-lab", s.createReport, CreateReportInput{
+		Title:              "RRF tuning survey",
+		Body:               "reciprocal rank fusion k-parameter sweep",
+		OriginAssignmentID: assigned.Assignment.ID,
+	})
+	if err != nil {
+		t.Fatalf("createReport as research-lab: %v", err)
+	}
+	if filed.Report == nil {
+		t.Fatal("createReport returned nil report")
+	}
+	if filed.Report.TrustStatus != string(research.TrustLow) {
+		t.Errorf("created report trust = %q, want low_trust", filed.Report.TrustStatus)
+	}
+	if filed.Report.ProducedBy != "research-lab" {
+		t.Errorf("created report produced_by = %q, want research-lab", filed.Report.ProducedBy)
+	}
+
+	// The assignment is now fulfilled. Verified via the store — there is no
+	// agent-facing assignment read tool by design.
+	aid, perr := uuid.Parse(assigned.Assignment.ID)
+	if perr != nil {
+		t.Fatalf("parse assignment id %q: %v", assigned.Assignment.ID, perr)
+	}
+	got, err := s.research.Assignment(t.Context(), aid)
+	if err != nil {
+		t.Fatalf("research.Assignment: %v", err)
+	}
+	if got.Status != research.StatusFulfilled {
+		t.Errorf("assignment status after report = %q, want fulfilled", got.Status)
+	}
+
+	// The report is immediately searchable and badged low_trust.
+	_, found, err := callHandler(t, s.searchKnowledge, SearchKnowledgeInput{Query: "RRF tuning"})
+	if err != nil {
+		t.Fatalf("searchKnowledge: %v", err)
+	}
+	if !slices.Contains(found.SearchedCorpus, SourceTypeReport) {
+		t.Errorf("searched_corpus = %v, want it to include %q", found.SearchedCorpus, SourceTypeReport)
+	}
+	var hit *SearchKnowledgeResult
+	for i := range found.Results {
+		if found.Results[i].SourceType == SourceTypeReport {
+			hit = &found.Results[i]
+			break
+		}
+	}
+	if hit == nil {
+		t.Fatalf("search_knowledge did not return the report; results=%+v", found.Results)
+	}
+	if hit.TrustStatus != string(research.TrustLow) {
+		t.Errorf("searched report trust badge = %q, want low_trust", hit.TrustStatus)
+	}
+}
+
+// TestIntegration_ReportLane_AssigneeBinding pins that fulfilling an assignment
+// is restricted to its assignee: a non-assignee is rejected and the assignment
+// stays open, the assignee succeeds, and a standalone report (no assignment)
+// remains open to any registered caller.
+func TestIntegration_ReportLane_AssigneeBinding(t *testing.T) {
+	s := setupServer(t)
+
+	_, assigned, err := callHandlerAs(t, "hq", s.assignResearch, AssignResearchInput{
+		Topic:      "vector index tradeoffs",
+		AssignedTo: "research-lab",
+	})
+	if err != nil {
+		t.Fatalf("assignResearch as hq: %v", err)
+	}
+	aid := assigned.Assignment.ID
+	pid, perr := uuid.Parse(aid)
+	if perr != nil {
+		t.Fatalf("parse assignment id: %v", perr)
+	}
+
+	// A different registered agent (content-studio) cannot fulfill research-lab's assignment.
+	_, _, err = callHandlerAs(t, "content-studio", s.createReport, CreateReportInput{
+		Title:              "not my work",
+		OriginAssignmentID: aid,
+	})
+	if err == nil {
+		t.Fatalf("non-assignee createReport succeeded; want rejection")
+	}
+	if !errors.Is(err, research.ErrNotAssignee) {
+		t.Errorf("non-assignee error = %v, want research.ErrNotAssignee", err)
+	}
+
+	// The assignment must remain open after the rejected attempt.
+	open, err := s.research.Assignment(t.Context(), pid)
+	if err != nil {
+		t.Fatalf("assignment read after rejection: %v", err)
+	}
+	if open.Status != research.StatusOpen {
+		t.Errorf("assignment status after rejected non-assignee attempt = %q, want open", open.Status)
+	}
+
+	// The assigned agent CAN fulfill it.
+	_, filed, err := callHandlerAs(t, "research-lab", s.createReport, CreateReportInput{
+		Title:              "real findings",
+		OriginAssignmentID: aid,
+	})
+	if err != nil {
+		t.Fatalf("assignee createReport: %v", err)
+	}
+	if filed.Report == nil {
+		t.Fatal("assignee createReport returned nil report")
+	}
+	fulfilled, err := s.research.Assignment(t.Context(), pid)
+	if err != nil {
+		t.Fatalf("assignment read after fulfillment: %v", err)
+	}
+	if fulfilled.Status != research.StatusFulfilled {
+		t.Errorf("assignment status after assignee fulfilled = %q, want fulfilled", fulfilled.Status)
+	}
+
+	// A standalone report (no assignment) is open to any registered caller —
+	// the assignee gate applies only to assignment fulfillment.
+	_, standalone, err := callHandlerAs(t, "content-studio", s.createReport, CreateReportInput{
+		Title: "free-standing source",
+	})
+	if err != nil {
+		t.Fatalf("standalone createReport: %v", err)
+	}
+	if standalone.Report == nil || standalone.Report.OriginAssignmentID != "" {
+		t.Errorf("standalone report should have empty origin_assignment_id; got %+v", standalone.Report)
+	}
+}
 
 // TestIntegration_ManageTargets_ArchiveHappyPath covers the C2 §B
 // stage-3 happy path: learning-studio archives a target it created,

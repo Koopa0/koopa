@@ -137,7 +137,7 @@ func TestMergeByRelevance_RelevanceBeatsRecency(t *testing.T) {
 	docB := mkResult(0xB, "2026-05-01T00:00:00Z") // latest, least relevant
 	contentResults := []SearchKnowledgeResult{docA, docB}
 
-	got := mergeByRelevance(contentResults, nil, 20)
+	got := mergeByRelevance(contentResults, nil, nil, 20)
 
 	rankOf := func(id string) int {
 		for i := range got {
@@ -166,7 +166,7 @@ func TestMergeByRelevance_RecencyTieBreaks(t *testing.T) {
 	newer := SearchKnowledgeResult{ID: testID(2).String(), SourceType: SourceTypeNote, CreatedAt: "2026-05-01T00:00:00Z"}
 
 	// Each leads its own branch → both at branch rank 0 → relevance tie.
-	got := mergeByRelevance([]SearchKnowledgeResult{older}, []SearchKnowledgeResult{newer}, 20)
+	got := mergeByRelevance([]SearchKnowledgeResult{older}, []SearchKnowledgeResult{newer}, nil, 20)
 	if len(got) != 2 {
 		t.Fatalf("len(got) = %d, want 2", len(got))
 	}
@@ -275,19 +275,21 @@ func TestSelectSources(t *testing.T) {
 		filter      []string
 		wantContent bool
 		wantNote    bool
+		wantReport  bool
 	}{
-		{name: "nil = both", filter: nil, wantContent: true, wantNote: true},
-		{name: "empty = both", filter: []string{}, wantContent: true, wantNote: true},
-		{name: "content only", filter: []string{SourceTypeContent}, wantContent: true, wantNote: false},
-		{name: "note only", filter: []string{SourceTypeNote}, wantContent: false, wantNote: true},
-		{name: "both explicit", filter: []string{SourceTypeContent, SourceTypeNote}, wantContent: true, wantNote: true},
+		{name: "nil = all", filter: nil, wantContent: true, wantNote: true, wantReport: true},
+		{name: "empty = all", filter: []string{}, wantContent: true, wantNote: true, wantReport: true},
+		{name: "content only", filter: []string{SourceTypeContent}, wantContent: true, wantNote: false, wantReport: false},
+		{name: "note only", filter: []string{SourceTypeNote}, wantContent: false, wantNote: true, wantReport: false},
+		{name: "report only", filter: []string{SourceTypeReport}, wantContent: false, wantNote: false, wantReport: true},
+		{name: "content+note", filter: []string{SourceTypeContent, SourceTypeNote}, wantContent: true, wantNote: true, wantReport: false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gotContent, gotNote := selectSources(tt.filter)
-			if gotContent != tt.wantContent || gotNote != tt.wantNote {
-				t.Errorf("selectSources(%v) = (content=%v, note=%v), want (content=%v, note=%v)",
-					tt.filter, gotContent, gotNote, tt.wantContent, tt.wantNote)
+			gotContent, gotNote, gotReport := selectSources(tt.filter)
+			if gotContent != tt.wantContent || gotNote != tt.wantNote || gotReport != tt.wantReport {
+				t.Errorf("selectSources(%v) = (content=%v, note=%v, report=%v), want (content=%v, note=%v, report=%v)",
+					tt.filter, gotContent, gotNote, gotReport, tt.wantContent, tt.wantNote, tt.wantReport)
 			}
 		})
 	}

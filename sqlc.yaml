@@ -24,6 +24,7 @@ sql:
       - "internal/learning/fsrs/query.sql"
       - "internal/bookmark/query.sql"
       - "internal/note/query.sql"
+      - "internal/research/query.sql"
     schema: "migrations/"
     gen:
       go:
@@ -88,6 +89,8 @@ sql:
           - column: "contents.search_vector"
             go_type: "string"
           - column: "notes.search_vector"
+            go_type: "string"
+          - column: "reports.search_vector"
             go_type: "string"
           # non-nullable JSONB → json.RawMessage
           - column: "feeds.filter_config"
