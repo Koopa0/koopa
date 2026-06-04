@@ -958,28 +958,6 @@ func (q *Queries) ArtifactsForTask(ctx context.Context, taskID *uuid.UUID) ([]Ar
 	return items, nil
 }
 
-const assignmentByID = `-- name: AssignmentByID :one
-SELECT id, topic, assigned_to, assigned_by, status, created_at, updated_at, fulfilled_at
-FROM research_assignments
-WHERE id = $1
-`
-
-func (q *Queries) AssignmentByID(ctx context.Context, id uuid.UUID) (ResearchAssignment, error) {
-	row := q.db.QueryRow(ctx, assignmentByID, id)
-	var i ResearchAssignment
-	err := row.Scan(
-		&i.ID,
-		&i.Topic,
-		&i.AssignedTo,
-		&i.AssignedBy,
-		&i.Status,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-		&i.FulfilledAt,
-	)
-	return i, err
-}
-
 const attachContentToTarget = `-- name: AttachContentToTarget :exec
 INSERT INTO learning_target_contents (target_id, content_id)
 VALUES ($1, $2)
@@ -2901,45 +2879,6 @@ func (q *Queries) CreateAgentNote(ctx context.Context, arg CreateAgentNoteParams
 	return i, err
 }
 
-const createAssignment = `-- name: CreateAssignment :one
-
-
-INSERT INTO research_assignments (topic, assigned_to, assigned_by)
-VALUES ($1, $2, $3)
-RETURNING id, topic, assigned_to, assigned_by, status, created_at, updated_at, fulfilled_at
-`
-
-type CreateAssignmentParams struct {
-	Topic      string `json:"topic"`
-	AssignedTo string `json:"assigned_to"`
-	AssignedBy string `json:"assigned_by"`
-}
-
-// Queries for the research package: fan-out research assignments and the
-// report corpus. See migrations/004_report_lane.up.sql for the schema.
-//
-// trust_status and assignment status are TEXT + CHECK (not PG ENUMs), so they
-// map to plain Go strings — validation lives in the research package, not in a
-// generated enum type. reports.search_vector is a GENERATED column and is never
-// selected or written here (sqlc maps it to string via an override in
-// sqlc.yaml).
-// ---- research_assignments ------------------------------------------------
-func (q *Queries) CreateAssignment(ctx context.Context, arg CreateAssignmentParams) (ResearchAssignment, error) {
-	row := q.db.QueryRow(ctx, createAssignment, arg.Topic, arg.AssignedTo, arg.AssignedBy)
-	var i ResearchAssignment
-	err := row.Scan(
-		&i.ID,
-		&i.Topic,
-		&i.AssignedTo,
-		&i.AssignedBy,
-		&i.Status,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-		&i.FulfilledAt,
-	)
-	return i, err
-}
-
 const createAttempt = `-- name: CreateAttempt :one
 INSERT INTO learning_attempts (learning_target_id, session_id, attempt_number, paradigm, outcome, duration_minutes, stuck_at, approach_used, metadata)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
@@ -3729,56 +3668,6 @@ type CreateRefreshTokenParams struct {
 func (q *Queries) CreateRefreshToken(ctx context.Context, arg CreateRefreshTokenParams) error {
 	_, err := q.db.Exec(ctx, createRefreshToken, arg.UserID, arg.TokenHash, arg.ExpiresAt)
 	return err
-}
-
-const createReport = `-- name: CreateReport :one
-
-INSERT INTO reports (title, body, produced_by, origin_assignment_id)
-VALUES ($1, $2, $3, $4)
-RETURNING id, title, body, produced_by, origin_assignment_id, trust_status, created_at, updated_at
-`
-
-type CreateReportParams struct {
-	Title              string     `json:"title"`
-	Body               string     `json:"body"`
-	ProducedBy         string     `json:"produced_by"`
-	OriginAssignmentID *uuid.UUID `json:"origin_assignment_id"`
-}
-
-type CreateReportRow struct {
-	ID                 uuid.UUID  `json:"id"`
-	Title              string     `json:"title"`
-	Body               string     `json:"body"`
-	ProducedBy         string     `json:"produced_by"`
-	OriginAssignmentID *uuid.UUID `json:"origin_assignment_id"`
-	TrustStatus        string     `json:"trust_status"`
-	CreatedAt          time.Time  `json:"created_at"`
-	UpdatedAt          time.Time  `json:"updated_at"`
-}
-
-// ---- reports -------------------------------------------------------------
-// trust_status is intentionally NOT a parameter — every report is born
-// low_trust (column DEFAULT). Promotion to trusted is a separate human/admin
-// action (SetReportTrust), never part of report creation.
-func (q *Queries) CreateReport(ctx context.Context, arg CreateReportParams) (CreateReportRow, error) {
-	row := q.db.QueryRow(ctx, createReport,
-		arg.Title,
-		arg.Body,
-		arg.ProducedBy,
-		arg.OriginAssignmentID,
-	)
-	var i CreateReportRow
-	err := row.Scan(
-		&i.ID,
-		&i.Title,
-		&i.Body,
-		&i.ProducedBy,
-		&i.OriginAssignmentID,
-		&i.TrustStatus,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
 }
 
 const createSession = `-- name: CreateSession :one
@@ -5461,25 +5350,6 @@ func (q *Queries) FindTargetByDomainTitle(ctx context.Context, arg FindTargetByD
 		&i.UpdatedAt,
 	)
 	return i, err
-}
-
-const fulfillAssignment = `-- name: FulfillAssignment :execrows
-UPDATE research_assignments
-SET status = 'fulfilled', fulfilled_at = now(), updated_at = now()
-WHERE id = $1 AND status = 'open'
-`
-
-// Flip open → fulfilled in the same transaction that creates the fulfilling
-// report. WHERE status = 'open' makes this idempotent: the first report
-// fulfills the assignment; a later report referencing the same (already
-// fulfilled) assignment affects 0 rows and is still created. fulfilled_at and
-// status move together to satisfy chk_research_assignment_fulfilled_pair.
-func (q *Queries) FulfillAssignment(ctx context.Context, id uuid.UUID) (int64, error) {
-	result, err := q.db.Exec(ctx, fulfillAssignment, id)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected(), nil
 }
 
 const goalByID = `-- name: GoalByID :one
@@ -7761,46 +7631,6 @@ func (q *Queries) ObservationsByConcept(ctx context.Context, arg ObservationsByC
 	return items, nil
 }
 
-const openAssignments = `-- name: OpenAssignments :many
-SELECT id, topic, assigned_to, assigned_by, status, created_at, updated_at, fulfilled_at
-FROM research_assignments
-WHERE status = 'open'
-ORDER BY created_at DESC
-LIMIT $1
-`
-
-// Unfulfilled (open) assignments, newest first. This is how "a fan-out
-// assignment produced no report" stays visible — it sits here until a report
-// fulfills it.
-func (q *Queries) OpenAssignments(ctx context.Context, maxResults int32) ([]ResearchAssignment, error) {
-	rows, err := q.db.Query(ctx, openAssignments, maxResults)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []ResearchAssignment{}
-	for rows.Next() {
-		var i ResearchAssignment
-		if err := rows.Scan(
-			&i.ID,
-			&i.Topic,
-			&i.AssignedTo,
-			&i.AssignedBy,
-			&i.Status,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-			&i.FulfilledAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const openTasksForAssignee = `-- name: OpenTasksForAssignee :many
 SELECT id, created_by, assignee, title, state, deadline, priority, submitted_at, accepted_at, completed_at, canceled_at, revision_requested_at, metadata, acknowledged_at, acknowledged_by
 FROM tasks
@@ -10000,39 +9830,6 @@ func (q *Queries) RelatedTagsForTopic(ctx context.Context, arg RelatedTagsForTop
 	return items, nil
 }
 
-const reportByID = `-- name: ReportByID :one
-SELECT id, title, body, produced_by, origin_assignment_id, trust_status, created_at, updated_at
-FROM reports
-WHERE id = $1
-`
-
-type ReportByIDRow struct {
-	ID                 uuid.UUID  `json:"id"`
-	Title              string     `json:"title"`
-	Body               string     `json:"body"`
-	ProducedBy         string     `json:"produced_by"`
-	OriginAssignmentID *uuid.UUID `json:"origin_assignment_id"`
-	TrustStatus        string     `json:"trust_status"`
-	CreatedAt          time.Time  `json:"created_at"`
-	UpdatedAt          time.Time  `json:"updated_at"`
-}
-
-func (q *Queries) ReportByID(ctx context.Context, id uuid.UUID) (ReportByIDRow, error) {
-	row := q.db.QueryRow(ctx, reportByID, id)
-	var i ReportByIDRow
-	err := row.Scan(
-		&i.ID,
-		&i.Title,
-		&i.Body,
-		&i.ProducedBy,
-		&i.OriginAssignmentID,
-		&i.TrustStatus,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
 const requestRevisionTask = `-- name: RequestRevisionTask :one
 UPDATE tasks
 SET state = 'revision_requested', revision_requested_at = now()
@@ -10506,67 +10303,6 @@ func (q *Queries) SearchNotes(ctx context.Context, arg SearchNotesParams) ([]Sea
 			&i.Maturity,
 			&i.CreatedBy,
 			&i.Metadata,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-			&i.Rank,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const searchReports = `-- name: SearchReports :many
-SELECT id, title, body, produced_by, origin_assignment_id, trust_status,
-       created_at, updated_at,
-       ts_rank(search_vector, websearch_to_tsquery('simple', $1)) AS rank
-FROM reports
-WHERE search_vector @@ websearch_to_tsquery('simple', $1)
-ORDER BY rank DESC
-LIMIT $2
-`
-
-type SearchReportsParams struct {
-	Query      string `json:"query"`
-	MaxResults int32  `json:"max_results"`
-}
-
-type SearchReportsRow struct {
-	ID                 uuid.UUID  `json:"id"`
-	Title              string     `json:"title"`
-	Body               string     `json:"body"`
-	ProducedBy         string     `json:"produced_by"`
-	OriginAssignmentID *uuid.UUID `json:"origin_assignment_id"`
-	TrustStatus        string     `json:"trust_status"`
-	CreatedAt          time.Time  `json:"created_at"`
-	UpdatedAt          time.Time  `json:"updated_at"`
-	Rank               float32    `json:"rank"`
-}
-
-// FTS over reports.search_vector (title weight A, body weight C), relevance
-// ranked, capped by LIMIT. Mirrors SearchNotes. The MCP search_knowledge tool
-// unions these hits with content + note hits, then downranks reports by trust
-// in mergeByRelevance. Returns trust_status so the caller can badge + weight.
-func (q *Queries) SearchReports(ctx context.Context, arg SearchReportsParams) ([]SearchReportsRow, error) {
-	rows, err := q.db.Query(ctx, searchReports, arg.Query, arg.MaxResults)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []SearchReportsRow{}
-	for rows.Next() {
-		var i SearchReportsRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.Title,
-			&i.Body,
-			&i.ProducedBy,
-			&i.OriginAssignmentID,
-			&i.TrustStatus,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.Rank,
@@ -11123,48 +10859,6 @@ func (q *Queries) SessionTimeline(ctx context.Context, arg SessionTimelineParams
 		return nil, err
 	}
 	return items, nil
-}
-
-const setReportTrust = `-- name: SetReportTrust :one
-UPDATE reports
-SET trust_status = $2, updated_at = now()
-WHERE id = $1
-RETURNING id, title, body, produced_by, origin_assignment_id, trust_status, created_at, updated_at
-`
-
-type SetReportTrustParams struct {
-	ID          uuid.UUID `json:"id"`
-	TrustStatus string    `json:"trust_status"`
-}
-
-type SetReportTrustRow struct {
-	ID                 uuid.UUID  `json:"id"`
-	Title              string     `json:"title"`
-	Body               string     `json:"body"`
-	ProducedBy         string     `json:"produced_by"`
-	OriginAssignmentID *uuid.UUID `json:"origin_assignment_id"`
-	TrustStatus        string     `json:"trust_status"`
-	CreatedAt          time.Time  `json:"created_at"`
-	UpdatedAt          time.Time  `json:"updated_at"`
-}
-
-// The writer for the human/admin trust verdict (low_trust → trusted or back).
-// Deliberately NOT wired to any agent-facing MCP tool — trust promotion is a
-// human decision, not an agent action.
-func (q *Queries) SetReportTrust(ctx context.Context, arg SetReportTrustParams) (SetReportTrustRow, error) {
-	row := q.db.QueryRow(ctx, setReportTrust, arg.ID, arg.TrustStatus)
-	var i SetReportTrustRow
-	err := row.Scan(
-		&i.ID,
-		&i.Title,
-		&i.Body,
-		&i.ProducedBy,
-		&i.OriginAssignmentID,
-		&i.TrustStatus,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
 }
 
 const similarContents = `-- name: SimilarContents :many

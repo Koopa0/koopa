@@ -24,7 +24,6 @@ sql:
       - "internal/learning/fsrs/query.sql"
       - "internal/bookmark/query.sql"
       - "internal/note/query.sql"
-      - "internal/research/query.sql"
     schema: "migrations/"
     gen:
       go:

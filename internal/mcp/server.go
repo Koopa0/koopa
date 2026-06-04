@@ -36,7 +36,6 @@ import (
 	"github.com/Koopa0/koopa/internal/mcp/ops"
 	"github.com/Koopa0/koopa/internal/note"
 	"github.com/Koopa0/koopa/internal/project"
-	"github.com/Koopa0/koopa/internal/research"
 	"github.com/Koopa0/koopa/internal/stats"
 	"github.com/Koopa0/koopa/internal/todo"
 )
@@ -80,10 +79,6 @@ type Server struct {
 	feeds       *feed.Store
 	feedEntries *entry.Store
 	stats       *stats.Store
-
-	// Research reports — agent-produced source corpus, distinct from
-	// notes (digested knowledge) and content (editorial). Trust axis only.
-	research *research.Store
 
 	// Embedder for search_knowledge semantic branch. Nullable — when nil,
 	// search_knowledge runs FTS-only. Populated from cmd/app/main.go when
@@ -176,7 +171,6 @@ func NewServer(pool *pgxpool.Pool, logger *slog.Logger, opts ...ServerOption) *S
 		feedEntries: entry.NewStore(pool),
 		feeds:       feed.NewStore(pool, logger),
 		stats:       stats.NewStore(pool),
-		research:    research.NewStore(pool),
 		pool:        pool,
 		logger:      logger,
 		// Zero-privilege fallback. cmd/mcp/main.go normally overrides this
@@ -272,10 +266,6 @@ func NewServer(pool *pgxpool.Pool, logger *slog.Logger, opts ...ServerOption) *S
 	// --- Extra: Cross-session & Aggregation ---
 	addTool(s, toolFrom(ops.SessionDelta), s.sessionDelta)
 	addTool(s, toolFrom(ops.WeeklySummary), s.weeklySummary)
-
-	// --- Research reports ---
-	addTool(s, toolFrom(ops.AssignResearch), s.assignResearch)
-	addTool(s, toolFrom(ops.CreateReport), s.createReport)
 
 	return s
 }

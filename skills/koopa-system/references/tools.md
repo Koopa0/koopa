@@ -13,7 +13,7 @@ is hand-maintained.
 > Run `go generate ./internal/mcp/ops` after any change to the tool surface;
 > the drift test `TestToolInventoryDocInSync` fails CI if this is stale.
 
-**49 tools** across 7 domains.
+**47 tools** across 7 domains.
 
 | Domain | Count |
 |---|---|
@@ -22,9 +22,9 @@ is hand-maintained.
 | `a2a` | 6 |
 | `meta` | 10 |
 | `learning` | 7 |
-| `content` | 13 |
+| `content` | 11 |
 | `system` | 3 |
-| **Total** | **49** |
+| **Total** | **47** |
 
 | Tool | Domain | Writability | Purpose |
 |---|---|---|---|
@@ -62,10 +62,8 @@ is hand-maintained.
 | `session_progress` | `learning` | read_only | In-session aggregate for the currently-active learning session: attempt count, elapsed time, paradigm distribution (problem_solving vs immersive with… |
 | `start_session` | `learning` | additive | Begin a learning session |
 | `archive_content` | `content` | destructive | Soft-delete a content row by archiving it |
-| `assign_research` | `content` | additive | Dispatch a fan-out research assignment: assign a topic to an agent who will produce a report |
 | `create_content` | `content` | additive | Create a new content row in status=draft |
 | `create_note` | `content` | additive | Create a Zettelkasten note (notes table) |
-| `create_report` | `content` | additive | File an agent-produced research report into the report corpus |
 | `list_content` | `content` | read_only | List content rows with optional filters (type, status, project) |
 | `manage_feeds` | `content` | destructive | Feed management: list, add (url+name+schedule), update (enable/disable, retopic), remove |
 | `publish_content` | `content` | destructive | HUMAN-ONLY |

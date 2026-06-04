@@ -20,7 +20,6 @@ import (
 	"github.com/Koopa0/koopa/internal/content"
 	"github.com/Koopa0/koopa/internal/embedder"
 	"github.com/Koopa0/koopa/internal/note"
-	"github.com/Koopa0/koopa/internal/research"
 )
 
 // searchKnowledgeHybridDeadline bounds the combined embed-query + semantic-SQL
@@ -47,17 +46,6 @@ const rrfK = 60.0
 const (
 	SourceTypeContent = "content"
 	SourceTypeNote    = "note"
-	SourceTypeReport  = "report"
-)
-
-// reportTrustedWeight and reportLowTrustWeight downrank report results in the
-// cross-corpus merge relative to notes and content (which carry an implicit
-// weight of 1.0). A human-trusted report ranks as a vetted source, just under
-// digested notes/content; a low-trust report is pushed well down. Trust never
-// gates visibility — every report still appears, only its rank changes.
-const (
-	reportTrustedWeight  = 0.8
-	reportLowTrustWeight = 0.5
 )
 
 // SearchKnowledgeInput is the input for the search_knowledge tool.
@@ -65,7 +53,7 @@ type SearchKnowledgeInput struct {
 	Query       string   `json:"query" jsonschema:"required" jsonschema_description:"Search query text"`
 	ContentType *string  `json:"content_type,omitempty" jsonschema_description:"Filter by content type: article, essay, build-log, til, digest. An unknown value is rejected. Implies source_types=[\"content\"]; notes are excluded automatically. Mutually exclusive with note_kind."`
 	NoteKind    *string  `json:"note_kind,omitempty" jsonschema_description:"Filter by note kind: solve-note, concept-note, debug-postmortem, decision-log, reading-note, musing. An unknown value is rejected. Implies source_types=[\"note\"]; content is excluded automatically. Mutually exclusive with content_type."`
-	SourceTypes []string `json:"source_types,omitempty" jsonschema_description:"Filter by source: 'content' (articles/essays/etc), 'note' (Zettelkasten), 'report' (agent-produced research sources, low-trust by default and downranked). Default: all three. Any token outside {content, note, report} is rejected. Overridden by content_type or note_kind if either is set (both narrow away from reports)."`
+	SourceTypes []string `json:"source_types,omitempty" jsonschema_description:"Filter by source: 'content' (articles/essays/etc), 'note' (Zettelkasten). Default: both. Any token outside {content, note} is rejected. Overridden by content_type or note_kind if either is set."`
 	Project     *string  `json:"project,omitempty" jsonschema_description:"NOT SUPPORTED — passing a non-empty value is rejected as an unsupported_filter. Reserved for a future content-only project filter."`
 	After       *string  `json:"after,omitempty" jsonschema_description:"Filter by created date YYYY-MM-DD: keep rows created on or after the whole of this day (server timezone, UTC by default)."`
 	Before      *string  `json:"before,omitempty" jsonschema_description:"Filter by created date YYYY-MM-DD: keep rows created on or before the whole of this day, i.e. through 23:59:59 of the date (server timezone, UTC by default)."`
@@ -80,7 +68,6 @@ type SearchKnowledgeResult struct {
 	Slug        string   `json:"slug"`
 	ContentType string   `json:"content_type,omitempty"` // content.type when source_type=content
 	NoteKind    string   `json:"note_kind,omitempty"`    // note.kind when source_type=note
-	TrustStatus string   `json:"trust_status,omitempty"` // report trust (low_trust|trusted) when source_type=report
 	Excerpt     string   `json:"excerpt"`
 	Tags        []string `json:"tags,omitempty"`
 	Project     string   `json:"project,omitempty"`
@@ -93,9 +80,9 @@ type SearchKnowledgeOutput struct {
 	Total   int                     `json:"total"`
 	Query   string                  `json:"query"`
 	// SearchedCorpus lists the source types actually queried ("content",
-	// "note", "report"). It lets a caller read a 0-result response as "found
-	// none in these corpora" rather than "does not exist". agent_notes are
-	// never in this corpus by design — recall of your own breadcrumbs is
+	// "note"). It lets a caller read a 0-result response as "found none in
+	// these corpora" rather than "does not exist". agent_notes are never in
+	// this corpus by design — recall of your own breadcrumbs is
 	// query_agent_notes.
 	SearchedCorpus []string `json:"searched_corpus"`
 }
@@ -115,26 +102,23 @@ func (s *Server) searchKnowledge(ctx context.Context, _ *mcp.CallToolRequest, in
 	}
 
 	limit := clamp(int(input.Limit), 1, 50, 20)
-	wantContent, wantNote, wantReport := selectSources(input.SourceTypes)
+	wantContent, wantNote := selectSources(input.SourceTypes)
 	// A type-specific filter implies the corresponding source. Caller's
 	// mental model is "I asked for articles, why did notes leak in?" —
 	// passing content_type narrows to the content branch even if
-	// source_types was unset (default all). Symmetric for note_kind. Either
-	// type-specific filter also excludes reports, which carry neither.
+	// source_types was unset (default both). Symmetric for note_kind.
 	if input.ContentType != nil && *input.ContentType != "" {
 		wantNote = false
-		wantReport = false
 	}
 	if input.NoteKind != nil && *input.NoteKind != "" {
 		wantContent = false
-		wantReport = false
 	}
 
 	// Each branch returns rows already ordered by its own relevance score
 	// (content: fused RRF rank; notes: ts_rank). The two scores live on
 	// incompatible scales, so the cross-source merge fuses by rank position
 	// rather than comparing raw scores — see mergeByRelevance.
-	var contentResults, noteResults, reportResults []SearchKnowledgeResult
+	var contentResults, noteResults []SearchKnowledgeResult
 
 	if wantContent {
 		merged, cErr := s.contentHybridSearch(ctx, input.Query, limit)
@@ -152,62 +136,48 @@ func (s *Server) searchKnowledge(ctx context.Context, _ *mcp.CallToolRequest, in
 		noteResults = filterNoteResults(notes, input.NoteKind, after, before)
 	}
 
-	if wantReport {
-		reports, rErr := s.research.Search(ctx, input.Query, limit)
-		if rErr != nil {
-			return nil, SearchKnowledgeOutput{}, fmt.Errorf("searching reports: %w", rErr)
-		}
-		reportResults = filterReportResults(reports, after, before)
-	}
-
-	results := mergeByRelevance(contentResults, noteResults, reportResults, limit)
+	results := mergeByRelevance(contentResults, noteResults, limit)
 
 	return nil, SearchKnowledgeOutput{
 		Results:        results,
 		Total:          len(results),
 		Query:          input.Query,
-		SearchedCorpus: searchedCorpusOf(wantContent, wantNote, wantReport),
+		SearchedCorpus: searchedCorpusOf(wantContent, wantNote),
 	}, nil
 }
 
 // searchedCorpusOf lists the source types actually queried, in stable order. It
 // lets a 0-result response read as "found none in these corpora" rather than
 // "does not exist".
-func searchedCorpusOf(wantContent, wantNote, wantReport bool) []string {
-	out := make([]string, 0, 3)
+func searchedCorpusOf(wantContent, wantNote bool) []string {
+	out := make([]string, 0, 2)
 	if wantContent {
 		out = append(out, SourceTypeContent)
 	}
 	if wantNote {
 		out = append(out, SourceTypeNote)
 	}
-	if wantReport {
-		out = append(out, SourceTypeReport)
-	}
 	return out
 }
 
 // mergeByRelevance fuses the already-relevance-ranked branch result lists
-// (content, note, report) into a single ranking, capped at limit. Each branch
+// (content, note) into a single ranking, capped at limit. Each branch
 // arrives ordered by its own relevance score — content by fused RRF rank,
-// notes and reports by ts_rank — and those scores live on incompatible scales,
-// so raw scores are never compared across branches. Instead each result is
-// scored by its RANK POSITION within its own branch via reciprocal rank
-// fusion: a result at branch rank r (1-based) scores 1/(rrfK + r). Content and
-// note results take that score unweighted; report results multiply it by a
-// trust weight (< 1.0) so an agent source ranks below digested knowledge at
-// equal relevance without ever being hidden.
+// notes by ts_rank — and those scores live on incompatible scales, so raw
+// scores are never compared across branches. Instead each result is scored by
+// its RANK POSITION within its own branch via reciprocal rank fusion: a result
+// at branch rank r (1-based) scores 1/(rrfK + r).
 //
 // CreatedAt (newer first) is a deterministic tie-breaker ONLY; it never
 // outranks a more relevant result. The result envelope is always non-nil
 // (JSON serialises to "results":[] when empty) — the json-api rule forbids
 // null on list fields.
-func mergeByRelevance(contentResults, noteResults, reportResults []SearchKnowledgeResult, limit int) []SearchKnowledgeResult {
+func mergeByRelevance(contentResults, noteResults []SearchKnowledgeResult, limit int) []SearchKnowledgeResult {
 	type scored struct {
 		result SearchKnowledgeResult
 		score  float64
 	}
-	ranked := make([]scored, 0, len(contentResults)+len(noteResults)+len(reportResults))
+	ranked := make([]scored, 0, len(contentResults)+len(noteResults))
 	accumulate := func(branch []SearchKnowledgeResult, weight float64) {
 		for i := range branch {
 			ranked = append(ranked, scored{
@@ -218,12 +188,6 @@ func mergeByRelevance(contentResults, noteResults, reportResults []SearchKnowled
 	}
 	accumulate(contentResults, 1.0)
 	accumulate(noteResults, 1.0)
-	for i := range reportResults {
-		ranked = append(ranked, scored{
-			result: reportResults[i],
-			score:  reportWeight(reportResults[i].TrustStatus) * (1.0 / (rrfK + float64(i+1))),
-		})
-	}
 
 	slices.SortStableFunc(ranked, func(a, b scored) int {
 		if c := cmp.Compare(b.score, a.score); c != 0 {
@@ -380,11 +344,11 @@ func rrfMerge(fts, sem []content.Content, limit int) []content.Content {
 // selectSources resolves the source_types filter into branch flags. Empty
 // list = all sources. Tokens are assumed already validated by
 // validateSourceTypes, so any unrecognized token here is a no-op rather than
-// an error. Named wantContent / wantNote / wantReport to avoid shadowing the
+// an error. Named wantContent / wantNote to avoid shadowing the
 // internal/content package.
-func selectSources(filter []string) (wantContent, wantNote, wantReport bool) {
+func selectSources(filter []string) (wantContent, wantNote bool) {
 	if len(filter) == 0 {
-		return true, true, true
+		return true, true
 	}
 	for _, t := range filter {
 		switch t {
@@ -392,11 +356,9 @@ func selectSources(filter []string) (wantContent, wantNote, wantReport bool) {
 			wantContent = true
 		case SourceTypeNote:
 			wantNote = true
-		case SourceTypeReport:
-			wantReport = true
 		}
 	}
-	return wantContent, wantNote, wantReport
+	return wantContent, wantNote
 }
 
 // filterNoteResults applies note-specific filters and converts to wire shape.
@@ -426,44 +388,6 @@ func filterNoteResults(notes []note.Note, kindFilter *string, after, before *tim
 		})
 	}
 	return out
-}
-
-// filterReportResults applies date filters and converts reports to the wire
-// shape. Each result carries source_type=report and trust_status so the
-// consumer can badge agent-generated sources and mergeByRelevance can downrank
-// low-trust ones.
-func filterReportResults(reports []research.Report, after, before *time.Time) []SearchKnowledgeResult {
-	out := make([]SearchKnowledgeResult, 0, len(reports))
-	for i := range reports {
-		r := &reports[i]
-		if after != nil && r.CreatedAt.Before(*after) {
-			continue
-		}
-		// before is the exclusive upper bound (start of the day after the
-		// requested date), so the whole requested day is kept.
-		if before != nil && !r.CreatedAt.Before(*before) {
-			continue
-		}
-		out = append(out, SearchKnowledgeResult{
-			ID:          r.ID.String(),
-			SourceType:  SourceTypeReport,
-			Title:       r.Title,
-			Excerpt:     truncate(r.Body, 200),
-			TrustStatus: string(r.TrustStatus),
-			CreatedAt:   r.CreatedAt.Format(time.RFC3339),
-		})
-	}
-	return out
-}
-
-// reportWeight returns the cross-corpus merge weight for a report by trust:
-// trusted reports rank as vetted sources, low-trust reports well below — never
-// hidden, only downranked.
-func reportWeight(trustStatus string) float64 {
-	if trustStatus == string(research.TrustTrusted) {
-		return reportTrustedWeight
-	}
-	return reportLowTrustWeight
 }
 
 // truncate cuts s to at most n runes, appending an ellipsis if
@@ -593,16 +517,15 @@ func validateSearchKnowledgeInput(input SearchKnowledgeInput) error {
 }
 
 // validateSourceTypes rejects any source token outside the supported corpus
-// set {content, note, report}. An unknown token (a typo, or an unsupported
-// corpus like "bookmark"/"task") is a caller error, not a silent no-op:
-// returning it as an error keeps "unsupported filter" distinguishable from
-// "no results".
+// set {content, note}. An unknown token (a typo, or an unsupported corpus
+// like "bookmark"/"task") is a caller error, not a silent no-op: returning it
+// as an error keeps "unsupported filter" distinguishable from "no results".
 func validateSourceTypes(filter []string) error {
 	for _, t := range filter {
 		switch t {
-		case SourceTypeContent, SourceTypeNote, SourceTypeReport:
+		case SourceTypeContent, SourceTypeNote:
 		default:
-			return fmt.Errorf("unsupported source_type %q (supported: content, note, report)", t)
+			return fmt.Errorf("unsupported source_type %q (supported: content, note)", t)
 		}
 	}
 	return nil
