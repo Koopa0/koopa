@@ -4,7 +4,6 @@ package mcp
 
 import (
 	"context"
-	"encoding/json"
 	"log/slog"
 	"strings"
 	"testing"
@@ -215,9 +214,8 @@ func testLogger() *slog.Logger {
 	return slog.New(slog.DiscardHandler)
 }
 
-// TestCommitProposalGate covers the type-dependent commit gate. directive
-// proposals commit without the human gate (HQ delegation flow); every other
-// type requires explicit human authority. The token verification step still
+// TestCommitProposalGate covers the commit gate: every commitment type
+// requires explicit human authority. The token verification step still
 // runs first — the gate fires only after a token is verified, so we use
 // genuine signed tokens here to reach the gate.
 func TestCommitProposalGate(t *testing.T) {
@@ -242,14 +240,6 @@ func TestCommitProposalGate(t *testing.T) {
 		typ     string
 		wantErr string
 	}{
-		{
-			name: "directive — hq self-commit allowed (no human gate)",
-			ctx:  withCallerAs(t.Context(), "hq"),
-			typ:  "directive",
-			// directive commit then fails at commitDirective on missing
-			// fields, but the auth gate must not fire — so we accept any
-			// error that does NOT mention the human-only refusal.
-		},
 		{
 			name:    "goal — hq commit refused (human-only)",
 			ctx:     withCallerAs(t.Context(), "hq"),
@@ -415,38 +405,6 @@ func TestPlanDayGate(t *testing.T) {
 			ctx := withCallerAs(t.Context(), caller)
 			if err := s.requireAuthor(ctx, "plan_day", "hq"); err != nil {
 				t.Errorf("requireAuthor plan_day caller=%s = %v, want nil", caller, err)
-			}
-		})
-	}
-}
-
-// TestFileReportStandaloneGate verifies the standalone allowlist
-// excludes HQ. The rejection arm goes through the handler; the
-// acceptance arm uses requireAuthor for the same reason as
-// TestPlanDayGate. The task-bound branch (in_response_to set) takes a
-// different path and is not covered here.
-func TestFileReportStandaloneGate(t *testing.T) {
-	s := newTestServer()
-
-	validArtifact := &FileReportArtifactInput{
-		Name:  "x",
-		Parts: []json.RawMessage{json.RawMessage(`{"text":"hi"}`)},
-	}
-
-	t.Run("hq rejected", func(t *testing.T) {
-		ctx := withCallerAs(t.Context(), "hq")
-		_, _, err := s.fileReport(ctx, nil, FileReportInput{Artifact: validArtifact})
-		if err == nil || !strings.Contains(err.Error(), `caller "hq" is not in the author allowlist`) {
-			t.Errorf("fileReport error = %v, want allowlist refusal", err)
-		}
-	})
-
-	authors := []string{"content-studio", "research-lab", "learning-studio"}
-	for _, caller := range append(authors, "human") {
-		t.Run("accept caller="+caller, func(t *testing.T) {
-			ctx := withCallerAs(t.Context(), caller)
-			if err := s.requireAuthor(ctx, "file_report (standalone)", authors...); err != nil {
-				t.Errorf("requireAuthor file_report caller=%s = %v, want nil", caller, err)
 			}
 		})
 	}

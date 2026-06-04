@@ -54,12 +54,8 @@ package mcp
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-
-	"github.com/Koopa0/koopa/internal/agent"
 )
 
 // ---------------------------------------------------------------
@@ -176,68 +172,6 @@ func (s *Server) proposeMilestone(ctx context.Context, _ *mcp.CallToolRequest, i
 		fields["deadline"] = *input.Deadline
 	}
 	out, err := s.proposeEntity(ctx, "milestone", fields)
-	if err != nil {
-		return nil, ProposeOutput{}, err
-	}
-	return nil, out, nil
-}
-
-// ---------------------------------------------------------------
-// propose_directive
-// ---------------------------------------------------------------
-
-type ProposeDirectiveInput struct {
-	As           string            `json:"as,omitempty" jsonschema_description:"Self-identification (source agent). Inferred from the caller identity when absent."`
-	Source       *string           `json:"source,omitempty" jsonschema_description:"Source agent name. Inferred from the caller identity when absent."`
-	Target       string            `json:"target" jsonschema:"required" jsonschema_description:"Target agent name (must exist in the registry)."`
-	Priority     string            `json:"priority" jsonschema:"required" jsonschema_description:"One of: high, medium, low."`
-	RequestParts []json.RawMessage `json:"request_parts" jsonschema:"required" jsonschema_description:"Directive payload as an a2a.Part array. The FIRST part MUST be a text part: {\"text\": \"<title-extracting first sentence>\"}. The server extracts that text (up to 200 runes) as the directive title — there is no separate title field. Empty parts, data-only first part, or empty/whitespace text are rejected. Subsequent parts can be any mix of text/data: [{\"text\":\"Investigate HNSW tuning\"}, {\"data\":{\"deadline\":\"2026-05-15\",\"depth\":\"detailed\"}}]."`
-	Metadata     json.RawMessage   `json:"metadata,omitempty" jsonschema_description:"Optional directive metadata (any JSON object)."`
-}
-
-// proposeDirective performs the capability pre-check (ActionSubmitTask)
-// at propose time rather than at commit time. The original multiplexer
-// let a caller without SubmitTasks sign a proposal token and only
-// rejected them at commit_proposal — four round-trips wasted. This
-// fast-fails the unauthorized caller before we allocate a signed token.
-//
-//nolint:gocritic // hugeParam: input passed by value per addTool[I,O] generic contract
-func (s *Server) proposeDirective(ctx context.Context, _ *mcp.CallToolRequest, input ProposeDirectiveInput) (*mcp.CallToolResult, ProposeOutput, error) {
-	caller := agent.Name(s.callerIdentity(ctx))
-	if _, err := agent.Authorize(ctx, s.registry, caller, agent.ActionSubmitTask); err != nil {
-		return nil, ProposeOutput{}, fmt.Errorf("propose_directive: %w", err)
-	}
-
-	// Strict contract: first request_part MUST be a text part with
-	// non-empty text. The extracted text becomes the directive title.
-	// Reject before token signing so the caller learns the invariant
-	// without paying a propose+commit round-trip.
-	title, err := extractTitleFromFirstTextPart(input.RequestParts)
-	if err != nil {
-		return nil, ProposeOutput{}, fmt.Errorf("propose_directive: %w", err)
-	}
-
-	fields := map[string]any{
-		"title":         title,
-		"target":        input.Target,
-		"priority":      input.Priority,
-		"request_parts": input.RequestParts,
-	}
-	if input.Source != nil {
-		fields["source"] = *input.Source
-	}
-	if len(input.Metadata) > 0 {
-		// resolveDirectiveFields + commitDirective handle metadata as any,
-		// then json.Marshal it into the task.metadata column. Pass the
-		// raw message through unchanged.
-		var m any
-		if err := json.Unmarshal(input.Metadata, &m); err != nil {
-			return nil, ProposeOutput{}, fmt.Errorf("propose_directive: metadata is not valid JSON: %w", err)
-		}
-		fields["metadata"] = m
-	}
-
-	out, err := s.proposeEntity(ctx, "directive", fields)
 	if err != nil {
 		return nil, ProposeOutput{}, err
 	}

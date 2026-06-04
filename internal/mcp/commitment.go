@@ -19,16 +19,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
-	"sort"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/Koopa0/koopa/internal/agent"
-	"github.com/Koopa0/koopa/internal/agent/task"
 	"github.com/Koopa0/koopa/internal/goal"
 	"github.com/Koopa0/koopa/internal/learning"
 	"github.com/Koopa0/koopa/internal/learning/hypothesis"
@@ -85,10 +81,10 @@ type ProposeOutput struct {
 // through.
 func (s *Server) proposeEntity(ctx context.Context, entityType string, fields map[string]any) (ProposeOutput, error) {
 	switch entityType {
-	case "goal", "project", "milestone", "directive", "hypothesis", "learning_plan", "learning_domain":
+	case "goal", "project", "milestone", "hypothesis", "learning_plan", "learning_domain":
 		// valid
 	default:
-		return ProposeOutput{}, fmt.Errorf("invalid type %q (valid: goal, project, milestone, directive, hypothesis, learning_plan, learning_domain)", entityType)
+		return ProposeOutput{}, fmt.Errorf("invalid type %q (valid: goal, project, milestone, hypothesis, learning_plan, learning_domain)", entityType)
 	}
 
 	resolved, warnings, err := s.resolveProposalFields(ctx, entityType, fields)
@@ -128,8 +124,6 @@ func (s *Server) resolveProposalFields(ctx context.Context, entityType string, f
 		warnings, err = s.resolveProjectFields(ctx, resolved)
 	case "milestone":
 		warnings, err = s.resolveMilestoneFields(ctx, resolved)
-	case "directive":
-		warnings, err = s.resolveDirectiveFields(ctx, resolved)
 	case "hypothesis":
 		warnings, err = resolveHypothesisFields(resolved)
 	case "learning_plan":
@@ -195,44 +189,6 @@ func (s *Server) resolveMilestoneFields(ctx context.Context, f map[string]any) (
 	// schema, so this is an error not a warning.
 	if _, ok := f["goal_id"]; !ok {
 		return warnings, fmt.Errorf("goal_title or goal_id is required for milestone")
-	}
-	return warnings, nil
-}
-
-//nolint:unparam // uniform (warnings, err) signature with sibling resolve*Fields; current directive rules produce only hard errors but future rules may warn
-func (s *Server) resolveDirectiveFields(ctx context.Context, f map[string]any) (warnings []string, err error) {
-	if _, ok := f["source"]; !ok {
-		f["source"] = s.callerIdentity(ctx)
-	}
-	if target, ok := f["target"].(string); !ok || target == "" {
-		return nil, fmt.Errorf("target is required for directive")
-	}
-	// priority must match the tasks.priority CHECK vocabulary (high | medium | low).
-	// No P0/P1/P2 alias — forcing callers to use the schema's single scale avoids
-	// split-language queries where the same column carries two meanings.
-	if raw, ok := f["priority"]; ok {
-		p, isStr := raw.(string)
-		if !isStr {
-			return nil, fmt.Errorf("priority must be a string (one of: high, medium, low)")
-		}
-		if !isValidTaskPriority(p) {
-			return nil, fmt.Errorf("priority must be one of: high, medium, low (got %q)", p)
-		}
-	} else {
-		f["priority"] = "medium"
-	}
-	// request_parts is the directive payload — a JSON array of a2a.Part
-	// objects that becomes the initial task_messages row (role=request).
-	// Hand-rolling the shape is forbidden; LLM clients pass raw Part
-	// objects and the task store parses through a2a-go at the boundary.
-	if _, ok := f["request_parts"]; !ok {
-		return nil, fmt.Errorf(`request_parts is required for directive (array of a2a.Part: [{"text":"..."}] or [{"data":{...}}])`)
-	}
-	// Title is auto-extracted from request_parts[0].text by the typed
-	// proposeDirective handler at the MCP boundary. By the time we
-	// reach here it is always set; absence indicates validator drift.
-	if title, ok := f["title"].(string); !ok || strings.TrimSpace(title) == "" {
-		return nil, fmt.Errorf("directive title was not extracted from request_parts[0].text (validator drift)")
 	}
 	return warnings, nil
 }
@@ -362,16 +318,8 @@ func (s *Server) commitProposal(ctx context.Context, _ *mcp.CallToolRequest, inp
 	// All authorization MUST complete before the nonce is consumed, so an
 	// unauthorized attempt can never burn a legitimate proposer's token (the
 	// consume is single-use-on-claim; a burned token is dead until expiry).
-	// directive is capability-gated (HQ delegation, not a human commitment) and
-	// must be checked here — commitDirective re-checks the same capability at
-	// the store boundary, but that runs after consume and so cannot be the gate.
-	// Every other type requires explicit human authority.
-	if payload.Type == "directive" {
-		caller := agent.Name(s.callerIdentity(ctx))
-		if _, err := agent.Authorize(ctx, s.registry, caller, agent.ActionSubmitTask); err != nil {
-			return nil, CommitProposalOutput{}, fmt.Errorf("commit_proposal of directive: %w", err)
-		}
-	} else if err := s.requireExplicitHuman(ctx, "commit_proposal of "+payload.Type); err != nil {
+	// Every commitment type requires explicit human authority.
+	if err := s.requireExplicitHuman(ctx, "commit_proposal of "+payload.Type); err != nil {
 		return nil, CommitProposalOutput{}, err
 	}
 
@@ -415,8 +363,6 @@ func (s *Server) commitEntity(ctx context.Context, entityType string, fields map
 		return s.commitProject(ctx, fields)
 	case "milestone":
 		return s.commitMilestone(ctx, fields)
-	case "directive":
-		return s.commitDirective(ctx, fields)
 	case "hypothesis":
 		return s.commitHypothesis(ctx, fields)
 	case "learning_plan":
@@ -562,149 +508,6 @@ func (s *Server) commitMilestone(ctx context.Context, fields map[string]any) (st
 		return "", fmt.Errorf("creating milestone: %w", err)
 	}
 	return row.ID.String(), nil
-}
-
-func (s *Server) commitDirective(ctx context.Context, fields map[string]any) (string, error) {
-	source, _ := fields["source"].(string)
-	target, _ := fields["target"].(string)
-	priority, _ := fields["priority"].(string)
-
-	if source == "" {
-		s.propValidatorDrift("directive", "source")
-		return "", fmt.Errorf("source is required for directive")
-	}
-	if target == "" {
-		s.propValidatorDrift("directive", "target")
-		return "", fmt.Errorf("target is required for directive")
-	}
-	// Defensive re-check — resolveDirectiveFields already validated this at
-	// propose time, but a token carrying a field that somehow bypassed it
-	// (validator drift) must not reach the DB.
-	if priority == "" {
-		priority = "medium"
-	} else if !isValidTaskPriority(priority) {
-		s.propValidatorDrift("directive", "priority")
-		return "", fmt.Errorf("priority must be one of: high, medium, low (got %q)", priority)
-	}
-
-	rawParts, err := extractRawPartsField(fields, "request_parts")
-	if err != nil {
-		return "", fmt.Errorf("commitDirective: %w", err)
-	}
-	requestParts, err := parseA2AParts(rawParts)
-	if err != nil {
-		return "", fmt.Errorf("commitDirective: request_parts: %w", err)
-	}
-
-	title, ok := fields["title"].(string)
-	if !ok || strings.TrimSpace(title) == "" {
-		s.propValidatorDrift("directive", "title")
-		return "", fmt.Errorf("commitDirective: title is missing or empty (validator drift — propose_directive should have extracted it from request_parts[0].text)")
-	}
-
-	var metadata json.RawMessage
-	if m, ok := fields["metadata"]; ok {
-		metadata, _ = json.Marshal(m)
-	}
-
-	caller := agent.Name(s.callerIdentity(ctx))
-	auth, err := agent.Authorize(ctx, s.registry, caller, agent.ActionSubmitTask)
-	if err != nil {
-		return "", fmt.Errorf("commitDirective: %w", err)
-	}
-
-	var t *task.Task
-	err = s.withActorTx(ctx, func(tx pgx.Tx) error {
-		var err error
-		t, err = s.tasks.WithTx(tx).Submit(ctx, auth, &task.SubmitInput{
-			Source:       source,
-			Target:       target,
-			Title:        title,
-			Priority:     &priority,
-			RequestParts: requestParts,
-			Metadata:     metadata,
-		})
-		return err
-	})
-	if err != nil {
-		return "", fmt.Errorf("commitDirective: %w", err)
-	}
-	return t.ID.String(), nil
-}
-
-// directiveTitleMaxRunes caps the auto-extracted directive title at a
-// length that fits the morning_context summary view without truncation
-// in transit. Inputs longer than this get rune-truncated with an
-// ellipsis suffix; the full text remains in request_parts[0].text.
-const directiveTitleMaxRunes = 200
-
-// extractTitleFromFirstTextPart returns the title to attach to a
-// directive task. The contract is strict: the first request_part MUST
-// be a text part with non-empty text after trim. Anything else
-// (data-only first part, missing parts, malformed JSON, blank text) is
-// rejected at propose time with a 422-style error so the caller learns
-// the invariant before the proposal token is ever signed.
-//
-// Long titles are rune-truncated to directiveTitleMaxRunes and suffixed
-// with "…" so the original semantics survives in request_parts.
-func extractTitleFromFirstTextPart(parts []json.RawMessage) (string, error) {
-	if len(parts) == 0 {
-		return "", fmt.Errorf("request_parts is empty; first part must be a text part with non-empty text")
-	}
-	var first map[string]any
-	if err := json.Unmarshal(parts[0], &first); err != nil {
-		return "", fmt.Errorf("request_parts[0] is not a valid JSON object: %w", err)
-	}
-	rawText, ok := first["text"]
-	if !ok {
-		keys := make([]string, 0, len(first))
-		for k := range first {
-			keys = append(keys, k)
-		}
-		sort.Strings(keys)
-		return "", fmt.Errorf("request_parts[0] must be a text part (have key %q with string value); got keys %v", "text", keys)
-	}
-	txt, ok := rawText.(string)
-	if !ok {
-		return "", fmt.Errorf("request_parts[0].text must be a string; got %T", rawText)
-	}
-	txt = strings.TrimSpace(txt)
-	if txt == "" {
-		return "", fmt.Errorf("request_parts[0].text is empty after trim; provide a meaningful first sentence — it becomes the directive title")
-	}
-	runes := []rune(txt)
-	if len(runes) > directiveTitleMaxRunes {
-		txt = string(runes[:directiveTitleMaxRunes]) + "…"
-	}
-	return txt, nil
-}
-
-// extractRawPartsField reads a `fields[key]` that should be an array of
-// JSON objects (each an a2a.Part), returning them as []json.RawMessage
-// ready to feed into parseA2AParts. Accepts both the typed case (already
-// []json.RawMessage) and the untyped case ([]any of map[string]any
-// proposals unmarshaled from the MCP tool schema).
-func extractRawPartsField(fields map[string]any, key string) ([]json.RawMessage, error) {
-	raw, ok := fields[key]
-	if !ok {
-		return nil, fmt.Errorf("%s is required", key)
-	}
-	switch v := raw.(type) {
-	case []json.RawMessage:
-		return v, nil
-	case []any:
-		out := make([]json.RawMessage, 0, len(v))
-		for i, elem := range v {
-			b, err := json.Marshal(elem)
-			if err != nil {
-				return nil, fmt.Errorf("%s[%d]: %w", key, i, err)
-			}
-			out = append(out, b)
-		}
-		return out, nil
-	default:
-		return nil, fmt.Errorf("%s: want array of a2a.Part objects, got %T", key, raw)
-	}
 }
 
 func (s *Server) commitHypothesis(ctx context.Context, fields map[string]any) (string, error) {

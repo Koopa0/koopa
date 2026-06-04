@@ -13,18 +13,18 @@ is hand-maintained.
 > Run `go generate ./internal/mcp/ops` after any change to the tool surface;
 > the drift test `TestToolInventoryDocInSync` fails CI if this is stale.
 
-**47 tools** across 7 domains.
+**40 tools** across 7 domains.
 
 | Domain | Count |
 |---|---|
 | `query` | 7 |
 | `daily` | 3 |
-| `a2a` | 6 |
-| `meta` | 10 |
+| `a2a` | 0 |
+| `meta` | 9 |
 | `learning` | 7 |
 | `content` | 11 |
 | `system` | 3 |
-| **Total** | **47** |
+| **Total** | **40** |
 
 | Tool | Domain | Writability | Purpose |
 |---|---|---|---|
@@ -38,14 +38,7 @@ is hand-maintained.
 | `advance_work` | `daily` | destructive | Personal-todo state transitions |
 | `capture_inbox` | `daily` | additive | Quick task capture to inbox |
 | `plan_day` | `daily` | idempotent | Set the day's plan as one atomic replacement |
-| `acknowledge_directive` | `a2a` | idempotent | Mark a task as acknowledged by the calling agent |
-| `file_report` | `a2a` | additive | File a structured artifact |
-| `list_my_tasks` | `a2a` | read_only | List your open coordination tasks without needing a task id or the full morning_context briefing |
-| `reaccept` | `a2a` | idempotent | Target-side acceptance of a revision request |
-| `request_revision` | `a2a` | destructive | Source-side request for revision of a completed directive/task |
-| `task_detail` | `a2a` | read_only | Fetch a single task with its full message history and artifacts |
 | `commit_proposal` | `meta` | additive | Commit a previously proposed entity using the proposal_token from any propose_<type> tool |
-| `propose_directive` | `meta` | read_only | Propose a directive (inter-agent work request targeting a named agent, carrying an a2a.Part array as request_parts) |
 | `propose_goal` | `meta` | read_only | Propose a goal (quarterly or multi-quarter commitment, optionally scoped to an area and given a target deadline) |
 | `propose_hypothesis` | `meta` | read_only | Propose a hypothesis (falsifiable claim with an invalidation condition and narrative content) |
 | `propose_learning_domain` | `meta` | read_only | Propose a learning domain (FK target for concepts/targets/sessions/plans |

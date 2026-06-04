@@ -188,46 +188,6 @@ func TestCommitProposal_Validation(t *testing.T) {
 	}
 }
 
-// TestCommitProposal_DirectiveAuthBeforeConsume is the regression guard for
-// finding #2: directive authorization (ActionSubmitTask) must run BEFORE the
-// nonce is consumed, so an unauthorized caller cannot burn a legitimate
-// proposer's token. Before the fix consume ran first and commitDirective failed
-// authorization afterwards, leaving the token spent — a DoS on the proposer.
-func TestCommitProposal_DirectiveAuthBeforeConsume(t *testing.T) {
-	s := newTestServer()
-
-	// A valid directive token. Fields can be empty: in the buggy ordering the
-	// nonce is consumed before commitEntity runs at all, so the token is burned
-	// regardless of downstream field validity — which is exactly the bug.
-	token, err := signProposal(s.proposalSecret, "directive", map[string]any{})
-	if err != nil {
-		t.Fatalf("signProposal: %v", err)
-	}
-
-	// learning-studio holds ReceiveTasks|PublishArtifacts but NOT SubmitTasks,
-	// so it is not authorized to commit a directive.
-	unauthCtx := withCallerAs(t.Context(), "learning-studio")
-	if _, _, cErr := s.commitProposal(unauthCtx, nil, CommitProposalInput{ProposalToken: token}); cErr == nil {
-		t.Fatal("unauthorized directive commit = nil error, want authorization rejection")
-	}
-
-	// The nonce must NOT have been consumed by the failed attempt: a fresh
-	// claim of the same nonce must still succeed. (The probe itself consumes
-	// it, which is fine — the assertion is only whether it was still free.)
-	payload, err := verifyProposal(s.proposalSecret, token)
-	if err != nil {
-		t.Fatalf("verifyProposal: %v", err)
-	}
-	if !s.nonces.consume(payload.Nonce, payload.ExpiresAt+60, time.Now().Unix()) {
-		t.Error("unauthorized directive commit consumed the nonce — authorization must run before consume")
-	}
-}
-
-// TestCommitProposal_FailureAfterConsumeIsExplicit is the regression guard for
-// finding #3: when commitEntity fails AFTER the nonce is consumed, the returned
-// error must make the spent-token state explicit (the caller must re-propose),
-// not surface the bare downstream error as if the token were still usable. The
-// single-use-on-claim semantics are unchanged; only the error is clarified.
 func TestCommitProposal_FailureAfterConsumeIsExplicit(t *testing.T) {
 	s := newTestServer()
 
@@ -252,91 +212,6 @@ func TestCommitProposal_FailureAfterConsumeIsExplicit(t *testing.T) {
 		t.Errorf("post-consume failure error = %q, want it to preserve the underlying cause", err)
 	}
 }
-
-// --- file_report ---
-
-func TestFileReport_Validation(t *testing.T) {
-	s := newTestServer()
-	validPart := json.RawMessage(`{"text":"report content"}`)
-	validArtifact := &FileReportArtifactInput{
-		Name:  "delivery",
-		Parts: []json.RawMessage{json.RawMessage(`{"text":"artifact body"}`)},
-	}
-	tests := []struct {
-		name    string
-		input   FileReportInput
-		wantErr string
-	}{
-		{
-			name:    "missing artifact",
-			input:   FileReportInput{ResponseParts: []json.RawMessage{validPart}},
-			wantErr: "artifact is required",
-		},
-		{
-			name: "malformed response part",
-			input: FileReportInput{
-				InResponseTo:  "00000000-0000-0000-0000-000000000001",
-				ResponseParts: []json.RawMessage{json.RawMessage(`{bad json`)},
-				Artifact:      validArtifact,
-			},
-			wantErr: "response_parts",
-		},
-		{
-			name: "malformed artifact part",
-			input: FileReportInput{
-				ResponseParts: []json.RawMessage{validPart},
-				Artifact: &FileReportArtifactInput{
-					Name:  "delivery",
-					Parts: []json.RawMessage{json.RawMessage(`{bad json`)},
-				},
-			},
-			wantErr: "artifact.parts",
-		},
-		{
-			name:    "invalid in_response_to UUID",
-			input:   FileReportInput{InResponseTo: "not-a-uuid", ResponseParts: []json.RawMessage{validPart}, Artifact: validArtifact},
-			wantErr: "invalid in_response_to UUID",
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			_, _, err := callHandler(t, s.fileReport, tt.input)
-			if err == nil {
-				t.Fatal("expected error, got nil")
-			}
-			if !contains(err.Error(), tt.wantErr) {
-				t.Errorf("error = %q, want containing %q", err, tt.wantErr)
-			}
-		})
-	}
-}
-
-// --- acknowledge_directive ---
-
-func TestAcknowledgeDirective_Validation(t *testing.T) {
-	s := newTestServer()
-	tests := []struct {
-		name    string
-		input   AcknowledgeDirectiveInput
-		wantErr string
-	}{
-		{name: "empty id", input: AcknowledgeDirectiveInput{}, wantErr: "invalid task_id"},
-		{name: "bad uuid", input: AcknowledgeDirectiveInput{TaskID: "not-a-uuid"}, wantErr: "invalid task_id"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			_, _, err := callHandler(t, s.acknowledgeDirective, tt.input)
-			if err == nil {
-				t.Fatal("expected error, got nil")
-			}
-			if !contains(err.Error(), tt.wantErr) {
-				t.Errorf("error = %q, want containing %q", err, tt.wantErr)
-			}
-		})
-	}
-}
-
-// --- track_hypothesis ---
 
 // TestTrackHypothesis_Validation covers the cheap dispatch-path
 // validations that fire BEFORE resolveHypothesis' pre-flight existence
@@ -698,13 +573,10 @@ func TestToolSchemaGeneration(t *testing.T) {
 		{"ProposeGoalInput", testSchema[ProposeGoalInput]},
 		{"ProposeProjectInput", testSchema[ProposeProjectInput]},
 		{"ProposeMilestoneInput", testSchema[ProposeMilestoneInput]},
-		{"ProposeDirectiveInput", testSchema[ProposeDirectiveInput]},
 		{"ProposeHypothesisInput", testSchema[ProposeHypothesisInput]},
 		{"ProposeLearningPlanInput", testSchema[ProposeLearningPlanInput]},
 		{"ProposeLearningDomainInput", testSchema[ProposeLearningDomainInput]},
 		{"CommitProposalInput", testSchema[CommitProposalInput]},
-		{"FileReportInput", testSchema[FileReportInput]},
-		{"AcknowledgeDirectiveInput", testSchema[AcknowledgeDirectiveInput]},
 		{"TrackHypothesisInput", testSchema[TrackHypothesisInput]},
 		{"StartSessionInput", testSchema[StartSessionInput]},
 		{"RecordAttemptInput", testSchema[RecordAttemptInput]},

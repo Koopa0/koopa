@@ -31,16 +31,6 @@ func TestProposalRoundTrip(t *testing.T) {
 			},
 		},
 		{
-			name:       "directive minimal",
-			entityType: "directive",
-			fields: map[string]any{
-				"source":   "hq",
-				"target":   "research-lab",
-				"priority": "medium",
-				"content":  "Research NATS exactly-once semantics",
-			},
-		},
-		{
 			name:       "hypothesis with claim",
 			entityType: "hypothesis",
 			fields: map[string]any{
@@ -64,7 +54,7 @@ func TestProposalRoundTrip(t *testing.T) {
 		},
 		{
 			name:       "nested metadata",
-			entityType: "directive",
+			entityType: "project",
 			fields: map[string]any{
 				"source":  "hq",
 				"target":  "content-studio",

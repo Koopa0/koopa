@@ -171,22 +171,6 @@ func ProposeMilestone() Meta {
 	}
 }
 
-// ProposeDirective returns metadata for the flat propose_directive tool.
-// FieldEnums advertises the priority enum structurally.
-func ProposeDirective() Meta {
-	return Meta{
-		Name:        "propose_directive",
-		Domain:      DomainMeta,
-		Writability: ReadOnly,
-		Stability:   StabilityStable,
-		Since:       "1.1.0",
-		Description: "Propose a directive (inter-agent work request targeting a named agent, carrying an a2a.Part array as request_parts). The first request_part MUST be a text part — its text becomes the directive title (server extracts up to 200 runes; data-only first parts are rejected at propose time). Returns a preview + signed proposal token — does NOT write to the database. Requires commit_proposal to finalize. Capability pre-check (SubmitTasks) runs at propose time; unauthorized callers fail fast without producing a signed token.",
-		FieldEnums: map[string][]string{
-			"priority": {"high", "medium", "low"},
-		},
-	}
-}
-
 // ProposeHypothesis returns metadata for the flat propose_hypothesis tool.
 func ProposeHypothesis() Meta {
 	return Meta{
@@ -244,88 +228,6 @@ func GoalProgress() Meta {
 		Stability:   StabilityStable,
 		Since:       since,
 		Description: "Deep goal view: each active goal with its full milestone hierarchy (id/title/completed_at/target_deadline) AND its linked projects. This is the structural complement to morning_context.active_goals (which carries only the goal-summary level: title/area/quarter/deadline/milestone counts). Use goal_progress when you need milestone-level visibility or to see which projects are wired under a goal. For the daily briefing's headline counts, morning_context.active_goals is enough — calling both is redundant.",
-	}
-}
-
-// FileReport returns metadata for the a2a artifact filing tool. The
-// description includes the a2a Part shape contract — top-level `type`
-// is silently dropped by a2a-go, so callers who want structured payloads
-// must use `{"data":{...}}` not `{"type":"...","text":"..."}`. See
-// HERMES F-15 (2026-05-23).
-func FileReport() Meta {
-	return Meta{
-		Name:        "file_report",
-		Domain:      DomainA2A,
-		Writability: Additive,
-		Stability:   StabilityStable,
-		Since:       since,
-		Description: "File a structured artifact. Two modes: (1) with in_response_to — completes the referenced task by attaching a response message and artifact, then transitions the task to completed; (2) without in_response_to — creates a standalone artifact attributed to the caller. Caller identity is resolved via the 'as' field. Requires PublishArtifacts capability. Each Part in artifact.parts / response_parts is an a2a Part with EXACTLY ONE of text/raw/data/url; top-level 'type' is silently ignored — use {\"data\":{...}} for structured payloads, not {\"type\":\"...\",\"text\":\"...\"}.",
-	}
-}
-
-// AcknowledgeDirective returns metadata for the task acknowledgement tool.
-func AcknowledgeDirective() Meta {
-	return Meta{
-		Name:        "acknowledge_directive",
-		Domain:      DomainA2A,
-		Writability: Idempotent,
-		Stability:   StabilityStable,
-		Since:       since,
-		Description: "Mark a task as acknowledged by the calling agent. Validates the caller is the target. Use when the AI picks up a task during morning_context.",
-	}
-}
-
-// TaskDetail returns metadata for the single-task read tool.
-func TaskDetail() Meta {
-	return Meta{
-		Name:        "task_detail",
-		Domain:      DomainA2A,
-		Writability: ReadOnly,
-		Stability:   StabilityStable,
-		Since:       since,
-		Description: "Fetch a single task with its full message history and artifacts. Caller must be the task source or target (else returns not_found — the tool does not leak the existence of tasks the caller is not party to). Use after submitting a directive to check whether the assignee accepted, replied, or completed it.",
-	}
-}
-
-// ListMyTasks returns metadata for the caller's open-task queue read.
-func ListMyTasks() Meta {
-	return Meta{
-		Name:        "list_my_tasks",
-		Domain:      DomainA2A,
-		Writability: ReadOnly,
-		Stability:   StabilityStable,
-		Since:       since,
-		Description: "List your open coordination tasks without needing a task id or the full morning_context briefing. Returns two disjoint lists: received (tasks assigned to you — your inbox) and issued (tasks you created — your outbox), each covering submitted, working, and revision_requested states. Scoped to the calling agent (as). Read-only.",
-	}
-}
-
-// RequestRevision returns metadata for the source-side revision-request tool.
-// Writability is Destructive: the transition completed → revision_requested
-// moves a finalized task back into an in-flight state; the optional reason
-// append is additive but the lifecycle move dominates the label.
-func RequestRevision() Meta {
-	return Meta{
-		Name:        "request_revision",
-		Domain:      DomainA2A,
-		Writability: Destructive,
-		Stability:   StabilityStable,
-		Since:       "1.2.0",
-		Description: "Source-side request for revision of a completed directive/task. Transitions completed → revision_requested and stamps revision_requested_at while preserving completed_at. Caller must be the task source and hold SubmitTasks. Optional reason (after trimming) is appended as a response message in the same transaction as the state transition — a failed transition rolls the reason back. Use after reviewing a file_report when the deliverable needs changes; the assignee re-enters the queue via the task's open-task listing and picks it up with reaccept.",
-	}
-}
-
-// Reaccept returns metadata for the target-side revision-pickup tool.
-// Writability is Idempotent: a second call after success returns ErrConflict
-// (the SQL WHERE narrows to state='revision_requested' and matches no rows),
-// same shape as acknowledge_directive.
-func Reaccept() Meta {
-	return Meta{
-		Name:        "reaccept",
-		Domain:      DomainA2A,
-		Writability: Idempotent,
-		Stability:   StabilityStable,
-		Since:       "1.2.0",
-		Description: "Target-side acceptance of a revision request. Transitions revision_requested → working and clears both completed_at and revision_requested_at so the task can be re-completed via file_report. Caller must be the task target and hold ReceiveTasks. Wrong-state calls (working / completed / submitted) are rejected with a state-mismatch error; the duplicate-call shape mirrors acknowledge_directive.",
 	}
 }
 
@@ -701,18 +603,11 @@ func All() []Meta {
 		ProposeGoal(),
 		ProposeProject(),
 		ProposeMilestone(),
-		ProposeDirective(),
 		ProposeHypothesis(),
 		ProposeLearningPlan(),
 		ProposeLearningDomain(),
 		CommitProposal(),
 		GoalProgress(),
-		FileReport(),
-		AcknowledgeDirective(),
-		TaskDetail(),
-		ListMyTasks(),
-		RequestRevision(),
-		Reaccept(),
 		TrackHypothesis(),
 		StartSession(),
 		RecordAttempt(),

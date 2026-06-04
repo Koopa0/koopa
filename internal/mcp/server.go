@@ -216,22 +216,15 @@ func NewServer(pool *pgxpool.Pool, logger *slog.Logger, opts ...ServerOption) *S
 	addTool(s, toolFrom(ops.WriteAgentNote), s.writeAgentNote)
 	addTool(s, toolFrom(ops.QueryAgentNotes), s.queryAgentNotes)
 
-	// --- Intent & a2a ---
+	// --- Proposals & commitment ---
 	addTool(s, toolFrom(ops.ProposeGoal), s.proposeGoal)
 	addTool(s, toolFrom(ops.ProposeProject), s.proposeProject)
 	addTool(s, toolFrom(ops.ProposeMilestone), s.proposeMilestone)
-	addTool(s, toolFrom(ops.ProposeDirective), s.proposeDirective)
 	addTool(s, toolFrom(ops.ProposeHypothesis), s.proposeHypothesis)
 	addTool(s, toolFrom(ops.ProposeLearningPlan), s.proposeLearningPlan)
 	addTool(s, toolFrom(ops.ProposeLearningDomain), s.proposeLearningDomain)
 	addTool(s, toolFrom(ops.CommitProposal), s.commitProposal)
 	addTool(s, toolFrom(ops.GoalProgress), s.goalProgress)
-	addTool(s, toolFrom(ops.FileReport), s.fileReport)
-	addTool(s, toolFrom(ops.AcknowledgeDirective), s.acknowledgeDirective)
-	addTool(s, toolFrom(ops.TaskDetail), s.taskDetail)
-	addTool(s, toolFrom(ops.ListMyTasks), s.listMyTasks)
-	addTool(s, toolFrom(ops.RequestRevision), s.requestRevision)
-	addTool(s, toolFrom(ops.Reaccept), s.reaccept)
 	addTool(s, toolFrom(ops.TrackHypothesis), s.trackHypothesis)
 
 	// --- Learning Domain ---
