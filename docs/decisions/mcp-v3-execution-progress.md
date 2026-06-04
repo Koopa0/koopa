@@ -46,6 +46,7 @@ private memory.
 ### Recommended order: W4 → W5 → (W6 + W3 + W9 as one briefing cluster) → W7 → W8 → frontend → W10
 
 ### W4 — bookmark, FULL feature removal  *(clean standalone — good next)*
+**Verified footprint (2026-06-05):** non-test importers = `cmd/app/main.go`, `cmd/app/routes.go`. Routes: public `GET /api/bookmarks` + `/api/bookmarks/{slug}` (routes.go:132-133); admin List/Get/Create/Update/Delete (routes.go:169-173); import (routes.go:29) + handler field `bookmark *bookmark.Handler` (routes.go:54). main.go: import (33), `bookmarkStore := bookmark.NewStore` (132), `bookmark.NewHandler(bookmarkStore, topicStore, tagStore, logger)` (195). Tests to clean: `internal/api/integration_test.go` (imports bookmark — public-API tests), `internal/bookmark/integration_test.go` (deleted with pkg). No other non-test Go refs (only comments in content.go/project.go + the generated db model). KEEP `search.Kind` KindBookmark (roadmap placeholder, per ledger E2).
 - `git rm -r internal/bookmark`.
 - HTTP: remove `/api/admin/bookmarks*` + public `/api/bookmarks*` routes (cmd/app/routes.go), the `bookmark` handler field, and main.go `bookmarkStore` + `bookmark.NewHandler` wiring + import.
 - Public read: check `cmd/app/routes.go` for `/api/bookmarks`, `/api/bookmarks/{slug}` (public site).
