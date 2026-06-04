@@ -30,10 +30,29 @@ jobs:
         run: go vet ./...
 
       # Unit lane with the race detector (security.md mandates -race).
-      # Integration tests (//go:build integration) need a live PostgreSQL via
-      # testcontainers; a dedicated integration CI lane is added separately.
-      - name: go test (race)
+      # Integration tests (//go:build integration) run in the separate
+      # `integration` job below — testcontainers needs a Docker daemon, which
+      # this job's runner does not assume. This lane is NOT a full-system pass.
+      - name: go test (race, unit)
         run: go test -race ./...
+
+  integration:
+    name: Integration (race, testcontainers)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+          cache: true
+
+      # ubuntu-latest provides a Docker daemon; testcontainers-go starts a
+      # pgvector/pgvector:pg17 container per package (internal/testdb) and
+      # applies migrations/. Identical to `make test-integration` locally.
+      - name: make test-integration
+        run: make test-integration
 
   lint:
     name: golangci-lint
