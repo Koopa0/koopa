@@ -10,7 +10,6 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	agentnote "github.com/Koopa0/koopa/internal/agent/note"
-	"github.com/Koopa0/koopa/internal/agent/task"
 	"github.com/Koopa0/koopa/internal/content"
 	"github.com/Koopa0/koopa/internal/daily"
 	"github.com/Koopa0/koopa/internal/goal"
@@ -33,7 +32,7 @@ const sectionTimeout = 15 * time.Second
 // scatter the per-agent override logic across the section fillers.
 // Section names must match the runSection labels in fillMorningSections.
 var defaultSectionsByAgent = map[string][]string{
-	"learning-studio": {"tasks", "pending_tasks", "hypotheses", "plan_history"},
+	"learning-studio": {"tasks", "hypotheses", "plan_history"},
 }
 
 // resolveDefaultSections returns the section set to use when the caller
@@ -63,7 +62,6 @@ func resolveDefaultSections(caller string) []string {
 //
 //	"tasks"            → overdue_todos, today_todos, committed_todos, upcoming_todos
 //	"goals"            → active_goals
-//	"pending_tasks"    → pending_tasks_received, pending_tasks_issued
 //	"hypotheses"       → unverified_hypotheses
 //	"rss"              → rss_highlights
 //	"plan_history"     → plan_history
@@ -71,7 +69,7 @@ func resolveDefaultSections(caller string) []string {
 //
 // Unknown group names are ignored silently (no error, no warning).
 type MorningContextInput struct {
-	Sections FlexStringSlice `json:"sections,omitempty" jsonschema_description:"Strict filter on which groups to populate (default: all). Omit or pass [] to get the full briefing. Group key → response fields populated: 'tasks' → overdue_todos/today_todos/committed_todos/upcoming_todos; 'goals' → active_goals; 'pending_tasks' → pending_tasks_received/pending_tasks_issued; 'hypotheses' → unverified_hypotheses; 'rss' → rss_highlights; 'plan_history' → plan_history; 'content_pipeline' → content_pipeline. Unknown keys silently ignored. Non-listed groups stay [] so JSON shape is stable across calls."`
+	Sections FlexStringSlice `json:"sections,omitempty" jsonschema_description:"Strict filter on which groups to populate (default: all). Omit or pass [] to get the full briefing. Group key → response fields populated: 'tasks' → overdue_todos/today_todos/committed_todos/upcoming_todos; 'goals' → active_goals; 'hypotheses' → unverified_hypotheses; 'rss' → rss_highlights; 'plan_history' → plan_history; 'content_pipeline' → content_pipeline. Unknown keys silently ignored. Non-listed groups stay [] so JSON shape is stable across calls."`
 	Date     *string         `json:"date,omitempty" jsonschema_description:"Target date YYYY-MM-DD (default: today)"`
 }
 
@@ -83,8 +81,6 @@ type MorningContextOutput struct {
 	CommittedTodos       []daily.Item             `json:"committed_todos"`
 	UpcomingTodos        []todo.PendingDetail     `json:"upcoming_todos"`
 	ActiveGoals          []goal.ActiveGoalSummary `json:"active_goals"`
-	PendingTasksReceived []task.Task              `json:"pending_tasks_received"`
-	PendingTasksIssued   []task.Task              `json:"pending_tasks_issued"`
 	UnverifiedHypotheses []hypothesis.Record      `json:"unverified_hypotheses"`
 	RSSHighlights        []RSSHighlight           `json:"rss_highlights"`
 	PlanHistory          []agentnote.Note         `json:"plan_history"`
@@ -138,8 +134,6 @@ func (s *Server) morningContext(ctx context.Context, _ *mcp.CallToolRequest, inp
 		CommittedTodos:       []daily.Item{},
 		UpcomingTodos:        []todo.PendingDetail{},
 		ActiveGoals:          []goal.ActiveGoalSummary{},
-		PendingTasksReceived: []task.Task{},
-		PendingTasksIssued:   []task.Task{},
 		UnverifiedHypotheses: []hypothesis.Record{},
 		RSSHighlights:        []RSSHighlight{},
 		PlanHistory:          []agentnote.Note{},
@@ -169,7 +163,6 @@ func (s *Server) fillMorningSections(ctx context.Context, date time.Time, reques
 
 	runSection("tasks", func(c context.Context) { s.fillMorningTasks(c, date, out) })
 	runSection("goals", func(c context.Context) { s.fillGoals(c, out) })
-	runSection("pending_tasks", func(c context.Context) { s.fillPendingTasks(c, out) })
 	runSection("hypotheses", func(c context.Context) { s.fillHypotheses(c, out) })
 	runSection("rss", func(c context.Context) { s.fillRSSHighlights(c, date, out) })
 	runSection("plan_history", func(c context.Context) { s.fillPlanHistory(c, date, out) })
@@ -219,23 +212,6 @@ func (s *Server) fillGoals(ctx context.Context, out *MorningContextOutput) {
 		out.ActiveGoals = goals
 	} else {
 		s.logger.Warn("morning_context: active goals", "error", err)
-	}
-}
-
-func (s *Server) fillPendingTasks(ctx context.Context, out *MorningContextOutput) {
-	caller := s.callerIdentity(ctx)
-	const limit = 20
-
-	if received, err := s.tasks.OpenForAssignee(ctx, caller, limit); err == nil {
-		out.PendingTasksReceived = received
-	} else {
-		s.logger.Warn("morning_context: pending tasks received", "error", err)
-	}
-
-	if issued, err := s.tasks.OpenForCreator(ctx, caller, limit); err == nil {
-		out.PendingTasksIssued = issued
-	} else {
-		s.logger.Warn("morning_context: pending tasks issued", "error", err)
 	}
 }
 

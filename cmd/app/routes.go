@@ -25,7 +25,6 @@ import (
 	"github.com/Koopa0/koopa/internal/activity"
 	"github.com/Koopa0/koopa/internal/agent"
 	agentnote "github.com/Koopa0/koopa/internal/agent/note"
-	agenttask "github.com/Koopa0/koopa/internal/agent/task"
 	"github.com/Koopa0/koopa/internal/auth"
 	"github.com/Koopa0/koopa/internal/bookmark"
 	"github.com/Koopa0/koopa/internal/content"
@@ -63,7 +62,6 @@ type handlers struct {
 	activity   *activity.Handler
 	upload     *upload.Handler
 	hypothesis *hypothesis.Handler
-	task       *agenttask.Handler
 	agent      *agent.Handler
 	daily      *daily.Handler
 	learning   *learning.Handler
@@ -329,27 +327,11 @@ func registerRoutes(
 	mux.Handle("PUT /api/admin/learning/plans/{id}/entries/{entry_id}", adminMid(http.HandlerFunc(h.plan.UpdateEntry)))
 	mux.Handle("POST /api/admin/learning/reviews/{card_id}", adminMid(http.HandlerFunc(h.fsrs.Review)))
 
-	// --- Admin: Coordination / Tasks ---
-	// All mutation paths run under adminMid for actor tx binding so audit
-	// triggers attribute task_messages / tasks writes to the caller agent.
-	mux.Handle("GET /api/admin/coordination/tasks", authMid(http.HandlerFunc(h.task.List)))
-	mux.Handle("GET /api/admin/coordination/tasks/open", authMid(http.HandlerFunc(h.task.Open)))
-	mux.Handle("GET /api/admin/coordination/tasks/completed", authMid(http.HandlerFunc(h.task.Completed)))
-	mux.Handle("GET /api/admin/coordination/tasks/{id}", authMid(http.HandlerFunc(h.task.Get)))
-	mux.Handle("GET /api/admin/coordination/tasks/{id}/messages", authMid(http.HandlerFunc(h.task.Messages)))
-	mux.Handle("GET /api/admin/coordination/tasks/{id}/artifacts", authMid(http.HandlerFunc(h.task.Artifacts)))
-	mux.Handle("POST /api/admin/coordination/tasks", adminMid(http.HandlerFunc(h.task.Submit)))
-	mux.Handle("POST /api/admin/coordination/tasks/{id}/reply", adminMid(http.HandlerFunc(h.task.Reply)))
-	mux.Handle("POST /api/admin/coordination/tasks/{id}/request-revision", adminMid(http.HandlerFunc(h.task.RequestRevision)))
-	mux.Handle("POST /api/admin/coordination/tasks/{id}/approve", adminMid(http.HandlerFunc(h.task.Approve)))
-	mux.Handle("POST /api/admin/coordination/tasks/{id}/cancel", adminMid(http.HandlerFunc(h.task.Cancel)))
-
 	// --- Admin: Coordination / Agents ---
 	// Agents are registry-managed — the admin surface is read-only;
 	// /:name/notes is the runtime log tab.
 	mux.Handle("GET /api/admin/coordination/agents", authMid(http.HandlerFunc(h.agent.List)))
 	mux.Handle("GET /api/admin/coordination/agents/{name}", authMid(http.HandlerFunc(h.agent.Get)))
-	mux.Handle("GET /api/admin/coordination/agents/{name}/tasks", authMid(http.HandlerFunc(h.task.AgentTasks)))
 	mux.Handle("GET /api/admin/coordination/agents/{name}/notes", authMid(http.HandlerFunc(h.agentNote.ListForAgent)))
 
 	// --- Admin: Coordination / Process runs ---

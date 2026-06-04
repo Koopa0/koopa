@@ -11,7 +11,6 @@ import (
 	"time"
 
 	agentnote "github.com/Koopa0/koopa/internal/agent/note"
-	"github.com/Koopa0/koopa/internal/agent/task"
 	"github.com/Koopa0/koopa/internal/daily"
 	"github.com/Koopa0/koopa/internal/goal"
 	"github.com/Koopa0/koopa/internal/learning/hypothesis"
@@ -63,8 +62,6 @@ func TestMorningContextOutput_AllSlicesMarshalAsEmptyArray(t *testing.T) {
 		CommittedTodos:       []daily.Item{},
 		UpcomingTodos:        []todo.PendingDetail{},
 		ActiveGoals:          []goal.ActiveGoalSummary{},
-		PendingTasksReceived: []task.Task{},
-		PendingTasksIssued:   []task.Task{},
 		UnverifiedHypotheses: []hypothesis.Record{},
 		RSSHighlights:        []RSSHighlight{},
 		PlanHistory:          []agentnote.Note{},
@@ -82,8 +79,6 @@ func TestMorningContextOutput_AllSlicesMarshalAsEmptyArray(t *testing.T) {
 		"committed_todos",
 		"upcoming_todos",
 		"active_goals",
-		"pending_tasks_received",
-		"pending_tasks_issued",
 		"unverified_hypotheses",
 		"rss_highlights",
 		"plan_history",
@@ -115,7 +110,7 @@ func TestResolveDefaultSections(t *testing.T) {
 		{
 			name:   "learning-studio gets focused subset",
 			caller: "learning-studio",
-			want:   []string{"tasks", "pending_tasks", "hypotheses", "plan_history"},
+			want:   []string{"tasks", "hypotheses", "plan_history"},
 		},
 	}
 	for _, tt := range tests {
@@ -168,8 +163,6 @@ func TestMorningContextOutput_PopulatedWireShape(t *testing.T) {
 		"committed_todos",
 		"upcoming_todos",
 		"active_goals",
-		"pending_tasks_received",
-		"pending_tasks_issued",
 		"unverified_hypotheses",
 		"rss_highlights",
 		"plan_history",
@@ -196,8 +189,6 @@ func TestMorningContextOutput_PopulatedWireShape(t *testing.T) {
 				CommittedTodos:       []daily.Item{},
 				UpcomingTodos:        []todo.PendingDetail{},
 				ActiveGoals:          []goal.ActiveGoalSummary{},
-				PendingTasksReceived: []task.Task{},
-				PendingTasksIssued:   []task.Task{},
 				UnverifiedHypotheses: []hypothesis.Record{},
 				RSSHighlights:        []RSSHighlight{},
 				PlanHistory:          []agentnote.Note{},
@@ -209,8 +200,6 @@ func TestMorningContextOutput_PopulatedWireShape(t *testing.T) {
 				{"committed_todos", 0},
 				{"upcoming_todos", 0},
 				{"active_goals", 0},
-				{"pending_tasks_received", 0},
-				{"pending_tasks_issued", 0},
 				{"unverified_hypotheses", 0},
 				{"rss_highlights", 0},
 				{"plan_history", 0},
@@ -228,8 +217,6 @@ func TestMorningContextOutput_PopulatedWireShape(t *testing.T) {
 				CommittedTodos:       []daily.Item{},
 				UpcomingTodos:        []todo.PendingDetail{},
 				ActiveGoals:          []goal.ActiveGoalSummary{},
-				PendingTasksReceived: []task.Task{},
-				PendingTasksIssued:   []task.Task{},
 				UnverifiedHypotheses: []hypothesis.Record{},
 				RSSHighlights:        []RSSHighlight{},
 				PlanHistory:          []agentnote.Note{},
@@ -252,8 +239,6 @@ func TestMorningContextOutput_PopulatedWireShape(t *testing.T) {
 				CommittedTodos:       []daily.Item{},
 				UpcomingTodos:        []todo.PendingDetail{},
 				ActiveGoals:          []goal.ActiveGoalSummary{},
-				PendingTasksReceived: []task.Task{},
-				PendingTasksIssued:   []task.Task{},
 				UnverifiedHypotheses: []hypothesis.Record{},
 				RSSHighlights: []RSSHighlight{
 					{Title: "Go 1.27 preview", URL: "https://example/g127", FeedName: "Go Blog", CreatedAt: "2026-05-26T10:00:00Z"},

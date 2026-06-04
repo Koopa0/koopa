@@ -27,9 +27,7 @@ import (
 
 	"github.com/Koopa0/koopa/internal/activity"
 	"github.com/Koopa0/koopa/internal/agent"
-	"github.com/Koopa0/koopa/internal/agent/artifact"
 	agentnote "github.com/Koopa0/koopa/internal/agent/note"
-	agenttask "github.com/Koopa0/koopa/internal/agent/task"
 	"github.com/Koopa0/koopa/internal/api"
 	"github.com/Koopa0/koopa/internal/auth"
 	"github.com/Koopa0/koopa/internal/bookmark"
@@ -143,8 +141,6 @@ func run(logger *slog.Logger) error {
 	authStore := auth.NewStore(pool)
 	hypothesisStore := hypothesis.NewStore(pool)
 	todoStore := todo.NewStore(pool)
-	artifactStore := artifact.NewStore(pool)
-	taskStore := agenttask.NewStore(pool, artifactStore)
 	dailyStore := daily.NewStore(pool)
 	learningStore := learning.NewStore(pool)
 	fsrsStore := fsrs.NewStore(pool)
@@ -207,7 +203,6 @@ func run(logger *slog.Logger) error {
 		activity:   activity.NewHandler(activityStore, logger),
 		upload:     uploadHandler,
 		hypothesis: hypothesis.NewHandler(hypothesisStore, logger),
-		task:       agenttask.NewHandler(taskStore, artifactStore, agentRegistry, logger),
 		agent:      agent.NewHandler(agentRegistry, logger),
 		daily:      daily.NewHandler(dailyStore, logger),
 		learning:   learning.NewHandler(learningStore, fsrsStore, logger),
@@ -224,7 +219,7 @@ func run(logger *slog.Logger) error {
 		today: today.NewHandler(dailyStore, logger).WithSources(
 			nil, // contentQueue — parked follow-up
 			nil, // hypotheses — parked follow-up
-			agenttask.NewTodayAwaitingSource(taskStore),
+			nil, // awaiting-task source removed (W2)
 			nil, // plannings — parked follow-up
 			nil, // dueReviews — parked follow-up
 			nil, // feeds — parked follow-up

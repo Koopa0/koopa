@@ -14,8 +14,6 @@ sql:
       - "internal/todo/query.sql"
       - "internal/agent/note/query.sql"
       - "internal/agent/query.sql"
-      - "internal/agent/task/query.sql"
-      - "internal/agent/artifact/query.sql"
       - "internal/daily/query.sql"
       - "internal/stats/query.sql"
       - "internal/learning/query.sql"

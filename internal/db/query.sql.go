@@ -14,81 +14,6 @@ import (
 	pgvector_go "github.com/pgvector/pgvector-go"
 )
 
-const acceptTask = `-- name: AcceptTask :one
-UPDATE tasks
-SET state = 'working', accepted_at = now()
-WHERE id = $1 AND state = 'submitted'
-RETURNING id, created_by, assignee, title, state, deadline, priority, submitted_at, accepted_at, completed_at, canceled_at, revision_requested_at, metadata, acknowledged_at, acknowledged_by
-`
-
-// Transition a task from submitted → working. The chk_tasks_state_timestamps
-// CHECK enforces that accepted_at is set together with state=working; any
-// attempt to accept a non-submitted task triggers a CHECK violation, which
-// the store maps to ErrConflict.
-func (q *Queries) AcceptTask(ctx context.Context, id uuid.UUID) (Task, error) {
-	row := q.db.QueryRow(ctx, acceptTask, id)
-	var i Task
-	err := row.Scan(
-		&i.ID,
-		&i.CreatedBy,
-		&i.Assignee,
-		&i.Title,
-		&i.State,
-		&i.Deadline,
-		&i.Priority,
-		&i.SubmittedAt,
-		&i.AcceptedAt,
-		&i.CompletedAt,
-		&i.CanceledAt,
-		&i.RevisionRequestedAt,
-		&i.Metadata,
-		&i.AcknowledgedAt,
-		&i.AcknowledgedBy,
-	)
-	return i, err
-}
-
-const acknowledgeTask = `-- name: AcknowledgeTask :one
-UPDATE tasks
-SET acknowledged_at = now(), acknowledged_by = $1
-WHERE id = $2 AND state = 'completed' AND acknowledged_at IS NULL
-RETURNING id, created_by, assignee, title, state, deadline, priority, submitted_at, accepted_at, completed_at, canceled_at, revision_requested_at, metadata, acknowledged_at, acknowledged_by
-`
-
-type AcknowledgeTaskParams struct {
-	AcknowledgedBy *string   `json:"acknowledged_by"`
-	ID             uuid.UUID `json:"id"`
-}
-
-// Stamp acknowledged_at / acknowledged_by on a completed, unacknowledged
-// task. The caller MUST have run LockTaskForApprove in the same tx and
-// verified (state, ack, source) — the WHERE clause here is a structural
-// safety net, not the primary gate. The chk_tasks_acknowledged_pair CHECK
-// guarantees acknowledged_by is set together with acknowledged_at and
-// only on a completed task.
-func (q *Queries) AcknowledgeTask(ctx context.Context, arg AcknowledgeTaskParams) (Task, error) {
-	row := q.db.QueryRow(ctx, acknowledgeTask, arg.AcknowledgedBy, arg.ID)
-	var i Task
-	err := row.Scan(
-		&i.ID,
-		&i.CreatedBy,
-		&i.Assignee,
-		&i.Title,
-		&i.State,
-		&i.Deadline,
-		&i.Priority,
-		&i.SubmittedAt,
-		&i.AcceptedAt,
-		&i.CompletedAt,
-		&i.CanceledAt,
-		&i.RevisionRequestedAt,
-		&i.Metadata,
-		&i.AcknowledgedAt,
-		&i.AcknowledgedBy,
-	)
-	return i, err
-}
-
 const activeGoals = `-- name: ActiveGoals :many
 SELECT g.id, g.title, g.description, g.status, g.area_id, g.quarter, g.deadline,
        g.created_at, g.updated_at,
@@ -523,51 +448,6 @@ func (q *Queries) AliasesByExactRawTags(ctx context.Context, rawTags []string) (
 	return items, nil
 }
 
-const allOpenTasks = `-- name: AllOpenTasks :many
-SELECT id, created_by, assignee, title, state, deadline, priority, submitted_at, accepted_at, completed_at, canceled_at, revision_requested_at, metadata, acknowledged_at, acknowledged_by
-FROM tasks
-WHERE state IN ('submitted', 'working', 'revision_requested')
-ORDER BY submitted_at DESC
-LIMIT $1
-`
-
-// All submitted+working+revision_requested tasks across all agents.
-func (q *Queries) AllOpenTasks(ctx context.Context, maxResults int32) ([]Task, error) {
-	rows, err := q.db.Query(ctx, allOpenTasks, maxResults)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []Task{}
-	for rows.Next() {
-		var i Task
-		if err := rows.Scan(
-			&i.ID,
-			&i.CreatedBy,
-			&i.Assignee,
-			&i.Title,
-			&i.State,
-			&i.Deadline,
-			&i.Priority,
-			&i.SubmittedAt,
-			&i.AcceptedAt,
-			&i.CompletedAt,
-			&i.CanceledAt,
-			&i.RevisionRequestedAt,
-			&i.Metadata,
-			&i.AcknowledgedAt,
-			&i.AcknowledgedBy,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const allPublishedSlugs = `-- name: AllPublishedSlugs :many
 SELECT slug, type, updated_at
 FROM contents
@@ -672,49 +552,6 @@ func (q *Queries) AppendHypothesisEvidence(ctx context.Context, arg AppendHypoth
 		&i.ResolvedByAttemptID,
 		&i.ResolvedByObservationID,
 		&i.ResolutionSummary,
-		&i.CreatedAt,
-	)
-	return i, err
-}
-
-const appendTaskMessage = `-- name: AppendTaskMessage :one
-INSERT INTO task_messages (task_id, role, position, parts)
-VALUES (
-    $1,
-    $2::message_role,
-    COALESCE(
-        (SELECT MAX(position) + 1 FROM task_messages WHERE task_id = $1),
-        0
-    ),
-    $3
-)
-RETURNING id, task_id, role, position, parts, created_at
-`
-
-type AppendTaskMessageParams struct {
-	TaskID uuid.UUID       `json:"task_id"`
-	Role   MessageRole     `json:"role"`
-	Parts  json.RawMessage `json:"parts"`
-}
-
-// Append a message to a task, computing position = MAX(position) + 1
-// atomically. Caller MUST have called LockTaskForAppend in the same
-// transaction first; that lock serializes concurrent appenders so the
-// scalar subquery for position is stable at INSERT time. Without the
-// lock, two appenders at READ COMMITTED can both read the same MAX and
-// one will hit UNIQUE(task_id, position) and fail.
-// chk_task_messages_parts_count and chk_task_messages_parts_size enforce
-// the 1..16 parts and ≤32 KB bounds at the DB layer; CHECK violations map
-// to ErrInvalidInput.
-func (q *Queries) AppendTaskMessage(ctx context.Context, arg AppendTaskMessageParams) (TaskMessage, error) {
-	row := q.db.QueryRow(ctx, appendTaskMessage, arg.TaskID, arg.Role, arg.Parts)
-	var i TaskMessage
-	err := row.Scan(
-		&i.ID,
-		&i.TaskID,
-		&i.Role,
-		&i.Position,
-		&i.Parts,
 		&i.CreatedAt,
 	)
 	return i, err
@@ -888,74 +725,6 @@ func (q *Queries) AreaIDBySlugOrName(ctx context.Context, identifier string) (uu
 	var id uuid.UUID
 	err := row.Scan(&id)
 	return id, err
-}
-
-const artifactByID = `-- name: ArtifactByID :one
-SELECT id, task_id, created_by, name, description, parts, created_at
-FROM artifacts WHERE id = $1
-`
-
-func (q *Queries) ArtifactByID(ctx context.Context, id uuid.UUID) (Artifact, error) {
-	row := q.db.QueryRow(ctx, artifactByID, id)
-	var i Artifact
-	err := row.Scan(
-		&i.ID,
-		&i.TaskID,
-		&i.CreatedBy,
-		&i.Name,
-		&i.Description,
-		&i.Parts,
-		&i.CreatedAt,
-	)
-	return i, err
-}
-
-const artifactCountForTask = `-- name: ArtifactCountForTask :one
-SELECT COUNT(*)::int AS count
-FROM artifacts WHERE task_id = $1
-`
-
-func (q *Queries) ArtifactCountForTask(ctx context.Context, taskID *uuid.UUID) (int32, error) {
-	row := q.db.QueryRow(ctx, artifactCountForTask, taskID)
-	var count int32
-	err := row.Scan(&count)
-	return count, err
-}
-
-const artifactsForTask = `-- name: ArtifactsForTask :many
-SELECT id, task_id, created_by, name, description, parts, created_at
-FROM artifacts
-WHERE task_id = $1
-ORDER BY created_at ASC
-`
-
-// All artifacts on a task in chronological order. Backed by idx_artifacts_task.
-func (q *Queries) ArtifactsForTask(ctx context.Context, taskID *uuid.UUID) ([]Artifact, error) {
-	rows, err := q.db.Query(ctx, artifactsForTask, taskID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []Artifact{}
-	for rows.Next() {
-		var i Artifact
-		if err := rows.Scan(
-			&i.ID,
-			&i.TaskID,
-			&i.CreatedBy,
-			&i.Name,
-			&i.Description,
-			&i.Parts,
-			&i.CreatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
 }
 
 const attachContentToTarget = `-- name: AttachContentToTarget :exec
@@ -1309,71 +1078,6 @@ func (q *Queries) AutoDisableFeed(ctx context.Context, arg AutoDisableFeedParams
 	return err
 }
 
-const awaitingApprovalPaged = `-- name: AwaitingApprovalPaged :many
-SELECT id, created_by, assignee, title, state, deadline, priority, submitted_at, accepted_at, completed_at, canceled_at, revision_requested_at, metadata, acknowledged_at, acknowledged_by
-FROM tasks
-WHERE state = 'completed' AND acknowledged_at IS NULL
-ORDER BY completed_at DESC NULLS LAST
-LIMIT $2 OFFSET $1
-`
-
-type AwaitingApprovalPagedParams struct {
-	PageOffset int32 `json:"page_offset"`
-	PageLimit  int32 `json:"page_limit"`
-}
-
-// Completed tasks that have not yet been source-acknowledged — the
-// "awaiting your judgment" inbox. Excludes already-acknowledged
-// completed tasks; those live in CompletedTasksPaged history.
-// Backed by idx_tasks_awaiting_approval (partial index).
-func (q *Queries) AwaitingApprovalPaged(ctx context.Context, arg AwaitingApprovalPagedParams) ([]Task, error) {
-	rows, err := q.db.Query(ctx, awaitingApprovalPaged, arg.PageOffset, arg.PageLimit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []Task{}
-	for rows.Next() {
-		var i Task
-		if err := rows.Scan(
-			&i.ID,
-			&i.CreatedBy,
-			&i.Assignee,
-			&i.Title,
-			&i.State,
-			&i.Deadline,
-			&i.Priority,
-			&i.SubmittedAt,
-			&i.AcceptedAt,
-			&i.CompletedAt,
-			&i.CanceledAt,
-			&i.RevisionRequestedAt,
-			&i.Metadata,
-			&i.AcknowledgedAt,
-			&i.AcknowledgedBy,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const awaitingApprovalPagedCount = `-- name: AwaitingApprovalPagedCount :one
-SELECT COUNT(*) FROM tasks
-WHERE state = 'completed' AND acknowledged_at IS NULL
-`
-
-func (q *Queries) AwaitingApprovalPagedCount(ctx context.Context) (int64, error) {
-	row := q.db.QueryRow(ctx, awaitingApprovalPagedCount)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
-}
-
 const backlogTodoItems = `-- name: BacklogTodoItems :many
 SELECT t.id, t.title, t.state, t.due, t.project_id,
        t.energy, t.priority, t.recur_interval, t.recur_unit,
@@ -1527,38 +1231,6 @@ func (q *Queries) BookmarkBySlug(ctx context.Context, slug string) (Bookmark, er
 		&i.PublishedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
-	)
-	return i, err
-}
-
-const cancelTask = `-- name: CancelTask :one
-UPDATE tasks
-SET state = 'canceled', canceled_at = now()
-WHERE id = $1 AND state IN ('submitted', 'working')
-RETURNING id, created_by, assignee, title, state, deadline, priority, submitted_at, accepted_at, completed_at, canceled_at, revision_requested_at, metadata, acknowledged_at, acknowledged_by
-`
-
-// Mark a task canceled. Allowed from submitted or working; the
-// chk_tasks_state_timestamps CHECK guards the (state, canceled_at) pair.
-func (q *Queries) CancelTask(ctx context.Context, id uuid.UUID) (Task, error) {
-	row := q.db.QueryRow(ctx, cancelTask, id)
-	var i Task
-	err := row.Scan(
-		&i.ID,
-		&i.CreatedBy,
-		&i.Assignee,
-		&i.Title,
-		&i.State,
-		&i.Deadline,
-		&i.Priority,
-		&i.SubmittedAt,
-		&i.AcceptedAt,
-		&i.CompletedAt,
-		&i.CanceledAt,
-		&i.RevisionRequestedAt,
-		&i.Metadata,
-		&i.AcknowledgedAt,
-		&i.AcknowledgedBy,
 	)
 	return i, err
 }
@@ -1770,70 +1442,6 @@ func (q *Queries) CollectionStatsGlobal(ctx context.Context, arg CollectionStats
 		&i.CuratedCount,
 	)
 	return i, err
-}
-
-const completedTasksPaged = `-- name: CompletedTasksPaged :many
-SELECT id, created_by, assignee, title, state, deadline, priority, submitted_at, accepted_at, completed_at, canceled_at, revision_requested_at, metadata, acknowledged_at, acknowledged_by
-FROM tasks
-WHERE state = 'completed'
-ORDER BY completed_at DESC NULLS LAST
-LIMIT $2 OFFSET $1
-`
-
-type CompletedTasksPagedParams struct {
-	PageOffset int32 `json:"page_offset"`
-	PageLimit  int32 `json:"page_limit"`
-}
-
-// Admin paginated completed tasks. Includes acknowledged completed tasks
-// on purpose — this is the completed-history view. Awaiting-judgment
-// consumers should use AwaitingApprovalPaged instead.
-func (q *Queries) CompletedTasksPaged(ctx context.Context, arg CompletedTasksPagedParams) ([]Task, error) {
-	rows, err := q.db.Query(ctx, completedTasksPaged, arg.PageOffset, arg.PageLimit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []Task{}
-	for rows.Next() {
-		var i Task
-		if err := rows.Scan(
-			&i.ID,
-			&i.CreatedBy,
-			&i.Assignee,
-			&i.Title,
-			&i.State,
-			&i.Deadline,
-			&i.Priority,
-			&i.SubmittedAt,
-			&i.AcceptedAt,
-			&i.CompletedAt,
-			&i.CanceledAt,
-			&i.RevisionRequestedAt,
-			&i.Metadata,
-			&i.AcknowledgedAt,
-			&i.AcknowledgedBy,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const completedTasksPagedCount = `-- name: CompletedTasksPagedCount :one
-SELECT COUNT(*) FROM tasks
-WHERE state = 'completed'
-`
-
-func (q *Queries) CompletedTasksPagedCount(ctx context.Context) (int64, error) {
-	row := q.db.QueryRow(ctx, completedTasksPagedCount)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
 }
 
 const completedTodoDetailSince = `-- name: CompletedTodoDetailSince :many
@@ -3730,54 +3338,6 @@ func (q *Queries) CreateTag(ctx context.Context, arg CreateTagParams) (Tag, erro
 		&i.Description,
 		&i.CreatedAt,
 		&i.UpdatedAt,
-	)
-	return i, err
-}
-
-const createTask = `-- name: CreateTask :one
-INSERT INTO tasks (created_by, assignee, title, deadline, priority, metadata)
-VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING id, created_by, assignee, title, state, deadline, priority, submitted_at, accepted_at, completed_at, canceled_at, revision_requested_at, metadata, acknowledged_at, acknowledged_by
-`
-
-type CreateTaskParams struct {
-	CreatedBy string          `json:"created_by"`
-	Assignee  string          `json:"assignee"`
-	Title     string          `json:"title"`
-	Deadline  *time.Time      `json:"deadline"`
-	Priority  *string         `json:"priority"`
-	Metadata  json.RawMessage `json:"metadata"`
-}
-
-// Insert a new task in 'submitted' state. The chk_tasks_no_self_assignment
-// and chk_task_title_not_blank CHECKs run here; CHECK violations bubble up
-// as PostgreSQL 23514 and are mapped to ErrInvalidInput in the store.
-func (q *Queries) CreateTask(ctx context.Context, arg CreateTaskParams) (Task, error) {
-	row := q.db.QueryRow(ctx, createTask,
-		arg.CreatedBy,
-		arg.Assignee,
-		arg.Title,
-		arg.Deadline,
-		arg.Priority,
-		arg.Metadata,
-	)
-	var i Task
-	err := row.Scan(
-		&i.ID,
-		&i.CreatedBy,
-		&i.Assignee,
-		&i.Title,
-		&i.State,
-		&i.Deadline,
-		&i.Priority,
-		&i.SubmittedAt,
-		&i.AcceptedAt,
-		&i.CompletedAt,
-		&i.CanceledAt,
-		&i.RevisionRequestedAt,
-		&i.Metadata,
-		&i.AcknowledgedAt,
-		&i.AcknowledgedBy,
 	)
 	return i, err
 }
@@ -5930,46 +5490,6 @@ func (q *Queries) InsertAliasWithTag(ctx context.Context, arg InsertAliasWithTag
 	return err
 }
 
-const insertArtifact = `-- name: InsertArtifact :one
-INSERT INTO artifacts (task_id, created_by, name, description, parts)
-VALUES ($1, $2, $3, $4, $5)
-RETURNING id, task_id, created_by, name, description, parts, created_at
-`
-
-type InsertArtifactParams struct {
-	TaskID      *uuid.UUID      `json:"task_id"`
-	CreatedBy   *string         `json:"created_by"`
-	Name        string          `json:"name"`
-	Description string          `json:"description"`
-	Parts       json.RawMessage `json:"parts"`
-}
-
-// Insert a structured deliverable, optionally bound to a task. The
-// chk_artifacts_parts_count and chk_artifacts_parts_size CHECKs run here;
-// violations bubble up as 23514 and are mapped to ErrInvalidInput.
-// chk_artifacts_standalone_attribution enforces that standalone artifacts
-// have created_by set.
-func (q *Queries) InsertArtifact(ctx context.Context, arg InsertArtifactParams) (Artifact, error) {
-	row := q.db.QueryRow(ctx, insertArtifact,
-		arg.TaskID,
-		arg.CreatedBy,
-		arg.Name,
-		arg.Description,
-		arg.Parts,
-	)
-	var i Artifact
-	err := row.Scan(
-		&i.ID,
-		&i.TaskID,
-		&i.CreatedBy,
-		&i.Name,
-		&i.Description,
-		&i.Parts,
-		&i.CreatedAt,
-	)
-	return i, err
-}
-
 const insertCrawlRun = `-- name: InsertCrawlRun :exec
 INSERT INTO process_runs (kind, name, input, output, status, error, started_at, ended_at)
 VALUES ('crawl', $1, $2, $3, $4, $5, $6, $7)
@@ -7109,49 +6629,6 @@ func (q *Queries) ListUnmappedAliases(ctx context.Context) ([]TagAlias, error) {
 	return items, nil
 }
 
-const lockTaskForAppend = `-- name: LockTaskForAppend :exec
-SELECT id FROM tasks WHERE id = $1 FOR UPDATE
-`
-
-// Acquire a row-level lock on the parent tasks row before appending a
-// message. Must be called inside the same transaction as the subsequent
-// AppendTaskMessage so the lock scope covers the MAX(position) read and
-// INSERT. Serializes concurrent appenders on the same task; other tasks
-// remain parallel. Returns no data; the caller only cares that the lock
-// succeeded before computing position.
-func (q *Queries) LockTaskForAppend(ctx context.Context, taskID uuid.UUID) error {
-	_, err := q.db.Exec(ctx, lockTaskForAppend, taskID)
-	return err
-}
-
-const lockTaskForApprove = `-- name: LockTaskForApprove :one
-SELECT id, created_by, state, acknowledged_at FROM tasks WHERE id = $1 FOR UPDATE
-`
-
-type LockTaskForApproveRow struct {
-	ID             uuid.UUID  `json:"id"`
-	CreatedBy      string     `json:"created_by"`
-	State          TaskState  `json:"state"`
-	AcknowledgedAt *time.Time `json:"acknowledged_at"`
-}
-
-// Acquire a row-level lock and read the gating columns for Acknowledge.
-// The caller checks created_by / state / acknowledged_at in Go to produce
-// distinct sentinel errors (ErrForbidden / ErrConflict / ErrAlreadyAcknowledged)
-// instead of collapsing them into a single ErrConflict. Held until the
-// enclosing transaction commits or rolls back.
-func (q *Queries) LockTaskForApprove(ctx context.Context, id uuid.UUID) (LockTaskForApproveRow, error) {
-	row := q.db.QueryRow(ctx, lockTaskForApprove, id)
-	var i LockTaskForApproveRow
-	err := row.Scan(
-		&i.ID,
-		&i.CreatedBy,
-		&i.State,
-		&i.AcknowledgedAt,
-	)
-	return i, err
-}
-
 const mapAlias = `-- name: MapAlias :one
 UPDATE tag_aliases SET
     tag_id = $2,
@@ -7629,171 +7106,6 @@ func (q *Queries) ObservationsByConcept(ctx context.Context, arg ObservationsByC
 		return nil, err
 	}
 	return items, nil
-}
-
-const openTasksForAssignee = `-- name: OpenTasksForAssignee :many
-SELECT id, created_by, assignee, title, state, deadline, priority, submitted_at, accepted_at, completed_at, canceled_at, revision_requested_at, metadata, acknowledged_at, acknowledged_by
-FROM tasks
-WHERE assignee = $1 AND state IN ('submitted', 'working', 'revision_requested')
-ORDER BY submitted_at DESC
-LIMIT $2
-`
-
-type OpenTasksForAssigneeParams struct {
-	Assignee   string `json:"assignee"`
-	MaxResults int32  `json:"max_results"`
-}
-
-// Tasks where this agent is the assignee and state is submitted, working,
-// or revision_requested. Includes revision_requested so agents see tasks
-// needing revision in their queue. Newest first.
-func (q *Queries) OpenTasksForAssignee(ctx context.Context, arg OpenTasksForAssigneeParams) ([]Task, error) {
-	rows, err := q.db.Query(ctx, openTasksForAssignee, arg.Assignee, arg.MaxResults)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []Task{}
-	for rows.Next() {
-		var i Task
-		if err := rows.Scan(
-			&i.ID,
-			&i.CreatedBy,
-			&i.Assignee,
-			&i.Title,
-			&i.State,
-			&i.Deadline,
-			&i.Priority,
-			&i.SubmittedAt,
-			&i.AcceptedAt,
-			&i.CompletedAt,
-			&i.CanceledAt,
-			&i.RevisionRequestedAt,
-			&i.Metadata,
-			&i.AcknowledgedAt,
-			&i.AcknowledgedBy,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const openTasksForCreator = `-- name: OpenTasksForCreator :many
-SELECT id, created_by, assignee, title, state, deadline, priority, submitted_at, accepted_at, completed_at, canceled_at, revision_requested_at, metadata, acknowledged_at, acknowledged_by
-FROM tasks
-WHERE created_by = $1 AND state IN ('submitted', 'working', 'revision_requested')
-ORDER BY submitted_at DESC
-LIMIT $2
-`
-
-type OpenTasksForCreatorParams struct {
-	CreatedBy  string `json:"created_by"`
-	MaxResults int32  `json:"max_results"`
-}
-
-// Tasks the calling agent submitted that are still open (submitted, working,
-// or revision_requested).
-func (q *Queries) OpenTasksForCreator(ctx context.Context, arg OpenTasksForCreatorParams) ([]Task, error) {
-	rows, err := q.db.Query(ctx, openTasksForCreator, arg.CreatedBy, arg.MaxResults)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []Task{}
-	for rows.Next() {
-		var i Task
-		if err := rows.Scan(
-			&i.ID,
-			&i.CreatedBy,
-			&i.Assignee,
-			&i.Title,
-			&i.State,
-			&i.Deadline,
-			&i.Priority,
-			&i.SubmittedAt,
-			&i.AcceptedAt,
-			&i.CompletedAt,
-			&i.CanceledAt,
-			&i.RevisionRequestedAt,
-			&i.Metadata,
-			&i.AcknowledgedAt,
-			&i.AcknowledgedBy,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const openTasksPaged = `-- name: OpenTasksPaged :many
-SELECT id, created_by, assignee, title, state, deadline, priority, submitted_at, accepted_at, completed_at, canceled_at, revision_requested_at, metadata, acknowledged_at, acknowledged_by
-FROM tasks
-WHERE state IN ('submitted', 'working', 'revision_requested')
-ORDER BY submitted_at DESC
-LIMIT $2 OFFSET $1
-`
-
-type OpenTasksPagedParams struct {
-	PageOffset int32 `json:"page_offset"`
-	PageLimit  int32 `json:"page_limit"`
-}
-
-// Admin paginated open tasks (submitted + working + revision_requested).
-func (q *Queries) OpenTasksPaged(ctx context.Context, arg OpenTasksPagedParams) ([]Task, error) {
-	rows, err := q.db.Query(ctx, openTasksPaged, arg.PageOffset, arg.PageLimit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []Task{}
-	for rows.Next() {
-		var i Task
-		if err := rows.Scan(
-			&i.ID,
-			&i.CreatedBy,
-			&i.Assignee,
-			&i.Title,
-			&i.State,
-			&i.Deadline,
-			&i.Priority,
-			&i.SubmittedAt,
-			&i.AcceptedAt,
-			&i.CompletedAt,
-			&i.CanceledAt,
-			&i.RevisionRequestedAt,
-			&i.Metadata,
-			&i.AcknowledgedAt,
-			&i.AcknowledgedBy,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const openTasksPagedCount = `-- name: OpenTasksPagedCount :one
-SELECT COUNT(*) FROM tasks
-WHERE state IN ('submitted', 'working', 'revision_requested')
-`
-
-func (q *Queries) OpenTasksPagedCount(ctx context.Context) (int64, error) {
-	row := q.db.QueryRow(ctx, openTasksPagedCount)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
 }
 
 const overdueRecurringTodoItems = `-- name: OverdueRecurringTodoItems :many
@@ -9191,38 +8503,6 @@ func (q *Queries) PublishedWithEmbeddings(ctx context.Context) ([]PublishedWithE
 	return items, nil
 }
 
-const reacceptTask = `-- name: ReacceptTask :one
-UPDATE tasks
-SET state = 'working', completed_at = NULL, revision_requested_at = NULL
-WHERE id = $1 AND state = 'revision_requested'
-RETURNING id, created_by, assignee, title, state, deadline, priority, submitted_at, accepted_at, completed_at, canceled_at, revision_requested_at, metadata, acknowledged_at, acknowledged_by
-`
-
-// Transition revision_requested → working. The assignee picks up the revision.
-// Clears completed_at and revision_requested_at so the task can be re-completed.
-func (q *Queries) ReacceptTask(ctx context.Context, id uuid.UUID) (Task, error) {
-	row := q.db.QueryRow(ctx, reacceptTask, id)
-	var i Task
-	err := row.Scan(
-		&i.ID,
-		&i.CreatedBy,
-		&i.Assignee,
-		&i.Title,
-		&i.State,
-		&i.Deadline,
-		&i.Priority,
-		&i.SubmittedAt,
-		&i.AcceptedAt,
-		&i.CompletedAt,
-		&i.CanceledAt,
-		&i.RevisionRequestedAt,
-		&i.Metadata,
-		&i.AcknowledgedAt,
-		&i.AcknowledgedBy,
-	)
-	return i, err
-}
-
 const reassignAliases = `-- name: ReassignAliases :execrows
 UPDATE tag_aliases SET tag_id = $1 WHERE tag_aliases.tag_id = $2
 `
@@ -9278,42 +8558,6 @@ func (q *Queries) ReassignContentTags(ctx context.Context, arg ReassignContentTa
 		return 0, err
 	}
 	return result.RowsAffected(), nil
-}
-
-const recentArtifacts = `-- name: RecentArtifacts :many
-SELECT id, task_id, created_by, name, description, parts, created_at
-FROM artifacts
-ORDER BY created_at DESC
-LIMIT $1
-`
-
-// Most recent artifacts across all tasks. Used by admin studio overview.
-func (q *Queries) RecentArtifacts(ctx context.Context, maxResults int32) ([]Artifact, error) {
-	rows, err := q.db.Query(ctx, recentArtifacts, maxResults)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []Artifact{}
-	for rows.Next() {
-		var i Artifact
-		if err := rows.Scan(
-			&i.ID,
-			&i.TaskID,
-			&i.CreatedBy,
-			&i.Name,
-			&i.Description,
-			&i.Parts,
-			&i.CreatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
 }
 
 const recentAttemptsByConceptSlim = `-- name: RecentAttemptsByConceptSlim :many
@@ -9505,51 +8749,6 @@ func (q *Queries) RecentObservationsByConcept(ctx context.Context, arg RecentObs
 			&i.ConceptSlug,
 			&i.Confidence,
 			&i.CreatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const recentResolvedTasks = `-- name: RecentResolvedTasks :many
-SELECT id, created_by, assignee, title, state, deadline, priority, submitted_at, accepted_at, completed_at, canceled_at, revision_requested_at, metadata, acknowledged_at, acknowledged_by
-FROM tasks
-WHERE state IN ('completed', 'canceled')
-ORDER BY COALESCE(completed_at, canceled_at) DESC
-LIMIT $1
-`
-
-// Recently completed or canceled tasks. Orders by COALESCE of terminal timestamps.
-func (q *Queries) RecentResolvedTasks(ctx context.Context, maxResults int32) ([]Task, error) {
-	rows, err := q.db.Query(ctx, recentResolvedTasks, maxResults)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []Task{}
-	for rows.Next() {
-		var i Task
-		if err := rows.Scan(
-			&i.ID,
-			&i.CreatedBy,
-			&i.Assignee,
-			&i.Title,
-			&i.State,
-			&i.Deadline,
-			&i.Priority,
-			&i.SubmittedAt,
-			&i.AcceptedAt,
-			&i.CompletedAt,
-			&i.CanceledAt,
-			&i.RevisionRequestedAt,
-			&i.Metadata,
-			&i.AcknowledgedAt,
-			&i.AcknowledgedBy,
 		); err != nil {
 			return nil, err
 		}
@@ -9828,41 +9027,6 @@ func (q *Queries) RelatedTagsForTopic(ctx context.Context, arg RelatedTagsForTop
 		return nil, err
 	}
 	return items, nil
-}
-
-const requestRevisionTask = `-- name: RequestRevisionTask :one
-UPDATE tasks
-SET state = 'revision_requested', revision_requested_at = now()
-WHERE id = $1 AND state = 'completed' AND acknowledged_at IS NULL
-RETURNING id, created_by, assignee, title, state, deadline, priority, submitted_at, accepted_at, completed_at, canceled_at, revision_requested_at, metadata, acknowledged_at, acknowledged_by
-`
-
-// Transition completed → revision_requested. Only the task creator (source)
-// should call this after reviewing the deliverable. Sets revision_requested_at.
-// Acknowledged completed tasks are final and cannot be revised — the
-// acknowledged_at IS NULL guard rejects them with no rows updated, which
-// the store maps to ErrConflict.
-func (q *Queries) RequestRevisionTask(ctx context.Context, id uuid.UUID) (Task, error) {
-	row := q.db.QueryRow(ctx, requestRevisionTask, id)
-	var i Task
-	err := row.Scan(
-		&i.ID,
-		&i.CreatedBy,
-		&i.Assignee,
-		&i.Title,
-		&i.State,
-		&i.Deadline,
-		&i.Priority,
-		&i.SubmittedAt,
-		&i.AcceptedAt,
-		&i.CompletedAt,
-		&i.CanceledAt,
-		&i.RevisionRequestedAt,
-		&i.Metadata,
-		&i.AcknowledgedAt,
-		&i.AcknowledgedBy,
-	)
-	return i, err
 }
 
 const resetFeedFailure = `-- name: ResetFeedFailure :exec
@@ -11971,132 +11135,6 @@ func (q *Queries) TargetRefsForNote(ctx context.Context, noteID uuid.UUID) ([]Ta
 	return items, nil
 }
 
-const taskByID = `-- name: TaskByID :one
-SELECT id, created_by, assignee, title, state, deadline, priority, submitted_at, accepted_at, completed_at, canceled_at, revision_requested_at, metadata, acknowledged_at, acknowledged_by
-FROM tasks WHERE id = $1
-`
-
-func (q *Queries) TaskByID(ctx context.Context, id uuid.UUID) (Task, error) {
-	row := q.db.QueryRow(ctx, taskByID, id)
-	var i Task
-	err := row.Scan(
-		&i.ID,
-		&i.CreatedBy,
-		&i.Assignee,
-		&i.Title,
-		&i.State,
-		&i.Deadline,
-		&i.Priority,
-		&i.SubmittedAt,
-		&i.AcceptedAt,
-		&i.CompletedAt,
-		&i.CanceledAt,
-		&i.RevisionRequestedAt,
-		&i.Metadata,
-		&i.AcknowledgedAt,
-		&i.AcknowledgedBy,
-	)
-	return i, err
-}
-
-const taskMessages = `-- name: TaskMessages :many
-SELECT id, task_id, role, position, parts, created_at
-FROM task_messages
-WHERE task_id = $1
-ORDER BY position ASC
-`
-
-// All messages on a task, in conversation order.
-func (q *Queries) TaskMessages(ctx context.Context, taskID uuid.UUID) ([]TaskMessage, error) {
-	rows, err := q.db.Query(ctx, taskMessages, taskID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []TaskMessage{}
-	for rows.Next() {
-		var i TaskMessage
-		if err := rows.Scan(
-			&i.ID,
-			&i.TaskID,
-			&i.Role,
-			&i.Position,
-			&i.Parts,
-			&i.CreatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const tasksPaged = `-- name: TasksPaged :many
-SELECT id, created_by, assignee, title, state, deadline, priority, submitted_at, accepted_at, completed_at, canceled_at, revision_requested_at, metadata, acknowledged_at, acknowledged_by
-FROM tasks
-WHERE ($1::task_state IS NULL OR state = $1::task_state)
-ORDER BY submitted_at DESC
-LIMIT $3 OFFSET $2
-`
-
-type TasksPagedParams struct {
-	State      NullTaskState `json:"state"`
-	PageOffset int32         `json:"page_offset"`
-	PageLimit  int32         `json:"page_limit"`
-}
-
-// Admin paginated list with optional state filter.
-func (q *Queries) TasksPaged(ctx context.Context, arg TasksPagedParams) ([]Task, error) {
-	rows, err := q.db.Query(ctx, tasksPaged, arg.State, arg.PageOffset, arg.PageLimit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []Task{}
-	for rows.Next() {
-		var i Task
-		if err := rows.Scan(
-			&i.ID,
-			&i.CreatedBy,
-			&i.Assignee,
-			&i.Title,
-			&i.State,
-			&i.Deadline,
-			&i.Priority,
-			&i.SubmittedAt,
-			&i.AcceptedAt,
-			&i.CompletedAt,
-			&i.CanceledAt,
-			&i.RevisionRequestedAt,
-			&i.Metadata,
-			&i.AcknowledgedAt,
-			&i.AcknowledgedBy,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const tasksPagedCount = `-- name: TasksPagedCount :one
-SELECT COUNT(*) FROM tasks
-WHERE ($1::task_state IS NULL OR state = $1::task_state)
-`
-
-func (q *Queries) TasksPagedCount(ctx context.Context, state NullTaskState) (int64, error) {
-	row := q.db.QueryRow(ctx, tasksPagedCount, state)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
-}
-
 const todoInboxCount = `-- name: TodoInboxCount :one
 SELECT count(*)::int FROM todos WHERE state = 'inbox'
 `
@@ -12765,41 +11803,6 @@ func (q *Queries) TopicsForContents(ctx context.Context, dollar_1 []uuid.UUID) (
 		return nil, err
 	}
 	return items, nil
-}
-
-const transitionTaskToCompleted = `-- name: TransitionTaskToCompleted :one
-UPDATE tasks
-SET state = 'completed', completed_at = now()
-WHERE id = $1 AND state = 'working'
-RETURNING id, created_by, assignee, title, state, deadline, priority, submitted_at, accepted_at, completed_at, canceled_at, revision_requested_at, metadata, acknowledged_at, acknowledged_by
-`
-
-// Flip a task from working → completed. The trg_tasks_completion_requires_outputs
-// trigger fires here: it counts response messages and artifacts on this
-// task_id and raises P0001 if either is zero. Callers MUST run this in the
-// same transaction as the AppendMessage + AddArtifact inserts so the trigger
-// sees them.
-func (q *Queries) TransitionTaskToCompleted(ctx context.Context, id uuid.UUID) (Task, error) {
-	row := q.db.QueryRow(ctx, transitionTaskToCompleted, id)
-	var i Task
-	err := row.Scan(
-		&i.ID,
-		&i.CreatedBy,
-		&i.Assignee,
-		&i.Title,
-		&i.State,
-		&i.Deadline,
-		&i.Priority,
-		&i.SubmittedAt,
-		&i.AcceptedAt,
-		&i.CompletedAt,
-		&i.CanceledAt,
-		&i.RevisionRequestedAt,
-		&i.Metadata,
-		&i.AcknowledgedAt,
-		&i.AcknowledgedBy,
-	)
-	return i, err
 }
 
 const unverifiedHypotheses = `-- name: UnverifiedHypotheses :many

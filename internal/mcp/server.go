@@ -20,9 +20,7 @@ import (
 
 	"github.com/Koopa0/koopa/internal/activity"
 	"github.com/Koopa0/koopa/internal/agent"
-	"github.com/Koopa0/koopa/internal/agent/artifact"
 	agentnote "github.com/Koopa0/koopa/internal/agent/note"
-	"github.com/Koopa0/koopa/internal/agent/task"
 	"github.com/Koopa0/koopa/internal/content"
 	"github.com/Koopa0/koopa/internal/daily"
 	"github.com/Koopa0/koopa/internal/embedder"
@@ -55,10 +53,6 @@ type Server struct {
 	// Goals and hypotheses
 	goals      *goal.Store
 	hypotheses *hypothesis.Store
-
-	// Agent coordination
-	tasks     *task.Store
-	artifacts *artifact.Store
 
 	// Agent registry — source of truth for capability enforcement via
 	// agent.Authorize. Wired in from cmd/app/main.go so the CLI and tests
@@ -151,7 +145,6 @@ func WithEmbedder(e *embedder.Embedder) ServerOption {
 
 // NewServer creates an MCP v2 server. All stores are created from the pool.
 func NewServer(pool *pgxpool.Pool, logger *slog.Logger, opts ...ServerOption) *Server {
-	artStore := artifact.NewStore(pool)
 	s := &Server{
 		todos:       todo.NewStore(pool),
 		agentNotes:  agentnote.NewStore(pool),
@@ -161,8 +154,6 @@ func NewServer(pool *pgxpool.Pool, logger *slog.Logger, opts ...ServerOption) *S
 		projects:    project.NewStore(pool),
 		goals:       goal.NewStore(pool),
 		hypotheses:  hypothesis.NewStore(pool),
-		tasks:       task.NewStore(pool, artStore),
-		artifacts:   artStore,
 		registry:    agent.NewBuiltinRegistry(),
 		learn:       learning.NewStore(pool),
 		plans:       plan.NewStore(pool),
