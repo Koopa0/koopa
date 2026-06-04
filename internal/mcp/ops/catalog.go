@@ -692,7 +692,7 @@ func AssignResearch() Meta {
 		Writability: Additive,
 		Stability:   StabilityBeta,
 		Since:       "1.3.0",
-		Description: "Dispatch a fan-out research assignment: assign a topic to an agent who will produce a report. Author-gated to hq (+ human implicit). Fan-out only — no chaining, no task tree, no acceptance step. The assignment is fulfilled when the assignee files a report referencing it via create_report; until then it stays open and is visible as unfulfilled work. This is NOT the A2A task path (no acknowledge/file_report/revision lifecycle).",
+		Description: "Dispatch a fan-out research assignment: assign a topic to an agent who will produce a report. A deliberate lightweight carve-out from the proposal-first directive flow, for low-trust research-source production only — NOT formal delegation, and it implies no final acceptance, revision authority, publication, or human truth verdict. Author-gated to hq (+ human implicit). Fan-out only — no chaining, no task tree, no acceptance step. The assignment is fulfilled when the assignee files a report referencing it via create_report; until then it stays open — persisted and store-queryable, though no agent-facing tool surfaces open assignments yet. This is NOT the A2A task path (no acknowledge/file_report/revision lifecycle).",
 	}
 }
 
@@ -704,7 +704,7 @@ func CreateReport() Meta {
 		Writability: Additive,
 		Stability:   StabilityBeta,
 		Since:       "1.3.0",
-		Description: "File an agent-produced research report into the report corpus — low_trust by default and immediately searchable via search_knowledge (badged source_type=report, downranked relative to notes/content so it never drowns out personal notes). produced_by provenance is stamped from the caller. Omit origin_assignment_id for a standalone report; pass it to fulfill a fan-out assignment — but ONLY the agent the assignment was dispatched to (its assigned_to) may fulfill it. A report is a SOURCE, not a personal note and not editorial content: it never becomes an evergreen note, and trust promotion (low_trust → trusted) is a human/admin action, never part of this tool.",
+		Description: "File an agent-produced research report into the report corpus — low_trust by default and immediately searchable via search_knowledge (badged source_type=report, downranked relative to notes/content so it never drowns out personal notes). Requires the PublishArtifacts capability — the same bar file_report(standalone) sets — so capability-less agents and the human cannot file reports. produced_by provenance is stamped from the caller. Omit origin_assignment_id for a standalone report; pass it to fulfill a fan-out assignment — but ONLY the agent the assignment was dispatched to (its assigned_to) may fulfill it. A report is a SOURCE, not a personal note and not editorial content: it never becomes an evergreen note, and trust promotion (low_trust → trusted) is a human/admin action (schema/store-ready, no production UI yet), never part of this tool.",
 	}
 }
 

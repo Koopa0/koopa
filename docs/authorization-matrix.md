@@ -131,6 +131,26 @@ Front-end review and the publish gate handle quality.
 | `archive_content` | — | — | content-studio, learning-studio | — | Author allowlist (+ human implicit) |
 | `list_content` / `read_content` | — | — | — | — | Open (read-only) |
 
+### Report lane
+
+Fan-out research is a deliberate lightweight carve-out from the proposal-first
+directive flow, for **low-trust research-source production only** — it is not
+formal delegation and implies no final acceptance, revision authority,
+publication, or human truth verdict. Dispatch (`assign_research`) is a
+coordinator act (hq + human). Filing into the searchable report corpus
+(`create_report`) requires the **PublishArtifacts** capability — the same bar
+`file_report(standalone)` sets — so a corpus write is never weaker than an
+artifact write; reports are additionally born `low_trust`, badged, and
+downranked in `search_knowledge`. Fulfilling a dispatched assignment is
+self-bound to its `assigned_to`. Trust promotion (`low_trust → trusted`) is a
+human/admin verdict (`research.Store.SetReportTrust`, schema/store-ready; no
+production UI yet) and never reaches the agent surface.
+
+| Tool | Capability | Platform | Author | Self | Effective rule |
+|---|---|---|---|---|---|
+| `assign_research` | — | — | hq | — | Author allowlist (+ human implicit); dispatch only |
+| `create_report` | **PublishArtifacts** | — | — | fulfiller == `assigned_to` | Capability to file into the corpus; self-bound only when fulfilling an assignment (a standalone report needs just the capability) |
+
 ### Publish gate
 
 | Tool | Capability | Platform | Author | Self | Effective rule |
@@ -289,6 +309,26 @@ to submit/revert, not by hq flipping the status itself, so no legitimate
 workflow is broken. The separate dangerous transition (review →
 published) stays gated at `publish_content` (human-only) as the top
 layer; every draft is private until then.
+
+### `assign_research` / `create_report` — the report lane
+
+The report lane is a separate, lighter coordination path from the §14
+directive flow, and that divergence is a deliberate product decision, not an
+oversight. A directive is proposal-first (`propose_directive → commit_proposal`,
+`SubmitTasks`-gated) and ends with a task-bound artifact + acceptance lifecycle.
+A research assignment is direct-commit dispatch whose only output is a
+**low-trust corpus source**: there is no acknowledge, no acceptance, no
+revision, and no human truth verdict — promotion to `trusted` stays an
+off-surface human/admin act. Because the deliverable is born low-trust, badged,
+and downranked in search, the *dispatch* gate is intentionally lighter (an `hq`
+author allowlist rather than a two-phase commitment) — but the *write* gate is
+deliberately **not** lighter: `create_report` requires `PublishArtifacts`, the
+same capability `file_report(standalone)` requires, so a capability-less agent
+(`claude`, `koopa0-dev`, `go-spec`) and the human cannot inject sources into the
+searchable corpus. Fulfilling a dispatched assignment additionally self-binds to
+`assigned_to` so targeted work cannot be closed by the wrong agent. If fan-out
+research ever needs the acceptance/revision lifecycle, fold it into the
+directive path rather than thickening this lane.
 
 ---
 

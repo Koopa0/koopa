@@ -1255,6 +1255,67 @@ func TestIntegration_ReportLane_AssigneeBinding(t *testing.T) {
 	}
 }
 
+// TestIntegration_ReportLane_RequiresPublishArtifacts pins the N2 decision:
+// filing into the searchable report corpus requires the PublishArtifacts
+// capability (the same bar file_report(standalone) sets). A registered but
+// capability-less agent (koopa0-dev, claude-code, Capability{}) is refused for
+// both a standalone report and an assignment fulfillment, and the capability
+// check fires BEFORE the assignee check — so a no-capability non-assignee is
+// rejected as Forbidden, not NotAssignee — while a capable assignee still
+// succeeds (the gate must not over-block).
+func TestIntegration_ReportLane_RequiresPublishArtifacts(t *testing.T) {
+	s := setupServer(t)
+
+	// Standalone report by a capability-less caller: refused.
+	if _, _, err := callHandlerAs(t, "koopa0-dev", s.createReport, CreateReportInput{
+		Title: "no-capability standalone",
+	}); !errors.Is(err, agent.ErrForbidden) {
+		t.Errorf("standalone createReport as koopa0-dev err = %v, want wrap of agent.ErrForbidden", err)
+	}
+
+	// hq dispatches an assignment to research-lab.
+	_, assigned, err := callHandlerAs(t, "hq", s.assignResearch, AssignResearchInput{
+		Topic:      "capability gate check",
+		AssignedTo: "research-lab",
+	})
+	if err != nil {
+		t.Fatalf("assignResearch as hq: %v", err)
+	}
+
+	// Fulfillment by a capability-less caller is refused as Forbidden (the
+	// capability check precedes the assignee binding), and the assignment stays
+	// open.
+	if _, _, err := callHandlerAs(t, "koopa0-dev", s.createReport, CreateReportInput{
+		Title:              "no-capability fulfillment",
+		OriginAssignmentID: assigned.Assignment.ID,
+	}); !errors.Is(err, agent.ErrForbidden) {
+		t.Errorf("fulfillment createReport as koopa0-dev err = %v, want wrap of agent.ErrForbidden", err)
+	}
+	pid, perr := uuid.Parse(assigned.Assignment.ID)
+	if perr != nil {
+		t.Fatalf("parse assignment id: %v", perr)
+	}
+	open, err := s.research.Assignment(t.Context(), pid)
+	if err != nil {
+		t.Fatalf("assignment read after refused fulfillment: %v", err)
+	}
+	if open.Status != research.StatusOpen {
+		t.Errorf("assignment status after refused create = %q, want open", open.Status)
+	}
+
+	// A capable assignee still succeeds — the gate must not over-block.
+	_, filed, err := callHandlerAs(t, "research-lab", s.createReport, CreateReportInput{
+		Title:              "capable fulfillment",
+		OriginAssignmentID: assigned.Assignment.ID,
+	})
+	if err != nil {
+		t.Fatalf("createReport as research-lab (holds PublishArtifacts): %v", err)
+	}
+	if filed.Report == nil {
+		t.Fatal("capable createReport returned nil report")
+	}
+}
+
 // TestIntegration_ManageTargets_ArchiveHappyPath covers the C2 §B
 // stage-3 happy path: learning-studio archives a target it created,
 // the cascade pulls in every relation involving the target, the

@@ -36,6 +36,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/Koopa0/koopa/internal/agent"
 	"github.com/Koopa0/koopa/internal/research"
 )
 
@@ -96,15 +97,15 @@ func (s *Server) assignResearch(ctx context.Context, _ *mcp.CallToolRequest, inp
 		return nil, AssignmentReply{}, fmt.Errorf("assigned_to is required")
 	}
 
-	var a *research.Assignment
-	err := s.withActorTx(ctx, func(tx pgx.Tx) error {
-		var createErr error
-		a, createErr = s.research.WithTx(tx).CreateAssignment(ctx, research.CreateAssignmentParams{
-			Topic:      input.Topic,
-			AssignedTo: input.AssignedTo,
-			AssignedBy: s.callerIdentity(ctx),
-		})
-		return createErr
+	// Single INSERT, no transaction. The report lane is deliberately
+	// un-audited — migrations/004_report_lane.up.sql adds no activity_events
+	// trigger on research_assignments — so there is no koopa.actor for a
+	// trigger to consume and withActorTx would buy nothing here. Provenance
+	// (assigned_by) lives on the row itself.
+	a, err := s.research.CreateAssignment(ctx, research.CreateAssignmentParams{
+		Topic:      input.Topic,
+		AssignedTo: input.AssignedTo,
+		AssignedBy: s.callerIdentity(ctx),
 	})
 	if err != nil {
 		if errors.Is(err, research.ErrUnknownAgent) {
@@ -135,6 +136,16 @@ func (s *Server) createReport(ctx context.Context, _ *mcp.CallToolRequest, input
 	if err := s.requireRegisteredCaller(ctx, "create_report"); err != nil {
 		return nil, ReportReply{}, err
 	}
+	// Filing into the searchable report corpus requires the PublishArtifacts
+	// capability — the same bar file_report(standalone) sets for publishing an
+	// agent deliverable. This excludes the capability-less agents (claude web,
+	// koopa0-dev, go-spec) and the human, whose own writing is notes/content
+	// rather than low-trust agent sources. Checked before assignee resolution
+	// so a capability-less caller is refused regardless of origin_assignment_id.
+	caller := agent.Name(s.callerIdentity(ctx))
+	if _, err := agent.Authorize(ctx, s.registry, caller, agent.ActionPublishArtifact); err != nil {
+		return nil, ReportReply{}, fmt.Errorf("create_report: %w", err)
+	}
 	if input.Title == "" {
 		return nil, ReportReply{}, fmt.Errorf("title is required")
 	}
@@ -144,6 +155,11 @@ func (s *Server) createReport(ctx context.Context, _ *mcp.CallToolRequest, input
 		return nil, ReportReply{}, err
 	}
 
+	// withActorTx is load-bearing here: the report INSERT and the assignment
+	// open→fulfilled flip must commit atomically. The koopa.actor it binds is
+	// currently inert (the report lane has no audit trigger — see
+	// migrations/004_report_lane.up.sql), but the transaction is the real need
+	// and stays forward-compatible if audit is added later.
 	var r *research.Report
 	err = s.withActorTx(ctx, func(tx pgx.Tx) error {
 		var createErr error
