@@ -28,7 +28,7 @@ func main() {
 }
 
 func run(path string) error {
-	raw, err := os.ReadFile(path)
+	raw, err := os.ReadFile(path) // #nosec G304 -- path is the manualPath compile-time const; build-time codegen, no external input
 	if err != nil {
 		return fmt.Errorf("reading manual: %w", err)
 	}
@@ -39,7 +39,7 @@ func run(path string) error {
 	if updated == string(raw) {
 		return nil // already in sync
 	}
-	if err := os.WriteFile(path, []byte(updated), 0o600); err != nil {
+	if err := os.WriteFile(path, []byte(updated), 0o600); err != nil { // #nosec G703 -- path is the manualPath compile-time const; build-time codegen, no external input
 		return fmt.Errorf("writing manual: %w", err)
 	}
 	return nil
