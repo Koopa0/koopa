@@ -108,23 +108,6 @@ RETURNING id, title, state, due, project_id,
           completed_at, energy, priority, recur_interval, recur_unit,
           description, created_by, created_at, updated_at;
 
--- name: TodoDailySummaryHint :one
--- Compute completion metrics hint for a single day.
-SELECT
-    (SELECT count(*)::int FROM daily_plan_items WHERE plan_date = @plan_date::date) AS planned_total,
-    (SELECT count(*)::int FROM daily_plan_items WHERE plan_date = @plan_date::date AND status = 'done') AS planned_completed,
-    count(*) FILTER (WHERE state = 'done'
-        AND completed_at >= @day_start AND completed_at < @day_end)::int AS total_completed
-FROM todos
-WHERE state = 'done' AND completed_at >= @day_start AND completed_at < @day_end;
-
--- name: CompletedTodoTitlesSince :many
--- Get titles of todo items completed since a given time.
-SELECT title FROM todos
-WHERE state = 'done' AND completed_at >= @since
-ORDER BY completed_at DESC
-LIMIT 20;
-
 -- name: CompletedTodoDetailSince :many
 -- Get todo items completed since a given time with project context.
 SELECT t.id, t.title, t.completed_at, t.project_id,
@@ -243,37 +226,6 @@ WHERE id = @id
 RETURNING id, title, state, due, project_id,
           completed_at, energy, priority, recur_interval, recur_unit,
           description, created_by, created_at, updated_at;
-
--- === Skip log queries ===
-
--- name: CreateTodoSkipRecord :exec
--- Insert a single skip record. ON CONFLICT ensures idempotency on cron re-run.
-INSERT INTO todo_skips (todo_id, original_due, skipped_date, reason)
-VALUES (@todo_id, @original_due, @skipped_date, @reason)
-ON CONFLICT (todo_id, skipped_date) DO NOTHING;
-
--- name: TodoSkipHistoryByItem :many
--- Get skip history for a specific todo item within a date range.
-SELECT id, todo_id, original_due, skipped_date, reason, created_at
-FROM todo_skips
-WHERE todo_id = @todo_id
-  AND skipped_date >= @since
-ORDER BY skipped_date DESC;
-
--- name: TodoSkipCountByItem :one
--- Count skips for a specific todo item within a date range.
-SELECT count(*)::int FROM todo_skips
-WHERE todo_id = @todo_id AND skipped_date >= @since;
-
--- name: TodoSkipHistoryByProject :many
--- Get skip history for all todo items under a project within a date range.
-SELECT sl.id, sl.todo_id, sl.original_due, sl.skipped_date, sl.reason, sl.created_at,
-       t.title AS item_title
-FROM todo_skips sl
-JOIN todos t ON t.id = sl.todo_id
-WHERE t.project_id = @project_id
-  AND sl.skipped_date >= @since
-ORDER BY sl.skipped_date DESC;
 
 -- name: TodoInboxCount :one
 -- Count of todo items in inbox state (for needs_attention badge).

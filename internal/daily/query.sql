@@ -40,19 +40,6 @@ UPDATE daily_plan_items
 SET status = @status, updated_at = now()
 WHERE todo_id = @todo_id AND plan_date = @plan_date;
 
--- name: ItemsByDateRange :many
--- Get daily plan items for a date range (e.g., yesterday's unfinished for morning_context).
-SELECT
-    dpi.id, dpi.plan_date, dpi.todo_id, dpi.selected_by, dpi.position,
-    dpi.reason, dpi.agent_note_id, dpi.status, dpi.created_at, dpi.updated_at,
-    t.title AS todo_title, t.state AS todo_state,
-    COALESCE(p.title, '') AS project_title
-FROM daily_plan_items dpi
-JOIN todos t ON t.id = dpi.todo_id
-LEFT JOIN projects p ON p.id = t.project_id
-WHERE dpi.plan_date >= @start_date AND dpi.plan_date <= @end_date
-ORDER BY dpi.plan_date DESC, dpi.position;
-
 -- name: ItemByID :one
 -- Get a single daily plan item by ID.
 SELECT id, plan_date, todo_id, selected_by, position, reason, agent_note_id, status, created_at, updated_at

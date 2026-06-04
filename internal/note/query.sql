@@ -80,10 +80,6 @@ DELETE FROM note_concepts WHERE note_id = $1 AND concept_id = $2;
 -- name: ConceptsForNote :many
 SELECT concept_id FROM note_concepts WHERE note_id = $1;
 
--- name: ConceptsForNotes :many
-SELECT note_id, concept_id FROM note_concepts
-WHERE note_id = ANY($1::uuid[]);
-
 -- name: ConceptRefsForNote :many
 -- Resolved concepts (slug + name) attached to a note — used by HTTP note
 -- detail / list enrichment where wire consumers need human-readable slugs

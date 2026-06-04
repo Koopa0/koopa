@@ -215,19 +215,6 @@ WHERE a.learning_target_id = @learning_target_id
 ORDER BY a.attempted_at DESC
 LIMIT @max_results;
 
--- name: ObservationsByAttempt :many
--- All observations on a single attempt, in coach-insertion order
--- (position ASC). Kept alongside ObservationsByAttemptIDs — callers
--- fetching a single attempt's observations use this for a one-element
--- ANY(::uuid[]) equivalent without the array dance.
-SELECT ao.id, ao.attempt_id, ao.concept_id, ao.signal_type, ao.category, ao.severity, ao.detail,
-       ao.confidence, ao.position,
-       c.slug AS concept_slug, c.name AS concept_name
-FROM learning_attempt_observations ao
-JOIN concepts c ON c.id = ao.concept_id
-WHERE ao.attempt_id = @attempt_id
-ORDER BY ao.position ASC;
-
 -- name: ObservationsByAttemptIDs :many
 -- Batched observation fetch for attempt_history — all three modes
 -- (target / concept_slug / session_id) use this after loading attempts

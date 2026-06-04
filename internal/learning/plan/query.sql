@@ -88,9 +88,6 @@ SELECT
     count(*) FILTER (WHERE status = 'planned')::int AS remaining
 FROM learning_plan_entries WHERE plan_id = @plan_id;
 
--- name: DeletePlanEntry :exec
-DELETE FROM learning_plan_entries WHERE id = @id;
-
 -- name: DeletePlanEntries :exec
 -- Batch delete plan entries by plan_id and entry IDs (for remove_entries action on draft plans).
 DELETE FROM learning_plan_entries WHERE plan_id = @plan_id AND id = ANY(@entry_ids::uuid[]);

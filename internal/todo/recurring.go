@@ -76,16 +76,6 @@ func (s *Store) ResetRecurring(ctx context.Context, id uuid.UUID, nextDue time.T
 	return &t, nil
 }
 
-// LogSkip inserts a skip record.
-func (s *Store) LogSkip(ctx context.Context, itemID uuid.UUID, originalDue, skippedDate time.Time, reason string) error {
-	return s.q.CreateTodoSkipRecord(ctx, db.CreateTodoSkipRecordParams{
-		TodoID:      itemID,
-		OriginalDue: originalDue,
-		SkippedDate: skippedDate,
-		Reason:      reason,
-	})
-}
-
 // RecurringItemByProject finds a recurring pending todo item under a project due today or overdue.
 func (s *Store) RecurringItemByProject(ctx context.Context, projectID uuid.UUID, today time.Time) (*Item, error) {
 	r, err := s.q.RecurringTodoItemByProject(ctx, db.RecurringTodoItemByProjectParams{

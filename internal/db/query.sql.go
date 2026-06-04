@@ -1902,34 +1902,6 @@ func (q *Queries) CompletedTodoDetailSince(ctx context.Context, since *time.Time
 	return items, nil
 }
 
-const completedTodoTitlesSince = `-- name: CompletedTodoTitlesSince :many
-SELECT title FROM todos
-WHERE state = 'done' AND completed_at >= $1
-ORDER BY completed_at DESC
-LIMIT 20
-`
-
-// Get titles of todo items completed since a given time.
-func (q *Queries) CompletedTodoTitlesSince(ctx context.Context, since *time.Time) ([]string, error) {
-	rows, err := q.db.Query(ctx, completedTodoTitlesSince, since)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []string{}
-	for rows.Next() {
-		var title string
-		if err := rows.Scan(&title); err != nil {
-			return nil, err
-		}
-		items = append(items, title)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const conceptByDomainSlug = `-- name: ConceptByDomainSlug :one
 SELECT id, slug, name, domain, kind, parent_id, description, created_at, updated_at
 FROM concepts
@@ -2370,36 +2342,6 @@ func (q *Queries) ConceptsForNote(ctx context.Context, noteID uuid.UUID) ([]uuid
 			return nil, err
 		}
 		items = append(items, concept_id)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const conceptsForNotes = `-- name: ConceptsForNotes :many
-SELECT note_id, concept_id FROM note_concepts
-WHERE note_id = ANY($1::uuid[])
-`
-
-type ConceptsForNotesRow struct {
-	NoteID    uuid.UUID `json:"note_id"`
-	ConceptID uuid.UUID `json:"concept_id"`
-}
-
-func (q *Queries) ConceptsForNotes(ctx context.Context, dollar_1 []uuid.UUID) ([]ConceptsForNotesRow, error) {
-	rows, err := q.db.Query(ctx, conceptsForNotes, dollar_1)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []ConceptsForNotesRow{}
-	for rows.Next() {
-		var i ConceptsForNotesRow
-		if err := rows.Scan(&i.NoteID, &i.ConceptID); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -4002,32 +3944,6 @@ func (q *Queries) CreateTodoItem(ctx context.Context, arg CreateTodoItemParams) 
 	return i, err
 }
 
-const createTodoSkipRecord = `-- name: CreateTodoSkipRecord :exec
-
-INSERT INTO todo_skips (todo_id, original_due, skipped_date, reason)
-VALUES ($1, $2, $3, $4)
-ON CONFLICT (todo_id, skipped_date) DO NOTHING
-`
-
-type CreateTodoSkipRecordParams struct {
-	TodoID      uuid.UUID `json:"todo_id"`
-	OriginalDue time.Time `json:"original_due"`
-	SkippedDate time.Time `json:"skipped_date"`
-	Reason      string    `json:"reason"`
-}
-
-// === Skip log queries ===
-// Insert a single skip record. ON CONFLICT ensures idempotency on cron re-run.
-func (q *Queries) CreateTodoSkipRecord(ctx context.Context, arg CreateTodoSkipRecordParams) error {
-	_, err := q.db.Exec(ctx, createTodoSkipRecord,
-		arg.TodoID,
-		arg.OriginalDue,
-		arg.SkippedDate,
-		arg.Reason,
-	)
-	return err
-}
-
 const createTopic = `-- name: CreateTopic :one
 INSERT INTO topics (slug, name, description, icon, sort_order)
 VALUES ($1, $2, $3, $4, $5)
@@ -4386,15 +4302,6 @@ func (q *Queries) DeleteBookmarkTopics(ctx context.Context, bookmarkID uuid.UUID
 	return err
 }
 
-const deleteContentTags = `-- name: DeleteContentTags :exec
-DELETE FROM content_tags WHERE content_id = $1
-`
-
-func (q *Queries) DeleteContentTags(ctx context.Context, contentID uuid.UUID) error {
-	_, err := q.db.Exec(ctx, deleteContentTags, contentID)
-	return err
-}
-
 const deleteContentTopics = `-- name: DeleteContentTopics :exec
 DELETE FROM content_topics WHERE content_id = $1
 `
@@ -4548,15 +4455,6 @@ type DeletePlanEntriesParams struct {
 // Batch delete plan entries by plan_id and entry IDs (for remove_entries action on draft plans).
 func (q *Queries) DeletePlanEntries(ctx context.Context, arg DeletePlanEntriesParams) error {
 	_, err := q.db.Exec(ctx, deletePlanEntries, arg.PlanID, arg.EntryIds)
-	return err
-}
-
-const deletePlanEntry = `-- name: DeletePlanEntry :exec
-DELETE FROM learning_plan_entries WHERE id = $1
-`
-
-func (q *Queries) DeletePlanEntry(ctx context.Context, id uuid.UUID) error {
-	_, err := q.db.Exec(ctx, deletePlanEntry, id)
 	return err
 }
 
@@ -6600,75 +6498,6 @@ func (q *Queries) ItemsByDate(ctx context.Context, planDate time.Time) ([]ItemsB
 	return items, nil
 }
 
-const itemsByDateRange = `-- name: ItemsByDateRange :many
-SELECT
-    dpi.id, dpi.plan_date, dpi.todo_id, dpi.selected_by, dpi.position,
-    dpi.reason, dpi.agent_note_id, dpi.status, dpi.created_at, dpi.updated_at,
-    t.title AS todo_title, t.state AS todo_state,
-    COALESCE(p.title, '') AS project_title
-FROM daily_plan_items dpi
-JOIN todos t ON t.id = dpi.todo_id
-LEFT JOIN projects p ON p.id = t.project_id
-WHERE dpi.plan_date >= $1 AND dpi.plan_date <= $2
-ORDER BY dpi.plan_date DESC, dpi.position
-`
-
-type ItemsByDateRangeParams struct {
-	StartDate time.Time `json:"start_date"`
-	EndDate   time.Time `json:"end_date"`
-}
-
-type ItemsByDateRangeRow struct {
-	ID           uuid.UUID  `json:"id"`
-	PlanDate     time.Time  `json:"plan_date"`
-	TodoID       uuid.UUID  `json:"todo_id"`
-	SelectedBy   string     `json:"selected_by"`
-	Position     int32      `json:"position"`
-	Reason       *string    `json:"reason"`
-	AgentNoteID  *uuid.UUID `json:"agent_note_id"`
-	Status       string     `json:"status"`
-	CreatedAt    time.Time  `json:"created_at"`
-	UpdatedAt    time.Time  `json:"updated_at"`
-	TodoTitle    string     `json:"todo_title"`
-	TodoState    TodoState  `json:"todo_state"`
-	ProjectTitle string     `json:"project_title"`
-}
-
-// Get daily plan items for a date range (e.g., yesterday's unfinished for morning_context).
-func (q *Queries) ItemsByDateRange(ctx context.Context, arg ItemsByDateRangeParams) ([]ItemsByDateRangeRow, error) {
-	rows, err := q.db.Query(ctx, itemsByDateRange, arg.StartDate, arg.EndDate)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []ItemsByDateRangeRow{}
-	for rows.Next() {
-		var i ItemsByDateRangeRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.PlanDate,
-			&i.TodoID,
-			&i.SelectedBy,
-			&i.Position,
-			&i.Reason,
-			&i.AgentNoteID,
-			&i.Status,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-			&i.TodoTitle,
-			&i.TodoState,
-			&i.ProjectTitle,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const lastEndedSession = `-- name: LastEndedSession :one
 SELECT id, domain, session_mode, agent_note_id, daily_plan_item_id, started_at, ended_at, metadata, created_at, updated_at
 FROM learning_sessions
@@ -7801,66 +7630,6 @@ func (q *Queries) ObservationCategoriesByDomain(ctx context.Context, domain stri
 			return nil, err
 		}
 		items = append(items, slug)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const observationsByAttempt = `-- name: ObservationsByAttempt :many
-SELECT ao.id, ao.attempt_id, ao.concept_id, ao.signal_type, ao.category, ao.severity, ao.detail,
-       ao.confidence, ao.position,
-       c.slug AS concept_slug, c.name AS concept_name
-FROM learning_attempt_observations ao
-JOIN concepts c ON c.id = ao.concept_id
-WHERE ao.attempt_id = $1
-ORDER BY ao.position ASC
-`
-
-type ObservationsByAttemptRow struct {
-	ID          uuid.UUID `json:"id"`
-	AttemptID   uuid.UUID `json:"attempt_id"`
-	ConceptID   uuid.UUID `json:"concept_id"`
-	SignalType  string    `json:"signal_type"`
-	Category    string    `json:"category"`
-	Severity    *string   `json:"severity"`
-	Detail      *string   `json:"detail"`
-	Confidence  string    `json:"confidence"`
-	Position    int32     `json:"position"`
-	ConceptSlug string    `json:"concept_slug"`
-	ConceptName string    `json:"concept_name"`
-}
-
-// All observations on a single attempt, in coach-insertion order
-// (position ASC). Kept alongside ObservationsByAttemptIDs — callers
-// fetching a single attempt's observations use this for a one-element
-// ANY(::uuid[]) equivalent without the array dance.
-func (q *Queries) ObservationsByAttempt(ctx context.Context, attemptID uuid.UUID) ([]ObservationsByAttemptRow, error) {
-	rows, err := q.db.Query(ctx, observationsByAttempt, attemptID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []ObservationsByAttemptRow{}
-	for rows.Next() {
-		var i ObservationsByAttemptRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.AttemptID,
-			&i.ConceptID,
-			&i.SignalType,
-			&i.Category,
-			&i.Severity,
-			&i.Detail,
-			&i.Confidence,
-			&i.Position,
-			&i.ConceptSlug,
-			&i.ConceptName,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -12634,36 +12403,6 @@ func (q *Queries) TasksPagedCount(ctx context.Context, state NullTaskState) (int
 	return count, err
 }
 
-const todoDailySummaryHint = `-- name: TodoDailySummaryHint :one
-SELECT
-    (SELECT count(*)::int FROM daily_plan_items WHERE plan_date = $1::date) AS planned_total,
-    (SELECT count(*)::int FROM daily_plan_items WHERE plan_date = $1::date AND status = 'done') AS planned_completed,
-    count(*) FILTER (WHERE state = 'done'
-        AND completed_at >= $2 AND completed_at < $3)::int AS total_completed
-FROM todos
-WHERE state = 'done' AND completed_at >= $2 AND completed_at < $3
-`
-
-type TodoDailySummaryHintParams struct {
-	PlanDate time.Time  `json:"plan_date"`
-	DayStart *time.Time `json:"day_start"`
-	DayEnd   *time.Time `json:"day_end"`
-}
-
-type TodoDailySummaryHintRow struct {
-	PlannedTotal     int32 `json:"planned_total"`
-	PlannedCompleted int32 `json:"planned_completed"`
-	TotalCompleted   int32 `json:"total_completed"`
-}
-
-// Compute completion metrics hint for a single day.
-func (q *Queries) TodoDailySummaryHint(ctx context.Context, arg TodoDailySummaryHintParams) (TodoDailySummaryHintRow, error) {
-	row := q.db.QueryRow(ctx, todoDailySummaryHint, arg.PlanDate, arg.DayStart, arg.DayEnd)
-	var i TodoDailySummaryHintRow
-	err := row.Scan(&i.PlannedTotal, &i.PlannedCompleted, &i.TotalCompleted)
-	return i, err
-}
-
 const todoInboxCount = `-- name: TodoInboxCount :one
 SELECT count(*)::int FROM todos WHERE state = 'inbox'
 `
@@ -12977,119 +12716,6 @@ func (q *Queries) TodoItemsDueOn(ctx context.Context, targetDate *time.Time) ([]
 			&i.UpdatedAt,
 			&i.ProjectTitle,
 			&i.ProjectSlug,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const todoSkipCountByItem = `-- name: TodoSkipCountByItem :one
-SELECT count(*)::int FROM todo_skips
-WHERE todo_id = $1 AND skipped_date >= $2
-`
-
-type TodoSkipCountByItemParams struct {
-	TodoID uuid.UUID `json:"todo_id"`
-	Since  time.Time `json:"since"`
-}
-
-// Count skips for a specific todo item within a date range.
-func (q *Queries) TodoSkipCountByItem(ctx context.Context, arg TodoSkipCountByItemParams) (int32, error) {
-	row := q.db.QueryRow(ctx, todoSkipCountByItem, arg.TodoID, arg.Since)
-	var column_1 int32
-	err := row.Scan(&column_1)
-	return column_1, err
-}
-
-const todoSkipHistoryByItem = `-- name: TodoSkipHistoryByItem :many
-SELECT id, todo_id, original_due, skipped_date, reason, created_at
-FROM todo_skips
-WHERE todo_id = $1
-  AND skipped_date >= $2
-ORDER BY skipped_date DESC
-`
-
-type TodoSkipHistoryByItemParams struct {
-	TodoID uuid.UUID `json:"todo_id"`
-	Since  time.Time `json:"since"`
-}
-
-// Get skip history for a specific todo item within a date range.
-func (q *Queries) TodoSkipHistoryByItem(ctx context.Context, arg TodoSkipHistoryByItemParams) ([]TodoSkip, error) {
-	rows, err := q.db.Query(ctx, todoSkipHistoryByItem, arg.TodoID, arg.Since)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []TodoSkip{}
-	for rows.Next() {
-		var i TodoSkip
-		if err := rows.Scan(
-			&i.ID,
-			&i.TodoID,
-			&i.OriginalDue,
-			&i.SkippedDate,
-			&i.Reason,
-			&i.CreatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const todoSkipHistoryByProject = `-- name: TodoSkipHistoryByProject :many
-SELECT sl.id, sl.todo_id, sl.original_due, sl.skipped_date, sl.reason, sl.created_at,
-       t.title AS item_title
-FROM todo_skips sl
-JOIN todos t ON t.id = sl.todo_id
-WHERE t.project_id = $1
-  AND sl.skipped_date >= $2
-ORDER BY sl.skipped_date DESC
-`
-
-type TodoSkipHistoryByProjectParams struct {
-	ProjectID *uuid.UUID `json:"project_id"`
-	Since     time.Time  `json:"since"`
-}
-
-type TodoSkipHistoryByProjectRow struct {
-	ID          uuid.UUID `json:"id"`
-	TodoID      uuid.UUID `json:"todo_id"`
-	OriginalDue time.Time `json:"original_due"`
-	SkippedDate time.Time `json:"skipped_date"`
-	Reason      string    `json:"reason"`
-	CreatedAt   time.Time `json:"created_at"`
-	ItemTitle   string    `json:"item_title"`
-}
-
-// Get skip history for all todo items under a project within a date range.
-func (q *Queries) TodoSkipHistoryByProject(ctx context.Context, arg TodoSkipHistoryByProjectParams) ([]TodoSkipHistoryByProjectRow, error) {
-	rows, err := q.db.Query(ctx, todoSkipHistoryByProject, arg.ProjectID, arg.Since)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []TodoSkipHistoryByProjectRow{}
-	for rows.Next() {
-		var i TodoSkipHistoryByProjectRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.TodoID,
-			&i.OriginalDue,
-			&i.SkippedDate,
-			&i.Reason,
-			&i.CreatedAt,
-			&i.ItemTitle,
 		); err != nil {
 			return nil, err
 		}
@@ -14644,24 +14270,6 @@ RETURNING id, email, created_at, updated_at
 
 func (q *Queries) UpsertUserByEmail(ctx context.Context, email string) (User, error) {
 	row := q.db.QueryRow(ctx, upsertUserByEmail, email)
-	var i User
-	err := row.Scan(
-		&i.ID,
-		&i.Email,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
-const userByEmail = `-- name: UserByEmail :one
-SELECT id, email, created_at, updated_at
-FROM users
-WHERE email = $1
-`
-
-func (q *Queries) UserByEmail(ctx context.Context, email string) (User, error) {
-	row := q.db.QueryRow(ctx, userByEmail, email)
 	var i User
 	err := row.Scan(
 		&i.ID,

@@ -1,8 +1,3 @@
--- name: UserByEmail :one
-SELECT id, email, created_at, updated_at
-FROM users
-WHERE email = $1;
-
 -- name: UserByID :one
 SELECT id, email, created_at, updated_at
 FROM users
