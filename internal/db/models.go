@@ -1370,7 +1370,7 @@ type RefreshToken struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
-// Agent-produced research/source artifacts — a first-class corpus member, low_trust by default. Distinct from notes (human-digested private knowledge, maturity axis) and contents (editorial/publication, status + is_public axes). A report is a SOURCE, not digested knowledge: a trusted report is still a source, never an evergreen note. Trust promotion (low_trust → trusted) is a human/admin act and is NOT exposed on the agent MCP surface. Reports are searchable from creation (search_knowledge), badged by source_type=report + trust_status, and downranked relative to notes/content so agent output never drowns out personal notes. Thin by design: no topics/tags, no publish lifecycle, no embedding, no maturity.
+// Agent-produced research/source artifacts — a first-class corpus member, low_trust by default. Distinct from notes (human-digested private knowledge, maturity axis) and contents (editorial/publication, status + is_public axes). A report is a SOURCE, not digested knowledge: a trusted report is still a source, never an evergreen note. Trust promotion (low_trust → trusted) is a human/admin act and is NOT exposed on the agent MCP surface. Reports are searchable from creation (search_knowledge), badged by source_type=report + trust_status, and downranked relative to notes/content so agent output never drowns out personal notes. Thin by design: no topics/tags, no publish lifecycle, no embedding, no maturity, and deliberately no audit trail (no activity_events trigger fires for this table; produced_by + created_at carry provenance).
 type Report struct {
 	ID uuid.UUID `json:"id"`
 	// Short title/summary of the report. Non-blank. Weighted A in search_vector.
@@ -1381,7 +1381,7 @@ type Report struct {
 	ProducedBy string `json:"produced_by"`
 	// References research_assignments(id). NULL for a standalone report (no dispatched assignment). Set when the report fulfills a fan-out assignment — the provenance link. ON DELETE SET NULL: deleting the assignment keeps the report (the source survives) but drops the provenance pointer.
 	OriginAssignmentID *uuid.UUID `json:"origin_assignment_id"`
-	// Trust axis: low_trust → trusted. Agent reports are born low_trust. Promotion to trusted is a human/admin verdict (Admin UI / SetReportTrust), never an agent MCP action and never the same thing as note maturity. low_trust controls search RANKING (downranked + badged), NOT visibility.
+	// Trust axis: low_trust → trusted. Agent reports are born low_trust. Promotion to trusted is a human/admin verdict (research.Store.SetReportTrust is schema/store-ready, but no production human UI exists yet — deferred), never an agent MCP action and never the same thing as note maturity. low_trust controls search RANKING (downranked + badged), NOT visibility.
 	TrustStatus string `json:"trust_status"`
 	// Generated tsvector for full-text search. Mirrors notes.search_vector shape (title weight A, body weight C). Reports are FTS-only — no embedding column.
 	SearchVector string    `json:"search_vector"`
@@ -1389,7 +1389,7 @@ type Report struct {
 	UpdatedAt    time.Time `json:"updated_at"`
 }
 
-// Fan-out research dispatch. HQ/human assigns a topic to an agent; the agent works autonomously and fulfills it by creating a report row referencing this assignment. Fan-out only — no parent_assignment_id, no chaining, no acceptance ceremony. An open assignment with no report is unfulfilled and visible. Distinct from tasks (the A2A coordination entity, with acknowledge/file_report/revision lifecycle) — research assignments have no such lifecycle by design.
+// Fan-out research dispatch. HQ/human assigns a topic to an agent; the agent works autonomously and fulfills it by creating a report row referencing this assignment. Fan-out only — no parent_assignment_id, no chaining, no acceptance ceremony. An open assignment with no report is unfulfilled and store-queryable, but no agent-facing read surface exposes it yet. Deliberately un-audited: no activity_events trigger fires for this table (provenance lives on assigned_by + created_at). Distinct from tasks (the A2A coordination entity, with acknowledge/file_report/revision lifecycle) — research assignments have no such lifecycle by design.
 type ResearchAssignment struct {
 	ID uuid.UUID `json:"id"`
 	// What to research, in free text. Non-blank (chk_research_assignment_topic_not_blank).
@@ -1398,7 +1398,7 @@ type ResearchAssignment struct {
 	AssignedTo string `json:"assigned_to"`
 	// References agents(name). The dispatcher (HQ or human). assign_research is author-gated to hq + human, so this is one of those.
 	AssignedBy string `json:"assigned_by"`
-	// Lifecycle: open → fulfilled. open = dispatched, no report yet (visible as unfulfilled work). fulfilled = a report referencing this assignment exists. Set by research.Store, never by trigger. There is no cancel/revision state.
+	// Lifecycle: open → fulfilled. open = dispatched, no report yet (persisted and store-queryable; no agent-facing read tool surfaces it yet). fulfilled = a report referencing this assignment exists. Set by research.Store, never by trigger. There is no cancel/revision state.
 	Status    string    `json:"status"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`

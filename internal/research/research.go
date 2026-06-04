@@ -15,8 +15,9 @@
 //
 // The trust axis is NOT note maturity: a trusted report is still a SOURCE, never
 // "evergreen digested knowledge". Trust promotion is a human/admin verdict
-// (SetTrust / future Admin UI), never an agent-facing MCP action. Reports are
-// searchable from creation and downranked by trust — visibility is not gated.
+// (SetTrust is schema/store-ready; no production human UI consumes it yet —
+// deferred), never an agent-facing MCP action. Reports are searchable from
+// creation and downranked by trust — visibility is not gated.
 //
 // A research assignment is fan-out only: HQ/human dispatches a topic to an
 // agent; the agent fulfills it by creating a report referencing the assignment,
@@ -58,8 +59,9 @@ func (t TrustStatus) Valid() bool {
 type Status string
 
 const (
-	// StatusOpen is a dispatched assignment with no report yet — visible as
-	// unfulfilled work.
+	// StatusOpen is a dispatched assignment with no report yet. It is persisted
+	// and store-queryable (OpenAssignments), but no agent-facing read tool
+	// surfaces open assignments yet — that is a reserved future read surface.
 	StatusOpen Status = "open"
 	// StatusFulfilled means a report referencing this assignment exists.
 	StatusFulfilled Status = "fulfilled"

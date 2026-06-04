@@ -160,11 +160,19 @@ them wrong is a semantic bug, not a naming quibble.
   row with no `kind` discriminator. **Ambiguity:** "show all directives I
   issued" cannot be answered structurally. **Open Question** §7: whether to
   add `tasks.kind` (status quo: no).
-- **report** — vocabulary for the artifact-bearing completion of a directive.
-  Mechanically: a `file_report(in_response_to=task_id)` call that attaches a
-  response `task_message` + an `artifact` and transitions the task to
-  `completed` (`catalog.go:242-251`; `authorization-matrix.md:160`). Not a
-  separate table.
+- **report** — **two distinct senses, kept separate; the word collides, the
+  mechanisms do not.**
+  - *A2A report* — the artifact-bearing completion of a directive: a
+    `file_report(in_response_to=task_id)` call that attaches a response
+    `task_message` + an `artifact` and transitions the task to `completed`
+    (`catalog.go:242-251`; `authorization-matrix.md` Coordination layer). Not a
+    separate table.
+  - *corpus report* — a first-class `reports` row written by `create_report`
+    (`migrations/004_report_lane`): an agent-produced, **low-trust, searchable
+    knowledge SOURCE** on a trust axis (low_trust → trusted). It is NOT
+    task-bound, NOT an artifact, and never becomes an evergreen note. Filing
+    requires `PublishArtifacts`; trust promotion is an off-surface human/admin
+    act. `file_report` ≠ `create_report`.
 - **task_message** — an ordered request/response turn on a task
   (`role ∈ {request, response}`). Parts are a2a-go `Part` JSON. **Enforced**
   caps: 1–16 parts (`chk_task_messages_parts_count`, `1307-1309`), ≤32 KB

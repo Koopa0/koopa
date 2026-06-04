@@ -65,8 +65,9 @@ func (s *Store) Assignment(ctx context.Context, id uuid.UUID) (*Assignment, erro
 }
 
 // OpenAssignments returns unfulfilled assignments newest-first, capped by limit.
-// This is the "no report produced is visible" surface: an assignment sits here
-// until a report fulfills it.
+// It is the store-level read for unfulfilled work: an assignment sits here until
+// a report fulfills it. No agent-facing MCP tool surfaces this yet — it is the
+// query a future open-assignments read/admin surface will build on.
 func (s *Store) OpenAssignments(ctx context.Context, limit int) ([]Assignment, error) {
 	rows, err := s.q.OpenAssignments(ctx, int32(limit)) // #nosec G115 -- limit bounded by caller
 	if err != nil {
@@ -159,8 +160,10 @@ func (s *Store) Search(ctx context.Context, query string, limit int) ([]Report, 
 
 // SetTrust promotes or demotes a report's trust status. This is the backend for
 // the human/admin trust verdict — it is deliberately NOT exposed as an
-// agent-facing MCP tool. Returns ErrNotFound when no row matched and
-// ErrInvalidTrust on an unrecognized status.
+// agent-facing MCP tool. It is schema/store-ready but no production human UI
+// consumes it yet (deferred), so every report stays low_trust in practice until
+// that surface lands. Returns ErrNotFound when no row matched and ErrInvalidTrust
+// on an unrecognized status.
 func (s *Store) SetTrust(ctx context.Context, id uuid.UUID, t TrustStatus) (*Report, error) {
 	if !t.Valid() {
 		return nil, fmt.Errorf("%w: %q", ErrInvalidTrust, t)
