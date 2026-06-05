@@ -30,7 +30,6 @@ import (
 	agentnote "github.com/Koopa0/koopa/internal/agent/note"
 	"github.com/Koopa0/koopa/internal/api"
 	"github.com/Koopa0/koopa/internal/auth"
-	"github.com/Koopa0/koopa/internal/bookmark"
 	"github.com/Koopa0/koopa/internal/content"
 	"github.com/Koopa0/koopa/internal/daily"
 	"github.com/Koopa0/koopa/internal/db"
@@ -129,7 +128,6 @@ func run(logger *slog.Logger) error {
 
 	// Stores
 	contentStore := content.NewStore(pool)
-	bookmarkStore := bookmark.NewStore(pool)
 	projectStore := project.NewStore(pool)
 	topicStore := topic.NewStore(pool)
 	feedStore := feed.NewStore(pool, logger)
@@ -192,7 +190,6 @@ func run(logger *slog.Logger) error {
 	h := &handlers{
 		auth:       authHandler,
 		content:    content.NewHandler(contentStore, cfg.SiteURL, logger),
-		bookmark:   bookmark.NewHandler(bookmarkStore, topicStore, tagStore, logger),
 		project:    project.NewHandler(projectStore, todoStore, activityStore, contentStore, logger),
 		topic:      topic.NewHandler(topicStore, contentStore, logger),
 		feed:       feedHandler,
@@ -238,10 +235,10 @@ func run(logger *slog.Logger) error {
 
 	// adminActorMid opens a per-request tx and binds koopa.actor so audit
 	// triggers record who mutated each row. Single-admin deployment, so the
-	// bound actor is always "human" (see bookmark.curatedByFromContext for
-	// the multi-admin upgrade path). adminMid composes authMid outside
-	// adminActorMid: JWT validation runs first — failing auth short-circuits
-	// before a DB tx is opened.
+	// bound actor is always "human"; a multi-admin upgrade would resolve the
+	// actor from the authenticated identity instead. adminMid composes authMid
+	// outside adminActorMid: JWT validation runs first — failing auth
+	// short-circuits before a DB tx is opened.
 	adminActorMid := api.ActorMiddleware(pool, "human", logger)
 	adminMid := func(next http.Handler) http.Handler {
 		return authMid(adminActorMid(next))

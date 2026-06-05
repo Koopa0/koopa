@@ -8,8 +8,8 @@
 //   - MergeTags — the manual tag-consolidation path. Every step is
 //     explicit and transactional because the ON DELETE CASCADE on
 //     the junction tables would silently wipe history if the merge
-//     hit DeleteTag without first reassigning aliases / content_tags
-//     / bookmark_tags. Do NOT simplify this to a single DELETE —
+//     hit DeleteTag without first reassigning aliases / content_tags.
+//     Do NOT simplify this to a single DELETE —
 //     the data-loss bug it prevents is documented in the MergeTags
 //     block comment above that method.
 //
@@ -312,21 +312,21 @@ func (s *Store) DeleteAlias(ctx context.Context, id uuid.UUID) error {
 
 // MergeTags merges source tag into target tag.
 //
-// CALLER CONTRACT: this method performs 7 writes across three junction
-// tables plus tag_aliases and tags. Callers that need atomicity MUST
-// pass a tx-bound Store via WithTx(tx). Admin HTTP callers use
-// ActorMiddleware which supplies the tx via request context; the tag
-// handler routes through that path. Without a tx-bound Store, a
-// mid-sequence failure leaves the source tag partially detached —
-// some junctions moved, some still pointing at source, source row
-// not deleted.
+// CALLER CONTRACT: this method performs 5 writes across two junction
+// tables (tag_aliases, content_tags) plus the source tags row. Callers
+// that need atomicity MUST pass a tx-bound Store via WithTx(tx). Admin
+// HTTP callers use ActorMiddleware which supplies the tx via request
+// context; the tag handler routes through that path. Without a tx-bound
+// Store, a mid-sequence failure leaves the source tag partially detached
+// — some junctions moved, some still pointing at source, source row not
+// deleted.
 //
-// Reassigns tag_aliases, content_tags, and bookmark_tags from source
-// to target (deduplicating against target's existing rows to avoid
-// primary-key collisions on the junctions), then deletes the source
-// tag. Without the junction reassignments the final DeleteTag would
-// silently cascade every junction row away via ON DELETE CASCADE —
-// the data-loss bug this merge is meant to avoid.
+// Reassigns tag_aliases and content_tags from source to target
+// (deduplicating against target's existing rows to avoid primary-key
+// collisions on the junctions), then deletes the source tag. Without the
+// junction reassignments the final DeleteTag would silently cascade every
+// junction row away via ON DELETE CASCADE — the data-loss bug this merge
+// is meant to avoid.
 func (s *Store) MergeTags(ctx context.Context, sourceID, targetID uuid.UUID) (*MergeResult, error) {
 	// Aliases: tag_aliases.tag_id is nullable → queries take *uuid.UUID.
 	src := &sourceID
@@ -356,28 +356,14 @@ func (s *Store) MergeTags(ctx context.Context, sourceID, targetID uuid.UUID) (*M
 		return nil, fmt.Errorf("reassigning content tags: %w", err)
 	}
 
-	// Bookmark tags: same cascade concern as content_tags.
-	if _, err := s.q.DeleteDuplicateBookmarkTags(ctx, db.DeleteDuplicateBookmarkTagsParams{
-		TagID: sourceID, TagID_2: targetID,
-	}); err != nil {
-		return nil, fmt.Errorf("deleting duplicate bookmark tags: %w", err)
-	}
-	bookmarkTagsMoved, err := s.q.ReassignBookmarkTags(ctx, db.ReassignBookmarkTagsParams{
-		TagID: targetID, TagID_2: sourceID,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("reassigning bookmark tags: %w", err)
-	}
-
 	// Delete the source tag (now has no references)
 	if err := s.q.DeleteTag(ctx, sourceID); err != nil {
 		return nil, fmt.Errorf("deleting source tag %s: %w", sourceID, err)
 	}
 
 	return &MergeResult{
-		AliasesMoved:      aliasesMoved,
-		ContentTagsMoved:  contentTagsMoved,
-		BookmarkTagsMoved: bookmarkTagsMoved,
+		AliasesMoved:     aliasesMoved,
+		ContentTagsMoved: contentTagsMoved,
 	}, nil
 }
 

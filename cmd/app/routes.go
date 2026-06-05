@@ -26,7 +26,6 @@ import (
 	"github.com/Koopa0/koopa/internal/agent"
 	agentnote "github.com/Koopa0/koopa/internal/agent/note"
 	"github.com/Koopa0/koopa/internal/auth"
-	"github.com/Koopa0/koopa/internal/bookmark"
 	"github.com/Koopa0/koopa/internal/content"
 	"github.com/Koopa0/koopa/internal/daily"
 	"github.com/Koopa0/koopa/internal/feed"
@@ -51,7 +50,6 @@ import (
 type handlers struct {
 	auth       *auth.Handler
 	content    *content.Handler
-	bookmark   *bookmark.Handler
 	project    *project.Handler
 	topic      *topic.Handler
 	feed       *feed.Handler
@@ -129,8 +127,6 @@ func registerRoutes(
 	mux.HandleFunc("GET /api/contents/{slug}", h.content.PublicBySlug)
 	mux.HandleFunc("GET /api/contents/by-type/{type}", h.content.PublicByType)
 	mux.HandleFunc("GET /api/contents/related/{slug}", h.content.PublicRelated)
-	mux.HandleFunc("GET /api/bookmarks", h.bookmark.PublicList)
-	mux.HandleFunc("GET /api/bookmarks/{slug}", h.bookmark.PublicBySlug)
 	mux.HandleFunc("GET /api/search", h.content.PublicSearch)
 	mux.HandleFunc("GET /api/knowledge-graph", h.content.KnowledgeGraph)
 	mux.HandleFunc("GET /api/feed/rss", h.content.RSS)
@@ -162,15 +158,6 @@ func registerRoutes(
 	mux.Handle("POST /api/admin/knowledge/content/{id}/revert-to-draft", adminMid(http.HandlerFunc(h.content.RevertToDraft)))
 	mux.Handle("POST /api/admin/knowledge/content/{id}/archive", adminMid(http.HandlerFunc(h.content.Archive)))
 	mux.Handle("PATCH /api/admin/knowledge/content/{id}/is-public", adminMid(http.HandlerFunc(h.content.SetIsPublic)))
-
-	// --- Admin: Knowledge / Bookmarks ---
-	// URL is identity (bookmarks.url_hash UNIQUE) and is deliberately not
-	// editable on the update path.
-	mux.Handle("GET /api/admin/knowledge/bookmarks", authMid(http.HandlerFunc(h.bookmark.List)))
-	mux.Handle("GET /api/admin/knowledge/bookmarks/{id}", authMid(http.HandlerFunc(h.bookmark.Get)))
-	mux.Handle("POST /api/admin/knowledge/bookmarks", adminMid(http.HandlerFunc(h.bookmark.Create)))
-	mux.Handle("PUT /api/admin/knowledge/bookmarks/{id}", adminMid(http.HandlerFunc(h.bookmark.Update)))
-	mux.Handle("DELETE /api/admin/knowledge/bookmarks/{id}", adminMid(http.HandlerFunc(h.bookmark.Delete)))
 
 	// --- Admin: Knowledge / Notes (Zettelkasten) ---
 	// Maturity transitions go through their own endpoint so every maturity

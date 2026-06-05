@@ -20,7 +20,6 @@ sql:
       - "internal/learning/hypothesis/query.sql"
       - "internal/learning/plan/query.sql"
       - "internal/learning/fsrs/query.sql"
-      - "internal/bookmark/query.sql"
       - "internal/note/query.sql"
     schema: "migrations/"
     gen:

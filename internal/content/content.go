@@ -30,8 +30,8 @@ const (
 	// TypeNote has been removed — notes are a separate entity
 	// now (internal/note, notes table). The content_type ENUM no longer
 	// accepts 'note'. Use note.Kind for note sub-type typed aliases.
-	// TypeBookmark was split out earlier into the bookmarks table
-	// (internal/bookmark).
+	// TypeBookmark was split out earlier into the bookmarks table; the
+	// bookmark feature was later removed entirely.
 )
 
 // Valid reports whether t is a known content type.

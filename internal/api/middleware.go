@@ -56,7 +56,7 @@ type actorKey struct{}
 // pool connection whose session has NO koopa.actor set. The audit
 // trigger's current_actor() falls through to the literal 'system' agent.
 // This handler-wiring bug class is demonstrated end-to-end on one
-// representative route (bookmark Create) by two integration tests in
+// representative route (note Create) by two integration tests in
 // internal/api/integration_test.go:
 // TestActorMiddleware_PropagatesHumanActor (happy path, asserts
 // actor='human') and

@@ -128,15 +128,3 @@ WHERE content_tags.tag_id = $1
 -- $1 = target_id, $2 = source_id
 UPDATE content_tags SET tag_id = $1 WHERE content_tags.tag_id = $2;
 
--- Merge: delete duplicate bookmark tags (source already attached to same bookmark as target).
--- name: DeleteDuplicateBookmarkTags :execrows
--- $1 = source_id, $2 = target_id
-DELETE FROM bookmark_tags
-WHERE bookmark_tags.tag_id = $1
-  AND bookmark_tags.bookmark_id IN (SELECT bt.bookmark_id FROM bookmark_tags bt WHERE bt.tag_id = $2);
-
--- Merge: reassign remaining bookmark tags from source to target.
--- name: ReassignBookmarkTags :execrows
--- $1 = target_id, $2 = source_id
-UPDATE bookmark_tags SET tag_id = $1 WHERE bookmark_tags.tag_id = $2;
-

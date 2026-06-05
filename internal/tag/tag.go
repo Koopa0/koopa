@@ -79,11 +79,10 @@ type MergeParams struct {
 
 // MergeResult holds statistics from a tag merge operation. Each field
 // reports the number of rows reassigned from the source tag to the
-// target tag for one of the three junction tables.
+// target tag for one of the two junction tables.
 type MergeResult struct {
-	AliasesMoved      int64 `json:"aliases_moved"`
-	ContentTagsMoved  int64 `json:"content_tags_moved"`
-	BookmarkTagsMoved int64 `json:"bookmark_tags_moved"`
+	AliasesMoved     int64 `json:"aliases_moved"`
+	ContentTagsMoved int64 `json:"content_tags_moved"`
 }
 
 // containsControlChars returns true if s contains any control character (null bytes, etc.).

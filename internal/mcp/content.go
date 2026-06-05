@@ -73,8 +73,8 @@ var (
 	// migrations/001_initial.up.sql after schema cleanup extracted notes to
 	// their own entity. 'note' is no longer a content sub-type — use the
 	// manage_note MCP tool (or internal/note directly) for Zettelkasten
-	// notes. 'bookmark' was never a content type in this schema — see
-	// internal/bookmark.
+	// notes. 'bookmark' was never a content type in this schema; the
+	// bookmark feature has since been removed entirely.
 	validContentTypes = map[string]struct{}{
 		"article":   {},
 		"essay":     {},

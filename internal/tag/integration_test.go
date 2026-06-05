@@ -30,9 +30,9 @@ func TestMain(m *testing.M) {
 	pool, cleanup := testdb.StartPool()
 	testPool = pool
 
-	// bookmarks.curated_by FKs onto agents(name). Sync the builtin
-	// registry so TestStore_MergeTags_PreservesContentAndBookmarkAttachments
-	// can insert a bookmark row without a 23503 FK violation.
+	// Audited inserts (e.g. contents) fire AFTER triggers that write
+	// activity_events.actor, which FKs onto agents(name). Sync the builtin
+	// registry so the merge test's seeded rows don't hit a 23503 FK violation.
 	registry := agent.NewBuiltinRegistry()
 	if _, err := agent.SyncToTable(context.Background(), registry, agent.NewStore(pool), nil, slog.Default()); err != nil {
 		slog.Default().Error("agent.SyncToTable", "error", err)
@@ -54,15 +54,14 @@ func setup(t *testing.T) *Store {
 }
 
 // setupWithJunctions is the same as setup but also truncates the
-// content and bookmark tables (and their tag junctions) so a merge
-// test can seed fresh rows without colliding on unique constraints.
-// TRUNCATE CASCADE on tags already removes junction rows, but
-// contents and bookmarks rows themselves persist across tests and
-// must be cleared explicitly.
+// contents table (and its tag junction) so a merge test can seed fresh
+// rows without colliding on unique constraints. TRUNCATE CASCADE on tags
+// already removes junction rows, but contents rows themselves persist
+// across tests and must be cleared explicitly.
 func setupWithJunctions(t *testing.T) *Store {
 	t.Helper()
 	if err := testdb.TruncateCtx(t.Context(), testPool,
-		"content_tags", "bookmark_tags", "contents", "bookmarks", "tag_aliases", "tags",
+		"content_tags", "contents", "tag_aliases", "tags",
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -97,25 +96,6 @@ func seedContent(t *testing.T, slug string) uuid.UUID {
 	return id
 }
 
-// seedBookmark inserts a minimal bookmarks row via raw SQL (the
-// bookmark package is out of scope here). Returns the row id.
-func seedBookmark(t *testing.T, slug string) uuid.UUID {
-	t.Helper()
-	// url_hash must be a 64-char lowercase hex (chk_bookmark_url_hash_format).
-	urlHash := randomHex(t, 32)
-	url := "https://example.com/" + slug
-	var id uuid.UUID
-	err := testPool.QueryRow(t.Context(), `
-		INSERT INTO bookmarks (url, url_hash, slug, title, capture_channel, curated_by)
-		VALUES ($1, $2, $3, $4, 'manual', 'human')
-		RETURNING id
-	`, url, urlHash, slug, "Title "+slug).Scan(&id)
-	if err != nil {
-		t.Fatalf("seedBookmark(%q) error: %v", slug, err)
-	}
-	return id
-}
-
 // attachContentTag inserts a row into content_tags.
 func attachContentTag(t *testing.T, contentID, tagID uuid.UUID) {
 	t.Helper()
@@ -124,17 +104,6 @@ func attachContentTag(t *testing.T, contentID, tagID uuid.UUID) {
 		contentID, tagID,
 	); err != nil {
 		t.Fatalf("attachContentTag(%s, %s) error: %v", contentID, tagID, err)
-	}
-}
-
-// attachBookmarkTag inserts a row into bookmark_tags.
-func attachBookmarkTag(t *testing.T, bookmarkID, tagID uuid.UUID) {
-	t.Helper()
-	if _, err := testPool.Exec(t.Context(),
-		`INSERT INTO bookmark_tags (bookmark_id, tag_id) VALUES ($1, $2)`,
-		bookmarkID, tagID,
-	); err != nil {
-		t.Fatalf("attachBookmarkTag(%s, %s) error: %v", bookmarkID, tagID, err)
 	}
 }
 
@@ -475,13 +444,13 @@ func TestStore_MergeTags_WithAlias(t *testing.T) {
 	}
 }
 
-// TestStore_MergeTags_PreservesContentAndBookmarkAttachments is the
-// regression guard for the silent data-loss bug in the old MergeTags:
-// before the fix, DeleteTag on the source cascaded away every
-// content_tags / bookmark_tags row referencing it. After the fix, those
-// junction rows are reassigned to the target before the source is
-// deleted, and MergeResult reports the counts moved.
-func TestStore_MergeTags_PreservesContentAndBookmarkAttachments(t *testing.T) {
+// TestStore_MergeTags_PreservesContentAttachments is the regression guard
+// for the silent data-loss bug in the old MergeTags: before the fix,
+// DeleteTag on the source cascaded away every content_tags row
+// referencing it. After the fix, those junction rows are reassigned to
+// the target before the source is deleted, and MergeResult reports the
+// counts moved.
+func TestStore_MergeTags_PreservesContentAttachments(t *testing.T) {
 	s := setupWithJunctions(t)
 	ctx := t.Context()
 
@@ -494,10 +463,6 @@ func TestStore_MergeTags_PreservesContentAndBookmarkAttachments(t *testing.T) {
 	attachContentTag(t, content1, source.ID)
 	attachContentTag(t, content2, source.ID)
 
-	// One bookmark tagged with source only.
-	bookmark := seedBookmark(t, "bookmark-"+randomHex(t, 8))
-	attachBookmarkTag(t, bookmark, source.ID)
-
 	result, err := s.MergeTags(ctx, source.ID, target.ID)
 	if err != nil {
 		t.Fatalf("MergeTags(%s, %s) error: %v", source.ID, target.ID, err)
@@ -506,13 +471,10 @@ func TestStore_MergeTags_PreservesContentAndBookmarkAttachments(t *testing.T) {
 	if result.ContentTagsMoved != 2 {
 		t.Errorf("MergeTags() content_tags_moved = %d, want 2", result.ContentTagsMoved)
 	}
-	if result.BookmarkTagsMoved != 1 {
-		t.Errorf("MergeTags() bookmark_tags_moved = %d, want 1", result.BookmarkTagsMoved)
-	}
 
-	// No content_tags / bookmark_tags row may reference the source tag
-	// — those rows were either reassigned (preferred) or silently
-	// cascaded away by the old buggy path.
+	// No content_tags row may reference the source tag — those rows were
+	// either reassigned (preferred) or silently cascaded away by the old
+	// buggy path.
 	var remainingContent int
 	if err := testPool.QueryRow(ctx,
 		`SELECT count(*)::int FROM content_tags WHERE tag_id = $1`, source.ID,
@@ -521,16 +483,6 @@ func TestStore_MergeTags_PreservesContentAndBookmarkAttachments(t *testing.T) {
 	}
 	if remainingContent != 0 {
 		t.Fatalf("MergeTags() content_tags remaining on source = %d, want 0", remainingContent)
-	}
-
-	var remainingBookmark int
-	if err := testPool.QueryRow(ctx,
-		`SELECT count(*)::int FROM bookmark_tags WHERE tag_id = $1`, source.ID,
-	).Scan(&remainingBookmark); err != nil {
-		t.Fatalf("counting remaining source bookmark_tags: %v", err)
-	}
-	if remainingBookmark != 0 {
-		t.Fatalf("MergeTags() bookmark_tags remaining on source = %d, want 0", remainingBookmark)
 	}
 
 	// Both contents must now be tagged with target (reassigned, not
@@ -544,18 +496,6 @@ func TestStore_MergeTags_PreservesContentAndBookmarkAttachments(t *testing.T) {
 	}
 	if contentOnTarget != 2 {
 		t.Fatalf("MergeTags() content_tags on target = %d, want 2", contentOnTarget)
-	}
-
-	// Bookmark must now be tagged with target.
-	var bookmarkOnTarget int
-	if err := testPool.QueryRow(ctx,
-		`SELECT count(*)::int FROM bookmark_tags WHERE tag_id = $1 AND bookmark_id = $2`,
-		target.ID, bookmark,
-	).Scan(&bookmarkOnTarget); err != nil {
-		t.Fatalf("counting target bookmark_tags: %v", err)
-	}
-	if bookmarkOnTarget != 1 {
-		t.Fatalf("MergeTags() bookmark_tags on target = %d, want 1", bookmarkOnTarget)
 	}
 
 	// Source tag itself must be gone.

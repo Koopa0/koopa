@@ -238,8 +238,8 @@ var (
 	// demotes the project_profile) was invoked on a non-transactional
 	// store. The status UPDATE and the profile demote must commit as a
 	// unit; a pool-backed store cannot guarantee that. Admin HTTP routes
-	// bind a tx via api.ActorMiddleware. Mirrors feed.Store, content.Store,
-	// and bookmark.Store.
+	// bind a tx via api.ActorMiddleware. Mirrors feed.Store and
+	// content.Store.
 	ErrNotTransactional = errors.New("project: archival requires a transactional store")
 )
 

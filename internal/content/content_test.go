@@ -26,7 +26,7 @@ func TestTypeValid(t *testing.T) {
 		{name: "build-log", typ: TypeBuildLog, want: true},
 		{name: "til", typ: TypeTIL, want: true},
 		{name: "digest", typ: TypeDigest, want: true},
-		// bookmark lives in its own table (internal/bookmark), not contents.
+		// bookmark was never a content type; the bookmark feature was removed.
 		{name: "dropped: bookmark", typ: "bookmark", want: false},
 		// note was removed from content_type in the notes/content split — notes are a
 		// separate entity (internal/note, notes table).

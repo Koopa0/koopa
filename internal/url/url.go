@@ -4,9 +4,8 @@
 // hash, used as dedup identity across tables that store external URLs
 // (feed_entries.url_hash and bookmarks.url_hash). A single authoritative
 // canonicalisation is required because both tables share UNIQUE(url_hash) —
-// if the RSS collector and the bookmark handler disagree on the canonical
-// form, the same URL from two ingress points hashes differently and dedup
-// fails.
+// if two writers disagree on the canonical form, the same URL from two
+// ingress points hashes differently and dedup fails.
 //
 // This package shadows stdlib net/url by package name. Callers that need
 // both must alias one import:

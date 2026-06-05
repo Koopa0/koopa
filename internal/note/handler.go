@@ -289,7 +289,7 @@ func (h *Handler) enrich(r *http.Request, n *Note) response {
 }
 
 // actorFromContext resolves the authenticated agent identity for a
-// created_by stamp. Mirrors the bookmark package helper.
+// created_by stamp.
 func actorFromContext(r *http.Request) string {
 	if a, ok := api.ActorFromContext(r.Context()); ok {
 		return a
