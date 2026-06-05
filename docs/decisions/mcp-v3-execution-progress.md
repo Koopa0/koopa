@@ -32,6 +32,7 @@ private memory.
 | W5b-1 | `e78a4ef` | FSRS `retrieval` view of `learning_dashboard` + `RetrievalQueue` store method/query + `RetrievalTarget`. |
 | W5b-2a | `6e722bc` | review_cards-backed next-due reads (no fsrs-pkg coupling): ConceptsForList next_due_target CTE, DashboardConceptRows next_due CTE, stats `fsrs_cards_count`. |
 | W5b-2b | `dd92c24` | **deleted `internal/learning/fsrs`** + every remaining consumer (learning ReviewMetrics / dashboard due_today / today due-reviews / HTTP review route / main wiring / tests). `go mod tidy` dropped go-fsrs + swept the W2 a2a-go/genproto debt. FSRS = 0 in production Go. Executed integration suites green. |
+| W5c (frontend) | `dd23199` | Angular FSRS removal: deleted the interactive "Due today (FSRS)" dashboard card + rating UI + ReviewRating/recordReview; dropped FSRS model fields (due_today / due_reviews_count / next_due / next_due_target / `LearningSummary.due_reviews`); today dropped the dead learning-summary fan-out source + Due-reviews section; concepts list dropped Next-due column. tsc+lint+build+16 specs green; FSRS = 0 in frontend/src. |
 
 ---
 
@@ -61,7 +62,7 @@ private memory.
 - Schema (`bookmarks`, `bookmark_topics`, `bookmark_tags`) → W7.
 - **Frontend verify lesson:** the unit-test builder is `@angular/build:unit-test`. Raw `npx vitest run <file>` fails with "describe is not defined" (bypasses the builder's TestBed/globals init) — ALWAYS use `npx ng test --watch=false --include='<spec glob>'` (supports `--include`/`--filter` for scoping). W4 verified via `npx tsc --noEmit` + `npx ng lint` + `npx ng build` + the 3 affected specs (28 tests green).
 
-### W5 — FSRS / spaced-repetition  (BACKEND DONE — W5a/W5b-1/W5b-2a/W5b-2b; only W5c frontend REMAINS)
+### W5 — FSRS / spaced-repetition  ✅ COMPLETE (backend W5a/W5b-1/W5b-2a/W5b-2b + frontend W5c)
 
 **Scope correction (re-grep at execution caught this):** the runbook's "`recommend_next_target` becomes weakness/mastery-based only" item is **MOOT** — `recommend_next.go` has ZERO fsrs references; it is already entirely weakness + variation-graph based (`WeaknessAnalysis` + `TargetVariations`, ranked by severity). No new ranking logic anywhere. W5 is a pure mechanical FSRS-field removal (ledger §3 direction is unambiguous — no product decision).
 
@@ -69,7 +70,7 @@ private memory.
 
 **W5b — backend: ✅ DONE** (`e78a4ef` W5b-1, `6e722bc` W5b-2a, `dd92c24` W5b-2b). `internal/learning/fsrs` deleted; FSRS gone from learning (handler / dashboard / concepts / query.sql), today, stats, the MCP `learning_dashboard` retrieval view, the HTTP review route, and main wiring. Verified by executed learning/today/stats/mcp integration suites (testcontainers). `go mod tidy` also resolved the pre-existing W2 `a2a-go`/`genproto` go.mod debt. Schema (`review_cards`, `review_logs`) → W7.
 
-**W5c — frontend (separate commit; Angular build stays green even before this since removed JSON fields just become absent at runtime):** Angular learning **dashboard** page (due_today / retention / next_due), learning **summary** (`due_reviews`), the **today** page's due-reviews block, and any nav-count surfacing due_reviews. Verify `npx ng build` + affected specs via `npx ng test --watch=false --include=...`.
+**W5c — frontend: ✅ DONE** (`dd23199`). Removed the dashboard "Due today (FSRS)" card + rating UI, the FSRS model fields, the today due-reviews section + its now-dead learning-summary fan-out source, and the concepts "Next due" column. The Explore map missed 3 items (the today-page spec's `dueReviewsCount` mock, the workbench `LearningSummary.due_reviews` field, and 2 stale doc comments) — re-grep + `tsc` caught them, which is why every workflow-produced plan is verified against the real files before applying.
 
 ### W6 + W3 + W9 — BRIEFING CLUSTER  *(interdependent — do together)*
 Why together: `agentnote` (W3) is woven through morning_context / reflection_context / session_delta / weekly_summary, and those tools are being removed-from-catalog (W6) and replaced by the new `brief` (W9). Gutting agent_notes from tools that are simultaneously being removed/rebuilt is cleaner as one unit.
