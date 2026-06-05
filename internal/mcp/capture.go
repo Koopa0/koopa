@@ -20,7 +20,7 @@ import (
 // Agent-to-agent work runs through the tasks table; capture_inbox writes a
 // personal GTD todo only.
 type CaptureInboxInput struct {
-	Title       string  `json:"title" jsonschema:"required" jsonschema_description:"Task title. The created todo enters state=inbox; it must be promoted via advance_work(action=clarify) before it can be passed to plan_day."`
+	Title       string  `json:"title" jsonschema:"required" jsonschema_description:"Task title. The created todo enters state=inbox; it must be clarified to state=todo (via the admin UI) before it can be passed to plan_day."`
 	Description string  `json:"description,omitempty" jsonschema_description:"Optional task description"`
 	Project     string  `json:"project,omitempty" jsonschema_description:"Project slug, alias, or title (fuzzy matched)"`
 	Energy      *string `json:"energy,omitempty" jsonschema_description:"Energy level. One of: \"high\", \"medium\", \"low\". Other values are rejected at the handler layer."`

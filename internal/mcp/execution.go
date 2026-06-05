@@ -1,14 +1,9 @@
 // Copyright 2026 Koopa. All rights reserved.
 
-// execution.go holds the handler + inputs for advance_work (todo
-// state machine), plan_day (daily plan assembly), and the shared
-// priority normalizer.
-//
-// advance_work operates on todos (personal GTD), NOT on coordination
-// tasks — the tool kept its original name so Cowork project
-// instructions keep working, but every code path routes to
-// internal/todo. Do not migrate it to internal/agent/task without
-// updating every caller first.
+// execution.go holds the handler + inputs for plan_day (daily plan
+// assembly). It operates on todos (personal GTD), NOT on coordination
+// tasks — every code path routes to internal/todo. Inbox→todo
+// promotion (clarify) is an admin-UI action, not an agent tool.
 
 package mcp
 
@@ -31,7 +26,7 @@ import (
 // PlanDayInput is the input for the plan_day tool.
 type PlanDayInput struct {
 	Date        *string       `json:"date,omitempty" jsonschema_description:"Plan date YYYY-MM-DD (default: today)"`
-	Items       []PlanDayItem `json:"items" jsonschema:"required" jsonschema_description:"Todo items to plan for the day. Each todo MUST already be in state=todo (not inbox/done/someday). Inbox-state items are rejected — promote them first via advance_work(action=clarify). plan_day is idempotent for the given date: re-calling with a different items list replaces existing 'planned' rows for that date and reports the displaced items in items_removed."`
+	Items       []PlanDayItem `json:"items" jsonschema:"required" jsonschema_description:"Todo items to plan for the day. Each todo MUST already be in state=todo (not inbox/done/someday). Inbox-state items are rejected — clarify them to state=todo via the admin UI first. plan_day is idempotent for the given date: re-calling with a different items list replaces existing 'planned' rows for that date and reports the displaced items in items_removed."`
 	AgentNoteID *string       `json:"agent_note_id,omitempty" jsonschema_description:"Optional agent_note UUID that drove this planning session"`
 }
 
@@ -113,7 +108,7 @@ func createPlanItemTx(ctx context.Context, txTodos *todo.Store, txDayplan *daily
 		return fmt.Errorf("todo item %s not found: %w", item.TaskID, err)
 	}
 	if t.State == todo.StateInbox {
-		return fmt.Errorf("todo item %s is in inbox state — call advance_work(action=\"clarify\", task_id=%q) first to promote it to state=todo before planning", item.TaskID, item.TaskID)
+		return fmt.Errorf("todo item %s is in inbox state — it must be clarified to state=todo (via the admin UI) before planning", item.TaskID)
 	}
 	pos := item.Position
 	if pos == 0 {
