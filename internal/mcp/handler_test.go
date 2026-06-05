@@ -138,41 +138,6 @@ func TestWriteAgentNote_Validation(t *testing.T) {
 	}
 }
 
-// TestTrackHypothesis_Validation covers the cheap dispatch-path
-// validations that fire BEFORE resolveHypothesis' pre-flight existence
-// check (and therefore don't need a real hypothesis row).
-// Resolve-path field validation moved to
-// TestIntegration_TrackHypothesis_Resolve_Validation in integration_test.go
-// after #13 removed the nil-guard in hypothesis.go.
-func TestTrackHypothesis_Validation(t *testing.T) {
-	s := newTestServer()
-	validID := "00000000-0000-0000-0000-000000000001"
-	tests := []struct {
-		name    string
-		input   TrackHypothesisInput
-		wantErr string
-	}{
-		{name: "zero id", input: TrackHypothesisInput{Action: "verify"}, wantErr: "invalid hypothesis_id"},
-		{name: "invalid action", input: TrackHypothesisInput{HypothesisID: validID, Action: "bad"}, wantErr: "invalid action"},
-		// add_evidence validation runs entirely on the input before any
-		// store call, so it stays in the unit suite.
-		{name: "add_evidence nil evidence", input: TrackHypothesisInput{HypothesisID: validID, Action: "add_evidence"}, wantErr: "evidence is required"},
-		{name: "add_evidence missing type", input: TrackHypothesisInput{HypothesisID: validID, Action: "add_evidence", Evidence: map[string]any{"note": "no type"}}, wantErr: "supporting or counter"},
-		{name: "add_evidence invalid type", input: TrackHypothesisInput{HypothesisID: validID, Action: "add_evidence", Evidence: map[string]any{"type": "bogus"}}, wantErr: "supporting or counter"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			_, _, err := callHandler(t, s.trackHypothesis, tt.input)
-			if err == nil {
-				t.Fatal("expected error, got nil")
-			}
-			if !contains(err.Error(), tt.wantErr) {
-				t.Errorf("error = %q, want containing %q", err, tt.wantErr)
-			}
-		})
-	}
-}
-
 // TestParseOptionalUUID covers the consolidated helper in internal/mcp/uuid.go.
 // It replaces parseNamedUUID (hypothesis.go) and the un-named parseOptionalUUID
 // (plan.go) that existed before this refactor.
@@ -399,7 +364,6 @@ func TestToolSchemaGeneration(t *testing.T) {
 		{"AdvanceWorkInput", testSchema[AdvanceWorkInput]},
 		{"PlanDayInput", testSchema[PlanDayInput]},
 		{"WriteAgentNoteInput", testSchema[WriteAgentNoteInput]},
-		{"TrackHypothesisInput", testSchema[TrackHypothesisInput]},
 		{"StartSessionInput", testSchema[StartSessionInput]},
 		{"RecordAttemptInput", testSchema[RecordAttemptInput]},
 		{"EndSessionInput", testSchema[EndSessionInput]},

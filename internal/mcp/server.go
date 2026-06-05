@@ -194,10 +194,6 @@ func NewServer(pool *pgxpool.Pool, logger *slog.Logger, opts ...ServerOption) *S
 	addTool(s, toolFrom(ops.WriteAgentNote), s.writeAgentNote)
 	addTool(s, toolFrom(ops.QueryAgentNotes), s.queryAgentNotes)
 
-	// --- Goals & hypotheses ---
-	addTool(s, toolFrom(ops.GoalProgress), s.goalProgress)
-	addTool(s, toolFrom(ops.TrackHypothesis), s.trackHypothesis)
-
 	// --- Learning Domain ---
 	addTool(s, toolFrom(ops.StartSession), s.startSession)
 	addTool(s, toolFrom(ops.RecordAttempt), s.recordAttempt)

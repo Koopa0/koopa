@@ -135,30 +135,6 @@ func QueryAgentNotes() Meta {
 	}
 }
 
-// GoalProgress returns metadata for the active-goals query.
-func GoalProgress() Meta {
-	return Meta{
-		Name:        "goal_progress",
-		Domain:      DomainQuery,
-		Writability: ReadOnly,
-		Stability:   StabilityStable,
-		Since:       since,
-		Description: "Deep goal view: each active goal with its full milestone hierarchy (id/title/completed_at/target_deadline) AND its linked projects. This is the structural complement to morning_context.active_goals (which carries only the goal-summary level: title/area/quarter/deadline/milestone counts). Use goal_progress when you need milestone-level visibility or to see which projects are wired under a goal. For the daily briefing's headline counts, morning_context.active_goals is enough — calling both is redundant.",
-	}
-}
-
-// TrackHypothesis returns metadata for the hypothesis lifecycle update tool.
-func TrackHypothesis() Meta {
-	return Meta{
-		Name:        "track_hypothesis",
-		Domain:      DomainMeta,
-		Writability: Idempotent,
-		Stability:   StabilityStable,
-		Since:       since,
-		Description: "Update an existing hypothesis. add_evidence (append supporting data) is the routine, repeatable action. verify (claim confirmed) and invalidate (claim disproven) are TERMINAL one-way verdicts — human-judgment calls, not casual updates; archive retires it. Hypothesis creation goes through propose_hypothesis.",
-	}
-}
-
 // StartSession returns metadata for the learning session start tool.
 func StartSession() Meta {
 	return Meta{
@@ -482,8 +458,6 @@ func All() []Meta {
 		PlanDay(),
 		WriteAgentNote(),
 		QueryAgentNotes(),
-		GoalProgress(),
-		TrackHypothesis(),
 		StartSession(),
 		RecordAttempt(),
 		EndSession(),

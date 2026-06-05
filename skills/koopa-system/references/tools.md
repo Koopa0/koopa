@@ -13,23 +13,22 @@ is hand-maintained.
 > Run `go generate ./internal/mcp/ops` after any change to the tool surface;
 > the drift test `TestToolInventoryDocInSync` fails CI if this is stale.
 
-**31 tools** across 7 domains.
+**29 tools** across 7 domains.
 
 | Domain | Count |
 |---|---|
-| `query` | 7 |
+| `query` | 6 |
 | `daily` | 3 |
 | `a2a` | 0 |
-| `meta` | 2 |
+| `meta` | 1 |
 | `learning` | 7 |
 | `content` | 10 |
 | `system` | 2 |
-| **Total** | **31** |
+| **Total** | **29** |
 
 | Tool | Domain | Writability | Purpose |
 |---|---|---|---|
 | `attempt_history` | `query` | read_only | Read-side counterpart to record_attempt |
-| `goal_progress` | `query` | read_only | Deep goal view: each active goal with its full milestone hierarchy (id/title/completed_at/target_deadline) AND its linked projects |
 | `learning_dashboard` | `query` | read_only | Learning analytics dashboard |
 | `morning_context` | `query` | read_only | Single-call daily-planning briefing |
 | `query_agent_notes` | `query` | read_only | Recall prior agent notes |
@@ -38,7 +37,6 @@ is hand-maintained.
 | `advance_work` | `daily` | destructive | Personal-todo state transitions |
 | `capture_inbox` | `daily` | additive | Quick task capture to inbox |
 | `plan_day` | `daily` | idempotent | Set the day's plan as one atomic replacement |
-| `track_hypothesis` | `meta` | idempotent | Update an existing hypothesis |
 | `write_agent_note` | `meta` | additive | Create an agent note |
 | `archive_learning_target` | `learning` | destructive | Archive a learning target (soft-delete) |
 | `end_session` | `learning` | additive | End the active learning session |

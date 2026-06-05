@@ -90,15 +90,3 @@ func isValidPlanStatus(s string) bool {
 		return false
 	}
 }
-
-// isValidGoalStatusFilter accepts the read-side filter values for goals.
-// "all" is a UI sentinel meaning "every status"; the rest mirror the
-// goals.status CHECK.
-func isValidGoalStatusFilter(s string) bool {
-	switch s {
-	case "all", "not_started", "in_progress", "done", "abandoned", "on_hold":
-		return true
-	default:
-		return false
-	}
-}

@@ -47,12 +47,6 @@ func TestValidators(t *testing.T) {
 			good: []string{"active", "paused", "completed", "abandoned"},
 			bad:  []string{"", "draft", "skipped", "Active"},
 		},
-		{
-			name: "goal_status_filter",
-			fn:   isValidGoalStatusFilter,
-			good: []string{"all", "not_started", "in_progress", "done", "abandoned", "on_hold"},
-			bad:  []string{"", "ALL", "active", "completed"},
-		},
 	}
 
 	for _, tt := range tests {
