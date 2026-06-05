@@ -13,7 +13,6 @@ const VALID_TYPES: ReadonlySet<string> = new Set<InspectorTargetType>([
   'todo',
   'concept',
   'agent',
-  'bookmark',
 ]);
 
 /**

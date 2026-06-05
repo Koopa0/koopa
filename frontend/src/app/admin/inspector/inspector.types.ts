@@ -3,8 +3,8 @@ import type { InspectorTargetType } from '../../core/models/workbench.model';
 /**
  * Discriminated union of inspectable entities.
  *
- * All 10 renderers active:
- *   content, hypothesis, task, goal, project, note, todo, agent, concept, bookmark
+ * Active renderers:
+ *   content, hypothesis, task, goal, project, note, todo, agent, concept
  *
  * Each entity's design brief lives in frontend/docs/inspector-design/<entity>.md
  * — workflow: auggie semantic dive → WebSearch reference designs → lens collision → brief → ship.

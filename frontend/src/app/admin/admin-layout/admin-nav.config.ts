@@ -1,7 +1,6 @@
 import {
   Activity as ActivityIcon,
   BookOpen,
-  Bookmark as BookmarkIcon,
   Brain,
   CheckSquare,
   Compass,
@@ -105,14 +104,6 @@ export const ADMIN_NAV: readonly AdminNavGroup[] = [
         icon: StickyNote,
         shortcutHint: 'G N',
         testId: 'admin-nav-notes',
-      },
-      {
-        label: 'Bookmarks',
-        route: '/admin/knowledge/bookmarks',
-        icon: BookmarkIcon,
-        countKey: 'bookmarks_total',
-        shortcutHint: 'G B',
-        testId: 'admin-nav-bookmarks',
       },
       {
         label: 'Feeds',

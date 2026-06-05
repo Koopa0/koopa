@@ -87,11 +87,6 @@ export const routes: Routes = [
       ),
   },
   {
-    path: 'bookmarks',
-    loadComponent: () =>
-      import('./pages/bookmarks/bookmarks').then((m) => m.BookmarksComponent),
-  },
-  {
     path: 'resume',
     redirectTo: '/about',
     pathMatch: 'full',
@@ -215,13 +210,6 @@ export const routes: Routes = [
             (m) => m.NoteEditorPageComponent,
           ),
         canDeactivate: [noteEditorCanDeactivate],
-      },
-      {
-        path: 'knowledge/bookmarks',
-        loadComponent: () =>
-          import('./admin/knowledge/bookmarks/list/bookmarks-list.page').then(
-            (m) => m.BookmarksListPageComponent,
-          ),
       },
       {
         path: 'knowledge/feeds',

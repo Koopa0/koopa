@@ -52,8 +52,7 @@ export interface ApiContent {
 }
 
 // Backend content_type enum (migrations/001_initial.up.sql).
-// Notes live in the separate notes table (ApiNote); bookmarks live in the
-// bookmarks table (BookmarkDetail).
+// Notes live in the separate notes table (ApiNote).
 export type ContentType = 'article' | 'essay' | 'build-log' | 'til' | 'digest';
 
 export type ContentStatus = 'draft' | 'review' | 'published' | 'archived';

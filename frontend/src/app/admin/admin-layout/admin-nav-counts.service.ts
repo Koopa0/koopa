@@ -2,7 +2,6 @@ import { Injectable, Signal, computed, inject } from '@angular/core';
 import { rxResource } from '@angular/core/rxjs-interop';
 import { combineLatest, map, of } from 'rxjs';
 import { catchError } from 'rxjs/operators';
-import { BookmarkService } from '../../core/services/bookmark.service';
 import { ContentService } from '../../core/services/content.service';
 import { HypothesisService } from '../../core/services/hypothesis.service';
 import { PlanService } from '../../core/services/plan.service';
@@ -18,7 +17,6 @@ export type NavCountKey =
   | 'goals_active'
   | 'contents_total'
   | 'review_queue'
-  | 'bookmarks_total'
   | 'feeds_active'
   | 'hypotheses_unverified'
   | 'tasks_awaiting_human';
@@ -30,7 +28,6 @@ const EMPTY_ENVELOPE: NavCountEnvelope = {
   goals_active: null,
   contents_total: null,
   review_queue: null,
-  bookmarks_total: null,
   feeds_active: null,
   hypotheses_unverified: null,
   tasks_awaiting_human: null,
@@ -53,7 +50,6 @@ export class AdminNavCountsService {
   private readonly hypothesisService = inject(HypothesisService);
   private readonly taskService = inject(TaskService);
   private readonly planService = inject(PlanService);
-  private readonly bookmarkService = inject(BookmarkService);
   private readonly systemService = inject(SystemService);
 
   private readonly resource = rxResource<NavCountEnvelope, void>({
@@ -90,10 +86,6 @@ export class AdminNavCountsService {
                   t.state === 'revision_requested' || t.state === 'submitted',
               ).length,
           ),
-          catchError(() => of<number | null>(null)),
-        ),
-        bookmarks_total: this.bookmarkService.list({ perPage: 1 }).pipe(
-          map((r) => r.meta.total ?? r.data.length),
           catchError(() => of<number | null>(null)),
         ),
         feeds_active: this.systemService.getHealth().pipe(

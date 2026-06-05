@@ -29,7 +29,6 @@ interface Chip<T extends string> {
 const ENTITY_CHIPS: readonly Chip<EntityFilter>[] = [
   { value: 'all', label: 'All' },
   { value: 'content', label: 'Content' },
-  { value: 'bookmark', label: 'Bookmark' },
   { value: 'note', label: 'Note' },
   { value: 'todo', label: 'Todo' },
   { value: 'goal', label: 'Goal' },
@@ -57,7 +56,6 @@ const KIND_CHIPS: readonly Chip<KindFilter>[] = [
  */
 const ENTITY_ROUTE: Record<ActivityEntityType, string> = {
   content: '/admin/knowledge/content/%/edit',
-  bookmark: '/admin/knowledge/bookmarks',
   note: '/admin/knowledge/notes',
   task: '/admin/coordination/tasks/%',
   goal: '/admin/commitment/goals/%',

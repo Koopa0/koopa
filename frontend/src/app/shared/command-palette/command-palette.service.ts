@@ -78,13 +78,6 @@ const ADMIN_NAV_ACTIONS: readonly AdminNavActionEntry[] = [
     keywords: ['zettelkasten', 'knowledge'],
   },
   {
-    id: 'admin-bookmarks',
-    label: 'Bookmarks',
-    group: 'Knowledge',
-    path: '/admin/knowledge/bookmarks',
-    keywords: ['links', 'collected'],
-  },
-  {
     id: 'admin-feeds',
     label: 'Feeds',
     group: 'Knowledge',

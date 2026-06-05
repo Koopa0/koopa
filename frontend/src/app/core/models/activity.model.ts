@@ -6,7 +6,6 @@ export type ActivityEntityType =
   | 'milestone'
   | 'project'
   | 'content'
-  | 'bookmark'
   | 'note'
   | 'learning_attempt'
   | 'task'

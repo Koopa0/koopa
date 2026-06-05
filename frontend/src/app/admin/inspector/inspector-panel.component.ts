@@ -14,7 +14,6 @@ import { TaskInspectorComponent } from './renderers/task-inspector/task-inspecto
 import { TodoInspectorComponent } from './renderers/todo-inspector/todo-inspector.component';
 import { AgentInspectorComponent } from './renderers/agent-inspector/agent-inspector.component';
 import { ConceptInspectorComponent } from './renderers/concept-inspector/concept-inspector.component';
-import { BookmarkInspectorComponent } from './renderers/bookmark-inspector/bookmark-inspector.component';
 
 /**
  * Right-side inspector panel — structural template shared by all renderers.
@@ -39,7 +38,6 @@ import { BookmarkInspectorComponent } from './renderers/bookmark-inspector/bookm
     TodoInspectorComponent,
     AgentInspectorComponent,
     ConceptInspectorComponent,
-    BookmarkInspectorComponent,
   ],
   templateUrl: './inspector-panel.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,

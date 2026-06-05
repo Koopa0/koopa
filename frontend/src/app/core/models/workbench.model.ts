@@ -506,40 +506,6 @@ export interface ConceptObservation {
 }
 
 // ============================================================
-// ============================================================
-// Bookmark Inspector — matches GET /api/admin/knowledge/bookmarks/{id} response.
-// ============================================================
-
-/**
- * Bookmark Inspector detail. The backend extracts `host` from the URL
- * and joins `source_feed_name` via `feed_entries` when the bookmark
- * came from an RSS source.
- */
-export interface BookmarkDetail {
-  id: string;
-  url: string;
-  url_hash: string;
-  slug: string;
-  title: string;
-  excerpt: string;
-  note: string;
-  capture_channel: 'rss' | 'manual' | 'shared' | string;
-  source_feed_entry_id?: string | null;
-  curated_by: string;
-  curated_at: string;
-  is_public: boolean;
-  published_at?: string | null;
-  topics: TopicRef[];
-  tags: string[];
-  created_at: string;
-  updated_at: string;
-
-  // NEW v1
-  host?: string | null;
-  source_feed_name?: string | null;
-}
-
-// ============================================================
 // Inspector target types
 // ============================================================
 
@@ -558,8 +524,7 @@ export type InspectorTargetType =
   | 'project'
   | 'todo'
   | 'concept'
-  | 'agent'
-  | 'bookmark';
+  | 'agent';
 
 /** @deprecated See InspectorTargetType. */
 export interface InspectorTarget {
@@ -626,11 +591,5 @@ export const ENTITY_TYPE_META: Record<InspectorTargetType, EntityTypeMeta> = {
     bgClass: 'bg-orange-900/30',
     textClass: 'text-orange-400',
     label: 'Agent',
-  },
-  bookmark: {
-    abbrev: 'BK',
-    bgClass: 'bg-pink-900/30',
-    textClass: 'text-pink-400',
-    label: 'Bookmark',
   },
 };

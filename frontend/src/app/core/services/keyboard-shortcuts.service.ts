@@ -29,7 +29,6 @@ const GO_TO_REGISTRY: readonly GoToEntry[] = [
   { key: 'c', label: 'Content', path: '/admin/knowledge/content' },
   { key: 'r', label: 'Review queue', path: '/admin/knowledge/review-queue' },
   { key: 'n', label: 'Notes', path: '/admin/knowledge/notes' },
-  { key: 'b', label: 'Bookmarks', path: '/admin/knowledge/bookmarks' },
   { key: 'f', label: 'Feeds', path: '/admin/knowledge/feeds' },
   { key: 'l', label: 'Learning dashboard', path: '/admin/learning' },
   { key: 'p', label: 'Concepts', path: '/admin/learning/concepts' },
