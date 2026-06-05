@@ -30,7 +30,6 @@ import (
 
 	agentnote "github.com/Koopa0/koopa/internal/agent/note"
 	"github.com/Koopa0/koopa/internal/learning"
-	"github.com/Koopa0/koopa/internal/learning/fsrs"
 )
 
 // --- start_session ---
@@ -108,7 +107,6 @@ type RecordAttemptInput struct {
 	Approach       *string              `json:"approach_used,omitempty" jsonschema_description:"Approach used. Plain free-text — same escape-level guidance as stuck_at. Example: two-pointer opposite ends, with hashmap for dedup."`
 	Observations   []ObservationInput   `json:"observations,omitempty" jsonschema_description:"Concept observations"`
 	Metadata       json.RawMessage      `json:"metadata,omitempty" jsonschema_description:"Free-form JSON for 8-step checklist outputs: complexity {time,space}, pattern, related problem slugs, solve context. Persisted on attempts.metadata. Reserved keys by convention (not enforced): 'pattern' (string, feeds recommend_next_target interleaving filter), 'recommended_by' (string: 'tool' | 'coach' | 'self'; when the attempt follows a recommend_next_target suggestion, set 'tool' so recommendation effectiveness can be audited later)."`
-	FSRSRating     *FlexInt             `json:"fsrs_rating,omitempty" jsonschema_description:"Optional FSRS recall-difficulty override. 1=Again, 2=Hard, 3=Good, 4=Easy. When set, this replaces the outcome-derived rating for spaced repetition scheduling. Use when recall difficulty diverges from solve outcome — e.g. solved but painful recall, or needed help but core concept is solid. Accepts int (2) or string (\"2\") for transports that stringify ints."`
 	RelatedTargets []RelatedTargetInput `json:"related_targets,omitempty" jsonschema_description:"Learning targets related to the attempted target (variations, follow-ups, prerequisites). Each entry is find-or-created then linked via item_relations. Same-domain only; cross-domain relations are rejected with a warning."`
 }
 
@@ -142,7 +140,7 @@ type ObservationInput struct {
 
 // ConceptRef is the slug + id pair surfaced to callers in the
 // record_attempt response so they can chain follow-up reads (mastery,
-// FSRS, observations) without re-resolving slug → id. auto_created is
+// observations) without re-resolving slug → id. auto_created is
 // intentionally omitted — distinguishing INSERT from UPDATE in
 // PostgreSQL upsert RETURNING is fragile (the xmax trick does not work
 // for ON CONFLICT DO UPDATE; the created_at = updated_at heuristic
@@ -160,17 +158,6 @@ type ConceptRef struct {
 type RelatedTargetRef struct {
 	ID    string `json:"id"`
 	Title string `json:"title"`
-}
-
-// FSRSCardRef is the touched review_cards row's id + next due
-// timestamp. Returned only when the FSRS scheduling step succeeded —
-// on failure FSRSReviewFailed=true and this field is omitted (no
-// null or zero-valued placeholder). Lets the coach surface "next
-// review due Mon 10am" without a follow-up CardByLearningTarget
-// query.
-type FSRSCardRef struct {
-	ID    string    `json:"id"`
-	DueAt time.Time `json:"due_at"`
 }
 
 type RecordAttemptOutput struct {
@@ -193,7 +180,7 @@ type RecordAttemptOutput struct {
 	// is a legal state, not an error. Observations are validated per-element
 	// (e.g. severity-on-mastery violations); a rejected element is named in
 	// ObservationWarnings by its input index, sibling elements still try
-	// independently, and the attempt row plus FSRS rating still persist.
+	// independently, and the attempt row still persists.
 	// Callers reconcile by comparing ObservationsRecorded against input
 	// length and reading ObservationWarnings for rejected indices. Same
 	// per-element semantics apply to RelatedTargets / RelationsLinked /
@@ -206,31 +193,12 @@ type RecordAttemptOutput struct {
 	PlanContext         []PlanContextEntry `json:"plan_context"`
 	RelationsLinked     int                `json:"relations_linked"`
 	RelationWarnings    []string           `json:"relation_warnings"`
-	// FSRSRatingApplied echoes the FSRS rating (1=Again, 2=Hard, 3=Good,
-	// 4=Easy) the server actually used when advancing the spaced-repetition
-	// queue for this attempt. When the caller supplied an fsrs_rating
-	// override this field repeats that value back, so the coach can verify
-	// the override reached the server without a follow-up query. When no
-	// override was supplied the field shows the rating derived from
-	// outcome via fsrs.RatingFromOutcome. nil only when the outcome was
-	// unknown to the bridge (no rating could be determined).
-	FSRSRatingApplied *int `json:"fsrs_rating_applied,omitempty"`
-	// FSRSReviewFailed is true when the attempt was persisted but the
-	// spaced-repetition review card update failed. The attempt itself is
-	// still valid — surface this so the caller can retry or warn the user
-	// instead of silently losing a review tick.
-	FSRSReviewFailed bool `json:"fsrs_review_failed,omitempty"`
 	// Concepts is one entry per observation that resolved to a concept
-	// (slug + id). Lets the caller drill into mastery / FSRS for those
-	// concepts without re-resolving slug → id. Empty when no
-	// observations were submitted or every one was rejected; rejected
-	// indices stay in ObservationWarnings.
+	// (slug + id). Lets the caller drill into mastery for those concepts
+	// without re-resolving slug → id. Empty when no observations were
+	// submitted or every one was rejected; rejected indices stay in
+	// ObservationWarnings.
 	Concepts []ConceptRef `json:"concepts"`
-	// FSRSCard is the touched review_cards row's id + next due
-	// timestamp. Omitted when FSRSReviewFailed=true so callers never
-	// receive stale or zero-valued card data — check FSRSReviewFailed
-	// first, then read FSRSCard.
-	FSRSCard *FSRSCardRef `json:"fsrs_card,omitempty"`
 	// RelatedTargetsResolved is one entry per related_target that was
 	// successfully linked (id + title). Rejected entries (cross-domain,
 	// unknown relation_type, link failure) stay in RelationWarnings.
@@ -294,13 +262,8 @@ func (s *Server) recordAttempt(ctx context.Context, _ *mcp.CallToolRequest, inpu
 
 	// Side effects: none of these fail the attempt — each helper logs its own
 	// failures and returns a best-effort result so the caller still gets a
-	// persisted attempt record. updateFSRSReview returns the rating it
-	// applied (so callers can verify a fsrs_rating override was received)
-	// plus a failed flag (so callers can detect silent review-card data
-	// loss) and, on success, the touched card's id + due timestamp so the
-	// caller can surface fsrs_card.due_at without an extra query.
+	// persisted attempt record.
 	recorded, obsWarnings, concepts := s.processObservations(ctx, attempt.ID, prep.domain, input.Observations)
-	fsrsRating, fsrsFailed, fsrsCard := s.updateFSRSReview(ctx, prep.itemID, prep.outcome, input.FSRSRating)
 	linked, relWarnings, relResolved := s.processRelatedTargets(ctx, prep.itemID, prep.domain, input.RelatedTargets)
 	planCtx := s.lookupPlanContext(ctx, prep.itemID)
 
@@ -330,8 +293,7 @@ func (s *Server) recordAttempt(ctx context.Context, _ *mcp.CallToolRequest, inpu
 		"session", prep.sessionID, "target", input.Target.Title, "outcome", prep.outcome,
 		"observations", recorded, "observation_warnings", len(obsWarnings),
 		"plan_context", len(planCtx),
-		"relations_linked", linked, "relation_warnings", len(relWarnings),
-		"fsrs_review_failed", fsrsFailed)
+		"relations_linked", linked, "relation_warnings", len(relWarnings))
 	return nil, RecordAttemptOutput{
 		Attempt:                *attempt,
 		CanonicalOutcome:       prep.outcome,
@@ -340,10 +302,7 @@ func (s *Server) recordAttempt(ctx context.Context, _ *mcp.CallToolRequest, inpu
 		PlanContext:            planCtx,
 		RelationsLinked:        linked,
 		RelationWarnings:       relWarnings,
-		FSRSRatingApplied:      fsrsRating,
-		FSRSReviewFailed:       fsrsFailed,
 		Concepts:               concepts,
-		FSRSCard:               fsrsCard,
 		RelatedTargetsResolved: relResolved,
 	}, nil
 }
@@ -395,17 +354,6 @@ func (s *Server) prepareAttempt(ctx context.Context, input *RecordAttemptInput) 
 	}
 	if len(input.Metadata) > 0 && !json.Valid(input.Metadata) {
 		return attemptPrep{}, fmt.Errorf("%w: metadata is not valid JSON", learning.ErrInvalidInput)
-	}
-
-	// fsrs_rating is 1..4 per the FSRS spec (Again=1, Hard=2, Good=3, Easy=4).
-	// FlexInt accepts any int; reject out-of-range values here so the attempt
-	// fails up-front rather than writing an attempt row and then warning that
-	// the FSRS review half-fired with an unusable rating.
-	if input.FSRSRating != nil {
-		r := int(*input.FSRSRating)
-		if r < 1 || r > 4 {
-			return attemptPrep{}, fmt.Errorf("%w: fsrs_rating must be 1..4, got %d", learning.ErrInvalidInput, r)
-		}
 	}
 
 	return attemptPrep{
@@ -479,78 +427,6 @@ func (s *Server) lookupPlanContext(ctx context.Context, targetID uuid.UUID) []Pl
 		out = append(out, pce)
 	}
 	return out
-}
-
-// updateFSRSReview applies a spaced-repetition review for itemID. When
-// override is non-nil it is used directly (1..4 rating); otherwise the
-// outcome string is mapped to a rating via fsrs.RatingFromOutcome.
-//
-// Returns the rating actually applied, a "failed" flag, and (on success)
-// the touched card's id + due timestamp.
-//
-//   - applied is non-nil whenever a rating was determined — even when the
-//     subsequent ReviewByRating / ReviewByOutcome call failed, we still
-//     surface the rating the caller's input would have produced so the
-//     coach can verify "did the override I sent reach the server" without
-//     a second query.
-//   - applied is nil only on the unknown-outcome path (no override, and
-//     the outcome string is outside the enum) — there is no rating to
-//     echo because the bridge function rejected the outcome.
-//   - failed=true means the FSRS queue was NOT advanced. The attempt row
-//     is still persisted, and the card row is stamped via fsrs.MarkDrift
-//     so the retrieval view raises a drift_suspect flag.
-//   - card is non-nil only when failed=false; on failure we omit the card
-//     entirely so the caller can rely on (failed=true ⇒ card=nil) and
-//     surface fsrs_review_failed instead of garbage card data.
-func (s *Server) updateFSRSReview(ctx context.Context, targetID uuid.UUID, outcome string, override *FlexInt) (applied *int, failed bool, card *FSRSCardRef) {
-	now := time.Now()
-	if override != nil {
-		rating := int(*override)
-		cardID, dueAt, err := s.fsrs.ReviewByRating(ctx, targetID, rating, now)
-		if err != nil {
-			s.logger.Warn("record_attempt: fsrs review (override) failed", "target_id", targetID, "rating", rating, "error", err)
-			s.markFSRSDrift(ctx, targetID, "rating_override_failed")
-			return &rating, true, nil
-		}
-		return &rating, false, &FSRSCardRef{ID: cardID.String(), DueAt: dueAt}
-	}
-
-	derived, derivErr := fsrs.RatingFromOutcome(outcome)
-	if derivErr != nil {
-		// Unknown outcome — no rating to echo. ReviewByOutcome will return
-		// the same error; let it run so the drift marker still fires.
-		s.logger.Warn("record_attempt: fsrs review failed", "target_id", targetID, "reason", "unknown_outcome", "error", derivErr)
-		s.markFSRSDrift(ctx, targetID, "unknown_outcome")
-		return nil, true, nil
-	}
-
-	cardID, dueAt, err := s.fsrs.ReviewByOutcome(ctx, targetID, outcome, now)
-	if err != nil {
-		// outcome is user-controlled — log only the sentinel branch so the
-		// raw value never reaches the log stream.
-		reason := "review_failed"
-		if errors.Is(err, fsrs.ErrUnknownOutcome) {
-			reason = "unknown_outcome"
-		}
-		s.logger.Warn("record_attempt: fsrs review failed", "target_id", targetID, "reason", reason, "error", err)
-		s.markFSRSDrift(ctx, targetID, reason)
-		return &derived, true, nil
-	}
-	return &derived, false, &FSRSCardRef{ID: cardID.String(), DueAt: dueAt}
-}
-
-// markFSRSDrift stamps the drift marker and logs any failure or silent
-// no-op (no card row for the target yet) so drift on brand-new targets is
-// still visible in operational telemetry.
-func (s *Server) markFSRSDrift(ctx context.Context, targetID uuid.UUID, reason string) {
-	rows, err := s.fsrs.MarkDrift(ctx, targetID, reason)
-	if err != nil {
-		s.logger.Warn("record_attempt: fsrs drift mark failed", "target_id", targetID, "reason", reason, "error", err)
-		return
-	}
-	if rows == 0 {
-		s.logger.Warn("record_attempt: fsrs drift silent — no card for target yet", "target_id", targetID, "reason", reason)
-	}
 }
 
 // processRelatedTargets resolves each RelatedTargetInput to a learning target and

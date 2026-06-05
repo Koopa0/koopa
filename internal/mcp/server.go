@@ -28,7 +28,6 @@ import (
 	"github.com/Koopa0/koopa/internal/feed/entry"
 	"github.com/Koopa0/koopa/internal/goal"
 	"github.com/Koopa0/koopa/internal/learning"
-	"github.com/Koopa0/koopa/internal/learning/fsrs"
 	"github.com/Koopa0/koopa/internal/learning/hypothesis"
 	"github.com/Koopa0/koopa/internal/learning/plan"
 	"github.com/Koopa0/koopa/internal/mcp/ops"
@@ -62,7 +61,6 @@ type Server struct {
 	// Learning domain
 	learn *learning.Store
 	plans *plan.Store
-	fsrs  *fsrs.Store
 
 	// Activity (audit log) — read-only consumer for weekly_summary
 	// self_audit metrics. Writes happen via AFTER triggers on covered
@@ -157,7 +155,6 @@ func NewServer(pool *pgxpool.Pool, logger *slog.Logger, opts ...ServerOption) *S
 		registry:    agent.NewBuiltinRegistry(),
 		learn:       learning.NewStore(pool),
 		plans:       plan.NewStore(pool),
-		fsrs:        fsrs.NewStore(pool),
 		activity:    activity.NewStore(pool),
 		feedEntries: entry.NewStore(pool),
 		feeds:       feed.NewStore(pool, logger),

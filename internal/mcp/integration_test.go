@@ -334,13 +334,8 @@ func TestIntegration_ColdStart_RecordAttempt(t *testing.T) {
 }
 
 // TestIntegration_RecordAttempt_DownstreamIds pins REQ-4: the record_attempt
-// response surfaces concepts[], fsrs_card{id,due_at}, and
-// related_targets_resolved[] so the coach can chain mastery / FSRS reads
-// without re-resolving slugs or running CardByLearningTarget. Per the
-// 2026-05-23 verdict on D3: fsrs_card MUST carry both id and due_at on
-// success (omitted entirely on failure via omitempty); the response is
-// purely additive (Invariant 7) and FSRS scheduling stays outside the
-// attempt transaction (Invariant 4).
+// response surfaces concepts[] and related_targets_resolved[] so the coach
+// can chain mastery reads without re-resolving slugs.
 func TestIntegration_RecordAttempt_DownstreamIds(t *testing.T) {
 	s := setupServer(t)
 
@@ -400,22 +395,6 @@ func TestIntegration_RecordAttempt_DownstreamIds(t *testing.T) {
 	}
 	if _, parseErr := uuid.Parse(rec.RelatedTargetsResolved[0].ID); parseErr != nil {
 		t.Errorf("RelatedTargetsResolved[0].ID = %q is not a valid UUID: %v", rec.RelatedTargetsResolved[0].ID, parseErr)
-	}
-
-	// FSRSCard: solved_independent maps to FSRS rating Good → ReviewByOutcome
-	// must succeed against a freshly created card. Both id and due_at must
-	// populate; FSRSReviewFailed must be false.
-	if rec.FSRSReviewFailed {
-		t.Errorf("FSRSReviewFailed = true, want false (solved_independent should not drift)")
-	}
-	if rec.FSRSCard == nil {
-		t.Fatal("FSRSCard = nil, want populated when FSRSReviewFailed=false")
-	}
-	if _, parseErr := uuid.Parse(rec.FSRSCard.ID); parseErr != nil {
-		t.Errorf("FSRSCard.ID = %q is not a valid UUID: %v", rec.FSRSCard.ID, parseErr)
-	}
-	if rec.FSRSCard.DueAt.IsZero() {
-		t.Errorf("FSRSCard.DueAt is zero — successful FSRS schedule must populate due_at")
 	}
 }
 
@@ -5485,4 +5464,3 @@ func TestIntegration_CommitProposal_ConcurrentCommitOnce(t *testing.T) {
 		t.Errorf("goals with title %q = %d, want 1 (concurrent replay created duplicates)", title, count)
 	}
 }
-
