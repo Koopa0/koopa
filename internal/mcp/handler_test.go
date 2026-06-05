@@ -22,12 +22,10 @@ import (
 // override callerAgent or pass `as` via context.
 func newTestServer() *Server {
 	return &Server{
-		logger:         slog.Default(),
-		callerAgent:    "human",
-		registry:       agent.NewBuiltinRegistry(),
-		proposalSecret: []byte("test-secret-32-bytes-long-enough"),
-		loc:            time.UTC,
-		nonces:         newNonceStore(),
+		logger:      slog.Default(),
+		callerAgent: "human",
+		registry:    agent.NewBuiltinRegistry(),
+		loc:         time.UTC,
 	}
 }
 
@@ -137,79 +135,6 @@ func TestWriteAgentNote_Validation(t *testing.T) {
 				t.Errorf("error = %q, want containing %q", err, tt.wantErr)
 			}
 		})
-	}
-}
-
-// --- propose_goal (representative happy path for the typed propose tools) ---
-
-func TestProposeGoal_HappyPath(t *testing.T) {
-	s := newTestServer()
-	desc := "Japanese language proficiency"
-	_, out, err := callHandler(t, s.proposeGoal, ProposeGoalInput{
-		Title:       "Pass JLPT N2",
-		Description: &desc,
-	})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if out.Type != "goal" {
-		t.Errorf("type = %q, want %q", out.Type, "goal")
-	}
-	if out.ProposalToken == "" {
-		t.Error("proposal_token is empty")
-	}
-	if out.Preview["title"] != "Pass JLPT N2" {
-		t.Errorf("preview title = %v, want %q", out.Preview["title"], "Pass JLPT N2")
-	}
-}
-
-// --- commit_proposal ---
-
-func TestCommitProposal_Validation(t *testing.T) {
-	s := newTestServer()
-	tests := []struct {
-		name    string
-		input   CommitProposalInput
-		wantErr string
-	}{
-		{name: "empty token", input: CommitProposalInput{}, wantErr: "invalid proposal"},
-		{name: "garbage token", input: CommitProposalInput{ProposalToken: "not.valid"}, wantErr: "invalid proposal"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			_, _, err := callHandler(t, s.commitProposal, tt.input)
-			if err == nil {
-				t.Fatal("expected error, got nil")
-			}
-			if !contains(err.Error(), tt.wantErr) {
-				t.Errorf("error = %q, want containing %q", err, tt.wantErr)
-			}
-		})
-	}
-}
-
-func TestCommitProposal_FailureAfterConsumeIsExplicit(t *testing.T) {
-	s := newTestServer()
-
-	// A goal token with no title passes the human gate and the nonce consume,
-	// then commitGoal fails on the missing required field BEFORE any DB call —
-	// exercising the post-consume failure path deterministically.
-	token, err := signProposal(s.proposalSecret, "goal", map[string]any{})
-	if err != nil {
-		t.Fatalf("signProposal: %v", err)
-	}
-	humanCtx := withCallerAs(t.Context(), "human")
-	_, _, err = s.commitProposal(humanCtx, nil, CommitProposalInput{ProposalToken: token})
-	if err == nil {
-		t.Fatal("commit of an invalid goal = nil error, want failure")
-	}
-	// Explicit about the spent token + how to recover.
-	if !contains(err.Error(), "consumed") || !contains(err.Error(), "re-propose") {
-		t.Errorf("post-consume failure error = %q, want it to state the token was consumed and to re-propose", err)
-	}
-	// The underlying cause is preserved (wrapped, not replaced).
-	if !contains(err.Error(), "title is required") {
-		t.Errorf("post-consume failure error = %q, want it to preserve the underlying cause", err)
 	}
 }
 
@@ -474,13 +399,6 @@ func TestToolSchemaGeneration(t *testing.T) {
 		{"AdvanceWorkInput", testSchema[AdvanceWorkInput]},
 		{"PlanDayInput", testSchema[PlanDayInput]},
 		{"WriteAgentNoteInput", testSchema[WriteAgentNoteInput]},
-		{"ProposeGoalInput", testSchema[ProposeGoalInput]},
-		{"ProposeProjectInput", testSchema[ProposeProjectInput]},
-		{"ProposeMilestoneInput", testSchema[ProposeMilestoneInput]},
-		{"ProposeHypothesisInput", testSchema[ProposeHypothesisInput]},
-		{"ProposeLearningPlanInput", testSchema[ProposeLearningPlanInput]},
-		{"ProposeLearningDomainInput", testSchema[ProposeLearningDomainInput]},
-		{"CommitProposalInput", testSchema[CommitProposalInput]},
 		{"TrackHypothesisInput", testSchema[TrackHypothesisInput]},
 		{"StartSessionInput", testSchema[StartSessionInput]},
 		{"RecordAttemptInput", testSchema[RecordAttemptInput]},

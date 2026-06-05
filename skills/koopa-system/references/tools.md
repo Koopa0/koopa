@@ -13,18 +13,18 @@ is hand-maintained.
 > Run `go generate ./internal/mcp/ops` after any change to the tool surface;
 > the drift test `TestToolInventoryDocInSync` fails CI if this is stale.
 
-**38 tools** across 7 domains.
+**31 tools** across 7 domains.
 
 | Domain | Count |
 |---|---|
 | `query` | 7 |
 | `daily` | 3 |
 | `a2a` | 0 |
-| `meta` | 9 |
+| `meta` | 2 |
 | `learning` | 7 |
 | `content` | 10 |
 | `system` | 2 |
-| **Total** | **38** |
+| **Total** | **31** |
 
 | Tool | Domain | Writability | Purpose |
 |---|---|---|---|
@@ -38,13 +38,6 @@ is hand-maintained.
 | `advance_work` | `daily` | destructive | Personal-todo state transitions |
 | `capture_inbox` | `daily` | additive | Quick task capture to inbox |
 | `plan_day` | `daily` | idempotent | Set the day's plan as one atomic replacement |
-| `commit_proposal` | `meta` | additive | Commit a previously proposed entity using the proposal_token from any propose_<type> tool |
-| `propose_goal` | `meta` | read_only | Propose a goal (quarterly or multi-quarter commitment, optionally scoped to an area and given a target deadline) |
-| `propose_hypothesis` | `meta` | read_only | Propose a hypothesis (falsifiable claim with an invalidation condition and narrative content) |
-| `propose_learning_domain` | `meta` | read_only | Propose a learning domain (FK target for concepts/targets/sessions/plans |
-| `propose_learning_plan` | `meta` | read_only | Propose a learning plan (committed curriculum with a title + domain + optional parent goal) |
-| `propose_milestone` | `meta` | read_only | Propose a milestone (progress marker scoped to a parent goal, with an optional target deadline) |
-| `propose_project` | `meta` | read_only | Propose a project (concrete work unit that can be linked to a goal and an area) |
 | `track_hypothesis` | `meta` | idempotent | Update an existing hypothesis |
 | `write_agent_note` | `meta` | additive | Create an agent note |
 | `archive_learning_target` | `learning` | destructive | Archive a learning target (soft-delete) |

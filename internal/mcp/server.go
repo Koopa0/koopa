@@ -4,7 +4,6 @@ package mcp
 
 import (
 	"context"
-	"crypto/rand"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -81,11 +80,9 @@ type Server struct {
 	pool *pgxpool.Pool
 
 	// Configuration
-	callerAgent    string         // calling agent name (from env)
-	loc            *time.Location // user timezone for day boundaries
-	proposalSecret []byte         // HMAC key for proposal tokens
-	nonces         *nonceStore    // consumed proposal nonces — replay defense for commit_proposal
-	logger         *slog.Logger
+	callerAgent string         // calling agent name (from env)
+	loc         *time.Location // user timezone for day boundaries
+	logger      *slog.Logger
 
 	// Telemetry
 	recordToolCall func(context.Context, ToolCallRecord)
@@ -171,14 +168,7 @@ func NewServer(pool *pgxpool.Pool, logger *slog.Logger, opts ...ServerOption) *S
 		// refuses it.
 		callerAgent: "unknown",
 		loc:         time.UTC,
-		nonces:      newNonceStore(),
 	}
-	// Auto-generate proposal HMAC secret. Ephemeral — proposals don't survive restarts.
-	secret := make([]byte, 32)
-	if _, err := rand.Read(secret); err != nil {
-		panic("mcp: failed to generate proposal secret: " + err.Error())
-	}
-	s.proposalSecret = secret
 
 	for _, opt := range opts {
 		opt(s)
@@ -204,14 +194,7 @@ func NewServer(pool *pgxpool.Pool, logger *slog.Logger, opts ...ServerOption) *S
 	addTool(s, toolFrom(ops.WriteAgentNote), s.writeAgentNote)
 	addTool(s, toolFrom(ops.QueryAgentNotes), s.queryAgentNotes)
 
-	// --- Proposals & commitment ---
-	addTool(s, toolFrom(ops.ProposeGoal), s.proposeGoal)
-	addTool(s, toolFrom(ops.ProposeProject), s.proposeProject)
-	addTool(s, toolFrom(ops.ProposeMilestone), s.proposeMilestone)
-	addTool(s, toolFrom(ops.ProposeHypothesis), s.proposeHypothesis)
-	addTool(s, toolFrom(ops.ProposeLearningPlan), s.proposeLearningPlan)
-	addTool(s, toolFrom(ops.ProposeLearningDomain), s.proposeLearningDomain)
-	addTool(s, toolFrom(ops.CommitProposal), s.commitProposal)
+	// --- Goals & hypotheses ---
 	addTool(s, toolFrom(ops.GoalProgress), s.goalProgress)
 	addTool(s, toolFrom(ops.TrackHypothesis), s.trackHypothesis)
 

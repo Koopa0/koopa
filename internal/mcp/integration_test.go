@@ -35,8 +35,6 @@ import (
 	"os"
 	"slices"
 	"strings"
-	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -79,6 +77,48 @@ func setupServer(t *testing.T) *Server {
 		WithRegistry(registry),
 		WithCallerAgent("learning-studio"),
 	)
+}
+
+// seedLearningPlan inserts a learning_plans row in draft status directly via
+// SQL — the replacement for the removed propose_learning_plan/commit_proposal
+// fixture path. It creates only the plan shell (no entries); REPOINT tests add
+// entries themselves via manage_plan. Returns the plan ID as a string for the
+// ManagePlanInput.PlanID field.
+func seedLearningPlan(t *testing.T, domain string, goalID *uuid.UUID, createdBy string) string {
+	t.Helper()
+	var planID string
+	err := testPool.QueryRow(t.Context(),
+		`INSERT INTO learning_plans (title, description, domain, goal_id, status, target_count, plan_config, created_by)
+		 VALUES ($1, $2, $3, $4, 'draft', NULL, '{}', $5)
+		 RETURNING id`,
+		"Seeded Plan", "", domain, goalID, createdBy,
+	).Scan(&planID)
+	if err != nil {
+		t.Fatalf("seedLearningPlan: %v", err)
+	}
+	return planID
+}
+
+// seedHypothesis inserts a learning_hypotheses row directly via SQL — the
+// replacement for the removed propose_hypothesis/commit_proposal fixture path.
+// state defaults to 'unverified' and observed_date to today. Returns the
+// hypothesis ID as a string for the TrackHypothesisInput.HypothesisID field.
+func seedHypothesis(t *testing.T, createdBy string) string {
+	t.Helper()
+	var hypID string
+	err := testPool.QueryRow(t.Context(),
+		`INSERT INTO learning_hypotheses (created_by, content, claim, invalidation_condition, metadata, observed_date)
+		 VALUES ($1, $2, $3, $4, '{}', now()::date)
+		 RETURNING id`,
+		createdBy,
+		"Seeded hypothesis content",
+		"Seeded hypothesis claim",
+		"Seeded invalidation condition",
+	).Scan(&hypID)
+	if err != nil {
+		t.Fatalf("seedHypothesis: %v", err)
+	}
+	return hypID
 }
 
 // truncateApplicationTables clears every table an MCP handler can write to
@@ -182,57 +222,6 @@ func TestIntegration_ColdStart_StartSession(t *testing.T) {
 	}
 	if out.Session.Domain != "leetcode" {
 		t.Errorf("session.Domain = %q, want %q", out.Session.Domain, "leetcode")
-	}
-}
-
-// --- 3. propose_learning_plan → commit_proposal ---
-
-// TestIntegration_ColdStart_CommitLearningPlan was Learning's third failure
-// mode: commit step hit learning_plans_domain_fkey for the same reason. It
-// also exercises the propose/commit two-phase protocol end-to-end.
-func TestIntegration_ColdStart_CommitLearningPlan(t *testing.T) {
-	s := setupServer(t)
-
-	_, proposal, err := callHandler(t, s.proposeLearningPlan, ProposeLearningPlanInput{
-		Title:  "Binary Search 14-Day Drill",
-		Domain: "leetcode",
-	})
-	if err != nil {
-		t.Fatalf("proposeLearningPlan: %v", err)
-	}
-	if proposal.ProposalToken == "" {
-		t.Fatal("proposeLearningPlan returned empty token")
-	}
-
-	// commit_proposal of high-commitment entities (incl. learning_plan)
-	// requires Platform=human via requireExplicitHuman. The setupServer
-	// default caller is learning-studio; switch to "human" via
-	// callHandlerAs so the gate passes.
-	_, commit, err := callHandlerAs(t, "human", s.commitProposal, CommitProposalInput{
-		ProposalToken: proposal.ProposalToken,
-	})
-	if err != nil {
-		t.Fatalf("commitProposal: %v", err)
-	}
-	if !commit.Committed {
-		t.Error("commitProposal: Committed = false")
-	}
-	if commit.Type != "learning_plan" {
-		t.Errorf("commitProposal.Type = %q, want %q", commit.Type, "learning_plan")
-	}
-
-	id, err := uuid.Parse(commit.ID)
-	if err != nil {
-		t.Fatalf("parsing returned plan ID: %v", err)
-	}
-	var domain string
-	if err := testPool.QueryRow(t.Context(),
-		"SELECT domain FROM learning_plans WHERE id = $1", id,
-	).Scan(&domain); err != nil {
-		t.Fatalf("fetching plan row: %v", err)
-	}
-	if domain != "leetcode" {
-		t.Errorf("plan.domain = %q, want %q", domain, "leetcode")
 	}
 }
 
@@ -468,141 +457,6 @@ func TestIntegration_ActorFallbackToSystem(t *testing.T) {
 
 	if got := activityActorFor(t, "todo", todoID); got != "system" {
 		t.Errorf("activity_events.actor = %q, want %q (fallback path)", got, "system")
-	}
-}
-
-// --- 7. Proposal validator rejects missing required — no token ---
-
-// TestIntegration_ProposalValidator covers the W4 symmetry guarantee.
-// A typed propose_<type> call with a structurally invalid payload must
-// return an error AND must NOT emit a proposal token. Each closure
-// invokes the typed handler so the field set under test matches the
-// handler's actual schema; a regression here is how the pre-W4
-// 'warn-and-sign' bug used to work.
-func TestIntegration_ProposalValidator_MissingRequired_NoToken(t *testing.T) {
-	s := setupServer(t)
-
-	cases := []struct {
-		name       string
-		propose    func() (ProposeOutput, error)
-		wantErrSub string
-	}{
-		// propose_goal / propose_project / propose_milestone have an
-		// author allowlist (hq, content-studio, research-lab). The
-		// setupServer default caller is learning-studio, which would
-		// fast-fail the allowlist before reaching input validation —
-		// defeating the test's purpose (assert input validation fires
-		// before token signing). Use callHandlerAs("hq") so the
-		// allowlist passes and the test exercises the actual validator.
-		{
-			name: "goal without title",
-			propose: func() (ProposeOutput, error) {
-				_, out, err := callHandlerAs(t, "hq", s.proposeGoal, ProposeGoalInput{})
-				return out, err
-			},
-			wantErrSub: "title is required for goal",
-		},
-		{
-			name: "project without slug",
-			propose: func() (ProposeOutput, error) {
-				_, out, err := callHandlerAs(t, "hq", s.proposeProject, ProposeProjectInput{Title: "x"})
-				return out, err
-			},
-			wantErrSub: "slug is required for project",
-		},
-		{
-			name: "milestone without goal",
-			propose: func() (ProposeOutput, error) {
-				_, out, err := callHandlerAs(t, "hq", s.proposeMilestone, ProposeMilestoneInput{Title: "x"})
-				return out, err
-			},
-			wantErrSub: "goal",
-		},
-		{
-			name: "learning_plan without domain",
-			propose: func() (ProposeOutput, error) {
-				_, out, err := callHandler(t, s.proposeLearningPlan, ProposeLearningPlanInput{Title: "x"})
-				return out, err
-			},
-			wantErrSub: "domain is required for learning_plan",
-		},
-		{
-			// B3 commit d81a0b0 added the field name to the slug error
-			// message ('invalid learning_domain slug ...') so the assert
-			// switched from the generic 'invalid slug' to the field-qualified
-			// form. Without 'learning_domain' the substring would still match
-			// the generic phrasing if it ever returns.
-			name: "learning_domain with bad slug format",
-			propose: func() (ProposeOutput, error) {
-				_, out, err := callHandlerAs(t, "hq", s.proposeLearningDomain, ProposeLearningDomainInput{Slug: "Not Kebab", Name: "X"})
-				return out, err
-			},
-			wantErrSub: "invalid learning_domain slug",
-		},
-		{
-			name: "hypothesis without claim",
-			propose: func() (ProposeOutput, error) {
-				_, out, err := callHandler(t, s.proposeHypothesis, ProposeHypothesisInput{InvalidationCondition: "x", Content: "y"})
-				return out, err
-			},
-			wantErrSub: "claim is required for hypothesis",
-		},
-	}
-
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			out, err := tc.propose()
-			if err == nil {
-				t.Fatalf("propose: expected error, got token=%q", out.ProposalToken)
-			}
-			if !strings.Contains(err.Error(), tc.wantErrSub) {
-				t.Errorf("error = %q, want containing %q", err, tc.wantErrSub)
-			}
-			if out.ProposalToken != "" {
-				t.Errorf("ProposalToken = %q, want empty (invariant: invalid propose never signs)", out.ProposalToken)
-			}
-		})
-	}
-}
-
-// --- 8. propose_learning_domain — W3 runtime addition ---
-
-// TestIntegration_ProposeLearningDomain rounds out the W3 feature: a runtime
-// domain is proposed, committed, and immediately usable as a session FK.
-func TestIntegration_ProposeLearningDomain(t *testing.T) {
-	s := setupServer(t)
-
-	_, proposal, err := callHandler(t, s.proposeLearningDomain, ProposeLearningDomainInput{
-		Slug: "rust",
-		Name: "Rust",
-	})
-	if err != nil {
-		t.Fatalf("proposeLearningDomain: %v", err)
-	}
-	if proposal.ProposalToken == "" {
-		t.Fatal("proposeLearningDomain returned empty token")
-	}
-
-	// commit_proposal(learning_domain) is human-only.
-	_, commit, err := callHandlerAs(t, "human", s.commitProposal, CommitProposalInput{
-		ProposalToken: proposal.ProposalToken,
-	})
-	if err != nil {
-		t.Fatalf("commitProposal: %v", err)
-	}
-	if commit.ID != "rust" {
-		t.Errorf("commitProposal.ID = %q, want %q", commit.ID, "rust")
-	}
-
-	_, sess, err := callHandler(t, s.startSession, StartSessionInput{
-		Domain: "rust",
-		Mode:   "practice",
-	})
-	if err != nil {
-		t.Fatalf("startSession on newly-committed domain: %v (W3 didn't make it usable)", err)
-	}
-	if sess.Session.Domain != "rust" {
-		t.Errorf("session.Domain = %q, want %q", sess.Session.Domain, "rust")
 	}
 }
 
@@ -942,23 +796,11 @@ func TestIntegration_UpdateEntry_AlignsAttemptToTarget(t *testing.T) {
 	}
 
 	// Build a plan on T1 (Two Sum) and activate it.
-	_, proposal, err := callHandler(t, s.proposeLearningPlan, ProposeLearningPlanInput{
-		Title:  "Hash-map Drill",
-		Domain: "leetcode",
-	})
-	if err != nil {
-		t.Fatalf("propose plan: %v", err)
-	}
-	_, commit, err := callHandlerAs(t, "human", s.commitProposal, CommitProposalInput{
-		ProposalToken: proposal.ProposalToken,
-	})
-	if err != nil {
-		t.Fatalf("commit plan: %v", err)
-	}
+	planID := seedLearningPlan(t, "leetcode", nil, "human")
 
 	_, _, err = callHandler(t, s.managePlan, ManagePlanInput{
 		Action: "add_entries",
-		PlanID: commit.ID,
+		PlanID: planID,
 		Entries: []ManagePlanEntryInput{
 			{Title: "Two Sum", Position: 1},
 		},
@@ -970,7 +812,7 @@ func TestIntegration_UpdateEntry_AlignsAttemptToTarget(t *testing.T) {
 	active := "active"
 	if _, _, err := callHandler(t, s.managePlan, ManagePlanInput{
 		Action: "update_plan",
-		PlanID: commit.ID,
+		PlanID: planID,
 		Status: &active,
 	}); err != nil {
 		t.Fatalf("activate plan: %v", err)
@@ -980,7 +822,7 @@ func TestIntegration_UpdateEntry_AlignsAttemptToTarget(t *testing.T) {
 	var entryID string
 	if err := testPool.QueryRow(t.Context(),
 		"SELECT id FROM learning_plan_entries WHERE plan_id = $1",
-		commit.ID,
+		planID,
 	).Scan(&entryID); err != nil {
 		t.Fatalf("locating plan entry: %v", err)
 	}
@@ -992,7 +834,7 @@ func TestIntegration_UpdateEntry_AlignsAttemptToTarget(t *testing.T) {
 	reason := "closing entry"
 	_, _, err = callHandler(t, s.managePlan, ManagePlanInput{
 		Action:               "update_entry",
-		PlanID:               commit.ID,
+		PlanID:               planID,
 		EntryID:              &entryID,
 		Status:               &completed,
 		CompletedByAttemptID: &mismatchAttempt,
@@ -1009,7 +851,7 @@ func TestIntegration_UpdateEntry_AlignsAttemptToTarget(t *testing.T) {
 	matchAttempt := a1.Attempt.ID.String()
 	if _, _, err := callHandler(t, s.managePlan, ManagePlanInput{
 		Action:               "update_entry",
-		PlanID:               commit.ID,
+		PlanID:               planID,
 		EntryID:              &entryID,
 		Status:               &completed,
 		CompletedByAttemptID: &matchAttempt,
@@ -1436,21 +1278,7 @@ func countReflectionNotes(t *testing.T) int {
 func TestIntegration_TrackHypothesis_Resolve_Validation(t *testing.T) {
 	s := setupServer(t)
 
-	_, proposal, err := callHandler(t, s.proposeHypothesis, ProposeHypothesisInput{
-		Claim:                 "test claim for validation harness",
-		InvalidationCondition: "evidence X disproves the claim",
-		Content:               "Seeded by TestIntegration_TrackHypothesis_Resolve_Validation so the resolve-path validators have a real row to look up.",
-	})
-	if err != nil {
-		t.Fatalf("propose hypothesis: %v", err)
-	}
-	_, commit, err := callHandlerAs(t, "human", s.commitProposal, CommitProposalInput{
-		ProposalToken: proposal.ProposalToken,
-	})
-	if err != nil {
-		t.Fatalf("commit hypothesis: %v", err)
-	}
-	hypothesisID := commit.ID
+	hypothesisID := seedHypothesis(t, "human")
 	bigSummary := strings.Repeat("a", 2*1024+1)
 
 	tests := []struct {
@@ -1519,23 +1347,11 @@ func TestIntegration_UpdateEntry_CompletionPolicy(t *testing.T) {
 		t.Fatalf("recordAttempt: %v", err)
 	}
 
-	_, proposal, err := callHandler(t, s.proposeLearningPlan, ProposeLearningPlanInput{
-		Title:  "Completion Policy Drill",
-		Domain: "leetcode",
-	})
-	if err != nil {
-		t.Fatalf("propose plan: %v", err)
-	}
-	_, commit, err := callHandlerAs(t, "human", s.commitProposal, CommitProposalInput{
-		ProposalToken: proposal.ProposalToken,
-	})
-	if err != nil {
-		t.Fatalf("commit plan: %v", err)
-	}
+	planID := seedLearningPlan(t, "leetcode", nil, "human")
 
 	if _, _, err := callHandler(t, s.managePlan, ManagePlanInput{
 		Action: "add_entries",
-		PlanID: commit.ID,
+		PlanID: planID,
 		Entries: []ManagePlanEntryInput{
 			{Title: "Two Sum", Position: 1},
 			{Title: "Stranded Target", Position: 2},
@@ -1547,14 +1363,14 @@ func TestIntegration_UpdateEntry_CompletionPolicy(t *testing.T) {
 	active := "active"
 	if _, _, err := callHandler(t, s.managePlan, ManagePlanInput{
 		Action: "update_plan",
-		PlanID: commit.ID,
+		PlanID: planID,
 		Status: &active,
 	}); err != nil {
 		t.Fatalf("activate plan: %v", err)
 	}
 
 	rows, err := testPool.Query(t.Context(),
-		"SELECT id, position FROM learning_plan_entries WHERE plan_id = $1 ORDER BY position", commit.ID)
+		"SELECT id, position FROM learning_plan_entries WHERE plan_id = $1 ORDER BY position", planID)
 	if err != nil {
 		t.Fatalf("locating entries: %v", err)
 	}
@@ -1590,7 +1406,7 @@ func TestIntegration_UpdateEntry_CompletionPolicy(t *testing.T) {
 			name: "missing reason rejects",
 			input: ManagePlanInput{
 				Action:               "update_entry",
-				PlanID:               commit.ID,
+				PlanID:               planID,
 				EntryID:              &twoSumEntryID,
 				Status:               &completed,
 				CompletedByAttemptID: &attemptID,
@@ -1601,7 +1417,7 @@ func TestIntegration_UpdateEntry_CompletionPolicy(t *testing.T) {
 			name: "blank reason rejects",
 			input: ManagePlanInput{
 				Action:               "update_entry",
-				PlanID:               commit.ID,
+				PlanID:               planID,
 				EntryID:              &twoSumEntryID,
 				Status:               &completed,
 				CompletedByAttemptID: &attemptID,
@@ -1613,7 +1429,7 @@ func TestIntegration_UpdateEntry_CompletionPolicy(t *testing.T) {
 			name: "missing attempt id rejects without force",
 			input: ManagePlanInput{
 				Action:  "update_entry",
-				PlanID:  commit.ID,
+				PlanID:  planID,
 				EntryID: &twoSumEntryID,
 				Status:  &completed,
 				Reason:  strPtr("solved on second attempt"),
@@ -1624,7 +1440,7 @@ func TestIntegration_UpdateEntry_CompletionPolicy(t *testing.T) {
 			name: "force without manual override prefix rejects",
 			input: ManagePlanInput{
 				Action:  "update_entry",
-				PlanID:  commit.ID,
+				PlanID:  planID,
 				EntryID: &strandedEntryID,
 				Status:  &completed,
 				Reason:  strPtr("just trust me on this one ok thanks"),
@@ -1636,7 +1452,7 @@ func TestIntegration_UpdateEntry_CompletionPolicy(t *testing.T) {
 			name: "force with prefix but too short rejects",
 			input: ManagePlanInput{
 				Action:  "update_entry",
-				PlanID:  commit.ID,
+				PlanID:  planID,
 				EntryID: &strandedEntryID,
 				Status:  &completed,
 				Reason:  strPtr("manual override: nope"),
@@ -1653,7 +1469,7 @@ func TestIntegration_UpdateEntry_CompletionPolicy(t *testing.T) {
 			name: "force at 35 chars below 60 floor rejects",
 			input: ManagePlanInput{
 				Action:  "update_entry",
-				PlanID:  commit.ID,
+				PlanID:  planID,
 				EntryID: &strandedEntryID,
 				Status:  &completed,
 				Reason:  strPtr("manual override: target retcon done"),
@@ -1665,7 +1481,7 @@ func TestIntegration_UpdateEntry_CompletionPolicy(t *testing.T) {
 			name: "reason exceeding cap rejects",
 			input: ManagePlanInput{
 				Action:               "update_entry",
-				PlanID:               commit.ID,
+				PlanID:               planID,
 				EntryID:              &twoSumEntryID,
 				Status:               &completed,
 				CompletedByAttemptID: &attemptID,
@@ -1680,7 +1496,7 @@ func TestIntegration_UpdateEntry_CompletionPolicy(t *testing.T) {
 			name: "force=true with status=skipped rejects",
 			input: ManagePlanInput{
 				Action:  "update_entry",
-				PlanID:  commit.ID,
+				PlanID:  planID,
 				EntryID: &twoSumEntryID,
 				Status:  strPtr("skipped"),
 				Reason:  strPtr("manual override: this should still reject because skipped"),
@@ -1705,7 +1521,7 @@ func TestIntegration_UpdateEntry_CompletionPolicy(t *testing.T) {
 	// reason — the escape hatch path.
 	if _, _, err := callHandler(t, s.managePlan, ManagePlanInput{
 		Action:  "update_entry",
-		PlanID:  commit.ID,
+		PlanID:  planID,
 		EntryID: &strandedEntryID,
 		Status:  &completed,
 		Reason:  strPtr("manual override: target was retconned during plan migration on 2026-05-06"),
@@ -1738,23 +1554,11 @@ func TestIntegration_UpdateEntry_SkipPolicy(t *testing.T) {
 
 	// Single-entry plan is enough — skip path does not need a recorded
 	// attempt, only an active plan with an entry to skip.
-	_, proposal, err := callHandler(t, s.proposeLearningPlan, ProposeLearningPlanInput{
-		Title:  "Skip Policy Drill",
-		Domain: "leetcode",
-	})
-	if err != nil {
-		t.Fatalf("propose plan: %v", err)
-	}
-	_, commit, err := callHandlerAs(t, "human", s.commitProposal, CommitProposalInput{
-		ProposalToken: proposal.ProposalToken,
-	})
-	if err != nil {
-		t.Fatalf("commit plan: %v", err)
-	}
+	planID := seedLearningPlan(t, "leetcode", nil, "human")
 
 	if _, _, err := callHandler(t, s.managePlan, ManagePlanInput{
 		Action: "add_entries",
-		PlanID: commit.ID,
+		PlanID: planID,
 		Entries: []ManagePlanEntryInput{
 			{Title: "Skip Target A", Position: 1},
 			{Title: "Skip Target B", Position: 2},
@@ -1767,14 +1571,14 @@ func TestIntegration_UpdateEntry_SkipPolicy(t *testing.T) {
 	active := "active"
 	if _, _, err := callHandler(t, s.managePlan, ManagePlanInput{
 		Action: "update_plan",
-		PlanID: commit.ID,
+		PlanID: planID,
 		Status: &active,
 	}); err != nil {
 		t.Fatalf("activate plan: %v", err)
 	}
 
 	rows, err := testPool.Query(t.Context(),
-		"SELECT id, position FROM learning_plan_entries WHERE plan_id = $1 ORDER BY position", commit.ID)
+		"SELECT id, position FROM learning_plan_entries WHERE plan_id = $1 ORDER BY position", planID)
 	if err != nil {
 		t.Fatalf("locating entries: %v", err)
 	}
@@ -1812,7 +1616,7 @@ func TestIntegration_UpdateEntry_SkipPolicy(t *testing.T) {
 			name: "skip without reason rejects",
 			input: ManagePlanInput{
 				Action:  "update_entry",
-				PlanID:  commit.ID,
+				PlanID:  planID,
 				EntryID: &entryA,
 				Status:  &skipped,
 			},
@@ -1822,7 +1626,7 @@ func TestIntegration_UpdateEntry_SkipPolicy(t *testing.T) {
 			name: "skip with empty-string reason rejects",
 			input: ManagePlanInput{
 				Action:  "update_entry",
-				PlanID:  commit.ID,
+				PlanID:  planID,
 				EntryID: &entryA,
 				Status:  &skipped,
 				Reason:  strPtr(""),
@@ -1833,7 +1637,7 @@ func TestIntegration_UpdateEntry_SkipPolicy(t *testing.T) {
 			name: "skip with whitespace-only reason rejects",
 			input: ManagePlanInput{
 				Action:  "update_entry",
-				PlanID:  commit.ID,
+				PlanID:  planID,
 				EntryID: &entryA,
 				Status:  &skipped,
 				Reason:  strPtr("   \t\n"),
@@ -1844,7 +1648,7 @@ func TestIntegration_UpdateEntry_SkipPolicy(t *testing.T) {
 			name: "skip with reason exceeding cap rejects",
 			input: ManagePlanInput{
 				Action:  "update_entry",
-				PlanID:  commit.ID,
+				PlanID:  planID,
 				EntryID: &entryA,
 				Status:  &skipped,
 				Reason:  strPtr(strings.Repeat("a", 1025)),
@@ -1869,7 +1673,7 @@ func TestIntegration_UpdateEntry_SkipPolicy(t *testing.T) {
 	// persisted (leading/trailing whitespace stripped).
 	if _, _, err := callHandler(t, s.managePlan, ManagePlanInput{
 		Action:  "update_entry",
-		PlanID:  commit.ID,
+		PlanID:  planID,
 		EntryID: &entryB,
 		Status:  &skipped,
 		Reason:  strPtr("  koopa solved this offline before the plan was committed  "),
@@ -1898,7 +1702,7 @@ func TestIntegration_UpdateEntry_SkipPolicy(t *testing.T) {
 	// and the diagnostic ordering would silently regress.
 	if _, _, err := callHandler(t, s.managePlan, ManagePlanInput{
 		Action:  "update_entry",
-		PlanID:  commit.ID,
+		PlanID:  planID,
 		EntryID: &entryC,
 		Status:  &skipped,
 		Reason:  strPtr("ignored because force gate fires first"),
@@ -1942,23 +1746,11 @@ func TestIntegration_WeeklySummary_SelfAuditBlock(t *testing.T) {
 	//    skip two with different reason prefixes, and leave the
 	//    fourth alone (regression guard: not every entry should
 	//    contribute to the audit signal).
-	_, planProposal, err := callHandler(t, s.proposeLearningPlan, ProposeLearningPlanInput{
-		Title:  "Self-Audit Test Plan",
-		Domain: "leetcode",
-	})
-	if err != nil {
-		t.Fatalf("propose plan: %v", err)
-	}
-	_, planCommit, err := callHandlerAs(t, "human", s.commitProposal, CommitProposalInput{
-		ProposalToken: planProposal.ProposalToken,
-	})
-	if err != nil {
-		t.Fatalf("commit plan: %v", err)
-	}
+	planID := seedLearningPlan(t, "leetcode", nil, "human")
 
 	if _, _, err := callHandler(t, s.managePlan, ManagePlanInput{
 		Action: "add_entries",
-		PlanID: planCommit.ID,
+		PlanID: planID,
 		Entries: []ManagePlanEntryInput{
 			{Title: "SA Target Alpha", Position: 1},
 			{Title: "SA Target Beta", Position: 2},
@@ -1973,14 +1765,14 @@ func TestIntegration_WeeklySummary_SelfAuditBlock(t *testing.T) {
 	active := "active"
 	if _, _, err := callHandler(t, s.managePlan, ManagePlanInput{
 		Action: "update_plan",
-		PlanID: planCommit.ID,
+		PlanID: planID,
 		Status: &active,
 	}); err != nil {
 		t.Fatalf("activate plan: %v", err)
 	}
 
 	rows, err := testPool.Query(t.Context(),
-		"SELECT id, position FROM learning_plan_entries WHERE plan_id = $1 ORDER BY position", planCommit.ID)
+		"SELECT id, position FROM learning_plan_entries WHERE plan_id = $1 ORDER BY position", planID)
 	if err != nil {
 		t.Fatalf("locating entries: %v", err)
 	}
@@ -2063,7 +1855,7 @@ func TestIntegration_WeeklySummary_SelfAuditBlock(t *testing.T) {
 	completed := "completed"
 	if _, _, err := callHandler(t, s.managePlan, ManagePlanInput{
 		Action:  "update_entry",
-		PlanID:  planCommit.ID,
+		PlanID:  planID,
 		EntryID: &entryAlpha,
 		Status:  &completed,
 		Reason:  strPtr("manual override: SA test exercises the force-mode escape hatch deliberately"),
@@ -2089,7 +1881,7 @@ func TestIntegration_WeeklySummary_SelfAuditBlock(t *testing.T) {
 	skipped := "skipped"
 	if _, _, err := callHandler(t, s.managePlan, ManagePlanInput{
 		Action:  "update_entry",
-		PlanID:  planCommit.ID,
+		PlanID:  planID,
 		EntryID: &entryBeta,
 		Status:  &skipped,
 		Reason:  strPtr("skipped: solved offline"),
@@ -2098,7 +1890,7 @@ func TestIntegration_WeeklySummary_SelfAuditBlock(t *testing.T) {
 	}
 	if _, _, err := callHandler(t, s.managePlan, ManagePlanInput{
 		Action:  "update_entry",
-		PlanID:  planCommit.ID,
+		PlanID:  planID,
 		EntryID: &entryGamma,
 		Status:  &skipped,
 		Reason:  strPtr("skipped: target archived"),
@@ -2112,7 +1904,7 @@ func TestIntegration_WeeklySummary_SelfAuditBlock(t *testing.T) {
 	// fallback) would go undetected.
 	if _, _, err := callHandler(t, s.managePlan, ManagePlanInput{
 		Action:  "update_entry",
-		PlanID:  planCommit.ID,
+		PlanID:  planID,
 		EntryID: &entryEpsilon,
 		Status:  &skipped,
 		Reason:  strPtr("plan retconned during refactor"),
@@ -2518,7 +2310,6 @@ func TestIntegration_RecommendNextTarget_RejectsInactiveSession(t *testing.T) {
 // adds a real topic via SQL, then calls the tool through the same
 // callHandler path the cold-start suite uses, and verifies a row
 // landed in feeds plus a matching feed_topics junction.
-
 
 // =========================================================================
 // Section 3: DB audit trigger regressions
@@ -3267,65 +3058,6 @@ func TestIntegration_AttemptHistory_SortInvariants(t *testing.T) {
 		if sessionOut.Attempts[i].AttemptNumber != wantNum {
 			t.Errorf("session mode ASC: Attempts[%d].AttemptNumber = %d, want %d", i, sessionOut.Attempts[i].AttemptNumber, wantNum)
 		}
-	}
-}
-
-// --- propose_* flat tools ---
-//
-// The seven typed propose tools (propose_goal, propose_project,
-// propose_milestone, propose_directive, propose_hypothesis,
-// propose_learning_plan, propose_learning_domain) all sign through the
-// shared proposeEntity workhorse. Core coverage here:
-//  - propose_goal happy path: produces a signed token that commit_proposal
-//    accepts.
-//  - propose_directive capability pre-check: unauthorized callers fail
-//    fast at propose time, not at commit.
-
-func TestIntegration_ProposeGoal_CommitRoundTrip(t *testing.T) {
-	s := setupServer(t)
-
-	// propose_goal's author allowlist excludes learning-studio
-	// (setupServer's default caller); use hq which is on the
-	// hq/content-studio/research-lab list per authorization-matrix.md.
-	_, proposal, err := callHandlerAs(t, "hq", s.proposeGoal, ProposeGoalInput{
-		Title:       "Pass JLPT N2 by October",
-		Description: strPtr("Reading + listening practice cadence for N2 spring 2026 cohort."),
-	})
-	if err != nil {
-		t.Fatalf("proposeGoal: %v", err)
-	}
-	if proposal.ProposalToken == "" {
-		t.Fatal("proposeGoal returned empty token")
-	}
-	if proposal.Type != "goal" {
-		t.Errorf("proposal.Type = %q, want goal", proposal.Type)
-	}
-
-	// commit_proposal(goal) is human-only via requireExplicitHuman; the
-	// "hq committed its own proposal" round-trip pattern lives separately.
-	_, commit, err := callHandlerAs(t, "human", s.commitProposal, CommitProposalInput{
-		ProposalToken: proposal.ProposalToken,
-	})
-	if err != nil {
-		t.Fatalf("commitProposal: %v", err)
-	}
-	if !commit.Committed {
-		t.Error("commit.Committed = false on round-trip")
-	}
-	if commit.Type != "goal" {
-		t.Errorf("commit.Type = %q, want goal", commit.Type)
-	}
-
-	id, err := uuid.Parse(commit.ID)
-	if err != nil {
-		t.Fatalf("parsing returned goal ID: %v", err)
-	}
-	var title string
-	if err := testPool.QueryRow(t.Context(), "SELECT title FROM goals WHERE id = $1", id).Scan(&title); err != nil {
-		t.Fatalf("fetching goal row: %v", err)
-	}
-	if title != "Pass JLPT N2 by October" {
-		t.Errorf("goal.title = %q, want round-tripped value", title)
 	}
 }
 
@@ -5223,124 +4955,4 @@ func logTier1Results(t *testing.T, outcomes []evalOutcome) {
 	}
 	fmt.Fprintf(&b, "totals: %d pass, %d fail, %d skip (of %d)\n", pass, fail, skip, len(outcomes))
 	t.Log(b.String())
-}
-
-// --- proposal-commit replay guard (security regression) ---
-
-// TestIntegration_CommitProposal_NonceReplayRejected is the T1 regression
-// guard for the proposal-token replay vulnerability: a single valid token,
-// committed twice within its TTL, must create exactly ONE entity. The second
-// commit must be rejected with a clear proposal_already_committed error — not
-// silently create a duplicate goal, not return 500. Before the nonce-consume
-// fix this produced two goal rows.
-func TestIntegration_CommitProposal_NonceReplayRejected(t *testing.T) {
-	s := setupServer(t)
-
-	const title = "Replay Guard Goal"
-	_, proposal, err := callHandlerAs(t, "hq", s.proposeGoal, ProposeGoalInput{Title: title})
-	if err != nil {
-		t.Fatalf("proposeGoal: %v", err)
-	}
-	if proposal.ProposalToken == "" {
-		t.Fatal("empty proposal token")
-	}
-
-	// First commit succeeds (goal is human-only — commit as human).
-	_, commit, err := callHandlerAs(t, "human", s.commitProposal, CommitProposalInput{
-		ProposalToken: proposal.ProposalToken,
-	})
-	if err != nil {
-		t.Fatalf("first commitProposal: %v", err)
-	}
-	if !commit.Committed {
-		t.Fatal("first commit: Committed = false")
-	}
-
-	// Second commit of the SAME token must be rejected as a replay.
-	_, _, replayErr := callHandlerAs(t, "human", s.commitProposal, CommitProposalInput{
-		ProposalToken: proposal.ProposalToken,
-	})
-	if replayErr == nil {
-		t.Fatal("second commit of the same token must be rejected, got nil error")
-	}
-	if !strings.Contains(replayErr.Error(), "proposal_already_committed") {
-		t.Errorf("replay error = %q, want containing %q", replayErr, "proposal_already_committed")
-	}
-
-	// Exactly one goal row must exist — the replay created no duplicate.
-	var count int
-	if err := testPool.QueryRow(t.Context(),
-		"SELECT count(*) FROM goals WHERE title = $1", title,
-	).Scan(&count); err != nil {
-		t.Fatalf("counting goals: %v", err)
-	}
-	if count != 1 {
-		t.Errorf("goals with title %q = %d, want 1 (replay created duplicates)", title, count)
-	}
-}
-
-// TestIntegration_CommitProposal_ConcurrentCommitOnce pins the TOCTOU-safety
-// of the nonce consume: when N goroutines commit the SAME valid token
-// simultaneously, exactly one must succeed and exactly one goal row may exist.
-// A check-then-write nonce guard would let multiple goroutines pass the
-// "not yet committed" check and each insert a row; the atomic claim must not.
-// Run with -race to surface any data race in the nonce store.
-func TestIntegration_CommitProposal_ConcurrentCommitOnce(t *testing.T) {
-	s := setupServer(t)
-
-	const title = "Concurrent Guard Goal"
-	_, proposal, err := callHandlerAs(t, "hq", s.proposeGoal, ProposeGoalInput{Title: title})
-	if err != nil {
-		t.Fatalf("proposeGoal: %v", err)
-	}
-
-	const n = 8
-	humanCtx := context.WithValue(t.Context(), callerKey{}, "human")
-	input := CommitProposalInput{ProposalToken: proposal.ProposalToken}
-
-	var (
-		wg          sync.WaitGroup
-		successes   atomic.Int64
-		alreadyDone atomic.Int64
-		otherErrs   atomic.Int64
-	)
-	// Release all goroutines at once to maximise the race window.
-	start := make(chan struct{})
-	for range n {
-		wg.Go(func() {
-			<-start
-			_, out, cErr := s.commitProposal(humanCtx, nil, input)
-			switch {
-			case cErr == nil && out.Committed:
-				successes.Add(1)
-			case cErr != nil && strings.Contains(cErr.Error(), "proposal_already_committed"):
-				alreadyDone.Add(1)
-			default:
-				otherErrs.Add(1)
-				t.Errorf("unexpected commit outcome: committed=%v err=%v", out.Committed, cErr)
-			}
-		})
-	}
-	close(start)
-	wg.Wait()
-
-	if got := successes.Load(); got != 1 {
-		t.Errorf("successful commits = %d, want exactly 1", got)
-	}
-	if got := alreadyDone.Load(); got != n-1 {
-		t.Errorf("proposal_already_committed rejections = %d, want %d", got, n-1)
-	}
-	if got := otherErrs.Load(); got != 0 {
-		t.Errorf("unexpected (non-replay) errors = %d, want 0", got)
-	}
-
-	var count int
-	if err := testPool.QueryRow(t.Context(),
-		"SELECT count(*) FROM goals WHERE title = $1", title,
-	).Scan(&count); err != nil {
-		t.Fatalf("counting goals: %v", err)
-	}
-	if count != 1 {
-		t.Errorf("goals with title %q = %d, want 1 (concurrent replay created duplicates)", title, count)
-	}
 }

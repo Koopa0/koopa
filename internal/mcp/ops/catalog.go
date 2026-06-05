@@ -135,90 +135,6 @@ func QueryAgentNotes() Meta {
 	}
 }
 
-// ProposeGoal returns metadata for the flat propose_goal tool.
-func ProposeGoal() Meta {
-	return Meta{
-		Name:        "propose_goal",
-		Domain:      DomainMeta,
-		Writability: ReadOnly,
-		Stability:   StabilityStable,
-		Since:       "1.1.0",
-		Description: "Propose a goal (quarterly or multi-quarter commitment, optionally scoped to an area and given a target deadline). Returns a preview + signed proposal token — does NOT write to the database. Requires commit_proposal to finalize.",
-	}
-}
-
-// ProposeProject returns metadata for the flat propose_project tool.
-func ProposeProject() Meta {
-	return Meta{
-		Name:        "propose_project",
-		Domain:      DomainMeta,
-		Writability: ReadOnly,
-		Stability:   StabilityStable,
-		Since:       "1.1.0",
-		Description: "Propose a project (concrete work unit that can be linked to a goal and an area). Returns a preview + signed proposal token — does NOT write to the database. Requires commit_proposal to finalize.",
-	}
-}
-
-// ProposeMilestone returns metadata for the flat propose_milestone tool.
-func ProposeMilestone() Meta {
-	return Meta{
-		Name:        "propose_milestone",
-		Domain:      DomainMeta,
-		Writability: ReadOnly,
-		Stability:   StabilityStable,
-		Since:       "1.1.0",
-		Description: "Propose a milestone (progress marker scoped to a parent goal, with an optional target deadline). Returns a preview + signed proposal token — does NOT write to the database. Requires commit_proposal to finalize.",
-	}
-}
-
-// ProposeHypothesis returns metadata for the flat propose_hypothesis tool.
-func ProposeHypothesis() Meta {
-	return Meta{
-		Name:        "propose_hypothesis",
-		Domain:      DomainMeta,
-		Writability: ReadOnly,
-		Stability:   StabilityStable,
-		Since:       "1.1.0",
-		Description: "Propose a hypothesis (falsifiable claim with an invalidation condition and narrative content). Returns a preview + signed proposal token — does NOT write to the database. Requires commit_proposal to finalize. Per mcp-decision-policy §4, hypotheses must carry a concrete invalidation_condition; narrative reflections without a falsifiable claim belong in write_agent_note(kind=reflection) instead.",
-	}
-}
-
-// ProposeLearningPlan returns metadata for the flat propose_learning_plan tool.
-func ProposeLearningPlan() Meta {
-	return Meta{
-		Name:        "propose_learning_plan",
-		Domain:      DomainMeta,
-		Writability: ReadOnly,
-		Stability:   StabilityStable,
-		Since:       "1.1.0",
-		Description: "Propose a learning plan (committed curriculum with a title + domain + optional parent goal). Returns a preview + signed proposal token — does NOT write to the database. Requires commit_proposal to finalize. Plan entries are added via manage_plan after the plan commits.",
-	}
-}
-
-// ProposeLearningDomain returns metadata for the flat propose_learning_domain tool.
-func ProposeLearningDomain() Meta {
-	return Meta{
-		Name:        "propose_learning_domain",
-		Domain:      DomainMeta,
-		Writability: ReadOnly,
-		Stability:   StabilityStable,
-		Since:       "1.1.0",
-		Description: "Propose a learning domain (FK target for concepts/targets/sessions/plans — e.g. 'leetcode', 'japanese'). Returns a preview + signed proposal token — does NOT write to the database. Requires commit_proposal to finalize. Slug must match pattern ^[a-z][a-z0-9-]*$.",
-	}
-}
-
-// CommitProposal returns metadata for the proposal-token commit tool.
-func CommitProposal() Meta {
-	return Meta{
-		Name:        "commit_proposal",
-		Domain:      DomainMeta,
-		Writability: Additive,
-		Stability:   StabilityStable,
-		Since:       since,
-		Description: "Commit a previously proposed entity using the proposal_token from any propose_<type> tool. Creates the entity in the database. Supports optional modifications to override fields before commit. Token expires 10 minutes after issuance (and is invalidated by server restart since the HMAC secret regenerates) — re-propose to get a new token if the commit is delayed beyond that window.",
-	}
-}
-
 // GoalProgress returns metadata for the active-goals query.
 func GoalProgress() Meta {
 	return Meta{
@@ -566,13 +482,6 @@ func All() []Meta {
 		PlanDay(),
 		WriteAgentNote(),
 		QueryAgentNotes(),
-		ProposeGoal(),
-		ProposeProject(),
-		ProposeMilestone(),
-		ProposeHypothesis(),
-		ProposeLearningPlan(),
-		ProposeLearningDomain(),
-		CommitProposal(),
 		GoalProgress(),
 		TrackHypothesis(),
 		StartSession(),
