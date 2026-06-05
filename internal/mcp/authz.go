@@ -107,46 +107,6 @@ func (s *Server) requireExplicitHuman(ctx context.Context, op string) error {
 	return nil
 }
 
-// requireTodoOwner enforces the self-bound rule on personal-GTD
-// transitions: a caller may only advance a todo they themselves created,
-// unless the caller is the human owner. The human is permitted on any
-// todo because Koopa coordinates across his own captures and
-// agent-created ones; consistency with requireAuthor where Platform=
-// "human" is always implicit.
-//
-// owner is the todo's created_by string (todo.Item.CreatedBy). Pass
-// the loaded row's value, not a re-derived one — the caller's snapshot
-// is authoritative for this check.
-//
-// Like requireAuthor, this gate uses callerIdentity (not
-// ExplicitCallerIdentity) — the server-default-human path inherits the
-// override consistent with the rest of the author/self axis. If
-// KOOPA_MCP_CALLER_AGENT is ever made multi-tenant, the author/self
-// gates as a whole need to be reviewed; this gate is not special.
-//
-// The error message intentionally does NOT name the original creator
-// to avoid leaking row attribution to non-owner callers (the audit log
-// carries the full picture; the wire reply doesn't need to).
-//
-// This is the §4 Self axis from the package doc applied at the
-// advance_work boundary. authorization-matrix.md was previously
-// annotated "Currently open; future: caller == created_by"; this gate
-// closes that gap.
-func (s *Server) requireTodoOwner(ctx context.Context, owner string) error {
-	name := s.callerIdentity(ctx)
-	if name == owner {
-		return nil
-	}
-	caller, ok := s.registry.Lookup(agent.Name(name))
-	if !ok {
-		return fmt.Errorf("advance_work: caller %q is not registered", name)
-	}
-	if caller.Platform == "human" {
-		return nil
-	}
-	return fmt.Errorf("advance_work: caller %q is not the todo owner; only the creator or human override may advance it", name)
-}
-
 // requireAuthor gates an operation to a domain-specific allowlist of
 // agents. Platform=="human" callers are always permitted regardless of
 // the list — see the package doc for why human is implicit.

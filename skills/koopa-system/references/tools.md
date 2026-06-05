@@ -13,18 +13,18 @@ is hand-maintained.
 > Run `go generate ./internal/mcp/ops` after any change to the tool surface;
 > the drift test `TestToolInventoryDocInSync` fails CI if this is stale.
 
-**29 tools** across 7 domains.
+**27 tools** across 7 domains.
 
 | Domain | Count |
 |---|---|
 | `query` | 6 |
-| `daily` | 3 |
+| `daily` | 2 |
 | `a2a` | 0 |
 | `meta` | 1 |
 | `learning` | 7 |
-| `content` | 10 |
+| `content` | 9 |
 | `system` | 2 |
-| **Total** | **29** |
+| **Total** | **27** |
 
 | Tool | Domain | Writability | Purpose |
 |---|---|---|---|
@@ -34,7 +34,6 @@ is hand-maintained.
 | `query_agent_notes` | `query` | read_only | Recall prior agent notes |
 | `reflection_context` | `query` | read_only | End-of-day retrospective: plan vs actual completion, daily plan item outcomes, today's agent notes |
 | `search_knowledge` | `query` | read_only | Search across content (articles, build logs, TILs, etc.) and notes (Zettelkasten) |
-| `advance_work` | `daily` | destructive | Personal-todo state transitions |
 | `capture_inbox` | `daily` | additive | Quick task capture to inbox |
 | `plan_day` | `daily` | idempotent | Set the day's plan as one atomic replacement |
 | `write_agent_note` | `meta` | additive | Create an agent note |
@@ -54,7 +53,6 @@ is hand-maintained.
 | `set_content_review_state` | `content` | additive | Set a content row's review state |
 | `update_content` | `content` | additive | Update editable fields (title/body/slug/type) on a content row |
 | `update_note` | `content` | additive | Update editable fields (slug / title / body / kind) on a note |
-| `update_note_maturity` | `content` | additive | Transition a note's maturity state |
 | `session_delta` | `system` | read_only | Activity snapshot since a point in time: todos created, todos completed, agent notes written, and learning session count |
 | `weekly_summary` | `system` | read_only | Week-level retrospective: todos completed, agent notes grouped by kind, learning session count and domains, concept mastery, and the self_audit block… |
 <!-- GENERATED:TOOL-INVENTORY END -->

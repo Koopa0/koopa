@@ -59,31 +59,6 @@ func TestCaptureInbox_Validation(t *testing.T) {
 	}
 }
 
-// --- advance_work ---
-
-func TestAdvanceWork_Validation(t *testing.T) {
-	s := newTestServer()
-	tests := []struct {
-		name    string
-		input   AdvanceWorkInput
-		wantErr string
-	}{
-		{name: "invalid task_id", input: AdvanceWorkInput{TaskID: "not-uuid", Action: "start"}, wantErr: "invalid task_id"},
-		// Action validation is tested via TestValidateTransition (requires DB for task lookup)
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			_, _, err := callHandler(t, s.advanceWork, tt.input)
-			if err == nil {
-				t.Fatal("expected error, got nil")
-			}
-			if !contains(err.Error(), tt.wantErr) {
-				t.Errorf("error = %q, want containing %q", err, tt.wantErr)
-			}
-		})
-	}
-}
-
 // --- plan_day ---
 
 func TestPlanDay_Validation(t *testing.T) {
@@ -361,7 +336,6 @@ func TestToolSchemaGeneration(t *testing.T) {
 		fn   func() error
 	}{
 		{"CaptureInboxInput", testSchema[CaptureInboxInput]},
-		{"AdvanceWorkInput", testSchema[AdvanceWorkInput]},
 		{"PlanDayInput", testSchema[PlanDayInput]},
 		{"WriteAgentNoteInput", testSchema[WriteAgentNoteInput]},
 		{"StartSessionInput", testSchema[StartSessionInput]},
@@ -377,7 +351,6 @@ func TestToolSchemaGeneration(t *testing.T) {
 		{"ReadContentInput", testSchema[ReadContentInput]},
 		{"CreateNoteInput", testSchema[CreateNoteInput]},
 		{"UpdateNoteInput", testSchema[UpdateNoteInput]},
-		{"UpdateNoteMaturityInput", testSchema[UpdateNoteMaturityInput]},
 	}
 	for _, tt := range types {
 		t.Run(tt.name, func(t *testing.T) {

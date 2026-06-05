@@ -189,7 +189,6 @@ func NewServer(pool *pgxpool.Pool, logger *slog.Logger, opts ...ServerOption) *S
 	addTool(s, toolFrom(ops.ReflectionContext), s.reflectionContext)
 	addTool(s, toolFrom(ops.SearchKnowledge), s.searchKnowledge)
 	addTool(s, toolFrom(ops.CaptureInbox), s.captureInbox)
-	addTool(s, toolFrom(ops.AdvanceWork), s.advanceWork)
 	addTool(s, toolFrom(ops.PlanDay), s.planDay)
 	addTool(s, toolFrom(ops.WriteAgentNote), s.writeAgentNote)
 	addTool(s, toolFrom(ops.QueryAgentNotes), s.queryAgentNotes)
@@ -217,7 +216,6 @@ func NewServer(pool *pgxpool.Pool, logger *slog.Logger, opts ...ServerOption) *S
 	// --- Notes (flat tools) ---
 	addTool(s, toolFrom(ops.CreateNote), s.createNote)
 	addTool(s, toolFrom(ops.UpdateNote), s.updateNote)
-	addTool(s, toolFrom(ops.UpdateNoteMaturity), s.updateNoteMaturity)
 
 	// --- Extra: Cross-session & Aggregation ---
 	addTool(s, toolFrom(ops.SessionDelta), s.sessionDelta)

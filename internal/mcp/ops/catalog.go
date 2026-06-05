@@ -76,26 +76,6 @@ func CaptureInbox() Meta {
 	}
 }
 
-// AdvanceWork returns metadata for the GTD task lifecycle transitions.
-// FieldEnums advertises the action / priority / energy enums
-// structurally — they are closed value sets enforced by the handler,
-// and surfacing them in tools/list saves callers a 422 round-trip.
-func AdvanceWork() Meta {
-	return Meta{
-		Name:        "advance_work",
-		Domain:      DomainDaily,
-		Writability: Destructive,
-		Stability:   StabilityStable,
-		Since:       since,
-		Description: "Personal-todo state transitions. Actions: clarify (inbox→todo, supply project/due/priority/energy to make it actionable; required before plan_day will accept the todo), start (todo→in_progress), complete (→done; if the todo is on today's daily plan, the matching plan_item is auto-marked done in the same transaction; recurring todos are auto-reset to next due date), defer (→someday).",
-		FieldEnums: map[string][]string{
-			"action":   {"clarify", "start", "complete", "defer"},
-			"priority": {"high", "medium", "low"},
-			"energy":   {"high", "medium", "low"},
-		},
-	}
-}
-
 // PlanDay returns metadata for the daily plan commit tool.
 func PlanDay() Meta {
 	return Meta{
@@ -405,21 +385,6 @@ func UpdateNote() Meta {
 	}
 }
 
-// UpdateNoteMaturity returns metadata for update_note_maturity.
-func UpdateNoteMaturity() Meta {
-	return Meta{
-		Name:        "update_note_maturity",
-		Domain:      DomainContent,
-		Writability: Additive,
-		Stability:   StabilityStable,
-		Since:       since,
-		Description: "Transition a note's maturity state. to_maturity one of: seed, stub, evergreen, needs_revision, archived. Any transition permitted (including recovery from archived).",
-		FieldEnums: map[string][]string{
-			"to_maturity": {"seed", "stub", "evergreen", "needs_revision", "archived"},
-		},
-	}
-}
-
 // SessionDelta returns metadata for the cross-session context bridge.
 func SessionDelta() Meta {
 	return Meta{
@@ -454,7 +419,6 @@ func All() []Meta {
 		ReflectionContext(),
 		SearchKnowledge(),
 		CaptureInbox(),
-		AdvanceWork(),
 		PlanDay(),
 		WriteAgentNote(),
 		QueryAgentNotes(),
@@ -476,7 +440,6 @@ func All() []Meta {
 		ReadContent(),
 		CreateNote(),
 		UpdateNote(),
-		UpdateNoteMaturity(),
 		SessionDelta(),
 		WeeklySummary(),
 	}

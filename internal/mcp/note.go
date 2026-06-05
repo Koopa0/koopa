@@ -173,50 +173,6 @@ func (s *Server) updateNote(ctx context.Context, _ *mcp.CallToolRequest, input U
 }
 
 // ---------------------------------------------------------------
-// update_note_maturity
-// ---------------------------------------------------------------
-
-// UpdateNoteMaturityInput is the tight input for update_note_maturity.
-type UpdateNoteMaturityInput struct {
-	As         string `json:"as,omitempty" jsonschema_description:"Self-identification."`
-	NoteID     string `json:"note_id" jsonschema:"required" jsonschema_description:"UUID of the note."`
-	ToMaturity string `json:"to_maturity" jsonschema:"required" jsonschema_description:"Target maturity. One of: seed, stub, evergreen, needs_revision, archived."`
-}
-
-func (s *Server) updateNoteMaturity(ctx context.Context, _ *mcp.CallToolRequest, input UpdateNoteMaturityInput) (*mcp.CallToolResult, NoteReply, error) {
-	if err := s.requireRegisteredCaller(ctx, "update_note_maturity"); err != nil {
-		return nil, NoteReply{}, err
-	}
-	if input.NoteID == "" {
-		return nil, NoteReply{}, fmt.Errorf("note_id is required")
-	}
-	id, err := uuid.Parse(input.NoteID)
-	if err != nil {
-		return nil, NoteReply{}, fmt.Errorf("invalid note_id: %w", err)
-	}
-	m := note.Maturity(input.ToMaturity)
-	if !m.Valid() {
-		return nil, NoteReply{}, fmt.Errorf("invalid to_maturity %q (one of: seed, stub, evergreen, needs_revision, archived)", input.ToMaturity)
-	}
-
-	var n *note.Note
-	err = s.withActorTx(ctx, func(tx pgx.Tx) error {
-		var updateErr error
-		n, updateErr = s.notes.WithTx(tx).UpdateMaturity(ctx, id, m)
-		return updateErr
-	})
-	if err != nil {
-		if errors.Is(err, note.ErrNotFound) {
-			return nil, NoteReply{}, fmt.Errorf("note %s not found", id)
-		}
-		return nil, NoteReply{}, fmt.Errorf("updating note maturity: %w", err)
-	}
-
-	s.logger.Info("update_note_maturity", "id", n.ID, "to", m)
-	return nil, NoteReply{Note: toNoteDetail(n)}, nil
-}
-
-// ---------------------------------------------------------------
 // helpers
 // ---------------------------------------------------------------
 
