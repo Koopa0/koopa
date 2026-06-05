@@ -240,19 +240,6 @@ func ManagePlan() Meta {
 	}
 }
 
-// ArchiveLearningTarget returns metadata for the flat learning-target
-// archive tool (formerly the single-action manage_targets multiplexer).
-func ArchiveLearningTarget() Meta {
-	return Meta{
-		Name:        "archive_learning_target",
-		Domain:      DomainLearning,
-		Writability: Destructive,
-		Stability:   StabilityStable,
-		Since:       since,
-		Description: "Archive a learning target (soft-delete). When cascade_relations=true (default), every learning_target_relations row referencing it is archived too; the symmetric-reverse edge for same_pattern/similar_structure is auto-cascaded because it sits in the same anchor|related filter. Returns the archived target plus a cascaded_relations list so the caller can show 'what got archived alongside the target' without a follow-up query. Authorization is U2 self-bound — caller must equal the target's created_by, with Platform=human as universal override. Archive is reversible; the archive_batch_id stamped on every cascaded row scopes a future unarchive to exactly this batch, not every relation involving the target.",
-	}
-}
-
 // SessionProgress returns metadata for the in-session aggregate tool.
 func SessionProgress() Meta {
 	return Meta{
@@ -429,7 +416,6 @@ func All() []Meta {
 		RecommendNextTarget(),
 		AttemptHistory(),
 		ManagePlan(),
-		ArchiveLearningTarget(),
 		SessionProgress(),
 		CreateContent(),
 		UpdateContent(),

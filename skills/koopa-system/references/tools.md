@@ -13,7 +13,7 @@ is hand-maintained.
 > Run `go generate ./internal/mcp/ops` after any change to the tool surface;
 > the drift test `TestToolInventoryDocInSync` fails CI if this is stale.
 
-**27 tools** across 7 domains.
+**26 tools** across 7 domains.
 
 | Domain | Count |
 |---|---|
@@ -21,10 +21,10 @@ is hand-maintained.
 | `daily` | 2 |
 | `a2a` | 0 |
 | `meta` | 1 |
-| `learning` | 7 |
+| `learning` | 6 |
 | `content` | 9 |
 | `system` | 2 |
-| **Total** | **27** |
+| **Total** | **26** |
 
 | Tool | Domain | Writability | Purpose |
 |---|---|---|---|
@@ -37,7 +37,6 @@ is hand-maintained.
 | `capture_inbox` | `daily` | additive | Quick task capture to inbox |
 | `plan_day` | `daily` | idempotent | Set the day's plan as one atomic replacement |
 | `write_agent_note` | `meta` | additive | Create an agent note |
-| `archive_learning_target` | `learning` | destructive | Archive a learning target (soft-delete) |
 | `end_session` | `learning` | additive | End the active learning session |
 | `manage_plan` | `learning` | destructive | Learning plan lifecycle and entries |
 | `recommend_next_target` | `learning` | read_only | Recommend the next learning target during an active session |
