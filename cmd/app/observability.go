@@ -13,7 +13,7 @@
 //   - Task 2 adds custom histogram buckets + name renames via Views.
 //   - Task 3 emits the HTTP request histogram + counter from middleware.
 //   - Task 6 wires otelpgx using the global MeterProvider set here.
-//   - Task 7 instruments background goroutines (feed scheduler, FSRS, agent sync).
+//   - Task 7 instruments background goroutines (feed scheduler, agent sync).
 package main
 
 import (

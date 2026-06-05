@@ -28,7 +28,10 @@ private memory.
 | W2b | `a31de0b` | task/artifact pkgs, morning pending_tasks, HTTP coordination/tasks routes, server stores |
 | W4 (backend) | `46e45b8` | bookmark pkg + public/admin routes + main wiring; tag-merge `bookmark_tags` coupling removed (2 sqlc queries + `MergeResult.BookmarkTagsMoved`); `api/integration_test.go` ActorMiddleware test repointed bookmark→note; stale-comment sweep |
 | W4 (frontend) | `7c91ecc` | bookmark public page, admin list, inspector renderer, BookmarkService deleted; routing/nav/nav-counts/command-palette/keyboard-shortcuts/activity/inspector-union/BookmarkDetail surgically cut; tsc+lint+build+specs green |
-| W5a | `c991257` | FSRS off the MCP surface: `record_attempt` loses `fsrs_rating` input + `fsrs_card`/`fsrs_rating_applied`/`fsrs_review_failed` output; `Server.fsrs` field + `updateFSRSReview`/`markFSRSDrift` removed. `fsrs` pkg + learning/today/stats/HTTP/schema FSRS surfaces still present (→ W5b/W7). |
+| W5a | `c991257` | FSRS off the MCP surface: `record_attempt` loses `fsrs_rating` input + `fsrs_card`/`fsrs_rating_applied`/`fsrs_review_failed` output; `Server.fsrs` field + `updateFSRSReview`/`markFSRSDrift` removed. |
+| W5b-1 | `e78a4ef` | FSRS `retrieval` view of `learning_dashboard` + `RetrievalQueue` store method/query + `RetrievalTarget`. |
+| W5b-2a | `6e722bc` | review_cards-backed next-due reads (no fsrs-pkg coupling): ConceptsForList next_due_target CTE, DashboardConceptRows next_due CTE, stats `fsrs_cards_count`. |
+| W5b-2b | `dd92c24` | **deleted `internal/learning/fsrs`** + every remaining consumer (learning ReviewMetrics / dashboard due_today / today due-reviews / HTTP review route / main wiring / tests). `go mod tidy` dropped go-fsrs + swept the W2 a2a-go/genproto debt. FSRS = 0 in production Go. Executed integration suites green. |
 
 ---
 
@@ -58,24 +61,13 @@ private memory.
 - Schema (`bookmarks`, `bookmark_topics`, `bookmark_tags`) → W7.
 - **Frontend verify lesson:** the unit-test builder is `@angular/build:unit-test`. Raw `npx vitest run <file>` fails with "describe is not defined" (bypasses the builder's TestBed/globals init) — ALWAYS use `npx ng test --watch=false --include='<spec glob>'` (supports `--include`/`--filter` for scoping). W4 verified via `npx tsc --noEmit` + `npx ng lint` + `npx ng build` + the 3 affected specs (28 tests green).
 
-### W5 — FSRS / spaced-repetition  (W5a DONE `c991257`; W5b backend + W5c frontend REMAIN)
+### W5 — FSRS / spaced-repetition  (BACKEND DONE — W5a/W5b-1/W5b-2a/W5b-2b; only W5c frontend REMAINS)
 
 **Scope correction (re-grep at execution caught this):** the runbook's "`recommend_next_target` becomes weakness/mastery-based only" item is **MOOT** — `recommend_next.go` has ZERO fsrs references; it is already entirely weakness + variation-graph based (`WeaknessAnalysis` + `TargetVariations`, ranked by severity). No new ranking logic anywhere. W5 is a pure mechanical FSRS-field removal (ledger §3 direction is unambiguous — no product decision).
 
 **W5a (done):** MCP-surface FSRS removed from `record_attempt` + `Server`. See Done table.
 
-**W5b — backend (ATOMIC: the `fsrs` pkg cannot be `git rm`'d until ALL consumers below are gone in the same commit):**
-- `internal/learning/handler.go`: remove `ReviewMetrics` interface (consumer-side iface over fsrs), the `reviews` field + change `NewHandler(store, reviews, logger)` → `NewHandler(store, logger)`; remove `learningSummaryResponse.DueReviews` + the Summary due-count block; remove the Dashboard handler's due_today/FSRS branch (re-grep `reviews`/`DueCount`/`RetentionFn`/`DashboardDueReviews` in handler.go).
-- `internal/learning/dashboard.go`: remove `DashboardConceptRow.NextDue` (+ its assignment), the `DashboardDueTodayTarget`/`Item`/`DueToday` types, the `RetentionFn` type alias, and the `DashboardDueReviews` method.
-- `internal/learning/query.sql`: remove the `DashboardDueReviews` query + the `concept_next_due` CTE/LEFT-JOIN from `DashboardConceptRows` (re-grep `review_cards`). Then `sqlc generate`. **(Per W4 lesson: drop these queries now so W7's review_cards/review_logs table-drop generates cleanly.)**
-- `internal/today/today.go` + `handler.go`: remove `DueReviewsSection` + `DueReviewCounter` + the today aggregate's due-reviews assembly.
-- `internal/stats/stats.go` + `query.sql`: remove `FsrsCardsCount` from the DB-counts section + the fsrs_cards count query. THEN update `internal/mcp/ops/catalog.go:~561` (system_status desc says `concepts/fsrs_cards`) + the `mcp/integration_test.go` system_status assertion (~149,180 mention `fsrs`) → `go generate ./internal/mcp/ops`.
-- `cmd/app/routes.go`: remove fsrs import, `fsrs *fsrs.Handler` field, `POST /api/admin/learning/reviews/{card_id}` route + the two FSRS comments (~205, ~301).
-- `cmd/app/main.go`: remove fsrs import, `fsrsStore`, `fsrs.NewHandler` wiring, and change `learning.NewHandler(learningStore, fsrsStore, logger)` → `learning.NewHandler(learningStore, logger)` + the FSRS comment (~213).
-- `git rm -r internal/learning/fsrs`; `sqlc.yaml`: remove `internal/learning/fsrs/query.sql`; `sqlc generate`.
-- Tests: `internal/learning/{integration_test,concepts_integration_test,dashboard_integration_test}.go` — drop `fsrs` import + the FSRS test bodies (Section-2 drift signal in integration_test.go is wholly FSRS; concepts/dashboard tests seed `review_cards` + assert NextDue/retention — strip those, keep the mastery/weakness/observation assertions). `ensureFSRSReachable` anchor (`var _ = fsrs.NewStore`) goes too.
-- Gate: build/vet/`go vet -tags integration ./internal/learning/ ./internal/mcp/ ./internal/today/ ./internal/stats/ ./internal/api/`/golangci-lint + **run** the learning + mcp integration suites (testcontainers; migrations still include review_cards until W7, so seeding-via-raw-SQL in any KEPT test still works).
-- Schema (`review_cards`, `review_logs`) → W7.
+**W5b — backend: ✅ DONE** (`e78a4ef` W5b-1, `6e722bc` W5b-2a, `dd92c24` W5b-2b). `internal/learning/fsrs` deleted; FSRS gone from learning (handler / dashboard / concepts / query.sql), today, stats, the MCP `learning_dashboard` retrieval view, the HTTP review route, and main wiring. Verified by executed learning/today/stats/mcp integration suites (testcontainers). `go mod tidy` also resolved the pre-existing W2 `a2a-go`/`genproto` go.mod debt. Schema (`review_cards`, `review_logs`) → W7.
 
 **W5c — frontend (separate commit; Angular build stays green even before this since removed JSON fields just become absent at runtime):** Angular learning **dashboard** page (due_today / retention / next_due), learning **summary** (`due_reviews`), the **today** page's due-reviews block, and any nav-count surfacing due_reviews. Verify `npx ng build` + affected specs via `npx ng test --watch=false --include=...`.
 
