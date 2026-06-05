@@ -13,8 +13,9 @@ private memory.
 ## Current state
 
 - **Branch:** `refactor/mcp-v3-contraction` (off `main` @ `effdb92`).
-- **MCP tools:** 49 → 40 so far (target ~11).
+- **MCP tools:** 49 → 40 (target ~11). **W4 (bookmark) changed this count by 0** — bookmark had no MCP surface (admin/public HTTP + frontend only).
 - **Invariant:** every commit is green (`go build ./... && go vet ./... && golangci-lint run && go test ./...`). The branch is always recoverable to the last commit; an uncommitted working tree may be mid-wave.
+- **Known pre-existing (NOT W4 — surfaced during W4, left untouched for scope):** `go.mod` has `github.com/a2aproject/a2a-go/v2` unused + a `google.golang.org/genproto/googleapis/api` tidy gap — both W2 (A2A removal) fallout. `go build`/`vet` pass; `go mod tidy` would clean them. Fold into W7 or a dedicated `chore(deps)` commit; do NOT mix into a feature wave.
 
 ### Done (committed, green)
 
@@ -25,6 +26,8 @@ private memory.
 | W1 | `8432536` | report-lane (research pkg, assign/create_report, search report source) |
 | W2a | `5e01145` | A2A dispatch tools + directive proposal/commit (threaded through commitment.go) |
 | W2b | `a31de0b` | task/artifact pkgs, morning pending_tasks, HTTP coordination/tasks routes, server stores |
+| W4 (backend) | `46e45b8` | bookmark pkg + public/admin routes + main wiring; tag-merge `bookmark_tags` coupling removed (2 sqlc queries + `MergeResult.BookmarkTagsMoved`); `api/integration_test.go` ActorMiddleware test repointed bookmark→note; stale-comment sweep |
+| W4 (frontend) | `7c91ecc` | bookmark public page, admin list, inspector renderer, BookmarkService deleted; routing/nav/nav-counts/command-palette/keyboard-shortcuts/activity/inspector-union/BookmarkDetail surgically cut; tsc+lint+build+specs green |
 
 ---
 
@@ -43,17 +46,16 @@ private memory.
 
 ## Remaining waves (mapped; cut-lists are starting points — re-grep at execution time)
 
-### Recommended order: W4 → W5 → (W6 + W3 + W9 as one briefing cluster) → W7 → W8 → frontend → W10
+### Recommended order: ~~W4~~ done → **W5 (next)** → (W6 + W3 + W9 as one briefing cluster) → W7 → W8 → frontend → W10
 
-### W4 — bookmark, FULL feature removal  *(clean standalone — good next)*
-**Verified footprint (2026-06-05):** non-test importers = `cmd/app/main.go`, `cmd/app/routes.go`. Routes: public `GET /api/bookmarks` + `/api/bookmarks/{slug}` (routes.go:132-133); admin List/Get/Create/Update/Delete (routes.go:169-173); import (routes.go:29) + handler field `bookmark *bookmark.Handler` (routes.go:54). main.go: import (33), `bookmarkStore := bookmark.NewStore` (132), `bookmark.NewHandler(bookmarkStore, topicStore, tagStore, logger)` (195). Tests to clean: `internal/api/integration_test.go` (imports bookmark — public-API tests), `internal/bookmark/integration_test.go` (deleted with pkg). No other non-test Go refs (only comments in content.go/project.go + the generated db model). KEEP `search.Kind` KindBookmark (roadmap placeholder, per ledger E2).
-- `git rm -r internal/bookmark`.
-- HTTP: remove `/api/admin/bookmarks*` + public `/api/bookmarks*` routes (cmd/app/routes.go), the `bookmark` handler field, and main.go `bookmarkStore` + `bookmark.NewHandler` wiring + import.
-- Public read: check `cmd/app/routes.go` for `/api/bookmarks`, `/api/bookmarks/{slug}` (public site).
-- `internal/search`: the `search.Kind` `KindBookmark` constant is declared-but-unwired (see ledger §1 / E2 decision — Koopa KEPT the 7 roadmap Kind constants, so do NOT remove KindBookmark unless re-confirmed).
-- sqlc.yaml: remove `internal/bookmark/query.sql`; `sqlc generate`.
-- Frontend: delete `frontend/src/app/admin/knowledge/bookmarks/*` pages + `bookmark.service.ts` + routes; the public bookmarks page if any. Verify with a frontend build.
+### W4 — bookmark, FULL feature removal  ✅ DONE (`46e45b8` backend, `7c91ecc` frontend)
+**Footprint correction (the original map was incomplete — re-grep at execution time caught it; lessons for later waves):**
+- The original footprint claimed "no other non-test Go refs (only comments)". WRONG: `internal/tag` had real coupling — `MergeTags` reassigned `bookmark_tags` via `DeleteDuplicateBookmarkTags`/`ReassignBookmarkTags` (tag/query.sql) + `MergeResult.BookmarkTagsMoved` (tag.go). Removed in W4. **This was necessary, not optional:** the queries had to go BEFORE W7 drops the `bookmark_tags` table, else `sqlc generate` in W7 fails on a query referencing a dropped table. **General rule for every feature-removal wave: drop ALL sqlc queries touching that feature's tables in the code wave, so the W7 table-drop generates cleanly.**
+- `internal/api/integration_test.go` was NOT "public-API tests" — it is the ActorMiddleware tx/audit-actor contract test that used **bookmark Create as its representative audited route**. Deleting bookmark would have destroyed that coverage, so it was **repointed to `note` Create** (an audited entity in the MCP-v3 keep-set). `topic`/`tag` were rejected as repoint targets — they are NOT in the `activity_events.entity_type` CHECK and have no audit trigger (only `todo/goal/milestone/project/content/bookmark/note/learning_*` are audited).
+- Stale-comment sweep (deleted-package/symbol refs): note/handler.go, content/content.go, mcp/content.go, project/project.go, tag/store.go, api/middleware.go, mcp/ops/types.go, content_test.go, url.go. The `bookmarks`-TABLE comments that describe the still-live schema relationship (feed/entry/store.go `source_feed_entry_id` FK, url.go `bookmarks.url_hash`) were left for the W7 sweep.
+- KEPT (per ledger E2): `search.Kind` `KindBookmark` roadmap placeholder; the generated `db.Bookmark*` models (vanish in W7 with the table).
 - Schema (`bookmarks`, `bookmark_topics`, `bookmark_tags`) → W7.
+- **Frontend verify lesson:** the unit-test builder is `@angular/build:unit-test`. Raw `npx vitest run <file>` fails with "describe is not defined" (bypasses the builder's TestBed/globals init) — ALWAYS use `npx ng test --watch=false --include='<spec glob>'` (supports `--include`/`--filter` for scoping). W4 verified via `npx tsc --noEmit` + `npx ng lint` + `npx ng build` + the 3 affected specs (28 tests green).
 
 ### W5 — FSRS / spaced-repetition  *(clean standalone)*
 - `git rm -r internal/learning/fsrs`.
