@@ -24,12 +24,6 @@ func TestValidators(t *testing.T) {
 			bad:  []string{"", "HIGH", "urgent", "none", "light"},
 		},
 		{
-			name: "task_priority",
-			fn:   isValidTaskPriority,
-			good: []string{"high", "medium", "low"},
-			bad:  []string{"", "p0", "critical", "Medium"},
-		},
-		{
 			name: "content_status",
 			fn:   isValidContentStatus,
 			good: []string{"draft", "review", "published", "archived"},

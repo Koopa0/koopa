@@ -1,7 +1,7 @@
 // Copyright 2026 Koopa. All rights reserved.
 
 // validate.go holds shared MCP input validators used across KEPT tools
-// (capture_inbox, advance_work, manage_plan, content, goals). They enforce
+// (capture_inbox, manage_plan, content, learning). They enforce
 // schema CHECK-constraint vocabularies client-side so handlers return a
 // specific error instead of a generic Postgres CheckViolation.
 
@@ -37,19 +37,8 @@ func validateSlug(fieldName, s string) error {
 	return fmt.Errorf("invalid %s %q: must be lowercase kebab-case (pattern: %s)", fieldName, s, slugPattern.String())
 }
 
-// isValidTaskPriority reports whether p matches the tasks.priority CHECK
-// constraint vocabulary. Mirrors the enum in migrations/001_initial.up.sql.
-func isValidTaskPriority(p string) bool {
-	switch p {
-	case "high", "medium", "low":
-		return true
-	default:
-		return false
-	}
-}
-
 // isValidEnergy mirrors the todos.energy CHECK in 001_initial.up.sql.
-// Used by capture_inbox and advance_work(action=clarify).
+// Used by capture_inbox.
 func isValidEnergy(e string) bool {
 	switch e {
 	case "high", "medium", "low":
