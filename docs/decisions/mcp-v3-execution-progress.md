@@ -13,8 +13,9 @@ private memory.
 ## Current state
 
 - **Branch:** `refactor/mcp-v3-contraction` (off `main` @ `effdb92`).
-- **MCP tools:** 49 → 40 (target ~11). **W4 (bookmark) changed this count by 0** — bookmark had no MCP surface (admin/public HTTP + frontend only).
+- **MCP tools:** 49 → 38 (target ~11). W4 changed the count by 0 (no MCP surface); W5 by 0 (FSRS was a field/view, not a standalone tool); W6 C1 slice-1 removed `system_status` + `manage_feeds` (40 → 38).
 - **Invariant:** every commit is green (`go build ./... && go vet ./... && golangci-lint run && go test ./...`). The branch is always recoverable to the last commit; an uncommitted working tree may be mid-wave.
+- **Acceptance protocol (owner decision 2026-06-06):** NO per-wave 驗收 — execute straight through W10. Acceptance = a single adversarial-review **workflow** over the whole branch AFTER W10 completes, then PR. **Anti-drift discipline during execution:** every removal is anchored to the ledger (§1 target surface / §2 admin-only / §3 retired); KEPT code (shared validators, backend stores, HTTP handlers) is zero-behaviour-change; no scope creep into adjacent code. Each slice runs the green gate + an adversarial "no dangling refs / kept-surface intact" check before commit.
 - **Known pre-existing (NOT W4 — surfaced during W4, left untouched for scope):** `go.mod` has `github.com/a2aproject/a2a-go/v2` unused + a `google.golang.org/genproto/googleapis/api` tidy gap — both W2 (A2A removal) fallout. `go build`/`vet` pass; `go mod tidy` would clean them. Fold into W7 or a dedicated `chore(deps)` commit; do NOT mix into a feature wave.
 
 ### Done (committed, green)
