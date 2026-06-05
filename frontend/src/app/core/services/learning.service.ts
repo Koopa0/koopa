@@ -43,9 +43,7 @@ export interface SessionsListQuery {
   sort?: 'started_at';
 }
 
-export type ReviewRating = 'again' | 'hard' | 'good' | 'easy';
-
-/** Learning-domain reads: summary, dashboard, concepts, sessions, plans, FSRS reviews. */
+/** Learning-domain reads: summary, dashboard, concepts, sessions, plans. */
 @Injectable({ providedIn: 'root' })
 export class LearningService {
   private readonly api = inject(ApiService);
@@ -154,18 +152,4 @@ export class LearningService {
     );
   }
 
-  /** Record an FSRS review; response has the new `due` / `retention`. */
-  recordReview(
-    cardId: string,
-    rating: ReviewRating,
-    attemptId?: string,
-  ): Observable<{ card_id: string; due: string; retention: number }> {
-    const body: Record<string, string> = { rating };
-    if (attemptId) body['attempt_id'] = attemptId;
-    return this.api.postData<{
-      card_id: string;
-      due: string;
-      retention: number;
-    }>(`/api/admin/learning/reviews/${cardId}`, body);
-  }
 }

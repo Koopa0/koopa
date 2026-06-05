@@ -7,7 +7,6 @@ import { ContentService } from '../../../core/services/content.service';
 import { HypothesisService } from '../../../core/services/hypothesis.service';
 import { TaskService } from '../../../core/services/task.service';
 import { DailyPlanService } from '../../../core/services/daily-plan.service';
-import { LearningService } from '../../../core/services/learning.service';
 import { SystemService } from '../../../core/services/system.service';
 
 // Track 1B — Today fan-out contract test.
@@ -34,7 +33,6 @@ interface FanoutMocks {
   hypotheses: unknown[];
   completedTasks: unknown[];
   plan: unknown;
-  summary: unknown;
   health: unknown;
 }
 
@@ -81,7 +79,6 @@ function happyFixtures(): FanoutMocks {
       done: 1,
       overdue_count: 1,
     },
-    summary: { streak_days: 4, due_reviews: 3, domains: [] },
     health: {
       feeds: { failing_feeds: [{ name: 'Go Blog', error: 'timeout' }] },
       pipelines: { failed: 2 },
@@ -108,7 +105,6 @@ function configure(
       { provide: HypothesisService, useValue: { list: () => src('hypotheses', fx.hypotheses) } },
       { provide: TaskService, useValue: { completed: () => src('completedTasks', fx.completedTasks) } },
       { provide: DailyPlanService, useValue: { today: () => src('plan', fx.plan) } },
-      { provide: LearningService, useValue: { summary: () => src('summary', fx.summary) } },
       { provide: SystemService, useValue: { getHealth: () => src('health', fx.health) } },
     ],
   });
@@ -125,12 +121,11 @@ describe('TodayService.today() — fan-out composition', () => {
     vi.useRealTimers();
   });
 
-  it('composes the four Today regions from all six sources', async () => {
+  it('composes the four Today regions from all five sources', async () => {
     const service = configure(happyFixtures());
     const vm = await firstValue(service);
 
     expect(vm.date).toBe('2026-05-21');
-    expect(vm.dueReviewsCount).toBe(3);
 
     // Plan: backend-realistic items map to the Today view-model {id,title,status}
     // (title ← backend `title`, status ← backend `state`). Fictional `{id:'p1'}`
@@ -180,19 +175,17 @@ describe('TodayService.today() — fan-out composition', () => {
       hypotheses: [],
       completedTasks: [],
       plan: { date: '2026-05-21', items: [], total: 0, done: 0, overdue_count: 0 },
-      summary: { streak_days: 0, due_reviews: 0, domains: [] },
       health: { feeds: { failing_feeds: [] }, pipelines: { failed: 0 }, database: {} },
     });
     const vm = await firstValue(service);
 
     expect(vm.awaitingJudgment).toEqual([]);
     expect(vm.warnings).toEqual([]);
-    expect(vm.dueReviewsCount).toBe(0);
     expect(vm.plan?.items).toEqual([]);
     expect(vm.plan?.total).toBe(0);
   });
 
-  // Per-source degradation across all six fan-out sources. (TodayService has
+  // Per-source degradation across all five fan-out sources. (TodayService has
   // NO open/active-task source — the only task source is `completed`, covered
   // by the completedTasks case — so that bullet is N/A by current design.)
   // Each case asserts the failing slice degrades AND a surviving region is
@@ -227,13 +220,6 @@ describe('TodayService.today() — fan-out composition', () => {
       assert: (vm) => {
         expect(vm.plan).toBeNull();
         expect(vm.awaitingJudgment).toHaveLength(3); // survivor
-      },
-    },
-    {
-      source: 'summary',
-      assert: (vm) => {
-        expect(vm.dueReviewsCount).toBe(0);
-        expect(vm.awaitingJudgment).toHaveLength(3);
       },
     },
     {

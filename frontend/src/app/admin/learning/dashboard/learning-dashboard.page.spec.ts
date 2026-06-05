@@ -9,7 +9,7 @@ import { NotificationService } from '../../../core/services/notification.service
 import { AdminTopbarService } from '../../admin-layout/admin-topbar.service';
 import type { DashboardOverview } from '../../../core/models/learning.model';
 
-// Product-truth guard for the Learning dashboard (FSRS review surface).
+// Product-truth guard for the Learning dashboard.
 // `/api/admin/learning/dashboard` is a live backend route, so the page
 // must never tell the operator the endpoint "is not live yet". On a
 // successful load the stale-availability copy is absent; on a real
@@ -18,9 +18,7 @@ import type { DashboardOverview } from '../../../core/models/learning.model';
 function emptyOverview(): DashboardOverview {
   return {
     streak_days: 0,
-    due_reviews_count: 0,
     concepts: { count_total: 0, counts_by_domain: {}, rows: [] },
-    due_today: { count: 0, items: [] },
     recent_observations: [],
   };
 }

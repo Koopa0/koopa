@@ -90,7 +90,6 @@
           <th scope="col" class="px-3 py-2 font-normal">Mastery</th>
           <th scope="col" class="px-3 py-2 font-normal">W / I / M</th>
           <th scope="col" class="px-3 py-2 font-normal">Obs</th>
-          <th scope="col" class="px-3 py-2 font-normal">Next due</th>
         </tr>
       </thead>
       <tbody>
@@ -129,13 +128,6 @@
               <span class="text-emerald-300">{{ row.mastery_counts.mastery }}</span>
             </td>
             <td class="px-3 py-2 font-mono text-[11px] text-zinc-400">{{ row.obs_count }}</td>
-            <td class="px-3 py-2 text-zinc-400">
-              {{
-                row.next_due_target
-                  ? (row.next_due_target.title + ' · ' + (row.next_due_target.due_at ?? '—'))
-                  : '—'
-              }}
-            </td>
           </tr>
         }
       </tbody>

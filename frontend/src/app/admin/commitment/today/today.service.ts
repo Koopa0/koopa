@@ -5,14 +5,12 @@ import { ContentService } from '../../../core/services/content.service';
 import { HypothesisService } from '../../../core/services/hypothesis.service';
 import { TaskService } from '../../../core/services/task.service';
 import { DailyPlanService } from '../../../core/services/daily-plan.service';
-import { LearningService } from '../../../core/services/learning.service';
 import { SystemService } from '../../../core/services/system.service';
 import type { ApiContent } from '../../../core/models/api.model';
 import type {
   CoordinationTask,
   DailyPlanResponse,
   Hypothesis,
-  LearningSummary,
 } from '../../../core/models/workbench.model';
 import type { SystemHealth } from '../../../core/models/admin.model';
 
@@ -88,7 +86,6 @@ export interface TodayVm {
   date: string;
   awaitingJudgment: JudgmentRow[];
   plan: PlanSummary | null;
-  dueReviewsCount: number;
   warnings: TodayWarning[];
 }
 
@@ -108,7 +105,6 @@ export class TodayService {
   private readonly hypothesisService = inject(HypothesisService);
   private readonly taskService = inject(TaskService);
   private readonly dailyPlanService = inject(DailyPlanService);
-  private readonly learningService = inject(LearningService);
   private readonly systemService = inject(SystemService);
 
   today(): Observable<TodayVm> {
@@ -117,11 +113,10 @@ export class TodayService {
       this.unverifiedHypotheses(),
       this.completedTasks(),
       this.plan(),
-      this.learningSummary(),
       this.systemHealth(),
     ]).pipe(
       map(
-        ([contents, hypotheses, tasks, plan, learning, health]): TodayVm => ({
+        ([contents, hypotheses, tasks, plan, health]): TodayVm => ({
           date: todayIso(),
           awaitingJudgment: [
             ...contents.map(contentRow),
@@ -133,7 +128,6 @@ export class TodayService {
               new Date(b.submittedAt).getTime(),
           ),
           plan,
-          dueReviewsCount: learning?.due_reviews ?? 0,
           warnings: buildWarnings(health),
         }),
       ),
@@ -184,12 +178,6 @@ export class TodayService {
       }),
       catchError(() => of<PlanSummary | null>(null)),
     );
-  }
-
-  private learningSummary(): Observable<LearningSummary | null> {
-    return this.learningService
-      .summary()
-      .pipe(catchError(() => of<LearningSummary | null>(null)));
   }
 
   private systemHealth(): Observable<SystemHealth | null> {

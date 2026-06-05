@@ -32,15 +32,6 @@ export interface DashboardConceptRow {
   obs_count: number;
   mastery_value: number;
   mastery_stage: MasteryStage;
-  next_due: string | null;
-}
-
-export interface DashboardDueItem {
-  card_id: string;
-  target: { id: string; title: string };
-  domain: LearningDomain;
-  retention: number;
-  last_reviewed_at: string | null;
 }
 
 export interface DashboardObservation {
@@ -56,15 +47,10 @@ export interface DashboardObservation {
 
 export interface DashboardOverview {
   streak_days: number;
-  due_reviews_count: number;
   concepts: {
     count_total: number;
     counts_by_domain: Record<string, number>;
     rows: DashboardConceptRow[];
-  };
-  due_today: {
-    count: number;
-    items: DashboardDueItem[];
   };
   recent_observations: DashboardObservation[];
 }
@@ -79,11 +65,6 @@ export interface ConceptRow {
   mastery_counts: MasteryCounts;
   obs_count: number;
   parent_slug: string | null;
-  next_due_target: {
-    id: string;
-    title: string;
-    due_at: string | null;
-  } | null;
 }
 
 export interface ConceptRelation {
@@ -114,7 +95,7 @@ export interface ConceptRecentAttempt {
 /**
  * Concept detail wire shape returned by GET /concepts/:slug?domain=...
  * Intentionally NOT extending ConceptRow: the detail endpoint omits
- * obs_count / parent_slug / next_due_target (those are list-only concerns)
+ * obs_count / parent_slug (those are list-only concerns)
  * and adds name / description / low_confidence_counts plus the structural
  * sub-objects below.
  */

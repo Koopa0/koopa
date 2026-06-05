@@ -12,15 +12,13 @@ import { TodayService, type TodayVm, type JudgmentRow } from './today.service';
 import { AdminTopbarService } from '../../admin-layout/admin-topbar.service';
 
 /**
- * Today — the Commitment landing page. Four stacked regions:
+ * Today — the Commitment landing page. Three stacked regions:
  *
  *   HERO     — content in review + unverified hypotheses + completed
  *              tasks awaiting human approval. Hidden when empty; PLAN
  *              promotes to the top.
  *   PLAN     — today's daily_plan_items with status glyphs and the
  *              top two active items for quick context.
- *   REVIEWS  — count of FSRS cards due within 24h plus a CTA to the
- *              review session.
  *   WARNINGS — cell-state envelope (failing feeds, pipeline failures).
  *              Only warn / error rows render; clean state is silent.
  *
@@ -55,9 +53,6 @@ export class TodayPageComponent {
   );
   protected readonly hasPlan = computed(
     () => (this.vm()?.plan?.items ?? []).length > 0,
-  );
-  protected readonly hasReviews = computed(
-    () => (this.vm()?.dueReviewsCount ?? 0) > 0,
   );
   protected readonly hasWarnings = computed(
     () => (this.vm()?.warnings ?? []).length > 0,

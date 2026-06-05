@@ -327,7 +327,6 @@ export interface DomainMastery {
 
 export interface LearningSummary extends CellState {
   streak_days: number;
-  due_reviews: number;
   domains: DomainMastery[];
 }
 

@@ -88,8 +88,8 @@
       </div>
     </div>
 
-    <!-- 3-card grid -->
-    <div class="grid flex-1 gap-5 lg:grid-cols-3">
+    <!-- 2-card grid -->
+    <div class="grid flex-1 gap-5 lg:grid-cols-2">
       <!-- Card 1: Concepts -->
       <section
         class="flex min-h-0 flex-col rounded-sm border border-zinc-800"
@@ -157,78 +157,7 @@
         }
       </section>
 
-      <!-- Card 2: Due today (FSRS) -->
-      <section
-        class="flex min-h-0 flex-col rounded-sm border border-zinc-800"
-        aria-labelledby="due-card-heading"
-        data-testid="learning-card-due"
-      >
-        <header
-          class="flex items-baseline justify-between border-b border-zinc-800 px-4 py-3"
-        >
-          <h2
-            id="due-card-heading"
-            class="font-mono text-[11px] uppercase tracking-wider text-zinc-400"
-          >
-            Due today
-          </h2>
-          <span class="font-mono text-[10px] text-zinc-500">
-            {{ v.due_today.count }}
-            {{ v.due_today.count === 1 ? 'card' : 'cards' }}
-          </span>
-        </header>
-        @if (v.due_today.items.length === 0) {
-          <p class="px-4 py-6 text-xs text-zinc-500">
-            Nothing due — queue is caught up.
-          </p>
-        } @else {
-          <ul class="flex-1 divide-y divide-zinc-900 overflow-y-auto">
-            @for (item of v.due_today.items; track item.card_id) {
-              <li class="px-4 py-3">
-                <div class="mb-1 flex items-baseline justify-between gap-2">
-                  <div class="min-w-0 flex-1 truncate text-sm text-zinc-100">
-                    {{ item.target.title }}
-                  </div>
-                  <span
-                    class="shrink-0 font-mono text-[10px] text-zinc-500"
-                  >
-                    retention
-                    {{ item.retention.toFixed(2) }}
-                  </span>
-                </div>
-                <div class="mb-2 font-mono text-[10px] text-zinc-500">
-                  {{ item.domain }}
-                  @if (item.last_reviewed_at) {
-                    · last {{ item.last_reviewed_at | date: 'short' }}
-                  }
-                </div>
-                <div
-                  class="flex flex-wrap gap-1"
-                  role="group"
-                  aria-label="FSRS rating"
-                >
-                  @for (r of ratings; track r) {
-                    <button
-                      type="button"
-                      (click)="recordReview(item.card_id, r)"
-                      [disabled]="ratingInFlight() === item.card_id"
-                      class="rounded-xs border border-zinc-700 bg-zinc-900 px-2 py-0.5 text-[11px] capitalize transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500 disabled:cursor-not-allowed disabled:opacity-50"
-                      [class]="ratingClass(r)"
-                      [attr.data-testid]="
-                        'learning-review-' + item.card_id + '-' + r
-                      "
-                    >
-                      {{ r }}
-                    </button>
-                  }
-                </div>
-              </li>
-            }
-          </ul>
-        }
-      </section>
-
-      <!-- Card 3: Recent observations -->
+      <!-- Card 2: Recent observations -->
       <section
         class="flex min-h-0 flex-col rounded-sm border border-zinc-800"
         aria-labelledby="obs-card-heading"

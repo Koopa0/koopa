@@ -140,8 +140,6 @@ export interface ContentSummary {
 // === Learn ===
 
 export interface LearningDashboard {
-  due_reviews_count: number;
-  due_reviews_today: number;
   recent_sessions: SessionSummary[];
   weakness_spotlight: ConceptWeakness[];
   mastery_by_domain: DomainMastery[];

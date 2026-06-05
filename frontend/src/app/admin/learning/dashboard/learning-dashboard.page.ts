@@ -10,30 +10,17 @@ import { rxResource } from '@angular/core/rxjs-interop';
 import { Router, RouterLink } from '@angular/router';
 import { DatePipe } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import {
-  LearningService,
-  type ReviewRating,
-} from '../../../core/services/learning.service';
-import { NotificationService } from '../../../core/services/notification.service';
+import { LearningService } from '../../../core/services/learning.service';
 import { AdminTopbarService } from '../../admin-layout/admin-topbar.service';
 import type {
   DashboardOverview,
   ObservationConfidence,
 } from '../../../core/models/learning.model';
 
-const RATINGS: readonly ReviewRating[] = ['again', 'hard', 'good', 'easy'];
-const RATING_CLASS: Record<ReviewRating, string> = {
-  again: 'text-red-300 hover:bg-red-950/40',
-  hard: 'text-amber-300 hover:bg-amber-950/40',
-  good: 'text-sky-300 hover:bg-sky-950/40',
-  easy: 'text-emerald-300 hover:bg-emerald-950/40',
-};
-
 /**
- * Learning Dashboard / Three cards from
- * the overview view: Concepts, Due today (FSRS), Recent observations.
- * All backing endpoints are live; on an unexpected 404/405/501 the
- * page shows a "couldn't load" error state.
+ * Learning Dashboard / Two cards from the overview view: Concepts and
+ * Recent observations. All backing endpoints are live; on an unexpected
+ * 404/405/501 the page shows a "couldn't load" error state.
  */
 @Component({
   selector: 'app-learning-dashboard-page',
@@ -45,12 +32,9 @@ const RATING_CLASS: Record<ReviewRating, string> = {
 })
 export class LearningDashboardPageComponent {
   private readonly learningService = inject(LearningService);
-  private readonly notifications = inject(NotificationService);
   private readonly topbar = inject(AdminTopbarService);
   private readonly router = inject(Router);
   private readonly destroyRef = inject(DestroyRef);
-
-  protected readonly ratings = RATINGS;
 
   protected readonly confidenceFilterOptions: readonly (
     | ObservationConfidence
@@ -89,9 +73,6 @@ export class LearningDashboardPageComponent {
     return false;
   });
 
-  private readonly _ratingInFlight = signal<string | null>(null);
-  protected readonly ratingInFlight = this._ratingInFlight.asReadonly();
-
   protected readonly masteryCounts = computed(() => {
     const vm = this.vm();
     if (!vm) return { struggling: 0, developing: 0, solid: 0 };
@@ -115,36 +96,9 @@ export class LearningDashboardPageComponent {
     this.confidenceFilter.set(value);
   }
 
-  protected ratingClass(r: ReviewRating): string {
-    return RATING_CLASS[r];
-  }
-
   protected openConcept(slug: string, domain: string): void {
     this.router.navigate(['/admin/learning/concepts', slug], {
       queryParams: { domain },
-    });
-  }
-
-  protected recordReview(cardId: string, rating: ReviewRating): void {
-    if (this._ratingInFlight()) return;
-    this._ratingInFlight.set(cardId);
-    this.learningService.recordReview(cardId, rating).subscribe({
-      next: () => {
-        this._ratingInFlight.set(null);
-        this.notifications.success(`Recorded ${rating}.`);
-        this.resource.reload();
-      },
-      error: (err: unknown) => {
-        this._ratingInFlight.set(null);
-        const status = err instanceof HttpErrorResponse ? err.status : null;
-        if (status === 404 || status === 405 || status === 501) {
-          this.notifications.error(
-            'Could not record the review — please refresh and try again.',
-          );
-        } else {
-          this.notifications.error('Failed to record review.');
-        }
-      },
     });
   }
 

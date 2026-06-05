@@ -10,7 +10,6 @@ import type { LearningSummary } from '../models/workbench.model';
 const mockSummary: LearningSummary = {
   state: 'ok',
   streak_days: 7,
-  due_reviews: 4,
   domains: [
     {
       domain: 'leetcode',
@@ -45,7 +44,6 @@ describe('LearningService', () => {
   it('should fetch learning summary', () => {
     service.summary().subscribe((res) => {
       expect(res.streak_days).toBe(7);
-      expect(res.due_reviews).toBe(4);
       expect(res.domains[0].concepts_developing).toBe(6);
       expect(res.state).toBe('ok');
     });

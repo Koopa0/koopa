@@ -29,7 +29,6 @@ function vmWithPlan(): TodayVm {
       done: 1,
       overdue: 0,
     },
-    dueReviewsCount: 0,
     warnings: [],
   };
 }
