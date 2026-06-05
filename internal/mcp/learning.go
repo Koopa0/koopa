@@ -382,26 +382,6 @@ func clampDurationMinutes(d *FlexInt) *int32 {
 	return &v
 }
 
-// resolveDueWithinHours applies the retrieval-view window contract: nil input
-// (caller did not supply due_within_hours) defaults to 24 hours — the typical
-// morning-review window. An explicit FlexInt(0) survives as strict
-// "due-right-now" because the *FlexInt indirection lets us distinguish unset
-// from zero (a plain int would collapse the two). Negative values clamp to 0;
-// values above 168 (one week) clamp to 168.
-func resolveDueWithinHours(in *FlexInt) int {
-	if in == nil {
-		return 24
-	}
-	h := int(*in)
-	if h < 0 {
-		return 0
-	}
-	if h > 168 {
-		return 168
-	}
-	return h
-}
-
 // lookupPlanContext returns the active plan entries that contain targetID, so
 // record_attempt can expose plan membership to the caller. Lookup failures
 // are logged and return an empty slice — plan context is auxiliary.
@@ -613,11 +593,10 @@ func (s *Server) endSession(ctx context.Context, _ *mcp.CallToolRequest, input E
 // --- learning_dashboard ---
 
 type LearningDashboardInput struct {
-	Domain           *string  `json:"domain,omitempty" jsonschema_description:"Filter by domain"`
-	View             *string  `json:"view,omitempty" jsonschema_description:"View: overview (default), mastery, weaknesses, retrieval, timeline, variations"`
-	WindowDays       FlexInt  `json:"window_days,omitempty" jsonschema_description:"Lookback window in days. Observations older than this are ignored. Defaults per view: mastery=60 (one Google interview prep cycle — avoids flicker for bursty practice), other views=30. Range 1..365."`
-	ConfidenceFilter *string  `json:"confidence_filter,omitempty" jsonschema_description:"Only meaningful for mastery and weaknesses views. 'high' (default) restricts to directly-evidenced observations; 'all' includes coach-inferred (low confidence). Other views ignore this field."`
-	DueWithinHours   *FlexInt `json:"due_within_hours,omitempty" jsonschema_description:"Retrieval view only. Extends the due cutoff into the future so the caller can preview what is due within the next N hours. Default 24 (today's review window — includes items due now plus those becoming due over the next day, the typical morning-review usage). Pass 0 for strict 'due-right-now' (use to confirm zero overdue items). Pass up to 168 (one week) for broader pre-review planning. Other views ignore this field."`
+	Domain           *string `json:"domain,omitempty" jsonschema_description:"Filter by domain"`
+	View             *string `json:"view,omitempty" jsonschema_description:"View: overview (default), mastery, weaknesses, timeline, variations"`
+	WindowDays       FlexInt `json:"window_days,omitempty" jsonschema_description:"Lookback window in days. Observations older than this are ignored. Defaults per view: mastery=60 (one Google interview prep cycle — avoids flicker for bursty practice), other views=30. Range 1..365."`
+	ConfidenceFilter *string `json:"confidence_filter,omitempty" jsonschema_description:"Only meaningful for mastery and weaknesses views. 'high' (default) restricts to directly-evidenced observations; 'all' includes coach-inferred (low confidence). Other views ignore this field."`
 }
 
 // LearningDashboardOutput is the dashboard tool's response.
@@ -636,7 +615,6 @@ type LearningDashboardOutput struct {
 	Sessions      []learning.Session         `json:"sessions,omitempty"`
 	Mastery       []MasteryRow               `json:"mastery,omitempty"`
 	Weaknesses    []learning.WeaknessRow     `json:"weaknesses,omitempty"`
-	Retrieval     []learning.RetrievalTarget `json:"retrieval,omitempty"`
 	Timeline      []learning.TimelineSession `json:"timeline,omitempty"`
 	Variations    []learning.TargetRelation  `json:"variations,omitempty"`
 }
@@ -660,8 +638,6 @@ func (o LearningDashboardOutput) MarshalJSON() ([]byte, error) {
 		base["mastery"] = ensureSlice(o.Mastery)
 	case "weaknesses":
 		base["weaknesses"] = ensureSlice(o.Weaknesses)
-	case "retrieval":
-		base["retrieval"] = ensureSlice(o.Retrieval)
 	case "timeline":
 		base["timeline"] = ensureSlice(o.Timeline)
 	case "variations":
@@ -774,8 +750,6 @@ func (s *Server) learningDashboard(ctx context.Context, _ *mcp.CallToolRequest, 
 		confidenceFilter = *input.ConfidenceFilter
 	}
 
-	dueWithinHours := resolveDueWithinHours(input.DueWithinHours)
-
 	var (
 		result LearningDashboardOutput
 		err    error
@@ -787,8 +761,6 @@ func (s *Server) learningDashboard(ctx context.Context, _ *mcp.CallToolRequest, 
 		result, err = s.dashboardMastery(ctx, domain, since, confidenceFilter)
 	case "weaknesses":
 		result, err = s.dashboardWeaknesses(ctx, domain, since, confidenceFilter)
-	case "retrieval":
-		result, err = s.dashboardRetrieval(ctx, domain, dueWithinHours)
 	case "timeline":
 		result, err = s.dashboardTimeline(ctx, domain, since)
 	case "variations":
@@ -836,22 +808,6 @@ func (s *Server) dashboardWeaknesses(ctx context.Context, domain *string, since 
 		View:       "weaknesses",
 		Weaknesses: rows,
 		Total:      len(rows),
-	}, nil
-}
-
-func (s *Server) dashboardRetrieval(ctx context.Context, domain *string, dueWithinHours int) (LearningDashboardOutput, error) {
-	// due_within_hours extends the cutoff into the future — 0 keeps the
-	// original behavior (only cards already due). Clamp happens at the
-	// caller; this method just applies it.
-	dueBefore := time.Now().Add(time.Duration(dueWithinHours) * time.Hour)
-	items, err := s.learn.RetrievalQueue(ctx, domain, dueBefore, 50)
-	if err != nil {
-		return LearningDashboardOutput{}, fmt.Errorf("querying retrieval queue: %w", err)
-	}
-	return LearningDashboardOutput{
-		View:      "retrieval",
-		Retrieval: items,
-		Total:     len(items),
 	}, nil
 }
 

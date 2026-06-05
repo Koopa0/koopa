@@ -305,31 +305,6 @@ WHERE ao.signal_type = 'weakness'
 GROUP BY c.slug, c.name, c.domain, ao.category
 ORDER BY critical_count DESC, occurrence_count DESC;
 
--- name: RetrievalQueue :many
--- Learning targets due for spaced review from review_cards.
--- Used by learning_dashboard retrieval view.
---
--- drift_suspect: true when the card's most recent attempt-driven review
--- could not be applied cleanly (last_sync_drift_at is more recent than the
--- last attempt on the target). Surfaces FSRS scheduling drift to the
--- consumer so the coach can choose to manually re-review instead of
--- trusting a possibly-stale due date.
-SELECT rc.id AS card_id, rc.due,
-       lt.id AS target_id, lt.title, lt.domain, lt.difficulty, lt.external_id,
-       (rc.last_sync_drift_at IS NOT NULL
-        AND rc.last_sync_drift_at > COALESCE(
-            (SELECT MAX(attempted_at) FROM learning_attempts la WHERE la.learning_target_id = lt.id),
-            'epoch'::timestamptz
-        ))::bool AS drift_suspect,
-       rc.last_drift_reason
-FROM review_cards rc
-JOIN learning_targets lt ON lt.id = rc.learning_target_id
-WHERE rc.due <= @due_before
-  AND lt.archived_at IS NULL
-  AND (sqlc.narg('domain')::text IS NULL OR lt.domain = sqlc.narg('domain'))
-ORDER BY rc.due ASC
-LIMIT @max_results;
-
 -- name: SessionTimeline :many
 -- Recent sessions grouped by day with attempt counts.
 -- Used by learning_dashboard timeline view.

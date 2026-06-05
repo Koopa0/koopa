@@ -45,25 +45,6 @@ func ValidRelationType(r RelationType) bool {
 	return ok
 }
 
-// RetrievalTarget represents a learning target due for spaced review.
-//
-// DriftSuspect is true when the card's most recent attempt-driven review
-// could not be applied cleanly (see fsrs.MarkDrift). A consumer seeing this
-// flag should treat the due date as possibly stale — the recommended UX is
-// to re-review manually rather than trusting the schedule. DriftReason
-// labels the cause for debugging.
-type RetrievalTarget struct {
-	CardID       uuid.UUID `json:"card_id"`
-	Due          time.Time `json:"due"`
-	TargetID     uuid.UUID `json:"target_id"`
-	Title        string    `json:"title"`
-	Domain       string    `json:"domain"`
-	Difficulty   *string   `json:"difficulty,omitempty"`
-	ExternalID   *string   `json:"external_id,omitempty"`
-	DriftSuspect bool      `json:"drift_suspect"`
-	DriftReason  *string   `json:"drift_reason,omitempty"`
-}
-
 // TargetRelation represents a relationship between two learning targets,
 // with per-related-target attempt stats so the dashboard variations view can
 // drive decisions ("has Koopa tried this variant, and how did it go?")
@@ -383,34 +364,6 @@ func (s *Store) TargetVariations(ctx context.Context, domain *string, limit int3
 			RelatedAttemptCount:    r.RelatedAttemptCount,
 			RelatedLastOutcome:     r.RelatedLastOutcome,
 			RelatedLastAttemptedAt: r.RelatedLastAttemptedAt,
-		}
-	}
-	return result, nil
-}
-
-// RetrievalQueue returns learning targets due for spaced review.
-func (s *Store) RetrievalQueue(ctx context.Context, domain *string, dueBefore time.Time, limit int32) ([]RetrievalTarget, error) {
-	rows, err := s.q.RetrievalQueue(ctx, db.RetrievalQueueParams{
-		DueBefore:  dueBefore,
-		Domain:     domain,
-		MaxResults: limit,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("querying retrieval queue: %w", err)
-	}
-	result := make([]RetrievalTarget, len(rows))
-	for i := range rows {
-		r := &rows[i]
-		result[i] = RetrievalTarget{
-			CardID:       r.CardID,
-			Due:          r.Due,
-			TargetID:     r.TargetID,
-			Title:        r.Title,
-			Domain:       r.Domain,
-			Difficulty:   r.Difficulty,
-			ExternalID:   r.ExternalID,
-			DriftSuspect: r.DriftSuspect,
-			DriftReason:  r.LastDriftReason,
 		}
 	}
 	return result, nil

@@ -320,9 +320,9 @@ func LearningDashboard() Meta {
 		Writability: ReadOnly,
 		Stability:   StabilityStable,
 		Since:       since,
-		Description: "Learning analytics dashboard. Views: overview (sessions list), mastery (per-concept signal counts; mastery floor: <3 observations → always 'developing' regardless of signal distribution), weaknesses (cross-pattern weakness analysis by category+severity), retrieval (items with due <= now only; newly reviewed cards get future due dates and won't reappear until due), timeline (sessions with attempt stats by day), variations (problem relationship graph). Filter by domain and lookback period. Response shape is stable across views: {view, total, <view_key>: [...]} — the view-specific array is always present (empty [] on no data), other view keys are absent.",
+		Description: "Learning analytics dashboard. Views: overview (sessions list), mastery (per-concept signal counts; mastery floor: <3 observations → always 'developing' regardless of signal distribution), weaknesses (cross-pattern weakness analysis by category+severity), timeline (sessions with attempt stats by day), variations (problem relationship graph). Filter by domain and lookback period. Response shape is stable across views: {view, total, <view_key>: [...]} — the view-specific array is always present (empty [] on no data), other view keys are absent.",
 		FieldEnums: map[string][]string{
-			"view":              {"overview", "mastery", "weaknesses", "retrieval", "timeline", "variations"},
+			"view":              {"overview", "mastery", "weaknesses", "timeline", "variations"},
 			"confidence_filter": {"high", "all"},
 		},
 	}

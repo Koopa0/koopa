@@ -28,7 +28,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -215,97 +214,6 @@ func TestSymmetricRelation_ReverseInsertIdempotent(t *testing.T) {
 // drift_suspect) is asserted here so a future refactor that reintroduces
 // the silent-Again fallback fails loudly instead of quietly resetting
 // every FSRS interval.
-
-// TestDriftSignal_UnknownOutcome_SurfacedInRetrievalQueue exercises the
-// full drift path: unknown-outcome review → ErrUnknownOutcome → MarkDrift
-// → RetrievalQueue surfaces drift_suspect → known-outcome review clears
-// it.
-func TestDriftSignal_UnknownOutcome_SurfacedInRetrievalQueue(t *testing.T) {
-	ctx := t.Context()
-	truncateLearningTables(t)
-
-	targetID := seedTarget(t, "two-sum-drift-test")
-
-	fsrsStore := fsrs.NewStore(testPool)
-	learnStore := learning.NewStore(testPool)
-
-	now := time.Date(2026, 4, 22, 12, 0, 0, 0, time.UTC)
-
-	// Baseline: successful review creates a review_cards row. Without an
-	// existing card, MarkDrift is a silent no-op — drift_suspect has
-	// nowhere to land.
-	_, baselineDue, err := fsrsStore.ReviewByOutcome(ctx, targetID, "solved_independent", now)
-	if err != nil {
-		t.Fatalf("baseline ReviewByOutcome: %v", err)
-	}
-	if baselineDue.Sub(now) < 24*time.Hour {
-		t.Fatalf("baseline card due too soon: gap = %s, want >= 24h", baselineDue.Sub(now))
-	}
-
-	// Unknown outcome → sentinel must bubble up.
-	driftTime := now.Add(time.Hour)
-	_, _, err = fsrsStore.ReviewByOutcome(ctx, targetID, "bogus_outcome_value", driftTime)
-	if !errors.Is(err, fsrs.ErrUnknownOutcome) {
-		t.Fatalf("ReviewByOutcome(unknown) error = %v, want ErrUnknownOutcome", err)
-	}
-
-	// Stamp drift marker (this is what mcp.markFSRSDrift does in prod).
-	rows, err := fsrsStore.MarkDrift(ctx, targetID, "unknown_outcome")
-	if err != nil {
-		t.Fatalf("MarkDrift: %v", err)
-	}
-	if rows != 1 {
-		t.Fatalf("MarkDrift affected %d rows, want 1 (baseline card should exist)", rows)
-	}
-
-	// Retrieval queue must surface drift_suspect.
-	dueBefore := driftTime.Add(365 * 24 * time.Hour) // cast wide: we just want the target returned
-	items, err := learnStore.RetrievalQueue(ctx, nil, dueBefore, 50)
-	if err != nil {
-		t.Fatalf("RetrievalQueue: %v", err)
-	}
-	if len(items) == 0 {
-		t.Fatalf("RetrievalQueue returned 0 items, want the drifted target")
-	}
-
-	var got *learning.RetrievalTarget
-	for i := range items {
-		if items[i].TargetID == targetID {
-			got = &items[i]
-			break
-		}
-	}
-	if got == nil {
-		t.Fatalf("RetrievalQueue did not return target %s", targetID)
-	}
-	if !got.DriftSuspect {
-		t.Errorf("drift_suspect = false, want true (last_sync_drift_at should be more recent than last attempt)")
-	}
-	if got.DriftReason == nil || *got.DriftReason != "unknown_outcome" {
-		reason := "<nil>"
-		if got.DriftReason != nil {
-			reason = *got.DriftReason
-		}
-		t.Errorf("drift_reason = %q, want %q", reason, "unknown_outcome")
-	}
-
-	// A subsequent successful review must clear drift (forgiveness path —
-	// drift is marked, never sticky).
-	clearTime := driftTime.Add(time.Hour)
-	if _, _, err := fsrsStore.ReviewByOutcome(ctx, targetID, "solved_independent", clearTime); err != nil {
-		t.Fatalf("clearing ReviewByOutcome: %v", err)
-	}
-
-	items, err = learnStore.RetrievalQueue(ctx, nil, dueBefore, 50)
-	if err != nil {
-		t.Fatalf("RetrievalQueue (post-clear): %v", err)
-	}
-	for i := range items {
-		if items[i].TargetID == targetID && items[i].DriftSuspect {
-			t.Errorf("drift_suspect still true after successful review — drift markers not cleared by UpdateCardState")
-		}
-	}
-}
 
 // TestDriftSignal_MarkDrift_NoCardYet — MarkDrift on a target that has
 // never had a review (no review_cards row) must be a silent no-op. The
