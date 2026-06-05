@@ -240,10 +240,6 @@ func NewServer(pool *pgxpool.Pool, logger *slog.Logger, opts ...ServerOption) *S
 	addTool(s, toolFrom(ops.UpdateNote), s.updateNote)
 	addTool(s, toolFrom(ops.UpdateNoteMaturity), s.updateNoteMaturity)
 
-	// --- Feeds & system ---
-	addTool(s, toolFrom(ops.ManageFeeds), s.manageFeeds)
-	addTool(s, toolFrom(ops.SystemStatus), s.systemStatus)
-
 	// --- Extra: Cross-session & Aggregation ---
 	addTool(s, toolFrom(ops.SessionDelta), s.sessionDelta)
 	addTool(s, toolFrom(ops.WeeklySummary), s.weeklySummary)

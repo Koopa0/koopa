@@ -13,7 +13,7 @@ is hand-maintained.
 > Run `go generate ./internal/mcp/ops` after any change to the tool surface;
 > the drift test `TestToolInventoryDocInSync` fails CI if this is stale.
 
-**40 tools** across 7 domains.
+**38 tools** across 7 domains.
 
 | Domain | Count |
 |---|---|
@@ -22,9 +22,9 @@ is hand-maintained.
 | `a2a` | 0 |
 | `meta` | 9 |
 | `learning` | 7 |
-| `content` | 11 |
-| `system` | 3 |
-| **Total** | **40** |
+| `content` | 10 |
+| `system` | 2 |
+| **Total** | **38** |
 
 | Tool | Domain | Writability | Purpose |
 |---|---|---|---|
@@ -58,7 +58,6 @@ is hand-maintained.
 | `create_content` | `content` | additive | Create a new content row in status=draft |
 | `create_note` | `content` | additive | Create a Zettelkasten note (notes table) |
 | `list_content` | `content` | read_only | List content rows with optional filters (type, status, project) |
-| `manage_feeds` | `content` | destructive | Feed management: list, add (url+name+schedule), update (enable/disable, retopic), remove |
 | `publish_content` | `content` | destructive | HUMAN-ONLY |
 | `read_content` | `content` | read_only | Fetch a single content row with full body by ID. |
 | `set_content_review_state` | `content` | additive | Set a content row's review state |
@@ -66,7 +65,6 @@ is hand-maintained.
 | `update_note` | `content` | additive | Update editable fields (slug / title / body / kind) on a note |
 | `update_note_maturity` | `content` | additive | Transition a note's maturity state |
 | `session_delta` | `system` | read_only | Activity snapshot since a point in time: todos created, todos completed, agent notes written, and learning session count |
-| `system_status` | `system` | read_only | Operational health snapshot |
 | `weekly_summary` | `system` | read_only | Week-level retrospective: todos completed, agent notes grouped by kind, learning session count and domains, concept mastery, and the self_audit block… |
 <!-- GENERATED:TOOL-INVENTORY END -->
 

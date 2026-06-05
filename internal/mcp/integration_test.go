@@ -143,44 +143,6 @@ func activityActorFor(t *testing.T, entityType string, entityID uuid.UUID) strin
 // was unset and the fallback 'system' wasn't in agents. After W1 (seed)
 // and W2 (withActorTx) this must write both the todo and the audit row
 // with actor = learning-studio.
-// TestIntegration_SystemStatus_LearningCounts verifies the F-3
-// addition: system_status's database section now includes three
-// learning-domain counts (attempts / sessions / concepts)
-// alongside the existing knowledge-side counts.
-// Phase 1 audit reported that learning-studio had to query multiple
-// dashboard views to confirm "is the learning surface populated";
-// system_status now answers it directly.
-func TestIntegration_SystemStatus_LearningCounts(t *testing.T) {
-	s := setupServer(t)
-
-	_, out, err := callHandler(t, s.systemStatus, SystemStatusInput{})
-	if err != nil {
-		t.Fatalf("systemStatus: %v", err)
-	}
-	if out.Health == nil {
-		t.Fatal("systemStatus: Health is nil")
-	}
-	// Build identity must always populate — auditors rely on it to confirm
-	// which commit produced the response. Even an unstamped local build
-	// returns the "dev" defaults, never empty strings.
-	if out.Build.SHA == "" || out.Build.BuiltAt == "" || out.Build.Version == "" {
-		t.Errorf("systemStatus: Build has empty field: %+v", out.Build)
-	}
-	db := out.Health.Database
-	// All three fields must serialise (even if zero) — the wire shape
-	// is the contract. We're not asserting specific counts because
-	// other tests in this suite seed varying state; we're asserting
-	// the fields exist and are reachable through the wire shape.
-	_ = db.AttemptsCount
-	_ = db.SessionsCount
-	_ = db.ConceptsCount
-	// Negative counts would mean an int overflow or a SQL bug.
-	if db.AttemptsCount < 0 || db.SessionsCount < 0 || db.ConceptsCount < 0 {
-		t.Errorf("learning counts must be non-negative: attempts=%d sessions=%d concepts=%d",
-			db.AttemptsCount, db.SessionsCount, db.ConceptsCount)
-	}
-}
-
 func TestIntegration_ColdStart_CaptureInbox(t *testing.T) {
 	s := setupServer(t)
 
@@ -2557,87 +2519,6 @@ func TestIntegration_RecommendNextTarget_RejectsInactiveSession(t *testing.T) {
 // callHandler path the cold-start suite uses, and verifies a row
 // landed in feeds plus a matching feed_topics junction.
 
-// seedFeedTopic inserts one topic and returns its id string. The MCP
-// tool takes topic_ids as a []string of canonical UUID forms, so the
-// helper hands back the string form ready to pass in.
-func seedFeedTopic(t *testing.T, slug, name string) (topicID uuid.UUID, topicIDStr string) {
-	t.Helper()
-	err := testPool.QueryRow(t.Context(),
-		`INSERT INTO topics (slug, name, description, sort_order)
-		 VALUES ($1, $2, 'V5 fixture', 500)
-		 RETURNING id`, slug, name,
-	).Scan(&topicID)
-	if err != nil {
-		t.Fatalf("seeding topic %s: %v", slug, err)
-	}
-	return topicID, topicID.String()
-}
-
-// TestIntegration_ManageFeedsAdd_WithScheduleAndTopics is the V5 regression
-// guard. It calls manage_feeds(action=add) with schedule='hourly' and a
-// valid topic_id. Before V5 the request was rejected; after V5 both the
-// feeds row and feed_topics junction must exist.
-func TestIntegration_ManageFeedsAdd_WithScheduleAndTopics(t *testing.T) {
-	s := setupServer(t)
-
-	// setupServer truncated topics; seed a fresh one scoped to this
-	// test's fixture so the FK walk has a valid target.
-	topicID, topicIDStr := seedFeedTopic(t, "v5-fixture", "V5 Fixture")
-
-	feedURL := "https://example.com/v5-fixture-feed.xml"
-	feedName := "V5 Fixture Feed"
-	schedule := "hourly"
-
-	_, out, err := callHandler(t, s.manageFeeds, ManageFeedsInput{
-		Action:   "add",
-		URL:      &feedURL,
-		Name:     &feedName,
-		Schedule: &schedule,
-		TopicIDs: []string{topicIDStr},
-	})
-	if err != nil {
-		t.Fatalf("manageFeeds(add): %v", err)
-	}
-	if out.Feed == nil {
-		t.Fatal("manageFeeds(add): returned Feed is nil")
-	}
-	if out.Feed.ID == uuid.Nil {
-		t.Fatal("manageFeeds(add): returned Feed has zero ID")
-	}
-
-	// Confirm the feed row landed with the expected schedule.
-	var (
-		dbURL      string
-		dbSchedule string
-	)
-	err = testPool.QueryRow(t.Context(),
-		`SELECT url, schedule FROM feeds WHERE id = $1`, out.Feed.ID,
-	).Scan(&dbURL, &dbSchedule)
-	if err != nil {
-		t.Fatalf("reading feed row: %v", err)
-	}
-	if dbURL != feedURL {
-		t.Errorf("feeds.url = %q, want %q", dbURL, feedURL)
-	}
-	if dbSchedule != schedule {
-		t.Errorf("feeds.schedule = %q, want %q", dbSchedule, schedule)
-	}
-
-	// Confirm the junction row landed so the topic association actually
-	// persisted. A V5 regression where topic_ids is parsed but not
-	// written would show up as an empty junction.
-	var junctionCount int
-	err = testPool.QueryRow(t.Context(),
-		`SELECT COUNT(*) FROM feed_topics WHERE feed_id = $1 AND topic_id = $2`,
-		out.Feed.ID, topicID,
-	).Scan(&junctionCount)
-	if err != nil {
-		t.Fatalf("counting feed_topics: %v", err)
-	}
-	if junctionCount != 1 {
-		t.Errorf("feed_topics count = %d, want 1", junctionCount)
-	}
-}
 
 // =========================================================================
 // Section 3: DB audit trigger regressions

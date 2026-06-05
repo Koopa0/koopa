@@ -248,68 +248,6 @@ func TestTrackHypothesis_Validation(t *testing.T) {
 	}
 }
 
-// --- manage_feeds ---
-
-func TestParseMCPTopicIDs_Errors(t *testing.T) {
-	tests := []struct {
-		name    string
-		input   []string
-		wantErr string
-	}{
-		{name: "malformed uuid", input: []string{"not-a-uuid"}, wantErr: "invalid topic_id"},
-		{name: "too many", input: make([]string, mcpMaxTopicIDs+1), wantErr: "too many topic_ids"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			_, err := parseMCPTopicIDs(tt.input)
-			if err == nil || !contains(err.Error(), tt.wantErr) {
-				t.Fatalf("parseMCPTopicIDs() err = %v, want containing %q", err, tt.wantErr)
-			}
-		})
-	}
-}
-
-// TestParseMCPTopicIDs_NoUUIDParseLeak asserts the error string does NOT
-// leak uuid.Parse's internal messages ("invalid UUID length: N", "invalid
-// UUID format") to the MCP caller. The field+index is the only
-// information we want to surface — anything more is internal state.
-func TestParseMCPTopicIDs_NoUUIDParseLeak(t *testing.T) {
-	leakMarkers := []string{"invalid UUID length", "invalid UUID format"}
-	inputs := [][]string{
-		{"abc"},               // too short
-		{"not-a-uuid-at-all"}, // wrong format
-		{""},                  // empty string mid-slice (valid uuid.Nil err)
-	}
-	for i, in := range inputs {
-		_, err := parseMCPTopicIDs(in)
-		if err == nil {
-			t.Fatalf("case %d: expected error for input %q, got nil", i, in)
-		}
-		for _, marker := range leakMarkers {
-			if contains(err.Error(), marker) {
-				t.Errorf("case %d: error = %q, must NOT contain %q (uuid.Parse internals)",
-					i, err.Error(), marker)
-			}
-		}
-	}
-}
-
-// TestParseFeedID_NoUUIDParseLeak mirrors the topic_id test: parseFeedID
-// must not leak uuid.Parse internals either.
-func TestParseFeedID_NoUUIDParseLeak(t *testing.T) {
-	bad := "not-a-uuid"
-	_, err := parseFeedID(&bad)
-	if err == nil {
-		t.Fatal("expected error for malformed feed_id, got nil")
-	}
-	if contains(err.Error(), "invalid UUID length") || contains(err.Error(), "invalid UUID format") {
-		t.Errorf("err = %q, must NOT contain uuid.Parse internals", err.Error())
-	}
-	if !contains(err.Error(), "invalid feed_id") {
-		t.Errorf("err = %q, want to contain %q", err.Error(), "invalid feed_id")
-	}
-}
-
 // TestParseOptionalUUID covers the consolidated helper in internal/mcp/uuid.go.
 // It replaces parseNamedUUID (hypothesis.go) and the un-named parseOptionalUUID
 // (plan.go) that existed before this refactor.
@@ -355,40 +293,6 @@ func TestParseOptionalUUID(t *testing.T) {
 		}
 		if contains(err.Error(), "invalid UUID length") {
 			t.Errorf("err = %q, must NOT contain uuid.Parse internals", err.Error())
-		}
-	})
-}
-
-func TestParseMCPTopicIDs_Success(t *testing.T) {
-	validUUID := "550e8400-e29b-41d4-a716-446655440000"
-	t.Run("nil passes through", func(t *testing.T) {
-		got, err := parseMCPTopicIDs(nil)
-		if err != nil {
-			t.Fatalf("unexpected err: %v", err)
-		}
-		if got != nil {
-			t.Errorf("got = %v, want nil (leave unchanged contract)", got)
-		}
-	})
-	t.Run("empty slice yields empty non-nil", func(t *testing.T) {
-		got, err := parseMCPTopicIDs([]string{})
-		if err != nil {
-			t.Fatalf("unexpected err: %v", err)
-		}
-		if got == nil {
-			t.Errorf("got = nil, want non-nil zero-length slice (clear contract)")
-		}
-		if len(got) != 0 {
-			t.Errorf("got len = %d, want 0", len(got))
-		}
-	})
-	t.Run("single valid uuid", func(t *testing.T) {
-		got, err := parseMCPTopicIDs([]string{validUUID})
-		if err != nil {
-			t.Fatalf("unexpected err: %v", err)
-		}
-		if len(got) != 1 {
-			t.Errorf("got len = %d, want 1", len(got))
 		}
 	})
 }
@@ -592,7 +496,6 @@ func TestToolSchemaGeneration(t *testing.T) {
 		{"CreateNoteInput", testSchema[CreateNoteInput]},
 		{"UpdateNoteInput", testSchema[UpdateNoteInput]},
 		{"UpdateNoteMaturityInput", testSchema[UpdateNoteMaturityInput]},
-		{"ManageFeedsInput", testSchema[ManageFeedsInput]},
 	}
 	for _, tt := range types {
 		t.Run(tt.name, func(t *testing.T) {

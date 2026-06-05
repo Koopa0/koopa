@@ -528,40 +528,6 @@ func UpdateNoteMaturity() Meta {
 	}
 }
 
-// ManageFeeds returns metadata for the RSS feed subscription multiplexer.
-//
-// Writability is Destructive because the tool exposes update (enable/
-// disable) and remove actions, both of which mutate or drop existing
-// rows. Clients that respect DestructiveHint should confirm before
-// dispatching these actions; list and add are overshadowed by the
-// strongest action in the multiplexer.
-func ManageFeeds() Meta {
-	return Meta{
-		Name:        "manage_feeds",
-		Domain:      DomainContent,
-		Writability: Destructive,
-		Stability:   StabilityStable,
-		Since:       since,
-		Description: "Feed management: list, add (url+name+schedule), update (enable/disable, retopic), remove. Returns the agent-facing FeedSummary shape (id, url, name, schedule, topics, enabled, priority, last_fetched_at) — admin/pipeline-internal fields (filter_config, etag, last_modified, consecutive_failures, last_error, disabled_reason) are omitted. The HTTP admin endpoint serves the full feed.Feed for callers that need pipeline diagnostics.",
-		FieldEnums: map[string][]string{
-			"action":   {"list", "add", "update", "remove"},
-			"schedule": {"hourly", "daily", "weekly", "biweekly", "monthly"},
-		},
-	}
-}
-
-// SystemStatus returns metadata for the pipeline health query.
-func SystemStatus() Meta {
-	return Meta{
-		Name:        "system_status",
-		Domain:      DomainSystem,
-		Writability: ReadOnly,
-		Stability:   StabilityStable,
-		Since:       since,
-		Description: "Operational health snapshot. Response sections: 'feeds' = feed subscription health (total/healthy/failing + failing_feeds[] with name/error/since); 'pipelines' = 24h process_runs aggregate (recent_runs/failed/last_run_at); 'database' = core entity counts split into knowledge-side (contents/todos/notes) and learning-side (attempts/sessions/concepts). Use when investigating ingestion or pipeline issues, or to confirm at a glance whether the learning surface has accumulated activity — for catalog stats by type, query the admin /system/stats endpoint; for daily todo / goal data, morning_context covers it.",
-	}
-}
-
 // SessionDelta returns metadata for the cross-session context bridge.
 func SessionDelta() Meta {
 	return Meta{
@@ -628,8 +594,6 @@ func All() []Meta {
 		CreateNote(),
 		UpdateNote(),
 		UpdateNoteMaturity(),
-		ManageFeeds(),
-		SystemStatus(),
 		SessionDelta(),
 		WeeklySummary(),
 	}
