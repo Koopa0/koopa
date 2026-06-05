@@ -3,8 +3,6 @@
 package learning
 
 import (
-	"context"
-	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -14,15 +12,6 @@ import (
 	"github.com/Koopa0/koopa/internal/api"
 	"github.com/google/uuid"
 )
-
-// ReviewMetrics exposes the FSRS read-only operations the learning
-// handler needs: total due-card count and per-card retrievability.
-// Defined here (consumer-side) to avoid importing
-// internal/learning/fsrs.
-type ReviewMetrics interface {
-	DueCount(ctx context.Context, before time.Time) (int, error)
-	Retention(state json.RawMessage, now time.Time) float64
-}
 
 // storeErrors maps learning sentinel errors to HTTP responses.
 var storeErrors = []api.ErrMap{
@@ -34,20 +23,18 @@ var storeErrors = []api.ErrMap{
 
 // Handler handles learning HTTP requests for the admin workbench.
 type Handler struct {
-	store   *Store
-	reviews ReviewMetrics
-	logger  *slog.Logger
+	store  *Store
+	logger *slog.Logger
 }
 
 // NewHandler returns a learning Handler.
-func NewHandler(store *Store, reviews ReviewMetrics, logger *slog.Logger) *Handler {
-	return &Handler{store: store, reviews: reviews, logger: logger}
+func NewHandler(store *Store, logger *slog.Logger) *Handler {
+	return &Handler{store: store, logger: logger}
 }
 
 // learningSummaryResponse is the response shape for GET /api/admin/learning/summary.
 type learningSummaryResponse struct {
 	StreakDays int             `json:"streak_days"`
-	DueReviews int             `json:"due_reviews"`
 	Domains    []DomainMastery `json:"domains"`
 }
 
@@ -65,16 +52,6 @@ func (h *Handler) Summary(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	dueReviews := 0
-	if h.reviews != nil {
-		if n, dueErr := h.reviews.DueCount(ctx, time.Now()); dueErr != nil {
-			h.logger.Error("counting due reviews", "error", dueErr)
-			// non-fatal: continue with 0
-		} else {
-			dueReviews = n
-		}
-	}
-
 	since := time.Now().Add(-masteryLookback)
 	rows, err := h.store.ConceptMastery(ctx, nil, since, nil, "high")
 	if err != nil {
@@ -90,7 +67,6 @@ func (h *Handler) Summary(w http.ResponseWriter, r *http.Request) {
 
 	resp := learningSummaryResponse{
 		StreakDays: streak,
-		DueReviews: dueReviews,
 		Domains:    domains,
 	}
 	api.Encode(w, http.StatusOK, api.Response{Data: resp})
@@ -113,26 +89,20 @@ func (h *Handler) mustAdminTx(w http.ResponseWriter, r *http.Request) (*Store, b
 
 // DashboardResponse is the wire shape for GET /api/admin/learning/dashboard.
 //
-// Top-level streak_days and due_reviews_count are duplicated with the
-// /learning/summary endpoint by design — the frontend dashboard page
-// wants the full picture in a single round-trip.
+// Top-level streak_days plus the concepts and recent-observations
+// envelopes give the frontend dashboard page the full picture in a
+// single round-trip.
 //
 // Currently every value of the `view` query param returns the same
-// payload; richer views (mastery, weaknesses, retrieval, timeline,
-// variations) are accepted for forward compatibility but not yet shaped.
+// payload; richer views (mastery, weaknesses, timeline, variations)
+// are accepted for forward compatibility but not yet shaped.
 type DashboardResponse struct {
 	StreakDays         int                          `json:"streak_days"`
-	DueReviewsCount    int                          `json:"due_reviews_count"`
 	Concepts           DashboardConcepts            `json:"concepts"`
-	DueToday           DashboardDueToday            `json:"due_today"`
 	RecentObservations []DashboardRecentObservation `json:"recent_observations"`
 }
 
 const (
-	// dashboardDueReviewLimit caps the due_today.items slice. The frontend
-	// renders a "ready to review" list, not the full backlog; 50 is more
-	// than a session would normally tackle.
-	dashboardDueReviewLimit = 50
 	// dashboardRecentObsLimit caps the recent_observations slice.
 	dashboardRecentObsLimit = 20
 )
@@ -146,15 +116,6 @@ func emptyDashboardConcepts() DashboardConcepts {
 		CountTotal:     0,
 		CountsByDomain: map[string]int{},
 		Rows:           []DashboardConceptRow{},
-	}
-}
-
-// emptyDashboardDueToday mirrors emptyDashboardConcepts for the
-// due_today envelope.
-func emptyDashboardDueToday() DashboardDueToday {
-	return DashboardDueToday{
-		Count: 0,
-		Items: []DashboardDueTodayItem{},
 	}
 }
 
@@ -174,11 +135,9 @@ func (h *Handler) Dashboard(w http.ResponseWriter, r *http.Request) {
 	}
 	now := time.Now()
 	since := now.Add(-masteryLookback)
-	dueBefore := now.Add(24 * time.Hour)
 
 	resp := DashboardResponse{
 		Concepts:           emptyDashboardConcepts(),
-		DueToday:           emptyDashboardDueToday(),
 		RecentObservations: []DashboardRecentObservation{},
 	}
 
@@ -198,8 +157,6 @@ func (h *Handler) Dashboard(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	h.populateDashboardReviews(ctx, &resp, domain, dueBefore, now)
-
 	if obs, err := h.store.DashboardRecentObservations(ctx, domain, confidenceFilter, dashboardRecentObsLimit); err != nil {
 		h.logger.Warn("dashboard: recent observations failed", "error", err)
 	} else {
@@ -217,29 +174,6 @@ func countConceptsByDomain(rows []DashboardConceptRow) map[string]int {
 		out[rows[i].Domain]++
 	}
 	return out
-}
-
-// populateDashboardReviews fills resp.DueToday and resp.DueReviewsCount
-// using the injected ReviewMetrics. Split out of Dashboard so the
-// FSRS-dependent branch stays flat. A nil h.reviews leaves the
-// already-initialised defaults in place.
-func (h *Handler) populateDashboardReviews(ctx context.Context, resp *DashboardResponse, domain *string, dueBefore, now time.Time) {
-	if h.reviews == nil {
-		return
-	}
-	retentionFn := func(state []byte, t time.Time) float64 {
-		return h.reviews.Retention(state, t)
-	}
-	if items, err := h.store.DashboardDueReviews(ctx, domain, dueBefore, dashboardDueReviewLimit, retentionFn, now); err != nil {
-		h.logger.Warn("dashboard: due reviews failed", "error", err)
-	} else {
-		resp.DueToday = DashboardDueToday{Count: len(items), Items: items}
-	}
-	if n, err := h.reviews.DueCount(ctx, dueBefore); err != nil {
-		h.logger.Warn("dashboard: due count failed", "error", err)
-	} else {
-		resp.DueReviewsCount = n
-	}
 }
 
 // --- Concepts ---

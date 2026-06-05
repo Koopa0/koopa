@@ -15,16 +15,12 @@ import (
 
 // Track 1B — Today fan-out wire contract.
 //
-// GET /api/admin/learning/summary is one of the six Today fan-out sources.
-// LearningService.summary() → TodayService consumes the due_reviews field.
 // learningSummaryResponse is unexported, so this is a white-box test pinning
-// the wire field names without a database — a rename of due_reviews breaks the
-// Today review badge silently.
+// the summary wire field names without a database.
 
 func TestLearningSummaryWireContract(t *testing.T) {
 	resp := learningSummaryResponse{
 		StreakDays: 4,
-		DueReviews: 3,
 		Domains:    []DomainMastery{},
 	}
 	b, err := json.Marshal(resp)
@@ -35,9 +31,9 @@ func TestLearningSummaryWireContract(t *testing.T) {
 	if err := json.Unmarshal(b, &m); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	for _, want := range []string{"streak_days", "due_reviews", "domains"} {
+	for _, want := range []string{"streak_days", "domains"} {
 		if _, ok := m[want]; !ok {
-			t.Errorf("learningSummaryResponse missing wire field %q (TodayService consumes due_reviews)", want)
+			t.Errorf("learningSummaryResponse missing wire field %q", want)
 		}
 	}
 }
@@ -51,11 +47,9 @@ func TestLearningSummaryWireContract(t *testing.T) {
 // page silently — this test surfaces the rename at unit-test time.
 func TestDashboardWireContract(t *testing.T) {
 	now := time.Date(2026, 4, 23, 12, 0, 0, 0, time.UTC)
-	lastReviewedAt := now.Add(-7 * 24 * time.Hour)
 
 	resp := DashboardResponse{
-		StreakDays:      4,
-		DueReviewsCount: 3,
+		StreakDays: 4,
 		Concepts: DashboardConcepts{
 			CountTotal:     1,
 			CountsByDomain: map[string]int{"leetcode": 1},
@@ -67,21 +61,6 @@ func TestDashboardWireContract(t *testing.T) {
 					ObsCount:     14,
 					MasteryValue: 0.5,
 					MasteryStage: StageDeveloping,
-				},
-			},
-		},
-		DueToday: DashboardDueToday{
-			Count: 1,
-			Items: []DashboardDueTodayItem{
-				{
-					CardID: uuid.New(),
-					Target: DashboardDueTodayTarget{
-						ID:    uuid.New(),
-						Title: "LC 76",
-					},
-					Domain:         "leetcode",
-					Retention:      0.62,
-					LastReviewedAt: &lastReviewedAt,
 				},
 			},
 		},
@@ -109,7 +88,7 @@ func TestDashboardWireContract(t *testing.T) {
 	if err := json.Unmarshal(b, &top); err != nil {
 		t.Fatalf("unmarshal top: %v", err)
 	}
-	for _, want := range []string{"streak_days", "due_reviews_count", "concepts", "due_today", "recent_observations"} {
+	for _, want := range []string{"streak_days", "concepts", "recent_observations"} {
 		if _, ok := top[want]; !ok {
 			t.Errorf("DashboardResponse missing top-level wire field %q", want)
 		}
@@ -140,42 +119,6 @@ func TestDashboardWireContract(t *testing.T) {
 		}
 	}
 
-	// due_today envelope.
-	var dueToday map[string]json.RawMessage
-	if err := json.Unmarshal(top["due_today"], &dueToday); err != nil {
-		t.Fatalf("unmarshal due_today: %v", err)
-	}
-	for _, want := range []string{"count", "items"} {
-		if _, ok := dueToday[want]; !ok {
-			t.Errorf("due_today envelope missing wire field %q", want)
-		}
-	}
-
-	// due_today item.
-	var dueItems []map[string]json.RawMessage
-	if err := json.Unmarshal(dueToday["items"], &dueItems); err != nil {
-		t.Fatalf("unmarshal due_today.items: %v", err)
-	}
-	if len(dueItems) != 1 {
-		t.Fatalf("due_today.items len = %d, want 1", len(dueItems))
-	}
-	for _, want := range []string{"card_id", "target", "domain", "retention", "last_reviewed_at"} {
-		if _, ok := dueItems[0][want]; !ok {
-			t.Errorf("due_today item missing wire field %q", want)
-		}
-	}
-
-	// due_today.items[0].target nested object.
-	var target map[string]json.RawMessage
-	if err := json.Unmarshal(dueItems[0]["target"], &target); err != nil {
-		t.Fatalf("unmarshal due_today.items[0].target: %v", err)
-	}
-	for _, want := range []string{"id", "title"} {
-		if _, ok := target[want]; !ok {
-			t.Errorf("due_today item target missing wire field %q", want)
-		}
-	}
-
 	// recent_observations row.
 	var obs []map[string]json.RawMessage
 	if err := json.Unmarshal(top["recent_observations"], &obs); err != nil {
@@ -198,7 +141,6 @@ func TestDashboardWireContract(t *testing.T) {
 func TestDashboardWireContract_EmptyEncoding(t *testing.T) {
 	resp := DashboardResponse{
 		Concepts:           emptyDashboardConcepts(),
-		DueToday:           emptyDashboardDueToday(),
 		RecentObservations: []DashboardRecentObservation{},
 	}
 	b, err := json.Marshal(resp)
@@ -209,7 +151,6 @@ func TestDashboardWireContract_EmptyEncoding(t *testing.T) {
 	for _, want := range []string{
 		`"counts_by_domain":{}`,
 		`"rows":[]`,
-		`"items":[]`,
 		`"recent_observations":[]`,
 	} {
 		if !contains(got, want) {

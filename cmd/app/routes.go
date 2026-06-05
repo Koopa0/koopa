@@ -32,7 +32,6 @@ import (
 	"github.com/Koopa0/koopa/internal/feed/entry"
 	"github.com/Koopa0/koopa/internal/goal"
 	"github.com/Koopa0/koopa/internal/learning"
-	"github.com/Koopa0/koopa/internal/learning/fsrs"
 	"github.com/Koopa0/koopa/internal/learning/hypothesis"
 	learningplan "github.com/Koopa0/koopa/internal/learning/plan"
 	"github.com/Koopa0/koopa/internal/note"
@@ -66,7 +65,6 @@ type handlers struct {
 	note       *note.Handler
 	todo       *todo.Handler
 	plan       *learningplan.Handler
-	fsrs       *fsrs.Handler
 	agentNote  *agentnote.Handler
 	today      *today.Handler
 	search     *search.Handler
@@ -202,7 +200,7 @@ func registerRoutes(
 	// --- Admin: Commitment / Today (aggregate) ---
 	// Today pulls from content (review queue), hypothesis (unverified),
 	// task (completed awaiting approval), daily plan, agent_notes (planning
-	// note), fsrs (due reviews), feed / goal (warnings).
+	// note), feed / goal (warnings).
 	mux.Handle("GET /api/admin/commitment/today", authMid(http.HandlerFunc(h.today.Today)))
 
 	// --- Admin: Commitment / Daily plan ---
@@ -296,10 +294,9 @@ func registerRoutes(
 	mux.Handle("POST /api/admin/learning/hypotheses/{id}/archive", adminMid(http.HandlerFunc(h.hypothesis.Archive)))
 	mux.Handle("POST /api/admin/learning/hypotheses/{id}/evidence", adminMid(http.HandlerFunc(h.hypothesis.AddEvidence)))
 
-	// --- Admin: Learning / Dashboard + concepts + sessions + plans + reviews ---
+	// --- Admin: Learning / Dashboard + concepts + sessions + plans ---
 	// Dashboard is the aggregate landing endpoint; concepts / sessions /
-	// plans are the domain-entity views; /reviews/:card_id is the FSRS
-	// rating record.
+	// plans are the domain-entity views.
 	mux.Handle("GET /api/admin/learning/dashboard", authMid(http.HandlerFunc(h.learning.Dashboard)))
 	mux.Handle("GET /api/admin/learning/concepts", authMid(http.HandlerFunc(h.learning.ConceptsList)))
 	mux.Handle("GET /api/admin/learning/concepts/{slug}", authMid(http.HandlerFunc(h.learning.ConceptDetail)))
@@ -312,7 +309,6 @@ func registerRoutes(
 	mux.Handle("GET /api/admin/learning/plans/{id}", authMid(http.HandlerFunc(h.plan.Detail)))
 	mux.Handle("POST /api/admin/learning/plans/{id}/entries", adminMid(http.HandlerFunc(h.plan.AddEntries)))
 	mux.Handle("PUT /api/admin/learning/plans/{id}/entries/{entry_id}", adminMid(http.HandlerFunc(h.plan.UpdateEntry)))
-	mux.Handle("POST /api/admin/learning/reviews/{card_id}", adminMid(http.HandlerFunc(h.fsrs.Review)))
 
 	// --- Admin: Coordination / Agents ---
 	// Agents are registry-managed — the admin surface is read-only;

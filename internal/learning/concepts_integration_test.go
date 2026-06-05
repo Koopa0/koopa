@@ -23,18 +23,14 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/Koopa0/koopa/internal/learning"
-	"github.com/Koopa0/koopa/internal/learning/fsrs"
 )
 
 // truncateConceptsTables clears every per-test row the concepts list
-// and detail tests touch. Includes concepts + learning_target_concepts
-// + review_cards + review_logs because /concepts surfaces FSRS state.
+// and detail tests touch.
 func truncateConceptsTables(t *testing.T) {
 	t.Helper()
 	_, err := testPool.Exec(t.Context(), `
 		TRUNCATE
-			review_logs,
-			review_cards,
 			learning_attempt_observations,
 			learning_attempts,
 			learning_sessions,
@@ -559,8 +555,3 @@ func TestConceptDetail_ConfidenceFilterAll_LowSignalsLiftStage(t *testing.T) {
 		t.Errorf("all mastery_stage = %q, want %q (3 mastery clears floor + ratio)", allResp.MasteryStage, learning.StageSolid)
 	}
 }
-
-// ensureFSRSReachable is a compile-time anchor for the fsrs import —
-// the test file references the package via store integration even
-// when the tests above don't directly call it.
-var _ = fsrs.NewStore

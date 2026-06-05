@@ -34,31 +34,6 @@ type DashboardConcepts struct {
 	Rows           []DashboardConceptRow `json:"rows"`
 }
 
-// DashboardDueTodayTarget is the nested target ref inside a due-today item.
-type DashboardDueTodayTarget struct {
-	ID    uuid.UUID `json:"id"`
-	Title string    `json:"title"`
-}
-
-// DashboardDueTodayItem is one row inside DashboardResponse.DueToday.Items.
-// Retention is computed at request time from the FSRS card_state JSONB —
-// see fsrs.Store.Retention. LastReviewedAt is NULL for cards inserted
-// without a review log (a record_attempt path may stamp a card but not
-// log a review).
-type DashboardDueTodayItem struct {
-	CardID         uuid.UUID               `json:"card_id"`
-	Target         DashboardDueTodayTarget `json:"target"`
-	Domain         string                  `json:"domain"`
-	Retention      float64                 `json:"retention"`
-	LastReviewedAt *time.Time              `json:"last_reviewed_at"`
-}
-
-// DashboardDueToday is the due_today envelope. Count == len(Items).
-type DashboardDueToday struct {
-	Count int                     `json:"count"`
-	Items []DashboardDueTodayItem `json:"items"`
-}
-
 // DashboardRecentObservation is one row inside DashboardResponse.RecentObservations.
 // Wire field renames vs. the schema columns:
 //
@@ -101,46 +76,6 @@ func (s *Store) DashboardConceptRows(ctx context.Context, domain *string, since 
 			ObsCount:     r.TotalObservations,
 			MasteryValue: MasteryValue(r.MasteryCount, r.TotalObservations),
 			MasteryStage: DeriveMasteryStage(r.WeaknessCount, r.ImprovementCount, r.MasteryCount),
-		}
-	}
-	return result, nil
-}
-
-// RetentionFn computes a card's FSRS retrievability from its card_state
-// JSONB at the given moment. Implemented by *fsrs.Store; passed in here
-// so dashboard.go doesn't import internal/learning/fsrs.
-type RetentionFn = func(state []byte, now time.Time) float64
-
-// DashboardDueReviews returns the due-card items for the dashboard,
-// already wrapped in the response DTO shape. retention is computed
-// per-row from card_state via the supplied RetentionFn. now is the
-// reference instant for retention computation (typically time.Now() at
-// the handler boundary).
-func (s *Store) DashboardDueReviews(ctx context.Context, domain *string, dueBefore time.Time, limit int32, retention RetentionFn, now time.Time) ([]DashboardDueTodayItem, error) {
-	rows, err := s.q.DashboardDueReviews(ctx, db.DashboardDueReviewsParams{
-		DueBefore:  dueBefore,
-		Domain:     domain,
-		MaxResults: limit,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("querying dashboard due reviews: %w", err)
-	}
-	result := make([]DashboardDueTodayItem, len(rows))
-	for i := range rows {
-		r := &rows[i]
-		var ret float64
-		if retention != nil {
-			ret = retention(r.CardState, now)
-		}
-		result[i] = DashboardDueTodayItem{
-			CardID: r.CardID,
-			Target: DashboardDueTodayTarget{
-				ID:    r.TargetID,
-				Title: r.TargetTitle,
-			},
-			Domain:         r.Domain,
-			Retention:      ret,
-			LastReviewedAt: r.LastReviewedAt,
 		}
 	}
 	return result, nil

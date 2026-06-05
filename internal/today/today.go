@@ -2,8 +2,8 @@
 
 // Package today composes the admin Today dashboard — a cross-domain
 // aggregate over content review, hypothesis judgment, task approval,
-// daily plan items, agent_note planning entries, FSRS due reviews, and
-// feed / goal warnings. Every cross-domain source is expressed through
+// daily plan items, agent_note planning entries, and feed / goal
+// warnings. Every cross-domain source is expressed through
 // a consumer-defined interface; this package does not import another
 // feature's *Store directly.
 package today
@@ -91,14 +91,6 @@ type PlanSummary struct {
 	Overdue int `json:"overdue"`
 }
 
-// DueReviewsSection is the FSRS due-today projection. Items are left
-// empty; callers that need the full list hit /learning/dashboard. Today
-// carries the count for the top-line badge only.
-type DueReviewsSection struct {
-	Count int   `json:"count"`
-	Items []any `json:"items"`
-}
-
 // Warning is a single warnings-row entry. source identifies which
 // subsystem surfaced it (feed, goal); severity is a closed set matching
 // CellState vocabulary.
@@ -110,9 +102,8 @@ type Warning struct {
 
 // Response is the wire shape for GET /api/admin/commitment/today.
 type Response struct {
-	Date             string            `json:"date"`
-	AwaitingJudgment AwaitingJudgment  `json:"awaiting_judgment"`
-	Plan             PlanSection       `json:"plan"`
-	DueReviews       DueReviewsSection `json:"due_reviews"`
-	Warnings         []Warning         `json:"warnings"`
+	Date             string           `json:"date"`
+	AwaitingJudgment AwaitingJudgment `json:"awaiting_judgment"`
+	Plan             PlanSection      `json:"plan"`
+	Warnings         []Warning        `json:"warnings"`
 }

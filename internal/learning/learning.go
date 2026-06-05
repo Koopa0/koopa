@@ -19,8 +19,7 @@ import (
 )
 
 // Store handles database operations for learning sessions, attempts,
-// observations, concepts, and learning targets. FSRS spaced-repetition
-// scheduling lives in the sibling package internal/learning/fsrs.
+// observations, concepts, and learning targets.
 type Store struct {
 	q *db.Queries
 }

@@ -44,12 +44,6 @@ type PlanningNoteReader interface {
 	PlanNoteForDate(ctx context.Context, date time.Time) (*PlanningNote, error)
 }
 
-// DueReviewCounter returns the number of FSRS cards due on/before
-// `before`.
-type DueReviewCounter interface {
-	DueCount(ctx context.Context, before time.Time) (int, error)
-}
-
 // FeedHealthReader surfaces failing feeds for the warnings section.
 type FeedHealthReader interface {
 	FailingFeeds(ctx context.Context) ([]FailingFeedWarning, error)
@@ -68,7 +62,6 @@ type Handler struct {
 	hypotheses    HypothesisUnverifiedLister
 	awaitingTasks TaskAwaitingApprovalLister
 	plannings     PlanningNoteReader
-	dueReviews    DueReviewCounter
 	feeds         FeedHealthReader
 	staleGoals    StaleGoalReader
 	logger        *slog.Logger
@@ -87,7 +80,6 @@ func (h *Handler) WithSources(
 	hypotheses HypothesisUnverifiedLister,
 	awaitingTasks TaskAwaitingApprovalLister,
 	plannings PlanningNoteReader,
-	dueReviews DueReviewCounter,
 	feeds FeedHealthReader,
 	staleGoals StaleGoalReader,
 ) *Handler {
@@ -95,7 +87,6 @@ func (h *Handler) WithSources(
 	h.hypotheses = hypotheses
 	h.awaitingTasks = awaitingTasks
 	h.plannings = plannings
-	h.dueReviews = dueReviews
 	h.feeds = feeds
 	h.staleGoals = staleGoals
 	return h
@@ -127,13 +118,11 @@ func (h *Handler) Today(w http.ResponseWriter, r *http.Request) {
 			UnverifiedHypotheses:           []JudgmentHypothesis{},
 			CompletedTasksAwaitingApproval: []JudgmentTask{},
 		},
-		Plan:       PlanSection{Date: date.Format(time.DateOnly), Items: []daily.Item{}},
-		DueReviews: DueReviewsSection{Items: []any{}},
-		Warnings:   []Warning{},
+		Plan:     PlanSection{Date: date.Format(time.DateOnly), Items: []daily.Item{}},
+		Warnings: []Warning{},
 	}
 	h.loadAwaitingJudgment(ctx, &resp)
 	h.loadPlanSection(ctx, date, &resp)
-	h.loadDueReviews(ctx, date, &resp)
 	h.loadWarnings(ctx, date, &resp)
 	api.Encode(w, http.StatusOK, api.Response{Data: resp})
 }
@@ -179,17 +168,6 @@ func (h *Handler) loadPlanSection(ctx context.Context, date time.Time, resp *Res
 		if note, err := h.plannings.PlanNoteForDate(ctx, date); err == nil && note != nil {
 			resp.Plan.PlanningNote = note
 		}
-	}
-}
-
-func (h *Handler) loadDueReviews(ctx context.Context, date time.Time, resp *Response) {
-	if h.dueReviews == nil {
-		return
-	}
-	if n, err := h.dueReviews.DueCount(ctx, date.Add(24*time.Hour)); err != nil {
-		h.logger.Warn("today: due-reviews count failed", "error", err)
-	} else {
-		resp.DueReviews.Count = n
 	}
 }
 

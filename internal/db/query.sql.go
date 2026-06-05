@@ -1188,27 +1188,6 @@ func (q *Queries) CanonicalNoteForTarget(ctx context.Context, targetID uuid.UUID
 	return i, err
 }
 
-const cardByLearningTarget = `-- name: CardByLearningTarget :one
-SELECT id, learning_target_id, card_state, due, last_sync_drift_at, last_drift_reason, created_at, updated_at FROM review_cards WHERE learning_target_id = $1
-`
-
-// Get the review card for a learning target.
-func (q *Queries) CardByLearningTarget(ctx context.Context, learningTargetID uuid.UUID) (ReviewCard, error) {
-	row := q.db.QueryRow(ctx, cardByLearningTarget, learningTargetID)
-	var i ReviewCard
-	err := row.Scan(
-		&i.ID,
-		&i.LearningTargetID,
-		&i.CardState,
-		&i.Due,
-		&i.LastSyncDriftAt,
-		&i.LastDriftReason,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
 const clarifyTodoItem = `-- name: ClarifyTodoItem :one
 UPDATE todos
 SET state = 'todo',
@@ -2399,35 +2378,6 @@ func (q *Queries) CreateAttempt(ctx context.Context, arg CreateAttemptParams) (L
 	return i, err
 }
 
-const createCardForLearningTarget = `-- name: CreateCardForLearningTarget :one
-INSERT INTO review_cards (learning_target_id, card_state, due)
-VALUES ($1, $2, $3)
-RETURNING id, learning_target_id, card_state, due, last_sync_drift_at, last_drift_reason, created_at, updated_at
-`
-
-type CreateCardForLearningTargetParams struct {
-	LearningTargetID uuid.UUID       `json:"learning_target_id"`
-	CardState        json.RawMessage `json:"card_state"`
-	Due              time.Time       `json:"due"`
-}
-
-// Create a new FSRS review card for a learning target.
-func (q *Queries) CreateCardForLearningTarget(ctx context.Context, arg CreateCardForLearningTargetParams) (ReviewCard, error) {
-	row := q.db.QueryRow(ctx, createCardForLearningTarget, arg.LearningTargetID, arg.CardState, arg.Due)
-	var i ReviewCard
-	err := row.Scan(
-		&i.ID,
-		&i.LearningTargetID,
-		&i.CardState,
-		&i.Due,
-		&i.LastSyncDriftAt,
-		&i.LastDriftReason,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
 const createContent = `-- name: CreateContent :one
 INSERT INTO contents (slug, title, body, excerpt, type, status,
                       series_id, series_order, is_public, project_id, ai_metadata,
@@ -3333,87 +3283,6 @@ func (q *Queries) DashboardConceptRows(ctx context.Context, arg DashboardConcept
 	return items, nil
 }
 
-const dashboardDueReviews = `-- name: DashboardDueReviews :many
-WITH card_last_review AS (
-    SELECT rl.card_id, MAX(rl.reviewed_at)::timestamptz AS last_reviewed_at
-    FROM review_logs rl
-    GROUP BY rl.card_id
-)
-SELECT rc.id                AS card_id,
-       rc.due,
-       rc.card_state,
-       lt.id                AS target_id,
-       lt.title             AS target_title,
-       lt.domain            AS domain,
-       clr.last_reviewed_at
-FROM review_cards rc
-JOIN learning_targets lt        ON lt.id = rc.learning_target_id
-LEFT JOIN card_last_review clr  ON clr.card_id = rc.id
-WHERE rc.due <= $1
-  AND lt.archived_at IS NULL
-  AND ($2::text IS NULL OR lt.domain = $2)
-ORDER BY rc.due ASC
-LIMIT $3
-`
-
-type DashboardDueReviewsParams struct {
-	DueBefore  time.Time `json:"due_before"`
-	Domain     *string   `json:"domain"`
-	MaxResults int32     `json:"max_results"`
-}
-
-type DashboardDueReviewsRow struct {
-	CardID         uuid.UUID       `json:"card_id"`
-	Due            time.Time       `json:"due"`
-	CardState      json.RawMessage `json:"card_state"`
-	TargetID       uuid.UUID       `json:"target_id"`
-	TargetTitle    string          `json:"target_title"`
-	Domain         string          `json:"domain"`
-	LastReviewedAt *time.Time      `json:"last_reviewed_at"`
-}
-
-// Due review cards for /learning/dashboard due_today.items.
-// Per-row fields:
-//
-//	card_state — opaque FSRS state JSONB; the Go layer extracts Stability
-//	             and computes retrievability via fsrs.Store.Retention.
-//	last_reviewed_at — MAX(review_logs.reviewed_at) for the card.
-//	             NULL when the card has never been reviewed (fresh card
-//	             inserted by a record_attempt flow without an immediate
-//	             review log).
-//
-// last_reviewed_at is pre-aggregated in the card_last_review CTE then
-// LEFT JOINed. Same reason as DashboardConceptRows.next_due — the
-// LEFT-JOIN-against-CTE shape is what makes sqlc emit *time.Time
-// instead of falling back to interface{}.
-func (q *Queries) DashboardDueReviews(ctx context.Context, arg DashboardDueReviewsParams) ([]DashboardDueReviewsRow, error) {
-	rows, err := q.db.Query(ctx, dashboardDueReviews, arg.DueBefore, arg.Domain, arg.MaxResults)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []DashboardDueReviewsRow{}
-	for rows.Next() {
-		var i DashboardDueReviewsRow
-		if err := rows.Scan(
-			&i.CardID,
-			&i.Due,
-			&i.CardState,
-			&i.TargetID,
-			&i.TargetTitle,
-			&i.Domain,
-			&i.LastReviewedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const dashboardRecentObservations = `-- name: DashboardRecentObservations :many
 SELECT ao.id,
        ao.signal_type,
@@ -3785,18 +3654,6 @@ func (q *Queries) DetachNoteFromTarget(ctx context.Context, arg DetachNoteFromTa
 		return 0, err
 	}
 	return result.RowsAffected(), nil
-}
-
-const dueReviewCount = `-- name: DueReviewCount :one
-SELECT count(*)::int FROM review_cards WHERE due <= $1
-`
-
-// Count of review cards due before a given time (for needs_attention badge).
-func (q *Queries) DueReviewCount(ctx context.Context, dueBefore time.Time) (int32, error) {
-	row := q.db.QueryRow(ctx, dueReviewCount, dueBefore)
-	var column_1 int32
-	err := row.Scan(&column_1)
-	return column_1, err
 }
 
 const enabledFeeds = `-- name: EnabledFeeds :many
@@ -5293,33 +5150,6 @@ func (q *Queries) InsertLearningTargetRelation(ctx context.Context, arg InsertLe
 	return err
 }
 
-const insertReviewLog = `-- name: InsertReviewLog :exec
-INSERT INTO review_logs (card_id, rating, scheduled_days, elapsed_days, state, reviewed_at)
-VALUES ($1, $2, $3, $4, $5, $6)
-`
-
-type InsertReviewLogParams struct {
-	CardID        uuid.UUID `json:"card_id"`
-	Rating        int32     `json:"rating"`
-	ScheduledDays int32     `json:"scheduled_days"`
-	ElapsedDays   int32     `json:"elapsed_days"`
-	State         int32     `json:"state"`
-	ReviewedAt    time.Time `json:"reviewed_at"`
-}
-
-// Append a review log entry after rating a card.
-func (q *Queries) InsertReviewLog(ctx context.Context, arg InsertReviewLogParams) error {
-	_, err := q.db.Exec(ctx, insertReviewLog,
-		arg.CardID,
-		arg.Rating,
-		arg.ScheduledDays,
-		arg.ElapsedDays,
-		arg.State,
-		arg.ReviewedAt,
-	)
-	return err
-}
-
 const insertUnmappedAlias = `-- name: InsertUnmappedAlias :exec
 INSERT INTO tag_aliases (raw_tag, tag_id, resolution_source, confirmed)
 VALUES ($1, NULL, 'unmapped', false)
@@ -5827,20 +5657,6 @@ func (q *Queries) LearningDomainExists(ctx context.Context, slug string) (bool, 
 	return exists, err
 }
 
-const learningTargetByCardID = `-- name: LearningTargetByCardID :one
-SELECT learning_target_id FROM review_cards WHERE id = $1
-`
-
-// Resolve a review card's learning_target_id for the wire-contract case where
-// the caller (REST handler) addresses the card directly but the scheduler
-// logic is target-scoped. Returns pgx.ErrNoRows when the card id is unknown.
-func (q *Queries) LearningTargetByCardID(ctx context.Context, id uuid.UUID) (uuid.UUID, error) {
-	row := q.db.QueryRow(ctx, learningTargetByCardID, id)
-	var learning_target_id uuid.UUID
-	err := row.Scan(&learning_target_id)
-	return learning_target_id, err
-}
-
 const learningTargetVariations = `-- name: LearningTargetVariations :many
 WITH target_last_attempt AS (
     SELECT DISTINCT ON (learning_target_id)
@@ -6326,33 +6142,6 @@ func (q *Queries) MapAlias(ctx context.Context, arg MapAliasParams) (TagAlias, e
 		&i.CreatedAt,
 	)
 	return i, err
-}
-
-const markCardDrift = `-- name: MarkCardDrift :execrows
-UPDATE review_cards
-SET last_sync_drift_at = now(),
-    last_drift_reason  = $1,
-    updated_at         = now()
-WHERE learning_target_id = $2
-`
-
-type MarkCardDriftParams struct {
-	Reason           *string   `json:"reason"`
-	LearningTargetID uuid.UUID `json:"learning_target_id"`
-}
-
-// Stamp a drift event on a card when an attempt-driven review cannot be
-// applied cleanly. Consumers of the retrieval view compare last_sync_drift_at
-// against recent attempt timestamps to decide whether to surface a
-// drift_suspect flag on each due item. Both columns are paired by
-// chk_review_card_drift_pair. Returns the number of rows affected so callers
-// can log when a target has no card yet (drift signal silently lost).
-func (q *Queries) MarkCardDrift(ctx context.Context, arg MarkCardDriftParams) (int64, error) {
-	result, err := q.db.Exec(ctx, markCardDrift, arg.Reason, arg.LearningTargetID)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected(), nil
 }
 
 const milestonesByGoal = `-- name: MilestonesByGoal :many
@@ -11218,41 +11007,6 @@ func (q *Queries) UnverifiedHypotheses(ctx context.Context, maxResults int32) ([
 		return nil, err
 	}
 	return items, nil
-}
-
-const updateCardState = `-- name: UpdateCardState :one
-UPDATE review_cards
-SET card_state         = $1,
-    due                = $2,
-    last_sync_drift_at = NULL,
-    last_drift_reason  = NULL,
-    updated_at         = now()
-WHERE id = $3
-RETURNING id, learning_target_id, card_state, due, last_sync_drift_at, last_drift_reason, created_at, updated_at
-`
-
-type UpdateCardStateParams struct {
-	CardState json.RawMessage `json:"card_state"`
-	Due       time.Time       `json:"due"`
-	ID        uuid.UUID       `json:"id"`
-}
-
-// Update card state and due date after a review. Clears drift markers since
-// a successful review reconciles the card with the attempt history.
-func (q *Queries) UpdateCardState(ctx context.Context, arg UpdateCardStateParams) (ReviewCard, error) {
-	row := q.db.QueryRow(ctx, updateCardState, arg.CardState, arg.Due, arg.ID)
-	var i ReviewCard
-	err := row.Scan(
-		&i.ID,
-		&i.LearningTargetID,
-		&i.CardState,
-		&i.Due,
-		&i.LastSyncDriftAt,
-		&i.LastDriftReason,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
 }
 
 const updateContent = `-- name: UpdateContent :one

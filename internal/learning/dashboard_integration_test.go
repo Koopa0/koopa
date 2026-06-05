@@ -3,13 +3,12 @@
 //go:build integration
 
 // dashboard_integration_test.go covers the GET /api/admin/learning/dashboard
-// reshape: observation-backed concept rows with mastery_value + next_due,
-// FSRS-computed retention on due_today.items, last_reviewed_at derived from
-// MAX(review_logs.reviewed_at), and confidence_filter propagation.
+// reshape: observation-backed concept rows with mastery_value, and
+// confidence_filter propagation.
 //
-// All tests target the store layer + Retention helper (and run real SQL
-// against testcontainers PostgreSQL). The handler is one thin layer above —
-// its wire shape is locked by handler_test.go::TestDashboardWireContract.
+// All tests target the store layer (and run real SQL against testcontainers
+// PostgreSQL). The handler is one thin layer above — its wire shape is
+// locked by handler_test.go::TestDashboardWireContract.
 //
 // Run with:
 //
@@ -24,7 +23,6 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/Koopa0/koopa/internal/learning"
-	"github.com/Koopa0/koopa/internal/learning/fsrs"
 )
 
 // truncateDashboardTables clears every per-test row touched by the
@@ -34,8 +32,6 @@ func truncateDashboardTables(t *testing.T) {
 	t.Helper()
 	_, err := testPool.Exec(t.Context(), `
 		TRUNCATE
-			review_logs,
-			review_cards,
 			learning_attempt_observations,
 			learning_attempts,
 			learning_sessions,
@@ -188,14 +184,6 @@ func TestDashboard_Empty_ReturnsEmptyContainers(t *testing.T) {
 	}
 	if len(rows) != 0 {
 		t.Errorf("DashboardConceptRows len = %d, want 0", len(rows))
-	}
-
-	items, err := store.DashboardDueReviews(t.Context(), nil, now.Add(24*time.Hour), 50, nil, now)
-	if err != nil {
-		t.Fatalf("DashboardDueReviews: %v", err)
-	}
-	if len(items) != 0 {
-		t.Errorf("DashboardDueReviews len = %d, want 0", len(items))
 	}
 
 	obs, err := store.DashboardRecentObservations(t.Context(), nil, "high", 20)
@@ -369,105 +357,5 @@ func TestDashboard_RecentObservations_WireFieldNames(t *testing.T) {
 	}
 	if _, present := m["detail"]; present {
 		t.Errorf("recent_observation JSON has forbidden legacy field %q", "detail")
-	}
-}
-
-// TestDashboard_DueToday_RealRetention_NullableLastReviewedAt covers the
-// full due_today flow: a real review through fsrs.Store leaves a card +
-// review_log behind. The dashboard query must surface card_id, target
-// metadata, a non-zero retention (real float64 from FSRS state), and a
-// non-nil last_reviewed_at. A second card that was inserted but never
-// reviewed yields last_reviewed_at=nil — the dashboard renders that as
-// `null` per the spec.
-func TestDashboard_DueToday_RealRetention_NullableLastReviewedAt(t *testing.T) {
-	truncateDashboardTables(t)
-	ctx := t.Context()
-
-	reviewedTargetID := seedTarget(t, "lc-due-reviewed")
-	unreviewedTargetID := seedTarget(t, "lc-due-unreviewed")
-
-	fsrsStore := fsrs.NewStore(testPool)
-
-	// Card 1: a successful review writes both review_cards and review_logs rows.
-	now := time.Date(2026, 4, 23, 12, 0, 0, 0, time.UTC)
-	if _, _, err := fsrsStore.ReviewByOutcome(ctx, reviewedTargetID, "solved_independent", now.Add(-30*24*time.Hour)); err != nil {
-		t.Fatalf("baseline ReviewByOutcome: %v", err)
-	}
-
-	// Card 2: insert a card directly with non-zero stability but no review_log.
-	// Mirrors the corner case where a card row exists from a prior code path
-	// without an accompanying log entry.
-	rawState, err := json.Marshal(map[string]any{
-		"Due":           now.Add(-time.Hour),
-		"Stability":     5.0,
-		"Difficulty":    5.0,
-		"ElapsedDays":   uint64(0),
-		"ScheduledDays": uint64(0),
-		"Reps":          uint64(1),
-		"Lapses":        uint64(0),
-		"State":         2, // Review
-		"LastReview":    now.Add(-5 * 24 * time.Hour),
-	})
-	if err != nil {
-		t.Fatalf("marshal card state: %v", err)
-	}
-	if _, err := testPool.Exec(ctx,
-		`INSERT INTO review_cards (learning_target_id, card_state, due)
-		 VALUES ($1, $2, $3)`,
-		unreviewedTargetID, rawState, now.Add(-time.Hour),
-	); err != nil {
-		t.Fatalf("inserting unreviewed card: %v", err)
-	}
-
-	store := learning.NewStore(testPool)
-	dueBefore := now.Add(48 * time.Hour) // wide enough to catch both
-	retentionFn := func(state []byte, t time.Time) float64 {
-		return fsrsStore.Retention(state, t)
-	}
-	items, err := store.DashboardDueReviews(ctx, nil, dueBefore, 50, retentionFn, now)
-	if err != nil {
-		t.Fatalf("DashboardDueReviews: %v", err)
-	}
-	if len(items) < 2 {
-		t.Fatalf("items len = %d, want >= 2", len(items))
-	}
-
-	var reviewed, unreviewed *learning.DashboardDueTodayItem
-	for i := range items {
-		switch items[i].Target.ID {
-		case reviewedTargetID:
-			reviewed = &items[i]
-		case unreviewedTargetID:
-			unreviewed = &items[i]
-		}
-	}
-	if reviewed == nil {
-		t.Fatalf("reviewed target not returned by DashboardDueReviews")
-	}
-	if unreviewed == nil {
-		t.Fatalf("unreviewed target not returned by DashboardDueReviews")
-	}
-
-	// Reviewed: retention is a real float64 in (0,1] and last_reviewed_at != nil.
-	if reviewed.Retention <= 0 || reviewed.Retention > 1 {
-		t.Errorf("reviewed.Retention = %v, want in (0, 1]", reviewed.Retention)
-	}
-	if reviewed.LastReviewedAt == nil {
-		t.Errorf("reviewed.LastReviewedAt = nil, want non-nil (review_log was written)")
-	}
-	if reviewed.Target.Title != "lc-due-reviewed" {
-		t.Errorf("reviewed.Target.Title = %q, want %q", reviewed.Target.Title, "lc-due-reviewed")
-	}
-	if reviewed.Domain != "leetcode" {
-		t.Errorf("reviewed.Domain = %q, want %q", reviewed.Domain, "leetcode")
-	}
-
-	// Unreviewed: retention is a real float64 (from the seeded state),
-	// last_reviewed_at IS nil (no review_logs row for this card).
-	if unreviewed.Retention <= 0 || unreviewed.Retention > 1 {
-		t.Errorf("unreviewed.Retention = %v, want in (0, 1] (seeded Stability=5 + LastReview 5 days ago)", unreviewed.Retention)
-	}
-	if unreviewed.LastReviewedAt != nil {
-		t.Errorf("unreviewed.LastReviewedAt = %v, want nil (no review_log row)", *unreviewed.LastReviewedAt)
 	}
 }

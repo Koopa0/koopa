@@ -62,7 +62,6 @@ func TestToday_AwaitingTasksWiredOthersNil(t *testing.T) {
 			nil, // hypotheses — parked, must stay empty
 			fakeAwaiting{tasks: want},
 			nil, // plannings
-			nil, // dueReviews
 			nil, // feeds
 			nil, // staleGoals
 		)

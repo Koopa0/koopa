@@ -3,15 +3,12 @@
 //go:build integration
 
 // integration_test.go bundles every testcontainers-backed test for the
-// learning package. Coverage is grouped into three concerns:
+// learning package. Coverage is grouped into two concerns:
 //
 //  1. Symmetric relation trigger — trg_learning_target_relations_symmetry
 //     auto-mirrors (A,B,same_pattern) to produce (B,A,same_pattern), and
 //     must be idempotent + directed-type-safe.
-//  2. FSRS drift signal — ErrUnknownOutcome bubbles up, MarkDrift stamps
-//     the card, RetrievalQueue surfaces drift_suspect, and a subsequent
-//     successful review clears the markers.
-//  3. Session concurrency — the uq_learning_sessions_one_active partial
+//  2. Session concurrency — the uq_learning_sessions_one_active partial
 //     unique index enforces "one active session per domain" against
 //     concurrent StartSession calls.
 //
@@ -34,7 +31,6 @@ import (
 
 	"github.com/Koopa0/koopa/internal/agent"
 	"github.com/Koopa0/koopa/internal/learning"
-	"github.com/Koopa0/koopa/internal/learning/fsrs"
 	"github.com/Koopa0/koopa/internal/testdb"
 )
 
@@ -104,8 +100,6 @@ func truncateLearningTables(t *testing.T) {
 	t.Helper()
 	_, err := testPool.Exec(t.Context(), `
 		TRUNCATE
-			review_logs,
-			review_cards,
 			learning_attempt_observations,
 			learning_attempts,
 			learning_sessions,
@@ -206,55 +200,7 @@ func TestSymmetricRelation_ReverseInsertIdempotent(t *testing.T) {
 }
 
 // =========================================================================
-// Section 2: FSRS drift signal
-// =========================================================================
-//
-// Compensating test for skipping the typed-outcome / exhaustive-linter
-// path. The runtime safety net (ErrUnknownOutcome → MarkDrift →
-// drift_suspect) is asserted here so a future refactor that reintroduces
-// the silent-Again fallback fails loudly instead of quietly resetting
-// every FSRS interval.
-
-// TestDriftSignal_MarkDrift_NoCardYet — MarkDrift on a target that has
-// never had a review (no review_cards row) must be a silent no-op. The
-// mcp layer logs this case so operators see drift-signal loss on
-// brand-new targets; this test asserts the return shape the handler
-// branches on.
-func TestDriftSignal_MarkDrift_NoCardYet(t *testing.T) {
-	ctx := t.Context()
-	truncateLearningTables(t)
-
-	targetID := seedTarget(t, "no-card-yet-drift-test")
-	fsrsStore := fsrs.NewStore(testPool)
-
-	rows, err := fsrsStore.MarkDrift(ctx, targetID, "unknown_outcome")
-	if err != nil {
-		t.Fatalf("MarkDrift on cardless target: %v", err)
-	}
-	if rows != 0 {
-		t.Errorf("MarkDrift rows = %d, want 0 (no card yet — drift has nowhere to land)", rows)
-	}
-}
-
-// TestDriftSignal_EmptyReason_Rejected — last_sync_drift_at and
-// last_drift_reason are paired (schema CHECK chk_review_card_drift_pair).
-// Empty reason is rejected at the Go layer before hitting the DB so
-// callers get a clear error.
-func TestDriftSignal_EmptyReason_Rejected(t *testing.T) {
-	ctx := t.Context()
-	truncateLearningTables(t)
-
-	targetID := seedTarget(t, "empty-reason-drift-test")
-	fsrsStore := fsrs.NewStore(testPool)
-
-	_, err := fsrsStore.MarkDrift(ctx, targetID, "")
-	if err == nil {
-		t.Fatal("MarkDrift(empty reason) = nil, want error")
-	}
-}
-
-// =========================================================================
-// Section 3: Session concurrency
+// Section 2: Session concurrency
 // =========================================================================
 
 // TestStartSession_ConcurrentStart_OnlyOneWins — the

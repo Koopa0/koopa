@@ -38,7 +38,6 @@ import (
 	"github.com/Koopa0/koopa/internal/feed/entry"
 	"github.com/Koopa0/koopa/internal/goal"
 	"github.com/Koopa0/koopa/internal/learning"
-	"github.com/Koopa0/koopa/internal/learning/fsrs"
 	"github.com/Koopa0/koopa/internal/learning/hypothesis"
 	learningplan "github.com/Koopa0/koopa/internal/learning/plan"
 	"github.com/Koopa0/koopa/internal/note"
@@ -141,7 +140,6 @@ func run(logger *slog.Logger) error {
 	todoStore := todo.NewStore(pool)
 	dailyStore := daily.NewStore(pool)
 	learningStore := learning.NewStore(pool)
-	fsrsStore := fsrs.NewStore(pool)
 	noteStore := note.NewStore(pool)
 	planStore := learningplan.NewStore(pool)
 	agentNoteStore := agentnote.NewStore(pool)
@@ -202,23 +200,21 @@ func run(logger *slog.Logger) error {
 		hypothesis: hypothesis.NewHandler(hypothesisStore, logger),
 		agent:      agent.NewHandler(agentRegistry, logger),
 		daily:      daily.NewHandler(dailyStore, logger),
-		learning:   learning.NewHandler(learningStore, fsrsStore, logger),
+		learning:   learning.NewHandler(learningStore, logger),
 		note:       note.NewHandler(noteStore, logger),
 		todo:       todo.NewHandler(todoStore, logger),
 		plan:       learningplan.NewHandler(planStore, logger),
-		fsrs:       fsrs.NewHandler(fsrsStore, logger),
 		agentNote:  agentnote.NewHandler(agentNoteStore, logger),
-		// Today wires only the awaiting-approval task source for now. The
-		// remaining six sources (content review queue, unverified
-		// hypotheses, planning note, FSRS due-count, feed / goal warnings)
-		// are intentionally parked follow-ups: their nil readers leave the
-		// matching response sections at their initialized empty state.
+		// Today wires no cross-domain sources for now. The six readers
+		// (content review queue, unverified hypotheses, planning note,
+		// feed / goal warnings) are intentionally parked follow-ups: their
+		// nil readers leave the matching response sections at their
+		// initialized empty state.
 		today: today.NewHandler(dailyStore, logger).WithSources(
 			nil, // contentQueue — parked follow-up
 			nil, // hypotheses — parked follow-up
 			nil, // awaiting-task source removed (W2)
 			nil, // plannings — parked follow-up
-			nil, // dueReviews — parked follow-up
 			nil, // feeds — parked follow-up
 			nil, // staleGoals — parked follow-up
 		),
