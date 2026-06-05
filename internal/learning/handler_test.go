@@ -51,7 +51,6 @@ func TestLearningSummaryWireContract(t *testing.T) {
 // page silently — this test surfaces the rename at unit-test time.
 func TestDashboardWireContract(t *testing.T) {
 	now := time.Date(2026, 4, 23, 12, 0, 0, 0, time.UTC)
-	nextDue := now.Add(48 * time.Hour)
 	lastReviewedAt := now.Add(-7 * 24 * time.Hour)
 
 	resp := DashboardResponse{
@@ -68,7 +67,6 @@ func TestDashboardWireContract(t *testing.T) {
 					ObsCount:     14,
 					MasteryValue: 0.5,
 					MasteryStage: StageDeveloping,
-					NextDue:      &nextDue,
 				},
 			},
 		},
@@ -136,7 +134,7 @@ func TestDashboardWireContract(t *testing.T) {
 	if len(conceptRows) != 1 {
 		t.Fatalf("concepts.rows len = %d, want 1", len(conceptRows))
 	}
-	for _, want := range []string{"slug", "kind", "domain", "obs_count", "mastery_value", "mastery_stage", "next_due"} {
+	for _, want := range []string{"slug", "kind", "domain", "obs_count", "mastery_value", "mastery_stage"} {
 		if _, ok := conceptRows[0][want]; !ok {
 			t.Errorf("concept row missing wire field %q", want)
 		}
@@ -283,7 +281,6 @@ func TestMasteryValueFormula(t *testing.T) {
 // constructed ConceptListRow — no DB. A rename of any JSON tag breaks
 // the Angular concepts catalog page silently.
 func TestConceptsListWireContract(t *testing.T) {
-	dueAt := time.Date(2026, 4, 25, 12, 0, 0, 0, time.UTC)
 	parent := "two-pointers"
 
 	row := ConceptListRow{
@@ -298,11 +295,6 @@ func TestConceptsListWireContract(t *testing.T) {
 		},
 		ObsCount:   14,
 		ParentSlug: &parent,
-		NextDueTarget: &ConceptListNextDueTarget{
-			ID:    uuid.New(),
-			Title: "LC 76",
-			DueAt: &dueAt,
-		},
 	}
 
 	b, err := json.Marshal(row)
@@ -315,7 +307,7 @@ func TestConceptsListWireContract(t *testing.T) {
 	}
 	for _, want := range []string{
 		"slug", "kind", "domain", "mastery_stage", "mastery_counts",
-		"obs_count", "parent_slug", "next_due_target",
+		"obs_count", "parent_slug",
 	} {
 		if _, ok := top[want]; !ok {
 			t.Errorf("ConceptListRow missing wire field %q", want)
@@ -329,16 +321,6 @@ func TestConceptsListWireContract(t *testing.T) {
 	for _, want := range []string{"weakness", "improvement", "mastery"} {
 		if _, ok := counts[want]; !ok {
 			t.Errorf("mastery_counts missing wire field %q", want)
-		}
-	}
-
-	var target map[string]json.RawMessage
-	if err := json.Unmarshal(top["next_due_target"], &target); err != nil {
-		t.Fatalf("unmarshal next_due_target: %v", err)
-	}
-	for _, want := range []string{"id", "title", "due_at"} {
-		if _, ok := target[want]; !ok {
-			t.Errorf("next_due_target missing wire field %q", want)
 		}
 	}
 }
@@ -356,7 +338,6 @@ func TestConceptsListWireContract_NullableFields_AreNullNotOmitted(t *testing.T)
 		MasteryCounts: SignalCounts{},
 		ObsCount:      0,
 		ParentSlug:    nil,
-		NextDueTarget: nil,
 	}
 	b, err := json.Marshal(row)
 	if err != nil {
@@ -365,7 +346,6 @@ func TestConceptsListWireContract_NullableFields_AreNullNotOmitted(t *testing.T)
 	got := string(b)
 	for _, want := range []string{
 		`"parent_slug":null`,
-		`"next_due_target":null`,
 	} {
 		if !contains(got, want) {
 			t.Errorf("expected %q in encoded row\nfull JSON: %s", want, got)

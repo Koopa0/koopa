@@ -207,39 +207,6 @@ func TestDashboard_Empty_ReturnsEmptyContainers(t *testing.T) {
 	}
 }
 
-// TestDashboard_ConceptWithNoFSRSCard_NextDueNull — a concept with
-// observations but no review_card on any of its targets must yield
-// next_due=nil (the LEFT JOIN against concept_next_due produces NULL).
-func TestDashboard_ConceptWithNoFSRSCard_NextDueNull(t *testing.T) {
-	truncateDashboardTables(t)
-	seedConceptCategory(t, "state-transition", "leetcode")
-
-	conceptID := seedConcept(t, "sliding-window-card-test", "Sliding Window", "leetcode", "pattern")
-	targetID := seedTarget(t, "lc-card-test")
-	linkTargetConcept(t, targetID, conceptID)
-
-	sessionID := seedSession(t, "leetcode")
-	now := time.Date(2026, 4, 23, 12, 0, 0, 0, time.UTC)
-	attemptID := seedAttempt(t, sessionID, targetID, now.Add(-time.Hour))
-
-	// Three high-conf weakness obs so the row appears.
-	seedObservation(t, attemptID, conceptID, "weakness", "state-transition", "high")
-	seedObservation(t, attemptID, conceptID, "weakness", "state-transition", "high")
-	seedObservation(t, attemptID, conceptID, "weakness", "state-transition", "high")
-
-	store := learning.NewStore(testPool)
-	rows, err := store.DashboardConceptRows(t.Context(), nil, now.Add(-90*24*time.Hour), "high")
-	if err != nil {
-		t.Fatalf("DashboardConceptRows: %v", err)
-	}
-	if len(rows) != 1 {
-		t.Fatalf("rows len = %d, want 1", len(rows))
-	}
-	if rows[0].NextDue != nil {
-		t.Errorf("rows[0].NextDue = %v, want nil (no review_card seeded)", *rows[0].NextDue)
-	}
-}
-
 // TestDashboard_LowConfidence_FilteredByDefault — a concept whose only
 // observations are confidence='low' is excluded by the default
 // confidence_filter='high' but appears with confidence_filter='all'.

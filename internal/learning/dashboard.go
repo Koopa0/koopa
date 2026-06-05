@@ -22,7 +22,6 @@ type DashboardConceptRow struct {
 	ObsCount     int64        `json:"obs_count"`
 	MasteryValue float64      `json:"mastery_value"`
 	MasteryStage MasteryStage `json:"mastery_stage"`
-	NextDue      *time.Time   `json:"next_due"`
 }
 
 // DashboardConcepts is the concepts envelope on the dashboard response.
@@ -77,10 +76,8 @@ type DashboardRecentObservation struct {
 }
 
 // DashboardConceptRows returns observation-backed concept rows for the
-// dashboard, joined to a LEFT-side concept_next_due CTE so concepts
-// without any FSRS card produce next_due=nil rather than dropping out.
-// confidenceFilter follows ConceptMastery semantics: "high" (default) or
-// "all"; invalid values return ErrInvalidInput.
+// dashboard. confidenceFilter follows ConceptMastery semantics: "high"
+// (default) or "all"; invalid values return ErrInvalidInput.
 func (s *Store) DashboardConceptRows(ctx context.Context, domain *string, since time.Time, confidenceFilter string) ([]DashboardConceptRow, error) {
 	confidenceFilter, err := normalizeConfidenceFilter(confidenceFilter)
 	if err != nil {
@@ -104,7 +101,6 @@ func (s *Store) DashboardConceptRows(ctx context.Context, domain *string, since 
 			ObsCount:     r.TotalObservations,
 			MasteryValue: MasteryValue(r.MasteryCount, r.TotalObservations),
 			MasteryStage: DeriveMasteryStage(r.WeaknessCount, r.ImprovementCount, r.MasteryCount),
-			NextDue:      r.NextDue,
 		}
 	}
 	return result, nil

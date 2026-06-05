@@ -99,9 +99,6 @@ func TestConceptsList_ConceptWithZeroObservations_AppearsAsDeveloping(t *testing
 	if got.MasteryStage != learning.StageDeveloping {
 		t.Errorf("MasteryStage = %q, want %q (under MinObservationsForVerdict floor)", got.MasteryStage, learning.StageDeveloping)
 	}
-	if got.NextDueTarget != nil {
-		t.Errorf("NextDueTarget = %+v, want nil (no review_card seeded)", *got.NextDueTarget)
-	}
 	if got.ParentSlug != nil {
 		t.Errorf("ParentSlug = %v, want nil (no parent seeded)", *got.ParentSlug)
 	}
@@ -270,66 +267,6 @@ func TestConceptsList_ParentSlug(t *testing.T) {
 	}
 	if *child.ParentSlug != "parent-concept" {
 		t.Errorf("child.ParentSlug = %q, want %q", *child.ParentSlug, "parent-concept")
-	}
-}
-
-// TestConceptsList_NextDueTarget — earliest-due card across linked
-// targets wins. Seed two targets with cards due in 2d and 5d; the
-// row's next_due_target must point at the 2d-due target.
-func TestConceptsList_NextDueTarget(t *testing.T) {
-	truncateConceptsTables(t)
-	ctx := t.Context()
-	now := time.Date(2026, 4, 23, 12, 0, 0, 0, time.UTC)
-
-	conceptID := seedConceptWithParent(t, "next-due-concept", "Next Due", "leetcode", "pattern", nil)
-	earlyTarget := seedTarget(t, "lc-early-due")
-	lateTarget := seedTarget(t, "lc-late-due")
-	linkTargetConcept(t, earlyTarget, conceptID)
-	linkTargetConcept(t, lateTarget, conceptID)
-
-	// Seed cards directly to control due dates.
-	state := json.RawMessage(`{"Due":"2026-04-23T12:00:00Z","Stability":5,"Difficulty":5,"ElapsedDays":0,"ScheduledDays":0,"Reps":1,"Lapses":0,"State":2,"LastReview":"2026-04-18T12:00:00Z"}`)
-	earlyDue := now.Add(2 * 24 * time.Hour)
-	lateDue := now.Add(5 * 24 * time.Hour)
-	if _, err := testPool.Exec(ctx,
-		`INSERT INTO review_cards (learning_target_id, card_state, due) VALUES ($1, $2, $3)`,
-		earlyTarget, state, earlyDue,
-	); err != nil {
-		t.Fatalf("inserting early card: %v", err)
-	}
-	if _, err := testPool.Exec(ctx,
-		`INSERT INTO review_cards (learning_target_id, card_state, due) VALUES ($1, $2, $3)`,
-		lateTarget, state, lateDue,
-	); err != nil {
-		t.Fatalf("inserting late card: %v", err)
-	}
-
-	store := learning.NewStore(testPool)
-	rows, err := store.ConceptsList(t.Context(), learning.ConceptListFilter{}, now.Add(-90*24*time.Hour))
-	if err != nil {
-		t.Fatalf("ConceptsList: %v", err)
-	}
-	var got *learning.ConceptListRow
-	for i := range rows {
-		if rows[i].Slug == "next-due-concept" {
-			got = &rows[i]
-			break
-		}
-	}
-	if got == nil {
-		t.Fatalf("next-due-concept not in results")
-	}
-	if got.NextDueTarget == nil {
-		t.Fatalf("NextDueTarget = nil, want earliest-due target")
-	}
-	if got.NextDueTarget.ID != earlyTarget {
-		t.Errorf("NextDueTarget.ID = %s, want %s (earliest-due wins)", got.NextDueTarget.ID, earlyTarget)
-	}
-	if got.NextDueTarget.Title != "lc-early-due" {
-		t.Errorf("NextDueTarget.Title = %q, want %q", got.NextDueTarget.Title, "lc-early-due")
-	}
-	if got.NextDueTarget.DueAt == nil || !got.NextDueTarget.DueAt.Equal(earlyDue) {
-		t.Errorf("NextDueTarget.DueAt = %v, want %v", got.NextDueTarget.DueAt, earlyDue)
 	}
 }
 

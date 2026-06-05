@@ -205,14 +205,13 @@ GROUP BY split_part(name, ':', 1);
 --
 -- Learning-domain counts added in F-3 follow-up: a learning-studio
 -- audit reported the previous shape made the learning surface invisible
--- in system_status. attempts/sessions/concepts/fsrs covers the four
+-- in system_status. attempts/sessions/concepts covers the three
 -- top-level entities a learning coach checks for "is the system
--- populated yet". One query, not four, keeps the round-trip at 1.
+-- populated yet". One query keeps the round-trip at 1.
 SELECT
     (SELECT COUNT(*) FROM contents)::int                 AS contents_count,
     (SELECT COUNT(*) FROM todos)::int                    AS todos_count,
     (SELECT COUNT(*) FROM notes)::int                    AS notes_count,
     (SELECT COUNT(*) FROM learning_attempts)::int        AS attempts_count,
     (SELECT COUNT(*) FROM learning_sessions)::int        AS sessions_count,
-    (SELECT COUNT(*) FROM concepts)::int                 AS concepts_count,
-    (SELECT COUNT(*) FROM review_cards)::int             AS fsrs_cards_count;
+    (SELECT COUNT(*) FROM concepts)::int                 AS concepts_count;

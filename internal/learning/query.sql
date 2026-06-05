@@ -406,33 +406,13 @@ LIMIT @max_results;
 -- LEFT JOIN's ON clause so unmatched-by-filter observations are simply
 -- not joined, instead of eliminating the concept from the result set.
 --
--- next_due_target_* come from concept_earliest_card, a CTE that picks the
--- earliest-due review card across every live learning_target linked to
--- the concept. NULL on every column when the concept has no linked
--- targets with cards.
---
 -- parent_slug is the concept's parent slug, NULL for root concepts.
-WITH concept_earliest_card AS (
-    SELECT DISTINCT ON (ltc.concept_id)
-           ltc.concept_id,
-           lt.id    AS target_id,
-           lt.title AS target_title,
-           rc.due   AS due_at
-    FROM learning_target_concepts ltc
-    JOIN review_cards rc      ON rc.learning_target_id = ltc.learning_target_id
-    JOIN learning_targets lt  ON lt.id = ltc.learning_target_id
-    WHERE lt.archived_at IS NULL
-    ORDER BY ltc.concept_id, rc.due ASC
-)
 SELECT c.id, c.slug, c.name, c.domain, c.kind,
        parent.slug AS parent_slug,
        COUNT(ao.id) FILTER (WHERE ao.signal_type = 'weakness')    AS weakness_count,
        COUNT(ao.id) FILTER (WHERE ao.signal_type = 'improvement') AS improvement_count,
        COUNT(ao.id) FILTER (WHERE ao.signal_type = 'mastery')     AS mastery_count,
-       COUNT(ao.id)                                               AS total_observations,
-       cec.target_id    AS next_due_target_id,
-       cec.target_title AS next_due_target_title,
-       cec.due_at       AS next_due_at
+       COUNT(ao.id)                                               AS total_observations
 FROM concepts c
 LEFT JOIN concepts parent ON parent.id = c.parent_id
 LEFT JOIN learning_attempt_observations ao
@@ -441,14 +421,13 @@ LEFT JOIN learning_attempt_observations ao
 LEFT JOIN learning_attempts a
        ON a.id = ao.attempt_id
       AND a.attempted_at >= @since
-LEFT JOIN concept_earliest_card cec ON cec.concept_id = c.id
 WHERE c.archived_at IS NULL
   AND (sqlc.narg('domain')::text IS NULL OR c.domain = sqlc.narg('domain'))
   AND (sqlc.narg('kind')::text   IS NULL OR c.kind::text = sqlc.narg('kind'))
   AND (sqlc.narg('q')::text      IS NULL
        OR c.name ILIKE '%' || sqlc.narg('q')::text || '%'
        OR c.slug ILIKE '%' || sqlc.narg('q')::text || '%')
-GROUP BY c.id, parent.slug, cec.target_id, cec.target_title, cec.due_at
+GROUP BY c.id, parent.slug
 ORDER BY c.domain ASC, c.slug ASC;
 
 -- name: ConceptMasteryCountsForConcept :one
@@ -542,41 +521,23 @@ LIMIT @max_results;
 -- window do not appear (separate decision from /concepts list which
 -- LEFT-JOINs to include unobserved concepts).
 --
--- next_due is the earliest review_cards.due across every learning_target
--- linked to the concept via learning_target_concepts. NULL when the
--- concept has no live targets with cards. Pre-aggregated in the
--- concept_next_due CTE then LEFT JOINed so sqlc infers nullability —
--- sqlc cannot infer NULLability from a bare correlated subquery, but a
--- LEFT JOIN against a CTE with a casted aggregate gives it a *time.Time
--- in Go.
---
 -- @confidence_filter mirrors ConceptMastery: 'high' (default) or 'all'.
 -- Stage derivation lives in Go (mastery.DeriveMasteryStage), and the
 -- floor applies only to the stage — mastery_value is a raw ratio derived
 -- in Go (mastery.MasteryValue).
-WITH concept_next_due AS (
-    SELECT ltc.concept_id, MIN(rc.due)::timestamptz AS next_due
-    FROM learning_target_concepts ltc
-    JOIN review_cards rc     ON rc.learning_target_id = ltc.learning_target_id
-    JOIN learning_targets lt ON lt.id = ltc.learning_target_id
-    WHERE lt.archived_at IS NULL
-    GROUP BY ltc.concept_id
-)
 SELECT c.id, c.slug, c.name, c.domain, c.kind,
        COUNT(*) FILTER (WHERE ao.signal_type = 'weakness')    AS weakness_count,
        COUNT(*) FILTER (WHERE ao.signal_type = 'improvement') AS improvement_count,
        COUNT(*) FILTER (WHERE ao.signal_type = 'mastery')     AS mastery_count,
-       COUNT(*)                                               AS total_observations,
-       cnd.next_due
+       COUNT(*)                                               AS total_observations
 FROM concepts c
 JOIN learning_attempt_observations ao ON ao.concept_id = c.id
 JOIN learning_attempts a              ON a.id = ao.attempt_id
-LEFT JOIN concept_next_due cnd        ON cnd.concept_id = c.id
 WHERE c.archived_at IS NULL
   AND (sqlc.narg('domain')::text IS NULL OR c.domain = sqlc.narg('domain'))
   AND a.attempted_at >= @since
   AND (@confidence_filter::text = 'all' OR ao.confidence = 'high')
-GROUP BY c.id, cnd.next_due
+GROUP BY c.id
 ORDER BY total_observations DESC, c.slug ASC;
 
 -- name: DashboardDueReviews :many

@@ -1695,27 +1695,12 @@ func (q *Queries) ConceptsBySlug(ctx context.Context, slugs []string) ([]Concept
 }
 
 const conceptsForList = `-- name: ConceptsForList :many
-WITH concept_earliest_card AS (
-    SELECT DISTINCT ON (ltc.concept_id)
-           ltc.concept_id,
-           lt.id    AS target_id,
-           lt.title AS target_title,
-           rc.due   AS due_at
-    FROM learning_target_concepts ltc
-    JOIN review_cards rc      ON rc.learning_target_id = ltc.learning_target_id
-    JOIN learning_targets lt  ON lt.id = ltc.learning_target_id
-    WHERE lt.archived_at IS NULL
-    ORDER BY ltc.concept_id, rc.due ASC
-)
 SELECT c.id, c.slug, c.name, c.domain, c.kind,
        parent.slug AS parent_slug,
        COUNT(ao.id) FILTER (WHERE ao.signal_type = 'weakness')    AS weakness_count,
        COUNT(ao.id) FILTER (WHERE ao.signal_type = 'improvement') AS improvement_count,
        COUNT(ao.id) FILTER (WHERE ao.signal_type = 'mastery')     AS mastery_count,
-       COUNT(ao.id)                                               AS total_observations,
-       cec.target_id    AS next_due_target_id,
-       cec.target_title AS next_due_target_title,
-       cec.due_at       AS next_due_at
+       COUNT(ao.id)                                               AS total_observations
 FROM concepts c
 LEFT JOIN concepts parent ON parent.id = c.parent_id
 LEFT JOIN learning_attempt_observations ao
@@ -1724,14 +1709,13 @@ LEFT JOIN learning_attempt_observations ao
 LEFT JOIN learning_attempts a
        ON a.id = ao.attempt_id
       AND a.attempted_at >= $2
-LEFT JOIN concept_earliest_card cec ON cec.concept_id = c.id
 WHERE c.archived_at IS NULL
   AND ($3::text IS NULL OR c.domain = $3)
   AND ($4::text   IS NULL OR c.kind::text = $4)
   AND ($5::text      IS NULL
        OR c.name ILIKE '%' || $5::text || '%'
        OR c.slug ILIKE '%' || $5::text || '%')
-GROUP BY c.id, parent.slug, cec.target_id, cec.target_title, cec.due_at
+GROUP BY c.id, parent.slug
 ORDER BY c.domain ASC, c.slug ASC
 `
 
@@ -1744,19 +1728,16 @@ type ConceptsForListParams struct {
 }
 
 type ConceptsForListRow struct {
-	ID                 uuid.UUID   `json:"id"`
-	Slug               string      `json:"slug"`
-	Name               string      `json:"name"`
-	Domain             string      `json:"domain"`
-	Kind               ConceptKind `json:"kind"`
-	ParentSlug         *string     `json:"parent_slug"`
-	WeaknessCount      int64       `json:"weakness_count"`
-	ImprovementCount   int64       `json:"improvement_count"`
-	MasteryCount       int64       `json:"mastery_count"`
-	TotalObservations  int64       `json:"total_observations"`
-	NextDueTargetID    *uuid.UUID  `json:"next_due_target_id"`
-	NextDueTargetTitle *string     `json:"next_due_target_title"`
-	NextDueAt          *time.Time  `json:"next_due_at"`
+	ID                uuid.UUID   `json:"id"`
+	Slug              string      `json:"slug"`
+	Name              string      `json:"name"`
+	Domain            string      `json:"domain"`
+	Kind              ConceptKind `json:"kind"`
+	ParentSlug        *string     `json:"parent_slug"`
+	WeaknessCount     int64       `json:"weakness_count"`
+	ImprovementCount  int64       `json:"improvement_count"`
+	MasteryCount      int64       `json:"mastery_count"`
+	TotalObservations int64       `json:"total_observations"`
 }
 
 // One row per non-archived concept matching the domain/kind/q filters.
@@ -1768,11 +1749,6 @@ type ConceptsForListRow struct {
 // @confidence_filter ('high' default | 'all') is applied inside the
 // LEFT JOIN's ON clause so unmatched-by-filter observations are simply
 // not joined, instead of eliminating the concept from the result set.
-//
-// next_due_target_* come from concept_earliest_card, a CTE that picks the
-// earliest-due review card across every live learning_target linked to
-// the concept. NULL on every column when the concept has no linked
-// targets with cards.
 //
 // parent_slug is the concept's parent slug, NULL for root concepts.
 func (q *Queries) ConceptsForList(ctx context.Context, arg ConceptsForListParams) ([]ConceptsForListRow, error) {
@@ -1801,9 +1777,6 @@ func (q *Queries) ConceptsForList(ctx context.Context, arg ConceptsForListParams
 			&i.ImprovementCount,
 			&i.MasteryCount,
 			&i.TotalObservations,
-			&i.NextDueTargetID,
-			&i.NextDueTargetTitle,
-			&i.NextDueAt,
 		); err != nil {
 			return nil, err
 		}
@@ -3286,29 +3259,19 @@ func (q *Queries) CurateFeedEntry(ctx context.Context, arg CurateFeedEntryParams
 }
 
 const dashboardConceptRows = `-- name: DashboardConceptRows :many
-WITH concept_next_due AS (
-    SELECT ltc.concept_id, MIN(rc.due)::timestamptz AS next_due
-    FROM learning_target_concepts ltc
-    JOIN review_cards rc     ON rc.learning_target_id = ltc.learning_target_id
-    JOIN learning_targets lt ON lt.id = ltc.learning_target_id
-    WHERE lt.archived_at IS NULL
-    GROUP BY ltc.concept_id
-)
 SELECT c.id, c.slug, c.name, c.domain, c.kind,
        COUNT(*) FILTER (WHERE ao.signal_type = 'weakness')    AS weakness_count,
        COUNT(*) FILTER (WHERE ao.signal_type = 'improvement') AS improvement_count,
        COUNT(*) FILTER (WHERE ao.signal_type = 'mastery')     AS mastery_count,
-       COUNT(*)                                               AS total_observations,
-       cnd.next_due
+       COUNT(*)                                               AS total_observations
 FROM concepts c
 JOIN learning_attempt_observations ao ON ao.concept_id = c.id
 JOIN learning_attempts a              ON a.id = ao.attempt_id
-LEFT JOIN concept_next_due cnd        ON cnd.concept_id = c.id
 WHERE c.archived_at IS NULL
   AND ($1::text IS NULL OR c.domain = $1)
   AND a.attempted_at >= $2
   AND ($3::text = 'all' OR ao.confidence = 'high')
-GROUP BY c.id, cnd.next_due
+GROUP BY c.id
 ORDER BY total_observations DESC, c.slug ASC
 `
 
@@ -3328,7 +3291,6 @@ type DashboardConceptRowsRow struct {
 	ImprovementCount  int64       `json:"improvement_count"`
 	MasteryCount      int64       `json:"mastery_count"`
 	TotalObservations int64       `json:"total_observations"`
-	NextDue           *time.Time  `json:"next_due"`
 }
 
 // Per-concept mastery rows for /learning/dashboard concepts.rows.
@@ -3336,14 +3298,6 @@ type DashboardConceptRowsRow struct {
 // observation-backed — concepts with zero observations in the (since, now)
 // window do not appear (separate decision from /concepts list which
 // LEFT-JOINs to include unobserved concepts).
-//
-// next_due is the earliest review_cards.due across every learning_target
-// linked to the concept via learning_target_concepts. NULL when the
-// concept has no live targets with cards. Pre-aggregated in the
-// concept_next_due CTE then LEFT JOINed so sqlc infers nullability —
-// sqlc cannot infer NULLability from a bare correlated subquery, but a
-// LEFT JOIN against a CTE with a casted aggregate gives it a *time.Time
-// in Go.
 //
 // @confidence_filter mirrors ConceptMastery: 'high' (default) or 'all'.
 // Stage derivation lives in Go (mastery.DeriveMasteryStage), and the
@@ -3368,7 +3322,6 @@ func (q *Queries) DashboardConceptRows(ctx context.Context, arg DashboardConcept
 			&i.ImprovementCount,
 			&i.MasteryCount,
 			&i.TotalObservations,
-			&i.NextDue,
 		); err != nil {
 			return nil, err
 		}
@@ -9742,18 +9695,16 @@ SELECT
     (SELECT COUNT(*) FROM notes)::int                    AS notes_count,
     (SELECT COUNT(*) FROM learning_attempts)::int        AS attempts_count,
     (SELECT COUNT(*) FROM learning_sessions)::int        AS sessions_count,
-    (SELECT COUNT(*) FROM concepts)::int                 AS concepts_count,
-    (SELECT COUNT(*) FROM review_cards)::int             AS fsrs_cards_count
+    (SELECT COUNT(*) FROM concepts)::int                 AS concepts_count
 `
 
 type StatsDatabaseCountsRow struct {
-	ContentsCount  int32 `json:"contents_count"`
-	TodosCount     int32 `json:"todos_count"`
-	NotesCount     int32 `json:"notes_count"`
-	AttemptsCount  int32 `json:"attempts_count"`
-	SessionsCount  int32 `json:"sessions_count"`
-	ConceptsCount  int32 `json:"concepts_count"`
-	FsrsCardsCount int32 `json:"fsrs_cards_count"`
+	ContentsCount int32 `json:"contents_count"`
+	TodosCount    int32 `json:"todos_count"`
+	NotesCount    int32 `json:"notes_count"`
+	AttemptsCount int32 `json:"attempts_count"`
+	SessionsCount int32 `json:"sessions_count"`
+	ConceptsCount int32 `json:"concepts_count"`
 }
 
 // Core entity counts for SystemHealth. todos is the personal GTD store;
@@ -9764,9 +9715,9 @@ type StatsDatabaseCountsRow struct {
 //
 // Learning-domain counts added in F-3 follow-up: a learning-studio
 // audit reported the previous shape made the learning surface invisible
-// in system_status. attempts/sessions/concepts/fsrs covers the four
+// in system_status. attempts/sessions/concepts covers the three
 // top-level entities a learning coach checks for "is the system
-// populated yet". One query, not four, keeps the round-trip at 1.
+// populated yet". One query keeps the round-trip at 1.
 func (q *Queries) StatsDatabaseCounts(ctx context.Context) (StatsDatabaseCountsRow, error) {
 	row := q.db.QueryRow(ctx, statsDatabaseCounts)
 	var i StatsDatabaseCountsRow
@@ -9777,7 +9728,6 @@ func (q *Queries) StatsDatabaseCounts(ctx context.Context) (StatsDatabaseCountsR
 		&i.AttemptsCount,
 		&i.SessionsCount,
 		&i.ConceptsCount,
-		&i.FsrsCardsCount,
 	)
 	return i, err
 }

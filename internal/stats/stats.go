@@ -216,18 +216,17 @@ type PipelineHealth struct {
 
 // DatabaseStats is the database section of SystemHealthSnapshot.
 // Counts split into knowledge-side entities (contents, todos, notes)
-// and learning-side entities (attempts, sessions, concepts, fsrs
-// cards). The split mirrors the system's two concerns — knowledge
+// and learning-side entities (attempts, sessions, concepts). The split
+// mirrors the system's two concerns — knowledge
 // management vs learning analytics — so a caller scanning health can
 // see at a glance which side is populated. Learning fields added per
 // the Phase 1 self-audit F-3 finding (learning-studio reported the
 // previous shape made the learning surface invisible).
 type DatabaseStats struct {
-	ContentsCount  int `json:"contents_count"`
-	TodosCount     int `json:"todos_count"`
-	NotesCount     int `json:"notes_count"`
-	AttemptsCount  int `json:"attempts_count"`
-	SessionsCount  int `json:"sessions_count"`
-	ConceptsCount  int `json:"concepts_count"`
-	FsrsCardsCount int `json:"fsrs_cards_count"`
+	ContentsCount int `json:"contents_count"`
+	TodosCount    int `json:"todos_count"`
+	NotesCount    int `json:"notes_count"`
+	AttemptsCount int `json:"attempts_count"`
+	SessionsCount int `json:"sessions_count"`
+	ConceptsCount int `json:"concepts_count"`
 }

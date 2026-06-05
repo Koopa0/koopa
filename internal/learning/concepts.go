@@ -24,27 +24,16 @@ type SignalCounts struct {
 	Mastery     int64 `json:"mastery"`
 }
 
-// ConceptListNextDueTarget is the nested per-row next_due_target object.
-// All three fields are required wire fields when the parent is non-null;
-// the parent itself is `null` when the concept has no linked review card.
-// `due_at` is nullable inside the object to honour the api-spec shape.
-type ConceptListNextDueTarget struct {
-	ID    uuid.UUID  `json:"id"`
-	Title string     `json:"title"`
-	DueAt *time.Time `json:"due_at"`
-}
-
 // ConceptListRow is one item in the /api/admin/learning/concepts
 // response array.
 type ConceptListRow struct {
-	Slug          string                    `json:"slug"`
-	Kind          string                    `json:"kind"`
-	Domain        string                    `json:"domain"`
-	MasteryStage  MasteryStage              `json:"mastery_stage"`
-	MasteryCounts SignalCounts              `json:"mastery_counts"`
-	ObsCount      int64                     `json:"obs_count"`
-	ParentSlug    *string                   `json:"parent_slug"`
-	NextDueTarget *ConceptListNextDueTarget `json:"next_due_target"`
+	Slug          string       `json:"slug"`
+	Kind          string       `json:"kind"`
+	Domain        string       `json:"domain"`
+	MasteryStage  MasteryStage `json:"mastery_stage"`
+	MasteryCounts SignalCounts `json:"mastery_counts"`
+	ObsCount      int64        `json:"obs_count"`
+	ParentSlug    *string      `json:"parent_slug"`
 }
 
 // NamedConcept is the {slug, name} pair used for parent + children on
@@ -172,13 +161,6 @@ func (s *Store) ConceptsList(ctx context.Context, f ConceptListFilter, since tim
 			},
 			ObsCount:   r.TotalObservations,
 			ParentSlug: r.ParentSlug,
-		}
-		if r.NextDueTargetID != nil && r.NextDueTargetTitle != nil {
-			row.NextDueTarget = &ConceptListNextDueTarget{
-				ID:    *r.NextDueTargetID,
-				Title: *r.NextDueTargetTitle,
-				DueAt: r.NextDueAt,
-			}
 		}
 		result = append(result, row)
 	}
