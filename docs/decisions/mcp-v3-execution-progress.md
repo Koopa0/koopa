@@ -91,6 +91,11 @@ Why together: `agentnote` (W3) is woven through morning_context / reflection_con
 
 **No product decision pending** — ledger §1 (target surface) + §3 (agent_notes fully retired, memory → agent `.md`) make every removal unambiguous; brief/learning_read modes/views are ledger-specified. The only judgment is mechanical (where to relocate the content-detail types brief needs in C3).
 
+**Mapping-workflow findings (2026-06-05; re-runnable — the 4-agent map/draft workflow produced full line-ranges + Go drafts of brief & learning_read, but in an ephemeral transcript; re-run or re-grep at execution):**
+- **C1 propose/commit is a SUBSYSTEM, not 7 isolated handlers.** `propose_flat.go` (whole file — 6 handlers + their `*Input` types) deletes cleanly. But `commitment.go` does NOT whole-delete: it holds shared validators (`validateSlug`, `isValidTaskPriority`, `isValidEnergy`, `isValidContentStatus`, `isValidPlanEntryStatus`, `isValidPlanStatus`, `isValidGoalStatusFilter`) that KEPT tools (manage_plan, content/advance paths) use — KEEP those; surgically remove only `ProposeOutput`/`CommitProposal{Input,Output}` + `proposeEntity`/`commitProposal`/`commitEntity`/`resolve*Fields`/`commit*` + `propValidatorDrift`. The HMAC token lives in a separate `proposal.go` (`signProposal`) — part of the proposal subsystem, remove iff no kept caller. **Verify each `isValid*` consumer before deleting.**
+- Every "clean chunk" has tendrils — apply each sub-commit with per-symbol consumer greps, not blind line-range deletes.
+- Status: cluster fully comprehended + planned; **execution deferred to a fresh focused session** (C1→C2→C3, each green-gated + committed) rather than risk a half-migrated tree at the tail of the W4+W5 marathon.
+
 End state of the cluster: MCP keeps ~11 tools (ledger §1): plan_day, search_knowledge, capture_inbox, start/record/end_session, manage_plan(5 actions), learning_read, brief, create_note, update_note.
 
 ### W7 — schema converge into `migrations/001`
