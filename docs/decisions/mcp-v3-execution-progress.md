@@ -33,6 +33,7 @@ private memory.
 | W5b-2a | `6e722bc` | review_cards-backed next-due reads (no fsrs-pkg coupling): ConceptsForList next_due_target CTE, DashboardConceptRows next_due CTE, stats `fsrs_cards_count`. |
 | W5b-2b | `dd92c24` | **deleted `internal/learning/fsrs`** + every remaining consumer (learning ReviewMetrics / dashboard due_today / today due-reviews / HTTP review route / main wiring / tests). `go mod tidy` dropped go-fsrs + swept the W2 a2a-go/genproto debt. FSRS = 0 in production Go. Executed integration suites green. |
 | W5c (frontend) | `dd23199` | Angular FSRS removal: deleted the interactive "Due today (FSRS)" dashboard card + rating UI + ReviewRating/recordReview; dropped FSRS model fields (due_today / due_reviews_count / next_due / next_due_target / `LearningSummary.due_reviews`); today dropped the dead learning-summary fan-out source + Due-reviews section; concepts list dropped Next-due column. tsc+lint+build+16 specs green; FSRS = 0 in frontend/src. |
+| W6 C1 (1/2) | `5bd2f32` | First catalog-contraction slice: removed `system_status` + `manage_feeds` (whole-file deletes system.go/feed.go/system_test.go + catalog Metas + All() + server addTool + go-generate'd tools.md). Shared-test fallout handled (handler_test/authz_registered_caller/integration). MCP 40 → 38. Proved the per-tool removal recipe (delete handler → catalog → server → go generate → shared-test cascade → gate). |
 
 ---
 
