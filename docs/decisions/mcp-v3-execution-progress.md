@@ -134,7 +134,11 @@ ORIGINAL PLAN:
 - Backend `POST` endpoints + handlers: goals, milestones, learning_plans, learning_domains (projects already has POST). These are the "decision-stamp" forms replacing the removed MCP propose_* tools.
 - Angular create/confirm forms for the same. Verify with a frontend build.
 
-### W10 — doc cascade (LAST; ledger §5 ordering rule)
+### W10 — doc cascade  ✅ DONE (W10a `(committed)`, W10b `3af3216`)
+**W10a:** rewrote backend-semantic-contract.md (§1–§7), authorization-matrix.md (8 write tools + read-only trio + removed→admin-HTTP migration map), skills/koopa-system manual (SKILL.md + hq/content/learning/decision-policy; deleted research.md + a2a.md), README + LEARNING-CONTRACT. **W10b:** fixed agent-facing stale descriptions (EndSession "creates agent note", UpdateNote "update_note_maturity"), removed the dead EndSessionInput.Reflection field, search.go corpus comment. Verified against catalog.go.
+**DEFERRED (flagged for owner):** (a) `requireExplicitHuman` orphaned (callers publish_content/commit_proposal removed; only its test keeps it alive); (b) `agent.Capability` flags vestigial (no live MCP tool consumes one post-A2A). Keep-for-future vs remove-as-dead is an owner decision; authz.go's package-doc rewrite + `.claude/rules/mcp-decision-policy.md` (gitignored, local) wait on it. Out of contraction scope.
+
+ORIGINAL PLAN (LAST; ledger §5 ordering rule):
 - Rewrite `.claude/rules/mcp-decision-policy.md` (§8 proposal, §14 coordination, §10 multiplexer, vocabulary), `docs/backend-semantic-contract.md`, `docs/authorization-matrix.md`.
 - Regenerate `skills/koopa-system/**` from the final catalog.
 - Delete the Studio role-manuals (`skills/koopa-system/references/{hq,content,learning,research,a2a,decision-policy}.md`; keep `tools.md`).
