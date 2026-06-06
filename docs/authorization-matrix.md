@@ -8,9 +8,27 @@ list; the prose above explains the model so the matrix is interpretable
 without reading every handler.
 
 > Authority order: this doc defers to the schema (`migrations/`) for
-> entity invariants and to `internal/agent/registry.go` for the agent
-> roster. If this doc and code disagree, the code wins and this doc is
-> stale — open a fix.
+> entity invariants, to `internal/mcp/ops/catalog.go` for the live tool
+> surface, and to `internal/agent/registry.go` for the agent roster. If
+> this doc and code disagree, the code wins and this doc is stale — open
+> a fix.
+
+> **Post-contraction surface (MCP-v3).** The agent-facing MCP surface is
+> exactly 11 tools (`internal/mcp/ops/catalog.go::All()`): `brief`,
+> `search_knowledge`, `capture_inbox`, `plan_day`, `start_session`,
+> `record_attempt`, `end_session`, `learning_read`, `manage_plan`,
+> `create_note`, `update_note`. Of these, `brief`, `learning_read`, and
+> `search_knowledge` are read-only and need no authz beyond being a
+> registered caller. The eight write tools are gated below.
+>
+> Commitment creation (goal / milestone / learning_plan / learning_domain)
+> and content authoring no longer exist on the MCP surface. They moved to
+> **admin-only HTTP POST endpoints** behind JWT auth + the per-request
+> actor tx (`adminMid` in `cmd/app/routes.go`) — i.e. human-gated. The
+> agent-facing `propose_*` / `commit_proposal` two-phase flow, the seven
+> content tools, the report lane, and the A2A coordination triad were all
+> removed; their former rows are gone from the matrix. See §7 for the
+> migration map.
 
 ---
 
@@ -36,6 +54,15 @@ Capability is intentionally narrow: it answers "may this caller speak
 on this transport channel". It does not answer "is this caller the
 right author of this domain entity" — that's Axis 3.
 
+> **Post-contraction note.** No tool on the current 11-tool MCP surface
+> takes a capability gate: the coordination triad (tasks / task_messages
+> / artifacts) and the report lane that consumed `SubmitTasks` /
+> `ReceiveTasks` / `PublishArtifacts` were removed. The capability model
+> still exists in `internal/agent` for compile-time enforcement, but no
+> agent-facing tool exercises it today. The axis is documented here
+> because it remains part of the four-axis model and the next coordination
+> tool (if any) would re-enable it.
+
 ### Axis 2 — Platform (runtime)
 
 Some operations are reserved for the human owner of the system. The
@@ -58,9 +85,14 @@ check (in `authz.go::requireExplicitHuman`):
    trusted auto-publisher agent registered with `Platform="human"`
    inherits the right without code changes.
 
-This axis is the load-bearing semantic for `publish_content` and for
-`commit_proposal` of high-commitment entities — operations whose meaning
-is "the human owner reviewed this".
+> **Post-contraction note.** The operations this axis used to gate —
+> content publication and high-commitment commits — are no longer MCP
+> tools. The "human reviewed this" semantic now lives in the admin HTTP
+> surface: every `POST /api/admin/...` mutation runs through `adminMid`
+> (JWT auth + per-request actor tx) in `cmd/app/routes.go`, which is the
+> human owner acting through the admin UI. `requireExplicitHuman` remains
+> in `authz.go` and would re-gate any future human-only MCP tool, but no
+> tool on the current surface invokes it.
 
 ### Axis 3 — Author (runtime allowlist)
 
@@ -80,255 +112,134 @@ content-studio author goals" should not require rebuilding the binary.
 
 ### Axis 4 — Self (runtime, row-level)
 
-Personal-GTD tools (`advance_work`) and task-bound coordination
-(`file_report` with `in_response_to`, `task_detail`) require
-`caller == row.created_by` or `caller == row.target`. Enforced inline
-by the handler against the loaded row; no helper because the row source
-varies.
+Row-level self-binding requires `caller == row.created_by` or
+`caller == row.target`, enforced inline by the handler against the
+loaded row (no helper, because the row source varies).
+
+> **Post-contraction note.** The tools this axis used to gate — the
+> personal-GTD `advance_work` and task-bound coordination
+> (`file_report(in_response_to)`, `task_detail`) — are removed. Todo
+> state transitions moved to `POST /api/admin/commitment/todos/{id}/advance`
+> (admin HTTP), and the coordination triad is gone entirely. No tool on
+> the current 11-tool surface uses a self-binding check; the axis is kept
+> in the model for completeness.
 
 ---
 
 ## §2. Why explicit `as` matters for human-only gates
 
-Operations gated by `requireAuthor` are content with the server default
-— if the default agent is human, server-default human is still human.
+The two `authz.go` gates treat the server-default caller differently:
 
-Operations gated by `requireExplicitHuman` refuse the default. The
-distinction matters specifically for `commit_proposal` of high-commitment
-entities and for `publish_content`, where human review is the
-load-bearing semantic — not a configuration default. A backdoor that
-let an MCP client omit `as` and silently inherit publish authority
-would defeat the gate.
+- `requireAuthor` accepts the server default — if the default agent is
+  human, server-default human is still human.
+- `requireExplicitHuman` refuses the default. It demands that the caller
+  supplied an explicit `as` AND that the named agent has
+  `Platform == "human"`. A backdoor that let an MCP client omit `as` and
+  silently inherit human authority would defeat the gate.
+
+> **Post-contraction note.** The operations that historically motivated
+> `requireExplicitHuman` — high-commitment `commit_proposal` and
+> `publish_content` — are no longer MCP tools; both moved to admin HTTP
+> (see §7). The distinction above is therefore latent on the current
+> surface: it constrains how a future human-only MCP tool MUST be wired,
+> not any tool that exists today. None of the eight current write tools
+> is human-gated at the MCP layer.
 
 ---
 
 ## §3. The matrix
 
 Read the columns left-to-right: each row names a write tool, the axes
-that gate it, and the rule.
+that gate it, and the rule. Only the eight write tools on the current
+11-tool MCP surface appear; the three read-only tools (`brief`,
+`learning_read`, `search_knowledge`) are not gated beyond being a
+registered caller and are listed at the end for completeness.
 
 ### Knowledge layer
 
 Notes are write-rich, curate-late by design and open to any registered
 caller — restricting authorship would force agents to launder
-observations through agent_notes and lose the slug-addressable knowledge
-graph that notes provide. Content authoring is narrower: only the two
-roles that produce content (content-studio, learning-studio) plus the
-implicit human may touch a `content` row's authoring lifecycle —
-create, update, and the draft↔review↔archived transitions
-(`set_content_review_state`, `archive_content`). Other agents (hq, research-lab) route content work
-to content-studio via a directive rather than acting directly.
-Front-end review and the publish gate handle quality.
+observations through some narrower channel and lose the slug-addressable
+knowledge graph that notes provide. The two note tools are the entire
+agent-facing knowledge-authoring surface; content authoring moved off MCP
+to admin HTTP (see §7).
 
 | Tool | Capability | Platform | Author | Self | Effective rule |
 |---|---|---|---|---|---|
 | `create_note` | — | — | — | — | Open to any registered caller |
-| `update_note` | — | — | — | — | Open |
-| `update_note_maturity` | — | — | — | — | Open |
-| `create_content` | — | — | content-studio, learning-studio | — | Author allowlist (+ human implicit) |
-| `update_content` | — | — | content-studio, learning-studio | — | Author allowlist (+ human implicit) |
-| `set_content_review_state` | — | — | content-studio, learning-studio | — | Author allowlist (+ human implicit) |
-| `archive_content` | — | — | content-studio, learning-studio | — | Author allowlist (+ human implicit) |
-| `list_content` / `read_content` | — | — | — | — | Open (read-only) |
+| `update_note` | — | — | — | — | Open (covers field edits AND maturity transitions) |
 
-### Report lane
+### Learning layer
 
-Fan-out research is a deliberate lightweight carve-out from the proposal-first
-directive flow, for **low-trust research-source production only** — it is not
-formal delegation and implies no final acceptance, revision authority,
-publication, or human truth verdict. Dispatch (`assign_research`) is a
-coordinator act (hq + human). Filing into the searchable report corpus
-(`create_report`) requires the **PublishArtifacts** capability — the same bar
-`file_report(standalone)` sets — so a corpus write is never weaker than an
-artifact write; reports are additionally born `low_trust`, badged, and
-downranked in `search_knowledge`. Fulfilling a dispatched assignment is
-self-bound to its `assigned_to`. Trust promotion (`low_trust → trusted`) is a
-human/admin verdict (`research.Store.SetReportTrust`, schema/store-ready; no
-production UI yet) and never reaches the agent surface.
+The learning lifecycle is the largest live write surface. All four write
+tools are open to any registered caller — there is no per-role authorship
+on learning: an agent that runs a session records its own attempts and
+manages its own plan entries. `manage_plan` is `Destructive` because it
+includes `remove_entries` and `reorder`; the per-entry completion audit
+trail (`completed_by_attempt_id` + `reason`) is policy-enforced inside the
+handler, not via the four axes.
 
 | Tool | Capability | Platform | Author | Self | Effective rule |
 |---|---|---|---|---|---|
-| `assign_research` | — | — | hq | — | Author allowlist (+ human implicit); dispatch only |
-| `create_report` | **PublishArtifacts** | — | — | fulfiller == `assigned_to` | Capability to file into the corpus; self-bound only when fulfilling an assignment (a standalone report needs just the capability) |
-
-### Publish gate
-
-| Tool | Capability | Platform | Author | Self | Effective rule |
-|---|---|---|---|---|---|
-| `publish_content` | — | **human** | — | — | Explicit `as` + Platform=human |
-
-### Commitment layer — agent drafts, human confirms
-
-The two-phase pattern's load-bearing semantic. `commit_proposal`
-dispatches on `payload.Type`:
-
-- `directive` is inter-agent coordination, not a commitment to Koopa.
-  HQ commits its own delegation tokens in the same session. The
-  capability check inside `commitDirective` is the gate; layering a
-  human requirement on top would force Koopa to confirm every
-  cross-agent task and turn HQ into a paperwork bottleneck.
-- The other six types each reshape Koopa's commitment surface
-  (quarterly horizon, multi-week scope, falsifiable claim tracker,
-  learning taxonomy). They commit only with explicit human authority.
-
-| Tool | Capability | Platform | Author | Self | Effective rule |
-|---|---|---|---|---|---|
-| `propose_directive` | **SubmitTasks** | — | — | — | Capability check at handler boundary |
-| `propose_goal` | — | — | hq, content-studio, research-lab | — | Strategic commitment proposers |
-| `propose_project` | — | — | hq, content-studio, research-lab | — | Same |
-| `propose_milestone` | — | — | hq, content-studio, research-lab | — | Same |
-| `propose_hypothesis` | — | — | hq, learning-studio, research-lab | — | Three roles that observe falsifiable claims |
-| `propose_learning_plan` | — | — | learning-studio | — | Operational learning curriculum |
-| `propose_learning_domain` | — | — | learning-studio, hq | — | Operational + strategic |
-| `commit_proposal(directive)` | **SubmitTasks** (in commitDirective) | — | — | — | Capability already gates |
-| `commit_proposal(others)` | — | **human** | — | — | Explicit `as` + Platform=human |
-
-### Coordination layer
-
-| Tool | Capability | Platform | Author | Self | Effective rule |
-|---|---|---|---|---|---|
-| `acknowledge_directive` | **ReceiveTasks** | — | — | task target | Capability + caller is the assigned target |
-| `file_report(in_response_to=...)` | **PublishArtifacts** | — | — | task target | Capability + caller is the target completing the task |
-| `file_report(standalone)` | **PublishArtifacts** | — | content-studio, research-lab, learning-studio | — | Capability + author allowlist (excludes hq) |
-| `task_detail` | — | — | — | source or target | Caller must be a party to the task |
-| `request_revision` | **SubmitTasks** | — | — | task source | Capability + caller is the source; transition `completed → revision_requested`. Optional reason appended as a response message in the same actor-bound tx as the transition. |
-| `reaccept` | **ReceiveTasks** | — | — | task target | Capability + caller is the assigned target; transition `revision_requested → working`, clears `completed_at` and `revision_requested_at`. |
+| `start_session` | — | — | — | — | Open (one active session at a time, enforced by the handler) |
+| `record_attempt` | — | — | — | — | Open (requires the active session) |
+| `end_session` | — | — | — | — | Open (requires the session_id) |
+| `manage_plan` | — | — | — | — | Open; completion audit fields are policy-enforced in-handler |
 
 ### Daily plan & GTD
 
 | Tool | Capability | Platform | Author | Self | Effective rule |
 |---|---|---|---|---|---|
-| `plan_day` | — | — | hq | — | HQ daily ritual; other agents have their own work queues |
+| `plan_day` | — | — | hq | — | HQ daily ritual (+ human implicit); other agents have their own work queues |
 | `capture_inbox` | — | — | — | — | Open (caller's own todo) |
-| `advance_work` | — | — | — | **caller == created_by** | Self-bound: only the todo's creator may advance it; Platform=human override permitted |
 
-### Feeds
+### Read-only tools (no authz row needed)
 
-| Tool | Capability | Platform | Author | Self | Effective rule |
-|---|---|---|---|---|---|
-| `manage_feeds(list)` | — | — | — | — | Open (read-only, returns FeedSummary — admin/pipeline-internal fields stripped) |
-| `manage_feeds(add/update/remove)` | — | — | — | — | Open |
+| Tool | Writability | Effective rule |
+|---|---|---|
+| `brief` | ReadOnly | Open to any registered caller; pure planning-state pull, carries no agent memory |
+| `learning_read` | ReadOnly | Open to any registered caller |
+| `search_knowledge` | ReadOnly | Open to any registered caller |
 
 ---
 
 ## §4. Why each gate exists
 
 Cross-references the rules above to the concrete reasoning so a future
-reviewer can challenge a rule without re-deriving it.
-
-### `publish_content` — human-only
-
-Publishing flips three fields atomically (status, is_public, published_at)
-and exposes content on the public website. The editorial lifecycle
-(draft → review → published) is intentionally a two-actor handoff:
-agent drafts and submits for review, human publishes. Without the
-human gate the lifecycle is theatre.
-
-### `commit_proposal` of high-commitment types — human-only
-
-Each of the six gated types reshapes Koopa's commitment surface:
-
-| Type | Effect on Koopa |
-|---|---|
-| goal | Occupies quarterly planning horizon |
-| project | Multi-week scope budget |
-| milestone | Affects goal_progress visibility |
-| hypothesis | Enters world-view tracking system (morning_context.unverified_hypotheses) |
-| learning_plan | Multi-week time budget |
-| learning_domain | Mutates the closed learning taxonomy |
-
-If any of these can be self-committed by the agent that proposed them,
-the propose+token mechanism is just ceremony.
-
-### `commit_proposal(directive)` — capability, NOT human
-
-A directive is an inter-agent work request, not a commitment to Koopa.
-HQ's morning briefing flow is "look at morning_context → decide what to
-delegate → propose+commit a directive" in the same session. Forcing
-Koopa to confirm every directive would invert the intended division of
-labor.
-
-### `propose_*` allowlists — fast-fail before token signing
-
-Each propose handler checks its allowlist before allocating a signed
-token. The same fast-fail discipline `propose_directive` uses for
-SubmitTasks: an unauthorized caller learns the rule without paying a
-propose+commit round-trip.
+reviewer can challenge a rule without re-deriving it. After the MCP-v3
+contraction only two gates remain on the agent surface — `plan_day`'s hq
+allowlist and "note authorship is open". Everything else is open to any
+registered caller (learning lifecycle, `capture_inbox`) or read-only.
 
 ### `plan_day` — hq + human only
 
 Schema COMMENT on `daily_plan_items.selected_by` already documents
-"typically hq or human". The other cowork agents have their own work
-queues:
-
-- content-studio → content_pipeline
-- research-lab → directive backlog
-- learning-studio → learning_plan + FSRS schedule
-
-`daily_plan_items` is not a generic "today's work" surface — it is
-HQ's morning ritual.
-
-### `file_report(standalone)` — excludes HQ
-
-HQ has `PublishArtifacts` capability but no business reason to publish
-standalone artifacts. HQ's outputs are agent_notes (plan / reflection)
-and read-side aggregates (weekly_summary), not artifacts. Excluding HQ
-from the standalone allowlist prevents drift where HQ accidentally
-creates artifacts that nobody reads.
+"typically hq or human". `daily_plan_items` is not a generic "today's
+work" surface — it is HQ's morning ritual, so the author allowlist names
+`hq` (with the human always implicit) and every other caller is refused
+before any write.
 
 ### Note authorship — open
 
 Notes form the AI-for-human / human-for-human knowledge layer. Any
-agent that observes something note-worthy may write it down; the
-front-end review surface (maturity transitions, curation tools) is
-where quality is enforced. Restricting authorship would force agents
-to launder observations through agent_notes(kind=context|reflection)
-and lose the slug-addressable knowledge graph notes provide.
+agent that observes something note-worthy may write it down; the admin
+review surface (maturity transitions, curation tools) is where quality is
+enforced. Restricting authorship would lose the slug-addressable
+knowledge graph notes provide. `create_note` and `update_note` are
+therefore both open; notes are never commitments and never publish.
 
-This contrasts with content (publish gated to human) and with
-commit_proposal (high-commitment types gated to human). Notes are not
-commitments and never publish.
+### Learning lifecycle — open
 
-### Content authorship — allowlisted, with human-only publish
-
-The entire content authoring lifecycle is gated to the two roles whose
-job is producing it: content-studio and learning-studio (human always
-implicit). This covers create, update, and the draft↔review↔archived
-transitions (`set_content_review_state`, `archive_content`) — not just
-the create surface. hq and research-lab
-are excluded throughout: they coordinate content work through a
-directive to content-studio rather than acting directly. This is
-defense-in-depth for autonomous operation: hq runs unattended (cron),
-and its largest anti-pattern is acting where it should delegate, so the
-boundary is an enforced gate rather than soft self-discipline. Gating
-only create/update would have left the asymmetry that an hq blocked from
-drafting could still push existing content through review or archive it
-— same drift risk, one layer up. The coordinator exception ("Koopa asks
-hq to handle a handoff") is satisfied by hq *directing* content-studio
-to submit/revert, not by hq flipping the status itself, so no legitimate
-workflow is broken. The separate dangerous transition (review →
-published) stays gated at `publish_content` (human-only) as the top
-layer; every draft is private until then.
-
-### `assign_research` / `create_report` — the report lane
-
-The report lane is a separate, lighter coordination path from the §14
-directive flow, and that divergence is a deliberate product decision, not an
-oversight. A directive is proposal-first (`propose_directive → commit_proposal`,
-`SubmitTasks`-gated) and ends with a task-bound artifact + acceptance lifecycle.
-A research assignment is direct-commit dispatch whose only output is a
-**low-trust corpus source**: there is no acknowledge, no acceptance, no
-revision, and no human truth verdict — promotion to `trusted` stays an
-off-surface human/admin act. Because the deliverable is born low-trust, badged,
-and downranked in search, the *dispatch* gate is intentionally lighter (an `hq`
-author allowlist rather than a two-phase commitment) — but the *write* gate is
-deliberately **not** lighter: `create_report` requires `PublishArtifacts`, the
-same capability `file_report(standalone)` requires, so a capability-less agent
-(`claude`, `koopa0-dev`, `go-spec`) and the human cannot inject sources into the
-searchable corpus. Fulfilling a dispatched assignment additionally self-binds to
-`assigned_to` so targeted work cannot be closed by the wrong agent. If fan-out
-research ever needs the acceptance/revision lifecycle, fold it into the
-directive path rather than thickening this lane.
+`start_session`, `record_attempt`, `end_session`, and `manage_plan` carry
+no author allowlist. An agent that runs a learning session records its
+own attempts and manages its own plan; there is no cross-agent authorship
+boundary to enforce. The integrity that matters on this surface is
+intra-handler, not authz: `start_session` rejects a second concurrent
+active session, `record_attempt` requires the active session, and
+`manage_plan(update_entry, status=completed)` requires the
+`completed_by_attempt_id` + `reason` audit pair (or a `manual override:`
+forced reason). Those are policy/state-machine checks inside the handlers,
+not one of the four axes.
 
 ---
 
@@ -362,7 +273,10 @@ When you add a tool that mutates state, decide which axes apply:
 1. Does the operation cross a transport boundary (submit/receive/publish)?
    → Capability check via `agent.Authorize`.
 2. Is the operation reserved for the human owner?
-   → `requireExplicitHuman` (e.g. publish, high-commitment commit).
+   → First ask whether it belongs on the MCP surface at all. Post-MCP-v3,
+   the answer for high-commitment and publication operations is "no — it
+   goes to admin HTTP" (see §7). If a human-only MCP tool is genuinely
+   warranted, gate it with `requireExplicitHuman`.
 3. Is the entity domain-owned by a subset of cowork agents?
    → `requireAuthor` with the allowlist.
 4. Does the operation only make sense on the caller's own row?
@@ -374,3 +288,38 @@ if the rule is non-obvious, and add gate tests in `internal/mcp/authz_test.go`.
 If a new axis is needed (e.g. quota, time-window), add it as a new
 helper in `authz.go` rather than overloading an existing one — the
 axes are orthogonal by design.
+
+---
+
+## §7. Where the removed write tools went (MCP-v3 migration map)
+
+The MCP-v3 semantic contraction moved every commitment-creation and
+content-authoring operation off the agent surface and onto admin-only
+HTTP POST endpoints. Those endpoints sit behind `adminMid` (JWT auth +
+per-request actor tx) in `cmd/app/routes.go`, so they are human-gated by
+construction — there is no `as`-field path to them. The agent-facing
+`propose_* → commit_proposal` two-phase flow is gone; the human now
+creates these entities directly through the admin UI.
+
+| Removed MCP tool(s) | Replacement |
+|---|---|
+| `propose_goal` / `commit_proposal(goal)` | `POST /api/admin/commitment/goals` |
+| `propose_milestone` / `commit_proposal(milestone)` | `POST /api/admin/commitment/goals/{id}/milestones` |
+| `propose_learning_plan` / `commit_proposal(learning_plan)` | `POST /api/admin/learning/plans` |
+| `propose_learning_domain` / `commit_proposal(learning_domain)` | `POST /api/admin/learning/domains` |
+| `propose_project`, `propose_hypothesis`, `propose_directive` | No agent-facing replacement (project/hypothesis are admin HTTP; the directive/coordination triad was retired) |
+| `create_content` / `update_content` | `POST` / `PUT /api/admin/knowledge/content` |
+| `set_content_review_state` | `POST /api/admin/knowledge/content/{id}/submit-for-review` · `/revert-to-draft` |
+| `archive_content` | `POST /api/admin/knowledge/content/{id}/archive` |
+| `publish_content` | `POST /api/admin/knowledge/content/{id}/publish` |
+| `update_note_maturity` | Folded into `update_note` (MCP) and `POST /api/admin/knowledge/notes/{id}/maturity` (admin) |
+| `advance_work` | `POST /api/admin/commitment/todos/{id}/advance` |
+| `manage_feeds` | `POST` / `PUT` / `DELETE /api/admin/knowledge/feeds` |
+| `assign_research` / `create_report` (report lane) | Retired — no replacement |
+| `acknowledge_directive` / `file_report` / `task_detail` / `request_revision` / `reaccept` (A2A triad) | Retired — no replacement |
+| `write_agent_note` / `query_agent_notes` | Retired — agent memory lives in the agent's own `.md` |
+
+Because every replacement is human-gated at the HTTP layer, the four-axis
+authz model no longer needs Platform (`requireExplicitHuman`) or
+Capability rows on the MCP surface — those concerns crossed the boundary
+into admin HTTP along with the tools.

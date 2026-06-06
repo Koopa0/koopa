@@ -32,23 +32,38 @@
 
 ### What koopa0.dev is
 
-A **private-by-default personal knowledge / learning / coordination OS for a
-single human owner and a small closed set of AI agents.** One Go backend
-serves one admin (`users`, single row today) and ≤10 registered agents
-(`internal/agent/registry.go:16-126`). Every party reads and writes through
-the same two surfaces: the PostgreSQL schema and the MCP tool layer on top of
-it. A public Angular site is a read-only projection of the publishable subset.
+A **private-by-default personal knowledge / learning OS for a single human
+owner and a small closed set of AI agents.** One Go backend serves one admin
+(`users`, single row today) and ≤10 registered agents
+(`internal/agent/registry.go`). Every party reads and writes through the same
+two surfaces: the PostgreSQL schema and the MCP tool layer on top of it. A
+public Angular site is a read-only projection of the publishable subset.
+(Earlier revisions framed this as a "coordination OS" — the inter-agent
+coordination layer was retired in MCP-v3; see the note after the facet table.)
 
 It is **all of the following, with explicit boundaries** (§4):
 
 | Facet | What it covers | Backing |
 |---|---|---|
-| **Personal semantic infrastructure** | `agents.name` as universal actor identity; `activity_events` as the canonical change log written only by triggers | `internal/agent/`, `internal/activity/`, schema triggers `migrations/001_initial.up.sql:2646-2911` |
+| **Personal semantic infrastructure** | `agents.name` as universal actor identity; `activity_events` as the canonical change log written only by triggers | `internal/agent/`, `internal/activity/`, schema triggers `migrations/001_initial.up.sql` |
 | **PARA / GTD / OKR-ish system** | areas, goals, milestones, projects, todos, daily plan | `internal/goal/`, `internal/project/`, `internal/todo/`, `internal/daily/` |
-| **Learning analytics engine** | domains, concepts, targets, sessions, attempts, observations, FSRS review | `internal/learning/` (incl. `internal/learning/fsrs/`) |
-| **Agent coordination layer (IPC)** | tasks, task_messages, artifacts, agent_notes | `internal/agent/task/`, `internal/agent/artifact/`, `internal/mcp/agent_note.go` |
-| **MCP tool surface** | 47 tools across 7 domains | `internal/mcp/ops/catalog.go::All()` (canonical list) |
+| **Learning analytics engine** | domains, concepts, targets, sessions, attempts, observations | `internal/learning/` |
+| **MCP tool surface** | **11 agent-facing tools** (post MCP-v3 semantic contraction) | `internal/mcp/ops/catalog.go::All()` (canonical list) |
 | **Knowledge / search system** | content, notes, bookmarks, topics, tags, feeds; hybrid search | `internal/content/`, `internal/note/`, `internal/search/`, `internal/mcp/search.go` |
+
+> **MCP-v3 semantic contraction (closed; ledger:
+> `docs/decisions/mcp-v3-semantic-contraction.md`).** The agent-facing MCP
+> surface is now **exactly 11 tools**. The former agent-coordination layer
+> (the A2A task/task_message/artifact triad and `agent_notes`), the report
+> lane, the FSRS spaced-repetition tools, the content write/lifecycle tools,
+> the `propose_*`/`commit_proposal` flow, and the standalone aggregate readers
+> were all removed from the agent surface. High-commitment entity creation
+> (goal / milestone / learning plan / learning domain) and content
+> publication moved to **admin-only HTTP forms** under `/api/admin/`
+> (`cmd/app/routes.go`). Agent memory is no longer a backend entity — each
+> agent keeps its own `.md`. The schema converged on migrations **001 + 002**
+> (9 tables dropped). This contract describes the contracted state; the ledger
+> is the historical record of how it got here.
 
 It is **NOT**: a multi-user product, an RBAC system, a public CMS with
 arbitrary authorship, or a generic agent marketplace. The agent set is closed
@@ -66,8 +81,10 @@ and compiled into the binary (`docs/authorization-matrix.md:269-289`).
    `current_actor()` (`2646-2656`), defaulting to `'system'`.
 3. **Illegal states are made structurally impossible** through joint CHECKs,
    partial unique indexes, and narrow triggers — not application discipline
-   alone (task state↔timestamp `1249-1255`; at-most-one-active session
-   `1895-1897`; completion-requires-outputs `1366-1391`).
+   alone (at-most-one-active learning session `uq_learning_sessions_one_active`;
+   curated feed-entry mutual-exclusion content-XOR-bookmark; learning-concept
+   acyclicity triggers). The task state↔timestamp / completion-requires-outputs
+   invariants cited in earlier revisions are gone with the retired `tasks` triad.
 
 ---
 
@@ -83,20 +100,20 @@ and are resolved only by the human owner.
 |---|---|---|---|
 | **Schema + DB constraints** | `migrations/001_initial.up.sql`, `002_seed.up.sql` | **Authoritative** | CHECKs, triggers, FKs are the last word on legal states. 2920 + 13k lines. |
 | **Go code + tests** | `internal/`, `cmd/` | **Authoritative** (reference impl) | A passing test pins observable behavior. When prose disagrees with a green test, the test wins. |
-| **MCP ops catalog** | `internal/mcp/ops/catalog.go` | **Authoritative** (tool surface) | The 47-tool `All()` list is canonical; drift-tested against handler registration (`ops/types.go:9-11`, `ops_catalog_test.go`). |
+| **MCP ops catalog** | `internal/mcp/ops/catalog.go` | **Authoritative** (tool surface) | The 11-tool `All()` list is canonical; drift-tested against handler registration (`ops/types.go:9-11`, `ops_catalog_test.go`). |
 | **MCP decision policy** | `.claude/rules/mcp-decision-policy.md` | **Advisory→Authoritative for routing** | Defines which tool fires when. Defers to schema. |
 | **Authorization matrix** | `docs/authorization-matrix.md` | **Derived** | Projection of `internal/mcp/authz.go` + `agent/authorize.go`. Code wins on conflict (`authorization-matrix.md:10-13`). |
 | **sqlc-generated code** | `internal/db/` | **Derived** | Generated from `query.sql` files; never hand-edited. |
 | **This contract** | `docs/backend-semantic-contract.md` | **Derived** | Shared vocabulary; below schema/code/catalog. |
-| **Learning contract** | `docs/LEARNING-CONTRACT.md` | **Derived** | FSRS-retention vs concept-mastery split. |
+| **Learning contract** | `docs/LEARNING-CONTRACT.md` | **Derived** | Concept-mastery model. (The FSRS-retention half of the former split is retired — FSRS was removed in MCP-v3.) |
 | **Cowork agent op docs** | `docs/Koopa-*.md` | **Advisory** | Per-agent operational guidance; never structural truth. |
-| **Frontend route/service code** | `frontend/src/app/**` | **Advisory / assumption** | Encodes the frontend's *assumed* backend contract. The endpoints it calls (incl. `/api/admin/commitment/today`, `/api/admin/learning/summary`, `/api/admin/system/health`) **do exist** (`cmd/app/routes.go:206,271,350`); the open risk is payload compatibility and the Today fan-out-vs-aggregate split — see §6. |
+| **Frontend route/service code** | `frontend/src/app/**` | **Advisory / assumption** | Encodes the frontend's *assumed* backend contract. The endpoints it calls (incl. `/api/admin/commitment/today`, `/api/admin/learning/summary`, `/api/admin/system/health`) **do exist** (`cmd/app/routes.go:204,269,333`); the open risk is payload compatibility and the Today fan-out-vs-aggregate split — see §6. |
 | **Audit reports** | `docs/audit/`, `docs/audit-prompts/` | **Stale / point-in-time** | Historical context only; NOT runtime truth. |
 
 **Implementation-only (no doc is authoritative; read the code):**
 `internal/mcp/execution.go::normalizePriority` (priority alias acceptance),
-`internal/mcp/search.go` (RRF merge constants), the FSRS scheduler
-internals (`internal/learning/fsrs/fsrs.go`).
+`internal/mcp/search.go` (RRF merge constants). (The FSRS scheduler internals
+cited in earlier revisions are gone — FSRS was retired in MCP-v3.)
 
 ---
 
@@ -134,65 +151,46 @@ them wrong is a semantic bug, not a naming quibble.
   (`Capability{}`, `registry.go:82-95`). A Claude Code session is a dev
   runtime, not a coordination peer (§4).
 - **capability** — one of three flags on `agent.Capability`: `SubmitTasks`,
-  `ReceiveTasks`, `PublishArtifacts` (`authorization-matrix.md:22-37`).
-  The *shape* of the check is **compile-time** (`agent.Authorize(...) →
-  Authorized[Action]`; a method needing the capability cannot be called
-  without the value), but the *subject* is resolved at **runtime** from the
-  caller's `as` identity against the registry row — so functional tests must
-  not over-read this as "purely compile-time": a wrong/unauthorized `as` is
-  rejected at request time. Capability lives in Go, **not** in the DB.
+  `ReceiveTasks`, `PublishArtifacts` (`internal/agent/agent.go:36-43`,
+  `registry.go`). The *shape* of the check is **compile-time**
+  (`agent.Authorize(...) → Authorized[Action]`; a method needing the capability
+  cannot be called without the value). Capability lives in Go, **not** in the
+  DB. **Post MCP-v3 these flags are vestigial relative to the agent tool
+  surface:** they used to gate the A2A coordination tools, which are retired —
+  no live MCP tool consumes a capability today. The literals remain on the
+  registry rows but no longer gate any agent-facing call.
 
-### Coordination / IPC
+### Coordination / IPC — RETIRED (MCP-v3 contraction)
 
-- **task** — an inter-agent work unit (`tasks` table). Lifecycle
-  `submitted → working → completed | canceled` plus the revision cycle
-  `completed → revision_requested → working → completed`
-  (`task_state` enum, `migrations/001_initial.up.sql:35-37`). **Enforced**:
-  state↔timestamp joint CHECK `chk_tasks_state_timestamps` (`1249-1255`);
-  no self-assignment `chk_tasks_no_self_assignment` (`1247-1248`); completion
-  requires ≥1 response message AND ≥1 artifact
-  (`trg_tasks_completion_requires_outputs`, `1366-1391`). *Is not* a `todo`;
-  *is not* a `process_run`.
-- **directive** — **vocabulary label only, not a structural entity.** A task
-  whose expected output is a *report* and whose target exercises autonomous
-  judgment. At the MCP boundary the agent uses `propose_directive` /
-  `acknowledge_directive` / `file_report`; in the DB it is a plain `tasks`
-  row with no `kind` discriminator. **Ambiguity:** "show all directives I
-  issued" cannot be answered structurally. **Open Question** §7: whether to
-  add `tasks.kind` (status quo: no).
-- **report** — **two distinct senses, kept separate; the word collides, the
-  mechanisms do not.**
-  - *A2A report* — the artifact-bearing completion of a directive: a
-    `file_report(in_response_to=task_id)` call that attaches a response
-    `task_message` + an `artifact` and transitions the task to `completed`
-    (`catalog.go:242-251`; `authorization-matrix.md` Coordination layer). Not a
-    separate table.
-  - *corpus report* — a first-class `reports` row written by `create_report`
-    (`migrations/004_report_lane`): an agent-produced, **low-trust, searchable
-    knowledge SOURCE** on a trust axis (low_trust → trusted). It is NOT
-    task-bound, NOT an artifact, and never becomes an evergreen note. Filing
-    requires `PublishArtifacts`; trust promotion is an off-surface human/admin
-    act. `file_report` ≠ `create_report`.
-- **task_message** — an ordered request/response turn on a task
-  (`role ∈ {request, response}`). Parts are a2a-go `Part` JSON. **Enforced**
-  caps: 1–16 parts (`chk_task_messages_parts_count`, `1307-1309`), ≤32 KB
-  (`chk_task_messages_parts_size`, `1311-1313`); unique `(task_id, position)`
-  (`1305`).
-- **artifact** — a structured deliverable. Task-bound (`task_id` set) or
-  standalone (`task_id` NULL). **Enforced** caps: 1–32 parts (`1341-1343`),
-  ≤256 KB (`1345-1346`).
-- **agent_note** — an agent's internal narrative log entry. Three kinds:
-  `plan` (daily-plan reasoning), `context` (session snapshot), `reflection`
-  (retrospective). **Self-directed; never inter-agent communication.** *Is
-  not* a Zettelkasten `note`. Per-kind binding enforced by trigger
-  (plan→daily_plan_item, reflection→learning_session). **Open Question** §7:
-  `agent_notes.metadata` per-kind schema is policy, not schema-enforced.
-- **session_note** — **NOT a backend entity.** The term appears in the task
-  brief and in skill docs as a loose label; in the schema it resolves to
-  `agent_notes(kind='context')` (a session snapshot) or to an
-  `agent_notes(kind='reflection')` linked from a `learning_session`. **Open
-  Question** §7: whether to formalize "session note" as distinct from
-  `agent_note` — currently it is not.
+The entire inter-agent coordination layer was removed from the agent surface
+in the MCP-v3 semantic contraction. The vocabulary below is preserved as a
+**tombstone** so future readers do not re-derive removed terms as live.
+
+- **task / task_message / artifact (A2A triad)** — **RETIRED.** The
+  `tasks` / `task_messages` / `artifacts` tables and their MCP tools
+  (`propose_directive`, `acknowledge_directive`, `file_report`,
+  `task_detail`, `request_revision`, `reaccept`) are gone. Inter-agent
+  coordination is no longer modeled in the backend; coordination, if any,
+  happens out of band. *Was not* a `todo`; *was not* a `process_run`.
+- **directive** — **RETIRED.** A naming-only label for a coordination task;
+  removed with the triad. There is no `propose_directive` / `commit_proposal`
+  path on the agent surface.
+- **report (A2A) / report lane** — **RETIRED.** Both the artifact-bearing
+  `file_report` completion and the `create_report` / `assign_research` corpus
+  report lane (`research_assignments` / `reports` tables) were dropped. There
+  is no agent-facing path that produces a searchable low-trust corpus SOURCE.
+- **agent_note** — **RETIRED.** The `agent_notes` feature
+  (`write_agent_note` / `query_agent_notes`, the three kinds plan / context /
+  reflection) was removed. Agent runtime memory now lives in each agent's own
+  `.md`, not in the backend. `brief` and `learning_read` are pure
+  planning-state / analytics pulls and carry **no** agent memory.
+  - *Consequence for the non-negotiable rules:* the old "agent_note is
+    self-directed memory, never A2A" rule is now **moot** — both sides of the
+    distinction (agent_note and the A2A triad) are gone. See §5.
+- **session_note** — **RETIRED label.** Was always a loose label resolving to
+  an `agent_note`; with `agent_notes` gone, "session note" no longer maps to
+  any backend entity. `end_session` may still accept optional reflection text,
+  but it no longer creates a persisted agent-note row (see §5 learning group).
 
 ### Commitment (PARA + GTD + goals)
 
@@ -203,10 +201,14 @@ them wrong is a semantic bug, not a naming quibble.
 - **goal** — an aspirational outcome, optionally area-scoped, with optional
   deadline/quarter. Status (`goal_status`: `not_started → in_progress → done |
   abandoned | on_hold`) is **manually managed**, not auto-derived from
-  milestones.
+  milestones. **No MCP create path** after MCP-v3: goals are created via the
+  admin form `POST /api/admin/commitment/goals` and status changes via
+  `PUT /api/admin/commitment/goals/{id}/status` (`cmd/app/routes.go:186-187`).
 - **milestone** — a binary done/not-done checkpoint inside a goal. **Not** an
   OKR key result — no `target_value`/`current_value` (§7 forbidden
-  assumptions). Goal progress = completed/total (advisory).
+  assumptions). Goal progress = completed/total (advisory). **No MCP create
+  path**: created via `POST /api/admin/commitment/goals/{id}/milestones`
+  (`cmd/app/routes.go:188`).
 - **todo** — a personal GTD work item. `todo_state`: `inbox → todo →
   in_progress → done`, plus `someday`. *Is not* a `task`.
 - **daily_plan_item** — "today I commit to this todo." Status CHECK `planned |
@@ -218,13 +220,20 @@ them wrong is a semantic bug, not a naming quibble.
 
 - **content** — first-party publishable artifact. Five types: `article`,
   `essay`, `build-log`, `til`, `digest`. `content_status`: `draft → review →
-  published → archived`. **`review → published` is human-only**
-  (`publish_content`, `authorization-matrix.md:126`). Publishing atomically
-  flips `status='published'`, `is_public=true`, `published_at=now()`.
+  published → archived`. Publishing atomically flips `status='published'`,
+  `is_public=true`, `published_at=now()`. **No MCP path** after MCP-v3:
+  content create / update / submit-for-review / revert-to-draft / publish /
+  archive are **admin-only HTTP** under `/api/admin/knowledge/content`
+  (`cmd/app/routes.go:147-156`); the write surface is the admin UI / human, not
+  any agent tool.
 - **note** — a Zettelkasten artifact (`notes` table), maturity lifecycle
   `seed → stub → evergreen → needs_revision → archived`. Private; **never
   publishes**. Six kinds: `solve-note`, `concept-note`, `debug-postmortem`,
-  `decision-log`, `reading-note`, `musing` (`catalog.go:547`).
+  `decision-log`, `reading-note`, `musing` (`catalog.go::CreateNote`). Notes
+  are the one knowledge entity still writable from the agent surface:
+  `create_note` and `update_note` (field edits). Maturity transitions are
+  **admin-only HTTP** (`POST /api/admin/knowledge/notes/{id}/maturity`,
+  `routes.go:165`) — the MCP `update_note_maturity` tool was removed.
 - **bookmark** — external URL + commentary. Curate = publish. Created via
   admin UI only (no MCP path). **Open Question** §7: a `PUT .../bookmarks/{id}`
   edit endpoint exists; whether bookmarks should be editable is undecided.
@@ -254,18 +263,19 @@ them wrong is a semantic bug, not a naming quibble.
   improvement, mastery}`, `confidence ∈ {high, low}`. **Confidence is a label,
   not a write-time gate** — read-time filter (`mcp-decision-policy.md §5`).
 - **concept** — learning ontology node (`pattern | skill | principle`),
-  same-domain hierarchy (parent-domain + acyclicity triggers `2174-2217`).
-  Mastery is **derived** over filtered observations, never stored. *Is not* a
-  tag.
-- **review card** — FSRS spaced-repetition state, **exactly one per
-  learning_target** (`uq_review_cards_learning_target`, `1688`). System-managed
-  (`internal/learning/fsrs/`); never via MCP. Review scope is per-target only.
+  same-domain hierarchy (parent-domain + acyclicity triggers). Mastery is
+  **derived** over filtered observations, never stored. *Is not* a tag.
+- **review card / FSRS** — **RETIRED.** The FSRS spaced-repetition state
+  (`review_cards`), its scheduler (`internal/learning/fsrs/`), and any
+  due-review surface were dropped in the MCP-v3 contraction. There is no
+  spaced-repetition mechanism today; `record_attempt` no longer writes an
+  FSRS rating, and no tool reports "due reviews".
 
 ### MCP / system
 
 - **MCP tool** — a registered handler in the MCP server, described by an
   `ops.Meta` (`ops/types.go:56-71`): name, domain, writability, stability,
-  since, description, field enums. 47 tools (`catalog.go::All()`).
+  since, description, field enums. **11 tools** (`catalog.go::All()`).
 - **schedule** — a per-agent recurring trigger declared on the Go
   `agent.Agent` literal (`Schedule{Name, Trigger, Expr, Backend, Purpose}`,
   `registry.go:27-33` etc.). E.g. `hq` runs `morning-briefing` at `0 8 * * *`
@@ -293,127 +303,155 @@ The named confusions and their resolutions, each grounded.
 | Boundary | Term A | Term B | Rule | Grounding |
 |---|---|---|---|---|
 | **PARA project vs agent identity** | `projects` row (work vehicle) | Cowork "project" = a `claude-cowork` agent | A PARA project is data in `projects`; a Cowork project is an actor in `agents`. They never share a table or ID. | `projects` schema; `registry.go:17-81` |
-| **GTD task vs directive** | `todos` (personal) | `tasks` framed as directive | A todo is single-actor GTD; a directive is an inter-agent `tasks` row. No `tasks.kind` — directive is naming only. | `todo_state` vs `task_state` enums; `mcp-decision-policy.md §14` |
-| **report vs session_note vs agent_note** | report = artifact-bearing task completion | session_note = loose label → `agent_notes(kind=context)` | agent_note = self-directed narrative | A report crosses agents (artifact); an agent_note never does. "session_note" is not its own entity. | `catalog.go:242-251`; `agent_note.go` |
+| **todo is the only work-item entity** | `todos` (personal GTD) | (`tasks` / directive — **RETIRED**) | The inter-agent `tasks` triad was removed in MCP-v3, so there is no longer a "task vs todo" boundary to police — a todo is the system's only work-item entity. | `todo_state` enum; MCP-v3 ledger |
 | **learning observation vs knowledge note** | `learning_attempt_observation` (diagnostic signal on a concept) | `note` (Zettelkasten artifact) | Observations drive mastery diagnosis; notes are durable knowledge. Different tables, different lifecycles. | schema; §3 |
-| **MCP tool call vs semantic write** | a `tools/call` invocation | the resulting row + `activity_event` | A read-only tool call (`ReadOnly` writability) produces no semantic write. Only Additive/Idempotent/Destructive tools write; the *write* is the row + its trigger-emitted audit event, not the call. | `ops/types.go:32-42` |
+| **MCP tool call vs semantic write** | a `tools/call` invocation | the resulting row + `activity_event` | A read-only tool call (`ReadOnly` writability — `brief`, `learning_read`, `search_knowledge`) produces no semantic write. Only Additive/Idempotent/Destructive tools write; the *write* is the row + its trigger-emitted audit event, not the call. | `ops/types.go:32-42` |
 | **Cowork project vs internal participant** | `claude-cowork` agent | (retired term "participant") | "Participant" is dead vocabulary; the live entity is `agent`. A Cowork project IS an agent. | `registry.go`; `mcp-decision-policy.md §4` |
-| **Claude Code runtime vs Koopa participant** | `claude-code` agent (dev session, no capability) | `human` agent (Koopa) | Claude Code agents can attribute writes but hold no coordination capability; Koopa (human) holds `SubmitTasks` + platform-human override. | `registry.go:82-111` |
+| **Claude Code runtime vs Koopa identity** | `claude-code` agent (dev session, no capability) | `human` agent (Koopa) | Claude Code agents attribute writes via `as` but hold no capability flags; Koopa (human) carries the platform-human override. The capability difference is now vestigial (no live MCP tool consumes a capability post MCP-v3) — the live distinction is actor-attribution identity, not coordination authority. | `registry.go` |
 | **frontend page model vs backend domain model** | Angular admin pages (composed views) | backend entities | The frontend composes multiple backend reads into one page (e.g. the Today page forks 6 calls). Page-level view-models are **not** backend entities and may assume endpoints not yet verified to exist (§6). | frontend `today-page.component.ts`; §2 |
 
 ---
 
 ## 5. MCP tool semantics
 
-The canonical inventory is `internal/mcp/ops/catalog.go::All()` — **47 tools**.
-Each tool's `Writability` (`ReadOnly | Additive | Idempotent | Destructive`)
-maps to MCP `ToolAnnotations` at registration and is the machine-readable risk
-signal (`ops/types.go:28-42`). Below, tools are grouped by their declared
-`Domain` plus the authorization axes that gate them
-(`docs/authorization-matrix.md §3`).
+The canonical inventory is `internal/mcp/ops/catalog.go::All()` — **11 tools**
+after the MCP-v3 semantic contraction. Each tool's `Writability` (`ReadOnly |
+Additive | Idempotent | Destructive`) maps to MCP `ToolAnnotations` at
+registration and is the machine-readable risk signal (`ops/types.go:28-42`).
+Below, tools are grouped by their declared `Domain`.
+
+The complete agent surface, by name and writability:
+
+| # | Tool | Domain | Writability |
+|---|---|---|---|
+| 1 | `brief` (mode=morning\|reflection) | `DomainQuery` | ReadOnly |
+| 2 | `search_knowledge` | `DomainQuery` | ReadOnly |
+| 3 | `capture_inbox` | `DomainDaily` | Additive |
+| 4 | `plan_day` | `DomainDaily` | Idempotent |
+| 5 | `start_session` | `DomainLearning` | Additive |
+| 6 | `record_attempt` | `DomainLearning` | Additive |
+| 7 | `end_session` | `DomainLearning` | Additive |
+| 8 | `learning_read` (view=overview\|next_target\|attempts\|session_progress) | `DomainLearning` | ReadOnly |
+| 9 | `manage_plan` (5 actions) | `DomainLearning` | Destructive |
+| 10 | `create_note` | `DomainContent` | Additive |
+| 11 | `update_note` | `DomainContent` | Additive |
+
+**`brief` and `learning_read` are READ-ONLY forever** — they are pure
+planning-state / analytics pulls and carry no agent memory and no write path.
 
 ### Group: knowledge / search (`DomainQuery`, `DomainContent`)
 
 | Tool | Writability | Caller | Side effect | Enforcement |
 |---|---|---|---|---|
 | `search_knowledge` | ReadOnly | any registered | none | FTS-backed today; hybrid pgvector + RRF is planned and gated on the embedder write/backfill pipeline (§6D, §7 #1) |
-| `create_content` / `update_content` / `set_content_review_state` / `archive_content` | Additive/Destructive | any registered | content row + state | **Open** authorship; lifecycle CHECKs in schema |
-| `publish_content` | Destructive | **human only** | atomic publish flip | `requireExplicitHuman` (`authz.go`); explicit `as` + Platform=human (`authorization-matrix.md:126`) |
-| `list_content` / `read_content` | ReadOnly | any | none | — |
-| `create_note` / `update_note` / `update_note_maturity` | Additive | any registered | note row / maturity | Open (`authorization-matrix.md:113-116`) |
-| `manage_feeds` | Destructive | any registered | feed CRUD (list/add/update/remove) | Open; returns stripped FeedSummary |
+| `create_note` | Additive | any registered | note row (default maturity `seed`) | one of six `kind` values; notes are Koopa-private, no publication lifecycle |
+| `update_note` | Additive | any registered | note field edit (slug / title / body / kind) | maturity transitions NOT here — admin-only HTTP (`update_note_maturity` tool removed) |
 
-**Semantics for testing:** content publish is the one hard human gate in this
-group; search is read-only and **FTS-only in production today** — the hybrid
-pgvector + RRF path is planned, not active (§6D, §7 #1). `manage_feeds` is a
-multiplexer (≤4 actions, one entity) — Destructive because it includes
-update/remove.
+**Semantics for testing:** notes are the only knowledge entity writable from
+the agent surface; their maturity lifecycle is admin-only. Search is read-only
+and **FTS-only in production today** — the hybrid pgvector + RRF path is
+planned, not active (§6D, §7 #1).
 
-### Group: PARA / GTD / OKR (`DomainDaily`, `DomainMeta`)
+**Removed from this group (now admin-only HTTP or gone):** the content write /
+lifecycle tools (`create_content`, `update_content`,
+`set_content_review_state`, `publish_content`, `archive_content`,
+`list_content`, `read_content`) moved to `/api/admin/knowledge/content`
+(`routes.go:147-156`) — publication is a human act on the admin surface, not an
+agent tool. `update_note_maturity` moved to
+`POST /api/admin/knowledge/notes/{id}/maturity` (`routes.go:165`).
+`manage_feeds` (feed CRUD) was removed from the agent surface; feeds are
+managed via `/api/admin/knowledge/feeds` (`routes.go:241-245`).
+
+### Group: PARA / GTD (`DomainDaily`)
 
 | Tool | Writability | Caller | Side effect | Enforcement |
 |---|---|---|---|---|
-| `capture_inbox` | Additive | any | todo (state=inbox) | Open (caller's own todo) |
-| `advance_work` | Destructive | self | todo transition (+auto plan-item, +recur reset) | Self-bound `caller==created_by`; Platform=human override (`authorization-matrix.md:170`) |
-| `plan_day` | Idempotent | **hq + human** | atomic daily-plan replacement | Author allowlist = `hq` (`authorization-matrix.md:168`) |
-| `propose_goal` / `propose_project` / `propose_milestone` | ReadOnly | author allowlist | **none** — returns signed token only | `requireAuthor` (hq, content-studio, research-lab) |
-| `propose_hypothesis` | ReadOnly | hq, learning-studio, research-lab | token only | `requireAuthor` |
-| `propose_learning_plan` / `propose_learning_domain` | ReadOnly | learning-studio (+hq for domain) | token only | `requireAuthor` |
-| `commit_proposal` | Additive | depends on type | creates the proposed entity | `directive`→capability; **other 6 types→human only** (`authorization-matrix.md:152-153`) |
-| `track_hypothesis` | Idempotent | — | hypothesis state | per-handler |
-| `goal_progress` | ReadOnly | any | none | — |
+| `capture_inbox` | Additive | any | todo (state=inbox) | only `title` required; status is always inbox |
+| `plan_day` | Idempotent | any | atomic daily-plan replacement | each todo MUST already be `state=todo`; items list MUST be non-empty; whole delete+insert runs in one tx |
 
-**Semantics for testing:** `propose_*` tools are **ReadOnly** — they sign a
-preview token and write nothing; the write happens at `commit_proposal`. Token
-expires 10 min after issuance and is invalidated by server restart (HMAC secret
-regenerates) (`catalog.go:225`). High-commitment commits are human-gated.
+**Semantics for testing:** `plan_day` is the one transactional contract here —
+any per-item validation failure rolls the whole replacement back to the prior
+plan; `items_removed` reports true displacements only (a carried-over todo with
+the same `task_id` is not reported as removed). `capture_inbox` is the only
+agent path that writes a todo; todo state transitions (inbox→todo→in_progress→
+done) are no longer agent-driven — `advance_work` was removed and clarification
+happens on the admin UI (todos `/api/admin/commitment/todos`, `routes.go:193-198`).
+
+**Removed from this group (now admin-only HTTP or gone):** `advance_work`
+(todo transitions → admin `POST .../todos/{id}/advance`). The entire
+`propose_*` / `commit_proposal` flow (`propose_goal`, `propose_project`,
+`propose_milestone`, `propose_hypothesis`, `propose_learning_plan`,
+`propose_learning_domain`, `propose_directive`, `commit_proposal`) was removed:
+high-commitment entities are now created on **admin HTTP forms** — goals
+(`POST /api/admin/commitment/goals`), milestones
+(`POST .../goals/{id}/milestones`), learning plans
+(`POST /api/admin/learning/plans`), learning domains
+(`POST /api/admin/learning/domains`) (`routes.go:186-188, 310, 316`).
+`goal_progress` and `track_hypothesis` were removed from the agent surface
+(hypothesis lifecycle is admin HTTP, `routes.go:289-295`).
 
 ### Group: learning (`DomainLearning`)
 
 | Tool | Writability | Side effect | Enforcement |
 |---|---|---|---|
 | `start_session` | Additive | new session | rejects if an active session exists (`uq_learning_sessions_one_active`) |
-| `record_attempt` | Additive | attempt + observations + targets/relations + FSRS rating | **partial-write**: per-element validation; `observations_recorded < input` is legal (`catalog.go:319`) |
-| `end_session` | Additive | ends session, optional reflection note | reflection→agent_note link trigger-bound |
-| `learning_dashboard` | ReadOnly | none | 6 views; mastery floor <3 obs → `developing` |
-| `recommend_next_target` | ReadOnly | none | active-session scoped |
-| `attempt_history` | ReadOnly | none | 3 lookup modes (target/concept/session) |
-| `session_progress` | ReadOnly | none | active-session aggregate |
-| `manage_plan` | Destructive | plan entries lifecycle (6 actions) | completion requires `completed_by_attempt_id` + reason, or `force=true` with `manual override:` prefix (`mcp-decision-policy.md §13`) |
-| `archive_learning_target` | Destructive | archive target + cascade relations | self-bound U2; Platform=human override (`catalog.go`) |
+| `record_attempt` | Additive | attempt + observations + targets/relations | **partial-write**: per-element validation; `observations_recorded < input` is legal; no FSRS rating (FSRS retired) |
+| `end_session` | Additive | ends session; optional reflection text | reflection text is summary-only — no persisted agent-note row (agent_notes retired) |
+| `learning_read` | ReadOnly | none | multiplexer; 4 views: `overview` / `next_target` / `attempts` / `session_progress` |
+| `manage_plan` | Destructive | plan entries lifecycle (5 actions) | completion requires `completed_by_attempt_id` + reason, or `force=true` with `manual override:` prefix (`mcp-decision-policy.md §13`) |
+
+**`learning_read` views** (`view` discriminator, ReadOnly): `overview` (recent
+sessions; filter by domain + window_days), `next_target` (in-session
+next-problem recommendation — requires the active `session_id`), `attempts`
+(history by target/concept/session; each attempt carries its observation list),
+`session_progress` (in-session aggregate; when no session is active returns
+`{active:false, last_ended_session_id}`). The former dashboard mastery /
+weaknesses / timeline / variations views are **admin-only HTTP**
+(`/api/admin/learning/dashboard`, `routes.go:300`) — `learning_read` rejects
+any view outside the four above.
+
+**`manage_plan` actions** (5, ReadOnly `progress` intrinsic to the lifecycle):
+`add_entries`, `remove_entries`, `update_entry`, `reorder`, `progress`. (The
+former Wave-1 sixth action was dropped to the 5-action set in MCP-v3.)
 
 **Semantics for testing:** `record_attempt` partial-write contract is the
 single most test-worthy learning behavior — rejected observation indices must
 surface in `observation_warnings` while siblings and the attempt row persist.
-`attempt_number` is **per-target, not per-session** (`catalog.go:319, 392`).
+`attempt_number` is **per-target, not per-session**.
 
-### Group: agent coordination / IPC (`DomainA2A`, parts of `DomainMeta`)
-
-| Tool | Writability | Caller | Side effect | Enforcement |
-|---|---|---|---|---|
-| `propose_directive` | ReadOnly | SubmitTasks cap | token only; first part must be text (becomes title) | capability pre-check at propose (`catalog.go:174`) |
-| `commit_proposal(directive)` | Additive | SubmitTasks | creates `tasks` row via `task.Store.Submit` | capability in `commitDirective` |
-| `acknowledge_directive` | Idempotent | ReceiveTasks + task target | `submitted→working`, stamps `accepted_at` | capability + self (target) |
-| `file_report(in_response_to)` | Additive | PublishArtifacts + task target | response message + artifact + `→completed` (atomic) | capability + self |
-| `file_report(standalone)` | Additive | PublishArtifacts; allowlist excludes hq | free-standing artifact | `requireAuthor` (content-studio, research-lab, learning-studio) |
-| `task_detail` | ReadOnly | source or target only | none; returns not_found to non-parties | self (party check) |
-| `request_revision` | Destructive | SubmitTasks + task source | `completed→revision_requested`, stamps `revision_requested_at`, preserves `completed_at`; optional trimmed reason appended as a response message in the same `withActorTx` | capability + self (source) |
-| `reaccept` | Idempotent | ReceiveTasks + task target | `revision_requested→working`, clears `completed_at` and `revision_requested_at` | capability + self (target) |
-| `write_agent_note` / `query_agent_notes` | Additive / ReadOnly | any | agent_note row / read | self-directed |
-
-**Semantics for testing:** the directive lifecycle is the core IPC contract.
-Completion is trigger-enforced to require both a response message and an
-artifact (`1366-1391`); `acknowledge_directive` is Idempotent (re-accept of a
-non-submitted task → ErrConflict, tested). `task_detail` must not leak tasks
-the caller is not party to. The revision cycle (`request_revision` →
-`reaccept`) is MCP exposure of the already-existing
-`completed → revision_requested → working` lifecycle in
-`internal/agent/task` — no schema or store change; the MCP layer adds the
-caller-source / caller-target self-bound checks that the SQL transitions
-alone cannot encode, and runs the optional `request_revision` reason append
-atomically with the state transition under `withActorTx` so a failed
-transition rolls back the message.
+**Removed from this group (now admin-only HTTP or gone):**
+`learning_dashboard` / `recommend_next_target` / `attempt_history` /
+`session_progress` were folded into `learning_read` views; the full dashboard
+views remain admin-only HTTP. `archive_learning_target` was removed from the
+agent surface. All FSRS / review-card tools are gone (FSRS retired).
 
 ### Group: audit / provenance
 
 There are **no write tools** in this group — provenance is a side effect.
-Audit events are emitted only by triggers; the read surface is embedded in
-`morning_context`, `session_delta`, `weekly_summary`, and the admin
-`/api/admin/coordination/activity` endpoint (frontend-advisory, §2).
+Audit events are emitted only by triggers; the agent-facing read surface is
+embedded in `brief` (morning/reflection) and `learning_read`. The richer
+activity feed (`/api/admin/coordination/activity`, `routes.go:257`) is
+admin-only HTTP (frontend-advisory, §2).
 
-### Group: system / context bootstrap (`DomainSystem`, `DomainQuery`)
+### Group: system / context bootstrap (`DomainQuery`)
 
 | Tool | Writability | Side effect | Notes |
 |---|---|---|---|
-| `morning_context` | ReadOnly | none | single-call daily briefing; `sections` filter; **today-scoped** |
-| `reflection_context` | ReadOnly | none | end-of-day, today-scoped |
-| `session_delta` | ReadOnly | none | 24h activity snapshot (not a two-session diff) |
-| `weekly_summary` | ReadOnly | none | Mon–Sun retrospective |
-| `system_status` | ReadOnly | none | feeds health + 24h process_runs + entity counts |
+| `brief(mode=morning)` | ReadOnly | none | single-call daily-planning briefing (overdue/today/committed/upcoming todos, active_goals, unverified_hypotheses, rss_highlights, content_pipeline); `sections` filter; **today-scoped**, not since-last-session |
+| `brief(mode=reflection)` | ReadOnly | none | end-of-day plan-vs-actual retrospective (planned_items + completed/deferred/planned counts + completion_rate); `sections` ignored |
 
-**Semantics for testing:** these aggregate read tools have overlapping scopes
-by design (today vs 24h-window vs week); contract tests should pin the *scope*
-of each, not just non-emptiness. Four of them are currently **untested** (§6).
+**`brief` replaces the former `morning_context` + `reflection_context`** behind
+a `mode` discriminator. Per-agent default sections: learning-studio defaults to
+`['tasks', 'hypotheses']`; every other caller (incl. hq) gets all sections.
+`rss_highlights` are feeds tagged priority=high, NOT relevance-ranked — use
+`search_knowledge` for ranked retrieval.
+
+**Removed from this group (gone):** `morning_context` and `reflection_context`
+were merged into `brief`. `session_delta` (24h activity snapshot),
+`weekly_summary` (Mon–Sun retrospective), and `system_status` (feeds health +
+process_runs + counts) were removed from the agent surface entirely — system
+observability is admin-only HTTP (`/api/admin/system/health`,
+`/api/admin/system/stats`, `routes.go:261-269`).
 
 ---
 
@@ -436,43 +474,42 @@ Confidence levels used below:
 
 ### A. Implemented and CLAIM-tested (specific behavior asserted)
 
+> The claims below describe the **contracted** agent surface. Behaviors backed
+> by tools removed in MCP-v3 (the task/directive triad, `propose_*` /
+> `commit_proposal`, FSRS, `archive_learning_target`, agent_notes) are no
+> longer agent-facing and are not listed here as live claims — see the
+> ledger `docs/decisions/mcp-v3-semantic-contraction.md` for their history.
+> Where the *underlying entity* (content lifecycle, learning sessions) still
+> exists behind admin HTTP, the schema-level CHECK claim is retained.
+
 | Claim | Confidence | Evidence |
 |---|---|---|
 | Login + refresh-token rotation + token security behave as specified | claim-tested | `internal/auth/` — 27 tests incl. `auth_security_test.go` |
-| Content draft→review→publish→archive transitions enforce their CHECKs | claim-tested | `internal/content/` integration (testcontainers) |
+| Content draft→review→publish→archive transitions enforce their CHECKs (now admin-HTTP-driven) | claim-tested | `internal/content/` integration (testcontainers) |
 | Tag raw→canonical alias resolution (auto + admin paths) | claim-tested | `internal/tag/` integration |
 | Feed fetch + scheduler cadence + auto-disable on failures | claim-tested | `internal/feed/scheduler_test.go` (testcontainers) |
-| Task **submit→accept→complete happy path** lands message+artifact+state atomically | claim-tested | `task/integration_test.go::TestCompletionRequiresOutputs` |
-| Task **self-assignment rejected** (`created_by<>assignee`) | claim-tested | `TestSelfAssignmentRejected` |
-| Task **accept-idempotency** (re-accept non-submitted → ErrConflict) | claim-tested | `TestAcceptNonSubmittedRejected` |
-| Task **message ordering serialized** under concurrent appends | claim-tested | `TestAppendMessage_ConcurrentAssigns_SerializedPositions` |
 | **At-most-one active learning session** rejects a second `start_session` | claim-tested | `TestIntegration_StartSession_*` |
 | `record_attempt` **cold-start happy path** (attempt + observations + targets) | claim-tested | `TestIntegration_ColdStart_RecordAttempt` |
 | Mastery floor (<3 filtered obs → `developing`) + confidence-filter invariant | claim-tested | `TestObservationConfidenceInvariant`; `internal/learning/mastery_test.go` |
-| FSRS rating-from-outcome + scheduler first-review | claim-tested | `internal/learning/fsrs/fsrs_test.go` |
-| `propose_*`→`commit_proposal` round-trip + proposal validation | claim-tested | `TestIntegration_ProposeGoal_CommitRoundTrip`, `TestIntegration_ProposalValidator` |
-| `propose_directive` capability pre-check rejects non-`SubmitTasks` callers | claim-tested | `TestIntegration_ProposeDirective_CapabilityPreCheck` |
-| `task_detail` returns not_found to non-parties (no existence leak) | claim-tested | `TestIntegration_TaskDetail_*` |
-| `archive_learning_target` archive + cascade + self-bound auth | claim-tested | 4 integration tests |
 
 ### B. Implemented and only SURFACE-tested (parity/validation, not semantics)
 
 | Claim | Confidence | Evidence |
 |---|---|---|
-| The 47-tool catalog matches handler registration | surface-tested (**parity only**) | `ops_catalog_test.go:22-33` compares *names only* — proves registration completeness, **not** per-tool contract behavior |
-| `search_knowledge` RRF merge + filter mutex logic | surface-tested (unit, no DB) | `search_test.go` — 4 unit tests on the merge function; no end-to-end search |
-| Content/note write tools (`archive_content`, `create_note`, `update_note`, `update_note_maturity`, `manage_plan`) input validation | surface-tested | `handler_test.go` — validation only, limited business-logic integration |
+| The 11-tool catalog matches handler registration | surface-tested (**parity only**) | `ops_catalog_test.go` compares *names only* — proves registration completeness, **not** per-tool contract behavior |
+| `search_knowledge` RRF merge + filter mutex logic | surface-tested (unit, no DB) | `search_test.go` — unit tests on the merge function; no end-to-end search |
+| Agent-surface note write tools (`create_note`, `update_note`, `manage_plan`) input validation | surface-tested | `handler_test.go` — validation only, limited business-logic integration |
 
 ### C. Implemented but WEAKLY tested (happy path only; rejection paths open)
 
 | Claim | Gap (untested) | Evidence |
 |---|---|---|
-| Task completion requires ≥1 message AND ≥1 artifact | the **rejection** path (complete *without* artifact → should fail) is untested | `task/integration_test.go` covers the satisfied case only |
-| Directive revision cycle (`completed→revision_requested→working→completed`) | the **full round-trip is untested** | no test exercises `revision_requested` |
-| Artifacts | **standalone** artifact lifecycle untested; no handler-level test; only exercised as a task-completion payload | `internal/agent/artifact/` has no `*_test.go` |
 | `record_attempt` partial-write | **per-element rejection** (`observation_warnings`, `relation_warnings`) coverage thin | audit |
-| a2a part size/count caps (16/32KB, 32/256KB) | cap-**rejection** path untested | schema CHECKs `1307-1346` exist; no test drives them |
-| Hybrid search semantic branch | no integration test against real pgvector; degradation path (embedder nil/timeout) untested | `search.go:182-236`; `search_knowledge` tool has no integration test |
+| Hybrid search semantic branch | no integration test against real pgvector; degradation path (embedder nil/timeout) untested | `search.go`; `search_knowledge` tool has no integration test |
+
+(The task-completion / directive-revision / standalone-artifact / a2a-cap gaps
+previously listed here are removed: the coordination triad was retired in
+MCP-v3 and those tables/tools no longer exist.)
 
 ### D. Schema-supported only (NOT implemented — do not assume it works)
 
@@ -486,28 +523,35 @@ Confidence levels used below:
 
 | Package / tool | Note |
 |---|---|
-| `internal/daily`, `internal/note`, `internal/search`, `internal/today`, `internal/todo`, `internal/weekly` | **No `*_test.go` files.** `internal/db` is sqlc-generated (acceptable). |
-| MCP tools `goal_progress`, `reflection_context`, `session_delta`, `weekly_summary` | No direct tests found — output shape unverified |
+| `internal/daily`, `internal/note`, `internal/search`, `internal/today`, `internal/todo` | **No `*_test.go` files.** `internal/db` is sqlc-generated (acceptable). |
+| MCP tools `brief` (morning + reflection modes), `learning_read` (4 views) | No direct contract tests found — output shape unverified. These are the surviving aggregate readers; the former `reflection_context` / `session_delta` / `weekly_summary` / `goal_progress` tools were removed. |
 
 ### F. Today surface (CORRECTED in Track 0.1)
 
 The endpoints exist — this is no longer an open existence question:
 
+This surface is **admin-only HTTP** (the frontend admin shell), not the MCP
+agent surface — it is unaffected by the MCP-v3 contraction except that two of
+its sections lost their data source (see below).
+
 | Endpoint | Status | Evidence |
 |---|---|---|
-| `GET /api/admin/commitment/today` | exists (backend aggregate) | `cmd/app/routes.go:206` → `today.Handler.Today` (`internal/today/handler.go:108-137`) |
-| `GET /api/admin/system/health` | exists | `cmd/app/routes.go:271` → `stats.Handler.Health` |
-| `GET /api/admin/learning/summary` | exists | `cmd/app/routes.go:350` → `learning.Handler.Summary` |
+| `GET /api/admin/commitment/today` | exists (backend aggregate) | `cmd/app/routes.go:204` → `today.Handler.Today` |
+| `GET /api/admin/system/health` | exists | `cmd/app/routes.go:269` → `stats.Handler.Health` |
+| `GET /api/admin/learning/summary` | exists | `cmd/app/routes.go:333` → `learning.Handler.Summary` |
 
 **The real risk is a fan-out-vs-aggregate split, not endpoint existence:**
 
 - The backend Today **aggregate exists but is only partially wired in
   production.** `today.NewHandler(planItems, logger)` requires only the plan
-  reader; the judgment / due-reviews / warnings sections come from optional
-  readers injected via `WithSources(...)` (`handler.go:78-100`). **`WithSources`
-  is not called anywhere in `cmd/`**, so in production the aggregate returns the
-  plan section populated and the AwaitingJudgment / DueReviews / Warnings
-  sections **empty** (`handler.go:121-160` initialize-then-fill-if-reader).
+  reader; the warnings section comes from optional readers injected via
+  `WithSources(...)`. **`WithSources` is not called anywhere in `cmd/`**, so in
+  production the aggregate returns the plan section populated and the Warnings
+  section **empty**.
+- **The AwaitingJudgment and DueReviews sections are now permanently empty** —
+  AwaitingJudgment was sourced from the retired `tasks` triad and DueReviews
+  from the retired FSRS review-cards. Reconciliation (below) should drop these
+  two sections rather than wire them.
 - The **frontend Today page bypasses the aggregate** and fans out to six
   per-entity endpoints, assembling the envelope client-side
   (`frontend/src/app/admin/commitment/today/today.service.ts` — the doc comment
@@ -534,21 +578,24 @@ The endpoints exist — this is no longer an open existence question:
 
 | Domain | Must test before trusting |
 |---|---|
-| **MCP tools** | Catalog parity is **already surface-tested** (names only, `ops_catalog_test.go`) — that is not a contract test. Add claim-level contract tests for all 45 (the 4 untested aggregate readers first); writability annotation matches actual side effect; `propose_*` writes nothing; token expiry + restart invalidation + tamper rejection; per-tool authorization gate (human-only publish, capability pre-checks, self-bound advance_work/archive_learning_target). |
-| **Search** | Decide the search product contract (Open Question #1) THEN integration-test the hybrid path with real pgvector; until then, test and document FTS-only behavior + graceful degradation when embedder nil/timeout (`search.go:198-207`). Add ranking-judgment tests (Scenario 6). |
-| **Agent coordination** | Directive full lifecycle incl. **revision cycle**; duplicate ack idempotency; **duplicate report** behavior; report-without-directive (standalone) authorization; completion-**without**-artifact rejection; `task_detail` non-party leak; a2a part size/count cap rejection (`1307-1346`). |
-| **Learning analytics** | `record_attempt` partial-write per-element rejection; mastery floor (<3 filtered obs → `developing`); confidence-filter read semantics; concept auto-creation boundary (leaf, same-domain only; cross-domain → rejected by trigger `2190`); plan-entry completion audit-trail enforcement (`mcp-decision-policy.md §13`). Needs a deterministic fixture matrix (see Scenario 4). |
+| **MCP tools** | Catalog parity is **already surface-tested** (names only, `ops_catalog_test.go`) — that is not a contract test. Add claim-level contract tests for all **11**: the multiplexer discriminators (`brief.mode`, `learning_read.view`, `manage_plan.action`) reject out-of-set values; writability annotation matches actual side effect; `brief` / `learning_read` are read-only (write nothing); per-tool authorization gate. |
+| **Search** | Decide the search product contract (Open Question #1) THEN integration-test the hybrid path with real pgvector; until then, test and document FTS-only behavior + graceful degradation when embedder nil/timeout. Add ranking-judgment tests (Scenario 6). |
+| **Learning analytics** | `record_attempt` partial-write per-element rejection; mastery floor (<3 filtered obs → `developing`); confidence-filter read semantics; concept auto-creation boundary (leaf, same-domain only; cross-domain → rejected by trigger); plan-entry completion audit-trail enforcement (`mcp-decision-policy.md §13`). Needs a deterministic fixture matrix (see Scenario 4). (Agent coordination as a test domain is gone — the task triad was retired in MCP-v3.) |
 | **Frontend workflows** | **Today surface reconciliation first** (§6F): decide canonical surface (fan-out vs aggregate) before any Today golden flow. Then a backend/frontend **route compatibility matrix** (every admin page: frontend endpoint ↔ backend route ↔ response envelope ↔ empty/error behavior); then golden-flow each admin area; assert no UI affordance violates a forbidden assumption below. |
 | **Observability** | **Track 1 input: inventory `activity_events` producers** and map each to `entity_type` × `change_kind` × actor attribution × write path × user-visible event × observability category × alert/dashboard relevance (see §7 Track 1 inputs). Confirm `koopa.actor` GUC is set on every Go write path so `actor='system'` only appears for genuine cron/manual ops (`registry.go:112-125`). Do NOT design dashboards yet. |
 
 ### Forbidden assumptions (UI / impl must NOT build on these)
 
-No `tasks.kind`; no `bookmarks.status` lifecycle; no content/concept-scoped
-review cards (one-per-target only); no daily-plan auto-carryover; no RBAC; no
-quantitative milestones; no goal auto-status; no cross-domain
-`learning_hypotheses`; no self-directed tasks; no direct `activity_events`
-INSERT; no direct mastery edit; no FSRS internal-state edit knobs. (Each is
-schema- or policy-enforced; see the cited constraints in §3/§5.)
+No `tasks` / `task_messages` / `artifacts` (the A2A triad was retired — do not
+re-introduce a coordination layer assuming these tables exist); no `agent_notes`
+(agent memory is each agent's own `.md`); no `reports` / `research_assignments`
+(report lane retired); no review cards / FSRS state of any kind (retired); no
+agent-facing `propose_*` / `commit_proposal` flow (high-commitment creation is
+admin HTTP); no agent-facing content write/publish (admin HTTP only); no
+`bookmarks.status` lifecycle; no daily-plan auto-carryover; no RBAC; no
+quantitative milestones; no goal auto-status; no direct `activity_events`
+INSERT; no direct mastery edit. (Each is schema- or policy-enforced or removed;
+see §3/§5 and the MCP-v3 ledger.)
 
 ### Open Questions (require human decision)
 
@@ -565,17 +612,20 @@ schema- or policy-enforced; see the cited constraints in §3/§5.)
    NOT be resolved by "the code exists" alone.
 3. **`p0`/`p1`/`p2` priority aliases** — `normalizePriority` accepts them as
    input shorthand; keep or remove?
-4. **`directive` discriminator** — add `tasks.kind` or keep naming-only?
-5. **Admin global-search Kind taxonomy** — wire the 7 unwired Kinds or remove
-   the declarations?
+4. **`directive` discriminator** — **MOOT (MCP-v3): the `tasks` triad was
+   retired.** There is no directive entity to discriminate.
+5. **Admin global-search Kind taxonomy** — wire the unwired Kinds or remove
+   the declarations? (Note: `KindTask` etc. are dead since the triad was
+   retired; only `KindContent` + `KindNote` remain meaningful.)
 6. **Feed AI relevance scoring** — implement or formally drop?
 7. **Actor attribution surfacing** — `activity_events.actor` exists but is not
-   propagated into `weekly.Summary` / `SessionDelta` / `MorningContext`
-   outputs; widen those types?
-8. **`agent_notes.metadata` schema** — formalize per-kind structure or keep
-   policy-only + tolerant readers?
-9. **"session_note" as a first-class entity** — formalize, or keep as a label
-   over `agent_notes(kind=context|reflection)`?
+   propagated into the surviving aggregate-reader outputs (`brief`); widen
+   those types? (The former `weekly.Summary` / `SessionDelta` / `MorningContext`
+   tool outputs no longer exist.)
+8. **`agent_notes.metadata` schema** — **MOOT (MCP-v3): `agent_notes` retired.**
+9. **"session_note" as a first-class entity** — **MOOT (MCP-v3): the
+   `agent_notes` backing entity is gone**; "session note" no longer maps to any
+   backend entity.
 10. **External `schedule` execution + `schedule run` recording** —
     **DECIDED (Phase 1D, 2026-05-27): scheduled execution is owned by the
     external Cowork/Desktop runner.** This repo provides the agent registry
@@ -583,43 +633,41 @@ schema- or policy-enforced; see the cited constraints in §3/§5.)
     audit row. **No internal scheduler is planned at this time.** Whether
     the external runner is actively writing those rows is not yet
     observable from this repo; adding a read-side observability surface
-    (e.g. "last schedule run per agent" in `system_status`) is a follow-up
-    task, deliberately separate from this ownership decision.
-11. **Task `revision_requested` payload contract** — request-revision body
-    shape (message vs artifact vs free text) is not codified.
+    (e.g. "last schedule run per agent" on the admin `/api/admin/system/health`
+    surface — the agent `system_status` tool was removed in MCP-v3) is a
+    follow-up task, deliberately separate from this ownership decision.
+11. **Task `revision_requested` payload contract** — **MOOT (MCP-v3): the
+    `tasks` triad and its revision cycle were retired.**
 12. **`contents.ai_metadata` consumer contract** — documented shape
     `{summary, keywords, quality_score, review_notes}` is not type-checked;
-    treat as advisory.
-13. **`learning_domains` lifecycle** — proposable at runtime but no
-    retire/deactivate flow.
+    treat as advisory. (Content is now admin-HTTP-only, but the column and its
+    advisory shape persist.)
+13. **`learning_domains` lifecycle** — created via admin form
+    `POST /api/admin/learning/domains` but no retire/deactivate flow.
 14. **`project_aliases` surface** — exist for fuzzy project resolution; not
     exposed in admin UI.
-15. **"Blocked task" definition** — Scenario 1 wants to show blocked work, but
-    `task_state` has no `blocked` value. Remove from the Today view, define as
-    a read-side derived condition, or add a structural state. Until decided,
-    do NOT test it as implemented.
-16. **`recommend_next_target` ranking policy** — design-only, not implemented.
-    Current ranker does not incorporate FSRS-due, breadth cap, or
-    explainability. Direction: mixed coaching recommendation by session mode.
-    Do NOT patch the ranker until decisions land on session-mode source, FSRS
-    join shape, `recommendation_type` taxonomy, breadth cap, backward-compatible
-    response envelope, and fixture matrix. (audit memo: CF-01.)
+15. **"Blocked task" definition** — **MOOT (MCP-v3): there is no `tasks` entity
+    or Today "awaiting/blocked work" section to populate.** A blocked-work
+    affordance, if ever wanted, would be a derived condition over `todos`.
+16. **`learning_read(view=next_target)` ranking policy** — design-only, not
+    implemented. Current ranker does not incorporate breadth cap or
+    explainability (FSRS-due is gone with FSRS). Direction: mixed coaching
+    recommendation by session mode. Do NOT patch the ranker until decisions
+    land on session-mode source, `recommendation_type` taxonomy, breadth cap,
+    backward-compatible response envelope, and fixture matrix. (audit memo: CF-01.)
 17. **`record_attempt` observation `concept_kind`** — design-only, not
     implemented. Auto-created concepts default to `skill`; the
     pattern/skill/principle distinction is not persisted. Direction: optional
     `concept_kind` on `record_attempt` for **new-concept creation only**.
     Existing concept `kind` MUST NOT be overwritten; conflict policy is
-    "warn but keep existing". `parent_id` / hierarchy stays proposal-first per
-    §5 — never direct-write via `record_attempt`. (audit memo: CF-03.)
-18. **Directive `reject` / `defer` transitions** — deferred. Conceptually
-    accepted, but should be bundled with the next task-lifecycle migration
-    (see also Q#4 `directive` discriminator). Not a standalone change.
-    (audit memo: CF-07.)
-19. **`weekly_summary.self_audit.recommendation_acceptance_rate`** — deferred.
-    P0 self-audit shipped (`weekly_summary.self_audit`); the
-    `recommendation_acceptance_rate` metric is explicitly out of scope until a
-    recommendation→adoption link is added (no schema or write-path support
-    today). (audit memo: CF-08 remainder.)
+    "warn but keep existing". `parent_id` / hierarchy stays admin-form-only —
+    never direct-write via `record_attempt`. (audit memo: CF-03.)
+18. **Directive `reject` / `defer` transitions** — **MOOT (MCP-v3): the
+    directive/task lifecycle was retired.** (audit memo: CF-07.)
+19. **`recommendation_acceptance_rate` self-audit metric** — **MOOT (MCP-v3):
+    the `weekly_summary` tool and its `self_audit` block were removed from the
+    agent surface.** Any equivalent now lives on admin HTTP stats, out of
+    scope here. (audit memo: CF-08 remainder.)
 
 ### Track 1 inputs (carried out of Track 0; not started here)
 
@@ -629,10 +677,11 @@ schema- or policy-enforced; see the cited constraints in §3/§5.)
    frontend endpoint ↔ backend route ↔ response envelope ↔ empty/error
    behavior. Broader than the two already-confirmed endpoints.
 3. **Observability event taxonomy from real producers** — inventory every
-   `activity_events` producer (the 12 audit triggers `2646-2911`) and map:
-   `entity_type` · `change_kind` · actor attribution · write path · user-visible
-   event · observability category · alert/dashboard relevance. Build the
-   taxonomy from producers, not from prose. Do NOT design dashboards yet.
+   `activity_events` producer (the audit triggers in migration 001, minus the
+   triggers on the 9 tables dropped in MCP-v3) and map: `entity_type` ·
+   `change_kind` · actor attribution · write path · user-visible event ·
+   observability category · alert/dashboard relevance. Build the taxonomy from
+   producers, not from prose. Do NOT design dashboards yet.
 4. **Scenario→test-spec conversion** — turn each scenario in
    `usage-scenario-catalog.md` into a fixture-backed spec (the catalog now
    carries seed specs; Track 1 makes them executable).

@@ -9,34 +9,49 @@
 ### Session Lifecycle（主線）
 
 ```
-attempt_history(target={title, domain})              ← 準備階段，查上次紀錄
+learning_read(view="attempts", target={title, domain})   ← 準備階段，查上次紀錄
   → start_session(domain, mode)
-  → record_attempt(session_id, target, outcome, observations?, metadata?, related_targets?, fsrs_rating?)  [重複 N 次]
+  → record_attempt(session_id, target, outcome, observations?, metadata?, related_targets?)  [重複 N 次]
   → end_session(session_id, reflection?)
 ```
 
 **只有一個 session 可以同時進行。** `start_session` 在有未結束 session 時會報錯。
 
+> MCP-v3 後，讀側分析統一在 `learning_read`（取代 learning_dashboard / recommend_next_target /
+> attempt_history / session_progress）。`brief` 與 `learning_read` 是 READ-ONLY。
+> FSRS / review 工具、A2A 協調（directive / report）、agent_notes feature 都已移除。
+
 ### Tool Details
 
 | Tool | When | Key Params |
 |------|------|------------|
-| `start_session` | 開始學習 | `domain` (seeded: `leetcode` / `japanese` / `go` / `system-design` / `reading`; 其他可透過 `propose_learning_domain` 新增), `mode` (practice/retrieval/mixed/review/reading), `daily_plan_item_id?` |
-| `record_attempt` | 每做一題/一個練習 | `session_id`, `target{title, external_id?, difficulty?}`, `outcome` (自然語言或 enum), `duration?`, `stuck_at?`, `approach?`, `observations[]?`, `metadata?` (8 步 checklist 的 complexity/pattern/brute_force_alt), `fsrs_rating?` (1..4 顯式覆寫), `related_targets[]?` (變體圖連結) |
-| `end_session` | 結束 session | `session_id`, `reflection?` (自動存為 agent_note(kind=reflection)) |
-| `learning_dashboard` | 查看學習數據 | `domain?`, `view` (overview/mastery/weaknesses/retrieval/timeline/variations), `window_days?` (mastery 預設 60，其他 view 30，1..365), `confidence_filter?` ("high" 預設 / "all" — 只對 mastery、weaknesses 有效) |
-| `attempt_history` | 查歷史 attempt（讀側） | 三選一：`target{title, domain?}` / `concept_slug` / `session_id`；`max_results?` |
-| `manage_plan` | 管理學習計畫 | `action` (add_entries/remove_entries/update_entry/reorder/update_plan/progress) |
+| `start_session` | 開始學習 | `domain` (seeded: `leetcode` / `japanese` / `go` / `system-design` / `reading`; 新 domain 由 Koopa 在 admin 表單 `POST /api/admin/learning/domains` 新增), `mode` (practice/retrieval/mixed/review/reading) |
+| `record_attempt` | 每做一題/一個練習 | `session_id`, `target{title, external_id?, difficulty?}`, `outcome` (自然語言或 enum), `duration?`, `stuck_at?`, `approach?`, `observations[]?`, `metadata?` (8 步 checklist 的 complexity/pattern/brute_force_alt), `related_targets[]?` (變體圖連結) |
+| `end_session` | 結束 session | `session_id`, `reflection?` |
+| `learning_read` | 讀側學習分析（READ-ONLY） | `view` (overview / next_target / attempts / session_progress) — 見下方 cheatsheet |
+| `manage_plan` | 管理學習計畫 | `action` (add_entries / remove_entries / update_entry / reorder / progress) |
 
 ### Supporting Tools
 
 | Tool | When | Notes |
 |------|------|-------|
 | `search_knowledge` | 找 Koopa 過去的筆記/文章 | 可用 `content_type` 過濾 |
-| `write_agent_note` | Session 外的學習反思 | `kind=reflection` 或 `kind=context` |
-| `file_report` | 回報學習成果給 HQ | 自發性報告（無 directive） |
-| `session_delta` | Session 開始時 | 看上次之後的學習活動 |
-| `acknowledge_directive` | 收到 HQ 的學習方向指令 | 你有 `ReceiveTasks` |
+| `brief(mode="morning")` | Session 開始時 | read-only 規劃狀態（default sections: tasks + hypotheses for learning-studio） |
+
+### Agent memory
+
+session 外的學習反思、教學筆記 → 寫進你自己的 `.md` 檔（不是 MCP 工具）。
+`end_session` 的 `reflection?` 仍可附在 session 上，但 agent_notes feature 已退役，MCP 無 `write_agent_note`。
+
+### 不再是 MCP 動作
+
+| 你想做的 | 現在怎麼做 |
+|---|---|
+| 回報學習成果給 HQ | 不再透過 MCP file_report；在對話中向 Koopa 摘要，或寫進你自己的 `.md` |
+| 收到 HQ 的學習方向指令 | 沒有 MCP directive；學習方向由 Koopa 透過 admin 建立的 goal / learning_plan 設定 |
+| 變更計畫狀態（draft→active→...） | admin 表單；MCP 的 `manage_plan` 不再有 `update_plan` action |
+| 新增 learning domain | Koopa 在 admin 表單建立（`POST /api/admin/learning/domains`） |
+| FSRS / spaced-repetition review 排程 | 系統內部管理；MCP 無 review 工具 |
 
 ## Session Workflow Patterns
 
@@ -66,14 +81,14 @@ end_session(as:"learning-studio", session_id="...", reflection="今天 hash-map 
 ### Spaced Retrieval Review
 
 ```
-learning_dashboard(as:"learning-studio", domain="leetcode", view="retrieval")
-  → 看到到期的 review items
-
 start_session(as:"learning-studio", domain="leetcode", mode="retrieval")
+  → learning_read(view="next_target", session_id="...")  找下一題（弱點 × 未試變體）
   → 逐題練習
   → record_attempt (each)
   → end_session
 ```
+
+（到期 review 排程由系統 FSRS 內部管理，MCP 不再暴露 retrieval view；用 `learning_read(view=next_target)` 在 session 內取得下一題建議。）
 
 ### Reading Session (DDIA, etc.)
 
@@ -138,8 +153,9 @@ ANY is true → set `confidence: "low"`:
 | `remove_entries` | 移除 entries（僅 draft plan） | plan_id, entry_ids[] |
 | `update_entry` | 更新 entry 狀態（completed/skipped/substituted） | plan_id, entry_id, status, completed_by_attempt_id?, reason? |
 | `reorder` | 調整順序 | plan_id, positions[{entry_id, position}] |
-| `update_plan` | 變更計畫狀態 | plan_id, status (draft→active→completed/paused/abandoned) |
-| `progress` | 查看進度（read-only） | plan_id |
+| `progress` | 查看進度（read-only） | plan_id — 回傳 plan_entry_id 清單，update_entry 前先查 |
+
+計畫狀態變更（draft→active→completed/paused/abandoned）不再是 MCP action — 走 admin 表單（`POST /api/admin/learning/plans` 系列）。`manage_plan` 只剩 5 個 entry-lifecycle actions。
 
 ### Plan Item Completion Audit Trail
 
@@ -153,31 +169,35 @@ This is policy-enforced. Without audit trail, completion is a black box.
 
 當 Koopa 重做一題時的標準流程：
 
-1. **準備階段** — 在他開始解題前用 `attempt_history(target={title, domain})` 查上次的 attempt。取 `outcome` / `stuck_at` / `approach_used` / `metadata`。記在心裡，**不要告訴他這是 revisit**
+1. **準備階段** — 在他開始解題前用 `learning_read(view="attempts", target={title, domain})` 查上次的 attempt。取 `outcome` / `stuck_at` / `approach_used` / `metadata`。記在心裡，**不要告訴他這是 revisit**
 2. **自然解題** — 讓他重新做
 3. **解題後 explicit comparison** — 用第 1 步的資料做具體對比：「上次你 22 分鐘 stuck 在 invariant reasoning，這次 8 分鐘乾淨解出」
 4. **記一筆 improvement observation**（若有進步）
-5. **決定下一步** — 改善 → harder variant（用 `learning_dashboard(view=variations)` 或 `attempt_history(concept_slug=...)` 找相近問題）；沒改善 → 調整教學
+5. **決定下一步** — 改善 → harder variant（在 session 內用 `learning_read(view="next_target", session_id=...)` 或 `learning_read(view="attempts", concept_slug=...)` 找相近問題）；沒改善 → 調整教學
 
-## Dashboard Views Cheatsheet
+## `learning_read` Views Cheatsheet
 
-| Question | View |
-|----------|------|
-| 最近學了什麼？ | `overview` |
-| 哪些概念已掌握？哪些還弱？ | `mastery` (預設 60 天 window，可用 `window_days` 覆寫) |
-| 弱點的模式是什麼？ | `weaknesses` |
-| 今天該複習什麼？ | `retrieval` |
-| 學習趨勢上升還是下降？ | `timeline` |
-| 做過的題目之間有什麼關係？ | `variations` |
-| 上次他做這題怎麼樣？ | `attempt_history(target=...)` ← **不是** learning_dashboard |
-| 他在 X concept 上的歷史？ | `attempt_history(concept_slug=...)` |
-| 昨天 session 我做了什麼？ | `attempt_history(session_id=...)` |
+`learning_read` 只暴露 4 個 view（READ-ONLY）：
+
+| Question | View | Params |
+|----------|------|--------|
+| 最近學了什麼？ | `overview` | `domain?`, `window_days?` |
+| session 內下一題該練什麼？ | `next_target` | `session_id`（active）, `count?`, `exclude_patterns?` |
+| 上次他做這題怎麼樣？ | `attempts` | `target={title, domain}` |
+| 他在 X concept 上的歷史？ | `attempts` | `concept_slug` |
+| 某個 session 做了什麼？ | `attempts` | `session_id` |
+| 目前 session 的即時統計？ | `session_progress` | （active session；無則回 `{active:false, last_ended_session_id}`） |
+
+mastery / weaknesses / timeline / variations / retrieval 這些 dashboard view **不在 MCP**，
+只在 admin（`GET /api/admin/learning/dashboard`）。需要弱點模式或掌握度全貌時，
+請 Koopa 看 admin dashboard，或在 session 內用 `next_target` 取得針對弱點的下一題建議。
 
 ## What You DON'T Do
 
 - 不在 session 外記錄 attempt（必須有 active session）
-- 不自動建立 goal/project（那是 HQ 的事，用 typed `propose_*` 工具如 `propose_goal` / `propose_project`）
-- 不發布內容（content-studio 的工作）
+- 不建立 goal/project/learning_plan/learning_domain（commitment 全走 admin 表單，由 Koopa 建立；你在對話起草）
+- 不發布內容（content 走 admin，由 Koopa 操作）
 - 不因為「怕污染 dashboard」而不敢標低信心觀察 —— floor + filter 設計就是讓你可以誠實標記
 - 不在 plan item 完成時省略 audit trail（completed_by_attempt_id + reason 必填）
+- 不嘗試呼叫已移除的工具（learning_dashboard / recommend_next_target / attempt_history / session_progress 都已併入 `learning_read`；`manage_plan(update_plan)` / propose_* / write_agent_note / file_report / session_delta / FSRS review 工具都不存在）
 - 不用舊的 `pending_observations` 欄位 —— 已移除，所有觀察直接寫入

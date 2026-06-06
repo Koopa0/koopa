@@ -4,12 +4,12 @@
 
 | Signal | Action |
 |---|---|
-| Question ("what / show / how is") | Read-only query tool |
-| Reference to existing entity | Transition / update on that entity |
+| Question ("what / show / how is") | Read-only query tool (`brief`, `search_knowledge`, `learning_read`) |
+| Reference to existing entity | Transition / update on that entity (`manage_plan(update_entry)`, `update_note`) |
 | Active learning session exists | `record_attempt` / `end_session` |
 | Capture impulse ("add / remind me / 記一下") | `capture_inbox` |
-| Commitment intent ("create goal / plan project") | the typed `propose_*` tool for the entity (`propose_goal`, `propose_project`, …) |
-| Reflection intent ("how did today go / 反思") | `write_agent_note` or `propose_hypothesis` |
+| Commitment intent ("create goal / plan project") | 對話起草 → 請 Koopa 在 admin 表單建立（no MCP propose tool） |
+| Reflection intent ("how did today go / 反思") | 寫進 agent 自己的 `.md`（agent_notes feature 已退役） |
 | Learning intent ("let's practice / 開始學") | `start_session` |
 
 ## Maturity gate
@@ -17,37 +17,46 @@
 | Level | Indicators | Allowed actions |
 |---|---|---|
 | M0 | vague, exploratory, no outcome | Conversation only — write nothing |
-| M1 | direction exists, missing specifics | `capture_inbox` or `write_agent_note(kind=plan)` |
-| M2 | outcome + rough scope | typed `propose_*` tool — AI fills defaults |
-| M3 | specific, time-bound, complete | typed `propose_*` tool — fast approval |
+| M1 | direction exists, missing specifics | `capture_inbox`，或記進 agent 自己的 `.md` |
+| M2 | outcome + rough scope | 對話起草 commitment 草稿 → 請 Koopa 在 admin 表單建立 |
+| M3 | specific, time-bound, complete | 同上 — 草稿完整，Koopa 在 admin 表單快速建立 |
 
 If uncertain between two levels, pick the lower one.
 
-## Proposal-first entities
+## Commitment entities — admin HTTP forms only (no MCP)
 
-Always the typed `propose_*` tool → user confirm → `commit_proposal`:
+高承諾實體不在 MCP surface；agent 在對話中起草，Koopa（human）在 admin 表單建立：
 
-- Goal — `propose_goal`
-- Project — `propose_project`
-- Milestone — `propose_milestone`
-- Hypothesis — `propose_hypothesis`
-- Learning plan (shell) — `propose_learning_plan`
-- Learning domain (runtime-added; 5 core domains are seeded at bootstrap) — `propose_learning_domain`
+| Entity | Admin form |
+|---|---|
+| Goal | `POST /api/admin/commitment/goals` |
+| Milestone | `POST /api/admin/commitment/goals/{id}/milestones` |
+| Project | `POST /api/admin/commitment/projects` |
+| Hypothesis | admin 表單（`/api/admin/learning/hypotheses/*`） |
+| Learning plan (shell) | `POST /api/admin/learning/plans` |
+| Learning domain (5 core domains seeded at bootstrap) | `POST /api/admin/learning/domains` |
 
-## Direct-commit entities
+## Direct-commit entities (MCP)
 
 - Todo (inbox) — `capture_inbox`
-- Agent note — `write_agent_note`
 - Daily plan entry — `plan_day`
 - Attempt + observation — `record_attempt` (within active session)
 - Learning session start — `start_session`
+- Note (Zettelkasten) — `create_note` / `update_note`
 - Plan entries (into existing plan) — `manage_plan(add_entries)`
+
+## Agent memory
+
+agent 的內部敘事、計畫、決策、反思 → 寫進 agent 自己的 `.md` 檔。
+這**不是**系統 entity，不經 MCP，不會被 `search_knowledge` 檢索。
+跨 session 需被系統檢索的知識 → `create_note`（`notes` 表，slug-addressable）。
 
 ## Never via MCP
 
 - Area (human life decision)
+- Goal / project / milestone / hypothesis / learning_plan / learning_domain (admin forms only)
+- Content 發布生命週期 (admin HTTP only)
 - Agent registry row (reconciled from `BuiltinAgents()` at startup)
-- Review card / review log (FSRS-managed)
 - `activity_events` (written only by AFTER triggers on covered tables)
 
 ## Concept auto-creation boundary
@@ -59,7 +68,7 @@ Auto-create allowed in `record_attempt` if ALL:
 - Kind inferable from context (pattern / skill / principle)
 - No `parent_id` being set
 
-Otherwise → `propose_hypothesis` (or manual admin for structural concept changes).
+Otherwise → 對話起草，請 Koopa 在 admin 表單建立 hypothesis / 處理 structural concept changes.
 
 ## Observation confidence
 

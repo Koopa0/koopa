@@ -28,7 +28,7 @@ MUST be updated):
 | Document | Tier | Runtime truth? | Notes |
 |---|---|---|---|
 | `backend-semantic-contract.md` | 4 (canonical) | **Yes** — shared vocabulary + cross-entity contract | 7 sections (§1–§7): core domain vocabulary is §3, domain boundaries §4, MCP tool semantics §5. |
-| `LEARNING-CONTRACT.md` | 4 (canonical companion) | **Yes** — FSRS vs concept-mastery split | — |
+| `LEARNING-CONTRACT.md` | 4 (canonical companion) | **Yes** — concept-mastery signal + the 5-tool learning surface | Post MCP-v3: single mastery axis, no FSRS. |
 | `authorization-matrix.md` | 4 (canonical companion) | **Yes** — MCP write-tool authorization | Four-axis model. |
 | `audit/*.md` | 6 (historical) | **No** — point-in-time review | Findings reflect repo state at the dated moment; verify before acting. |
 | `audit-prompts/*.md` | 6 (historical) | **No** — past audit-session prompts | Session inputs, not contracts. |
