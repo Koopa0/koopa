@@ -115,7 +115,10 @@ Why together: `agentnote` (W3) is woven through morning_context / reflection_con
 
 End state of the cluster: MCP keeps ~11 tools (ledger §1): plan_day, search_knowledge, capture_inbox, start/record/end_session, manage_plan(5 actions), learning_read, brief, create_note, update_note.
 
-### W7 — schema converge into `migrations/001`
+### W7 — schema converge into `migrations/001`  ✅ DONE (`(committed)`)
+Dropped 9 retired tables + the agent_note_id FK columns + orphaned enum types + triggers/functions/COMMENTs from migrations/001; removed bookmark/task from the activity_events CHECK; git rm migrations 003+004; sqlc.yaml dropped the reports.search_vector override; sqlc regenerated; learning/daily query.sql + Go cascade (EndSession lost noteID; Session/Item lost AgentNoteID); removed the bookmark-coupled feed-entry curation trigger. migrations/ = 001+002 only. Gate green incl every schema-touching integration suite (testcontainers applies the converged schema cleanly). **PRE-EXISTING, not W7:** 4 content/project integration failures ("requires a transactional store") present at branch base effdb92 — undetected because CI has no integration lane; flagged for a separate fix.
+
+ORIGINAL PLAN (for reference):
 - Edit `001` in place: DROP `tasks`, `task_messages`, `artifacts`, `agent_notes`, `review_cards`, `review_logs`, `bookmarks`, `bookmark_topics`, `bookmark_tags` + any retired columns; remove their indexes/triggers/COMMENTs.
 - `git rm migrations/003_tasks_acknowledged.{up,down}.sql migrations/004_report_lane.{up,down}.sql` (their tables `research_assignments`, `reports` + the `tasks` ACK columns vanish with them).
 - Remove the now-orphan `reports.search_vector` override from sqlc.yaml.
