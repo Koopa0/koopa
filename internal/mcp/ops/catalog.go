@@ -340,30 +340,6 @@ func UpdateNote() Meta {
 	}
 }
 
-// SessionDelta returns metadata for the cross-session context bridge.
-func SessionDelta() Meta {
-	return Meta{
-		Name:        "session_delta",
-		Domain:      DomainSystem,
-		Writability: ReadOnly,
-		Stability:   StabilityStable,
-		Since:       since,
-		Description: "Activity snapshot since a point in time: todos created, todos completed, agent notes written, and learning session count. Returns what happened in the window (not a diff between two sessions, and not scoped to any learning_session). Default lookback: 24 hours. Use when reopening a session mid-day after a break — for the morning briefing call morning_context (today-scoped, broader sections) instead.",
-	}
-}
-
-// WeeklySummary returns metadata for the week retrospective query.
-func WeeklySummary() Meta {
-	return Meta{
-		Name:        "weekly_summary",
-		Domain:      DomainSystem,
-		Writability: ReadOnly,
-		Stability:   StabilityStable,
-		Since:       since,
-		Description: "Week-level retrospective: todos completed, agent notes grouped by kind, learning session count and domains, concept mastery, and the self_audit block (P0 verification metrics for the Phase 2 audit fixes — force_true_count, solved_after_solution_rate + counts, same_concept_repeated_within_week with threshold >= 3 distinct attempts, skipped_count + skip_reason_prefix_histogram). skip_reason_prefix_histogram buckets reasons by the 'skipped:' soft convention: 'skipped: solved offline' → 'solved offline'; reasons that do NOT start with 'skipped:' or that are empty after the prefix bucket under 'unclassified' (the 'unclassified' share is itself a convention-adherence signal). Defaults to current week (Monday-Sunday). Use Monday for last week's review or any time you need cross-day patterns. For today only, use reflection_context. For since-last-session activity, use session_delta. self_audit is always emitted (slice fields are [] when empty); recommendation_acceptance_rate is intentionally deferred because it requires new tracking infrastructure (see audit decisions memo §E.4).",
-	}
-}
-
 // All returns every tool meta in stable registration order. The order
 // mirrors the addTool call sequence in internal/mcp/server.go and is
 // enforced by TestOpsCatalogDrift. Adding a new tool requires appending
@@ -391,7 +367,5 @@ func All() []Meta {
 		ReadContent(),
 		CreateNote(),
 		UpdateNote(),
-		SessionDelta(),
-		WeeklySummary(),
 	}
 }

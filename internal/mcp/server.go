@@ -17,7 +17,6 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/Koopa0/koopa/internal/activity"
 	"github.com/Koopa0/koopa/internal/agent"
 	agentnote "github.com/Koopa0/koopa/internal/agent/note"
 	"github.com/Koopa0/koopa/internal/content"
@@ -60,11 +59,6 @@ type Server struct {
 	// Learning domain
 	learn *learning.Store
 	plans *plan.Store
-
-	// Activity (audit log) — read-only consumer for weekly_summary
-	// self_audit metrics. Writes happen via AFTER triggers on covered
-	// tables, not via this store.
-	activity *activity.Store
 
 	// Content and feeds
 	feeds       *feed.Store
@@ -152,7 +146,6 @@ func NewServer(pool *pgxpool.Pool, logger *slog.Logger, opts ...ServerOption) *S
 		registry:    agent.NewBuiltinRegistry(),
 		learn:       learning.NewStore(pool),
 		plans:       plan.NewStore(pool),
-		activity:    activity.NewStore(pool),
 		feedEntries: entry.NewStore(pool),
 		feeds:       feed.NewStore(pool, logger),
 		stats:       stats.NewStore(pool),
@@ -212,10 +205,6 @@ func NewServer(pool *pgxpool.Pool, logger *slog.Logger, opts ...ServerOption) *S
 	// --- Notes (flat tools) ---
 	addTool(s, toolFrom(ops.CreateNote), s.createNote)
 	addTool(s, toolFrom(ops.UpdateNote), s.updateNote)
-
-	// --- Extra: Cross-session & Aggregation ---
-	addTool(s, toolFrom(ops.SessionDelta), s.sessionDelta)
-	addTool(s, toolFrom(ops.WeeklySummary), s.weeklySummary)
 
 	return s
 }

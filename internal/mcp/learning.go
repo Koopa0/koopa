@@ -673,30 +673,6 @@ type MasteryRow struct {
 	LastObservedAt    time.Time             `json:"last_observed_at"`
 }
 
-// toMasteryRows converts learning.ConceptMasteryRow slice (raw counts) to
-// the dashboard MasteryRow shape with stage derivation.
-func toMasteryRows(rows []learning.ConceptMasteryRow) []MasteryRow {
-	out := make([]MasteryRow, len(rows))
-	for i := range rows {
-		r := &rows[i]
-		out[i] = MasteryRow{
-			ID:                r.ID,
-			Slug:              r.Slug,
-			Name:              r.Name,
-			Domain:            r.Domain,
-			Kind:              r.Kind,
-			WeaknessCount:     r.WeaknessCount,
-			ImprovementCount:  r.ImprovementCount,
-			MasteryCount:      r.MasteryCount,
-			TotalObservations: r.TotalObservations,
-			Stage:             learning.DeriveMasteryStage(r.WeaknessCount, r.ImprovementCount, r.MasteryCount),
-			FirstObservedAt:   r.FirstObservedAt,
-			LastObservedAt:    r.LastObservedAt,
-		}
-	}
-	return out
-}
-
 // buildLearningOverview is the read-side builder for learning_read(view=overview).
 // It resolves the lookback window and optional domain filter, surfaces a
 // domain-existence warning, and returns the recent-sessions overview.

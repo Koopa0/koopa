@@ -13,7 +13,7 @@ is hand-maintained.
 > Run `go generate ./internal/mcp/ops` after any change to the tool surface;
 > the drift test `TestToolInventoryDocInSync` fails CI if this is stale.
 
-**23 tools** across 7 domains.
+**21 tools** across 7 domains.
 
 | Domain | Count |
 |---|---|
@@ -23,8 +23,8 @@ is hand-maintained.
 | `meta` | 1 |
 | `learning` | 5 |
 | `content` | 9 |
-| `system` | 2 |
-| **Total** | **23** |
+| `system` | 0 |
+| **Total** | **21** |
 
 | Tool | Domain | Writability | Purpose |
 |---|---|---|---|
@@ -49,8 +49,6 @@ is hand-maintained.
 | `set_content_review_state` | `content` | additive | Set a content row's review state |
 | `update_content` | `content` | additive | Update editable fields (title/body/slug/type) on a content row |
 | `update_note` | `content` | additive | Update editable fields (slug / title / body / kind) on a note |
-| `session_delta` | `system` | read_only | Activity snapshot since a point in time: todos created, todos completed, agent notes written, and learning session count |
-| `weekly_summary` | `system` | read_only | Week-level retrospective: todos completed, agent notes grouped by kind, learning session count and domains, concept mastery, and the self_audit block… |
 <!-- GENERATED:TOOL-INVENTORY END -->
 
 ---
