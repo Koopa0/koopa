@@ -81,9 +81,7 @@ type SearchKnowledgeOutput struct {
 	Query   string                  `json:"query"`
 	// SearchedCorpus lists the source types actually queried ("content",
 	// "note"). It lets a caller read a 0-result response as "found none in
-	// these corpora" rather than "does not exist". agent_notes are never in
-	// this corpus by design — recall of your own breadcrumbs is
-	// query_agent_notes.
+	// these corpora" rather than "does not exist".
 	SearchedCorpus []string `json:"searched_corpus"`
 }
 

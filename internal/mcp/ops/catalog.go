@@ -143,7 +143,7 @@ func EndSession() Meta {
 		Writability: Additive,
 		Stability:   StabilityStable,
 		Since:       since,
-		Description: "End the active learning session. Optional reflection text creates an agent note linked to the session. Returns session summary with all attempts.",
+		Description: "End the active learning session. Returns session summary with all attempts.",
 	}
 }
 
@@ -207,7 +207,7 @@ func UpdateNote() Meta {
 		Writability: Additive,
 		Stability:   StabilityStable,
 		Since:       since,
-		Description: "Update editable fields (slug / title / body / kind) on a note. Maturity transitions have their own tool (update_note_maturity) so state changes are auditable separately from content edits.",
+		Description: "Update editable fields (slug / title / body / kind) on a note. Maturity is not editable via the MCP surface.",
 	}
 }
 

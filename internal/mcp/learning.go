@@ -457,8 +457,7 @@ func (s *Server) processRelatedTargets(ctx context.Context, sourceID uuid.UUID, 
 // --- end_session ---
 
 type EndSessionInput struct {
-	SessionID  string  `json:"session_id" jsonschema:"required" jsonschema_description:"Session UUID to end"`
-	Reflection *string `json:"reflection,omitempty" jsonschema_description:"Optional reflection text (creates agent note)"`
+	SessionID string `json:"session_id" jsonschema:"required" jsonschema_description:"Session UUID to end"`
 }
 
 type EndSessionOutput struct {
