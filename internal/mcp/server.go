@@ -18,7 +18,6 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/Koopa0/koopa/internal/agent"
-	agentnote "github.com/Koopa0/koopa/internal/agent/note"
 	"github.com/Koopa0/koopa/internal/content"
 	"github.com/Koopa0/koopa/internal/daily"
 	"github.com/Koopa0/koopa/internal/embedder"
@@ -40,12 +39,11 @@ type Server struct {
 	server *mcp.Server
 
 	// GTD and daily workflow
-	todos      *todo.Store
-	agentNotes *agentnote.Store
-	dayplan    *daily.Store
-	contents   *content.Store
-	notes      *note.Store
-	projects   *project.Store
+	todos    *todo.Store
+	dayplan  *daily.Store
+	contents *content.Store
+	notes    *note.Store
+	projects *project.Store
 
 	// Goals and hypotheses
 	goals      *goal.Store
@@ -136,7 +134,6 @@ func WithEmbedder(e *embedder.Embedder) ServerOption {
 func NewServer(pool *pgxpool.Pool, logger *slog.Logger, opts ...ServerOption) *Server {
 	s := &Server{
 		todos:       todo.NewStore(pool),
-		agentNotes:  agentnote.NewStore(pool),
 		dayplan:     daily.NewStore(pool),
 		contents:    content.NewStore(pool),
 		notes:       note.NewStore(pool),
@@ -182,8 +179,6 @@ func NewServer(pool *pgxpool.Pool, logger *slog.Logger, opts ...ServerOption) *S
 	addTool(s, toolFrom(ops.SearchKnowledge), s.searchKnowledge)
 	addTool(s, toolFrom(ops.CaptureInbox), s.captureInbox)
 	addTool(s, toolFrom(ops.PlanDay), s.planDay)
-	addTool(s, toolFrom(ops.WriteAgentNote), s.writeAgentNote)
-	addTool(s, toolFrom(ops.QueryAgentNotes), s.queryAgentNotes)
 
 	// --- Learning Domain ---
 	addTool(s, toolFrom(ops.StartSession), s.startSession)

@@ -231,105 +231,6 @@ func (q *Queries) AddPlanEntry(ctx context.Context, arg AddPlanEntryParams) (Lea
 	return i, err
 }
 
-const agentNoteByID = `-- name: AgentNoteByID :one
-SELECT id, kind, created_by, content, metadata, entry_date, created_at
-FROM agent_notes
-WHERE id = $1
-`
-
-type AgentNoteByIDRow struct {
-	ID        uuid.UUID       `json:"id"`
-	Kind      AgentNoteKind   `json:"kind"`
-	CreatedBy string          `json:"created_by"`
-	Content   string          `json:"content"`
-	Metadata  json.RawMessage `json:"metadata"`
-	EntryDate time.Time       `json:"entry_date"`
-	CreatedAt time.Time       `json:"created_at"`
-}
-
-// Get a single agent note by ID.
-func (q *Queries) AgentNoteByID(ctx context.Context, id uuid.UUID) (AgentNoteByIDRow, error) {
-	row := q.db.QueryRow(ctx, agentNoteByID, id)
-	var i AgentNoteByIDRow
-	err := row.Scan(
-		&i.ID,
-		&i.Kind,
-		&i.CreatedBy,
-		&i.Content,
-		&i.Metadata,
-		&i.EntryDate,
-		&i.CreatedAt,
-	)
-	return i, err
-}
-
-const agentNotesByDateRange = `-- name: AgentNotesByDateRange :many
-SELECT id, kind, created_by, content, metadata, entry_date, created_at
-FROM agent_notes
-WHERE entry_date >= $1::date
-  AND entry_date <= $2::date
-  AND ($3::agent_note_kind IS NULL OR kind = $3::agent_note_kind)
-  AND ($4::text IS NULL OR created_by = $4)
-ORDER BY entry_date DESC, created_at DESC
-`
-
-type AgentNotesByDateRangeParams struct {
-	StartDate time.Time         `json:"start_date"`
-	EndDate   time.Time         `json:"end_date"`
-	Kind      NullAgentNoteKind `json:"kind"`
-	CreatedBy *string           `json:"created_by"`
-}
-
-type AgentNotesByDateRangeRow struct {
-	ID        uuid.UUID       `json:"id"`
-	Kind      AgentNoteKind   `json:"kind"`
-	CreatedBy string          `json:"created_by"`
-	Content   string          `json:"content"`
-	Metadata  json.RawMessage `json:"metadata"`
-	EntryDate time.Time       `json:"entry_date"`
-	CreatedAt time.Time       `json:"created_at"`
-}
-
-// List agent notes in a date range, optionally filtered by kind and/or created_by.
-// Explicit ::date casts on @start_date / @end_date keep the comparison
-// date-typed end-to-end. Without them pgx sends the time.Time as
-// timestamptz, PG promotes entry_date (DATE) to timestamptz at session
-// midnight UTC, and a same-day note stored from a Taipei-zoned writer
-// can fall outside the range purely because of UTC truncation. See
-// learning-studio brief REQ-3 (2026-05-23).
-func (q *Queries) AgentNotesByDateRange(ctx context.Context, arg AgentNotesByDateRangeParams) ([]AgentNotesByDateRangeRow, error) {
-	rows, err := q.db.Query(ctx, agentNotesByDateRange,
-		arg.StartDate,
-		arg.EndDate,
-		arg.Kind,
-		arg.CreatedBy,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []AgentNotesByDateRangeRow{}
-	for rows.Next() {
-		var i AgentNotesByDateRangeRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.Kind,
-			&i.CreatedBy,
-			&i.Content,
-			&i.Metadata,
-			&i.EntryDate,
-			&i.CreatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const aliasByCaseInsensitiveRawTag = `-- name: AliasByCaseInsensitiveRawTag :one
 SELECT id, raw_tag, tag_id, resolution_source, confirmed, confirmed_at, created_at FROM tag_aliases WHERE LOWER(raw_tag) = LOWER($1) AND tag_id IS NOT NULL
 LIMIT 1
@@ -2282,52 +2183,6 @@ func (q *Queries) CountContents(ctx context.Context, arg CountContentsParams) (i
 	var count int64
 	err := row.Scan(&count)
 	return count, err
-}
-
-const createAgentNote = `-- name: CreateAgentNote :one
-INSERT INTO agent_notes (kind, created_by, content, metadata, entry_date)
-VALUES ($1::agent_note_kind, $2, $3, $4, $5)
-RETURNING id, kind, created_by, content, metadata, entry_date, created_at
-`
-
-type CreateAgentNoteParams struct {
-	Kind      AgentNoteKind   `json:"kind"`
-	CreatedBy string          `json:"created_by"`
-	Content   string          `json:"content"`
-	Metadata  json.RawMessage `json:"metadata"`
-	EntryDate time.Time       `json:"entry_date"`
-}
-
-type CreateAgentNoteRow struct {
-	ID        uuid.UUID       `json:"id"`
-	Kind      AgentNoteKind   `json:"kind"`
-	CreatedBy string          `json:"created_by"`
-	Content   string          `json:"content"`
-	Metadata  json.RawMessage `json:"metadata"`
-	EntryDate time.Time       `json:"entry_date"`
-	CreatedAt time.Time       `json:"created_at"`
-}
-
-// Insert an agent note entry.
-func (q *Queries) CreateAgentNote(ctx context.Context, arg CreateAgentNoteParams) (CreateAgentNoteRow, error) {
-	row := q.db.QueryRow(ctx, createAgentNote,
-		arg.Kind,
-		arg.CreatedBy,
-		arg.Content,
-		arg.Metadata,
-		arg.EntryDate,
-	)
-	var i CreateAgentNoteRow
-	err := row.Scan(
-		&i.ID,
-		&i.Kind,
-		&i.CreatedBy,
-		&i.Content,
-		&i.Metadata,
-		&i.EntryDate,
-		&i.CreatedAt,
-	)
-	return i, err
 }
 
 const createAttempt = `-- name: CreateAttempt :one
@@ -5471,40 +5326,6 @@ func (q *Queries) LastEndedSession(ctx context.Context) (LearningSession, error)
 	return i, err
 }
 
-const latestAgentNoteByKind = `-- name: LatestAgentNoteByKind :one
-SELECT id, kind, created_by, content, metadata, entry_date, created_at
-FROM agent_notes
-WHERE kind = $1::agent_note_kind
-ORDER BY entry_date DESC, created_at DESC
-LIMIT 1
-`
-
-type LatestAgentNoteByKindRow struct {
-	ID        uuid.UUID       `json:"id"`
-	Kind      AgentNoteKind   `json:"kind"`
-	CreatedBy string          `json:"created_by"`
-	Content   string          `json:"content"`
-	Metadata  json.RawMessage `json:"metadata"`
-	EntryDate time.Time       `json:"entry_date"`
-	CreatedAt time.Time       `json:"created_at"`
-}
-
-// Get the most recent agent note of a specific kind.
-func (q *Queries) LatestAgentNoteByKind(ctx context.Context, kind AgentNoteKind) (LatestAgentNoteByKindRow, error) {
-	row := q.db.QueryRow(ctx, latestAgentNoteByKind, kind)
-	var i LatestAgentNoteByKindRow
-	err := row.Scan(
-		&i.ID,
-		&i.Kind,
-		&i.CreatedBy,
-		&i.Content,
-		&i.Metadata,
-		&i.EntryDate,
-		&i.CreatedAt,
-	)
-	return i, err
-}
-
 const latestFeedEntries = `-- name: LatestFeedEntries :many
 SELECT cd.id, cd.source_url, cd.title, cd.original_content,
        cd.relevance_score, cd.status, cd.curated_content_id, cd.collected_at,
@@ -8265,52 +8086,6 @@ func (q *Queries) RecurringTodoItemsDueToday(ctx context.Context, today *time.Ti
 	return items, nil
 }
 
-const reflectionNotesForDate = `-- name: ReflectionNotesForDate :many
-SELECT id, kind, created_by, content, metadata, entry_date, created_at
-FROM agent_notes
-WHERE kind = 'reflection' AND entry_date = $1
-ORDER BY created_at DESC
-`
-
-type ReflectionNotesForDateRow struct {
-	ID        uuid.UUID       `json:"id"`
-	Kind      AgentNoteKind   `json:"kind"`
-	CreatedBy string          `json:"created_by"`
-	Content   string          `json:"content"`
-	Metadata  json.RawMessage `json:"metadata"`
-	EntryDate time.Time       `json:"entry_date"`
-	CreatedAt time.Time       `json:"created_at"`
-}
-
-// Get reflection notes for a specific date.
-func (q *Queries) ReflectionNotesForDate(ctx context.Context, entryDate time.Time) ([]ReflectionNotesForDateRow, error) {
-	rows, err := q.db.Query(ctx, reflectionNotesForDate, entryDate)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []ReflectionNotesForDateRow{}
-	for rows.Next() {
-		var i ReflectionNotesForDateRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.Kind,
-			&i.CreatedBy,
-			&i.Content,
-			&i.Metadata,
-			&i.EntryDate,
-			&i.CreatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const refreshTokenByHash = `-- name: RefreshTokenByHash :one
 SELECT id, user_id, token_hash, expires_at, created_at
 FROM refresh_tokens
@@ -8535,81 +8310,6 @@ func (q *Queries) RevertContentToDraft(ctx context.Context, id uuid.UUID) (Rever
 		&i.UpdatedAt,
 	)
 	return i, err
-}
-
-const searchAgentNotes = `-- name: SearchAgentNotes :many
-SELECT id, kind, created_by, content, metadata, entry_date, created_at
-FROM agent_notes
-WHERE search_vector @@ websearch_to_tsquery('simple', $1::text)
-  AND entry_date >= $2
-  AND entry_date <= $3
-  AND ($4::agent_note_kind IS NULL OR kind = $4::agent_note_kind)
-  AND ($5::text IS NULL OR created_by = $5)
-ORDER BY entry_date DESC,
-         created_at DESC,
-         ts_rank(search_vector, websearch_to_tsquery('simple', $1::text)) DESC
-LIMIT $6::int
-`
-
-type SearchAgentNotesParams struct {
-	Query     string            `json:"query"`
-	StartDate time.Time         `json:"start_date"`
-	EndDate   time.Time         `json:"end_date"`
-	Kind      NullAgentNoteKind `json:"kind"`
-	CreatedBy *string           `json:"created_by"`
-	RowLimit  int32             `json:"row_limit"`
-}
-
-type SearchAgentNotesRow struct {
-	ID        uuid.UUID       `json:"id"`
-	Kind      AgentNoteKind   `json:"kind"`
-	CreatedBy string          `json:"created_by"`
-	Content   string          `json:"content"`
-	Metadata  json.RawMessage `json:"metadata"`
-	EntryDate time.Time       `json:"entry_date"`
-	CreatedAt time.Time       `json:"created_at"`
-}
-
-// Full-text search over agent_notes.content using websearch_to_tsquery on
-// the simple tsvector config (GIN-indexed). Ordering is recency-first with
-// ts_rank as tiebreaker — an agent asking "what did I write about X?"
-// almost always wants the most recent mention, not the most lexically
-// relevant old one. Matches are still filtered by the FTS predicate, so
-// relevance determines inclusion; recency determines position.
-// Optional filters: kind, created_by. Date range is mandatory to bound the scan.
-func (q *Queries) SearchAgentNotes(ctx context.Context, arg SearchAgentNotesParams) ([]SearchAgentNotesRow, error) {
-	rows, err := q.db.Query(ctx, searchAgentNotes,
-		arg.Query,
-		arg.StartDate,
-		arg.EndDate,
-		arg.Kind,
-		arg.CreatedBy,
-		arg.RowLimit,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []SearchAgentNotesRow{}
-	for rows.Next() {
-		var i SearchAgentNotesRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.Kind,
-			&i.CreatedBy,
-			&i.Content,
-			&i.Metadata,
-			&i.EntryDate,
-			&i.CreatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
 }
 
 const searchContents = `-- name: SearchContents :many

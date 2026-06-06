@@ -24,7 +24,6 @@ import (
 
 	"github.com/Koopa0/koopa/internal/activity"
 	"github.com/Koopa0/koopa/internal/agent"
-	agentnote "github.com/Koopa0/koopa/internal/agent/note"
 	"github.com/Koopa0/koopa/internal/auth"
 	"github.com/Koopa0/koopa/internal/content"
 	"github.com/Koopa0/koopa/internal/daily"
@@ -65,7 +64,6 @@ type handlers struct {
 	note       *note.Handler
 	todo       *todo.Handler
 	plan       *learningplan.Handler
-	agentNote  *agentnote.Handler
 	today      *today.Handler
 	search     *search.Handler
 	pool       *pgxpool.Pool
@@ -311,11 +309,9 @@ func registerRoutes(
 	mux.Handle("PUT /api/admin/learning/plans/{id}/entries/{entry_id}", adminMid(http.HandlerFunc(h.plan.UpdateEntry)))
 
 	// --- Admin: Coordination / Agents ---
-	// Agents are registry-managed — the admin surface is read-only;
-	// /:name/notes is the runtime log tab.
+	// Agents are registry-managed — the admin surface is read-only.
 	mux.Handle("GET /api/admin/coordination/agents", authMid(http.HandlerFunc(h.agent.List)))
 	mux.Handle("GET /api/admin/coordination/agents/{name}", authMid(http.HandlerFunc(h.agent.Get)))
-	mux.Handle("GET /api/admin/coordination/agents/{name}/notes", authMid(http.HandlerFunc(h.agentNote.ListForAgent)))
 
 	// --- Admin: Coordination / Process runs ---
 	mux.Handle("GET /api/admin/coordination/process-runs", authMid(http.HandlerFunc(h.stats.ProcessRuns)))

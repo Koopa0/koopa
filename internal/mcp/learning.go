@@ -28,7 +28,6 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	agentnote "github.com/Koopa0/koopa/internal/agent/note"
 	"github.com/Koopa0/koopa/internal/learning"
 )
 
@@ -342,7 +341,7 @@ func (s *Server) prepareAttempt(ctx context.Context, input *RecordAttemptInput) 
 	// rules in processRelatedTargets; this guard is for the primary target.
 	domain := session.Domain
 	if input.Target.Domain != nil && *input.Target.Domain != "" && *input.Target.Domain != session.Domain {
-		return attemptPrep{}, fmt.Errorf("%w: target.domain %q does not match active session domain %q; the primary attempt target inherits the session's domain (omit target.domain, or pass the session's domain). For cross-domain isomorphism use propose_hypothesis or write_agent_note(kind=context)", learning.ErrInvalidInput, *input.Target.Domain, session.Domain)
+		return attemptPrep{}, fmt.Errorf("%w: target.domain %q does not match active session domain %q; the primary attempt target inherits the session's domain (omit target.domain, or pass the session's domain). For cross-domain isomorphism use propose_hypothesis", learning.ErrInvalidInput, *input.Target.Domain, session.Domain)
 	}
 	itemID, err := s.learn.FindOrCreateTarget(ctx, domain, input.Target.Title, input.Target.ExternalID, input.Target.Difficulty, s.callerIdentity(ctx))
 	if err != nil {
@@ -437,7 +436,7 @@ func (s *Server) processRelatedTargets(ctx context.Context, sourceID uuid.UUID, 
 		// Cross-domain rejection moved to this layer — source domain is already
 		// in scope from prepareAttempt, no DB lookup needed.
 		if ri.Domain != nil && *ri.Domain != "" && *ri.Domain != sourceDomain {
-			warnings = append(warnings, fmt.Sprintf("related_targets[%d] (%q): cross-domain relation rejected (source=%q, target=%q). learning_target_relations is intentionally per-domain — for cross-domain isomorphism, use propose_hypothesis (if the connection is falsifiable) or write_agent_note(kind=context) (if it's an ad-hoc observation worth keeping)", i, ri.Title, sourceDomain, *ri.Domain))
+			warnings = append(warnings, fmt.Sprintf("related_targets[%d] (%q): cross-domain relation rejected (source=%q, target=%q). learning_target_relations is intentionally per-domain — for cross-domain isomorphism, use propose_hypothesis (if the connection is falsifiable)", i, ri.Title, sourceDomain, *ri.Domain))
 			continue
 		}
 		targetID, err := s.learn.FindOrCreateTarget(ctx, sourceDomain, ri.Title, ri.ExternalID, ri.Difficulty, caller)
@@ -477,35 +476,9 @@ func (s *Server) endSession(ctx context.Context, _ *mcp.CallToolRequest, input E
 		return nil, EndSessionOutput{}, fmt.Errorf("invalid session_id: %w", err)
 	}
 
-	// Pre-flight: ensure the session exists AND is active before
-	// creating the reflection note. Without this, an end_session call
-	// against a not-found or already-ended session would still write
-	// the reflection text into agent_notes — producing orphan
-	// reflections (no linked session) that pollute morning_context /
-	// session_delta / query_agent_notes. Phase 3 audit found three
-	// repeated end_session calls each created a reflection note even
-	// though only the first succeeded.
-	//
-	// Race trade-off: another caller can end the session between this
-	// check and EndSession below. That window is sub-millisecond. The
-	// race is acceptable in this codebase because:
-	//   1. No other cowork agent has a write path to learning_sessions
-	//      — learning-studio is the sole MCP end_session caller. The
-	//      admin HTTP handler in internal/learning/handler.go is the
-	//      only other writer and is human-driven (Koopa via admin UI);
-	//      cowork-vs-admin concurrency is rare and would resolve to
-	//      the same already-ended error on either side.
-	//   2. Conversation is serialised at the agent level — a single
-	//      agent does not issue two concurrent end_session calls.
-	//   3. The "one active session at a time" invariant (uq_learning_
-	//      sessions_one_active) prevents fan-out concurrency.
-	// A full fix would push note creation into the same tx as
-	// EndSession (Design 2/3 in the F-NEW1 proposal). Both options
-	// either couple learning.Store to agent_notes (violates
-	// feedback_split_by_semantics) or add handler-level tx
-	// orchestration for a never-observed race — not worth the coupling.
-	// The orphan-by-race window is honest doc; the orphan-by-mistake
-	// window (the actual Phase 3 finding) is closed.
+	// Pre-flight: ensure the session exists AND is active before ending
+	// it, so a not-found or already-ended id surfaces a precise error
+	// message instead of a generic store failure.
 	existing, err := s.learn.SessionByID(ctx, sessionID)
 	switch {
 	case errors.Is(err, learning.ErrNotFound):
@@ -519,33 +492,11 @@ func (s *Server) endSession(ctx context.Context, _ *mcp.CallToolRequest, input E
 		return nil, EndSessionOutput{}, fmt.Errorf("session %s was already ended at %s", sessionID, existing.EndedAt.Format(time.RFC3339))
 	}
 
-	// Optionally create reflection agent_note entry. Reached only when
-	// the session above is active; orphan-by-mistake closed.
-	var noteID *uuid.UUID
-	if input.Reflection != nil && *input.Reflection != "" {
-		entry, noteErr := s.agentNotes.Create(ctx, &agentnote.CreateParams{
-			Kind:      agentnote.KindReflection,
-			CreatedBy: s.callerIdentity(ctx),
-			Content:   *input.Reflection,
-			EntryDate: s.today(),
-		})
-		if noteErr == nil {
-			v := entry.ID
-			noteID = &v
-		} else {
-			// best-effort: the reflection note is annotation, not core
-			// to ending the session. Log the failure and proceed
-			// without a linked note — caller's EndSessionOutput.Session
-			// will carry agent_note_id=nil; they may follow up with
-			// write_agent_note(kind=reflection) if the reflection is
-			// load-bearing. Hard-failing end_session on a note write
-			// would couple the session lifecycle to agent_notes
-			// availability without a payoff.
-			s.logger.Warn("end_session: agent note creation failed", "error", noteErr)
-		}
-	}
-
-	session, err := s.learn.EndSession(ctx, sessionID, noteID)
+	// The agent_notes feature was retired; end_session no longer writes a
+	// reflection note. The learning_sessions.agent_note_id column stays
+	// (dropped in W7), so the EndSession store signature is unchanged and
+	// receives nil — the column is written NULL.
+	session, err := s.learn.EndSession(ctx, sessionID, nil)
 	if err != nil {
 		switch {
 		case errors.Is(err, learning.ErrNotFound):

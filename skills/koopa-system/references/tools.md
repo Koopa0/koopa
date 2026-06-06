@@ -13,27 +13,25 @@ is hand-maintained.
 > Run `go generate ./internal/mcp/ops` after any change to the tool surface;
 > the drift test `TestToolInventoryDocInSync` fails CI if this is stale.
 
-**13 tools** across 7 domains.
+**11 tools** across 7 domains.
 
 | Domain | Count |
 |---|---|
-| `query` | 3 |
+| `query` | 2 |
 | `daily` | 2 |
 | `a2a` | 0 |
-| `meta` | 1 |
+| `meta` | 0 |
 | `learning` | 5 |
 | `content` | 2 |
 | `system` | 0 |
-| **Total** | **13** |
+| **Total** | **11** |
 
 | Tool | Domain | Writability | Purpose |
 |---|---|---|---|
 | `brief` | `query` | read_only | Read-only planning-state pull |
-| `query_agent_notes` | `query` | read_only | Recall prior agent notes |
 | `search_knowledge` | `query` | read_only | Search across content (articles, build logs, TILs, etc.) and notes (Zettelkasten) |
 | `capture_inbox` | `daily` | additive | Quick task capture to inbox |
 | `plan_day` | `daily` | idempotent | Set the day's plan as one atomic replacement |
-| `write_agent_note` | `meta` | additive | Create an agent note |
 | `end_session` | `learning` | additive | End the active learning session |
 | `learning_read` | `learning` | read_only | Read-only learning analytics |
 | `manage_plan` | `learning` | destructive | Learning plan lifecycle and entries |

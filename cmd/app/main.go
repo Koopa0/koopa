@@ -27,7 +27,6 @@ import (
 
 	"github.com/Koopa0/koopa/internal/activity"
 	"github.com/Koopa0/koopa/internal/agent"
-	agentnote "github.com/Koopa0/koopa/internal/agent/note"
 	"github.com/Koopa0/koopa/internal/api"
 	"github.com/Koopa0/koopa/internal/auth"
 	"github.com/Koopa0/koopa/internal/content"
@@ -142,7 +141,6 @@ func run(logger *slog.Logger) error {
 	learningStore := learning.NewStore(pool)
 	noteStore := note.NewStore(pool)
 	planStore := learningplan.NewStore(pool)
-	agentNoteStore := agentnote.NewStore(pool)
 
 	// Feed collector for manual fetch + scheduled fetch
 	feedCollector := collector.New(entryStore, feedStore, logger)
@@ -204,7 +202,6 @@ func run(logger *slog.Logger) error {
 		note:       note.NewHandler(noteStore, logger),
 		todo:       todo.NewHandler(todoStore, logger),
 		plan:       learningplan.NewHandler(planStore, logger),
-		agentNote:  agentnote.NewHandler(agentNoteStore, logger),
 		// Today wires no cross-domain sources for now. The six readers
 		// (content review queue, unverified hypotheses, planning note,
 		// feed / goal warnings) are intentionally parked follow-ups: their

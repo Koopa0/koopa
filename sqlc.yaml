@@ -12,7 +12,6 @@ sql:
       - "internal/tag/query.sql"
       - "internal/activity/query.sql"
       - "internal/todo/query.sql"
-      - "internal/agent/note/query.sql"
       - "internal/agent/query.sql"
       - "internal/daily/query.sql"
       - "internal/stats/query.sql"

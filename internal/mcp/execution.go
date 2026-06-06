@@ -16,7 +16,6 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	agentnote "github.com/Koopa0/koopa/internal/agent/note"
 	"github.com/Koopa0/koopa/internal/daily"
 	"github.com/Koopa0/koopa/internal/todo"
 )
@@ -25,9 +24,8 @@ import (
 
 // PlanDayInput is the input for the plan_day tool.
 type PlanDayInput struct {
-	Date        *string       `json:"date,omitempty" jsonschema_description:"Plan date YYYY-MM-DD (default: today)"`
-	Items       []PlanDayItem `json:"items" jsonschema:"required" jsonschema_description:"Todo items to plan for the day. Each todo MUST already be in state=todo (not inbox/done/someday). Inbox-state items are rejected — clarify them to state=todo via the admin UI first. plan_day is idempotent for the given date: re-calling with a different items list replaces existing 'planned' rows for that date and reports the displaced items in items_removed."`
-	AgentNoteID *string       `json:"agent_note_id,omitempty" jsonschema_description:"Optional agent_note UUID that drove this planning session"`
+	Date  *string       `json:"date,omitempty" jsonschema_description:"Plan date YYYY-MM-DD (default: today)"`
+	Items []PlanDayItem `json:"items" jsonschema:"required" jsonschema_description:"Todo items to plan for the day. Each todo MUST already be in state=todo (not inbox/done/someday). Inbox-state items are rejected — clarify them to state=todo via the admin UI first. plan_day is idempotent for the given date: re-calling with a different items list replaces existing 'planned' rows for that date and reports the displaced items in items_removed."`
 }
 
 // PlanDayItem is a single item in the plan_day input.
@@ -68,27 +66,6 @@ func (s *Server) resolvePlanDate(date *string) (time.Time, error) {
 	return t, nil
 }
 
-// resolvePlanAgentNote parses the optional agent_note UUID and verifies the
-// referenced note has kind='plan' — the invariant D5 enforces at the MCP
-// boundary since schema has no cross-row CHECK.
-func (s *Server) resolvePlanAgentNote(ctx context.Context, raw *string) (*uuid.UUID, error) {
-	if raw == nil || *raw == "" {
-		return nil, nil
-	}
-	parsed, err := uuid.Parse(*raw)
-	if err != nil {
-		return nil, fmt.Errorf("invalid agent_note_id: %w", err)
-	}
-	ref, err := s.agentNotes.NoteByID(ctx, parsed)
-	if err != nil {
-		return nil, fmt.Errorf("loading agent_note %s: %w", parsed, err)
-	}
-	if ref.Kind != agentnote.KindPlan {
-		return nil, fmt.Errorf("agent_note %s has kind=%q; daily_plan_items.agent_note_id requires kind='plan'", parsed, ref.Kind)
-	}
-	return &parsed, nil
-}
-
 // createPlanItemTx resolves a single PlanDayItem against tx-bound stores
 // and inserts the daily_plan_items row. The caller wraps all calls in a
 // single transaction so a mid-loop failure rolls back both the new
@@ -98,7 +75,7 @@ func (s *Server) resolvePlanAgentNote(ctx context.Context, raw *string) (*uuid.U
 //
 // Index i is the caller-loop position used when the item did not
 // specify one.
-func createPlanItemTx(ctx context.Context, txTodos *todo.Store, txDayplan *daily.Store, item PlanDayItem, i int, date time.Time, noteID *uuid.UUID, caller string) error {
+func createPlanItemTx(ctx context.Context, txTodos *todo.Store, txDayplan *daily.Store, item PlanDayItem, i int, date time.Time, caller string) error {
 	itemID, err := uuid.Parse(item.TaskID)
 	if err != nil {
 		return fmt.Errorf("invalid task_id at position %d: %w", i, err)
@@ -115,11 +92,10 @@ func createPlanItemTx(ctx context.Context, txTodos *todo.Store, txDayplan *daily
 		pos = i
 	}
 	if _, err := txDayplan.Create(ctx, &daily.CreateItemParams{
-		PlanDate:    date,
-		TodoID:      itemID,
-		SelectedBy:  caller,
-		Position:    int32(pos), // #nosec G115 -- position is bounded by caller Items slice length
-		AgentNoteID: noteID,
+		PlanDate:   date,
+		TodoID:     itemID,
+		SelectedBy: caller,
+		Position:   int32(pos), // #nosec G115 -- position is bounded by caller Items slice length
 	}); err != nil {
 		return fmt.Errorf("creating plan item for todo %s: %w", item.TaskID, err)
 	}
@@ -182,11 +158,6 @@ func (s *Server) planDay(ctx context.Context, _ *mcp.CallToolRequest, input Plan
 		return nil, PlanDayOutput{}, err
 	}
 
-	noteID, err := s.resolvePlanAgentNote(ctx, input.AgentNoteID)
-	if err != nil {
-		return nil, PlanDayOutput{}, err
-	}
-
 	caller := s.callerIdentity(ctx)
 	var (
 		removed []daily.RemovedItem
@@ -203,7 +174,7 @@ func (s *Server) planDay(ctx context.Context, _ *mcp.CallToolRequest, input Plan
 		}
 
 		for i, item := range input.Items {
-			if err := createPlanItemTx(ctx, txTodos, txDayplan, item, i, date, noteID, caller); err != nil {
+			if err := createPlanItemTx(ctx, txTodos, txDayplan, item, i, date, caller); err != nil {
 				return err
 			}
 		}

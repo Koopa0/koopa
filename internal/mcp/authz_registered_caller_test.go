@@ -3,12 +3,11 @@
 //go:build integration
 
 // authz_registered_caller_test.go is the behavioural confirmation for the
-// "ungated mutating tool" hole: the ten write tools that carry no
-// identity gate (capture_inbox, write_agent_note, track_hypothesis,
-// start_session, record_attempt, end_session, manage_plan, create_note,
-// update_note, update_note_maturity) must refuse a caller
-// that does not resolve to a known, registered author before any store
-// write happens.
+// "ungated mutating tool" hole: the write tools that carry no identity gate
+// (capture_inbox, track_hypothesis, start_session, record_attempt,
+// end_session, manage_plan, create_note, update_note, update_note_maturity)
+// must refuse a caller that does not resolve to a known, registered author
+// before any store write happens.
 //
 // The gate is requireRegisteredCaller (authz.go). It reuses the existing
 // registry — the same one requireAuthor / requireExplicitHuman /
@@ -30,40 +29,13 @@ package mcp
 
 import (
 	"testing"
-
-	"github.com/google/uuid"
 )
 
-// TestIntegration_MutatingTools_RejectUnregisteredCaller confirms write_agent_note
-// + create_note: a caller that names an agent absent from the registry is
-// refused, and — critically — the gate fires BEFORE the store write, so no
-// row is created.
+// TestIntegration_MutatingTools_RejectUnregisteredCaller confirms create_note:
+// a caller that names an agent absent from the registry is refused, and —
+// critically — the gate fires BEFORE the store write, so no row is created.
 func TestIntegration_MutatingTools_RejectUnregisteredCaller(t *testing.T) {
 	const ghost = "not-a-registered-agent"
-
-	// --- T2: write_agent_note as unregistered ---
-	t.Run("write_agent_note", func(t *testing.T) {
-		s := setupServer(t)
-		_, _, err := callHandlerAs(t, ghost, s.writeAgentNote, WriteAgentNoteInput{
-			Kind:    "context",
-			Content: "gate test — should never persist",
-		})
-		if err == nil {
-			t.Fatal("write_agent_note as unregistered = nil error, want rejection")
-		}
-		if !contains(err.Error(), "not registered") {
-			t.Errorf("write_agent_note error = %q, want containing %q", err, "not registered")
-		}
-		var count int
-		if qerr := testPool.QueryRow(t.Context(),
-			`SELECT COUNT(*) FROM agent_notes WHERE content = $1`,
-			"gate test — should never persist").Scan(&count); qerr != nil {
-			t.Fatalf("counting agent_notes: %v", qerr)
-		}
-		if count != 0 {
-			t.Errorf("agent_notes rows after rejected write = %d, want 0", count)
-		}
-	})
 
 	// --- T2: create_note as unregistered ---
 	t.Run("create_note", func(t *testing.T) {
@@ -96,20 +68,6 @@ func TestIntegration_MutatingTools_RejectUnregisteredCaller(t *testing.T) {
 // each tool's existing rules (notes/feeds carry no author allowlist, so any
 // registered agent is admitted) — still succeed.
 func TestIntegration_MutatingTools_RegisteredCallerStillWrites(t *testing.T) {
-	t.Run("write_agent_note as content-studio", func(t *testing.T) {
-		s := setupServer(t)
-		_, out, err := callHandlerAs(t, "content-studio", s.writeAgentNote, WriteAgentNoteInput{
-			Kind:    "context",
-			Content: "registered author note",
-		})
-		if err != nil {
-			t.Fatalf("write_agent_note as content-studio = %v, want success", err)
-		}
-		if out.Entry.ID == uuid.Nil {
-			t.Fatal("write_agent_note as content-studio returned empty entry id")
-		}
-	})
-
 	t.Run("create_note as hq", func(t *testing.T) {
 		s := setupServer(t)
 		_, out, err := callHandlerAs(t, "hq", s.createNote, CreateNoteInput{

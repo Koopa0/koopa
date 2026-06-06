@@ -88,31 +88,6 @@ func TestPlanDay_Validation(t *testing.T) {
 	}
 }
 
-// --- write_agent_note ---
-
-func TestWriteAgentNote_Validation(t *testing.T) {
-	s := newTestServer()
-	tests := []struct {
-		name    string
-		input   WriteAgentNoteInput
-		wantErr string
-	}{
-		{name: "empty content", input: WriteAgentNoteInput{Kind: "plan"}, wantErr: "content is required"},
-		{name: "invalid kind", input: WriteAgentNoteInput{Kind: "invalid", Content: "text"}, wantErr: "invalid kind"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			_, _, err := callHandler(t, s.writeAgentNote, tt.input)
-			if err == nil {
-				t.Fatal("expected error, got nil")
-			}
-			if !contains(err.Error(), tt.wantErr) {
-				t.Errorf("error = %q, want containing %q", err, tt.wantErr)
-			}
-		})
-	}
-}
-
 // TestParseOptionalUUID covers the consolidated helper in internal/mcp/uuid.go.
 // It replaces parseNamedUUID (hypothesis.go) and the un-named parseOptionalUUID
 // (plan.go) that existed before this refactor.
@@ -329,7 +304,6 @@ func TestToolSchemaGeneration(t *testing.T) {
 	}{
 		{"CaptureInboxInput", testSchema[CaptureInboxInput]},
 		{"PlanDayInput", testSchema[PlanDayInput]},
-		{"WriteAgentNoteInput", testSchema[WriteAgentNoteInput]},
 		{"StartSessionInput", testSchema[StartSessionInput]},
 		{"RecordAttemptInput", testSchema[RecordAttemptInput]},
 		{"EndSessionInput", testSchema[EndSessionInput]},

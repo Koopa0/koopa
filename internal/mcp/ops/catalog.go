@@ -32,7 +32,7 @@ func Brief() Meta {
 		Writability: ReadOnly,
 		Stability:   StabilityStable,
 		Since:       since,
-		Description: "Read-only planning-state pull. Pick a mode (required): 'morning' = single-call daily-planning briefing (overdue/today/committed/upcoming todos, active_goals, unverified_hypotheses, rss_highlights, content_pipeline); 'reflection' = end-of-day plan-vs-actual retrospective (planned_items + completed/deferred/planned counts + completion_rate). brief does NOT include agent_notes — to recall plans/context/reflections you wrote, use query_agent_notes. Morning mode is filterable via the sections parameter (ignored in reflection mode) — valid keys (omit or pass [] for all): 'tasks' (overdue/today/committed/upcoming todos), 'goals' (active_goals), 'hypotheses' (unverified_hypotheses), 'rss' (rss_highlights — feeds tagged priority=high, NOT relevance-ranked; use search_knowledge for ranked retrieval), 'content_pipeline' (content_pipeline). Per-agent default sections: learning-studio defaults to ['tasks', 'hypotheses']; every other caller (incl. hq) gets all sections. Scope is the target date (default today), not since-last-session.",
+		Description: "Read-only planning-state pull. Pick a mode (required): 'morning' = single-call daily-planning briefing (overdue/today/committed/upcoming todos, active_goals, unverified_hypotheses, rss_highlights, content_pipeline); 'reflection' = end-of-day plan-vs-actual retrospective (planned_items + completed/deferred/planned counts + completion_rate). brief is a pure planning-state pull and carries no agent memory. Morning mode is filterable via the sections parameter (ignored in reflection mode) — valid keys (omit or pass [] for all): 'tasks' (overdue/today/committed/upcoming todos), 'goals' (active_goals), 'hypotheses' (unverified_hypotheses), 'rss' (rss_highlights — feeds tagged priority=high, NOT relevance-ranked; use search_knowledge for ranked retrieval), 'content_pipeline' (content_pipeline). Per-agent default sections: learning-studio defaults to ['tasks', 'hypotheses']; every other caller (incl. hq) gets all sections. Scope is the target date (default today), not since-last-session.",
 		FieldEnums: map[string][]string{
 			"mode": {"morning", "reflection"},
 		},
@@ -47,7 +47,7 @@ func SearchKnowledge() Meta {
 		Writability: ReadOnly,
 		Stability:   StabilityStable,
 		Since:       since,
-		Description: "Search across content (articles, build logs, TILs, etc.) and notes (Zettelkasten) — i.e. what we KNOW. CURRENT behavior: PostgreSQL full-text search (lexical, tsvector + websearch syntax, GIN-indexed) only — there is no production document-embedding write path today, so the semantic / pgvector branch returns no rows for app-created content. Hybrid lexical + pgvector + RRF is PLANNED but not active; do not assume semantic recall. Filters: source_types (default both), content_type (implies content-only; mutex with note_kind), note_kind (implies note-only; mutex with content_type), project, date range. Does NOT cover agent_notes (your runtime plan/context/reflection breadcrumbs) — to recall what you DECIDED/PLANNED/REFLECTED, use query_agent_notes instead.",
+		Description: "Search across content (articles, build logs, TILs, etc.) and notes (Zettelkasten) — i.e. what we KNOW. CURRENT behavior: PostgreSQL full-text search (lexical, tsvector + websearch syntax, GIN-indexed) only — there is no production document-embedding write path today, so the semantic / pgvector branch returns no rows for app-created content. Hybrid lexical + pgvector + RRF is PLANNED but not active; do not assume semantic recall. Filters: source_types (default both), content_type (implies content-only; mutex with note_kind), note_kind (implies note-only; mutex with content_type), project, date range.",
 	}
 }
 
@@ -77,33 +77,6 @@ func PlanDay() Meta {
 		Stability:   StabilityStable,
 		Since:       since,
 		Description: "Set the day's plan as one atomic replacement. Each todo MUST already be in state=todo (inbox/done/someday rejected — clarify inbox todos to state=todo via the admin UI first). The items list MUST be non-empty; to leave the day unplanned, do not call plan_day at all. The whole call (delete-existing + insert-new) runs in one transaction, so any per-item validation failure rolls back to the previous plan. items_removed reports todos that were in the previous plan but are NOT in the new list (true displacements only — todos carried over with the same task_id are not reported as removed even though their plan_item row gets a new id).",
-	}
-}
-
-// WriteAgentNote returns metadata for the agent-note writer.
-func WriteAgentNote() Meta {
-	return Meta{
-		Name:        "write_agent_note",
-		Domain:      DomainMeta,
-		Writability: Additive,
-		Stability:   StabilityStable,
-		Since:       since,
-		Description: "Create an agent note. Kind: plan (daily plan reasoning), context (session state snapshot), reflection (retrospective review). Use for session logging and reflection.",
-		FieldEnums: map[string][]string{
-			"kind": {"plan", "context", "reflection"},
-		},
-	}
-}
-
-// QueryAgentNotes returns metadata for the agent-note reader.
-func QueryAgentNotes() Meta {
-	return Meta{
-		Name:        "query_agent_notes",
-		Domain:      DomainQuery,
-		Writability: ReadOnly,
-		Stability:   StabilityStable,
-		Since:       since,
-		Description: "Recall prior agent notes — your runtime breadcrumbs of what you DECIDED/PLANNED/REFLECTED — across date ranges. Filters: kind (plan|context|reflection), since/until (YYYY-MM-DD, default last 90 days), author. Use when conversation context no longer contains a note you wrote earlier — session reflections, plan reasoning, context snapshots. For published knowledge or content (what we KNOW), use search_knowledge instead. Ordered newest-first.",
 	}
 }
 
@@ -248,8 +221,6 @@ func All() []Meta {
 		SearchKnowledge(),
 		CaptureInbox(),
 		PlanDay(),
-		WriteAgentNote(),
-		QueryAgentNotes(),
 		StartSession(),
 		RecordAttempt(),
 		EndSession(),
