@@ -23,27 +23,19 @@ const since = "1.0.0"
 // metadata endpoint runs well under a QPS — the allocation cost is
 // irrelevant in both paths and not worth a global-state optimisation.
 
-// MorningContext returns metadata for the morning planning query.
-func MorningContext() Meta {
+// Brief returns metadata for the read-only planning-state multiplexer that
+// replaces the former morning_context + reflection_context tools.
+func Brief() Meta {
 	return Meta{
-		Name:        "morning_context",
+		Name:        "brief",
 		Domain:      DomainQuery,
 		Writability: ReadOnly,
 		Stability:   StabilityStable,
 		Since:       since,
-		Description: "Single-call daily-planning briefing. Filterable via the sections parameter — valid keys (omit or pass [] for all): 'tasks' (overdue/today/committed/upcoming todos), 'goals' (active_goals), 'pending_tasks' (pending_tasks_received + pending_tasks_issued — inter-agent coordination work), 'hypotheses' (unverified_hypotheses), 'rss' (rss_highlights — feeds tagged priority=high, NOT relevance-ranked; use search_knowledge for ranked retrieval), 'plan_history' (recent daily plan notes), 'content_pipeline' (content_pipeline). Per-agent default sections: learning-studio defaults to ['tasks', 'pending_tasks', 'hypotheses', 'plan_history']; every other caller (incl. hq) gets all sections. Further role guidance lives in each cowork project's CLAUDE.md. Scope is today (not since-last-session). For mid-day catch-up after a break, use session_delta instead. For week-level retrospective, use weekly_summary.",
-	}
-}
-
-// ReflectionContext returns metadata for the evening reflection query.
-func ReflectionContext() Meta {
-	return Meta{
-		Name:        "reflection_context",
-		Domain:      DomainQuery,
-		Writability: ReadOnly,
-		Stability:   StabilityStable,
-		Since:       since,
-		Description: "End-of-day retrospective: plan vs actual completion, daily plan item outcomes, today's agent notes. Day-level scope (today only) — for week-level retrospective use weekly_summary; for since-last-session activity use session_delta.",
+		Description: "Read-only planning-state pull. Pick a mode (required): 'morning' = single-call daily-planning briefing (overdue/today/committed/upcoming todos, active_goals, unverified_hypotheses, rss_highlights, content_pipeline); 'reflection' = end-of-day plan-vs-actual retrospective (planned_items + completed/deferred/planned counts + completion_rate). brief does NOT include agent_notes — to recall plans/context/reflections you wrote, use query_agent_notes. Morning mode is filterable via the sections parameter (ignored in reflection mode) — valid keys (omit or pass [] for all): 'tasks' (overdue/today/committed/upcoming todos), 'goals' (active_goals), 'hypotheses' (unverified_hypotheses), 'rss' (rss_highlights — feeds tagged priority=high, NOT relevance-ranked; use search_knowledge for ranked retrieval), 'content_pipeline' (content_pipeline). Per-agent default sections: learning-studio defaults to ['tasks', 'hypotheses']; every other caller (incl. hq) gets all sections. Scope is the target date (default today), not since-last-session.",
+		FieldEnums: map[string][]string{
+			"mode": {"morning", "reflection"},
+		},
 	}
 }
 
@@ -346,8 +338,7 @@ func UpdateNote() Meta {
 // an accessor here and registering a handler in the mcp package.
 func All() []Meta {
 	return []Meta{
-		MorningContext(),
-		ReflectionContext(),
+		Brief(),
 		SearchKnowledge(),
 		CaptureInbox(),
 		PlanDay(),

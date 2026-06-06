@@ -84,15 +84,6 @@ var (
 	}
 )
 
-// ContentSummary is a lightweight content record for list results.
-type ContentSummary struct {
-	ID        string `json:"id"`
-	Title     string `json:"title"`
-	Type      string `json:"type"`
-	Status    string `json:"status"`
-	UpdatedAt string `json:"updated_at"`
-}
-
 // ContentDetail is a full content record for read/create/update/publish results.
 type ContentDetail struct {
 	ID        string   `json:"id"`
@@ -653,19 +644,4 @@ func toContentDetail(c *content.Content) *ContentDetail {
 		CreatedAt: c.CreatedAt.Format(time.RFC3339),
 		UpdatedAt: c.UpdatedAt.Format(time.RFC3339),
 	}
-}
-
-func toContentSummaries(contents []content.Content) []ContentSummary {
-	summaries := make([]ContentSummary, len(contents))
-	for i := range contents {
-		c := &contents[i]
-		summaries[i] = ContentSummary{
-			ID:        c.ID.String(),
-			Title:     c.Title,
-			Type:      string(c.Type),
-			Status:    string(c.Status),
-			UpdatedAt: c.UpdatedAt.Format(time.RFC3339),
-		}
-	}
-	return summaries
 }

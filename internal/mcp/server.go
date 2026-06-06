@@ -178,8 +178,7 @@ func NewServer(pool *pgxpool.Pool, logger *slog.Logger, opts ...ServerOption) *S
 	// loop. A drift test in ops_test.go asserts catalog ↔ registration parity.
 
 	// --- Core Lifecycle ---
-	addTool(s, toolFrom(ops.MorningContext), s.morningContext)
-	addTool(s, toolFrom(ops.ReflectionContext), s.reflectionContext)
+	addTool(s, toolFrom(ops.Brief), s.brief)
 	addTool(s, toolFrom(ops.SearchKnowledge), s.searchKnowledge)
 	addTool(s, toolFrom(ops.CaptureInbox), s.captureInbox)
 	addTool(s, toolFrom(ops.PlanDay), s.planDay)

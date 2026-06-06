@@ -13,24 +13,23 @@ is hand-maintained.
 > Run `go generate ./internal/mcp/ops` after any change to the tool surface;
 > the drift test `TestToolInventoryDocInSync` fails CI if this is stale.
 
-**21 tools** across 7 domains.
+**20 tools** across 7 domains.
 
 | Domain | Count |
 |---|---|
-| `query` | 4 |
+| `query` | 3 |
 | `daily` | 2 |
 | `a2a` | 0 |
 | `meta` | 1 |
 | `learning` | 5 |
 | `content` | 9 |
 | `system` | 0 |
-| **Total** | **21** |
+| **Total** | **20** |
 
 | Tool | Domain | Writability | Purpose |
 |---|---|---|---|
-| `morning_context` | `query` | read_only | Single-call daily-planning briefing |
+| `brief` | `query` | read_only | Read-only planning-state pull |
 | `query_agent_notes` | `query` | read_only | Recall prior agent notes |
-| `reflection_context` | `query` | read_only | End-of-day retrospective: plan vs actual completion, daily plan item outcomes, today's agent notes |
 | `search_knowledge` | `query` | read_only | Search across content (articles, build logs, TILs, etc.) and notes (Zettelkasten) |
 | `capture_inbox` | `daily` | additive | Quick task capture to inbox |
 | `plan_day` | `daily` | idempotent | Set the day's plan as one atomic replacement |
