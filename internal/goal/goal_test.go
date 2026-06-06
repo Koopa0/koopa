@@ -175,12 +175,99 @@ func TestRegression_GoalStatusValidation(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Handler.List — nil store panics (validation: none, store called immediately)
-// Store interaction (success paths needing a real store) has no dedicated
-// in-package integration test yet.
+// Handler.Create — input validation (real Handler, nil store)
+// The decision-stamp create requires a non-empty title; validation rejects
+// before the store is touched, so a nil store is safe for these cases.
 // ---------------------------------------------------------------------------
 
+func TestHandler_Create_Validation(t *testing.T) {
+	t.Parallel()
+
+	h := NewHandler(nil, nil, slog.New(slog.DiscardHandler))
+
+	tests := []struct {
+		name       string
+		body       string
+		wantStatus int
+		wantCode   string
+	}{
+		{name: "missing title returns 400", body: `{"description":"x"}`, wantStatus: http.StatusBadRequest, wantCode: "BAD_REQUEST"},
+		{name: "empty title returns 400", body: `{"title":""}`, wantStatus: http.StatusBadRequest, wantCode: "BAD_REQUEST"},
+		{name: "malformed JSON returns 400", body: `{bad}`, wantStatus: http.StatusBadRequest, wantCode: "BAD_REQUEST"},
+		{name: "empty body returns 400", body: ``, wantStatus: http.StatusBadRequest, wantCode: "BAD_REQUEST"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			req := httptest.NewRequest(http.MethodPost, "/api/admin/commitment/goals", bytes.NewReader([]byte(tt.body)))
+			req.Header.Set("Content-Type", "application/json")
+			w := httptest.NewRecorder()
+			h.Create(w, req)
+
+			if w.Code != tt.wantStatus {
+				t.Fatalf("Create(%q) status = %d, want %d (body: %s)", tt.name, w.Code, tt.wantStatus, w.Body.String())
+			}
+			var eb api.ErrorBody
+			if err := json.NewDecoder(w.Body).Decode(&eb); err != nil {
+				t.Fatalf("decoding error body: %v", err)
+			}
+			if eb.Error.Code != tt.wantCode {
+				t.Errorf("Create(%q) error.code = %q, want %q", tt.name, eb.Error.Code, tt.wantCode)
+			}
+		})
+	}
+}
+
 // ---------------------------------------------------------------------------
-// Handler.UpdateStatus success path — requires real store.
-// Not yet covered by an in-package integration test.
+// Handler.CreateMilestone — input validation (real Handler, nil store)
+// goalID comes from the path; an invalid UUID or missing title rejects
+// before the store is touched.
+// ---------------------------------------------------------------------------
+
+func TestHandler_CreateMilestone_Validation(t *testing.T) {
+	t.Parallel()
+
+	h := NewHandler(nil, nil, slog.New(slog.DiscardHandler))
+	goalID := uuid.New().String()
+
+	tests := []struct {
+		name       string
+		pathID     string
+		body       string
+		wantStatus int
+		wantCode   string
+	}{
+		{name: "invalid goal uuid returns 400", pathID: "not-a-uuid", body: `{"title":"M1"}`, wantStatus: http.StatusBadRequest, wantCode: "BAD_REQUEST"},
+		{name: "missing title returns 400", pathID: goalID, body: `{"description":"x"}`, wantStatus: http.StatusBadRequest, wantCode: "BAD_REQUEST"},
+		{name: "empty title returns 400", pathID: goalID, body: `{"title":""}`, wantStatus: http.StatusBadRequest, wantCode: "BAD_REQUEST"},
+		{name: "malformed JSON returns 400", pathID: goalID, body: `{bad}`, wantStatus: http.StatusBadRequest, wantCode: "BAD_REQUEST"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			req := httptest.NewRequest(http.MethodPost, "/api/admin/commitment/goals/"+tt.pathID+"/milestones", bytes.NewReader([]byte(tt.body)))
+			req.Header.Set("Content-Type", "application/json")
+			req.SetPathValue("id", tt.pathID)
+			w := httptest.NewRecorder()
+			h.CreateMilestone(w, req)
+
+			if w.Code != tt.wantStatus {
+				t.Fatalf("CreateMilestone(%q) status = %d, want %d (body: %s)", tt.name, w.Code, tt.wantStatus, w.Body.String())
+			}
+			var eb api.ErrorBody
+			if err := json.NewDecoder(w.Body).Decode(&eb); err != nil {
+				t.Fatalf("decoding error body: %v", err)
+			}
+			if eb.Error.Code != tt.wantCode {
+				t.Errorf("CreateMilestone(%q) error.code = %q, want %q", tt.name, eb.Error.Code, tt.wantCode)
+			}
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Handler.List / Create / CreateMilestone success paths — require a real
+// store. Not yet covered by an in-package integration test.
 // ---------------------------------------------------------------------------

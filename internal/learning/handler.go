@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 
@@ -16,10 +17,19 @@ import (
 // storeErrors maps learning sentinel errors to HTTP responses.
 var storeErrors = []api.ErrMap{
 	{Target: ErrNotFound, Status: http.StatusNotFound, Code: "NOT_FOUND", Message: "learning entity not found"},
+	{Target: ErrConflict, Status: http.StatusConflict, Code: "CONFLICT", Message: "learning entity conflict"},
 	{Target: ErrActiveExists, Status: http.StatusConflict, Code: "ACTIVE_SESSION_EXISTS", Message: "an active session already exists"},
 	{Target: ErrNoActive, Status: http.StatusNotFound, Code: "NO_ACTIVE_SESSION", Message: "no active session"},
 	{Target: ErrAlreadyEnded, Status: http.StatusConflict, Code: "SESSION_ENDED", Message: "session already ended"},
 }
+
+// domainSlugPattern mirrors the chk_learning_domains_slug_format CHECK in
+// migrations/001 (and the MCP-side slugPattern in internal/mcp/validate.go).
+// Validating client-side lets the handler return a specific 400 instead of a
+// generic CheckViolation 500 from PostgreSQL. Keep aligned with the schema
+// rule: lowercase kebab-case, leading digits allowed, no trailing/consecutive
+// hyphens.
+var domainSlugPattern = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 
 // Handler handles learning HTTP requests for the admin workbench.
 type Handler struct {
@@ -83,6 +93,61 @@ func (h *Handler) mustAdminTx(w http.ResponseWriter, r *http.Request) (*Store, b
 		return nil, false
 	}
 	return h.store.WithTx(tx), true
+}
+
+// --- Domains ---
+
+// createDomainRequest is the JSON body for POST /api/admin/learning/domains —
+// the owner decision-stamp that replaces the removed propose_learning_domain /
+// commit MCP flow. slug and name are required; slug must be lowercase
+// kebab-case (matches the learning_domains slug CHECK).
+type createDomainRequest struct {
+	Slug string `json:"slug"`
+	Name string `json:"name"`
+}
+
+// CreateDomain handles POST /api/admin/learning/domains.
+func (h *Handler) CreateDomain(w http.ResponseWriter, r *http.Request) {
+	req, err := api.Decode[createDomainRequest](w, r)
+	if err != nil {
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid request body")
+		return
+	}
+	if req.Slug == "" || req.Name == "" {
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "slug and name are required")
+		return
+	}
+	if !domainSlugPattern.MatchString(req.Slug) {
+		api.Error(w, http.StatusUnprocessableEntity, "INVALID_SLUG",
+			"slug must be lowercase kebab-case (pattern: "+domainSlugPattern.String()+")")
+		return
+	}
+
+	store, ok := h.mustAdminTx(w, r)
+	if !ok {
+		return
+	}
+
+	// Reject duplicates before the INSERT fires a unique-violation round
+	// trip — the store wraps a unique violation as a generic error (no
+	// ErrConflict mapping), so checking first yields a clean 409.
+	exists, err := store.DomainExists(r.Context(), req.Slug)
+	if err != nil {
+		h.logger.Error("checking learning domain", "slug", req.Slug, "error", err)
+		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to create domain")
+		return
+	}
+	if exists {
+		api.HandleError(w, h.logger, ErrConflict, storeErrors...)
+		return
+	}
+
+	domain, err := store.CreateDomain(r.Context(), req.Slug, req.Name)
+	if err != nil {
+		api.HandleError(w, h.logger, err, storeErrors...)
+		return
+	}
+	api.Encode(w, http.StatusCreated, api.Response{Data: domain})
 }
 
 // --- Dashboard ---

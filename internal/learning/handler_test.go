@@ -3,6 +3,7 @@
 package learning
 
 import (
+	"bytes"
 	"encoding/json"
 	"log/slog"
 	"net/http"
@@ -10,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Koopa0/koopa/internal/api"
 	"github.com/google/uuid"
 )
 
@@ -440,5 +442,53 @@ func TestConceptsList_RejectsInvalidMasteryStage(t *testing.T) {
 	h.ConceptsList(w, req)
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("ConceptsList(mastery_stage=bogus) status = %d, want %d", w.Code, http.StatusBadRequest)
+	}
+}
+
+// TestCreateDomain_Validation pins handler-level rejection for the
+// learning_domain decision-stamp create. Missing slug/name and malformed
+// slugs are rejected before any store/tx call, so a nil store is safe — the
+// handler short-circuits at validation. A valid slug would proceed to
+// mustAdminTx, which is covered by the integration suite.
+func TestCreateDomain_Validation(t *testing.T) {
+	t.Parallel()
+
+	h := &Handler{logger: slog.New(slog.DiscardHandler)}
+
+	tests := []struct {
+		name       string
+		body       string
+		wantStatus int
+		wantCode   string
+	}{
+		{name: "missing slug returns 400", body: `{"name":"Japanese"}`, wantStatus: http.StatusBadRequest, wantCode: "BAD_REQUEST"},
+		{name: "missing name returns 400", body: `{"slug":"japanese"}`, wantStatus: http.StatusBadRequest, wantCode: "BAD_REQUEST"},
+		{name: "malformed JSON returns 400", body: `{bad}`, wantStatus: http.StatusBadRequest, wantCode: "BAD_REQUEST"},
+		{name: "empty body returns 400", body: ``, wantStatus: http.StatusBadRequest, wantCode: "BAD_REQUEST"},
+		{name: "uppercase slug returns 422", body: `{"slug":"Japanese","name":"Japanese"}`, wantStatus: http.StatusUnprocessableEntity, wantCode: "INVALID_SLUG"},
+		{name: "underscore slug returns 422", body: `{"slug":"jp_lang","name":"Japanese"}`, wantStatus: http.StatusUnprocessableEntity, wantCode: "INVALID_SLUG"},
+		{name: "trailing hyphen slug returns 422", body: `{"slug":"japanese-","name":"Japanese"}`, wantStatus: http.StatusUnprocessableEntity, wantCode: "INVALID_SLUG"},
+		{name: "space in slug returns 422", body: `{"slug":"jp lang","name":"Japanese"}`, wantStatus: http.StatusUnprocessableEntity, wantCode: "INVALID_SLUG"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			req := httptest.NewRequest(http.MethodPost, "/api/admin/learning/domains", bytes.NewReader([]byte(tt.body)))
+			req.Header.Set("Content-Type", "application/json")
+			w := httptest.NewRecorder()
+			h.CreateDomain(w, req)
+
+			if w.Code != tt.wantStatus {
+				t.Fatalf("CreateDomain(%q) status = %d, want %d (body: %s)", tt.name, w.Code, tt.wantStatus, w.Body.String())
+			}
+			var eb api.ErrorBody
+			if err := json.NewDecoder(w.Body).Decode(&eb); err != nil {
+				t.Fatalf("decoding error body: %v", err)
+			}
+			if eb.Error.Code != tt.wantCode {
+				t.Errorf("CreateDomain(%q) error.code = %q, want %q", tt.name, eb.Error.Code, tt.wantCode)
+			}
+		})
 	}
 }

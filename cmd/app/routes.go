@@ -179,11 +179,13 @@ func registerRoutes(
 	mux.Handle("DELETE /api/admin/commitment/projects/{id}/profile", adminMid(http.HandlerFunc(h.project.DeleteProfile)))
 
 	// --- Admin: Commitment / Goals ---
-	// List + Detail + status-transition. Create / Update stay off the REST
-	// surface — goals are proposed through Cowork chat.
+	// List + Detail + status-transition + the owner decision-stamp creates
+	// (goal, milestone) that replaced the removed propose_*/commit MCP flow.
 	mux.Handle("GET /api/admin/commitment/goals", authMid(http.HandlerFunc(h.goal.List)))
 	mux.Handle("GET /api/admin/commitment/goals/{id}", authMid(http.HandlerFunc(h.goal.Detail)))
+	mux.Handle("POST /api/admin/commitment/goals", adminMid(http.HandlerFunc(h.goal.Create)))
 	mux.Handle("PUT /api/admin/commitment/goals/{id}/status", adminMid(http.HandlerFunc(h.goal.UpdateStatus)))
+	mux.Handle("POST /api/admin/commitment/goals/{id}/milestones", adminMid(http.HandlerFunc(h.goal.CreateMilestone)))
 
 	// --- Admin: Commitment / Todos ---
 	// State transitions route through POST /advance so each transition is a
@@ -305,8 +307,13 @@ func registerRoutes(
 	mux.Handle("POST /api/admin/learning/sessions/{id}/attempts", adminMid(http.HandlerFunc(h.learning.RecordAttempt)))
 	mux.Handle("GET /api/admin/learning/plans", authMid(http.HandlerFunc(h.plan.List)))
 	mux.Handle("GET /api/admin/learning/plans/{id}", authMid(http.HandlerFunc(h.plan.Detail)))
+	mux.Handle("POST /api/admin/learning/plans", adminMid(http.HandlerFunc(h.plan.Create)))
 	mux.Handle("POST /api/admin/learning/plans/{id}/entries", adminMid(http.HandlerFunc(h.plan.AddEntries)))
 	mux.Handle("PUT /api/admin/learning/plans/{id}/entries/{entry_id}", adminMid(http.HandlerFunc(h.plan.UpdateEntry)))
+
+	// Learning domain decision-stamp create — replaces the removed
+	// propose_learning_domain / commit MCP flow.
+	mux.Handle("POST /api/admin/learning/domains", adminMid(http.HandlerFunc(h.learning.CreateDomain)))
 
 	// --- Admin: Coordination / Agents ---
 	// Agents are registry-managed — the admin surface is read-only.

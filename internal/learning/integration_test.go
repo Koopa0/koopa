@@ -249,3 +249,46 @@ func TestStartSession_ConcurrentStart_OnlyOneWins(t *testing.T) {
 		t.Errorf("unexpected error count = %d, want 0", got)
 	}
 }
+
+// TestCreateDomain_HappyPath exercises the real store path behind the
+// learning_domain decision-stamp create. A valid kebab-case slug must
+// produce a learning_domains row (active=true) and become visible via
+// Domains()/DomainExists(). Uses a unique slug so it does not collide with
+// the migration-seeded domains, and cleans up after itself since
+// learning_domains is outside truncateLearningTables.
+func TestCreateDomain_HappyPath(t *testing.T) {
+	store := learning.NewStore(testPool)
+	slug := "w8-test-domain"
+
+	// Clean any leftover from a prior interrupted run, and after this test.
+	cleanup := func() {
+		if _, err := testPool.Exec(context.Background(),
+			`DELETE FROM learning_domains WHERE slug = $1`, slug); err != nil {
+			t.Logf("cleanup learning_domains %q: %v", slug, err)
+		}
+	}
+	cleanup()
+	t.Cleanup(cleanup)
+
+	d, err := store.CreateDomain(t.Context(), slug, "W8 Test Domain")
+	if err != nil {
+		t.Fatalf("CreateDomain(%q): %v", slug, err)
+	}
+	if d.Slug != slug {
+		t.Errorf("CreateDomain slug = %q, want %q", d.Slug, slug)
+	}
+	if d.Name != "W8 Test Domain" {
+		t.Errorf("CreateDomain name = %q, want %q", d.Name, "W8 Test Domain")
+	}
+	if !d.Active {
+		t.Errorf("CreateDomain active = false, want true")
+	}
+
+	exists, err := store.DomainExists(t.Context(), slug)
+	if err != nil {
+		t.Fatalf("DomainExists(%q): %v", slug, err)
+	}
+	if !exists {
+		t.Errorf("DomainExists(%q) = false after create, want true", slug)
+	}
+}

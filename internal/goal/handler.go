@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -16,6 +17,7 @@ import (
 // storeErrors maps store sentinel errors to HTTP responses.
 var storeErrors = []api.ErrMap{
 	{Target: ErrNotFound, Status: http.StatusNotFound, Code: "NOT_FOUND", Message: "goal not found"},
+	{Target: ErrConflict, Status: http.StatusConflict, Code: "CONFLICT", Message: "goal conflict"},
 }
 
 // Handler handles goal HTTP requests.
@@ -245,6 +247,92 @@ func (h *Handler) Detail(w http.ResponseWriter, r *http.Request) {
 	}
 
 	api.Encode(w, http.StatusOK, api.Response{Data: resp})
+}
+
+// createRequest is the JSON body for POST /api/admin/commitment/goals.
+// Status is not accepted — the decision-stamp create always lands in
+// status=not_started (the store enforces this); lifecycle transitions go
+// through PUT /goals/{id}/status. area_id, deadline, and quarter are
+// optional shaping fields.
+type createRequest struct {
+	Title       string     `json:"title"`
+	Description string     `json:"description"`
+	AreaID      *uuid.UUID `json:"area_id,omitempty"`
+	Deadline    *time.Time `json:"deadline,omitempty"`
+	Quarter     *string    `json:"quarter,omitempty"`
+}
+
+// Create handles POST /api/admin/commitment/goals — the owner decision-stamp
+// that replaces the removed propose_goal / commit MCP flow. The goal is
+// created in status=not_started.
+func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
+	req, err := api.Decode[createRequest](w, r)
+	if err != nil {
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid request body")
+		return
+	}
+	if req.Title == "" {
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "title is required")
+		return
+	}
+
+	store := h.store
+	if tx, ok := api.TxFromContext(r.Context()); ok {
+		store = h.store.WithTx(tx)
+	}
+	g, err := store.Create(r.Context(), &CreateParams{
+		Title:       req.Title,
+		Description: req.Description,
+		AreaID:      req.AreaID,
+		Deadline:    req.Deadline,
+		Quarter:     req.Quarter,
+	})
+	if err != nil {
+		api.HandleError(w, h.logger, err, storeErrors...)
+		return
+	}
+	api.Encode(w, http.StatusCreated, api.Response{Data: g})
+}
+
+// createMilestoneRequest is the JSON body for
+// POST /api/admin/commitment/goals/{id}/milestones. goal_id comes from the
+// path, not the body.
+type createMilestoneRequest struct {
+	Title          string     `json:"title"`
+	Description    string     `json:"description"`
+	TargetDeadline *time.Time `json:"target_deadline,omitempty"`
+}
+
+// CreateMilestone handles POST /api/admin/commitment/goals/{id}/milestones —
+// the owner decision-stamp that replaces the removed propose_milestone / commit
+// MCP flow. goalID is the path parameter.
+func (h *Handler) CreateMilestone(w http.ResponseWriter, r *http.Request) {
+	goalID, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid goal id")
+		return
+	}
+
+	req, err := api.Decode[createMilestoneRequest](w, r)
+	if err != nil {
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid request body")
+		return
+	}
+	if req.Title == "" {
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "title is required")
+		return
+	}
+
+	store := h.store
+	if tx, ok := api.TxFromContext(r.Context()); ok {
+		store = h.store.WithTx(tx)
+	}
+	m, err := store.CreateMilestone(r.Context(), goalID, req.Title, req.Description, req.TargetDeadline)
+	if err != nil {
+		api.HandleError(w, h.logger, err, storeErrors...)
+		return
+	}
+	api.Encode(w, http.StatusCreated, api.Response{Data: m})
 }
 
 func mapHTTPGoalStatus(s string) (Status, error) {

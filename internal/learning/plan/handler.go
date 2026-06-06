@@ -10,6 +10,7 @@
 package plan
 
 import (
+	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -116,6 +117,66 @@ func (h *Handler) Detail(w http.ResponseWriter, r *http.Request) {
 		h.logger.Warn("plan detail: progress fetch failed", "plan_id", id, "error", err)
 	}
 	api.Encode(w, http.StatusOK, api.Response{Data: resp})
+}
+
+// CreateRequest is the JSON body for POST /api/admin/learning/plans — the
+// owner decision-stamp that replaces the removed propose_learning_plan /
+// commit MCP flow. The plan is created in status=draft (the store enforces
+// this); activation goes through the manage_plan(update_plan) path. domain
+// and title are required. created_by is taken from the request actor, not
+// the body.
+type CreateRequest struct {
+	Title       string          `json:"title"`
+	Description string          `json:"description"`
+	Domain      string          `json:"domain"`
+	GoalID      *uuid.UUID      `json:"goal_id,omitempty"`
+	TargetCount *int32          `json:"target_count,omitempty"`
+	PlanConfig  json.RawMessage `json:"plan_config,omitempty"`
+}
+
+// Create handles POST /api/admin/learning/plans.
+func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
+	req, err := api.Decode[CreateRequest](w, r)
+	if err != nil {
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid request body")
+		return
+	}
+	if req.Title == "" {
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "title is required")
+		return
+	}
+	if req.Domain == "" {
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "domain is required")
+		return
+	}
+
+	store, ok := h.mustAdminTx(w, r)
+	if !ok {
+		return
+	}
+	plan, err := store.CreatePlan(r.Context(), &CreatePlanParams{
+		Title:       req.Title,
+		Description: req.Description,
+		Domain:      req.Domain,
+		GoalID:      req.GoalID,
+		TargetCount: req.TargetCount,
+		PlanConfig:  req.PlanConfig,
+		CreatedBy:   actorFromContext(r),
+	})
+	if err != nil {
+		api.HandleError(w, h.logger, err, storeErrors...)
+		return
+	}
+	api.Encode(w, http.StatusCreated, api.Response{Data: plan})
+}
+
+// actorFromContext resolves the authenticated agent identity for the
+// created_by stamp, falling back to "human" for the admin write convention.
+func actorFromContext(r *http.Request) string {
+	if a, ok := api.ActorFromContext(r.Context()); ok {
+		return a
+	}
+	return "human"
 }
 
 // AddEntriesRequest is the POST body for adding entries to a plan.
