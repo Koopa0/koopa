@@ -68,14 +68,3 @@ func isValidPlanEntryStatus(s string) bool {
 		return false
 	}
 }
-
-// isValidPlanStatus mirrors the values manage_plan(action=update_plan) is
-// allowed to write to learning_plans.status.
-func isValidPlanStatus(s string) bool {
-	switch s {
-	case "active", "paused", "completed", "abandoned":
-		return true
-	default:
-		return false
-	}
-}

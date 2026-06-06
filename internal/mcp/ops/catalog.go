@@ -233,9 +233,9 @@ func ManagePlan() Meta {
 		Writability: Destructive,
 		Stability:   StabilityStable,
 		Since:       since,
-		Description: "Learning plan lifecycle and entries. Actions: add_entries (accepts learning_target_id OR title for find-or-create using plan domain), remove_entries (draft only), update_entry (complete/skip/substitute), reorder, update_plan (activate/pause/complete/abandon), progress. The progress action returns aggregate counts plus a flat entry list with plan_entry_id, learning_target_id, title, position, status, phase — call it before update_entry to look up plan_entry_id. Completing an entry (status=completed) requires a non-blank reason and a completed_by_attempt_id whose learning_target matches the entry's; mismatched IDs are rejected. Skipping an entry (status=skipped) also requires a non-blank reason — skip is a decision and cross-agent review needs to know why an active plan entry was dropped (no force-mode escape hatch for skip). Use force=true with a reason starting with 'manual override:' (≥60 chars) when no aligned attempt exists for completion — the prefix is the audit signal for retroactive completions.",
+		Description: "Learning plan lifecycle and entries. Actions: add_entries (accepts learning_target_id OR title for find-or-create using plan domain), remove_entries (draft only), update_entry (complete/skip/substitute), reorder, progress. The progress action returns aggregate counts plus a flat entry list with plan_entry_id, learning_target_id, title, position, status, phase — call it before update_entry to look up plan_entry_id. Completing an entry (status=completed) requires a non-blank reason and a completed_by_attempt_id whose learning_target matches the entry's; mismatched IDs are rejected. Skipping an entry (status=skipped) also requires a non-blank reason — skip is a decision and cross-agent review needs to know why an active plan entry was dropped (no force-mode escape hatch for skip). Use force=true with a reason starting with 'manual override:' (≥60 chars) when no aligned attempt exists for completion — the prefix is the audit signal for retroactive completions.",
 		FieldEnums: map[string][]string{
-			"action": {"add_entries", "remove_entries", "update_entry", "reorder", "update_plan", "progress"},
+			"action": {"add_entries", "remove_entries", "update_entry", "reorder", "progress"},
 		},
 	}
 }

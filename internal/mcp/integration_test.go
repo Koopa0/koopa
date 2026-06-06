@@ -787,12 +787,8 @@ func TestIntegration_UpdateEntry_AlignsAttemptToTarget(t *testing.T) {
 		t.Fatalf("add_entries: %v", err)
 	}
 
-	active := "active"
-	if _, _, err := callHandler(t, s.managePlan, ManagePlanInput{
-		Action: "update_plan",
-		PlanID: planID,
-		Status: &active,
-	}); err != nil {
+	if _, err := testPool.Exec(t.Context(),
+		"UPDATE learning_plans SET status = 'active', updated_at = now() WHERE id = $1", planID); err != nil {
 		t.Fatalf("activate plan: %v", err)
 	}
 
@@ -972,12 +968,8 @@ func TestIntegration_UpdateEntry_CompletionPolicy(t *testing.T) {
 		t.Fatalf("add_entries: %v", err)
 	}
 
-	active := "active"
-	if _, _, err := callHandler(t, s.managePlan, ManagePlanInput{
-		Action: "update_plan",
-		PlanID: planID,
-		Status: &active,
-	}); err != nil {
+	if _, err := testPool.Exec(t.Context(),
+		"UPDATE learning_plans SET status = 'active', updated_at = now() WHERE id = $1", planID); err != nil {
 		t.Fatalf("activate plan: %v", err)
 	}
 
@@ -1180,12 +1172,8 @@ func TestIntegration_UpdateEntry_SkipPolicy(t *testing.T) {
 		t.Fatalf("add_entries: %v", err)
 	}
 
-	active := "active"
-	if _, _, err := callHandler(t, s.managePlan, ManagePlanInput{
-		Action: "update_plan",
-		PlanID: planID,
-		Status: &active,
-	}); err != nil {
+	if _, err := testPool.Exec(t.Context(),
+		"UPDATE learning_plans SET status = 'active', updated_at = now() WHERE id = $1", planID); err != nil {
 		t.Fatalf("activate plan: %v", err)
 	}
 
@@ -1374,12 +1362,8 @@ func TestIntegration_WeeklySummary_SelfAuditBlock(t *testing.T) {
 		t.Fatalf("add_entries: %v", err)
 	}
 
-	active := "active"
-	if _, _, err := callHandler(t, s.managePlan, ManagePlanInput{
-		Action: "update_plan",
-		PlanID: planID,
-		Status: &active,
-	}); err != nil {
+	if _, err := testPool.Exec(t.Context(),
+		"UPDATE learning_plans SET status = 'active', updated_at = now() WHERE id = $1", planID); err != nil {
 		t.Fatalf("activate plan: %v", err)
 	}
 

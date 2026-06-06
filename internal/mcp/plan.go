@@ -2,11 +2,11 @@
 
 // plan.go holds the manage_plan multiplexer tool for learning plans.
 //
-// manage_plan is at the approved 6-action ceiling (add_entries,
-// remove_entries, update_entry, reorder, update_plan, progress —
-// see .claude/rules/mcp-decision-policy.md §10). Adding a seventh
-// action requires either splitting one out into a dedicated tool or
-// consolidating two existing actions — do NOT just append.
+// manage_plan has 5 actions (add_entries, remove_entries,
+// update_entry, reorder, progress — see
+// .claude/rules/mcp-decision-policy.md §10, which sets a 6-action
+// ceiling). Plan-level lifecycle (activate/pause/complete/abandon)
+// is admin-only, not an agent action.
 //
 // `update_entry` enforces the audit-trail policy from §13: marking an
 // entry completed REQUIRES both `completed_by_attempt_id` (the
@@ -38,7 +38,7 @@ import (
 
 // ManagePlanInput holds the input for the manage_plan multiplexer tool.
 type ManagePlanInput struct {
-	Action string `json:"action" jsonschema:"required" jsonschema_description:"Action: add_entries, remove_entries, update_entry, reorder, update_plan, progress"`
+	Action string `json:"action" jsonschema:"required" jsonschema_description:"Action: add_entries, remove_entries, update_entry, reorder, progress"`
 	PlanID string `json:"plan_id" jsonschema:"required" jsonschema_description:"Plan UUID"`
 
 	// add_entries
@@ -49,7 +49,7 @@ type ManagePlanInput struct {
 
 	// update_entry
 	EntryID                    *string `json:"entry_id,omitempty" jsonschema_description:"Plan entry UUID (for update_entry)"`
-	Status                     *string `json:"status,omitempty" jsonschema_description:"New status: completed, skipped, substituted (for update_entry) or active, paused, completed, abandoned (for update_plan)"`
+	Status                     *string `json:"status,omitempty" jsonschema_description:"New entry status for update_entry: completed, skipped, substituted"`
 	Reason                     *string `json:"reason,omitempty" jsonschema_description:"Justification for the transition. REQUIRED and non-blank when status=completed OR status=skipped; this is the audit trail per mcp-decision-policy §13 (skip is a decision — cross-agent review needs to know why an active plan entry was dropped). When force=true (completed only), reason MUST start with the literal text manual override: (no surrounding quotes) and be ≥ 60 characters. Reason is capped at 1024 characters."`
 	SubstituteLearningTargetID *string `json:"substitute_learning_target_id,omitempty" jsonschema_description:"learning_targets.id of the replacement (for status=substituted)"`
 	CompletedByAttemptID       *string `json:"completed_by_attempt_id,omitempty" jsonschema_description:"Attempt UUID that informed the completion decision. REQUIRED when status=completed unless force=true. The attempt's learning_target_id MUST match the plan entry's — misaligned IDs are rejected so the audit trail stays trustworthy."`
@@ -116,12 +116,10 @@ func (s *Server) managePlan(ctx context.Context, _ *mcp.CallToolRequest, input M
 		return s.updatePlanEntry(ctx, planID, &input)
 	case "reorder":
 		return s.reorderPlanEntries(ctx, planID, &input)
-	case "update_plan":
-		return s.updatePlan(ctx, planID, &input)
 	case "progress":
 		return s.planProgress(ctx, planID)
 	default:
-		return nil, ManagePlanOutput{}, fmt.Errorf("invalid action %q (valid: add_entries, remove_entries, update_entry, reorder, update_plan, progress)", input.Action)
+		return nil, ManagePlanOutput{}, fmt.Errorf("invalid action %q (valid: add_entries, remove_entries, update_entry, reorder, progress)", input.Action)
 	}
 }
 
@@ -550,38 +548,6 @@ func (s *Server) reorderPlanEntries(ctx context.Context, planID uuid.UUID, input
 	}, nil
 }
 
-func (s *Server) updatePlan(ctx context.Context, planID uuid.UUID, input *ManagePlanInput) (*mcp.CallToolResult, ManagePlanOutput, error) {
-	if input.Status == nil || *input.Status == "" {
-		return nil, ManagePlanOutput{}, fmt.Errorf("status is required for update_plan")
-	}
-	if !isValidPlanStatus(*input.Status) {
-		return nil, ManagePlanOutput{}, fmt.Errorf("status for update_plan must be one of: active, paused, completed, abandoned (got %q)", *input.Status)
-	}
-
-	// Fetch current plan to validate transition.
-	p, err := s.plans.Plan(ctx, planID)
-	if err != nil {
-		return nil, ManagePlanOutput{}, fmt.Errorf("fetching plan: %w", err)
-	}
-
-	newStatus := plan.Status(*input.Status)
-	if err := validatePlanTransition(p.Status, newStatus); err != nil {
-		return nil, ManagePlanOutput{}, err
-	}
-
-	_, err = s.plans.UpdatePlanStatus(ctx, planID, newStatus)
-	if err != nil {
-		return nil, ManagePlanOutput{}, fmt.Errorf("updating plan status: %w", err)
-	}
-
-	s.logger.Info("manage_plan", "action", "update_plan", "plan_id", planID, "status", newStatus)
-	return nil, ManagePlanOutput{
-		Action:  "update_plan",
-		PlanID:  planID.String(),
-		Message: fmt.Sprintf("plan status → %s", newStatus),
-	}, nil
-}
-
 func (s *Server) planProgress(ctx context.Context, planID uuid.UUID) (*mcp.CallToolResult, ManagePlanOutput, error) {
 	// Verify plan exists before computing progress — without this, a bogus
 	// plan_id returns {total:0, entries:[]} which looks like an empty plan.
@@ -610,26 +576,5 @@ func (s *Server) planProgress(ctx context.Context, planID uuid.UUID) (*mcp.CallT
 	}, nil
 }
 
-var allowedPlanTransitions = map[plan.Status][]plan.Status{
-	plan.StatusDraft:  {plan.StatusActive, plan.StatusAbandoned},
-	plan.StatusActive: {plan.StatusPaused, plan.StatusCompleted, plan.StatusAbandoned},
-	plan.StatusPaused: {plan.StatusActive, plan.StatusAbandoned},
-}
-
-// validatePlanTransition checks that the status transition is allowed.
-func validatePlanTransition(from, to plan.Status) error {
-	targets, ok := allowedPlanTransitions[from]
-	if !ok {
-		return fmt.Errorf("plan status %q cannot be transitioned", from)
-	}
-	for _, t := range targets {
-		if t == to {
-			return nil
-		}
-	}
-	return fmt.Errorf("invalid plan transition %s → %s", from, to)
-}
-
 // parseOptionalUUID lives in internal/mcp/uuid.go — consolidated helper
-// shared with every MCP-boundary UUID parse call (track_hypothesis,
-// manage_feeds, manage_plan, etc.).
+// shared with every MCP-boundary UUID parse call (manage_plan, etc.).
