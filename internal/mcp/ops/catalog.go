@@ -212,100 +212,6 @@ func ManagePlan() Meta {
 	}
 }
 
-// Content tools — flat per-intent design.
-// 8 separate tools instead of one manage_content multiplexer. Rationale:
-// actions have divergent input schemas + mixed authorization (publish is
-// human-only); mapping one-intent-one-tool gives the LLM crisp tool
-// selection and MCP annotations match the action (Destructive on
-// publish/archive; read-only on list/read).
-
-// CreateContent returns metadata for the create_content tool.
-func CreateContent() Meta {
-	return Meta{
-		Name:        "create_content",
-		Domain:      DomainContent,
-		Writability: Additive,
-		Stability:   StabilityStable,
-		Since:       since,
-		Description: "Create a new content row in status=draft. type is one of: article, essay, build-log, til, digest. Notes are NOT a content type — use create_note. Slug collisions surface as output.slug_conflict (caller can pick a new slug or switch to update_content).",
-		FieldEnums: map[string][]string{
-			"content_type": {"article", "essay", "build-log", "til", "digest"},
-		},
-	}
-}
-
-// UpdateContent returns metadata for the update_content tool.
-func UpdateContent() Meta {
-	return Meta{
-		Name:        "update_content",
-		Domain:      DomainContent,
-		Writability: Additive,
-		Stability:   StabilityStable,
-		Since:       since,
-		Description: "Update editable fields (title/body/slug/type) on a content row. Any field may be omitted. Slug rename triggers slug_conflict path on collision. Fields-only: it does NOT change status — passing a status is rejected. Use set_content_review_state / publish_content / archive_content for lifecycle transitions.",
-	}
-}
-
-// SetContentReviewState returns metadata for set_content_review_state.
-func SetContentReviewState() Meta {
-	return Meta{
-		Name:        "set_content_review_state",
-		Domain:      DomainContent,
-		Writability: Additive,
-		Stability:   StabilityStable,
-		Since:       since,
-		Description: "Set a content row's review state. state='review' submits a draft for review (the Claude → human publish handoff signal — content is done on Claude's side and awaits human publish or revert); state='draft' reverts a review item back to draft for more work. The target state is an idempotent no-op when already there (no second event). Rejected from published / archived / any state that isn't the required source (invalid_state, no mutation).",
-	}
-}
-
-// PublishContent returns metadata for publish_content. Human-only.
-func PublishContent() Meta {
-	return Meta{
-		Name:        "publish_content",
-		Domain:      DomainContent,
-		Writability: Destructive,
-		Stability:   StabilityStable,
-		Since:       since,
-		Description: "HUMAN-ONLY. Publish a review content row: status='published', is_public=true, published_at=now(). Requires explicit `as` field + registry Platform='human' — the server default does NOT confer publish authority. published → published is an idempotent no-op (no second event). Rejected from draft / archived (invalid_state, no mutation).",
-	}
-}
-
-// ArchiveContent returns metadata for archive_content.
-func ArchiveContent() Meta {
-	return Meta{
-		Name:        "archive_content",
-		Domain:      DomainContent,
-		Writability: Destructive,
-		Stability:   StabilityStable,
-		Since:       since,
-		Description: "Soft-delete a content row by archiving it. Allowed: draft → archived, review → archived. archived → archived is an idempotent no-op (no second event). PUBLISHED content is rejected (invalid_state, no mutation) — depublication is a separate lifecycle decision and must not be hidden inside archive_content. Archived rows keep their audit trail.",
-	}
-}
-
-// ListContent returns metadata for list_content.
-func ListContent() Meta {
-	return Meta{
-		Name:        "list_content",
-		Domain:      DomainContent,
-		Writability: ReadOnly,
-		Stability:   StabilityStable,
-		Since:       since,
-		Description: "List content rows with optional filters (type, status, project). Returns summaries — use read_content for the full body.",
-	}
-}
-
-// ReadContent returns metadata for read_content.
-func ReadContent() Meta {
-	return Meta{
-		Name:        "read_content",
-		Domain:      DomainContent,
-		Writability: ReadOnly,
-		Stability:   StabilityStable,
-		Since:       since,
-		Description: "Fetch a single content row with full body by ID.",
-	}
-}
-
 // Note tools — flat per-intent design. Three tools map 1:1 to user intent.
 
 // CreateNote returns metadata for create_note.
@@ -349,13 +255,6 @@ func All() []Meta {
 		EndSession(),
 		LearningRead(),
 		ManagePlan(),
-		CreateContent(),
-		UpdateContent(),
-		SetContentReviewState(),
-		PublishContent(),
-		ArchiveContent(),
-		ListContent(),
-		ReadContent(),
 		CreateNote(),
 		UpdateNote(),
 	}

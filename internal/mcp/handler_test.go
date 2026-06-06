@@ -249,13 +249,6 @@ func TestLearningRead_InvalidView(t *testing.T) {
 	}
 }
 
-// --- content flat tools ---
-//
-// The old manage_content multiplexer + its TestManageContent_Validation
-// invalid-action path were removed in the notes/content split. Validation is now
-// per-tool (required-field checks in each *Tool handler). See
-// TestCreateContent_Validation etc. if / when they're added.
-
 // --- outcome mapping ---
 
 func TestMapOutcome(t *testing.T) {
@@ -341,13 +334,6 @@ func TestToolSchemaGeneration(t *testing.T) {
 		{"RecordAttemptInput", testSchema[RecordAttemptInput]},
 		{"EndSessionInput", testSchema[EndSessionInput]},
 		{"LearningReadInput", testSchema[LearningReadInput]},
-		{"CreateContentInput", testSchema[CreateContentInput]},
-		{"UpdateContentInput", testSchema[UpdateContentInput]},
-		{"SetContentReviewStateInput", testSchema[SetContentReviewStateInput]},
-		{"PublishContentInput", testSchema[PublishContentInput]},
-		{"ArchiveContentInput", testSchema[ArchiveContentInput]},
-		{"ListContentInput", testSchema[ListContentInput]},
-		{"ReadContentInput", testSchema[ReadContentInput]},
 		{"CreateNoteInput", testSchema[CreateNoteInput]},
 		{"UpdateNoteInput", testSchema[UpdateNoteInput]},
 	}

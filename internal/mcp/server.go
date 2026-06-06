@@ -192,15 +192,6 @@ func NewServer(pool *pgxpool.Pool, logger *slog.Logger, opts ...ServerOption) *S
 	addTool(s, toolFrom(ops.LearningRead), s.learningRead)
 	addTool(s, toolFrom(ops.ManagePlan), s.managePlan)
 
-	// --- Content lifecycle (flat tools) ---
-	addTool(s, toolFrom(ops.CreateContent), s.createContentTool)
-	addTool(s, toolFrom(ops.UpdateContent), s.updateContentTool)
-	addTool(s, toolFrom(ops.SetContentReviewState), s.setContentReviewState)
-	addTool(s, toolFrom(ops.PublishContent), s.publishContentTool)
-	addTool(s, toolFrom(ops.ArchiveContent), s.archiveContentTool)
-	addTool(s, toolFrom(ops.ListContent), s.listContentTool)
-	addTool(s, toolFrom(ops.ReadContent), s.readContentTool)
-
 	// --- Notes (flat tools) ---
 	addTool(s, toolFrom(ops.CreateNote), s.createNote)
 	addTool(s, toolFrom(ops.UpdateNote), s.updateNote)

@@ -13,7 +13,7 @@ is hand-maintained.
 > Run `go generate ./internal/mcp/ops` after any change to the tool surface;
 > the drift test `TestToolInventoryDocInSync` fails CI if this is stale.
 
-**20 tools** across 7 domains.
+**13 tools** across 7 domains.
 
 | Domain | Count |
 |---|---|
@@ -22,9 +22,9 @@ is hand-maintained.
 | `a2a` | 0 |
 | `meta` | 1 |
 | `learning` | 5 |
-| `content` | 9 |
+| `content` | 2 |
 | `system` | 0 |
-| **Total** | **20** |
+| **Total** | **13** |
 
 | Tool | Domain | Writability | Purpose |
 |---|---|---|---|
@@ -39,14 +39,7 @@ is hand-maintained.
 | `manage_plan` | `learning` | destructive | Learning plan lifecycle and entries |
 | `record_attempt` | `learning` | additive | Record an attempt within the active learning session |
 | `start_session` | `learning` | additive | Begin a learning session |
-| `archive_content` | `content` | destructive | Soft-delete a content row by archiving it |
-| `create_content` | `content` | additive | Create a new content row in status=draft |
 | `create_note` | `content` | additive | Create a Zettelkasten note (notes table) |
-| `list_content` | `content` | read_only | List content rows with optional filters (type, status, project) |
-| `publish_content` | `content` | destructive | HUMAN-ONLY |
-| `read_content` | `content` | read_only | Fetch a single content row with full body by ID. |
-| `set_content_review_state` | `content` | additive | Set a content row's review state |
-| `update_content` | `content` | additive | Update editable fields (title/body/slug/type) on a content row |
 | `update_note` | `content` | additive | Update editable fields (slug / title / body / kind) on a note |
 <!-- GENERATED:TOOL-INVENTORY END -->
 
