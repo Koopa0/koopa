@@ -126,7 +126,11 @@ ORIGINAL PLAN (for reference):
 - Remove `TestTaskStateChange_FiresActivityTrigger` (integration_test.go) — it drives the dropped `tasks` table via raw SQL.
 - End state: clean `001` + `002` only.
 
-### W8 — admin create forms (NET-NEW BUILD; ledger §2)
+### W8 — admin create forms (NET-NEW BUILD; ledger §2)  ⏳ BACKEND DONE (`252fef1`), FRONTEND DEFERRED
+**Backend done:** 4 admin POST endpoints (goal/milestone/learning_plan/learning_domain) mirroring project.Create — the decision-stamp replacements for the removed propose_*/commit tools. adminMid (human-only); existing store Create methods; ErrConflict added to goal+learning storeErrors; kebab-slug validation for domains. Gate green incl executed integration.
+**Frontend = separate owner-directed phase.** Owner ran a redesign-vs-rebuild deliberation workflow (2026-06-06) → **DECISION: HYBRID** — redesign/rewire the ~75% reusable (list/detail pages, 29 services, layout, 9-component shared lib) + rebuild only the create-form pages. The frontend is ~65-75% contraction-impacted but code-healthy. **OPEN (owner, at form-build time):** the admin-user-creation model — do humans create goals/plans via UI, or read-mostly + admin-form creation? Determines the form-page UX. Phases: surgical cleanup (stale endpoints/handlers) → form wiring (content/note editors ready; goal/plan/domain POST now exist) → polish. This is the next major phase, separate from the backend contraction.
+
+ORIGINAL PLAN:
 - Backend `POST` endpoints + handlers: goals, milestones, learning_plans, learning_domains (projects already has POST). These are the "decision-stamp" forms replacing the removed MCP propose_* tools.
 - Angular create/confirm forms for the same. Verify with a frontend build.
 
