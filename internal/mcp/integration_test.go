@@ -1832,12 +1832,18 @@ func TestIntegration_RecommendNextTarget_HappyPath(t *testing.T) {
 	}
 
 	// The recommender should surface harder-variant-of-A.
-	_, rec, err := callHandler(t, s.recommendNextTarget, RecommendNextTargetInput{
-		SessionID: sess.Session.ID.String(),
+	sessID := sess.Session.ID.String()
+	_, out, err := callHandler(t, s.learningRead, LearningReadInput{
+		View:      "next_target",
+		SessionID: &sessID,
 	})
 	if err != nil {
-		t.Fatalf("recommendNextTarget: %v", err)
+		t.Fatalf("learningRead next_target: %v", err)
 	}
+	if out.NextTarget == nil {
+		t.Fatal("learningRead next_target: NextTarget payload is nil")
+	}
+	rec := out.NextTarget
 	if len(rec.Candidates) == 0 {
 		t.Fatalf("no candidates; empty_reason=%q", rec.EmptyReason)
 	}
@@ -1868,12 +1874,18 @@ func TestIntegration_RecommendNextTarget_NoWeaknesses(t *testing.T) {
 		t.Fatalf("startSession: %v", err)
 	}
 
-	_, rec, err := callHandler(t, s.recommendNextTarget, RecommendNextTargetInput{
-		SessionID: sess.Session.ID.String(),
+	sessID := sess.Session.ID.String()
+	_, out, err := callHandler(t, s.learningRead, LearningReadInput{
+		View:      "next_target",
+		SessionID: &sessID,
 	})
 	if err != nil {
-		t.Fatalf("recommendNextTarget: %v", err)
+		t.Fatalf("learningRead next_target: %v", err)
 	}
+	if out.NextTarget == nil {
+		t.Fatal("learningRead next_target: NextTarget payload is nil")
+	}
+	rec := out.NextTarget
 	if len(rec.Candidates) != 0 {
 		t.Errorf("candidates = %d, want 0 in empty-state", len(rec.Candidates))
 	}
@@ -1889,10 +1901,12 @@ func TestIntegration_RecommendNextTarget_NoWeaknesses(t *testing.T) {
 func TestIntegration_RecommendNextTarget_RejectsInactiveSession(t *testing.T) {
 	s := setupServer(t)
 
-	if _, _, err := callHandler(t, s.recommendNextTarget, RecommendNextTargetInput{
-		SessionID: uuid.New().String(),
+	unknownSession := uuid.New().String()
+	if _, _, err := callHandler(t, s.learningRead, LearningReadInput{
+		View:      "next_target",
+		SessionID: &unknownSession,
 	}); err == nil {
-		t.Error("recommendNextTarget accepted unknown session; should error")
+		t.Error("learningRead next_target accepted unknown session; should error")
 	}
 }
 
@@ -2095,10 +2109,14 @@ func TestLearningSessionEnded_FiresActivityTrigger(t *testing.T) {
 func TestIntegration_SessionProgress_NoActive(t *testing.T) {
 	s := setupServer(t)
 
-	_, out, err := callHandler(t, s.sessionProgress, SessionProgressInput{})
+	_, read, err := callHandler(t, s.learningRead, LearningReadInput{View: "session_progress"})
 	if err != nil {
-		t.Fatalf("sessionProgress: %v", err)
+		t.Fatalf("learningRead session_progress: %v", err)
 	}
+	if read.SessionProgress == nil {
+		t.Fatal("learningRead session_progress: SessionProgress payload is nil")
+	}
+	out := read.SessionProgress
 
 	if out.Active {
 		t.Errorf("Active = true, want false")
@@ -2131,10 +2149,14 @@ func TestIntegration_SessionProgress_ActiveEmpty(t *testing.T) {
 		t.Fatalf("startSession: %v", err)
 	}
 
-	_, out, err := callHandler(t, s.sessionProgress, SessionProgressInput{})
+	_, read, err := callHandler(t, s.learningRead, LearningReadInput{View: "session_progress"})
 	if err != nil {
-		t.Fatalf("sessionProgress: %v", err)
+		t.Fatalf("learningRead session_progress: %v", err)
 	}
+	if read.SessionProgress == nil {
+		t.Fatal("learningRead session_progress: SessionProgress payload is nil")
+	}
+	out := read.SessionProgress
 
 	if !out.Active {
 		t.Fatal("Active = false on a freshly-started session")
@@ -2239,10 +2261,14 @@ func TestIntegration_SessionProgress_WithAttempts(t *testing.T) {
 		t.Fatalf("recordAttempt immersive: %v", err)
 	}
 
-	_, out, err := callHandler(t, s.sessionProgress, SessionProgressInput{})
+	_, read, err := callHandler(t, s.learningRead, LearningReadInput{View: "session_progress"})
 	if err != nil {
-		t.Fatalf("sessionProgress: %v", err)
+		t.Fatalf("learningRead session_progress: %v", err)
 	}
+	if read.SessionProgress == nil {
+		t.Fatal("learningRead session_progress: SessionProgress payload is nil")
+	}
+	out := read.SessionProgress
 
 	if !out.Active {
 		t.Fatal("Active = false after recording two attempts")
@@ -2321,10 +2347,14 @@ func TestIntegration_SessionProgress_LastEndedSurfaced(t *testing.T) {
 		t.Fatal("endSession did not populate EndedAt")
 	}
 
-	_, out, err := callHandler(t, s.sessionProgress, SessionProgressInput{})
+	_, read, err := callHandler(t, s.learningRead, LearningReadInput{View: "session_progress"})
 	if err != nil {
-		t.Fatalf("sessionProgress: %v", err)
+		t.Fatalf("learningRead session_progress: %v", err)
 	}
+	if read.SessionProgress == nil {
+		t.Fatal("learningRead session_progress: SessionProgress payload is nil")
+	}
+	out := read.SessionProgress
 
 	if out.Active {
 		t.Fatal("Active = true after end_session")
@@ -2398,13 +2428,18 @@ func TestIntegration_AttemptHistory_TargetMode_IncludesObservations(t *testing.T
 	// revisit; regression past ~100ms would compound into friction fast.
 	// Not a benchmark — a defensive threshold. Bump if CI flakes.
 	start := time.Now()
-	_, out, err := callHandler(t, s.attemptHistory, AttemptHistoryInput{
+	_, read, err := callHandler(t, s.learningRead, LearningReadInput{
+		View:   "attempts",
 		Target: &AttemptHistoryTargetRef{Title: "Two Sum"},
 	})
 	elapsed := time.Since(start)
 	if err != nil {
-		t.Fatalf("attemptHistory target: %v", err)
+		t.Fatalf("learningRead attempts target: %v", err)
 	}
+	if read.Attempts == nil {
+		t.Fatal("learningRead attempts: Attempts payload is nil")
+	}
+	out := read.Attempts
 	if !out.Resolved {
 		t.Fatal("Resolved = false on existing target")
 	}
@@ -2464,12 +2499,17 @@ func TestIntegration_AttemptHistory_ConceptMode_MatchedObservationID(t *testing.
 		t.Fatalf("recordAttempt: %v", err)
 	}
 
-	_, out, err := callHandler(t, s.attemptHistory, AttemptHistoryInput{
+	_, read, err := callHandler(t, s.learningRead, LearningReadInput{
+		View:        "attempts",
 		ConceptSlug: strPtr("sliding-window-variable"),
 	})
 	if err != nil {
-		t.Fatalf("attemptHistory concept: %v", err)
+		t.Fatalf("learningRead attempts concept: %v", err)
 	}
+	if read.Attempts == nil {
+		t.Fatal("learningRead attempts: Attempts payload is nil")
+	}
+	out := read.Attempts
 	if !out.Resolved {
 		t.Fatal("Resolved = false on existing concept")
 	}
@@ -2519,12 +2559,17 @@ func TestIntegration_AttemptHistory_SessionMode_Observations(t *testing.T) {
 		t.Fatalf("recordAttempt: %v", err)
 	}
 
-	_, out, err := callHandler(t, s.attemptHistory, AttemptHistoryInput{
+	_, read, err := callHandler(t, s.learningRead, LearningReadInput{
+		View:      "attempts",
 		SessionID: strPtr(sess.Session.ID.String()),
 	})
 	if err != nil {
-		t.Fatalf("attemptHistory session: %v", err)
+		t.Fatalf("learningRead attempts session: %v", err)
 	}
+	if read.Attempts == nil {
+		t.Fatal("learningRead attempts: Attempts payload is nil")
+	}
+	out := read.Attempts
 	if len(out.Attempts) != 1 {
 		t.Fatalf("Attempts len = %d, want 1", len(out.Attempts))
 	}
@@ -2565,13 +2610,18 @@ func TestIntegration_AttemptHistory_IncludeObservationsFalse(t *testing.T) {
 	includeFalse := false
 
 	// target mode — observations empty, matched_observation_id always nil.
-	_, outTarget, err := callHandler(t, s.attemptHistory, AttemptHistoryInput{
+	_, readTarget, err := callHandler(t, s.learningRead, LearningReadInput{
+		View:                "attempts",
 		Target:              &AttemptHistoryTargetRef{Title: "Valid Parentheses"},
 		IncludeObservations: &includeFalse,
 	})
 	if err != nil {
-		t.Fatalf("attemptHistory target include=false: %v", err)
+		t.Fatalf("learningRead attempts target include=false: %v", err)
 	}
+	if readTarget.Attempts == nil {
+		t.Fatal("learningRead attempts target: Attempts payload is nil")
+	}
+	outTarget := readTarget.Attempts
 	if len(outTarget.Attempts) != 1 {
 		t.Fatalf("target attempts len = %d, want 1", len(outTarget.Attempts))
 	}
@@ -2582,13 +2632,18 @@ func TestIntegration_AttemptHistory_IncludeObservationsFalse(t *testing.T) {
 	// concept mode — observations empty, but matched_observation_id MUST
 	// stay populated because the query match info comes from the primary
 	// SQL query, not the secondary observation fetch.
-	_, outConcept, err := callHandler(t, s.attemptHistory, AttemptHistoryInput{
+	_, readConcept, err := callHandler(t, s.learningRead, LearningReadInput{
+		View:                "attempts",
 		ConceptSlug:         strPtr("stack-matching"),
 		IncludeObservations: &includeFalse,
 	})
 	if err != nil {
-		t.Fatalf("attemptHistory concept include=false: %v", err)
+		t.Fatalf("learningRead attempts concept include=false: %v", err)
 	}
+	if readConcept.Attempts == nil {
+		t.Fatal("learningRead attempts concept: Attempts payload is nil")
+	}
+	outConcept := readConcept.Attempts
 	if len(outConcept.Attempts) != 1 {
 		t.Fatalf("concept attempts len = %d, want 1", len(outConcept.Attempts))
 	}
@@ -2624,12 +2679,17 @@ func TestIntegration_AttemptHistory_SortInvariants(t *testing.T) {
 		}
 	}
 
-	_, targetOut, err := callHandler(t, s.attemptHistory, AttemptHistoryInput{
+	_, targetRead, err := callHandler(t, s.learningRead, LearningReadInput{
+		View:   "attempts",
 		Target: &AttemptHistoryTargetRef{Title: "Climbing Stairs"},
 	})
 	if err != nil {
-		t.Fatalf("attemptHistory target: %v", err)
+		t.Fatalf("learningRead attempts target: %v", err)
 	}
+	if targetRead.Attempts == nil {
+		t.Fatal("learningRead attempts target: Attempts payload is nil")
+	}
+	targetOut := targetRead.Attempts
 	if len(targetOut.Attempts) != 3 {
 		t.Fatalf("target attempts = %d, want 3", len(targetOut.Attempts))
 	}
@@ -2640,12 +2700,17 @@ func TestIntegration_AttemptHistory_SortInvariants(t *testing.T) {
 		}
 	}
 
-	_, sessionOut, err := callHandler(t, s.attemptHistory, AttemptHistoryInput{
+	_, sessionRead, err := callHandler(t, s.learningRead, LearningReadInput{
+		View:      "attempts",
 		SessionID: strPtr(sess.Session.ID.String()),
 	})
 	if err != nil {
-		t.Fatalf("attemptHistory session: %v", err)
+		t.Fatalf("learningRead attempts session: %v", err)
 	}
+	if sessionRead.Attempts == nil {
+		t.Fatal("learningRead attempts session: Attempts payload is nil")
+	}
+	sessionOut := sessionRead.Attempts
 	if len(sessionOut.Attempts) != 3 {
 		t.Fatalf("session attempts = %d, want 3", len(sessionOut.Attempts))
 	}
@@ -2666,20 +2731,20 @@ func TestIntegration_ToolsListAdvertisesEnums(t *testing.T) {
 	// the generated schema (via the same jsonschema.ForType path) has
 	// the expected enums. A lightweight proxy for what tools/list emits.
 	s.logger.Info("integration_test: enum advertising probe", "registered", len(s.registeredNames))
-	foundRecord, foundDashboard := false, false
+	foundRecord, foundLearningRead := false, false
 	for _, m := range ops.All() {
 		if m.Name == "record_attempt" && len(m.FieldEnums["outcome"]) > 0 {
 			foundRecord = true
 		}
-		if m.Name == "learning_dashboard" && len(m.FieldEnums["view"]) > 0 {
-			foundDashboard = true
+		if m.Name == "learning_read" && len(m.FieldEnums["view"]) > 0 {
+			foundLearningRead = true
 		}
 	}
 	if !foundRecord {
 		t.Error("record_attempt.FieldEnums[outcome] missing")
 	}
-	if !foundDashboard {
-		t.Error("learning_dashboard.FieldEnums[view] missing")
+	if !foundLearningRead {
+		t.Error("learning_read.FieldEnums[view] missing")
 	}
 }
 

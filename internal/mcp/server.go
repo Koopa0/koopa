@@ -197,11 +197,8 @@ func NewServer(pool *pgxpool.Pool, logger *slog.Logger, opts ...ServerOption) *S
 	addTool(s, toolFrom(ops.StartSession), s.startSession)
 	addTool(s, toolFrom(ops.RecordAttempt), s.recordAttempt)
 	addTool(s, toolFrom(ops.EndSession), s.endSession)
-	addTool(s, toolFrom(ops.LearningDashboard), s.learningDashboard)
-	addTool(s, toolFrom(ops.RecommendNextTarget), s.recommendNextTarget)
-	addTool(s, toolFrom(ops.AttemptHistory), s.attemptHistory)
+	addTool(s, toolFrom(ops.LearningRead), s.learningRead)
 	addTool(s, toolFrom(ops.ManagePlan), s.managePlan)
-	addTool(s, toolFrom(ops.SessionProgress), s.sessionProgress)
 
 	// --- Content lifecycle (flat tools) ---
 	addTool(s, toolFrom(ops.CreateContent), s.createContentTool)

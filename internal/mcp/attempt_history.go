@@ -8,7 +8,6 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
-	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/Koopa0/koopa/internal/learning"
 )
@@ -85,7 +84,10 @@ type AttemptHistoryOutput struct {
 	Total    int                `json:"total"`
 }
 
-func (s *Server) attemptHistory(ctx context.Context, _ *mcp.CallToolRequest, input AttemptHistoryInput) (*mcp.CallToolResult, AttemptHistoryOutput, error) {
+// buildAttemptHistory is the read-side builder for learning_read(view=attempts).
+// It enforces the exactly-one-entry-point contract, then dispatches to the
+// matching sub-mode. Read-only: lookups never create targets or concepts.
+func (s *Server) buildAttemptHistory(ctx context.Context, input AttemptHistoryInput) (AttemptHistoryOutput, error) {
 	// Enforce exactly-one entry point. Three booleans + a sum is the most
 	// readable way to express "oneof" in Go without reflection.
 	provided := 0
@@ -99,10 +101,10 @@ func (s *Server) attemptHistory(ctx context.Context, _ *mcp.CallToolRequest, inp
 		provided++
 	}
 	if provided == 0 {
-		return nil, AttemptHistoryOutput{}, fmt.Errorf("attempt_history: one of target, concept_slug, session_id is required")
+		return AttemptHistoryOutput{}, fmt.Errorf("attempt_history: one of target, concept_slug, session_id is required")
 	}
 	if provided > 1 {
-		return nil, AttemptHistoryOutput{}, fmt.Errorf("attempt_history: target, concept_slug, session_id are mutually exclusive")
+		return AttemptHistoryOutput{}, fmt.Errorf("attempt_history: target, concept_slug, session_id are mutually exclusive")
 	}
 
 	limit := int32(clamp(int(input.MaxResults), 1, 100, 10)) //nolint:gosec // G115: clamped to 1..100
@@ -122,9 +124,9 @@ func (s *Server) attemptHistory(ctx context.Context, _ *mcp.CallToolRequest, inp
 	}
 }
 
-func (s *Server) attemptHistoryByTarget(ctx context.Context, ref *AttemptHistoryTargetRef, limit int32, includeObs bool) (*mcp.CallToolResult, AttemptHistoryOutput, error) {
+func (s *Server) attemptHistoryByTarget(ctx context.Context, ref *AttemptHistoryTargetRef, limit int32, includeObs bool) (AttemptHistoryOutput, error) {
 	if ref.Title == "" {
-		return nil, AttemptHistoryOutput{}, fmt.Errorf("attempt_history: target.title is required")
+		return AttemptHistoryOutput{}, fmt.Errorf("attempt_history: target.title is required")
 	}
 	domain := "leetcode"
 	if ref.Domain != nil && *ref.Domain != "" {
@@ -136,7 +138,7 @@ func (s *Server) attemptHistoryByTarget(ctx context.Context, ref *AttemptHistory
 		// Not-found is a legal answer for improvement verification: the user
 		// has never attempted this problem. Surface as resolved=false rather
 		// than as an error so the caller can branch cleanly.
-		return nil, AttemptHistoryOutput{
+		return AttemptHistoryOutput{
 			Mode:     "target",
 			Resolved: false,
 			Reason:   fmt.Sprintf("no target found in domain %q with title %q", domain, ref.Title),
@@ -146,17 +148,17 @@ func (s *Server) attemptHistoryByTarget(ctx context.Context, ref *AttemptHistory
 
 	attempts, err := s.learn.AttemptsByLearningTarget(ctx, itemID, limit)
 	if err != nil {
-		return nil, AttemptHistoryOutput{}, fmt.Errorf("attempt_history: %w", err)
+		return AttemptHistoryOutput{}, fmt.Errorf("attempt_history: %w", err)
 	}
 	if attempts == nil {
 		attempts = []learning.Attempt{}
 	}
 	if includeObs {
 		if err := s.learn.AttachObservations(ctx, attempts); err != nil {
-			return nil, AttemptHistoryOutput{}, fmt.Errorf("attempt_history: %w", err)
+			return AttemptHistoryOutput{}, fmt.Errorf("attempt_history: %w", err)
 		}
 	}
-	return nil, AttemptHistoryOutput{
+	return AttemptHistoryOutput{
 		Mode:     "target",
 		Resolved: true,
 		Attempts: attempts,
@@ -164,10 +166,10 @@ func (s *Server) attemptHistoryByTarget(ctx context.Context, ref *AttemptHistory
 	}, nil
 }
 
-func (s *Server) attemptHistoryByConcept(ctx context.Context, domain, slug string, limit int32, includeObs bool) (*mcp.CallToolResult, AttemptHistoryOutput, error) {
+func (s *Server) attemptHistoryByConcept(ctx context.Context, domain, slug string, limit int32, includeObs bool) (AttemptHistoryOutput, error) {
 	concept, err := s.learn.ConceptBySlug(ctx, domain, slug)
 	if err != nil {
-		return nil, AttemptHistoryOutput{
+		return AttemptHistoryOutput{
 			Mode:     "concept",
 			Resolved: false,
 			Reason:   fmt.Sprintf("no concept found in domain %q with slug %q", domain, slug),
@@ -177,17 +179,17 @@ func (s *Server) attemptHistoryByConcept(ctx context.Context, domain, slug strin
 
 	attempts, err := s.learn.AttemptsByConcept(ctx, concept.ID, limit)
 	if err != nil {
-		return nil, AttemptHistoryOutput{}, fmt.Errorf("attempt_history: %w", err)
+		return AttemptHistoryOutput{}, fmt.Errorf("attempt_history: %w", err)
 	}
 	if attempts == nil {
 		attempts = []learning.Attempt{}
 	}
 	if includeObs {
 		if err := s.learn.AttachObservations(ctx, attempts); err != nil {
-			return nil, AttemptHistoryOutput{}, fmt.Errorf("attempt_history: %w", err)
+			return AttemptHistoryOutput{}, fmt.Errorf("attempt_history: %w", err)
 		}
 	}
-	return nil, AttemptHistoryOutput{
+	return AttemptHistoryOutput{
 		Mode:     "concept",
 		Resolved: true,
 		Attempts: attempts,
@@ -195,10 +197,10 @@ func (s *Server) attemptHistoryByConcept(ctx context.Context, domain, slug strin
 	}, nil
 }
 
-func (s *Server) attemptHistoryBySession(ctx context.Context, sessionIDStr string, includeObs bool) (*mcp.CallToolResult, AttemptHistoryOutput, error) {
+func (s *Server) attemptHistoryBySession(ctx context.Context, sessionIDStr string, includeObs bool) (AttemptHistoryOutput, error) {
 	sessionID, err := uuid.Parse(sessionIDStr)
 	if err != nil {
-		return nil, AttemptHistoryOutput{}, fmt.Errorf("attempt_history: invalid session_id: %w", err)
+		return AttemptHistoryOutput{}, fmt.Errorf("attempt_history: invalid session_id: %w", err)
 	}
 
 	// Existence check first so a non-existent session_id surfaces as
@@ -208,29 +210,29 @@ func (s *Server) attemptHistoryBySession(ctx context.Context, sessionIDStr strin
 	// vs "no session" are different bugs to debug.
 	if _, err := s.learn.SessionByID(ctx, sessionID); err != nil {
 		if errors.Is(err, learning.ErrNotFound) {
-			return nil, AttemptHistoryOutput{
+			return AttemptHistoryOutput{
 				Mode:     "session",
 				Resolved: false,
 				Reason:   fmt.Sprintf("session %s not found", sessionID),
 				Attempts: []learning.Attempt{},
 			}, nil
 		}
-		return nil, AttemptHistoryOutput{}, fmt.Errorf("attempt_history: %w", err)
+		return AttemptHistoryOutput{}, fmt.Errorf("attempt_history: %w", err)
 	}
 
 	attempts, err := s.learn.AttemptsBySession(ctx, sessionID)
 	if err != nil {
-		return nil, AttemptHistoryOutput{}, fmt.Errorf("attempt_history: %w", err)
+		return AttemptHistoryOutput{}, fmt.Errorf("attempt_history: %w", err)
 	}
 	if attempts == nil {
 		attempts = []learning.Attempt{}
 	}
 	if includeObs {
 		if err := s.learn.AttachObservations(ctx, attempts); err != nil {
-			return nil, AttemptHistoryOutput{}, fmt.Errorf("attempt_history: %w", err)
+			return AttemptHistoryOutput{}, fmt.Errorf("attempt_history: %w", err)
 		}
 	}
-	return nil, AttemptHistoryOutput{
+	return AttemptHistoryOutput{
 		Mode:     "session",
 		Resolved: true,
 		Attempts: attempts,

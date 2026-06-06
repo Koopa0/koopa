@@ -697,28 +697,18 @@ func toMasteryRows(rows []learning.ConceptMasteryRow) []MasteryRow {
 	return out
 }
 
-// defaultDaysForView is the per-view fallback for the lookback window when
-// the caller doesn't pass `days`. Mastery defaults to 60 because that's
-// the practitioner's mental horizon for "am I still good at this pattern" —
-// roughly one Google interview prep cycle. The audit's reasoning was:
-// 30-day window makes pattern stages flicker for someone whose practice
-// is intentionally bursty (3 weeks of DP, 5 weeks of system design, then
-// back). Other views use 30 because their data is more session-grained
-// and a longer window adds noise without adding signal.
-func defaultDaysForView(view string) int {
-	if view == "mastery" {
-		return 60
-	}
-	return 30
-}
-
-func (s *Server) learningDashboard(ctx context.Context, _ *mcp.CallToolRequest, input LearningDashboardInput) (*mcp.CallToolResult, LearningDashboardOutput, error) {
-	view := "overview"
-	if input.View != nil && *input.View != "" {
-		view = *input.View
-	}
-
-	windowDays := clamp(int(input.WindowDays), 1, 365, defaultDaysForView(view))
+// buildLearningOverview is the read-side builder for learning_read(view=overview).
+// It resolves the lookback window and optional domain filter, surfaces a
+// domain-existence warning, and returns the recent-sessions overview.
+//
+// Only the overview view survives the C2 contraction on the MCP surface: the
+// former learning_dashboard mastery / weaknesses / timeline / variations views
+// stay HTTP-admin-only (internal/learning/handler.go) and are not reachable
+// through learning_read. confidence_filter is accepted on the input for
+// forward-compatibility but is inert here — sessions are not confidence-
+// filtered.
+func (s *Server) buildLearningOverview(ctx context.Context, input LearningDashboardInput) (LearningDashboardOutput, error) {
+	windowDays := clamp(int(input.WindowDays), 1, 365, 30)
 	since := time.Now().AddDate(0, 0, -windowDays)
 
 	var domain *string
@@ -731,47 +721,18 @@ func (s *Server) learningDashboard(ctx context.Context, _ *mcp.CallToolRequest, 
 		// caller passed a domain filter — happy path is unaffected.
 		exists, dErr := s.learn.DomainExists(ctx, *input.Domain)
 		if dErr != nil {
-			s.logger.Warn("learning_dashboard: domain existence check failed", "domain", *input.Domain, "error", dErr)
+			s.logger.Warn("learning_read overview: domain existence check failed", "domain", *input.Domain, "error", dErr)
 		} else if !exists {
 			domainWarning = fmt.Sprintf("domain %q not found in learning_domains; result is empty because the slug is unknown, not because the domain has no activity", *input.Domain)
 		}
 	}
 
-	// confidence_filter is meaningful only on mastery and weaknesses.
-	// Pass the raw value (or empty) through to the store; normalization +
-	// validation lives in learning.normalizeConfidenceFilter so there is
-	// exactly one place that decides what is legal. Do NOT pre-coerce
-	// invalid values to "high" here — that would silently swallow typos
-	// like "hi" and make the store-side guard dead code. An invalid value
-	// will come back as learning.ErrInvalidInput and surface as a normal
-	// tool error to the caller.
-	var confidenceFilter string
-	if input.ConfidenceFilter != nil {
-		confidenceFilter = *input.ConfidenceFilter
+	out, err := s.dashboardOverview(ctx, domain, since)
+	if err != nil {
+		return LearningDashboardOutput{}, err
 	}
-
-	var (
-		result LearningDashboardOutput
-		err    error
-	)
-	switch view {
-	case "overview":
-		result, err = s.dashboardOverview(ctx, domain, since)
-	case "mastery":
-		result, err = s.dashboardMastery(ctx, domain, since, confidenceFilter)
-	case "weaknesses":
-		result, err = s.dashboardWeaknesses(ctx, domain, since, confidenceFilter)
-	case "timeline":
-		result, err = s.dashboardTimeline(ctx, domain, since)
-	case "variations":
-		result, err = s.dashboardVariations(ctx, domain)
-	default:
-		return nil, LearningDashboardOutput{}, fmt.Errorf("unknown view %q", view)
-	}
-	if err == nil {
-		result.DomainWarning = domainWarning
-	}
-	return nil, result, err
+	out.DomainWarning = domainWarning
+	return out, nil
 }
 
 func (s *Server) dashboardOverview(ctx context.Context, domain *string, since time.Time) (LearningDashboardOutput, error) {
@@ -783,55 +744,6 @@ func (s *Server) dashboardOverview(ctx context.Context, domain *string, since ti
 		View:     "overview",
 		Sessions: sessions,
 		Total:    len(sessions),
-	}, nil
-}
-
-func (s *Server) dashboardMastery(ctx context.Context, domain *string, since time.Time, confidenceFilter string) (LearningDashboardOutput, error) {
-	rows, err := s.learn.ConceptMastery(ctx, domain, since, nil, confidenceFilter)
-	if err != nil {
-		return LearningDashboardOutput{}, fmt.Errorf("querying concept mastery: %w", err)
-	}
-	mastery := toMasteryRows(rows)
-	return LearningDashboardOutput{
-		View:    "mastery",
-		Mastery: mastery,
-		Total:   len(mastery),
-	}, nil
-}
-
-func (s *Server) dashboardWeaknesses(ctx context.Context, domain *string, since time.Time, confidenceFilter string) (LearningDashboardOutput, error) {
-	rows, err := s.learn.WeaknessAnalysis(ctx, domain, since, confidenceFilter)
-	if err != nil {
-		return LearningDashboardOutput{}, fmt.Errorf("querying weakness analysis: %w", err)
-	}
-	return LearningDashboardOutput{
-		View:       "weaknesses",
-		Weaknesses: rows,
-		Total:      len(rows),
-	}, nil
-}
-
-func (s *Server) dashboardTimeline(ctx context.Context, domain *string, since time.Time) (LearningDashboardOutput, error) {
-	sessions, err := s.learn.SessionTimeline(ctx, domain, since)
-	if err != nil {
-		return LearningDashboardOutput{}, fmt.Errorf("querying session timeline: %w", err)
-	}
-	return LearningDashboardOutput{
-		View:     "timeline",
-		Timeline: sessions,
-		Total:    len(sessions),
-	}, nil
-}
-
-func (s *Server) dashboardVariations(ctx context.Context, domain *string) (LearningDashboardOutput, error) {
-	relations, err := s.learn.TargetVariations(ctx, domain, 100)
-	if err != nil {
-		return LearningDashboardOutput{}, fmt.Errorf("querying target variations: %w", err)
-	}
-	return LearningDashboardOutput{
-		View:       "variations",
-		Variations: relations,
-		Total:      len(relations),
 	}, nil
 }
 

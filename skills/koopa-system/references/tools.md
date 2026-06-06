@@ -13,23 +13,21 @@ is hand-maintained.
 > Run `go generate ./internal/mcp/ops` after any change to the tool surface;
 > the drift test `TestToolInventoryDocInSync` fails CI if this is stale.
 
-**26 tools** across 7 domains.
+**23 tools** across 7 domains.
 
 | Domain | Count |
 |---|---|
-| `query` | 6 |
+| `query` | 4 |
 | `daily` | 2 |
 | `a2a` | 0 |
 | `meta` | 1 |
-| `learning` | 6 |
+| `learning` | 5 |
 | `content` | 9 |
 | `system` | 2 |
-| **Total** | **26** |
+| **Total** | **23** |
 
 | Tool | Domain | Writability | Purpose |
 |---|---|---|---|
-| `attempt_history` | `query` | read_only | Read-side counterpart to record_attempt |
-| `learning_dashboard` | `query` | read_only | Learning analytics dashboard |
 | `morning_context` | `query` | read_only | Single-call daily-planning briefing |
 | `query_agent_notes` | `query` | read_only | Recall prior agent notes |
 | `reflection_context` | `query` | read_only | End-of-day retrospective: plan vs actual completion, daily plan item outcomes, today's agent notes |
@@ -38,10 +36,9 @@ is hand-maintained.
 | `plan_day` | `daily` | idempotent | Set the day's plan as one atomic replacement |
 | `write_agent_note` | `meta` | additive | Create an agent note |
 | `end_session` | `learning` | additive | End the active learning session |
+| `learning_read` | `learning` | read_only | Read-only learning analytics |
 | `manage_plan` | `learning` | destructive | Learning plan lifecycle and entries |
-| `recommend_next_target` | `learning` | read_only | Recommend the next learning target during an active session |
 | `record_attempt` | `learning` | additive | Record an attempt within the active learning session |
-| `session_progress` | `learning` | read_only | In-session aggregate for the currently-active learning session: attempt count, elapsed time, paradigm distribution (problem_solving vs immersive with… |
 | `start_session` | `learning` | additive | Begin a learning session |
 | `archive_content` | `content` | destructive | Soft-delete a content row by archiving it |
 | `create_content` | `content` | additive | Create a new content row in status=draft |

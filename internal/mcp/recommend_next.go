@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/Koopa0/koopa/internal/learning"
 )
@@ -86,10 +85,14 @@ var severityRank = map[string]int{
 	"minor":    2,
 }
 
-func (s *Server) recommendNextTarget(ctx context.Context, _ *mcp.CallToolRequest, input RecommendNextTargetInput) (*mcp.CallToolResult, RecommendNextTargetOutput, error) {
+// buildRecommendNextTarget is the read-side builder for
+// learning_read(view=next_target). It validates that the supplied session is
+// the active session, then combines weakness analysis with the variation graph
+// to produce ranked candidates. Read-only: it never mutates state.
+func (s *Server) buildRecommendNextTarget(ctx context.Context, input RecommendNextTargetInput) (RecommendNextTargetOutput, error) {
 	sessionID, err := uuid.Parse(input.SessionID)
 	if err != nil {
-		return nil, RecommendNextTargetOutput{}, fmt.Errorf("%w: invalid session_id: %w", learning.ErrInvalidInput, err)
+		return RecommendNextTargetOutput{}, fmt.Errorf("%w: invalid session_id: %w", learning.ErrInvalidInput, err)
 	}
 
 	active, err := s.learn.ActiveSession(ctx)
@@ -98,12 +101,12 @@ func (s *Server) recommendNextTarget(ctx context.Context, _ *mcp.CallToolRequest
 		// a redundant outer wrap so callers don't read
 		// "no active session: learning: no active session".
 		if errors.Is(err, learning.ErrNoActive) {
-			return nil, RecommendNextTargetOutput{}, err
+			return RecommendNextTargetOutput{}, err
 		}
-		return nil, RecommendNextTargetOutput{}, fmt.Errorf("checking active session: %w", err)
+		return RecommendNextTargetOutput{}, fmt.Errorf("checking active session: %w", err)
 	}
 	if active.ID != sessionID {
-		return nil, RecommendNextTargetOutput{}, fmt.Errorf("%w: session %s is not the active session (active session is %s)", learning.ErrInvalidInput, sessionID, active.ID)
+		return RecommendNextTargetOutput{}, fmt.Errorf("%w: session %s is not the active session (active session is %s)", learning.ErrInvalidInput, sessionID, active.ID)
 	}
 
 	domain := active.Domain
@@ -119,10 +122,10 @@ func (s *Server) recommendNextTarget(ctx context.Context, _ *mcp.CallToolRequest
 	// without weakness signal, so bail with a descriptive reason.
 	weaknesses, err := s.learn.WeaknessAnalysis(ctx, &domain, time.Now().AddDate(0, 0, -recommendWindowDays), "high")
 	if err != nil {
-		return nil, RecommendNextTargetOutput{}, fmt.Errorf("fetching weaknesses: %w", err)
+		return RecommendNextTargetOutput{}, fmt.Errorf("fetching weaknesses: %w", err)
 	}
 	if len(weaknesses) == 0 {
-		return nil, RecommendNextTargetOutput{
+		return RecommendNextTargetOutput{
 			Candidates:     []Candidate{},
 			RecentPatterns: recentPatterns,
 			EmptyReason:    "no concepts need practice in the 30-day window",
@@ -148,7 +151,7 @@ func (s *Server) recommendNextTarget(ctx context.Context, _ *mcp.CallToolRequest
 		// report tracks per-weakness disposition so we can name the
 		// dominant cause (and only fall back to "multiple causes" when
 		// the dispositions actually mix).
-		return nil, RecommendNextTargetOutput{
+		return RecommendNextTargetOutput{
 			Candidates:     []Candidate{},
 			RecentPatterns: recentPatterns,
 			EmptyReason:    emptyReasonFromProbe(report, relaxedFilter),
@@ -168,12 +171,12 @@ func (s *Server) recommendNextTarget(ctx context.Context, _ *mcp.CallToolRequest
 		out.EmptyReason = "relaxed interleaving filter — all first-pass candidates shared a recent pattern from this session"
 	}
 
-	s.logger.Info("recommend_next_target",
+	s.logger.Info("learning_read next_target",
 		"session_id", sessionID, "domain", domain,
 		"weaknesses", len(weaknesses), "candidates", len(candidates),
 		"recent_patterns", len(recentPatterns), "relaxed", relaxedFilter)
 
-	return nil, out, nil
+	return out, nil
 }
 
 // collectRecentPatterns extracts the `pattern` field from each attempt's

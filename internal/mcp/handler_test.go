@@ -236,12 +236,11 @@ func TestEndSession_Validation(t *testing.T) {
 	}
 }
 
-// --- learning_dashboard ---
+// --- learning_read ---
 
-func TestLearningDashboard_InvalidView(t *testing.T) {
+func TestLearningRead_InvalidView(t *testing.T) {
 	s := newTestServer()
-	input := LearningDashboardInput{View: strPtr("nonexistent")}
-	_, _, err := callHandler(t, s.learningDashboard, input)
+	_, _, err := callHandler(t, s.learningRead, LearningReadInput{View: "bogus"})
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -341,7 +340,7 @@ func TestToolSchemaGeneration(t *testing.T) {
 		{"StartSessionInput", testSchema[StartSessionInput]},
 		{"RecordAttemptInput", testSchema[RecordAttemptInput]},
 		{"EndSessionInput", testSchema[EndSessionInput]},
-		{"LearningDashboardInput", testSchema[LearningDashboardInput]},
+		{"LearningReadInput", testSchema[LearningReadInput]},
 		{"CreateContentInput", testSchema[CreateContentInput]},
 		{"UpdateContentInput", testSchema[UpdateContentInput]},
 		{"SetContentReviewStateInput", testSchema[SetContentReviewStateInput]},

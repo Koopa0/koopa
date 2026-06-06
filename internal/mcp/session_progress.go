@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/Koopa0/koopa/internal/learning"
 )
@@ -26,10 +25,6 @@ import (
 // Distinct from session_delta (24h pan-feature activity snapshot) per
 // .claude/rules/mcp-decision-policy.md §10: the two tools share neither
 // the same entity nor the same workflow contract.
-
-// SessionProgressInput is intentionally empty — the tool answers one
-// question, scoped by the server's view of the active session.
-type SessionProgressInput struct{}
 
 // SessionProgressOutput reports aggregate state of the currently-active
 // learning session. Caller MUST branch on Active first.
@@ -114,24 +109,28 @@ type SessionProgressCategory struct {
 	Count      int64  `json:"count"`
 }
 
-// sessionProgress resolves the active session and aggregates its in-session
-// state. TOCTOU note: ActiveSession + SessionProgress are two round-trips;
-// a concurrent end_session between them would produce {Active: true} for a
+// buildSessionProgress is the read-side builder for
+// learning_read(view=session_progress). It resolves the active session and
+// aggregates its in-session state, or returns the {active: false} affordance
+// when no session is active. Read-only.
+//
+// TOCTOU note: ActiveSession + SessionProgress are two round-trips; a
+// concurrent end_session between them would produce {Active: true} for a
 // session that ended microseconds ago. Single-user / single-session scale
-// makes this operationally inert. Treat the response as near-real-time,
-// not transactional.
-func (s *Server) sessionProgress(ctx context.Context, _ *mcp.CallToolRequest, _ SessionProgressInput) (*mcp.CallToolResult, SessionProgressOutput, error) {
+// makes this operationally inert. Treat the response as near-real-time, not
+// transactional.
+func (s *Server) buildSessionProgress(ctx context.Context) (SessionProgressOutput, error) {
 	session, err := s.learn.ActiveSession(ctx)
 	if err != nil {
 		if errors.Is(err, learning.ErrNoActive) {
 			return s.sessionProgressInactive(ctx)
 		}
-		return nil, SessionProgressOutput{}, fmt.Errorf("resolving active session: %w", err)
+		return SessionProgressOutput{}, fmt.Errorf("resolving active session: %w", err)
 	}
 
 	agg, err := s.learn.SessionProgress(ctx, session.ID)
 	if err != nil {
-		return nil, SessionProgressOutput{}, fmt.Errorf("querying session progress: %w", err)
+		return SessionProgressOutput{}, fmt.Errorf("querying session progress: %w", err)
 	}
 
 	now := time.Now()
@@ -164,12 +163,12 @@ func (s *Server) sessionProgress(ctx context.Context, _ *mcp.CallToolRequest, _ 
 		"category_count", len(out.ObservationCategoryDistribution),
 	)
 
-	return nil, out, nil
+	return out, nil
 }
 
 // sessionProgressInactive builds the {active: false} response, including
 // the LastEndedSession affordance when a prior session exists.
-func (s *Server) sessionProgressInactive(ctx context.Context) (*mcp.CallToolResult, SessionProgressOutput, error) {
+func (s *Server) sessionProgressInactive(ctx context.Context) (SessionProgressOutput, error) {
 	out := SessionProgressOutput{
 		Active: false,
 		Reason: "no active session",
@@ -187,10 +186,10 @@ func (s *Server) sessionProgressInactive(ctx context.Context) (*mcp.CallToolResu
 	case errors.Is(err, learning.ErrNotFound):
 		// no prior session on record — fine, leave affordance fields nil
 	default:
-		return nil, SessionProgressOutput{}, fmt.Errorf("resolving last ended session: %w", err)
+		return SessionProgressOutput{}, fmt.Errorf("resolving last ended session: %w", err)
 	}
 
-	return nil, out, nil
+	return out, nil
 }
 
 func slugDistFromStore(rows []learning.SessionProgressConceptCount) []SessionProgressConcept {

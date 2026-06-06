@@ -182,46 +182,26 @@ func EndSession() Meta {
 	}
 }
 
-// LearningDashboard returns metadata for the learning analytics dashboard.
-// FieldEnums advertises the view + confidence_filter enums so tools/list
-// callers see valid values structurally without parsing Description prose.
-func LearningDashboard() Meta {
+// LearningRead returns metadata for the read-only learning-analytics
+// multiplexer. It subsumes the former learning_dashboard (overview view only),
+// recommend_next_target, attempt_history, and session_progress tools behind a
+// single `view` discriminator. FieldEnums advertises the view enum so
+// tools/list callers see valid values structurally.
+//
+// The former dashboard mastery / weaknesses / timeline / variations views are
+// deliberately NOT exposed here — they remain HTTP-admin-only. learning_read
+// rejects any view outside the four below.
+func LearningRead() Meta {
 	return Meta{
-		Name:        "learning_dashboard",
-		Domain:      DomainQuery,
-		Writability: ReadOnly,
-		Stability:   StabilityStable,
-		Since:       since,
-		Description: "Learning analytics dashboard. Views: overview (sessions list), mastery (per-concept signal counts; mastery floor: <3 observations → always 'developing' regardless of signal distribution), weaknesses (cross-pattern weakness analysis by category+severity), timeline (sessions with attempt stats by day), variations (problem relationship graph). Filter by domain and lookback period. Response shape is stable across views: {view, total, <view_key>: [...]} — the view-specific array is always present (empty [] on no data), other view keys are absent.",
-		FieldEnums: map[string][]string{
-			"view":              {"overview", "mastery", "weaknesses", "timeline", "variations"},
-			"confidence_filter": {"high", "all"},
-		},
-	}
-}
-
-// RecommendNextTarget returns metadata for the session-scoped next-target
-// recommender.
-func RecommendNextTarget() Meta {
-	return Meta{
-		Name:        "recommend_next_target",
+		Name:        "learning_read",
 		Domain:      DomainLearning,
 		Writability: ReadOnly,
 		Stability:   StabilityStable,
 		Since:       since,
-		Description: "Recommend the next learning target during an active session. Combines weaknesses (concepts by severity × recency) with the variation graph (untried harder_variant / follow_up / same_pattern / similar_structure of problems the user already practiced on each weak concept). Interleaving filter operates on current session only — skips candidates whose anchor pattern was practiced in this session. Cross-session interleaving is the coach's job at session start via learning_dashboard view=timeline. Returns up to N candidates with source_concept + reason so the coach can explain the choice. When candidates are skipped, use recommended_by='tool' in the metadata of the resulting record_attempt to preserve the recommendation provenance.",
-	}
-}
-
-// AttemptHistory returns metadata for the attempt lookup tool.
-func AttemptHistory() Meta {
-	return Meta{
-		Name:        "attempt_history",
-		Domain:      DomainQuery,
-		Writability: ReadOnly,
-		Stability:   StabilityStable,
-		Since:       since,
-		Description: "Read-side counterpart to record_attempt. Three lookup modes (exactly one required): target (title+domain — primary Improvement Verification Loop entry for 'how did this problem go last time'), concept_slug (returns attempts that observed the concept), session_id (returns all attempts for a past session, oldest first). Every returned attempt carries its full observations list (each with confidence label) and — on concept_slug mode — a matched_observation_id pointer into that list indicating which observation drove the query match. Observations within each attempt are ordered by coach-insertion (position ASC). Sort order: target/concept_slug DESC, session_id ASC. Empty result with resolved=false means the lookup target does not exist. attempt_number on each returned attempt is PER-TARGET (counts attempts on the same learning_target_id across all sessions), NOT per-session — three attempts on three different targets in one session each get attempt_number=1. Example (concept_slug, include_observations=false): {\"mode\":\"concept\",\"resolved\":true,\"attempts\":[{\"id\":\"...\",\"outcome\":\"solved_with_hint\",\"observations\":null,\"matched_observation_id\":\"obs-uuid\"}]} — matched_observation_id is still populated because the query did match an observation even though the list is skipped; pass include_observations=true (default) to see the observation itself.",
+		Description: "Read-only learning analytics. Pick a view: overview (recent learning sessions; filter by domain + window_days), next_target (in-session next-problem recommendation combining weakness analysis with the untried-variation graph — requires session_id, the active session, plus optional count + exclude_patterns), attempts (attempt history: exactly one of target {title+domain}, concept_slug, or session_id; each attempt carries its observation list with confidence labels, and concept_slug mode adds matched_observation_id; sort is target/concept DESC, session ASC; resolved=false means the lookup target does not exist), session_progress (in-session aggregate for the currently-active session: attempt count, elapsed time, paradigm/concept/category distributions; when no session is active returns {active:false, last_ended_session_id} as a pivot affordance). Response is the selected view's payload plus a top-level `view` tag.",
+		FieldEnums: map[string][]string{
+			"view": {"overview", "next_target", "attempts", "session_progress"},
+		},
 	}
 }
 
@@ -237,18 +217,6 @@ func ManagePlan() Meta {
 		FieldEnums: map[string][]string{
 			"action": {"add_entries", "remove_entries", "update_entry", "reorder", "progress"},
 		},
-	}
-}
-
-// SessionProgress returns metadata for the in-session aggregate tool.
-func SessionProgress() Meta {
-	return Meta{
-		Name:        "session_progress",
-		Domain:      DomainLearning,
-		Writability: ReadOnly,
-		Stability:   StabilityStable,
-		Since:       "1.1.0",
-		Description: "In-session aggregate for the currently-active learning session: attempt count, elapsed time, paradigm distribution (problem_solving vs immersive with total minutes), concept slug distribution, and observation category (signal_type × category) distribution. Scope is the ACTIVE session only — when no session is active, returns {active: false, last_ended_session_id, last_ended_at} so the caller can pivot to attempt_history(session_id=...) for past-session review; this is an affordance, not a fallback, and aggregate fields are NOT populated for the ended session. Does NOT return concept kind distribution (pattern/skill/principle) because kind is currently auto-assigned to 'skill' for all session-created concepts; tracking would be trivial noise — see HERMES W-10 if kind discrimination becomes meaningful. paradigm_distribution is informational only — most sessions are single-paradigm by design, so do not infer mixing-ratio intent from a 0/N split. Distinct from session_delta, which is a 24h pan-feature snapshot (todos + agent notes + session count) not scoped to any learning_session.",
 	}
 }
 
@@ -412,11 +380,8 @@ func All() []Meta {
 		StartSession(),
 		RecordAttempt(),
 		EndSession(),
-		LearningDashboard(),
-		RecommendNextTarget(),
-		AttemptHistory(),
+		LearningRead(),
 		ManagePlan(),
-		SessionProgress(),
 		CreateContent(),
 		UpdateContent(),
 		SetContentReviewState(),
