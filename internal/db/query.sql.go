@@ -117,7 +117,7 @@ func (q *Queries) ActiveProjects(ctx context.Context) ([]Project, error) {
 }
 
 const activeSession = `-- name: ActiveSession :one
-SELECT id, domain, session_mode, agent_note_id, daily_plan_item_id, started_at, ended_at, metadata, created_at, updated_at
+SELECT id, domain, session_mode, daily_plan_item_id, started_at, ended_at, metadata, created_at, updated_at
 FROM learning_sessions WHERE ended_at IS NULL
 ORDER BY started_at DESC LIMIT 1
 `
@@ -130,7 +130,6 @@ func (q *Queries) ActiveSession(ctx context.Context) (LearningSession, error) {
 		&i.ID,
 		&i.Domain,
 		&i.SessionMode,
-		&i.AgentNoteID,
 		&i.DailyPlanItemID,
 		&i.StartedAt,
 		&i.EndedAt,
@@ -2495,25 +2494,23 @@ func (q *Queries) CreateHypothesis(ctx context.Context, arg CreateHypothesisPara
 }
 
 const createItem = `-- name: CreateItem :one
-INSERT INTO daily_plan_items (plan_date, todo_id, selected_by, position, reason, agent_note_id)
-VALUES ($1, $2, $3, $4, $5, $6)
+INSERT INTO daily_plan_items (plan_date, todo_id, selected_by, position, reason)
+VALUES ($1, $2, $3, $4, $5)
 ON CONFLICT (plan_date, todo_id) DO UPDATE SET
     selected_by = EXCLUDED.selected_by,
     position = EXCLUDED.position,
     reason = EXCLUDED.reason,
-    agent_note_id = EXCLUDED.agent_note_id,
     status = 'planned',
     updated_at = now()
-RETURNING id, plan_date, todo_id, selected_by, position, reason, agent_note_id, status, created_at, updated_at
+RETURNING id, plan_date, todo_id, selected_by, position, reason, status, created_at, updated_at
 `
 
 type CreateItemParams struct {
-	PlanDate    time.Time  `json:"plan_date"`
-	TodoID      uuid.UUID  `json:"todo_id"`
-	SelectedBy  string     `json:"selected_by"`
-	Position    int32      `json:"position"`
-	Reason      *string    `json:"reason"`
-	AgentNoteID *uuid.UUID `json:"agent_note_id"`
+	PlanDate   time.Time `json:"plan_date"`
+	TodoID     uuid.UUID `json:"todo_id"`
+	SelectedBy string    `json:"selected_by"`
+	Position   int32     `json:"position"`
+	Reason     *string   `json:"reason"`
 }
 
 // Insert a daily plan item.
@@ -2524,7 +2521,6 @@ func (q *Queries) CreateItem(ctx context.Context, arg CreateItemParams) (DailyPl
 		arg.SelectedBy,
 		arg.Position,
 		arg.Reason,
-		arg.AgentNoteID,
 	)
 	var i DailyPlanItem
 	err := row.Scan(
@@ -2534,7 +2530,6 @@ func (q *Queries) CreateItem(ctx context.Context, arg CreateItemParams) (DailyPl
 		&i.SelectedBy,
 		&i.Position,
 		&i.Reason,
-		&i.AgentNoteID,
 		&i.Status,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -2881,7 +2876,7 @@ func (q *Queries) CreateRefreshToken(ctx context.Context, arg CreateRefreshToken
 const createSession = `-- name: CreateSession :one
 INSERT INTO learning_sessions (domain, session_mode, daily_plan_item_id)
 VALUES ($1, $2, $3)
-RETURNING id, domain, session_mode, agent_note_id, daily_plan_item_id, started_at, ended_at, metadata, created_at, updated_at
+RETURNING id, domain, session_mode, daily_plan_item_id, started_at, ended_at, metadata, created_at, updated_at
 `
 
 type CreateSessionParams struct {
@@ -2897,7 +2892,6 @@ func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (L
 		&i.ID,
 		&i.Domain,
 		&i.SessionMode,
-		&i.AgentNoteID,
 		&i.DailyPlanItemID,
 		&i.StartedAt,
 		&i.EndedAt,
@@ -3599,24 +3593,18 @@ func (q *Queries) EnabledFeedsBySchedule(ctx context.Context, schedule string) (
 }
 
 const endSession = `-- name: EndSession :one
-UPDATE learning_sessions SET ended_at = now(), agent_note_id = $1, updated_at = now()
-WHERE id = $2 AND ended_at IS NULL
-RETURNING id, domain, session_mode, agent_note_id, daily_plan_item_id, started_at, ended_at, metadata, created_at, updated_at
+UPDATE learning_sessions SET ended_at = now(), updated_at = now()
+WHERE id = $1 AND ended_at IS NULL
+RETURNING id, domain, session_mode, daily_plan_item_id, started_at, ended_at, metadata, created_at, updated_at
 `
 
-type EndSessionParams struct {
-	AgentNoteID *uuid.UUID `json:"agent_note_id"`
-	ID          uuid.UUID  `json:"id"`
-}
-
-func (q *Queries) EndSession(ctx context.Context, arg EndSessionParams) (LearningSession, error) {
-	row := q.db.QueryRow(ctx, endSession, arg.AgentNoteID, arg.ID)
+func (q *Queries) EndSession(ctx context.Context, id uuid.UUID) (LearningSession, error) {
+	row := q.db.QueryRow(ctx, endSession, id)
 	var i LearningSession
 	err := row.Scan(
 		&i.ID,
 		&i.Domain,
 		&i.SessionMode,
-		&i.AgentNoteID,
 		&i.DailyPlanItemID,
 		&i.StartedAt,
 		&i.EndedAt,
@@ -3643,7 +3631,7 @@ to_end AS (
 UPDATE learning_sessions
 SET ended_at = now(), updated_at = now()
 WHERE id IN (SELECT id FROM to_end) AND ended_at IS NULL
-RETURNING id, domain, session_mode, agent_note_id, daily_plan_item_id, started_at, ended_at, metadata, created_at, updated_at
+RETURNING id, domain, session_mode, daily_plan_item_id, started_at, ended_at, metadata, created_at, updated_at
 `
 
 // Ends the currently-active session if its most recent activity is more than
@@ -3667,7 +3655,6 @@ func (q *Queries) EndStaleActiveSession(ctx context.Context) (LearningSession, e
 		&i.ID,
 		&i.Domain,
 		&i.SessionMode,
-		&i.AgentNoteID,
 		&i.DailyPlanItemID,
 		&i.StartedAt,
 		&i.EndedAt,
@@ -5200,7 +5187,7 @@ func (q *Queries) IsAliasRejected(ctx context.Context, rawTag string) (bool, err
 }
 
 const itemByID = `-- name: ItemByID :one
-SELECT id, plan_date, todo_id, selected_by, position, reason, agent_note_id, status, created_at, updated_at
+SELECT id, plan_date, todo_id, selected_by, position, reason, status, created_at, updated_at
 FROM daily_plan_items WHERE id = $1
 `
 
@@ -5215,7 +5202,6 @@ func (q *Queries) ItemByID(ctx context.Context, id uuid.UUID) (DailyPlanItem, er
 		&i.SelectedBy,
 		&i.Position,
 		&i.Reason,
-		&i.AgentNoteID,
 		&i.Status,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -5226,7 +5212,7 @@ func (q *Queries) ItemByID(ctx context.Context, id uuid.UUID) (DailyPlanItem, er
 const itemsByDate = `-- name: ItemsByDate :many
 SELECT
     dpi.id, dpi.plan_date, dpi.todo_id, dpi.selected_by, dpi.position,
-    dpi.reason, dpi.agent_note_id, dpi.status, dpi.created_at, dpi.updated_at,
+    dpi.reason, dpi.status, dpi.created_at, dpi.updated_at,
     t.title AS todo_title, t.state AS todo_state, t.due AS todo_due,
     t.energy AS todo_energy, t.priority AS todo_priority,
     COALESCE(p.title, '') AS project_title, COALESCE(p.slug, '') AS project_slug
@@ -5244,7 +5230,6 @@ type ItemsByDateRow struct {
 	SelectedBy   string     `json:"selected_by"`
 	Position     int32      `json:"position"`
 	Reason       *string    `json:"reason"`
-	AgentNoteID  *uuid.UUID `json:"agent_note_id"`
 	Status       string     `json:"status"`
 	CreatedAt    time.Time  `json:"created_at"`
 	UpdatedAt    time.Time  `json:"updated_at"`
@@ -5274,7 +5259,6 @@ func (q *Queries) ItemsByDate(ctx context.Context, planDate time.Time) ([]ItemsB
 			&i.SelectedBy,
 			&i.Position,
 			&i.Reason,
-			&i.AgentNoteID,
 			&i.Status,
 			&i.CreatedAt,
 			&i.UpdatedAt,
@@ -5297,7 +5281,7 @@ func (q *Queries) ItemsByDate(ctx context.Context, planDate time.Time) ([]ItemsB
 }
 
 const lastEndedSession = `-- name: LastEndedSession :one
-SELECT id, domain, session_mode, agent_note_id, daily_plan_item_id, started_at, ended_at, metadata, created_at, updated_at
+SELECT id, domain, session_mode, daily_plan_item_id, started_at, ended_at, metadata, created_at, updated_at
 FROM learning_sessions
 WHERE ended_at IS NOT NULL
 ORDER BY ended_at DESC
@@ -5315,7 +5299,6 @@ func (q *Queries) LastEndedSession(ctx context.Context) (LearningSession, error)
 		&i.ID,
 		&i.Domain,
 		&i.SessionMode,
-		&i.AgentNoteID,
 		&i.DailyPlanItemID,
 		&i.StartedAt,
 		&i.EndedAt,
@@ -7953,7 +7936,7 @@ func (q *Queries) RecentObservationsByConcept(ctx context.Context, arg RecentObs
 }
 
 const recentSessions = `-- name: RecentSessions :many
-SELECT id, domain, session_mode, agent_note_id, daily_plan_item_id, started_at, ended_at, metadata, created_at, updated_at
+SELECT id, domain, session_mode, daily_plan_item_id, started_at, ended_at, metadata, created_at, updated_at
 FROM learning_sessions
 WHERE ($1::text IS NULL OR domain = $1)
   AND started_at >= $2
@@ -7980,7 +7963,6 @@ func (q *Queries) RecentSessions(ctx context.Context, arg RecentSessionsParams) 
 			&i.ID,
 			&i.Domain,
 			&i.SessionMode,
-			&i.AgentNoteID,
 			&i.DailyPlanItemID,
 			&i.StartedAt,
 			&i.EndedAt,
@@ -8780,7 +8762,7 @@ func (q *Queries) SelfAuditRepeatedConcepts(ctx context.Context, arg SelfAuditRe
 }
 
 const sessionByID = `-- name: SessionByID :one
-SELECT id, domain, session_mode, agent_note_id, daily_plan_item_id, started_at, ended_at, metadata, created_at, updated_at
+SELECT id, domain, session_mode, daily_plan_item_id, started_at, ended_at, metadata, created_at, updated_at
 FROM learning_sessions WHERE id = $1
 `
 
@@ -8791,7 +8773,6 @@ func (q *Queries) SessionByID(ctx context.Context, id uuid.UUID) (LearningSessio
 		&i.ID,
 		&i.Domain,
 		&i.SessionMode,
-		&i.AgentNoteID,
 		&i.DailyPlanItemID,
 		&i.StartedAt,
 		&i.EndedAt,
@@ -11033,7 +11014,7 @@ const updateItemStatus = `-- name: UpdateItemStatus :one
 UPDATE daily_plan_items
 SET status = $1, updated_at = now()
 WHERE id = $2
-RETURNING id, plan_date, todo_id, selected_by, position, reason, agent_note_id, status, created_at, updated_at
+RETURNING id, plan_date, todo_id, selected_by, position, reason, status, created_at, updated_at
 `
 
 type UpdateItemStatusParams struct {
@@ -11052,7 +11033,6 @@ func (q *Queries) UpdateItemStatus(ctx context.Context, arg UpdateItemStatusPara
 		&i.SelectedBy,
 		&i.Position,
 		&i.Reason,
-		&i.AgentNoteID,
 		&i.Status,
 		&i.CreatedAt,
 		&i.UpdatedAt,

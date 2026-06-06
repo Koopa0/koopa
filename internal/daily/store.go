@@ -42,12 +42,11 @@ func NewStore(dbtx db.DBTX) *Store {
 // Create inserts or upserts a daily plan item.
 func (s *Store) Create(ctx context.Context, p *CreateItemParams) (*Item, error) {
 	row, err := s.q.CreateItem(ctx, db.CreateItemParams{
-		PlanDate:    p.PlanDate,
-		TodoID:      p.TodoID,
-		SelectedBy:  p.SelectedBy,
-		Position:    p.Position,
-		Reason:      p.Reason,
-		AgentNoteID: p.AgentNoteID,
+		PlanDate:   p.PlanDate,
+		TodoID:     p.TodoID,
+		SelectedBy: p.SelectedBy,
+		Position:   p.Position,
+		Reason:     p.Reason,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("creating daily plan item: %w", err)
@@ -100,12 +99,11 @@ func (s *Store) CompleteByTodo(ctx context.Context, todoItemID uuid.UUID, date t
 // Upsert inserts or updates a daily plan item (upsert on plan_date + todo_id).
 func (s *Store) Upsert(ctx context.Context, p *UpsertParams) (*Item, error) {
 	row, err := s.q.CreateItem(ctx, db.CreateItemParams{
-		PlanDate:    p.PlanDate,
-		TodoID:      p.TodoID,
-		SelectedBy:  p.SelectedBy,
-		Position:    p.Position,
-		Reason:      p.Reason,
-		AgentNoteID: p.AgentNoteID,
+		PlanDate:   p.PlanDate,
+		TodoID:     p.TodoID,
+		SelectedBy: p.SelectedBy,
+		Position:   p.Position,
+		Reason:     p.Reason,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("upserting daily plan item: %w", err)
@@ -162,16 +160,15 @@ func (s *Store) DeletePlannedByDate(ctx context.Context, date time.Time) ([]Remo
 
 func rawToItem(r *db.DailyPlanItem) *Item {
 	return &Item{
-		ID:          r.ID,
-		PlanDate:    r.PlanDate,
-		TodoID:      r.TodoID,
-		SelectedBy:  r.SelectedBy,
-		Position:    r.Position,
-		Reason:      r.Reason,
-		AgentNoteID: r.AgentNoteID,
-		Status:      Status(r.Status),
-		CreatedAt:   r.CreatedAt,
-		UpdatedAt:   r.UpdatedAt,
+		ID:         r.ID,
+		PlanDate:   r.PlanDate,
+		TodoID:     r.TodoID,
+		SelectedBy: r.SelectedBy,
+		Position:   r.Position,
+		Reason:     r.Reason,
+		Status:     Status(r.Status),
+		CreatedAt:  r.CreatedAt,
+		UpdatedAt:  r.UpdatedAt,
 	}
 }
 
@@ -183,7 +180,6 @@ func itemsByDateRowToItem(r *db.ItemsByDateRow) Item {
 		SelectedBy:   r.SelectedBy,
 		Position:     r.Position,
 		Reason:       r.Reason,
-		AgentNoteID:  r.AgentNoteID,
 		Status:       Status(r.Status),
 		CreatedAt:    r.CreatedAt,
 		UpdatedAt:    r.UpdatedAt,

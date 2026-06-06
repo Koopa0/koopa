@@ -8,9 +8,7 @@
 DROP TRIGGER IF EXISTS trg_learning_sessions_audit ON learning_sessions;
 DROP TRIGGER IF EXISTS trg_learning_plan_entries_audit ON learning_plan_entries;
 DROP TRIGGER IF EXISTS trg_learning_hypotheses_audit ON learning_hypotheses;
-DROP TRIGGER IF EXISTS trg_tasks_audit ON tasks;
 DROP TRIGGER IF EXISTS trg_learning_attempts_audit ON learning_attempts;
-DROP TRIGGER IF EXISTS trg_bookmarks_audit ON bookmarks;
 DROP TRIGGER IF EXISTS trg_contents_audit ON contents;
 DROP TRIGGER IF EXISTS trg_projects_audit ON projects;
 DROP TRIGGER IF EXISTS trg_milestones_audit ON milestones;
@@ -19,7 +17,6 @@ DROP TRIGGER IF EXISTS trg_todos_audit ON todos;
 DROP TRIGGER IF EXISTS trg_learning_target_relations_domain ON learning_target_relations;
 DROP TRIGGER IF EXISTS trg_concepts_acyclicity ON concepts;
 DROP TRIGGER IF EXISTS trg_concepts_parent_domain ON concepts;
-DROP TRIGGER IF EXISTS trg_tasks_completion_requires_outputs ON tasks;
 
 -- ============================================================
 -- 2. Functions
@@ -28,9 +25,7 @@ DROP TRIGGER IF EXISTS trg_tasks_completion_requires_outputs ON tasks;
 DROP FUNCTION IF EXISTS audit_learning_sessions();
 DROP FUNCTION IF EXISTS audit_learning_plan_entries();
 DROP FUNCTION IF EXISTS audit_learning_hypotheses();
-DROP FUNCTION IF EXISTS audit_tasks();
 DROP FUNCTION IF EXISTS audit_learning_attempts();
-DROP FUNCTION IF EXISTS audit_bookmarks();
 DROP FUNCTION IF EXISTS audit_contents();
 DROP FUNCTION IF EXISTS audit_projects();
 DROP FUNCTION IF EXISTS audit_milestones();
@@ -40,7 +35,6 @@ DROP FUNCTION IF EXISTS current_actor();
 DROP FUNCTION IF EXISTS enforce_learning_target_relation_domain();
 DROP FUNCTION IF EXISTS enforce_concept_acyclicity();
 DROP FUNCTION IF EXISTS enforce_concept_parent_domain();
-DROP FUNCTION IF EXISTS enforce_task_completion_outputs();
 
 -- ============================================================
 -- 3. Deferred foreign keys
@@ -52,11 +46,6 @@ DROP FUNCTION IF EXISTS enforce_task_completion_outputs();
 -- ============================================================
 -- 4. Tables (reverse creation order, respecting FK dependencies)
 -- ============================================================
-
--- Bookmarks + junctions
-DROP TABLE IF EXISTS bookmark_tags;
-DROP TABLE IF EXISTS bookmark_topics;
-DROP TABLE IF EXISTS bookmarks;
 
 -- Learning plans
 DROP TABLE IF EXISTS learning_plan_entries;
@@ -75,17 +64,10 @@ DROP TABLE IF EXISTS note_concepts;
 DROP TABLE IF EXISTS learning_target_contents;
 DROP TABLE IF EXISTS learning_target_notes;
 DROP TABLE IF EXISTS learning_target_concepts;
-DROP TABLE IF EXISTS review_logs;
-DROP TABLE IF EXISTS review_cards;
 DROP TABLE IF EXISTS learning_targets;
 DROP TABLE IF EXISTS content_concepts;
 DROP TABLE IF EXISTS concepts;
 DROP TABLE IF EXISTS learning_domains;
-
--- Coordination layer
-DROP TABLE IF EXISTS artifacts;
-DROP TABLE IF EXISTS task_messages;
-DROP TABLE IF EXISTS tasks;
 
 -- Project aliases
 DROP TABLE IF EXISTS project_aliases;
@@ -96,7 +78,6 @@ DROP TABLE IF EXISTS activity_events;
 -- Personal GTD layer
 DROP TABLE IF EXISTS todo_skips;
 DROP TABLE IF EXISTS daily_plan_items;
-DROP TABLE IF EXISTS agent_notes;
 DROP TABLE IF EXISTS todos;
 
 -- Process runs
@@ -153,9 +134,6 @@ DROP TABLE IF EXISTS agents;
 DROP TYPE IF EXISTS note_maturity;
 DROP TYPE IF EXISTS note_kind;
 DROP TYPE IF EXISTS hypothesis_state;
-DROP TYPE IF EXISTS message_role;
-DROP TYPE IF EXISTS task_state;
-DROP TYPE IF EXISTS agent_note_kind;
 DROP TYPE IF EXISTS agent_status;
 DROP TYPE IF EXISTS todo_state;
 DROP TYPE IF EXISTS project_status;

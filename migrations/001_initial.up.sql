@@ -30,14 +30,6 @@ CREATE TYPE todo_state AS ENUM (
 
 CREATE TYPE agent_status AS ENUM ('active', 'retired');
 
-CREATE TYPE agent_note_kind AS ENUM ('plan', 'context', 'reflection');
-
-CREATE TYPE task_state AS ENUM (
-    'submitted', 'working', 'completed', 'canceled', 'revision_requested'
-);
-
-CREATE TYPE message_role AS ENUM ('request', 'response');
-
 CREATE TYPE hypothesis_state AS ENUM (
     'unverified', 'verified', 'invalidated', 'archived'
 );
@@ -92,7 +84,7 @@ CREATE TABLE agents (
     )
 );
 
-COMMENT ON TABLE agents IS 'DB projection of the Go BuiltinAgents() registry. Rows are upserted at startup by agent.SyncToTable. Capability flags are NOT stored here — authorization is enforced in Go via the agent.Authorized compile-time wrapper. FK targets for coordination references (tasks, agent_notes, learning_hypotheses) use ON DELETE RESTRICT so historical records cannot dangle. Removed registry entries transition to status=retired rather than being deleted.';
+COMMENT ON TABLE agents IS 'DB projection of the Go BuiltinAgents() registry. Rows are upserted at startup by agent.SyncToTable. Capability flags are NOT stored here — authorization is enforced in Go via the agent.Authorized compile-time wrapper. FK targets for coordination references (learning_hypotheses) use ON DELETE RESTRICT so historical records cannot dangle. Removed registry entries transition to status=retired rather than being deleted.';
 COMMENT ON COLUMN agents.name IS 'Unique agent identifier. Used as the caller identity (as: field) in MCP tool calls and as FK target for created_by / assignee / curated_by columns. Format: lowercase, must start with a letter, alphanumeric + hyphens.';
 COMMENT ON COLUMN agents.display_name IS 'Human-readable label for admin UI and logs. Non-blank (chk_agent_display_name_not_blank).';
 COMMENT ON COLUMN agents.platform IS 'Execution context. Closed set: claude-cowork, claude-code, claude-web, human, system (chk_agent_platform). The system value is reserved for the database-level fallback agent registered by BuiltinAgents — it attributes writes that bypass the Go actor middleware (pg_cron, manual psql ops, bug safety net). Routing decisions are driven by agent registry lookups, not this column.';
@@ -920,45 +912,6 @@ CREATE INDEX idx_todos_project ON todos (project_id) WHERE project_id IS NOT NUL
 CREATE INDEX idx_todos_completed ON todos (completed_at) WHERE state = 'done';
 CREATE INDEX idx_todos_created_by ON todos (created_by, created_at DESC);
 
--- ============================================================
--- Agent notes
--- An agent's internal narrative log (plan / context / reflection).
--- Self-directed, not inter-agent coordination.
--- ============================================================
-
-CREATE TABLE agent_notes (
-    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    kind          agent_note_kind NOT NULL,
-    created_by    TEXT NOT NULL REFERENCES agents(name) ON DELETE RESTRICT,
-    content       TEXT NOT NULL,
-    metadata      JSONB,
-    entry_date    DATE NOT NULL,
-    created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
-    search_vector TSVECTOR GENERATED ALWAYS AS (
-        to_tsvector('simple', coalesce(content, ''))
-    ) STORED
-);
-
-COMMENT ON TABLE agent_notes IS 'An agent''s internal narrative log — plans, context snapshots, reflections. Self-directed, not inter-agent coordination. Produced by a single agent across a session or day. RETENTION: indefinite.';
-COMMENT ON COLUMN agent_notes.kind IS 'plan = daily plan. context = end-of-session state snapshot. reflection = retrospective review.';
-COMMENT ON COLUMN agent_notes.created_by IS 'Which agent wrote this note. FK to agents.';
-COMMENT ON COLUMN agent_notes.content IS 'Free-text body of the note. Markdown allowed.';
-COMMENT ON COLUMN agent_notes.entry_date IS 'The logical date this note belongs to. May differ from created_at for backfilled notes.';
-COMMENT ON COLUMN agent_notes.metadata IS
-    'Structured metadata per kind. '
-    'plan: {reasoning}. Daily todo selection is tracked in daily_plan_items, not here. '
-    'context, reflection: no required metadata schema.';
-COMMENT ON COLUMN agent_notes.created_at IS 'Row insertion timestamp.';
-COMMENT ON COLUMN agent_notes.search_vector IS
-    'Generated tsvector for full-text search over content. Uses ''simple'' '
-    'config (no stemming, multilingual-safe — notes are written in both '
-    'Chinese and English). GIN-indexed via idx_agent_notes_search. '
-    'Mirrors contents.search_vector / notes.search_vector shape.';
-
-CREATE INDEX idx_agent_notes_date ON agent_notes (entry_date DESC);
-CREATE INDEX idx_agent_notes_kind ON agent_notes (entry_date, kind);
-CREATE INDEX idx_agent_notes_search ON agent_notes USING GIN(search_vector);
-
 CREATE TABLE daily_plan_items (
     id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     plan_date     DATE NOT NULL,
@@ -966,7 +919,6 @@ CREATE TABLE daily_plan_items (
     selected_by   TEXT NOT NULL REFERENCES agents(name) ON DELETE RESTRICT,
     position      INT NOT NULL DEFAULT 0,
     reason        TEXT,
-    agent_note_id UUID REFERENCES agent_notes(id) ON DELETE SET NULL,
     status        TEXT NOT NULL DEFAULT 'planned'
                   CHECK (status IN ('planned', 'done', 'deferred', 'dropped')),
     created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -985,8 +937,6 @@ CREATE INDEX idx_daily_plan_items_active
 
 CREATE INDEX idx_daily_plan_items_todo
     ON daily_plan_items (todo_id);
-CREATE INDEX idx_daily_plan_items_agent_note
-    ON daily_plan_items (agent_note_id) WHERE agent_note_id IS NOT NULL;
 
 COMMENT ON TABLE daily_plan_items IS
     'Daily commitment records. Each row represents a todo item selected for '
@@ -1003,16 +953,6 @@ COMMENT ON COLUMN daily_plan_items.selected_by IS
     'or human (manual selection via MCP tool).';
 COMMENT ON COLUMN daily_plan_items.position IS
     'Ordering within a day''s plan. 0-based. Semantic: first item = highest priority for today.';
-COMMENT ON COLUMN daily_plan_items.agent_note_id IS
-    'Optional link to the agent_notes(kind=''plan'') entry that drove this planning session. '
-    'All items from the same planning session share the same agent_note_id. '
-    'Enables "which reasoning led to these todo selections" queries. '
-    'Symmetric with learning_sessions.agent_note_id — session produces the note, '
-    'agent_note_id links back. SET NULL on note deletion. '
-    'INVARIANT: the referenced agent_note MUST have kind=''plan''. Schema does not '
-    'enforce this (no CHECK across rows) — writers are responsible. plan_day and '
-    'morning_context MCP handlers must validate kind before insert; tests live in '
-    'internal/mcp (agent_note kind binding integration).';
 COMMENT ON COLUMN daily_plan_items.reason IS
     'Optional rationale for selecting this todo today. NULL = no specific reason recorded.';
 COMMENT ON COLUMN daily_plan_items.status IS
@@ -1023,32 +963,6 @@ COMMENT ON COLUMN daily_plan_items.status IS
 COMMENT ON COLUMN daily_plan_items.updated_at IS
     'Application-managed. Tracks when status last changed. '
     'Critical for Weekly Review analysis and cron debug.';
-
--- Structural invariant: daily_plan_items.agent_note_id, when set, must
--- reference an agent_notes row with kind='plan'. The FK alone does not
--- enforce kind binding; this trigger closes the gap so any path that writes
--- the column (existing MCP handler, future tools, manual repair) is checked
--- at the database boundary rather than at a single writer.
-CREATE OR REPLACE FUNCTION enforce_daily_plan_agent_note_kind() RETURNS TRIGGER AS $$
-DECLARE
-    note_kind agent_note_kind;
-BEGIN
-    IF NEW.agent_note_id IS NULL THEN
-        RETURN NEW;
-    END IF;
-    SELECT kind INTO note_kind FROM agent_notes WHERE id = NEW.agent_note_id;
-    IF note_kind IS DISTINCT FROM 'plan' THEN
-        RAISE EXCEPTION 'daily_plan_items.agent_note_id must reference an agent_notes row with kind=''plan'' (got kind=%)', note_kind;
-    END IF;
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE TRIGGER trg_daily_plan_items_agent_note_kind
-    BEFORE INSERT OR UPDATE OF agent_note_id ON daily_plan_items
-    FOR EACH ROW EXECUTE FUNCTION enforce_daily_plan_agent_note_kind();
-COMMENT ON TRIGGER trg_daily_plan_items_agent_note_kind ON daily_plan_items
-    IS 'Rejects INSERT/UPDATE when agent_note_id points to an agent_notes row whose kind is not ''plan''.';
 
 -- ============================================================
 -- Todo skips
@@ -1142,8 +1056,8 @@ COMMENT ON TRIGGER trg_daily_plan_items_not_already_skipped ON daily_plan_items
 CREATE TABLE activity_events (
     id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     entity_type   TEXT NOT NULL CHECK (entity_type IN (
-                      'todo', 'goal', 'milestone', 'project', 'content', 'bookmark',
-                      'note', 'learning_attempt', 'task', 'learning_hypothesis',
+                      'todo', 'goal', 'milestone', 'project', 'content',
+                      'note', 'learning_attempt', 'learning_hypothesis',
                       'learning_plan_entry', 'learning_session'
                   )),
     entity_id     UUID NOT NULL,
@@ -1218,177 +1132,6 @@ COMMENT ON COLUMN project_aliases.source IS 'Where this alias was discovered (e.
 
 -- Case-insensitive unique: prevents "Koopa0.dev" and "koopa0.dev" as separate aliases
 CREATE UNIQUE INDEX idx_project_aliases_lower_alias ON project_aliases (LOWER(alias));
-
--- ============================================================
--- Coordination layer: tasks + task_messages + artifacts
---
--- tasks         = inter-agent work unit with an explicit lifecycle
--- task_messages = ordered request/response conversation turns
--- artifacts     = structured deliverables produced by the assignee
--- ============================================================
-
-CREATE TABLE tasks (
-    id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    created_by   TEXT NOT NULL REFERENCES agents(name) ON DELETE RESTRICT,
-    assignee     TEXT NOT NULL REFERENCES agents(name) ON DELETE RESTRICT,
-    title        TEXT NOT NULL,
-    state        task_state NOT NULL DEFAULT 'submitted',
-    deadline                TIMESTAMPTZ,
-    priority                TEXT CHECK (priority IN ('high', 'medium', 'low')),
-    submitted_at            TIMESTAMPTZ NOT NULL DEFAULT now(),
-    accepted_at             TIMESTAMPTZ,
-    completed_at            TIMESTAMPTZ,
-    canceled_at             TIMESTAMPTZ,
-    revision_requested_at   TIMESTAMPTZ,
-    metadata                JSONB NOT NULL DEFAULT '{}',
-
-    CONSTRAINT chk_task_title_not_blank
-        CHECK (btrim(title) <> ''),
-    CONSTRAINT chk_tasks_no_self_assignment
-        CHECK (created_by <> assignee),
-    CONSTRAINT chk_tasks_state_timestamps CHECK (
-        (state = 'submitted'          AND accepted_at IS NULL     AND completed_at IS NULL     AND canceled_at IS NULL     AND revision_requested_at IS NULL) OR
-        (state = 'working'            AND accepted_at IS NOT NULL AND completed_at IS NULL     AND canceled_at IS NULL     AND revision_requested_at IS NULL) OR
-        (state = 'completed'          AND accepted_at IS NOT NULL AND completed_at IS NOT NULL AND canceled_at IS NULL     AND revision_requested_at IS NULL) OR
-        (state = 'canceled'           AND canceled_at IS NOT NULL AND completed_at IS NULL                                AND revision_requested_at IS NULL) OR
-        (state = 'revision_requested' AND accepted_at IS NOT NULL AND completed_at IS NOT NULL AND canceled_at IS NULL     AND revision_requested_at IS NOT NULL)
-    )
-);
-
-COMMENT ON TABLE tasks IS
-    'Inter-agent coordination work units. Distinct from personal GTD todos. '
-    'One agent asks another to do work. Lifecycle: submitted → working → completed | canceled. '
-    'Completed tasks can enter a revision cycle: completed → revision_requested → working → completed. '
-    'chk_tasks_state_timestamps makes illegal (state, timestamp) combinations impossible. '
-    'Conversation history lives in task_messages; structured deliverables live in artifacts. '
-    'A completed task must have at least one response message and at least one artifact — '
-    'enforced by trg_tasks_completion_requires_outputs.';
-COMMENT ON COLUMN tasks.created_by IS 'Agent that submitted the task. FK to agents.';
-COMMENT ON COLUMN tasks.assignee IS 'Agent expected to perform the work. FK to agents.';
-COMMENT ON COLUMN tasks.title IS 'Short human-readable task label.';
-COMMENT ON COLUMN tasks.state IS 'submitted = created, not yet accepted. working = assignee accepted, in flight. completed = response and artifact delivered. canceled = withdrawn before completion. revision_requested = human reviewer requested changes on a completed task.';
-COMMENT ON COLUMN tasks.deadline IS 'When the task must be completed by. NULL = no deadline. Queryable routing signal for "tasks due soon" dashboards.';
-COMMENT ON COLUMN tasks.priority IS 'Caller-declared priority (high | medium | low). NULL = unspecified. Queryable routing signal alongside deadline.';
-COMMENT ON COLUMN tasks.submitted_at IS 'When the task was created. DEFAULT now().';
-COMMENT ON COLUMN tasks.accepted_at IS 'When the assignee transitioned the task to working. NULL while state=submitted or for tasks canceled before acceptance.';
-COMMENT ON COLUMN tasks.completed_at IS 'When the assignee delivered the final outputs. NULL unless state=completed or revision_requested. Cleared when re-entering working after revision.';
-COMMENT ON COLUMN tasks.canceled_at IS 'When the task was canceled. NULL unless state=canceled. Mutually exclusive with completed_at.';
-COMMENT ON COLUMN tasks.revision_requested_at IS 'When a human reviewer requested changes on a completed task. NULL unless state=revision_requested. Cleared when re-entering working after revision.';
-COMMENT ON COLUMN tasks.metadata IS 'Non-routing task info: correlation keys, opaque payload hints. Promote a field to a column when WHERE/JOIN/GROUP BY usage exceeds 3 occurrences.';
-
-CREATE INDEX idx_tasks_assignee_open
-    ON tasks (assignee, submitted_at DESC)
-    WHERE state IN ('submitted', 'working');
-
-CREATE INDEX idx_tasks_created_by_open
-    ON tasks (created_by, submitted_at DESC)
-    WHERE state IN ('submitted', 'working');
-
-CREATE INDEX idx_tasks_state ON tasks (state);
-
--- ============================================================
--- task_messages: request/response conversation turns
---
--- Parts are stored as a JSONB array of a2a.Part values in a2a-go's flattened
--- form: {"text": "..."} or {"data": {...}}. Hard size caps prevent unbounded
--- payloads — anything larger must be stored as an artifact.
--- ============================================================
-
-CREATE TABLE task_messages (
-    id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    task_id    UUID NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
-    role       message_role NOT NULL,
-    position   INTEGER NOT NULL,
-    parts      JSONB NOT NULL,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-
-    UNIQUE (task_id, position),
-
-    CONSTRAINT chk_task_messages_parts_count CHECK (
-        jsonb_typeof(parts) = 'array' AND
-        jsonb_array_length(parts) BETWEEN 1 AND 16
-    ),
-    CONSTRAINT chk_task_messages_parts_size CHECK (
-        pg_column_size(parts) <= 32768
-    )
-);
-
-COMMENT ON TABLE task_messages IS 'Ordered request/response conversation turns on a task. Parts column is a JSONB array of a2a.Part values (flattened form). Hard size caps (16 parts max, 32 KB total) are DB-enforced bloat prevention — anything larger belongs in artifacts, not messages.';
-COMMENT ON COLUMN task_messages.task_id IS 'Parent task. CASCADE — messages die with their task.';
-COMMENT ON COLUMN task_messages.role IS 'request = message from the task creator to the assignee. response = message from the assignee back to the task creator.';
-COMMENT ON COLUMN task_messages.position IS 'Order within a task conversation, 0-based. UNIQUE(task_id, position) prevents duplicates and out-of-order inserts.';
-COMMENT ON COLUMN task_messages.parts IS 'JSONB array of a2a.Part values in a2a-go''s flattened format. Each part is {"text": "..."} or {"data": {...}}. Serialized/deserialized by a2a-go — Go code never hand-rolls this shape.';
-COMMENT ON COLUMN task_messages.created_at IS 'Row insertion timestamp.';
-
-CREATE INDEX idx_task_messages_task ON task_messages (task_id, position);
-
--- ============================================================
--- artifacts: structured task deliverables
---
--- Looser size bounds than messages (32 parts max, 256 KB total). Anything
--- above 256 KB belongs in external object storage referenced by a part.
--- ============================================================
-
-CREATE TABLE artifacts (
-    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    task_id     UUID REFERENCES tasks(id) ON DELETE CASCADE,
-    created_by  TEXT REFERENCES agents(name) ON DELETE RESTRICT,
-    name        TEXT NOT NULL,
-    description TEXT NOT NULL DEFAULT '',
-    parts       JSONB NOT NULL,
-    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
-
-    CONSTRAINT chk_artifacts_parts_count CHECK (
-        jsonb_typeof(parts) = 'array' AND
-        jsonb_array_length(parts) BETWEEN 1 AND 32
-    ),
-    CONSTRAINT chk_artifacts_parts_size CHECK (
-        pg_column_size(parts) <= 262144
-    ),
-    CONSTRAINT chk_artifacts_standalone_attribution CHECK (
-        task_id IS NOT NULL OR created_by IS NOT NULL
-    )
-);
-
-COMMENT ON TABLE artifacts IS 'Structured deliverables, optionally bound to a task. Task-bound artifacts are produced during task work; standalone artifacts are self-initiated by an agent. Size bounds (32 parts, 256 KB) are looser than task_messages bounds.';
-COMMENT ON COLUMN artifacts.task_id IS 'Parent task. NULL for standalone (self-initiated) artifacts. CASCADE — task-bound artifacts die with their task.';
-COMMENT ON COLUMN artifacts.created_by IS 'Agent that created this artifact. Required for standalone artifacts (task_id IS NULL). Optional for task-bound artifacts (attribution comes from the task).';
-COMMENT ON COLUMN artifacts.name IS 'Short label identifying this artifact (e.g. "weekly-report", "architecture-diagram").';
-COMMENT ON COLUMN artifacts.description IS 'Optional longer description. Empty string = no description.';
-COMMENT ON COLUMN artifacts.parts IS 'JSONB array of a2a.Part values (same format as task_messages.parts). Stores the actual deliverable content.';
-COMMENT ON COLUMN artifacts.created_at IS 'Row insertion timestamp.';
-
-CREATE INDEX idx_artifacts_task ON artifacts (task_id, created_at);
-CREATE INDEX idx_artifacts_created_by ON artifacts (created_by, created_at DESC)
-    WHERE task_id IS NULL;
-
--- A completed task must have at least one response message and at least one artifact.
-CREATE OR REPLACE FUNCTION enforce_task_completion_outputs() RETURNS TRIGGER AS $$
-DECLARE
-    response_count INT;
-    artifact_count INT;
-BEGIN
-    IF NEW.state <> 'completed' THEN
-        RETURN NEW;
-    END IF;
-    IF TG_OP = 'UPDATE' AND OLD.state = 'completed' THEN
-        RETURN NEW;
-    END IF;
-    SELECT COUNT(*) INTO response_count
-        FROM task_messages WHERE task_id = NEW.id AND role = 'response';
-    SELECT COUNT(*) INTO artifact_count
-        FROM artifacts WHERE task_id = NEW.id;
-    IF response_count = 0 OR artifact_count = 0 THEN
-        RAISE EXCEPTION 'task % cannot transition to completed: requires at least one response message (have %) and one artifact (have %)',
-            NEW.id, response_count, artifact_count;
-    END IF;
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE TRIGGER trg_tasks_completion_requires_outputs
-    BEFORE INSERT OR UPDATE OF state ON tasks
-    FOR EACH ROW EXECUTE FUNCTION enforce_task_completion_outputs();
 
 -- ============================================================
 -- Learning analytics: concepts, targets, sessions, attempts, observations.
@@ -1641,78 +1384,6 @@ COMMENT ON INDEX uq_learning_targets_domain_title_no_external IS
 
 CREATE INDEX idx_learning_targets_domain ON learning_targets (domain);
 
--- ============================================================
--- Spaced repetition: review_cards + review_logs
--- ============================================================
-
-CREATE TABLE review_cards (
-    id                   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    learning_target_id   UUID NOT NULL REFERENCES learning_targets(id) ON DELETE CASCADE,
-    card_state           JSONB NOT NULL,
-    due                  TIMESTAMPTZ NOT NULL,
-    last_sync_drift_at   TIMESTAMPTZ,
-    last_drift_reason    TEXT,
-    created_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
-
-    CONSTRAINT chk_review_card_state_not_empty
-        CHECK (card_state <> '{}'::jsonb AND card_state <> 'null'::jsonb),
-    CONSTRAINT chk_review_card_drift_pair
-        CHECK ((last_sync_drift_at IS NULL AND last_drift_reason IS NULL)
-            OR (last_sync_drift_at IS NOT NULL AND last_drift_reason IS NOT NULL))
-);
-
-COMMENT ON TABLE review_cards IS
-    'Spaced repetition card state. Algorithm-agnostic; currently FSRS. One card per '
-    'learning_target. Review is scoped to learning_targets only — content- or '
-    'concept-scoped review is not modelled; add a new junction table when that '
-    'feature ships.';
-COMMENT ON COLUMN review_cards.learning_target_id IS
-    'Learning target (problem, drill, chapter). CASCADE on target deletion. Unique '
-    '(uq_review_cards_learning_target) — one card per target.';
-COMMENT ON COLUMN review_cards.card_state IS
-    'Serialized FSRS state (Due, Stability, Difficulty, Reps, Lapses). Opaque to SQL.';
-COMMENT ON COLUMN review_cards.due IS
-    'Denormalized from card_state for index-based due-date queries.';
-COMMENT ON COLUMN review_cards.last_sync_drift_at IS
-    'When the last attempt-driven FSRS review for this card failed to apply. '
-    'NULL = never drifted. Paired with last_drift_reason by chk_review_card_drift_pair. '
-    'Cleared on next successful review. Consumers (retrieval view) surface a '
-    'drift_suspect flag when this is set and more recent than the last attempt.';
-COMMENT ON COLUMN review_cards.last_drift_reason IS
-    'Short machine-readable reason for the most recent drift event. '
-    'NULL when last_sync_drift_at is NULL. Examples: unknown_outcome, persist_failed.';
-COMMENT ON COLUMN review_cards.updated_at IS
-    'Application-managed. Set explicitly in UPDATE queries.';
-
-CREATE UNIQUE INDEX uq_review_cards_learning_target
-    ON review_cards (learning_target_id);
-
-CREATE INDEX idx_review_cards_due ON review_cards (due);
-
-CREATE TABLE review_logs (
-    id             BIGSERIAL PRIMARY KEY,
-    card_id        UUID NOT NULL REFERENCES review_cards(id) ON DELETE CASCADE,
-    rating         INT NOT NULL CHECK (rating BETWEEN 1 AND 4),
-    scheduled_days INT NOT NULL CHECK (scheduled_days >= 0),
-    elapsed_days   INT NOT NULL CHECK (elapsed_days >= 0),
-    state          INT NOT NULL CHECK (state BETWEEN 0 AND 3),
-    reviewed_at    TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-COMMENT ON TABLE review_logs IS 'Append-only review history. One row per review event. RETENTION: indefinite (FSRS algorithm needs full history).';
-COMMENT ON COLUMN review_logs.card_id IS
-    'The review card this log belongs to. CASCADE — card deletion removes its history.';
-COMMENT ON COLUMN review_logs.reviewed_at IS
-    'When this review occurred. May differ from row insertion time if backfilled. '
-    'DEFAULT now() for real-time reviews.';
-COMMENT ON COLUMN review_logs.rating IS '1=Again (forgot), 2=Hard (partial), 3=Good (remembered), 4=Easy.';
-COMMENT ON COLUMN review_logs.scheduled_days IS 'Days the FSRS algorithm scheduled between this and the previous review.';
-COMMENT ON COLUMN review_logs.elapsed_days IS 'Actual days elapsed since the previous review.';
-COMMENT ON COLUMN review_logs.state IS 'Card state BEFORE this review: 0=New, 1=Learning, 2=Review, 3=Relearning.';
-
-CREATE INDEX idx_review_logs_card ON review_logs (card_id, reviewed_at DESC);
-
 -- Learning item ↔ concept junction
 
 CREATE TABLE learning_target_concepts (
@@ -1803,16 +1474,13 @@ CREATE UNIQUE INDEX idx_note_concepts_one_primary
     WHERE relevance = 'primary';
 
 -- Learning sessions: orchestration boundary with explicit start/end, mode,
--- and a container of attempts. Distinct from agent_notes (narrative log);
--- a session may produce an agent_note(kind=reflection) at the end, linked
--- via agent_note_id.
+-- and a container of attempts.
 
 CREATE TABLE learning_sessions (
     id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     domain              TEXT NOT NULL REFERENCES learning_domains(slug) ON DELETE RESTRICT,
     session_mode        TEXT NOT NULL
                         CHECK (session_mode IN ('retrieval', 'practice', 'mixed', 'review', 'reading')),
-    agent_note_id       UUID REFERENCES agent_notes(id) ON DELETE SET NULL,
     daily_plan_item_id  UUID REFERENCES daily_plan_items(id) ON DELETE SET NULL,
     started_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
     ended_at            TIMESTAMPTZ,
@@ -1826,10 +1494,7 @@ CREATE TABLE learning_sessions (
 
 COMMENT ON TABLE learning_sessions IS
     'Session orchestration boundary — explicit start/end, mode, and attempt container. '
-    'Distinct from agent_notes: agent_notes are post-hoc narrative (plan, context, '
-    'reflection), sessions are in-progress orchestration. A session ending may produce '
-    'an agent_notes(kind=reflection) entry, linked via agent_note_id. '
-    'updated_at tracks mutation: ended_at and agent_note_id are written by EndSession, '
+    'updated_at tracks mutation: ended_at is written by EndSession, '
     'and metadata may be updated mid-session by orchestration code.';
 COMMENT ON COLUMN learning_sessions.updated_at IS
     'Application-managed. Set explicitly in UPDATE queries (notably EndSession).';
@@ -1840,11 +1505,6 @@ COMMENT ON COLUMN learning_sessions.session_mode IS
     'mixed: combination of retrieval and practice. '
     'review: revisiting previously solved items. '
     'reading: comprehension-focused (DDIA, O''Reilly, literary texts).';
-COMMENT ON COLUMN learning_sessions.agent_note_id IS
-    'Optional link to the reflection agent_notes entry written after the session. '
-    'The session produces the note, not the other way around. '
-    'SET NULL on note deletion. Kind binding (must reference an agent_notes row '
-    'with kind=''reflection'') is enforced by trg_learning_sessions_agent_note_kind.';
 COMMENT ON COLUMN learning_sessions.daily_plan_item_id IS
     'If this session was planned in the daily plan, link here. '
     'Enables plan adherence analysis. SET NULL on plan item deletion.';
@@ -1858,33 +1518,6 @@ COMMENT ON COLUMN learning_sessions.metadata IS
 
 CREATE INDEX idx_learning_sessions_started ON learning_sessions (started_at DESC);
 CREATE INDEX idx_learning_sessions_domain ON learning_sessions (domain);
-CREATE INDEX idx_learning_sessions_agent_note ON learning_sessions (agent_note_id)
-    WHERE agent_note_id IS NOT NULL;
-
--- Structural invariant: learning_sessions.agent_note_id, when set, must
--- reference an agent_notes row with kind='reflection'. The FK alone does not
--- enforce kind binding; this trigger is the database-boundary guard so any
--- writer path (end_session, future tools, manual repair) is validated.
-CREATE OR REPLACE FUNCTION enforce_learning_session_agent_note_kind() RETURNS TRIGGER AS $$
-DECLARE
-    note_kind agent_note_kind;
-BEGIN
-    IF NEW.agent_note_id IS NULL THEN
-        RETURN NEW;
-    END IF;
-    SELECT kind INTO note_kind FROM agent_notes WHERE id = NEW.agent_note_id;
-    IF note_kind IS DISTINCT FROM 'reflection' THEN
-        RAISE EXCEPTION 'learning_sessions.agent_note_id must reference an agent_notes row with kind=''reflection'' (got kind=%)', note_kind;
-    END IF;
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE TRIGGER trg_learning_sessions_agent_note_kind
-    BEFORE INSERT OR UPDATE OF agent_note_id ON learning_sessions
-    FOR EACH ROW EXECUTE FUNCTION enforce_learning_session_agent_note_kind();
-COMMENT ON TRIGGER trg_learning_sessions_agent_note_kind ON learning_sessions
-    IS 'Rejects INSERT/UPDATE when agent_note_id points to an agent_notes row whose kind is not ''reflection''.';
 
 -- At-most-one-active-session invariant enforcement. Constant key on
 -- partial rows WHERE ended_at IS NULL — any two active sessions collide
@@ -2494,143 +2127,6 @@ COMMENT ON COLUMN learning_plan_entries.completed_at IS
     'completed. Set by manage_plan tool call, not derived from attempts.';
 
 -- ============================================================
--- Bookmarks — external resources curated with commentary
--- ============================================================
--- Split out from contents.type='bookmark' polymorphism. Bookmarks
--- differ from first-party content: external canonical URL,
--- curate = publish (no editorial review),
--- different RSS output. See internal/bookmark package.
-
-CREATE TABLE bookmarks (
-    id                   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    url                  TEXT NOT NULL,
-    url_hash             TEXT NOT NULL,
-    slug                 TEXT NOT NULL,
-    title                TEXT NOT NULL,
-    excerpt              TEXT NOT NULL DEFAULT '',
-    note                 TEXT NOT NULL DEFAULT '',
-    capture_channel      TEXT NOT NULL
-        CHECK (capture_channel IN ('rss', 'manual', 'shared')),
-    source_feed_entry_id UUID REFERENCES feed_entries(id) ON DELETE SET NULL,
-    curated_by           TEXT NOT NULL REFERENCES agents(name) ON DELETE RESTRICT,
-    curated_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
-    is_public            BOOLEAN NOT NULL DEFAULT true,
-    published_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
-    created_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
-
-    CONSTRAINT uniq_bookmarks_url_hash UNIQUE (url_hash),
-    CONSTRAINT uniq_bookmarks_slug UNIQUE (slug),
-    CONSTRAINT chk_bookmark_url_scheme
-        CHECK (url ~ '^https?://'),
-    CONSTRAINT chk_bookmark_url_hash_format
-        CHECK (url_hash ~ '^[a-f0-9]{64}$'),
-    CONSTRAINT chk_bookmark_slug_format
-        CHECK (slug ~ '^[a-z0-9]+(-[a-z0-9]+)*$'),
-    CONSTRAINT chk_bookmark_title_not_blank
-        CHECK (btrim(title) <> '')
-);
-
-COMMENT ON TABLE bookmarks IS 'External resources curated with personal commentary. Curate = publish: creating a bookmark sets published_at = now() and is_public = true by default. No editorial review.';
-COMMENT ON COLUMN bookmarks.url IS 'Canonical external URL. Must use http(s) scheme. SEO canonical tag points to this value.';
-COMMENT ON COLUMN bookmarks.url_hash IS 'SHA-256 hex digest (64 chars) of the canonical URL. Dedup identity. Computed in application code before INSERT.';
-COMMENT ON COLUMN bookmarks.slug IS 'URL-safe internal identifier for the bookmark''s permalink on the koopa0.dev site. Distinct from the external URL.';
-COMMENT ON COLUMN bookmarks.title IS 'Display title. May override the source title if edited at capture time.';
-COMMENT ON COLUMN bookmarks.excerpt IS 'Short excerpt from the source. Empty string when none.';
-COMMENT ON COLUMN bookmarks.note IS 'Curator''s personal commentary. Empty string when none.';
-COMMENT ON COLUMN bookmarks.capture_channel IS 'How the bookmark entered the system. rss = curated from a feed entry. manual = pasted by the curator. shared = received via an external channel.';
-COMMENT ON COLUMN bookmarks.source_feed_entry_id IS 'When capture_channel=rss, references the originating feed_entries row. NULL otherwise. SET NULL on feed_entry deletion.';
-COMMENT ON COLUMN bookmarks.curated_by IS 'Agent that curated the bookmark. FK to agents.';
-COMMENT ON COLUMN bookmarks.curated_at IS 'When the bookmark was curated into the system.';
-COMMENT ON COLUMN bookmarks.is_public IS 'Whether this bookmark is visible on the public website. Defaults to true — curate = publish.';
-COMMENT ON COLUMN bookmarks.published_at IS 'When the bookmark was published. Defaults to now() at row creation since creating a bookmark is the act of publishing.';
-
-CREATE INDEX idx_bookmarks_published_at ON bookmarks(published_at DESC NULLS LAST)
-    WHERE is_public = true;
-CREATE INDEX idx_bookmarks_curated_at ON bookmarks(curated_at DESC);
-CREATE INDEX idx_bookmarks_source_feed_entry ON bookmarks(source_feed_entry_id)
-    WHERE source_feed_entry_id IS NOT NULL;
-
-CREATE TABLE bookmark_topics (
-    bookmark_id UUID NOT NULL REFERENCES bookmarks(id) ON DELETE CASCADE,
-    topic_id    UUID NOT NULL REFERENCES topics(id) ON DELETE CASCADE,
-    PRIMARY KEY (bookmark_id, topic_id)
-);
-
-COMMENT ON TABLE bookmark_topics IS 'Junction: bookmark ↔ topic. Many-to-many. Topics are curated knowledge domain categories (same taxonomy as content_topics).';
-
-CREATE INDEX idx_bookmark_topics_topic_id ON bookmark_topics(topic_id);
-
-CREATE TABLE bookmark_tags (
-    bookmark_id UUID NOT NULL REFERENCES bookmarks(id) ON DELETE CASCADE,
-    tag_id      UUID NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
-    PRIMARY KEY (bookmark_id, tag_id)
-);
-
-COMMENT ON TABLE bookmark_tags IS 'Junction: bookmark ↔ tag. References canonical tags resolved through the tag_aliases pipeline.';
-
-CREATE INDEX idx_bookmark_tags_tag_id ON bookmark_tags(tag_id);
-
--- ============================================================
--- Cross-table invariants — require both endpoint tables to exist
--- ============================================================
-
--- feed_entry ↔ bookmark curation exclusion. A single feed_entry may be
--- curated into first-party content (feed_entries.curated_content_id) OR into
--- an external bookmark (bookmarks.source_feed_entry_id), never both.
--- Enforced bidirectionally. SELECT ... FOR UPDATE on the feed_entries row
--- serialises the cross-table check — without the lock, two concurrent
--- transactions (one setting curated_content_id, one inserting a bookmark
--- that references the same feed_entry) could both pass the IF EXISTS guard
--- under READ COMMITTED and commit conflicting state.
-CREATE OR REPLACE FUNCTION enforce_feed_entry_curation_exclusion() RETURNS TRIGGER AS $$
-DECLARE
-    locked_feed_id UUID;
-BEGIN
-    IF TG_TABLE_NAME = 'feed_entries' THEN
-        IF NEW.curated_content_id IS NULL THEN
-            RETURN NEW;
-        END IF;
-        -- Take a row lock on this feed_entry so a concurrent bookmark INSERT
-        -- referencing the same feed_entry must wait for our commit.
-        PERFORM 1 FROM feed_entries WHERE id = NEW.id FOR UPDATE;
-        IF EXISTS (SELECT 1 FROM bookmarks WHERE source_feed_entry_id = NEW.id) THEN
-            RAISE EXCEPTION 'feed_entries % already curated as a bookmark; cannot also set curated_content_id', NEW.id;
-        END IF;
-    ELSIF TG_TABLE_NAME = 'bookmarks' THEN
-        IF NEW.source_feed_entry_id IS NULL THEN
-            RETURN NEW;
-        END IF;
-        -- Lock the referenced feed_entry so concurrent feed_entries UPDATE
-        -- setting curated_content_id must wait.
-        SELECT id INTO locked_feed_id
-            FROM feed_entries
-            WHERE id = NEW.source_feed_entry_id
-            FOR UPDATE;
-        IF EXISTS (
-            SELECT 1 FROM feed_entries
-            WHERE id = NEW.source_feed_entry_id AND curated_content_id IS NOT NULL
-        ) THEN
-            RAISE EXCEPTION 'feed_entries % already curated as first-party content; cannot also capture as bookmark', NEW.source_feed_entry_id;
-        END IF;
-    END IF;
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE TRIGGER trg_feed_entries_curation_exclusion
-    BEFORE INSERT OR UPDATE OF curated_content_id ON feed_entries
-    FOR EACH ROW EXECUTE FUNCTION enforce_feed_entry_curation_exclusion();
-COMMENT ON TRIGGER trg_feed_entries_curation_exclusion ON feed_entries
-    IS 'Rejects setting curated_content_id when the feed_entry is already referenced by a bookmark.source_feed_entry_id — a feed entry is curated as EITHER first-party content OR an external bookmark, never both.';
-
-CREATE TRIGGER trg_bookmarks_curation_exclusion
-    BEFORE INSERT OR UPDATE OF source_feed_entry_id ON bookmarks
-    FOR EACH ROW EXECUTE FUNCTION enforce_feed_entry_curation_exclusion();
-COMMENT ON TRIGGER trg_bookmarks_curation_exclusion ON bookmarks
-    IS 'Rejects setting source_feed_entry_id when the referenced feed_entry already has a curated_content_id — paired with trg_feed_entries_curation_exclusion for bidirectional enforcement.';
-
--- ============================================================
 -- activity_events triggers — canonical audit log writers
 --
 -- Application code MUST set the actor identity for the current transaction via
@@ -2769,26 +2265,6 @@ CREATE TRIGGER trg_contents_audit
     AFTER INSERT OR UPDATE OF status ON contents
     FOR EACH ROW EXECUTE FUNCTION audit_contents();
 
--- bookmarks: INSERT + publication transitions
-CREATE OR REPLACE FUNCTION audit_bookmarks() RETURNS TRIGGER AS $$
-BEGIN
-    IF TG_OP = 'INSERT' THEN
-        INSERT INTO activity_events (entity_type, entity_id, entity_title, entity_slug, change_kind, actor, payload)
-        VALUES ('bookmark', NEW.id, NEW.title, NEW.slug, 'created', current_actor(),
-                jsonb_build_object('is_public', NEW.is_public));
-    ELSIF OLD.published_at IS DISTINCT FROM NEW.published_at AND NEW.published_at IS NOT NULL THEN
-        INSERT INTO activity_events (entity_type, entity_id, entity_title, entity_slug, change_kind, actor, payload)
-        VALUES ('bookmark', NEW.id, NEW.title, NEW.slug, 'published', current_actor(),
-                jsonb_build_object('published_at', NEW.published_at));
-    END IF;
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE TRIGGER trg_bookmarks_audit
-    AFTER INSERT OR UPDATE OF published_at ON bookmarks
-    FOR EACH ROW EXECUTE FUNCTION audit_bookmarks();
-
 -- notes: INSERT audit (entity_type='note' was previously registered in the
 -- entity_type CHECK but had no trigger — closing that coverage gap).
 CREATE OR REPLACE FUNCTION audit_notes() RETURNS TRIGGER AS $$
@@ -2827,31 +2303,6 @@ $$ LANGUAGE plpgsql;
 CREATE TRIGGER trg_learning_attempts_audit
     AFTER INSERT ON learning_attempts
     FOR EACH ROW EXECUTE FUNCTION audit_learning_attempts();
-
--- tasks: INSERT + state transitions. INSERT must always be 'submitted' per
--- chk_tasks_state_timestamps; the 'created' event documents the submission.
-CREATE OR REPLACE FUNCTION audit_tasks() RETURNS TRIGGER AS $$
-BEGIN
-    IF TG_OP = 'INSERT' THEN
-        INSERT INTO activity_events (entity_type, entity_id, entity_title, change_kind, actor, payload)
-        VALUES ('task', NEW.id, NEW.title, 'created', current_actor(),
-                jsonb_build_object('state', NEW.state,
-                                   'assignee', NEW.assignee, 'created_by', NEW.created_by));
-    ELSIF NEW.state IS DISTINCT FROM OLD.state THEN
-        INSERT INTO activity_events (entity_type, entity_id, entity_title, change_kind, actor, payload)
-        VALUES ('task', NEW.id, NEW.title,
-                CASE WHEN NEW.state = 'completed' THEN 'completed' ELSE 'state_changed' END,
-                current_actor(),
-                jsonb_build_object('from', OLD.state, 'to', NEW.state,
-                                   'assignee', NEW.assignee, 'created_by', NEW.created_by));
-    END IF;
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE TRIGGER trg_tasks_audit
-    AFTER INSERT OR UPDATE OF state ON tasks
-    FOR EACH ROW EXECUTE FUNCTION audit_tasks();
 
 -- learning_hypotheses: state transitions. entity_title is the claim (full
 -- text; consumers may truncate for display).

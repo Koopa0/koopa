@@ -493,10 +493,9 @@ func (s *Server) endSession(ctx context.Context, _ *mcp.CallToolRequest, input E
 	}
 
 	// The agent_notes feature was retired; end_session no longer writes a
-	// reflection note. The learning_sessions.agent_note_id column stays
-	// (dropped in W7), so the EndSession store signature is unchanged and
-	// receives nil — the column is written NULL.
-	session, err := s.learn.EndSession(ctx, sessionID, nil)
+	// reflection note. The learning_sessions.agent_note_id column was dropped
+	// in W7, so EndSession takes only the session id.
+	session, err := s.learn.EndSession(ctx, sessionID)
 	if err != nil {
 		switch {
 		case errors.Is(err, learning.ErrNotFound):

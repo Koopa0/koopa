@@ -14,15 +14,15 @@ ORDER BY slug;
 -- name: CreateSession :one
 INSERT INTO learning_sessions (domain, session_mode, daily_plan_item_id)
 VALUES (@domain, @session_mode, @daily_plan_item_id)
-RETURNING id, domain, session_mode, agent_note_id, daily_plan_item_id, started_at, ended_at, metadata, created_at, updated_at;
+RETURNING id, domain, session_mode, daily_plan_item_id, started_at, ended_at, metadata, created_at, updated_at;
 
 -- name: SessionByID :one
-SELECT id, domain, session_mode, agent_note_id, daily_plan_item_id, started_at, ended_at, metadata, created_at, updated_at
+SELECT id, domain, session_mode, daily_plan_item_id, started_at, ended_at, metadata, created_at, updated_at
 FROM learning_sessions WHERE id = @id;
 
 -- name: ActiveSession :one
 -- Find a session that hasn't ended yet.
-SELECT id, domain, session_mode, agent_note_id, daily_plan_item_id, started_at, ended_at, metadata, created_at, updated_at
+SELECT id, domain, session_mode, daily_plan_item_id, started_at, ended_at, metadata, created_at, updated_at
 FROM learning_sessions WHERE ended_at IS NULL
 ORDER BY started_at DESC LIMIT 1;
 
@@ -56,15 +56,15 @@ to_end AS (
 UPDATE learning_sessions
 SET ended_at = now(), updated_at = now()
 WHERE id IN (SELECT id FROM to_end) AND ended_at IS NULL
-RETURNING id, domain, session_mode, agent_note_id, daily_plan_item_id, started_at, ended_at, metadata, created_at, updated_at;
+RETURNING id, domain, session_mode, daily_plan_item_id, started_at, ended_at, metadata, created_at, updated_at;
 
 -- name: EndSession :one
-UPDATE learning_sessions SET ended_at = now(), agent_note_id = @agent_note_id, updated_at = now()
+UPDATE learning_sessions SET ended_at = now(), updated_at = now()
 WHERE id = @id AND ended_at IS NULL
-RETURNING id, domain, session_mode, agent_note_id, daily_plan_item_id, started_at, ended_at, metadata, created_at, updated_at;
+RETURNING id, domain, session_mode, daily_plan_item_id, started_at, ended_at, metadata, created_at, updated_at;
 
 -- name: RecentSessions :many
-SELECT id, domain, session_mode, agent_note_id, daily_plan_item_id, started_at, ended_at, metadata, created_at, updated_at
+SELECT id, domain, session_mode, daily_plan_item_id, started_at, ended_at, metadata, created_at, updated_at
 FROM learning_sessions
 WHERE (sqlc.narg('domain')::text IS NULL OR domain = sqlc.narg('domain'))
   AND started_at >= @since
@@ -765,7 +765,7 @@ ORDER BY
 -- session_progress — lets the caller pivot to
 -- attempt_history(session_id=...) without a separate lookup. Returns
 -- pgx.ErrNoRows if no session was ever ended.
-SELECT id, domain, session_mode, agent_note_id, daily_plan_item_id, started_at, ended_at, metadata, created_at, updated_at
+SELECT id, domain, session_mode, daily_plan_item_id, started_at, ended_at, metadata, created_at, updated_at
 FROM learning_sessions
 WHERE ended_at IS NOT NULL
 ORDER BY ended_at DESC

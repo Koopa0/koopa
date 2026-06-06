@@ -363,11 +363,6 @@ func (h *Handler) StartSession(w http.ResponseWriter, r *http.Request) {
 	api.Encode(w, http.StatusCreated, api.Response{Data: startResp{Session: session, ZombieEnded: zombie}})
 }
 
-// EndSessionRequest is the POST body for ending a session.
-type EndSessionRequest struct {
-	AgentNoteID *uuid.UUID `json:"agent_note_id,omitempty"`
-}
-
 // EndSession handles POST /api/admin/learning/sessions/{id}/end.
 func (h *Handler) EndSession(w http.ResponseWriter, r *http.Request) {
 	id, err := uuid.Parse(r.PathValue("id"))
@@ -375,16 +370,11 @@ func (h *Handler) EndSession(w http.ResponseWriter, r *http.Request) {
 		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid session id")
 		return
 	}
-	req, err := api.Decode[EndSessionRequest](w, r)
-	if err != nil {
-		// Empty body is acceptable — agent_note_id is optional.
-		req = EndSessionRequest{}
-	}
 	store, ok := h.mustAdminTx(w, r)
 	if !ok {
 		return
 	}
-	session, err := store.EndSession(r.Context(), id, req.AgentNoteID)
+	session, err := store.EndSession(r.Context(), id)
 	if err != nil {
 		api.HandleError(w, h.logger, err, storeErrors...)
 		return

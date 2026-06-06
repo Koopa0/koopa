@@ -45,7 +45,6 @@ type Item struct {
 	SelectedBy   string     `json:"selected_by"`
 	Position     int32      `json:"position"`
 	Reason       *string    `json:"reason,omitempty"`
-	AgentNoteID  *uuid.UUID `json:"agent_note_id,omitempty"`
 	Status       Status     `json:"status"`
 	CreatedAt    time.Time  `json:"created_at"`
 	UpdatedAt    time.Time  `json:"updated_at"`
@@ -60,20 +59,18 @@ type Item struct {
 
 // CreateItemParams holds the parameters for creating a daily plan item.
 type CreateItemParams struct {
-	PlanDate    time.Time
-	TodoID      uuid.UUID
-	SelectedBy  string
-	Position    int32
-	Reason      *string
-	AgentNoteID *uuid.UUID
+	PlanDate   time.Time
+	TodoID     uuid.UUID
+	SelectedBy string
+	Position   int32
+	Reason     *string
 }
 
 // UpsertParams holds the parameters for upserting a daily plan item.
 type UpsertParams struct {
-	PlanDate    time.Time
-	TodoID      uuid.UUID
-	SelectedBy  string
-	Position    int32
-	Reason      *string
-	AgentNoteID *uuid.UUID
+	PlanDate   time.Time
+	TodoID     uuid.UUID
+	SelectedBy string
+	Position   int32
+	Reason     *string
 }

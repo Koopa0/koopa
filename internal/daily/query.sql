@@ -1,21 +1,20 @@
 -- name: CreateItem :one
 -- Insert a daily plan item.
-INSERT INTO daily_plan_items (plan_date, todo_id, selected_by, position, reason, agent_note_id)
-VALUES (@plan_date, @todo_id, @selected_by, @position, @reason, @agent_note_id)
+INSERT INTO daily_plan_items (plan_date, todo_id, selected_by, position, reason)
+VALUES (@plan_date, @todo_id, @selected_by, @position, @reason)
 ON CONFLICT (plan_date, todo_id) DO UPDATE SET
     selected_by = EXCLUDED.selected_by,
     position = EXCLUDED.position,
     reason = EXCLUDED.reason,
-    agent_note_id = EXCLUDED.agent_note_id,
     status = 'planned',
     updated_at = now()
-RETURNING id, plan_date, todo_id, selected_by, position, reason, agent_note_id, status, created_at, updated_at;
+RETURNING id, plan_date, todo_id, selected_by, position, reason, status, created_at, updated_at;
 
 -- name: ItemsByDate :many
 -- Get all daily plan items for a specific date, joined with todo item details.
 SELECT
     dpi.id, dpi.plan_date, dpi.todo_id, dpi.selected_by, dpi.position,
-    dpi.reason, dpi.agent_note_id, dpi.status, dpi.created_at, dpi.updated_at,
+    dpi.reason, dpi.status, dpi.created_at, dpi.updated_at,
     t.title AS todo_title, t.state AS todo_state, t.due AS todo_due,
     t.energy AS todo_energy, t.priority AS todo_priority,
     COALESCE(p.title, '') AS project_title, COALESCE(p.slug, '') AS project_slug
@@ -30,7 +29,7 @@ ORDER BY dpi.position;
 UPDATE daily_plan_items
 SET status = @status, updated_at = now()
 WHERE id = @id
-RETURNING id, plan_date, todo_id, selected_by, position, reason, agent_note_id, status, created_at, updated_at;
+RETURNING id, plan_date, todo_id, selected_by, position, reason, status, created_at, updated_at;
 
 -- name: UpdateItemStatusByTodo :execrows
 -- Update the status of a daily plan item by todo_id and date.
@@ -42,7 +41,7 @@ WHERE todo_id = @todo_id AND plan_date = @plan_date;
 
 -- name: ItemByID :one
 -- Get a single daily plan item by ID.
-SELECT id, plan_date, todo_id, selected_by, position, reason, agent_note_id, status, created_at, updated_at
+SELECT id, plan_date, todo_id, selected_by, position, reason, status, created_at, updated_at
 FROM daily_plan_items WHERE id = @id;
 
 -- name: DeletePlannedItemsByDate :many

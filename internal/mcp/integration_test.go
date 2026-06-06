@@ -25,8 +25,6 @@ package mcp
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -112,17 +110,12 @@ func truncateApplicationTables(t *testing.T) {
 		"activity_events",
 		"daily_plan_items",
 		"todos",
-		"agent_notes",
 		"contents",
 		"notes",
-		"bookmarks",
 		"milestones",
 		"goals",
 		"projects",
 		"learning_hypotheses",
-		"task_messages",
-		"artifacts",
-		"tasks",
 		"learning_attempt_observations",
 		"learning_attempts",
 		"learning_sessions",
@@ -1326,10 +1319,9 @@ func TestIntegration_RecommendNextTarget_RejectsInactiveSession(t *testing.T) {
 // Section 3: DB audit trigger regressions
 // =========================================================================
 //
-// Integration coverage for the five audit triggers in
+// Integration coverage for the audit triggers in
 // migrations/001_initial.up.sql:
 //
-//   - trg_tasks_audit                        — tasks.state transitions
 //   - trg_learning_hypotheses_audit          — hypotheses.state transitions
 //   - trg_learning_plan_entries_audit        — learning_plan_entries.status
 //   - trg_learning_sessions_audit            — learning_sessions end-of-session
@@ -1354,35 +1346,6 @@ func latestActivityChangeKind(t *testing.T, entityType string, entityID uuid.UUI
 		t.Fatalf("fetching activity_events for %s %s: %v", entityType, entityID, err)
 	}
 	return kind
-}
-
-func TestTaskStateChange_FiresActivityTrigger(t *testing.T) {
-	setupServer(t) // reconciles agents so the FK on activity_events.actor resolves
-
-	// Seed a task directly via SQL; two distinct agents from the
-	// builtin registry satisfy chk_tasks_no_self_assignment.
-	var taskID uuid.UUID
-	err := testPool.QueryRow(t.Context(),
-		`INSERT INTO tasks (created_by, assignee, title)
-		 VALUES ('hq', 'learning-studio', 'trigger fixture task')
-		 RETURNING id`,
-	).Scan(&taskID)
-	if err != nil {
-		t.Fatalf("seeding task: %v", err)
-	}
-
-	// Transition submitted → working. The trigger fires on UPDATE OF
-	// state when OLD.state IS DISTINCT FROM NEW.state.
-	if _, err := testPool.Exec(t.Context(),
-		`UPDATE tasks SET state = 'working', accepted_at = now() WHERE id = $1`,
-		taskID,
-	); err != nil {
-		t.Fatalf("updating task state: %v", err)
-	}
-
-	if got := latestActivityChangeKind(t, "task", taskID); got != "state_changed" {
-		t.Errorf("activity_events.change_kind = %q, want %q", got, "state_changed")
-	}
 }
 
 // TestHypothesisStateChange_FiresActivityTrigger asserts
@@ -2153,114 +2116,6 @@ func TestIntegration_ToolsListAdvertisesEnums(t *testing.T) {
 // Consolidated from a2a_integration_test.go (Track-1K test-file consolidation).
 // ============================================================================
 
-// =========================================================================
-// Section: A2A directive/report chain — helpers
-// =========================================================================
-
-// seedSubmittedTask inserts a task in the default 'submitted' state plus its
-// initial request message, mirroring what commit_proposal(directive) produces.
-// Returns the task id. createdBy and assignee must be distinct registry agents
-// (chk_tasks_no_self_assignment).
-func seedSubmittedTask(t *testing.T, createdBy, assignee, title string) uuid.UUID {
-	t.Helper()
-	var id uuid.UUID
-	if err := testPool.QueryRow(t.Context(),
-		`INSERT INTO tasks (created_by, assignee, title)
-		 VALUES ($1, $2, $3) RETURNING id`,
-		createdBy, assignee, title,
-	).Scan(&id); err != nil {
-		t.Fatalf("seeding task: %v", err)
-	}
-	if _, err := testPool.Exec(t.Context(),
-		`INSERT INTO task_messages (task_id, role, position, parts)
-		 VALUES ($1, 'request', 0, '[{"text":"please do the work"}]'::jsonb)`,
-		id,
-	); err != nil {
-		t.Fatalf("seeding request message: %v", err)
-	}
-	return id
-}
-
-// taskRow returns the (state, created_by, assignee) for a task.
-func taskRow(t *testing.T, id uuid.UUID) (state, createdBy, assignee string) {
-	t.Helper()
-	if err := testPool.QueryRow(t.Context(),
-		`SELECT state, created_by, assignee FROM tasks WHERE id = $1`, id,
-	).Scan(&state, &createdBy, &assignee); err != nil {
-		t.Fatalf("reading task %s: %v", id, err)
-	}
-	return state, createdBy, assignee
-}
-
-func taskAcceptedAtSet(t *testing.T, id uuid.UUID) bool {
-	t.Helper()
-	var set bool
-	if err := testPool.QueryRow(t.Context(),
-		`SELECT accepted_at IS NOT NULL FROM tasks WHERE id = $1`, id,
-	).Scan(&set); err != nil {
-		t.Fatalf("reading accepted_at for %s: %v", id, err)
-	}
-	return set
-}
-
-func taskCount(t *testing.T) int {
-	t.Helper()
-	var n int
-	if err := testPool.QueryRow(t.Context(), `SELECT count(*) FROM tasks`).Scan(&n); err != nil {
-		t.Fatalf("counting tasks: %v", err)
-	}
-	return n
-}
-
-func messageCount(t *testing.T, taskID uuid.UUID, role string) int {
-	t.Helper()
-	var n int
-	if err := testPool.QueryRow(t.Context(),
-		`SELECT count(*) FROM task_messages WHERE task_id = $1 AND role = $2`, taskID, role,
-	).Scan(&n); err != nil {
-		t.Fatalf("counting %s messages for %s: %v", role, taskID, err)
-	}
-	return n
-}
-
-func artifactCountForTask(t *testing.T, taskID uuid.UUID) int {
-	t.Helper()
-	var n int
-	if err := testPool.QueryRow(t.Context(),
-		`SELECT count(*) FROM artifacts WHERE task_id = $1`, taskID,
-	).Scan(&n); err != nil {
-		t.Fatalf("counting artifacts for %s: %v", taskID, err)
-	}
-	return n
-}
-
-// taskEventCount counts activity_events of a given change_kind for a task.
-func taskEventCount(t *testing.T, taskID uuid.UUID, kind string) int {
-	t.Helper()
-	var n int
-	if err := testPool.QueryRow(t.Context(),
-		`SELECT count(*) FROM activity_events
-		 WHERE entity_type = 'task' AND entity_id = $1 AND change_kind = $2`,
-		taskID, kind,
-	).Scan(&n); err != nil {
-		t.Fatalf("counting %s events for task %s: %v", kind, taskID, err)
-	}
-	return n
-}
-
-// allTaskEventCount counts every task-typed activity_events row in the DB.
-// Used to assert that a standalone artifact produces no task audit row.
-func allTaskEventCount(t *testing.T) int {
-	t.Helper()
-	var n int
-	if err := testPool.QueryRow(t.Context(),
-		`SELECT count(*) FROM activity_events WHERE entity_type = 'task'`,
-	).Scan(&n); err != nil {
-		t.Fatalf("counting task events: %v", err)
-	}
-	return n
-}
-
 // --- seeding helpers ---
 
 // seedSearchContent inserts a content row whose title and body both contain
@@ -2309,50 +2164,6 @@ func seedSearchNote(t *testing.T, slug, term, kind string) uuid.UUID {
 		t.Fatalf("seedSearchNote(%q): %v", slug, err)
 	}
 	return id
-}
-
-// seedSearchAgentNote inserts an agent_notes row containing term. agent_notes
-// is FTS-indexed (idx_agent_notes_search) with the same search_vector
-// mechanism as contents/notes — making it the strongest adversarial control
-// for the corpus boundary: if search_knowledge accidentally unioned it, this
-// is the leak that would surface.
-func seedSearchAgentNote(t *testing.T, term string) {
-	t.Helper()
-	if _, err := testPool.Exec(t.Context(),
-		`INSERT INTO agent_notes (kind, created_by, content, entry_date)
-		 VALUES ('context', 'learning-studio', $1, CURRENT_DATE)`,
-		term+" agent note content",
-	); err != nil {
-		t.Fatalf("seedSearchAgentNote: %v", err)
-	}
-}
-
-// seedSearchTask inserts a coordination task whose title contains term.
-func seedSearchTask(t *testing.T, term string) {
-	t.Helper()
-	if _, err := testPool.Exec(t.Context(),
-		`INSERT INTO tasks (created_by, assignee, title)
-		 VALUES ('hq', 'learning-studio', $1)`,
-		term+" task title",
-	); err != nil {
-		t.Fatalf("seedSearchTask: %v", err)
-	}
-}
-
-// seedSearchBookmark inserts a bookmark whose title contains term. url_hash is
-// derived as sha256(slug) hex (64 lowercase hex chars — matches the schema
-// CHECK and the uniq_bookmarks_url_hash constraint) so the helper stays correct
-// if a future test seeds more than one bookmark per truncate cycle.
-func seedSearchBookmark(t *testing.T, slug, term string) {
-	t.Helper()
-	sum := sha256.Sum256([]byte(slug))
-	if _, err := testPool.Exec(t.Context(),
-		`INSERT INTO bookmarks (url, url_hash, slug, title, capture_channel, curated_by)
-		 VALUES ('https://example.com/' || $1, $2, $1, $3, 'manual', 'learning-studio')`,
-		slug, hex.EncodeToString(sum[:]), term+" bookmark title",
-	); err != nil {
-		t.Fatalf("seedSearchBookmark: %v", err)
-	}
 }
 
 // assertSearchResultShape checks the stable required fields of a single result
@@ -2438,18 +2249,15 @@ func TestIntegration_SearchKnowledge_CorpusInclusion(t *testing.T) {
 
 // --- corpus exclusion ---
 
-// TestIntegration_SearchKnowledge_CorpusExclusion seeds confusable non-corpus
-// entities (agent_note, task, bookmark) that all match the query term, plus one
-// in-corpus content row, and asserts the non-corpus entities never leak into
-// search_knowledge results. The in-corpus content row presence guards against a
-// vacuous pass (a non-matching term would make exclusion trivially true).
+// TestIntegration_SearchKnowledge_CorpusExclusion seeds a confusable non-corpus
+// note that matches the query term alongside one in-corpus content row, and
+// asserts only corpus source types (content, note) surface in search_knowledge
+// results. The in-corpus content row presence guards against a vacuous pass (a
+// non-matching term would make exclusion trivially true).
 func TestIntegration_SearchKnowledge_CorpusExclusion(t *testing.T) {
 	s := setupServer(t)
 	const term = "zqxexcl"
 	seedSearchContent(t, "sk-excl-content", term, "draft")
-	seedSearchAgentNote(t, term)
-	seedSearchTask(t, term)
-	seedSearchBookmark(t, "sk-excl-bookmark", term)
 
 	_, out, err := callHandler(t, s.searchKnowledge, SearchKnowledgeInput{Query: term})
 	if err != nil {
@@ -2462,12 +2270,6 @@ func TestIntegration_SearchKnowledge_CorpusExclusion(t *testing.T) {
 	for _, r := range out.Results {
 		if r.SourceType != SourceTypeContent && r.SourceType != SourceTypeNote {
 			t.Errorf("non-corpus entity leaked: source_type = %q", r.SourceType)
-		}
-		// agent_note / task / bookmark titles carry these markers.
-		for _, leak := range []string{"agent note content", "task title", "bookmark title"} {
-			if strings.Contains(r.Title, leak) {
-				t.Errorf("excluded entity leaked into results via title %q (marker %q)", r.Title, leak)
-			}
 		}
 	}
 }
@@ -2942,48 +2744,6 @@ func seedRelNote(t *testing.T, slug, term, kind, maturity string) uuid.UUID {
 	return id
 }
 
-// seedRelAgentNote inserts an agent_notes row carrying term. agent_notes is
-// FTS-indexed with the same mechanism as notes — the strongest adversarial
-// control: if search_knowledge ever unioned it, this is the leak that surfaces.
-func seedRelAgentNote(t *testing.T, term string) {
-	t.Helper()
-	if _, err := testPool.Exec(t.Context(),
-		`INSERT INTO agent_notes (kind, created_by, content, entry_date)
-		 VALUES ('context', 'learning-studio', $1, CURRENT_DATE)`,
-		term+" agent note content",
-	); err != nil {
-		t.Fatalf("seedRelAgentNote: %v", err)
-	}
-}
-
-// seedRelTask inserts a tasks row carrying term in its title.
-func seedRelTask(t *testing.T, term string) {
-	t.Helper()
-	if _, err := testPool.Exec(t.Context(),
-		`INSERT INTO tasks (created_by, assignee, title)
-		 VALUES ('hq', 'learning-studio', $1)`,
-		term+" task title",
-	); err != nil {
-		t.Fatalf("seedRelTask: %v", err)
-	}
-}
-
-// seedRelArtifact inserts a standalone artifacts row carrying term in a text
-// part. Artifacts have NO FTS path at all (search-relevance-seed-plan.md §3c);
-// seeding one keeps the NEG-02 control faithful to the seed plan even though it
-// can only ever be empty in search_knowledge.
-func seedRelArtifact(t *testing.T, term string) {
-	t.Helper()
-	parts := fmt.Sprintf(`[{"text":%q}]`, term+" artifact part")
-	if _, err := testPool.Exec(t.Context(),
-		`INSERT INTO artifacts (created_by, name, description, parts)
-		 VALUES ('learning-studio', $1, '', $2::jsonb)`,
-		term+" artifact", parts,
-	); err != nil {
-		t.Fatalf("seedRelArtifact: %v", err)
-	}
-}
-
 // relSeeder seeds one seed_id row and reports whether it has a stable id worth
 // pinning in the evaluator (content/note do; non-corpus controls do not).
 type relSeeder func(t *testing.T) (uuid.UUID, bool)
@@ -3012,9 +2772,6 @@ func tier1SeederRegistry() map[string]relSeeder {
 
 	return map[string]relSeeder{
 		// NEG controls (corpus boundary).
-		"T-NEG":  noID(func(t *testing.T) { seedRelTask(t, "zqxtaskonly") }),
-		"AR-NEG": noID(func(t *testing.T) { seedRelArtifact(t, "zqxartonly") }),
-		"AN-NEG": noID(func(t *testing.T) { seedRelAgentNote(t, "zqxagentonly") }),
 		"C-ARCHIVED": withID(func(t *testing.T) uuid.UUID {
 			return seedRelContent(t, "rel-c-archived", "zqxarchcontent", "article", "archived", nil)
 		}),

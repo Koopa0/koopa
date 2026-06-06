@@ -74,7 +74,6 @@ type Session struct {
 	ID              uuid.UUID  `json:"id"`
 	Domain          string     `json:"domain"`
 	Mode            Mode       `json:"mode"`
-	AgentNoteID     *uuid.UUID `json:"agent_note_id,omitempty"`
 	DailyPlanItemID *uuid.UUID `json:"daily_plan_item_id,omitempty"`
 	StartedAt       time.Time  `json:"started_at"`
 	EndedAt         *time.Time `json:"ended_at,omitempty"`

@@ -14,49 +14,6 @@ import (
 	pgvector_go "github.com/pgvector/pgvector-go"
 )
 
-type AgentNoteKind string
-
-const (
-	AgentNoteKindPlan       AgentNoteKind = "plan"
-	AgentNoteKindContext    AgentNoteKind = "context"
-	AgentNoteKindReflection AgentNoteKind = "reflection"
-)
-
-func (e *AgentNoteKind) Scan(src interface{}) error {
-	switch s := src.(type) {
-	case []byte:
-		*e = AgentNoteKind(s)
-	case string:
-		*e = AgentNoteKind(s)
-	default:
-		return fmt.Errorf("unsupported scan type for AgentNoteKind: %T", src)
-	}
-	return nil
-}
-
-type NullAgentNoteKind struct {
-	AgentNoteKind AgentNoteKind `json:"agent_note_kind"`
-	Valid         bool          `json:"valid"` // Valid is true if AgentNoteKind is not NULL
-}
-
-// Scan implements the Scanner interface.
-func (ns *NullAgentNoteKind) Scan(value interface{}) error {
-	if value == nil {
-		ns.AgentNoteKind, ns.Valid = "", false
-		return nil
-	}
-	ns.Valid = true
-	return ns.AgentNoteKind.Scan(value)
-}
-
-// Value implements the driver Valuer interface.
-func (ns NullAgentNoteKind) Value() (driver.Value, error) {
-	if !ns.Valid {
-		return nil, nil
-	}
-	return string(ns.AgentNoteKind), nil
-}
-
 type AgentStatus string
 
 const (
@@ -364,48 +321,6 @@ func (ns NullHypothesisState) Value() (driver.Value, error) {
 	return string(ns.HypothesisState), nil
 }
 
-type MessageRole string
-
-const (
-	MessageRoleRequest  MessageRole = "request"
-	MessageRoleResponse MessageRole = "response"
-)
-
-func (e *MessageRole) Scan(src interface{}) error {
-	switch s := src.(type) {
-	case []byte:
-		*e = MessageRole(s)
-	case string:
-		*e = MessageRole(s)
-	default:
-		return fmt.Errorf("unsupported scan type for MessageRole: %T", src)
-	}
-	return nil
-}
-
-type NullMessageRole struct {
-	MessageRole MessageRole `json:"message_role"`
-	Valid       bool        `json:"valid"` // Valid is true if MessageRole is not NULL
-}
-
-// Scan implements the Scanner interface.
-func (ns *NullMessageRole) Scan(value interface{}) error {
-	if value == nil {
-		ns.MessageRole, ns.Valid = "", false
-		return nil
-	}
-	ns.Valid = true
-	return ns.MessageRole.Scan(value)
-}
-
-// Value implements the driver Valuer interface.
-func (ns NullMessageRole) Value() (driver.Value, error) {
-	if !ns.Valid {
-		return nil, nil
-	}
-	return string(ns.MessageRole), nil
-}
-
 type NoteKind string
 
 const (
@@ -543,51 +458,6 @@ func (ns NullProjectStatus) Value() (driver.Value, error) {
 	return string(ns.ProjectStatus), nil
 }
 
-type TaskState string
-
-const (
-	TaskStateSubmitted         TaskState = "submitted"
-	TaskStateWorking           TaskState = "working"
-	TaskStateCompleted         TaskState = "completed"
-	TaskStateCanceled          TaskState = "canceled"
-	TaskStateRevisionRequested TaskState = "revision_requested"
-)
-
-func (e *TaskState) Scan(src interface{}) error {
-	switch s := src.(type) {
-	case []byte:
-		*e = TaskState(s)
-	case string:
-		*e = TaskState(s)
-	default:
-		return fmt.Errorf("unsupported scan type for TaskState: %T", src)
-	}
-	return nil
-}
-
-type NullTaskState struct {
-	TaskState TaskState `json:"task_state"`
-	Valid     bool      `json:"valid"` // Valid is true if TaskState is not NULL
-}
-
-// Scan implements the Scanner interface.
-func (ns *NullTaskState) Scan(value interface{}) error {
-	if value == nil {
-		ns.TaskState, ns.Valid = "", false
-		return nil
-	}
-	ns.Valid = true
-	return ns.TaskState.Scan(value)
-}
-
-// Value implements the driver Valuer interface.
-func (ns NullTaskState) Value() (driver.Value, error) {
-	if !ns.Valid {
-		return nil, nil
-	}
-	return string(ns.TaskState), nil
-}
-
 type TodoState string
 
 const (
@@ -644,7 +514,7 @@ type ActivityEvent struct {
 	EntityTitle *string `json:"entity_title"`
 	// Slug of the entity AT THE TIME of the event, for slug-addressable types (content, bookmark, note, project). NULL otherwise.
 	EntitySlug *string `json:"entity_slug"`
-	// Closed set of mutation kinds. created = INSERT. state_changed = enum/status transition. completed/published/archived = specific terminal transitions worth distinguishing. acknowledged = source-side final acceptance of a completed task (state stays completed). updated = generic field change.
+	// Closed set of mutation kinds. created = INSERT. state_changed = enum/status transition. completed/published/archived = specific terminal transitions worth distinguishing. updated = generic field change.
 	ChangeKind string `json:"change_kind"`
 	// Optional project association for project-scoped activity feeds. SET NULL on project deletion.
 	ProjectID *uuid.UUID `json:"project_id"`
@@ -657,7 +527,7 @@ type ActivityEvent struct {
 	CreatedAt time.Time       `json:"created_at"`
 }
 
-// DB projection of the Go BuiltinAgents() registry. Rows are upserted at startup by agent.SyncToTable. Capability flags are NOT stored here — authorization is enforced in Go via the agent.Authorized compile-time wrapper. FK targets for coordination references (tasks, agent_notes, learning_hypotheses) use ON DELETE RESTRICT so historical records cannot dangle. Removed registry entries transition to status=retired rather than being deleted.
+// DB projection of the Go BuiltinAgents() registry. Rows are upserted at startup by agent.SyncToTable. Capability flags are NOT stored here — authorization is enforced in Go via the agent.Authorized compile-time wrapper. FK targets for coordination references (learning_hypotheses) use ON DELETE RESTRICT so historical records cannot dangle. Removed registry entries transition to status=retired rather than being deleted.
 type Agent struct {
 	// Unique agent identifier. Used as the caller identity (as: field) in MCP tool calls and as FK target for created_by / assignee / curated_by columns. Format: lowercase, must start with a letter, alphanumeric + hyphens.
 	Name string `json:"name"`
@@ -677,25 +547,6 @@ type Agent struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
-// An agent's internal narrative log — plans, context snapshots, reflections. Self-directed, not inter-agent coordination. Produced by a single agent across a session or day. RETENTION: indefinite.
-type AgentNote struct {
-	ID uuid.UUID `json:"id"`
-	// plan = daily plan. context = end-of-session state snapshot. reflection = retrospective review.
-	Kind AgentNoteKind `json:"kind"`
-	// Which agent wrote this note. FK to agents.
-	CreatedBy string `json:"created_by"`
-	// Free-text body of the note. Markdown allowed.
-	Content string `json:"content"`
-	// Structured metadata per kind. plan: {reasoning}. Daily todo selection is tracked in daily_plan_items, not here. context, reflection: no required metadata schema.
-	Metadata json.RawMessage `json:"metadata"`
-	// The logical date this note belongs to. May differ from created_at for backfilled notes.
-	EntryDate time.Time `json:"entry_date"`
-	// Row insertion timestamp.
-	CreatedAt time.Time `json:"created_at"`
-	// Generated tsvector for full-text search over content. Uses 'simple' config (no stemming, multilingual-safe — notes are written in both Chinese and English). GIN-indexed via idx_agent_notes_search. Mirrors contents.search_vector / notes.search_vector shape.
-	SearchVector interface{} `json:"search_vector"`
-}
-
 // PARA Areas of Responsibility — ongoing domains requiring sustained attention. Unlike projects (which complete), areas persist indefinitely. Each area has a standard to maintain, not a goal to achieve. Goals and projects reference areas via FK.
 type Area struct {
 	ID uuid.UUID `json:"id"`
@@ -712,66 +563,6 @@ type Area struct {
 	CreatedAt time.Time `json:"created_at"`
 	// Application-managed. Set explicitly in UPDATE queries.
 	UpdatedAt time.Time `json:"updated_at"`
-}
-
-// Structured deliverables, optionally bound to a task. Task-bound artifacts are produced during task work; standalone artifacts are self-initiated by an agent. Size bounds (32 parts, 256 KB) are looser than task_messages bounds.
-type Artifact struct {
-	ID uuid.UUID `json:"id"`
-	// Parent task. NULL for standalone (self-initiated) artifacts. CASCADE — task-bound artifacts die with their task.
-	TaskID *uuid.UUID `json:"task_id"`
-	// Agent that created this artifact. Required for standalone artifacts (task_id IS NULL). Optional for task-bound artifacts (attribution comes from the task).
-	CreatedBy *string `json:"created_by"`
-	// Short label identifying this artifact (e.g. "weekly-report", "architecture-diagram").
-	Name string `json:"name"`
-	// Optional longer description. Empty string = no description.
-	Description string `json:"description"`
-	// JSONB array of a2a.Part values (same format as task_messages.parts). Stores the actual deliverable content.
-	Parts json.RawMessage `json:"parts"`
-	// Row insertion timestamp.
-	CreatedAt time.Time `json:"created_at"`
-}
-
-// External resources curated with personal commentary. Curate = publish: creating a bookmark sets published_at = now() and is_public = true by default. No editorial review.
-type Bookmark struct {
-	ID uuid.UUID `json:"id"`
-	// Canonical external URL. Must use http(s) scheme. SEO canonical tag points to this value.
-	Url string `json:"url"`
-	// SHA-256 hex digest (64 chars) of the canonical URL. Dedup identity. Computed in application code before INSERT.
-	UrlHash string `json:"url_hash"`
-	// URL-safe internal identifier for the bookmark's permalink on the koopa0.dev site. Distinct from the external URL.
-	Slug string `json:"slug"`
-	// Display title. May override the source title if edited at capture time.
-	Title string `json:"title"`
-	// Short excerpt from the source. Empty string when none.
-	Excerpt string `json:"excerpt"`
-	// Curator's personal commentary. Empty string when none.
-	Note string `json:"note"`
-	// How the bookmark entered the system. rss = curated from a feed entry. manual = pasted by the curator. shared = received via an external channel.
-	CaptureChannel string `json:"capture_channel"`
-	// When capture_channel=rss, references the originating feed_entries row. NULL otherwise. SET NULL on feed_entry deletion.
-	SourceFeedEntryID *uuid.UUID `json:"source_feed_entry_id"`
-	// Agent that curated the bookmark. FK to agents.
-	CuratedBy string `json:"curated_by"`
-	// When the bookmark was curated into the system.
-	CuratedAt time.Time `json:"curated_at"`
-	// Whether this bookmark is visible on the public website. Defaults to true — curate = publish.
-	IsPublic bool `json:"is_public"`
-	// When the bookmark was published. Defaults to now() at row creation since creating a bookmark is the act of publishing.
-	PublishedAt time.Time `json:"published_at"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
-}
-
-// Junction: bookmark ↔ tag. References canonical tags resolved through the tag_aliases pipeline.
-type BookmarkTag struct {
-	BookmarkID uuid.UUID `json:"bookmark_id"`
-	TagID      uuid.UUID `json:"tag_id"`
-}
-
-// Junction: bookmark ↔ topic. Many-to-many. Topics are curated knowledge domain categories (same taxonomy as content_topics).
-type BookmarkTopic struct {
-	BookmarkID uuid.UUID `json:"bookmark_id"`
-	TopicID    uuid.UUID `json:"topic_id"`
 }
 
 // Learning ontology — concepts, patterns, skills, and principles that can be learned, practiced, and diagnosed. Independent from tags (which handle content classification). Hierarchy via parent_id (typical: pattern contains skill, skill refines principle — but kind ordering is convention, not DDL-enforced). Mastery is a derived state computed from attempt_observations aggregation, not stored on this table.
@@ -874,8 +665,6 @@ type DailyPlanItem struct {
 	Position int32 `json:"position"`
 	// Optional rationale for selecting this todo today. NULL = no specific reason recorded.
 	Reason *string `json:"reason"`
-	// Optional link to the agent_notes(kind='plan') entry that drove this planning session. All items from the same planning session share the same agent_note_id. Enables "which reasoning led to these todo selections" queries. Symmetric with learning_sessions.agent_note_id — session produces the note, agent_note_id links back. SET NULL on note deletion. INVARIANT: the referenced agent_note MUST have kind='plan'. Schema does not enforce this (no CHECK across rows) — writers are responsible. plan_day and morning_context MCP handlers must validate kind before insert; tests live in internal/mcp (agent_note kind binding integration).
-	AgentNoteID *uuid.UUID `json:"agent_note_id"`
 	// Lifecycle state. planned = committed for today. done = completed within this day (independent of todos.state for recurring todos). deferred = not done today, carry-over candidate for future planning. dropped = explicitly removed from plan, no intent to carry over.
 	Status    string    `json:"status"`
 	CreatedAt time.Time `json:"created_at"`
@@ -1107,15 +896,13 @@ type LearningPlanEntry struct {
 	CompletedAt *time.Time `json:"completed_at"`
 }
 
-// Session orchestration boundary — explicit start/end, mode, and attempt container. Distinct from agent_notes: agent_notes are post-hoc narrative (plan, context, reflection), sessions are in-progress orchestration. A session ending may produce an agent_notes(kind=reflection) entry, linked via agent_note_id. updated_at tracks mutation: ended_at and agent_note_id are written by EndSession, and metadata may be updated mid-session by orchestration code.
+// Session orchestration boundary — explicit start/end, mode, and attempt container. updated_at tracks mutation: ended_at is written by EndSession, and metadata may be updated mid-session by orchestration code.
 type LearningSession struct {
 	ID uuid.UUID `json:"id"`
 	// Learning domain for this session. FK to learning_domains.
 	Domain string `json:"domain"`
 	// retrieval: recall-based testing (no hints). practice: active problem-solving with coaching. mixed: combination of retrieval and practice. review: revisiting previously solved items. reading: comprehension-focused (DDIA, O'Reilly, literary texts).
 	SessionMode string `json:"session_mode"`
-	// Optional link to the reflection agent_notes entry written after the session. The session produces the note, not the other way around. SET NULL on note deletion. Kind binding (must reference an agent_notes row with kind='reflection') is enforced by trg_learning_sessions_agent_note_kind.
-	AgentNoteID *uuid.UUID `json:"agent_note_id"`
 	// If this session was planned in the daily plan, link here. Enables plan adherence analysis. SET NULL on plan item deletion.
 	DailyPlanItemID *uuid.UUID `json:"daily_plan_item_id"`
 	// Session start time. DEFAULT now() for immediate starts.
@@ -1370,77 +1157,6 @@ type RefreshToken struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
-// Agent-produced research/source artifacts — a first-class corpus member, low_trust by default. Distinct from notes (human-digested private knowledge, maturity axis) and contents (editorial/publication, status + is_public axes). A report is a SOURCE, not digested knowledge: a trusted report is still a source, never an evergreen note. Trust promotion (low_trust → trusted) is a human/admin act and is NOT exposed on the agent MCP surface. Reports are searchable from creation (search_knowledge), badged by source_type=report + trust_status, and downranked relative to notes/content so agent output never drowns out personal notes. Thin by design: no topics/tags, no publish lifecycle, no embedding, no maturity, and deliberately no audit trail (no activity_events trigger fires for this table; produced_by + created_at carry provenance).
-type Report struct {
-	ID uuid.UUID `json:"id"`
-	// Short title/summary of the report. Non-blank. Weighted A in search_vector.
-	Title string `json:"title"`
-	// Report body in markdown (the research/source content). Weighted C in search_vector (first 10000 chars, mirroring contents/notes).
-	Body string `json:"body"`
-	// References agents(name). The agent that produced this report — required provenance. ON DELETE RESTRICT so a report cannot lose its author.
-	ProducedBy string `json:"produced_by"`
-	// References research_assignments(id). NULL for a standalone report (no dispatched assignment). Set when the report fulfills a fan-out assignment — the provenance link. ON DELETE SET NULL: deleting the assignment keeps the report (the source survives) but drops the provenance pointer.
-	OriginAssignmentID *uuid.UUID `json:"origin_assignment_id"`
-	// Trust axis: low_trust → trusted. Agent reports are born low_trust. Promotion to trusted is a human/admin verdict (research.Store.SetReportTrust is schema/store-ready, but no production human UI exists yet — deferred), never an agent MCP action and never the same thing as note maturity. low_trust controls search RANKING (downranked + badged), NOT visibility.
-	TrustStatus string `json:"trust_status"`
-	// Generated tsvector for full-text search. Mirrors notes.search_vector shape (title weight A, body weight C). Reports are FTS-only — no embedding column.
-	SearchVector string    `json:"search_vector"`
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
-}
-
-// Fan-out research dispatch. HQ/human assigns a topic to an agent; the agent works autonomously and fulfills it by creating a report row referencing this assignment. Fan-out only — no parent_assignment_id, no chaining, no acceptance ceremony. An open assignment with no report is unfulfilled and store-queryable, but no agent-facing read surface exposes it yet. Deliberately un-audited: no activity_events trigger fires for this table (provenance lives on assigned_by + created_at). Distinct from tasks (the A2A coordination entity, with acknowledge/file_report/revision lifecycle) — research assignments have no such lifecycle by design.
-type ResearchAssignment struct {
-	ID uuid.UUID `json:"id"`
-	// What to research, in free text. Non-blank (chk_research_assignment_topic_not_blank).
-	Topic string `json:"topic"`
-	// References agents(name). The agent expected to produce the report. ON DELETE RESTRICT so a dispatched assignment cannot dangle.
-	AssignedTo string `json:"assigned_to"`
-	// References agents(name). The dispatcher (HQ or human). assign_research is author-gated to hq + human, so this is one of those.
-	AssignedBy string `json:"assigned_by"`
-	// Lifecycle: open → fulfilled. open = dispatched, no report yet (persisted and store-queryable; no agent-facing read tool surfaces it yet). fulfilled = a report referencing this assignment exists. Set by research.Store, never by trigger. There is no cancel/revision state.
-	Status    string    `json:"status"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
-	// NULL until a report fulfills this assignment, then set to now() in the same transaction that creates the report. Paired with status=fulfilled by chk_research_assignment_fulfilled_pair.
-	FulfilledAt *time.Time `json:"fulfilled_at"`
-}
-
-// Spaced repetition card state. Algorithm-agnostic; currently FSRS. One card per learning_target. Review is scoped to learning_targets only — content- or concept-scoped review is not modelled; add a new junction table when that feature ships.
-type ReviewCard struct {
-	ID uuid.UUID `json:"id"`
-	// Learning target (problem, drill, chapter). CASCADE on target deletion. Unique (uq_review_cards_learning_target) — one card per target.
-	LearningTargetID uuid.UUID `json:"learning_target_id"`
-	// Serialized FSRS state (Due, Stability, Difficulty, Reps, Lapses). Opaque to SQL.
-	CardState json.RawMessage `json:"card_state"`
-	// Denormalized from card_state for index-based due-date queries.
-	Due time.Time `json:"due"`
-	// When the last attempt-driven FSRS review for this card failed to apply. NULL = never drifted. Paired with last_drift_reason by chk_review_card_drift_pair. Cleared on next successful review. Consumers (retrieval view) surface a drift_suspect flag when this is set and more recent than the last attempt.
-	LastSyncDriftAt *time.Time `json:"last_sync_drift_at"`
-	// Short machine-readable reason for the most recent drift event. NULL when last_sync_drift_at is NULL. Examples: unknown_outcome, persist_failed.
-	LastDriftReason *string   `json:"last_drift_reason"`
-	CreatedAt       time.Time `json:"created_at"`
-	// Application-managed. Set explicitly in UPDATE queries.
-	UpdatedAt time.Time `json:"updated_at"`
-}
-
-// Append-only review history. One row per review event. RETENTION: indefinite (FSRS algorithm needs full history).
-type ReviewLog struct {
-	ID int64 `json:"id"`
-	// The review card this log belongs to. CASCADE — card deletion removes its history.
-	CardID uuid.UUID `json:"card_id"`
-	// 1=Again (forgot), 2=Hard (partial), 3=Good (remembered), 4=Easy.
-	Rating int32 `json:"rating"`
-	// Days the FSRS algorithm scheduled between this and the previous review.
-	ScheduledDays int32 `json:"scheduled_days"`
-	// Actual days elapsed since the previous review.
-	ElapsedDays int32 `json:"elapsed_days"`
-	// Card state BEFORE this review: 0=New, 1=Learning, 2=Review, 3=Relearning.
-	State int32 `json:"state"`
-	// When this review occurred. May differ from row insertion time if backfilled. DEFAULT now() for real-time reviews.
-	ReviewedAt time.Time `json:"reviewed_at"`
-}
-
 // Canonical tag registry. Fine-grained content-classification labels (two-pointers, error-handling). Resolved through tag_aliases pipeline. Mastery diagnosis and weakness tracking live in the concepts + learning_attempt_observations path — tags MUST NOT carry diagnostic semantics.
 type Tag struct {
 	ID uuid.UUID `json:"id"`
@@ -1468,54 +1184,6 @@ type TagAlias struct {
 	// When an admin confirmed this mapping. NULL iff confirmed = false (enforced by chk_confirmed_pair). Set together with confirmed = true.
 	ConfirmedAt *time.Time `json:"confirmed_at"`
 	CreatedAt   time.Time  `json:"created_at"`
-}
-
-// Inter-agent coordination work units. Distinct from personal GTD todos. One agent asks another to do work. Lifecycle: submitted → working → completed | canceled. Completed tasks can enter a revision cycle: completed → revision_requested → working → completed. chk_tasks_state_timestamps makes illegal (state, timestamp) combinations impossible. Conversation history lives in task_messages; structured deliverables live in artifacts. A completed task must have at least one response message and at least one artifact — enforced by trg_tasks_completion_requires_outputs.
-type Task struct {
-	ID uuid.UUID `json:"id"`
-	// Agent that submitted the task. FK to agents.
-	CreatedBy string `json:"created_by"`
-	// Agent expected to perform the work. FK to agents.
-	Assignee string `json:"assignee"`
-	// Short human-readable task label.
-	Title string `json:"title"`
-	// submitted = created, not yet accepted. working = assignee accepted, in flight. completed = response and artifact delivered. canceled = withdrawn before completion. revision_requested = human reviewer requested changes on a completed task.
-	State TaskState `json:"state"`
-	// When the task must be completed by. NULL = no deadline. Queryable routing signal for "tasks due soon" dashboards.
-	Deadline *time.Time `json:"deadline"`
-	// Caller-declared priority (high | medium | low). NULL = unspecified. Queryable routing signal alongside deadline.
-	Priority *string `json:"priority"`
-	// When the task was created. DEFAULT now().
-	SubmittedAt time.Time `json:"submitted_at"`
-	// When the assignee transitioned the task to working. NULL while state=submitted or for tasks canceled before acceptance.
-	AcceptedAt *time.Time `json:"accepted_at"`
-	// When the assignee delivered the final outputs. NULL unless state=completed or revision_requested. Cleared when re-entering working after revision.
-	CompletedAt *time.Time `json:"completed_at"`
-	// When the task was canceled. NULL unless state=canceled. Mutually exclusive with completed_at.
-	CanceledAt *time.Time `json:"canceled_at"`
-	// When a human reviewer requested changes on a completed task. NULL unless state=revision_requested. Cleared when re-entering working after revision.
-	RevisionRequestedAt *time.Time `json:"revision_requested_at"`
-	// Non-routing task info: correlation keys, opaque payload hints. Promote a field to a column when WHERE/JOIN/GROUP BY usage exceeds 3 occurrences.
-	Metadata json.RawMessage `json:"metadata"`
-	// Source-side final acceptance of the current completed result. NULL until the source agent calls /approve on a completed, unacknowledged task. A non-NULL value means: this delivery is accepted, the task is closed for revisions, and the awaiting-judgment inbox should not show it.
-	AcknowledgedAt *time.Time `json:"acknowledged_at"`
-	// Agent that acknowledged the task. Must equal tasks.created_by — enforced at the store layer, not at the schema, because the FK can only check agents(name) existence. NULL together with acknowledged_at.
-	AcknowledgedBy *string `json:"acknowledged_by"`
-}
-
-// Ordered request/response conversation turns on a task. Parts column is a JSONB array of a2a.Part values (flattened form). Hard size caps (16 parts max, 32 KB total) are DB-enforced bloat prevention — anything larger belongs in artifacts, not messages.
-type TaskMessage struct {
-	ID uuid.UUID `json:"id"`
-	// Parent task. CASCADE — messages die with their task.
-	TaskID uuid.UUID `json:"task_id"`
-	// request = message from the task creator to the assignee. response = message from the assignee back to the task creator.
-	Role MessageRole `json:"role"`
-	// Order within a task conversation, 0-based. UNIQUE(task_id, position) prevents duplicates and out-of-order inserts.
-	Position int32 `json:"position"`
-	// JSONB array of a2a.Part values in a2a-go's flattened format. Each part is {"text": "..."} or {"data": {...}}. Serialized/deserialized by a2a-go — Go code never hand-rolls this shape.
-	Parts json.RawMessage `json:"parts"`
-	// Row insertion timestamp.
-	CreatedAt time.Time `json:"created_at"`
 }
 
 // Personal GTD work items. Distinct from the tasks coordination entity (inter-agent work units). Lifecycle: inbox (captured, not clarified) → todo (clarified, actionable) → in_progress → done. someday = interested but not now, reviewed in Weekly Review. inbox items lack project/due/priority — clarification promotes them to todo.

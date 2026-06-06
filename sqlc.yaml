@@ -84,8 +84,6 @@ sql:
             go_type: "string"
           - column: "notes.search_vector"
             go_type: "string"
-          - column: "reports.search_vector"
-            go_type: "string"
           # non-nullable JSONB → json.RawMessage
           - column: "feeds.filter_config"
             go_type:

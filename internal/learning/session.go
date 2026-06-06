@@ -33,7 +33,6 @@ func rowToSession(r *db.LearningSession) *Session {
 		ID:              r.ID,
 		Domain:          r.Domain,
 		Mode:            Mode(r.SessionMode),
-		AgentNoteID:     r.AgentNoteID,
 		DailyPlanItemID: r.DailyPlanItemID,
 		StartedAt:       r.StartedAt,
 		EndedAt:         r.EndedAt,
@@ -113,7 +112,7 @@ func (s *Store) ActiveSession(ctx context.Context) (*Session, error) {
 	return rowToSession(&row), nil
 }
 
-// EndSession ends the active session. Optionally links an agent_note entry.
+// EndSession ends the active session.
 //
 // Returns:
 //   - ErrNotFound: no session with that id exists
@@ -123,7 +122,7 @@ func (s *Store) ActiveSession(ctx context.Context) (*Session, error) {
 // pgx.ErrNoRows, so we look up the row first to give the caller an
 // actionable diagnostic — "id you sent doesn't exist" vs "you're racing
 // with another caller / your local state is stale" are different bugs.
-func (s *Store) EndSession(ctx context.Context, sessionID uuid.UUID, agentNoteID *uuid.UUID) (*Session, error) {
+func (s *Store) EndSession(ctx context.Context, sessionID uuid.UUID) (*Session, error) {
 	existing, err := s.SessionByID(ctx, sessionID)
 	if err != nil {
 		return nil, err
@@ -132,10 +131,7 @@ func (s *Store) EndSession(ctx context.Context, sessionID uuid.UUID, agentNoteID
 		return existing, ErrAlreadyEnded
 	}
 
-	row, err := s.q.EndSession(ctx, db.EndSessionParams{
-		ID:          sessionID,
-		AgentNoteID: agentNoteID,
-	})
+	row, err := s.q.EndSession(ctx, sessionID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return s.handleEndSessionRace(ctx, sessionID)
 	}
