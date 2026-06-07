@@ -66,6 +66,11 @@ func (s *Server) resolvePlanDate(date *string) (time.Time, error) {
 	return t, nil
 }
 
+// maxPlanPosition bounds the user-supplied plan position so the int32 cast
+// in createPlanItemTx cannot overflow. Daily plans are small; this is a
+// generous safety ceiling, not a product limit.
+const maxPlanPosition = 100_000
+
 // createPlanItemTx resolves a single PlanDayItem against tx-bound stores
 // and inserts the daily_plan_items row. The caller wraps all calls in a
 // single transaction so a mid-loop failure rolls back both the new
@@ -87,6 +92,9 @@ func createPlanItemTx(ctx context.Context, txTodos *todo.Store, txDayplan *daily
 	if t.State == todo.StateInbox {
 		return fmt.Errorf("todo item %s is in inbox state — it must be clarified to state=todo (via the admin UI) before planning", item.TaskID)
 	}
+	if item.Position < 0 || item.Position > maxPlanPosition {
+		return fmt.Errorf("todo item %s position %d out of range [0, %d]", item.TaskID, item.Position, maxPlanPosition)
+	}
 	pos := item.Position
 	if pos == 0 {
 		pos = i
@@ -95,7 +103,7 @@ func createPlanItemTx(ctx context.Context, txTodos *todo.Store, txDayplan *daily
 		PlanDate:   date,
 		TodoID:     itemID,
 		SelectedBy: caller,
-		Position:   int32(pos), // #nosec G115 -- position is bounded by caller Items slice length
+		Position:   int32(pos), // #nosec G115 -- pos validated to [0, maxPlanPosition] or the loop index; fits int32
 	}); err != nil {
 		return fmt.Errorf("creating plan item for todo %s: %w", item.TaskID, err)
 	}

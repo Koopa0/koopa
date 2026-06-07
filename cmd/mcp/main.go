@@ -175,6 +175,7 @@ func runHTTP(ctx context.Context, cfg *config, server *mcp.Server, logger *slog.
 		ReadTimeout:       10 * time.Second,
 		WriteTimeout:      120 * time.Second,
 		IdleTimeout:       600 * time.Second,
+		MaxHeaderBytes:    1 << 20, // 1 MB — bound request header size (security.md)
 	}
 
 	go func() {
