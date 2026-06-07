@@ -153,6 +153,13 @@ export const routes: Routes = [
           ),
       },
       {
+        path: 'commitment/goals/new',
+        loadComponent: () =>
+          import('./admin/commitment/goals/create/goal-create.page').then(
+            (m) => m.GoalCreatePageComponent,
+          ),
+      },
+      {
         path: 'commitment/goals/:id',
         loadComponent: () =>
           import('./admin/commitment/goals/profile/goal-profile.page').then(

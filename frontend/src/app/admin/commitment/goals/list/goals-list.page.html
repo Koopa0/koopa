@@ -31,13 +31,22 @@
       }
     </div>
 
-    <span
-      class="ml-auto font-mono text-[11px] text-zinc-500"
-      aria-live="polite"
-      data-testid="goals-count"
-    >
-      Showing {{ total() }} {{ total() === 1 ? 'goal' : 'goals' }}
-    </span>
+    <div class="ml-auto flex items-center gap-3">
+      <span
+        class="font-mono text-[11px] text-zinc-500"
+        aria-live="polite"
+        data-testid="goals-count"
+      >
+        Showing {{ total() }} {{ total() === 1 ? 'goal' : 'goals' }}
+      </span>
+      <a
+        routerLink="/admin/commitment/goals/new"
+        class="rounded-sm bg-brand px-3 py-1.5 text-xs font-medium text-bg transition-colors hover:bg-brand-strong"
+        data-testid="goals-new"
+      >
+        New goal
+      </a>
+    </div>
   </div>
 
   @if (hasError()) {
@@ -54,7 +63,7 @@
     [isLoading]="isLoading()"
     [isEmpty]="isEmpty()"
     emptyTitle="No goals match this filter"
-    emptyDescription="Goals enter the system via Cowork's propose_commitment flow."
+    emptyDescription="Create a goal to start tracking a commitment."
   >
     <table class="w-full text-sm" data-testid="goals-list-table">
       <thead>

@@ -10,7 +10,7 @@ import {
   viewChildren,
 } from '@angular/core';
 import { rxResource } from '@angular/core/rxjs-interop';
-import { Router } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { DatePipe } from '@angular/common';
 import { PlanService } from '../../../../core/services/plan.service';
 import { AdminTopbarService } from '../../../admin-layout/admin-topbar.service';
@@ -74,7 +74,7 @@ const STATUS_LABEL: Record<GoalStatus, string> = {
 @Component({
   selector: 'app-goals-list-page',
   standalone: true,
-  imports: [DataTableComponent, DatePipe],
+  imports: [DataTableComponent, DatePipe, RouterLink],
   templateUrl: './goals-list.page.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {

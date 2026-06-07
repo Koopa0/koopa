@@ -8,6 +8,18 @@ import type {
   ProjectDetail,
 } from '../models/admin.model';
 
+/**
+ * Goal create request. `status` is server-set (always `not_started`);
+ * `area_id` is omitted until an areas endpoint exists. Optional fields are
+ * sent only when present so the server applies its own defaults.
+ */
+export interface GoalCreateRequest {
+  title: string;
+  description: string;
+  quarter?: string;
+  deadline?: string;
+}
+
 /** Planning service — goals + projects read endpoints (admin REST). */
 @Injectable({ providedIn: 'root' })
 export class PlanService {
@@ -15,6 +27,15 @@ export class PlanService {
 
   getGoalsOverview(): Observable<GoalsOverview> {
     return this.api.getData<GoalsOverview>('/api/admin/commitment/goals');
+  }
+
+  /**
+   * Create a goal (human-only, adminMid). The server always sets
+   * status=not_started; transitions go through {@link updateGoalStatus}.
+   * Returns the created goal so the caller can route to its detail page.
+   */
+  createGoal(body: GoalCreateRequest): Observable<GoalDetail> {
+    return this.api.postData<GoalDetail>('/api/admin/commitment/goals', body);
   }
 
   getGoalDetail(id: string): Observable<GoalDetail> {
