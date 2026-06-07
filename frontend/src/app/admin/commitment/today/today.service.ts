@@ -1,268 +1,136 @@
 import { Injectable, inject } from '@angular/core';
-import { Observable, combineLatest, map, of } from 'rxjs';
-import { catchError } from 'rxjs/operators';
-import { ContentService } from '../../../core/services/content.service';
-import { HypothesisService } from '../../../core/services/hypothesis.service';
-import { TaskService } from '../../../core/services/task.service';
-import { DailyPlanService } from '../../../core/services/daily-plan.service';
-import { SystemService } from '../../../core/services/system.service';
-import type { ApiContent } from '../../../core/models/api.model';
+import { Observable } from 'rxjs';
+import { ApiService } from '../../../core/services/api.service';
+import type { GoalStatus } from '../../../core/models/api.model';
 import type {
-  CoordinationTask,
-  DailyPlanResponse,
-  Hypothesis,
+  EnergyLevel,
+  HypothesisState,
+  TodoState,
 } from '../../../core/models/workbench.model';
-import type { SystemHealth } from '../../../core/models/admin.model';
-
-/** Row surfaced in the HERO "Awaiting your judgment" section. */
-export interface JudgmentRow {
-  kind: 'content' | 'hypothesis' | 'task';
-  id: string;
-  title: string;
-  subtitle: string;
-  submittedAt: string;
-  ageDays: number;
-  /** Three-letter visual badge (ART/ESS/BLG/TIL/DGT/HYP/TSK). */
-  badge: string;
-  /** Route to open when the row is activated. */
-  route: string | null;
-}
-
-const CONTENT_TYPE_BADGE: Record<ApiContent['type'], string> = {
-  article: 'ART',
-  essay: 'ESS',
-  'build-log': 'BLG',
-  til: 'TIL',
-  digest: 'DGT',
-};
 
 /**
- * BackendDailyPlanItem is the wire shape returned by
- * GET /api/admin/commitment/daily-plan (internal/daily/handler.go PlanItem):
- * `title` + `state` (the daily_plan_items lifecycle). It diverges from the
- * shared `DailyPlanItem` model (todo_title/todo_state/status/position);
- * TodayService maps the real shape locally rather than mutating the shared
- * model.
+ * Today read-models — bound to GET /api/admin/commitment/today, the HTTP
+ * mirror of the agent brief(mode=morning) tool. Field names track the Go
+ * wire structs verbatim (internal/today/today.go and the nested
+ * todo.PendingDetail / daily.Item / goal.ActiveGoalSummary /
+ * hypothesis.Record / learning.Session). Lists are always present ([],
+ * never null); active_session is omitted when no session is open.
  */
-interface BackendDailyPlanItem {
+
+/** A pending todo joined with its project — overdue / today / upcoming. */
+export interface PendingDetail {
   id: string;
-  todo_id: string;
   title: string;
-  state: string; // planned | done | deferred | dropped
+  state: TodoState;
+  due?: string;
+  project_title: string;
+  project_slug: string;
+  energy?: EnergyLevel;
   priority?: string;
-  reason?: string;
-  due_date?: string;
-  completed_at?: string;
-  selected_by: string;
+  recur_interval?: number;
+  recur_unit?: string;
+  created_at: string;
+  updated_at: string;
 }
 
-/** TodayPlanItem is the view-model the Today plan region renders. Fields are
- *  derived only from real backend fields — no dependence on todo_title /
- *  todo_state / position, which the daily-plan endpoint does not emit. */
-export interface TodayPlanItem {
+export type CommittedStatus = 'planned' | 'done' | 'deferred' | 'dropped';
+
+/** A committed daily-plan item — today's plan (daily.Item). */
+export interface CommittedItem {
+  id: string;
+  plan_date: string;
+  todo_id: string;
+  selected_by: string;
+  position: number;
+  reason?: string;
+  status: CommittedStatus;
+  todo_title: string;
+  todo_state: string;
+  todo_due?: string;
+  todo_energy?: string;
+  todo_priority?: string;
+  project_title: string;
+  project_slug: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PlanCompletion {
+  planned: number;
+  completed: number;
+  deferred: number;
+}
+
+/** Active goal with milestone rollup (goal.ActiveGoalSummary). */
+export interface ActiveGoalSummary {
   id: string;
   title: string;
-  /** daily_plan_items lifecycle, mapped from backend `state`. */
-  status: string;
+  description: string;
+  status: GoalStatus;
+  area_id?: string;
+  area_name: string;
+  quarter?: string;
+  deadline?: string;
+  milestone_total: number;
+  milestone_done: number;
+  created_at: string;
+  updated_at: string;
 }
 
-export interface PlanSummary {
+/** An unverified hypothesis (hypothesis.Record, state=unverified). */
+export interface UnverifiedHypothesis {
+  id: string;
+  created_by: string;
+  content: string;
+  state: HypothesisState;
+  claim: string;
+  invalidation_condition: string;
+  observed_date: string;
+  created_at: string;
+}
+
+/** The open learning session, if any (learning.Session). */
+export interface ActiveSession {
+  id: string;
+  domain: string;
+  mode: string;
+  daily_plan_item_id?: string;
+  started_at: string;
+  created_at: string;
+}
+
+export interface RssHighlight {
+  title: string;
+  url: string;
+  feed_name: string;
+  created_at: string;
+}
+
+/** The full brief(morning) wire shape. */
+export interface TodayBrief {
   date: string;
-  items: TodayPlanItem[];
-  total: number;
-  done: number;
-  overdue: number;
-}
-
-export type WarningSeverity = 'warn' | 'error';
-
-export interface TodayWarning {
-  severity: WarningSeverity;
-  source: 'feed' | 'pipeline' | 'goal';
-  message: string;
-}
-
-export interface TodayVm {
-  date: string;
-  awaitingJudgment: JudgmentRow[];
-  plan: PlanSummary | null;
-  warnings: TodayWarning[];
+  overdue_todos: PendingDetail[];
+  today_todos: PendingDetail[];
+  committed_todos: CommittedItem[];
+  upcoming_todos: PendingDetail[];
+  plan_completion: PlanCompletion;
+  active_goals: ActiveGoalSummary[];
+  unverified_hypotheses: UnverifiedHypothesis[];
+  active_session?: ActiveSession;
+  rss_highlights: RssHighlight[];
 }
 
 /**
- * Today page composer. Until `GET /api/admin/commitment/today` ships per
- *, this service fans out to the existing per-entity
- * endpoints and assembles the Today envelope. Each source degrades
- * independently — one failing dependency does not blank the whole view.
- *
- * Swap this to a single-endpoint call (`CommitmentService.today()`) once
- * the backend lands `/commitment/today`; the `TodayVm` shape stays the
- * same.
+ * Today page composer. A single call to the contracted aggregate endpoint;
+ * the backend fans out across the domain stores and degrades per-section,
+ * so the front end consumes one envelope rather than orchestrating the
+ * morning sections itself.
  */
 @Injectable({ providedIn: 'root' })
 export class TodayService {
-  private readonly contentService = inject(ContentService);
-  private readonly hypothesisService = inject(HypothesisService);
-  private readonly taskService = inject(TaskService);
-  private readonly dailyPlanService = inject(DailyPlanService);
-  private readonly systemService = inject(SystemService);
+  private readonly api = inject(ApiService);
 
-  today(): Observable<TodayVm> {
-    return combineLatest([
-      this.reviewContents(),
-      this.unverifiedHypotheses(),
-      this.completedTasks(),
-      this.plan(),
-      this.systemHealth(),
-    ]).pipe(
-      map(
-        ([contents, hypotheses, tasks, plan, health]): TodayVm => ({
-          date: todayIso(),
-          awaitingJudgment: [
-            ...contents.map(contentRow),
-            ...hypotheses.map(hypothesisRow),
-            ...tasks.map(taskRow),
-          ].sort(
-            (a, b) =>
-              new Date(a.submittedAt).getTime() -
-              new Date(b.submittedAt).getTime(),
-          ),
-          plan,
-          warnings: buildWarnings(health),
-        }),
-      ),
-    );
+  today(): Observable<TodayBrief> {
+    return this.api.getData<TodayBrief>('/api/admin/commitment/today');
   }
-
-  private reviewContents(): Observable<ApiContent[]> {
-    return this.contentService
-      .adminList({ status: 'review', perPage: 50 })
-      .pipe(
-        map((r) => r.data),
-        catchError(() => of<ApiContent[]>([])),
-      );
-  }
-
-  private unverifiedHypotheses(): Observable<Hypothesis[]> {
-    return this.hypothesisService
-      .list('unverified')
-      .pipe(catchError(() => of<Hypothesis[]>([])));
-  }
-
-  private completedTasks(): Observable<CoordinationTask[]> {
-    // Awaiting-judgment semantics: a task that has been source-acknowledged
-    // (acknowledged_at set) is final and must not appear in the inbox. The
-    // /completed endpoint is the completed-history view and intentionally
-    // includes acked tasks; we filter client-side until backend Today
-    // fan-out switches to a dedicated awaiting-approval source.
-    return this.taskService.completed().pipe(
-      map((rows) => rows.filter((t) => !t.acknowledged_at)),
-      catchError(() => of<CoordinationTask[]>([])),
-    );
-  }
-
-  private plan(): Observable<PlanSummary | null> {
-    return this.dailyPlanService.today().pipe(
-      map((r: DailyPlanResponse): PlanSummary => {
-        // The daily-plan endpoint emits BackendDailyPlanItem (title/state); the
-        // DailyPlanResponse model types items as the legacy DailyPlanItem, so
-        // read through the real wire shape and map to the Today view-model.
-        const backendItems = r.items as unknown as BackendDailyPlanItem[];
-        return {
-          date: r.date,
-          items: backendItems.map(toTodayPlanItem),
-          total: r.total,
-          done: r.done,
-          overdue: r.overdue_count,
-        };
-      }),
-      catchError(() => of<PlanSummary | null>(null)),
-    );
-  }
-
-  private systemHealth(): Observable<SystemHealth | null> {
-    return this.systemService
-      .getHealth()
-      .pipe(catchError(() => of<SystemHealth | null>(null)));
-  }
-}
-
-function toTodayPlanItem(it: BackendDailyPlanItem): TodayPlanItem {
-  return { id: it.id, title: it.title, status: it.state };
-}
-
-function todayIso(): string {
-  return new Date().toISOString().slice(0, 10);
-}
-
-function daysSince(dateStr: string): number {
-  const diff = Date.now() - new Date(dateStr).getTime();
-  return Math.max(0, Math.floor(diff / (1000 * 60 * 60 * 24)));
-}
-
-function contentRow(c: ApiContent): JudgmentRow {
-  const readingTime = c.reading_time_min ?? 0;
-  const subtitle =
-    readingTime > 0 ? `${c.type} · ${readingTime} min read` : c.type;
-  return {
-    kind: 'content',
-    id: c.id,
-    title: c.title,
-    subtitle,
-    submittedAt: c.updated_at,
-    ageDays: daysSince(c.updated_at),
-    badge: CONTENT_TYPE_BADGE[c.type] ?? 'CNT',
-    route: `/admin/knowledge/content/${c.id}/edit`,
-  };
-}
-
-function hypothesisRow(h: Hypothesis): JudgmentRow {
-  return {
-    kind: 'hypothesis',
-    id: h.id,
-    title: h.claim,
-    subtitle: `unverified · ${h.created_by}`,
-    submittedAt: h.created_at,
-    ageDays: daysSince(h.created_at),
-    badge: 'HYP',
-    route: null,
-  };
-}
-
-function taskRow(t: CoordinationTask): JudgmentRow {
-  const when = t.completed_at ?? t.submitted_at;
-  return {
-    kind: 'task',
-    id: t.id,
-    title: t.title,
-    subtitle: `${t.source} → ${t.target} · completed`,
-    submittedAt: when,
-    ageDays: daysSince(when),
-    badge: 'TSK',
-    route: null,
-  };
-}
-
-function buildWarnings(health: SystemHealth | null): TodayWarning[] {
-  if (!health) return [];
-
-  const warnings: TodayWarning[] = [];
-
-  for (const feed of health.feeds.failing_feeds) {
-    warnings.push({
-      severity: 'warn',
-      source: 'feed',
-      message: `${feed.name} failing — ${feed.error}`,
-    });
-  }
-
-  if (health.pipelines.failed > 0) {
-    warnings.push({
-      severity: 'error',
-      source: 'pipeline',
-      message: `${health.pipelines.failed} pipeline runs failed in the last 24h`,
-    });
-  }
-
-  return warnings;
 }

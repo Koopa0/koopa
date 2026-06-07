@@ -6,24 +6,29 @@ import {
   inject,
 } from '@angular/core';
 import { rxResource } from '@angular/core/rxjs-interop';
-import { Router, RouterLink } from '@angular/router';
+import { RouterLink } from '@angular/router';
 import { DatePipe } from '@angular/common';
-import { TodayService, type TodayVm, type JudgmentRow } from './today.service';
+import {
+  TodayService,
+  type PendingDetail,
+  type TodayBrief,
+} from './today.service';
 import { AdminTopbarService } from '../../admin-layout/admin-topbar.service';
 
+/** A labelled group of loose (unplanned) todos for the combined panel. */
+interface LooseGroup {
+  label: string;
+  items: PendingDetail[];
+}
+
 /**
- * Today — the Commitment landing page. Three stacked regions:
- *
- *   HERO     — content in review + unverified hypotheses + completed
- *              tasks awaiting human approval. Hidden when empty; PLAN
- *              promotes to the top.
- *   PLAN     — today's daily_plan_items with status glyphs and the
- *              top two active items for quick context.
- *   WARNINGS — cell-state envelope (failing feeds, pipeline failures).
- *              Only warn / error rows render; clean state is silent.
- *
- * Each region degrades independently: a 500 from one upstream endpoint
- * does not blank the others (see {@link TodayService}).
+ * Today — the Daily landing page, bound to the brief(morning) aggregate
+ * (GET /api/admin/commitment/today). It renders the day in skimmable,
+ * independently-degrading sections: plan completion, the committed plan,
+ * loose todos grouped overdue/today/upcoming, active goals, unverified
+ * hypotheses, the active learning session (the one "now" accent), and RSS
+ * highlights. Every list is always present ([]); the session is omitted
+ * when none is open.
  */
 @Component({
   selector: 'app-today-page',
@@ -36,10 +41,9 @@ import { AdminTopbarService } from '../../admin-layout/admin-topbar.service';
 export class TodayPageComponent {
   private readonly todayService = inject(TodayService);
   private readonly topbar = inject(AdminTopbarService);
-  private readonly router = inject(Router);
   private readonly destroyRef = inject(DestroyRef);
 
-  protected readonly resource = rxResource<TodayVm, void>({
+  protected readonly resource = rxResource<TodayBrief, void>({
     stream: () => this.todayService.today(),
   });
 
@@ -47,48 +51,60 @@ export class TodayPageComponent {
   protected readonly isLoading = computed(
     () => this.resource.status() === 'loading' && !this.vm(),
   );
-
-  protected readonly hasJudgment = computed(
-    () => (this.vm()?.awaitingJudgment ?? []).length > 0,
-  );
-  protected readonly hasPlan = computed(
-    () => (this.vm()?.plan?.items ?? []).length > 0,
-  );
-  protected readonly hasWarnings = computed(
-    () => (this.vm()?.warnings ?? []).length > 0,
+  protected readonly isError = computed(
+    () => this.resource.status() === 'error',
   );
 
-  // Glyphs + active-item filtering derive only from the daily_plan_items
-  // lifecycle (`status`, mapped from the backend `state`). The earlier
-  // `todo_state` ('in_progress') branch was removed: the daily-plan endpoint
-  // does not emit a todo GTD state, so that branch never fired in production
-  // (see TodayService.BackendDailyPlanItem / Track 1B-correction).
-  protected readonly planGlyphs = computed(() => {
-    const items = this.vm()?.plan?.items ?? [];
-    return items.slice(0, 8).map((item) => (item.status === 'done' ? '✓' : '·'));
+  /** Overdue / today / upcoming loose todos, only the non-empty buckets. */
+  protected readonly looseGroups = computed<LooseGroup[]>(() => {
+    const v = this.vm();
+    if (!v) return [];
+    return [
+      { label: 'Overdue', items: v.overdue_todos },
+      { label: 'Due today', items: v.today_todos },
+      { label: 'Upcoming', items: v.upcoming_todos },
+    ].filter((g) => g.items.length > 0);
   });
 
-  protected readonly topActivePlanItems = computed(() => {
-    const items = this.vm()?.plan?.items ?? [];
-    return items.filter((it) => it.status === 'planned').slice(0, 2);
+  protected readonly hasLooseTodos = computed(
+    () => this.looseGroups().length > 0,
+  );
+
+  /** committed.completed / total of the day's plan, as a percentage. */
+  protected readonly planPercent = computed(() => {
+    const pc = this.vm()?.plan_completion;
+    if (!pc) return 0;
+    const total = pc.planned + pc.completed + pc.deferred;
+    return total === 0 ? 0 : Math.round((pc.completed / total) * 100);
+  });
+
+  /** True when every section is empty — drives the teaching empty state. */
+  protected readonly isQuiet = computed(() => {
+    const v = this.vm();
+    if (!v) return false;
+    return (
+      v.committed_todos.length === 0 &&
+      v.overdue_todos.length === 0 &&
+      v.today_todos.length === 0 &&
+      v.upcoming_todos.length === 0 &&
+      v.active_goals.length === 0 &&
+      v.unverified_hypotheses.length === 0 &&
+      v.rss_highlights.length === 0 &&
+      !v.active_session
+    );
   });
 
   constructor() {
-    // Topbar context is static for this page; no signal dependencies means
-    // no need for effect() — a direct call mounts the context once.
-    this.topbar.set({
-      title: 'Today',
-      crumbs: ['Commitment', 'Today'],
-    });
+    this.topbar.set({ title: 'Today', crumbs: ['Daily', 'Today'] });
     this.destroyRef.onDestroy(() => this.topbar.reset());
   }
 
-  protected openJudgmentRow(row: JudgmentRow): void {
-    if (row.route) this.router.navigate([row.route]);
+  protected goalPercent(done: number, total: number): number {
+    if (total <= 0) return 0;
+    return Math.round((done / total) * 100);
   }
 
-  protected planProgressPercent(done: number, total: number): number {
-    if (total === 0) return 0;
-    return Math.round((done / total) * 100);
+  protected retry(): void {
+    this.resource.reload();
   }
 }

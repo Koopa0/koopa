@@ -3,77 +3,155 @@ import { provideRouter } from '@angular/router';
 import { of } from 'rxjs';
 
 import { TodayPageComponent } from './today-page.component';
-import { TodayService, type TodayVm } from './today.service';
+import { TodayService, type TodayBrief } from './today.service';
 import { AdminTopbarService } from '../../admin-layout/admin-topbar.service';
 
-// Track 1B-correction — pins the Today plan region at the PRODUCT surface
-// (component render), using a view-model whose plan items carry the
-// backend-mapped fields {id, title, status}. This proves:
-//   - the plan row renders `item.title` (not the fictional `todo_title`);
-//   - glyphs derive from `item.status` (done → ✓), not nonexistent fields;
-//   - the active-items list filters on `status==='planned'`, not `todo_state`.
-// A VM with fictional items (e.g. {todo_title, todo_state}) would render blank
-// rows and all-'·' glyphs, failing these assertions.
+// Pins the Today render at the PRODUCT surface against the brief(morning)
+// contract (GET /api/admin/commitment/today). A VM bound to the retired
+// fan-out shape (awaitingJudgment / warnings) would not render these
+// sections, failing these assertions.
 
-function vmWithPlan(): TodayVm {
+function populatedBrief(): TodayBrief {
   return {
-    date: '2026-05-21',
-    awaitingJudgment: [],
-    plan: {
-      date: '2026-05-21',
-      items: [
-        { id: 'p1', title: 'Fix auth middleware', status: 'planned' },
-        { id: 'p2', title: 'Ship release notes', status: 'done' },
-      ],
-      total: 2,
-      done: 1,
-      overdue: 0,
+    date: '2026-06-07',
+    overdue_todos: [],
+    today_todos: [
+      {
+        id: 't1',
+        title: 'Triage the GTD inbox',
+        state: 'todo',
+        project_title: 'koopa-core',
+        project_slug: 'koopa-core',
+        created_at: '2026-06-07T00:00:00Z',
+        updated_at: '2026-06-07T00:00:00Z',
+      },
+    ],
+    committed_todos: [
+      {
+        id: 'p1',
+        plan_date: '2026-06-07',
+        todo_id: 'td1',
+        selected_by: 'human',
+        position: 1,
+        status: 'planned',
+        todo_title: 'Rewrite auth handler',
+        todo_state: 'in_progress',
+        project_title: 'koopa-core',
+        project_slug: 'koopa-core',
+        created_at: '2026-06-07T00:00:00Z',
+        updated_at: '2026-06-07T00:00:00Z',
+      },
+    ],
+    upcoming_todos: [],
+    plan_completion: { planned: 3, completed: 1, deferred: 0 },
+    active_goals: [
+      {
+        id: 'g1',
+        title: 'Ship koopa v1',
+        description: '',
+        status: 'in_progress',
+        area_name: 'Build',
+        milestone_total: 5,
+        milestone_done: 2,
+        created_at: '2026-06-07T00:00:00Z',
+        updated_at: '2026-06-07T00:00:00Z',
+      },
+    ],
+    unverified_hypotheses: [
+      {
+        id: 'h1',
+        created_by: 'human',
+        content: '',
+        state: 'unverified',
+        claim: 'I reach for channels when a mutex is simpler',
+        invalidation_condition: 'Three drills picking the simplest primitive',
+        observed_date: '2026-06-02T00:00:00Z',
+        created_at: '2026-06-02T00:00:00Z',
+      },
+    ],
+    active_session: {
+      id: 's1',
+      domain: 'system-design',
+      mode: 'reading',
+      started_at: '2026-06-07T09:00:00Z',
+      created_at: '2026-06-07T09:00:00Z',
     },
-    warnings: [],
+    rss_highlights: [
+      {
+        title: 'Why HNSW beats IVF',
+        url: 'https://example.com/hnsw',
+        feed_name: 'pgvector',
+        created_at: '4h ago',
+      },
+    ],
   };
 }
 
-describe('TodayPageComponent — plan region render', () => {
+function quietBrief(): TodayBrief {
+  return {
+    date: '2026-06-07',
+    overdue_todos: [],
+    today_todos: [],
+    committed_todos: [],
+    upcoming_todos: [],
+    plan_completion: { planned: 0, completed: 0, deferred: 0 },
+    active_goals: [],
+    unverified_hypotheses: [],
+    rss_highlights: [],
+  };
+}
+
+describe('TodayPageComponent', () => {
   let fixture: ComponentFixture<TodayPageComponent>;
 
   afterEach(() => TestBed.resetTestingModule());
 
-  async function render(vm: TodayVm): Promise<void> {
+  async function render(brief: TodayBrief): Promise<HTMLElement> {
     TestBed.configureTestingModule({
       imports: [TodayPageComponent],
       providers: [
         provideRouter([]),
-        { provide: TodayService, useValue: { today: () => of(vm) } },
-        { provide: AdminTopbarService, useValue: { set: () => undefined, reset: () => undefined } },
+        { provide: TodayService, useValue: { today: () => of(brief) } },
+        {
+          provide: AdminTopbarService,
+          useValue: { set: () => undefined, reset: () => undefined },
+        },
       ],
     });
     fixture = TestBed.createComponent(TodayPageComponent);
     fixture.detectChanges();
     await fixture.whenStable();
     fixture.detectChanges();
+    return fixture.nativeElement as HTMLElement;
   }
 
-  it('renders the active plan item title from the backend-mapped `title` field', async () => {
-    await render(vmWithPlan());
+  function testid(el: HTMLElement, id: string): HTMLElement | null {
+    return el.querySelector(`[data-testid="${id}"]`);
+  }
 
-    const active = fixture.nativeElement.querySelector(
-      '[data-testid="today-plan-active"]',
-    ) as HTMLElement;
-    expect(active).toBeTruthy();
-    // Planned item renders; the done item is not "active".
-    expect(active.textContent).toContain('Fix auth middleware');
-    expect(active.textContent).not.toContain('Ship release notes');
+  it('should render the committed plan from todo_title when populated', async () => {
+    const el = await render(populatedBrief());
+    const plan = testid(el, 'today-plan');
+    expect(plan).toBeTruthy();
+    expect(plan?.textContent).toContain('Rewrite auth handler');
   });
 
-  it('derives plan glyphs from `status` (done → ✓)', async () => {
-    await render(vmWithPlan());
+  it('should render an active goal and the active session when present', async () => {
+    const el = await render(populatedBrief());
+    expect(testid(el, 'today-goals')?.textContent).toContain('Ship koopa v1');
+    expect(testid(el, 'today-session')?.textContent).toContain('system-design');
+  });
 
-    const glyphs = fixture.nativeElement.querySelector(
-      '[data-testid="today-plan-glyphs"]',
-    ) as HTMLElement;
-    expect(glyphs).toBeTruthy();
-    // One done item → a ✓ glyph present; planned item → ·.
-    expect(glyphs.textContent).toContain('✓');
-    expect(glyphs.textContent).toContain('·');
+  it('should render an unverified hypothesis claim', async () => {
+    const el = await render(populatedBrief());
+    expect(testid(el, 'today-hypotheses')?.textContent).toContain(
+      'I reach for channels when a mutex is simpler',
+    );
+  });
+
+  it('should show the teaching empty state when every section is empty', async () => {
+    const el = await render(quietBrief());
+    expect(testid(el, 'today-empty')).toBeTruthy();
+    expect(testid(el, 'today-plan')).toBeNull();
   });
 });

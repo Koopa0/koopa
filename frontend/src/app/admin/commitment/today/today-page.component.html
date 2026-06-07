@@ -4,214 +4,393 @@
     data-testid="today-loading"
   >
     <div
-      class="size-5 animate-spin rounded-full border-2 border-zinc-700 border-t-zinc-300"
+      class="size-5 animate-spin rounded-full border-2 border-border border-t-brand"
       aria-label="Loading Today"
     ></div>
   </div>
+} @else if (isError()) {
+  <div
+    class="flex flex-1 flex-col items-center justify-center gap-3 p-10 text-center"
+    data-testid="today-error"
+  >
+    <p class="font-mono text-[11px] tracking-wide text-error uppercase">
+      Couldn't load Today
+    </p>
+    <p class="max-w-md text-sm text-fg-muted">
+      The morning brief failed to load. The backend may be unavailable.
+    </p>
+    <button
+      type="button"
+      (click)="retry()"
+      class="rounded-sm border border-border bg-elevated px-3 py-1.5 text-xs text-fg-muted transition-colors hover:border-brand hover:text-brand"
+    >
+      Retry
+    </button>
+  </div>
 } @else if (vm(); as v) {
-  <div class="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-6 px-6 py-8">
+  <div class="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-5 px-6 py-6">
     <!-- Date strap -->
     <div
-      class="flex items-baseline justify-between border-b border-zinc-800 pb-3"
+      class="flex items-baseline justify-between border-b border-border pb-3"
     >
       <h1
-        class="font-display text-2xl font-semibold text-zinc-100"
+        class="font-display text-2xl font-semibold text-fg"
         data-testid="today-date"
       >
-        Today · {{ v.date | date: 'fullDate' }}
+        Today
+        <span class="ml-2 text-fg-faint">{{ v.date | date: 'EEEE, MMM d' }}</span>
       </h1>
-      <span class="font-mono text-[11px] text-zinc-500">
-        commitment / today
-      </span>
+      <span class="font-mono text-[11px] text-fg-faint">daily / today</span>
     </div>
 
-    <!-- HERO: Awaiting judgment (hidden when empty) -->
-    @if (hasJudgment()) {
+    @if (isQuiet()) {
+      <!-- Teaching empty state -->
       <section
-        class="rounded-sm border border-amber-900/40 bg-amber-950/10 p-5"
-        aria-labelledby="today-judgment-heading"
-        data-testid="today-hero"
-      >
-        <header class="mb-3 flex items-center justify-between">
-          <h2
-            id="today-judgment-heading"
-            class="font-mono text-[11px] uppercase tracking-wider text-amber-300"
-          >
-            Awaiting your judgment
-          </h2>
-          <span class="font-mono text-xs text-amber-200">
-            {{ v.awaitingJudgment.length }}
-          </span>
-        </header>
-        <ul class="divide-y divide-zinc-800/80">
-          @for (row of v.awaitingJudgment; track row.kind + ':' + row.id) {
-            <li class="flex items-start gap-3 py-2.5">
-              <span
-                class="mt-0.5 min-w-12 font-mono text-[10px] font-semibold uppercase tracking-wider text-zinc-500"
-                aria-hidden="true"
-              >
-                {{ row.badge }}
-              </span>
-              <div class="min-w-0 flex-1">
-                <button
-                  type="button"
-                  (click)="openJudgmentRow(row)"
-                  [disabled]="!row.route"
-                  class="w-full truncate text-left text-sm text-zinc-100 transition-colors hover:text-sky-300 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500 disabled:cursor-default disabled:hover:text-zinc-100"
-                  [attr.data-testid]="'today-judgment-row-' + row.kind"
-                >
-                  {{ row.title }}
-                </button>
-                <div class="truncate font-mono text-[11px] text-zinc-500">
-                  {{ row.subtitle }}
-                </div>
-              </div>
-              <span
-                class="shrink-0 font-mono text-[11px] text-zinc-500"
-                [attr.aria-label]="row.ageDays + ' days old'"
-              >
-                {{ row.ageDays }}d
-              </span>
-            </li>
-          }
-        </ul>
-      </section>
-    }
-
-    <!-- PLAN -->
-    @if (hasPlan() && v.plan; as plan) {
-      <section
-        class="rounded-sm border border-zinc-800 p-5"
-        aria-labelledby="today-plan-heading"
-        data-testid="today-plan"
-      >
-        <header class="mb-3 flex flex-wrap items-baseline gap-3">
-          <h2
-            id="today-plan-heading"
-            class="font-mono text-[11px] uppercase tracking-wider text-zinc-500"
-          >
-            Today's plan
-          </h2>
-          <span class="font-mono text-xs text-zinc-300">
-            {{ plan.done }} / {{ plan.total }} done
-          </span>
-          @if (plan.overdue > 0) {
-            <span
-              class="font-mono text-xs text-amber-400"
-              [attr.aria-label]="plan.overdue + ' overdue'"
-            >
-              · {{ plan.overdue }} overdue
-            </span>
-          }
-          <div class="ml-auto h-1.5 w-32 overflow-hidden rounded-full bg-zinc-800">
-            <div
-              class="h-full bg-sky-500 transition-all"
-              [style.width.%]="planProgressPercent(plan.done, plan.total)"
-            ></div>
-          </div>
-        </header>
-
-        <div
-          class="mb-3 font-mono text-sm tracking-wider text-zinc-300"
-          aria-hidden="true"
-          data-testid="today-plan-glyphs"
-        >
-          @for (glyph of planGlyphs(); track $index) {
-            <span class="mx-0.5">{{ glyph }}</span>
-          }
-        </div>
-
-        @if (topActivePlanItems().length > 0) {
-          <ul
-            class="space-y-1 text-sm text-zinc-200"
-            data-testid="today-plan-active"
-          >
-            @for (item of topActivePlanItems(); track item.id) {
-              <li class="flex items-baseline gap-2">
-                <span
-                  class="font-mono text-[11px] text-zinc-500"
-                  aria-hidden="true"
-                >
-                  ▸
-                </span>
-                <span class="truncate">{{ item.title }}</span>
-              </li>
-            }
-          </ul>
-        }
-      </section>
-    }
-
-
-    <!-- WARNINGS -->
-    @if (hasWarnings()) {
-      <section
-        aria-labelledby="today-warnings-heading"
-        data-testid="today-warnings"
-      >
-        <h2
-          id="today-warnings-heading"
-          class="mb-2 font-mono text-[11px] uppercase tracking-wider text-zinc-500"
-        >
-          Warnings
-        </h2>
-        <ul class="space-y-1.5">
-          @for (w of v.warnings; track $index) {
-            <li
-              class="flex items-baseline gap-2 rounded-sm border px-3 py-2 text-xs"
-              [class.border-amber-900]="w.severity === 'warn'"
-              [class.bg-amber-950/10]="w.severity === 'warn'"
-              [class.text-amber-200]="w.severity === 'warn'"
-              [class.border-red-900]="w.severity === 'error'"
-              [class.bg-red-950/10]="w.severity === 'error'"
-              [class.text-red-300]="w.severity === 'error'"
-            >
-              <span class="font-mono uppercase" aria-hidden="true">
-                {{ w.severity === 'error' ? '✕' : '⚠' }}
-              </span>
-              <span class="font-mono text-[10px] uppercase opacity-70">
-                {{ w.source }}
-              </span>
-              <span class="flex-1">{{ w.message }}</span>
-            </li>
-          }
-        </ul>
-      </section>
-    }
-
-    <!-- Fully-quiet fallback -->
-    @if (!hasJudgment() && !hasPlan() && !hasWarnings()) {
-      <section
-        class="flex flex-1 flex-col items-center justify-center rounded-sm border border-dashed border-zinc-800 p-10 text-center"
+        class="flex flex-1 flex-col items-center justify-center rounded-md border border-dashed border-border p-10 text-center"
         data-testid="today-empty"
       >
-        <p class="mb-2 font-mono text-xs uppercase tracking-wider text-zinc-500">
+        <p class="mb-2 font-mono text-xs tracking-wide text-fg-faint uppercase">
           Nothing on deck
         </p>
-        <p class="mb-5 max-w-md text-sm text-zinc-300">
-          No judgments awaiting, no plan queued, no reviews due.
+        <p class="mb-5 max-w-md text-sm text-fg-muted">
+          No plan queued, no loose todos, no goals or hypotheses in flight.
         </p>
-        <div class="flex flex-wrap justify-center gap-2" data-testid="today-empty-cta">
+        <div class="flex flex-wrap justify-center gap-2">
           <a
-            routerLink="/admin/commitment/todos"
-            class="rounded-sm border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-xs text-zinc-200 transition-colors hover:border-sky-700 hover:text-sky-300 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500"
+            routerLink="/admin/daily/plan"
+            class="rounded-sm border border-border bg-panel px-3 py-1.5 text-xs text-fg-muted transition-colors hover:border-brand hover:text-brand"
           >
-            Capture a todo →
+            Plan your day →
           </a>
           <a
-            routerLink="/admin/knowledge/content"
-            class="rounded-sm border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-xs text-zinc-200 transition-colors hover:border-sky-700 hover:text-sky-300 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500"
+            routerLink="/admin/daily/inbox"
+            class="rounded-sm border border-border bg-panel px-3 py-1.5 text-xs text-fg-muted transition-colors hover:border-brand hover:text-brand"
           >
-            Browse content →
-          </a>
-          <a
-            routerLink="/admin/learning"
-            class="rounded-sm border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-xs text-zinc-200 transition-colors hover:border-sky-700 hover:text-sky-300 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500"
-          >
-            Open Learning →
+            Triage the inbox →
           </a>
         </div>
       </section>
+    } @else {
+      <!-- Plan completion strip -->
+      <section
+        class="flex flex-wrap items-center gap-x-6 gap-y-2 rounded-md border border-border bg-panel px-4 py-3"
+        data-testid="today-plan-completion"
+      >
+        <h2 class="font-mono text-[11px] tracking-wide text-fg-faint uppercase">
+          Day progress
+        </h2>
+        <div class="flex items-baseline gap-4 font-mono text-xs">
+          <span class="text-fg">
+            <span class="text-success">{{ v.plan_completion.completed }}</span>
+            done
+          </span>
+          <span class="text-fg-subtle">
+            {{ v.plan_completion.planned }} planned
+          </span>
+          @if (v.plan_completion.deferred > 0) {
+            <span class="text-warn">{{ v.plan_completion.deferred }} deferred</span>
+          }
+        </div>
+        <div class="ml-auto flex items-center gap-3">
+          <div class="h-1.5 w-40 overflow-hidden rounded-sm bg-elevated">
+            <div
+              class="h-full bg-brand transition-all"
+              [style.width.%]="planPercent()"
+            ></div>
+          </div>
+          <span class="font-mono text-xs text-fg-muted">{{ planPercent() }}%</span>
+        </div>
+      </section>
+
+      <div class="grid grid-cols-1 gap-5 lg:grid-cols-3">
+        <!-- LEFT: the plan + loose todos -->
+        <div class="flex flex-col gap-5 lg:col-span-2">
+          <!-- Today's committed plan -->
+          @if (v.committed_todos.length > 0) {
+            <section
+              class="rounded-md border border-border bg-panel"
+              aria-labelledby="today-plan-heading"
+              data-testid="today-plan"
+            >
+              <header
+                class="flex items-baseline justify-between border-b border-border px-4 py-2.5"
+              >
+                <h2
+                  id="today-plan-heading"
+                  class="font-mono text-[11px] tracking-wide text-fg-faint uppercase"
+                >
+                  Today's plan
+                </h2>
+                <span class="font-mono text-[11px] text-fg-subtle">
+                  {{ v.committed_todos.length }} items
+                </span>
+              </header>
+              <ul class="divide-y divide-border-faint">
+                @for (item of v.committed_todos; track item.id) {
+                  <li class="flex items-center gap-3 px-4 py-2">
+                    <span
+                      class="w-5 text-right font-mono text-[11px] text-fg-faint tabular-nums"
+                      aria-hidden="true"
+                    >
+                      {{ item.position }}
+                    </span>
+                    <span class="w-3.5 text-center" aria-hidden="true">
+                      @switch (item.status) {
+                        @case ('done') {
+                          <span class="text-success">✓</span>
+                        }
+                        @default {
+                          @if (item.todo_state === 'in_progress') {
+                            <span class="text-brand">▸</span>
+                          } @else {
+                            <span class="text-fg-faint">·</span>
+                          }
+                        }
+                      }
+                    </span>
+                    <span
+                      class="min-w-0 flex-1 truncate text-sm"
+                      [class.text-fg]="item.status !== 'done'"
+                      [class.text-fg-faint]="item.status === 'done'"
+                      [class.line-through]="item.status === 'done'"
+                    >
+                      {{ item.todo_title }}
+                    </span>
+                    @if (item.project_title) {
+                      <span
+                        class="shrink-0 rounded-sm bg-elevated px-1.5 py-0.5 font-mono text-[10px] text-fg-subtle"
+                      >
+                        {{ item.project_title }}
+                      </span>
+                    }
+                    @if (item.todo_energy) {
+                      <span
+                        class="shrink-0 font-mono text-[10px] text-fg-faint uppercase"
+                      >
+                        {{ item.todo_energy }}
+                      </span>
+                    }
+                  </li>
+                }
+              </ul>
+            </section>
+          }
+
+          <!-- Loose todos: overdue / due today / upcoming -->
+          @if (hasLooseTodos()) {
+            <section
+              class="rounded-md border border-border bg-panel"
+              aria-labelledby="today-loose-heading"
+              data-testid="today-loose"
+            >
+              <header class="border-b border-border px-4 py-2.5">
+                <h2
+                  id="today-loose-heading"
+                  class="font-mono text-[11px] tracking-wide text-fg-faint uppercase"
+                >
+                  Loose todos
+                </h2>
+              </header>
+              @for (group of looseGroups(); track group.label) {
+                <div
+                  class="border-b border-border-faint last:border-b-0"
+                  [attr.data-testid]="'today-loose-' + group.label"
+                >
+                  <p
+                    class="px-4 pt-2.5 pb-1 font-mono text-[10px] tracking-wide uppercase"
+                    [class.text-warn]="group.label === 'Overdue'"
+                    [class.text-fg-subtle]="group.label !== 'Overdue'"
+                  >
+                    {{ group.label }}
+                  </p>
+                  <ul class="divide-y divide-border-faint">
+                    @for (todo of group.items; track todo.id) {
+                      <li class="flex items-center gap-3 px-4 py-2">
+                        <span class="min-w-0 flex-1 truncate text-sm text-fg">
+                          {{ todo.title }}
+                        </span>
+                        @if (todo.project_title) {
+                          <span
+                            class="shrink-0 rounded-sm bg-elevated px-1.5 py-0.5 font-mono text-[10px] text-fg-subtle"
+                          >
+                            {{ todo.project_title }}
+                          </span>
+                        }
+                        @if (todo.energy) {
+                          <span
+                            class="shrink-0 font-mono text-[10px] text-fg-faint uppercase"
+                          >
+                            {{ todo.energy }}
+                          </span>
+                        }
+                        @if (todo.due) {
+                          <span
+                            class="shrink-0 font-mono text-[10px]"
+                            [class.text-warn]="group.label === 'Overdue'"
+                            [class.text-fg-faint]="group.label !== 'Overdue'"
+                          >
+                            {{ todo.due | date: 'MMM d' }}
+                          </span>
+                        }
+                      </li>
+                    }
+                  </ul>
+                </div>
+              }
+            </section>
+          }
+        </div>
+
+        <!-- RIGHT: session, goals, hypotheses, rss -->
+        <div class="flex flex-col gap-5">
+          <!-- Active learning session — the one "now" accent -->
+          @if (v.active_session; as session) {
+            <section
+              class="rounded-md border border-brand/40 bg-brand-faint p-4"
+              data-testid="today-session"
+            >
+              <h2
+                class="mb-2 flex items-center gap-2 font-mono text-[11px] tracking-wide text-brand uppercase"
+              >
+                <span class="size-1.5 rounded-full bg-brand"></span>
+                Active session
+              </h2>
+              <p class="font-display text-base font-semibold text-fg">
+                {{ session.domain }}
+              </p>
+              <div class="mt-1.5 flex items-center gap-2 font-mono text-[11px] text-fg-subtle">
+                <span class="rounded-sm bg-elevated px-1.5 py-0.5">
+                  {{ session.mode }}
+                </span>
+                <span>since {{ session.started_at | date: 'shortTime' }}</span>
+              </div>
+            </section>
+          }
+
+          <!-- Active goals -->
+          @if (v.active_goals.length > 0) {
+            <section
+              class="rounded-md border border-border bg-panel"
+              aria-labelledby="today-goals-heading"
+              data-testid="today-goals"
+            >
+              <header class="border-b border-border px-4 py-2.5">
+                <h2
+                  id="today-goals-heading"
+                  class="font-mono text-[11px] tracking-wide text-fg-faint uppercase"
+                >
+                  Active goals
+                </h2>
+              </header>
+              <ul class="divide-y divide-border-faint">
+                @for (goal of v.active_goals; track goal.id) {
+                  <li class="px-4 py-3">
+                    <a
+                      [routerLink]="['/admin/commitment/goals', goal.id]"
+                      class="block truncate text-sm text-fg transition-colors hover:text-brand"
+                    >
+                      {{ goal.title }}
+                    </a>
+                    <div class="mt-2 flex items-center gap-2">
+                      <div class="h-1 flex-1 overflow-hidden rounded-sm bg-elevated">
+                        <div
+                          class="h-full bg-brand"
+                          [style.width.%]="
+                            goalPercent(goal.milestone_done, goal.milestone_total)
+                          "
+                        ></div>
+                      </div>
+                      <span class="font-mono text-[10px] text-fg-faint">
+                        {{ goal.milestone_done }}/{{ goal.milestone_total }}
+                      </span>
+                    </div>
+                    @if (goal.area_name) {
+                      <span class="mt-1 block font-mono text-[10px] text-fg-faint">
+                        {{ goal.area_name }}
+                      </span>
+                    }
+                  </li>
+                }
+              </ul>
+            </section>
+          }
+
+          <!-- Unverified hypotheses -->
+          @if (v.unverified_hypotheses.length > 0) {
+            <section
+              class="rounded-md border border-border bg-panel"
+              aria-labelledby="today-hyp-heading"
+              data-testid="today-hypotheses"
+            >
+              <header class="border-b border-border px-4 py-2.5">
+                <h2
+                  id="today-hyp-heading"
+                  class="font-mono text-[11px] tracking-wide text-fg-faint uppercase"
+                >
+                  Unverified hypotheses
+                </h2>
+              </header>
+              <ul class="divide-y divide-border-faint">
+                @for (hyp of v.unverified_hypotheses; track hyp.id) {
+                  <li class="px-4 py-3">
+                    <p class="font-serif text-sm leading-snug text-fg-muted italic">
+                      {{ hyp.claim }}
+                    </p>
+                    <p class="mt-2 font-mono text-[10px] text-fg-faint">
+                      <span class="text-fg-subtle uppercase">Invalidates if</span>
+                      · {{ hyp.invalidation_condition }}
+                    </p>
+                    <p class="mt-1.5 font-mono text-[10px] text-fg-faint">
+                      {{ hyp.created_by }} · {{ hyp.observed_date | date: 'MMM d' }}
+                    </p>
+                  </li>
+                }
+              </ul>
+            </section>
+          }
+
+          <!-- RSS highlights -->
+          @if (v.rss_highlights.length > 0) {
+            <section
+              class="rounded-md border border-border bg-panel"
+              aria-labelledby="today-rss-heading"
+              data-testid="today-rss"
+            >
+              <header class="border-b border-border px-4 py-2.5">
+                <h2
+                  id="today-rss-heading"
+                  class="font-mono text-[11px] tracking-wide text-fg-faint uppercase"
+                >
+                  RSS highlights
+                </h2>
+              </header>
+              <ul class="divide-y divide-border-faint">
+                @for (item of v.rss_highlights; track item.url) {
+                  <li class="flex items-start gap-2.5 px-4 py-2.5">
+                    <span
+                      class="mt-1.5 size-1.5 shrink-0 rounded-full bg-brand"
+                      aria-hidden="true"
+                    ></span>
+                    <div class="min-w-0 flex-1">
+                      <a
+                        [href]="item.url"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        class="block truncate text-sm text-fg transition-colors hover:text-brand"
+                      >
+                        {{ item.title }}
+                      </a>
+                      <p class="truncate font-mono text-[10px] text-fg-faint">
+                        {{ item.feed_name }} · {{ item.created_at }}
+                      </p>
+                    </div>
+                  </li>
+                }
+              </ul>
+            </section>
+          }
+        </div>
+      </div>
     }
   </div>
 }
