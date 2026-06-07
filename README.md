@@ -22,60 +22,57 @@
 > **Status: private portfolio / source-visible reference — not open source.**
 > See [LICENSE](LICENSE): All Rights Reserved. The code is published for portfolio
 > and reference reading; it is not open for external use, fork, or contribution.
-> There is no CONTRIBUTING / SECURITY / issue-tracker process — this is a
-> single-admin system by design, not a community project.
+> This is a single-admin system by design, not a community project.
 
 **koopa** is a private-by-default personal OS where AI agents share a semantic runtime — so the AI reads your state, not your prompts.
 
-It's 8 a.m. You ask HQ for the day. It doesn't ask what's on your plate — it reads yesterday's unfinished daily plan, this week's goal progress, the learning targets your last sessions flagged as weak, and the RSS highlights the ingest pipeline collected overnight, and hands you one briefing. You skim it, set today's plan, and start. Through the day the agents stay in their lane: HQ plans, Learning Studio coaches a practice session, any agent searches the corpus or co-authors a note — all in conversation with you. Nothing high-stakes happens behind your back: every goal, project, milestone, and published article is **your** decision, made in the admin UI. The agents surface structure; you make the call.
+It's 8 a.m. You ask for the day. The planner doesn't ask what's on your plate — it reads yesterday's unfinished daily plan, this week's goal progress, the learning targets your last sessions flagged as weak, and the RSS highlights the ingest pipeline collected overnight, and hands you one briefing. You skim it, set today's plan, and start. Through the day the agents stay in their lane: the planner sets the day, the learning coach runs a practice session, any agent searches the corpus or co-authors a note — all in conversation with you. Nothing high-stakes happens behind your back: every goal, project, milestone, and published article is **your** decision, made in the admin UI. The agents surface structure; you make the call.
 
 ## Why this exists
 
-Most AI integrations are stateless: every conversation starts from zero, every agent is a fresh amnesiac, and you spend your time re-explaining context. The more agents you add — Claude Code in your editor, Cowork agents on schedulers, background summarizers — the worse it gets. Each produces output the others never see.
+Most AI integrations are stateless: every conversation starts from zero, every agent is a fresh amnesiac, and you spend your time re-explaining context. The more agents you add — Claude Code in your editor, Cowork agents on schedulers, background summarizers — the worse it gets, because each produces output the others never see.
 
-koopa takes a different position: AI understands your work because your work is **structurally modeled**. Goals, projects, todos, learning attempts, daily plans, content drafts, cognitive observations — all first-class entities with precise schemas and their own lifecycles. Every agent reads from and writes to the same semantic store through MCP. When Learning Studio opens a practice session, it already knows which concepts you struggled with last week and which plan you're executing. When HQ assembles your morning briefing, it reads yesterday's daily plan and surfaces what didn't get done — not because you summarized it, but because the state is there.
-
-This is not a chatbot with memory. The AI reads a goal's milestones, its linked projects, its recent activity — queried from a structured schema, shared across every agent. Understanding is precise, not reconstructed.
+koopa models the work instead. Goals, projects, todos, learning attempts, daily plans, content drafts, cognitive observations — all first-class entities with precise schemas and their own lifecycles, in one store every agent reads and writes through MCP. When the learning coach opens a practice session, it already knows which concepts you struggled with last week and which plan you're executing. When the planner assembles your morning briefing, it reads yesterday's daily plan and surfaces what didn't get done — not because you summarized it, but because the state is there. Understanding is queried, not reconstructed; there is no drift between agents and no "I think you mentioned…".
 
 ## How it works
 
 The actor axis is **flow vs. decision**, not human vs. agent:
 
 - **Cowork agents drive flows** through a small MCP toolset, in conversation with you.
-- **You are the sole decision-maker _and_ the sole router.** There is no agent→agent dispatch and no agent→agent status channel. Coordination is the shared state in the database, not a message bus.
+- **You are the sole decision-maker _and_ the sole router.** Coordination is the shared state in the database, not a message bus — agents read each other's effects through the schema, never through direct dispatch.
 - **The admin UI is where you confirm, decide, and view** — it owns every high-commitment write.
 
-Functionally the agents are a **planner**, a **learning coach**, a **search window**, and a **note co-author**. They run on declared cadences — HQ at 8 a.m., others on their own schedules pinned in the Go agent registry (`internal/agent/registry.go::BuiltinAgents()`) — but **execution is driven by an external Cowork/Desktop runner, not by this repo**; the backend owns the registry metadata, the schema, and the `process_runs` table that audits each external run.
+Functionally the agents are a **planner**, a **learning coach**, a **search window**, and a **note co-author**. They run on declared cadences — the planner at 8 a.m., others on their own schedules pinned in the Go agent registry (`internal/agent/registry.go::BuiltinAgents()`) — but execution is driven by an external Cowork/Desktop runner, not by this repo; the backend owns the registry metadata, the schema, and the `process_runs` table that audits each external run.
 
-Identity, not capability tokens, gates writes. Every MCP call self-identifies via an `as` field; the server resolves it against the registry and applies a three-axis authorization (`internal/mcp/authz.go`): an **author** allowlist (a human is always permitted), **registration** (a known, non-anonymous caller), and **self** (you may only act on your own rows). An unknown caller fails closed on every mutating tool.
+Writes are gated by **identity**. Every MCP call self-identifies via an `as` field; the server resolves it against the registry and applies three-axis authorization (`internal/mcp/authz.go`): an **author** allowlist (a human is always permitted), **registration** (a known, non-anonymous caller), and **self** (you may only act on your own rows). An unknown caller fails closed on every mutating tool.
 
-Two structural invariants are real, not aspirational:
+Two structural invariants hold:
 
-**Publishing is atomic.** Content cannot leak public by accident — `status='published'`, `is_public=true`, and `published_at=now()` are set in one operation, protected by a joint CHECK constraint.
+**Publishing is atomic.** `status='published'`, `is_public=true`, and `published_at=now()` are set in one operation under a joint CHECK constraint, so content cannot leak public by accident.
 
-**Every mutation has an actor.** Every write to a covered entity produces an `activity_events` row via AFTER trigger, carrying the agent name that caused it. Application code cannot insert there directly; the audit log is structural, not voluntary.
+**Every mutation has an actor.** Each write to a covered entity produces an `activity_events` row via AFTER trigger, carrying the agent name that caused it. Application code cannot insert there directly — the audit log is structural, not voluntary.
 
 ### Autonomy with a gate
 
-Agents can capture a raw todo to your inbox, draft a note, run a search, recommend the next learning target — useful, low-stakes flows. But **they cannot create high-commitment entities**. Goals, projects, milestones, hypotheses, learning plans, learning domains, and published content are created **only through the admin UI** (authenticated HTTP), by you. The agent surfaces the option in conversation; you commit it.
+Agents capture a raw todo to your inbox, draft a note, run a search, recommend the next learning target — useful, low-stakes flows. High-commitment entities — goals, projects, milestones, hypotheses, learning plans, learning domains, and published content — are created **only through the admin UI** (authenticated HTTP), by you. The agent surfaces the option in conversation; you commit it.
 
-The design choice underneath: AI can run autonomously _because_ the commitment surface is yours. Without that boundary, autonomy would flood your system with entities you never decided to keep. With it, autonomy is useful — agents surface options, you keep the call. A system that makes decisions for you eventually makes you worse at making them.
+That boundary is what makes the autonomy useful: agents can run on their own _because_ the commitment surface is yours. Without it, autonomy floods the system with entities you never decided to keep. A system that makes decisions for you eventually makes you worse at making them.
 
 ## The shared semantic runtime
 
-The system models three bounded contexts. Each has its own vocabulary, its own lifecycle, and non-overlapping definitions:
+The system models three bounded contexts, each with its own vocabulary and lifecycle:
 
-**Commitment** — PARA + GTD. Areas (ongoing responsibilities), goals (outcomes with optional deadlines), milestones (binary progress checkpoints), projects (execution vehicles), todos (personal GTD items), daily plan items (today's commitments). The daily plan has **no auto-carryover**: yesterday's unfinished work surfaces in the morning briefing but does not roll forward automatically. Confrontation is a feature — auto-carryover erodes your relationship with your own commitments.
+**Commitment** — PARA + GTD. Areas (ongoing responsibilities), goals (outcomes with optional deadlines), milestones (binary progress checkpoints), projects (execution vehicles), todos (personal GTD items), daily plan items (today's commitments). The daily plan has **no auto-carryover**: yesterday's unfinished work surfaces in the morning briefing but does not roll forward on its own. Confrontation is the feature — silent carryover erodes your relationship with your own commitments.
 
 **Knowledge** — five first-party content types (`article`, `essay`, `build-log`, `til`, `digest`) with an editorial lifecycle (`draft → review → published → archived`); Zettelkasten notes in a separate table with six sub-kinds (`solve-note`, `concept-note`, `debug-postmortem`, `decision-log`, `reading-note`, `musing`) and a maturity lifecycle (`seed → stub → evergreen → needs_revision → archived`); RSS feeds with scheduled fetch and auto-disable on consecutive failures. Content is authored in the admin UI; agents co-author notes via MCP.
 
-**Learning** — a concept ontology, learning targets (individual problems, chapters, drills), sessions with a declared mode, attempts with an outcome taxonomy, observations with confidence labels, learning plans with ordered entries. This is a **concept-mastery and weakness-review coach** grounded in deliberate practice (Ericsson for attempt structure, Bjork for desirable difficulty) — **not** an Anki-style spaced-repetition product. There is no due-queue and no review scheduler; the signal is mastery and weakness derived from observed attempts.
+**Learning** — a concept ontology, learning targets (individual problems, chapters, drills), sessions with a declared mode, attempts with an outcome taxonomy, confidence-labeled observations, learning plans with ordered entries. It is a concept-mastery and weakness-review coach grounded in deliberate practice — Ericsson for attempt structure, Bjork for desirable difficulty. The signal is mastery and weakness derived from observed attempts: the coach knows which concepts decayed and which patterns you miss, and steers the next session from that.
 
-The vocabulary splits are load-bearing. A `note` is a Zettelkasten knowledge artifact, private to you, with its own maturity lifecycle; it is not the same as published `content`. Conflating them breaks the system's guarantees.
+The vocabulary splits are load-bearing. A `note` is a private Zettelkasten artifact with its own maturity lifecycle; published `content` is a different table with a different lifecycle. Conflating them breaks the system's guarantees.
 
 ## Knowledge retrieval
 
-Published content and Zettelkasten notes are queryable by any agent through MCP via `search_knowledge`. **Today it runs PostgreSQL full-text search** (tsvector with websearch syntax, GIN-indexed) over content and notes. The pgvector schema, HNSW indexes, and embedder package are in place, but the document-embedding write/backfill pipeline and the reciprocal-rank-fusion merge path are not active yet. The hybrid lexical + semantic + RRF path is **planned**, to be activated once an embedder write/backfill pipeline lands.
+Any agent queries published content and Zettelkasten notes through MCP via `search_knowledge`, backed by PostgreSQL full-text search (tsvector with websearch syntax, GIN-indexed). Hybrid lexical + pgvector semantic retrieval with reciprocal-rank-fusion is on the roadmap — the schema, HNSW indexes, and merge code are in place, pending an embedder write/backfill pipeline.
 
 ## The agent toolset
 
@@ -90,45 +87,36 @@ Eleven MCP tools — small on purpose. Everything an agent can do is a workflow 
 | `start_session` / `record_attempt` / `end_session` | Learning-session lifecycle: begin, record attempts + observations, end with a summary. |
 | `learning_read` | Read-only learning analytics (`view = overview \| next_target \| attempts \| session_progress`). |
 | `manage_plan` | Learning-plan curriculum (`action = add_entries \| remove_entries \| update_entry \| reorder \| progress`). |
-| `create_note` / `update_note` | Co-author the Zettelkasten — body and links. Maturity is yours to set in the admin UI. |
+| `create_note` / `update_note` | Co-author the Zettelkasten — body and links. |
 
-`brief` and `learning_read` are read-only forever; they never grow a mutation. Everything else high-commitment — goals, projects, milestones, hypotheses, plan activation, content authoring and publishing, note maturity, feed curation — lives in the admin UI, off the agent surface.
-
-## Design philosophy
-
-**AI understands you through structure, not prompts.** Context windows and memory files are the conventional path to personalization. koopa takes the opposite position: AI understands your work because the work is explicitly modeled in a semantic schema that every agent reads the same way. No drift between agents, no "I think you mentioned…" — just the model.
-
-**Your ownership is preserved by design.** Admin-only commitment creation, confidence-labeled observations, no auto-carryover — every friction choice exists to keep you the decision-maker rather than a passive approver of AI suggestions. A system that presents structured information and waits for your call makes you better over time.
-
-**Workflow semantics, not raw database access.** MCP tools expose operations like `brief`, `plan_day`, `record_attempt` — not `SELECT * FROM todos`. Each tool encapsulates a meaningful step with valid transitions, required fields, and invariant checks. Rules live in the tool layer, not in prompt instructions scattered across agents.
+`brief` and `learning_read` are read-only; the mutating tools each encapsulate one workflow step with required fields and valid transitions, so the rules live in the tool layer, not in prompt instructions scattered across agents.
 
 ## What this enables
 
-**Agents see the same state.** When HQ writes a morning briefing, it reads the same daily plan, the same open todos, the same goal progress that any other agent would. There is no "what did I tell the other agent"; there is only the schema.
+**Agents see the same state.** When the planner writes a morning briefing, it reads the same daily plan, open todos, and goal progress any other agent would — there is no "what did I tell the other agent", only the schema.
 
-**Morning briefings grounded in yesterday.** HQ doesn't ask what you did. It reads yesterday's daily plan, checks which items completed / deferred / dropped, surfaces open todos, shows goal progress against milestones. The briefing is generated from state, not from your recollection.
+**Briefings grounded in yesterday.** The planner reads yesterday's daily plan, checks which items completed / deferred / dropped, and shows goal progress against milestones — generated from state, not from your recollection.
 
-**Learning coaching grounded in evidence.** Learning Studio doesn't generically suggest "practice more." It sees that your last three attempts at sliding-window targets produced pattern-recognition failures with moderate severity, and that mastery of this concept declined over two weeks. The coaching is specific because the evidence is specific — and every observation carries a confidence label that controls whether it contributes to the primary view or surfaces only under `confidence_filter=all`.
+**Coaching grounded in evidence.** The learning coach sees that your last three sliding-window attempts produced pattern-recognition failures with moderate severity, and that mastery of the concept declined over two weeks. The coaching is specific because the evidence is — and every observation carries a confidence label that controls whether it counts toward the primary view.
 
-**One audited trail.** Because every mutation writes an `activity_events` row with its actor, the whole system has a single, structural history — who changed what, when — that no agent can opt out of.
+**One audited trail.** Because every mutation writes an `activity_events` row with its actor, the whole system has a single structural history — who changed what, when — that no agent can opt out of.
 
 ## Scope and limits
 
-This is a single-admin system by design. No RBAC, no multi-tenant, no "share with a colleague" — one human, several AI agents. The admin UI is private; only a subset of content (articles, build logs, TILs, the project portfolio) renders on the public site, and only after you explicitly publish it. Goals, attempts, and notes stay private. If you want a team wiki or a Notion clone, this is not it.
+A single-admin system by design: no RBAC, no multi-tenant, no "share with a colleague" — one human, several AI agents. The admin UI is private; only a subset of content (articles, build logs, TILs, the project portfolio) renders on the public site, and only after you explicitly publish it. Goals, attempts, and notes stay private. If you want a team wiki or a Notion clone, this is not it.
 
 ## Tech stack
 
-| Layer             | Choice                                                                                                                                       |
-| ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| Backend           | Go 1.26+ (stdlib-first), PostgreSQL 17, pgx/v5, sqlc                                                                                         |
-| Search (today)    | PostgreSQL FTS (tsvector + websearch + GIN)                                                                                                  |
-| Search (planned)  | Hybrid lexical + pgvector HNSW with RRF merge — schema, indexes, and merge code in place; pending an embedder write/backfill pipeline        |
-| Embedding         | `gemini-embedding-2-preview` (1536d Matryoshka) target; pgvector columns + HNSW indexes in place; no production write path yet (see Search)  |
-| Scheduling        | Agent cadences declared in `internal/agent/registry.go::BuiltinAgents()`; execution driven by an external Cowork/Desktop runner; audited via `process_runs` |
-| Frontend          | Angular 22 (SSR, zoneless, Signal Forms), Tailwind CSS v4                                                                                   |
-| AI collaboration  | Claude (Cowork + Code), MCP (11 workflow tools)                                                                                             |
-| Cache             | Ristretto (in-memory, single machine)                                                                                                       |
-| Object storage    | Cloudflare R2 (S3-compatible)                                                                                                                |
+| Layer            | Choice                                                                        |
+| ---------------- | ----------------------------------------------------------------------------- |
+| Backend          | Go 1.26+ (stdlib-first), PostgreSQL 17, pgx/v5, sqlc                           |
+| Search           | PostgreSQL FTS (tsvector + websearch + GIN); hybrid pgvector HNSW + RRF on the roadmap |
+| Embedding        | `gemini-embedding-2` (1536d Matryoshka); pgvector columns + HNSW indexes in place |
+| Scheduling       | Agent cadences declared in `internal/agent/registry.go`; execution driven by an external Cowork/Desktop runner; audited via `process_runs` |
+| Frontend         | Angular 22 (SSR, zoneless, Signal Forms), Tailwind CSS v4                      |
+| AI collaboration | Claude (Cowork + Code), MCP (11 workflow tools)                               |
+| Cache            | Ristretto (in-memory, single machine)                                         |
+| Object storage   | Cloudflare R2 (S3-compatible)                                                  |
 
 ---
 
