@@ -203,9 +203,10 @@ func registerRoutes(
 	mux.Handle("DELETE /api/admin/commitment/todos/{id}", adminMid(http.HandlerFunc(h.todo.Delete)))
 
 	// --- Admin: Commitment / Today (aggregate) ---
-	// Today pulls from content (review queue), hypothesis (unverified),
-	// task (completed awaiting approval), daily plan, agent_notes (planning
-	// note), feed / goal (warnings).
+	// Today is the HTTP mirror of brief(mode=morning): todo date views
+	// (overdue / today / upcoming), the day's committed plan + completion
+	// counts, active goals, unverified hypotheses, the active learning
+	// session, and RSS highlights.
 	mux.Handle("GET /api/admin/commitment/today", authMid(http.HandlerFunc(h.today.Today)))
 
 	// --- Admin: Commitment / Daily plan ---

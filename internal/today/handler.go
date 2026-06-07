@@ -4,98 +4,103 @@ package today
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net/http"
-	"strconv"
 	"time"
 
 	"github.com/Koopa0/koopa/internal/api"
 	"github.com/Koopa0/koopa/internal/daily"
+	"github.com/Koopa0/koopa/internal/feed/entry"
+	"github.com/Koopa0/koopa/internal/goal"
+	"github.com/Koopa0/koopa/internal/learning"
+	"github.com/Koopa0/koopa/internal/learning/hypothesis"
+	"github.com/Koopa0/koopa/internal/todo"
 )
 
 // --- Source interfaces ---
+//
+// Each interface is consumer-defined and matched to a real store method so
+// the production wiring injects the concrete store directly — no adapter.
 
-// PlanItemReader returns daily plan items for a given calendar date.
+// TodoReader returns the date-relative todo views: overdue, due-today, and
+// the upcoming-week window. Backed by *todo.Store.
+type TodoReader interface {
+	OverdueItems(ctx context.Context, today time.Time) ([]todo.PendingDetail, error)
+	ItemsDueOn(ctx context.Context, date time.Time) ([]todo.PendingDetail, error)
+	ItemsDueInRange(ctx context.Context, start, end time.Time) ([]todo.PendingDetail, error)
+}
+
+// PlanItemReader returns the day's committed daily plan items. Backed by
+// *daily.Store.
 type PlanItemReader interface {
 	ItemsByDate(ctx context.Context, date time.Time) ([]daily.Item, error)
 }
 
-// ContentReviewLister returns content rows currently in review — the
-// human judgment queue.
-type ContentReviewLister interface {
-	ReviewQueue(ctx context.Context, limit int) ([]JudgmentContent, error)
+// ActiveGoalReader returns the in_progress goals with milestone counts.
+// Backed by *goal.Store.
+type ActiveGoalReader interface {
+	ActiveGoals(ctx context.Context) ([]goal.ActiveGoalSummary, error)
 }
 
-// HypothesisUnverifiedLister returns unverified hypotheses awaiting
-// judgment.
-type HypothesisUnverifiedLister interface {
-	UnverifiedForJudgment(ctx context.Context, limit int) ([]JudgmentHypothesis, error)
+// UnverifiedHypothesisReader returns hypotheses still awaiting judgment.
+// Backed by *hypothesis.Store.
+type UnverifiedHypothesisReader interface {
+	Unverified(ctx context.Context, maxResults int32) ([]hypothesis.Record, error)
 }
 
-// TaskAwaitingApprovalLister returns tasks in completed state that the
-// human has not yet acknowledged.
-type TaskAwaitingApprovalLister interface {
-	AwaitingApproval(ctx context.Context, limit int) ([]JudgmentTask, error)
+// ActiveSessionReader returns the open learning session, or learning's
+// ErrNoActive sentinel when none is open. Backed by *learning.Store.
+type ActiveSessionReader interface {
+	ActiveSession(ctx context.Context) (*learning.Session, error)
 }
 
-// PlanningNoteReader returns the latest agent_note(kind=plan) for the
-// date (or near it).
-type PlanningNoteReader interface {
-	PlanNoteForDate(ctx context.Context, date time.Time) (*PlanningNote, error)
-}
-
-// FeedHealthReader surfaces failing feeds for the warnings section.
-type FeedHealthReader interface {
-	FailingFeeds(ctx context.Context) ([]FailingFeedWarning, error)
-}
-
-// StaleGoalReader surfaces goals that have not progressed within the
-// staleness window.
-type StaleGoalReader interface {
-	StaleGoals(ctx context.Context, before time.Time) ([]StaleGoalWarning, error)
+// RSSHighlightReader returns recent high-priority feed entries. Backed by
+// *entry.Store.
+type RSSHighlightReader interface {
+	HighPriorityRecent(ctx context.Context, since time.Time, maxResults int32) ([]entry.Item, error)
 }
 
 // Handler handles the Today aggregate HTTP request.
 type Handler struct {
-	planItems     PlanItemReader
-	contentQueue  ContentReviewLister
-	hypotheses    HypothesisUnverifiedLister
-	awaitingTasks TaskAwaitingApprovalLister
-	plannings     PlanningNoteReader
-	feeds         FeedHealthReader
-	staleGoals    StaleGoalReader
-	logger        *slog.Logger
+	planItems  PlanItemReader
+	todos      TodoReader
+	goals      ActiveGoalReader
+	hypotheses UnverifiedHypothesisReader
+	sessions   ActiveSessionReader
+	rss        RSSHighlightReader
+	logger     *slog.Logger
 }
 
-// NewHandler returns a today Handler. planItems is required — every other
-// reader is optional, and a nil reader leaves its section of the response
-// at the initialized empty-slice / zero state.
+// NewHandler returns a today Handler. planItems is required; every other
+// reader is injected via WithSources. A nil reader leaves its section of
+// the response at the initialized empty-slice / zero state.
 func NewHandler(planItems PlanItemReader, logger *slog.Logger) *Handler {
 	return &Handler{planItems: planItems, logger: logger}
 }
 
-// WithSources injects the cross-domain readers.
+// WithSources injects the cross-domain readers and returns the handler for
+// chaining.
 func (h *Handler) WithSources(
-	contentQueue ContentReviewLister,
-	hypotheses HypothesisUnverifiedLister,
-	awaitingTasks TaskAwaitingApprovalLister,
-	plannings PlanningNoteReader,
-	feeds FeedHealthReader,
-	staleGoals StaleGoalReader,
+	todos TodoReader,
+	goals ActiveGoalReader,
+	hypotheses UnverifiedHypothesisReader,
+	sessions ActiveSessionReader,
+	rss RSSHighlightReader,
 ) *Handler {
-	h.contentQueue = contentQueue
+	h.todos = todos
+	h.goals = goals
 	h.hypotheses = hypotheses
-	h.awaitingTasks = awaitingTasks
-	h.plannings = plannings
-	h.feeds = feeds
-	h.staleGoals = staleGoals
+	h.sessions = sessions
+	h.rss = rss
 	return h
 }
 
 const (
-	judgmentListLimit = 50
-	warningsFeedMin   = 3  // surface a feed warning after 3 consecutive failures
-	staleGoalDays     = 14 // mark goal as stale after this many days with no movement
+	hypothesisListLimit = 10 // mirrors brief(morning) fillHypotheses
+	rssHighlightLimit   = 10 // mirrors brief(morning) fillRSSHighlights
+	rssLookbackDays     = 2  // mirrors brief(morning): since = date - 2d
+	upcomingWindowDays  = 7  // mirrors brief(morning): upcoming = date .. date+7d
 )
 
 // Today handles GET /api/admin/commitment/today.
@@ -112,119 +117,126 @@ func (h *Handler) Today(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 	resp := Response{
-		Date: date.Format(time.DateOnly),
-		AwaitingJudgment: AwaitingJudgment{
-			ContentReview:                  []JudgmentContent{},
-			UnverifiedHypotheses:           []JudgmentHypothesis{},
-			CompletedTasksAwaitingApproval: []JudgmentTask{},
-		},
-		Plan:     PlanSection{Date: date.Format(time.DateOnly), Items: []daily.Item{}},
-		Warnings: []Warning{},
+		Date:                 date.Format(time.DateOnly),
+		OverdueTodos:         []todo.PendingDetail{},
+		TodayTodos:           []todo.PendingDetail{},
+		CommittedTodos:       []daily.Item{},
+		UpcomingTodos:        []todo.PendingDetail{},
+		ActiveGoals:          []goal.ActiveGoalSummary{},
+		UnverifiedHypotheses: []hypothesis.Record{},
+		RSSHighlights:        []RSSHighlight{},
 	}
-	h.loadAwaitingJudgment(ctx, &resp)
-	h.loadPlanSection(ctx, date, &resp)
-	h.loadWarnings(ctx, date, &resp)
+
+	h.loadTodos(ctx, date, &resp)
+	h.loadPlan(ctx, date, &resp)
+	h.loadGoals(ctx, &resp)
+	h.loadHypotheses(ctx, &resp)
+	h.loadSession(ctx, &resp)
+	h.loadRSS(ctx, date, &resp)
+
 	api.Encode(w, http.StatusOK, api.Response{Data: resp})
 }
 
-func (h *Handler) loadAwaitingJudgment(ctx context.Context, resp *Response) {
-	if h.contentQueue != nil {
-		if rows, err := h.contentQueue.ReviewQueue(ctx, judgmentListLimit); err != nil {
-			h.logger.Warn("today: content review queue failed", "error", err)
-		} else if rows != nil {
-			resp.AwaitingJudgment.ContentReview = rows
-		}
+func (h *Handler) loadTodos(ctx context.Context, date time.Time, resp *Response) {
+	if h.todos == nil {
+		return
 	}
-	if h.hypotheses != nil {
-		if rows, err := h.hypotheses.UnverifiedForJudgment(ctx, judgmentListLimit); err != nil {
-			h.logger.Warn("today: unverified hypotheses failed", "error", err)
-		} else if rows != nil {
-			resp.AwaitingJudgment.UnverifiedHypotheses = rows
-		}
+	if rows, err := h.todos.OverdueItems(ctx, date); err != nil {
+		h.logger.Warn("today: overdue todos failed", "error", err)
+	} else if rows != nil {
+		resp.OverdueTodos = rows
 	}
-	if h.awaitingTasks != nil {
-		if rows, err := h.awaitingTasks.AwaitingApproval(ctx, judgmentListLimit); err != nil {
-			h.logger.Warn("today: tasks awaiting approval failed", "error", err)
-		} else if rows != nil {
-			resp.AwaitingJudgment.CompletedTasksAwaitingApproval = rows
-		}
+	if rows, err := h.todos.ItemsDueOn(ctx, date); err != nil {
+		h.logger.Warn("today: today todos failed", "error", err)
+	} else if rows != nil {
+		resp.TodayTodos = rows
+	}
+	end := date.AddDate(0, 0, upcomingWindowDays)
+	if rows, err := h.todos.ItemsDueInRange(ctx, date, end); err != nil {
+		h.logger.Warn("today: upcoming todos failed", "error", err)
+	} else if rows != nil {
+		resp.UpcomingTodos = rows
 	}
 }
 
-func (h *Handler) loadPlanSection(ctx context.Context, date time.Time, resp *Response) {
+func (h *Handler) loadPlan(ctx context.Context, date time.Time, resp *Response) {
 	items, err := h.planItems.ItemsByDate(ctx, date)
 	if err != nil {
 		h.logger.Error("today: plan items failed", "error", err)
-	} else if items != nil {
-		resp.Plan.Items = items
-		resp.Plan.Summary.Total = len(items)
-		for i := range items {
-			if items[i].Status == daily.StatusDone {
-				resp.Plan.Summary.Done++
-			}
-		}
+		return
 	}
-	if h.plannings != nil {
-		if note, err := h.plannings.PlanNoteForDate(ctx, date); err == nil && note != nil {
-			resp.Plan.PlanningNote = note
+	if items != nil {
+		resp.CommittedTodos = items
+	}
+	for i := range items {
+		switch items[i].Status {
+		case daily.StatusPlanned:
+			resp.PlanCompletion.Planned++
+		case daily.StatusDone:
+			resp.PlanCompletion.Completed++
+		case daily.StatusDeferred:
+			resp.PlanCompletion.Deferred++
+		case daily.StatusDropped:
+			// dropped items are not counted in any category
 		}
 	}
 }
 
-func (h *Handler) loadWarnings(ctx context.Context, date time.Time, resp *Response) {
-	resp.Warnings = append(resp.Warnings, h.feedWarnings(ctx)...)
-	resp.Warnings = append(resp.Warnings, h.goalWarnings(ctx, date)...)
+func (h *Handler) loadGoals(ctx context.Context, resp *Response) {
+	if h.goals == nil {
+		return
+	}
+	if rows, err := h.goals.ActiveGoals(ctx); err != nil {
+		h.logger.Warn("today: active goals failed", "error", err)
+	} else if rows != nil {
+		resp.ActiveGoals = rows
+	}
 }
 
-func (h *Handler) feedWarnings(ctx context.Context) []Warning {
-	if h.feeds == nil {
-		return nil
+func (h *Handler) loadHypotheses(ctx context.Context, resp *Response) {
+	if h.hypotheses == nil {
+		return
 	}
-	rows, err := h.feeds.FailingFeeds(ctx)
+	if rows, err := h.hypotheses.Unverified(ctx, hypothesisListLimit); err != nil {
+		h.logger.Warn("today: unverified hypotheses failed", "error", err)
+	} else if rows != nil {
+		resp.UnverifiedHypotheses = rows
+	}
+}
+
+func (h *Handler) loadSession(ctx context.Context, resp *Response) {
+	if h.sessions == nil {
+		return
+	}
+	session, err := h.sessions.ActiveSession(ctx)
 	if err != nil {
-		h.logger.Warn("today: failing feeds failed", "error", err)
-		return nil
-	}
-	out := make([]Warning, 0, len(rows))
-	for i := range rows {
-		if rows[i].ConsecutiveFailures < warningsFeedMin {
-			continue
+		// ErrNoActive is the expected "no session open" case, not a failure.
+		if !errors.Is(err, learning.ErrNoActive) {
+			h.logger.Warn("today: active session failed", "error", err)
 		}
-		out = append(out, Warning{
-			Source:   "feed",
-			Severity: severityForFailures(rows[i].ConsecutiveFailures),
-			Message:  rows[i].Message,
+		return
+	}
+	resp.ActiveSession = session
+}
+
+func (h *Handler) loadRSS(ctx context.Context, date time.Time, resp *Response) {
+	if h.rss == nil {
+		return
+	}
+	since := date.AddDate(0, 0, -rssLookbackDays)
+	items, err := h.rss.HighPriorityRecent(ctx, since, rssHighlightLimit)
+	if err != nil {
+		h.logger.Warn("today: rss highlights failed", "error", err)
+		return
+	}
+	highlights := make([]RSSHighlight, 0, len(items))
+	for i := range items {
+		highlights = append(highlights, RSSHighlight{
+			Title:     items[i].Title,
+			URL:       items[i].SourceURL,
+			FeedName:  items[i].FeedName,
+			CreatedAt: items[i].CollectedAt.Format(time.RFC3339),
 		})
 	}
-	return out
-}
-
-func (h *Handler) goalWarnings(ctx context.Context, date time.Time) []Warning {
-	if h.staleGoals == nil {
-		return nil
-	}
-	cutoff := date.AddDate(0, 0, -staleGoalDays)
-	rows, err := h.staleGoals.StaleGoals(ctx, cutoff)
-	if err != nil {
-		h.logger.Warn("today: stale goals failed", "error", err)
-		return nil
-	}
-	out := make([]Warning, 0, len(rows))
-	for i := range rows {
-		out = append(out, Warning{
-			Source:   "goal",
-			Severity: "warn",
-			Message:  rows[i].Title + " stale " + strconv.Itoa(rows[i].DaysSinceMove) + "d",
-		})
-	}
-	return out
-}
-
-// severityForFailures maps consecutive_failures to a CellState-vocabulary
-// severity label — 3-5 failures warn, 6+ escalate to error.
-func severityForFailures(n int) string {
-	if n >= 6 {
-		return "error"
-	}
-	return "warn"
+	resp.RSSHighlights = highlights
 }

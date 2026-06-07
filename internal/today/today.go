@@ -1,109 +1,56 @@
 // Copyright 2026 Koopa. All rights reserved.
 
 // Package today composes the admin Today dashboard — a cross-domain
-// aggregate over content review, hypothesis judgment, task approval,
-// daily plan items, agent_note planning entries, and feed / goal
-// warnings. Every cross-domain source is expressed through
-// a consumer-defined interface; this package does not import another
-// feature's *Store directly.
+// aggregate over todos, the day's committed plan, active goals,
+// unverified hypotheses, the active learning session, and RSS highlights.
+// It is the HTTP mirror of the agent-facing brief(mode=morning) tool:
+// both pull the same morning sections from the same domain stores.
+//
+// Every cross-domain source is expressed through a consumer-defined
+// interface; this package does not import another feature's *Store
+// directly.
 package today
 
 import (
-	"time"
-
-	"github.com/google/uuid"
-
 	"github.com/Koopa0/koopa/internal/daily"
+	"github.com/Koopa0/koopa/internal/goal"
+	"github.com/Koopa0/koopa/internal/learning"
+	"github.com/Koopa0/koopa/internal/learning/hypothesis"
+	"github.com/Koopa0/koopa/internal/todo"
 )
 
-// JudgmentContent is a content row queued for human review decision.
-type JudgmentContent struct {
-	ID          uuid.UUID `json:"id"`
-	Title       string    `json:"title"`
-	Type        string    `json:"type"`
-	Actor       string    `json:"actor"`
-	SubmittedAt time.Time `json:"submitted_at"`
+// RSSHighlight is a recent high-priority feed entry surfaced as a
+// situational-awareness signal. It mirrors the brief(morning)
+// rss_highlights shape: recency-ordered, filtered by the feed's
+// pre-tagged priority — not relevance-scored or curated.
+type RSSHighlight struct {
+	Title     string `json:"title"`
+	URL       string `json:"url"`
+	FeedName  string `json:"feed_name"`
+	CreatedAt string `json:"created_at"`
 }
 
-// JudgmentHypothesis is an unverified hypothesis awaiting decision.
-type JudgmentHypothesis struct {
-	ID        uuid.UUID `json:"id"`
-	Claim     string    `json:"claim"`
-	Actor     string    `json:"actor"`
-	CreatedAt time.Time `json:"created_at"`
+// PlanCompletion is the small counts panel derived from the day's
+// committed plan items: how many are still planned, done, or deferred.
+type PlanCompletion struct {
+	Planned   int `json:"planned"`
+	Completed int `json:"completed"`
+	Deferred  int `json:"deferred"`
 }
 
-// JudgmentTask is a completed task awaiting the human acknowledge.
-type JudgmentTask struct {
-	ID          uuid.UUID  `json:"id"`
-	Title       string     `json:"title"`
-	Source      string     `json:"source"`
-	Assignee    string     `json:"assignee"`
-	CompletedAt *time.Time `json:"completed_at,omitempty"`
-}
-
-// PlanningNote is the latest agent_note(kind=plan) for a date.
-type PlanningNote struct {
-	ID        uuid.UUID `json:"id"`
-	Kind      string    `json:"kind"`
-	BodyMD    string    `json:"body_md"`
-	Actor     string    `json:"actor"`
-	CreatedAt time.Time `json:"created_at"`
-}
-
-// FailingFeedWarning is a warnings-row entry for a feed that has been
-// consecutive-failing beyond a threshold.
-type FailingFeedWarning struct {
-	Name                string `json:"name"`
-	ConsecutiveFailures int    `json:"consecutive_failures"`
-	Message             string `json:"message"`
-}
-
-// StaleGoalWarning is a warnings-row entry for a goal that has not
-// progressed within the stale window.
-type StaleGoalWarning struct {
-	ID            uuid.UUID `json:"id"`
-	Title         string    `json:"title"`
-	DaysSinceMove int       `json:"days_since_move"`
-}
-
-// AwaitingJudgment bundles the three "human decision needed" inboxes.
-type AwaitingJudgment struct {
-	ContentReview                  []JudgmentContent    `json:"content_review"`
-	UnverifiedHypotheses           []JudgmentHypothesis `json:"unverified_hypotheses"`
-	CompletedTasksAwaitingApproval []JudgmentTask       `json:"completed_tasks_awaiting_approval"`
-}
-
-// PlanSection is the today's-plan projection used by the UI. Items mirror
-// daily.Item exactly — the wire shape for today and /daily-plan stays the
-// same row type so the frontend can reuse its row component.
-type PlanSection struct {
-	Date         string        `json:"date"`
-	PlanningNote *PlanningNote `json:"planning_note,omitempty"`
-	Items        []daily.Item  `json:"items"`
-	Summary      PlanSummary   `json:"summary"`
-}
-
-// PlanSummary is the small counts panel above plan items.
-type PlanSummary struct {
-	Total   int `json:"total"`
-	Done    int `json:"done"`
-	Overdue int `json:"overdue"`
-}
-
-// Warning is a single warnings-row entry. source identifies which
-// subsystem surfaced it (feed, goal); severity is a closed set matching
-// CellState vocabulary.
-type Warning struct {
-	Source   string `json:"source"`
-	Severity string `json:"severity"`
-	Message  string `json:"message"`
-}
-
-// Response is the wire shape for GET /api/admin/commitment/today.
+// Response is the wire shape for GET /api/admin/commitment/today. It
+// carries the same morning sections as brief(mode=morning), exposed via
+// the admin API. List fields always marshal as [] (never null); the
+// active learning session is omitted when none is open.
 type Response struct {
-	Date             string           `json:"date"`
-	AwaitingJudgment AwaitingJudgment `json:"awaiting_judgment"`
-	Plan             PlanSection      `json:"plan"`
-	Warnings         []Warning        `json:"warnings"`
+	Date                 string                   `json:"date"`
+	OverdueTodos         []todo.PendingDetail     `json:"overdue_todos"`
+	TodayTodos           []todo.PendingDetail     `json:"today_todos"`
+	CommittedTodos       []daily.Item             `json:"committed_todos"`
+	UpcomingTodos        []todo.PendingDetail     `json:"upcoming_todos"`
+	PlanCompletion       PlanCompletion           `json:"plan_completion"`
+	ActiveGoals          []goal.ActiveGoalSummary `json:"active_goals"`
+	UnverifiedHypotheses []hypothesis.Record      `json:"unverified_hypotheses"`
+	ActiveSession        *learning.Session        `json:"active_session,omitempty"`
+	RSSHighlights        []RSSHighlight           `json:"rss_highlights"`
 }

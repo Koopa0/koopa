@@ -203,18 +203,17 @@ func run(logger *slog.Logger) error {
 		note:       note.NewHandler(noteStore, logger),
 		todo:       todo.NewHandler(todoStore, logger),
 		plan:       learningplan.NewHandler(planStore, logger),
-		// Today wires no cross-domain sources for now. The six readers
-		// (content review queue, unverified hypotheses, planning note,
-		// feed / goal warnings) are intentionally parked follow-ups: their
-		// nil readers leave the matching response sections at their
-		// initialized empty state.
+		// Today is the HTTP mirror of brief(mode=morning): the same domain
+		// stores feed both. The contracted readers — todo date views, the
+		// day's committed plan, active goals, unverified hypotheses, the
+		// active learning session, and RSS highlights — are wired to the
+		// real stores below.
 		today: today.NewHandler(dailyStore, logger).WithSources(
-			nil, // contentQueue — parked follow-up
-			nil, // hypotheses — parked follow-up
-			nil, // awaiting-task source removed (W2)
-			nil, // plannings — parked follow-up
-			nil, // feeds — parked follow-up
-			nil, // staleGoals — parked follow-up
+			todoStore,
+			goalStore,
+			hypothesisStore,
+			learningStore,
+			entryStore,
 		),
 		search: search.NewHandler([]search.Source{
 			content.NewSearchSource(contentStore),
