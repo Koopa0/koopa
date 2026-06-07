@@ -5,9 +5,7 @@ import {
   CheckSquare,
   Compass,
   FileText,
-  GitBranch,
   Home,
-  MessageSquare,
   Rss,
   StickyNote,
   Target,
@@ -146,21 +144,6 @@ export const ADMIN_NAV: readonly AdminNavGroup[] = [
   {
     label: 'Coordination',
     items: [
-      {
-        label: 'Tasks',
-        route: '/admin/coordination/tasks',
-        icon: MessageSquare,
-        countKey: 'tasks_awaiting_human',
-        shortcutHint: 'G K',
-        testId: 'admin-nav-tasks',
-      },
-      {
-        label: 'Process runs',
-        route: '/admin/coordination/pipeline',
-        icon: GitBranch,
-        shortcutHint: '',
-        testId: 'admin-nav-pipeline',
-      },
       {
         label: 'Activity',
         route: '/admin/coordination/activity',

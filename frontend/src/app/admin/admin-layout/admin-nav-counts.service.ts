@@ -6,7 +6,6 @@ import { ContentService } from '../../core/services/content.service';
 import { HypothesisService } from '../../core/services/hypothesis.service';
 import { PlanService } from '../../core/services/plan.service';
 import { SystemService } from '../../core/services/system.service';
-import { TaskService } from '../../core/services/task.service';
 
 /**
  * Keys map one-to-one to the `system/health` envelope fields. Any nav
@@ -18,8 +17,7 @@ export type NavCountKey =
   | 'contents_total'
   | 'review_queue'
   | 'feeds_active'
-  | 'hypotheses_unverified'
-  | 'tasks_awaiting_human';
+  | 'hypotheses_unverified';
 
 export type NavCountEnvelope = Record<NavCountKey, number | null>;
 
@@ -30,7 +28,6 @@ const EMPTY_ENVELOPE: NavCountEnvelope = {
   review_queue: null,
   feeds_active: null,
   hypotheses_unverified: null,
-  tasks_awaiting_human: null,
 };
 
 /**
@@ -40,15 +37,13 @@ const EMPTY_ENVELOPE: NavCountEnvelope = {
  * whole envelope; the nav simply hides that count.
  *
  * Backed by {@link rxResource} so the shell can call {@link reload}
- * after mutations (publish, request-revision, …) to refresh the
- * `review_queue` and `tasks_awaiting_human` counts without a full
- * page reload.
+ * after mutations (publish, …) to refresh the `review_queue` count
+ * without a full page reload.
  */
 @Injectable({ providedIn: 'root' })
 export class AdminNavCountsService {
   private readonly contentService = inject(ContentService);
   private readonly hypothesisService = inject(HypothesisService);
-  private readonly taskService = inject(TaskService);
   private readonly planService = inject(PlanService);
   private readonly systemService = inject(SystemService);
 
@@ -78,16 +73,6 @@ export class AdminNavCountsService {
           map((list) => list.length),
           catchError(() => of<number | null>(null)),
         ),
-        tasks_awaiting_human: this.taskService.open().pipe(
-          map(
-            (list) =>
-              list.filter(
-                (t) =>
-                  t.state === 'revision_requested' || t.state === 'submitted',
-              ).length,
-          ),
-          catchError(() => of<number | null>(null)),
-        ),
         feeds_active: this.systemService.getHealth().pipe(
           map((h) => h.feeds.healthy),
           catchError(() => of<number | null>(null)),
@@ -106,8 +91,8 @@ export class AdminNavCountsService {
   /**
    * Re-fetch every source. Call after an admin mutation (publish,
    * revert-to-draft, request-revision, etc.) so the nav reflects the
-   * new state immediately. The shell additionally reloads on
-   * `NavigationEnd` — see {@link AdminLayoutComponent}.
+   * new state immediately (e.g. the `review_queue` count). The shell
+   * additionally reloads on `NavigationEnd` — see {@link AdminLayoutComponent}.
    */
   reload(): void {
     this.resource.reload();

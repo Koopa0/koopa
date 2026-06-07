@@ -10,7 +10,6 @@ import { GoalInspectorComponent } from './renderers/goal-inspector/goal-inspecto
 import { ProjectInspectorComponent } from './renderers/project-inspector/project-inspector.component';
 import { ContentInspectorComponent } from './renderers/content-inspector/content-inspector.component';
 import { HypothesisInspectorComponent } from './renderers/hypothesis-inspector/hypothesis-inspector.component';
-import { TaskInspectorComponent } from './renderers/task-inspector/task-inspector.component';
 import { TodoInspectorComponent } from './renderers/todo-inspector/todo-inspector.component';
 import { AgentInspectorComponent } from './renderers/agent-inspector/agent-inspector.component';
 import { ConceptInspectorComponent } from './renderers/concept-inspector/concept-inspector.component';
@@ -34,7 +33,6 @@ import { ConceptInspectorComponent } from './renderers/concept-inspector/concept
     ProjectInspectorComponent,
     ContentInspectorComponent,
     HypothesisInspectorComponent,
-    TaskInspectorComponent,
     TodoInspectorComponent,
     AgentInspectorComponent,
     ConceptInspectorComponent,

@@ -113,25 +113,11 @@ const ADMIN_NAV_ACTIONS: readonly AdminNavActionEntry[] = [
     keywords: ['claim', 'verify'],
   },
   {
-    id: 'admin-tasks',
-    label: 'Tasks',
-    group: 'Coordination',
-    path: '/admin/coordination/tasks',
-    keywords: ['directive', 'assigned'],
-  },
-  {
     id: 'admin-agents',
     label: 'Agents',
     group: 'Coordination',
     path: '/admin/coordination/agents',
     keywords: ['agent', 'cowork'],
-  },
-  {
-    id: 'admin-pipeline',
-    label: 'Process runs',
-    group: 'Coordination',
-    path: '/admin/coordination/pipeline',
-    keywords: ['pipeline', 'runs'],
   },
   {
     id: 'admin-activity',

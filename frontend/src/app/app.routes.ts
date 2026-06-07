@@ -280,27 +280,6 @@ export const routes: Routes = [
 
       // ── Coordination ─────────────────────────────────────────────
       {
-        path: 'coordination/tasks',
-        loadComponent: () =>
-          import('./admin/coordination/tasks/list/tasks-list.page').then(
-            (m) => m.TasksListPageComponent,
-          ),
-      },
-      {
-        path: 'coordination/tasks/:id',
-        loadComponent: () =>
-          import('./admin/coordination/tasks/timeline/task-timeline.page').then(
-            (m) => m.TaskTimelinePageComponent,
-          ),
-      },
-      {
-        path: 'coordination/pipeline',
-        loadComponent: () =>
-          import('./admin/coordination/pipeline/pipeline.page').then(
-            (m) => m.PipelinePageComponent,
-          ),
-      },
-      {
         path: 'coordination/activity',
         loadComponent: () =>
           import('./admin/coordination/activity/activity.page').then(

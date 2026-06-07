@@ -33,7 +33,6 @@ const GO_TO_REGISTRY: readonly GoToEntry[] = [
   { key: 'l', label: 'Learning dashboard', path: '/admin/learning' },
   { key: 'p', label: 'Concepts', path: '/admin/learning/concepts' },
   { key: 'y', label: 'Hypotheses', path: '/admin/learning/hypotheses' },
-  { key: 'k', label: 'Tasks', path: '/admin/coordination/tasks' },
   { key: 'a', label: 'Activity', path: '/admin/coordination/activity' },
 ] as const;
 
