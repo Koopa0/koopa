@@ -8,7 +8,6 @@ export type ActivityEntityType =
   | 'content'
   | 'note'
   | 'learning_attempt'
-  | 'task'
   | 'learning_hypothesis'
   | 'learning_plan_entry'
   | 'learning_session';

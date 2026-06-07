@@ -33,7 +33,6 @@ const ENTITY_CHIPS: readonly Chip<EntityFilter>[] = [
   { value: 'todo', label: 'Todo' },
   { value: 'goal', label: 'Goal' },
   { value: 'project', label: 'Project' },
-  { value: 'task', label: 'Task' },
   { value: 'learning_hypothesis', label: 'Hypothesis' },
   { value: 'learning_attempt', label: 'Attempt' },
   { value: 'learning_session', label: 'Session' },
@@ -57,7 +56,6 @@ const KIND_CHIPS: readonly Chip<KindFilter>[] = [
 const ENTITY_ROUTE: Record<ActivityEntityType, string> = {
   content: '/admin/knowledge/content/%/edit',
   note: '/admin/knowledge/notes',
-  task: '/admin/coordination/tasks/%',
   goal: '/admin/commitment/goals/%',
   milestone: '/admin/commitment/goals',
   project: '/admin/commitment/projects/%',
