@@ -25,8 +25,8 @@ import { HeroCanvasComponent } from '../../../shared/components/hero-canvas/hero
         <div
           class="hero-bg absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-(--color-brand)/10 via-zinc-950 to-zinc-950"
         ></div>
-        <!-- Canvas flow field (lazy loaded, overlays on top) -->
-        @defer (on idle) {
+        <!-- Canvas flow field (lazy loaded; SSR-rendered host, hydrates on idle) -->
+        @defer (on idle; hydrate on idle) {
           <app-hero-canvas class="absolute inset-0" />
         }
       </div>

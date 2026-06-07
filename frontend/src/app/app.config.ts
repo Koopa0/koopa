@@ -9,11 +9,7 @@ import {
   withInMemoryScrolling,
   withViewTransitions,
 } from '@angular/router';
-import {
-  provideClientHydration,
-  withEventReplay,
-  withNoIncrementalHydration
-} from '@angular/platform-browser';
+import { provideClientHydration } from '@angular/platform-browser';
 import { provideAnimationsAsync } from '@angular/platform-browser/animations/async';
 import { provideHttpClient, withInterceptors } from '@angular/common/http';
 
@@ -55,6 +51,8 @@ export const appConfig: ApplicationConfig = {
     ),
     provideAnimationsAsync(),
     provideHttpClient(withInterceptors([authInterceptor, errorInterceptor])),
-    provideClientHydration(withEventReplay(), withNoIncrementalHydration()),
+    // Incremental hydration is the v22 default and enables event replay
+    // automatically; @defer blocks opt into lazy hydration via hydrate triggers.
+    provideClientHydration(),
   ],
 };
