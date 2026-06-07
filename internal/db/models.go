@@ -622,7 +622,7 @@ type Content struct {
 	CreatedAt   time.Time  `json:"created_at"`
 	// Application-managed. Set explicitly in UPDATE queries.
 	UpdatedAt time.Time `json:"updated_at"`
-	// pgvector embedding (1536d) from gemini-embedding-2-preview. See internal/embedder.Dimension — schema + Go must match exactly or pgvector rejects writes.
+	// pgvector embedding (1536d) from gemini-embedding-2. See internal/embedder.Dimension — schema + Go must match exactly or pgvector rejects writes.
 	Embedding *pgvector_go.Vector `json:"embedding"`
 	// Generated tsvector for full-text search. Uses 'simple' config (no stemming/language-specific tokenization) for multilingual safety. Weight A = title, C = body (first 10K chars). Semantic search via embedding compensates for tsvector recall limitations.
 	SearchVector string `json:"search_vector"`
@@ -1018,7 +1018,7 @@ type Note struct {
 	Metadata json.RawMessage `json:"metadata"`
 	// AI pipeline metadata: {summary, keywords, extracted_concepts}. Set by background enrichment.
 	AiMetadata json.RawMessage `json:"ai_metadata"`
-	// pgvector embedding (1536d) from gemini-embedding-2-preview. Used by search_knowledge.
+	// pgvector embedding (1536d) from gemini-embedding-2. Used by search_knowledge.
 	Embedding *pgvector_go.Vector `json:"embedding"`
 	CreatedAt time.Time           `json:"created_at"`
 	// Application-managed. Set explicitly in UPDATE queries.

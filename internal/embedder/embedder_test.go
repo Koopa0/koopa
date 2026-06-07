@@ -35,8 +35,8 @@ func TestModelAndDimension(t *testing.T) {
 	// change here must be paired with a schema migration + re-embed. The
 	// test exists to make the intent explicit at commit time — anyone
 	// flipping these values has to update the test in the same diff.
-	if Model != "gemini-embedding-2-preview" {
-		t.Errorf("Model = %q, want %q", Model, "gemini-embedding-2-preview")
+	if Model != "gemini-embedding-2" {
+		t.Errorf("Model = %q, want %q", Model, "gemini-embedding-2")
 	}
 	if Dimension != 1536 {
 		t.Errorf("Dimension = %d, want 1536", Dimension)

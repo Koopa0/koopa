@@ -523,7 +523,7 @@ COMMENT ON COLUMN contents.search_vector IS
     'Generated tsvector for full-text search. Uses ''simple'' config (no stemming/language-specific '
     'tokenization) for multilingual safety. Weight A = title, C = body (first 10K chars). '
     'Semantic search via embedding compensates for tsvector recall limitations.';
-COMMENT ON COLUMN contents.embedding IS 'pgvector embedding (1536d) from gemini-embedding-2-preview. See internal/embedder.Dimension — schema + Go must match exactly or pgvector rejects writes.';
+COMMENT ON COLUMN contents.embedding IS 'pgvector embedding (1536d) from gemini-embedding-2. See internal/embedder.Dimension — schema + Go must match exactly or pgvector rejects writes.';
 COMMENT ON COLUMN contents.updated_at IS 'Application-managed. Set explicitly in UPDATE queries.';
 
 CREATE INDEX idx_contents_status ON contents(status);
@@ -605,7 +605,7 @@ COMMENT ON COLUMN notes.metadata IS
 COMMENT ON COLUMN notes.ai_metadata IS
     'AI pipeline metadata: {summary, keywords, extracted_concepts}. Set by background enrichment.';
 COMMENT ON COLUMN notes.embedding IS
-    'pgvector embedding (1536d) from gemini-embedding-2-preview. Used by search_knowledge.';
+    'pgvector embedding (1536d) from gemini-embedding-2. Used by search_knowledge.';
 COMMENT ON COLUMN notes.search_vector IS
     'Generated tsvector for full-text search. Mirrors contents.search_vector shape.';
 COMMENT ON COLUMN notes.updated_at IS

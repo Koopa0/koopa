@@ -2,7 +2,7 @@
 
 // Package embedder generates vector embeddings for knowledge content.
 //
-// Backed by Google's gemini-embedding-2-preview model at 1536 dimensions
+// Backed by Google's gemini-embedding-2 model at 1536 dimensions
 // (Matryoshka-truncated from the model's native 3072d). Callers treat the
 // Embedder as an opaque dependency — no interface is exported because there
 // is exactly one implementation today. If a second provider surfaces, the
@@ -22,7 +22,7 @@ import (
 // incompatible with the new one — a schema migration and full re-embed
 // is required before flipping either of these values.
 const (
-	Model     = "gemini-embedding-2-preview"
+	Model     = "gemini-embedding-2"
 	Dimension = 1536
 )
 
