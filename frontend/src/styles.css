@@ -1,94 +1,471 @@
 @import 'tailwindcss';
 
-@theme {
-  --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, sans-serif;
-  --font-display: 'Space Grotesk', 'Inter', ui-sans-serif, system-ui, sans-serif;
-  --font-mono: 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
+/* ============================================================
+   koopa.dev design system — runtime tokens
+   Source of truth: docs/frontend/prototypes/project/_ds/.../colors_and_type.css
+   Dark is default; light is opt-in via [data-theme="light"] on <html>.
+   All colors oklch for perceptual uniformity. Hand-written component
+   CSS references these raw vars (var(--bg), var(--brand), ...); Tailwind
+   utilities reach them through the @theme aliases below.
+   ============================================================ */
+:root,
+[data-theme='dark'] {
+  /* Brand — logo cyan-teal, used surgically */
+  --brand: oklch(0.72 0.1 210);
+  --brand-strong: oklch(0.64 0.12 210);
+  --brand-muted: oklch(0.72 0.1 210 / 0.14);
+  --brand-faint: oklch(0.72 0.1 210 / 0.06);
 
-  --color-brand: oklch(0.58 0.2 245);
-  --color-brand-light: oklch(0.68 0.18 245);
+  /* Surfaces (4 elevations) */
+  --bg: oklch(0.145 0.004 260);
+  --panel: oklch(0.18 0.004 260);
+  --elevated: oklch(0.215 0.005 260);
+  --overlay: oklch(0.255 0.006 260);
 
-  --container-article: 720px;
+  /* Text (4 tiers) */
+  --fg: oklch(0.97 0.004 260);
+  --fg-muted: oklch(0.78 0.005 260);
+  --fg-subtle: oklch(0.6 0.006 260);
+  --fg-faint: oklch(0.45 0.006 260);
+
+  /* Lines */
+  --border: oklch(0.28 0.005 260);
+  --border-strong: oklch(0.38 0.006 260);
+  --border-faint: oklch(0.22 0.005 260);
+
+  /* Semantic (muted on purpose — never out-shout the accent) */
+  --success: oklch(0.72 0.12 155);
+  --success-bg: oklch(0.72 0.12 155 / 0.12);
+  --warn: oklch(0.78 0.13 80);
+  --warn-bg: oklch(0.78 0.13 80 / 0.12);
+  --error: oklch(0.7 0.17 25);
+  --error-bg: oklch(0.7 0.17 25 / 0.12);
+  --info: oklch(0.72 0.1 210);
+  --info-bg: oklch(0.72 0.1 210 / 0.12);
+
+  /* Content-type dots (bookmark/FSRS retired in backend; kept for the
+     live types: article/essay/build-log/til/note/digest) */
+  --dot-article: oklch(0.72 0.1 210);
+  --dot-essay: oklch(0.76 0.09 320);
+  --dot-build-log: oklch(0.76 0.12 70);
+  --dot-til: oklch(0.78 0.13 150);
+  --dot-note: oklch(0.7 0.02 260);
+  --dot-digest: oklch(0.8 0.1 50);
+
+  /* Shadows — two levels only, true-black low-alpha in dark */
+  --shadow-1: 0 2px 8px -2px rgb(0 0 0 / 0.5), 0 1px 2px rgb(0 0 0 / 0.4);
+  --shadow-2: 0 18px 40px -12px rgb(0 0 0 / 0.65), 0 4px 12px rgb(0 0 0 / 0.45);
+
+  color-scheme: dark;
 }
 
-/* Base reset */
+[data-theme='light'] {
+  --brand: oklch(0.56 0.12 210);
+  --brand-strong: oklch(0.48 0.13 210);
+  --brand-muted: oklch(0.56 0.12 210 / 0.12);
+  --brand-faint: oklch(0.56 0.12 210 / 0.05);
+
+  --bg: oklch(0.985 0.004 90); /* warm paper — not clinical white */
+  --panel: oklch(1 0 0);
+  --elevated: oklch(0.975 0.004 90);
+  --overlay: oklch(0.945 0.005 90);
+
+  --fg: oklch(0.17 0.008 260);
+  --fg-muted: oklch(0.38 0.008 260);
+  --fg-subtle: oklch(0.52 0.007 260);
+  --fg-faint: oklch(0.65 0.005 260);
+
+  --border: oklch(0.88 0.005 260);
+  --border-strong: oklch(0.78 0.006 260);
+  --border-faint: oklch(0.93 0.004 260);
+
+  --success: oklch(0.52 0.13 155);
+  --success-bg: oklch(0.52 0.13 155 / 0.1);
+  --warn: oklch(0.58 0.14 65);
+  --warn-bg: oklch(0.58 0.14 65 / 0.1);
+  --error: oklch(0.52 0.18 25);
+  --error-bg: oklch(0.52 0.18 25 / 0.1);
+  --info: oklch(0.56 0.12 210);
+  --info-bg: oklch(0.56 0.12 210 / 0.1);
+
+  --shadow-1: 0 2px 8px -2px rgb(15 23 42 / 0.08), 0 1px 2px rgb(15 23 42 / 0.06);
+  --shadow-2: 0 18px 40px -12px rgb(15 23 42 / 0.15), 0 4px 12px rgb(15 23 42 / 0.08);
+
+  color-scheme: light;
+}
+
+/* Static design scales (theme-independent) */
+:root {
+  /* Line heights */
+  --lh-tight: 1.15;
+  --lh-snug: 1.35;
+  --lh-normal: 1.5;
+  --lh-read: 1.75;
+
+  /* Weights */
+  --fw-regular: 400;
+  --fw-medium: 500;
+  --fw-semibold: 600;
+  --fw-bold: 700;
+
+  /* Tracking */
+  --track-tight: -0.02em;
+  --track-snug: -0.01em;
+  --track-normal: 0em;
+  --track-wide: 0.06em;
+
+  /* Spacing (2–8 dense tables, 40–80 reading pages) */
+  --s-2: 2px;
+  --s-4: 4px;
+  --s-6: 6px;
+  --s-8: 8px;
+  --s-12: 12px;
+  --s-16: 16px;
+  --s-20: 20px;
+  --s-24: 24px;
+  --s-32: 32px;
+  --s-40: 40px;
+  --s-56: 56px;
+  --s-80: 80px;
+
+  /* Radii — no pills except avatars */
+  --r-sm: 2px;
+  --r-md: 6px;
+  --r-lg: 12px;
+  --r-full: 999px;
+
+  /* Content widths */
+  --measure-article: 680px;
+  --measure-admin-prose: 640px;
+  --container: 1280px;
+
+  /* Motion — restrained, nothing bounces */
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --dur-fast: 60ms;
+  --dur-base: 120ms;
+  --dur-slow: 200ms;
+}
+
+/* ============================================================
+   Tailwind v4 theme — remap legacy scales onto the design system
+   so the ~2800 existing zinc/blue/sky utilities adopt the DS look
+   with no per-file rewrite, and expose DS tokens as first-class
+   utilities (bg-panel, text-fg-muted, border-border, ...).
+   ============================================================ */
+@theme {
+  /* Type families */
+  --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-display: 'Space Grotesk', 'Inter', ui-sans-serif, system-ui, sans-serif;
+  --font-serif: 'IBM Plex Serif', ui-serif, Georgia, serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
+
+  /* DS surface + text + line tokens as utilities (switch by theme) */
+  --color-bg: var(--bg);
+  --color-panel: var(--panel);
+  --color-elevated: var(--elevated);
+  --color-overlay: var(--overlay);
+  --color-fg: var(--fg);
+  --color-fg-muted: var(--fg-muted);
+  --color-fg-subtle: var(--fg-subtle);
+  --color-fg-faint: var(--fg-faint);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-border-faint: var(--border-faint);
+
+  /* Brand + semantic as utilities */
+  --color-brand: var(--brand);
+  --color-brand-strong: var(--brand-strong);
+  --color-brand-muted: var(--brand-muted);
+  --color-brand-faint: var(--brand-faint);
+  --color-brand-light: var(--brand-strong); /* legacy alias */
+  --color-success: var(--success);
+  --color-success-bg: var(--success-bg);
+  --color-warn: var(--warn);
+  --color-warn-bg: var(--warn-bg);
+  --color-error: var(--error);
+  --color-error-bg: var(--error-bg);
+  --color-info: var(--info);
+  --color-info-bg: var(--info-bg);
+
+  /* Legacy zinc scale → DS cool-neutral (hue 260, low chroma). Lightnesses
+     track Tailwind defaults so contrast is preserved; only the hue/chroma
+     shift to the DS's slight-blue-bias neutral. */
+  --color-zinc-50: oklch(0.985 0.003 260);
+  --color-zinc-100: oklch(0.967 0.003 260);
+  --color-zinc-200: oklch(0.92 0.004 260);
+  --color-zinc-300: oklch(0.871 0.005 260);
+  --color-zinc-400: oklch(0.705 0.006 260);
+  --color-zinc-500: oklch(0.552 0.006 260);
+  --color-zinc-600: oklch(0.442 0.006 260);
+  --color-zinc-700: oklch(0.37 0.006 260);
+  --color-zinc-800: oklch(0.274 0.005 260);
+  --color-zinc-900: oklch(0.21 0.004 260);
+  --color-zinc-950: oklch(0.145 0.004 260);
+
+  /* Legacy blue + sky scales → DS cyan-teal brand ramp (the "swap the old
+     repo blue for surgical cyan-teal" change), centered on --brand at 400. */
+  --color-blue-50: oklch(0.97 0.02 210);
+  --color-blue-100: oklch(0.93 0.03 210);
+  --color-blue-200: oklch(0.88 0.05 210);
+  --color-blue-300: oklch(0.8 0.08 210);
+  --color-blue-400: oklch(0.72 0.1 210);
+  --color-blue-500: oklch(0.64 0.12 210);
+  --color-blue-600: oklch(0.56 0.12 210);
+  --color-blue-700: oklch(0.48 0.12 210);
+  --color-blue-800: oklch(0.4 0.1 210);
+  --color-blue-900: oklch(0.32 0.08 210);
+  --color-blue-950: oklch(0.24 0.06 210);
+  --color-sky-50: oklch(0.97 0.02 210);
+  --color-sky-100: oklch(0.93 0.03 210);
+  --color-sky-200: oklch(0.88 0.05 210);
+  --color-sky-300: oklch(0.8 0.08 210);
+  --color-sky-400: oklch(0.72 0.1 210);
+  --color-sky-500: oklch(0.64 0.12 210);
+  --color-sky-600: oklch(0.56 0.12 210);
+  --color-sky-700: oklch(0.48 0.12 210);
+  --color-sky-800: oklch(0.4 0.1 210);
+  --color-sky-900: oklch(0.32 0.08 210);
+  --color-sky-950: oklch(0.24 0.06 210);
+
+  /* Radii */
+  --radius-xs: var(--r-sm);
+  --radius-sm: var(--r-sm);
+  --radius-md: var(--r-md);
+  --radius-lg: var(--r-lg);
+
+  /* Reading measure — keeps the existing max-w-article utility, retuned to DS */
+  --container-article: 680px;
+}
+
+/* ============================================================
+   Base reset
+   ============================================================ */
 html {
   scroll-behavior: smooth;
 }
 
-html, body {
+html,
+body {
   height: 100%;
   margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-sans);
 }
 
 * {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-}
-
-/* Minimal scrollbar */
-* {
   scrollbar-width: thin;
-  scrollbar-color: var(--color-zinc-700) transparent;
+  scrollbar-color: var(--border-strong) transparent;
 }
 
 /* Scroll margin for anchored elements */
-h1[id], h2[id], h3[id], h4[id], h5[id], h6[id],
+h1[id],
+h2[id],
+h3[id],
+h4[id],
+h5[id],
+h6[id],
 [id]:target {
   scroll-margin-top: 80px;
 }
 
-/* Code font */
-code, pre {
+code,
+pre {
   font-family: var(--font-mono);
 }
 
-/* Article content prose styles (dark mode only) */
-.prose {
-  max-width: var(--container-article);
+/* Global keyboard focus indicator (WCAG 2.1 AA), zero specificity so
+   components can override with utilities. DS: 2px --fg-subtle ring. */
+:where(
+  a,
+  button,
+  input,
+  select,
+  textarea,
+  [tabindex],
+  [role='button'],
+  [role='link'],
+  [role='tab'],
+  [role='option'],
+  [role='switch']
+):focus-visible {
+  outline: 2px solid var(--fg-subtle);
+  outline-offset: 2px;
+}
+
+/* ============================================================
+   Semantic text styles (shared by both surfaces)
+   ============================================================ */
+.h-display {
+  font-family: var(--font-display);
+  font-size: 3rem;
+  font-weight: var(--fw-bold);
+  line-height: var(--lh-tight);
+  letter-spacing: var(--track-tight);
+  color: var(--fg);
+}
+.h1 {
+  font-family: var(--font-display);
+  font-size: 2.375rem;
+  font-weight: var(--fw-bold);
+  line-height: var(--lh-tight);
+  letter-spacing: var(--track-tight);
+  color: var(--fg);
+}
+.h2 {
+  font-family: var(--font-display);
+  font-size: 1.875rem;
+  font-weight: var(--fw-semibold);
+  line-height: var(--lh-snug);
+  letter-spacing: var(--track-snug);
+  color: var(--fg);
+}
+.h3 {
+  font-family: var(--font-display);
+  font-size: 1.5rem;
+  font-weight: var(--fw-semibold);
+  line-height: var(--lh-snug);
+  color: var(--fg);
+}
+.h4 {
+  font-family: var(--font-display);
+  font-size: 1.25rem;
+  font-weight: var(--fw-semibold);
+  line-height: var(--lh-snug);
+  color: var(--fg);
+}
+.lead {
+  font-family: var(--font-sans);
+  font-size: 1.125rem;
+  line-height: var(--lh-normal);
+  color: var(--fg-muted);
+}
+.body-read {
+  font-family: var(--font-serif);
   font-size: 1.0625rem;
-  line-height: 1.75;
-  color: var(--color-zinc-300);
+  line-height: var(--lh-read);
+  color: var(--fg-muted);
+}
+.caption {
+  font-family: var(--font-sans);
+  font-size: 0.75rem;
+  line-height: var(--lh-normal);
+  color: var(--fg-subtle);
+}
+.micro {
+  font-family: var(--font-sans);
+  font-size: 0.6875rem;
+  line-height: var(--lh-normal);
+  color: var(--fg-subtle);
+  letter-spacing: var(--track-wide);
+  text-transform: uppercase;
+}
+.kbd {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  padding: 2px 6px;
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: var(--r-sm);
+  background: var(--elevated);
+  color: var(--fg-muted);
 }
 
-.prose h1, .prose h2, .prose h3, .prose h4 {
-  color: var(--color-zinc-100);
+/* Display font helper — breaks the "everything is Inter" feel */
+.font-display {
+  font-family: var(--font-display);
+  letter-spacing: -0.02em;
 }
 
-.prose h1 { font-size: 2.25rem; font-weight: 700; margin-top: 2rem; margin-bottom: 1rem; line-height: 1.2; }
-.prose h2 { font-size: 1.75rem; font-weight: 600; margin-top: 2rem; margin-bottom: 0.75rem; line-height: 1.3; }
-.prose h3 { font-size: 1.375rem; font-weight: 600; margin-top: 1.5rem; margin-bottom: 0.5rem; line-height: 1.4; }
-.prose h4 { font-size: 1.125rem; font-weight: 600; margin-top: 1.25rem; margin-bottom: 0.5rem; }
+/* ============================================================
+   Article prose — IBM Plex Serif long-form (the reading surface).
+   "Swapping in a serif for article bodies is the single biggest
+   signal that reading is respected here."
+   ============================================================ */
+.prose {
+  max-width: var(--measure-article);
+  font-family: var(--font-serif);
+  font-size: 1.0625rem;
+  line-height: var(--lh-read);
+  color: var(--fg-muted);
+}
 
-.prose p { margin-bottom: 1.25em; max-width: 75ch; }
+.prose h1,
+.prose h2,
+.prose h3,
+.prose h4 {
+  font-family: var(--font-display);
+  color: var(--fg);
+  letter-spacing: var(--track-snug);
+}
 
-.prose a { color: var(--color-blue-400); text-decoration: underline; text-underline-offset: 2px; }
-.prose a:hover { color: var(--color-blue-300); }
+.prose h1 {
+  font-size: 2.25rem;
+  font-weight: 700;
+  margin-top: 2rem;
+  margin-bottom: 1rem;
+  line-height: 1.2;
+}
+.prose h2 {
+  font-size: 1.75rem;
+  font-weight: 600;
+  margin-top: 2rem;
+  margin-bottom: 0.75rem;
+  line-height: 1.3;
+}
+.prose h3 {
+  font-size: 1.375rem;
+  font-weight: 600;
+  margin-top: 1.5rem;
+  margin-bottom: 0.5rem;
+  line-height: 1.4;
+}
+.prose h4 {
+  font-size: 1.125rem;
+  font-weight: 600;
+  margin-top: 1.25rem;
+  margin-bottom: 0.5rem;
+}
+
+.prose p {
+  margin-bottom: 1.25em;
+}
+
+.prose a {
+  color: var(--brand);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-decoration-thickness: 1px;
+}
+.prose a:hover {
+  color: var(--brand-strong);
+}
 
 .prose blockquote {
-  border-left: 4px solid var(--color-blue-500);
-  padding: 1rem 1.5rem;
+  border-left: 2px solid var(--brand);
+  padding: 0.25rem 0 0.25rem 1.25rem;
   margin: 1.5rem 0;
   font-style: italic;
-  color: var(--color-zinc-400);
-  background: var(--color-zinc-800/50);
-  border-radius: 0 0.5rem 0.5rem 0;
+  color: var(--fg);
 }
 
 .prose code {
-  font-size: 0.9em;
+  font-family: var(--font-mono);
+  font-size: 0.85em;
   padding: 2px 6px;
-  background: var(--color-zinc-800);
-  color: var(--color-zinc-200);
-  border-radius: 0.25rem;
+  background: var(--elevated);
+  color: var(--fg);
+  border-radius: var(--r-sm);
 }
 
 .prose pre {
-  position: relative;
-  background: var(--color-zinc-900);
-  border: 1px solid var(--color-zinc-800);
-  border-radius: 0.75rem;
-  padding: 1.5rem;
+  font-family: var(--font-mono);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: 1.25rem;
   margin: 1.5rem 0;
   overflow-x: auto;
 }
@@ -96,245 +473,223 @@ code, pre {
 .prose pre code {
   background: none;
   padding: 0;
-  font-size: 0.9375rem;
+  font-size: 0.875rem;
   line-height: 1.6;
   color: inherit;
 }
 
-.prose ul, .prose ol { margin: 1rem 0; padding-left: 2rem; }
-.prose li { margin: 0.5rem 0; }
-.prose li::marker { color: var(--color-blue-500); }
+.prose ul,
+.prose ol {
+  margin: 1rem 0;
+  padding-left: 1.5rem;
+}
+.prose li {
+  margin: 0.4rem 0;
+}
+.prose li::marker {
+  color: var(--brand);
+}
 
-.prose table { width: 100%; border-collapse: collapse; margin: 1.5rem 0; }
-.prose th, .prose td { text-align: left; padding: 0.75rem 1rem; border-bottom: 1px solid var(--color-zinc-800); }
-.prose th { font-weight: 600; color: var(--color-zinc-100); }
+.prose table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1.5rem 0;
+  font-family: var(--font-sans);
+  font-size: 0.9375rem;
+}
+.prose th,
+.prose td {
+  text-align: left;
+  padding: 0.6rem 0.9rem;
+  border-bottom: 1px solid var(--border);
+}
+.prose th {
+  font-weight: 600;
+  color: var(--fg);
+}
 
-.prose hr { border: none; border-top: 1px solid var(--color-zinc-800); margin: 2rem 0; }
+.prose hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 2rem 0;
+}
 
-.prose img { border-radius: 0.75rem; max-width: 100%; }
+.prose img {
+  border-radius: var(--r-md);
+  max-width: 100%;
+}
 
-.prose strong { color: var(--color-zinc-100); }
+.prose strong {
+  color: var(--fg);
+  font-weight: 600;
+}
 
-/* Compact prose for admin dashboard cards — inherits prose colors but smaller */
+/* Compact prose for admin cards — DS colors, smaller scale, sans body */
 .prose-compact {
+  font-family: var(--font-sans);
   font-size: 0.875rem;
   line-height: 1.625;
   max-width: none;
+  color: var(--fg-muted);
 }
-.prose-compact h1 { font-size: 1.125rem; margin-top: 0.75rem; margin-bottom: 0.375rem; }
-.prose-compact h2 { font-size: 1rem; margin-top: 0.75rem; margin-bottom: 0.375rem; }
-.prose-compact h3 { font-size: 0.9375rem; margin-top: 0.5rem; margin-bottom: 0.25rem; }
-.prose-compact h4 { font-size: 0.875rem; margin-top: 0.5rem; margin-bottom: 0.25rem; }
-.prose-compact p { margin-bottom: 0.625em; max-width: none; }
-.prose-compact blockquote { padding: 0.5rem 1rem; margin: 0.75rem 0; }
-.prose-compact ul, .prose-compact ol { margin: 0.5rem 0; padding-left: 1.5rem; }
-.prose-compact li { margin: 0.125rem 0; }
-.prose-compact pre { padding: 0.75rem; margin: 0.75rem 0; border-radius: 0.375rem; }
-.prose-compact pre code { font-size: 0.8125rem; }
-.prose-compact table { margin: 0.75rem 0; }
-.prose-compact th, .prose-compact td { padding: 0.375rem 0.75rem; }
-.prose-compact hr { margin: 1rem 0; }
-
-/* Highlight.js theme (dark) */
-.hljs { color: #e1e4e8; background: transparent; }
-.hljs-comment, .hljs-quote { color: #6a737d; font-style: italic; }
-.hljs-keyword, .hljs-selector-tag { color: #ff7b72; }
-.hljs-string, .hljs-attr, .hljs-addition { color: #a5d6ff; }
-.hljs-number, .hljs-literal { color: #79c0ff; }
-.hljs-built_in, .hljs-type { color: #d2a8ff; }
-.hljs-title, .hljs-section { color: #d2a8ff; font-weight: 600; }
-.hljs-name, .hljs-tag { color: #7ee787; }
-.hljs-variable, .hljs-template-variable { color: #ffa657; }
-.hljs-deletion { color: #ffa198; background: rgba(248,81,73,0.1); }
-.hljs-meta { color: #8b949e; }
-.hljs-emphasis { font-style: italic; }
-.hljs-strong { font-weight: 700; }
-.hljs-link { text-decoration: underline; }
-
-/* Global keyboard focus indicator (WCAG 2.1 AA)
-   Uses :where() for zero specificity so components can override with Tailwind utilities */
-:where(a, button, input, select, textarea, [tabindex], [role="button"], [role="link"], [role="tab"], [role="option"], [role="switch"]):focus-visible {
-  outline: 2px solid #a1a1aa; /* zinc-400 */
-  outline-offset: 2px;
+.prose-compact h1 {
+  font-size: 1.125rem;
+  margin-top: 0.75rem;
+  margin-bottom: 0.375rem;
+}
+.prose-compact h2 {
+  font-size: 1rem;
+  margin-top: 0.75rem;
+  margin-bottom: 0.375rem;
+}
+.prose-compact h3 {
+  font-size: 0.9375rem;
+  margin-top: 0.5rem;
+  margin-bottom: 0.25rem;
+}
+.prose-compact h4 {
+  font-size: 0.875rem;
+  margin-top: 0.5rem;
+  margin-bottom: 0.25rem;
+}
+.prose-compact p {
+  margin-bottom: 0.625em;
+  max-width: none;
+}
+.prose-compact blockquote {
+  padding: 0.5rem 1rem;
+  margin: 0.75rem 0;
+}
+.prose-compact ul,
+.prose-compact ol {
+  margin: 0.5rem 0;
+  padding-left: 1.5rem;
+}
+.prose-compact li {
+  margin: 0.125rem 0;
+}
+.prose-compact pre {
+  padding: 0.75rem;
+  margin: 0.75rem 0;
+  border-radius: var(--r-sm);
+}
+.prose-compact pre code {
+  font-size: 0.8125rem;
+}
+.prose-compact table {
+  margin: 0.75rem 0;
+}
+.prose-compact th,
+.prose-compact td {
+  padding: 0.375rem 0.75rem;
+}
+.prose-compact hr {
+  margin: 1rem 0;
 }
 
-/* View Transitions — scoped to content area only.
-   Header, sidebar, and footer do NOT participate in route transitions. */
+/* ============================================================
+   Highlight.js (dark) — GitHub-style tokens, work on the DS surfaces
+   ============================================================ */
+.hljs {
+  color: #e1e4e8;
+  background: transparent;
+}
+.hljs-comment,
+.hljs-quote {
+  color: #6a737d;
+  font-style: italic;
+}
+.hljs-keyword,
+.hljs-selector-tag {
+  color: #ff7b72;
+}
+.hljs-string,
+.hljs-attr,
+.hljs-addition {
+  color: #a5d6ff;
+}
+.hljs-number,
+.hljs-literal {
+  color: #79c0ff;
+}
+.hljs-built_in,
+.hljs-type {
+  color: #d2a8ff;
+}
+.hljs-title,
+.hljs-section {
+  color: #d2a8ff;
+  font-weight: 600;
+}
+.hljs-name,
+.hljs-tag {
+  color: #7ee787;
+}
+.hljs-variable,
+.hljs-template-variable {
+  color: #ffa657;
+}
+.hljs-deletion {
+  color: #ffa198;
+  background: rgba(248, 81, 73, 0.1);
+}
+.hljs-meta {
+  color: #8b949e;
+}
+.hljs-emphasis {
+  font-style: italic;
+}
+.hljs-strong {
+  font-weight: 700;
+}
+.hljs-link {
+  text-decoration: underline;
+}
+
+/* ============================================================
+   View transitions — scoped to the content area only.
+   ============================================================ */
 ::view-transition-old(page-content) {
   animation: 100ms ease-out both vt-fade-out;
 }
-
 ::view-transition-new(page-content) {
   animation: 150ms ease-out both vt-fade-in;
 }
-
-/* Suppress default root transition — only named elements transition. */
 ::view-transition-old(root),
 ::view-transition-new(root) {
   animation: none;
 }
-
 @keyframes vt-fade-out {
-  to { opacity: 0; }
+  to {
+    opacity: 0;
+  }
 }
-
 @keyframes vt-fade-in {
-  from { opacity: 0; }
+  from {
+    opacity: 0;
+  }
 }
 
-/* Display font for headings — breaks the "everything is Inter" AI feel */
-.font-display {
-  font-family: var(--font-display);
-  letter-spacing: -0.02em;
-}
-
-/* Grain texture overlay — adds organic feel, removes clinical flatness */
+/* ============================================================
+   Grain overlay — faint noise composited globally. The single thing
+   that keeps the UI from reading as clinical. Keep it.
+   ============================================================ */
 .grain-overlay::after {
   content: '';
   position: fixed;
   inset: 0;
   z-index: 9999;
   pointer-events: none;
-  opacity: 0.03;
+  opacity: 0.025;
   background-image: url('/noise.svg');
   background-repeat: repeat;
   background-size: 200px 200px;
   mix-blend-mode: overlay;
 }
 
-/* CTA Button shimmer effect on hover */
-.cta-primary::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(105deg, transparent 40%, rgba(255,255,255,0.25) 50%, transparent 60%);
-  transform: translateX(-200%);
-  transition: none;
-}
-
-.cta-primary:hover::after {
-  animation: shimmer 0.6s ease-in-out;
-}
-
-@keyframes shimmer {
-  to { transform: translateX(200%); }
-}
-
-/* Glitch effect — full (404 page) */
-.glitch-text {
-  position: relative;
-  animation: glitch-idle 2.5s step-end infinite;
-}
-
-.glitch-text::before,
-.glitch-text::after {
-  content: attr(data-text);
-  position: absolute;
-  inset: 0;
-}
-
-.glitch-text::before {
-  color: oklch(0.58 0.2 245);
-  animation: glitch-shift-1 2.5s step-end infinite;
-  clip-path: inset(0 0 100% 0);
-}
-
-.glitch-text::after {
-  color: rgb(255, 80, 80);
-  animation: glitch-shift-2 2.5s step-end infinite;
-  clip-path: inset(0 0 100% 0);
-}
-
-@keyframes glitch-idle {
-  0%, 78%, 100% { transform: none; }
-  80% { transform: translate(-2px, 1px); }
-  83% { transform: translate(2px, -1px); }
-  86% { transform: translate(-1px, 2px); }
-  89% { transform: translate(1px, -1px); }
-  92% { transform: none; }
-}
-
-@keyframes glitch-shift-1 {
-  0%, 78%, 92%, 100% { clip-path: inset(0 0 100% 0); }
-  80% { clip-path: inset(20% 0 60% 0); transform: translate(-3px, 0); }
-  83% { clip-path: inset(60% 0 10% 0); transform: translate(3px, 0); }
-  86% { clip-path: inset(40% 0 30% 0); transform: translate(-2px, 0); }
-  89% { clip-path: inset(15% 0 70% 0); transform: translate(2px, 0); }
-}
-
-@keyframes glitch-shift-2 {
-  0%, 78%, 92%, 100% { clip-path: inset(0 0 100% 0); }
-  81% { clip-path: inset(30% 0 50% 0); transform: translate(3px, 0); }
-  84% { clip-path: inset(10% 0 70% 0); transform: translate(-3px, 0); }
-  87% { clip-path: inset(50% 0 20% 0); transform: translate(2px, 0); }
-  90% { clip-path: inset(25% 0 55% 0); transform: translate(-2px, 0); }
-}
-
-/* Glitch effect — subtle (hover, brand elements) */
-.glitch-hover {
-  position: relative;
-}
-
-.glitch-hover::before,
-.glitch-hover::after {
-  content: attr(data-text);
-  position: absolute;
-  inset: 0;
-  clip-path: inset(0 0 100% 0);
-  pointer-events: none;
-}
-
-.glitch-hover::before { color: oklch(0.58 0.2 245); }
-.glitch-hover::after { color: rgb(255, 80, 80); }
-
-.glitch-hover:hover::before {
-  animation: glitch-subtle-1 0.3s step-end;
-}
-
-.glitch-hover:hover::after {
-  animation: glitch-subtle-2 0.3s step-end;
-}
-
-.glitch-hover:hover {
-  animation: glitch-subtle-base 0.3s step-end;
-}
-
-@keyframes glitch-subtle-base {
-  0%, 100% { transform: none; }
-  25% { transform: translate(-1px, 0); }
-  50% { transform: translate(1px, 0); }
-  75% { transform: translate(-1px, 1px); }
-}
-
-@keyframes glitch-subtle-1 {
-  0%, 100% { clip-path: inset(0 0 100% 0); }
-  25% { clip-path: inset(30% 0 50% 0); transform: translate(-2px, 0); }
-  50% { clip-path: inset(60% 0 20% 0); transform: translate(2px, 0); }
-  75% { clip-path: inset(10% 0 70% 0); transform: translate(-1px, 0); }
-}
-
-@keyframes glitch-subtle-2 {
-  0%, 100% { clip-path: inset(0 0 100% 0); }
-  33% { clip-path: inset(40% 0 40% 0); transform: translate(2px, 0); }
-  66% { clip-path: inset(20% 0 60% 0); transform: translate(-2px, 0); }
-}
-
-/* Scanline overlay for 404 */
-.scanlines::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  background: repeating-linear-gradient(
-    0deg,
-    transparent,
-    transparent 2px,
-    rgba(255, 255, 255, 0.015) 2px,
-    rgba(255, 255, 255, 0.015) 4px
-  );
-}
-
-/* Respect user's reduced motion preference (WCAG 2.3.3) */
+/* ============================================================
+   Respect reduced motion (WCAG 2.3.3)
+   ============================================================ */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
