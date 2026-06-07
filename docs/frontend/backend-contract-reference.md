@@ -86,7 +86,26 @@ Lifecycle: `POST /learning/hypotheses/{id}/{verify|invalidate|archive|evidence}`
 
 ---
 
-## ⚠️ Alignment points (decide / backend work)
+## ✅ Alignment points — RESOLVED (2026-06-07)
 
-1. **#9 plan-detail field name:** real = `progress` (5 fields incl. `remaining`). Keep, or rename to `summary`? + I'll de-embed the response to explicit `{plan, entries, progress}`.
-2. **Today aggregate is a PARKED STUB.** `internal/today` exists but its readers are wired `nil` (returns empty) and its response struct still carries stale `task`/`agent_note` fields from before the contraction. Screen 1 (Today) needs a real backend: **either** wire `internal/today` to live sources (overdue/today todos, active goals, unverified hypotheses, active session, rss) and drop the stale fields — **or** the frontend composes Today from the individual endpoints. This is a backend task I can do (recommend wiring `internal/today` to the contracted shape, matching the agent `brief(morning)` sections).
+1. **#9 plan-detail:** kept `progress` (matches `manage_plan(progress)` + the `Progress` type); de-embedded. Real wire shape: `{ "plan": {...}, "entries": [EntryDetail], "progress": { total, completed, skipped, substituted, remaining } }` — plan fields nest under `plan`, NOT flat. Same fix applied to session detail → `{ "session": {...}, "attempts": [...] }`.
+2. **Today aggregate:** WIRED to the contracted brief(morning) shape (no longer a stub; stale task/agent_note fields dropped). Contract below.
+
+## Daily — Today (real, wired)
+
+`GET /api/admin/commitment/today` →
+```json
+{
+  "date": "YYYY-MM-DD",
+  "overdue_todos": [PendingDetail],
+  "today_todos": [PendingDetail],
+  "committed_todos": [Item],
+  "upcoming_todos": [PendingDetail],
+  "plan_completion": { "planned": 0, "completed": 0, "deferred": 0 },
+  "active_goals": [ActiveGoalSummary],
+  "unverified_hypotheses": [Hypothesis],
+  "active_session": "Session | absent (omitempty)",
+  "rss_highlights": [{ "title", "url", "feed_name", "created_at" }]
+}
+```
+All list fields are `[]`, never `null`. `active_session` is omitted (not null) when no session is open. `PendingDetail` = a todo + its project; `Item` = a daily-plan item; `ActiveGoalSummary` / `Hypothesis` / `Session` match the goal/hypothesis/learning endpoints.
