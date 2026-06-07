@@ -19,9 +19,14 @@ package learning_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"io"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"os"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -290,5 +295,45 @@ func TestCreateDomain_HappyPath(t *testing.T) {
 	}
 	if !exists {
 		t.Errorf("DomainExists(%q) = false after create, want true", slug)
+	}
+}
+
+// TestListDomains_HTTP exercises GET /api/admin/learning/domains end to end
+// against a real database: a created domain must appear in the handler's
+// {data:[...]} envelope, and the list is always a JSON array.
+func TestListDomains_HTTP(t *testing.T) {
+	store := learning.NewStore(testPool)
+	slug := "w8-list-test-domain"
+
+	cleanup := func() {
+		if _, err := testPool.Exec(context.Background(),
+			`DELETE FROM learning_domains WHERE slug = $1`, slug); err != nil {
+			t.Logf("cleanup learning_domains %q: %v", slug, err)
+		}
+	}
+	cleanup()
+	t.Cleanup(cleanup)
+
+	if _, err := store.CreateDomain(t.Context(), slug, "W8 List Test Domain"); err != nil {
+		t.Fatalf("CreateDomain(%q): %v", slug, err)
+	}
+
+	h := learning.NewHandler(store, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	req := httptest.NewRequest(http.MethodGet, "/api/admin/learning/domains", http.NoBody)
+	w := httptest.NewRecorder()
+	h.ListDomains(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("ListDomains status = %d, want %d (body: %s)", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var resp struct {
+		Data []learning.Domain `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal ListDomains response: %v (body: %s)", err, w.Body.String())
+	}
+	if !slices.ContainsFunc(resp.Data, func(d learning.Domain) bool { return d.Slug == slug }) {
+		t.Errorf("ListDomains response missing created domain %q (got %d domains)", slug, len(resp.Data))
 	}
 }

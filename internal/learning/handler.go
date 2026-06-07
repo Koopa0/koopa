@@ -164,6 +164,20 @@ func (h *Handler) CreateDomain(w http.ResponseWriter, r *http.Request) {
 	api.Encode(w, http.StatusCreated, api.Response{Data: domain})
 }
 
+// ListDomains handles GET /api/admin/learning/domains — every active learning
+// domain, slug-ordered. Read-only (authMid); the admin UI uses it to populate
+// the domain selector when creating a learning plan or domain. The list is
+// always a JSON array, never null.
+func (h *Handler) ListDomains(w http.ResponseWriter, r *http.Request) {
+	domains, err := h.store.Domains(r.Context())
+	if err != nil {
+		h.logger.Error("listing learning domains", "error", err)
+		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to list domains")
+		return
+	}
+	api.Encode(w, http.StatusOK, api.Response{Data: domains})
+}
+
 // --- Dashboard ---
 
 // DashboardResponse is the wire shape for GET /api/admin/learning/dashboard.

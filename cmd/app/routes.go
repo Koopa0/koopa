@@ -325,8 +325,9 @@ func registerRoutes(
 	mux.Handle("POST /api/admin/learning/plans/{id}/entries", adminMid(http.HandlerFunc(h.plan.AddEntries)))
 	mux.Handle("PUT /api/admin/learning/plans/{id}/entries/{entry_id}", adminMid(http.HandlerFunc(h.plan.UpdateEntry)))
 
-	// Learning domain decision-stamp create — replaces the removed
-	// propose_learning_domain / commit MCP flow.
+	// Learning domains — read populates the admin plan/domain selectors; create
+	// is the decision-stamp that replaces the removed propose_learning_domain flow.
+	mux.Handle("GET /api/admin/learning/domains", authMid(http.HandlerFunc(h.learning.ListDomains)))
 	mux.Handle("POST /api/admin/learning/domains", adminMid(http.HandlerFunc(h.learning.CreateDomain)))
 
 	// --- Admin: Coordination / Agents ---
