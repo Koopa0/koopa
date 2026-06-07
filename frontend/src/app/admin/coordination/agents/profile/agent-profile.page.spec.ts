@@ -4,22 +4,14 @@ import { provideRouter } from '@angular/router';
 import { of, throwError, type Observable } from 'rxjs';
 
 import { AgentProfilePageComponent } from './agent-profile.page';
-import {
-  AgentService,
-  type AgentNoteRow,
-} from '../../../../core/services/agent.service';
+import { AgentService } from '../../../../core/services/agent.service';
 import { AdminTopbarService } from '../../../admin-layout/admin-topbar.service';
-import type {
-  AgentDetail,
-  AgentTasksResponse,
-} from '../../../../core/models/workbench.model';
+import type { AgentDetail } from '../../../../core/models/workbench.model';
 
-// Product-truth guard for the Agent Profile notes tab.
-// `/api/admin/coordination/agents/:name/notes` is a live backend route,
-// so the notes tab must never claim "the agent notes endpoint is not
-// live yet". A successful (even empty) load shows the empty state; an
-// unexpected 404 shows an honest "couldn't load" banner; a real failure
-// shows the transient error state.
+// The Agent Profile is a read-only registry view: it renders the hero
+// (name / display_name / platform / status) and the capability badges,
+// both sourced from GET /api/admin/coordination/agents/:name. The A2A
+// task/notes tabs were retired with the backend coordination endpoints.
 
 function agentDetail(): AgentDetail {
   return {
@@ -39,17 +31,13 @@ function agentDetail(): AgentDetail {
   };
 }
 
-function emptyTasks(): AgentTasksResponse {
-  return { as_assignee: [], as_creator: [], recent_artifacts: [] };
-}
-
-describe('AgentProfilePageComponent — notes availability copy', () => {
+describe('AgentProfilePageComponent', () => {
   let fixture: ComponentFixture<AgentProfilePageComponent>;
 
   afterEach(() => TestBed.resetTestingModule());
 
-  async function renderNotesTab(
-    notes: () => Observable<AgentNoteRow[]>,
+  async function render(
+    get: () => Observable<AgentDetail>,
   ): Promise<HTMLElement> {
     TestBed.configureTestingModule({
       imports: [AgentProfilePageComponent],
@@ -57,11 +45,7 @@ describe('AgentProfilePageComponent — notes availability copy', () => {
         provideRouter([]),
         {
           provide: AgentService,
-          useValue: {
-            get: () => of(agentDetail()),
-            tasks: () => of(emptyTasks()),
-            notes,
-          },
+          useValue: { get },
         },
         {
           provide: AdminTopbarService,
@@ -73,49 +57,41 @@ describe('AgentProfilePageComponent — notes availability copy', () => {
     fixture.detectChanges();
     await fixture.whenStable();
     fixture.detectChanges();
-
-    const el = fixture.nativeElement as HTMLElement;
-    const tab = el.querySelector(
-      '[data-testid="agent-tab-notes"]',
-    ) as HTMLButtonElement | null;
-    expect(tab).toBeTruthy();
-    tab?.click();
-    fixture.detectChanges();
-    await fixture.whenStable();
-    fixture.detectChanges();
-    return el;
+    return fixture.nativeElement as HTMLElement;
   }
 
-  it('shows the empty notes state without stale "not live" copy when notes load', async () => {
-    const el = await renderNotesTab(() => of([]));
+  it('should render the hero and capability badges when the agent loads', async () => {
+    const el = await render(() => of(agentDetail()));
 
-    expect(
-      el.querySelector('[data-testid="agent-notes-unavailable"]'),
-    ).toBeNull();
-    expect(el.textContent).not.toContain('not live yet');
-    expect(el.textContent).toContain('No notes recorded.');
+    const hero = el.querySelector('[data-testid="agent-hero"]');
+    expect(hero).toBeTruthy();
+    expect(hero?.textContent).toContain('Studio HQ');
+    expect(hero?.textContent).toContain('hq');
+    expect(hero?.textContent).toContain('claude-cowork');
+
+    const capabilities = el.querySelector(
+      '[data-testid="agent-capabilities"]',
+    );
+    expect(capabilities).toBeTruthy();
+    expect(capabilities?.textContent).toContain('submit_tasks');
+    expect(capabilities?.textContent).toContain('receive_tasks');
+    expect(capabilities?.textContent).toContain('publish_artifacts');
   });
 
-  it('shows an honest "couldn\'t load" message (not "not live yet") on a 404', async () => {
-    const el = await renderNotesTab(() =>
-      throwError(() => new HttpErrorResponse({ status: 404 })),
-    );
+  it('should not render the retired task or notes tabs', async () => {
+    const el = await render(() => of(agentDetail()));
 
-    const banner = el.querySelector(
-      '[data-testid="agent-notes-unavailable"]',
-    );
-    expect(banner).toBeTruthy();
-    expect(banner?.textContent).toContain("Couldn't load notes");
-    expect(banner?.textContent).not.toContain('not live yet');
+    expect(el.querySelector('[data-testid="agent-tabs"]')).toBeNull();
+    expect(el.querySelector('[data-testid="agent-workload"]')).toBeNull();
+    expect(el.querySelector('[data-testid="agent-notes"]')).toBeNull();
   });
 
-  it('shows the transient error state on a real backend failure', async () => {
-    const el = await renderNotesTab(() =>
+  it('should show the error state when the agent fails to load', async () => {
+    const el = await render(() =>
       throwError(() => new HttpErrorResponse({ status: 500 })),
     );
 
-    expect(
-      el.querySelector('[data-testid="agent-notes-error"]'),
-    ).toBeTruthy();
+    expect(el.querySelector('[data-testid="agent-error"]')).toBeTruthy();
+    expect(el.querySelector('[data-testid="agent-profile"]')).toBeNull();
   });
 });

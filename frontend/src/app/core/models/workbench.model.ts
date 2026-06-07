@@ -419,35 +419,6 @@ export interface TodoDetail {
 }
 
 // ============================================================
-// Agent Inspector — uses AgentSummary (above) + AgentTasksResponse.
-// ============================================================
-
-export interface TaskBrief {
-  id: string;
-  title: string;
-  state: TaskState;
-  source: string;
-  target: string;
-  submitted_at: string;
-  completed_at?: string | null;
-}
-
-export interface ArtifactBrief {
-  id: string;
-  task_id: string;
-  task_title: string;
-  name: string;
-  description?: string | null;
-  created_at: string;
-}
-
-export interface AgentTasksResponse {
-  as_assignee: TaskBrief[];
-  as_creator: TaskBrief[];
-  recent_artifacts: ArtifactBrief[];
-}
-
-// ============================================================
 // Concept Inspector — matches GET /api/admin/learning/concepts/{id} response.
 // ============================================================
 
