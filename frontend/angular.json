@@ -31,9 +31,7 @@
                 "www.koopa0.dev"
               ]
             },
-            "polyfills": [
-              "zone.js"
-            ],
+            "polyfills": [],
             "tsConfig": "tsconfig.app.json",
             "inlineStyleLanguage": "css",
             "assets": [
