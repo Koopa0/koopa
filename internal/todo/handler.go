@@ -16,6 +16,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -126,6 +127,119 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	api.Encode(w, http.StatusOK, api.Response{Data: out})
+}
+
+// recurringResponse is the wire shape for GET /todos/recurring. Both
+// arrays are non-nil so empty results serialize [] not null.
+type recurringResponse struct {
+	DueToday []Item `json:"due_today"`
+	Overdue  []Item `json:"overdue"`
+}
+
+// Recurring handles GET /api/admin/commitment/todos/recurring — the
+// recurring-todo dashboard split into "due today" and "overdue" buckets.
+// today is the server's day boundary, matching the daily-plan read.
+func (h *Handler) Recurring(w http.ResponseWriter, r *http.Request) {
+	today := time.Now().UTC()
+
+	dueToday, err := h.store.RecurringItemsDueToday(r.Context(), today)
+	if err != nil {
+		h.logger.Error("listing recurring todos due today", "error", err)
+		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to list recurring todos")
+		return
+	}
+	overdue, err := h.store.OverdueRecurringItems(r.Context(), today)
+	if err != nil {
+		h.logger.Error("listing overdue recurring todos", "error", err)
+		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to list recurring todos")
+		return
+	}
+
+	resp := recurringResponse{
+		DueToday: ensureItems(dueToday),
+		Overdue:  ensureItems(overdue),
+	}
+	api.Encode(w, http.StatusOK, api.Response{Data: resp})
+}
+
+// historyDefaultWindow is the look-back applied when ?since= is omitted.
+const historyDefaultWindow = 30 * 24 * time.Hour
+
+// historyMaxResults bounds the search-path result set per api conventions
+// (limit default 20, max 100).
+const (
+	historyDefaultLimit = 20
+	historyMaxLimit     = 100
+)
+
+// History handles GET /api/admin/commitment/todos/history. With ?q= it
+// runs the full-text search path; without it, the completed-since path.
+// Query params: since (YYYY-MM-DD, default 30d ago), q, project (slug),
+// limit (1-100, default 20).
+func (h *Handler) History(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+
+	since := time.Now().UTC().Add(-historyDefaultWindow)
+	if v := q.Get("since"); v != "" {
+		parsed, err := time.Parse(time.DateOnly, v)
+		if err != nil {
+			api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid since format, use YYYY-MM-DD")
+			return
+		}
+		since = parsed
+	}
+
+	limit := historyDefaultLimit
+	if v := q.Get("limit"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 1 || n > historyMaxLimit {
+			api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "limit must be between 1 and 100")
+			return
+		}
+		limit = n
+	}
+
+	// Search path: ?q= present → full-text search over the historical
+	// record, scoped to completed-after the since cutoff so the same
+	// window applies to both paths.
+	if query := q.Get("q"); query != "" {
+		var projectSlug *string
+		if p := q.Get("project"); p != "" {
+			projectSlug = &p
+		}
+		sinceCopy := since
+		results, err := h.store.SearchItems(r.Context(), &query, projectSlug, nil, &sinceCopy, nil, int32(limit)) // #nosec G115 -- limit bounded to [1, 100]
+		if err != nil {
+			h.logger.Error("searching todo history", "error", err)
+			api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to search todo history")
+			return
+		}
+		if results == nil {
+			results = []SearchDetail{}
+		}
+		api.Encode(w, http.StatusOK, api.Response{Data: results})
+		return
+	}
+
+	// Completed-since path: the default history view.
+	completed, err := h.store.CompletedItemsDetailSince(r.Context(), since)
+	if err != nil {
+		h.logger.Error("listing completed todo history", "error", err)
+		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to list todo history")
+		return
+	}
+	if completed == nil {
+		completed = []CompletedDetail{}
+	}
+	api.Encode(w, http.StatusOK, api.Response{Data: completed})
+}
+
+// ensureItems returns a non-nil slice so empty results serialize as [].
+func ensureItems(items []Item) []Item {
+	if items == nil {
+		return []Item{}
+	}
+	return items
 }
 
 // parseDueDate converts an optional YYYY-MM-DD string into a *time.Time.

@@ -34,6 +34,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/Koopa0/koopa/internal/agent"
+	"github.com/Koopa0/koopa/internal/api"
 	"github.com/Koopa0/koopa/internal/learning/hypothesis"
 	"github.com/Koopa0/koopa/internal/testdb"
 )
@@ -76,6 +77,127 @@ func seedHypothesis(t *testing.T, pool *pgxpool.Pool) uuid.UUID {
 		t.Fatalf("seeding hypothesis: %v", err)
 	}
 	return id
+}
+
+// TestIntegration_Hypothesis_Create_HappyPath drives
+// POST /api/admin/learning/hypotheses through the actor middleware and asserts
+// the hypothesis persists in state=unverified with the claim + invalidation
+// condition and actor=human on its audit row.
+func TestIntegration_Hypothesis_Create_HappyPath(t *testing.T) {
+	if _, err := testPool.Exec(t.Context(),
+		`TRUNCATE learning_hypotheses, activity_events CASCADE`,
+	); err != nil {
+		t.Fatalf("truncate: %v", err)
+	}
+
+	store := hypothesis.NewStore(testPool)
+	h := hypothesis.NewHandler(store, slog.Default())
+
+	body, err := json.Marshal(map[string]any{
+		"content":                "I keep failing graph DFS termination.",
+		"claim":                  "DFS termination is my weakest LeetCode skill",
+		"invalidation_condition": "three clean graph solves in a row",
+	})
+	if err != nil {
+		t.Fatalf("marshal body: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/admin/learning/hypotheses", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+
+	rec := serveAdmin(t, h.Create, req)
+
+	resp := rec.Result()
+	defer resp.Body.Close()
+	respBody, _ := io.ReadAll(resp.Body)
+
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("status = %d, want 201 (body=%s)", resp.StatusCode, string(respBody))
+	}
+
+	var env struct {
+		Data struct {
+			ID uuid.UUID `json:"id"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(respBody, &env); err != nil {
+		t.Fatalf("decode response: %v (body=%s)", err, respBody)
+	}
+	if env.Data.ID == uuid.Nil {
+		t.Fatalf("response missing id: %s", respBody)
+	}
+
+	// The hypothesis audit trigger fires only AFTER UPDATE OF state, never on
+	// INSERT, so create writes no activity_events row. Provenance for the
+	// create path is the created_by column, stamped from the tx-bound actor.
+	var state, claim, createdBy string
+	if err := testPool.QueryRow(t.Context(),
+		`SELECT state::text, claim, created_by FROM learning_hypotheses WHERE id = $1`, env.Data.ID,
+	).Scan(&state, &claim, &createdBy); err != nil {
+		t.Fatalf("reading created hypothesis: %v", err)
+	}
+	if state != "unverified" {
+		t.Errorf("state = %q, want %q (create always lands unverified)", state, "unverified")
+	}
+	if claim != "DFS termination is my weakest LeetCode skill" {
+		t.Errorf("claim = %q, want the submitted claim", claim)
+	}
+	if createdBy != "human" {
+		t.Errorf("created_by = %q, want %q (tx-bound actor did not reach the stamp)", createdBy, "human")
+	}
+}
+
+// TestIntegration_Hypothesis_Create_MissingClaim asserts the handler rejects a
+// create missing the required claim with 400 before any write.
+func TestIntegration_Hypothesis_Create_MissingClaim(t *testing.T) {
+	if _, err := testPool.Exec(t.Context(),
+		`TRUNCATE learning_hypotheses, activity_events CASCADE`,
+	); err != nil {
+		t.Fatalf("truncate: %v", err)
+	}
+
+	store := hypothesis.NewStore(testPool)
+	h := hypothesis.NewHandler(store, slog.Default())
+
+	body, err := json.Marshal(map[string]any{
+		"invalidation_condition": "something",
+	})
+	if err != nil {
+		t.Fatalf("marshal body: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/admin/learning/hypotheses", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+
+	rec := serveAdmin(t, h.Create, req)
+
+	resp := rec.Result()
+	defer resp.Body.Close()
+	respBody, _ := io.ReadAll(resp.Body)
+
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 for missing claim (body=%s)", resp.StatusCode, string(respBody))
+	}
+
+	var count int
+	if err := testPool.QueryRow(t.Context(),
+		`SELECT COUNT(*) FROM learning_hypotheses`,
+	).Scan(&count); err != nil {
+		t.Fatalf("counting hypotheses: %v", err)
+	}
+	if count != 0 {
+		t.Errorf("hypothesis count = %d, want 0 (validation must precede any write)", count)
+	}
+}
+
+// serveAdmin runs a request through api.ActorMiddleware (actor="human") into
+// the handler, mirroring the production adminMid chain that binds the tx the
+// create path reads for the created_by stamp and audit actor.
+func serveAdmin(t *testing.T, h http.HandlerFunc, req *http.Request) *httptest.ResponseRecorder {
+	t.Helper()
+	mid := api.ActorMiddleware(testPool, "human", slog.Default())
+	wrapped := mid(h)
+	rec := httptest.NewRecorder()
+	wrapped.ServeHTTP(rec, req)
+	return rec
 }
 
 // TestHypothesisVerify_DoesNotViolateCheckConstraint is the V2 regression

@@ -198,7 +198,7 @@ func run(logger *slog.Logger) error {
 		upload:     uploadHandler,
 		hypothesis: hypothesis.NewHandler(hypothesisStore, logger),
 		agent:      agent.NewHandler(agentRegistry, logger),
-		daily:      daily.NewHandler(dailyStore, logger),
+		daily:      daily.NewHandler(dailyStore, todoStore, logger),
 		learning:   learning.NewHandler(learningStore, logger),
 		note:       note.NewHandler(noteStore, logger),
 		todo:       todo.NewHandler(todoStore, logger),

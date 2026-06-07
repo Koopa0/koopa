@@ -33,6 +33,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -220,6 +221,115 @@ func TestIntegration_Goal_CreateMilestone(t *testing.T) {
 	}
 	if gotTitle != "Finish Genki I" {
 		t.Errorf("milestone title = %q, want %q", gotTitle, "Finish Genki I")
+	}
+}
+
+// TestIntegration_Goal_List_StatusFilter seeds goals in two statuses and
+// asserts GET /goals?status=in_progress returns only the in_progress goal.
+func TestIntegration_Goal_List_StatusFilter(t *testing.T) {
+	truncate(t)
+	h := newHandler()
+
+	var active, dream uuid.UUID
+	if err := testPool.QueryRow(t.Context(),
+		`INSERT INTO goals (title, status) VALUES ('Active Goal', 'in_progress') RETURNING id`,
+	).Scan(&active); err != nil {
+		t.Fatalf("seeding in_progress goal: %v", err)
+	}
+	if err := testPool.QueryRow(t.Context(),
+		`INSERT INTO goals (title, status) VALUES ('Dream Goal', 'not_started') RETURNING id`,
+	).Scan(&dream); err != nil {
+		t.Fatalf("seeding not_started goal: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/admin/commitment/goals?status=in_progress", nil)
+	rec := httptest.NewRecorder()
+	h.List(rec, req)
+
+	resp := rec.Result()
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body=%s)", resp.StatusCode, body)
+	}
+
+	var env struct {
+		Data []struct {
+			ID     uuid.UUID `json:"id"`
+			Status string    `json:"status"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &env); err != nil {
+		t.Fatalf("decode list response: %v (body=%s)", err, body)
+	}
+	if len(env.Data) != 1 {
+		t.Fatalf("filtered list returned %d goals, want 1 (body=%s)", len(env.Data), body)
+	}
+	if env.Data[0].ID != active {
+		t.Errorf("filtered goal id = %s, want %s (the in_progress goal)", env.Data[0].ID, active)
+	}
+	if env.Data[0].Status != "in_progress" {
+		t.Errorf("filtered goal status = %q, want %q", env.Data[0].Status, "in_progress")
+	}
+}
+
+// TestIntegration_Goal_ToggleMilestone seeds an incomplete milestone, toggles
+// it (asserting completed_at becomes non-NULL), then toggles again (asserting
+// it clears back to NULL).
+func TestIntegration_Goal_ToggleMilestone(t *testing.T) {
+	truncate(t)
+	h := newHandler()
+
+	var goalID, milestoneID uuid.UUID
+	if err := testPool.QueryRow(t.Context(),
+		`INSERT INTO goals (title, status) VALUES ('Goal With Milestone', 'in_progress') RETURNING id`,
+	).Scan(&goalID); err != nil {
+		t.Fatalf("seeding goal: %v", err)
+	}
+	if err := testPool.QueryRow(t.Context(),
+		`INSERT INTO milestones (goal_id, title) VALUES ($1, 'Finish chapter 1') RETURNING id`,
+		goalID,
+	).Scan(&milestoneID); err != nil {
+		t.Fatalf("seeding milestone: %v", err)
+	}
+
+	toggle := func() *httptest.ResponseRecorder {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodPost,
+			"/api/admin/commitment/goals/"+goalID.String()+"/milestones/"+milestoneID.String()+"/toggle", nil)
+		req.SetPathValue("id", goalID.String())
+		req.SetPathValue("mid", milestoneID.String())
+		return serve(t, h.ToggleMilestone, req)
+	}
+
+	// First toggle: completed_at should flip from NULL to non-NULL.
+	rec := toggle()
+	if rec.Code != http.StatusOK {
+		t.Fatalf("first toggle status = %d, want 200 (body=%s)", rec.Code, rec.Body.String())
+	}
+	var completedAt *time.Time
+	if err := testPool.QueryRow(t.Context(),
+		`SELECT completed_at FROM milestones WHERE id = $1`, milestoneID,
+	).Scan(&completedAt); err != nil {
+		t.Fatalf("reading milestone after first toggle: %v", err)
+	}
+	if completedAt == nil {
+		t.Error("completed_at is NULL after first toggle, want non-NULL")
+	}
+
+	// Second toggle: completed_at should clear back to NULL.
+	rec = toggle()
+	if rec.Code != http.StatusOK {
+		t.Fatalf("second toggle status = %d, want 200 (body=%s)", rec.Code, rec.Body.String())
+	}
+	if err := testPool.QueryRow(t.Context(),
+		`SELECT completed_at FROM milestones WHERE id = $1`, milestoneID,
+	).Scan(&completedAt); err != nil {
+		t.Fatalf("reading milestone after second toggle: %v", err)
+	}
+	if completedAt != nil {
+		t.Errorf("completed_at = %v after second toggle, want NULL", completedAt)
 	}
 }
 

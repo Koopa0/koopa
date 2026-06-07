@@ -186,11 +186,16 @@ func registerRoutes(
 	mux.Handle("POST /api/admin/commitment/goals", adminMid(http.HandlerFunc(h.goal.Create)))
 	mux.Handle("PUT /api/admin/commitment/goals/{id}/status", adminMid(http.HandlerFunc(h.goal.UpdateStatus)))
 	mux.Handle("POST /api/admin/commitment/goals/{id}/milestones", adminMid(http.HandlerFunc(h.goal.CreateMilestone)))
+	mux.Handle("POST /api/admin/commitment/goals/{id}/milestones/{mid}/toggle", adminMid(http.HandlerFunc(h.goal.ToggleMilestone)))
 
 	// --- Admin: Commitment / Todos ---
 	// State transitions route through POST /advance so each transition is a
 	// distinct audit event separate from scalar field PUTs.
 	mux.Handle("GET /api/admin/commitment/todos", authMid(http.HandlerFunc(h.todo.List)))
+	// recurring + history are literal sub-paths; Go 1.22 routing gives them
+	// precedence over the {id} wildcard below.
+	mux.Handle("GET /api/admin/commitment/todos/recurring", authMid(http.HandlerFunc(h.todo.Recurring)))
+	mux.Handle("GET /api/admin/commitment/todos/history", authMid(http.HandlerFunc(h.todo.History)))
 	mux.Handle("GET /api/admin/commitment/todos/{id}", authMid(http.HandlerFunc(h.todo.Get)))
 	mux.Handle("POST /api/admin/commitment/todos", adminMid(http.HandlerFunc(h.todo.Create)))
 	mux.Handle("PUT /api/admin/commitment/todos/{id}", adminMid(http.HandlerFunc(h.todo.Update)))
@@ -208,6 +213,11 @@ func registerRoutes(
 	// directly by the Today HERO and legacy now-page dashboard. /today
 	// is the richer aggregate; /daily-plan is the focused read.
 	mux.Handle("GET /api/admin/commitment/daily-plan", authMid(http.HandlerFunc(h.daily.Plan)))
+	// Plan-write is the human equivalent of the MCP plan_day tool: it
+	// idempotently replaces the date's planned rows in one tx and reports
+	// the displaced todos. Mutation → adminMid (the per-request tx the
+	// delete-then-insert and todo-state validation require).
+	mux.Handle("PUT /api/admin/commitment/daily-plan", adminMid(http.HandlerFunc(h.daily.PutPlan)))
 
 	// --- Admin: Knowledge / Topics ---
 	// List is reachable as admin (same payload as the public /api/topics list)
@@ -288,6 +298,9 @@ func registerRoutes(
 	// --- Admin: Learning / Hypotheses ---
 	mux.Handle("GET /api/admin/learning/hypotheses", authMid(http.HandlerFunc(h.hypothesis.List)))
 	mux.Handle("GET /api/admin/learning/hypotheses/{id}", authMid(http.HandlerFunc(h.hypothesis.Get)))
+	// Create is the owner decision-stamp that replaces the removed
+	// propose_hypothesis / commit MCP flow. Mutation → adminMid.
+	mux.Handle("POST /api/admin/learning/hypotheses", adminMid(http.HandlerFunc(h.hypothesis.Create)))
 	mux.Handle("GET /api/admin/learning/hypotheses/{id}/lineage", authMid(http.HandlerFunc(h.hypothesis.Lineage)))
 	mux.Handle("POST /api/admin/learning/hypotheses/{id}/verify", adminMid(http.HandlerFunc(h.hypothesis.Verify)))
 	mux.Handle("POST /api/admin/learning/hypotheses/{id}/invalidate", adminMid(http.HandlerFunc(h.hypothesis.Invalidate)))

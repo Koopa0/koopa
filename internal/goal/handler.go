@@ -32,8 +32,28 @@ func NewHandler(store *Store, projects *project.Store, logger *slog.Logger) *Han
 	return &Handler{store: store, projects: projects, logger: logger}
 }
 
-// List handles GET /api/admin/goals — returns all goals.
+// List handles GET /api/admin/goals — returns all goals, or only goals in
+// the requested status when ?status= is supplied. The filtered path returns
+// the richer ActiveGoalSummary shape (milestone counts + area name); the
+// unfiltered path is unchanged.
 func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
+	if raw := r.URL.Query().Get("status"); raw != "" {
+		status, statusErr := mapHTTPGoalStatus(raw)
+		if statusErr != nil {
+			api.Error(w, http.StatusBadRequest, "INVALID_STATUS", statusErr.Error())
+			return
+		}
+		canonical := string(status)
+		summaries, err := h.store.GoalsByOptionalStatus(r.Context(), &canonical)
+		if err != nil {
+			h.logger.Error("listing goals by status", "status", canonical, "error", err)
+			api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to list goals")
+			return
+		}
+		api.Encode(w, http.StatusOK, api.Response{Data: summaries})
+		return
+	}
+
 	goals, err := h.store.Goals(r.Context())
 	if err != nil {
 		h.logger.Error("listing goals", "error", err)
@@ -348,6 +368,30 @@ func (h *Handler) CreateMilestone(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	api.Encode(w, http.StatusCreated, api.Response{Data: m})
+}
+
+// ToggleMilestone handles
+// POST /api/admin/commitment/goals/{id}/milestones/{mid}/toggle — flips the
+// milestone's completed_at (set to now if null, cleared if set). The goal id
+// is in the path for routing/auditing symmetry; the toggle keys on the
+// milestone id alone. Returns the updated milestone.
+func (h *Handler) ToggleMilestone(w http.ResponseWriter, r *http.Request) {
+	mid, err := uuid.Parse(r.PathValue("mid"))
+	if err != nil {
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid milestone id")
+		return
+	}
+
+	store := h.store
+	if tx, ok := api.TxFromContext(r.Context()); ok {
+		store = h.store.WithTx(tx)
+	}
+	m, err := store.ToggleMilestone(r.Context(), mid)
+	if err != nil {
+		api.HandleError(w, h.logger, err, storeErrors...)
+		return
+	}
+	api.Encode(w, http.StatusOK, api.Response{Data: m})
 }
 
 func mapHTTPGoalStatus(s string) (Status, error) {

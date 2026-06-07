@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -41,6 +42,86 @@ type Handler struct {
 // NewHandler returns a hypothesis Handler.
 func NewHandler(store *Store, logger *slog.Logger) *Handler {
 	return &Handler{store: store, logger: logger}
+}
+
+// createRequest is the body for POST /api/admin/learning/hypotheses — the
+// owner decision-stamp that replaces the removed propose_hypothesis /
+// commit MCP flow. The hypothesis is created in state=unverified.
+//
+// claim and invalidation_condition are required: a hypothesis without a
+// falsifiable claim and an invalidation condition is not a hypothesis.
+// content is the optional supporting narrative. observed_date defaults to
+// today (the date recorded) when omitted.
+type createRequest struct {
+	Content               string  `json:"content"`
+	Claim                 string  `json:"claim"`
+	InvalidationCondition string  `json:"invalidation_condition"`
+	ObservedDate          *string `json:"observed_date,omitempty"`
+}
+
+// Create handles POST /api/admin/learning/hypotheses.
+func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
+	req, err := api.Decode[createRequest](w, r)
+	if err != nil {
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid request body")
+		return
+	}
+	if req.Claim == "" {
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "claim is required")
+		return
+	}
+	if req.InvalidationCondition == "" {
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalidation_condition is required")
+		return
+	}
+	if containsControlChars(req.Claim) {
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "claim must not contain control characters")
+		return
+	}
+	if containsControlChars(req.InvalidationCondition) {
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalidation_condition must not contain control characters")
+		return
+	}
+	if containsControlChars(req.Content) {
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "content must not contain control characters")
+		return
+	}
+
+	observed := time.Now().UTC()
+	if req.ObservedDate != nil && *req.ObservedDate != "" {
+		parsed, perr := time.Parse(time.DateOnly, *req.ObservedDate)
+		if perr != nil {
+			api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid observed_date, use YYYY-MM-DD")
+			return
+		}
+		observed = parsed
+	}
+
+	store := h.store
+	if tx, ok := api.TxFromContext(r.Context()); ok {
+		store = h.store.WithTx(tx)
+	}
+	rec, err := store.Create(r.Context(), &CreateParams{
+		CreatedBy:             actorFromContext(r),
+		Content:               req.Content,
+		Claim:                 req.Claim,
+		InvalidationCondition: req.InvalidationCondition,
+		ObservedDate:          observed,
+	})
+	if err != nil {
+		api.HandleError(w, h.logger, err, storeErrors...)
+		return
+	}
+	api.Encode(w, http.StatusCreated, api.Response{Data: rec})
+}
+
+// actorFromContext resolves the authenticated agent identity for the
+// created_by stamp, falling back to "human" outside the actor middleware.
+func actorFromContext(r *http.Request) string {
+	if a, ok := api.ActorFromContext(r.Context()); ok {
+		return a
+	}
+	return "human"
 }
 
 // List handles GET /api/admin/hypotheses.
