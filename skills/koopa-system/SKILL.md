@@ -47,7 +47,7 @@ Every agent must know:
 ## System Architecture (Minimal)
 
 ```
-RSS feeds ──fetch──► feed_entries ──curate (admin UI)──► bookmarks / contents
+RSS feeds ──fetch──► feed_entries ──curate (admin UI)──► contents
 Admin HTTP forms ──► contents (article / essay / build-log / til / digest) — 發布生命週期人類掌握
 MCP create_note  ──► notes    (solve-note / concept-note / reading-note / ...)
                        kind + maturity (seed → evergreen → archived)
@@ -72,7 +72,6 @@ Commitment 實體（goal / project / milestone / hypothesis / learning_plan / le
 | `learning_targets`（要學的） | `notes(kind='solve-note')`（學完寫的） | 在筆記之前就存在？ |
 | `concepts`（診斷本體） | `tags`（內容分類） | 代表可診斷的能力？ |
 | `hypothesis`（可證偽主張，admin 建立） | reflection（敘事，寫進 agent `.md`） | 有 invalidation_condition？ |
-| `contents`（首方公開，admin 發布） | `bookmarks`（外部 URL，admin 收藏） | 有 canonical external URL？ |
 
 ## 如果找不到對應的工具該怎麼辦
 

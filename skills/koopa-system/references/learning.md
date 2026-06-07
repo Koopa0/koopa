@@ -78,7 +78,7 @@ record_attempt(as:"learning-studio",
 end_session(as:"learning-studio", session_id="...", reflection="今天 hash-map 系列穩定，two-pointer 仍需加強")
 ```
 
-### Spaced Retrieval Review
+### Retrieval-Mode Session (weakness × untried variations)
 
 ```
 start_session(as:"learning-studio", domain="leetcode", mode="retrieval")
@@ -88,7 +88,7 @@ start_session(as:"learning-studio", domain="leetcode", mode="retrieval")
   → end_session
 ```
 
-（到期 review 排程由系統 FSRS 內部管理，MCP 不再暴露 retrieval view；用 `learning_read(view=next_target)` 在 session 內取得下一題建議。）
+下一題建議在 session 內用 `learning_read(view=next_target)` 取得（弱點分析 × 未試變體圖）。
 
 ### Reading Session (DDIA, etc.)
 
