@@ -19,8 +19,6 @@ import {
   LucideAngularModule,
   ArrowLeft,
   Share2,
-  Calendar,
-  Clock,
   AlertCircle,
   Copy,
   Check,
@@ -81,8 +79,6 @@ export class ArticleDetailComponent implements OnInit {
 
   protected readonly ArrowLeftIcon = ArrowLeft;
   protected readonly Share2Icon = Share2;
-  protected readonly CalendarIcon = Calendar;
-  protected readonly ClockIcon = Clock;
   protected readonly AlertCircleIcon = AlertCircle;
   protected readonly CopyIcon = Copy;
   protected readonly CheckIcon = Check;

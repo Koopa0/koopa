@@ -11,8 +11,6 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
 import {
   LucideAngularModule,
-  Github,
-  ExternalLink,
   ArrowRight,
   FolderOpen,
 } from 'lucide-angular';
@@ -59,8 +57,6 @@ export class ProjectsComponent implements OnInit {
     { value: 'archived', label: 'Archived' },
   ];
 
-  protected readonly GithubIcon = Github;
-  protected readonly ExternalLinkIcon = ExternalLink;
   protected readonly ArrowRightIcon = ArrowRight;
   protected readonly FolderOpenIcon = FolderOpen;
 

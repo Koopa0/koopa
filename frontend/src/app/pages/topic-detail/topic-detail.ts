@@ -16,12 +16,9 @@ import { DatePipe } from '@angular/common';
 import {
   LucideAngularModule,
   ArrowLeft,
-  Calendar,
-  Clock,
   ChevronLeft,
   ChevronRight,
   Layers,
-  Tag,
 } from 'lucide-angular';
 import { environment } from '../../../environments/environment';
 import {
@@ -76,12 +73,9 @@ export class TopicDetailComponent implements OnInit {
   );
 
   protected readonly ArrowLeftIcon = ArrowLeft;
-  protected readonly CalendarIcon = Calendar;
-  protected readonly ClockIcon = Clock;
   protected readonly ChevronLeftIcon = ChevronLeft;
   protected readonly ChevronRightIcon = ChevronRight;
   protected readonly LayersIcon = Layers;
-  protected readonly TagIcon = Tag;
 
   protected readonly contentTypeConfig = CONTENT_TYPE_CONFIG;
 

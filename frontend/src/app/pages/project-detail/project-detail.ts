@@ -14,9 +14,6 @@ import {
   ArrowLeft,
   Github,
   ExternalLink,
-  CheckCircle2,
-  Wrench,
-  Code2,
 } from 'lucide-angular';
 import { ProjectService } from '../../core/services/project/project.service';
 import { SeoService } from '../../core/services/seo/seo.service';
@@ -46,9 +43,6 @@ export class ProjectDetailComponent implements OnInit {
   protected readonly ArrowLeftIcon = ArrowLeft;
   protected readonly GithubIcon = Github;
   protected readonly ExternalLinkIcon = ExternalLink;
-  protected readonly CheckCircle2Icon = CheckCircle2;
-  protected readonly WrenchIcon = Wrench;
-  protected readonly Code2Icon = Code2;
 
   ngOnInit(): void {
     this.loadProject(this.slug());

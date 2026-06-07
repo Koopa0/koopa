@@ -1,25 +1,25 @@
 @if (isLoading()) {
-<section class="bg-zinc-950">
+<section>
   <div
-    class="mx-auto flex max-w-4xl flex-col items-center justify-center gap-3 px-4 py-20 text-zinc-400"
+    class="mx-auto flex max-w-3xl flex-col items-center justify-center gap-3 px-6 py-20 text-fg-muted"
   >
     <div
-      class="size-8 animate-spin rounded-full border-2 border-zinc-700 border-t-zinc-400"
+      class="size-8 animate-spin rounded-full border-2 border-border border-t-fg-muted"
     ></div>
     <p class="text-sm">Loading article...</p>
   </div>
 </section>
 } @else if (error()) {
-<section class="bg-zinc-950">
+<section>
   <div
-    class="mx-auto flex max-w-4xl flex-col items-center justify-center gap-4 px-4 py-20 text-center"
+    class="mx-auto flex max-w-3xl flex-col items-center justify-center gap-4 px-6 py-20 text-center"
   >
-    <lucide-icon [img]="AlertCircleIcon" [size]="48" class="text-red-500" />
-    <p class="text-xl font-semibold text-zinc-100">Failed to Load</p>
-    <p class="text-sm text-zinc-400">{{ error() }}</p>
+    <lucide-icon [img]="AlertCircleIcon" [size]="40" class="text-error" />
+    <p class="text-xl font-semibold text-fg">Failed to Load</p>
+    <p class="text-sm text-fg-muted">{{ error() }}</p>
     <button
       type="button"
-      class="inline-flex items-center gap-2 rounded-sm border border-zinc-700 px-4 py-2 text-sm text-zinc-300 transition-colors hover:border-zinc-500 hover:text-white"
+      class="inline-flex items-center gap-2 rounded-sm border border-border px-4 py-2 text-sm text-fg-muted transition-colors hover:border-border-strong hover:text-fg"
       (click)="goBack()"
     >
       <lucide-icon [img]="ArrowLeftIcon" [size]="16" />
@@ -29,13 +29,13 @@
 </section>
 } @else if (article()) {
 <!-- Article Header -->
-<section class="border-b border-zinc-800 bg-zinc-950">
-  <div class="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:px-8">
+<section class="border-b border-border">
+  <div class="mx-auto max-w-3xl px-6 py-8">
     <!-- Navigation -->
     <div class="mb-6 flex items-center justify-between">
       <button
         type="button"
-        class="inline-flex items-center gap-1 text-sm text-zinc-400 transition-colors hover:text-zinc-200"
+        class="inline-flex items-center gap-1 text-sm text-fg-subtle transition-colors hover:text-fg"
         (click)="goBack()"
       >
         <lucide-icon [img]="ArrowLeftIcon" [size]="16" />
@@ -43,7 +43,7 @@
       </button>
       <button
         type="button"
-        class="inline-flex items-center gap-1 rounded-sm border border-zinc-700 px-3 py-1.5 text-sm text-zinc-400 transition-colors hover:border-zinc-500 hover:text-zinc-200"
+        class="inline-flex items-center gap-1 rounded-sm border border-border px-3 py-1.5 text-sm text-fg-muted transition-colors hover:border-border-strong hover:text-fg"
         (click)="shareArticle()"
       >
         @if (isCopied()) {
@@ -58,7 +58,7 @@
     <div class="mb-4 flex flex-wrap gap-2">
       @for (tag of article()!.tags; track tag) {
       <span
-        class="rounded-full border border-zinc-700 px-3 py-0.5 text-xs text-zinc-400"
+        class="rounded-sm bg-elevated px-2 py-0.5 font-mono text-[11px] text-fg-subtle"
       >
         {{ tag }}
       </span>
@@ -66,27 +66,35 @@
     </div>
 
     <!-- Title -->
-    <h1 class="font-display mb-6 text-3xl font-bold text-balance sm:text-4xl text-zinc-100">
+    <h1
+      class="font-display mb-5 text-4xl font-bold tracking-tight text-balance text-fg"
+    >
       {{ article()!.title }}
     </h1>
 
-    <!-- Meta -->
-    <div class="flex flex-wrap items-center gap-4 text-sm text-zinc-500">
-      <span class="flex items-center gap-1">
-        <lucide-icon [img]="CalendarIcon" [size]="14" />
-        {{ article()!.published_at | date: 'MMM d, yyyy' }}
-      </span>
-      <span class="flex items-center gap-1">
-        <lucide-icon [img]="ClockIcon" [size]="14" />
-        {{ article()!.reading_time_min }} min read
-      </span>
+    <!-- Meta (matches articles editorial meta) -->
+    <div
+      class="flex flex-wrap items-center gap-2 font-mono text-[11px] text-fg-faint"
+    >
+      <span
+        class="size-1.5 rounded-full"
+        [style.background]="'var(--dot-' + article()!.type + ')'"
+        aria-hidden="true"
+      ></span>
+      <span>{{ article()!.type }}</span>
+      @if (article()!.published_at) {
+      <span aria-hidden="true">·</span>
+      <span>{{ article()!.published_at | date: 'MMM d, yyyy' }}</span>
+      }
+      <span aria-hidden="true">·</span>
+      <span>{{ article()!.reading_time_min }} min</span>
     </div>
   </div>
 </section>
 
 <!-- Article Body -->
-<section class="bg-zinc-950">
-  <div class="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
+<section>
+  <div class="mx-auto max-w-6xl px-6 py-12">
     <div class="flex gap-8">
       <!-- TOC Sidebar -->
       <aside class="hidden w-56 shrink-0 xl:block">
@@ -95,7 +103,7 @@
         </div>
       </aside>
       <!-- Content -->
-      <div class="min-w-0 max-w-4xl flex-1">
+      <div class="min-w-0 max-w-3xl flex-1">
         <div class="prose" [innerHTML]="parsedContent()"></div>
       </div>
     </div>
@@ -103,20 +111,20 @@
 </section>
 
 <!-- Related Articles -->
-<section class="bg-zinc-950">
-  <div class="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:px-8">
+<section>
+  <div class="mx-auto max-w-3xl px-6 py-8">
     <app-related-articles [articles]="relatedArticles()" />
   </div>
 </section>
 
 <!-- Article Footer -->
-<section class="border-t border-zinc-800 bg-zinc-950">
-  <div class="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:px-8">
+<section class="border-t border-border">
+  <div class="mx-auto max-w-3xl px-6 py-8">
     <div class="flex flex-wrap items-center justify-between gap-4">
       <div class="flex items-center gap-3">
         <button
           type="button"
-          class="inline-flex items-center gap-2 rounded-sm bg-white px-4 py-2 text-sm font-semibold text-zinc-900 transition-colors hover:bg-zinc-200"
+          class="inline-flex items-center gap-2 rounded-sm bg-brand px-4 py-2 text-sm font-semibold text-bg transition-colors hover:bg-brand-strong"
           (click)="shareArticle()"
         >
           @if (isCopied()) {
@@ -127,7 +135,7 @@
         </button>
         <button
           type="button"
-          class="inline-flex items-center gap-2 rounded-sm border border-zinc-700 px-4 py-2 text-sm text-zinc-300 transition-colors hover:border-zinc-500 hover:text-white"
+          class="inline-flex items-center gap-2 rounded-sm border border-border px-4 py-2 text-sm text-fg-muted transition-colors hover:border-border-strong hover:text-fg"
           (click)="goBack()"
         >
           <lucide-icon [img]="ArrowLeftIcon" [size]="16" />
@@ -136,7 +144,7 @@
       </div>
 
       @if (article()!.updated_at !== article()!.published_at) {
-      <p class="text-xs text-zinc-500">
+      <p class="font-mono text-[11px] text-fg-faint">
         Last updated: {{ article()!.updated_at | date: 'MMM d, yyyy HH:mm' }}
       </p>
       }
