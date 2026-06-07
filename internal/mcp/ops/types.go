@@ -20,10 +20,8 @@ type Domain string
 const (
 	DomainQuery    Domain = "query"    // read-only context, dashboards, search
 	DomainDaily    Domain = "daily"    // GTD capture, task lifecycle, daily plan
-	DomainA2A      Domain = "a2a"      // tasks, artifacts, acknowledgement
 	DomainLearning Domain = "learning" // sessions, attempts, learning plans
 	DomainContent  Domain = "content"  // content lifecycle, feeds
-	DomainMeta     Domain = "meta"     // proposal/commit, agent notes, hypotheses
 	DomainSystem   Domain = "system"   // system health, cross-session bridges
 )
 

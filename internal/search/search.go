@@ -20,15 +20,8 @@ import (
 type Kind string
 
 const (
-	KindContent    Kind = "content"
-	KindNote       Kind = "note"
-	KindBookmark   Kind = "bookmark"
-	KindHypothesis Kind = "hypothesis"
-	KindConcept    Kind = "concept"
-	KindTask       Kind = "task"
-	KindGoal       Kind = "goal"
-	KindTodo       Kind = "todo"
-	KindProject    Kind = "project"
+	KindContent Kind = "content"
+	KindNote    Kind = "note"
 )
 
 // Result is a single hit surfaced by any Source. Score is a 0..1

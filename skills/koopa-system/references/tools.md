@@ -13,14 +13,12 @@ is hand-maintained.
 > Run `go generate ./internal/mcp/ops` after any change to the tool surface;
 > the drift test `TestToolInventoryDocInSync` fails CI if this is stale.
 
-**11 tools** across 7 domains.
+**11 tools** across 5 domains.
 
 | Domain | Count |
 |---|---|
 | `query` | 2 |
 | `daily` | 2 |
-| `a2a` | 0 |
-| `meta` | 0 |
 | `learning` | 5 |
 | `content` | 2 |
 | `system` | 0 |
