@@ -278,6 +278,13 @@ export const routes: Routes = [
           ),
       },
       {
+        path: 'learning/hypotheses/new',
+        loadComponent: () =>
+          import(
+            './admin/learning/hypotheses/create/hypothesis-create.page'
+          ).then((m) => m.HypothesisCreatePageComponent),
+      },
+      {
         path: 'learning/hypotheses/:id',
         loadComponent: () =>
           import(

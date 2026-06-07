@@ -10,7 +10,7 @@ import {
   viewChildren,
 } from '@angular/core';
 import { rxResource } from '@angular/core/rxjs-interop';
-import { Router } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { DatePipe } from '@angular/common';
 import { HypothesisService } from '../../../../core/services/hypothesis.service';
 import { AdminTopbarService } from '../../../admin-layout/admin-topbar.service';
@@ -59,7 +59,7 @@ const STATE_TEXT_CLASS: Record<HypothesisState, string> = {
 @Component({
   selector: 'app-hypotheses-list-page',
   standalone: true,
-  imports: [DataTableComponent, DatePipe],
+  imports: [DataTableComponent, DatePipe, RouterLink],
   templateUrl: './hypotheses-list.page.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {

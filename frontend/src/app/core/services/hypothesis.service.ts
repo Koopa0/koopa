@@ -56,6 +56,18 @@ export interface AddEvidenceRequest {
   linked_observation_id?: string;
 }
 
+/**
+ * Body for `POST /api/admin/learning/hypotheses`. Lands `state=unverified`;
+ * `created_by` comes from the session actor. `observed_date` is a YYYY-MM-DD
+ * calendar date (date-only per the contract, not RFC3339).
+ */
+export interface HypothesisCreateRequest {
+  claim: string;
+  invalidation_condition: string;
+  content?: string;
+  observed_date?: string;
+}
+
 @Injectable({ providedIn: 'root' })
 export class HypothesisService {
   private readonly api = inject(ApiService);
@@ -71,6 +83,17 @@ export class HypothesisService {
 
   get(id: string): Observable<Hypothesis> {
     return this.api.getData<Hypothesis>(`/api/admin/learning/hypotheses/${id}`);
+  }
+
+  /**
+   * Create a hypothesis (human-only, adminMid). Lands `state=unverified`;
+   * returns the created record so the caller can route to its profile.
+   */
+  create(body: HypothesisCreateRequest): Observable<Hypothesis> {
+    return this.api.postData<Hypothesis>(
+      '/api/admin/learning/hypotheses',
+      body,
+    );
   }
 
   /** Full profile envelope: origin, attempts, observations, evidence log. */

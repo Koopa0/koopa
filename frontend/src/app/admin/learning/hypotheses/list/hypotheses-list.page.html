@@ -31,14 +31,23 @@
       }
     </div>
 
-    <span
-      class="ml-auto font-mono text-[11px] text-zinc-500"
-      aria-live="polite"
-      data-testid="hypotheses-count"
-    >
-      Showing {{ total() }}
-      {{ total() === 1 ? 'hypothesis' : 'hypotheses' }}
-    </span>
+    <div class="ml-auto flex items-center gap-3">
+      <span
+        class="font-mono text-[11px] text-zinc-500"
+        aria-live="polite"
+        data-testid="hypotheses-count"
+      >
+        Showing {{ total() }}
+        {{ total() === 1 ? 'hypothesis' : 'hypotheses' }}
+      </span>
+      <a
+        routerLink="/admin/learning/hypotheses/new"
+        class="rounded-sm bg-brand px-3 py-1.5 text-xs font-medium text-bg transition-colors hover:bg-brand-strong"
+        data-testid="hypotheses-new"
+      >
+        New hypothesis
+      </a>
+    </div>
   </div>
 
   @if (hasError()) {
