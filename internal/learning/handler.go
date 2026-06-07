@@ -31,6 +31,16 @@ var storeErrors = []api.ErrMap{
 // hyphens.
 var domainSlugPattern = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 
+// containsControlChars reports whether s contains any control character.
+func containsControlChars(s string) bool {
+	for _, r := range s {
+		if r < 0x20 || r == 0x7f || (r >= 0x80 && r <= 0x9f) {
+			return true
+		}
+	}
+	return false
+}
+
 // Handler handles learning HTTP requests for the admin workbench.
 type Handler struct {
 	store  *Store
@@ -120,6 +130,10 @@ func (h *Handler) CreateDomain(w http.ResponseWriter, r *http.Request) {
 	if !domainSlugPattern.MatchString(req.Slug) {
 		api.Error(w, http.StatusUnprocessableEntity, "INVALID_SLUG",
 			"slug must be lowercase kebab-case (pattern: "+domainSlugPattern.String()+")")
+		return
+	}
+	if containsControlChars(req.Name) {
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "name must not contain control characters")
 		return
 	}
 

@@ -193,6 +193,8 @@ func TestHandler_Create_Validation(t *testing.T) {
 	}{
 		{name: "missing title returns 400", body: `{"description":"x"}`, wantStatus: http.StatusBadRequest, wantCode: "BAD_REQUEST"},
 		{name: "empty title returns 400", body: `{"title":""}`, wantStatus: http.StatusBadRequest, wantCode: "BAD_REQUEST"},
+		{name: "control char in title returns 400", body: "{\"title\":\"bad\\u0001title\"}", wantStatus: http.StatusBadRequest, wantCode: "BAD_REQUEST"},
+		{name: "control char in description returns 400", body: "{\"title\":\"ok\",\"description\":\"bad\\u0001desc\"}", wantStatus: http.StatusBadRequest, wantCode: "BAD_REQUEST"},
 		{name: "malformed JSON returns 400", body: `{bad}`, wantStatus: http.StatusBadRequest, wantCode: "BAD_REQUEST"},
 		{name: "empty body returns 400", body: ``, wantStatus: http.StatusBadRequest, wantCode: "BAD_REQUEST"},
 	}
@@ -241,6 +243,8 @@ func TestHandler_CreateMilestone_Validation(t *testing.T) {
 		{name: "invalid goal uuid returns 400", pathID: "not-a-uuid", body: `{"title":"M1"}`, wantStatus: http.StatusBadRequest, wantCode: "BAD_REQUEST"},
 		{name: "missing title returns 400", pathID: goalID, body: `{"description":"x"}`, wantStatus: http.StatusBadRequest, wantCode: "BAD_REQUEST"},
 		{name: "empty title returns 400", pathID: goalID, body: `{"title":""}`, wantStatus: http.StatusBadRequest, wantCode: "BAD_REQUEST"},
+		{name: "control char in title returns 400", pathID: goalID, body: "{\"title\":\"bad\\u0001title\"}", wantStatus: http.StatusBadRequest, wantCode: "BAD_REQUEST"},
+		{name: "control char in description returns 400", pathID: goalID, body: "{\"title\":\"ok\",\"description\":\"bad\\u0001desc\"}", wantStatus: http.StatusBadRequest, wantCode: "BAD_REQUEST"},
 		{name: "malformed JSON returns 400", pathID: goalID, body: `{bad}`, wantStatus: http.StatusBadRequest, wantCode: "BAD_REQUEST"},
 	}
 

@@ -21,6 +21,20 @@ var (
 	ErrConflict = errors.New("plan: conflict")
 )
 
+// maxEntriesPerRequest bounds the number of entries one AddEntries call may
+// add, so a single oversized body cannot exhaust the per-entry insert loop.
+const maxEntriesPerRequest = 100
+
+// containsControlChars reports whether s contains any control character.
+func containsControlChars(s string) bool {
+	for _, r := range s {
+		if r < 0x20 || r == 0x7f || (r >= 0x80 && r <= 0x9f) {
+			return true
+		}
+	}
+	return false
+}
+
 // Status represents a plan lifecycle state.
 type Status string
 

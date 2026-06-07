@@ -274,6 +274,14 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "title is required")
 		return
 	}
+	if containsControlChars(req.Title) {
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "title must not contain control characters")
+		return
+	}
+	if containsControlChars(req.Description) {
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "description must not contain control characters")
+		return
+	}
 
 	store := h.store
 	if tx, ok := api.TxFromContext(r.Context()); ok {
@@ -319,6 +327,14 @@ func (h *Handler) CreateMilestone(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Title == "" {
 		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "title is required")
+		return
+	}
+	if containsControlChars(req.Title) {
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "title must not contain control characters")
+		return
+	}
+	if containsControlChars(req.Description) {
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "description must not contain control characters")
 		return
 	}
 

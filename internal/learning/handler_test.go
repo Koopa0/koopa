@@ -469,6 +469,7 @@ func TestCreateDomain_Validation(t *testing.T) {
 		{name: "underscore slug returns 422", body: `{"slug":"jp_lang","name":"Japanese"}`, wantStatus: http.StatusUnprocessableEntity, wantCode: "INVALID_SLUG"},
 		{name: "trailing hyphen slug returns 422", body: `{"slug":"japanese-","name":"Japanese"}`, wantStatus: http.StatusUnprocessableEntity, wantCode: "INVALID_SLUG"},
 		{name: "space in slug returns 422", body: `{"slug":"jp lang","name":"Japanese"}`, wantStatus: http.StatusUnprocessableEntity, wantCode: "INVALID_SLUG"},
+		{name: "control char in name returns 400", body: "{\"slug\":\"japanese\",\"name\":\"bad\\u0001name\"}", wantStatus: http.StatusBadRequest, wantCode: "BAD_REQUEST"},
 	}
 
 	for _, tt := range tests {

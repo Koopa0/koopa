@@ -149,6 +149,18 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "domain is required")
 		return
 	}
+	if containsControlChars(req.Title) {
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "title must not contain control characters")
+		return
+	}
+	if containsControlChars(req.Description) {
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "description must not contain control characters")
+		return
+	}
+	if containsControlChars(req.Domain) {
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "domain must not contain control characters")
+		return
+	}
 
 	store, ok := h.mustAdminTx(w, r)
 	if !ok {
@@ -206,6 +218,10 @@ func (h *Handler) AddEntries(w http.ResponseWriter, r *http.Request) {
 	}
 	if len(req.Entries) == 0 {
 		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "entries must be non-empty")
+		return
+	}
+	if len(req.Entries) > maxEntriesPerRequest {
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "entries exceeds maximum per request")
 		return
 	}
 	for i := range req.Entries {

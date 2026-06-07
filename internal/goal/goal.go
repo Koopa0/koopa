@@ -49,3 +49,13 @@ var (
 	// ErrConflict indicates a uniqueness violation.
 	ErrConflict = errors.New("goal: conflict")
 )
+
+// containsControlChars reports whether s contains any control character.
+func containsControlChars(s string) bool {
+	for _, r := range s {
+		if r < 0x20 || r == 0x7f || (r >= 0x80 && r <= 0x9f) {
+			return true
+		}
+	}
+	return false
+}
