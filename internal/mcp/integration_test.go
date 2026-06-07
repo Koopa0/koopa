@@ -3217,3 +3217,89 @@ func logTier1Results(t *testing.T, outcomes []evalOutcome) {
 	fmt.Fprintf(&b, "totals: %d pass, %d fail, %d skip (of %d)\n", pass, fail, skip, len(outcomes))
 	t.Log(b.String())
 }
+
+// --- plan_day position bounds (#13) ---
+
+// seedTodoState inserts a todo in the given state and returns its id. plan_day
+// requires todos in state=todo; the registry sync in setupServer seeds the
+// default created_by='human' agent so the FK resolves.
+func seedTodoState(t *testing.T, title, state string) uuid.UUID {
+	t.Helper()
+	var id uuid.UUID
+	if err := testPool.QueryRow(t.Context(),
+		`INSERT INTO todos (title, state) VALUES ($1, $2::todo_state) RETURNING id`,
+		title, state,
+	).Scan(&id); err != nil {
+		t.Fatalf("seeding todo %q (state=%s): %v", title, state, err)
+	}
+	return id
+}
+
+// countPlanItems returns how many daily_plan_items rows exist for a todo.
+func countPlanItems(t *testing.T, todoID uuid.UUID) int {
+	t.Helper()
+	var n int
+	if err := testPool.QueryRow(t.Context(),
+		`SELECT COUNT(*) FROM daily_plan_items WHERE todo_id = $1`, todoID,
+	).Scan(&n); err != nil {
+		t.Fatalf("counting plan items: %v", err)
+	}
+	return n
+}
+
+// TestIntegration_PlanDay_PositionOutOfRangeRejected guards the #13 fix:
+// createPlanItemTx bounds the caller-supplied position to [0, maxPlanPosition]
+// (100000) so the int32 cast cannot overflow. A position above the ceiling or
+// below zero must be rejected, and because the whole plan_day write runs inside
+// a single withActorTx, the rejection rolls back the DeletePlannedByDate that
+// opened the idempotent-replace window — leaving zero daily_plan_items written.
+//
+// plan_day is author-gated to hq, so the call goes through callHandlerAs("hq").
+func TestIntegration_PlanDay_PositionOutOfRangeRejected(t *testing.T) {
+	s := setupServer(t)
+	todoID := seedTodoState(t, "bounded-plan-item", "todo")
+
+	tests := []struct {
+		name     string
+		position int
+	}{
+		{name: "above maxPlanPosition", position: maxPlanPosition + 1},
+		{name: "well above ceiling", position: 1_000_000},
+		{name: "negative position", position: -1},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			_, _, err := callHandlerAs(t, "hq", s.planDay, PlanDayInput{
+				Items: []PlanDayItem{
+					{TaskID: todoID.String(), Position: tc.position},
+				},
+			})
+			if err == nil {
+				t.Fatalf("plan_day accepted out-of-range position %d; want rejection", tc.position)
+			}
+			if !strings.Contains(err.Error(), "out of range") {
+				t.Errorf("error = %q, want it to name the out-of-range position", err)
+			}
+			if got := countPlanItems(t, todoID); got != 0 {
+				t.Errorf("daily_plan_items for todo = %d, want 0 (tx rollback on rejection)", got)
+			}
+		})
+	}
+
+	// Control: an in-range position for the same todo succeeds, proving the
+	// rejection above is the bounds gate and not a setup error.
+	_, out, err := callHandlerAs(t, "hq", s.planDay, PlanDayInput{
+		Items: []PlanDayItem{
+			{TaskID: todoID.String(), Position: 1},
+		},
+	})
+	if err != nil {
+		t.Fatalf("plan_day with in-range position: %v", err)
+	}
+	if out.ItemsCreated != 1 {
+		t.Errorf("items_created = %d, want 1 for the in-range control", out.ItemsCreated)
+	}
+	if got := countPlanItems(t, todoID); got != 1 {
+		t.Errorf("daily_plan_items for todo = %d, want 1 after in-range plan", got)
+	}
+}

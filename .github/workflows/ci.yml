@@ -50,9 +50,11 @@ jobs:
 
       # ubuntu-latest provides a Docker daemon; testcontainers-go starts a
       # pgvector/pgvector:pg17 container per package (internal/testdb) and
-      # applies migrations/. Identical to `make test-integration` locally.
-      - name: make test-integration
-        run: make test-integration
+      # applies migrations/. Mirrors `make test-integration` locally, with
+      # -count=1 to bypass the test cache so the integration suite always runs
+      # against the current tree (the cache can mask a regression on re-runs).
+      - name: go test (race, integration)
+        run: go test -race -count=1 -tags integration ./...
 
   lint:
     name: golangci-lint

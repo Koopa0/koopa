@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -492,4 +493,69 @@ func TestCreateDomain_Validation(t *testing.T) {
 			}
 		})
 	}
+}
+
+// FuzzDomainSlug exercises the domain-slug validator used by the CreateDomain
+// handler (domainSlugPattern, the chk_learning_domains_slug_format mirror). The
+// validator must never panic on arbitrary bytes, and acceptance must imply a
+// well-formed kebab slug: lowercase ASCII alphanumerics with single internal
+// hyphens, no control characters, no leading/trailing/consecutive hyphens.
+//
+// The seed corpus pins both halves of the contract — slugs that MUST pass and
+// inputs (control chars, bad shape, wrong case) that MUST be rejected — so a
+// future loosening of the pattern that breaks either direction surfaces as a
+// reproducible failure, not just a clean fuzz run.
+func FuzzDomainSlug(f *testing.F) {
+	valid := []string{"leetcode", "go", "japanese", "system-design", "1-arrays", "a", "ab-cd-ef"}
+	invalid := []string{
+		"",                 // empty
+		"Japanese",         // uppercase
+		"jp_lang",          // underscore
+		"japanese-",        // trailing hyphen
+		"-japanese",        // leading hyphen
+		"a--b",             // consecutive hyphens
+		"jp lang",          // space
+		"bad\x01name",      // C0 control char
+		"bad\x7fname",      // DEL
+		"bad\u0085name",    // C1 control char (NEL)
+		"emoji-\U0001F600", // non-ASCII
+	}
+	for _, s := range valid {
+		f.Add(s)
+	}
+	for _, s := range invalid {
+		f.Add(s)
+	}
+
+	f.Fuzz(func(t *testing.T, slug string) {
+		// Must never panic — the whole point of fuzzing a validator.
+		accepted := domainSlugPattern.MatchString(slug)
+
+		if !accepted {
+			// Rejection is always a safe outcome; nothing more to assert.
+			return
+		}
+
+		// Acceptance is the load-bearing direction: an accepted slug MUST be a
+		// well-formed kebab slug. Any accepted input that violates one of these
+		// invariants means the pattern is over-permissive.
+		if slug == "" {
+			t.Fatalf("validator accepted empty slug")
+		}
+		if containsControlChars(slug) {
+			t.Fatalf("validator accepted slug with control characters: %q", slug)
+		}
+		if strings.HasPrefix(slug, "-") || strings.HasSuffix(slug, "-") {
+			t.Fatalf("validator accepted slug with leading/trailing hyphen: %q", slug)
+		}
+		if strings.Contains(slug, "--") {
+			t.Fatalf("validator accepted slug with consecutive hyphens: %q", slug)
+		}
+		for _, r := range slug {
+			isLowerAlnum := (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9')
+			if !isLowerAlnum && r != '-' {
+				t.Fatalf("validator accepted slug with disallowed rune %q in %q", r, slug)
+			}
+		}
+	})
 }

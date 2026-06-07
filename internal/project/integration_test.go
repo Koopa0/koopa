@@ -130,6 +130,28 @@ func truncate(t *testing.T) {
 	}
 }
 
+// archiveProjectTx runs project.Store.UpdateStatus(archived) inside a
+// committed pgx.Tx. The archived transition demotes the project_profile in
+// the same tx, so UpdateStatus rejects a pool-backed store with
+// ErrNotTransactional — the integration suite must drive it through a
+// transaction just like api.ActorMiddleware does for the admin route.
+func archiveProjectTx(t *testing.T, projectID uuid.UUID) {
+	t.Helper()
+	ctx := t.Context()
+	tx, err := testPool.Begin(ctx)
+	if err != nil {
+		t.Fatalf("Begin tx: %v", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	if _, err := project.NewStore(tx).UpdateStatus(ctx, projectID, project.StatusArchived, nil, nil); err != nil {
+		t.Fatalf("store.UpdateStatus(archived): %v", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		t.Fatalf("Commit tx: %v", err)
+	}
+}
+
 // TestIntegration_Detail_ProjectNotFound is the 404 branch: path parses
 // but no row exists. The handler must NOT 500 or leak SQL errors.
 func TestIntegration_Detail_ProjectNotFound(t *testing.T) {
@@ -360,11 +382,11 @@ func TestIntegration_ProjectArchive_TogglesProfilePublic(t *testing.T) {
 	}
 
 	// Archive the project via the Go store — the path that owns the
-	// coupling now.
-	store := project.NewStore(testPool)
-	if _, err := store.UpdateStatus(t.Context(), projectID, project.StatusArchived, nil, nil); err != nil {
-		t.Fatalf("store.UpdateStatus(archived): %v", err)
-	}
+	// coupling now. UpdateStatus(archived) performs the status UPDATE plus
+	// the profile demote as a unit and rejects a pool-backed store with
+	// ErrNotTransactional, so drive it through a committed pgx.Tx exactly as
+	// api.ActorMiddleware does for the production admin route.
+	archiveProjectTx(t, projectID)
 
 	// Post-update: is_public and featured must both have flipped to
 	// false. A regression in project.Store.UpdateStatus or a missing

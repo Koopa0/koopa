@@ -119,6 +119,52 @@ var cmpContentOpts = cmp.Options{
 	cmpopts.SortSlices(func(a, b TopicRef) bool { return a.Slug < b.Slug }),
 }
 
+// createContentTx runs CreateContent inside a committed pgx.Tx, mirroring the
+// production admin path where api.ActorMiddleware opens the tx and the handler
+// binds the store via WithTx. CreateContent with junction rows (TopicIDs /
+// Concepts) rejects a pool-backed store with ErrNotTransactional — the write
+// fans out to contents + content_topics + content_concepts and must commit as
+// a unit — so the integration suite must drive it through a transaction just
+// like the real caller does. Same shape as TestStore_CreateContent_DuplicateSlug_InTx.
+func createContentTx(t *testing.T, ctx context.Context, p *CreateParams) *Content {
+	t.Helper()
+	tx, err := testPool.Begin(ctx)
+	if err != nil {
+		t.Fatalf("Begin tx: %v", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	created, err := NewStore(tx).CreateContent(ctx, p)
+	if err != nil {
+		t.Fatalf("CreateContent() error: %v", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		t.Fatalf("Commit tx: %v", err)
+	}
+	return created
+}
+
+// updateContentTx runs UpdateContent inside a committed pgx.Tx for the same
+// reason as createContentTx: topic/concept junction replacement is a multi-row
+// write that requires a transactional store.
+func updateContentTx(t *testing.T, ctx context.Context, id uuid.UUID, p *UpdateParams) *Content {
+	t.Helper()
+	tx, err := testPool.Begin(ctx)
+	if err != nil {
+		t.Fatalf("Begin tx: %v", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	updated, err := NewStore(tx).UpdateContent(ctx, id, p)
+	if err != nil {
+		t.Fatalf("UpdateContent(%s) error: %v", id, err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		t.Fatalf("Commit tx: %v", err)
+	}
+	return updated
+}
+
 // topicRow holds the minimal fields returned by seedTopic.
 type topicRow struct {
 	ID   uuid.UUID
@@ -158,10 +204,10 @@ func TestStore_CreateContent_and_Content(t *testing.T) {
 		ReadingTimeMin: 5,
 	}
 
-	created, err := s.CreateContent(ctx, params)
-	if err != nil {
-		t.Fatalf("CreateContent() error: %v", err)
-	}
+	// TopicIDs makes this a multi-row (contents + content_topics) write, so
+	// CreateContent must run through a transactional store — drive it the way
+	// api.ActorMiddleware does in production.
+	created := createContentTx(t, ctx, params)
 
 	if created.ID == uuid.Nil {
 		t.Fatal("CreateContent() returned nil ID")
@@ -305,13 +351,18 @@ func TestStore_CreateContent_DuplicateSlug_InTx(t *testing.T) {
 // atomically inserts content_concepts rows for every ConceptID attached
 // to a public content row.
 func TestStore_CreateContent_ArticleWithConcepts(t *testing.T) {
-	s := setup(t)
+	// setup truncates and seeds the system/human agents; the create itself
+	// runs through createContentTx, so the returned pool-backed store is not
+	// needed here.
+	setup(t)
 	ctx := t.Context()
 
 	cid1 := seedConcept(t, testPool, "leetcode", "binary-search-basic", "Binary Search (basic)", "pattern")
 	cid2 := seedConcept(t, testPool, "leetcode", "binary-search-on-rotated", "Binary Search (rotated)", "pattern")
 
-	created, err := s.CreateContent(ctx, &CreateParams{
+	// Concepts attach content_concepts junction rows, so CreateContent fans
+	// out to two tables and requires a transactional store.
+	created := createContentTx(t, ctx, &CreateParams{
 		Slug:    "binary-search-family",
 		Title:   "Binary Search family",
 		Body:    "Cross-variant notes on binary search.",
@@ -323,9 +374,6 @@ func TestStore_CreateContent_ArticleWithConcepts(t *testing.T) {
 			{ID: cid2, Relevance: "secondary"},
 		},
 	})
-	if err != nil {
-		t.Fatalf("CreateContent(article + concept_ids) error: %v", err)
-	}
 
 	// Verify both rows in content_concepts.
 	got := contentConceptIDs(t, testPool, created.ID)
@@ -452,13 +500,17 @@ func TestStore_Contents_FilterByType(t *testing.T) {
 }
 
 func TestStore_UpdateContent(t *testing.T) {
-	s := setup(t)
+	// setup truncates and seeds agents; the create/update both run through
+	// tx helpers, so the returned pool-backed store is not needed here.
+	setup(t)
 	ctx := t.Context()
 
 	tp1 := seedTopic(t, testPool, "topic-a", "Topic A")
 	tp2 := seedTopic(t, testPool, "topic-b", "Topic B")
 
-	created, err := s.CreateContent(ctx, &CreateParams{
+	// Both create and update attach a content_topics junction row, so each is
+	// a multi-row write that must run through a transactional store.
+	created := createContentTx(t, ctx, &CreateParams{
 		Slug:           "update-me",
 		Title:          "Original Title",
 		Body:           "original body",
@@ -468,25 +520,19 @@ func TestStore_UpdateContent(t *testing.T) {
 		TopicIDs:       []uuid.UUID{tp1.ID},
 		ReadingTimeMin: 2,
 	})
-	if err != nil {
-		t.Fatalf("CreateContent() error: %v", err)
-	}
 
 	newTitle := "Updated Title"
 	newBody := "updated body"
 	newExcerpt := "updated excerpt"
 	newReadingTime := 10
 
-	updated, err := s.UpdateContent(ctx, created.ID, &UpdateParams{
+	updated := updateContentTx(t, ctx, created.ID, &UpdateParams{
 		Title:          &newTitle,
 		Body:           &newBody,
 		Excerpt:        &newExcerpt,
 		TopicIDs:       []uuid.UUID{tp2.ID},
 		ReadingTimeMin: &newReadingTime,
 	})
-	if err != nil {
-		t.Fatalf("UpdateContent(%s) error: %v", created.ID, err)
-	}
 
 	if updated.Title != newTitle {
 		t.Errorf("UpdateContent() title = %q, want %q", updated.Title, newTitle)
