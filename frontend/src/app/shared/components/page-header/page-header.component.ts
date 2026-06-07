@@ -10,7 +10,9 @@ import { Component, ChangeDetectionStrategy, input } from '@angular/core';
           class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"
         >
           <div>
-            <h1 class="text-2xl font-bold text-zinc-100">{{ title() }}</h1>
+            <h1 class="font-display text-2xl font-bold text-zinc-100">
+              {{ title() }}
+            </h1>
             @if (description()) {
               <p class="mt-1 text-sm text-zinc-400">{{ description() }}</p>
             }

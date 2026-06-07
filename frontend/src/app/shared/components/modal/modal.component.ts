@@ -16,7 +16,7 @@ import { A11yModule } from '@angular/cdk/a11y';
   template: `
     <!-- Backdrop -->
     <div
-      class="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs"
+      class="fixed inset-0 z-50 bg-black/60"
       aria-hidden="true"
       (click)="closed.emit()"
     ></div>
@@ -30,7 +30,7 @@ import { A11yModule } from '@angular/cdk/a11y';
       (keydown.escape)="closed.emit()"
     >
       <div
-        class="flex max-h-[calc(100dvh-2rem)] w-full flex-col rounded-xs border border-zinc-700 bg-zinc-900 shadow-lg"
+        class="flex max-h-[calc(100dvh-2rem)] w-full flex-col rounded-lg border border-border bg-panel shadow-[var(--shadow-2)]"
         [class]="maxWidthClass()"
         cdkTrapFocus
         cdkTrapFocusAutoCapture
