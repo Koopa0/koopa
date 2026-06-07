@@ -3,7 +3,9 @@ FROM node:22-alpine AS builder
 
 WORKDIR /app
 
-COPY package.json package-lock.json ./
+# .npmrc carries legacy-peer-deps=true so `npm ci` resolves the lockfile
+# despite angular-eslint 21.4's pre-v22 @angular/cli peer range.
+COPY package.json package-lock.json .npmrc ./
 RUN npm ci
 
 COPY . .
