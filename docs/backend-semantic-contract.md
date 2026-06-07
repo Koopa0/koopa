@@ -139,11 +139,11 @@ them wrong is a semantic bug, not a naming quibble.
 - **actor** — the `agents.name` value attributed to one `activity_events` row;
   set from the `koopa.actor` GUC inside the audit trigger
   (`migrations/001_initial.up.sql:2646-2656`).
-- **HQ / Koopa** — `hq` is the `claude-cowork` agent acting as "CEO":
+- **planner / Koopa** — `planner` is the `claude-cowork` agent acting as "CEO":
   decisions, delegation, the morning briefing (`registry.go:17-34`). "Koopa"
   is the human owner (display name on the `human` agent, `registry.go:106`).
-  HQ holds `SubmitTasks + PublishArtifacts` but **not** `ReceiveTasks`.
-- **Claude Cowork project** — a `claude-cowork` platform agent: `hq`,
+  planner holds `SubmitTasks + PublishArtifacts` but **not** `ReceiveTasks`.
+- **Claude Cowork project** — a `claude-cowork` platform agent: `planner`,
   `content-studio`, `research-lab`, `learning-studio` (`registry.go:17-81`).
   A platform/identity, not a PARA `project` (§4).
 - **Claude Code** — `claude-code` platform agents (`koopa0-dev`, `go-spec`),
@@ -279,7 +279,7 @@ in the MCP-v3 semantic contraction. The vocabulary below is preserved as a
   since, description, field enums. **11 tools** (`catalog.go::All()`).
 - **schedule** — a per-agent recurring trigger declared on the Go
   `agent.Agent` literal (`Schedule{Name, Trigger, Expr, Backend, Purpose}`,
-  `registry.go:27-33` etc.). E.g. `hq` runs `morning-briefing` at `0 8 * * *`
+  `registry.go:27-33` etc.). E.g. `planner` runs `morning-briefing` at `0 8 * * *`
   on `cowork_desktop`. **Lives in Go, not the DB.** Only 4 of 9 agents carry a
   schedule. **DECIDED (Phase 1D, 2026-05-27):** the schedule literal is
   metadata only and the backend has **no internal scheduler** — execution is
@@ -443,7 +443,7 @@ admin-only HTTP (frontend-advisory, §2).
 
 **`brief` replaces the former `morning_context` + `reflection_context`** behind
 a `mode` discriminator. Per-agent default sections: learning-studio defaults to
-`['tasks', 'hypotheses']`; every other caller (incl. hq) gets all sections.
+`['tasks', 'hypotheses']`; every other caller (incl. planner) gets all sections.
 `rss_highlights` are feeds tagged priority=high, NOT relevance-ranked — use
 `search_knowledge` for ranked retrieval.
 

@@ -11,10 +11,10 @@ import { AgentInspectorComponent } from './agent-inspector.component';
 import type { AgentDetail } from '../../../../core/models/workbench.model';
 
 const baseAgent: AgentDetail = {
-  name: 'hq',
-  display_name: 'Studio HQ',
+  name: 'planner',
+  display_name: 'Planner',
   platform: 'claude-cowork',
-  description: 'CEO — decisions, delegation, morning briefing',
+  description: 'planning, decisions, daily driving, morning briefing',
   capability: {
     submit_tasks: true,
     receive_tasks: false,
@@ -83,9 +83,9 @@ describe('AgentInspectorComponent', () => {
     const el = fixture.nativeElement as HTMLElement;
     expect(
       el.querySelector('[data-testid="agent-display-name"]')?.textContent,
-    ).toContain('Studio HQ');
+    ).toContain('Planner');
     const subtitle = el.querySelector('[data-testid="agent-subtitle"]');
-    expect(subtitle?.textContent).toContain('hq');
+    expect(subtitle?.textContent).toContain('planner');
     expect(subtitle?.textContent).toContain('claude-cowork');
   });
 
@@ -194,9 +194,9 @@ describe('AgentInspectorComponent', () => {
     const link = fixture.nativeElement.querySelector(
       '[data-testid="agent-open-tasks-link"]',
     );
-    expect(link?.textContent).toContain('View 3 open tasks for hq');
-    // routerLink resolves to /admin/coordination/agents/hq (agent profile).
-    expect(link?.getAttribute('aria-label')).toContain('open tasks for hq');
+    expect(link?.textContent).toContain('View 3 open tasks for planner');
+    // routerLink resolves to /admin/coordination/agents/planner (agent profile).
+    expect(link?.getAttribute('aria-label')).toContain('open tasks for planner');
   });
 
   it('should render "No open tasks" when count is 0', async () => {

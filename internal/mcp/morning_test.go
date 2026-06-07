@@ -102,7 +102,7 @@ func TestResolveDefaultSections(t *testing.T) {
 		caller string
 		want   []string
 	}{
-		{name: "unlisted caller falls through to all", caller: "hq", want: nil},
+		{name: "unlisted caller falls through to all", caller: "planner", want: nil},
 		{name: "empty caller falls through to all", caller: "", want: nil},
 		{
 			name:   "learning-studio gets focused subset",

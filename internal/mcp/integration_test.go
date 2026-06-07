@@ -3254,7 +3254,7 @@ func countPlanItems(t *testing.T, todoID uuid.UUID) int {
 // a single withActorTx, the rejection rolls back the DeletePlannedByDate that
 // opened the idempotent-replace window — leaving zero daily_plan_items written.
 //
-// plan_day is author-gated to hq, so the call goes through callHandlerAs("hq").
+// plan_day is author-gated to planner, so the call goes through callHandlerAs("planner").
 func TestIntegration_PlanDay_PositionOutOfRangeRejected(t *testing.T) {
 	s := setupServer(t)
 	todoID := seedTodoState(t, "bounded-plan-item", "todo")
@@ -3269,7 +3269,7 @@ func TestIntegration_PlanDay_PositionOutOfRangeRejected(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			_, _, err := callHandlerAs(t, "hq", s.planDay, PlanDayInput{
+			_, _, err := callHandlerAs(t, "planner", s.planDay, PlanDayInput{
 				Items: []PlanDayItem{
 					{TaskID: todoID.String(), Position: tc.position},
 				},
@@ -3288,7 +3288,7 @@ func TestIntegration_PlanDay_PositionOutOfRangeRejected(t *testing.T) {
 
 	// Control: an in-range position for the same todo succeeds, proving the
 	// rejection above is the bounds gate and not a setup error.
-	_, out, err := callHandlerAs(t, "hq", s.planDay, PlanDayInput{
+	_, out, err := callHandlerAs(t, "planner", s.planDay, PlanDayInput{
 		Items: []PlanDayItem{
 			{TaskID: todoID.String(), Position: 1},
 		},

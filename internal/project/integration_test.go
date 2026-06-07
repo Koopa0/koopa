@@ -273,10 +273,10 @@ func TestIntegration_Detail_FullAggregate(t *testing.T) {
 	}
 
 	// Activity event scoped via slug. actor is NOT NULL and FKs onto
-	// agents — use hq, which the builtin registry sync populates.
+	// agents — use planner, which the builtin registry sync populates.
 	if _, err := testPool.Exec(t.Context(),
 		`INSERT INTO activity_events (entity_type, change_kind, entity_id, project_id, entity_title, actor, occurred_at)
-		 VALUES ('todo', 'created', $1, $2, 'seeded activity', 'hq', now())`,
+		 VALUES ('todo', 'created', $1, $2, 'seeded activity', 'planner', now())`,
 		uuid.New(), projectID,
 	); err != nil {
 		t.Fatalf("seeding activity event: %v", err)

@@ -22,7 +22,7 @@ const mockResponse: DailyPlanResponse = {
       todo_assignee: 'human',
       status: 'planned',
       position: 0,
-      selected_by: 'hq',
+      selected_by: 'planner',
     },
   ],
 };

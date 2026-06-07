@@ -65,7 +65,7 @@ Morning mode is filterable via `sections` (omit or pass `[]` for all). Valid key
 | `rss` | rss_highlights — feeds tagged `priority=high`, NOT relevance-ranked; use `search_knowledge` for ranked retrieval |
 | `content_pipeline` | content_pipeline |
 
-Per-agent default sections: `learning-studio` defaults to `['tasks', 'hypotheses']`; every other caller (incl. `hq`) gets all sections. Explicit `sections` always wins.
+Per-agent default sections: `learning-studio` defaults to `['tasks', 'hypotheses']`; every other caller (incl. `planner`) gets all sections. Explicit `sections` always wins.
 
 ### `search_knowledge` retrieval
 

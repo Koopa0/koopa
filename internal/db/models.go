@@ -659,7 +659,7 @@ type DailyPlanItem struct {
 	PlanDate time.Time `json:"plan_date"`
 	// The todo committed to. CASCADE on delete — if the todo is removed, the plan item goes too.
 	TodoID uuid.UUID `json:"todo_id"`
-	// Which agent added this item to the plan. Typically hq (morning briefing, cron auto-populate) or human (manual selection via MCP tool).
+	// Which agent added this item to the plan. Typically planner (morning briefing, cron auto-populate) or human (manual selection via MCP tool).
 	SelectedBy string `json:"selected_by"`
 	// Ordering within a day's plan. 0-based. Semantic: first item = highest priority for today.
 	Position int32 `json:"position"`
@@ -1209,7 +1209,7 @@ type Todo struct {
 	RecurUnit *string `json:"recur_unit"`
 	// Free-text detail. Empty string = no detail.
 	Description string `json:"description"`
-	// Which agent created or imported this todo into the system. FK to agents. Default human. Examples: human (manual or synced from external tool), hq (morning briefing).
+	// Which agent created or imported this todo into the system. FK to agents. Default human. Examples: human (manual or synced from external tool), planner (morning briefing).
 	CreatedBy string `json:"created_by"`
 	// Row insertion timestamp.
 	CreatedAt time.Time `json:"created_at"`

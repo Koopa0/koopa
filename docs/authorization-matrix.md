@@ -190,7 +190,7 @@ handler, not via the four axes.
 
 | Tool | Capability | Platform | Author | Self | Effective rule |
 |---|---|---|---|---|---|
-| `plan_day` | — | — | hq | — | HQ daily ritual (+ human implicit); other agents have their own work queues |
+| `plan_day` | — | — | planner | — | planner daily ritual (+ human implicit); other agents have their own work queues |
 | `capture_inbox` | — | — | — | — | Open (caller's own todo) |
 
 ### Read-only tools (no authz row needed)
@@ -207,16 +207,16 @@ handler, not via the four axes.
 
 Cross-references the rules above to the concrete reasoning so a future
 reviewer can challenge a rule without re-deriving it. After the MCP-v3
-contraction only two gates remain on the agent surface — `plan_day`'s hq
+contraction only two gates remain on the agent surface — `plan_day`'s planner
 allowlist and "note authorship is open". Everything else is open to any
 registered caller (learning lifecycle, `capture_inbox`) or read-only.
 
-### `plan_day` — hq + human only
+### `plan_day` — planner + human only
 
 Schema COMMENT on `daily_plan_items.selected_by` already documents
-"typically hq or human". `daily_plan_items` is not a generic "today's
-work" surface — it is HQ's morning ritual, so the author allowlist names
-`hq` (with the human always implicit) and every other caller is refused
+"typically planner or human". `daily_plan_items` is not a generic "today's
+work" surface — it is planner's morning ritual, so the author allowlist names
+`planner` (with the human always implicit) and every other caller is refused
 before any write.
 
 ### Note authorship — open

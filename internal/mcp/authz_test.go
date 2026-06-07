@@ -30,23 +30,23 @@ func TestRequireAuthor(t *testing.T) {
 		{
 			name:    "human always allowed regardless of allowlist",
 			ctx:     withCallerAs(t.Context(), "human"),
-			authors: []string{"hq"},
+			authors: []string{"planner"},
 		},
 		{
 			name:    "caller in allowlist",
-			ctx:     withCallerAs(t.Context(), "hq"),
-			authors: []string{"hq", "content-studio"},
+			ctx:     withCallerAs(t.Context(), "planner"),
+			authors: []string{"planner", "content-studio"},
 		},
 		{
 			name:    "caller not in allowlist",
 			ctx:     withCallerAs(t.Context(), "learning-studio"),
-			authors: []string{"hq", "content-studio"},
+			authors: []string{"planner", "content-studio"},
 			wantErr: `caller "learning-studio" is not in the author allowlist`,
 		},
 		{
 			name:    "unregistered caller",
 			ctx:     withCallerAs(t.Context(), "ghost"),
-			authors: []string{"hq"},
+			authors: []string{"planner"},
 			wantErr: `caller "ghost" is not registered`,
 		},
 		{
@@ -55,7 +55,7 @@ func TestRequireAuthor(t *testing.T) {
 			// as:"unknown" trying to slip past the env default.
 			name:    "explicit unknown caller — refused by allowlist",
 			ctx:     withCallerAs(t.Context(), "unknown"),
-			authors: []string{"hq", "content-studio"},
+			authors: []string{"planner", "content-studio"},
 			wantErr: `caller "unknown" is not in the author allowlist`,
 		},
 	}
@@ -114,7 +114,7 @@ func TestServerDefaultCallerAgent_FailsClosed(t *testing.T) {
 	// rejects with the "not in the author allowlist" path. This is the gate
 	// that CF-02 actually hardened — under the old default "human", this
 	// branch silently passed via the human-implicit short circuit.
-	if err := s.requireAuthor(t.Context(), "test_op", "hq", "content-studio"); err == nil {
+	if err := s.requireAuthor(t.Context(), "test_op", "planner", "content-studio"); err == nil {
 		t.Fatal("requireAuthor without `as` (default unknown) = nil, want refusal")
 	} else if !strings.Contains(err.Error(), `caller "unknown" is not in the author allowlist`) {
 		t.Errorf("requireAuthor error = %q, want unknown-not-in-allowlist refusal", err)
@@ -123,7 +123,7 @@ func TestServerDefaultCallerAgent_FailsClosed(t *testing.T) {
 	// Sanity check: an explicit `as: "human"` continues to work. This
 	// guards against an over-zealous follow-up that closes the
 	// explicit-human path too — legitimate human authority must remain.
-	if err := s.requireAuthor(withCallerAs(t.Context(), "human"), "test_op", "hq"); err != nil {
+	if err := s.requireAuthor(withCallerAs(t.Context(), "human"), "test_op", "planner"); err != nil {
 		t.Errorf("requireAuthor with explicit as=human = %v, want nil", err)
 	}
 }
@@ -135,7 +135,7 @@ func testLogger() *slog.Logger {
 	return slog.New(slog.DiscardHandler)
 }
 
-// TestPlanDayGate verifies the hq+human author rule on plan_day. Only
+// TestPlanDayGate verifies the planner+human author rule on plan_day. Only
 // the rejection arm goes through the handler — the gate fires before
 // any store call. Acceptance is verified via requireAuthor against the
 // same allowlist; reaching past the gate would force the test to spin
@@ -161,10 +161,10 @@ func TestPlanDayGate(t *testing.T) {
 		}
 	})
 
-	for _, caller := range []string{"hq", "human"} {
+	for _, caller := range []string{"planner", "human"} {
 		t.Run("accept caller="+caller, func(t *testing.T) {
 			ctx := withCallerAs(t.Context(), caller)
-			if err := s.requireAuthor(ctx, "plan_day", "hq"); err != nil {
+			if err := s.requireAuthor(ctx, "plan_day", "planner"); err != nil {
 				t.Errorf("requireAuthor plan_day caller=%s = %v, want nil", caller, err)
 			}
 		})

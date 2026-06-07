@@ -19,7 +19,7 @@ import (
 func TestPlanResponseWireContract(t *testing.T) {
 	resp := PlanResponse{
 		Date:         "2026-05-21",
-		Items:        []PlanItem{{ID: "p1", TodoID: "t1", Title: "Fix auth middleware", SelectedBy: "hq"}},
+		Items:        []PlanItem{{ID: "p1", TodoID: "t1", Title: "Fix auth middleware", SelectedBy: "planner"}},
 		Total:        2,
 		Done:         1,
 		OverdueCount: 1,

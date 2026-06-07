@@ -30,17 +30,17 @@ func TestStore_LastAgentScheduleRuns_Integration(t *testing.T) {
 	pool := testdb.NewPool(t)
 	ctx := t.Context()
 
-	seedAgent(t, ctx, pool, "hq", "claude-cowork")
+	seedAgent(t, ctx, pool, "planner", "claude-cowork")
 	seedAgent(t, ctx, pool, "content-studio", "claude-cowork")
 	seedAgent(t, ctx, pool, "research-lab", "claude-cowork")
 
-	// hq — three runs; the latest (08:00) is what we expect to read.
+	// planner — three runs; the latest (08:00) is what we expect to read.
 	hqEarliest := time.Date(2026, time.May, 25, 8, 0, 0, 0, time.UTC)
 	hqMiddle := time.Date(2026, time.May, 26, 8, 0, 0, 0, time.UTC)
 	hqLatest := time.Date(2026, time.May, 27, 8, 0, 0, 0, time.UTC)
-	insertCompletedAgentScheduleRun(t, ctx, pool, "hq:morning-briefing", "claude-cowork", hqEarliest)
-	insertCompletedAgentScheduleRun(t, ctx, pool, "hq:morning-briefing", "claude-cowork", hqMiddle)
-	insertCompletedAgentScheduleRun(t, ctx, pool, "hq:morning-briefing", "claude-cowork", hqLatest)
+	insertCompletedAgentScheduleRun(t, ctx, pool, "planner:morning-briefing", "claude-cowork", hqEarliest)
+	insertCompletedAgentScheduleRun(t, ctx, pool, "planner:morning-briefing", "claude-cowork", hqMiddle)
+	insertCompletedAgentScheduleRun(t, ctx, pool, "planner:morning-briefing", "claude-cowork", hqLatest)
 
 	// content-studio — single completed run.
 	contentRun := time.Date(2026, time.May, 27, 14, 0, 0, 0, time.UTC)
@@ -60,7 +60,7 @@ func TestStore_LastAgentScheduleRuns_Integration(t *testing.T) {
 	}
 
 	want := map[string]time.Time{
-		"hq":             hqLatest,
+		"planner":             hqLatest,
 		"content-studio": contentRun,
 	}
 

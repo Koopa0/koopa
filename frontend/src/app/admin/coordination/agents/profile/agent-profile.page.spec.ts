@@ -15,10 +15,10 @@ import type { AgentDetail } from '../../../../core/models/workbench.model';
 
 function agentDetail(): AgentDetail {
   return {
-    name: 'hq',
-    display_name: 'Studio HQ',
+    name: 'planner',
+    display_name: 'Planner',
     platform: 'claude-cowork',
-    description: 'CEO, decisions, delegation',
+    description: 'planning, decisions, daily driving',
     capability: {
       submit_tasks: true,
       receive_tasks: false,
@@ -65,8 +65,8 @@ describe('AgentProfilePageComponent', () => {
 
     const hero = el.querySelector('[data-testid="agent-hero"]');
     expect(hero).toBeTruthy();
-    expect(hero?.textContent).toContain('Studio HQ');
-    expect(hero?.textContent).toContain('hq');
+    expect(hero?.textContent).toContain('Planner');
+    expect(hero?.textContent).toContain('planner');
     expect(hero?.textContent).toContain('claude-cowork');
 
     const capabilities = el.querySelector(

@@ -23,15 +23,19 @@ accepted; they are rewritten LAST, on purpose.
 
 ## 1. MCP v3 accepted agent surface (~11 tools)
 
+> **Follow-on owner decision (2026-06-08):** the `hq` identity is renamed to **`planner`**;
+> all surfaces (Go core, docs, skills, frontend) are updated. The name is the only change —
+> the role and the tool surface are unchanged.
+
 | Tool | Locked semantics | Notes |
 |---|---|---|
-| `plan_day` | **hq / human-facing agents ONLY.** Pulls data + forms today's **candidate** plan. NOT priority-deciding, NOT auto-scheduling, NOT commitment-system owner. | role-scoped |
+| `plan_day` | **planner / human-facing agents ONLY.** Pulls data + forms today's **candidate** plan. NOT priority-deciding, NOT auto-scheduling, NOT commitment-system owner. | role-scoped |
 | `search_knowledge` | Retrieval over Koopa's corpus — the agent's only window into content/notes. | read |
 | `capture_inbox` | Agent drops a **raw** todo into inbox FOR Koopa. Clarification/advance is Koopa's (admin). | write (insert-only) |
 | `start_session` / `record_attempt` / `end_session` | Learning session lifecycle, Cowork-coached. | mutation |
 | `manage_plan` (5 actions: `add_entries`, `remove_entries`, `update_entry`, `reorder`, `progress`) | Learning-plan curriculum management. | `update_plan` REMOVED → admin |
 | `learning_read` (`view = overview \| next_target \| attempts \| session_progress`) | **READ-ONLY multiplexer.** Session / attempt / weakness / plan-based. **No FSRS due queue.** | never mutates |
-| `brief` (`mode = morning \| reflection`) | **READ-ONLY multiplexer.** Planning-state pull for hq. No `agent_notes` / FSRS sections. | never mutates |
+| `brief` (`mode = morning \| reflection`) | **READ-ONLY multiplexer.** Planning-state pull for planner. No `agent_notes` / FSRS sections. | never mutates |
 | `create_note` / `update_note` | Cowork co-authors the Zettelkasten — body / links only. | **maturity NOT here** |
 
 **Invariant (Correction 3):** `brief` and `learning_read` are **READ-ONLY forever** — they never

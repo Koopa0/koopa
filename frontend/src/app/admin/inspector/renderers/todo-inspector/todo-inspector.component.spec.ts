@@ -143,12 +143,12 @@ describe('TodoInspectorComponent', () => {
 
   it('should render created_by row when created_by ≠ assignee (delegation signal)', async () => {
     setupFixture();
-    await loadAndSettle({ ...baseTodo, created_by: 'hq', assignee: 'human' });
+    await loadAndSettle({ ...baseTodo, created_by: 'planner', assignee: 'human' });
 
     const createdBy = fixture.nativeElement.querySelector(
       '[data-testid="todo-created-by"]',
     );
-    expect(createdBy?.textContent?.trim()).toBe('hq');
+    expect(createdBy?.textContent?.trim()).toBe('planner');
 
     httpMock.verify();
   });

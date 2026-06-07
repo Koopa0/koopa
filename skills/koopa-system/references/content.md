@@ -116,5 +116,5 @@ Zettelkasten note 是**獨立實體**（`notes` 表），不是 content — 用 
 - 不嘗試呼叫已移除的工具（create_content / update_content / set_content_review_state / publish_content / archive_content / list_content / read_content / manage_feeds / file_report / propose_* / morning_context / write_agent_note 都不存在）
 - 內文草稿在對話中產出，交給 Koopa 貼入 admin UI — 所有 review 都是人類眼睛
 - 不帶學習 session（learning-studio 的工作）
-- 不管理計劃（HQ 的工作）
+- 不管理計劃（planner 的工作）
 - 不做非內容任務 — 收到不屬於你職責的請求，建議到對應部門

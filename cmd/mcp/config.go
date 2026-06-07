@@ -42,7 +42,7 @@ func loadConfig(logger *slog.Logger) config {
 	cfg.DatabaseURL = requireEnv("DATABASE_URL", logger)
 
 	// Default caller agent: "unknown" — fail-closed. Each Cowork project's
-	// instructions tell the AI to pass as: "hq" (or its real agent name)
+	// instructions tell the AI to pass as: "planner" (or its real agent name)
 	// in every tool call. A client that forgets ends up attributed to the
 	// zero-privilege "unknown" agent, which requireAuthor /
 	// requireRegisteredCaller both refuse. Override only when the deployment

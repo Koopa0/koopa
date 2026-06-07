@@ -902,7 +902,7 @@ COMMENT ON COLUMN todos.description IS 'Free-text detail. Empty string = no deta
 COMMENT ON COLUMN todos.created_by IS
     'Which agent created or imported this todo into the system. '
     'FK to agents. Default human. '
-    'Examples: human (manual or synced from external tool), hq (morning briefing).';
+    'Examples: human (manual or synced from external tool), planner (morning briefing).';
 COMMENT ON COLUMN todos.created_at IS 'Row insertion timestamp.';
 COMMENT ON COLUMN todos.updated_at IS 'Set explicitly by application in UPDATE queries. No trigger — application-managed.';
 
@@ -949,7 +949,7 @@ COMMENT ON COLUMN daily_plan_items.plan_date IS
 COMMENT ON COLUMN daily_plan_items.todo_id IS
     'The todo committed to. CASCADE on delete — if the todo is removed, the plan item goes too.';
 COMMENT ON COLUMN daily_plan_items.selected_by IS
-    'Which agent added this item to the plan. Typically hq (morning briefing, cron auto-populate) '
+    'Which agent added this item to the plan. Typically planner (morning briefing, cron auto-populate) '
     'or human (manual selection via MCP tool).';
 COMMENT ON COLUMN daily_plan_items.position IS
     'Ordering within a day''s plan. 0-based. Semantic: first item = highest priority for today.';

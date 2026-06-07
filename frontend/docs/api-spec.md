@@ -212,7 +212,7 @@ Goal profile detail. 既有 `GET /api/admin/goals/:id`.
       "reason": "<plan-time note from the author>",
       "due_date": "2026-04-24",
       "completed_at": null,
-      "selected_by": "hq"
+      "selected_by": "planner"
     }
   ],
   "total": 3,

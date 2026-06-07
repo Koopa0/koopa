@@ -68,19 +68,19 @@ func TestIntegration_MutatingTools_RejectUnregisteredCaller(t *testing.T) {
 // each tool's existing rules (notes/feeds carry no author allowlist, so any
 // registered agent is admitted) — still succeed.
 func TestIntegration_MutatingTools_RegisteredCallerStillWrites(t *testing.T) {
-	t.Run("create_note as hq", func(t *testing.T) {
+	t.Run("create_note as planner", func(t *testing.T) {
 		s := setupServer(t)
-		_, out, err := callHandlerAs(t, "hq", s.createNote, CreateNoteInput{
+		_, out, err := callHandlerAs(t, "planner", s.createNote, CreateNoteInput{
 			Slug:  "registered-author-note",
 			Title: "Registered Author Note",
 			Body:  "persists",
 			Kind:  "musing",
 		})
 		if err != nil {
-			t.Fatalf("create_note as hq = %v, want success", err)
+			t.Fatalf("create_note as planner = %v, want success", err)
 		}
-		if out.Note == nil || out.Note.CreatedBy != "hq" {
-			t.Fatalf("create_note as hq created_by = %+v, want hq", out.Note)
+		if out.Note == nil || out.Note.CreatedBy != "planner" {
+			t.Fatalf("create_note as planner created_by = %+v, want planner", out.Note)
 		}
 	})
 }

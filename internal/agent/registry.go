@@ -17,10 +17,10 @@ import (
 func BuiltinAgents() []Agent {
 	return []Agent{
 		{
-			Name:        "hq",
-			DisplayName: "Studio HQ",
+			Name:        "planner",
+			DisplayName: "Planner",
 			Platform:    "claude-cowork",
-			Description: "CEO — decisions, delegation, morning briefing",
+			Description: "Daily planner — morning briefing and candidate day plan, in conversation with Koopa",
 			Schedule: Schedule{
 				Name:    "morning-briefing",
 				Trigger: TriggerCron,

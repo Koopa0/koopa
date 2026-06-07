@@ -47,8 +47,8 @@ session 外的學習反思、教學筆記 → 寫進你自己的 `.md` 檔（不
 
 | 你想做的 | 現在怎麼做 |
 |---|---|
-| 回報學習成果給 HQ | 不再透過 MCP file_report；在對話中向 Koopa 摘要，或寫進你自己的 `.md` |
-| 收到 HQ 的學習方向指令 | 沒有 MCP directive；學習方向由 Koopa 透過 admin 建立的 goal / learning_plan 設定 |
+| 回報學習成果 | 不再透過 MCP file_report；在對話中向 Koopa 摘要，或寫進你自己的 `.md` |
+| 收到學習方向指令 | 沒有 MCP directive；學習方向由 Koopa 透過 admin 建立的 goal / learning_plan 設定 |
 | 變更計畫狀態（draft→active→...） | admin 表單；MCP 的 `manage_plan` 不再有 `update_plan` action |
 | 新增 learning domain | Koopa 在 admin 表單建立（`POST /api/admin/learning/domains`） |
 | FSRS / spaced-repetition review 排程 | 系統內部管理；MCP 無 review 工具 |

@@ -362,7 +362,7 @@ func addTool[I, O any](s *Server, tool *mcp.Tool, handler func(context.Context, 
 		start := time.Now()
 
 		// Extract optional "as" field for per-call agent override.
-		// Project instructions tell each AI: "在所有 tool call 中傳入 as: 'hq'"
+		// Project instructions tell each AI: "在所有 tool call 中傳入 as: 'planner'"
 		ctx = s.extractCallerIdentity(ctx, req.Params.Arguments)
 
 		var input I
@@ -487,14 +487,14 @@ func injectFieldEnums(schema *jsonschema.Schema, toolName string) {
 // injectCallerIdentityField adds the "as" property to a tool schema and
 // removes additionalProperties:false so the MCP client can pass it.
 // This enables caller self-identification: each Cowork project's instructions
-// tell the AI to pass as:"hq" (or "content-studio", etc.) in every tool call.
+// tell the AI to pass as:"planner" (or "content-studio", etc.) in every tool call.
 func injectCallerIdentityField(s *jsonschema.Schema) {
 	if s.Properties == nil {
 		s.Properties = map[string]*jsonschema.Schema{}
 	}
 	s.Properties["as"] = &jsonschema.Schema{
 		Type:        "string",
-		Description: "Caller agent identity (e.g. hq, content-studio). Set by project instructions.",
+		Description: "Caller agent identity (e.g. planner, content-studio). Set by project instructions.",
 	}
 	// Allow the "as" field to pass through — jsonschema-go sets
 	// additionalProperties:false by default which would reject it.

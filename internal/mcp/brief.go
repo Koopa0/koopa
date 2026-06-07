@@ -81,7 +81,7 @@ func resolveDefaultSections(caller string) []string {
 //
 // Unknown group names are ignored silently (no error, no warning).
 type BriefInput struct {
-	As       string          `json:"as,omitempty" jsonschema_description:"Caller agent identity (e.g. hq, content-studio)."`
+	As       string          `json:"as,omitempty" jsonschema_description:"Caller agent identity (e.g. planner, content-studio)."`
 	Mode     string          `json:"mode" jsonschema_description:"Briefing mode (required): 'morning' = daily-planning pull (todos/goals/hypotheses/rss/content_pipeline); 'reflection' = end-of-day plan-vs-actual retrospective (daily plan items + completion counts). brief is a pure planning-state pull and carries no agent memory."`
 	Sections FlexStringSlice `json:"sections,omitempty" jsonschema_description:"MORNING-ONLY strict filter on which groups to populate (default: all). Ignored in reflection mode. Omit or pass [] to get the full morning briefing. Group key → response fields: 'tasks' → overdue_todos/today_todos/committed_todos/upcoming_todos; 'goals' → active_goals; 'hypotheses' → unverified_hypotheses; 'rss' → rss_highlights; 'content_pipeline' → content_pipeline. Unknown keys silently ignored."`
 	Date     *string         `json:"date,omitempty" jsonschema_description:"Target date YYYY-MM-DD (default: today)"`
