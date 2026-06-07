@@ -15,11 +15,7 @@ import {
   withNoIncrementalHydration
 } from '@angular/platform-browser';
 import { provideAnimationsAsync } from '@angular/platform-browser/animations/async';
-import {
-  provideHttpClient,
-  withFetch,
-  withInterceptors,
-} from '@angular/common/http';
+import { provideHttpClient, withInterceptors } from '@angular/common/http';
 
 import { routes } from './app.routes';
 import { authInterceptor } from './core/interceptors/auth.interceptor';
@@ -58,10 +54,7 @@ export const appConfig: ApplicationConfig = {
       }),
     ),
     provideAnimationsAsync(),
-    provideHttpClient(
-      withFetch(),
-      withInterceptors([authInterceptor, errorInterceptor]),
-    ),
+    provideHttpClient(withInterceptors([authInterceptor, errorInterceptor])),
     provideClientHydration(withEventReplay(), withNoIncrementalHydration()),
   ],
 };
