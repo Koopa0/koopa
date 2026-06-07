@@ -378,7 +378,7 @@ func (h *Handler) SessionsList(w http.ResponseWriter, r *http.Request) {
 
 // SessionDetailResponse is the wire shape for GET /sessions/:id.
 type SessionDetailResponse struct {
-	*Session
+	Session  *Session  `json:"session"`
 	Attempts []Attempt `json:"attempts"`
 }
 

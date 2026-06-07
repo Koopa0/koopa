@@ -89,7 +89,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 
 // DetailResponse is the wire shape for /plans/:id — plan + entries + progress.
 type DetailResponse struct {
-	*Plan
+	Plan     *Plan         `json:"plan"`
 	Entries  []EntryDetail `json:"entries"`
 	Progress *Progress     `json:"progress"`
 }
