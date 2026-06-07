@@ -1,179 +1,167 @@
-<!-- Header -->
-<section class="border-b border-zinc-800 bg-zinc-950">
-  <div class="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
-    <h1 class="font-display text-3xl font-bold text-balance text-zinc-100">
+<!-- Hero -->
+<section class="border-b border-border">
+  <div class="mx-auto max-w-3xl px-6 py-16">
+    <h1 class="font-display text-4xl font-bold tracking-tight text-balance text-fg">
       Articles
     </h1>
-    <p class="mt-2 text-zinc-400">
-      Exploring the latest tech trends and in-depth analysis
+    <p class="mt-3 font-serif text-lg leading-relaxed text-fg-muted">
+      Writing on system design, Go, and learning in public — let the work speak.
     </p>
   </div>
 </section>
 
-<section class="bg-zinc-950">
-  <div class="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
-    <!-- Filters -->
-    <div class="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center">
-      <!-- Search -->
+<section>
+  <div class="mx-auto max-w-3xl px-6 py-10">
+    <!-- Search -->
+    <div class="mb-8 flex items-center gap-3">
       <div
-        class="flex flex-1 items-center gap-2 rounded-sm border border-zinc-700 bg-zinc-900 px-3 py-2"
+        class="flex flex-1 items-center gap-2 rounded-sm border border-border bg-elevated px-3 py-2"
       >
-        <lucide-icon [img]="SearchIcon" [size]="16" class="text-zinc-500" />
+        <lucide-icon [img]="SearchIcon" [size]="16" class="text-fg-faint" />
         <input
           type="text"
-          placeholder="Search articles..."
+          placeholder="Search articles…"
           aria-label="Search articles"
-          class="flex-1 bg-transparent text-sm text-zinc-100 outline-hidden placeholder:text-zinc-500"
+          class="flex-1 bg-transparent text-sm text-fg outline-hidden placeholder:text-fg-faint"
           [value]="searchQuery()"
           (input)="onSearchChange($event)"
         />
       </div>
-
       @if (hasFilters()) {
-      <button
-        type="button"
-        class="flex items-center gap-1 rounded-sm border border-red-900 px-3 py-2 text-sm text-red-400 transition-colors hover:bg-red-900/20"
-        (click)="clearFilters()"
-      >
-        <lucide-icon [img]="XIcon" [size]="14" />
-        Clear filters
-      </button>
+        <button
+          type="button"
+          class="flex items-center gap-1 rounded-sm border border-border px-3 py-2 text-sm text-fg-muted transition-colors hover:text-fg"
+          (click)="clearFilters()"
+        >
+          <lucide-icon [img]="XIcon" [size]="14" />
+          Clear
+        </button>
       }
     </div>
 
-    <!-- Content -->
     @if (isLoading()) {
-    <div class="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
-      @for (_ of [1, 2, 3, 4, 5, 6]; track _) {
-      <app-skeleton variant="card" />
-      }
-    </div>
-    } @else {
-    <!-- Results Info -->
-    <div class="mb-6 text-sm text-zinc-500">
-      Found
-      <strong class="text-zinc-300">{{ totalArticles() }}</strong>
-      articles @if (hasFilters()) {
-      <span>(filtered)</span>
-      }
-    </div>
-
-    @if (articles().length > 0) {
-    <!-- Articles Grid -->
-    <div class="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
-      @for (article of articles(); track article.id) {
-      <a
-        [routerLink]="'/articles/' + article.slug"
-        class="group relative overflow-hidden rounded-sm border border-zinc-800 bg-zinc-900/50 no-underline transition-all duration-200 hover:-translate-y-1 hover:border-zinc-600 hover:shadow-lg hover:shadow-zinc-950/50"
-      >
-        <!-- Gradient accent line -->
-        <div
-          class="absolute inset-x-0 top-0 h-0.5 bg-linear-to-r from-zinc-600 via-zinc-400 to-zinc-600 opacity-0 transition-opacity duration-200 group-hover:opacity-100"
-        ></div>
-
-        <div class="p-6">
-          <!-- Tags (top) -->
-          <div class="mb-3 flex flex-wrap gap-1.5">
-            @for (tag of article.tags; track tag) {
-            <span
-              class="rounded-sm bg-zinc-800 px-2 py-0.5 text-xs text-zinc-400"
-            >
-              {{ tag }}
-            </span>
-            }
-          </div>
-
-          <!-- Title -->
-          <h2
-            class="mb-2 text-lg font-semibold text-zinc-100 group-hover:text-white"
-          >
-            {{ article.title }}
-          </h2>
-
-          <!-- Excerpt -->
-          <p class="mb-4 line-clamp-2 text-sm leading-relaxed text-zinc-400">
-            {{ article.excerpt }}
-          </p>
-        </div>
-
-        <!-- Meta row -->
-        <div
-          class="flex items-center gap-4 border-t border-zinc-800/60 px-6 py-3 text-xs text-zinc-500"
-        >
-          <span class="flex items-center gap-1">
-            <lucide-icon [img]="CalendarIcon" [size]="12" />
-            {{ article.published_at | date: 'MMM d, yyyy' }}
-          </span>
-          <span class="flex items-center gap-1">
-            <lucide-icon [img]="ClockIcon" [size]="12" />
-            {{ article.reading_time_min }} min
-          </span>
-        </div>
-      </a>
-      }
-    </div>
-
-    <!-- Pagination -->
-    @let cp = currentPage(); @let tp = totalPages(); @if (tp > 1) {
-    <nav aria-label="Pagination" class="mt-12 flex flex-col items-center gap-4">
-      <div class="flex items-center gap-2">
-        <button
-          type="button"
-          class="rounded-sm p-2 text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-200 focus-visible:ring-2 focus-visible:ring-zinc-400 focus-visible:outline-hidden disabled:opacity-30"
-          [disabled]="cp === 1"
-          (click)="onPageChange(cp - 1)"
-          aria-label="Previous page"
-        >
-          <lucide-icon [img]="ChevronLeftIcon" [size]="16" />
-        </button>
-
-        @for (page of pageArray(); track page) {
-        <button
-          type="button"
-          class="rounded-sm px-3 py-1 text-sm transition-colors focus-visible:ring-2 focus-visible:ring-zinc-400 focus-visible:outline-hidden"
-          [class]="
-                    cp === page
-                      ? 'bg-zinc-700 text-white'
-                      : 'text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200'
-                  "
-          (click)="onPageChange(page)"
-          [attr.aria-current]="cp === page ? 'page' : null"
-          [attr.aria-label]="'Page ' + page"
-        >
-          {{ page }}
-        </button>
+      <div class="flex flex-col gap-4">
+        @for (_ of [1, 2, 3, 4, 5]; track _) {
+          <app-skeleton variant="card" />
         }
-
-        <button
-          type="button"
-          class="rounded-sm p-2 text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-200 focus-visible:ring-2 focus-visible:ring-zinc-400 focus-visible:outline-hidden disabled:opacity-30"
-          [disabled]="cp === tp"
-          (click)="onPageChange(cp + 1)"
-          aria-label="Next page"
-        >
-          <lucide-icon [img]="ChevronRightIcon" [size]="16" />
-        </button>
       </div>
-      <div class="text-xs text-zinc-500">Page {{ cp }} of {{ tp }}</div>
-    </nav>
-    } } @else {
-    <!-- Empty State -->
-    <div class="flex flex-col items-center gap-4 py-20 text-center">
-      <lucide-icon [img]="FileTextIcon" [size]="48" class="text-zinc-700" />
-      <h2 class="text-lg font-medium text-zinc-300">No articles found</h2>
-      <p class="text-sm text-zinc-500">
-        Try adjusting your search or clearing filters
-      </p>
-      @if (hasFilters()) {
-      <button
-        type="button"
-        class="rounded-sm bg-zinc-800 px-4 py-2 text-sm text-zinc-300 transition-colors hover:bg-zinc-700"
-        (click)="clearFilters()"
-      >
-        Clear all filters
-      </button>
+    } @else {
+      <div class="mb-6 font-mono text-[11px] text-fg-faint">
+        {{ totalArticles() }}
+        {{ totalArticles() === 1 ? 'article' : 'articles' }}
+        @if (hasFilters()) {
+          <span>· filtered</span>
+        }
+      </div>
+
+      @if (articles().length > 0) {
+        <!-- Editorial list -->
+        <ul class="divide-y divide-border-faint border-t border-border-faint">
+          @for (article of articles(); track article.id) {
+            <li>
+              <a
+                [routerLink]="'/articles/' + article.slug"
+                class="group block py-5 no-underline"
+              >
+                <div
+                  class="flex flex-wrap items-center gap-2 font-mono text-[11px] text-fg-faint"
+                >
+                  <span
+                    class="size-1.5 rounded-full"
+                    [style.background]="'var(--dot-' + article.type + ')'"
+                    aria-hidden="true"
+                  ></span>
+                  <span>{{ article.type }}</span>
+                  @if (article.published_at) {
+                    <span aria-hidden="true">·</span>
+                    <span>{{ article.published_at | date: 'MMM d, yyyy' }}</span>
+                  }
+                  <span aria-hidden="true">·</span>
+                  <span>{{ article.reading_time_min }} min</span>
+                </div>
+                <h2
+                  class="mt-1.5 font-display text-xl font-semibold text-fg transition-colors group-hover:text-brand"
+                >
+                  {{ article.title }}
+                </h2>
+                <p
+                  class="mt-1.5 line-clamp-2 font-serif text-[15px] leading-relaxed text-fg-muted"
+                >
+                  {{ article.excerpt }}
+                </p>
+              </a>
+            </li>
+          }
+        </ul>
+
+        <!-- Pagination -->
+        @let cp = currentPage();
+        @let tp = totalPages();
+        @if (tp > 1) {
+          <nav
+            aria-label="Pagination"
+            class="mt-12 flex flex-col items-center gap-4"
+          >
+            <div class="flex items-center gap-2">
+              <button
+                type="button"
+                class="rounded-sm p-2 text-fg-muted transition-colors hover:bg-overlay hover:text-fg disabled:opacity-30"
+                [disabled]="cp === 1"
+                (click)="onPageChange(cp - 1)"
+                aria-label="Previous page"
+              >
+                <lucide-icon [img]="ChevronLeftIcon" [size]="16" />
+              </button>
+
+              @for (page of pageArray(); track page) {
+                <button
+                  type="button"
+                  class="rounded-sm px-3 py-1 text-sm transition-colors"
+                  [class]="
+                    cp === page
+                      ? 'bg-brand-muted text-brand'
+                      : 'text-fg-muted hover:bg-overlay hover:text-fg'
+                  "
+                  (click)="onPageChange(page)"
+                  [attr.aria-current]="cp === page ? 'page' : null"
+                  [attr.aria-label]="'Page ' + page"
+                >
+                  {{ page }}
+                </button>
+              }
+
+              <button
+                type="button"
+                class="rounded-sm p-2 text-fg-muted transition-colors hover:bg-overlay hover:text-fg disabled:opacity-30"
+                [disabled]="cp === tp"
+                (click)="onPageChange(cp + 1)"
+                aria-label="Next page"
+              >
+                <lucide-icon [img]="ChevronRightIcon" [size]="16" />
+              </button>
+            </div>
+            <div class="font-mono text-[11px] text-fg-faint">
+              Page {{ cp }} of {{ tp }}
+            </div>
+          </nav>
+        }
+      } @else {
+        <!-- Empty state -->
+        <div class="flex flex-col items-center gap-4 py-20 text-center">
+          <lucide-icon [img]="FileTextIcon" [size]="40" class="text-fg-faint" />
+          <h2 class="text-lg font-medium text-fg-muted">No articles found</h2>
+          <p class="text-sm text-fg-faint">Try a different search.</p>
+          @if (hasFilters()) {
+            <button
+              type="button"
+              class="rounded-sm border border-border px-4 py-2 text-sm text-fg-muted transition-colors hover:text-fg"
+              (click)="clearFilters()"
+            >
+              Clear search
+            </button>
+          }
+        </div>
       }
-    </div>
-    } }
+    }
   </div>
 </section>

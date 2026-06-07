@@ -18,9 +18,6 @@ import {
   LucideAngularModule,
   Search,
   X,
-  Clock,
-  Calendar,
-  ArrowRight,
   ChevronLeft,
   ChevronRight,
   FileText,
@@ -90,9 +87,6 @@ export class ArticlesComponent implements OnInit {
 
   protected readonly SearchIcon = Search;
   protected readonly XIcon = X;
-  protected readonly ClockIcon = Clock;
-  protected readonly CalendarIcon = Calendar;
-  protected readonly ArrowRightIcon = ArrowRight;
   protected readonly ChevronLeftIcon = ChevronLeft;
   protected readonly ChevronRightIcon = ChevronRight;
   protected readonly FileTextIcon = FileText;
