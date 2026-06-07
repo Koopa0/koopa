@@ -85,8 +85,7 @@ func (s *Store) Contents(ctx context.Context, f Filter) ([]Content, int, error) 
 // handleSlugConflict renders SlugConflictError as a 409 with the existing
 // row's identity. Returns true when it handled the error.
 func handleSlugConflict(w http.ResponseWriter, err error) bool {
-	var se *SlugConflictError
-	if errors.As(err, &se) {
+	if se, ok := errors.AsType[*SlugConflictError](err); ok {
 		api.Encode(w, http.StatusConflict, slugConflictBody{
 			Error: slugConflictDetail{
 				Code:      "SLUG_CONFLICT",

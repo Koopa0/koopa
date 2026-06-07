@@ -164,8 +164,7 @@ func (s *Store) Create(ctx context.Context, p *CreateParams) (*Note, error) {
 		Metadata:  metaBytes,
 	})
 	if err != nil {
-		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == pgerrcode.UniqueViolation {
+		if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok && pgErr.Code == pgerrcode.UniqueViolation {
 			return nil, fmt.Errorf("%w: slug=%s", ErrConflict, p.Slug)
 		}
 		return nil, fmt.Errorf("inserting note: %w", err)
@@ -209,8 +208,7 @@ func (s *Store) Update(ctx context.Context, id uuid.UUID, p UpdateParams) (*Note
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrNotFound
 		}
-		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == pgerrcode.UniqueViolation {
+		if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok && pgErr.Code == pgerrcode.UniqueViolation {
 			return nil, fmt.Errorf("%w: slug", ErrConflict)
 		}
 		return nil, fmt.Errorf("updating note %s: %w", id, err)

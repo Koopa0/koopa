@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"slices"
-	"sort"
 	"time"
 	"unicode/utf8"
 
@@ -319,14 +318,14 @@ func rrfMerge(fts, sem []content.Content, limit int) []content.Content {
 	for id, sc := range scores {
 		ranked = append(ranked, scored{id: id, score: sc})
 	}
-	sort.Slice(ranked, func(i, j int) bool {
-		if ranked[i].score != ranked[j].score {
-			return ranked[i].score > ranked[j].score
+	slices.SortFunc(ranked, func(a, b scored) int {
+		if a.score != b.score {
+			return cmp.Compare(b.score, a.score) // higher score first
 		}
 		// Stable tiebreaker: prefer FTS winner (rank 1 in FTS beats
 		// rank 1 in semantic only when scores truly tie — negligible in
 		// practice but keeps output deterministic).
-		return ranked[i].id.String() < ranked[j].id.String()
+		return cmp.Compare(a.id.String(), b.id.String())
 	})
 
 	if len(ranked) > limit {

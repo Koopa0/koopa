@@ -12,8 +12,9 @@
 package ops
 
 import (
+	"cmp"
 	"fmt"
-	"sort"
+	"slices"
 	"strings"
 )
 
@@ -63,11 +64,11 @@ func RenderToolInventory() string {
 
 	rows := make([]Meta, len(tools))
 	copy(rows, tools)
-	sort.SliceStable(rows, func(i, j int) bool {
-		if ri, rj := domainRank(rows[i].Domain), domainRank(rows[j].Domain); ri != rj {
-			return ri < rj
+	slices.SortStableFunc(rows, func(a, b Meta) int {
+		if ri, rj := domainRank(a.Domain), domainRank(b.Domain); ri != rj {
+			return cmp.Compare(ri, rj)
 		}
-		return rows[i].Name < rows[j].Name
+		return cmp.Compare(a.Name, b.Name)
 	})
 
 	var b strings.Builder

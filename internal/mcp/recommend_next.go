@@ -3,11 +3,12 @@
 package mcp
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"sort"
+	"slices"
 	"time"
 
 	"github.com/google/uuid"
@@ -528,20 +529,18 @@ func shouldSkipForInterleaving(ctx context.Context, s *Server, anchorID uuid.UUI
 // similar_structure). Stable sort so the insertion order of weaknesses
 // is preserved within ties.
 func rankCandidates(candidates []Candidate) {
-	sort.SliceStable(candidates, func(i, j int) bool {
-		si := severityRank[candidates[i].SourceSeverity]
-		sj := severityRank[candidates[j].SourceSeverity]
-		if candidates[i].SourceSeverity == "" {
+	slices.SortStableFunc(candidates, func(a, b Candidate) int {
+		si := severityRank[a.SourceSeverity]
+		if a.SourceSeverity == "" {
 			si = len(severityRank)
 		}
-		if candidates[j].SourceSeverity == "" {
+		sj := severityRank[b.SourceSeverity]
+		if b.SourceSeverity == "" {
 			sj = len(severityRank)
 		}
 		if si != sj {
-			return si < sj
+			return cmp.Compare(si, sj)
 		}
-		ri := recommendAllowedRelations[candidates[i].RelationType]
-		rj := recommendAllowedRelations[candidates[j].RelationType]
-		return ri < rj
+		return cmp.Compare(recommendAllowedRelations[a.RelationType], recommendAllowedRelations[b.RelationType])
 	})
 }
