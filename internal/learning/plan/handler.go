@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"math"
 	"net/http"
 	"time"
 
@@ -244,7 +245,7 @@ func (h *Handler) AddEntries(w http.ResponseWriter, r *http.Request) {
 		api.HandleError(w, h.logger, err, storeErrors...)
 		return
 	}
-	if len(existing) > int(^int32(0))-len(req.Entries) {
+	if len(existing) > math.MaxInt32-len(req.Entries) {
 		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "plan already has too many entries")
 		return
 	}
