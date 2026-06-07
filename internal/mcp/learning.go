@@ -341,7 +341,7 @@ func (s *Server) prepareAttempt(ctx context.Context, input *RecordAttemptInput) 
 	// rules in processRelatedTargets; this guard is for the primary target.
 	domain := session.Domain
 	if input.Target.Domain != nil && *input.Target.Domain != "" && *input.Target.Domain != session.Domain {
-		return attemptPrep{}, fmt.Errorf("%w: target.domain %q does not match active session domain %q; the primary attempt target inherits the session's domain (omit target.domain, or pass the session's domain). For cross-domain isomorphism use propose_hypothesis", learning.ErrInvalidInput, *input.Target.Domain, session.Domain)
+		return attemptPrep{}, fmt.Errorf("%w: target.domain %q does not match active session domain %q; the primary attempt target inherits the session's domain (omit target.domain, or pass the session's domain). A genuine cross-domain connection is a hypothesis for Koopa to record in the admin UI, not an attempt target", learning.ErrInvalidInput, *input.Target.Domain, session.Domain)
 	}
 	itemID, err := s.learn.FindOrCreateTarget(ctx, domain, input.Target.Title, input.Target.ExternalID, input.Target.Difficulty, s.callerIdentity(ctx))
 	if err != nil {
@@ -436,7 +436,7 @@ func (s *Server) processRelatedTargets(ctx context.Context, sourceID uuid.UUID, 
 		// Cross-domain rejection moved to this layer — source domain is already
 		// in scope from prepareAttempt, no DB lookup needed.
 		if ri.Domain != nil && *ri.Domain != "" && *ri.Domain != sourceDomain {
-			warnings = append(warnings, fmt.Sprintf("related_targets[%d] (%q): cross-domain relation rejected (source=%q, target=%q). learning_target_relations is intentionally per-domain — for cross-domain isomorphism, use propose_hypothesis (if the connection is falsifiable)", i, ri.Title, sourceDomain, *ri.Domain))
+			warnings = append(warnings, fmt.Sprintf("related_targets[%d] (%q): cross-domain relation rejected (source=%q, target=%q). learning_target_relations is intentionally per-domain — surface a falsifiable cross-domain connection to Koopa as a hypothesis (admin UI), not a target relation", i, ri.Title, sourceDomain, *ri.Domain))
 			continue
 		}
 		targetID, err := s.learn.FindOrCreateTarget(ctx, sourceDomain, ri.Title, ri.ExternalID, ri.Difficulty, caller)
