@@ -114,13 +114,13 @@ commitment as one area? (I recommend split — Daily is the everyday entry point
 
 ---
 
-## 5. Open owner decisions ✏️
+## 5. Owner decisions — RESOLVED (2026-06-07)
 
-1. **N1 — nav:** split Daily out of Commitment? (rec: yes)
-2. **N2 — admin-creation model (the crux):** does Koopa create goals/plans/todos **via these forms in the UI**, or are most created by agents and the UI is read-mostly + light edits? This sets how much form-building vs read-view-building.
-3. **N3 — GTD depth in v1:** ship the full GTD inbox+recurring+someday now, or start with today/plan + basic todo list and add recurring later?
-4. **N4 — scope/sequence:** which area first? (rec: **Daily + the W8 create forms** — highest daily value + the backend is ready.)
-5. **N5 — visual direction:** keep the current look, or take Claude Design's pass at a fresh visual language within the same component system?
+1. **N1 — nav:** ✅ **SPLIT** Daily into its own top-level area.
+2. **N2 — admin-creation model:** ✅ **both — but an architectural fact resolves it.** After the contraction, agents have **no MCP tool** to create the *high-commitment* entities — **goal, project, milestone, learning_plan (shell), learning_domain, hypothesis** (the `propose_*`/`commit` flow was removed; per ledger §2 these are **human-only via admin HTTP** — exactly why W8 shipped their POST endpoints). So the UI create **forms are mandatory, not optional — they are the *only* creation path for commitments.** Agents *can* still create **todo** (`capture_inbox`), **daily plan** (`plan_day`), **note** (`create_note`), **plan entries** (`manage_plan`) — for those, UI-create is convenience alongside the agent path. The UI is **not** read-mostly for commitments; it owns their creation. (Wanting agents to create commitments again = re-opening proposal-first → a new MCP surface, not a frontend change.)
+3. **N3 — GTD depth:** ✅ **do all** — Inbox, Today, Pending, Someday, Recurring, History.
+4. **N4 — sequence:** ✅ **do all**; suggested order: Daily + create-forms → Knowledge/Learning editors → System cleanup.
+5. **N5 — visual:** ✅ **fresh visual**, but as **one cohesive new design system applied uniformly to rebuilt AND kept pages** (tokens + the 9 components re-skinned; keep structure + dark-mode default). Not page-by-page divergence. See the prompt.
 
 ---
 

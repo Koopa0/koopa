@@ -16,14 +16,16 @@ power user's daily workflow: **information density, keyboard speed, fast scannin
 and low-friction capture/editing** over generic marketing polish. Output
 high-fidelity, production-intent prototypes — not mood boards.
 
-**Design-system source (read this first).** Adopt the EXISTING design language from
-the codebase at `frontend/` (Angular 21→22, SSR, Tailwind CSS v4, **dark mode is
-the default**). Reuse — do not reinvent — the shared component library in
-`frontend/src/app/shared/components`: `data-table`, `modal`, `form-field`,
-`page-header`, `badge`, `loading-spinner`, `empty-state`, `hero-canvas`. Pull
-colours, typography, spacing, and radii from the current Tailwind v4 theme. Every
-new screen must look like it already belongs to this app. If you propose a visual
-refresh, keep it within the same component system and tokens.
+**Design-system foundation + a FRESH visual (the owner wants a new look).** First read
+the codebase at `frontend/` to ingest the *structure*: the Angular component inventory
+(`shared/components`: `data-table`, `modal`, `form-field`, `page-header`, `badge`,
+`loading-spinner`, `empty-state`, `hero-canvas`), the SSR setup, Tailwind v4, and the
+**dark-mode-default** baseline. Then **propose ONE cohesive, fresh visual language** —
+new tokens (colour palette, type scale, spacing, radii, elevation) and a refreshed look
+for those same components — and apply it **uniformly across ALL screens, rebuilt and
+kept alike**, so the app reads as one consistent system, never half-old-half-new. Keep
+the components' structure/semantics and the dark-mode default; refresh the skin.
+Density and keyboard speed stay above decorative polish.
 
 **Tech constraints the visuals must respect (Angular v22).** Forms use **Signal
 Forms** (stable in v22) — design create/edit forms as reactive, inline-validated,
