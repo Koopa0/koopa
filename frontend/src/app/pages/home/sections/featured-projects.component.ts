@@ -11,6 +11,7 @@ import {
   PLATFORM_ID,
 } from '@angular/core';
 import { isPlatformBrowser } from '@angular/common';
+import { prefersReducedMotion } from '../../../shared/utils/motion';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
 import {
@@ -137,7 +138,10 @@ export class FeaturedProjectsComponent implements OnInit {
 
   constructor() {
     afterNextRender(() => {
-      this.ngZone.runOutsideAngular(() => this.initScrollAnimations());
+      // best-effort: a decorative animation must never surface as an unhandled error
+      this.ngZone.runOutsideAngular(
+        () => void this.initScrollAnimations().catch(() => undefined),
+      );
     });
   }
 
@@ -155,7 +159,7 @@ export class FeaturedProjectsComponent implements OnInit {
 
   private async initScrollAnimations(): Promise<void> {
     if (!isPlatformBrowser(this.platformId)) return;
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    if (prefersReducedMotion()) return;
 
     const { gsap, ScrollTrigger, registerGsapPlugins } = await import(
       '../../../shared/utils/gsap'

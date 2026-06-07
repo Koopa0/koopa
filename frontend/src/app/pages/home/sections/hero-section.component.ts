@@ -9,6 +9,7 @@ import {
   DestroyRef,
 } from '@angular/core';
 import { isPlatformBrowser } from '@angular/common';
+import { prefersReducedMotion } from '../../../shared/utils/motion';
 import { LucideAngularModule, Code2 } from 'lucide-angular';
 import { HeroCanvasComponent } from '../../../shared/components/hero-canvas/hero-canvas.component';
 
@@ -68,7 +69,10 @@ export class HeroSectionComponent {
 
   constructor() {
     afterNextRender(() => {
-      this.ngZone.runOutsideAngular(() => this.animateEntrance());
+      // best-effort: a decorative animation must never surface as an unhandled error
+      this.ngZone.runOutsideAngular(
+        () => void this.animateEntrance().catch(() => undefined),
+      );
     });
   }
 
@@ -80,9 +84,7 @@ export class HeroSectionComponent {
       '.hero-badge, .hero-title, .hero-subtitle',
     );
 
-    const prefersReduced = window.matchMedia(
-      '(prefers-reduced-motion: reduce)',
-    ).matches;
+    const prefersReduced = prefersReducedMotion();
     if (prefersReduced) {
       targets.forEach((el) =>
         (el as HTMLElement).classList.remove('motion-safe:opacity-0'),

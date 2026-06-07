@@ -10,6 +10,7 @@ import {
   viewChild,
 } from '@angular/core';
 import { isPlatformBrowser } from '@angular/common';
+import { prefersReducedMotion } from '../../utils/motion';
 
 // --- Aurora band configuration ---
 
@@ -102,10 +103,7 @@ export class HeroCanvasComponent {
       if (!isPlatformBrowser(this.platformId)) return;
 
       const cores = navigator.hardwareConcurrency ?? 4;
-      const prefersReduced = window.matchMedia(
-        '(prefers-reduced-motion: reduce)',
-      ).matches;
-      if (cores <= 2 || prefersReduced) return;
+      if (cores <= 2 || prefersReducedMotion()) return;
 
       this.ngZone.runOutsideAngular(() => this.init());
     });
