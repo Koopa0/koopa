@@ -1,0 +1,233 @@
+{
+  "plugins": [
+    "react",
+    "import"
+  ],
+  "rules": {
+    "react/forbid-elements": [
+      "warn",
+      {
+        "forbid": []
+      }
+    ],
+    "no-restricted-imports": [
+      "warn",
+      {
+        "patterns": [
+          {
+            "group": [
+              "ui_kits/public-site/**"
+            ],
+            "message": "Import design-system components from 'index.js', not component internals."
+          }
+        ]
+      }
+    ],
+    "no-restricted-syntax": [
+      "warn",
+      {
+        "selector": "Literal[value=/#[0-9a-fA-F]{3,8}\\b/]",
+        "message": "Raw hex color — use a design-system color token via var()."
+      },
+      {
+        "selector": "Literal[value=/\\b\\d+px\\b/]",
+        "message": "Raw px value — use a design-system spacing token via var()."
+      },
+      {
+        "selector": "Literal[value=/font-family\\s*:\\s*(?!['\\\"]?(?:Inter|Space Grotesk|IBM Plex Serif|JetBrains Mono))/i]",
+        "message": "Font not provided by the design system. Available: Inter, Space Grotesk, IBM Plex Serif, JetBrains Mono."
+      }
+    ]
+  },
+  "overrides": [
+    {
+      "files": [
+        "**/index.js"
+      ],
+      "rules": {
+        "no-restricted-imports": "off"
+      }
+    }
+  ],
+  "x-omelette": {
+    "components": {},
+    "tokens": [
+      "--bg",
+      "--border",
+      "--border-faint",
+      "--border-strong",
+      "--brand",
+      "--brand-faint",
+      "--brand-muted",
+      "--brand-strong",
+      "--container",
+      "--dot-article",
+      "--dot-bookmark",
+      "--dot-build-log",
+      "--dot-digest",
+      "--dot-essay",
+      "--dot-note",
+      "--dot-til",
+      "--dur-base",
+      "--dur-fast",
+      "--dur-slow",
+      "--ease-standard",
+      "--elevated",
+      "--error",
+      "--error-bg",
+      "--fg",
+      "--fg-faint",
+      "--fg-muted",
+      "--fg-subtle",
+      "--font-display",
+      "--font-mono",
+      "--font-sans",
+      "--font-serif",
+      "--fs-11",
+      "--fs-12",
+      "--fs-13",
+      "--fs-14",
+      "--fs-16",
+      "--fs-18",
+      "--fs-ed-17",
+      "--fs-ed-20",
+      "--fs-ed-24",
+      "--fs-ed-30",
+      "--fs-ed-38",
+      "--fs-ed-48",
+      "--fw-bold",
+      "--fw-medium",
+      "--fw-regular",
+      "--fw-semibold",
+      "--info",
+      "--info-bg",
+      "--lh-normal",
+      "--lh-read",
+      "--lh-snug",
+      "--lh-tight",
+      "--measure-admin-prose",
+      "--measure-article",
+      "--overlay",
+      "--panel",
+      "--r-full",
+      "--r-lg",
+      "--r-md",
+      "--r-sm",
+      "--s-0",
+      "--s-12",
+      "--s-16",
+      "--s-2",
+      "--s-20",
+      "--s-24",
+      "--s-32",
+      "--s-4",
+      "--s-40",
+      "--s-56",
+      "--s-6",
+      "--s-8",
+      "--s-80",
+      "--shadow-1",
+      "--shadow-2",
+      "--success",
+      "--success-bg",
+      "--track-normal",
+      "--track-snug",
+      "--track-tight",
+      "--track-wide",
+      "--warn",
+      "--warn-bg"
+    ],
+    "tokenKinds": {
+      "--brand": "color",
+      "--brand-strong": "color",
+      "--brand-muted": "color",
+      "--brand-faint": "color",
+      "--bg": "color",
+      "--panel": "color",
+      "--elevated": "color",
+      "--overlay": "color",
+      "--fg": "color",
+      "--fg-muted": "color",
+      "--fg-subtle": "color",
+      "--fg-faint": "color",
+      "--border": "color",
+      "--border-strong": "color",
+      "--border-faint": "color",
+      "--success": "color",
+      "--success-bg": "color",
+      "--warn": "color",
+      "--warn-bg": "color",
+      "--error": "color",
+      "--error-bg": "color",
+      "--info": "color",
+      "--info-bg": "color",
+      "--dot-article": "color",
+      "--dot-essay": "color",
+      "--dot-build-log": "color",
+      "--dot-til": "color",
+      "--dot-note": "color",
+      "--dot-bookmark": "color",
+      "--dot-digest": "color",
+      "--shadow-1": "shadow",
+      "--shadow-2": "shadow",
+      "--font-display": "font",
+      "--font-sans": "font",
+      "--font-serif": "font",
+      "--font-mono": "font",
+      "--fs-11": "spacing",
+      "--fs-12": "spacing",
+      "--fs-13": "spacing",
+      "--fs-14": "spacing",
+      "--fs-16": "spacing",
+      "--fs-18": "spacing",
+      "--fs-ed-17": "spacing",
+      "--fs-ed-20": "spacing",
+      "--fs-ed-24": "spacing",
+      "--fs-ed-30": "spacing",
+      "--fs-ed-38": "spacing",
+      "--fs-ed-48": "spacing",
+      "--lh-tight": "other",
+      "--lh-snug": "other",
+      "--lh-normal": "other",
+      "--lh-read": "other",
+      "--fw-regular": "other",
+      "--fw-medium": "other",
+      "--fw-semibold": "other",
+      "--fw-bold": "other",
+      "--track-tight": "spacing",
+      "--track-snug": "spacing",
+      "--track-normal": "spacing",
+      "--track-wide": "spacing",
+      "--s-0": "other",
+      "--s-2": "spacing",
+      "--s-4": "spacing",
+      "--s-6": "spacing",
+      "--s-8": "spacing",
+      "--s-12": "spacing",
+      "--s-16": "spacing",
+      "--s-20": "spacing",
+      "--s-24": "spacing",
+      "--s-32": "spacing",
+      "--s-40": "spacing",
+      "--s-56": "spacing",
+      "--s-80": "spacing",
+      "--r-sm": "spacing",
+      "--r-md": "spacing",
+      "--r-lg": "spacing",
+      "--r-full": "spacing",
+      "--measure-article": "spacing",
+      "--measure-admin-prose": "spacing",
+      "--container": "spacing",
+      "--ease-standard": "other",
+      "--dur-fast": "other",
+      "--dur-base": "other",
+      "--dur-slow": "other"
+    },
+    "fontFamilies": [
+      "IBM Plex Serif",
+      "Inter",
+      "JetBrains Mono",
+      "Space Grotesk"
+    ]
+  }
+}

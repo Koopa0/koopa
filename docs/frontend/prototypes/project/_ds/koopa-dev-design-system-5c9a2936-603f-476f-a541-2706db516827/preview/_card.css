@@ -1,0 +1,12 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Serif:ital,wght@0,400;0,500;1,400&family=JetBrains+Mono:wght@400;500;600&display=swap');
+@import url('../colors_and_type.css');
+
+html, body { margin:0; padding:0; background:var(--bg); color:var(--fg); font-family: var(--font-sans); }
+.card {
+  padding: 20px 24px;
+  box-sizing: border-box;
+  min-height: 100vh;
+}
+.row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+.col { display: flex; flex-direction: column; gap: 8px; }
+.label { font-size: var(--fs-11); color: var(--fg-subtle); letter-spacing: 0.06em; text-transform: uppercase; font-family: var(--font-sans); }

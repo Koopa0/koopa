@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>koopa.admin</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Serif:ital,wght@0,400;1,400&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="assets/koopa-tokens.css" />
+<link rel="stylesheet" href="assets/koopa-admin-kit.css" />
+<link rel="stylesheet" href="assets/koopa-screens.css?v=7" />
+<style>
+  /* admin kit forces body{overflow:hidden}; keep that but allow inner scroll */
+  html, body { height: 100%; }
+  #root { flex: 1; display: flex; height: 100vh; min-width: 0; }
+  input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(0.7); cursor: pointer; }
+</style>
+</head>
+<body class="grain" data-screen-label="koopa.admin">
+<div id="root"></div>
+
+<template id="__bundler_thumbnail">
+  <svg viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
+    <rect width="48" height="48" rx="10" fill="#16181d" />
+    <path d="M24 11 35 17.4v12.8L24 36.6 13 30.2V17.4z" fill="none" stroke="#2BB6C4" stroke-width="2.2" stroke-linejoin="round" />
+    <circle cx="24" cy="23.8" r="3.4" fill="#2BB6C4" />
+  </svg>
+</template>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<script src="app/data.js"></script>
+<script type="text/babel" data-presets="react" src="app/tweaks-panel.jsx"></script>
+<script type="text/babel" data-presets="react" src="app/components.jsx"></script>
+<script type="text/babel" data-presets="react" src="app/screens.jsx"></script>
+<script type="text/babel" data-presets="react" src="app/screens2.jsx"></script>
+<script type="text/babel" data-presets="react" src="app/screens3.jsx"></script>
+<script type="text/babel" data-presets="react" src="app/screens4.jsx?v=1"></script>
+<script type="text/babel" data-presets="react" src="app/screens5.jsx"></script>
+<script type="text/babel" data-presets="react" src="app/main.jsx"></script>
+</body>
+</html>
