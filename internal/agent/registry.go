@@ -11,9 +11,9 @@ import (
 // add, remove, or modify an agent — the startup sync reconciles the DB on
 // next restart.
 //
-// Capability and schedule flags live on agent.Agent in the Go registry, NOT
-// in the DB — authorization is enforced via agent.Authorized (compile-time
-// wrapper in authorize.go).
+// Schedule definitions live on agent.Agent in the Go registry, not in the
+// DB. The agents table is an identity projection only (name, platform,
+// status).
 func BuiltinAgents() []Agent {
 	return []Agent{
 		{
@@ -21,11 +21,6 @@ func BuiltinAgents() []Agent {
 			DisplayName: "Studio HQ",
 			Platform:    "claude-cowork",
 			Description: "CEO — decisions, delegation, morning briefing",
-			Capability: Capability{
-				SubmitTasks:      true,
-				ReceiveTasks:     false,
-				PublishArtifacts: true,
-			},
 			Schedule: Schedule{
 				Name:    "morning-briefing",
 				Trigger: TriggerCron,
@@ -39,11 +34,6 @@ func BuiltinAgents() []Agent {
 			DisplayName: "Content Studio",
 			Platform:    "claude-cowork",
 			Description: "Content strategy, writing, publishing",
-			Capability: Capability{
-				SubmitTasks:      true,
-				ReceiveTasks:     true,
-				PublishArtifacts: true,
-			},
 			Schedule: Schedule{
 				Name:    "pipeline-check",
 				Trigger: TriggerCron,
@@ -57,11 +47,6 @@ func BuiltinAgents() []Agent {
 			DisplayName: "Research Lab",
 			Platform:    "claude-cowork",
 			Description: "Deep research, structured reports",
-			Capability: Capability{
-				SubmitTasks:      true,
-				ReceiveTasks:     true,
-				PublishArtifacts: true,
-			},
 			Schedule: Schedule{
 				Name:    "industry-scan",
 				Trigger: TriggerCron,
@@ -75,41 +60,30 @@ func BuiltinAgents() []Agent {
 			DisplayName: "Learning Studio",
 			Platform:    "claude-cowork",
 			Description: "LeetCode coaching, spaced repetition",
-			Capability: Capability{
-				SubmitTasks:      false,
-				ReceiveTasks:     true,
-				PublishArtifacts: true,
-			},
 		},
 		{
 			Name:        "koopa0-dev",
 			DisplayName: "koopa",
 			Platform:    "claude-code",
 			Description: "koopa development project",
-			Capability:  Capability{},
 		},
 		{
 			Name:        "go-spec",
 			DisplayName: "go-spec",
 			Platform:    "claude-code",
 			Description: "Go spec configuration project",
-			Capability:  Capability{},
 		},
 		{
 			Name:        "claude",
 			DisplayName: "Claude",
 			Platform:    "claude-web",
 			Description: "General Claude Web session",
-			Capability:  Capability{},
 		},
 		{
 			Name:        "human",
 			DisplayName: "Koopa",
 			Platform:    "human",
 			Description: "Direct manual operation by the user",
-			Capability: Capability{
-				SubmitTasks: true,
-			},
 		},
 		{
 			// The audit trigger current_actor() falls back to the literal
@@ -123,17 +97,15 @@ func BuiltinAgents() []Agent {
 			DisplayName: "System",
 			Platform:    "system",
 			Description: "Database-level writes without Go caller context — pg_cron jobs, manual ops, or fallback when koopa.actor is unset",
-			Capability:  Capability{},
 		},
 		{
 			// Zero-privilege fallback for MCP calls that omit the `as`
 			// field. Lives at the SERVER default (server.go callerAgent
 			// + cmd/mcp KOOPA_MCP_CALLER_AGENT default) so a caller that
 			// forgot to identify itself cannot inherit human or any
-			// cowork-agent privileges through the env-var backdoor. Has
-			// no Capability flags (so coordination mutations refuse it
-			// via agent.Authorize) and Platform != "human" (so
-			// requireExplicitHuman refuses it). Distinct from "system":
+			// cowork-agent privileges through the env-var backdoor.
+			// Platform != "human", so requireRegisteredCaller and
+			// requireAuthor both refuse it. Distinct from "system":
 			// "system" attributes DB-level writes that bypass the Go
 			// actor middleware; "unknown" attributes MCP calls whose
 			// Go middleware DID run but received no identity. Surfacing
@@ -144,7 +116,6 @@ func BuiltinAgents() []Agent {
 			DisplayName: "Unknown caller",
 			Platform:    "system",
 			Description: "Zero-privilege fallback for MCP calls without an `as` field. Real agents MUST self-identify per project instructions — surfacing 'unknown' as actor signals a client that forgot to pass `as`.",
-			Capability:  Capability{},
 		},
 	}
 }

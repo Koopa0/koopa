@@ -17,9 +17,9 @@ import (
 
 // newTestServer creates a Server with no stores — only useful for validation
 // tests that fail before any DB call. The default caller is "human" so the
-// authorization helpers in authz.go (requireAuthor, requireExplicitHuman) do
-// not gate validation paths from running. Tests that need a non-human caller
-// override callerAgent or pass `as` via context.
+// authorization helpers in authz.go (requireAuthor, requireRegisteredCaller)
+// do not gate validation paths from running. Tests that need a non-human
+// caller override callerAgent or pass `as` via context.
 func newTestServer() *Server {
 	return &Server{
 		logger:      slog.Default(),

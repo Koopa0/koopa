@@ -49,9 +49,10 @@ type Server struct {
 	goals      *goal.Store
 	hypotheses *hypothesis.Store
 
-	// Agent registry — source of truth for capability enforcement via
-	// agent.Authorize. Wired in from cmd/app/main.go so the CLI and tests
-	// can inject custom rosters when needed.
+	// Agent registry — source of truth for caller identity resolution and
+	// the requireAuthor / requireRegisteredCaller gates. Wired in from
+	// cmd/app/main.go so the CLI and tests can inject custom rosters when
+	// needed.
 	registry *agent.Registry
 
 	// Learning domain
@@ -153,9 +154,8 @@ func NewServer(pool *pgxpool.Pool, logger *slog.Logger, opts ...ServerOption) *S
 		// the option lands on "unknown" — by design, so a caller that omits
 		// `as` cannot inherit any cowork-agent or human privileges through
 		// the server default. The unknown agent is registered in
-		// agent.BuiltinAgents() with zero Capability and Platform=system so
-		// every gate (requireExplicitHuman, requireAuthor, agent.Authorize)
-		// refuses it.
+		// agent.BuiltinAgents() with Platform=system so the mutating-tool
+		// gates (requireAuthor, requireRegisteredCaller) refuse it.
 		callerAgent: "unknown",
 		loc:         time.UTC,
 	}
@@ -264,20 +264,6 @@ func (s *Server) callerIdentity(ctx context.Context) string {
 		return v
 	}
 	return s.callerAgent
-}
-
-// ExplicitCallerIdentity reports whether the caller supplied an explicit `as`
-// field on the MCP request and returns the resolved identity. Returns
-// (false, "") when the caller omitted `as` and fell through to the server
-// default (s.callerAgent). Handlers that gate on identity (e.g.
-// publish_content, which is human-only) MUST use this — callerIdentity
-// alone cannot distinguish "explicitly identified as human" from "server
-// default happened to be 'human'".
-func (s *Server) ExplicitCallerIdentity(ctx context.Context) (explicit bool, name string) {
-	if v, ok := ctx.Value(callerKey{}).(string); ok && v != "" {
-		return true, v
-	}
-	return false, ""
 }
 
 type callerKey struct{}

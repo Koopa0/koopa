@@ -527,7 +527,7 @@ type ActivityEvent struct {
 	CreatedAt time.Time       `json:"created_at"`
 }
 
-// DB projection of the Go BuiltinAgents() registry. Rows are upserted at startup by agent.SyncToTable. Capability flags are NOT stored here — authorization is enforced in Go via the agent.Authorized compile-time wrapper. FK targets for coordination references (learning_hypotheses) use ON DELETE RESTRICT so historical records cannot dangle. Removed registry entries transition to status=retired rather than being deleted.
+// DB projection of the Go BuiltinAgents() registry. Rows are upserted at startup by agent.SyncToTable. Stores identity only (name, platform, status). FK targets for coordination references (learning_hypotheses) use ON DELETE RESTRICT so historical records cannot dangle. Removed registry entries transition to status=retired rather than being deleted.
 type Agent struct {
 	// Unique agent identifier. Used as the caller identity (as: field) in MCP tool calls and as FK target for created_by / assignee / curated_by columns. Format: lowercase, must start with a letter, alphanumeric + hyphens.
 	Name string `json:"name"`

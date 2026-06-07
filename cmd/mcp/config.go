@@ -44,8 +44,8 @@ func loadConfig(logger *slog.Logger) config {
 	// Default caller agent: "unknown" — fail-closed. Each Cowork project's
 	// instructions tell the AI to pass as: "hq" (or its real agent name)
 	// in every tool call. A client that forgets ends up attributed to the
-	// zero-privilege "unknown" agent, which agent.Authorize / requireAuthor
-	// / requireExplicitHuman all refuse. Override only when the deployment
+	// zero-privilege "unknown" agent, which requireAuthor /
+	// requireRegisteredCaller both refuse. Override only when the deployment
 	// genuinely has a single legitimate default (e.g. a personal-use
 	// deploy where all calls are from Koopa) — pin to "human" explicitly
 	// in that case rather than relying on the prior implicit default.

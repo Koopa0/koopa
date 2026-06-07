@@ -108,8 +108,9 @@ func run(logger *slog.Logger) error {
 	// Agent registry — reconcile the Go BuiltinAgents() literal with the
 	// agents table before any HTTP traffic. Missing literal entries are
 	// retired (status=retired), new ones are inserted as active. Failure
-	// here is fatal: an empty or stale agents table means Authorize() cannot
-	// resolve callers, so every MCP coordination tool would reject traffic.
+	// here is fatal: an empty or stale agents table means the caller-identity
+	// gates cannot resolve callers, so every gated MCP tool would reject
+	// traffic and audit-row FKs to agents.name would not resolve.
 	agentRegistry := agent.NewBuiltinRegistry()
 	agentStore := agent.NewStore(pool)
 	syncCtx, syncCancel := context.WithTimeout(ctx, agentSyncTimeout)

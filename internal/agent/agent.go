@@ -1,22 +1,21 @@
 // Copyright 2026 Koopa. All rights reserved.
 
 // Package agent is the single source of truth for the koopa agent
-// registry, the compile-time capability gate, and the startup-time projection
-// into the agents table.
+// registry and the startup-time projection into the agents table.
 //
 // Agents are defined as a Go literal in BuiltinAgents() — there is no
 // configuration file, database seed, or admin UI. Modifying the agent roster
 // is a code change that goes through the normal review + rebuild cycle.
-//
-// Capability enforcement uses the Authorized compile-time wrapper defined in
-// authorize.go. External packages cannot construct an Authorized value —
-// the only path is agent.Authorize(). The internal/agent/task and
-// internal/agent/artifact packages accept Authorized as a parameter on
-// every mutation method, so bypassing the check fails at compile time,
-// not at runtime.
 package agent
 
-import "time"
+import (
+	"errors"
+	"time"
+)
+
+// ErrUnknownAgent means the caller name is not present in the registry or
+// the agents table.
+var ErrUnknownAgent = errors.New("agent: unknown agent")
 
 // Name is the unique identifier for an agent. Matches the Go literal in
 // BuiltinAgents() and the primary key in the agents table.
@@ -29,19 +28,6 @@ const (
 	StatusActive  Status = "active"
 	StatusRetired Status = "retired"
 )
-
-// Capability is the permission set granted to an agent. These are NOT A2A
-// feature flags (streaming/pushNotifications) — they are authorization bits
-// evaluated by Authorize() before every mutation on the coordination store.
-type Capability struct {
-	// SubmitTasks allows the agent to create new tasks targeted at other agents.
-	SubmitTasks bool
-	// ReceiveTasks allows the agent to be the target of a task and to accept it.
-	ReceiveTasks bool
-	// PublishArtifacts allows the agent to attach artifacts to tasks it has
-	// accepted and to file responses that complete a task.
-	PublishArtifacts bool
-}
 
 // TriggerKind identifies how an agent's schedule fires.
 type TriggerKind string
@@ -81,15 +67,14 @@ func (s Schedule) IsZero() bool {
 }
 
 // Agent is the complete in-process description of an agent. It carries its
-// own Capability and Schedule — there is no separate AgentCard type and no
-// Go-to-A2A adapter. If an A2A wire interop scenario materializes, an
-// adapter function is added at that point (see target doc §16.4).
+// own Schedule — there is no separate AgentCard type and no Go-to-A2A
+// adapter. If an A2A wire interop scenario materializes, an adapter
+// function is added at that point (see target doc §16.4).
 type Agent struct {
 	Name        Name
 	DisplayName string
 	Platform    string
 	Description string
-	Capability  Capability
 	Schedule    Schedule
 	// Status reflects the most recent DB projection. It is populated by
 	// Registry.SetStatus after agent.SyncToTable runs at startup. Lookups via

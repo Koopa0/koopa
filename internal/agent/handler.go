@@ -22,17 +22,12 @@ func NewHandler(registry *Registry, logger *slog.Logger) *Handler {
 
 // agentResponse is the JSON-serializable agent shape for the API.
 type agentResponse struct {
-	Name        Name   `json:"name"`
-	DisplayName string `json:"display_name"`
-	Platform    string `json:"platform"`
-	Description string `json:"description"`
-	Capability  struct {
-		SubmitTasks      bool `json:"submit_tasks"`
-		ReceiveTasks     bool `json:"receive_tasks"`
-		PublishArtifacts bool `json:"publish_artifacts"`
-	} `json:"capability"`
-	Schedule *scheduleResponse `json:"schedule,omitempty"`
-	Status   Status            `json:"status"`
+	Name        Name              `json:"name"`
+	DisplayName string            `json:"display_name"`
+	Platform    string            `json:"platform"`
+	Description string            `json:"description"`
+	Schedule    *scheduleResponse `json:"schedule,omitempty"`
+	Status      Status            `json:"status"`
 }
 
 type scheduleResponse struct {
@@ -51,9 +46,6 @@ func toAgentResponse(a *Agent) agentResponse {
 		Description: a.Description,
 		Status:      a.Status,
 	}
-	resp.Capability.SubmitTasks = a.Capability.SubmitTasks
-	resp.Capability.ReceiveTasks = a.Capability.ReceiveTasks
-	resp.Capability.PublishArtifacts = a.Capability.PublishArtifacts
 	if !a.Schedule.IsZero() {
 		resp.Schedule = &scheduleResponse{
 			Name:    a.Schedule.Name,

@@ -52,9 +52,9 @@ CREATE TYPE concept_kind AS ENUM (
 --
 -- Source of truth lives in Go: internal/agent/registry.go::BuiltinAgents().
 -- This table is a DB projection of that registry — rows are upserted at
--- application startup by internal/agent/sync.go::SyncToTable. Capability
--- flags are intentionally absent: authorization is enforced in Go via the
--- agent.Authorized compile-time wrapper type, not by DB columns.
+-- application startup by internal/agent/sync.go::SyncToTable. It stores
+-- identity only (name, platform, status); the registry carries any
+-- additional in-process metadata.
 --
 -- The table exists so that coordination entities (tasks, agent_notes,
 -- learning_hypotheses, bookmarks, etc.) can maintain referential integrity to a
@@ -84,7 +84,7 @@ CREATE TABLE agents (
     )
 );
 
-COMMENT ON TABLE agents IS 'DB projection of the Go BuiltinAgents() registry. Rows are upserted at startup by agent.SyncToTable. Capability flags are NOT stored here — authorization is enforced in Go via the agent.Authorized compile-time wrapper. FK targets for coordination references (learning_hypotheses) use ON DELETE RESTRICT so historical records cannot dangle. Removed registry entries transition to status=retired rather than being deleted.';
+COMMENT ON TABLE agents IS 'DB projection of the Go BuiltinAgents() registry. Rows are upserted at startup by agent.SyncToTable. Stores identity only (name, platform, status). FK targets for coordination references (learning_hypotheses) use ON DELETE RESTRICT so historical records cannot dangle. Removed registry entries transition to status=retired rather than being deleted.';
 COMMENT ON COLUMN agents.name IS 'Unique agent identifier. Used as the caller identity (as: field) in MCP tool calls and as FK target for created_by / assignee / curated_by columns. Format: lowercase, must start with a letter, alphanumeric + hyphens.';
 COMMENT ON COLUMN agents.display_name IS 'Human-readable label for admin UI and logs. Non-blank (chk_agent_display_name_not_blank).';
 COMMENT ON COLUMN agents.platform IS 'Execution context. Closed set: claude-cowork, claude-code, claude-web, human, system (chk_agent_platform). The system value is reserved for the database-level fallback agent registered by BuiltinAgents — it attributes writes that bypass the Go actor middleware (pg_cron, manual psql ops, bug safety net). Routing decisions are driven by agent registry lookups, not this column.';

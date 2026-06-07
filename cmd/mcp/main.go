@@ -51,8 +51,9 @@ func run(ctx context.Context, cfg *config, logger *slog.Logger) error {
 	defer pool.Close()
 
 	// Reconcile the Go agent registry against the agents table before
-	// any MCP traffic. Same rationale as cmd/app/main.go: Authorize()
-	// depends on the in-memory registry reflecting DB retirement state.
+	// any MCP traffic. Same rationale as cmd/app/main.go: the
+	// caller-identity gates depend on the in-memory registry reflecting
+	// DB retirement state.
 	agentRegistry := agent.NewBuiltinRegistry()
 	agentStore := agent.NewStore(pool)
 	syncCtx, syncCancel := context.WithTimeout(ctx, agentSyncTimeout)

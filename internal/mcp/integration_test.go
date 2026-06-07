@@ -774,9 +774,9 @@ func TestIntegration_UpdateEntry_AlignsAttemptToTarget(t *testing.T) {
 
 // callHandlerAs invokes the handler with an explicit caller identity in
 // context, simulating an MCP request that included `as: "<agent>"`.
-// Required for handlers gated on requireExplicitHuman (publish_content,
-// commit_proposal of high-commitment types) — callHandler alone falls
-// through to the server default and the gate refuses.
+// Required for handlers gated on requireAuthor / requireRegisteredCaller —
+// callHandler alone falls through to the zero-privilege server default and
+// the gate refuses.
 func callHandlerAs[I, O any](t *testing.T, as string, handler func(context.Context, *mcp.CallToolRequest, I) (*mcp.CallToolResult, O, error), input I) (*mcp.CallToolResult, O, error) {
 	t.Helper()
 	ctx := context.WithValue(t.Context(), callerKey{}, as)

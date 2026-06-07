@@ -33,8 +33,8 @@ type SyncResult struct {
 //  2. Every DB row whose name is not in the registry is transitioned to
 //     retired (if not already).
 //  3. The registry's in-memory Status field is updated for any entry that
-//     the DB reports as retired, so Authorize() picks up retirement without
-//     requiring a live DB lookup on every call.
+//     the DB reports as retired, so registry lookups pick up retirement
+//     without requiring a live DB lookup on every call.
 //
 // The function takes a context with a short timeout so a slow or unresponsive
 // DB does not hang startup indefinitely — the caller is expected to provide
@@ -172,7 +172,7 @@ func retireAbsent(ctx context.Context, store *Store, registeredNames map[Name]st
 }
 
 // propagateStatusBack re-lists and copies DB retirement state into the
-// in-memory registry so Authorize() does not need a live DB lookup.
+// in-memory registry so callers do not need a live DB lookup.
 func propagateStatusBack(ctx context.Context, store *Store, r *Registry, registeredNames map[Name]struct{}, logger *slog.Logger) error {
 	rows, err := store.List(ctx)
 	if err != nil {

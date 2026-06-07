@@ -10,8 +10,8 @@
 // before any store write happens.
 //
 // The gate is requireRegisteredCaller (authz.go). It reuses the existing
-// registry — the same one requireAuthor / requireExplicitHuman /
-// agent.Authorize already consult — and refuses two callers:
+// registry — the same one requireAuthor already consults — and refuses two
+// callers:
 //
 //   - an `as` value naming no registry row (e.g. "not-a-registered-agent");
 //   - the zero-privilege "unknown" sentinel, which is the server default
