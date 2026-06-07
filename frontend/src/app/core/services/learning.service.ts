@@ -43,6 +43,16 @@ export interface SessionsListQuery {
   sort?: 'started_at';
 }
 
+export interface Domain {
+  slug: string;
+  name: string;
+}
+
+export interface DomainCreateRequest {
+  slug: string;
+  name: string;
+}
+
 /** Learning-domain reads: summary, dashboard, concepts, sessions, plans. */
 @Injectable({ providedIn: 'root' })
 export class LearningService {
@@ -152,4 +162,11 @@ export class LearningService {
     );
   }
 
+  getDomains(): Observable<Domain[]> {
+    return this.api.getData<Domain[]>('/api/admin/learning/domains');
+  }
+
+  createDomain(body: DomainCreateRequest): Observable<Domain> {
+    return this.api.postData<Domain>('/api/admin/learning/domains', body);
+  }
 }

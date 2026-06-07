@@ -6,6 +6,7 @@ import {
   Compass,
   FileText,
   Home,
+  Layers,
   Rss,
   StickyNote,
   Target,
@@ -123,6 +124,13 @@ export const ADMIN_NAV: readonly AdminNavGroup[] = [
         shortcutHint: 'G L',
         testId: 'admin-nav-learning',
         exact: true,
+      },
+      {
+        label: 'Domains',
+        route: '/admin/learning/domains',
+        icon: Layers,
+        shortcutHint: 'G D',
+        testId: 'admin-nav-domains',
       },
       {
         label: 'Concepts',

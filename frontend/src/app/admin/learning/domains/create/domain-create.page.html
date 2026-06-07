@@ -1,0 +1,86 @@
+<div class="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-5 px-6 py-6">
+  <!-- Header -->
+  <div class="flex items-baseline justify-between border-b border-border pb-3">
+    <h1 class="font-display text-2xl font-semibold text-fg">New domain</h1>
+    <span class="font-mono text-[11px] text-fg-faint">learning / domains / new</span>
+  </div>
+
+  @if (serverError(); as err) {
+    <div
+      class="rounded-sm border border-error/40 bg-error-bg px-3 py-2 text-sm text-error"
+      role="alert"
+      data-testid="domain-create-error"
+    >
+      {{ err }}
+    </div>
+  }
+
+  <form
+    novalidate
+    (submit)="$event.preventDefault(); save()"
+    class="flex flex-col gap-5"
+    data-testid="domain-create-form"
+  >
+    <!-- Slug (required) -->
+    <div class="flex flex-col gap-1.5">
+      <label for="domain-slug" class="font-mono text-[11px] text-fg-subtle">
+        Slug <span class="text-error">*</span>
+      </label>
+      <input
+        id="domain-slug"
+        type="text"
+        [formField]="domainForm.slug"
+        placeholder="systems-design"
+        class="rounded-sm border border-border bg-elevated px-3 py-2 font-mono text-sm text-fg outline-none focus:border-brand"
+        [class.border-error]="domainForm.slug().touched() && domainForm.slug().invalid()"
+      />
+      @if (domainForm.slug().touched() && domainForm.slug().invalid()) {
+        @for (e of domainForm.slug().errors(); track e.message) {
+          <p class="font-mono text-[11px] text-error" role="alert">
+            {{ e.message }}
+          </p>
+        }
+      }
+    </div>
+
+    <!-- Name (required) -->
+    <div class="flex flex-col gap-1.5">
+      <label for="domain-name" class="font-mono text-[11px] text-fg-subtle">
+        Name <span class="text-error">*</span>
+      </label>
+      <input
+        id="domain-name"
+        type="text"
+        [formField]="domainForm.name"
+        placeholder="Systems design"
+        class="rounded-sm border border-border bg-elevated px-3 py-2 text-sm text-fg outline-none focus:border-brand"
+        [class.border-error]="domainForm.name().touched() && domainForm.name().invalid()"
+      />
+      @if (domainForm.name().touched() && domainForm.name().invalid()) {
+        @for (e of domainForm.name().errors(); track e.message) {
+          <p class="font-mono text-[11px] text-error" role="alert">
+            {{ e.message }}
+          </p>
+        }
+      }
+    </div>
+
+    <!-- Actions -->
+    <div class="flex items-center gap-3 border-t border-border pt-4">
+      <button
+        type="submit"
+        [disabled]="domainForm().invalid() || submitting()"
+        class="rounded-sm bg-brand px-4 py-2 text-sm font-medium text-bg transition-colors hover:bg-brand-strong disabled:cursor-not-allowed disabled:opacity-40"
+        data-testid="domain-create-submit"
+      >
+        {{ submitting() ? 'Creating…' : 'Create domain' }}
+      </button>
+      <a
+        routerLink="/admin/learning/domains"
+        class="rounded-sm border border-border px-4 py-2 text-sm text-fg-muted transition-colors hover:text-fg"
+      >
+        Cancel
+      </a>
+    </div>
+  </form>
+</div>

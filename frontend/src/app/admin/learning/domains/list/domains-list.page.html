@@ -1,0 +1,62 @@
+<div class="flex min-w-0 flex-1 flex-col px-6 py-5">
+  <!-- Header -->
+  <div class="mb-4 flex flex-wrap items-center gap-x-4 gap-y-2">
+    <div class="ml-auto flex items-center gap-3">
+      <span
+        class="font-mono text-[11px] text-zinc-500"
+        aria-live="polite"
+        data-testid="domains-count"
+      >
+        Showing {{ total() }} {{ total() === 1 ? 'domain' : 'domains' }}
+      </span>
+      <a
+        routerLink="/admin/learning/domains/new"
+        class="rounded-sm bg-brand px-3 py-1.5 text-xs font-medium text-bg transition-colors hover:bg-brand-strong"
+        data-testid="domains-new"
+      >
+        New domain
+      </a>
+    </div>
+  </div>
+
+  @if (hasError()) {
+    <div
+      role="alert"
+      class="mb-3 rounded-xs border border-red-800 bg-red-900/20 px-3 py-2 text-xs text-red-300"
+      data-testid="domains-list-error"
+    >
+      Couldn't load domains.
+    </div>
+  }
+
+  <app-data-table
+    [isLoading]="isLoading()"
+    [isEmpty]="isEmpty()"
+    emptyTitle="No domains yet"
+    emptyDescription="Create a domain to organise learning plans and concepts."
+  >
+    <table class="w-full text-sm" data-testid="domains-list-table">
+      <thead>
+        <tr
+          class="border-b border-zinc-800 text-left font-mono text-[10px] uppercase tracking-wider text-zinc-500"
+        >
+          <th scope="col" class="px-3 py-2 font-normal">Slug</th>
+          <th scope="col" class="px-3 py-2 font-normal">Name</th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (row of rows(); let i = $index; track row.slug) {
+          <tr
+            class="border-b border-zinc-900"
+            [attr.data-testid]="'domains-list-row-' + i"
+          >
+            <td class="px-3 py-2 font-mono text-[11px] text-zinc-400">
+              {{ row.slug }}
+            </td>
+            <td class="px-3 py-2 text-zinc-100">{{ row.name }}</td>
+          </tr>
+        }
+      </tbody>
+    </table>
+  </app-data-table>
+</div>

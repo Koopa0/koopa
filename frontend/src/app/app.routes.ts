@@ -243,6 +243,20 @@ export const routes: Routes = [
           ),
       },
       {
+        path: 'learning/domains',
+        loadComponent: () =>
+          import('./admin/learning/domains/list/domains-list.page').then(
+            (m) => m.DomainsListPageComponent,
+          ),
+      },
+      {
+        path: 'learning/domains/new',
+        loadComponent: () =>
+          import('./admin/learning/domains/create/domain-create.page').then(
+            (m) => m.DomainCreatePageComponent,
+          ),
+      },
+      {
         path: 'learning/concepts',
         loadComponent: () =>
           import('./admin/learning/concepts/list/concepts-list.page').then(
