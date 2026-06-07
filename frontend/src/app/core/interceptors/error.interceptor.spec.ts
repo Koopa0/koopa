@@ -7,6 +7,7 @@ import {
   HttpClient,
   provideHttpClient,
   withInterceptors,
+  withXhr
 } from '@angular/common/http';
 import { Router } from '@angular/router';
 import { signal } from '@angular/core';
@@ -35,7 +36,7 @@ describe('errorInterceptor', () => {
 
     TestBed.configureTestingModule({
       providers: [
-        provideHttpClient(withInterceptors([errorInterceptor])),
+        provideHttpClient(withXhr(), withInterceptors([errorInterceptor])),
         provideHttpClientTesting(),
         { provide: Router, useValue: mockRouter },
         { provide: AuthService, useValue: mockAuthService },

@@ -7,6 +7,7 @@ import {
   HttpClient,
   provideHttpClient,
   withInterceptors,
+  withXhr
 } from '@angular/common/http';
 import { signal } from '@angular/core';
 import { authInterceptor } from './auth.interceptor';
@@ -22,7 +23,7 @@ describe('authInterceptor', () => {
 
     TestBed.configureTestingModule({
       providers: [
-        provideHttpClient(withInterceptors([authInterceptor])),
+        provideHttpClient(withXhr(), withInterceptors([authInterceptor])),
         provideHttpClientTesting(),
         {
           provide: AuthService,

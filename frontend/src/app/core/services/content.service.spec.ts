@@ -3,7 +3,7 @@ import {
   HttpTestingController,
   provideHttpClientTesting,
 } from '@angular/common/http/testing';
-import { provideHttpClient } from '@angular/common/http';
+import { provideHttpClient, withXhr } from '@angular/common/http';
 import { ContentService } from './content.service';
 import type { ApiContent, ApiPaginationMeta, ApiListResponse } from '../models';
 
@@ -51,7 +51,7 @@ describe('ContentService', () => {
 
   beforeEach(() => {
     TestBed.configureTestingModule({
-      providers: [provideHttpClient(), provideHttpClientTesting()],
+      providers: [provideHttpClient(withXhr()), provideHttpClientTesting()],
     });
     service = TestBed.inject(ContentService);
     httpMock = TestBed.inject(HttpTestingController);

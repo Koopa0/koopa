@@ -3,7 +3,7 @@ import {
   HttpTestingController,
   provideHttpClientTesting,
 } from '@angular/common/http/testing';
-import { provideHttpClient } from '@angular/common/http';
+import { provideHttpClient, withXhr } from '@angular/common/http';
 import { DailyPlanService } from './daily-plan.service';
 import type { DailyPlanResponse } from '../models/workbench.model';
 
@@ -33,7 +33,7 @@ describe('DailyPlanService', () => {
 
   beforeEach(() => {
     TestBed.configureTestingModule({
-      providers: [provideHttpClient(), provideHttpClientTesting()],
+      providers: [provideHttpClient(withXhr()), provideHttpClientTesting()],
     });
     service = TestBed.inject(DailyPlanService);
     httpMock = TestBed.inject(HttpTestingController);
