@@ -1,0 +1,154 @@
+<div class="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-5 px-6 py-6">
+  <!-- Header -->
+  <div class="flex items-baseline justify-between border-b border-border pb-3">
+    <h1 class="font-display text-2xl font-semibold text-fg">New plan</h1>
+    <span class="font-mono text-[11px] text-fg-faint">learning / plans / new</span>
+  </div>
+
+  @if (serverError(); as err) {
+    <div
+      class="rounded-sm border border-error/40 bg-error-bg px-3 py-2 text-sm text-error"
+      role="alert"
+      data-testid="plan-create-error"
+    >
+      {{ err }}
+    </div>
+  }
+
+  <form
+    novalidate
+    (submit)="$event.preventDefault(); save()"
+    class="flex flex-col gap-5"
+    data-testid="plan-create-form"
+  >
+    <!-- Title (required) -->
+    <div class="flex flex-col gap-1.5">
+      <label for="plan-title" class="font-mono text-[11px] text-fg-subtle">
+        Title <span class="text-error">*</span>
+      </label>
+      <input
+        id="plan-title"
+        type="text"
+        [formField]="planForm.title"
+        placeholder="Master graph traversal patterns"
+        class="rounded-sm border border-border bg-elevated px-3 py-2 text-sm text-fg outline-none focus:border-brand"
+        [class.border-error]="planForm.title().touched() && planForm.title().invalid()"
+      />
+      @if (planForm.title().touched() && planForm.title().invalid()) {
+        @for (e of planForm.title().errors(); track e.message) {
+          <p class="font-mono text-[11px] text-error" role="alert">
+            {{ e.message }}
+          </p>
+        }
+      }
+    </div>
+
+    <!-- Description -->
+    <div class="flex flex-col gap-1.5">
+      <label for="plan-desc" class="font-mono text-[11px] text-fg-subtle">
+        Description
+      </label>
+      <textarea
+        id="plan-desc"
+        rows="4"
+        [formField]="planForm.description"
+        placeholder="What does this plan cover, and how does it sequence the targets?"
+        class="resize-y rounded-sm border border-border bg-elevated px-3 py-2 text-sm leading-relaxed text-fg outline-none focus:border-brand"
+      ></textarea>
+    </div>
+
+    <!-- Domain (required) -->
+    <div class="flex flex-col gap-1.5">
+      <label for="plan-domain" class="font-mono text-[11px] text-fg-subtle">
+        Domain <span class="text-error">*</span>
+      </label>
+      @if (hasDomains()) {
+        <select
+          id="plan-domain"
+          [formField]="planForm.domain"
+          class="rounded-sm border border-border bg-elevated px-3 py-2 text-sm text-fg outline-none focus:border-brand"
+          [class.border-error]="planForm.domain().touched() && planForm.domain().invalid()"
+          data-testid="plan-domain-select"
+        >
+          <option value="">—</option>
+          @for (d of domains(); track d.slug) {
+            <option [value]="d.slug">{{ d.name }}</option>
+          }
+        </select>
+        @if (planForm.domain().touched() && planForm.domain().invalid()) {
+          @for (e of planForm.domain().errors(); track e.message) {
+            <p class="font-mono text-[11px] text-error" role="alert">
+              {{ e.message }}
+            </p>
+          }
+        }
+      } @else {
+        <p
+          class="rounded-sm border border-border bg-elevated px-3 py-2 text-sm text-fg-muted"
+          data-testid="plan-no-domains"
+        >
+          No domains yet —
+          <a
+            routerLink="/admin/learning/domains/new"
+            class="text-brand underline-offset-2 hover:underline"
+          >
+            create one first
+          </a>
+          .
+        </p>
+      }
+    </div>
+
+    <div class="grid grid-cols-1 gap-5 sm:grid-cols-2">
+      <!-- Goal (optional) -->
+      <div class="flex flex-col gap-1.5">
+        <label for="plan-goal" class="font-mono text-[11px] text-fg-subtle">
+          Goal
+        </label>
+        <select
+          id="plan-goal"
+          [formField]="planForm.goal_id"
+          class="rounded-sm border border-border bg-elevated px-3 py-2 text-sm text-fg outline-none focus:border-brand"
+          data-testid="plan-goal-select"
+        >
+          <option value="">—</option>
+          @for (g of goals(); track g.id) {
+            <option [value]="g.id">{{ g.title }}</option>
+          }
+        </select>
+      </div>
+
+      <!-- Target count (optional) -->
+      <div class="flex flex-col gap-1.5">
+        <label for="plan-target-count" class="font-mono text-[11px] text-fg-subtle">
+          Target count
+        </label>
+        <input
+          id="plan-target-count"
+          type="number"
+          [formField]="planForm.target_count"
+          placeholder="0"
+          class="rounded-sm border border-border bg-elevated px-3 py-2 text-sm text-fg outline-none focus:border-brand"
+        />
+      </div>
+    </div>
+
+    <!-- Actions -->
+    <div class="flex items-center gap-3 border-t border-border pt-4">
+      <button
+        type="submit"
+        [disabled]="planForm().invalid() || submitting()"
+        class="rounded-sm bg-brand px-4 py-2 text-sm font-medium text-bg transition-colors hover:bg-brand-strong disabled:cursor-not-allowed disabled:opacity-40"
+        data-testid="plan-create-submit"
+      >
+        {{ submitting() ? 'Creating…' : 'Create plan' }}
+      </button>
+      <a
+        routerLink="/admin/learning/plans"
+        class="rounded-sm border border-border px-4 py-2 text-sm text-fg-muted transition-colors hover:text-fg"
+      >
+        Cancel
+      </a>
+    </div>
+  </form>
+</div>

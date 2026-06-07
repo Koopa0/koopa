@@ -278,6 +278,20 @@ export const routes: Routes = [
           ).then((m) => m.SessionTimelinePageComponent),
       },
       {
+        path: 'learning/plans',
+        loadComponent: () =>
+          import('./admin/learning/plans/list/plans-list.page').then(
+            (m) => m.PlansListPageComponent,
+          ),
+      },
+      {
+        path: 'learning/plans/new',
+        loadComponent: () =>
+          import('./admin/learning/plans/create/plan-create.page').then(
+            (m) => m.PlanCreatePageComponent,
+          ),
+      },
+      {
         path: 'learning/plans/:id',
         loadComponent: () =>
           import('./admin/learning/plans/timeline/plan-timeline.page').then(

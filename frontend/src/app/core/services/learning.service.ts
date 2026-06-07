@@ -53,6 +53,19 @@ export interface DomainCreateRequest {
   name: string;
 }
 
+/**
+ * Plan create request. `title` + `domain` are required; `goal_id` links the
+ * plan to a commitment goal, and `target_count` seeds the planned entry count.
+ * Optional fields are sent only when present so the server applies its defaults.
+ */
+export interface PlanCreateRequest {
+  title: string;
+  description: string;
+  domain: string;
+  goal_id?: string;
+  target_count?: number;
+}
+
 /** Learning-domain reads: summary, dashboard, concepts, sessions, plans. */
 @Injectable({ providedIn: 'root' })
 export class LearningService {
@@ -129,6 +142,14 @@ export class LearningService {
 
   plan(id: string): Observable<PlanDetail> {
     return this.api.getData<PlanDetail>(`/api/admin/learning/plans/${id}`);
+  }
+
+  /**
+   * Create a learning plan. Returns the created plan so the caller can route
+   * to its detail page (`PlanDetail.id`).
+   */
+  createPlan(body: PlanCreateRequest): Observable<PlanDetail> {
+    return this.api.postData<PlanDetail>('/api/admin/learning/plans', body);
   }
 
   /**
