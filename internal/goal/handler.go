@@ -78,8 +78,7 @@ func (h *Handler) UpdateStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	updated, err := store.UpdateStatus(r.Context(), id, status)
 	if err != nil {
-		h.logger.Error("updating goal status", "id", id, "error", err)
-		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to update goal status")
+		api.HandleError(w, h.logger, err, storeErrors...)
 		return
 	}
 
