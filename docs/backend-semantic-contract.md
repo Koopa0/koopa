@@ -22,9 +22,9 @@
 - Statements not provable from the repo are marked **Open Question**.
 - The existence of a table, a doc, or a handler is **not** treated as proof
   that a feature works. §6 separates "implemented and tested" from the rest.
-- Where the prior contract recorded a human decision (e.g. bookmark search
-  exclusion, resolved 2026-05-21), that decision is carried forward verbatim
-  in §6 / §7 rather than re-derived.
+- Where the prior contract recorded a human decision (e.g. FTS-only is the
+  current `search_knowledge` production behavior, decided Phase 1D 2026-05-27),
+  that decision is carried forward verbatim in §6 / §7 rather than re-derived.
 
 ---
 
@@ -49,7 +49,7 @@ It is **all of the following, with explicit boundaries** (§4):
 | **PARA / GTD / OKR-ish system** | areas, goals, milestones, projects, todos, daily plan | `internal/goal/`, `internal/project/`, `internal/todo/`, `internal/daily/` |
 | **Learning analytics engine** | domains, concepts, targets, sessions, attempts, observations | `internal/learning/` |
 | **MCP tool surface** | **11 agent-facing tools** (post MCP-v3 semantic contraction) | `internal/mcp/ops/catalog.go::All()` (canonical list) |
-| **Knowledge / search system** | content, notes, bookmarks, topics, tags, feeds; hybrid search | `internal/content/`, `internal/note/`, `internal/search/`, `internal/mcp/search.go` |
+| **Knowledge / search system** | content, notes, topics, tags, feeds; hybrid search | `internal/content/`, `internal/note/`, `internal/search/`, `internal/mcp/search.go` |
 
 > **MCP-v3 semantic contraction (closed; ledger:
 > `docs/decisions/mcp-v3-semantic-contraction.md`).** The agent-facing MCP
@@ -82,7 +82,7 @@ and compiled into the binary (`docs/authorization-matrix.md:269-289`).
 3. **Illegal states are made structurally impossible** through joint CHECKs,
    partial unique indexes, and narrow triggers — not application discipline
    alone (at-most-one-active learning session `uq_learning_sessions_one_active`;
-   curated feed-entry mutual-exclusion content-XOR-bookmark; learning-concept
+   a curated feed-entry resolves to a content row; learning-concept
    acyclicity triggers). The task state↔timestamp / completion-requires-outputs
    invariants cited in earlier revisions are gone with the retired `tasks` triad.
 
@@ -234,19 +234,20 @@ in the MCP-v3 semantic contraction. The vocabulary below is preserved as a
   `create_note` and `update_note` (field edits). Maturity transitions are
   **admin-only HTTP** (`POST /api/admin/knowledge/notes/{id}/maturity`,
   `routes.go:165`) — the MCP `update_note_maturity` tool was removed.
-- **bookmark** — external URL + commentary. Curate = publish. Created via
-  admin UI only (no MCP path). **Open Question** §7: a `PUT .../bookmarks/{id}`
-  edit endpoint exists; whether bookmarks should be editable is undecided.
+- **bookmark** — **RETIRED.** The bookmark feature (table, junctions, admin
+  pages, public `/api/bookmarks`, Angular page) was removed in the MCP-v3
+  semantic contraction; see `docs/decisions/mcp-v3-semantic-contraction.md §3`.
+  Not a live entity, lifecycle, or endpoint.
 - **source / provenance** — attribution of where a knowledge row came from.
-  Columns: `contents.origin_system`, `bookmarks.capture_channel`,
+  Columns: `contents.origin_system`,
   `feed_entries → feeds`, `learning_attempts.metadata.recommended_by`.
   `activity_events.actor` + `entity_title`/`entity_slug` write-time snapshots
   give per-mutation provenance. **Ambiguity:** there is no single uniform
   "provenance" object; provenance is per-entity columns + the audit log.
 - **feed / feed_entry** — RSS subscription + collected items. `feed_entry`
-  lifecycle `unread → read → curated | ignored`; a curated entry becomes
-  EITHER content OR a bookmark, never both (mutual-exclusion triggers
-  `2586-2627`).
+  lifecycle `unread → read → curated | ignored`; a curated entry produces a
+  content row (the former feed-entry→bookmark curation target was removed
+  with the retired bookmark feature, MCP-v3).
 
 ### Learning
 
@@ -517,7 +518,7 @@ MCP-v3 and those tables/tools no longer exist.)
 |---|---|---|
 | **Document embedding write path** | **No automatic document-embedding write path exists — this is the current decision, not a TODO.** `embedder.Embed()` is defined (`embedder.go:65`) but has no production call site; app-created `content`/`note` rows therefore behave **FTS-only** unless embeddings are externally/backfill-populated. The vector-*read* path is real (`InternalSemanticSearch`, `content/public.go:104-115`) and *would* return rows if embeddings were backfilled — so "no write path" must not be conflated with "semantic branch can never return rows". **Decided (Phase 1D, 2026-05-27):** keep schema, indexes, and embedder package in place; do not implement write/backfill until agent recall ceilings on FTS are observed in practice. `search_knowledge` is documented as FTS-backed today. | `search.go:182-235` (only `EmbedQuery`); no `Embed()` call site; cols `migrations/001_initial.up.sql:495,573` |
 | **Feed AI relevance scoring** | Not active — "scoring pipeline not yet active, all items have score=0"; highlights recency/priority-ordered | `internal/feed/entry/query.sql` |
-| **Admin global-search Kind taxonomy** | `internal/search/search.go` declares 9 Kinds; only `KindContent` + `KindNote` are wired; `KindBookmark/Hypothesis/Concept/Task/Goal/Todo/Project` declared-but-unwired | `internal/search/search.go` |
+| **Admin global-search Kind taxonomy** | `internal/search/search.go` declares **2 Kinds, both wired**: `KindContent` + `KindNote`. The earlier declared-but-unwired Kinds were removed in the just-landed cleanup. | `internal/search/search.go:22-25` |
 
 ### E. Untested entirely (no test files — confidence: unclear / requires evidence)
 
@@ -566,9 +567,9 @@ its sections lost their data source (see below).
 
 ### G. Carried-forward human-resolved decisions (do not re-litigate)
 
-- **Bookmark is NOT a `search_knowledge` corpus member** — resolved
-  2026-05-21 by Koopa; the dormant `bookmarks.embedding` column + HNSW index
-  were removed.
+- **Bookmark search-corpus exclusion** — moot: the bookmark feature was
+  retired in MCP-v3 (`docs/decisions/mcp-v3-semantic-contraction.md §3`), so
+  there is no bookmark entity to include or exclude from the search corpus.
 
 ---
 
@@ -592,7 +593,9 @@ re-introduce a coordination layer assuming these tables exist); no `agent_notes`
 (report lane retired); no review cards / FSRS state of any kind (retired); no
 agent-facing `propose_*` / `commit_proposal` flow (high-commitment creation is
 admin HTTP); no agent-facing content write/publish (admin HTTP only); no
-`bookmarks.status` lifecycle; no daily-plan auto-carryover; no RBAC; no
+`bookmarks` of any kind (the bookmark feature was retired in MCP-v3, see
+`docs/decisions/mcp-v3-semantic-contraction.md §3`); no daily-plan
+auto-carryover; no RBAC; no
 quantitative milestones; no goal auto-status; no direct `activity_events`
 INSERT; no direct mastery edit. (Each is schema- or policy-enforced or removed;
 see §3/§5 and the MCP-v3 ledger.)
@@ -607,16 +610,17 @@ see §3/§5 and the MCP-v3 ledger.)
    for revisiting: observed agent recall ceilings on FTS (e.g. ≥3 incidents
    where a known-relevant document was not retrieved). Cross-source ranking
    (recency-final vs fused relevance) is part of the deferred design.
-2. **Bookmark edit flow** — the `PUT /api/admin/knowledge/bookmarks/{id}`
-   endpoint exists; are bookmarks Create-only/immutable or Create+edit? Must
-   NOT be resolved by "the code exists" alone.
+2. **Bookmark edit flow** — **RESOLVED — feature retired (MCP-v3):** the
+   bookmark feature (table, endpoints, admin pages, Angular page) was removed;
+   see `docs/decisions/mcp-v3-semantic-contraction.md §3`. There is no bookmark
+   entity to edit, so the question is moot.
 3. **`p0`/`p1`/`p2` priority aliases** — `normalizePriority` accepts them as
    input shorthand; keep or remove?
 4. **`directive` discriminator** — **MOOT (MCP-v3): the `tasks` triad was
    retired.** There is no directive entity to discriminate.
-5. **Admin global-search Kind taxonomy** — wire the unwired Kinds or remove
-   the declarations? (Note: `KindTask` etc. are dead since the triad was
-   retired; only `KindContent` + `KindNote` remain meaningful.)
+5. **Admin global-search Kind taxonomy** — **RESOLVED:** the declared-but-unwired
+   Kinds were removed in the just-landed cleanup; `internal/search/search.go`
+   now declares exactly `KindContent` + `KindNote`, both wired.
 6. **Feed AI relevance scoring** — implement or formally drop?
 7. **Actor attribution surfacing** — `activity_events.actor` exists but is not
    propagated into the surviving aggregate-reader outputs (`brief`); widen
