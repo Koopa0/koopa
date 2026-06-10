@@ -24,6 +24,7 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { map, startWith } from 'rxjs';
 import {
   NoteService,
+  type NoteCreateRequest,
   type NoteDetail,
   type NoteUpdateRequest,
 } from '../../../../core/services/note.service';
@@ -35,6 +36,7 @@ import {
 import type { NoteKind, NoteMaturity } from '../../../../core/models/api.model';
 
 interface NoteEditorForm {
+  slug: FormControl<string>;
   title: FormControl<string>;
   body: FormControl<string>;
   kind: FormControl<NoteKind>;
@@ -68,22 +70,26 @@ const MATURITY_LABEL: Record<NoteMaturity, string> = {
 };
 
 const MATURITY_DOT: Record<NoteMaturity, string> = {
-  seed: 'bg-zinc-400',
-  stub: 'bg-sky-400',
-  evergreen: 'bg-emerald-500',
-  needs_revision: 'bg-amber-400',
-  archived: 'bg-zinc-600',
+  seed: 'bg-fg-subtle',
+  stub: 'bg-info',
+  evergreen: 'bg-success',
+  needs_revision: 'bg-warn',
+  archived: 'bg-fg-faint',
 };
 
+const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
 /**
- * Note Editor Two-column layout mirroring
- * the Content Editor: markdown body on the left, metadata + maturity
- * ladder + relations on the right.
+ * Note Editor — create + edit route for Zettelkasten notes.
  *
- * Save / Update maturity / Delete are  per ; callers tolerate
- * 404/405/501. Backward maturity transitions (e.g. evergreen → stub)
- * ask for confirmation because the backend warns on those moves per
- * the spec's "反向 transition" note.
+ * Create mode (`/new`, no :id): empty form with slug/title/body/kind;
+ * saving POSTs the note (maturity defaults server-side) and navigates
+ * to the created note's `:id/edit` route.
+ *
+ * Edit mode (`:id/edit`): markdown body on the left, metadata +
+ * maturity ladder + relations on the right. Maturity transitions go
+ * through the dedicated POST …/maturity endpoint, never the general
+ * update; backward moves (e.g. evergreen → stub) ask for confirmation.
  */
 @Component({
   selector: 'app-note-editor-page',
@@ -108,12 +114,15 @@ export class NoteEditorPageComponent {
   protected readonly maturityLadder = MATURITY_LADDER;
 
   private readonly idFromRoute = toSignal(
-    this.route.paramMap.pipe(map((p) => p.get('id') ?? '')),
-    { initialValue: '' },
+    this.route.paramMap.pipe(map((p) => p.get('id'))),
+    { initialValue: null },
   );
 
-  protected readonly noteResource = rxResource<NoteDetail, string>({
-    params: () => this.idFromRoute(),
+  /** Create mode when the route carries no :id. */
+  protected readonly isCreate = computed(() => this.idFromRoute() === null);
+
+  protected readonly noteResource = rxResource<NoteDetail, string | undefined>({
+    params: () => this.idFromRoute() ?? undefined,
     stream: ({ params }) => this.noteService.get(params),
   });
 
@@ -137,6 +146,7 @@ export class NoteEditorPageComponent {
   protected readonly isActioning = this._isActioning.asReadonly();
 
   protected readonly form = new FormGroup<NoteEditorForm>({
+    slug: new FormControl('', { nonNullable: true }),
     title: new FormControl('', {
       nonNullable: true,
       validators: [Validators.required, Validators.maxLength(200)],
@@ -159,15 +169,28 @@ export class NoteEditorPageComponent {
     { initialValue: this.form.dirty },
   );
 
+  /** Read by the canDeactivate guard — applies in create and edit mode alike. */
   readonly hasUnsavedChanges = this.formDirty;
 
   constructor() {
-    // Hydrate form whenever a fresh note arrives.
+    if (this.isCreate()) {
+      // The create endpoint requires slug + body alongside title + kind.
+      this.form.controls.slug.addValidators([
+        Validators.required,
+        Validators.pattern(SLUG_PATTERN),
+      ]);
+      this.form.controls.body.addValidators([Validators.required]);
+      this.form.controls.slug.updateValueAndValidity();
+      this.form.controls.body.updateValueAndValidity();
+    }
+
+    // Hydrate form whenever a fresh note arrives (edit mode only).
     effect(() => {
       const n = this.note();
       if (!n) return;
       this.form.reset(
         {
+          slug: n.slug,
           title: n.title,
           body: n.body,
           kind: n.kind,
@@ -178,7 +201,7 @@ export class NoteEditorPageComponent {
       );
     });
 
-    // Seed topbar synchronously; effect rehydrates on non-null note.
+    // Seed topbar synchronously; effect rehydrates on state changes.
     this.topbar.set({
       title: 'Note editor',
       crumbs: ['Knowledge', 'Notes'],
@@ -190,22 +213,23 @@ export class NoteEditorPageComponent {
 
   private buildTopbarContext() {
     const n = this.note();
+    const create = this.isCreate();
     const formInvalid = this.formStatus() === 'INVALID';
     const actioning = this.isActioning();
 
     const actions: TopbarAction[] = [
       {
-        id: 'cancel',
-        label: 'Cancel',
+        id: 'close',
+        label: 'Close',
         kind: 'secondary',
         run: () => this.cancel(),
       },
       {
         id: 'save',
-        label: 'Save',
+        label: create ? 'Create note' : 'Save',
         kind: 'primary',
         shortcutHint: '⌘S',
-        disabled: !n || actioning || formInvalid,
+        disabled: actioning || formInvalid || (!create && !n),
         run: () => this.save(),
       },
     ];
@@ -222,10 +246,12 @@ export class NoteEditorPageComponent {
     }
 
     return {
-      title: n ? `Editing · ${n.kind}` : 'Note editor',
-      crumbs: n
-        ? ['Knowledge', 'Notes', n.id.slice(0, 8)]
-        : ['Knowledge', 'Notes'],
+      title: create ? 'New note' : n ? `Editing · ${n.kind}` : 'Note editor',
+      crumbs: create
+        ? ['Knowledge', 'Notes', 'New']
+        : n
+          ? ['Knowledge', 'Notes', n.id.slice(0, 8)]
+          : ['Knowledge', 'Notes'],
       actions,
       overflowActions,
     };
@@ -236,8 +262,50 @@ export class NoteEditorPageComponent {
   }
 
   protected save(): void {
+    if (this._isActioning()) return;
+    if (this.form.invalid) {
+      this.form.markAllAsTouched();
+      return;
+    }
+    if (this.isCreate()) {
+      this.createNote();
+    } else {
+      this.updateNote();
+    }
+  }
+
+  private createNote(): void {
+    const v = this.form.getRawValue();
+    const body: NoteCreateRequest = {
+      slug: v.slug.trim(),
+      title: v.title.trim(),
+      body: v.body,
+      kind: v.kind,
+      concept_slugs: splitCsv(v.conceptSlugs),
+      target_ids: splitCsv(v.targetIds),
+    };
+
+    this._isActioning.set(true);
+    this.noteService
+      .create(body)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (created) => {
+          this._isActioning.set(false);
+          this.form.markAsPristine();
+          this.notifications.success(`Note "${created.title}" created.`);
+          this.router.navigate(['/admin/knowledge/notes', created.id, 'edit']);
+        },
+        error: () => {
+          this._isActioning.set(false);
+          this.notifications.error('Failed to create note.');
+        },
+      });
+  }
+
+  private updateNote(): void {
     const n = this.note();
-    if (!n || this.form.invalid || this._isActioning()) return;
+    if (!n) return;
 
     const v = this.form.getRawValue();
     const body: NoteUpdateRequest = {
@@ -322,13 +390,14 @@ export class NoteEditorPageComponent {
   private afterError(err: unknown, name: string): void {
     this._isActioning.set(false);
     const status = err instanceof HttpErrorResponse ? err.status : null;
+    const verb = name.replaceAll('-', ' ');
     if (status === 404 || status === 405 || status === 501) {
       this.notifications.error(
-        `Could not ${name.replace('-', ' ')} — please refresh and try again.`,
+        `Could not ${verb} — please refresh and try again.`,
       );
       return;
     }
-    this.notifications.error(`Failed to ${name.replace('-', ' ')}.`);
+    this.notifications.error(`Failed to ${verb}.`);
   }
 
   protected maturityDotClass(m: NoteMaturity): string {

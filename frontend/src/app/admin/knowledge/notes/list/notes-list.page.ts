@@ -146,6 +146,16 @@ export class NotesListPageComponent {
     this.topbar.set({
       title: 'Notes',
       crumbs: ['Knowledge', 'Notes'],
+      actions: [
+        {
+          id: 'new-note',
+          label: 'New note',
+          kind: 'primary',
+          run: () => {
+            void this.router.navigate(['/admin/knowledge/notes/new']);
+          },
+        },
+      ],
     });
 
     effect(() => {

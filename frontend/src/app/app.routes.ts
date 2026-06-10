@@ -147,11 +147,20 @@ export const routes: Routes = [
         data: { title: 'Plan', crumbs: ['Daily', 'Plan'] },
       },
       {
+        path: 'daily/inbox',
+        loadComponent: () =>
+          import('./admin/commitment/todos/gtd.page').then(
+            (m) => m.GtdPageComponent,
+          ),
+        data: { gtdView: 'inbox' },
+      },
+      {
         path: 'daily/todos',
         loadComponent: () =>
-          import('./admin/commitment/todos/list/todos-list.page').then(
-            (m) => m.TodosListPageComponent,
+          import('./admin/commitment/todos/gtd.page').then(
+            (m) => m.GtdPageComponent,
           ),
+        data: { gtdView: 'today' },
       },
 
       // ── Commitment ───────────────────────────────────────────────
@@ -194,17 +203,12 @@ export const routes: Routes = [
         data: { title: 'All content', crumbs: ['Knowledge', 'Content'] },
       },
       {
-        // The content editor hard-requires a content :id (rxResource
-        // fetches on init); the create flow ships in a later batch.
         path: 'knowledge/content/new',
         loadComponent: () =>
-          import('./admin/shared/admin-placeholder.component').then(
-            (m) => m.AdminPlaceholderComponent,
+          import('./admin/knowledge/content/editor/content-editor.page').then(
+            (m) => m.ContentEditorPageComponent,
           ),
-        data: {
-          title: 'New content',
-          crumbs: ['Knowledge', 'Content', 'New'],
-        },
+        canDeactivate: [contentEditorCanDeactivate],
       },
       {
         path: 'knowledge/content/:id/edit',
@@ -234,14 +238,12 @@ export const routes: Routes = [
           ),
       },
       {
-        // The note editor hard-requires a note :id (rxResource fetches
-        // on init); the create flow ships in a later batch.
         path: 'knowledge/notes/new',
         loadComponent: () =>
-          import('./admin/shared/admin-placeholder.component').then(
-            (m) => m.AdminPlaceholderComponent,
+          import('./admin/knowledge/notes/editor/note-editor.page').then(
+            (m) => m.NoteEditorPageComponent,
           ),
-        data: { title: 'New note', crumbs: ['Knowledge', 'Notes', 'New'] },
+        canDeactivate: [noteEditorCanDeactivate],
       },
       {
         path: 'knowledge/notes/:id/edit',
@@ -387,18 +389,16 @@ export const routes: Routes = [
       {
         path: 'system/health',
         loadComponent: () =>
-          import('./admin/shared/admin-placeholder.component').then(
-            (m) => m.AdminPlaceholderComponent,
+          import('./admin/system/health/system-health.page').then(
+            (m) => m.SystemHealthPageComponent,
           ),
-        data: { title: 'Health', crumbs: ['System', 'Health'] },
       },
       {
         path: 'system/stats',
         loadComponent: () =>
-          import('./admin/shared/admin-placeholder.component').then(
-            (m) => m.AdminPlaceholderComponent,
+          import('./admin/system/stats/system-stats.page').then(
+            (m) => m.SystemStatsPageComponent,
           ),
-        data: { title: 'Stats', crumbs: ['System', 'Stats'] },
       },
       {
         path: 'system/activity',

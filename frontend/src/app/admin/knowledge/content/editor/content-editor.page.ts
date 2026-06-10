@@ -23,18 +23,28 @@ import { DatePipe } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { map, startWith } from 'rxjs';
 import { ContentService } from '../../../../core/services/content.service';
+import { TopicService } from '../../../../core/services/topic.service';
 import { NotificationService } from '../../../../core/services/notification.service';
 import {
   AdminTopbarService,
   type TopbarAction,
 } from '../../../admin-layout/admin-topbar.service';
+import { StatusBadgeComponent } from '../../../../shared/components/status-badge/status-badge.component';
+import type { BadgeVariant } from '../../../../shared/components/status-badge/status-badge.component';
+import {
+  ContentLifecycleRailComponent,
+  type ContentLifecycleAction,
+} from './lifecycle-rail.component';
 import type {
   ApiContent,
+  ApiCreateContentRequest,
   ApiUpdateContentRequest,
+  ContentStatus,
   ContentType,
 } from '../../../../core/models/api.model';
 
 interface ContentEditorForm {
+  slug: FormControl<string>;
   title: FormControl<string>;
   body: FormControl<string>;
   excerpt: FormControl<string>;
@@ -42,7 +52,6 @@ interface ContentEditorForm {
   tags: FormControl<string>;
   coverImage: FormControl<string>;
   readingTimeMin: FormControl<number>;
-  isPublic: FormControl<boolean>;
 }
 
 const CONTENT_TYPE_OPTIONS: readonly {
@@ -56,29 +65,43 @@ const CONTENT_TYPE_OPTIONS: readonly {
   { value: 'digest', label: 'Digest' },
 ];
 
+const STATUS_BADGE_VARIANT: Record<ContentStatus, BadgeVariant> = {
+  draft: 'neutral',
+  review: 'warning',
+  published: 'success',
+  archived: 'neutral',
+};
+
+const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const WORDS_PER_MINUTE = 220;
+
 /**
- * Content Editor — Editor route for the content lifecycle.
+ * Content Editor — create + edit route for the content lifecycle.
  *
- * Layout mirrors: markdown editor on the
- * left, metadata sidebar on the right. Topbar publishes the four action
- * buttons (Cancel / Save draft / Revert to draft / Publish) plus an
- * overflow menu (Send for review / Archive).
+ * Create mode (`/new`, no :id): empty form, slug editable; saving POSTs
+ * the new content (status defaults to draft server-side) and navigates
+ * to the `:id/edit` route of the created record.
  *
- * Actions — `submit-for-review`, `revert-to-draft`, and `archive` are
- * backed by live backend routes. On failure (including an unexpected
- * 404 / 405 / 501) {@link handleMissingEndpoint} surfaces an error toast
- * asking the operator to retry; the editor state does not change.
+ * Edit mode (`:id/edit`): markdown editor on the left; the sidebar
+ * carries the lifecycle rail (draft → review → published → archived
+ * with the legal transition buttons), the is_public switch (PATCH
+ * …/is-public), and the type/topics/tags metadata column. Publishing
+ * is human-only server-side — a 403 surfaces as a refusal toast.
  *
  * Keyboard:
- *   ⌘S        — save draft
+ *   ⌘S        — save (create or update)
  *   ⌘⇧P       — publish (only while status='review')
  *   ⌘⇧R       — revert to draft (only while status='review')
- * All three preventDefault so browser shortcuts don't fire.
  */
 @Component({
   selector: 'app-content-editor-page',
   standalone: true,
-  imports: [ReactiveFormsModule, DatePipe],
+  imports: [
+    ReactiveFormsModule,
+    DatePipe,
+    StatusBadgeComponent,
+    ContentLifecycleRailComponent,
+  ],
   templateUrl: './content-editor.page.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
@@ -90,6 +113,7 @@ export class ContentEditorPageComponent {
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly contentService = inject(ContentService);
+  private readonly topicService = inject(TopicService);
   private readonly notifications = inject(NotificationService);
   private readonly topbar = inject(AdminTopbarService);
   private readonly destroyRef = inject(DestroyRef);
@@ -97,12 +121,18 @@ export class ContentEditorPageComponent {
   protected readonly typeOptions = CONTENT_TYPE_OPTIONS;
 
   private readonly idFromRoute = toSignal(
-    this.route.paramMap.pipe(map((p) => p.get('id') ?? '')),
-    { initialValue: '' },
+    this.route.paramMap.pipe(map((p) => p.get('id'))),
+    { initialValue: null },
   );
 
-  protected readonly contentResource = rxResource<ApiContent, string>({
-    params: () => this.idFromRoute(),
+  /** Create mode when the route carries no :id. */
+  protected readonly isCreate = computed(() => this.idFromRoute() === null);
+
+  protected readonly contentResource = rxResource<
+    ApiContent,
+    string | undefined
+  >({
+    params: () => this.idFromRoute() ?? undefined,
     stream: ({ params }) => this.contentService.adminGet(params),
   });
 
@@ -114,10 +144,19 @@ export class ContentEditorPageComponent {
     () => this.contentResource.status() === 'error',
   );
 
+  protected readonly topicsResource = rxResource({
+    stream: () => this.topicService.getAllTopics(),
+  });
+  protected readonly topics = computed(() => this.topicsResource.value() ?? []);
+
   private readonly _isActioning = signal(false);
   protected readonly isActioning = this._isActioning.asReadonly();
 
+  /** Selected topic ids; kept outside the FormGroup so toggling stays a plain signal write. */
+  protected readonly selectedTopicIds = signal<string[]>([]);
+
   protected readonly form = new FormGroup<ContentEditorForm>({
+    slug: new FormControl('', { nonNullable: true }),
     title: new FormControl('', {
       nonNullable: true,
       validators: [Validators.required, Validators.maxLength(200)],
@@ -131,11 +170,10 @@ export class ContentEditorPageComponent {
     tags: new FormControl('', { nonNullable: true }),
     coverImage: new FormControl('', { nonNullable: true }),
     readingTimeMin: new FormControl(0, { nonNullable: true }),
-    isPublic: new FormControl(false, { nonNullable: true }),
   });
 
-  // Bridge Angular FormGroup state to signals so the topbar effect re-runs
-  // when the user types or resets the form. `form.dirty` / `form.invalid`
+  // Bridge Angular FormGroup state to signals so effects re-run when
+  // the user types or resets the form. `form.dirty` / `form.invalid`
   // are not reactive by themselves.
   private readonly formStatus = toSignal(
     this.form.statusChanges.pipe(startWith(this.form.status)),
@@ -146,13 +184,58 @@ export class ContentEditorPageComponent {
     { initialValue: this.form.dirty },
   );
 
+  // Mirrors of form values that the template derives display state
+  // from. Updated by valueChanges and re-seeded on hydrate (form.reset
+  // suppresses events, so the hydrate effect writes them directly).
+  private readonly bodyText = signal('');
+  protected readonly typeValue = signal<ContentType>('article');
+
+  protected readonly wordCount = computed(() => {
+    const t = this.bodyText().trim();
+    return t.length === 0 ? 0 : t.split(/\s+/).length;
+  });
+  protected readonly minRead = computed(() =>
+    Math.max(1, Math.round(this.wordCount() / WORDS_PER_MINUTE)),
+  );
+
+  protected readonly saveState = computed<
+    'saving' | 'dirty' | 'new' | 'saved'
+  >(() => {
+    if (this.isActioning()) return 'saving';
+    if (this.formDirty()) return 'dirty';
+    return this.isCreate() ? 'new' : 'saved';
+  });
+
+  /**
+   * True when the form has unsaved edits. Used by the
+   * {@link contentEditorCanDeactivate} route guard to confirm before
+   * leaving the page — in create and edit mode alike.
+   */
+  readonly hasUnsavedChanges = this.formDirty;
+
   constructor() {
-    // Hydrate form when content arrives.
+    if (this.isCreate()) {
+      this.form.controls.slug.addValidators([
+        Validators.required,
+        Validators.pattern(SLUG_PATTERN),
+      ]);
+      this.form.controls.slug.updateValueAndValidity();
+    }
+
+    this.form.controls.body.valueChanges
+      .pipe(takeUntilDestroyed())
+      .subscribe((v) => this.bodyText.set(v));
+    this.form.controls.type.valueChanges
+      .pipe(takeUntilDestroyed())
+      .subscribe((v) => this.typeValue.set(v));
+
+    // Hydrate form when content arrives (edit mode only).
     effect(() => {
       const c = this.content();
       if (!c) return;
       this.form.reset(
         {
+          slug: c.slug,
           title: c.title,
           body: c.body,
           excerpt: c.excerpt,
@@ -160,13 +243,14 @@ export class ContentEditorPageComponent {
           tags: (c.tags ?? []).join(', '),
           coverImage: c.cover_image ?? '',
           readingTimeMin: c.reading_time_min,
-          isPublic: c.is_public,
         },
         { emitEvent: false },
       );
+      this.bodyText.set(c.body);
+      this.typeValue.set(c.type);
+      this.selectedTopicIds.set((c.topics ?? []).map((t) => t.id));
     });
 
-    // Push topbar context whenever content status changes.
     effect(() => this.topbar.set(this.buildTopbarContext()));
 
     this.destroyRef.onDestroy(() => this.topbar.reset());
@@ -174,73 +258,35 @@ export class ContentEditorPageComponent {
 
   private buildTopbarContext() {
     const c = this.content();
-    // Read form-state signals so the effect re-runs on user input.
-    const formStatus = this.formStatus();
-    const formDirty = this.formDirty();
-    const formInvalid = formStatus === 'INVALID';
-
-    const title = c ? `Editing · ${c.type}` : 'Content editor';
-    const crumbs = c
-      ? ['Knowledge', 'Content', c.id.slice(0, 8)]
-      : ['Knowledge', 'Content'];
+    const create = this.isCreate();
+    const formInvalid = this.formStatus() === 'INVALID';
 
     const actions: TopbarAction[] = [
       {
-        id: 'cancel',
-        label: 'Cancel',
+        id: 'close',
+        label: 'Close',
         kind: 'secondary',
         run: () => this.cancel(),
       },
       {
         id: 'save',
-        label: 'Save draft',
+        label: create ? 'Create draft' : 'Save',
         kind: 'primary',
         shortcutHint: '⌘S',
-        disabled: !c || this.isActioning() || formInvalid,
+        disabled: this.isActioning() || formInvalid || (!create && !c),
         run: () => this.save(),
       },
     ];
 
-    if (c?.status === 'review') {
-      actions.push({
-        id: 'revert',
-        label: 'Revert to draft',
-        kind: 'secondary',
-        shortcutHint: '⌘⇧R',
-        disabled: this.isActioning(),
-        run: () => this.revertToDraft(),
-      });
-      actions.push({
-        id: 'publish',
-        label: 'Publish (human only)',
-        kind: 'primary',
-        shortcutHint: '⌘⇧P',
-        disabled: this.isActioning(),
-        run: () => this.publish(),
-      });
-    }
-
-    const overflowActions: TopbarAction[] = [];
-    if (c?.status === 'draft') {
-      overflowActions.push({
-        id: 'submit-review',
-        label: 'Send for review',
-        kind: 'secondary',
-        disabled: this.isActioning() || formDirty,
-        run: () => this.submitForReview(),
-      });
-    }
-    if (c && c.status !== 'archived') {
-      overflowActions.push({
-        id: 'archive',
-        label: 'Archive',
-        kind: 'destructive',
-        disabled: this.isActioning(),
-        run: () => this.archiveContent(),
-      });
-    }
-
-    return { title, crumbs, actions, overflowActions };
+    return {
+      title: create ? 'New content' : c ? `Editing · ${c.type}` : 'Content editor',
+      crumbs: create
+        ? ['Knowledge', 'Content', 'New']
+        : c
+          ? ['Knowledge', 'Content', c.id.slice(0, 8)]
+          : ['Knowledge', 'Content'],
+      actions,
+    };
   }
 
   protected cancel(): void {
@@ -248,8 +294,57 @@ export class ContentEditorPageComponent {
   }
 
   protected save(): void {
+    if (this._isActioning()) return;
+    if (this.form.invalid) {
+      this.form.markAllAsTouched();
+      return;
+    }
+    if (this.isCreate()) {
+      this.createContent();
+    } else {
+      this.updateContent();
+    }
+  }
+
+  private createContent(): void {
+    const v = this.form.getRawValue();
+    const body: ApiCreateContentRequest = {
+      slug: v.slug.trim(),
+      title: v.title.trim(),
+      type: v.type,
+      body: v.body,
+      excerpt: v.excerpt,
+      tags: parseTags(v.tags),
+      topic_ids: this.selectedTopicIds(),
+      cover_image: v.coverImage || undefined,
+      reading_time_min: v.readingTimeMin,
+    };
+
+    this._isActioning.set(true);
+    this.contentService
+      .create(body)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (created) => {
+          this._isActioning.set(false);
+          this.form.markAsPristine();
+          this.notifications.success(`Draft "${created.title}" created.`);
+          this.router.navigate([
+            '/admin/knowledge/content',
+            created.id,
+            'edit',
+          ]);
+        },
+        error: () => {
+          this._isActioning.set(false);
+          this.notifications.error('Failed to create content.');
+        },
+      });
+  }
+
+  private updateContent(): void {
     const c = this.content();
-    if (!c || this.form.invalid || this._isActioning()) return;
+    if (!c) return;
 
     const v = this.form.getRawValue();
     const body: ApiUpdateContentRequest = {
@@ -257,9 +352,12 @@ export class ContentEditorPageComponent {
       body: v.body,
       excerpt: v.excerpt,
       tags: parseTags(v.tags),
+      topic_ids: this.selectedTopicIds(),
       cover_image: v.coverImage || undefined,
       reading_time_min: v.readingTimeMin,
-      is_public: v.isPublic,
+      // Visibility is owned by the PATCH …/is-public switch; echo the
+      // server-known value so the full update does not clobber it.
+      is_public: c.is_public,
     };
 
     this._isActioning.set(true);
@@ -280,46 +378,45 @@ export class ContentEditorPageComponent {
       });
   }
 
-  protected submitForReview(): void {
-    const c = this.content();
-    if (!c || this._isActioning()) return;
+  protected runLifecycleAction(action: ContentLifecycleAction): void {
+    switch (action) {
+      case 'submit-for-review':
+        this.submitForReview();
+        break;
+      case 'publish':
+        this.publish();
+        break;
+      case 'revert-to-draft':
+        this.revertToDraft();
+        break;
+      case 'archive':
+        this.archiveContent();
+        break;
+    }
+  }
 
-    this._isActioning.set(true);
-    this.contentService
-      .submitForReview(c.id)
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe({
-        next: () => {
-          this._isActioning.set(false);
-          this.notifications.success('Sent for review.');
-          this.contentResource.reload();
-        },
-        error: (err: unknown) => {
-          this._isActioning.set(false);
-          this.handleMissingEndpoint(err, 'submit-for-review');
-        },
-      });
+  protected submitForReview(): void {
+    this.transition(
+      (id) => this.contentService.submitForReview(id),
+      'Submitted for review.',
+      'submit-for-review',
+    );
   }
 
   protected revertToDraft(): void {
-    const c = this.content();
-    if (!c || this._isActioning()) return;
+    this.transition(
+      (id) => this.contentService.revertToDraft(id),
+      'Reverted to draft.',
+      'revert-to-draft',
+    );
+  }
 
-    this._isActioning.set(true);
-    this.contentService
-      .revertToDraft(c.id)
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe({
-        next: () => {
-          this._isActioning.set(false);
-          this.notifications.success('Reverted to draft.');
-          this.contentResource.reload();
-        },
-        error: (err: unknown) => {
-          this._isActioning.set(false);
-          this.handleMissingEndpoint(err, 'revert-to-draft');
-        },
-      });
+  protected archiveContent(): void {
+    this.transition(
+      (id) => this.contentService.archive(id),
+      'Archived.',
+      'archive',
+    );
   }
 
   protected publish(): void {
@@ -338,8 +435,7 @@ export class ContentEditorPageComponent {
         },
         error: (err: unknown) => {
           this._isActioning.set(false);
-          const status = httpStatus(err);
-          if (status === 403) {
+          if (httpStatus(err) === 403) {
             this.notifications.error(
               'Only human callers can publish; action refused.',
             );
@@ -350,42 +446,76 @@ export class ContentEditorPageComponent {
       });
   }
 
-  protected archiveContent(): void {
+  /** Shared runner for the non-publish lifecycle POSTs. */
+  private transition(
+    call: (id: string) => ReturnType<ContentService['archive']>,
+    successMessage: string,
+    name: string,
+  ): void {
     const c = this.content();
     if (!c || this._isActioning()) return;
 
     this._isActioning.set(true);
-    this.contentService
-      .archive(c.id)
+    call(c.id)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: () => {
           this._isActioning.set(false);
-          this.notifications.success(`Archived "${c.title}".`);
+          this.notifications.success(successMessage);
           this.contentResource.reload();
         },
         error: (err: unknown) => {
           this._isActioning.set(false);
-          this.handleMissingEndpoint(err, 'archive');
+          this.handleTransitionError(err, name);
         },
       });
   }
 
+  protected toggleVisibility(): void {
+    const c = this.content();
+    if (!c || this._isActioning()) return;
+
+    const next = !c.is_public;
+    this._isActioning.set(true);
+    this.contentService
+      .setVisibility(c.id, next)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: () => {
+          this._isActioning.set(false);
+          this.notifications.success(next ? 'Set public.' : 'Set private.');
+          this.contentResource.reload();
+        },
+        error: () => {
+          this._isActioning.set(false);
+          this.notifications.error('Failed to change visibility.');
+        },
+      });
+  }
+
+  protected toggleTopic(id: string): void {
+    this.selectedTopicIds.update((ids) =>
+      ids.includes(id) ? ids.filter((t) => t !== id) : [...ids, id],
+    );
+    this.form.markAsDirty();
+  }
+
   /**
-   * Surface a failed content action as an error toast. The backend
+   * Surface a failed lifecycle action as an error toast. The backend
    * routes exist, so a 404/405/501 here is an unexpected failure (a
-   * routing/proxy mismatch or a missing record) rather than a pending
-   * endpoint — the message tells the operator to refresh and retry.
+   * routing/proxy mismatch or a missing record) — the message tells
+   * the operator to refresh and retry.
    */
-  private handleMissingEndpoint(err: unknown, name: string): void {
+  private handleTransitionError(err: unknown, name: string): void {
     const status = httpStatus(err);
+    const verb = name.replaceAll('-', ' ');
     if (status === 404 || status === 405 || status === 501) {
       this.notifications.error(
-        `Could not ${name.replace('-', ' ')} — please refresh and try again.`,
+        `Could not ${verb} — please refresh and try again.`,
       );
       return;
     }
-    this.notifications.error(`Failed to ${name.replace('-', ' ')}.`);
+    this.notifications.error(`Failed to ${verb}.`);
   }
 
   /**
@@ -398,13 +528,7 @@ export class ContentEditorPageComponent {
     const isCmdOrCtrl = event.metaKey || event.ctrlKey;
     if (!isCmdOrCtrl) return;
 
-    // Bail if the component is not yet hydrated — there's nothing to
-    // act on, and avoids firing during late-arriving events that reach
-    // a torn-down view.
-    const c = this.content();
-    if (!c) return;
-
-    // ⌘S — save draft
+    // ⌘S — save (create or update)
     if (event.key === 's' && !event.shiftKey && !event.altKey) {
       event.preventDefault();
       this.save();
@@ -414,28 +538,25 @@ export class ContentEditorPageComponent {
     // Below: remaining chords all require Cmd+Shift without Alt, and
     // only apply while the content is in review.
     if (!event.shiftKey || event.altKey) return;
-    if (c.status !== 'review') return;
+    const c = this.content();
+    if (c?.status !== 'review') return;
 
-    // ⌘⇧P — publish. `event.key` is guaranteed uppercase when Shift is
-    // held, independent of Caps Lock.
+    // `event.key` is guaranteed uppercase when Shift is held,
+    // independent of Caps Lock.
     if (event.key === 'P') {
       event.preventDefault();
       this.publish();
       return;
     }
-    // ⌘⇧R — revert to draft
     if (event.key === 'R') {
       event.preventDefault();
       this.revertToDraft();
     }
   }
 
-  /**
-   * True when the form has unsaved edits. Used by the
-   * {@link contentEditorCanDeactivate} route guard to confirm before
-   * leaving the page.
-   */
-  readonly hasUnsavedChanges = this.formDirty;
+  protected statusVariant(status: ContentStatus): BadgeVariant {
+    return STATUS_BADGE_VARIANT[status];
+  }
 
   protected aiSummary(c: ApiContent): string | null {
     const v = c.ai_metadata?.['summary'];

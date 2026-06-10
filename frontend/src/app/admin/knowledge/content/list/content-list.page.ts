@@ -176,6 +176,16 @@ export class ContentListPageComponent {
       this.topbar.set({
         title: data.title ?? 'All content',
         crumbs: data.crumbs ?? ['Knowledge', 'Content'],
+        actions: [
+          {
+            id: 'new-content',
+            label: 'New',
+            kind: 'primary',
+            run: () => {
+              void this.router.navigate(['/admin/knowledge/content/new']);
+            },
+          },
+        ],
       });
     });
     effect(() => {
