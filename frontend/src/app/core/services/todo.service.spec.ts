@@ -61,4 +61,100 @@ describe('TodoService', () => {
     expect(req.request.method).toBe('GET');
     req.flush({ data: mockTodo });
   });
+
+  it('should pass list filters when supplied, including per_page', () => {
+    service
+      .list({ state: 'todo', sort: 'due', per_page: 200 })
+      .subscribe((rows) => {
+        expect(rows).toHaveLength(0);
+      });
+
+    const req = httpMock.expectOne(
+      (r) =>
+        r.url.endsWith('/api/admin/commitment/todos') &&
+        r.params.get('state') === 'todo' &&
+        r.params.get('sort') === 'due' &&
+        r.params.get('per_page') === '200',
+    );
+    expect(req.request.method).toBe('GET');
+    req.flush({ data: [] });
+  });
+
+  it('should fetch the recurring buckets', () => {
+    service.recurring().subscribe((res) => {
+      expect(res.due_today).toHaveLength(1);
+      expect(res.due_today[0].recur_interval).toBe(1);
+      expect(res.overdue).toHaveLength(0);
+    });
+
+    const req = httpMock.expectOne((r) =>
+      r.url.endsWith('/api/admin/commitment/todos/recurring'),
+    );
+    expect(req.request.method).toBe('GET');
+    req.flush({
+      data: {
+        due_today: [
+          {
+            id: 'recur-1',
+            title: 'Review the queue',
+            state: 'todo',
+            recur_interval: 1,
+            recur_unit: 'days',
+            created_by: 'human',
+            created_at: '2026-06-01T00:00:00Z',
+            updated_at: '2026-06-01T00:00:00Z',
+          },
+        ],
+        overdue: [],
+      },
+    });
+  });
+
+  it('should fetch history without q on the completed-since path', () => {
+    service.history().subscribe((rows) => {
+      expect(rows[0].title).toBe('Shipped the thing');
+    });
+
+    const req = httpMock.expectOne(
+      (r) =>
+        r.url.endsWith('/api/admin/commitment/todos/history') &&
+        !r.params.has('q'),
+    );
+    expect(req.request.method).toBe('GET');
+    req.flush({
+      data: [
+        {
+          id: 'hist-1',
+          title: 'Shipped the thing',
+          completed_at: '2026-06-09T10:00:00Z',
+          project_title: 'koopa-core',
+        },
+      ],
+    });
+  });
+
+  it('should pass q to history for the search path', () => {
+    service.history({ q: 'auth' }).subscribe();
+
+    const req = httpMock.expectOne(
+      (r) =>
+        r.url.endsWith('/api/admin/commitment/todos/history') &&
+        r.params.get('q') === 'auth',
+    );
+    expect(req.request.method).toBe('GET');
+    req.flush({ data: [] });
+  });
+
+  it('should post the advance action and tolerate the inbox-only drop 204', () => {
+    service.advance('todo-1', 'drop').subscribe((res) => {
+      expect(res).toBeNull();
+    });
+
+    const req = httpMock.expectOne((r) =>
+      r.url.includes('/api/admin/commitment/todos/todo-1/advance'),
+    );
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body).toEqual({ action: 'drop' });
+    req.flush(null, { status: 204, statusText: 'No Content' });
+  });
 });

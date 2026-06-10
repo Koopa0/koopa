@@ -248,8 +248,8 @@ fi
 # the "Coming soon" route placeholder. Only phrases that falsely deny a live
 # route are listed.
 STALE_COPY_FILES=(
-  "src/app/admin/commitment/todos/list/todos-list.page.html"
-  "src/app/admin/commitment/todos/list/todos-list.page.ts"
+  "src/app/admin/commitment/todos/gtd.page.html"
+  "src/app/admin/commitment/todos/gtd.page.ts"
   "src/app/admin/coordination/agents/profile/agent-profile.page.html"
   "src/app/admin/coordination/agents/profile/agent-profile.page.ts"
   "src/app/admin/knowledge/content/editor/content-editor.page.ts"

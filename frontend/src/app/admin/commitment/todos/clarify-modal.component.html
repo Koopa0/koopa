@@ -1,0 +1,94 @@
+<app-modal
+  [title]="item().title"
+  subtitle="Give it just enough shape to act on — project, energy, when. It becomes a todo."
+  titleId="clarify-modal-title"
+  (closed)="closed.emit()"
+>
+  <div class="flex flex-col gap-4" data-testid="clarify-modal">
+    <span
+      class="self-start rounded-sm bg-brand-muted px-2 py-0.5 font-mono text-[10px] tracking-wide text-brand uppercase"
+    >
+      clarify capture
+    </span>
+
+    <app-form-field label="Project" fieldId="clarify-project">
+      <select
+        id="clarify-project"
+        [value]="project()"
+        (change)="project.set(readValue($event))"
+        class="w-full rounded-sm border border-border bg-elevated px-2.5 py-1.5 text-[13px] text-fg focus:border-brand focus:outline-hidden"
+        data-testid="clarify-project"
+      >
+        <option value="">(no project)</option>
+        @for (option of projects(); track option.id) {
+          <option [value]="option.id">{{ option.title }}</option>
+        }
+      </select>
+    </app-form-field>
+
+    <app-form-field label="Energy">
+      <div
+        class="inline-flex gap-0.5 rounded-sm border border-border bg-elevated p-0.5"
+        role="radiogroup"
+        aria-label="Energy"
+      >
+        @for (option of energyOptions; track option) {
+          <button
+            type="button"
+            role="radio"
+            [attr.aria-checked]="energy() === option"
+            (click)="energy.set(option)"
+            class="rounded-[3px] px-2.5 py-1 font-mono text-[11px] transition-colors"
+            [class.bg-brand-muted]="energy() === option"
+            [class.text-brand]="energy() === option"
+            [class.text-fg-subtle]="energy() !== option"
+            [attr.data-testid]="'clarify-energy-' + option"
+          >
+            {{ option }}
+          </button>
+        }
+      </div>
+    </app-form-field>
+
+    <app-form-field label="Due" fieldId="clarify-due">
+      <input
+        id="clarify-due"
+        type="date"
+        [value]="due()"
+        (input)="due.set(readValue($event))"
+        class="w-full rounded-sm border border-border bg-elevated px-2.5 py-1.5 text-[13px] text-fg focus:border-brand focus:outline-hidden"
+        data-testid="clarify-due"
+      />
+    </app-form-field>
+  </div>
+
+  <div modal-footer class="flex w-full items-center gap-2.5">
+    <button
+      type="button"
+      (click)="deferInstead.emit()"
+      [disabled]="busy()"
+      class="rounded-sm border border-transparent px-2.5 py-1.5 text-xs text-fg-subtle transition-colors hover:bg-overlay hover:text-fg disabled:cursor-not-allowed disabled:opacity-40"
+      data-testid="clarify-defer-instead"
+    >
+      Defer instead
+    </button>
+    <span class="flex-1"></span>
+    <button
+      type="button"
+      (click)="closed.emit()"
+      class="rounded-sm border border-border bg-elevated px-2.5 py-1.5 text-xs text-fg-muted transition-colors hover:bg-overlay hover:text-fg"
+      data-testid="clarify-cancel"
+    >
+      Cancel
+    </button>
+    <button
+      type="button"
+      (click)="submit()"
+      [disabled]="busy()"
+      class="rounded-sm border border-brand bg-brand px-2.5 py-1.5 text-xs font-semibold text-[oklch(0.14_0.02_260)] transition-colors hover:bg-brand-strong disabled:cursor-not-allowed disabled:opacity-40"
+      data-testid="clarify-submit"
+    >
+      Clarify → todo
+    </button>
+  </div>
+</app-modal>

@@ -1,0 +1,152 @@
+@if (view() === 'inbox') {
+  <lucide-icon
+    [img]="sourceIcon()"
+    [size]="14"
+    class="shrink-0 text-fg-subtle"
+    aria-hidden="true"
+  />
+  <span class="min-w-0 flex-1 truncate text-[13px] text-fg">
+    {{ item().title }}
+  </span>
+  @if (item().created_by) {
+    <span
+      class="shrink-0 rounded-sm bg-elevated px-1.5 py-0.5 font-mono text-[10px] text-fg-subtle"
+    >
+      {{ item().created_by }}
+    </span>
+  }
+  <span class="shrink-0 font-mono text-[10px] text-fg-faint">{{ age() }}</span>
+  <span
+    class="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100"
+    [class.opacity-100]="selected()"
+  >
+    <button
+      type="button"
+      (click)="clarify.emit()"
+      [disabled]="busy()"
+      class="rounded-sm border border-brand bg-brand px-2 py-0.5 text-[11px] font-semibold text-[oklch(0.14_0.02_260)] transition-colors hover:bg-brand-strong disabled:cursor-not-allowed disabled:opacity-40"
+      data-testid="gtd-row-clarify"
+    >
+      Clarify
+    </button>
+    <button
+      type="button"
+      (click)="deferRow.emit()"
+      [disabled]="busy()"
+      title="Defer (d)"
+      aria-label="Defer to someday"
+      class="rounded-sm border border-transparent p-1 text-fg-subtle transition-colors hover:bg-overlay hover:text-fg disabled:cursor-not-allowed disabled:opacity-40"
+      data-testid="gtd-row-defer"
+    >
+      <lucide-icon [img]="MoonIcon" [size]="13" aria-hidden="true" />
+    </button>
+    <button
+      type="button"
+      (click)="dropRow.emit()"
+      [disabled]="busy()"
+      title="Drop (x)"
+      aria-label="Drop capture"
+      class="rounded-sm border border-transparent p-1 text-error transition-colors hover:bg-error-bg disabled:cursor-not-allowed disabled:opacity-40"
+      data-testid="gtd-row-drop"
+    >
+      <lucide-icon [img]="XIcon" [size]="13" aria-hidden="true" />
+    </button>
+  </span>
+} @else {
+  <button
+    type="button"
+    (click)="advance.emit()"
+    [disabled]="busy()"
+    [attr.aria-label]="verbLabel() + ' ' + item().title"
+    class="flex size-[15px] shrink-0 items-center justify-center rounded-sm border-[1.5px] border-border-strong transition-colors hover:border-brand disabled:cursor-not-allowed disabled:opacity-40"
+    data-testid="gtd-row-check"
+  ></button>
+  @if (inProgress()) {
+    <span
+      class="size-[7px] shrink-0 rounded-[2px] bg-info"
+      aria-hidden="true"
+      data-testid="gtd-row-ip-dot"
+    ></span>
+  }
+  <span class="min-w-0 flex-1 truncate text-[13px] text-fg">
+    {{ item().title }}
+  </span>
+  @if (recur(); as label) {
+    <span
+      class="shrink-0 rounded-sm bg-brand-muted px-1.5 py-0.5 font-mono text-[10px] text-brand"
+    >
+      {{ label }}
+    </span>
+  }
+  @if (inProgress()) {
+    <span
+      class="shrink-0 rounded-sm bg-info-bg px-1.5 py-0.5 font-mono text-[10px] text-info uppercase"
+    >
+      in progress
+    </span>
+  }
+  @if (item().project_title) {
+    <span
+      class="shrink-0 rounded-sm bg-elevated px-1.5 py-0.5 font-mono text-[10px] text-fg-subtle"
+    >
+      {{ item().project_title }}
+    </span>
+  }
+  @if (energy(); as level) {
+    <app-energy-meter class="shrink-0" [level]="level" />
+  }
+  @if (due(); as chip) {
+    <span
+      class="shrink-0 rounded-sm px-1.5 py-0.5 font-mono text-[10px]"
+      [class.bg-error-bg]="chip.tone === 'overdue'"
+      [class.text-error]="chip.tone === 'overdue'"
+      [class.bg-warn-bg]="chip.tone === 'soon'"
+      [class.text-warn]="chip.tone === 'soon'"
+      [class.bg-elevated]="chip.tone === 'default'"
+      [class.text-fg-subtle]="chip.tone === 'default'"
+      data-testid="gtd-row-due"
+    >
+      {{ chip.label }}
+    </span>
+  }
+  <span
+    class="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100"
+    [class.opacity-100]="selected()"
+  >
+    <button
+      type="button"
+      (click)="advance.emit()"
+      [disabled]="busy()"
+      class="rounded-sm border border-border bg-elevated px-2 py-0.5 text-[11px] text-fg-muted transition-colors hover:border-brand hover:text-brand disabled:cursor-not-allowed disabled:opacity-40"
+      data-testid="gtd-row-advance"
+    >
+      {{ verbLabel() }}
+    </button>
+    @if (showPull()) {
+      <button
+        type="button"
+        (click)="pull.emit()"
+        [disabled]="busy()"
+        title="Pull into today (t)"
+        aria-label="Pull into today"
+        class="rounded-sm border border-transparent p-1 text-fg-subtle transition-colors hover:bg-overlay hover:text-fg disabled:cursor-not-allowed disabled:opacity-40"
+        data-testid="gtd-row-pull"
+      >
+        <lucide-icon [img]="CalendarPlusIcon" [size]="13" aria-hidden="true" />
+      </button>
+    }
+    @if (showDefer()) {
+      <button
+        type="button"
+        (click)="deferRow.emit()"
+        [disabled]="busy()"
+        title="Defer (d)"
+        aria-label="Defer to someday"
+        class="rounded-sm border border-transparent p-1 text-fg-subtle transition-colors hover:bg-overlay hover:text-fg disabled:cursor-not-allowed disabled:opacity-40"
+        data-testid="gtd-row-defer"
+      >
+        <lucide-icon [img]="MoonIcon" [size]="13" aria-hidden="true" />
+      </button>
+    }
+  </span>
+}

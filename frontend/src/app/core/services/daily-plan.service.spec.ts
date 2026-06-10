@@ -4,24 +4,27 @@ import {
   provideHttpClientTesting,
 } from '@angular/common/http/testing';
 import { provideHttpClient, withXhr } from '@angular/common/http';
-import { DailyPlanService } from './daily-plan.service';
-import type { DailyPlanResponse } from '../models/workbench.model';
+import { DailyPlanService, type DailyPlan } from './daily-plan.service';
 
-const mockResponse: DailyPlanResponse = {
-  date: '2026-04-17',
-  state: 'ok',
-  total: 3,
+const mockPlan: DailyPlan = {
+  date: '2026-06-10',
+  total: 2,
   done: 1,
   overdue_count: 0,
   items: [
     {
       id: 'dp-1',
       todo_id: 'todo-1',
-      todo_title: 'Fix auth middleware',
-      todo_state: 'in_progress',
-      todo_assignee: 'human',
-      status: 'planned',
-      position: 0,
+      title: 'Fix auth middleware',
+      state: 'planned',
+      selected_by: 'human',
+    },
+    {
+      id: 'dp-2',
+      todo_id: 'todo-2',
+      title: 'Write the digest',
+      state: 'done',
+      completed_at: '2026-06-10T09:00:00Z',
       selected_by: 'planner',
     },
   ],
@@ -49,46 +52,50 @@ describe('DailyPlanService', () => {
 
   it("should fetch today's plan when no date is given", () => {
     service.today().subscribe((res) => {
-      expect(res.date).toBe('2026-04-17');
-      expect(res.items).toHaveLength(1);
-      expect(res.state).toBe('ok');
+      expect(res.date).toBe('2026-06-10');
+      expect(res.items).toHaveLength(2);
+      expect(res.items[0].todo_id).toBe('todo-1');
+      expect(res.items[1].state).toBe('done');
     });
-
-    const req = httpMock.expectOne(
-      (r) => r.url.includes('/api/admin/commitment/daily-plan') && !r.params.has('date'),
-    );
-    expect(req.request.method).toBe('GET');
-    req.flush({ data: mockResponse });
-  });
-
-  it('should pass date param when supplied', () => {
-    service.today('2026-04-15').subscribe();
 
     const req = httpMock.expectOne(
       (r) =>
         r.url.includes('/api/admin/commitment/daily-plan') &&
-        r.params.get('date') === '2026-04-15',
+        !r.params.has('date'),
     );
     expect(req.request.method).toBe('GET');
-    req.flush({ data: mockResponse });
+    req.flush({ data: mockPlan });
   });
 
-  it('should surface warn state when overdue items exist', () => {
-    service.today().subscribe((res) => {
-      expect(res.state).toBe('warn');
-      expect(res.reason).toBe('1 overdue from yesterday');
+  it('should pass date param when supplied', () => {
+    service.today('2026-06-08').subscribe();
+
+    const req = httpMock.expectOne(
+      (r) =>
+        r.url.includes('/api/admin/commitment/daily-plan') &&
+        r.params.get('date') === '2026-06-08',
+    );
+    expect(req.request.method).toBe('GET');
+    req.flush({ data: mockPlan });
+  });
+
+  it('should PUT the full item set on replace', () => {
+    const items = [
+      { todo_id: 'todo-1', position: 0 },
+      { todo_id: 'todo-3', position: 1 },
+    ];
+    service.replace(items).subscribe((res) => {
+      expect(res.total).toBe(2);
+      expect(res.items_removed).toHaveLength(0);
     });
 
     const req = httpMock.expectOne((r) =>
       r.url.includes('/api/admin/commitment/daily-plan'),
     );
+    expect(req.request.method).toBe('PUT');
+    expect(req.request.body).toEqual({ items });
     req.flush({
-      data: {
-        ...mockResponse,
-        state: 'warn',
-        reason: '1 overdue from yesterday',
-        overdue_count: 1,
-      },
+      data: { date: '2026-06-10', items: [], total: 2, items_removed: [] },
     });
   });
 });

@@ -283,37 +283,6 @@ export interface CellState {
 }
 
 // ============================================================
-// Daily Plan (matches internal/daily/daily.go::Item)
-// ============================================================
-
-export type DailyPlanStatus = 'planned' | 'done' | 'deferred' | 'dropped';
-
-export interface DailyPlanItem {
-  id: string;
-  todo_id: string;
-  todo_title: string;
-  todo_state: string;
-  todo_assignee: string;
-  todo_due?: string;
-  todo_energy?: string | null;
-  todo_priority?: string | null;
-  status: DailyPlanStatus;
-  position: number;
-  reason?: string;
-  selected_by: string;
-  project_title?: string;
-  project_slug?: string;
-}
-
-export interface DailyPlanResponse extends CellState {
-  date: string;
-  items: DailyPlanItem[];
-  total: number;
-  done: number;
-  overdue_count: number;
-}
-
-// ============================================================
 // Learning Summary (matches internal/learning/handler.go response)
 // ============================================================
 

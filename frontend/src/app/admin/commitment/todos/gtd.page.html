@@ -1,0 +1,269 @@
+<!-- Persistent capture bar -->
+<form
+  class="flex h-[42px] shrink-0 items-center gap-2.5 border-b border-border bg-panel px-5"
+  (submit)="$event.preventDefault(); submitCapture()"
+  data-testid="gtd-capture-form"
+>
+  <lucide-icon
+    [img]="PlusIcon"
+    [size]="15"
+    class="shrink-0 text-fg-subtle"
+    aria-hidden="true"
+  />
+  <label for="gtd-capture" class="sr-only">Capture a thought</label>
+  <input
+    #captureInput
+    id="gtd-capture"
+    type="text"
+    [value]="captureDraft()"
+    (input)="captureDraft.set(readInput($event))"
+    placeholder="Capture a thought — it lands in the inbox, unclarified…"
+    class="h-full min-w-0 flex-1 bg-transparent text-[13px] text-fg outline-hidden placeholder:text-fg-faint"
+    data-testid="gtd-capture-input"
+  />
+  <kbd
+    class="shrink-0 rounded-sm border border-border border-b-2 bg-elevated px-1.5 font-mono text-[10px] whitespace-nowrap text-fg-muted"
+  >
+    ↵ capture
+  </kbd>
+</form>
+
+<!-- View tabs with live counts -->
+<div
+  class="flex shrink-0 flex-wrap items-center gap-1 border-b border-border bg-panel px-5 py-2"
+  role="tablist"
+  aria-label="GTD views"
+>
+  @for (tab of tabs; track tab.view) {
+    <button
+      type="button"
+      role="tab"
+      [attr.aria-selected]="store.view() === tab.view"
+      (click)="store.setView(tab.view)"
+      class="rounded-sm border px-2.5 py-[3px] font-mono text-[11px] transition-colors"
+      [class.border-transparent]="store.view() === tab.view"
+      [class.bg-brand-muted]="store.view() === tab.view"
+      [class.text-brand]="store.view() === tab.view"
+      [class.border-border-faint]="store.view() !== tab.view"
+      [class.bg-elevated]="store.view() !== tab.view"
+      [class.text-fg-muted]="store.view() !== tab.view"
+      [attr.data-testid]="'gtd-tab-' + tab.view"
+    >
+      {{ tab.label }}
+      <span class="ml-1 tabular-nums" aria-hidden="true">
+        {{ store.counts()[tab.view] }}
+      </span>
+    </button>
+  }
+  @if (store.view() === 'history') {
+    <label for="gtd-history-search" class="sr-only">Search history</label>
+    <input
+      id="gtd-history-search"
+      type="search"
+      [value]="store.searchDraft()"
+      (input)="store.searchHistory(readInput($event))"
+      placeholder="Search history…"
+      class="ml-auto h-7 w-56 rounded-sm border border-border-faint bg-elevated px-2.5 text-xs text-fg placeholder:text-fg-faint focus:border-brand focus:outline-hidden"
+      data-testid="gtd-history-search"
+    />
+  }
+</div>
+
+<!-- Scrollable list area -->
+<div class="min-h-0 flex-1 overflow-y-auto" data-testid="gtd-list">
+  @if (store.viewError()) {
+    <div
+      class="flex flex-col items-center gap-2 p-10 text-center"
+      data-testid="gtd-error"
+    >
+      <lucide-icon
+        [img]="HexagonIcon"
+        [size]="28"
+        class="mb-1 text-error opacity-70"
+        aria-hidden="true"
+      />
+      <h2 class="font-display text-sm font-semibold text-fg">
+        Couldn’t load this view
+      </h2>
+      <p class="max-w-[280px] text-xs leading-relaxed text-fg-subtle">
+        The todos service didn’t respond. Nothing was lost.
+      </p>
+      <button
+        type="button"
+        (click)="store.reloadActive()"
+        data-testid="gtd-retry"
+        class="mt-2 rounded-sm border border-border bg-elevated px-3 py-1.5 text-xs text-fg-muted transition-colors hover:border-brand hover:text-brand"
+      >
+        Retry
+      </button>
+    </div>
+  } @else if (store.viewLoading()) {
+    <div
+      class="flex flex-col gap-1 px-5 py-3"
+      data-testid="gtd-loading"
+      aria-busy="true"
+      aria-label="Loading todos"
+    >
+      @for (row of [1, 2, 3, 4, 5, 6]; track row) {
+        <div class="h-8 animate-pulse rounded-sm bg-elevated"></div>
+      }
+    </div>
+  } @else {
+    @switch (store.view()) {
+      @case ('recurring') {
+        @if (store.recurringGroups().length === 0) {
+          <app-empty-state
+            [icon]="HexagonIcon"
+            [title]="store.emptyCopy().title"
+            [description]="store.emptyCopy().description"
+          />
+        }
+        @for (group of store.recurringGroups(); track group.label) {
+          <p
+            class="px-5 pt-3 pb-1 font-mono text-[10px] tracking-wider text-fg-faint uppercase"
+            [attr.data-testid]="'gtd-recurring-group-' + group.label"
+          >
+            {{ group.label }}
+          </p>
+          <div role="list">
+            @for (item of group.items; track item.id) {
+              <div
+                role="listitem"
+                class="flex min-h-8 items-center gap-2.5 border-b border-border-faint px-5 py-1.5"
+                data-testid="gtd-recurring-row"
+              >
+                <span class="min-w-0 flex-1 truncate text-[13px] text-fg">
+                  {{ item.title }}
+                </span>
+                @if (recurBadge(item); as badge) {
+                  <span
+                    class="shrink-0 rounded-sm bg-brand-muted px-1.5 py-0.5 font-mono text-[10px] text-brand"
+                  >
+                    {{ badge }}
+                  </span>
+                }
+                @if (recurEnergy(item); as level) {
+                  <app-energy-meter class="shrink-0" [level]="level" />
+                }
+                @if (recurDue(item); as chip) {
+                  <span
+                    class="shrink-0 rounded-sm px-1.5 py-0.5 font-mono text-[10px]"
+                    [class.bg-error-bg]="chip.tone === 'overdue'"
+                    [class.text-error]="chip.tone === 'overdue'"
+                    [class.bg-warn-bg]="chip.tone === 'soon'"
+                    [class.text-warn]="chip.tone === 'soon'"
+                    [class.bg-elevated]="chip.tone === 'default'"
+                    [class.text-fg-subtle]="chip.tone === 'default'"
+                  >
+                    {{ chip.label }}
+                  </span>
+                }
+              </div>
+            }
+          </div>
+        }
+      }
+      @case ('history') {
+        @if (store.historyRows().length === 0) {
+          <app-empty-state
+            [icon]="HexagonIcon"
+            [title]="store.emptyCopy().title"
+            [description]="store.emptyCopy().description"
+          />
+        }
+        <div role="list">
+          @for (row of store.historyRows(); track row.id) {
+            <div
+              role="listitem"
+              class="flex min-h-8 items-center gap-2.5 border-b border-border-faint px-5 py-1.5"
+              data-testid="gtd-history-row"
+            >
+              <span
+                class="flex size-[15px] shrink-0 items-center justify-center rounded-sm bg-success text-[9px] leading-none font-bold text-[oklch(0.16_0.02_260)]"
+                aria-hidden="true"
+              >
+                ✓
+              </span>
+              <span class="min-w-0 flex-1 truncate text-[13px] text-fg-faint">
+                {{ row.title }}
+              </span>
+              <span
+                class="shrink-0 rounded-sm bg-elevated px-1.5 py-0.5 font-mono text-[10px] text-fg-subtle"
+              >
+                {{ row.project_title || 'unfiled' }}
+              </span>
+              <span class="shrink-0 font-mono text-[10px] text-fg-faint">
+                {{
+                  row.completed_at
+                    ? (row.completed_at | date: 'MMM d, HH:mm')
+                    : '—'
+                }}
+              </span>
+            </div>
+          }
+        </div>
+      }
+      @default {
+        @if (store.rows().length === 0) {
+          <app-empty-state
+            [icon]="HexagonIcon"
+            [title]="store.emptyCopy().title"
+            [description]="store.emptyCopy().description"
+          />
+        }
+        <div role="list">
+          @for (row of store.rows(); let i = $index; track row.id) {
+            <app-gtd-row
+              [item]="row"
+              [view]="store.view()"
+              [selected]="showSelection() && i === store.selection()"
+              [busy]="store.busy()"
+              (rowHover)="store.selectedIndex.set(i)"
+              (clarify)="store.clarifyTarget.set(row)"
+              (advance)="store.advanceRow(row)"
+              (deferRow)="store.deferRow(row)"
+              (dropRow)="store.dropRow(row)"
+              (pull)="store.pullRow(row)"
+              [attr.data-testid]="'gtd-row-' + i"
+            />
+          }
+        </div>
+      }
+    }
+  }
+</div>
+
+<!-- Contextual keyboard hint bar -->
+<footer
+  class="flex shrink-0 items-center gap-4 border-t border-border bg-panel px-5 py-2 font-mono text-[11px] text-fg-subtle"
+  data-testid="gtd-kbar"
+>
+  @for (hint of store.legend(); track hint.keys) {
+    <span class="inline-flex items-center gap-1.5">
+      <kbd
+        class="rounded-sm border border-border border-b-2 bg-elevated px-1.5 font-mono text-[10px] text-fg-muted"
+      >
+        {{ hint.keys }}
+      </kbd>
+      {{ hint.label }}
+    </span>
+  }
+  <span
+    class="ml-auto tabular-nums"
+    aria-live="polite"
+    data-testid="gtd-count"
+  >
+    {{ store.itemCount() }} {{ store.itemCount() === 1 ? 'item' : 'items' }}
+  </span>
+</footer>
+
+<!-- Clarify dialog -->
+@if (store.clarifyTarget(); as target) {
+  <app-clarify-modal
+    [item]="target"
+    [busy]="store.busy()"
+    (clarified)="store.clarified($event)"
+    (deferInstead)="store.deferInstead()"
+    (closed)="store.clarifyTarget.set(null)"
+  />
+}

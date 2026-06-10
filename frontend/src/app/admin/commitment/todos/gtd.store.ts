@@ -1,0 +1,249 @@
+import { DestroyRef, Injectable, computed, inject, signal } from '@angular/core';
+import { rxResource } from '@angular/core/rxjs-interop';
+import { of, switchMap, type Observable } from 'rxjs';
+import {
+  TodoService,
+  type TodoAdvanceAction,
+  type TodoItem,
+  type TodoRow,
+} from '../../../core/services/todo.service';
+import {
+  DailyPlanService,
+  type DailyPlan,
+} from '../../../core/services/daily-plan.service';
+import { NotificationService } from '../../../core/services/notification.service';
+import {
+  ADVANCE_TOAST,
+  advanceActionFor,
+  appendToPlan,
+  clarifyUpdate,
+  emptyCopyFor,
+  keyboardLegend,
+  mutationErrorMessage,
+  planMemberIds,
+  recurringGroupsOf,
+  rowsForView,
+  viewCounts,
+  type ClarifyResult,
+  type GtdView,
+} from './gtd-view';
+
+const BACKLOG_PAGE_SIZE = 200;
+const HISTORY_DEBOUNCE_MS = 250;
+
+/**
+ * Page-scoped state for the GTD surface: the four data resources
+ * (backlog list, daily plan, recurring buckets, completed history),
+ * the active view + row selection, and every mutation round-trip
+ * (capture, advance verbs, clarify, plan append). Provided by the GTD
+ * page so the state dies with the route.
+ */
+@Injectable()
+export class GtdStore {
+  private readonly todoService = inject(TodoService);
+  private readonly dailyPlanService = inject(DailyPlanService);
+  private readonly notifications = inject(NotificationService);
+  private readonly destroyRef = inject(DestroyRef);
+
+  readonly view = signal<GtdView>('inbox');
+  readonly selectedIndex = signal(0);
+  readonly clarifyTarget = signal<TodoRow | null>(null);
+  readonly searchDraft = signal('');
+  private readonly historyQuery = signal('');
+  private historyTimer: ReturnType<typeof setTimeout> | null = null;
+  private readonly _busy = signal(false);
+  readonly busy = this._busy.asReadonly();
+
+  readonly backlog = rxResource<TodoRow[], void>({
+    stream: () => this.todoService.list({ per_page: BACKLOG_PAGE_SIZE }),
+  });
+  readonly plan = rxResource<DailyPlan, void>({
+    stream: () => this.dailyPlanService.today(),
+  });
+  readonly recurring = rxResource({
+    stream: () => this.todoService.recurring(),
+  });
+  readonly history = rxResource({
+    params: () => ({ q: this.historyQuery() }),
+    stream: ({ params }) =>
+      this.todoService.history(params.q ? { q: params.q } : {}),
+  });
+
+  private readonly todayIso = new Date().toISOString().slice(0, 10);
+  private readonly planIds = computed(() =>
+    planMemberIds(this.plan.value()?.items ?? []),
+  );
+  readonly rows = computed(() =>
+    rowsForView(
+      this.view(),
+      this.backlog.value() ?? [],
+      this.planIds(),
+      this.todayIso,
+    ),
+  );
+  readonly selection = computed(() =>
+    Math.min(this.selectedIndex(), Math.max(this.rows().length - 1, 0)),
+  );
+  readonly historyRows = computed(() => this.history.value() ?? []);
+  readonly recurringGroups = computed(() =>
+    recurringGroupsOf(this.recurring.value()),
+  );
+  readonly counts = computed(() =>
+    viewCounts(
+      this.backlog.value() ?? [],
+      this.planIds(),
+      this.todayIso,
+      this.recurring.value(),
+      this.historyRows().length,
+    ),
+  );
+  readonly itemCount = computed(() => this.counts()[this.view()]);
+  readonly legend = computed(() => keyboardLegend(this.view()));
+  readonly emptyCopy = computed(() =>
+    emptyCopyFor(this.view(), this.searchDraft().trim() !== ''),
+  );
+  private readonly activeResource = computed(() => {
+    if (this.view() === 'recurring') return this.recurring;
+    if (this.view() === 'history') return this.history;
+    return this.backlog;
+  });
+  readonly viewLoading = computed(
+    () => this.activeResource().status() === 'loading',
+  );
+  readonly viewError = computed(
+    () => this.activeResource().status() === 'error',
+  );
+
+  constructor() {
+    this.destroyRef.onDestroy(() => {
+      if (this.historyTimer !== null) clearTimeout(this.historyTimer);
+    });
+  }
+
+  setView(view: GtdView): void {
+    this.view.set(view);
+    this.selectedIndex.set(0);
+  }
+
+  reloadActive(): void {
+    this.activeResource().reload();
+  }
+
+  /** Debounced history search — lands in ?q= on the history endpoint. */
+  searchHistory(value: string): void {
+    this.searchDraft.set(value);
+    if (this.historyTimer !== null) clearTimeout(this.historyTimer);
+    this.historyTimer = setTimeout(
+      () => this.historyQuery.set(value.trim()),
+      HISTORY_DEBOUNCE_MS,
+    );
+  }
+
+  /** Capture a raw thought into the inbox; lands unclarified. */
+  capture(title: string, onDone: () => void): void {
+    if (this._busy()) return;
+    this._busy.set(true);
+    this.todoService.create({ title }).subscribe({
+      next: () => {
+        this._busy.set(false);
+        this.notifications.success('Captured to inbox');
+        this.setView('inbox');
+        this.backlog.reload();
+        onDone();
+      },
+      error: () => {
+        this._busy.set(false);
+        this.notifications.error('Failed to capture.');
+      },
+    });
+  }
+
+  /** Primary advance: inbox rows open clarify, others run their verb. */
+  advanceRow(row: TodoRow): void {
+    if (row.state === 'inbox') {
+      this.clarifyTarget.set(row);
+      return;
+    }
+    const action = advanceActionFor(row.state);
+    if (action) this.runAdvance(row, action);
+  }
+
+  deferRow(row: TodoRow): void {
+    this.runAdvance(row, 'defer');
+  }
+
+  dropRow(row: TodoRow): void {
+    this.runAdvance(row, 'drop');
+  }
+
+  /** Append the todo to today's plan via the atomic PUT replace. */
+  pullRow(row: TodoRow): void {
+    const plan = this.plan.value();
+    if (!plan) {
+      this.notifications.error('Today’s plan has not loaded yet.');
+      return;
+    }
+    if (this.planIds().has(row.id)) {
+      this.notifications.info('Already in today’s plan.');
+      return;
+    }
+    this.mutate(
+      this.dailyPlanService.replace(appendToPlan(plan.items, row.id)),
+      'Pulled into today',
+      { plan: true },
+    );
+  }
+
+  /** Clarify-modal submit: optional field PUT, then advance(clarify). */
+  clarified(result: ClarifyResult): void {
+    const row = this.clarifyTarget();
+    if (!row) return;
+    this.clarifyTarget.set(null);
+    const fields = clarifyUpdate(result);
+    const update$: Observable<TodoItem | null> = fields
+      ? this.todoService.update(row.id, fields)
+      : of(null);
+    this.mutate(
+      update$.pipe(switchMap(() => this.todoService.advance(row.id, 'clarify'))),
+      ADVANCE_TOAST.clarify,
+      {},
+    );
+  }
+
+  deferInstead(): void {
+    const row = this.clarifyTarget();
+    if (!row) return;
+    this.clarifyTarget.set(null);
+    this.runAdvance(row, 'defer');
+  }
+
+  private runAdvance(row: TodoRow, action: TodoAdvanceAction): void {
+    const done = action === 'complete';
+    this.mutate(this.todoService.advance(row.id, action), ADVANCE_TOAST[action], {
+      plan: done,
+      history: done,
+    });
+  }
+
+  private mutate(
+    request: Observable<unknown>,
+    message: string,
+    reload: { plan?: boolean; history?: boolean },
+  ): void {
+    if (this._busy()) return;
+    this._busy.set(true);
+    request.subscribe({
+      next: () => {
+        this._busy.set(false);
+        this.notifications.success(message);
+        this.backlog.reload();
+        if (reload.plan) this.plan.reload();
+        if (reload.history) this.history.reload();
+      },
+      error: (err: unknown) => {
+        this._busy.set(false);
+        this.notifications.error(mutationErrorMessage(err));
+      },
+    });
+  }
+}
