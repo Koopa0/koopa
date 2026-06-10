@@ -1,6 +1,6 @@
 # `docs/` — index, authority, and what counts as runtime truth
 
-> **Project status (Phase 1D, 2026-05-27):** koopa is a **private portfolio /
+> **Project status (2026-06-10):** koopa is a **private portfolio /
 > source-visible reference repository**, not open source. See the root
 > [README.md](../README.md) and [LICENSE](../LICENSE). The docs below describe
 > the system that exists for the single admin and the closed agent set; they
@@ -21,7 +21,7 @@ MUST be updated):
 3. **MCP ops catalog + tool descriptions** (`internal/mcp/ops/catalog.go`) and **MCP behavior policy** (`.claude/rules/mcp-decision-policy.md`)
 4. **Backend semantic contract** — `backend-semantic-contract.md`
 5. **Skills / agent operational docs** — `skills/koopa-system/`, `docs/Koopa-*.md`
-6. **Historical docs** — `docs/audit/`, `docs/audit-prompts/`
+6. **Historical docs** — dated audit reports and superseded design docs
 
 ## Document classification
 
@@ -29,9 +29,8 @@ MUST be updated):
 |---|---|---|---|
 | `backend-semantic-contract.md` | 4 (canonical) | **Yes** — shared vocabulary + cross-entity contract | 7 sections (§1–§7): core domain vocabulary is §3, domain boundaries §4, MCP tool semantics §5. |
 | `LEARNING-CONTRACT.md` | 4 (canonical companion) | **Yes** — concept-mastery signal + the 5-tool learning surface | Post MCP-v3: single mastery axis, no FSRS. |
-| `authorization-matrix.md` | 4 (canonical companion) | **Yes** — MCP write-tool authorization | Four-axis model. |
-| `audit/*.md` | 6 (historical) | **No** — point-in-time review | Findings reflect repo state at the dated moment; verify before acting. |
-| `audit-prompts/*.md` | 6 (historical) | **No** — past audit-session prompts | Session inputs, not contracts. |
+| `authorization-matrix.md` | 4 (canonical companion) | **Yes** — MCP write-tool authorization | Identity-based three-axis model (platform / author / self). |
+| `audit-prompts/*.md` | 5 (operational) | **No** — executable prompt templates | Stage prompts for the adversarial-review protocol (`.claude/rules/adversarial-review.md`); templates, not contracts. |
 
 Out of `docs/` but in the order: `migrations/*.sql` (tier 1),
 `internal/`+`cmd/` (tier 2), `internal/mcp/ops/catalog.go` +
@@ -61,10 +60,6 @@ automated gates. Listed for a future task; none is wired today.
 4. **Search-corpus pin.** A unit test asserting `search_knowledge`'s
    `selectSources` corpus matches a documented constant, so README/corpus
    claims and code cannot silently diverge again.
-5. **Bookmark-lifecycle pin.** A doc-test (or a comment-linked assertion)
-   that the set of routes under `/api/admin/knowledge/bookmarks` matches
-   the bookmark lifecycle documented in contract §3 (create/edit/delete, no
-   draft→review; edit-flow intent is §7 Open Question #2).
 
 ## Maintenance rule
 

@@ -2,7 +2,7 @@
 
 This document is the authoritative reference for **who may perform what
 operation** on the koopa MCP server. Authorization is not a single
-mechanism — four orthogonal axes compose to produce the effective rule
+mechanism — three orthogonal axes compose to produce the effective rule
 for each tool. The matrix at the bottom of this doc is the canonical
 list; the prose above explains the model so the matrix is interpretable
 without reading every handler.
@@ -32,51 +32,24 @@ without reading every handler.
 
 ---
 
-## §1. The four axes
+## §1. The three axes
 
-Each axis enforces exactly one concern. A handler may compose two or
-three axes (e.g. capability + author); never blur their meaning.
+Each axis enforces exactly one concern. A handler may compose more than
+one axis (e.g. author + self); never blur their meaning.
 
-### Axis 1 — Capability (compile-time)
-
-Three flags live on `agent.Capability` (`internal/agent/agent.go`):
-
-- `SubmitTasks` — may submit a task to another agent (directive source)
-- `ReceiveTasks` — may be the target of a task and accept it
-- `PublishArtifacts` — may attach artifacts (task-bound or standalone)
-
-Capability is checked via `agent.Authorize(ctx, registry, caller,
-action)` which returns an `agent.Authorized[Action]` value. Coordination
-store mutation methods take that value in their signatures, so a caller
-without the capability cannot reach the store at compile time.
-
-Capability is intentionally narrow: it answers "may this caller speak
-on this transport channel". It does not answer "is this caller the
-right author of this domain entity" — that's Axis 3.
-
-> **Post-contraction note.** No tool on the current 11-tool MCP surface
-> takes a capability gate: the coordination triad (tasks / task_messages
-> / artifacts) and the report lane that consumed `SubmitTasks` /
-> `ReceiveTasks` / `PublishArtifacts` were removed. The capability model
-> still exists in `internal/agent` for compile-time enforcement, but no
-> agent-facing tool exercises it today. The axis is documented here
-> because it remains part of the four-axis model and the next coordination
-> tool (if any) would re-enable it.
-
-### Axis 2 — Platform (runtime)
+### Axis 1 — Platform (runtime)
 
 Some operations are reserved for the human owner of the system. The
 check (in `authz.go::requireExplicitHuman`):
 
 1. The caller MUST supply an explicit `as` field. The MCP server has a
    default caller agent (env `KOOPA_MCP_CALLER_AGENT`, default
-   `"unknown"` since CF-02 hardening). Even if a future deploy overrides
+   `"unknown"`). Even if a future deploy overrides
    the default back to `"human"`, `requireExplicitHuman` refuses ANY
    default-fall-through — `ExplicitCallerIdentity` distinguishes
    "explicit `as` was supplied" from "fell through to server default",
    and the gate rejects the latter regardless of what the default
-   points to. The `"unknown"` agent itself is zero-privilege (no
-   Capability flags, Platform `system`) so even the requireAuthor gate
+   points to. The `"unknown"` agent itself is zero-privilege (Platform `system`) so even the requireAuthor gate
    refuses it, closing the prior fail-open where the env default
    silently granted human authority to any client that forgot to set
    `as`.
@@ -94,7 +67,7 @@ check (in `authz.go::requireExplicitHuman`):
 > in `authz.go` and would re-gate any future human-only MCP tool, but no
 > tool on the current surface invokes it.
 
-### Axis 3 — Author (runtime allowlist)
+### Axis 2 — Author (runtime allowlist)
 
 Domain ownership: each write tool that crosses a domain boundary names
 the cowork (or claude-code) agents that may legitimately author the
@@ -107,10 +80,10 @@ targeted entity. The check (`authz.go::requireAuthor`):
   human is never excluded.
 - All other callers must match one of the named agents.
 
-Author allowlists are runtime data, not capability flags. Adding "may
-content-studio author goals" should not require rebuilding the binary.
+Author allowlists are runtime data baked into handlers. Adding "may
+learning-studio author goals" should not require migrating existing rows.
 
-### Axis 4 — Self (runtime, row-level)
+### Axis 3 — Self (runtime, row-level)
 
 Row-level self-binding requires `caller == row.created_by` or
 `caller == row.target`, enforced inline by the handler against the
@@ -164,10 +137,10 @@ knowledge graph that notes provide. The two note tools are the entire
 agent-facing knowledge-authoring surface; content authoring moved off MCP
 to admin HTTP (see §7).
 
-| Tool | Capability | Platform | Author | Self | Effective rule |
-|---|---|---|---|---|---|
-| `create_note` | — | — | — | — | Open to any registered caller |
-| `update_note` | — | — | — | — | Open (covers field edits AND maturity transitions) |
+| Tool | Platform | Author | Self | Effective rule |
+|---|---|---|---|---|
+| `create_note` | — | — | — | Open to any registered caller |
+| `update_note` | — | — | — | Open (covers field edits AND maturity transitions) |
 
 ### Learning layer
 
@@ -177,21 +150,21 @@ on learning: an agent that runs a session records its own attempts and
 manages its own plan entries. `manage_plan` is `Destructive` because it
 includes `remove_entries` and `reorder`; the per-entry completion audit
 trail (`completed_by_attempt_id` + `reason`) is policy-enforced inside the
-handler, not via the four axes.
+handler, not via the axes above.
 
-| Tool | Capability | Platform | Author | Self | Effective rule |
-|---|---|---|---|---|---|
-| `start_session` | — | — | — | — | Open (one active session at a time, enforced by the handler) |
-| `record_attempt` | — | — | — | — | Open (requires the active session) |
-| `end_session` | — | — | — | — | Open (requires the session_id) |
-| `manage_plan` | — | — | — | — | Open; completion audit fields are policy-enforced in-handler |
+| Tool | Platform | Author | Self | Effective rule |
+|---|---|---|---|---|
+| `start_session` | — | — | — | Open (one active session at a time, enforced by the handler) |
+| `record_attempt` | — | — | — | Open (requires the active session) |
+| `end_session` | — | — | — | Open (requires the session_id) |
+| `manage_plan` | — | — | — | Open; completion audit fields are policy-enforced in-handler |
 
 ### Daily plan & GTD
 
-| Tool | Capability | Platform | Author | Self | Effective rule |
-|---|---|---|---|---|---|
-| `plan_day` | — | — | planner | — | planner daily ritual (+ human implicit); other agents have their own work queues |
-| `capture_inbox` | — | — | — | — | Open (caller's own todo) |
+| Tool | Platform | Author | Self | Effective rule |
+|---|---|---|---|---|
+| `plan_day` | — | planner | — | planner daily ritual (+ human implicit); other agents have their own work queues |
+| `capture_inbox` | — | — | — | Open (caller's own todo) |
 
 ### Read-only tools (no authz row needed)
 
@@ -239,7 +212,7 @@ active session, `record_attempt` requires the active session, and
 `manage_plan(update_entry, status=completed)` requires the
 `completed_by_attempt_id` + `reason` audit pair (or a `manual override:`
 forced reason). Those are policy/state-machine checks inside the handlers,
-not one of the four axes.
+not one of the three axes.
 
 ---
 
@@ -255,13 +228,12 @@ policies don't express well:
 
 - self-only checks (caller == row.created_by) need row-level predicates
 - platform checks need an attribute on the subject
-- capability is compile-time, not policy-table-driven
 
-A formal RBAC framework (Casbin, oso, cerbos) would replace four
+A formal RBAC framework (Casbin, oso, cerbos) would replace a few
 small composable mechanisms with one large generic one — and violate
 the project's no-framework dependency posture in the process.
 
-The right framing: this is **declarative authorship policy**. The four
+The right framing: this is **declarative authorship policy**. The
 helpers in `authz.go` are the abstraction; this document is the policy.
 
 ---
@@ -270,16 +242,14 @@ helpers in `authz.go` are the abstraction; this document is the policy.
 
 When you add a tool that mutates state, decide which axes apply:
 
-1. Does the operation cross a transport boundary (submit/receive/publish)?
-   → Capability check via `agent.Authorize`.
-2. Is the operation reserved for the human owner?
+1. Is the operation reserved for the human owner?
    → First ask whether it belongs on the MCP surface at all. Post-MCP-v3,
    the answer for high-commitment and publication operations is "no — it
    goes to admin HTTP" (see §7). If a human-only MCP tool is genuinely
    warranted, gate it with `requireExplicitHuman`.
-3. Is the entity domain-owned by a subset of cowork agents?
+2. Is the entity domain-owned by a subset of cowork agents?
    → `requireAuthor` with the allowlist.
-4. Does the operation only make sense on the caller's own row?
+3. Does the operation only make sense on the caller's own row?
    → Inline `caller == row.created_by` (or `target`) check.
 
 Add the tool to the matrix in §3, add a one-paragraph rationale in §4
@@ -319,7 +289,7 @@ creates these entities directly through the admin UI.
 | `acknowledge_directive` / `file_report` / `task_detail` / `request_revision` / `reaccept` (A2A triad) | Retired — no replacement |
 | `write_agent_note` / `query_agent_notes` | Retired — agent memory lives in the agent's own `.md` |
 
-Because every replacement is human-gated at the HTTP layer, the four-axis
-authz model no longer needs Platform (`requireExplicitHuman`) or
-Capability rows on the MCP surface — those concerns crossed the boundary
-into admin HTTP along with the tools.
+Because every replacement is human-gated at the HTTP layer, the authz
+model no longer needs Platform (`requireExplicitHuman`) rows on the MCP
+surface — that concern crossed the boundary into admin HTTP along with
+the tools.

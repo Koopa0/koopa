@@ -126,9 +126,11 @@ them wrong is a semantic bug, not a naming quibble.
 ### Identity / actors
 
 - **agent** — an actor that may write to the system (human, Cowork Claude
-  instance, Claude Code, system bot). *Source of truth* `registry.go:16-126`;
-  DB row is a projection. **Enforced**: FK target for every actor column;
-  capability gated at compile time via `agent.Authorized`. *Is not* a user
+  instance, Claude Code, system bot). *Source of truth*
+  `registry.go::BuiltinAgents()`; DB row is an identity projection (name /
+  platform / status). **Enforced**: FK target for every actor column;
+  authorization is identity-based at runtime (`internal/mcp/authz.go` —
+  author allowlists, registration, human-only gates). *Is not* a user
   account; *is not* a Cowork project (one platform an agent can run on).
 - **participant** — **retired vocabulary.** Pre-rebuild term for what is now
   `agent`. Do not use in new code/schema/UI. (`mcp-decision-policy.md §4`.)
@@ -139,26 +141,16 @@ them wrong is a semantic bug, not a naming quibble.
 - **actor** — the `agents.name` value attributed to one `activity_events` row;
   set from the `koopa.actor` GUC inside the audit trigger
   (`migrations/001_initial.up.sql:2646-2656`).
-- **planner / Koopa** — `planner` is the `claude-cowork` agent acting as "CEO":
-  decisions, delegation, the morning briefing (`registry.go:17-34`). "Koopa"
-  is the human owner (display name on the `human` agent, `registry.go:106`).
-  planner holds `SubmitTasks + PublishArtifacts` but **not** `ReceiveTasks`.
-- **Claude Cowork project** — a `claude-cowork` platform agent: `planner`,
-  `content-studio`, `research-lab`, `learning-studio` (`registry.go:17-81`).
-  A platform/identity, not a PARA `project` (§4).
+- **planner / Koopa** — `planner` is the `claude-cowork` daily-driver agent:
+  morning briefing, candidate day plans, inbox capture, search, note
+  co-authoring (`registry.go`). "Koopa" is the human owner (display name on
+  the `human` agent) — the sole decision-maker and sole router.
+- **Claude Cowork project** — a `claude-cowork` platform agent: `planner` or
+  `learning-studio` (`registry.go`). A platform/identity, not a PARA
+  `project` (§4).
 - **Claude Code** — `claude-code` platform agents (`koopa0-dev`, `go-spec`),
-  doing repo development work; **zero coordination capability**
-  (`Capability{}`, `registry.go:82-95`). A Claude Code session is a dev
-  runtime, not a coordination peer (§4).
-- **capability** — one of three flags on `agent.Capability`: `SubmitTasks`,
-  `ReceiveTasks`, `PublishArtifacts` (`internal/agent/agent.go:36-43`,
-  `registry.go`). The *shape* of the check is **compile-time**
-  (`agent.Authorize(...) → Authorized[Action]`; a method needing the capability
-  cannot be called without the value). Capability lives in Go, **not** in the
-  DB. **Post MCP-v3 these flags are vestigial relative to the agent tool
-  surface:** they used to gate the A2A coordination tools, which are retired —
-  no live MCP tool consumes a capability today. The literals remain on the
-  registry rows but no longer gate any agent-facing call.
+  doing repo development work with no MCP write surface. A Claude Code
+  session is a dev runtime, not a coordination peer (§4).
 
 ### Coordination / IPC — RETIRED (MCP-v3 contraction)
 
@@ -175,6 +167,11 @@ in the MCP-v3 semantic contraction. The vocabulary below is preserved as a
 - **directive** — **RETIRED.** A naming-only label for a coordination task;
   removed with the triad. There is no `propose_directive` / `commit_proposal`
   path on the agent surface.
+- **capability** — **RETIRED.** The compile-time `agent.Capability` flags
+  (`SubmitTasks` / `ReceiveTasks` / `PublishArtifacts`) gated the A2A tools
+  and were removed with them — the type no longer exists in
+  `internal/agent`. Authorization is identity-based at runtime
+  (`internal/mcp/authz.go`).
 - **report (A2A) / report lane** — **RETIRED.** Both the artifact-bearing
   `file_report` completion and the `create_report` / `assign_research` corpus
   report lane (`research_assignments` / `reports` tables) were dropped. There
