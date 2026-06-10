@@ -1,104 +1,180 @@
 @if (isLoading()) {
   <div
-    class="flex flex-1 items-center justify-center"
+    class="mx-auto w-full max-w-6xl flex-1 px-6 py-6"
     data-testid="today-loading"
+    aria-busy="true"
+    aria-label="Loading Today"
   >
-    <div
-      class="size-5 animate-spin rounded-full border-2 border-border border-t-brand"
-      aria-label="Loading Today"
-    ></div>
+    <div class="h-9 w-64 animate-pulse rounded-sm bg-elevated"></div>
+    <div class="mt-5 h-[74px] animate-pulse rounded-md bg-elevated"></div>
+    <div class="mt-5 grid grid-cols-1 gap-5 lg:grid-cols-3">
+      <div
+        class="flex flex-col gap-2 rounded-md border border-border bg-panel p-4 lg:col-span-2"
+      >
+        @for (row of [1, 2, 3, 4, 5, 6]; track row) {
+          <div class="h-8 animate-pulse rounded-sm bg-elevated"></div>
+        }
+      </div>
+      <div class="flex flex-col gap-5">
+        <div class="h-32 animate-pulse rounded-md bg-elevated"></div>
+        <div class="h-40 animate-pulse rounded-md bg-elevated"></div>
+        <div class="h-32 animate-pulse rounded-md bg-elevated"></div>
+      </div>
+    </div>
   </div>
 } @else if (isError()) {
   <div
-    class="flex flex-1 flex-col items-center justify-center gap-3 p-10 text-center"
+    class="flex flex-1 flex-col items-center justify-center gap-2 p-10 text-center"
     data-testid="today-error"
   >
-    <p class="font-mono text-[11px] tracking-wide text-error uppercase">
-      Couldn't load Today
-    </p>
-    <p class="max-w-md text-sm text-fg-muted">
-      The morning brief failed to load. The backend may be unavailable.
+    <lucide-icon
+      [img]="HexagonIcon"
+      [size]="28"
+      class="mb-1 text-error opacity-70"
+      aria-hidden="true"
+    />
+    <h2 class="font-display text-sm font-semibold text-fg">
+      Couldn't load today's plan
+    </h2>
+    <p class="max-w-[280px] text-xs leading-relaxed text-fg-subtle">
+      The daily-plan service didn't respond. Your captures are safe in the
+      inbox.
     </p>
     <button
       type="button"
       (click)="retry()"
-      class="rounded-sm border border-border bg-elevated px-3 py-1.5 text-xs text-fg-muted transition-colors hover:border-brand hover:text-brand"
+      data-testid="today-retry"
+      class="mt-2 rounded-sm border border-border bg-elevated px-3 py-1.5 text-xs text-fg-muted transition-colors hover:border-brand hover:text-brand"
     >
       Retry
     </button>
   </div>
-} @else if (vm(); as v) {
+} @else if (brief(); as v) {
   <div class="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-5 px-6 py-6">
-    <!-- Date strap -->
+    <!-- Day header: greeting, date line, capture bar -->
     <div
-      class="flex items-baseline justify-between border-b border-border pb-3"
+      class="flex flex-wrap items-end justify-between gap-4 border-b border-border pb-4"
     >
-      <h1
-        class="font-display text-2xl font-semibold text-fg"
-        data-testid="today-date"
+      <div>
+        <h1
+          class="font-display text-2xl font-semibold text-fg"
+          data-testid="today-greeting"
+        >
+          {{ greeting() }}, Koopa
+        </h1>
+        <p
+          class="mt-1 font-mono text-[11px] text-fg-subtle"
+          data-testid="today-date"
+        >
+          {{ v.date | date: 'EEEE, MMMM d y' }} · W{{ v.date | date: 'w' }}
+        </p>
+      </div>
+      <button
+        type="button"
+        (click)="openPalette()"
+        data-testid="today-capture"
+        class="flex h-[38px] w-[420px] max-w-[46vw] cursor-text items-center gap-2.5 rounded-md border border-border bg-panel px-3 text-left text-[13px] text-fg-faint transition-colors hover:border-border-strong"
       >
-        Today
-        <span class="ml-2 text-fg-faint">{{ v.date | date: 'EEEE, MMM d' }}</span>
-      </h1>
-      <span class="font-mono text-[11px] text-fg-faint">daily / today</span>
+        <span class="flex-1 truncate">Capture a todo…</span>
+        <kbd
+          class="rounded-sm border border-border border-b-2 bg-elevated px-1.5 font-mono text-[10px] text-fg-muted"
+        >
+          ⌘K
+        </kbd>
+      </button>
     </div>
 
     @if (isQuiet()) {
       <!-- Teaching empty state -->
       <section
-        class="flex flex-1 flex-col items-center justify-center rounded-md border border-dashed border-border p-10 text-center"
+        class="flex flex-1 flex-col items-center justify-center gap-2 rounded-md border border-dashed border-border p-10 text-center"
         data-testid="today-empty"
       >
-        <p class="mb-2 font-mono text-xs tracking-wide text-fg-faint uppercase">
-          Nothing on deck
+        <lucide-icon
+          [img]="HexagonIcon"
+          [size]="28"
+          class="mb-1 text-border-strong"
+          aria-hidden="true"
+        />
+        <h2 class="font-display text-sm font-semibold text-fg">
+          Nothing planned yet
+        </h2>
+        <p class="max-w-[280px] text-xs leading-relaxed text-fg-subtle">
+          Pull todos into today, or capture something new. An empty day is a
+          blank page, not a failure.
         </p>
-        <p class="mb-5 max-w-md text-sm text-fg-muted">
-          No plan queued, no loose todos, no goals or hypotheses in flight.
-        </p>
-        <div class="flex flex-wrap justify-center gap-2">
-          <a
-            routerLink="/admin/daily/plan"
-            class="rounded-sm border border-border bg-panel px-3 py-1.5 text-xs text-fg-muted transition-colors hover:border-brand hover:text-brand"
-          >
-            Plan your day →
-          </a>
-          <a
-            routerLink="/admin/daily/inbox"
-            class="rounded-sm border border-border bg-panel px-3 py-1.5 text-xs text-fg-muted transition-colors hover:border-brand hover:text-brand"
-          >
-            Triage the inbox →
-          </a>
-        </div>
+        <button
+          type="button"
+          (click)="openPalette()"
+          data-testid="today-empty-capture"
+          class="mt-2 rounded-sm border border-brand bg-brand px-3 py-1.5 text-xs font-semibold text-[oklch(0.14_0.02_260)] transition-colors hover:bg-brand-strong"
+        >
+          Capture a todo
+        </button>
       </section>
     } @else {
-      <!-- Plan completion strip -->
+      <!-- Day-progress strip -->
       <section
-        class="flex flex-wrap items-center gap-x-6 gap-y-2 rounded-md border border-border bg-panel px-4 py-3"
+        class="flex flex-wrap items-center gap-x-8 gap-y-3 rounded-md border border-border bg-panel px-5 py-3.5"
         data-testid="today-plan-completion"
       >
-        <h2 class="font-mono text-[11px] tracking-wide text-fg-faint uppercase">
-          Day progress
-        </h2>
-        <div class="flex items-baseline gap-4 font-mono text-xs">
-          <span class="text-fg">
-            <span class="text-success">{{ v.plan_completion.completed }}</span>
-            done
-          </span>
-          <span class="text-fg-subtle">
-            {{ v.plan_completion.planned }} planned
-          </span>
-          @if (v.plan_completion.deferred > 0) {
-            <span class="text-warn">{{ v.plan_completion.deferred }} deferred</span>
-          }
+        <div class="flex items-center gap-7">
+          <div>
+            <p
+              class="font-display text-[22px] font-semibold text-fg tabular-nums"
+            >
+              {{ figures().planned }}
+            </p>
+            <p
+              class="font-mono text-[10px] tracking-wide text-fg-faint uppercase"
+            >
+              Planned
+            </p>
+          </div>
+          <div>
+            <p
+              class="font-display text-[22px] font-semibold text-success tabular-nums"
+            >
+              {{ figures().completed }}
+            </p>
+            <p
+              class="font-mono text-[10px] tracking-wide text-fg-faint uppercase"
+            >
+              Completed
+            </p>
+          </div>
+          <div>
+            <p
+              class="font-display text-[22px] font-semibold tabular-nums"
+              [class.text-warn]="figures().deferred > 0"
+              [class.text-fg-subtle]="figures().deferred === 0"
+            >
+              {{ figures().deferred }}
+            </p>
+            <p
+              class="font-mono text-[10px] tracking-wide text-fg-faint uppercase"
+            >
+              Deferred
+            </p>
+          </div>
         </div>
-        <div class="ml-auto flex items-center gap-3">
-          <div class="h-1.5 w-40 overflow-hidden rounded-sm bg-elevated">
+        <div class="ml-auto flex min-w-[200px] flex-1 items-center gap-4 sm:max-w-sm">
+          <div class="flex h-2 flex-1 overflow-hidden rounded-full bg-bg">
             <div
-              class="h-full bg-brand transition-all"
-              [style.width.%]="planPercent()"
+              class="h-full bg-success transition-all"
+              [style.width.%]="figures().doneWidth"
+            ></div>
+            <div
+              class="h-full bg-warn/70 transition-all"
+              [style.width.%]="figures().deferredWidth"
             ></div>
           </div>
-          <span class="font-mono text-xs text-fg-muted">{{ planPercent() }}%</span>
+          <span
+            class="font-display text-[22px] font-semibold text-fg tabular-nums"
+            data-testid="today-percent"
+          >
+            {{ figures().percent }}%
+          </span>
         </div>
       </section>
 
@@ -113,7 +189,7 @@
               data-testid="today-plan"
             >
               <header
-                class="flex items-baseline justify-between border-b border-border px-4 py-2.5"
+                class="flex items-center justify-between border-b border-border px-4 py-2.5"
               >
                 <h2
                   id="today-plan-heading"
@@ -121,41 +197,86 @@
                 >
                   Today's plan
                 </h2>
-                <span class="font-mono text-[11px] text-fg-subtle">
-                  {{ v.committed_todos.length }} items
-                </span>
+                <div class="flex items-center gap-3">
+                  <span class="font-mono text-[11px] text-fg-subtle">
+                    {{ v.committed_todos.length }} items
+                  </span>
+                  <button
+                    type="button"
+                    (click)="openPalette()"
+                    data-testid="today-plan-add"
+                    class="rounded-sm border border-border bg-elevated px-2 py-0.5 text-[11px] text-fg-muted transition-colors hover:border-brand hover:text-brand"
+                  >
+                    Add
+                  </button>
+                </div>
               </header>
               <ul class="divide-y divide-border-faint">
                 @for (item of v.committed_todos; track item.id) {
-                  <li class="flex items-center gap-3 px-4 py-2">
+                  <li class="group flex min-h-8 items-center gap-3 px-4 py-1.5">
                     <span
-                      class="w-5 text-right font-mono text-[11px] text-fg-faint tabular-nums"
+                      class="w-4 text-right font-mono text-[11px] text-fg-faint tabular-nums"
                       aria-hidden="true"
                     >
                       {{ item.position }}
                     </span>
-                    <span class="w-3.5 text-center" aria-hidden="true">
-                      @switch (item.status) {
-                        @case ('done') {
-                          <span class="text-success">✓</span>
-                        }
-                        @default {
-                          @if (item.todo_state === 'in_progress') {
-                            <span class="text-brand">▸</span>
-                          } @else {
-                            <span class="text-fg-faint">·</span>
-                          }
-                        }
+                    <button
+                      type="button"
+                      (click)="advancePlan(item)"
+                      [disabled]="busy() || item.status === 'done' || item.todo_state === 'done'"
+                      [attr.aria-label]="'Advance ' + item.todo_title"
+                      data-testid="today-plan-check"
+                      class="flex size-[15px] shrink-0 items-center justify-center rounded-sm border-[1.5px] transition-colors"
+                      [class.border-border-strong]="
+                        item.status !== 'done' && item.todo_state !== 'done'
+                      "
+                      [class.hover:border-brand]="
+                        item.status !== 'done' && item.todo_state !== 'done'
+                      "
+                      [class.border-success]="
+                        item.status === 'done' || item.todo_state === 'done'
+                      "
+                      [class.bg-success]="
+                        item.status === 'done' || item.todo_state === 'done'
+                      "
+                    >
+                      @if (item.status === 'done' || item.todo_state === 'done') {
+                        <span
+                          class="text-[9px] leading-none font-bold text-[oklch(0.16_0.02_260)]"
+                          aria-hidden="true"
+                        >
+                          ✓
+                        </span>
                       }
-                    </span>
+                    </button>
+                    @if (item.todo_state === 'in_progress') {
+                      <span
+                        class="size-[7px] shrink-0 rounded-[2px] bg-info"
+                        aria-hidden="true"
+                        data-testid="today-plan-ip-dot"
+                      ></span>
+                    }
                     <span
-                      class="min-w-0 flex-1 truncate text-sm"
-                      [class.text-fg]="item.status !== 'done'"
-                      [class.text-fg-faint]="item.status === 'done'"
-                      [class.line-through]="item.status === 'done'"
+                      class="min-w-0 flex-1 truncate text-[13px]"
+                      [class.text-fg]="
+                        item.status !== 'done' && item.todo_state !== 'done'
+                      "
+                      [class.text-fg-faint]="
+                        item.status === 'done' || item.todo_state === 'done'
+                      "
+                      [class.line-through]="
+                        item.status === 'done' || item.todo_state === 'done'
+                      "
                     >
                       {{ item.todo_title }}
                     </span>
+                    @if (item.todo_state === 'in_progress') {
+                      <span
+                        class="shrink-0 rounded-sm bg-info-bg px-1.5 py-0.5 font-mono text-[10px] text-info uppercase"
+                      >
+                        in progress
+                      </span>
+                    }
                     @if (item.project_title) {
                       <span
                         class="shrink-0 rounded-sm bg-elevated px-1.5 py-0.5 font-mono text-[10px] text-fg-subtle"
@@ -163,12 +284,20 @@
                         {{ item.project_title }}
                       </span>
                     }
-                    @if (item.todo_energy) {
-                      <span
-                        class="shrink-0 font-mono text-[10px] text-fg-faint uppercase"
+                    @if (energyLevel(item.todo_energy); as level) {
+                      <app-energy-meter class="shrink-0" [level]="level" />
+                    }
+                    @if (item.status !== 'done' && item.todo_state !== 'done') {
+                      <button
+                        type="button"
+                        (click)="advancePlan(item)"
+                        [disabled]="busy()"
+                        [attr.aria-label]="'Advance ' + item.todo_title"
+                        data-testid="today-plan-advance"
+                        class="shrink-0 rounded-sm border border-border bg-elevated px-1.5 py-0.5 font-mono text-[11px] text-fg-muted opacity-0 transition-all group-hover:opacity-100 hover:border-brand hover:text-brand focus-visible:opacity-100"
                       >
-                        {{ item.todo_energy }}
-                      </span>
+                        →
+                      </button>
                     }
                   </li>
                 }
@@ -177,36 +306,52 @@
           }
 
           <!-- Loose todos: overdue / due today / upcoming -->
-          @if (hasLooseTodos()) {
+          @if (looseGroups().length > 0) {
             <section
               class="rounded-md border border-border bg-panel"
               aria-labelledby="today-loose-heading"
               data-testid="today-loose"
             >
-              <header class="border-b border-border px-4 py-2.5">
+              <header
+                class="flex items-center justify-between border-b border-border px-4 py-2.5"
+              >
                 <h2
                   id="today-loose-heading"
                   class="font-mono text-[11px] tracking-wide text-fg-faint uppercase"
                 >
                   Loose todos
                 </h2>
+                <a
+                  routerLink="/admin/daily/todos"
+                  class="rounded-sm border border-border bg-elevated px-2 py-0.5 text-[11px] text-fg-muted transition-colors hover:border-brand hover:text-brand"
+                >
+                  Open Todos
+                </a>
               </header>
-              @for (group of looseGroups(); track group.label) {
+              @for (group of looseGroups(); track group.kind) {
                 <div
                   class="border-b border-border-faint last:border-b-0"
-                  [attr.data-testid]="'today-loose-' + group.label"
+                  [attr.data-testid]="'today-loose-' + group.kind"
                 >
                   <p
                     class="px-4 pt-2.5 pb-1 font-mono text-[10px] tracking-wide uppercase"
-                    [class.text-warn]="group.label === 'Overdue'"
-                    [class.text-fg-subtle]="group.label !== 'Overdue'"
+                    [class.text-warn]="group.kind === 'overdue'"
+                    [class.text-fg-subtle]="group.kind !== 'overdue'"
                   >
                     {{ group.label }}
                   </p>
                   <ul class="divide-y divide-border-faint">
                     @for (todo of group.items; track todo.id) {
-                      <li class="flex items-center gap-3 px-4 py-2">
-                        <span class="min-w-0 flex-1 truncate text-sm text-fg">
+                      <li class="group flex min-h-8 items-center gap-3 px-4 py-1.5">
+                        <button
+                          type="button"
+                          (click)="completeLoose(todo)"
+                          [disabled]="busy()"
+                          [attr.aria-label]="'Complete ' + todo.title"
+                          data-testid="today-loose-check"
+                          class="size-[15px] shrink-0 rounded-sm border-[1.5px] border-border-strong transition-colors hover:border-brand"
+                        ></button>
+                        <span class="min-w-0 flex-1 truncate text-[13px] text-fg">
                           {{ todo.title }}
                         </span>
                         @if (todo.project_title) {
@@ -216,18 +361,24 @@
                             {{ todo.project_title }}
                           </span>
                         }
-                        @if (todo.energy) {
-                          <span
-                            class="shrink-0 font-mono text-[10px] text-fg-faint uppercase"
-                          >
-                            {{ todo.energy }}
-                          </span>
+                        @if (energyLevel(todo.energy); as level) {
+                          <app-energy-meter class="shrink-0" [level]="level" />
                         }
-                        @if (todo.due) {
+                        @if (group.kind === 'overdue') {
                           <span
-                            class="shrink-0 font-mono text-[10px]"
-                            [class.text-warn]="group.label === 'Overdue'"
-                            [class.text-fg-faint]="group.label !== 'Overdue'"
+                            class="shrink-0 rounded-sm bg-error-bg px-1.5 py-0.5 font-mono text-[10px] text-error"
+                          >
+                            {{ todo.due ? (todo.due | date: 'MMM d') : 'overdue' }}
+                          </span>
+                        } @else if (group.kind === 'today') {
+                          <span
+                            class="shrink-0 rounded-sm bg-warn-bg px-1.5 py-0.5 font-mono text-[10px] text-warn"
+                          >
+                            today
+                          </span>
+                        } @else if (todo.due) {
+                          <span
+                            class="shrink-0 rounded-sm bg-elevated px-1.5 py-0.5 font-mono text-[10px] text-fg-subtle"
                           >
                             {{ todo.due | date: 'MMM d' }}
                           </span>
@@ -243,28 +394,9 @@
 
         <!-- RIGHT: session, goals, hypotheses, rss -->
         <div class="flex flex-col gap-5">
-          <!-- Active learning session — the one "now" accent -->
+          <!-- Active learning session — only when the brief carries one -->
           @if (v.active_session; as session) {
-            <section
-              class="rounded-md border border-brand/40 bg-brand-faint p-4"
-              data-testid="today-session"
-            >
-              <h2
-                class="mb-2 flex items-center gap-2 font-mono text-[11px] tracking-wide text-brand uppercase"
-              >
-                <span class="size-1.5 rounded-full bg-brand"></span>
-                Active session
-              </h2>
-              <p class="font-display text-base font-semibold text-fg">
-                {{ session.domain }}
-              </p>
-              <div class="mt-1.5 flex items-center gap-2 font-mono text-[11px] text-fg-subtle">
-                <span class="rounded-sm bg-elevated px-1.5 py-0.5">
-                  {{ session.mode }}
-                </span>
-                <span>since {{ session.started_at | date: 'shortTime' }}</span>
-              </div>
-            </section>
+            <app-today-session-card [session]="session" />
           }
 
           <!-- Active goals -->
@@ -284,15 +416,25 @@
               </header>
               <ul class="divide-y divide-border-faint">
                 @for (goal of v.active_goals; track goal.id) {
-                  <li class="px-4 py-3">
-                    <a
-                      [routerLink]="['/admin/commitment/goals', goal.id]"
-                      class="block truncate text-sm text-fg transition-colors hover:text-brand"
-                    >
-                      {{ goal.title }}
-                    </a>
+                  <li class="px-4 py-2.5 transition-colors hover:bg-overlay">
+                    <div class="flex items-center justify-between gap-2">
+                      <a
+                        [routerLink]="['/admin/commitment/goals', goal.id]"
+                        class="min-w-0 flex-1 truncate text-[12.5px] text-fg transition-colors hover:text-brand"
+                      >
+                        {{ goal.title }}
+                      </a>
+                      <app-status-badge
+                        class="shrink-0"
+                        [variant]="goalVariant(goal.status)"
+                      >
+                        {{ statusLabel(goal.status) }}
+                      </app-status-badge>
+                    </div>
                     <div class="mt-2 flex items-center gap-2">
-                      <div class="h-1 flex-1 overflow-hidden rounded-sm bg-elevated">
+                      <div
+                        class="h-1 flex-1 overflow-hidden rounded-full bg-bg"
+                      >
                         <div
                           class="h-full bg-brand"
                           [style.width.%]="
@@ -300,15 +442,13 @@
                           "
                         ></div>
                       </div>
-                      <span class="font-mono text-[10px] text-fg-faint">
+                      <span
+                        class="font-mono text-[10px] text-fg-faint tabular-nums"
+                      >
                         {{ goal.milestone_done }}/{{ goal.milestone_total }}
+                        milestones{{ goal.area_name ? ' · ' + goal.area_name : '' }}
                       </span>
                     </div>
-                    @if (goal.area_name) {
-                      <span class="mt-1 block font-mono text-[10px] text-fg-faint">
-                        {{ goal.area_name }}
-                      </span>
-                    }
                   </li>
                 }
               </ul>
@@ -333,15 +473,29 @@
               <ul class="divide-y divide-border-faint">
                 @for (hyp of v.unverified_hypotheses; track hyp.id) {
                   <li class="px-4 py-3">
-                    <p class="font-serif text-sm leading-snug text-fg-muted italic">
-                      {{ hyp.claim }}
+                    <p
+                      class="font-serif text-[13px] leading-relaxed text-fg italic"
+                    >
+                      “{{ hyp.claim }}”
                     </p>
-                    <p class="mt-2 font-mono text-[10px] text-fg-faint">
-                      <span class="text-fg-subtle uppercase">Invalidates if</span>
-                      · {{ hyp.invalidation_condition }}
+                    <p class="mt-2 text-[11.5px] text-fg-subtle">
+                      <span
+                        class="mr-1 font-mono text-[9px] tracking-wider text-warn uppercase"
+                      >
+                        Invalidates if
+                      </span>
+                      {{ hyp.invalidation_condition }}
                     </p>
-                    <p class="mt-1.5 font-mono text-[10px] text-fg-faint">
-                      {{ hyp.created_by }} · {{ hyp.observed_date | date: 'MMM d' }}
+                    <p
+                      class="mt-1.5 flex items-center gap-2 font-mono text-[10px] text-fg-faint"
+                    >
+                      <app-status-badge variant="warning">
+                        unverified
+                      </app-status-badge>
+                      <span>
+                        {{ hyp.created_by }} ·
+                        {{ hyp.observed_date | date: 'MMM d' }}
+                      </span>
                     </p>
                   </li>
                 }
@@ -366,7 +520,9 @@
               </header>
               <ul class="divide-y divide-border-faint">
                 @for (item of v.rss_highlights; track item.url) {
-                  <li class="flex items-start gap-2.5 px-4 py-2.5">
+                  <li
+                    class="flex items-start gap-2.5 px-4 py-2 transition-colors hover:bg-overlay"
+                  >
                     <span
                       class="mt-1.5 size-1.5 shrink-0 rounded-full bg-brand"
                       aria-hidden="true"
@@ -376,12 +532,13 @@
                         [href]="item.url"
                         target="_blank"
                         rel="noopener noreferrer"
-                        class="block truncate text-sm text-fg transition-colors hover:text-brand"
+                        class="line-clamp-2 text-[12.5px] leading-snug text-fg transition-colors hover:text-brand"
                       >
                         {{ item.title }}
                       </a>
                       <p class="truncate font-mono text-[10px] text-fg-faint">
-                        {{ item.feed_name }} · {{ item.created_at }}
+                        {{ item.feed_name }} ·
+                        {{ item.created_at | date: 'MMM d, HH:mm' }}
                       </p>
                     </div>
                   </li>

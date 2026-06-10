@@ -5,3 +5,4 @@ export { PageHeaderComponent } from './page-header/page-header.component';
 export { ModalComponent } from './modal/modal.component';
 export { FormFieldComponent } from './form-field/form-field.component';
 export { DataTableComponent } from './data-table/data-table.component';
+export { EnergyMeterComponent } from './energy-meter/energy-meter.component';

@@ -5,7 +5,12 @@ import {
   computed,
 } from '@angular/core';
 
-type BadgeVariant = 'success' | 'warning' | 'info' | 'danger' | 'neutral';
+export type BadgeVariant =
+  | 'success'
+  | 'warning'
+  | 'info'
+  | 'danger'
+  | 'neutral';
 
 const VARIANT_CLASSES: Record<BadgeVariant, string> = {
   success: 'border-success/30 bg-success-bg text-success',
