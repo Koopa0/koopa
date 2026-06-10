@@ -178,7 +178,10 @@ func TestIntegration_Goal_Create(t *testing.T) {
 }
 
 // TestIntegration_Goal_CreateMilestone seeds a goal, then drives
-// POST /goals/{id}/milestones and asserts the milestone persists under it.
+// POST /goals/{id}/milestones twice and asserts both milestones persist with
+// appended positions (0, then 1). The second insert is the regression guard:
+// the insert used to omit position, so every milestone landed on the DEFAULT 0
+// and the second one died on UNIQUE(goal_id, position).
 func TestIntegration_Goal_CreateMilestone(t *testing.T) {
 	truncate(t)
 	h := newHandler()
@@ -211,9 +214,10 @@ func TestIntegration_Goal_CreateMilestone(t *testing.T) {
 
 	var gotGoalID uuid.UUID
 	var gotTitle string
+	var gotPosition int32
 	if err := testPool.QueryRow(t.Context(),
-		`SELECT goal_id, title FROM milestones WHERE id = $1`, id,
-	).Scan(&gotGoalID, &gotTitle); err != nil {
+		`SELECT goal_id, title, position FROM milestones WHERE id = $1`, id,
+	).Scan(&gotGoalID, &gotTitle, &gotPosition); err != nil {
 		t.Fatalf("reading created milestone %s: %v", id, err)
 	}
 	if gotGoalID != goalID {
@@ -221,6 +225,34 @@ func TestIntegration_Goal_CreateMilestone(t *testing.T) {
 	}
 	if gotTitle != "Finish Genki I" {
 		t.Errorf("milestone title = %q, want %q", gotTitle, "Finish Genki I")
+	}
+	if gotPosition != 0 {
+		t.Errorf("first milestone position = %d, want 0", gotPosition)
+	}
+
+	req2 := postJSON(t, "/api/admin/commitment/goals/"+goalID.String()+"/milestones", map[string]any{
+		"title": "Finish Genki II",
+	})
+	req2.SetPathValue("id", goalID.String())
+	rec2 := serve(t, h.CreateMilestone, req2)
+
+	resp2 := rec2.Result()
+	defer resp2.Body.Close()
+	body2, _ := io.ReadAll(resp2.Body)
+
+	if resp2.StatusCode != http.StatusCreated {
+		t.Fatalf("second milestone status = %d, want 201 (body=%s)", resp2.StatusCode, body2)
+	}
+
+	id2 := decodeID(t, body2)
+	var gotPosition2 int32
+	if err := testPool.QueryRow(t.Context(),
+		`SELECT position FROM milestones WHERE id = $1`, id2,
+	).Scan(&gotPosition2); err != nil {
+		t.Fatalf("reading second milestone %s: %v", id2, err)
+	}
+	if gotPosition2 != 1 {
+		t.Errorf("second milestone position = %d, want 1 (append after existing max)", gotPosition2)
 	}
 }
 

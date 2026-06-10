@@ -143,6 +143,9 @@ func (s *Store) CreateMilestone(ctx context.Context, goalID uuid.UUID, title, de
 		TargetDeadline: targetDeadline,
 	})
 	if err != nil {
+		if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok && pgErr.Code == pgerrcode.UniqueViolation {
+			return nil, ErrConflict
+		}
 		return nil, fmt.Errorf("creating milestone: %w", err)
 	}
 	return rowToMilestone(&r), nil

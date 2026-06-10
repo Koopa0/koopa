@@ -2568,8 +2568,9 @@ func (q *Queries) CreateLearningDomain(ctx context.Context, arg CreateLearningDo
 }
 
 const createMilestone = `-- name: CreateMilestone :one
-INSERT INTO milestones (goal_id, title, description, target_deadline)
-VALUES ($1, $2, $3, $4)
+INSERT INTO milestones (goal_id, title, description, target_deadline, position)
+VALUES ($1, $2, $3, $4,
+        (SELECT COALESCE(MAX(position) + 1, 0) FROM milestones WHERE goal_id = $1))
 RETURNING id, goal_id, title, description, target_deadline, completed_at, position, created_at, updated_at
 `
 
@@ -2592,6 +2593,8 @@ type CreateMilestoneRow struct {
 	UpdatedAt      time.Time  `json:"updated_at"`
 }
 
+// Appends to the goal's milestone list: position = current max + 1, 0 when
+// the goal has none (position carries UNIQUE(goal_id, position)).
 func (q *Queries) CreateMilestone(ctx context.Context, arg CreateMilestoneParams) (CreateMilestoneRow, error) {
 	row := q.db.QueryRow(ctx, createMilestone,
 		arg.GoalID,

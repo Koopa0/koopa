@@ -56,8 +56,11 @@ WHERE (sqlc.narg('status')::text IS NULL OR g.status::text = sqlc.narg('status')
 ORDER BY g.deadline NULLS LAST, g.created_at;
 
 -- name: CreateMilestone :one
-INSERT INTO milestones (goal_id, title, description, target_deadline)
-VALUES (@goal_id, @title, @description, @target_deadline)
+-- Appends to the goal's milestone list: position = current max + 1, 0 when
+-- the goal has none (position carries UNIQUE(goal_id, position)).
+INSERT INTO milestones (goal_id, title, description, target_deadline, position)
+VALUES (@goal_id, @title, @description, @target_deadline,
+        (SELECT COALESCE(MAX(position) + 1, 0) FROM milestones WHERE goal_id = @goal_id))
 RETURNING id, goal_id, title, description, target_deadline, completed_at, position, created_at, updated_at;
 
 -- name: GoalByIDWithArea :one
