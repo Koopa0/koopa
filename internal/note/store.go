@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgerrcode"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/pgvector/pgvector-go"
 
 	"github.com/Koopa0/koopa/internal/db"
 )
@@ -302,6 +303,33 @@ func (s *Store) Search(ctx context.Context, query string, limit int) ([]Note, er
 	})
 	if err != nil {
 		return nil, fmt.Errorf("searching notes: %w", err)
+	}
+	out := make([]Note, 0, len(rows))
+	for i := range rows {
+		n, convErr := buildNote(
+			rows[i].ID, rows[i].Slug, rows[i].Title, rows[i].Body,
+			rows[i].Kind, rows[i].Maturity, rows[i].CreatedBy, rows[i].Metadata,
+			rows[i].CreatedAt, rows[i].UpdatedAt,
+		)
+		if convErr != nil {
+			return nil, convErr
+		}
+		out = append(out, *n)
+	}
+	return out, nil
+}
+
+// SemanticSearch returns notes ranked by cosine similarity to the query
+// embedding — the vector counterpart of Search, with the same visibility
+// (every note, archived included). Notes without embeddings are skipped.
+// Used by search_knowledge to feed the hybrid RRF merge.
+func (s *Store) SemanticSearch(ctx context.Context, queryEmbedding pgvector.Vector, limit int) ([]Note, error) {
+	rows, err := s.q.InternalSemanticSearchNotes(ctx, db.InternalSemanticSearchNotesParams{
+		TargetEmbedding: queryEmbedding,
+		MaxResults:      int32(limit), // #nosec G115 -- limit bounded by MCP handler
+	})
+	if err != nil {
+		return nil, fmt.Errorf("semantic searching notes: %w", err)
 	}
 	out := make([]Note, 0, len(rows))
 	for i := range rows {

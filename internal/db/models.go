@@ -533,7 +533,7 @@ type Agent struct {
 	Name string `json:"name"`
 	// Human-readable label for admin UI and logs. Non-blank (chk_agent_display_name_not_blank).
 	DisplayName string `json:"display_name"`
-	// Execution context. Closed set: claude-cowork, claude-code, claude-web, human, system (chk_agent_platform). The system value is reserved for the database-level fallback agent registered by BuiltinAgents — it attributes writes that bypass the Go actor middleware (pg_cron, manual psql ops, bug safety net). Routing decisions are driven by agent registry lookups, not this column.
+	// Execution context. Closed set: claude-cowork, claude-code, claude-web, codex, human, system (chk_agent_platform). The system value is reserved for the database-level fallback agent registered by BuiltinAgents — it attributes writes that bypass the Go actor middleware (pg_cron, manual psql ops, bug safety net). Routing decisions are driven by agent registry lookups, not this column.
 	Platform string `json:"platform"`
 	// Short role description. Empty string = no description.
 	Description string `json:"description"`

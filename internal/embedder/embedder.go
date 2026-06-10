@@ -1,12 +1,12 @@
 // Copyright 2026 Koopa. All rights reserved.
 
-// Package embedder generates vector embeddings for knowledge content.
+// Package embedder generates vector embeddings for knowledge content,
+// and reconciles the contents/notes embedding columns in the background.
 //
 // Backed by Google's gemini-embedding-2 model at 1536 dimensions
-// (Matryoshka-truncated from the model's native 3072d). Callers treat the
-// Embedder as an opaque dependency — no interface is exported because there
-// is exactly one implementation today. If a second provider surfaces, the
-// interface is discovered from usage, not designed up front.
+// (Matryoshka-truncated from the model's native 3072d). Callers depend on
+// the concrete *Embedder; the single-method TextEmbedder seam exists only
+// so Reconciler tests can run without network access.
 package embedder
 
 import (

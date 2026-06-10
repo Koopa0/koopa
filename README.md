@@ -83,7 +83,7 @@ The vocabulary splits are load-bearing. A `note` is a private Zettelkasten artif
 
 ## Knowledge retrieval
 
-Any agent queries published content and Zettelkasten notes through MCP via `search_knowledge`, backed by PostgreSQL full-text search (tsvector with websearch syntax, GIN-indexed). Hybrid lexical + pgvector semantic retrieval with reciprocal-rank-fusion is on the roadmap — the schema, HNSW indexes, and merge code are in place, pending an embedder write/backfill pipeline.
+Any agent queries published content and Zettelkasten notes through MCP via `search_knowledge`, backed by hybrid retrieval: PostgreSQL full-text search (tsvector with websearch syntax, GIN-indexed) and pgvector semantic search (HNSW, cosine) fused per corpus with reciprocal-rank fusion. A background reconciler embeds new contents and notes as they land (`gemini-embedding-2`), so the semantic side stays current without touching any request path; without `GEMINI_API_KEY`, search runs FTS-only.
 
 ## The agent toolset
 
@@ -121,8 +121,8 @@ A single-admin system by design: no RBAC, no multi-tenant, no "share with a coll
 | Layer            | Choice                                                                        |
 | ---------------- | ----------------------------------------------------------------------------- |
 | Backend          | Go 1.26+ (stdlib-first), PostgreSQL 17, pgx/v5, sqlc                           |
-| Search           | PostgreSQL FTS (tsvector + websearch + GIN); hybrid pgvector HNSW + RRF on the roadmap |
-| Embedding        | `gemini-embedding-2` (1536d Matryoshka); pgvector columns + HNSW indexes in place |
+| Search           | Hybrid: PostgreSQL FTS (tsvector + websearch + GIN) + pgvector semantic (HNSW, cosine), RRF-fused; FTS-only without `GEMINI_API_KEY` |
+| Embedding        | `gemini-embedding-2` (1536d Matryoshka); background reconciler keeps contents + notes embedded |
 | Scheduling       | Agent cadences declared in `internal/agent/registry.go`; execution driven by an external Cowork/Desktop runner; audited via `process_runs` |
 | Frontend         | Angular 22 (SSR, zoneless, Signal Forms), Tailwind CSS v4                      |
 | AI collaboration | Claude (Cowork + Code), Codex CLI, MCP (11 workflow tools)                    |

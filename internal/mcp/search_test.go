@@ -110,6 +110,65 @@ func TestRrfMerge_AllIDsPresentUnderLimit(t *testing.T) {
 	}
 }
 
+func testNote(i byte) note.Note {
+	return note.Note{ID: testID(i)}
+}
+
+// testNoteRank returns the zero-based rank of want in out, or -1 if absent.
+func testNoteRank(out []note.Note, want uuid.UUID) int {
+	for i := range out {
+		if out[i].ID == want {
+			return i
+		}
+	}
+	return -1
+}
+
+// TestRrfMergeNotes_SharedNoteRanksFirst mirrors the content-side
+// consensus invariant for the note branch: a note appearing in both FTS
+// and semantic rankings must beat single-branch notes at the same rank.
+func TestRrfMergeNotes_SharedNoteRanksFirst(t *testing.T) {
+	fts := []note.Note{testNote(1), testNote(2), testNote(3)}
+	sem := []note.Note{testNote(3), testNote(4), testNote(5)}
+	got := rrfMergeNotes(fts, sem, 5)
+
+	if testNoteRank(got, testID(3)) != 0 {
+		t.Errorf("shared note id(3) rank = %d, want 0 (consensus pick)",
+			testNoteRank(got, testID(3)))
+	}
+	if len(got) != 5 {
+		t.Errorf("len(got) = %d, want 5 (all distinct notes preserved)", len(got))
+	}
+}
+
+// TestRrfMergeNotes_LimitCapsOutput verifies the caller's limit is
+// respected even when the union of inputs is larger.
+func TestRrfMergeNotes_LimitCapsOutput(t *testing.T) {
+	fts := []note.Note{testNote(1), testNote(2), testNote(3)}
+	sem := []note.Note{testNote(4), testNote(5)}
+	got := rrfMergeNotes(fts, sem, 2)
+	if len(got) != 2 {
+		t.Errorf("len(got) = %d, want 2 (limit)", len(got))
+	}
+}
+
+// TestRrfMergeNotes_EmptySemanticPreservesFTSOrder verifies single-branch
+// RRF is a no-op on ordering — the FTS-only fallback must not reshuffle
+// note ranks.
+func TestRrfMergeNotes_EmptySemanticPreservesFTSOrder(t *testing.T) {
+	fts := []note.Note{testNote(1), testNote(2), testNote(3)}
+	got := rrfMergeNotes(fts, nil, 5)
+	if len(got) != 3 {
+		t.Fatalf("len(got) = %d, want 3", len(got))
+	}
+	for i := range fts {
+		if got[i].ID != fts[i].ID {
+			t.Errorf("rank %d: got %s, want %s (FTS order must be preserved)",
+				i, got[i].ID, fts[i].ID)
+		}
+	}
+}
+
 // TestMergeByRelevance_RelevanceBeatsRecency is the regression guard for the
 // cross-source merge: the merge MUST preserve each branch's relevance order
 // and never let recency dominate it. The branches arrive already ranked by

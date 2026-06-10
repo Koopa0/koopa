@@ -256,6 +256,27 @@ FROM contents
 WHERE status = 'published' AND is_public = true
   AND embedding IS NOT NULL;
 
+-- name: ContentsMissingEmbedding :many
+-- Rows the embedding reconciler still has to process. Archived content is
+-- excluded — it is invisible to every search path (InternalSearchContents
+-- and InternalSemanticSearchContents both filter it out), so embedding it
+-- would spend API quota on unreachable rows. Oldest first so a backfill
+-- progresses deterministically.
+SELECT id, title, body
+FROM contents
+WHERE embedding IS NULL AND status != 'archived'
+ORDER BY created_at
+LIMIT $1;
+
+-- name: SetContentEmbedding :exec
+-- Persist a derived embedding. updated_at is deliberately untouched:
+-- the embedding derives from title/body and carries no editorial change,
+-- and updated_at orders admin lists and feeds lastmod semantics — a
+-- background re-embed must not make content look freshly edited. The
+-- contents audit trigger fires only on INSERT or UPDATE OF status, so
+-- this write produces no activity_events row.
+UPDATE contents SET embedding = $2 WHERE id = $1;
+
 -- name: ContentsByStatus :many
 -- List contents by status, ordered by updated_at descending. Used by admin pipeline.
 SELECT id, slug, title, body, excerpt, type, status,

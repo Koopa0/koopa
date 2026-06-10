@@ -112,3 +112,36 @@ FROM notes
 WHERE search_vector @@ websearch_to_tsquery('simple', @query)
 ORDER BY rank DESC
 LIMIT @max_results;
+
+-- name: InternalSemanticSearchNotes :many
+-- Semantic search over notes via pgvector cosine distance — the vector
+-- counterpart of SearchNotes, feeding the hybrid RRF merge in
+-- search_knowledge. No maturity filter: every note (archived included)
+-- is reachable through FTS, and the semantic branch mirrors that
+-- visibility. Notes without embeddings are skipped.
+SELECT id, slug, title, body, kind, maturity, created_by,
+       metadata, created_at, updated_at,
+       (1 - (embedding <=> @target_embedding::vector))::float8 AS similarity
+FROM notes
+WHERE embedding IS NOT NULL
+ORDER BY embedding <=> @target_embedding::vector
+LIMIT @max_results;
+
+-- name: NotesMissingEmbedding :many
+-- Rows the embedding reconciler still has to process. No maturity filter —
+-- archived notes stay searchable (SearchNotes does not exclude them), so
+-- they get embeddings too. Oldest first so a backfill progresses
+-- deterministically.
+SELECT id, title, body
+FROM notes
+WHERE embedding IS NULL
+ORDER BY created_at
+LIMIT $1;
+
+-- name: SetNoteEmbedding :exec
+-- Persist a derived embedding. updated_at is deliberately untouched: the
+-- embedding derives from title/body and carries no edit, and the admin
+-- notes list orders by updated_at — a background re-embed must not make
+-- notes look freshly edited. The notes audit trigger fires only on
+-- INSERT, so this write produces no activity_events row.
+UPDATE notes SET embedding = $2 WHERE id = $1;

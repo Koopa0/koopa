@@ -43,6 +43,10 @@ type config struct {
 	R2Bucket          string
 	R2PublicURL       string
 
+	// Gemini embedding. Empty = embedding reconciler disabled; search
+	// stays FTS-only.
+	GeminiAPIKey string
+
 	// Site URL for RSS/sitemap
 	SiteURL string
 
@@ -78,6 +82,7 @@ func loadConfig(logger *slog.Logger) config {
 		R2SecretAccessKey:  os.Getenv("R2_SECRET_ACCESS_KEY"),
 		R2Bucket:           os.Getenv("R2_BUCKET"),
 		R2PublicURL:        os.Getenv("R2_PUBLIC_URL"),
+		GeminiAPIKey:       os.Getenv("GEMINI_API_KEY"),
 		SiteURL:            envOr("SITE_URL", "https://koopa0.dev"),
 
 		ObservabilityEnabled: envBoolOr("KOOPA_OBSERVABILITY_ENABLED", true),
@@ -86,6 +91,21 @@ func loadConfig(logger *slog.Logger) config {
 		Environment:          envOr("KOOPA_ENV", "dev"),
 	}
 	return cfg
+}
+
+// backfillConfig holds the environment the embed-backfill one-shot needs.
+// Both values are required — a backfill cannot run without a database or
+// a Gemini key, so missing either exits at startup.
+type backfillConfig struct {
+	DatabaseURL  string
+	GeminiAPIKey string
+}
+
+func loadBackfillConfig(logger *slog.Logger) backfillConfig {
+	return backfillConfig{
+		DatabaseURL:  requireEnv("DATABASE_URL", logger),
+		GeminiAPIKey: requireEnv("GEMINI_API_KEY", logger),
+	}
 }
 
 // queryTracingOn folds the all-or-nothing kill-switch semantics (Q3):

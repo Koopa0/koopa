@@ -32,6 +32,7 @@ import (
 	"github.com/Koopa0/koopa/internal/content"
 	"github.com/Koopa0/koopa/internal/daily"
 	"github.com/Koopa0/koopa/internal/db"
+	"github.com/Koopa0/koopa/internal/embedder"
 	"github.com/Koopa0/koopa/internal/feed"
 	"github.com/Koopa0/koopa/internal/feed/collector"
 	"github.com/Koopa0/koopa/internal/feed/entry"
@@ -55,12 +56,60 @@ import (
 // the app behind a silent reconciliation.
 const agentSyncTimeout = 10 * time.Second
 
+// embedReconcileInterval is how often the embedding reconciler rescans
+// contents and notes for rows with NULL embeddings. New rows are embedded
+// within roughly one interval of landing.
+const embedReconcileInterval = 60 * time.Second
+
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	if len(os.Args) == 2 && os.Args[1] == "embed-backfill" {
+		if err := runBackfill(logger); err != nil {
+			logger.Error("embed-backfill failed", "error", err)
+			os.Exit(1)
+		}
+		return
+	}
 	if err := run(logger); err != nil {
 		logger.Error("startup failed", "error", err)
 		os.Exit(1)
 	}
+}
+
+// runBackfill is the embed-backfill one-shot: drain every contents/notes
+// row missing an embedding, log the counts, and exit without serving
+// HTTP. The exit status reflects success — rows that failed to embed
+// surface as an error so a partially-drained run is visible to the
+// operator. Schema migrations are not run; the backfill targets a
+// database the serving binary already migrated.
+func runBackfill(logger *slog.Logger) error {
+	cfg := loadBackfillConfig(logger)
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+
+	pool, err := connectDB(ctx, cfg.DatabaseURL, nil)
+	if err != nil {
+		return err
+	}
+	defer pool.Close()
+
+	emb, err := embedder.New(ctx, cfg.GeminiAPIKey)
+	if err != nil {
+		return fmt.Errorf("initializing gemini embedder: %w", err)
+	}
+	reconciler := embedder.NewReconciler(emb, content.NewStore(pool), note.NewStore(pool), logger)
+
+	res, err := reconciler.RunOnce(ctx)
+	if err != nil {
+		return fmt.Errorf("embed backfill: %w", err)
+	}
+	logger.Info("embed backfill complete",
+		"contents", res.Contents, "notes", res.Notes, "failed", res.Failed)
+	if res.Failed > 0 {
+		return fmt.Errorf("embed backfill: %d rows failed to embed", res.Failed)
+	}
+	return nil
 }
 
 // run wires every subsystem and starts the HTTP server. Its cyclomatic
@@ -157,6 +206,23 @@ func run(logger *slog.Logger) error {
 		Logger:   logger,
 	}); err != nil {
 		return err
+	}
+
+	// Embedding reconciler (optional — only if Gemini is configured).
+	// Runs entirely outside the request path: the Gemini call must never
+	// sit inside a handler's per-request tx or latency budget. Shares the
+	// scheduler WaitGroup so shutdown waits for an in-flight pass to
+	// observe ctx cancellation.
+	if cfg.GeminiAPIKey != "" {
+		emb, embErr := embedder.New(ctx, cfg.GeminiAPIKey)
+		if embErr != nil {
+			return fmt.Errorf("initializing gemini embedder: %w", embErr)
+		}
+		reconciler := embedder.NewReconciler(emb, contentStore, noteStore, logger)
+		wg.Go(func() { reconciler.Run(ctx, embedReconcileInterval) })
+		logger.Info("embedding reconciler started", "interval", embedReconcileInterval.String())
+	} else {
+		logger.Info("embedding reconciler disabled, search stays FTS-only (GEMINI_API_KEY unset)")
 	}
 
 	// Upload (optional — only if R2 is configured)

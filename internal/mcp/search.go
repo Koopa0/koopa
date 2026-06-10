@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -111,26 +112,22 @@ func (s *Server) searchKnowledge(ctx context.Context, _ *mcp.CallToolRequest, in
 		wantContent = false
 	}
 
-	// Each branch returns rows already ordered by its own relevance score
-	// (content: fused RRF rank; notes: ts_rank). The two scores live on
-	// incompatible scales, so the cross-source merge fuses by rank position
-	// rather than comparing raw scores — see mergeByRelevance.
-	var contentResults, noteResults []SearchKnowledgeResult
-
-	if wantContent {
-		merged, cErr := s.contentHybridSearch(ctx, input.Query, limit)
-		if cErr != nil {
-			return nil, SearchKnowledgeOutput{}, fmt.Errorf("searching content: %w", cErr)
-		}
-		contentResults = s.filterContentResults(ctx, merged, input.ContentType, after, before)
+	contentRows, noteRows, err := s.hybridSearch(ctx, input.Query, limit, wantContent, wantNote)
+	if err != nil {
+		return nil, SearchKnowledgeOutput{}, err
 	}
 
+	// Each branch arrives already ordered by its own relevance score (fused
+	// RRF rank, or native FTS rank when the semantic side came back empty).
+	// The two scores live on incompatible scales, so the cross-source merge
+	// fuses by rank position rather than comparing raw scores — see
+	// mergeByRelevance.
+	var contentResults, noteResults []SearchKnowledgeResult
+	if wantContent {
+		contentResults = s.filterContentResults(ctx, contentRows, input.ContentType, after, before)
+	}
 	if wantNote {
-		notes, nErr := s.notes.Search(ctx, input.Query, limit)
-		if nErr != nil {
-			return nil, SearchKnowledgeOutput{}, fmt.Errorf("searching notes: %w", nErr)
-		}
-		noteResults = filterNoteResults(notes, input.NoteKind, after, before)
+		noteResults = filterNoteResults(noteRows, input.NoteKind, after, before)
 	}
 
 	results := mergeByRelevance(contentResults, noteResults, limit)
@@ -203,75 +200,82 @@ func mergeByRelevance(contentResults, noteResults []SearchKnowledgeResult, limit
 	return results
 }
 
-// contentHybridSearch runs FTS + semantic branches in parallel and merges
-// with reciprocal rank fusion. When the embedder is not configured or the
-// semantic branch errors out (network, API key, timeout), the handler
-// degrades to FTS-only — search stays useful, just without the semantic
-// recall boost. The returned slice is ordered by fused rank, capped at
-// limit.
-func (s *Server) contentHybridSearch(ctx context.Context, query string, limit int) ([]content.Content, error) {
-	// Bound semantic branch separately — it involves a network call to
-	// Gemini for query embedding; FTS uses the local DB and gets the
-	// parent ctx. On semantic timeout / error we log and fall back to FTS.
+// hybridSearch runs the FTS branches and — when the embedder is wired —
+// the semantic branches for the selected corpora in parallel, then fuses
+// each corpus's two rankings with reciprocal rank fusion. An FTS error
+// aborts the search; semantic failures degrade that corpus to FTS-only,
+// so search stays useful when Gemini is slow or unreachable. Returned
+// slices are ordered by fused rank (FTS rank when the semantic side is
+// empty), capped at limit.
+func (s *Server) hybridSearch(ctx context.Context, query string, limit int, wantContent, wantNote bool) ([]content.Content, []note.Note, error) {
 	branchSize := searchKnowledgeBranchSize
 	if limit > branchSize {
 		branchSize = limit
 	}
 
 	var (
-		ftsResults, semResults []content.Content
-		semErr                 error
+		contentFTS, contentSem []content.Content
+		noteFTS, noteSem       []note.Note
 	)
 
 	g, gctx := errgroup.WithContext(ctx)
-
-	g.Go(func() error {
-		rows, _, err := s.contents.InternalSearch(gctx, query, 1, branchSize)
-		if err != nil {
-			return fmt.Errorf("fts: %w", err)
-		}
-		ftsResults = rows
-		return nil
-	})
-
-	if s.embedder != nil {
+	if wantContent {
 		g.Go(func() error {
-			rows, err := s.semanticBranch(gctx, query, branchSize)
+			rows, _, err := s.contents.InternalSearch(gctx, query, 1, branchSize)
 			if err != nil {
-				semErr = err
-				return nil // Fall back to FTS; log happens inside semanticBranch.
+				return fmt.Errorf("searching content: fts: %w", err)
 			}
-			semResults = rows
+			contentFTS = rows
 			return nil
 		})
 	}
-
+	if wantNote {
+		g.Go(func() error {
+			rows, err := s.notes.Search(gctx, query, branchSize)
+			if err != nil {
+				return fmt.Errorf("searching notes: fts: %w", err)
+			}
+			noteFTS = rows
+			return nil
+		})
+	}
+	if s.embedder != nil && (wantContent || wantNote) {
+		g.Go(func() error {
+			contentSem, noteSem = s.semanticBranches(gctx, query, branchSize, wantContent, wantNote)
+			return nil
+		})
+	}
 	if err := g.Wait(); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	if len(semResults) == 0 {
-		// Either embedder unset, semantic failed gracefully, or no vector
-		// hits. Hand back FTS ordering unchanged — a single-source RRF
+	contentRows := contentFTS
+	if len(contentSem) > 0 {
+		contentRows = rrfMerge(contentFTS, contentSem, limit)
+	} else if len(contentRows) > limit {
+		// FTS ordering is handed back unchanged — a single-source RRF
 		// would be a no-op transform that discards the FTS-native rank.
-		_ = semErr
-		if len(ftsResults) > limit {
-			return ftsResults[:limit], nil
-		}
-		return ftsResults, nil
+		contentRows = contentRows[:limit]
 	}
-
-	merged := rrfMerge(ftsResults, semResults, limit)
-	return merged, nil
+	noteRows := noteFTS
+	if len(noteSem) > 0 {
+		noteRows = rrfMergeNotes(noteFTS, noteSem, limit)
+	} else if len(noteRows) > limit {
+		noteRows = noteRows[:limit]
+	}
+	return contentRows, noteRows, nil
 }
 
-// semanticBranch produces the vector side of hybrid search: embed the
-// query via Gemini, then cosine-rank contents via pgvector. Bounded by
-// searchKnowledgeHybridDeadline so a slow Gemini call cannot stall the
-// MCP handler. Any failure is logged and returned; the caller is expected
-// to swallow the error and degrade to FTS-only (ErrEmptyInput is the one
-// shape that should not even log, since it's a caller-input issue).
-func (s *Server) semanticBranch(ctx context.Context, query string, limit int) ([]content.Content, error) {
+// semanticBranches produces the vector side of hybrid search: embed the
+// query once via Gemini, then cosine-rank contents and notes in parallel
+// with that one vector — EmbedQuery is never called twice for a single
+// search. The embed plus both vector queries share a single
+// searchKnowledgeHybridDeadline window, so a slow Gemini call cannot
+// stall the MCP handler. Every failure is logged and swallowed; the
+// caller treats an empty slice as "degrade that corpus to FTS-only"
+// (ErrEmptyInput is the one shape that does not even log, since it is a
+// caller-input issue).
+func (s *Server) semanticBranches(ctx context.Context, query string, limit int, wantContent, wantNote bool) (contentRows []content.Content, noteRows []note.Note) {
 	semCtx, cancel := context.WithTimeout(ctx, searchKnowledgeHybridDeadline)
 	defer cancel()
 
@@ -280,14 +284,33 @@ func (s *Server) semanticBranch(ctx context.Context, query string, limit int) ([
 		if !errors.Is(err, embedder.ErrEmptyInput) {
 			s.logger.Warn("search_knowledge semantic branch skipped: embed_query failed", "err", err)
 		}
-		return nil, err
+		return nil, nil
 	}
-	rows, err := s.contents.InternalSemanticSearch(semCtx, pgvector.NewVector(vec), limit)
-	if err != nil {
-		s.logger.Warn("search_knowledge semantic branch skipped: vector query failed", "err", err)
-		return nil, err
+	queryVec := pgvector.NewVector(vec)
+
+	var wg sync.WaitGroup
+	if wantContent {
+		wg.Go(func() {
+			rows, semErr := s.contents.InternalSemanticSearch(semCtx, queryVec, limit)
+			if semErr != nil {
+				s.logger.Warn("search_knowledge semantic branch skipped: content vector query failed", "err", semErr)
+				return
+			}
+			contentRows = rows
+		})
 	}
-	return rows, nil
+	if wantNote {
+		wg.Go(func() {
+			rows, semErr := s.notes.SemanticSearch(semCtx, queryVec, limit)
+			if semErr != nil {
+				s.logger.Warn("search_knowledge semantic branch skipped: note vector query failed", "err", semErr)
+				return
+			}
+			noteRows = rows
+		})
+	}
+	wg.Wait()
+	return contentRows, noteRows
 }
 
 // rrfMerge fuses two ranked content lists via reciprocal rank fusion:
@@ -332,6 +355,52 @@ func rrfMerge(fts, sem []content.Content, limit int) []content.Content {
 		ranked = ranked[:limit]
 	}
 	out := make([]content.Content, len(ranked))
+	for i := range ranked {
+		out[i] = byID[ranked[i].id]
+	}
+	return out
+}
+
+// rrfMergeNotes fuses two ranked note lists via reciprocal rank fusion —
+// the note counterpart of rrfMerge: score(n) = Σ 1 / (k + rank_i(n)) over
+// the branches where n appears, rank_i starting at 1. Notes appearing in
+// only one branch still score. Score ties break on note ID so output
+// stays deterministic. Input slices are treated as already ranked in
+// index order.
+func rrfMergeNotes(fts, sem []note.Note, limit int) []note.Note {
+	scores := make(map[uuid.UUID]float64, len(fts)+len(sem))
+	byID := make(map[uuid.UUID]note.Note, len(fts)+len(sem))
+	accumulate := func(rows []note.Note) {
+		for i := range rows {
+			id := rows[i].ID
+			scores[id] += 1.0 / (rrfK + float64(i+1))
+			if _, ok := byID[id]; !ok {
+				byID[id] = rows[i]
+			}
+		}
+	}
+	accumulate(fts)
+	accumulate(sem)
+
+	type scored struct {
+		id    uuid.UUID
+		score float64
+	}
+	ranked := make([]scored, 0, len(scores))
+	for id, sc := range scores {
+		ranked = append(ranked, scored{id: id, score: sc})
+	}
+	slices.SortFunc(ranked, func(a, b scored) int {
+		if a.score != b.score {
+			return cmp.Compare(b.score, a.score) // higher score first
+		}
+		return cmp.Compare(a.id.String(), b.id.String())
+	})
+
+	if len(ranked) > limit {
+		ranked = ranked[:limit]
+	}
+	out := make([]note.Note, len(ranked))
 	for i := range ranked {
 		out[i] = byID[ranked[i].id]
 	}

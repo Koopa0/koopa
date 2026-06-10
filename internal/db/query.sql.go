@@ -2157,6 +2157,45 @@ func (q *Queries) ContentsForTarget(ctx context.Context, targetID uuid.UUID) ([]
 	return items, nil
 }
 
+const contentsMissingEmbedding = `-- name: ContentsMissingEmbedding :many
+SELECT id, title, body
+FROM contents
+WHERE embedding IS NULL AND status != 'archived'
+ORDER BY created_at
+LIMIT $1
+`
+
+type ContentsMissingEmbeddingRow struct {
+	ID    uuid.UUID `json:"id"`
+	Title string    `json:"title"`
+	Body  string    `json:"body"`
+}
+
+// Rows the embedding reconciler still has to process. Archived content is
+// excluded — it is invisible to every search path (InternalSearchContents
+// and InternalSemanticSearchContents both filter it out), so embedding it
+// would spend API quota on unreachable rows. Oldest first so a backfill
+// progresses deterministically.
+func (q *Queries) ContentsMissingEmbedding(ctx context.Context, limit int32) ([]ContentsMissingEmbeddingRow, error) {
+	rows, err := q.db.Query(ctx, contentsMissingEmbedding, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ContentsMissingEmbeddingRow{}
+	for rows.Next() {
+		var i ContentsMissingEmbeddingRow
+		if err := rows.Scan(&i.ID, &i.Title, &i.Body); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const countContents = `-- name: CountContents :one
 SELECT COUNT(*) FROM contents
 WHERE ($1::content_type IS NULL OR type = $1)
@@ -5177,6 +5216,72 @@ func (q *Queries) InternalSemanticSearchContents(ctx context.Context, arg Intern
 	return items, nil
 }
 
+const internalSemanticSearchNotes = `-- name: InternalSemanticSearchNotes :many
+SELECT id, slug, title, body, kind, maturity, created_by,
+       metadata, created_at, updated_at,
+       (1 - (embedding <=> $1::vector))::float8 AS similarity
+FROM notes
+WHERE embedding IS NOT NULL
+ORDER BY embedding <=> $1::vector
+LIMIT $2
+`
+
+type InternalSemanticSearchNotesParams struct {
+	TargetEmbedding pgvector_go.Vector `json:"target_embedding"`
+	MaxResults      int32              `json:"max_results"`
+}
+
+type InternalSemanticSearchNotesRow struct {
+	ID         uuid.UUID       `json:"id"`
+	Slug       string          `json:"slug"`
+	Title      string          `json:"title"`
+	Body       string          `json:"body"`
+	Kind       NoteKind        `json:"kind"`
+	Maturity   NoteMaturity    `json:"maturity"`
+	CreatedBy  string          `json:"created_by"`
+	Metadata   json.RawMessage `json:"metadata"`
+	CreatedAt  time.Time       `json:"created_at"`
+	UpdatedAt  time.Time       `json:"updated_at"`
+	Similarity float64         `json:"similarity"`
+}
+
+// Semantic search over notes via pgvector cosine distance — the vector
+// counterpart of SearchNotes, feeding the hybrid RRF merge in
+// search_knowledge. No maturity filter: every note (archived included)
+// is reachable through FTS, and the semantic branch mirrors that
+// visibility. Notes without embeddings are skipped.
+func (q *Queries) InternalSemanticSearchNotes(ctx context.Context, arg InternalSemanticSearchNotesParams) ([]InternalSemanticSearchNotesRow, error) {
+	rows, err := q.db.Query(ctx, internalSemanticSearchNotes, arg.TargetEmbedding, arg.MaxResults)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []InternalSemanticSearchNotesRow{}
+	for rows.Next() {
+		var i InternalSemanticSearchNotesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Slug,
+			&i.Title,
+			&i.Body,
+			&i.Kind,
+			&i.Maturity,
+			&i.CreatedBy,
+			&i.Metadata,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.Similarity,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const isAliasRejected = `-- name: IsAliasRejected :one
 SELECT EXISTS(SELECT 1 FROM tag_aliases WHERE raw_tag = $1 AND resolution_source = 'rejected') AS rejected
 `
@@ -6206,6 +6311,44 @@ func (q *Queries) NotesForTarget(ctx context.Context, targetID uuid.UUID) ([]Not
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const notesMissingEmbedding = `-- name: NotesMissingEmbedding :many
+SELECT id, title, body
+FROM notes
+WHERE embedding IS NULL
+ORDER BY created_at
+LIMIT $1
+`
+
+type NotesMissingEmbeddingRow struct {
+	ID    uuid.UUID `json:"id"`
+	Title string    `json:"title"`
+	Body  string    `json:"body"`
+}
+
+// Rows the embedding reconciler still has to process. No maturity filter —
+// archived notes stay searchable (SearchNotes does not exclude them), so
+// they get embeddings too. Oldest first so a backfill progresses
+// deterministically.
+func (q *Queries) NotesMissingEmbedding(ctx context.Context, limit int32) ([]NotesMissingEmbeddingRow, error) {
+	rows, err := q.db.Query(ctx, notesMissingEmbedding, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []NotesMissingEmbeddingRow{}
+	for rows.Next() {
+		var i NotesMissingEmbeddingRow
+		if err := rows.Scan(&i.ID, &i.Title, &i.Body); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -9004,6 +9147,45 @@ func (q *Queries) SessionTimeline(ctx context.Context, arg SessionTimelineParams
 		return nil, err
 	}
 	return items, nil
+}
+
+const setContentEmbedding = `-- name: SetContentEmbedding :exec
+UPDATE contents SET embedding = $2 WHERE id = $1
+`
+
+type SetContentEmbeddingParams struct {
+	ID        uuid.UUID           `json:"id"`
+	Embedding *pgvector_go.Vector `json:"embedding"`
+}
+
+// Persist a derived embedding. updated_at is deliberately untouched:
+// the embedding derives from title/body and carries no editorial change,
+// and updated_at orders admin lists and feeds lastmod semantics — a
+// background re-embed must not make content look freshly edited. The
+// contents audit trigger fires only on INSERT or UPDATE OF status, so
+// this write produces no activity_events row.
+func (q *Queries) SetContentEmbedding(ctx context.Context, arg SetContentEmbeddingParams) error {
+	_, err := q.db.Exec(ctx, setContentEmbedding, arg.ID, arg.Embedding)
+	return err
+}
+
+const setNoteEmbedding = `-- name: SetNoteEmbedding :exec
+UPDATE notes SET embedding = $2 WHERE id = $1
+`
+
+type SetNoteEmbeddingParams struct {
+	ID        uuid.UUID           `json:"id"`
+	Embedding *pgvector_go.Vector `json:"embedding"`
+}
+
+// Persist a derived embedding. updated_at is deliberately untouched: the
+// embedding derives from title/body and carries no edit, and the admin
+// notes list orders by updated_at — a background re-embed must not make
+// notes look freshly edited. The notes audit trigger fires only on
+// INSERT, so this write produces no activity_events row.
+func (q *Queries) SetNoteEmbedding(ctx context.Context, arg SetNoteEmbeddingParams) error {
+	_, err := q.db.Exec(ctx, setNoteEmbedding, arg.ID, arg.Embedding)
+	return err
 }
 
 const similarContents = `-- name: SimilarContents :many
