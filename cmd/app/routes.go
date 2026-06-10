@@ -322,8 +322,13 @@ func registerRoutes(
 	mux.Handle("GET /api/admin/learning/plans", authMid(http.HandlerFunc(h.plan.List)))
 	mux.Handle("GET /api/admin/learning/plans/{id}", authMid(http.HandlerFunc(h.plan.Detail)))
 	mux.Handle("POST /api/admin/learning/plans", adminMid(http.HandlerFunc(h.plan.Create)))
+	// Plan lifecycle + curriculum maintenance: status transitions, atomic
+	// entry reordering, and draft-only entry removal.
+	mux.Handle("PUT /api/admin/learning/plans/{id}/status", adminMid(http.HandlerFunc(h.plan.UpdateStatus)))
+	mux.Handle("PUT /api/admin/learning/plans/{id}/reorder", adminMid(http.HandlerFunc(h.plan.Reorder)))
 	mux.Handle("POST /api/admin/learning/plans/{id}/entries", adminMid(http.HandlerFunc(h.plan.AddEntries)))
 	mux.Handle("PUT /api/admin/learning/plans/{id}/entries/{entry_id}", adminMid(http.HandlerFunc(h.plan.UpdateEntry)))
+	mux.Handle("DELETE /api/admin/learning/plans/{id}/entries/{entry_id}", adminMid(http.HandlerFunc(h.plan.RemoveEntry)))
 
 	// Learning domains — read populates the admin plan/domain selectors; create
 	// is the decision-stamp that replaces the removed propose_learning_domain flow.

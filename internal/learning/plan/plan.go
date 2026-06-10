@@ -47,6 +47,19 @@ const (
 	StatusAbandoned Status = "abandoned"
 )
 
+// validStatus reports whether s is a recognized plan lifecycle status.
+// The set mirrors the learning_plans.status CHECK constraint so invalid
+// values are rejected at the handler boundary with a 400 instead of
+// surfacing as a database constraint error.
+func validStatus(s Status) bool {
+	switch s {
+	case StatusDraft, StatusActive, StatusCompleted, StatusPaused, StatusAbandoned:
+		return true
+	default:
+		return false
+	}
+}
+
 // EntryStatus represents a plan entry lifecycle state.
 type EntryStatus string
 

@@ -18,6 +18,15 @@
 //     audit gate. status=completed REQUIRES completed_by_attempt_id AND a
 //     non-blank reason; missing either → 400 AUDIT_REQUIRED. The happy path
 //     (both present, on a real attempt-backed entry) → 200.
+//   - UpdateStatus — PUT /plans/{id}/status: valid lifecycle transitions
+//     persist and return the updated plan; unknown enum values → 400 at the
+//     handler (never the DB CHECK); unknown plan id → 404.
+//   - Reorder — PUT /plans/{id}/reorder: a full position swap persists
+//     atomically despite UNIQUE (plan_id, position); duplicate positions,
+//     duplicate entry ids, and foreign entries reject without writes.
+//   - RemoveEntry — DELETE /plans/{id}/entries/{entry_id}: draft-only
+//     removal → 204; active plans refuse with 409; unknown or foreign
+//     entries → 404.
 //
 // Run with:
 //
@@ -36,6 +45,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -434,6 +444,344 @@ func TestIntegration_Plan_UpdateEntry_CompletionAuditGate(t *testing.T) {
 		}
 		if reason == nil || !strings.Contains(*reason, "solved_independent") {
 			t.Errorf("reason = %v, want the audit reason persisted", reason)
+		}
+	})
+}
+
+// seedEntries adds one fresh target per title to the plan through the
+// AddEntries handler and returns the created entry IDs ordered by position
+// (positions 1..n, assigned by the handler).
+func seedEntries(t *testing.T, h *plan.Handler, planID uuid.UUID, titles ...string) []uuid.UUID {
+	t.Helper()
+	entries := make([]map[string]any, len(titles))
+	for i, title := range titles {
+		entries[i] = map[string]any{"learning_target_id": seedTarget(t, title).String()}
+	}
+	req := jsonReq(t, http.MethodPost, "/api/admin/learning/plans/"+planID.String()+"/entries", map[string]any{
+		"entries": entries,
+	})
+	req.SetPathValue("id", planID.String())
+	if rec := serve(t, h.AddEntries, req); rec.Code != http.StatusCreated {
+		t.Fatalf("seedEntries: status = %d, want 201 (body=%s)", rec.Code, rec.Body.String())
+	}
+
+	rows, err := testPool.Query(t.Context(),
+		`SELECT id FROM learning_plan_entries WHERE plan_id = $1 ORDER BY position`, planID)
+	if err != nil {
+		t.Fatalf("seedEntries: reading entry ids: %v", err)
+	}
+	defer rows.Close()
+	var ids []uuid.UUID
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			t.Fatalf("seedEntries: scanning entry id: %v", err)
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("seedEntries: iterating entry ids: %v", err)
+	}
+	if len(ids) != len(titles) {
+		t.Fatalf("seedEntries: got %d entries, want %d", len(ids), len(titles))
+	}
+	return ids
+}
+
+// entryPositions reads the plan's current id → position map for persistence
+// assertions.
+func entryPositions(t *testing.T, planID uuid.UUID) map[uuid.UUID]int32 {
+	t.Helper()
+	rows, err := testPool.Query(t.Context(),
+		`SELECT id, position FROM learning_plan_entries WHERE plan_id = $1`, planID)
+	if err != nil {
+		t.Fatalf("reading entry positions: %v", err)
+	}
+	defer rows.Close()
+	got := make(map[uuid.UUID]int32)
+	for rows.Next() {
+		var id uuid.UUID
+		var pos int32
+		if err := rows.Scan(&id, &pos); err != nil {
+			t.Fatalf("scanning entry position: %v", err)
+		}
+		got[id] = pos
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("iterating entry positions: %v", err)
+	}
+	return got
+}
+
+// TestIntegration_Plan_UpdateStatus drives PUT /plans/{id}/status through the
+// lifecycle enum gate: valid transitions persist and return the updated plan,
+// an unknown enum value rejects with 400 at the handler before the DB CHECK
+// can turn it into a 500, and an unknown plan id maps to 404. Cases run in
+// order — each builds on the status the previous one left behind.
+func TestIntegration_Plan_UpdateStatus(t *testing.T) {
+	truncate(t)
+	h := newHandler()
+	planID := seedDraftPlan(t, h, "Status Lifecycle Plan")
+
+	tests := []struct {
+		name       string
+		id         string
+		body       map[string]any
+		wantCode   int
+		wantStatus string // status expected in the DB after the call
+	}{
+		{name: "draft to active", id: planID.String(), body: map[string]any{"status": "active"}, wantCode: http.StatusOK, wantStatus: "active"},
+		{name: "active to paused", id: planID.String(), body: map[string]any{"status": "paused"}, wantCode: http.StatusOK, wantStatus: "paused"},
+		{name: "invalid enum rejected", id: planID.String(), body: map[string]any{"status": "archived"}, wantCode: http.StatusBadRequest, wantStatus: "paused"},
+		{name: "missing status rejected", id: planID.String(), body: map[string]any{}, wantCode: http.StatusBadRequest, wantStatus: "paused"},
+		{name: "unknown plan returns 404", id: uuid.New().String(), body: map[string]any{"status": "active"}, wantCode: http.StatusNotFound, wantStatus: "paused"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := jsonReq(t, http.MethodPut, "/api/admin/learning/plans/"+tt.id+"/status", tt.body)
+			req.SetPathValue("id", tt.id)
+			rec := serve(t, h.UpdateStatus, req)
+
+			if rec.Code != tt.wantCode {
+				t.Fatalf("status = %d, want %d (body=%s)", rec.Code, tt.wantCode, rec.Body.String())
+			}
+			if tt.wantCode == http.StatusOK {
+				var env struct {
+					Data plan.Plan `json:"data"`
+				}
+				if err := json.Unmarshal(rec.Body.Bytes(), &env); err != nil {
+					t.Fatalf("decoding updated plan: %v (body=%s)", err, rec.Body.String())
+				}
+				if string(env.Data.Status) != tt.wantStatus {
+					t.Errorf("response status = %q, want %q", env.Data.Status, tt.wantStatus)
+				}
+			}
+			var dbStatus string
+			if err := testPool.QueryRow(t.Context(),
+				`SELECT status FROM learning_plans WHERE id = $1`, planID,
+			).Scan(&dbStatus); err != nil {
+				t.Fatalf("reading plan status: %v", err)
+			}
+			if dbStatus != tt.wantStatus {
+				t.Errorf("DB status = %q, want %q", dbStatus, tt.wantStatus)
+			}
+		})
+	}
+}
+
+// TestIntegration_Plan_Reorder_SwapPersists reorders a three-entry plan into
+// reverse order — a full swap that would violate UNIQUE (plan_id, position)
+// without the two-phase update — and asserts the new positions persist and
+// the response envelope carries the entries in the new order.
+func TestIntegration_Plan_Reorder_SwapPersists(t *testing.T) {
+	truncate(t)
+	h := newHandler()
+	planID := seedDraftPlan(t, h, "Reorder Plan")
+	ids := seedEntries(t, h, planID, "Reorder A", "Reorder B", "Reorder C") // positions 1,2,3
+
+	req := jsonReq(t, http.MethodPut, "/api/admin/learning/plans/"+planID.String()+"/reorder", map[string]any{
+		"entries": []map[string]any{
+			{"plan_entry_id": ids[0].String(), "position": 3},
+			{"plan_entry_id": ids[1].String(), "position": 2},
+			{"plan_entry_id": ids[2].String(), "position": 1},
+		},
+	})
+	req.SetPathValue("id", planID.String())
+	rec := serve(t, h.Reorder, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body=%s)", rec.Code, rec.Body.String())
+	}
+
+	want := map[uuid.UUID]int32{ids[0]: 3, ids[1]: 2, ids[2]: 1}
+	if diff := cmp.Diff(want, entryPositions(t, planID)); diff != "" {
+		t.Errorf("persisted positions mismatch (-want +got):\n%s", diff)
+	}
+
+	// The response is the detail envelope ordered by the NEW positions.
+	var env struct {
+		Data struct {
+			Entries []struct {
+				PlanEntryID uuid.UUID `json:"plan_entry_id"`
+				Position    int32     `json:"position"`
+			} `json:"entries"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &env); err != nil {
+		t.Fatalf("decoding detail envelope: %v (body=%s)", err, rec.Body.String())
+	}
+	if len(env.Data.Entries) != 3 {
+		t.Fatalf("envelope entries = %d, want 3 (body=%s)", len(env.Data.Entries), rec.Body.String())
+	}
+	wantOrder := []uuid.UUID{ids[2], ids[1], ids[0]}
+	for i, e := range env.Data.Entries {
+		if e.PlanEntryID != wantOrder[i] {
+			t.Errorf("envelope entries[%d] = %s, want %s", i, e.PlanEntryID, wantOrder[i])
+		}
+	}
+}
+
+// TestIntegration_Plan_Reorder_Rejections drives the reorder request gates
+// end-to-end: duplicate positions, duplicate entry ids, entries of another
+// plan, unknown plans, and collisions with entries left out of the request
+// all reject — and no positions change.
+func TestIntegration_Plan_Reorder_Rejections(t *testing.T) {
+	truncate(t)
+	h := newHandler()
+	planID := seedDraftPlan(t, h, "Reorder Reject Plan")
+	ids := seedEntries(t, h, planID, "Reject A", "Reject B", "Reject C") // positions 1,2,3
+	otherPlan := seedDraftPlan(t, h, "Reorder Other Plan")
+	otherIDs := seedEntries(t, h, otherPlan, "Reject Other A")
+
+	before := entryPositions(t, planID)
+
+	tests := []struct {
+		name     string
+		planID   string
+		entries  []map[string]any
+		wantCode int
+	}{
+		{
+			name:   "duplicate position",
+			planID: planID.String(),
+			entries: []map[string]any{
+				{"plan_entry_id": ids[0].String(), "position": 5},
+				{"plan_entry_id": ids[1].String(), "position": 5},
+			},
+			wantCode: http.StatusBadRequest,
+		},
+		{
+			name:   "duplicate entry id",
+			planID: planID.String(),
+			entries: []map[string]any{
+				{"plan_entry_id": ids[0].String(), "position": 4},
+				{"plan_entry_id": ids[0].String(), "position": 5},
+			},
+			wantCode: http.StatusBadRequest,
+		},
+		{
+			name:     "entry of another plan",
+			planID:   planID.String(),
+			entries:  []map[string]any{{"plan_entry_id": otherIDs[0].String(), "position": 1}},
+			wantCode: http.StatusNotFound,
+		},
+		{
+			name:     "unknown plan",
+			planID:   uuid.New().String(),
+			entries:  []map[string]any{{"plan_entry_id": ids[0].String(), "position": 1}},
+			wantCode: http.StatusNotFound,
+		},
+		{
+			// ids[1] holds position 2 and is not part of the request, so
+			// moving ids[0] onto 2 must refuse instead of tripping the
+			// unique constraint.
+			name:     "collision with untouched entry",
+			planID:   planID.String(),
+			entries:  []map[string]any{{"plan_entry_id": ids[0].String(), "position": 2}},
+			wantCode: http.StatusConflict,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := jsonReq(t, http.MethodPut, "/api/admin/learning/plans/"+tt.planID+"/reorder", map[string]any{
+				"entries": tt.entries,
+			})
+			req.SetPathValue("id", tt.planID)
+			rec := serve(t, h.Reorder, req)
+
+			if rec.Code != tt.wantCode {
+				t.Fatalf("status = %d, want %d (body=%s)", rec.Code, tt.wantCode, rec.Body.String())
+			}
+			if diff := cmp.Diff(before, entryPositions(t, planID)); diff != "" {
+				t.Errorf("positions changed after rejected reorder (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+// TestIntegration_Plan_RemoveEntry covers the draft-only removal invariant:
+// deleting an entry from a draft plan returns 204 and removes exactly that
+// row; the same delete against an active plan refuses with 409 and the row
+// survives; unknown entries and entries of a different plan map to 404.
+// Subtests run in order — activation happens between the draft and active
+// cases.
+func TestIntegration_Plan_RemoveEntry(t *testing.T) {
+	truncate(t)
+	h := newHandler()
+	planID := seedDraftPlan(t, h, "Remove Plan")
+	ids := seedEntries(t, h, planID, "Remove A", "Remove B")
+	otherPlan := seedDraftPlan(t, h, "Remove Other Plan")
+	otherIDs := seedEntries(t, h, otherPlan, "Remove Other A")
+
+	remove := func(t *testing.T, planID, entryID string) *httptest.ResponseRecorder {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodDelete,
+			"/api/admin/learning/plans/"+planID+"/entries/"+entryID, http.NoBody)
+		req.SetPathValue("id", planID)
+		req.SetPathValue("entry_id", entryID)
+		return serve(t, h.RemoveEntry, req)
+	}
+	count := func(t *testing.T, planID uuid.UUID) int {
+		t.Helper()
+		var n int
+		if err := testPool.QueryRow(t.Context(),
+			`SELECT COUNT(*) FROM learning_plan_entries WHERE plan_id = $1`, planID,
+		).Scan(&n); err != nil {
+			t.Fatalf("counting entries: %v", err)
+		}
+		return n
+	}
+
+	t.Run("unknown entry returns 404", func(t *testing.T) {
+		if rec := remove(t, planID.String(), uuid.New().String()); rec.Code != http.StatusNotFound {
+			t.Fatalf("status = %d, want 404 (body=%s)", rec.Code, rec.Body.String())
+		}
+	})
+
+	t.Run("entry of another plan returns 404", func(t *testing.T) {
+		rec := remove(t, planID.String(), otherIDs[0].String())
+		if rec.Code != http.StatusNotFound {
+			t.Fatalf("status = %d, want 404 (body=%s)", rec.Code, rec.Body.String())
+		}
+		if got := count(t, otherPlan); got != 1 {
+			t.Errorf("other plan entry count = %d, want 1 (cross-plan delete must not land)", got)
+		}
+	})
+
+	t.Run("draft removal succeeds with 204", func(t *testing.T) {
+		rec := remove(t, planID.String(), ids[0].String())
+		if rec.Code != http.StatusNoContent {
+			t.Fatalf("status = %d, want 204 (body=%s)", rec.Code, rec.Body.String())
+		}
+		if got := count(t, planID); got != 1 {
+			t.Errorf("entry count = %d, want 1", got)
+		}
+		var remaining uuid.UUID
+		if err := testPool.QueryRow(t.Context(),
+			`SELECT id FROM learning_plan_entries WHERE plan_id = $1`, planID,
+		).Scan(&remaining); err != nil {
+			t.Fatalf("reading remaining entry: %v", err)
+		}
+		if remaining != ids[1] {
+			t.Errorf("remaining entry = %s, want %s", remaining, ids[1])
+		}
+	})
+
+	t.Run("active plan refuses removal with 409", func(t *testing.T) {
+		if _, err := testPool.Exec(t.Context(),
+			`UPDATE learning_plans SET status = 'active' WHERE id = $1`, planID,
+		); err != nil {
+			t.Fatalf("activating plan: %v", err)
+		}
+		rec := remove(t, planID.String(), ids[1].String())
+		if rec.Code != http.StatusConflict {
+			t.Fatalf("status = %d, want 409 (body=%s)", rec.Code, rec.Body.String())
+		}
+		if code := errorCode(t, rec.Body.Bytes()); code != "CONFLICT" {
+			t.Errorf("error.code = %q, want %q", code, "CONFLICT")
+		}
+		if got := count(t, planID); got != 1 {
+			t.Errorf("entry count = %d, want 1 (refused delete must not land)", got)
 		}
 	})
 }

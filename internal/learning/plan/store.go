@@ -247,13 +247,18 @@ func (s *Store) UpdateEntryStatus(ctx context.Context, p UpdateEntryStatusParams
 	return rowToEntry(&row), nil
 }
 
-// UpdateEntryPosition changes the position of a plan entry.
+// UpdateEntryPosition changes the position of a plan entry. A position
+// already held by another entry of the same plan violates the
+// (plan_id, position) unique constraint and maps to ErrConflict.
 func (s *Store) UpdateEntryPosition(ctx context.Context, entryID uuid.UUID, position int32) error {
 	n, err := s.q.UpdatePlanEntryPosition(ctx, db.UpdatePlanEntryPositionParams{
 		Position: position,
 		ID:       entryID,
 	})
 	if err != nil {
+		if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok && pgErr.Code == pgerrcode.UniqueViolation {
+			return ErrConflict
+		}
 		return fmt.Errorf("updating plan entry position %s: %w", entryID, err)
 	}
 	if n == 0 {
