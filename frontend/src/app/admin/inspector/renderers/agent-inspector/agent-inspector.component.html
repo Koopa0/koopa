@@ -137,7 +137,7 @@
       <!-- Tail link to the agent profile — surfaces this agent's task workload. -->
       @if (a.open_task_count > 0) {
         <a
-          [routerLink]="['/admin/coordination/agents', a.name]"
+          [routerLink]="['/admin/system/agents', a.name]"
           class="motion-reduce:transition-none block border-t border-zinc-800 pt-3 text-sm text-sky-400 transition-colors hover:text-sky-300"
           [attr.aria-label]="
             'View ' +

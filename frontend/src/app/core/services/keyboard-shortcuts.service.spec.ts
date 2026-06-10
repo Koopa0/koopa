@@ -111,16 +111,14 @@ describe('KeyboardShortcutsService', () => {
 
   describe('admin G-prefix navigation', () => {
     it('should navigate on `G H` chord from inside admin', () => {
-      setupBrowser('/admin/commitment/today');
+      setupBrowser('/admin/daily/today');
       dispatchKey('g');
       dispatchKey('h');
-      expect(routerStub.navigate).toHaveBeenCalledWith([
-        '/admin/commitment/today',
-      ]);
+      expect(routerStub.navigate).toHaveBeenCalledWith(['/admin/daily/today']);
     });
 
     it('should navigate on `G R` chord to review queue', () => {
-      setupBrowser('/admin/commitment/today');
+      setupBrowser('/admin/daily/today');
       dispatchKey('g');
       dispatchKey('r');
       expect(routerStub.navigate).toHaveBeenCalledWith([
@@ -129,7 +127,7 @@ describe('KeyboardShortcutsService', () => {
     });
 
     it('should NOT navigate when the G-prefix target is unknown', () => {
-      setupBrowser('/admin/commitment/today');
+      setupBrowser('/admin/daily/today');
       dispatchKey('g');
       dispatchKey('q');
       expect(routerStub.navigate).not.toHaveBeenCalled();
@@ -191,7 +189,7 @@ describe('KeyboardShortcutsService', () => {
     });
 
     it('should disable G-prefix chord when a11y mode is on', () => {
-      const service = setupBrowser('/admin/commitment/today');
+      const service = setupBrowser('/admin/daily/today');
       service.toggleA11yMode();
 
       dispatchKey('g');

@@ -1,6 +1,7 @@
 import {
   Component,
   ChangeDetectionStrategy,
+  DestroyRef,
   inject,
   signal,
   computed,
@@ -15,7 +16,9 @@ import { Router } from '@angular/router';
 import { Subject, debounceTime } from 'rxjs';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { trigger, transition, style, animate } from '@angular/animations';
+import { NotificationService } from '../../core/services/notification.service';
 import { SearchService } from '../../core/services/search.service';
+import { TodoService } from '../../core/services/todo.service';
 import {
   CommandPaletteService,
   type CommandAction,
@@ -64,8 +67,11 @@ interface GroupedAction {
 export class CommandPaletteComponent {
   private readonly paletteService = inject(CommandPaletteService);
   private readonly searchService = inject(SearchService);
+  private readonly todoService = inject(TodoService);
+  private readonly notifications = inject(NotificationService);
   private readonly router = inject(Router);
   private readonly platformId = inject(PLATFORM_ID);
+  private readonly destroyRef = inject(DestroyRef);
 
   private readonly searchInput =
     viewChild<ElementRef<HTMLInputElement>>('searchInput');
@@ -133,6 +139,23 @@ export class CommandPaletteComponent {
     this.totalItems();
     return 0;
   });
+
+  private readonly _isCapturing = signal(false);
+  protected readonly isCapturing = this._isCapturing.asReadonly();
+
+  /**
+   * GTD capture fallback (design spec 03 §0): the query is more than one
+   * character, matched no command and no entity, and the session can
+   * write to the admin API. Enter then captures the raw text to the GTD
+   * inbox instead of doing nothing.
+   */
+  protected readonly captureAvailable = computed(
+    () =>
+      this.paletteService.isAuthenticated() &&
+      this.query().trim().length > 1 &&
+      this.totalItems() === 0 &&
+      !this.isSearching(),
+  );
 
   constructor() {
     // Debounced search
@@ -257,9 +280,42 @@ export class CommandPaletteComponent {
     return contentTypeLabel(type);
   }
 
+  /**
+   * Create an inbox todo from the raw query (state=inbox — capture, not
+   * clarify), toast the result, and close the palette on success. On
+   * failure the palette stays open so the text is not lost.
+   */
+  protected captureToInbox(): void {
+    const title = this.query().trim();
+    if (!title || this._isCapturing()) return;
+
+    this._isCapturing.set(true);
+    this.todoService
+      .create({ title, state: 'inbox' })
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: () => {
+          this._isCapturing.set(false);
+          this.notifications.success(`Captured to inbox: "${title}"`);
+          this.close();
+        },
+        error: () => {
+          this._isCapturing.set(false);
+          this.notifications.error('Could not capture the todo. Try again.');
+        },
+      });
+  }
+
   private selectActive(): void {
     const idx = this.activeIndex();
     const actions = this.filteredActions();
+
+    if (this.totalItems() === 0) {
+      if (this.captureAvailable()) {
+        this.captureToInbox();
+      }
+      return;
+    }
 
     if (idx < actions.length) {
       this.executeAction(actions[idx].action);

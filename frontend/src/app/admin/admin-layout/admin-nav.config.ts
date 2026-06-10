@@ -1,16 +1,23 @@
 import {
   Activity as ActivityIcon,
   BookOpen,
+  Bot,
   Brain,
+  Calendar,
+  ChartColumn,
   CheckSquare,
   Compass,
   FileText,
+  HeartPulse,
   Home,
   Layers,
   ListChecks,
   Rss,
+  Search,
   StickyNote,
+  Tag,
   Target,
+  Timer,
 } from 'lucide-angular';
 import type { NavCountKey } from './admin-nav-counts.service';
 
@@ -25,7 +32,10 @@ export interface AdminNavItem {
    * whose count is not meaningful).
    */
   countKey?: NavCountKey;
-  /** Two-key chord hint (e.g. `G T`); chord binding lives in the service. */
+  /**
+   * Two-key chord hint (e.g. `G T`); chord binding lives in the service.
+   * Empty string = no chord assigned (placeholder surfaces).
+   */
   shortcutHint: string;
   /** Stable test id; avoids computing one from the label at render time. */
   testId: string;
@@ -45,30 +55,42 @@ export interface AdminNavGroup {
 }
 
 /**
- * 4-domain nav structure. Mirrors the backend's semantic subsystems
- * (Commitment / Knowledge / Learning / Coordination). Kept here, not
- * inlined in AdminLayoutComponent, so the component stays small and
- * the structure is reusable by tests and the command palette.
+ * 5-domain nav structure (Daily / Commitment / Knowledge / Learning /
+ * System) per the Mission Control design IA. Kept here, not inlined in
+ * AdminLayoutComponent, so the component stays small and the structure
+ * is reusable by tests and the command palette.
  */
 export const ADMIN_NAV: readonly AdminNavGroup[] = [
   {
-    label: 'Commitment',
+    label: 'Daily',
     items: [
       {
         label: 'Today',
-        route: '/admin/commitment/today',
+        route: '/admin/daily/today',
         icon: Home,
         shortcutHint: 'G H',
         testId: 'admin-nav-today',
       },
       {
+        label: 'Plan',
+        route: '/admin/daily/plan',
+        icon: Calendar,
+        shortcutHint: '',
+        testId: 'admin-nav-plan',
+      },
+      {
         label: 'Todos',
-        route: '/admin/commitment/todos',
+        route: '/admin/daily/todos',
         icon: CheckSquare,
         countKey: 'todos_open',
         shortcutHint: 'G T',
         testId: 'admin-nav-todos',
       },
+    ],
+  },
+  {
+    label: 'Commitment',
+    items: [
       {
         label: 'Goals & projects',
         route: '/admin/commitment/goals',
@@ -113,6 +135,20 @@ export const ADMIN_NAV: readonly AdminNavGroup[] = [
         shortcutHint: 'G F',
         testId: 'admin-nav-feeds',
       },
+      {
+        label: 'Search',
+        route: '/admin/knowledge/search',
+        icon: Search,
+        shortcutHint: '',
+        testId: 'admin-nav-search',
+      },
+      {
+        label: 'Tags & topics',
+        route: '/admin/knowledge/tags',
+        icon: Tag,
+        shortcutHint: '',
+        testId: 'admin-nav-tags',
+      },
     ],
   },
   {
@@ -125,6 +161,13 @@ export const ADMIN_NAV: readonly AdminNavGroup[] = [
         shortcutHint: 'G L',
         testId: 'admin-nav-learning',
         exact: true,
+      },
+      {
+        label: 'Sessions',
+        route: '/admin/learning/sessions',
+        icon: Timer,
+        shortcutHint: '',
+        testId: 'admin-nav-sessions',
       },
       {
         label: 'Domains',
@@ -158,14 +201,35 @@ export const ADMIN_NAV: readonly AdminNavGroup[] = [
     ],
   },
   {
-    label: 'Coordination',
+    label: 'System',
     items: [
       {
+        label: 'Health',
+        route: '/admin/system/health',
+        icon: HeartPulse,
+        shortcutHint: '',
+        testId: 'admin-nav-health',
+      },
+      {
+        label: 'Stats',
+        route: '/admin/system/stats',
+        icon: ChartColumn,
+        shortcutHint: '',
+        testId: 'admin-nav-stats',
+      },
+      {
         label: 'Activity',
-        route: '/admin/coordination/activity',
+        route: '/admin/system/activity',
         icon: ActivityIcon,
         shortcutHint: 'G A',
         testId: 'admin-nav-activity',
+      },
+      {
+        label: 'Agents',
+        route: '/admin/system/agents',
+        icon: Bot,
+        shortcutHint: '',
+        testId: 'admin-nav-agents',
       },
     ],
   },

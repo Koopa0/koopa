@@ -7,7 +7,6 @@ import type { InspectorAction, InspectorTarget } from './inspector.types';
 const VALID_TYPES: ReadonlySet<string> = new Set<InspectorTargetType>([
   'content',
   'hypothesis',
-  'task',
   'goal',
   'project',
   'todo',

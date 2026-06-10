@@ -192,7 +192,7 @@ export class TodosListPageComponent {
   constructor() {
     this.topbar.set({
       title: 'Todos',
-      crumbs: ['Commitment', 'Todos'],
+      crumbs: ['Daily', 'Todos'],
     });
 
     effect(() => {

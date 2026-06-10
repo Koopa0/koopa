@@ -60,7 +60,7 @@ export class AgentProfilePageComponent {
   constructor() {
     this.topbar.set({
       title: 'Agent',
-      crumbs: ['Coordination', 'Agents'],
+      crumbs: ['System', 'Agents'],
     });
 
     effect(() => {
@@ -68,7 +68,7 @@ export class AgentProfilePageComponent {
       if (!a) return;
       this.topbar.set({
         title: `Agent · ${a.display_name}`,
-        crumbs: ['Coordination', 'Agents', a.name],
+        crumbs: ['System', 'Agents', a.name],
       });
     });
 
@@ -76,6 +76,6 @@ export class AgentProfilePageComponent {
   }
 
   protected back(): void {
-    this.router.navigate(['/admin/coordination/agents']);
+    this.router.navigate(['/admin/system/agents']);
   }
 }

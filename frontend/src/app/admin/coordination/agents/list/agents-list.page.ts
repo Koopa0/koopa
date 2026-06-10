@@ -101,7 +101,7 @@ export class AgentsListPageComponent {
   constructor() {
     this.topbar.set({
       title: 'Agents',
-      crumbs: ['Coordination', 'Agents'],
+      crumbs: ['System', 'Agents'],
     });
 
     effect(() => {
@@ -121,7 +121,7 @@ export class AgentsListPageComponent {
   }
 
   protected openRow(row: AgentSummary): void {
-    this.router.navigate(['/admin/coordination/agents', row.name]);
+    this.router.navigate(['/admin/system/agents', row.name]);
   }
 
   protected rowTabIndex(i: number): number {

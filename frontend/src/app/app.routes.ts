@@ -128,23 +128,33 @@ export const routes: Routes = [
       ),
     canActivate: [adminGuard],
     children: [
-      { path: '', redirectTo: 'commitment/today', pathMatch: 'full' },
+      { path: '', redirectTo: 'daily/today', pathMatch: 'full' },
 
-      // ── Commitment ───────────────────────────────────────────────
+      // ── Daily ────────────────────────────────────────────────────
       {
-        path: 'commitment/today',
+        path: 'daily/today',
         loadComponent: () =>
           import('./admin/commitment/today/today-page.component').then(
             (m) => m.TodayPageComponent,
           ),
       },
       {
-        path: 'commitment/todos',
+        path: 'daily/plan',
+        loadComponent: () =>
+          import('./admin/shared/admin-placeholder.component').then(
+            (m) => m.AdminPlaceholderComponent,
+          ),
+        data: { title: 'Plan', crumbs: ['Daily', 'Plan'] },
+      },
+      {
+        path: 'daily/todos',
         loadComponent: () =>
           import('./admin/commitment/todos/list/todos-list.page').then(
             (m) => m.TodosListPageComponent,
           ),
       },
+
+      // ── Commitment ───────────────────────────────────────────────
       {
         path: 'commitment/goals',
         loadComponent: () =>
@@ -184,6 +194,19 @@ export const routes: Routes = [
         data: { title: 'All content', crumbs: ['Knowledge', 'Content'] },
       },
       {
+        // The content editor hard-requires a content :id (rxResource
+        // fetches on init); the create flow ships in a later batch.
+        path: 'knowledge/content/new',
+        loadComponent: () =>
+          import('./admin/shared/admin-placeholder.component').then(
+            (m) => m.AdminPlaceholderComponent,
+          ),
+        data: {
+          title: 'New content',
+          crumbs: ['Knowledge', 'Content', 'New'],
+        },
+      },
+      {
         path: 'knowledge/content/:id/edit',
         loadComponent: () =>
           import('./admin/knowledge/content/editor/content-editor.page').then(
@@ -211,6 +234,16 @@ export const routes: Routes = [
           ),
       },
       {
+        // The note editor hard-requires a note :id (rxResource fetches
+        // on init); the create flow ships in a later batch.
+        path: 'knowledge/notes/new',
+        loadComponent: () =>
+          import('./admin/shared/admin-placeholder.component').then(
+            (m) => m.AdminPlaceholderComponent,
+          ),
+        data: { title: 'New note', crumbs: ['Knowledge', 'Notes', 'New'] },
+      },
+      {
         path: 'knowledge/notes/:id/edit',
         loadComponent: () =>
           import('./admin/knowledge/notes/editor/note-editor.page').then(
@@ -231,6 +264,25 @@ export const routes: Routes = [
           import('./admin/knowledge/feeds/triage/feed-triage.page').then(
             (m) => m.FeedTriagePageComponent,
           ),
+      },
+      {
+        path: 'knowledge/search',
+        loadComponent: () =>
+          import('./admin/shared/admin-placeholder.component').then(
+            (m) => m.AdminPlaceholderComponent,
+          ),
+        data: { title: 'Search', crumbs: ['Knowledge', 'Search'] },
+      },
+      {
+        path: 'knowledge/tags',
+        loadComponent: () =>
+          import('./admin/shared/admin-placeholder.component').then(
+            (m) => m.AdminPlaceholderComponent,
+          ),
+        data: {
+          title: 'Tags & topics',
+          crumbs: ['Knowledge', 'Tags & topics'],
+        },
       },
 
       // ── Learning ─────────────────────────────────────────────────
@@ -269,6 +321,17 @@ export const routes: Routes = [
           import('./admin/learning/concepts/profile/concept-profile.page').then(
             (m) => m.ConceptProfilePageComponent,
           ),
+      },
+      {
+        // A sessions LIST page does not exist yet (only the per-session
+        // timeline below); placeholder keeps the nav entry resolvable.
+        path: 'learning/sessions',
+        pathMatch: 'full',
+        loadComponent: () =>
+          import('./admin/shared/admin-placeholder.component').then(
+            (m) => m.AdminPlaceholderComponent,
+          ),
+        data: { title: 'Sessions', crumbs: ['Learning', 'Sessions'] },
       },
       {
         path: 'learning/sessions/:id',
@@ -320,23 +383,39 @@ export const routes: Routes = [
           ).then((m) => m.HypothesisProfilePageComponent),
       },
 
-      // ── Coordination ─────────────────────────────────────────────
+      // ── System ───────────────────────────────────────────────────
       {
-        path: 'coordination/activity',
+        path: 'system/health',
+        loadComponent: () =>
+          import('./admin/shared/admin-placeholder.component').then(
+            (m) => m.AdminPlaceholderComponent,
+          ),
+        data: { title: 'Health', crumbs: ['System', 'Health'] },
+      },
+      {
+        path: 'system/stats',
+        loadComponent: () =>
+          import('./admin/shared/admin-placeholder.component').then(
+            (m) => m.AdminPlaceholderComponent,
+          ),
+        data: { title: 'Stats', crumbs: ['System', 'Stats'] },
+      },
+      {
+        path: 'system/activity',
         loadComponent: () =>
           import('./admin/coordination/activity/activity.page').then(
             (m) => m.ActivityPageComponent,
           ),
       },
       {
-        path: 'coordination/agents',
+        path: 'system/agents',
         loadComponent: () =>
           import('./admin/coordination/agents/list/agents-list.page').then(
             (m) => m.AgentsListPageComponent,
           ),
       },
       {
-        path: 'coordination/agents/:name',
+        path: 'system/agents/:name',
         loadComponent: () =>
           import('./admin/coordination/agents/profile/agent-profile.page').then(
             (m) => m.AgentProfilePageComponent,
@@ -353,8 +432,34 @@ export const routes: Routes = [
         data: { title: 'Settings', crumbs: ['Settings'] },
       },
 
+      // ── Retired-path redirects (old links keep working) ──────────
+      {
+        path: 'commitment/today',
+        redirectTo: 'daily/today',
+        pathMatch: 'full',
+      },
+      {
+        path: 'commitment/todos',
+        redirectTo: 'daily/todos',
+        pathMatch: 'full',
+      },
+      {
+        path: 'coordination/activity',
+        redirectTo: 'system/activity',
+        pathMatch: 'full',
+      },
+      {
+        path: 'coordination/agents',
+        redirectTo: 'system/agents',
+        pathMatch: 'full',
+      },
+      {
+        path: 'coordination/agents/:name',
+        redirectTo: 'system/agents/:name',
+      },
+
       // ── Legacy stub routes (redirect to v2 equivalents) ──────────
-      { path: 'now', redirectTo: 'commitment/today', pathMatch: 'full' },
+      { path: 'now', redirectTo: 'daily/today', pathMatch: 'full' },
       { path: 'atlas', redirectTo: 'knowledge/content', pathMatch: 'full' },
     ],
   },

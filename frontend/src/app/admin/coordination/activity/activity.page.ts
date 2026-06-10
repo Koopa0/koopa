@@ -59,7 +59,7 @@ const ENTITY_ROUTE: Record<ActivityEntityType, string> = {
   goal: '/admin/commitment/goals/%',
   milestone: '/admin/commitment/goals',
   project: '/admin/commitment/projects/%',
-  todo: '/admin/commitment/todos',
+  todo: '/admin/daily/todos',
   learning_hypothesis: '/admin/learning/hypotheses/%',
   learning_attempt: '/admin/learning/hypotheses',
   learning_session: '/admin/learning',
@@ -120,7 +120,7 @@ export class ActivityPageComponent {
   constructor() {
     this.topbar.set({
       title: 'Activity',
-      crumbs: ['Coordination', 'Activity'],
+      crumbs: ['System', 'Activity'],
     });
     this.destroyRef.onDestroy(() => this.topbar.reset());
   }

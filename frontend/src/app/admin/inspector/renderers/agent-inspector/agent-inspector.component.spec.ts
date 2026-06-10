@@ -195,7 +195,7 @@ describe('AgentInspectorComponent', () => {
       '[data-testid="agent-open-tasks-link"]',
     );
     expect(link?.textContent).toContain('View 3 open tasks for planner');
-    // routerLink resolves to /admin/coordination/agents/planner (agent profile).
+    // routerLink resolves to /admin/system/agents/planner (agent profile).
     expect(link?.getAttribute('aria-label')).toContain('open tasks for planner');
   });
 

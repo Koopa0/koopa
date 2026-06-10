@@ -141,7 +141,7 @@ fi
 # src/app/app.routes.ts. "admin" is allowed here so authenticated shortcuts
 # (e.g. app.html "Admin dashboard" link, palette admin entries) don't false-fire;
 # the existing Gates 1+2 check above already keeps pages/ free of /admin links.
-PUBLIC_ROOT_ALLOWLIST="articles essays projects topics til search build-logs bookmarks about uses resume home privacy terms login error admin"
+PUBLIC_ROOT_ALLOWLIST="articles essays projects topics til search build-logs about uses resume home privacy terms login error admin"
 
 # Emit `file:line:/path` records by stripping the surrounding ref form from each
 # match. Each grep -oE captures the smallest substring containing the path
@@ -252,9 +252,6 @@ STALE_COPY_FILES=(
   "src/app/admin/commitment/todos/list/todos-list.page.ts"
   "src/app/admin/coordination/agents/profile/agent-profile.page.html"
   "src/app/admin/coordination/agents/profile/agent-profile.page.ts"
-  "src/app/admin/coordination/pipeline/pipeline.page.html"
-  "src/app/admin/coordination/tasks/timeline/task-timeline.page.ts"
-  "src/app/admin/knowledge/bookmarks/list/bookmarks-list.page.ts"
   "src/app/admin/knowledge/content/editor/content-editor.page.ts"
   "src/app/admin/knowledge/notes/editor/note-editor.page.html"
   "src/app/admin/knowledge/notes/editor/note-editor.page.ts"

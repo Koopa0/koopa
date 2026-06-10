@@ -38,15 +38,15 @@ const ADMIN_NAV_ACTIONS: readonly AdminNavActionEntry[] = [
   {
     id: 'admin-today',
     label: 'Today',
-    group: 'Commitment',
-    path: '/admin/commitment/today',
+    group: 'Daily',
+    path: '/admin/daily/today',
     keywords: ['home', 'plan', 'judgment'],
   },
   {
     id: 'admin-todos',
     label: 'Todos',
-    group: 'Commitment',
-    path: '/admin/commitment/todos',
+    group: 'Daily',
+    path: '/admin/daily/todos',
     keywords: ['tasks', 'inbox'],
   },
   {
@@ -115,15 +115,15 @@ const ADMIN_NAV_ACTIONS: readonly AdminNavActionEntry[] = [
   {
     id: 'admin-agents',
     label: 'Agents',
-    group: 'Coordination',
-    path: '/admin/coordination/agents',
+    group: 'System',
+    path: '/admin/system/agents',
     keywords: ['agent', 'cowork'],
   },
   {
     id: 'admin-activity',
     label: 'Activity',
-    group: 'Coordination',
-    path: '/admin/coordination/activity',
+    group: 'System',
+    path: '/admin/system/activity',
     keywords: ['changelog', 'audit'],
   },
 ];

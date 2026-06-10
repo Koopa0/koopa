@@ -54,11 +54,21 @@
           aria-autocomplete="list"
           aria-controls="command-palette-listbox"
           [attr.aria-activedescendant]="
-            totalItems() > 0 ? 'cp-item-' + activeIndex() : null
+            totalItems() > 0 || captureAvailable()
+              ? 'cp-item-' + activeIndex()
+              : null
           "
-          [attr.aria-expanded]="totalItems() > 0"
+          [attr.aria-expanded]="totalItems() > 0 || captureAvailable()"
           data-testid="command-palette-input"
         />
+        @if (captureAvailable()) {
+          <span
+            class="rounded-xs bg-sky-950/60 px-1.5 py-0.5 font-mono text-[10px] font-medium tracking-wider text-sky-300 uppercase"
+            data-testid="command-palette-capture-pill"
+          >
+            capture
+          </span>
+        }
         <kbd
           class="hidden rounded-xs border border-zinc-700 bg-zinc-800 px-1.5 py-0.5 text-[10px] font-medium text-zinc-500 sm:inline"
         >
@@ -144,6 +154,54 @@
                 View all results →
               </button>
             </div>
+          } @else if (captureAvailable()) {
+            <!-- GTD capture fallback: nothing matched, capture the raw query -->
+            <div class="px-2">
+              <div
+                class="px-2 pb-1 text-[11px] font-medium tracking-wider text-zinc-600 uppercase"
+              >
+                Capture
+              </div>
+              <button
+                type="button"
+                class="flex w-full items-center gap-3 rounded-md bg-zinc-800 px-3 py-2.5 text-left text-sm text-zinc-100 transition-colors"
+                [disabled]="isCapturing()"
+                (click)="captureToInbox()"
+                role="option"
+                aria-selected="true"
+                id="cp-item-0"
+                [attr.data-index]="0"
+                data-testid="command-palette-capture"
+              >
+                <div
+                  class="flex size-8 shrink-0 items-center justify-center rounded-md border border-sky-800/50 bg-sky-950/40"
+                >
+                  <svg
+                    class="size-4 text-sky-300"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke-width="1.5"
+                    stroke="currentColor"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      d="m20.25 7.5-.625 10.632a2.25 2.25 0 0 1-2.247 2.118H6.622a2.25 2.25 0 0 1-2.247-2.118L3.75 7.5m8.25 3v6.75m0 0-3-3m3 3 3-3M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125Z"
+                    />
+                  </svg>
+                </div>
+                <span class="min-w-0 flex-1 truncate">
+                  Capture to GTD Inbox: "{{ query().trim() }}"
+                </span>
+                <kbd
+                  class="rounded-xs border border-zinc-700 bg-zinc-800 px-1 py-0.5 font-mono text-[10px] text-zinc-500"
+                  >↵</kbd
+                >
+              </button>
+              <p class="px-3 pt-2 text-xs text-zinc-600">
+                No matches. Press ↵ to capture as a todo.
+              </p>
+            </div>
           } @else if (query().length >= 2) {
             <div class="px-4 py-8 text-center text-sm text-zinc-600">
               No results found for "{{ query() }}"
@@ -216,7 +274,7 @@
             class="rounded-xs border border-zinc-700 bg-zinc-800 px-1 py-0.5 font-mono"
             >↵</kbd
           >
-          Select
+          {{ captureAvailable() ? 'Capture' : 'Select' }}
         </span>
         <span class="flex items-center gap-1">
           <kbd
