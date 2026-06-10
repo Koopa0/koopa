@@ -7,25 +7,38 @@ import {
   signal,
 } from '@angular/core';
 import { rxResource } from '@angular/core/rxjs-interop';
-import { Router, RouterLink } from '@angular/router';
+import { Router } from '@angular/router';
 import { DatePipe } from '@angular/common';
-import { HttpErrorResponse } from '@angular/common/http';
 import { LearningService } from '../../../core/services/learning.service';
 import { AdminTopbarService } from '../../admin-layout/admin-topbar.service';
 import type {
   DashboardOverview,
   ObservationConfidence,
 } from '../../../core/models/learning.model';
+import {
+  DashboardWidgetComponent,
+  type WidgetState,
+} from './dashboard-widget.component';
+import {
+  SIGNAL_CLASS,
+  STAGE_BADGE_CLASS,
+  computeAvgMasteryPercent,
+  computeStagePills,
+  deriveWeaknesses,
+  sortByMastery,
+} from './dashboard-view';
 
 /**
- * Learning Dashboard / Two cards from the overview view: Concepts and
- * Recent observations. All backing endpoints are live; on an unexpected
- * 404/405/501 the page shows a "couldn't load" error state.
+ * Learning dashboard. Five widgets over two live reads: GET
+ * /api/admin/learning/dashboard backs Mastery overview, Concepts, Recent
+ * observations, and Concept weakness signals; GET /api/admin/learning/summary
+ * backs Streak. Each widget renders its own loading / error / empty state,
+ * so one failing read never blanks the page.
  */
 @Component({
   selector: 'app-learning-dashboard-page',
   standalone: true,
-  imports: [DatePipe, RouterLink],
+  imports: [DatePipe, DashboardWidgetComponent],
   templateUrl: './learning-dashboard.page.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: { class: 'flex min-h-full flex-1 flex-col' },
@@ -36,19 +49,15 @@ export class LearningDashboardPageComponent {
   private readonly router = inject(Router);
   private readonly destroyRef = inject(DestroyRef);
 
-  protected readonly confidenceFilterOptions: readonly (
-    | ObservationConfidence
-    | 'all'
-  )[] = ['high', 'all'];
-
+  protected readonly confidenceFilterOptions = ['high', 'all'] as const;
   protected readonly confidenceFilter = signal<ObservationConfidence | 'all'>(
     'high',
   );
 
-  protected readonly resource = rxResource<
-    DashboardOverview,
-    ObservationConfidence | 'all'
-  >({
+  protected readonly stageBadge = STAGE_BADGE_CLASS;
+  protected readonly signalColor = SIGNAL_CLASS;
+
+  private readonly dashboardResource = rxResource({
     params: () => this.confidenceFilter(),
     stream: ({ params }) =>
       this.learningService.dashboard({
@@ -57,37 +66,75 @@ export class LearningDashboardPageComponent {
       }),
   });
 
-  protected readonly vm = computed(() => this.resource.value());
-  protected readonly isLoading = computed(
-    () => this.resource.status() === 'loading' && !this.vm(),
-  );
-  protected readonly hasError = computed(
-    () => this.resource.status() === 'error',
-  );
-  protected readonly endpointsUnavailable = computed(() => {
-    if (this.resource.status() !== 'error') return false;
-    const err = this.resource.error();
-    if (err instanceof HttpErrorResponse) {
-      return err.status === 404 || err.status === 405 || err.status === 501;
-    }
-    return false;
+  private readonly summaryResource = rxResource({
+    stream: () => this.learningService.summary(),
   });
 
-  protected readonly masteryCounts = computed(() => {
-    const vm = this.vm();
-    if (!vm) return { struggling: 0, developing: 0, solid: 0 };
-    const rows = vm.concepts.rows;
-    return {
-      struggling: rows.filter((r) => r.mastery_stage === 'struggling').length,
-      developing: rows.filter((r) => r.mastery_stage === 'developing').length,
-      solid: rows.filter((r) => r.mastery_stage === 'solid').length,
-    };
+  // resource.value() throws while a resource is in the error state, so
+  // every downstream read goes through these hasValue()-guarded views.
+  protected readonly overview = computed(() =>
+    this.dashboardResource.hasValue()
+      ? this.dashboardResource.value()
+      : undefined,
+  );
+  protected readonly summary = computed(() =>
+    this.summaryResource.hasValue() ? this.summaryResource.value() : undefined,
+  );
+
+  /** Shared by Mastery overview and Concepts — both render concept rows. */
+  protected readonly conceptsState = computed(() =>
+    this.dashboardWidgetState((v) => v.concepts.rows.length === 0),
+  );
+  protected readonly observationsState = computed(() =>
+    this.dashboardWidgetState((v) => v.recent_observations.length === 0),
+  );
+  protected readonly weaknessState = computed(() =>
+    this.dashboardWidgetState(
+      (v) => !v.concepts.rows.some((r) => r.mastery_stage === 'struggling'),
+    ),
+  );
+  protected readonly streakState = computed<WidgetState>(() => {
+    if (this.summaryResource.status() === 'error') return 'error';
+    return this.summary() ? 'ok' : 'loading';
   });
+
+  protected readonly masteryMeta = computed(() => {
+    const v = this.overview();
+    return v ? `${v.concepts.count_total} concepts` : '';
+  });
+  protected readonly observationsMeta = computed(() => {
+    const v = this.overview();
+    return v ? `${v.recent_observations.length} recent` : '';
+  });
+  protected readonly weaknessMeta = computed(
+    () => `${this.weaknesses().length} flagged`,
+  );
+
+  protected readonly stagePills = computed(() =>
+    computeStagePills(this.overview()?.concepts.rows ?? []),
+  );
+  protected readonly avgMasteryPercent = computed(() =>
+    computeAvgMasteryPercent(this.overview()?.concepts.rows ?? []),
+  );
+  protected readonly conceptRows = computed(() =>
+    sortByMastery(this.overview()?.concepts.rows ?? []),
+  );
+  protected readonly weaknesses = computed(() =>
+    deriveWeaknesses(this.overview()),
+  );
 
   constructor() {
     this.topbar.set({
       title: 'Learning dashboard',
-      crumbs: ['Learning'],
+      crumbs: ['learning', 'dashboard'],
+      actions: [
+        {
+          id: 'learning-concepts',
+          label: 'Concepts',
+          kind: 'secondary',
+          run: () => void this.router.navigate(['/admin/learning/concepts']),
+        },
+      ],
     });
     this.destroyRef.onDestroy(() => this.topbar.reset());
   }
@@ -96,26 +143,31 @@ export class LearningDashboardPageComponent {
     this.confidenceFilter.set(value);
   }
 
+  protected retryDashboard(): void {
+    this.dashboardResource.reload();
+  }
+
+  protected retrySummary(): void {
+    this.summaryResource.reload();
+  }
+
   protected openConcept(slug: string, domain: string): void {
-    this.router.navigate(['/admin/learning/concepts', slug], {
+    void this.router.navigate(['/admin/learning/concepts', slug], {
       queryParams: { domain },
     });
   }
 
-  protected masteryStagePercent(value: number): number {
+  protected percent(value: number): number {
     return Math.round(value * 100);
   }
 
-  protected masteryStageColor(stage: string): string {
-    switch (stage) {
-      case 'solid':
-        return 'bg-emerald-500';
-      case 'developing':
-        return 'bg-sky-400';
-      case 'struggling':
-        return 'bg-red-400';
-      default:
-        return 'bg-zinc-500';
-    }
+  /** Shared state machine for the four widgets backed by the dashboard read. */
+  private dashboardWidgetState(
+    isEmpty: (v: DashboardOverview) => boolean,
+  ): WidgetState {
+    if (this.dashboardResource.status() === 'error') return 'error';
+    const v = this.overview();
+    if (!v) return 'loading';
+    return isEmpty(v) ? 'empty' : 'ok';
   }
 }

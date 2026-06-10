@@ -1,0 +1,83 @@
+<section
+  class="flex min-h-0 flex-col overflow-hidden rounded-md border border-border bg-panel"
+  [attr.data-testid]="'widget-' + testId()"
+  [attr.aria-busy]="state() === 'loading'"
+>
+  <header class="flex items-baseline gap-2 border-b border-border px-4 py-3">
+    <h3 class="font-display text-[15px] font-semibold text-fg">
+      {{ title() }}
+    </h3>
+    <span class="ml-auto font-mono text-[11px] text-fg-subtle">
+      @if (state() === 'loading') {
+        loading…
+      } @else {
+        {{ meta() }}
+      }
+    </span>
+  </header>
+
+  @switch (state()) {
+    @case ('loading') {
+      <div
+        class="flex flex-col gap-3 p-4"
+        [attr.data-testid]="'widget-' + testId() + '-loading'"
+      >
+        <div class="h-2.5 w-[90%] animate-pulse rounded-sm bg-elevated"></div>
+        <div class="h-2.5 w-3/4 animate-pulse rounded-sm bg-elevated"></div>
+        <div class="h-2.5 w-3/5 animate-pulse rounded-sm bg-elevated"></div>
+      </div>
+    }
+    @case ('error') {
+      <div
+        role="alert"
+        aria-live="polite"
+        class="flex flex-col items-center gap-1.5 px-5 py-8 text-center"
+        [attr.data-testid]="'widget-' + testId() + '-error'"
+      >
+        <lucide-icon
+          [img]="HexagonIcon"
+          [size]="22"
+          class="mb-1 text-error opacity-70"
+          aria-hidden="true"
+        />
+        <h4 class="font-display text-sm font-semibold text-fg">
+          Couldn't load this widget
+        </h4>
+        <p class="max-w-[280px] text-xs leading-relaxed text-fg-subtle">
+          The reader returned a warning. The rest of the dashboard is
+          unaffected.
+        </p>
+        <button
+          type="button"
+          (click)="retry.emit()"
+          class="mt-2 rounded-sm border border-border bg-elevated px-2.5 py-1 text-[11px] text-fg-muted transition-colors hover:border-brand hover:text-brand"
+          [attr.data-testid]="'widget-' + testId() + '-retry'"
+        >
+          Retry
+        </button>
+      </div>
+    }
+    @case ('empty') {
+      <div
+        class="flex flex-col items-center gap-1.5 px-5 py-8 text-center"
+        [attr.data-testid]="'widget-' + testId() + '-empty'"
+      >
+        <lucide-icon
+          [img]="HexagonIcon"
+          [size]="22"
+          class="mb-1 text-border-strong"
+          aria-hidden="true"
+        />
+        <h4 class="font-display text-sm font-semibold text-fg">
+          {{ emptyTitle() }}
+        </h4>
+        <p class="max-w-[280px] text-xs leading-relaxed text-fg-subtle">
+          {{ emptyBody() }}
+        </p>
+      </div>
+    }
+    @default {
+      <ng-content />
+    }
+  }
+</section>

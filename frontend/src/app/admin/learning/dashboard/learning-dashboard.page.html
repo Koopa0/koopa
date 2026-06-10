@@ -1,225 +1,269 @@
-<div class="flex min-w-0 flex-1 flex-col gap-5 px-6 py-6">
-  @if (isLoading()) {
-    <div
-      class="flex flex-1 items-center justify-center"
-      data-testid="learning-loading"
+<div class="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-5 px-6 py-6">
+  <!-- Chrome: observation confidence filter (applies to the dashboard read) -->
+  <div class="flex flex-wrap items-center gap-3" data-testid="learning-chrome">
+    <span
+      class="font-mono text-[10px] tracking-[0.06em] text-fg-faint uppercase"
     >
-      <div
-        class="size-5 animate-spin rounded-full border-2 border-zinc-700 border-t-zinc-300"
-        aria-label="Loading dashboard"
-      ></div>
-    </div>
-  } @else if (endpointsUnavailable()) {
+      Confidence
+    </span>
     <div
-      class="flex flex-1 items-center justify-center rounded-sm border border-dashed border-zinc-800 p-10 text-center"
-      data-testid="learning-endpoints-pending"
+      class="inline-flex gap-0.5 rounded-sm border border-border bg-elevated p-0.5"
+      role="group"
+      aria-label="Observation confidence filter"
     >
-      <div class="max-w-md">
-        <p
-          class="mb-1 font-mono text-[10px] uppercase tracking-wider text-zinc-500"
+      @for (value of confidenceFilterOptions; track value) {
+        <button
+          type="button"
+          (click)="setConfidenceFilter(value)"
+          class="rounded-[3px] px-2.5 py-1 font-mono text-[11px] capitalize transition-colors"
+          [class]="
+            confidenceFilter() === value
+              ? 'bg-brand-muted text-brand'
+              : 'text-fg-subtle hover:text-fg'
+          "
+          [attr.aria-pressed]="confidenceFilter() === value"
+          [attr.data-testid]="'learning-filter-confidence-' + value"
         >
-          Couldn't load
-        </p>
-        <p class="text-xs text-zinc-500">
-          Couldn't load the dashboard. Try refreshing the page.
-        </p>
-      </div>
+          {{ value }}
+        </button>
+      }
     </div>
-  } @else if (hasError()) {
-    <div
-      role="alert"
-      class="rounded-xs border border-red-800 bg-red-900/20 px-3 py-2 text-xs text-red-300"
-      data-testid="learning-error"
-    >
-      Couldn't load dashboard.
-    </div>
-  } @else if (vm(); as v) {
-    <!-- Top chrome: confidence filter + summary counts -->
-    <div
-      class="flex flex-wrap items-baseline gap-4"
-      data-testid="learning-chrome"
-    >
-      <div
-        class="flex items-center gap-1"
-        role="toolbar"
-        aria-label="Observation confidence filter"
-      >
-        <span
-          class="mr-1 font-mono text-[10px] uppercase tracking-wider text-zinc-500"
-        >
-          Confidence
-        </span>
-        @for (value of confidenceFilterOptions; track value) {
-          <button
-            type="button"
-            (click)="setConfidenceFilter(value)"
-            class="h-7 rounded-xs border px-2.5 text-[11px] font-medium capitalize transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500"
-            [class.border-sky-700]="confidenceFilter() === value"
-            [class.bg-sky-900/30]="confidenceFilter() === value"
-            [class.text-sky-300]="confidenceFilter() === value"
-            [class.border-zinc-800]="confidenceFilter() !== value"
-            [class.bg-zinc-900]="confidenceFilter() !== value"
-            [class.text-zinc-400]="confidenceFilter() !== value"
-            [attr.aria-pressed]="confidenceFilter() === value"
-            [attr.data-testid]="'learning-filter-confidence-' + value"
+  </div>
+
+  <!-- Mastery overview — full width -->
+  <app-dashboard-widget
+    title="Mastery overview"
+    [meta]="masteryMeta()"
+    [state]="conceptsState()"
+    testId="mastery"
+    emptyTitle="No concepts yet"
+    emptyBody="Mastery appears once attempts produce observations."
+    (retry)="retryDashboard()"
+  >
+    <div class="flex flex-col gap-4 p-4">
+      <div class="grid grid-cols-3 gap-2.5">
+        @for (stage of stagePills(); track stage.id) {
+          <div
+            class="rounded-sm border border-border-faint bg-elevated px-2.5 py-2"
+            [attr.data-testid]="'mastery-stage-' + stage.id"
           >
-            {{ value }}
-          </button>
+            <div
+              class="font-display text-xl font-semibold text-fg tabular-nums"
+            >
+              {{ stage.count }}
+            </div>
+            <div
+              class="mt-0.5 font-mono text-[10px] tracking-[0.05em] text-fg-faint uppercase"
+            >
+              {{ stage.id }}
+            </div>
+          </div>
         }
       </div>
-
-      <div
-        class="ml-auto flex items-center gap-3 font-mono text-[11px] text-zinc-500"
-        data-testid="learning-counts"
-      >
-        <span>{{ v.concepts.count_total }} concepts</span>
-        <span aria-hidden="true">·</span>
-        <span class="text-red-300"
-          >{{ masteryCounts().struggling }} struggling</span
-        >
-        <span aria-hidden="true">·</span>
-        <span class="text-sky-300"
-          >{{ masteryCounts().developing }} developing</span
-        >
-        <span aria-hidden="true">·</span>
-        <span class="text-emerald-300"
-          >{{ masteryCounts().solid }} solid</span
-        >
-      </div>
-    </div>
-
-    <!-- 2-card grid -->
-    <div class="grid flex-1 gap-5 lg:grid-cols-2">
-      <!-- Card 1: Concepts -->
-      <section
-        class="flex min-h-0 flex-col rounded-sm border border-zinc-800"
-        aria-labelledby="concepts-card-heading"
-        data-testid="learning-card-concepts"
-      >
-        <header
-          class="flex items-baseline justify-between border-b border-zinc-800 px-4 py-3"
-        >
-          <h2
-            id="concepts-card-heading"
-            class="font-mono text-[11px] uppercase tracking-wider text-zinc-400"
+      <div>
+        <div class="flex items-baseline justify-between">
+          <span
+            class="font-mono text-[10px] tracking-[0.05em] text-fg-faint uppercase"
           >
-            Concepts
-          </h2>
-          <a
-            routerLink="/admin/learning/concepts"
-            class="font-mono text-[10px] text-zinc-500 transition-colors hover:text-sky-300 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500"
-          >
-            View all →
-          </a>
-        </header>
-        @if (v.concepts.rows.length === 0) {
-          <p class="px-4 py-6 text-xs text-zinc-500">
-            No concepts tracked yet.
-          </p>
-        } @else {
-          <ul class="flex-1 divide-y divide-zinc-900 overflow-y-auto">
-            @for (c of v.concepts.rows; track c.slug) {
-              <li>
-                <button
-                  type="button"
-                  (click)="openConcept(c.slug, c.domain)"
-                  class="flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-zinc-800/40 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-sky-500"
-                  [attr.data-testid]="'learning-concept-' + c.slug"
-                >
-                  <div class="min-w-0 flex-1">
-                    <div class="truncate text-sm text-zinc-100">
-                      {{ c.slug }}
-                    </div>
-                    <div
-                      class="font-mono text-[11px] text-zinc-500"
-                    >
-                      {{ c.kind }} · {{ c.domain }} · {{ c.obs_count }} obs
-                    </div>
-                  </div>
-                  <div
-                    class="h-1.5 w-16 shrink-0 overflow-hidden rounded-full bg-zinc-800"
-                    [attr.aria-label]="
-                      'Mastery ' +
-                      masteryStagePercent(c.mastery_value) +
-                      '%'
-                    "
-                  >
-                    <div
-                      class="h-full"
-                      [class]="masteryStageColor(c.mastery_stage)"
-                      [style.width.%]="masteryStagePercent(c.mastery_value)"
-                    ></div>
-                  </div>
-                </button>
-              </li>
-            }
-          </ul>
-        }
-      </section>
-
-      <!-- Card 2: Recent observations -->
-      <section
-        class="flex min-h-0 flex-col rounded-sm border border-zinc-800"
-        aria-labelledby="obs-card-heading"
-        data-testid="learning-card-observations"
-      >
-        <header
-          class="flex items-baseline justify-between border-b border-zinc-800 px-4 py-3"
-        >
-          <h2
-            id="obs-card-heading"
-            class="font-mono text-[11px] uppercase tracking-wider text-zinc-400"
-          >
-            Recent observations
-          </h2>
-          <span class="font-mono text-[10px] text-zinc-500">
-            {{ v.recent_observations.length }}
+            Avg mastery
           </span>
-        </header>
-        @if (v.recent_observations.length === 0) {
-          <p class="px-4 py-6 text-xs text-zinc-500">
-            No observations in the current filter window.
-          </p>
-        } @else {
-          <ul class="flex-1 divide-y divide-zinc-900 overflow-y-auto">
+          <span
+            class="font-mono text-[11px] text-fg-subtle tabular-nums"
+            data-testid="mastery-avg-percent"
+          >
+            {{ avgMasteryPercent() }}%
+          </span>
+        </div>
+        <div class="mt-1.5 h-1.5 overflow-hidden rounded-full bg-bg">
+          <div
+            class="h-full rounded-full bg-brand"
+            [style.width.%]="avgMasteryPercent()"
+          ></div>
+        </div>
+        <p class="mt-2 font-mono text-[10px] text-fg-faint">
+          struggling → developing → solid
+        </p>
+      </div>
+    </div>
+  </app-dashboard-widget>
+
+  <div class="grid grid-cols-1 gap-5 lg:grid-cols-2">
+    <div class="flex min-w-0 flex-col gap-5">
+      <!-- Concepts -->
+      <app-dashboard-widget
+        title="Concepts"
+        meta="by mastery"
+        [state]="conceptsState()"
+        testId="concepts"
+        emptyTitle="No concepts tracked yet"
+        emptyBody="Concepts appear once learning sessions record observations."
+        (retry)="retryDashboard()"
+      >
+        <ul class="max-h-[340px] divide-y divide-border-faint overflow-y-auto">
+          @for (c of conceptRows(); track c.slug + c.domain) {
+            <li>
+              <button
+                type="button"
+                (click)="openConcept(c.slug, c.domain)"
+                class="flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-overlay"
+                [attr.data-testid]="'learning-concept-' + c.slug"
+              >
+                <span class="min-w-0 flex-1">
+                  <span class="block truncate text-[13px] text-fg">
+                    {{ c.slug }}
+                  </span>
+                  <span class="block font-mono text-[11px] text-fg-subtle">
+                    {{ c.kind }} · {{ c.domain }} · {{ c.obs_count }} obs
+                  </span>
+                </span>
+                <span
+                  class="inline-flex shrink-0 rounded-[3px] px-[7px] py-px font-mono text-[10px] tracking-[0.04em] uppercase"
+                  [class]="stageBadge[c.mastery_stage]"
+                >
+                  {{ c.mastery_stage }}
+                </span>
+                <span
+                  class="h-1 w-[90px] shrink-0 overflow-hidden rounded-[2px] bg-bg"
+                  role="img"
+                  [attr.aria-label]="'Mastery ' + percent(c.mastery_value) + '%'"
+                >
+                  <span
+                    class="block h-full bg-brand"
+                    [style.width.%]="percent(c.mastery_value)"
+                  ></span>
+                </span>
+              </button>
+            </li>
+          }
+        </ul>
+      </app-dashboard-widget>
+
+      <!-- Recent observations -->
+      <app-dashboard-widget
+        title="Recent observations"
+        [meta]="observationsMeta()"
+        [state]="observationsState()"
+        testId="observations"
+        emptyTitle="No observations yet"
+        emptyBody="No observations in the current filter window."
+        (retry)="retryDashboard()"
+      >
+        <ul class="max-h-[340px] divide-y divide-border-faint overflow-y-auto">
+          @if (overview(); as v) {
             @for (obs of v.recent_observations; track obs.id) {
               <li class="px-4 py-2.5">
                 <div
-                  class="mb-0.5 flex flex-wrap items-center gap-2 font-mono text-[10px]"
+                  class="flex flex-wrap items-center gap-2 font-mono text-[10px] tracking-[0.04em] uppercase"
                 >
-                  <span
-                    class="uppercase"
-                    [class.text-amber-300]="obs.signal === 'weakness'"
-                    [class.text-sky-300]="obs.signal === 'improvement'"
-                    [class.text-emerald-300]="obs.signal === 'mastery'"
-                  >
+                  <span [class]="signalColor[obs.signal]">
                     {{ obs.signal }}
                   </span>
-                  <span class="text-zinc-500">{{ obs.category }}</span>
+                  <span class="text-fg-subtle normal-case">
+                    {{ obs.category }}
+                  </span>
                   @if (obs.confidence === 'low') {
                     <span
-                      class="rounded-xs border border-zinc-700 bg-zinc-800 px-1 text-zinc-400"
+                      class="rounded-sm bg-overlay px-1.5 text-fg-subtle normal-case"
                     >
                       low
                     </span>
                   }
+                </div>
+                <p
+                  class="mt-1 font-serif text-[13px] leading-[1.55] text-fg-muted italic"
+                >
+                  {{ obs.body }}
+                </p>
+                <div
+                  class="mt-1 flex flex-wrap items-center gap-1.5 font-mono text-[10px] text-fg-faint"
+                >
+                  <span>{{ obs.domain }}</span>
+                  <span aria-hidden="true">·</span>
                   <button
                     type="button"
                     (click)="openConcept(obs.concept_slug, obs.domain)"
-                    class="text-zinc-400 transition-colors hover:text-sky-300 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500"
+                    class="transition-colors hover:text-brand"
                   >
                     {{ obs.concept_slug }}
                   </button>
-                </div>
-                <p class="text-xs text-zinc-300">{{ obs.body }}</p>
-                <div class="mt-1 font-mono text-[10px] text-zinc-600">
-                  {{ obs.created_at | date: 'short' }}
+                  <span aria-hidden="true">·</span>
+                  <span>{{ obs.created_at | date: 'MMM d' }}</span>
                 </div>
               </li>
             }
-          </ul>
-        }
-      </section>
+          }
+        </ul>
+      </app-dashboard-widget>
     </div>
-  }
+
+    <div class="flex min-w-0 flex-col gap-5">
+      <!-- Streak -->
+      <app-dashboard-widget
+        title="Streak"
+        [state]="streakState()"
+        testId="streak"
+        (retry)="retrySummary()"
+      >
+        @if (summary(); as s) {
+          <div class="p-4" data-testid="streak-figures">
+            <div
+              class="font-display text-[22px] font-semibold text-fg tabular-nums"
+            >
+              {{ s.streak_days }}
+            </div>
+            <div
+              class="mt-0.5 font-mono text-[10px] tracking-[0.05em] text-fg-faint uppercase"
+            >
+              day streak
+            </div>
+          </div>
+        }
+      </app-dashboard-widget>
+
+      <!-- Concept weakness signals -->
+      <app-dashboard-widget
+        title="Concept weakness signals"
+        [meta]="weaknessMeta()"
+        [state]="weaknessState()"
+        testId="weakness"
+        emptyTitle="No weakness signals"
+        emptyBody="Nothing is flagged as struggling right now."
+        (retry)="retryDashboard()"
+      >
+        <ul class="divide-y divide-border-faint">
+          @for (
+            row of weaknesses();
+            track row.concept.slug + row.concept.domain
+          ) {
+            <li class="flex items-start gap-3 px-4 py-2.5">
+              <span class="min-w-0 flex-1">
+                <button
+                  type="button"
+                  (click)="openConcept(row.concept.slug, row.concept.domain)"
+                  class="block max-w-full truncate text-left text-[13px] text-fg transition-colors hover:text-brand"
+                >
+                  {{ row.concept.slug }}
+                </button>
+                <span class="block font-mono text-[11px] text-fg-subtle">
+                  {{ row.concept.domain }}
+                </span>
+                @if (row.note) {
+                  <span
+                    class="mt-1 line-clamp-2 block font-serif text-xs leading-snug text-fg-subtle italic"
+                  >
+                    {{ row.note }}
+                  </span>
+                }
+              </span>
+              <span
+                class="shrink-0 font-display text-base font-semibold text-error tabular-nums"
+              >
+                {{ percent(row.concept.mastery_value) }}%
+              </span>
+            </li>
+          }
+        </ul>
+      </app-dashboard-widget>
+    </div>
+  </div>
 </div>
