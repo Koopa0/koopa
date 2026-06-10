@@ -1,0 +1,204 @@
+<div class="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-5 px-6 py-6">
+  @if (hasError()) {
+    <div
+      class="flex flex-col items-center gap-2 rounded-md border border-border bg-panel px-5 py-9 text-center"
+      role="alert"
+      data-testid="health-error"
+    >
+      <h4 class="font-display text-sm font-semibold text-fg">
+        Couldn't load system health
+      </h4>
+      <p class="max-w-[280px] text-xs leading-normal text-fg-subtle">
+        The health snapshot read failed. The backing services may still be
+        running.
+      </p>
+      <button
+        type="button"
+        (click)="retry()"
+        class="mt-2 rounded-sm border border-border bg-elevated px-2.5 py-1 text-xs text-fg-muted transition-colors hover:bg-overlay hover:text-fg"
+        data-testid="health-retry"
+      >
+        Retry
+      </button>
+    </div>
+  } @else if (isLoading()) {
+    <div
+      class="flex flex-1 items-center justify-center py-16 text-fg-faint"
+      data-testid="health-loading"
+    >
+      <app-loading-spinner size="lg" />
+    </div>
+  } @else if (health(); as h) {
+    <!-- Feeds -->
+    <section
+      class="overflow-hidden rounded-md border border-border bg-panel"
+      data-testid="health-feeds"
+    >
+      <header class="flex items-center gap-2 border-b border-border px-3.5 py-2.5">
+        <h3 class="font-display text-sm font-semibold whitespace-nowrap text-fg">
+          Feeds
+        </h3>
+        <span class="font-mono text-[11px] text-fg-faint">
+          {{ h.feeds.total }} subscribed
+        </span>
+        <span class="flex-1"></span>
+        <app-status-badge
+          [variant]="h.feeds.failing > 0 ? 'danger' : 'success'"
+          data-testid="health-feeds-badge"
+        >
+          {{ h.feeds.failing > 0 ? h.feeds.failing + ' failing' : 'healthy' }}
+        </app-status-badge>
+      </header>
+      <div class="grid grid-cols-3 gap-2.5 p-4">
+        @for (tile of feedTiles(); track tile.id) {
+          <div
+            class="rounded-sm border border-border-faint bg-elevated px-2.5 py-2"
+            [attr.data-testid]="'health-tile-' + tile.id"
+          >
+            <div
+              class="font-display text-[22px] font-semibold tabular-nums"
+              [class.text-fg]="tile.tone === 'default'"
+              [class.text-success]="tile.tone === 'success'"
+              [class.text-error]="tile.tone === 'error'"
+            >
+              {{ tile.value | number }}
+            </div>
+            <div
+              class="mt-0.5 font-mono text-[10px] tracking-[0.05em] text-fg-faint uppercase"
+            >
+              {{ tile.label }}
+            </div>
+          </div>
+        }
+      </div>
+      @if (h.feeds.failing_feeds.length > 0) {
+        <ul
+          class="divide-y divide-border-faint border-t border-border"
+          data-testid="health-failing-feeds"
+        >
+          @for (feed of h.feeds.failing_feeds; track feed.name) {
+            <li class="px-4 py-2.5">
+              <div class="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                <span class="text-[13px] font-medium text-fg">
+                  {{ feed.name }}
+                </span>
+                @if (feed.since) {
+                  <span class="font-mono text-[10px] text-fg-faint">
+                    failing since {{ feed.since | date: 'MMM d, HH:mm' }}
+                  </span>
+                }
+              </div>
+              <p class="mt-0.5 font-mono text-[11px] leading-relaxed text-error">
+                {{ feed.error }}
+              </p>
+            </li>
+          }
+        </ul>
+      } @else {
+        <p
+          class="border-t border-border px-4 py-2.5 font-mono text-[11px] text-fg-subtle"
+          data-testid="health-feeds-all-healthy"
+        >
+          All feeds fetching normally.
+        </p>
+      }
+    </section>
+
+    <div class="grid grid-cols-1 gap-5 lg:grid-cols-2">
+      <!-- Pipelines -->
+      <section
+        class="overflow-hidden rounded-md border border-border bg-panel"
+        data-testid="health-pipelines"
+      >
+        <header
+          class="flex items-center gap-2 border-b border-border px-3.5 py-2.5"
+        >
+          <h3
+            class="font-display text-sm font-semibold whitespace-nowrap text-fg"
+          >
+            Pipelines
+          </h3>
+          <span class="font-mono text-[11px] text-fg-faint">recent window</span>
+          <span class="flex-1"></span>
+          <app-status-badge
+            [variant]="h.pipelines.failed > 0 ? 'danger' : 'success'"
+            data-testid="health-pipelines-badge"
+          >
+            {{
+              h.pipelines.failed > 0 ? h.pipelines.failed + ' failed' : 'passing'
+            }}
+          </app-status-badge>
+        </header>
+        <div class="grid grid-cols-2 gap-2.5 p-4">
+          @for (tile of pipelineTiles(); track tile.id) {
+            <div
+              class="rounded-sm border border-border-faint bg-elevated px-2.5 py-2"
+              [attr.data-testid]="'health-tile-' + tile.id"
+            >
+              <div
+                class="font-display text-[22px] font-semibold tabular-nums"
+                [class.text-fg]="tile.tone === 'default'"
+                [class.text-success]="tile.tone === 'success'"
+                [class.text-error]="tile.tone === 'error'"
+              >
+                {{ tile.value | number }}
+              </div>
+              <div
+                class="mt-0.5 font-mono text-[10px] tracking-[0.05em] text-fg-faint uppercase"
+              >
+                {{ tile.label }}
+              </div>
+            </div>
+          }
+        </div>
+        <p
+          class="border-t border-border px-4 py-2.5 font-mono text-[11px] text-fg-subtle"
+          data-testid="health-pipelines-last-run"
+        >
+          last run ·
+          @if (h.pipelines.last_run_at; as lastRun) {
+            {{ lastRun | date: 'MMM d, HH:mm' }}
+          } @else {
+            never
+          }
+        </p>
+      </section>
+
+      <!-- Database -->
+      <section
+        class="overflow-hidden rounded-md border border-border bg-panel"
+        data-testid="health-database"
+      >
+        <header
+          class="flex items-center gap-2 border-b border-border px-3.5 py-2.5"
+        >
+          <h3
+            class="font-display text-sm font-semibold whitespace-nowrap text-fg"
+          >
+            Database
+          </h3>
+          <span class="font-mono text-[11px] text-fg-faint">entity counts</span>
+        </header>
+        <div class="grid grid-cols-3 gap-2.5 p-4">
+          @for (tile of databaseTiles(); track tile.id) {
+            <div
+              class="rounded-sm border border-border-faint bg-elevated px-2.5 py-2"
+              [attr.data-testid]="'health-tile-' + tile.id"
+            >
+              <div
+                class="font-display text-[22px] font-semibold text-fg tabular-nums"
+              >
+                {{ tile.value | number }}
+              </div>
+              <div
+                class="mt-0.5 font-mono text-[10px] tracking-[0.05em] text-fg-faint uppercase"
+              >
+                {{ tile.label }}
+              </div>
+            </div>
+          }
+        </div>
+      </section>
+    </div>
+  }
+</div>

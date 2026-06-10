@@ -1,0 +1,404 @@
+<div class="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-7 px-6 py-6">
+  <!-- Inventory (overview read) -->
+  <section class="flex flex-col gap-4" data-testid="stats-inventory">
+    <div class="flex items-baseline gap-2.5">
+      <h3 class="font-display text-base font-semibold text-fg">Inventory</h3>
+      <span class="font-mono text-[11px] text-fg-subtle">
+        contents · collection · activity
+      </span>
+    </div>
+
+    @if (overviewError()) {
+      <div
+        class="flex items-center gap-3 rounded-sm border border-error/30 bg-error-bg px-3 py-2 text-xs text-error"
+        role="alert"
+        data-testid="stats-overview-error"
+      >
+        <span class="flex-1">Couldn't load the stats overview.</span>
+        <button
+          type="button"
+          (click)="retryOverview()"
+          class="rounded-sm border border-error/40 px-2 py-0.5 font-mono text-[11px] transition-colors hover:bg-error/10"
+          data-testid="stats-overview-retry"
+        >
+          Retry
+        </button>
+      </div>
+    } @else if (overviewLoading()) {
+      <div
+        class="flex items-center justify-center py-12 text-fg-faint"
+        data-testid="stats-overview-loading"
+      >
+        <app-loading-spinner size="lg" />
+      </div>
+    } @else {
+      <div class="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+        @for (tile of tiles(); track tile.id) {
+          <div
+            class="rounded-sm border border-border-faint bg-elevated px-2.5 py-2"
+            [attr.data-testid]="'stats-tile-' + tile.id"
+          >
+            <div
+              class="font-display text-[22px] font-semibold text-fg tabular-nums"
+            >
+              {{ tile.value | number }}
+            </div>
+            <div
+              class="mt-0.5 font-mono text-[10px] tracking-[0.05em] text-fg-faint uppercase"
+            >
+              {{ tile.label }}
+            </div>
+            @if (tile.sub) {
+              <div class="mt-0.5 font-mono text-[10px] text-fg-subtle">
+                {{ tile.sub }}
+              </div>
+            }
+          </div>
+        }
+      </div>
+
+      <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        @for (panel of breakdowns(); track panel.id) {
+          <div
+            class="overflow-hidden rounded-md border border-border bg-panel"
+            [attr.data-testid]="'stats-breakdown-' + panel.id"
+          >
+            <h4
+              class="border-b border-border px-3.5 py-2 font-display text-[13px] font-semibold text-fg"
+            >
+              {{ panel.title }}
+            </h4>
+            @if (panel.rows.length > 0) {
+              <ul class="divide-y divide-border-faint">
+                @for (row of panel.rows; track row.key) {
+                  <li
+                    class="flex items-center justify-between px-3.5 py-1.5"
+                  >
+                    <span class="font-mono text-[11px] text-fg-muted">
+                      {{ row.key }}
+                    </span>
+                    <span
+                      class="font-mono text-[11px] text-fg tabular-nums"
+                    >
+                      {{ row.count | number }}
+                    </span>
+                  </li>
+                }
+              </ul>
+            } @else {
+              <p class="px-3.5 py-2 font-mono text-[11px] text-fg-faint">
+                no rows yet
+              </p>
+            }
+          </div>
+        }
+      </div>
+
+      <!-- Process runs per kind -->
+      <app-data-table
+        [isLoading]="false"
+        [isEmpty]="processRunRows().length === 0"
+        emptyTitle="No process runs recorded"
+        emptyDescription="Pipeline runs appear here once the collectors execute."
+      >
+        <table class="w-full text-sm" data-testid="stats-process-runs-table">
+          <thead>
+            <tr
+              class="border-b border-border text-left font-mono text-[10px] tracking-wider text-fg-faint uppercase"
+            >
+              <th scope="col" class="px-3 py-2 font-normal">Kind</th>
+              <th scope="col" class="px-3 py-2 text-right font-normal">Total</th>
+              <th scope="col" class="px-3 py-2 text-right font-normal">
+                Completed
+              </th>
+              <th scope="col" class="px-3 py-2 text-right font-normal">
+                Failed
+              </th>
+              <th scope="col" class="px-3 py-2 text-right font-normal">
+                Running
+              </th>
+              <th scope="col" class="px-3 py-2 text-right font-normal">
+                Pending
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (row of processRunRows(); track row.kind) {
+              <tr
+                class="border-b border-border-faint transition-colors hover:bg-overlay"
+                [attr.data-testid]="'stats-process-runs-row-' + row.kind"
+              >
+                <td class="px-3 py-1.5 font-mono text-[11px] text-fg">
+                  {{ row.kind }}
+                </td>
+                <td
+                  class="px-3 py-1.5 text-right font-mono text-[11px] text-fg-muted tabular-nums"
+                >
+                  {{ row.total | number }}
+                </td>
+                <td
+                  class="px-3 py-1.5 text-right font-mono text-[11px] text-success tabular-nums"
+                >
+                  {{ row.completed | number }}
+                </td>
+                <td
+                  class="px-3 py-1.5 text-right font-mono text-[11px] tabular-nums"
+                  [class.text-error]="row.failed > 0"
+                  [class.text-fg-faint]="row.failed === 0"
+                >
+                  {{ row.failed | number }}
+                </td>
+                <td
+                  class="px-3 py-1.5 text-right font-mono text-[11px] text-info tabular-nums"
+                >
+                  {{ row.running | number }}
+                </td>
+                <td
+                  class="px-3 py-1.5 text-right font-mono text-[11px] text-fg-subtle tabular-nums"
+                >
+                  {{ row.pending | number }}
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </app-data-table>
+    }
+  </section>
+
+  <!-- Area drift (drift read) -->
+  <section class="flex flex-col gap-4" data-testid="stats-drift">
+    <div class="flex items-baseline gap-2.5">
+      <h3 class="font-display text-base font-semibold text-fg">Area drift</h3>
+      <span class="font-mono text-[11px] text-fg-subtle">
+        @if (drift(); as d) {
+          activity vs goal share · {{ d.period }}
+        } @else {
+          activity vs goal share
+        }
+      </span>
+    </div>
+
+    @if (driftError()) {
+      <div
+        class="flex items-center gap-3 rounded-sm border border-error/30 bg-error-bg px-3 py-2 text-xs text-error"
+        role="alert"
+        data-testid="stats-drift-error"
+      >
+        <span class="flex-1">Couldn't load the drift report.</span>
+        <button
+          type="button"
+          (click)="retryDrift()"
+          class="rounded-sm border border-error/40 px-2 py-0.5 font-mono text-[11px] transition-colors hover:bg-error/10"
+          data-testid="stats-drift-retry"
+        >
+          Retry
+        </button>
+      </div>
+    } @else {
+      <app-data-table
+        [isLoading]="driftLoading()"
+        [isEmpty]="driftAreas().length === 0"
+        emptyTitle="No drift data"
+        emptyDescription="Drift appears once areas accumulate goals and activity."
+      >
+        <table class="w-full text-sm" data-testid="stats-drift-table">
+          <thead>
+            <tr
+              class="border-b border-border text-left font-mono text-[10px] tracking-wider text-fg-faint uppercase"
+            >
+              <th scope="col" class="px-3 py-2 font-normal">Area</th>
+              <th scope="col" class="px-3 py-2 text-right font-normal">
+                Active goals
+              </th>
+              <th scope="col" class="px-3 py-2 text-right font-normal">
+                Events
+              </th>
+              <th scope="col" class="px-3 py-2 text-right font-normal">
+                Event %
+              </th>
+              <th scope="col" class="px-3 py-2 text-right font-normal">
+                Goal %
+              </th>
+              <th scope="col" class="px-3 py-2 text-right font-normal">
+                Drift %
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (area of driftAreas(); track area.area) {
+              <tr
+                class="border-b border-border-faint transition-colors hover:bg-overlay"
+                [attr.data-testid]="'stats-drift-row-' + area.area"
+              >
+                <td class="px-3 py-1.5 text-[13px] font-medium text-fg">
+                  {{ area.area }}
+                </td>
+                <td
+                  class="px-3 py-1.5 text-right font-mono text-[11px] text-fg-muted tabular-nums"
+                >
+                  {{ area.active_goals | number }}
+                </td>
+                <td
+                  class="px-3 py-1.5 text-right font-mono text-[11px] text-fg-muted tabular-nums"
+                >
+                  {{ area.event_count | number }}
+                </td>
+                <td
+                  class="px-3 py-1.5 text-right font-mono text-[11px] text-fg-muted tabular-nums"
+                >
+                  {{ area.event_percent | number: '1.0-1' }}%
+                </td>
+                <td
+                  class="px-3 py-1.5 text-right font-mono text-[11px] text-fg-muted tabular-nums"
+                >
+                  {{ area.goal_percent | number: '1.0-1' }}%
+                </td>
+                <td
+                  class="px-3 py-1.5 text-right font-mono text-[11px] text-fg tabular-nums"
+                >
+                  {{ area.drift_percent | number: '1.0-1' }}%
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </app-data-table>
+    }
+  </section>
+
+  <!-- Learning content growth (learning read) -->
+  <section class="flex flex-col gap-4" data-testid="stats-learning">
+    <div class="flex items-baseline gap-2.5">
+      <h3 class="font-display text-base font-semibold text-fg">
+        Learning content
+      </h3>
+      <span class="font-mono text-[11px] text-fg-subtle">
+        note growth · weekly cadence
+      </span>
+    </div>
+
+    @if (learningError()) {
+      <div
+        class="flex items-center gap-3 rounded-sm border border-error/30 bg-error-bg px-3 py-2 text-xs text-error"
+        role="alert"
+        data-testid="stats-learning-error"
+      >
+        <span class="flex-1">Couldn't load learning stats.</span>
+        <button
+          type="button"
+          (click)="retryLearning()"
+          class="rounded-sm border border-error/40 px-2 py-0.5 font-mono text-[11px] transition-colors hover:bg-error/10"
+          data-testid="stats-learning-retry"
+        >
+          Retry
+        </button>
+      </div>
+    } @else if (learningLoading()) {
+      <div
+        class="flex items-center justify-center py-12 text-fg-faint"
+        data-testid="stats-learning-loading"
+      >
+        <app-loading-spinner size="lg" />
+      </div>
+    } @else if (learning(); as l) {
+      <div
+        class="grid grid-cols-2 gap-2.5 sm:grid-cols-4"
+        data-testid="stats-learning-tiles"
+      >
+        <div class="rounded-sm border border-border-faint bg-elevated px-2.5 py-2">
+          <div
+            class="font-display text-[22px] font-semibold text-fg tabular-nums"
+          >
+            {{ l.notes.total | number }}
+          </div>
+          <div
+            class="mt-0.5 font-mono text-[10px] tracking-[0.05em] text-fg-faint uppercase"
+          >
+            notes
+          </div>
+        </div>
+        <div class="rounded-sm border border-border-faint bg-elevated px-2.5 py-2">
+          <div
+            class="font-display text-[22px] font-semibold text-fg tabular-nums"
+          >
+            +{{ l.notes.last_week | number }}
+          </div>
+          <div
+            class="mt-0.5 font-mono text-[10px] tracking-[0.05em] text-fg-faint uppercase"
+          >
+            last week
+          </div>
+        </div>
+        <div class="rounded-sm border border-border-faint bg-elevated px-2.5 py-2">
+          <div
+            class="font-display text-[22px] font-semibold text-fg tabular-nums"
+          >
+            +{{ l.notes.last_month | number }}
+          </div>
+          <div
+            class="mt-0.5 font-mono text-[10px] tracking-[0.05em] text-fg-faint uppercase"
+          >
+            last month
+          </div>
+        </div>
+        <div class="rounded-sm border border-border-faint bg-elevated px-2.5 py-2">
+          <div
+            class="font-display text-[22px] font-semibold tabular-nums"
+            [class.text-success]="l.activity.trend === 'up'"
+            [class.text-warn]="l.activity.trend === 'down'"
+            [class.text-fg]="l.activity.trend === 'stable'"
+            data-testid="stats-learning-cadence"
+          >
+            {{ l.activity.this_week | number }}
+          </div>
+          <div
+            class="mt-0.5 font-mono text-[10px] tracking-[0.05em] text-fg-faint uppercase"
+          >
+            this week · {{ l.activity.trend }}
+          </div>
+          <div class="mt-0.5 font-mono text-[10px] text-fg-subtle">
+            {{ l.activity.last_week | number }} last week
+          </div>
+        </div>
+      </div>
+
+      <app-data-table
+        [isLoading]="false"
+        [isEmpty]="topTags().length === 0"
+        emptyTitle="No tags yet"
+        emptyDescription="Top tags appear once notes accumulate tags."
+      >
+        <table class="w-full text-sm" data-testid="stats-top-tags-table">
+          <thead>
+            <tr
+              class="border-b border-border text-left font-mono text-[10px] tracking-wider text-fg-faint uppercase"
+            >
+              <th scope="col" class="px-3 py-2 font-normal">Tag</th>
+              <th scope="col" class="px-3 py-2 text-right font-normal">
+                Notes
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (tag of topTags(); track tag.name) {
+              <tr
+                class="border-b border-border-faint transition-colors hover:bg-overlay"
+                [attr.data-testid]="'stats-top-tag-' + tag.name"
+              >
+                <td class="px-3 py-1.5 font-mono text-[11px] text-fg">
+                  {{ tag.name }}
+                </td>
+                <td
+                  class="px-3 py-1.5 text-right font-mono text-[11px] text-fg-muted tabular-nums"
+                >
+                  {{ tag.count | number }}
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </app-data-table>
+    }
+  </section>
+</div>

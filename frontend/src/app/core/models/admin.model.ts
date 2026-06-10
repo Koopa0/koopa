@@ -32,40 +32,45 @@ export interface ActiveGoalSummary {
   quarter?: string;
 }
 
-/** Goal detail — milestones and projects are siblings, not parent-child */
+/**
+ * GET /api/admin/commitment/goals/{id} — milestones and projects are
+ * siblings, not parent-child. Mirrors goalDetailResponse
+ * (internal/goal/handler.go); area/deadline/quarter are omitted when unset.
+ */
 export interface GoalDetail {
   id: string;
   title: string;
   description: string;
   status: GoalStatus;
-  area_id: string;
-  area_name: string;
-  deadline: string | null;
-  quarter: string;
-  created_at: string;
-  health: GoalHealth;
+  area_id?: string;
+  area_name?: string;
+  deadline?: string | null;
+  quarter?: string | null;
   milestones: Milestone[];
   projects: GoalProject[];
   recent_activity: ActivityItem[];
+  created_at: string;
+  updated_at: string;
 }
 
-export type GoalHealth = 'on-track' | 'at-risk' | 'stalled';
-
-/** Milestone — binary completion (completed_at null = not completed) */
+/** Milestone — binary completion (completed_at absent = not completed). */
 export interface Milestone {
   id: string;
+  goal_id: string;
   title: string;
-  completed: boolean;
-  completed_at: string | null;
+  description: string;
+  target_deadline?: string | null;
+  completed_at?: string | null;
   position: number;
+  created_at: string;
+  updated_at: string;
 }
 
-/** Project linked to goal via projects.goal_id (not through milestone) */
+/** Project linked to goal via projects.goal_id (not through milestone). */
 export interface GoalProject {
   id: string;
   title: string;
   status: string;
-  task_progress: TaskProgress;
 }
 
 export interface TaskProgress {
@@ -76,6 +81,8 @@ export interface TaskProgress {
 export interface ActivityItem {
   type: string;
   title: string;
+  ref_id?: string;
+  ref_slug?: string | null;
   timestamp: string;
 }
 
@@ -297,7 +304,8 @@ export interface FeedHealth {
 export interface FailingFeed {
   name: string;
   error: string;
-  since: string;
+  /** Absent when the failure window start is unknown (backend omitempty). */
+  since?: string;
 }
 
 export interface PipelineHealth {
@@ -310,4 +318,111 @@ export interface DatabaseStats {
   contents_count: number;
   todos_count: number;
   notes_count: number;
+  attempts_count: number;
+  sessions_count: number;
+  concepts_count: number;
+}
+
+// === System stats ===
+
+/**
+ * GET /api/admin/system/stats envelope (internal/stats/stats.go
+ * Overview). Counts are point-in-time inventory aggregates; the
+ * breakdown maps key on backend enum values (status, type, source).
+ */
+export interface StatsOverview {
+  contents: StatsContents;
+  collected: StatsCollected;
+  feeds: StatsFeeds;
+  process_runs: Record<string, StatsProcessRuns>;
+  projects: StatsProjects;
+  notes: StatsNotes;
+  activity: StatsActivity;
+  tags: StatsTags;
+}
+
+export interface StatsContents {
+  total: number;
+  by_status: Record<string, number>;
+  by_type: Record<string, number>;
+  published: number;
+}
+
+export interface StatsCollected {
+  total: number;
+  by_status: Record<string, number>;
+}
+
+export interface StatsFeeds {
+  total: number;
+  enabled: number;
+}
+
+/** Per process-run kind (map key: crawl, agent_schedule, ...). */
+export interface StatsProcessRuns {
+  total: number;
+  by_status: Record<string, number>;
+}
+
+export interface StatsProjects {
+  total: number;
+  by_status: Record<string, number>;
+}
+
+export interface StatsNotes {
+  total: number;
+  by_type: Record<string, number>;
+}
+
+export interface StatsActivity {
+  total: number;
+  last_24h: number;
+  last_7d: number;
+  by_source: Record<string, number>;
+}
+
+export interface StatsTags {
+  canonical: number;
+  aliases: number;
+  unconfirmed: number;
+}
+
+/** GET /api/admin/system/stats/drift — goal attention vs activity share. */
+export interface DriftReport {
+  period: string;
+  areas: AreaDrift[];
+}
+
+export interface AreaDrift {
+  area: string;
+  active_goals: number;
+  event_count: number;
+  event_percent: number;
+  goal_percent: number;
+  drift_percent: number;
+}
+
+/** GET /api/admin/system/stats/learning — note growth + weekly cadence. */
+export interface StatsLearning {
+  notes: StatsNoteGrowth;
+  activity: StatsWeeklyActivity;
+  top_tags: StatsTagCount[];
+}
+
+export interface StatsNoteGrowth {
+  total: number;
+  last_week: number;
+  last_month: number;
+  by_type: Record<string, number>;
+}
+
+export interface StatsWeeklyActivity {
+  this_week: number;
+  last_week: number;
+  trend: 'up' | 'down' | 'stable';
+}
+
+export interface StatsTagCount {
+  name: string;
+  count: number;
 }
