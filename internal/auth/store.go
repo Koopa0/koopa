@@ -59,12 +59,11 @@ func (s *Store) UpsertUserByEmail(ctx context.Context, email string) (*User, err
 
 // CreateRefreshToken stores a new refresh token hash.
 func (s *Store) CreateRefreshToken(ctx context.Context, userID uuid.UUID, tokenHash string, expiresAt time.Time) error {
-	err := s.q.CreateRefreshToken(ctx, db.CreateRefreshTokenParams{
+	if err := s.q.CreateRefreshToken(ctx, db.CreateRefreshTokenParams{
 		UserID:    userID,
 		TokenHash: tokenHash,
 		ExpiresAt: expiresAt,
-	})
-	if err != nil {
+	}); err != nil {
 		if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok && pgErr.Code == pgerrcode.UniqueViolation {
 			return ErrConflict
 		}
@@ -112,8 +111,7 @@ func (s *Store) ConsumeRefreshToken(ctx context.Context, tokenHash string) (*Ref
 
 // DeleteRefreshToken removes a refresh token by hash.
 func (s *Store) DeleteRefreshToken(ctx context.Context, tokenHash string) error {
-	err := s.q.DeleteRefreshToken(ctx, tokenHash)
-	if err != nil {
+	if err := s.q.DeleteRefreshToken(ctx, tokenHash); err != nil {
 		return fmt.Errorf("deleting refresh token: %w", err)
 	}
 	return nil
@@ -121,8 +119,7 @@ func (s *Store) DeleteRefreshToken(ctx context.Context, tokenHash string) error 
 
 // DeleteExpiredTokens removes all expired refresh tokens.
 func (s *Store) DeleteExpiredTokens(ctx context.Context) error {
-	err := s.q.DeleteExpiredTokens(ctx)
-	if err != nil {
+	if err := s.q.DeleteExpiredTokens(ctx); err != nil {
 		return fmt.Errorf("deleting expired tokens: %w", err)
 	}
 	return nil
