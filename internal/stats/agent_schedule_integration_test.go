@@ -31,8 +31,8 @@ func TestStore_LastAgentScheduleRuns_Integration(t *testing.T) {
 	ctx := t.Context()
 
 	seedAgent(t, ctx, pool, "planner", "claude-cowork")
-	seedAgent(t, ctx, pool, "content-studio", "claude-cowork")
-	seedAgent(t, ctx, pool, "research-lab", "claude-cowork")
+	seedAgent(t, ctx, pool, "learning-studio", "claude-cowork")
+	seedAgent(t, ctx, pool, "fixture-lab", "claude-cowork")
 
 	// planner — three runs; the latest (08:00) is what we expect to read.
 	hqEarliest := time.Date(2026, time.May, 25, 8, 0, 0, 0, time.UTC)
@@ -42,13 +42,13 @@ func TestStore_LastAgentScheduleRuns_Integration(t *testing.T) {
 	insertCompletedAgentScheduleRun(t, ctx, pool, "planner:morning-briefing", "claude-cowork", hqMiddle)
 	insertCompletedAgentScheduleRun(t, ctx, pool, "planner:morning-briefing", "claude-cowork", hqLatest)
 
-	// content-studio — single completed run.
-	contentRun := time.Date(2026, time.May, 27, 14, 0, 0, 0, time.UTC)
-	insertCompletedAgentScheduleRun(t, ctx, pool, "content-studio:pipeline-check", "claude-cowork", contentRun)
+	// learning-studio — single completed run.
+	learningRun := time.Date(2026, time.May, 27, 14, 0, 0, 0, time.UTC)
+	insertCompletedAgentScheduleRun(t, ctx, pool, "learning-studio:weekly-review", "claude-cowork", learningRun)
 
-	// research-lab — only a pending row (started_at IS NULL). The query
-	// must skip it; research-lab must NOT appear in the result.
-	insertPendingAgentScheduleRun(t, ctx, pool, "research-lab:industry-scan", "claude-cowork")
+	// fixture-lab — only a pending row (started_at IS NULL). The query
+	// must skip it; fixture-lab must NOT appear in the result.
+	insertPendingAgentScheduleRun(t, ctx, pool, "fixture-lab:industry-scan", "claude-cowork")
 
 	// An unrelated crawl run — must be ignored by the query.
 	insertCompletedCrawlRun(t, ctx, pool, "rss-feed-collector", time.Date(2026, time.May, 27, 12, 0, 0, 0, time.UTC))
@@ -60,8 +60,8 @@ func TestStore_LastAgentScheduleRuns_Integration(t *testing.T) {
 	}
 
 	want := map[string]time.Time{
-		"planner":             hqLatest,
-		"content-studio": contentRun,
+		"planner":         hqLatest,
+		"learning-studio": learningRun,
 	}
 
 	if diff := cmp.Diff(want, got, cmp.Comparer(func(a, b time.Time) bool { return a.Equal(b) })); diff != "" {

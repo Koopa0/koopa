@@ -10,7 +10,7 @@
 //  1. Author — is the caller in the allowlist for this domain? Each
 //     write tool that crosses a domain boundary (plan_day, …) has a
 //     small set of legitimate authors baked into its handler. Author
-//     gates are runtime allowlists — adding "may content-studio author
+//     gates are runtime allowlists — adding "may learning-studio author
 //     goals" should not require rebuilding the binary or migrating
 //     existing rows. Enforced by requireAuthor.
 //
@@ -37,7 +37,7 @@
 // # Why the "unknown" fallback fails every gate
 //
 // The MCP server has a default caller agent (cmd/mcp/config.go:
-// KOOPA_MCP_CALLER_AGENT, default "unknown" since CF-02). The "unknown"
+// KOOPA_MCP_CALLER_AGENT, default "unknown"). The "unknown"
 // agent has Platform != "human", so a tool call that omits `as` cannot
 // pass requireAuthor (it is neither human nor in any allowlist) nor
 // requireRegisteredCaller (it is the zero-privilege fallback sentinel).
@@ -48,6 +48,7 @@ package mcp
 import (
 	"context"
 	"fmt"
+	"slices"
 
 	"github.com/Koopa0/koopa/internal/agent"
 )
@@ -68,10 +69,8 @@ func (s *Server) requireAuthor(ctx context.Context, op string, authors ...string
 	if caller.Platform == "human" {
 		return nil
 	}
-	for _, a := range authors {
-		if name == a {
-			return nil
-		}
+	if slices.Contains(authors, name) {
+		return nil
 	}
 	return fmt.Errorf("%s: caller %q is not in the author allowlist (allowed: human, %v)", op, name, authors)
 }
@@ -101,9 +100,9 @@ const unknownAgent = "unknown"
 //     "unknown" is registered, so Lookup alone would admit it — but it
 //     means "the caller did not identify itself" and is therefore not a
 //     known author; a knowledge-base / settings write attributed to it is
-//     refused. This mirrors the fail-closed posture CF-02 established for
-//     requireAuthor (which already rejects "unknown" via the allowlist
-//     axis).
+//     refused. This mirrors requireAuthor's fail-closed handling of the
+//     server's default caller ("unknown" is already rejected there via
+//     the allowlist axis).
 //
 // This gate reads callerIdentity: a personal-use deploy that pins
 // KOOPA_MCP_CALLER_AGENT="human" (per config.go) is a real registered author

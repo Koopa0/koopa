@@ -141,10 +141,8 @@ func displacedFrom(removed []daily.RemovedItem, kept []PlanDayItem) []daily.Remo
 }
 
 // planDay assembles a day's daily_plan_items. Only the planner (the morning
-// briefing role) and the human owner author daily plans. The other
-// cowork agents have their own work queues — content-studio's
-// content_pipeline, research-lab's directive backlog, learning-studio's
-// practice queue — and do not participate in daily_plan_items.
+// briefing role) and the human owner author daily plans; other agents do
+// not participate in daily_plan_items.
 //
 // All writes (delete-existing + insert-new) run inside a single
 // transaction. Without that wrapper a mid-loop validation failure

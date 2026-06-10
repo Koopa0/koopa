@@ -416,7 +416,7 @@ func (s *Server) logToolCall(_ context.Context, name string, dur time.Duration, 
 //
 // All current callers pass lo=1 (limits / counts / window sizes that
 // must be at least 1). The parameter stays in the signature because
-// the next caller that emerges from a Phase 2 redesign may legitimately
+// the next caller that emerges from a future redesign may legitimately
 // want lo=0 (a "0 means strict" semantic) and forcing such a caller to
 // re-introduce the parameter would be churn for no gain.
 //
@@ -487,14 +487,14 @@ func injectFieldEnums(schema *jsonschema.Schema, toolName string) {
 // injectCallerIdentityField adds the "as" property to a tool schema and
 // removes additionalProperties:false so the MCP client can pass it.
 // This enables caller self-identification: each Cowork project's instructions
-// tell the AI to pass as:"planner" (or "content-studio", etc.) in every tool call.
+// tell the AI to pass as:"planner" (or "learning-studio", etc.) in every tool call.
 func injectCallerIdentityField(s *jsonschema.Schema) {
 	if s.Properties == nil {
 		s.Properties = map[string]*jsonschema.Schema{}
 	}
 	s.Properties["as"] = &jsonschema.Schema{
 		Type:        "string",
-		Description: "Caller agent identity (e.g. planner, content-studio). Set by project instructions.",
+		Description: "Caller agent identity (e.g. planner, learning-studio). Set by project instructions.",
 	}
 	// Allow the "as" field to pass through — jsonschema-go sets
 	// additionalProperties:false by default which would reject it.

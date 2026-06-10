@@ -30,36 +30,10 @@ func BuiltinAgents() []Agent {
 			},
 		},
 		{
-			Name:        "content-studio",
-			DisplayName: "Content Studio",
-			Platform:    "claude-cowork",
-			Description: "Content strategy, writing, publishing",
-			Schedule: Schedule{
-				Name:    "pipeline-check",
-				Trigger: TriggerCron,
-				Expr:    "0 14 * * *",
-				Backend: "cowork_desktop",
-				Purpose: "Daily content pipeline health + RSS monitoring",
-			},
-		},
-		{
-			Name:        "research-lab",
-			DisplayName: "Research Lab",
-			Platform:    "claude-cowork",
-			Description: "Deep research, structured reports",
-			Schedule: Schedule{
-				Name:    "industry-scan",
-				Trigger: TriggerCron,
-				Expr:    "0 9 * * 1",
-				Backend: "cowork_desktop",
-				Purpose: "Weekly industry trend scanning",
-			},
-		},
-		{
 			Name:        "learning-studio",
 			DisplayName: "Learning Studio",
 			Platform:    "claude-cowork",
-			Description: "LeetCode coaching, spaced repetition",
+			Description: "Learning coach — session lifecycle, curriculum, weakness diagnosis",
 		},
 		{
 			Name:        "koopa0-dev",

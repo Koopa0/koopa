@@ -50,8 +50,8 @@ func TestRequireAuthor(t *testing.T) {
 			wantErr: `caller "ghost" is not registered`,
 		},
 		{
-			// CF-02: the zero-privilege fallback agent must be refused
-			// by requireAuthor too — even if a client explicitly passes
+			// The zero-privilege fallback agent must be refused by
+			// requireAuthor too — even if a client explicitly passes
 			// as:"unknown" trying to slip past the env default.
 			name:    "explicit unknown caller — refused by allowlist",
 			ctx:     withCallerAs(t.Context(), "unknown"),
@@ -79,19 +79,19 @@ func TestRequireAuthor(t *testing.T) {
 	}
 }
 
-// TestServerDefaultCallerAgent_FailsClosed pins the CF-02 contract: the
-// server's default callerAgent (used when an MCP call omits `as`) is the
-// zero-privilege "unknown" agent, and requireAuthor refuses it.
+// TestServerDefaultCallerAgent_FailsClosed pins the hardened-default
+// contract: the server's default callerAgent (used when an MCP call omits
+// `as`) is the zero-privilege "unknown" agent, and requireAuthor refuses it.
 // This test deliberately uses a fresh Server constructed without
 // WithCallerAgent, so it observes the bare default from NewServer's
 // initializer at server.go.
 //
-// Why this matters: prior to CF-02, the default was "human", which let
-// any caller that omitted `as` silently inherit human authority through
-// requireAuthor (the human-implicit branch). The audit author chain for
-// such a call would attribute it to "human" even though no human review
-// occurred. The default change to "unknown" closes that path: a missing
-// `as` now resolves to a Platform=system agent that fails the gate.
+// Why this matters: before the default was hardened to "unknown", it was
+// "human", which let any caller that omitted `as` silently inherit human
+// authority through requireAuthor (the human-implicit branch). The audit
+// author chain for such a call would attribute it to "human" even though
+// no human review occurred. The "unknown" default closes that path: a
+// missing `as` resolves to a Platform=system agent that fails the gate.
 func TestServerDefaultCallerAgent_FailsClosed(t *testing.T) {
 	// Construct a Server with the same default initializer NewServer uses,
 	// without WithCallerAgent. handler_test.go's newTestServer() pins
@@ -102,9 +102,9 @@ func TestServerDefaultCallerAgent_FailsClosed(t *testing.T) {
 	s := &Server{
 		logger:   testLogger(),
 		registry: agent.NewBuiltinRegistry(),
-		// Mirror server.go NewServer initializer — the value that CF-02
-		// hardened. If this drifts from server.go, the test must be
-		// updated to match, and the divergence is itself a regression.
+		// Mirror server.go NewServer initializer — the hardened default.
+		// If this drifts from server.go, the test must be updated to
+		// match, and the divergence is itself a regression.
 		callerAgent: "unknown",
 	}
 
@@ -112,9 +112,10 @@ func TestServerDefaultCallerAgent_FailsClosed(t *testing.T) {
 	// server default ("unknown"). The "unknown" registry row has
 	// Platform=system (not human) and is not in any allowlist, so the gate
 	// rejects with the "not in the author allowlist" path. This is the gate
-	// that CF-02 actually hardened — under the old default "human", this
-	// branch silently passed via the human-implicit short circuit.
-	if err := s.requireAuthor(t.Context(), "test_op", "planner", "content-studio"); err == nil {
+	// the hardened default protects — before the default was hardened to
+	// "unknown", this branch silently passed via the human-implicit short
+	// circuit under the old default "human".
+	if err := s.requireAuthor(t.Context(), "test_op", "planner", "learning-studio"); err == nil {
 		t.Fatal("requireAuthor without `as` (default unknown) = nil, want refusal")
 	} else if !strings.Contains(err.Error(), `caller "unknown" is not in the author allowlist`) {
 		t.Errorf("requireAuthor error = %q, want unknown-not-in-allowlist refusal", err)
@@ -145,10 +146,10 @@ func TestPlanDayGate(t *testing.T) {
 
 	input := PlanDayInput{Items: []PlanDayItem{{TaskID: "550e8400-e29b-41d4-a716-446655440000"}}}
 
-	t.Run("content-studio rejected", func(t *testing.T) {
-		ctx := withCallerAs(t.Context(), "content-studio")
+	t.Run("claude rejected", func(t *testing.T) {
+		ctx := withCallerAs(t.Context(), "claude")
 		_, _, err := s.planDay(ctx, nil, input)
-		if err == nil || !strings.Contains(err.Error(), `caller "content-studio" is not in the author allowlist`) {
+		if err == nil || !strings.Contains(err.Error(), `caller "claude" is not in the author allowlist`) {
 			t.Errorf("planDay error = %v, want allowlist refusal", err)
 		}
 	})
