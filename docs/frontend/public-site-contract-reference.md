@@ -40,9 +40,11 @@
 
 ## Project / Portfolio (the "用作品說話" surface)
 
-- `GET /api/projects` → `[ProjectSummary]` · `GET /api/projects/{slug}` → rich project profile:
+- `GET /api/projects` → `[ProjectSummary]` · `GET /api/projects/{slug}` → the **bare project row**
+  (`{slug, title, description, status, repo?, …}` — no profile fields).
+- `GET /api/portfolio` → `[PublicListing]` — the rich profile shape:
   `{ title, long_description?, role?, tech_stack[], highlights[], problem?, solution?, architecture?, results?, github_url?, live_url?, cover_image?, featured, is_public, sort_order }`.
-- `GET /api/portfolio` → curated portfolio view.
+  A project-detail page composes from portfolio (find by slug), falling back to the bare row.
 
 ## Misc public reads
 - `GET /api/search?q=` → public search across published content.
