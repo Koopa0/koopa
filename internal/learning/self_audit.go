@@ -30,10 +30,10 @@ type RepeatedConcept struct {
 
 // SelfAuditOutcomeRate returns solved_after_solution count + total
 // problem_solving attempt count for [start, end). Used by
-// weekly_summary.self_audit to surface the CF-06 fix's behavioral
-// signal — if the rate stays flat across weeks the playbook adoption
-// is sticking; if it spikes, learning-studio's outcome discipline is
-// drifting.
+// weekly_summary.self_audit to surface outcome-recording discipline:
+// if the solved_after_solution share stays flat across weeks the
+// recording discipline is sticking; if it spikes, learning-studio's
+// outcome discipline is drifting.
 func (s *Store) SelfAuditOutcomeRate(ctx context.Context, start, end time.Time) (OutcomeRate, error) {
 	row, err := s.q.SelfAuditAttemptOutcomeRate(ctx, db.SelfAuditAttemptOutcomeRateParams{
 		StartAt: start,

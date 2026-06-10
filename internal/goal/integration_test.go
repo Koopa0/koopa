@@ -3,9 +3,9 @@
 //go:build integration
 
 // integration_test.go bundles the testcontainers-backed admin handler tests
-// for the goal package (W8 admin-surface coverage). Every mutation handler is
-// driven through api.ActorMiddleware via httptest — never store.Mutation on a
-// bare pool — because the goals/milestones audit triggers read koopa.actor
+// for the goal package. Every mutation handler is driven through
+// api.ActorMiddleware via httptest — never store.Mutation on a bare
+// pool — because the goals/milestones audit triggers read koopa.actor
 // from the per-request transaction the middleware binds, and the production
 // admin route (cmd/app/routes.go adminMid) always wires that tx.
 //
@@ -14,9 +14,9 @@
 //     status=not_started.
 //   - CreateMilestone — POST /goals/{id}/milestones → 201, milestone persisted
 //     under the parent goal.
-//   - UpdateStatus on a non-existent goal → 404. This guards the #6 fix:
-//     UpdateStatus now routes the store ErrNotFound through api.HandleError /
-//     storeErrors instead of leaking a 500.
+//   - UpdateStatus on a non-existent goal → 404. This guards the regression
+//     where the store ErrNotFound leaked as a 500 instead of routing through
+//     api.HandleError / storeErrors.
 //
 // Run with:
 //
@@ -365,10 +365,10 @@ func TestIntegration_Goal_ToggleMilestone(t *testing.T) {
 	}
 }
 
-// TestIntegration_Goal_UpdateStatus_NotFound guards the #6 fix: UpdateStatus
-// on a goal id that does not exist must produce a 404 (store ErrNotFound routed
-// through api.HandleError / storeErrors), not a 500. A bare uuid that parses
-// but matches no row is the exact regression case.
+// TestIntegration_Goal_UpdateStatus_NotFound guards the 404 contract:
+// UpdateStatus on a goal id that does not exist must produce a 404 (store
+// ErrNotFound routed through api.HandleError / storeErrors), not a 500. A bare
+// uuid that parses but matches no row is the exact regression case.
 func TestIntegration_Goal_UpdateStatus_NotFound(t *testing.T) {
 	truncate(t)
 	h := newHandler()

@@ -219,9 +219,9 @@ type PipelineHealth struct {
 // and learning-side entities (attempts, sessions, concepts). The split
 // mirrors the system's two concerns — knowledge
 // management vs learning analytics — so a caller scanning health can
-// see at a glance which side is populated. Learning fields added per
-// the Phase 1 self-audit F-3 finding (learning-studio reported the
-// previous shape made the learning surface invisible).
+// see at a glance which side is populated. The learning fields are
+// present because learning-studio reported that a counts shape without
+// them made the learning surface invisible.
 type DatabaseStats struct {
 	ContentsCount int `json:"contents_count"`
 	TodosCount    int `json:"todos_count"`

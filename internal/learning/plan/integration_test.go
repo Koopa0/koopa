@@ -3,9 +3,9 @@
 //go:build integration
 
 // integration_test.go bundles the testcontainers-backed admin handler tests
-// for the learning plan package (W8 admin-surface coverage). Every mutation
-// handler is driven through api.ActorMiddleware via httptest, never on a bare
-// pool: plan handlers call h.mustAdminTx and 500 if the per-request tx is
+// for the learning plan package. Every mutation handler is driven through
+// api.ActorMiddleware via httptest, never on a bare pool: plan handlers
+// call h.mustAdminTx and 500 if the per-request tx is
 // absent, and the audit triggers read koopa.actor from that tx. The production
 // admin route (cmd/app/routes.go adminMid) always binds it.
 //

@@ -151,9 +151,9 @@ func activityActorFor(t *testing.T, entityType string, entityID uuid.UUID) strin
 
 // TestIntegration_ColdStart_CaptureInbox was Learning's first failure mode
 // in the audit: activity_events_actor_fkey violation because koopa.actor
-// was unset and the fallback 'system' wasn't in agents. After W1 (seed)
-// and W2 (withActorTx) this must write both the todo and the audit row
-// with actor = learning-studio.
+// was unset and the fallback 'system' wasn't in agents. With the registry
+// seed and the withActorTx wrapper in place, this must write both the todo
+// and the audit row with actor = learning-studio.
 func TestIntegration_ColdStart_CaptureInbox(t *testing.T) {
 	s := setupServer(t)
 
@@ -177,7 +177,8 @@ func TestIntegration_ColdStart_CaptureInbox(t *testing.T) {
 
 // TestIntegration_ColdStart_StartSession was Learning's second failure mode:
 // learning_sessions_domain_fkey violation because the 5 declared domains
-// were never seeded. After W1 this must resolve the FK and create the row.
+// were never seeded. With the domain seed in place this must resolve the
+// FK and create the row.
 func TestIntegration_ColdStart_StartSession(t *testing.T) {
 	s := setupServer(t)
 
@@ -204,7 +205,7 @@ func TestIntegration_ColdStart_StartSession(t *testing.T) {
 // observation references a concept slug that doesn't exist yet; record_attempt
 // is allowed to auto-create leaf concepts in the session's domain, and the
 // concept must be resolvable by the concepts.domain FK to learning_domains
-// (seeded in W1).
+// (covered by the builtin domain seed).
 func TestIntegration_ColdStart_RecordAttempt(t *testing.T) {
 	s := setupServer(t)
 
@@ -350,8 +351,9 @@ func TestIntegration_ColdStart_EndSession(t *testing.T) {
 // TestIntegration_ActorFallbackToSystem guards the safety net. withActorTx
 // is supposed to set koopa.actor on every covered write, but if a bug or an
 // ops-level SQL statement bypasses it, the audit trigger's fallback string
-// is the literal 'system'. W1 registered that agent specifically so the FK
-// resolves — if anyone removes it, this test fails and tells them why.
+// is the literal 'system'. The builtin registry registers that agent
+// specifically so the FK resolves — if anyone removes it, this test fails
+// and tells them why.
 //
 // The test writes a todo directly via the pool WITHOUT set_config. The
 // audit trigger fires, reads an empty koopa.actor, falls back to 'system',
@@ -494,8 +496,8 @@ func TestIntegration_FindOrCreateTarget_TitleCanonicalises(t *testing.T) {
 	}
 }
 
-// TestIntegration_RecordAttempt_PrimaryTargetCrossDomain pins the Phase 1E
-// semantic boundary: the primary attempt target inherits the active session's
+// TestIntegration_RecordAttempt_PrimaryTargetCrossDomain pins the cross-domain
+// primary-target rule: the primary attempt target inherits the active session's
 // domain. record_attempt MUST reject an explicit input.Target.Domain that
 // disagrees with session.Domain — otherwise a single call could silently
 // create a learning_target (and auto-create concepts) in a domain unrelated
@@ -1008,8 +1010,8 @@ func TestIntegration_UpdateEntry_CompletionPolicy(t *testing.T) {
 }
 
 // TestIntegration_UpdateEntry_SkipPolicy exercises the skip-path reason
-// requirement added for CF-04: status=skipped now requires a non-blank
-// reason for audit-trail parity with status=completed. Without it,
+// requirement: status=skipped requires a non-blank reason for audit-trail
+// parity with status=completed. Without it,
 // cross-agent review cannot distinguish "skipped because solved offline"
 // from "skipped because plan retconned" — the policy gap that pushed
 // agents toward force=true (wrong tool for normal skip).
@@ -3247,7 +3249,7 @@ func countPlanItems(t *testing.T, todoID uuid.UUID) int {
 	return n
 }
 
-// TestIntegration_PlanDay_PositionOutOfRangeRejected guards the #13 fix:
+// TestIntegration_PlanDay_PositionOutOfRangeRejected guards the position bound:
 // createPlanItemTx bounds the caller-supplied position to [0, maxPlanPosition]
 // (100000) so the int32 cast cannot overflow. A position above the ceiling or
 // below zero must be rejected, and because the whole plan_day write runs inside

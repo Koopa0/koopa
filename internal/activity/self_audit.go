@@ -26,8 +26,8 @@ import (
 //
 // The 'skipped:' soft convention is documented in the learning-studio
 // audit decisions memo §F.1.d as a coaching hint, not a server-enforced
-// rule — CF-04 only mandates non-blank reason text, not a specific
-// prefix. The histogram therefore reports BOTH the in-convention
+// rule — the audit contract only mandates non-blank reason text, not
+// a specific prefix. The histogram therefore reports BOTH the in-convention
 // categories AND the share of non-conforming reasons (as the
 // 'unclassified' bucket).
 type SkipReasonPrefix struct {

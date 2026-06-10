@@ -9,7 +9,7 @@
 // attributed to "unknown" — a zero-privilege agent registered in
 // agent.BuiltinAgents(). The earlier default of "human" silently
 // granted full human authority to any caller that forgot to set `as`,
-// which was the fail-open trap CF-02 closed.
+// which is the fail-open trap this default closes.
 package main
 
 import (
