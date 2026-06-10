@@ -1,44 +1,44 @@
 <!-- Shell: 220px nav rail + (Topbar + router-outlet) -->
 <div class="flex min-h-0 flex-1">
   <aside
-    class="flex w-[220px] shrink-0 flex-col border-r border-zinc-800 bg-zinc-950"
+    class="flex w-[220px] shrink-0 flex-col border-r border-border bg-panel py-3.5"
     role="navigation"
     aria-label="Admin navigation"
   >
     <!-- Brand -->
     <div
-      class="flex items-center gap-2.5 border-b border-zinc-900 px-3 py-4"
+      class="mx-2.5 flex items-center gap-2.5 px-2 pb-4 pt-1"
       data-testid="admin-nav-brand"
     >
       <div
-        class="grid size-6 place-items-center rounded-xs bg-sky-900/40 text-xs font-bold text-sky-300"
+        class="grid size-6 place-items-center rounded-xs bg-brand-muted font-display text-[11px] font-semibold text-brand"
         aria-hidden="true"
       >
         K
       </div>
       <div class="min-w-0">
-        <div class="truncate font-display text-sm font-semibold text-zinc-100">
+        <div class="truncate font-display text-sm font-semibold text-fg">
           koopa.admin
         </div>
-        <div class="font-mono text-[10px] text-zinc-500">local · dark</div>
+        <div class="font-mono text-[10px] text-fg-subtle">local · dark</div>
       </div>
     </div>
 
     <!-- Nav groups -->
-    <nav class="flex-1 overflow-y-auto px-2 py-2">
+    <nav class="flex-1 overflow-y-auto px-2.5 pb-2">
       @for (group of navGroups; track group.label) {
       <div
-        class="mt-3 px-2 pb-1 pt-2 font-mono text-[10px] uppercase tracking-[0.08em] text-zinc-600"
+        class="px-2 pb-1 pt-3 font-mono text-[10px] uppercase tracking-[0.08em] text-fg-faint"
       >
         {{ group.label }}
       </div>
       @for (item of group.items; track item.route) {
       <a
         [routerLink]="item.route"
-        routerLinkActive="bg-sky-950/40 text-sky-300"
+        routerLinkActive="bg-brand-muted text-brand"
         [routerLinkActiveOptions]="{ exact: item.exact ?? false }"
         #rla="routerLinkActive"
-        class="group relative flex h-8 items-center gap-2 rounded-xs px-2 text-xs text-zinc-400 no-underline transition-colors hover:bg-zinc-800/50 hover:text-zinc-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500"
+        class="group relative flex items-center gap-[9px] rounded-xs px-2 py-[5px] text-[13px] text-fg-muted no-underline transition-colors hover:bg-overlay hover:text-fg"
         [attr.aria-current]="rla.isActive ? 'page' : null"
         [attr.title]="
               item.shortcutHint
@@ -49,7 +49,7 @@
       >
         @if (rla.isActive) {
         <span
-          class="absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-full bg-sky-500"
+          class="absolute -left-2.5 bottom-1.5 top-1.5 w-0.5 rounded-[2px] bg-brand"
           aria-hidden="true"
           data-testid="admin-nav-active-bar"
         ></span>
@@ -58,7 +58,7 @@
         <span class="truncate">{{ item.label }}</span>
         @let count = countFor(item); @if (count !== null) {
         <span
-          class="ml-auto font-mono text-[10px] text-zinc-500"
+          class="ml-auto font-mono text-[10px] tabular-nums text-fg-faint"
           data-testid="admin-nav-count"
         >
           {{ count }}
@@ -69,11 +69,11 @@
     </nav>
 
     <!-- Bottom: settings + user summary -->
-    <div class="border-t border-zinc-800 px-2 py-2">
+    <div class="mx-2.5">
       <a
         routerLink="/admin/settings"
-        routerLinkActive="bg-sky-950/40 text-sky-300"
-        class="flex h-8 items-center gap-2 rounded-xs px-2 text-xs text-zinc-400 no-underline transition-colors hover:bg-zinc-800/50 hover:text-zinc-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500"
+        routerLinkActive="bg-brand-muted text-brand"
+        class="flex items-center gap-[9px] rounded-xs px-2 py-[5px] text-[13px] text-fg-muted no-underline transition-colors hover:bg-overlay hover:text-fg"
         data-testid="admin-nav-settings"
       >
         <lucide-icon [img]="SettingsIcon" [size]="14" />
@@ -81,22 +81,22 @@
       </a>
 
       <div
-        class="mt-1 flex items-center gap-2.5 border-t border-zinc-900 px-2 py-3"
+        class="mt-2 flex items-center gap-2.5 border-t border-border px-2 py-2"
         data-testid="admin-nav-user"
       >
         <div
-          class="grid size-6 place-items-center rounded-xs bg-sky-900/40 font-mono text-[10px] font-semibold text-sky-300"
+          class="grid size-6.5 place-items-center rounded-xs bg-brand-muted font-display text-[11px] font-semibold text-brand"
           aria-hidden="true"
         >
           H
         </div>
         <div class="min-w-0 flex-1">
-          <div class="text-xs text-zinc-200">human</div>
+          <div class="text-xs text-fg">human</div>
           <div
-            class="flex items-center gap-1 font-mono text-[10px] text-zinc-500"
+            class="flex items-center gap-[5px] font-mono text-[10px] text-fg-subtle"
           >
             <span
-              class="inline-block size-1.5 rounded-full bg-emerald-500"
+              class="inline-block size-[5px] rounded-full bg-success"
               aria-hidden="true"
             ></span>
             <span>agents available</span>
@@ -106,9 +106,9 @@
         <button
           type="button"
           (click)="toggleA11yMode()"
-          class="grid size-7 place-items-center rounded-xs transition-colors hover:bg-zinc-800/50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500"
-          [class.text-emerald-400]="a11yMode()"
-          [class.text-zinc-500]="!a11yMode()"
+          class="grid size-7 place-items-center rounded-xs transition-colors hover:bg-overlay"
+          [class.text-success]="a11yMode()"
+          [class.text-fg-subtle]="!a11yMode()"
           [attr.aria-label]="
             a11yMode()
               ? 'Disable accessibility mode (single-character shortcuts active)'
@@ -122,7 +122,7 @@
         <button
           type="button"
           (click)="logout()"
-          class="grid size-7 place-items-center rounded-xs text-zinc-500 transition-colors hover:bg-zinc-800/50 hover:text-red-400 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500"
+          class="grid size-7 place-items-center rounded-xs text-fg-subtle transition-colors hover:bg-overlay hover:text-error"
           aria-label="Sign out"
           data-testid="admin-logout"
         >

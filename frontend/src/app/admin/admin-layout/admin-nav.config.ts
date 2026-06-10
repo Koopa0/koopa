@@ -10,6 +10,7 @@ import {
   FileText,
   HeartPulse,
   Home,
+  Inbox as InboxIcon,
   Layers,
   ListChecks,
   Rss,
@@ -77,6 +78,13 @@ export const ADMIN_NAV: readonly AdminNavGroup[] = [
         icon: Calendar,
         shortcutHint: '',
         testId: 'admin-nav-plan',
+      },
+      {
+        label: 'Inbox',
+        route: '/admin/daily/inbox',
+        icon: InboxIcon,
+        shortcutHint: '',
+        testId: 'admin-nav-inbox',
       },
       {
         label: 'Todos',

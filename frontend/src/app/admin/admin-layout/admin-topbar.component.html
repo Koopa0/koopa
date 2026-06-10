@@ -1,9 +1,9 @@
 @let ctx = context();
 
-<div class="flex min-w-0 flex-1 items-baseline gap-3">
+<div class="flex min-w-0 flex-1 items-baseline gap-4">
   @if (ctx.title) {
     <h1
-      class="truncate text-sm font-semibold text-zinc-100"
+      class="truncate font-display text-sm font-semibold text-fg"
       data-testid="topbar-title"
     >
       {{ ctx.title }}
@@ -13,7 +13,7 @@
   @if (ctx.crumbs && ctx.crumbs.length > 0) {
     <nav
       aria-label="Breadcrumb"
-      class="flex min-w-0 items-baseline gap-1 truncate font-mono text-[11px] text-zinc-500"
+      class="flex min-w-0 items-baseline gap-1.5 truncate font-mono text-[11px] text-fg-subtle"
       data-testid="topbar-crumbs"
     >
       @for (crumb of ctx.crumbs; track $index) {
@@ -29,18 +29,13 @@
 <button
   type="button"
   (click)="openSearch()"
-  class="flex items-center gap-2 rounded-sm border border-zinc-800 bg-zinc-900 px-3 py-1.5 text-[11px] text-zinc-400 transition-colors hover:border-zinc-700 hover:text-zinc-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500"
+  class="flex min-w-60 cursor-pointer items-center gap-2 rounded-sm border border-border-faint bg-elevated px-2.5 py-1 text-xs text-fg-subtle transition-colors hover:border-border-strong"
   aria-label="Open search (Cmd+K)"
   data-testid="topbar-search"
 >
   <lucide-icon [img]="SearchIcon" [size]="13" />
-  <span>Search…</span>
-  <kbd
-    class="rounded-xs border border-zinc-700 bg-zinc-800 px-1 font-mono text-[10px] text-zinc-400"
-    aria-hidden="true"
-  >
-    ⌘K
-  </kbd>
+  <span class="flex-1 text-left">Search &amp; commands…</span>
+  <kbd class="kbd" aria-hidden="true">⌘K</kbd>
 </button>
 
 @if (ctx.actions && ctx.actions.length > 0) {
@@ -56,13 +51,13 @@
         (click)="runAction(action)"
         [disabled]="action.disabled"
         [class]="actionClasses()[action.kind ?? 'secondary']"
-        class="flex items-center gap-1.5 rounded-sm px-3 py-1.5 text-xs font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500 disabled:cursor-not-allowed"
+        class="flex items-center gap-1.5 rounded-sm border px-2.5 py-1 text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-40"
         [attr.data-testid]="'topbar-action-' + action.id"
       >
         <span>{{ action.label }}</span>
         @if (action.shortcutHint) {
           <kbd
-            class="rounded-xs border border-zinc-500/60 bg-black/20 px-1 font-mono text-[10px] opacity-70"
+            class="rounded-xs border border-border-strong/60 bg-bg/30 px-1 font-mono text-[10px] opacity-70"
             aria-hidden="true"
           >
             {{ action.shortcutHint }}
@@ -78,7 +73,7 @@
     <button
       type="button"
       (click)="toggleOverflow()"
-      class="grid size-8 place-items-center rounded-sm text-zinc-400 transition-colors hover:bg-zinc-800/80 hover:text-zinc-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500"
+      class="grid size-8 place-items-center rounded-sm text-fg-muted transition-colors hover:bg-overlay hover:text-fg"
       aria-label="More actions"
       [attr.aria-expanded]="overflowOpen()"
       data-testid="topbar-overflow-toggle"
@@ -98,7 +93,7 @@
         (keydown.escape)="closeOverflow()"
       ></div>
       <ul
-        class="absolute right-0 top-10 z-50 min-w-48 rounded-sm border border-zinc-800 bg-zinc-950 py-1 shadow-xs"
+        class="absolute right-0 top-[calc(100%+6px)] z-50 min-w-42 rounded-md border border-border bg-elevated p-1 shadow-(--shadow-1)"
         data-testid="topbar-overflow-menu"
       >
         @for (action of ctx.overflowActions; track action.id) {
@@ -107,14 +102,14 @@
               type="button"
               (click)="runAction(action)"
               [disabled]="action.disabled"
-              class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-zinc-300 transition-colors hover:bg-zinc-800/80 focus-visible:bg-zinc-800/80 focus-visible:outline-hidden disabled:cursor-not-allowed disabled:text-zinc-600"
-              [class.text-red-300]="action.kind === 'destructive'"
+              class="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-xs text-fg-muted transition-colors hover:bg-overlay hover:text-fg focus-visible:bg-overlay focus-visible:outline-hidden disabled:cursor-not-allowed disabled:opacity-40"
+              [class.text-error]="action.kind === 'destructive'"
               [attr.data-testid]="'topbar-overflow-action-' + action.id"
             >
               <span class="flex-1">{{ action.label }}</span>
               @if (action.shortcutHint) {
                 <kbd
-                  class="rounded-xs border border-zinc-700 bg-zinc-900 px-1 font-mono text-[10px] text-zinc-500"
+                  class="rounded-xs border border-border bg-bg px-1 font-mono text-[10px] text-fg-subtle"
                   aria-hidden="true"
                 >
                   {{ action.shortcutHint }}

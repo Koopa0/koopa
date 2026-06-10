@@ -13,9 +13,9 @@ type ActionKind = NonNullable<TopbarAction['kind']>;
 
 const ACTION_CLASS_MAP: Record<ActionKind, string> = {
   primary:
-    'bg-sky-600 text-white hover:bg-sky-500 disabled:bg-sky-900/60 disabled:text-sky-300',
-  secondary: 'text-zinc-300 hover:bg-zinc-800/80 disabled:text-zinc-600',
-  destructive: 'text-red-300 hover:bg-red-950/50 disabled:text-red-800',
+    'border-brand bg-brand font-semibold text-[oklch(0.12_0.02_260)] hover:bg-brand-strong',
+  secondary: 'border-border bg-elevated text-fg-muted hover:bg-overlay hover:text-fg',
+  destructive: 'border-transparent text-error hover:bg-error-bg',
 };
 
 /**
@@ -25,7 +25,7 @@ const ACTION_CLASS_MAP: Record<ActionKind, string> = {
  * the service signal and dispatches to action handlers owned by the
  * host page. Overflow actions surface inside a click-to-open `…` menu.
  *
- * Height: 48px.
+ * Height: 44px.
  */
 @Component({
   selector: 'app-admin-topbar',
@@ -35,7 +35,7 @@ const ACTION_CLASS_MAP: Record<ActionKind, string> = {
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
     class:
-      'flex h-12 shrink-0 items-center gap-3 border-b border-zinc-800 bg-zinc-950/80 px-4',
+      'flex h-11 shrink-0 items-center gap-4 border-b border-border bg-panel px-5',
     role: 'toolbar',
     'aria-label': 'Admin topbar',
   },
