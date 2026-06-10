@@ -20,7 +20,7 @@ const MIN_GOAL: GoalDetail = {
   deadline: null,
   quarter: '2026-Q2',
   created_at: '2026-01-01T00:00:00Z',
-  health: 'on-track',
+  updated_at: '2026-01-01T00:00:00Z',
   milestones: [],
   projects: [],
   recent_activity: [],

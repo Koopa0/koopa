@@ -43,7 +43,7 @@ export class GoalInspectorComponent {
   protected readonly milestoneProgress = computed(() => {
     const ms = this.goal()?.milestones ?? [];
     if (ms.length === 0) return null;
-    const done = ms.filter((m) => m.completed).length;
+    const done = ms.filter((m) => !!m.completed_at).length;
     return {
       done,
       total: ms.length,

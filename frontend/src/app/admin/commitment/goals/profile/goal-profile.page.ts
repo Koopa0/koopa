@@ -15,56 +15,24 @@ import {
 import { ActivatedRoute, Router } from '@angular/router';
 import { DatePipe } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { map } from 'rxjs';
+import { map, type Observable } from 'rxjs';
 import { PlanService } from '../../../../core/services/plan.service';
 import { NotificationService } from '../../../../core/services/notification.service';
 import { AdminTopbarService } from '../../../admin-layout/admin-topbar.service';
-import type { GoalDetail } from '../../../../core/models/admin.model';
+import type { GoalDetail, Milestone } from '../../../../core/models/admin.model';
 import type { GoalStatus } from '../../../../core/models';
-
-const STATUS_DOT_CLASS: Record<GoalStatus, string> = {
-  not_started: 'bg-zinc-400',
-  in_progress: 'bg-sky-400',
-  on_hold: 'bg-amber-400',
-  done: 'bg-emerald-500',
-  abandoned: 'bg-zinc-600',
-};
-
-const STATUS_LABEL: Record<GoalStatus, string> = {
-  not_started: 'not started',
-  in_progress: 'in progress',
-  on_hold: 'on hold',
-  done: 'done',
-  abandoned: 'abandoned',
-};
-
-// All 5 statuses are surfaced; legal transitions are enforced
-// server-side. Illegal transitions come back as HTTP 400 and are
-// toasted as "Illegal state transition".
-const STATUS_OPTIONS: readonly GoalStatus[] = [
-  'not_started',
-  'in_progress',
-  'on_hold',
-  'done',
-  'abandoned',
-];
-
-const HEALTH_LABEL: Record<NonNullable<GoalDetail['health']>, string> = {
-  'on-track': 'on track',
-  'at-risk': 'at risk',
-  stalled: 'stalled',
-};
-
-const HEALTH_CLASS: Record<NonNullable<GoalDetail['health']>, string> = {
-  'on-track': 'text-emerald-300',
-  'at-risk': 'text-amber-300',
-  stalled: 'text-red-300',
-};
+import {
+  GOAL_STATUS_CHIP_CLASS,
+  GOAL_STATUS_DOT_CLASS,
+  GOAL_STATUS_LABEL,
+  GOAL_STATUS_OPTIONS,
+} from '../goal-status';
 
 /**
- * Goal Profile Hero header + Overview +
- * Milestones (binary checklist, no percent-complete) + linked Projects
- * + Activity + System. Status changes go through
+ * Goal detail — title/description with a status chip + change menu,
+ * meta strip, milestones (inline add + click-to-toggle), linked
+ * projects, and the recent-activity rail. The status endpoint returns
+ * a partial object, so every mutation re-fetches the detail.
  */
 @Component({
   selector: 'app-goal-profile-page',
@@ -82,7 +50,7 @@ export class GoalProfilePageComponent {
   private readonly topbar = inject(AdminTopbarService);
   private readonly destroyRef = inject(DestroyRef);
 
-  protected readonly statusOptions = STATUS_OPTIONS;
+  protected readonly statusOptions = GOAL_STATUS_OPTIONS;
 
   private readonly idFromRoute = toSignal(
     this.route.paramMap.pipe(map((p) => p.get('id') ?? '')),
@@ -106,25 +74,14 @@ export class GoalProfilePageComponent {
   protected readonly isActioning = this._isActioning.asReadonly();
 
   protected readonly isStatusMenuOpen = signal(false);
+  protected readonly newMilestoneTitle = signal('');
 
-  /**
-   * Aggregate count derived client-side. Milestones themselves are
-   * binary (completed/not) —
-   * this value is a headline signal over the set, NOT per-milestone
-   * percent-complete which the contract forbids.
-   */
-  protected readonly milestonePercent = computed(() => {
-    const g = this.goal();
-    if (!g || g.milestones.length === 0) return 0;
-    const done = g.milestones.filter((m) => m.completed).length;
-    return Math.round((done / g.milestones.length) * 100);
-  });
+  protected readonly milestonesDone = computed(
+    () => this.goal()?.milestones.filter((m) => !!m.completed_at).length ?? 0,
+  );
 
   constructor() {
-    this.topbar.set({
-      title: 'Goal',
-      crumbs: ['Commitment', 'Goals & projects'],
-    });
+    this.topbar.set({ title: 'Goal', crumbs: ['Commitment', 'Goals'] });
 
     effect(() => {
       const g = this.goal();
@@ -138,20 +95,16 @@ export class GoalProfilePageComponent {
     this.destroyRef.onDestroy(() => this.topbar.reset());
   }
 
+  protected statusChipClass(status: GoalStatus): string {
+    return GOAL_STATUS_CHIP_CLASS[status];
+  }
+
   protected statusDotClass(status: GoalStatus): string {
-    return STATUS_DOT_CLASS[status];
+    return GOAL_STATUS_DOT_CLASS[status];
   }
 
   protected statusLabel(status: GoalStatus): string {
-    return STATUS_LABEL[status];
-  }
-
-  protected healthLabel(health: GoalDetail['health']): string {
-    return HEALTH_LABEL[health];
-  }
-
-  protected healthClass(health: GoalDetail['health']): string {
-    return HEALTH_CLASS[health];
+    return GOAL_STATUS_LABEL[status];
   }
 
   protected back(): void {
@@ -172,33 +125,73 @@ export class GoalProfilePageComponent {
 
   protected updateStatus(status: GoalStatus): void {
     const g = this.goal();
-    if (!g || this._isActioning() || status === g.status) {
-      this.closeStatusMenu();
-      return;
-    }
-
-    this._isActioning.set(true);
     this.closeStatusMenu();
-    this.planService
-      .updateGoalStatus(g.id, status)
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe({
-        next: () => {
-          this._isActioning.set(false);
-          this.notifications.success(`Status set to ${STATUS_LABEL[status]}.`);
-          this.resource.reload();
-        },
-        error: (err: unknown) => {
-          this._isActioning.set(false);
-          const httpStatus =
-            err instanceof HttpErrorResponse ? err.status : null;
-          if (httpStatus === 400) {
-            this.notifications.error('Illegal status transition.');
-          } else {
-            this.notifications.error('Failed to update status.');
-          }
-        },
-      });
+    if (!g || this._isActioning() || status === g.status) return;
+
+    this.mutate(this.planService.updateGoalStatus(g.id, status), {
+      success: `Status → ${GOAL_STATUS_LABEL[status]}`,
+      badRequest: 'Illegal status transition.',
+      failure: 'Failed to update status.',
+    });
+  }
+
+  protected onMilestoneInput(event: Event): void {
+    this.newMilestoneTitle.set((event.target as HTMLInputElement).value);
+  }
+
+  protected addMilestone(): void {
+    const g = this.goal();
+    const title = this.newMilestoneTitle().trim();
+    if (!g || !title || this._isActioning()) return;
+
+    this.mutate(this.planService.createMilestone(g.id, title), {
+      success: 'Milestone added',
+      conflict: 'A milestone with that title already exists.',
+      failure: 'Failed to add milestone.',
+      onSuccess: () => this.newMilestoneTitle.set(''),
+    });
+  }
+
+  protected toggleMilestone(m: Milestone): void {
+    const g = this.goal();
+    if (!g || this._isActioning()) return;
+
+    this.mutate(this.planService.toggleMilestone(g.id, m.id), {
+      failure: 'Failed to update milestone.',
+    });
+  }
+
+  /** Runs a mutation, toasts the outcome, and re-fetches the detail. */
+  private mutate<T>(
+    request: Observable<T>,
+    msg: {
+      success?: string;
+      conflict?: string;
+      badRequest?: string;
+      failure: string;
+      onSuccess?: () => void;
+    },
+  ): void {
+    this._isActioning.set(true);
+    request.pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: () => {
+        this._isActioning.set(false);
+        msg.onSuccess?.();
+        if (msg.success) this.notifications.success(msg.success);
+        this.resource.reload();
+      },
+      error: (err: unknown) => {
+        this._isActioning.set(false);
+        const status = err instanceof HttpErrorResponse ? err.status : null;
+        if (status === 409 && msg.conflict) {
+          this.notifications.error(msg.conflict);
+        } else if (status === 400 && msg.badRequest) {
+          this.notifications.error(msg.badRequest);
+        } else {
+          this.notifications.error(msg.failure);
+        }
+      },
+    });
   }
 }
 

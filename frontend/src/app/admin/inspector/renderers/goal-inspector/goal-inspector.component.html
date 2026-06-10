@@ -77,10 +77,6 @@
               <dd class="mt-1 font-medium text-zinc-200">{{ g.status }}</dd>
             </div>
             <div>
-              <dt class="text-zinc-400">Health</dt>
-              <dd class="mt-1 font-medium text-zinc-200">{{ g.health }}</dd>
-            </div>
-            <div>
               <dt class="text-zinc-400">Quarter</dt>
               <dd class="mt-1 font-mono font-medium text-zinc-200">
                 {{ g.quarter }}
@@ -124,13 +120,13 @@
                   <li class="flex items-start gap-2 text-zinc-300">
                     <span
                       class="mt-1.5 inline-block size-2 shrink-0 rounded-full"
-                      [class.bg-emerald-500]="m.completed"
-                      [class.bg-zinc-700]="!m.completed"
+                      [class.bg-emerald-500]="m.completed_at"
+                      [class.bg-zinc-700]="!m.completed_at"
                       aria-hidden="true"
                     ></span>
                     <span
-                      [class.text-zinc-400]="m.completed"
-                      [class.line-through]="m.completed"
+                      [class.text-zinc-400]="m.completed_at"
+                      [class.line-through]="m.completed_at"
                     >
                       {{ m.title }}
                     </span>
@@ -149,8 +145,8 @@
                     class="flex items-center justify-between rounded-md border border-zinc-800/80 bg-zinc-900/40 p-2 text-sm"
                   >
                     <span class="text-zinc-200">{{ p.title }}</span>
-                    <span class="font-mono text-xs text-zinc-400">
-                      {{ p.task_progress.done }}/{{ p.task_progress.total }}
+                    <span class="font-mono text-xs text-zinc-400 capitalize">
+                      {{ p.status }}
                     </span>
                   </li>
                 }

@@ -1,9 +1,22 @@
 <div class="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-5 px-6 py-6">
   <!-- Header -->
-  <div class="flex items-baseline justify-between border-b border-border pb-3">
+  <div class="border-b border-border pb-3">
     <h1 class="font-display text-2xl font-semibold text-fg">New goal</h1>
-    <span class="font-mono text-[11px] text-fg-faint">commitment / goals / new</span>
+    <p class="mt-1 text-[13px] text-fg-subtle">
+      A goal is a destination, not a task. Status is set by the system to
+      <span class="font-mono text-fg-muted">not_started</span> on create.
+    </p>
   </div>
+
+  @if (submitted() && goalForm().invalid()) {
+    <div
+      class="rounded-sm bg-error-bg px-3 py-2 text-xs text-error"
+      role="alert"
+      data-testid="goal-create-banner"
+    >
+      Some fields need attention before this can be created.
+    </div>
+  }
 
   @if (serverError(); as err) {
     <div
@@ -18,35 +31,44 @@
   <form
     novalidate
     (submit)="$event.preventDefault(); save()"
-    class="flex flex-col gap-5"
+    class="flex flex-col gap-4.5"
     data-testid="goal-create-form"
   >
     <!-- Title (required) -->
     <div class="flex flex-col gap-1.5">
-      <label for="goal-title" class="font-mono text-[11px] text-fg-subtle">
-        Title <span class="text-error">*</span>
-      </label>
+      <div class="flex items-baseline">
+        <label for="goal-title" class="font-mono text-[11px] text-fg-muted">
+          Title <span class="text-brand">*</span>
+        </label>
+        <span class="ml-auto font-mono text-[10px] text-fg-faint" data-testid="goal-title-count">
+          {{ goalForm.title().value().length }}/{{ titleMax }}
+        </span>
+      </div>
       <input
         id="goal-title"
         type="text"
         [formField]="goalForm.title"
         placeholder="Ship koopa v1 to a stable, self-hostable release"
         class="rounded-sm border border-border bg-elevated px-3 py-2 text-sm text-fg outline-none focus:border-brand"
-        [class.border-error]="goalForm.title().touched() && goalForm.title().invalid()"
+        [class.border-error]="showErrors(goalForm.title())"
       />
-      @if (goalForm.title().touched() && goalForm.title().invalid()) {
+      @if (showErrors(goalForm.title())) {
         @for (e of goalForm.title().errors(); track e.message) {
           <p class="font-mono text-[11px] text-error" role="alert">
             {{ e.message }}
           </p>
         }
+      } @else {
+        <p class="text-[11px] text-fg-faint">
+          Declarative and specific. You'll read this every quarter.
+        </p>
       }
     </div>
 
     <!-- Description -->
     <div class="flex flex-col gap-1.5">
-      <label for="goal-desc" class="font-mono text-[11px] text-fg-subtle">
-        Description
+      <label for="goal-desc" class="font-mono text-[11px] text-fg-muted">
+        Description <span class="text-fg-faint">(optional)</span>
       </label>
       <textarea
         id="goal-desc"
@@ -55,13 +77,16 @@
         placeholder="What does done look like, and why does it matter?"
         class="resize-y rounded-sm border border-border bg-elevated px-3 py-2 text-sm leading-relaxed text-fg outline-none focus:border-brand"
       ></textarea>
+      <p class="text-[11px] text-fg-faint">
+        Context for future-you and the agents that read this.
+      </p>
     </div>
 
-    <div class="grid grid-cols-1 gap-5 sm:grid-cols-2">
+    <div class="grid grid-cols-1 gap-4.5 sm:grid-cols-2">
       <!-- Quarter -->
       <div class="flex flex-col gap-1.5">
-        <label for="goal-quarter" class="font-mono text-[11px] text-fg-subtle">
-          Quarter
+        <label for="goal-quarter" class="font-mono text-[11px] text-fg-muted">
+          Quarter <span class="text-fg-faint">(optional)</span>
         </label>
         <select
           id="goal-quarter"
@@ -77,8 +102,8 @@
 
       <!-- Deadline -->
       <div class="flex flex-col gap-1.5">
-        <label for="goal-deadline" class="font-mono text-[11px] text-fg-subtle">
-          Deadline
+        <label for="goal-deadline" class="font-mono text-[11px] text-fg-muted">
+          Deadline <span class="text-fg-faint">(optional)</span>
         </label>
         <input
           id="goal-deadline"
@@ -86,21 +111,17 @@
           [formField]="goalForm.deadline"
           class="rounded-sm border border-border bg-elevated px-3 py-2 text-sm text-fg outline-none focus:border-brand"
         />
+        <p class="text-[11px] text-fg-faint">
+          A soft commitment, movable with a reason.
+        </p>
       </div>
     </div>
-
-    <!-- Server-set status note -->
-    <p class="font-mono text-[11px] text-fg-faint">
-      Status is set to
-      <span class="text-fg-subtle">not_started</span> on creation — change it
-      from the goal's detail page.
-    </p>
 
     <!-- Actions -->
     <div class="flex items-center gap-3 border-t border-border pt-4">
       <button
         type="submit"
-        [disabled]="goalForm().invalid() || submitting()"
+        [disabled]="submitting() || (submitted() && goalForm().invalid())"
         class="rounded-sm bg-brand px-4 py-2 text-sm font-medium text-bg transition-colors hover:bg-brand-strong disabled:cursor-not-allowed disabled:opacity-40"
         data-testid="goal-create-submit"
       >
@@ -112,6 +133,11 @@
       >
         Cancel
       </a>
+      <span
+        class="ml-auto rounded-sm bg-overlay px-2 py-1 font-mono text-[10px] uppercase tracking-wider text-fg-subtle"
+      >
+        status set on create: not_started
+      </span>
     </div>
   </form>
 </div>

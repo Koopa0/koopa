@@ -22,21 +22,27 @@ describe('GoalInspectorComponent', () => {
     deadline: null,
     quarter: '2026-Q2',
     created_at: '2026-04-01T00:00:00Z',
-    health: 'on-track',
+    updated_at: '2026-04-13T00:00:00Z',
     milestones: [
       {
         id: 'm1',
+        goal_id: 'g1',
         title: 'design spec',
-        completed: true,
+        description: '',
         completed_at: '2026-04-08T00:00:00Z',
         position: 1,
+        created_at: '2026-04-01T00:00:00Z',
+        updated_at: '2026-04-08T00:00:00Z',
       },
       {
         id: 'm2',
+        goal_id: 'g1',
         title: 'phase 1 impl',
-        completed: false,
+        description: '',
         completed_at: null,
         position: 2,
+        created_at: '2026-04-01T00:00:00Z',
+        updated_at: '2026-04-01T00:00:00Z',
       },
     ],
     projects: [
@@ -44,7 +50,6 @@ describe('GoalInspectorComponent', () => {
         id: 'p1',
         title: 'mcp v2 rewrite',
         status: 'in_progress',
-        task_progress: { done: 6, total: 14 },
       },
     ],
     recent_activity: [
