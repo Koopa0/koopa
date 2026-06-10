@@ -38,11 +38,22 @@ koopa models the work instead. Goals, projects, todos, learning attempts, daily 
 
 The actor axis is **flow vs. decision**, not human vs. agent:
 
-- **Cowork agents drive flows** through a small MCP toolset, in conversation with you.
+- **Agents drive flows** through a small MCP toolset, in conversation with you.
 - **You are the sole decision-maker _and_ the sole router.** Coordination is the shared state in the database, not a message bus — agents read each other's effects through the schema, never through direct dispatch.
 - **The admin UI is where you confirm, decide, and view** — it owns every high-commitment write.
 
-Functionally the agents are a **planner**, a **learning coach**, a **search window**, and a **note co-author**. They run on declared cadences — the planner at 8 a.m., others on their own schedules pinned in the Go agent registry (`internal/agent/registry.go::BuiltinAgents()`) — but execution is driven by an external Cowork/Desktop runner, not by this repo; the backend owns the registry metadata, the schema, and the `process_runs` table that audits each external run.
+The working roster (`internal/agent/registry.go::BuiltinAgents()`):
+
+| Identity | Runs as | Role |
+|---|---|---|
+| `planner` | Claude Cowork | Morning briefing, candidate day plans, inbox capture, search, note co-author |
+| `learning-studio` | Claude Cowork | Learning coach — sessions, attempts, curriculum |
+| `koopa0-dev` / `go-spec` | Claude Code | Development sessions in this repo |
+| `codex` | Codex CLI | Dev collaborator — repo work and cross-review sessions |
+| `hermes` | Claude Code (scheduled) | Curates the personal Obsidian vault on assigned cron jobs |
+| `human` | — | Koopa: the only decision-maker, the only router |
+
+Cowork agents run on declared cadences — the planner at 8 a.m., pinned in the registry — but execution is driven by external runners, not by this repo; the backend owns the registry metadata, the schema, and the `process_runs` table that audits each external run.
 
 Writes are gated by **identity**. Every MCP call self-identifies via an `as` field; the server resolves it against the registry and applies three-axis authorization (`internal/mcp/authz.go`): an **author** allowlist (a human is always permitted), **registration** (a known, non-anonymous caller), and **self** (you may only act on your own rows). An unknown caller fails closed on every mutating tool.
 
@@ -114,7 +125,7 @@ A single-admin system by design: no RBAC, no multi-tenant, no "share with a coll
 | Embedding        | `gemini-embedding-2` (1536d Matryoshka); pgvector columns + HNSW indexes in place |
 | Scheduling       | Agent cadences declared in `internal/agent/registry.go`; execution driven by an external Cowork/Desktop runner; audited via `process_runs` |
 | Frontend         | Angular 22 (SSR, zoneless, Signal Forms), Tailwind CSS v4                      |
-| AI collaboration | Claude (Cowork + Code), MCP (11 workflow tools)                               |
+| AI collaboration | Claude (Cowork + Code), Codex CLI, MCP (11 workflow tools)                    |
 | Cache            | Ristretto (in-memory, single machine)                                         |
 | Object storage   | Cloudflare R2 (S3-compatible)                                                  |
 

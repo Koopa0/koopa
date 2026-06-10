@@ -48,6 +48,18 @@ func BuiltinAgents() []Agent {
 			Description: "Go spec configuration project",
 		},
 		{
+			Name:        "codex",
+			DisplayName: "Codex",
+			Platform:    "codex",
+			Description: "Dev collaborator (Codex CLI) — repo work and cross-review sessions",
+		},
+		{
+			Name:        "hermes",
+			DisplayName: "Hermes",
+			Platform:    "claude-code",
+			Description: "Scheduled assistant — curates the personal Obsidian vault on assigned cron jobs",
+		},
+		{
 			Name:        "claude",
 			DisplayName: "Claude",
 			Platform:    "claude-web",
