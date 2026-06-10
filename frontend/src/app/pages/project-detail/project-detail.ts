@@ -1,68 +1,140 @@
 import {
   Component,
-  DestroyRef,
-  inject,
-  signal,
-  input,
   ChangeDetectionStrategy,
-  OnInit,
+  computed,
+  effect,
+  inject,
+  input,
 } from '@angular/core';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { Location } from '@angular/common';
-import {
-  LucideAngularModule,
-  ArrowLeft,
-  Github,
-  ExternalLink,
-} from 'lucide-angular';
+import { RouterLink } from '@angular/router';
+import { rxResource } from '@angular/core/rxjs-interop';
+import { catchError, forkJoin, map, of } from 'rxjs';
+import { LucideAngularModule, Github, ExternalLink } from 'lucide-angular';
 import { ProjectService } from '../../core/services/project/project.service';
 import { SeoService } from '../../core/services/seo/seo.service';
 import { environment } from '../../../environments/environment';
-import type { ApiProject, ProjectStatus } from '../../core/models';
+import type { ApiPortfolioProject, ApiProject } from '../../core/models';
+
+/**
+ * The fields the project page renders. GET /api/projects/{slug} returns
+ * only the bare project row, so the rich profile (role, tech stack,
+ * narrative sections, highlights, links) is composed from the matching
+ * GET /api/portfolio listing; the bare row is the fallback when the
+ * project has no portfolio profile.
+ */
+interface ProjectProfile {
+  slug: string;
+  title: string;
+  description: string;
+  long_description: string | null;
+  role: string | null;
+  tech_stack: string[];
+  highlights: string[];
+  problem: string | null;
+  solution: string | null;
+  architecture: string | null;
+  results: string | null;
+  github_url: string | null;
+  live_url: string | null;
+}
+
+function fromListing(listing: ApiPortfolioProject): ProjectProfile {
+  return {
+    slug: listing.slug,
+    title: listing.title,
+    description: listing.description,
+    long_description: listing.long_description ?? null,
+    role: listing.role ?? null,
+    tech_stack: listing.tech_stack,
+    highlights: listing.highlights,
+    problem: listing.problem ?? null,
+    solution: listing.solution ?? null,
+    architecture: listing.architecture ?? null,
+    results: listing.results ?? null,
+    github_url: listing.github_url ?? null,
+    live_url: listing.live_url ?? null,
+  };
+}
+
+function fromBareRow(row: ApiProject): ProjectProfile {
+  return {
+    slug: row.slug,
+    title: row.title,
+    description: row.description,
+    long_description: null,
+    role: null,
+    tech_stack: [],
+    highlights: [],
+    problem: null,
+    solution: null,
+    architecture: null,
+    results: null,
+    github_url: null,
+    live_url: null,
+  };
+}
 
 @Component({
   selector: 'app-project-detail',
   standalone: true,
-  imports: [LucideAngularModule],
+  imports: [RouterLink, LucideAngularModule],
   templateUrl: './project-detail.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
-export class ProjectDetailComponent implements OnInit {
+export class ProjectDetailComponent {
   /** Route param: projects/:slug */
   readonly slug = input.required<string>();
 
-  private readonly location = inject(Location);
   private readonly projectService = inject(ProjectService);
   private readonly seoService = inject(SeoService);
-  private readonly destroyRef = inject(DestroyRef);
 
-  protected readonly project = signal<ApiProject | null>(null);
-  protected readonly isLoading = signal(true);
-  protected readonly isNotFound = signal(false);
+  protected readonly projectResource = rxResource<
+    ProjectProfile | null,
+    string
+  >({
+    params: () => this.slug(),
+    stream: ({ params }) =>
+      forkJoin({
+        listings: this.projectService
+          .getPortfolio()
+          .pipe(catchError(() => of([] as ApiPortfolioProject[]))),
+        row: this.projectService
+          .getProjectBySlug(params)
+          .pipe(catchError(() => of(null))),
+      }).pipe(
+        map(({ listings, row }) => {
+          const listing = listings.find((l) => l.slug === params);
+          if (listing) return fromListing(listing);
+          return row ? fromBareRow(row) : null;
+        }),
+      ),
+  });
 
-  protected readonly ArrowLeftIcon = ArrowLeft;
+  protected readonly project = computed(() =>
+    this.projectResource.hasValue() ? this.projectResource.value() : null,
+  );
+
+  protected readonly isLoading = computed(
+    () => this.projectResource.status() === 'loading',
+  );
+
+  protected readonly isNotFound = computed(
+    () => !this.isLoading() && this.project() === null,
+  );
+
   protected readonly GithubIcon = Github;
   protected readonly ExternalLinkIcon = ExternalLink;
 
-  ngOnInit(): void {
-    this.loadProject(this.slug());
-  }
-
-  private loadProject(slug: string): void {
-    this.projectService.getProjectBySlug(slug).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
-      next: (project) => {
-        this.project.set(project);
-        this.isLoading.set(false);
+  constructor() {
+    effect(() => {
+      const project = this.project();
+      if (project) {
         this.updateSeo(project);
-      },
-      error: () => {
-        this.isNotFound.set(true);
-        this.isLoading.set(false);
-      },
+      }
     });
   }
 
-  private updateSeo(project: ApiProject): void {
+  private updateSeo(project: ProjectProfile): void {
     const projectUrl = `${environment.siteUrl}/projects/${project.slug}`;
     this.seoService.updateMeta({
       title: `${project.title} | Koopa`,
@@ -73,33 +145,5 @@ export class ProjectDetailComponent implements OnInit {
       ogType: 'website',
       canonicalUrl: projectUrl,
     });
-  }
-
-  protected goBack(): void {
-    this.location.back();
-  }
-
-  protected getStatusLabel(status: ProjectStatus): string {
-    const labels: Record<ProjectStatus, string> = {
-      'planned': 'Planned',
-      'in_progress': 'In Progress',
-      'on_hold': 'On Hold',
-      'completed': 'Completed',
-      'maintained': 'Maintained',
-      'archived': 'Archived',
-    };
-    return labels[status];
-  }
-
-  protected getStatusClass(status: ProjectStatus): string {
-    const classes: Record<ProjectStatus, string> = {
-      'planned': 'bg-zinc-800 text-zinc-300',
-      'in_progress': 'bg-amber-900/50 text-amber-400',
-      'on_hold': 'bg-orange-900/50 text-orange-400',
-      'completed': 'bg-emerald-900/50 text-emerald-400',
-      'maintained': 'bg-sky-900/50 text-sky-400',
-      'archived': 'bg-zinc-800 text-zinc-400',
-    };
-    return classes[status];
   }
 }

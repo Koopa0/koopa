@@ -1,25 +1,25 @@
 import {
   Component,
   ChangeDetectionStrategy,
-  DestroyRef,
-  inject,
-  signal,
   computed,
+  inject,
   OnInit,
 } from '@angular/core';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
-import {
-  LucideAngularModule,
-  ArrowRight,
-  FolderOpen,
-} from 'lucide-angular';
+import { rxResource } from '@angular/core/rxjs-interop';
+import { LucideAngularModule, ArrowRight, FolderOpen } from 'lucide-angular';
 import { ProjectService } from '../../core/services/project/project.service';
 import { SeoService } from '../../core/services/seo/seo.service';
 import { environment } from '../../../environments/environment';
 import { buildCollectionPageSchema } from '../../core/services/seo/json-ld.util';
-import type { ApiProject, ProjectStatus } from '../../core/models';
+import type { ApiPortfolioProject } from '../../core/models';
 
+/**
+ * The projects index — one featured card (the portfolio entry the
+ * backend flags `featured`) above compact rows for the rest. Data comes
+ * from GET /api/portfolio, the rich public profile shape; GET
+ * /api/projects only carries bare rows.
+ */
 @Component({
   selector: 'app-projects',
   standalone: true,
@@ -30,88 +30,57 @@ import type { ApiProject, ProjectStatus } from '../../core/models';
 export class ProjectsComponent implements OnInit {
   private readonly projectService = inject(ProjectService);
   private readonly seoService = inject(SeoService);
-  private readonly destroyRef = inject(DestroyRef);
 
-  protected readonly projects = signal<ApiProject[]>([]);
-  protected readonly isLoading = signal(true);
-  protected readonly error = signal<string | null>(null);
-  protected readonly selectedStatus = signal<ProjectStatus | 'all'>('all');
-
-  protected readonly filteredProjects = computed(() => {
-    const status = this.selectedStatus();
-    const allProjects = this.projects();
-    if (status === 'all') {
-      return allProjects;
-    }
-    return allProjects.filter((p) => p.status === status);
+  protected readonly portfolioResource = rxResource<
+    ApiPortfolioProject[],
+    void
+  >({
+    stream: () => this.projectService.getPortfolio(),
   });
 
-  protected readonly statusFilters: {
-    value: ProjectStatus | 'all';
-    label: string;
-  }[] = [
-    { value: 'all', label: 'All' },
-    { value: 'completed', label: 'Completed' },
-    { value: 'in_progress', label: 'In Progress' },
-    { value: 'maintained', label: 'Maintained' },
-    { value: 'archived', label: 'Archived' },
-  ];
+  protected readonly projects = computed(() =>
+    this.portfolioResource.hasValue() ? this.portfolioResource.value() : [],
+  );
+
+  /** The backend-flagged featured project (first one when several). */
+  protected readonly featured = computed(
+    () => this.projects().find((p) => p.featured) ?? null,
+  );
+
+  /** Everything that is not the featured card, as compact rows. */
+  protected readonly rest = computed(() => {
+    const featured = this.featured();
+    return this.projects().filter((p) => p !== featured);
+  });
+
+  protected readonly isLoading = computed(
+    () => this.portfolioResource.status() === 'loading',
+  );
+
+  protected readonly hasError = computed(
+    () => this.portfolioResource.status() === 'error',
+  );
 
   protected readonly ArrowRightIcon = ArrowRight;
   protected readonly FolderOpenIcon = FolderOpen;
 
   ngOnInit(): void {
+    const description =
+      'Open-source and personal projects — backend services, CLI tools, and full-stack apps.';
     this.seoService.updateMeta({
       title: 'Projects',
-      description: 'Open-source and personal projects — backend services, CLI tools, and full-stack apps.',
+      description,
       ogUrl: `${environment.siteUrl}/projects`,
+      canonicalUrl: `${environment.siteUrl}/projects`,
       jsonLd: buildCollectionPageSchema({
         name: 'Projects',
-        description: 'Open-source and personal projects — backend services, CLI tools, and full-stack apps.',
+        description,
         url: `${environment.siteUrl}/projects`,
       }),
     });
-    this.loadProjects();
   }
 
-  protected onStatusChange(status: ProjectStatus | 'all'): void {
-    this.selectedStatus.set(status);
-  }
-
-  protected getStatusLabel(status: ProjectStatus): string {
-    const labels: Record<ProjectStatus, string> = {
-      'planned': 'Planned',
-      'in_progress': 'In Progress',
-      'on_hold': 'On Hold',
-      'completed': 'Completed',
-      'maintained': 'Maintained',
-      'archived': 'Archived',
-    };
-    return labels[status];
-  }
-
-  protected getStatusClass(status: ProjectStatus): string {
-    const classes: Record<ProjectStatus, string> = {
-      'planned': 'bg-zinc-800 text-zinc-300',
-      'in_progress': 'bg-amber-900/50 text-amber-400',
-      'on_hold': 'bg-orange-900/50 text-orange-400',
-      'completed': 'bg-emerald-900/50 text-emerald-400',
-      'maintained': 'bg-sky-900/50 text-sky-400',
-      'archived': 'bg-zinc-800 text-zinc-400',
-    };
-    return classes[status];
-  }
-
-  protected loadProjects(): void {
-    this.projectService.getAllProjects().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
-      next: (projects) => {
-        this.projects.set(projects);
-        this.isLoading.set(false);
-      },
-      error: () => {
-        this.error.set('Failed to load projects');
-        this.isLoading.set(false);
-      },
-    });
+  protected retry(): void {
+    this.portfolioResource.reload();
   }
 }

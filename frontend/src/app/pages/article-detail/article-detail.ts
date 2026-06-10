@@ -15,29 +15,32 @@ import {
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { isPlatformBrowser } from '@angular/common';
 import { Location, DatePipe } from '@angular/common';
-import {
-  LucideAngularModule,
-  ArrowLeft,
-  Share2,
-  AlertCircle,
-  Copy,
-  Check,
-} from 'lucide-angular';
+import { RouterLink } from '@angular/router';
+import { LucideAngularModule, ArrowLeft, AlertCircle } from 'lucide-angular';
 import { environment } from '../../../environments/environment';
 import { ArticleService } from '../../core/services/article.service';
 import { ContentService } from '../../core/services/content.service';
 import { MarkdownService } from '../../core/services/markdown.service';
 import type { ApiContent, ApiRelatedContent } from '../../core/models';
+import { contentTypeLabelEn } from '../../core/models';
 import { SeoService } from '../../core/services/seo/seo.service';
 import { buildBlogPostingSchema } from '../../core/services/seo/json-ld.util';
 import { TableOfContentsComponent } from '../../shared/table-of-contents/table-of-contents.component';
 import { RelatedArticlesComponent } from '../../shared/related-articles/related-articles.component';
 
+/**
+ * The reading surface — renders every written content type (article /
+ * essay / build-log / til / digest) fetched by slug. Has two homes:
+ * /articles/:slug (full chrome: breadcrumbs, TOC, read next) and
+ * /preview/:slug (chrome-less column for the admin publish-preview
+ * iframe, noindex).
+ */
 @Component({
   selector: 'app-article-detail',
   standalone: true,
   imports: [
     DatePipe,
+    RouterLink,
     LucideAngularModule,
     TableOfContentsComponent,
     RelatedArticlesComponent,
@@ -46,8 +49,11 @@ import { RelatedArticlesComponent } from '../../shared/related-articles/related-
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class ArticleDetailComponent implements OnInit {
-  /** Route param: articles/:slug */
+  /** Route param: articles/:slug or preview/:slug */
   readonly slug = input.required<string>();
+
+  /** Route data flag: /preview/:slug renders the bare reading column. */
+  readonly preview = input(false);
 
   private readonly location = inject(Location);
   private readonly articleService = inject(ArticleService);
@@ -62,7 +68,6 @@ export class ArticleDetailComponent implements OnInit {
   protected readonly relatedArticles = signal<ApiRelatedContent[]>([]);
   protected readonly isLoading = signal(true);
   protected readonly error = signal<string | null>(null);
-  protected readonly isCopied = signal(false);
 
   protected readonly rawHtml = computed(() => {
     const article = this.article();
@@ -77,11 +82,29 @@ export class ArticleDetailComponent implements OnInit {
   /** Sanitized HTML — MarkdownService uses DOMPurify, safe for [innerHTML] */
   protected readonly parsedContent = this.rawHtml;
 
+  /** Human label for the breadcrumb tail (e.g. "Build Log"). */
+  protected readonly typeLabel = computed(() => {
+    const article = this.article();
+    return article ? contentTypeLabelEn(article.type) : '';
+  });
+
+  /** First attached topic drives the breadcrumb topic link. */
+  protected readonly primaryTopic = computed(
+    () => this.article()?.topics[0] ?? null,
+  );
+
+  /**
+   * Layout wrapper: full mode centers a reading column with the
+   * "On this page" rail; preview mode is a bare, left-aligned column.
+   */
+  protected readonly wrapperClass = computed(() =>
+    this.preview()
+      ? 'max-w-[760px] px-6 pt-8 pb-16 sm:px-10'
+      : 'mx-auto max-w-6xl px-6 pt-11 pb-28 sm:px-10 lg:grid lg:grid-cols-[minmax(0,680px)_192px] lg:justify-center lg:gap-14',
+  );
+
   protected readonly ArrowLeftIcon = ArrowLeft;
-  protected readonly Share2Icon = Share2;
   protected readonly AlertCircleIcon = AlertCircle;
-  protected readonly CopyIcon = Copy;
-  protected readonly CheckIcon = Check;
 
   private isBrowser = false;
 
@@ -115,7 +138,9 @@ export class ArticleDetailComponent implements OnInit {
           this.article.set(article);
           this.isLoading.set(false);
           this.updateSeo(article);
-          this.loadRelated(article.slug);
+          if (!this.preview()) {
+            this.loadRelated(article.slug);
+          }
         },
         error: () => {
           this.error.set('Failed to load article');
@@ -141,6 +166,16 @@ export class ArticleDetailComponent implements OnInit {
   }
 
   private updateSeo(article: ApiContent): void {
+    if (this.preview()) {
+      // The preview iframe must never be indexed or carry canonical/JSON-LD.
+      this.seoService.updateMeta({
+        title: article.title,
+        description: article.excerpt,
+        noIndex: true,
+      });
+      return;
+    }
+
     const articleUrl = `${environment.siteUrl}/articles/${article.slug}`;
     this.seoService.updateMeta({
       title: article.title,
@@ -178,7 +213,7 @@ export class ArticleDetailComponent implements OnInit {
 
       const btn = document.createElement('button');
       btn.className =
-        'copy-btn absolute right-2 top-2 rounded-xs border border-zinc-700 bg-zinc-800 px-2 py-1 text-xs text-zinc-400 opacity-0 transition-opacity hover:text-zinc-200 group-hover:opacity-100';
+        'copy-btn absolute right-2 top-2 rounded-xs border border-border bg-elevated px-2 py-1 text-xs text-fg-subtle opacity-0 transition-opacity hover:text-fg group-hover:opacity-100';
       btn.textContent = 'Copy';
       btn.type = 'button';
       wrapper.classList.add('group');
@@ -193,30 +228,6 @@ export class ArticleDetailComponent implements OnInit {
             btn.textContent = 'Copy';
           }, 1500);
         });
-      });
-    }
-  }
-
-  protected shareArticle(): void {
-    if (!isPlatformBrowser(this.platformId)) {
-      return;
-    }
-
-    const article = this.article();
-    if (!article) {
-      return;
-    }
-
-    if (navigator.share) {
-      navigator.share({
-        title: article.title,
-        text: article.excerpt,
-        url: window.location.href,
-      });
-    } else {
-      navigator.clipboard.writeText(window.location.href).then(() => {
-        this.isCopied.set(true);
-        setTimeout(() => this.isCopied.set(false), 2000);
       });
     }
   }

@@ -4,11 +4,14 @@ import { contentEditorCanDeactivate } from './admin/knowledge/content/editor/con
 import { noteEditorCanDeactivate } from './admin/knowledge/notes/editor/note-editor.guard';
 
 export const routes: Routes = [
+  // The articles index IS the home page — one consolidated reading index
+  // for every written content type (article / essay / build-log / til /
+  // digest), filterable via the `type` query param.
   {
     path: '',
     pathMatch: 'full',
     loadComponent: () =>
-      import('./pages/home/home').then((m) => m.HomeComponent),
+      import('./pages/articles/articles').then((m) => m.ArticlesComponent),
   },
   { path: 'home', redirectTo: '/', pathMatch: 'full' },
   {
@@ -23,18 +26,29 @@ export const routes: Routes = [
         (m) => m.ArticleDetailComponent,
       ),
   },
+  // Chrome-less render of the same reading surface for the admin
+  // publish-preview iframe (no header / footer / TOC / nav).
   {
-    path: 'essays',
+    path: 'preview/:slug',
     loadComponent: () =>
-      import('./pages/essays/essays').then((m) => m.EssaysComponent),
-  },
-  {
-    path: 'essays/:slug',
-    loadComponent: () =>
-      import('./pages/essay-detail/essay-detail').then(
-        (m) => m.EssayDetailComponent,
+      import('./pages/article-detail/article-detail').then(
+        (m) => m.ArticleDetailComponent,
       ),
+    data: { preview: true },
   },
+  // Retired per-type list pages — the consolidated index covers them.
+  { path: 'essays', redirectTo: '/articles?type=essay', pathMatch: 'full' },
+  { path: 'til', redirectTo: '/articles?type=til', pathMatch: 'full' },
+  {
+    path: 'build-logs',
+    redirectTo: '/articles?type=build-log',
+    pathMatch: 'full',
+  },
+  // Retired per-type detail pages — every content type reads at
+  // /articles/:slug (one reading surface).
+  { path: 'essays/:slug', redirectTo: '/articles/:slug' },
+  { path: 'til/:slug', redirectTo: '/articles/:slug' },
+  { path: 'build-logs/:slug', redirectTo: '/articles/:slug' },
   {
     path: 'projects',
     loadComponent: () =>
@@ -60,31 +74,9 @@ export const routes: Routes = [
       ),
   },
   {
-    path: 'til',
-    loadComponent: () =>
-      import('./pages/tils/tils').then((m) => m.TilsComponent),
-  },
-  {
-    path: 'til/:slug',
-    loadComponent: () =>
-      import('./pages/til-detail/til-detail').then((m) => m.TilDetailComponent),
-  },
-  {
     path: 'search',
     loadComponent: () =>
       import('./pages/search/search').then((m) => m.SearchComponent),
-  },
-  {
-    path: 'build-logs',
-    loadComponent: () =>
-      import('./pages/build-logs/build-logs').then((m) => m.BuildLogsComponent),
-  },
-  {
-    path: 'build-logs/:slug',
-    loadComponent: () =>
-      import('./pages/build-log-detail/build-log-detail').then(
-        (m) => m.BuildLogDetailComponent,
-      ),
   },
   {
     path: 'resume',

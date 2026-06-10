@@ -7,9 +7,28 @@ import {
 import { provideRouter } from '@angular/router';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ArticlesComponent } from './articles';
-import type { ApiContent, ApiPaginationMeta } from '../../core/models';
+import type {
+  ApiContent,
+  ApiPaginationMeta,
+  ApiTopic,
+} from '../../core/models';
 
-function buildMockArticle(overrides: Partial<ApiContent> = {}): ApiContent {
+function buildMockTopic(overrides: Partial<ApiTopic> = {}): ApiTopic {
+  return {
+    id: 'topic-1',
+    slug: 'go',
+    name: 'Go',
+    description: 'Go programming',
+    icon: '',
+    content_count: 1,
+    sort_order: 1,
+    created_at: '2026-01-01T00:00:00Z',
+    updated_at: '2026-01-01T00:00:00Z',
+    ...overrides,
+  };
+}
+
+function buildMockContent(overrides: Partial<ApiContent> = {}): ApiContent {
   return {
     id: 'test-1',
     slug: 'test-article',
@@ -19,7 +38,7 @@ function buildMockArticle(overrides: Partial<ApiContent> = {}): ApiContent {
     type: 'article',
     status: 'published',
     tags: ['angular', 'testing'],
-    topics: [],
+    topics: [buildMockTopic()],
     cover_image: null,
     source: null,
     source_type: null,
@@ -41,7 +60,7 @@ function buildMockMeta(
   return {
     total: 1,
     page: 1,
-    per_page: 12,
+    per_page: 50,
     total_pages: 1,
     ...overrides,
   };
@@ -72,57 +91,136 @@ describe('ArticlesComponent', () => {
     httpTesting.verify();
   });
 
-  it('should create', () => {
+  /** Flush effects + microtasks so rxResource issues its requests. */
+  async function settle(): Promise<void> {
     fixture.detectChanges();
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    fixture.detectChanges();
+  }
+
+  function flushTopics(topics: ApiTopic[] = [buildMockTopic()]): void {
+    const req = httpTesting.expectOne(
+      (r) => r.url.includes('/api/topics') && r.method === 'GET',
+    );
+    req.flush({ data: topics });
+  }
+
+  function flushContents(
+    contents: ApiContent[],
+    meta: ApiPaginationMeta = buildMockMeta({ total: contents.length }),
+  ): void {
     const req = httpTesting.expectOne(
       (r) => r.url.includes('/api/contents') && r.method === 'GET',
     );
-    req.flush({ data: [], meta: buildMockMeta({ total: 0 }) });
+    req.flush({ data: contents, meta });
+  }
+
+  it('should create', async () => {
+    await settle();
+    flushContents([]);
+    flushTopics();
     expect(component).toBeTruthy();
   });
 
-  it('should fetch articles on init and populate articles signal', () => {
-    const mockArticles = [
-      buildMockArticle({ id: '1', title: 'First' }),
-      buildMockArticle({ id: '2', title: 'Second' }),
-    ];
-
-    fixture.detectChanges();
-
-    const req = httpTesting.expectOne(
-      (r) => r.url.includes('/api/contents') && r.method === 'GET',
-    );
-    req.flush({ data: mockArticles, meta: buildMockMeta({ total: 2 }) });
-    fixture.detectChanges();
-
-    expect(component['articles']()).toHaveLength(2);
-    expect(component['totalArticles']()).toBe(2);
-    expect(component['isLoading']()).toBe(false);
-  });
-
-  it('should display articles in the template after loading', () => {
-    const mockArticles = [
-      buildMockArticle({
-        id: '1',
-        title: 'Angular Signals Guide',
-        slug: 'angular-signals',
-      }),
-    ];
-
-    fixture.detectChanges();
-
-    const req = httpTesting.expectOne(
-      (r) => r.url.includes('/api/contents') && r.method === 'GET',
-    );
-    req.flush({ data: mockArticles, meta: buildMockMeta({ total: 1 }) });
-    fixture.detectChanges();
+  it('should render rows for every written content type when loaded', async () => {
+    await settle();
+    flushContents([
+      buildMockContent({ id: '1', title: 'An Article', type: 'article' }),
+      buildMockContent({ id: '2', title: 'An Essay', type: 'essay' }),
+      buildMockContent({ id: '3', title: 'A Build Log', type: 'build-log' }),
+      buildMockContent({ id: '4', title: 'A TIL', type: 'til' }),
+      buildMockContent({ id: '5', title: 'A Digest', type: 'digest' }),
+    ]);
+    flushTopics();
+    await settle();
 
     const el = fixture.nativeElement as HTMLElement;
-    expect(el.textContent).toContain('Angular Signals Guide');
+    const rows = el.querySelectorAll('[data-testid="index-row"]');
+    expect(rows.length).toBe(5);
+    expect(el.textContent).toContain('An Essay');
+    expect(el.textContent).toContain('A Build Log');
   });
 
-  it('should set error signal when HTTP request fails', () => {
-    fixture.detectChanges();
+  it('should link every row to the single reading surface at /articles/:slug', async () => {
+    await settle();
+    flushContents([
+      buildMockContent({ id: '1', slug: 'my-til', type: 'til' }),
+    ]);
+    flushTopics();
+    await settle();
+
+    const row = (fixture.nativeElement as HTMLElement).querySelector(
+      '[data-testid="index-row"]',
+    );
+    expect(row?.getAttribute('href')).toBe('/articles/my-til');
+  });
+
+  it('should pass the type query param to the contents request', async () => {
+    fixture.componentRef.setInput('type', 'til');
+    await settle();
+
+    const req = httpTesting.expectOne(
+      (r) => r.url.includes('/api/contents') && r.method === 'GET',
+    );
+    expect(req.request.params.get('type')).toBe('til');
+    req.flush({ data: [], meta: buildMockMeta({ total: 0 }) });
+    flushTopics();
+  });
+
+  it('should ignore an unknown type query param', async () => {
+    fixture.componentRef.setInput('type', 'bogus');
+    await settle();
+
+    const req = httpTesting.expectOne(
+      (r) => r.url.includes('/api/contents') && r.method === 'GET',
+    );
+    expect(req.request.params.has('type')).toBe(false);
+    req.flush({ data: [], meta: buildMockMeta({ total: 0 }) });
+    flushTopics();
+  });
+
+  it('should filter rows client-side when a topic chip is selected', async () => {
+    await settle();
+    flushContents([
+      buildMockContent({
+        id: '1',
+        title: 'Go piece',
+        topics: [buildMockTopic({ slug: 'go', name: 'Go' })],
+      }),
+      buildMockContent({
+        id: '2',
+        title: 'Angular piece',
+        topics: [buildMockTopic({ id: 't2', slug: 'angular', name: 'Angular' })],
+      }),
+    ]);
+    flushTopics([
+      buildMockTopic({ slug: 'go', name: 'Go' }),
+      buildMockTopic({ id: 't2', slug: 'angular', name: 'Angular' }),
+    ]);
+    await settle();
+
+    component['selectTopic']('go');
+    await settle();
+
+    const el = fixture.nativeElement as HTMLElement;
+    const rows = el.querySelectorAll('[data-testid="index-row"]');
+    expect(rows.length).toBe(1);
+    expect(el.textContent).toContain('Go piece');
+    expect(el.textContent).not.toContain('Angular piece');
+  });
+
+  it('should show the empty state when no contents are returned', async () => {
+    await settle();
+    flushContents([]);
+    flushTopics();
+    await settle();
+
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.textContent).toContain('Nothing here yet');
+  });
+
+  it('should show an error state with retry when the request fails', async () => {
+    await settle();
 
     const req = httpTesting.expectOne(
       (r) => r.url.includes('/api/contents') && r.method === 'GET',
@@ -131,100 +229,25 @@ describe('ArticlesComponent', () => {
       status: 500,
       statusText: 'Internal Server Error',
     });
-    fixture.detectChanges();
-
-    expect(component['error']()).toBe(
-      'Failed to load articles. Please try again later.',
-    );
-    expect(component['isLoading']()).toBe(false);
-  });
-
-  it('should show empty state when no articles returned', () => {
-    fixture.detectChanges();
-
-    const req = httpTesting.expectOne(
-      (r) => r.url.includes('/api/contents') && r.method === 'GET',
-    );
-    req.flush({ data: [], meta: buildMockMeta({ total: 0 }) });
-    fixture.detectChanges();
+    flushTopics();
+    await settle();
 
     const el = fixture.nativeElement as HTMLElement;
-    expect(el.textContent).toContain('No articles found');
+    expect(el.textContent).toContain('Could not load the index');
+    expect(component['hasError']()).toBe(true);
   });
 
-  it('should show loading skeletons while fetching', () => {
-    fixture.detectChanges();
+  it('should render the hero lead and topic chips', async () => {
+    await settle();
+    flushContents([]);
+    flushTopics([buildMockTopic({ slug: 'go', name: 'Go' })]);
+    await settle();
 
-    expect(component['isLoading']()).toBe(true);
     const el = fixture.nativeElement as HTMLElement;
-    const skeletons = el.querySelectorAll('app-skeleton');
-    expect(skeletons.length).toBeGreaterThan(0);
-
-    const req = httpTesting.expectOne(
-      (r) => r.url.includes('/api/contents') && r.method === 'GET',
-    );
-    req.flush({ data: [], meta: buildMockMeta({ total: 0 }) });
-  });
-
-  it('should compute totalPages correctly', () => {
-    fixture.detectChanges();
-
-    const req = httpTesting.expectOne(
-      (r) => r.url.includes('/api/contents') && r.method === 'GET',
-    );
-    req.flush({ data: [], meta: buildMockMeta({ total: 25 }) });
-    fixture.detectChanges();
-
-    // 25 articles / 12 per page = 3 pages
-    expect(component['totalPages']()).toBe(3);
-  });
-
-  it('should clear filters and reload articles', () => {
-    fixture.detectChanges();
-
-    // Initial load
-    const initialReq = httpTesting.expectOne(
-      (r) => r.url.includes('/api/contents') && r.method === 'GET',
-    );
-    initialReq.flush({ data: [], meta: buildMockMeta({ total: 0 }) });
-
-    // Trigger clearFilters
-    component['clearFilters']();
-
-    const reloadReq = httpTesting.expectOne(
-      (r) => r.url.includes('/api/contents') && r.method === 'GET',
-    );
-    reloadReq.flush({ data: [], meta: buildMockMeta({ total: 0 }) });
-
-    expect(component['searchQuery']()).toBe('');
-    expect(component['currentPage']()).toBe(1);
-  });
-
-  it('should change page and reload articles', () => {
-    fixture.detectChanges();
-
-    const initialReq = httpTesting.expectOne(
-      (r) => r.url.includes('/api/contents') && r.method === 'GET',
-    );
-    initialReq.flush({
-      data: Array.from({ length: 12 }, (_, i) =>
-        buildMockArticle({ id: `a${i}` }),
-      ),
-      meta: buildMockMeta({ total: 24 }),
-    });
-
-    component['onPageChange'](2);
-
-    const pageReq = httpTesting.expectOne(
-      (r) => r.url.includes('/api/contents') && r.method === 'GET',
-    );
-    pageReq.flush({
-      data: Array.from({ length: 12 }, (_, i) =>
-        buildMockArticle({ id: `b${i}` }),
-      ),
-      meta: buildMockMeta({ total: 24, page: 2 }),
-    });
-
-    expect(component['currentPage']()).toBe(2);
+    expect(el.textContent).toContain('Let the work speak.');
+    expect(
+      el.querySelector('[data-testid="topic-chip-all"]'),
+    ).toBeTruthy();
+    expect(el.querySelectorAll('[data-testid="topic-chip"]').length).toBe(1);
   });
 });

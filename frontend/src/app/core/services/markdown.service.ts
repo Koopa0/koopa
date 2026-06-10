@@ -55,6 +55,7 @@ const PURIFY_CONFIG = {
     'target',
     'rel',
     'data-mermaid-code',
+    'data-lang',
     'width',
     'height',
     'colspan',
@@ -135,21 +136,23 @@ export class MarkdownService {
   }
 
   private highlightCode(html: string): string {
-    // Use regex to find and replace code blocks with highlighted versions
+    // Use regex to find and replace code blocks with highlighted versions.
+    // The fence language is carried onto <pre data-lang> so CSS can render
+    // the top-right language label on the reading surface.
     return html.replace(
       /<pre><code class="language-(\w+)">([\s\S]*?)<\/code><\/pre>/g,
       (match, lang, code) => {
         try {
           if (lang && hljs.getLanguage(lang)) {
             const highlighted = hljs.highlight(code, { language: lang }).value;
-            return `<pre><code class="language-${lang} hljs">${highlighted}</code></pre>`;
+            return `<pre data-lang="${lang}"><code class="language-${lang} hljs">${highlighted}</code></pre>`;
           }
         } catch {
           // Syntax highlighting failed, fallback to auto-detection
         }
         try {
           const highlighted = hljs.highlightAuto(code).value;
-          return `<pre><code class="hljs">${highlighted}</code></pre>`;
+          return `<pre data-lang="${lang}"><code class="hljs">${highlighted}</code></pre>`;
         } catch {
           return match;
         }

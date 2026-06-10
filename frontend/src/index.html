@@ -2,6 +2,18 @@
 <html lang="zh-TW" data-theme="dark">
   <head>
     <meta charset="utf-8" />
+    <!-- Apply the persisted theme before first paint. SSR always emits the
+         dark default on <html>; this flips to light synchronously when the
+         visitor previously chose it, so there is no flash of wrong theme. -->
+    <script>
+      try {
+        if (localStorage.getItem('koopa-theme') === 'light') {
+          document.documentElement.setAttribute('data-theme', 'light');
+        }
+      } catch (e) {
+        /* storage unavailable — keep the dark default */
+      }
+    </script>
     <title>Koopa | Software Engineer</title>
     <base href="/" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />

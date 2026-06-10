@@ -8,8 +8,8 @@ import {
   signal,
   computed,
 } from '@angular/core';
-import { isPlatformBrowser, DatePipe } from '@angular/common';
-import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { isPlatformBrowser } from '@angular/common';
+import { ActivatedRoute, Router } from '@angular/router';
 import { Subject, debounceTime } from 'rxjs';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import {
@@ -21,11 +21,8 @@ import {
   FileText,
 } from 'lucide-angular';
 import { ContentService } from '../../core/services/content.service';
-import {
-  CONTENT_TYPE_CONFIG,
-  contentTypeRoute,
-  publicContentTypes,
-} from '../../core/models';
+import { publicContentTypes } from '../../core/models';
+import { PostRowComponent } from '../../shared/post-row/post-row.component';
 import type {
   ApiContent,
   ContentType,
@@ -38,7 +35,7 @@ const SEARCH_DEBOUNCE_MS = 300;
 @Component({
   selector: 'app-search',
   standalone: true,
-  imports: [RouterLink, DatePipe, LucideAngularModule],
+  imports: [LucideAngularModule, PostRowComponent],
   templateUrl: './search.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
@@ -59,17 +56,12 @@ export class SearchComponent implements OnInit {
   protected readonly isLoading = signal(false);
   protected readonly error = signal<string | null>(null);
 
-  protected readonly typeConfig = CONTENT_TYPE_CONFIG;
   protected readonly availableTypes = publicContentTypes();
 
   protected readonly totalPages = computed(() => {
     const m = this.meta();
     return m ? m.total_pages : 0;
   });
-
-  protected readonly pageArray = computed(() =>
-    Array.from({ length: this.totalPages() }, (_, i) => i + 1),
-  );
 
   protected readonly SearchIcon = Search;
   protected readonly XIcon = X;
@@ -136,10 +128,6 @@ export class SearchComponent implements OnInit {
     if (isPlatformBrowser(this.platformId)) {
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
-  }
-
-  protected getResultRoute(result: ApiContent): string {
-    return `${contentTypeRoute(result.type)}/${result.slug}`;
   }
 
   private executeSearch(): void {

@@ -1,167 +1,140 @@
-<!-- Hero -->
-<section class="border-b border-border">
-  <div class="mx-auto max-w-3xl px-6 py-16">
-    <h1 class="font-display text-4xl font-bold tracking-tight text-balance text-fg">
-      Articles
-    </h1>
-    <p class="mt-3 font-serif text-lg leading-relaxed text-fg-muted">
-      Writing on system design, Go, and learning in public — let the work speak.
-    </p>
-  </div>
-</section>
-
 <section>
-  <div class="mx-auto max-w-3xl px-6 py-10">
-    <!-- Search -->
-    <div class="mb-8 flex items-center gap-3">
-      <div
-        class="flex flex-1 items-center gap-2 rounded-sm border border-border bg-elevated px-3 py-2"
+  <div class="mx-auto max-w-3xl px-6 pt-14 pb-28 sm:px-11">
+    <!-- Hero -->
+    <header class="max-w-2xl pt-7">
+      <p class="font-mono text-[11px] tracking-[0.08em] uppercase text-brand">
+        koopa.dev
+      </p>
+      <h1
+        class="font-display mt-4 mb-[18px] text-4xl font-bold leading-[1.08] tracking-[-0.03em] text-balance text-fg sm:text-[2.75rem]"
       >
-        <lucide-icon [img]="SearchIcon" [size]="16" class="text-fg-faint" />
-        <input
-          type="text"
-          placeholder="Search articles…"
-          aria-label="Search articles"
-          class="flex-1 bg-transparent text-sm text-fg outline-hidden placeholder:text-fg-faint"
-          [value]="searchQuery()"
-          (input)="onSearchChange($event)"
-        />
-      </div>
-      @if (hasFilters()) {
+        Let the work speak.
+      </h1>
+      <p class="font-serif text-[1.1875rem] leading-[1.7] text-fg-muted">
+        Writing on Go, systems, and learning in public — one engineer's
+        working notes, build logs, and essays.
+      </p>
+    </header>
+
+    <!-- Topic filter chips -->
+    <div
+      class="mt-8 mb-2 flex flex-wrap items-center gap-2 border-b border-border pb-4"
+      role="group"
+      aria-label="Filter by topic"
+    >
+      <button
+        type="button"
+        class="rounded-xs border px-3 py-1 font-mono text-xs transition-colors"
+        [class.bg-brand-muted]="topicFilter() === 'all'"
+        [class.text-brand]="topicFilter() === 'all'"
+        [class.border-transparent]="topicFilter() === 'all'"
+        [class.border-border]="topicFilter() !== 'all'"
+        [class.text-fg-subtle]="topicFilter() !== 'all'"
+        [class.hover:text-fg]="topicFilter() !== 'all'"
+        [class.hover:border-border-strong]="topicFilter() !== 'all'"
+        [attr.aria-pressed]="topicFilter() === 'all'"
+        (click)="selectTopic('all')"
+        data-testid="topic-chip-all"
+      >
+        All
+      </button>
+      @for (topic of topics(); track topic.slug) {
         <button
           type="button"
-          class="flex items-center gap-1 rounded-sm border border-border px-3 py-2 text-sm text-fg-muted transition-colors hover:text-fg"
-          (click)="clearFilters()"
+          class="rounded-xs border px-3 py-1 font-mono text-xs transition-colors"
+          [class.bg-brand-muted]="topicFilter() === topic.slug"
+          [class.text-brand]="topicFilter() === topic.slug"
+          [class.border-transparent]="topicFilter() === topic.slug"
+          [class.border-border]="topicFilter() !== topic.slug"
+          [class.text-fg-subtle]="topicFilter() !== topic.slug"
+          [class.hover:text-fg]="topicFilter() !== topic.slug"
+          [class.hover:border-border-strong]="topicFilter() !== topic.slug"
+          [attr.aria-pressed]="topicFilter() === topic.slug"
+          (click)="selectTopic(topic.slug)"
+          data-testid="topic-chip"
         >
-          <lucide-icon [img]="XIcon" [size]="14" />
-          Clear
+          {{ topic.name }}
+        </button>
+      }
+
+      @if (typeFilter(); as activeType) {
+        <button
+          type="button"
+          class="ml-auto flex items-center gap-1.5 rounded-xs bg-brand-muted px-3 py-1 font-mono text-xs text-brand transition-colors hover:bg-overlay"
+          (click)="clearTypeFilter()"
+          [attr.aria-label]="'Clear ' + activeType + ' filter'"
+          data-testid="type-filter-clear"
+        >
+          {{ activeType }}
+          <lucide-icon [img]="XIcon" [size]="12" />
         </button>
       }
     </div>
 
+    <!-- Editorial list -->
     @if (isLoading()) {
-      <div class="flex flex-col gap-4">
-        @for (_ of [1, 2, 3, 4, 5]; track _) {
+      <div class="flex flex-col gap-4 pt-6">
+        @for (placeholder of [1, 2, 3, 4, 5]; track placeholder) {
           <app-skeleton variant="card" />
         }
       </div>
-    } @else {
-      <div class="mb-6 font-mono text-[11px] text-fg-faint">
-        {{ totalArticles() }}
-        {{ totalArticles() === 1 ? 'article' : 'articles' }}
-        @if (hasFilters()) {
-          <span>· filtered</span>
-        }
+    } @else if (hasError()) {
+      <div class="flex flex-col items-center gap-4 py-20 text-center">
+        <p class="text-sm text-fg-muted">
+          Could not load the index. Please try again.
+        </p>
+        <button
+          type="button"
+          class="rounded-xs border border-border px-4 py-2 text-sm text-fg-muted transition-colors hover:border-border-strong hover:text-fg"
+          (click)="retry()"
+        >
+          Retry
+        </button>
       </div>
-
-      @if (articles().length > 0) {
-        <!-- Editorial list -->
-        <ul class="divide-y divide-border-faint border-t border-border-faint">
-          @for (article of articles(); track article.id) {
-            <li>
-              <a
-                [routerLink]="'/articles/' + article.slug"
-                class="group block py-5 no-underline"
-              >
-                <div
-                  class="flex flex-wrap items-center gap-2 font-mono text-[11px] text-fg-faint"
-                >
-                  <span
-                    class="size-1.5 rounded-full"
-                    [style.background]="'var(--dot-' + article.type + ')'"
-                    aria-hidden="true"
-                  ></span>
-                  <span>{{ article.type }}</span>
-                  @if (article.published_at) {
-                    <span aria-hidden="true">·</span>
-                    <span>{{ article.published_at | date: 'MMM d, yyyy' }}</span>
-                  }
-                  <span aria-hidden="true">·</span>
-                  <span>{{ article.reading_time_min }} min</span>
-                </div>
-                <h2
-                  class="mt-1.5 font-display text-xl font-semibold text-fg transition-colors group-hover:text-brand"
-                >
-                  {{ article.title }}
-                </h2>
-                <p
-                  class="mt-1.5 line-clamp-2 font-serif text-[15px] leading-relaxed text-fg-muted"
-                >
-                  {{ article.excerpt }}
-                </p>
-              </a>
-            </li>
-          }
-        </ul>
-
-        <!-- Pagination -->
-        @let cp = currentPage();
-        @let tp = totalPages();
-        @if (tp > 1) {
-          <nav
-            aria-label="Pagination"
-            class="mt-12 flex flex-col items-center gap-4"
+    } @else if (filteredContents().length > 0) {
+      <ul>
+        @for (content of filteredContents(); track content.id) {
+          <li
+            class="border-border-faint [&:not(:first-child)]:border-t"
           >
-            <div class="flex items-center gap-2">
-              <button
-                type="button"
-                class="rounded-sm p-2 text-fg-muted transition-colors hover:bg-overlay hover:text-fg disabled:opacity-30"
-                [disabled]="cp === 1"
-                (click)="onPageChange(cp - 1)"
-                aria-label="Previous page"
-              >
-                <lucide-icon [img]="ChevronLeftIcon" [size]="16" />
-              </button>
-
-              @for (page of pageArray(); track page) {
-                <button
-                  type="button"
-                  class="rounded-sm px-3 py-1 text-sm transition-colors"
-                  [class]="
-                    cp === page
-                      ? 'bg-brand-muted text-brand'
-                      : 'text-fg-muted hover:bg-overlay hover:text-fg'
-                  "
-                  (click)="onPageChange(page)"
-                  [attr.aria-current]="cp === page ? 'page' : null"
-                  [attr.aria-label]="'Page ' + page"
-                >
-                  {{ page }}
-                </button>
-              }
-
-              <button
-                type="button"
-                class="rounded-sm p-2 text-fg-muted transition-colors hover:bg-overlay hover:text-fg disabled:opacity-30"
-                [disabled]="cp === tp"
-                (click)="onPageChange(cp + 1)"
-                aria-label="Next page"
-              >
-                <lucide-icon [img]="ChevronRightIcon" [size]="16" />
-              </button>
-            </div>
-            <div class="font-mono text-[11px] text-fg-faint">
-              Page {{ cp }} of {{ tp }}
-            </div>
-          </nav>
+            <app-post-row [content]="content" />
+          </li>
         }
-      } @else {
-        <!-- Empty state -->
-        <div class="flex flex-col items-center gap-4 py-20 text-center">
-          <lucide-icon [img]="FileTextIcon" [size]="40" class="text-fg-faint" />
-          <h2 class="text-lg font-medium text-fg-muted">No articles found</h2>
-          <p class="text-sm text-fg-faint">Try a different search.</p>
-          @if (hasFilters()) {
-            <button
-              type="button"
-              class="rounded-sm border border-border px-4 py-2 text-sm text-fg-muted transition-colors hover:text-fg"
-              (click)="clearFilters()"
-            >
-              Clear search
-            </button>
-          }
-        </div>
+      </ul>
+
+      @if (totalPages() > 1) {
+        <nav
+          aria-label="Pagination"
+          class="mt-12 flex items-center justify-center gap-4 font-mono text-xs text-fg-subtle"
+        >
+          <button
+            type="button"
+            class="rounded-xs border border-border px-3 py-1.5 transition-colors hover:border-border-strong hover:text-fg disabled:opacity-30"
+            [disabled]="page() === 1"
+            (click)="previousPage()"
+          >
+            Newer
+          </button>
+          <span class="text-fg-faint">{{ page() }} / {{ totalPages() }}</span>
+          <button
+            type="button"
+            class="rounded-xs border border-border px-3 py-1.5 transition-colors hover:border-border-strong hover:text-fg disabled:opacity-30"
+            [disabled]="page() === totalPages()"
+            (click)="nextPage()"
+          >
+            Older
+          </button>
+        </nav>
       }
+    } @else {
+      <!-- Empty state -->
+      <div class="flex flex-col items-center gap-4 py-20 text-center">
+        <lucide-icon [img]="FileTextIcon" [size]="40" class="text-fg-faint" />
+        <h2 class="text-lg font-medium text-fg-muted">Nothing here yet</h2>
+        <p class="text-sm text-fg-faint">
+          Try a different topic, or clear the filters.
+        </p>
+      </div>
     }
   </div>
 </section>

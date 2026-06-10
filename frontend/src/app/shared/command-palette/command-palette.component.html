@@ -10,7 +10,7 @@
 
   <!-- Dialog -->
   <div
-    class="fixed inset-0 z-[101] flex items-start justify-center px-4 pt-[15vh]"
+    class="fixed inset-0 z-[101] flex items-start justify-center px-4 pt-[12vh]"
     (click)="close()"
     (keydown.escape)="close()"
     role="dialog"
@@ -18,19 +18,21 @@
     aria-label="Command palette"
   >
     <div
-      class="w-full max-w-lg overflow-hidden rounded-lg border border-zinc-700 bg-zinc-900 shadow-2xl"
+      class="w-full max-w-[600px] overflow-hidden rounded-lg border border-border-strong bg-elevated shadow-(--shadow-2)"
       (click)="$event.stopPropagation()"
       (keydown.escape)="$event.stopPropagation()"
       tabindex="-1"
       @scaleIn
     >
       <!-- Search Input -->
-      <div class="flex items-center gap-3 border-b border-zinc-800 px-4 py-3">
+      <div
+        class="flex items-center gap-3 border-b border-border px-[18px] py-[15px]"
+      >
         <svg
-          class="size-5 shrink-0 text-zinc-500"
+          class="size-[17px] shrink-0 text-fg-subtle"
           fill="none"
           viewBox="0 0 24 24"
-          stroke-width="2"
+          stroke-width="1.6"
           stroke="currentColor"
         >
           <path
@@ -42,8 +44,8 @@
         <input
           #searchInput
           type="text"
-          class="flex-1 bg-transparent text-sm text-zinc-100 outline-hidden placeholder:text-zinc-500"
-          [placeholder]="searchPlaceholder"
+          class="flex-1 bg-transparent text-[15px] text-fg outline-hidden placeholder:text-fg-faint"
+          [placeholder]="searchPlaceholder()"
           [value]="query()"
           (input)="onInput($event)"
           (keydown)="onKeydown($event)"
@@ -63,14 +65,14 @@
         />
         @if (captureAvailable()) {
           <span
-            class="rounded-xs bg-sky-950/60 px-1.5 py-0.5 font-mono text-[10px] font-medium tracking-wider text-sky-300 uppercase"
+            class="rounded-xs bg-brand-muted px-1.5 py-0.5 font-mono text-[10px] font-medium tracking-wider text-brand uppercase"
             data-testid="command-palette-capture-pill"
           >
             capture
           </span>
         }
         <kbd
-          class="hidden rounded-xs border border-zinc-700 bg-zinc-800 px-1.5 py-0.5 text-[10px] font-medium text-zinc-500 sm:inline"
+          class="hidden rounded-xs border border-border bg-bg px-1.5 py-0.5 font-mono text-[10px] font-medium text-fg-subtle sm:inline"
         >
           ESC
         </kbd>
@@ -78,7 +80,7 @@
 
       <!-- Results -->
       <div
-        class="max-h-80 overflow-y-auto overscroll-contain py-2"
+        class="max-h-[52vh] overflow-y-auto overscroll-contain p-1.5"
         #resultsList
         role="listbox"
         id="command-palette-listbox"
@@ -88,17 +90,17 @@
           <!-- Search Results -->
           @if (isSearching()) {
             <div
-              class="flex items-center justify-center gap-2 px-4 py-8 text-zinc-500"
+              class="flex items-center justify-center gap-2 px-4 py-8 text-fg-subtle"
             >
               <div
-                class="size-4 animate-spin rounded-full border-2 border-zinc-700 border-t-zinc-400"
+                class="size-4 animate-spin rounded-full border-2 border-border border-t-fg-subtle"
               ></div>
-              <span class="text-sm">Searching...</span>
+              <span class="text-sm">Searching…</span>
             </div>
           } @else if (searchResults().length > 0) {
-            <div class="px-2">
+            <div>
               <div
-                class="px-2 pb-1 text-[11px] font-medium tracking-wider text-zinc-600 uppercase"
+                class="px-3 pb-1 font-mono text-[10px] tracking-[0.08em] text-fg-faint uppercase"
               >
                 Search Results
               </div>
@@ -109,15 +111,9 @@
               ) {
                 <button
                   type="button"
-                  class="flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-left text-sm transition-colors"
-                  [class.bg-zinc-800]="
+                  class="flex w-full flex-col items-start gap-0.5 rounded-xs px-3 py-2.5 text-left transition-colors"
+                  [class.bg-brand-muted]="
                     activeIndex() === i + filteredActions().length
-                  "
-                  [class.text-zinc-100]="
-                    activeIndex() === i + filteredActions().length
-                  "
-                  [class.text-zinc-400]="
-                    activeIndex() !== i + filteredActions().length
                   "
                   [attr.data-index]="i + filteredActions().length"
                   [id]="'cp-item-' + (i + filteredActions().length)"
@@ -128,27 +124,26 @@
                     activeIndex() === i + filteredActions().length
                   "
                 >
-                  <div
-                    class="flex size-8 shrink-0 items-center justify-center rounded-md border border-zinc-700/50 bg-zinc-800/50"
+                  <span
+                    class="w-full truncate text-sm font-medium"
+                    [class.text-brand]="
+                      activeIndex() === i + filteredActions().length
+                    "
+                    [class.text-fg]="
+                      activeIndex() !== i + filteredActions().length
+                    "
                   >
-                    <span class="text-xs text-zinc-500">{{
-                      getTypeLabel(result.type)
-                    }}</span>
-                  </div>
-                  <div class="min-w-0 flex-1">
-                    <div class="truncate font-medium">{{ result.title }}</div>
-                    @if (result.excerpt) {
-                      <div class="truncate text-xs text-zinc-600">
-                        {{ result.excerpt }}
-                      </div>
-                    }
-                  </div>
+                    {{ result.title }}
+                  </span>
+                  <span class="font-mono text-[10px] text-fg-faint">
+                    {{ getResultSubtitle(result) }}
+                  </span>
                 </button>
               }
               <!-- View all results -->
               <button
                 type="button"
-                class="mt-1 flex w-full items-center justify-center gap-1 rounded-md px-3 py-2 text-xs text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-300"
+                class="mt-1 flex w-full items-center justify-center gap-1 rounded-xs px-3 py-2 text-xs text-fg-subtle transition-colors hover:bg-overlay hover:text-fg"
                 (click)="navigateToSearch()"
               >
                 View all results →
@@ -156,15 +151,15 @@
             </div>
           } @else if (captureAvailable()) {
             <!-- GTD capture fallback: nothing matched, capture the raw query -->
-            <div class="px-2">
+            <div>
               <div
-                class="px-2 pb-1 text-[11px] font-medium tracking-wider text-zinc-600 uppercase"
+                class="px-3 pb-1 font-mono text-[10px] tracking-[0.08em] text-fg-faint uppercase"
               >
                 Capture
               </div>
               <button
                 type="button"
-                class="flex w-full items-center gap-3 rounded-md bg-zinc-800 px-3 py-2.5 text-left text-sm text-zinc-100 transition-colors"
+                class="flex w-full items-center gap-3 rounded-xs bg-brand-muted px-3 py-2.5 text-left text-sm text-fg transition-colors"
                 [disabled]="isCapturing()"
                 (click)="captureToInbox()"
                 role="option"
@@ -174,10 +169,10 @@
                 data-testid="command-palette-capture"
               >
                 <div
-                  class="flex size-8 shrink-0 items-center justify-center rounded-md border border-sky-800/50 bg-sky-950/40"
+                  class="flex size-8 shrink-0 items-center justify-center rounded-xs border border-brand-muted bg-brand-faint"
                 >
                   <svg
-                    class="size-4 text-sky-300"
+                    class="size-4 text-brand"
                     fill="none"
                     viewBox="0 0 24 24"
                     stroke-width="1.5"
@@ -194,38 +189,38 @@
                   Capture to GTD Inbox: "{{ query().trim() }}"
                 </span>
                 <kbd
-                  class="rounded-xs border border-zinc-700 bg-zinc-800 px-1 py-0.5 font-mono text-[10px] text-zinc-500"
+                  class="rounded-xs border border-border bg-bg px-1 py-0.5 font-mono text-[10px] text-fg-subtle"
                   >↵</kbd
                 >
               </button>
-              <p class="px-3 pt-2 text-xs text-zinc-600">
+              <p class="px-3 pt-2 text-xs text-fg-faint">
                 No matches. Press ↵ to capture as a todo.
               </p>
             </div>
           } @else if (query().length >= 2) {
-            <div class="px-4 py-8 text-center text-sm text-zinc-600">
-              No results found for "{{ query() }}"
+            <div class="px-4 py-7 text-center text-sm text-fg-subtle">
+              No matches for "{{ query() }}".
             </div>
           }
         } @else {
           <!-- Quick Actions -->
           @for (group of groupedActions(); track group.name) {
-            <div class="px-2">
+            <div>
               @if (!$first) {
-                <div class="my-1 border-t border-zinc-800/50"></div>
+                <div class="my-1 border-t border-border-faint"></div>
               }
               <div
-                class="px-2 pb-1 pt-2 text-[11px] font-medium tracking-wider text-zinc-600 uppercase"
+                class="px-3 pt-2 pb-1 font-mono text-[10px] tracking-[0.08em] text-fg-faint uppercase"
               >
                 {{ group.name }}
               </div>
               @for (item of group.items; track item.id) {
                 <button
                   type="button"
-                  class="flex w-full items-center gap-3 rounded-md px-3 py-2 text-left text-sm transition-colors"
-                  [class.bg-zinc-800]="activeIndex() === item.flatIndex"
-                  [class.text-zinc-100]="activeIndex() === item.flatIndex"
-                  [class.text-zinc-400]="activeIndex() !== item.flatIndex"
+                  class="flex w-full items-center gap-3 rounded-xs px-3 py-2 text-left text-sm transition-colors"
+                  [class.bg-brand-muted]="activeIndex() === item.flatIndex"
+                  [class.text-brand]="activeIndex() === item.flatIndex"
+                  [class.text-fg-muted]="activeIndex() !== item.flatIndex"
                   [attr.data-index]="item.flatIndex"
                   [id]="'cp-item-' + item.flatIndex"
                   (mouseenter)="activeIndex.set(item.flatIndex)"
@@ -233,23 +228,6 @@
                   role="option"
                   [attr.aria-selected]="activeIndex() === item.flatIndex"
                 >
-                  <div
-                    class="flex size-8 shrink-0 items-center justify-center rounded-md border border-zinc-700/50 bg-zinc-800/50 text-zinc-500"
-                  >
-                    <svg
-                      class="size-4"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke-width="1.5"
-                      stroke="currentColor"
-                    >
-                      <path
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        d="M13.5 4.5 21 12m0 0-7.5 7.5M21 12H3"
-                      />
-                    </svg>
-                  </div>
                   <span class="flex-1">{{ item.label }}</span>
                 </button>
               }
@@ -260,25 +238,25 @@
 
       <!-- Footer -->
       <div
-        class="flex items-center gap-4 border-t border-zinc-800 px-4 py-2 text-[11px] text-zinc-600"
+        class="flex items-center gap-4 border-t border-border px-[18px] py-2 text-[11px] text-fg-faint"
       >
         <span class="flex items-center gap-1">
           <kbd
-            class="rounded-xs border border-zinc-700 bg-zinc-800 px-1 py-0.5 font-mono"
+            class="rounded-xs border border-border bg-bg px-1 py-0.5 font-mono"
             >↑↓</kbd
           >
           Navigate
         </span>
         <span class="flex items-center gap-1">
           <kbd
-            class="rounded-xs border border-zinc-700 bg-zinc-800 px-1 py-0.5 font-mono"
+            class="rounded-xs border border-border bg-bg px-1 py-0.5 font-mono"
             >↵</kbd
           >
           {{ captureAvailable() ? 'Capture' : 'Select' }}
         </span>
         <span class="flex items-center gap-1">
           <kbd
-            class="rounded-xs border border-zinc-700 bg-zinc-800 px-1 py-0.5 font-mono"
+            class="rounded-xs border border-border bg-bg px-1 py-0.5 font-mono"
             >esc</kbd
           >
           Close

@@ -30,12 +30,9 @@ export const serverRoutes: ServerRoute[] = [
     renderMode: RenderMode.Server,
   },
   {
-    path: 'til',
-    renderMode: RenderMode.Server,
-  },
-  {
-    path: 'til/:slug',
-    renderMode: RenderMode.Server,
+    // Admin publish-preview iframe target — browser-only render.
+    path: 'preview/:slug',
+    renderMode: RenderMode.Client,
   },
   {
     path: 'search',

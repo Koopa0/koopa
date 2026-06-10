@@ -8,7 +8,7 @@ import {
 } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
-import { LucideAngularModule, Hash, Layers } from 'lucide-angular';
+import { LucideAngularModule, Layers } from 'lucide-angular';
 import { environment } from '../../../environments/environment';
 import { TopicService } from '../../core/services/topic.service';
 import { SeoService } from '../../core/services/seo/seo.service';
@@ -31,7 +31,6 @@ export class TopicsComponent implements OnInit {
   protected readonly isLoading = signal(true);
   protected readonly error = signal<string | null>(null);
 
-  protected readonly HashIcon = Hash;
   protected readonly LayersIcon = Layers;
 
   ngOnInit(): void {

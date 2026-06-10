@@ -5,6 +5,7 @@ import {
   inject,
   signal,
   computed,
+  linkedSignal,
   input,
   OnInit,
   PLATFORM_ID,
@@ -12,33 +13,37 @@ import {
 import { isPlatformBrowser } from '@angular/common';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
-import { DatePipe } from '@angular/common';
-import {
-  LucideAngularModule,
-  ArrowLeft,
-  ChevronLeft,
-  ChevronRight,
-  Layers,
-} from 'lucide-angular';
+import { LucideAngularModule, Layers } from 'lucide-angular';
 import { environment } from '../../../environments/environment';
-import {
-  TopicService,
-  type RelatedTag,
-} from '../../core/services/topic.service';
+import { TopicService } from '../../core/services/topic.service';
 import { SeoService } from '../../core/services/seo/seo.service';
-import { CONTENT_TYPE_CONFIG, contentTypeRoute } from '../../core/models';
+import { buildCollectionPageSchema } from '../../core/services/seo/json-ld.util';
+import { PostRowComponent } from '../../shared/post-row/post-row.component';
 import type {
   ApiTopic,
   ApiContent,
   ApiPaginationMeta,
+  ContentType,
 } from '../../core/models';
 
 const CONTENTS_PER_PAGE = 12;
+const CONTENT_TYPES: readonly ContentType[] = [
+  'article',
+  'essay',
+  'build-log',
+  'til',
+  'digest',
+];
 
+/**
+ * The topic page — topic hero (eyebrow with piece count, name,
+ * description), type filter tabs over the types present in this topic,
+ * and the same editorial list rows as the reading index.
+ */
 @Component({
   selector: 'app-topic-detail',
   standalone: true,
-  imports: [RouterLink, DatePipe, LucideAngularModule],
+  imports: [RouterLink, LucideAngularModule, PostRowComponent],
   templateUrl: './topic-detail.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
@@ -53,57 +58,43 @@ export class TopicDetailComponent implements OnInit {
 
   protected readonly topic = signal<ApiTopic | null>(null);
   protected readonly contents = signal<ApiContent[]>([]);
-  protected readonly relatedTags = signal<RelatedTag[]>([]);
-  protected readonly selectedTag = signal<string | null>(null);
   protected readonly meta = signal<ApiPaginationMeta | null>(null);
   protected readonly isLoading = signal(true);
   protected readonly isNotFound = signal(false);
   protected readonly error = signal<string | null>(null);
   protected readonly currentPage = signal(1);
 
-  protected readonly filteredContents = computed(() => {
-    const tag = this.selectedTag();
-    const all = this.contents();
-    return tag ? all.filter((c) => c.tags.includes(tag)) : all;
+  /** Selected type tab — snaps back to "all" whenever new contents load. */
+  protected readonly selectedType = linkedSignal<
+    ApiContent[],
+    'all' | ContentType
+  >({
+    source: () => this.contents(),
+    computation: () => 'all',
   });
 
-  protected readonly totalPages = computed(() => this.meta()?.total_pages ?? 1);
-  protected readonly pageArray = computed(() =>
-    Array.from({ length: this.totalPages() }, (_, i) => i + 1),
-  );
+  /** Distinct content types present on the current page, in canonical order. */
+  protected readonly typesPresent = computed(() => {
+    const present = new Set(this.contents().map((c) => c.type));
+    return CONTENT_TYPES.filter((type) => present.has(type));
+  });
 
-  protected readonly ArrowLeftIcon = ArrowLeft;
-  protected readonly ChevronLeftIcon = ChevronLeft;
-  protected readonly ChevronRightIcon = ChevronRight;
+  protected readonly filteredContents = computed(() => {
+    const type = this.selectedType();
+    const all = this.contents();
+    return type === 'all' ? all : all.filter((c) => c.type === type);
+  });
+
+  protected readonly totalPages = computed(() => this.meta()?.total_pages ?? 0);
+
   protected readonly LayersIcon = Layers;
-
-  protected readonly contentTypeConfig = CONTENT_TYPE_CONFIG;
 
   ngOnInit(): void {
     this.loadTopicContents(this.slug(), 1);
   }
 
-  protected getBadgeClasses(content: ApiContent): string {
-    return (
-      this.contentTypeConfig[content.type]?.badgeClasses ??
-      'bg-zinc-800 text-zinc-400'
-    );
-  }
-
-  protected getTypeLabel(content: ApiContent): string {
-    return this.contentTypeConfig[content.type]?.labelZh ?? content.type;
-  }
-
-  protected getContentRoute(content: ApiContent): string {
-    return `${contentTypeRoute(content.type)}/${content.slug}`;
-  }
-
-  protected toggleTag(tag: string): void {
-    if (!tag) {
-      this.selectedTag.set(null);
-    } else {
-      this.selectedTag.update((current) => (current === tag ? null : tag));
-    }
+  protected selectType(type: 'all' | ContentType): void {
+    this.selectedType.set(type);
   }
 
   protected onPageChange(page: number): void {
@@ -125,16 +116,23 @@ export class TopicDetailComponent implements OnInit {
         next: (result) => {
           this.topic.set(result.topic);
           this.contents.set(result.contents);
-          this.relatedTags.set(result.related_tags);
           this.meta.set(result.meta);
           this.isLoading.set(false);
 
+          const url = `${environment.siteUrl}/topics/${slug}`;
+          const description =
+            result.topic.description ||
+            `Browse all content under the "${result.topic.name}" topic.`;
           this.seoService.updateMeta({
             title: result.topic.name,
-            description:
-              result.topic.description ||
-              `Browse all content under the "${result.topic.name}" topic.`,
-            ogUrl: `${environment.siteUrl}/topics/${slug}`,
+            description,
+            ogUrl: url,
+            canonicalUrl: url,
+            jsonLd: buildCollectionPageSchema({
+              name: result.topic.name,
+              description,
+              url,
+            }),
           });
         },
         error: (err) => {

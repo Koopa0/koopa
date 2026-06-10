@@ -7,18 +7,38 @@ import { provideHttpClient, withXhr } from '@angular/common/http';
 import { provideRouter } from '@angular/router';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ProjectDetailComponent } from './project-detail';
-import type { ApiProject } from '../../core/models';
+import type { ApiPortfolioProject, ApiProject } from '../../core/models';
 
-function createMockProject(overrides: Partial<ApiProject> = {}): ApiProject {
+function buildMockListing(
+  overrides: Partial<ApiPortfolioProject> = {},
+): ApiPortfolioProject {
+  return {
+    id: '1',
+    slug: 'test-project',
+    title: 'Test Project',
+    description: 'A test project description',
+    status: 'completed',
+    role: 'Full-stack Developer',
+    tech_stack: ['Angular', 'Go'],
+    highlights: ['Built from scratch'],
+    problem: 'The problem statement',
+    featured: false,
+    sort_order: 0,
+    updated_at: '2026-01-01T00:00:00Z',
+    ...overrides,
+  };
+}
+
+function buildMockBareRow(overrides: Partial<ApiProject> = {}): ApiProject {
   return {
     id: '1',
     slug: 'test-project',
     title: 'Test Project',
     description: 'A test project description',
     long_description: null,
-    role: 'Full-stack Developer',
-    tech_stack: ['Angular', 'Go'],
-    highlights: ['Built from scratch'],
+    role: '',
+    tech_stack: [],
+    highlights: [],
     problem: null,
     solution: null,
     architecture: null,
@@ -64,39 +84,78 @@ describe('ProjectDetailComponent', () => {
     httpMock.verify();
   });
 
-  it('should create', () => {
-    fixture.componentRef.setInput('slug', 'test-project');
+  /** Flush effects + microtasks so rxResource issues its requests. */
+  async function settle(): Promise<void> {
     fixture.detectChanges();
-    const req = httpMock.expectOne((r) =>
-      r.url.includes('/api/projects/test-project'),
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    fixture.detectChanges();
+  }
+
+  function flushPortfolio(listings: ApiPortfolioProject[]): void {
+    const req = httpMock.expectOne(
+      (r) => r.url.includes('/api/portfolio') && r.method === 'GET',
     );
-    req.flush({ data: createMockProject() });
+    req.flush({ data: listings });
+  }
+
+  function flushBareRow(slug: string, row: ApiProject | null): void {
+    const req = httpMock.expectOne((r) =>
+      r.url.includes(`/api/projects/${slug}`),
+    );
+    if (row) {
+      req.flush({ data: row });
+    } else {
+      req.flush('Not Found', { status: 404, statusText: 'Not Found' });
+    }
+  }
+
+  it('should create', async () => {
+    fixture.componentRef.setInput('slug', 'test-project');
+    await settle();
+    flushPortfolio([buildMockListing()]);
+    flushBareRow('test-project', buildMockBareRow());
     expect(component).toBeTruthy();
   });
 
-  it('should load project when slug provided', () => {
+  it('should compose the rich profile from the portfolio listing when present', async () => {
     fixture.componentRef.setInput('slug', 'test-project');
-    fixture.detectChanges();
+    await settle();
+    flushPortfolio([buildMockListing()]);
+    flushBareRow('test-project', buildMockBareRow());
+    await settle();
 
-    const req = httpMock.expectOne((r) =>
-      r.url.includes('/api/projects/test-project'),
-    );
-    expect(req.request.method).toBe('GET');
-    req.flush({ data: createMockProject() });
+    const project = component['project']();
+    expect(project).toBeTruthy();
+    expect(project!.role).toBe('Full-stack Developer');
+    expect(project!.problem).toBe('The problem statement');
+    expect(project!.tech_stack).toEqual(['Angular', 'Go']);
 
-    expect(component['project']()).toBeTruthy();
-    expect(component['project']()!.title).toBe('Test Project');
-    expect(component['isLoading']()).toBe(false);
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.textContent).toContain('The problem');
+    expect(el.textContent).toContain('The problem statement');
   });
 
-  it('should handle HTTP error', () => {
-    fixture.componentRef.setInput('slug', 'bad-slug');
-    fixture.detectChanges();
+  it('should fall back to the bare project row when the portfolio lacks the slug', async () => {
+    fixture.componentRef.setInput('slug', 'test-project');
+    await settle();
+    flushPortfolio([buildMockListing({ slug: 'other-project' })]);
+    flushBareRow('test-project', buildMockBareRow());
+    await settle();
 
-    const req = httpMock.expectOne((r) =>
-      r.url.includes('/api/projects/bad-slug'),
-    );
-    req.flush('Not Found', { status: 404, statusText: 'Not Found' });
+    const project = component['project']();
+    expect(project).toBeTruthy();
+    expect(project!.title).toBe('Test Project');
+    expect(project!.role).toBeNull();
+    expect(project!.highlights).toEqual([]);
+    expect(component['isNotFound']()).toBe(false);
+  });
+
+  it('should report not found when neither source has the project', async () => {
+    fixture.componentRef.setInput('slug', 'bad-slug');
+    await settle();
+    flushPortfolio([]);
+    flushBareRow('bad-slug', null);
+    await settle();
 
     expect(component['isNotFound']()).toBe(true);
     expect(component['isLoading']()).toBe(false);

@@ -42,8 +42,18 @@ describe('MarkdownService', () => {
 
   it('should parse code blocks with language', () => {
     const result = service.parse('```typescript\nconst x = 1;\n```');
-    expect(result).toContain('<pre>');
+    expect(result).toContain('<pre');
     expect(result).toContain('<code');
+  });
+
+  it('should carry the fence language onto pre[data-lang] for the CSS label', () => {
+    const result = service.parse('```go\nfunc main() {}\n```');
+    expect(result).toContain('data-lang="go"');
+  });
+
+  it('should not emit data-lang for fences without a language', () => {
+    const result = service.parse('```\nplain text\n```');
+    expect(result).not.toContain('data-lang');
   });
 
   it('should parse links', () => {

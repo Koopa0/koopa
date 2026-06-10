@@ -141,6 +141,40 @@ export type ProjectStatus =
   | 'maintained'
   | 'archived';
 
+/**
+ * Public portfolio listing (matches internal/project/project.go::PublicListing).
+ *
+ * Served by GET /api/portfolio — the rich public project profile
+ * (role, tech stack, highlights, problem/solution/architecture/results).
+ * GET /api/projects/{slug} returns only the bare project row, so public
+ * project pages compose from this shape. Optional fields are omitted by
+ * the backend when unset (Go pointer + omitempty).
+ */
+export interface ApiPortfolioProject {
+  id: string;
+  slug: string;
+  title: string;
+  description: string;
+  status: ProjectStatus;
+  repo?: string;
+  deadline?: string;
+  last_activity_at?: string;
+  long_description?: string;
+  role?: string;
+  tech_stack: string[];
+  highlights: string[];
+  problem?: string;
+  solution?: string;
+  architecture?: string;
+  results?: string;
+  github_url?: string;
+  live_url?: string;
+  cover_image?: string;
+  featured: boolean;
+  sort_order: number;
+  updated_at: string;
+}
+
 export type GoalStatus =
   | 'not_started'
   | 'in_progress'

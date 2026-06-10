@@ -68,8 +68,6 @@ const STATIC_ROUTES: Array<{
   { path: '/', changefreq: 'daily', priority: '1.0' },
   { path: '/articles', changefreq: 'daily', priority: '0.9' },
   { path: '/projects', changefreq: 'weekly', priority: '0.8' },
-  { path: '/til', changefreq: 'daily', priority: '0.7' },
-  { path: '/resume', changefreq: 'monthly', priority: '0.7' },
   { path: '/uses', changefreq: 'monthly', priority: '0.5' },
   { path: '/about', changefreq: 'monthly', priority: '0.7' },
 ];
@@ -90,10 +88,14 @@ interface ApiListResponse {
   meta: { total: number; page: number; per_page: number; total_pages: number };
 }
 
+// Every written content type reads at /articles/:slug (one reading surface);
+// the old /essays/:slug and /til/:slug URLs are redirects.
 const TYPE_ROUTE_PREFIX: Record<string, string> = {
   article: '/articles',
-  essay: '/essays',
-  til: '/til',
+  essay: '/articles',
+  'build-log': '/articles',
+  til: '/articles',
+  digest: '/articles',
 };
 
 /** 從後端取得所有已發布內容，帶快取避免頻繁請求 */

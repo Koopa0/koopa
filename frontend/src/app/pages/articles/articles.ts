@@ -1,152 +1,183 @@
 import {
   Component,
-  DestroyRef,
-  inject,
-  signal,
-  computed,
   ChangeDetectionStrategy,
   OnInit,
-  PLATFORM_ID,
+  computed,
+  inject,
+  input,
+  linkedSignal,
 } from '@angular/core';
-import { isPlatformBrowser } from '@angular/common';
-import { RouterLink } from '@angular/router';
-import { DatePipe } from '@angular/common';
-import { FormsModule } from '@angular/forms';
-import { Subject, debounceTime } from 'rxjs';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import {
-  LucideAngularModule,
-  Search,
-  X,
-  ChevronLeft,
-  ChevronRight,
-  FileText,
-} from 'lucide-angular';
+import { Router } from '@angular/router';
+import { rxResource } from '@angular/core/rxjs-interop';
+import { LucideAngularModule, FileText, X } from 'lucide-angular';
 import { environment } from '../../../environments/environment';
-import {
-  ArticleService,
-  ArticlesResponse,
-  ArticleFilters,
-} from '../../core/services/article.service';
-import { SkeletonComponent } from '../../shared/skeleton/skeleton.component';
+import { ContentService } from '../../core/services/content.service';
+import { TopicService } from '../../core/services/topic.service';
 import { SeoService } from '../../core/services/seo/seo.service';
-import { buildCollectionPageSchema } from '../../core/services/seo/json-ld.util';
-import type { ApiContent } from '../../core/models';
+import {
+  buildCollectionPageSchema,
+  buildWebSiteSchema,
+} from '../../core/services/seo/json-ld.util';
+import { PostRowComponent } from '../../shared/post-row/post-row.component';
+import { SkeletonComponent } from '../../shared/skeleton/skeleton.component';
+import type {
+  ApiContent,
+  ApiListResponse,
+  ApiTopic,
+  ContentType,
+} from '../../core/models';
 
-const ARTICLES_PER_PAGE = 12;
-const SEARCH_DEBOUNCE_MS = 300;
+const PER_PAGE = 50;
+const CONTENT_TYPES: readonly ContentType[] = [
+  'article',
+  'essay',
+  'build-log',
+  'til',
+  'digest',
+];
 
+interface ContentsQuery {
+  type?: ContentType;
+  page: number;
+}
+
+/**
+ * The reading index — served at both `/` and `/articles`. One editorial
+ * list consolidating every written content type (article / essay /
+ * build-log / til / digest); the `type` query param narrows by type
+ * (retired /essays, /til, /build-logs lists redirect here) and the topic
+ * chips narrow client-side by topic.
+ */
 @Component({
   selector: 'app-articles',
   standalone: true,
-  imports: [
-    RouterLink,
-    DatePipe,
-    FormsModule,
-    LucideAngularModule,
-    SkeletonComponent,
-  ],
+  imports: [LucideAngularModule, PostRowComponent, SkeletonComponent],
   templateUrl: './articles.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class ArticlesComponent implements OnInit {
-  private readonly articleService = inject(ArticleService);
-  private readonly platformId = inject(PLATFORM_ID);
+  /** Query param: /articles?type=essay narrows the index to one type. */
+  readonly type = input<string>();
+
+  private readonly contentService = inject(ContentService);
+  private readonly topicService = inject(TopicService);
   private readonly seoService = inject(SeoService);
-  private readonly destroyRef = inject(DestroyRef);
+  private readonly router = inject(Router);
 
-  private readonly searchSubject = new Subject<string>();
+  protected readonly FileTextIcon = FileText;
+  protected readonly XIcon = X;
 
-  protected readonly articles = signal<ApiContent[]>([]);
-  protected readonly totalArticles = signal(0);
-  protected readonly currentPage = signal(1);
-  protected readonly isLoading = signal(false);
-  protected readonly error = signal<string | null>(null);
+  protected readonly typeFilter = computed<ContentType | undefined>(() => {
+    const requested = this.type();
+    return CONTENT_TYPES.includes(requested as ContentType)
+      ? (requested as ContentType)
+      : undefined;
+  });
 
-  protected readonly searchQuery = signal('');
+  /** Current page — snaps back to 1 whenever the type filter changes. */
+  protected readonly page = linkedSignal<ContentType | undefined, number>({
+    source: () => this.typeFilter(),
+    computation: () => 1,
+  });
+
+  /** Selected topic chip — snaps back to "all" when the type changes. */
+  protected readonly topicFilter = linkedSignal<ContentType | undefined, string>(
+    {
+      source: () => this.typeFilter(),
+      computation: () => 'all',
+    },
+  );
+
+  protected readonly contentsResource = rxResource<
+    ApiListResponse<ApiContent>,
+    ContentsQuery
+  >({
+    params: () => ({ type: this.typeFilter(), page: this.page() }),
+    stream: ({ params }) =>
+      this.contentService.listPublished({
+        type: params.type,
+        page: params.page,
+        perPage: PER_PAGE,
+      }),
+  });
+
+  protected readonly topicsResource = rxResource<ApiTopic[], void>({
+    stream: () => this.topicService.getAllTopics(),
+  });
+
+  protected readonly contents = computed(() =>
+    this.contentsResource.hasValue() ? this.contentsResource.value().data : [],
+  );
+
+  protected readonly topics = computed(() =>
+    this.topicsResource.hasValue() ? this.topicsResource.value() : [],
+  );
+
+  protected readonly filteredContents = computed(() => {
+    const topic = this.topicFilter();
+    const items = this.contents();
+    if (topic === 'all') {
+      return items;
+    }
+    return items.filter((c) => c.topics.some((t) => t.slug === topic));
+  });
+
+  protected readonly isLoading = computed(
+    () => this.contentsResource.status() === 'loading',
+  );
+
+  protected readonly hasError = computed(
+    () => this.contentsResource.status() === 'error',
+  );
 
   protected readonly totalPages = computed(() =>
-    Math.ceil(this.totalArticles() / ARTICLES_PER_PAGE),
+    this.contentsResource.hasValue()
+      ? this.contentsResource.value().meta.total_pages
+      : 0,
   );
-  protected readonly hasFilters = computed(
-    () => this.searchQuery().length > 0,
-  );
-  protected readonly pageArray = computed(() =>
-    Array.from({ length: this.totalPages() }, (_, i) => i + 1),
-  );
-
-  constructor() {
-    this.searchSubject
-      .pipe(debounceTime(SEARCH_DEBOUNCE_MS), takeUntilDestroyed())
-      .subscribe((query) => {
-        this.searchQuery.set(query);
-        this.currentPage.set(1);
-        this.loadArticles();
-      });
-  }
-
-  protected readonly SearchIcon = Search;
-  protected readonly XIcon = X;
-  protected readonly ChevronLeftIcon = ChevronLeft;
-  protected readonly ChevronRightIcon = ChevronRight;
-  protected readonly FileTextIcon = FileText;
 
   ngOnInit(): void {
+    const isHome = !this.router.url.split('?')[0].startsWith('/articles');
+    const path = isHome ? '/' : '/articles';
+    const description =
+      'Let the work speak — writing on Go, systems, and learning in public.';
+
     this.seoService.updateMeta({
       title: 'Articles',
-      description: 'Technical articles, dev notes, and lessons learned.',
-      ogUrl: `${environment.siteUrl}/articles`,
-      jsonLd: buildCollectionPageSchema({
-        name: 'Articles',
-        description: 'Technical articles, dev notes, and lessons learned.',
-        url: `${environment.siteUrl}/articles`,
-      }),
+      description,
+      ogUrl: `${environment.siteUrl}${path}`,
+      canonicalUrl: `${environment.siteUrl}${path}`,
+      jsonLd: isHome
+        ? buildWebSiteSchema()
+        : buildCollectionPageSchema({
+            name: 'Articles',
+            description,
+            url: `${environment.siteUrl}/articles`,
+          }),
     });
-    this.loadArticles();
   }
 
-  protected loadArticles(): void {
-    this.isLoading.set(true);
-    this.error.set(null);
-
-    const filters: ArticleFilters = {
-      search: this.searchQuery() || undefined,
-      page: this.currentPage(),
-      perPage: ARTICLES_PER_PAGE,
-    };
-
-    this.articleService
-      .getArticles(filters)
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe({
-        next: (response: ArticlesResponse) => {
-          this.articles.set(response.articles);
-          this.totalArticles.set(response.meta.total);
-          this.isLoading.set(false);
-        },
-        error: () => {
-          this.error.set('Failed to load articles. Please try again later.');
-          this.isLoading.set(false);
-        },
-      });
+  protected selectTopic(slug: string): void {
+    this.topicFilter.set(slug);
   }
 
-  protected onSearchChange(event: Event): void {
-    const target = event.target as HTMLInputElement;
-    this.searchSubject.next(target.value);
+  protected clearTypeFilter(): void {
+    this.router.navigate(['/articles']);
   }
 
-  protected onPageChange(page: number): void {
-    this.currentPage.set(page);
-    this.loadArticles();
-    if (isPlatformBrowser(this.platformId)) {
-      window.scrollTo({ top: 0, behavior: 'smooth' });
+  protected previousPage(): void {
+    if (this.page() > 1) {
+      this.page.update((p) => p - 1);
     }
   }
 
-  protected clearFilters(): void {
-    this.searchQuery.set('');
-    this.currentPage.set(1);
-    this.loadArticles();
+  protected nextPage(): void {
+    if (this.page() < this.totalPages()) {
+      this.page.update((p) => p + 1);
+    }
+  }
+
+  protected retry(): void {
+    this.contentsResource.reload();
   }
 }

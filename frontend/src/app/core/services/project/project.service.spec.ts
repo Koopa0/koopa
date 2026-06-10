@@ -5,7 +5,7 @@ import {
   provideHttpClientTesting,
 } from '@angular/common/http/testing';
 import { ProjectService } from './project.service';
-import type { ApiProject } from '../../models';
+import type { ApiPortfolioProject, ApiProject } from '../../models';
 
 function createMockProject(overrides: Partial<ApiProject> = {}): ApiProject {
   return {
@@ -86,6 +86,35 @@ describe('ProjectService', () => {
         status: 500,
         statusText: 'Internal Server Error',
       });
+    });
+  });
+
+  describe('getPortfolio', () => {
+    it('should fetch the portfolio and normalize missing array fields', () => {
+      const listing = {
+        id: 'proj-001',
+        slug: 'koopa',
+        title: 'koopa',
+        description: 'Personal knowledge engine',
+        status: 'in_progress',
+        featured: true,
+        sort_order: 0,
+        updated_at: '2026-01-15T10:00:00Z',
+      } as unknown as ApiPortfolioProject;
+
+      let received: ApiPortfolioProject[] = [];
+      service.getPortfolio().subscribe((listings) => {
+        received = listings;
+      });
+
+      const req = httpMock.expectOne((r) => r.url.includes('/api/portfolio'));
+      expect(req.request.method).toBe('GET');
+      req.flush({ data: [listing] });
+
+      expect(received.length).toBe(1);
+      expect(received[0].featured).toBe(true);
+      expect(received[0].tech_stack).toEqual([]);
+      expect(received[0].highlights).toEqual([]);
     });
   });
 

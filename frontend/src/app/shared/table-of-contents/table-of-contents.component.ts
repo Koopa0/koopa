@@ -14,10 +14,9 @@ import {
 import { isPlatformBrowser } from '@angular/common';
 import { fromEvent, throttleTime } from 'rxjs';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { LucideAngularModule, List } from 'lucide-angular';
 
 const SCROLL_OFFSET_PX = 120;
-const NAV_OFFSET_PX = 80;
+const NAV_OFFSET_PX = 90;
 const SCROLL_THROTTLE_MS = 100;
 
 export interface TocItem {
@@ -29,31 +28,24 @@ export interface TocItem {
 @Component({
   selector: 'app-table-of-contents',
   standalone: true,
-  imports: [LucideAngularModule],
   template: `
     @if (tocItems().length > 0) {
-      <nav
-        class="rounded-sm border border-zinc-800 bg-zinc-900/50 p-4"
-        aria-label="Table of contents"
-      >
-        <h3
-          class="mb-3 flex items-center gap-2 text-sm font-medium text-zinc-300"
-        >
-          <lucide-icon [img]="ListIcon" [size]="14" />
-          Contents
+      <nav aria-label="On this page">
+        <h3 class="mb-3 font-mono text-[10px] uppercase tracking-[0.08em] text-fg-faint">
+          On this page
         </h3>
-        <ul class="space-y-0.5">
+        <ul>
           @for (item of tocItems(); track item.id) {
             <li>
               <a
                 [href]="'#' + item.id"
-                class="block truncate rounded-sm px-2 py-1 text-xs no-underline transition-colors"
-                [class]="
-                  activeId() === item.id
-                    ? 'bg-zinc-800 text-zinc-100'
-                    : 'text-zinc-500 hover:text-zinc-300'
-                "
-                [style.padding-left.rem]="0.5 + (item.level - 2) * 0.75"
+                class="block border-l-2 py-[5px] pr-1 text-[12.5px] leading-[1.4] no-underline transition-colors"
+                [class.border-brand]="activeId() === item.id"
+                [class.text-brand]="activeId() === item.id"
+                [class.border-border]="activeId() !== item.id"
+                [class.text-fg-subtle]="activeId() !== item.id"
+                [class.hover:text-fg-muted]="activeId() !== item.id"
+                [style.padding-left.px]="item.level === 3 ? 24 : 12"
                 (click)="scrollToElement($event, item.id)"
               >
                 {{ item.text }}
@@ -75,8 +67,6 @@ export class TableOfContentsComponent {
   private readonly injector = inject(Injector);
 
   protected readonly activeId = signal('');
-
-  protected readonly ListIcon = List;
 
   // Extract headings from HTML content string (works on server too)
   protected readonly tocItems = computed<TocItem[]>(() => {

@@ -61,4 +61,24 @@ describe('RelatedArticlesComponent', () => {
     const links = fixture.nativeElement.querySelectorAll('a');
     expect(links.length).toBe(2);
   });
+
+  it('should cap the list at two read-next rows', () => {
+    fixture.componentRef.setInput('articles', [
+      createMockContent(),
+      createMockContent({ id: 'c2', slug: 'test2', title: 'Test 2' }),
+      createMockContent({ id: 'c3', slug: 'test3', title: 'Test 3' }),
+    ]);
+    fixture.detectChanges();
+    const links = fixture.nativeElement.querySelectorAll('a');
+    expect(links.length).toBe(2);
+  });
+
+  it('should route every type to the single reading surface', () => {
+    fixture.componentRef.setInput('articles', [
+      createMockContent({ slug: 'a-til', type: 'til' }),
+    ]);
+    fixture.detectChanges();
+    const link = fixture.nativeElement.querySelector('a');
+    expect(link?.getAttribute('href')).toBe('/articles/a-til');
+  });
 });

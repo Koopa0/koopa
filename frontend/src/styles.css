@@ -404,8 +404,8 @@ pre {
 .prose {
   max-width: var(--measure-article);
   font-family: var(--font-serif);
-  font-size: 1.0625rem;
-  line-height: var(--lh-read);
+  font-size: 1.125rem;
+  line-height: 1.78;
   color: var(--fg-muted);
 }
 
@@ -426,17 +426,16 @@ pre {
   line-height: 1.2;
 }
 .prose h2 {
-  font-size: 1.75rem;
+  font-size: 1.5625rem;
   font-weight: 600;
-  margin-top: 2rem;
-  margin-bottom: 0.75rem;
+  letter-spacing: -0.01em;
+  margin: 44px 0 14px;
   line-height: 1.3;
 }
 .prose h3 {
-  font-size: 1.375rem;
+  font-size: 1.1875rem;
   font-weight: 600;
-  margin-top: 1.5rem;
-  margin-bottom: 0.5rem;
+  margin: 30px 0 10px;
   line-height: 1.4;
 }
 .prose h4 {
@@ -446,65 +445,120 @@ pre {
   margin-bottom: 0.5rem;
 }
 
+/* Hover "#" anchors on linkable headings — pure CSS, no extra DOM.
+   scroll-margin keeps the heading clear of the sticky header on jump. */
+.prose h2[id],
+.prose h3[id] {
+  position: relative;
+  scroll-margin-top: 92px;
+}
+.prose h2[id]::before,
+.prose h3[id]::before {
+  content: '#';
+  position: absolute;
+  left: -24px;
+  font-family: var(--font-mono);
+  font-weight: 500;
+  color: var(--brand);
+  opacity: 0;
+  transition: opacity var(--dur-base) var(--ease-standard);
+}
+.prose h3[id]::before {
+  left: -22px;
+  font-size: 0.9em;
+}
+.prose h2[id]:hover::before,
+.prose h3[id]:hover::before {
+  opacity: 0.55;
+}
+
 .prose p {
-  margin-bottom: 1.25em;
+  margin: 0 0 22px;
 }
 
 .prose a {
   color: var(--brand);
-  text-decoration: underline;
-  text-underline-offset: 2px;
-  text-decoration-thickness: 1px;
+  text-decoration: none;
+  border-bottom: 1px solid var(--brand-muted);
 }
 .prose a:hover {
-  color: var(--brand-strong);
+  border-bottom-color: var(--brand);
 }
 
 .prose blockquote {
-  border-left: 2px solid var(--brand);
-  padding: 0.25rem 0 0.25rem 1.25rem;
-  margin: 1.5rem 0;
+  border-left: 3px solid var(--brand);
+  background: var(--brand-faint);
+  padding: 16px 22px;
+  margin: 28px 0;
   font-style: italic;
+  font-size: 1.125rem;
+  line-height: 1.6;
   color: var(--fg);
+  border-radius: 0 var(--r-md) var(--r-md) 0;
 }
 
 .prose code {
   font-family: var(--font-mono);
-  font-size: 0.85em;
-  padding: 2px 6px;
+  font-size: 0.875rem;
+  padding: 1px 5px;
   background: var(--elevated);
   color: var(--fg);
-  border-radius: var(--r-sm);
+  border-radius: 3px;
 }
 
 .prose pre {
+  position: relative;
   font-family: var(--font-mono);
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: var(--r-md);
-  padding: 1.25rem;
-  margin: 1.5rem 0;
+  padding: 18px 20px;
+  margin: 24px 0;
   overflow-x: auto;
+}
+
+/* Language label pinned top-right of fenced code blocks. Fades out on
+   hover so it never fights the copy button injected in the same corner. */
+.prose pre[data-lang]::before {
+  content: attr(data-lang);
+  position: absolute;
+  top: 9px;
+  right: 12px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--fg-faint);
+  transition: opacity var(--dur-base) var(--ease-standard);
+}
+.prose pre[data-lang]:hover::before {
+  opacity: 0;
 }
 
 .prose pre code {
   background: none;
   padding: 0;
-  font-size: 0.875rem;
-  line-height: 1.6;
+  font-size: 0.84375rem;
+  line-height: 1.7;
   color: inherit;
 }
 
 .prose ul,
 .prose ol {
-  margin: 1rem 0;
-  padding-left: 1.5rem;
+  margin: 0 0 22px;
+  padding-left: 24px;
 }
 .prose li {
-  margin: 0.4rem 0;
+  margin: 6px 0;
+  padding-left: 4px;
 }
 .prose li::marker {
-  color: var(--brand);
+  color: var(--fg-faint);
+}
+
+.prose em {
+  font-style: italic;
+  color: var(--fg);
 }
 
 .prose table {

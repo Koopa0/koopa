@@ -23,8 +23,8 @@ import {
   CommandPaletteService,
   type CommandAction,
 } from './command-palette.service';
-import type { ApiContent, ContentType } from '../../core/models';
-import { contentTypeLabel, contentTypeRoute } from '../../core/models';
+import type { ApiContent } from '../../core/models';
+import { contentTypeRoute } from '../../core/models';
 
 interface GroupedAction {
   name: string;
@@ -82,7 +82,13 @@ export class CommandPaletteComponent {
 
   protected readonly isOpen = this.paletteService.isOpen;
   protected readonly query = signal('');
-  protected readonly searchPlaceholder = 'Search content or quick navigate...';
+
+  /** Public visitors get the kit's writing-search prompt; admin keeps the navigate hint. */
+  protected readonly searchPlaceholder = computed(() =>
+    this.paletteService.isAuthenticated()
+      ? 'Search content or quick navigate...'
+      : 'Search writing…',
+  );
 
   /** Whether the user is typing a search query (vs browsing actions) */
   protected readonly isSearchMode = computed(() => {
@@ -276,8 +282,14 @@ export class CommandPaletteComponent {
     this.router.navigate(['/search'], { queryParams: q ? { q } : {} });
   }
 
-  protected getTypeLabel(type: ContentType): string {
-    return contentTypeLabel(type);
+  /** Result meta line: `{type} · {topic} · {n} min`, skipping absent parts. */
+  protected getResultSubtitle(result: ApiContent): string {
+    const parts = [
+      result.type as string,
+      result.topics[0]?.name,
+      `${result.reading_time_min} min`,
+    ].filter((part): part is string => Boolean(part));
+    return parts.join(' · ');
   }
 
   /**
