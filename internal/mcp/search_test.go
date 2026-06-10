@@ -265,31 +265,31 @@ func TestSearchKnowledge_Validation(t *testing.T) {
 		{name: "missing query", input: SearchKnowledgeInput{}, wantErr: "query is required"},
 		{
 			name:    "malformed after date",
-			input:   SearchKnowledgeInput{Query: "go", After: strPtr("not-a-date")},
+			input:   SearchKnowledgeInput{Query: "go", After: new("not-a-date")},
 			wantErr: "invalid after date",
 		},
 		{
 			name:    "malformed before date",
-			input:   SearchKnowledgeInput{Query: "go", Before: strPtr("13/2026")},
+			input:   SearchKnowledgeInput{Query: "go", Before: new("13/2026")},
 			wantErr: "invalid before date",
 		},
 		{
 			name: "content_type and note_kind are mutually exclusive",
 			input: SearchKnowledgeInput{
 				Query:       "go",
-				ContentType: strPtr("article"),
-				NoteKind:    strPtr("solve-note"),
+				ContentType: new("article"),
+				NoteKind:    new("solve-note"),
 			},
 			wantErr: "mutually exclusive",
 		},
 		{
 			name:    "unsupported content_type rejected",
-			input:   SearchKnowledgeInput{Query: "go", ContentType: strPtr("banana-not-a-type")},
+			input:   SearchKnowledgeInput{Query: "go", ContentType: new("banana-not-a-type")},
 			wantErr: "unsupported content_type",
 		},
 		{
 			name:    "unsupported note_kind rejected",
-			input:   SearchKnowledgeInput{Query: "go", NoteKind: strPtr("banana-not-a-kind")},
+			input:   SearchKnowledgeInput{Query: "go", NoteKind: new("banana-not-a-kind")},
 			wantErr: "unsupported note_kind",
 		},
 		{
@@ -304,7 +304,7 @@ func TestSearchKnowledge_Validation(t *testing.T) {
 		},
 		{
 			name:    "project filter rejected as unsupported",
-			input:   SearchKnowledgeInput{Query: "go", Project: strPtr("koopa")},
+			input:   SearchKnowledgeInput{Query: "go", Project: new("koopa")},
 			wantErr: "unsupported_filter",
 		},
 	}
@@ -392,11 +392,11 @@ func TestSearchKnowledge_DateBoundaryFilter(t *testing.T) {
 	loc := time.UTC
 	const day = "2026-05-22"
 
-	after, err := parseDateStart(strPtr(day), loc)
+	after, err := parseDateStart(new(day), loc)
 	if err != nil {
 		t.Fatalf("parseDateStart(%q): %v", day, err)
 	}
-	before, err := parseDateEnd(strPtr(day), loc)
+	before, err := parseDateEnd(new(day), loc)
 	if err != nil {
 		t.Fatalf("parseDateEnd(%q): %v", day, err)
 	}

@@ -127,7 +127,7 @@ func TestGroupChangelog(t *testing.T) {
 					Timestamp:  base,
 					EntityType: "content-繁體中文",
 					ChangeKind: "note_updated",
-					Title:      strPtr("📝 Go 學習筆記"),
+					Title:      new("📝 Go 學習筆記"),
 				},
 			},
 			want: []ChangelogDay{
@@ -135,7 +135,7 @@ func TestGroupChangelog(t *testing.T) {
 					Date:       "2026-03-17",
 					EventCount: 1,
 					Events: []ChangelogEvent{
-						{EntityType: "content-繁體中文", ChangeKind: "note_updated", Title: strPtr("📝 Go 學習筆記"), Timestamp: base},
+						{EntityType: "content-繁體中文", ChangeKind: "note_updated", Title: new("📝 Go 學習筆記"), Timestamp: base},
 					},
 				},
 			},
@@ -247,9 +247,6 @@ func TestGroupChangelog(t *testing.T) {
 		})
 	}
 }
-
-// strPtr is a test helper that returns a pointer to the given string.
-func strPtr(s string) *string { return &s }
 
 // FuzzGroupChangelog verifies GroupChangelog never panics on arbitrary event slices.
 func FuzzGroupChangelog(f *testing.F) {

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 	"unicode/utf8"
 
@@ -41,16 +42,13 @@ func (e *stubEmbedder) Embed(_ context.Context, text string) ([]float32, error) 
 }
 
 // fakeSource is an in-memory Source: docs whose ID has no entry in
-// vectors are "missing". drained (optional) is closed once every doc has
-// a persisted vector.
+// vectors are "missing".
 type fakeSource struct {
 	listErr error
-	drained chan struct{}
 
-	mu          sync.Mutex
-	docs        []Document
-	vectors     map[uuid.UUID]pgvector.Vector
-	drainedOnce sync.Once
+	mu      sync.Mutex
+	docs    []Document
+	vectors map[uuid.UUID]pgvector.Vector
 }
 
 func newFakeSource(n int, titlePrefix string) *fakeSource {
@@ -91,9 +89,6 @@ func (f *fakeSource) SetEmbedding(_ context.Context, id uuid.UUID, embedding pgv
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.vectors[id] = embedding
-	if len(f.vectors) == len(f.docs) && f.drained != nil {
-		f.drainedOnce.Do(func() { close(f.drained) })
-	}
 	return nil
 }
 
@@ -223,39 +218,37 @@ func TestReconcilerRunOnce_CanceledContext(t *testing.T) {
 }
 
 func TestReconcilerRun_StopsOnCancel(t *testing.T) {
-	contents := newFakeSource(2, "content")
-	notes := newFakeSource(1, "note")
-	notes.drained = make(chan struct{})
-	r := NewReconciler(&stubEmbedder{}, contents, notes, slog.New(slog.DiscardHandler))
+	synctest.Test(t, func(t *testing.T) {
+		contents := newFakeSource(2, "content")
+		notes := newFakeSource(1, "note")
+		r := NewReconciler(&stubEmbedder{}, contents, notes, slog.New(slog.DiscardHandler))
 
-	ctx, cancel := context.WithCancel(t.Context())
-	done := make(chan struct{})
-	go func() {
-		r.Run(ctx, time.Hour)
-		close(done)
-	}()
+		ctx, cancel := context.WithCancel(t.Context())
+		done := make(chan struct{})
+		go func() {
+			r.Run(ctx, time.Hour)
+			close(done)
+		}()
 
-	// The initial pass runs before any tick: notes (drained second)
-	// reporting empty means both sources are done.
-	select {
-	case <-notes.drained:
-	case <-time.After(5 * time.Second):
-		t.Fatal("initial pass did not drain within 5s")
-	}
+		// Run is blocked on the ticker once Wait returns, and the test
+		// never advances the fake clock, so no tick has fired: whatever
+		// is persisted at this point came from the initial pass alone.
+		synctest.Wait()
+		if n := contents.embeddedCount(); n != 2 {
+			t.Errorf("initial pass: contents persisted = %d, want 2", n)
+		}
+		if n := notes.embeddedCount(); n != 1 {
+			t.Errorf("initial pass: notes persisted = %d, want 1", n)
+		}
 
-	cancel()
-	select {
-	case <-done:
-	case <-time.After(5 * time.Second):
-		t.Fatal("Run did not return within 5s of ctx cancel")
-	}
-
-	if n := contents.embeddedCount(); n != 2 {
-		t.Errorf("contents persisted = %d, want 2", n)
-	}
-	if n := notes.embeddedCount(); n != 1 {
-		t.Errorf("notes persisted = %d, want 1", n)
-	}
+		cancel()
+		synctest.Wait()
+		select {
+		case <-done:
+		default:
+			t.Fatal("Run did not return after ctx cancel")
+		}
+	})
 }
 
 func TestEmbedText(t *testing.T) {

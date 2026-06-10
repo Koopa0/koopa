@@ -1,9 +1,10 @@
 // Copyright 2026 Koopa. All rights reserved.
 
-// Package mcp provides an MCP (Model Context Protocol) server exposing
-// the koopa knowledge engine as workflow-driven tools.
-//
-// v2: 22 tools organized by workflow, not by entity CRUD.
-// Design: .claude/plans/mcp-v2-design.md
-// Policy: .claude/rules/mcp-decision-policy.md
+// Package mcp provides the Model Context Protocol server that exposes
+// the koopa knowledge engine to AI agents as workflow-driven tools —
+// planning briefs, GTD capture, knowledge search, the learning-session
+// lifecycle, and Zettelkasten note co-authoring. Tools are organized by
+// workflow rather than entity CRUD; the canonical tool catalog lives in
+// internal/mcp/ops. Callers self-identify per call and every mutation
+// is authorized against the caller's agent identity.
 package mcp

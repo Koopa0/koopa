@@ -58,6 +58,13 @@ linters:
       checks:
         - "all"
         - "-SA1019" # Allow deprecated APIs for incremental migration
+        # Package-comment and doc-comment enforcement. Already covered by
+        # "all", but listed explicitly so the requirement survives any
+        # future narrowing of the check set.
+        - "ST1000" # missing or malformed package comment
+        - "ST1020" # exported function doc comment format
+        - "ST1021" # exported type doc comment format
+        - "ST1022" # exported var/const doc comment format
 
     govet:
       enable-all: true

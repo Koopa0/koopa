@@ -69,8 +69,8 @@ func TestNullCollectedStatus(t *testing.T) {
 		wantValid bool
 	}{
 		{name: "nil input → invalid", input: nil, wantValid: false},
-		{name: "non-nil string → valid", input: ptr("unread"), wantValid: true},
-		{name: "empty string → valid (non-nil)", input: ptr(""), wantValid: true},
+		{name: "non-nil string → valid", input: new("unread"), wantValid: true},
+		{name: "empty string → valid (non-nil)", input: new(""), wantValid: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -282,7 +282,7 @@ func TestHandler_List_QueryParams(t *testing.T) {
 		{name: "no params → default sort", query: "", wantSort: "", wantStatus: nil},
 		{name: "relevance sort", query: "sort=relevance", wantSort: "relevance", wantStatus: nil},
 		{name: "unknown sort → ignored", query: "sort=price", wantSort: "", wantStatus: nil},
-		{name: "status param", query: "status=unread", wantSort: "", wantStatus: ptr("unread")},
+		{name: "status param", query: "status=unread", wantSort: "", wantStatus: new("unread")},
 	}
 
 	for _, tt := range tests {
@@ -323,8 +323,6 @@ func TestHandler_List_QueryParams(t *testing.T) {
 // ---------------------------------------------------------------------------
 // helpers
 // ---------------------------------------------------------------------------
-
-func ptr(s string) *string { return &s }
 
 type errorResponse struct {
 	Error struct {

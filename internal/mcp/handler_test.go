@@ -44,7 +44,7 @@ func TestCaptureInbox_Validation(t *testing.T) {
 		wantErr string
 	}{
 		{name: "empty title", input: CaptureInboxInput{}, wantErr: "title is required"},
-		{name: "invalid due", input: CaptureInboxInput{Title: "test", Due: strPtr("not-a-date")}, wantErr: "invalid due date"},
+		{name: "invalid due", input: CaptureInboxInput{Title: "test", Due: new("not-a-date")}, wantErr: "invalid due date"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -71,7 +71,7 @@ func TestPlanDay_Validation(t *testing.T) {
 		{name: "empty items", input: PlanDayInput{}, wantErr: "items must contain at least one todo"},
 		{name: "invalid date", input: PlanDayInput{
 			Items: []PlanDayItem{{TaskID: "550e8400-e29b-41d4-a716-446655440000"}},
-			Date:  strPtr("bad-date"),
+			Date:  new("bad-date"),
 		}, wantErr: "invalid date"},
 		// task_id validation within items happens after DB call (delete existing plan)
 	}
@@ -148,7 +148,7 @@ func TestStartSession_Validation(t *testing.T) {
 	}{
 		{name: "empty domain", input: StartSessionInput{Mode: "practice"}, wantErr: "domain is required"},
 		{name: "invalid mode", input: StartSessionInput{Domain: "leetcode", Mode: "bad"}, wantErr: "invalid mode"},
-		{name: "invalid plan item id", input: StartSessionInput{Domain: "leetcode", Mode: "practice", DailyPlanItemID: strPtr("bad")}, wantErr: "invalid daily_plan_item_id"},
+		{name: "invalid plan item id", input: StartSessionInput{Domain: "leetcode", Mode: "practice", DailyPlanItemID: new("bad")}, wantErr: "invalid daily_plan_item_id"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -331,8 +331,6 @@ func testSchema[T any]() error {
 }
 
 // --- helpers ---
-
-func strPtr(s string) *string { return &s }
 
 func contains(s, substr string) bool {
 	return len(s) >= len(substr) && searchString(s, substr)

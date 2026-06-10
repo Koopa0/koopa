@@ -1,6 +1,10 @@
 // Copyright 2026 Koopa. All rights reserved.
 
-// Package goal provides goal tracking.
+// Package goal provides goal and milestone tracking for the admin
+// planning surface. A goal is a long-horizon outcome — optionally tied
+// to an area, quarter, or deadline — whose status moves through
+// not_started → in_progress → done | abandoned | on_hold; milestones
+// are a goal's checkable progress markers.
 package goal
 
 import (

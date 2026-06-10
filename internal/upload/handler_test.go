@@ -47,7 +47,7 @@ func s3Success(t *testing.T) *s3.Client {
 		},
 	}
 	return s3.New(s3.Options{
-		BaseEndpoint: strPtr("https://fake.r2.example.com"),
+		BaseEndpoint: new("https://fake.r2.example.com"),
 		Region:       "auto",
 		HTTPClient:   fake,
 		Credentials:  noopCredentials{},
@@ -68,7 +68,7 @@ func s3Failure(t *testing.T) *s3.Client {
 		},
 	}
 	return s3.New(s3.Options{
-		BaseEndpoint: strPtr("https://fake.r2.example.com"),
+		BaseEndpoint: new("https://fake.r2.example.com"),
 		Region:       "auto",
 		HTTPClient:   fake,
 		Credentials:  noopCredentials{},
@@ -119,8 +119,6 @@ func makePNGBytes() []byte {
 	copy(data, pngHeader)
 	return data
 }
-
-func strPtr(s string) *string { return &s }
 
 // decodeErrorBody decodes the api.ErrorBody from the response.
 func decodeErrorBody(t *testing.T, body io.Reader) api.ErrorBody {

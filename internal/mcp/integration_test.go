@@ -887,7 +887,7 @@ func TestIntegration_UpdateEntry_CompletionPolicy(t *testing.T) {
 				EntryID:              &twoSumEntryID,
 				Status:               &completed,
 				CompletedByAttemptID: &attemptID,
-				Reason:               strPtr("   "),
+				Reason:               new("   "),
 			},
 			wantSub: "reason is required",
 		},
@@ -898,7 +898,7 @@ func TestIntegration_UpdateEntry_CompletionPolicy(t *testing.T) {
 				PlanID:  planID,
 				EntryID: &twoSumEntryID,
 				Status:  &completed,
-				Reason:  strPtr("solved on second attempt"),
+				Reason:  new("solved on second attempt"),
 			},
 			wantSub: "completed_by_attempt_id is required",
 		},
@@ -909,7 +909,7 @@ func TestIntegration_UpdateEntry_CompletionPolicy(t *testing.T) {
 				PlanID:  planID,
 				EntryID: &strandedEntryID,
 				Status:  &completed,
-				Reason:  strPtr("just trust me on this one ok thanks"),
+				Reason:  new("just trust me on this one ok thanks"),
 				Force:   boolPtr(true),
 			},
 			wantSub: "manual override:",
@@ -921,7 +921,7 @@ func TestIntegration_UpdateEntry_CompletionPolicy(t *testing.T) {
 				PlanID:  planID,
 				EntryID: &strandedEntryID,
 				Status:  &completed,
-				Reason:  strPtr("manual override: nope"),
+				Reason:  new("manual override: nope"),
 				Force:   boolPtr(true),
 			},
 			wantSub: "≥ 60 characters",
@@ -938,7 +938,7 @@ func TestIntegration_UpdateEntry_CompletionPolicy(t *testing.T) {
 				PlanID:  planID,
 				EntryID: &strandedEntryID,
 				Status:  &completed,
-				Reason:  strPtr("manual override: target retcon done"),
+				Reason:  new("manual override: target retcon done"),
 				Force:   boolPtr(true),
 			},
 			wantSub: "≥ 60 characters",
@@ -951,7 +951,7 @@ func TestIntegration_UpdateEntry_CompletionPolicy(t *testing.T) {
 				EntryID:              &twoSumEntryID,
 				Status:               &completed,
 				CompletedByAttemptID: &attemptID,
-				Reason:               strPtr(strings.Repeat("a", 1025)),
+				Reason:               new(strings.Repeat("a", 1025)),
 			},
 			wantSub: "exceeds 1024 characters",
 		},
@@ -964,8 +964,8 @@ func TestIntegration_UpdateEntry_CompletionPolicy(t *testing.T) {
 				Action:  "update_entry",
 				PlanID:  planID,
 				EntryID: &twoSumEntryID,
-				Status:  strPtr("skipped"),
-				Reason:  strPtr("manual override: this should still reject because skipped"),
+				Status:  new("skipped"),
+				Reason:  new("manual override: this should still reject because skipped"),
 				Force:   boolPtr(true),
 			},
 			wantSub: "force=true is only valid with status=completed",
@@ -990,7 +990,7 @@ func TestIntegration_UpdateEntry_CompletionPolicy(t *testing.T) {
 		PlanID:  planID,
 		EntryID: &strandedEntryID,
 		Status:  &completed,
-		Reason:  strPtr("manual override: target was retconned during plan migration on 2026-05-06"),
+		Reason:  new("manual override: target was retconned during plan migration on 2026-05-06"),
 		Force:   boolPtr(true),
 	}); err != nil {
 		t.Fatalf("force-completion with valid override reason: %v", err)
@@ -1091,7 +1091,7 @@ func TestIntegration_UpdateEntry_SkipPolicy(t *testing.T) {
 				PlanID:  planID,
 				EntryID: &entryA,
 				Status:  &skipped,
-				Reason:  strPtr(""),
+				Reason:  new(""),
 			},
 			wantSub: "reason is required when marking entry skipped",
 		},
@@ -1102,7 +1102,7 @@ func TestIntegration_UpdateEntry_SkipPolicy(t *testing.T) {
 				PlanID:  planID,
 				EntryID: &entryA,
 				Status:  &skipped,
-				Reason:  strPtr("   \t\n"),
+				Reason:  new("   \t\n"),
 			},
 			wantSub: "reason is required when marking entry skipped",
 		},
@@ -1113,7 +1113,7 @@ func TestIntegration_UpdateEntry_SkipPolicy(t *testing.T) {
 				PlanID:  planID,
 				EntryID: &entryA,
 				Status:  &skipped,
-				Reason:  strPtr(strings.Repeat("a", 1025)),
+				Reason:  new(strings.Repeat("a", 1025)),
 			},
 			wantSub: "exceeds 1024 characters",
 		},
@@ -1138,7 +1138,7 @@ func TestIntegration_UpdateEntry_SkipPolicy(t *testing.T) {
 		PlanID:  planID,
 		EntryID: &entryB,
 		Status:  &skipped,
-		Reason:  strPtr("  koopa solved this offline before the plan was committed  "),
+		Reason:  new("  koopa solved this offline before the plan was committed  "),
 	}); err != nil {
 		t.Fatalf("skip with valid reason: %v", err)
 	}
@@ -1167,7 +1167,7 @@ func TestIntegration_UpdateEntry_SkipPolicy(t *testing.T) {
 		PlanID:  planID,
 		EntryID: &entryC,
 		Status:  &skipped,
-		Reason:  strPtr("ignored because force gate fires first"),
+		Reason:  new("ignored because force gate fires first"),
 		Force:   boolPtr(true),
 	}); err == nil {
 		t.Fatal("expected force=true with skipped to reject, got nil")
@@ -1867,7 +1867,7 @@ func TestIntegration_AttemptHistory_ConceptMode_MatchedObservationID(t *testing.
 
 	_, read, err := callHandler(t, s.learningRead, LearningReadInput{
 		View:        "attempts",
-		ConceptSlug: strPtr("sliding-window-variable"),
+		ConceptSlug: new("sliding-window-variable"),
 	})
 	if err != nil {
 		t.Fatalf("learningRead attempts concept: %v", err)
@@ -1927,7 +1927,7 @@ func TestIntegration_AttemptHistory_SessionMode_Observations(t *testing.T) {
 
 	_, read, err := callHandler(t, s.learningRead, LearningReadInput{
 		View:      "attempts",
-		SessionID: strPtr(sess.Session.ID.String()),
+		SessionID: new(sess.Session.ID.String()),
 	})
 	if err != nil {
 		t.Fatalf("learningRead attempts session: %v", err)
@@ -2000,7 +2000,7 @@ func TestIntegration_AttemptHistory_IncludeObservationsFalse(t *testing.T) {
 	// SQL query, not the secondary observation fetch.
 	_, readConcept, err := callHandler(t, s.learningRead, LearningReadInput{
 		View:                "attempts",
-		ConceptSlug:         strPtr("stack-matching"),
+		ConceptSlug:         new("stack-matching"),
 		IncludeObservations: &includeFalse,
 	})
 	if err != nil {
@@ -2068,7 +2068,7 @@ func TestIntegration_AttemptHistory_SortInvariants(t *testing.T) {
 
 	_, sessionRead, err := callHandler(t, s.learningRead, LearningReadInput{
 		View:      "attempts",
-		SessionID: strPtr(sess.Session.ID.String()),
+		SessionID: new(sess.Session.ID.String()),
 	})
 	if err != nil {
 		t.Fatalf("learningRead attempts session: %v", err)

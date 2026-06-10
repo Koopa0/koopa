@@ -340,10 +340,7 @@ func (s *Server) buildCandidatesFromWeaknesses(ctx context.Context, domain strin
 		excludeSet[p] = struct{}{}
 	}
 
-	topN := recommendWeaknessesTopN
-	if len(weaknesses) < topN {
-		topN = len(weaknesses)
-	}
+	topN := min(len(weaknesses), recommendWeaknessesTopN)
 
 	seenTargets := map[uuid.UUID]struct{}{}
 	candidates := make([]Candidate, 0, topN*2)

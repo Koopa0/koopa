@@ -208,10 +208,7 @@ func mergeByRelevance(contentResults, noteResults []SearchKnowledgeResult, limit
 // slices are ordered by fused rank (FTS rank when the semantic side is
 // empty), capped at limit.
 func (s *Server) hybridSearch(ctx context.Context, query string, limit int, wantContent, wantNote bool) ([]content.Content, []note.Note, error) {
-	branchSize := searchKnowledgeBranchSize
-	if limit > branchSize {
-		branchSize = limit
-	}
+	branchSize := max(limit, searchKnowledgeBranchSize)
 
 	var (
 		contentFTS, contentSem []content.Content

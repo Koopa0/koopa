@@ -1,8 +1,9 @@
 // Copyright 2026 Koopa. All rights reserved.
 
-// Command app runs the koopa HTTP API server (v2).
-//
-// This serves the Angular frontend. MCP tools are in cmd/mcp.
+// Command app runs the koopa HTTP API server — the public and admin
+// JSON API consumed by the Angular frontend, plus the background feed
+// collection and embedding reconciliation loops. MCP tools are served
+// separately by cmd/mcp.
 package main
 
 import (

@@ -1,6 +1,11 @@
 // Copyright 2026 Koopa. All rights reserved.
 
-// Package content provides content management for the knowledge engine.
+// Package content manages the public editorial corpus — articles,
+// essays, build logs, TILs, and digests — through the draft → review →
+// published → archived lifecycle. It owns the contents table end to
+// end: admin CRUD, the anonymous read surface with RSS and sitemap
+// syndication for published rows, search integration, and the pgvector
+// embedding columns behind the knowledge graph.
 package content
 
 import (
