@@ -10,7 +10,7 @@
   count, unique ids, required fields, and enum membership.
 - `TestSearchFixtures_SelectNegFltOnly` partitions fixtures into the tier-1
   mechanical subset (`NEG-*` and `FLT-*` with `automation_possible: "yes"`) and
-  the human-judgment remainder (`KN/LRN/PLAN/A2A`).
+  the human-judgment remainder (`KN/LRN/PLAN`).
 - The DB-backed tier-1 evaluator (integration suite) runs only the NEG/FLT
   subset and asserts **contract** outcomes (presence / absence / narrowing /
   rejection / empty) — never ranking metrics.
@@ -36,14 +36,13 @@ Filter keys (mirror `SearchKnowledgeInput`): `source_types` (`content` \| `note`
 `decision-log` \| `reading-note` \| `musing`), `project` (unsupported — rejected),
 `after` / `before` (`YYYY-MM-DD`), `limit` (max 50).
 
-## Coverage summary (33 fixtures)
+## Coverage summary (28 fixtures)
 
 | Prefix | Count | Tier-1? | Outcome class |
 |---|---|---|---|
 | `KN` | 5 | no (human judgment) | `judgment` |
 | `LRN` | 5 | no (human judgment) | `judgment` |
 | `PLAN` | 5 | no (human judgment) | `judgment` |
-| `A2A` | 5 | no (human judgment) | `judgment` |
 | `NEG` | 5 | yes (mechanical) | `empty` |
 | `FLT` | 8 | yes (mechanical) | `results` / `validation_error` |
 
@@ -233,68 +232,6 @@ seed_requirements:
 automation_possible: "no"
 expected_outcome: judgment
 should_not_appear_criteria: "Generic build-logs without a retrospective framing should rank below the retro essay."
-```
-
-## A2A — coordination-content discovery (human-judged)
-
-These judge whether written content/notes ABOUT coordination surface — the
-coordination entities themselves (tasks, directives, artifacts) live outside
-the `search_knowledge` corpus.
-
-```yaml
-fixture_id: A2A-01
-scenario_category: coordination-discovery
-query: "directive handoff to content-studio"
-filters: {}
-seed_requirements:
-  - content:build-log:content-studio-directive
-automation_possible: "no"
-expected_outcome: judgment
-```
-
-```yaml
-fixture_id: A2A-02
-scenario_category: coordination-discovery
-query: "research-lab findings on pgvector recall"
-filters: {}
-seed_requirements:
-  - content:build-log:research-lab-pgvector
-automation_possible: "no"
-expected_outcome: judgment
-```
-
-```yaml
-fixture_id: A2A-03
-scenario_category: coordination-discovery
-query: "how artifacts get published back to HQ"
-filters: {}
-seed_requirements:
-  - content:article:artifact-publish-flow
-automation_possible: "no"
-expected_outcome: judgment
-```
-
-```yaml
-fixture_id: A2A-04
-scenario_category: coordination-discovery
-query: "delegation decisions and capability boundaries"
-filters: {}
-seed_requirements:
-  - content:essay:capability-model-rationale
-automation_possible: "no"
-expected_outcome: judgment
-```
-
-```yaml
-fixture_id: A2A-05
-scenario_category: coordination-discovery
-query: "agent_note vs task — why notes are never A2A"
-filters: {}
-seed_requirements:
-  - note:decision-log:agent-note-not-a2a
-automation_possible: "no"
-expected_outcome: judgment
-notes: "Decision-log note recording the self-directed-memory invariant."
 ```
 
 ## NEG — negative controls (mechanical: must return empty)

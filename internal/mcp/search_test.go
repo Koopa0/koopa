@@ -380,14 +380,12 @@ func TestSearchKnowledge_DateBoundaryFilter(t *testing.T) {
 
 // fixtureIDPattern matches the stable id format used by the judgment set: a
 // category prefix that starts with a letter and may contain digits (KN, NEG,
-// FLT, LRN, PLAN, and A2A — the coordination prefix carries a digit), a dash,
-// and a two-digit number. Reconciled with search-relevance-fixture-schema.md §2
-// in Track 1L: the schema now documents this same grammar
-// (`^[A-Z][A-Z0-9]{1,3}-[0-9]{2}$`), which admits `A2A`.
+// FLT, LRN, PLAN), a dash, and a two-digit number
+// (`^[A-Z][A-Z0-9]{1,3}-[0-9]{2}$`).
 var fixtureIDPattern = regexp.MustCompile(`^[A-Z][A-Z0-9]{1,3}-\d{2}$`)
 
-// automationPossibleValues is the quoted-string enum after the Track 1K doc
-// cleanup. A YAML boolean (the old `false`) is rejected before reaching here.
+// automationPossibleValues is the quoted-string enum the loader accepts.
+// A YAML boolean (a bare `false`) is rejected before reaching here.
 var automationPossibleValues = map[string]bool{"yes": true, "no": true, "partial": true}
 
 // expectedOutcomeValues is the deterministic-outcome enum (schema §2). The
@@ -612,13 +610,13 @@ func selectTier1(fixtures []searchFixture) (selected []searchFixture, skipped []
 
 // TestSearchFixtures_ParseAllBlocks loads the real judgment set and asserts the
 // full set parses, every block carries the required fields, and the counts
-// match the coverage summary (33 fixtures total).
+// match the coverage summary (28 fixtures total).
 func TestSearchFixtures_ParseAllBlocks(t *testing.T) {
 	fixtures := loadSearchFixtures(t)
 
-	// 33 = KN(5) + LRN(5) + PLAN(5) + A2A(5) + NEG(5) + FLT(8), per the
-	// judgment-set coverage summary at the Track 1K snapshot.
-	const wantTotal = 33
+	// 28 = KN(5) + LRN(5) + PLAN(5) + NEG(5) + FLT(8), per the judgment-set
+	// coverage summary.
+	const wantTotal = 28
 	if len(fixtures) != wantTotal {
 		t.Errorf("parsed %d fixtures, want %d", len(fixtures), wantTotal)
 	}
@@ -647,8 +645,8 @@ func TestSearchFixtures_ParseAllBlocks(t *testing.T) {
 
 // TestSearchFixtures_RejectInvalidVocabulary pins that the parser refuses any
 // block that violates the loader contract — chiefly an automation_possible that
-// is not a quoted-string enum member (the Track 1K doc-cleanup invariant), plus
-// missing required keys and a bad fixture_id.
+// is not a quoted-string enum member, plus missing required keys and a bad
+// fixture_id.
 func TestSearchFixtures_RejectInvalidVocabulary(t *testing.T) {
 	const valid = `fixture_id: NEG-09
 query: "zqxprobe"
