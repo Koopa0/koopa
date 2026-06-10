@@ -24,8 +24,12 @@ go through `PUT /commitment/goals/{id}/status` `{ "status": "<enum>" }`.
 
 **Detail** `GET /commitment/goals/{id}` → `{ id, title, description, status, area_id?, area_name?, deadline?, quarter?, milestones[], projects[], recent_activity[], created_at, updated_at }`.
 **List** `GET /commitment/goals?status=<enum>` (optional filter).
+**Update** `PUT /commitment/goals/{id}` — partial: `{ title?, description?, quarter?, deadline?, area_id? }` (omitted = unchanged; `status` not accepted) → updated goal; 404 unknown.
 **Milestone create** `POST /commitment/goals/{id}/milestones` `{ title, description, target_deadline? }`.
+**Milestone update** `PUT /commitment/goals/{id}/milestones/{mid}` — partial: `{ title?, description?, target_deadline? }`; `mid` must belong to the goal (404 otherwise) → updated milestone.
+**Milestone delete** `DELETE /commitment/goals/{id}/milestones/{mid}` → 204; same membership binding; completed milestones deletable; position gaps left as-is.
 **Milestone toggle** `POST /commitment/goals/{id}/milestones/{mid}/toggle` → updated milestone (flips `completed_at`).
+**Areas** `GET /commitment/areas` → `[{ id, slug, name, sort_order }]` — PARA areas for the goal area selector, ordered by `sort_order`.
 
 ---
 
@@ -51,7 +55,7 @@ above. **⚠️ Decide: keep `progress` or rename to `summary`?** I lean **`prog
 **Entries** `POST /learning/plans/{id}/entries` `{ entries: [{ learning_target_id, phase? }] }` (max 100).
 **Update entry** (the **audit-gate** modal): marking `status=completed` REQUIRES
 `completed_by_attempt_id` + non-blank `reason` (server rejects otherwise, 400 `AUDIT_REQUIRED`).
-`status=skipped` requires a `reason`.
+`status=substituted` requires `substituted_by` (400 otherwise). `skipped` has no extra gate.
 
 ---
 
@@ -69,13 +73,22 @@ Lifecycle: `POST /learning/hypotheses/{id}/{verify|invalidate|archive|evidence}`
 **Todo (Item) shape:** `{ id, title, state, due?, project_id?, completed_at?, energy?, priority?, recur_interval?, recur_unit?, description?, created_by, created_at, updated_at }`.
 **State enum (5):** `inbox · todo · in_progress · done · someday`.
 
-**List (state-filtered)** `GET /commitment/todos?state=&project=&priority=&energy=&q=&sort=&limit=` — serves Inbox / Today / Pending / Someday / Done.
+**List (state-filtered)** `GET /commitment/todos?state=&project=&priority=&energy=&q=&sort=&limit=` — serves Inbox / Today / Pending / Someday / Done. `state` accepts a single value or a comma-separated list (`state=inbox,todo,in_progress,someday` — the server-side done exclusion for the backlog); every element must be a valid state, else 400. List rows carry `created_by`.
 **Create** `POST /commitment/todos` (`state` defaults to `inbox`; pass `state=todo` to skip clarify).
-**Advance** `POST /commitment/todos/{id}/advance` (clarify / start / complete / defer / drop).
+**Advance** `POST /commitment/todos/{id}/advance` (clarify / start / complete / defer / activate / drop). `activate` = someday → todo; wrong-state → 400 `INVALID_TRANSITION`.
 **Recurring view** `GET /commitment/todos/recurring` → `{ "due_today": [Item], "overdue": [Item] }`. *(new)*
 **History view** `GET /commitment/todos/history?since=YYYY-MM-DD&q=&project=&limit=` → completed/searched items. *(new)*
 
 **Daily plan** `GET /commitment/daily-plan?date=` (read) · **`PUT /commitment/daily-plan`** *(new)* `{ date?, items: [{ todo_id, position? }] }` → atomic set/reorder; rejects empty + inbox-state todos; returns the new plan + `items_removed`.
+
+---
+
+## Learning — Dashboard & Summary
+
+**Dashboard** `GET /learning/dashboard?view=&domain=&confidence_filter=` →
+`{ streak_days, concepts: { count_total, counts_by_domain, rows[] }, recent_observations[], week_activity: [{ "date": "YYYY-MM-DD", "attempts": 0 }] }`.
+`week_activity` = the last 7 UTC days of attempt logging (`learning_attempts.created_at`), zero-filled, today last.
+**Summary** `GET /learning/summary` → `{ streak_days, domains: [DomainMastery] }` — the lightweight streak + per-domain mastery envelope (no due-review data).
 
 ---
 

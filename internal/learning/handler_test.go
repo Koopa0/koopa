@@ -79,6 +79,9 @@ func TestDashboardWireContract(t *testing.T) {
 				CreatedAt:   now,
 			},
 		},
+		WeekActivity: []WeekActivityDay{
+			{Date: "2026-04-23", Attempts: 3},
+		},
 	}
 
 	b, err := json.Marshal(resp)
@@ -91,7 +94,7 @@ func TestDashboardWireContract(t *testing.T) {
 	if err := json.Unmarshal(b, &top); err != nil {
 		t.Fatalf("unmarshal top: %v", err)
 	}
-	for _, want := range []string{"streak_days", "concepts", "recent_observations"} {
+	for _, want := range []string{"streak_days", "concepts", "recent_observations", "week_activity"} {
 		if _, ok := top[want]; !ok {
 			t.Errorf("DashboardResponse missing top-level wire field %q", want)
 		}
@@ -135,6 +138,20 @@ func TestDashboardWireContract(t *testing.T) {
 			t.Errorf("recent_observation row missing wire field %q", want)
 		}
 	}
+
+	// week_activity day.
+	var week []map[string]json.RawMessage
+	if err := json.Unmarshal(top["week_activity"], &week); err != nil {
+		t.Fatalf("unmarshal week_activity: %v", err)
+	}
+	if len(week) != 1 {
+		t.Fatalf("week_activity len = %d, want 1", len(week))
+	}
+	for _, want := range []string{"date", "attempts"} {
+		if _, ok := week[0][want]; !ok {
+			t.Errorf("week_activity day missing wire field %q", want)
+		}
+	}
 }
 
 // TestDashboardWireContract_EmptyEncoding asserts that an "empty"
@@ -145,6 +162,7 @@ func TestDashboardWireContract_EmptyEncoding(t *testing.T) {
 	resp := DashboardResponse{
 		Concepts:           emptyDashboardConcepts(),
 		RecentObservations: []DashboardRecentObservation{},
+		WeekActivity:       []WeekActivityDay{},
 	}
 	b, err := json.Marshal(resp)
 	if err != nil {
@@ -155,6 +173,7 @@ func TestDashboardWireContract_EmptyEncoding(t *testing.T) {
 		`"counts_by_domain":{}`,
 		`"rows":[]`,
 		`"recent_observations":[]`,
+		`"week_activity":[]`,
 	} {
 		if !contains(got, want) {
 			t.Errorf("empty dashboard JSON missing %q\nfull JSON: %s", want, got)
@@ -166,6 +185,7 @@ func TestDashboardWireContract_EmptyEncoding(t *testing.T) {
 		`"rows":null`,
 		`"items":null`,
 		`"recent_observations":null`,
+		`"week_activity":null`,
 	} {
 		if contains(got, never) {
 			t.Errorf("empty dashboard JSON has forbidden %q\nfull JSON: %s", never, got)

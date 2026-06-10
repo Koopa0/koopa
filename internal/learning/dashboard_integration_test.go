@@ -3,8 +3,9 @@
 //go:build integration
 
 // dashboard_integration_test.go covers the GET /api/admin/learning/dashboard
-// reshape: observation-backed concept rows with mastery_value, and
-// confidence_filter propagation.
+// reshape: observation-backed concept rows with mastery_value,
+// confidence_filter propagation, and the week_activity 7-day zero-filled
+// window.
 //
 // All tests target the store layer (and run real SQL against testcontainers
 // PostgreSQL). The handler is one thin layer above — its wire shape is
@@ -20,6 +21,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/google/uuid"
 
 	"github.com/Koopa0/koopa/internal/learning"
@@ -150,6 +152,23 @@ func seedConceptCategory(t *testing.T, slug, domain string) {
 	)
 	if err != nil {
 		t.Fatalf("seeding observation_category %q: %v", slug, err)
+	}
+}
+
+// seedAttemptCreatedAt inserts a learning_attempt with an explicit
+// created_at — the column WeekActivity buckets on. attemptNumber is
+// caller-supplied because UNIQUE(learning_target_id, attempt_number)
+// forbids reusing 1 for repeated attempts on the same target.
+func seedAttemptCreatedAt(t *testing.T, sessionID, targetID uuid.UUID, attemptNumber int32, createdAt time.Time) {
+	t.Helper()
+	_, err := testPool.Exec(t.Context(),
+		`INSERT INTO learning_attempts
+		   (session_id, learning_target_id, attempt_number, paradigm, outcome, created_at)
+		 VALUES ($1, $2, $3, 'problem_solving', 'solved_independent', $4)`,
+		sessionID, targetID, attemptNumber, createdAt,
+	)
+	if err != nil {
+		t.Fatalf("seeding attempt #%d (created_at=%s): %v", attemptNumber, createdAt, err)
 	}
 }
 
@@ -357,5 +376,42 @@ func TestDashboard_RecentObservations_WireFieldNames(t *testing.T) {
 	}
 	if _, present := m["detail"]; present {
 		t.Errorf("recent_observation JSON has forbidden legacy field %q", "detail")
+	}
+}
+
+// TestDashboard_WeekActivity_ZeroFillAndOrder — WeekActivity returns
+// exactly 7 UTC days ending at now's day (today last), zero-filled for
+// days without attempts, bucketed on created_at, and attempts older
+// than the window are excluded.
+func TestDashboard_WeekActivity_ZeroFillAndOrder(t *testing.T) {
+	truncateDashboardTables(t)
+
+	targetID := seedTarget(t, "lc-week-activity")
+	sessionID := seedSession(t, "leetcode")
+
+	now := time.Date(2026, 6, 8, 12, 0, 0, 0, time.UTC)
+	// Two attempts today, one three days ago, one outside the 7-day window.
+	seedAttemptCreatedAt(t, sessionID, targetID, 1, now)
+	seedAttemptCreatedAt(t, sessionID, targetID, 2, now.Add(-2*time.Hour))
+	seedAttemptCreatedAt(t, sessionID, targetID, 3, now.AddDate(0, 0, -3))
+	seedAttemptCreatedAt(t, sessionID, targetID, 4, now.AddDate(0, 0, -8))
+
+	store := learning.NewStore(testPool)
+	got, err := store.WeekActivity(t.Context(), now)
+	if err != nil {
+		t.Fatalf("WeekActivity: %v", err)
+	}
+
+	want := []learning.WeekActivityDay{
+		{Date: "2026-06-02", Attempts: 0},
+		{Date: "2026-06-03", Attempts: 0},
+		{Date: "2026-06-04", Attempts: 0},
+		{Date: "2026-06-05", Attempts: 1},
+		{Date: "2026-06-06", Attempts: 0},
+		{Date: "2026-06-07", Attempts: 0},
+		{Date: "2026-06-08", Attempts: 2},
+	}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("WeekActivity(%s) mismatch (-want +got):\n%s", now.Format(time.DateOnly), diff)
 	}
 }

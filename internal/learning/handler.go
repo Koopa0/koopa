@@ -193,6 +193,9 @@ type DashboardResponse struct {
 	StreakDays         int                          `json:"streak_days"`
 	Concepts           DashboardConcepts            `json:"concepts"`
 	RecentObservations []DashboardRecentObservation `json:"recent_observations"`
+	// WeekActivity is the last 7 UTC days of attempt-logging activity,
+	// zero-filled, oldest first (today last).
+	WeekActivity []WeekActivityDay `json:"week_activity"`
 }
 
 const (
@@ -232,12 +235,19 @@ func (h *Handler) Dashboard(w http.ResponseWriter, r *http.Request) {
 	resp := DashboardResponse{
 		Concepts:           emptyDashboardConcepts(),
 		RecentObservations: []DashboardRecentObservation{},
+		WeekActivity:       []WeekActivityDay{},
 	}
 
 	if streak, err := h.store.Streak(ctx); err != nil {
 		h.logger.Warn("dashboard: streak failed", "error", err)
 	} else {
 		resp.StreakDays = streak
+	}
+
+	if days, err := h.store.WeekActivity(ctx, now); err != nil {
+		h.logger.Warn("dashboard: week activity failed", "error", err)
+	} else {
+		resp.WeekActivity = days
 	}
 
 	if rows, err := h.store.DashboardConceptRows(ctx, domain, since, confidenceFilter); err != nil {

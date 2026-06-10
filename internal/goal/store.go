@@ -420,6 +420,121 @@ func rowToGoal(r *db.Goal) Goal {
 	}
 }
 
+// Area is a PARA classification row consumed by the admin area selector.
+type Area struct {
+	ID        uuid.UUID `json:"id"`
+	Slug      string    `json:"slug"`
+	Name      string    `json:"name"`
+	SortOrder int32     `json:"sort_order"`
+}
+
+// Areas returns every PARA area ordered by sort_order then name.
+func (s *Store) Areas(ctx context.Context) ([]Area, error) {
+	rows, err := s.q.Areas(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("listing areas: %w", err)
+	}
+	areas := make([]Area, len(rows))
+	for i := range rows {
+		r := &rows[i]
+		areas[i] = Area{
+			ID:        r.ID,
+			Slug:      r.Slug,
+			Name:      r.Name,
+			SortOrder: r.SortOrder,
+		}
+	}
+	return areas, nil
+}
+
+// UpdateParams holds optional fields for updating a goal. nil means
+// "leave unchanged".
+type UpdateParams struct {
+	ID          uuid.UUID
+	Title       *string
+	Description *string
+	Quarter     *string
+	Deadline    *time.Time
+	AreaID      *uuid.UUID
+}
+
+// Update applies a partial update to a goal's shaping fields. Status is
+// not touched — it transitions through UpdateStatus.
+func (s *Store) Update(ctx context.Context, p *UpdateParams) (*Goal, error) {
+	r, err := s.q.UpdateGoal(ctx, db.UpdateGoalParams{
+		ID:             p.ID,
+		NewTitle:       p.Title,
+		NewDescription: p.Description,
+		NewQuarter:     p.Quarter,
+		NewDeadline:    p.Deadline,
+		NewAreaID:      p.AreaID,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("updating goal %s: %w", p.ID, err)
+	}
+	g := rowToGoal(&r)
+	return &g, nil
+}
+
+// UpdateMilestoneParams holds optional fields for updating a milestone.
+// nil means "leave unchanged". GoalID binds the update to the parent
+// goal — a mismatch surfaces as ErrNotFound.
+type UpdateMilestoneParams struct {
+	ID             uuid.UUID
+	GoalID         uuid.UUID
+	Title          *string
+	Description    *string
+	TargetDeadline *time.Time
+}
+
+// UpdateMilestone applies a partial update to a milestone owned by the
+// given goal. Returns ErrNotFound when the milestone does not exist or
+// belongs to a different goal.
+func (s *Store) UpdateMilestone(ctx context.Context, p *UpdateMilestoneParams) (*Milestone, error) {
+	r, err := s.q.UpdateMilestone(ctx, db.UpdateMilestoneParams{
+		ID:                p.ID,
+		GoalID:            p.GoalID,
+		NewTitle:          p.Title,
+		NewDescription:    p.Description,
+		NewTargetDeadline: p.TargetDeadline,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("updating milestone %s: %w", p.ID, err)
+	}
+	return &Milestone{
+		ID:             r.ID,
+		GoalID:         r.GoalID,
+		Title:          r.Title,
+		Description:    r.Description,
+		TargetDeadline: r.TargetDeadline,
+		CompletedAt:    r.CompletedAt,
+		Position:       r.Position,
+		CreatedAt:      r.CreatedAt,
+		UpdatedAt:      r.UpdatedAt,
+	}, nil
+}
+
+// DeleteMilestone deletes a milestone owned by the given goal. Returns
+// ErrNotFound when the milestone does not exist or belongs to a
+// different goal. Completed milestones are deletable; position gaps in
+// the remaining siblings are left as-is.
+func (s *Store) DeleteMilestone(ctx context.Context, goalID, id uuid.UUID) error {
+	n, err := s.q.DeleteMilestone(ctx, db.DeleteMilestoneParams{ID: id, GoalID: goalID})
+	if err != nil {
+		return fmt.Errorf("deleting milestone %s: %w", id, err)
+	}
+	if n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 // AreaIDBySlugOrName resolves an area slug or case-insensitive name to a
 // UUID. Returns ErrNotFound if no area matches. Used by propose_goal /
 // propose_project when the caller passes an area identifier instead of

@@ -6,9 +6,9 @@
 // records the real mutator.
 //
 // State transitions go through POST {id}/advance (clarify, start,
-// complete, defer, drop) instead of riding PUT so every state change
-// surfaces as a distinct audit event. PUT mutates scalar fields only —
-// state transitions via PUT return 400.
+// complete, defer, activate, drop) instead of riding PUT so every state
+// change surfaces as a distinct audit event. PUT mutates scalar fields
+// only — state transitions via PUT return 400.
 
 package todo
 
@@ -69,13 +69,28 @@ type listResponse struct {
 }
 
 // List handles GET /api/admin/commitment/todos.
-// Query params: state, project (uuid), priority, energy, q, limit,
-// due_before (YYYY-MM-DD), sort. due_before is applied in Go after the
-// SQL query returns. Unknown sort values silently fall back to the
-// default ordering (due → priority → created_at).
+// Query params: state (single value or comma-separated list, every
+// element validated against the state enum), project (uuid), priority,
+// energy, q, limit, due_before (YYYY-MM-DD), sort. due_before is applied
+// in Go after the SQL query returns. Unknown sort values silently fall
+// back to the default ordering (due → priority → created_at).
 func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
-	state := q.Get("state")
+	var states []string
+	if raw := q.Get("state"); raw != "" {
+		for s := range strings.SplitSeq(raw, ",") {
+			s = strings.TrimSpace(s)
+			if s == "" {
+				continue
+			}
+			if !validState(s) {
+				api.Error(w, http.StatusBadRequest, "BAD_REQUEST",
+					"state must be a comma-separated subset of {inbox, todo, in_progress, done, someday}")
+				return
+			}
+			states = append(states, s)
+		}
+	}
 	project := q.Get("project")
 	priority := q.Get("priority")
 	energy := q.Get("energy")
@@ -94,7 +109,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	rows, err := h.store.BacklogItems(r.Context(), state, project, energy, priority, search, sort, limit)
+	rows, err := h.store.BacklogItems(r.Context(), states, project, energy, priority, search, sort, limit)
 	if err != nil {
 		h.logger.Error("listing todos", "error", err)
 		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to list todos")
@@ -120,6 +135,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 				Priority:      r.Priority,
 				RecurInterval: r.RecurInterval,
 				RecurUnit:     r.RecurUnit,
+				CreatedBy:     r.CreatedBy,
 				CreatedAt:     r.CreatedAt,
 				UpdatedAt:     r.UpdatedAt,
 			},
@@ -429,8 +445,9 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 	api.Encode(w, http.StatusOK, api.Response{Data: item})
 }
 
-// advanceRequest mirrors the MCP advance_work action set. 'drop' removes
-// the row — see storeDelete comment.
+// advanceRequest carries the GTD advance action: clarify, start,
+// complete, defer, activate, or drop. 'drop' removes the row — see
+// storeDelete comment.
 type advanceRequest struct {
 	Action string `json:"action"`
 }
@@ -470,6 +487,9 @@ func (h *Handler) Advance(w http.ResponseWriter, r *http.Request) {
 		actionErr = store.Complete(r.Context(), id, nil)
 	case "defer":
 		actionErr = store.Defer(r.Context(), id)
+	case "activate":
+		h.advanceActivate(w, r, store, id)
+		return
 	case "drop":
 		// drop hard-deletes an inbox-state row. Non-inbox rows surface
 		// ErrNotFound — the caller must pick defer explicitly rather
@@ -487,7 +507,7 @@ func (h *Handler) Advance(w http.ResponseWriter, r *http.Request) {
 		return
 	default:
 		api.Error(w, http.StatusBadRequest, "INVALID_TRANSITION",
-			"action must be one of: clarify, start, complete, defer, drop")
+			"action must be one of: clarify, start, complete, defer, activate, drop")
 		return
 	}
 
@@ -502,6 +522,24 @@ func (h *Handler) Advance(w http.ResponseWriter, r *http.Request) {
 			api.HandleError(w, h.logger, err, storeErrors...)
 			return
 		}
+	}
+	api.Encode(w, http.StatusOK, api.Response{Data: item})
+}
+
+// advanceActivate handles advance(action=activate): someday → todo. The
+// SQL guard (WHERE state='someday') makes any other state surface
+// ErrNotFound, reported as an invalid transition — mirroring drop's
+// inbox guard.
+func (h *Handler) advanceActivate(w http.ResponseWriter, r *http.Request, store *Store, id uuid.UUID) {
+	item, err := store.Activate(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			api.Error(w, http.StatusBadRequest, "INVALID_TRANSITION",
+				"activate requires someday state")
+			return
+		}
+		api.HandleError(w, h.logger, err, storeErrors...)
+		return
 	}
 	api.Encode(w, http.StatusOK, api.Response{Data: item})
 }
@@ -528,6 +566,18 @@ func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
 
 func validPriority(p string) bool {
 	return p == "high" || p == "medium" || p == "low"
+}
+
+// validState reports whether s is a member of the todo_state enum.
+// Validated at the handler boundary so a bad filter value is a 400, not
+// a PostgreSQL cast error surfacing as 500.
+func validState(s string) bool {
+	switch State(s) {
+	case StateInbox, StateTodo, StateInProgress, StateDone, StateSomeday:
+		return true
+	default:
+		return false
+	}
 }
 
 func validEnergy(e string) bool {

@@ -81,6 +81,39 @@ func (s *Store) DashboardConceptRows(ctx context.Context, domain *string, since 
 	return result, nil
 }
 
+// WeekActivityDay is one day inside DashboardResponse.WeekActivity.
+type WeekActivityDay struct {
+	// Date is the UTC day in YYYY-MM-DD form.
+	Date string `json:"date"`
+	// Attempts counts learning_attempts created on that day.
+	Attempts int `json:"attempts"`
+}
+
+// WeekActivity returns the last seven UTC days of attempt-logging
+// activity (learning_attempts.created_at), zero-filled for empty days,
+// oldest first — the day containing now is always the last element.
+func (s *Store) WeekActivity(ctx context.Context, now time.Time) ([]WeekActivityDay, error) {
+	y, m, d := now.UTC().Date()
+	today := time.Date(y, m, d, 0, 0, 0, 0, time.UTC)
+	since := today.AddDate(0, 0, -6)
+
+	rows, err := s.q.WeekAttemptCounts(ctx, since)
+	if err != nil {
+		return nil, fmt.Errorf("querying week attempt counts: %w", err)
+	}
+	counts := make(map[string]int, len(rows))
+	for i := range rows {
+		counts[rows[i].Day.Format(time.DateOnly)] = int(rows[i].Attempts)
+	}
+
+	out := make([]WeekActivityDay, 7)
+	for i := range 7 {
+		date := since.AddDate(0, 0, i).Format(time.DateOnly)
+		out[i] = WeekActivityDay{Date: date, Attempts: counts[date]}
+	}
+	return out, nil
+}
+
 // DashboardRecentObservations returns the recent_observations slice for
 // the dashboard. Field renames (signal_type → signal, detail → body)
 // happen here; the SQL preserves schema-native names.

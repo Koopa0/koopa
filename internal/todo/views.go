@@ -161,10 +161,11 @@ func (s *Store) InboxItems(ctx context.Context) ([]Item, error) {
 }
 
 // BacklogItems returns a filtered list for the admin backlog view.
-// Empty state, projectID, energy, priority, search, or sort are treated
+// Empty states, projectID, energy, priority, search, or sort are treated
 // as "no filter / default ordering" so the admin UI can request the full
-// backlog without sending every field.
-func (s *Store) BacklogItems(ctx context.Context, state, projectID, energy, priority, search, sort string, limit int) ([]PendingDetail, error) {
+// backlog without sending every field. states elements must be valid
+// todo_state values — the handler validates before calling.
+func (s *Store) BacklogItems(ctx context.Context, states []string, projectID, energy, priority, search, sort string, limit int) ([]PendingDetail, error) {
 	var projID *uuid.UUID
 	if projectID != "" {
 		id, err := uuid.Parse(projectID)
@@ -187,13 +188,8 @@ func (s *Store) BacklogItems(ctx context.Context, state, projectID, energy, prio
 		sortPtr = &sort
 	}
 
-	stateParam := db.NullTodoState{}
-	if state != "" {
-		stateParam = db.NullTodoState{TodoState: db.TodoState(state), Valid: true}
-	}
-
 	rows, err := s.q.BacklogTodoItems(ctx, db.BacklogTodoItemsParams{
-		State:      stateParam,
+		States:     states,
 		ProjectID:  projID,
 		Energy:     energyPtr,
 		Priority:   priorityPtr,
@@ -212,6 +208,7 @@ func (s *Store) BacklogItems(ctx context.Context, state, projectID, energy, prio
 			ProjectTitle: r.ProjectTitle, ProjectSlug: r.ProjectSlug,
 			Energy: r.Energy, Priority: r.Priority,
 			RecurInterval: r.RecurInterval, RecurUnit: r.RecurUnit,
+			CreatedBy: r.CreatedBy,
 			CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
 		}
 	}

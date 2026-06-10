@@ -17,6 +17,12 @@
 //   - UpdateStatus on a non-existent goal → 404. This guards the regression
 //     where the store ErrNotFound leaked as a 500 instead of routing through
 //     api.HandleError / storeErrors.
+//   - Update — PUT /goals/{id} partial update (provided fields change,
+//     omitted fields survive) + 404 for an unknown goal.
+//   - UpdateMilestone / DeleteMilestone — membership-bound {id, mid}
+//     mutations; a goal/milestone mismatch is a 404, never a cross-goal
+//     write.
+//   - ListAreas — GET /areas returns the migration-seeded PARA rows.
 //
 // Run with:
 //
@@ -403,5 +409,306 @@ func TestIntegration_Goal_UpdateStatus_NotFound(t *testing.T) {
 	}
 	if env.Error.Code != "NOT_FOUND" {
 		t.Errorf("error.code = %q, want %q", env.Error.Code, "NOT_FOUND")
+	}
+}
+
+// putJSON builds a PUT request with a JSON body and the admin content type.
+func putJSON(t *testing.T, target string, body any) *http.Request {
+	t.Helper()
+	req := postJSON(t, target, body)
+	req.Method = http.MethodPut
+	return req
+}
+
+// errCode extracts error.code from an api error envelope.
+func errCode(t *testing.T, body []byte) string {
+	t.Helper()
+	var env struct {
+		Error struct {
+			Code string `json:"code"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(body, &env); err != nil {
+		t.Fatalf("decode error envelope: %v (body=%s)", err, body)
+	}
+	return env.Error.Code
+}
+
+// seedGoal inserts a goal row and returns its id.
+func seedGoal(t *testing.T, title string) uuid.UUID {
+	t.Helper()
+	var id uuid.UUID
+	if err := testPool.QueryRow(t.Context(),
+		`INSERT INTO goals (title, description, status) VALUES ($1, 'original description', 'in_progress') RETURNING id`,
+		title,
+	).Scan(&id); err != nil {
+		t.Fatalf("seeding goal %q: %v", title, err)
+	}
+	return id
+}
+
+// seedMilestone inserts a milestone under the given goal and returns its id.
+func seedMilestone(t *testing.T, goalID uuid.UUID, title string, position int32) uuid.UUID {
+	t.Helper()
+	var id uuid.UUID
+	if err := testPool.QueryRow(t.Context(),
+		`INSERT INTO milestones (goal_id, title, position) VALUES ($1, $2, $3) RETURNING id`,
+		goalID, title, position,
+	).Scan(&id); err != nil {
+		t.Fatalf("seeding milestone %q: %v", title, err)
+	}
+	return id
+}
+
+// TestIntegration_Goal_Update drives PUT /goals/{id} through the middleware:
+// provided fields change, omitted fields survive, and an unknown goal is a
+// 404.
+func TestIntegration_Goal_Update(t *testing.T) {
+	truncate(t)
+	h := newHandler()
+
+	id := seedGoal(t, "Original title")
+
+	// Resolve a real area so the partial update can also rewire area_id.
+	var areaID uuid.UUID
+	if err := testPool.QueryRow(t.Context(),
+		`SELECT id FROM areas WHERE slug = 'learning'`,
+	).Scan(&areaID); err != nil {
+		t.Fatalf("resolving seeded area: %v", err)
+	}
+
+	req := putJSON(t, "/api/admin/commitment/goals/"+id.String(), map[string]any{
+		"title":   "Updated title",
+		"quarter": "2026-Q3",
+		"area_id": areaID,
+	})
+	req.SetPathValue("id", id.String())
+	rec := serve(t, h.Update, req)
+
+	resp := rec.Result()
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body=%s)", resp.StatusCode, body)
+	}
+
+	var title, description, quarter string
+	var gotArea *uuid.UUID
+	if err := testPool.QueryRow(t.Context(),
+		`SELECT title, description, COALESCE(quarter, ''), area_id FROM goals WHERE id = $1`, id,
+	).Scan(&title, &description, &quarter, &gotArea); err != nil {
+		t.Fatalf("reading updated goal: %v", err)
+	}
+	if title != "Updated title" {
+		t.Errorf("title = %q, want %q", title, "Updated title")
+	}
+	if description != "original description" {
+		t.Errorf("description = %q, want %q (omitted field must survive)", description, "original description")
+	}
+	if quarter != "2026-Q3" {
+		t.Errorf("quarter = %q, want %q", quarter, "2026-Q3")
+	}
+	if gotArea == nil || *gotArea != areaID {
+		t.Errorf("area_id = %v, want %s", gotArea, areaID)
+	}
+
+	// Unknown goal → 404 NOT_FOUND.
+	missing := uuid.New()
+	req404 := putJSON(t, "/api/admin/commitment/goals/"+missing.String(), map[string]any{
+		"title": "Whatever",
+	})
+	req404.SetPathValue("id", missing.String())
+	rec404 := serve(t, h.Update, req404)
+
+	resp404 := rec404.Result()
+	defer resp404.Body.Close()
+	body404, _ := io.ReadAll(resp404.Body)
+
+	if resp404.StatusCode != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404 for unknown goal (body=%s)", resp404.StatusCode, body404)
+	}
+	if code := errCode(t, body404); code != "NOT_FOUND" {
+		t.Errorf("error.code = %q, want %q", code, "NOT_FOUND")
+	}
+}
+
+// TestIntegration_Goal_UpdateMilestone drives PUT /goals/{id}/milestones/{mid}
+// through the middleware: a partial title update lands, and a {goal, mid}
+// membership mismatch is a 404 with the row untouched.
+func TestIntegration_Goal_UpdateMilestone(t *testing.T) {
+	truncate(t)
+	h := newHandler()
+
+	goalID := seedGoal(t, "Goal A")
+	otherGoalID := seedGoal(t, "Goal B")
+	mid := seedMilestone(t, goalID, "Original milestone", 0)
+
+	req := putJSON(t,
+		"/api/admin/commitment/goals/"+goalID.String()+"/milestones/"+mid.String(),
+		map[string]any{"title": "Renamed milestone"})
+	req.SetPathValue("id", goalID.String())
+	req.SetPathValue("mid", mid.String())
+	rec := serve(t, h.UpdateMilestone, req)
+
+	resp := rec.Result()
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body=%s)", resp.StatusCode, body)
+	}
+
+	var title string
+	if err := testPool.QueryRow(t.Context(),
+		`SELECT title FROM milestones WHERE id = $1`, mid,
+	).Scan(&title); err != nil {
+		t.Fatalf("reading updated milestone: %v", err)
+	}
+	if title != "Renamed milestone" {
+		t.Errorf("milestone title = %q, want %q", title, "Renamed milestone")
+	}
+
+	// Membership mismatch: the milestone belongs to goalID, not otherGoalID.
+	reqMismatch := putJSON(t,
+		"/api/admin/commitment/goals/"+otherGoalID.String()+"/milestones/"+mid.String(),
+		map[string]any{"title": "Hijacked"})
+	reqMismatch.SetPathValue("id", otherGoalID.String())
+	reqMismatch.SetPathValue("mid", mid.String())
+	recMismatch := serve(t, h.UpdateMilestone, reqMismatch)
+
+	respMismatch := recMismatch.Result()
+	defer respMismatch.Body.Close()
+	bodyMismatch, _ := io.ReadAll(respMismatch.Body)
+
+	if respMismatch.StatusCode != http.StatusNotFound {
+		t.Fatalf("mismatch status = %d, want 404 (body=%s)", respMismatch.StatusCode, bodyMismatch)
+	}
+	if code := errCode(t, bodyMismatch); code != "NOT_FOUND" {
+		t.Errorf("mismatch error.code = %q, want %q", code, "NOT_FOUND")
+	}
+	if err := testPool.QueryRow(t.Context(),
+		`SELECT title FROM milestones WHERE id = $1`, mid,
+	).Scan(&title); err != nil {
+		t.Fatalf("reading milestone after rejected update: %v", err)
+	}
+	if title != "Renamed milestone" {
+		t.Errorf("milestone title = %q after rejected cross-goal update, want %q", title, "Renamed milestone")
+	}
+}
+
+// TestIntegration_Goal_DeleteMilestone drives DELETE /goals/{id}/milestones/{mid}:
+// a completed milestone deletes with 204 (gaps left as-is), and a membership
+// mismatch is a 404 that deletes nothing.
+func TestIntegration_Goal_DeleteMilestone(t *testing.T) {
+	truncate(t)
+	h := newHandler()
+
+	goalID := seedGoal(t, "Goal A")
+	otherGoalID := seedGoal(t, "Goal B")
+	mid := seedMilestone(t, goalID, "Done milestone", 0)
+	keeper := seedMilestone(t, goalID, "Keeper milestone", 1)
+
+	// Completed milestones are deletable — stamp completed_at first.
+	if _, err := testPool.Exec(t.Context(),
+		`UPDATE milestones SET completed_at = now() WHERE id = $1`, mid,
+	); err != nil {
+		t.Fatalf("completing milestone: %v", err)
+	}
+
+	// Membership mismatch first: nothing is deleted.
+	reqMismatch := httptest.NewRequest(http.MethodDelete,
+		"/api/admin/commitment/goals/"+otherGoalID.String()+"/milestones/"+mid.String(), nil)
+	reqMismatch.SetPathValue("id", otherGoalID.String())
+	reqMismatch.SetPathValue("mid", mid.String())
+	recMismatch := serve(t, h.DeleteMilestone, reqMismatch)
+
+	respMismatch := recMismatch.Result()
+	defer respMismatch.Body.Close()
+	bodyMismatch, _ := io.ReadAll(respMismatch.Body)
+
+	if respMismatch.StatusCode != http.StatusNotFound {
+		t.Fatalf("mismatch status = %d, want 404 (body=%s)", respMismatch.StatusCode, bodyMismatch)
+	}
+	if code := errCode(t, bodyMismatch); code != "NOT_FOUND" {
+		t.Errorf("mismatch error.code = %q, want %q", code, "NOT_FOUND")
+	}
+
+	// Correct binding: 204 and the row is gone; the sibling keeps its
+	// position (gaps left as-is).
+	req := httptest.NewRequest(http.MethodDelete,
+		"/api/admin/commitment/goals/"+goalID.String()+"/milestones/"+mid.String(), nil)
+	req.SetPathValue("id", goalID.String())
+	req.SetPathValue("mid", mid.String())
+	rec := serve(t, h.DeleteMilestone, req)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want 204 (body=%s)", rec.Code, rec.Body.String())
+	}
+
+	var count int
+	if err := testPool.QueryRow(t.Context(),
+		`SELECT count(*) FROM milestones WHERE id = $1`, mid,
+	).Scan(&count); err != nil {
+		t.Fatalf("counting deleted milestone: %v", err)
+	}
+	if count != 0 {
+		t.Errorf("milestone row count = %d after delete, want 0", count)
+	}
+
+	var keeperPos int32
+	if err := testPool.QueryRow(t.Context(),
+		`SELECT position FROM milestones WHERE id = $1`, keeper,
+	).Scan(&keeperPos); err != nil {
+		t.Fatalf("reading surviving milestone: %v", err)
+	}
+	if keeperPos != 1 {
+		t.Errorf("surviving milestone position = %d, want 1 (gaps left as-is)", keeperPos)
+	}
+}
+
+// TestIntegration_Goal_ListAreas asserts GET /areas returns the
+// migration-seeded PARA rows with the {id, slug, name, sort_order} shape
+// the goal-create selector consumes.
+func TestIntegration_Goal_ListAreas(t *testing.T) {
+	h := newHandler()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/admin/commitment/areas", nil)
+	rec := httptest.NewRecorder()
+	h.ListAreas(rec, req)
+
+	resp := rec.Result()
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body=%s)", resp.StatusCode, body)
+	}
+
+	var env struct {
+		Data []struct {
+			ID        uuid.UUID `json:"id"`
+			Slug      string    `json:"slug"`
+			Name      string    `json:"name"`
+			SortOrder int32     `json:"sort_order"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &env); err != nil {
+		t.Fatalf("decode areas response: %v (body=%s)", err, body)
+	}
+	if len(env.Data) == 0 {
+		t.Fatalf("areas list is empty, want the migration-seeded PARA rows (body=%s)", body)
+	}
+	for i, a := range env.Data {
+		if a.ID == uuid.Nil || a.Slug == "" || a.Name == "" {
+			t.Errorf("areas[%d] = %+v, want non-zero id/slug/name", i, a)
+		}
+	}
+	// Seeded rows are ordered by sort_order — verify monotonic non-decreasing.
+	for i := 1; i < len(env.Data); i++ {
+		if env.Data[i].SortOrder < env.Data[i-1].SortOrder {
+			t.Errorf("areas not ordered by sort_order: [%d]=%d < [%d]=%d",
+				i, env.Data[i].SortOrder, i-1, env.Data[i-1].SortOrder)
+		}
 	}
 }

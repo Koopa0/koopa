@@ -251,12 +251,24 @@ SET state = 'todo',
 WHERE id = @id AND state = 'inbox'
 RETURNING *;
 
+-- name: ActivateTodoItem :one
+-- Promote a someday todo item back to todo state. State guard mirrors
+-- ClarifyTodoItem: only someday rows transition; anything else is a
+-- no-row miss.
+UPDATE todos
+SET state = 'todo',
+    updated_at = now()
+WHERE id = @id AND state = 'someday'
+RETURNING *;
+
 -- name: DeleteTodoItem :execrows
 -- Hard delete an inbox todo item. State guard prevents accidental deletion.
 DELETE FROM todos WHERE id = @id AND state = 'inbox';
 
 -- name: BacklogTodoItems :many
--- Filtered todo item list for admin backlog view.
+-- Filtered todo item list for admin backlog view. states is a text[] of
+-- todo_state values (NULL = no state filter); elements are validated at
+-- the handler boundary.
 SELECT t.id, t.title, t.state, t.due, t.project_id,
        t.energy, t.priority, t.recur_interval, t.recur_unit,
        t.created_by, t.created_at, t.updated_at,
@@ -264,7 +276,7 @@ SELECT t.id, t.title, t.state, t.due, t.project_id,
        COALESCE(p.slug, '') AS project_slug
 FROM todos t
 LEFT JOIN projects p ON p.id = t.project_id
-WHERE (sqlc.narg('state')::todo_state IS NULL OR t.state = sqlc.narg('state')::todo_state)
+WHERE (sqlc.narg('states')::text[] IS NULL OR t.state::text = ANY(sqlc.narg('states')::text[]))
   AND (sqlc.narg('project_id')::uuid IS NULL OR t.project_id = sqlc.narg('project_id'))
   AND (sqlc.narg('energy')::text IS NULL OR t.energy = sqlc.narg('energy'))
   AND (sqlc.narg('priority')::text IS NULL OR t.priority = sqlc.narg('priority'))

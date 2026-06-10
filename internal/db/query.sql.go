@@ -14,6 +14,39 @@ import (
 	pgvector_go "github.com/pgvector/pgvector-go"
 )
 
+const activateTodoItem = `-- name: ActivateTodoItem :one
+UPDATE todos
+SET state = 'todo',
+    updated_at = now()
+WHERE id = $1 AND state = 'someday'
+RETURNING id, title, state, due, project_id, completed_at, energy, priority, recur_interval, recur_unit, description, created_by, created_at, updated_at
+`
+
+// Promote a someday todo item back to todo state. State guard mirrors
+// ClarifyTodoItem: only someday rows transition; anything else is a
+// no-row miss.
+func (q *Queries) ActivateTodoItem(ctx context.Context, id uuid.UUID) (Todo, error) {
+	row := q.db.QueryRow(ctx, activateTodoItem, id)
+	var i Todo
+	err := row.Scan(
+		&i.ID,
+		&i.Title,
+		&i.State,
+		&i.Due,
+		&i.ProjectID,
+		&i.CompletedAt,
+		&i.Energy,
+		&i.Priority,
+		&i.RecurInterval,
+		&i.RecurUnit,
+		&i.Description,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const activeGoals = `-- name: ActiveGoals :many
 SELECT g.id, g.title, g.description, g.status, g.area_id, g.quarter, g.deadline,
        g.created_at, g.updated_at,
@@ -595,6 +628,45 @@ func (q *Queries) AreaIDBySlugOrName(ctx context.Context, identifier string) (uu
 	return id, err
 }
 
+const areas = `-- name: Areas :many
+SELECT id, slug, name, sort_order
+FROM areas
+ORDER BY sort_order, name
+`
+
+type AreasRow struct {
+	ID        uuid.UUID `json:"id"`
+	Slug      string    `json:"slug"`
+	Name      string    `json:"name"`
+	SortOrder int32     `json:"sort_order"`
+}
+
+// List every PARA area for the admin area selector (goal classification).
+func (q *Queries) Areas(ctx context.Context) ([]AreasRow, error) {
+	rows, err := q.db.Query(ctx, areas)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AreasRow{}
+	for rows.Next() {
+		var i AreasRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Slug,
+			&i.Name,
+			&i.SortOrder,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const attachContentToTarget = `-- name: AttachContentToTarget :exec
 INSERT INTO learning_target_contents (target_id, content_id)
 VALUES ($1, $2)
@@ -954,7 +1026,7 @@ SELECT t.id, t.title, t.state, t.due, t.project_id,
        COALESCE(p.slug, '') AS project_slug
 FROM todos t
 LEFT JOIN projects p ON p.id = t.project_id
-WHERE ($1::todo_state IS NULL OR t.state = $1::todo_state)
+WHERE ($1::text[] IS NULL OR t.state::text = ANY($1::text[]))
   AND ($2::uuid IS NULL OR t.project_id = $2)
   AND ($3::text IS NULL OR t.energy = $3)
   AND ($4::text IS NULL OR t.priority = $4)
@@ -969,13 +1041,13 @@ LIMIT $7
 `
 
 type BacklogTodoItemsParams struct {
-	State      NullTodoState `json:"state"`
-	ProjectID  *uuid.UUID    `json:"project_id"`
-	Energy     *string       `json:"energy"`
-	Priority   *string       `json:"priority"`
-	Search     *string       `json:"search"`
-	Sort       *string       `json:"sort"`
-	MaxResults int32         `json:"max_results"`
+	States     []string   `json:"states"`
+	ProjectID  *uuid.UUID `json:"project_id"`
+	Energy     *string    `json:"energy"`
+	Priority   *string    `json:"priority"`
+	Search     *string    `json:"search"`
+	Sort       *string    `json:"sort"`
+	MaxResults int32      `json:"max_results"`
 }
 
 type BacklogTodoItemsRow struct {
@@ -995,10 +1067,12 @@ type BacklogTodoItemsRow struct {
 	ProjectSlug   string     `json:"project_slug"`
 }
 
-// Filtered todo item list for admin backlog view.
+// Filtered todo item list for admin backlog view. states is a text[] of
+// todo_state values (NULL = no state filter); elements are validated at
+// the handler boundary.
 func (q *Queries) BacklogTodoItems(ctx context.Context, arg BacklogTodoItemsParams) ([]BacklogTodoItemsRow, error) {
 	rows, err := q.db.Query(ctx, backlogTodoItems,
-		arg.State,
+		arg.States,
 		arg.ProjectID,
 		arg.Energy,
 		arg.Priority,
@@ -3334,6 +3408,26 @@ DELETE FROM feed_topics WHERE feed_id = $1::uuid
 func (q *Queries) DeleteFeedTopics(ctx context.Context, feedID uuid.UUID) error {
 	_, err := q.db.Exec(ctx, deleteFeedTopics, feedID)
 	return err
+}
+
+const deleteMilestone = `-- name: DeleteMilestone :execrows
+DELETE FROM milestones WHERE id = $1 AND goal_id = $2
+`
+
+type DeleteMilestoneParams struct {
+	ID     uuid.UUID `json:"id"`
+	GoalID uuid.UUID `json:"goal_id"`
+}
+
+// Delete a milestone, bound to its parent goal (same membership guard as
+// UpdateMilestone). Completed milestones are deletable; position gaps in
+// the remaining siblings are left as-is.
+func (q *Queries) DeleteMilestone(ctx context.Context, arg DeleteMilestoneParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteMilestone, arg.ID, arg.GoalID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const deleteNote = `-- name: DeleteNote :execrows
@@ -11041,6 +11135,55 @@ func (q *Queries) UpdateFeedEntryFeedback(ctx context.Context, arg UpdateFeedEnt
 	return err
 }
 
+const updateGoal = `-- name: UpdateGoal :one
+UPDATE goals SET
+    title       = COALESCE($1, title),
+    description = COALESCE($2, description),
+    quarter     = COALESCE($3, quarter),
+    deadline    = COALESCE($4, deadline),
+    area_id     = COALESCE($5, area_id),
+    updated_at  = now()
+WHERE id = $6
+RETURNING id, title, description, status, area_id, quarter, deadline,
+          created_at, updated_at
+`
+
+type UpdateGoalParams struct {
+	NewTitle       *string    `json:"new_title"`
+	NewDescription *string    `json:"new_description"`
+	NewQuarter     *string    `json:"new_quarter"`
+	NewDeadline    *time.Time `json:"new_deadline"`
+	NewAreaID      *uuid.UUID `json:"new_area_id"`
+	ID             uuid.UUID  `json:"id"`
+}
+
+// Partial update of a goal's shaping fields. NULL parameters leave the
+// column unchanged. Status is not touched here — it has its own
+// UpdateGoalStatus transition.
+func (q *Queries) UpdateGoal(ctx context.Context, arg UpdateGoalParams) (Goal, error) {
+	row := q.db.QueryRow(ctx, updateGoal,
+		arg.NewTitle,
+		arg.NewDescription,
+		arg.NewQuarter,
+		arg.NewDeadline,
+		arg.NewAreaID,
+		arg.ID,
+	)
+	var i Goal
+	err := row.Scan(
+		&i.ID,
+		&i.Title,
+		&i.Description,
+		&i.Status,
+		&i.AreaID,
+		&i.Quarter,
+		&i.Deadline,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const updateGoalStatus = `-- name: UpdateGoalStatus :one
 UPDATE goals SET
     status = $1::goal_status,
@@ -11246,6 +11389,62 @@ func (q *Queries) UpdateItemStatusByTodo(ctx context.Context, arg UpdateItemStat
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const updateMilestone = `-- name: UpdateMilestone :one
+UPDATE milestones SET
+    title           = COALESCE($1, title),
+    description     = COALESCE($2, description),
+    target_deadline = COALESCE($3, target_deadline),
+    updated_at      = now()
+WHERE id = $4 AND goal_id = $5
+RETURNING id, goal_id, title, description, target_deadline, completed_at, position, created_at, updated_at
+`
+
+type UpdateMilestoneParams struct {
+	NewTitle          *string    `json:"new_title"`
+	NewDescription    *string    `json:"new_description"`
+	NewTargetDeadline *time.Time `json:"new_target_deadline"`
+	ID                uuid.UUID  `json:"id"`
+	GoalID            uuid.UUID  `json:"goal_id"`
+}
+
+type UpdateMilestoneRow struct {
+	ID             uuid.UUID  `json:"id"`
+	GoalID         uuid.UUID  `json:"goal_id"`
+	Title          string     `json:"title"`
+	Description    string     `json:"description"`
+	TargetDeadline *time.Time `json:"target_deadline"`
+	CompletedAt    *time.Time `json:"completed_at"`
+	Position       int32      `json:"position"`
+	CreatedAt      time.Time  `json:"created_at"`
+	UpdatedAt      time.Time  `json:"updated_at"`
+}
+
+// Partial update of a milestone, bound to its parent goal: the WHERE
+// clause enforces membership, so a {goal_id, id} mismatch is a no-row
+// miss rather than a cross-goal write.
+func (q *Queries) UpdateMilestone(ctx context.Context, arg UpdateMilestoneParams) (UpdateMilestoneRow, error) {
+	row := q.db.QueryRow(ctx, updateMilestone,
+		arg.NewTitle,
+		arg.NewDescription,
+		arg.NewTargetDeadline,
+		arg.ID,
+		arg.GoalID,
+	)
+	var i UpdateMilestoneRow
+	err := row.Scan(
+		&i.ID,
+		&i.GoalID,
+		&i.Title,
+		&i.Description,
+		&i.TargetDeadline,
+		&i.CompletedAt,
+		&i.Position,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }
 
 const updateNote = `-- name: UpdateNote :one
@@ -11998,6 +12197,43 @@ func (q *Queries) WeaknessAnalysis(ctx context.Context, arg WeaknessAnalysisPara
 			&i.MinorCount,
 			&i.LastSeenAt,
 		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const weekAttemptCounts = `-- name: WeekAttemptCounts :many
+SELECT (created_at AT TIME ZONE 'UTC')::date AS day,
+       count(*)::int AS attempts
+FROM learning_attempts
+WHERE created_at >= $1
+GROUP BY day
+ORDER BY day
+`
+
+type WeekAttemptCountsRow struct {
+	Day      time.Time `json:"day"`
+	Attempts int32     `json:"attempts"`
+}
+
+// Per-UTC-day attempt counts since @since, keyed on created_at (when the
+// attempt was logged) for /learning/dashboard week_activity. Days with
+// zero attempts produce no row — the store zero-fills the 7-day window.
+func (q *Queries) WeekAttemptCounts(ctx context.Context, since time.Time) ([]WeekAttemptCountsRow, error) {
+	rows, err := q.db.Query(ctx, weekAttemptCounts, since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []WeekAttemptCountsRow{}
+	for rows.Next() {
+		var i WeekAttemptCountsRow
+		if err := rows.Scan(&i.Day, &i.Attempts); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

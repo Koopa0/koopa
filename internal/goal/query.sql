@@ -154,3 +154,42 @@ LIMIT @max_results;
 SELECT id FROM areas
 WHERE slug = @identifier OR LOWER(name) = LOWER(@identifier)
 LIMIT 1;
+
+-- name: Areas :many
+-- List every PARA area for the admin area selector (goal classification).
+SELECT id, slug, name, sort_order
+FROM areas
+ORDER BY sort_order, name;
+
+-- name: UpdateGoal :one
+-- Partial update of a goal's shaping fields. NULL parameters leave the
+-- column unchanged. Status is not touched here — it has its own
+-- UpdateGoalStatus transition.
+UPDATE goals SET
+    title       = COALESCE(sqlc.narg('new_title'), title),
+    description = COALESCE(sqlc.narg('new_description'), description),
+    quarter     = COALESCE(sqlc.narg('new_quarter'), quarter),
+    deadline    = COALESCE(sqlc.narg('new_deadline'), deadline),
+    area_id     = COALESCE(sqlc.narg('new_area_id'), area_id),
+    updated_at  = now()
+WHERE id = @id
+RETURNING id, title, description, status, area_id, quarter, deadline,
+          created_at, updated_at;
+
+-- name: UpdateMilestone :one
+-- Partial update of a milestone, bound to its parent goal: the WHERE
+-- clause enforces membership, so a {goal_id, id} mismatch is a no-row
+-- miss rather than a cross-goal write.
+UPDATE milestones SET
+    title           = COALESCE(sqlc.narg('new_title'), title),
+    description     = COALESCE(sqlc.narg('new_description'), description),
+    target_deadline = COALESCE(sqlc.narg('new_target_deadline'), target_deadline),
+    updated_at      = now()
+WHERE id = @id AND goal_id = @goal_id
+RETURNING id, goal_id, title, description, target_deadline, completed_at, position, created_at, updated_at;
+
+-- name: DeleteMilestone :execrows
+-- Delete a milestone, bound to its parent goal (same membership guard as
+-- UpdateMilestone). Completed milestones are deletable; position gaps in
+-- the remaining siblings are left as-is.
+DELETE FROM milestones WHERE id = @id AND goal_id = @goal_id;

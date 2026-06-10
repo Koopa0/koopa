@@ -321,6 +321,78 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	api.Encode(w, http.StatusCreated, api.Response{Data: g})
 }
 
+// ListAreas handles GET /api/admin/commitment/areas — every PARA area,
+// ordered by sort_order. Read-only; the admin UI uses it to populate the
+// area selector when creating or updating a goal.
+func (h *Handler) ListAreas(w http.ResponseWriter, r *http.Request) {
+	areas, err := h.store.Areas(r.Context())
+	if err != nil {
+		h.logger.Error("listing areas", "error", err)
+		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to list areas")
+		return
+	}
+	api.Encode(w, http.StatusOK, api.Response{Data: areas})
+}
+
+// updateRequest is the JSON body for PUT /api/admin/commitment/goals/{id}.
+// All fields are optional; omitted fields stay unchanged. Status is not
+// accepted — lifecycle transitions go through PUT /goals/{id}/status.
+type updateRequest struct {
+	Title       *string    `json:"title,omitempty"`
+	Description *string    `json:"description,omitempty"`
+	Quarter     *string    `json:"quarter,omitempty"`
+	Deadline    *time.Time `json:"deadline,omitempty"`
+	AreaID      *uuid.UUID `json:"area_id,omitempty"`
+}
+
+// Update handles PUT /api/admin/commitment/goals/{id} — partial update of
+// title / description / quarter / deadline / area_id. Returns the updated
+// goal; 404 when the goal does not exist.
+func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid goal id")
+		return
+	}
+	req, err := api.Decode[updateRequest](w, r)
+	if err != nil {
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid request body")
+		return
+	}
+	if req.Title != nil {
+		if *req.Title == "" {
+			api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "title must not be empty")
+			return
+		}
+		if containsControlChars(*req.Title) {
+			api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "title must not contain control characters")
+			return
+		}
+	}
+	if req.Description != nil && containsControlChars(*req.Description) {
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "description must not contain control characters")
+		return
+	}
+
+	store := h.store
+	if tx, ok := api.TxFromContext(r.Context()); ok {
+		store = h.store.WithTx(tx)
+	}
+	g, err := store.Update(r.Context(), &UpdateParams{
+		ID:          id,
+		Title:       req.Title,
+		Description: req.Description,
+		Quarter:     req.Quarter,
+		Deadline:    req.Deadline,
+		AreaID:      req.AreaID,
+	})
+	if err != nil {
+		api.HandleError(w, h.logger, err, storeErrors...)
+		return
+	}
+	api.Encode(w, http.StatusOK, api.Response{Data: g})
+}
+
 // createMilestoneRequest is the JSON body for
 // POST /api/admin/commitment/goals/{id}/milestones. goal_id comes from the
 // path, not the body.
@@ -368,6 +440,93 @@ func (h *Handler) CreateMilestone(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	api.Encode(w, http.StatusCreated, api.Response{Data: m})
+}
+
+// updateMilestoneRequest is the JSON body for
+// PUT /api/admin/commitment/goals/{id}/milestones/{mid}. All fields are
+// optional; omitted fields stay unchanged.
+type updateMilestoneRequest struct {
+	Title          *string    `json:"title,omitempty"`
+	Description    *string    `json:"description,omitempty"`
+	TargetDeadline *time.Time `json:"target_deadline,omitempty"`
+}
+
+// UpdateMilestone handles PUT /api/admin/commitment/goals/{id}/milestones/{mid}
+// — partial update of title / description / target_deadline. The milestone
+// must belong to the goal in the path; a mismatch is a 404.
+func (h *Handler) UpdateMilestone(w http.ResponseWriter, r *http.Request) {
+	goalID, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid goal id")
+		return
+	}
+	mid, err := uuid.Parse(r.PathValue("mid"))
+	if err != nil {
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid milestone id")
+		return
+	}
+	req, err := api.Decode[updateMilestoneRequest](w, r)
+	if err != nil {
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid request body")
+		return
+	}
+	if req.Title != nil {
+		if *req.Title == "" {
+			api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "title must not be empty")
+			return
+		}
+		if containsControlChars(*req.Title) {
+			api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "title must not contain control characters")
+			return
+		}
+	}
+	if req.Description != nil && containsControlChars(*req.Description) {
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "description must not contain control characters")
+		return
+	}
+
+	store := h.store
+	if tx, ok := api.TxFromContext(r.Context()); ok {
+		store = h.store.WithTx(tx)
+	}
+	m, err := store.UpdateMilestone(r.Context(), &UpdateMilestoneParams{
+		ID:             mid,
+		GoalID:         goalID,
+		Title:          req.Title,
+		Description:    req.Description,
+		TargetDeadline: req.TargetDeadline,
+	})
+	if err != nil {
+		api.HandleError(w, h.logger, err, storeErrors...)
+		return
+	}
+	api.Encode(w, http.StatusOK, api.Response{Data: m})
+}
+
+// DeleteMilestone handles DELETE /api/admin/commitment/goals/{id}/milestones/{mid}.
+// The milestone must belong to the goal in the path; a mismatch is a 404.
+// Completed milestones are deletable. Returns 204 on success.
+func (h *Handler) DeleteMilestone(w http.ResponseWriter, r *http.Request) {
+	goalID, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid goal id")
+		return
+	}
+	mid, err := uuid.Parse(r.PathValue("mid"))
+	if err != nil {
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid milestone id")
+		return
+	}
+
+	store := h.store
+	if tx, ok := api.TxFromContext(r.Context()); ok {
+		store = h.store.WithTx(tx)
+	}
+	if err := store.DeleteMilestone(r.Context(), goalID, mid); err != nil {
+		api.HandleError(w, h.logger, err, storeErrors...)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // ToggleMilestone handles

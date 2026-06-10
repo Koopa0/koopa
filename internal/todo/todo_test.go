@@ -59,6 +59,37 @@ func TestEscapeILIKE(t *testing.T) {
 	}
 }
 
+// TestValidState pins the todo_state enum membership check that guards
+// the list handler's state filter: every enum value passes, everything
+// else (including near-misses and casing) fails so the handler returns
+// 400 instead of letting PostgreSQL reject the cast as a 500.
+func TestValidState(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  bool
+	}{
+		{name: "inbox", input: "inbox", want: true},
+		{name: "todo", input: "todo", want: true},
+		{name: "in_progress", input: "in_progress", want: true},
+		{name: "done", input: "done", want: true},
+		{name: "someday", input: "someday", want: true},
+		{name: "empty", input: "", want: false},
+		{name: "unknown", input: "bogus", want: false},
+		{name: "hyphenated near-miss", input: "in-progress", want: false},
+		{name: "uppercase", input: "DONE", want: false},
+		{name: "whitespace padded", input: " todo", want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := validState(tt.input); got != tt.want {
+				t.Errorf("validState(%q) = %v, want %v", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
 // decodeILIKE is the inverse of escapeILIKE: it consumes a
 // backslash-escaped ILIKE pattern (default ESCAPE '\') and returns the
 // literal string an ILIKE engine would match against. Used only by

@@ -564,6 +564,17 @@ WHERE c.archived_at IS NULL
 ORDER BY ao.created_at DESC
 LIMIT @max_results;
 
+-- name: WeekAttemptCounts :many
+-- Per-UTC-day attempt counts since @since, keyed on created_at (when the
+-- attempt was logged) for /learning/dashboard week_activity. Days with
+-- zero attempts produce no row — the store zero-fills the 7-day window.
+SELECT (created_at AT TIME ZONE 'UTC')::date AS day,
+       count(*)::int AS attempts
+FROM learning_attempts
+WHERE created_at >= @since
+GROUP BY day
+ORDER BY day;
+
 -- name: AttemptsByConcept :many
 -- Attempts that produced an observation about the given concept, newest
 -- first. Each row carries a matched_observation_id pointer — the id of

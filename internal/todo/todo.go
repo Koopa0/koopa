@@ -203,6 +203,21 @@ func (s *Store) Clarify(ctx context.Context, id uuid.UUID, p *ClarifyParams) (*I
 	return &t, nil
 }
 
+// Activate promotes a someday todo item back to todo state. Returns
+// ErrNotFound when the row does not exist or is not in someday state
+// (the SQL guard mirrors Clarify's inbox guard).
+func (s *Store) Activate(ctx context.Context, id uuid.UUID) (*Item, error) {
+	row, err := s.q.ActivateTodoItem(ctx, id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("activating todo item %s: %w", id, err)
+	}
+	t := rowToItem(&row)
+	return &t, nil
+}
+
 // Start sets a todo item's state to in_progress.
 func (s *Store) Start(ctx context.Context, id uuid.UUID) error {
 	_, err := s.UpdateState(ctx, id, StateInProgress)
@@ -413,6 +428,10 @@ type ProjectCompletion struct {
 }
 
 // PendingDetail is a pending todo with project context.
+//
+// CreatedBy is populated by BacklogItems only (the admin list view
+// projects it onto the wire); the morning-context date views leave it
+// empty and omit it from JSON.
 type PendingDetail struct {
 	ID            uuid.UUID  `json:"id"`
 	Title         string     `json:"title"`
@@ -424,6 +443,7 @@ type PendingDetail struct {
 	Priority      *string    `json:"priority,omitempty"`
 	RecurInterval *int32     `json:"recur_interval,omitempty"`
 	RecurUnit     *string    `json:"recur_unit,omitempty"`
+	CreatedBy     string     `json:"created_by,omitempty"`
 	CreatedAt     time.Time  `json:"created_at"`
 	UpdatedAt     time.Time  `json:"updated_at"`
 }

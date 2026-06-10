@@ -3,15 +3,20 @@
 //go:build integration
 
 // integration_test.go bundles the testcontainers-backed admin handler tests
-// for the todo recurring + history read views. These are read-only handlers
-// (authMid in production) so they need no per-request tx; they run directly
-// against the shared pool-bound store.
+// for the todo package. Read-only handlers (authMid in production) run
+// directly against the shared pool-bound store; mutation handlers run
+// through api.ActorMiddleware exactly like the production adminMid chain,
+// because the todos audit trigger reads koopa.actor from the per-request
+// transaction.
 //
 // Coverage:
 //   - Recurring — seed a recurring todo due today and an overdue one; assert
 //     each lands in the right bucket.
 //   - History — seed a completed todo; assert it appears in the default
 //     completed-since view.
+//   - List — state filter (single value, comma-separated list, invalid
+//     element → 400) and the created_by projection.
+//   - Advance(activate) — someday → todo happy path + wrong-state 400.
 //
 // Run with:
 //
@@ -26,12 +31,14 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/Koopa0/koopa/internal/agent"
+	"github.com/Koopa0/koopa/internal/api"
 	"github.com/Koopa0/koopa/internal/testdb"
 	"github.com/Koopa0/koopa/internal/todo"
 )
@@ -79,6 +86,46 @@ func serveRead(t *testing.T, h http.HandlerFunc, req *http.Request) *httptest.Re
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	return rec
+}
+
+// serve runs an admin mutation request through ActorMiddleware
+// (actor="human", the admin-write convention) into the given handler,
+// mirroring the production adminMid chain.
+func serve(t *testing.T, h http.HandlerFunc, req *http.Request) *httptest.ResponseRecorder {
+	t.Helper()
+	mid := api.ActorMiddleware(testPool, "human", slog.Default())
+	wrapped := mid(h)
+	rec := httptest.NewRecorder()
+	wrapped.ServeHTTP(rec, req)
+	return rec
+}
+
+// seedTodo inserts a todo row in the given state and returns its id.
+// done rows get completed_at stamped — chk_todo_completed_at_consistency
+// requires it.
+func seedTodo(t *testing.T, title, state, createdBy string) uuid.UUID {
+	t.Helper()
+	var id uuid.UUID
+	if err := testPool.QueryRow(t.Context(),
+		`INSERT INTO todos (title, state, created_by, completed_at)
+		 VALUES ($1, $2::todo_state, $3, CASE WHEN $2::todo_state = 'done' THEN now() END)
+		 RETURNING id`,
+		title, state, createdBy,
+	).Scan(&id); err != nil {
+		t.Fatalf("seeding todo %q (state=%s): %v", title, state, err)
+	}
+	return id
+}
+
+// advanceReq builds the POST {id}/advance request for the given action.
+func advanceReq(t *testing.T, id uuid.UUID, action string) *http.Request {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPost,
+		"/api/admin/commitment/todos/"+id.String()+"/advance",
+		strings.NewReader(`{"action":"`+action+`"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.SetPathValue("id", id.String())
+	return req
 }
 
 // dataIDs extracts the set of data[].id values from an api.Response list
@@ -190,5 +237,203 @@ func TestIntegration_Todo_History(t *testing.T) {
 	ids := dataIDs(t, body)
 	if _, ok := ids[done]; !ok {
 		t.Errorf("completed todo %s missing from history (body=%s)", done, body)
+	}
+}
+
+// TestIntegration_Todo_List_SingleStateFilter pins the backward-compatible
+// single-value state filter and the created_by projection: a list row must
+// carry the creator identity, not serialize "".
+func TestIntegration_Todo_List_SingleStateFilter(t *testing.T) {
+	truncate(t)
+	h := newHandler()
+
+	someday := seedTodo(t, "Someday item", "someday", "planner")
+	seedTodo(t, "Inbox item", "inbox", "human")
+
+	req := httptest.NewRequest(http.MethodGet, "/api/admin/commitment/todos?state=someday", nil)
+	rec := serveRead(t, h.List, req)
+
+	resp := rec.Result()
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body=%s)", resp.StatusCode, body)
+	}
+
+	var env struct {
+		Data []struct {
+			ID        uuid.UUID `json:"id"`
+			State     string    `json:"state"`
+			CreatedBy string    `json:"created_by"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &env); err != nil {
+		t.Fatalf("decode list response: %v (body=%s)", err, body)
+	}
+	if len(env.Data) != 1 {
+		t.Fatalf("state=someday returned %d rows, want 1 (body=%s)", len(env.Data), body)
+	}
+	if env.Data[0].ID != someday {
+		t.Errorf("filtered row id = %s, want %s", env.Data[0].ID, someday)
+	}
+	if env.Data[0].State != "someday" {
+		t.Errorf("filtered row state = %q, want %q", env.Data[0].State, "someday")
+	}
+	if env.Data[0].CreatedBy != "planner" {
+		t.Errorf("created_by = %q, want %q (list projection must carry the creator)", env.Data[0].CreatedBy, "planner")
+	}
+}
+
+// TestIntegration_Todo_List_MultiStateFilter pins the comma-separated state
+// filter: state=inbox,todo returns rows from both states and excludes done —
+// the server-side exclusion the GTD backlog view relies on.
+func TestIntegration_Todo_List_MultiStateFilter(t *testing.T) {
+	truncate(t)
+	h := newHandler()
+
+	inbox := seedTodo(t, "Inbox item", "inbox", "human")
+	open := seedTodo(t, "Open item", "todo", "human")
+	seedTodo(t, "Done item", "done", "human")
+
+	req := httptest.NewRequest(http.MethodGet, "/api/admin/commitment/todos?state=inbox,todo", nil)
+	rec := serveRead(t, h.List, req)
+
+	resp := rec.Result()
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body=%s)", resp.StatusCode, body)
+	}
+
+	ids := dataIDs(t, body)
+	if len(ids) != 2 {
+		t.Fatalf("state=inbox,todo returned %d rows, want 2 (body=%s)", len(ids), body)
+	}
+	if _, ok := ids[inbox]; !ok {
+		t.Errorf("inbox todo %s missing from multi-state list (body=%s)", inbox, body)
+	}
+	if _, ok := ids[open]; !ok {
+		t.Errorf("todo-state todo %s missing from multi-state list (body=%s)", open, body)
+	}
+}
+
+// TestIntegration_Todo_List_InvalidStateElement pins enum validation at the
+// handler boundary: any invalid element in the comma list is a 400, never a
+// PostgreSQL cast error surfacing as 500.
+func TestIntegration_Todo_List_InvalidStateElement(t *testing.T) {
+	truncate(t)
+	h := newHandler()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/admin/commitment/todos?state=todo,bogus", nil)
+	rec := serveRead(t, h.List, req)
+
+	resp := rec.Result()
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 for invalid state element (body=%s)", resp.StatusCode, body)
+	}
+
+	var env struct {
+		Error struct {
+			Code string `json:"code"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(body, &env); err != nil {
+		t.Fatalf("decode error envelope: %v (body=%s)", err, body)
+	}
+	if env.Error.Code != "BAD_REQUEST" {
+		t.Errorf("error.code = %q, want %q", env.Error.Code, "BAD_REQUEST")
+	}
+}
+
+// TestIntegration_Todo_Advance_Activate drives the activate verb through the
+// middleware: a someday row transitions to todo, in the response and in the
+// database.
+func TestIntegration_Todo_Advance_Activate(t *testing.T) {
+	truncate(t)
+	h := newHandler()
+
+	id := seedTodo(t, "Revive me", "someday", "human")
+
+	rec := serve(t, h.Advance, advanceReq(t, id, "activate"))
+
+	resp := rec.Result()
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body=%s)", resp.StatusCode, body)
+	}
+
+	var env struct {
+		Data struct {
+			ID    uuid.UUID `json:"id"`
+			State string    `json:"state"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &env); err != nil {
+		t.Fatalf("decode activate response: %v (body=%s)", err, body)
+	}
+	if env.Data.ID != id {
+		t.Errorf("response id = %s, want %s", env.Data.ID, id)
+	}
+	if env.Data.State != "todo" {
+		t.Errorf("response state = %q, want %q", env.Data.State, "todo")
+	}
+
+	var state string
+	if err := testPool.QueryRow(t.Context(),
+		`SELECT state FROM todos WHERE id = $1`, id,
+	).Scan(&state); err != nil {
+		t.Fatalf("reading activated todo: %v", err)
+	}
+	if state != "todo" {
+		t.Errorf("db state = %q after activate, want %q", state, "todo")
+	}
+}
+
+// TestIntegration_Todo_Advance_Activate_WrongState pins the SQL state guard:
+// activate on a non-someday row is a 400 INVALID_TRANSITION (mirroring the
+// drop guard), and the row keeps its state.
+func TestIntegration_Todo_Advance_Activate_WrongState(t *testing.T) {
+	truncate(t)
+	h := newHandler()
+
+	id := seedTodo(t, "Still raw", "inbox", "human")
+
+	rec := serve(t, h.Advance, advanceReq(t, id, "activate"))
+
+	resp := rec.Result()
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 for activate on inbox row (body=%s)", resp.StatusCode, body)
+	}
+
+	var env struct {
+		Error struct {
+			Code string `json:"code"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(body, &env); err != nil {
+		t.Fatalf("decode error envelope: %v (body=%s)", err, body)
+	}
+	if env.Error.Code != "INVALID_TRANSITION" {
+		t.Errorf("error.code = %q, want %q", env.Error.Code, "INVALID_TRANSITION")
+	}
+
+	var state string
+	if err := testPool.QueryRow(t.Context(),
+		`SELECT state FROM todos WHERE id = $1`, id,
+	).Scan(&state); err != nil {
+		t.Fatalf("reading todo after rejected activate: %v", err)
+	}
+	if state != "inbox" {
+		t.Errorf("db state = %q after rejected activate, want %q (unchanged)", state, "inbox")
 	}
 }

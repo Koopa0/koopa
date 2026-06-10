@@ -181,11 +181,16 @@ func registerRoutes(
 	// --- Admin: Commitment / Goals ---
 	// List + Detail + status-transition + the owner decision-stamp creates
 	// (goal, milestone) that replaced the removed propose_*/commit MCP flow.
+	// Areas back the goal-create/update area selector (PARA classification).
+	mux.Handle("GET /api/admin/commitment/areas", authMid(http.HandlerFunc(h.goal.ListAreas)))
 	mux.Handle("GET /api/admin/commitment/goals", authMid(http.HandlerFunc(h.goal.List)))
 	mux.Handle("GET /api/admin/commitment/goals/{id}", authMid(http.HandlerFunc(h.goal.Detail)))
 	mux.Handle("POST /api/admin/commitment/goals", adminMid(http.HandlerFunc(h.goal.Create)))
+	mux.Handle("PUT /api/admin/commitment/goals/{id}", adminMid(http.HandlerFunc(h.goal.Update)))
 	mux.Handle("PUT /api/admin/commitment/goals/{id}/status", adminMid(http.HandlerFunc(h.goal.UpdateStatus)))
 	mux.Handle("POST /api/admin/commitment/goals/{id}/milestones", adminMid(http.HandlerFunc(h.goal.CreateMilestone)))
+	mux.Handle("PUT /api/admin/commitment/goals/{id}/milestones/{mid}", adminMid(http.HandlerFunc(h.goal.UpdateMilestone)))
+	mux.Handle("DELETE /api/admin/commitment/goals/{id}/milestones/{mid}", adminMid(http.HandlerFunc(h.goal.DeleteMilestone)))
 	mux.Handle("POST /api/admin/commitment/goals/{id}/milestones/{mid}/toggle", adminMid(http.HandlerFunc(h.goal.ToggleMilestone)))
 
 	// --- Admin: Commitment / Todos ---
@@ -347,8 +352,9 @@ func registerRoutes(
 	// (Daily Plan replaced by /api/admin/commitment/today aggregate.)
 
 	// --- Admin: Learning / Summary ---
-	// Lightweight 3-field cell-state envelope for surfaces that need
-	// streak + due-review count without paying for the full dashboard
-	// fan-out. Shares its aggregation query with /learning/dashboard.
+	// Lightweight envelope ({ streak_days, domains }) for surfaces that
+	// need streak + per-domain mastery without paying for the full
+	// dashboard fan-out. Shares its aggregation query with
+	// /learning/dashboard.
 	mux.Handle("GET /api/admin/learning/summary", authMid(http.HandlerFunc(h.learning.Summary)))
 }
