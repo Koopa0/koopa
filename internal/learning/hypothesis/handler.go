@@ -31,6 +31,7 @@ var storeErrors = []api.ErrMap{
 	{Target: ErrEvidenceRequired, Status: http.StatusUnprocessableEntity, Code: "EVIDENCE_REQUIRED", Message: "at least one evidence source required to resolve"},
 	{Target: ErrEvidenceNotFound, Status: http.StatusBadRequest, Code: "EVIDENCE_NOT_FOUND", Message: "referenced attempt or observation not found"},
 	{Target: ErrInvalidTransition, Status: http.StatusUnprocessableEntity, Code: "INVALID_TRANSITION", Message: "invalid state transition"},
+	{Target: ErrNotDraft, Status: http.StatusConflict, Code: "NOT_DRAFT", Message: "hypothesis is not a draft"},
 }
 
 // Handler handles hypothesis HTTP requests.
@@ -107,6 +108,10 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		Claim:                 req.Claim,
 		InvalidationCondition: req.InvalidationCondition,
 		ObservedDate:          observed,
+		// Admin create lands directly in unverified — creating in the
+		// admin UI IS the endorsement. Agent drafts (state=draft) enter
+		// only via the MCP draft_hypothesis tool.
+		State: StateUnverified,
 	})
 	if err != nil {
 		api.HandleError(w, h.logger, err, storeErrors...)
@@ -197,6 +202,50 @@ func (h *Handler) Lineage(w http.ResponseWriter, r *http.Request) {
 		EvidenceLog:  []any{},
 	}
 	api.Encode(w, http.StatusOK, api.Response{Data: resp})
+}
+
+// Endorse handles POST /api/admin/learning/hypotheses/{id}/endorse — the
+// owner stamp on an agent-drafted hypothesis (draft → unverified). Part of
+// the MCP v3.1 inert-drafts contract: agents draft, only the owner makes a
+// hypothesis count. Non-draft rows return 409 NOT_DRAFT; missing rows 404.
+func (h *Handler) Endorse(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid hypothesis id")
+		return
+	}
+
+	store := h.store
+	if tx, ok := api.TxFromContext(r.Context()); ok {
+		store = h.store.WithTx(tx)
+	}
+	rec, err := store.Endorse(r.Context(), id)
+	if err != nil {
+		api.HandleError(w, h.logger, err, storeErrors...)
+		return
+	}
+	api.Encode(w, http.StatusOK, api.Response{Data: rec})
+}
+
+// Delete handles DELETE /api/admin/learning/hypotheses/{id}. Draft-only:
+// unverified/verified/invalidated/archived rows are permanent records and
+// return 409 NOT_DRAFT. A removed draft returns 204 with no body.
+func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid hypothesis id")
+		return
+	}
+
+	store := h.store
+	if tx, ok := api.TxFromContext(r.Context()); ok {
+		store = h.store.WithTx(tx)
+	}
+	if err := store.DeleteDraft(r.Context(), id); err != nil {
+		api.HandleError(w, h.logger, err, storeErrors...)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // resolveRequest is the body for POST /verify and /invalidate. All fields
@@ -381,7 +430,7 @@ func (h *Handler) AddEvidence(w http.ResponseWriter, r *http.Request) {
 
 func validState(s State) bool {
 	switch s {
-	case StateUnverified, StateVerified, StateInvalidated, StateArchived:
+	case StateDraft, StateUnverified, StateVerified, StateInvalidated, StateArchived:
 		return true
 	}
 	return false

@@ -185,6 +185,20 @@ func ManagePlan() Meta {
 	}
 }
 
+// DraftHypothesis returns metadata for the agent hypothesis-drafting tool —
+// the first (and so far only) write surface adopted under the MCP v3.1
+// inert-drafts amendment (docs/decisions/mcp-v3.1-inert-drafts.md).
+func DraftHypothesis() Meta {
+	return Meta{
+		Name:        "draft_hypothesis",
+		Domain:      DomainLearning,
+		Writability: Additive,
+		Stability:   StabilityStable,
+		Since:       "1.1.0",
+		Description: "Draft a falsifiable learning hypothesis (claim + invalidation_condition) in state=draft. v3.1 inert-drafts contract: a draft is INERT until the owner endorses it in the admin UI — it feeds no dashboard, counts toward no progress, and never appears in brief(morning), the Today page, or any default listing. Draft only to materialize a pattern that surfaced in a conversation the owner was part of — NEVER from scheduled or autonomous runs. Use when the user exhibits a recurring, falsifiable pattern (e.g. 'graph 題每次卡在 DFS 終止條件'). Endorsement (draft→unverified), verdicts (verify/invalidate), and draft deletion are owner actions in admin, not MCP.",
+	}
+}
+
 // Note tools — flat per-intent design. Three tools map 1:1 to user intent.
 
 // CreateNote returns metadata for create_note.
@@ -226,6 +240,7 @@ func All() []Meta {
 		EndSession(),
 		LearningRead(),
 		ManagePlan(),
+		DraftHypothesis(),
 		CreateNote(),
 		UpdateNote(),
 	}

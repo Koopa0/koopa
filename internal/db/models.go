@@ -280,6 +280,7 @@ func (ns NullGoalStatus) Value() (driver.Value, error) {
 type HypothesisState string
 
 const (
+	HypothesisStateDraft       HypothesisState = "draft"
 	HypothesisStateUnverified  HypothesisState = "unverified"
 	HypothesisStateVerified    HypothesisState = "verified"
 	HypothesisStateInvalidated HypothesisState = "invalidated"
@@ -823,7 +824,7 @@ type LearningHypothesis struct {
 	CreatedBy string `json:"created_by"`
 	// Full narrative context. claim is the one-line prediction; content is the supporting analysis.
 	Content string `json:"content"`
-	// Lifecycle: unverified → verified | invalidated → archived.
+	// Lifecycle: draft → unverified → verified | invalidated → archived. draft is the agent-created pre-endorsement state, inert by definition: it feeds no dashboard, counts toward no progress, and never appears in brief(morning), the Today aggregate, or any default listing — visible only in the admin hypotheses list (the triage surface). draft leaves draft only via owner endorsement in admin (draft → unverified) or draft-only DELETE. Admin-created rows land directly in unverified.
 	State HypothesisState `json:"state"`
 	// One-line falsifiable prediction.
 	Claim string `json:"claim"`

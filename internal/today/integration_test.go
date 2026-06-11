@@ -211,3 +211,42 @@ func TestIntegration_Today_EmptyStateArrays(t *testing.T) {
 		t.Errorf("active_session present in empty-state body, want omitted: %s", raw)
 	}
 }
+
+// TestIntegration_Today_ExcludesDraftHypotheses is the HTTP-side inertness
+// pin for v3.1 inert drafts: the Today aggregate pulls hypotheses through
+// the state='unverified'-scoped query, so a seeded draft must NEVER appear
+// in unverified_hypotheses (or anywhere else in the payload) while a
+// sibling unverified row does.
+func TestIntegration_Today_ExcludesDraftHypotheses(t *testing.T) {
+	truncate(t)
+	ctx := t.Context()
+	h := newHandler()
+
+	if _, err := testPool.Exec(ctx,
+		`INSERT INTO learning_hypotheses
+		   (created_by, content, state, claim, invalidation_condition, observed_date)
+		 VALUES
+		   ('planner', '', 'draft', 'inert draft claim', 'disproof condition', CURRENT_DATE),
+		   ('human', '', 'unverified', 'endorsed unverified claim', 'disproof condition', CURRENT_DATE)`,
+	); err != nil {
+		t.Fatalf("seed hypotheses: %v", err)
+	}
+
+	rec, got := getToday(t, h)
+
+	if len(got.UnverifiedHypotheses) != 1 {
+		t.Fatalf("unverified_hypotheses len = %d, want 1 (draft must be excluded): %+v",
+			len(got.UnverifiedHypotheses), got.UnverifiedHypotheses)
+	}
+	if got.UnverifiedHypotheses[0].State != hypothesis.StateUnverified ||
+		got.UnverifiedHypotheses[0].Claim != "endorsed unverified claim" {
+		t.Errorf("unverified_hypotheses[0] = {state:%q claim:%q}, want the unverified row only",
+			got.UnverifiedHypotheses[0].State, got.UnverifiedHypotheses[0].Claim)
+	}
+
+	// Wire-level: the draft's claim must not leak into ANY section of the
+	// Today payload — inert means absent, not merely relabeled.
+	if raw := rec.Body.String(); strings.Contains(raw, "inert draft claim") {
+		t.Errorf("today payload contains the draft claim, want it absent: %s", raw)
+	}
+}

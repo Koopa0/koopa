@@ -101,6 +101,31 @@ func ValidateResolveInput(attemptID, observationID, summary *string) (ResolvePar
 	}, nil
 }
 
+// ValidateDraftFields enforces the create-time field invariants shared by
+// every transport that creates a hypothesis (admin HTTP create and the MCP
+// draft_hypothesis tool): claim and invalidation_condition are required —
+// a hypothesis without both is not falsifiable — and no free-text field may
+// carry control characters (same C0/C1 policy as containsControlChars).
+// The returned error text is client-facing.
+func ValidateDraftFields(claim, invalidationCondition, content string) error {
+	if claim == "" {
+		return errors.New("claim is required")
+	}
+	if invalidationCondition == "" {
+		return errors.New("invalidation_condition is required")
+	}
+	if containsControlChars(claim) {
+		return errors.New("claim must not contain control characters")
+	}
+	if containsControlChars(invalidationCondition) {
+		return errors.New("invalidation_condition must not contain control characters")
+	}
+	if containsControlChars(content) {
+		return errors.New("content must not contain control characters")
+	}
+	return nil
+}
+
 // parseEvidenceUUID parses an optional UUID field, returning (nil, nil)
 // for absent or empty input. An invalid UUID yields *InvalidEvidenceIDError
 // naming the field; the underlying uuid.Parse error is intentionally NOT

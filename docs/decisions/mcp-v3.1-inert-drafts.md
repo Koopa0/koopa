@@ -62,3 +62,5 @@ the only flow with real usage data today.
 goal / project drafts, milestone suggestions under active goals, agent
 `advance` verbs (complete/defer). Candidates, not commitments — usage
 produces the ordering, not design taste.
+
+**Implementation landed 2026-06-11** — migration 005 (`draft` enum value + evidence-CHECK exemption + state COMMENT), `draft_hypothesis` MCP tool (surface = 12), admin `POST …/hypotheses/{id}/endorse` + draft-only `DELETE`, inertness pinned by integration tests on brief(morning) and the Today aggregate.

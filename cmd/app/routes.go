@@ -328,6 +328,11 @@ func registerRoutes(
 	mux.Handle("POST /api/admin/learning/hypotheses/{id}/invalidate", adminMid(http.HandlerFunc(h.hypothesis.Invalidate)))
 	mux.Handle("POST /api/admin/learning/hypotheses/{id}/archive", adminMid(http.HandlerFunc(h.hypothesis.Archive)))
 	mux.Handle("POST /api/admin/learning/hypotheses/{id}/evidence", adminMid(http.HandlerFunc(h.hypothesis.AddEvidence)))
+	// v3.1 inert drafts: endorse is the owner stamp on an agent-drafted
+	// hypothesis (draft → unverified); DELETE is draft-only — non-draft
+	// rows are permanent records. Mutations → adminMid.
+	mux.Handle("POST /api/admin/learning/hypotheses/{id}/endorse", adminMid(http.HandlerFunc(h.hypothesis.Endorse)))
+	mux.Handle("DELETE /api/admin/learning/hypotheses/{id}", adminMid(http.HandlerFunc(h.hypothesis.Delete)))
 
 	// --- Admin: Learning / Dashboard + concepts + sessions + plans ---
 	// Dashboard is the aggregate landing endpoint; concepts / sessions /

@@ -209,3 +209,41 @@ func mustParseUUID(t *testing.T, s string) *uuid.UUID {
 	}
 	return &u
 }
+
+// TestValidateDraftFields pins the shared create-time field contract used
+// by the MCP draft_hypothesis tool (and mirrored inline by the admin
+// create handler). Bugs each row catches: dropping the required-field
+// checks would let empty non-falsifiable drafts into the table; dropping
+// the control-char checks would let terminal-escape payloads reach the
+// admin triage UI.
+func TestValidateDraftFields(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name         string
+		claim        string
+		invalidation string
+		content      string
+		wantErr      bool
+	}{
+		{name: "happy", claim: "DFS termination is my weakest skill", invalidation: "three clean solves", content: "narrative", wantErr: false},
+		{name: "happy empty content", claim: "c", invalidation: "i", content: "", wantErr: false},
+		{name: "happy multiline content", claim: "c", invalidation: "i", content: "line one\n\tline two\r\n", wantErr: false},
+		{name: "missing claim", claim: "", invalidation: "i", content: "", wantErr: true},
+		{name: "missing invalidation", claim: "c", invalidation: "", content: "", wantErr: true},
+		{name: "control char in claim", claim: "c\x1b[31m", invalidation: "i", content: "", wantErr: true},
+		{name: "control char in invalidation", claim: "c", invalidation: "i\x00", content: "", wantErr: true},
+		{name: "control char in content", claim: "c", invalidation: "i", content: "x\u0085y", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			err := ValidateDraftFields(tt.claim, tt.invalidation, tt.content)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ValidateDraftFields(%q, %q, %q) err = %v, wantErr %v",
+					tt.claim, tt.invalidation, tt.content, err, tt.wantErr)
+			}
+		})
+	}
+}

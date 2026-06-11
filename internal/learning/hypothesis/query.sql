@@ -1,8 +1,25 @@
 -- name: CreateHypothesis :one
-INSERT INTO learning_hypotheses (created_by, content, claim, invalidation_condition, metadata, observed_date)
-VALUES (@created_by, @content, @claim, @invalidation_condition, @metadata, @observed_date)
+-- state is caller-supplied: 'draft' for agent drafts (MCP draft_hypothesis),
+-- 'unverified' for admin creates (creating in admin IS the endorsement).
+-- The store layer rejects every other initial state before this runs.
+INSERT INTO learning_hypotheses (created_by, content, state, claim, invalidation_condition, metadata, observed_date)
+VALUES (@created_by, @content, @state::hypothesis_state, @claim, @invalidation_condition, @metadata, @observed_date)
 RETURNING id, created_by, content, state, claim, invalidation_condition, metadata, observed_date,
           resolved_at, resolved_by_attempt_id, resolved_by_observation_id, resolution_summary, created_at;
+
+-- name: EndorseHypothesisDraft :one
+-- Owner stamp on an agent-drafted hypothesis: draft → unverified. The
+-- state-scoped WHERE makes the transition atomic; zero rows means the row
+-- is missing or not a draft — the store disambiguates with a follow-up read.
+UPDATE learning_hypotheses SET state = 'unverified'
+WHERE id = @id AND state = 'draft'
+RETURNING id, created_by, content, state, claim, invalidation_condition, metadata, observed_date,
+          resolved_at, resolved_by_attempt_id, resolved_by_observation_id, resolution_summary, created_at;
+
+-- name: DeleteHypothesisDraft :execrows
+-- Draft-only DELETE. Every non-draft row (unverified/verified/invalidated/
+-- archived) is a permanent record and must never be deleted by this path.
+DELETE FROM learning_hypotheses WHERE id = @id AND state = 'draft';
 
 -- name: HypothesisByID :one
 SELECT id, created_by, content, state, claim, invalidation_condition, metadata, observed_date,

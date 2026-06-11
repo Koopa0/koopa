@@ -320,3 +320,168 @@ func TestAppendEvidence_ConcurrentAppendsPreserveAllEntries(t *testing.T) {
 			n, count, n, n-count)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// v3.1 inert drafts — endorse / draft-only delete / triage list filter
+// ---------------------------------------------------------------------------
+
+// seedDraftHypothesis inserts a state=draft row directly via SQL — the
+// fixture equivalent of what the MCP draft_hypothesis tool writes.
+func seedDraftHypothesis(t *testing.T, pool *pgxpool.Pool, claim string) uuid.UUID {
+	t.Helper()
+	var id uuid.UUID
+	err := pool.QueryRow(t.Context(),
+		`INSERT INTO learning_hypotheses (created_by, content, state, claim, invalidation_condition, observed_date)
+		 VALUES ('planner', '', 'draft', $1, 'would be invalid if X', CURRENT_DATE)
+		 RETURNING id`,
+		claim,
+	).Scan(&id)
+	if err != nil {
+		t.Fatalf("seeding draft hypothesis: %v", err)
+	}
+	return id
+}
+
+// TestIntegration_Hypothesis_Endorse drives the draft → unverified owner
+// stamp through the real handler chain: happy path 200 + row lands in
+// unverified, re-endorsing the now-unverified row 409 NOT_DRAFT, and a
+// missing id 404.
+func TestIntegration_Hypothesis_Endorse(t *testing.T) {
+	if _, err := testPool.Exec(t.Context(),
+		`TRUNCATE learning_hypotheses, activity_events CASCADE`,
+	); err != nil {
+		t.Fatalf("truncate: %v", err)
+	}
+
+	store := hypothesis.NewStore(testPool)
+	h := hypothesis.NewHandler(store, slog.Default())
+	id := seedDraftHypothesis(t, testPool, "graph problems keep failing on DFS termination")
+
+	endorse := func(target string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPost,
+			"/api/admin/learning/hypotheses/"+target+"/endorse", http.NoBody)
+		req.SetPathValue("id", target)
+		return serveAdmin(t, h.Endorse, req)
+	}
+
+	// Happy path: draft → unverified.
+	rec := endorse(id.String())
+	if rec.Code != http.StatusOK {
+		t.Fatalf("endorse(draft) status = %d, want 200 (body=%s)", rec.Code, rec.Body.String())
+	}
+	var state string
+	if err := testPool.QueryRow(t.Context(),
+		`SELECT state::text FROM learning_hypotheses WHERE id = $1`, id,
+	).Scan(&state); err != nil {
+		t.Fatalf("reading endorsed row: %v", err)
+	}
+	if state != "unverified" {
+		t.Errorf("state after endorse = %q, want %q", state, "unverified")
+	}
+
+	// Non-draft: the row is now unverified — endorsing again must 409.
+	rec = endorse(id.String())
+	if rec.Code != http.StatusConflict {
+		t.Errorf("endorse(unverified) status = %d, want 409 (body=%s)", rec.Code, rec.Body.String())
+	}
+
+	// Missing row → 404.
+	rec = endorse(uuid.NewString())
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("endorse(missing) status = %d, want 404 (body=%s)", rec.Code, rec.Body.String())
+	}
+}
+
+// TestIntegration_Hypothesis_DeleteDraftOnly drives the draft-only DELETE:
+// removing a draft returns 204 and the row is gone; an unverified row is a
+// permanent record — DELETE returns 409 and the row survives.
+func TestIntegration_Hypothesis_DeleteDraftOnly(t *testing.T) {
+	if _, err := testPool.Exec(t.Context(),
+		`TRUNCATE learning_hypotheses, activity_events CASCADE`,
+	); err != nil {
+		t.Fatalf("truncate: %v", err)
+	}
+
+	store := hypothesis.NewStore(testPool)
+	h := hypothesis.NewHandler(store, slog.Default())
+
+	del := func(target string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodDelete,
+			"/api/admin/learning/hypotheses/"+target, http.NoBody)
+		req.SetPathValue("id", target)
+		return serveAdmin(t, h.Delete, req)
+	}
+
+	// Draft → 204 and gone.
+	draftID := seedDraftHypothesis(t, testPool, "deletable draft")
+	rec := del(draftID.String())
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("delete(draft) status = %d, want 204 (body=%s)", rec.Code, rec.Body.String())
+	}
+	var count int
+	if err := testPool.QueryRow(t.Context(),
+		`SELECT COUNT(*) FROM learning_hypotheses WHERE id = $1`, draftID,
+	).Scan(&count); err != nil {
+		t.Fatalf("counting deleted draft: %v", err)
+	}
+	if count != 0 {
+		t.Errorf("draft row count after delete = %d, want 0", count)
+	}
+
+	// Unverified → 409 and the permanent record survives.
+	permanentID := seedHypothesis(t, testPool)
+	rec = del(permanentID.String())
+	if rec.Code != http.StatusConflict {
+		t.Errorf("delete(unverified) status = %d, want 409 (body=%s)", rec.Code, rec.Body.String())
+	}
+	if err := testPool.QueryRow(t.Context(),
+		`SELECT COUNT(*) FROM learning_hypotheses WHERE id = $1`, permanentID,
+	).Scan(&count); err != nil {
+		t.Fatalf("counting unverified row: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("unverified row count after refused delete = %d, want 1 (permanent record must survive)", count)
+	}
+}
+
+// TestIntegration_Hypothesis_ListStateFilter pins the admin triage surface:
+// the unfiltered list shows drafts alongside everything else, and
+// ?state=draft narrows to drafts only. This is the ONE surface where
+// drafts are deliberately visible.
+func TestIntegration_Hypothesis_ListStateFilter(t *testing.T) {
+	if _, err := testPool.Exec(t.Context(),
+		`TRUNCATE learning_hypotheses, activity_events CASCADE`,
+	); err != nil {
+		t.Fatalf("truncate: %v", err)
+	}
+
+	store := hypothesis.NewStore(testPool)
+	h := hypothesis.NewHandler(store, slog.Default())
+	seedDraftHypothesis(t, testPool, "draft claim for triage")
+	seedHypothesis(t, testPool) // unverified
+
+	list := func(query string) []hypothesis.Record {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodGet, "/api/admin/learning/hypotheses"+query, http.NoBody)
+		rec := httptest.NewRecorder()
+		h.List(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("list(%q) status = %d, want 200 (body=%s)", query, rec.Code, rec.Body.String())
+		}
+		var env struct {
+			Data []hypothesis.Record `json:"data"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &env); err != nil {
+			t.Fatalf("decode list response: %v (body=%s)", err, rec.Body.String())
+		}
+		return env.Data
+	}
+
+	if got := list(""); len(got) != 2 {
+		t.Errorf("unfiltered list len = %d, want 2 (draft + unverified)", len(got))
+	}
+	drafts := list("?state=draft")
+	if len(drafts) != 1 || drafts[0].State != hypothesis.StateDraft {
+		t.Errorf("list(state=draft) = %+v, want exactly one draft row", drafts)
+	}
+}

@@ -306,3 +306,81 @@ func TestParseResolveRequest_HappyPath_SummaryOnly(t *testing.T) {
 		t.Errorf("ResolveParams mismatch (-want +got):\n%s", diff)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// validState — the admin list filter's enum gate
+// ---------------------------------------------------------------------------
+
+// TestValidState pins the closed set the admin list filter accepts. The
+// bug each row catches: dropping draft would break the v3.1 triage surface
+// (GET ?state=draft is the only place drafts are visible); accepting an
+// unknown string would let a typo'd filter fall through to the DB cast and
+// surface as a 500 instead of a 400.
+func TestValidState(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		state State
+		want  bool
+	}{
+		{name: "draft", state: StateDraft, want: true},
+		{name: "unverified", state: StateUnverified, want: true},
+		{name: "verified", state: StateVerified, want: true},
+		{name: "invalidated", state: StateInvalidated, want: true},
+		{name: "archived", state: StateArchived, want: true},
+		{name: "unknown", state: State("pending"), want: false},
+		{name: "empty", state: State(""), want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := validState(tt.state); got != tt.want {
+				t.Errorf("validState(%q) = %v, want %v", tt.state, got, tt.want)
+			}
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Endorse / Delete — path validation (pre-store)
+// ---------------------------------------------------------------------------
+
+// TestEndorseAndDelete_MalformedPathID_400 asserts both draft-lifecycle
+// handlers reject a non-UUID path id before any store call (nil store is
+// safe only because validation precedes it — same extraction pattern as
+// the verify handlers above).
+func TestEndorseAndDelete_MalformedPathID_400(t *testing.T) {
+	t.Parallel()
+
+	h := newVerifyHandler()
+
+	tests := []struct {
+		name  string
+		serve func(w http.ResponseWriter, r *http.Request)
+	}{
+		{name: "endorse", serve: h.Endorse},
+		{name: "delete", serve: h.Delete},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			req := httptest.NewRequest(http.MethodPost, "/api/admin/learning/hypotheses/not-a-uuid/x", strings.NewReader(""))
+			req.SetPathValue("id", "not-a-uuid")
+			w := httptest.NewRecorder()
+
+			tt.serve(w, req)
+
+			if w.Code != http.StatusBadRequest {
+				t.Fatalf("%s(not-a-uuid) status = %d, want %d", tt.name, w.Code, http.StatusBadRequest)
+			}
+			eb := decodeErrorResponse(t, w)
+			if eb.Error.Code != "BAD_REQUEST" {
+				t.Errorf("%s(not-a-uuid) code = %q, want %q", tt.name, eb.Error.Code, "BAD_REQUEST")
+			}
+		})
+	}
+}

@@ -35,11 +35,23 @@ func (s *Store) WithTx(tx pgx.Tx) *Store {
 	return &Store{q: s.q.WithTx(tx)}
 }
 
-// Create inserts a new hypothesis.
+// Create inserts a new hypothesis. The only legal initial states are
+// StateDraft (agent path) and StateUnverified (admin path; also the
+// default for a zero-value p.State) — resolved states exist only as
+// transition outcomes and are rejected with ErrInvalidTransition before
+// any DB round-trip.
 func (s *Store) Create(ctx context.Context, p *CreateParams) (*Record, error) {
+	state := p.State
+	if state == "" {
+		state = StateUnverified
+	}
+	if state != StateDraft && state != StateUnverified {
+		return nil, ErrInvalidTransition
+	}
 	r, err := s.q.CreateHypothesis(ctx, db.CreateHypothesisParams{
 		CreatedBy:             p.CreatedBy,
 		Content:               p.Content,
+		State:                 db.HypothesisState(state),
 		Claim:                 p.Claim,
 		InvalidationCondition: p.InvalidationCondition,
 		Metadata:              p.Metadata,
@@ -49,6 +61,48 @@ func (s *Store) Create(ctx context.Context, p *CreateParams) (*Record, error) {
 		return nil, fmt.Errorf("creating hypothesis: %w", err)
 	}
 	return rowToRecord(&r)
+}
+
+// Endorse is the owner stamp on an agent-drafted hypothesis: draft →
+// unverified. The transition is a single state-scoped UPDATE, so a
+// concurrent endorse cannot double-fire. Zero rows is disambiguated with
+// a follow-up read: missing row → ErrNotFound, non-draft row → ErrNotDraft.
+func (s *Store) Endorse(ctx context.Context, id uuid.UUID) (*Record, error) {
+	r, err := s.q.EndorseHypothesisDraft(ctx, id)
+	if err == nil {
+		return rowToRecord(&r)
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return nil, fmt.Errorf("endorsing hypothesis %s: %w", id, err)
+	}
+	if _, lookupErr := s.q.HypothesisByID(ctx, id); lookupErr != nil {
+		if errors.Is(lookupErr, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("classifying endorse failure for hypothesis %s: %w", id, lookupErr)
+	}
+	return nil, ErrNotDraft
+}
+
+// DeleteDraft removes a hypothesis ONLY while it is still in draft.
+// Non-draft rows are permanent records — the state-scoped DELETE cannot
+// touch them, and the zero-rows case is disambiguated with a follow-up
+// read: missing row → ErrNotFound, non-draft row → ErrNotDraft.
+func (s *Store) DeleteDraft(ctx context.Context, id uuid.UUID) error {
+	n, err := s.q.DeleteHypothesisDraft(ctx, id)
+	if err != nil {
+		return fmt.Errorf("deleting hypothesis draft %s: %w", id, err)
+	}
+	if n > 0 {
+		return nil
+	}
+	if _, lookupErr := s.q.HypothesisByID(ctx, id); lookupErr != nil {
+		if errors.Is(lookupErr, pgx.ErrNoRows) {
+			return ErrNotFound
+		}
+		return fmt.Errorf("classifying draft delete failure for hypothesis %s: %w", id, lookupErr)
+	}
+	return ErrNotDraft
 }
 
 // RecordByID returns a single hypothesis by ID.
@@ -69,9 +123,11 @@ func (s *Store) RecordByID(ctx context.Context, id uuid.UUID) (*Record, error) {
 // Transitions to verified/invalidated MUST go through UpdateResolution
 // so resolved_at and at least one evidence source are written atomically;
 // this method returns ErrInvalidTransition for those states rather than
-// letting the schema CHECK surface as an opaque 23514.
+// letting the schema CHECK surface as an opaque 23514. draft is rejected
+// for the opposite reason: nothing transitions TO draft — it is an
+// initial state only, and demoting a row to draft would un-endorse it.
 func (s *Store) UpdateState(ctx context.Context, id uuid.UUID, state State) (*Record, error) {
-	if state == StateVerified || state == StateInvalidated {
+	if state == StateVerified || state == StateInvalidated || state == StateDraft {
 		return nil, ErrInvalidTransition
 	}
 	r, err := s.q.UpdateHypothesisState(ctx, db.UpdateHypothesisStateParams{

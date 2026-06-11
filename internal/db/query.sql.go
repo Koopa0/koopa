@@ -2563,8 +2563,8 @@ func (q *Queries) CreateGoal(ctx context.Context, arg CreateGoalParams) (Goal, e
 }
 
 const createHypothesis = `-- name: CreateHypothesis :one
-INSERT INTO learning_hypotheses (created_by, content, claim, invalidation_condition, metadata, observed_date)
-VALUES ($1, $2, $3, $4, $5, $6)
+INSERT INTO learning_hypotheses (created_by, content, state, claim, invalidation_condition, metadata, observed_date)
+VALUES ($1, $2, $3::hypothesis_state, $4, $5, $6, $7)
 RETURNING id, created_by, content, state, claim, invalidation_condition, metadata, observed_date,
           resolved_at, resolved_by_attempt_id, resolved_by_observation_id, resolution_summary, created_at
 `
@@ -2572,16 +2572,21 @@ RETURNING id, created_by, content, state, claim, invalidation_condition, metadat
 type CreateHypothesisParams struct {
 	CreatedBy             string          `json:"created_by"`
 	Content               string          `json:"content"`
+	State                 HypothesisState `json:"state"`
 	Claim                 string          `json:"claim"`
 	InvalidationCondition string          `json:"invalidation_condition"`
 	Metadata              json.RawMessage `json:"metadata"`
 	ObservedDate          time.Time       `json:"observed_date"`
 }
 
+// state is caller-supplied: 'draft' for agent drafts (MCP draft_hypothesis),
+// 'unverified' for admin creates (creating in admin IS the endorsement).
+// The store layer rejects every other initial state before this runs.
 func (q *Queries) CreateHypothesis(ctx context.Context, arg CreateHypothesisParams) (LearningHypothesis, error) {
 	row := q.db.QueryRow(ctx, createHypothesis,
 		arg.CreatedBy,
 		arg.Content,
+		arg.State,
 		arg.Claim,
 		arg.InvalidationCondition,
 		arg.Metadata,
@@ -3488,6 +3493,20 @@ func (q *Queries) DeleteFeedTopics(ctx context.Context, feedID uuid.UUID) error 
 	return err
 }
 
+const deleteHypothesisDraft = `-- name: DeleteHypothesisDraft :execrows
+DELETE FROM learning_hypotheses WHERE id = $1 AND state = 'draft'
+`
+
+// Draft-only DELETE. Every non-draft row (unverified/verified/invalidated/
+// archived) is a permanent record and must never be deleted by this path.
+func (q *Queries) DeleteHypothesisDraft(ctx context.Context, id uuid.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteHypothesisDraft, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const deleteMilestone = `-- name: DeleteMilestone :execrows
 DELETE FROM milestones WHERE id = $1 AND goal_id = $2
 `
@@ -3907,6 +3926,37 @@ func (q *Queries) EndStaleActiveSession(ctx context.Context) (LearningSession, e
 		&i.Metadata,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const endorseHypothesisDraft = `-- name: EndorseHypothesisDraft :one
+UPDATE learning_hypotheses SET state = 'unverified'
+WHERE id = $1 AND state = 'draft'
+RETURNING id, created_by, content, state, claim, invalidation_condition, metadata, observed_date,
+          resolved_at, resolved_by_attempt_id, resolved_by_observation_id, resolution_summary, created_at
+`
+
+// Owner stamp on an agent-drafted hypothesis: draft → unverified. The
+// state-scoped WHERE makes the transition atomic; zero rows means the row
+// is missing or not a draft — the store disambiguates with a follow-up read.
+func (q *Queries) EndorseHypothesisDraft(ctx context.Context, id uuid.UUID) (LearningHypothesis, error) {
+	row := q.db.QueryRow(ctx, endorseHypothesisDraft, id)
+	var i LearningHypothesis
+	err := row.Scan(
+		&i.ID,
+		&i.CreatedBy,
+		&i.Content,
+		&i.State,
+		&i.Claim,
+		&i.InvalidationCondition,
+		&i.Metadata,
+		&i.ObservedDate,
+		&i.ResolvedAt,
+		&i.ResolvedByAttemptID,
+		&i.ResolvedByObservationID,
+		&i.ResolutionSummary,
+		&i.CreatedAt,
 	)
 	return i, err
 }

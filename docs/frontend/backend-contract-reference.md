@@ -63,8 +63,17 @@ above. **⚠️ Decide: keep `progress` or rename to `summary`?** I lean **`prog
 
 **Domain create** `POST /learning/domains` `{ "slug": "kebab-case", "name": "…" }` (slug: `[a-z0-9-]`, no leading/trailing/double hyphen; both control-char validated).
 
-**Hypothesis create** `POST /learning/hypotheses` `{ "claim": "…", "invalidation_condition": "…", "content"?: "…", "observed_date"?: "YYYY-MM-DD" }` → lands `state=unverified`. (`created_by` from the session actor.)
+**Hypothesis state enum (5):** `draft · unverified · verified · invalidated · archived`.
+Machine: `draft → unverified → verified | invalidated → archived`. `draft` is the
+agent-created pre-endorsement state (MCP `draft_hypothesis`, v3.1 inert drafts) —
+inert: excluded from brief(morning), the Today aggregate, and every dashboard;
+visible ONLY in the admin hypotheses list (render as a drafts/triage group).
+
+**Hypothesis create** `POST /learning/hypotheses` `{ "claim": "…", "invalidation_condition": "…", "content"?: "…", "observed_date"?: "YYYY-MM-DD" }` → lands `state=unverified` (admin create IS the endorsement). (`created_by` from the session actor.)
+**List** `GET /learning/hypotheses?state=<enum>&page=&per_page=` — optional state filter; `state=draft` is the triage view; bad value 400.
 Lifecycle: `POST /learning/hypotheses/{id}/{verify|invalidate|archive|evidence}`.
+**Endorse** `POST /learning/hypotheses/{id}/endorse` → `draft → unverified`; 200 + updated record; 409 `NOT_DRAFT` on a non-draft row; 404 unknown. *(new, v3.1)*
+**Delete (draft-only)** `DELETE /learning/hypotheses/{id}` → 204; 409 `NOT_DRAFT` for any non-draft state — endorsed/resolved rows are permanent records. *(new, v3.1)*
 
 ---
 
@@ -143,4 +152,4 @@ No rating field, ever — reflections are the only evaluation. DATE fields are `
   "rss_highlights": [{ "title", "url", "feed_name", "created_at" }]
 }
 ```
-All list fields are `[]`, never `null`. `active_session` is omitted (not null) when no session is open. `PendingDetail` = a todo + its project; `Item` = a daily-plan item; `ActiveGoalSummary` / `Hypothesis` / `Session` match the goal/hypothesis/learning endpoints.
+All list fields are `[]`, never `null`. `active_session` is omitted (not null) when no session is open. `PendingDetail` = a todo + its project; `Item` = a daily-plan item; `ActiveGoalSummary` / `Hypothesis` / `Session` match the goal/hypothesis/learning endpoints. `unverified_hypotheses` is state-scoped to `unverified` — `draft` hypotheses (v3.1 inert drafts) never appear here.

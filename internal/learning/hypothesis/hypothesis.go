@@ -5,7 +5,14 @@
 // A hypothesis carries a one-line claim plus the invalidation condition
 // that would disprove it. Evidence accumulates in metadata until the state
 // transitions to verified or invalidated. Lifecycle:
-// unverified → verified | invalidated → archived.
+// draft → unverified → verified | invalidated → archived.
+//
+// draft is the agent-created pre-endorsement state (MCP v3.1 inert drafts):
+// inert by definition — excluded from brief(morning), the Today aggregate,
+// and every dashboard; visible only in the admin hypotheses list. A draft
+// leaves draft only via owner endorsement (Endorse, draft → unverified) or
+// draft-only deletion (DeleteDraft). Admin-created hypotheses land directly
+// in unverified — creating in admin IS the endorsement.
 package hypothesis
 
 import (
@@ -45,13 +52,28 @@ var (
 	//     unverified/archived while writing a non-NULL resolved_at, which
 	//     should be structurally impossible but maps here if it ever
 	//     fires instead of silently becoming ErrEvidenceRequired).
+	//
+	//   - UpdateState was called with draft as the target. Nothing
+	//     transitions TO draft — it is exclusively an initial state set
+	//     at creation time; demoting an endorsed row back to draft would
+	//     silently un-endorse it.
+	//
+	//   - Create was called with an initial state other than draft or
+	//     unverified. verified/invalidated/archived rows cannot be born —
+	//     they exist only as the outcome of a lifecycle transition.
 	ErrInvalidTransition = errors.New("hypothesis: invalid state transition")
+
+	// ErrNotDraft indicates Endorse or DeleteDraft targeted a row whose
+	// state is not draft. Endorsement applies only to agent drafts, and
+	// non-draft rows are permanent records that must never be deleted.
+	ErrNotDraft = errors.New("hypothesis: not a draft")
 )
 
 // State mirrors the hypothesis_state SQL enum.
 type State string
 
 const (
+	StateDraft       State = "draft"
 	StateUnverified  State = "unverified"
 	StateVerified    State = "verified"
 	StateInvalidated State = "invalidated"
@@ -87,6 +109,13 @@ type CreateParams struct {
 	InvalidationCondition string
 	Metadata              json.RawMessage
 	ObservedDate          time.Time
+
+	// State is the initial lifecycle state. Zero value defaults to
+	// StateUnverified (the admin create path — creating in admin IS the
+	// endorsement). StateDraft is the agent path (MCP draft_hypothesis).
+	// Any other value is rejected with ErrInvalidTransition: resolved
+	// states exist only as transition outcomes, never at birth.
+	State State
 }
 
 // ResolveParams carries the evidence sources that accompany a transition

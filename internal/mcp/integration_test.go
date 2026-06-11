@@ -43,6 +43,7 @@ import (
 	"github.com/Koopa0/koopa/internal/agent"
 	"github.com/Koopa0/koopa/internal/content"
 	"github.com/Koopa0/koopa/internal/learning"
+	"github.com/Koopa0/koopa/internal/learning/hypothesis"
 	"github.com/Koopa0/koopa/internal/mcp/ops"
 	"github.com/Koopa0/koopa/internal/note"
 	"github.com/Koopa0/koopa/internal/testdb"
@@ -3303,5 +3304,118 @@ func TestIntegration_PlanDay_PositionOutOfRangeRejected(t *testing.T) {
 	}
 	if got := countPlanItems(t, todoID); got != 1 {
 		t.Errorf("daily_plan_items for todo = %d, want 1 after in-range plan", got)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// draft_hypothesis (v3.1 inert drafts) — creation, gating, and inertness
+// ---------------------------------------------------------------------------
+
+// seedHypothesisRow inserts a hypothesis in the given state directly via
+// SQL so the brief inertness probe controls both sides of the fixture.
+func seedHypothesisRow(t *testing.T, state, claim string) uuid.UUID {
+	t.Helper()
+	var id uuid.UUID
+	err := testPool.QueryRow(t.Context(),
+		`INSERT INTO learning_hypotheses (created_by, content, state, claim, invalidation_condition, observed_date)
+		 VALUES ('human', '', $1, $2, 'would be invalid if X', CURRENT_DATE)
+		 RETURNING id`,
+		state, claim,
+	).Scan(&id)
+	if err != nil {
+		t.Fatalf("seeding %s hypothesis: %v", state, err)
+	}
+	return id
+}
+
+// TestIntegration_DraftHypothesis_AsPlanner drives the draft_hypothesis
+// handler as planner and asserts the v3.1 contract on the persisted row:
+// state=draft (inert until owner endorsement) and created_by=planner
+// (explicit attribution).
+func TestIntegration_DraftHypothesis_AsPlanner(t *testing.T) {
+	s := setupServer(t)
+
+	_, out, err := callHandlerAs(t, "planner", s.draftHypothesis, DraftHypothesisInput{
+		Claim:                 "graph problems keep failing on DFS termination",
+		InvalidationCondition: "three clean graph solves in a row",
+		Content:               "observed across the last four leetcode sessions",
+	})
+	if err != nil {
+		t.Fatalf("draftHypothesis: %v", err)
+	}
+	if out.Hypothesis.ID == uuid.Nil {
+		t.Fatal("draftHypothesis returned zero hypothesis ID")
+	}
+	if out.Hypothesis.State != hypothesis.StateDraft {
+		t.Errorf("output state = %q, want %q", out.Hypothesis.State, hypothesis.StateDraft)
+	}
+	if out.Hypothesis.CreatedBy != "planner" {
+		t.Errorf("output created_by = %q, want %q", out.Hypothesis.CreatedBy, "planner")
+	}
+
+	var state, createdBy string
+	if err := testPool.QueryRow(t.Context(),
+		`SELECT state::text, created_by FROM learning_hypotheses WHERE id = $1`, out.Hypothesis.ID,
+	).Scan(&state, &createdBy); err != nil {
+		t.Fatalf("reading drafted row: %v", err)
+	}
+	if state != "draft" {
+		t.Errorf("persisted state = %q, want %q (agent drafts must land inert)", state, "draft")
+	}
+	if createdBy != "planner" {
+		t.Errorf("persisted created_by = %q, want %q (attribution is part of the v3.1 contract)", createdBy, "planner")
+	}
+}
+
+// TestIntegration_DraftHypothesis_CallerGate asserts the registered-caller
+// gate: the zero-privilege "unknown" fallback (call omitted `as`) and a
+// fabricated agent name are both refused before any write.
+func TestIntegration_DraftHypothesis_CallerGate(t *testing.T) {
+	s := setupServer(t)
+
+	for _, caller := range []string{"unknown", "fabricated-agent"} {
+		_, _, err := callHandlerAs(t, caller, s.draftHypothesis, DraftHypothesisInput{
+			Claim:                 "should never persist",
+			InvalidationCondition: "n/a",
+		})
+		if err == nil {
+			t.Errorf("draftHypothesis as %q err = nil, want registered-caller refusal", caller)
+		}
+	}
+
+	var count int
+	if err := testPool.QueryRow(t.Context(),
+		`SELECT COUNT(*) FROM learning_hypotheses`,
+	).Scan(&count); err != nil {
+		t.Fatalf("counting hypotheses: %v", err)
+	}
+	if count != 0 {
+		t.Errorf("hypothesis count = %d, want 0 (gate must precede any write)", count)
+	}
+}
+
+// TestIntegration_BriefMorning_ExcludesDraftHypotheses is the MCP-side
+// inertness pin for v3.1: brief(morning) pulls hypotheses through the
+// state='unverified'-scoped query, so a seeded draft must NEVER appear in
+// unverified_hypotheses while a sibling unverified row does.
+func TestIntegration_BriefMorning_ExcludesDraftHypotheses(t *testing.T) {
+	s := setupServer(t)
+
+	seedHypothesisRow(t, "draft", "inert draft claim")
+	seedHypothesisRow(t, "unverified", "endorsed unverified claim")
+
+	_, out, err := callHandler(t, s.brief, BriefInput{Mode: "morning"})
+	if err != nil {
+		t.Fatalf("brief(morning): %v", err)
+	}
+
+	if len(out.UnverifiedHypotheses) != 1 {
+		t.Fatalf("unverified_hypotheses len = %d, want 1 (draft must be excluded): %+v",
+			len(out.UnverifiedHypotheses), out.UnverifiedHypotheses)
+	}
+	got := out.UnverifiedHypotheses[0]
+	if got.State != hypothesis.StateUnverified || got.Claim != "endorsed unverified claim" {
+		t.Errorf("unverified_hypotheses[0] = {state:%q claim:%q}, want the unverified row only",
+			got.State, got.Claim)
 	}
 }
