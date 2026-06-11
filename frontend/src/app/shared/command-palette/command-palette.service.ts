@@ -166,7 +166,11 @@ export class CommandPaletteService {
         label: 'TIL',
         group: 'Pages',
         keywords: ['today', 'learned', 'learning'],
-        action: () => this.navigate('/til'),
+        // TIL reads on the consolidated articles index, filtered by type.
+        action: () =>
+          void this.router.navigate(['/articles'], {
+            queryParams: { type: 'til' },
+          }),
       },
       {
         id: 'projects',

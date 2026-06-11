@@ -20,7 +20,9 @@ import {
   ChevronRight,
   FileText,
 } from 'lucide-angular';
+import { environment } from '../../../environments/environment';
 import { ContentService } from '../../core/services/content.service';
+import { SeoService } from '../../core/services/seo/seo.service';
 import { publicContentTypes } from '../../core/models';
 import { PostRowComponent } from '../../shared/post-row/post-row.component';
 import type {
@@ -43,6 +45,7 @@ export class SearchComponent implements OnInit {
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly contentService = inject(ContentService);
+  private readonly seoService = inject(SeoService);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly destroyRef = inject(DestroyRef);
 
@@ -81,6 +84,23 @@ export class SearchComponent implements OnInit {
   }
 
   ngOnInit(): void {
+    const url = `${environment.siteUrl}/search`;
+    const description =
+      'Full-text search across articles, essays, build logs, TILs, and digests.';
+    this.seoService.updateMeta({
+      title: 'Search',
+      description,
+      ogUrl: url,
+      canonicalUrl: url,
+      jsonLd: {
+        '@context': 'https://schema.org',
+        '@type': 'SearchResultsPage',
+        name: 'Search',
+        description,
+        url,
+      },
+    });
+
     this.route.queryParams
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe((params) => {

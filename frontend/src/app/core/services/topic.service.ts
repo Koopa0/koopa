@@ -15,6 +15,15 @@ export interface TopicWithContents {
   meta: ApiPaginationMeta;
 }
 
+/** Partial update payload — only provided fields change. */
+export interface TopicUpdateRequest {
+  slug?: string;
+  name?: string;
+  description?: string;
+  icon?: string;
+  sort_order?: number;
+}
+
 @Injectable({ providedIn: 'root' })
 export class TopicService {
   private readonly api = inject(ApiService);
@@ -22,6 +31,19 @@ export class TopicService {
   /** Get all topics (public) */
   getAllTopics(): Observable<ApiTopic[]> {
     return this.api.getData<ApiTopic[]>('/api/topics');
+  }
+
+  /** Admin — list topics (same payload as the public list, auth-gated) */
+  adminList(): Observable<ApiTopic[]> {
+    return this.api.getData<ApiTopic[]>('/api/admin/knowledge/topics');
+  }
+
+  /** Admin — update a topic (rename, description, icon, sort order) */
+  adminUpdate(id: string, body: TopicUpdateRequest): Observable<ApiTopic> {
+    return this.api.putData<ApiTopic>(
+      `/api/admin/knowledge/topics/${id}`,
+      body,
+    );
   }
 
   /** Get single topic with its contents by slug (public) */

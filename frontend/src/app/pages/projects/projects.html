@@ -12,7 +12,7 @@
     </nav>
 
     <!-- Hero -->
-    <header class="border-b border-border pt-2 pb-7">
+    <header class="mb-2 border-b border-border pt-2 pb-7">
       <p class="font-mono text-[11px] tracking-[0.06em] uppercase text-brand">
         Projects
       </p>
@@ -58,7 +58,7 @@
       @if (featured(); as f) {
         <a
           [routerLink]="['/projects', f.slug]"
-          class="group mt-8 block rounded-lg border border-border bg-panel px-[30px] py-7 no-underline transition-colors duration-(--dur-base) hover:border-brand-muted"
+          class="group mt-2 block rounded-lg border border-border bg-panel px-[30px] py-7 no-underline transition-colors duration-(--dur-base) hover:border-brand-muted"
           data-testid="featured-project"
         >
           <div class="mb-2.5 flex flex-wrap items-baseline gap-x-3.5 gap-y-1">
@@ -126,7 +126,7 @@
         <ul
           class="divide-y divide-border-faint border-b border-border-faint"
           [class.mt-6]="featured() !== null"
-          [class.mt-8]="featured() === null"
+          [class.mt-2]="featured() === null"
           [class.border-t]="featured() === null"
         >
           @for (project of rest(); track project.id) {

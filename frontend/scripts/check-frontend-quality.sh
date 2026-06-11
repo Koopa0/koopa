@@ -144,7 +144,10 @@ fi
 # "essays", "til", "build-logs" and "home" survive as redirect routes into the
 # consolidated /articles index; "preview" is the chrome-less reading column the
 # admin publish-preview iframes; "feed.xml" is served by server.ts (RSS).
-PUBLIC_ROOT_ALLOWLIST="articles essays projects topics til search build-logs preview about uses resume home privacy terms login error admin feed.xml"
+# "resume" is deliberately NOT allowlisted: the /resume route survives only as
+# an inbound redirect to /about for old external links — internal links and
+# navigation must target /about directly.
+PUBLIC_ROOT_ALLOWLIST="articles essays projects topics til search build-logs preview about uses home privacy terms login error admin feed.xml"
 
 # Emit `file:line:/path` records by stripping the surrounding ref form from each
 # match. Each grep -oE captures the smallest substring containing the path

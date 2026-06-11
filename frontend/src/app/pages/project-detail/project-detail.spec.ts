@@ -5,7 +5,9 @@ import {
 } from '@angular/common/http/testing';
 import { provideHttpClient, withXhr } from '@angular/common/http';
 import { provideRouter } from '@angular/router';
+import { Title } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
+import { environment } from '../../../environments/environment';
 import { ProjectDetailComponent } from './project-detail';
 import type { ApiPortfolioProject, ApiProject } from '../../core/models';
 
@@ -159,5 +161,39 @@ describe('ProjectDetailComponent', () => {
 
     expect(component['isNotFound']()).toBe(true);
     expect(component['isLoading']()).toBe(false);
+  });
+
+  it('should set the page title without doubling the site name', async () => {
+    fixture.componentRef.setInput('slug', 'test-project');
+    await settle();
+    flushPortfolio([buildMockListing()]);
+    flushBareRow('test-project', buildMockBareRow());
+    await settle();
+
+    const title = TestBed.inject(Title).getTitle();
+    expect(title).toBe(`Test Project | ${environment.siteName}`);
+  });
+
+  it('should emit breadcrumb JSON-LD for the project trail', async () => {
+    fixture.componentRef.setInput('slug', 'test-project');
+    await settle();
+    flushPortfolio([buildMockListing()]);
+    flushBareRow('test-project', buildMockBareRow());
+    await settle();
+
+    const script = document.querySelector(
+      'script[type="application/ld+json"][data-seo]',
+    );
+    expect(script).toBeTruthy();
+    const jsonLd = JSON.parse(script!.textContent ?? '{}') as {
+      '@type': string;
+      itemListElement: { name: string }[];
+    };
+    expect(jsonLd['@type']).toBe('BreadcrumbList');
+    expect(jsonLd.itemListElement.map((i) => i.name)).toEqual([
+      'koopa.dev',
+      'projects',
+      'Test Project',
+    ]);
   });
 });

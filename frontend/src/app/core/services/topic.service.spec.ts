@@ -106,6 +106,38 @@ describe('TopicService', () => {
     });
   });
 
+  describe('adminList', () => {
+    it('should fetch topics from the admin endpoint', () => {
+      service.adminList().subscribe((topics) => {
+        expect(topics).toHaveLength(1);
+        expect(topics[0].content_count).toBe(5);
+      });
+
+      const req = httpMock.expectOne((r) =>
+        r.url.endsWith('/api/admin/knowledge/topics'),
+      );
+      expect(req.request.method).toBe('GET');
+      req.flush({ data: [createMockTopic()] });
+    });
+  });
+
+  describe('adminUpdate', () => {
+    it('should PUT the partial payload when updating a topic', () => {
+      service
+        .adminUpdate('topic-001', { name: 'Angular v2' })
+        .subscribe((topic) => {
+          expect(topic.name).toBe('Angular v2');
+        });
+
+      const req = httpMock.expectOne((r) =>
+        r.url.endsWith('/api/admin/knowledge/topics/topic-001'),
+      );
+      expect(req.request.method).toBe('PUT');
+      expect(req.request.body).toEqual({ name: 'Angular v2' });
+      req.flush({ data: createMockTopic({ name: 'Angular v2' }) });
+    });
+  });
+
   describe('getTopicBySlug', () => {
     it('should fetch topic with its contents by slug', () => {
       const mockTopic = createMockTopic({ slug: 'angular' });

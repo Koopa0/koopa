@@ -77,7 +77,6 @@ export class UsesComponent {
   private readonly seoService = inject(SeoService);
 
   protected readonly categories = USE_CATEGORIES;
-  protected readonly WrenchIcon = Wrench;
 
   constructor() {
     this.seoService.updateMeta({

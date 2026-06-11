@@ -12,6 +12,7 @@ import { catchError, forkJoin, map, of } from 'rxjs';
 import { LucideAngularModule, Github, ExternalLink } from 'lucide-angular';
 import { ProjectService } from '../../core/services/project/project.service';
 import { SeoService } from '../../core/services/seo/seo.service';
+import { buildBreadcrumbSchema } from '../../core/services/seo/json-ld.util';
 import { environment } from '../../../environments/environment';
 import type { ApiPortfolioProject, ApiProject } from '../../core/models';
 
@@ -137,13 +138,18 @@ export class ProjectDetailComponent {
   private updateSeo(project: ProjectProfile): void {
     const projectUrl = `${environment.siteUrl}/projects/${project.slug}`;
     this.seoService.updateMeta({
-      title: `${project.title} | Koopa`,
+      title: project.title,
       description: project.description,
       ogTitle: project.title,
       ogDescription: project.description,
       ogUrl: projectUrl,
       ogType: 'website',
       canonicalUrl: projectUrl,
+      jsonLd: buildBreadcrumbSchema([
+        { name: 'koopa.dev', url: environment.siteUrl },
+        { name: 'projects', url: `${environment.siteUrl}/projects` },
+        { name: project.title, url: projectUrl },
+      ]),
     });
   }
 }
