@@ -99,6 +99,28 @@ Lifecycle: `POST /learning/hypotheses/{id}/{verify|invalidate|archive|evidence}`
 
 ---
 
+## Knowledge — Readings
+
+Literature shelf + reading diary. **Privacy boundary: no MCP tool, not in the
+search corpus (no embeddings/tsvector) — this admin surface is the only access path.**
+No rating field, ever — reflections are the only evaluation. DATE fields are `YYYY-MM-DD` strings.
+
+**Reading shape:** `{ id, title, author, status, started_on?, finished_on?, is_public, created_at, updated_at }`. `author` is `""` when not recorded.
+**Status enum (4):** `want_to_read · reading · finished · abandoned` (transitions free; not schema-enforced).
+
+**List** `GET /knowledge/readings?status=<enum>` (optional filter; bad value 400) — ordered `updated_at` desc; status-group ordering is the frontend's call.
+**Create** `POST /knowledge/readings` `{ title, author?, status?, started_on? }` — `status` defaults `want_to_read`; `finished_on` not accepted here (record it via update).
+**Detail** `GET /knowledge/readings/{id}` → reading + `reflections[]` thread, ordered `entry_date` asc, `created_at` asc tiebreak.
+**Update** `PUT /knowledge/readings/{id}` — partial: `{ title?, author?, status?, started_on?, finished_on?, is_public? }`. Convenience rule: transition to `finished` with no `finished_on` stamps today; an explicit date wins; an already-recorded date is never overwritten.
+**Delete** `DELETE /knowledge/readings/{id}` → 204 — **cascades the diary**.
+
+**Reflection shape:** `{ id, reading_id, entry_date, body, created_at, updated_at }`. Body is multi-line prose (newlines/tabs OK).
+**Create** `POST /knowledge/readings/{id}/reflections` `{ body, entry_date? }` — `entry_date` defaults today.
+**Update** `PUT /knowledge/readings/{id}/reflections/{rid}` — partial `{ body?, entry_date? }`; `rid` must belong to the reading (404 otherwise).
+**Delete** `DELETE /knowledge/readings/{id}/reflections/{rid}` → 204; same membership binding.
+
+---
+
 ## ✅ Alignment points — RESOLVED (2026-06-07)
 
 1. **#9 plan-detail:** kept `progress` (matches `manage_plan(progress)` + the `Progress` type); de-embedded. Real wire shape: `{ "plan": {...}, "entries": [EntryDetail], "progress": { total, completed, skipped, substituted, remaining } }` — plan fields nest under `plan`, NOT flat. Same fix applied to session detail → `{ "session": {...}, "attempts": [...] }`.

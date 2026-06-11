@@ -1145,6 +1145,42 @@ type ProjectProfile struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
+// Literature reading shelf — one row per book, Koopa-private. Evaluation happens only through reading_reflections (dated diary entries); there is intentionally no rating column. No agent surface: not exposed via MCP, not in the search_knowledge corpus, admin HTTP only.
+type Reading struct {
+	ID uuid.UUID `json:"id"`
+	// Book title as Koopa records it. Required, never blank (chk_reading_title_not_blank).
+	Title string `json:"title"`
+	// Author name(s), free text. Empty string when not recorded — "unknown author" carries no distinct meaning from "not entered", so NOT NULL DEFAULT '' instead of nullable.
+	Author string `json:"author"`
+	// Shelf state: want_to_read → reading → finished | abandoned. The CHECK closes the value set; transitions are NOT schema-enforced — any change is allowed (abandoned books get picked back up, finished books get re-read). Set by the admin HTTP handler, never by trigger.
+	Status string `json:"status"`
+	// Date Koopa started reading. NULL while the book sits on the want-to-read shelf or when the start date was never recorded.
+	StartedOn *time.Time `json:"started_on"`
+	// Date Koopa finished (or gave up on) the book. NULL until the reading concludes. The handler auto-stamps today on a transition to finished when no explicit date is supplied.
+	FinishedOn *time.Time `json:"finished_on"`
+	// Reserved for a future public shelf. Default false; nothing public-facing reads this yet — flipping it has no effect until a public surface exists.
+	IsPublic bool `json:"is_public"`
+	// Row creation time. Set by the database, never updated.
+	CreatedAt time.Time `json:"created_at"`
+	// Application-managed. Set explicitly in UPDATE queries.
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// Reading diary — dated entries under one book, shown as a time-ordered thread (entry_date, then created_at) on the book page. Many per book. Private like readings: no agent surface, no search corpus, admin HTTP only.
+type ReadingReflection struct {
+	ID uuid.UUID `json:"id"`
+	// The book this entry belongs to. ON DELETE CASCADE — deleting a book deletes its entire diary; the entries have no meaning without the book.
+	ReadingID uuid.UUID `json:"reading_id"`
+	// The diary date the entry belongs to — the day of reading, not necessarily the day it was typed in. Defaults to the current date; the handler applies the same default when the field is omitted.
+	EntryDate time.Time `json:"entry_date"`
+	// The diary entry text. Required, never blank (chk_reading_reflection_body_not_blank). Free-form prose; newlines allowed.
+	Body string `json:"body"`
+	// Row creation time. Tiebreak for thread ordering when two entries share an entry_date.
+	CreatedAt time.Time `json:"created_at"`
+	// Application-managed. Set explicitly in UPDATE queries.
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
 // JWT refresh token hashes. One user may have multiple active tokens (multi-device).
 type RefreshToken struct {
 	ID uuid.UUID `json:"id"`

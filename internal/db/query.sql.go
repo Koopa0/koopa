@@ -2973,6 +2973,84 @@ func (q *Queries) CreateProject(ctx context.Context, arg CreateProjectParams) (P
 	return i, err
 }
 
+const createReading = `-- name: CreateReading :one
+
+INSERT INTO readings (
+    title, author, status, started_on
+) VALUES (
+    $1, $2, $3, $4
+)
+RETURNING id, title, author, status, started_on, finished_on, is_public,
+          created_at, updated_at
+`
+
+type CreateReadingParams struct {
+	Title     string     `json:"title"`
+	Author    string     `json:"author"`
+	Status    string     `json:"status"`
+	StartedOn *time.Time `json:"started_on"`
+}
+
+// Queries for the reading package. See migrations/004_readings.up.sql for
+// the readings + reading_reflections tables. status is TEXT + CHECK (not an
+// ENUM); the Go layer validates before writing so the constraint never
+// surfaces as a 500. No audit triggers fire on these tables — single human
+// writer, diary stays out of activity feeds (rationale in the migration).
+func (q *Queries) CreateReading(ctx context.Context, arg CreateReadingParams) (Reading, error) {
+	row := q.db.QueryRow(ctx, createReading,
+		arg.Title,
+		arg.Author,
+		arg.Status,
+		arg.StartedOn,
+	)
+	var i Reading
+	err := row.Scan(
+		&i.ID,
+		&i.Title,
+		&i.Author,
+		&i.Status,
+		&i.StartedOn,
+		&i.FinishedOn,
+		&i.IsPublic,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const createReflection = `-- name: CreateReflection :one
+INSERT INTO reading_reflections (
+    reading_id, entry_date, body
+) VALUES (
+    $1, COALESCE($3::date, CURRENT_DATE), $2
+)
+RETURNING id, reading_id, entry_date, body, created_at, updated_at
+`
+
+type CreateReflectionParams struct {
+	ReadingID uuid.UUID  `json:"reading_id"`
+	Body      string     `json:"body"`
+	EntryDate *time.Time `json:"entry_date"`
+}
+
+// A NULL entry_date defaults to today. COALESCE here rather than relying
+// on the column DEFAULT so the "today" clock is the same (the database's
+// CURRENT_DATE) whether the handler passes a date or not — and the same
+// clock the finished auto-stamp in UpdateReading uses.
+func (q *Queries) CreateReflection(ctx context.Context, arg CreateReflectionParams) (ReadingReflection, error) {
+	row := q.db.QueryRow(ctx, createReflection, arg.ReadingID, arg.Body, arg.EntryDate)
+	var i ReadingReflection
+	err := row.Scan(
+		&i.ID,
+		&i.ReadingID,
+		&i.EntryDate,
+		&i.Body,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const createRefreshToken = `-- name: CreateRefreshToken :exec
 INSERT INTO refresh_tokens (user_id, token_hash, expires_at)
 VALUES ($1, $2, $3)
@@ -3542,6 +3620,38 @@ DELETE FROM projects WHERE id = $1
 func (q *Queries) DeleteProject(ctx context.Context, id uuid.UUID) error {
 	_, err := q.db.Exec(ctx, deleteProject, id)
 	return err
+}
+
+const deleteReading = `-- name: DeleteReading :execrows
+DELETE FROM readings WHERE id = $1
+`
+
+// ON DELETE CASCADE removes the book's entire diary with it.
+func (q *Queries) DeleteReading(ctx context.Context, id uuid.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteReading, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const deleteReflection = `-- name: DeleteReflection :execrows
+DELETE FROM reading_reflections WHERE id = $1 AND reading_id = $2
+`
+
+type DeleteReflectionParams struct {
+	ID        uuid.UUID `json:"id"`
+	ReadingID uuid.UUID `json:"reading_id"`
+}
+
+// Delete a diary entry, bound to its parent reading (same membership guard
+// as UpdateReflection).
+func (q *Queries) DeleteReflection(ctx context.Context, arg DeleteReflectionParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteReflection, arg.ID, arg.ReadingID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const deleteRefreshToken = `-- name: DeleteRefreshToken :exec
@@ -7937,6 +8047,70 @@ func (q *Queries) PublishedWithEmbeddings(ctx context.Context) ([]PublishedWithE
 	return items, nil
 }
 
+const readingByID = `-- name: ReadingByID :one
+SELECT id, title, author, status, started_on, finished_on, is_public,
+       created_at, updated_at
+FROM readings
+WHERE id = $1
+`
+
+func (q *Queries) ReadingByID(ctx context.Context, id uuid.UUID) (Reading, error) {
+	row := q.db.QueryRow(ctx, readingByID, id)
+	var i Reading
+	err := row.Scan(
+		&i.ID,
+		&i.Title,
+		&i.Author,
+		&i.Status,
+		&i.StartedOn,
+		&i.FinishedOn,
+		&i.IsPublic,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const readings = `-- name: Readings :many
+SELECT id, title, author, status, started_on, finished_on, is_public,
+       created_at, updated_at
+FROM readings
+WHERE ($1::text IS NULL OR status = $1)
+ORDER BY updated_at DESC
+`
+
+// Shelf list with optional status filter. Ordered by recency of edit —
+// status-group ordering for the shelf view is the frontend's concern.
+func (q *Queries) Readings(ctx context.Context, status *string) ([]Reading, error) {
+	rows, err := q.db.Query(ctx, readings, status)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Reading{}
+	for rows.Next() {
+		var i Reading
+		if err := rows.Scan(
+			&i.ID,
+			&i.Title,
+			&i.Author,
+			&i.Status,
+			&i.StartedOn,
+			&i.FinishedOn,
+			&i.IsPublic,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const reassignAliases = `-- name: ReassignAliases :execrows
 UPDATE tag_aliases SET tag_id = $1 WHERE tag_aliases.tag_id = $2
 `
@@ -8295,6 +8469,42 @@ func (q *Queries) RecurringTodoItemsDueToday(ctx context.Context, today *time.Ti
 			&i.RecurUnit,
 			&i.Description,
 			&i.CreatedBy,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const reflectionsForReading = `-- name: ReflectionsForReading :many
+SELECT id, reading_id, entry_date, body, created_at, updated_at
+FROM reading_reflections
+WHERE reading_id = $1
+ORDER BY entry_date ASC, created_at ASC
+`
+
+// The diary thread for one book: diary-date order, creation order as the
+// same-day tiebreak. Served by idx_reading_reflections_thread.
+func (q *Queries) ReflectionsForReading(ctx context.Context, readingID uuid.UUID) ([]ReadingReflection, error) {
+	rows, err := q.db.Query(ctx, reflectionsForReading, readingID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ReadingReflection{}
+	for rows.Next() {
+		var i ReadingReflection
+		if err := rows.Scan(
+			&i.ID,
+			&i.ReadingID,
+			&i.EntryDate,
+			&i.Body,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -11765,6 +11975,103 @@ func (q *Queries) UpdateProjectStatus(ctx context.Context, arg UpdateProjectStat
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.OldStatus,
+	)
+	return i, err
+}
+
+const updateReading = `-- name: UpdateReading :one
+UPDATE readings SET
+    title = COALESCE($1, title),
+    author = COALESCE($2, author),
+    status = COALESCE($3::text, status),
+    started_on = COALESCE($4::date, started_on),
+    finished_on = COALESCE(
+        $5::date,
+        finished_on,
+        CASE WHEN $3::text = 'finished' THEN CURRENT_DATE END
+    ),
+    is_public = COALESCE($6::boolean, is_public),
+    updated_at = now()
+WHERE id = $7
+RETURNING id, title, author, status, started_on, finished_on, is_public,
+          created_at, updated_at
+`
+
+type UpdateReadingParams struct {
+	Title      *string    `json:"title"`
+	Author     *string    `json:"author"`
+	Status     *string    `json:"status"`
+	StartedOn  *time.Time `json:"started_on"`
+	FinishedOn *time.Time `json:"finished_on"`
+	IsPublic   *bool      `json:"is_public"`
+	ID         uuid.UUID  `json:"id"`
+}
+
+// Partial update — omitted (NULL) args leave the column unchanged, so
+// nullable dates cannot be cleared back to NULL through this query.
+// finished_on resolution order: explicit caller value wins, then the
+// existing value, then the convenience auto-stamp — CURRENT_DATE when this
+// update sets status to finished. The existing-value guard means a repeat
+// "finished" update never silently moves an already-recorded finish date.
+func (q *Queries) UpdateReading(ctx context.Context, arg UpdateReadingParams) (Reading, error) {
+	row := q.db.QueryRow(ctx, updateReading,
+		arg.Title,
+		arg.Author,
+		arg.Status,
+		arg.StartedOn,
+		arg.FinishedOn,
+		arg.IsPublic,
+		arg.ID,
+	)
+	var i Reading
+	err := row.Scan(
+		&i.ID,
+		&i.Title,
+		&i.Author,
+		&i.Status,
+		&i.StartedOn,
+		&i.FinishedOn,
+		&i.IsPublic,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const updateReflection = `-- name: UpdateReflection :one
+UPDATE reading_reflections SET
+    body = COALESCE($1, body),
+    entry_date = COALESCE($2::date, entry_date),
+    updated_at = now()
+WHERE id = $3 AND reading_id = $4
+RETURNING id, reading_id, entry_date, body, created_at, updated_at
+`
+
+type UpdateReflectionParams struct {
+	Body      *string    `json:"body"`
+	EntryDate *time.Time `json:"entry_date"`
+	ID        uuid.UUID  `json:"id"`
+	ReadingID uuid.UUID  `json:"reading_id"`
+}
+
+// Partial update of a diary entry, bound to its parent reading: the WHERE
+// clause enforces membership, so a {reading_id, id} mismatch is a no-row
+// miss (404) rather than a cross-book write.
+func (q *Queries) UpdateReflection(ctx context.Context, arg UpdateReflectionParams) (ReadingReflection, error) {
+	row := q.db.QueryRow(ctx, updateReflection,
+		arg.Body,
+		arg.EntryDate,
+		arg.ID,
+		arg.ReadingID,
+	)
+	var i ReadingReflection
+	err := row.Scan(
+		&i.ID,
+		&i.ReadingID,
+		&i.EntryDate,
+		&i.Body,
+		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }

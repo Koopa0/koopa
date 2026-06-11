@@ -43,6 +43,7 @@ import (
 	learningplan "github.com/Koopa0/koopa/internal/learning/plan"
 	"github.com/Koopa0/koopa/internal/note"
 	"github.com/Koopa0/koopa/internal/project"
+	"github.com/Koopa0/koopa/internal/reading"
 	"github.com/Koopa0/koopa/internal/search"
 	"github.com/Koopa0/koopa/internal/stats"
 	"github.com/Koopa0/koopa/internal/tag"
@@ -191,6 +192,7 @@ func run(logger *slog.Logger) error {
 	dailyStore := daily.NewStore(pool)
 	learningStore := learning.NewStore(pool)
 	noteStore := note.NewStore(pool)
+	readingStore := reading.NewStore(pool)
 	planStore := learningplan.NewStore(pool)
 
 	// Feed collector for manual fetch + scheduled fetch
@@ -268,6 +270,7 @@ func run(logger *slog.Logger) error {
 		daily:      daily.NewHandler(dailyStore, todoStore, logger),
 		learning:   learning.NewHandler(learningStore, logger),
 		note:       note.NewHandler(noteStore, logger),
+		reading:    reading.NewHandler(readingStore, logger),
 		todo:       todo.NewHandler(todoStore, logger),
 		plan:       learningplan.NewHandler(planStore, logger),
 		// Today is the HTTP mirror of brief(mode=morning): the same domain

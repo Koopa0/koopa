@@ -35,6 +35,7 @@ import (
 	learningplan "github.com/Koopa0/koopa/internal/learning/plan"
 	"github.com/Koopa0/koopa/internal/note"
 	"github.com/Koopa0/koopa/internal/project"
+	"github.com/Koopa0/koopa/internal/reading"
 	"github.com/Koopa0/koopa/internal/search"
 	"github.com/Koopa0/koopa/internal/stats"
 	"github.com/Koopa0/koopa/internal/tag"
@@ -62,6 +63,7 @@ type handlers struct {
 	daily      *daily.Handler
 	learning   *learning.Handler
 	note       *note.Handler
+	reading    *reading.Handler
 	todo       *todo.Handler
 	plan       *learningplan.Handler
 	today      *today.Handler
@@ -164,6 +166,20 @@ func registerRoutes(
 	mux.Handle("PUT /api/admin/knowledge/notes/{id}", adminMid(http.HandlerFunc(h.note.Update)))
 	mux.Handle("POST /api/admin/knowledge/notes/{id}/maturity", adminMid(http.HandlerFunc(h.note.Maturity)))
 	mux.Handle("DELETE /api/admin/knowledge/notes/{id}", adminMid(http.HandlerFunc(h.note.Delete)))
+
+	// --- Admin: Knowledge / Readings (literature shelf + diary) ---
+	// Deeply private domain: no public routes, no MCP tool, not in the
+	// search_knowledge corpus — this admin surface is the only access path.
+	// Reflections are membership-bound sub-resources: {rid} must belong to
+	// {id} or the handler 404s.
+	mux.Handle("GET /api/admin/knowledge/readings", authMid(http.HandlerFunc(h.reading.List)))
+	mux.Handle("GET /api/admin/knowledge/readings/{id}", authMid(http.HandlerFunc(h.reading.Get)))
+	mux.Handle("POST /api/admin/knowledge/readings", adminMid(http.HandlerFunc(h.reading.Create)))
+	mux.Handle("PUT /api/admin/knowledge/readings/{id}", adminMid(http.HandlerFunc(h.reading.Update)))
+	mux.Handle("DELETE /api/admin/knowledge/readings/{id}", adminMid(http.HandlerFunc(h.reading.Delete)))
+	mux.Handle("POST /api/admin/knowledge/readings/{id}/reflections", adminMid(http.HandlerFunc(h.reading.CreateReflection)))
+	mux.Handle("PUT /api/admin/knowledge/readings/{id}/reflections/{rid}", adminMid(http.HandlerFunc(h.reading.UpdateReflection)))
+	mux.Handle("DELETE /api/admin/knowledge/readings/{id}/reflections/{rid}", adminMid(http.HandlerFunc(h.reading.DeleteReflection)))
 
 	// --- Admin: Commitment / Projects ---
 	// Full CRUD + profile variants for the public-portfolio facet.
