@@ -11,9 +11,11 @@ import type {
   LearningSessionRow,
   MasteryStage,
   ObservationConfidence,
+  Plan,
   PlanDetail,
+  PlanEntryDetail,
   PlanEntryStatus,
-  PlanRow,
+  PlanStatus,
   SessionDetail,
 } from '../models/learning.model';
 
@@ -136,8 +138,9 @@ export class LearningService {
     );
   }
 
-  plans(): Observable<PlanRow[]> {
-    return this.api.getData<PlanRow[]>('/api/admin/learning/plans');
+  /** Draft + active plans only — the management list view. No progress data. */
+  plans(): Observable<Plan[]> {
+    return this.api.getData<Plan[]>('/api/admin/learning/plans');
   }
 
   plan(id: string): Observable<PlanDetail> {
@@ -145,16 +148,42 @@ export class LearningService {
   }
 
   /**
-   * Create a learning plan. Returns the created plan so the caller can route
-   * to its detail page (`PlanDetail.id`).
+   * Create a learning plan. The server always creates `status=draft`;
+   * activation goes through {@link updatePlanStatus}. Returns the created
+   * plan so the caller can route to its detail page.
    */
-  createPlan(body: PlanCreateRequest): Observable<PlanDetail> {
-    return this.api.postData<PlanDetail>('/api/admin/learning/plans', body);
+  createPlan(body: PlanCreateRequest): Observable<Plan> {
+    return this.api.postData<Plan>('/api/admin/learning/plans', body);
+  }
+
+  /** Plan lifecycle transition. Returns the updated plan (no entries). */
+  updatePlanStatus(id: string, status: PlanStatus): Observable<Plan> {
+    return this.api.putData<Plan>(`/api/admin/learning/plans/${id}/status`, {
+      status,
+    });
   }
 
   /**
-   * When `status === 'completed'` the backend expects
-   * `completed_by_attempt_id` + `reason` for the audit trail.
+   * Atomic position rewrite. Send EVERY entry of the plan — untouched
+   * entries holding a requested position make the server 409. Returns the
+   * full detail envelope reflecting the new order.
+   */
+  reorderPlanEntries(
+    id: string,
+    entries: { plan_entry_id: string; position: number }[],
+  ): Observable<PlanDetail> {
+    return this.api.putData<PlanDetail>(
+      `/api/admin/learning/plans/${id}/reorder`,
+      { entries },
+    );
+  }
+
+  /**
+   * Entry transition. The audit gate is server-enforced: `completed`
+   * REQUIRES `completed_by_attempt_id` + a non-blank `reason`
+   * (400 AUDIT_REQUIRED otherwise); `substituted` REQUIRES
+   * `substituted_by` (another plan entry id). Returns the bare updated
+   * entry — reload the detail envelope for fresh progress counts.
    */
   updatePlanEntry(
     planId: string,
@@ -163,11 +192,19 @@ export class LearningService {
       status: PlanEntryStatus;
       completed_by_attempt_id?: string;
       reason?: string;
+      substituted_by?: string;
     },
-  ): Observable<PlanDetail> {
-    return this.api.putData<PlanDetail>(
+  ): Observable<PlanEntryDetail> {
+    return this.api.putData<PlanEntryDetail>(
       `/api/admin/learning/plans/${planId}/entries/${entryId}`,
       body,
+    );
+  }
+
+  /** Draft plans only — the server 409s for any other plan status. */
+  removePlanEntry(planId: string, entryId: string): Observable<void> {
+    return this.api.delete(
+      `/api/admin/learning/plans/${planId}/entries/${entryId}`,
     );
   }
 

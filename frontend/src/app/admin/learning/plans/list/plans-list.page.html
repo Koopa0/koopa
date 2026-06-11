@@ -3,7 +3,7 @@
   <div class="mb-4 flex flex-wrap items-center gap-x-4 gap-y-2">
     <div class="ml-auto flex items-center gap-3">
       <span
-        class="font-mono text-[11px] text-zinc-500"
+        class="font-mono text-[11px] text-fg-subtle"
         aria-live="polite"
         data-testid="plans-count"
       >
@@ -22,7 +22,7 @@
   @if (hasError()) {
     <div
       role="alert"
-      class="mb-3 rounded-xs border border-red-800 bg-red-900/20 px-3 py-2 text-xs text-red-300"
+      class="mb-3 rounded-xs border border-error/40 bg-error-bg px-3 py-2 text-xs text-error"
       data-testid="plans-list-error"
     >
       Couldn't load plans.
@@ -38,11 +38,11 @@
     <table class="w-full text-sm" data-testid="plans-list-table">
       <thead>
         <tr
-          class="border-b border-zinc-800 text-left font-mono text-[10px] uppercase tracking-wider text-zinc-500"
+          class="border-b border-border text-left font-mono text-[10px] uppercase tracking-wider text-fg-faint"
         >
           <th scope="col" class="px-3 py-2 font-normal">Title</th>
+          <th scope="col" class="px-3 py-2 font-normal">Domain</th>
           <th scope="col" class="px-3 py-2 font-normal">Status</th>
-          <th scope="col" class="px-3 py-2 font-normal">Progress</th>
           <th scope="col" class="px-3 py-2 font-normal">Updated</th>
         </tr>
       </thead>
@@ -51,15 +51,22 @@
           <tr
             #row
             [attr.tabindex]="rowTabIndex(i)"
-            class="cursor-pointer border-b border-zinc-900 transition-colors hover:bg-zinc-800/40 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-sky-500"
-            [class.bg-zinc-800/40]="i === focusedIndex()"
+            class="cursor-pointer border-b border-border-faint transition-colors hover:bg-overlay focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-brand"
+            [class.bg-overlay]="i === focusedIndex()"
             (click)="openRow(row)"
             (keydown.enter)="openRow(row)"
             (focus)="focusedIndex.set(i)"
             [attr.data-testid]="'plans-list-row-' + i"
           >
-            <td class="max-w-xl truncate px-3 py-2 text-zinc-100">
+            <td class="max-w-xl truncate px-3 py-2 text-fg">
               {{ row.title }}
+            </td>
+            <td class="px-3 py-2">
+              <span
+                class="rounded-sm bg-elevated px-1.5 py-0.5 font-mono text-[11px] text-fg-muted"
+              >
+                {{ row.domain }}
+              </span>
             </td>
             <td class="px-3 py-2">
               <span
@@ -74,10 +81,7 @@
                 {{ row.status }}
               </span>
             </td>
-            <td class="px-3 py-2 font-mono text-[11px] text-zinc-400">
-              {{ row.summary.completed }} / {{ row.summary.total }}
-            </td>
-            <td class="px-3 py-2 text-zinc-400">
+            <td class="px-3 py-2 text-fg-subtle">
               {{ row.updated_at | date: 'short' }}
             </td>
           </tr>

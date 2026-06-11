@@ -6,15 +6,18 @@ import { of } from 'rxjs';
 import { PlansListPageComponent } from './plans-list.page';
 import { LearningService } from '../../../../core/services/learning.service';
 import { AdminTopbarService } from '../../../admin-layout/admin-topbar.service';
-import type { PlanRow } from '../../../../core/models/learning.model';
+import type { Plan } from '../../../../core/models/learning.model';
 
-function planRow(overrides: Partial<PlanRow> = {}): PlanRow {
+function planRow(overrides: Partial<Plan> = {}): Plan {
   return {
     id: 'p_1',
     title: 'Graph algorithms drill',
+    description: '',
+    domain: 'leetcode',
     status: 'active',
     goal_id: null,
-    summary: { total: 10, completed: 3, skipped: 0, substituted: 0 },
+    created_by: 'human',
+    created_at: '2026-05-20T10:00:00Z',
     updated_at: '2026-06-01T10:00:00Z',
     ...overrides,
   };

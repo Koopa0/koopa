@@ -1,138 +1,521 @@
 @if (isLoading()) {
-<div class="flex flex-1 items-center justify-center" data-testid="plan-loading">
   <div
-    class="size-5 animate-spin rounded-full border-2 border-zinc-700 border-t-zinc-300"
-    aria-label="Loading plan"
-  ></div>
-</div>
-} @else if (endpointsUnavailable()) {
-<div
-  class="flex flex-1 items-center justify-center p-8 text-center"
-  data-testid="plan-endpoints-pending"
->
-  <div class="max-w-md">
-    <p
-      class="mb-1 font-mono text-[10px] uppercase tracking-wider text-zinc-500"
-    >
-      Couldn't load
-    </p>
-    <p class="mb-4 text-xs text-zinc-500">
-      Couldn't load this plan. Try refreshing the page.
-    </p>
-    <button
-      type="button"
-      (click)="back()"
-      class="rounded-sm border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-xs text-zinc-300 transition-colors hover:bg-zinc-800"
-    >
-      Back to dashboard
-    </button>
-  </div>
-</div>
-} @else if (hasError()) {
-<div
-  class="flex flex-1 items-center justify-center p-8 text-center"
-  data-testid="plan-error"
->
-  <div>
-    <p class="mb-2 text-sm text-red-400">Failed to load plan.</p>
-    <button
-      type="button"
-      (click)="back()"
-      class="rounded-sm border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-xs text-zinc-300 transition-colors hover:bg-zinc-800"
-    >
-      Back to dashboard
-    </button>
-  </div>
-</div>
-} @else if (plan(); as p) {
-<article
-  class="mx-auto flex w-full max-w-4xl flex-col gap-5 px-6 py-8"
-  data-testid="plan-timeline"
->
-  <!-- Hero -->
-  <header class="border-b border-zinc-800 pb-4" data-testid="plan-hero">
-    <h1 class="mb-2 font-display text-2xl font-semibold text-zinc-100">
-      {{ p.title }}
-    </h1>
+    class="flex flex-1 items-center justify-center"
+    data-testid="plan-loading"
+  >
     <div
-      class="flex flex-wrap items-center gap-x-4 gap-y-1 font-mono text-[11px] text-zinc-500"
-    >
-      <span [class]="planStatusText(p.status)" class="capitalize"
-        >{{ p.status }}</span
+      class="size-5 animate-spin rounded-full border-2 border-border border-t-fg-muted"
+      aria-label="Loading plan"
+    ></div>
+  </div>
+} @else if (hasError()) {
+  <div
+    class="flex flex-1 items-center justify-center p-8 text-center"
+    data-testid="plan-error"
+  >
+    <div>
+      <p class="mb-2 text-sm text-error">Couldn't load this plan.</p>
+      <button
+        type="button"
+        (click)="back()"
+        class="rounded-sm border border-border bg-elevated px-3 py-1.5 text-xs text-fg-muted transition-colors hover:bg-overlay hover:text-fg"
       >
-      <span>{{ p.summary.completed }} / {{ p.summary.total }} entries</span>
-      @if (p.summary.skipped > 0) {
-      <span>· {{ p.summary.skipped }} skipped</span>
-      } @if (p.summary.substituted > 0) {
-      <span>· {{ p.summary.substituted }} substituted</span>
-      }
+        Back to plans
+      </button>
     </div>
-    <div class="mt-3 flex items-center gap-3">
-      <div class="h-1.5 flex-1 overflow-hidden rounded-full bg-zinc-800">
-        <div
-          class="h-full bg-sky-500 transition-all"
-          [style.width.%]="progressPercent()"
-        ></div>
+  </div>
+} @else if (detail(); as d) {
+  <article
+    class="mx-auto flex w-full max-w-4xl flex-col gap-5 px-6 py-8"
+    data-testid="plan-detail"
+  >
+    <!-- Hero -->
+    <header class="border-b border-border pb-4" data-testid="plan-hero">
+      <div class="flex flex-wrap items-start justify-between gap-3">
+        <h1 class="font-display text-2xl font-semibold text-fg">
+          {{ d.plan.title }}
+        </h1>
+        <app-status-badge
+          [variant]="planStatusVariant(d.plan.status)"
+          data-testid="plan-status-badge"
+        >
+          {{ d.plan.status }}
+        </app-status-badge>
       </div>
-      <span class="font-mono text-[11px] text-zinc-400"
-        >{{ progressPercent() }}%</span
-      >
-    </div>
-  </header>
-
-  <!-- Entries timeline -->
-  <section data-testid="plan-entries">
-    @if (p.entries.length === 0) {
-    <p class="text-xs text-zinc-500">No entries in this plan yet.</p>
-    } @else {
-    <ol class="space-y-2">
-      @for (e of p.entries; track e.id) {
-      <li
-        class="flex gap-3 rounded-sm border border-zinc-800 bg-zinc-900/40 p-3"
+      @if (d.plan.description) {
+        <p class="mt-2 max-w-2xl text-sm leading-relaxed text-fg-muted">
+          {{ d.plan.description }}
+        </p>
+      }
+      <div
+        class="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 font-mono text-[11px] text-fg-subtle"
       >
         <span
-          class="mt-1 inline-block size-1.5 shrink-0 rounded-full"
-          [class]="entryDot(e.status)"
-          aria-hidden="true"
-        ></span>
-        <div class="min-w-0 flex-1">
-          <div class="flex items-baseline justify-between gap-3">
-            <div class="min-w-0 flex-1 truncate text-sm text-zinc-100">
-              <span class="mr-2 font-mono text-[11px] text-zinc-500"
-                >{{ e.position }}.</span
-              >
-              {{ e.target.title }}
-            </div>
-            <span
-              class="shrink-0 font-mono text-[10px] uppercase"
-              [class]="entryText(e.status)"
-              >{{ e.status }}</span
+          class="rounded-sm bg-elevated px-1.5 py-0.5 text-fg-muted"
+          data-testid="plan-domain"
+          >{{ d.plan.domain }}</span
+        >
+        <span data-testid="plan-goal">
+          @if (d.plan.goal_id) {
+            goal {{ d.plan.goal_id!.slice(0, 8) }}
+          } @else {
+            no linked goal
+          }
+        </span>
+        <span>{{ entries().length }} entries</span>
+      </div>
+
+      <!-- Lifecycle controls -->
+      @if (statusActions().length > 0) {
+        <div
+          class="mt-4 flex flex-wrap items-center gap-2"
+          data-testid="plan-lifecycle"
+        >
+          @for (a of statusActions(); track a.to) {
+            <button
+              type="button"
+              (click)="setPlanStatus(a.to)"
+              [disabled]="busy()"
+              [attr.data-testid]="'plan-status-' + a.to"
+              class="rounded-sm px-3 py-1.5 text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-40"
+              [class.bg-brand]="a.kind === 'primary'"
+              [class.text-bg]="a.kind === 'primary'"
+              [class.font-medium]="a.kind === 'primary'"
+              [class.hover:bg-brand-strong]="a.kind === 'primary'"
+              [class.border]="a.kind !== 'primary'"
+              [class.border-border]="a.kind === 'ghost'"
+              [class.text-fg-muted]="a.kind === 'ghost'"
+              [class.hover:bg-overlay]="a.kind === 'ghost'"
+              [class.border-transparent]="a.kind === 'danger'"
+              [class.text-error]="a.kind === 'danger'"
+              [class.hover:bg-error-bg]="a.kind === 'danger'"
             >
-          </div>
-          @if (e.completed_at) {
-          <div class="mt-0.5 font-mono text-[10px] text-zinc-500">
-            completed {{ e.completed_at | date: 'short' }} @if
-            (e.completed_by_attempt_id) { · via attempt {{
-            e.completed_by_attempt_id.slice(0, 8) }} }
-          </div>
-          } @if (e.reason) {
-          <p class="mt-1 text-xs text-zinc-400">{{ e.reason }}</p>
+              {{ a.label }}
+            </button>
           }
         </div>
-      </li>
       }
-    </ol>
-    }
-  </section>
 
-  <div class="pt-4">
-    <button
-      type="button"
-      (click)="back()"
-      class="rounded-sm px-3 py-1.5 text-xs text-zinc-400 transition-colors hover:text-zinc-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500"
+      @if (actionError(); as err) {
+        <p
+          class="mt-3 rounded-sm border border-error/40 bg-error-bg px-3 py-2 text-xs text-error"
+          role="alert"
+          data-testid="plan-action-error"
+        >
+          {{ err }}
+        </p>
+      }
+    </header>
+
+    <!-- Progress -->
+    @if (progress(); as prog) {
+      <section data-testid="plan-progress">
+        <div
+          class="flex h-2 overflow-hidden rounded-full bg-bg"
+          role="img"
+          [attr.aria-label]="
+            prog.completed +
+            ' completed, ' +
+            prog.substituted +
+            ' substituted, ' +
+            prog.skipped +
+            ' skipped of ' +
+            prog.total
+          "
+        >
+          <div class="h-full bg-success" [style.width.%]="completedPct()"></div>
+          <div
+            class="h-full bg-brand/80"
+            [style.width.%]="substitutedPct()"
+          ></div>
+          <div class="h-full bg-warn/60" [style.width.%]="skippedPct()"></div>
+        </div>
+        <div
+          class="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 font-mono text-[11px] text-fg-subtle"
+          data-testid="plan-progress-legend"
+        >
+          <span class="inline-flex items-center gap-1.5">
+            <span
+              class="inline-block size-2 rounded-xs bg-success"
+              aria-hidden="true"
+            ></span>
+            {{ prog.completed }} completed
+          </span>
+          <span class="inline-flex items-center gap-1.5">
+            <span
+              class="inline-block size-2 rounded-xs bg-brand/80"
+              aria-hidden="true"
+            ></span>
+            {{ prog.substituted }} substituted
+          </span>
+          <span class="inline-flex items-center gap-1.5">
+            <span
+              class="inline-block size-2 rounded-xs bg-warn/60"
+              aria-hidden="true"
+            ></span>
+            {{ prog.skipped }} skipped
+          </span>
+          <span class="text-fg-faint">{{ prog.remaining }} remaining</span>
+          <span class="text-fg-faint">{{ prog.total }} total</span>
+        </div>
+      </section>
+    }
+
+    <!-- Entries -->
+    <section
+      class="rounded-md border border-border bg-panel"
+      data-testid="plan-entries"
     >
-      Back to dashboard
-    </button>
-  </div>
-</article>
+      <div
+        class="flex items-center gap-2 border-b border-border px-4 py-2.5"
+      >
+        <h3 class="font-display text-sm font-semibold text-fg">Entries</h3>
+        <span class="font-mono text-[11px] text-fg-faint">{{
+          entries().length
+        }}</span>
+        <span class="ml-auto font-mono text-[10px] uppercase tracking-wider text-fg-faint"
+          >drag to reorder</span
+        >
+      </div>
+
+      @if (entries().length === 0) {
+        <p class="px-4 py-6 text-center text-xs text-fg-subtle">
+          No entries in this plan yet.
+        </p>
+      } @else {
+        <ol cdkDropList (cdkDropListDropped)="drop($event)">
+          @for (e of entries(); let i = $index; track e.plan_entry_id) {
+            <li
+              cdkDrag
+              [cdkDragDisabled]="busy()"
+              class="group flex gap-3 border-b border-border-faint px-4 py-2.5 last:border-b-0 bg-panel"
+              [attr.data-testid]="'plan-entry-' + i"
+            >
+              <button
+                type="button"
+                cdkDragHandle
+                class="mt-0.5 cursor-grab text-fg-faint opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+                [attr.aria-label]="'Reorder ' + e.target_title"
+                data-testid="plan-entry-grip"
+              >
+                <svg
+                  width="10"
+                  height="14"
+                  viewBox="0 0 10 14"
+                  fill="currentColor"
+                  aria-hidden="true"
+                >
+                  <circle cx="2.5" cy="2.5" r="1.25" />
+                  <circle cx="7.5" cy="2.5" r="1.25" />
+                  <circle cx="2.5" cy="7" r="1.25" />
+                  <circle cx="7.5" cy="7" r="1.25" />
+                  <circle cx="2.5" cy="11.5" r="1.25" />
+                  <circle cx="7.5" cy="11.5" r="1.25" />
+                </svg>
+              </button>
+
+              <span
+                class="mt-0.5 w-5 shrink-0 text-right font-mono text-[11px] tabular-nums text-fg-faint"
+                >{{ i + 1 }}</span
+              >
+
+              <div class="min-w-0 flex-1">
+                <div class="flex flex-wrap items-center gap-2">
+                  <span
+                    class="min-w-0 truncate text-sm text-fg"
+                    [class.text-fg-faint]="e.status === 'skipped'"
+                    [class.line-through]="e.status === 'skipped'"
+                  >
+                    {{ e.target_title }}
+                  </span>
+                  @if (e.phase) {
+                    <app-status-badge
+                      [variant]="phaseVariant(e.phase!)"
+                      [attr.data-testid]="'plan-entry-phase-' + i"
+                    >
+                      {{ e.phase }}
+                    </app-status-badge>
+                  }
+                  <app-status-badge
+                    [variant]="entryStatusVariant(e.status)"
+                    [attr.data-testid]="'plan-entry-status-' + i"
+                  >
+                    {{ e.status }}
+                  </app-status-badge>
+                </div>
+
+                @if (e.status === 'completed') {
+                  <div class="mt-1 font-mono text-[10px] text-fg-faint">
+                    @if (e.completed_at) {
+                      completed {{ e.completed_at | date: 'short' }}
+                    }
+                    @if (e.completed_by_attempt_id) {
+                      · via attempt {{ e.completed_by_attempt_id!.slice(0, 8) }}
+                    }
+                  </div>
+                }
+                @if (e.status === 'substituted' && e.substituted_by) {
+                  <div class="mt-1 font-mono text-[10px] text-fg-faint">
+                    substituted by {{ substitutedLabel(e) }}
+                  </div>
+                }
+                @if (e.reason) {
+                  <p class="mt-1 text-xs leading-relaxed text-fg-muted">
+                    {{ e.reason }}
+                  </p>
+                }
+              </div>
+
+              <div class="flex shrink-0 items-start gap-1.5">
+                @if (e.status === 'planned') {
+                  <button
+                    type="button"
+                    (click)="openComplete(e)"
+                    [disabled]="busy()"
+                    class="rounded-sm bg-brand px-2 py-1 text-[11px] font-medium text-bg transition-colors hover:bg-brand-strong disabled:cursor-not-allowed disabled:opacity-40"
+                    [attr.data-testid]="'plan-entry-complete-' + i"
+                  >
+                    Complete
+                  </button>
+                  <button
+                    type="button"
+                    (click)="skipEntry(e)"
+                    [disabled]="busy()"
+                    class="rounded-sm border border-border px-2 py-1 text-[11px] text-fg-muted transition-colors hover:bg-overlay hover:text-fg disabled:cursor-not-allowed disabled:opacity-40"
+                    [attr.data-testid]="'plan-entry-skip-' + i"
+                  >
+                    Skip
+                  </button>
+                  @if (entries().length > 1) {
+                    <button
+                      type="button"
+                      (click)="openSubstitute(e)"
+                      [disabled]="busy()"
+                      class="rounded-sm border border-border px-2 py-1 text-[11px] text-fg-muted transition-colors hover:bg-overlay hover:text-fg disabled:cursor-not-allowed disabled:opacity-40"
+                      [attr.data-testid]="'plan-entry-substitute-' + i"
+                    >
+                      Substitute
+                    </button>
+                  }
+                }
+                @if (isDraft()) {
+                  <button
+                    type="button"
+                    (click)="removeEntry(e)"
+                    [disabled]="busy()"
+                    class="rounded-sm px-2 py-1 text-[11px] text-error transition-colors hover:bg-error-bg disabled:cursor-not-allowed disabled:opacity-40"
+                    [attr.aria-label]="'Remove ' + e.target_title"
+                    [attr.data-testid]="'plan-entry-remove-' + i"
+                  >
+                    Remove
+                  </button>
+                }
+              </div>
+            </li>
+          }
+        </ol>
+      }
+    </section>
+
+    <div class="pt-2">
+      <button
+        type="button"
+        (click)="back()"
+        class="rounded-sm px-3 py-1.5 text-xs text-fg-subtle transition-colors hover:text-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+      >
+        Back to plans
+      </button>
+    </div>
+  </article>
+}
+
+<!-- Audit-gate modal: completing an entry requires the justifying attempt + reason -->
+@if (completeTarget(); as target) {
+  <app-modal
+    [title]="'Complete: ' + target.target_title"
+    titleId="plan-complete-title"
+    maxWidth="md"
+    (closed)="cancelComplete()"
+  >
+    <div class="flex flex-col gap-4" data-testid="plan-complete-modal">
+      <p
+        class="inline-flex items-center gap-1.5 self-start font-mono text-[10px] uppercase tracking-wider text-warn"
+      >
+        audit gate · justification required
+      </p>
+      <p class="text-xs leading-relaxed text-fg-subtle">
+        Marking an entry complete isn't a silent toggle. Name the attempt
+        that justifies it and say why — this is written to the plan's audit
+        log.
+      </p>
+
+      <div class="flex flex-col gap-1.5">
+        <label
+          for="complete-attempt-id"
+          class="font-mono text-[11px] text-fg-subtle"
+        >
+          Justifying attempt id <span class="text-brand">*</span>
+        </label>
+        <input
+          id="complete-attempt-id"
+          type="text"
+          [value]="attemptId()"
+          (input)="setAttemptId($event)"
+          placeholder="a1b2c3d4-…"
+          class="rounded-sm border border-border bg-elevated px-3 py-2 font-mono text-xs text-fg outline-none focus:border-brand"
+          data-testid="plan-complete-attempt-id"
+        />
+        @if (attemptId().trim() && !attemptIdValid()) {
+          <p class="font-mono text-[11px] text-error" role="alert">
+            Must be the attempt's UUID.
+          </p>
+        } @else {
+          <p class="font-mono text-[11px] text-fg-faint">
+            Attempts have no admin list view — paste the id of the session
+            attempt on this entry's target.
+          </p>
+        }
+      </div>
+
+      <div class="flex flex-col gap-1.5">
+        <label
+          for="complete-reason"
+          class="font-mono text-[11px] text-fg-subtle"
+        >
+          Why does this attempt justify completion?
+          <span class="text-brand">*</span>
+        </label>
+        <textarea
+          id="complete-reason"
+          rows="3"
+          [value]="completeReason()"
+          (input)="setCompleteReason($event)"
+          placeholder="solved_independent on attempt #2, 8 min, clean implementation"
+          class="resize-y rounded-sm border border-border bg-elevated px-3 py-2 text-sm leading-relaxed text-fg outline-none focus:border-brand"
+          data-testid="plan-complete-reason"
+        ></textarea>
+      </div>
+
+      @if (modalError(); as err) {
+        <p
+          class="rounded-sm border border-error/40 bg-error-bg px-3 py-2 text-xs text-error"
+          role="alert"
+          data-testid="plan-complete-error"
+        >
+          {{ err }}
+        </p>
+      }
+    </div>
+
+    <ng-container modal-footer>
+      @if (!completeReady()) {
+        <span class="mr-auto self-center font-mono text-[11px] text-error">
+          Both are required
+        </span>
+      }
+      <button
+        type="button"
+        (click)="cancelComplete()"
+        class="rounded-sm border border-border px-3 py-1.5 text-xs text-fg-muted transition-colors hover:bg-overlay hover:text-fg"
+        data-testid="plan-complete-cancel"
+      >
+        Cancel
+      </button>
+      <button
+        type="button"
+        (click)="confirmComplete()"
+        [disabled]="!completeReady() || busy()"
+        class="rounded-sm bg-brand px-3 py-1.5 text-xs font-medium text-bg transition-colors hover:bg-brand-strong disabled:cursor-not-allowed disabled:opacity-40"
+        data-testid="plan-complete-confirm"
+      >
+        Complete &amp; log
+      </button>
+    </ng-container>
+  </app-modal>
+}
+
+<!-- Substitute modal: pick the sibling entry that replaces this one -->
+@if (substituteTarget(); as target) {
+  <app-modal
+    [title]="'Substitute: ' + target.target_title"
+    titleId="plan-substitute-title"
+    maxWidth="md"
+    (closed)="cancelSubstitute()"
+  >
+    <div class="flex flex-col gap-4" data-testid="plan-substitute-modal">
+      <p class="text-xs leading-relaxed text-fg-subtle">
+        Substitution keeps the audit trail honest — the entry stays in the
+        plan, pointing at the entry that replaces it.
+      </p>
+
+      <div class="flex flex-col gap-1.5" role="radiogroup" aria-label="Substituting entry">
+        @for (opt of substituteOptions(); let i = $index; track opt.plan_entry_id) {
+          <button
+            type="button"
+            role="radio"
+            [attr.aria-checked]="substitutePick() === opt.plan_entry_id"
+            (click)="substitutePick.set(opt.plan_entry_id)"
+            class="flex items-start gap-2.5 rounded-sm border px-3 py-2 text-left transition-colors"
+            [class.border-brand]="substitutePick() === opt.plan_entry_id"
+            [class.bg-brand-faint]="substitutePick() === opt.plan_entry_id"
+            [class.border-border]="substitutePick() !== opt.plan_entry_id"
+            [class.bg-elevated]="substitutePick() !== opt.plan_entry_id"
+            [attr.data-testid]="'plan-substitute-option-' + i"
+          >
+            <span
+              class="mt-0.5 inline-block size-3.5 shrink-0 rounded-full border-[1.5px]"
+              [class.border-brand]="substitutePick() === opt.plan_entry_id"
+              [class.border-border-strong]="
+                substitutePick() !== opt.plan_entry_id
+              "
+              aria-hidden="true"
+            ></span>
+            <span class="min-w-0">
+              <span class="block truncate text-[13px] text-fg">{{
+                opt.target_title
+              }}</span>
+              <span class="mt-0.5 block font-mono text-[10px] text-fg-faint">
+                position {{ opt.position }} · {{ opt.status }}
+              </span>
+            </span>
+          </button>
+        }
+      </div>
+
+      @if (modalError(); as err) {
+        <p
+          class="rounded-sm border border-error/40 bg-error-bg px-3 py-2 text-xs text-error"
+          role="alert"
+          data-testid="plan-substitute-error"
+        >
+          {{ err }}
+        </p>
+      }
+    </div>
+
+    <ng-container modal-footer>
+      @if (!substitutePick()) {
+        <span class="mr-auto self-center font-mono text-[11px] text-error">
+          Pick the substituting entry
+        </span>
+      }
+      <button
+        type="button"
+        (click)="cancelSubstitute()"
+        class="rounded-sm border border-border px-3 py-1.5 text-xs text-fg-muted transition-colors hover:bg-overlay hover:text-fg"
+        data-testid="plan-substitute-cancel"
+      >
+        Cancel
+      </button>
+      <button
+        type="button"
+        (click)="confirmSubstitute()"
+        [disabled]="!substitutePick() || busy()"
+        class="rounded-sm bg-brand px-3 py-1.5 text-xs font-medium text-bg transition-colors hover:bg-brand-strong disabled:cursor-not-allowed disabled:opacity-40"
+        data-testid="plan-substitute-confirm"
+      >
+        Substitute &amp; log
+      </button>
+    </ng-container>
+  </app-modal>
 }

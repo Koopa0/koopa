@@ -72,13 +72,34 @@ describe('PlanCreatePageComponent', () => {
     fixture.detectChanges();
   }
 
-  it('should disable submit when the title is empty', () => {
-    expect(submitBtn().disabled).toBe(true);
+  it('should keep submit enabled before the first submit attempt', () => {
+    // Design gating: the button only disables after a failed submit.
+    expect(submitBtn().disabled).toBe(false);
+    expect(
+      el.querySelector('[data-testid="plan-create-banner"]'),
+    ).toBeNull();
   });
 
-  it('should keep submit disabled when a domain is not selected', async () => {
-    await typeTitle('Master graph traversal');
+  it('should show the banner and not call createPlan when submitting an invalid form', async () => {
+    submitBtn().click();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(createPlan).not.toHaveBeenCalled();
+    expect(
+      el.querySelector('[data-testid="plan-create-banner"]')?.textContent,
+    ).toContain('Some fields need attention');
     expect(submitBtn().disabled).toBe(true);
+    // Field errors are surfaced by the submit attempt even without blur.
+    expect(el.textContent).toContain('Title is required.');
+    expect(el.textContent).toContain('A plan must belong to a domain.');
+  });
+
+  it('should render the live title character count', async () => {
+    await typeTitle('Master graph traversal');
+    expect(
+      el.querySelector('[data-testid="plan-title-count"]')?.textContent,
+    ).toContain('22/80');
   });
 
   it('should create the plan and route to its detail once title and domain are set', async () => {
@@ -90,14 +111,40 @@ describe('PlanCreatePageComponent', () => {
     await fixture.whenStable();
 
     expect(createPlan).toHaveBeenCalledTimes(1);
-    // Title is trimmed; domain is the selected slug; optionals are omitted.
+    // Title is trimmed; domain is the selected slug; the goal stays
+    // unlinked; target_count carries the slider default.
     expect(createPlan.mock.calls[0][0]).toMatchObject({
       title: 'Master graph traversal',
       domain: 'go',
+      target_count: 9,
     });
+    expect(createPlan.mock.calls[0][0].goal_id).toBeUndefined();
     expect(navigateSpy).toHaveBeenCalledWith([
       '/admin/learning/plans',
       'p_new',
     ]);
+  });
+
+  it('should send the adjusted target count when the slider moves', async () => {
+    await typeTitle('Concurrency drills');
+    await selectDomain('go');
+
+    const slider = el.querySelector(
+      '[data-testid="plan-target-count"]',
+    ) as HTMLInputElement;
+    slider.value = '14';
+    slider.dispatchEvent(new Event('input'));
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(
+      el.querySelector('[data-testid="plan-target-count-readout"]')
+        ?.textContent,
+    ).toContain('14 entries to scaffold');
+
+    submitBtn().click();
+    await fixture.whenStable();
+
+    expect(createPlan.mock.calls[0][0]).toMatchObject({ target_count: 14 });
   });
 });

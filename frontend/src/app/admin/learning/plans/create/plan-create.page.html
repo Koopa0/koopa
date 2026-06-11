@@ -1,8 +1,16 @@
 <div class="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-5 px-6 py-6">
   <!-- Header -->
-  <div class="flex items-baseline justify-between border-b border-border pb-3">
-    <h1 class="font-display text-2xl font-semibold text-fg">New plan</h1>
-    <span class="font-mono text-[11px] text-fg-faint">learning / plans / new</span>
+  <div class="border-b border-border pb-3">
+    <div class="flex items-baseline justify-between">
+      <h1 class="font-display text-2xl font-semibold text-fg">New plan</h1>
+      <span class="font-mono text-[11px] text-fg-faint"
+        >learning / plans / new</span
+      >
+    </div>
+    <p class="mt-2 text-[13px] text-fg-subtle">
+      A plan is an ordered path through a domain. Entries, phases and the
+      audit log come after — start with intent.
+    </p>
   </div>
 
   @if (serverError(); as err) {
@@ -15,6 +23,17 @@
     </div>
   }
 
+  @if (showInvalidBanner()) {
+    <div
+      class="rounded-sm border border-error/40 bg-error-bg px-3 py-2 text-xs text-error"
+      role="alert"
+      aria-live="polite"
+      data-testid="plan-create-banner"
+    >
+      Some fields need attention before this can be created.
+    </div>
+  }
+
   <form
     novalidate
     (submit)="$event.preventDefault(); save()"
@@ -23,23 +42,40 @@
   >
     <!-- Title (required) -->
     <div class="flex flex-col gap-1.5">
-      <label for="plan-title" class="font-mono text-[11px] text-fg-subtle">
-        Title <span class="text-error">*</span>
-      </label>
+      <div class="flex items-baseline justify-between">
+        <label for="plan-title" class="font-mono text-[11px] text-fg-subtle">
+          Title <span class="text-brand">*</span>
+        </label>
+        <span
+          class="font-mono text-[10px] text-fg-faint"
+          data-testid="plan-title-count"
+          >{{ titleCount() }}/{{ titleMax }}</span
+        >
+      </div>
       <input
         id="plan-title"
         type="text"
         [formField]="planForm.title"
         placeholder="Master graph traversal patterns"
         class="rounded-sm border border-border bg-elevated px-3 py-2 text-sm text-fg outline-none focus:border-brand"
-        [class.border-error]="planForm.title().touched() && planForm.title().invalid()"
+        [class.border-error]="
+          (planForm.title().touched() || submitted()) &&
+          planForm.title().invalid()
+        "
       />
-      @if (planForm.title().touched() && planForm.title().invalid()) {
+      @if (
+        (planForm.title().touched() || submitted()) &&
+        planForm.title().invalid()
+      ) {
         @for (e of planForm.title().errors(); track e.message) {
           <p class="font-mono text-[11px] text-error" role="alert">
             {{ e.message }}
           </p>
         }
+      } @else {
+        <p class="font-mono text-[11px] text-fg-faint">
+          What fluency are you building?
+        </p>
       }
     </div>
 
@@ -60,14 +96,17 @@
     <!-- Domain (required) -->
     <div class="flex flex-col gap-1.5">
       <label for="plan-domain" class="font-mono text-[11px] text-fg-subtle">
-        Domain <span class="text-error">*</span>
+        Domain <span class="text-brand">*</span>
       </label>
       @if (hasDomains()) {
         <select
           id="plan-domain"
           [formField]="planForm.domain"
           class="rounded-sm border border-border bg-elevated px-3 py-2 text-sm text-fg outline-none focus:border-brand"
-          [class.border-error]="planForm.domain().touched() && planForm.domain().invalid()"
+          [class.border-error]="
+            (planForm.domain().touched() || submitted()) &&
+            planForm.domain().invalid()
+          "
           data-testid="plan-domain-select"
         >
           <option value="">—</option>
@@ -75,12 +114,19 @@
             <option [value]="d.slug">{{ d.name }}</option>
           }
         </select>
-        @if (planForm.domain().touched() && planForm.domain().invalid()) {
+        @if (
+          (planForm.domain().touched() || submitted()) &&
+          planForm.domain().invalid()
+        ) {
           @for (e of planForm.domain().errors(); track e.message) {
             <p class="font-mono text-[11px] text-error" role="alert">
               {{ e.message }}
             </p>
           }
+        } @else {
+          <p class="font-mono text-[11px] text-fg-faint">
+            Concepts &amp; observations roll up here.
+          </p>
         }
       } @else {
         <p
@@ -111,25 +157,44 @@
           class="rounded-sm border border-border bg-elevated px-3 py-2 text-sm text-fg outline-none focus:border-brand"
           data-testid="plan-goal-select"
         >
-          <option value="">—</option>
+          <option value="">Not linked</option>
           @for (g of goals(); track g.id) {
-            <option [value]="g.id">{{ g.title }}</option>
+            <option [value]="g.id">{{ goalLabel(g.title) }}</option>
           }
         </select>
+        <p class="font-mono text-[11px] text-fg-faint">
+          Tie this plan to a commitment.
+        </p>
       </div>
 
-      <!-- Target count (optional) -->
+      <!-- Target entry count (slider) -->
       <div class="flex flex-col gap-1.5">
-        <label for="plan-target-count" class="font-mono text-[11px] text-fg-subtle">
-          Target count
+        <label
+          for="plan-target-count"
+          class="font-mono text-[11px] text-fg-subtle"
+        >
+          Target entry count
         </label>
-        <input
-          id="plan-target-count"
-          type="number"
-          [formField]="planForm.target_count"
-          placeholder="0"
-          class="rounded-sm border border-border bg-elevated px-3 py-2 text-sm text-fg outline-none focus:border-brand"
-        />
+        <div class="flex items-center gap-3 py-2">
+          <input
+            id="plan-target-count"
+            type="range"
+            [min]="targetCountMin"
+            [max]="targetCountMax"
+            step="1"
+            [value]="targetCount()"
+            (input)="setTargetCount($event)"
+            class="flex-1 accent-(--brand)"
+            data-testid="plan-target-count"
+          />
+          <span
+            class="font-mono text-[11px] tabular-nums text-fg-muted"
+            data-testid="plan-target-count-readout"
+            aria-live="polite"
+          >
+            {{ targetCount() }} entries to scaffold
+          </span>
+        </div>
       </div>
     </div>
 
@@ -137,7 +202,7 @@
     <div class="flex items-center gap-3 border-t border-border pt-4">
       <button
         type="submit"
-        [disabled]="planForm().invalid() || submitting()"
+        [disabled]="showInvalidBanner() || submitting()"
         class="rounded-sm bg-brand px-4 py-2 text-sm font-medium text-bg transition-colors hover:bg-brand-strong disabled:cursor-not-allowed disabled:opacity-40"
         data-testid="plan-create-submit"
       >
@@ -149,6 +214,12 @@
       >
         Cancel
       </a>
+      <span
+        class="ml-auto rounded-sm bg-elevated px-2 py-1 font-mono text-[10px] uppercase tracking-wider text-fg-subtle"
+        data-testid="plan-create-status-chip"
+      >
+        status on create: draft
+      </span>
     </div>
   </form>
 </div>

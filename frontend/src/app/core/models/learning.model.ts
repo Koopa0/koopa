@@ -181,8 +181,12 @@ export interface SessionDetail {
 
 // === Plans ===
 
+/**
+ * Plan entry lifecycle (learning_plan_entries.status):
+ * planned → completed | skipped | substituted.
+ */
 export type PlanEntryStatus =
-  | 'pending'
+  | 'planned'
   | 'completed'
   | 'skipped'
   | 'substituted';
@@ -194,40 +198,62 @@ export type PlanStatus =
   | 'completed'
   | 'abandoned';
 
-export interface PlanRow {
+/**
+ * A learning plan row (internal/learning/plan Plan). Both the list endpoint
+ * (`GET /plans` — draft + active only) and the `plan` key of the detail
+ * envelope use this shape. The list endpoint carries NO progress data;
+ * progress lives only on the detail envelope.
+ */
+export interface Plan {
   id: string;
   title: string;
+  description: string;
+  domain: string;
+  goal_id?: string | null;
   status: PlanStatus;
-  goal_id: string | null;
-  summary: {
-    total: number;
-    completed: number;
-    skipped: number;
-    substituted: number;
-  };
+  target_count?: number | null;
+  plan_config?: unknown;
+  created_by: string;
+  created_at: string;
   updated_at: string;
 }
 
-export interface PlanEntry {
-  id: string;
+/**
+ * Plan entry projection from the detail envelope (EntryDetail in Go).
+ * `plan_entry_id` is the identifier passed back to the update / remove /
+ * reorder endpoints; `substituted_by` references another plan entry.
+ * `phase` is a free-form kebab-case label (e.g. "foundation", "1-arrays").
+ */
+export interface PlanEntryDetail {
+  plan_entry_id: string;
+  plan_id: string;
+  learning_target_id: string;
   position: number;
   status: PlanEntryStatus;
-  target: { id: string; title: string };
-  completed_at?: string | null;
+  phase?: string | null;
+  substituted_by?: string | null;
   completed_by_attempt_id?: string | null;
   reason?: string | null;
+  added_at: string;
+  completed_at?: string | null;
+  target_title: string;
+  target_domain: string;
+  target_difficulty?: string | null;
+  target_external_id?: string | null;
 }
 
+/** Five-field completion summary from the detail envelope. */
+export interface PlanProgress {
+  total: number;
+  completed: number;
+  skipped: number;
+  substituted: number;
+  remaining: number;
+}
+
+/** `GET /plans/{id}` (and the reorder response) — de-embedded envelope. */
 export interface PlanDetail {
-  id: string;
-  title: string;
-  status: PlanStatus;
-  goal_id: string | null;
-  entries: PlanEntry[];
-  summary: {
-    total: number;
-    completed: number;
-    skipped: number;
-    substituted: number;
-  };
+  plan: Plan;
+  entries: PlanEntryDetail[];
+  progress: PlanProgress;
 }

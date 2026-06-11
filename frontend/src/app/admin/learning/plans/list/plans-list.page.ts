@@ -15,29 +15,30 @@ import { DatePipe } from '@angular/common';
 import { LearningService } from '../../../../core/services/learning.service';
 import { AdminTopbarService } from '../../../admin-layout/admin-topbar.service';
 import { DataTableComponent } from '../../../../shared/components/data-table/data-table.component';
-import type { PlanRow, PlanStatus } from '../../../../core/models/learning.model';
+import type { Plan, PlanStatus } from '../../../../core/models/learning.model';
 
 const STATUS_DOT_CLASS: Record<PlanStatus, string> = {
-  draft: 'bg-zinc-600',
-  active: 'bg-emerald-500',
-  paused: 'bg-amber-400',
-  completed: 'bg-sky-500',
-  abandoned: 'bg-red-500',
+  draft: 'bg-fg-subtle',
+  active: 'bg-success',
+  paused: 'bg-warn',
+  completed: 'bg-info',
+  abandoned: 'bg-error',
 };
 
 const STATUS_TEXT_CLASS: Record<PlanStatus, string> = {
-  draft: 'text-zinc-500',
-  active: 'text-emerald-300',
-  paused: 'text-amber-300',
-  completed: 'text-sky-300',
-  abandoned: 'text-red-300',
+  draft: 'text-fg-subtle',
+  active: 'text-success',
+  paused: 'text-warn',
+  completed: 'text-info',
+  abandoned: 'text-error',
 };
 
 /**
- * Plans List — Learning curricula. `GET /api/admin/learning/plans` returns the
- * flat plan list; rows open the plan timeline at `/admin/learning/plans/:id`.
- * Columns: Title / Status / Progress / Updated. The endpoint may return empty
- * until plans are proposed, so empty and error states are first-class.
+ * Plans List — Learning curricula. `GET /api/admin/learning/plans` returns
+ * bare plan rows (draft + active only, no progress counts); rows open the
+ * plan detail at `/admin/learning/plans/:id`. Columns: Title / Domain /
+ * Status / Updated. The endpoint may return empty until plans are created,
+ * so empty and error states are first-class.
  */
 @Component({
   selector: 'app-plans-list-page',
@@ -56,7 +57,7 @@ export class PlansListPageComponent {
   private readonly router = inject(Router);
   private readonly destroyRef = inject(DestroyRef);
 
-  protected readonly resource = rxResource<PlanRow[], void>({
+  protected readonly resource = rxResource<Plan[], void>({
     stream: () => this.learningService.plans(),
   });
 
@@ -90,7 +91,7 @@ export class PlansListPageComponent {
     this.destroyRef.onDestroy(() => this.topbar.reset());
   }
 
-  protected openRow(row: PlanRow): void {
+  protected openRow(row: Plan): void {
     this.router.navigate(['/admin/learning/plans', row.id]);
   }
 
