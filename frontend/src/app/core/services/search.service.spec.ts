@@ -85,6 +85,47 @@ describe('SearchService', () => {
     expect(service.results()).toEqual([]);
   });
 
+  it('should call the admin endpoint and unwrap results when adminSearch is called', () => {
+    let results: { type: string; title: string }[] | undefined;
+    service.adminSearch('pgvector', 10).subscribe((r) => (results = r));
+
+    const req = httpMock.expectOne((r) =>
+      r.url.endsWith('/api/admin/search'),
+    );
+    expect(req.request.params.get('q')).toBe('pgvector');
+    expect(req.request.params.get('limit')).toBe('10');
+    req.flush({
+      data: {
+        results: [
+          {
+            type: 'content',
+            id: 'c1',
+            slug: 'pgvector-indexing',
+            title: 'pgvector indexing',
+            excerpt: 'HNSW vs IVFFlat',
+            score: 0.9,
+          },
+          { type: 'note', id: 'n1', title: 'pgvector note', score: 0 },
+        ],
+      },
+    });
+
+    expect(results?.length).toBe(2);
+    expect(results?.[0].type).toBe('content');
+    expect(results?.[1].type).toBe('note');
+  });
+
+  it('should return an empty array when adminSearch results are missing', () => {
+    let results: unknown[] | undefined;
+    service.adminSearch('nothing').subscribe((r) => (results = r));
+
+    httpMock
+      .expectOne((r) => r.url.endsWith('/api/admin/search'))
+      .flush({ data: {} });
+
+    expect(results).toEqual([]);
+  });
+
   it('should clear search state', () => {
     const mockResponse: ApiListResponse<ApiContent> = {
       data: [makeMockContent()],

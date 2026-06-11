@@ -1,10 +1,29 @@
 import { Injectable, inject, signal, computed } from '@angular/core';
-import type { Subscription } from 'rxjs';
+import { map, type Observable, type Subscription } from 'rxjs';
+import { ApiService } from './api.service';
 import { ContentService } from './content.service';
 import type { ApiContent, ApiPaginationMeta } from '../models';
 
+/** Entity kind of an admin search hit — routes the click target. */
+export type AdminSearchKind = 'content' | 'note';
+
+/** Single hit from the admin global search endpoint. */
+export interface AdminSearchResult {
+  type: AdminSearchKind;
+  id: string;
+  slug?: string;
+  title: string;
+  excerpt?: string;
+  score: number;
+}
+
+interface AdminSearchResponse {
+  results: AdminSearchResult[];
+}
+
 @Injectable({ providedIn: 'root' })
 export class SearchService {
+  private readonly api = inject(ApiService);
   private readonly content = inject(ContentService);
 
   private readonly _query = signal('');
@@ -51,5 +70,15 @@ export class SearchService {
     this._query.set('');
     this._results.set([]);
     this._meta.set(null);
+  }
+
+  /**
+   * Admin global search — merged content + note hits from
+   * GET /api/admin/search. Stateless; callers own the result signal.
+   */
+  adminSearch(query: string, limit = 20): Observable<AdminSearchResult[]> {
+    return this.api
+      .getData<AdminSearchResponse>('/api/admin/search', { q: query, limit })
+      .pipe(map((res) => res.results ?? []));
   }
 }

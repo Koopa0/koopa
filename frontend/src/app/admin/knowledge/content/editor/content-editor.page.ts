@@ -35,6 +35,7 @@ import {
   ContentLifecycleRailComponent,
   type ContentLifecycleAction,
 } from './lifecycle-rail.component';
+import { ContentPreviewOverlayComponent } from './preview-overlay.component';
 import type {
   ApiContent,
   ApiCreateContentRequest,
@@ -101,6 +102,7 @@ const WORDS_PER_MINUTE = 220;
     DatePipe,
     StatusBadgeComponent,
     ContentLifecycleRailComponent,
+    ContentPreviewOverlayComponent,
   ],
   templateUrl: './content-editor.page.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -151,6 +153,9 @@ export class ContentEditorPageComponent {
 
   private readonly _isActioning = signal(false);
   protected readonly isActioning = this._isActioning.asReadonly();
+
+  /** Publish-preview overlay visibility (edit mode, saved content only). */
+  protected readonly showPreview = signal(false);
 
   /** Selected topic ids; kept outside the FormGroup so toggling stays a plain signal write. */
   protected readonly selectedTopicIds = signal<string[]>([]);
@@ -262,6 +267,16 @@ export class ContentEditorPageComponent {
     const formInvalid = this.formStatus() === 'INVALID';
 
     const actions: TopbarAction[] = [
+      ...(!create && c
+        ? [
+            {
+              id: 'preview',
+              label: 'Preview',
+              kind: 'secondary',
+              run: () => this.showPreview.set(true),
+            } satisfies TopbarAction,
+          ]
+        : []),
       {
         id: 'close',
         label: 'Close',

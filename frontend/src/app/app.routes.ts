@@ -262,21 +262,16 @@ export const routes: Routes = [
       {
         path: 'knowledge/search',
         loadComponent: () =>
-          import('./admin/shared/admin-placeholder.component').then(
-            (m) => m.AdminPlaceholderComponent,
+          import('./admin/knowledge/search/knowledge-search.page').then(
+            (m) => m.KnowledgeSearchPageComponent,
           ),
-        data: { title: 'Search', crumbs: ['Knowledge', 'Search'] },
       },
       {
         path: 'knowledge/tags',
         loadComponent: () =>
-          import('./admin/shared/admin-placeholder.component').then(
-            (m) => m.AdminPlaceholderComponent,
+          import('./admin/knowledge/tags/tags-topics.page').then(
+            (m) => m.TagsTopicsPageComponent,
           ),
-        data: {
-          title: 'Tags & topics',
-          crumbs: ['Knowledge', 'Tags & topics'],
-        },
       },
 
       // ── Learning ─────────────────────────────────────────────────

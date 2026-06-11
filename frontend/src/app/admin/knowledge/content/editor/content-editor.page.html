@@ -332,4 +332,13 @@
       }
     </aside>
   </form>
+
+  @if (showPreview() && content(); as c) {
+    <app-content-preview-overlay
+      [slug]="c.slug"
+      [type]="c.type"
+      [live]="c.status === 'published'"
+      (closed)="showPreview.set(false)"
+    />
+  }
 }

@@ -8,6 +8,7 @@ import { provideRouter, Router, type Routes } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
 
 import { ContentEditorPageComponent } from './content-editor.page';
+import { AdminTopbarService } from '../../../admin-layout/admin-topbar.service';
 import type { ApiContent } from '../../../../core/models/api.model';
 
 const CONTENT_URL = '/api/admin/knowledge/content';
@@ -166,6 +167,12 @@ describe('ContentEditorPageComponent', () => {
       await settle();
     });
 
+    it('should not expose a preview action in create mode', () => {
+      const actions =
+        TestBed.inject(AdminTopbarService).context().actions ?? [];
+      expect(actions.find((a) => a.id === 'preview')).toBeUndefined();
+    });
+
     it('should not POST when required fields are missing', async () => {
       el()
         .querySelector<HTMLFormElement>('[data-testid="content-editor"]')
@@ -235,6 +242,58 @@ describe('ContentEditorPageComponent', () => {
         el().querySelector('[data-testid="lifecycle-publish-gate"]')
           ?.textContent,
       ).toContain('human only');
+    });
+
+    it('should open the preview overlay with the /preview/:slug iframe via the topbar action', async () => {
+      const topbar = TestBed.inject(AdminTopbarService);
+      const previewAction = topbar
+        .context()
+        .actions?.find((a) => a.id === 'preview');
+      expect(previewAction).toBeTruthy();
+
+      previewAction!.run();
+      await settle();
+
+      const iframe = el().querySelector<HTMLIFrameElement>(
+        '[data-testid="preview-iframe"]',
+      );
+      expect(iframe?.getAttribute('src')).toBe('/preview/value-semantics');
+      expect(
+        el().querySelector('[data-testid="preview-note"]')?.textContent,
+      ).toContain('draft preview');
+    });
+
+    it('should close the preview overlay on scrim mousedown', async () => {
+      TestBed.inject(AdminTopbarService)
+        .context()
+        .actions?.find((a) => a.id === 'preview')
+        ?.run();
+      await settle();
+      expect(
+        el().querySelector('[data-testid="preview-scrim"]'),
+      ).toBeTruthy();
+
+      el()
+        .querySelector<HTMLElement>('[data-testid="preview-scrim"]')
+        ?.dispatchEvent(new MouseEvent('mousedown'));
+      await settle();
+
+      expect(el().querySelector('[data-testid="preview-scrim"]')).toBeNull();
+    });
+
+    it('should close the preview overlay on Escape', async () => {
+      TestBed.inject(AdminTopbarService)
+        .context()
+        .actions?.find((a) => a.id === 'preview')
+        ?.run();
+      await settle();
+
+      document.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+      );
+      await settle();
+
+      expect(el().querySelector('[data-testid="preview-scrim"]')).toBeNull();
     });
 
     it('should PATCH is-public when the visibility switch is toggled', async () => {
