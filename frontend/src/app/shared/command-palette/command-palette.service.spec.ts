@@ -25,7 +25,9 @@ describe('CommandPaletteService', () => {
       providers: [
         provideHttpClient(withXhr()),
         provideHttpClientTesting(),
-        provideRouter([]),
+        // Wildcard route so tests can navigate into /admin (the palette's
+        // admin quick-nav is gated to the admin area).
+        provideRouter([{ path: '**', children: [] }]),
         { provide: AuthService, useValue: authStub },
       ],
     });
@@ -81,8 +83,31 @@ describe('CommandPaletteService', () => {
     expect(adminActions.length).toBe(0);
   });
 
-  it('should load goals and projects when opening while authenticated', () => {
-    const { httpMock } = setup(true);
+  it('should not surface admin nav on a public route even when authenticated', async () => {
+    const { httpMock, router } = setup(true);
+    await router.navigateByUrl('/');
+    service.open();
+    // The owner is authed, so the entity load still fires — drain it.
+    httpMock.expectOne('/bff/api/admin/commitment/goals').flush([]);
+    httpMock
+      .expectOne('/bff/api/admin/commitment/projects')
+      .flush({ projects: [] });
+    httpMock
+      .expectOne((r) => r.url.includes('/bff/api/admin/knowledge/content'))
+      .flush({ data: [] });
+
+    const actions = service.actions();
+    expect(actions.filter((a) => a.group === 'Admin')).toHaveLength(0);
+    expect(actions.filter((a) => a.group === 'Goals')).toHaveLength(0);
+    // Public page nav stays available.
+    expect(actions.some((a) => a.id === 'home')).toBe(true);
+    httpMock.verify();
+  });
+
+  it('should load goals and projects when opening while authenticated', async () => {
+    const { httpMock, router } = setup(true);
+    // Admin entity actions only surface in the admin area.
+    await router.navigateByUrl('/admin/daily/today');
 
     const goalsResponse: GoalSummary[] = [
       {

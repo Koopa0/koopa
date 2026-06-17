@@ -6,8 +6,9 @@ import {
   PLATFORM_ID,
 } from '@angular/core';
 import { isPlatformBrowser } from '@angular/common';
-import { Router } from '@angular/router';
-import { forkJoin } from 'rxjs';
+import { toSignal } from '@angular/core/rxjs-interop';
+import { NavigationEnd, Router } from '@angular/router';
+import { filter, forkJoin, map } from 'rxjs';
 import { AuthService } from '../../core/services/auth.service';
 import { PlanService } from '../../core/services/plan.service';
 import { ContentService } from '../../core/services/content.service';
@@ -141,6 +142,20 @@ export class CommandPaletteService {
 
   readonly isAuthenticated = this.authService.isAuthenticated;
 
+  // Admin quick-nav only belongs in the admin area. On the public reading
+  // site the palette stays reader-focused (public page nav + content search),
+  // even for the signed-in owner — the admin routes don't surface there.
+  private readonly currentUrl = toSignal(
+    this.router.events.pipe(
+      filter((e): e is NavigationEnd => e instanceof NavigationEnd),
+      map((e) => e.urlAfterRedirects),
+    ),
+    { initialValue: this.router.url },
+  );
+  private readonly inAdminArea = computed(() =>
+    this.currentUrl().startsWith('/admin'),
+  );
+
   private readonly _adminEntities = signal<CommandAction[]>([]);
   private hasLoadedEntities = false;
 
@@ -195,7 +210,7 @@ export class CommandPaletteService {
       },
     ];
 
-    if (this.isAuthenticated()) {
+    if (this.isAuthenticated() && this.inAdminArea()) {
       const admin: CommandAction[] = ADMIN_NAV_ACTIONS.map((entry) => ({
         id: entry.id,
         label: entry.label,
