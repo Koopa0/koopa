@@ -145,9 +145,12 @@ export class HypothesisService {
   }
 
   addEvidence(id: string, body: AddEvidenceRequest): Observable<Hypothesis> {
+    // The handler decodes `{ evidence: {...} }` and 400s when the wrapper is
+    // absent (handler.go AddEvidence). The evidence object is stored as-is and
+    // read back via the lineage `evidence_log`, so its fields must match.
     return this.api.postData<Hypothesis>(
       `/api/admin/learning/hypotheses/${id}/evidence`,
-      body,
+      { evidence: body },
     );
   }
 }

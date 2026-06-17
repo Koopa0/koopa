@@ -20,6 +20,7 @@ import type { Hypothesis } from '../../../../core/models/workbench.model';
 const HYP_URL = '/api/admin/learning/hypotheses/h1';
 const LINEAGE_URL = '/api/admin/learning/hypotheses/h1/lineage';
 const ENDORSE_URL = '/api/admin/learning/hypotheses/h1/endorse';
+const EVIDENCE_URL = '/api/admin/learning/hypotheses/h1/evidence';
 
 function hyp(overrides?: Partial<Hypothesis>): Hypothesis {
   return {
@@ -201,5 +202,40 @@ describe('HypothesisProfilePageComponent', () => {
 
     httpMock.expectNone((r) => r.method === 'DELETE' && r.url.endsWith(HYP_URL));
     expect(testid('hypothesis-action-delete')).not.toBeNull();
+  });
+
+  it('should POST evidence wrapped in an { evidence } envelope (handler requires it)', async () => {
+    await render(hyp({ state: 'unverified' }));
+
+    (testid('hypothesis-action-add-evidence') as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    const body = testid('hypothesis-evidence-body') as HTMLTextAreaElement;
+    body.value = 'Three drills all reached for a mutex first';
+    body.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+
+    (testid('hypothesis-evidence-submit') as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    const post = httpMock.expectOne(
+      (r) => r.method === 'POST' && r.url.endsWith(EVIDENCE_URL),
+    );
+    // The handler 400s unless the body is nested under `evidence`.
+    expect(post.request.body).toEqual({
+      evidence: {
+        type: 'supporting',
+        body: 'Three drills all reached for a mutex first',
+      },
+    });
+    post.flush({ data: hyp({ state: 'unverified' }) });
+    fixture.detectChanges();
+
+    expect(flushHyp(hyp({ state: 'unverified' }))).toBeGreaterThan(0);
+    flushLineage(hyp({ state: 'unverified' }));
+    await settle();
+    flushHyp(hyp({ state: 'unverified' }));
+    flushLineage(hyp({ state: 'unverified' }));
+    fixture.detectChanges();
   });
 });
