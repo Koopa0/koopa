@@ -4,8 +4,9 @@ import { ApiService } from '../api.service';
 import type { ApiPortfolioProject, ApiProject } from '../../models';
 
 /**
- * Project read-only service. Mutation (create / update / delete) lives
- * in Claude Cowork via `propose_commitment(type=project)`.
+ * Public read-only project projection (`/api/projects`, public = true).
+ * Project create / update / delete are admin-only — Koopa runs them in the
+ * admin UI; there is no agent-facing MCP path.
  */
 @Injectable({ providedIn: 'root' })
 export class ProjectService {

@@ -4,18 +4,14 @@
  * Source of truth:
  *   Content    → internal/content/content.go
  *   Hypothesis → internal/hypothesis/hypothesis.go
- *   Task       → internal/agent/task/task.go
- *   Artifact   → internal/agent/artifact/artifact.go
  *   Agent      → internal/agent/agent.go + registry.go
  *   Goal       → internal/goal/goal.go
  *   Todo       → internal/todo/todo.go
  *   Daily      → internal/daily/daily.go
  *
  * Vocabulary discipline:
- *   task ≠ todo    — task is A2A coordination, todo is personal GTD
  *   hypothesis ≠ insight — schema is `hypotheses`, never `insights`
  *   agent ≠ participant — schema is `agents`
- *   agent_note ≠ journal — schema is `agent_notes`
  */
 
 import type { ContentStatus, ContentType, GoalStatus } from './api.model';
@@ -96,120 +92,47 @@ export interface HypothesisMetadata {
 }
 
 // ============================================================
-// Task — A2A coordination (matches internal/agent/task/task.go)
+// Agent (matches internal/agent/handler.go::agentResponse +
+// internal/agent/registry.go::BuiltinAgents)
+//
+// The agents table is a read-only identity projection. The HTTP shape is
+// exactly six fields — there is no capability, task, or activity concept
+// (the MCP-v3 contraction retired the A2A coordination surface).
 // ============================================================
-
-export type TaskState =
-  | 'submitted'
-  | 'working'
-  | 'completed'
-  | 'canceled'
-  | 'revision_requested';
-
-export type MessageRole = 'request' | 'response';
-
-export interface CoordinationTask {
-  id: string;
-  source: string;
-  target: string;
-  title: string;
-  state: TaskState;
-  submitted_at: string;
-  accepted_at?: string;
-  completed_at?: string;
-  canceled_at?: string;
-  revision_requested_at?: string;
-  /**
-   * Set when the source agent has acknowledged a completed task as final.
-   * Drives the "Awaiting your judgment" inbox (only unacked completed
-   * tasks appear) and disables the Approve / Request revision buttons in
-   * the task timeline. Acknowledgement is durable on the tasks row, not
-   * derived from messages.
-   */
-  acknowledged_at?: string;
-  acknowledged_by?: string;
-  metadata?: Record<string, unknown>;
-}
-
-export interface TaskMessage {
-  id: string;
-  task_id: string;
-  role: MessageRole;
-  position: number;
-  parts: A2aPart[];
-  created_at: string;
-}
 
 /**
- * a2a-go Part — matches a2a-go's flattened JSON format.
- *
- * Wire format (from a2a-go MarshalJSON):
- *   Text part: {"text": "hello"}
- *   Data part: {"data": {"mimeType": "image/png", "data": "base64..."}}
- *
- * Discriminated by which field is present, NOT by a `kind` field.
+ * Platform an agent runs on. Matches the `platform` literals in
+ * registry.go::BuiltinAgents — `system` is the DB-level fallback identity.
  */
-export interface A2aTextPart {
-  text: string;
-  data?: never;
-}
-
-export interface A2aDataPart {
-  text?: never;
-  data: {
-    mimeType: string;
-    data: string;
-  };
-}
-
-export type A2aPart = A2aTextPart | A2aDataPart;
-
-/** Type guard for text parts. */
-export function isTextPart(part: A2aPart): part is A2aTextPart {
-  return 'text' in part && typeof part.text === 'string';
-}
-
-// ============================================================
-// Artifact (matches internal/agent/artifact/artifact.go)
-// ============================================================
-
-export interface Artifact {
-  id: string;
-  task_id: string;
-  name: string;
-  description?: string;
-  parts: A2aPart[];
-  created_at: string;
-}
-
-// ============================================================
-// Agent (matches internal/agent/agent.go)
-// ============================================================
-
 export type AgentPlatform =
   | 'claude-cowork'
   | 'claude-code'
   | 'claude-web'
-  | 'human';
+  | 'codex'
+  | 'human'
+  | 'system';
 
 export type AgentStatus = 'active' | 'retired';
 
+/**
+ * Agent — the full read-only registry projection. Mirrors
+ * `agentResponse` in internal/agent/handler.go: six fields, `schedule`
+ * present only for agents that carry one (e.g. planner's morning briefing).
+ */
 export interface Agent {
   name: string;
   display_name: string;
   platform: AgentPlatform;
   description: string;
-  capability: AgentCapability;
   schedule?: AgentSchedule;
   status: AgentStatus;
 }
 
-export interface AgentCapability {
-  submit_tasks: boolean;
-  receive_tasks: boolean;
-  publish_artifacts: boolean;
-}
-
+/**
+ * Schedule attached to an agent. Mirrors `scheduleResponse` in
+ * internal/agent/handler.go — definitions live in the Go registry, not
+ * the DB.
+ */
 export interface AgentSchedule {
   name: string;
   trigger: 'cron' | 'manual' | '';
@@ -258,20 +181,6 @@ export interface GoalActivityItem {
 }
 
 // ============================================================
-// Goal summary (for overview grid)
-// ============================================================
-
-export interface GoalSummary {
-  id: string;
-  title: string;
-  status: GoalStatus;
-  deadline?: string;
-  milestones_total: number;
-  milestones_done: number;
-  area_name: string;
-}
-
-// ============================================================
 // Cell state — envelope carried by any summary cell.
 // ============================================================
 
@@ -300,37 +209,18 @@ export interface LearningSummary extends CellState {
 }
 
 // ============================================================
-// Agents (cell-state aware list)
+// Agents (read-only registry projection)
+//
+// GET /api/admin/system/agents returns a bare []Agent; the single-agent
+// route returns one Agent. Both rows and detail carry the same six
+// fields — list and detail are identical shapes.
 // ============================================================
 
-export type AgentActivityState = 'active' | 'idle' | 'blocked';
+/** Row shape for the agents roster — the full registry projection. */
+export type AgentSummary = Agent;
 
-export interface AgentSummary extends Agent {
-  open_task_count: number;
-  blocked_count: number;
-  activity_state: AgentActivityState;
-  /** Optional: enables AGENTS cell ⚠ badge → direct open of blocking Task Inspector. */
-  first_blocked_task_id?: string | null;
-}
-
-/**
- * Agent Inspector detail — v1 brief shape.
- * See: frontend/docs/inspector-design/agent-inspector.md
- *
- * v1 deltas vs AgentSummary:
- * - +retired_at — present when status='retired' (DB chk_agent_status_retired)
- * - +schedule_human_readable — server-derived "Daily 8 AM briefing" from cron + purpose
- * - +last_task_accepted_at — optional MAX(tasks.accepted_at WHERE assignee=$1) for footer hint
- */
-export interface AgentDetail extends AgentSummary {
-  retired_at?: string | null;
-  schedule_human_readable?: string | null;
-  last_task_accepted_at?: string | null;
-}
-
-export interface AgentsResponse extends CellState {
-  agents: AgentSummary[];
-}
+/** Single-agent detail — same six-field projection as the roster row. */
+export type AgentDetail = Agent;
 
 // ============================================================
 // Judgment Queue (frontend-composed from 3 sources)
