@@ -513,6 +513,139 @@ func entryPositions(t *testing.T, planID uuid.UUID) map[uuid.UUID]int32 {
 	return got
 }
 
+// TestIntegration_Plan_List_EntryCounts drives GET /api/admin/learning/plans
+// (management view) and the ?domain= filtered path, asserting each list row
+// carries entry_total / entry_done for the admin Entries/Progress columns.
+func TestIntegration_Plan_List_EntryCounts(t *testing.T) {
+	truncate(t)
+	h := newHandler()
+
+	withEntries := seedDraftPlan(t, h, "Counts Plan A")
+	entryIDs := seedEntries(t, h, withEntries, "Counts T1", "Counts T2", "Counts T3")
+	// Complete one entry directly — the §13 handler gate is exercised by the
+	// CompletionAuditGate test; the list counts only read persisted status.
+	if _, err := testPool.Exec(t.Context(),
+		`UPDATE learning_plan_entries SET status = 'completed', completed_at = now() WHERE id = $1`,
+		entryIDs[0],
+	); err != nil {
+		t.Fatalf("completing entry: %v", err)
+	}
+	withoutEntries := seedDraftPlan(t, h, "Counts Plan B")
+
+	type listRow struct {
+		ID         uuid.UUID `json:"id"`
+		EntryTotal int64     `json:"entry_total"`
+		EntryDone  int64     `json:"entry_done"`
+	}
+	fetch := func(t *testing.T, target string) map[uuid.UUID]listRow {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodGet, target, http.NoBody)
+		rec := serve(t, h.List, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("list status = %d, want 200 (body=%s)", rec.Code, rec.Body.String())
+		}
+		var env struct {
+			Data []listRow `json:"data"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &env); err != nil {
+			t.Fatalf("decode list: %v (body=%s)", err, rec.Body.String())
+		}
+		rows := make(map[uuid.UUID]listRow, len(env.Data))
+		for _, r := range env.Data {
+			rows[r.ID] = r
+		}
+		return rows
+	}
+
+	listTests := []struct {
+		name   string
+		target string
+	}{
+		{name: "management list", target: "/api/admin/learning/plans"},
+		{name: "domain filtered list", target: "/api/admin/learning/plans?domain=leetcode"},
+	}
+	for _, tt := range listTests {
+		t.Run(tt.name, func(t *testing.T) {
+			want := map[uuid.UUID]listRow{
+				withEntries:    {ID: withEntries, EntryTotal: 3, EntryDone: 1},
+				withoutEntries: {ID: withoutEntries, EntryTotal: 0, EntryDone: 0},
+			}
+			if diff := cmp.Diff(want, fetch(t, tt.target)); diff != "" {
+				t.Errorf("plan list counts mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+// TestIntegration_Plan_Detail_GoalName asserts the detail envelope carries
+// the linked goal's title (goal_name) so the meta strip shows the title
+// instead of a UUID, and an empty string for goal-less plans.
+func TestIntegration_Plan_Detail_GoalName(t *testing.T) {
+	truncate(t)
+	h := newHandler()
+
+	// truncate() leaves goals alone (other suites own that table) — seed a
+	// uniquely-titled goal and clean it up explicitly. The goals audit
+	// trigger defaults the actor to 'system' outside ActorMiddleware.
+	var goalID uuid.UUID
+	if err := testPool.QueryRow(t.Context(),
+		`INSERT INTO goals (title) VALUES ('Plan Detail Goal Name Goal') RETURNING id`,
+	).Scan(&goalID); err != nil {
+		t.Fatalf("seeding goal: %v", err)
+	}
+	t.Cleanup(func() {
+		if _, err := testPool.Exec(context.Background(),
+			`DELETE FROM goals WHERE id = $1`, goalID); err != nil {
+			t.Logf("cleanup goal: %v", err)
+		}
+	})
+
+	// Plan bound to the goal — created through the handler so goal_id takes
+	// the same path production uses.
+	req := jsonReq(t, http.MethodPost, "/api/admin/learning/plans", map[string]any{
+		"title":   "Goal Name Plan",
+		"domain":  "leetcode",
+		"goal_id": goalID.String(),
+	})
+	rec := serve(t, h.Create, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create plan with goal: status = %d, want 201 (body=%s)", rec.Code, rec.Body.String())
+	}
+	planWithGoal := decodeID(t, rec.Body.Bytes())
+
+	planWithout := seedDraftPlan(t, h, "Goalless Plan")
+
+	detailGoalName := func(t *testing.T, id uuid.UUID) string {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodGet,
+			"/api/admin/learning/plans/"+id.String(), http.NoBody)
+		req.SetPathValue("id", id.String())
+		rec := serve(t, h.Detail, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("detail status = %d, want 200 (body=%s)", rec.Code, rec.Body.String())
+		}
+		var env struct {
+			Data struct {
+				GoalName *string `json:"goal_name"`
+			} `json:"data"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &env); err != nil {
+			t.Fatalf("decode detail: %v (body=%s)", err, rec.Body.String())
+		}
+		if env.Data.GoalName == nil {
+			t.Fatalf("goal_name missing from detail envelope (body=%s)", rec.Body.String())
+		}
+		return *env.Data.GoalName
+	}
+
+	if got := detailGoalName(t, planWithGoal); got != "Plan Detail Goal Name Goal" {
+		t.Errorf("goal_name = %q, want %q", got, "Plan Detail Goal Name Goal")
+	}
+	if got := detailGoalName(t, planWithout); got != "" {
+		t.Errorf("goal_name = %q, want empty string for a goal-less plan", got)
+	}
+}
+
 // TestIntegration_Plan_UpdateStatus drives PUT /plans/{id}/status through the
 // lifecycle enum gate: valid transitions persist and return the updated plan,
 // an unknown enum value rejects with 400 at the handler before the DB CHECK

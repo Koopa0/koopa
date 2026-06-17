@@ -6,12 +6,26 @@ RETURNING *;
 -- name: Plan :one
 SELECT * FROM learning_plans WHERE id = @id;
 
+-- name: PlanGoalName :one
+-- Goal title for the plan-detail meta strip. LEFT JOIN + COALESCE yields an
+-- empty string when the plan has no goal (goal_id IS NULL); zero rows only
+-- when the plan itself does not exist.
+SELECT COALESCE(g.title, '')::text AS goal_name
+FROM learning_plans lp
+LEFT JOIN goals g ON g.id = lp.goal_id
+WHERE lp.id = @id;
+
 -- name: PlansByDomain :many
--- Filter plans by domain, optionally by status.
-SELECT * FROM learning_plans
-WHERE domain = @domain
-  AND (sqlc.narg('status')::text IS NULL OR status = sqlc.narg('status'))
-ORDER BY created_at DESC;
+-- Filter plans by domain, optionally by status. Carries per-plan entry
+-- counts (total + completed) for the admin list's Entries/Progress columns.
+SELECT lp.id, lp.title, lp.description, lp.domain, lp.goal_id, lp.status,
+       lp.target_count, lp.plan_config, lp.created_by, lp.created_at, lp.updated_at,
+       (SELECT count(*) FROM learning_plan_entries e WHERE e.plan_id = lp.id) AS entry_total,
+       (SELECT count(*) FROM learning_plan_entries e WHERE e.plan_id = lp.id AND e.status = 'completed') AS entry_done
+FROM learning_plans lp
+WHERE lp.domain = @domain
+  AND (sqlc.narg('status')::text IS NULL OR lp.status = sqlc.narg('status'))
+ORDER BY lp.created_at DESC;
 
 -- name: PlansByGoal :many
 SELECT * FROM learning_plans WHERE goal_id = @goal_id
@@ -20,9 +34,15 @@ ORDER BY created_at DESC;
 -- name: PlansInManagement :many
 -- Plans visible to the management UI: draft + active. Name reflects the
 -- actual semantic (a draft plan is not "active" but is in the management
--- backlog), replacing the old ActivePlans lie.
-SELECT * FROM learning_plans WHERE status IN ('draft', 'active')
-ORDER BY updated_at DESC;
+-- backlog), replacing the old ActivePlans lie. Carries per-plan entry
+-- counts (total + completed) for the admin list's Entries/Progress columns.
+SELECT lp.id, lp.title, lp.description, lp.domain, lp.goal_id, lp.status,
+       lp.target_count, lp.plan_config, lp.created_by, lp.created_at, lp.updated_at,
+       (SELECT count(*) FROM learning_plan_entries e WHERE e.plan_id = lp.id) AS entry_total,
+       (SELECT count(*) FROM learning_plan_entries e WHERE e.plan_id = lp.id AND e.status = 'completed') AS entry_done
+FROM learning_plans lp
+WHERE lp.status IN ('draft', 'active')
+ORDER BY lp.updated_at DESC;
 
 -- name: UpdatePlanStatus :one
 UPDATE learning_plans SET status = @status, updated_at = now()

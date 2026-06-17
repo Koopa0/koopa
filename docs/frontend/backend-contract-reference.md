@@ -41,10 +41,15 @@ go through `PUT /commitment/goals/{id}/status` `{ "status": "<enum>" }`.
 ```
 **Plan status enum (5):** `draft · active · completed · paused · abandoned`.
 
+**List** `GET /learning/plans?domain=&status=` — no `domain` → management view (`draft`+`active`);
+with `domain` → all statuses unless `status=` narrows. Rows = plan fields + **`entry_total`** +
+**`entry_done`** (per-plan entry counts for the Entries/Progress columns).
+
 **Detail** `GET /learning/plans/{id}` → ⚠️ **field-name decision (#9):**
 ```json
-{ "plan": {…}, "entries": [EntryDetail], "progress": { "total", "completed", "skipped", "substituted", "remaining" } }
+{ "plan": {…}, "goal_name": "…", "entries": [EntryDetail], "progress": { "total", "completed", "skipped", "substituted", "remaining" } }
 ```
+`goal_name` = the linked goal's title for the meta strip (`""` when the plan has no goal — never a UUID).
 The real field is **`progress`** (not `summary`). The detail response *also* currently
 embeds the plan's fields (anti-pattern) — I'll switch it to the explicit `{ plan, entries, progress }`
 above. **⚠️ Decide: keep `progress` or rename to `summary`?** I lean **`progress`**
@@ -56,6 +61,11 @@ above. **⚠️ Decide: keep `progress` or rename to `summary`?** I lean **`prog
 **Update entry** (the **audit-gate** modal): marking `status=completed` REQUIRES
 `completed_by_attempt_id` + non-blank `reason` (server rejects otherwise, 400 `AUDIT_REQUIRED`).
 `status=substituted` requires `substituted_by` (400 otherwise). `skipped` has no extra gate.
+**Attempt picker** `GET /learning/targets/{id}/attempts?limit=` (limit 1–100, default 20) →
+newest-first attempts on one learning target:
+`[{ id, outcome, duration_minutes?, attempted_at, created_at, session_id, attempt_number, paradigm, target_title, … }]`
+— the candidate `completed_by_attempt_id` values for the audit-gate modal (replaces the raw UUID
+field). Unknown target / no attempts → `[]` (never 404); out-of-range or non-numeric limit → 400.
 
 ---
 

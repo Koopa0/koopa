@@ -54,7 +54,8 @@ func (h *Handler) mustAdminTx(w http.ResponseWriter, r *http.Request) (*Store, b
 	return h.store.WithTx(tx), true
 }
 
-// List handles GET /api/admin/learning/plans.
+// List handles GET /api/admin/learning/plans. Rows carry entry_total /
+// entry_done counts for the admin list's Entries/Progress columns.
 // Query params: domain (filter), status (filter).
 func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
@@ -71,7 +72,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if plans == nil {
-			plans = []Plan{}
+			plans = []Summary{}
 		}
 		api.Encode(w, http.StatusOK, api.Response{Data: plans})
 		return
@@ -84,14 +85,17 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if plans == nil {
-		plans = []Plan{}
+		plans = []Summary{}
 	}
 	api.Encode(w, http.StatusOK, api.Response{Data: plans})
 }
 
-// DetailResponse is the wire shape for /plans/:id — plan + entries + progress.
+// DetailResponse is the wire shape for /plans/:id — plan + goal name +
+// entries + progress. GoalName is the linked goal's title for the meta
+// strip, empty string when the plan has no goal.
 type DetailResponse struct {
 	Plan     *Plan         `json:"plan"`
+	GoalName string        `json:"goal_name"`
 	Entries  []EntryDetail `json:"entries"`
 	Progress *Progress     `json:"progress"`
 }
@@ -111,13 +115,18 @@ func (h *Handler) Detail(w http.ResponseWriter, r *http.Request) {
 	api.Encode(w, http.StatusOK, api.Response{Data: h.detail(r.Context(), h.store, plan)})
 }
 
-// detail assembles the plan + entries + progress envelope from the given
-// store. Entries and progress failures degrade to a partial envelope — the
-// plan row is authoritative and the caller still gets a usable response.
-// Mutation handlers pass their tx-bound store so the envelope reflects
-// writes made earlier in the same request.
+// detail assembles the plan + goal name + entries + progress envelope from
+// the given store. Goal-name, entries, and progress failures degrade to a
+// partial envelope — the plan row is authoritative and the caller still
+// gets a usable response. Mutation handlers pass their tx-bound store so
+// the envelope reflects writes made earlier in the same request.
 func (h *Handler) detail(ctx context.Context, store *Store, p *Plan) DetailResponse {
 	resp := DetailResponse{Plan: p, Entries: []EntryDetail{}}
+	if name, err := store.GoalName(ctx, p.ID); err == nil {
+		resp.GoalName = name
+	} else {
+		h.logger.Warn("plan detail: goal name fetch failed", "plan_id", p.ID, "error", err)
+	}
 	if entries, err := store.EntriesDetailed(ctx, p.ID); err == nil {
 		resp.Entries = entries
 	} else {

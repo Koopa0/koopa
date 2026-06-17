@@ -88,7 +88,9 @@ type Session struct {
 // paths where they make sense — Difficulty is only set by AttemptsByConcept,
 // MatchedObservationID is only set by AttemptsByConcept and points into
 // Observations to indicate which one drove the query match, Metadata is
-// set by every read path but absent from write returns.
+// set by every read path but absent from write returns. CreatedAt is
+// populated by RecordAttempt, AttemptsBySession, and
+// AttemptsByLearningTarget (omitted as zero elsewhere).
 //
 // Observations is populated only on attempt_history read paths that opt
 // into the observation fetch (include_observations=true on
@@ -109,6 +111,7 @@ type Attempt struct {
 	StuckAt              *string         `json:"stuck_at,omitempty"`
 	ApproachUsed         *string         `json:"approach_used,omitempty"`
 	AttemptedAt          time.Time       `json:"attempted_at"`
+	CreatedAt            time.Time       `json:"created_at,omitzero"`
 	Metadata             json.RawMessage `json:"metadata,omitempty"`
 	TargetTitle          string          `json:"target_title"`
 	TargetExternalID     *string         `json:"target_external_id,omitempty"`

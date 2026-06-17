@@ -52,6 +52,7 @@ func (s *Store) RecordAttempt(ctx context.Context, targetID, sessionID uuid.UUID
 		StuckAt:          row.StuckAt,
 		ApproachUsed:     row.ApproachUsed,
 		AttemptedAt:      row.AttemptedAt,
+		CreatedAt:        row.CreatedAt,
 	}, nil
 }
 
@@ -105,6 +106,7 @@ func (s *Store) AttemptsBySession(ctx context.Context, sessionID uuid.UUID) ([]A
 			StuckAt:          r.StuckAt,
 			ApproachUsed:     r.ApproachUsed,
 			AttemptedAt:      r.AttemptedAt,
+			CreatedAt:        r.CreatedAt,
 			Metadata:         r.Metadata,
 			TargetTitle:      r.TargetTitle,
 			TargetExternalID: r.TargetExternalID,
@@ -115,8 +117,8 @@ func (s *Store) AttemptsBySession(ctx context.Context, sessionID uuid.UUID) ([]A
 
 // AttemptsByLearningTarget returns recent attempts on a specific learning
 // target, newest first. Primary backing query for the Improvement
-// Verification Loop: "how did this target go last time?". Same shape as
-// AttemptsBySession.
+// Verification Loop ("how did this target go last time?") and the admin
+// audit-gate attempt picker. Same shape as AttemptsBySession.
 func (s *Store) AttemptsByLearningTarget(ctx context.Context, targetID uuid.UUID, limit int32) ([]Attempt, error) {
 	rows, err := s.q.AttemptsByLearningTarget(ctx, db.AttemptsByLearningTargetParams{
 		LearningTargetID: targetID,
@@ -139,6 +141,7 @@ func (s *Store) AttemptsByLearningTarget(ctx context.Context, targetID uuid.UUID
 			StuckAt:          r.StuckAt,
 			ApproachUsed:     r.ApproachUsed,
 			AttemptedAt:      r.AttemptedAt,
+			CreatedAt:        r.CreatedAt,
 			Metadata:         r.Metadata,
 			TargetTitle:      r.TargetTitle,
 			TargetExternalID: r.TargetExternalID,

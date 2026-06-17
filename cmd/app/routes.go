@@ -345,6 +345,9 @@ func registerRoutes(
 	mux.Handle("POST /api/admin/learning/sessions", adminMid(http.HandlerFunc(h.learning.StartSession)))
 	mux.Handle("POST /api/admin/learning/sessions/{id}/end", adminMid(http.HandlerFunc(h.learning.EndSession)))
 	mux.Handle("POST /api/admin/learning/sessions/{id}/attempts", adminMid(http.HandlerFunc(h.learning.RecordAttempt)))
+	// Target attempts back the plan-detail audit-gate modal's picker of
+	// candidate justifying attempts (completed_by_attempt_id).
+	mux.Handle("GET /api/admin/learning/targets/{id}/attempts", authMid(http.HandlerFunc(h.learning.TargetAttempts)))
 	mux.Handle("GET /api/admin/learning/plans", authMid(http.HandlerFunc(h.plan.List)))
 	mux.Handle("GET /api/admin/learning/plans/{id}", authMid(http.HandlerFunc(h.plan.Detail)))
 	mux.Handle("POST /api/admin/learning/plans", adminMid(http.HandlerFunc(h.plan.Create)))

@@ -86,6 +86,14 @@ type Plan struct {
 	UpdatedAt   time.Time       `json:"updated_at"`
 }
 
+// Summary represents a plan in the management list with entry progress
+// counts — the source for the admin list's Entries/Progress columns.
+type Summary struct {
+	Plan
+	EntryTotal int64 `json:"entry_total"`
+	EntryDone  int64 `json:"entry_done"`
+}
+
 // Entry represents a single row in a learning plan's ordered sequence.
 // Matches the learning_plan_entries table.
 type Entry struct {

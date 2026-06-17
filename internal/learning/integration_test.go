@@ -31,6 +31,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -336,4 +337,163 @@ func TestListDomains_HTTP(t *testing.T) {
 	if !slices.ContainsFunc(resp.Data, func(d learning.Domain) bool { return d.Slug == slug }) {
 		t.Errorf("ListDomains response missing created domain %q (got %d domains)", slug, len(resp.Data))
 	}
+}
+
+// =========================================================================
+// Section 3: Target attempts endpoint (audit-gate picker)
+// =========================================================================
+
+// seedPickerAttempt inserts attempt #number on the target, backdated by
+// ageMinutes so the newest-first (attempted_at DESC) ordering is
+// deterministic. The explicit attempt_number satisfies the per-target
+// uniqueness index (idx_learning_attempts_item_number). Unlike seedAttempt
+// (dashboard suite), outcome and the nullable duration are
+// caller-controlled so the picker-field assertions can cover both the
+// populated and the omitted duration_minutes row.
+func seedPickerAttempt(t *testing.T, sessionID, targetID uuid.UUID, number int32, outcome string, duration *int32, ageMinutes int32) uuid.UUID {
+	t.Helper()
+	var id uuid.UUID
+	if err := testPool.QueryRow(t.Context(),
+		`INSERT INTO learning_attempts (session_id, learning_target_id, attempt_number, paradigm, outcome, duration_minutes, attempted_at)
+		 VALUES ($1, $2, $3, 'problem_solving', $4, $5, now() - make_interval(mins => $6))
+		 RETURNING id`,
+		sessionID, targetID, number, outcome, duration, ageMinutes,
+	).Scan(&id); err != nil {
+		t.Fatalf("seeding attempt (%s): %v", outcome, err)
+	}
+	return id
+}
+
+// TestTargetAttempts_HTTP drives GET /api/admin/learning/targets/{id}/attempts
+// end to end: newest-first ordering with the picker fields populated, the
+// limit bound (1-100, default 20), and the 404-free empty contract — a target
+// with no attempts (or an unknown id) returns 200 with an empty list so the
+// audit-gate picker renders empty instead of erroring.
+func TestTargetAttempts_HTTP(t *testing.T) {
+	truncateLearningTables(t)
+
+	target := seedTarget(t, "Target Attempts Endpoint")
+	emptyTarget := seedTarget(t, "Target Without Attempts")
+	session := seedSession(t, "leetcode")
+
+	dur := int32(25)
+	oldest := seedPickerAttempt(t, session, target, 1, "gave_up", nil, 180)
+	middle := seedPickerAttempt(t, session, target, 2, "solved_with_hint", &dur, 120)
+	newest := seedPickerAttempt(t, session, target, 3, "solved_independent", &dur, 60)
+
+	h := learning.NewHandler(learning.NewStore(testPool), slog.New(slog.NewTextHandler(io.Discard, nil)))
+
+	get := func(t *testing.T, targetID, query string) *httptest.ResponseRecorder {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodGet,
+			"/api/admin/learning/targets/"+targetID+"/attempts"+query, http.NoBody)
+		req.SetPathValue("id", targetID)
+		w := httptest.NewRecorder()
+		h.TargetAttempts(w, req)
+		return w
+	}
+
+	decode := func(t *testing.T, body []byte) []learning.Attempt {
+		t.Helper()
+		var resp struct {
+			Data []learning.Attempt `json:"data"`
+		}
+		if err := json.Unmarshal(body, &resp); err != nil {
+			t.Fatalf("unmarshal response: %v (body: %s)", err, body)
+		}
+		if resp.Data == nil {
+			t.Fatalf("data = null, want JSON array (body: %s)", body)
+		}
+		return resp.Data
+	}
+
+	attemptIDs := func(atts []learning.Attempt) []uuid.UUID {
+		ids := make([]uuid.UUID, len(atts))
+		for i, a := range atts {
+			ids[i] = a.ID
+		}
+		return ids
+	}
+
+	t.Run("newest first with picker fields", func(t *testing.T) {
+		w := get(t, target.String(), "")
+		if w.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200 (body: %s)", w.Code, w.Body.String())
+		}
+		got := decode(t, w.Body.Bytes())
+		if diff := cmp.Diff([]uuid.UUID{newest, middle, oldest}, attemptIDs(got)); diff != "" {
+			t.Fatalf("attempt order mismatch (-want +got):\n%s", diff)
+		}
+
+		first := got[0]
+		if first.Outcome != "solved_independent" {
+			t.Errorf("first outcome = %q, want %q", first.Outcome, "solved_independent")
+		}
+		if first.SessionID != session {
+			t.Errorf("first session_id = %s, want %s", first.SessionID, session)
+		}
+		if first.CreatedAt.IsZero() {
+			t.Errorf("first created_at is zero, want populated")
+		}
+		if first.DurationMinutes == nil || *first.DurationMinutes != dur {
+			t.Errorf("first duration_minutes = %v, want %d", first.DurationMinutes, dur)
+		}
+		if last := got[2]; last.DurationMinutes != nil {
+			t.Errorf("last duration_minutes = %v, want omitted (seeded NULL)", *last.DurationMinutes)
+		}
+	})
+
+	t.Run("limit caps the page at the newest rows", func(t *testing.T) {
+		w := get(t, target.String(), "?limit=2")
+		if w.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200 (body: %s)", w.Code, w.Body.String())
+		}
+		got := decode(t, w.Body.Bytes())
+		if diff := cmp.Diff([]uuid.UUID{newest, middle}, attemptIDs(got)); diff != "" {
+			t.Errorf("limited page mismatch (-want +got):\n%s", diff)
+		}
+	})
+
+	emptyTests := []struct {
+		name     string
+		targetID string
+	}{
+		{name: "target with no attempts", targetID: emptyTarget.String()},
+		{name: "unknown target id", targetID: uuid.NewString()},
+	}
+	for _, tt := range emptyTests {
+		t.Run(tt.name+" returns empty list not 404", func(t *testing.T) {
+			w := get(t, tt.targetID, "")
+			if w.Code != http.StatusOK {
+				t.Fatalf("status = %d, want 200 (body: %s)", w.Code, w.Body.String())
+			}
+			if got := decode(t, w.Body.Bytes()); len(got) != 0 {
+				t.Errorf("len(data) = %d, want 0", len(got))
+			}
+		})
+	}
+
+	limitTests := []struct {
+		name  string
+		query string
+	}{
+		{name: "limit zero", query: "?limit=0"},
+		{name: "limit above max", query: "?limit=101"},
+		{name: "limit not a number", query: "?limit=abc"},
+	}
+	for _, tt := range limitTests {
+		t.Run(tt.name+" rejects with 400", func(t *testing.T) {
+			w := get(t, target.String(), tt.query)
+			if w.Code != http.StatusBadRequest {
+				t.Errorf("status = %d, want 400 (body: %s)", w.Code, w.Body.String())
+			}
+		})
+	}
+
+	t.Run("invalid target id rejects with 400", func(t *testing.T) {
+		w := get(t, "not-a-uuid", "")
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("status = %d, want 400 (body: %s)", w.Code, w.Body.String())
+		}
+	})
 }

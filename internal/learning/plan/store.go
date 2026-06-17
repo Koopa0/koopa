@@ -99,8 +99,9 @@ func (s *Store) Plan(ctx context.Context, id uuid.UUID) (*Plan, error) {
 	return rowToPlan(&row), nil
 }
 
-// PlansByDomain returns plans filtered by domain and optionally by status.
-func (s *Store) PlansByDomain(ctx context.Context, domain string, status *string) ([]Plan, error) {
+// PlansByDomain returns plans filtered by domain and optionally by status,
+// with per-plan entry progress counts.
+func (s *Store) PlansByDomain(ctx context.Context, domain string, status *string) ([]Summary, error) {
 	rows, err := s.q.PlansByDomain(ctx, db.PlansByDomainParams{
 		Domain: domain,
 		Status: status,
@@ -108,7 +109,28 @@ func (s *Store) PlansByDomain(ctx context.Context, domain string, status *string
 	if err != nil {
 		return nil, fmt.Errorf("querying plans by domain %s: %w", domain, err)
 	}
-	return rowsToPlans(rows), nil
+	result := make([]Summary, len(rows))
+	for i := range rows {
+		r := &rows[i]
+		result[i] = Summary{
+			Plan: Plan{
+				ID:          r.ID,
+				Title:       r.Title,
+				Description: r.Description,
+				Domain:      r.Domain,
+				GoalID:      r.GoalID,
+				Status:      Status(r.Status),
+				TargetCount: r.TargetCount,
+				PlanConfig:  r.PlanConfig,
+				CreatedBy:   r.CreatedBy,
+				CreatedAt:   r.CreatedAt,
+				UpdatedAt:   r.UpdatedAt,
+			},
+			EntryTotal: r.EntryTotal,
+			EntryDone:  r.EntryDone,
+		}
+	}
+	return result, nil
 }
 
 // PlansByGoal returns all plans linked to a specific goal.
@@ -121,15 +143,49 @@ func (s *Store) PlansByGoal(ctx context.Context, goalID uuid.UUID) ([]Plan, erro
 }
 
 // PlansInManagement returns all plans visible to the management UI —
-// status in ('draft', 'active').
+// status in ('draft', 'active') — with per-plan entry progress counts.
 // entry: the old name misrepresented the query body, which always
 // included draft plans.
-func (s *Store) PlansInManagement(ctx context.Context) ([]Plan, error) {
+func (s *Store) PlansInManagement(ctx context.Context) ([]Summary, error) {
 	rows, err := s.q.PlansInManagement(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("querying plans in management: %w", err)
 	}
-	return rowsToPlans(rows), nil
+	result := make([]Summary, len(rows))
+	for i := range rows {
+		r := &rows[i]
+		result[i] = Summary{
+			Plan: Plan{
+				ID:          r.ID,
+				Title:       r.Title,
+				Description: r.Description,
+				Domain:      r.Domain,
+				GoalID:      r.GoalID,
+				Status:      Status(r.Status),
+				TargetCount: r.TargetCount,
+				PlanConfig:  r.PlanConfig,
+				CreatedBy:   r.CreatedBy,
+				CreatedAt:   r.CreatedAt,
+				UpdatedAt:   r.UpdatedAt,
+			},
+			EntryTotal: r.EntryTotal,
+			EntryDone:  r.EntryDone,
+		}
+	}
+	return result, nil
+}
+
+// GoalName returns the linked goal's title for a plan, or the empty string
+// when the plan has no goal. Returns ErrNotFound for an unknown plan id.
+func (s *Store) GoalName(ctx context.Context, planID uuid.UUID) (string, error) {
+	name, err := s.q.PlanGoalName(ctx, planID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", ErrNotFound
+		}
+		return "", fmt.Errorf("querying goal name for plan %s: %w", planID, err)
+	}
+	return name, nil
 }
 
 // UpdatePlanStatus transitions a plan to the given status.

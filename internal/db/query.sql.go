@@ -871,7 +871,7 @@ func (q *Queries) AttemptsByConcept(ctx context.Context, arg AttemptsByConceptPa
 
 const attemptsByLearningTarget = `-- name: AttemptsByLearningTarget :many
 SELECT a.id, a.learning_target_id, a.session_id, a.attempt_number, a.paradigm, a.outcome,
-       a.duration_minutes, a.stuck_at, a.approach_used, a.attempted_at, a.metadata,
+       a.duration_minutes, a.stuck_at, a.approach_used, a.attempted_at, a.created_at, a.metadata,
        lt.title AS target_title, lt.external_id AS target_external_id
 FROM learning_attempts a
 JOIN learning_targets lt ON lt.id = a.learning_target_id
@@ -896,6 +896,7 @@ type AttemptsByLearningTargetRow struct {
 	StuckAt          *string         `json:"stuck_at"`
 	ApproachUsed     *string         `json:"approach_used"`
 	AttemptedAt      time.Time       `json:"attempted_at"`
+	CreatedAt        time.Time       `json:"created_at"`
 	Metadata         json.RawMessage `json:"metadata"`
 	TargetTitle      string          `json:"target_title"`
 	TargetExternalID *string         `json:"target_external_id"`
@@ -903,7 +904,9 @@ type AttemptsByLearningTargetRow struct {
 
 // All attempts on a specific learning target, newest first. Primary backing
 // query for Improvement Verification Loop — "how did he do this target
-// last time?". Same shape as AttemptsBySession so they share the Go DTO.
+// last time?" — and the admin audit-gate attempt picker
+// (GET /targets/{id}/attempts). Same shape as AttemptsBySession so they
+// share the Go DTO.
 func (q *Queries) AttemptsByLearningTarget(ctx context.Context, arg AttemptsByLearningTargetParams) ([]AttemptsByLearningTargetRow, error) {
 	rows, err := q.db.Query(ctx, attemptsByLearningTarget, arg.LearningTargetID, arg.MaxResults)
 	if err != nil {
@@ -924,6 +927,7 @@ func (q *Queries) AttemptsByLearningTarget(ctx context.Context, arg AttemptsByLe
 			&i.StuckAt,
 			&i.ApproachUsed,
 			&i.AttemptedAt,
+			&i.CreatedAt,
 			&i.Metadata,
 			&i.TargetTitle,
 			&i.TargetExternalID,
@@ -940,7 +944,7 @@ func (q *Queries) AttemptsByLearningTarget(ctx context.Context, arg AttemptsByLe
 
 const attemptsBySession = `-- name: AttemptsBySession :many
 SELECT a.id, a.learning_target_id, a.session_id, a.attempt_number, a.paradigm, a.outcome,
-       a.duration_minutes, a.stuck_at, a.approach_used, a.attempted_at, a.metadata,
+       a.duration_minutes, a.stuck_at, a.approach_used, a.attempted_at, a.created_at, a.metadata,
        lt.title AS target_title, lt.external_id AS target_external_id
 FROM learning_attempts a
 JOIN learning_targets lt ON lt.id = a.learning_target_id
@@ -959,6 +963,7 @@ type AttemptsBySessionRow struct {
 	StuckAt          *string         `json:"stuck_at"`
 	ApproachUsed     *string         `json:"approach_used"`
 	AttemptedAt      time.Time       `json:"attempted_at"`
+	CreatedAt        time.Time       `json:"created_at"`
 	Metadata         json.RawMessage `json:"metadata"`
 	TargetTitle      string          `json:"target_title"`
 	TargetExternalID *string         `json:"target_external_id"`
@@ -986,6 +991,7 @@ func (q *Queries) AttemptsBySession(ctx context.Context, sessionID uuid.UUID) ([
 			&i.StuckAt,
 			&i.ApproachUsed,
 			&i.AttemptedAt,
+			&i.CreatedAt,
 			&i.Metadata,
 			&i.TargetTitle,
 			&i.TargetExternalID,
@@ -7261,6 +7267,23 @@ func (q *Queries) PlanEntry(ctx context.Context, id uuid.UUID) (LearningPlanEntr
 	return i, err
 }
 
+const planGoalName = `-- name: PlanGoalName :one
+SELECT COALESCE(g.title, '')::text AS goal_name
+FROM learning_plans lp
+LEFT JOIN goals g ON g.id = lp.goal_id
+WHERE lp.id = $1
+`
+
+// Goal title for the plan-detail meta strip. LEFT JOIN + COALESCE yields an
+// empty string when the plan has no goal (goal_id IS NULL); zero rows only
+// when the plan itself does not exist.
+func (q *Queries) PlanGoalName(ctx context.Context, id uuid.UUID) (string, error) {
+	row := q.db.QueryRow(ctx, planGoalName, id)
+	var goal_name string
+	err := row.Scan(&goal_name)
+	return goal_name, err
+}
+
 const planProgress = `-- name: PlanProgress :one
 SELECT
     count(*)::int AS total,
@@ -7294,10 +7317,14 @@ func (q *Queries) PlanProgress(ctx context.Context, planID uuid.UUID) (PlanProgr
 }
 
 const plansByDomain = `-- name: PlansByDomain :many
-SELECT id, title, description, domain, goal_id, status, target_count, plan_config, created_by, created_at, updated_at FROM learning_plans
-WHERE domain = $1
-  AND ($2::text IS NULL OR status = $2)
-ORDER BY created_at DESC
+SELECT lp.id, lp.title, lp.description, lp.domain, lp.goal_id, lp.status,
+       lp.target_count, lp.plan_config, lp.created_by, lp.created_at, lp.updated_at,
+       (SELECT count(*) FROM learning_plan_entries e WHERE e.plan_id = lp.id) AS entry_total,
+       (SELECT count(*) FROM learning_plan_entries e WHERE e.plan_id = lp.id AND e.status = 'completed') AS entry_done
+FROM learning_plans lp
+WHERE lp.domain = $1
+  AND ($2::text IS NULL OR lp.status = $2)
+ORDER BY lp.created_at DESC
 `
 
 type PlansByDomainParams struct {
@@ -7305,16 +7332,33 @@ type PlansByDomainParams struct {
 	Status *string `json:"status"`
 }
 
-// Filter plans by domain, optionally by status.
-func (q *Queries) PlansByDomain(ctx context.Context, arg PlansByDomainParams) ([]LearningPlan, error) {
+type PlansByDomainRow struct {
+	ID          uuid.UUID       `json:"id"`
+	Title       string          `json:"title"`
+	Description string          `json:"description"`
+	Domain      string          `json:"domain"`
+	GoalID      *uuid.UUID      `json:"goal_id"`
+	Status      string          `json:"status"`
+	TargetCount *int32          `json:"target_count"`
+	PlanConfig  json.RawMessage `json:"plan_config"`
+	CreatedBy   string          `json:"created_by"`
+	CreatedAt   time.Time       `json:"created_at"`
+	UpdatedAt   time.Time       `json:"updated_at"`
+	EntryTotal  int64           `json:"entry_total"`
+	EntryDone   int64           `json:"entry_done"`
+}
+
+// Filter plans by domain, optionally by status. Carries per-plan entry
+// counts (total + completed) for the admin list's Entries/Progress columns.
+func (q *Queries) PlansByDomain(ctx context.Context, arg PlansByDomainParams) ([]PlansByDomainRow, error) {
 	rows, err := q.db.Query(ctx, plansByDomain, arg.Domain, arg.Status)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []LearningPlan{}
+	items := []PlansByDomainRow{}
 	for rows.Next() {
-		var i LearningPlan
+		var i PlansByDomainRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.Title,
@@ -7327,6 +7371,8 @@ func (q *Queries) PlansByDomain(ctx context.Context, arg PlansByDomainParams) ([
 			&i.CreatedBy,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.EntryTotal,
+			&i.EntryDone,
 		); err != nil {
 			return nil, err
 		}
@@ -7376,22 +7422,44 @@ func (q *Queries) PlansByGoal(ctx context.Context, goalID *uuid.UUID) ([]Learnin
 }
 
 const plansInManagement = `-- name: PlansInManagement :many
-SELECT id, title, description, domain, goal_id, status, target_count, plan_config, created_by, created_at, updated_at FROM learning_plans WHERE status IN ('draft', 'active')
-ORDER BY updated_at DESC
+SELECT lp.id, lp.title, lp.description, lp.domain, lp.goal_id, lp.status,
+       lp.target_count, lp.plan_config, lp.created_by, lp.created_at, lp.updated_at,
+       (SELECT count(*) FROM learning_plan_entries e WHERE e.plan_id = lp.id) AS entry_total,
+       (SELECT count(*) FROM learning_plan_entries e WHERE e.plan_id = lp.id AND e.status = 'completed') AS entry_done
+FROM learning_plans lp
+WHERE lp.status IN ('draft', 'active')
+ORDER BY lp.updated_at DESC
 `
+
+type PlansInManagementRow struct {
+	ID          uuid.UUID       `json:"id"`
+	Title       string          `json:"title"`
+	Description string          `json:"description"`
+	Domain      string          `json:"domain"`
+	GoalID      *uuid.UUID      `json:"goal_id"`
+	Status      string          `json:"status"`
+	TargetCount *int32          `json:"target_count"`
+	PlanConfig  json.RawMessage `json:"plan_config"`
+	CreatedBy   string          `json:"created_by"`
+	CreatedAt   time.Time       `json:"created_at"`
+	UpdatedAt   time.Time       `json:"updated_at"`
+	EntryTotal  int64           `json:"entry_total"`
+	EntryDone   int64           `json:"entry_done"`
+}
 
 // Plans visible to the management UI: draft + active. Name reflects the
 // actual semantic (a draft plan is not "active" but is in the management
-// backlog), replacing the old ActivePlans lie.
-func (q *Queries) PlansInManagement(ctx context.Context) ([]LearningPlan, error) {
+// backlog), replacing the old ActivePlans lie. Carries per-plan entry
+// counts (total + completed) for the admin list's Entries/Progress columns.
+func (q *Queries) PlansInManagement(ctx context.Context) ([]PlansInManagementRow, error) {
 	rows, err := q.db.Query(ctx, plansInManagement)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []LearningPlan{}
+	items := []PlansInManagementRow{}
 	for rows.Next() {
-		var i LearningPlan
+		var i PlansInManagementRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.Title,
@@ -7404,6 +7472,8 @@ func (q *Queries) PlansInManagement(ctx context.Context) ([]LearningPlan, error)
 			&i.CreatedBy,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.EntryTotal,
+			&i.EntryDone,
 		); err != nil {
 			return nil, err
 		}

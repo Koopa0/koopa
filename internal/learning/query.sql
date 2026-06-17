@@ -195,7 +195,7 @@ RETURNING id, slug, name, domain, kind, parent_id, description, created_by, arch
 -- All attempts within a session, oldest first. Backs end_session summary
 -- and the by_session path of attempt_history.
 SELECT a.id, a.learning_target_id, a.session_id, a.attempt_number, a.paradigm, a.outcome,
-       a.duration_minutes, a.stuck_at, a.approach_used, a.attempted_at, a.metadata,
+       a.duration_minutes, a.stuck_at, a.approach_used, a.attempted_at, a.created_at, a.metadata,
        lt.title AS target_title, lt.external_id AS target_external_id
 FROM learning_attempts a
 JOIN learning_targets lt ON lt.id = a.learning_target_id
@@ -205,9 +205,11 @@ ORDER BY a.attempted_at;
 -- name: AttemptsByLearningTarget :many
 -- All attempts on a specific learning target, newest first. Primary backing
 -- query for Improvement Verification Loop — "how did he do this target
--- last time?". Same shape as AttemptsBySession so they share the Go DTO.
+-- last time?" — and the admin audit-gate attempt picker
+-- (GET /targets/{id}/attempts). Same shape as AttemptsBySession so they
+-- share the Go DTO.
 SELECT a.id, a.learning_target_id, a.session_id, a.attempt_number, a.paradigm, a.outcome,
-       a.duration_minutes, a.stuck_at, a.approach_used, a.attempted_at, a.metadata,
+       a.duration_minutes, a.stuck_at, a.approach_used, a.attempted_at, a.created_at, a.metadata,
        lt.title AS target_title, lt.external_id AS target_external_id
 FROM learning_attempts a
 JOIN learning_targets lt ON lt.id = a.learning_target_id

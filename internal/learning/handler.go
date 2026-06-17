@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -423,6 +424,49 @@ func (h *Handler) SessionDetail(w http.ResponseWriter, r *http.Request) {
 		resp.Attempts = atts
 	}
 	api.Encode(w, http.StatusOK, api.Response{Data: resp})
+}
+
+// --- Targets ---
+
+// Bounds for the target attempts list (audit-gate picker page size).
+const (
+	targetAttemptsDefaultLimit = 20
+	targetAttemptsMaxLimit     = 100
+)
+
+// TargetAttempts handles GET /api/admin/learning/targets/{id}/attempts.
+// Lists attempts on one learning target, newest first — the picker source
+// for the plan-detail audit-gate modal (candidate completed_by_attempt_id
+// values). A target with no attempts — including an unknown target id —
+// returns an empty list, not 404, so the picker renders empty instead of
+// erroring. Query params: limit (1-100, default 20).
+func (h *Handler) TargetAttempts(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid target id")
+		return
+	}
+
+	limit := targetAttemptsDefaultLimit
+	if v := r.URL.Query().Get("limit"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 1 || n > targetAttemptsMaxLimit {
+			api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "limit must be between 1 and 100")
+			return
+		}
+		limit = n
+	}
+
+	atts, err := h.store.AttemptsByLearningTarget(r.Context(), id, int32(limit)) // #nosec G115 -- limit bounded to [1, 100]
+	if err != nil {
+		h.logger.Error("listing target attempts", "error", err)
+		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to list attempts")
+		return
+	}
+	if atts == nil {
+		atts = []Attempt{}
+	}
+	api.Encode(w, http.StatusOK, api.Response{Data: atts})
 }
 
 // StartSessionRequest is the POST body for starting a session.
