@@ -64,6 +64,10 @@ export interface ContentAiMetadata {
 // ============================================================
 
 export type HypothesisState =
+  // Inert agent-drafted state (MCP v3.1): drafts surface only in the admin
+  // hypotheses list, never in brief/Today/dashboards. The owner endorses
+  // (draft → unverified) or deletes them; nothing else acts on a draft.
+  | 'draft'
   | 'unverified'
   | 'verified'
   | 'invalidated'

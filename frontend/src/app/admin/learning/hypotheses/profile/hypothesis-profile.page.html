@@ -58,15 +58,64 @@
       aria-label="Hypothesis actions"
       data-testid="hypothesis-actions"
     >
-      <button
-        type="button"
-        (click)="toggleEvidenceForm()"
-        [disabled]="isActioning()"
-        class="rounded-sm border border-border-strong bg-panel px-3 py-1.5 text-xs text-fg transition-colors hover:border-brand hover:text-brand focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand disabled:cursor-not-allowed"
-        data-testid="hypothesis-action-add-evidence"
-      >
-        {{ isEvidenceFormOpen() ? 'Close evidence form' : 'Add evidence' }}
-      </button>
+      @if (canAddEvidence()) {
+        <button
+          type="button"
+          (click)="toggleEvidenceForm()"
+          [disabled]="isActioning()"
+          class="rounded-sm border border-border-strong bg-panel px-3 py-1.5 text-xs text-fg transition-colors hover:border-brand hover:text-brand focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand disabled:cursor-not-allowed"
+          data-testid="hypothesis-action-add-evidence"
+        >
+          {{ isEvidenceFormOpen() ? 'Close evidence form' : 'Add evidence' }}
+        </button>
+      }
+
+      @if (canEndorse()) {
+        <button
+          type="button"
+          (click)="endorse()"
+          [disabled]="isActioning()"
+          class="rounded-sm bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-emerald-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand disabled:cursor-not-allowed disabled:bg-emerald-900/60"
+          data-testid="hypothesis-action-endorse"
+        >
+          Endorse
+        </button>
+      }
+      @if (canDelete()) {
+        @if (confirmingDelete()) {
+          <span class="text-xs text-fg-muted" data-testid="hypothesis-delete-prompt">
+            Delete draft?
+          </span>
+          <button
+            type="button"
+            (click)="confirmDelete()"
+            [disabled]="isActioning()"
+            class="rounded-sm bg-red-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-red-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand disabled:cursor-not-allowed disabled:bg-red-900/60"
+            data-testid="hypothesis-delete-confirm"
+          >
+            Delete
+          </button>
+          <button
+            type="button"
+            (click)="cancelDelete()"
+            [disabled]="isActioning()"
+            class="rounded-sm px-3 py-1.5 text-xs text-fg-muted transition-colors hover:text-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand disabled:cursor-not-allowed"
+            data-testid="hypothesis-delete-cancel"
+          >
+            Cancel
+          </button>
+        } @else {
+          <button
+            type="button"
+            (click)="requestDelete()"
+            [disabled]="isActioning()"
+            class="rounded-sm px-3 py-1.5 text-xs text-red-300 transition-colors hover:bg-red-950/40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand disabled:cursor-not-allowed"
+            data-testid="hypothesis-action-delete"
+          >
+            Delete draft
+          </button>
+        }
+      }
 
       @if (canVerify()) {
         <button

@@ -25,6 +25,7 @@ import type {
 } from '../../../../core/models/workbench.model';
 
 const STATE_DOT_CLASS: Record<HypothesisState, string> = {
+  draft: 'bg-violet-400',
   unverified: 'bg-amber-400',
   verified: 'bg-emerald-500',
   invalidated: 'bg-red-500',
@@ -32,6 +33,7 @@ const STATE_DOT_CLASS: Record<HypothesisState, string> = {
 };
 
 const STATE_TEXT_CLASS: Record<HypothesisState, string> = {
+  draft: 'text-violet-300',
   unverified: 'text-amber-300',
   verified: 'text-emerald-300',
   invalidated: 'text-red-300',
@@ -120,10 +122,24 @@ export class HypothesisProfilePageComponent {
   private readonly _isActioning = signal(false);
   protected readonly isActioning = this._isActioning.asReadonly();
 
+  // Two-step inline confirm for the irreversible draft delete.
+  protected readonly confirmingDelete = signal(false);
+
   // Add-evidence form (inline within the profile).
   protected readonly evidenceKind = signal<EvidenceKind>('supporting');
   protected readonly evidenceBody = signal('');
   protected readonly isEvidenceFormOpen = signal(false);
+
+  // A draft is inert and pending the owner's decision (MCP v3.1): the only
+  // actions are Endorse (→ unverified) and Delete. Investigation actions
+  // (evidence/verify/invalidate/archive) belong to endorsed hypotheses.
+  protected readonly isDraft = computed(() => this.hypothesis()?.state === 'draft');
+  protected readonly canEndorse = this.isDraft;
+  protected readonly canDelete = this.isDraft;
+  protected readonly canAddEvidence = computed(() => {
+    const h = this.hypothesis();
+    return !!h && h.state !== 'draft';
+  });
 
   // Lifecycle: hypothesis transitions from
   // unverified → {verified | invalidated | archived}. Verify and
@@ -133,10 +149,10 @@ export class HypothesisProfilePageComponent {
     return !!h && h.state === 'unverified';
   });
   protected readonly canInvalidate = this.canVerify;
-  // Any non-archived state can archive.
+  // Any non-archived, non-draft state can archive.
   protected readonly canArchive = computed(() => {
     const h = this.hypothesis();
-    return !!h && h.state !== 'archived';
+    return !!h && h.state !== 'archived' && h.state !== 'draft';
   });
 
   constructor() {
@@ -224,6 +240,65 @@ export class HypothesisProfilePageComponent {
 
   protected archive(): void {
     this.runTransition('archive', 'Archived');
+  }
+
+  /** Endorse a draft (draft → unverified) — the owner's decision-stamp. */
+  protected endorse(): void {
+    const h = this.hypothesis();
+    if (!h || this._isActioning()) return;
+
+    this._isActioning.set(true);
+    this.hypothesisService.endorse(h.id).subscribe({
+      next: () => {
+        this._isActioning.set(false);
+        this.notifications.success('Endorsed — now unverified.');
+        this.hypothesisResource.reload();
+        this.lineageResource.reload();
+      },
+      error: (err: unknown) => {
+        this._isActioning.set(false);
+        const status = err instanceof HttpErrorResponse ? err.status : null;
+        this.notifications.error(
+          status === 409
+            ? 'Already endorsed.'
+            : 'Failed to endorse hypothesis.',
+        );
+      },
+    });
+  }
+
+  protected requestDelete(): void {
+    this.confirmingDelete.set(true);
+  }
+
+  protected cancelDelete(): void {
+    this.confirmingDelete.set(false);
+  }
+
+  /** Delete a draft (draft-only). The row is gone, so route back to the list. */
+  protected confirmDelete(): void {
+    const h = this.hypothesis();
+    if (!h || this._isActioning()) return;
+
+    this._isActioning.set(true);
+    this.hypothesisService.deleteDraft(h.id).subscribe({
+      next: () => {
+        this._isActioning.set(false);
+        this.confirmingDelete.set(false);
+        this.notifications.success('Draft deleted.');
+        this.router.navigate(['/admin/learning/hypotheses']);
+      },
+      error: (err: unknown) => {
+        this._isActioning.set(false);
+        this.confirmingDelete.set(false);
+        const status = err instanceof HttpErrorResponse ? err.status : null;
+        this.notifications.error(
+          status === 409
+            ? 'Only drafts can be deleted.'
+            : 'Failed to delete draft.',
+        );
+      },
+    });
   }
 
   private runTransition(

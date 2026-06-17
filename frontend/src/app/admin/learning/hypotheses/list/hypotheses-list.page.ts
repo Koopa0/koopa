@@ -29,6 +29,7 @@ interface StateChip {
 
 const STATE_CHIPS: readonly StateChip[] = [
   { value: 'all', label: 'All' },
+  { value: 'draft', label: 'Draft' },
   { value: 'unverified', label: 'Unverified' },
   { value: 'verified', label: 'Verified' },
   { value: 'invalidated', label: 'Invalidated' },
@@ -36,6 +37,7 @@ const STATE_CHIPS: readonly StateChip[] = [
 ];
 
 const STATE_DOT_CLASS: Record<HypothesisState, string> = {
+  draft: 'bg-violet-400',
   unverified: 'bg-amber-400',
   verified: 'bg-emerald-500',
   invalidated: 'bg-red-500',
@@ -43,6 +45,7 @@ const STATE_DOT_CLASS: Record<HypothesisState, string> = {
 };
 
 const STATE_TEXT_CLASS: Record<HypothesisState, string> = {
+  draft: 'text-violet-300',
   unverified: 'text-amber-300',
   verified: 'text-emerald-300',
   invalidated: 'text-red-300',

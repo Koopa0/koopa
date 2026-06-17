@@ -124,6 +124,26 @@ export class HypothesisService {
     );
   }
 
+  /**
+   * Endorse an agent-drafted hypothesis (draft → unverified) — the owner's
+   * decision-stamp under the MCP v3.1 inert-drafts contract. Returns the
+   * promoted record. Backend returns 409 NOT_DRAFT on a non-draft row.
+   */
+  endorse(id: string): Observable<Hypothesis> {
+    return this.api.postData<Hypothesis>(
+      `/api/admin/learning/hypotheses/${id}/endorse`,
+      {},
+    );
+  }
+
+  /**
+   * Delete a draft hypothesis. Draft-only: the backend returns 409 NOT_DRAFT
+   * for any other state. Resolves with no body (204).
+   */
+  deleteDraft(id: string): Observable<void> {
+    return this.api.delete(`/api/admin/learning/hypotheses/${id}`);
+  }
+
   addEvidence(id: string, body: AddEvidenceRequest): Observable<Hypothesis> {
     return this.api.postData<Hypothesis>(
       `/api/admin/learning/hypotheses/${id}/evidence`,
