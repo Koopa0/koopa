@@ -12,8 +12,8 @@ export interface NoteRow {
   maturity: NoteMaturity;
   /** Authoring agent identity — the `created_by` wire field (e.g. human, hermes). */
   created_by: string;
-  concepts: { slug: string; name: string }[];
-  targets: { id: string; title: string }[];
+  concepts: { id: string; slug: string; name: string }[];
+  targets: { id: string; title: string; domain?: string }[];
   created_at: string;
   updated_at: string;
 }
@@ -45,7 +45,14 @@ export interface NoteUpdateRequest {
   title?: string;
   body?: string;
   kind?: NoteKind;
-  concept_slugs?: string[];
+  /**
+   * Set-semantics for the note's concept links: absent ⇒ leave untouched,
+   * `[]` ⇒ clear all, `[ids…]` ⇒ set to exactly these. Concept ids (not
+   * slugs) because concept slugs scope per-domain and a bare slug cannot
+   * resolve to one concept.
+   */
+  concept_ids?: string[];
+  /** Set-semantics for the note's learning-target links (see {@link concept_ids}). */
   target_ids?: string[];
 }
 

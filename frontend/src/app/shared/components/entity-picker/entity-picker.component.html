@@ -1,0 +1,112 @@
+<div class="flex flex-col gap-1.5" data-testid="entity-picker">
+  @if (label()) {
+    <label [attr.for]="inputId()" class="font-mono text-[11px] text-fg-subtle">
+      {{ label() }}
+    </label>
+  }
+
+  <!-- Selected chips -->
+  @if (selected().length > 0) {
+    <ul class="flex flex-wrap gap-1" data-testid="entity-picker-chips">
+      @for (entity of selected(); track entity.id) {
+        <li
+          class="inline-flex items-center gap-1 rounded-xs bg-overlay px-1.5 py-0.5 text-xs text-fg-subtle"
+          [attr.data-testid]="'entity-picker-chip-' + entity.id"
+        >
+          <span>{{ entity.label }}</span>
+          <button
+            type="button"
+            (click)="remove(entity)"
+            class="text-fg-muted hover:text-fg focus:text-fg focus:outline-hidden"
+            [attr.aria-label]="'Remove ' + entity.label"
+            [attr.data-testid]="'entity-picker-chip-remove-' + entity.id"
+          >
+            <span aria-hidden="true">×</span>
+          </button>
+        </li>
+      }
+    </ul>
+  }
+
+  <!-- Combobox input + results -->
+  <div class="relative">
+    <input
+      #searchInput
+      type="text"
+      role="combobox"
+      autocomplete="off"
+      [id]="inputId()"
+      [value]="query()"
+      [placeholder]="placeholder()"
+      [attr.aria-expanded]="isOpen()"
+      [attr.aria-controls]="listboxId()"
+      [attr.aria-activedescendant]="activeOptionId()"
+      aria-autocomplete="list"
+      (input)="setQuery($event)"
+      (keydown)="handleKeydown($event)"
+      class="w-full rounded-sm border border-border bg-elevated px-2 py-[5px] text-xs text-fg placeholder:text-fg-subtle focus:border-brand focus:shadow-[0_0_0_1px_var(--brand)] focus:outline-hidden"
+      data-testid="entity-picker-search-input"
+    />
+
+    @if (isOpen()) {
+      <div
+        class="absolute z-10 mt-1 w-full rounded-xs border border-border bg-elevated"
+      >
+        @if (isLoading()) {
+          <p
+            class="p-2 text-xs text-fg-subtle"
+            data-testid="entity-picker-loading"
+          >
+            Searching…
+          </p>
+        } @else if (hasError()) {
+          <p
+            class="p-2 text-xs text-error"
+            role="alert"
+            aria-live="polite"
+            data-testid="entity-picker-error"
+          >
+            Search failed. Try again.
+          </p>
+        } @else if (isEmpty()) {
+          <p
+            class="p-2 text-xs text-fg-subtle"
+            data-testid="entity-picker-empty"
+          >
+            No matches.
+          </p>
+        } @else {
+          <ul
+            [id]="listboxId()"
+            role="listbox"
+            [attr.aria-label]="label() || 'Results'"
+            data-testid="entity-picker-results-list"
+          >
+            @for (entity of results(); track entity.id; let i = $index) {
+              <li role="presentation">
+                <button
+                  #option
+                  type="button"
+                  role="option"
+                  [id]="optionId(entity)"
+                  [attr.aria-selected]="i === activeIndex()"
+                  (click)="add(entity)"
+                  class="flex w-full flex-col items-start gap-0.5 p-2 text-left hover:bg-overlay focus:bg-overlay focus:outline-hidden"
+                  [class.bg-overlay]="i === activeIndex()"
+                  [attr.data-testid]="'entity-picker-result-' + entity.id"
+                >
+                  <span class="text-xs text-fg">{{ entity.label }}</span>
+                  @if (entity.sublabel) {
+                    <span class="font-mono text-[10px] text-fg-faint">
+                      {{ entity.sublabel }}
+                    </span>
+                  }
+                </button>
+              </li>
+            }
+          </ul>
+        }
+      </div>
+    }
+  </div>
+</div>

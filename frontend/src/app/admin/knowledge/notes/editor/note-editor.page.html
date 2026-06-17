@@ -145,31 +145,31 @@
           </select>
         </div>
 
-        <div class="mb-2.5 flex flex-col gap-1">
-          <label for="note-concepts" class="font-mono text-[11px] text-fg-subtle">
-            Concept slugs (comma-separated)
-          </label>
-          <input
-            id="note-concepts"
-            type="text"
-            formControlName="conceptSlugs"
-            class="rounded-sm border border-border bg-elevated px-2 py-[5px] text-xs text-fg focus:border-brand focus:shadow-[0_0_0_1px_var(--brand)] focus:outline-hidden"
-            data-testid="note-concepts"
-          />
-        </div>
+        @if (note()) {
+          <div class="mb-2.5" data-testid="note-concepts">
+            <app-entity-picker
+              label="Concepts"
+              inputId="note-concept-picker"
+              placeholder="Search concepts…"
+              [search]="searchConcepts"
+              [(selected)]="selectedConcepts"
+            />
+          </div>
 
-        <div class="flex flex-col gap-1">
-          <label for="note-targets" class="font-mono text-[11px] text-fg-subtle">
-            Target IDs (comma-separated)
-          </label>
-          <input
-            id="note-targets"
-            type="text"
-            formControlName="targetIds"
-            class="rounded-sm border border-border bg-elevated px-2 py-[5px] text-xs text-fg focus:border-brand focus:shadow-[0_0_0_1px_var(--brand)] focus:outline-hidden"
-            data-testid="note-targets"
-          />
-        </div>
+          <div data-testid="note-targets">
+            <app-entity-picker
+              label="Learning targets"
+              inputId="note-target-picker"
+              placeholder="Search targets…"
+              [search]="searchTargets"
+              [(selected)]="selectedTargets"
+            />
+          </div>
+        } @else {
+          <p class="text-[11px] leading-relaxed text-fg-faint" data-testid="note-links-hint">
+            Concepts and learning targets can be linked once the note is created.
+          </p>
+        }
       </div>
 
       <!-- Maturity ladder (edit mode only; the create endpoint defaults maturity server-side) -->

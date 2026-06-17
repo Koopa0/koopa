@@ -11,6 +11,7 @@ import type {
   LearningSessionRow,
   MasteryStage,
   NextTarget,
+  ConceptSearchResult,
   ObservationConfidence,
   Plan,
   PlanDetail,
@@ -22,6 +23,7 @@ import type {
   SessionDetail,
   SessionMeta,
   TargetAttempt,
+  TargetSearchResult,
 } from '../models/learning.model';
 
 export interface DashboardQuery {
@@ -111,6 +113,34 @@ export class LearningService {
     if (query.q) params['q'] = query.q;
     return this.api.getData<ConceptRow[]>(
       '/api/admin/learning/concepts',
+      params,
+    );
+  }
+
+  /**
+   * Concept typeahead for the note-link picker. Returns id + name + domain
+   * (concepts are cross-domain, so the domain disambiguates same-named hits).
+   * Distinct from {@link concepts}, which feeds the dashboard list and omits
+   * id/name.
+   */
+  searchConcepts(q: string, domain?: string): Observable<ConceptSearchResult[]> {
+    const params: Record<string, string> = { q };
+    if (domain) params['domain'] = domain;
+    return this.api.getData<ConceptSearchResult[]>(
+      '/api/admin/learning/concepts',
+      params,
+    );
+  }
+
+  /**
+   * Learning-target typeahead for the note-link picker. Returns id + title +
+   * domain.
+   */
+  searchTargets(q: string, domain?: string): Observable<TargetSearchResult[]> {
+    const params: Record<string, string> = { q };
+    if (domain) params['domain'] = domain;
+    return this.api.getData<TargetSearchResult[]>(
+      '/api/admin/learning/targets',
       params,
     );
   }

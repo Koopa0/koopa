@@ -92,6 +92,29 @@ export interface ConceptRow {
   parent_slug: string | null;
 }
 
+/**
+ * A concept search hit from GET /api/admin/learning/concepts?q=… — the
+ * minimal id + name + disambiguating domain the note-link picker needs.
+ * Distinct from {@link ConceptRow} (the dashboard list row), which carries
+ * mastery state but no id/name.
+ */
+export interface ConceptSearchResult {
+  id: string;
+  slug: string;
+  name: string;
+  domain: LearningDomain;
+}
+
+/**
+ * A learning-target search hit from GET /api/admin/learning/targets?q=… —
+ * id + title + disambiguating domain for the note-link picker.
+ */
+export interface TargetSearchResult {
+  id: string;
+  title: string;
+  domain: LearningDomain;
+}
+
 export interface ConceptRelation {
   type: string;
   concept: { slug: string; name: string };

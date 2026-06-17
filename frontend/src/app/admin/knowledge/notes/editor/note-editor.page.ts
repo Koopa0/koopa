@@ -21,18 +21,23 @@ import {
 import { ActivatedRoute, Router } from '@angular/router';
 import { DatePipe } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { map, startWith } from 'rxjs';
+import { map, startWith, type Observable } from 'rxjs';
 import {
   NoteService,
   type NoteCreateRequest,
   type NoteDetail,
   type NoteUpdateRequest,
 } from '../../../../core/services/note.service';
+import { LearningService } from '../../../../core/services/learning.service';
 import { NotificationService } from '../../../../core/services/notification.service';
 import {
   AdminTopbarService,
   type TopbarAction,
 } from '../../../admin-layout/admin-topbar.service';
+import {
+  EntityPickerComponent,
+  type PickerEntity,
+} from '../../../../shared/components';
 import type { NoteKind, NoteMaturity } from '../../../../core/models/api.model';
 
 interface NoteEditorForm {
@@ -40,8 +45,6 @@ interface NoteEditorForm {
   title: FormControl<string>;
   body: FormControl<string>;
   kind: FormControl<NoteKind>;
-  conceptSlugs: FormControl<string>;
-  targetIds: FormControl<string>;
 }
 
 const KIND_OPTIONS: readonly { value: NoteKind; label: string }[] = [
@@ -93,7 +96,7 @@ const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
  */
 @Component({
   selector: 'app-note-editor-page',
-  imports: [ReactiveFormsModule, DatePipe],
+  imports: [ReactiveFormsModule, DatePipe, EntityPickerComponent],
   templateUrl: './note-editor.page.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
@@ -105,12 +108,40 @@ export class NoteEditorPageComponent {
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly noteService = inject(NoteService);
+  private readonly learning = inject(LearningService);
   private readonly notifications = inject(NotificationService);
   private readonly topbar = inject(AdminTopbarService);
   private readonly destroyRef = inject(DestroyRef);
 
   protected readonly kindOptions = KIND_OPTIONS;
   protected readonly maturityLadder = MATURITY_LADDER;
+
+  /** Selected concept links — two-way bound to the concept picker. */
+  protected readonly selectedConcepts = signal<PickerEntity[]>([]);
+  /** Selected learning-target links — two-way bound to the target picker. */
+  protected readonly selectedTargets = signal<PickerEntity[]>([]);
+
+  /** Concept typeahead source — maps search hits to picker entities. */
+  protected readonly searchConcepts = (
+    q: string,
+  ): Observable<PickerEntity[]> =>
+    this.learning
+      .searchConcepts(q)
+      .pipe(
+        map((rows) =>
+          rows.map((c) => ({ id: c.id, label: c.name, sublabel: c.domain })),
+        ),
+      );
+
+  /** Learning-target typeahead source — maps search hits to picker entities. */
+  protected readonly searchTargets = (q: string): Observable<PickerEntity[]> =>
+    this.learning
+      .searchTargets(q)
+      .pipe(
+        map((rows) =>
+          rows.map((t) => ({ id: t.id, label: t.title, sublabel: t.domain })),
+        ),
+      );
 
   private readonly idFromRoute = toSignal(
     this.route.paramMap.pipe(map((p) => p.get('id'))),
@@ -155,8 +186,6 @@ export class NoteEditorPageComponent {
       nonNullable: true,
       validators: [Validators.required],
     }),
-    conceptSlugs: new FormControl('', { nonNullable: true }),
-    targetIds: new FormControl('', { nonNullable: true }),
   });
 
   private readonly formStatus = toSignal(
@@ -168,8 +197,20 @@ export class NoteEditorPageComponent {
     { initialValue: this.form.dirty },
   );
 
+  /**
+   * The link ids as last hydrated from the server, used to detect picker-only
+   * edits (the pickers live outside the reactive form, so form.dirty misses
+   * them). Re-set on every fresh note load and after a successful save.
+   */
+  private readonly linksBaseline = signal('');
+  private readonly linksDirty = computed(
+    () => this.currentLinksKey() !== this.linksBaseline(),
+  );
+
   /** Read by the canDeactivate guard — applies in create and edit mode alike. */
-  readonly hasUnsavedChanges = this.formDirty;
+  readonly hasUnsavedChanges = computed(
+    () => this.formDirty() || this.linksDirty(),
+  );
 
   constructor() {
     if (this.isCreate()) {
@@ -193,10 +234,24 @@ export class NoteEditorPageComponent {
           title: n.title,
           body: n.body,
           kind: n.kind,
-          conceptSlugs: n.concepts.map((c) => c.slug).join(', '),
-          targetIds: n.targets.map((t) => t.id).join(', '),
         },
         { emitEvent: false },
+      );
+      // The note read model carries no domain on concept refs (it's a
+      // search-only disambiguator), so seeded concept chips show name only.
+      this.selectedConcepts.set(
+        n.concepts.map((c) => ({ id: c.id, label: c.name })),
+      );
+      this.selectedTargets.set(
+        n.targets.map((t) => ({ id: t.id, label: t.title, sublabel: t.domain })),
+      );
+      // Compute the baseline from the note directly — reading the selection
+      // signals here would make this effect re-run (and reset) on every pick.
+      this.linksBaseline.set(
+        linksKey(
+          n.concepts.map((c) => c.id),
+          n.targets.map((t) => t.id),
+        ),
       );
     });
 
@@ -275,13 +330,13 @@ export class NoteEditorPageComponent {
 
   private createNote(): void {
     const v = this.form.getRawValue();
+    // Links are set in edit mode (the create endpoint does not resolve them);
+    // the pickers only appear once the note exists.
     const body: NoteCreateRequest = {
       slug: v.slug.trim(),
       title: v.title.trim(),
       body: v.body,
       kind: v.kind,
-      concept_slugs: splitCsv(v.conceptSlugs),
-      target_ids: splitCsv(v.targetIds),
     };
 
     this._isActioning.set(true);
@@ -307,12 +362,14 @@ export class NoteEditorPageComponent {
     if (!n) return;
 
     const v = this.form.getRawValue();
+    // The pickers manage the full link set, so always send both arrays (an
+    // empty array clears the links; absent would leave them untouched).
     const body: NoteUpdateRequest = {
       title: v.title.trim(),
       body: v.body,
       kind: v.kind,
-      concept_slugs: splitCsv(v.conceptSlugs),
-      target_ids: splitCsv(v.targetIds),
+      concept_ids: this.selectedConcepts().map((e) => e.id),
+      target_ids: this.selectedTargets().map((e) => e.id),
     };
 
     this._isActioning.set(true);
@@ -399,6 +456,17 @@ export class NoteEditorPageComponent {
     this.notifications.error(`Failed to ${verb}.`);
   }
 
+  /**
+   * Stable key over the currently-selected link ids — compared against
+   * {@link linksBaseline} to tell whether the pickers were touched.
+   */
+  private currentLinksKey(): string {
+    return linksKey(
+      this.selectedConcepts().map((e) => e.id),
+      this.selectedTargets().map((e) => e.id),
+    );
+  }
+
   protected maturityDotClass(m: NoteMaturity): string {
     return MATURITY_DOT[m];
   }
@@ -418,9 +486,9 @@ export class NoteEditorPageComponent {
   }
 }
 
-function splitCsv(raw: string): string[] {
-  return raw
-    .split(',')
-    .map((s) => s.trim())
-    .filter((s) => s.length > 0);
+/** Order-independent key over concept + target id sets, for dirty tracking. */
+function linksKey(conceptIds: string[], targetIds: string[]): string {
+  const concepts = [...conceptIds].sort().join(',');
+  const targets = [...targetIds].sort().join(',');
+  return `${concepts}|${targets}`;
 }
