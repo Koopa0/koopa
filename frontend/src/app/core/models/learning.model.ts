@@ -340,5 +340,6 @@ export interface PlanDetail {
   /** Linked goal's title for the meta strip; `""` when the plan has no goal. */
   goal_name: string;
   entries: PlanEntryDetail[];
-  progress: PlanProgress;
+  /** Absent (Go `*Progress`, omitempty) when the progress rollup fails. */
+  progress?: PlanProgress;
 }

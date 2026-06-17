@@ -87,12 +87,6 @@
             <dt class="text-fg-subtle">Slug</dt>
             <dd class="font-mono text-xs text-fg-muted">{{ c.slug }}</dd>
           </div>
-          @if (c.source_type) {
-            <div class="flex justify-between">
-              <dt class="text-fg-subtle">Origin</dt>
-              <dd class="text-fg">{{ c.source_type }}</dd>
-            </div>
-          }
           <div class="flex justify-between">
             <dt class="text-fg-subtle">Created</dt>
             <dd class="text-fg">{{ c.created_at | date: "medium" }}</dd>

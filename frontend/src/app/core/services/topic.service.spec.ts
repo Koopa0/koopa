@@ -34,8 +34,6 @@ function createMockContent(overrides: Partial<ApiContent> = {}): ApiContent {
     tags: ['Angular'],
     topics: [],
     cover_image: null,
-    source: null,
-    source_type: null,
     series_id: null,
     series_order: null,
     is_public: true,

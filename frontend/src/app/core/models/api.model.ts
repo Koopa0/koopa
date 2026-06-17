@@ -37,10 +37,8 @@ export interface ApiContent {
   type: ContentType;
   status: ContentStatus;
   tags: string[];
-  topics: ApiTopic[];
+  topics: ApiTopicRef[];
   cover_image: string | null;
-  source: string | null;
-  source_type: string | null;
   series_id: string | null;
   series_order: number | null;
   is_public: boolean;
@@ -103,6 +101,17 @@ export interface ApiTopic {
   sort_order: number;
   created_at: string;
   updated_at: string;
+}
+
+/**
+ * Lean topic reference embedded on content rows (Go `content.TopicRef`).
+ * Only id / slug / name are on this wire — distinct from the full ApiTopic
+ * returned by the topics endpoint.
+ */
+export interface ApiTopicRef {
+  id: string;
+  slug: string;
+  name: string;
 }
 
 /** Backend Project object */

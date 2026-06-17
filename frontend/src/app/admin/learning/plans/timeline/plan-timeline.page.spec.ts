@@ -376,7 +376,7 @@ describe('PlanTimelinePageComponent', () => {
     const reloaded: PlanDetail = {
       ...base,
       entries: [...base.entries, added],
-      progress: { ...base.progress, total: 4, remaining: 3 },
+      progress: { total: 4, completed: 1, skipped: 0, substituted: 0, remaining: 3 },
     };
     await setup();
     // The reload after a successful add returns the augmented envelope.
