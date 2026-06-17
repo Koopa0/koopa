@@ -283,11 +283,11 @@ func registerRoutes(
 	mux.Handle("POST /api/admin/knowledge/feed-entries/{id}/ignore", adminMid(http.HandlerFunc(h.entry.Ignore)))
 	mux.Handle("POST /api/admin/knowledge/feed-entries/{id}/feedback", adminMid(http.HandlerFunc(h.entry.SubmitFeedback)))
 
-	// --- Admin: Coordination / Activity ---
+	// --- Admin: System / Activity ---
 	// /activity is the domain-level audit feed; /activity/sessions surfaces
 	// GitHub push events grouped for the rewind view.
-	mux.Handle("GET /api/admin/coordination/activity", authMid(http.HandlerFunc(h.activity.Changelog)))
-	mux.Handle("GET /api/admin/coordination/activity/sessions", authMid(http.HandlerFunc(h.activity.Sessions)))
+	mux.Handle("GET /api/admin/system/activity", authMid(http.HandlerFunc(h.activity.Changelog)))
+	mux.Handle("GET /api/admin/system/activity/sessions", authMid(http.HandlerFunc(h.activity.Sessions)))
 
 	// --- Admin: System / Stats ---
 	mux.Handle("GET /api/admin/system/stats", authMid(http.HandlerFunc(h.stats.Overview)))
@@ -368,13 +368,13 @@ func registerRoutes(
 	mux.Handle("GET /api/admin/learning/domains", authMid(http.HandlerFunc(h.learning.ListDomains)))
 	mux.Handle("POST /api/admin/learning/domains", adminMid(http.HandlerFunc(h.learning.CreateDomain)))
 
-	// --- Admin: Coordination / Agents ---
+	// --- Admin: System / Agents ---
 	// Agents are registry-managed — the admin surface is read-only.
-	mux.Handle("GET /api/admin/coordination/agents", authMid(http.HandlerFunc(h.agent.List)))
-	mux.Handle("GET /api/admin/coordination/agents/{name}", authMid(http.HandlerFunc(h.agent.Get)))
+	mux.Handle("GET /api/admin/system/agents", authMid(http.HandlerFunc(h.agent.List)))
+	mux.Handle("GET /api/admin/system/agents/{name}", authMid(http.HandlerFunc(h.agent.Get)))
 
-	// --- Admin: Coordination / Process runs ---
-	mux.Handle("GET /api/admin/coordination/process-runs", authMid(http.HandlerFunc(h.stats.ProcessRuns)))
+	// --- Admin: System / Process runs ---
+	mux.Handle("GET /api/admin/system/process-runs", authMid(http.HandlerFunc(h.stats.ProcessRuns)))
 
 	// (Goal Detail moved to /api/admin/commitment/goals/{id} above.)
 	// (Daily Plan replaced by /api/admin/commitment/today aggregate.)

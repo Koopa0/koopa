@@ -67,7 +67,8 @@ type response struct {
 }
 
 // List handles GET /api/admin/knowledge/notes.
-// Query params: page, per_page, kind (single), maturity (single).
+// Query params: page, per_page, kind (single), maturity (single),
+// created_by (single authoring agent name).
 func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	page, perPage := api.ParsePagination(r)
 	f := Filter{Page: page, PerPage: perPage}
@@ -87,6 +88,13 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		f.Maturity = &m
+	}
+	if v := strings.TrimSpace(r.URL.Query().Get("created_by")); v != "" {
+		if containsControlChars(v) {
+			api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid created_by")
+			return
+		}
+		f.CreatedBy = &v
 	}
 
 	notes, total, err := h.store.Notes(r.Context(), f)

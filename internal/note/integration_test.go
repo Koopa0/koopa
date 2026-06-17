@@ -54,17 +54,35 @@ func setup(t *testing.T) *Store {
 
 func seedNote(t *testing.T, s *Store, slug, title string) *Note {
 	t.Helper()
+	return seedNoteBy(t, s, slug, title, "human")
+}
+
+// seedNoteBy seeds a note authored by createdBy. The agent must already
+// exist (created_by FKs to agents.name) — seedAgent handles that.
+func seedNoteBy(t *testing.T, s *Store, slug, title, createdBy string) *Note {
+	t.Helper()
 	n, err := s.Create(t.Context(), &CreateParams{
 		Slug:      slug,
 		Title:     title,
 		Body:      "body of " + slug,
 		Kind:      KindMusing,
-		CreatedBy: "human",
+		CreatedBy: createdBy,
 	})
 	if err != nil {
 		t.Fatalf("creating note %q: %v", slug, err)
 	}
 	return n
+}
+
+// seedAgent inserts an agent row so notes can reference it via created_by.
+func seedAgent(t *testing.T, name, platform string) {
+	t.Helper()
+	if _, err := testPool.Exec(t.Context(),
+		`INSERT INTO agents (name, display_name, platform)
+		 VALUES ($1, $2, $3)
+		 ON CONFLICT (name) DO NOTHING`, name, name, platform); err != nil {
+		t.Fatalf("seeding agent %q: %v", name, err)
+	}
 }
 
 // vec1536 builds a 1536-dim vector whose leading elements are vals and
@@ -109,6 +127,56 @@ func TestSemanticSearch_CosineOrder(t *testing.T) {
 		if got[i].Slug != want {
 			t.Errorf("rank %d: slug = %q, want %q (cosine order)", i, got[i].Slug, want)
 		}
+	}
+}
+
+func TestNotes_CreatedByFilter(t *testing.T) {
+	store := setup(t)
+	ctx := t.Context()
+
+	// 'human' is seeded by setup; 'hermes' is the second author.
+	seedAgent(t, "hermes", "claude-code")
+	seedNoteBy(t, store, "hermes-one", "Hermes one", "hermes")
+	seedNoteBy(t, store, "hermes-two", "Hermes two", "hermes")
+	seedNoteBy(t, store, "human-one", "Human one", "human")
+
+	page := Filter{Page: 1, PerPage: 50}
+
+	// No filter: every author's notes are returned.
+	all, total, err := store.Notes(ctx, page)
+	if err != nil {
+		t.Fatalf("Notes(no filter) error = %v", err)
+	}
+	if total != 3 || len(all) != 3 {
+		t.Fatalf("Notes(no filter) = %d rows (total %d), want 3 rows (total 3)", len(all), total)
+	}
+
+	// created_by=hermes: only Hermes-authored notes.
+	hermes := "hermes"
+	f := page
+	f.CreatedBy = &hermes
+	got, total, err := store.Notes(ctx, f)
+	if err != nil {
+		t.Fatalf("Notes(created_by=hermes) error = %v", err)
+	}
+	if total != 2 || len(got) != 2 {
+		t.Fatalf("Notes(created_by=hermes) = %d rows (total %d), want 2 rows (total 2)", len(got), total)
+	}
+	for i := range got {
+		if got[i].CreatedBy != "hermes" {
+			t.Errorf("Notes(created_by=hermes)[%d].CreatedBy = %q, want %q", i, got[i].CreatedBy, "hermes")
+		}
+	}
+
+	// created_by with no matching author: empty, not an error.
+	none := "nonexistent-agent"
+	f.CreatedBy = &none
+	got, total, err = store.Notes(ctx, f)
+	if err != nil {
+		t.Fatalf("Notes(created_by=nonexistent) error = %v", err)
+	}
+	if total != 0 || len(got) != 0 {
+		t.Fatalf("Notes(created_by=nonexistent) = %d rows (total %d), want 0 rows (total 0)", len(got), total)
 	}
 }
 

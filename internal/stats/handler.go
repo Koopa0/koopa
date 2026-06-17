@@ -104,7 +104,7 @@ type ProcessRunsResponse struct {
 	Total   int                `json:"total"`
 }
 
-// ProcessRuns handles GET /api/admin/coordination/process-runs. Composes
+// ProcessRuns handles GET /api/admin/system/process-runs. Composes
 // 24h success rate, failed-last-hour, in-retry counts, and a paginated
 // recent-runs list from process_runs.
 func (h *Handler) ProcessRuns(w http.ResponseWriter, r *http.Request) {

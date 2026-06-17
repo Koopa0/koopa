@@ -109,12 +109,14 @@ type UpdateParams struct {
 	Metadata *map[string]any `json:"metadata,omitempty"`
 }
 
-// Filter holds list parameters.
+// Filter holds list parameters. A nil pointer means "no filter on this
+// field"; CreatedBy narrows the list to a single authoring agent.
 type Filter struct {
-	Page     int
-	PerPage  int
-	Kind     *Kind
-	Maturity *Maturity
+	Page      int
+	PerPage   int
+	Kind      *Kind
+	Maturity  *Maturity
+	CreatedBy *string
 }
 
 // ConceptRef is a lightweight concept reference for note detail enrichment.
@@ -145,3 +147,15 @@ var (
 	// ErrInvalidMaturity signals an unrecognized maturity value on input.
 	ErrInvalidMaturity = errors.New("note: invalid maturity")
 )
+
+// containsControlChars reports whether s contains any control character —
+// ASCII C0 (0x00–0x1F), DEL (0x7F), or Unicode C1 (0x80–0x9F). Used to
+// reject malformed filter input at the handler boundary.
+func containsControlChars(s string) bool {
+	for _, r := range s {
+		if r < 0x20 || r == 0x7f || (r >= 0x80 && r <= 0x9f) {
+			return true
+		}
+	}
+	return false
+}

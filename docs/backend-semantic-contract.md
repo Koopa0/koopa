@@ -428,7 +428,7 @@ agent surface. All FSRS / review-card tools are gone (FSRS retired).
 There are **no write tools** in this group — provenance is a side effect.
 Audit events are emitted only by triggers; the agent-facing read surface is
 embedded in `brief` (morning/reflection) and `learning_read`. The richer
-activity feed (`/api/admin/coordination/activity`, `routes.go:257`) is
+activity feed (`/api/admin/system/activity`, `routes.go:257`) is
 admin-only HTTP (frontend-advisory, §2).
 
 ### Group: system / context bootstrap (`DomainQuery`)

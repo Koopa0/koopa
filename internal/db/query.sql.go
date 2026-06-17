@@ -6448,15 +6448,17 @@ SELECT id, slug, title, body, kind, maturity, created_by,
 FROM notes
 WHERE ($3::note_kind IS NULL OR kind = $3)
   AND ($4::note_maturity IS NULL OR maturity = $4)
+  AND ($5::text IS NULL OR created_by = $5)
 ORDER BY updated_at DESC
 LIMIT $1 OFFSET $2
 `
 
 type NotesParams struct {
-	Limit    int32            `json:"limit"`
-	Offset   int32            `json:"offset"`
-	Kind     NullNoteKind     `json:"kind"`
-	Maturity NullNoteMaturity `json:"maturity"`
+	Limit     int32            `json:"limit"`
+	Offset    int32            `json:"offset"`
+	Kind      NullNoteKind     `json:"kind"`
+	Maturity  NullNoteMaturity `json:"maturity"`
+	CreatedBy *string          `json:"created_by"`
 }
 
 type NotesRow struct {
@@ -6478,6 +6480,7 @@ func (q *Queries) Notes(ctx context.Context, arg NotesParams) ([]NotesRow, error
 		arg.Offset,
 		arg.Kind,
 		arg.Maturity,
+		arg.CreatedBy,
 	)
 	if err != nil {
 		return nil, err
@@ -6512,15 +6515,17 @@ const notesCount = `-- name: NotesCount :one
 SELECT COUNT(*) FROM notes
 WHERE ($1::note_kind IS NULL OR kind = $1)
   AND ($2::note_maturity IS NULL OR maturity = $2)
+  AND ($3::text IS NULL OR created_by = $3)
 `
 
 type NotesCountParams struct {
-	Kind     NullNoteKind     `json:"kind"`
-	Maturity NullNoteMaturity `json:"maturity"`
+	Kind      NullNoteKind     `json:"kind"`
+	Maturity  NullNoteMaturity `json:"maturity"`
+	CreatedBy *string          `json:"created_by"`
 }
 
 func (q *Queries) NotesCount(ctx context.Context, arg NotesCountParams) (int64, error) {
-	row := q.db.QueryRow(ctx, notesCount, arg.Kind, arg.Maturity)
+	row := q.db.QueryRow(ctx, notesCount, arg.Kind, arg.Maturity, arg.CreatedBy)
 	var count int64
 	err := row.Scan(&count)
 	return count, err

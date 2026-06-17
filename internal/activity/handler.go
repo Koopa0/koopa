@@ -55,7 +55,7 @@ func (h *Handler) Sessions(w http.ResponseWriter, r *http.Request) {
 	api.Encode(w, http.StatusOK, api.Response{Data: sessions})
 }
 
-// Changelog handles GET /api/admin/coordination/activity.
+// Changelog handles GET /api/admin/system/activity.
 // Query params: days (default 30, max 90), project, source (entity_type),
 // actor (comma-separated allowlist).
 func (h *Handler) Changelog(w http.ResponseWriter, r *http.Request) {

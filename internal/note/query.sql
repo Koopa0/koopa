@@ -30,13 +30,15 @@ SELECT id, slug, title, body, kind, maturity, created_by,
 FROM notes
 WHERE (sqlc.narg('kind')::note_kind IS NULL OR kind = sqlc.narg('kind'))
   AND (sqlc.narg('maturity')::note_maturity IS NULL OR maturity = sqlc.narg('maturity'))
+  AND (sqlc.narg('created_by')::text IS NULL OR created_by = sqlc.narg('created_by'))
 ORDER BY updated_at DESC
 LIMIT $1 OFFSET $2;
 
 -- name: NotesCount :one
 SELECT COUNT(*) FROM notes
 WHERE (sqlc.narg('kind')::note_kind IS NULL OR kind = sqlc.narg('kind'))
-  AND (sqlc.narg('maturity')::note_maturity IS NULL OR maturity = sqlc.narg('maturity'));
+  AND (sqlc.narg('maturity')::note_maturity IS NULL OR maturity = sqlc.narg('maturity'))
+  AND (sqlc.narg('created_by')::text IS NULL OR created_by = sqlc.narg('created_by'));
 
 -- name: UpdateNote :one
 -- Editable fields only. Maturity is intentionally separated — use

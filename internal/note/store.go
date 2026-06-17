@@ -103,18 +103,20 @@ func (s *Store) Notes(ctx context.Context, f Filter) ([]Note, int, error) {
 	maturityArg := nullMaturity(f.Maturity)
 
 	rows, err := s.q.Notes(ctx, db.NotesParams{
-		Limit:    int32(f.PerPage),                // #nosec G115 -- pagination bounded in API layer
-		Offset:   int32((f.Page - 1) * f.PerPage), // #nosec G115 -- same
-		Kind:     kindArg,
-		Maturity: maturityArg,
+		Limit:     int32(f.PerPage),                // #nosec G115 -- pagination bounded in API layer
+		Offset:    int32((f.Page - 1) * f.PerPage), // #nosec G115 -- same
+		Kind:      kindArg,
+		Maturity:  maturityArg,
+		CreatedBy: f.CreatedBy,
 	})
 	if err != nil {
 		return nil, 0, fmt.Errorf("listing notes: %w", err)
 	}
 
 	total, err := s.q.NotesCount(ctx, db.NotesCountParams{
-		Kind:     kindArg,
-		Maturity: maturityArg,
+		Kind:      kindArg,
+		Maturity:  maturityArg,
+		CreatedBy: f.CreatedBy,
 	})
 	if err != nil {
 		return nil, 0, fmt.Errorf("counting notes: %w", err)
