@@ -45,7 +45,6 @@ const STATUS_TEXT_CLASS: Record<PlanStatus, string> = {
  */
 @Component({
   selector: 'app-plans-list-page',
-  standalone: true,
   imports: [DataTableComponent, DatePipe, RouterLink],
   templateUrl: './plans-list.page.html',
   changeDetection: ChangeDetectionStrategy.OnPush,

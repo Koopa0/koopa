@@ -27,7 +27,6 @@ const RECOMMENDED_MODE = 'review' as const;
  */
 @Component({
   selector: 'app-next-up-card',
-  standalone: true,
   templateUrl: './next-up-card.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })

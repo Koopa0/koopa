@@ -46,7 +46,6 @@ const ADD_FORM_DEFAULTS = {
  */
 @Component({
   selector: 'app-reading-shelf-page',
-  standalone: true,
   imports: [RouterLink],
   templateUrl: './reading-shelf.page.html',
   changeDetection: ChangeDetectionStrategy.OnPush,

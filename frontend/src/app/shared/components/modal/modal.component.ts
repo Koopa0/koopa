@@ -11,7 +11,6 @@ import { A11yModule } from '@angular/cdk/a11y';
 
 @Component({
   selector: 'app-modal',
-  standalone: true,
   imports: [A11yModule],
   template: `
     <!-- Backdrop -->

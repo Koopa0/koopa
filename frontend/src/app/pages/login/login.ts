@@ -22,7 +22,6 @@ const ERROR_MESSAGES: Record<string, string> = {
 
 @Component({
   selector: 'app-login',
-  standalone: true,
   imports: [RouterLink, LucideAngularModule],
   templateUrl: './login.html',
   changeDetection: ChangeDetectionStrategy.OnPush,

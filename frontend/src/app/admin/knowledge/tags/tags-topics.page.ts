@@ -32,7 +32,6 @@ interface RenameState {
  */
 @Component({
   selector: 'app-tags-topics-page',
-  standalone: true,
   imports: [ModalComponent],
   templateUrl: './tags-topics.page.html',
   changeDetection: ChangeDetectionStrategy.OnPush,

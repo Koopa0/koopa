@@ -36,7 +36,6 @@ import {
  */
 @Component({
   selector: 'app-goal-profile-page',
-  standalone: true,
   imports: [DatePipe],
   templateUrl: './goal-profile.page.html',
   changeDetection: ChangeDetectionStrategy.OnPush,

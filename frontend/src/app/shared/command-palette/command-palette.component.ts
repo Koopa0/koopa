@@ -33,7 +33,6 @@ interface GroupedAction {
 
 @Component({
   selector: 'app-command-palette',
-  standalone: true,
   templateUrl: './command-palette.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
   animations: [

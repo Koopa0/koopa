@@ -73,7 +73,6 @@ const STATUS_LABEL: Record<GoalStatus, string> = {
  */
 @Component({
   selector: 'app-goals-list-page',
-  standalone: true,
   imports: [DataTableComponent, DatePipe, RouterLink],
   templateUrl: './goals-list.page.html',
   changeDetection: ChangeDetectionStrategy.OnPush,

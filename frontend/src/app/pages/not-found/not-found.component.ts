@@ -10,7 +10,6 @@ import { SeoService } from '../../core/services/seo/seo.service';
 
 @Component({
   selector: 'app-not-found',
-  standalone: true,
   imports: [RouterLink, LucideAngularModule],
   template: `
     <section

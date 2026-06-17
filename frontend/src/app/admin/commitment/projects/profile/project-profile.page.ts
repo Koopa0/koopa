@@ -37,7 +37,6 @@ const TODO_COLUMNS: readonly TodoColumn[] = [
  */
 @Component({
   selector: 'app-project-profile-page',
-  standalone: true,
   imports: [DatePipe, RouterLink],
   templateUrl: './project-profile.page.html',
   changeDetection: ChangeDetectionStrategy.OnPush,

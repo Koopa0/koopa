@@ -17,7 +17,6 @@ export type WidgetState = 'loading' | 'error' | 'empty' | 'ok';
  */
 @Component({
   selector: 'app-dashboard-widget',
-  standalone: true,
   imports: [LucideAngularModule],
   templateUrl: './dashboard-widget.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,

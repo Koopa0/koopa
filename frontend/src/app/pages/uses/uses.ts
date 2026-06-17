@@ -68,7 +68,6 @@ const USE_CATEGORIES: UseCategory[] = [
 
 @Component({
   selector: 'app-uses',
-  standalone: true,
   imports: [LucideAngularModule],
   templateUrl: './uses.html',
   changeDetection: ChangeDetectionStrategy.OnPush,

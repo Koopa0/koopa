@@ -5,7 +5,6 @@ import { EnergyMeterComponent } from './energy-meter.component';
 import type { EnergyLevel } from '../../../core/models/workbench.model';
 
 @Component({
-  standalone: true,
   imports: [EnergyMeterComponent],
   template: `<app-energy-meter [level]="level()" />`,
 })

@@ -9,7 +9,6 @@ import { environment } from '../../../environments/environment';
 
 @Component({
   selector: 'app-terms',
-  standalone: true,
   templateUrl: './terms.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })

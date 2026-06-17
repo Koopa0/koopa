@@ -50,7 +50,6 @@ const STATE_LABEL: Record<TodoState, string> = {
  */
 @Component({
   selector: 'app-todo-inspector',
-  standalone: true,
   imports: [ClipboardModule, LucideAngularModule],
   templateUrl: './todo-inspector.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,

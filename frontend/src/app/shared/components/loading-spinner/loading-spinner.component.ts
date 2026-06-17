@@ -2,7 +2,6 @@ import { Component, ChangeDetectionStrategy, input } from '@angular/core';
 
 @Component({
   selector: 'app-loading-spinner',
-  standalone: true,
   template: `
     <div
       class="animate-spin rounded-full border-current border-t-transparent"

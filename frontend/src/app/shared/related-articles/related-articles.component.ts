@@ -13,7 +13,6 @@ const MAX_READ_NEXT = 2;
 /** "Read next" — up to two related pieces as quiet editorial rows. */
 @Component({
   selector: 'app-related-articles',
-  standalone: true,
   imports: [RouterLink],
   template: `
     @if (relatedArticles().length > 0) {

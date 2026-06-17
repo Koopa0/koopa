@@ -39,7 +39,6 @@ const STAGE_DOT: Record<MasteryStage, string> = {
  */
 @Component({
   selector: 'app-concept-profile-page',
-  standalone: true,
   imports: [DatePipe, RouterLink],
   templateUrl: './concept-profile.page.html',
   changeDetection: ChangeDetectionStrategy.OnPush,

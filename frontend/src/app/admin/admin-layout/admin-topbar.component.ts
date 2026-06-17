@@ -29,7 +29,6 @@ const ACTION_CLASS_MAP: Record<ActionKind, string> = {
  */
 @Component({
   selector: 'app-admin-topbar',
-  standalone: true,
   imports: [LucideAngularModule],
   templateUrl: './admin-topbar.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,

@@ -37,7 +37,6 @@ const SKILLS: Skill[] = [
 
 @Component({
   selector: 'app-about',
-  standalone: true,
   imports: [LucideAngularModule],
   templateUrl: './about.html',
   changeDetection: ChangeDetectionStrategy.OnPush,

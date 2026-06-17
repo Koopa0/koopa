@@ -41,7 +41,6 @@ const REFLECTION_MAX = 280;
  */
 @Component({
   selector: 'app-day-close-page',
-  standalone: true,
   imports: [DatePipe, LucideAngularModule, EmptyStateComponent],
   templateUrl: './day-close.page.html',
   changeDetection: ChangeDetectionStrategy.OnPush,

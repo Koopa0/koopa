@@ -18,7 +18,7 @@ import {
 const DETAIL_URL = '/api/admin/knowledge/readings/rd-1';
 
 /** Navigation target for the post-delete redirect. */
-@Component({ selector: 'app-shelf-stub', standalone: true, template: '' })
+@Component({ selector: 'app-shelf-stub', template: '' })
 class ShelfStubComponent {}
 
 const routes: Routes = [

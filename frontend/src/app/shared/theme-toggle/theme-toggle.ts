@@ -9,7 +9,6 @@ import { ThemeService } from '../../core/services/theme.service';
  */
 @Component({
   selector: 'app-theme-toggle',
-  standalone: true,
   imports: [LucideAngularModule],
   template: `
     <button

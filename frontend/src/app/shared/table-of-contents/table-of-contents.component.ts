@@ -27,7 +27,6 @@ export interface TocItem {
 
 @Component({
   selector: 'app-table-of-contents',
-  standalone: true,
   template: `
     @if (tocItems().length > 0) {
       <nav aria-label="On this page">

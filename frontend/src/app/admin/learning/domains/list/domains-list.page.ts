@@ -20,7 +20,6 @@ import { DataTableComponent } from '../../../../shared/components/data-table/dat
  */
 @Component({
   selector: 'app-domains-list-page',
-  standalone: true,
   imports: [DataTableComponent, RouterLink],
   templateUrl: './domains-list.page.html',
   changeDetection: ChangeDetectionStrategy.OnPush,

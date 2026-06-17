@@ -26,7 +26,6 @@ import type {
  */
 @Component({
   selector: 'app-session-timeline-page',
-  standalone: true,
   imports: [DatePipe, RouterLink],
   templateUrl: './session-timeline.page.html',
   changeDetection: ChangeDetectionStrategy.OnPush,

@@ -73,7 +73,6 @@ const ENTITY_ROUTE: Record<ActivityEntityType, string> = {
  */
 @Component({
   selector: 'app-activity-page',
-  standalone: true,
   imports: [DatePipe],
   templateUrl: './activity.page.html',
   changeDetection: ChangeDetectionStrategy.OnPush,

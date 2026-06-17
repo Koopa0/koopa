@@ -37,7 +37,6 @@ import { RelatedArticlesComponent } from '../../shared/related-articles/related-
  */
 @Component({
   selector: 'app-article-detail',
-  standalone: true,
   imports: [
     DatePipe,
     RouterLink,

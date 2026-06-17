@@ -61,7 +61,6 @@ function quarterOptions(now: Date): string[] {
  */
 @Component({
   selector: 'app-goal-create-page',
-  standalone: true,
   imports: [RouterLink, FormField],
   templateUrl: './goal-create.page.html',
   changeDetection: ChangeDetectionStrategy.OnPush,

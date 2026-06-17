@@ -33,7 +33,6 @@ const HEALTH_CHIPS: readonly HealthFilter[] = [
  */
 @Component({
   selector: 'app-feeds-list-page',
-  standalone: true,
   imports: [DataTableComponent, DatePipe],
   templateUrl: './feeds-list.page.html',
   changeDetection: ChangeDetectionStrategy.OnPush,

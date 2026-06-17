@@ -64,7 +64,6 @@ interface ObservationGroup {
  */
 @Component({
   selector: 'app-concept-inspector',
-  standalone: true,
   imports: [DatePipe, ClipboardModule, RouterLink, LucideAngularModule],
   templateUrl: './concept-inspector.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,

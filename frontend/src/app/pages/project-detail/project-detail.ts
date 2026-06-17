@@ -77,7 +77,6 @@ function fromBareRow(row: ApiProject): ProjectProfile {
 
 @Component({
   selector: 'app-project-detail',
-  standalone: true,
   imports: [RouterLink, LucideAngularModule],
   templateUrl: './project-detail.html',
   changeDetection: ChangeDetectionStrategy.OnPush,

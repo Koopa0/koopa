@@ -39,7 +39,6 @@ const KEY_LEGEND: readonly KeyHint[] = [
  */
 @Component({
   selector: 'app-inbox-zero-page',
-  standalone: true,
   imports: [LucideAngularModule, EmptyStateComponent, ClarifyModalComponent],
   providers: [InboxZeroStore],
   templateUrl: './inbox-zero.page.html',

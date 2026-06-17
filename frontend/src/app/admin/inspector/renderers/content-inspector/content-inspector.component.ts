@@ -27,7 +27,6 @@ type ContentTab = 'preview' | 'metadata';
  */
 @Component({
   selector: 'app-content-inspector',
-  standalone: true,
   imports: [DatePipe],
   templateUrl: './content-inspector.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,

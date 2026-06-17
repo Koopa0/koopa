@@ -53,7 +53,6 @@ type EvidenceKind = 'supporting' | 'counter';
  */
 @Component({
   selector: 'app-hypothesis-profile-page',
-  standalone: true,
   imports: [DatePipe],
   templateUrl: './hypothesis-profile.page.html',
   changeDetection: ChangeDetectionStrategy.OnPush,

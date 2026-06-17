@@ -36,7 +36,6 @@ const SEARCH_DEBOUNCE_MS = 300;
 
 @Component({
   selector: 'app-search',
-  standalone: true,
   imports: [LucideAngularModule, PostRowComponent],
   templateUrl: './search.html',
   changeDetection: ChangeDetectionStrategy.OnPush,

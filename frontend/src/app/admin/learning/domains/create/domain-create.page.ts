@@ -31,7 +31,6 @@ const SLUG_PATTERN = /^[a-z0-9]+(-[a-z0-9]+)*$/;
  */
 @Component({
   selector: 'app-domain-create-page',
-  standalone: true,
   imports: [RouterLink, FormField],
   templateUrl: './domain-create.page.html',
   changeDetection: ChangeDetectionStrategy.OnPush,

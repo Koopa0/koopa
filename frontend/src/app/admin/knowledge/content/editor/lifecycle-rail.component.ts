@@ -54,7 +54,6 @@ const ACTIONS_BY_STATUS: Record<ContentStatus, readonly RailAction[]> = {
  */
 @Component({
   selector: 'app-content-lifecycle-rail',
-  standalone: true,
   templateUrl: './lifecycle-rail.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })

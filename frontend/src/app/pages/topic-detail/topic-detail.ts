@@ -42,7 +42,6 @@ const CONTENT_TYPES: readonly ContentType[] = [
  */
 @Component({
   selector: 'app-topic-detail',
-  standalone: true,
   imports: [RouterLink, LucideAngularModule, PostRowComponent],
   templateUrl: './topic-detail.html',
   changeDetection: ChangeDetectionStrategy.OnPush,

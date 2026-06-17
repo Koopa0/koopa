@@ -28,7 +28,6 @@ import { AdminTopbarService } from '../../../admin-layout/admin-topbar.service';
  */
 @Component({
   selector: 'app-feed-triage-page',
-  standalone: true,
   imports: [DatePipe],
   templateUrl: './feed-triage.page.html',
   changeDetection: ChangeDetectionStrategy.OnPush,

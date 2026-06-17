@@ -63,7 +63,6 @@ const STAGE_DOT: Record<MasteryStage, string> = {
  */
 @Component({
   selector: 'app-concepts-list-page',
-  standalone: true,
   imports: [DataTableComponent],
   templateUrl: './concepts-list.page.html',
   changeDetection: ChangeDetectionStrategy.OnPush,

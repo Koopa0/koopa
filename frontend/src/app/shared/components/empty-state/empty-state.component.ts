@@ -3,7 +3,6 @@ import { LucideAngularModule, FileText } from 'lucide-angular';
 
 @Component({
   selector: 'app-empty-state',
-  standalone: true,
   imports: [LucideAngularModule],
   template: `
     <div class="flex flex-col items-center gap-3 py-16 text-center">

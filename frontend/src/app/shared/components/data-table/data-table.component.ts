@@ -19,7 +19,6 @@ import { FileText } from 'lucide-angular';
  */
 @Component({
   selector: 'app-data-table',
-  standalone: true,
   imports: [LoadingSpinnerComponent, EmptyStateComponent],
   template: `
     @if (error()) {

@@ -40,7 +40,6 @@ const STATUS_OPTIONS: readonly { status: ReadingStatus; label: string }[] = [
  */
 @Component({
   selector: 'app-reading-detail-page',
-  standalone: true,
   imports: [RouterLink],
   templateUrl: './reading-detail.page.html',
   changeDetection: ChangeDetectionStrategy.OnPush,

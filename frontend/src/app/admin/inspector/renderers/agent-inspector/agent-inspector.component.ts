@@ -31,7 +31,6 @@ import type { AgentDetail } from '../../../../core/models/workbench.model';
  */
 @Component({
   selector: 'app-agent-inspector',
-  standalone: true,
   imports: [DatePipe, ClipboardModule, RouterLink, LucideAngularModule],
   templateUrl: './agent-inspector.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,

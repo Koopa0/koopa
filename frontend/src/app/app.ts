@@ -32,7 +32,6 @@ import { KeyboardShortcutsService } from './core/services/keyboard-shortcuts.ser
 
 @Component({
   selector: 'app-root',
-  standalone: true,
   imports: [
     RouterOutlet,
     RouterLink,

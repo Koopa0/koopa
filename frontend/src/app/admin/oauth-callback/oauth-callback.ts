@@ -9,7 +9,6 @@ import { AuthService } from '../../core/services/auth.service';
 
 @Component({
   selector: 'app-oauth-callback',
-  standalone: true,
   template: `
     <div
       class="flex min-h-[calc(100vh-4rem)] items-center justify-center bg-bg"

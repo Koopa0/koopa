@@ -19,7 +19,6 @@ const toastSlideIn = trigger('toastSlideIn', [
 
 @Component({
   selector: 'app-toast',
-  standalone: true,
   templateUrl: './toast.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
   animations: [toastSlideIn],

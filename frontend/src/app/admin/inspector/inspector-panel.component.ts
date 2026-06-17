@@ -26,7 +26,6 @@ import { ConceptInspectorComponent } from './renderers/concept-inspector/concept
  */
 @Component({
   selector: 'app-inspector-panel',
-  standalone: true,
   imports: [
     LucideAngularModule,
     GoalInspectorComponent,

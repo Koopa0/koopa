@@ -39,7 +39,6 @@ import {
  */
 @Component({
   selector: 'app-learning-dashboard-page',
-  standalone: true,
   imports: [DatePipe, DashboardWidgetComponent, NextUpCardComponent],
   templateUrl: './learning-dashboard.page.html',
   changeDetection: ChangeDetectionStrategy.OnPush,

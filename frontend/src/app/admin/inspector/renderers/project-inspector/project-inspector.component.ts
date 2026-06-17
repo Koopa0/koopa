@@ -15,7 +15,6 @@ type ProjectTab = 'overview' | 'activity';
 
 @Component({
   selector: 'app-project-inspector',
-  standalone: true,
   imports: [DatePipe],
   templateUrl: './project-inspector.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,

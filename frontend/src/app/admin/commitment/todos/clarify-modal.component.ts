@@ -26,7 +26,6 @@ const ENERGY_OPTIONS: readonly EnergyLevel[] = ['low', 'medium', 'high'];
  */
 @Component({
   selector: 'app-clarify-modal',
-  standalone: true,
   imports: [ModalComponent, FormFieldComponent],
   templateUrl: './clarify-modal.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,

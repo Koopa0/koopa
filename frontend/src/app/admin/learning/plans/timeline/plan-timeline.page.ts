@@ -113,7 +113,6 @@ const STATUS_ACTIONS: Record<PlanStatus, StatusAction[]> = {
  */
 @Component({
   selector: 'app-plan-timeline-page',
-  standalone: true,
   imports: [
     DatePipe,
     CdkDropList,

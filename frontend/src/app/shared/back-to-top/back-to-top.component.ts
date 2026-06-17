@@ -12,7 +12,6 @@ import { LucideAngularModule, ChevronUp } from 'lucide-angular';
 
 @Component({
   selector: 'app-back-to-top',
-  standalone: true,
   imports: [LucideAngularModule],
   template: `
     <button

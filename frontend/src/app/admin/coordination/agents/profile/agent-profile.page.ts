@@ -21,7 +21,6 @@ import type { AgentDetail } from '../../../../core/models/workbench.model';
  */
 @Component({
   selector: 'app-agent-profile-page',
-  standalone: true,
   imports: [DatePipe],
   templateUrl: './agent-profile.page.html',
   changeDetection: ChangeDetectionStrategy.OnPush,

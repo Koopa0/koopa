@@ -54,7 +54,6 @@ import type { EnergyLevel } from '../../../core/models/workbench.model';
  */
 @Component({
   selector: 'app-today-page',
-  standalone: true,
   imports: [
     RouterLink,
     DatePipe,

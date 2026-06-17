@@ -97,7 +97,6 @@ const STATUS_TEXT_CLASS: Record<ContentStatus, string> = {
  */
 @Component({
   selector: 'app-content-list-page',
-  standalone: true,
   imports: [DataTableComponent, DatePipe],
   templateUrl: './content-list.page.html',
   changeDetection: ChangeDetectionStrategy.OnPush,

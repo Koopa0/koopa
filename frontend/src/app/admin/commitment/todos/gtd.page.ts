@@ -42,7 +42,6 @@ import {
  */
 @Component({
   selector: 'app-gtd-page',
-  standalone: true,
   imports: [
     DatePipe,
     LucideAngularModule,

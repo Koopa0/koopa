@@ -49,7 +49,6 @@ const ACTIVITY_TEXT_CLASS: Record<AgentActivityState, string> = {
  */
 @Component({
   selector: 'app-agents-list-page',
-  standalone: true,
   imports: [DataTableComponent],
   templateUrl: './agents-list.page.html',
   changeDetection: ChangeDetectionStrategy.OnPush,

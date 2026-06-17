@@ -16,7 +16,6 @@ function session(): ActiveSession {
 }
 
 @Component({
-  standalone: true,
   imports: [TodaySessionCardComponent],
   template: `<app-today-session-card [session]="session()" />`,
 })

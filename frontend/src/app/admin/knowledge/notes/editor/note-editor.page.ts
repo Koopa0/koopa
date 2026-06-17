@@ -93,7 +93,6 @@ const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
  */
 @Component({
   selector: 'app-note-editor-page',
-  standalone: true,
   imports: [ReactiveFormsModule, DatePipe],
   templateUrl: './note-editor.page.html',
   changeDetection: ChangeDetectionStrategy.OnPush,

@@ -2,7 +2,6 @@ import { Component, input, ChangeDetectionStrategy } from '@angular/core';
 
 @Component({
   selector: 'app-skeleton',
-  standalone: true,
   template: `
     @switch (variant()) {
       @case ('card') {

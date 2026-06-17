@@ -46,7 +46,6 @@ const KIND_ROUTE: Record<AdminSearchKind, string[]> = {
  */
 @Component({
   selector: 'app-knowledge-search-page',
-  standalone: true,
   templateUrl: './knowledge-search.page.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {

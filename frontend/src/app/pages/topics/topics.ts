@@ -17,7 +17,6 @@ import type { ApiTopic } from '../../core/models';
 
 @Component({
   selector: 'app-topics',
-  standalone: true,
   imports: [RouterLink, LucideAngularModule],
   templateUrl: './topics.html',
   changeDetection: ChangeDetectionStrategy.OnPush,

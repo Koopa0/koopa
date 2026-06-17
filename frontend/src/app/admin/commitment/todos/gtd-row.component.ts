@@ -33,7 +33,6 @@ import {
  */
 @Component({
   selector: 'app-gtd-row',
-  standalone: true,
   imports: [LucideAngularModule, EnergyMeterComponent],
   templateUrl: './gtd-row.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,

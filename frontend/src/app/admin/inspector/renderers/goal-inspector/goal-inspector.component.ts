@@ -15,7 +15,6 @@ type GoalTab = 'overview' | 'activity';
 
 @Component({
   selector: 'app-goal-inspector',
-  standalone: true,
   imports: [DatePipe],
   templateUrl: './goal-inspector.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,

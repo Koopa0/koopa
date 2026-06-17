@@ -2,7 +2,6 @@ import { Component, ChangeDetectionStrategy, input } from '@angular/core';
 
 @Component({
   selector: 'app-form-field',
-  standalone: true,
   template: `
     <div class="space-y-1.5">
       @if (label()) {

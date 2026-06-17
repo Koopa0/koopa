@@ -46,7 +46,6 @@ const GOAL_LABEL_MAX = 40;
  */
 @Component({
   selector: 'app-plan-create-page',
-  standalone: true,
   imports: [RouterLink, FormField],
   templateUrl: './plan-create.page.html',
   changeDetection: ChangeDetectionStrategy.OnPush,

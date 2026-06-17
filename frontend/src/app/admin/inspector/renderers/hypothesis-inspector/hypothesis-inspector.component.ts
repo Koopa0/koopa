@@ -21,7 +21,6 @@ type HypothesisTab = 'claim' | 'evidence';
  */
 @Component({
   selector: 'app-hypothesis-inspector',
-  standalone: true,
   imports: [DatePipe, JsonPipe],
   templateUrl: './hypothesis-inspector.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,

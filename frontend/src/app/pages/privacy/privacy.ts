@@ -9,7 +9,6 @@ import { environment } from '../../../environments/environment';
 
 @Component({
   selector: 'app-privacy',
-  standalone: true,
   templateUrl: './privacy.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })

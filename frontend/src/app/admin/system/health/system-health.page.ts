@@ -28,7 +28,6 @@ interface HealthTile {
  */
 @Component({
   selector: 'app-system-health-page',
-  standalone: true,
   imports: [DatePipe, DecimalPipe, StatusBadgeComponent, LoadingSpinnerComponent],
   templateUrl: './system-health.page.html',
   changeDetection: ChangeDetectionStrategy.OnPush,

@@ -22,7 +22,6 @@ const VARIANT_CLASSES: Record<BadgeVariant, string> = {
 
 @Component({
   selector: 'app-status-badge',
-  standalone: true,
   template: `
     <span
       class="inline-flex items-center rounded-sm border px-2 py-0.5 font-mono text-[11px] tracking-wide uppercase"

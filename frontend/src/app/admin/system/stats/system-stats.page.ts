@@ -31,7 +31,6 @@ interface StatTile {
  */
 @Component({
   selector: 'app-system-stats-page',
-  standalone: true,
   imports: [DecimalPipe, DataTableComponent, LoadingSpinnerComponent],
   templateUrl: './system-stats.page.html',
   changeDetection: ChangeDetectionStrategy.OnPush,

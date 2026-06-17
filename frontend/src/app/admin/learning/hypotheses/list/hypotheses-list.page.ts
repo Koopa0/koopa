@@ -58,7 +58,6 @@ const STATE_TEXT_CLASS: Record<HypothesisState, string> = {
  */
 @Component({
   selector: 'app-hypotheses-list-page',
-  standalone: true,
   imports: [DataTableComponent, DatePipe, RouterLink],
   templateUrl: './hypotheses-list.page.html',
   changeDetection: ChangeDetectionStrategy.OnPush,

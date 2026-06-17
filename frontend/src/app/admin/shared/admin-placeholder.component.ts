@@ -27,7 +27,6 @@ const EMPTY_VM: PlaceholderVm = { title: '', crumbs: [] };
  */
 @Component({
   selector: 'app-admin-placeholder',
-  standalone: true,
   template: `
     <section
       class="flex flex-1 flex-col items-center justify-center p-8 text-center"

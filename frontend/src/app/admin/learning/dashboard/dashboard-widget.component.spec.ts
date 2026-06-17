@@ -9,7 +9,6 @@ import {
 // Host wraps the widget so projected content behaves exactly as the
 // dashboard page uses it: body markup only renders in the ok state.
 @Component({
-  standalone: true,
   imports: [DashboardWidgetComponent],
   template: `
     <app-dashboard-widget

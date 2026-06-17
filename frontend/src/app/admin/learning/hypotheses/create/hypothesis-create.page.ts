@@ -25,7 +25,6 @@ interface HypothesisForm {
  */
 @Component({
   selector: 'app-hypothesis-create-page',
-  standalone: true,
   imports: [RouterLink, FormField],
   templateUrl: './hypothesis-create.page.html',
   changeDetection: ChangeDetectionStrategy.OnPush,

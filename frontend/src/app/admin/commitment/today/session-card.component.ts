@@ -37,7 +37,6 @@ function formatElapsed(startedAt: string, nowMs: number): string {
  */
 @Component({
   selector: 'app-today-session-card',
-  standalone: true,
   imports: [DatePipe, RouterLink],
   template: `
     <section

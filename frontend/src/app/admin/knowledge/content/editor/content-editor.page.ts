@@ -96,7 +96,6 @@ const WORDS_PER_MINUTE = 220;
  */
 @Component({
   selector: 'app-content-editor-page',
-  standalone: true,
   imports: [
     ReactiveFormsModule,
     DatePipe,

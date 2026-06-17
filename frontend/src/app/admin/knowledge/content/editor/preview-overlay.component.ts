@@ -20,7 +20,6 @@ import type { ContentType } from '../../../../core/models/api.model';
  */
 @Component({
   selector: 'app-content-preview-overlay',
-  standalone: true,
   imports: [A11yModule],
   template: `
     <div

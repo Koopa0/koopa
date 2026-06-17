@@ -11,7 +11,6 @@ import type { ApiContent } from '../../core/models';
  */
 @Component({
   selector: 'app-post-row',
-  standalone: true,
   imports: [RouterLink, DatePipe],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `

@@ -22,7 +22,6 @@ import type { ApiPortfolioProject } from '../../core/models';
  */
 @Component({
   selector: 'app-projects',
-  standalone: true,
   imports: [RouterLink, LucideAngularModule],
   templateUrl: './projects.html',
   changeDetection: ChangeDetectionStrategy.OnPush,

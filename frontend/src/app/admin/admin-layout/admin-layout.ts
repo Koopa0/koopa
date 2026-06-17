@@ -38,7 +38,6 @@ import { AdminNavCountsService } from './admin-nav-counts.service';
  */
 @Component({
   selector: 'app-admin-layout',
-  standalone: true,
   imports: [
     RouterOutlet,
     RouterLink,

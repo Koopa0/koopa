@@ -82,7 +82,6 @@ const KIND_SHORT: Record<NoteKind, string> = {
  */
 @Component({
   selector: 'app-notes-list-page',
-  standalone: true,
   imports: [DataTableComponent, DatePipe],
   templateUrl: './notes-list.page.html',
   changeDetection: ChangeDetectionStrategy.OnPush,

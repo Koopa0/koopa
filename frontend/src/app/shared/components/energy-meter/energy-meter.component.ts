@@ -30,7 +30,6 @@ const LIT_COLOR_CLASS: Record<EnergyLevel, string> = {
  */
 @Component({
   selector: 'app-energy-meter',
-  standalone: true,
   template: `
     <span
       class="inline-flex items-end gap-[2px]"

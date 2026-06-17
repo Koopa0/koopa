@@ -50,7 +50,6 @@ interface ContentsQuery {
  */
 @Component({
   selector: 'app-articles',
-  standalone: true,
   imports: [LucideAngularModule, PostRowComponent, SkeletonComponent],
   templateUrl: './articles.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
