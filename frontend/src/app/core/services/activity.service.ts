@@ -29,7 +29,7 @@ export class ActivityService {
     if (query.until) params['until'] = query.until;
     if (query.actor) params['actor'] = query.actor;
     return this.api.getData<ChangelogResponse>(
-      '/api/admin/coordination/activity',
+      '/api/admin/system/activity',
       params,
     );
   }

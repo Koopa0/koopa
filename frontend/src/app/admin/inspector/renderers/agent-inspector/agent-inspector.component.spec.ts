@@ -55,7 +55,7 @@ describe('AgentInspectorComponent', () => {
 
   function flushAll(name: string, response: AgentDetail | null): void {
     const reqs = httpMock.match((r) =>
-      r.url.includes(`/api/admin/coordination/agents/${name}`),
+      r.url.includes(`/api/admin/system/agents/${name}`),
     );
     expect(reqs.length).toBeGreaterThan(0);
     for (const r of reqs) {

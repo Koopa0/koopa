@@ -1,0 +1,204 @@
+@if (isLoading()) {
+  <div
+    class="mx-auto w-full max-w-3xl flex-1 px-6 py-6"
+    data-testid="daily-plan-loading"
+    aria-busy="true"
+    aria-label="Loading today's plan"
+  >
+    <div class="h-9 w-56 animate-pulse rounded-sm bg-elevated"></div>
+    <div class="mt-5 flex flex-col gap-2">
+      @for (block of [1, 2, 3]; track block) {
+        <div class="h-11 animate-pulse rounded-sm bg-elevated"></div>
+      }
+    </div>
+  </div>
+} @else if (isError()) {
+  <div
+    class="flex flex-1 flex-col items-center justify-center gap-2 p-10 text-center"
+    data-testid="daily-plan-error"
+  >
+    <lucide-icon
+      [img]="CalendarCheckIcon"
+      [size]="28"
+      class="mb-1 text-error opacity-70"
+      aria-hidden="true"
+    />
+    <h2 class="font-display text-sm font-semibold text-fg">
+      Couldn't load today's plan
+    </h2>
+    <p class="max-w-[280px] text-xs leading-relaxed text-fg-subtle">
+      The daily-plan service didn't respond. Nothing was changed.
+    </p>
+    <button
+      type="button"
+      (click)="retry()"
+      data-testid="daily-plan-retry"
+      class="mt-2 rounded-sm border border-border bg-elevated px-3 py-1.5 text-xs text-fg-muted transition-colors hover:border-brand hover:text-brand"
+    >
+      Retry
+    </button>
+  </div>
+} @else {
+  <div class="mx-auto flex w-full max-w-3xl flex-1 flex-col gap-5 px-6 py-6">
+    <!-- Header -->
+    <div
+      class="flex flex-wrap items-end justify-between gap-4 border-b border-border pb-4"
+    >
+      <div>
+        <h1
+          class="font-display text-2xl font-semibold text-fg"
+          data-testid="daily-plan-title"
+        >
+          Plan today
+        </h1>
+        <p class="mt-1 text-[11px] text-fg-subtle">
+          @if (date()) {
+            {{ date() | date: 'EEEE, MMMM d' }} ·
+          }
+          Compose, reorder, and trim today's committed plan.
+        </p>
+      </div>
+      <span
+        class="font-mono text-[11px] text-fg-muted"
+        data-testid="daily-plan-count"
+        aria-live="polite"
+      >
+        {{ planned().length }} planned
+      </span>
+    </div>
+
+    <!-- Plan list -->
+    @if (isEmpty()) {
+      <app-empty-state
+        [icon]="CalendarCheckIcon"
+        title="No plan yet"
+        description="Add a todo below to start composing today's plan."
+        data-testid="daily-plan-empty"
+      />
+    } @else {
+      <ol
+        cdkDropList
+        (cdkDropListDropped)="drop($event)"
+        class="flex flex-col gap-2"
+        data-testid="daily-plan-list"
+      >
+        @for (item of planned(); let i = $index; track item.id) {
+          <li
+            cdkDrag
+            [cdkDragDisabled]="busy()"
+            class="group flex items-center gap-3 rounded-sm border border-border bg-elevated px-3 py-2"
+            [attr.data-testid]="'daily-plan-item-' + item.todo_id"
+          >
+            <button
+              type="button"
+              cdkDragHandle
+              class="cursor-grab text-fg-faint opacity-60 transition-opacity hover:opacity-100 focus-visible:opacity-100 disabled:cursor-not-allowed"
+              [disabled]="busy()"
+              [attr.aria-label]="'Reorder ' + item.title"
+              [attr.data-testid]="'daily-plan-grip-' + item.todo_id"
+            >
+              <svg
+                width="10"
+                height="14"
+                viewBox="0 0 10 14"
+                fill="currentColor"
+                aria-hidden="true"
+              >
+                <circle cx="2.5" cy="2.5" r="1.25" />
+                <circle cx="7.5" cy="2.5" r="1.25" />
+                <circle cx="2.5" cy="7" r="1.25" />
+                <circle cx="7.5" cy="7" r="1.25" />
+                <circle cx="2.5" cy="11.5" r="1.25" />
+                <circle cx="7.5" cy="11.5" r="1.25" />
+              </svg>
+            </button>
+
+            <span
+              class="w-5 shrink-0 text-right font-mono text-[11px] tabular-nums text-fg-faint"
+              >{{ i + 1 }}</span
+            >
+
+            <span class="min-w-0 flex-1 truncate text-sm text-fg">
+              {{ item.title }}
+            </span>
+
+            <button
+              type="button"
+              [disabled]="busy() || isLastPlanned(item.todo_id)"
+              (click)="remove(item.todo_id)"
+              [attr.data-testid]="'daily-plan-remove-' + item.todo_id"
+              [attr.title]="
+                isLastPlanned(item.todo_id)
+                  ? 'A day needs at least one planned item — drop it from Today instead'
+                  : 'Remove from today'
+              "
+              class="shrink-0 rounded-sm border border-border px-2 py-1 text-[11px] text-fg-muted transition-colors hover:border-error hover:text-error disabled:opacity-40 disabled:hover:border-border disabled:hover:text-fg-muted"
+            >
+              Remove
+            </button>
+          </li>
+        }
+      </ol>
+    }
+
+    <!-- Add an un-planned todo -->
+    <section
+      class="rounded-md border border-border bg-panel p-4"
+      data-testid="daily-plan-add"
+    >
+      <div class="flex items-center justify-between gap-3">
+        <div>
+          <h2 class="font-display text-sm font-semibold text-fg">
+            Add to today
+          </h2>
+          <p class="mt-1 text-[11px] text-fg-subtle">
+            Pick a clarified todo to commit to today's plan.
+          </p>
+        </div>
+        <button
+          type="button"
+          (click)="togglePicker()"
+          [disabled]="busy() || candidates().length === 0"
+          data-testid="daily-plan-add-toggle"
+          class="flex shrink-0 items-center gap-1.5 rounded-sm border border-border bg-elevated px-3 py-1.5 text-xs text-fg-muted transition-colors hover:border-brand hover:text-brand disabled:opacity-50"
+        >
+          <lucide-icon [img]="ListPlusIcon" [size]="14" aria-hidden="true" />
+          {{ picking() ? 'Close' : 'Add todo' }}
+        </button>
+      </div>
+
+      @if (candidates().length === 0) {
+        <p
+          class="mt-3 text-[11px] text-fg-subtle"
+          data-testid="daily-plan-no-candidates"
+        >
+          No un-planned todos. Clarify something in the inbox first.
+        </p>
+      } @else if (picking()) {
+        <ul
+          class="mt-3 flex max-h-64 flex-col gap-1 overflow-y-auto"
+          data-testid="daily-plan-candidates"
+        >
+          @for (todo of candidates(); track todo.id) {
+            <li>
+              <button
+                type="button"
+                [disabled]="busy()"
+                (click)="add(todo)"
+                [attr.data-testid]="'daily-plan-candidate-' + todo.id"
+                class="flex w-full items-center justify-between gap-3 rounded-sm border border-border bg-elevated px-3 py-2 text-left text-sm text-fg transition-colors hover:border-brand disabled:opacity-50"
+              >
+                <span class="min-w-0 flex-1 truncate">{{ todo.title }}</span>
+                @if (todo.project_title) {
+                  <span class="shrink-0 font-mono text-[10px] text-fg-subtle">
+                    {{ todo.project_title }}
+                  </span>
+                }
+              </button>
+            </li>
+          }
+        </ul>
+      }
+    </section>
+  </div>
+}

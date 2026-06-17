@@ -133,10 +133,9 @@ export const routes: Routes = [
       {
         path: 'daily/plan',
         loadComponent: () =>
-          import('./admin/shared/admin-placeholder.component').then(
-            (m) => m.AdminPlaceholderComponent,
+          import('./admin/daily/plan/daily-plan.page').then(
+            (m) => m.DailyPlanPageComponent,
           ),
-        data: { title: 'Plan', crumbs: ['Daily', 'Plan'] },
       },
       {
         path: 'daily/inbox',
@@ -418,33 +417,23 @@ export const routes: Routes = [
       {
         path: 'system/activity',
         loadComponent: () =>
-          import('./admin/coordination/activity/activity.page').then(
+          import('./admin/system/activity/activity.page').then(
             (m) => m.ActivityPageComponent,
           ),
       },
       {
         path: 'system/agents',
         loadComponent: () =>
-          import('./admin/coordination/agents/list/agents-list.page').then(
+          import('./admin/system/agents/list/agents-list.page').then(
             (m) => m.AgentsListPageComponent,
           ),
       },
       {
         path: 'system/agents/:name',
         loadComponent: () =>
-          import('./admin/coordination/agents/profile/agent-profile.page').then(
+          import('./admin/system/agents/profile/agent-profile.page').then(
             (m) => m.AgentProfilePageComponent,
           ),
-      },
-
-      // ── Settings ─────────────────────────────────────────────────
-      {
-        path: 'settings',
-        loadComponent: () =>
-          import('./admin/shared/admin-placeholder.component').then(
-            (m) => m.AdminPlaceholderComponent,
-          ),
-        data: { title: 'Settings', crumbs: ['Settings'] },
       },
 
       // ── Retired-path redirects (old links keep working) ──────────

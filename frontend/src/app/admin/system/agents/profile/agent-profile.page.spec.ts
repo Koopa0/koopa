@@ -10,7 +10,7 @@ import type { AgentDetail } from '../../../../core/models/workbench.model';
 
 // The Agent Profile is a read-only registry view: it renders the hero
 // (name / display_name / platform / status) and the capability badges,
-// both sourced from GET /api/admin/coordination/agents/:name. The A2A
+// both sourced from GET /api/admin/system/agents/:name. The A2A
 // task/notes tabs were retired with the backend coordination endpoints.
 
 function agentDetail(): AgentDetail {

@@ -9,12 +9,7 @@ import {
 } from '@angular/router';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { filter } from 'rxjs/operators';
-import {
-  Accessibility,
-  LogOut,
-  LucideAngularModule,
-  Settings as SettingsIcon,
-} from 'lucide-angular';
+import { Accessibility, LogOut, LucideAngularModule } from 'lucide-angular';
 import { AuthService } from '../../core/services/auth.service';
 import { KeyboardShortcutsService } from '../../core/services/keyboard-shortcuts.service';
 import { ToastComponent } from '../../shared/toast/toast.component';
@@ -74,7 +69,6 @@ export class AdminLayoutComponent {
 
   protected readonly LogOutIcon = LogOut;
   protected readonly AccessibilityIcon = Accessibility;
-  protected readonly SettingsIcon = SettingsIcon;
 
   constructor() {
     // Inspector side panel is still used by some list pages in transit.

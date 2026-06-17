@@ -256,8 +256,8 @@ fi
 STALE_COPY_FILES=(
   "src/app/admin/commitment/todos/gtd.page.html"
   "src/app/admin/commitment/todos/gtd.page.ts"
-  "src/app/admin/coordination/agents/profile/agent-profile.page.html"
-  "src/app/admin/coordination/agents/profile/agent-profile.page.ts"
+  "src/app/admin/system/agents/profile/agent-profile.page.html"
+  "src/app/admin/system/agents/profile/agent-profile.page.ts"
   "src/app/admin/knowledge/content/editor/content-editor.page.ts"
   "src/app/admin/knowledge/notes/editor/note-editor.page.html"
   "src/app/admin/knowledge/notes/editor/note-editor.page.ts"

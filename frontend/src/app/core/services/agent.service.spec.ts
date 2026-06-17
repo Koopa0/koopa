@@ -55,7 +55,7 @@ describe('AgentService', () => {
       expect(res.state).toBe('ok');
     });
 
-    const req = httpMock.expectOne((r) => r.url.includes('/api/admin/coordination/agents'));
+    const req = httpMock.expectOne((r) => r.url.includes('/api/admin/system/agents'));
     expect(req.request.method).toBe('GET');
     req.flush({ data: mockResponse });
   });
@@ -67,7 +67,7 @@ describe('AgentService', () => {
       expect(res.agents[0].activity_state).toBe('blocked');
     });
 
-    const req = httpMock.expectOne((r) => r.url.includes('/api/admin/coordination/agents'));
+    const req = httpMock.expectOne((r) => r.url.includes('/api/admin/system/agents'));
     req.flush({
       data: {
         state: 'warn',
@@ -89,7 +89,7 @@ describe('AgentService', () => {
     });
 
     const req = httpMock.expectOne((r) =>
-      r.url.includes('/api/admin/coordination/agents/research-lab'),
+      r.url.includes('/api/admin/system/agents/research-lab'),
     );
     expect(req.request.method).toBe('GET');
     req.flush({ data: mockAgent });

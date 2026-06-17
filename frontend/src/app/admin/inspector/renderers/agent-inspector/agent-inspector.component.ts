@@ -27,7 +27,7 @@ import type { AgentDetail } from '../../../../core/models/workbench.model';
  * - NO action buttons — agents are hardcoded code change, not workbench-mutable.
  * - `system` agent gets amber warning (hidden fallback identity per Fact 9).
  *
- * Backend: GET /api/admin/coordination/agents/{name}.
+ * Backend: GET /api/admin/system/agents/{name}.
  */
 @Component({
   selector: 'app-agent-inspector',

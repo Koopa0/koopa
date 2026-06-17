@@ -10,7 +10,7 @@ import type {
  * Agent service — registry list + per-agent open/blocked task counts for the
  * AGENTS cell.
  *
- * Backend: internal/agent/handler.go::List (route GET /api/admin/coordination/agents) +
+ * Backend: internal/agent/handler.go::List (route GET /api/admin/system/agents) +
  * task store batch counts. The cell warns when any
  * agent.activity_state === 'blocked' and surfaces one word per agent
  * (active / idle / blocked).
@@ -20,7 +20,7 @@ export class AgentService {
   private readonly api = inject(ApiService);
 
   list(): Observable<AgentsResponse> {
-    return this.api.getData<AgentsResponse>('/api/admin/coordination/agents');
+    return this.api.getData<AgentsResponse>('/api/admin/system/agents');
   }
 
   /**
@@ -30,7 +30,7 @@ export class AgentService {
    */
   get(name: string): Observable<AgentDetail> {
     return this.api.getData<AgentDetail>(
-      `/api/admin/coordination/agents/${name}`,
+      `/api/admin/system/agents/${name}`,
     );
   }
 }
