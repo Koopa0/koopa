@@ -112,7 +112,9 @@ export interface ProjectDetail {
   status: string;
   area: string;
   goal_breadcrumb: GoalBreadcrumb | null;
-  todos_by_state: TodosByState;
+  // null when the project handler runs without a todo store wired (the Go
+  // `todos_by_state` is an uninitialised `any` in that path); consumers guard.
+  todos_by_state: TodosByState | null;
   recent_activity: ActivityItem[];
   related_content: ContentSummary[];
 }

@@ -15,10 +15,11 @@ import { AdminTopbarService } from '../../../admin-layout/admin-topbar.service';
 import type {
   ProjectDetail,
   TaskSummary,
+  TodosByState,
 } from '../../../../core/models/admin.model';
 
 interface TodoColumn {
-  key: keyof ProjectDetail['todos_by_state'];
+  key: keyof TodosByState;
   label: string;
 }
 
@@ -70,9 +71,8 @@ export class ProjectProfilePageComponent {
   );
 
   protected readonly todoTotals = computed(() => {
-    const p = this.project();
-    if (!p) return { total: 0, done: 0 };
-    const s = p.todos_by_state;
+    const s = this.project()?.todos_by_state;
+    if (!s) return { total: 0, done: 0 };
     const total =
       s.in_progress.length + s.todo.length + s.done.length + s.someday.length;
     return { total, done: s.done.length };
@@ -113,8 +113,7 @@ export class ProjectProfilePageComponent {
   }
 
   protected todosForColumn(col: TodoColumn): TaskSummary[] {
-    const p = this.project();
-    return p ? p.todos_by_state[col.key] : [];
+    return this.project()?.todos_by_state?.[col.key] ?? [];
   }
 }
 
