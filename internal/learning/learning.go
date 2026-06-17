@@ -3,7 +3,8 @@
 // Package learning provides learning session orchestration.
 //
 // A session has explicit start/end, a mode, and contains attempts.
-// Ending a session optionally produces an agent_notes(kind=reflection) entry.
+// Ending a session records its end time only; there is no reflection capture
+// (the agent_notes mechanism that once held session reflections was retired).
 package learning
 
 import (

@@ -143,11 +143,10 @@ export class LearningService {
     );
   }
 
-  endSession(id: string, reflectionMd?: string): Observable<SessionMeta> {
-    const body = reflectionMd ? { reflection_md: reflectionMd } : {};
+  endSession(id: string): Observable<SessionMeta> {
     return this.api.postData<SessionMeta>(
       `/api/admin/learning/sessions/${id}/end`,
-      body,
+      {},
     );
   }
 
