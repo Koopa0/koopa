@@ -653,7 +653,7 @@ type ContentTopic struct {
 	TopicID   uuid.UUID `json:"topic_id"`
 }
 
-// Daily commitment records. Each row represents a todo item selected for a specific day's plan. Lifecycle: planned → done | deferred | dropped. Re-plan uses INSERT ... ON CONFLICT (plan_date, todo_id) DO UPDATE SET status = 'planned'.
+// Daily commitment records. Each row represents a todo item selected for a specific day's plan. Lifecycle: planned → done | deferred | dropped. Re-plan replaces only the day's 'planned' rows; terminal rows (done/deferred/dropped) are preserved as history and cannot be re-planned (re-sending one is rejected). Position is unique among 'planned' rows only.
 type DailyPlanItem struct {
 	ID uuid.UUID `json:"id"`
 	// The date this todo was planned for. Combined with todo_id forms a unique constraint — one todo can appear at most once per day.

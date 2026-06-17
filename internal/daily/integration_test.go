@@ -16,6 +16,12 @@
 //   - empty items → 400.
 //   - inbox-state todo → 400 (must be clarified to state=todo first).
 //   - out-of-range position → 400.
+//   - re-planning a todo already resolved (done/deferred/dropped) for the date
+//     → 409 PLAN_ITEM_RESOLVED; the resolved row is not resurrected and the
+//     prior plan survives (atomic rollback).
+//   - re-planning a still-planned day (reorder) → 200; positions follow request.
+//   - re-planning into a completed item's slot → 200 (position is unique among
+//     'planned' rows only, so a terminal row does not block the slot).
 //
 // Run with:
 //
@@ -295,5 +301,230 @@ func TestIntegration_Daily_PutPlan_PositionOutOfRange(t *testing.T) {
 	}
 	if count != 0 {
 		t.Errorf("plan row count = %d, want 0 (bounds rejection must precede any write)", count)
+	}
+}
+
+// TestIntegration_Daily_PutPlan_ResolvedItemNotResurrected asserts that
+// re-planning a todo already resolved for the date (done/deferred/dropped) is
+// rejected with 409 PLAN_ITEM_RESOLVED rather than silently flipped back to
+// 'planned'. It also asserts the atomic rollback leaves the prior plan intact:
+// the resolved row keeps its terminal status and the co-planned item stays
+// 'planned' even though DeletePlannedByDate runs before the rejected insert.
+func TestIntegration_Daily_PutPlan_ResolvedItemNotResurrected(t *testing.T) {
+	for _, state := range []string{"done", "deferred", "dropped"} {
+		t.Run(state, func(t *testing.T) {
+			truncate(t)
+			h := newHandler()
+
+			resolved := seedTodo(t, "Already handled", "todo")
+			other := seedTodo(t, "Still open", "todo")
+
+			plan := map[string]any{
+				"items": []map[string]any{
+					{"todo_id": resolved.String()},
+					{"todo_id": other.String()},
+				},
+			}
+			if rec := serve(t, h.PutPlan, putJSON(t, "/api/admin/commitment/daily-plan", plan)); rec.Code != http.StatusOK {
+				t.Fatalf("initial plan status = %d, want 200 (body=%s)", rec.Code, rec.Body.String())
+			}
+
+			// Resolve the first item, as if it were completed/deferred/dropped
+			// during the day.
+			if _, err := testPool.Exec(t.Context(),
+				`UPDATE daily_plan_items SET status = $1 WHERE todo_id = $2 AND plan_date = CURRENT_DATE`,
+				state, resolved,
+			); err != nil {
+				t.Fatalf("marking item %s: %v", state, err)
+			}
+
+			// Re-plan the same day with the full list — the resolved item is
+			// still in it (the realistic trigger: re-plan after completing work).
+			rec := serve(t, h.PutPlan, putJSON(t, "/api/admin/commitment/daily-plan", plan))
+			resp := rec.Result()
+			defer resp.Body.Close()
+			body, _ := io.ReadAll(resp.Body)
+
+			if resp.StatusCode != http.StatusConflict {
+				t.Fatalf("re-plan status = %d, want 409 for resolved item (body=%s)", resp.StatusCode, body)
+			}
+			if code := errorCode(t, body); code != "PLAN_ITEM_RESOLVED" {
+				t.Errorf("error.code = %q, want %q", code, "PLAN_ITEM_RESOLVED")
+			}
+
+			// The resolved item must keep its terminal status (not resurrected),
+			// and the rollback must preserve the co-planned item as 'planned'.
+			got := map[uuid.UUID]string{}
+			rows, err := testPool.Query(t.Context(),
+				`SELECT todo_id, status FROM daily_plan_items WHERE plan_date = CURRENT_DATE`,
+			)
+			if err != nil {
+				t.Fatalf("reading plan rows: %v", err)
+			}
+			defer rows.Close()
+			for rows.Next() {
+				var id uuid.UUID
+				var st string
+				if err := rows.Scan(&id, &st); err != nil {
+					t.Fatalf("scanning plan row: %v", err)
+				}
+				got[id] = st
+			}
+			if err := rows.Err(); err != nil {
+				t.Fatalf("iterating plan rows: %v", err)
+			}
+
+			if got[resolved] != state {
+				t.Errorf("resolved item status = %q, want %q (must not be resurrected to planned)", got[resolved], state)
+			}
+			if got[other] != "planned" {
+				t.Errorf("co-planned item status = %q, want %q (atomic rollback must preserve the prior plan)", got[other], "planned")
+			}
+			if len(got) != 2 {
+				t.Errorf("plan row count = %d, want 2", len(got))
+			}
+		})
+	}
+}
+
+// TestIntegration_Daily_PutPlan_ReplanPlannedReorder asserts that re-planning a
+// day whose items are all still 'planned' keeps working after the ON CONFLICT
+// guard was added: a reordered full list replaces the prior plan, both items
+// stay 'planned', and positions follow the new request order.
+func TestIntegration_Daily_PutPlan_ReplanPlannedReorder(t *testing.T) {
+	truncate(t)
+	h := newHandler()
+
+	first := seedTodo(t, "First", "todo")
+	second := seedTodo(t, "Second", "todo")
+
+	order := func(a, b uuid.UUID) map[string]any {
+		return map[string]any{
+			"items": []map[string]any{
+				{"todo_id": a.String()},
+				{"todo_id": b.String()},
+			},
+		}
+	}
+
+	if rec := serve(t, h.PutPlan, putJSON(t, "/api/admin/commitment/daily-plan", order(first, second))); rec.Code != http.StatusOK {
+		t.Fatalf("initial plan status = %d, want 200 (body=%s)", rec.Code, rec.Body.String())
+	}
+
+	// Re-plan the same day with the order reversed — both items are still planned.
+	if rec := serve(t, h.PutPlan, putJSON(t, "/api/admin/commitment/daily-plan", order(second, first))); rec.Code != http.StatusOK {
+		t.Fatalf("reorder re-plan status = %d, want 200 (body=%s)", rec.Code, rec.Body.String())
+	}
+
+	type row struct {
+		todoID   uuid.UUID
+		position int32
+		status   string
+	}
+	var got []row
+	rows, err := testPool.Query(t.Context(),
+		`SELECT todo_id, position, status FROM daily_plan_items WHERE plan_date = CURRENT_DATE ORDER BY position`,
+	)
+	if err != nil {
+		t.Fatalf("reading plan rows: %v", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var r row
+		if err := rows.Scan(&r.todoID, &r.position, &r.status); err != nil {
+			t.Fatalf("scanning plan row: %v", err)
+		}
+		got = append(got, r)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("iterating plan rows: %v", err)
+	}
+
+	if len(got) != 2 {
+		t.Fatalf("plan row count = %d, want 2", len(got))
+	}
+	if got[0].todoID != second || got[1].todoID != first {
+		t.Errorf("reordered plan = [%s, %s], want [%s, %s]", got[0].todoID, got[1].todoID, second, first)
+	}
+	for _, r := range got {
+		if r.status != "planned" {
+			t.Errorf("todo %s status = %q, want %q", r.todoID, r.status, "planned")
+		}
+	}
+}
+
+// TestIntegration_Daily_PutPlan_ReplanReusesTerminalPosition asserts that
+// re-planning the remaining work after the top item is completed succeeds even
+// though the completed (terminal) row keeps its position: the new planned item
+// reuses that slot. Position uniqueness is scoped to 'planned' rows, so a
+// terminal row at the same position no longer collides on UNIQUE(plan_date,
+// position).
+func TestIntegration_Daily_PutPlan_ReplanReusesTerminalPosition(t *testing.T) {
+	truncate(t)
+	h := newHandler()
+
+	first := seedTodo(t, "Top task", "todo")
+	second := seedTodo(t, "Next task", "todo")
+
+	// Plan both: first@0, second@1.
+	plan := map[string]any{
+		"items": []map[string]any{
+			{"todo_id": first.String()},
+			{"todo_id": second.String()},
+		},
+	}
+	if rec := serve(t, h.PutPlan, putJSON(t, "/api/admin/commitment/daily-plan", plan)); rec.Code != http.StatusOK {
+		t.Fatalf("initial plan status = %d, want 200 (body=%s)", rec.Code, rec.Body.String())
+	}
+
+	// Complete the top item; it stays at position 0 as terminal history.
+	if _, err := testPool.Exec(t.Context(),
+		`UPDATE daily_plan_items SET status = 'done' WHERE todo_id = $1 AND plan_date = CURRENT_DATE`,
+		first,
+	); err != nil {
+		t.Fatalf("completing top item: %v", err)
+	}
+
+	// Re-plan the remaining work alone — second lands at position 0, the slot
+	// the done item still occupies. This must succeed (no UNIQUE collision).
+	reReq := putJSON(t, "/api/admin/commitment/daily-plan", map[string]any{
+		"items": []map[string]any{{"todo_id": second.String()}},
+	})
+	if rec := serve(t, h.PutPlan, reReq); rec.Code != http.StatusOK {
+		t.Fatalf("re-plan status = %d, want 200 (resolved row must not block the slot) (body=%s)", rec.Code, rec.Body.String())
+	}
+
+	type row struct {
+		position int32
+		status   string
+	}
+	got := map[uuid.UUID]row{}
+	rows, err := testPool.Query(t.Context(),
+		`SELECT todo_id, position, status FROM daily_plan_items WHERE plan_date = CURRENT_DATE`,
+	)
+	if err != nil {
+		t.Fatalf("reading plan rows: %v", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id uuid.UUID
+		var r row
+		if err := rows.Scan(&id, &r.position, &r.status); err != nil {
+			t.Fatalf("scanning plan row: %v", err)
+		}
+		got[id] = r
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("iterating plan rows: %v", err)
+	}
+
+	if got[first] != (row{position: 0, status: "done"}) {
+		t.Errorf("completed item = %+v, want {position:0 status:done} (history preserved)", got[first])
+	}
+	if got[second] != (row{position: 0, status: "planned"}) {
+		t.Errorf("re-planned item = %+v, want {position:0 status:planned} (reuses the slot)", got[second])
+	}
+	if len(got) != 2 {
+		t.Errorf("plan row count = %d, want 2", len(got))
 	}
 }

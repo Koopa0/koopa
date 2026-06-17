@@ -3,10 +3,10 @@
 // store.go holds Store methods for daily_plan_items.
 //
 // Naming quirks worth knowing before adding callers:
-//   - Create and Upsert both call sqlc's CreateItem query, which uses
-//     ON CONFLICT DO UPDATE on (plan_date, todo_id). Upsert is the
-//     honest name; Create is a legacy alias. New callers should use
-//     Upsert.
+//   - Create and Upsert both call sqlc's CreateItem query (upsert on
+//     (plan_date, todo_id)). Both return ErrItemResolved when the existing
+//     row is already in a terminal state. Upsert is the honest name;
+//     Create is a legacy alias. New callers should use Upsert.
 //   - ItemsByDate returns Items with denormalised todo + project
 //     fields for the list view; ItemByID returns the bare row.
 //     The two converters (rawToItem vs itemsByDateRowToItem) reflect
@@ -39,7 +39,9 @@ func NewStore(dbtx db.DBTX) *Store {
 	return &Store{q: db.New(dbtx)}
 }
 
-// Create inserts or upserts a daily plan item.
+// Create inserts a daily plan item, or reorders it when it is still 'planned'
+// for the date. It returns ErrItemResolved when a row for (plan_date, todo_id)
+// already reached a terminal state — re-planning must not resurrect it.
 func (s *Store) Create(ctx context.Context, p *CreateItemParams) (*Item, error) {
 	row, err := s.q.CreateItem(ctx, db.CreateItemParams{
 		PlanDate:   p.PlanDate,
@@ -49,6 +51,9 @@ func (s *Store) Create(ctx context.Context, p *CreateItemParams) (*Item, error) 
 		Reason:     p.Reason,
 	})
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrItemResolved
+		}
 		return nil, fmt.Errorf("creating daily plan item: %w", err)
 	}
 	return rawToItem(&row), nil
@@ -96,7 +101,9 @@ func (s *Store) CompleteByTodo(ctx context.Context, todoItemID uuid.UUID, date t
 	return n > 0, nil
 }
 
-// Upsert inserts or updates a daily plan item (upsert on plan_date + todo_id).
+// Upsert inserts a daily plan item, or reorders it when it is still 'planned'
+// for the date (upsert on plan_date + todo_id). It returns ErrItemResolved
+// when the existing row already reached a terminal state.
 func (s *Store) Upsert(ctx context.Context, p *UpsertParams) (*Item, error) {
 	row, err := s.q.CreateItem(ctx, db.CreateItemParams{
 		PlanDate:   p.PlanDate,
@@ -106,6 +113,9 @@ func (s *Store) Upsert(ctx context.Context, p *UpsertParams) (*Item, error) {
 		Reason:     p.Reason,
 	})
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrItemResolved
+		}
 		return nil, fmt.Errorf("upserting daily plan item: %w", err)
 	}
 	return rawToItem(&row), nil

@@ -6,6 +6,7 @@
 package daily
 
 import (
+	"errors"
 	"log/slog"
 	"net/http"
 	"time"
@@ -270,6 +271,10 @@ func (h *Handler) insertPlanItem(w http.ResponseWriter, r *http.Request, txDaily
 		SelectedBy: caller,
 		Position:   int32(pos), // #nosec G115 -- validated to [0, maxPlanPosition] or the loop index; fits int32
 	}); err != nil {
+		if errors.Is(err, ErrItemResolved) {
+			api.HandleError(w, h.logger, err, planItemErrors...)
+			return false
+		}
 		h.logger.Error("creating plan item", "todo_id", item.TodoID, "error", err)
 		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to create plan item")
 		return false
@@ -310,4 +315,10 @@ func actorFromContext(r *http.Request) string {
 // surface (a planned todo_id that does not exist) to HTTP responses.
 var todoStoreErrors = []api.ErrMap{
 	{Target: todo.ErrNotFound, Status: http.StatusBadRequest, Code: "TODO_NOT_FOUND", Message: "referenced todo not found"},
+}
+
+// planItemErrors maps the daily sentinel errors the plan-write insert can
+// surface to HTTP responses.
+var planItemErrors = []api.ErrMap{
+	{Target: ErrItemResolved, Status: http.StatusConflict, Code: "PLAN_ITEM_RESOLVED", Message: "this todo is already resolved (done, deferred, or dropped) for that date and cannot be re-planned"},
 }

@@ -9,6 +9,7 @@ package mcp
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -105,6 +106,9 @@ func createPlanItemTx(ctx context.Context, txTodos *todo.Store, txDayplan *daily
 		SelectedBy: caller,
 		Position:   int32(pos), // #nosec G115 -- pos validated to [0, maxPlanPosition] or the loop index; fits int32
 	}); err != nil {
+		if errors.Is(err, daily.ErrItemResolved) {
+			return fmt.Errorf("todo item %s is already resolved (done/deferred/dropped) for %s and cannot be re-planned", item.TaskID, date.Format(time.DateOnly))
+		}
 		return fmt.Errorf("creating plan item for todo %s: %w", item.TaskID, err)
 	}
 	return nil

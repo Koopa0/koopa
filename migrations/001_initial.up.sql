@@ -924,8 +924,7 @@ CREATE TABLE daily_plan_items (
     created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
 
-    UNIQUE (plan_date, todo_id),
-    UNIQUE (plan_date, position)
+    UNIQUE (plan_date, todo_id)
 );
 
 CREATE INDEX idx_daily_plan_items_date
@@ -938,10 +937,20 @@ CREATE INDEX idx_daily_plan_items_active
 CREATE INDEX idx_daily_plan_items_todo
     ON daily_plan_items (todo_id);
 
+-- Position uniqueness applies to the active plan only. A day's 'planned' rows
+-- must each occupy a distinct slot; terminal rows (done/deferred/dropped) are
+-- frozen history that keep their original position, so a re-plan may reuse a
+-- terminal row's slot. Scoping the constraint to status='planned' permits that.
+CREATE UNIQUE INDEX idx_daily_plan_items_position
+    ON daily_plan_items (plan_date, position)
+    WHERE status = 'planned';
+
 COMMENT ON TABLE daily_plan_items IS
     'Daily commitment records. Each row represents a todo item selected for '
     'a specific day''s plan. Lifecycle: planned → done | deferred | dropped. '
-    'Re-plan uses INSERT ... ON CONFLICT (plan_date, todo_id) DO UPDATE SET status = ''planned''.';
+    'Re-plan replaces only the day''s ''planned'' rows; terminal rows '
+    '(done/deferred/dropped) are preserved as history and cannot be re-planned '
+    '(re-sending one is rejected). Position is unique among ''planned'' rows only.';
 
 COMMENT ON COLUMN daily_plan_items.plan_date IS
     'The date this todo was planned for. Combined with todo_id forms a unique constraint — '

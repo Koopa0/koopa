@@ -2641,8 +2641,8 @@ ON CONFLICT (plan_date, todo_id) DO UPDATE SET
     selected_by = EXCLUDED.selected_by,
     position = EXCLUDED.position,
     reason = EXCLUDED.reason,
-    status = 'planned',
     updated_at = now()
+WHERE daily_plan_items.status = 'planned'
 RETURNING id, plan_date, todo_id, selected_by, position, reason, status, created_at, updated_at
 `
 
@@ -2654,7 +2654,13 @@ type CreateItemParams struct {
 	Reason     *string   `json:"reason"`
 }
 
-// Insert a daily plan item.
+// Insert a daily plan item, or reorder it when it is still 'planned' for the
+// date. The ON CONFLICT guard (WHERE status = 'planned') refuses to touch a
+// row that already reached a terminal state (done/deferred/dropped): the
+// conflicting UPDATE matches no row, so RETURNING is empty and the driver
+// yields pgx.ErrNoRows. The store maps that to ErrItemResolved so re-planning
+// cannot silently resurrect a resolved item. A fresh insert (no conflict)
+// always returns its row, defaulting status to 'planned'.
 func (q *Queries) CreateItem(ctx context.Context, arg CreateItemParams) (DailyPlanItem, error) {
 	row := q.db.QueryRow(ctx, createItem,
 		arg.PlanDate,
@@ -5583,7 +5589,7 @@ FROM daily_plan_items dpi
 JOIN todos t ON t.id = dpi.todo_id
 LEFT JOIN projects p ON p.id = t.project_id
 WHERE dpi.plan_date = $1
-ORDER BY dpi.position
+ORDER BY dpi.position, dpi.created_at
 `
 
 type ItemsByDateRow struct {
@@ -5606,6 +5612,9 @@ type ItemsByDateRow struct {
 }
 
 // Get all daily plan items for a specific date, joined with todo item details.
+// created_at breaks position ties so the order is deterministic when a terminal
+// row and a planned row share a position slot (position is unique among
+// 'planned' rows only).
 func (q *Queries) ItemsByDate(ctx context.Context, planDate time.Time) ([]ItemsByDateRow, error) {
 	rows, err := q.db.Query(ctx, itemsByDate, planDate)
 	if err != nil {
