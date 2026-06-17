@@ -9,27 +9,31 @@ export interface FeedRow {
   name: string;
   url: string;
   schedule: string;
-  topic_slugs: string[];
+  topics: string[];
   enabled: boolean;
+  priority: FeedPriority;
   consecutive_failures: number;
   last_fetched_at: string | null;
-  last_error: string | null;
-  priority: FeedPriority;
+  last_error: string;
+  /** Set to the failure cause after MaxConsecutiveFailures auto-disables a feed; empty otherwise. */
+  disabled_reason: string;
+  created_at: string;
 }
 
 export interface FeedEntryRow {
   id: string;
-  title: string;
-  excerpt: string;
   source_url: string;
-  feed: { id: string; name: string };
-  topic_slugs: string[];
-  relevance_score: number | null;
+  feed_name: string;
+  title: string;
+  /** RSS entry content/summary as delivered by the feed. Absent when none. */
+  original_content?: string;
+  relevance_score: number;
   status: FeedEntryStatus;
+  curated_content_id: string | null;
   collected_at: string;
   published_at: string | null;
-  curated_content_id: string | null;
   user_feedback: 'up' | 'down' | null;
+  feed_id: string | null;
 }
 
 export type FeedEntryFeedback = 'up' | 'down';

@@ -40,7 +40,6 @@
     <header
       class="flex flex-wrap items-baseline gap-3 font-mono text-[11px] text-fg-subtle"
     >
-      @if (entry.relevance_score !== null) {
       <span
         class="text-amber-300"
         [attr.aria-label]="'Relevance ' + entry.relevance_score"
@@ -49,8 +48,7 @@
         {{ relevanceDots(entry.relevance_score) }} {{
         entry.relevance_score.toFixed(2) }}
       </span>
-      }
-      <span>{{ entry.feed.name }}</span>
+      <span>{{ entry.feed_name }}</span>
       @if (entry.published_at) {
       <span>published {{ entry.published_at | date: 'short' }}</span>
       } @else {
@@ -72,23 +70,13 @@
       </a>
     </h2>
 
-    @if (entry.excerpt) {
+    @if (entry.original_content) {
     <p
       class="whitespace-pre-wrap text-sm leading-relaxed text-fg-muted"
       data-testid="feed-triage-excerpt"
     >
-      {{ entry.excerpt }}
+      {{ entry.original_content }}
     </p>
-    } @if (entry.topic_slugs.length > 0) {
-    <div class="flex flex-wrap gap-1" data-testid="feed-triage-topics">
-      @for (topic of entry.topic_slugs; track topic) {
-      <span
-        class="rounded-full border border-border-strong bg-elevated px-2 py-0.5 font-mono text-[10px] text-fg-muted"
-      >
-        {{ topic }}
-      </span>
-      }
-    </div>
     }
 
     <!-- Actions -->

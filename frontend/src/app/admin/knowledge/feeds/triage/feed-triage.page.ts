@@ -52,7 +52,13 @@ export class FeedTriagePageComponent {
       }),
   });
 
-  protected readonly entries = computed(() => this.resource.value() ?? []);
+  // Guard the read: rxResource.value() throws while the resource is in an
+  // error state, so gate on hasValue() (the repo idiom). hasError() drives
+  // the error card; without this guard a failed entry read throws here and
+  // the error state never renders.
+  protected readonly entries = computed(() =>
+    this.resource.hasValue() ? this.resource.value() : [],
+  );
   protected readonly total = computed(() => this.entries().length);
   protected readonly isLoading = computed(
     () => this.resource.status() === 'loading',
@@ -91,8 +97,7 @@ export class FeedTriagePageComponent {
     this.destroyRef.onDestroy(() => this.topbar.reset());
   }
 
-  protected relevanceDots(score: number | null): string {
-    if (score == null) return '';
+  protected relevanceDots(score: number): string {
     const rounded = Math.min(5, Math.max(0, Math.round(score * 5)));
     return '●'.repeat(rounded) + '○'.repeat(5 - rounded);
   }

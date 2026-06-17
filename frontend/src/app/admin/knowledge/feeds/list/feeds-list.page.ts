@@ -52,7 +52,13 @@ export class FeedsListPageComponent {
     stream: () => this.feedService.listFeeds(),
   });
 
-  protected readonly allRows = computed(() => this.resource.value() ?? []);
+  // Guard the read: rxResource.value() throws while the resource is in an
+  // error state, so gate on hasValue() (the repo idiom). hasError() drives
+  // the error banner; without this guard a failed list read throws here and
+  // the banner never renders.
+  protected readonly allRows = computed(() =>
+    this.resource.hasValue() ? this.resource.value() : [],
+  );
 
   protected readonly rows = computed(() => {
     const filter = this.healthFilter();

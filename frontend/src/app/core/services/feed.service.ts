@@ -8,12 +8,16 @@ import type {
   FeedRow,
 } from '../models/feed.model';
 
+/**
+ * Query params the backend feed-entries List handler honors. Per
+ * internal/feed/entry/handler.go:32-40 the handler reads only status,
+ * sort (the literal "relevance" enables relevance ordering), and
+ * pagination — feed_id / topic_slug / min_relevance are not wired
+ * server-side, so they are omitted here rather than sent and dropped.
+ */
 export interface FeedEntriesQuery {
   status?: FeedEntryStatus;
-  feed_id?: string;
-  topic_slug?: string;
-  min_relevance?: number;
-  sort?: 'relevance' | 'collected_at';
+  sort?: 'relevance';
   page?: number;
   perPage?: number;
 }
@@ -29,8 +33,8 @@ export class FeedService {
     return this.api.getData<FeedRow[]>('/api/admin/knowledge/feeds');
   }
 
-  fetchNow(id: string): Observable<{ status: string }> {
-    return this.api.postData<{ status: string }>(
+  fetchNow(id: string): Observable<{ new_items: number }> {
+    return this.api.postData<{ new_items: number }>(
       `/api/admin/knowledge/feeds/${id}/fetch`,
       {},
     );
@@ -48,10 +52,6 @@ export class FeedService {
   listEntries(query: FeedEntriesQuery = {}): Observable<FeedEntryRow[]> {
     const params: Record<string, string | number> = {};
     if (query.status) params['status'] = query.status;
-    if (query.feed_id) params['feed_id'] = query.feed_id;
-    if (query.topic_slug) params['topic_slug'] = query.topic_slug;
-    if (query.min_relevance !== undefined)
-      params['min_relevance'] = query.min_relevance;
     if (query.sort) params['sort'] = query.sort;
     if (query.page) params['page'] = query.page;
     if (query.perPage) params['per_page'] = query.perPage;

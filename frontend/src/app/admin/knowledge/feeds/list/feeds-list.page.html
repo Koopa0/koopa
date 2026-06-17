@@ -109,10 +109,20 @@
                   </span>
                 }
               </span>
+              @if (!row.enabled && row.disabled_reason) {
+                <div
+                  class="mt-0.5 truncate text-[10px] text-amber-400"
+                  [title]="row.disabled_reason"
+                  data-testid="feeds-list-disabled-reason"
+                >
+                  auto-disabled: {{ row.disabled_reason }}
+                </div>
+              }
               @if (row.last_error) {
                 <div
                   class="mt-0.5 truncate text-[10px] text-red-400"
                   [title]="row.last_error"
+                  data-testid="feeds-list-last-error"
                 >
                   {{ row.last_error }}
                 </div>
