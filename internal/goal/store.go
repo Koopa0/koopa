@@ -48,20 +48,6 @@ func (s *Store) WithTx(tx pgx.Tx) *Store {
 	return &Store{q: s.q.WithTx(tx)}
 }
 
-// Goals returns all goals ordered by status and deadline.
-func (s *Store) Goals(ctx context.Context) ([]Goal, error) {
-	rows, err := s.q.Goals(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("listing goals: %w", err)
-	}
-	goals := make([]Goal, len(rows))
-	for i := range rows {
-		r := rows[i]
-		goals[i] = rowToGoal(&r)
-	}
-	return goals, nil
-}
-
 // GoalByTitle returns a goal by case-insensitive title match.
 func (s *Store) GoalByTitle(ctx context.Context, title string) (*Goal, error) {
 	r, err := s.q.GoalByTitle(ctx, title)

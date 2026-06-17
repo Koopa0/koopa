@@ -37,6 +37,10 @@ func NewHandler(store *Store, projects *project.Store, logger *slog.Logger) *Han
 // the richer ActiveGoalSummary shape (milestone counts + area name); the
 // unfiltered path is unchanged.
 func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
+	// One path for filtered and unfiltered: GoalsByOptionalStatus(nil)
+	// returns every goal with area_name + milestone counts, so the list
+	// always carries the same rich row shape (no bare-[]Goal divergence).
+	var statusFilter *string
 	if raw := r.URL.Query().Get("status"); raw != "" {
 		status, statusErr := mapHTTPGoalStatus(raw)
 		if statusErr != nil {
@@ -44,23 +48,16 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		canonical := string(status)
-		summaries, err := h.store.GoalsByOptionalStatus(r.Context(), &canonical)
-		if err != nil {
-			h.logger.Error("listing goals by status", "status", canonical, "error", err)
-			api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to list goals")
-			return
-		}
-		api.Encode(w, http.StatusOK, api.Response{Data: summaries})
-		return
+		statusFilter = &canonical
 	}
 
-	goals, err := h.store.Goals(r.Context())
+	summaries, err := h.store.GoalsByOptionalStatus(r.Context(), statusFilter)
 	if err != nil {
 		h.logger.Error("listing goals", "error", err)
 		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to list goals")
 		return
 	}
-	api.Encode(w, http.StatusOK, api.Response{Data: goals})
+	api.Encode(w, http.StatusOK, api.Response{Data: summaries})
 }
 
 // updateStatusRequest is the JSON body for PUT /api/admin/goals/{id}/status.

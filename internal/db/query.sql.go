@@ -4819,42 +4819,6 @@ func (q *Queries) GoalRecentActivity(ctx context.Context, arg GoalRecentActivity
 	return items, nil
 }
 
-const goals = `-- name: Goals :many
-SELECT id, title, description, status, area_id, quarter, deadline,
-       created_at, updated_at
-FROM goals ORDER BY status, deadline NULLS LAST, created_at DESC
-`
-
-func (q *Queries) Goals(ctx context.Context) ([]Goal, error) {
-	rows, err := q.db.Query(ctx, goals)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []Goal{}
-	for rows.Next() {
-		var i Goal
-		if err := rows.Scan(
-			&i.ID,
-			&i.Title,
-			&i.Description,
-			&i.Status,
-			&i.AreaID,
-			&i.Quarter,
-			&i.Deadline,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const goalsByOptionalStatus = `-- name: GoalsByOptionalStatus :many
 SELECT g.id, g.title, g.description, g.status, g.area_id, g.quarter, g.deadline,
        g.created_at, g.updated_at,

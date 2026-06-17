@@ -1,8 +1,3 @@
--- name: Goals :many
-SELECT id, title, description, status, area_id, quarter, deadline,
-       created_at, updated_at
-FROM goals ORDER BY status, deadline NULLS LAST, created_at DESC;
-
 -- name: UpdateGoalStatus :one
 -- Update a goal's status.
 UPDATE goals SET
