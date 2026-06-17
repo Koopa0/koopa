@@ -62,8 +62,8 @@ export class AdminNavCountsService {
           ),
         goals_active: this.planService.getGoalsOverview().pipe(
           map(
-            (o) =>
-              o.goals.filter(
+            (goals) =>
+              goals.filter(
                 (g) => g.status === 'in_progress' || g.status === 'not_started',
               ).length,
           ),

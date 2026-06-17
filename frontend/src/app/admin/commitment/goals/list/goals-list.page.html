@@ -91,7 +91,7 @@
             [attr.data-testid]="'goals-list-row-' + i"
           >
             <td class="truncate px-3 py-2 text-fg">{{ row.title }}</td>
-            <td class="px-3 py-2 text-fg-muted">{{ row.area_name }}</td>
+            <td class="px-3 py-2 text-fg-muted">{{ row.area_name || '—' }}</td>
             <td class="px-3 py-2">
               <span
                 class="inline-flex items-center gap-1.5 text-xs"
@@ -108,15 +108,13 @@
             <td class="px-3 py-2">
               <div class="flex items-center gap-2">
                 <span class="font-mono text-[11px] text-fg-muted">
-                  {{ row.milestones_done }} / {{ row.milestones_total }}
+                  {{ row.milestone_done }} / {{ row.milestone_total }}
                 </span>
-                <div
-                  class="h-1.5 w-16 overflow-hidden rounded-full bg-elevated"
-                >
+                <div class="h-1.5 w-16 overflow-hidden rounded-full bg-elevated">
                   <div
                     class="h-full bg-brand"
                     [style.width.%]="
-                      milestonePercent(row.milestones_done, row.milestones_total)
+                      milestonePercent(row.milestone_done, row.milestone_total)
                     "
                   ></div>
                 </div>

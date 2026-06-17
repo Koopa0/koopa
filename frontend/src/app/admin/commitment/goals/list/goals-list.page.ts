@@ -15,10 +15,7 @@ import { DatePipe } from '@angular/common';
 import { PlanService } from '../../../../core/services/plan.service';
 import { AdminTopbarService } from '../../../admin-layout/admin-topbar.service';
 import { DataTableComponent } from '../../../../shared/components/data-table/data-table.component';
-import type {
-  ActiveGoalSummary,
-  GoalsOverview,
-} from '../../../../core/models/admin.model';
+import type { GoalSummary } from '../../../../core/models/admin.model';
 import type { GoalStatus } from '../../../../core/models';
 
 type StatusFilter = 'all' | 'active' | GoalStatus;
@@ -63,9 +60,10 @@ const STATUS_LABEL: Record<GoalStatus, string> = {
 };
 
 /**
- * Goals List `/api/admin/commitment/goals` already
- * returns a cell-state envelope with all goals; filtering is
- * client-side so chip toggles don't refetch.
+ * Goals List — `GET /api/admin/commitment/goals` returns a flat array of
+ * all goals (every status), each a rich `GoalSummary` with `area_name`
+ * and milestone counts. Filtering is client-side so chip toggles don't
+ * refetch.
  *
  * Default chip is `active` (= `in_progress` OR `not_started`) since the
  * Today workflow cares about active commitments. The `all` chip keeps
@@ -90,12 +88,16 @@ export class GoalsListPageComponent {
   protected readonly statusChips = STATUS_CHIPS;
   protected readonly statusFilter = signal<StatusFilter>('active');
 
-  protected readonly resource = rxResource<GoalsOverview, void>({
+  protected readonly resource = rxResource<GoalSummary[], void>({
     stream: () => this.planService.getGoalsOverview(),
   });
 
-  protected readonly envelope = computed(() => this.resource.value());
-  protected readonly allGoals = computed(() => this.envelope()?.goals ?? []);
+  // Guard the read: rxResource.value() throws while the resource is in an
+  // error state, so gate on hasValue() (the repo idiom). hasError() drives
+  // the banner separately.
+  protected readonly allGoals = computed(() =>
+    this.resource.hasValue() ? this.resource.value() : [],
+  );
 
   protected readonly rows = computed(() => {
     const filter = this.statusFilter();
@@ -144,7 +146,7 @@ export class GoalsListPageComponent {
     this.focusedIndex.set(0);
   }
 
-  protected openRow(row: ActiveGoalSummary): void {
+  protected openRow(row: GoalSummary): void {
     this.router.navigate(['/admin/commitment/goals', row.id]);
   }
 

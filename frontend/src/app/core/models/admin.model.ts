@@ -1,35 +1,31 @@
 /** Admin workbench models. */
 
 import type { ContentType, GoalStatus } from './api.model';
-import type { CellState } from './workbench.model';
 
 // === Plan — Goals ===
 
 /**
- * GET /api/admin/commitment/goals response — flat `goals` array with `area_name` per goal
- * and cell-state envelope.
+ * GET /api/admin/commitment/goals — a flat array of goal rows, every
+ * status (or one status with `?status=`). Mirrors the Go
+ * `goal.ActiveGoalSummary` (the `Goal` struct fields + `area_name` +
+ * milestone counts), which both the filtered and unfiltered paths return
+ * through `GoalsByOptionalStatus`. `area_name` is `''` when the goal has
+ * no area; `milestone_total` / `milestone_done` are singular (the Go JSON
+ * tags). The admin list renders milestone progress straight from this row.
  */
-export interface GoalsOverview extends CellState {
-  goals: ActiveGoalSummary[];
-}
-
-/**
- * Per-goal summary for overview grid. `area_name` is flat (not grouped).
- * `last_progress_at` + `stalled_days` drive GOALS cell warn state.
- */
-export interface ActiveGoalSummary {
+export interface GoalSummary {
   id: string;
   title: string;
-  area_name: string;
+  description: string;
   status: GoalStatus;
-  milestones_total: number;
-  milestones_done: number;
-  /** ISO datetime — most recent milestone completion (or goal creation). */
-  last_progress_at?: string;
-  /** null when not stalled; >=14d triggers cell warn. */
-  stalled_days?: number | null;
-  deadline?: string | null;
+  area_id?: string;
   quarter?: string;
+  deadline?: string | null;
+  created_at: string;
+  updated_at: string;
+  area_name: string;
+  milestone_total: number;
+  milestone_done: number;
 }
 
 /**

@@ -2,7 +2,7 @@ import { Injectable, inject } from '@angular/core';
 import type { Observable } from 'rxjs';
 import { ApiService } from './api.service';
 import type {
-  GoalsOverview,
+  GoalSummary,
   GoalDetail,
   Milestone,
   ProjectSummary,
@@ -46,6 +46,31 @@ export interface GoalCreated {
 }
 
 /**
+ * PUT /goals/{id} body — partial update of a goal's shaping fields. Every
+ * field is optional; the server leaves omitted fields unchanged. `status`
+ * is never accepted here (it transitions through {@link updateGoalStatus}).
+ * `area_id` set to `null` is not supported by the partial update — omit it
+ * to leave the area unchanged.
+ */
+export interface GoalUpdateRequest {
+  title?: string;
+  description?: string;
+  quarter?: string;
+  deadline?: string;
+  area_id?: string;
+}
+
+/**
+ * PUT /goals/{id}/milestones/{mid} body — partial update of a milestone's
+ * title / description / target_deadline. Omitted fields stay unchanged.
+ */
+export interface MilestoneUpdateRequest {
+  title?: string;
+  description?: string;
+  target_deadline?: string;
+}
+
+/**
  * PUT /goals/{id}/status response — a partial projection, NOT the full
  * goal. Callers must re-fetch the detail after a status change.
  */
@@ -61,8 +86,14 @@ export interface GoalStatusUpdate {
 export class PlanService {
   private readonly api = inject(ApiService);
 
-  getGoalsOverview(): Observable<GoalsOverview> {
-    return this.api.getData<GoalsOverview>('/api/admin/commitment/goals');
+  /**
+   * All goals, every status, as a flat array. The unfiltered
+   * `GET /commitment/goals` endpoint returns the rich `GoalSummary` row
+   * (Goal fields + `area_name` + milestone counts) directly — no `{goals}`
+   * envelope. The same shape comes back from the `?status=` path.
+   */
+  getGoalsOverview(): Observable<GoalSummary[]> {
+    return this.api.getData<GoalSummary[]>('/api/admin/commitment/goals');
   }
 
   /** PARA areas for the goal area selector, ordered by `sort_order`. */
@@ -126,6 +157,45 @@ export class PlanService {
     return this.api.postData<Milestone>(
       `/api/admin/commitment/goals/${goalId}/milestones/${milestoneId}/toggle`,
       {},
+    );
+  }
+
+  /**
+   * Partial update of a goal's shaping fields (title / description /
+   * quarter / deadline / area_id). Status is excluded — it transitions
+   * through {@link updateGoalStatus}. Returns the updated bare goal row;
+   * the server responds 404 when the goal does not exist.
+   */
+  updateGoal(id: string, body: GoalUpdateRequest): Observable<GoalCreated> {
+    return this.api.putData<GoalCreated>(
+      `/api/admin/commitment/goals/${id}`,
+      body,
+    );
+  }
+
+  /**
+   * Partial update of a milestone owned by the goal. The server binds the
+   * milestone to the goal in the path, so a cross-goal id is a 404.
+   */
+  updateMilestone(
+    goalId: string,
+    milestoneId: string,
+    body: MilestoneUpdateRequest,
+  ): Observable<Milestone> {
+    return this.api.putData<Milestone>(
+      `/api/admin/commitment/goals/${goalId}/milestones/${milestoneId}`,
+      body,
+    );
+  }
+
+  /**
+   * Delete a milestone owned by the goal. The server responds 204 on
+   * success and 404 when the milestone does not exist or belongs to a
+   * different goal. Completed milestones are deletable.
+   */
+  deleteMilestone(goalId: string, milestoneId: string): Observable<void> {
+    return this.api.delete(
+      `/api/admin/commitment/goals/${goalId}/milestones/${milestoneId}`,
     );
   }
 }

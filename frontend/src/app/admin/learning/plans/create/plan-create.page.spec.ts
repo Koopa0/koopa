@@ -19,7 +19,7 @@ describe('PlanCreatePageComponent', () => {
   beforeEach(async () => {
     createPlan.mockReturnValue(of({ id: 'p_new' }));
     getDomains.mockReturnValue(of([{ slug: 'go', name: 'Go' }]));
-    getGoalsOverview.mockReturnValue(of({ goals: [] }));
+    getGoalsOverview.mockReturnValue(of([]));
 
     TestBed.configureTestingModule({
       imports: [PlanCreatePageComponent],

@@ -12,7 +12,7 @@ import { form, FormField, required, maxLength } from '@angular/forms/signals';
 import { LearningService } from '../../../../core/services/learning.service';
 import type { Domain } from '../../../../core/services/learning.service';
 import { PlanService } from '../../../../core/services/plan.service';
-import type { GoalsOverview } from '../../../../core/models/admin.model';
+import type { GoalSummary } from '../../../../core/models/admin.model';
 import { AdminTopbarService } from '../../../admin-layout/admin-topbar.service';
 
 interface PlanForm {
@@ -76,12 +76,10 @@ export class PlanCreatePageComponent {
   );
   protected readonly hasDomains = computed(() => this.domains().length > 0);
 
-  protected readonly goalsResource = rxResource<GoalsOverview, void>({
+  protected readonly goalsResource = rxResource<GoalSummary[], void>({
     stream: () => this.planService.getGoalsOverview(),
   });
-  protected readonly goals = computed(
-    () => this.goalsResource.value()?.goals ?? [],
-  );
+  protected readonly goals = computed(() => this.goalsResource.value() ?? []);
 
   protected readonly model = signal<PlanForm>({
     title: '',

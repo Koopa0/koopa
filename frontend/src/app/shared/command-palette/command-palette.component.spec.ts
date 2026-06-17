@@ -109,9 +109,7 @@ describe('CommandPaletteComponent', () => {
       service.open();
       fixture.detectChanges();
 
-      httpMock
-        .expectOne('/bff/api/admin/commitment/goals')
-        .flush({ state: 'ok', goals: [] });
+      httpMock.expectOne('/bff/api/admin/commitment/goals').flush([]);
       httpMock
         .expectOne('/bff/api/admin/commitment/projects')
         .flush({ projects: [] });

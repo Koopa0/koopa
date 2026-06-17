@@ -26,6 +26,108 @@
     class="mx-auto flex w-full max-w-5xl flex-col gap-6 px-6 py-8"
     data-testid="goal-profile"
   >
+    @if (isEditing()) {
+      <!-- Inline goal edit form -->
+      <form
+        class="flex flex-col gap-4 rounded-md border border-border bg-panel p-4"
+        (submit)="$event.preventDefault(); saveEdit()"
+        data-testid="goal-edit-form"
+      >
+        <div class="flex flex-col gap-1.5">
+          <label for="goal-edit-title" class="font-mono text-[11px] text-fg-muted">
+            Title <span class="text-brand">*</span>
+          </label>
+          <input
+            id="goal-edit-title"
+            type="text"
+            [formField]="editForm.title"
+            class="rounded-sm border border-border bg-elevated px-3 py-2 text-sm text-fg outline-none focus:border-brand"
+            data-testid="goal-edit-title"
+          />
+          @if (editForm.title().touched() && editForm.title().invalid()) {
+            @for (e of editForm.title().errors(); track e.message) {
+              <p class="font-mono text-[11px] text-error" role="alert">{{ e.message }}</p>
+            }
+          }
+        </div>
+
+        <div class="flex flex-col gap-1.5">
+          <label for="goal-edit-desc" class="font-mono text-[11px] text-fg-muted">
+            Description
+          </label>
+          <textarea
+            id="goal-edit-desc"
+            rows="3"
+            [formField]="editForm.description"
+            class="resize-y rounded-sm border border-border bg-elevated px-3 py-2 text-sm leading-relaxed text-fg outline-none focus:border-brand"
+            data-testid="goal-edit-desc"
+          ></textarea>
+        </div>
+
+        <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <div class="flex flex-col gap-1.5">
+            <label for="goal-edit-area" class="font-mono text-[11px] text-fg-muted">Area</label>
+            <select
+              id="goal-edit-area"
+              [value]="editModel().area_id"
+              (change)="onEditAreaChange($event)"
+              class="rounded-sm border border-border bg-elevated px-3 py-2 text-sm text-fg outline-none focus:border-brand"
+              data-testid="goal-edit-area"
+            >
+              <option value="">No area</option>
+              @for (area of areas(); track area.id) {
+                <option [value]="area.id">{{ area.name }}</option>
+              }
+            </select>
+          </div>
+          <div class="flex flex-col gap-1.5">
+            <label for="goal-edit-quarter" class="font-mono text-[11px] text-fg-muted">Quarter</label>
+            <select
+              id="goal-edit-quarter"
+              [value]="editModel().quarter"
+              (change)="onEditQuarterChange($event)"
+              class="rounded-sm border border-border bg-elevated px-3 py-2 text-sm text-fg outline-none focus:border-brand"
+              data-testid="goal-edit-quarter"
+            >
+              <option value="">—</option>
+              @for (q of quarters(); track q) {
+                <option [value]="q">{{ q }}</option>
+              }
+            </select>
+          </div>
+          <div class="flex flex-col gap-1.5">
+            <label for="goal-edit-deadline" class="font-mono text-[11px] text-fg-muted">Deadline</label>
+            <input
+              id="goal-edit-deadline"
+              type="date"
+              [value]="editModel().deadline"
+              (change)="onEditDeadlineChange($event)"
+              class="rounded-sm border border-border bg-elevated px-3 py-2 text-sm text-fg outline-none focus:border-brand"
+              data-testid="goal-edit-deadline"
+            />
+          </div>
+        </div>
+
+        <div class="flex items-center gap-3 border-t border-border pt-3">
+          <button
+            type="submit"
+            [disabled]="isActioning()"
+            class="rounded-sm bg-brand px-4 py-1.5 text-sm font-medium text-bg transition-colors hover:bg-brand-strong disabled:cursor-not-allowed disabled:opacity-40"
+            data-testid="goal-edit-save"
+          >
+            Save
+          </button>
+          <button
+            type="button"
+            (click)="cancelEdit()"
+            class="rounded-sm border border-border px-4 py-1.5 text-sm text-fg-muted transition-colors hover:text-fg"
+            data-testid="goal-edit-cancel"
+          >
+            Cancel
+          </button>
+        </div>
+      </form>
+    } @else {
     <!-- Detail top: title + description + status control -->
     <header class="flex items-start gap-4" data-testid="goal-hero">
       <div class="min-w-0 flex-1">
@@ -38,6 +140,16 @@
           </p>
         }
       </div>
+
+      <button
+        type="button"
+        (click)="startEdit()"
+        [disabled]="isActioning()"
+        class="shrink-0 rounded-sm border border-border px-2.5 py-1 font-mono text-[11px] text-fg-muted transition-colors hover:bg-overlay hover:text-fg disabled:cursor-not-allowed"
+        data-testid="goal-edit-toggle"
+      >
+        Edit
+      </button>
 
       <!-- Status chip + change menu -->
       <div class="relative shrink-0" data-testid="goal-status-dropdown">
@@ -112,6 +224,7 @@
       </span>
       <span class="ml-auto text-fg-faint">{{ g.id.slice(0, 8) }}</span>
     </div>
+    }
 
     <div class="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_300px]">
       <div class="flex min-w-0 flex-col gap-6">
@@ -135,39 +248,121 @@
             <ul>
               @for (m of g.milestones; track m.id) {
                 <li class="border-b border-border-faint last:border-b-0">
-                  <button
-                    type="button"
-                    (click)="toggleMilestone(m)"
-                    [disabled]="isActioning()"
-                    class="flex w-full items-center gap-2.5 px-3.5 py-2 text-left transition-colors hover:bg-overlay disabled:cursor-not-allowed"
-                    [attr.data-testid]="'goal-milestone-' + m.id"
-                    [attr.aria-pressed]="!!m.completed_at"
-                  >
-                    <span
-                      class="grid size-4 shrink-0 place-items-center rounded-full border text-[10px] leading-none"
-                      [class.border-success]="m.completed_at"
-                      [class.bg-success]="m.completed_at"
-                      [class.text-bg]="m.completed_at"
-                      [class.border-border-strong]="!m.completed_at"
-                      [class.text-transparent]="!m.completed_at"
-                      aria-hidden="true"
+                  @if (editingMilestoneId() === m.id) {
+                    <!-- Inline title edit -->
+                    <form
+                      class="flex items-center gap-2 px-3.5 py-2"
+                      (submit)="$event.preventDefault(); saveMilestoneEdit(m)"
+                      [attr.data-testid]="'goal-milestone-edit-' + m.id"
                     >
-                      ✓
-                    </span>
-                    <span
-                      class="min-w-0 flex-1 truncate text-sm"
-                      [class.text-fg]="!m.completed_at"
-                      [class.text-fg-faint]="m.completed_at"
-                      [class.line-through]="m.completed_at"
-                    >
-                      {{ m.title }}
-                    </span>
-                    @if (m.completed_at) {
-                      <span class="shrink-0 font-mono text-[11px] text-fg-faint">
-                        {{ m.completed_at | date: 'shortDate' }}
-                      </span>
-                    }
-                  </button>
+                      <label [attr.for]="'goal-milestone-edit-input-' + m.id" class="sr-only">
+                        Edit milestone title
+                      </label>
+                      <input
+                        [id]="'goal-milestone-edit-input-' + m.id"
+                        type="text"
+                        [value]="editingMilestoneTitle()"
+                        (input)="onMilestoneEditInput($event)"
+                        (keydown.escape)="cancelMilestoneEdit()"
+                        class="min-w-0 flex-1 rounded-sm border border-border bg-elevated px-2.5 py-1 text-sm text-fg outline-none focus:border-brand"
+                        [attr.data-testid]="'goal-milestone-edit-input-' + m.id"
+                      />
+                      <button
+                        type="submit"
+                        [disabled]="!editingMilestoneTitle().trim() || isActioning()"
+                        class="rounded-sm border border-border bg-elevated px-2.5 py-1 text-xs text-fg-muted transition-colors hover:bg-overlay hover:text-fg disabled:cursor-not-allowed disabled:opacity-40"
+                        [attr.data-testid]="'goal-milestone-edit-save-' + m.id"
+                      >
+                        Save
+                      </button>
+                      <button
+                        type="button"
+                        (click)="cancelMilestoneEdit()"
+                        class="rounded-sm px-2 py-1 text-xs text-fg-subtle transition-colors hover:text-fg"
+                        [attr.data-testid]="'goal-milestone-edit-cancel-' + m.id"
+                      >
+                        Cancel
+                      </button>
+                    </form>
+                  } @else {
+                    <div class="flex items-center gap-1 pr-2 transition-colors hover:bg-overlay">
+                      <button
+                        type="button"
+                        (click)="toggleMilestone(m)"
+                        [disabled]="isActioning()"
+                        class="flex min-w-0 flex-1 items-center gap-2.5 px-3.5 py-2 text-left disabled:cursor-not-allowed"
+                        [attr.data-testid]="'goal-milestone-' + m.id"
+                        [attr.aria-pressed]="!!m.completed_at"
+                      >
+                        <span
+                          class="grid size-4 shrink-0 place-items-center rounded-full border text-[10px] leading-none"
+                          [class.border-success]="m.completed_at"
+                          [class.bg-success]="m.completed_at"
+                          [class.text-bg]="m.completed_at"
+                          [class.border-border-strong]="!m.completed_at"
+                          [class.text-transparent]="!m.completed_at"
+                          aria-hidden="true"
+                        >
+                          ✓
+                        </span>
+                        <span
+                          class="min-w-0 flex-1 truncate text-sm"
+                          [class.text-fg]="!m.completed_at"
+                          [class.text-fg-faint]="m.completed_at"
+                          [class.line-through]="m.completed_at"
+                        >
+                          {{ m.title }}
+                        </span>
+                        @if (m.completed_at) {
+                          <span class="shrink-0 font-mono text-[11px] text-fg-faint">
+                            {{ m.completed_at | date: 'shortDate' }}
+                          </span>
+                        }
+                      </button>
+
+                      @if (confirmingDeleteId() === m.id) {
+                        <span class="shrink-0 font-mono text-[11px] text-error">Delete?</span>
+                        <button
+                          type="button"
+                          (click)="confirmDeleteMilestone(m)"
+                          [disabled]="isActioning()"
+                          class="shrink-0 rounded-sm bg-error px-2 py-1 font-mono text-[11px] text-bg transition-colors hover:opacity-90 disabled:cursor-not-allowed"
+                          [attr.data-testid]="'goal-milestone-delete-confirm-' + m.id"
+                        >
+                          Yes
+                        </button>
+                        <button
+                          type="button"
+                          (click)="cancelDeleteMilestone()"
+                          class="shrink-0 rounded-sm px-2 py-1 font-mono text-[11px] text-fg-subtle transition-colors hover:text-fg"
+                          [attr.data-testid]="'goal-milestone-delete-cancel-' + m.id"
+                        >
+                          No
+                        </button>
+                      } @else {
+                        <button
+                          type="button"
+                          (click)="startMilestoneEdit(m)"
+                          [disabled]="isActioning()"
+                          class="shrink-0 rounded-sm px-2 py-1 font-mono text-[11px] text-fg-subtle transition-colors hover:bg-elevated hover:text-fg disabled:cursor-not-allowed"
+                          [attr.data-testid]="'goal-milestone-edit-toggle-' + m.id"
+                          aria-label="Edit milestone"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          (click)="requestDeleteMilestone(m)"
+                          [disabled]="isActioning()"
+                          class="shrink-0 rounded-sm px-2 py-1 font-mono text-[11px] text-fg-subtle transition-colors hover:bg-error-bg hover:text-error disabled:cursor-not-allowed"
+                          [attr.data-testid]="'goal-milestone-delete-' + m.id"
+                          aria-label="Delete milestone"
+                        >
+                          ✕
+                        </button>
+                      }
+                    </div>
+                  }
                 </li>
               }
             </ul>

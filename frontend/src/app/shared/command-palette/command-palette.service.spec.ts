@@ -8,10 +8,7 @@ import { provideRouter, Router } from '@angular/router';
 import { signal } from '@angular/core';
 import { AuthService } from '../../core/services/auth.service';
 import { CommandPaletteService } from './command-palette.service';
-import type {
-  GoalsOverview,
-  ProjectSummary,
-} from '../../core/models/admin.model';
+import type { GoalSummary, ProjectSummary } from '../../core/models/admin.model';
 
 describe('CommandPaletteService', () => {
   let service: CommandPaletteService;
@@ -87,20 +84,20 @@ describe('CommandPaletteService', () => {
   it('should load goals and projects when opening while authenticated', () => {
     const { httpMock } = setup(true);
 
-    const goalsResponse: GoalsOverview = {
-      state: 'ok',
-      goals: [
-        {
-          id: 'g1',
-          title: 'mcp rewrite',
-          area_name: 'backend',
-          status: 'in_progress',
-          milestones_total: 7,
-          milestones_done: 4,
-          quarter: '2026-Q2',
-        },
-      ],
-    };
+    const goalsResponse: GoalSummary[] = [
+      {
+        id: 'g1',
+        title: 'mcp rewrite',
+        description: '',
+        status: 'in_progress',
+        quarter: '2026-Q2',
+        created_at: '2026-06-01T00:00:00Z',
+        updated_at: '2026-06-01T00:00:00Z',
+        area_name: 'backend',
+        milestone_total: 7,
+        milestone_done: 4,
+      },
+    ];
 
     const projectsResponse: { projects: ProjectSummary[] } = {
       projects: [
@@ -157,9 +154,7 @@ describe('CommandPaletteService', () => {
     const { httpMock } = setup(true);
 
     service.open();
-    httpMock
-      .expectOne('/bff/api/admin/commitment/goals')
-      .flush({ state: 'ok', goals: [] });
+    httpMock.expectOne('/bff/api/admin/commitment/goals').flush([]);
     httpMock.expectOne('/bff/api/admin/commitment/projects').flush({ projects: [] });
     httpMock
       .expectOne((r) => r.url.includes('/bff/api/admin/knowledge/content'))

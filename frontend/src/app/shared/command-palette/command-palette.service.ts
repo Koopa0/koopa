@@ -246,7 +246,7 @@ export class CommandPaletteService {
       contents: this.contentService.adminList({ perPage: 50 }),
     }).subscribe({
       next: ({ goals, projects, contents }) => {
-        const goalActions: CommandAction[] = goals.goals.map((g) => ({
+        const goalActions: CommandAction[] = goals.map((g) => ({
           id: `goal:${g.id}`,
           label: g.title,
           group: 'Goals',

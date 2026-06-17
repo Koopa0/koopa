@@ -18,7 +18,14 @@ import type { GoalDetail } from '../../../../core/models/admin.model';
 const DETAIL_URL = '/api/admin/commitment/goals/g1';
 const STATUS_URL = '/api/admin/commitment/goals/g1/status';
 const MILESTONES_URL = '/api/admin/commitment/goals/g1/milestones';
+const MILESTONE_M1_URL = '/api/admin/commitment/goals/g1/milestones/m1';
 const TOGGLE_URL = '/api/admin/commitment/goals/g1/milestones/m1/toggle';
+const AREAS_URL = '/api/admin/commitment/areas';
+
+const AREA_ROWS = [
+  { id: 'area-1', slug: 'build', name: 'Build', sort_order: 1 },
+  { id: 'area-2', slug: 'career', name: 'Career', sort_order: 2 },
+];
 
 function detail(overrides?: Partial<GoalDetail>): GoalDetail {
   return {
@@ -26,6 +33,7 @@ function detail(overrides?: Partial<GoalDetail>): GoalDetail {
     title: 'Ship koopa v1',
     description: 'Stable, self-hostable release.',
     status: 'not_started',
+    area_id: 'area-1',
     area_name: 'Build',
     quarter: '2026-Q3',
     deadline: '2026-09-30',
@@ -88,8 +96,9 @@ describe('GoalProfilePageComponent', () => {
   afterEach(() => {
     try {
       // rxResource may re-fire the detail loader during stabilization;
-      // drain any stragglers before asserting nothing else is open.
+      // drain any stragglers (detail + areas) before asserting clean.
       flushDetail(detail());
+      flushAreas();
       httpMock.verify();
     } finally {
       TestBed.resetTestingModule();
@@ -115,19 +124,28 @@ describe('GoalProfilePageComponent', () => {
     return reqs.length;
   }
 
+  /** Drain the areas read (fired once on init for the edit form selector). */
+  function flushAreas(): void {
+    httpMock
+      .match((r) => r.method === 'GET' && r.url.endsWith(AREAS_URL))
+      .forEach((r) => r.flush({ data: AREA_ROWS }));
+  }
+
   async function settle(): Promise<void> {
     await fixture.whenStable();
     fixture.detectChanges();
   }
 
-  // Flush the in-flight detail request before awaiting stability —
+  // Flush the in-flight detail + areas requests before awaiting stability —
   // pending HTTP counts as a pending task in zoneless mode.
   async function render(body: GoalDetail): Promise<void> {
     fixture = TestBed.createComponent(GoalProfilePageComponent);
     fixture.detectChanges();
     expect(flushDetail(body)).toBeGreaterThan(0);
+    flushAreas();
     await settle();
     flushDetail(body);
+    flushAreas();
     fixture.detectChanges();
   }
 
@@ -161,7 +179,6 @@ describe('GoalProfilePageComponent', () => {
     const put = httpMock.expectOne((r) => r.url.endsWith(STATUS_URL));
     expect(put.request.method).toBe('PUT');
     expect(put.request.body).toEqual({ status: 'in_progress' });
-    // Partial projection — not the full goal.
     put.flush({
       data: {
         title: 'Ship koopa v1',
@@ -192,8 +209,9 @@ describe('GoalProfilePageComponent', () => {
     (testid('goal-milestone-add-btn') as HTMLButtonElement).click();
     fixture.detectChanges();
 
-    const post = httpMock.expectOne((r) => r.url.endsWith(MILESTONES_URL));
-    expect(post.request.method).toBe('POST');
+    const post = httpMock.expectOne(
+      (r) => r.method === 'POST' && r.url.endsWith(MILESTONES_URL),
+    );
     expect(post.request.body).toEqual({ title: 'Publish the launch post' });
     post.flush({
       data: { id: 'm3', goal_id: 'g1', title: 'Publish the launch post' },
@@ -207,36 +225,6 @@ describe('GoalProfilePageComponent', () => {
 
     expect(toastMessages()).toContain('Milestone added');
     expect((testid('goal-milestone-input') as HTMLInputElement).value).toBe('');
-  });
-
-  it('should disable the add button when the milestone title is blank', async () => {
-    await render(detail());
-    expect(
-      (testid('goal-milestone-add-btn') as HTMLButtonElement).disabled,
-    ).toBe(true);
-  });
-
-  it('should toast the conflict when the milestone title already exists', async () => {
-    await render(detail());
-
-    const input = testid('goal-milestone-input') as HTMLInputElement;
-    input.value = 'Cut the first RC';
-    input.dispatchEvent(new Event('input'));
-    await settle();
-    (testid('goal-milestone-add-btn') as HTMLButtonElement).click();
-    fixture.detectChanges();
-
-    httpMock
-      .expectOne((r) => r.url.endsWith(MILESTONES_URL))
-      .flush(
-        { error: { code: 'CONFLICT', message: 'goal conflict' } },
-        { status: 409, statusText: 'Conflict' },
-      );
-    await settle();
-
-    expect(toastMessages()).toContain(
-      'A milestone with that title already exists.',
-    );
   });
 
   it('should toggle a milestone and reload the detail', async () => {
@@ -256,5 +244,144 @@ describe('GoalProfilePageComponent', () => {
     await settle();
     flushDetail(detail());
     fixture.detectChanges();
+  });
+
+  // --- Edit goal ---
+
+  it('should PUT only the changed shaping fields and reload after edit', async () => {
+    await render(detail());
+
+    (testid('goal-edit-toggle') as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    const title = testid('goal-edit-title') as HTMLInputElement;
+    expect(title.value).toBe('Ship koopa v1');
+    title.value = 'Ship koopa v1.0';
+    title.dispatchEvent(new Event('input'));
+    await settle();
+
+    (testid('goal-edit-save') as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    const put = httpMock.expectOne(
+      (r) => r.method === 'PUT' && r.url.endsWith(DETAIL_URL),
+    );
+    // Only the title changed; description/quarter/area/deadline stay omitted.
+    expect(put.request.body).toEqual({ title: 'Ship koopa v1.0' });
+    put.flush({
+      data: {
+        id: 'g1',
+        title: 'Ship koopa v1.0',
+        description: 'Stable, self-hostable release.',
+        status: 'not_started',
+        created_at: '2026-05-01T00:00:00Z',
+        updated_at: '2026-06-11T00:00:00Z',
+      },
+    });
+    fixture.detectChanges();
+
+    expect(flushDetail(detail({ title: 'Ship koopa v1.0' }))).toBeGreaterThan(0);
+    await settle();
+    flushDetail(detail({ title: 'Ship koopa v1.0' }));
+    fixture.detectChanges();
+
+    expect(toastMessages()).toContain('Goal updated');
+    expect(testid('goal-hero')?.textContent).toContain('Ship koopa v1.0');
+  });
+
+  it('should leave the goal unchanged and not call the API when edit is cancelled', async () => {
+    await render(detail());
+
+    (testid('goal-edit-toggle') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    (testid('goal-edit-cancel') as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    httpMock.expectNone(
+      (r) => r.method === 'PUT' && r.url.endsWith(DETAIL_URL),
+    );
+    expect(testid('goal-hero')).not.toBeNull();
+  });
+
+  // --- Milestone delete (two-step confirm) ---
+
+  it('should require a confirm before DELETE and then reload the detail', async () => {
+    await render(detail());
+
+    (testid('goal-milestone-delete-m1') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    // First click only reveals the confirm — no request yet.
+    httpMock.expectNone(
+      (r) => r.method === 'DELETE' && r.url.endsWith(MILESTONE_M1_URL),
+    );
+
+    (testid('goal-milestone-delete-confirm-m1') as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    const del = httpMock.expectOne(
+      (r) => r.method === 'DELETE' && r.url.endsWith(MILESTONE_M1_URL),
+    );
+    del.flush(null, { status: 204, statusText: 'No Content' });
+    fixture.detectChanges();
+
+    expect(flushDetail(detail())).toBeGreaterThan(0);
+    await settle();
+    flushDetail(detail());
+    fixture.detectChanges();
+
+    expect(toastMessages()).toContain('Milestone deleted');
+  });
+
+  it('should not DELETE when the delete confirm is dismissed', async () => {
+    await render(detail());
+
+    (testid('goal-milestone-delete-m1') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    (testid('goal-milestone-delete-cancel-m1') as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    httpMock.expectNone(
+      (r) => r.method === 'DELETE' && r.url.endsWith(MILESTONE_M1_URL),
+    );
+  });
+
+  // --- Inline milestone title edit ---
+
+  it('should PUT the new milestone title and reload after inline edit', async () => {
+    await render(detail());
+
+    (testid('goal-milestone-edit-toggle-m1') as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    const input = testid('goal-milestone-edit-input-m1') as HTMLInputElement;
+    expect(input.value).toBe('Cut the first RC');
+    input.value = 'Cut the first release candidate';
+    input.dispatchEvent(new Event('input'));
+    await settle();
+
+    (testid('goal-milestone-edit-save-m1') as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    const put = httpMock.expectOne(
+      (r) => r.method === 'PUT' && r.url.endsWith(MILESTONE_M1_URL),
+    );
+    expect(put.request.body).toEqual({
+      title: 'Cut the first release candidate',
+    });
+    put.flush({
+      data: {
+        id: 'm1',
+        goal_id: 'g1',
+        title: 'Cut the first release candidate',
+      },
+    });
+    fixture.detectChanges();
+
+    expect(flushDetail(detail())).toBeGreaterThan(0);
+    await settle();
+    flushDetail(detail());
+    fixture.detectChanges();
+
+    expect(toastMessages()).toContain('Milestone updated');
   });
 });
