@@ -226,6 +226,23 @@ func (q *Queries) AddNoteConcept(ctx context.Context, arg AddNoteConceptParams) 
 	return err
 }
 
+const addNoteTarget = `-- name: AddNoteTarget :exec
+INSERT INTO learning_target_notes (note_id, target_id)
+VALUES ($1, $2)
+ON CONFLICT DO NOTHING
+`
+
+type AddNoteTargetParams struct {
+	NoteID   uuid.UUID `json:"note_id"`
+	TargetID uuid.UUID `json:"target_id"`
+}
+
+// Link a note to a learning target. Idempotent — a repeat attach is a no-op.
+func (q *Queries) AddNoteTarget(ctx context.Context, arg AddNoteTargetParams) error {
+	_, err := q.db.Exec(ctx, addNoteTarget, arg.NoteID, arg.TargetID)
+	return err
+}
+
 const addPlanEntry = `-- name: AddPlanEntry :one
 INSERT INTO learning_plan_entries (plan_id, learning_target_id, position, phase)
 VALUES ($1, $2, $3, $4)
@@ -3556,6 +3573,20 @@ type DeleteNoteConceptParams struct {
 
 func (q *Queries) DeleteNoteConcept(ctx context.Context, arg DeleteNoteConceptParams) error {
 	_, err := q.db.Exec(ctx, deleteNoteConcept, arg.NoteID, arg.ConceptID)
+	return err
+}
+
+const deleteNoteTarget = `-- name: DeleteNoteTarget :exec
+DELETE FROM learning_target_notes WHERE note_id = $1 AND target_id = $2
+`
+
+type DeleteNoteTargetParams struct {
+	NoteID   uuid.UUID `json:"note_id"`
+	TargetID uuid.UUID `json:"target_id"`
+}
+
+func (q *Queries) DeleteNoteTarget(ctx context.Context, arg DeleteNoteTargetParams) error {
+	_, err := q.db.Exec(ctx, deleteNoteTarget, arg.NoteID, arg.TargetID)
 	return err
 }
 
@@ -10593,7 +10624,7 @@ func (q *Queries) TargetByID(ctx context.Context, id uuid.UUID) (LearningTarget,
 const targetRefsForNote = `-- name: TargetRefsForNote :many
 SELECT lt.id, lt.title, lt.domain
 FROM learning_target_notes ltn
-JOIN learning_targets lt ON lt.id = ltn.learning_target_id
+JOIN learning_targets lt ON lt.id = ltn.target_id
 WHERE ltn.note_id = $1
 ORDER BY lt.title
 `
@@ -10620,6 +10651,78 @@ func (q *Queries) TargetRefsForNote(ctx context.Context, noteID uuid.UUID) ([]Ta
 			return nil, err
 		}
 		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const targetsForList = `-- name: TargetsForList :many
+SELECT id, title, domain
+FROM learning_targets
+WHERE archived_at IS NULL
+  AND ($1::text IS NULL OR domain = $1)
+  AND ($2::text IS NULL OR title ILIKE '%' || $2::text || '%')
+ORDER BY title ASC
+LIMIT $3::int
+`
+
+type TargetsForListParams struct {
+	Domain *string `json:"domain"`
+	Q      *string `json:"q"`
+	Limit  int32   `json:"limit"`
+}
+
+type TargetsForListRow struct {
+	ID     uuid.UUID `json:"id"`
+	Title  string    `json:"title"`
+	Domain string    `json:"domain"`
+}
+
+// One row per non-archived learning target matching the optional domain/q
+// filters. Powers the admin note-editor target picker; q is a
+// case-insensitive substring match on title. Capped by @limit so an
+// empty-q load cannot return the whole catalog.
+func (q *Queries) TargetsForList(ctx context.Context, arg TargetsForListParams) ([]TargetsForListRow, error) {
+	rows, err := q.db.Query(ctx, targetsForList, arg.Domain, arg.Q, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []TargetsForListRow{}
+	for rows.Next() {
+		var i TargetsForListRow
+		if err := rows.Scan(&i.ID, &i.Title, &i.Domain); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const targetsForNote = `-- name: TargetsForNote :many
+SELECT target_id FROM learning_target_notes WHERE note_id = $1
+`
+
+// Target ids currently linked to a note — the set Store.SetTargets diffs
+// the desired ids against. Mirrors ConceptsForNote.
+func (q *Queries) TargetsForNote(ctx context.Context, noteID uuid.UUID) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, targetsForNote, noteID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []uuid.UUID{}
+	for rows.Next() {
+		var target_id uuid.UUID
+		if err := rows.Scan(&target_id); err != nil {
+			return nil, err
+		}
+		items = append(items, target_id)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err

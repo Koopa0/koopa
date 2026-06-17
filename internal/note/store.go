@@ -216,11 +216,30 @@ func (s *Store) Update(ctx context.Context, id uuid.UUID, p UpdateParams) (*Note
 		}
 		return nil, fmt.Errorf("updating note %s: %w", id, err)
 	}
-	return buildNote(
+	n, err := buildNote(
 		r.ID, r.Slug, r.Title, r.Body,
 		r.Kind, r.Maturity, r.CreatedBy, r.Metadata,
 		r.CreatedAt, r.UpdatedAt,
 	)
+	if err != nil {
+		return nil, err
+	}
+
+	// Reconcile link sets within the caller's tx. A nil pointer leaves the
+	// existing links untouched; a non-nil pointer (incl. an empty slice) sets
+	// them to exactly the given ids. UpdateNote above already enforced the
+	// note exists, so a bad id here is a link error, not a missing note.
+	if p.ConceptIDs != nil {
+		if err := s.SetConcepts(ctx, id, *p.ConceptIDs); err != nil {
+			return nil, err
+		}
+	}
+	if p.TargetIDs != nil {
+		if err := s.SetTargets(ctx, id, *p.TargetIDs); err != nil {
+			return nil, err
+		}
+	}
+	return n, nil
 }
 
 // UpdateMaturity transitions the maturity state. Any transition permitted.
@@ -258,16 +277,15 @@ func (s *Store) Delete(ctx context.Context, id uuid.UUID) error {
 }
 
 // AttachConcept adds a note_concepts row with the given relevance. Idempotent —
-// a repeat attach is a no-op. At most one primary per note is enforced by
-// idx_note_concepts_one_primary; a second primary attach will raise an FK
-// conflict that bubbles up as a DB error.
+// a repeat attach is a no-op (ON CONFLICT DO NOTHING). A concept_id that does
+// not exist surfaces as ErrInvalidLink (foreign-key violation), not a 500.
 func (s *Store) AttachConcept(ctx context.Context, noteID, conceptID uuid.UUID, relevance string) error {
 	if err := s.q.AddNoteConcept(ctx, db.AddNoteConceptParams{
 		NoteID:    noteID,
 		ConceptID: conceptID,
 		Relevance: relevance,
 	}); err != nil {
-		return fmt.Errorf("attaching concept %s to note %s: %w", conceptID, noteID, err)
+		return linkErr(err, "concept", conceptID, noteID)
 	}
 	return nil
 }
@@ -290,6 +308,124 @@ func (s *Store) ConceptsForNote(ctx context.Context, noteID uuid.UUID) ([]uuid.U
 		return nil, fmt.Errorf("listing concepts for note %s: %w", noteID, err)
 	}
 	return ids, nil
+}
+
+// AttachTarget links a note to a learning target. Idempotent — a repeat
+// attach is a no-op. A target_id that does not exist surfaces as
+// ErrInvalidLink (foreign-key violation), not a 500.
+func (s *Store) AttachTarget(ctx context.Context, noteID, targetID uuid.UUID) error {
+	if err := s.q.AddNoteTarget(ctx, db.AddNoteTargetParams{
+		NoteID:   noteID,
+		TargetID: targetID,
+	}); err != nil {
+		return linkErr(err, "target", targetID, noteID)
+	}
+	return nil
+}
+
+// DetachTarget removes a learning_target_notes row. Idempotent — deleting a
+// missing row is a no-op.
+func (s *Store) DetachTarget(ctx context.Context, noteID, targetID uuid.UUID) error {
+	if err := s.q.DeleteNoteTarget(ctx, db.DeleteNoteTargetParams{
+		NoteID:   noteID,
+		TargetID: targetID,
+	}); err != nil {
+		return fmt.Errorf("detaching target %s from note %s: %w", targetID, noteID, err)
+	}
+	return nil
+}
+
+// TargetsForNote returns the learning_target IDs linked to a note.
+func (s *Store) TargetsForNote(ctx context.Context, noteID uuid.UUID) ([]uuid.UUID, error) {
+	ids, err := s.q.TargetsForNote(ctx, noteID)
+	if err != nil {
+		return nil, fmt.Errorf("listing targets for note %s: %w", noteID, err)
+	}
+	return ids, nil
+}
+
+// SetConcepts reconciles a note's concept links to exactly want. Concepts in
+// want but not yet linked are attached with 'secondary' relevance (primary
+// designation is a separate admin action); links absent from want are
+// detached. Existing links are left untouched, so a primary set elsewhere
+// survives a re-save. Idempotent and order-independent. Runs on the caller's
+// store binding, so when invoked through a tx-bound Store the whole reconcile
+// commits or rolls back atomically with the surrounding request.
+func (s *Store) SetConcepts(ctx context.Context, noteID uuid.UUID, want []uuid.UUID) error {
+	current, err := s.ConceptsForNote(ctx, noteID)
+	if err != nil {
+		return err
+	}
+	add, remove := diffIDs(current, want)
+	for _, id := range add {
+		if err := s.AttachConcept(ctx, noteID, id, "secondary"); err != nil {
+			return err
+		}
+	}
+	for _, id := range remove {
+		if err := s.DetachConcept(ctx, noteID, id); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// SetTargets reconciles a note's learning-target links to exactly want.
+// Mirrors SetConcepts.
+func (s *Store) SetTargets(ctx context.Context, noteID uuid.UUID, want []uuid.UUID) error {
+	current, err := s.TargetsForNote(ctx, noteID)
+	if err != nil {
+		return err
+	}
+	add, remove := diffIDs(current, want)
+	for _, id := range add {
+		if err := s.AttachTarget(ctx, noteID, id); err != nil {
+			return err
+		}
+	}
+	for _, id := range remove {
+		if err := s.DetachTarget(ctx, noteID, id); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// diffIDs returns the ids to add (present in want, absent from current) and
+// to remove (present in current, absent from want), treating both as sets.
+// want is de-duplicated; add preserves want's order, remove preserves
+// current's order.
+func diffIDs(current, want []uuid.UUID) (add, remove []uuid.UUID) {
+	curSet := make(map[uuid.UUID]struct{}, len(current))
+	for _, id := range current {
+		curSet[id] = struct{}{}
+	}
+	wantSet := make(map[uuid.UUID]struct{}, len(want))
+	for _, id := range want {
+		if _, dup := wantSet[id]; dup {
+			continue
+		}
+		wantSet[id] = struct{}{}
+		if _, ok := curSet[id]; !ok {
+			add = append(add, id)
+		}
+	}
+	for _, id := range current {
+		if _, ok := wantSet[id]; !ok {
+			remove = append(remove, id)
+		}
+	}
+	return add, remove
+}
+
+// linkErr maps a junction-write failure to a sentinel. A foreign-key
+// violation means the referenced concept / target id does not exist, which
+// is caller input error (ErrInvalidLink → 422), not an internal fault.
+func linkErr(err error, kind string, id, noteID uuid.UUID) error {
+	if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok && pgErr.Code == pgerrcode.ForeignKeyViolation {
+		return fmt.Errorf("%w: %s %s", ErrInvalidLink, kind, id)
+	}
+	return fmt.Errorf("attaching %s %s to note %s: %w", kind, id, noteID, err)
 }
 
 // Search performs a full-text search over notes (title + body). Returns

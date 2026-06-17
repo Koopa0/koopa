@@ -369,6 +369,44 @@ func (s *Store) TargetVariations(ctx context.Context, domain *string, limit int3
 	return result, nil
 }
 
+// TargetListRow is one item in the GET /api/admin/learning/targets response —
+// the minimal {id, title, domain} the admin note-editor target picker needs.
+type TargetListRow struct {
+	ID     uuid.UUID `json:"id"`
+	Title  string    `json:"title"`
+	Domain string    `json:"domain"`
+}
+
+// TargetListFilter bundles the optional query params for the targets list.
+// Empty string means "no filter on that axis"; Limit is caller-bounded.
+type TargetListFilter struct {
+	Domain string
+	Q      string
+	Limit  int32
+}
+
+// Targets lists non-archived learning targets matching the filter, ordered by
+// title and capped by Limit. Powers the note-editor target picker; q is a
+// case-insensitive substring match on title.
+func (s *Store) Targets(ctx context.Context, f TargetListFilter) ([]TargetListRow, error) {
+	params := db.TargetsForListParams{Limit: f.Limit}
+	if f.Domain != "" {
+		params.Domain = &f.Domain
+	}
+	if f.Q != "" {
+		params.Q = &f.Q
+	}
+	rows, err := s.q.TargetsForList(ctx, params)
+	if err != nil {
+		return nil, fmt.Errorf("querying targets list: %w", err)
+	}
+	out := make([]TargetListRow, len(rows))
+	for i := range rows {
+		out[i] = TargetListRow{ID: rows[i].ID, Title: rows[i].Title, Domain: rows[i].Domain}
+	}
+	return out, nil
+}
+
 // ============================================================
 // Learning target writeup junctions
 //

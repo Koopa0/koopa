@@ -505,6 +505,50 @@ func (h *Handler) TargetAttempts(w http.ResponseWriter, r *http.Request) {
 	api.Encode(w, http.StatusOK, api.Response{Data: atts})
 }
 
+// Bounds for the GET /api/admin/learning/targets picker list.
+const (
+	targetsListDefaultLimit = 50
+	targetsListMaxLimit     = 100
+)
+
+// TargetsList handles GET /api/admin/learning/targets — the admin
+// note-editor's target picker source. Query params: domain (optional),
+// q (case-insensitive substring on title), limit (1-100, default 50).
+func (h *Handler) TargetsList(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	domain := q.Get("domain")
+	query := q.Get("q")
+	if containsControlChars(domain) || containsControlChars(query) {
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "filter contains control characters")
+		return
+	}
+
+	limit := targetsListDefaultLimit
+	if v := q.Get("limit"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 1 || n > targetsListMaxLimit {
+			api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "limit must be between 1 and 100")
+			return
+		}
+		limit = n
+	}
+
+	rows, err := h.store.Targets(r.Context(), TargetListFilter{
+		Domain: domain,
+		Q:      query,
+		Limit:  int32(limit), // #nosec G115 -- limit bounded to [1, 100]
+	})
+	if err != nil {
+		h.logger.Error("listing targets", "error", err)
+		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to list targets")
+		return
+	}
+	if rows == nil {
+		rows = []TargetListRow{}
+	}
+	api.Encode(w, http.StatusOK, api.Response{Data: rows})
+}
+
 // StartSessionRequest is the POST body for starting a session.
 type StartSessionRequest struct {
 	Domain          string     `json:"domain"`

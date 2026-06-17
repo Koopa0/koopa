@@ -98,9 +98,23 @@ ORDER BY c.name;
 -- surfaces; full target detail stays behind the learning endpoints.
 SELECT lt.id, lt.title, lt.domain
 FROM learning_target_notes ltn
-JOIN learning_targets lt ON lt.id = ltn.learning_target_id
+JOIN learning_targets lt ON lt.id = ltn.target_id
 WHERE ltn.note_id = $1
 ORDER BY lt.title;
+
+-- name: AddNoteTarget :exec
+-- Link a note to a learning target. Idempotent — a repeat attach is a no-op.
+INSERT INTO learning_target_notes (note_id, target_id)
+VALUES ($1, $2)
+ON CONFLICT DO NOTHING;
+
+-- name: DeleteNoteTarget :exec
+DELETE FROM learning_target_notes WHERE note_id = $1 AND target_id = $2;
+
+-- name: TargetsForNote :many
+-- Target ids currently linked to a note — the set Store.SetTargets diffs
+-- the desired ids against. Mirrors ConceptsForNote.
+SELECT target_id FROM learning_target_notes WHERE note_id = $1;
 
 -- name: SearchNotes :many
 -- FTS over notes.search_vector (title weight A, body weight C). Returns

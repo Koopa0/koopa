@@ -27,7 +27,9 @@ type SignalCounts struct {
 // ConceptListRow is one item in the /api/admin/learning/concepts
 // response array.
 type ConceptListRow struct {
+	ID            uuid.UUID    `json:"id"`
 	Slug          string       `json:"slug"`
+	Name          string       `json:"name"`
 	Kind          string       `json:"kind"`
 	Domain        string       `json:"domain"`
 	MasteryStage  MasteryStage `json:"mastery_stage"`
@@ -150,7 +152,9 @@ func (s *Store) ConceptsList(ctx context.Context, f ConceptListFilter, since tim
 			continue
 		}
 		row := ConceptListRow{
+			ID:           r.ID,
 			Slug:         r.Slug,
+			Name:         r.Name,
 			Kind:         string(r.Kind),
 			Domain:       r.Domain,
 			MasteryStage: stage,

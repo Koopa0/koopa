@@ -432,6 +432,19 @@ WHERE c.archived_at IS NULL
 GROUP BY c.id, parent.slug
 ORDER BY c.domain ASC, c.slug ASC;
 
+-- name: TargetsForList :many
+-- One row per non-archived learning target matching the optional domain/q
+-- filters. Powers the admin note-editor target picker; q is a
+-- case-insensitive substring match on title. Capped by @limit so an
+-- empty-q load cannot return the whole catalog.
+SELECT id, title, domain
+FROM learning_targets
+WHERE archived_at IS NULL
+  AND (sqlc.narg('domain')::text IS NULL OR domain = sqlc.narg('domain'))
+  AND (sqlc.narg('q')::text IS NULL OR title ILIKE '%' || sqlc.narg('q')::text || '%')
+ORDER BY title ASC
+LIMIT sqlc.arg('limit')::int;
+
 -- name: ConceptMasteryCountsForConcept :one
 -- Two-axis signal counts for a single concept, returned in one round
 -- trip. Filtered counts honour the caller's confidence_filter

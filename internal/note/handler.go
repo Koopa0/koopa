@@ -13,6 +13,7 @@
 package note
 
 import (
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -28,6 +29,7 @@ var storeErrors = []api.ErrMap{
 	{Target: ErrConflict, Status: http.StatusConflict, Code: "CONFLICT", Message: "note slug conflict"},
 	{Target: ErrInvalidKind, Status: http.StatusBadRequest, Code: "INVALID_KIND", Message: "invalid note kind"},
 	{Target: ErrInvalidMaturity, Status: http.StatusBadRequest, Code: "INVALID_MATURITY", Message: "invalid note maturity"},
+	{Target: ErrInvalidLink, Status: http.StatusUnprocessableEntity, Code: "INVALID_LINK", Message: "unknown concept or target id"},
 }
 
 // Handler handles note HTTP requests. The public surface is empty — notes
@@ -110,7 +112,12 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	for i := range notes {
 		n := notes[i]
 		n.Body = ""
-		out[i] = h.enrich(r, &n)
+		enriched, err := h.enrich(r, &n)
+		if err != nil {
+			api.HandleError(w, h.logger, err, storeErrors...)
+			return
+		}
+		out[i] = enriched
 	}
 	api.Encode(w, http.StatusOK, api.PagedResponse(out, total, f.Page, f.PerPage))
 }
@@ -127,7 +134,12 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 		api.HandleError(w, h.logger, err, storeErrors...)
 		return
 	}
-	api.Encode(w, http.StatusOK, api.Response{Data: h.enrich(r, n)})
+	resp, err := h.enrich(r, n)
+	if err != nil {
+		api.HandleError(w, h.logger, err, storeErrors...)
+		return
+	}
+	api.Encode(w, http.StatusOK, api.Response{Data: resp})
 }
 
 // createRequest is the POST body for Create. created_by is not caller-
@@ -185,7 +197,12 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		api.HandleError(w, h.logger, err, storeErrors...)
 		return
 	}
-	api.Encode(w, http.StatusCreated, api.Response{Data: h.enrich(r, n)})
+	resp, err := h.enrich(r, n)
+	if err != nil {
+		api.HandleError(w, h.logger, err, storeErrors...)
+		return
+	}
+	api.Encode(w, http.StatusCreated, api.Response{Data: resp})
 }
 
 // updateRequest is the PUT body for Update. Structurally identical to
@@ -219,7 +236,12 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 		api.HandleError(w, h.logger, err, storeErrors...)
 		return
 	}
-	api.Encode(w, http.StatusOK, api.Response{Data: h.enrich(r, n)})
+	resp, err := h.enrich(r, n)
+	if err != nil {
+		api.HandleError(w, h.logger, err, storeErrors...)
+		return
+	}
+	api.Encode(w, http.StatusOK, api.Response{Data: resp})
 }
 
 // Maturity handles POST /api/admin/knowledge/notes/{id}/maturity.
@@ -253,7 +275,12 @@ func (h *Handler) Maturity(w http.ResponseWriter, r *http.Request) {
 		api.HandleError(w, h.logger, err, storeErrors...)
 		return
 	}
-	api.Encode(w, http.StatusOK, api.Response{Data: h.enrich(r, n)})
+	resp, err := h.enrich(r, n)
+	if err != nil {
+		api.HandleError(w, h.logger, err, storeErrors...)
+		return
+	}
+	api.Encode(w, http.StatusOK, api.Response{Data: resp})
 }
 
 // Delete handles DELETE /api/admin/knowledge/notes/{id}.
@@ -274,26 +301,43 @@ func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// enrich attaches concept / target refs to a Note before wire encoding.
-// Failures on either side do not fail the whole request — the UI just
-// renders empty badges — but they are logged for follow-up.
-func (h *Handler) enrich(r *http.Request, n *Note) response {
+// enrich attaches resolved concept / target refs to a Note before wire
+// encoding. When the request carries a tx (a mutation in flight) the reads run
+// inside that tx so the response reflects the request's own uncommitted edits;
+// in that case a read failure is FATAL and returned, because a failed
+// statement aborts the tx — swallowing the error would let the handler return
+// 2xx while the middleware's commit fails, silently losing the write. Outside
+// a tx (a plain GET) a read failure is tolerated: empty badges, logged.
+func (h *Handler) enrich(r *http.Request, n *Note) (response, error) {
 	out := response{Note: n, Concepts: []ConceptRef{}, Targets: []TargetRef{}}
 	if n == nil {
-		return out
+		return out, nil
 	}
 	ctx := r.Context()
-	if refs, err := h.store.ConceptRefsForNote(ctx, n.ID); err != nil {
+	store := h.store
+	tx, inTx := api.TxFromContext(ctx)
+	if inTx {
+		store = h.store.WithTx(tx)
+	}
+	concepts, err := store.ConceptRefsForNote(ctx, n.ID)
+	if err != nil {
+		if inTx {
+			return out, fmt.Errorf("enriching note %s concepts: %w", n.ID, err)
+		}
 		h.logger.Warn("note enrich: loading concepts failed", "note_id", n.ID, "error", err)
 	} else {
-		out.Concepts = refs
+		out.Concepts = concepts
 	}
-	if refs, err := h.store.TargetRefsForNote(ctx, n.ID); err != nil {
+	targets, err := store.TargetRefsForNote(ctx, n.ID)
+	if err != nil {
+		if inTx {
+			return out, fmt.Errorf("enriching note %s targets: %w", n.ID, err)
+		}
 		h.logger.Warn("note enrich: loading targets failed", "note_id", n.ID, "error", err)
 	} else {
-		out.Targets = refs
+		out.Targets = targets
 	}
-	return out
+	return out, nil
 }
 
 // actorFromContext resolves the authenticated agent identity for a
