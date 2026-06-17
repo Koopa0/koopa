@@ -12,6 +12,7 @@ import {
   Home,
   Inbox as InboxIcon,
   Layers,
+  Library,
   ListChecks,
   Rss,
   Search,
@@ -134,6 +135,13 @@ export const ADMIN_NAV: readonly AdminNavGroup[] = [
         icon: StickyNote,
         shortcutHint: 'G N',
         testId: 'admin-nav-notes',
+      },
+      {
+        label: 'Reading',
+        route: '/admin/knowledge/reading',
+        icon: Library,
+        shortcutHint: '',
+        testId: 'admin-nav-reading',
       },
       {
         label: 'Feeds',

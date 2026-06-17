@@ -246,6 +246,20 @@ export const routes: Routes = [
         canDeactivate: [noteEditorCanDeactivate],
       },
       {
+        path: 'knowledge/reading',
+        loadComponent: () =>
+          import('./admin/knowledge/reading/shelf/reading-shelf.page').then(
+            (m) => m.ReadingShelfPageComponent,
+          ),
+      },
+      {
+        path: 'knowledge/reading/:id',
+        loadComponent: () =>
+          import('./admin/knowledge/reading/detail/reading-detail.page').then(
+            (m) => m.ReadingDetailPageComponent,
+          ),
+      },
+      {
         path: 'knowledge/feeds',
         loadComponent: () =>
           import('./admin/knowledge/feeds/list/feeds-list.page').then(
