@@ -23,11 +23,11 @@ interface DueDisplay {
 
 /** State → colored text mapping. */
 const STATE_TEXT_CLASS: Record<TodoState, string> = {
-  inbox: 'text-zinc-400',
-  todo: 'text-sky-400',
+  inbox: 'text-fg-muted',
+  todo: 'text-brand',
   in_progress: 'text-amber-400',
   done: 'text-emerald-400',
-  someday: 'text-zinc-500',
+  someday: 'text-fg-subtle',
 };
 
 const STATE_LABEL: Record<TodoState, string> = {

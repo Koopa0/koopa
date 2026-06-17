@@ -1,6 +1,6 @@
 <!-- Tabs -->
 <div
-  class="flex border-b border-zinc-800"
+  class="flex border-b border-border"
   role="tablist"
   aria-label="Project inspector tabs"
 >
@@ -11,10 +11,10 @@
     [attr.aria-selected]="activeTab() === 'overview'"
     (click)="setTab('overview')"
     class="flex-1 px-4 py-2.5 text-xs font-medium transition-colors"
-    [class.text-zinc-100]="activeTab() === 'overview'"
+    [class.text-fg]="activeTab() === 'overview'"
     [class.border-b-2]="activeTab() === 'overview'"
-    [class.border-zinc-400]="activeTab() === 'overview'"
-    [class.text-zinc-500]="activeTab() !== 'overview'"
+    [class.border-border-strong]="activeTab() === 'overview'"
+    [class.text-fg-subtle]="activeTab() !== 'overview'"
   >
     Overview
   </button>
@@ -25,10 +25,10 @@
     [attr.aria-selected]="activeTab() === 'activity'"
     (click)="setTab('activity')"
     class="flex-1 px-4 py-2.5 text-xs font-medium transition-colors"
-    [class.text-zinc-100]="activeTab() === 'activity'"
+    [class.text-fg]="activeTab() === 'activity'"
     [class.border-b-2]="activeTab() === 'activity'"
-    [class.border-zinc-400]="activeTab() === 'activity'"
-    [class.text-zinc-500]="activeTab() !== 'activity'"
+    [class.border-border-strong]="activeTab() === 'activity'"
+    [class.text-fg-subtle]="activeTab() !== 'activity'"
   >
     Activity
   </button>
@@ -37,17 +37,17 @@
 <div class="flex h-full flex-col" data-testid="project-inspector">
   @if (isLoading()) {
     <div
-      class="flex flex-1 items-center justify-center text-zinc-400"
+      class="flex flex-1 items-center justify-center text-fg-muted"
       role="status"
       aria-label="Loading project"
     >
       <div
-        class="size-5 animate-spin rounded-full border-2 border-zinc-700 border-t-zinc-400"
+        class="size-5 animate-spin rounded-full border-2 border-border-strong border-t-zinc-400"
       ></div>
     </div>
   } @else if (hasError()) {
     <div
-      class="flex flex-1 items-center justify-center px-6 text-center text-sm text-zinc-400"
+      class="flex flex-1 items-center justify-center px-6 text-center text-sm text-fg-muted"
       role="alert"
     >
       Failed to load project.
@@ -57,82 +57,82 @@
       @case ("overview") {
         <div class="space-y-6 p-6" data-testid="project-overview-section">
           <header>
-            <div class="text-xs uppercase tracking-wider text-zinc-400">
+            <div class="text-xs uppercase tracking-wider text-fg-muted">
               Project · {{ p.area }}
             </div>
             <h2
-              class="mt-1 text-lg font-semibold text-zinc-100"
+              class="mt-1 text-lg font-semibold text-fg"
               data-testid="project-title"
             >
               {{ p.title }}
             </h2>
             @if (p.goal_breadcrumb) {
-              <div class="mt-1 text-xs text-zinc-400">
+              <div class="mt-1 text-xs text-fg-muted">
                 Goal:
-                <span class="text-zinc-400">{{
+                <span class="text-fg-muted">{{
                   p.goal_breadcrumb.goal_title
                 }}</span>
               </div>
             }
             @if (p.description) {
-              <p class="mt-2 text-sm text-zinc-400">{{ p.description }}</p>
+              <p class="mt-2 text-sm text-fg-muted">{{ p.description }}</p>
             }
           </header>
 
           <dl class="grid grid-cols-2 gap-4 text-xs">
             <div>
-              <dt class="text-zinc-400">Status</dt>
-              <dd class="mt-1 font-medium text-zinc-200">{{ p.status }}</dd>
+              <dt class="text-fg-muted">Status</dt>
+              <dd class="mt-1 font-medium text-fg">{{ p.status }}</dd>
             </div>
             <div>
-              <dt class="text-zinc-400">Area</dt>
-              <dd class="mt-1 font-medium text-zinc-200">{{ p.area }}</dd>
+              <dt class="text-fg-muted">Area</dt>
+              <dd class="mt-1 font-medium text-fg">{{ p.area }}</dd>
             </div>
           </dl>
 
           @if (taskCounts(); as tc) {
             <section>
-              <div class="text-xs text-zinc-400">Tasks</div>
+              <div class="text-xs text-fg-muted">Tasks</div>
               <div
                 class="mt-2 grid grid-cols-4 gap-2 text-center"
                 role="list"
                 aria-label="Task counts by status"
               >
                 <div
-                  class="rounded-md border border-zinc-800/80 bg-zinc-900/40 p-2"
+                  class="rounded-md border border-border/80 bg-panel/40 p-2"
                   role="listitem"
                 >
-                  <div class="font-mono text-base text-sky-300">
+                  <div class="font-mono text-base text-brand">
                     {{ tc.inProgress }}
                   </div>
-                  <div class="text-xs text-zinc-400">in progress</div>
+                  <div class="text-xs text-fg-muted">in progress</div>
                 </div>
                 <div
-                  class="rounded-md border border-zinc-800/80 bg-zinc-900/40 p-2"
+                  class="rounded-md border border-border/80 bg-panel/40 p-2"
                   role="listitem"
                 >
-                  <div class="font-mono text-base text-zinc-200">
+                  <div class="font-mono text-base text-fg">
                     {{ tc.todo }}
                   </div>
-                  <div class="text-xs text-zinc-400">todo</div>
+                  <div class="text-xs text-fg-muted">todo</div>
                 </div>
                 <div
-                  class="rounded-md border border-zinc-800/80 bg-zinc-900/40 p-2"
+                  class="rounded-md border border-border/80 bg-panel/40 p-2"
                   role="listitem"
                 >
                   <div class="font-mono text-base text-emerald-300">
                     {{ tc.done }}
                   </div>
-                  <div class="text-xs text-zinc-400">done</div>
+                  <div class="text-xs text-fg-muted">done</div>
                 </div>
                 <div
-                  class="rounded-md border border-zinc-800/80 bg-zinc-900/40 p-2"
+                  class="rounded-md border border-border/80 bg-panel/40 p-2"
                   role="listitem"
                 >
-                  <div class="font-mono text-base text-zinc-400">
+                  <div class="font-mono text-base text-fg-muted">
                     {{ tc.someday }}
                   </div>
-                  <div class="text-xs text-zinc-400">someday</div>
+                  <div class="text-xs text-fg-muted">someday</div>
                 </div>
               </div>
             </section>
@@ -140,29 +140,29 @@
 
           @if (p.problem) {
             <section>
-              <div class="text-xs uppercase tracking-wider text-zinc-400">
+              <div class="text-xs uppercase tracking-wider text-fg-muted">
                 Problem
               </div>
-              <p class="mt-1 text-sm text-zinc-300">{{ p.problem }}</p>
+              <p class="mt-1 text-sm text-fg-muted">{{ p.problem }}</p>
             </section>
           }
           @if (p.solution) {
             <section>
-              <div class="text-xs uppercase tracking-wider text-zinc-400">
+              <div class="text-xs uppercase tracking-wider text-fg-muted">
                 Solution
               </div>
-              <p class="mt-1 text-sm text-zinc-300">{{ p.solution }}</p>
+              <p class="mt-1 text-sm text-fg-muted">{{ p.solution }}</p>
             </section>
           }
 
           @if (p.related_content.length > 0) {
             <section>
-              <div class="text-xs text-zinc-400">
+              <div class="text-xs text-fg-muted">
                 Related Content ({{ p.related_content.length }})
               </div>
               <ul class="mt-2 space-y-1 text-sm">
                 @for (c of p.related_content; track c.id) {
-                  <li class="text-zinc-400">{{ c.title }}</li>
+                  <li class="text-fg-muted">{{ c.title }}</li>
                 }
               </ul>
             </section>
@@ -172,16 +172,16 @@
       @case ("activity") {
         <div class="p-6" data-testid="project-activity-section">
           @if (p.recent_activity.length === 0) {
-            <div class="text-sm text-zinc-400">No recent activity.</div>
+            <div class="text-sm text-fg-muted">No recent activity.</div>
           } @else {
             <ul class="space-y-3">
               @for (a of p.recent_activity; track $index) {
-                <li class="border-l-2 border-zinc-800 pl-3 text-sm">
-                  <div class="text-xs text-zinc-400">
+                <li class="border-l-2 border-border pl-3 text-sm">
+                  <div class="text-xs text-fg-muted">
                     {{ a.timestamp | date: "short" }}
                   </div>
-                  <div class="text-zinc-200">{{ a.title }}</div>
-                  <div class="font-mono text-xs text-zinc-400">
+                  <div class="text-fg">{{ a.title }}</div>
+                  <div class="font-mono text-xs text-fg-muted">
                     {{ a.type }}
                   </div>
                 </li>

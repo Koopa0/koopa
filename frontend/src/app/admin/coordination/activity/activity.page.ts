@@ -146,9 +146,9 @@ export class ActivityPageComponent {
   protected kindDotClass(kind: ActivityChangeKind): string {
     switch (kind) {
       case 'created':
-        return 'bg-sky-500';
+        return 'bg-brand';
       case 'updated':
-        return 'bg-zinc-400';
+        return 'bg-fg-subtle';
       case 'state_changed':
         return 'bg-amber-400';
       case 'published':
@@ -156,7 +156,7 @@ export class ActivityPageComponent {
       case 'completed':
         return 'bg-emerald-400';
       case 'archived':
-        return 'bg-zinc-600';
+        return 'bg-fg-faint';
     }
   }
 }

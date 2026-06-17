@@ -1,6 +1,6 @@
 <!-- Tabs -->
 <div
-  class="flex border-b border-zinc-800"
+  class="flex border-b border-border"
   role="tablist"
   aria-label="Content inspector tabs"
 >
@@ -10,10 +10,10 @@
     [attr.aria-selected]="activeTab() === 'preview'"
     (click)="setTab('preview')"
     class="flex-1 px-4 py-2.5 text-xs font-medium transition-colors"
-    [class.text-zinc-100]="activeTab() === 'preview'"
+    [class.text-fg]="activeTab() === 'preview'"
     [class.border-b-2]="activeTab() === 'preview'"
-    [class.border-sky-500]="activeTab() === 'preview'"
-    [class.text-zinc-500]="activeTab() !== 'preview'"
+    [class.border-brand]="activeTab() === 'preview'"
+    [class.text-fg-subtle]="activeTab() !== 'preview'"
     data-testid="content-tab-preview"
   >
     Preview
@@ -24,10 +24,10 @@
     [attr.aria-selected]="activeTab() === 'metadata'"
     (click)="setTab('metadata')"
     class="flex-1 px-4 py-2.5 text-xs font-medium transition-colors"
-    [class.text-zinc-100]="activeTab() === 'metadata'"
+    [class.text-fg]="activeTab() === 'metadata'"
     [class.border-b-2]="activeTab() === 'metadata'"
-    [class.border-sky-500]="activeTab() === 'metadata'"
-    [class.text-zinc-500]="activeTab() !== 'metadata'"
+    [class.border-brand]="activeTab() === 'metadata'"
+    [class.text-fg-subtle]="activeTab() !== 'metadata'"
     data-testid="content-tab-metadata"
   >
     Metadata
@@ -38,7 +38,7 @@
 @if (isLoading()) {
   <div class="flex flex-1 items-center justify-center">
     <div
-      class="size-5 animate-spin rounded-full border-2 border-zinc-700 border-t-zinc-400"
+      class="size-5 animate-spin rounded-full border-2 border-border-strong border-t-zinc-400"
     ></div>
   </div>
 } @else if (hasError()) {
@@ -55,10 +55,10 @@
       >
         <h1>{{ c.title }}</h1>
         @if (c.excerpt) {
-          <p class="text-zinc-400 italic">{{ c.excerpt }}</p>
+          <p class="text-fg-muted italic">{{ c.excerpt }}</p>
         }
         <!-- Body rendered as plain text for now; Markdown rendering -->
-        <div class="whitespace-pre-wrap text-sm leading-relaxed text-zinc-300">
+        <div class="whitespace-pre-wrap text-sm leading-relaxed text-fg-muted">
           {{ c.body }}
         </div>
       </article>
@@ -68,43 +68,43 @@
       <div class="space-y-3 px-5 py-4" data-testid="content-metadata">
         <dl class="space-y-2 text-sm">
           <div class="flex justify-between">
-            <dt class="text-zinc-500">Type</dt>
-            <dd class="text-zinc-200">{{ c.type }}</dd>
+            <dt class="text-fg-subtle">Type</dt>
+            <dd class="text-fg">{{ c.type }}</dd>
           </div>
           <div class="flex justify-between">
-            <dt class="text-zinc-500">Status</dt>
-            <dd class="text-zinc-200">{{ c.status }}</dd>
+            <dt class="text-fg-subtle">Status</dt>
+            <dd class="text-fg">{{ c.status }}</dd>
           </div>
           <div class="flex justify-between">
-            <dt class="text-zinc-500">Public</dt>
-            <dd class="text-zinc-200">{{ c.is_public ? "Yes" : "No" }}</dd>
+            <dt class="text-fg-subtle">Public</dt>
+            <dd class="text-fg">{{ c.is_public ? "Yes" : "No" }}</dd>
           </div>
           <div class="flex justify-between">
-            <dt class="text-zinc-500">Reading Time</dt>
-            <dd class="text-zinc-200">{{ c.reading_time_min }} min</dd>
+            <dt class="text-fg-subtle">Reading Time</dt>
+            <dd class="text-fg">{{ c.reading_time_min }} min</dd>
           </div>
           <div class="flex justify-between">
-            <dt class="text-zinc-500">Slug</dt>
-            <dd class="font-mono text-xs text-zinc-300">{{ c.slug }}</dd>
+            <dt class="text-fg-subtle">Slug</dt>
+            <dd class="font-mono text-xs text-fg-muted">{{ c.slug }}</dd>
           </div>
           @if (c.source_type) {
             <div class="flex justify-between">
-              <dt class="text-zinc-500">Origin</dt>
-              <dd class="text-zinc-200">{{ c.source_type }}</dd>
+              <dt class="text-fg-subtle">Origin</dt>
+              <dd class="text-fg">{{ c.source_type }}</dd>
             </div>
           }
           <div class="flex justify-between">
-            <dt class="text-zinc-500">Created</dt>
-            <dd class="text-zinc-200">{{ c.created_at | date: "medium" }}</dd>
+            <dt class="text-fg-subtle">Created</dt>
+            <dd class="text-fg">{{ c.created_at | date: "medium" }}</dd>
           </div>
           <div class="flex justify-between">
-            <dt class="text-zinc-500">Updated</dt>
-            <dd class="text-zinc-200">{{ c.updated_at | date: "medium" }}</dd>
+            <dt class="text-fg-subtle">Updated</dt>
+            <dd class="text-fg">{{ c.updated_at | date: "medium" }}</dd>
           </div>
           @if (c.published_at) {
             <div class="flex justify-between">
-              <dt class="text-zinc-500">Published</dt>
-              <dd class="text-zinc-200">
+              <dt class="text-fg-subtle">Published</dt>
+              <dd class="text-fg">
                 {{ c.published_at | date: "medium" }}
               </dd>
             </div>
@@ -114,14 +114,14 @@
         @if (c.tags.length > 0) {
           <div>
             <h4
-              class="mb-1 text-xs font-semibold uppercase tracking-wider text-zinc-500"
+              class="mb-1 text-xs font-semibold uppercase tracking-wider text-fg-subtle"
             >
               Tags
             </h4>
             <div class="flex flex-wrap gap-1">
               @for (tag of c.tags; track tag) {
                 <span
-                  class="rounded-full border border-zinc-700 bg-zinc-800 px-2 py-0.5 text-[10px] text-zinc-400"
+                  class="rounded-full border border-border-strong bg-elevated px-2 py-0.5 text-[10px] text-fg-muted"
                   >{{ tag }}</span
                 >
               }
@@ -132,14 +132,14 @@
         @if (c.topics.length > 0) {
           <div>
             <h4
-              class="mb-1 text-xs font-semibold uppercase tracking-wider text-zinc-500"
+              class="mb-1 text-xs font-semibold uppercase tracking-wider text-fg-subtle"
             >
               Topics
             </h4>
             <div class="flex flex-wrap gap-1">
               @for (topic of c.topics; track topic.id) {
                 <span
-                  class="rounded-full border border-sky-800 bg-sky-900/30 px-2 py-0.5 text-[10px] text-sky-400"
+                  class="rounded-full border border-brand-strong bg-brand/30 px-2 py-0.5 text-[10px] text-brand"
                   >{{ topic.name }}</span
                 >
               }
@@ -150,12 +150,12 @@
         @if (reviewNotes(); as notes) {
           <div>
             <h4
-              class="mb-1 text-xs font-semibold uppercase tracking-wider text-zinc-500"
+              class="mb-1 text-xs font-semibold uppercase tracking-wider text-fg-subtle"
             >
               Last Review Notes
             </h4>
             <p
-              class="rounded-md border border-zinc-800 bg-zinc-900 p-3 text-xs text-zinc-400"
+              class="rounded-md border border-border bg-panel p-3 text-xs text-fg-muted"
             >
               {{ notes }}
             </p>
@@ -168,7 +168,7 @@
   <!-- Action Bar -->
   @if (isReviewable()) {
     <div
-      class="border-t border-zinc-800 px-5 py-3"
+      class="border-t border-border px-5 py-3"
       data-testid="content-actions"
     >
       <div class="flex items-center gap-2">
@@ -195,14 +195,14 @@
 
         <div class="flex-1"></div>
 
-        <span class="flex items-center gap-2 text-xs text-zinc-400">
+        <span class="flex items-center gap-2 text-xs text-fg-muted">
           <span id="content-public-label">Public</span>
           <button
             type="button"
             role="switch"
             class="relative inline-flex h-5 w-9 items-center rounded-full transition-colors"
             [class.bg-emerald-600]="c.is_public"
-            [class.bg-zinc-700]="!c.is_public"
+            [class.bg-overlay]="!c.is_public"
             [attr.aria-checked]="c.is_public"
             aria-labelledby="content-public-label"
             [disabled]="isActioning()"
@@ -223,7 +223,7 @@
         <div class="mt-3 space-y-2">
           <textarea
             aria-label="Reason for rejection"
-            class="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 placeholder-zinc-500 outline-hidden focus:border-zinc-500 focus:ring-1 focus:ring-zinc-500"
+            class="w-full rounded-md border border-border-strong bg-panel px-3 py-2 text-sm text-fg placeholder-fg-faint outline-hidden focus:border-border-strong focus:ring-1 focus:ring-border-strong"
             rows="3"
             placeholder="Reason for rejection (required)..."
             [value]="rejectNotes()"
@@ -242,7 +242,7 @@
             </button>
             <button
               type="button"
-              class="rounded-md px-3 py-1.5 text-xs text-zinc-400 transition-colors hover:text-zinc-200"
+              class="rounded-md px-3 py-1.5 text-xs text-fg-muted transition-colors hover:text-fg"
               (click)="toggleReject()"
             >
               Cancel

@@ -108,7 +108,7 @@ describe('ConceptInspectorComponent', () => {
     expect(subtitle?.textContent).toContain('leetcode');
     expect(subtitle?.textContent).toContain('developing');
     const stage = el.querySelector('[data-testid="concept-stage"]');
-    expect(stage?.className).toContain('text-zinc-400');
+    expect(stage?.className).toContain('text-fg-muted');
   });
 
   it('should color stage text amber when struggling', async () => {

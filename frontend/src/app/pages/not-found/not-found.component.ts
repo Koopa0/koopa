@@ -14,39 +14,39 @@ import { SeoService } from '../../core/services/seo/seo.service';
   imports: [RouterLink, LucideAngularModule],
   template: `
     <section
-      class="scanlines relative flex min-h-[calc(100vh-4rem)] items-center justify-center bg-zinc-950 px-4"
+      class="scanlines relative flex min-h-[calc(100vh-4rem)] items-center justify-center bg-bg px-4"
     >
       <div class="text-center">
         <p
-          class="glitch-text font-display text-8xl font-bold text-zinc-800"
+          class="glitch-text font-display text-8xl font-bold text-fg-faint"
           data-text="404"
         >
           404
         </p>
-        <h1 class="font-display mt-4 text-2xl font-bold text-zinc-100">
+        <h1 class="font-display mt-4 text-2xl font-bold text-fg">
           Page Not Found
         </h1>
-        <p class="mt-2 text-sm text-zinc-400">
+        <p class="mt-2 text-sm text-fg-muted">
           The page you are looking for does not exist or has been removed.
         </p>
         <div class="mt-8 flex flex-wrap items-center justify-center gap-3">
           <a
             routerLink="/"
-            class="inline-flex items-center gap-2 rounded-sm bg-white px-5 py-2.5 text-sm font-semibold text-zinc-900 no-underline transition-colors hover:bg-zinc-200"
+            class="inline-flex items-center gap-2 rounded-sm bg-white px-5 py-2.5 text-sm font-semibold text-bg no-underline transition-colors hover:bg-fg-muted"
           >
             <lucide-icon [img]="HomeIcon" [size]="16" />
             Back to Home
           </a>
           <a
             routerLink="/articles"
-            class="inline-flex items-center gap-2 rounded-sm border border-zinc-700 px-5 py-2.5 text-sm text-zinc-300 no-underline transition-colors hover:border-zinc-500 hover:text-white"
+            class="inline-flex items-center gap-2 rounded-sm border border-border-strong px-5 py-2.5 text-sm text-fg-muted no-underline transition-colors hover:border-border-strong hover:text-white"
           >
             <lucide-icon [img]="FileTextIcon" [size]="16" />
             Articles
           </a>
           <a
             routerLink="/about"
-            class="inline-flex items-center gap-2 rounded-sm border border-zinc-700 px-5 py-2.5 text-sm text-zinc-300 no-underline transition-colors hover:border-zinc-500 hover:text-white"
+            class="inline-flex items-center gap-2 rounded-sm border border-border-strong px-5 py-2.5 text-sm text-fg-muted no-underline transition-colors hover:border-border-strong hover:text-white"
           >
             <lucide-icon [img]="UserIcon" [size]="16" />
             About

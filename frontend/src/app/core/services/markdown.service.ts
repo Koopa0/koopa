@@ -201,15 +201,15 @@ export class MarkdownService {
             'rounded-lg',
             'border-2',
             'border-dashed',
-            'border-zinc-600',
-            'bg-zinc-100',
+            'border-border-strong',
+            'bg-elevated',
             'p-5',
             'text-center',
             'font-mono',
-            'text-zinc-600',
-            'dark:bg-zinc-800',
-            'dark:border-zinc-500',
-            'dark:text-zinc-400',
+            'text-fg-faint',
+            'dark:bg-overlay',
+            'dark:border-border-strong',
+            'dark:text-fg-muted',
           );
 
           const title = document.createElement('div');
@@ -225,7 +225,7 @@ export class MarkdownService {
 
           const pre = document.createElement('pre');
           pre.className =
-            'rounded-sm bg-white p-2.5 text-left dark:bg-zinc-900';
+            'rounded-sm bg-white p-2.5 text-left dark:bg-panel';
           pre.textContent = code;
           element.appendChild(pre);
         }

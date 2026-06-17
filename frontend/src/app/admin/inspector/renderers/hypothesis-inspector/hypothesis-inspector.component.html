@@ -1,6 +1,6 @@
 <!-- Tabs -->
 <div
-  class="flex border-b border-zinc-800"
+  class="flex border-b border-border"
   role="tablist"
   aria-label="Hypothesis inspector tabs"
 >
@@ -10,10 +10,10 @@
     [attr.aria-selected]="activeTab() === 'claim'"
     (click)="setTab('claim')"
     class="flex-1 px-4 py-2.5 text-xs font-medium transition-colors"
-    [class.text-zinc-100]="activeTab() === 'claim'"
+    [class.text-fg]="activeTab() === 'claim'"
     [class.border-b-2]="activeTab() === 'claim'"
     [class.border-purple-500]="activeTab() === 'claim'"
-    [class.text-zinc-500]="activeTab() !== 'claim'"
+    [class.text-fg-subtle]="activeTab() !== 'claim'"
   >
     Claim
   </button>
@@ -23,10 +23,10 @@
     [attr.aria-selected]="activeTab() === 'evidence'"
     (click)="setTab('evidence')"
     class="flex-1 px-4 py-2.5 text-xs font-medium transition-colors"
-    [class.text-zinc-100]="activeTab() === 'evidence'"
+    [class.text-fg]="activeTab() === 'evidence'"
     [class.border-b-2]="activeTab() === 'evidence'"
     [class.border-purple-500]="activeTab() === 'evidence'"
-    [class.text-zinc-500]="activeTab() !== 'evidence'"
+    [class.text-fg-subtle]="activeTab() !== 'evidence'"
   >
     Evidence
   </button>
@@ -36,7 +36,7 @@
 @if (isLoading()) {
   <div class="flex flex-1 items-center justify-center">
     <div
-      class="size-5 animate-spin rounded-full border-2 border-zinc-700 border-t-zinc-400"
+      class="size-5 animate-spin rounded-full border-2 border-border-strong border-t-zinc-400"
     ></div>
   </div>
 } @else if (hasError()) {
@@ -50,33 +50,33 @@
         <!-- Claim -->
         <div>
           <h4
-            class="mb-1 text-xs font-semibold uppercase tracking-wider text-zinc-500"
+            class="mb-1 text-xs font-semibold uppercase tracking-wider text-fg-subtle"
           >
             Claim
           </h4>
-          <p class="text-sm font-medium text-zinc-100">{{ h.claim }}</p>
+          <p class="text-sm font-medium text-fg">{{ h.claim }}</p>
         </div>
 
         <!-- Invalidation condition -->
         <div>
           <h4
-            class="mb-1 text-xs font-semibold uppercase tracking-wider text-zinc-500"
+            class="mb-1 text-xs font-semibold uppercase tracking-wider text-fg-subtle"
           >
             Invalidation Condition
           </h4>
-          <p class="text-sm text-zinc-300">{{ h.invalidation_condition }}</p>
+          <p class="text-sm text-fg-muted">{{ h.invalidation_condition }}</p>
         </div>
 
         <!-- Full content / context -->
         @if (h.content) {
           <div>
             <h4
-              class="mb-1 text-xs font-semibold uppercase tracking-wider text-zinc-500"
+              class="mb-1 text-xs font-semibold uppercase tracking-wider text-fg-subtle"
             >
               Context
             </h4>
             <p
-              class="whitespace-pre-wrap text-sm leading-relaxed text-zinc-400"
+              class="whitespace-pre-wrap text-sm leading-relaxed text-fg-muted"
             >
               {{ h.content }}
             </p>
@@ -86,16 +86,16 @@
         <!-- Metadata -->
         <dl class="space-y-1 text-sm">
           <div class="flex justify-between">
-            <dt class="text-zinc-500">State</dt>
-            <dd class="text-zinc-200">{{ h.state }}</dd>
+            <dt class="text-fg-subtle">State</dt>
+            <dd class="text-fg">{{ h.state }}</dd>
           </div>
           <div class="flex justify-between">
-            <dt class="text-zinc-500">Author</dt>
-            <dd class="text-zinc-200">{{ h.created_by }}</dd>
+            <dt class="text-fg-subtle">Author</dt>
+            <dd class="text-fg">{{ h.created_by }}</dd>
           </div>
           <div class="flex justify-between">
-            <dt class="text-zinc-500">Observed</dt>
-            <dd class="text-zinc-200">
+            <dt class="text-fg-subtle">Observed</dt>
+            <dd class="text-fg">
               {{ h.observed_date | date: "mediumDate" }}
             </dd>
           </div>
@@ -106,12 +106,12 @@
     @if (activeTab() === "evidence") {
       <div class="px-5 py-4">
         @if (evidence().length === 0) {
-          <p class="text-sm text-zinc-500">No evidence recorded yet.</p>
+          <p class="text-sm text-fg-subtle">No evidence recorded yet.</p>
         } @else {
           <div class="space-y-3">
             @for (item of evidence(); track $index) {
-              <div class="rounded-md border border-zinc-800 bg-zinc-900/50 p-3">
-                <pre class="whitespace-pre-wrap text-xs text-zinc-300">{{
+              <div class="rounded-md border border-border bg-panel/50 p-3">
+                <pre class="whitespace-pre-wrap text-xs text-fg-muted">{{
                   item | json
                 }}</pre>
               </div>
@@ -124,7 +124,7 @@
 
   <!-- Action bar -->
   @if (isActionable()) {
-    <div class="flex items-center gap-2 border-t border-zinc-800 px-5 py-3">
+    <div class="flex items-center gap-2 border-t border-border px-5 py-3">
       <button
         type="button"
         class="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white shadow-xs transition-colors hover:bg-emerald-500 disabled:opacity-50"
@@ -144,7 +144,7 @@
       <div class="flex-1"></div>
       <button
         type="button"
-        class="text-xs text-zinc-500 transition-colors hover:text-zinc-300"
+        class="text-xs text-fg-subtle transition-colors hover:text-fg-muted"
         (click)="archive()"
       >
         Archive

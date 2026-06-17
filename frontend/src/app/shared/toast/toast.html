@@ -9,12 +9,12 @@
       [class.border-red-500]="notification.type === 'error'"
       [class.bg-red-900/20]="notification.type === 'error'"
       [class.text-red-400]="notification.type === 'error'"
-      [class.border-sky-500]="notification.type === 'undo'"
-      [class.bg-zinc-800]="notification.type === 'undo'"
-      [class.text-zinc-200]="notification.type === 'undo'"
-      [class.border-zinc-400]="notification.type === 'info'"
-      [class.bg-zinc-900]="notification.type === 'info'"
-      [class.text-zinc-300]="notification.type === 'info'"
+      [class.border-brand]="notification.type === 'undo'"
+      [class.bg-elevated]="notification.type === 'undo'"
+      [class.text-fg]="notification.type === 'undo'"
+      [class.border-border-strong]="notification.type === 'info'"
+      [class.bg-panel]="notification.type === 'info'"
+      [class.text-fg-muted]="notification.type === 'info'"
       role="status"
     >
       <span>{{ notification.message }}</span>
@@ -22,7 +22,7 @@
         @if (notification.type === 'undo') {
           <button
             type="button"
-            class="font-medium text-sky-400 transition-colors hover:text-sky-300"
+            class="font-medium text-brand transition-colors hover:text-brand"
             (click)="notificationService.triggerUndo(notification.id)"
           >
             Undo
@@ -30,7 +30,7 @@
         }
         <button
           type="button"
-          class="shrink-0 rounded-sm p-0.5 transition-colors hover:bg-zinc-700"
+          class="shrink-0 rounded-sm p-0.5 transition-colors hover:bg-overlay"
           aria-label="Close notification"
           (click)="notificationService.dismiss(notification.id)"
         >

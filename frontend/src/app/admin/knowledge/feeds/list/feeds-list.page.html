@@ -8,7 +8,7 @@
       data-testid="feeds-filter-health"
     >
       <span
-        class="mr-1 font-mono text-[10px] uppercase tracking-wider text-zinc-500"
+        class="mr-1 font-mono text-[10px] uppercase tracking-wider text-fg-subtle"
       >
         Health
       </span>
@@ -16,13 +16,13 @@
         <button
           type="button"
           (click)="setHealthFilter(value)"
-          class="h-7 rounded-xs border px-2.5 text-[11px] font-medium capitalize transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500"
-          [class.border-sky-700]="healthFilter() === value"
-          [class.bg-sky-900/30]="healthFilter() === value"
-          [class.text-sky-300]="healthFilter() === value"
-          [class.border-zinc-800]="healthFilter() !== value"
-          [class.bg-zinc-900]="healthFilter() !== value"
-          [class.text-zinc-400]="healthFilter() !== value"
+          class="h-7 rounded-xs border px-2.5 text-[11px] font-medium capitalize transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+          [class.border-brand]="healthFilter() === value"
+          [class.bg-brand/30]="healthFilter() === value"
+          [class.text-brand]="healthFilter() === value"
+          [class.border-border]="healthFilter() !== value"
+          [class.bg-panel]="healthFilter() !== value"
+          [class.text-fg-muted]="healthFilter() !== value"
           [attr.aria-pressed]="healthFilter() === value"
           [attr.data-testid]="'feeds-filter-health-' + value"
         >
@@ -32,7 +32,7 @@
     </div>
 
     <span
-      class="ml-auto font-mono text-[11px] text-zinc-500"
+      class="ml-auto font-mono text-[11px] text-fg-subtle"
       aria-live="polite"
       data-testid="feeds-count"
     >
@@ -59,7 +59,7 @@
     <table class="w-full text-sm" data-testid="feeds-list-table">
       <thead>
         <tr
-          class="border-b border-zinc-800 text-left font-mono text-[10px] uppercase tracking-wider text-zinc-500"
+          class="border-b border-border text-left font-mono text-[10px] uppercase tracking-wider text-fg-subtle"
         >
           <th scope="col" class="px-3 py-2 font-normal">Name</th>
           <th scope="col" class="px-3 py-2 font-normal">URL</th>
@@ -72,24 +72,24 @@
       <tbody>
         @for (row of rows(); track row.id) {
           <tr
-            class="border-b border-zinc-900 transition-colors hover:bg-zinc-800/40"
+            class="border-b border-border-faint transition-colors hover:bg-elevated/40"
             [class.bg-red-950/10]="
               row.enabled && row.consecutive_failures > 0
             "
             [attr.data-testid]="'feeds-list-row-' + row.id"
           >
-            <td class="px-3 py-2 text-zinc-100">{{ row.name }}</td>
-            <td class="truncate px-3 py-2 font-mono text-[11px] text-zinc-500">
+            <td class="px-3 py-2 text-fg">{{ row.name }}</td>
+            <td class="truncate px-3 py-2 font-mono text-[11px] text-fg-subtle">
               <a
                 [href]="row.url"
                 target="_blank"
                 rel="noopener noreferrer"
-                class="transition-colors hover:text-sky-300"
+                class="transition-colors hover:text-brand"
               >
                 {{ row.url }}
               </a>
             </td>
-            <td class="px-3 py-2 font-mono text-[11px] text-zinc-400 capitalize">
+            <td class="px-3 py-2 font-mono text-[11px] text-fg-muted capitalize">
               {{ row.schedule }}
             </td>
             <td class="px-3 py-2">
@@ -104,7 +104,7 @@
                 ></span>
                 {{ healthLabel(row) }}
                 @if (row.consecutive_failures > 0) {
-                  <span class="font-mono text-[10px] text-zinc-500">
+                  <span class="font-mono text-[10px] text-fg-subtle">
                     ×{{ row.consecutive_failures }}
                   </span>
                 }
@@ -118,7 +118,7 @@
                 </div>
               }
             </td>
-            <td class="px-3 py-2 text-zinc-400">
+            <td class="px-3 py-2 text-fg-muted">
               {{
                 row.last_fetched_at
                   ? (row.last_fetched_at | date: 'short')
@@ -130,7 +130,7 @@
                 type="button"
                 (click)="fetchNow(row)"
                 [disabled]="fetchingId() === row.id"
-                class="rounded-xs border border-zinc-700 bg-zinc-900 px-2 py-1 text-[11px] text-zinc-300 transition-colors hover:border-sky-700 hover:text-sky-300 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500 disabled:cursor-not-allowed disabled:opacity-50"
+                class="rounded-xs border border-border-strong bg-panel px-2 py-1 text-[11px] text-fg-muted transition-colors hover:border-brand hover:text-brand focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand disabled:cursor-not-allowed disabled:opacity-50"
                 [attr.data-testid]="'feeds-list-fetch-' + row.id"
               >
                 {{ fetchingId() === row.id ? 'Queuing…' : 'Fetch now' }}

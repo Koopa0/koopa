@@ -8,7 +8,7 @@ import { Component, ChangeDetectionStrategy, input } from '@angular/core';
       @if (label()) {
         <label
           [attr.for]="fieldId()"
-          class="block text-sm font-medium text-zinc-300"
+          class="block text-sm font-medium text-fg-muted"
         >
           {{ label() }}
           @if (required()) {
@@ -17,7 +17,7 @@ import { Component, ChangeDetectionStrategy, input } from '@angular/core';
         </label>
       }
       @if (hint()) {
-        <p class="text-xs text-zinc-500">{{ hint() }}</p>
+        <p class="text-xs text-fg-subtle">{{ hint() }}</p>
       }
       <ng-content />
       @if (error()) {

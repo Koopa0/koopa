@@ -33,13 +33,13 @@ const EMPTY_VM: PlaceholderVm = { title: '', crumbs: [] };
       class="flex flex-1 flex-col items-center justify-center p-8 text-center"
       data-testid="admin-placeholder"
     >
-      <p class="mb-2 font-mono text-xs uppercase tracking-wider text-zinc-500">
+      <p class="mb-2 font-mono text-xs uppercase tracking-wider text-fg-subtle">
         Coming soon
       </p>
-      <h2 class="mb-3 font-display text-xl font-semibold text-zinc-100">
+      <h2 class="mb-3 font-display text-xl font-semibold text-fg">
         {{ vm().title }}
       </h2>
-      <p class="max-w-md text-sm text-zinc-400">
+      <p class="max-w-md text-sm text-fg-muted">
         This surface is part of Mission Control Admin v2. The route exists so
         navigation and keyboard shortcuts resolve; the page itself will land in
         a follow-up task.

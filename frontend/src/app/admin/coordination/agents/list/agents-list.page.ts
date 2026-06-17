@@ -32,13 +32,13 @@ const STATE_CHIPS: readonly { value: StateFilter; label: string }[] = [
 
 const ACTIVITY_DOT_CLASS: Record<AgentActivityState, string> = {
   active: 'bg-emerald-500',
-  idle: 'bg-zinc-400',
+  idle: 'bg-fg-subtle',
   blocked: 'bg-red-500',
 };
 
 const ACTIVITY_TEXT_CLASS: Record<AgentActivityState, string> = {
   active: 'text-emerald-300',
-  idle: 'text-zinc-300',
+  idle: 'text-fg-muted',
   blocked: 'text-red-300',
 };
 

@@ -8,7 +8,7 @@
       data-testid="goals-filter-status"
     >
       <span
-        class="mr-1 font-mono text-[10px] uppercase tracking-wider text-zinc-500"
+        class="mr-1 font-mono text-[10px] uppercase tracking-wider text-fg-subtle"
       >
         Status
       </span>
@@ -16,13 +16,13 @@
         <button
           type="button"
           (click)="setStatusFilter(chip.value)"
-          class="h-7 rounded-xs border px-2.5 text-[11px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500"
-          [class.border-sky-700]="statusFilter() === chip.value"
-          [class.bg-sky-900/30]="statusFilter() === chip.value"
-          [class.text-sky-300]="statusFilter() === chip.value"
-          [class.border-zinc-800]="statusFilter() !== chip.value"
-          [class.bg-zinc-900]="statusFilter() !== chip.value"
-          [class.text-zinc-400]="statusFilter() !== chip.value"
+          class="h-7 rounded-xs border px-2.5 text-[11px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+          [class.border-brand]="statusFilter() === chip.value"
+          [class.bg-brand/30]="statusFilter() === chip.value"
+          [class.text-brand]="statusFilter() === chip.value"
+          [class.border-border]="statusFilter() !== chip.value"
+          [class.bg-panel]="statusFilter() !== chip.value"
+          [class.text-fg-muted]="statusFilter() !== chip.value"
           [attr.aria-pressed]="statusFilter() === chip.value"
           [attr.data-testid]="'goals-filter-status-' + chip.value"
         >
@@ -33,7 +33,7 @@
 
     <div class="ml-auto flex items-center gap-3">
       <span
-        class="font-mono text-[11px] text-zinc-500"
+        class="font-mono text-[11px] text-fg-subtle"
         aria-live="polite"
         data-testid="goals-count"
       >
@@ -68,7 +68,7 @@
     <table class="w-full text-sm" data-testid="goals-list-table">
       <thead>
         <tr
-          class="border-b border-zinc-800 text-left font-mono text-[10px] uppercase tracking-wider text-zinc-500"
+          class="border-b border-border text-left font-mono text-[10px] uppercase tracking-wider text-fg-subtle"
         >
           <th scope="col" class="px-3 py-2 font-normal">Title</th>
           <th scope="col" class="px-3 py-2 font-normal">Area</th>
@@ -83,15 +83,15 @@
           <tr
             #row
             [attr.tabindex]="rowTabIndex(i)"
-            class="cursor-pointer border-b border-zinc-900 transition-colors hover:bg-zinc-800/40 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-sky-500"
-            [class.bg-zinc-800/40]="i === focusedIndex()"
+            class="cursor-pointer border-b border-border-faint transition-colors hover:bg-elevated/40 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-brand"
+            [class.bg-elevated/40]="i === focusedIndex()"
             (click)="openRow(row)"
             (keydown.enter)="openRow(row)"
             (focus)="focusedIndex.set(i)"
             [attr.data-testid]="'goals-list-row-' + i"
           >
-            <td class="truncate px-3 py-2 text-zinc-100">{{ row.title }}</td>
-            <td class="px-3 py-2 text-zinc-400">{{ row.area_name }}</td>
+            <td class="truncate px-3 py-2 text-fg">{{ row.title }}</td>
+            <td class="px-3 py-2 text-fg-muted">{{ row.area_name }}</td>
             <td class="px-3 py-2">
               <span
                 class="inline-flex items-center gap-1.5 text-xs"
@@ -107,14 +107,14 @@
             </td>
             <td class="px-3 py-2">
               <div class="flex items-center gap-2">
-                <span class="font-mono text-[11px] text-zinc-400">
+                <span class="font-mono text-[11px] text-fg-muted">
                   {{ row.milestones_done }} / {{ row.milestones_total }}
                 </span>
                 <div
-                  class="h-1.5 w-16 overflow-hidden rounded-full bg-zinc-800"
+                  class="h-1.5 w-16 overflow-hidden rounded-full bg-elevated"
                 >
                   <div
-                    class="h-full bg-sky-500"
+                    class="h-full bg-brand"
                     [style.width.%]="
                       milestonePercent(row.milestones_done, row.milestones_total)
                     "
@@ -122,10 +122,10 @@
                 </div>
               </div>
             </td>
-            <td class="px-3 py-2 text-zinc-400">
+            <td class="px-3 py-2 text-fg-muted">
               {{ row.deadline ? (row.deadline | date: 'shortDate') : '—' }}
             </td>
-            <td class="px-3 py-2 font-mono text-[11px] text-zinc-500">
+            <td class="px-3 py-2 font-mono text-[11px] text-fg-subtle">
               {{ row.id.slice(0, 8) }}
             </td>
           </tr>

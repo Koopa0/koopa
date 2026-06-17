@@ -1,17 +1,17 @@
 <div class="flex h-full flex-col" data-testid="todo-inspector">
   @if (isLoading()) {
     <div
-      class="flex flex-1 items-center justify-center text-zinc-400"
+      class="flex flex-1 items-center justify-center text-fg-muted"
       role="status"
       aria-label="Loading todo"
     >
       <div
-        class="motion-reduce:animate-none size-5 animate-spin rounded-full border-2 border-zinc-700 border-t-zinc-400"
+        class="motion-reduce:animate-none size-5 animate-spin rounded-full border-2 border-border-strong border-t-zinc-400"
       ></div>
     </div>
   } @else if (hasError()) {
     <div
-      class="flex flex-1 items-center justify-center px-6 text-center text-sm text-zinc-400"
+      class="flex flex-1 items-center justify-center px-6 text-center text-sm text-fg-muted"
       role="alert"
     >
       Failed to load todo.
@@ -22,14 +22,14 @@
       <header class="space-y-1">
         <div class="flex items-start justify-between gap-3">
           <h2
-            class="font-display text-base font-semibold leading-tight text-zinc-100"
+            class="font-display text-base font-semibold leading-tight text-fg"
             data-testid="todo-title"
           >
             {{ t.title }}
           </h2>
           <button
             type="button"
-            class="motion-reduce:transition-none flex shrink-0 items-center gap-1 rounded-xs border border-zinc-800 bg-zinc-900/50 px-2 py-1 text-xs text-zinc-400 transition-colors hover:border-zinc-700 hover:text-zinc-200"
+            class="motion-reduce:transition-none flex shrink-0 items-center gap-1 rounded-xs border border-border bg-panel/50 px-2 py-1 text-xs text-fg-muted transition-colors hover:border-border-strong hover:text-fg"
             [cdkCopyToClipboard]="t.id"
             (cdkCopyToClipboardCopied)="onCopyTodoId()"
             aria-label="Copy todo ID to clipboard"
@@ -44,7 +44,7 @@
             }
           </button>
         </div>
-        <p class="text-xs text-zinc-400" data-testid="todo-subtitle">
+        <p class="text-xs text-fg-muted" data-testid="todo-subtitle">
           @if (stateText(); as st) {
             <span [class]="st.class" data-testid="todo-state-text">{{
               st.label
@@ -54,7 +54,7 @@
             <span aria-hidden="true"> · </span>
             <button
               type="button"
-              class="motion-reduce:transition-none text-zinc-300 transition-colors hover:text-zinc-100"
+              class="motion-reduce:transition-none text-fg-muted transition-colors hover:text-fg"
               (click)="
                 t.project_id &&
                   inspector.open({ type: 'project', id: t.project_id })
@@ -73,7 +73,7 @@
       <!-- Description: prose body, hide-if-null -->
       @if (t.description) {
         <p
-          class="whitespace-pre-wrap text-sm leading-relaxed text-zinc-200"
+          class="whitespace-pre-wrap text-sm leading-relaxed text-fg"
           data-testid="todo-description"
         >
           {{ t.description }}
@@ -86,8 +86,8 @@
           class="font-mono text-sm"
           [class.text-red-400]="d.level === 'overdue'"
           [class.text-amber-400]="d.level === 'today'"
-          [class.text-sky-400]="d.level === 'soon'"
-          [class.text-zinc-400]="d.level === 'later' || d.level === 'done'"
+          [class.text-brand]="d.level === 'soon'"
+          [class.text-fg-muted]="d.level === 'later' || d.level === 'done'"
           data-testid="todo-due"
         >
           @switch (d.level) {
@@ -111,16 +111,16 @@
         data-testid="todo-facts"
       >
         @if (t.energy) {
-          <dt class="text-zinc-400">Energy</dt>
-          <dd class="text-zinc-200">{{ t.energy }}</dd>
+          <dt class="text-fg-muted">Energy</dt>
+          <dd class="text-fg">{{ t.energy }}</dd>
         }
         @if (t.priority) {
-          <dt class="text-zinc-400">Priority</dt>
-          <dd class="text-zinc-200">{{ t.priority }}</dd>
+          <dt class="text-fg-muted">Priority</dt>
+          <dd class="text-fg">{{ t.priority }}</dd>
         }
         @if (recurrenceText(); as r) {
-          <dt class="text-zinc-400">Repeats</dt>
-          <dd class="text-zinc-200">
+          <dt class="text-fg-muted">Repeats</dt>
+          <dd class="text-fg">
             {{ r.text }}
             @if (r.skipNote) {
               <span class="text-amber-300" data-testid="todo-skip-hint">
@@ -129,11 +129,11 @@
             }
           </dd>
         }
-        <dt class="text-zinc-400">Assignee</dt>
-        <dd class="font-mono text-zinc-200">{{ t.assignee }}</dd>
+        <dt class="text-fg-muted">Assignee</dt>
+        <dd class="font-mono text-fg">{{ t.assignee }}</dd>
         @if (createdByDifferent()) {
-          <dt class="text-zinc-400">Created by</dt>
-          <dd class="font-mono text-zinc-200" data-testid="todo-created-by">
+          <dt class="text-fg-muted">Created by</dt>
+          <dd class="font-mono text-fg" data-testid="todo-created-by">
             {{ t.created_by }}
           </dd>
         }
@@ -141,21 +141,21 @@
 
       <!-- Footer: timestamps as quiet meta -->
       <dl
-        class="space-y-0.5 border-t border-zinc-800 pt-3 text-xs"
+        class="space-y-0.5 border-t border-border pt-3 text-xs"
         data-testid="todo-timestamps"
       >
         <div class="flex justify-between">
-          <dt class="text-zinc-400">Created</dt>
-          <dd class="font-mono text-zinc-300">{{ t.created_at }}</dd>
+          <dt class="text-fg-muted">Created</dt>
+          <dd class="font-mono text-fg-muted">{{ t.created_at }}</dd>
         </div>
         <div class="flex justify-between">
-          <dt class="text-zinc-400">Updated</dt>
-          <dd class="font-mono text-zinc-300">{{ t.updated_at }}</dd>
+          <dt class="text-fg-muted">Updated</dt>
+          <dd class="font-mono text-fg-muted">{{ t.updated_at }}</dd>
         </div>
         @if (t.state === "done" && t.completed_at) {
           <div class="flex justify-between">
-            <dt class="text-zinc-400">Completed</dt>
-            <dd class="font-mono text-zinc-300">{{ t.completed_at }}</dd>
+            <dt class="text-fg-muted">Completed</dt>
+            <dd class="font-mono text-fg-muted">{{ t.completed_at }}</dd>
           </div>
         }
       </dl>

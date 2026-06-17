@@ -38,12 +38,12 @@ import { A11yModule } from '@angular/cdk/a11y';
       >
         <!-- Header -->
         @if (title()) {
-          <div class="shrink-0 border-b border-zinc-800 px-6 py-4">
-            <h3 [id]="titleId()" class="text-lg font-semibold text-zinc-100">
+          <div class="shrink-0 border-b border-border px-6 py-4">
+            <h3 [id]="titleId()" class="text-lg font-semibold text-fg">
               {{ title() }}
             </h3>
             @if (subtitle()) {
-              <p class="mt-0.5 text-sm text-zinc-500">{{ subtitle() }}</p>
+              <p class="mt-0.5 text-sm text-fg-subtle">{{ subtitle() }}</p>
             }
           </div>
         }
@@ -55,7 +55,7 @@ import { A11yModule } from '@angular/cdk/a11y';
 
         <!-- Footer -->
         <div
-          class="flex shrink-0 justify-end gap-3 border-t border-zinc-800 px-6 py-4"
+          class="flex shrink-0 justify-end gap-3 border-t border-border px-6 py-4"
         >
           <ng-content select="[modal-footer]" />
         </div>

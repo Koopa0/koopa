@@ -33,7 +33,7 @@ import { FileText } from 'lucide-angular';
 
     @if (isLoading()) {
       <div class="flex items-center justify-center py-16">
-        <app-loading-spinner size="lg" class="text-zinc-500" />
+        <app-loading-spinner size="lg" class="text-fg-subtle" />
       </div>
     } @else if (isEmpty()) {
       <app-empty-state
@@ -45,7 +45,7 @@ import { FileText } from 'lucide-angular';
       </app-empty-state>
     } @else {
       <div
-        class="overflow-x-auto rounded-xs border border-zinc-800 bg-zinc-900/50"
+        class="overflow-x-auto rounded-xs border border-border bg-panel/50"
       >
         <ng-content />
       </div>

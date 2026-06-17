@@ -1,13 +1,13 @@
 @if (isOpen() && target(); as t) {
   <aside
-    class="fixed right-0 top-0 z-50 flex h-full w-full max-w-[480px] flex-col border-l border-zinc-800 bg-zinc-950 shadow-2xl"
+    class="fixed right-0 top-0 z-50 flex h-full w-full max-w-[480px] flex-col border-l border-border bg-bg shadow-2xl"
     role="complementary"
     aria-label="Inspector panel"
     data-testid="inspector-panel"
   >
     <!-- Header: type badge + close -->
     <div
-      class="flex items-center justify-between border-b border-zinc-800 px-5 py-3"
+      class="flex items-center justify-between border-b border-border px-5 py-3"
     >
       <div class="flex items-center gap-2">
         <span
@@ -18,7 +18,7 @@
           {{ meta(t.type).abbrev }}
         </span>
         <span
-          class="font-mono text-xs uppercase tracking-wider text-zinc-400"
+          class="font-mono text-xs uppercase tracking-wider text-fg-muted"
           data-testid="inspector-type"
         >
           {{ meta(t.type).label }}
@@ -26,7 +26,7 @@
       </div>
       <button
         type="button"
-        class="rounded-sm p-1 text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-100"
+        class="rounded-sm p-1 text-fg-muted transition-colors hover:bg-elevated hover:text-fg"
         (click)="close()"
         aria-label="Close inspector"
         data-testid="inspector-close"

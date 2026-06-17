@@ -7,10 +7,10 @@ import { LucideAngularModule, FileText } from 'lucide-angular';
   imports: [LucideAngularModule],
   template: `
     <div class="flex flex-col items-center gap-3 py-16 text-center">
-      <lucide-icon [img]="icon()" [size]="40" class="text-zinc-700" />
-      <h3 class="text-sm font-medium text-zinc-300">{{ title() }}</h3>
+      <lucide-icon [img]="icon()" [size]="40" class="text-fg-faint" />
+      <h3 class="text-sm font-medium text-fg-muted">{{ title() }}</h3>
       @if (description()) {
-        <p class="max-w-sm text-xs text-zinc-500">{{ description() }}</p>
+        <p class="max-w-sm text-xs text-fg-subtle">{{ description() }}</p>
       }
       <ng-content />
     </div>

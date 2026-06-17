@@ -1,17 +1,17 @@
 <div class="flex h-full flex-col" data-testid="concept-inspector">
   @if (isLoading()) {
     <div
-      class="flex flex-1 items-center justify-center text-zinc-400"
+      class="flex flex-1 items-center justify-center text-fg-muted"
       role="status"
       aria-label="Loading concept"
     >
       <div
-        class="motion-reduce:animate-none size-5 animate-spin rounded-full border-2 border-zinc-700 border-t-zinc-400"
+        class="motion-reduce:animate-none size-5 animate-spin rounded-full border-2 border-border-strong border-t-zinc-400"
       ></div>
     </div>
   } @else if (hasError()) {
     <div
-      class="flex flex-1 items-center justify-center px-6 text-center text-sm text-zinc-400"
+      class="flex flex-1 items-center justify-center px-6 text-center text-sm text-fg-muted"
       role="alert"
     >
       Failed to load concept.
@@ -22,14 +22,14 @@
       <header class="space-y-1">
         <div class="flex items-start justify-between gap-3">
           <h2
-            class="font-display text-base font-semibold leading-tight text-zinc-100"
+            class="font-display text-base font-semibold leading-tight text-fg"
             data-testid="concept-name"
           >
             {{ c.name }}
           </h2>
           <button
             type="button"
-            class="motion-reduce:transition-none flex shrink-0 items-center gap-1 rounded-xs border border-zinc-800 bg-zinc-900/50 px-2 py-1 text-xs text-zinc-400 transition-colors hover:border-zinc-700 hover:text-zinc-200"
+            class="motion-reduce:transition-none flex shrink-0 items-center gap-1 rounded-xs border border-border bg-panel/50 px-2 py-1 text-xs text-fg-muted transition-colors hover:border-border-strong hover:text-fg"
             [cdkCopyToClipboard]="c.slug"
             (cdkCopyToClipboardCopied)="onCopyConceptSlug()"
             aria-label="Copy concept slug to clipboard"
@@ -44,7 +44,7 @@
             }
           </button>
         </div>
-        <p class="text-xs text-zinc-400" data-testid="concept-subtitle">
+        <p class="text-xs text-fg-muted" data-testid="concept-subtitle">
           <span>{{ c.kind }}</span>
           <span aria-hidden="true"> · </span>
           <span>{{ c.domain }}</span>
@@ -58,7 +58,7 @@
       <!-- Description: hide-if-null -->
       @if (c.description) {
         <p
-          class="text-sm leading-relaxed text-zinc-200"
+          class="text-sm leading-relaxed text-fg"
           data-testid="concept-description"
         >
           {{ c.description }}
@@ -67,11 +67,11 @@
 
       <!-- Parent concept link: hide-if-null -->
       @if (c.parent_concept; as parent) {
-        <p class="text-xs text-zinc-400" data-testid="concept-parent">
+        <p class="text-xs text-fg-muted" data-testid="concept-parent">
           Parent:
           <button
             type="button"
-            class="motion-reduce:transition-none font-mono text-zinc-300 transition-colors hover:text-zinc-100"
+            class="motion-reduce:transition-none font-mono text-fg-muted transition-colors hover:text-fg"
             (click)="inspector.open({ type: 'concept', id: parent.id })"
             [attr.aria-label]="
               'Open parent concept ' + parent.slug + ' in inspector'
@@ -85,23 +85,23 @@
 
       <!-- MASTERY section -->
       <section
-        class="border-t border-zinc-800 pt-4"
+        class="border-t border-border pt-4"
         data-testid="concept-mastery-section"
       >
         <h3
-          class="text-xs font-semibold uppercase tracking-wider text-zinc-400"
+          class="text-xs font-semibold uppercase tracking-wider text-fg-muted"
         >
           Mastery
         </h3>
         <p
-          class="mt-1 text-sm text-zinc-200"
+          class="mt-1 text-sm text-fg"
           data-testid="concept-mastery-counts"
         >
           {{ c.mastery_counts.weakness }} weakness ·
           {{ c.mastery_counts.improvement }} improvement ·
           {{ c.mastery_counts.mastery }} mastery
         </p>
-        <p class="text-xs text-zinc-400">
+        <p class="text-xs text-fg-muted">
           ({{ c.mastery_counts.total }}
           {{ c.mastery_counts.total === 1 ? "observation" : "observations" }},
           high confidence)
@@ -110,11 +110,11 @@
 
       <!-- RECENT ATTEMPTS section -->
       <section
-        class="border-t border-zinc-800 pt-4"
+        class="border-t border-border pt-4"
         data-testid="concept-attempts-section"
       >
         <h3
-          class="text-xs font-semibold uppercase tracking-wider text-zinc-400"
+          class="text-xs font-semibold uppercase tracking-wider text-fg-muted"
         >
           Recent attempts
         </h3>
@@ -125,7 +125,7 @@
           >
             @for (att of c.recent_attempts; track att.id) {
               <li class="flex flex-wrap items-center gap-2">
-                <span class="font-mono text-zinc-500">
+                <span class="font-mono text-fg-subtle">
                   {{ att.attempted_at | date: "yyyy-MM-dd" }}
                 </span>
                 <span [attr.aria-label]="outcome(att.outcome).label">
@@ -133,15 +133,15 @@
                     outcome(att.outcome).icon
                   }}</span>
                 </span>
-                <span class="text-zinc-300">
+                <span class="text-fg-muted">
                   {{ outcome(att.outcome).label }}
                 </span>
                 @if (att.duration_minutes) {
-                  <span class="font-mono text-zinc-500">
+                  <span class="font-mono text-fg-subtle">
                     {{ att.duration_minutes }}min
                   </span>
                 }
-                <span class="truncate text-zinc-400">
+                <span class="truncate text-fg-muted">
                   {{ att.target_title }}
                 </span>
               </li>
@@ -157,11 +157,11 @@
       <!-- OBSERVATIONS section -->
       @if (observationGroups().length > 0 || c.low_confidence_count > 0) {
         <section
-          class="border-t border-zinc-800 pt-4"
+          class="border-t border-border pt-4"
           data-testid="concept-observations-section"
         >
           <h3
-            class="text-xs font-semibold uppercase tracking-wider text-zinc-400"
+            class="text-xs font-semibold uppercase tracking-wider text-fg-muted"
           >
             Observations
           </h3>
@@ -178,7 +178,7 @@
               <ul class="mt-1 space-y-2 text-sm">
                 @for (obs of group.high; track obs.id) {
                   <li>
-                    <p class="text-xs text-zinc-400">
+                    <p class="text-xs text-fg-muted">
                       {{ obs.category }}
                       @if (obs.severity) {
                         <span aria-hidden="true"> · </span>
@@ -189,7 +189,7 @@
                       }
                     </p>
                     @if (obs.detail) {
-                      <p class="text-zinc-300">{{ obs.detail }}</p>
+                      <p class="text-fg-muted">{{ obs.detail }}</p>
                     }
                   </li>
                 }
@@ -204,7 +204,7 @@
               data-testid="concept-low-confidence-details"
             >
               <summary
-                class="motion-reduce:transition-none cursor-pointer text-zinc-400 transition-colors hover:text-zinc-200"
+                class="motion-reduce:transition-none cursor-pointer text-fg-muted transition-colors hover:text-fg"
               >
                 Show {{ c.low_confidence_count }} AI-inferred
                 {{
@@ -215,7 +215,7 @@
               <div class="mt-2 space-y-2 pl-4">
                 @for (obs of c.low_confidence_observations; track obs.id) {
                   <div>
-                    <p class="text-xs text-zinc-400">
+                    <p class="text-xs text-fg-muted">
                       <span [class]="signalLabelClass(obs.signal_type)">
                         {{ obs.signal_type }}
                       </span>
@@ -223,7 +223,7 @@
                       {{ obs.category }}
                     </p>
                     @if (obs.detail) {
-                      <p class="text-zinc-300">{{ obs.detail }}</p>
+                      <p class="text-fg-muted">{{ obs.detail }}</p>
                     }
                   </div>
                 }
@@ -237,7 +237,7 @@
       @if (c.targets_exercising_count > 0) {
         <a
           [routerLink]="['/admin/learning/concepts', c.slug]"
-          class="motion-reduce:transition-none block border-t border-zinc-800 pt-3 text-sm text-sky-400 transition-colors hover:text-sky-300"
+          class="motion-reduce:transition-none block border-t border-border pt-3 text-sm text-brand transition-colors hover:text-brand"
           [attr.aria-label]="
             'View ' +
             c.targets_exercising_count +

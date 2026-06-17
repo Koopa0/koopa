@@ -22,13 +22,13 @@ import type {
 
 const STAGE_TEXT: Record<MasteryStage, string> = {
   struggling: 'text-red-300',
-  developing: 'text-sky-300',
+  developing: 'text-brand',
   solid: 'text-emerald-300',
 };
 
 const STAGE_DOT: Record<MasteryStage, string> = {
   struggling: 'bg-red-500',
-  developing: 'bg-sky-400',
+  developing: 'bg-brand',
   solid: 'bg-emerald-500',
 };
 

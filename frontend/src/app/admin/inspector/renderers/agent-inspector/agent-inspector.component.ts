@@ -91,8 +91,8 @@ export class AgentInspectorComponent {
   /** Status pill class — emerald-400 for active, zinc-500 for retired. */
   protected readonly statusClass = computed(() => {
     const a = this.agent();
-    if (!a) return 'text-zinc-400';
-    return a.status === 'active' ? 'text-emerald-400' : 'text-zinc-500';
+    if (!a) return 'text-fg-muted';
+    return a.status === 'active' ? 'text-emerald-400' : 'text-fg-subtle';
   });
 
   protected onCopyAgentName(): void {

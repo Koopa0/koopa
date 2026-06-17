@@ -39,19 +39,19 @@ const STATUS_CHIPS: readonly StatusChip[] = [
 ];
 
 const STATUS_DOT_CLASS: Record<GoalStatus, string> = {
-  not_started: 'bg-zinc-400',
-  in_progress: 'bg-sky-400',
+  not_started: 'bg-fg-subtle',
+  in_progress: 'bg-brand',
   on_hold: 'bg-amber-400',
   done: 'bg-emerald-500',
-  abandoned: 'bg-zinc-600',
+  abandoned: 'bg-fg-faint',
 };
 
 const STATUS_TEXT_CLASS: Record<GoalStatus, string> = {
-  not_started: 'text-zinc-300',
-  in_progress: 'text-sky-300',
+  not_started: 'text-fg-muted',
+  in_progress: 'text-brand',
   on_hold: 'text-amber-300',
   done: 'text-emerald-300',
-  abandoned: 'text-zinc-500',
+  abandoned: 'text-fg-subtle',
 };
 
 const STATUS_LABEL: Record<GoalStatus, string> = {

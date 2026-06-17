@@ -65,17 +65,17 @@ const STATUS_CHIPS: readonly StatusChip[] = [
 ];
 
 const STATUS_DOT_CLASS: Record<ContentStatus, string> = {
-  draft: 'bg-zinc-400',
+  draft: 'bg-fg-subtle',
   review: 'bg-amber-400',
   published: 'bg-emerald-500',
-  archived: 'bg-zinc-600',
+  archived: 'bg-fg-faint',
 };
 
 const STATUS_TEXT_CLASS: Record<ContentStatus, string> = {
-  draft: 'text-zinc-300',
+  draft: 'text-fg-muted',
   review: 'text-amber-300',
   published: 'text-emerald-300',
-  archived: 'text-zinc-500',
+  archived: 'text-fg-subtle',
 };
 
 /**
@@ -228,7 +228,7 @@ export class ContentListPageComponent {
   protected typeBadgeClass(type: ContentType): string {
     return (
       CONTENT_TYPE_CONFIG[type]?.badgeClasses ??
-      'border-zinc-700 bg-zinc-800 text-zinc-400'
+      'border-border-strong bg-elevated text-fg-muted'
     );
   }
 

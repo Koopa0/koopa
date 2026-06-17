@@ -108,9 +108,9 @@ export class SessionTimelinePageComponent {
 
   protected outcomeClass(outcome: string): string {
     if (outcome.startsWith('solved_independent')) return 'text-emerald-300';
-    if (outcome.startsWith('solved_with_hint')) return 'text-sky-300';
+    if (outcome.startsWith('solved_with_hint')) return 'text-brand';
     if (outcome.startsWith('failed')) return 'text-red-300';
-    return 'text-zinc-400';
+    return 'text-fg-muted';
   }
 
   protected attemptObsCount(a: SessionAttempt): number {

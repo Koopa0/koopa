@@ -485,8 +485,8 @@ export interface EntityTypeMeta {
 export const ENTITY_TYPE_META: Record<InspectorTargetType, EntityTypeMeta> = {
   content: {
     abbrev: 'ART',
-    bgClass: 'bg-sky-900/30',
-    textClass: 'text-sky-400',
+    bgClass: 'bg-brand/30',
+    textClass: 'text-brand',
     label: 'Content',
   },
   task: {
@@ -509,14 +509,14 @@ export const ENTITY_TYPE_META: Record<InspectorTargetType, EntityTypeMeta> = {
   },
   project: {
     abbrev: 'PRJ',
-    bgClass: 'bg-zinc-700',
-    textClass: 'text-zinc-300',
+    bgClass: 'bg-overlay',
+    textClass: 'text-fg-muted',
     label: 'Project',
   },
   todo: {
     abbrev: 'TD',
-    bgClass: 'bg-zinc-700',
-    textClass: 'text-zinc-400',
+    bgClass: 'bg-overlay',
+    textClass: 'text-fg-muted',
     label: 'Todo',
   },
   concept: {

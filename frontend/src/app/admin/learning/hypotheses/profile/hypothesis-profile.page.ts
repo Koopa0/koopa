@@ -28,14 +28,14 @@ const STATE_DOT_CLASS: Record<HypothesisState, string> = {
   unverified: 'bg-amber-400',
   verified: 'bg-emerald-500',
   invalidated: 'bg-red-500',
-  archived: 'bg-zinc-600',
+  archived: 'bg-fg-faint',
 };
 
 const STATE_TEXT_CLASS: Record<HypothesisState, string> = {
   unverified: 'text-amber-300',
   verified: 'text-emerald-300',
   invalidated: 'text-red-300',
-  archived: 'text-zinc-500',
+  archived: 'text-fg-subtle',
 };
 
 type EvidenceKind = 'supporting' | 'counter';

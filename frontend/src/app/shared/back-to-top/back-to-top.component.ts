@@ -17,7 +17,7 @@ import { LucideAngularModule, ChevronUp } from 'lucide-angular';
   template: `
     <button
       type="button"
-      class="fixed bottom-6 right-6 z-50 rounded-full bg-zinc-800 p-3 text-zinc-300 shadow-lg transition-all hover:-translate-y-1 hover:bg-zinc-700 hover:text-white sm:bottom-8 sm:right-8"
+      class="fixed bottom-6 right-6 z-50 rounded-full bg-elevated p-3 text-fg-muted shadow-lg transition-all hover:-translate-y-1 hover:bg-overlay hover:text-white sm:bottom-8 sm:right-8"
       [class.opacity-0]="!isVisible()"
       [class.pointer-events-none]="!isVisible()"
       [class.opacity-100]="isVisible()"

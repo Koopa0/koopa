@@ -12,10 +12,10 @@ import { AuthService } from '../../core/services/auth.service';
   standalone: true,
   template: `
     <div
-      class="flex min-h-[calc(100vh-4rem)] items-center justify-center bg-zinc-950"
+      class="flex min-h-[calc(100vh-4rem)] items-center justify-center bg-bg"
     >
       <div
-        class="size-6 animate-spin rounded-full border-2 border-zinc-600 border-t-zinc-200"
+        class="size-6 animate-spin rounded-full border-2 border-border-strong border-t-zinc-200"
       ></div>
     </div>
   `,

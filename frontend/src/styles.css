@@ -164,10 +164,8 @@
 }
 
 /* ============================================================
-   Tailwind v4 theme — remap legacy scales onto the design system
-   so the ~2800 existing zinc/blue/sky utilities adopt the DS look
-   with no per-file rewrite, and expose DS tokens as first-class
-   utilities (bg-panel, text-fg-muted, border-border, ...).
+   Tailwind v4 theme — expose DS tokens as first-class utilities
+   (bg-panel, text-fg-muted, border-border, ...) that switch by theme.
    ============================================================ */
 @theme {
   /* Type families */
@@ -203,46 +201,6 @@
   --color-error-bg: var(--error-bg);
   --color-info: var(--info);
   --color-info-bg: var(--info-bg);
-
-  /* Legacy zinc scale → DS cool-neutral (hue 260, low chroma). Lightnesses
-     track Tailwind defaults so contrast is preserved; only the hue/chroma
-     shift to the DS's slight-blue-bias neutral. */
-  --color-zinc-50: oklch(0.985 0.003 260);
-  --color-zinc-100: oklch(0.967 0.003 260);
-  --color-zinc-200: oklch(0.92 0.004 260);
-  --color-zinc-300: oklch(0.871 0.005 260);
-  --color-zinc-400: oklch(0.705 0.006 260);
-  --color-zinc-500: oklch(0.552 0.006 260);
-  --color-zinc-600: oklch(0.442 0.006 260);
-  --color-zinc-700: oklch(0.37 0.006 260);
-  --color-zinc-800: oklch(0.274 0.005 260);
-  --color-zinc-900: oklch(0.21 0.004 260);
-  --color-zinc-950: oklch(0.145 0.004 260);
-
-  /* Legacy blue + sky scales → DS cyan-teal brand ramp (the "swap the old
-     repo blue for surgical cyan-teal" change), centered on --brand at 400. */
-  --color-blue-50: oklch(0.97 0.02 210);
-  --color-blue-100: oklch(0.93 0.03 210);
-  --color-blue-200: oklch(0.88 0.05 210);
-  --color-blue-300: oklch(0.8 0.08 210);
-  --color-blue-400: oklch(0.72 0.1 210);
-  --color-blue-500: oklch(0.64 0.12 210);
-  --color-blue-600: oklch(0.56 0.12 210);
-  --color-blue-700: oklch(0.48 0.12 210);
-  --color-blue-800: oklch(0.4 0.1 210);
-  --color-blue-900: oklch(0.32 0.08 210);
-  --color-blue-950: oklch(0.24 0.06 210);
-  --color-sky-50: oklch(0.97 0.02 210);
-  --color-sky-100: oklch(0.93 0.03 210);
-  --color-sky-200: oklch(0.88 0.05 210);
-  --color-sky-300: oklch(0.8 0.08 210);
-  --color-sky-400: oklch(0.72 0.1 210);
-  --color-sky-500: oklch(0.64 0.12 210);
-  --color-sky-600: oklch(0.56 0.12 210);
-  --color-sky-700: oklch(0.48 0.12 210);
-  --color-sky-800: oklch(0.4 0.1 210);
-  --color-sky-900: oklch(0.32 0.08 210);
-  --color-sky-950: oklch(0.24 0.06 210);
 
   /* Radii */
   --radius-xs: var(--r-sm);

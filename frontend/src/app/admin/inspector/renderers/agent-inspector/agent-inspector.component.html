@@ -1,17 +1,17 @@
 <div class="flex h-full flex-col" data-testid="agent-inspector">
   @if (isLoading()) {
     <div
-      class="flex flex-1 items-center justify-center text-zinc-400"
+      class="flex flex-1 items-center justify-center text-fg-muted"
       role="status"
       aria-label="Loading agent"
     >
       <div
-        class="motion-reduce:animate-none size-5 animate-spin rounded-full border-2 border-zinc-700 border-t-zinc-400"
+        class="motion-reduce:animate-none size-5 animate-spin rounded-full border-2 border-border-strong border-t-zinc-400"
       ></div>
     </div>
   } @else if (hasError()) {
     <div
-      class="flex flex-1 items-center justify-center px-6 text-center text-sm text-zinc-400"
+      class="flex flex-1 items-center justify-center px-6 text-center text-sm text-fg-muted"
       role="alert"
     >
       Failed to load agent.
@@ -34,7 +34,7 @@
       <header class="space-y-1">
         <div class="flex items-start justify-between gap-3">
           <h2
-            class="font-display text-base font-semibold leading-tight text-zinc-100"
+            class="font-display text-base font-semibold leading-tight text-fg"
             [class.line-through]="a.status === 'retired'"
             [class.decoration-amber-700]="a.status === 'retired'"
             data-testid="agent-display-name"
@@ -43,7 +43,7 @@
           </h2>
           <button
             type="button"
-            class="motion-reduce:transition-none flex shrink-0 items-center gap-1 rounded-xs border border-zinc-800 bg-zinc-900/50 px-2 py-1 text-xs text-zinc-400 transition-colors hover:border-zinc-700 hover:text-zinc-200"
+            class="motion-reduce:transition-none flex shrink-0 items-center gap-1 rounded-xs border border-border bg-panel/50 px-2 py-1 text-xs text-fg-muted transition-colors hover:border-border-strong hover:text-fg"
             [cdkCopyToClipboard]="a.name"
             (cdkCopyToClipboardCopied)="onCopyAgentName()"
             aria-label="Copy agent name to clipboard"
@@ -58,8 +58,8 @@
             }
           </button>
         </div>
-        <p class="text-xs text-zinc-400" data-testid="agent-subtitle">
-          <span class="font-mono text-zinc-300">{{ a.name }}</span>
+        <p class="text-xs text-fg-muted" data-testid="agent-subtitle">
+          <span class="font-mono text-fg-muted">{{ a.name }}</span>
           <span aria-hidden="true"> · </span>
           <span>{{ a.platform }}</span>
           @if (a.status === "retired" && a.retired_at) {
@@ -74,7 +74,7 @@
       <!-- Description: prose body, hide-if-null -->
       @if (a.description) {
         <p
-          class="text-sm leading-relaxed text-zinc-200"
+          class="text-sm leading-relaxed text-fg"
           data-testid="agent-description"
         >
           {{ a.description }}
@@ -87,27 +87,27 @@
         data-testid="agent-facts"
       >
         @if (capabilityText(); as cap) {
-          <dt class="text-zinc-400">Capabilities</dt>
-          <dd class="text-zinc-200" data-testid="agent-capabilities">
+          <dt class="text-fg-muted">Capabilities</dt>
+          <dd class="text-fg" data-testid="agent-capabilities">
             {{ cap }}
           </dd>
         }
         @if (scheduleText(); as sched) {
-          <dt class="text-zinc-400">Schedule</dt>
-          <dd class="text-zinc-200" data-testid="agent-schedule">
+          <dt class="text-fg-muted">Schedule</dt>
+          <dd class="text-fg" data-testid="agent-schedule">
             {{ sched }}
           </dd>
         }
-        <dt class="text-zinc-400">Status</dt>
+        <dt class="text-fg-muted">Status</dt>
         <dd>
           <span [class]="statusClass()" data-testid="agent-status">
             {{ a.status }}
           </span>
         </dd>
         @if (a.last_task_accepted_at) {
-          <dt class="text-zinc-400">Last task</dt>
+          <dt class="text-fg-muted">Last task</dt>
           <dd
-            class="font-mono text-xs text-zinc-300"
+            class="font-mono text-xs text-fg-muted"
             data-testid="agent-last-task"
           >
             {{ a.last_task_accepted_at | date: "short" }}
@@ -119,14 +119,14 @@
       @if (a.schedule?.expr) {
         <details class="text-xs" data-testid="agent-cron-details">
           <summary
-            class="motion-reduce:transition-none cursor-pointer text-zinc-500 transition-colors hover:text-zinc-300"
+            class="motion-reduce:transition-none cursor-pointer text-fg-subtle transition-colors hover:text-fg-muted"
           >
             Show cron expression
           </summary>
           <div class="mt-1 pl-4">
-            <code class="font-mono text-zinc-300">{{ a.schedule?.expr }}</code>
+            <code class="font-mono text-fg-muted">{{ a.schedule?.expr }}</code>
             @if (a.schedule?.backend) {
-              <span class="text-zinc-500">
+              <span class="text-fg-subtle">
                 · runs in {{ a.schedule?.backend }}</span
               >
             }
@@ -138,7 +138,7 @@
       @if (a.open_task_count > 0) {
         <a
           [routerLink]="['/admin/system/agents', a.name]"
-          class="motion-reduce:transition-none block border-t border-zinc-800 pt-3 text-sm text-sky-400 transition-colors hover:text-sky-300"
+          class="motion-reduce:transition-none block border-t border-border pt-3 text-sm text-brand transition-colors hover:text-brand"
           [attr.aria-label]="
             'View ' +
             a.open_task_count +
@@ -153,7 +153,7 @@
         </a>
       } @else {
         <p
-          class="border-t border-zinc-800 pt-3 text-sm text-zinc-500"
+          class="border-t border-border pt-3 text-sm text-fg-subtle"
           data-testid="agent-no-open-tasks"
         >
           No open tasks for this agent.

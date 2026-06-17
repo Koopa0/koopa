@@ -22,21 +22,21 @@ import type {
 } from '../../../../core/models/workbench.model';
 
 const STAGE_TEXT_CLASS: Record<MasteryStage, string> = {
-  developing: 'text-zinc-400',
+  developing: 'text-fg-muted',
   struggling: 'text-amber-400',
   solid: 'text-emerald-400',
 };
 
 const SIGNAL_LABEL_CLASS: Record<ObservationSignal, string> = {
   weakness: 'text-red-400',
-  improvement: 'text-sky-400',
+  improvement: 'text-brand',
   mastery: 'text-emerald-400',
 };
 
 const SEVERITY_CLASS: Record<ObservationSeverity, string> = {
   critical: 'text-red-300',
   moderate: 'text-amber-300',
-  minor: 'text-zinc-400',
+  minor: 'text-fg-muted',
 };
 
 const OUTCOME_ICON: Record<string, { icon: string; label: string }> = {
@@ -94,7 +94,7 @@ export class ConceptInspectorComponent {
   /** Stage colored text class (subtitle inline, not banner). */
   protected readonly stageClass = computed(() => {
     const c = this.concept();
-    return c ? STAGE_TEXT_CLASS[c.mastery_stage] : 'text-zinc-400';
+    return c ? STAGE_TEXT_CLASS[c.mastery_stage] : 'text-fg-muted';
   });
 
   /** Group high-confidence observations by signal_type for OBSERVATIONS section. */

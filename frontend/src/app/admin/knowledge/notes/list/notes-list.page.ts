@@ -49,19 +49,19 @@ const MATURITY_CHIPS: readonly Chip<MaturityFilter>[] = [
 ];
 
 const MATURITY_DOT: Record<NoteMaturity, string> = {
-  seed: 'bg-zinc-400',
-  stub: 'bg-sky-400',
+  seed: 'bg-fg-subtle',
+  stub: 'bg-brand',
   evergreen: 'bg-emerald-500',
   needs_revision: 'bg-amber-400',
-  archived: 'bg-zinc-600',
+  archived: 'bg-fg-faint',
 };
 
 const MATURITY_TEXT: Record<NoteMaturity, string> = {
-  seed: 'text-zinc-300',
-  stub: 'text-sky-300',
+  seed: 'text-fg-muted',
+  stub: 'text-brand',
   evergreen: 'text-emerald-300',
   needs_revision: 'text-amber-300',
-  archived: 'text-zinc-500',
+  archived: 'text-fg-subtle',
 };
 
 const KIND_SHORT: Record<NoteKind, string> = {

@@ -8,7 +8,7 @@
       data-testid="notes-filter-kind"
     >
       <span
-        class="mr-1 font-mono text-[10px] uppercase tracking-wider text-zinc-500"
+        class="mr-1 font-mono text-[10px] uppercase tracking-wider text-fg-subtle"
       >
         Kind
       </span>
@@ -16,13 +16,13 @@
         <button
           type="button"
           (click)="setKindFilter(chip.value)"
-          class="h-7 rounded-xs border px-2.5 text-[11px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500"
-          [class.border-sky-700]="kindFilter() === chip.value"
-          [class.bg-sky-900/30]="kindFilter() === chip.value"
-          [class.text-sky-300]="kindFilter() === chip.value"
-          [class.border-zinc-800]="kindFilter() !== chip.value"
-          [class.bg-zinc-900]="kindFilter() !== chip.value"
-          [class.text-zinc-400]="kindFilter() !== chip.value"
+          class="h-7 rounded-xs border px-2.5 text-[11px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+          [class.border-brand]="kindFilter() === chip.value"
+          [class.bg-brand/30]="kindFilter() === chip.value"
+          [class.text-brand]="kindFilter() === chip.value"
+          [class.border-border]="kindFilter() !== chip.value"
+          [class.bg-panel]="kindFilter() !== chip.value"
+          [class.text-fg-muted]="kindFilter() !== chip.value"
           [attr.aria-pressed]="kindFilter() === chip.value"
           [attr.data-testid]="'notes-filter-kind-' + chip.value"
         >
@@ -37,7 +37,7 @@
       data-testid="notes-filter-maturity"
     >
       <span
-        class="mr-1 font-mono text-[10px] uppercase tracking-wider text-zinc-500"
+        class="mr-1 font-mono text-[10px] uppercase tracking-wider text-fg-subtle"
       >
         Maturity
       </span>
@@ -45,13 +45,13 @@
         <button
           type="button"
           (click)="setMaturityFilter(chip.value)"
-          class="h-7 rounded-xs border px-2.5 text-[11px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500"
-          [class.border-sky-700]="maturityFilter() === chip.value"
-          [class.bg-sky-900/30]="maturityFilter() === chip.value"
-          [class.text-sky-300]="maturityFilter() === chip.value"
-          [class.border-zinc-800]="maturityFilter() !== chip.value"
-          [class.bg-zinc-900]="maturityFilter() !== chip.value"
-          [class.text-zinc-400]="maturityFilter() !== chip.value"
+          class="h-7 rounded-xs border px-2.5 text-[11px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+          [class.border-brand]="maturityFilter() === chip.value"
+          [class.bg-brand/30]="maturityFilter() === chip.value"
+          [class.text-brand]="maturityFilter() === chip.value"
+          [class.border-border]="maturityFilter() !== chip.value"
+          [class.bg-panel]="maturityFilter() !== chip.value"
+          [class.text-fg-muted]="maturityFilter() !== chip.value"
           [attr.aria-pressed]="maturityFilter() === chip.value"
           [attr.data-testid]="'notes-filter-maturity-' + chip.value"
         >
@@ -59,7 +59,7 @@
         </button>
       }
       <span
-        class="ml-auto font-mono text-[11px] text-zinc-500"
+        class="ml-auto font-mono text-[11px] text-fg-subtle"
         aria-live="polite"
         data-testid="notes-count"
       >
@@ -74,7 +74,7 @@
         data-testid="notes-filter-author"
       >
         <span
-          class="mr-1 font-mono text-[10px] uppercase tracking-wider text-zinc-500"
+          class="mr-1 font-mono text-[10px] uppercase tracking-wider text-fg-subtle"
         >
           Author
         </span>
@@ -82,13 +82,13 @@
           <button
             type="button"
             (click)="setAuthorFilter(chip.value)"
-            class="h-7 rounded-xs border px-2.5 text-[11px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500"
-            [class.border-sky-700]="authorFilter() === chip.value"
-            [class.bg-sky-900/30]="authorFilter() === chip.value"
-            [class.text-sky-300]="authorFilter() === chip.value"
-            [class.border-zinc-800]="authorFilter() !== chip.value"
-            [class.bg-zinc-900]="authorFilter() !== chip.value"
-            [class.text-zinc-400]="authorFilter() !== chip.value"
+            class="h-7 rounded-xs border px-2.5 text-[11px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+            [class.border-brand]="authorFilter() === chip.value"
+            [class.bg-brand/30]="authorFilter() === chip.value"
+            [class.text-brand]="authorFilter() === chip.value"
+            [class.border-border]="authorFilter() !== chip.value"
+            [class.bg-panel]="authorFilter() !== chip.value"
+            [class.text-fg-muted]="authorFilter() !== chip.value"
             [attr.aria-pressed]="authorFilter() === chip.value"
             [attr.data-testid]="'notes-filter-author-' + chip.value"
           >
@@ -101,13 +101,13 @@
 
   @if (endpointsUnavailable()) {
     <div
-      class="mb-3 rounded-sm border border-dashed border-zinc-800 p-4 text-center"
+      class="mb-3 rounded-sm border border-dashed border-border p-4 text-center"
       data-testid="notes-endpoints-pending"
     >
-      <p class="mb-1 font-mono text-[10px] uppercase tracking-wider text-zinc-500">
+      <p class="mb-1 font-mono text-[10px] uppercase tracking-wider text-fg-subtle">
         Couldn't load
       </p>
-      <p class="text-xs text-zinc-500">
+      <p class="text-xs text-fg-subtle">
         Couldn't load notes. Try refreshing the page.
       </p>
     </div>
@@ -130,7 +130,7 @@
     <table class="w-full text-sm" data-testid="notes-list-table">
       <thead>
         <tr
-          class="border-b border-zinc-800 text-left font-mono text-[10px] uppercase tracking-wider text-zinc-500"
+          class="border-b border-border text-left font-mono text-[10px] uppercase tracking-wider text-fg-subtle"
         >
           <th scope="col" class="px-3 py-2 font-normal">Kind</th>
           <th scope="col" class="px-3 py-2 font-normal">Title</th>
@@ -146,8 +146,8 @@
           <tr
             #row
             [attr.tabindex]="rowTabIndex(i)"
-            class="cursor-pointer border-b border-zinc-900 transition-colors hover:bg-zinc-800/40 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-sky-500"
-            [class.bg-zinc-800/40]="i === focusedIndex()"
+            class="cursor-pointer border-b border-border-faint transition-colors hover:bg-elevated/40 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-brand"
+            [class.bg-elevated/40]="i === focusedIndex()"
             (click)="openRow(row)"
             (keydown.enter)="openRow(row)"
             (focus)="focusedIndex.set(i)"
@@ -160,7 +160,7 @@
                 {{ kindShort(row.kind) }}
               </span>
             </td>
-            <td class="max-w-lg truncate px-3 py-2 text-zinc-100">
+            <td class="max-w-lg truncate px-3 py-2 text-fg">
               {{ row.title }}
             </td>
             <td class="px-3 py-2">
@@ -176,16 +176,16 @@
                 {{ row.maturity.replace('_', ' ') }}
               </span>
             </td>
-            <td class="px-3 py-2 font-mono text-[11px] text-zinc-400">
+            <td class="px-3 py-2 font-mono text-[11px] text-fg-muted">
               {{ row.created_by }}
             </td>
-            <td class="px-3 py-2 truncate text-zinc-400">
+            <td class="px-3 py-2 truncate text-fg-muted">
               {{ conceptsLabel(row) }}
             </td>
-            <td class="px-3 py-2 text-zinc-400">
+            <td class="px-3 py-2 text-fg-muted">
               {{ row.updated_at | date: 'short' }}
             </td>
-            <td class="px-3 py-2 font-mono text-[11px] text-zinc-500">
+            <td class="px-3 py-2 font-mono text-[11px] text-fg-subtle">
               {{ row.id.slice(0, 8) }}
             </td>
           </tr>
