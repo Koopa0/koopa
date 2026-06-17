@@ -147,6 +147,13 @@ export const routes: Routes = [
         data: { gtdView: 'inbox' },
       },
       {
+        path: 'daily/inbox-zero',
+        loadComponent: () =>
+          import('./admin/commitment/inbox-zero/inbox-zero.page').then(
+            (m) => m.InboxZeroPageComponent,
+          ),
+      },
+      {
         path: 'daily/todos',
         loadComponent: () =>
           import('./admin/commitment/todos/gtd.page').then(

@@ -1,0 +1,110 @@
+@let row = store.current();
+
+<div
+  class="flex min-h-full flex-1 flex-col items-center justify-center px-6 py-10"
+  data-testid="inbox-zero"
+>
+  @if (store.loading()) {
+    <div
+      class="flex flex-col items-center gap-3 text-fg-subtle"
+      data-testid="inbox-zero-loading"
+    >
+      <div
+        class="size-6 animate-spin rounded-full border-2 border-border border-t-brand"
+        aria-hidden="true"
+      ></div>
+      <p class="text-sm">Loading inbox…</p>
+    </div>
+  } @else if (store.errored()) {
+    <div
+      class="flex flex-col items-center gap-4 text-center"
+      data-testid="inbox-zero-error"
+    >
+      <h2 class="text-sm font-medium text-fg">Couldn’t load the inbox</h2>
+      <p class="max-w-sm text-xs text-fg-subtle">
+        Something went wrong fetching your captures. Try again.
+      </p>
+      <button
+        type="button"
+        (click)="store.reload()"
+        class="rounded-sm border border-border bg-elevated px-3 py-1.5 text-xs text-fg-muted transition-colors hover:bg-overlay hover:text-fg"
+        data-testid="inbox-zero-retry"
+      >
+        Retry
+      </button>
+    </div>
+  } @else if (store.done()) {
+    <app-empty-state
+      [icon]="InboxIcon"
+      title="Inbox zero."
+      description="Nothing left to triage. Captures land here — come back when the inbox fills up."
+      data-testid="inbox-zero-done"
+    />
+  } @else if (row) {
+    <div class="flex w-full max-w-2xl flex-col items-center gap-8">
+      <!-- Progress counter -->
+      <p
+        class="font-mono text-xs tracking-wide text-fg-faint uppercase"
+        aria-live="polite"
+        data-testid="inbox-zero-progress"
+      >
+        {{ store.ordinal() }} / {{ store.total() }} left
+      </p>
+
+      <!-- The card -->
+      <div
+        class="flex w-full flex-col gap-6 rounded-lg border border-border bg-panel px-8 py-10 shadow-[var(--shadow-2)]"
+        data-testid="inbox-zero-card"
+      >
+        <div class="flex items-center gap-2.5">
+          <span
+            class="rounded-sm bg-brand-muted px-2 py-0.5 font-mono text-[10px] tracking-wide text-brand uppercase"
+            data-testid="inbox-zero-source"
+          >
+            {{ source() }}
+          </span>
+          <span
+            class="font-mono text-[11px] text-fg-faint"
+            data-testid="inbox-zero-age"
+          >
+            {{ age() }}
+          </span>
+        </div>
+
+        <p
+          class="text-xl leading-snug font-medium text-balance text-fg"
+          data-testid="inbox-zero-title"
+        >
+          {{ row.title }}
+        </p>
+      </div>
+
+      <!-- Key hint bar -->
+      <div
+        class="flex flex-wrap items-center justify-center gap-x-5 gap-y-2"
+        data-testid="inbox-zero-legend"
+      >
+        @for (hint of legend; track hint.keys) {
+          <span class="flex items-center gap-1.5">
+            <kbd
+              class="rounded-xs border border-border bg-elevated px-1.5 py-0.5 font-mono text-[11px] text-fg-muted"
+            >
+              {{ hint.keys }}
+            </kbd>
+            <span class="text-xs text-fg-subtle">{{ hint.label }}</span>
+          </span>
+        }
+      </div>
+    </div>
+  }
+</div>
+
+@if (store.clarifyRequest(); as request) {
+  <app-clarify-modal
+    [item]="request.row"
+    [busy]="store.busy()"
+    (clarified)="clarified($event)"
+    (deferInstead)="store.deferInstead()"
+    (closed)="store.closeClarify()"
+  />
+}
