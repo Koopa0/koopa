@@ -8,20 +8,20 @@ import {
 } from '@angular/core';
 import { rxResource, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
-import { DatePipe } from '@angular/common';
 import { map } from 'rxjs';
 import { AgentService } from '../../../../core/services/agent.service';
 import { AdminTopbarService } from '../../../admin-layout/admin-topbar.service';
-import type { AgentDetail } from '../../../../core/models/workbench.model';
+import type { Agent } from '../../../../core/models/workbench.model';
 
 /**
- * Agent Profile. Read-only registry view showing the hero (name /
- * display_name / platform / status / schedule) and capability badges
- * (submit_tasks / receive_tasks / publish_artifacts).
+ * Agent Profile — read-only registry view. Renders the six-field
+ * projection (name / display_name / platform / description / status) plus
+ * the schedule detail when present. There are no capabilities, tasks, or
+ * activity state; the MCP-v3 contraction retired the A2A surface.
  */
 @Component({
   selector: 'app-agent-profile-page',
-  imports: [DatePipe],
+  imports: [],
   templateUrl: './agent-profile.page.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: { class: 'flex min-h-full flex-1 flex-col' },
@@ -38,7 +38,7 @@ export class AgentProfilePageComponent {
     { initialValue: '' },
   );
 
-  protected readonly agentResource = rxResource<AgentDetail, string>({
+  protected readonly agentResource = rxResource<Agent, string>({
     params: () => this.nameFromRoute(),
     stream: ({ params }) => this.agentService.get(params),
   });

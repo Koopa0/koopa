@@ -8,18 +8,13 @@ import {
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
 import { AgentInspectorComponent } from './agent-inspector.component';
-import type { AgentDetail } from '../../../../core/models/workbench.model';
+import type { Agent } from '../../../../core/models/workbench.model';
 
-const baseAgent: AgentDetail = {
+const baseAgent: Agent = {
   name: 'planner',
   display_name: 'Planner',
   platform: 'claude-cowork',
-  description: 'planning, decisions, daily driving, morning briefing',
-  capability: {
-    submit_tasks: true,
-    receive_tasks: false,
-    publish_artifacts: true,
-  },
+  description: 'Daily planner — morning briefing and candidate day plan',
   schedule: {
     name: 'morning-briefing',
     trigger: 'cron',
@@ -28,12 +23,6 @@ const baseAgent: AgentDetail = {
     purpose: 'Daily briefing — todos, projects, goals, RSS highlights',
   },
   status: 'active',
-  open_task_count: 3,
-  blocked_count: 0,
-  activity_state: 'active',
-  schedule_human_readable: 'Daily 8 AM briefing',
-  last_task_accepted_at: '2026-04-17T03:00:00Z',
-  retired_at: null,
 };
 
 describe('AgentInspectorComponent', () => {
@@ -53,7 +42,7 @@ describe('AgentInspectorComponent', () => {
     httpMock = TestBed.inject(HttpTestingController);
   }
 
-  function flushAll(name: string, response: AgentDetail | null): void {
+  function flushAll(name: string, response: Agent | null): void {
     const reqs = httpMock.match((r) =>
       r.url.includes(`/api/admin/system/agents/${name}`),
     );
@@ -67,7 +56,7 @@ describe('AgentInspectorComponent', () => {
     }
   }
 
-  async function loadAndSettle(a: AgentDetail | null): Promise<void> {
+  async function loadAndSettle(a: Agent | null): Promise<void> {
     fixture.componentRef.setInput('id', baseAgent.name);
     fixture.detectChanges();
     flushAll(baseAgent.name, a);
@@ -89,47 +78,44 @@ describe('AgentInspectorComponent', () => {
     expect(subtitle?.textContent).toContain('claude-cowork');
   });
 
-  it('should render capability inline as plain text (not dot-grid)', async () => {
-    setupFixture();
-    await loadAndSettle(baseAgent);
-
-    const cap = fixture.nativeElement.querySelector(
-      '[data-testid="agent-capabilities"]',
-    );
-    expect(cap?.textContent?.trim()).toBe(
-      'submits tasks · publishes artifacts',
-    );
-    // Must NOT contain dot-grid SVG or matrix indicator
-    expect(cap?.querySelector('svg')).toBeFalsy();
-  });
-
-  it('should omit capability row entirely for passive identity (all bits false)', async () => {
-    setupFixture();
-    await loadAndSettle({
-      ...baseAgent,
-      name: 'koopa0-dev',
-      capability: {
-        submit_tasks: false,
-        receive_tasks: false,
-        publish_artifacts: false,
-      },
-    });
-
-    const cap = fixture.nativeElement.querySelector(
-      '[data-testid="agent-capabilities"]',
-    );
-    expect(cap).toBeFalsy();
-  });
-
-  it('should render schedule as human-readable, NOT cron literal in default view', async () => {
+  it('should render schedule as its purpose, NOT the cron literal in default view', async () => {
     setupFixture();
     await loadAndSettle(baseAgent);
 
     const sched = fixture.nativeElement.querySelector(
       '[data-testid="agent-schedule"]',
     );
-    expect(sched?.textContent?.trim()).toBe('Daily 8 AM briefing');
+    expect(sched?.textContent?.trim()).toBe(
+      'Daily briefing — todos, projects, goals, RSS highlights',
+    );
     expect(sched?.textContent).not.toContain('0 8 * * *');
+  });
+
+  it('should omit the schedule row for an agent without a schedule', async () => {
+    setupFixture();
+    await loadAndSettle({
+      name: 'koopa0-dev',
+      display_name: 'koopa',
+      platform: 'claude-code',
+      description: 'koopa development project',
+      status: 'active',
+    });
+
+    const sched = fixture.nativeElement.querySelector(
+      '[data-testid="agent-schedule"]',
+    );
+    expect(sched).toBeFalsy();
+  });
+
+  it('should not render any retired capability UI', async () => {
+    setupFixture();
+    await loadAndSettle(baseAgent);
+
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.querySelector('[data-testid="agent-capabilities"]')).toBeFalsy();
+    expect(el.querySelector('[data-testid="agent-open-tasks-link"]')).toBeFalsy();
+    expect(el.querySelector('[data-testid="agent-no-open-tasks"]')).toBeFalsy();
+    expect(el.textContent).not.toContain('submits tasks');
   });
 
   it('should expose cron expression in <details> progressive disclosure', async () => {
@@ -145,21 +131,15 @@ describe('AgentInspectorComponent', () => {
     expect(details?.textContent).toContain('cowork_desktop');
   });
 
-  it('should render system agent warning for system fallback identity', async () => {
+  it('should render system agent warning for the system fallback identity', async () => {
     setupFixture();
     await loadAndSettle({
-      ...baseAgent,
       name: 'system',
       display_name: 'System',
-      platform: 'human',
+      platform: 'system',
       description:
         'Database-level writes without Go caller context — pg_cron jobs',
-      capability: {
-        submit_tasks: false,
-        receive_tasks: false,
-        publish_artifacts: false,
-      },
-      schedule: undefined,
+      status: 'active',
     });
 
     const warning = fixture.nativeElement.querySelector(
@@ -169,48 +149,21 @@ describe('AgentInspectorComponent', () => {
     expect(warning?.textContent).toContain('fallback identity');
   });
 
-  it('should render retired status with line-through title + retired_at in subtitle', async () => {
+  it('should render retired status with line-through title', async () => {
     setupFixture();
     await loadAndSettle({
       ...baseAgent,
       status: 'retired',
-      retired_at: '2026-04-10T00:00:00Z',
     });
 
     const title = fixture.nativeElement.querySelector(
       '[data-testid="agent-display-name"]',
     );
     expect(title?.classList.contains('line-through')).toBe(true);
-    const subtitle = fixture.nativeElement.querySelector(
-      '[data-testid="agent-subtitle"]',
+    const status = fixture.nativeElement.querySelector(
+      '[data-testid="agent-status"]',
     );
-    expect(subtitle?.textContent).toContain('retired');
-  });
-
-  it('should render tail link with N open tasks pointing to agent profile', async () => {
-    setupFixture();
-    await loadAndSettle(baseAgent);
-
-    const link = fixture.nativeElement.querySelector(
-      '[data-testid="agent-open-tasks-link"]',
-    );
-    expect(link?.textContent).toContain('View 3 open tasks for planner');
-    // routerLink resolves to /admin/system/agents/planner (agent profile).
-    expect(link?.getAttribute('aria-label')).toContain('open tasks for planner');
-  });
-
-  it('should render "No open tasks" when count is 0', async () => {
-    setupFixture();
-    await loadAndSettle({ ...baseAgent, open_task_count: 0 });
-
-    const empty = fixture.nativeElement.querySelector(
-      '[data-testid="agent-no-open-tasks"]',
-    );
-    expect(empty?.textContent).toContain('No open tasks');
-    const link = fixture.nativeElement.querySelector(
-      '[data-testid="agent-open-tasks-link"]',
-    );
-    expect(link).toBeFalsy();
+    expect(status?.textContent).toContain('retired');
   });
 
   it('should expose copy agent name button with CDK Clipboard binding', async () => {

@@ -19,7 +19,6 @@ import type {
 } from '../../../core/models/activity.model';
 
 type EntityFilter = 'all' | ActivityEntityType;
-type KindFilter = 'all' | ActivityChangeKind;
 
 interface Chip<T extends string> {
   value: T;
@@ -36,16 +35,6 @@ const ENTITY_CHIPS: readonly Chip<EntityFilter>[] = [
   { value: 'learning_hypothesis', label: 'Hypothesis' },
   { value: 'learning_attempt', label: 'Attempt' },
   { value: 'learning_session', label: 'Session' },
-];
-
-const KIND_CHIPS: readonly Chip<KindFilter>[] = [
-  { value: 'all', label: 'All' },
-  { value: 'created', label: 'Created' },
-  { value: 'updated', label: 'Updated' },
-  { value: 'state_changed', label: 'State' },
-  { value: 'published', label: 'Published' },
-  { value: 'completed', label: 'Completed' },
-  { value: 'archived', label: 'Archived' },
 ];
 
 /**
@@ -67,9 +56,12 @@ const ENTITY_ROUTE: Record<ActivityEntityType, string> = {
 };
 
 /**
- * Activity log — day-grouped changelog with entity_type and
- * change_kind filter chips. Row click routes to the canonical detail
- * surface for that entity.
+ * Activity log — day-grouped changelog with an entity-type filter (sent to
+ * the backend as `source`) and a by-actor filter (sent as `actor`, the
+ * backend's comma-separated allowlist param). Change kind is shown per
+ * event but is not a server-side filter — the changelog endpoint has no
+ * change-kind param. Row click routes to the canonical detail surface for
+ * that entity.
  */
 @Component({
   selector: 'app-activity-page',
@@ -85,20 +77,19 @@ export class ActivityPageComponent {
   private readonly destroyRef = inject(DestroyRef);
 
   protected readonly entityChips = ENTITY_CHIPS;
-  protected readonly kindChips = KIND_CHIPS;
 
   protected readonly entityFilter = signal<EntityFilter>('all');
-  protected readonly kindFilter = signal<KindFilter>('all');
+  protected readonly actorFilter = signal<string>('');
 
   protected readonly resource = rxResource<
     ChangelogResponse,
-    { entity: EntityFilter; kind: KindFilter }
+    { entity: EntityFilter; actor: string }
   >({
-    params: () => ({ entity: this.entityFilter(), kind: this.kindFilter() }),
+    params: () => ({ entity: this.entityFilter(), actor: this.actorFilter() }),
     stream: ({ params }) =>
       this.activityService.changelog({
-        entity_type: params.entity === 'all' ? undefined : params.entity,
-        change_kind: params.kind === 'all' ? undefined : params.kind,
+        source: params.entity === 'all' ? undefined : params.entity,
+        actor: params.actor === '' ? undefined : params.actor,
       }),
   });
 
@@ -128,18 +119,27 @@ export class ActivityPageComponent {
     this.entityFilter.set(value);
   }
 
-  protected setKindFilter(value: KindFilter): void {
-    this.kindFilter.set(value);
+  protected setActorFilter(value: string): void {
+    this.actorFilter.set(value.trim());
   }
 
   protected canOpen(event: ChangelogEvent): boolean {
-    return !!ENTITY_ROUTE[event.entity_type];
+    const template = ENTITY_ROUTE[event.entity_type];
+    if (!template) return false;
+    // Templates with an id placeholder need a concrete entity_id; without
+    // one (entity_id is omitempty on the wire) the row is not openable.
+    return !template.includes('%') || !!event.entity_id;
   }
 
   protected openEvent(event: ChangelogEvent): void {
     const template = ENTITY_ROUTE[event.entity_type];
     if (!template) return;
-    this.router.navigateByUrl(template.replace('%', event.entity_id));
+    if (template.includes('%')) {
+      if (!event.entity_id) return;
+      this.router.navigateByUrl(template.replace('%', event.entity_id));
+      return;
+    }
+    this.router.navigateByUrl(template);
   }
 
   protected kindDotClass(kind: ActivityChangeKind): string {

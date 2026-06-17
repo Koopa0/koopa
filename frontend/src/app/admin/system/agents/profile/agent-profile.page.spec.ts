@@ -6,28 +6,28 @@ import { of, throwError, type Observable } from 'rxjs';
 import { AgentProfilePageComponent } from './agent-profile.page';
 import { AgentService } from '../../../../core/services/agent.service';
 import { AdminTopbarService } from '../../../admin-layout/admin-topbar.service';
-import type { AgentDetail } from '../../../../core/models/workbench.model';
+import type { Agent } from '../../../../core/models/workbench.model';
 
-// The Agent Profile is a read-only registry view: it renders the hero
-// (name / display_name / platform / status) and the capability badges,
-// both sourced from GET /api/admin/system/agents/:name. The A2A
-// task/notes tabs were retired with the backend coordination endpoints.
+// The Agent Profile is a read-only registry view over the six-field
+// projection (name / display_name / platform / description / status, plus
+// an optional schedule), sourced from GET /api/admin/system/agents/:name.
+// Capability, task, and activity concepts were retired with the MCP-v3
+// A2A coordination surface.
 
-function agentDetail(): AgentDetail {
+function plannerAgent(): Agent {
   return {
     name: 'planner',
     display_name: 'Planner',
     platform: 'claude-cowork',
-    description: 'planning, decisions, daily driving',
-    capability: {
-      submit_tasks: true,
-      receive_tasks: false,
-      publish_artifacts: true,
+    description: 'Daily planner — morning briefing and candidate day plan',
+    schedule: {
+      name: 'morning-briefing',
+      trigger: 'cron',
+      expr: '0 8 * * *',
+      backend: 'cowork_desktop',
+      purpose: 'Daily briefing — todos, projects, goals, hypotheses',
     },
     status: 'active',
-    open_task_count: 0,
-    blocked_count: 0,
-    activity_state: 'idle',
   };
 }
 
@@ -36,9 +36,7 @@ describe('AgentProfilePageComponent', () => {
 
   afterEach(() => TestBed.resetTestingModule());
 
-  async function render(
-    get: () => Observable<AgentDetail>,
-  ): Promise<HTMLElement> {
+  async function render(get: () => Observable<Agent>): Promise<HTMLElement> {
     TestBed.configureTestingModule({
       imports: [AgentProfilePageComponent],
       providers: [
@@ -60,30 +58,54 @@ describe('AgentProfilePageComponent', () => {
     return fixture.nativeElement as HTMLElement;
   }
 
-  it('should render the hero and capability badges when the agent loads', async () => {
-    const el = await render(() => of(agentDetail()));
+  it('should render the hero with the six-field projection when the agent loads', async () => {
+    const el = await render(() => of(plannerAgent()));
 
     const hero = el.querySelector('[data-testid="agent-hero"]');
     expect(hero).toBeTruthy();
     expect(hero?.textContent).toContain('Planner');
     expect(hero?.textContent).toContain('planner');
     expect(hero?.textContent).toContain('claude-cowork');
-
-    const capabilities = el.querySelector(
-      '[data-testid="agent-capabilities"]',
-    );
-    expect(capabilities).toBeTruthy();
-    expect(capabilities?.textContent).toContain('submit_tasks');
-    expect(capabilities?.textContent).toContain('receive_tasks');
-    expect(capabilities?.textContent).toContain('publish_artifacts');
+    expect(hero?.textContent).toContain('active');
   });
 
-  it('should not render the retired task or notes tabs', async () => {
-    const el = await render(() => of(agentDetail()));
+  it('should render the schedule detail when the agent carries one', async () => {
+    const el = await render(() => of(plannerAgent()));
 
+    const schedule = el.querySelector('[data-testid="agent-schedule"]');
+    expect(schedule).toBeTruthy();
+    expect(
+      el.querySelector('[data-testid="agent-schedule-name"]')?.textContent,
+    ).toContain('morning-briefing');
+    expect(
+      el.querySelector('[data-testid="agent-schedule-expr"]')?.textContent,
+    ).toContain('0 8 * * *');
+    expect(
+      el.querySelector('[data-testid="agent-schedule-purpose"]')?.textContent,
+    ).toContain('Daily briefing');
+  });
+
+  it('should omit the schedule section for an agent without a schedule', async () => {
+    const el = await render(() =>
+      of({
+        name: 'koopa0-dev',
+        display_name: 'koopa',
+        platform: 'claude-code',
+        description: 'koopa development project',
+        status: 'active',
+      } satisfies Agent),
+    );
+
+    expect(el.querySelector('[data-testid="agent-schedule"]')).toBeNull();
+  });
+
+  it('should not render any retired capability or task UI', async () => {
+    const el = await render(() => of(plannerAgent()));
+
+    expect(el.querySelector('[data-testid="agent-capabilities"]')).toBeNull();
     expect(el.querySelector('[data-testid="agent-tabs"]')).toBeNull();
     expect(el.querySelector('[data-testid="agent-workload"]')).toBeNull();
-    expect(el.querySelector('[data-testid="agent-notes"]')).toBeNull();
+    expect(el.textContent).not.toContain('submit_tasks');
   });
 
   it('should show the error state when the agent fails to load', async () => {

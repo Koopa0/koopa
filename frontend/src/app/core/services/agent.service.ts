@@ -1,36 +1,27 @@
 import { Injectable, inject } from '@angular/core';
 import type { Observable } from 'rxjs';
 import { ApiService } from './api.service';
-import type {
-  AgentsResponse,
-  AgentDetail,
-} from '../models/workbench.model';
+import type { Agent } from '../models/workbench.model';
 
 /**
- * Agent service — registry list + per-agent open/blocked task counts for the
- * AGENTS cell.
+ * Agent service — read-only registry projection.
  *
- * Backend: internal/agent/handler.go::List (route GET /api/admin/system/agents) +
- * task store batch counts. The cell warns when any
- * agent.activity_state === 'blocked' and surfaces one word per agent
- * (active / idle / blocked).
+ * Backend: internal/agent/handler.go. `List` (GET /api/admin/system/agents)
+ * returns a bare []agentResponse; `Get` (GET /api/admin/system/agents/{name})
+ * returns a single agentResponse. Each row is the six-field identity
+ * projection — name, display_name, platform, description, optional schedule,
+ * status. There are no task counts or capability flags; the MCP-v3
+ * contraction retired the A2A coordination surface.
  */
 @Injectable({ providedIn: 'root' })
 export class AgentService {
   private readonly api = inject(ApiService);
 
-  list(): Observable<AgentsResponse> {
-    return this.api.getData<AgentsResponse>('/api/admin/system/agents');
+  list(): Observable<Agent[]> {
+    return this.api.getData<Agent[]>('/api/admin/system/agents');
   }
 
-  /**
-   * Single-agent detail for Agent Inspector.
-   * Returns AgentDetail (extends AgentSummary with retired_at, schedule_human_readable,
-   * last_task_accepted_at — see workbench.model.ts).
-   */
-  get(name: string): Observable<AgentDetail> {
-    return this.api.getData<AgentDetail>(
-      `/api/admin/system/agents/${name}`,
-    );
+  get(name: string): Observable<Agent> {
+    return this.api.getData<Agent>(`/api/admin/system/agents/${name}`);
   }
 }

@@ -62,12 +62,6 @@
           <span class="font-mono text-fg-muted">{{ a.name }}</span>
           <span aria-hidden="true"> · </span>
           <span>{{ a.platform }}</span>
-          @if (a.status === "retired" && a.retired_at) {
-            <span aria-hidden="true"> · </span>
-            <span class="text-amber-400"
-              >retired {{ a.retired_at | date: "mediumDate" }}</span
-            >
-          }
         </p>
       </header>
 
@@ -86,12 +80,6 @@
         class="grid grid-cols-[120px_1fr] gap-y-1 text-sm"
         data-testid="agent-facts"
       >
-        @if (capabilityText(); as cap) {
-          <dt class="text-fg-muted">Capabilities</dt>
-          <dd class="text-fg" data-testid="agent-capabilities">
-            {{ cap }}
-          </dd>
-        }
         @if (scheduleText(); as sched) {
           <dt class="text-fg-muted">Schedule</dt>
           <dd class="text-fg" data-testid="agent-schedule">
@@ -104,15 +92,6 @@
             {{ a.status }}
           </span>
         </dd>
-        @if (a.last_task_accepted_at) {
-          <dt class="text-fg-muted">Last task</dt>
-          <dd
-            class="font-mono text-xs text-fg-muted"
-            data-testid="agent-last-task"
-          >
-            {{ a.last_task_accepted_at | date: "short" }}
-          </dd>
-        }
       </dl>
 
       <!-- Power-user disclosure: raw cron expression -->
@@ -132,32 +111,6 @@
             }
           </div>
         </details>
-      }
-
-      <!-- Tail link to the agent profile — surfaces this agent's task workload. -->
-      @if (a.open_task_count > 0) {
-        <a
-          [routerLink]="['/admin/system/agents', a.name]"
-          class="motion-reduce:transition-none block border-t border-border pt-3 text-sm text-brand transition-colors hover:text-brand"
-          [attr.aria-label]="
-            'View ' +
-            a.open_task_count +
-            ' open tasks for ' +
-            a.name +
-            ' in agent profile'
-          "
-          data-testid="agent-open-tasks-link"
-        >
-          View {{ a.open_task_count }} open
-          {{ a.open_task_count === 1 ? "task" : "tasks" }} for {{ a.name }} →
-        </a>
-      } @else {
-        <p
-          class="border-t border-border pt-3 text-sm text-fg-subtle"
-          data-testid="agent-no-open-tasks"
-        >
-          No open tasks for this agent.
-        </p>
       }
     </div>
   }

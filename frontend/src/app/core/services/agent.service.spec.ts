@@ -5,27 +5,29 @@ import {
 } from '@angular/common/http/testing';
 import { provideHttpClient, withXhr } from '@angular/common/http';
 import { AgentService } from './agent.service';
-import type { AgentsResponse, AgentSummary } from '../models/workbench.model';
+import type { Agent } from '../models/workbench.model';
 
-const mockAgent: AgentSummary = {
-  name: 'research-lab',
-  display_name: 'Research Lab',
+const planner: Agent = {
+  name: 'planner',
+  display_name: 'Planner',
   platform: 'claude-cowork',
-  description: 'Deep research, structured reports',
-  capability: {
-    submit_tasks: true,
-    receive_tasks: true,
-    publish_artifacts: true,
+  description: 'Daily planner — morning briefing and candidate day plan',
+  schedule: {
+    name: 'morning-briefing',
+    trigger: 'cron',
+    expr: '0 8 * * *',
+    backend: 'cowork_desktop',
+    purpose: 'Daily briefing — todos, projects, goals, hypotheses',
   },
   status: 'active',
-  open_task_count: 1,
-  blocked_count: 0,
-  activity_state: 'active',
 };
 
-const mockResponse: AgentsResponse = {
-  state: 'ok',
-  agents: [mockAgent],
+const koopaDev: Agent = {
+  name: 'koopa0-dev',
+  display_name: 'koopa',
+  platform: 'claude-code',
+  description: 'koopa development project',
+  status: 'active',
 };
 
 describe('AgentService', () => {
@@ -48,50 +50,34 @@ describe('AgentService', () => {
     expect(service).toBeTruthy();
   });
 
-  it('should fetch agents list', () => {
-    service.list().subscribe((res) => {
-      expect(res.agents).toHaveLength(1);
-      expect(res.agents[0].activity_state).toBe('active');
-      expect(res.state).toBe('ok');
-    });
-
-    const req = httpMock.expectOne((r) => r.url.includes('/api/admin/system/agents'));
-    expect(req.request.method).toBe('GET');
-    req.flush({ data: mockResponse });
-  });
-
-  it('should surface warn state when any agent is blocked', () => {
-    service.list().subscribe((res) => {
-      expect(res.state).toBe('warn');
-      expect(res.reason).toBe('rl: blocked 6d');
-      expect(res.agents[0].activity_state).toBe('blocked');
-    });
-
-    const req = httpMock.expectOne((r) => r.url.includes('/api/admin/system/agents'));
-    req.flush({
-      data: {
-        state: 'warn',
-        reason: 'rl: blocked 6d',
-        agents: [
-          {
-            ...mockAgent,
-            activity_state: 'blocked',
-            blocked_count: 1,
-          },
-        ],
-      },
-    });
-  });
-
-  it('should fetch single agent by name', () => {
-    service.get('research-lab').subscribe((res) => {
-      expect(res.name).toBe('research-lab');
+  it('should fetch the agents roster as a bare array', () => {
+    service.list().subscribe((agents) => {
+      expect(agents).toHaveLength(2);
+      expect(agents[0].name).toBe('planner');
+      expect(agents[0].schedule?.expr).toBe('0 8 * * *');
+      expect(agents[1].name).toBe('koopa0-dev');
+      expect(agents[1].schedule).toBeUndefined();
     });
 
     const req = httpMock.expectOne((r) =>
-      r.url.includes('/api/admin/system/agents/research-lab'),
+      r.url.includes('/api/admin/system/agents'),
     );
     expect(req.request.method).toBe('GET');
-    req.flush({ data: mockAgent });
+    // Backend List returns api.Response{Data: []agentResponse} — a bare
+    // array under `data`, no envelope key, no per-agent task counts.
+    req.flush({ data: [planner, koopaDev] });
+  });
+
+  it('should fetch a single agent by name', () => {
+    service.get('planner').subscribe((agent) => {
+      expect(agent.name).toBe('planner');
+      expect(agent.platform).toBe('claude-cowork');
+    });
+
+    const req = httpMock.expectOne((r) =>
+      r.url.includes('/api/admin/system/agents/planner'),
+    );
+    expect(req.request.method).toBe('GET');
+    req.flush({ data: planner });
   });
 });

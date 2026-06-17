@@ -20,16 +20,20 @@ export type ActivityChangeKind =
   | 'completed'
   | 'archived';
 
+/**
+ * One changelog row. Mirrors internal/activity/activity.go::ChangelogEvent:
+ * `actor` is always on the wire (non-null); `entity_id`, `title`, and
+ * `project` are `omitempty` and may be absent.
+ */
 export interface ChangelogEvent {
   id: string;
   timestamp: string;
   entity_type: ActivityEntityType;
-  entity_id: string;
+  entity_id?: string;
   change_kind: ActivityChangeKind;
-  title: string;
-  project: string | null;
-  /**may be absent today. */
-  actor?: string | null;
+  title?: string;
+  project?: string | null;
+  actor: string;
 }
 
 export interface ChangelogDay {

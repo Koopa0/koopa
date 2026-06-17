@@ -43,68 +43,55 @@
         >
           {{ a.status }}
         </span>
-        @if (a.schedule_human_readable) {
-          <span>{{ a.schedule_human_readable }}</span>
-        }
-        @if (a.last_task_accepted_at) {
-          <span>
-            last accepted {{ a.last_task_accepted_at | date: 'short' }}
-          </span>
-        }
       </div>
       <p class="mt-2 whitespace-pre-wrap text-sm text-fg-muted">
         {{ a.description }}
       </p>
     </header>
 
-    <!-- Capabilities -->
-    <section
-      class="rounded-sm border border-border p-5"
-      aria-labelledby="agent-capabilities-heading"
-      data-testid="agent-capabilities"
-    >
-      <h2
-        id="agent-capabilities-heading"
-        class="mb-3 font-mono text-[10px] uppercase tracking-wider text-fg-subtle"
+    <!-- Schedule -->
+    @if (a.schedule; as schedule) {
+      <section
+        class="rounded-sm border border-border p-5"
+        aria-labelledby="agent-schedule-heading"
+        data-testid="agent-schedule"
       >
-        Capabilities
-      </h2>
-      <ul class="flex flex-wrap gap-2 text-xs">
-        <li
-          class="rounded-xs border px-2 py-0.5"
-          [class.border-emerald-700]="a.capability.submit_tasks"
-          [class.bg-emerald-900/30]="a.capability.submit_tasks"
-          [class.text-emerald-300]="a.capability.submit_tasks"
-          [class.border-border]="!a.capability.submit_tasks"
-          [class.bg-panel]="!a.capability.submit_tasks"
-          [class.text-fg-subtle]="!a.capability.submit_tasks"
+        <h2
+          id="agent-schedule-heading"
+          class="mb-3 font-mono text-[10px] uppercase tracking-wider text-fg-subtle"
         >
-          submit_tasks
-        </li>
-        <li
-          class="rounded-xs border px-2 py-0.5"
-          [class.border-emerald-700]="a.capability.receive_tasks"
-          [class.bg-emerald-900/30]="a.capability.receive_tasks"
-          [class.text-emerald-300]="a.capability.receive_tasks"
-          [class.border-border]="!a.capability.receive_tasks"
-          [class.bg-panel]="!a.capability.receive_tasks"
-          [class.text-fg-subtle]="!a.capability.receive_tasks"
-        >
-          receive_tasks
-        </li>
-        <li
-          class="rounded-xs border px-2 py-0.5"
-          [class.border-emerald-700]="a.capability.publish_artifacts"
-          [class.bg-emerald-900/30]="a.capability.publish_artifacts"
-          [class.text-emerald-300]="a.capability.publish_artifacts"
-          [class.border-border]="!a.capability.publish_artifacts"
-          [class.bg-panel]="!a.capability.publish_artifacts"
-          [class.text-fg-subtle]="!a.capability.publish_artifacts"
-        >
-          publish_artifacts
-        </li>
-      </ul>
-    </section>
+          Schedule
+        </h2>
+        <dl class="grid grid-cols-[120px_1fr] gap-y-2 text-sm">
+          <dt class="text-fg-muted">Name</dt>
+          <dd class="text-fg" data-testid="agent-schedule-name">
+            {{ schedule.name }}
+          </dd>
+          <dt class="text-fg-muted">Trigger</dt>
+          <dd class="text-fg" data-testid="agent-schedule-trigger">
+            {{ schedule.trigger || '—' }}
+          </dd>
+          @if (schedule.expr) {
+            <dt class="text-fg-muted">Expression</dt>
+            <dd class="font-mono text-fg" data-testid="agent-schedule-expr">
+              {{ schedule.expr }}
+            </dd>
+          }
+          @if (schedule.backend) {
+            <dt class="text-fg-muted">Backend</dt>
+            <dd class="font-mono text-fg" data-testid="agent-schedule-backend">
+              {{ schedule.backend }}
+            </dd>
+          }
+          @if (schedule.purpose) {
+            <dt class="text-fg-muted">Purpose</dt>
+            <dd class="text-fg" data-testid="agent-schedule-purpose">
+              {{ schedule.purpose }}
+            </dd>
+          }
+        </dl>
+      </section>
+    }
 
     <div class="pt-4">
       <button

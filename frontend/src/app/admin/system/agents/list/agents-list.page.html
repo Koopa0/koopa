@@ -4,27 +4,27 @@
     <div
       class="flex flex-wrap items-center gap-1"
       role="toolbar"
-      aria-label="Filter by activity"
-      data-testid="agents-filter-state"
+      aria-label="Filter by status"
+      data-testid="agents-filter-status"
     >
       <span
         class="mr-1 font-mono text-[10px] uppercase tracking-wider text-fg-subtle"
       >
-        Activity
+        Status
       </span>
-      @for (chip of stateChips; track chip.value) {
+      @for (chip of statusChips; track chip.value) {
         <button
           type="button"
-          (click)="setStateFilter(chip.value)"
+          (click)="setStatusFilter(chip.value)"
           class="h-7 rounded-xs border px-2.5 text-[11px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
-          [class.border-brand]="stateFilter() === chip.value"
-          [class.bg-brand/30]="stateFilter() === chip.value"
-          [class.text-brand]="stateFilter() === chip.value"
-          [class.border-border]="stateFilter() !== chip.value"
-          [class.bg-panel]="stateFilter() !== chip.value"
-          [class.text-fg-muted]="stateFilter() !== chip.value"
-          [attr.aria-pressed]="stateFilter() === chip.value"
-          [attr.data-testid]="'agents-filter-state-' + chip.value"
+          [class.border-brand]="statusFilter() === chip.value"
+          [class.bg-brand/30]="statusFilter() === chip.value"
+          [class.text-brand]="statusFilter() === chip.value"
+          [class.border-border]="statusFilter() !== chip.value"
+          [class.bg-panel]="statusFilter() !== chip.value"
+          [class.text-fg-muted]="statusFilter() !== chip.value"
+          [attr.aria-pressed]="statusFilter() === chip.value"
+          [attr.data-testid]="'agents-filter-status-' + chip.value"
         >
           {{ chip.label }}
         </button>
@@ -63,9 +63,7 @@
         >
           <th scope="col" class="px-3 py-2 font-normal">Name</th>
           <th scope="col" class="px-3 py-2 font-normal">Platform</th>
-          <th scope="col" class="px-3 py-2 font-normal">Activity</th>
-          <th scope="col" class="px-3 py-2 font-normal">As creator</th>
-          <th scope="col" class="px-3 py-2 font-normal">As assignee</th>
+          <th scope="col" class="px-3 py-2 font-normal">Schedule</th>
           <th scope="col" class="px-3 py-2 font-normal">Status</th>
         </tr>
       </thead>
@@ -90,36 +88,8 @@
             <td class="px-3 py-2 font-mono text-[11px] text-fg-muted">
               {{ row.platform }}
             </td>
-            <td class="px-3 py-2">
-              @if (row.status === 'retired') {
-                <span class="font-mono text-[11px] text-fg-subtle">retired</span>
-              } @else {
-                <span
-                  class="inline-flex items-center gap-1.5 text-xs capitalize"
-                  [class]="activityTextClass(row.activity_state)"
-                >
-                  <span
-                    class="inline-block size-1.5 rounded-full"
-                    [class]="activityDotClass(row.activity_state)"
-                    aria-hidden="true"
-                  ></span>
-                  {{ row.activity_state }}
-                  @if (row.blocked_count > 0) {
-                    <span
-                      class="font-mono text-[10px] text-red-400"
-                      aria-label="{{ row.blocked_count }} blocked"
-                    >
-                      ⚠ {{ row.blocked_count }}
-                    </span>
-                  }
-                </span>
-              }
-            </td>
-            <td class="px-3 py-2 font-mono text-[11px] text-fg-muted">
-              {{ row.open_task_count }}
-            </td>
-            <td class="px-3 py-2 font-mono text-[11px] text-fg-muted">
-              {{ row.blocked_count }}
+            <td class="px-3 py-2 text-fg-muted">
+              {{ scheduleSummary(row) }}
             </td>
             <td class="px-3 py-2">
               <span

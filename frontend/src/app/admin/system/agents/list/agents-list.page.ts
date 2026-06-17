@@ -15,37 +15,24 @@ import { AgentService } from '../../../../core/services/agent.service';
 import { AdminTopbarService } from '../../../admin-layout/admin-topbar.service';
 import { DataTableComponent } from '../../../../shared/components/data-table/data-table.component';
 import type {
-  AgentActivityState,
-  AgentSummary,
-  AgentsResponse,
+  Agent,
+  AgentStatus,
 } from '../../../../core/models/workbench.model';
 
-type StateFilter = 'all' | AgentActivityState | 'retired';
+type StatusFilter = 'all' | AgentStatus;
 
-const STATE_CHIPS: readonly { value: StateFilter; label: string }[] = [
+const STATUS_CHIPS: readonly { value: StatusFilter; label: string }[] = [
   { value: 'all', label: 'All' },
   { value: 'active', label: 'Active' },
-  { value: 'idle', label: 'Idle' },
-  { value: 'blocked', label: 'Blocked' },
   { value: 'retired', label: 'Retired' },
 ];
 
-const ACTIVITY_DOT_CLASS: Record<AgentActivityState, string> = {
-  active: 'bg-emerald-500',
-  idle: 'bg-fg-subtle',
-  blocked: 'bg-red-500',
-};
-
-const ACTIVITY_TEXT_CLASS: Record<AgentActivityState, string> = {
-  active: 'text-emerald-300',
-  idle: 'text-fg-muted',
-  blocked: 'text-red-300',
-};
-
 /**
- * Agents list. Columns: Name / Platform / Activity / As creator / As
- * assignee / Status. Row click opens the agent profile; filter chips
- * gate by activity_state (or retired).
+ * Agents list — a read-only roster over the registry projection
+ * (GET /api/admin/system/agents returns a bare []Agent). Columns:
+ * Name / Platform / Schedule / Status. Row click opens the agent profile;
+ * the status filter gates by active / retired (the only real dimension —
+ * there is no activity or task state).
  */
 @Component({
   selector: 'app-agents-list-page',
@@ -63,23 +50,19 @@ export class AgentsListPageComponent {
   private readonly router = inject(Router);
   private readonly destroyRef = inject(DestroyRef);
 
-  protected readonly stateChips = STATE_CHIPS;
-  protected readonly stateFilter = signal<StateFilter>('all');
+  protected readonly statusChips = STATUS_CHIPS;
+  protected readonly statusFilter = signal<StatusFilter>('all');
 
-  protected readonly resource = rxResource<AgentsResponse, void>({
+  protected readonly resource = rxResource<Agent[], void>({
     stream: () => this.agentService.list(),
   });
 
-  protected readonly envelope = computed(() => this.resource.value());
-  protected readonly allAgents = computed(() => this.envelope()?.agents ?? []);
+  protected readonly allAgents = computed(() => this.resource.value() ?? []);
 
   protected readonly rows = computed(() => {
-    const filter = this.stateFilter();
-    return this.allAgents().filter((a) => {
-      if (filter === 'all') return true;
-      if (filter === 'retired') return a.status === 'retired';
-      return a.status === 'active' && a.activity_state === filter;
-    });
+    const filter = this.statusFilter();
+    if (filter === 'all') return this.allAgents();
+    return this.allAgents().filter((a) => a.status === filter);
   });
 
   protected readonly total = computed(() => this.rows().length);
@@ -114,12 +97,12 @@ export class AgentsListPageComponent {
     this.destroyRef.onDestroy(() => this.topbar.reset());
   }
 
-  protected setStateFilter(value: StateFilter): void {
-    this.stateFilter.set(value);
+  protected setStatusFilter(value: StatusFilter): void {
+    this.statusFilter.set(value);
     this.focusedIndex.set(0);
   }
 
-  protected openRow(row: AgentSummary): void {
+  protected openRow(row: Agent): void {
     this.router.navigate(['/admin/system/agents', row.name]);
   }
 
@@ -127,12 +110,8 @@ export class AgentsListPageComponent {
     return i === this.focusedIndex() ? 0 : -1;
   }
 
-  protected activityDotClass(state: AgentActivityState): string {
-    return ACTIVITY_DOT_CLASS[state];
-  }
-
-  protected activityTextClass(state: AgentActivityState): string {
-    return ACTIVITY_TEXT_CLASS[state];
+  protected scheduleSummary(agent: Agent): string {
+    return agent.schedule?.purpose || agent.schedule?.name || '—';
   }
 
   protected handleKeydown(event: KeyboardEvent): void {

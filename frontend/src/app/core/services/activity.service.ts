@@ -1,17 +1,22 @@
 import { Injectable, inject } from '@angular/core';
 import type { Observable } from 'rxjs';
 import type {
-    ActivityChangeKind,
     ActivityEntityType,
     ChangelogResponse,
 } from '../models/activity.model';
 import { ApiService } from './api.service';
 
+/**
+ * Query for GET /api/admin/system/activity. The backend
+ * (internal/activity/handler.go::Changelog) honors `source` (entity type),
+ * `project`, `actor` (comma-separated), and `days`. There is no
+ * change-kind filter — kind is a display attribute on each event, never a
+ * server-side filter.
+ */
 export interface ChangelogQuery {
-  entity_type?: ActivityEntityType;
-  change_kind?: ActivityChangeKind;
-  since?: string;
-  until?: string;
+  /** Entity type — sent to the backend as `source`. */
+  source?: ActivityEntityType;
+  project?: string;
   /** filter by agent. Backend may ignore until ChangelogEvent.actor lands. */
   actor?: string;
 }
@@ -23,10 +28,8 @@ export class ActivityService {
 
   changelog(query: ChangelogQuery = {}): Observable<ChangelogResponse> {
     const params: Record<string, string> = {};
-    if (query.entity_type) params['entity_type'] = query.entity_type;
-    if (query.change_kind) params['change_kind'] = query.change_kind;
-    if (query.since) params['since'] = query.since;
-    if (query.until) params['until'] = query.until;
+    if (query.source) params['source'] = query.source;
+    if (query.project) params['project'] = query.project;
     if (query.actor) params['actor'] = query.actor;
     return this.api.getData<ChangelogResponse>(
       '/api/admin/system/activity',
