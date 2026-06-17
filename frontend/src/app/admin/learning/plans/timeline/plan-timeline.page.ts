@@ -74,6 +74,23 @@ interface StatusAction {
   kind: 'primary' | 'ghost' | 'danger';
 }
 
+/**
+ * Canonical UUID (any version) — the add-entry form needs a learning target
+ * id, and there is no admin endpoint that lists selectable targets (only
+ * concepts, a different entity), so the field is a raw id validated here
+ * before the POST instead of a picker.
+ */
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Phase label convention mirrored from the server's ValidatePhase
+ * (internal/learning/plan/plan.go): lowercase alphanumeric segments joined by
+ * single hyphens. Empty is allowed here because phase is optional — the field
+ * is simply omitted from the request when blank.
+ */
+const PHASE_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/;
+
 /** Lifecycle controls per current plan status; terminal states get none. */
 const STATUS_ACTIONS: Record<PlanStatus, StatusAction[]> = {
   draft: [{ label: 'Activate', to: 'active', kind: 'primary' }],
@@ -110,6 +127,12 @@ const STATUS_ACTIONS: Record<PlanStatus, StatusAction[]> = {
  *   substituting entry (`substituted_by` references a sibling entry).
  * - Entry removal is draft-only (the server 409s otherwise), so the
  *   affordance is hidden for any other plan status.
+ * - Adding entries appends learning targets to the curriculum. The server
+ *   accepts it for any non-terminal plan, so the affordance hides only on
+ *   completed / abandoned plans. With no targets-list endpoint to drive a
+ *   picker, the target is entered as a validated learning_target_id (UUID);
+ *   phase is an optional kebab-case label. The POST returns the bare new
+ *   entries, so the plan detail is reloaded for fresh positions + progress.
  */
 @Component({
   selector: 'app-plan-timeline-page',
@@ -230,6 +253,32 @@ export class PlanTimelinePageComponent {
       (e) => e.plan_entry_id !== target.plan_entry_id,
     );
   });
+
+  // --- Add-entry modal ---
+  protected readonly addOpen = signal(false);
+  protected readonly addTargetId = signal('');
+  protected readonly addPhase = signal('');
+
+  /** Adding entries is curation — the server allows it on any non-terminal plan. */
+  protected readonly canAddEntries = computed(() => {
+    const s = this.plan()?.status;
+    return s === 'draft' || s === 'active' || s === 'paused';
+  });
+
+  /** A target id is required and must be a UUID; only then is the form valid. */
+  protected readonly addTargetIdValid = computed(() =>
+    UUID_RE.test(this.addTargetId().trim()),
+  );
+
+  /** Phase is optional, but a non-blank phase must be kebab-case. */
+  protected readonly addPhaseValid = computed(() => {
+    const phase = this.addPhase().trim();
+    return phase === '' || PHASE_RE.test(phase);
+  });
+
+  protected readonly addReady = computed(
+    () => this.addTargetIdValid() && this.addPhaseValid(),
+  );
 
   constructor() {
     this.topbar.set({ title: 'Learning plan', crumbs: ['Learning', 'Plans'] });
@@ -455,6 +504,58 @@ export class PlanTimelinePageComponent {
         error: () => {
           this.busy.set(false);
           this.modalError.set('Could not record the substitution.');
+        },
+      });
+  }
+
+  // --- Add entry ---
+
+  protected openAdd(): void {
+    this.addTargetId.set('');
+    this.addPhase.set('');
+    this.modalError.set(null);
+    this.addOpen.set(true);
+  }
+
+  protected cancelAdd(): void {
+    this.addOpen.set(false);
+  }
+
+  protected setAddTargetId(event: Event): void {
+    this.addTargetId.set((event.target as HTMLInputElement).value);
+  }
+
+  protected setAddPhase(event: Event): void {
+    this.addPhase.set((event.target as HTMLInputElement).value);
+  }
+
+  protected confirmAdd(): void {
+    const p = this.plan();
+    if (!p || !this.addReady() || this.busy()) return;
+    const phase = this.addPhase().trim();
+    this.busy.set(true);
+    this.modalError.set(null);
+    this.learningService
+      .addPlanEntries(p.id, [
+        {
+          learning_target_id: this.addTargetId().trim(),
+          ...(phase ? { phase } : {}),
+        },
+      ])
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: () => {
+          this.busy.set(false);
+          this.addOpen.set(false);
+          // The POST returns the bare entries; reload for fresh positions
+          // and progress counts.
+          this.resource.reload();
+        },
+        error: () => {
+          this.busy.set(false);
+          this.modalError.set(
+            'The server rejected the entry — check that the target id exists and the phase is kebab-case.',
+          );
         },
       });
   }

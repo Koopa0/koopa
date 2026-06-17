@@ -176,6 +176,17 @@
         <span class="ml-auto font-mono text-[10px] uppercase tracking-wider text-fg-faint"
           >drag to reorder</span
         >
+        @if (canAddEntries()) {
+          <button
+            type="button"
+            (click)="openAdd()"
+            [disabled]="busy()"
+            class="rounded-sm border border-border px-2 py-1 text-[11px] text-fg-muted transition-colors hover:bg-overlay hover:text-fg disabled:cursor-not-allowed disabled:opacity-40"
+            data-testid="plan-add-entry"
+          >
+            Add entry
+          </button>
+        }
       </div>
 
       @if (entries().length === 0) {
@@ -557,6 +568,113 @@
         data-testid="plan-substitute-confirm"
       >
         Substitute &amp; log
+      </button>
+    </ng-container>
+  </app-modal>
+}
+
+<!-- Add-entry modal: append a learning target (by id) to the curriculum -->
+@if (addOpen()) {
+  <app-modal
+    title="Add entry"
+    titleId="plan-add-title"
+    maxWidth="md"
+    (closed)="cancelAdd()"
+  >
+    <div class="flex flex-col gap-4" data-testid="plan-add-modal">
+      <p class="text-xs leading-relaxed text-fg-subtle">
+        Append a learning target to this plan. There's no target browser yet,
+        so paste the target's id. The new entry lands at the end; reorder it by
+        dragging.
+      </p>
+
+      <div class="flex flex-col gap-1.5">
+        <label
+          for="add-target-id"
+          class="font-mono text-[11px] text-fg-subtle"
+        >
+          Learning target id <span class="text-brand">*</span>
+        </label>
+        <input
+          id="add-target-id"
+          type="text"
+          [value]="addTargetId()"
+          (input)="setAddTargetId($event)"
+          placeholder="00000000-0000-0000-0000-000000000000"
+          autocomplete="off"
+          spellcheck="false"
+          [attr.aria-invalid]="
+            addTargetId().trim().length > 0 && !addTargetIdValid()
+          "
+          class="rounded-sm border border-border bg-elevated px-3 py-2 font-mono text-[13px] text-fg outline-none focus:border-brand"
+          data-testid="plan-add-target-id"
+        />
+        @if (addTargetId().trim().length > 0 && !addTargetIdValid()) {
+          <p
+            class="font-mono text-[11px] text-error"
+            role="alert"
+            data-testid="plan-add-target-id-error"
+          >
+            Must be a UUID.
+          </p>
+        }
+      </div>
+
+      <div class="flex flex-col gap-1.5">
+        <label for="add-phase" class="font-mono text-[11px] text-fg-subtle">
+          Phase <span class="text-fg-faint">(optional)</span>
+        </label>
+        <input
+          id="add-phase"
+          type="text"
+          [value]="addPhase()"
+          (input)="setAddPhase($event)"
+          placeholder="1-arrays"
+          autocomplete="off"
+          spellcheck="false"
+          [attr.aria-invalid]="!addPhaseValid()"
+          class="rounded-sm border border-border bg-elevated px-3 py-2 font-mono text-[13px] text-fg outline-none focus:border-brand"
+          data-testid="plan-add-phase"
+        />
+        @if (!addPhaseValid()) {
+          <p
+            class="font-mono text-[11px] text-error"
+            role="alert"
+            data-testid="plan-add-phase-error"
+          >
+            Phase must be kebab-case (e.g. 1-arrays, phase-2-trees).
+          </p>
+        }
+      </div>
+
+      @if (modalError(); as err) {
+        <p
+          class="rounded-sm border border-error/40 bg-error-bg px-3 py-2 text-xs text-error"
+          role="alert"
+          data-testid="plan-add-error"
+        >
+          {{ err }}
+        </p>
+      }
+    </div>
+
+    <ng-container modal-footer>
+      <button
+        type="button"
+        (click)="cancelAdd()"
+        class="rounded-sm border border-border px-3 py-1.5 text-xs text-fg-muted transition-colors hover:bg-overlay hover:text-fg"
+        data-testid="plan-add-cancel"
+      >
+        Cancel
+      </button>
+      <button
+        type="button"
+        (click)="confirmAdd()"
+        [disabled]="!addReady() || busy()"
+        class="rounded-sm bg-brand px-3 py-1.5 text-xs font-medium text-bg transition-colors hover:bg-brand-strong disabled:cursor-not-allowed disabled:opacity-40"
+        data-testid="plan-add-confirm"
+      >
+        Add entry
       </button>
     </ng-container>
   </app-modal>

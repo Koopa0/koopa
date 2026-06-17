@@ -13,6 +13,7 @@ import type {
 } from '../../../../core/models/learning.model';
 
 const ATTEMPT_UUID = '11111111-2222-3333-4444-555555555555';
+const TARGET_UUID = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
 
 function attempt(overrides: Partial<TargetAttempt> = {}): TargetAttempt {
   return {
@@ -92,6 +93,7 @@ describe('PlanTimelinePageComponent', () => {
   const removePlanEntry = vi.fn();
   const reorderPlanEntries = vi.fn();
   const targetAttempts = vi.fn();
+  const addPlanEntries = vi.fn();
 
   async function setup(
     data: PlanDetail = detail(),
@@ -103,6 +105,7 @@ describe('PlanTimelinePageComponent', () => {
     removePlanEntry.mockReturnValue(of(undefined));
     reorderPlanEntries.mockReturnValue(of(data));
     targetAttempts.mockReturnValue(of(attempts));
+    addPlanEntries.mockReturnValue(of([]));
 
     TestBed.configureTestingModule({
       imports: [PlanTimelinePageComponent],
@@ -117,6 +120,7 @@ describe('PlanTimelinePageComponent', () => {
             removePlanEntry,
             reorderPlanEntries,
             targetAttempts,
+            addPlanEntries,
           },
         },
         {
@@ -313,6 +317,98 @@ describe('PlanTimelinePageComponent', () => {
       status: 'substituted',
       substituted_by: 'e2',
     });
+  });
+
+  it('should gate the add-entry submit on a valid target id and kebab-case phase', async () => {
+    await setup();
+
+    expect(byTestId('plan-add-entry')).not.toBeNull();
+    byTestId<HTMLButtonElement>('plan-add-entry')?.click();
+    await settle();
+
+    const confirm = byTestId<HTMLButtonElement>('plan-add-confirm');
+    expect(byTestId('plan-add-modal')).not.toBeNull();
+    // No target id yet → submit disabled, no request.
+    expect(confirm?.disabled).toBe(true);
+    confirm?.click();
+    await settle();
+    expect(addPlanEntries).not.toHaveBeenCalled();
+
+    // A non-UUID target id surfaces the inline error and keeps submit disabled.
+    const idInput = byTestId<HTMLInputElement>('plan-add-target-id')!;
+    idInput.value = 'not-a-uuid';
+    idInput.dispatchEvent(new Event('input'));
+    await settle();
+    expect(byTestId('plan-add-target-id-error')).not.toBeNull();
+    expect(
+      byTestId<HTMLButtonElement>('plan-add-confirm')?.disabled,
+    ).toBe(true);
+
+    // A valid UUID clears the error and enables submit (phase still blank).
+    idInput.value = TARGET_UUID;
+    idInput.dispatchEvent(new Event('input'));
+    await settle();
+    expect(byTestId('plan-add-target-id-error')).toBeNull();
+    expect(
+      byTestId<HTMLButtonElement>('plan-add-confirm')?.disabled,
+    ).toBe(false);
+
+    // A non-kebab-case phase re-disables submit and shows the phase error.
+    const phaseInput = byTestId<HTMLInputElement>('plan-add-phase')!;
+    phaseInput.value = 'Phase One';
+    phaseInput.dispatchEvent(new Event('input'));
+    await settle();
+    expect(byTestId('plan-add-phase-error')).not.toBeNull();
+    expect(
+      byTestId<HTMLButtonElement>('plan-add-confirm')?.disabled,
+    ).toBe(true);
+  });
+
+  it('should post the entry and re-render the reloaded envelope on add', async () => {
+    const base = detail();
+    const added = entry({
+      plan_entry_id: 'e4',
+      learning_target_id: TARGET_UUID,
+      position: 3,
+      target_title: 'Valid Parentheses',
+      phase: '1-stack',
+    });
+    const reloaded: PlanDetail = {
+      ...base,
+      entries: [...base.entries, added],
+      progress: { ...base.progress, total: 4, remaining: 3 },
+    };
+    await setup();
+    // The reload after a successful add returns the augmented envelope.
+    plan.mockReturnValue(of(reloaded));
+
+    byTestId<HTMLButtonElement>('plan-add-entry')?.click();
+    await settle();
+
+    const idInput = byTestId<HTMLInputElement>('plan-add-target-id')!;
+    idInput.value = TARGET_UUID;
+    idInput.dispatchEvent(new Event('input'));
+    const phaseInput = byTestId<HTMLInputElement>('plan-add-phase')!;
+    phaseInput.value = '1-stack';
+    phaseInput.dispatchEvent(new Event('input'));
+    await settle();
+
+    byTestId<HTMLButtonElement>('plan-add-confirm')?.click();
+    await settle();
+
+    expect(addPlanEntries).toHaveBeenCalledWith('plan-1', [
+      { learning_target_id: TARGET_UUID, phase: '1-stack' },
+    ]);
+    // Modal closed and the new entry rendered from the reloaded envelope.
+    expect(byTestId('plan-add-modal')).toBeNull();
+    expect(el.textContent).toContain('Valid Parentheses');
+  });
+
+  it('should hide the add affordance on a terminal plan', async () => {
+    const data = detail();
+    await setup({ ...data, plan: { ...data.plan, status: 'completed' } });
+
+    expect(byTestId('plan-add-entry')).toBeNull();
   });
 });
 

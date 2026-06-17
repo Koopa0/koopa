@@ -193,6 +193,23 @@ export class LearningService {
   }
 
   /**
+   * Append entries to a plan's curriculum. Each entry resolves a learning
+   * target by id; `phase` is an optional kebab-case label. Positions are
+   * auto-assigned server-side (appended after the current max). Returns the
+   * bare created entries (not the detail envelope), so callers reload the
+   * plan detail for fresh progress counts. Up to 100 entries per call.
+   */
+  addPlanEntries(
+    planId: string,
+    entries: { learning_target_id: string; phase?: string }[],
+  ): Observable<PlanEntryDetail[]> {
+    return this.api.postData<PlanEntryDetail[]>(
+      `/api/admin/learning/plans/${planId}/entries`,
+      { entries },
+    );
+  }
+
+  /**
    * Entry transition. The audit gate is server-enforced: `completed`
    * REQUIRES `completed_by_attempt_id` + a non-blank `reason`
    * (400 AUDIT_REQUIRED otherwise); `substituted` REQUIRES
