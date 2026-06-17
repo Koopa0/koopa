@@ -64,6 +64,28 @@ const CHANGELOG_WIRE = {
   },
 };
 
+// The activity page sources its actor filter chips from the agent registry
+// (GET /api/admin/system/agents). Roster ground truth:
+// internal/agent/handler.go::agentResponse (name = the `actor` filter value).
+const AGENTS_WIRE = {
+  data: [
+    {
+      name: 'planner',
+      display_name: 'Planner',
+      platform: 'claude-cowork',
+      description: 'Daily-driver planner',
+      status: 'active',
+    },
+    {
+      name: 'human',
+      display_name: 'Koopa',
+      platform: 'human',
+      description: 'Sole decision-maker',
+      status: 'active',
+    },
+  ],
+};
+
 describe('ActivityPageComponent', () => {
   let fixture: ComponentFixture<ActivityPageComponent>;
   let httpMock: HttpTestingController;
@@ -85,6 +107,11 @@ describe('ActivityPageComponent', () => {
     fixture = TestBed.createComponent(ActivityPageComponent);
     httpMock = TestBed.inject(HttpTestingController);
     fixture.detectChanges();
+    // Actor chips come from the registry — drain that read so the roster
+    // (planner, human) is available to the actor filter.
+    httpMock
+      .expectOne((r) => r.url.includes('/api/admin/system/agents'))
+      .flush(AGENTS_WIRE);
   }
 
   async function settle(): Promise<void> {
@@ -157,19 +184,20 @@ describe('ActivityPageComponent', () => {
     await settle();
   });
 
-  it('should send ?actor= when the by-actor filter is set', async () => {
+  it('should send ?actor= when an actor chip from the roster is selected', async () => {
     configure();
     httpMock
       .expectOne((r) => r.url.includes('/api/admin/system/activity'))
       .flush(CHANGELOG_WIRE);
     await settle();
 
-    const actorInput = el.querySelector(
-      '[data-testid="activity-filter-actor"]',
-    ) as HTMLInputElement | null;
-    expect(actorInput).toBeTruthy();
-    actorInput!.value = 'planner';
-    actorInput!.dispatchEvent(new Event('input'));
+    // Chips are sourced from the registry roster flushed in configure();
+    // pick the planner chip (data-testid uses the agent name).
+    const plannerChip = el.querySelector(
+      '[data-testid="activity-filter-actor-planner"]',
+    ) as HTMLButtonElement | null;
+    expect(plannerChip).toBeTruthy();
+    plannerChip!.click();
     fixture.detectChanges();
 
     const filtered = httpMock.expectOne((r) =>

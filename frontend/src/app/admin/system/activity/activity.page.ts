@@ -6,10 +6,11 @@ import {
   inject,
   signal,
 } from '@angular/core';
-import { rxResource } from '@angular/core/rxjs-interop';
+import { rxResource, toSignal } from '@angular/core/rxjs-interop';
 import { Router } from '@angular/router';
 import { DatePipe } from '@angular/common';
 import { ActivityService } from '../../../core/services/activity.service';
+import { AgentService } from '../../../core/services/agent.service';
 import { AdminTopbarService } from '../../admin-layout/admin-topbar.service';
 import type {
   ActivityChangeKind,
@@ -17,6 +18,7 @@ import type {
   ChangelogEvent,
   ChangelogResponse,
 } from '../../../core/models/activity.model';
+import type { Agent } from '../../../core/models/workbench.model';
 
 type EntityFilter = 'all' | ActivityEntityType;
 
@@ -72,11 +74,23 @@ const ENTITY_ROUTE: Record<ActivityEntityType, string> = {
 })
 export class ActivityPageComponent {
   private readonly activityService = inject(ActivityService);
+  private readonly agentService = inject(AgentService);
   private readonly topbar = inject(AdminTopbarService);
   private readonly router = inject(Router);
   private readonly destroyRef = inject(DestroyRef);
 
   protected readonly entityChips = ENTITY_CHIPS;
+
+  // Actor chips are sourced from the registry (name = filter value, the
+  // backend's comma-separated `actor` allowlist; display_name = label) so
+  // the filter stays in lock-step with the real agent roster.
+  private readonly agents = toSignal(this.agentService.list(), {
+    initialValue: [] as Agent[],
+  });
+  protected readonly actorChips = computed<Chip<string>[]>(() => [
+    { value: '', label: 'All' },
+    ...this.agents().map((a) => ({ value: a.name, label: a.display_name })),
+  ]);
 
   protected readonly entityFilter = signal<EntityFilter>('all');
   protected readonly actorFilter = signal<string>('');
@@ -120,7 +134,7 @@ export class ActivityPageComponent {
   }
 
   protected setActorFilter(value: string): void {
-    this.actorFilter.set(value.trim());
+    this.actorFilter.set(value);
   }
 
   protected canOpen(event: ChangelogEvent): boolean {
