@@ -86,7 +86,7 @@
         <li class="rounded-sm border border-border bg-panel/40 p-4">
           <header class="mb-2 flex flex-wrap items-baseline gap-x-3 gap-y-1">
             <span class="text-sm font-medium text-fg"
-              >{{ a.target.title }}</span
+              >{{ a.target_title }}</span
             >
             <span class="font-mono text-[10px] capitalize text-fg-subtle"
               >{{ a.paradigm }}</span
@@ -103,13 +103,15 @@
             >
             }
             <span class="ml-auto font-mono text-[10px] text-fg-subtle"
-              >{{ a.created_at | date: 'short' }}</span
+              >{{ a.attempted_at | date: 'short' }}</span
             >
           </header>
           @if (a.stuck_at) {
           <p class="mb-1 text-xs text-amber-300">Stuck at: {{ a.stuck_at }}</p>
-          } @if (a.approach) {
-          <p class="mb-2 text-xs text-fg-muted">Approach: {{ a.approach }}</p>
+          } @if (a.approach_used) {
+          <p class="mb-2 text-xs text-fg-muted">
+            Approach: {{ a.approach_used }}
+          </p>
           } @if (a.observations.length > 0) {
           <div class="mt-2 border-t border-border-faint pt-2">
             <div
@@ -122,10 +124,10 @@
               <li class="flex flex-wrap items-baseline gap-2 text-xs">
                 <span
                   class="font-mono text-[10px] uppercase"
-                  [class.text-amber-300]="obs.signal === 'weakness'"
-                  [class.text-brand]="obs.signal === 'improvement'"
-                  [class.text-emerald-300]="obs.signal === 'mastery'"
-                  >{{ obs.signal }}</span
+                  [class.text-amber-300]="obs.signal_type === 'weakness'"
+                  [class.text-brand]="obs.signal_type === 'improvement'"
+                  [class.text-emerald-300]="obs.signal_type === 'mastery'"
+                  >{{ obs.signal_type }}</span
                 >
                 <span class="font-mono text-[10px] text-fg-subtle"
                   >{{ obs.category }}</span
@@ -145,7 +147,7 @@
                   class="font-mono text-[10px] text-fg-muted transition-colors hover:text-brand focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
                   >{{ obs.concept_slug }}</a
                 >
-                <span class="text-fg-muted">{{ obs.body }}</span>
+                <span class="text-fg-muted">{{ obs.detail }}</span>
               </li>
               }
             </ul>
@@ -154,23 +156,6 @@
         </li>
         }
       </ol>
-
-      @if (s.reflection_note; as note) {
-      <section
-        class="mt-6 rounded-sm border border-amber-900/60 bg-amber-950/10 p-4"
-        data-testid="session-reflection"
-      >
-        <header class="mb-2 flex items-center gap-3 font-mono text-[11px]">
-          <span class="uppercase text-amber-300">Reflection</span>
-          <span class="text-fg-subtle"
-            >{{ note.actor }} · {{ note.created_at | date: 'short' }}</span
-          >
-        </header>
-        <p class="whitespace-pre-wrap text-sm text-fg">
-          {{ note.body_md }}
-        </p>
-      </section>
-      }
     </div>
   </section>
 

@@ -14,11 +14,13 @@ import type {
   ObservationConfidence,
   Plan,
   PlanDetail,
+  PlanEntry,
   PlanEntryDetail,
   PlanEntryStatus,
   PlanStatus,
   PlanSummary,
   SessionDetail,
+  SessionMeta,
   TargetAttempt,
 } from '../models/learning.model';
 
@@ -141,9 +143,9 @@ export class LearningService {
     );
   }
 
-  endSession(id: string, reflectionMd?: string): Observable<SessionDetail> {
+  endSession(id: string, reflectionMd?: string): Observable<SessionMeta> {
     const body = reflectionMd ? { reflection_md: reflectionMd } : {};
-    return this.api.postData<SessionDetail>(
+    return this.api.postData<SessionMeta>(
       `/api/admin/learning/sessions/${id}/end`,
       body,
     );
@@ -202,8 +204,8 @@ export class LearningService {
   addPlanEntries(
     planId: string,
     entries: { learning_target_id: string; phase?: string }[],
-  ): Observable<PlanEntryDetail[]> {
-    return this.api.postData<PlanEntryDetail[]>(
+  ): Observable<PlanEntry[]> {
+    return this.api.postData<PlanEntry[]>(
       `/api/admin/learning/plans/${planId}/entries`,
       { entries },
     );

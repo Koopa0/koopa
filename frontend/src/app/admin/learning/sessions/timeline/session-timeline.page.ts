@@ -48,7 +48,33 @@ export class SessionTimelinePageComponent {
     stream: ({ params }) => this.learningService.session(params),
   });
 
-  protected readonly session = computed(() => this.resource.value());
+  /**
+   * View-model over the {session, attempts} wire: flattens the session row,
+   * normalizes each attempt's observations to an array, and derives the
+   * completion summary client-side (the endpoint ships no summary block).
+   */
+  protected readonly session = computed(() => {
+    const detail = this.resource.value();
+    if (!detail) return undefined;
+    const attempts = detail.attempts.map((a) => ({
+      ...a,
+      observations: a.observations ?? [],
+    }));
+    return {
+      ...detail.session,
+      attempts,
+      summary: {
+        attempts: attempts.length,
+        solved_independent: attempts.filter((a) =>
+          a.outcome.startsWith('solved_independent'),
+        ).length,
+        solved_with_hint: attempts.filter((a) =>
+          a.outcome.startsWith('solved_with_hint'),
+        ).length,
+        observations: attempts.reduce((n, a) => n + a.observations.length, 0),
+      },
+    };
+  });
   protected readonly isLoading = computed(
     () => this.resource.status() === 'loading' && !this.session(),
   );
@@ -113,6 +139,6 @@ export class SessionTimelinePageComponent {
   }
 
   protected attemptObsCount(a: SessionAttempt): number {
-    return a.observations.length;
+    return a.observations?.length ?? 0;
   }
 }

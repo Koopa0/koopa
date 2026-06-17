@@ -156,52 +156,61 @@ export interface LearningSessionRow {
   reflection_note_id?: string | null;
 }
 
+/** One observation on an attempt (matches learning.Observation). */
 export interface SessionAttemptObservation {
   id: string;
-  signal: ObservationSignal;
+  attempt_id: string;
+  concept_id: string;
+  signal_type: ObservationSignal;
   category: string;
-  body: string;
-  concept_slug: string;
   severity?: 'critical' | 'moderate' | 'minor' | null;
+  detail?: string | null;
   confidence: ObservationConfidence;
+  position: number;
+  concept_slug?: string;
+  concept_name?: string;
 }
 
+/** One attempt in a session timeline (matches learning.Attempt). */
 export interface SessionAttempt {
   id: string;
-  target: { id: string; title: string };
+  learning_target_id: string;
+  session_id: string;
+  attempt_number: number;
   paradigm: string;
   outcome: string;
-  duration_minutes: number | null;
-  stuck_at: string | null;
-  approach: string | null;
-  created_at: string;
-  observations: SessionAttemptObservation[];
+  duration_minutes?: number | null;
+  stuck_at?: string | null;
+  approach_used?: string | null;
+  attempted_at: string;
+  created_at?: string;
+  target_title: string;
+  target_external_id?: string | null;
+  difficulty?: string | null;
+  observations?: SessionAttemptObservation[];
+  matched_observation_id?: string | null;
 }
 
-export interface SessionReflectionNote {
-  id: string;
-  kind: 'reflection';
-  body_md: string;
-  actor: string;
-  created_at: string;
-}
-
-export interface SessionSummary {
-  attempts: number;
-  solved_independent: number;
-  solved_with_hint: number;
-  observations: number;
-}
-
-export interface SessionDetail {
+/** Session metadata block of the detail envelope (matches learning.Session). */
+export interface SessionMeta {
   id: string;
   domain: LearningDomain;
   mode: LearningSessionMode;
+  daily_plan_item_id?: string | null;
   started_at: string;
-  ended_at: string | null;
-  summary: SessionSummary;
+  ended_at?: string | null;
+  created_at: string;
+}
+
+/**
+ * GET /api/admin/learning/sessions/{id} wire: the lean session row plus its
+ * attempts. Completion metrics (attempt counts, solved-independent rate) are
+ * derived from `attempts` on the client; the endpoint carries no summary
+ * block and no reflection note.
+ */
+export interface SessionDetail {
+  session: SessionMeta;
   attempts: SessionAttempt[];
-  reflection_note: SessionReflectionNote | null;
 }
 
 // === Plans ===
@@ -251,6 +260,26 @@ export interface Plan {
 export interface PlanSummary extends Plan {
   entry_total: number;
   entry_done: number;
+}
+
+/**
+ * Lean plan-entry row returned by POST /plans/{id}/entries (Go `Entry`).
+ * Distinct from PlanEntryDetail: it carries no target_* projection and its
+ * id key is `id`. The add-entry caller reloads the detail and ignores this
+ * body — it exists so the return type matches the actual wire.
+ */
+export interface PlanEntry {
+  id: string;
+  plan_id: string;
+  learning_target_id: string;
+  position: number;
+  status: PlanEntryStatus;
+  phase?: string | null;
+  substituted_by?: string | null;
+  completed_by_attempt_id?: string | null;
+  reason?: string | null;
+  added_at: string;
+  completed_at?: string | null;
 }
 
 /**
