@@ -93,6 +93,42 @@ func (h *Handler) Summary(w http.ResponseWriter, r *http.Request) {
 	api.Encode(w, http.StatusOK, api.Response{Data: resp})
 }
 
+// NextTarget handles GET /api/admin/learning/next-target.
+//
+// It surfaces the single concept Koopa should practice next plus a one-line
+// human reason, for the dashboard "Next up" card. Unlike the MCP
+// recommend_next path it is session-independent: it reads the same
+// severity-ordered weakness signal (WeaknessAnalysis over the 30-day window)
+// and lets the pure SelectNextTarget picker choose the head and render the
+// reason. "Nothing to recommend" is a 200 with {empty: true}, not a 404, so
+// the card renders an empty state without special-casing a missing resource.
+//
+// Optional ?domain= scopes the recommendation to one practice track.
+func (h *Handler) NextTarget(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	var domain *string
+	if v := strings.TrimSpace(r.URL.Query().Get("domain")); v != "" {
+		if containsControlChars(v) {
+			api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "domain contains control characters")
+			return
+		}
+		domain = &v
+	}
+
+	now := time.Now()
+	since := now.AddDate(0, 0, -NextTargetWindowDays)
+	weaknesses, err := h.store.WeaknessAnalysis(ctx, domain, since, "high")
+	if err != nil {
+		h.logger.Error("querying weakness analysis for next target", "error", err)
+		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to compute next target")
+		return
+	}
+
+	next := SelectNextTarget(weaknesses, now)
+	api.Encode(w, http.StatusOK, api.Response{Data: next})
+}
+
 // mustAdminTx extracts the per-request tx for mutation endpoints.
 func (h *Handler) mustAdminTx(w http.ResponseWriter, r *http.Request) (*Store, bool) {
 	tx, ok := api.TxFromContext(r.Context())

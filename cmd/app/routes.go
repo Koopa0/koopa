@@ -338,6 +338,10 @@ func registerRoutes(
 	// Dashboard is the aggregate landing endpoint; concepts / sessions /
 	// plans are the domain-entity views.
 	mux.Handle("GET /api/admin/learning/dashboard", authMid(http.HandlerFunc(h.learning.Dashboard)))
+	// Next up card: the single concept to practice next + a one-line reason.
+	// Session-independent (no MCP next_target session scope); empty state is a
+	// 200 with {empty: true}, never a 404.
+	mux.Handle("GET /api/admin/learning/next-target", authMid(http.HandlerFunc(h.learning.NextTarget)))
 	mux.Handle("GET /api/admin/learning/concepts", authMid(http.HandlerFunc(h.learning.ConceptsList)))
 	mux.Handle("GET /api/admin/learning/concepts/{slug}", authMid(http.HandlerFunc(h.learning.ConceptDetail)))
 	mux.Handle("GET /api/admin/learning/sessions", authMid(http.HandlerFunc(h.learning.SessionsList)))

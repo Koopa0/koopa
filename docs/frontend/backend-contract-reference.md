@@ -108,6 +108,9 @@ Lifecycle: `POST /learning/hypotheses/{id}/{verify|invalidate|archive|evidence}`
 `{ streak_days, concepts: { count_total, counts_by_domain, rows[] }, recent_observations[], week_activity: [{ "date": "YYYY-MM-DD", "attempts": 0 }] }`.
 `week_activity` = the last 7 UTC days of attempt logging (`learning_attempts.created_at`), zero-filled, today last.
 **Summary** `GET /learning/summary` → `{ streak_days, domains: [DomainMastery] }` — the lightweight streak + per-domain mastery envelope (no due-review data).
+**Next up** `GET /learning/next-target?domain=` → `{ empty, concept_slug, concept_name, domain, mastery_stage, severity, days_since_practice, reason }` — the single concept to practice next plus a one-line human `reason`, for the dashboard "Next up" card. Session-independent: it reads the severity-ordered weakness signal over the last 30 days (NOT the MCP `learning_read(view=next_target)` session-scoped variation recommender). Optional `domain` scopes to one practice track.
+`severity` ∈ `critical · moderate · minor` (dominant band, `""` when no severity counts set); `mastery_stage` ∈ `struggling · developing` (a recommended concept is always weakness-led, never `solid`).
+**Empty state** — when there is no weakness signal in the window the response is **200** (never 404) with `{ "empty": true, "reason": "no concepts need practice in the last 30 days — nothing to recommend yet" }`; the concept fields are omitted (`omitempty`). The card renders its empty state from `reason`.
 
 ---
 
