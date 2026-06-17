@@ -10,6 +10,7 @@ import type {
   LearningSessionMode,
   LearningSessionRow,
   MasteryStage,
+  NextTarget,
   ObservationConfidence,
   Plan,
   PlanDetail,
@@ -89,6 +90,14 @@ export class LearningService {
     return this.api.getData<DashboardOverview>(
       '/api/admin/learning/dashboard',
       params,
+    );
+  }
+
+  /** The single weakest concept to practice next; `empty` when none. */
+  nextTarget(domain?: string): Observable<NextTarget> {
+    return this.api.getData<NextTarget>(
+      '/api/admin/learning/next-target',
+      domain ? { domain } : undefined,
     );
   }
 

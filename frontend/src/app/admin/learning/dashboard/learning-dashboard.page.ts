@@ -19,6 +19,7 @@ import {
   DashboardWidgetComponent,
   type WidgetState,
 } from './dashboard-widget.component';
+import { NextUpCardComponent } from './next-up-card.component';
 import {
   SIGNAL_CLASS,
   STAGE_BADGE_CLASS,
@@ -39,7 +40,7 @@ import {
 @Component({
   selector: 'app-learning-dashboard-page',
   standalone: true,
-  imports: [DatePipe, DashboardWidgetComponent],
+  imports: [DatePipe, DashboardWidgetComponent, NextUpCardComponent],
   templateUrl: './learning-dashboard.page.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: { class: 'flex min-h-full flex-1 flex-col' },

@@ -14,6 +14,7 @@ import { LearningDashboardPageComponent } from './learning-dashboard.page';
 
 const DASHBOARD_URL = '/api/admin/learning/dashboard';
 const SUMMARY_URL = '/api/admin/learning/summary';
+const NEXT_TARGET_URL = '/api/admin/learning/next-target';
 
 function dashboardPayload(): Record<string, unknown> {
   return {
@@ -124,6 +125,12 @@ describe('LearningDashboardPageComponent', () => {
   });
 
   afterEach(() => {
+    // The Next-up card is an independent child of the dashboard with its own
+    // read; drain its request so verify() only judges the dashboard reads
+    // each test actually drives. Its payload is irrelevant to these widgets.
+    httpMock
+      .match((r) => r.url.includes(NEXT_TARGET_URL))
+      .forEach((req) => req.flush({ data: { empty: true, reason: 'none' } }));
     httpMock.verify();
   });
 

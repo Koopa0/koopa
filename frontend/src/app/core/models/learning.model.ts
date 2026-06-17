@@ -14,6 +14,22 @@ export type LearningSessionMode =
   | 'review'
   | 'reading';
 
+/**
+ * The single concept to practice next, for the dashboard Next-up card.
+ * When `empty` is true the weakness signal is silent and only `reason`
+ * carries a sentence; the concept fields are absent.
+ */
+export interface NextTarget {
+  empty: boolean;
+  reason: string;
+  concept_slug?: string;
+  concept_name?: string;
+  domain?: string;
+  mastery_stage?: MasteryStage;
+  severity?: string;
+  days_since_practice?: number;
+}
+
 export type ObservationSignal = 'weakness' | 'improvement' | 'mastery';
 export type ObservationConfidence = 'high' | 'low';
 
