@@ -108,9 +108,15 @@ export class ArticlesComponent implements OnInit {
     this.contentsResource.hasValue() ? this.contentsResource.value().data : [],
   );
 
-  protected readonly topics = computed(() =>
-    this.topicsResource.hasValue() ? this.topicsResource.value() : [],
-  );
+  // Only surface topics that actually have published content — the public
+  // /api/topics returns every seeded topic (content_count is published-only),
+  // so without this the index shows a wall of empty, dead filter chips.
+  protected readonly topics = computed(() => {
+    const all = this.topicsResource.hasValue()
+      ? this.topicsResource.value()
+      : [];
+    return all.filter((t) => t.content_count > 0);
+  });
 
   protected readonly filteredContents = computed(() => {
     const topic = this.topicFilter();

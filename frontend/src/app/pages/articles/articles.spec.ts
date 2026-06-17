@@ -139,6 +139,23 @@ describe('ArticlesComponent', () => {
     expect(el.textContent).toContain('A Build Log');
   });
 
+  it('should only render topic chips for topics with published content', async () => {
+    await settle();
+    flushContents([buildMockContent()]);
+    flushTopics([
+      buildMockTopic({ id: 't1', slug: 'go', name: 'Go', content_count: 2 }),
+      buildMockTopic({ id: 't2', slug: 'empty', name: 'Empty', content_count: 0 }),
+    ]);
+    await settle();
+
+    const el = fixture.nativeElement as HTMLElement;
+    const labels = Array.from(
+      el.querySelectorAll('[data-testid="topic-chip"]'),
+    ).map((c) => c.textContent?.trim());
+    expect(labels).toContain('Go');
+    expect(labels).not.toContain('Empty');
+  });
+
   it('should link every row to the single reading surface at /articles/:slug', async () => {
     await settle();
     flushContents([
