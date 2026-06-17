@@ -156,9 +156,10 @@ type createRequest struct {
 }
 
 // Create handles POST /api/admin/knowledge/notes.
-// concept_slugs / target_ids are accepted for parity with the MCP
-// create_note shape. The HTTP path does not resolve them into junction
-// rows; callers attach them through the dedicated attach endpoints.
+// Links are NOT resolved on create — set concept_ids / target_ids via
+// PUT /notes/{id} once the note exists (see Update). createRequest still
+// decodes concept_slugs / target_ids only so a caller sending them gets an
+// explicit 400 instead of having them silently dropped.
 func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	req, err := api.Decode[createRequest](w, r)
 	if err != nil {
@@ -175,6 +176,13 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Maturity != "" && !req.Maturity.Valid() {
 		api.Error(w, http.StatusBadRequest, "INVALID_MATURITY", "invalid note maturity")
+		return
+	}
+	// Links are an edit-mode operation: set concept_ids / target_ids via PUT
+	// once the note exists. Reject them here rather than silently dropping —
+	// keeps Create consistent with Update's explicit link handling.
+	if len(req.ConceptSlugs) > 0 || len(req.TargetIDs) > 0 {
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "links are set via PUT after the note is created, not on create")
 		return
 	}
 

@@ -416,3 +416,52 @@ func TestUpdate_PreservesPrimaryAndNeverAddsSecond(t *testing.T) {
 		t.Errorf("concepts after clear = %v, want empty", got)
 	}
 }
+
+// TestCreateHTTP_RejectsLinks pins that note Create rejects link fields with
+// 400 — links are an edit-mode PUT operation — rather than silently dropping
+// them, while a plain create still succeeds. Driven over the real
+// ActorMiddleware tx so it exercises the production path.
+func TestCreateHTTP_RejectsLinks(t *testing.T) {
+	s := setupLinks(t)
+	ctx := t.Context()
+	logger := slog.New(slog.DiscardHandler)
+	handler := NewHandler(s, logger)
+	served := api.ActorMiddleware(testPool, "human", logger)(http.HandlerFunc(handler.Create))
+
+	post := func(t *testing.T, payload map[string]any) *httptest.ResponseRecorder {
+		t.Helper()
+		body, err := json.Marshal(payload)
+		if err != nil {
+			t.Fatalf("marshal body: %v", err)
+		}
+		req := httptest.NewRequestWithContext(ctx, http.MethodPost,
+			"/api/admin/knowledge/notes", bytes.NewReader(body))
+		w := httptest.NewRecorder()
+		served.ServeHTTP(w, req)
+		return w
+	}
+	base := func() map[string]any {
+		return map[string]any{"slug": "create-" + uuid.NewString()[:8], "title": "T", "kind": string(KindMusing)}
+	}
+
+	// A valid uuid string is also a valid slug string, so it decodes for both
+	// concept_slugs ([]string) and target_ids ([]uuid.UUID) — isolating the
+	// link-reject from a decode error.
+	for _, field := range []string{"concept_slugs", "target_ids"} {
+		t.Run("rejects "+field, func(t *testing.T) {
+			p := base()
+			p[field] = []string{uuid.NewString()}
+			w := post(t, p)
+			if w.Code != http.StatusBadRequest {
+				t.Fatalf("create with %s status = %d, want 400 (body: %s)", field, w.Code, w.Body.String())
+			}
+		})
+	}
+
+	t.Run("succeeds without links", func(t *testing.T) {
+		w := post(t, base())
+		if w.Code != http.StatusCreated {
+			t.Fatalf("plain create status = %d, want 201 (body: %s)", w.Code, w.Body.String())
+		}
+	})
+}
