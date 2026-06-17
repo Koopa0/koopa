@@ -150,7 +150,10 @@ describe('GtdPageComponent', () => {
     fixture.detectChanges();
     httpMock
       .expectOne(
-        (r) => r.url.endsWith(TODOS_URL) && r.params.get('per_page') === '200',
+        (r) =>
+          r.url.endsWith(TODOS_URL) &&
+          r.params.get('per_page') === '200' &&
+          r.params.get('state') === 'inbox,todo,in_progress,someday',
       )
       .flush({ data: backlogRows });
     httpMock
@@ -168,7 +171,10 @@ describe('GtdPageComponent', () => {
   function flushBacklogReload(): void {
     httpMock
       .expectOne(
-        (r) => r.url.endsWith(TODOS_URL) && r.params.get('per_page') === '200',
+        (r) =>
+          r.url.endsWith(TODOS_URL) &&
+          r.params.get('per_page') === '200' &&
+          r.params.get('state') === 'inbox,todo,in_progress,someday',
       )
       .flush({ data: backlogRows });
   }
@@ -325,6 +331,24 @@ describe('GtdPageComponent', () => {
     httpMock
       .expectOne((r) => r.url.includes(PLAN_URL) && r.method === 'GET')
       .flush({ data: planFixture });
+    await settle();
+  });
+
+  it('should activate a someday row with e via advance(activate)', async () => {
+    await render('inbox');
+
+    (testid('gtd-tab-someday') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    expect(testid('gtd-row-0')?.textContent).toContain('Someday idea');
+
+    keydown('e');
+    const advance = httpMock.expectOne((r) =>
+      r.url.endsWith(`${TODOS_URL}/someday-1/advance`),
+    );
+    expect(advance.request.body).toEqual({ action: 'activate' });
+    advance.flush({ data: { ...backlogRows[5], state: 'todo' } });
+    TestBed.tick();
+    flushBacklogReload();
     await settle();
   });
 

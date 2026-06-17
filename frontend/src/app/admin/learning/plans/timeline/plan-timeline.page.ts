@@ -18,7 +18,7 @@ import {
   moveItemInArray,
 } from '@angular/cdk/drag-drop';
 import type { CdkDragDrop } from '@angular/cdk/drag-drop';
-import { map } from 'rxjs';
+import { map, of } from 'rxjs';
 import { LearningService } from '../../../../core/services/learning.service';
 import { AdminTopbarService } from '../../../admin-layout/admin-topbar.service';
 import { ModalComponent } from '../../../../shared/components/modal/modal.component';
@@ -30,6 +30,7 @@ import type {
   PlanEntryStatus,
   PlanProgress,
   PlanStatus,
+  TargetAttempt,
 } from '../../../../core/models/learning.model';
 
 /**
@@ -90,9 +91,6 @@ const STATUS_ACTIONS: Record<PlanStatus, StatusAction[]> = {
   abandoned: [],
 };
 
-const UUID_RE =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
 /**
  * Plan detail — the design's PlanDetail screen reworked over the real
  * `{ plan, entries, progress }` envelope.
@@ -104,10 +102,10 @@ const UUID_RE =
  * - Plan lifecycle (draft→active activation, pause / complete / abandon)
  *   goes through the status endpoint.
  * - Completing an entry is audit-gated per mcp-decision-policy §13: the
- *   modal requires the justifying attempt id + a reason; the server
- *   rejects anything less with 400 AUDIT_REQUIRED. There is no admin
- *   endpoint listing attempts per target, so the attempt id is a
- *   required free-text UUID field.
+ *   modal requires the justifying attempt + a reason; the server rejects
+ *   anything less with 400 AUDIT_REQUIRED. The justifying attempt is picked
+ *   from the entry target's attempts (GET targets/{id}/attempts), each
+ *   option showing its outcome + date so the attempt is recognizable.
  * - Skip is a plain transition; substitution requires picking the
  *   substituting entry (`substituted_by` references a sibling entry).
  * - Entry removal is draft-only (the server 409s otherwise), so the
@@ -148,6 +146,8 @@ export class PlanTimelinePageComponent {
   protected readonly detail = computed(() => this.resource.value());
   protected readonly plan = computed(() => this.detail()?.plan);
   protected readonly progress = computed(() => this.detail()?.progress);
+  /** Linked goal's title for the meta strip; "" when the plan has no goal. */
+  protected readonly goalName = computed(() => this.detail()?.goal_name ?? '');
 
   /**
    * Local working copy of the entries — the drag preview reorders this
@@ -189,15 +189,34 @@ export class PlanTimelinePageComponent {
 
   // --- Audit-gate modal (complete) ---
   protected readonly completeTarget = signal<PlanEntryDetail | null>(null);
-  protected readonly attemptId = signal('');
+  protected readonly selectedAttemptId = signal<string | null>(null);
   protected readonly completeReason = signal('');
   protected readonly modalError = signal<string | null>(null);
 
-  protected readonly attemptIdValid = computed(() =>
-    UUID_RE.test(this.attemptId().trim()),
+  // The picker lists the entry target's attempts (newest first). It keys off
+  // the open complete-target's learning_target_id; closing the modal stops the
+  // read by resolving the key to ''.
+  private readonly attemptsResource = rxResource<TargetAttempt[], string>({
+    params: () => this.completeTarget()?.learning_target_id ?? '',
+    stream: ({ params }) =>
+      params
+        ? this.learningService.targetAttempts(params)
+        : of<TargetAttempt[]>([]),
+  });
+  protected readonly attempts = computed<TargetAttempt[]>(() =>
+    this.attemptsResource.hasValue() ? this.attemptsResource.value() : [],
   );
+  protected readonly attemptsLoading = computed(
+    () => this.attemptsResource.status() === 'loading',
+  );
+  protected readonly attemptsError = computed(
+    () => this.attemptsResource.status() === 'error',
+  );
+
   protected readonly completeReady = computed(
-    () => this.attemptIdValid() && this.completeReason().trim().length > 0,
+    () =>
+      this.selectedAttemptId() !== null &&
+      this.completeReason().trim().length > 0,
   );
 
   // --- Substitute modal ---
@@ -242,6 +261,11 @@ export class PlanTimelinePageComponent {
 
   protected phaseVariant(phase: string): BadgeVariant {
     return PHASE_VARIANT[phase] ?? 'neutral';
+  }
+
+  /** Selects an attempt as the justifying attempt for completion. */
+  protected pickAttempt(id: string): void {
+    this.selectedAttemptId.set(id);
   }
 
   /** Resolves a substituted_by entry id to its target title for display. */
@@ -355,17 +379,13 @@ export class PlanTimelinePageComponent {
 
   protected openComplete(e: PlanEntryDetail): void {
     this.completeTarget.set(e);
-    this.attemptId.set('');
+    this.selectedAttemptId.set(null);
     this.completeReason.set('');
     this.modalError.set(null);
   }
 
   protected cancelComplete(): void {
     this.completeTarget.set(null);
-  }
-
-  protected setAttemptId(event: Event): void {
-    this.attemptId.set((event.target as HTMLInputElement).value);
   }
 
   protected setCompleteReason(event: Event): void {
@@ -375,13 +395,15 @@ export class PlanTimelinePageComponent {
   protected confirmComplete(): void {
     const target = this.completeTarget();
     const p = this.plan();
-    if (!target || !p || !this.completeReady() || this.busy()) return;
+    const attemptId = this.selectedAttemptId();
+    if (!target || !p || !attemptId || !this.completeReady() || this.busy())
+      return;
     this.busy.set(true);
     this.modalError.set(null);
     this.learningService
       .updatePlanEntry(p.id, target.plan_entry_id, {
         status: 'completed',
-        completed_by_attempt_id: this.attemptId().trim(),
+        completed_by_attempt_id: attemptId,
         reason: this.completeReason().trim(),
       })
       .pipe(takeUntilDestroyed(this.destroyRef))

@@ -70,7 +70,13 @@ export interface TodoHistoryEntry {
 }
 
 export interface TodoListQuery {
-  state?: TodoState;
+  /**
+   * Single state or a set of states. A list serializes to the
+   * comma-separated `state=` the server splits and validates per element
+   * (e.g. `inbox,todo,in_progress,someday` for the backlog), so a long done
+   * history can't push live rows past the per_page cap.
+   */
+  state?: TodoState | TodoState[];
   project?: string;
   priority?: PriorityLevel;
   energy?: EnergyLevel;
@@ -105,6 +111,7 @@ export type TodoAdvanceAction =
   | 'start'
   | 'complete'
   | 'defer'
+  | 'activate'
   | 'drop';
 
 export interface TodoUpdateRequest {
@@ -128,7 +135,11 @@ export class TodoService {
 
   list(query: TodoListQuery = {}): Observable<TodoRow[]> {
     const params: Record<string, string> = {};
-    if (query.state) params['state'] = query.state;
+    if (query.state) {
+      params['state'] = Array.isArray(query.state)
+        ? query.state.join(',')
+        : query.state;
+    }
     if (query.project) params['project'] = query.project;
     if (query.priority) params['priority'] = query.priority;
     if (query.energy) params['energy'] = query.energy;
@@ -168,7 +179,8 @@ export class TodoService {
 
   /**
    * Drive the state machine (inbox → todo → in_progress → done /
-   * someday). `drop` is inbox-only and returns 204 with no body.
+   * someday; someday → todo via `activate`). `drop` is inbox-only and
+   * returns 204 with no body.
    */
   advance(id: string, action: TodoAdvanceAction): Observable<TodoItem | null> {
     return this.api.postData<TodoItem | null>(

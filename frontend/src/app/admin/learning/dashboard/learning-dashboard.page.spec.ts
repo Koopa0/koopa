@@ -70,6 +70,15 @@ function dashboardPayload(): Record<string, unknown> {
         created_at: '2026-06-08T10:00:00Z',
       },
     ],
+    week_activity: [
+      { date: '2026-06-04', attempts: 0 },
+      { date: '2026-06-05', attempts: 1 },
+      { date: '2026-06-06', attempts: 3 },
+      { date: '2026-06-07', attempts: 0 },
+      { date: '2026-06-08', attempts: 7 },
+      { date: '2026-06-09', attempts: 2 },
+      { date: '2026-06-10', attempts: 4 },
+    ],
   };
 }
 
@@ -78,6 +87,7 @@ function emptyDashboardPayload(): Record<string, unknown> {
     streak_days: 0,
     concepts: { count_total: 0, counts_by_domain: {}, rows: [] },
     recent_observations: [],
+    week_activity: [],
   };
 }
 
@@ -163,6 +173,31 @@ describe('LearningDashboardPageComponent', () => {
 
     // Product-truth guard: live endpoints must never be called "not live".
     expect(el().textContent).not.toContain('not live yet');
+  });
+
+  it('should render the 7-cell week heatmap from the dashboard week_activity', async () => {
+    await settle();
+    httpMock
+      .expectOne((r) => r.url.includes(DASHBOARD_URL))
+      .flush({ data: dashboardPayload() });
+    httpMock
+      .expectOne((r) => r.url.includes(SUMMARY_URL))
+      .flush({ data: summaryPayload() });
+    await settle();
+
+    const heatmap = el().querySelector('[data-testid="streak-heatmap"]');
+    expect(heatmap).toBeTruthy();
+    const cells = el().querySelectorAll(
+      '[data-testid^="streak-heatmap-cell-"]',
+    );
+    expect(cells.length).toBe(7);
+    // Today (last cell) is present and labels its attempt count for a11y.
+    const today = el().querySelector(
+      '[data-testid="streak-heatmap-cell-2026-06-10"]',
+    );
+    expect(today?.querySelector('[aria-label]')?.getAttribute('aria-label')).toContain(
+      '4 attempts',
+    );
   });
 
   it('should keep the Streak widget alive when the dashboard read fails', async () => {

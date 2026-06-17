@@ -205,17 +205,55 @@
         (retry)="retrySummary()"
       >
         @if (summary(); as s) {
-          <div class="p-4" data-testid="streak-figures">
-            <div
-              class="font-display text-[22px] font-semibold text-fg tabular-nums"
-            >
-              {{ s.streak_days }}
+          <div class="flex flex-col gap-4 p-4" data-testid="streak-figures">
+            <div>
+              <div
+                class="font-display text-[22px] font-semibold text-fg tabular-nums"
+              >
+                {{ s.streak_days }}
+              </div>
+              <div
+                class="mt-0.5 font-mono text-[10px] tracking-[0.05em] text-fg-faint uppercase"
+              >
+                day streak
+              </div>
             </div>
-            <div
-              class="mt-0.5 font-mono text-[10px] tracking-[0.05em] text-fg-faint uppercase"
-            >
-              day streak
-            </div>
+
+            <!-- Week heatmap — last 7 days of attempt logging, today last. -->
+            @if (weekActivity().length > 0) {
+              <div data-testid="streak-heatmap">
+                <div
+                  class="font-mono text-[10px] tracking-[0.05em] text-fg-faint uppercase"
+                >
+                  This week
+                </div>
+                <div class="mt-2 flex gap-1.5">
+                  @for (cell of weekActivity(); track cell.date) {
+                    <div
+                      class="flex flex-1 flex-col items-center gap-1"
+                      [attr.data-testid]="'streak-heatmap-cell-' + cell.date"
+                    >
+                      <div
+                        class="aspect-square w-full rounded-xs"
+                        [class]="cell.fillClass"
+                        role="img"
+                        [attr.aria-label]="
+                          cell.attempts +
+                          ' attempts on ' +
+                          cell.date
+                        "
+                        [attr.title]="cell.date + ' · ' + cell.attempts + ' attempts'"
+                      ></div>
+                      <div
+                        class="font-mono text-[9px] tracking-[0.04em] text-fg-faint uppercase tabular-nums"
+                      >
+                        {{ cell.dayLabel }}
+                      </div>
+                    </div>
+                  }
+                </div>
+              </div>
+            }
           </div>
         }
       </app-dashboard-widget>

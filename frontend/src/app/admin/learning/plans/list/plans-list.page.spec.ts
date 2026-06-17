@@ -6,9 +6,9 @@ import { of } from 'rxjs';
 import { PlansListPageComponent } from './plans-list.page';
 import { LearningService } from '../../../../core/services/learning.service';
 import { AdminTopbarService } from '../../../admin-layout/admin-topbar.service';
-import type { Plan } from '../../../../core/models/learning.model';
+import type { PlanSummary } from '../../../../core/models/learning.model';
 
-function planRow(overrides: Partial<Plan> = {}): Plan {
+function planRow(overrides: Partial<PlanSummary> = {}): PlanSummary {
   return {
     id: 'p_1',
     title: 'Graph algorithms drill',
@@ -17,6 +17,8 @@ function planRow(overrides: Partial<Plan> = {}): Plan {
     status: 'active',
     goal_id: null,
     created_by: 'human',
+    entry_total: 4,
+    entry_done: 1,
     created_at: '2026-05-20T10:00:00Z',
     updated_at: '2026-06-01T10:00:00Z',
     ...overrides,
@@ -53,10 +55,15 @@ describe('PlansListPageComponent', () => {
     TestBed.resetTestingModule();
   });
 
-  it('should render a row per plan', async () => {
+  it('should render a row per plan with the entries and progress columns', async () => {
     plans.mockReturnValue(
       of([
-        planRow({ id: 'p_1', title: 'Graph algorithms drill' }),
+        planRow({
+          id: 'p_1',
+          title: 'Graph algorithms drill',
+          entry_total: 4,
+          entry_done: 1,
+        }),
         planRow({ id: 'p_2', title: 'Concurrency patterns' }),
       ]),
     );
@@ -69,6 +76,13 @@ describe('PlansListPageComponent', () => {
     expect(el.querySelector('[data-testid="plans-count"]')?.textContent).toContain(
       '2',
     );
+    // Entries/Progress columns reflect the per-plan counts (1/4 → 25%).
+    expect(
+      el.querySelector('[data-testid="plans-list-entries-0"]')?.textContent,
+    ).toContain('1/4');
+    expect(
+      el.querySelector('[data-testid="plans-list-progress-0"]')?.textContent,
+    ).toContain('25%');
   });
 
   it('should show the empty state when no plans exist', async () => {

@@ -15,7 +15,10 @@ import { DatePipe } from '@angular/common';
 import { LearningService } from '../../../../core/services/learning.service';
 import { AdminTopbarService } from '../../../admin-layout/admin-topbar.service';
 import { DataTableComponent } from '../../../../shared/components/data-table/data-table.component';
-import type { Plan, PlanStatus } from '../../../../core/models/learning.model';
+import type {
+  PlanStatus,
+  PlanSummary,
+} from '../../../../core/models/learning.model';
 
 const STATUS_DOT_CLASS: Record<PlanStatus, string> = {
   draft: 'bg-fg-subtle',
@@ -35,10 +38,10 @@ const STATUS_TEXT_CLASS: Record<PlanStatus, string> = {
 
 /**
  * Plans List — Learning curricula. `GET /api/admin/learning/plans` returns
- * bare plan rows (draft + active only, no progress counts); rows open the
+ * plan rows (draft + active only) with per-plan entry counts; rows open the
  * plan detail at `/admin/learning/plans/:id`. Columns: Title / Domain /
- * Status / Updated. The endpoint may return empty until plans are created,
- * so empty and error states are first-class.
+ * Status / Entries / Progress / Updated. The endpoint may return empty until
+ * plans are created, so empty and error states are first-class.
  */
 @Component({
   selector: 'app-plans-list-page',
@@ -57,7 +60,7 @@ export class PlansListPageComponent {
   private readonly router = inject(Router);
   private readonly destroyRef = inject(DestroyRef);
 
-  protected readonly resource = rxResource<Plan[], void>({
+  protected readonly resource = rxResource<PlanSummary[], void>({
     stream: () => this.learningService.plans(),
   });
 
@@ -91,7 +94,7 @@ export class PlansListPageComponent {
     this.destroyRef.onDestroy(() => this.topbar.reset());
   }
 
-  protected openRow(row: Plan): void {
+  protected openRow(row: PlanSummary): void {
     this.router.navigate(['/admin/learning/plans', row.id]);
   }
 
@@ -105,6 +108,13 @@ export class PlansListPageComponent {
 
   protected statusTextClass(status: PlanStatus): string {
     return STATUS_TEXT_CLASS[status];
+  }
+
+  /** Completion as a 0–100 percentage; 0 when the plan has no entries. */
+  protected progressPct(row: PlanSummary): number {
+    return row.entry_total === 0
+      ? 0
+      : Math.round((row.entry_done / row.entry_total) * 100);
   }
 
   protected handleKeydown(event: KeyboardEvent): void {

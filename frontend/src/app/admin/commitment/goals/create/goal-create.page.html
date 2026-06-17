@@ -82,6 +82,27 @@
       </p>
     </div>
 
+    <!-- Area (optional, PARA classification) -->
+    <div class="flex flex-col gap-1.5">
+      <label for="goal-area" class="font-mono text-[11px] text-fg-muted">
+        Area <span class="text-fg-faint">(optional)</span>
+      </label>
+      <select
+        id="goal-area"
+        [formField]="goalForm.area_id"
+        class="rounded-sm border border-border bg-elevated px-3 py-2 text-sm text-fg outline-none focus:border-brand"
+        data-testid="goal-area"
+      >
+        <option value="">No area</option>
+        @for (area of areas(); track area.id) {
+          <option [value]="area.id">{{ area.name }}</option>
+        }
+      </select>
+      <p class="text-[11px] text-fg-faint">
+        PARA classification — which area of responsibility this goal sits in.
+      </p>
+    </div>
+
     <div class="grid grid-cols-1 gap-4.5 sm:grid-cols-2">
       <!-- Quarter -->
       <div class="flex flex-col gap-1.5">

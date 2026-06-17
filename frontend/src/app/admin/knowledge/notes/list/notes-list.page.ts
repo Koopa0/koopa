@@ -102,6 +102,10 @@ export class NotesListPageComponent {
 
   protected readonly kindFilter = signal<KindFilter>('all');
   protected readonly maturityFilter = signal<MaturityFilter>('all');
+  // The notes list endpoint filters by kind + maturity only — it has no
+  // created_by param — so the author filter is applied client-side over the
+  // loaded page. The chips are derived from the authors present on that page.
+  protected readonly authorFilter = signal<string>('all');
 
   protected readonly resource = rxResource<
     NoteRow[],
@@ -118,7 +122,24 @@ export class NotesListPageComponent {
       }),
   });
 
-  protected readonly rows = computed(() => this.resource.value() ?? []);
+  private readonly loadedRows = computed(() => this.resource.value() ?? []);
+
+  /** Distinct authors on the loaded page, for the author filter chips. */
+  protected readonly authorChips = computed<readonly Chip<string>[]>(() => {
+    const authors = [
+      ...new Set(this.loadedRows().map((r) => r.created_by).filter(Boolean)),
+    ].sort();
+    return [
+      { value: 'all', label: 'All' },
+      ...authors.map((a) => ({ value: a, label: a })),
+    ];
+  });
+
+  protected readonly rows = computed(() => {
+    const author = this.authorFilter();
+    if (author === 'all') return this.loadedRows();
+    return this.loadedRows().filter((r) => r.created_by === author);
+  });
   protected readonly total = computed(() => this.rows().length);
   protected readonly isLoading = computed(
     () => this.resource.status() === 'loading',
@@ -171,11 +192,19 @@ export class NotesListPageComponent {
 
   protected setKindFilter(value: KindFilter): void {
     this.kindFilter.set(value);
+    // The reloaded page may not carry the selected author.
+    this.authorFilter.set('all');
     this.focusedIndex.set(0);
   }
 
   protected setMaturityFilter(value: MaturityFilter): void {
     this.maturityFilter.set(value);
+    this.authorFilter.set('all');
+    this.focusedIndex.set(0);
+  }
+
+  protected setAuthorFilter(value: string): void {
+    this.authorFilter.set(value);
     this.focusedIndex.set(0);
   }
 

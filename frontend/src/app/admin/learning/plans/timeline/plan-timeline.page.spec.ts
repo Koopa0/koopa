@@ -9,9 +9,25 @@ import { AdminTopbarService } from '../../../admin-layout/admin-topbar.service';
 import type {
   PlanDetail,
   PlanEntryDetail,
+  TargetAttempt,
 } from '../../../../core/models/learning.model';
 
 const ATTEMPT_UUID = '11111111-2222-3333-4444-555555555555';
+
+function attempt(overrides: Partial<TargetAttempt> = {}): TargetAttempt {
+  return {
+    id: ATTEMPT_UUID,
+    learning_target_id: 't1',
+    session_id: 's1',
+    attempt_number: 2,
+    paradigm: 'cold',
+    outcome: 'solved_independent',
+    duration_minutes: 8,
+    attempted_at: '2026-06-01T09:00:00Z',
+    target_title: 'Two Sum',
+    ...overrides,
+  };
+}
 
 function entry(overrides: Partial<PlanEntryDetail> = {}): PlanEntryDetail {
   return {
@@ -35,12 +51,13 @@ function detail(overrides: Partial<PlanDetail> = {}): PlanDetail {
       title: 'Graph algorithms drill',
       description: 'Breadth before depth.',
       domain: 'leetcode',
-      goal_id: null,
+      goal_id: 'g-1',
       status: 'draft',
       created_by: 'human',
       created_at: '2026-05-20T10:00:00Z',
       updated_at: '2026-06-01T10:00:00Z',
     },
+    goal_name: 'Crack the FAANG interview',
     entries: [
       entry(),
       entry({
@@ -74,13 +91,18 @@ describe('PlanTimelinePageComponent', () => {
   const updatePlanEntry = vi.fn();
   const removePlanEntry = vi.fn();
   const reorderPlanEntries = vi.fn();
+  const targetAttempts = vi.fn();
 
-  async function setup(data: PlanDetail = detail()): Promise<void> {
+  async function setup(
+    data: PlanDetail = detail(),
+    attempts: TargetAttempt[] = [attempt()],
+  ): Promise<void> {
     plan.mockReturnValue(of(data));
     updatePlanStatus.mockReturnValue(of(data.plan));
     updatePlanEntry.mockReturnValue(of(data.entries[0]));
     removePlanEntry.mockReturnValue(of(undefined));
     reorderPlanEntries.mockReturnValue(of(data));
+    targetAttempts.mockReturnValue(of(attempts));
 
     TestBed.configureTestingModule({
       imports: [PlanTimelinePageComponent],
@@ -94,6 +116,7 @@ describe('PlanTimelinePageComponent', () => {
             updatePlanEntry,
             removePlanEntry,
             reorderPlanEntries,
+            targetAttempts,
           },
         },
         {
@@ -128,6 +151,14 @@ describe('PlanTimelinePageComponent', () => {
     await fixture.whenStable();
     fixture.detectChanges();
   }
+
+  it('should show the linked goal title in the meta strip, not the goal id', async () => {
+    await setup();
+
+    const goalMeta = byTestId('plan-goal')?.textContent ?? '';
+    expect(goalMeta).toContain('Crack the FAANG interview');
+    expect(goalMeta).not.toContain('g-1');
+  });
 
   it('should render ordered entries with phase and status badges', async () => {
     await setup();
@@ -191,7 +222,7 @@ describe('PlanTimelinePageComponent', () => {
     expect(byTestId('plan-entry-remove-0')).toBeNull();
   });
 
-  it('should gate completion on the justifying attempt id and reason', async () => {
+  it('should gate completion on picking a justifying attempt and a reason', async () => {
     await setup();
 
     byTestId<HTMLButtonElement>('plan-entry-complete-0')?.click();
@@ -200,17 +231,19 @@ describe('PlanTimelinePageComponent', () => {
     const confirm = byTestId<HTMLButtonElement>('plan-complete-confirm');
     expect(byTestId('plan-complete-modal')).not.toBeNull();
     expect(confirm?.disabled).toBe(true);
+    // The picker fetched attempts for the entry's target.
+    expect(targetAttempts).toHaveBeenCalledWith('t1');
+    // Each option shows its outcome + date so the attempt is recognizable.
+    expect(byTestId('plan-complete-attempt-0')?.textContent).toContain(
+      'solved_independent',
+    );
 
     // Confirming while incomplete must not fire the request.
     confirm?.click();
     await settle();
     expect(updatePlanEntry).not.toHaveBeenCalled();
 
-    const attemptInput = byTestId<HTMLInputElement>(
-      'plan-complete-attempt-id',
-    )!;
-    attemptInput.value = ATTEMPT_UUID;
-    attemptInput.dispatchEvent(new Event('input'));
+    byTestId<HTMLButtonElement>('plan-complete-attempt-0')?.click();
     const reasonArea = byTestId<HTMLTextAreaElement>('plan-complete-reason')!;
     reasonArea.value = 'solved_independent, 8 min, clean implementation';
     reasonArea.dispatchEvent(new Event('input'));
@@ -229,26 +262,17 @@ describe('PlanTimelinePageComponent', () => {
     });
   });
 
-  it('should reject a non-UUID attempt id in the audit gate', async () => {
-    await setup();
+  it('should show the empty state when the entry target has no attempts', async () => {
+    await setup(detail(), []);
 
     byTestId<HTMLButtonElement>('plan-entry-complete-0')?.click();
     await settle();
 
-    const attemptInput = byTestId<HTMLInputElement>(
-      'plan-complete-attempt-id',
-    )!;
-    attemptInput.value = 'not-a-uuid';
-    attemptInput.dispatchEvent(new Event('input'));
-    const reasonArea = byTestId<HTMLTextAreaElement>('plan-complete-reason')!;
-    reasonArea.value = 'good enough';
-    reasonArea.dispatchEvent(new Event('input'));
-    await settle();
-
+    expect(byTestId('plan-complete-attempts-empty')).not.toBeNull();
+    expect(byTestId('plan-complete-attempt-0')).toBeNull();
     expect(
       byTestId<HTMLButtonElement>('plan-complete-confirm')?.disabled,
     ).toBe(true);
-    expect(el.textContent).toContain("Must be the attempt's UUID.");
   });
 
   it('should skip an entry as a plain transition', async () => {

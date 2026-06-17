@@ -28,7 +28,7 @@ function notePayload(overrides: Partial<NoteDetail> = {}): NoteDetail {
     body: 'Lower bound vs upper bound.',
     kind: 'solve-note',
     maturity: 'seed',
-    actor: 'human',
+    created_by: 'human',
     concepts: [],
     targets: [],
     created_at: '2026-06-01T00:00:00Z',

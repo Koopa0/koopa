@@ -31,6 +31,12 @@ import {
 const BACKLOG_PAGE_SIZE = 200;
 const HISTORY_DEBOUNCE_MS = 250;
 
+// The backlog feeds the inbox / today / pending / someday views — every
+// live state, never `done`. Filtering server-side (rather than fetching
+// everything and dropping done locally) keeps a long completed history from
+// pushing live rows past the per_page cap.
+const BACKLOG_STATES = ['inbox', 'todo', 'in_progress', 'someday'] as const;
+
 /**
  * Page-scoped state for the GTD surface: the four data resources
  * (backlog list, daily plan, recurring buckets, completed history),
@@ -55,7 +61,11 @@ export class GtdStore {
   readonly busy = this._busy.asReadonly();
 
   readonly backlog = rxResource<TodoRow[], void>({
-    stream: () => this.todoService.list({ per_page: BACKLOG_PAGE_SIZE }),
+    stream: () =>
+      this.todoService.list({
+        state: [...BACKLOG_STATES],
+        per_page: BACKLOG_PAGE_SIZE,
+      }),
   });
   readonly plan = rxResource<DailyPlan, void>({
     stream: () => this.dailyPlanService.today(),

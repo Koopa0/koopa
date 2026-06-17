@@ -56,8 +56,8 @@
           >{{ d.plan.domain }}</span
         >
         <span data-testid="plan-goal">
-          @if (d.plan.goal_id) {
-            goal {{ d.plan.goal_id!.slice(0, 8) }}
+          @if (goalName()) {
+            {{ goalName() }}
           } @else {
             no linked goal
           }
@@ -350,30 +350,72 @@
       </p>
 
       <div class="flex flex-col gap-1.5">
-        <label
-          for="complete-attempt-id"
-          class="font-mono text-[11px] text-fg-subtle"
-        >
-          Justifying attempt id <span class="text-brand">*</span>
-        </label>
-        <input
-          id="complete-attempt-id"
-          type="text"
-          [value]="attemptId()"
-          (input)="setAttemptId($event)"
-          placeholder="a1b2c3d4-…"
-          class="rounded-sm border border-border bg-elevated px-3 py-2 font-mono text-xs text-fg outline-none focus:border-brand"
-          data-testid="plan-complete-attempt-id"
-        />
-        @if (attemptId().trim() && !attemptIdValid()) {
-          <p class="font-mono text-[11px] text-error" role="alert">
-            Must be the attempt's UUID.
+        <span class="font-mono text-[11px] text-fg-subtle">
+          Justifying attempt <span class="text-brand">*</span>
+        </span>
+        @if (attemptsLoading()) {
+          <p
+            class="font-mono text-[11px] text-fg-faint"
+            data-testid="plan-complete-attempts-loading"
+          >
+            Loading attempts…
+          </p>
+        } @else if (attemptsError()) {
+          <p
+            class="font-mono text-[11px] text-error"
+            role="alert"
+            data-testid="plan-complete-attempts-error"
+          >
+            Couldn't load attempts for this target.
+          </p>
+        } @else if (attempts().length === 0) {
+          <p
+            class="font-mono text-[11px] text-fg-faint"
+            data-testid="plan-complete-attempts-empty"
+          >
+            No attempts recorded on this target yet — log one in a learning
+            session before completing the entry.
           </p>
         } @else {
-          <p class="font-mono text-[11px] text-fg-faint">
-            Attempts have no admin list view — paste the id of the session
-            attempt on this entry's target.
-          </p>
+          <div
+            class="flex max-h-44 flex-col gap-1.5 overflow-y-auto"
+            role="radiogroup"
+            aria-label="Justifying attempt"
+            data-testid="plan-complete-attempts"
+          >
+            @for (att of attempts(); let i = $index; track att.id) {
+              <button
+                type="button"
+                role="radio"
+                [attr.aria-checked]="selectedAttemptId() === att.id"
+                (click)="pickAttempt(att.id)"
+                class="flex items-start gap-2.5 rounded-sm border px-3 py-2 text-left transition-colors"
+                [class.border-brand]="selectedAttemptId() === att.id"
+                [class.bg-brand-faint]="selectedAttemptId() === att.id"
+                [class.border-border]="selectedAttemptId() !== att.id"
+                [class.bg-elevated]="selectedAttemptId() !== att.id"
+                [attr.data-testid]="'plan-complete-attempt-' + i"
+              >
+                <span
+                  class="mt-0.5 inline-block size-3.5 shrink-0 rounded-full border-[1.5px]"
+                  [class.border-brand]="selectedAttemptId() === att.id"
+                  [class.border-border-strong]="selectedAttemptId() !== att.id"
+                  aria-hidden="true"
+                ></span>
+                <span class="min-w-0">
+                  <span class="block truncate text-[13px] text-fg">
+                    {{ att.outcome }}
+                  </span>
+                  <span
+                    class="mt-0.5 block font-mono text-[10px] text-fg-faint"
+                  >
+                    #{{ att.attempt_number }} · {{ att.paradigm }} ·
+                    {{ att.attempted_at | date: 'MMM d, y' }}
+                  </span>
+                </span>
+              </button>
+            }
+          </div>
         }
       </div>
 

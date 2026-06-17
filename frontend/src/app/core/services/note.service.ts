@@ -10,7 +10,8 @@ export interface NoteRow {
   title: string;
   kind: NoteKind;
   maturity: NoteMaturity;
-  actor: string;
+  /** Authoring agent identity — the `created_by` wire field (e.g. human, hermes). */
+  created_by: string;
   concepts: { slug: string; name: string }[];
   targets: { id: string; title: string }[];
   created_at: string;

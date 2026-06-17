@@ -3,6 +3,7 @@ import type {
   DashboardOverview,
   MasteryStage,
   ObservationSignal,
+  WeekActivityDay,
 } from '../../../core/models/learning.model';
 
 /** A struggling concept paired with its latest weakness observation, if any. */
@@ -55,6 +56,58 @@ export function sortByMastery(
   rows: DashboardConceptRow[],
 ): DashboardConceptRow[] {
   return [...rows].sort((a, b) => b.mastery_value - a.mastery_value);
+}
+
+/** One rendered cell of the week heatmap. */
+export interface WeekActivityCell {
+  /** UTC day (YYYY-MM-DD) — the cell's aria/title source. */
+  date: string;
+  /** Attempt count on that day. */
+  attempts: number;
+  /** Single-letter weekday label (M T W …) for the cell footer. */
+  dayLabel: string;
+  /** Day-of-month, for the cell footer. */
+  dayOfMonth: number;
+  /** Fill class by intensity bucket (DS tokens). */
+  fillClass: string;
+}
+
+const WEEKDAY_INITIALS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'] as const;
+
+// Intensity buckets keyed off attempt count. Empty days read as a faint
+// surface; busier days deepen toward the brand. DS tokens only.
+const HEATMAP_EMPTY = 'bg-elevated';
+const HEATMAP_LOW = 'bg-brand-faint';
+const HEATMAP_MID = 'bg-brand-muted';
+const HEATMAP_HIGH = 'bg-brand';
+
+/** Fill class for an attempt count: empty / low (1–2) / mid (3–5) / high (6+). */
+export function heatmapFill(attempts: number): string {
+  if (attempts <= 0) return HEATMAP_EMPTY;
+  if (attempts <= 2) return HEATMAP_LOW;
+  if (attempts <= 5) return HEATMAP_MID;
+  return HEATMAP_HIGH;
+}
+
+/**
+ * Render the 7-day week heatmap. The wire days are already ordered (today
+ * last, zero-filled); each `date` is parsed as UTC so the weekday label
+ * matches the server's day boundary regardless of the viewer's timezone.
+ */
+export function buildWeekActivity(
+  days: readonly WeekActivityDay[] | undefined,
+): WeekActivityCell[] {
+  if (!days) return [];
+  return days.map((d) => {
+    const parsed = new Date(`${d.date}T00:00:00Z`);
+    return {
+      date: d.date,
+      attempts: d.attempts,
+      dayLabel: WEEKDAY_INITIALS[parsed.getUTCDay()],
+      dayOfMonth: parsed.getUTCDate(),
+      fillClass: heatmapFill(d.attempts),
+    };
+  });
 }
 
 /** Struggling concepts, weakest first, with their latest weakness note. */

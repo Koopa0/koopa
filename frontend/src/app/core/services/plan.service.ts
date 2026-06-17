@@ -12,15 +12,24 @@ import type { GoalStatus } from '../models';
 
 /**
  * Goal create request. `status` is server-set (always `not_started`).
- * The server also accepts `area_id`, but no endpoint enumerates areas yet,
- * so the field is not surfaced here. Optional fields are sent only when
- * present so the server applies its own defaults.
+ * `area_id` is the optional PARA classification (nullable on the server);
+ * the rest of the optional fields are sent only when present so the server
+ * applies its own defaults.
  */
 export interface GoalCreateRequest {
   title: string;
   description: string;
+  area_id?: string;
   quarter?: string;
   deadline?: string;
+}
+
+/** A PARA area for the goal area selector (GET /commitment/areas). */
+export interface Area {
+  id: string;
+  slug: string;
+  name: string;
+  sort_order: number;
 }
 
 /** POST /goals response — the bare goal row (no milestones/projects). */
@@ -54,6 +63,11 @@ export class PlanService {
 
   getGoalsOverview(): Observable<GoalsOverview> {
     return this.api.getData<GoalsOverview>('/api/admin/commitment/goals');
+  }
+
+  /** PARA areas for the goal area selector, ordered by `sort_order`. */
+  getAreas(): Observable<Area[]> {
+    return this.api.getData<Area[]>('/api/admin/commitment/areas');
   }
 
   /**

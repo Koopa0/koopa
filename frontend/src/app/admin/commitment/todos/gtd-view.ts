@@ -234,13 +234,14 @@ export function energyOf(value?: string | null): EnergyLevel | null {
 
 /**
  * Which advance verb a non-inbox row takes next. `someday` rows go
- * through `start` — the HTTP surface has no someday→todo verb, so
- * activation skips straight to in_progress.
+ * through `activate` (someday → todo) so re-activation returns them to the
+ * backlog rather than skipping straight to in_progress; `todo` rows start.
  */
 export function advanceActionFor(
   state: TodoState,
-): 'start' | 'complete' | null {
-  if (state === 'todo' || state === 'someday') return 'start';
+): 'start' | 'activate' | 'complete' | null {
+  if (state === 'todo') return 'start';
+  if (state === 'someday') return 'activate';
   if (state === 'in_progress') return 'complete';
   return null;
 }
@@ -250,6 +251,7 @@ export const ADVANCE_TOAST = {
   start: 'Started',
   complete: 'Completed',
   defer: 'Deferred → someday',
+  activate: 'Activated → todo',
   drop: 'Dropped',
 } as const;
 
@@ -302,7 +304,7 @@ export function keyboardLegend(view: GtdView): KeyHint[] {
     case 'someday':
       return [
         ...NAV_HINTS,
-        { keys: 'e', label: 'start' },
+        { keys: 'e', label: 'activate' },
         { keys: 't', label: 'today' },
       ];
     default:

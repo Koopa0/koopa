@@ -45,6 +45,14 @@ export interface DashboardObservation {
   created_at: string;
 }
 
+/** One day of the dashboard week heatmap (7 days, zero-filled, today last). */
+export interface WeekActivityDay {
+  /** UTC day in YYYY-MM-DD form. */
+  date: string;
+  /** learning_attempts logged on that day. */
+  attempts: number;
+}
+
 export interface DashboardOverview {
   streak_days: number;
   concepts: {
@@ -53,6 +61,7 @@ export interface DashboardOverview {
     rows: DashboardConceptRow[];
   };
   recent_observations: DashboardObservation[];
+  week_activity: WeekActivityDay[];
 }
 
 // === Concepts ===
@@ -199,10 +208,9 @@ export type PlanStatus =
   | 'abandoned';
 
 /**
- * A learning plan row (internal/learning/plan Plan). Both the list endpoint
- * (`GET /plans` — draft + active only) and the `plan` key of the detail
- * envelope use this shape. The list endpoint carries NO progress data;
- * progress lives only on the detail envelope.
+ * A learning plan row (internal/learning/plan Plan). This bare shape is the
+ * `plan` key of the detail envelope. The list endpoint returns
+ * {@link PlanSummary} (this plus per-plan entry counts).
  */
 export interface Plan {
   id: string;
@@ -216,6 +224,17 @@ export interface Plan {
   created_by: string;
   created_at: string;
   updated_at: string;
+}
+
+/**
+ * A learning plan list row (internal/learning/plan Summary). Adds the
+ * per-plan entry counts the admin list's Entries/Progress columns render.
+ * `GET /plans` returns these; the detail envelope's `plan` key does not
+ * carry the counts.
+ */
+export interface PlanSummary extends Plan {
+  entry_total: number;
+  entry_done: number;
 }
 
 /**
@@ -242,6 +261,25 @@ export interface PlanEntryDetail {
   target_external_id?: string | null;
 }
 
+/**
+ * One attempt on a learning target, as returned newest-first by
+ * GET /learning/targets/{id}/attempts. Backs the audit-gate modal's
+ * attempt picker — the candidate `completed_by_attempt_id` values. Mirrors
+ * the Go `learning.Attempt` wire shape; only the fields the picker reads
+ * are typed (the wire carries more).
+ */
+export interface TargetAttempt {
+  id: string;
+  learning_target_id: string;
+  session_id: string;
+  attempt_number: number;
+  paradigm: string;
+  outcome: string;
+  duration_minutes?: number;
+  attempted_at: string;
+  target_title: string;
+}
+
 /** Five-field completion summary from the detail envelope. */
 export interface PlanProgress {
   total: number;
@@ -254,6 +292,8 @@ export interface PlanProgress {
 /** `GET /plans/{id}` (and the reorder response) — de-embedded envelope. */
 export interface PlanDetail {
   plan: Plan;
+  /** Linked goal's title for the meta strip; `""` when the plan has no goal. */
+  goal_name: string;
   entries: PlanEntryDetail[];
   progress: PlanProgress;
 }

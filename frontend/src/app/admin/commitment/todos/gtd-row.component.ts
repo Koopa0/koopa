@@ -80,9 +80,16 @@ export class GtdRowComponent {
   protected readonly inProgress = computed(
     () => this.item().state === 'in_progress',
   );
-  protected readonly verbLabel = computed(() =>
-    advanceActionFor(this.item().state) === 'complete' ? 'Complete' : 'Start',
-  );
+  protected readonly verbLabel = computed(() => {
+    switch (advanceActionFor(this.item().state)) {
+      case 'complete':
+        return 'Complete';
+      case 'activate':
+        return 'Activate';
+      default:
+        return 'Start';
+    }
+  });
   protected readonly showPull = computed(
     () => this.view() === 'pending' || this.view() === 'someday',
   );

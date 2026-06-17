@@ -87,12 +87,12 @@ describe('GtdRowComponent', () => {
     expect(el().textContent).toContain('in progress');
   });
 
-  it('should hide defer but offer pull on someday rows', () => {
+  it('should hide defer, offer pull, and label the verb Activate on someday rows', () => {
     render(makeRow({ state: 'someday' }), 'someday');
 
     expect(testid('gtd-row-defer')).toBeNull();
     expect(testid('gtd-row-pull')).toBeTruthy();
-    expect(testid('gtd-row-advance')?.textContent).toContain('Start');
+    expect(testid('gtd-row-advance')?.textContent).toContain('Activate');
   });
 
   it('should mark the host when selected', () => {

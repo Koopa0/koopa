@@ -16,7 +16,9 @@ import type {
   PlanEntryDetail,
   PlanEntryStatus,
   PlanStatus,
+  PlanSummary,
   SessionDetail,
+  TargetAttempt,
 } from '../models/learning.model';
 
 export interface DashboardQuery {
@@ -138,9 +140,12 @@ export class LearningService {
     );
   }
 
-  /** Draft + active plans only — the management list view. No progress data. */
-  plans(): Observable<Plan[]> {
-    return this.api.getData<Plan[]>('/api/admin/learning/plans');
+  /**
+   * Draft + active plans for the management list view. Rows carry
+   * entry_total / entry_done for the Entries/Progress columns.
+   */
+  plans(): Observable<PlanSummary[]> {
+    return this.api.getData<PlanSummary[]>('/api/admin/learning/plans');
   }
 
   plan(id: string): Observable<PlanDetail> {
@@ -205,6 +210,20 @@ export class LearningService {
   removePlanEntry(planId: string, entryId: string): Observable<void> {
     return this.api.delete(
       `/api/admin/learning/plans/${planId}/entries/${entryId}`,
+    );
+  }
+
+  /**
+   * Attempts on one learning target, newest first — the audit-gate modal's
+   * picker source for `completed_by_attempt_id`. An unknown target or one
+   * with no attempts returns an empty list (never 404). `limit` is 1–100
+   * (server default 20).
+   */
+  targetAttempts(targetId: string, limit?: number): Observable<TargetAttempt[]> {
+    const params = limit ? { limit: String(limit) } : undefined;
+    return this.api.getData<TargetAttempt[]>(
+      `/api/admin/learning/targets/${targetId}/attempts`,
+      params,
     );
   }
 

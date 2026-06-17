@@ -22,6 +22,7 @@ import {
 import {
   SIGNAL_CLASS,
   STAGE_BADGE_CLASS,
+  buildWeekActivity,
   computeAvgMasteryPercent,
   computeStagePills,
   deriveWeaknesses,
@@ -121,6 +122,11 @@ export class LearningDashboardPageComponent {
   );
   protected readonly weaknesses = computed(() =>
     deriveWeaknesses(this.overview()),
+  );
+  // The week heatmap rides the dashboard read (week_activity), not the
+  // streak summary — empty until the dashboard resolves.
+  protected readonly weekActivity = computed(() =>
+    buildWeekActivity(this.overview()?.week_activity),
   );
 
   constructor() {

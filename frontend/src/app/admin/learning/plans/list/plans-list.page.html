@@ -43,6 +43,8 @@
           <th scope="col" class="px-3 py-2 font-normal">Title</th>
           <th scope="col" class="px-3 py-2 font-normal">Domain</th>
           <th scope="col" class="px-3 py-2 font-normal">Status</th>
+          <th scope="col" class="px-3 py-2 font-normal">Entries</th>
+          <th scope="col" class="px-3 py-2 font-normal">Progress</th>
           <th scope="col" class="px-3 py-2 font-normal">Updated</th>
         </tr>
       </thead>
@@ -79,6 +81,29 @@
                   aria-hidden="true"
                 ></span>
                 {{ row.status }}
+              </span>
+            </td>
+            <td
+              class="px-3 py-2 font-mono text-[11px] text-fg-muted tabular-nums"
+              [attr.data-testid]="'plans-list-entries-' + i"
+            >
+              {{ row.entry_done }}/{{ row.entry_total }}
+            </td>
+            <td class="px-3 py-2" [attr.data-testid]="'plans-list-progress-' + i">
+              <span class="flex items-center gap-2">
+                <span
+                  class="h-1.5 w-16 overflow-hidden rounded-full bg-bg"
+                  role="img"
+                  [attr.aria-label]="progressPct(row) + '% complete'"
+                >
+                  <span
+                    class="block h-full rounded-full bg-brand"
+                    [style.width.%]="progressPct(row)"
+                  ></span>
+                </span>
+                <span class="font-mono text-[11px] text-fg-subtle tabular-nums">
+                  {{ progressPct(row) }}%
+                </span>
               </span>
             </td>
             <td class="px-3 py-2 text-fg-subtle">

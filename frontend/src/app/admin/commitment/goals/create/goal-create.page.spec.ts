@@ -11,6 +11,12 @@ import { GoalCreatePageComponent } from './goal-create.page';
 import { NotificationService } from '../../../../core/services/notification.service';
 
 const GOALS_URL = '/api/admin/commitment/goals';
+const AREAS_URL = '/api/admin/commitment/areas';
+
+const areaRows = [
+  { id: 'area-1', slug: 'career', name: 'Career', sort_order: 1 },
+  { id: 'area-2', slug: 'health', name: 'Health', sort_order: 2 },
+];
 
 describe('GoalCreatePageComponent', () => {
   let fixture: ComponentFixture<GoalCreatePageComponent>;
@@ -34,6 +40,13 @@ describe('GoalCreatePageComponent', () => {
 
     fixture = TestBed.createComponent(GoalCreatePageComponent);
     fixture.detectChanges();
+    // Let the area resource loader issue its HTTP request (rxResource resolves
+    // on a macrotask, so whenStable alone isn't enough), then flush it.
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    fixture.detectChanges();
+    httpMock
+      .expectOne((r) => r.url.endsWith(AREAS_URL))
+      .flush({ data: areaRows });
     await fixture.whenStable();
     fixture.detectChanges();
     el = fixture.nativeElement as HTMLElement;
@@ -123,6 +136,41 @@ describe('GoalCreatePageComponent', () => {
       '/admin/commitment/goals',
       'g_new',
     ]);
+  });
+
+  it('should populate the area selector from the areas read and send the picked area_id', async () => {
+    const select = el.querySelector('#goal-area') as HTMLSelectElement;
+    // "No area" placeholder plus one option per area row.
+    expect(select.options.length).toBe(areaRows.length + 1);
+    expect(select.textContent).toContain('Career');
+
+    await typeTitle('Ship koopa v1');
+    select.value = 'area-2';
+    select.dispatchEvent(new Event('change'));
+    select.dispatchEvent(new Event('input'));
+    await settle();
+
+    submitBtn().click();
+    await settle();
+
+    const req = httpMock.expectOne((r) => r.url.endsWith(GOALS_URL));
+    expect(req.request.body).toMatchObject({
+      title: 'Ship koopa v1',
+      area_id: 'area-2',
+    });
+    req.flush({ data: { id: 'g_area', title: 'Ship koopa v1', status: 'not_started' } });
+    await settle();
+  });
+
+  it('should omit area_id when no area is picked', async () => {
+    await typeTitle('Ship koopa v1');
+    submitBtn().click();
+    await settle();
+
+    const req = httpMock.expectOne((r) => r.url.endsWith(GOALS_URL));
+    expect(req.request.body).not.toHaveProperty('area_id');
+    req.flush({ data: { id: 'g_new', title: 'Ship koopa v1', status: 'not_started' } });
+    await settle();
   });
 
   it('should surface a server error and re-enable submit when creation fails', async () => {

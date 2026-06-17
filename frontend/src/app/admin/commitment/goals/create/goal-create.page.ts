@@ -2,10 +2,11 @@ import {
   ChangeDetectionStrategy,
   Component,
   DestroyRef,
+  computed,
   inject,
   signal,
 } from '@angular/core';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { rxResource, takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { Router, RouterLink } from '@angular/router';
 import {
   form,
@@ -15,13 +16,18 @@ import {
   validate,
   minLengthError,
 } from '@angular/forms/signals';
-import { PlanService } from '../../../../core/services/plan.service';
+import {
+  PlanService,
+  type Area,
+  type GoalCreateRequest,
+} from '../../../../core/services/plan.service';
 import { NotificationService } from '../../../../core/services/notification.service';
 import { AdminTopbarService } from '../../../admin-layout/admin-topbar.service';
 
 interface GoalForm {
   title: string;
   description: string;
+  area_id: string;
   quarter: string;
   deadline: string;
 }
@@ -74,9 +80,19 @@ export class GoalCreatePageComponent {
   protected readonly submitted = signal(false);
   protected readonly serverError = signal<string | null>(null);
 
+  // Area selector is optional — a failed/empty areas read just leaves the
+  // select with its "no area" placeholder; it never blocks goal creation.
+  private readonly areasResource = rxResource<Area[], void>({
+    stream: () => this.planService.getAreas(),
+  });
+  protected readonly areas = computed<Area[]>(() =>
+    this.areasResource.hasValue() ? this.areasResource.value() : [],
+  );
+
   protected readonly model = signal<GoalForm>({
     title: '',
     description: '',
+    area_id: '',
     quarter: '',
     deadline: '',
   });
@@ -120,14 +136,19 @@ export class GoalCreatePageComponent {
     this.submitting.set(true);
     this.serverError.set(null);
 
+    const body: GoalCreateRequest = {
+      title: v.title.trim(),
+      description: v.description.trim(),
+    };
+    // Optional fields are sent only when present so the server applies its
+    // own defaults / leaves area_id NULL.
+    if (v.area_id) body.area_id = v.area_id;
+    if (v.quarter) body.quarter = v.quarter;
+    // Date input yields YYYY-MM-DD; pin to UTC midnight for an RFC3339 value.
+    if (v.deadline) body.deadline = `${v.deadline}T00:00:00Z`;
+
     this.planService
-      .createGoal({
-        title: v.title.trim(),
-        description: v.description.trim(),
-        quarter: v.quarter || undefined,
-        // Date input yields YYYY-MM-DD; pin to UTC midnight for an RFC3339 value.
-        deadline: v.deadline ? `${v.deadline}T00:00:00Z` : undefined,
-      })
+      .createGoal(body)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (goal) => {
