@@ -126,15 +126,11 @@ export class ContentService {
     );
   }
 
-  /**
-   * Revert content back to draft, optionally writing reviewer notes
-   * into `ai_metadata.review_notes`.
-   */
-  revertToDraft(id: string, reviewerNotes?: string): Observable<ApiContent> {
-    const body = reviewerNotes ? { reviewer_notes: reviewerNotes } : {};
+  /** Revert content back to draft. The handler takes no body. */
+  revertToDraft(id: string): Observable<ApiContent> {
     return this.api.postData<ApiContent>(
       `/api/admin/knowledge/content/${id}/revert-to-draft`,
-      body,
+      {},
     );
   }
 

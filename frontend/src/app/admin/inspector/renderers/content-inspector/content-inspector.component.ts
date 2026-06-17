@@ -39,7 +39,6 @@ export class ContentInspectorComponent {
   private readonly notifications = inject(NotificationService);
 
   protected readonly activeTab = signal<ContentTab>('preview');
-  protected readonly rejectNotes = signal('');
   protected readonly isRejectExpanded = signal(false);
   protected readonly isActioning = signal(false);
 
@@ -105,14 +104,12 @@ export class ContentInspectorComponent {
 
   protected reject(): void {
     const c = this.content();
-    const notes = this.rejectNotes().trim();
-    if (!c || !notes || this.isActioning()) return;
+    if (!c || this.isActioning()) return;
 
     this.isActioning.set(true);
-    this.contentService.revertToDraft(c.id, notes).subscribe({
+    this.contentService.revertToDraft(c.id).subscribe({
       next: () => {
         this.isActioning.set(false);
-        this.rejectNotes.set('');
         this.isRejectExpanded.set(false);
         this.inspector.recordAction('content', c.id, 'reject');
         this.notifications.undo(`Reverted "${c.title}" to draft`, () => {
@@ -143,9 +140,5 @@ export class ContentInspectorComponent {
         this.isActioning.set(false);
       },
     });
-  }
-
-  protected readTextarea(event: Event): string {
-    return (event.target as HTMLTextAreaElement).value;
   }
 }

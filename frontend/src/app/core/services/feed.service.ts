@@ -42,7 +42,7 @@ export class FeedService {
 
   updateFeed(
     id: string,
-    body: Partial<Pick<FeedRow, 'enabled' | 'schedule' | 'priority'>>,
+    body: Partial<Pick<FeedRow, 'enabled' | 'schedule'>>,
   ): Observable<FeedRow> {
     return this.api.putData<FeedRow>(`/api/admin/knowledge/feeds/${id}`, body);
   }
