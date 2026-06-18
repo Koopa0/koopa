@@ -65,8 +65,15 @@ export class GtdRowComponent {
 
   private readonly todayIso = new Date().toISOString().slice(0, 10);
 
+  // 'manual' when Koopa captured it in the admin UI ('human'); 'agent' for a
+  // capture an agent dropped in via MCP — hermes (vault sweep / Telegram
+  // bridge), planner, system, etc. all stamp their own identity, never
+  // 'human'.
+  protected readonly sourceKind = computed(() =>
+    this.item().created_by === 'human' ? 'manual' : 'agent',
+  );
   protected readonly sourceIcon = computed(() =>
-    this.item().created_by === 'system' ? Rss : Inbox,
+    this.sourceKind() === 'manual' ? Inbox : Rss,
   );
   protected readonly age = computed(() => ageLabel(this.item().created_at));
   protected readonly energy = computed(() => energyOf(this.item().energy));

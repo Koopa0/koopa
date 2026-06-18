@@ -78,6 +78,20 @@ describe('GtdRowComponent', () => {
     expect(testid('gtd-row-description')).toBeNull();
   });
 
+  it('should mark a human inbox capture as a manual source', () => {
+    render(makeRow({ state: 'inbox', created_by: 'human' }), 'inbox');
+
+    expect(testid('gtd-row-source')?.getAttribute('data-source')).toBe(
+      'manual',
+    );
+  });
+
+  it('should mark an agent inbox capture (hermes) as an agent source', () => {
+    render(makeRow({ state: 'inbox', created_by: 'hermes' }), 'inbox');
+
+    expect(testid('gtd-row-source')?.getAttribute('data-source')).toBe('agent');
+  });
+
   it('should show Start with project, energy, due, and pull on a pending row', () => {
     render(
       makeRow({

@@ -11,8 +11,9 @@ import type {
  * Row shape returned by GET /api/admin/commitment/todos. The handler
  * projects a subset of the full item plus the joined project title and
  * the capture's free-text `description` — `project_id` and `completed_at`
- * are not on this wire shape, and `created_by` arrives empty today (the
- * list projection drops it).
+ * are not on this wire shape. `created_by` carries the capture's origin:
+ * `human` for an admin capture, the agent name (e.g. `hermes`) for an MCP
+ * capture.
  */
 export interface TodoRow {
   id: string;
