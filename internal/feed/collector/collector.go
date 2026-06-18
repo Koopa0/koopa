@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/url"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"github.com/mmcdole/gofeed"
@@ -277,10 +278,7 @@ func (c *Collector) tryCreateItem(ctx context.Context, item *gofeed.Item, f *fee
 		return nil
 	}
 
-	content := itemContent(item)
-	if len(content) > maxContentLen {
-		content = content[:maxContentLen]
-	}
+	content := truncateUTF8(itemContent(item), maxContentLen)
 
 	score := Score(item.Title, content, tags, keywords)
 
@@ -303,6 +301,23 @@ func (c *Collector) tryCreateItem(ctx context.Context, item *gofeed.Item, f *fee
 }
 
 // itemContent extracts the best available content from a feed item.
+// truncateUTF8 returns s truncated to at most maxBytes without splitting a
+// multi-byte UTF-8 rune. Feed content is untrusted; a plain byte slice can cut
+// mid-rune and persist invalid UTF-8.
+func truncateUTF8(s string, maxBytes int) string {
+	if maxBytes <= 0 {
+		return ""
+	}
+	if len(s) <= maxBytes {
+		return s
+	}
+	// Back up to the start of the rune straddling the cut so it is excluded.
+	for maxBytes > 0 && !utf8.RuneStart(s[maxBytes]) {
+		maxBytes--
+	}
+	return s[:maxBytes]
+}
+
 func itemContent(item *gofeed.Item) string {
 	if item.Content != "" {
 		return item.Content
