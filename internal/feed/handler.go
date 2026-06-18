@@ -33,6 +33,7 @@ const maxTopicIDs = 20
 var storeErrors = []api.ErrMap{
 	{Target: ErrNotFound, Status: http.StatusNotFound, Code: "NOT_FOUND", Message: "feed not found"},
 	{Target: ErrConflict, Status: http.StatusConflict, Code: "CONFLICT", Message: "feed conflict"},
+	{Target: ErrInvalidInput, Status: http.StatusBadRequest, Code: "BAD_REQUEST", Message: "invalid feed input"},
 	{Target: ErrTopicNotFound, Status: http.StatusBadRequest, Code: "TOPIC_NOT_FOUND", Message: "referenced topic not found"},
 	{Target: ErrTooManyTopicIDs, Status: http.StatusBadRequest, Code: "BAD_REQUEST", Message: "too many topic_ids (max 20)"},
 	{Target: ErrInvalidTopicID, Status: http.StatusBadRequest, Code: "BAD_REQUEST", Message: "invalid topic_id"},
@@ -182,6 +183,19 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 	req, err := api.Decode[updateRequest](w, r)
 	if err != nil {
 		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid request body")
+		return
+	}
+	// url and name are optional on update (nil = unchanged), but a present-yet-
+	// empty value violates chk_feed_url_scheme / chk_feed_name_not_blank —
+	// reject it here so the asymmetry with Create (which requires both
+	// non-empty) does not let an empty value through to a 500 at the DB
+	// boundary. The nil check preserves no-change semantics.
+	if req.URL != nil && *req.URL == "" {
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "url must not be empty")
+		return
+	}
+	if req.Name != nil && *req.Name == "" {
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "name must not be empty")
 		return
 	}
 	if req.Schedule != nil && !ValidSchedule(*req.Schedule) {

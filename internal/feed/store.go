@@ -170,10 +170,7 @@ func (s *Store) CreateFeed(ctx context.Context, p *CreateParams) (*Feed, error) 
 		FilterConfig: filterJSON,
 	})
 	if err != nil {
-		if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok && pgErr.Code == pgerrcode.UniqueViolation {
-			return nil, ErrConflict
-		}
-		return nil, fmt.Errorf("creating feed: %w", err)
+		return nil, mapWriteError(err, "creating feed")
 	}
 
 	if len(p.TopicIDs) > 0 {
@@ -226,10 +223,7 @@ func (s *Store) UpdateFeed(ctx context.Context, id uuid.UUID, p *UpdateParams) (
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrNotFound
 		}
-		if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok && pgErr.Code == pgerrcode.UniqueViolation {
-			return nil, ErrConflict
-		}
-		return nil, fmt.Errorf("updating feed %s: %w", id, err)
+		return nil, mapWriteError(err, fmt.Sprintf("updating feed %s", id))
 	}
 
 	if err := s.replaceFeedTopics(ctx, r.ID, p.TopicIDs); err != nil {
@@ -261,6 +255,26 @@ func (s *Store) replaceFeedTopics(ctx context.Context, feedID uuid.UUID, topicID
 		return mapFeedTopicsInsertError(err)
 	}
 	return nil
+}
+
+// mapWriteError classifies a PostgreSQL feed-write failure into a feature
+// sentinel. A unique violation (23505) on the url becomes ErrConflict; a
+// check-constraint violation (23514 — chk_feed_url_scheme, chk_feed_name_not_blank,
+// chk_feed_schedule) becomes ErrInvalidInput; any other error is wrapped with
+// the supplied context.
+func mapWriteError(err error, operation string) error {
+	pgErr, ok := errors.AsType[*pgconn.PgError](err)
+	if !ok {
+		return fmt.Errorf("%s: %w", operation, err)
+	}
+	switch pgErr.Code {
+	case pgerrcode.UniqueViolation:
+		return ErrConflict
+	case pgerrcode.CheckViolation:
+		return ErrInvalidInput
+	default:
+		return fmt.Errorf("%s: %w", operation, err)
+	}
 }
 
 // mapFeedTopicsInsertError translates a PostgreSQL error from a

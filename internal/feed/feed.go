@@ -179,6 +179,11 @@ var (
 	// ErrConflict indicates a duplicate feed URL.
 	ErrConflict = errors.New("feed: conflict")
 
+	// ErrInvalidInput signals a client-supplied value the database rejected
+	// via a check constraint: a url that is not http(s) (chk_feed_url_scheme)
+	// or a blank name (chk_feed_name_not_blank).
+	ErrInvalidInput = errors.New("feed: invalid input")
+
 	// ErrTopicNotFound indicates a topic_id in TopicIDs does not reference
 	// an existing row in topics. Surfaced as HTTP 400 TOPIC_NOT_FOUND so
 	// the client can correct the request without exposing the underlying
