@@ -28,6 +28,7 @@ import (
 // storeErrors maps todo sentinel errors to HTTP responses.
 var storeErrors = []api.ErrMap{
 	{Target: ErrNotFound, Status: http.StatusNotFound, Code: "NOT_FOUND", Message: "todo not found"},
+	{Target: ErrInvalidInput, Status: http.StatusBadRequest, Code: "BAD_REQUEST", Message: "invalid todo input"},
 }
 
 // ErrInvalidTransition is returned by Advance when the caller supplies
@@ -358,8 +359,7 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		CreatedBy:   actor,
 	})
 	if err != nil {
-		h.logger.Error("creating todo", "error", err)
-		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to create todo")
+		api.HandleError(w, h.logger, err, storeErrors...)
 		return
 	}
 
@@ -405,6 +405,14 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 	req, err := api.Decode[updateRequest](w, r)
 	if err != nil {
 		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid request body")
+		return
+	}
+	// Title is optional on update (nil = unchanged), but a present-yet-blank
+	// title violates chk_todo_title_not_blank — reject it here so the asymmetry
+	// with Create (which requires a non-blank title) does not let a blank
+	// through to a 500 at the DB boundary.
+	if req.Title != nil && strings.TrimSpace(*req.Title) == "" {
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "title must not be blank")
 		return
 	}
 	if req.Priority != nil && !validPriority(*req.Priority) {

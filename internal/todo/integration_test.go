@@ -26,6 +26,7 @@ package todo_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -435,5 +436,54 @@ func TestIntegration_Todo_Advance_Activate_WrongState(t *testing.T) {
 	}
 	if state != "inbox" {
 		t.Errorf("db state = %q after rejected activate, want %q (unchanged)", state, "inbox")
+	}
+}
+
+// TestIntegration_Todo_InvalidInput verifies that a client-supplied project_id
+// pointing at a non-existent project (foreign key 23503) surfaces as
+// todo.ErrInvalidInput — which the handler maps to HTTP 400 — instead of a
+// wrapped error that api.HandleError would render as an opaque 500. The store's
+// mapWriteError is shared by Create and Update, so the table drives both paths.
+func TestIntegration_Todo_InvalidInput(t *testing.T) {
+	truncate(t)
+	store := todo.NewStore(testPool)
+	ctx := t.Context()
+
+	missing := uuid.New()
+
+	tests := []struct {
+		name string
+		run  func() error
+	}{
+		{
+			name: "create with non-existent project_id (foreign key 23503)",
+			run: func() error {
+				_, err := store.Create(ctx, &todo.CreateParams{
+					Title:     "Orphan todo",
+					ProjectID: &missing,
+					CreatedBy: "human",
+				})
+				return err
+			},
+		},
+		{
+			name: "update with non-existent project_id (foreign key 23503)",
+			run: func() error {
+				existing := seedTodo(t, "Update target", "todo", "human")
+				_, err := store.Update(ctx, &todo.UpdateParams{
+					ID:        existing,
+					ProjectID: &missing,
+				})
+				return err
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := tt.run(); !errors.Is(err, todo.ErrInvalidInput) {
+				t.Fatalf("err = %v, want todo.ErrInvalidInput", err)
+			}
+		})
 	}
 }

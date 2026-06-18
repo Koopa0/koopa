@@ -17,7 +17,9 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgerrcode"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/Koopa0/koopa/internal/db"
 )
@@ -65,6 +67,17 @@ type CreateParams struct {
 	CreatedBy   string
 }
 
+// mapWriteError classifies a PostgreSQL todo-write failure into a store
+// sentinel. A foreign-key (23503) violation — a project_id pointing at a
+// non-existent project — becomes ErrInvalidInput; any other error is wrapped
+// with the supplied context.
+func mapWriteError(err error, operation string) error {
+	if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok && pgErr.Code == pgerrcode.ForeignKeyViolation {
+		return ErrInvalidInput
+	}
+	return fmt.Errorf("%s: %w", operation, err)
+}
+
 // Create inserts a new todo item in inbox state.
 func (s *Store) Create(ctx context.Context, p *CreateParams) (*Item, error) {
 	r, err := s.q.CreateTodoItem(ctx, db.CreateTodoItemParams{
@@ -78,7 +91,7 @@ func (s *Store) Create(ctx context.Context, p *CreateParams) (*Item, error) {
 		CreatedBy:   p.CreatedBy,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("creating todo item: %w", err)
+		return nil, mapWriteError(err, "creating todo item")
 	}
 	t := rowToItem(&r)
 	return &t, nil
@@ -172,7 +185,7 @@ func (s *Store) Update(ctx context.Context, p *UpdateParams) (*Item, error) {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrNotFound
 		}
-		return nil, fmt.Errorf("updating todo item %s: %w", p.ID, err)
+		return nil, mapWriteError(err, fmt.Sprintf("updating todo item %s", p.ID))
 	}
 	t := rowToItem(&r)
 	return &t, nil
@@ -269,6 +282,10 @@ func rowToItem(r *db.Todo) Item {
 
 // ErrNotFound indicates the todo item does not exist.
 var ErrNotFound = errors.New("todo: not found")
+
+// ErrInvalidInput signals a client-supplied value the database rejected:
+// a project_id foreign key pointing at a non-existent project.
+var ErrInvalidInput = errors.New("todo: invalid input")
 
 // State represents a todo item's GTD lifecycle state. Mirrors the todo_state
 // SQL enum. Uses underscores (in_progress) to match Go naming conventions.
