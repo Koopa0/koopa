@@ -1921,8 +1921,8 @@ CREATE TABLE learning_hypotheses (
     metadata                    JSONB,
     observed_date               DATE NOT NULL,
     resolved_at                 TIMESTAMPTZ,
-    resolved_by_attempt_id      UUID REFERENCES learning_attempts(id) ON DELETE SET NULL,
-    resolved_by_observation_id  UUID REFERENCES learning_attempt_observations(id) ON DELETE SET NULL,
+    resolved_by_attempt_id      UUID REFERENCES learning_attempts(id) ON DELETE RESTRICT,
+    resolved_by_observation_id  UUID REFERENCES learning_attempt_observations(id) ON DELETE RESTRICT,
     resolution_summary          TEXT,
     created_at                  TIMESTAMPTZ NOT NULL DEFAULT now(),
 
@@ -1958,8 +1958,8 @@ COMMENT ON COLUMN learning_hypotheses.invalidation_condition IS 'What evidence w
 COMMENT ON COLUMN learning_hypotheses.metadata IS 'supporting_evidence, counter_evidence, conclusion, category, project, tags. Promote fields to columns when WHERE/JOIN/GROUP BY usage exceeds 3 occurrences.';
 COMMENT ON COLUMN learning_hypotheses.observed_date IS 'Date the hypothesis was first observed or recorded.';
 COMMENT ON COLUMN learning_hypotheses.resolved_at IS 'When the state transitioned to verified or invalidated. NULL otherwise. Tied to state by chk_learning_hypothesis_resolved_at.';
-COMMENT ON COLUMN learning_hypotheses.resolved_by_attempt_id IS 'Optional FK to the learning attempt whose outcome resolved this hypothesis. SET NULL on attempt deletion.';
-COMMENT ON COLUMN learning_hypotheses.resolved_by_observation_id IS 'Optional FK to the observation whose evidence resolved this hypothesis. SET NULL on observation deletion.';
+COMMENT ON COLUMN learning_hypotheses.resolved_by_attempt_id IS 'Optional FK to the learning attempt whose outcome resolved this hypothesis. RESTRICT on attempt deletion — a resolved hypothesis pins its evidence (deleting it via SET NULL would violate chk_learning_hypothesis_resolution when no other evidence column is set).';
+COMMENT ON COLUMN learning_hypotheses.resolved_by_observation_id IS 'Optional FK to the observation whose evidence resolved this hypothesis. RESTRICT on observation deletion — a resolved hypothesis pins its evidence (deleting it via SET NULL would violate chk_learning_hypothesis_resolution when no other evidence column is set).';
 COMMENT ON COLUMN learning_hypotheses.resolution_summary IS 'Free-text resolution rationale. Required when state is verified/invalidated and neither resolved_by_* FK is set.';
 
 CREATE INDEX idx_learning_hypotheses_state ON learning_hypotheses (state);
@@ -2143,9 +2143,13 @@ COMMENT ON COLUMN learning_plan_entries.completed_at IS
 -- before any covered table mutation. The triggers read this via current_setting.
 -- If unset, the actor defaults to 'system'.
 --
--- The triggers are AFTER row triggers, so a successful mutation always produces
--- exactly one activity_events row per covered transition. Bypassing the trigger
--- requires DROP TRIGGER — there is no application path that can skip it.
+-- The triggers are AFTER row triggers, so a successful mutation of a covered
+-- table always produces exactly one activity_events row per covered transition.
+-- The guarantee is scoped to covered-table mutations: the triggers fire on
+-- INSERT/UPDATE/DELETE of the tables they are attached to. A direct
+-- `INSERT INTO activity_events` fires no trigger and is accepted by the DB — it
+-- is a convention violation (the application layer must never write audit rows
+-- by hand), not something the schema blocks.
 -- ============================================================
 
 CREATE OR REPLACE FUNCTION current_actor() RETURNS TEXT AS $$
