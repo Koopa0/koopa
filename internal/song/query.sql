@@ -1,5 +1,5 @@
--- Queries for the song package. See migrations/001_initial.up.sql for the
--- songs + song_reflections tables (the ヨルシカ shelf). title_ja carries a
+-- Queries for the song package — the songs + song_reflections tables (the
+-- ヨルシカ shelf). title_ja carries a
 -- not-blank CHECK; the Go layer validates before writing so the constraint
 -- never surfaces as a 500. The study fields (lyrics_ja, translation,
 -- vocabulary) are owner-filled free text, never generated. No audit triggers

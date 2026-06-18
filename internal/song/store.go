@@ -62,7 +62,8 @@ func (s *Store) Songs(ctx context.Context) ([]Song, error) {
 }
 
 // Create inserts a new song. The study fields default to empty for the owner
-// to fill later.
+// to fill later. p is passed by pointer per the store convention; the store
+// neither retains nor mutates it, so the caller keeps ownership.
 func (s *Store) Create(ctx context.Context, p *CreateParams) (*Song, error) {
 	r, err := s.q.CreateSong(ctx, db.CreateSongParams{
 		TitleJa:     p.Title,
