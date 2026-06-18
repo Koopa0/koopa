@@ -27,13 +27,9 @@ export interface FeedEntryRow {
   title: string;
   /** RSS entry content/summary as delivered by the feed. Absent when none. */
   original_content?: string;
-  relevance_score: number;
   status: FeedEntryStatus;
   curated_content_id: string | null;
   collected_at: string;
   published_at: string | null;
-  user_feedback: 'up' | 'down' | null;
   feed_id: string | null;
 }
-
-export type FeedEntryFeedback = 'up' | 'down';

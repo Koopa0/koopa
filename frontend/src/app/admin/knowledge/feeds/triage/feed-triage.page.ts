@@ -12,23 +12,23 @@ import { Router } from '@angular/router';
 import type { FeedEntryRow } from '../../../../core/models/feed.model';
 import { FeedService } from '../../../../core/services/feed.service';
 import { NotificationService } from '../../../../core/services/notification.service';
+import { KbdComponent } from '../../../../shared/components/kbd/kbd.component';
 import { AdminTopbarService } from '../../../admin-layout/admin-topbar.service';
 
 /**
- * Feed Triage Inbox-zero card flow:
- * show one entry at a time, `D` drafts / `I` ignores / `u` undoes the
- * last action. The spec prescribes two actions only (Draft + Ignore)
- * plus undo; relevance feedback is exposed inline as smaller buttons.
+ * Feed Triage inbox-zero card flow: show one unread entry at a time.
+ * `D` opens the source in a new tab, `I` ignores, `U` steps back to
+ * re-examine the previous card. Entries arrive newest-first from the
+ * backend default order (COALESCE(published_at, collected_at) DESC), so
+ * the page sends no sort param.
  *
- * Draft currently calls out to the Content Editor in a new tab once a
- * content row exists — the two-step curate flow (POST /contents →
- * POST /feed-entries/:id/curate) lands when a quick-create dialog is
- * available. For now Draft records a placeholder curate action that
- * will surface an "endpoint not yet wired" toast — safe to defer.
+ * Open source opens the source URL and leaves the entry unread — the
+ * two-step curate flow (POST /contents → POST /feed-entries/:id/curate)
+ * happens in Cowork until a quick-create dialog lands here.
  */
 @Component({
   selector: 'app-feed-triage-page',
-  imports: [DatePipe],
+  imports: [DatePipe, KbdComponent],
   templateUrl: './feed-triage.page.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
@@ -47,7 +47,6 @@ export class FeedTriagePageComponent {
     stream: () =>
       this.feedService.listEntries({
         status: 'unread',
-        sort: 'relevance',
         perPage: 50,
       }),
   });
@@ -74,6 +73,8 @@ export class FeedTriagePageComponent {
   protected readonly remaining = computed(() =>
     Math.max(0, this.total() - this.cursor()),
   );
+  /** 1-based position of the current card in the loaded queue. */
+  protected readonly position = computed(() => this.cursor() + 1);
 
   private readonly _isActioning = signal(false);
   protected readonly isActioning = this._isActioning.asReadonly();
@@ -95,11 +96,6 @@ export class FeedTriagePageComponent {
       ],
     });
     this.destroyRef.onDestroy(() => this.topbar.reset());
-  }
-
-  protected relevanceDots(score: number): string {
-    const rounded = Math.min(5, Math.max(0, Math.round(score * 5)));
-    return '●'.repeat(rounded) + '○'.repeat(5 - rounded);
   }
 
   protected ignore(): void {
@@ -135,25 +131,6 @@ export class FeedTriagePageComponent {
     this.notifications.info(
       'Opened in a new tab. Entry stays unread — draft it in Cowork to curate.',
     );
-  }
-
-  protected feedback(dir: 'up' | 'down'): void {
-    const entry = this.current();
-    if (!entry || this._isActioning()) return;
-
-    this._isActioning.set(true);
-    this.feedService.feedback(entry.id, dir).subscribe({
-      next: () => {
-        this._isActioning.set(false);
-        this.notifications.success(
-          dir === 'up' ? 'Marked relevant.' : 'Marked not relevant.',
-        );
-      },
-      error: () => {
-        this._isActioning.set(false);
-        this.notifications.error('Failed to record feedback.');
-      },
-    });
   }
 
   /**

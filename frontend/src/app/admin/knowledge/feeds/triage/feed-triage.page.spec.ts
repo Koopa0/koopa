@@ -9,16 +9,14 @@ import { vi } from 'vitest';
 
 import { FeedTriagePageComponent } from './feed-triage.page';
 import type { FeedEntryRow } from '../../../../core/models/feed.model';
-import { NotificationService } from '../../../../core/services/notification.service';
 
 // Contract guard for the feed-triage card flow. The fixture mirrors the
 // REAL feed-entries wire — entry.Item as encoded by
 // internal/feed/entry/handler.go:32-49 (collected.go:32-47): FLAT
-// feed_name + feed_id, original_content (omitempty), relevance_score
-// always present, NO excerpt / topic_slugs / nested feed object. The page
-// previously read a nested { feed: {name} } + excerpt + topic_slugs shape
-// that the backend never emits; this pins the flat shape so the drift
-// can't recur silently.
+// feed_name + feed_id, original_content (omitempty), NO excerpt /
+// topic_slugs / nested feed object. The page previously read a nested
+// { feed: {name} } + excerpt + topic_slugs shape that the backend never
+// emits; this pins the flat shape so the drift can't recur silently.
 const ENTRIES_URL = '/api/admin/knowledge/feed-entries';
 
 /** A full wire entry — the flat fields GET feed-entries returns. */
@@ -29,12 +27,10 @@ function entry(overrides: Partial<FeedEntryRow>): FeedEntryRow {
     feed_name: 'Example Feed',
     title: 'A Post About Go Value Semantics',
     original_content: 'Copies are not the enemy.',
-    relevance_score: 0.82,
     status: 'unread',
     curated_content_id: null,
     collected_at: '2026-06-16T08:00:00Z',
     published_at: '2026-06-15T12:00:00Z',
-    user_feedback: null,
     feed_id: 'f1',
     ...overrides,
   };
@@ -83,7 +79,7 @@ describe('FeedTriagePageComponent', () => {
     fixture.detectChanges();
   }
 
-  it('should request unread entries sorted by relevance with the page size', async () => {
+  it('should request unread entries with the page size and no sort param', async () => {
     fixture = TestBed.createComponent(FeedTriagePageComponent);
     fixture.detectChanges();
     await new Promise<void>((r) => setTimeout(r, 0));
@@ -92,8 +88,10 @@ describe('FeedTriagePageComponent', () => {
     const req = httpMock.expectOne((r) => r.url.endsWith(ENTRIES_URL));
     expect(req.request.method).toBe('GET');
     expect(req.request.params.get('status')).toBe('unread');
-    expect(req.request.params.get('sort')).toBe('relevance');
     expect(req.request.params.get('per_page')).toBe('50');
+    // No sort param: triage leans on the backend default order
+    // (COALESCE(published_at, collected_at) DESC = newest-first).
+    expect(req.request.params.has('sort')).toBe(false);
     // The unwired pre-contraction params must never be sent.
     expect(req.request.params.has('feed_id')).toBe(false);
     expect(req.request.params.has('topic_slug')).toBe(false);
@@ -103,7 +101,7 @@ describe('FeedTriagePageComponent', () => {
     fixture.detectChanges();
   });
 
-  it('should render the flat wire shape — feed_name, relevance_score and original_content', async () => {
+  it('should render the flat wire shape — feed_name and original_content', async () => {
     await render([entry({})]);
 
     const card = testid('feed-triage-card');
@@ -113,8 +111,6 @@ describe('FeedTriagePageComponent', () => {
     );
     // feed_name is a flat string on the entry, not entry.feed.name.
     expect(card?.textContent).toContain('Example Feed');
-    // relevance_score is always present and rendered to 2 dp.
-    expect(testid('feed-triage-relevance')?.textContent).toContain('0.82');
     // The snippet derives from original_content (no excerpt field exists).
     expect(testid('feed-triage-excerpt')?.textContent).toContain(
       'Copies are not the enemy.',
@@ -145,24 +141,6 @@ describe('FeedTriagePageComponent', () => {
     fixture.detectChanges();
 
     expect(testid('feed-triage-title')?.textContent).toContain('Second Entry');
-  });
-
-  it('should record relevance feedback against the current entry', async () => {
-    await render([entry({ id: 'e1' })]);
-
-    (testid('feed-triage-feedback-up') as HTMLButtonElement).click();
-    const req = httpMock.expectOne((r) =>
-      r.url.endsWith(`${ENTRIES_URL}/e1/feedback`),
-    );
-    expect(req.request.body).toEqual({ feedback: 'up' });
-    req.flush({});
-    await fixture.whenStable();
-    fixture.detectChanges();
-
-    const notifications = TestBed.inject(NotificationService).notifications();
-    expect(notifications.some((n) => n.message === 'Marked relevant.')).toBe(
-      true,
-    );
   });
 
   it('should show the inbox-zero state when there are no unread entries', async () => {
