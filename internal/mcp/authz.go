@@ -85,10 +85,9 @@ const unknownAgent = "unknown"
 // asserts only that a mutating call carries a KNOWN author, not that the
 // author holds any particular capability or platform. It exists for the
 // write tools that previously had no identity gate at all (capture_inbox,
-// track_hypothesis, start_session, record_attempt, end_session, manage_plan,
-// create_note, update_note, update_note_maturity, manage_feeds), where an
-// unregistered or unidentified caller could write to the knowledge base /
-// settings.
+// draft_hypothesis, start_session, record_attempt, end_session, manage_plan,
+// create_note, update_note), where an unregistered or unidentified caller
+// could write to the knowledge base / settings.
 //
 // It reuses the same registry requireAuthor already consults — no parallel
 // map — and refuses two callers:

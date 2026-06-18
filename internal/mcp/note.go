@@ -1,10 +1,10 @@
 // Copyright 2026 Koopa. All rights reserved.
 
-// note.go holds the Zettelkasten note MCP tools: create_note,
-// update_note, update_note_maturity. Three flat handlers, no
-// multiplexer (policy: `.claude/rules/mcp-decision-policy.md` §10 —
-// multiplexers only when all actions share the same workflow + ≤6
-// actions; three distinct note-lifecycle intents do not justify one).
+// note.go holds the Zettelkasten note MCP tools: create_note and
+// update_note. Two flat handlers, no multiplexer (multiplexers only
+// when all actions share the same workflow + ≤6 actions; two distinct
+// note-lifecycle intents do not justify one). Maturity transitions are
+// not on the MCP surface — they go through the admin HTTP endpoint.
 //
 // Not to be confused with agent_note.go — that file handles the
 // runtime log on internal/agent/note. Keeping the filename parallel to
@@ -13,8 +13,8 @@
 //
 // # Authorization stance — intentionally open
 //
-// All three handlers (create_note, update_note, update_note_maturity)
-// accept any registered caller without an author allowlist. Notes form
+// Both handlers (create_note, update_note) accept any registered
+// caller without an author allowlist. Notes form
 // the AI-for-human / human-for-human knowledge layer: any agent that
 // observes something note-worthy may write it down, and the
 // front-end review surface (maturity transitions, curation tools) is
@@ -23,10 +23,11 @@
 // agent_notes(kind=context|reflection) and lose the slug-addressable
 // knowledge graph that notes provide.
 //
-// This contrasts with content (publish_content gated to human) and with
-// commit_proposal (high-commitment types gated to human). Notes are not
-// commitments and never publish; the looser rule is intentional, not
-// an oversight.
+// This contrasts with content (publishing is gated to the human in the
+// admin UI) and with high-commitment entities — goals, projects,
+// learning plans — which the agent surface cannot create at all. Notes
+// are not commitments and never publish; the looser rule is
+// intentional, not an oversight.
 
 package mcp
 
@@ -119,8 +120,9 @@ func (s *Server) createNote(ctx context.Context, _ *mcp.CallToolRequest, input C
 // update_note
 // ---------------------------------------------------------------
 
-// UpdateNoteInput is the tight input for update_note.
-// Maturity is intentionally NOT in this tool — see update_note_maturity.
+// UpdateNoteInput is the tight input for update_note. Maturity is
+// intentionally NOT in this tool — transitions go through the admin HTTP
+// endpoint (POST /api/admin/knowledge/notes/{id}/maturity), not MCP.
 type UpdateNoteInput struct {
 	As     string  `json:"as,omitempty" jsonschema_description:"Self-identification."`
 	NoteID string  `json:"note_id" jsonschema:"required" jsonschema_description:"UUID of the note to update."`
