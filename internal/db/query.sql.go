@@ -11457,6 +11457,43 @@ func (q *Queries) TodoItemsDueOn(ctx context.Context, targetDate *time.Time) ([]
 	return items, nil
 }
 
+const todosByCreator = `-- name: TodosByCreator :many
+SELECT id, title, state
+FROM todos
+WHERE created_by = $1
+ORDER BY created_at DESC
+`
+
+type TodosByCreatorRow struct {
+	ID    uuid.UUID `json:"id"`
+	Title string    `json:"title"`
+	State TodoState `json:"state"`
+}
+
+// List todos created by a given agent, newest first. Powers the list_tasks
+// MCP readback loop: an agent reads the disposition of the todos it created.
+// created_by is the resolved caller identity (caller-scoped), never a
+// client-supplied filter. Uses idx_todos_created_by (created_by, created_at DESC).
+func (q *Queries) TodosByCreator(ctx context.Context, createdBy string) ([]TodosByCreatorRow, error) {
+	rows, err := q.db.Query(ctx, todosByCreator, createdBy)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []TodosByCreatorRow{}
+	for rows.Next() {
+		var i TodosByCreatorRow
+		if err := rows.Scan(&i.ID, &i.Title, &i.State); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const toggleMilestone = `-- name: ToggleMilestone :one
 UPDATE milestones SET
     completed_at = CASE WHEN completed_at IS NULL THEN now() ELSE NULL END,

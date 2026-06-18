@@ -94,6 +94,16 @@ WHERE state != 'done' AND title ILIKE '%' || @search_title || '%'
 ORDER BY due NULLS LAST, updated_at ASC
 LIMIT 10;
 
+-- name: TodosByCreator :many
+-- List todos created by a given agent, newest first. Powers the list_tasks
+-- MCP readback loop: an agent reads the disposition of the todos it created.
+-- created_by is the resolved caller identity (caller-scoped), never a
+-- client-supplied filter. Uses idx_todos_created_by (created_by, created_at DESC).
+SELECT id, title, state
+FROM todos
+WHERE created_by = @created_by
+ORDER BY created_at DESC;
+
 -- name: UpdateTodoItemState :one
 -- Update a todo item's state. Sets completed_at on transition to done.
 UPDATE todos SET

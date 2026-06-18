@@ -13,22 +13,23 @@ is hand-maintained.
 > Run `go generate ./internal/mcp/ops` after any change to the tool surface;
 > the drift test `TestToolInventoryDocInSync` fails CI if this is stale.
 
-**14 tools** across 5 domains.
+**15 tools** across 5 domains.
 
 | Domain | Count |
 |---|---|
 | `query` | 2 |
-| `daily` | 4 |
+| `daily` | 5 |
 | `learning` | 6 |
 | `content` | 2 |
 | `system` | 0 |
-| **Total** | **14** |
+| **Total** | **15** |
 
 | Tool | Domain | Writability | Purpose |
 |---|---|---|---|
 | `brief` | `query` | read_only | Read-only planning-state pull |
 | `search_knowledge` | `query` | read_only | Search across content (articles, build logs, TILs, etc.) and notes (Zettelkasten) |
 | `capture_inbox` | `daily` | additive | Quick task capture to inbox |
+| `list_tasks` | `daily` | read_only | Read-only readback of the todos you created (created_by = your resolved caller identity) so you can learn their disposition |
 | `plan_day` | `daily` | idempotent | Set the day's plan as one atomic replacement |
 | `propose_area` | `daily` | additive | Propose a PARA area (ongoing domain of responsibility) as an INERT draft in status=proposed |
 | `propose_goal` | `daily` | additive | Propose a goal (with optional ordered milestones) as an INERT draft in status=proposed |

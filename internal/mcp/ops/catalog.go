@@ -224,6 +224,19 @@ func ProposeGoal() Meta {
 	}
 }
 
+// ListTasks returns metadata for the read-only proposal-readback tool — an
+// agent reads the disposition of the todos it created.
+func ListTasks() Meta {
+	return Meta{
+		Name:        "list_tasks",
+		Domain:      DomainDaily,
+		Writability: ReadOnly,
+		Stability:   StabilityStable,
+		Since:       "1.3.0",
+		Description: "Read-only readback of the todos you created (created_by = your resolved caller identity) so you can learn their disposition — accept = state todo/done, pending = inbox, reject = absent from this list (the owner triages in admin; a rejected proposal simply disappears). Caller-scoped: returns only your own todos, never the owner's personal todos or another agent's. Use to close the capture_inbox loop — after you push a suggestion, list_tasks shows how the owner acted on it.",
+	}
+}
+
 // Note tools — flat per-intent design. Three tools map 1:1 to user intent.
 
 // CreateNote returns metadata for create_note.
@@ -268,6 +281,7 @@ func All() []Meta {
 		DraftHypothesis(),
 		ProposeArea(),
 		ProposeGoal(),
+		ListTasks(),
 		CreateNote(),
 		UpdateNote(),
 	}

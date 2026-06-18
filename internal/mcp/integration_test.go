@@ -3831,6 +3831,105 @@ func TestIntegration_ProposeArea_RationalePersistsTriageOnly(t *testing.T) {
 	}
 }
 
+// seedTodoForCreator inserts a todo with an explicit created_by, state, and
+// created_at so the list_tasks readback tests can assert creator-scoping,
+// state passthrough, and newest-first ordering deterministically. created_by
+// must name a registered agent (todos.created_by FK → agents). A done state
+// carries completed_at to satisfy chk_todo_completed_at_consistency. The raw
+// INSERT fires trg_todos_audit with current_actor() falling back to 'system',
+// harmless here — list_tasks reads todos.created_by, not the audit log.
+func seedTodoForCreator(t *testing.T, createdBy, title, state string, createdAt time.Time) uuid.UUID {
+	t.Helper()
+	var completedAt *time.Time
+	if state == "done" {
+		completedAt = &createdAt
+	}
+	var id uuid.UUID
+	if err := testPool.QueryRow(t.Context(),
+		`INSERT INTO todos (title, state, created_by, created_at, completed_at)
+		 VALUES ($1, $2::todo_state, $3, $4, $5)
+		 RETURNING id`,
+		title, state, createdBy, createdAt, completedAt,
+	).Scan(&id); err != nil {
+		t.Fatalf("seedTodoForCreator(created_by=%q, state=%q): %v", createdBy, state, err)
+	}
+	return id
+}
+
+// TestIntegration_ListTasks_ReturnsCallerTodos drives the happy path: a caller
+// reads back exactly the todos it created, newest first, with state and
+// created_by carried through. Two todos in distinct states (done newest, inbox
+// older) pin both the ordering and the State passthrough.
+func TestIntegration_ListTasks_ReturnsCallerTodos(t *testing.T) {
+	s := setupServer(t)
+
+	older := time.Now().Add(-2 * time.Hour)
+	newer := time.Now().Add(-1 * time.Hour)
+	oldID := seedTodoForCreator(t, "planner", "older proposal", "inbox", older)
+	newID := seedTodoForCreator(t, "planner", "newer proposal", "done", newer)
+
+	_, out, err := callHandlerAs(t, "planner", s.listTasks, ListTasksInput{})
+	if err != nil {
+		t.Fatalf("listTasks: %v", err)
+	}
+
+	want := []TaskListItem{
+		{ID: newID.String(), Title: "newer proposal", State: "done", CreatedBy: "planner"},
+		{ID: oldID.String(), Title: "older proposal", State: "inbox", CreatedBy: "planner"},
+	}
+	if diff := cmp.Diff(want, out.Tasks); diff != "" {
+		t.Errorf("listTasks(planner) mismatch (-want +got):\n%s", diff)
+	}
+}
+
+// TestIntegration_ListTasks_CallerGate asserts the registered-caller gate: the
+// zero-privilege "unknown" fallback and a fabricated name are refused. Without
+// the gate the handler would fall through to TodosByCreator and return an empty
+// list with no error, so a nil error here means the gate is missing.
+func TestIntegration_ListTasks_CallerGate(t *testing.T) {
+	s := setupServer(t)
+
+	for _, caller := range []string{"unknown", "fabricated-agent"} {
+		if _, _, err := callHandlerAs(t, caller, s.listTasks, ListTasksInput{}); err == nil {
+			t.Errorf("listTasks as %q err = nil, want registered-caller refusal", caller)
+		}
+	}
+}
+
+// TestIntegration_ListTasks_CallerScoped pins the privacy invariant: the list
+// is scoped to the resolved caller, so caller A (planner) never sees caller B's
+// (learning-studio) todos.
+func TestIntegration_ListTasks_CallerScoped(t *testing.T) {
+	s := setupServer(t)
+
+	mineID := seedTodoForCreator(t, "planner", "planner todo", "inbox", time.Now())
+	theirsID := seedTodoForCreator(t, "learning-studio", "studio todo", "inbox", time.Now())
+
+	_, out, err := callHandlerAs(t, "planner", s.listTasks, ListTasksInput{})
+	if err != nil {
+		t.Fatalf("listTasks: %v", err)
+	}
+
+	var sawMine, sawTheirs bool
+	for _, ti := range out.Tasks {
+		switch ti.ID {
+		case mineID.String():
+			sawMine = true
+		case theirsID.String():
+			sawTheirs = true
+		}
+		if ti.CreatedBy != "planner" {
+			t.Errorf("listTasks(planner) returned created_by=%q, want planner-scoped only", ti.CreatedBy)
+		}
+	}
+	if !sawMine {
+		t.Errorf("listTasks(planner) missing the caller's own todo %s", mineID)
+	}
+	if sawTheirs {
+		t.Errorf("listTasks(planner) leaked another agent's todo %s (caller-scoping violated)", theirsID)
+	}
+}
+
 // TestIntegration_BriefReflection_CountsFromTodoState pins that brief(reflection)
 // derives completed/deferred/planned from each planned todo's CURRENT state, not
 // the daily_plan_item.status column (which has no write path — it stays 'planned'

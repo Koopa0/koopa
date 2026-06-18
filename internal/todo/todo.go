@@ -141,6 +141,27 @@ func (s *Store) PendingItemsByTitle(ctx context.Context, title string) ([]Item, 
 	return items, nil
 }
 
+// TodosByCreator returns the todos created by createdBy, newest first. It
+// backs the list_tasks MCP readback loop: an agent reads the disposition
+// (state) of the todos it created. createdBy is the resolved caller
+// identity — caller-scoped, never a client-supplied filter — so the result
+// is exactly the caller's own todos. Backed by idx_todos_created_by.
+func (s *Store) TodosByCreator(ctx context.Context, createdBy string) ([]CreatorItem, error) {
+	rows, err := s.q.TodosByCreator(ctx, createdBy)
+	if err != nil {
+		return nil, fmt.Errorf("listing todos created by %q: %w", createdBy, err)
+	}
+	items := make([]CreatorItem, len(rows))
+	for i := range rows {
+		items[i] = CreatorItem{
+			ID:    rows[i].ID,
+			Title: rows[i].Title,
+			State: State(rows[i].State),
+		}
+	}
+	return items, nil
+}
+
 // UpdateState updates a todo item's state.
 func (s *Store) UpdateState(ctx context.Context, id uuid.UUID, state State) (*Item, error) {
 	r, err := s.q.UpdateTodoItemState(ctx, db.UpdateTodoItemStateParams{
@@ -427,6 +448,17 @@ func derefStr(p *string) string {
 		return *p
 	}
 	return ""
+}
+
+// CreatorItem is a slim todo projection for the list_tasks readback loop —
+// just enough for an agent to learn the disposition (state) of a todo it
+// created. The heavyweight fields (due / energy / project / recurrence) the
+// readback does not need are omitted; created_by is implied by the query
+// filter and supplied by the caller, so it is not re-selected here.
+type CreatorItem struct {
+	ID    uuid.UUID
+	Title string
+	State State
 }
 
 // Pending is a lightweight projection used by morning_context.
