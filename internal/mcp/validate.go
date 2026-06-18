@@ -48,16 +48,6 @@ func isValidEnergy(e string) bool {
 	}
 }
 
-// isValidContentStatus mirrors the contents.status CHECK.
-func isValidContentStatus(s string) bool {
-	switch s {
-	case "draft", "review", "published", "archived":
-		return true
-	default:
-		return false
-	}
-}
-
 // isValidPlanEntryStatus mirrors the values manage_plan(action=update_entry)
 // is allowed to write to learning_plan_entries.status.
 func isValidPlanEntryStatus(s string) bool {
