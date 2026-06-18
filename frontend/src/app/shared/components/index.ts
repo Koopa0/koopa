@@ -10,3 +10,18 @@ export {
   type PickerEntity,
   type PickerSearchFn,
 } from './entity-picker/entity-picker.component';
+
+/* ── DS core primitives (Claude Design "koopa.dev Design System" ingest) ── */
+export {
+  ButtonComponent,
+  type ButtonVariant,
+  type ButtonSize,
+} from './button/button.component';
+export { CardComponent, type CardPadding } from './card/card.component';
+export { BadgeComponent, type BadgeTone } from './badge/badge.component';
+export {
+  CalloutComponent,
+  type CalloutVariant,
+} from './callout/callout.component';
+export { AlertComponent, type AlertVariant } from './alert/alert.component';
+export { TabsComponent, type TabItem } from './tabs/tabs.component';

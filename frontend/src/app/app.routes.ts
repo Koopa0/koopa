@@ -15,6 +15,13 @@ export const routes: Routes = [
   },
   { path: 'home', redirectTo: '/', pathMatch: 'full' },
   {
+    path: 'design-system',
+    loadComponent: () =>
+      import('./pages/design-system/design-system').then(
+        (m) => m.DesignSystemComponent,
+      ),
+  },
+  {
     path: 'articles',
     loadComponent: () =>
       import('./pages/articles/articles').then((m) => m.ArticlesComponent),
@@ -186,9 +193,9 @@ export const routes: Routes = [
       {
         path: 'commitment/projects/:id',
         loadComponent: () =>
-          import(
-            './admin/commitment/projects/profile/project-profile.page'
-          ).then((m) => m.ProjectProfilePageComponent),
+          import('./admin/commitment/projects/profile/project-profile.page').then(
+            (m) => m.ProjectProfilePageComponent,
+          ),
       },
 
       // ── Knowledge ────────────────────────────────────────────────
@@ -345,9 +352,9 @@ export const routes: Routes = [
       {
         path: 'learning/sessions/:id',
         loadComponent: () =>
-          import(
-            './admin/learning/sessions/timeline/session-timeline.page'
-          ).then((m) => m.SessionTimelinePageComponent),
+          import('./admin/learning/sessions/timeline/session-timeline.page').then(
+            (m) => m.SessionTimelinePageComponent,
+          ),
       },
       {
         path: 'learning/plans',
@@ -380,16 +387,16 @@ export const routes: Routes = [
       {
         path: 'learning/hypotheses/new',
         loadComponent: () =>
-          import(
-            './admin/learning/hypotheses/create/hypothesis-create.page'
-          ).then((m) => m.HypothesisCreatePageComponent),
+          import('./admin/learning/hypotheses/create/hypothesis-create.page').then(
+            (m) => m.HypothesisCreatePageComponent,
+          ),
       },
       {
         path: 'learning/hypotheses/:id',
         loadComponent: () =>
-          import(
-            './admin/learning/hypotheses/profile/hypothesis-profile.page'
-          ).then((m) => m.HypothesisProfilePageComponent),
+          import('./admin/learning/hypotheses/profile/hypothesis-profile.page').then(
+            (m) => m.HypothesisProfilePageComponent,
+          ),
       },
 
       // ── System ───────────────────────────────────────────────────

@@ -9,12 +9,10 @@
    utilities reach them through the @theme aliases below.
    ============================================================ */
 :root,
-[data-theme='dark'] {
-  /* Brand — logo cyan-teal, used surgically */
-  --brand: oklch(0.72 0.1 210);
-  --brand-strong: oklch(0.64 0.12 210);
-  --brand-muted: oklch(0.72 0.1 210 / 0.14);
-  --brand-faint: oklch(0.72 0.1 210 / 0.06);
+[data-theme='dark'],
+.dark {
+  /* Brand/accent derived from the accent-knob layer (see :root below).
+     --brand* are kept as aliases of --accent* for existing component CSS. */
 
   /* Surfaces (4 elevations) */
   --bg: oklch(0.145 0.004 260);
@@ -59,11 +57,12 @@
   color-scheme: dark;
 }
 
-[data-theme='light'] {
-  --brand: oklch(0.56 0.12 210);
-  --brand-strong: oklch(0.48 0.13 210);
-  --brand-muted: oklch(0.56 0.12 210 / 0.12);
-  --brand-faint: oklch(0.56 0.12 210 / 0.05);
+[data-theme='light'],
+.light {
+  /* same hue; only nudge accent L/C darker for contrast on paper.
+     --accent/--brand (defined once in :root) resolve lazily to these. */
+  --accent-l: 0.55;
+  --accent-c: 0.13;
 
   --bg: oklch(0.985 0.004 90); /* warm paper — not clinical white */
   --panel: oklch(1 0 0);
@@ -92,6 +91,55 @@
   --shadow-2: 0 18px 40px -12px rgb(15 23 42 / 0.15), 0 4px 12px rgb(15 23 42 / 0.08);
 
   color-scheme: light;
+}
+
+/* ============================================================
+   Accent — single-knob theming (koopa = cyan-teal, hue 210).
+   Swap the whole brand by changing --accent-h; light mode tweaks L/C
+   (see [data-theme='light']). --brand* stay as aliases so existing
+   component CSS + .prose are unchanged. Mirrors the upstream DS
+   (colors_and_type.css + themes/accents.css `.theme-koopa`).
+   ============================================================ */
+:root {
+  --accent-h: 210; /* koopa cyan-teal, from the turtle logo */
+  --accent-c: 0.1;
+  --accent-l: 0.68;
+  --accent: oklch(var(--accent-l) var(--accent-c) var(--accent-h));
+  --accent-strong: oklch(calc(var(--accent-l) - 0.08) calc(var(--accent-c) + 0.02) var(--accent-h));
+  --accent-muted: oklch(var(--accent-l) var(--accent-c) var(--accent-h) / 0.14);
+  --accent-faint: oklch(var(--accent-l) var(--accent-c) var(--accent-h) / 0.06);
+  --on-accent: oklch(0.14 0.02 var(--accent-h));
+
+  /* aliases — existing component CSS + .prose reference --brand* */
+  --brand: var(--accent);
+  --brand-strong: var(--accent-strong);
+  --brand-muted: var(--accent-muted);
+  --brand-faint: var(--accent-faint);
+
+  /* Tonal ramps (Tailwind-style 50–950); accent ramp re-tints with --accent-h */
+  --accent-50: oklch(0.97 0.018 var(--accent-h));
+  --accent-100: oklch(0.93 0.04 var(--accent-h));
+  --accent-200: oklch(0.87 0.07 var(--accent-h));
+  --accent-300: oklch(0.79 0.105 var(--accent-h));
+  --accent-400: oklch(0.7 0.14 var(--accent-h));
+  --accent-500: oklch(0.62 0.165 var(--accent-h));
+  --accent-600: oklch(0.55 0.175 var(--accent-h));
+  --accent-700: oklch(0.48 0.16 var(--accent-h));
+  --accent-800: oklch(0.4 0.13 var(--accent-h));
+  --accent-900: oklch(0.33 0.1 var(--accent-h));
+  --accent-950: oklch(0.24 0.07 var(--accent-h));
+
+  --neutral-50: oklch(0.985 0.002 260);
+  --neutral-100: oklch(0.965 0.003 260);
+  --neutral-200: oklch(0.92 0.004 260);
+  --neutral-300: oklch(0.855 0.005 260);
+  --neutral-400: oklch(0.71 0.006 260);
+  --neutral-500: oklch(0.58 0.006 260);
+  --neutral-600: oklch(0.47 0.006 260);
+  --neutral-700: oklch(0.38 0.006 260);
+  --neutral-800: oklch(0.275 0.005 260);
+  --neutral-900: oklch(0.2 0.004 260);
+  --neutral-950: oklch(0.15 0.004 260);
 }
 
 /* Static design scales (theme-independent) */
@@ -210,6 +258,94 @@
 
   /* Reading measure — keeps the existing max-w-article utility, retuned to DS */
   --container-article: 680px;
+}
+
+/* ============================================================
+   shadcn / Tailwind-v4 bridge — expose the SAME semantic names that
+   shadcn(-Angular), Catalyst and templUI use (bg-primary,
+   text-muted-foreground, bg-card, bg-sidebar, ring, chart-*) mapped
+   onto our tokens. Brand stays swappable via --accent.
+   Mirrors the upstream DS tailwind-bridge.css.
+   ============================================================ */
+:root {
+  --background: var(--bg);
+  --foreground: var(--fg);
+  --card: var(--panel);
+  --card-foreground: var(--fg);
+  --popover: var(--elevated);
+  --popover-foreground: var(--fg);
+  --primary: var(--accent);
+  --primary-foreground: var(--on-accent);
+  --secondary: var(--elevated);
+  --secondary-foreground: var(--fg);
+  --muted: var(--elevated);
+  --muted-foreground: var(--fg-muted);
+  --destructive: var(--error);
+  --destructive-foreground: var(--on-accent);
+  --input: var(--border);
+  --ring: var(--accent);
+  --selection: var(--accent-muted);
+
+  /* sidebar (admin shell) */
+  --sidebar: var(--panel);
+  --sidebar-foreground: var(--fg);
+  --sidebar-primary: var(--accent);
+  --sidebar-primary-foreground: var(--on-accent);
+  --sidebar-accent: var(--overlay);
+  --sidebar-accent-foreground: var(--fg);
+  --sidebar-border: var(--border);
+  --sidebar-ring: var(--accent);
+
+  /* data-viz — distinct hues sharing the accent feel */
+  --chart-1: var(--accent);
+  --chart-2: oklch(0.7 0.13 160);
+  --chart-3: oklch(0.74 0.14 70);
+  --chart-4: oklch(0.7 0.15 300);
+  --chart-5: oklch(0.68 0.16 20);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  /* accent tonal ramp as utilities (bg-accent-500, text-accent-300, …) */
+  --color-accent-50: var(--accent-50);
+  --color-accent-100: var(--accent-100);
+  --color-accent-200: var(--accent-200);
+  --color-accent-300: var(--accent-300);
+  --color-accent-400: var(--accent-400);
+  --color-accent-500: var(--accent-500);
+  --color-accent-600: var(--accent-600);
+  --color-accent-700: var(--accent-700);
+  --color-accent-800: var(--accent-800);
+  --color-accent-900: var(--accent-900);
+  --color-accent-950: var(--accent-950);
 }
 
 /* ============================================================
