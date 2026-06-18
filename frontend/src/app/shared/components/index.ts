@@ -53,10 +53,6 @@ export {
   ProgressComponent,
   type ProgressTone,
 } from './progress/progress.component';
-export {
-  SkeletonComponent,
-  type SkeletonVariant,
-} from './skeleton/skeleton.component';
 export { HextileComponent } from './hextile/hextile.component';
 
 /* more */
@@ -71,10 +67,6 @@ export {
   SeparatorComponent,
   type SeparatorOrientation,
 } from './separator/separator.component';
-export {
-  SpinnerComponent,
-  type SpinnerSize,
-} from './spinner/spinner.component';
 
 /* forms */
 export { InputComponent, type InputSize } from './input/input.component';
@@ -114,17 +106,6 @@ export {
   type ContentType,
 } from './content-type/content-type.component';
 
-/* interactive (toast / code / command palette) */
-export {
-  ToastService,
-  type Toast,
-  type ToastInput,
-  type ToastVariant,
-} from './toast/toast.service';
-export { ToastComponent } from './toast/toast.component';
-export { ToastHostComponent } from './toast-host/toast-host.component';
+/* interactive — toast & command palette already exist under src/app/shared/
+   (app-wired); only the new, non-duplicated code block ships from here. */
 export { CodeBlockComponent } from './code-block/code-block.component';
-export {
-  CommandPaletteComponent,
-  type CommandItem,
-} from './command-palette/command-palette.component';

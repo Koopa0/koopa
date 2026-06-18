@@ -1,9 +1,4 @@
-import {
-  Component,
-  ChangeDetectionStrategy,
-  signal,
-  inject,
-} from '@angular/core';
+import { Component, ChangeDetectionStrategy, signal } from '@angular/core';
 import {
   ButtonComponent,
   BadgeComponent,
@@ -22,14 +17,13 @@ import {
   AvatarComponent,
   AvatarGroupComponent,
   ProgressComponent,
-  SkeletonComponent,
   HextileComponent,
   AccordionComponent,
   AccordionItemComponent,
   DescriptionListComponent,
   StepperComponent,
   SeparatorComponent,
-  SpinnerComponent,
+  LoadingSpinnerComponent,
   InputComponent,
   TextareaComponent,
   SelectComponent,
@@ -47,16 +41,17 @@ import {
   TooltipDirective,
   DrawerComponent,
   CodeBlockComponent,
-  CommandPaletteComponent,
-  type CommandItem,
-  ToastHostComponent,
-  ToastService,
 } from '../../shared/components';
+import { SkeletonComponent } from '../../shared/skeleton/skeleton.component';
 
 /**
- * Design-system showcase — every DS core primitive ingested from the Claude
- * Design "koopa.dev Design System", in its variants. Visual + AXE/WCAG AA
- * verification surface for the ingest. Route: /design-system.
+ * Design-system showcase — DS core primitives ingested from the Claude Design
+ * "koopa.dev Design System", in their variants. Visual + AXE/WCAG AA
+ * verification surface. Route: /design-system.
+ *
+ * Note: toast and the ⌘K command palette are existing app features
+ * (src/app/shared/{toast,command-palette}) and are not re-demoed here; the
+ * spinner/skeleton demos use the existing app-loading-spinner / app-skeleton.
  */
 @Component({
   selector: 'app-design-system',
@@ -74,14 +69,14 @@ import {
     AvatarComponent,
     AvatarGroupComponent,
     ProgressComponent,
-    SkeletonComponent,
     HextileComponent,
     AccordionComponent,
     AccordionItemComponent,
     DescriptionListComponent,
     StepperComponent,
     SeparatorComponent,
-    SpinnerComponent,
+    LoadingSpinnerComponent,
+    SkeletonComponent,
     InputComponent,
     TextareaComponent,
     SelectComponent,
@@ -97,8 +92,6 @@ import {
     TooltipDirective,
     DrawerComponent,
     CodeBlockComponent,
-    CommandPaletteComponent,
-    ToastHostComponent,
   ],
   template: `
     <main class="mx-auto max-w-5xl px-6 py-12" data-testid="design-system-page">
@@ -122,7 +115,7 @@ import {
       </section>
 
       <section class="mb-12" aria-labelledby="ds-badges">
-        <h2 id="ds-badges" class="h3 mb-4">Badges · status · content-type</h2>
+        <h2 id="ds-badges" class="h3 mb-4">Badges · content-type</h2>
         <div class="flex flex-wrap items-center gap-2">
           @for (t of badgeTones; track t) {
             <app-badge [tone]="t">{{ t }}</app-badge>
@@ -194,8 +187,8 @@ import {
         <div class="mt-4 max-w-md space-y-3">
           <app-progress [value]="72" />
           <app-progress [value]="48" tone="success" label="Mastery" />
-          <app-skeleton variant="title" />
-          <app-skeleton variant="text" width="60%" />
+          <app-skeleton variant="text" />
+          <app-skeleton variant="card" />
         </div>
         <div class="mt-4 max-w-lg">
           <app-code-block lang="ts" [code]="snippet" testId="cb-demo" />
@@ -220,9 +213,9 @@ import {
         </div>
         <app-separator label="OR" class="my-4 block" />
         <div class="flex items-center gap-3">
-          <app-spinner size="sm" />
-          <app-spinner size="md" />
-          <app-spinner size="lg" />
+          <app-loading-spinner size="sm" />
+          <app-loading-spinner size="md" />
+          <app-loading-spinner size="lg" />
         </div>
       </section>
 
@@ -287,21 +280,6 @@ import {
           <app-button variant="secondary" (click)="drawerOpen.set(true)">
             Open drawer
           </app-button>
-          <app-button variant="secondary" (click)="cmdkOpen.set(true)">
-            Command palette
-          </app-button>
-          <app-button
-            variant="primary"
-            (click)="
-              toasts.push({
-                title: 'Saved',
-                desc: 'Draft stored',
-                variant: 'success',
-              })
-            "
-          >
-            Toast
-          </app-button>
         </div>
       </section>
 
@@ -314,20 +292,11 @@ import {
           >
         </div>
       </app-drawer>
-
-      <app-command-palette
-        [(open)]="cmdkOpen"
-        [items]="commands"
-        (selected)="onCommand($event)"
-      />
-      <app-toast-host />
     </main>
   `,
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class DesignSystemComponent {
-  protected readonly toasts = inject(ToastService);
-
   protected readonly buttonVariants: readonly ButtonVariant[] = [
     'primary',
     'secondary',
@@ -402,16 +371,6 @@ export class DesignSystemComponent {
   protected readonly notify = signal(true);
 
   protected readonly drawerOpen = signal(false);
-  protected readonly cmdkOpen = signal(false);
-  protected readonly commands: readonly CommandItem[] = [
-    { id: 'new', label: 'New article', group: 'Create' },
-    { id: 'search', label: 'Search', group: 'Navigate', meta: '⌘K' },
-    { id: 'theme', label: 'Toggle theme', group: 'Settings' },
-  ];
 
   protected readonly snippet = `const x = signal(0);\nconst double = computed(() => x() * 2);`;
-
-  protected onCommand(item: CommandItem): void {
-    this.toasts.push({ title: 'Command', desc: item.label });
-  }
 }
