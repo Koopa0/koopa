@@ -20,6 +20,7 @@ sql:
       - "internal/learning/plan/query.sql"
       - "internal/note/query.sql"
       - "internal/reading/query.sql"
+      - "internal/song/query.sql"
     schema: "migrations/"
     gen:
       go:

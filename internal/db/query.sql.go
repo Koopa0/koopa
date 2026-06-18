@@ -3041,6 +3041,87 @@ func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (L
 	return i, err
 }
 
+const createSong = `-- name: CreateSong :one
+
+INSERT INTO songs (
+    title_ja, album, lyrics_ja, translation, vocabulary
+) VALUES (
+    $1, $2, $3, $4, $5
+)
+RETURNING id, title_ja, album, lyrics_ja, translation, vocabulary, is_public,
+          created_at, updated_at
+`
+
+type CreateSongParams struct {
+	TitleJa     string `json:"title_ja"`
+	Album       string `json:"album"`
+	LyricsJa    string `json:"lyrics_ja"`
+	Translation string `json:"translation"`
+	Vocabulary  string `json:"vocabulary"`
+}
+
+// Queries for the song package. See migrations/001_initial.up.sql for the
+// songs + song_reflections tables (the ヨルシカ shelf). title_ja carries a
+// not-blank CHECK; the Go layer validates before writing so the constraint
+// never surfaces as a 500. The study fields (lyrics_ja, translation,
+// vocabulary) are owner-filled free text, never generated. No audit triggers
+// fire on these tables — single human writer, the diary stays out of activity
+// feeds (same privacy posture as the reading shelf).
+func (q *Queries) CreateSong(ctx context.Context, arg CreateSongParams) (Song, error) {
+	row := q.db.QueryRow(ctx, createSong,
+		arg.TitleJa,
+		arg.Album,
+		arg.LyricsJa,
+		arg.Translation,
+		arg.Vocabulary,
+	)
+	var i Song
+	err := row.Scan(
+		&i.ID,
+		&i.TitleJa,
+		&i.Album,
+		&i.LyricsJa,
+		&i.Translation,
+		&i.Vocabulary,
+		&i.IsPublic,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const createSongReflection = `-- name: CreateSongReflection :one
+INSERT INTO song_reflections (
+    song_id, entry_date, body
+) VALUES (
+    $1, COALESCE($3::date, CURRENT_DATE), $2
+)
+RETURNING id, song_id, entry_date, body, created_at, updated_at
+`
+
+type CreateSongReflectionParams struct {
+	SongID    uuid.UUID  `json:"song_id"`
+	Body      string     `json:"body"`
+	EntryDate *time.Time `json:"entry_date"`
+}
+
+// A NULL entry_date defaults to today. COALESCE here rather than relying on
+// the column DEFAULT so the "today" clock is the same (the database's
+// CURRENT_DATE) whether the handler passes a date or not.
+func (q *Queries) CreateSongReflection(ctx context.Context, arg CreateSongReflectionParams) (SongReflection, error) {
+	row := q.db.QueryRow(ctx, createSongReflection, arg.SongID, arg.Body, arg.EntryDate)
+	var i SongReflection
+	err := row.Scan(
+		&i.ID,
+		&i.SongID,
+		&i.EntryDate,
+		&i.Body,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const createTag = `-- name: CreateTag :one
 INSERT INTO tags (slug, name, parent_id, description)
 VALUES ($1, $2, $3, $4)
@@ -3680,6 +3761,38 @@ WHERE token_hash = $1
 func (q *Queries) DeleteRefreshToken(ctx context.Context, tokenHash string) error {
 	_, err := q.db.Exec(ctx, deleteRefreshToken, tokenHash)
 	return err
+}
+
+const deleteSong = `-- name: DeleteSong :execrows
+DELETE FROM songs WHERE id = $1
+`
+
+// ON DELETE CASCADE removes the song's entire reflection thread with it.
+func (q *Queries) DeleteSong(ctx context.Context, id uuid.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteSong, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const deleteSongReflection = `-- name: DeleteSongReflection :execrows
+DELETE FROM song_reflections WHERE id = $1 AND song_id = $2
+`
+
+type DeleteSongReflectionParams struct {
+	ID     uuid.UUID `json:"id"`
+	SongID uuid.UUID `json:"song_id"`
+}
+
+// Delete a diary entry, bound to its parent song (same membership guard as
+// UpdateSongReflection).
+func (q *Queries) DeleteSongReflection(ctx context.Context, arg DeleteSongReflectionParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteSongReflection, arg.ID, arg.SongID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const deleteTag = `-- name: DeleteTag :exec
@@ -8754,6 +8867,42 @@ func (q *Queries) ReflectionsForReading(ctx context.Context, readingID uuid.UUID
 	return items, nil
 }
 
+const reflectionsForSong = `-- name: ReflectionsForSong :many
+SELECT id, song_id, entry_date, body, created_at, updated_at
+FROM song_reflections
+WHERE song_id = $1
+ORDER BY entry_date ASC, created_at ASC
+`
+
+// The diary thread for one song: diary-date order, creation order as the
+// same-day tiebreak. Served by idx_song_reflections_thread.
+func (q *Queries) ReflectionsForSong(ctx context.Context, songID uuid.UUID) ([]SongReflection, error) {
+	rows, err := q.db.Query(ctx, reflectionsForSong, songID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []SongReflection{}
+	for rows.Next() {
+		var i SongReflection
+		if err := rows.Scan(
+			&i.ID,
+			&i.SongID,
+			&i.EntryDate,
+			&i.Body,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const refreshTokenByHash = `-- name: RefreshTokenByHash :one
 SELECT id, user_id, token_hash, expires_at, created_at
 FROM refresh_tokens
@@ -9796,6 +9945,69 @@ func (q *Queries) SimilarContents(ctx context.Context, arg SimilarContentsParams
 			&i.Excerpt,
 			&i.Type,
 			&i.Similarity,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const songByID = `-- name: SongByID :one
+SELECT id, title_ja, album, lyrics_ja, translation, vocabulary, is_public,
+       created_at, updated_at
+FROM songs
+WHERE id = $1
+`
+
+func (q *Queries) SongByID(ctx context.Context, id uuid.UUID) (Song, error) {
+	row := q.db.QueryRow(ctx, songByID, id)
+	var i Song
+	err := row.Scan(
+		&i.ID,
+		&i.TitleJa,
+		&i.Album,
+		&i.LyricsJa,
+		&i.Translation,
+		&i.Vocabulary,
+		&i.IsPublic,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const songs = `-- name: Songs :many
+SELECT id, title_ja, album, lyrics_ja, translation, vocabulary, is_public,
+       created_at, updated_at
+FROM songs
+ORDER BY updated_at DESC
+`
+
+// Shelf list, ordered by recency of edit. The whole table is ヨルシカ, so
+// there is no artist filter; grouping by album is the frontend's concern.
+func (q *Queries) Songs(ctx context.Context) ([]Song, error) {
+	rows, err := q.db.Query(ctx, songs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Song{}
+	for rows.Next() {
+		var i Song
+		if err := rows.Scan(
+			&i.ID,
+			&i.TitleJa,
+			&i.Album,
+			&i.LyricsJa,
+			&i.Translation,
+			&i.Vocabulary,
+			&i.IsPublic,
+			&i.CreatedAt,
+			&i.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -12384,6 +12596,97 @@ func (q *Queries) UpdateReflection(ctx context.Context, arg UpdateReflectionPara
 	err := row.Scan(
 		&i.ID,
 		&i.ReadingID,
+		&i.EntryDate,
+		&i.Body,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const updateSong = `-- name: UpdateSong :one
+UPDATE songs SET
+    title_ja = COALESCE($1, title_ja),
+    album = COALESCE($2, album),
+    lyrics_ja = COALESCE($3, lyrics_ja),
+    translation = COALESCE($4, translation),
+    vocabulary = COALESCE($5, vocabulary),
+    is_public = COALESCE($6::boolean, is_public),
+    updated_at = now()
+WHERE id = $7
+RETURNING id, title_ja, album, lyrics_ja, translation, vocabulary, is_public,
+          created_at, updated_at
+`
+
+type UpdateSongParams struct {
+	TitleJa     *string   `json:"title_ja"`
+	Album       *string   `json:"album"`
+	LyricsJa    *string   `json:"lyrics_ja"`
+	Translation *string   `json:"translation"`
+	Vocabulary  *string   `json:"vocabulary"`
+	IsPublic    *bool     `json:"is_public"`
+	ID          uuid.UUID `json:"id"`
+}
+
+// Partial update — omitted (NULL) args leave the column unchanged. The study
+// fields are plain text columns, so an explicit empty string clears one while
+// a NULL leaves it; the Go layer passes a pointer only when the caller sent
+// the field.
+func (q *Queries) UpdateSong(ctx context.Context, arg UpdateSongParams) (Song, error) {
+	row := q.db.QueryRow(ctx, updateSong,
+		arg.TitleJa,
+		arg.Album,
+		arg.LyricsJa,
+		arg.Translation,
+		arg.Vocabulary,
+		arg.IsPublic,
+		arg.ID,
+	)
+	var i Song
+	err := row.Scan(
+		&i.ID,
+		&i.TitleJa,
+		&i.Album,
+		&i.LyricsJa,
+		&i.Translation,
+		&i.Vocabulary,
+		&i.IsPublic,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const updateSongReflection = `-- name: UpdateSongReflection :one
+UPDATE song_reflections SET
+    body = COALESCE($1, body),
+    entry_date = COALESCE($2::date, entry_date),
+    updated_at = now()
+WHERE id = $3 AND song_id = $4
+RETURNING id, song_id, entry_date, body, created_at, updated_at
+`
+
+type UpdateSongReflectionParams struct {
+	Body      *string    `json:"body"`
+	EntryDate *time.Time `json:"entry_date"`
+	ID        uuid.UUID  `json:"id"`
+	SongID    uuid.UUID  `json:"song_id"`
+}
+
+// Partial update of a diary entry, bound to its parent song: the WHERE clause
+// enforces membership, so a {song_id, id} mismatch is a no-row miss (404)
+// rather than a cross-song write.
+func (q *Queries) UpdateSongReflection(ctx context.Context, arg UpdateSongReflectionParams) (SongReflection, error) {
+	row := q.db.QueryRow(ctx, updateSongReflection,
+		arg.Body,
+		arg.EntryDate,
+		arg.ID,
+		arg.SongID,
+	)
+	var i SongReflection
+	err := row.Scan(
+		&i.ID,
+		&i.SongID,
 		&i.EntryDate,
 		&i.Body,
 		&i.CreatedAt,

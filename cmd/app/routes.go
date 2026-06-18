@@ -39,6 +39,7 @@ import (
 	"github.com/Koopa0/koopa/internal/project"
 	"github.com/Koopa0/koopa/internal/reading"
 	"github.com/Koopa0/koopa/internal/search"
+	"github.com/Koopa0/koopa/internal/song"
 	"github.com/Koopa0/koopa/internal/stats"
 	"github.com/Koopa0/koopa/internal/tag"
 	"github.com/Koopa0/koopa/internal/today"
@@ -66,6 +67,7 @@ type handlers struct {
 	learning   *learning.Handler
 	note       *note.Handler
 	reading    *reading.Handler
+	song       *song.Handler
 	todo       *todo.Handler
 	plan       *learningplan.Handler
 	today      *today.Handler
@@ -186,6 +188,20 @@ func registerRoutes(
 	mux.Handle("POST /api/admin/knowledge/readings/{id}/reflections", adminMid(http.HandlerFunc(h.reading.CreateReflection)))
 	mux.Handle("PUT /api/admin/knowledge/readings/{id}/reflections/{rid}", adminMid(http.HandlerFunc(h.reading.UpdateReflection)))
 	mux.Handle("DELETE /api/admin/knowledge/readings/{id}/reflections/{rid}", adminMid(http.HandlerFunc(h.reading.DeleteReflection)))
+
+	// --- Admin: Knowledge / Songs (ヨルシカ shelf + reflection diary) ---
+	// Same privacy posture as readings: no public routes, no MCP tool, not in
+	// the search_knowledge corpus — this admin surface is the only access
+	// path. Reflections are membership-bound sub-resources: {rid} must belong
+	// to {id} or the handler 404s.
+	mux.Handle("GET /api/admin/knowledge/songs", authMid(http.HandlerFunc(h.song.List)))
+	mux.Handle("GET /api/admin/knowledge/songs/{id}", authMid(http.HandlerFunc(h.song.Get)))
+	mux.Handle("POST /api/admin/knowledge/songs", adminMid(http.HandlerFunc(h.song.Create)))
+	mux.Handle("PUT /api/admin/knowledge/songs/{id}", adminMid(http.HandlerFunc(h.song.Update)))
+	mux.Handle("DELETE /api/admin/knowledge/songs/{id}", adminMid(http.HandlerFunc(h.song.Delete)))
+	mux.Handle("POST /api/admin/knowledge/songs/{id}/reflections", adminMid(http.HandlerFunc(h.song.CreateReflection)))
+	mux.Handle("PUT /api/admin/knowledge/songs/{id}/reflections/{rid}", adminMid(http.HandlerFunc(h.song.UpdateReflection)))
+	mux.Handle("DELETE /api/admin/knowledge/songs/{id}/reflections/{rid}", adminMid(http.HandlerFunc(h.song.DeleteReflection)))
 
 	// --- Admin: Commitment / Projects ---
 	// Full CRUD + profile variants for the public-portfolio facet.
