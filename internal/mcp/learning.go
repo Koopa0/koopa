@@ -8,7 +8,7 @@
 //   - recommend_next.go    — recommend_next_target
 //   - plan.go              — manage_plan multiplexer
 //
-// The session lifecycle rule (.claude/rules/mcp-decision-policy.md §12):
+// The session lifecycle rule:
 // only one learning_sessions row may have ended_at IS NULL at a time.
 // start_session enforces this and will auto-end an abandoned zombie
 // session (>12h idle) so the next start succeeds without manual
@@ -626,8 +626,8 @@ type MasteryRow struct {
 // It resolves the lookback window and optional domain filter, surfaces a
 // domain-existence warning, and returns the recent-sessions overview.
 //
-// Only the overview view survives the C2 contraction on the MCP surface: the
-// former learning_dashboard mastery / weaknesses / timeline / variations views
+// Only the overview view is exposed on the MCP surface: the
+// learning_dashboard mastery / weaknesses / timeline / variations views
 // stay HTTP-admin-only (internal/learning/handler.go) and are not reachable
 // through learning_read. confidence_filter is accepted on the input for
 // forward-compatibility but is inert here — sessions are not confidence-

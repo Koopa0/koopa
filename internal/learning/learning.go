@@ -129,10 +129,10 @@ type Attempt struct {
 // clause does not join concepts. Both fields stay non-pointer string for
 // JSON-shape stability across paths.
 //
-// Confidence is a label, not a gate — both "high" and "low" persist per
-// .claude/rules/mcp-decision-policy.md §5. Read-side filters (dashboard
-// confidence_filter) decide whether low-confidence observations contribute
-// to aggregation; attempt_history surfaces every observation regardless.
+// Confidence is a label, not a gate — both "high" and "low" persist.
+// Read-side filters (dashboard confidence_filter) decide whether
+// low-confidence observations contribute to aggregation; attempt_history
+// surfaces every observation regardless.
 //
 // Position is zero-based insertion order within the attempt (the index
 // of the observation in the record_attempt request). Read paths return

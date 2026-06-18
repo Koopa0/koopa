@@ -16,8 +16,8 @@ import (
 // --- draft_hypothesis ---
 
 // DraftHypothesisInput is the input for the draft_hypothesis tool. The
-// created row always lands in state=draft — the v3.1 inert-drafts contract:
-// the agent prepares material, only the owner makes it count (endorsement,
+// created row always lands in state=draft — an inert draft: the agent
+// prepares material, only the owner makes it count (endorsement,
 // verdicts, and deletion live in the admin UI, off the MCP surface).
 type DraftHypothesisInput struct {
 	Claim                 string  `json:"claim" jsonschema:"required" jsonschema_description:"One-line falsifiable prediction. Required — a hypothesis without a claim is not a hypothesis."`

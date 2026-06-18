@@ -48,9 +48,8 @@ koopa0.dev:
    decides what matures and what is deleted. Hermes proposes; Koopa keeps.
 
 This is conversation-and-cron-derived capture into an inert seed, not
-authorship of standing knowledge — consistent with the inert-draft principle
-(`docs/decisions/mcp-v3.1-inert-drafts.md`): an agent may prepare material, but
-what counts as kept knowledge is the owner's stamp.
+authorship of standing knowledge: an agent may prepare material, but what
+counts as kept knowledge is the owner's stamp.
 
 ## Future
 

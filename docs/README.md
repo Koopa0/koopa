@@ -18,7 +18,7 @@ MUST be updated):
 
 1. **Schema / migrations + DB constraints** — `migrations/*.sql`
 2. **Go code + tests** — `internal/`, `cmd/`
-3. **MCP ops catalog + tool descriptions** (`internal/mcp/ops/catalog.go`) and **MCP behavior policy** (`.claude/rules/mcp-decision-policy.md`)
+3. **MCP ops catalog + tool descriptions** (`internal/mcp/ops/catalog.go`) and **authorization** (`internal/mcp/authz.go`, `internal/agent/registry.go`)
 4. **Backend semantic contract** — `backend-semantic-contract.md`
 5. **Skills / agent operational docs** — `skills/koopa-system/`, `docs/Koopa-*.md`
 6. **Historical docs** — dated audit reports and superseded design docs
@@ -27,14 +27,15 @@ MUST be updated):
 
 | Document | Tier | Runtime truth? | Notes |
 |---|---|---|---|
-| `backend-semantic-contract.md` | 4 (canonical) | **Yes** — shared vocabulary + cross-entity contract | 7 sections (§1–§7): core domain vocabulary is §3, domain boundaries §4, MCP tool semantics §5. |
-| `LEARNING-CONTRACT.md` | 4 (canonical companion) | **Yes** — concept-mastery signal + the 5-tool learning surface | Post MCP-v3: single mastery axis, no FSRS. |
-| `authorization-matrix.md` | 4 (canonical companion) | **Yes** — MCP write-tool authorization | Identity-based three-axis model (platform / author / self). |
+| `backend-semantic-contract.md` | 4 (canonical) | **Yes** — shared vocabulary + cross-entity contract | 7 sections (§1–§7): core domain vocabulary is §3, domain boundaries §4. The MCP tool inventory lives in `internal/mcp/ops/catalog.go::All()` (§5 points there). |
+| `LEARNING-CONTRACT.md` | 4 (canonical companion) | **Yes** — concept-mastery signal + the learning tool surface | Single mastery axis, no FSRS. |
 | `audit-prompts/*.md` | 5 (operational) | **No** — executable prompt templates | Stage prompts for the adversarial-review protocol (`.claude/rules/adversarial-review.md`); templates, not contracts. |
+
+MCP write-tool authorization is identity-based (platform / author / self), enforced in code at `internal/mcp/authz.go` (roster: `internal/agent/registry.go`).
 
 Out of `docs/` but in the order: `migrations/*.sql` (tier 1),
 `internal/`+`cmd/` (tier 2), `internal/mcp/ops/catalog.go` +
-`.claude/rules/mcp-decision-policy.md` (tier 3),
+`internal/mcp/authz.go` (tier 3),
 `skills/koopa-system/references/*.md` (tier 5, incl. `tools.md` — the MCP
 tool parameter reference, formerly `docs/MCP-TOOLS-v2.md`).
 

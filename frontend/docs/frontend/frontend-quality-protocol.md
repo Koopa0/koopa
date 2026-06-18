@@ -135,7 +135,7 @@ This protocol defines the seven quality gates that every change to `frontend/` m
 
 ### Why this is manual today
 
-- Lifecycle legality depends on entity state machines defined in the backend (see `.claude/rules/mcp-decision-policy.md` §3). A static check would have to ingest the state machine; deferred.
+- Lifecycle legality depends on entity state machines defined in the backend schema (`migrations/*.sql` CHECKs/triggers; see `docs/backend-semantic-contract.md` §3). A static check would have to ingest the state machine; deferred.
 
 ### Manual review (per PR)
 

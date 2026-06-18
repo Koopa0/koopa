@@ -205,9 +205,9 @@ func (h *Handler) Lineage(w http.ResponseWriter, r *http.Request) {
 }
 
 // Endorse handles POST /api/admin/learning/hypotheses/{id}/endorse — the
-// owner stamp on an agent-drafted hypothesis (draft → unverified). Part of
-// the MCP v3.1 inert-drafts contract: agents draft, only the owner makes a
-// hypothesis count. Non-draft rows return 409 NOT_DRAFT; missing rows 404.
+// owner stamp on an agent-drafted hypothesis (draft → unverified). Agents
+// draft inert hypotheses; only the owner makes one count. Non-draft rows
+// return 409 NOT_DRAFT; missing rows 404.
 func (h *Handler) Endorse(w http.ResponseWriter, r *http.Request) {
 	id, err := uuid.Parse(r.PathValue("id"))
 	if err != nil {

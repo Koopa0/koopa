@@ -19,12 +19,12 @@ not by itself mark the concept "mastered"; mastery advances when multiple
 observations across multiple targets accumulate for the same concept (see
 the mastery floor in `internal/learning/mastery.go::DeriveMasteryStage`).
 
-> **No FSRS / spaced-repetition layer.** The MCP-v3 contraction removed the
-> per-target FSRS retention layer (`review_cards` / `review_logs`) and the
-> tools that read it. `record_attempt` no longer schedules reviews, and
-> there is no "due" / retention surface on the agent MCP. If spaced
-> repetition returns, it comes back as a separate, explicitly-designed
-> subsystem — not as an implicit side effect of recording an attempt.
+> **No FSRS / spaced-repetition layer.** There is no per-target FSRS
+> retention layer (`review_cards` / `review_logs`) and no tool that reads
+> one. `record_attempt` schedules no reviews, and there is no "due" /
+> retention surface on the agent MCP. If spaced repetition is ever wanted,
+> it comes back as a separate, explicitly-designed subsystem — not as an
+> implicit side effect of recording an attempt.
 
 ## The agent learning surface — five tools
 
@@ -67,10 +67,11 @@ One attempt call fans out to at most two write paths:
    rejected at write, not silently split in a read-time GROUP BY.
 
 Both high- and low-confidence observations are persisted; `confidence` is
-a read-time label, not a write-time gate (see
-`.claude/rules/mcp-decision-policy.md` §5). Auto-creation of leaf targets
-and same-domain concepts happens inside `record_attempt` per the
-auto-creation boundary in §6 of that policy.
+a read-time label, not a write-time gate (the read-time filter lives in
+`internal/learning/mastery.go::DeriveMasteryStage`). Auto-creation of leaf
+targets and same-domain concepts happens inside `record_attempt`
+(`internal/mcp/learning.go`), bounded to leaf nodes in the active
+session's domain.
 
 ### Partial-write contract
 
@@ -125,7 +126,7 @@ These are real-sounding coupling candidates that are explicitly absent:
 - **Recording an attempt does not advance a plan entry.** Plan entries
   move only through `manage_plan(action=update_entry)`, and completing one
   requires a `completed_by_attempt_id` whose target matches the entry's
-  (see `.claude/rules/mcp-decision-policy.md` §13).
+  (enforced in `internal/mcp/plan.go`).
 - **Observations always flow through `record_attempt`.** An observation
   without an attempt is not a valid write path.
 
@@ -151,10 +152,10 @@ view that joins weakness signal with the variation graph.
 
 - `migrations/001_initial.up.sql` + `migrations/002_seed.up.sql` — schema,
   authoritative on columns / constraints / triggers.
-- `.claude/rules/mcp-decision-policy.md` — which tool writes which entity,
-  observation confidence labelling (§5), concept auto-creation (§6), plan
-  entry completion audit trail (§13).
-- `internal/mcp/ops/catalog.go` — the live 11-tool MCP surface; the
+- `internal/mcp/ops/catalog.go::All()` — the live MCP tool surface; the
   authoritative source for tool names and descriptions.
+- `internal/mcp/learning.go` + `internal/mcp/plan.go` — which tool writes
+  which entity, observation confidence labelling, concept auto-creation,
+  and the plan-entry completion audit trail.
 - `docs/backend-semantic-contract.md` §3 — system-wide domain model +
   entity catalogue.

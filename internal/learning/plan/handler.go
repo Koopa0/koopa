@@ -4,7 +4,7 @@
 //
 // Plan / entry lifecycle decisions stay centralized in the Store — the
 // HTTP handler is a thin adapter. Completed entries MUST carry
-// completed_by_attempt_id + reason per mcp-decision-policy §13; the
+// completed_by_attempt_id + reason (the completion audit trail); the
 // handler rejects completion requests missing those fields.
 
 package plan

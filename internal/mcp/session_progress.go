@@ -22,9 +22,9 @@ import (
 // returns {active: false} with a LastEndedSessionID pointer so the caller
 // can pivot to attempt_history(session_id=...) without a second round-trip.
 //
-// Distinct from session_delta (24h pan-feature activity snapshot) per
-// .claude/rules/mcp-decision-policy.md §10: the two tools share neither
-// the same entity nor the same workflow contract.
+// This is an in-session aggregate, not a cross-session activity snapshot:
+// it shares neither the same entity nor the same workflow contract as the
+// attempt-history views.
 
 // SessionProgressOutput reports aggregate state of the currently-active
 // learning session. Caller MUST branch on Active first.

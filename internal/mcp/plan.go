@@ -3,12 +3,10 @@
 // plan.go holds the manage_plan multiplexer tool for learning plans.
 //
 // manage_plan has 5 actions (add_entries, remove_entries,
-// update_entry, reorder, progress — see
-// .claude/rules/mcp-decision-policy.md §10, which sets a 6-action
-// ceiling). Plan-level lifecycle (activate/pause/complete/abandon)
-// is admin-only, not an agent action.
+// update_entry, reorder, progress). Plan-level lifecycle
+// (activate/pause/complete/abandon) is admin-only, not an agent action.
 //
-// `update_entry` enforces the audit-trail policy from §13: marking an
+// `update_entry` enforces the completion audit trail: marking an
 // entry completed REQUIRES both `completed_by_attempt_id` (the
 // learning_attempts row that justified the decision) and `reason`
 // (Claude's short justification). The schema CHECK is nullable-friendly
@@ -51,7 +49,7 @@ type ManagePlanInput struct {
 	// update_entry
 	EntryID                    *string `json:"entry_id,omitempty" jsonschema_description:"Plan entry UUID (for update_entry)"`
 	Status                     *string `json:"status,omitempty" jsonschema_description:"New entry status for update_entry: completed, skipped, substituted"`
-	Reason                     *string `json:"reason,omitempty" jsonschema_description:"Justification for the transition. REQUIRED and non-blank when status=completed OR status=skipped; this is the audit trail per mcp-decision-policy §13 (skip is a decision — cross-agent review needs to know why an active plan entry was dropped). When force=true (completed only), reason MUST start with the literal text manual override: (no surrounding quotes) and be ≥ 60 characters. Reason is capped at 1024 characters."`
+	Reason                     *string `json:"reason,omitempty" jsonschema_description:"Justification for the transition. REQUIRED and non-blank when status=completed OR status=skipped; this is the completion/skip audit trail (skip is a decision — cross-agent review needs to know why an active plan entry was dropped). When force=true (completed only), reason MUST start with the literal text manual override: (no surrounding quotes) and be ≥ 60 characters. Reason is capped at 1024 characters."`
 	SubstituteLearningTargetID *string `json:"substitute_learning_target_id,omitempty" jsonschema_description:"learning_targets.id of the replacement (for status=substituted)"`
 	CompletedByAttemptID       *string `json:"completed_by_attempt_id,omitempty" jsonschema_description:"Attempt UUID that informed the completion decision. REQUIRED when status=completed unless force=true. The attempt's learning_target_id MUST match the plan entry's — misaligned IDs are rejected so the audit trail stays trustworthy."`
 	Force                      *bool   `json:"force,omitempty" jsonschema_description:"Escape hatch for status=completed when no aligned attempt exists (plan retconned, target migrated, etc.). When true, completed_by_attempt_id may be omitted, but reason MUST start with the literal text manual override: (no surrounding quotes) and be ≥ 60 characters so the deviation is loud in the audit trail. Use sparingly — the normal path provides verifiable evidence; force replaces evidence with a written justification."`
@@ -296,7 +294,7 @@ const reasonMaxLength = 1024
 // review must distinguish "skipped because solved offline" from "skipped
 // because target archived" from "skipped because plan retconned". Skip is
 // rare in normal usage; the friction of one sentence is dwarfed by the
-// value of reconstructing decisions weeks later (mcp-decision-policy §13).
+// value of reconstructing decisions weeks later.
 //
 // Unlike completion, skip has no force-mode escape hatch — the "no aligned
 // attempt exists" justification for completion forces doesn't apply to
@@ -305,7 +303,7 @@ const reasonMaxLength = 1024
 // as anything other than missing data.
 func validateSkipEntryReason(reason string) error {
 	if reason == "" {
-		return fmt.Errorf("%w: reason is required when marking entry skipped (audit-trail policy mcp-decision-policy §13 — skip is a decision; cross-agent review needs to know why an active plan entry was dropped)", learning.ErrInvalidInput)
+		return fmt.Errorf("%w: reason is required when marking entry skipped (completion/skip audit trail — skip is a decision; cross-agent review needs to know why an active plan entry was dropped)", learning.ErrInvalidInput)
 	}
 	if utf8.RuneCountInString(reason) > reasonMaxLength {
 		return fmt.Errorf("%w: reason exceeds %d characters (got %d) — keep audit text concise", learning.ErrInvalidInput, reasonMaxLength, utf8.RuneCountInString(reason))
@@ -325,7 +323,7 @@ func validateCompleteEntryReason(reason string, forced bool) error {
 	}
 	if !forced {
 		if reason == "" {
-			return fmt.Errorf("%w: reason is required when marking entry completed (audit-trail policy mcp-decision-policy.md §13)", learning.ErrInvalidInput)
+			return fmt.Errorf("%w: reason is required when marking entry completed (completion audit trail)", learning.ErrInvalidInput)
 		}
 		return nil
 	}
@@ -340,7 +338,7 @@ func validateCompleteEntryReason(reason string, forced bool) error {
 
 // prepareCompleteEntryParams fills the completion-specific fields on params
 // (CompletedAt, CompletedByAttemptID) and enforces the audit-trail policy
-// for plan-entry completion (mcp-decision-policy §13).
+// for plan-entry completion.
 //
 // Normal path (force=false / unset):
 //   - completed_by_attempt_id REQUIRED — hard reject if missing.

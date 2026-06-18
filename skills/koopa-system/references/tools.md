@@ -163,10 +163,10 @@ Separate entity, separate package. Notes are Koopa-private and mature in place; 
 
 ## Cross-cutting rules
 
-**Caller identity**: every tool accepts optional `as: "<agent_name>"`. Server trusts the `as` value, validates via the Go `agent.Capability` registered in `BuiltinAgents()`. Default caller is from env `KOOPA_MCP_CALLER_AGENT`.
+**Caller identity**: every tool accepts optional `as: "<agent_name>"`. Server trusts the `as` value and authorizes by identity (platform / author / self) in `internal/mcp/authz.go`, against the roster in `internal/agent/registry.go::BuiltinAgents()`. Default caller is from env `KOOPA_MCP_CALLER_AGENT`.
 
 **Read-only forever**: `brief` and `learning_read` are read-only by design and will not gain write actions.
 
 **Off the MCP surface**: high-commitment entities (goals / projects / milestones / hypotheses, learning-plan activation, content authoring + publishing, note maturity, feed curation, todo lifecycle transitions) are admin-UI/HTTP only.
 
-**Cross-references**: `docs/backend-semantic-contract.md` §2 (vocabulary), §3 (entity responsibilities), §4 (lifecycles). `.claude/rules/mcp-decision-policy.md` §1 (intent classification), §10 (multiplexer rules).
+**Cross-references**: `docs/backend-semantic-contract.md` §2 (vocabulary), §3 (entity responsibilities), §4 (lifecycles). The canonical tool surface, intent routing, and multiplexer semantics live in `internal/mcp/ops/catalog.go::All()` and the per-tool handlers in `internal/mcp/`.

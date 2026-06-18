@@ -7,7 +7,7 @@
 // transitions to verified or invalidated. Lifecycle:
 // draft → unverified → verified | invalidated → archived.
 //
-// draft is the agent-created pre-endorsement state (MCP v3.1 inert drafts):
+// draft is the agent-created pre-endorsement state (an inert draft):
 // inert by definition — excluded from brief(morning), the Today aggregate,
 // and every dashboard; visible only in the admin hypotheses list. A draft
 // leaves draft only via owner endorsement (Endorse, draft → unverified) or
