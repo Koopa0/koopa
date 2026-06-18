@@ -62,9 +62,9 @@ func setup(t *testing.T) *Store {
 }
 
 // seedLearningTarget helper has been removed alongside the
-// 1:1 learning_targets.content_id FK. Target↔content attach now goes
-// through learning_target_contents (learning package); integration
-// coverage lives in the learning package's own tests.
+// 1:1 learning_targets.content_id FK. Target writeups now attach via the
+// learning_target_notes junction (note package); integration coverage
+// lives in the note/learning packages' own tests.
 
 // seedConcept inserts a concepts row via SQL. Same rationale as seedTopic:
 // avoid importing the learning package to dodge an import cycle.
@@ -86,8 +86,7 @@ func seedConcept(t *testing.T, pool *pgxpool.Pool, domain, slug, name, kind stri
 // assertions in the note+learning_target test.
 // contentIDForTarget helper removed — learning_targets.content_id no
 // longer exists. Caller used to assert 1:1 atomicity; target-writeup
-// linkage is now N:M via learning_target_contents + learning_target_notes,
-// tested from the learning package.
+// linkage is now N:M via learning_target_notes, tested from the note package.
 
 // contentConceptIDs reads back concept_id rows from the content_concepts
 // junction for the given content row, for atomicity assertions.
@@ -342,9 +341,9 @@ func TestStore_CreateContent_DuplicateSlug_InTx(t *testing.T) {
 // TestStore_CreateContent_LearningTargetNotFound, _NoteWithLearningTarget,
 // and _NoteWithConcepts (with note+learning_target wiring) were removed in
 // schema cleanup when the 1:1 learning_targets.content_id FK was dropped.
-// Target↔writeup linkage is now N:M via learning_target_contents +
-// learning_target_notes junctions; integration coverage for those lives
-// in the learning package's tests. The bare content_concepts junction
+// Target↔writeup linkage is now N:M via the learning_target_notes
+// junction; integration coverage for that lives in the note package's
+// tests. The bare content_concepts junction
 // path (below) still stands on its own.
 
 // TestStore_CreateContent_ArticleWithConcepts verifies CreateContent

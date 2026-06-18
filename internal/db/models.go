@@ -917,7 +917,7 @@ type LearningSession struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
-// Learning targets — what to learn, practice, and revisit. Lifecycle differs from notes: targets follow not-attempted → practicing → mastered (learning progress), while notes follow seed → evergreen → archived (knowledge maturity). Targets exist before notes are written. Writeups attach via the learning_target_notes and learning_target_contents junction tables (N:M — a single target may accumulate multiple writeups of different kinds over time: solve-note → concept-note → debug-postmortem). Canonical writeup per domain = notes row whose kind matches learning_domains.canonical_writeup_kind.
+// Learning targets — what to learn, practice, and revisit. Lifecycle differs from notes: targets follow not-attempted → practicing → mastered (learning progress), while notes follow seed → evergreen → archived (knowledge maturity). Targets exist before notes are written. Writeups attach via the learning_target_notes junction table (N:M — a single target may accumulate multiple writeups of different kinds over time: solve-note → concept-note → debug-postmortem). Canonical writeup per domain = notes row whose kind matches learning_domains.canonical_writeup_kind.
 type LearningTarget struct {
 	ID uuid.UUID `json:"id"`
 	// Learning domain. FK to learning_domains.
@@ -947,13 +947,6 @@ type LearningTargetConcept struct {
 	ConceptID        uuid.UUID `json:"concept_id"`
 	// primary = the core concept this target drills. secondary = a supporting concept also exercised. At most one primary per target, enforced by idx_learning_target_concepts_one_primary.
 	Relevance string    `json:"relevance"`
-	CreatedAt time.Time `json:"created_at"`
-}
-
-// Many-to-many: which public-facing contents (article/essay/til/build-log/digest) reference a learning target. E.g., an article "Understanding Go Memory Model" may be attached to the learning_target for DDIA Chapter 6 Memory Ordering.
-type LearningTargetContent struct {
-	TargetID  uuid.UUID `json:"target_id"`
-	ContentID uuid.UUID `json:"content_id"`
 	CreatedAt time.Time `json:"created_at"`
 }
 

@@ -584,10 +584,6 @@ func (s *Store) CreateContent(ctx context.Context, p *CreateParams) (*Content, e
 		}
 	}
 
-	// Attach to learning_targets via the learning_target_contents junction
-	// is the learning package's responsibility; the content-create path
-	// does not reach into learning_targets directly.
-
 	c := rowToContent(contentRow{
 		ID: r.ID, Slug: r.Slug, Title: r.Title, Body: r.Body, Excerpt: r.Excerpt,
 		Type: r.Type, Status: r.Status,

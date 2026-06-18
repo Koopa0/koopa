@@ -61,7 +61,6 @@ DROP TABLE IF EXISTS learning_attempts;
 DROP TABLE IF EXISTS learning_sessions;
 -- Note junctions (FKs into notes, learning_targets, contents, concepts)
 DROP TABLE IF EXISTS note_concepts;
-DROP TABLE IF EXISTS learning_target_contents;
 DROP TABLE IF EXISTS learning_target_notes;
 DROP TABLE IF EXISTS learning_target_concepts;
 DROP TABLE IF EXISTS learning_targets;

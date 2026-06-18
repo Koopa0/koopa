@@ -1331,8 +1331,8 @@ COMMENT ON TABLE learning_targets IS
     'Learning targets — what to learn, practice, and revisit. Lifecycle differs from '
     'notes: targets follow not-attempted → practicing → mastered (learning progress), '
     'while notes follow seed → evergreen → archived (knowledge maturity). Targets exist '
-    'before notes are written. Writeups attach via the learning_target_notes and '
-    'learning_target_contents junction tables (N:M — a single target may accumulate '
+    'before notes are written. Writeups attach via the learning_target_notes '
+    'junction table (N:M — a single target may accumulate '
     'multiple writeups of different kinds over time: solve-note → concept-note → '
     'debug-postmortem). Canonical writeup per domain = notes row whose kind matches '
     'learning_domains.canonical_writeup_kind.';
@@ -1438,19 +1438,6 @@ COMMENT ON TABLE learning_target_notes IS
 
 CREATE INDEX idx_learning_target_notes_note ON learning_target_notes (note_id);
 
-CREATE TABLE learning_target_contents (
-    target_id  UUID NOT NULL REFERENCES learning_targets(id) ON DELETE CASCADE,
-    content_id UUID NOT NULL REFERENCES contents(id)          ON DELETE CASCADE,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    PRIMARY KEY (target_id, content_id)
-);
-
-COMMENT ON TABLE learning_target_contents IS
-    'Many-to-many: which public-facing contents (article/essay/til/build-log/digest) '
-    'reference a learning target. E.g., an article "Understanding Go Memory Model" '
-    'may be attached to the learning_target for DDIA Chapter 6 Memory Ordering.';
-
-CREATE INDEX idx_learning_target_contents_content ON learning_target_contents (content_id);
 
 -- ============================================================
 -- Notes ↔ concepts junction
