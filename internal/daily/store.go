@@ -3,10 +3,9 @@
 // store.go holds Store methods for daily_plan_items.
 //
 // Naming quirks worth knowing before adding callers:
-//   - Create and Upsert both call sqlc's CreateItem query (upsert on
-//     (plan_date, todo_id)). Both return ErrItemResolved when the existing
-//     row is already in a terminal state. Upsert is the honest name;
-//     Create is a legacy alias. New callers should use Upsert.
+//   - Create upserts on (plan_date, todo_id) via sqlc's CreateItem query
+//     and returns ErrItemResolved when the existing row is already in a
+//     terminal state.
 //   - ItemsByDate returns Items with denormalised todo + project
 //     fields for the list view; ItemByID returns the bare row.
 //     The two converters (rawToItem vs itemsByDateRowToItem) reflect
@@ -99,26 +98,6 @@ func (s *Store) CompleteByTodo(ctx context.Context, todoItemID uuid.UUID, date t
 		return false, fmt.Errorf("completing daily plan item by todo item: %w", err)
 	}
 	return n > 0, nil
-}
-
-// Upsert inserts a daily plan item, or reorders it when it is still 'planned'
-// for the date (upsert on plan_date + todo_id). It returns ErrItemResolved
-// when the existing row already reached a terminal state.
-func (s *Store) Upsert(ctx context.Context, p *UpsertParams) (*Item, error) {
-	row, err := s.q.CreateItem(ctx, db.CreateItemParams{
-		PlanDate:   p.PlanDate,
-		TodoID:     p.TodoID,
-		SelectedBy: p.SelectedBy,
-		Position:   p.Position,
-		Reason:     p.Reason,
-	})
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, ErrItemResolved
-		}
-		return nil, fmt.Errorf("upserting daily plan item: %w", err)
-	}
-	return rawToItem(&row), nil
 }
 
 // Complete marks a daily plan item as done.

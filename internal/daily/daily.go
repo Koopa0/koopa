@@ -69,12 +69,3 @@ type CreateItemParams struct {
 	Position   int32
 	Reason     *string
 }
-
-// UpsertParams holds the parameters for upserting a daily plan item.
-type UpsertParams struct {
-	PlanDate   time.Time
-	TodoID     uuid.UUID
-	SelectedBy string
-	Position   int32
-	Reason     *string
-}
