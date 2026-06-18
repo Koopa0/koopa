@@ -217,6 +217,7 @@ CREATE TABLE areas (
     status      TEXT NOT NULL DEFAULT 'active'
         CHECK (status IN ('proposed', 'active')),
     created_by  TEXT REFERENCES agents(name) ON DELETE RESTRICT,
+    proposal_rationale TEXT,
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
 
@@ -235,6 +236,10 @@ COMMENT ON COLUMN areas.created_by IS
     'Provenance. NULL = system/seed origin — areas are seeded in 002 before any agents row '
     'exists at startup, so this is NULLABLE with NO default (a NOT NULL or DEFAULT-''human'' FK '
     'would fail the seed with a foreign_key_violation). An agent name marks an area that agent proposed.';
+COMMENT ON COLUMN areas.proposal_rationale IS
+    'Agent''s why-propose-this-now justification, captured on a proposed row and shown to the owner '
+    'in admin triage to support activate/reject. NULL for admin/seeded rows and acceptable to keep '
+    'or clear on activation.';
 
 COMMENT ON TABLE areas IS
     'PARA Areas of Responsibility — ongoing domains requiring sustained attention. '
@@ -268,6 +273,7 @@ CREATE TABLE goals (
     quarter           TEXT,
     deadline          TIMESTAMPTZ,
     created_by        TEXT REFERENCES agents(name) ON DELETE RESTRICT,
+    proposal_rationale TEXT,
     created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
 
@@ -288,6 +294,10 @@ COMMENT ON COLUMN goals.status IS
 COMMENT ON COLUMN goals.created_by IS
     'Provenance. NULL = system/admin origin; an agent name marks a goal that agent proposed. '
     'NULLABLE with no default, mirroring areas.created_by.';
+COMMENT ON COLUMN goals.proposal_rationale IS
+    'Agent''s why-propose-this-now justification, captured on a proposed row and shown to the owner '
+    'in admin triage to support activate/reject. NULL for admin/seeded rows and acceptable to keep '
+    'or clear on activation.';
 COMMENT ON COLUMN goals.area_id IS
     'PARA Area of Responsibility this goal belongs to. FK to areas. '
     'SET NULL on area deletion — goal survives unclassified. NULL = no area assigned.';

@@ -46,7 +46,7 @@ func (q *Queries) ActivateArea(ctx context.Context, id uuid.UUID) (ActivateAreaR
 const activateGoal = `-- name: ActivateGoal :one
 UPDATE goals SET status = 'not_started', updated_at = now()
 WHERE id = $1 AND status = 'proposed'
-RETURNING id, title, description, status, area_id, quarter, deadline, created_by,
+RETURNING id, title, description, status, area_id, quarter, deadline, created_by, proposal_rationale,
           created_at, updated_at
 `
 
@@ -65,6 +65,7 @@ func (q *Queries) ActivateGoal(ctx context.Context, id uuid.UUID) (Goal, error) 
 		&i.Quarter,
 		&i.Deadline,
 		&i.CreatedBy,
+		&i.ProposalRationale,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -2457,7 +2458,7 @@ func (q *Queries) CreateFeedEntry(ctx context.Context, arg CreateFeedEntryParams
 const createGoal = `-- name: CreateGoal :one
 INSERT INTO goals (title, description, status, area_id, quarter, deadline)
 VALUES ($1, $2, $3::goal_status, $4, $5, $6)
-RETURNING id, title, description, status, area_id, quarter, deadline, created_by,
+RETURNING id, title, description, status, area_id, quarter, deadline, created_by, proposal_rationale,
           created_at, updated_at
 `
 
@@ -2490,6 +2491,7 @@ func (q *Queries) CreateGoal(ctx context.Context, arg CreateGoalParams) (Goal, e
 		&i.Quarter,
 		&i.Deadline,
 		&i.CreatedBy,
+		&i.ProposalRationale,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -4705,7 +4707,7 @@ func (q *Queries) FindTargetByDomainTitle(ctx context.Context, arg FindTargetByD
 }
 
 const goalByID = `-- name: GoalByID :one
-SELECT id, title, description, status, area_id, quarter, deadline, created_by,
+SELECT id, title, description, status, area_id, quarter, deadline, created_by, proposal_rationale,
        created_at, updated_at
 FROM goals WHERE id = $1
 `
@@ -4722,6 +4724,7 @@ func (q *Queries) GoalByID(ctx context.Context, id uuid.UUID) (Goal, error) {
 		&i.Quarter,
 		&i.Deadline,
 		&i.CreatedBy,
+		&i.ProposalRationale,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -4770,7 +4773,7 @@ func (q *Queries) GoalByIDWithArea(ctx context.Context, id uuid.UUID) (GoalByIDW
 }
 
 const goalByTitle = `-- name: GoalByTitle :one
-SELECT id, title, description, status, area_id, quarter, deadline, created_by,
+SELECT id, title, description, status, area_id, quarter, deadline, created_by, proposal_rationale,
        created_at, updated_at
 FROM goals WHERE LOWER(title) = LOWER($1)
 `
@@ -4788,6 +4791,7 @@ func (q *Queries) GoalByTitle(ctx context.Context, title string) (Goal, error) {
 		&i.Quarter,
 		&i.Deadline,
 		&i.CreatedBy,
+		&i.ProposalRationale,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -7843,16 +7847,17 @@ func (q *Queries) ProposalsPendingCount(ctx context.Context) (ProposalsPendingCo
 
 const proposeArea = `-- name: ProposeArea :one
 
-INSERT INTO areas (slug, name, description, status, created_by)
-VALUES ($1, $2, $3, 'proposed', $4)
+INSERT INTO areas (slug, name, description, status, created_by, proposal_rationale)
+VALUES ($1, $2, $3, 'proposed', $4, $5)
 RETURNING id, slug, name, status, created_by
 `
 
 type ProposeAreaParams struct {
-	Slug        string  `json:"slug"`
-	Name        string  `json:"name"`
-	Description string  `json:"description"`
-	CreatedBy   *string `json:"created_by"`
+	Slug              string  `json:"slug"`
+	Name              string  `json:"name"`
+	Description       string  `json:"description"`
+	CreatedBy         *string `json:"created_by"`
+	ProposalRationale *string `json:"proposal_rationale"`
 }
 
 type ProposeAreaRow struct {
@@ -7876,6 +7881,7 @@ func (q *Queries) ProposeArea(ctx context.Context, arg ProposeAreaParams) (Propo
 		arg.Name,
 		arg.Description,
 		arg.CreatedBy,
+		arg.ProposalRationale,
 	)
 	var i ProposeAreaRow
 	err := row.Scan(
@@ -7889,17 +7895,18 @@ func (q *Queries) ProposeArea(ctx context.Context, arg ProposeAreaParams) (Propo
 }
 
 const proposeGoal = `-- name: ProposeGoal :one
-INSERT INTO goals (title, description, status, area_id, created_by)
-VALUES ($1, $2, 'proposed', $3, $4)
-RETURNING id, title, description, status, area_id, quarter, deadline, created_by,
+INSERT INTO goals (title, description, status, area_id, created_by, proposal_rationale)
+VALUES ($1, $2, 'proposed', $3, $4, $5)
+RETURNING id, title, description, status, area_id, quarter, deadline, created_by, proposal_rationale,
           created_at, updated_at
 `
 
 type ProposeGoalParams struct {
-	Title       string     `json:"title"`
-	Description string     `json:"description"`
-	AreaID      *uuid.UUID `json:"area_id"`
-	CreatedBy   *string    `json:"created_by"`
+	Title             string     `json:"title"`
+	Description       string     `json:"description"`
+	AreaID            *uuid.UUID `json:"area_id"`
+	CreatedBy         *string    `json:"created_by"`
+	ProposalRationale *string    `json:"proposal_rationale"`
 }
 
 // Insert an agent-proposed goal as an inert draft (status='proposed').
@@ -7912,6 +7919,7 @@ func (q *Queries) ProposeGoal(ctx context.Context, arg ProposeGoalParams) (Goal,
 		arg.Description,
 		arg.AreaID,
 		arg.CreatedBy,
+		arg.ProposalRationale,
 	)
 	var i Goal
 	err := row.Scan(
@@ -7923,6 +7931,7 @@ func (q *Queries) ProposeGoal(ctx context.Context, arg ProposeGoalParams) (Goal,
 		&i.Quarter,
 		&i.Deadline,
 		&i.CreatedBy,
+		&i.ProposalRationale,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -7930,22 +7939,24 @@ func (q *Queries) ProposeGoal(ctx context.Context, arg ProposeGoalParams) (Goal,
 }
 
 const proposedAreas = `-- name: ProposedAreas :many
-SELECT id, slug, name, description, created_by, created_at
+SELECT id, slug, name, description, created_by, proposal_rationale, created_at
 FROM areas
 WHERE status = 'proposed'
 ORDER BY created_at DESC
 `
 
 type ProposedAreasRow struct {
-	ID          uuid.UUID `json:"id"`
-	Slug        string    `json:"slug"`
-	Name        string    `json:"name"`
-	Description string    `json:"description"`
-	CreatedBy   *string   `json:"created_by"`
-	CreatedAt   time.Time `json:"created_at"`
+	ID                uuid.UUID `json:"id"`
+	Slug              string    `json:"slug"`
+	Name              string    `json:"name"`
+	Description       string    `json:"description"`
+	CreatedBy         *string   `json:"created_by"`
+	ProposalRationale *string   `json:"proposal_rationale"`
+	CreatedAt         time.Time `json:"created_at"`
 }
 
-// Every proposed area awaiting owner triage, newest first.
+// Every proposed area awaiting owner triage, newest first. proposal_rationale is
+// the agent's why-now justification, shown on the triage card.
 func (q *Queries) ProposedAreas(ctx context.Context) ([]ProposedAreasRow, error) {
 	rows, err := q.db.Query(ctx, proposedAreas)
 	if err != nil {
@@ -7961,6 +7972,7 @@ func (q *Queries) ProposedAreas(ctx context.Context) ([]ProposedAreasRow, error)
 			&i.Name,
 			&i.Description,
 			&i.CreatedBy,
+			&i.ProposalRationale,
 			&i.CreatedAt,
 		); err != nil {
 			return nil, err
@@ -7974,7 +7986,8 @@ func (q *Queries) ProposedAreas(ctx context.Context) ([]ProposedAreasRow, error)
 }
 
 const proposedGoals = `-- name: ProposedGoals :many
-SELECT g.id, g.title, g.description, g.area_id, g.created_by, g.created_at,
+SELECT g.id, g.title, g.description, g.area_id, g.created_by, g.proposal_rationale,
+       g.created_at,
        COALESCE(a.name, '') AS area_name,
        (SELECT count(*) FROM milestones m WHERE m.goal_id = g.id) AS milestone_total
 FROM goals g
@@ -7984,18 +7997,20 @@ ORDER BY g.created_at DESC
 `
 
 type ProposedGoalsRow struct {
-	ID             uuid.UUID  `json:"id"`
-	Title          string     `json:"title"`
-	Description    string     `json:"description"`
-	AreaID         *uuid.UUID `json:"area_id"`
-	CreatedBy      *string    `json:"created_by"`
-	CreatedAt      time.Time  `json:"created_at"`
-	AreaName       string     `json:"area_name"`
-	MilestoneTotal int64      `json:"milestone_total"`
+	ID                uuid.UUID  `json:"id"`
+	Title             string     `json:"title"`
+	Description       string     `json:"description"`
+	AreaID            *uuid.UUID `json:"area_id"`
+	CreatedBy         *string    `json:"created_by"`
+	ProposalRationale *string    `json:"proposal_rationale"`
+	CreatedAt         time.Time  `json:"created_at"`
+	AreaName          string     `json:"area_name"`
+	MilestoneTotal    int64      `json:"milestone_total"`
 }
 
 // Every proposed goal awaiting owner triage, with area name + milestone count,
-// newest first. Feeds the one-card-at-a-time triage surface.
+// newest first. Feeds the one-card-at-a-time triage surface. proposal_rationale
+// is the agent's why-now justification, shown on the triage card.
 func (q *Queries) ProposedGoals(ctx context.Context) ([]ProposedGoalsRow, error) {
 	rows, err := q.db.Query(ctx, proposedGoals)
 	if err != nil {
@@ -8011,6 +8026,7 @@ func (q *Queries) ProposedGoals(ctx context.Context) ([]ProposedGoalsRow, error)
 			&i.Description,
 			&i.AreaID,
 			&i.CreatedBy,
+			&i.ProposalRationale,
 			&i.CreatedAt,
 			&i.AreaName,
 			&i.MilestoneTotal,
@@ -11933,7 +11949,7 @@ UPDATE goals SET
     area_id     = COALESCE($5, area_id),
     updated_at  = now()
 WHERE id = $6
-RETURNING id, title, description, status, area_id, quarter, deadline, created_by,
+RETURNING id, title, description, status, area_id, quarter, deadline, created_by, proposal_rationale,
           created_at, updated_at
 `
 
@@ -11968,6 +11984,7 @@ func (q *Queries) UpdateGoal(ctx context.Context, arg UpdateGoalParams) (Goal, e
 		&i.Quarter,
 		&i.Deadline,
 		&i.CreatedBy,
+		&i.ProposalRationale,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -11979,7 +11996,7 @@ UPDATE goals SET
     status = $1::goal_status,
     updated_at = now()
 WHERE id = $2
-RETURNING id, title, description, status, area_id, quarter, deadline, created_by,
+RETURNING id, title, description, status, area_id, quarter, deadline, created_by, proposal_rationale,
           created_at, updated_at
 `
 
@@ -12001,6 +12018,7 @@ func (q *Queries) UpdateGoalStatus(ctx context.Context, arg UpdateGoalStatusPara
 		&i.Quarter,
 		&i.Deadline,
 		&i.CreatedBy,
+		&i.ProposalRationale,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)

@@ -99,6 +99,7 @@ func (s *Server) proposeArea(ctx context.Context, _ *mcp.CallToolRequest, input 
 			Name:        strings.TrimSpace(input.Name),
 			Description: input.Description,
 			CreatedBy:   s.callerIdentity(ctx),
+			Rationale:   nilIfBlank(input.Rationale),
 		})
 		return createErr
 	})
@@ -181,6 +182,7 @@ func (s *Server) proposeGoal(ctx context.Context, _ *mcp.CallToolRequest, input 
 			Description: input.Description,
 			AreaID:      areaID,
 			CreatedBy:   s.callerIdentity(ctx),
+			Rationale:   nilIfBlank(input.Rationale),
 			Milestones:  input.Milestones,
 		})
 		return createErr
@@ -222,4 +224,14 @@ func deref(p *string) string {
 		return ""
 	}
 	return *p
+}
+
+// nilIfBlank maps an omitted-or-whitespace rationale to nil so it persists as
+// SQL NULL (matching proposal_rationale's "NULL for admin/seeded rows"
+// semantics), and a real justification to a pointer to the original value.
+func nilIfBlank(s string) *string {
+	if strings.TrimSpace(s) == "" {
+		return nil
+	}
+	return &s
 }

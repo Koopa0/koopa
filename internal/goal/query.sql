@@ -4,12 +4,12 @@ UPDATE goals SET
     status = @status::goal_status,
     updated_at = now()
 WHERE id = @id
-RETURNING id, title, description, status, area_id, quarter, deadline, created_by,
+RETURNING id, title, description, status, area_id, quarter, deadline, created_by, proposal_rationale,
           created_at, updated_at;
 
 -- name: GoalByTitle :one
 -- Find a goal by case-insensitive title match.
-SELECT id, title, description, status, area_id, quarter, deadline, created_by,
+SELECT id, title, description, status, area_id, quarter, deadline, created_by, proposal_rationale,
        created_at, updated_at
 FROM goals WHERE LOWER(title) = LOWER(@title);
 
@@ -17,11 +17,11 @@ FROM goals WHERE LOWER(title) = LOWER(@title);
 -- Create a new goal (v2: PostgreSQL-native).
 INSERT INTO goals (title, description, status, area_id, quarter, deadline)
 VALUES (@title, @description, @status::goal_status, @area_id, @quarter, @deadline)
-RETURNING id, title, description, status, area_id, quarter, deadline, created_by,
+RETURNING id, title, description, status, area_id, quarter, deadline, created_by, proposal_rationale,
           created_at, updated_at;
 
 -- name: GoalByID :one
-SELECT id, title, description, status, area_id, quarter, deadline, created_by,
+SELECT id, title, description, status, area_id, quarter, deadline, created_by, proposal_rationale,
        created_at, updated_at
 FROM goals WHERE id = @id;
 
@@ -185,7 +185,7 @@ UPDATE goals SET
     area_id     = COALESCE(sqlc.narg('new_area_id'), area_id),
     updated_at  = now()
 WHERE id = @id
-RETURNING id, title, description, status, area_id, quarter, deadline, created_by,
+RETURNING id, title, description, status, area_id, quarter, deadline, created_by, proposal_rationale,
           created_at, updated_at;
 
 -- name: UpdateMilestone :one
@@ -215,8 +215,8 @@ DELETE FROM milestones WHERE id = @id AND goal_id = @goal_id;
 -- Insert an agent-proposed area as an inert draft (status='proposed').
 -- created_by is the proposing agent. The area is filtered out of every
 -- active-only selector until the owner activates it in admin triage.
-INSERT INTO areas (slug, name, description, status, created_by)
-VALUES (@slug, @name, @description, 'proposed', @created_by)
+INSERT INTO areas (slug, name, description, status, created_by, proposal_rationale)
+VALUES (@slug, @name, @description, 'proposed', @created_by, @proposal_rationale)
 RETURNING id, slug, name, status, created_by;
 
 -- name: ProposeGoal :one
@@ -224,9 +224,9 @@ RETURNING id, slug, name, status, created_by;
 -- created_by is the proposing agent. area_id may reference an active OR a
 -- just-proposed area (resolved by the caller). Milestones are inserted
 -- separately in the same transaction.
-INSERT INTO goals (title, description, status, area_id, created_by)
-VALUES (@title, @description, 'proposed', @area_id, @created_by)
-RETURNING id, title, description, status, area_id, quarter, deadline, created_by,
+INSERT INTO goals (title, description, status, area_id, created_by, proposal_rationale)
+VALUES (@title, @description, 'proposed', @area_id, @created_by, @proposal_rationale)
+RETURNING id, title, description, status, area_id, quarter, deadline, created_by, proposal_rationale,
           created_at, updated_at;
 
 -- name: ActivateGoal :one
@@ -235,7 +235,7 @@ RETURNING id, title, description, status, area_id, quarter, deadline, created_by
 -- not proposed (the store disambiguates with a follow-up read).
 UPDATE goals SET status = 'not_started', updated_at = now()
 WHERE id = @id AND status = 'proposed'
-RETURNING id, title, description, status, area_id, quarter, deadline, created_by,
+RETURNING id, title, description, status, area_id, quarter, deadline, created_by, proposal_rationale,
           created_at, updated_at;
 
 -- name: ActivateArea :one
@@ -276,8 +276,10 @@ SELECT id, slug, name, status, created_by FROM areas WHERE id = @id;
 
 -- name: ProposedGoals :many
 -- Every proposed goal awaiting owner triage, with area name + milestone count,
--- newest first. Feeds the one-card-at-a-time triage surface.
-SELECT g.id, g.title, g.description, g.area_id, g.created_by, g.created_at,
+-- newest first. Feeds the one-card-at-a-time triage surface. proposal_rationale
+-- is the agent's why-now justification, shown on the triage card.
+SELECT g.id, g.title, g.description, g.area_id, g.created_by, g.proposal_rationale,
+       g.created_at,
        COALESCE(a.name, '') AS area_name,
        (SELECT count(*) FROM milestones m WHERE m.goal_id = g.id) AS milestone_total
 FROM goals g
@@ -286,8 +288,9 @@ WHERE g.status = 'proposed'
 ORDER BY g.created_at DESC;
 
 -- name: ProposedAreas :many
--- Every proposed area awaiting owner triage, newest first.
-SELECT id, slug, name, description, created_by, created_at
+-- Every proposed area awaiting owner triage, newest first. proposal_rationale is
+-- the agent's why-now justification, shown on the triage card.
+SELECT id, slug, name, description, created_by, proposal_rationale, created_at
 FROM areas
 WHERE status = 'proposed'
 ORDER BY created_at DESC;

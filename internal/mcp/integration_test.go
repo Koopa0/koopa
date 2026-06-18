@@ -3681,6 +3681,156 @@ func TestIntegration_ProposeGoal_BlankTitleRejected(t *testing.T) {
 	}
 }
 
+// TestIntegration_ProposeGoal_RationalePersistsTriageOnly proves the rationale
+// captured by propose_goal is (a) stored on the proposed row, (b) surfaced in
+// the triage-list read, and (c) NOT leaked into the normal goal list. A sibling
+// goal proposed without a rationale persists NULL (nil pointer), pinning the
+// nullable→pointer mapping at both the store and triage-read layers.
+func TestIntegration_ProposeGoal_RationalePersistsTriageOnly(t *testing.T) {
+	s := setupServer(t)
+
+	const rationale = "Recurring Japanese study sessions signal a real objective worth committing to."
+
+	_, withRat, err := callHandlerAs(t, "planner", s.proposeGoal, ProposeGoalInput{
+		Title:     "Reach conversational Japanese",
+		Rationale: rationale,
+	})
+	if err != nil {
+		t.Fatalf("proposeGoal(with rationale): %v", err)
+	}
+	_, noRat, err := callHandlerAs(t, "planner", s.proposeGoal, ProposeGoalInput{
+		Title: "Goal with no rationale",
+	})
+	if err != nil {
+		t.Fatalf("proposeGoal(no rationale): %v", err)
+	}
+
+	// (a) The proposed row stores the rationale verbatim; the omitted one is NULL.
+	var stored *string
+	if err := testPool.QueryRow(t.Context(),
+		`SELECT proposal_rationale FROM goals WHERE id = $1`, withRat.Goal.ID,
+	).Scan(&stored); err != nil {
+		t.Fatalf("reading stored rationale: %v", err)
+	}
+	if stored == nil || *stored != rationale {
+		t.Errorf("stored proposal_rationale = %v, want %q", stored, rationale)
+	}
+	var storedNil *string
+	if err := testPool.QueryRow(t.Context(),
+		`SELECT proposal_rationale FROM goals WHERE id = $1`, noRat.Goal.ID,
+	).Scan(&storedNil); err != nil {
+		t.Fatalf("reading omitted rationale: %v", err)
+	}
+	if storedNil != nil {
+		t.Errorf("omitted proposal_rationale = %q, want NULL (nil)", *storedNil)
+	}
+
+	// (b) The triage-list read carries the rationale through to the UI, and the
+	// omitted one stays nil.
+	proposed, err := s.goals.ProposedGoals(t.Context())
+	if err != nil {
+		t.Fatalf("ProposedGoals: %v", err)
+	}
+	var gotRat, gotNil *string
+	var found, foundNil bool
+	for i := range proposed {
+		switch proposed[i].ID {
+		case withRat.Goal.ID:
+			gotRat, found = proposed[i].ProposalRationale, true
+		case noRat.Goal.ID:
+			gotNil, foundNil = proposed[i].ProposalRationale, true
+		}
+	}
+	if !found || !foundNil {
+		t.Fatalf("triage list missing proposed goals (found=%v foundNil=%v)", found, foundNil)
+	}
+	if gotRat == nil || *gotRat != rationale {
+		t.Errorf("triage ProposalRationale = %v, want %q", gotRat, rationale)
+	}
+	if gotNil != nil {
+		t.Errorf("triage ProposalRationale (omitted) = %q, want nil", *gotNil)
+	}
+
+	// (c) The normal goal list never carries the rationale — even asked for
+	// proposed rows explicitly, the active-list struct has no such field, so the
+	// justification cannot appear in its serialized form.
+	status := "proposed"
+	list, err := s.goals.GoalsByOptionalStatus(t.Context(), &status)
+	if err != nil {
+		t.Fatalf("GoalsByOptionalStatus: %v", err)
+	}
+	blob, err := json.Marshal(list)
+	if err != nil {
+		t.Fatalf("marshaling normal list: %v", err)
+	}
+	if strings.Contains(string(blob), rationale) {
+		t.Errorf("normal goal list leaked proposal_rationale: %s", blob)
+	}
+}
+
+// TestIntegration_ProposeArea_RationalePersistsTriageOnly is the area
+// counterpart: propose_area's rationale is stored on the proposed row, surfaced
+// in the triage list, and absent from the active-area selector (which excludes
+// proposed areas entirely).
+func TestIntegration_ProposeArea_RationalePersistsTriageOnly(t *testing.T) {
+	s := setupServer(t)
+	t.Cleanup(func() { deleteProposedAreas(t) })
+
+	const rationale = "Backend craft keeps surfacing as a standing responsibility, not a one-off."
+
+	_, out, err := callHandlerAs(t, "planner", s.proposeArea, ProposeAreaInput{
+		Name:      "Backend Studio",
+		Rationale: rationale,
+	})
+	if err != nil {
+		t.Fatalf("proposeArea: %v", err)
+	}
+
+	// (a) Stored on the proposed row.
+	var stored *string
+	if err := testPool.QueryRow(t.Context(),
+		`SELECT proposal_rationale FROM areas WHERE id = $1`, out.Area.ID,
+	).Scan(&stored); err != nil {
+		t.Fatalf("reading stored rationale: %v", err)
+	}
+	if stored == nil || *stored != rationale {
+		t.Errorf("stored proposal_rationale = %v, want %q", stored, rationale)
+	}
+
+	// (b) Surfaced in the triage list.
+	proposed, err := s.goals.ProposedAreas(t.Context())
+	if err != nil {
+		t.Fatalf("ProposedAreas: %v", err)
+	}
+	var got *string
+	var found bool
+	for i := range proposed {
+		if proposed[i].ID == out.Area.ID {
+			got, found = proposed[i].ProposalRationale, true
+		}
+	}
+	if !found {
+		t.Fatalf("triage list missing proposed area %s", out.Area.ID)
+	}
+	if got == nil || *got != rationale {
+		t.Errorf("triage ProposalRationale = %v, want %q", got, rationale)
+	}
+
+	// (c) The active-area selector excludes proposed areas entirely, so the
+	// rationale never reaches it.
+	areas, err := s.goals.Areas(t.Context())
+	if err != nil {
+		t.Fatalf("Areas: %v", err)
+	}
+	blob, err := json.Marshal(areas)
+	if err != nil {
+		t.Fatalf("marshaling area selector: %v", err)
+	}
+	if strings.Contains(string(blob), rationale) {
+		t.Errorf("active-area selector leaked proposal_rationale: %s", blob)
+	}
+}
+
 // TestIntegration_BriefReflection_CountsFromTodoState pins that brief(reflection)
 // derives completed/deferred/planned from each planned todo's CURRENT state, not
 // the daily_plan_item.status column (which has no write path — it stays 'planned'

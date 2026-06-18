@@ -578,11 +578,14 @@ type ProposedArea struct {
 
 // ProposeAreaParams holds the fields for an agent-proposed area draft. Slug is
 // derived by the caller (handler) and must satisfy chk_area_slug_format.
+// Rationale is the agent's optional why-now justification; nil when omitted,
+// stored as NULL.
 type ProposeAreaParams struct {
 	Slug        string
 	Name        string
 	Description string
 	CreatedBy   string
+	Rationale   *string
 }
 
 // ProposeArea inserts an agent-proposed area as an inert draft
@@ -590,10 +593,11 @@ type ProposeAreaParams struct {
 // CHECK violation (blank name, malformed slug) becomes ErrInvalidInput.
 func (s *Store) ProposeArea(ctx context.Context, p *ProposeAreaParams) (*ProposedArea, error) {
 	r, err := s.q.ProposeArea(ctx, db.ProposeAreaParams{
-		Slug:        p.Slug,
-		Name:        p.Name,
-		Description: p.Description,
-		CreatedBy:   &p.CreatedBy,
+		Slug:              p.Slug,
+		Name:              p.Name,
+		Description:       p.Description,
+		CreatedBy:         &p.CreatedBy,
+		ProposalRationale: p.Rationale,
 	})
 	if err != nil {
 		return nil, mapProposeError(err, "proposing area")
@@ -609,12 +613,14 @@ func (s *Store) ProposeArea(ctx context.Context, p *ProposeAreaParams) (*Propose
 
 // ProposeGoalParams holds the fields for an agent-proposed goal draft.
 // AreaID is resolved by the caller (existing-active or just-proposed area);
-// Milestones are appended in insertion order under the new goal.
+// Milestones are appended in insertion order under the new goal. Rationale is
+// the agent's optional why-now justification; nil when omitted, stored as NULL.
 type ProposeGoalParams struct {
 	Title       string
 	Description string
 	AreaID      *uuid.UUID
 	CreatedBy   string
+	Rationale   *string
 	Milestones  []string
 }
 
@@ -625,10 +631,11 @@ type ProposeGoalParams struct {
 // ErrInvalidInput; a CHECK violation (blank title) likewise.
 func (s *Store) ProposeGoal(ctx context.Context, p *ProposeGoalParams) (*Goal, error) {
 	r, err := s.q.ProposeGoal(ctx, db.ProposeGoalParams{
-		Title:       p.Title,
-		Description: p.Description,
-		AreaID:      p.AreaID,
-		CreatedBy:   &p.CreatedBy,
+		Title:             p.Title,
+		Description:       p.Description,
+		AreaID:            p.AreaID,
+		CreatedBy:         &p.CreatedBy,
+		ProposalRationale: p.Rationale,
 	})
 	if err != nil {
 		return nil, mapProposeError(err, "proposing goal")
@@ -750,26 +757,32 @@ func (s *Store) ProposalsPendingCount(ctx context.Context) (ProposalsPending, er
 }
 
 // ProposedGoalSummary is a proposed goal row for the triage surface, with area
-// name and milestone count resolved.
+// name and milestone count resolved. ProposalRationale is the agent's why-now
+// justification (nil when none was given) — surfaced only here in triage, never
+// in the active-goal list or brief.
 type ProposedGoalSummary struct {
-	ID             uuid.UUID  `json:"id"`
-	Title          string     `json:"title"`
-	Description    string     `json:"description"`
-	AreaID         *uuid.UUID `json:"area_id,omitempty"`
-	AreaName       string     `json:"area_name"`
-	CreatedBy      *string    `json:"created_by,omitempty"`
-	CreatedAt      time.Time  `json:"created_at"`
-	MilestoneTotal int64      `json:"milestone_total"`
+	ID                uuid.UUID  `json:"id"`
+	Title             string     `json:"title"`
+	Description       string     `json:"description"`
+	AreaID            *uuid.UUID `json:"area_id,omitempty"`
+	AreaName          string     `json:"area_name"`
+	CreatedBy         *string    `json:"created_by,omitempty"`
+	ProposalRationale *string    `json:"proposal_rationale,omitempty"`
+	CreatedAt         time.Time  `json:"created_at"`
+	MilestoneTotal    int64      `json:"milestone_total"`
 }
 
 // ProposedAreaSummary is a proposed area row for the triage surface.
+// ProposalRationale is the agent's why-now justification (nil when none was
+// given) — surfaced only here in triage.
 type ProposedAreaSummary struct {
-	ID          uuid.UUID `json:"id"`
-	Slug        string    `json:"slug"`
-	Name        string    `json:"name"`
-	Description string    `json:"description"`
-	CreatedBy   *string   `json:"created_by,omitempty"`
-	CreatedAt   time.Time `json:"created_at"`
+	ID                uuid.UUID `json:"id"`
+	Slug              string    `json:"slug"`
+	Name              string    `json:"name"`
+	Description       string    `json:"description"`
+	CreatedBy         *string   `json:"created_by,omitempty"`
+	ProposalRationale *string   `json:"proposal_rationale,omitempty"`
+	CreatedAt         time.Time `json:"created_at"`
 }
 
 // ProposedGoals returns every proposed goal awaiting triage, newest first.
@@ -782,14 +795,15 @@ func (s *Store) ProposedGoals(ctx context.Context) ([]ProposedGoalSummary, error
 	for i := range rows {
 		r := &rows[i]
 		out[i] = ProposedGoalSummary{
-			ID:             r.ID,
-			Title:          r.Title,
-			Description:    r.Description,
-			AreaID:         r.AreaID,
-			AreaName:       r.AreaName,
-			CreatedBy:      r.CreatedBy,
-			CreatedAt:      r.CreatedAt,
-			MilestoneTotal: r.MilestoneTotal,
+			ID:                r.ID,
+			Title:             r.Title,
+			Description:       r.Description,
+			AreaID:            r.AreaID,
+			AreaName:          r.AreaName,
+			CreatedBy:         r.CreatedBy,
+			ProposalRationale: r.ProposalRationale,
+			CreatedAt:         r.CreatedAt,
+			MilestoneTotal:    r.MilestoneTotal,
 		}
 	}
 	return out, nil
@@ -805,12 +819,13 @@ func (s *Store) ProposedAreas(ctx context.Context) ([]ProposedAreaSummary, error
 	for i := range rows {
 		r := &rows[i]
 		out[i] = ProposedAreaSummary{
-			ID:          r.ID,
-			Slug:        r.Slug,
-			Name:        r.Name,
-			Description: r.Description,
-			CreatedBy:   r.CreatedBy,
-			CreatedAt:   r.CreatedAt,
+			ID:                r.ID,
+			Slug:              r.Slug,
+			Name:              r.Name,
+			Description:       r.Description,
+			CreatedBy:         r.CreatedBy,
+			ProposalRationale: r.ProposalRationale,
+			CreatedAt:         r.CreatedAt,
 		}
 	}
 	return out, nil
