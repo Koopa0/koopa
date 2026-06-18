@@ -102,9 +102,7 @@ func (s *Store) FindOrCreateConcept(ctx context.Context, slug, name, domain, kin
 
 // ConceptIDsBySlug resolves a batch of concept slugs to their UUIDs. Returns
 // a map keyed by slug; slugs that don't match any concept are absent from
-// the map. Callers compare len(result) to len(input) to detect missing
-// slugs. Used by manage_content to wire content_concepts atomically without
-// forcing the caller to know concept UUIDs.
+// the map. Callers compare len(result) to len(input) to detect missing slugs.
 func (s *Store) ConceptIDsBySlug(ctx context.Context, slugs []string) (map[string]uuid.UUID, error) {
 	if len(slugs) == 0 {
 		return map[string]uuid.UUID{}, nil
@@ -139,10 +137,10 @@ func (s *Store) ConceptBySlug(ctx context.Context, domain, slug string) (*Concep
 	}, nil
 }
 
-// ConceptsTouchedCount returns (high_only, all) distinct concept counts for
-// attempts in the [start, end) window. Drives weekly_summary.concepts_touched
-// (high) and concepts_touched_all (calibration metric — difference is the
-// number of low-confidence observations not yet behavior-validated).
+// ConceptsTouchedCount returns (high, all) distinct concept counts for
+// attempts in the [start, end) window: high counts only behaviour-validated
+// (high-confidence) observations; all includes low-confidence ones. The
+// difference is the not-yet-validated calibration gap.
 func (s *Store) ConceptsTouchedCount(ctx context.Context, start, end time.Time) (high, all int, err error) {
 	row, err := s.q.ConceptsTouchedBetween(ctx, db.ConceptsTouchedBetweenParams{
 		StartAt: start,
