@@ -72,34 +72,6 @@ type TargetRelation struct {
 	RelatedLastAttemptedAt *time.Time `json:"related_last_attempted_at,omitempty"`
 }
 
-// TargetNote is a lightweight note projection returned by target-writeup queries.
-// Distinct from note.Note so the learning package doesn't force a cross-package
-// conversion on consumers that only want the common fields.
-type TargetNote struct {
-	ID        uuid.UUID
-	Slug      string
-	Title     string
-	Body      string
-	Kind      string
-	Maturity  string
-	CreatedBy string
-	CreatedAt time.Time
-	UpdatedAt time.Time
-}
-
-// TargetContent is a lightweight content projection for target-writeup listings.
-type TargetContent struct {
-	ID          uuid.UUID
-	Slug        string
-	Title       string
-	Type        string
-	Status      string
-	IsPublic    bool
-	PublishedAt *time.Time
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
-}
-
 // FindTarget looks up a learning target by (domain, title) without creating
 // it. Returns ErrNotFound if the target does not exist. Used by read-only
 // tools like attempt_history that must not silently pollute the catalog.
@@ -233,30 +205,6 @@ type Target struct {
 // without needing to know the column nullability convention.
 func (t *Target) IsArchived() bool { return t.ArchivedAt != nil }
 
-// ArchivedTarget is the post-archive row returned by ArchiveTarget. The
-// batch_id ties together the target + its cascaded relations so
-// unarchive_target can restore exactly that group.
-type ArchivedTarget struct {
-	ID             uuid.UUID
-	Domain         string
-	Title          string
-	ArchivedAt     time.Time
-	ArchiveBatchID uuid.UUID
-}
-
-// ArchivedRelation is one row included in the cascaded_relations list
-// of an archive response. Carries enough fields for the caller to
-// re-display "what got archived alongside the target" without a second
-// lookup.
-type ArchivedRelation struct {
-	ID             uuid.UUID
-	AnchorID       uuid.UUID
-	RelatedID      uuid.UUID
-	RelationType   string
-	ArchivedAt     time.Time
-	ArchiveBatchID uuid.UUID
-}
-
 // TargetByID returns the full row including archive metadata. Returns
 // ErrNotFound when the target does not exist. Does NOT filter archived
 // rows — callers branch on ArchivedAt to decide archive vs unarchive
@@ -281,63 +229,6 @@ func (s *Store) TargetByID(ctx context.Context, id uuid.UUID) (*Target, error) {
 		CreatedAt:      row.CreatedAt,
 		UpdatedAt:      row.UpdatedAt,
 	}, nil
-}
-
-// ArchiveTarget soft-deletes a target. When cascadeRelations is true,
-// every live learning_target_relations row that references the target
-// as anchor OR related is archived in the same batch (returned in
-// cascaded). The symmetric-reverse edge auto-created by the symmetry
-// trigger sits in the same anchor|related set, so it gets caught
-// naturally without a separate query.
-//
-// Returns ErrAlreadyArchived when the target's archived_at is already
-// set (idempotent rejection — UPDATE WHERE archived_at IS NULL returns
-// zero rows). The caller MUST pre-flight via TargetByID for ownership
-// + state — that contract lives at the handler layer.
-//
-// The batch_id is caller-supplied so the unarchive path can restore
-// exactly this group. Generate a fresh UUID per archive call.
-func (s *Store) ArchiveTarget(ctx context.Context, targetID, batchID uuid.UUID, cascadeRelations bool) (*ArchivedTarget, []ArchivedRelation, error) {
-	row, err := s.q.ArchiveTargetReturn(ctx, db.ArchiveTargetReturnParams{
-		ID:      targetID,
-		BatchID: &batchID,
-	})
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, nil, ErrAlreadyArchived
-		}
-		return nil, nil, fmt.Errorf("archiving target %s: %w", targetID, err)
-	}
-	archived := &ArchivedTarget{
-		ID:             row.ID,
-		Domain:         row.Domain,
-		Title:          row.Title,
-		ArchivedAt:     *row.ArchivedAt,
-		ArchiveBatchID: *row.ArchiveBatchID,
-	}
-	if !cascadeRelations {
-		return archived, nil, nil
-	}
-	relRows, err := s.q.ArchiveRelationsForTarget(ctx, db.ArchiveRelationsForTargetParams{
-		BatchID:  &batchID,
-		TargetID: targetID,
-	})
-	if err != nil {
-		return nil, nil, fmt.Errorf("cascading relations archive for %s: %w", targetID, err)
-	}
-	cascaded := make([]ArchivedRelation, len(relRows))
-	for i := range relRows {
-		r := &relRows[i]
-		cascaded[i] = ArchivedRelation{
-			ID:             r.ID,
-			AnchorID:       r.AnchorID,
-			RelatedID:      r.RelatedID,
-			RelationType:   r.RelationType,
-			ArchivedAt:     *r.ArchivedAt,
-			ArchiveBatchID: *r.ArchiveBatchID,
-		}
-	}
-	return archived, cascaded, nil
 }
 
 // TargetVariations returns the problem relationship graph for learning targets.
@@ -403,137 +294,6 @@ func (s *Store) Targets(ctx context.Context, f TargetListFilter) ([]TargetListRo
 	out := make([]TargetListRow, len(rows))
 	for i := range rows {
 		out[i] = TargetListRow{ID: rows[i].ID, Title: rows[i].Title, Domain: rows[i].Domain}
-	}
-	return out, nil
-}
-
-// ============================================================
-// Learning target writeup junctions
-//
-// Two N:M attach paths (notes + contents). Intentionally not polymorphic:
-// notes and contents are distinct entities with different lifecycles.
-// ============================================================
-
-// AttachNote idempotently attaches a note to a target. A repeat attach is a no-op.
-func (s *Store) AttachNote(ctx context.Context, targetID, noteID uuid.UUID) error {
-	if err := s.q.AttachNoteToTarget(ctx, db.AttachNoteToTargetParams{
-		TargetID: targetID,
-		NoteID:   noteID,
-	}); err != nil {
-		return fmt.Errorf("attaching note %s to target %s: %w", noteID, targetID, err)
-	}
-	return nil
-}
-
-// DetachNote removes the attach row. Returns ErrNotFound when no row matched.
-func (s *Store) DetachNote(ctx context.Context, targetID, noteID uuid.UUID) error {
-	n, err := s.q.DetachNoteFromTarget(ctx, db.DetachNoteFromTargetParams{
-		TargetID: targetID,
-		NoteID:   noteID,
-	})
-	if err != nil {
-		return fmt.Errorf("detaching note %s from target %s: %w", noteID, targetID, err)
-	}
-	if n == 0 {
-		return ErrNotFound
-	}
-	return nil
-}
-
-// NotesForTarget returns all notes attached to a target, newest-updated first.
-func (s *Store) NotesForTarget(ctx context.Context, targetID uuid.UUID) ([]TargetNote, error) {
-	rows, err := s.q.NotesForTarget(ctx, targetID)
-	if err != nil {
-		return nil, fmt.Errorf("listing notes for target %s: %w", targetID, err)
-	}
-	out := make([]TargetNote, len(rows))
-	for i := range rows {
-		out[i] = TargetNote{
-			ID:        rows[i].ID,
-			Slug:      rows[i].Slug,
-			Title:     rows[i].Title,
-			Body:      rows[i].Body,
-			Kind:      string(rows[i].Kind),
-			Maturity:  string(rows[i].Maturity),
-			CreatedBy: rows[i].CreatedBy,
-			CreatedAt: rows[i].CreatedAt,
-			UpdatedAt: rows[i].UpdatedAt,
-		}
-	}
-	return out, nil
-}
-
-// CanonicalNoteForTarget returns the canonical writeup note for a target,
-// resolved via learning_domains.canonical_writeup_kind. Returns
-// (nil, nil) — not an error — when the domain has no canonical rule or
-// no note of the canonical kind is attached yet. Caller distinguishes
-// 'no canonical' from 'lookup error' by nil vs error.
-func (s *Store) CanonicalNoteForTarget(ctx context.Context, targetID uuid.UUID) (*TargetNote, error) {
-	row, err := s.q.CanonicalNoteForTarget(ctx, targetID)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("querying canonical note for target %s: %w", targetID, err)
-	}
-	return &TargetNote{
-		ID:        row.ID,
-		Slug:      row.Slug,
-		Title:     row.Title,
-		Body:      row.Body,
-		Kind:      string(row.Kind),
-		Maturity:  string(row.Maturity),
-		CreatedBy: row.CreatedBy,
-		CreatedAt: row.CreatedAt,
-		UpdatedAt: row.UpdatedAt,
-	}, nil
-}
-
-// AttachContent idempotently attaches a content row (article/essay/etc) to a target.
-func (s *Store) AttachContent(ctx context.Context, targetID, contentID uuid.UUID) error {
-	if err := s.q.AttachContentToTarget(ctx, db.AttachContentToTargetParams{
-		TargetID:  targetID,
-		ContentID: contentID,
-	}); err != nil {
-		return fmt.Errorf("attaching content %s to target %s: %w", contentID, targetID, err)
-	}
-	return nil
-}
-
-// DetachContent removes the attach row. Returns ErrNotFound when no row matched.
-func (s *Store) DetachContent(ctx context.Context, targetID, contentID uuid.UUID) error {
-	n, err := s.q.DetachContentFromTarget(ctx, db.DetachContentFromTargetParams{
-		TargetID:  targetID,
-		ContentID: contentID,
-	})
-	if err != nil {
-		return fmt.Errorf("detaching content %s from target %s: %w", contentID, targetID, err)
-	}
-	if n == 0 {
-		return ErrNotFound
-	}
-	return nil
-}
-
-// ContentsForTarget returns all contents attached to a target, newest-updated first.
-func (s *Store) ContentsForTarget(ctx context.Context, targetID uuid.UUID) ([]TargetContent, error) {
-	rows, err := s.q.ContentsForTarget(ctx, targetID)
-	if err != nil {
-		return nil, fmt.Errorf("listing contents for target %s: %w", targetID, err)
-	}
-	out := make([]TargetContent, len(rows))
-	for i := range rows {
-		out[i] = TargetContent{
-			ID:          rows[i].ID,
-			Slug:        rows[i].Slug,
-			Title:       rows[i].Title,
-			Type:        string(rows[i].Type),
-			Status:      string(rows[i].Status),
-			IsPublic:    rows[i].IsPublic,
-			PublishedAt: rows[i].PublishedAt,
-			CreatedAt:   rows[i].CreatedAt,
-			UpdatedAt:   rows[i].UpdatedAt,
-		}
 	}
 	return out, nil
 }

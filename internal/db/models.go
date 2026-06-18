@@ -836,9 +836,9 @@ type LearningHypothesis struct {
 	ObservedDate time.Time `json:"observed_date"`
 	// When the state transitioned to verified or invalidated. NULL otherwise. Tied to state by chk_learning_hypothesis_resolved_at.
 	ResolvedAt *time.Time `json:"resolved_at"`
-	// Optional FK to the learning attempt whose outcome resolved this hypothesis. SET NULL on attempt deletion.
+	// Optional FK to the learning attempt whose outcome resolved this hypothesis. RESTRICT on attempt deletion — a resolved hypothesis pins its evidence (deleting it via SET NULL would violate chk_learning_hypothesis_resolution when no other evidence column is set).
 	ResolvedByAttemptID *uuid.UUID `json:"resolved_by_attempt_id"`
-	// Optional FK to the observation whose evidence resolved this hypothesis. SET NULL on observation deletion.
+	// Optional FK to the observation whose evidence resolved this hypothesis. RESTRICT on observation deletion — a resolved hypothesis pins its evidence (deleting it via SET NULL would violate chk_learning_hypothesis_resolution when no other evidence column is set).
 	ResolvedByObservationID *uuid.UUID `json:"resolved_by_observation_id"`
 	// Free-text resolution rationale. Required when state is verified/invalidated and neither resolved_by_* FK is set.
 	ResolutionSummary *string   `json:"resolution_summary"`

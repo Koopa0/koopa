@@ -574,95 +574,6 @@ func (q *Queries) ArchiveContentReturning(ctx context.Context, id uuid.UUID) (Ar
 	return i, err
 }
 
-const archiveRelationsForTarget = `-- name: ArchiveRelationsForTarget :many
-UPDATE learning_target_relations
-SET archived_at = now(), archive_batch_id = $1
-WHERE (anchor_id = $2 OR related_id = $2)
-  AND archived_at IS NULL
-RETURNING id, anchor_id, related_id, relation_type, created_by,
-          archived_at, archive_batch_id, created_at
-`
-
-type ArchiveRelationsForTargetParams struct {
-	BatchID  *uuid.UUID `json:"batch_id"`
-	TargetID uuid.UUID  `json:"target_id"`
-}
-
-// Cascades archive onto every live relation that references the target
-// as anchor OR related, tagging them with the same batch id. The
-// symmetric-relation reverse edge (auto-inserted by the
-// enforce_learning_target_relation_symmetry trigger for same_pattern /
-// similar_structure) is the same row pattern with anchor/related
-// swapped, so it gets caught by the OR clause naturally — no separate
-// query needed. Returns the affected rows so the handler can include
-// them in the cascaded_relations response.
-func (q *Queries) ArchiveRelationsForTarget(ctx context.Context, arg ArchiveRelationsForTargetParams) ([]LearningTargetRelation, error) {
-	rows, err := q.db.Query(ctx, archiveRelationsForTarget, arg.BatchID, arg.TargetID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []LearningTargetRelation{}
-	for rows.Next() {
-		var i LearningTargetRelation
-		if err := rows.Scan(
-			&i.ID,
-			&i.AnchorID,
-			&i.RelatedID,
-			&i.RelationType,
-			&i.CreatedBy,
-			&i.ArchivedAt,
-			&i.ArchiveBatchID,
-			&i.CreatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const archiveTargetReturn = `-- name: ArchiveTargetReturn :one
-UPDATE learning_targets
-SET archived_at = now(), archive_batch_id = $1, updated_at = now()
-WHERE id = $2 AND archived_at IS NULL
-RETURNING id, domain, title, external_id, difficulty, metadata,
-          created_by, archived_at, archive_batch_id, created_at, updated_at
-`
-
-type ArchiveTargetReturnParams struct {
-	BatchID *uuid.UUID `json:"batch_id"`
-	ID      uuid.UUID  `json:"id"`
-}
-
-// Soft-deletes a target, marking archived_at and tagging it with
-// archive_batch_id. The batch id ties the target to the relations
-// archived in the same call (see ArchiveRelationsForTarget) so a
-// future unarchive_target call can restore exactly the cascade
-// group, not every relation involving the target. Returns the
-// updated row.
-func (q *Queries) ArchiveTargetReturn(ctx context.Context, arg ArchiveTargetReturnParams) (LearningTarget, error) {
-	row := q.db.QueryRow(ctx, archiveTargetReturn, arg.BatchID, arg.ID)
-	var i LearningTarget
-	err := row.Scan(
-		&i.ID,
-		&i.Domain,
-		&i.Title,
-		&i.ExternalID,
-		&i.Difficulty,
-		&i.Metadata,
-		&i.CreatedBy,
-		&i.ArchivedAt,
-		&i.ArchiveBatchID,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
 const areaIDBySlugOrName = `-- name: AreaIDBySlugOrName :one
 SELECT id FROM areas
 WHERE slug = $1 OR LOWER(name) = LOWER($1)
@@ -716,48 +627,6 @@ func (q *Queries) Areas(ctx context.Context) ([]AreasRow, error) {
 		return nil, err
 	}
 	return items, nil
-}
-
-const attachContentToTarget = `-- name: AttachContentToTarget :exec
-INSERT INTO learning_target_contents (target_id, content_id)
-VALUES ($1, $2)
-ON CONFLICT DO NOTHING
-`
-
-type AttachContentToTargetParams struct {
-	TargetID  uuid.UUID `json:"target_id"`
-	ContentID uuid.UUID `json:"content_id"`
-}
-
-// Idempotent attach of a content row (article/essay/etc) to a target.
-func (q *Queries) AttachContentToTarget(ctx context.Context, arg AttachContentToTargetParams) error {
-	_, err := q.db.Exec(ctx, attachContentToTarget, arg.TargetID, arg.ContentID)
-	return err
-}
-
-const attachNoteToTarget = `-- name: AttachNoteToTarget :exec
-
-INSERT INTO learning_target_notes (target_id, note_id)
-VALUES ($1, $2)
-ON CONFLICT DO NOTHING
-`
-
-type AttachNoteToTargetParams struct {
-	TargetID uuid.UUID `json:"target_id"`
-	NoteID   uuid.UUID `json:"note_id"`
-}
-
-// ============================================================
-// Learning target writeup junctions (notes + contents)
-//
-// Two N:M junctions, intentionally not polymorphic — notes and contents
-// are distinct entities with distinct lifecycles. A target may accumulate
-// many writeups of different kinds over time.
-// ============================================================
-// Idempotent attach. Repeat attaches are no-ops.
-func (q *Queries) AttachNoteToTarget(ctx context.Context, arg AttachNoteToTargetParams) error {
-	_, err := q.db.Exec(ctx, attachNoteToTarget, arg.TargetID, arg.NoteID)
-	return err
 }
 
 const attemptByID = `-- name: AttemptByID :one
@@ -1170,55 +1039,6 @@ func (q *Queries) BacklogTodoItems(ctx context.Context, arg BacklogTodoItemsPara
 		return nil, err
 	}
 	return items, nil
-}
-
-const canonicalNoteForTarget = `-- name: CanonicalNoteForTarget :one
-SELECT n.id, n.slug, n.title, n.body, n.kind, n.maturity,
-       n.created_by, n.metadata, n.created_at, n.updated_at
-FROM notes n
-JOIN learning_target_notes ltn ON ltn.note_id = n.id
-JOIN learning_targets lt       ON lt.id = ltn.target_id
-JOIN learning_domains ld       ON ld.slug = lt.domain
-WHERE ltn.target_id = $1
-  AND ld.canonical_writeup_kind IS NOT NULL
-  AND n.kind = ld.canonical_writeup_kind
-ORDER BY n.updated_at DESC
-LIMIT 1
-`
-
-type CanonicalNoteForTargetRow struct {
-	ID        uuid.UUID       `json:"id"`
-	Slug      string          `json:"slug"`
-	Title     string          `json:"title"`
-	Body      string          `json:"body"`
-	Kind      NoteKind        `json:"kind"`
-	Maturity  NoteMaturity    `json:"maturity"`
-	CreatedBy string          `json:"created_by"`
-	Metadata  json.RawMessage `json:"metadata"`
-	CreatedAt time.Time       `json:"created_at"`
-	UpdatedAt time.Time       `json:"updated_at"`
-}
-
-// Resolves the canonical writeup for a target: the most recently updated
-// note whose kind matches the target domain's canonical_writeup_kind.
-// Returns no rows if the domain has no canonical rule or the target has
-// no note of the canonical kind yet.
-func (q *Queries) CanonicalNoteForTarget(ctx context.Context, targetID uuid.UUID) (CanonicalNoteForTargetRow, error) {
-	row := q.db.QueryRow(ctx, canonicalNoteForTarget, targetID)
-	var i CanonicalNoteForTargetRow
-	err := row.Scan(
-		&i.ID,
-		&i.Slug,
-		&i.Title,
-		&i.Body,
-		&i.Kind,
-		&i.Maturity,
-		&i.CreatedBy,
-		&i.Metadata,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
 }
 
 const clarifyTodoItem = `-- name: ClarifyTodoItem :one
@@ -2236,58 +2056,6 @@ func (q *Queries) ContentsByTopicIDCount(ctx context.Context, topicID uuid.UUID)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
-}
-
-const contentsForTarget = `-- name: ContentsForTarget :many
-SELECT c.id, c.slug, c.title, c.type, c.status, c.is_public,
-       c.published_at, c.created_at, c.updated_at
-FROM contents c
-JOIN learning_target_contents ltc ON ltc.content_id = c.id
-WHERE ltc.target_id = $1
-ORDER BY c.updated_at DESC
-`
-
-type ContentsForTargetRow struct {
-	ID          uuid.UUID     `json:"id"`
-	Slug        string        `json:"slug"`
-	Title       string        `json:"title"`
-	Type        ContentType   `json:"type"`
-	Status      ContentStatus `json:"status"`
-	IsPublic    bool          `json:"is_public"`
-	PublishedAt *time.Time    `json:"published_at"`
-	CreatedAt   time.Time     `json:"created_at"`
-	UpdatedAt   time.Time     `json:"updated_at"`
-}
-
-// All contents attached to a target.
-func (q *Queries) ContentsForTarget(ctx context.Context, targetID uuid.UUID) ([]ContentsForTargetRow, error) {
-	rows, err := q.db.Query(ctx, contentsForTarget, targetID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []ContentsForTargetRow{}
-	for rows.Next() {
-		var i ContentsForTargetRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.Slug,
-			&i.Title,
-			&i.Type,
-			&i.Status,
-			&i.IsPublic,
-			&i.PublishedAt,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
 }
 
 const contentsMissingEmbedding = `-- name: ContentsMissingEmbedding :many
@@ -3809,44 +3577,6 @@ UPDATE project_profiles
 func (q *Queries) DemoteProjectProfileOnArchive(ctx context.Context, projectID uuid.UUID) error {
 	_, err := q.db.Exec(ctx, demoteProjectProfileOnArchive, projectID)
 	return err
-}
-
-const detachContentFromTarget = `-- name: DetachContentFromTarget :execrows
-DELETE FROM learning_target_contents
-WHERE target_id = $1 AND content_id = $2
-`
-
-type DetachContentFromTargetParams struct {
-	TargetID  uuid.UUID `json:"target_id"`
-	ContentID uuid.UUID `json:"content_id"`
-}
-
-func (q *Queries) DetachContentFromTarget(ctx context.Context, arg DetachContentFromTargetParams) (int64, error) {
-	result, err := q.db.Exec(ctx, detachContentFromTarget, arg.TargetID, arg.ContentID)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected(), nil
-}
-
-const detachNoteFromTarget = `-- name: DetachNoteFromTarget :execrows
-DELETE FROM learning_target_notes
-WHERE target_id = $1 AND note_id = $2
-`
-
-type DetachNoteFromTargetParams struct {
-	TargetID uuid.UUID `json:"target_id"`
-	NoteID   uuid.UUID `json:"note_id"`
-}
-
-// Returns affected row count so the caller can distinguish 'actually
-// detached' from 'was never attached' if needed.
-func (q *Queries) DetachNoteFromTarget(ctx context.Context, arg DetachNoteFromTargetParams) (int64, error) {
-	result, err := q.db.Exec(ctx, detachNoteFromTarget, arg.TargetID, arg.NoteID)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected(), nil
 }
 
 const enabledFeeds = `-- name: EnabledFeeds :many
@@ -6605,61 +6335,6 @@ func (q *Queries) NotesCount(ctx context.Context, arg NotesCountParams) (int64, 
 	var count int64
 	err := row.Scan(&count)
 	return count, err
-}
-
-const notesForTarget = `-- name: NotesForTarget :many
-SELECT n.id, n.slug, n.title, n.body, n.kind, n.maturity,
-       n.created_by, n.metadata, n.created_at, n.updated_at
-FROM notes n
-JOIN learning_target_notes ltn ON ltn.note_id = n.id
-WHERE ltn.target_id = $1
-ORDER BY n.updated_at DESC
-`
-
-type NotesForTargetRow struct {
-	ID        uuid.UUID       `json:"id"`
-	Slug      string          `json:"slug"`
-	Title     string          `json:"title"`
-	Body      string          `json:"body"`
-	Kind      NoteKind        `json:"kind"`
-	Maturity  NoteMaturity    `json:"maturity"`
-	CreatedBy string          `json:"created_by"`
-	Metadata  json.RawMessage `json:"metadata"`
-	CreatedAt time.Time       `json:"created_at"`
-	UpdatedAt time.Time       `json:"updated_at"`
-}
-
-// All notes attached to a target, newest-updated first. Caller can filter
-// by kind in Go if a single-kind view is needed.
-func (q *Queries) NotesForTarget(ctx context.Context, targetID uuid.UUID) ([]NotesForTargetRow, error) {
-	rows, err := q.db.Query(ctx, notesForTarget, targetID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []NotesForTargetRow{}
-	for rows.Next() {
-		var i NotesForTargetRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.Slug,
-			&i.Title,
-			&i.Body,
-			&i.Kind,
-			&i.Maturity,
-			&i.CreatedBy,
-			&i.Metadata,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
 }
 
 const notesMissingEmbedding = `-- name: NotesMissingEmbedding :many
