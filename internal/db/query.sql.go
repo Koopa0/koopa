@@ -14,6 +14,63 @@ import (
 	pgvector_go "github.com/pgvector/pgvector-go"
 )
 
+const activateArea = `-- name: ActivateArea :one
+UPDATE areas SET status = 'active', updated_at = now()
+WHERE id = $1 AND status = 'proposed'
+RETURNING id, slug, name, status, created_by
+`
+
+type ActivateAreaRow struct {
+	ID        uuid.UUID `json:"id"`
+	Slug      string    `json:"slug"`
+	Name      string    `json:"name"`
+	Status    string    `json:"status"`
+	CreatedBy *string   `json:"created_by"`
+}
+
+// Owner stamp on a proposed area: proposed → active. State-scoped WHERE; zero
+// rows means missing or not proposed.
+func (q *Queries) ActivateArea(ctx context.Context, id uuid.UUID) (ActivateAreaRow, error) {
+	row := q.db.QueryRow(ctx, activateArea, id)
+	var i ActivateAreaRow
+	err := row.Scan(
+		&i.ID,
+		&i.Slug,
+		&i.Name,
+		&i.Status,
+		&i.CreatedBy,
+	)
+	return i, err
+}
+
+const activateGoal = `-- name: ActivateGoal :one
+UPDATE goals SET status = 'not_started', updated_at = now()
+WHERE id = $1 AND status = 'proposed'
+RETURNING id, title, description, status, area_id, quarter, deadline, created_by,
+          created_at, updated_at
+`
+
+// Owner stamp on a proposed goal: proposed → not_started. The state-scoped
+// WHERE makes the transition atomic; zero rows means the row is missing or
+// not proposed (the store disambiguates with a follow-up read).
+func (q *Queries) ActivateGoal(ctx context.Context, id uuid.UUID) (Goal, error) {
+	row := q.db.QueryRow(ctx, activateGoal, id)
+	var i Goal
+	err := row.Scan(
+		&i.ID,
+		&i.Title,
+		&i.Description,
+		&i.Status,
+		&i.AreaID,
+		&i.Quarter,
+		&i.Deadline,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const activateTodoItem = `-- name: ActivateTodoItem :one
 UPDATE todos
 SET state = 'todo',
@@ -574,17 +631,63 @@ func (q *Queries) ArchiveContentReturning(ctx context.Context, id uuid.UUID) (Ar
 	return i, err
 }
 
+const areaByID = `-- name: AreaByID :one
+SELECT id, slug, name, status, created_by FROM areas WHERE id = $1
+`
+
+type AreaByIDRow struct {
+	ID        uuid.UUID `json:"id"`
+	Slug      string    `json:"slug"`
+	Name      string    `json:"name"`
+	Status    string    `json:"status"`
+	CreatedBy *string   `json:"created_by"`
+}
+
+// Fetch an area's status row by id. Used to disambiguate a zero-rows
+// proposed-area mutation: missing row vs existing-but-not-proposed.
+func (q *Queries) AreaByID(ctx context.Context, id uuid.UUID) (AreaByIDRow, error) {
+	row := q.db.QueryRow(ctx, areaByID, id)
+	var i AreaByIDRow
+	err := row.Scan(
+		&i.ID,
+		&i.Slug,
+		&i.Name,
+		&i.Status,
+		&i.CreatedBy,
+	)
+	return i, err
+}
+
 const areaIDBySlugOrName = `-- name: AreaIDBySlugOrName :one
+SELECT id FROM areas
+WHERE (slug = $1 OR LOWER(name) = LOWER($1))
+  AND status = 'active'
+LIMIT 1
+`
+
+// Resolve an ACTIVE area identifier (slug or display name, case-insensitive
+// on name) to its UUID. Used when wiring an area without forcing the caller
+// to know UUIDs. Excludes proposed areas: a proposed area is an inert draft
+// and must not become a goal's parent until the owner activates it.
+func (q *Queries) AreaIDBySlugOrName(ctx context.Context, identifier string) (uuid.UUID, error) {
+	row := q.db.QueryRow(ctx, areaIDBySlugOrName, identifier)
+	var id uuid.UUID
+	err := row.Scan(&id)
+	return id, err
+}
+
+const areaIDBySlugOrNameIncludingProposed = `-- name: AreaIDBySlugOrNameIncludingProposed :one
 SELECT id FROM areas
 WHERE slug = $1 OR LOWER(name) = LOWER($1)
 LIMIT 1
 `
 
-// Resolve an area identifier (slug or display name, case-insensitive on
-// name) to its UUID. Used by propose_goal / propose_project when
-// wiring an area without forcing the caller to know UUIDs.
-func (q *Queries) AreaIDBySlugOrName(ctx context.Context, identifier string) (uuid.UUID, error) {
-	row := q.db.QueryRow(ctx, areaIDBySlugOrName, identifier)
+// Same resolver as AreaIDBySlugOrName but ALSO matches proposed areas.
+// Used ONLY by propose_goal so a goal can be proposed under an area that was
+// proposed earlier in the same conversation (the proposal bundle); every
+// other caller uses the active-only variant.
+func (q *Queries) AreaIDBySlugOrNameIncludingProposed(ctx context.Context, identifier string) (uuid.UUID, error) {
+	row := q.db.QueryRow(ctx, areaIDBySlugOrNameIncludingProposed, identifier)
 	var id uuid.UUID
 	err := row.Scan(&id)
 	return id, err
@@ -593,6 +696,7 @@ func (q *Queries) AreaIDBySlugOrName(ctx context.Context, identifier string) (uu
 const areas = `-- name: Areas :many
 SELECT id, slug, name, sort_order
 FROM areas
+WHERE status = 'active'
 ORDER BY sort_order, name
 `
 
@@ -603,7 +707,9 @@ type AreasRow struct {
 	SortOrder int32     `json:"sort_order"`
 }
 
-// List every PARA area for the admin area selector (goal classification).
+// List every ACTIVE PARA area for the admin area selector (goal
+// classification). Proposed areas are inert drafts excluded here — they
+// surface only in admin triage, never as a selectable goal parent.
 func (q *Queries) Areas(ctx context.Context) ([]AreasRow, error) {
 	rows, err := q.db.Query(ctx, areas)
 	if err != nil {
@@ -3489,6 +3595,51 @@ func (q *Queries) DeleteProject(ctx context.Context, id uuid.UUID) error {
 	return err
 }
 
+const deleteProposedArea = `-- name: DeleteProposedArea :execrows
+DELETE FROM areas WHERE id = $1 AND status = 'proposed'
+`
+
+// Reject (hard DELETE) a proposed area. Proposed-only: a non-proposed area is
+// a real PARA row and must never be deleted by this path.
+func (q *Queries) DeleteProposedArea(ctx context.Context, id uuid.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteProposedArea, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const deleteProposedGoal = `-- name: DeleteProposedGoal :execrows
+DELETE FROM goals WHERE id = $1 AND status = 'proposed'
+`
+
+// Reject (hard DELETE) a proposed goal. Proposed-only: a non-proposed goal is
+// a real planning record and must never be deleted by this path. Milestones
+// CASCADE via the milestones.goal_id FK.
+func (q *Queries) DeleteProposedGoal(ctx context.Context, id uuid.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteProposedGoal, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const deleteProposedGoalsByArea = `-- name: DeleteProposedGoalsByArea :execrows
+DELETE FROM goals WHERE area_id = $1 AND status = 'proposed'
+`
+
+// CASCADE half of an area rejection: delete every proposed goal under the
+// rejected proposed area. Active goals under the area are left untouched (the
+// area→goal FK is SET NULL, so they survive unclassified). Run in the same
+// transaction as DeleteProposedArea.
+func (q *Queries) DeleteProposedGoalsByArea(ctx context.Context, areaID *uuid.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteProposedGoalsByArea, areaID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const deleteReading = `-- name: DeleteReading :execrows
 DELETE FROM readings WHERE id = $1
 `
@@ -4633,7 +4784,8 @@ SELECT g.id, g.title, g.description, g.status, g.area_id, g.quarter, g.deadline,
        (SELECT count(*) FROM milestones m WHERE m.goal_id = g.id AND m.completed_at IS NOT NULL) AS milestone_done
 FROM goals g
 LEFT JOIN areas a ON a.id = g.area_id
-WHERE ($1::text IS NULL OR g.status::text = $1)
+WHERE ($1::text IS NULL AND g.status <> 'proposed'
+       OR g.status::text = $1)
 ORDER BY g.deadline NULLS LAST, g.created_at
 `
 
@@ -4652,8 +4804,10 @@ type GoalsByOptionalStatusRow struct {
 	MilestoneDone  int64      `json:"milestone_done"`
 }
 
-// Goals filtered by optional status, with milestone counts.
-// Pass NULL to return all statuses.
+// Goals filtered by optional status, with milestone counts. Pass NULL to
+// return every NON-proposed status — proposed goals are inert drafts that
+// surface ONLY in the admin triage list, never the normal goal list. A
+// caller wanting proposed goals asks for them explicitly (status='proposed').
 func (q *Queries) GoalsByOptionalStatus(ctx context.Context, status *string) ([]GoalsByOptionalStatusRow, error) {
 	rows, err := q.db.Query(ctx, goalsByOptionalStatus, status)
 	if err != nil {
@@ -7544,6 +7698,209 @@ func (q *Queries) Projects(ctx context.Context) ([]Project, error) {
 			&i.ExpectedCadence,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const proposalsPendingCount = `-- name: ProposalsPendingCount :one
+SELECT
+    (SELECT count(*) FROM goals WHERE status = 'proposed')::bigint AS proposed_goals,
+    (SELECT count(*) FROM areas WHERE status = 'proposed')::bigint AS proposed_areas
+`
+
+type ProposalsPendingCountRow struct {
+	ProposedGoals int64 `json:"proposed_goals"`
+	ProposedAreas int64 `json:"proposed_areas"`
+}
+
+// Nav-badge count: proposed goals + proposed areas awaiting owner triage.
+func (q *Queries) ProposalsPendingCount(ctx context.Context) (ProposalsPendingCountRow, error) {
+	row := q.db.QueryRow(ctx, proposalsPendingCount)
+	var i ProposalsPendingCountRow
+	err := row.Scan(&i.ProposedGoals, &i.ProposedAreas)
+	return i, err
+}
+
+const proposeArea = `-- name: ProposeArea :one
+
+INSERT INTO areas (slug, name, description, status, created_by)
+VALUES ($1, $2, $3, 'proposed', $4)
+RETURNING id, slug, name, status, created_by
+`
+
+type ProposeAreaParams struct {
+	Slug        string  `json:"slug"`
+	Name        string  `json:"name"`
+	Description string  `json:"description"`
+	CreatedBy   *string `json:"created_by"`
+}
+
+type ProposeAreaRow struct {
+	ID        uuid.UUID `json:"id"`
+	Slug      string    `json:"slug"`
+	Name      string    `json:"name"`
+	Status    string    `json:"status"`
+	CreatedBy *string   `json:"created_by"`
+}
+
+// ============================================================
+// Proposals — agent-proposed inert drafts (propose_area / propose_goal)
+// and the owner's admin-side triage (activate / reject / count).
+// ============================================================
+// Insert an agent-proposed area as an inert draft (status='proposed').
+// created_by is the proposing agent. The area is filtered out of every
+// active-only selector until the owner activates it in admin triage.
+func (q *Queries) ProposeArea(ctx context.Context, arg ProposeAreaParams) (ProposeAreaRow, error) {
+	row := q.db.QueryRow(ctx, proposeArea,
+		arg.Slug,
+		arg.Name,
+		arg.Description,
+		arg.CreatedBy,
+	)
+	var i ProposeAreaRow
+	err := row.Scan(
+		&i.ID,
+		&i.Slug,
+		&i.Name,
+		&i.Status,
+		&i.CreatedBy,
+	)
+	return i, err
+}
+
+const proposeGoal = `-- name: ProposeGoal :one
+INSERT INTO goals (title, description, status, area_id, created_by)
+VALUES ($1, $2, 'proposed', $3, $4)
+RETURNING id, title, description, status, area_id, quarter, deadline, created_by,
+          created_at, updated_at
+`
+
+type ProposeGoalParams struct {
+	Title       string     `json:"title"`
+	Description string     `json:"description"`
+	AreaID      *uuid.UUID `json:"area_id"`
+	CreatedBy   *string    `json:"created_by"`
+}
+
+// Insert an agent-proposed goal as an inert draft (status='proposed').
+// created_by is the proposing agent. area_id may reference an active OR a
+// just-proposed area (resolved by the caller). Milestones are inserted
+// separately in the same transaction.
+func (q *Queries) ProposeGoal(ctx context.Context, arg ProposeGoalParams) (Goal, error) {
+	row := q.db.QueryRow(ctx, proposeGoal,
+		arg.Title,
+		arg.Description,
+		arg.AreaID,
+		arg.CreatedBy,
+	)
+	var i Goal
+	err := row.Scan(
+		&i.ID,
+		&i.Title,
+		&i.Description,
+		&i.Status,
+		&i.AreaID,
+		&i.Quarter,
+		&i.Deadline,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const proposedAreas = `-- name: ProposedAreas :many
+SELECT id, slug, name, description, created_by, created_at
+FROM areas
+WHERE status = 'proposed'
+ORDER BY created_at DESC
+`
+
+type ProposedAreasRow struct {
+	ID          uuid.UUID `json:"id"`
+	Slug        string    `json:"slug"`
+	Name        string    `json:"name"`
+	Description string    `json:"description"`
+	CreatedBy   *string   `json:"created_by"`
+	CreatedAt   time.Time `json:"created_at"`
+}
+
+// Every proposed area awaiting owner triage, newest first.
+func (q *Queries) ProposedAreas(ctx context.Context) ([]ProposedAreasRow, error) {
+	rows, err := q.db.Query(ctx, proposedAreas)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ProposedAreasRow{}
+	for rows.Next() {
+		var i ProposedAreasRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Slug,
+			&i.Name,
+			&i.Description,
+			&i.CreatedBy,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const proposedGoals = `-- name: ProposedGoals :many
+SELECT g.id, g.title, g.description, g.area_id, g.created_by, g.created_at,
+       COALESCE(a.name, '') AS area_name,
+       (SELECT count(*) FROM milestones m WHERE m.goal_id = g.id) AS milestone_total
+FROM goals g
+LEFT JOIN areas a ON a.id = g.area_id
+WHERE g.status = 'proposed'
+ORDER BY g.created_at DESC
+`
+
+type ProposedGoalsRow struct {
+	ID             uuid.UUID  `json:"id"`
+	Title          string     `json:"title"`
+	Description    string     `json:"description"`
+	AreaID         *uuid.UUID `json:"area_id"`
+	CreatedBy      *string    `json:"created_by"`
+	CreatedAt      time.Time  `json:"created_at"`
+	AreaName       string     `json:"area_name"`
+	MilestoneTotal int64      `json:"milestone_total"`
+}
+
+// Every proposed goal awaiting owner triage, with area name + milestone count,
+// newest first. Feeds the one-card-at-a-time triage surface.
+func (q *Queries) ProposedGoals(ctx context.Context) ([]ProposedGoalsRow, error) {
+	rows, err := q.db.Query(ctx, proposedGoals)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ProposedGoalsRow{}
+	for rows.Next() {
+		var i ProposedGoalsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Title,
+			&i.Description,
+			&i.AreaID,
+			&i.CreatedBy,
+			&i.CreatedAt,
+			&i.AreaName,
+			&i.MilestoneTotal,
 		); err != nil {
 			return nil, err
 		}

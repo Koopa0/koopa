@@ -19,6 +19,7 @@ var storeErrors = []api.ErrMap{
 	{Target: ErrNotFound, Status: http.StatusNotFound, Code: "NOT_FOUND", Message: "goal not found"},
 	{Target: ErrConflict, Status: http.StatusConflict, Code: "CONFLICT", Message: "goal conflict"},
 	{Target: ErrInvalidInput, Status: http.StatusBadRequest, Code: "BAD_REQUEST", Message: "invalid goal input"},
+	{Target: ErrNotProposed, Status: http.StatusConflict, Code: "NOT_PROPOSED", Message: "goal or area is not a proposed draft"},
 }
 
 // Handler handles goal HTTP requests.
@@ -549,6 +550,138 @@ func (h *Handler) ToggleMilestone(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	api.Encode(w, http.StatusOK, api.Response{Data: m})
+}
+
+// --- Proposals triage (activate / reject / count / list) ---
+//
+// Agents propose inert goal/area drafts via MCP (propose_goal / propose_area);
+// these admin handlers are where the single human owner reviews them. Activate
+// flips proposed → not_started (goal) / active (area); reject is a hard DELETE
+// (an area rejection cascade-deletes its proposed child goals in one tx — a
+// proposal is one indivisible bundle). All are behind adminMid.
+
+// ActivateGoal handles POST /api/admin/commitment/goals/{id}/activate —
+// proposed → not_started. 404 when the goal does not exist; 409 NOT_PROPOSED
+// when it exists but is not a proposed draft.
+func (h *Handler) ActivateGoal(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid goal id")
+		return
+	}
+
+	store := h.store
+	if tx, ok := api.TxFromContext(r.Context()); ok {
+		store = h.store.WithTx(tx)
+	}
+	g, err := store.ActivateGoal(r.Context(), id)
+	if err != nil {
+		api.HandleError(w, h.logger, err, storeErrors...)
+		return
+	}
+	api.Encode(w, http.StatusOK, api.Response{Data: g})
+}
+
+// ActivateArea handles POST /api/admin/commitment/areas/{id}/activate —
+// proposed → active. Same 404 / 409 contract as ActivateGoal.
+func (h *Handler) ActivateArea(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid area id")
+		return
+	}
+
+	store := h.store
+	if tx, ok := api.TxFromContext(r.Context()); ok {
+		store = h.store.WithTx(tx)
+	}
+	a, err := store.ActivateArea(r.Context(), id)
+	if err != nil {
+		api.HandleError(w, h.logger, err, storeErrors...)
+		return
+	}
+	api.Encode(w, http.StatusOK, api.Response{Data: a})
+}
+
+// RejectGoal handles DELETE /api/admin/commitment/goals/{id}/proposed — hard
+// DELETE of a proposed goal (milestones cascade). 404 missing, 409 NOT_PROPOSED
+// when the goal is real. Returns 204 on success.
+func (h *Handler) RejectGoal(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid goal id")
+		return
+	}
+
+	store := h.store
+	if tx, ok := api.TxFromContext(r.Context()); ok {
+		store = h.store.WithTx(tx)
+	}
+	if err := store.RejectGoal(r.Context(), id); err != nil {
+		api.HandleError(w, h.logger, err, storeErrors...)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// RejectArea handles DELETE /api/admin/commitment/areas/{id}/proposed — hard
+// DELETE of a proposed area AND, in the same request transaction, every
+// proposed goal under it (the bundle). Active goals under the area survive
+// (area_id SET NULL). 404 missing, 409 NOT_PROPOSED when the area is real.
+// Returns 204 on success.
+func (h *Handler) RejectArea(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid area id")
+		return
+	}
+
+	store := h.store
+	if tx, ok := api.TxFromContext(r.Context()); ok {
+		store = h.store.WithTx(tx)
+	}
+	if err := store.RejectArea(r.Context(), id); err != nil {
+		api.HandleError(w, h.logger, err, storeErrors...)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// ProposalsCount handles GET /api/admin/commitment/proposals/count — the nav
+// badge count of proposed goals + proposed areas awaiting triage.
+func (h *Handler) ProposalsCount(w http.ResponseWriter, r *http.Request) {
+	count, err := h.store.ProposalsPendingCount(r.Context())
+	if err != nil {
+		h.logger.Error("counting proposals", "error", err)
+		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to count proposals")
+		return
+	}
+	api.Encode(w, http.StatusOK, api.Response{Data: count})
+}
+
+// proposalsResponse is the triage payload: every proposed goal + every proposed
+// area awaiting owner review.
+type proposalsResponse struct {
+	Goals []ProposedGoalSummary `json:"goals"`
+	Areas []ProposedAreaSummary `json:"areas"`
+}
+
+// Proposals handles GET /api/admin/commitment/proposals — the triage list of
+// every proposed goal and area awaiting owner review.
+func (h *Handler) Proposals(w http.ResponseWriter, r *http.Request) {
+	goals, err := h.store.ProposedGoals(r.Context())
+	if err != nil {
+		h.logger.Error("listing proposed goals", "error", err)
+		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to list proposals")
+		return
+	}
+	areas, err := h.store.ProposedAreas(r.Context())
+	if err != nil {
+		h.logger.Error("listing proposed areas", "error", err)
+		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to list proposals")
+		return
+	}
+	api.Encode(w, http.StatusOK, api.Response{Data: proposalsResponse{Goals: goals, Areas: areas}})
 }
 
 func mapHTTPGoalStatus(s string) (Status, error) {

@@ -3422,6 +3422,265 @@ func TestIntegration_BriefMorning_ExcludesDraftHypotheses(t *testing.T) {
 	}
 }
 
+// deleteProposedAreas clears any proposed areas a test created. areas is NOT
+// in truncateApplicationTables (the seeded PARA rows must survive), so a test
+// that proposes an area cleans up after itself to keep sibling tests isolated.
+// Uses a fresh background context: t.Cleanup runs after t.Context() is already
+// cancelled, so reusing it would fail with "context canceled".
+func deleteProposedAreas(t *testing.T) {
+	t.Helper()
+	if _, err := testPool.Exec(context.Background(),
+		`DELETE FROM areas WHERE status = 'proposed'`,
+	); err != nil {
+		t.Fatalf("cleaning up proposed areas: %v", err)
+	}
+}
+
+// TestIntegration_ProposeArea_AsPlanner drives propose_area and asserts the
+// inert-draft contract on the persisted row: status=proposed, created_by=the
+// proposing agent, and a slug derived from the name.
+func TestIntegration_ProposeArea_AsPlanner(t *testing.T) {
+	s := setupServer(t)
+	t.Cleanup(func() { deleteProposedAreas(t) })
+
+	_, out, err := callHandlerAs(t, "planner", s.proposeArea, ProposeAreaInput{
+		Name:        "Backend Studio",
+		Description: "Sustained backend craft.",
+		Rationale:   "Recurring backend themes in recent sessions.",
+	})
+	if err != nil {
+		t.Fatalf("proposeArea: %v", err)
+	}
+	if out.Area == nil || out.Area.ID == uuid.Nil {
+		t.Fatal("proposeArea returned no area / zero ID")
+	}
+	if out.Area.Slug != "backend-studio" {
+		t.Errorf("output slug = %q, want %q (derived from name)", out.Area.Slug, "backend-studio")
+	}
+
+	var status, createdBy string
+	if err := testPool.QueryRow(t.Context(),
+		`SELECT status, created_by FROM areas WHERE id = $1`, out.Area.ID,
+	).Scan(&status, &createdBy); err != nil {
+		t.Fatalf("reading proposed area: %v", err)
+	}
+	if status != "proposed" {
+		t.Errorf("persisted status = %q, want %q (agent proposals land inert)", status, "proposed")
+	}
+	if createdBy != "planner" {
+		t.Errorf("persisted created_by = %q, want %q", createdBy, "planner")
+	}
+}
+
+// TestIntegration_ProposeArea_CallerGate asserts the registered-caller gate:
+// the zero-privilege "unknown" fallback and a fabricated name are refused
+// before any write.
+func TestIntegration_ProposeArea_CallerGate(t *testing.T) {
+	s := setupServer(t)
+	t.Cleanup(func() { deleteProposedAreas(t) })
+
+	for _, caller := range []string{"unknown", "fabricated-agent"} {
+		_, _, err := callHandlerAs(t, caller, s.proposeArea, ProposeAreaInput{Name: "Should Never Persist"})
+		if err == nil {
+			t.Errorf("proposeArea as %q err = nil, want registered-caller refusal", caller)
+		}
+	}
+
+	var count int
+	if err := testPool.QueryRow(t.Context(),
+		`SELECT COUNT(*) FROM areas WHERE status = 'proposed'`,
+	).Scan(&count); err != nil {
+		t.Fatalf("counting proposed areas: %v", err)
+	}
+	if count != 0 {
+		t.Errorf("proposed area count = %d, want 0 (gate must precede any write)", count)
+	}
+}
+
+// TestIntegration_ProposeArea_BlankNameRejected asserts the handler rejects a
+// blank name before any write (the chk_area_name_not_blank CHECK would also
+// fire, but the handler validates first for a clean error).
+func TestIntegration_ProposeArea_BlankNameRejected(t *testing.T) {
+	s := setupServer(t)
+
+	for _, name := range []string{"", "   ", "!!!"} {
+		if _, _, err := callHandlerAs(t, "planner", s.proposeArea, ProposeAreaInput{Name: name}); err == nil {
+			t.Errorf("proposeArea(name=%q) err = nil, want rejection", name)
+		}
+	}
+}
+
+// TestIntegration_ProposeGoal_AsPlanner drives propose_goal with milestones
+// under an existing ACTIVE area and asserts: goal status=proposed,
+// created_by=planner, area_id resolved, and milestones persisted in order.
+func TestIntegration_ProposeGoal_AsPlanner(t *testing.T) {
+	s := setupServer(t)
+
+	// Resolve a seeded active area to file under.
+	var areaID uuid.UUID
+	if err := testPool.QueryRow(t.Context(),
+		`SELECT id FROM areas WHERE slug = 'learning'`,
+	).Scan(&areaID); err != nil {
+		t.Fatalf("resolving seeded area: %v", err)
+	}
+
+	_, out, err := callHandlerAs(t, "planner", s.proposeGoal, ProposeGoalInput{
+		Area:       "learning",
+		Title:      "Reach conversational Japanese",
+		Milestones: []string{"Finish Genki I", "Finish Genki II"},
+	})
+	if err != nil {
+		t.Fatalf("proposeGoal: %v", err)
+	}
+	if out.Goal == nil || out.Goal.ID == uuid.Nil {
+		t.Fatal("proposeGoal returned no goal / zero ID")
+	}
+
+	var status, createdBy string
+	var gotArea *uuid.UUID
+	if err := testPool.QueryRow(t.Context(),
+		`SELECT status, created_by, area_id FROM goals WHERE id = $1`, out.Goal.ID,
+	).Scan(&status, &createdBy, &gotArea); err != nil {
+		t.Fatalf("reading proposed goal: %v", err)
+	}
+	if status != "proposed" {
+		t.Errorf("persisted status = %q, want %q", status, "proposed")
+	}
+	if createdBy != "planner" {
+		t.Errorf("persisted created_by = %q, want %q", createdBy, "planner")
+	}
+	if gotArea == nil || *gotArea != areaID {
+		t.Errorf("persisted area_id = %v, want %s (resolved from 'learning')", gotArea, areaID)
+	}
+
+	var titles []string
+	rows, err := testPool.Query(t.Context(),
+		`SELECT title FROM milestones WHERE goal_id = $1 ORDER BY position`, out.Goal.ID)
+	if err != nil {
+		t.Fatalf("reading milestones: %v", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var title string
+		if err := rows.Scan(&title); err != nil {
+			t.Fatalf("scanning milestone: %v", err)
+		}
+		titles = append(titles, title)
+	}
+	if diff := cmp.Diff([]string{"Finish Genki I", "Finish Genki II"}, titles); diff != "" {
+		t.Errorf("milestones mismatch (-want +got):\n%s", diff)
+	}
+}
+
+// TestIntegration_ProposeGoal_UnderProposedArea proves the bundle case: a goal
+// can be proposed under an area proposed earlier in the same flow (the
+// include-proposed resolver). Both land inert.
+func TestIntegration_ProposeGoal_UnderProposedArea(t *testing.T) {
+	s := setupServer(t)
+	t.Cleanup(func() { deleteProposedAreas(t) })
+
+	if _, _, err := callHandlerAs(t, "planner", s.proposeArea, ProposeAreaInput{
+		Name: "New Theme Studio",
+	}); err != nil {
+		t.Fatalf("proposeArea: %v", err)
+	}
+
+	_, out, err := callHandlerAs(t, "planner", s.proposeGoal, ProposeGoalInput{
+		Area:  "new-theme-studio",
+		Title: "First goal of the new theme",
+	})
+	if err != nil {
+		t.Fatalf("proposeGoal under proposed area: %v", err)
+	}
+
+	var status string
+	var areaStatus string
+	if err := testPool.QueryRow(t.Context(),
+		`SELECT g.status, a.status FROM goals g JOIN areas a ON a.id = g.area_id WHERE g.id = $1`,
+		out.Goal.ID,
+	).Scan(&status, &areaStatus); err != nil {
+		t.Fatalf("reading proposed goal+area: %v", err)
+	}
+	if status != "proposed" {
+		t.Errorf("goal status = %q, want proposed", status)
+	}
+	if areaStatus != "proposed" {
+		t.Errorf("parent area status = %q, want proposed (bundle case)", areaStatus)
+	}
+}
+
+// TestIntegration_ProposeGoal_Inert pins the inertness contract end-to-end: a
+// proposed goal is absent from brief(morning).active_goals, while a sibling
+// in_progress goal appears.
+func TestIntegration_ProposeGoal_Inert(t *testing.T) {
+	s := setupServer(t)
+
+	if _, _, err := callHandlerAs(t, "planner", s.proposeGoal, ProposeGoalInput{
+		Title: "Inert proposed goal",
+	}); err != nil {
+		t.Fatalf("proposeGoal: %v", err)
+	}
+	if _, err := testPool.Exec(t.Context(),
+		`INSERT INTO goals (title, status) VALUES ('Active sibling goal', 'in_progress')`,
+	); err != nil {
+		t.Fatalf("seeding active goal: %v", err)
+	}
+
+	// Explicit sections=['goals'] — setupServer's learning-studio caller
+	// otherwise defaults to ['tasks','hypotheses'] and active_goals stays empty
+	// regardless of the goal's status.
+	_, out, err := callHandler(t, s.brief, BriefInput{Mode: "morning", Sections: FlexStringSlice{"goals"}})
+	if err != nil {
+		t.Fatalf("brief(morning): %v", err)
+	}
+	if len(out.ActiveGoals) != 1 {
+		t.Fatalf("active_goals len = %d, want 1 (proposed goal must be excluded): %+v",
+			len(out.ActiveGoals), out.ActiveGoals)
+	}
+	if out.ActiveGoals[0].Title != "Active sibling goal" {
+		t.Errorf("active_goals[0].Title = %q, want %q", out.ActiveGoals[0].Title, "Active sibling goal")
+	}
+}
+
+// TestIntegration_ProposeGoal_UnknownAreaRejected asserts a non-empty area that
+// matches no row is a clean caller error with nothing written.
+func TestIntegration_ProposeGoal_UnknownAreaRejected(t *testing.T) {
+	s := setupServer(t)
+
+	if _, _, err := callHandlerAs(t, "planner", s.proposeGoal, ProposeGoalInput{
+		Area:  "no-such-area",
+		Title: "Goal under a missing area",
+	}); err == nil {
+		t.Error("proposeGoal with unknown area err = nil, want rejection")
+	}
+
+	var count int
+	if err := testPool.QueryRow(t.Context(),
+		`SELECT COUNT(*) FROM goals`,
+	).Scan(&count); err != nil {
+		t.Fatalf("counting goals: %v", err)
+	}
+	if count != 0 {
+		t.Errorf("goal count = %d, want 0 (resolve failure must roll back)", count)
+	}
+}
+
+// TestIntegration_ProposeGoal_BlankTitleRejected asserts the handler rejects a
+// blank title and a blank milestone before any write.
+func TestIntegration_ProposeGoal_BlankTitleRejected(t *testing.T) {
+	s := setupServer(t)
+
+	if _, _, err := callHandlerAs(t, "planner", s.proposeGoal, ProposeGoalInput{Title: "  "}); err == nil {
+		t.Error("proposeGoal(blank title) err = nil, want rejection")
+	}
+	if _, _, err := callHandlerAs(t, "planner", s.proposeGoal, ProposeGoalInput{
+		Title:      "Has a title",
+		Milestones: []string{"ok", "  "},
+	}); err == nil {
+		t.Error("proposeGoal(blank milestone) err = nil, want rejection")
+	}
+}
+
 // TestIntegration_BriefReflection_CountsFromTodoState pins that brief(reflection)
 // derives completed/deferred/planned from each planned todo's CURRENT state, not
 // the daily_plan_item.status column (which has no write path — it stays 'planned'

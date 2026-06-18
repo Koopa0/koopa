@@ -714,6 +714,389 @@ func TestIntegration_Goal_ListAreas(t *testing.T) {
 	}
 }
 
+// TestIntegration_Goal_ProposedExcludedFromList is the leak pin for proposed
+// goals: a proposed goal is an inert draft that must NEVER appear in the
+// normal goal list (GoalsByOptionalStatus with no status filter) nor in
+// ActiveGoals, while a sibling not_started goal does appear in the list. It
+// surfaces only when status='proposed' is asked for explicitly.
+func TestIntegration_Goal_ProposedExcludedFromList(t *testing.T) {
+	truncate(t)
+	store := goal.NewStore(testPool)
+	ctx := t.Context()
+
+	var proposed, real uuid.UUID
+	if err := testPool.QueryRow(ctx,
+		`INSERT INTO goals (title, status) VALUES ('Proposed Goal', 'proposed') RETURNING id`,
+	).Scan(&proposed); err != nil {
+		t.Fatalf("seeding proposed goal: %v", err)
+	}
+	if err := testPool.QueryRow(ctx,
+		`INSERT INTO goals (title, status) VALUES ('Real Goal', 'not_started') RETURNING id`,
+	).Scan(&real); err != nil {
+		t.Fatalf("seeding not_started goal: %v", err)
+	}
+
+	// Default list (no status filter) must exclude the proposed goal.
+	all, err := store.GoalsByOptionalStatus(ctx, nil)
+	if err != nil {
+		t.Fatalf("GoalsByOptionalStatus(nil): %v", err)
+	}
+	if containsGoal(all, proposed) {
+		t.Error("proposed goal leaked into the default goal list (GoalsByOptionalStatus(nil))")
+	}
+	if !containsGoal(all, real) {
+		t.Error("not_started goal missing from the default goal list")
+	}
+
+	// ActiveGoals only carries in_progress; a proposed goal must be absent.
+	active, err := store.ActiveGoals(ctx)
+	if err != nil {
+		t.Fatalf("ActiveGoals: %v", err)
+	}
+	for i := range active {
+		if active[i].ID == proposed {
+			t.Error("proposed goal leaked into ActiveGoals")
+		}
+	}
+
+	// Asking for proposed explicitly surfaces it — the triage path.
+	proposedStatus := string(goal.StatusProposed)
+	only, err := store.GoalsByOptionalStatus(ctx, &proposedStatus)
+	if err != nil {
+		t.Fatalf("GoalsByOptionalStatus(proposed): %v", err)
+	}
+	if !containsGoal(only, proposed) {
+		t.Error("explicit status=proposed query did not return the proposed goal")
+	}
+	if containsGoal(only, real) {
+		t.Error("explicit status=proposed query leaked the not_started goal")
+	}
+}
+
+// TestIntegration_Goal_ProposedAreaExcludedFromSelector is the leak pin for
+// proposed areas: a proposed area must NEVER appear in the Areas selector that
+// backs the goal-create area picker, while a seeded active area does. The
+// active-only resolver also refuses a proposed area, while the include-proposed
+// resolver (used only by propose_goal) finds it.
+func TestIntegration_Goal_ProposedAreaExcludedFromSelector(t *testing.T) {
+	truncate(t)
+	t.Cleanup(func() { deleteAreasBySlug(t, "proposed-theme") })
+	store := goal.NewStore(testPool)
+	ctx := t.Context()
+
+	var proposedArea uuid.UUID
+	if err := testPool.QueryRow(ctx,
+		`INSERT INTO areas (slug, name, status) VALUES ('proposed-theme', 'Proposed Theme', 'proposed') RETURNING id`,
+	).Scan(&proposedArea); err != nil {
+		t.Fatalf("seeding proposed area: %v", err)
+	}
+
+	areas, err := store.Areas(ctx)
+	if err != nil {
+		t.Fatalf("Areas: %v", err)
+	}
+	if len(areas) == 0 {
+		t.Fatal("Areas returned no rows — expected the migration-seeded active areas")
+	}
+	for i := range areas {
+		if areas[i].ID == proposedArea {
+			t.Error("proposed area leaked into the Areas selector")
+		}
+	}
+
+	// Active-only resolver refuses the proposed area.
+	if _, err := store.AreaIDBySlugOrName(ctx, "proposed-theme"); !errors.Is(err, goal.ErrNotFound) {
+		t.Errorf("AreaIDBySlugOrName(proposed) err = %v, want ErrNotFound", err)
+	}
+	// Include-proposed resolver (propose_goal's bundle case) finds it.
+	got, err := store.AreaIDBySlugOrNameIncludingProposed(ctx, "proposed-theme")
+	if err != nil {
+		t.Fatalf("AreaIDBySlugOrNameIncludingProposed(proposed): %v", err)
+	}
+	if got != proposedArea {
+		t.Errorf("AreaIDBySlugOrNameIncludingProposed = %s, want %s", got, proposedArea)
+	}
+}
+
+// containsGoal reports whether any summary in the slice has the given id.
+func containsGoal(summaries []goal.ActiveGoalSummary, id uuid.UUID) bool {
+	for i := range summaries {
+		if summaries[i].ID == id {
+			return true
+		}
+	}
+	return false
+}
+
+// seedProposedGoal inserts a proposed goal (optionally under an area) and
+// returns its id.
+func seedProposedGoal(t *testing.T, title string, areaID *uuid.UUID) uuid.UUID {
+	t.Helper()
+	var id uuid.UUID
+	if err := testPool.QueryRow(t.Context(),
+		`INSERT INTO goals (title, status, area_id) VALUES ($1, 'proposed', $2) RETURNING id`,
+		title, areaID,
+	).Scan(&id); err != nil {
+		t.Fatalf("seeding proposed goal %q: %v", title, err)
+	}
+	return id
+}
+
+// seedArea inserts an area in the given status and returns its id. Cleaned up
+// by the caller — areas is not in truncate().
+func seedArea(t *testing.T, slug, name, status string) uuid.UUID {
+	t.Helper()
+	var id uuid.UUID
+	if err := testPool.QueryRow(t.Context(),
+		`INSERT INTO areas (slug, name, status) VALUES ($1, $2, $3) RETURNING id`,
+		slug, name, status,
+	).Scan(&id); err != nil {
+		t.Fatalf("seeding %s area %q: %v", status, slug, err)
+	}
+	return id
+}
+
+// deleteAreasBySlug removes named areas in a fresh context (t.Cleanup runs
+// after t.Context() is cancelled).
+func deleteAreasBySlug(t *testing.T, slugs ...string) {
+	t.Helper()
+	if _, err := testPool.Exec(context.Background(),
+		`DELETE FROM areas WHERE slug = ANY($1)`, slugs,
+	); err != nil {
+		t.Fatalf("cleaning up seeded areas: %v", err)
+	}
+}
+
+// TestIntegration_Goal_ActivateGoal drives POST /goals/{id}/activate: a
+// proposed goal flips to not_started; a non-proposed goal is a 409 NOT_PROPOSED;
+// a missing goal is a 404.
+func TestIntegration_Goal_ActivateGoal(t *testing.T) {
+	truncate(t)
+	h := newHandler()
+
+	proposed := seedProposedGoal(t, "Proposed goal", nil)
+	real := seedGoal(t, "Real goal") // seedGoal inserts status=in_progress
+
+	req := httptest.NewRequest(http.MethodPost, "/api/admin/commitment/goals/"+proposed.String()+"/activate", nil)
+	req.SetPathValue("id", proposed.String())
+	rec := serve(t, h.ActivateGoal, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("activate proposed goal status = %d, want 200 (body=%s)", rec.Code, rec.Body.String())
+	}
+	var status string
+	if err := testPool.QueryRow(t.Context(),
+		`SELECT status FROM goals WHERE id = $1`, proposed,
+	).Scan(&status); err != nil {
+		t.Fatalf("reading activated goal: %v", err)
+	}
+	if status != string(goal.StatusNotStarted) {
+		t.Errorf("activated goal status = %q, want %q", status, goal.StatusNotStarted)
+	}
+
+	// A non-proposed goal → 409 NOT_PROPOSED, untouched.
+	reqReal := httptest.NewRequest(http.MethodPost, "/api/admin/commitment/goals/"+real.String()+"/activate", nil)
+	reqReal.SetPathValue("id", real.String())
+	recReal := serve(t, h.ActivateGoal, reqReal)
+	if recReal.Code != http.StatusConflict {
+		t.Fatalf("activate real goal status = %d, want 409 (body=%s)", recReal.Code, recReal.Body.String())
+	}
+	if code := errCode(t, recReal.Body.Bytes()); code != "NOT_PROPOSED" {
+		t.Errorf("activate real goal error.code = %q, want NOT_PROPOSED", code)
+	}
+
+	// Missing goal → 404.
+	missing := uuid.New()
+	reqMiss := httptest.NewRequest(http.MethodPost, "/api/admin/commitment/goals/"+missing.String()+"/activate", nil)
+	reqMiss.SetPathValue("id", missing.String())
+	recMiss := serve(t, h.ActivateGoal, reqMiss)
+	if recMiss.Code != http.StatusNotFound {
+		t.Errorf("activate missing goal status = %d, want 404", recMiss.Code)
+	}
+}
+
+// TestIntegration_Goal_ActivateArea drives POST /areas/{id}/activate: a
+// proposed area flips to active.
+func TestIntegration_Goal_ActivateArea(t *testing.T) {
+	truncate(t)
+	t.Cleanup(func() { deleteAreasBySlug(t, "to-activate") })
+	h := newHandler()
+
+	areaID := seedArea(t, "to-activate", "To Activate", "proposed")
+
+	req := httptest.NewRequest(http.MethodPost, "/api/admin/commitment/areas/"+areaID.String()+"/activate", nil)
+	req.SetPathValue("id", areaID.String())
+	rec := serve(t, h.ActivateArea, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("activate area status = %d, want 200 (body=%s)", rec.Code, rec.Body.String())
+	}
+	var status string
+	if err := testPool.QueryRow(t.Context(),
+		`SELECT status FROM areas WHERE id = $1`, areaID,
+	).Scan(&status); err != nil {
+		t.Fatalf("reading activated area: %v", err)
+	}
+	if status != "active" {
+		t.Errorf("activated area status = %q, want active", status)
+	}
+}
+
+// TestIntegration_Goal_RejectGoal drives DELETE /goals/{id}/proposed: a
+// proposed goal (with milestones) is hard-deleted, milestones cascade; a real
+// goal is a 409 NOT_PROPOSED left intact.
+func TestIntegration_Goal_RejectGoal(t *testing.T) {
+	truncate(t)
+	h := newHandler()
+
+	proposed := seedProposedGoal(t, "Proposed goal", nil)
+	seedMilestone(t, proposed, "child milestone", 0)
+	real := seedGoal(t, "Real goal")
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/admin/commitment/goals/"+proposed.String()+"/proposed", nil)
+	req.SetPathValue("id", proposed.String())
+	rec := serve(t, h.RejectGoal, req)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("reject proposed goal status = %d, want 204 (body=%s)", rec.Code, rec.Body.String())
+	}
+	var goalCount, msCount int
+	if err := testPool.QueryRow(t.Context(),
+		`SELECT count(*) FROM goals WHERE id = $1`, proposed,
+	).Scan(&goalCount); err != nil {
+		t.Fatalf("counting rejected goal: %v", err)
+	}
+	if goalCount != 0 {
+		t.Errorf("rejected goal row count = %d, want 0", goalCount)
+	}
+	if err := testPool.QueryRow(t.Context(),
+		`SELECT count(*) FROM milestones WHERE goal_id = $1`, proposed,
+	).Scan(&msCount); err != nil {
+		t.Fatalf("counting cascaded milestones: %v", err)
+	}
+	if msCount != 0 {
+		t.Errorf("milestone count = %d after reject, want 0 (cascade)", msCount)
+	}
+
+	// A real goal → 409 NOT_PROPOSED, intact.
+	reqReal := httptest.NewRequest(http.MethodDelete, "/api/admin/commitment/goals/"+real.String()+"/proposed", nil)
+	reqReal.SetPathValue("id", real.String())
+	recReal := serve(t, h.RejectGoal, reqReal)
+	if recReal.Code != http.StatusConflict {
+		t.Fatalf("reject real goal status = %d, want 409 (body=%s)", recReal.Code, recReal.Body.String())
+	}
+	var realCount int
+	if err := testPool.QueryRow(t.Context(),
+		`SELECT count(*) FROM goals WHERE id = $1`, real,
+	).Scan(&realCount); err != nil {
+		t.Fatalf("counting real goal: %v", err)
+	}
+	if realCount != 1 {
+		t.Errorf("real goal row count = %d after rejected delete, want 1 (untouched)", realCount)
+	}
+}
+
+// TestIntegration_Goal_RejectAreaCascade drives DELETE /areas/{id}/proposed:
+// rejecting a proposed area hard-deletes it AND its proposed child goals in one
+// tx, while an ACTIVE child goal under the same area survives (area_id SET
+// NULL). This is the bundle contract — the locked owner decision.
+func TestIntegration_Goal_RejectAreaCascade(t *testing.T) {
+	truncate(t)
+	t.Cleanup(func() { deleteAreasBySlug(t, "bundle-area") })
+	h := newHandler()
+
+	areaID := seedArea(t, "bundle-area", "Bundle Area", "proposed")
+	proposedChild := seedProposedGoal(t, "Proposed child goal", &areaID)
+
+	// An active goal already filed under the area (e.g. a goal the owner
+	// activated before deciding to reject the theme). It must survive.
+	var activeChild uuid.UUID
+	if err := testPool.QueryRow(t.Context(),
+		`INSERT INTO goals (title, status, area_id) VALUES ('Active child goal', 'in_progress', $1) RETURNING id`,
+		areaID,
+	).Scan(&activeChild); err != nil {
+		t.Fatalf("seeding active child goal: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/admin/commitment/areas/"+areaID.String()+"/proposed", nil)
+	req.SetPathValue("id", areaID.String())
+	rec := serve(t, h.RejectArea, req)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("reject area status = %d, want 204 (body=%s)", rec.Code, rec.Body.String())
+	}
+
+	// Area gone.
+	var areaCount int
+	if err := testPool.QueryRow(t.Context(),
+		`SELECT count(*) FROM areas WHERE id = $1`, areaID,
+	).Scan(&areaCount); err != nil {
+		t.Fatalf("counting rejected area: %v", err)
+	}
+	if areaCount != 0 {
+		t.Errorf("rejected area row count = %d, want 0", areaCount)
+	}
+
+	// Proposed child goal gone (cascade).
+	var proposedCount int
+	if err := testPool.QueryRow(t.Context(),
+		`SELECT count(*) FROM goals WHERE id = $1`, proposedChild,
+	).Scan(&proposedCount); err != nil {
+		t.Fatalf("counting proposed child goal: %v", err)
+	}
+	if proposedCount != 0 {
+		t.Errorf("proposed child goal count = %d after area reject, want 0 (bundle cascade)", proposedCount)
+	}
+
+	// Active child goal survives, unclassified (area_id SET NULL).
+	var activeStatus string
+	var activeArea *uuid.UUID
+	if err := testPool.QueryRow(t.Context(),
+		`SELECT status, area_id FROM goals WHERE id = $1`, activeChild,
+	).Scan(&activeStatus, &activeArea); err != nil {
+		t.Fatalf("reading active child goal: %v", err)
+	}
+	if activeStatus != "in_progress" {
+		t.Errorf("active child status = %q after area reject, want in_progress (untouched)", activeStatus)
+	}
+	if activeArea != nil {
+		t.Errorf("active child area_id = %v after area reject, want NULL (SET NULL)", activeArea)
+	}
+}
+
+// TestIntegration_Goal_ProposalsCount drives GET /proposals/count: it reports
+// the number of proposed goals and proposed areas awaiting triage.
+func TestIntegration_Goal_ProposalsCount(t *testing.T) {
+	truncate(t)
+	t.Cleanup(func() { deleteAreasBySlug(t, "count-area-1", "count-area-2") })
+	h := newHandler()
+
+	seedProposedGoal(t, "Proposed goal A", nil)
+	seedProposedGoal(t, "Proposed goal B", nil)
+	seedGoal(t, "Real goal") // not counted
+	seedArea(t, "count-area-1", "Count Area 1", "proposed")
+	seedArea(t, "count-area-2", "Count Area 2", "proposed")
+
+	req := httptest.NewRequest(http.MethodGet, "/api/admin/commitment/proposals/count", nil)
+	rec := httptest.NewRecorder()
+	h.ProposalsCount(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("proposals count status = %d, want 200 (body=%s)", rec.Code, rec.Body.String())
+	}
+
+	var env struct {
+		Data struct {
+			Goals int64 `json:"proposed_goals"`
+			Areas int64 `json:"proposed_areas"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &env); err != nil {
+		t.Fatalf("decode count response: %v (body=%s)", err, rec.Body.String())
+	}
+	if env.Data.Goals != 2 {
+		t.Errorf("proposed_goals = %d, want 2", env.Data.Goals)
+	}
+	if env.Data.Areas != 2 {
+		t.Errorf("proposed_areas = %d, want 2", env.Data.Areas)
+	}
+}
+
 // TestIntegration_Goal_InvalidInput verifies that a foreign key pointing at a
 // non-existent row (23503) surfaces as goal.ErrInvalidInput — which the handler
 // maps to HTTP 400 — instead of a wrapped error rendered as an opaque 500. It

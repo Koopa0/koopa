@@ -215,6 +215,18 @@ func registerRoutes(
 	mux.Handle("DELETE /api/admin/commitment/goals/{id}/milestones/{mid}", adminMid(http.HandlerFunc(h.goal.DeleteMilestone)))
 	mux.Handle("POST /api/admin/commitment/goals/{id}/milestones/{mid}/toggle", adminMid(http.HandlerFunc(h.goal.ToggleMilestone)))
 
+	// --- Admin: Commitment / Proposals triage ---
+	// Agents propose inert goal/area drafts via MCP (propose_goal /
+	// propose_area); the human reviews them here. Reads (count + list) are
+	// authMid; activate (proposed → not_started/active) and reject (hard
+	// DELETE; area reject cascades its proposed goals) are mutations → adminMid.
+	mux.Handle("GET /api/admin/commitment/proposals", authMid(http.HandlerFunc(h.goal.Proposals)))
+	mux.Handle("GET /api/admin/commitment/proposals/count", authMid(http.HandlerFunc(h.goal.ProposalsCount)))
+	mux.Handle("POST /api/admin/commitment/goals/{id}/activate", adminMid(http.HandlerFunc(h.goal.ActivateGoal)))
+	mux.Handle("DELETE /api/admin/commitment/goals/{id}/proposed", adminMid(http.HandlerFunc(h.goal.RejectGoal)))
+	mux.Handle("POST /api/admin/commitment/areas/{id}/activate", adminMid(http.HandlerFunc(h.goal.ActivateArea)))
+	mux.Handle("DELETE /api/admin/commitment/areas/{id}/proposed", adminMid(http.HandlerFunc(h.goal.RejectArea)))
+
 	// --- Admin: Commitment / Todos ---
 	// State transitions route through POST /advance so each transition is a
 	// distinct audit event separate from scalar field PUTs.

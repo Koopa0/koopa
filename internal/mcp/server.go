@@ -170,6 +170,10 @@ func NewServer(pool *pgxpool.Pool, logger *slog.Logger, opts ...ServerOption) *S
 	addTool(s, toolFrom(ops.ManagePlan), s.managePlan)
 	addTool(s, toolFrom(ops.DraftHypothesis), s.draftHypothesis)
 
+	// --- Proposals (agent inert drafts for owner triage) ---
+	addTool(s, toolFrom(ops.ProposeArea), s.proposeArea)
+	addTool(s, toolFrom(ops.ProposeGoal), s.proposeGoal)
+
 	// --- Notes (flat tools) ---
 	addTool(s, toolFrom(ops.CreateNote), s.createNote)
 	addTool(s, toolFrom(ops.UpdateNote), s.updateNote)

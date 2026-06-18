@@ -536,10 +536,10 @@ func (s *Store) DeleteMilestone(ctx context.Context, goalID, id uuid.UUID) error
 	return nil
 }
 
-// AreaIDBySlugOrName resolves an area slug or case-insensitive name to a
-// UUID. Returns ErrNotFound if no area matches. Used by propose_goal /
-// propose_project when the caller passes an area identifier instead of
-// a UUID.
+// AreaIDBySlugOrName resolves an ACTIVE area slug or case-insensitive name to
+// a UUID. Returns ErrNotFound if no active area matches — a proposed area is
+// an inert draft and is not resolvable here, so it cannot become a goal's
+// parent until the owner activates it.
 func (s *Store) AreaIDBySlugOrName(ctx context.Context, identifier string) (uuid.UUID, error) {
 	id, err := s.q.AreaIDBySlugOrName(ctx, identifier)
 	if err != nil {
@@ -549,4 +549,293 @@ func (s *Store) AreaIDBySlugOrName(ctx context.Context, identifier string) (uuid
 		return uuid.Nil, fmt.Errorf("resolving area %q: %w", identifier, err)
 	}
 	return id, nil
+}
+
+// AreaIDBySlugOrNameIncludingProposed resolves an area slug or
+// case-insensitive name to a UUID, matching proposed areas as well as active
+// ones. Returns ErrNotFound if no area matches. Used ONLY by propose_goal so a
+// goal can be proposed under an area proposed earlier in the same conversation
+// (the proposal bundle); every other caller uses the active-only resolver.
+func (s *Store) AreaIDBySlugOrNameIncludingProposed(ctx context.Context, identifier string) (uuid.UUID, error) {
+	id, err := s.q.AreaIDBySlugOrNameIncludingProposed(ctx, identifier)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return uuid.Nil, ErrNotFound
+		}
+		return uuid.Nil, fmt.Errorf("resolving area %q (incl. proposed): %w", identifier, err)
+	}
+	return id, nil
+}
+
+// ProposedArea is the inert-draft area returned by ProposeArea / ActivateArea.
+type ProposedArea struct {
+	ID        uuid.UUID `json:"id"`
+	Slug      string    `json:"slug"`
+	Name      string    `json:"name"`
+	Status    string    `json:"status"`
+	CreatedBy *string   `json:"created_by,omitempty"`
+}
+
+// ProposeAreaParams holds the fields for an agent-proposed area draft. Slug is
+// derived by the caller (handler) and must satisfy chk_area_slug_format.
+type ProposeAreaParams struct {
+	Slug        string
+	Name        string
+	Description string
+	CreatedBy   string
+}
+
+// ProposeArea inserts an agent-proposed area as an inert draft
+// (status='proposed'). A 23505 on the unique slug becomes ErrConflict; a
+// CHECK violation (blank name, malformed slug) becomes ErrInvalidInput.
+func (s *Store) ProposeArea(ctx context.Context, p *ProposeAreaParams) (*ProposedArea, error) {
+	r, err := s.q.ProposeArea(ctx, db.ProposeAreaParams{
+		Slug:        p.Slug,
+		Name:        p.Name,
+		Description: p.Description,
+		CreatedBy:   &p.CreatedBy,
+	})
+	if err != nil {
+		return nil, mapProposeError(err, "proposing area")
+	}
+	return &ProposedArea{
+		ID:        r.ID,
+		Slug:      r.Slug,
+		Name:      r.Name,
+		Status:    r.Status,
+		CreatedBy: r.CreatedBy,
+	}, nil
+}
+
+// ProposeGoalParams holds the fields for an agent-proposed goal draft.
+// AreaID is resolved by the caller (existing-active or just-proposed area);
+// Milestones are appended in insertion order under the new goal.
+type ProposeGoalParams struct {
+	Title       string
+	Description string
+	AreaID      *uuid.UUID
+	CreatedBy   string
+	Milestones  []string
+}
+
+// ProposeGoal inserts an agent-proposed goal as an inert draft
+// (status='proposed') plus its milestones, all within the supplied
+// transaction so a mid-loop failure rolls the whole proposal back. Bind the
+// store to the tx with WithTx before calling. A bad area_id FK (23503) becomes
+// ErrInvalidInput; a CHECK violation (blank title) likewise.
+func (s *Store) ProposeGoal(ctx context.Context, p *ProposeGoalParams) (*Goal, error) {
+	r, err := s.q.ProposeGoal(ctx, db.ProposeGoalParams{
+		Title:       p.Title,
+		Description: p.Description,
+		AreaID:      p.AreaID,
+		CreatedBy:   &p.CreatedBy,
+	})
+	if err != nil {
+		return nil, mapProposeError(err, "proposing goal")
+	}
+	g := rowToGoal(&r)
+
+	for i, title := range p.Milestones {
+		if _, err := s.q.CreateMilestoneWithPosition(ctx, db.CreateMilestoneWithPositionParams{
+			GoalID:   g.ID,
+			Title:    title,
+			Position: int32(i),
+		}); err != nil {
+			return nil, mapProposeError(err, "proposing goal milestone")
+		}
+	}
+	return &g, nil
+}
+
+// mapProposeError classifies a proposal-write failure. A unique violation
+// (23505 — duplicate area slug) becomes ErrConflict; a foreign-key (23503 —
+// bad area_id) or CHECK violation (23514 — blank title/name, malformed slug)
+// becomes ErrInvalidInput; anything else is wrapped with context.
+func mapProposeError(err error, operation string) error {
+	pgErr, ok := errors.AsType[*pgconn.PgError](err)
+	if !ok {
+		return fmt.Errorf("%s: %w", operation, err)
+	}
+	switch pgErr.Code {
+	case pgerrcode.UniqueViolation:
+		return ErrConflict
+	case pgerrcode.ForeignKeyViolation, pgerrcode.CheckViolation:
+		return ErrInvalidInput
+	default:
+		return fmt.Errorf("%s: %w", operation, err)
+	}
+}
+
+// ActivateGoal transitions a proposed goal to not_started. Proposed-only:
+// ErrNotFound when the goal is missing, ErrNotProposed when it exists but is
+// not proposed (the zero-rows case is disambiguated with a follow-up read).
+func (s *Store) ActivateGoal(ctx context.Context, id uuid.UUID) (*Goal, error) {
+	r, err := s.q.ActivateGoal(ctx, id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, s.classifyProposedGoalMiss(ctx, id)
+		}
+		return nil, fmt.Errorf("activating goal %s: %w", id, err)
+	}
+	g := rowToGoal(&r)
+	return &g, nil
+}
+
+// ActivateArea transitions a proposed area to active. Proposed-only, same
+// missing/not-proposed disambiguation as ActivateGoal.
+func (s *Store) ActivateArea(ctx context.Context, id uuid.UUID) (*ProposedArea, error) {
+	r, err := s.q.ActivateArea(ctx, id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, s.classifyProposedAreaMiss(ctx, id)
+		}
+		return nil, fmt.Errorf("activating area %s: %w", id, err)
+	}
+	return &ProposedArea{
+		ID:        r.ID,
+		Slug:      r.Slug,
+		Name:      r.Name,
+		Status:    r.Status,
+		CreatedBy: r.CreatedBy,
+	}, nil
+}
+
+// RejectGoal hard-deletes a proposed goal (milestones CASCADE). Proposed-only:
+// ErrNotFound when missing, ErrNotProposed when the row exists but is not
+// proposed — a real goal is never deleted by this path.
+func (s *Store) RejectGoal(ctx context.Context, id uuid.UUID) error {
+	n, err := s.q.DeleteProposedGoal(ctx, id)
+	if err != nil {
+		return fmt.Errorf("rejecting goal %s: %w", id, err)
+	}
+	if n > 0 {
+		return nil
+	}
+	return s.classifyProposedGoalMiss(ctx, id)
+}
+
+// RejectArea hard-deletes a proposed area AND, in the same transaction, every
+// proposed goal under it — a proposal is one indivisible theme+goals bundle.
+// Active goals under the area survive (their area_id is SET NULL by the FK).
+// Bind the store to a tx with WithTx before calling so both deletes are
+// atomic. Proposed-only: ErrNotFound when missing, ErrNotProposed otherwise.
+func (s *Store) RejectArea(ctx context.Context, id uuid.UUID) error {
+	if _, err := s.q.DeleteProposedGoalsByArea(ctx, &id); err != nil {
+		return fmt.Errorf("rejecting proposed goals under area %s: %w", id, err)
+	}
+	n, err := s.q.DeleteProposedArea(ctx, id)
+	if err != nil {
+		return fmt.Errorf("rejecting area %s: %w", id, err)
+	}
+	if n > 0 {
+		return nil
+	}
+	return s.classifyProposedAreaMiss(ctx, id)
+}
+
+// ProposalsPending is the nav-badge breakdown of items awaiting owner triage.
+type ProposalsPending struct {
+	Goals int64 `json:"proposed_goals"`
+	Areas int64 `json:"proposed_areas"`
+}
+
+// ProposalsPendingCount returns the count of proposed goals and proposed areas
+// awaiting owner triage.
+func (s *Store) ProposalsPendingCount(ctx context.Context) (ProposalsPending, error) {
+	r, err := s.q.ProposalsPendingCount(ctx)
+	if err != nil {
+		return ProposalsPending{}, fmt.Errorf("counting pending proposals: %w", err)
+	}
+	return ProposalsPending{Goals: r.ProposedGoals, Areas: r.ProposedAreas}, nil
+}
+
+// ProposedGoalSummary is a proposed goal row for the triage surface, with area
+// name and milestone count resolved.
+type ProposedGoalSummary struct {
+	ID             uuid.UUID  `json:"id"`
+	Title          string     `json:"title"`
+	Description    string     `json:"description"`
+	AreaID         *uuid.UUID `json:"area_id,omitempty"`
+	AreaName       string     `json:"area_name"`
+	CreatedBy      *string    `json:"created_by,omitempty"`
+	CreatedAt      time.Time  `json:"created_at"`
+	MilestoneTotal int64      `json:"milestone_total"`
+}
+
+// ProposedAreaSummary is a proposed area row for the triage surface.
+type ProposedAreaSummary struct {
+	ID          uuid.UUID `json:"id"`
+	Slug        string    `json:"slug"`
+	Name        string    `json:"name"`
+	Description string    `json:"description"`
+	CreatedBy   *string   `json:"created_by,omitempty"`
+	CreatedAt   time.Time `json:"created_at"`
+}
+
+// ProposedGoals returns every proposed goal awaiting triage, newest first.
+func (s *Store) ProposedGoals(ctx context.Context) ([]ProposedGoalSummary, error) {
+	rows, err := s.q.ProposedGoals(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("listing proposed goals: %w", err)
+	}
+	out := make([]ProposedGoalSummary, len(rows))
+	for i := range rows {
+		r := &rows[i]
+		out[i] = ProposedGoalSummary{
+			ID:             r.ID,
+			Title:          r.Title,
+			Description:    r.Description,
+			AreaID:         r.AreaID,
+			AreaName:       r.AreaName,
+			CreatedBy:      r.CreatedBy,
+			CreatedAt:      r.CreatedAt,
+			MilestoneTotal: r.MilestoneTotal,
+		}
+	}
+	return out, nil
+}
+
+// ProposedAreas returns every proposed area awaiting triage, newest first.
+func (s *Store) ProposedAreas(ctx context.Context) ([]ProposedAreaSummary, error) {
+	rows, err := s.q.ProposedAreas(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("listing proposed areas: %w", err)
+	}
+	out := make([]ProposedAreaSummary, len(rows))
+	for i := range rows {
+		r := &rows[i]
+		out[i] = ProposedAreaSummary{
+			ID:          r.ID,
+			Slug:        r.Slug,
+			Name:        r.Name,
+			Description: r.Description,
+			CreatedBy:   r.CreatedBy,
+			CreatedAt:   r.CreatedAt,
+		}
+	}
+	return out, nil
+}
+
+// classifyProposedGoalMiss disambiguates a zero-rows proposed-goal mutation:
+// the row is missing (ErrNotFound) or exists but is not proposed
+// (ErrNotProposed).
+func (s *Store) classifyProposedGoalMiss(ctx context.Context, id uuid.UUID) error {
+	if _, err := s.q.GoalByID(ctx, id); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrNotFound
+		}
+		return fmt.Errorf("classifying proposed-goal miss %s: %w", id, err)
+	}
+	return ErrNotProposed
+}
+
+// classifyProposedAreaMiss is the area counterpart of classifyProposedGoalMiss.
+func (s *Store) classifyProposedAreaMiss(ctx context.Context, id uuid.UUID) error {
+	if _, err := s.q.AreaByID(ctx, id); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrNotFound
+		}
+		return fmt.Errorf("classifying proposed-area miss %s: %w", id, err)
+	}
+	return ErrNotProposed
 }

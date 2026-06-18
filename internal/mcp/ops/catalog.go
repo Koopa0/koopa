@@ -198,6 +198,32 @@ func DraftHypothesis() Meta {
 	}
 }
 
+// ProposeArea returns metadata for the agent area-proposal tool — an inert
+// PARA-theme draft for the owner to activate or reject in admin triage.
+func ProposeArea() Meta {
+	return Meta{
+		Name:        "propose_area",
+		Domain:      DomainDaily,
+		Writability: Additive,
+		Stability:   StabilityStable,
+		Since:       "1.2.0",
+		Description: "Propose a PARA area (ongoing domain of responsibility) as an INERT draft in status=proposed. A proposed area is invisible until the owner activates it — it appears in no area selector, backs no goal, and surfaces only in the admin proposals triage. The slug is derived from name. Propose only to materialize a theme that surfaced in a conversation the owner was part of — NEVER from scheduled or autonomous runs. Activation (proposed→active) and rejection (hard delete) are owner actions in admin, not MCP.",
+	}
+}
+
+// ProposeGoal returns metadata for the agent goal-proposal tool — an inert
+// goal+milestones draft for the owner to activate or reject in admin triage.
+func ProposeGoal() Meta {
+	return Meta{
+		Name:        "propose_goal",
+		Domain:      DomainDaily,
+		Writability: Additive,
+		Stability:   StabilityStable,
+		Since:       "1.2.0",
+		Description: "Propose a goal (with optional ordered milestones) as an INERT draft in status=proposed. A proposed goal feeds no list, no alignment, and never appears in brief or any default goal listing — it surfaces only in the admin proposals triage. Optionally file it under an area: an existing ACTIVE area's slug/name, or an area proposed earlier in the same conversation (the proposal bundle). Propose only to materialize an objective that surfaced in a conversation the owner was part of — NEVER from scheduled or autonomous runs. Activation (proposed→not_started) and rejection (hard delete, milestones cascade) are owner actions in admin, not MCP.",
+	}
+}
+
 // Note tools — flat per-intent design. Three tools map 1:1 to user intent.
 
 // CreateNote returns metadata for create_note.
@@ -240,6 +266,8 @@ func All() []Meta {
 		LearningRead(),
 		ManagePlan(),
 		DraftHypothesis(),
+		ProposeArea(),
+		ProposeGoal(),
 		CreateNote(),
 		UpdateNote(),
 	}

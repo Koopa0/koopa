@@ -18,6 +18,11 @@ import (
 type Status string
 
 const (
+	// StatusProposed indicates an agent-proposed inert draft awaiting owner
+	// triage. A proposed goal feeds no list, alignment, or brief; the owner
+	// activates it (→ not_started) or rejects it (hard DELETE) in admin.
+	StatusProposed Status = "proposed"
+
 	// StatusNotStarted indicates the goal has not been started.
 	StatusNotStarted Status = "not_started"
 
@@ -57,6 +62,10 @@ var (
 	// a foreign key pointing at a non-existent area_id (goal) or goal_id
 	// (milestone).
 	ErrInvalidInput = errors.New("goal: invalid input")
+	// ErrNotProposed indicates an activate/reject targeted a goal or area
+	// that exists but is not in status=proposed. Real planning rows are not
+	// activated or hard-deleted through the proposal-triage path.
+	ErrNotProposed = errors.New("goal: not proposed")
 )
 
 // containsControlChars reports whether s contains any control character.
