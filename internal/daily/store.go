@@ -71,50 +71,6 @@ func (s *Store) ItemsByDate(ctx context.Context, date time.Time) ([]Item, error)
 	return items, nil
 }
 
-// UpdateStatus updates the status of a daily plan item.
-func (s *Store) UpdateStatus(ctx context.Context, id uuid.UUID, status Status) error {
-	_, err := s.q.UpdateItemStatus(ctx, db.UpdateItemStatusParams{
-		ID:     id,
-		Status: string(status),
-	})
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return ErrNotFound
-		}
-		return fmt.Errorf("updating daily plan item status: %w", err)
-	}
-	return nil
-}
-
-// CompleteByTodo marks the daily plan item for a todo on a given date as done.
-// Returns true if a matching plan item was found and updated.
-func (s *Store) CompleteByTodo(ctx context.Context, todoItemID uuid.UUID, date time.Time) (bool, error) {
-	n, err := s.q.UpdateItemStatusByTodo(ctx, db.UpdateItemStatusByTodoParams{
-		TodoID:   todoItemID,
-		PlanDate: date,
-		Status:   string(StatusDone),
-	})
-	if err != nil {
-		return false, fmt.Errorf("completing daily plan item by todo item: %w", err)
-	}
-	return n > 0, nil
-}
-
-// Complete marks a daily plan item as done.
-func (s *Store) Complete(ctx context.Context, id uuid.UUID) error {
-	return s.UpdateStatus(ctx, id, StatusDone)
-}
-
-// Defer marks a daily plan item as deferred.
-func (s *Store) Defer(ctx context.Context, id uuid.UUID) error {
-	return s.UpdateStatus(ctx, id, StatusDeferred)
-}
-
-// Drop marks a daily plan item as dropped.
-func (s *Store) Drop(ctx context.Context, id uuid.UUID) error {
-	return s.UpdateStatus(ctx, id, StatusDropped)
-}
-
 // ItemByID returns a single daily plan item by ID (without todo item joins).
 func (s *Store) ItemByID(ctx context.Context, id uuid.UUID) (*Item, error) {
 	r, err := s.q.ItemByID(ctx, id)

@@ -11555,59 +11555,6 @@ func (q *Queries) UpdateHypothesisState(ctx context.Context, arg UpdateHypothesi
 	return i, err
 }
 
-const updateItemStatus = `-- name: UpdateItemStatus :one
-UPDATE daily_plan_items
-SET status = $1, updated_at = now()
-WHERE id = $2
-RETURNING id, plan_date, todo_id, selected_by, position, reason, status, created_at, updated_at
-`
-
-type UpdateItemStatusParams struct {
-	Status string    `json:"status"`
-	ID     uuid.UUID `json:"id"`
-}
-
-// Update the status of a daily plan item.
-func (q *Queries) UpdateItemStatus(ctx context.Context, arg UpdateItemStatusParams) (DailyPlanItem, error) {
-	row := q.db.QueryRow(ctx, updateItemStatus, arg.Status, arg.ID)
-	var i DailyPlanItem
-	err := row.Scan(
-		&i.ID,
-		&i.PlanDate,
-		&i.TodoID,
-		&i.SelectedBy,
-		&i.Position,
-		&i.Reason,
-		&i.Status,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
-const updateItemStatusByTodo = `-- name: UpdateItemStatusByTodo :execrows
-UPDATE daily_plan_items
-SET status = $1, updated_at = now()
-WHERE todo_id = $2 AND plan_date = $3
-`
-
-type UpdateItemStatusByTodoParams struct {
-	Status   string    `json:"status"`
-	TodoID   uuid.UUID `json:"todo_id"`
-	PlanDate time.Time `json:"plan_date"`
-}
-
-// Update the status of a daily plan item by todo_id and date.
-// Used when advance_work completes a todo item to auto-update today's plan item.
-// Returns rows affected so caller can distinguish "updated" from "no matching item".
-func (q *Queries) UpdateItemStatusByTodo(ctx context.Context, arg UpdateItemStatusByTodoParams) (int64, error) {
-	result, err := q.db.Exec(ctx, updateItemStatusByTodo, arg.Status, arg.TodoID, arg.PlanDate)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected(), nil
-}
-
 const updateMilestone = `-- name: UpdateMilestone :one
 UPDATE milestones SET
     title           = COALESCE($1, title),

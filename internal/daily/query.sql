@@ -33,21 +33,6 @@ LEFT JOIN projects p ON p.id = t.project_id
 WHERE dpi.plan_date = @plan_date
 ORDER BY dpi.position, dpi.created_at;
 
--- name: UpdateItemStatus :one
--- Update the status of a daily plan item.
-UPDATE daily_plan_items
-SET status = @status, updated_at = now()
-WHERE id = @id
-RETURNING id, plan_date, todo_id, selected_by, position, reason, status, created_at, updated_at;
-
--- name: UpdateItemStatusByTodo :execrows
--- Update the status of a daily plan item by todo_id and date.
--- Used when advance_work completes a todo item to auto-update today's plan item.
--- Returns rows affected so caller can distinguish "updated" from "no matching item".
-UPDATE daily_plan_items
-SET status = @status, updated_at = now()
-WHERE todo_id = @todo_id AND plan_date = @plan_date;
-
 -- name: ItemByID :one
 -- Get a single daily plan item by ID.
 SELECT id, plan_date, todo_id, selected_by, position, reason, status, created_at, updated_at
