@@ -1,12 +1,14 @@
 import { Injectable, inject } from '@angular/core';
-import { Observable, forkJoin } from 'rxjs';
-import { concatMap, map } from 'rxjs/operators';
+import { Observable } from 'rxjs';
+import { concatMap } from 'rxjs/operators';
 import { ApiService } from './api.service';
 
 /**
  * A proposed goal awaiting owner triage (goal.ProposedGoalSummary). `area_id`
  * points at a proposed area when this goal is part of a proposed bundle,
  * otherwise it is standalone (null, or under an already-active area).
+ * `proposal_rationale` is the agent's why-now justification — absent on older
+ * rows proposed before the field existed.
  */
 export interface ProposedGoal {
   id: string;
@@ -17,9 +19,12 @@ export interface ProposedGoal {
   created_by?: string;
   created_at: string;
   milestone_total: number;
+  proposal_rationale?: string;
 }
 
-/** A proposed PARA area awaiting owner triage (goal.ProposedAreaSummary). */
+/** A proposed PARA area awaiting owner triage (goal.ProposedAreaSummary).
+ *  `proposal_rationale` is the agent's why-now justification — absent on older
+ *  rows proposed before the field existed. */
 export interface ProposedArea {
   id: string;
   slug: string;
@@ -27,6 +32,7 @@ export interface ProposedArea {
   description: string;
   created_by?: string;
   created_at: string;
+  proposal_rationale?: string;
 }
 
 /** GET /api/admin/commitment/proposals payload. */
@@ -64,23 +70,11 @@ export class ProposalService {
     return this.api.postVoid(`${BASE}/goals/${id}/activate`, {});
   }
 
-  /** Activate a proposed area (proposed → active). Does not touch its child
-   *  goals — see {@link activateBundle} for accepting a whole bundle. */
+  /** Activate a proposed area (proposed → active). Area-only: its proposed
+   *  child goals stay proposed under the now-active area and resurface in
+   *  triage as standalone goal cards for individual review. */
   activateArea(id: string): Observable<void> {
     return this.api.postVoid(`${BASE}/areas/${id}/activate`, {});
-  }
-
-  /**
-   * Accept a proposed area bundle: activate the area and each of its proposed
-   * child goals. The backend activate routes are per-entity, so the bundle
-   * "accept" is composed here — the symmetric counterpart of the server-side
-   * cascade on reject.
-   */
-  activateBundle(areaId: string, goalIds: string[]): Observable<void> {
-    return forkJoin([
-      this.activateArea(areaId),
-      ...goalIds.map((id) => this.activateGoal(id)),
-    ]).pipe(map(() => undefined));
   }
 
   /** Edit a proposed goal's title, then activate it (proposed → not_started).

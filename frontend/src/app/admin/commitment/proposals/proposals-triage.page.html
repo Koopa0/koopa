@@ -90,6 +90,21 @@
           }
         </div>
 
+        @if (card.area.proposal_rationale; as rationale) {
+          <div
+            class="rounded-sm border-l-2 border-l-brand bg-bg px-3 py-2.5"
+            aria-live="polite"
+            data-testid="proposals-rationale"
+          >
+            <p
+              class="pb-1 font-mono text-[10px] tracking-wide text-fg-faint uppercase"
+            >
+              Why now
+            </p>
+            <p class="text-[13px] leading-relaxed text-fg-muted">{{ rationale }}</p>
+          </div>
+        }
+
         @if (card.goals.length > 0) {
           <div
             class="rounded-sm border border-border-faint bg-bg p-3"
@@ -118,6 +133,10 @@
                 </li>
               }
             </ul>
+            <p class="pt-2 text-[11px] leading-relaxed text-fg-subtle">
+              Activating the area keeps these as proposals — you'll review each
+              one next.
+            </p>
           </div>
         }
 
@@ -129,11 +148,7 @@
             class="rounded-sm bg-brand px-3 py-1.5 text-xs font-medium text-bg transition-colors hover:bg-brand-strong disabled:cursor-not-allowed disabled:opacity-40"
             data-testid="proposals-area-activate"
           >
-            {{
-              card.goals.length > 0
-                ? 'Activate area & goals'
-                : 'Activate area'
-            }}
+            Activate area
           </button>
           <button
             type="button"
@@ -203,6 +218,21 @@
                 {{ card.goal.milestone_total === 1 ? 'milestone' : 'milestones' }}
               </p>
             }
+          </div>
+        }
+
+        @if (card.goal.proposal_rationale; as rationale) {
+          <div
+            class="rounded-sm border-l-2 border-l-brand bg-bg px-3 py-2.5"
+            aria-live="polite"
+            data-testid="proposals-rationale"
+          >
+            <p
+              class="pb-1 font-mono text-[10px] tracking-wide text-fg-faint uppercase"
+            >
+              Why now
+            </p>
+            <p class="text-[13px] leading-relaxed text-fg-muted">{{ rationale }}</p>
           </div>
         }
 

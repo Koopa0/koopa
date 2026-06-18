@@ -55,12 +55,14 @@ function buildCards(resp: ProposalsResponse): TriageCard[] {
 
 /**
  * Proposals triage — the owner's one-card-at-a-time review of agent-proposed
- * inert goal/area drafts. Each card is either a proposed area bundle (area +
- * its proposed goals, accepted or rejected as a unit) or a standalone proposed
- * goal. Activate promotes a draft into the live planning lifecycle; reject
- * hard-deletes it (an area reject cascades its goals server-side). Cards are
- * spliced off the head locally as they're resolved — no reload flash — and the
- * nav badge is refreshed after each action so the count tracks the queue.
+ * inert goal/area drafts. Each card is either a proposed area (reviewed on its
+ * own) or a standalone proposed goal. Activate promotes a draft into the live
+ * planning lifecycle; reject hard-deletes it (an area reject cascades its
+ * proposed goals server-side). Most resolutions splice the head card off the
+ * queue locally — no reload flash. Activating an area is the exception: it
+ * touches only the area, so its still-proposed child goals are re-fetched and
+ * resurface as standalone cards for individual review. The nav badge re-reads
+ * its count after each action so it tracks the queue.
  */
 @Component({
   selector: 'app-proposals-triage-page',
@@ -194,15 +196,16 @@ export class ProposalsTriagePageComponent {
 
   // ── Area bundle card ───────────────────────────────────────────
 
+  /** Activate the current area only. Its proposed child goals stay proposed
+   *  under the now-active area, so the queue re-fetches and they resurface as
+   *  standalone cards for individual review. */
   protected activateArea(): void {
     const card = this.currentArea();
     if (!card) return;
     this.run(
-      this.proposalService.activateBundle(
-        card.area.id,
-        card.goals.map((g) => g.id),
-      ),
+      this.proposalService.activateArea(card.area.id),
       `Activated "${card.area.name}"`,
+      { reload: true },
     );
   }
 
@@ -225,15 +228,26 @@ export class ProposalsTriagePageComponent {
 
   // ── Shared action runner ───────────────────────────────────────
 
-  /** Runs a triage mutation, then advances to the next card and refreshes the
-   *  nav badge. On failure the card stays put so the owner can retry. */
-  private run(op: Observable<void>, success: string): void {
+  /** Runs a triage mutation, then settles the queue and shows a toast. By
+   *  default the resolved head card is spliced off locally; pass `reload` to
+   *  re-fetch instead — used by area activate so still-proposed children
+   *  resurface. On failure the card stays put so the owner can retry. */
+  private run(
+    op: Observable<void>,
+    success: string,
+    opts: { reload?: boolean } = {},
+  ): void {
     if (this.busy()) return;
     this.busy.set(true);
     op.pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: () => {
         this.busy.set(false);
-        this.advance();
+        if (opts.reload) {
+          this.editing.set(false);
+          this.resource.reload();
+        } else {
+          this.advance();
+        }
         this.notifications.success(success);
       },
       error: () => {

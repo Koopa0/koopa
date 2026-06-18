@@ -136,24 +136,101 @@ describe('ProposalsTriagePageComponent', () => {
     expect(card?.textContent).toContain('Run 5k');
   });
 
-  it('should activate the area and its goals then advance to the standalone goal', async () => {
+  it('should activate only the area and resurface its child goal as a standalone card', async () => {
     await render();
 
     testid('proposals-area-activate')?.click();
     await settle();
 
+    // Area-only: exactly the per-area activate, never a per-goal activate.
     httpMock
       .expectOne((r) => r.method === 'POST' && r.url.endsWith(areaActivate('ar-1')))
       .flush({});
-    httpMock
-      .expectOne((r) => r.method === 'POST' && r.url.endsWith(goalActivate('gl-1')))
-      .flush({});
+    httpMock.expectNone((r) => r.url.endsWith(goalActivate('gl-1')));
     await settle();
 
-    expect(testid('proposals-position')?.textContent).toContain('2 of 2');
-    expect(testid('proposals-goal-card')?.textContent).toContain(
-      'Learn Go generics',
+    // The queue re-fetches; the still-proposed child comes back standalone now
+    // that its parent area is active (no longer a proposed bundle).
+    flushList({
+      areas: [],
+      goals: [
+        {
+          id: 'gl-1',
+          title: 'Run 5k',
+          description: '',
+          area_id: 'ar-1',
+          area_name: 'Health',
+          created_by: 'planner',
+          created_at: '2026-06-18T00:00:00Z',
+          milestone_total: 2,
+        },
+        {
+          id: 'gl-2',
+          title: 'Learn Go generics',
+          description: 'deep dive',
+          area_name: 'Build',
+          created_by: 'planner',
+          created_at: '2026-06-18T00:00:00Z',
+          milestone_total: 0,
+        },
+      ],
+    });
+    await settle();
+
+    expect(testid('proposals-area-card')).toBeNull();
+    expect(testid('proposals-goal-card')?.textContent).toContain('Run 5k');
+    expect(testid('proposals-position')?.textContent).toContain('1 of 2');
+  });
+
+  it('should render the proposal rationale on the area card when present', async () => {
+    await render({
+      areas: [
+        {
+          id: 'ar-1',
+          slug: 'health',
+          name: 'Health',
+          description: 'Body upkeep',
+          created_by: 'planner',
+          created_at: '2026-06-18T00:00:00Z',
+          proposal_rationale: 'You logged three runs last week — worth committing to.',
+        },
+      ],
+      goals: [],
+    });
+
+    const rationale = testid('proposals-rationale');
+    expect(rationale).toBeTruthy();
+    expect(rationale?.textContent).toContain(
+      'You logged three runs last week',
     );
+  });
+
+  it('should render the proposal rationale on the standalone goal card when present', async () => {
+    await render({
+      areas: [],
+      goals: [
+        {
+          id: 'gl-2',
+          title: 'Learn Go generics',
+          description: 'deep dive',
+          area_name: 'Build',
+          created_by: 'planner',
+          created_at: '2026-06-18T00:00:00Z',
+          milestone_total: 0,
+          proposal_rationale: 'Generics keep coming up in your reading.',
+        },
+      ],
+    });
+
+    expect(testid('proposals-rationale')?.textContent).toContain(
+      'Generics keep coming up',
+    );
+  });
+
+  it('should omit the rationale block when none was given', async () => {
+    await render(goalOnly());
+
+    expect(testid('proposals-rationale')).toBeNull();
   });
 
   it('should activate a standalone goal and then show the all-clear state', async () => {
