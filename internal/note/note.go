@@ -149,6 +149,11 @@ var (
 	// ErrConflict indicates a duplicate slug.
 	ErrConflict = errors.New("note: conflict")
 
+	// ErrInvalidInput signals a client-supplied value the database rejected
+	// via a check constraint: a malformed slug (chk_note_slug_format) or a
+	// blank title (chk_note_title_not_blank).
+	ErrInvalidInput = errors.New("note: invalid input")
+
 	// ErrInvalidKind signals an unrecognized kind value on input.
 	ErrInvalidKind = errors.New("note: invalid kind")
 

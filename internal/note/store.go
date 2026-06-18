@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -167,10 +168,7 @@ func (s *Store) Create(ctx context.Context, p *CreateParams) (*Note, error) {
 		Metadata:  metaBytes,
 	})
 	if err != nil {
-		if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok && pgErr.Code == pgerrcode.UniqueViolation {
-			return nil, fmt.Errorf("%w: slug=%s", ErrConflict, p.Slug)
-		}
-		return nil, fmt.Errorf("inserting note: %w", err)
+		return nil, mapNoteWriteError(err, "inserting note", fmt.Sprintf("slug=%s", p.Slug))
 	}
 	return buildNote(
 		r.ID, r.Slug, r.Title, r.Body,
@@ -179,9 +177,38 @@ func (s *Store) Create(ctx context.Context, p *CreateParams) (*Note, error) {
 	)
 }
 
+// mapNoteWriteError classifies a PostgreSQL note-write failure into a feature
+// sentinel. A unique violation (23505) on the slug becomes ErrConflict (with
+// conflictDetail appended for context); a check-constraint violation (23514 —
+// chk_note_slug_format, chk_note_title_not_blank) becomes ErrInvalidInput; any
+// other error is wrapped with operation. Callers handle pgx.ErrNoRows before
+// reaching here.
+func mapNoteWriteError(err error, operation, conflictDetail string) error {
+	pgErr, ok := errors.AsType[*pgconn.PgError](err)
+	if !ok {
+		return fmt.Errorf("%s: %w", operation, err)
+	}
+	switch pgErr.Code {
+	case pgerrcode.UniqueViolation:
+		return fmt.Errorf("%w: %s", ErrConflict, conflictDetail)
+	case pgerrcode.CheckViolation:
+		return ErrInvalidInput
+	default:
+		return fmt.Errorf("%s: %w", operation, err)
+	}
+}
+
 // Update modifies editable fields. Maturity transitions go through
 // UpdateMaturity separately.
 func (s *Store) Update(ctx context.Context, id uuid.UUID, p UpdateParams) (*Note, error) {
+	// Title is optional on update (nil = unchanged), but a present-yet-blank
+	// title violates chk_note_title_not_blank. Reject it here so the asymmetry
+	// with Create (which requires a non-blank title at the handler boundary)
+	// does not let a blank through. The store is the shared write path for both
+	// the HTTP handler and the MCP update_note tool, so the check covers both.
+	if p.Title != nil && strings.TrimSpace(*p.Title) == "" {
+		return nil, ErrInvalidInput
+	}
 	var kindArg db.NullNoteKind
 	if p.Kind != nil {
 		if !p.Kind.Valid() {
@@ -211,10 +238,7 @@ func (s *Store) Update(ctx context.Context, id uuid.UUID, p UpdateParams) (*Note
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrNotFound
 		}
-		if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok && pgErr.Code == pgerrcode.UniqueViolation {
-			return nil, fmt.Errorf("%w: slug", ErrConflict)
-		}
-		return nil, fmt.Errorf("updating note %s: %w", id, err)
+		return nil, mapNoteWriteError(err, fmt.Sprintf("updating note %s", id), "slug")
 	}
 	n, err := buildNote(
 		r.ID, r.Slug, r.Title, r.Body,

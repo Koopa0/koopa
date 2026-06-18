@@ -27,6 +27,7 @@ import (
 var storeErrors = []api.ErrMap{
 	{Target: ErrNotFound, Status: http.StatusNotFound, Code: "NOT_FOUND", Message: "note not found"},
 	{Target: ErrConflict, Status: http.StatusConflict, Code: "CONFLICT", Message: "note slug conflict"},
+	{Target: ErrInvalidInput, Status: http.StatusBadRequest, Code: "BAD_REQUEST", Message: "invalid note input"},
 	{Target: ErrInvalidKind, Status: http.StatusBadRequest, Code: "INVALID_KIND", Message: "invalid note kind"},
 	{Target: ErrInvalidMaturity, Status: http.StatusBadRequest, Code: "INVALID_MATURITY", Message: "invalid note maturity"},
 	{Target: ErrInvalidLink, Status: http.StatusUnprocessableEntity, Code: "INVALID_LINK", Message: "unknown concept or target id"},

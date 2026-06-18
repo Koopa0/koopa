@@ -13,6 +13,7 @@
 package note
 
 import (
+	"errors"
 	"os"
 	"testing"
 	"time"
@@ -215,5 +216,77 @@ func TestMissingEmbeddings_SetEmbeddingRoundTrip(t *testing.T) {
 	}
 	if !updatedAt.Equal(first.UpdatedAt) {
 		t.Errorf("updated_at = %v after SetEmbedding, want %v (unchanged)", updatedAt, first.UpdatedAt)
+	}
+}
+
+// TestStore_InvalidInput verifies that a value the database (or the store's own
+// blank-title guard) rejects surfaces as ErrInvalidInput — which the HTTP
+// handler maps to 400 and the MCP create_note/update_note tools report as an
+// invalid-input message — instead of a wrapped error rendered as an opaque 500.
+// The store is the shared write path for both callers, so mapping it here
+// covers both. Coverage: a malformed slug (chk_note_slug_format 23514) and a
+// blank title (chk_note_title_not_blank 23514) on Create, and the same two on
+// Update (where a present-yet-blank title is caught by the store's pre-check).
+func TestStore_InvalidInput(t *testing.T) {
+	store := setup(t)
+	ctx := t.Context()
+
+	blank := "   "
+	badSlug := "Not A Valid Slug!"
+
+	tests := []struct {
+		name string
+		run  func() error
+	}{
+		{
+			name: "create with malformed slug (chk_note_slug_format 23514)",
+			run: func() error {
+				_, err := store.Create(ctx, &CreateParams{
+					Slug:      badSlug,
+					Title:     "Valid title",
+					Body:      "body",
+					Kind:      KindMusing,
+					CreatedBy: "human",
+				})
+				return err
+			},
+		},
+		{
+			name: "create with blank title (chk_note_title_not_blank 23514)",
+			run: func() error {
+				_, err := store.Create(ctx, &CreateParams{
+					Slug:      "valid-slug",
+					Title:     blank,
+					Body:      "body",
+					Kind:      KindMusing,
+					CreatedBy: "human",
+				})
+				return err
+			},
+		},
+		{
+			name: "update to malformed slug (chk_note_slug_format 23514)",
+			run: func() error {
+				existing := seedNote(t, store, "update-slug-target", "Update Slug Target")
+				_, err := store.Update(ctx, existing.ID, UpdateParams{Slug: &badSlug})
+				return err
+			},
+		},
+		{
+			name: "update to blank title (store blank-title guard)",
+			run: func() error {
+				existing := seedNote(t, store, "update-title-target", "Update Title Target")
+				_, err := store.Update(ctx, existing.ID, UpdateParams{Title: &blank})
+				return err
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := tt.run(); !errors.Is(err, ErrInvalidInput) {
+				t.Fatalf("err = %v, want ErrInvalidInput", err)
+			}
+		})
 	}
 }

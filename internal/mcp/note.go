@@ -105,6 +105,9 @@ func (s *Server) createNote(ctx context.Context, _ *mcp.CallToolRequest, input C
 		if errors.Is(err, note.ErrConflict) {
 			return nil, NoteReply{}, fmt.Errorf("slug already exists: %q", input.Slug)
 		}
+		if errors.Is(err, note.ErrInvalidInput) {
+			return nil, NoteReply{}, fmt.Errorf("invalid note input: slug must be url-safe and title must not be blank")
+		}
 		return nil, NoteReply{}, fmt.Errorf("creating note: %w", err)
 	}
 
@@ -164,6 +167,9 @@ func (s *Server) updateNote(ctx context.Context, _ *mcp.CallToolRequest, input U
 		}
 		if errors.Is(err, note.ErrConflict) {
 			return nil, NoteReply{}, fmt.Errorf("slug conflict on update")
+		}
+		if errors.Is(err, note.ErrInvalidInput) {
+			return nil, NoteReply{}, fmt.Errorf("invalid note input: slug must be url-safe and title must not be blank")
 		}
 		return nil, NoteReply{}, fmt.Errorf("updating note: %w", err)
 	}
