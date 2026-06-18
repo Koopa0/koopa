@@ -664,8 +664,7 @@ func (h *Handler) RecordAttempt(w http.ResponseWriter, r *http.Request) {
 		nil,
 	)
 	if err != nil {
-		h.logger.Error("recording attempt", "error", err)
-		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to record attempt")
+		api.HandleError(w, h.logger, err, storeErrors...)
 		return
 	}
 	api.Encode(w, http.StatusCreated, api.Response{Data: attempt})

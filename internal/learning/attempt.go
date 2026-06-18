@@ -9,7 +9,9 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgerrcode"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/Koopa0/koopa/internal/db"
 )
@@ -39,6 +41,14 @@ func (s *Store) RecordAttempt(ctx context.Context, targetID, sessionID uuid.UUID
 		Metadata:         metadata,
 	})
 	if err != nil {
+		// idx_learning_attempts_item_number is UNIQUE on
+		// (learning_target_id, attempt_number); a concurrent caller racing
+		// on the same target can slip an attempt between our count and this
+		// INSERT, surfacing 23505. Map to ErrConflict so the handler returns
+		// 409 instead of an opaque 500. Mirrors session.go CreateSession.
+		if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok && pgErr.Code == pgerrcode.UniqueViolation {
+			return nil, ErrConflict
+		}
 		return nil, fmt.Errorf("creating attempt: %w", err)
 	}
 	return &Attempt{

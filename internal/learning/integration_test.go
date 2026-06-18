@@ -256,6 +256,66 @@ func TestStartSession_ConcurrentStart_OnlyOneWins(t *testing.T) {
 	}
 }
 
+// TestRecordAttempt_DuplicateNumber_ReturnsConflict — idx_learning_attempts_item_number
+// is UNIQUE on (learning_target_id, attempt_number). RecordAttempt computes the
+// next number from MAX(attempt_number); concurrent callers can both read the
+// same MAX and race to insert the same number. The losers must surface
+// ErrConflict (→ 409), not an opaque wrapped 500. Without the 23505→ErrConflict
+// mapping in RecordAttempt this test fails: the duplicate would arrive as a
+// generic "creating attempt" wrap. A future migration that drops the unique
+// index must also fail this test.
+func TestRecordAttempt_DuplicateNumber_ReturnsConflict(t *testing.T) {
+	truncateLearningTables(t)
+
+	store := learning.NewStore(testPool)
+	target := seedTarget(t, "Duplicate Attempt Number")
+	session := seedSession(t, "leetcode")
+
+	const callers = 8
+	var (
+		wg           sync.WaitGroup
+		successCount atomic.Int32
+		conflictErr  atomic.Int32
+		otherErrs    atomic.Int32
+	)
+
+	for range callers {
+		wg.Go(func() {
+			_, err := store.RecordAttempt(
+				t.Context(), target, session,
+				learning.ParadigmProblemSolving, "solved_independent",
+				nil, nil, nil, nil,
+			)
+			switch {
+			case err == nil:
+				successCount.Add(1)
+			case errors.Is(err, learning.ErrConflict):
+				conflictErr.Add(1)
+			default:
+				otherErrs.Add(1)
+				t.Errorf("RecordAttempt unexpected error: %v", err)
+			}
+		})
+	}
+	wg.Wait()
+
+	if got := otherErrs.Load(); got != 0 {
+		t.Fatalf("unexpected (non-conflict) error count = %d, want 0", got)
+	}
+	if got := successCount.Load(); got < 1 {
+		t.Errorf("successful RecordAttempt count = %d, want >= 1", got)
+	}
+	// At least one caller must have lost the (target, attempt_number) race and
+	// mapped 23505 → ErrConflict. With callers reading the same MAX the index
+	// guarantees collisions; if none occurred the mapping was never exercised.
+	if got := conflictErr.Load(); got < 1 {
+		t.Errorf("ErrConflict count = %d, want >= 1 (the duplicate race was not exercised)", got)
+	}
+	if total := successCount.Load() + conflictErr.Load(); total != callers {
+		t.Errorf("success(%d)+conflict(%d) = %d, want %d", successCount.Load(), conflictErr.Load(), total, callers)
+	}
+}
+
 // TestCreateDomain_HappyPath exercises the real store path behind the
 // learning_domain decision-stamp create. A valid kebab-case slug must
 // produce a learning_domains row (active=true) and become visible via
