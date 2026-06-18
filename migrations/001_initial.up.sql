@@ -31,7 +31,7 @@ CREATE TYPE todo_state AS ENUM (
 CREATE TYPE agent_status AS ENUM ('active', 'retired');
 
 CREATE TYPE hypothesis_state AS ENUM (
-    'unverified', 'verified', 'invalidated', 'archived'
+    'draft', 'unverified', 'verified', 'invalidated', 'archived'
 );
 
 CREATE TYPE note_kind AS ENUM (
@@ -77,7 +77,7 @@ CREATE TABLE agents (
     CONSTRAINT chk_agent_display_name_not_blank
         CHECK (btrim(display_name) <> ''),
     CONSTRAINT chk_agent_platform
-        CHECK (platform IN ('claude-cowork', 'claude-code', 'claude-web', 'human', 'system')),
+        CHECK (platform IN ('claude-cowork', 'claude-code', 'claude-web', 'codex', 'human', 'system')),
     CONSTRAINT chk_agent_status_retired CHECK (
         (status = 'active'  AND retired_at IS NULL) OR
         (status = 'retired' AND retired_at IS NOT NULL)
@@ -87,7 +87,7 @@ CREATE TABLE agents (
 COMMENT ON TABLE agents IS 'DB projection of the Go BuiltinAgents() registry. Rows are upserted at startup by agent.SyncToTable. Stores identity only (name, platform, status). FK targets for coordination references (learning_hypotheses) use ON DELETE RESTRICT so historical records cannot dangle. Removed registry entries transition to status=retired rather than being deleted.';
 COMMENT ON COLUMN agents.name IS 'Unique agent identifier. Used as the caller identity (as: field) in MCP tool calls and as FK target for created_by / assignee / curated_by columns. Format: lowercase, must start with a letter, alphanumeric + hyphens.';
 COMMENT ON COLUMN agents.display_name IS 'Human-readable label for admin UI and logs. Non-blank (chk_agent_display_name_not_blank).';
-COMMENT ON COLUMN agents.platform IS 'Execution context. Closed set: claude-cowork, claude-code, claude-web, human, system (chk_agent_platform). The system value is reserved for the database-level fallback agent registered by BuiltinAgents — it attributes writes that bypass the Go actor middleware (pg_cron, manual psql ops, bug safety net). Routing decisions are driven by agent registry lookups, not this column.';
+COMMENT ON COLUMN agents.platform IS 'Execution context. Closed set: claude-cowork, claude-code, claude-web, codex, human, system (chk_agent_platform). The system value is reserved for the database-level fallback agent registered by BuiltinAgents — it attributes writes that bypass the Go actor middleware (pg_cron, manual psql ops, bug safety net). Routing decisions are driven by agent registry lookups, not this column.';
 COMMENT ON COLUMN agents.description IS 'Short role description. Empty string = no description.';
 COMMENT ON COLUMN agents.status IS 'active = currently present in BuiltinAgents(). retired = previously registered but no longer in the Go literal. chk_agent_status_retired ties retired_at to status=retired.';
 COMMENT ON COLUMN agents.synced_at IS 'When this row was last reconciled with BuiltinAgents() by agent.SyncToTable. Updated on every startup sync.';
@@ -1917,7 +1917,7 @@ CREATE TABLE learning_hypotheses (
         CHECK ((state IN ('verified', 'invalidated')) = (resolved_at IS NOT NULL)),
     CONSTRAINT chk_learning_hypothesis_resolution
         CHECK (
-            state IN ('unverified', 'archived')
+            state::text IN ('draft', 'unverified', 'archived')
             OR resolved_by_attempt_id IS NOT NULL
             OR resolved_by_observation_id IS NOT NULL
             OR (resolution_summary IS NOT NULL AND btrim(resolution_summary) <> '')
@@ -1939,7 +1939,14 @@ COMMENT ON TABLE learning_hypotheses IS
     'then include non-learning signals and vice versa.';
 COMMENT ON COLUMN learning_hypotheses.created_by IS 'Which agent recorded the hypothesis. FK to agents.';
 COMMENT ON COLUMN learning_hypotheses.content IS 'Full narrative context. claim is the one-line prediction; content is the supporting analysis.';
-COMMENT ON COLUMN learning_hypotheses.state IS 'Lifecycle: unverified → verified | invalidated → archived.';
+COMMENT ON COLUMN learning_hypotheses.state IS
+    'Lifecycle: draft → unverified → verified | invalidated → archived. '
+    'draft is the agent-created pre-endorsement state, inert by definition: '
+    'it feeds no dashboard, counts toward no progress, and never appears in '
+    'brief(morning), the Today aggregate, or any default listing — visible '
+    'only in the admin hypotheses list (the triage surface). draft leaves '
+    'draft only via owner endorsement in admin (draft → unverified) or '
+    'draft-only DELETE. Admin-created rows land directly in unverified.';
 COMMENT ON COLUMN learning_hypotheses.claim IS 'One-line falsifiable prediction.';
 COMMENT ON COLUMN learning_hypotheses.invalidation_condition IS 'What evidence would disprove the claim. Required — a hypothesis without one is not falsifiable.';
 COMMENT ON COLUMN learning_hypotheses.metadata IS 'supporting_evidence, counter_evidence, conclusion, category, project, tags. Promote fields to columns when WHERE/JOIN/GROUP BY usage exceeds 3 occurrences.';
@@ -2368,3 +2375,184 @@ CREATE TRIGGER trg_learning_sessions_audit
 -- project_profile demotion (is_public = false) is enforced in
 -- internal/project.Store.UpdateStatus, not in a trigger — per the
 -- trigger policy that keeps cross-aggregate side effects out of the DB.
+
+
+-- ============================================================
+-- Readings — literature shelf + reading diary
+--
+-- One book per readings row; one dated diary entry per reading_reflections
+-- row. Deeply private: no agent surface (no MCP, not in the search_knowledge
+-- corpus), admin HTTP only. No audit triggers (every write is the single
+-- human admin behind adminMid — an actor trail would record a constant) and
+-- no rating column, ever — reflections are the only evaluation (owner decision).
+-- ============================================================
+
+CREATE TABLE readings (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    title       TEXT NOT NULL,
+    author      TEXT NOT NULL DEFAULT '',
+    status      TEXT NOT NULL DEFAULT 'want_to_read'
+        CHECK (status IN ('want_to_read', 'reading', 'finished', 'abandoned')),
+    started_on  DATE,
+    finished_on DATE,
+    is_public   BOOLEAN NOT NULL DEFAULT false,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+    CONSTRAINT chk_reading_title_not_blank
+        CHECK (btrim(title) <> '')
+);
+
+COMMENT ON TABLE readings IS
+    'Literature reading shelf — one row per book, Koopa-private. Evaluation '
+    'happens only through reading_reflections (dated diary entries); there is '
+    'intentionally no rating column. No agent surface: not exposed via MCP, '
+    'not in the search_knowledge corpus, admin HTTP only.';
+COMMENT ON COLUMN readings.title IS
+    'Book title as Koopa records it. Required, never blank (chk_reading_title_not_blank).';
+COMMENT ON COLUMN readings.author IS
+    'Author name(s), free text. Empty string when not recorded — "unknown author" '
+    'carries no distinct meaning from "not entered", so NOT NULL DEFAULT '''' '
+    'instead of nullable.';
+COMMENT ON COLUMN readings.status IS
+    'Shelf state: want_to_read → reading → finished | abandoned. The CHECK '
+    'closes the value set; transitions are NOT schema-enforced — any change is '
+    'allowed (abandoned books get picked back up, finished books get re-read). '
+    'Set by the admin HTTP handler, never by trigger.';
+COMMENT ON COLUMN readings.started_on IS
+    'Date Koopa started reading. NULL while the book sits on the want-to-read '
+    'shelf or when the start date was never recorded.';
+COMMENT ON COLUMN readings.finished_on IS
+    'Date Koopa finished (or gave up on) the book. NULL until the reading '
+    'concludes. The handler auto-stamps today on a transition to finished when '
+    'no explicit date is supplied.';
+COMMENT ON COLUMN readings.is_public IS
+    'Reserved for a future public shelf. Default false; nothing public-facing '
+    'reads this yet — flipping it has no effect until a public surface exists.';
+COMMENT ON COLUMN readings.created_at IS
+    'Row creation time. Set by the database, never updated.';
+COMMENT ON COLUMN readings.updated_at IS
+    'Application-managed. Set explicitly in UPDATE queries.';
+
+CREATE INDEX idx_readings_status ON readings(status);
+
+CREATE TABLE reading_reflections (
+    id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    reading_id UUID NOT NULL REFERENCES readings(id) ON DELETE CASCADE,
+    entry_date DATE NOT NULL DEFAULT CURRENT_DATE,
+    body       TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+    CONSTRAINT chk_reading_reflection_body_not_blank
+        CHECK (btrim(body) <> '')
+);
+
+COMMENT ON TABLE reading_reflections IS
+    'Reading diary — dated entries under one book, shown as a time-ordered '
+    'thread (entry_date, then created_at) on the book page. Many per book. '
+    'Private like readings: no agent surface, no search corpus, admin HTTP only.';
+COMMENT ON COLUMN reading_reflections.reading_id IS
+    'The book this entry belongs to. ON DELETE CASCADE — deleting a book '
+    'deletes its entire diary; the entries have no meaning without the book.';
+COMMENT ON COLUMN reading_reflections.entry_date IS
+    'The diary date the entry belongs to — the day of reading, not necessarily '
+    'the day it was typed in. Defaults to the current date; the handler applies '
+    'the same default when the field is omitted.';
+COMMENT ON COLUMN reading_reflections.body IS
+    'The diary entry text. Required, never blank '
+    '(chk_reading_reflection_body_not_blank). Free-form prose; newlines allowed.';
+COMMENT ON COLUMN reading_reflections.created_at IS
+    'Row creation time. Tiebreak for thread ordering when two entries share an '
+    'entry_date.';
+COMMENT ON COLUMN reading_reflections.updated_at IS
+    'Application-managed. Set explicitly in UPDATE queries.';
+
+CREATE INDEX idx_reading_reflections_thread
+    ON reading_reflections(reading_id, entry_date, created_at);
+
+
+-- ============================================================
+-- Songs — ヨルシカ song shelf + reflection diary
+--
+-- Mirrors the readings/reading_reflections pattern: one song per row, many
+-- dated reflections threaded under it. Same privacy posture (no agent surface,
+-- no search corpus, admin HTTP only) and no rating/progress column. The
+-- distinct dimension is the Japanese-study reference layer (lyrics / owner
+-- translation / vocabulary) — all owner-filled, never generated. album is a
+-- free-text grouping label; there is no album entity and no narrative relation
+-- (v1).
+-- ============================================================
+
+CREATE TABLE songs (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    title_ja    TEXT NOT NULL,
+    album       TEXT NOT NULL DEFAULT '',
+    lyrics_ja   TEXT NOT NULL DEFAULT '',
+    translation TEXT NOT NULL DEFAULT '',
+    vocabulary  TEXT NOT NULL DEFAULT '',
+    is_public   BOOLEAN NOT NULL DEFAULT false,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+    CONSTRAINT chk_song_title_ja_not_blank
+        CHECK (btrim(title_ja) <> '')
+);
+
+COMMENT ON TABLE songs IS
+    'ヨルシカ song shelf — one row per song, Koopa-private. Reflections live in '
+    'song_reflections (dated thread). No rating column; no agent surface (no '
+    'MCP, not in the search_knowledge corpus), admin HTTP only.';
+COMMENT ON COLUMN songs.title_ja IS
+    'Japanese song title (original). Required, never blank (chk_song_title_ja_not_blank).';
+COMMENT ON COLUMN songs.album IS
+    'Album name as a free-text grouping label. No album entity, no narrative '
+    'relation (v1). Empty string when not recorded.';
+COMMENT ON COLUMN songs.lyrics_ja IS
+    'Japanese lyrics. Owner-filled for study; never generated. Empty until entered.';
+COMMENT ON COLUMN songs.translation IS
+    'Owner translation of the lyrics. Owner-filled; never generated. Empty until entered.';
+COMMENT ON COLUMN songs.vocabulary IS
+    'Vocabulary notes for Japanese study (free-form). Owner-filled; never '
+    'generated. Empty until entered.';
+COMMENT ON COLUMN songs.is_public IS
+    'Reserved for a future public surface. Default false; nothing public-facing '
+    'reads this yet.';
+COMMENT ON COLUMN songs.created_at IS
+    'Row creation time. Set by the database, never updated.';
+COMMENT ON COLUMN songs.updated_at IS
+    'Application-managed. Set explicitly in UPDATE queries.';
+
+CREATE TABLE song_reflections (
+    id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    song_id    UUID NOT NULL REFERENCES songs(id) ON DELETE CASCADE,
+    entry_date DATE NOT NULL DEFAULT CURRENT_DATE,
+    body       TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+    CONSTRAINT chk_song_reflection_body_not_blank
+        CHECK (btrim(body) <> '')
+);
+
+COMMENT ON TABLE song_reflections IS
+    'Song reflection diary — dated entries under one song (理解/感受/意境), shown '
+    'as a thread ordered by (entry_date, created_at). Many per song. Private '
+    'like songs: no agent surface, no search corpus, admin HTTP only.';
+COMMENT ON COLUMN song_reflections.song_id IS
+    'The song this entry belongs to. ON DELETE CASCADE — deleting a song deletes '
+    'its entire reflection thread; the entries have no meaning without the song.';
+COMMENT ON COLUMN song_reflections.entry_date IS
+    'The reflection date — the day of listening/understanding, not necessarily '
+    'the typing date. Defaults to the current date; the handler applies the same '
+    'default when omitted.';
+COMMENT ON COLUMN song_reflections.body IS
+    'The reflection text. Required, never blank (chk_song_reflection_body_not_blank). '
+    'Free-form prose; newlines allowed.';
+COMMENT ON COLUMN song_reflections.created_at IS
+    'Row creation time. Tiebreak for thread ordering when two entries share an entry_date.';
+COMMENT ON COLUMN song_reflections.updated_at IS
+    'Application-managed. Set explicitly in UPDATE queries.';
+
+CREATE INDEX idx_song_reflections_thread
+    ON song_reflections(song_id, entry_date, created_at);

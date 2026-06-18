@@ -1187,6 +1187,42 @@ type RefreshToken struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
+// ヨルシカ song shelf — one row per song, Koopa-private. Reflections live in song_reflections (dated thread). No rating column; no agent surface (no MCP, not in the search_knowledge corpus), admin HTTP only.
+type Song struct {
+	ID uuid.UUID `json:"id"`
+	// Japanese song title (original). Required, never blank (chk_song_title_ja_not_blank).
+	TitleJa string `json:"title_ja"`
+	// Album name as a free-text grouping label. No album entity, no narrative relation (v1). Empty string when not recorded.
+	Album string `json:"album"`
+	// Japanese lyrics. Owner-filled for study; never generated. Empty until entered.
+	LyricsJa string `json:"lyrics_ja"`
+	// Owner translation of the lyrics. Owner-filled; never generated. Empty until entered.
+	Translation string `json:"translation"`
+	// Vocabulary notes for Japanese study (free-form). Owner-filled; never generated. Empty until entered.
+	Vocabulary string `json:"vocabulary"`
+	// Reserved for a future public surface. Default false; nothing public-facing reads this yet.
+	IsPublic bool `json:"is_public"`
+	// Row creation time. Set by the database, never updated.
+	CreatedAt time.Time `json:"created_at"`
+	// Application-managed. Set explicitly in UPDATE queries.
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// Song reflection diary — dated entries under one song (理解/感受/意境), shown as a thread ordered by (entry_date, created_at). Many per song. Private like songs: no agent surface, no search corpus, admin HTTP only.
+type SongReflection struct {
+	ID uuid.UUID `json:"id"`
+	// The song this entry belongs to. ON DELETE CASCADE — deleting a song deletes its entire reflection thread; the entries have no meaning without the song.
+	SongID uuid.UUID `json:"song_id"`
+	// The reflection date — the day of listening/understanding, not necessarily the typing date. Defaults to the current date; the handler applies the same default when omitted.
+	EntryDate time.Time `json:"entry_date"`
+	// The reflection text. Required, never blank (chk_song_reflection_body_not_blank). Free-form prose; newlines allowed.
+	Body string `json:"body"`
+	// Row creation time. Tiebreak for thread ordering when two entries share an entry_date.
+	CreatedAt time.Time `json:"created_at"`
+	// Application-managed. Set explicitly in UPDATE queries.
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
 // Canonical tag registry. Fine-grained content-classification labels (two-pointers, error-handling). Resolved through tag_aliases pipeline. Mastery diagnosis and weakness tracking live in the concepts + learning_attempt_observations path — tags MUST NOT carry diagnostic semantics.
 type Tag struct {
 	ID uuid.UUID `json:"id"`

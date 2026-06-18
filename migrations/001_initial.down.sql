@@ -47,6 +47,12 @@ DROP FUNCTION IF EXISTS enforce_concept_parent_domain();
 -- 4. Tables (reverse creation order, respecting FK dependencies)
 -- ============================================================
 
+-- Songs + readings shelves (private; reflections FK their parent — drop first)
+DROP TABLE IF EXISTS song_reflections;
+DROP TABLE IF EXISTS songs;
+DROP TABLE IF EXISTS reading_reflections;
+DROP TABLE IF EXISTS readings;
+
 -- Learning plans
 DROP TABLE IF EXISTS learning_plan_entries;
 DROP TABLE IF EXISTS learning_plans;
