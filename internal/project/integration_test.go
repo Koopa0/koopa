@@ -23,6 +23,7 @@ package project_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -402,5 +403,90 @@ func TestIntegration_ProjectArchive_TogglesProfilePublic(t *testing.T) {
 	}
 	if postFeatured {
 		t.Error("profile.featured = true after archive, want false (archive coupling regression)")
+	}
+}
+
+// TestIntegration_Project_InvalidInput verifies that values the database
+// rejects on the project write paths surface as project.ErrInvalidInput —
+// which the handler maps to HTTP 400 — instead of a wrapped error rendered as
+// an opaque 500. It covers the four reachable classes: a foreign key pointing
+// at a non-existent goal_id (23503), a malformed slug (chk_project_slug_format
+// 23514), an out-of-range expected_cadence (the cadence CHECK 23514), a
+// malformed profile url (chk_project_profile_github_url 23514), and the
+// not-public-if-archived trigger (P0001).
+func TestIntegration_Project_InvalidInput(t *testing.T) {
+	truncate(t)
+	store := project.NewStore(testPool)
+	ctx := t.Context()
+
+	tests := []struct {
+		name string
+		run  func() error
+	}{
+		{
+			name: "create with non-existent goal_id (foreign key 23503)",
+			run: func() error {
+				missing := uuid.New()
+				_, err := store.CreateProject(ctx, &project.CreateParams{
+					Slug:   "fk-orphan",
+					Title:  "FK Orphan",
+					Status: project.StatusInProgress,
+					GoalID: &missing,
+				})
+				return err
+			},
+		},
+		{
+			name: "create with malformed slug (chk_project_slug_format 23514)",
+			run: func() error {
+				_, err := store.CreateProject(ctx, &project.CreateParams{
+					Slug:   "Not A Valid Slug!",
+					Title:  "Bad Slug",
+					Status: project.StatusInProgress,
+				})
+				return err
+			},
+		},
+		{
+			name: "update status with invalid expected_cadence (cadence CHECK 23514)",
+			run: func() error {
+				id := seedBareProject(t, "cadence-target", "Cadence Target")
+				bad := "fortnightly"
+				_, err := store.UpdateStatus(ctx, id, project.StatusInProgress, nil, &bad)
+				return err
+			},
+		},
+		{
+			name: "upsert profile with non-https github_url (chk_project_profile_github_url 23514)",
+			run: func() error {
+				id := seedBareProject(t, "github-url-target", "GitHub URL Target")
+				badURL := "http://gitlab.com/owner/repo"
+				_, err := store.UpsertProfile(ctx, &project.UpsertProfileParams{
+					ProjectID: id,
+					GithubURL: &badURL,
+				})
+				return err
+			},
+		},
+		{
+			name: "upsert public profile on archived project (not_public_if_archived trigger P0001)",
+			run: func() error {
+				id := seedBareProject(t, "archived-public-target", "Archived Public Target")
+				archiveProjectTx(t, id)
+				_, err := store.UpsertProfile(ctx, &project.UpsertProfileParams{
+					ProjectID: id,
+					IsPublic:  true,
+				})
+				return err
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := tt.run(); !errors.Is(err, project.ErrInvalidInput) {
+				t.Fatalf("err = %v, want project.ErrInvalidInput", err)
+			}
+		})
 	}
 }

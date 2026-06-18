@@ -21,6 +21,7 @@ import (
 var storeErrors = []api.ErrMap{
 	{Target: ErrNotFound, Status: http.StatusNotFound, Code: "NOT_FOUND", Message: "project not found"},
 	{Target: ErrConflict, Status: http.StatusConflict, Code: "CONFLICT", Message: "project conflict"},
+	{Target: ErrInvalidInput, Status: http.StatusBadRequest, Code: "BAD_REQUEST", Message: "invalid project input"},
 }
 
 // recentActivityLimit caps how many activity rows the detail endpoint

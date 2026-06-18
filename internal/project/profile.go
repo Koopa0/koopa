@@ -54,8 +54,18 @@ func (s *Store) UpsertProfile(ctx context.Context, p *UpsertProfileParams) (*Pro
 		SortOrder:       int32(p.SortOrder), // #nosec G115 -- bounded by UI
 	})
 	if err != nil {
-		if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok && pgErr.Code == pgerrcode.ForeignKeyViolation {
-			return nil, ErrNotFound
+		// The only FK on project_profiles is project_id; a 23503 means the
+		// project does not exist, so it maps to ErrNotFound. A check violation
+		// (chk_project_profile_github_url / _live_url) or the
+		// not-public-if-archived trigger (P0001) is a client-supplied value the
+		// database rejected → ErrInvalidInput.
+		if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok {
+			switch pgErr.Code {
+			case pgerrcode.ForeignKeyViolation:
+				return nil, ErrNotFound
+			case pgerrcode.CheckViolation, pgerrcode.RaiseException:
+				return nil, ErrInvalidInput
+			}
 		}
 		return nil, fmt.Errorf("upserting project profile %s: %w", p.ProjectID, err)
 	}

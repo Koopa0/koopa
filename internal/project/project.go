@@ -234,6 +234,13 @@ var (
 	// ErrConflict indicates a duplicate slug or primary key conflict.
 	ErrConflict = errors.New("project: conflict")
 
+	// ErrInvalidInput signals a client-supplied value the database rejected:
+	// a foreign key pointing at a non-existent area_id / goal_id, a check
+	// violation (chk_project_slug_format, the expected_cadence CHECK, the
+	// project_profile github_url / live_url format CHECKs), or the
+	// not-public-if-archived trigger raising an exception.
+	ErrInvalidInput = errors.New("project: invalid input")
+
 	// ErrNotTransactional indicates an archival transition (which also
 	// demotes the project_profile) was invoked on a non-transactional
 	// store. The status UPDATE and the profile demote must commit as a
@@ -375,13 +382,32 @@ func (s *Store) CreateProject(ctx context.Context, p *CreateParams) (*Project, e
 		AreaID:      p.AreaID,
 	})
 	if err != nil {
-		if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok && pgErr.Code == pgerrcode.UniqueViolation {
-			return nil, ErrConflict
-		}
-		return nil, fmt.Errorf("creating project: %w", err)
+		return nil, mapWriteError(err, "creating project")
 	}
 	proj := rowToProject(&r)
 	return &proj, nil
+}
+
+// mapWriteError classifies a PostgreSQL project-write failure into a feature
+// sentinel. A unique violation (23505) on the slug becomes ErrConflict; a
+// foreign-key (23503 — area_id / goal_id pointing at a non-existent row),
+// check-constraint (23514 — chk_project_slug_format, the expected_cadence
+// CHECK, the project_profile url-format CHECKs), or raised-exception (P0001 —
+// the not-public-if-archived trigger) violation becomes ErrInvalidInput; any
+// other error is wrapped with the supplied context.
+func mapWriteError(err error, operation string) error {
+	pgErr, ok := errors.AsType[*pgconn.PgError](err)
+	if !ok {
+		return fmt.Errorf("%s: %w", operation, err)
+	}
+	switch pgErr.Code {
+	case pgerrcode.UniqueViolation:
+		return ErrConflict
+	case pgerrcode.ForeignKeyViolation, pgerrcode.CheckViolation, pgerrcode.RaiseException:
+		return ErrInvalidInput
+	default:
+		return fmt.Errorf("%s: %w", operation, err)
+	}
 }
 
 // UpdateProject updates a project.
@@ -397,10 +423,7 @@ func (s *Store) UpdateProject(ctx context.Context, id uuid.UUID, p *UpdateParams
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrNotFound
 		}
-		if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok && pgErr.Code == pgerrcode.UniqueViolation {
-			return nil, ErrConflict
-		}
-		return nil, fmt.Errorf("updating project %s: %w", id, err)
+		return nil, mapWriteError(err, fmt.Sprintf("updating project %s", id))
 	}
 	proj := rowToProject(&r)
 	return &proj, nil
@@ -504,7 +527,7 @@ func (s *Store) UpdateStatus(ctx context.Context, id uuid.UUID, status Status, d
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrNotFound
 		}
-		return nil, fmt.Errorf("updating project %s status: %w", id, err)
+		return nil, mapWriteError(err, fmt.Sprintf("updating project %s status", id))
 	}
 
 	// Archive coupling: when the row transitioned into archived, demote
