@@ -77,25 +77,12 @@ type Server struct {
 	loc         *time.Location // user timezone for day boundaries
 	logger      *slog.Logger
 
-	// Telemetry
-	recordToolCall func(context.Context, ToolCallRecord)
-
 	// registeredNames records every tool name passed through addTool,
 	// in registration order. It is populated exclusively during NewServer
 	// and read only by TestOpsCatalogDrift, which asserts the sequence
 	// matches ops.All(). The field is not safe to mutate after startup
 	// and exists for drift detection, not runtime introspection.
 	registeredNames []string
-}
-
-// ToolCallRecord holds telemetry data for a single tool invocation.
-type ToolCallRecord struct {
-	Name        string
-	Duration    time.Duration
-	IsError     bool
-	IsEmpty     bool
-	InputBytes  int
-	OutputBytes int
 }
 
 // ServerOption configures optional Server dependencies.
@@ -109,11 +96,6 @@ func WithCallerAgent(name string) ServerOption {
 // WithLocation sets the user timezone for day boundary calculations.
 func WithLocation(loc *time.Location) ServerOption {
 	return func(s *Server) { s.loc = loc }
-}
-
-// WithTelemetry enables async tool call logging.
-func WithTelemetry(recorder func(context.Context, ToolCallRecord)) ServerOption {
-	return func(s *Server) { s.recordToolCall = recorder }
 }
 
 // WithRegistry injects a pre-built agent registry. Required in production
@@ -360,8 +342,6 @@ func addTool[I, O any](s *Server, tool *mcp.Tool, handler func(context.Context, 
 	s.registeredNames = append(s.registeredNames, tool.Name)
 
 	s.server.AddTool(tool, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		start := time.Now()
-
 		// Extract optional "as" field for per-call agent override.
 		// Project instructions tell each AI: "在所有 tool call 中傳入 as: 'planner'"
 		ctx = s.extractCallerIdentity(ctx, req.Params.Arguments)
@@ -372,10 +352,7 @@ func addTool[I, O any](s *Server, tool *mcp.Tool, handler func(context.Context, 
 		}
 
 		override, output, err := handler(ctx, req, input)
-		dur := time.Since(start)
-
 		if err != nil {
-			s.logToolCall(ctx, tool.Name, dur, 0, true, false)
 			return toolResultError(err.Error()), nil
 		}
 		if override != nil {
@@ -384,33 +361,10 @@ func addTool[I, O any](s *Server, tool *mcp.Tool, handler func(context.Context, 
 
 		data, marshalErr := json.Marshal(output)
 		if marshalErr != nil {
-			s.logToolCall(ctx, tool.Name, dur, 0, true, false)
 			return toolResultError(fmt.Sprintf("marshal output: %v", marshalErr)), nil
 		}
-
-		isEmpty := len(data) <= 4
-		s.logToolCall(ctx, tool.Name, dur, len(data), false, isEmpty)
 		return toolResultText(string(data)), nil
 	})
-}
-
-// logToolCall records telemetry if configured.
-func (s *Server) logToolCall(_ context.Context, name string, dur time.Duration, outBytes int, isErr, isEmpty bool) {
-	if s.recordToolCall == nil {
-		return
-	}
-	rec := ToolCallRecord{
-		Name:        name,
-		Duration:    dur,
-		IsError:     isErr,
-		IsEmpty:     isEmpty,
-		OutputBytes: outBytes,
-	}
-	go func() { //nolint:gosec // G118: intentional — telemetry must outlive the request context
-		tCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		s.recordToolCall(tCtx, rec)
-	}()
 }
 
 // clamp constrains v to [lo, hi], returning def if v is 0.
