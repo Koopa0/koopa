@@ -68,11 +68,15 @@ type CreateParams struct {
 }
 
 // mapWriteError classifies a PostgreSQL todo-write failure into a store
-// sentinel. A foreign-key (23503) violation — a project_id pointing at a
-// non-existent project — becomes ErrInvalidInput; any other error is wrapped
-// with the supplied context.
+// sentinel. A foreign-key violation (23503) on the client-supplied project_id
+// becomes ErrInvalidInput (a bad input → 400). The created_by FK (server-set
+// actor) is deliberately NOT mapped: an unregistered actor is a server/config
+// condition, not bad client input, so it falls through to a wrapped 500. Any
+// other error is wrapped with the supplied context.
 func mapWriteError(err error, operation string) error {
-	if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok && pgErr.Code == pgerrcode.ForeignKeyViolation {
+	if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok &&
+		pgErr.Code == pgerrcode.ForeignKeyViolation &&
+		pgErr.ConstraintName == "todos_project_id_fkey" {
 		return ErrInvalidInput
 	}
 	return fmt.Errorf("%s: %w", operation, err)
