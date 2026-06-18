@@ -25,7 +25,7 @@ export type SeparatorOrientation = 'h' | 'v';
       >
         <span class="h-px flex-1 bg-border" aria-hidden="true"></span>
         <span
-          class="font-mono text-[11px] tracking-[0.08em] text-fg-faint uppercase"
+          class="font-mono text-[11px] tracking-[0.08em] text-fg-subtle uppercase"
         >
           {{ label() }}
         </span>

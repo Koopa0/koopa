@@ -26,7 +26,7 @@ const FILL_CLASSES: Record<ProgressTone, string> = {
       [attr.aria-valuenow]="clamped()"
       aria-valuemin="0"
       aria-valuemax="100"
-      [attr.aria-label]="label()"
+      [attr.aria-label]="label() ?? 'Progress'"
       [attr.data-testid]="testId()"
     >
       <div

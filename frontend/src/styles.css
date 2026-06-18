@@ -23,7 +23,7 @@
   /* Text (4 tiers) */
   --fg: oklch(0.97 0.004 260);
   --fg-muted: oklch(0.78 0.005 260);
-  --fg-subtle: oklch(0.6 0.006 260);
+  --fg-subtle: oklch(0.64 0.006 260); /* WCAG AA: 4.5:1 on panel/elevated/overlay */
   --fg-faint: oklch(0.45 0.006 260);
 
   /* Lines */

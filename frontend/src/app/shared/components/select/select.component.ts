@@ -31,6 +31,7 @@ const SIZE_CLASSES: Record<SelectSize, string> = {
       <select
         [value]="value()"
         [disabled]="disabled()"
+        [attr.aria-label]="ariaLabel() || placeholder() || null"
         [attr.aria-invalid]="invalid() || null"
         [attr.data-testid]="testId()"
         [class]="classes()"
@@ -44,7 +45,7 @@ const SIZE_CLASSES: Record<SelectSize, string> = {
         }
       </select>
       <span
-        class="pointer-events-none absolute inset-y-0 right-2.5 flex items-center text-fg-faint"
+        class="pointer-events-none absolute inset-y-0 right-2.5 flex items-center text-fg-subtle"
         aria-hidden="true"
       >
         <svg
@@ -68,6 +69,7 @@ export class SelectComponent {
   readonly value = model('');
   readonly options = input<readonly SelectOption[]>([]);
   readonly placeholder = input('');
+  readonly ariaLabel = input<string | null>(null);
   readonly disabled = input(false);
   readonly invalid = input(false);
   readonly size = input<SelectSize>('md');

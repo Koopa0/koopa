@@ -10,7 +10,7 @@ export type StatTrend = 'up' | 'down' | 'flat';
 const TREND_CLASSES: Record<StatTrend, string> = {
   up: 'text-success',
   down: 'text-error',
-  flat: 'text-fg-faint',
+  flat: 'text-fg-subtle',
 };
 
 /**

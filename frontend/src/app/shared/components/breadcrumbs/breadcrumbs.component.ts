@@ -39,7 +39,7 @@ export interface BreadcrumbItem {
           } @else {
             <span [attr.data-testid]="'crumb-' + $index">{{ item.label }}</span>
           }
-          <span class="text-fg-faint" aria-hidden="true">/</span>
+          <span class="text-fg-subtle" aria-hidden="true">/</span>
         }
       }
     </nav>

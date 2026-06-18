@@ -44,7 +44,7 @@ const SIZE_CLASSES: Record<ButtonSize, string> = {
           aria-hidden="true"
         ></span>
       }
-      <span class="contents" [class.invisible]="loading()">
+      <span class="contents" [class.opacity-0]="loading()">
         <ng-content />
       </span>
     </button>

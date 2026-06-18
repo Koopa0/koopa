@@ -47,7 +47,7 @@ const ICON_CLASSES: Record<ToastVariant, string> = {
       </div>
       <button
         type="button"
-        class="ml-auto inline-flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-sm border-none bg-transparent text-fg-faint transition-colors duration-[120ms] hover:text-fg [&_svg]:size-3.5"
+        class="ml-auto inline-flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-sm border-none bg-transparent text-fg-subtle transition-colors duration-[120ms] hover:text-fg [&_svg]:size-3.5"
         [attr.aria-label]="closeLabel()"
         [attr.data-testid]="testId() ? testId() + '-close' : 'toast-close'"
         (click)="dismiss.emit(toast().id)"

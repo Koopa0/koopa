@@ -15,9 +15,7 @@ import {
   selector: 'app-chip',
   template: `
     <span
-      role="button"
-      tabindex="0"
-      [attr.aria-pressed]="active()"
+      [attr.data-active]="active() ? 'true' : null"
       [attr.data-testid]="testId()"
       [class]="classes()"
     >

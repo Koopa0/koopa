@@ -29,7 +29,7 @@ const COPIED_RESET_MS = 2000;
         <span class="text-[11px] text-fg-subtle">{{ lang() }}</span>
         <button
           type="button"
-          class="inline-flex cursor-pointer items-center gap-1.5 border-none bg-transparent text-[11px] text-fg-faint transition-colors duration-[120ms] hover:text-fg-muted [&_svg]:size-3.5"
+          class="inline-flex cursor-pointer items-center gap-1.5 border-none bg-transparent text-[11px] text-fg-subtle transition-colors duration-[120ms] hover:text-fg-muted [&_svg]:size-3.5"
           [attr.aria-label]="copied() ? 'Copied to clipboard' : 'Copy code'"
           [attr.data-testid]="testId() ? testId() + '-copy' : 'code-block-copy'"
           (click)="copy()"

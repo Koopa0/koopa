@@ -46,7 +46,7 @@ import { NgTemplateOutlet } from '@angular/common';
       </span>
       <span class="truncate">{{ label() }}</span>
       @if (count() !== undefined && count() !== null) {
-        <span class="ml-auto font-mono text-[11px] text-fg-faint">
+        <span class="ml-auto font-mono text-[11px] text-fg-subtle">
           {{ count() }}
         </span>
       }

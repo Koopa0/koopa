@@ -62,7 +62,7 @@ interface CommandGroup {
           <input
             #search
             type="text"
-            class="w-full border-none bg-transparent font-sans text-[16px] text-fg placeholder:text-fg-faint focus:outline-hidden"
+            class="w-full border-none bg-transparent font-sans text-[16px] text-fg placeholder:text-fg-subtle focus:outline-hidden"
             role="combobox"
             aria-expanded="true"
             aria-controls="command-palette-list"
@@ -83,7 +83,7 @@ interface CommandGroup {
           @for (group of groups(); track group.name) {
             @if (group.name) {
               <div
-                class="px-2.5 pt-2 pb-1 font-mono text-[11px] tracking-[0.06em] text-fg-faint uppercase"
+                class="px-2.5 pt-2 pb-1 font-mono text-[11px] tracking-[0.06em] text-fg-subtle uppercase"
               >
                 {{ group.name }}
               </div>
@@ -108,7 +108,7 @@ interface CommandGroup {
                 }
                 <span class="flex-1 truncate">{{ item.label }}</span>
                 @if (item.meta) {
-                  <span class="shrink-0 font-mono text-[11px] text-fg-faint">{{
+                  <span class="shrink-0 font-mono text-[11px] text-fg-subtle">{{
                     item.meta
                   }}</span>
                 }
@@ -124,7 +124,7 @@ interface CommandGroup {
         </div>
 
         <div
-          class="flex items-center gap-4 border-t border-border px-4 py-2.5 font-mono text-[11px] text-fg-faint"
+          class="flex items-center gap-4 border-t border-border px-4 py-2.5 font-mono text-[11px] text-fg-subtle"
         >
           <span>↑↓ navigate</span>
           <span>↵ select</span>

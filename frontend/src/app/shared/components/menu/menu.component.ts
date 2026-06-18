@@ -50,20 +50,15 @@ const MENU_POSITIONS: ConnectedPosition[] = [
 @Component({
   selector: 'app-menu',
   imports: [A11yModule, OverlayModule],
+  host: {
+    '(click)': 'toggle()',
+    '(keydown.arrowdown)': 'onArrowDown($event)',
+  },
   template: `
-    <div
-      #trigger
-      role="button"
-      tabindex="0"
-      class="inline-flex cursor-pointer"
-      [attr.aria-haspopup]="'menu'"
-      [attr.aria-expanded]="isOpen()"
-      [attr.aria-label]="ariaLabel()"
-      (click)="toggle()"
-      (keydown.enter)="toggle(); $event.preventDefault()"
-      (keydown.space)="toggle(); $event.preventDefault()"
-      (keydown.arrowdown)="open(); $event.preventDefault()"
-    >
+    <!-- Plain positioning anchor: the projected [menu-trigger] (a real button)
+         is the interactive control; activation is handled on the host so we
+         never nest interactive elements. -->
+    <div #trigger class="inline-flex">
       <ng-content select="[menu-trigger]" />
     </div>
 
@@ -119,6 +114,13 @@ export class MenuComponent {
 
   protected toggle(): void {
     this.open.update((v) => !v);
+  }
+
+  protected onArrowDown(event: Event): void {
+    event.preventDefault();
+    if (!this.open()) {
+      this.open.set(true);
+    }
   }
 
   protected close(): void {

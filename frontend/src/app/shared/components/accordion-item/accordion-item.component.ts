@@ -28,7 +28,7 @@ let nextId = 0;
       >
         <span>{{ title() }}</span>
         <svg
-          class="size-4 shrink-0 text-fg-faint transition-transform duration-[120ms]"
+          class="size-4 shrink-0 text-fg-subtle transition-transform duration-[120ms]"
           [class.rotate-180]="open()"
           viewBox="0 0 24 24"
           fill="none"

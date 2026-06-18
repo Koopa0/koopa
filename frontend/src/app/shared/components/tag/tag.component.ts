@@ -8,22 +8,12 @@ import { Component, ChangeDetectionStrategy, input } from '@angular/core';
 @Component({
   selector: 'app-tag',
   template: `
-    @if (href()) {
-      <a
-        [href]="href()"
-        [attr.data-testid]="testId()"
-        class="font-mono text-[11px] text-fg-subtle no-underline transition-colors duration-[120ms] hover:text-brand"
-      >
-        <ng-content />
-      </a>
-    } @else {
-      <span
-        [attr.data-testid]="testId()"
-        class="font-mono text-[11px] text-fg-subtle"
-      >
-        <ng-content />
-      </span>
-    }
+    <a
+      [attr.href]="href()"
+      [attr.data-testid]="testId()"
+      class="font-mono text-[11px] text-fg-subtle no-underline transition-colors duration-[120ms] hover:text-brand"
+      ><ng-content
+    /></a>
   `,
   changeDetection: ChangeDetectionStrategy.OnPush,
 })

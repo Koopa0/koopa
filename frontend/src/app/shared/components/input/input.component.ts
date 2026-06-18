@@ -50,7 +50,7 @@ export class InputComponent {
   protected readonly classes = computed(() =>
     [
       'w-full rounded-sm border border-border bg-elevated text-fg leading-normal',
-      'placeholder:text-fg-faint transition-colors duration-[120ms]',
+      'placeholder:text-fg-subtle transition-colors duration-[120ms]',
       'hover:border-border-strong focus:border-brand focus:bg-panel focus:outline-hidden',
       'aria-invalid:border-error',
       'disabled:opacity-40 disabled:cursor-not-allowed',

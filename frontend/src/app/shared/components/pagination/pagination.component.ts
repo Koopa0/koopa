@@ -36,7 +36,7 @@ type PageToken = number | 'gap';
       @for (token of tokens(); track $index) {
         @if (token === 'gap') {
           <span
-            class="inline-flex h-[30px] min-w-[30px] items-center justify-center font-mono text-xs text-fg-faint select-none"
+            class="inline-flex h-[30px] min-w-[30px] items-center justify-center font-mono text-xs text-fg-subtle select-none"
             aria-hidden="true"
           >
             …
