@@ -17,6 +17,7 @@ import { CommandPaletteService } from '../../../shared/command-palette/command-p
 // and advance clicks drive the todo state machine over HTTP.
 
 const TODAY_URL = '/api/admin/commitment/today';
+const COUNT_URL = '/api/admin/commitment/proposals/count';
 const ADVANCE_URL = (id: string) =>
   `/api/admin/commitment/todos/${id}/advance`;
 
@@ -158,13 +159,23 @@ describe('TodayPageComponent', () => {
     fixture.detectChanges();
   }
 
+  // The Today page also fires a standalone proposals-count read for the
+  // awaiting-review pointer; it must be flushed before settle for the same
+  // zoneless reason below (an unflushed request hangs whenStable).
+  function flushCount(pending = 0): void {
+    httpMock
+      .expectOne((r) => r.url.endsWith(COUNT_URL))
+      .flush({ data: pending });
+  }
+
   // Note: fixture.whenStable() must not be awaited while a request is
   // still open — pending HTTP counts as a pending task in zoneless mode
   // and whenStable would never resolve. Flush first, then settle.
-  async function render(brief: TodayBrief): Promise<void> {
+  async function render(brief: TodayBrief, pendingProposals = 0): Promise<void> {
     fixture = TestBed.createComponent(TodayPageComponent);
     fixture.detectChanges();
     httpMock.expectOne((r) => r.url.endsWith(TODAY_URL)).flush(brief);
+    flushCount(pendingProposals);
     await settle();
   }
 
@@ -174,6 +185,7 @@ describe('TodayPageComponent', () => {
 
     expect(testid('today-loading')).toBeTruthy();
     httpMock.expectOne((r) => r.url.endsWith(TODAY_URL)).flush(quietBrief());
+    flushCount();
     await settle();
   });
 
@@ -308,6 +320,7 @@ describe('TodayPageComponent', () => {
     httpMock
       .expectOne((r) => r.url.endsWith(TODAY_URL))
       .flush('boom', { status: 500, statusText: 'Server Error' });
+    flushCount();
     await settle();
 
     expect(testid('today-error')).toBeTruthy();
@@ -323,5 +336,19 @@ describe('TodayPageComponent', () => {
     await settle();
 
     expect(testid('today-plan')).toBeTruthy();
+  });
+
+  it('should show the proposals pointer linking to triage when the count is positive', async () => {
+    await render(quietBrief(), 3);
+
+    const pointer = testid('today-proposals-pointer');
+    expect(pointer).toBeTruthy();
+    expect(pointer?.textContent).toContain('3 proposals awaiting review');
+    expect(pointer?.getAttribute('href')).toBe('/admin/commitment/proposals');
+  });
+
+  it('should hide the proposals pointer when the count is zero', async () => {
+    await render(populatedBrief(), 0);
+    expect(testid('today-proposals-pointer')).toBeNull();
   });
 });

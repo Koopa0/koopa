@@ -8,7 +8,7 @@ import {
 
 import { AdminNavCountsService } from './admin-nav-counts.service';
 
-// Mocks only the real HTTP boundary. The service fans out to five reads and
+// Mocks only the real HTTP boundary. The service fans out to six reads and
 // assembles the nav-count envelope. The guarded `counts` computed
 // (hasValue() ? value() : EMPTY_ENVELOPE) must never throw a
 // ResourceValueError — a failed fan-out blanks the count, it does not take
@@ -17,6 +17,7 @@ const CONTENT_URL = '/api/admin/knowledge/content';
 const GOALS_URL = '/api/admin/commitment/goals';
 const HYP_URL = '/api/admin/learning/hypotheses';
 const HEALTH_URL = '/api/admin/system/health';
+const PROPOSALS_COUNT_URL = '/api/admin/commitment/proposals/count';
 
 const EMPTY_ENVELOPE = {
   todos_open: null,
@@ -25,6 +26,7 @@ const EMPTY_ENVELOPE = {
   review_queue: null,
   feeds_active: null,
   hypotheses_unverified: null,
+  proposals_pending: null,
 };
 
 describe('AdminNavCountsService', () => {
@@ -80,6 +82,9 @@ describe('AdminNavCountsService', () => {
     httpMock
       .expectOne((r) => r.url.endsWith(HEALTH_URL))
       .flush({ data: { feeds: { healthy: 7 } } });
+    httpMock
+      .expectOne((r) => r.url.endsWith(PROPOSALS_COUNT_URL))
+      .flush({ data: 4 });
     // rxResource resolves the combined stream on a macrotask.
     await new Promise<void>((r) => setTimeout(r, 0));
     TestBed.tick();
@@ -90,6 +95,7 @@ describe('AdminNavCountsService', () => {
       goals_active: 1,
       hypotheses_unverified: 2,
       feeds_active: 7,
+      proposals_pending: 4,
     });
   });
 
@@ -99,6 +105,7 @@ describe('AdminNavCountsService', () => {
     fail(httpMock.expectOne((r) => r.url.endsWith(GOALS_URL)));
     fail(httpMock.expectOne((r) => r.url.endsWith(HYP_URL)));
     fail(httpMock.expectOne((r) => r.url.endsWith(HEALTH_URL)));
+    fail(httpMock.expectOne((r) => r.url.endsWith(PROPOSALS_COUNT_URL)));
     TestBed.tick();
 
     // Each source is wrapped in catchError → null, so the guarded counts()

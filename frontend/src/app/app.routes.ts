@@ -191,6 +191,13 @@ export const routes: Routes = [
           ),
       },
       {
+        path: 'commitment/proposals',
+        loadComponent: () =>
+          import('./admin/commitment/proposals/proposals-triage.page').then(
+            (m) => m.ProposalsTriagePageComponent,
+          ),
+      },
+      {
         path: 'commitment/projects/:id',
         loadComponent: () =>
           import('./admin/commitment/projects/profile/project-profile.page').then(

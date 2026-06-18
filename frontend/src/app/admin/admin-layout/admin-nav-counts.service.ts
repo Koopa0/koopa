@@ -5,6 +5,7 @@ import { catchError } from 'rxjs/operators';
 import { ContentService } from '../../core/services/content.service';
 import { HypothesisService } from '../../core/services/hypothesis.service';
 import { PlanService } from '../../core/services/plan.service';
+import { ProposalService } from '../../core/services/proposal.service';
 import { SystemService } from '../../core/services/system.service';
 
 /**
@@ -17,7 +18,8 @@ export type NavCountKey =
   | 'contents_total'
   | 'review_queue'
   | 'feeds_active'
-  | 'hypotheses_unverified';
+  | 'hypotheses_unverified'
+  | 'proposals_pending';
 
 export type NavCountEnvelope = Record<NavCountKey, number | null>;
 
@@ -28,6 +30,7 @@ const EMPTY_ENVELOPE: NavCountEnvelope = {
   review_queue: null,
   feeds_active: null,
   hypotheses_unverified: null,
+  proposals_pending: null,
 };
 
 /**
@@ -45,6 +48,7 @@ export class AdminNavCountsService {
   private readonly contentService = inject(ContentService);
   private readonly hypothesisService = inject(HypothesisService);
   private readonly planService = inject(PlanService);
+  private readonly proposalService = inject(ProposalService);
   private readonly systemService = inject(SystemService);
 
   private readonly resource = rxResource<NavCountEnvelope, void>({
@@ -75,6 +79,9 @@ export class AdminNavCountsService {
         ),
         feeds_active: this.systemService.getHealth().pipe(
           map((h) => h.feeds.healthy),
+          catchError(() => of<number | null>(null)),
+        ),
+        proposals_pending: this.proposalService.count().pipe(
           catchError(() => of<number | null>(null)),
         ),
       }).pipe(

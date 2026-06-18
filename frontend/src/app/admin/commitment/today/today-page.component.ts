@@ -34,6 +34,7 @@ import { TodaySessionCardComponent } from './session-card.component';
 import { AdminTopbarService } from '../../admin-layout/admin-topbar.service';
 import { CommandPaletteService } from '../../../shared/command-palette/command-palette.service';
 import { NotificationService } from '../../../core/services/notification.service';
+import { ProposalService } from '../../../core/services/proposal.service';
 import { TodoService } from '../../../core/services/todo.service';
 import { EnergyMeterComponent } from '../../../shared/components/energy-meter/energy-meter.component';
 import {
@@ -69,6 +70,7 @@ import type { EnergyLevel } from '../../../core/models/workbench.model';
 export class TodayPageComponent {
   private readonly todayService = inject(TodayService);
   private readonly todoService = inject(TodoService);
+  private readonly proposalService = inject(ProposalService);
   private readonly notifications = inject(NotificationService);
   private readonly palette = inject(CommandPaletteService);
   private readonly topbar = inject(AdminTopbarService);
@@ -95,6 +97,17 @@ export class TodayPageComponent {
   );
   protected readonly isError = computed(
     () => this.resource.status() === 'error',
+  );
+
+  // Proposals-awaiting-review pointer. A standalone, fail-safe read: a broken
+  // count just hides the pointer (guard the read — value() throws in error
+  // state). The proposed rows themselves are NEVER pulled into Today; this is
+  // a count + link only, the inert drafts live solely on the triage page.
+  private readonly proposalsCount = rxResource<number, void>({
+    stream: () => this.proposalService.count(),
+  });
+  protected readonly proposalsPending = computed(() =>
+    this.proposalsCount.hasValue() ? this.proposalsCount.value() : 0,
   );
 
   private readonly _busy = signal(false);

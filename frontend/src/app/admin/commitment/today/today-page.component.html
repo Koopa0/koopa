@@ -51,6 +51,24 @@
   </div>
 } @else if (brief(); as v) {
   <div class="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-5 px-6 py-6">
+    <!-- Proposals-awaiting-review pointer (count + link only; the inert
+         proposed rows are never rendered here) -->
+    @if (proposalsPending() > 0) {
+      <a
+        routerLink="/admin/commitment/proposals"
+        class="flex items-center gap-2 self-start rounded-sm border border-border bg-panel px-3 py-1.5 text-[12px] text-brand no-underline transition-colors hover:border-brand"
+        data-testid="today-proposals-pointer"
+      >
+        <span
+          class="size-1.5 rounded-full bg-brand"
+          aria-hidden="true"
+        ></span>
+        {{ proposalsPending() }}
+        {{ proposalsPending() === 1 ? 'proposal' : 'proposals' }} awaiting
+        review →
+      </a>
+    }
+
     <!-- Day header: greeting, date line, capture bar -->
     <div
       class="flex flex-wrap items-end justify-between gap-4 border-b border-border pb-4"
