@@ -18,6 +18,16 @@ const capture: TodoRow = {
   updated_at: '2026-06-10T08:00:00Z',
 };
 
+const captureWithBody: TodoRow = {
+  ...capture,
+  description: '**Indexing** uses `HNSW`. See [docs](https://example.com).',
+};
+
+const captureWithHeading: TodoRow = {
+  ...capture,
+  description: '# Big title\n\nbody text',
+};
+
 describe('ClarifyModalComponent', () => {
   let fixture: ComponentFixture<ClarifyModalComponent>;
   let httpMock: HttpTestingController;
@@ -33,9 +43,9 @@ describe('ClarifyModalComponent', () => {
     httpMock.verify();
   });
 
-  async function render(): Promise<void> {
+  async function render(item: TodoRow = capture): Promise<void> {
     fixture = TestBed.createComponent(ClarifyModalComponent);
-    fixture.componentRef.setInput('item', capture);
+    fixture.componentRef.setInput('item', item);
     fixture.detectChanges();
     httpMock
       .expectOne((r) => r.url.includes(PROJECTS_URL))
@@ -117,6 +127,41 @@ describe('ClarifyModalComponent', () => {
     testid('clarify-cancel')?.click();
     expect(deferred).toBe(1);
     expect(closed).toBe(1);
+  });
+
+  it('should emit dropInstead from the footer Drop action', async () => {
+    await render();
+    let dropped = 0;
+    fixture.componentInstance.dropInstead.subscribe(() => dropped++);
+
+    testid('clarify-drop')?.click();
+    expect(dropped).toBe(1);
+  });
+
+  it('should render the capture body as sanitized HTML with new-tab links', async () => {
+    await render(captureWithBody);
+
+    const detail = testid('clarify-description');
+    expect(detail).toBeTruthy();
+    const html = detail?.innerHTML ?? '';
+    expect(html).toContain('<strong>');
+    expect(html).toContain('<code>');
+    expect(html).toContain('target="_blank"');
+    expect(html).toContain('rel="noopener noreferrer"');
+  });
+
+  it('should omit the capture detail section when the capture has no body', async () => {
+    await render();
+
+    expect(testid('clarify-description')).toBeNull();
+  });
+
+  it('should demote capture headings so they nest under the dialog title', async () => {
+    await render(captureWithHeading);
+
+    const html = testid('clarify-description')?.innerHTML ?? '';
+    expect(html).toContain('<h4');
+    expect(html).not.toContain('<h1');
   });
 
   it('should degrade to only the default option without throwing when the projects read fails', async () => {

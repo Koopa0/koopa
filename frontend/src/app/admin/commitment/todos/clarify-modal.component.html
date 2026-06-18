@@ -1,10 +1,21 @@
 <app-modal
   [title]="item().title"
-  subtitle="Give it just enough shape to act on — project, energy, when. It becomes a todo."
+  subtitle="Read the capture, then shape it — clarify into a todo, defer, or drop."
   titleId="clarify-modal-title"
+  [maxWidth]="'lg'"
   (closed)="closed.emit()"
 >
   <div class="flex flex-col gap-4" data-testid="clarify-modal">
+    @if (item().description) {
+      <section
+        aria-label="Capture detail"
+        data-testid="clarify-description"
+        class="prose-compact max-h-[40vh] overflow-y-auto"
+      >
+        <div [innerHTML]="renderedDescription()"></div>
+      </section>
+    }
+
     <span
       class="self-start rounded-sm bg-brand-muted px-2 py-0.5 font-mono text-[10px] tracking-wide text-brand uppercase"
     >
@@ -63,6 +74,16 @@
   </div>
 
   <div modal-footer class="flex w-full items-center gap-2.5">
+    <button
+      type="button"
+      (click)="dropInstead.emit()"
+      [disabled]="busy()"
+      aria-label="Drop capture"
+      class="rounded-sm border border-transparent px-2.5 py-1.5 text-xs text-error transition-colors hover:bg-error-bg disabled:cursor-not-allowed disabled:opacity-40"
+      data-testid="clarify-drop"
+    >
+      Drop
+    </button>
     <button
       type="button"
       (click)="deferInstead.emit()"

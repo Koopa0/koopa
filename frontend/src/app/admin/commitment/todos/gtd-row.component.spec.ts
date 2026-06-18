@@ -78,6 +78,42 @@ describe('GtdRowComponent', () => {
     expect(testid('gtd-row-description')).toBeNull();
   });
 
+  it('should strip markdown from the description preview on an inbox row', () => {
+    render(
+      makeRow({
+        state: 'inbox',
+        description:
+          '**Move** the JWT parsing into a `dedicated` [middleware](https://x)',
+      }),
+      'inbox',
+    );
+
+    const preview = testid('gtd-row-description')?.textContent ?? '';
+    expect(preview).not.toContain('**');
+    expect(preview).not.toContain('`');
+    expect(preview).not.toContain('](');
+    expect(preview).toContain('Move');
+    expect(preview).toContain('dedicated');
+    expect(preview).toContain('middleware');
+  });
+
+  it('should emit openDetail from the row body without firing it from Clarify', () => {
+    render(makeRow({ state: 'inbox' }), 'inbox');
+    const opened: unknown[] = [];
+    const clarified: unknown[] = [];
+    fixture.componentInstance.openDetail.subscribe(() => opened.push(true));
+    fixture.componentInstance.clarify.subscribe(() => clarified.push(true));
+
+    testid('gtd-row-open')?.click();
+    expect(opened).toHaveLength(1);
+
+    // The Clarify action is a sibling of the open-detail button, not nested
+    // inside it — clicking it must not also bubble an openDetail emission.
+    testid('gtd-row-clarify')?.click();
+    expect(opened).toHaveLength(1);
+    expect(clarified).toHaveLength(1);
+  });
+
   it('should mark a human inbox capture as a manual source', () => {
     render(makeRow({ state: 'inbox', created_by: 'human' }), 'inbox');
 

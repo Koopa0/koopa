@@ -281,6 +281,19 @@ export class GtdStore {
     this.runAdvance(row, 'defer');
   }
 
+  /**
+   * Drop the capture from the clarify dialog. Clears the target first — unlike
+   * dropRow, which only advances — so the modal unmounts before the backlog
+   * reload removes the row underneath it.
+   */
+  dropInstead(): void {
+    const row = this.clarifyTarget();
+    if (!row) return;
+    this.clarifyTarget.set(null);
+    this.clarifyIntent.set('clarify');
+    this.runAdvance(row, 'drop');
+  }
+
   // Append the freshly-clarified capture to today's plan. The plan must be
   // loaded; a stale/missing plan aborts before the clarify fires so nothing
   // half-applies. An already-planned row just clarifies (no double append).

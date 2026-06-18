@@ -9,6 +9,7 @@ import {
   initialViewOf,
   keyActionFor,
   planMemberIds,
+  plainPreview,
   recurLabel,
   rowsForView,
   viewCounts,
@@ -170,5 +171,48 @@ describe('gtd-view', () => {
       'match your search',
     );
     expect(emptyCopyFor('history', false).description).toContain('kept here');
+  });
+});
+
+describe('plainPreview', () => {
+  const cases: [string, string][] = [
+    ['', ''],
+    ['just plain text', 'just plain text'],
+    ['**bold**', 'bold'],
+    ['*italic*', 'italic'],
+    ['_italic_', 'italic'],
+    ['__strong__', 'strong'],
+    ['~~strike~~', 'strike'],
+    ['`inline code`', 'inline code'],
+    ['# Heading', 'Heading'],
+    ['> a quote', 'a quote'],
+    ['- a\n- b', 'a b'],
+    ['1. a\n2. b', 'a b'],
+    ['[text](https://example.com)', 'text'],
+    ['![diagram](https://img)', 'diagram'],
+    ['snake_case_id stays intact', 'snake_case_id stays intact'],
+  ];
+
+  it.each(cases)('strips markdown %j to %j', (input, expected) => {
+    expect(plainPreview(input)).toBe(expected);
+  });
+
+  it('keeps the inner text of a fenced code block', () => {
+    expect(plainPreview('```go\nx := 1\n```')).toBe('x := 1');
+  });
+
+  it('collapses multi-line markdown into a single line', () => {
+    expect(plainPreview('# Title\n\nbody **here**')).toBe('Title body here');
+  });
+
+  it('falls back to raw text so an image-only body is never blank', () => {
+    expect(plainPreview('![](https://img)')).toBe('![](https://img)');
+  });
+
+  it('bounds the scanned source so a huge hostile body stays cheap', () => {
+    // The link/image strips are quadratic on pathological input ('['.repeat);
+    // the source cap keeps the preview bounded regardless of body length.
+    const preview = plainPreview('['.repeat(50000));
+    expect(preview.length).toBeLessThanOrEqual(2000);
   });
 });

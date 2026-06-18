@@ -605,6 +605,22 @@ pre {
 .prose-compact pre code {
   font-size: 0.8125rem;
 }
+.prose-compact :not(pre) > code {
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  background: var(--elevated);
+  color: var(--fg);
+  padding: 0.1rem 0.3rem;
+  border-radius: var(--r-sm);
+}
+.prose-compact a {
+  color: var(--brand);
+  text-decoration: none;
+  border-bottom: 1px solid var(--brand-muted);
+}
+.prose-compact a:hover {
+  border-bottom-color: var(--brand);
+}
 .prose-compact table {
   margin: 0.75rem 0;
 }

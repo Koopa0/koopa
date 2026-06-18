@@ -8,6 +8,7 @@ import {
   inject,
   signal,
   viewChild,
+  viewChildren,
 } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
 import { DatePipe } from '@angular/common';
@@ -72,6 +73,7 @@ export class GtdPageComponent {
   private readonly todayIso = new Date().toISOString().slice(0, 10);
   private readonly captureInput =
     viewChild<ElementRef<HTMLInputElement>>('captureInput');
+  private readonly gtdRows = viewChildren(GtdRowComponent);
 
   protected readonly showSelection = computed(() =>
     isTriageable(this.store.view()),
@@ -132,6 +134,14 @@ export class GtdPageComponent {
     event.preventDefault();
     const index = this.store.selection();
     const row = rows[index];
+    // Inbox actions that open the clarify dialog: focus the row's trigger
+    // first so the modal's focus trap restores focus to it on close.
+    if (
+      view === 'inbox' &&
+      (action === 'advance' || action === 'clarify' || action === 'pull')
+    ) {
+      this.gtdRows()[index]?.focusOpen();
+    }
     switch (action) {
       case 'down':
         this.store.selectedIndex.set(Math.min(index + 1, rows.length - 1));

@@ -307,6 +307,36 @@ describe('GtdPageComponent', () => {
     expect(testid('clarify-modal')).toBeNull();
   });
 
+  it('should open the clarify modal when an inbox row body is clicked', async () => {
+    await render('inbox');
+
+    (testid('gtd-row-open') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    httpMock
+      .expectOne((r) => r.url.includes('/api/admin/commitment/projects'))
+      .flush({ data: { projects: [] } });
+    await settle();
+
+    expect(testid('clarify-modal')).toBeTruthy();
+  });
+
+  it('should focus the inbox row trigger when the dialog opens from the keyboard', async () => {
+    await render('inbox');
+    const trigger = testid('gtd-row-open') as HTMLButtonElement;
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'c' }));
+    // Pre-focus runs synchronously in the handler, before the modal mounts —
+    // it anchors the modal's focus trap so focus returns to the row on close.
+    expect(document.activeElement).toBe(trigger);
+
+    // Settle the now-open dialog so its projects read is satisfied for verify().
+    fixture.detectChanges();
+    httpMock
+      .expectOne((r) => r.url.includes('/api/admin/commitment/projects'))
+      .flush({ data: { projects: [] } });
+    await settle();
+  });
+
   it('should pull the selected pending todo into today with t via the atomic plan PUT', async () => {
     await render('inbox');
 

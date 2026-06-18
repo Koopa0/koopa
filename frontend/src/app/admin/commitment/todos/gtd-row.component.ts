@@ -1,9 +1,11 @@
 import {
   ChangeDetectionStrategy,
   Component,
+  ElementRef,
   computed,
   input,
   output,
+  viewChild,
 } from '@angular/core';
 import {
   CalendarPlus,
@@ -20,6 +22,7 @@ import {
   ageLabel,
   dueChip,
   energyOf,
+  plainPreview,
   recurLabel,
   type GtdView,
 } from './gtd-view';
@@ -58,6 +61,10 @@ export class GtdRowComponent {
   readonly deferRow = output<void>();
   readonly dropRow = output<void>();
   readonly pull = output<void>();
+  readonly openDetail = output<void>();
+
+  private readonly openButton =
+    viewChild<ElementRef<HTMLButtonElement>>('openButton');
 
   protected readonly MoonIcon = Moon;
   protected readonly XIcon = X;
@@ -100,4 +107,18 @@ export class GtdRowComponent {
     () => this.view() === 'pending' || this.view() === 'someday',
   );
   protected readonly showDefer = computed(() => this.view() !== 'someday');
+  // Markdown-stripped one-line preview; the full body renders in the dialog.
+  protected readonly descriptionPreview = computed(() => {
+    const detail = this.item().description;
+    return detail ? plainPreview(detail) : null;
+  });
+
+  /**
+   * Focus the open-detail trigger. The page calls this before opening the
+   * clarify dialog from the keyboard so the modal's focus trap captures the
+   * row and restores focus to it on close.
+   */
+  focusOpen(): void {
+    this.openButton()?.nativeElement.focus();
+  }
 }

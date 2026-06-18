@@ -289,6 +289,26 @@ describe('GtdStore', () => {
       .flush({ data: backlogRows });
   });
 
+  it('should drop the clarify target then clear it on dropInstead', () => {
+    store.clarifyTarget.set(backlogRows[0]);
+    store.dropInstead();
+
+    const advance = httpMock.expectOne((r) =>
+      r.url.endsWith(`${TODOS_URL}/inbox-1/advance`),
+    );
+    expect(advance.request.body).toEqual({ action: 'drop' });
+    advance.flush(null, { status: 204, statusText: 'No Content' });
+
+    // Cleared before the reload removes the row underneath the modal.
+    expect(store.clarifyTarget()).toBeNull();
+    TestBed.tick();
+    httpMock
+      .expectOne(
+        (r) => r.url.endsWith(TODOS_URL) && r.params.get('per_page') === '200',
+      )
+      .flush({ data: backlogRows });
+  });
+
   it('should debounce the history search into a ?q= request', async () => {
     store.searchHistory('auth');
     httpMock.expectNone(

@@ -219,6 +219,7 @@
               [selected]="showSelection() && i === store.selection()"
               [busy]="store.busy()"
               (rowHover)="store.selectedIndex.set(i)"
+              (openDetail)="store.openClarify(row)"
               (clarify)="store.openClarify(row)"
               (advance)="store.advanceRow(row)"
               (deferRow)="store.deferRow(row)"
@@ -264,6 +265,7 @@
     [busy]="store.busy()"
     (clarified)="store.clarified($event)"
     (deferInstead)="store.deferInstead()"
+    (dropInstead)="store.dropInstead()"
     (closed)="store.closeClarify()"
   />
 }
