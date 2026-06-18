@@ -22,10 +22,12 @@ var coreKeywords = map[string]bool{
 	"genkit": true, "mcp": true, "claude": true, "llm": true,
 }
 
-// Score computes a relevance score (0-100) for a collected item based on
+// Score computes a relevance score (0-1) for a collected item based on
 // keyword matches in title, content, and tags against tracking keywords.
 // Core keywords (Go, PostgreSQL, system design, etc.) receive 2x weight,
-// reflecting Koopa's positioning as a Go backend consultant.
+// reflecting Koopa's positioning as a Go backend consultant. The range
+// matches the relevance_score CHECK (BETWEEN 0 AND 1) and the >0.5
+// relevance threshold documented on db/models.go.
 func Score(title, content string, tags, keywords []string) float32 {
 	if len(keywords) == 0 {
 		return 0
@@ -61,11 +63,9 @@ func Score(title, content string, tags, keywords []string) float32 {
 	if totalWeight == 0 {
 		return 0
 	}
-	score := matchedWeight / totalWeight * 100
-	if score > 100 {
-		score = 100
-	}
-	return score
+	// matchedWeight <= totalWeight by construction, so the ratio is in [0,1];
+	// no upper cap is needed.
+	return matchedWeight / totalWeight
 }
 
 // NormalizeKeywords deduplicates and lowercases a keyword list.

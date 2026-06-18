@@ -26,7 +26,7 @@ func TestScore(t *testing.T) {
 			content:  "This article covers HTTP handlers and routing patterns.",
 			tags:     []string{"golang", "rest"},
 			keywords: []string{"go", "rest", "api"},
-			want:     100,
+			want:     1,
 		},
 		{
 			name:     "no keywords match",
@@ -42,7 +42,7 @@ func TestScore(t *testing.T) {
 			content:  "Goroutines and channels.",
 			tags:     nil,
 			keywords: []string{"go", "rust", "java", "python"},
-			want:     40, // go(2x) matched / total weight 5 (go=2+rust=1+java=1+python=1) = 40%
+			want:     0.4, // go(2x) matched / total weight 5 (go=2+rust=1+java=1+python=1) = 0.4
 		},
 		{
 			name:     "empty keywords returns zero",
@@ -58,7 +58,7 @@ func TestScore(t *testing.T) {
 			content:  "",
 			tags:     nil,
 			keywords: []string{"golang"},
-			want:     100,
+			want:     1,
 		},
 		{
 			name:     "case insensitive matching",
@@ -66,7 +66,7 @@ func TestScore(t *testing.T) {
 			content:  "",
 			tags:     nil,
 			keywords: []string{"golang"},
-			want:     100,
+			want:     1,
 		},
 		{
 			name:     "tag match contributes to score",
@@ -74,7 +74,7 @@ func TestScore(t *testing.T) {
 			content:  "unrelated content",
 			tags:     []string{"kubernetes"},
 			keywords: []string{"kubernetes"},
-			want:     100,
+			want:     1,
 		},
 		{
 			name:     "substring matching works",
@@ -82,7 +82,7 @@ func TestScore(t *testing.T) {
 			content:  "",
 			tags:     nil,
 			keywords: []string{"microservice"}, // substring of "microservices"
-			want:     100,
+			want:     1,
 		},
 	}
 
@@ -92,6 +92,39 @@ func TestScore(t *testing.T) {
 			got := Score(tt.title, tt.content, tt.tags, tt.keywords)
 			if got != tt.want {
 				t.Errorf("Score(%q, ..., %v) = %v, want %v", tt.title, tt.keywords, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestScore_RescaledRange pins the [0,1] contract after the 0-100 → 0-1
+// rescale: a full single-keyword match is exactly 1.0, and any input with at
+// least one match stays <= 1.0 (the relevance_score CHECK is BETWEEN 0 AND 1).
+func TestScore_RescaledRange(t *testing.T) {
+	t.Parallel()
+
+	if got := Score("golang", "", nil, []string{"golang"}); got != 1 {
+		t.Errorf("Score full single-keyword match = %v, want exactly 1.0", got)
+	}
+
+	matched := []struct {
+		name     string
+		title    string
+		content  string
+		tags     []string
+		keywords []string
+	}{
+		{name: "single core match", title: "go", content: "", tags: nil, keywords: []string{"go"}},
+		{name: "core + non-core both match", title: "go rust", content: "", tags: nil, keywords: []string{"go", "rust"}},
+		{name: "partial match", title: "go", content: "", tags: nil, keywords: []string{"go", "python", "java"}},
+		{name: "tag-only match", title: "x", content: "y", tags: []string{"kubernetes"}, keywords: []string{"kubernetes"}},
+	}
+	for _, tt := range matched {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := Score(tt.title, tt.content, tt.tags, tt.keywords)
+			if got <= 0 || got > 1 {
+				t.Errorf("Score(%q, ...) = %v, want (0, 1]", tt.title, got)
 			}
 		})
 	}
@@ -150,8 +183,8 @@ func FuzzScore(f *testing.F) {
 
 	f.Fuzz(func(t *testing.T, title, content, tag, keyword string) {
 		score := Score(title, content, []string{tag}, []string{keyword})
-		if score < 0 || score > 100 {
-			t.Errorf("Score() = %v, want [0, 100]", score)
+		if score < 0 || score > 1 {
+			t.Errorf("Score() = %v, want [0, 1]", score)
 		}
 	})
 }

@@ -24,13 +24,13 @@ func TestScore_BoundaryValues(t *testing.T) {
 		wantMax  float32
 	}{
 		{
-			name:     "all core keywords match — cannot exceed 100",
+			name:     "all core keywords match — cannot exceed 1",
 			title:    "go golang postgresql postgres pgx sqlc concurrency goroutine grpc system design database sql iot mqtt kubernetes docker performance benchmark observability genkit mcp claude llm",
 			content:  "go golang postgresql postgres pgx sqlc concurrency goroutine grpc system design database sql iot mqtt kubernetes docker performance benchmark observability genkit mcp claude llm",
 			tags:     []string{"go", "golang"},
 			keywords: []string{"go", "golang", "postgresql"},
-			wantMin:  100,
-			wantMax:  100,
+			wantMin:  1,
+			wantMax:  1,
 		},
 		{
 			name:     "single keyword, no match",
@@ -47,8 +47,8 @@ func TestScore_BoundaryValues(t *testing.T) {
 			content:  "",
 			tags:     []string{"go"},
 			keywords: []string{"go"},
-			wantMin:  100,
-			wantMax:  100,
+			wantMin:  1,
+			wantMax:  1,
 		},
 		{
 			name:     "nil tags treated as empty",
@@ -56,11 +56,11 @@ func TestScore_BoundaryValues(t *testing.T) {
 			content:  "",
 			tags:     nil,
 			keywords: []string{"golang"},
-			wantMin:  100,
-			wantMax:  100,
+			wantMin:  1,
+			wantMax:  1,
 		},
 		{
-			name:    "very long keyword list — score stays in [0,100]",
+			name:    "very long keyword list — score stays in [0,1]",
 			title:   "golang article",
 			content: strings.Repeat("golang ", 100),
 			tags:    nil,
@@ -72,16 +72,16 @@ func TestScore_BoundaryValues(t *testing.T) {
 				return kws
 			}()...),
 			wantMin: 0,
-			wantMax: 100,
+			wantMax: 1,
 		},
 		{
-			name:     "single keyword matches — score is 100",
+			name:     "single keyword matches — score is 1",
 			title:    "golang",
 			content:  "",
 			tags:     nil,
 			keywords: []string{"golang"},
-			wantMin:  100,
-			wantMax:  100,
+			wantMin:  1,
+			wantMax:  1,
 		},
 	}
 
@@ -105,8 +105,8 @@ func TestScore_CoreKeywordBoost(t *testing.T) {
 	t.Parallel()
 
 	// With keywords ["go"(core=2x), "rust"(non-core=1x)]:
-	//   totalWeight = 3, matchedWeight when "go" matches = 2, score = 2/3 * 100 ≈ 66.67
-	//   matchedWeight when "rust" matches = 1, score = 1/3 * 100 ≈ 33.33
+	//   totalWeight = 3, matchedWeight when "go" matches = 2, score = 2/3 ≈ 0.667
+	//   matchedWeight when "rust" matches = 1, score = 1/3 ≈ 0.333
 	t.Run("core keyword boosts score above non-core", func(t *testing.T) {
 		t.Parallel()
 
@@ -121,8 +121,8 @@ func TestScore_CoreKeywordBoost(t *testing.T) {
 	t.Run("exact core keyword weight calculation", func(t *testing.T) {
 		t.Parallel()
 		// keywords: ["go"(2), "python"(1)] → totalWeight=3
-		// title "go programming": "go" matches → matchedWeight=2 → score=66.666...
-		want := float32(2) / float32(3) * 100
+		// title "go programming": "go" matches → matchedWeight=2 → score=0.666...
+		want := float32(2) / float32(3)
 		got := Score("go programming", "", nil, []string{"go", "python"})
 		// Allow floating point tolerance of 0.01.
 		diff := got - want
@@ -144,13 +144,13 @@ func TestScore_TitleWeightDouble(t *testing.T) {
 	// Match in content (counted once).
 	contentScore := Score("no match here", "unique_kw_xyz appears once", nil, keyword)
 
-	// Both should be 100 since "unique_kw_xyz" is the only keyword and it matches in both.
+	// Both should be 1 since "unique_kw_xyz" is the only keyword and it matches in both.
 	// The double-title weighting affects the proportional weight, not binary match.
-	if titleScore != 100 {
-		t.Errorf("Score with title match = %v, want 100", titleScore)
+	if titleScore != 1 {
+		t.Errorf("Score with title match = %v, want 1", titleScore)
 	}
-	if contentScore != 100 {
-		t.Errorf("Score with content match = %v, want 100", contentScore)
+	if contentScore != 1 {
+		t.Errorf("Score with content match = %v, want 1", contentScore)
 	}
 }
 
@@ -227,8 +227,8 @@ func TestScore_AdversarialInputs(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			got := Score(tt.title, tt.content, tt.tags, tt.keywords)
-			if got < 0 || got > 100 {
-				t.Errorf("Score(%q, ...) = %v, want [0, 100]", tt.title, got)
+			if got < 0 || got > 1 {
+				t.Errorf("Score(%q, ...) = %v, want [0, 1]", tt.title, got)
 			}
 			if math.IsNaN(float64(got)) || math.IsInf(float64(got), 0) {
 				t.Errorf("Score(%q, ...) = %v (NaN or Inf)", tt.title, got)
