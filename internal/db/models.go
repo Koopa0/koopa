@@ -235,6 +235,7 @@ func (ns NullFeedEntryStatus) Value() (driver.Value, error) {
 type GoalStatus string
 
 const (
+	GoalStatusProposed   GoalStatus = "proposed"
 	GoalStatusNotStarted GoalStatus = "not_started"
 	GoalStatusInProgress GoalStatus = "in_progress"
 	GoalStatusDone       GoalStatus = "done"
@@ -560,7 +561,11 @@ type Area struct {
 	// Optional emoji or icon identifier for UI display.
 	Icon *string `json:"icon"`
 	// Display ordering. Lower = higher priority.
-	SortOrder int32     `json:"sort_order"`
+	SortOrder int32 `json:"sort_order"`
+	// proposed | active. An agent-proposed area lands in 'proposed' — inert: filtered out of every area selector / resolver, so it cannot become a real goal's parent until activated. The owner activates (→ active) or rejects (DELETE) it in admin triage. Admin/seeded areas are 'active'. Default active so existing and admin inserts need not set it.
+	Status string `json:"status"`
+	// Provenance. NULL = system/seed origin — areas are seeded in 002 before any agents row exists at startup, so this is NULLABLE with NO default (a NOT NULL or DEFAULT-'human' FK would fail the seed with a foreign_key_violation). An agent name marks an area that agent proposed.
+	CreatedBy *string   `json:"created_by"`
 	CreatedAt time.Time `json:"created_at"`
 	// Application-managed. Set explicitly in UPDATE queries.
 	UpdatedAt time.Time `json:"updated_at"`
@@ -743,15 +748,17 @@ type Goal struct {
 	ID          uuid.UUID `json:"id"`
 	Title       string    `json:"title"`
 	Description string    `json:"description"`
-	// Lifecycle: not_started → in_progress → done | abandoned | on_hold. on_hold = paused but not abandoned, can resume to in_progress. abandoned = terminal, will not pursue.
+	// Lifecycle: proposed → not_started → in_progress → done | abandoned | on_hold. proposed = agent-proposed draft, inert — ActiveGoals filters in_progress, so a proposed goal never reaches brief / alignment; the owner activates it to not_started in admin triage or rejects (DELETE, milestones CASCADE). on_hold = paused but not abandoned, can resume to in_progress. abandoned = terminal, will not pursue.
 	Status GoalStatus `json:"status"`
 	// PARA Area of Responsibility this goal belongs to. FK to areas. SET NULL on area deletion — goal survives unclassified. NULL = no area assigned.
 	AreaID *uuid.UUID `json:"area_id"`
 	// Target quarter (e.g. "Q1 2026"). Free-form text. NULL = no quarter assigned.
 	Quarter *string `json:"quarter"`
 	// Hard deadline if any. NULL = no deadline.
-	Deadline  *time.Time `json:"deadline"`
-	CreatedAt time.Time  `json:"created_at"`
+	Deadline *time.Time `json:"deadline"`
+	// Provenance. NULL = system/admin origin; an agent name marks a goal that agent proposed. NULLABLE with no default, mirroring areas.created_by.
+	CreatedBy *string   `json:"created_by"`
+	CreatedAt time.Time `json:"created_at"`
 	// Application-managed. Set explicitly in UPDATE queries.
 	UpdatedAt time.Time `json:"updated_at"`
 }

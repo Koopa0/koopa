@@ -2351,7 +2351,7 @@ func (q *Queries) CreateFeedEntry(ctx context.Context, arg CreateFeedEntryParams
 const createGoal = `-- name: CreateGoal :one
 INSERT INTO goals (title, description, status, area_id, quarter, deadline)
 VALUES ($1, $2, $3::goal_status, $4, $5, $6)
-RETURNING id, title, description, status, area_id, quarter, deadline,
+RETURNING id, title, description, status, area_id, quarter, deadline, created_by,
           created_at, updated_at
 `
 
@@ -2383,6 +2383,7 @@ func (q *Queries) CreateGoal(ctx context.Context, arg CreateGoalParams) (Goal, e
 		&i.AreaID,
 		&i.Quarter,
 		&i.Deadline,
+		&i.CreatedBy,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -4440,7 +4441,7 @@ func (q *Queries) FindTargetByDomainTitle(ctx context.Context, arg FindTargetByD
 }
 
 const goalByID = `-- name: GoalByID :one
-SELECT id, title, description, status, area_id, quarter, deadline,
+SELECT id, title, description, status, area_id, quarter, deadline, created_by,
        created_at, updated_at
 FROM goals WHERE id = $1
 `
@@ -4456,6 +4457,7 @@ func (q *Queries) GoalByID(ctx context.Context, id uuid.UUID) (Goal, error) {
 		&i.AreaID,
 		&i.Quarter,
 		&i.Deadline,
+		&i.CreatedBy,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -4504,7 +4506,7 @@ func (q *Queries) GoalByIDWithArea(ctx context.Context, id uuid.UUID) (GoalByIDW
 }
 
 const goalByTitle = `-- name: GoalByTitle :one
-SELECT id, title, description, status, area_id, quarter, deadline,
+SELECT id, title, description, status, area_id, quarter, deadline, created_by,
        created_at, updated_at
 FROM goals WHERE LOWER(title) = LOWER($1)
 `
@@ -4521,6 +4523,7 @@ func (q *Queries) GoalByTitle(ctx context.Context, title string) (Goal, error) {
 		&i.AreaID,
 		&i.Quarter,
 		&i.Deadline,
+		&i.CreatedBy,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -11361,7 +11364,7 @@ UPDATE goals SET
     area_id     = COALESCE($5, area_id),
     updated_at  = now()
 WHERE id = $6
-RETURNING id, title, description, status, area_id, quarter, deadline,
+RETURNING id, title, description, status, area_id, quarter, deadline, created_by,
           created_at, updated_at
 `
 
@@ -11395,6 +11398,7 @@ func (q *Queries) UpdateGoal(ctx context.Context, arg UpdateGoalParams) (Goal, e
 		&i.AreaID,
 		&i.Quarter,
 		&i.Deadline,
+		&i.CreatedBy,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -11406,7 +11410,7 @@ UPDATE goals SET
     status = $1::goal_status,
     updated_at = now()
 WHERE id = $2
-RETURNING id, title, description, status, area_id, quarter, deadline,
+RETURNING id, title, description, status, area_id, quarter, deadline, created_by,
           created_at, updated_at
 `
 
@@ -11427,6 +11431,7 @@ func (q *Queries) UpdateGoalStatus(ctx context.Context, arg UpdateGoalStatusPara
 		&i.AreaID,
 		&i.Quarter,
 		&i.Deadline,
+		&i.CreatedBy,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)

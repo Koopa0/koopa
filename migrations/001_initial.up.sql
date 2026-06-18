@@ -17,7 +17,7 @@ CREATE TYPE feed_entry_status AS ENUM (
 );
 
 CREATE TYPE goal_status AS ENUM (
-    'not_started', 'in_progress', 'done', 'abandoned', 'on_hold'
+    'proposed', 'not_started', 'in_progress', 'done', 'abandoned', 'on_hold'
 );
 
 CREATE TYPE project_status AS ENUM (
@@ -214,6 +214,9 @@ CREATE TABLE areas (
     description TEXT NOT NULL DEFAULT '',
     icon        TEXT,
     sort_order  INT NOT NULL DEFAULT 0,
+    status      TEXT NOT NULL DEFAULT 'active'
+        CHECK (status IN ('proposed', 'active')),
+    created_by  TEXT REFERENCES agents(name) ON DELETE RESTRICT,
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
 
@@ -222,6 +225,16 @@ CREATE TABLE areas (
     CONSTRAINT chk_area_name_not_blank
         CHECK (btrim(name) <> '')
 );
+
+COMMENT ON COLUMN areas.status IS
+    'proposed | active. An agent-proposed area lands in ''proposed'' — inert: filtered out of '
+    'every area selector / resolver, so it cannot become a real goal''s parent until activated. '
+    'The owner activates (→ active) or rejects (DELETE) it in admin triage. Admin/seeded areas '
+    'are ''active''. Default active so existing and admin inserts need not set it.';
+COMMENT ON COLUMN areas.created_by IS
+    'Provenance. NULL = system/seed origin — areas are seeded in 002 before any agents row '
+    'exists at startup, so this is NULLABLE with NO default (a NOT NULL or DEFAULT-''human'' FK '
+    'would fail the seed with a foreign_key_violation). An agent name marks an area that agent proposed.';
 
 COMMENT ON TABLE areas IS
     'PARA Areas of Responsibility — ongoing domains requiring sustained attention. '
@@ -254,6 +267,7 @@ CREATE TABLE goals (
     area_id           UUID REFERENCES areas(id) ON DELETE SET NULL,
     quarter           TEXT,
     deadline          TIMESTAMPTZ,
+    created_by        TEXT REFERENCES agents(name) ON DELETE RESTRICT,
     created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
 
@@ -266,9 +280,14 @@ COMMENT ON TABLE goals IS
     'Each goal may have milestones (progress checkpoints) and projects (execution vehicles). '
     'Milestone progress is advisory — goal status is managed manually, not auto-derived.';
 COMMENT ON COLUMN goals.status IS
-    'Lifecycle: not_started → in_progress → done | abandoned | on_hold. '
-    'on_hold = paused but not abandoned, can resume to in_progress. '
-    'abandoned = terminal, will not pursue.';
+    'Lifecycle: proposed → not_started → in_progress → done | abandoned | on_hold. '
+    'proposed = agent-proposed draft, inert — ActiveGoals filters in_progress, so a proposed '
+    'goal never reaches brief / alignment; the owner activates it to not_started in admin triage '
+    'or rejects (DELETE, milestones CASCADE). on_hold = paused but not abandoned, can resume to '
+    'in_progress. abandoned = terminal, will not pursue.';
+COMMENT ON COLUMN goals.created_by IS
+    'Provenance. NULL = system/admin origin; an agent name marks a goal that agent proposed. '
+    'NULLABLE with no default, mirroring areas.created_by.';
 COMMENT ON COLUMN goals.area_id IS
     'PARA Area of Responsibility this goal belongs to. FK to areas. '
     'SET NULL on area deletion — goal survives unclassified. NULL = no area assigned.';

@@ -43,6 +43,7 @@ type Goal struct {
 	AreaID      *uuid.UUID `json:"area_id,omitempty"`
 	Quarter     *string    `json:"quarter,omitempty"`
 	Deadline    *time.Time `json:"deadline,omitempty"`
+	CreatedBy   *string    `json:"created_by,omitempty"`
 	CreatedAt   time.Time  `json:"created_at"`
 	UpdatedAt   time.Time  `json:"updated_at"`
 }

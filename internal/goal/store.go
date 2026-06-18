@@ -415,6 +415,7 @@ func rowToGoal(r *db.Goal) Goal {
 		AreaID:      r.AreaID,
 		Quarter:     r.Quarter,
 		Deadline:    r.Deadline,
+		CreatedBy:   r.CreatedBy,
 		CreatedAt:   r.CreatedAt,
 		UpdatedAt:   r.UpdatedAt,
 	}
