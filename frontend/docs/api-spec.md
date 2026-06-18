@@ -168,9 +168,9 @@
 
 ### 2.7 `GET /api/admin/commitment/todos/:id`  🔨 new
 
-**Purpose**：Todo detail for the todo inspector / edit form. Returns the same shape as the list row plus full description, attached project, and full due_date/completed_at timestamps.
+**Purpose**：Single-todo detail — the list-row shape plus full description, attached project, and full due_date/completed_at timestamps.
 
-**Response**：`TodoDetail` — list-row fields plus `description`, `project` (full ref), `completed_at`, `last_state_change_at`.
+**Response**：list-row fields plus `description`, `project` (full ref), `completed_at`, `last_state_change_at`.
 
 ### 2.8 `GET /api/admin/commitment/goals`  ✓ existing (rename)
 
