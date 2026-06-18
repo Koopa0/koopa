@@ -29,8 +29,6 @@ func NewHandler(sources []Source, logger *slog.Logger) *Handler {
 
 // Search handles GET /api/admin/search.
 // Query params: q (required), limit (optional; default 20, max 50).
-// mode=lexical|semantic is accepted but does not branch today; every
-// source runs its lexical path.
 func (h *Handler) Search(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query().Get("q")
 	if query == "" {
@@ -43,7 +41,7 @@ func (h *Handler) Search(w http.ResponseWriter, r *http.Request) {
 		api.Encode(w, http.StatusOK, api.Response{Data: Response{Results: []Result{}}})
 		return
 	}
-	per := LimitPerSource(limit, len(h.sources))
+	per := limitPerSource(limit, len(h.sources))
 
 	ctx := r.Context()
 	all := make([][]Result, len(h.sources))

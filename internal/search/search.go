@@ -9,7 +9,6 @@ package search
 
 import (
 	"context"
-	"net/http"
 
 	"github.com/google/uuid"
 )
@@ -62,9 +61,9 @@ type Source interface {
 // limit/N so no single kind dominates the envelope.
 const maxLimit = 50
 
-// LimitPerSource splits the client-requested limit across n sources so
+// limitPerSource splits the client-requested limit across n sources so
 // the response is balanced. Returns at least 1 per source when n > 0.
-func LimitPerSource(total, n int) int {
+func limitPerSource(total, n int) int {
 	if n <= 0 || total <= 0 {
 		return 0
 	}
@@ -74,7 +73,3 @@ func LimitPerSource(total, n int) int {
 	}
 	return per
 }
-
-// HandlerFunc is the net/http adapter the router mounts. The search
-// handler lives alongside these helpers in handler.go.
-var _ http.Handler = http.HandlerFunc(nil)
