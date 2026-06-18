@@ -37,8 +37,8 @@ func NewStore(dbtx db.DBTX) *Store {
 // WithTx returns a Store bound to tx for all queries. Used by callers
 // composing multi-store transactions — typically via api.ActorMiddleware
 // (HTTP) or mcp.Server.withActorTx (MCP). The tx carries koopa.actor
-// so audit triggers attribute mutations correctly (feed_entries is
-// audited per routes 29-31: curate, ignore, submit-feedback).
+// so audit triggers attribute mutations correctly (feed_entries
+// mutations curate and ignore are audited).
 func (s *Store) WithTx(tx pgx.Tx) *Store {
 	return &Store{q: s.q.WithTx(tx)}
 }
@@ -48,33 +48,6 @@ func (s *Store) Items(ctx context.Context, f Filter) ([]Item, int, error) {
 	status := nullCollectedStatus(f.Status)
 	limit := int32(f.PerPage)                 // #nosec G115 -- pagination values are bounded by API layer
 	offset := int32((f.Page - 1) * f.PerPage) // #nosec G115 -- pagination values are bounded by API layer
-
-	if f.Sort == "relevance" {
-		rows, err := s.q.FeedEntriesByRelevance(ctx, db.FeedEntriesByRelevanceParams{
-			Limit:  limit,
-			Offset: offset,
-			Status: status,
-		})
-		if err != nil {
-			return nil, 0, fmt.Errorf("listing collected data: %w", err)
-		}
-		count, err := s.q.FeedEntriesCount(ctx, status)
-		if err != nil {
-			return nil, 0, fmt.Errorf("counting collected data: %w", err)
-		}
-		data := make([]Item, len(rows))
-		for i := range rows {
-			r := &rows[i]
-			data[i] = rowToItem(collectedRow{
-				ID: r.ID, SourceUrl: r.SourceUrl, Title: r.Title, OriginalContent: r.OriginalContent,
-				RelevanceScore: r.RelevanceScore, Status: r.Status,
-				CuratedContentID: r.CuratedContentID, CollectedAt: r.CollectedAt, UrlHash: r.UrlHash,
-				UserFeedback: r.UserFeedback, FeedbackAt: r.FeedbackAt, FeedID: r.FeedID,
-				PublishedAt: r.PublishedAt, FeedName: r.FeedName,
-			})
-		}
-		return data, int(count), nil
-	}
 
 	rows, err := s.q.FeedEntriesList(ctx, db.FeedEntriesListParams{
 		Limit:  limit,
@@ -93,9 +66,9 @@ func (s *Store) Items(ctx context.Context, f Filter) ([]Item, int, error) {
 		r := &rows[i]
 		data[i] = rowToItem(collectedRow{
 			ID: r.ID, SourceUrl: r.SourceUrl, Title: r.Title, OriginalContent: r.OriginalContent,
-			RelevanceScore: r.RelevanceScore, Status: r.Status,
+			Status:           r.Status,
 			CuratedContentID: r.CuratedContentID, CollectedAt: r.CollectedAt, UrlHash: r.UrlHash,
-			UserFeedback: r.UserFeedback, FeedbackAt: r.FeedbackAt, FeedID: r.FeedID,
+			FeedID:      r.FeedID,
 			PublishedAt: r.PublishedAt, FeedName: r.FeedName,
 		})
 	}
@@ -113,9 +86,9 @@ func (s *Store) Item(ctx context.Context, id uuid.UUID) (*Item, error) {
 	}
 	d := rowToItem(collectedRow{
 		ID: r.ID, SourceUrl: r.SourceUrl, Title: r.Title, OriginalContent: r.OriginalContent,
-		RelevanceScore: r.RelevanceScore, Status: r.Status,
+		Status:           r.Status,
 		CuratedContentID: r.CuratedContentID, CollectedAt: r.CollectedAt, UrlHash: r.UrlHash,
-		UserFeedback: r.UserFeedback, FeedbackAt: r.FeedbackAt, FeedID: r.FeedID,
+		FeedID:      r.FeedID,
 		PublishedAt: r.PublishedAt, FeedName: r.FeedName,
 	})
 	return &d, nil
@@ -157,7 +130,6 @@ func (s *Store) CreateItem(ctx context.Context, p *CreateParams) (*Item, error) 
 		OriginalContent: p.OriginalContent,
 		UrlHash:         p.URLHash,
 		FeedID:          p.FeedID,
-		RelevanceScore:  p.RelevanceScore,
 		PublishedAt:     p.PublishedAt,
 	})
 	if err != nil {
@@ -171,14 +143,11 @@ func (s *Store) CreateItem(ctx context.Context, p *CreateParams) (*Item, error) 
 		SourceURL:        r.SourceUrl,
 		Title:            r.Title,
 		OriginalContent:  &r.OriginalContent,
-		RelevanceScore:   r.RelevanceScore,
 		Status:           Status(r.Status),
 		CuratedContentID: r.CuratedContentID,
 		CollectedAt:      r.CollectedAt,
 		PublishedAt:      r.PublishedAt,
 		URLHash:          r.UrlHash,
-		UserFeedback:     r.UserFeedback,
-		FeedbackAt:       r.FeedbackAt,
 		FeedID:           r.FeedID,
 	}
 	return &d, nil
@@ -195,24 +164,12 @@ func (s *Store) ItemByURLHash(ctx context.Context, urlHash string) (*Item, error
 	}
 	d := rowToItem(collectedRow{
 		ID: r.ID, SourceUrl: r.SourceUrl, Title: r.Title, OriginalContent: r.OriginalContent,
-		RelevanceScore: r.RelevanceScore, Status: r.Status,
+		Status:           r.Status,
 		CuratedContentID: r.CuratedContentID, CollectedAt: r.CollectedAt, UrlHash: r.UrlHash,
-		UserFeedback: r.UserFeedback, FeedbackAt: r.FeedbackAt, FeedID: r.FeedID,
+		FeedID:      r.FeedID,
 		PublishedAt: r.PublishedAt, FeedName: r.FeedName,
 	})
 	return &d, nil
-}
-
-// UpdateFeedback updates the user feedback for a collected data item.
-func (s *Store) UpdateFeedback(ctx context.Context, id uuid.UUID, feedback Feedback) error {
-	fb := string(feedback)
-	if err := s.q.UpdateFeedEntryFeedback(ctx, db.UpdateFeedEntryFeedbackParams{
-		ID:           id,
-		UserFeedback: &fb,
-	}); err != nil {
-		return fmt.Errorf("updating collected feedback %s: %w", id, err)
-	}
-	return nil
 }
 
 // RecentFeedEntries returns recently collected items in a time range, ordered by collected_at DESC.
@@ -230,9 +187,9 @@ func (s *Store) RecentFeedEntries(ctx context.Context, start, end time.Time, lim
 		r := &rows[i]
 		data[i] = rowToItem(collectedRow{
 			ID: r.ID, SourceUrl: r.SourceUrl, Title: r.Title, OriginalContent: r.OriginalContent,
-			RelevanceScore: r.RelevanceScore, Status: r.Status,
+			Status:           r.Status,
 			CuratedContentID: r.CuratedContentID, CollectedAt: r.CollectedAt, UrlHash: r.UrlHash,
-			UserFeedback: r.UserFeedback, FeedbackAt: r.FeedbackAt, FeedID: r.FeedID,
+			FeedID:      r.FeedID,
 			PublishedAt: r.PublishedAt, FeedName: r.FeedName,
 		})
 	}
@@ -254,32 +211,32 @@ func (s *Store) LatestFeedEntries(ctx context.Context, since *time.Time, maxResu
 		r := &rows[i]
 		data[i] = rowToItem(collectedRow{
 			ID: r.ID, SourceUrl: r.SourceUrl, Title: r.Title, OriginalContent: r.OriginalContent,
-			RelevanceScore: r.RelevanceScore, Status: r.Status,
+			Status:           r.Status,
 			CuratedContentID: r.CuratedContentID, CollectedAt: r.CollectedAt, UrlHash: r.UrlHash,
-			UserFeedback: r.UserFeedback, FeedbackAt: r.FeedbackAt, FeedID: r.FeedID,
+			FeedID:      r.FeedID,
 			PublishedAt: r.PublishedAt, FeedName: r.FeedName,
 		})
 	}
 	return data, nil
 }
 
-// TopUnreadFeedEntriesRecent returns unread collected items with relevance > 0.5 since the given time.
+// TopUnreadFeedEntriesRecent returns unread collected items since the given time.
 func (s *Store) TopUnreadFeedEntriesRecent(ctx context.Context, since time.Time, maxResults int32) ([]Item, error) {
 	rows, err := s.q.TopUnreadFeedEntriesRecent(ctx, db.TopUnreadFeedEntriesRecentParams{
 		Since:      since,
 		MaxResults: maxResults,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("listing top relevant collected data: %w", err)
+		return nil, fmt.Errorf("listing top unread collected data: %w", err)
 	}
 	data := make([]Item, len(rows))
 	for i := range rows {
 		r := &rows[i]
 		data[i] = rowToItem(collectedRow{
 			ID: r.ID, SourceUrl: r.SourceUrl, Title: r.Title, OriginalContent: r.OriginalContent,
-			RelevanceScore: r.RelevanceScore, Status: r.Status,
+			Status:           r.Status,
 			CuratedContentID: r.CuratedContentID, CollectedAt: r.CollectedAt, UrlHash: r.UrlHash,
-			UserFeedback: r.UserFeedback, FeedbackAt: r.FeedbackAt, FeedID: r.FeedID,
+			FeedID:      r.FeedID,
 			PublishedAt: r.PublishedAt, FeedName: r.FeedName,
 		})
 	}
@@ -300,9 +257,9 @@ func (s *Store) LatestByRecency(ctx context.Context, since *time.Time, maxResult
 		r := &rows[i]
 		data[i] = rowToItem(collectedRow{
 			ID: r.ID, SourceUrl: r.SourceUrl, Title: r.Title, OriginalContent: r.OriginalContent,
-			RelevanceScore: r.RelevanceScore, Status: r.Status,
+			Status:           r.Status,
 			CuratedContentID: r.CuratedContentID, CollectedAt: r.CollectedAt, UrlHash: r.UrlHash,
-			UserFeedback: r.UserFeedback, FeedbackAt: r.FeedbackAt, FeedID: r.FeedID,
+			FeedID:      r.FeedID,
 			PublishedAt: r.PublishedAt, FeedName: r.FeedName,
 		})
 	}
@@ -323,9 +280,9 @@ func (s *Store) HighPriorityRecent(ctx context.Context, since time.Time, maxResu
 		r := &rows[i]
 		data[i] = rowToItem(collectedRow{
 			ID: r.ID, SourceUrl: r.SourceUrl, Title: r.Title, OriginalContent: r.OriginalContent,
-			RelevanceScore: r.RelevanceScore, Status: r.Status,
+			Status:           r.Status,
 			CuratedContentID: r.CuratedContentID, CollectedAt: r.CollectedAt, UrlHash: r.UrlHash,
-			UserFeedback: r.UserFeedback, FeedbackAt: r.FeedbackAt, FeedID: r.FeedID,
+			FeedID:      r.FeedID,
 			PublishedAt: r.PublishedAt, FeedName: r.FeedName,
 		})
 	}
@@ -342,7 +299,7 @@ func (s *Store) DeleteOldIgnored(ctx context.Context, cutoff time.Time) (int64, 
 	return n, nil
 }
 
-// TopItems returns the top N highest-scoring unread items from the last 7 days.
+// TopItems returns the top N most recent unread items from the last 7 days.
 func (s *Store) TopItems(ctx context.Context, limit int) ([]Item, error) {
 	since := time.Now().AddDate(0, 0, -7)
 	rows, err := s.q.TopUnreadFeedEntriesRecent(ctx, db.TopUnreadFeedEntriesRecentParams{
@@ -357,9 +314,9 @@ func (s *Store) TopItems(ctx context.Context, limit int) ([]Item, error) {
 		r := &rows[i]
 		items[i] = rowToItem(collectedRow{
 			ID: r.ID, SourceUrl: r.SourceUrl, Title: r.Title, OriginalContent: r.OriginalContent,
-			RelevanceScore: r.RelevanceScore, Status: r.Status,
+			Status:           r.Status,
 			CuratedContentID: r.CuratedContentID, CollectedAt: r.CollectedAt, UrlHash: r.UrlHash,
-			UserFeedback: r.UserFeedback, FeedbackAt: r.FeedbackAt, FeedID: r.FeedID,
+			FeedID:      r.FeedID,
 			PublishedAt: r.PublishedAt, FeedName: r.FeedName,
 		})
 	}
@@ -374,13 +331,10 @@ type collectedRow struct {
 	SourceUrl        string //nolint:staticcheck,revive // matches sqlc-generated field name
 	Title            string
 	OriginalContent  string
-	RelevanceScore   float64
 	Status           db.FeedEntryStatus
 	CuratedContentID *uuid.UUID
 	CollectedAt      time.Time
 	UrlHash          string //nolint:staticcheck,revive // matches sqlc-generated field name
-	UserFeedback     *string
-	FeedbackAt       *time.Time
 	FeedID           *uuid.UUID
 	PublishedAt      *time.Time
 	FeedName         string
@@ -393,14 +347,11 @@ func rowToItem(r collectedRow) Item { //nolint:gocritic // hugeParam: struct pas
 		FeedName:         r.FeedName,
 		Title:            r.Title,
 		OriginalContent:  &r.OriginalContent,
-		RelevanceScore:   r.RelevanceScore,
 		Status:           Status(r.Status),
 		CuratedContentID: r.CuratedContentID,
 		CollectedAt:      r.CollectedAt,
 		PublishedAt:      r.PublishedAt,
 		URLHash:          r.UrlHash,
-		UserFeedback:     r.UserFeedback,
-		FeedbackAt:       r.FeedbackAt,
 		FeedID:           r.FeedID,
 	}
 }

@@ -1,7 +1,7 @@
 -- name: FeedEntriesList :many
 SELECT cd.id, cd.source_url, cd.title, cd.original_content,
-       cd.relevance_score, cd.status, cd.curated_content_id, cd.collected_at,
-       cd.url_hash, cd.user_feedback, cd.feedback_at, cd.feed_id, cd.published_at,
+       cd.status, cd.curated_content_id, cd.collected_at,
+       cd.url_hash, cd.feed_id, cd.published_at,
        COALESCE(f.name, '') AS feed_name
 FROM feed_entries cd
 LEFT JOIN feeds f ON cd.feed_id = f.id
@@ -15,8 +15,8 @@ WHERE (sqlc.narg('status')::feed_entry_status IS NULL OR status = sqlc.narg('sta
 
 -- name: FeedEntryByID :one
 SELECT cd.id, cd.source_url, cd.title, cd.original_content,
-       cd.relevance_score, cd.status, cd.curated_content_id, cd.collected_at,
-       cd.url_hash, cd.user_feedback, cd.feedback_at, cd.feed_id, cd.published_at,
+       cd.status, cd.curated_content_id, cd.collected_at,
+       cd.url_hash, cd.feed_id, cd.published_at,
        COALESCE(f.name, '') AS feed_name
 FROM feed_entries cd
 LEFT JOIN feeds f ON cd.feed_id = f.id
@@ -24,37 +24,34 @@ WHERE cd.id = $1;
 
 -- name: FeedEntryByURLHash :one
 SELECT cd.id, cd.source_url, cd.title, cd.original_content,
-       cd.relevance_score, cd.status, cd.curated_content_id, cd.collected_at,
-       cd.url_hash, cd.user_feedback, cd.feedback_at, cd.feed_id, cd.published_at,
+       cd.status, cd.curated_content_id, cd.collected_at,
+       cd.url_hash, cd.feed_id, cd.published_at,
        COALESCE(f.name, '') AS feed_name
 FROM feed_entries cd
 LEFT JOIN feeds f ON cd.feed_id = f.id
 WHERE cd.url_hash = $1;
 
 -- name: CreateFeedEntry :one
-INSERT INTO feed_entries (source_url, title, original_content, url_hash, feed_id, relevance_score, published_at)
-VALUES ($1, $2, $3, $4, sqlc.narg('feed_id'), @relevance_score, sqlc.narg('published_at'))
+INSERT INTO feed_entries (source_url, title, original_content, url_hash, feed_id, published_at)
+VALUES ($1, $2, $3, $4, sqlc.narg('feed_id'), sqlc.narg('published_at'))
 RETURNING id, source_url, title, original_content,
-          relevance_score, status, curated_content_id, collected_at,
-          url_hash, user_feedback, feedback_at, feed_id, published_at;
-
--- name: UpdateFeedEntryFeedback :exec
-UPDATE feed_entries SET user_feedback = $2, feedback_at = now() WHERE id = $1;
+          status, curated_content_id, collected_at,
+          url_hash, feed_id, published_at;
 
 -- name: CurateFeedEntry :one
 UPDATE feed_entries SET status = 'curated', curated_content_id = sqlc.narg('curated_content_id')
 WHERE id = $1
 RETURNING id, source_url, title, original_content,
-          relevance_score, status, curated_content_id, collected_at,
-          url_hash, user_feedback, feedback_at, feed_id, published_at;
+          status, curated_content_id, collected_at,
+          url_hash, feed_id, published_at;
 
 -- name: IgnoreFeedEntry :exec
 UPDATE feed_entries SET status = 'ignored' WHERE id = $1;
 
 -- name: RecentFeedEntries :many
 SELECT cd.id, cd.source_url, cd.title, cd.original_content,
-       cd.relevance_score, cd.status, cd.curated_content_id, cd.collected_at,
-       cd.url_hash, cd.user_feedback, cd.feedback_at, cd.feed_id, cd.published_at,
+       cd.status, cd.curated_content_id, cd.collected_at,
+       cd.url_hash, cd.feed_id, cd.published_at,
        COALESCE(f.name, '') AS feed_name
 FROM feed_entries cd
 LEFT JOIN feeds f ON cd.feed_id = f.id
@@ -66,8 +63,8 @@ LIMIT $3;
 -- Get latest collected data, optionally filtered by time range.
 -- When days is NULL, returns the latest N items regardless of time.
 SELECT cd.id, cd.source_url, cd.title, cd.original_content,
-       cd.relevance_score, cd.status, cd.curated_content_id, cd.collected_at,
-       cd.url_hash, cd.user_feedback, cd.feedback_at, cd.feed_id, cd.published_at,
+       cd.status, cd.curated_content_id, cd.collected_at,
+       cd.url_hash, cd.feed_id, cd.published_at,
        COALESCE(f.name, '') AS feed_name
 FROM feed_entries cd
 LEFT JOIN feeds f ON cd.feed_id = f.id
@@ -75,24 +72,11 @@ WHERE (sqlc.narg('since')::timestamptz IS NULL OR cd.collected_at >= sqlc.narg('
 ORDER BY COALESCE(cd.published_at, cd.collected_at) DESC
 LIMIT @max_results;
 
--- name: FeedEntriesByRelevance :many
-SELECT cd.id, cd.source_url, cd.title, cd.original_content,
-       cd.relevance_score, cd.status, cd.curated_content_id, cd.collected_at,
-       cd.url_hash, cd.user_feedback, cd.feedback_at, cd.feed_id, cd.published_at,
-       COALESCE(f.name, '') AS feed_name
-FROM feed_entries cd
-LEFT JOIN feeds f ON cd.feed_id = f.id
-WHERE (sqlc.narg('status')::feed_entry_status IS NULL OR cd.status = sqlc.narg('status'))
-ORDER BY cd.relevance_score DESC, COALESCE(cd.published_at, cd.collected_at) DESC
-LIMIT $1 OFFSET $2;
-
 -- name: TopUnreadFeedEntriesRecent :many
--- Get top unread collected data since a given time.
--- Score filter removed: scoring pipeline not yet active, all items have score=0.
--- When scoring is implemented, restore relevance_score > 0.5 threshold.
+-- Get unread collected data since a given time.
 SELECT cd.id, cd.source_url, cd.title, cd.original_content,
-       cd.relevance_score, cd.status, cd.curated_content_id, cd.collected_at,
-       cd.url_hash, cd.user_feedback, cd.feedback_at, cd.feed_id, cd.published_at,
+       cd.status, cd.curated_content_id, cd.collected_at,
+       cd.url_hash, cd.feed_id, cd.published_at,
        COALESCE(f.name, '') AS feed_name
 FROM feed_entries cd
 LEFT JOIN feeds f ON cd.feed_id = f.id
@@ -104,8 +88,8 @@ LIMIT @max_results;
 -- name: LatestFeedEntriesByRecency :many
 -- Get latest collected data ordered by recency (collected_at DESC), optionally filtered by time.
 SELECT cd.id, cd.source_url, cd.title, cd.original_content,
-       cd.relevance_score, cd.status, cd.curated_content_id, cd.collected_at,
-       cd.url_hash, cd.user_feedback, cd.feedback_at, cd.feed_id, cd.published_at,
+       cd.status, cd.curated_content_id, cd.collected_at,
+       cd.url_hash, cd.feed_id, cd.published_at,
        COALESCE(f.name, '') AS feed_name
 FROM feed_entries cd
 LEFT JOIN feeds f ON cd.feed_id = f.id
@@ -116,8 +100,8 @@ LIMIT @max_results;
 -- name: HighPriorityRecentFeedEntries :many
 -- Get unread collected data from high-priority feeds in the past N hours.
 SELECT cd.id, cd.source_url, cd.title, cd.original_content,
-       cd.relevance_score, cd.status, cd.curated_content_id, cd.collected_at,
-       cd.url_hash, cd.user_feedback, cd.feedback_at, cd.feed_id, cd.published_at,
+       cd.status, cd.curated_content_id, cd.collected_at,
+       cd.url_hash, cd.feed_id, cd.published_at,
        COALESCE(f.name, '') AS feed_name
 FROM feed_entries cd
 JOIN feeds f ON cd.feed_id = f.id

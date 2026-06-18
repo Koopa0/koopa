@@ -107,7 +107,7 @@ func (c *Collector) FetchFeed(ctx context.Context, f *feed.Feed) ([]uuid.UUID, e
 		return nil, nil // 304 Not Modified
 	}
 
-	newIDs := c.processItems(ctx, parsed.Items, f, nil, logger)
+	newIDs := c.processItems(ctx, parsed.Items, f, logger)
 
 	logger.Info("feed fetched", "total_items", len(parsed.Items), "new_items", len(newIDs))
 	return newIDs, nil
@@ -242,8 +242,8 @@ func (c *Collector) handleFeedResponse(ctx context.Context, resp *http.Response,
 	return parsed, nil
 }
 
-// processItems deduplicates, scores, and stores new feed items.
-func (c *Collector) processItems(ctx context.Context, items []*gofeed.Item, f *feed.Feed, keywords []string, logger *slog.Logger) []uuid.UUID {
+// processItems deduplicates and stores new feed items.
+func (c *Collector) processItems(ctx context.Context, items []*gofeed.Item, f *feed.Feed, logger *slog.Logger) []uuid.UUID {
 	var newIDs []uuid.UUID
 	for _, item := range items {
 		if item.Link == "" {
@@ -255,7 +255,7 @@ func (c *Collector) processItems(ctx context.Context, items []*gofeed.Item, f *f
 			continue
 		}
 
-		id := c.tryCreateItem(ctx, item, f, tags, keywords, logger)
+		id := c.tryCreateItem(ctx, item, f, logger)
 		if id != nil {
 			newIDs = append(newIDs, *id)
 		}
@@ -264,7 +264,7 @@ func (c *Collector) processItems(ctx context.Context, items []*gofeed.Item, f *f
 }
 
 // tryCreateItem attempts to create a single collected item, returning nil if skipped.
-func (c *Collector) tryCreateItem(ctx context.Context, item *gofeed.Item, f *feed.Feed, tags, keywords []string, logger *slog.Logger) *uuid.UUID {
+func (c *Collector) tryCreateItem(ctx context.Context, item *gofeed.Item, f *feed.Feed, logger *slog.Logger) *uuid.UUID {
 	urlHash, err := koopaurl.Hash(item.Link)
 	if err != nil {
 		logger.Warn("skipping item with unhashable url", "url", item.Link, "error", err)
@@ -280,15 +280,12 @@ func (c *Collector) tryCreateItem(ctx context.Context, item *gofeed.Item, f *fee
 
 	content := truncateUTF8(itemContent(item), maxContentLen)
 
-	score := Score(item.Title, content, tags, keywords)
-
 	cd, err := c.writer.CreateItem(ctx, &entry.CreateParams{
 		SourceURL:       item.Link,
 		Title:           item.Title,
 		OriginalContent: content,
 		URLHash:         urlHash,
 		FeedID:          &f.ID,
-		RelevanceScore:  float64(score),
 		PublishedAt:     item.PublishedParsed,
 	})
 	if err != nil {

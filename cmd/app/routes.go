@@ -315,7 +315,6 @@ func registerRoutes(
 	mux.Handle("GET /api/admin/knowledge/feed-entries", authMid(http.HandlerFunc(h.entry.List)))
 	mux.Handle("POST /api/admin/knowledge/feed-entries/{id}/curate", adminMid(http.HandlerFunc(h.entry.Curate)))
 	mux.Handle("POST /api/admin/knowledge/feed-entries/{id}/ignore", adminMid(http.HandlerFunc(h.entry.Ignore)))
-	mux.Handle("POST /api/admin/knowledge/feed-entries/{id}/feedback", adminMid(http.HandlerFunc(h.entry.SubmitFeedback)))
 
 	// --- Admin: System / Activity ---
 	// /activity is the domain-level audit feed; /activity/sessions surfaces

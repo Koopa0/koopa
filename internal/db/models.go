@@ -719,8 +719,6 @@ type FeedEntry struct {
 	Title string `json:"title"`
 	// RSS entry content/summary as delivered by the feed. Empty string when none.
 	OriginalContent string `json:"original_content"`
-	// Keyword-weighted relevance score in the closed interval [0.0, 1.0] — 0 = unscored/irrelevant, 1 = perfect match. Computed by the fetch pipeline. Display and filter thresholds (e.g. > 0.5) assume this scale.
-	RelevanceScore float64 `json:"relevance_score"`
 	// Curation lifecycle: unread → read → curated | ignored.
 	Status FeedEntryStatus `json:"status"`
 	// When curated into first-party content, references the contents row. SET NULL on content deletion. feed_entry → bookmark curation is not supported — use the bookmark UI directly.
@@ -729,10 +727,6 @@ type FeedEntry struct {
 	CollectedAt time.Time `json:"collected_at"`
 	// SHA256 hex of canonical source_url. Dedup identity. Computed in application code via internal/urlhash before INSERT.
 	UrlHash string `json:"url_hash"`
-	// Admin feedback on relevance scoring quality. Used to tune scoring.
-	UserFeedback *string `json:"user_feedback"`
-	// When feedback was given. NULL = no feedback.
-	FeedbackAt *time.Time `json:"feedback_at"`
 	// Source feed. SET NULL on feed deletion — entries retained for curation.
 	FeedID *uuid.UUID `json:"feed_id"`
 	// Original publication date from the feed. NULL if not provided.

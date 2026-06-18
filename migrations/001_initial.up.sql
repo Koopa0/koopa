@@ -733,19 +733,13 @@ CREATE TABLE feed_entries (
     source_url          TEXT NOT NULL,
     title               TEXT NOT NULL,
     original_content    TEXT NOT NULL DEFAULT '',
-    relevance_score     DOUBLE PRECISION NOT NULL DEFAULT 0
-                        CHECK (relevance_score >= 0 AND relevance_score <= 1),
     status              feed_entry_status NOT NULL DEFAULT 'unread',
     curated_content_id  UUID REFERENCES contents(id) ON DELETE SET NULL,
     collected_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
     url_hash            TEXT NOT NULL,
-    user_feedback       TEXT,
-    feedback_at         TIMESTAMPTZ,
     feed_id             UUID REFERENCES feeds(id) ON DELETE SET NULL,
     published_at        TIMESTAMPTZ,
 
-    CONSTRAINT chk_feedback_pair
-        CHECK ((user_feedback IS NULL) = (feedback_at IS NULL)),
     CONSTRAINT chk_feed_entry_url_hash_format
         CHECK (url_hash ~ '^[a-f0-9]{64}$'),
     CONSTRAINT chk_feed_entry_curated_status
@@ -758,21 +752,16 @@ COMMENT ON COLUMN feed_entries.feed_id IS 'Source feed. SET NULL on feed deletio
 COMMENT ON COLUMN feed_entries.title IS 'Article title from the RSS feed. Raw, not cleaned.';
 COMMENT ON COLUMN feed_entries.original_content IS 'RSS entry content/summary as delivered by the feed. Empty string when none.';
 COMMENT ON COLUMN feed_entries.source_url IS 'Original article URL.';
-COMMENT ON COLUMN feed_entries.relevance_score IS 'Keyword-weighted relevance score in the closed interval [0.0, 1.0] — 0 = unscored/irrelevant, 1 = perfect match. Computed by the fetch pipeline. Display and filter thresholds (e.g. > 0.5) assume this scale.';
 COMMENT ON COLUMN feed_entries.status IS 'Curation lifecycle: unread → read → curated | ignored.';
 COMMENT ON COLUMN feed_entries.curated_content_id IS 'When curated into first-party content, references the contents row. SET NULL on content deletion. feed_entry → bookmark curation is not supported — use the bookmark UI directly.';
 COMMENT ON COLUMN feed_entries.collected_at IS 'When the pipeline first fetched this entry.';
-COMMENT ON COLUMN feed_entries.user_feedback IS 'Admin feedback on relevance scoring quality. Used to tune scoring.';
-COMMENT ON COLUMN feed_entries.feedback_at IS 'When feedback was given. NULL = no feedback.';
 COMMENT ON COLUMN feed_entries.published_at IS 'Original publication date from the feed. NULL if not provided.';
 
 CREATE INDEX idx_feed_entries_status ON feed_entries(status);
-CREATE INDEX idx_feed_entries_relevance ON feed_entries(relevance_score DESC);
 CREATE UNIQUE INDEX idx_feed_entries_url_hash ON feed_entries (url_hash);
 CREATE INDEX idx_feed_entries_feed_id ON feed_entries (feed_id) WHERE feed_id IS NOT NULL;
 CREATE INDEX idx_feed_entries_collected_at ON feed_entries (collected_at DESC);
 CREATE INDEX idx_feed_entries_unread_at ON feed_entries (collected_at DESC) WHERE status = 'unread';
-CREATE INDEX idx_feed_entries_unread_relevance ON feed_entries (relevance_score DESC) WHERE status = 'unread';
 CREATE INDEX idx_feed_entries_unread_recent ON feed_entries (feed_id, collected_at DESC) WHERE status = 'unread';
 
 CREATE INDEX idx_feeds_high_priority ON feeds(id) WHERE priority = 'high';

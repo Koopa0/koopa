@@ -2316,11 +2316,11 @@ func (q *Queries) CreateFeed(ctx context.Context, arg CreateFeedParams) (Feed, e
 }
 
 const createFeedEntry = `-- name: CreateFeedEntry :one
-INSERT INTO feed_entries (source_url, title, original_content, url_hash, feed_id, relevance_score, published_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
+INSERT INTO feed_entries (source_url, title, original_content, url_hash, feed_id, published_at)
+VALUES ($1, $2, $3, $4, $5, $6)
 RETURNING id, source_url, title, original_content,
-          relevance_score, status, curated_content_id, collected_at,
-          url_hash, user_feedback, feedback_at, feed_id, published_at
+          status, curated_content_id, collected_at,
+          url_hash, feed_id, published_at
 `
 
 type CreateFeedEntryParams struct {
@@ -2329,7 +2329,6 @@ type CreateFeedEntryParams struct {
 	OriginalContent string     `json:"original_content"`
 	UrlHash         string     `json:"url_hash"`
 	FeedID          *uuid.UUID `json:"feed_id"`
-	RelevanceScore  float64    `json:"relevance_score"`
 	PublishedAt     *time.Time `json:"published_at"`
 }
 
@@ -2340,7 +2339,6 @@ func (q *Queries) CreateFeedEntry(ctx context.Context, arg CreateFeedEntryParams
 		arg.OriginalContent,
 		arg.UrlHash,
 		arg.FeedID,
-		arg.RelevanceScore,
 		arg.PublishedAt,
 	)
 	var i FeedEntry
@@ -2349,13 +2347,10 @@ func (q *Queries) CreateFeedEntry(ctx context.Context, arg CreateFeedEntryParams
 		&i.SourceUrl,
 		&i.Title,
 		&i.OriginalContent,
-		&i.RelevanceScore,
 		&i.Status,
 		&i.CuratedContentID,
 		&i.CollectedAt,
 		&i.UrlHash,
-		&i.UserFeedback,
-		&i.FeedbackAt,
 		&i.FeedID,
 		&i.PublishedAt,
 	)
@@ -3156,8 +3151,8 @@ const curateFeedEntry = `-- name: CurateFeedEntry :one
 UPDATE feed_entries SET status = 'curated', curated_content_id = $2
 WHERE id = $1
 RETURNING id, source_url, title, original_content,
-          relevance_score, status, curated_content_id, collected_at,
-          url_hash, user_feedback, feedback_at, feed_id, published_at
+          status, curated_content_id, collected_at,
+          url_hash, feed_id, published_at
 `
 
 type CurateFeedEntryParams struct {
@@ -3173,13 +3168,10 @@ func (q *Queries) CurateFeedEntry(ctx context.Context, arg CurateFeedEntryParams
 		&i.SourceUrl,
 		&i.Title,
 		&i.OriginalContent,
-		&i.RelevanceScore,
 		&i.Status,
 		&i.CuratedContentID,
 		&i.CollectedAt,
 		&i.UrlHash,
-		&i.UserFeedback,
-		&i.FeedbackAt,
 		&i.FeedID,
 		&i.PublishedAt,
 	)
@@ -4159,76 +4151,6 @@ func (q *Queries) FeedByID(ctx context.Context, id uuid.UUID) (FeedByIDRow, erro
 	return i, err
 }
 
-const feedEntriesByRelevance = `-- name: FeedEntriesByRelevance :many
-SELECT cd.id, cd.source_url, cd.title, cd.original_content,
-       cd.relevance_score, cd.status, cd.curated_content_id, cd.collected_at,
-       cd.url_hash, cd.user_feedback, cd.feedback_at, cd.feed_id, cd.published_at,
-       COALESCE(f.name, '') AS feed_name
-FROM feed_entries cd
-LEFT JOIN feeds f ON cd.feed_id = f.id
-WHERE ($3::feed_entry_status IS NULL OR cd.status = $3)
-ORDER BY cd.relevance_score DESC, COALESCE(cd.published_at, cd.collected_at) DESC
-LIMIT $1 OFFSET $2
-`
-
-type FeedEntriesByRelevanceParams struct {
-	Limit  int32               `json:"limit"`
-	Offset int32               `json:"offset"`
-	Status NullFeedEntryStatus `json:"status"`
-}
-
-type FeedEntriesByRelevanceRow struct {
-	ID               uuid.UUID       `json:"id"`
-	SourceUrl        string          `json:"source_url"`
-	Title            string          `json:"title"`
-	OriginalContent  string          `json:"original_content"`
-	RelevanceScore   float64         `json:"relevance_score"`
-	Status           FeedEntryStatus `json:"status"`
-	CuratedContentID *uuid.UUID      `json:"curated_content_id"`
-	CollectedAt      time.Time       `json:"collected_at"`
-	UrlHash          string          `json:"url_hash"`
-	UserFeedback     *string         `json:"user_feedback"`
-	FeedbackAt       *time.Time      `json:"feedback_at"`
-	FeedID           *uuid.UUID      `json:"feed_id"`
-	PublishedAt      *time.Time      `json:"published_at"`
-	FeedName         string          `json:"feed_name"`
-}
-
-func (q *Queries) FeedEntriesByRelevance(ctx context.Context, arg FeedEntriesByRelevanceParams) ([]FeedEntriesByRelevanceRow, error) {
-	rows, err := q.db.Query(ctx, feedEntriesByRelevance, arg.Limit, arg.Offset, arg.Status)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []FeedEntriesByRelevanceRow{}
-	for rows.Next() {
-		var i FeedEntriesByRelevanceRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.SourceUrl,
-			&i.Title,
-			&i.OriginalContent,
-			&i.RelevanceScore,
-			&i.Status,
-			&i.CuratedContentID,
-			&i.CollectedAt,
-			&i.UrlHash,
-			&i.UserFeedback,
-			&i.FeedbackAt,
-			&i.FeedID,
-			&i.PublishedAt,
-			&i.FeedName,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const feedEntriesCount = `-- name: FeedEntriesCount :one
 SELECT COUNT(*) FROM feed_entries
 WHERE ($1::feed_entry_status IS NULL OR status = $1)
@@ -4243,8 +4165,8 @@ func (q *Queries) FeedEntriesCount(ctx context.Context, status NullFeedEntryStat
 
 const feedEntriesList = `-- name: FeedEntriesList :many
 SELECT cd.id, cd.source_url, cd.title, cd.original_content,
-       cd.relevance_score, cd.status, cd.curated_content_id, cd.collected_at,
-       cd.url_hash, cd.user_feedback, cd.feedback_at, cd.feed_id, cd.published_at,
+       cd.status, cd.curated_content_id, cd.collected_at,
+       cd.url_hash, cd.feed_id, cd.published_at,
        COALESCE(f.name, '') AS feed_name
 FROM feed_entries cd
 LEFT JOIN feeds f ON cd.feed_id = f.id
@@ -4264,13 +4186,10 @@ type FeedEntriesListRow struct {
 	SourceUrl        string          `json:"source_url"`
 	Title            string          `json:"title"`
 	OriginalContent  string          `json:"original_content"`
-	RelevanceScore   float64         `json:"relevance_score"`
 	Status           FeedEntryStatus `json:"status"`
 	CuratedContentID *uuid.UUID      `json:"curated_content_id"`
 	CollectedAt      time.Time       `json:"collected_at"`
 	UrlHash          string          `json:"url_hash"`
-	UserFeedback     *string         `json:"user_feedback"`
-	FeedbackAt       *time.Time      `json:"feedback_at"`
 	FeedID           *uuid.UUID      `json:"feed_id"`
 	PublishedAt      *time.Time      `json:"published_at"`
 	FeedName         string          `json:"feed_name"`
@@ -4290,13 +4209,10 @@ func (q *Queries) FeedEntriesList(ctx context.Context, arg FeedEntriesListParams
 			&i.SourceUrl,
 			&i.Title,
 			&i.OriginalContent,
-			&i.RelevanceScore,
 			&i.Status,
 			&i.CuratedContentID,
 			&i.CollectedAt,
 			&i.UrlHash,
-			&i.UserFeedback,
-			&i.FeedbackAt,
 			&i.FeedID,
 			&i.PublishedAt,
 			&i.FeedName,
@@ -4313,8 +4229,8 @@ func (q *Queries) FeedEntriesList(ctx context.Context, arg FeedEntriesListParams
 
 const feedEntryByID = `-- name: FeedEntryByID :one
 SELECT cd.id, cd.source_url, cd.title, cd.original_content,
-       cd.relevance_score, cd.status, cd.curated_content_id, cd.collected_at,
-       cd.url_hash, cd.user_feedback, cd.feedback_at, cd.feed_id, cd.published_at,
+       cd.status, cd.curated_content_id, cd.collected_at,
+       cd.url_hash, cd.feed_id, cd.published_at,
        COALESCE(f.name, '') AS feed_name
 FROM feed_entries cd
 LEFT JOIN feeds f ON cd.feed_id = f.id
@@ -4326,13 +4242,10 @@ type FeedEntryByIDRow struct {
 	SourceUrl        string          `json:"source_url"`
 	Title            string          `json:"title"`
 	OriginalContent  string          `json:"original_content"`
-	RelevanceScore   float64         `json:"relevance_score"`
 	Status           FeedEntryStatus `json:"status"`
 	CuratedContentID *uuid.UUID      `json:"curated_content_id"`
 	CollectedAt      time.Time       `json:"collected_at"`
 	UrlHash          string          `json:"url_hash"`
-	UserFeedback     *string         `json:"user_feedback"`
-	FeedbackAt       *time.Time      `json:"feedback_at"`
 	FeedID           *uuid.UUID      `json:"feed_id"`
 	PublishedAt      *time.Time      `json:"published_at"`
 	FeedName         string          `json:"feed_name"`
@@ -4346,13 +4259,10 @@ func (q *Queries) FeedEntryByID(ctx context.Context, id uuid.UUID) (FeedEntryByI
 		&i.SourceUrl,
 		&i.Title,
 		&i.OriginalContent,
-		&i.RelevanceScore,
 		&i.Status,
 		&i.CuratedContentID,
 		&i.CollectedAt,
 		&i.UrlHash,
-		&i.UserFeedback,
-		&i.FeedbackAt,
 		&i.FeedID,
 		&i.PublishedAt,
 		&i.FeedName,
@@ -4362,8 +4272,8 @@ func (q *Queries) FeedEntryByID(ctx context.Context, id uuid.UUID) (FeedEntryByI
 
 const feedEntryByURLHash = `-- name: FeedEntryByURLHash :one
 SELECT cd.id, cd.source_url, cd.title, cd.original_content,
-       cd.relevance_score, cd.status, cd.curated_content_id, cd.collected_at,
-       cd.url_hash, cd.user_feedback, cd.feedback_at, cd.feed_id, cd.published_at,
+       cd.status, cd.curated_content_id, cd.collected_at,
+       cd.url_hash, cd.feed_id, cd.published_at,
        COALESCE(f.name, '') AS feed_name
 FROM feed_entries cd
 LEFT JOIN feeds f ON cd.feed_id = f.id
@@ -4375,13 +4285,10 @@ type FeedEntryByURLHashRow struct {
 	SourceUrl        string          `json:"source_url"`
 	Title            string          `json:"title"`
 	OriginalContent  string          `json:"original_content"`
-	RelevanceScore   float64         `json:"relevance_score"`
 	Status           FeedEntryStatus `json:"status"`
 	CuratedContentID *uuid.UUID      `json:"curated_content_id"`
 	CollectedAt      time.Time       `json:"collected_at"`
 	UrlHash          string          `json:"url_hash"`
-	UserFeedback     *string         `json:"user_feedback"`
-	FeedbackAt       *time.Time      `json:"feedback_at"`
 	FeedID           *uuid.UUID      `json:"feed_id"`
 	PublishedAt      *time.Time      `json:"published_at"`
 	FeedName         string          `json:"feed_name"`
@@ -4395,13 +4302,10 @@ func (q *Queries) FeedEntryByURLHash(ctx context.Context, urlHash string) (FeedE
 		&i.SourceUrl,
 		&i.Title,
 		&i.OriginalContent,
-		&i.RelevanceScore,
 		&i.Status,
 		&i.CuratedContentID,
 		&i.CollectedAt,
 		&i.UrlHash,
-		&i.UserFeedback,
-		&i.FeedbackAt,
 		&i.FeedID,
 		&i.PublishedAt,
 		&i.FeedName,
@@ -4867,8 +4771,8 @@ func (q *Queries) GoalsByOptionalStatus(ctx context.Context, status *string) ([]
 
 const highPriorityRecentFeedEntries = `-- name: HighPriorityRecentFeedEntries :many
 SELECT cd.id, cd.source_url, cd.title, cd.original_content,
-       cd.relevance_score, cd.status, cd.curated_content_id, cd.collected_at,
-       cd.url_hash, cd.user_feedback, cd.feedback_at, cd.feed_id, cd.published_at,
+       cd.status, cd.curated_content_id, cd.collected_at,
+       cd.url_hash, cd.feed_id, cd.published_at,
        COALESCE(f.name, '') AS feed_name
 FROM feed_entries cd
 JOIN feeds f ON cd.feed_id = f.id
@@ -4889,13 +4793,10 @@ type HighPriorityRecentFeedEntriesRow struct {
 	SourceUrl        string          `json:"source_url"`
 	Title            string          `json:"title"`
 	OriginalContent  string          `json:"original_content"`
-	RelevanceScore   float64         `json:"relevance_score"`
 	Status           FeedEntryStatus `json:"status"`
 	CuratedContentID *uuid.UUID      `json:"curated_content_id"`
 	CollectedAt      time.Time       `json:"collected_at"`
 	UrlHash          string          `json:"url_hash"`
-	UserFeedback     *string         `json:"user_feedback"`
-	FeedbackAt       *time.Time      `json:"feedback_at"`
 	FeedID           *uuid.UUID      `json:"feed_id"`
 	PublishedAt      *time.Time      `json:"published_at"`
 	FeedName         string          `json:"feed_name"`
@@ -4916,13 +4817,10 @@ func (q *Queries) HighPriorityRecentFeedEntries(ctx context.Context, arg HighPri
 			&i.SourceUrl,
 			&i.Title,
 			&i.OriginalContent,
-			&i.RelevanceScore,
 			&i.Status,
 			&i.CuratedContentID,
 			&i.CollectedAt,
 			&i.UrlHash,
-			&i.UserFeedback,
-			&i.FeedbackAt,
 			&i.FeedID,
 			&i.PublishedAt,
 			&i.FeedName,
@@ -5666,8 +5564,8 @@ func (q *Queries) LastEndedSession(ctx context.Context) (LearningSession, error)
 
 const latestFeedEntries = `-- name: LatestFeedEntries :many
 SELECT cd.id, cd.source_url, cd.title, cd.original_content,
-       cd.relevance_score, cd.status, cd.curated_content_id, cd.collected_at,
-       cd.url_hash, cd.user_feedback, cd.feedback_at, cd.feed_id, cd.published_at,
+       cd.status, cd.curated_content_id, cd.collected_at,
+       cd.url_hash, cd.feed_id, cd.published_at,
        COALESCE(f.name, '') AS feed_name
 FROM feed_entries cd
 LEFT JOIN feeds f ON cd.feed_id = f.id
@@ -5686,13 +5584,10 @@ type LatestFeedEntriesRow struct {
 	SourceUrl        string          `json:"source_url"`
 	Title            string          `json:"title"`
 	OriginalContent  string          `json:"original_content"`
-	RelevanceScore   float64         `json:"relevance_score"`
 	Status           FeedEntryStatus `json:"status"`
 	CuratedContentID *uuid.UUID      `json:"curated_content_id"`
 	CollectedAt      time.Time       `json:"collected_at"`
 	UrlHash          string          `json:"url_hash"`
-	UserFeedback     *string         `json:"user_feedback"`
-	FeedbackAt       *time.Time      `json:"feedback_at"`
 	FeedID           *uuid.UUID      `json:"feed_id"`
 	PublishedAt      *time.Time      `json:"published_at"`
 	FeedName         string          `json:"feed_name"`
@@ -5714,13 +5609,10 @@ func (q *Queries) LatestFeedEntries(ctx context.Context, arg LatestFeedEntriesPa
 			&i.SourceUrl,
 			&i.Title,
 			&i.OriginalContent,
-			&i.RelevanceScore,
 			&i.Status,
 			&i.CuratedContentID,
 			&i.CollectedAt,
 			&i.UrlHash,
-			&i.UserFeedback,
-			&i.FeedbackAt,
 			&i.FeedID,
 			&i.PublishedAt,
 			&i.FeedName,
@@ -5737,8 +5629,8 @@ func (q *Queries) LatestFeedEntries(ctx context.Context, arg LatestFeedEntriesPa
 
 const latestFeedEntriesByRecency = `-- name: LatestFeedEntriesByRecency :many
 SELECT cd.id, cd.source_url, cd.title, cd.original_content,
-       cd.relevance_score, cd.status, cd.curated_content_id, cd.collected_at,
-       cd.url_hash, cd.user_feedback, cd.feedback_at, cd.feed_id, cd.published_at,
+       cd.status, cd.curated_content_id, cd.collected_at,
+       cd.url_hash, cd.feed_id, cd.published_at,
        COALESCE(f.name, '') AS feed_name
 FROM feed_entries cd
 LEFT JOIN feeds f ON cd.feed_id = f.id
@@ -5757,13 +5649,10 @@ type LatestFeedEntriesByRecencyRow struct {
 	SourceUrl        string          `json:"source_url"`
 	Title            string          `json:"title"`
 	OriginalContent  string          `json:"original_content"`
-	RelevanceScore   float64         `json:"relevance_score"`
 	Status           FeedEntryStatus `json:"status"`
 	CuratedContentID *uuid.UUID      `json:"curated_content_id"`
 	CollectedAt      time.Time       `json:"collected_at"`
 	UrlHash          string          `json:"url_hash"`
-	UserFeedback     *string         `json:"user_feedback"`
-	FeedbackAt       *time.Time      `json:"feedback_at"`
 	FeedID           *uuid.UUID      `json:"feed_id"`
 	PublishedAt      *time.Time      `json:"published_at"`
 	FeedName         string          `json:"feed_name"`
@@ -5784,13 +5673,10 @@ func (q *Queries) LatestFeedEntriesByRecency(ctx context.Context, arg LatestFeed
 			&i.SourceUrl,
 			&i.Title,
 			&i.OriginalContent,
-			&i.RelevanceScore,
 			&i.Status,
 			&i.CuratedContentID,
 			&i.CollectedAt,
 			&i.UrlHash,
-			&i.UserFeedback,
-			&i.FeedbackAt,
 			&i.FeedID,
 			&i.PublishedAt,
 			&i.FeedName,
@@ -8486,8 +8372,8 @@ func (q *Queries) RecentAttemptsByConceptSlim(ctx context.Context, arg RecentAtt
 
 const recentFeedEntries = `-- name: RecentFeedEntries :many
 SELECT cd.id, cd.source_url, cd.title, cd.original_content,
-       cd.relevance_score, cd.status, cd.curated_content_id, cd.collected_at,
-       cd.url_hash, cd.user_feedback, cd.feedback_at, cd.feed_id, cd.published_at,
+       cd.status, cd.curated_content_id, cd.collected_at,
+       cd.url_hash, cd.feed_id, cd.published_at,
        COALESCE(f.name, '') AS feed_name
 FROM feed_entries cd
 LEFT JOIN feeds f ON cd.feed_id = f.id
@@ -8507,13 +8393,10 @@ type RecentFeedEntriesRow struct {
 	SourceUrl        string          `json:"source_url"`
 	Title            string          `json:"title"`
 	OriginalContent  string          `json:"original_content"`
-	RelevanceScore   float64         `json:"relevance_score"`
 	Status           FeedEntryStatus `json:"status"`
 	CuratedContentID *uuid.UUID      `json:"curated_content_id"`
 	CollectedAt      time.Time       `json:"collected_at"`
 	UrlHash          string          `json:"url_hash"`
-	UserFeedback     *string         `json:"user_feedback"`
-	FeedbackAt       *time.Time      `json:"feedback_at"`
 	FeedID           *uuid.UUID      `json:"feed_id"`
 	PublishedAt      *time.Time      `json:"published_at"`
 	FeedName         string          `json:"feed_name"`
@@ -8533,13 +8416,10 @@ func (q *Queries) RecentFeedEntries(ctx context.Context, arg RecentFeedEntriesPa
 			&i.SourceUrl,
 			&i.Title,
 			&i.OriginalContent,
-			&i.RelevanceScore,
 			&i.Status,
 			&i.CuratedContentID,
 			&i.CollectedAt,
 			&i.UrlHash,
-			&i.UserFeedback,
-			&i.FeedbackAt,
 			&i.FeedID,
 			&i.PublishedAt,
 			&i.FeedName,
@@ -11441,8 +11321,8 @@ func (q *Queries) ToggleMilestone(ctx context.Context, id uuid.UUID) (ToggleMile
 
 const topUnreadFeedEntriesRecent = `-- name: TopUnreadFeedEntriesRecent :many
 SELECT cd.id, cd.source_url, cd.title, cd.original_content,
-       cd.relevance_score, cd.status, cd.curated_content_id, cd.collected_at,
-       cd.url_hash, cd.user_feedback, cd.feedback_at, cd.feed_id, cd.published_at,
+       cd.status, cd.curated_content_id, cd.collected_at,
+       cd.url_hash, cd.feed_id, cd.published_at,
        COALESCE(f.name, '') AS feed_name
 FROM feed_entries cd
 LEFT JOIN feeds f ON cd.feed_id = f.id
@@ -11462,21 +11342,16 @@ type TopUnreadFeedEntriesRecentRow struct {
 	SourceUrl        string          `json:"source_url"`
 	Title            string          `json:"title"`
 	OriginalContent  string          `json:"original_content"`
-	RelevanceScore   float64         `json:"relevance_score"`
 	Status           FeedEntryStatus `json:"status"`
 	CuratedContentID *uuid.UUID      `json:"curated_content_id"`
 	CollectedAt      time.Time       `json:"collected_at"`
 	UrlHash          string          `json:"url_hash"`
-	UserFeedback     *string         `json:"user_feedback"`
-	FeedbackAt       *time.Time      `json:"feedback_at"`
 	FeedID           *uuid.UUID      `json:"feed_id"`
 	PublishedAt      *time.Time      `json:"published_at"`
 	FeedName         string          `json:"feed_name"`
 }
 
-// Get top unread collected data since a given time.
-// Score filter removed: scoring pipeline not yet active, all items have score=0.
-// When scoring is implemented, restore relevance_score > 0.5 threshold.
+// Get unread collected data since a given time.
 func (q *Queries) TopUnreadFeedEntriesRecent(ctx context.Context, arg TopUnreadFeedEntriesRecentParams) ([]TopUnreadFeedEntriesRecentRow, error) {
 	rows, err := q.db.Query(ctx, topUnreadFeedEntriesRecent, arg.Since, arg.MaxResults)
 	if err != nil {
@@ -11491,13 +11366,10 @@ func (q *Queries) TopUnreadFeedEntriesRecent(ctx context.Context, arg TopUnreadF
 			&i.SourceUrl,
 			&i.Title,
 			&i.OriginalContent,
-			&i.RelevanceScore,
 			&i.Status,
 			&i.CuratedContentID,
 			&i.CollectedAt,
 			&i.UrlHash,
-			&i.UserFeedback,
-			&i.FeedbackAt,
 			&i.FeedID,
 			&i.PublishedAt,
 			&i.FeedName,
@@ -11868,20 +11740,6 @@ func (q *Queries) UpdateFeed(ctx context.Context, arg UpdateFeedParams) (Feed, e
 		&i.UpdatedAt,
 	)
 	return i, err
-}
-
-const updateFeedEntryFeedback = `-- name: UpdateFeedEntryFeedback :exec
-UPDATE feed_entries SET user_feedback = $2, feedback_at = now() WHERE id = $1
-`
-
-type UpdateFeedEntryFeedbackParams struct {
-	ID           uuid.UUID `json:"id"`
-	UserFeedback *string   `json:"user_feedback"`
-}
-
-func (q *Queries) UpdateFeedEntryFeedback(ctx context.Context, arg UpdateFeedEntryFeedbackParams) error {
-	_, err := q.db.Exec(ctx, updateFeedEntryFeedback, arg.ID, arg.UserFeedback)
-	return err
 }
 
 const updateGoal = `-- name: UpdateGoal :one

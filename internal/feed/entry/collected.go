@@ -1,7 +1,7 @@
 // Copyright 2026 Koopa. All rights reserved.
 
 // Package entry manages externally collected data items from RSS feeds
-// and other sources, including curation and feedback.
+// and other sources, including curation.
 package entry
 
 import (
@@ -35,27 +35,13 @@ type Item struct {
 	FeedName         string     `json:"feed_name"`
 	Title            string     `json:"title"`
 	OriginalContent  *string    `json:"original_content,omitempty"`
-	RelevanceScore   float64    `json:"relevance_score"`
 	Status           Status     `json:"status"`
 	CuratedContentID *uuid.UUID `json:"curated_content_id,omitempty"`
 	CollectedAt      time.Time  `json:"collected_at"`
 	PublishedAt      *time.Time `json:"published_at,omitempty"`
 	URLHash          string     `json:"url_hash"`
-	UserFeedback     *string    `json:"user_feedback,omitempty"`
-	FeedbackAt       *time.Time `json:"feedback_at,omitempty"`
 	FeedID           *uuid.UUID `json:"feed_id,omitempty"`
 }
-
-// Feedback represents user feedback on collected data.
-type Feedback string
-
-const (
-	// FeedbackUp indicates positive feedback.
-	FeedbackUp Feedback = "up"
-
-	// FeedbackDown indicates negative feedback.
-	FeedbackDown Feedback = "down"
-)
 
 // CreateParams are the parameters for creating collected data.
 type CreateParams struct {
@@ -64,7 +50,6 @@ type CreateParams struct {
 	OriginalContent string     `json:"original_content"`
 	URLHash         string     `json:"url_hash"`
 	FeedID          *uuid.UUID `json:"feed_id,omitempty"`
-	RelevanceScore  float64    `json:"relevance_score"`
 	PublishedAt     *time.Time `json:"published_at,omitempty"`
 }
 
@@ -73,7 +58,6 @@ type Filter struct {
 	Page    int
 	PerPage int
 	Status  *string
-	Sort    string // "" or "relevance"
 }
 
 var (
