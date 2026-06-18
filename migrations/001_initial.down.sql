@@ -66,6 +66,9 @@ DROP TABLE IF EXISTS learning_target_concepts;
 DROP TABLE IF EXISTS learning_targets;
 DROP TABLE IF EXISTS content_concepts;
 DROP TABLE IF EXISTS concepts;
+-- observation_categories: FK target of learning_attempt_observations.category
+-- (dropped above), FK source onto learning_domains (dropped below).
+DROP TABLE IF EXISTS observation_categories;
 DROP TABLE IF EXISTS learning_domains;
 
 -- Project aliases
