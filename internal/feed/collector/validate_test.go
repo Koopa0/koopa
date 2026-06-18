@@ -26,16 +26,17 @@ func TestValidateFeedURL(t *testing.T) {
 		{name: "gopher scheme", input: "gopher://example.com/feed", wantErr: true},
 		{name: "javascript scheme", input: "javascript:alert(1)", wantErr: true},
 		{name: "data URI", input: "data:text/xml,<feed/>", wantErr: true},
-		// SSRF: internal/private network hosts
-		{name: "localhost", input: "http://localhost/feed", wantErr: true},
-		{name: "127.0.0.1", input: "http://127.0.0.1/feed", wantErr: true},
-		{name: "IPv6 loopback", input: "http://[::1]/feed", wantErr: true},
-		{name: "AWS metadata", input: "http://169.254.169.254/latest/meta-data/", wantErr: true},
-		{name: "GCP metadata", input: "http://metadata.google.internal/computeMetadata/", wantErr: true},
-		{name: "private 10.x", input: "http://10.0.0.1/feed", wantErr: true},
-		{name: "private 192.168.x", input: "http://192.168.1.1/feed", wantErr: true},
-		{name: "private 172.16.x", input: "http://172.16.0.1/feed", wantErr: true},
-		{name: "0.0.0.0", input: "http://0.0.0.0/feed", wantErr: true},
+		// userinfo can disguise the real host (http://trusted@evil/) — rejected.
+		{name: "userinfo", input: "http://trusted@evil.example/feed", wantErr: true},
+
+		// Internal/private-network hosts are intentionally NOT rejected here.
+		// SSRF is enforced at connect time by guardedDialContext (covering
+		// alternate IP encodings, IPv6, DNS rebinding, and redirect targets a
+		// hostname-string check cannot). These pass the cheap pre-flight and
+		// are refused at dial — see TestIsInternalIP and
+		// TestGuardedDialContext_BlocksLoopback in ssrf_test.go.
+		{name: "loopback passes pre-flight (blocked at dial)", input: "http://127.0.0.1/feed", wantErr: false},
+		{name: "metadata host passes pre-flight (blocked at dial)", input: "http://169.254.169.254/latest/", wantErr: false},
 
 		// malformed URLs
 		{name: "empty string", input: "", wantErr: true},
