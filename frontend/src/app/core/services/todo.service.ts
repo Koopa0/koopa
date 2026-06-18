@@ -4,7 +4,6 @@ import { ApiService } from './api.service';
 import type {
   EnergyLevel,
   PriorityLevel,
-  TodoDetail,
   TodoState,
 } from '../models/workbench.model';
 
@@ -127,11 +126,6 @@ export interface TodoUpdateRequest {
 @Injectable({ providedIn: 'root' })
 export class TodoService {
   private readonly api = inject(ApiService);
-
-  /** Single-todo detail for the inspector. */
-  get(id: string): Observable<TodoDetail> {
-    return this.api.getData<TodoDetail>(`/api/admin/commitment/todos/${id}`);
-  }
 
   list(query: TodoListQuery = {}): Observable<TodoRow[]> {
     const params: Record<string, string> = {};

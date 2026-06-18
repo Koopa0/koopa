@@ -1,6 +1,5 @@
 import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
 import {
-  ActivatedRoute,
   NavigationEnd,
   Router,
   RouterLink,
@@ -13,8 +12,6 @@ import { Accessibility, LogOut, LucideAngularModule } from 'lucide-angular';
 import { AuthService } from '../../core/services/auth.service';
 import { KeyboardShortcutsService } from '../../core/services/keyboard-shortcuts.service';
 import { ToastComponent } from '../../shared/toast/toast.component';
-import { InspectorService } from '../inspector/inspector.service';
-import { InspectorPanelComponent } from '../inspector/inspector-panel.component';
 import { AdminTopbarComponent } from './admin-topbar.component';
 import { ADMIN_NAV, type AdminNavItem } from './admin-nav.config';
 import { AdminNavCountsService } from './admin-nav-counts.service';
@@ -39,7 +36,6 @@ import { AdminNavCountsService } from './admin-nav-counts.service';
     RouterLinkActive,
     LucideAngularModule,
     ToastComponent,
-    InspectorPanelComponent,
     AdminTopbarComponent,
   ],
   templateUrl: './admin-layout.html',
@@ -48,9 +44,7 @@ import { AdminNavCountsService } from './admin-nav-counts.service';
 })
 export class AdminLayoutComponent {
   private readonly router = inject(Router);
-  private readonly route = inject(ActivatedRoute);
   private readonly authService = inject(AuthService);
-  private readonly inspector = inject(InspectorService);
   private readonly keyboardShortcuts = inject(KeyboardShortcutsService);
   private readonly navCounts = inject(AdminNavCountsService);
 
@@ -71,14 +65,6 @@ export class AdminLayoutComponent {
   protected readonly AccessibilityIcon = Accessibility;
 
   constructor() {
-    // Inspector side panel is still used by some list pages in transit.
-    // Sync `?inspect=` query param here so share-links keep working; new
-    // surfaces should use route navigation instead.
-    // TODO: remove once all surfaces use route navigation.
-    this.route.queryParamMap.pipe(takeUntilDestroyed()).subscribe((params) => {
-      this.inspector.syncFromUrl(params.get('inspect'));
-    });
-
     // Refresh nav counts after every successful navigation. A user
     // publishing content or replying to a task will almost always
     // navigate afterwards, so this catches post-mutation staleness

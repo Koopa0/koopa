@@ -242,7 +242,7 @@ export interface JudgmentQueueItem {
 }
 
 // ============================================================
-// Todo Inspector — matches GET /api/admin/commitment/todos/{id} response.
+// Todo — shared enums (todo list / plan / detail views).
 // ============================================================
 
 export type TodoState = 'inbox' | 'todo' | 'in_progress' | 'done' | 'someday';
@@ -250,179 +250,10 @@ export type TodoState = 'inbox' | 'todo' | 'in_progress' | 'done' | 'someday';
 export type EnergyLevel = 'low' | 'medium' | 'high';
 export type PriorityLevel = 'low' | 'medium' | 'high';
 
-/**
- * Todo Inspector detail — v1 brief shape.
- * See: frontend/docs/inspector-design/todo-inspector.md
- *
- * v1 vs v0 (template-copy era) deltas:
- * - +created_by — surface who put this in inbox (≠ assignee = delegation signal)
- * - +recent_skip_count_30d — health signal for recurring todos (todo_skips table)
- */
-export interface TodoDetail {
-  id: string;
-  title: string;
-  state: TodoState;
-  description: string;
-  due?: string | null;
-  energy?: EnergyLevel | null;
-  priority?: PriorityLevel | null;
-  recur_interval?: number | null;
-  recur_unit?: string | null;
-  completed_at?: string | null;
-  project_id?: string | null;
-  project_title: string;
-  project_slug: string;
-  assignee: string;
-  /** Who put this todo into the system. ≠ assignee signals delegation. */
-  created_by: string;
-  /** Count of todo_skips rows in last 30 days. Only set when recur_interval IS NOT NULL. */
-  recent_skip_count_30d?: number | null;
-  created_at: string;
-  updated_at: string;
-}
-
 // ============================================================
-// Concept Inspector — matches GET /api/admin/learning/concepts/{id} response.
+// Concept — shared mastery / observation enums.
 // ============================================================
 
 export type MasteryStage = 'developing' | 'struggling' | 'solid';
 export type ObservationSignal = 'weakness' | 'improvement' | 'mastery';
 export type ObservationSeverity = 'critical' | 'moderate' | 'minor';
-
-/**
- * Concept Inspector detail. `low_confidence_observations` stays in a
- * `<details>` progressive disclosure — confidence is a read-time
- * label, never a write-time gate. `recent_attempts` caps at 5.
- */
-export interface ConceptDetail {
-  id: string;
-  slug: string;
-  name: string;
-  domain: string;
-  kind: string;
-  description: string;
-  created_at: string;
-  mastery_stage: MasteryStage;
-  mastery_counts: {
-    weakness: number;
-    improvement: number;
-    mastery: number;
-    total: number;
-  };
-  recent_attempts: ConceptAttempt[]; // top 5
-  recent_observations: ConceptObservation[]; // high-confidence only
-
-  // NEW v1
-  parent_concept?: { id: string; slug: string; name: string } | null;
-  low_confidence_count: number;
-  low_confidence_observations: ConceptObservation[];
-  targets_exercising_count: number;
-}
-
-export interface ConceptAttempt {
-  id: string;
-  outcome: string;
-  duration_minutes?: number | null;
-  attempted_at: string;
-  target_title: string;
-}
-
-export interface ConceptObservation {
-  id: string;
-  signal_type: ObservationSignal;
-  category: string;
-  severity?: ObservationSeverity | null;
-  detail: string;
-  created_at: string;
-  attempted_at?: string | null;
-  target_title: string;
-}
-
-// ============================================================
-// Inspector target types
-// ============================================================
-
-/**
- * @deprecated The inspector-based routing model is being phased out in favor
- * of route-based navigation. New code MUST route directly to a domain page
- * (e.g. `/admin/knowledge/content/:id`) instead of opening an inspector
- * panel keyed by InspectorTargetType. Kept for existing legacy callers
- * until the migration completes.
- */
-export type InspectorTargetType =
-  | 'content'
-  | 'hypothesis'
-  | 'task'
-  | 'goal'
-  | 'project'
-  | 'todo'
-  | 'concept'
-  | 'agent';
-
-/** @deprecated See InspectorTargetType. */
-export interface InspectorTarget {
-  type: InspectorTargetType;
-  id: string;
-}
-
-// ============================================================
-// Entity type metadata (for badges, icons, colors)
-// ============================================================
-
-export interface EntityTypeMeta {
-  abbrev: string;
-  bgClass: string;
-  textClass: string;
-  label: string;
-}
-
-export const ENTITY_TYPE_META: Record<InspectorTargetType, EntityTypeMeta> = {
-  content: {
-    abbrev: 'ART',
-    bgClass: 'bg-brand/30',
-    textClass: 'text-brand',
-    label: 'Content',
-  },
-  task: {
-    abbrev: 'TSK',
-    bgClass: 'bg-amber-900/30',
-    textClass: 'text-amber-400',
-    label: 'Task',
-  },
-  hypothesis: {
-    abbrev: 'HYP',
-    bgClass: 'bg-purple-900/30',
-    textClass: 'text-purple-400',
-    label: 'Hypothesis',
-  },
-  goal: {
-    abbrev: 'GL',
-    bgClass: 'bg-emerald-900/30',
-    textClass: 'text-emerald-400',
-    label: 'Goal',
-  },
-  project: {
-    abbrev: 'PRJ',
-    bgClass: 'bg-overlay',
-    textClass: 'text-fg-muted',
-    label: 'Project',
-  },
-  todo: {
-    abbrev: 'TD',
-    bgClass: 'bg-overlay',
-    textClass: 'text-fg-muted',
-    label: 'Todo',
-  },
-  concept: {
-    abbrev: 'CPT',
-    bgClass: 'bg-indigo-900/30',
-    textClass: 'text-indigo-400',
-    label: 'Concept',
-  },
-  agent: {
-    abbrev: 'AGT',
-    bgClass: 'bg-orange-900/30',
-    textClass: 'text-orange-400',
-    label: 'Agent',
-  },
-};
