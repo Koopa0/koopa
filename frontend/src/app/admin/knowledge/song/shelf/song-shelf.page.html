@@ -1,0 +1,166 @@
+<div class="mx-auto flex w-full max-w-3xl min-w-0 flex-1 flex-col px-6 py-5">
+  <!-- Toolbar -->
+  <div class="flex items-center gap-3 border-b border-border pb-3">
+    <h1 class="font-display text-lg font-semibold text-fg">ヨルシカ</h1>
+    <span
+      class="font-mono text-[11px] text-fg-faint"
+      aria-live="polite"
+      data-testid="song-shelf-count"
+    >
+      {{ total() }} {{ total() === 1 ? 'song' : 'songs' }}
+    </span>
+    <span class="flex-1"></span>
+    @if (!addFormOpen()) {
+      <button
+        type="button"
+        (click)="openAddForm()"
+        class="rounded-sm border border-border bg-elevated px-3 py-1.5 text-xs text-fg-muted transition-colors hover:bg-overlay hover:text-fg"
+        data-testid="song-add-open"
+      >
+        Add song
+      </button>
+    }
+  </div>
+
+  <!-- Inline add form -->
+  @if (addFormOpen()) {
+    <form
+      novalidate
+      (submit)="$event.preventDefault(); addSong()"
+      class="mt-4 flex flex-col gap-3 rounded-md border border-border bg-panel p-4"
+      data-testid="song-add-form"
+    >
+      <div class="grid gap-3 sm:grid-cols-[1fr_1fr]">
+        <div class="flex flex-col gap-1.5">
+          <label for="song-new-title" class="font-mono text-[11px] text-fg-subtle">
+            曲名 <span class="text-error">*</span>
+          </label>
+          <input
+            id="song-new-title"
+            type="text"
+            [value]="newTitle()"
+            (input)="newTitle.set(readValue($event))"
+            placeholder="曲のタイトル"
+            class="rounded-sm border border-border bg-elevated px-3 py-2 font-serif text-sm text-fg outline-none placeholder:text-fg-faint focus:border-brand"
+            data-testid="song-add-title"
+          />
+        </div>
+        <div class="flex flex-col gap-1.5">
+          <label for="song-new-album" class="font-mono text-[11px] text-fg-subtle">
+            アルバム
+          </label>
+          <input
+            id="song-new-album"
+            type="text"
+            [value]="newAlbum()"
+            (input)="newAlbum.set(readValue($event))"
+            placeholder="（任意）"
+            class="rounded-sm border border-border bg-elevated px-3 py-2 text-sm text-fg outline-none placeholder:text-fg-faint focus:border-brand"
+            data-testid="song-add-album"
+          />
+        </div>
+      </div>
+      <div class="flex items-center gap-2">
+        <button
+          type="submit"
+          [disabled]="!canSubmit()"
+          class="rounded-sm bg-brand px-3 py-1.5 text-xs font-medium text-bg transition-colors hover:bg-brand-strong disabled:cursor-not-allowed disabled:opacity-40"
+          data-testid="song-add-submit"
+        >
+          {{ submitting() ? 'Adding…' : 'Add to shelf' }}
+        </button>
+        <button
+          type="button"
+          (click)="cancelAddForm()"
+          class="rounded-sm px-3 py-1.5 text-xs text-fg-subtle transition-colors hover:text-fg"
+          data-testid="song-add-cancel"
+        >
+          Cancel
+        </button>
+      </div>
+    </form>
+  }
+
+  <!-- States -->
+  @if (isLoading()) {
+    <div class="mt-6 flex flex-col gap-2" data-testid="song-shelf-loading">
+      @for (i of [0, 1, 2, 3, 4]; track i) {
+        <div class="h-10 animate-pulse rounded-sm bg-elevated"></div>
+      }
+    </div>
+  } @else if (hasError()) {
+    <div
+      class="mt-10 flex flex-col items-center gap-2 text-center"
+      role="alert"
+      data-testid="song-shelf-error"
+    >
+      <p class="text-sm text-fg-muted">Couldn't load the shelf.</p>
+      <button
+        type="button"
+        (click)="resource.reload()"
+        class="rounded-sm border border-border bg-elevated px-3 py-1.5 text-xs text-fg-muted transition-colors hover:bg-overlay hover:text-fg"
+        data-testid="song-shelf-retry"
+      >
+        Try again
+      </button>
+    </div>
+  } @else if (isEmpty()) {
+    <div
+      class="mt-14 flex flex-col items-center gap-2 px-6 text-center"
+      data-testid="song-shelf-empty"
+    >
+      <p class="font-serif text-base text-fg italic">The shelf is empty.</p>
+      <p class="max-w-xs text-[13px] leading-relaxed text-fg-subtle">
+        Add the ヨルシカ song you're sitting with. The study layer and the
+        diary begin from there.
+      </p>
+      <button
+        type="button"
+        (click)="openAddForm()"
+        class="mt-2 rounded-sm border border-border bg-elevated px-3 py-1.5 text-xs text-fg-muted transition-colors hover:bg-overlay hover:text-fg"
+        data-testid="song-empty-add"
+      >
+        Add the first song
+      </button>
+    </div>
+  } @else {
+    <!-- Album groups -->
+    @for (group of groups(); track group.album) {
+      <section [attr.data-testid]="'song-group-' + (group.album || 'none')">
+        <h2
+          class="px-3 pt-6 pb-1.5 font-mono text-[10px] tracking-[0.08em] text-fg-faint uppercase"
+        >
+          {{ group.label }}
+          <span class="ml-1">{{ group.rows.length }}</span>
+        </h2>
+        <ul>
+          @for (song of group.rows; track song.id) {
+            <li
+              class="group flex min-h-10 items-baseline gap-3 border-b border-border-faint px-3 py-2 transition-colors hover:bg-overlay"
+              [attr.data-testid]="'song-row-' + song.id"
+            >
+              <a
+                [routerLink]="['/admin/knowledge/song', song.id]"
+                class="flex min-w-0 flex-1 items-baseline gap-2.5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+              >
+                <span
+                  class="truncate font-serif text-[15px] text-fg transition-colors group-hover:text-brand"
+                >
+                  {{ song.title_ja }}
+                </span>
+              </a>
+              @if (song.is_public) {
+                <span
+                  class="shrink-0 rounded-sm border border-border px-1.5 py-0.5 font-mono text-[10px] text-fg-subtle"
+                  data-testid="song-row-public"
+                >
+                  public
+                </span>
+              }
+            </li>
+          }
+        </ul>
+      </section>
+    }
+  }
+</div>

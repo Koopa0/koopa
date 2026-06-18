@@ -273,6 +273,20 @@ export const routes: Routes = [
           ),
       },
       {
+        path: 'knowledge/song',
+        loadComponent: () =>
+          import('./admin/knowledge/song/shelf/song-shelf.page').then(
+            (m) => m.SongShelfPageComponent,
+          ),
+      },
+      {
+        path: 'knowledge/song/:id',
+        loadComponent: () =>
+          import('./admin/knowledge/song/detail/song-detail.page').then(
+            (m) => m.SongDetailPageComponent,
+          ),
+      },
+      {
         path: 'knowledge/feeds',
         loadComponent: () =>
           import('./admin/knowledge/feeds/list/feeds-list.page').then(

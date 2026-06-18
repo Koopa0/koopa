@@ -15,6 +15,7 @@ import {
   Library,
   ListChecks,
   Moon,
+  Music,
   Rss,
   Search,
   StickyNote,
@@ -150,6 +151,13 @@ export const ADMIN_NAV: readonly AdminNavGroup[] = [
         icon: Library,
         shortcutHint: '',
         testId: 'admin-nav-reading',
+      },
+      {
+        label: 'ヨルシカ',
+        route: '/admin/knowledge/song',
+        icon: Music,
+        shortcutHint: '',
+        testId: 'admin-nav-song',
       },
       {
         label: 'Feeds',
