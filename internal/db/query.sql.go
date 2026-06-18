@@ -8971,7 +8971,7 @@ type SelfAuditLearningPlanForceCountParams struct {
 
 // Counts force-mode plan-entry completions in [start, end). The
 // 'manual override:' reason prefix is the audit signal for force=true
-// completions per mcp-decision-policy.md §13: the prefix is required by
+// completions: the prefix is required by
 // validateCompleteEntryReason (internal/mcp/plan.go) and stamped into
 // activity_events.payload.reason by the audit_learning_plan_entries
 // trigger. Used by weekly_summary.self_audit to verify whether the
