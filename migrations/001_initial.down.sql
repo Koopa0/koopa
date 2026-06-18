@@ -141,6 +141,7 @@ DROP TYPE IF EXISTS goal_status;
 DROP TYPE IF EXISTS feed_entry_status;
 DROP TYPE IF EXISTS content_status;
 DROP TYPE IF EXISTS content_type;
+DROP TYPE IF EXISTS concept_kind;
 
 -- ============================================================
 -- 6. Extensions
