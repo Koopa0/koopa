@@ -68,8 +68,9 @@ var (
 	ErrNotProposed = errors.New("goal: not proposed")
 )
 
-// containsControlChars reports whether s contains any control character.
-func containsControlChars(s string) bool {
+// ContainsControlChars reports whether s contains any control character —
+// ASCII C0 (0x00–0x1F), DEL (0x7F), or Unicode C1 (0x80–0x9F).
+func ContainsControlChars(s string) bool {
 	for _, r := range s {
 		if r < 0x20 || r == 0x7f || (r >= 0x80 && r <= 0x9f) {
 			return true

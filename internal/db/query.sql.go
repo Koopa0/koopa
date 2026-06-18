@@ -683,9 +683,9 @@ LIMIT 1
 `
 
 // Same resolver as AreaIDBySlugOrName but ALSO matches proposed areas.
-// Used ONLY by propose_goal so a goal can be proposed under an area that was
-// proposed earlier in the same conversation (the proposal bundle); every
-// other caller uses the active-only variant.
+// Used ONLY by propose_goal so a goal can be proposed under an area that is
+// proposed but not yet activated (the proposal bundle); every other caller
+// uses the active-only variant.
 func (q *Queries) AreaIDBySlugOrNameIncludingProposed(ctx context.Context, identifier string) (uuid.UUID, error) {
 	row := q.db.QueryRow(ctx, areaIDBySlugOrNameIncludingProposed, identifier)
 	var id uuid.UUID

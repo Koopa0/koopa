@@ -157,9 +157,9 @@ LIMIT 1;
 
 -- name: AreaIDBySlugOrNameIncludingProposed :one
 -- Same resolver as AreaIDBySlugOrName but ALSO matches proposed areas.
--- Used ONLY by propose_goal so a goal can be proposed under an area that was
--- proposed earlier in the same conversation (the proposal bundle); every
--- other caller uses the active-only variant.
+-- Used ONLY by propose_goal so a goal can be proposed under an area that is
+-- proposed but not yet activated (the proposal bundle); every other caller
+-- uses the active-only variant.
 SELECT id FROM areas
 WHERE slug = @identifier OR LOWER(name) = LOWER(@identifier)
 LIMIT 1;

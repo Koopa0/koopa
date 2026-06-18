@@ -293,11 +293,11 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "title is required")
 		return
 	}
-	if containsControlChars(req.Title) {
+	if ContainsControlChars(req.Title) {
 		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "title must not contain control characters")
 		return
 	}
-	if containsControlChars(req.Description) {
+	if ContainsControlChars(req.Description) {
 		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "description must not contain control characters")
 		return
 	}
@@ -363,12 +363,12 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 			api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "title must not be empty")
 			return
 		}
-		if containsControlChars(*req.Title) {
+		if ContainsControlChars(*req.Title) {
 			api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "title must not contain control characters")
 			return
 		}
 	}
-	if req.Description != nil && containsControlChars(*req.Description) {
+	if req.Description != nil && ContainsControlChars(*req.Description) {
 		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "description must not contain control characters")
 		return
 	}
@@ -420,11 +420,11 @@ func (h *Handler) CreateMilestone(w http.ResponseWriter, r *http.Request) {
 		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "title is required")
 		return
 	}
-	if containsControlChars(req.Title) {
+	if ContainsControlChars(req.Title) {
 		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "title must not contain control characters")
 		return
 	}
-	if containsControlChars(req.Description) {
+	if ContainsControlChars(req.Description) {
 		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "description must not contain control characters")
 		return
 	}
@@ -474,12 +474,12 @@ func (h *Handler) UpdateMilestone(w http.ResponseWriter, r *http.Request) {
 			api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "title must not be empty")
 			return
 		}
-		if containsControlChars(*req.Title) {
+		if ContainsControlChars(*req.Title) {
 			api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "title must not contain control characters")
 			return
 		}
 	}
-	if req.Description != nil && containsControlChars(*req.Description) {
+	if req.Description != nil && ContainsControlChars(*req.Description) {
 		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "description must not contain control characters")
 		return
 	}

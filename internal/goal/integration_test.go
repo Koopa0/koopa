@@ -1060,6 +1060,51 @@ func TestIntegration_Goal_RejectAreaCascade(t *testing.T) {
 	}
 }
 
+// TestIntegration_Goal_RejectArea_NotProposed drives DELETE /areas/{id}/proposed
+// against an ACTIVE area: the handler returns 409 NOT_PROPOSED, and because
+// RejectArea deletes proposed child goals BEFORE it guards the area's status,
+// the whole request tx must roll back (ActorMiddleware commits only on 2xx/3xx)
+// so neither the area nor a proposed child goal under it is deleted. This is the
+// sibling of the RejectGoal not-proposed case for the area path.
+func TestIntegration_Goal_RejectArea_NotProposed(t *testing.T) {
+	truncate(t)
+	t.Cleanup(func() { deleteAreasBySlug(t, "active-area") })
+	h := newHandler()
+
+	areaID := seedArea(t, "active-area", "Active Area", "active")
+	proposedChild := seedProposedGoal(t, "Proposed child of active area", &areaID)
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/admin/commitment/areas/"+areaID.String()+"/proposed", nil)
+	req.SetPathValue("id", areaID.String())
+	rec := serve(t, h.RejectArea, req)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("reject active area status = %d, want 409 (body=%s)", rec.Code, rec.Body.String())
+	}
+
+	// Area intact — a real (active) area is never deleted by the triage path.
+	var areaCount int
+	if err := testPool.QueryRow(t.Context(),
+		`SELECT count(*) FROM areas WHERE id = $1`, areaID,
+	).Scan(&areaCount); err != nil {
+		t.Fatalf("counting active area: %v", err)
+	}
+	if areaCount != 1 {
+		t.Errorf("active area row count = %d after rejected delete, want 1 (untouched)", areaCount)
+	}
+
+	// Proposed child intact — the premature DeleteProposedGoalsByArea must have
+	// rolled back with the 409 (no commit on a non-2xx response).
+	var childCount int
+	if err := testPool.QueryRow(t.Context(),
+		`SELECT count(*) FROM goals WHERE id = $1`, proposedChild,
+	).Scan(&childCount); err != nil {
+		t.Fatalf("counting proposed child goal: %v", err)
+	}
+	if childCount != 1 {
+		t.Errorf("proposed child goal count = %d after rejected area delete, want 1 (tx rolled back)", childCount)
+	}
+}
+
 // TestIntegration_Goal_ProposalsCount drives GET /proposals/count: it reports
 // the number of proposed goals and proposed areas awaiting triage.
 func TestIntegration_Goal_ProposalsCount(t *testing.T) {

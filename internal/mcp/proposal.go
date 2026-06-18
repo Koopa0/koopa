@@ -77,6 +77,15 @@ func (s *Server) proposeArea(ctx context.Context, _ *mcp.CallToolRequest, input 
 	if strings.TrimSpace(input.Name) == "" {
 		return nil, ProposeAreaOutput{}, fmt.Errorf("name is required")
 	}
+	if goal.ContainsControlChars(input.Name) {
+		return nil, ProposeAreaOutput{}, fmt.Errorf("name must not contain control characters")
+	}
+	if goal.ContainsControlChars(input.Description) {
+		return nil, ProposeAreaOutput{}, fmt.Errorf("description must not contain control characters")
+	}
+	if goal.ContainsControlChars(input.Rationale) {
+		return nil, ProposeAreaOutput{}, fmt.Errorf("rationale must not contain control characters")
+	}
 	slug := deriveSlug(input.Name)
 	if slug == "" {
 		return nil, ProposeAreaOutput{}, fmt.Errorf("name %q has no slug-able characters; provide a name with letters or digits", input.Name)
@@ -114,7 +123,7 @@ func (s *Server) proposeArea(ctx context.Context, _ *mcp.CallToolRequest, input 
 // the owner to activate or reject in admin triage.
 type ProposeGoalInput struct {
 	As          string   `json:"as,omitempty" jsonschema_description:"Self-identification — the agent making this call. Stamped on goals.created_by."`
-	Area        string   `json:"area,omitempty" jsonschema_description:"Area to file the goal under: an existing ACTIVE area's slug/name, OR a just-proposed area's slug/name from the same conversation. Omit to leave the goal unclassified."`
+	Area        string   `json:"area,omitempty" jsonschema_description:"Area to file the goal under: an existing ACTIVE area's slug/name, OR the slug/name of an area that has been proposed but not yet activated. Omit to leave the goal unclassified."`
 	Title       string   `json:"title" jsonschema:"required" jsonschema_description:"One-line goal title. Required and non-blank."`
 	Description string   `json:"description,omitempty" jsonschema_description:"Fuller statement of the objective and what achieving it looks like."`
 	Rationale   string   `json:"rationale,omitempty" jsonschema_description:"Why this goal is worth proposing now — shown to the owner in triage."`
@@ -134,9 +143,21 @@ func (s *Server) proposeGoal(ctx context.Context, _ *mcp.CallToolRequest, input 
 	if strings.TrimSpace(input.Title) == "" {
 		return nil, ProposeGoalOutput{}, fmt.Errorf("title is required")
 	}
+	if goal.ContainsControlChars(input.Title) {
+		return nil, ProposeGoalOutput{}, fmt.Errorf("title must not contain control characters")
+	}
+	if goal.ContainsControlChars(input.Description) {
+		return nil, ProposeGoalOutput{}, fmt.Errorf("description must not contain control characters")
+	}
+	if goal.ContainsControlChars(input.Rationale) {
+		return nil, ProposeGoalOutput{}, fmt.Errorf("rationale must not contain control characters")
+	}
 	for i, m := range input.Milestones {
 		if strings.TrimSpace(m) == "" {
 			return nil, ProposeGoalOutput{}, fmt.Errorf("milestone %d is blank; every milestone needs a title", i+1)
+		}
+		if goal.ContainsControlChars(m) {
+			return nil, ProposeGoalOutput{}, fmt.Errorf("milestone %d must not contain control characters", i+1)
 		}
 	}
 
@@ -145,8 +166,8 @@ func (s *Server) proposeGoal(ctx context.Context, _ *mcp.CallToolRequest, input 
 		store := s.goals.WithTx(tx)
 
 		// Resolve the area within the tx, matching proposed areas too so a
-		// goal can be filed under an area proposed earlier in the same
-		// conversation (the bundle case). nil area = unclassified.
+		// goal can be filed under an area that is proposed but not yet
+		// activated (the bundle case). nil area = unclassified.
 		var areaID *uuid.UUID
 		if id, err := resolveProposalArea(ctx, store, input.Area); err != nil {
 			return err
@@ -186,7 +207,7 @@ func resolveProposalArea(ctx context.Context, store *goal.Store, identifier stri
 	id, err := store.AreaIDBySlugOrNameIncludingProposed(ctx, identifier)
 	if err != nil {
 		if errors.Is(err, goal.ErrNotFound) {
-			return nil, fmt.Errorf("no area matches %q (use an active area or one proposed earlier in this conversation)", identifier)
+			return nil, fmt.Errorf("no area matches %q (use an active area or one that has been proposed but not yet activated)", identifier)
 		}
 		return nil, fmt.Errorf("resolving area %q: %w", identifier, err)
 	}

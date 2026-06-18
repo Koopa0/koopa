@@ -554,7 +554,7 @@ func (s *Store) AreaIDBySlugOrName(ctx context.Context, identifier string) (uuid
 // AreaIDBySlugOrNameIncludingProposed resolves an area slug or
 // case-insensitive name to a UUID, matching proposed areas as well as active
 // ones. Returns ErrNotFound if no area matches. Used ONLY by propose_goal so a
-// goal can be proposed under an area proposed earlier in the same conversation
+// goal can be proposed under an area that is proposed but not yet activated
 // (the proposal bundle); every other caller uses the active-only resolver.
 func (s *Store) AreaIDBySlugOrNameIncludingProposed(ctx context.Context, identifier string) (uuid.UUID, error) {
 	id, err := s.q.AreaIDBySlugOrNameIncludingProposed(ctx, identifier)
