@@ -48,6 +48,26 @@ func (s *Store) WithTx(tx pgx.Tx) *Store {
 	return &Store{q: s.q.WithTx(tx)}
 }
 
+// mapWriteError classifies a PostgreSQL goal/milestone-write failure into a
+// feature sentinel. A unique violation (23505) becomes ErrConflict; a
+// foreign-key violation (23503 — a goal's area_id or a milestone's goal_id
+// pointing at a non-existent row) becomes ErrInvalidInput; any other error is
+// wrapped with the supplied context.
+func mapWriteError(err error, operation string) error {
+	pgErr, ok := errors.AsType[*pgconn.PgError](err)
+	if !ok {
+		return fmt.Errorf("%s: %w", operation, err)
+	}
+	switch pgErr.Code {
+	case pgerrcode.UniqueViolation:
+		return ErrConflict
+	case pgerrcode.ForeignKeyViolation:
+		return ErrInvalidInput
+	default:
+		return fmt.Errorf("%s: %w", operation, err)
+	}
+}
+
 // GoalByTitle returns a goal by case-insensitive title match.
 func (s *Store) GoalByTitle(ctx context.Context, title string) (*Goal, error) {
 	r, err := s.q.GoalByTitle(ctx, title)
@@ -88,7 +108,7 @@ func (s *Store) CreateGoal(ctx context.Context, title, description, status strin
 		Deadline:    deadline,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("creating goal: %w", err)
+		return nil, mapWriteError(err, "creating goal")
 	}
 	g := rowToGoal(&r)
 	return &g, nil
@@ -129,10 +149,7 @@ func (s *Store) CreateMilestone(ctx context.Context, goalID uuid.UUID, title, de
 		TargetDeadline: targetDeadline,
 	})
 	if err != nil {
-		if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok && pgErr.Code == pgerrcode.UniqueViolation {
-			return nil, ErrConflict
-		}
-		return nil, fmt.Errorf("creating milestone: %w", err)
+		return nil, mapWriteError(err, "creating milestone")
 	}
 	return rowToMilestone(&r), nil
 }
@@ -279,7 +296,7 @@ func (s *Store) Create(ctx context.Context, p *CreateParams) (*Goal, error) {
 		Deadline:    p.Deadline,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("creating goal: %w", err)
+		return nil, mapWriteError(err, "creating goal")
 	}
 	g := rowToGoal(&r)
 	return &g, nil
@@ -293,10 +310,7 @@ func (s *Store) CreateMilestoneSimple(ctx context.Context, goalID uuid.UUID, tit
 		Position: position,
 	})
 	if err != nil {
-		if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok && pgErr.Code == pgerrcode.UniqueViolation {
-			return nil, ErrConflict
-		}
-		return nil, fmt.Errorf("creating milestone: %w", err)
+		return nil, mapWriteError(err, "creating milestone")
 	}
 	return &Milestone{
 		ID:             r.ID,
@@ -459,7 +473,7 @@ func (s *Store) Update(ctx context.Context, p *UpdateParams) (*Goal, error) {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrNotFound
 		}
-		return nil, fmt.Errorf("updating goal %s: %w", p.ID, err)
+		return nil, mapWriteError(err, fmt.Sprintf("updating goal %s", p.ID))
 	}
 	g := rowToGoal(&r)
 	return &g, nil

@@ -33,6 +33,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -710,5 +711,60 @@ func TestIntegration_Goal_ListAreas(t *testing.T) {
 			t.Errorf("areas not ordered by sort_order: [%d]=%d < [%d]=%d",
 				i, env.Data[i].SortOrder, i-1, env.Data[i-1].SortOrder)
 		}
+	}
+}
+
+// TestIntegration_Goal_InvalidInput verifies that a foreign key pointing at a
+// non-existent row (23503) surfaces as goal.ErrInvalidInput — which the handler
+// maps to HTTP 400 — instead of a wrapped error rendered as an opaque 500. It
+// covers a goal's area_id on both Create and Update, and a milestone's goal_id
+// on CreateMilestone, since mapWriteError is shared across all three.
+func TestIntegration_Goal_InvalidInput(t *testing.T) {
+	truncate(t)
+	store := goal.NewStore(testPool)
+	ctx := t.Context()
+
+	missing := uuid.New()
+
+	tests := []struct {
+		name string
+		run  func() error
+	}{
+		{
+			name: "create goal with non-existent area_id (foreign key 23503)",
+			run: func() error {
+				_, err := store.Create(ctx, &goal.CreateParams{
+					Title:  "Orphan area goal",
+					AreaID: &missing,
+				})
+				return err
+			},
+		},
+		{
+			name: "update goal with non-existent area_id (foreign key 23503)",
+			run: func() error {
+				id := seedGoal(t, "Area update target")
+				_, err := store.Update(ctx, &goal.UpdateParams{
+					ID:     id,
+					AreaID: &missing,
+				})
+				return err
+			},
+		},
+		{
+			name: "create milestone under non-existent goal_id (foreign key 23503)",
+			run: func() error {
+				_, err := store.CreateMilestone(ctx, missing, "Orphan milestone", "", nil)
+				return err
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := tt.run(); !errors.Is(err, goal.ErrInvalidInput) {
+				t.Fatalf("err = %v, want goal.ErrInvalidInput", err)
+			}
+		})
 	}
 }

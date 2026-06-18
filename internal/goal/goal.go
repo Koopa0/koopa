@@ -52,6 +52,10 @@ var (
 	ErrNotFound = errors.New("goal: not found")
 	// ErrConflict indicates a uniqueness violation.
 	ErrConflict = errors.New("goal: conflict")
+	// ErrInvalidInput signals a client-supplied value the database rejected:
+	// a foreign key pointing at a non-existent area_id (goal) or goal_id
+	// (milestone).
+	ErrInvalidInput = errors.New("goal: invalid input")
 )
 
 // containsControlChars reports whether s contains any control character.

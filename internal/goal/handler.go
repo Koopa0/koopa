@@ -18,6 +18,7 @@ import (
 var storeErrors = []api.ErrMap{
 	{Target: ErrNotFound, Status: http.StatusNotFound, Code: "NOT_FOUND", Message: "goal not found"},
 	{Target: ErrConflict, Status: http.StatusConflict, Code: "CONFLICT", Message: "goal conflict"},
+	{Target: ErrInvalidInput, Status: http.StatusBadRequest, Code: "BAD_REQUEST", Message: "invalid goal input"},
 }
 
 // Handler handles goal HTTP requests.
