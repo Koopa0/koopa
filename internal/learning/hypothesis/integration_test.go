@@ -5,7 +5,7 @@
 // Integration coverage for the hypothesis verify runtime fix (V2). A
 // hypothesis moves from state='unverified' into 'verified' only when
 // resolved_at is set AND at least one evidence source is supplied —
-// chk_hypothesis_resolved_at + chk_hypothesis_resolution enforce both.
+// chk_learning_hypothesis_resolved_at + chk_learning_hypothesis_resolution enforce both.
 // Before V2 the verify handler called UpdateHypothesisState which only
 // changed state, leaving resolved_at NULL and guaranteeing a 23514
 // CHECK violation. This test POSTs through the real handler chain and
@@ -21,6 +21,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -483,5 +484,27 @@ func TestIntegration_Hypothesis_ListStateFilter(t *testing.T) {
 	drafts := list("?state=draft")
 	if len(drafts) != 1 || drafts[0].State != hypothesis.StateDraft {
 		t.Errorf("list(state=draft) = %+v, want exactly one draft row", drafts)
+	}
+}
+
+// TestIntegration_Hypothesis_Resolution_NoEvidence_MapsToEvidenceRequired drives
+// the CHECK-violation backstop in Store.UpdateResolution. Resolving an unverified
+// hypothesis to verified with no evidence (no attempt, observation, or summary)
+// violates chk_learning_hypothesis_resolution. The store must route that 23514 to
+// ErrEvidenceRequired by constraint name, not let it fall through as a generic
+// wrapped error the handler would surface as a 500. Calling the store directly
+// bypasses the handler's pre-validation so the constraint actually fires — which
+// is exactly the backstop path the handler relies on.
+func TestIntegration_Hypothesis_Resolution_NoEvidence_MapsToEvidenceRequired(t *testing.T) {
+	if _, err := testPool.Exec(t.Context(),
+		`TRUNCATE learning_hypotheses, activity_events CASCADE`); err != nil {
+		t.Fatalf("truncate: %v", err)
+	}
+	id := seedHypothesis(t, testPool)
+
+	store := hypothesis.NewStore(testPool)
+	_, err := store.UpdateResolution(t.Context(), id, hypothesis.StateVerified, hypothesis.ResolveParams{})
+	if !errors.Is(err, hypothesis.ErrEvidenceRequired) {
+		t.Fatalf("UpdateResolution(verified, no evidence) error = %v, want ErrEvidenceRequired", err)
 	}
 }

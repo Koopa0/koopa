@@ -119,7 +119,7 @@ func (s *Store) RecordByID(ctx context.Context, id uuid.UUID) (*Record, error) {
 
 // UpdateState updates a hypothesis's lifecycle state WITHOUT touching
 // resolution evidence. Safe only for transitions that do not require
-// evidence under chk_hypothesis_resolution (unverified ↔ archived).
+// evidence under chk_learning_hypothesis_resolution (unverified ↔ archived).
 // Transitions to verified/invalidated MUST go through UpdateResolution
 // so resolved_at and at least one evidence source are written atomically;
 // this method returns ErrInvalidTransition for those states rather than
@@ -155,10 +155,10 @@ func (s *Store) UpdateState(ctx context.Context, id uuid.UUID, state State) (*Re
 //     ErrEvidenceNotFound. We do not leak the offending column or
 //     constraint name to the caller; the handler returns a generic
 //     "referenced attempt or observation not found" response.
-//   - 23514 chk_hypothesis_resolution → ErrEvidenceRequired. Should be
-//     unreachable post-handler-validation, but if it fires the handler
-//     can return 422 instead of a 500.
-//   - 23514 chk_hypothesis_resolved_at → ErrInvalidTransition. Means
+//   - 23514 chk_learning_hypothesis_resolution → ErrEvidenceRequired.
+//     Should be unreachable post-handler-validation, but if it fires the
+//     handler can return 422 instead of a 500.
+//   - 23514 chk_learning_hypothesis_resolved_at → ErrInvalidTransition. Means
 //     the (state, resolved_at) pair is inconsistent; structurally
 //     impossible from this query but we map it instead of swallowing
 //     it into ErrEvidenceRequired, which would lie to the client.
@@ -187,9 +187,9 @@ func (s *Store) UpdateResolution(ctx context.Context, id uuid.UUID, state State,
 				return nil, ErrEvidenceNotFound
 			case pgerrcode.CheckViolation:
 				switch pgErr.ConstraintName {
-				case "chk_hypothesis_resolution":
+				case "chk_learning_hypothesis_resolution":
 					return nil, ErrEvidenceRequired
-				case "chk_hypothesis_resolved_at":
+				case "chk_learning_hypothesis_resolved_at":
 					return nil, ErrInvalidTransition
 				}
 			}
