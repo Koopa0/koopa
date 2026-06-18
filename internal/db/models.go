@@ -857,7 +857,7 @@ type LearningPlan struct {
 	Domain string `json:"domain"`
 	// Optional aspirational target. NULL = area-level maintenance plan (no specific goal). SET NULL on goal deletion.
 	GoalID *uuid.UUID `json:"goal_id"`
-	// Lifecycle state. draft → active → completed. Can pause from active, abandon from draft/active/paused. Draft plans are not tracked in execution. See mcp-decision-policy.md for mutation rules per status.
+	// Lifecycle state. draft → active → completed. Can pause from active, abandon from draft/active/paused. Draft plans are not tracked in execution.
 	Status string `json:"status"`
 	// Advisory target item count (e.g., 200). NULL = open-ended plan. Not enforced by DB.
 	TargetCount *int32 `json:"target_count"`

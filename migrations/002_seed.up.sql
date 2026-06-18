@@ -171,7 +171,7 @@ END $$;
 -- ============================================================
 -- Learning domains
 -- ============================================================
--- Declared vocabulary per CLAUDE.md and mcp-decision-policy.md. Until these
+-- Declared vocabulary per CLAUDE.md. Until these
 -- rows exist the learning write paths (start_session, record_attempt,
 -- commit_proposal(type=learning_plan)) all fail with
 -- learning_sessions_domain_fkey / learning_plans_domain_fkey. Adding a

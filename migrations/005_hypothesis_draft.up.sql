@@ -1,4 +1,4 @@
--- 005: hypothesis 'draft' state (MCP v3.1 inert-drafts amendment).
+-- 005: hypothesis 'draft' state.
 --
 -- Agent-created hypotheses land in 'draft', an inert pre-endorsement state
 -- ahead of the existing unverified → verified | invalidated | archived

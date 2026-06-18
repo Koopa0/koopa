@@ -2011,8 +2011,7 @@ COMMENT ON COLUMN learning_plans.goal_id IS
     'SET NULL on goal deletion.';
 COMMENT ON COLUMN learning_plans.status IS
     'Lifecycle state. draft → active → completed. Can pause from active, abandon from '
-    'draft/active/paused. Draft plans are not tracked in execution. See '
-    'mcp-decision-policy.md for mutation rules per status.';
+    'draft/active/paused. Draft plans are not tracked in execution.';
 COMMENT ON COLUMN learning_plans.target_count IS
     'Advisory target item count (e.g., 200). NULL = open-ended plan. Not enforced by DB.';
 COMMENT ON COLUMN learning_plans.plan_config IS
