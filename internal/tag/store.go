@@ -2,9 +2,10 @@
 
 // store.go holds the Store for tags + tag_aliases, including:
 //
-//   - ResolveTag / ResolveTags — the 4-step normalization pipeline
-//     (exact alias → case-insensitive alias → slug → unmapped). New
-//     mappings are inserted best-effort so the next lookup is O(1).
+//   - ResolveTag / ResolveTags — the normalization pipeline: admin-rejected
+//     raw tags are skipped, then exact alias → case-insensitive alias →
+//     slug → unmapped. New mappings are inserted best-effort so the next
+//     lookup is O(1). ResolveTags batches every step.
 //   - MergeTags — the manual tag-consolidation path. Every step is
 //     explicit and transactional because the ON DELETE CASCADE on
 //     the junction tables would silently wipe history if the merge
@@ -22,6 +23,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
+	"slices"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgerrcode"
@@ -107,42 +111,228 @@ func (s *Store) ResolveTag(ctx context.Context, rawTag string) Resolved {
 	return Resolved{RawTag: rawTag, TagID: nil, ResolutionSource: "unmapped"}
 }
 
-// ResolveTags normalizes a slice of raw tags through the 4-step pipeline.
-// Uses a batch exact-match lookup first to resolve the majority in one query,
-// then falls back to per-tag resolution for the unresolved remainder.
+// ResolveTags normalizes a slice of raw tags through the same pipeline as
+// ResolveTag, but batches every step so the cost is a fixed number of queries
+// regardless of how many tags miss the exact-match fast path. Results are
+// positionally aligned with rawTags (duplicates included). Resolution sources
+// match ResolveTag: auto-exact, auto-ci, auto-slug, or unmapped.
 func (s *Store) ResolveTags(ctx context.Context, rawTags []string) []Resolved {
 	if len(rawTags) == 0 {
 		return nil
 	}
 
-	results := make([]Resolved, 0, len(rawTags))
+	r := newTagResolution(rawTags)
+	r.markOversized()
 
-	// Step 1: batch exact alias match — resolves majority of tags in one query.
-	aliases, err := s.q.AliasesByExactRawTags(ctx, rawTags)
-	if err != nil {
-		// Fall back to per-tag resolution on batch query failure.
-		for _, raw := range rawTags {
-			results = append(results, s.ResolveTag(ctx, raw))
+	// On batch exact-match failure, fall back to per-tag resolution for the
+	// remainder — faithful to the single-tag path.
+	if !s.resolveExact(ctx, r) {
+		for i, raw := range rawTags {
+			if !r.done[i] {
+				r.results[i] = s.ResolveTag(ctx, raw)
+			}
 		}
-		return results
+		return r.results
 	}
 
-	// Index matched aliases by raw_tag for O(1) lookup.
-	matched := make(map[string]*uuid.UUID, len(aliases))
-	for _, a := range aliases {
-		matched[a.RawTag] = a.TagID
-	}
+	s.markRejected(ctx, r)
+	s.resolveCaseInsensitive(ctx, r)
+	s.resolveSlug(ctx, r)
+	s.memoize(ctx, r)
+	s.markRemainingUnmapped(ctx, r)
+	return r.results
+}
 
-	// Resolve each tag: use batch result if available, fall back to per-tag.
-	for _, raw := range rawTags {
-		if tagID, ok := matched[raw]; ok {
-			results = append(results, Resolved{RawTag: raw, TagID: tagID, ResolutionSource: "auto-exact"})
+// tagResolution accumulates the positionally-aligned results of a batched
+// ResolveTags pass plus the buffer of ci/slug matches awaiting memoization.
+type tagResolution struct {
+	raw     []string
+	results []Resolved
+	done    []bool
+
+	memoRaw []string
+	memoTag []uuid.UUID
+	memoSrc []string
+}
+
+func newTagResolution(rawTags []string) *tagResolution {
+	return &tagResolution{
+		raw:     rawTags,
+		results: make([]Resolved, len(rawTags)),
+		done:    make([]bool, len(rawTags)),
+	}
+}
+
+// mapped fills slot i with a resolved tag.
+func (r *tagResolution) mapped(i int, tagID *uuid.UUID, source string) {
+	r.results[i] = Resolved{RawTag: r.raw[i], TagID: tagID, ResolutionSource: source}
+	r.done[i] = true
+}
+
+// markUnmapped fills slot i as unmapped.
+func (r *tagResolution) markUnmapped(i int) {
+	r.results[i] = Resolved{RawTag: r.raw[i], TagID: nil, ResolutionSource: "unmapped"}
+	r.done[i] = true
+}
+
+// memo queues a ci/slug match to be written back as an exact alias.
+func (r *tagResolution) memo(raw string, tagID uuid.UUID, source string) {
+	r.memoRaw = append(r.memoRaw, raw)
+	r.memoTag = append(r.memoTag, tagID)
+	r.memoSrc = append(r.memoSrc, source)
+}
+
+// remaining returns the raw tags whose slot is not yet filled (order preserved).
+func (r *tagResolution) remaining() []string {
+	out := make([]string, 0, len(r.raw))
+	for i, raw := range r.raw {
+		if !r.done[i] {
+			out = append(out, raw)
+		}
+	}
+	return out
+}
+
+// markOversized drops hostile oversized tags to unmapped, never written.
+func (r *tagResolution) markOversized() {
+	for i, raw := range r.raw {
+		if len(raw) > maxRawTagLen {
+			r.markUnmapped(i)
+		}
+	}
+}
+
+// resolveExact fills exact alias matches. Returns false if the batch query
+// failed, signalling the caller to fall back to per-tag resolution.
+func (s *Store) resolveExact(ctx context.Context, r *tagResolution) bool {
+	exact, err := s.q.AliasesByExactRawTags(ctx, r.remaining())
+	if err != nil {
+		return false
+	}
+	byRaw := make(map[string]*uuid.UUID, len(exact))
+	for _, a := range exact {
+		byRaw[a.RawTag] = a.TagID
+	}
+	for i, raw := range r.raw {
+		if r.done[i] {
 			continue
 		}
-		// Not in batch result — run the full 4-step pipeline for this tag only.
-		results = append(results, s.ResolveTag(ctx, raw))
+		if tagID, ok := byRaw[raw]; ok {
+			r.mapped(i, tagID, "auto-exact")
+		}
 	}
-	return results
+	return true
+}
+
+// markRejected drops admin-rejected raw tags to unmapped before ci/slug so a
+// rejected tag can never re-map. Query errors are swallowed (treated as none
+// rejected), matching the single-tag path's leniency.
+func (s *Store) markRejected(ctx context.Context, r *tagResolution) {
+	rejected, err := s.q.RejectedRawTags(ctx, r.remaining())
+	if err != nil || len(rejected) == 0 {
+		return
+	}
+	set := make(map[string]struct{}, len(rejected))
+	for _, raw := range rejected {
+		set[raw] = struct{}{}
+	}
+	for i, raw := range r.raw {
+		if r.done[i] {
+			continue
+		}
+		if _, ok := set[raw]; ok {
+			r.markUnmapped(i)
+		}
+	}
+}
+
+// resolveCaseInsensitive fills case-insensitive alias matches (keyed by
+// lower-cased raw_tag) and queues them for memoization. Errors are swallowed.
+func (s *Store) resolveCaseInsensitive(ctx context.Context, r *tagResolution) {
+	ci, err := s.q.AliasesByCaseInsensitiveRawTags(ctx, r.remaining())
+	if err != nil || len(ci) == 0 {
+		return
+	}
+	byLower := make(map[string]*uuid.UUID, len(ci))
+	for _, a := range ci {
+		byLower[strings.ToLower(a.RawTag)] = a.TagID
+	}
+	for i, raw := range r.raw {
+		if r.done[i] {
+			continue
+		}
+		if tagID, ok := byLower[strings.ToLower(raw)]; ok && tagID != nil {
+			r.mapped(i, tagID, "auto-ci")
+			r.memo(raw, *tagID, "auto-ci")
+		}
+	}
+}
+
+// resolveSlug fills slug matches against canonical tags and queues them for
+// memoization. Errors are swallowed.
+func (s *Store) resolveSlug(ctx context.Context, r *tagResolution) {
+	slugByIndex := make(map[int]string)
+	slugSet := make(map[string]struct{})
+	for i, raw := range r.raw {
+		if r.done[i] {
+			continue
+		}
+		if slug := Slugify(raw); slug != "" {
+			slugByIndex[i] = slug
+			slugSet[slug] = struct{}{}
+		}
+	}
+	if len(slugSet) == 0 {
+		return
+	}
+	tags, err := s.q.TagsBySlugs(ctx, slices.Sorted(maps.Keys(slugSet)))
+	if err != nil || len(tags) == 0 {
+		return
+	}
+	idBySlug := make(map[string]uuid.UUID, len(tags))
+	for i := range tags {
+		idBySlug[tags[i].Slug] = tags[i].ID
+	}
+	for i := range r.raw {
+		if r.done[i] {
+			continue
+		}
+		slug, ok := slugByIndex[i]
+		if !ok {
+			continue
+		}
+		if id, ok := idBySlug[slug]; ok {
+			tagID := id
+			r.mapped(i, &tagID, "auto-slug")
+			r.memo(r.raw[i], tagID, "auto-slug")
+		}
+	}
+}
+
+// memoize best-effort records ci/slug matches as exact aliases for next time.
+func (s *Store) memoize(ctx context.Context, r *tagResolution) {
+	if len(r.memoRaw) == 0 {
+		return
+	}
+	_ = s.q.InsertResolvedAliases(ctx, db.InsertResolvedAliasesParams{
+		RawTags: r.memoRaw,
+		TagIds:  r.memoTag,
+		Sources: r.memoSrc,
+	}) // best-effort
+}
+
+// markRemainingUnmapped records still-unresolved raw tags for admin review.
+func (s *Store) markRemainingUnmapped(ctx context.Context, r *tagResolution) {
+	rest := r.remaining()
+	if len(rest) == 0 {
+		return
+	}
+	_ = s.q.InsertUnmappedAliases(ctx, rest) // best-effort
+	for i := range r.raw {
+		if !r.done[i] {
+			r.markUnmapped(i)
+		}
+	}
 }
 
 // Tags returns all canonical tags ordered by name.

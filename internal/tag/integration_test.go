@@ -18,6 +18,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/Koopa0/koopa/internal/agent"
@@ -382,6 +383,131 @@ func TestStore_ResolveTags_Empty(t *testing.T) {
 	results = s.ResolveTags(t.Context(), []string{})
 	if results != nil {
 		t.Errorf("ResolveTags([]) = %v, want nil", results)
+	}
+}
+
+// TestStore_ResolveTags_BatchPipeline exercises every branch of the batched
+// pipeline in one call — exact, case-insensitive, slug, admin-rejected,
+// brand-new (unmapped), and oversized — and asserts both the per-tag result
+// and the write-back side effects (memoized aliases, unmapped records), and
+// that a rejected raw tag is NOT re-mapped even when a canonical tag shares its
+// slug.
+func TestStore_ResolveTags_BatchPipeline(t *testing.T) {
+	s := setup(t)
+	ctx := t.Context()
+
+	golang := seedTag(t, s, "golang", "Go")
+	rust := seedTag(t, s, "rust", "Rust")
+	python := seedTag(t, s, "python", "Python")
+	seedTag(t, s, "blocked", "Blocked")
+
+	// Pre-seed an exact alias ("Rust") and a mixed-case alias ("Python") for
+	// the case-insensitive path.
+	s.ResolveTag(ctx, "Rust")
+	s.ResolveTag(ctx, "Python")
+
+	// Admin-reject "blocked" even though a canonical "blocked" tag exists, so
+	// the slug step WOULD map it if the rejected short-circuit were missing.
+	if _, err := testPool.Exec(ctx,
+		`INSERT INTO tag_aliases (raw_tag, tag_id, resolution_source, confirmed)
+		 VALUES ('blocked', NULL, 'rejected', false)`,
+	); err != nil {
+		t.Fatalf("seeding rejected alias: %v", err)
+	}
+
+	oversized := strings.Repeat("z", maxRawTagLen+1)
+	input := []string{"Rust", "python", "GoLang", "blocked", "brand-new-xyz", oversized}
+
+	got := s.ResolveTags(ctx, input)
+	if len(got) != len(input) {
+		t.Fatalf("ResolveTags() len = %d, want %d", len(got), len(input))
+	}
+
+	wants := []struct {
+		source string
+		tagID  *uuid.UUID
+	}{
+		{source: "auto-exact", tagID: &rust.ID},
+		{source: "auto-ci", tagID: &python.ID},
+		{source: "auto-slug", tagID: &golang.ID},
+		{source: "unmapped", tagID: nil}, // rejected short-circuits the canonical "blocked" slug match
+		{source: "unmapped", tagID: nil},
+		{source: "unmapped", tagID: nil}, // oversized
+	}
+	for i := range input {
+		if got[i].RawTag != input[i] {
+			t.Errorf("result[%d] raw_tag = %q, want %q", i, got[i].RawTag, input[i])
+		}
+		if got[i].ResolutionSource != wants[i].source {
+			t.Errorf("result[%d] (%q) source = %q, want %q", i, input[i], got[i].ResolutionSource, wants[i].source)
+		}
+		switch {
+		case wants[i].tagID == nil && got[i].TagID != nil:
+			t.Errorf("result[%d] (%q) tag_id = %s, want nil", i, input[i], got[i].TagID)
+		case wants[i].tagID != nil && got[i].TagID == nil:
+			t.Errorf("result[%d] (%q) tag_id = nil, want %s", i, input[i], wants[i].tagID)
+		case wants[i].tagID != nil && *got[i].TagID != *wants[i].tagID:
+			t.Errorf("result[%d] (%q) tag_id = %s, want %s", i, input[i], got[i].TagID, wants[i].tagID)
+		}
+	}
+
+	// Side effects: ci/slug matches memoized as exact aliases for next time.
+	assertAliasTag(t, "python", &python.ID)
+	assertAliasTag(t, "GoLang", &golang.ID)
+	// Brand-new tag recorded as unmapped for admin review.
+	assertAliasTag(t, "brand-new-xyz", nil)
+	// Rejected alias untouched — still 'rejected', not flipped to 'unmapped'.
+	assertAliasSource(t, "blocked", "rejected")
+	// Oversized tag was never written.
+	assertNoAlias(t, oversized)
+}
+
+// aliasRow reads a tag_aliases row by raw_tag for side-effect assertions.
+func aliasRow(t *testing.T, rawTag string) (tagID *uuid.UUID, source string, found bool) {
+	t.Helper()
+	err := testPool.QueryRow(t.Context(),
+		`SELECT tag_id, resolution_source FROM tag_aliases WHERE raw_tag = $1`, rawTag,
+	).Scan(&tagID, &source)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, "", false
+	}
+	if err != nil {
+		t.Fatalf("querying alias %q: %v", rawTag, err)
+	}
+	return tagID, source, true
+}
+
+func assertAliasTag(t *testing.T, rawTag string, want *uuid.UUID) {
+	t.Helper()
+	tagID, _, found := aliasRow(t, rawTag)
+	if !found {
+		t.Errorf("alias %q not found, want tag_id=%v", rawTag, want)
+		return
+	}
+	switch {
+	case want == nil && tagID != nil:
+		t.Errorf("alias %q tag_id = %s, want nil", rawTag, tagID)
+	case want != nil && (tagID == nil || *tagID != *want):
+		t.Errorf("alias %q tag_id = %v, want %s", rawTag, tagID, want)
+	}
+}
+
+func assertAliasSource(t *testing.T, rawTag, want string) {
+	t.Helper()
+	_, source, found := aliasRow(t, rawTag)
+	if !found {
+		t.Errorf("alias %q not found, want source=%q", rawTag, want)
+		return
+	}
+	if source != want {
+		t.Errorf("alias %q source = %q, want %q", rawTag, source, want)
+	}
+}
+
+func assertNoAlias(t *testing.T, rawTag string) {
+	t.Helper()
+	if _, _, found := aliasRow(t, rawTag); found {
+		t.Errorf("alias %q exists, want none", rawTag)
 	}
 }
 

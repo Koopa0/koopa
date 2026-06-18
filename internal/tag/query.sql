@@ -31,6 +31,41 @@ INSERT INTO tag_aliases (raw_tag, tag_id, resolution_source, confirmed)
 VALUES ($1, $2, $3, false)
 ON CONFLICT (raw_tag) DO NOTHING;
 
+-- name: RejectedRawTags :many
+-- Batch step 0: which of these raw tags are admin-rejected (skip resolution).
+SELECT raw_tag FROM tag_aliases
+WHERE raw_tag = ANY(@raw_tags::text[]) AND resolution_source = 'rejected';
+
+-- name: AliasesByCaseInsensitiveRawTags :many
+-- Batch step 2: case-insensitive alias matches with a mapped tag_id. One row
+-- per lower-cased raw_tag; the caller keys results by LOWER(input).
+SELECT DISTINCT ON (LOWER(raw_tag)) raw_tag, tag_id FROM tag_aliases
+WHERE LOWER(raw_tag) = ANY(SELECT LOWER(t) FROM unnest(@raw_tags::text[]) AS t)
+  AND tag_id IS NOT NULL
+ORDER BY LOWER(raw_tag);
+
+-- name: TagsBySlugs :many
+-- Batch step 3: canonical tags by slug.
+SELECT * FROM tags WHERE slug = ANY(@slugs::text[]);
+
+-- name: InsertResolvedAliases :exec
+-- Batch memoize resolved aliases (steps 2-3) for future exact match. The three
+-- arrays are positionally aligned by the caller (equal length).
+INSERT INTO tag_aliases (raw_tag, tag_id, resolution_source, confirmed)
+SELECT
+    unnest(@raw_tags::text[]),
+    unnest(@tag_ids::uuid[]),
+    unnest(@sources::text[]),
+    false
+ON CONFLICT (raw_tag) DO NOTHING;
+
+-- name: InsertUnmappedAliases :exec
+-- Batch step 4: record unmapped raw tags for admin review.
+INSERT INTO tag_aliases (raw_tag, tag_id, resolution_source, confirmed)
+SELECT t, NULL, 'unmapped', false
+FROM unnest(@raw_tags::text[]) AS t
+ON CONFLICT (raw_tag) DO NOTHING;
+
 -- Admin: list all canonical tags ordered by name.
 -- name: ListTags :many
 SELECT * FROM tags ORDER BY name;
