@@ -140,19 +140,15 @@ ORDER BY due ASC NULLS LAST
 LIMIT 1;
 
 -- name: UpdateTodoItem :one
--- Update arbitrary todo item fields. Only non-null parameters are applied.
+-- Update editable todo item fields. State transitions go through
+-- UpdateTodoItemState, never here. Only non-null parameters are applied.
 UPDATE todos SET
     title        = COALESCE(sqlc.narg('new_title'), title),
-    state        = COALESCE(sqlc.narg('state')::todo_state, state),
     due          = COALESCE(sqlc.narg('due'), due),
     energy       = COALESCE(sqlc.narg('energy'), energy),
     priority     = COALESCE(sqlc.narg('priority'), priority),
     project_id   = COALESCE(sqlc.narg('new_project_id'), project_id),
     description  = COALESCE(sqlc.narg('new_description'), description),
-    completed_at = CASE
-        WHEN sqlc.narg('state')::todo_state = 'done' AND completed_at IS NULL THEN now()
-        ELSE completed_at
-    END,
     updated_at = now()
 WHERE id = @id
 RETURNING id, title, state, due, project_id,

@@ -12074,39 +12074,33 @@ func (q *Queries) UpdateTag(ctx context.Context, arg UpdateTagParams) (Tag, erro
 const updateTodoItem = `-- name: UpdateTodoItem :one
 UPDATE todos SET
     title        = COALESCE($1, title),
-    state        = COALESCE($2::todo_state, state),
-    due          = COALESCE($3, due),
-    energy       = COALESCE($4, energy),
-    priority     = COALESCE($5, priority),
-    project_id   = COALESCE($6, project_id),
-    description  = COALESCE($7, description),
-    completed_at = CASE
-        WHEN $2::todo_state = 'done' AND completed_at IS NULL THEN now()
-        ELSE completed_at
-    END,
+    due          = COALESCE($2, due),
+    energy       = COALESCE($3, energy),
+    priority     = COALESCE($4, priority),
+    project_id   = COALESCE($5, project_id),
+    description  = COALESCE($6, description),
     updated_at = now()
-WHERE id = $8
+WHERE id = $7
 RETURNING id, title, state, due, project_id,
           completed_at, energy, priority, recur_interval, recur_unit,
           description, created_by, created_at, updated_at
 `
 
 type UpdateTodoItemParams struct {
-	NewTitle       *string       `json:"new_title"`
-	State          NullTodoState `json:"state"`
-	Due            *time.Time    `json:"due"`
-	Energy         *string       `json:"energy"`
-	Priority       *string       `json:"priority"`
-	NewProjectID   *uuid.UUID    `json:"new_project_id"`
-	NewDescription *string       `json:"new_description"`
-	ID             uuid.UUID     `json:"id"`
+	NewTitle       *string    `json:"new_title"`
+	Due            *time.Time `json:"due"`
+	Energy         *string    `json:"energy"`
+	Priority       *string    `json:"priority"`
+	NewProjectID   *uuid.UUID `json:"new_project_id"`
+	NewDescription *string    `json:"new_description"`
+	ID             uuid.UUID  `json:"id"`
 }
 
-// Update arbitrary todo item fields. Only non-null parameters are applied.
+// Update editable todo item fields. State transitions go through
+// UpdateTodoItemState, never here. Only non-null parameters are applied.
 func (q *Queries) UpdateTodoItem(ctx context.Context, arg UpdateTodoItemParams) (Todo, error) {
 	row := q.db.QueryRow(ctx, updateTodoItem,
 		arg.NewTitle,
-		arg.State,
 		arg.Due,
 		arg.Energy,
 		arg.Priority,

@@ -161,7 +161,6 @@ func (s *Store) UpdateState(ctx context.Context, id uuid.UUID, state State) (*It
 type UpdateParams struct {
 	ID          uuid.UUID
 	Title       *string
-	State       *State
 	Due         *time.Time
 	Energy      *string
 	Priority    *string
@@ -173,12 +172,6 @@ type UpdateParams struct {
 func (s *Store) Update(ctx context.Context, p *UpdateParams) (*Item, error) {
 	params := db.UpdateTodoItemParams{ID: p.ID}
 	params.NewTitle = p.Title
-	if p.State != nil {
-		params.State = db.NullTodoState{
-			TodoState: db.TodoState(*p.State),
-			Valid:     true,
-		}
-	}
 	params.Due = p.Due
 	params.Energy = p.Energy
 	params.Priority = p.Priority
