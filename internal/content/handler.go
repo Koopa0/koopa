@@ -18,6 +18,7 @@ import (
 var storeErrors = []api.ErrMap{
 	{Target: ErrNotFound, Status: http.StatusNotFound, Code: "NOT_FOUND", Message: "content not found"},
 	{Target: ErrConflict, Status: http.StatusConflict, Code: "CONFLICT", Message: "content conflict"},
+	{Target: ErrInvalidInput, Status: http.StatusBadRequest, Code: "BAD_REQUEST", Message: "invalid content input"},
 	{Target: ErrInvalidState, Status: http.StatusBadRequest, Code: "INVALID_STATE", Message: "content not in required state for this transition"},
 }
 

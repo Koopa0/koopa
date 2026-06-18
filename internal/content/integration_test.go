@@ -830,3 +830,78 @@ func TestStore_UpdateContent_NotFound(t *testing.T) {
 		t.Fatalf("UpdateContent(missing ID) = %v, want ErrNotFound", err)
 	}
 }
+
+// TestStore_CreateContent_InvalidInput verifies that a client-supplied value
+// the database rejects — a foreign key pointing at a non-existent project, or
+// a slug that violates chk_content_slug_format — surfaces as ErrInvalidInput
+// (which the handler maps to HTTP 400) instead of a wrapped error that
+// api.HandleError would render as an opaque 500.
+func TestStore_CreateContent_InvalidInput(t *testing.T) {
+	s := setup(t)
+	ctx := t.Context()
+
+	tests := []struct {
+		name   string
+		mutate func(p *CreateParams)
+	}{
+		{
+			name: "non-existent project_id (foreign key 23503)",
+			mutate: func(p *CreateParams) {
+				missing := uuid.New()
+				p.ProjectID = &missing
+			},
+		},
+		{
+			name: "malformed slug (check violation 23514)",
+			mutate: func(p *CreateParams) {
+				p.Slug = "Not A Valid Slug!"
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			params := &CreateParams{
+				Slug:    "valid-slug",
+				Title:   "Title",
+				Body:    "body",
+				Excerpt: "excerpt",
+				Type:    TypeTIL,
+				Status:  StatusDraft,
+			}
+			tt.mutate(params)
+
+			if _, err := s.CreateContent(ctx, params); !errors.Is(err, ErrInvalidInput) {
+				t.Fatalf("CreateContent() err = %v, want ErrInvalidInput", err)
+			}
+		})
+	}
+}
+
+// TestStore_UpdateContent_InvalidInput verifies the same FK/CHECK → 400
+// classification on the UPDATE path (mapWriteError is shared by CreateContent
+// and UpdateContent, so a regression in either would slip past a Create-only test).
+func TestStore_UpdateContent_InvalidInput(t *testing.T) {
+	setup(t)
+	ctx := t.Context()
+
+	existing := createContentTx(t, ctx, &CreateParams{
+		Slug:    "update-target",
+		Title:   "Title",
+		Body:    "body",
+		Excerpt: "excerpt",
+		Type:    TypeTIL,
+		Status:  StatusDraft,
+	})
+
+	missing := uuid.New()
+	tx, err := testPool.Begin(ctx)
+	if err != nil {
+		t.Fatalf("Begin tx: %v", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	if _, err := NewStore(tx).UpdateContent(ctx, existing.ID, &UpdateParams{ProjectID: &missing}); !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("UpdateContent(bad project_id) err = %v, want ErrInvalidInput", err)
+	}
+}

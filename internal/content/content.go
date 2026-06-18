@@ -222,6 +222,12 @@ var (
 	// update or pick a new slug.
 	ErrConflict = errors.New("content: conflict")
 
+	// ErrInvalidInput signals a client-supplied value the database rejected:
+	// a foreign key pointing at a non-existent row (e.g. a stale project_id)
+	// or a check-constraint violation (slug format, series_id/series_order
+	// pairing).
+	ErrInvalidInput = errors.New("content: invalid input")
+
 	// ErrInvalidState signals a state-machine rejection: the requested
 	// transition is not valid for the content's current status.
 	// SubmitForReview (draft→review) and RevertToDraft (review→draft)
@@ -285,25 +291,32 @@ func (s *Store) WithTx(tx pgx.Tx) *Store {
 	return &Store{dbtx: tx, q: s.q.WithTx(tx)}
 }
 
-// mapInsertConflict converts a PostgreSQL unique-violation (23505) into a
-// structured error. Slug collisions produce *SlugConflictError when the
-// caller has pre-resolved the existing id; any other unique violation (or
-// a missing pre-resolved id) falls back to the bare ErrConflict sentinel.
-// Non-23505 errors are wrapped with the supplied context.
+// mapWriteError classifies a PostgreSQL content-write failure into a store
+// sentinel. A unique violation (23505) on the slug produces *SlugConflictError
+// when the caller has pre-resolved the existing id, else the bare ErrConflict;
+// a foreign-key (23503) or check-constraint (23514) violation becomes
+// ErrInvalidInput; any other error is wrapped with the supplied context.
 //
 // The pre-resolved id MUST be captured BEFORE the INSERT that produced err
 // — once the outer tx hits 23505, PostgreSQL marks it aborted and any
 // subsequent SELECT returns SQLSTATE 25P02 ("current transaction is
 // aborted"). That is why the lookup cannot live in this helper.
-func mapInsertConflict(err error, slug string, existingID uuid.UUID, operation string) error {
+func mapWriteError(err error, slug string, existingID uuid.UUID, operation string) error {
 	pgErr, ok := errors.AsType[*pgconn.PgError](err)
-	if !ok || pgErr.Code != pgerrcode.UniqueViolation {
+	if !ok {
 		return fmt.Errorf("%s: %w", operation, err)
 	}
-	if pgErr.ConstraintName != "contents_slug_key" || existingID == uuid.Nil {
-		return ErrConflict
+	switch pgErr.Code {
+	case pgerrcode.UniqueViolation:
+		if pgErr.ConstraintName != "contents_slug_key" || existingID == uuid.Nil {
+			return ErrConflict
+		}
+		return &SlugConflictError{Slug: slug, ContentID: existingID}
+	case pgerrcode.ForeignKeyViolation, pgerrcode.CheckViolation:
+		return ErrInvalidInput
+	default:
+		return fmt.Errorf("%s: %w", operation, err)
 	}
-	return &SlugConflictError{Slug: slug, ContentID: existingID}
 }
 
 // preResolveSlugID looks up the existing content id for a slug so
@@ -549,7 +562,7 @@ func (s *Store) CreateContent(ctx context.Context, p *CreateParams) (*Content, e
 		CoverImage:     p.CoverImage,
 	})
 	if err != nil {
-		return nil, mapInsertConflict(err, p.Slug, preResolvedID, "creating content")
+		return nil, mapWriteError(err, p.Slug, preResolvedID, "creating content")
 	}
 
 	for _, topicID := range p.TopicIDs {
@@ -660,7 +673,7 @@ func (s *Store) UpdateContent(ctx context.Context, id uuid.UUID, p *UpdateParams
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrNotFound
 		}
-		return nil, mapInsertConflict(err, slug, preResolvedID, fmt.Sprintf("updating content %s", id))
+		return nil, mapWriteError(err, slug, preResolvedID, fmt.Sprintf("updating content %s", id))
 	}
 
 	if p.TopicIDs != nil {
