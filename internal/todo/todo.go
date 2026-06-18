@@ -446,9 +446,9 @@ type ProjectCompletion struct {
 
 // PendingDetail is a pending todo with project context.
 //
-// CreatedBy is populated by BacklogItems only (the admin list view
-// projects it onto the wire); the morning-context date views leave it
-// empty and omit it from JSON.
+// CreatedBy and Description are populated by BacklogItems only (the admin
+// list view projects them onto the wire); the morning-context date views
+// leave them empty and omit them from JSON.
 type PendingDetail struct {
 	ID            uuid.UUID  `json:"id"`
 	Title         string     `json:"title"`
@@ -460,6 +460,7 @@ type PendingDetail struct {
 	Priority      *string    `json:"priority,omitempty"`
 	RecurInterval *int32     `json:"recur_interval,omitempty"`
 	RecurUnit     *string    `json:"recur_unit,omitempty"`
+	Description   string     `json:"description,omitempty"`
 	CreatedBy     string     `json:"created_by,omitempty"`
 	CreatedAt     time.Time  `json:"created_at"`
 	UpdatedAt     time.Time  `json:"updated_at"`

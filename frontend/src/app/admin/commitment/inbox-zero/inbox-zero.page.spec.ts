@@ -16,6 +16,7 @@ interface InboxRow {
   id: string;
   title: string;
   state: string;
+  description?: string;
   created_by?: string;
   created_at: string;
   updated_at: string;
@@ -130,6 +131,28 @@ describe('InboxZeroPageComponent', () => {
     expect(
       el().querySelector('[data-testid="inbox-zero-source"]')?.textContent,
     ).toContain('feed');
+  });
+
+  it('should render the capture description on the card when present', async () => {
+    await load([
+      capture({
+        id: 'a',
+        title: 'Research pgvector',
+        description: 'check HNSW vs IVFFlat tradeoffs',
+      }),
+    ]);
+
+    expect(
+      el().querySelector('[data-testid="inbox-zero-description"]')?.textContent,
+    ).toContain('check HNSW vs IVFFlat tradeoffs');
+  });
+
+  it('should omit the description line on the card when the capture has none', async () => {
+    await load([capture({ id: 'a', title: 'No detail' })]);
+
+    expect(
+      el().querySelector('[data-testid="inbox-zero-description"]'),
+    ).toBeNull();
   });
 
   it('should show the quiet done state when the inbox is empty', async () => {

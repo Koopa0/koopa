@@ -71,12 +71,22 @@
           </span>
         </div>
 
-        <p
-          class="text-xl leading-snug font-medium text-balance text-fg"
-          data-testid="inbox-zero-title"
-        >
-          {{ row.title }}
-        </p>
+        <div class="flex flex-col gap-3">
+          <p
+            class="text-xl leading-snug font-medium text-balance text-fg"
+            data-testid="inbox-zero-title"
+          >
+            {{ row.title }}
+          </p>
+          @if (row.description) {
+            <p
+              class="text-sm leading-relaxed whitespace-pre-line text-pretty text-fg-subtle"
+              data-testid="inbox-zero-description"
+            >
+              {{ row.description }}
+            </p>
+          }
+        </div>
       </div>
 
       <!-- Key hint bar -->

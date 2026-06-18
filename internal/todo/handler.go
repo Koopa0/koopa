@@ -136,6 +136,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 				Priority:      r.Priority,
 				RecurInterval: r.RecurInterval,
 				RecurUnit:     r.RecurUnit,
+				Description:   r.Description,
 				CreatedBy:     r.CreatedBy,
 				CreatedAt:     r.CreatedAt,
 				UpdatedAt:     r.UpdatedAt,

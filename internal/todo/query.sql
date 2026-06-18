@@ -271,7 +271,7 @@ DELETE FROM todos WHERE id = @id AND state = 'inbox';
 -- the handler boundary.
 SELECT t.id, t.title, t.state, t.due, t.project_id,
        t.energy, t.priority, t.recur_interval, t.recur_unit,
-       t.created_by, t.created_at, t.updated_at,
+       t.description, t.created_by, t.created_at, t.updated_at,
        COALESCE(p.title, '') AS project_title,
        COALESCE(p.slug, '') AS project_slug
 FROM todos t

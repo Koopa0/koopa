@@ -61,6 +61,23 @@ describe('GtdRowComponent', () => {
     expect(dropped).toHaveLength(1);
   });
 
+  it('should render the capture description under the title on an inbox row', () => {
+    render(
+      makeRow({ state: 'inbox', description: 'check HNSW vs IVFFlat tradeoffs' }),
+      'inbox',
+    );
+
+    expect(testid('gtd-row-description')?.textContent).toContain(
+      'check HNSW vs IVFFlat tradeoffs',
+    );
+  });
+
+  it('should omit the description line on an inbox row with no detail', () => {
+    render(makeRow({ state: 'inbox' }), 'inbox');
+
+    expect(testid('gtd-row-description')).toBeNull();
+  });
+
   it('should show Start with project, energy, due, and pull on a pending row', () => {
     render(
       makeRow({

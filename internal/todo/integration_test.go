@@ -15,7 +15,8 @@
 //   - History — seed a completed todo; assert it appears in the default
 //     completed-since view.
 //   - List — state filter (single value, comma-separated list, invalid
-//     element → 400) and the created_by projection.
+//     element → 400), the created_by projection, and the description
+//     projection the inbox triage surfaces render.
 //   - Advance(activate) — someday → todo happy path + wrong-state 400.
 //
 // Run with:
@@ -283,6 +284,60 @@ func TestIntegration_Todo_List_SingleStateFilter(t *testing.T) {
 	}
 	if env.Data[0].CreatedBy != "planner" {
 		t.Errorf("created_by = %q, want %q (list projection must carry the creator)", env.Data[0].CreatedBy, "planner")
+	}
+}
+
+// TestIntegration_Todo_List_DescriptionProjection pins the wire shape the
+// inbox triage surfaces depend on: the admin list projection carries the
+// capture's free-text description (e.g. hermes context) and leaves it empty
+// when the capture has none. Regression guard — before the description was
+// added to BacklogTodoItems, this field was silently dropped.
+func TestIntegration_Todo_List_DescriptionProjection(t *testing.T) {
+	truncate(t)
+	h := newHandler()
+
+	const detail = "check HNSW vs IVFFlat tradeoffs"
+	var withDesc uuid.UUID
+	if err := testPool.QueryRow(t.Context(),
+		`INSERT INTO todos (title, state, created_by, description)
+		 VALUES ($1, 'inbox'::todo_state, 'hermes', $2)
+		 RETURNING id`,
+		"Hermes capture", detail,
+	).Scan(&withDesc); err != nil {
+		t.Fatalf("seeding inbox todo with description: %v", err)
+	}
+	bare := seedTodo(t, "Bare capture", "inbox", "human")
+
+	req := httptest.NewRequest(http.MethodGet, "/api/admin/commitment/todos?state=inbox", nil)
+	rec := serveRead(t, h.List, req)
+
+	resp := rec.Result()
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body=%s)", resp.StatusCode, body)
+	}
+
+	var env struct {
+		Data []struct {
+			ID          uuid.UUID `json:"id"`
+			Description string    `json:"description"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &env); err != nil {
+		t.Fatalf("decode list response: %v (body=%s)", err, body)
+	}
+
+	got := make(map[uuid.UUID]string, len(env.Data))
+	for _, d := range env.Data {
+		got[d.ID] = d.Description
+	}
+	if got[withDesc] != detail {
+		t.Errorf("description for hermes capture = %q, want %q (list projection must carry the capture detail)", got[withDesc], detail)
+	}
+	if got[bare] != "" {
+		t.Errorf("description for bare capture = %q, want empty", got[bare])
 	}
 }
 

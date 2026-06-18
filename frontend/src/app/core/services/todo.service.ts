@@ -9,10 +9,10 @@ import type {
 
 /**
  * Row shape returned by GET /api/admin/commitment/todos. The handler
- * projects a subset of the full item plus the joined project title —
- * `description`, `project_id`, and `completed_at` are not on this wire
- * shape, and `created_by` arrives empty today (the list projection
- * drops it).
+ * projects a subset of the full item plus the joined project title and
+ * the capture's free-text `description` — `project_id` and `completed_at`
+ * are not on this wire shape, and `created_by` arrives empty today (the
+ * list projection drops it).
  */
 export interface TodoRow {
   id: string;
@@ -23,6 +23,8 @@ export interface TodoRow {
   priority?: PriorityLevel | null;
   recur_interval?: number | null;
   recur_unit?: string | null;
+  /** Capture free-text detail (e.g. hermes context); omitted when empty. */
+  description?: string;
   created_by?: string;
   created_at: string;
   updated_at: string;

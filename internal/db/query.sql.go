@@ -1078,7 +1078,7 @@ func (q *Queries) AutoDisableFeed(ctx context.Context, arg AutoDisableFeedParams
 const backlogTodoItems = `-- name: BacklogTodoItems :many
 SELECT t.id, t.title, t.state, t.due, t.project_id,
        t.energy, t.priority, t.recur_interval, t.recur_unit,
-       t.created_by, t.created_at, t.updated_at,
+       t.description, t.created_by, t.created_at, t.updated_at,
        COALESCE(p.title, '') AS project_title,
        COALESCE(p.slug, '') AS project_slug
 FROM todos t
@@ -1117,6 +1117,7 @@ type BacklogTodoItemsRow struct {
 	Priority      *string    `json:"priority"`
 	RecurInterval *int32     `json:"recur_interval"`
 	RecurUnit     *string    `json:"recur_unit"`
+	Description   string     `json:"description"`
 	CreatedBy     string     `json:"created_by"`
 	CreatedAt     time.Time  `json:"created_at"`
 	UpdatedAt     time.Time  `json:"updated_at"`
@@ -1154,6 +1155,7 @@ func (q *Queries) BacklogTodoItems(ctx context.Context, arg BacklogTodoItemsPara
 			&i.Priority,
 			&i.RecurInterval,
 			&i.RecurUnit,
+			&i.Description,
 			&i.CreatedBy,
 			&i.CreatedAt,
 			&i.UpdatedAt,
