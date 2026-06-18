@@ -68,4 +68,9 @@ var (
 
 	// ErrConflict indicates a duplicate slug.
 	ErrConflict = errors.New("topic: conflict")
+
+	// ErrInvalidInput signals a client-supplied value the database rejected
+	// via a check constraint: a malformed slug (chk_topic_slug_format) or a
+	// blank name (chk_topic_name_not_blank).
+	ErrInvalidInput = errors.New("topic: invalid input")
 )

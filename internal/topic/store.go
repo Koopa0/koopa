@@ -102,10 +102,7 @@ func (s *Store) CreateTopic(ctx context.Context, p *CreateParams) (*Topic, error
 		SortOrder:   int32(p.SortOrder), // #nosec G115 -- sort order is a small UI ordering value, not user-controlled
 	})
 	if err != nil {
-		if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok && pgErr.Code == pgerrcode.UniqueViolation {
-			return nil, ErrConflict
-		}
-		return nil, fmt.Errorf("creating topic: %w", err)
+		return nil, mapWriteError(err, "creating topic")
 	}
 	return &Topic{
 		ID:          r.ID,
@@ -138,10 +135,7 @@ func (s *Store) UpdateTopic(ctx context.Context, id uuid.UUID, p *UpdateParams) 
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrNotFound
 		}
-		if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok && pgErr.Code == pgerrcode.UniqueViolation {
-			return nil, ErrConflict
-		}
-		return nil, fmt.Errorf("updating topic %s: %w", id, err)
+		return nil, mapWriteError(err, fmt.Sprintf("updating topic %s", id))
 	}
 	return &Topic{
 		ID:          r.ID,
@@ -178,4 +172,24 @@ func (s *Store) DeleteTopic(ctx context.Context, id uuid.UUID) error {
 		return fmt.Errorf("deleting topic %s: %w", id, err)
 	}
 	return nil
+}
+
+// mapWriteError classifies a PostgreSQL topic-write failure into a feature
+// sentinel. A unique violation (23505) on the slug becomes ErrConflict; a
+// check-constraint violation (23514 — chk_topic_slug_format,
+// chk_topic_name_not_blank) becomes ErrInvalidInput; any other error is
+// wrapped with the supplied context.
+func mapWriteError(err error, operation string) error {
+	pgErr, ok := errors.AsType[*pgconn.PgError](err)
+	if !ok {
+		return fmt.Errorf("%s: %w", operation, err)
+	}
+	switch pgErr.Code {
+	case pgerrcode.UniqueViolation:
+		return ErrConflict
+	case pgerrcode.CheckViolation:
+		return ErrInvalidInput
+	default:
+		return fmt.Errorf("%s: %w", operation, err)
+	}
 }
