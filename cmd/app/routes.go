@@ -15,6 +15,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -25,6 +26,7 @@ import (
 	"github.com/Koopa0/koopa/internal/activity"
 	"github.com/Koopa0/koopa/internal/agent"
 	"github.com/Koopa0/koopa/internal/auth"
+	"github.com/Koopa0/koopa/internal/build"
 	"github.com/Koopa0/koopa/internal/content"
 	"github.com/Koopa0/koopa/internal/daily"
 	"github.com/Koopa0/koopa/internal/feed"
@@ -105,8 +107,12 @@ func registerRoutes(
 
 	// --- Health checks (no auth) ---
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		_, _ = fmt.Fprint(w, "ok")
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		_ = json.NewEncoder(w).Encode(struct {
+			Status string     `json:"status"`
+			Build  build.Info `json:"build"`
+		}{Status: "ok", Build: build.Current()})
 	})
 	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)

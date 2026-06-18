@@ -10,6 +10,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -23,6 +24,7 @@ import (
 	"golang.org/x/oauth2/google"
 
 	"github.com/Koopa0/koopa/internal/agent"
+	"github.com/Koopa0/koopa/internal/build"
 	"github.com/Koopa0/koopa/internal/embedder"
 	"github.com/Koopa0/koopa/internal/mcp"
 )
@@ -150,7 +152,12 @@ func runHTTP(ctx context.Context, cfg *config, server *mcp.Server, logger *slog.
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = fmt.Fprint(w, "ok")
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		_ = json.NewEncoder(w).Encode(struct {
+			Status string     `json:"status"`
+			Build  build.Info `json:"build"`
+		}{Status: "ok", Build: build.Current()})
 	})
 	mux.HandleFunc("GET /favicon.ico", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "https://koopa0.dev/favicon.ico", http.StatusMovedPermanently)
