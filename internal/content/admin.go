@@ -231,6 +231,27 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 
 // List handles GET /api/admin/knowledge/content.
 func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
+	f, ok := parseAdminListFilter(w, r)
+	if !ok {
+		return
+	}
+
+	contents, total, err := h.store.Contents(r.Context(), f)
+	if err != nil {
+		h.logger.Error("admin listing contents", "error", err)
+		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to list contents")
+		return
+	}
+	api.Encode(w, http.StatusOK, api.PagedResponse(contents, total, f.Page, f.PerPage))
+}
+
+// parseAdminListFilter builds a Filter from the admin List query parameters,
+// rejecting unrecognized type, status, or is_public values with 400. An
+// unrecognized value left the filter pointer nil, which silently applied no
+// filter (a wrongly broad result set); validation here keeps the contract
+// consistent across all three filters. Returns false after writing the error
+// response when any value is invalid.
+func parseAdminListFilter(w http.ResponseWriter, r *http.Request) (Filter, bool) {
 	page, perPage := api.ParsePagination(r)
 	f := Filter{Page: page, PerPage: perPage}
 
@@ -238,6 +259,9 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 		ct := Type(t)
 		if ct.Valid() {
 			f.Type = &ct
+		} else {
+			api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid content type")
+			return Filter{}, false
 		}
 	}
 	if s := r.URL.Query().Get("status"); s != "" {
@@ -245,6 +269,9 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 		switch cs {
 		case StatusDraft, StatusReview, StatusPublished, StatusArchived:
 			f.Status = &cs
+		default:
+			api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid content status")
+			return Filter{}, false
 		}
 	}
 	if v := r.URL.Query().Get("is_public"); v != "" {
@@ -257,17 +284,10 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 			f.IsPublic = &isPublic
 		default:
 			api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "is_public must be true or false")
-			return
+			return Filter{}, false
 		}
 	}
-
-	contents, total, err := h.store.Contents(r.Context(), f)
-	if err != nil {
-		h.logger.Error("admin listing contents", "error", err)
-		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to list contents")
-		return
-	}
-	api.Encode(w, http.StatusOK, api.PagedResponse(contents, total, f.Page, f.PerPage))
+	return f, true
 }
 
 // SubmitForReview handles POST /api/admin/knowledge/content/{id}/submit-for-review.

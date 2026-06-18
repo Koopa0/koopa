@@ -58,6 +58,51 @@ func TestParseFilter_Type(t *testing.T) {
 	}
 }
 
+// TestParseAdminListFilter_Validation verifies that the admin List filter
+// rejects unrecognized type and status values with 400, consistent with
+// is_public, and accepts valid values without writing an error.
+func TestParseAdminListFilter_Validation(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		query    string
+		wantOK   bool
+		wantCode int // status written when !wantOK
+	}{
+		{name: "invalid type", query: "type=garbage", wantOK: false, wantCode: http.StatusBadRequest},
+		{name: "invalid status", query: "status=garbage", wantOK: false, wantCode: http.StatusBadRequest},
+		{name: "invalid is_public", query: "is_public=maybe", wantOK: false, wantCode: http.StatusBadRequest},
+		{name: "valid type", query: "type=til", wantOK: true},
+		{name: "valid status", query: "status=draft", wantOK: true},
+		{name: "valid is_public", query: "is_public=true", wantOK: true},
+		{name: "all valid", query: "type=article&status=published&is_public=false", wantOK: true},
+		{name: "no filters", query: "", wantOK: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			req := httptest.NewRequest(http.MethodGet, "/?"+tt.query, http.NoBody)
+			w := httptest.NewRecorder()
+
+			_, ok := parseAdminListFilter(w, req)
+			if ok != tt.wantOK {
+				t.Fatalf("parseAdminListFilter(%q) ok = %v, want %v", tt.query, ok, tt.wantOK)
+			}
+			if tt.wantOK {
+				if w.Code != http.StatusOK { // no error written → recorder stays 200
+					t.Errorf("parseAdminListFilter(%q) wrote status %d, want no error (200)", tt.query, w.Code)
+				}
+				return
+			}
+			if w.Code != tt.wantCode {
+				t.Errorf("parseAdminListFilter(%q) status = %d, want %d", tt.query, w.Code, tt.wantCode)
+			}
+		})
+	}
+}
+
 func assertTimePtr(t *testing.T, field, query string, got, want *time.Time) {
 	t.Helper()
 	switch {
