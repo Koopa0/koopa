@@ -11,6 +11,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -31,6 +32,10 @@ import (
 
 // agentSyncTimeout bounds the startup reconciliation of the agents table.
 const agentSyncTimeout = 10 * time.Second
+
+// mcpShutdownTimeout bounds the graceful drain of in-flight MCP tool calls on
+// shutdown, matching the app server's grace period.
+const mcpShutdownTimeout = 10 * time.Second
 
 func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
@@ -185,15 +190,30 @@ func runHTTP(ctx context.Context, cfg *config, server *mcp.Server, logger *slog.
 		MaxHeaderBytes:    1 << 20, // 1 MB — bound request header size (security.md)
 	}
 
+	serverErr := make(chan error, 1)
 	go func() {
-		<-ctx.Done()
-		close(oauth.Done)
-		_ = httpServer.Close()
+		logger.Info("starting MCP v2 server over HTTP", "port", cfg.Port)
+		serverErr <- httpServer.ListenAndServe()
 	}()
 
-	logger.Info("starting MCP v2 server over HTTP", "port", cfg.Port)
-	if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-		return fmt.Errorf("http server: %w", err)
+	select {
+	case err := <-serverErr:
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			return fmt.Errorf("http server: %w", err)
+		}
+		return nil
+	case <-ctx.Done():
+	}
+
+	// Graceful shutdown: stop accepting and drain in-flight tool calls, THEN
+	// stop the oauth eviction loop — an in-flight /oauth request may still be
+	// served during the drain, so Done must outlive the drain.
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), mcpShutdownTimeout)
+	defer cancel()
+	shutdownErr := httpServer.Shutdown(shutdownCtx)
+	close(oauth.Done)
+	if shutdownErr != nil {
+		return fmt.Errorf("http server shutdown: %w", shutdownErr)
 	}
 	return nil
 }
