@@ -89,13 +89,6 @@ export const ADMIN_NAV: readonly AdminNavGroup[] = [
         testId: 'admin-nav-inbox',
       },
       {
-        label: 'Inbox Zero',
-        route: '/admin/daily/inbox-zero',
-        icon: Layers,
-        shortcutHint: '',
-        testId: 'admin-nav-inbox-zero',
-      },
-      {
         label: 'Todos',
         route: '/admin/daily/todos',
         icon: CheckSquare,
