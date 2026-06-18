@@ -317,7 +317,7 @@ func toolResultText(text string) *mcp.CallToolResult {
 	}
 }
 
-// addTool registers a tool with optional telemetry wrapping.
+// addTool registers a tool.
 // If tool.InputSchema is nil, addTool generates the schema with FlexInt support.
 // Array fields in the schema are post-processed to remove nullable type
 // (Go slices generate ["null","array"] but MCP clients may stringify nullable arrays).

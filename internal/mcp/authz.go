@@ -20,10 +20,12 @@
 //     refuse the zero-privilege "unknown" fallback. Enforced by
 //     requireRegisteredCaller.
 //
-//  3. Self — is the caller the row's owner? Personal-GTD tools
-//     (advance_work) require caller == row.created_by / row.target.
-//     Enforced inline by the handler against the loaded row; no helper
-//     here because the row source varies.
+//  3. Self — is the caller the row's owner? The model reserves this axis
+//     for personal-GTD mutations (caller == row.created_by / row.target).
+//     No tool on the current MCP surface exercises it — advance_work, its
+//     original consumer, is an admin-only HTTP action — so there is no
+//     requireSelf helper; a handler that needed it would gate inline
+//     against the loaded row.
 //
 // # Why human is always implicit on author gates
 //
@@ -87,7 +89,7 @@ const unknownAgent = "unknown"
 // write tools that previously had no identity gate at all (capture_inbox,
 // draft_hypothesis, start_session, record_attempt, end_session, manage_plan,
 // create_note, update_note), where an unregistered or unidentified caller
-// could write to the knowledge base / settings.
+// could write to the knowledge base.
 //
 // It reuses the same registry requireAuthor already consults — no parallel
 // map — and refuses two callers:
@@ -98,7 +100,7 @@ const unknownAgent = "unknown"
 //     omitted (and the value a buggy client might mirror explicitly).
 //     "unknown" is registered, so Lookup alone would admit it — but it
 //     means "the caller did not identify itself" and is therefore not a
-//     known author; a knowledge-base / settings write attributed to it is
+//     known author; a knowledge-base write attributed to it is
 //     refused. This mirrors requireAuthor's fail-closed handling of the
 //     server's default caller ("unknown" is already rejected there via
 //     the allowlist axis).
