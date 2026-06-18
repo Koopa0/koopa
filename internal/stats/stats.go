@@ -78,9 +78,11 @@ type NoteStats struct {
 
 // ActivityStats holds activity event counts.
 type ActivityStats struct {
-	Total    int            `json:"total"`
-	Last24h  int            `json:"last_24h"`
-	Last7d   int            `json:"last_7d"`
+	Total   int `json:"total"`
+	Last24h int `json:"last_24h"`
+	Last7d  int `json:"last_7d"`
+	// BySource is keyed by the activity event's entity_type (todo, content,
+	// note, ...) — the changed entity's kind, not a provenance source.
 	BySource map[string]int `json:"by_source"`
 }
 
