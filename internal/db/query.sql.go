@@ -2938,8 +2938,8 @@ type CreateReadingParams struct {
 	StartedOn *time.Time `json:"started_on"`
 }
 
-// Queries for the reading package. See migrations/004_readings.up.sql for
-// the readings + reading_reflections tables. status is TEXT + CHECK (not an
+// Queries for the reading package, over the readings + reading_reflections
+// tables. status is TEXT + CHECK (not an
 // ENUM); the Go layer validates before writing so the constraint never
 // surfaces as a 500. No audit triggers fire on these tables — single human
 // writer, diary stays out of activity feeds (rationale in the migration).
