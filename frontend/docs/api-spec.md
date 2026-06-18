@@ -982,7 +982,7 @@ since=<iso>,until=<iso>
 - `GET /api/auth/google/callback`
 - `POST /api/auth/refresh`
 
-Token in-memory signal + HttpOnly refresh cookie（security.md）. 無 `/logout` endpoint（clear memory + revoke refresh 在 frontend 處理）.
+Token 存記憶體 signal：access 與 refresh 皆存記憶體 signal，refresh token 以 POST body 送 `/api/auth/refresh`（非 cookie、無 `withCredentials`）。比 localStorage 更耐 XSS，但 reload 後遺失、需重新走 Google OAuth。無 `/logout` endpoint（clear memory + revoke refresh 在 frontend 處理）.
 
 ---
 
