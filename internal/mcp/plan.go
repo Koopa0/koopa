@@ -20,6 +20,7 @@ package mcp
 import (
 	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -525,19 +526,62 @@ func (s *Server) mpSubstitute(ctx context.Context, planID, entryID uuid.UUID, in
 	})
 }
 
+// parseReorderPositions validates the request-shape rules for a reorder —
+// parseable entry_id, non-negative position, no duplicate entry_id, no
+// duplicate position — and maps the input onto the store's ReorderEntry type.
+// Plan membership and untouched-position collision are enforced inside
+// plan.Store.Reorder (which returns plan.ErrNotFound / plan.ErrConflict).
+func parseReorderPositions(positions []ManagePlanPositionInput) ([]plan.ReorderEntry, error) {
+	ids := make(map[uuid.UUID]struct{}, len(positions))
+	seen := make(map[int32]struct{}, len(positions))
+	out := make([]plan.ReorderEntry, len(positions))
+	for i, pos := range positions {
+		entryID, err := uuid.Parse(pos.EntryID)
+		if err != nil {
+			return nil, fmt.Errorf("positions[%d]: invalid entry_id %q: %w", i, pos.EntryID, err)
+		}
+		if pos.Position < 0 {
+			return nil, fmt.Errorf("positions[%d]: position must be >= 0", i)
+		}
+		if _, dup := ids[entryID]; dup {
+			return nil, fmt.Errorf("positions[%d]: duplicate entry_id %s", i, entryID)
+		}
+		if _, dup := seen[pos.Position]; dup {
+			return nil, fmt.Errorf("positions[%d]: duplicate position %d", i, pos.Position)
+		}
+		ids[entryID] = struct{}{}
+		seen[pos.Position] = struct{}{}
+		out[i] = plan.ReorderEntry{EntryID: entryID, Position: pos.Position}
+	}
+	return out, nil
+}
+
+// reorderPlanEntries rewrites plan-entry positions atomically. The whole
+// reorder runs inside withActorTx so a mid-loop failure rolls back rather
+// than leaving a half-applied order, and the store's two-phase park keeps a
+// swap-type permutation from tripping the (plan_id, position) unique index.
+// Membership failures map to a clear not-found error and untouched-position
+// collisions to a clear conflict error — never a raw 23505.
 func (s *Server) reorderPlanEntries(ctx context.Context, planID uuid.UUID, input *ManagePlanInput) (*mcp.CallToolResult, ManagePlanOutput, error) {
 	if len(input.Positions) == 0 {
 		return nil, ManagePlanOutput{}, fmt.Errorf("positions is required for reorder")
 	}
 
-	for _, pos := range input.Positions {
-		entryID, err := uuid.Parse(pos.EntryID)
-		if err != nil {
-			return nil, ManagePlanOutput{}, fmt.Errorf("invalid entry_id %q: %w", pos.EntryID, err)
-		}
-		if err := s.plans.UpdateEntryPosition(ctx, entryID, pos.Position); err != nil {
-			return nil, ManagePlanOutput{}, fmt.Errorf("updating position for entry %s: %w", pos.EntryID, err)
-		}
+	entries, err := parseReorderPositions(input.Positions)
+	if err != nil {
+		return nil, ManagePlanOutput{}, err
+	}
+
+	err = s.withActorTx(ctx, func(tx pgx.Tx) error {
+		return s.plans.WithTx(tx).Reorder(ctx, planID, entries)
+	})
+	switch {
+	case errors.Is(err, plan.ErrNotFound):
+		return nil, ManagePlanOutput{}, fmt.Errorf("reorder: one or more entries do not belong to plan %s: %w", planID, err)
+	case errors.Is(err, plan.ErrConflict):
+		return nil, ManagePlanOutput{}, fmt.Errorf("reorder: a requested position is held by an entry not included in the reorder (plan %s): %w", planID, err)
+	case err != nil:
+		return nil, ManagePlanOutput{}, fmt.Errorf("reordering plan %s entries: %w", planID, err)
 	}
 
 	s.logger.Info("manage_plan", "action", "reorder", "plan_id", planID, "count", len(input.Positions))

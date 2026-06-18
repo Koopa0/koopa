@@ -323,6 +323,78 @@ func (s *Store) UpdateEntryPosition(ctx context.Context, entryID uuid.UUID, posi
 	return nil
 }
 
+// ReorderEntry assigns one plan entry a new position. EntryID is the plan
+// entry's primary key (learning_plan_entries.id), Position its target slot.
+type ReorderEntry struct {
+	EntryID  uuid.UUID
+	Position int32
+}
+
+// Reorder rewrites the positions of the given plan entries atomically and
+// collision-safely. It MUST run on a tx-bound Store (s.WithTx(tx)) so the
+// whole reorder is all-or-nothing; on a bare pool a mid-loop failure would
+// leave a partially-applied order.
+//
+// Validation (request-shape checks — non-negative, no duplicate EntryID, no
+// duplicate Position — are the caller's responsibility):
+//   - every entry MUST belong to planID, else ErrNotFound;
+//   - no requested position may be held by an entry the request leaves
+//     untouched, else ErrConflict — that entry would trip the
+//     (plan_id, position) unique constraint.
+//
+// Application is two-phase: every touched entry is first parked at a unique
+// negative temp position, then assigned its final position. Live positions
+// are always >= 0, so the negative range cannot collide; without the park a
+// swap-type permutation would trip the unique constraint mid-update.
+func (s *Store) Reorder(ctx context.Context, planID uuid.UUID, entries []ReorderEntry) error {
+	existing, err := s.Entries(ctx, planID)
+	if err != nil {
+		return err
+	}
+
+	members := make(map[uuid.UUID]struct{}, len(existing))
+	for i := range existing {
+		members[existing[i].ID] = struct{}{}
+	}
+	touched := make(map[uuid.UUID]struct{}, len(entries))
+	wanted := make(map[int32]struct{}, len(entries))
+	for i := range entries {
+		if _, ok := members[entries[i].EntryID]; !ok {
+			return ErrNotFound
+		}
+		touched[entries[i].EntryID] = struct{}{}
+		wanted[entries[i].Position] = struct{}{}
+	}
+
+	// A position requested by the reorder but currently held by an entry the
+	// request does not touch would collide on the unique constraint. Refuse
+	// up-front with ErrConflict rather than letting the assign phase trip 23505.
+	for i := range existing {
+		e := &existing[i]
+		if _, ok := touched[e.ID]; ok {
+			continue
+		}
+		if _, ok := wanted[e.Position]; ok {
+			return ErrConflict
+		}
+	}
+
+	// Phase 1: park every touched entry at a unique negative position.
+	for i := range entries {
+		temp := -int32(i) - 1 // #nosec G115 -- bounded by len(entries)
+		if err := s.UpdateEntryPosition(ctx, entries[i].EntryID, temp); err != nil {
+			return err
+		}
+	}
+	// Phase 2: assign the finals.
+	for i := range entries {
+		if err := s.UpdateEntryPosition(ctx, entries[i].EntryID, entries[i].Position); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // RemoveEntries deletes plan entries by plan ID and entry IDs.
 func (s *Store) RemoveEntries(ctx context.Context, planID uuid.UUID, entryIDs []uuid.UUID) error {
 	err := s.q.DeletePlanEntries(ctx, db.DeletePlanEntriesParams{

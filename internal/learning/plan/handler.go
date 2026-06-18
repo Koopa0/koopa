@@ -411,89 +411,44 @@ func (h *Handler) UpdateStatus(w http.ResponseWriter, r *http.Request) {
 // unique and must not collide with the positions of entries left out of
 // the request.
 type ReorderRequest struct {
-	Entries []ReorderEntry `json:"entries"`
+	Entries []reorderEntryRequest `json:"entries"`
 }
 
-// ReorderEntry assigns one plan entry its new position.
-type ReorderEntry struct {
+// reorderEntryRequest is the wire shape of one reorder item. The JSON field
+// is plan_entry_id (the identifier the admin UI passes back); it maps onto
+// the store's ReorderEntry.EntryID before the position write.
+type reorderEntryRequest struct {
 	PlanEntryID uuid.UUID `json:"plan_entry_id"`
 	Position    int32     `json:"position"`
 }
 
 // validateReorderEntries checks the request-shape rules — non-nil ids,
 // non-negative positions, no duplicate ids, no duplicate positions — and
-// returns the id and position sets for the plan-level checks. The error
-// message is client-facing (400).
-func validateReorderEntries(entries []ReorderEntry) (ids map[uuid.UUID]struct{}, positions map[int32]struct{}, err error) {
-	ids = make(map[uuid.UUID]struct{}, len(entries))
-	positions = make(map[int32]struct{}, len(entries))
+// maps the request items onto the store's ReorderEntry type. The error
+// message is client-facing (400). Plan-membership and untouched-position
+// collision are enforced inside Store.Reorder.
+func validateReorderEntries(entries []reorderEntryRequest) ([]ReorderEntry, error) {
+	ids := make(map[uuid.UUID]struct{}, len(entries))
+	positions := make(map[int32]struct{}, len(entries))
+	out := make([]ReorderEntry, len(entries))
 	for i, e := range entries {
 		if e.PlanEntryID == uuid.Nil {
-			return nil, nil, fmt.Errorf("entries[%d]: plan_entry_id is required", i)
+			return nil, fmt.Errorf("entries[%d]: plan_entry_id is required", i)
 		}
 		if e.Position < 0 {
-			return nil, nil, fmt.Errorf("entries[%d]: position must be >= 0", i)
+			return nil, fmt.Errorf("entries[%d]: position must be >= 0", i)
 		}
 		if _, dup := ids[e.PlanEntryID]; dup {
-			return nil, nil, fmt.Errorf("entries[%d]: duplicate plan_entry_id %s", i, e.PlanEntryID)
+			return nil, fmt.Errorf("entries[%d]: duplicate plan_entry_id %s", i, e.PlanEntryID)
 		}
 		if _, dup := positions[e.Position]; dup {
-			return nil, nil, fmt.Errorf("entries[%d]: duplicate position %d", i, e.Position)
+			return nil, fmt.Errorf("entries[%d]: duplicate position %d", i, e.Position)
 		}
 		ids[e.PlanEntryID] = struct{}{}
 		positions[e.Position] = struct{}{}
+		out[i] = ReorderEntry{EntryID: e.PlanEntryID, Position: e.Position}
 	}
-	return ids, positions, nil
-}
-
-// checkReorderAgainstPlan validates the requested reorder against the plan's
-// current entries: every referenced entry must belong to the plan, and no
-// requested position may be held by an entry the request leaves untouched —
-// that would trip the (plan_id, position) unique constraint. Returns the
-// HTTP status, error code, and client-facing message for the first
-// violation, or status 0 when the reorder is applicable.
-func checkReorderAgainstPlan(existing []Entry, requested []ReorderEntry, ids map[uuid.UUID]struct{}, positions map[int32]struct{}) (status int, code, msg string) {
-	members := make(map[uuid.UUID]struct{}, len(existing))
-	for i := range existing {
-		members[existing[i].ID] = struct{}{}
-	}
-	for i := range requested {
-		if _, ok := members[requested[i].PlanEntryID]; !ok {
-			return http.StatusNotFound, "NOT_FOUND",
-				fmt.Sprintf("entry %s not found in plan", requested[i].PlanEntryID)
-		}
-	}
-	for i := range existing {
-		e := &existing[i]
-		if _, touched := ids[e.ID]; touched {
-			continue
-		}
-		if _, wanted := positions[e.Position]; wanted {
-			return http.StatusConflict, "CONFLICT",
-				fmt.Sprintf("position %d is held by entry %s, which is not included in the reorder", e.Position, e.ID)
-		}
-	}
-	return 0, "", ""
-}
-
-// applyReorder writes the new positions in two phases on the given
-// (tx-bound) store: park every touched entry at a unique negative position,
-// then assign the finals. Without the parking phase a swap would collide
-// with the (plan_id, position) unique constraint mid-update. Live positions
-// are always >= 0, so the negative range cannot collide with any entry.
-func applyReorder(ctx context.Context, store *Store, entries []ReorderEntry) error {
-	for i := range entries {
-		temp := -int32(i) - 1 // #nosec G115 -- bounded by request body size
-		if err := store.UpdateEntryPosition(ctx, entries[i].PlanEntryID, temp); err != nil {
-			return err
-		}
-	}
-	for i := range entries {
-		if err := store.UpdateEntryPosition(ctx, entries[i].PlanEntryID, entries[i].Position); err != nil {
-			return err
-		}
-	}
-	return nil
+	return out, nil
 }
 
 // Reorder handles PUT /api/admin/learning/plans/{id}/reorder.
@@ -501,8 +456,9 @@ func applyReorder(ctx context.Context, store *Store, entries []ReorderEntry) err
 // All position updates apply atomically inside the request transaction —
 // either every entry lands on its new position or none do (the middleware
 // rolls the tx back on any non-2xx response). Positions must be >= 0, the
-// same floor AddEntries enforces. Returns the full plan detail envelope
-// reflecting the new order.
+// same floor AddEntries enforces. Membership and untouched-position collision
+// are enforced by Store.Reorder (ErrNotFound → 404, ErrConflict → 409).
+// Returns the full plan detail envelope reflecting the new order.
 func (h *Handler) Reorder(w http.ResponseWriter, r *http.Request) {
 	planID, err := uuid.Parse(r.PathValue("id"))
 	if err != nil {
@@ -518,7 +474,7 @@ func (h *Handler) Reorder(w http.ResponseWriter, r *http.Request) {
 		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "entries must be non-empty")
 		return
 	}
-	ids, positions, err := validateReorderEntries(req.Entries)
+	entries, err := validateReorderEntries(req.Entries)
 	if err != nil {
 		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", err.Error())
 		return
@@ -533,17 +489,7 @@ func (h *Handler) Reorder(w http.ResponseWriter, r *http.Request) {
 		api.HandleError(w, h.logger, err, storeErrors...)
 		return
 	}
-	existing, err := store.Entries(r.Context(), planID)
-	if err != nil {
-		api.HandleError(w, h.logger, err, storeErrors...)
-		return
-	}
-	if status, code, msg := checkReorderAgainstPlan(existing, req.Entries, ids, positions); status != 0 {
-		api.Error(w, status, code, msg)
-		return
-	}
-
-	if err := applyReorder(r.Context(), store, req.Entries); err != nil {
+	if err := store.Reorder(r.Context(), planID, entries); err != nil {
 		api.HandleError(w, h.logger, err, storeErrors...)
 		return
 	}

@@ -36,6 +36,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -44,6 +45,7 @@ import (
 	"github.com/Koopa0/koopa/internal/content"
 	"github.com/Koopa0/koopa/internal/learning"
 	"github.com/Koopa0/koopa/internal/learning/hypothesis"
+	"github.com/Koopa0/koopa/internal/learning/plan"
 	"github.com/Koopa0/koopa/internal/mcp/ops"
 	"github.com/Koopa0/koopa/internal/note"
 	"github.com/Koopa0/koopa/internal/testdb"
@@ -3417,5 +3419,174 @@ func TestIntegration_BriefMorning_ExcludesDraftHypotheses(t *testing.T) {
 	if got.State != hypothesis.StateUnverified || got.Claim != "endorsed unverified claim" {
 		t.Errorf("unverified_hypotheses[0] = {state:%q claim:%q}, want the unverified row only",
 			got.State, got.Claim)
+	}
+}
+
+// --- manage_plan(reorder) atomicity + collision safety ---
+
+// mcpEntryPositions reads the plan's id → position map for reorder assertions.
+func mcpEntryPositions(t *testing.T, planID uuid.UUID) map[uuid.UUID]int32 {
+	t.Helper()
+	rows, err := testPool.Query(t.Context(),
+		`SELECT id, position FROM learning_plan_entries WHERE plan_id = $1`, planID)
+	if err != nil {
+		t.Fatalf("reading entry positions: %v", err)
+	}
+	defer rows.Close()
+	got := make(map[uuid.UUID]int32)
+	for rows.Next() {
+		var id uuid.UUID
+		var pos int32
+		if err := rows.Scan(&id, &pos); err != nil {
+			t.Fatalf("scanning entry position: %v", err)
+		}
+		got[id] = pos
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("iterating entry positions: %v", err)
+	}
+	return got
+}
+
+// seedReorderPlan creates an active plan with three entries at positions
+// 0,1,2 via manage_plan(add_entries) and returns the plan id plus the entry
+// ids ordered by position. Positions are explicit so a swap exercises the
+// (plan_id, position) unique index.
+func seedReorderPlan(t *testing.T, s *Server) (planID uuid.UUID, entryIDs []uuid.UUID) {
+	t.Helper()
+	planIDStr := seedLearningPlan(t, "leetcode", nil, "human")
+
+	if _, _, err := callHandler(t, s.managePlan, ManagePlanInput{
+		Action: "add_entries",
+		PlanID: planIDStr,
+		Entries: []ManagePlanEntryInput{
+			{Title: "Reorder MCP A", Position: 0},
+			{Title: "Reorder MCP B", Position: 1},
+			{Title: "Reorder MCP C", Position: 2},
+		},
+	}); err != nil {
+		t.Fatalf("add_entries: %v", err)
+	}
+
+	planID, err := uuid.Parse(planIDStr)
+	if err != nil {
+		t.Fatalf("parsing plan id: %v", err)
+	}
+
+	rows, err := testPool.Query(t.Context(),
+		`SELECT id FROM learning_plan_entries WHERE plan_id = $1 ORDER BY position`, planID)
+	if err != nil {
+		t.Fatalf("reading seeded entry ids: %v", err)
+	}
+	defer rows.Close()
+	var ids []uuid.UUID
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			t.Fatalf("scanning entry id: %v", err)
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("iterating entry ids: %v", err)
+	}
+	if len(ids) != 3 {
+		t.Fatalf("seeded %d entries, want 3", len(ids))
+	}
+	return planID, ids
+}
+
+// TestIntegration_ManagePlan_Reorder_SwapPersists drives manage_plan(reorder)
+// through a full reversal 0<->2 of a three-entry plan. A naive per-entry loop
+// would trip UNIQUE (plan_id, position) the moment it parks the first entry on
+// a slot another entry still holds; the store's two-phase park makes the swap
+// land cleanly. Proves the MCP path no longer hits a raw 23505 on a swap.
+func TestIntegration_ManagePlan_Reorder_SwapPersists(t *testing.T) {
+	s := setupServer(t)
+	planID, ids := seedReorderPlan(t, s)
+
+	// Reverse: A(0)→2, B(1)→1, C(2)→0.
+	if _, _, err := callHandler(t, s.managePlan, ManagePlanInput{
+		Action: "reorder",
+		PlanID: planID.String(),
+		Positions: []ManagePlanPositionInput{
+			{EntryID: ids[0].String(), Position: 2},
+			{EntryID: ids[1].String(), Position: 1},
+			{EntryID: ids[2].String(), Position: 0},
+		},
+	}); err != nil {
+		t.Fatalf("reorder swap: %v (a naive loop trips 23505 here)", err)
+	}
+
+	want := map[uuid.UUID]int32{ids[0]: 2, ids[1]: 1, ids[2]: 0}
+	if diff := cmp.Diff(want, mcpEntryPositions(t, planID)); diff != "" {
+		t.Errorf("persisted positions after swap mismatch (-want +got):\n%s", diff)
+	}
+}
+
+// TestIntegration_ManagePlan_Reorder_CollisionRollsBack drives the atomicity +
+// collision-safety guarantee: requesting a position held by an entry the
+// reorder leaves untouched must reject with a clear conflict error (wrapping
+// plan.ErrConflict — NOT a raw 23505) and leave every position unchanged. The
+// re-query proves the whole reorder is all-or-nothing under the transaction.
+func TestIntegration_ManagePlan_Reorder_CollisionRollsBack(t *testing.T) {
+	s := setupServer(t)
+	planID, ids := seedReorderPlan(t, s)
+
+	before := mcpEntryPositions(t, planID)
+
+	// ids[1] holds position 1 and is NOT part of the request, so moving ids[0]
+	// onto position 1 must refuse instead of tripping the unique constraint.
+	_, _, err := callHandler(t, s.managePlan, ManagePlanInput{
+		Action: "reorder",
+		PlanID: planID.String(),
+		Positions: []ManagePlanPositionInput{
+			{EntryID: ids[0].String(), Position: 1},
+		},
+	})
+	if err == nil {
+		t.Fatal("reorder onto an untouched entry's position succeeded; want a conflict rejection")
+	}
+	if !errors.Is(err, plan.ErrConflict) {
+		t.Errorf("error = %v, want wrap of plan.ErrConflict (a clear conflict, not a raw 23505)", err)
+	}
+	if strings.Contains(err.Error(), "23505") {
+		t.Errorf("error surfaced a raw 23505: %v", err)
+	}
+
+	if diff := cmp.Diff(before, mcpEntryPositions(t, planID)); diff != "" {
+		t.Errorf("positions changed after a rejected reorder (-want +got):\n%s\nreorder must be all-or-nothing", diff)
+	}
+}
+
+// TestIntegration_ManagePlan_Reorder_ForeignEntryRollsBack pins the other
+// rollback path: a batch mixing a valid entry with one that belongs to a
+// different plan must reject with a not-found error (wrapping plan.ErrNotFound)
+// and write nothing — the membership check fires before any position update,
+// and the transaction leaves the valid entry untouched too.
+func TestIntegration_ManagePlan_Reorder_ForeignEntryRollsBack(t *testing.T) {
+	s := setupServer(t)
+	planID, ids := seedReorderPlan(t, s)
+	_, otherIDs := seedReorderPlan(t, s)
+
+	before := mcpEntryPositions(t, planID)
+
+	_, _, err := callHandler(t, s.managePlan, ManagePlanInput{
+		Action: "reorder",
+		PlanID: planID.String(),
+		Positions: []ManagePlanPositionInput{
+			{EntryID: ids[0].String(), Position: 2},
+			{EntryID: otherIDs[0].String(), Position: 0}, // belongs to another plan
+		},
+	})
+	if err == nil {
+		t.Fatal("reorder referencing a foreign entry succeeded; want a not-found rejection")
+	}
+	if !errors.Is(err, plan.ErrNotFound) {
+		t.Errorf("error = %v, want wrap of plan.ErrNotFound", err)
+	}
+
+	if diff := cmp.Diff(before, mcpEntryPositions(t, planID)); diff != "" {
+		t.Errorf("positions changed after a rejected reorder (-want +got):\n%s\nthe valid entry must not move", diff)
 	}
 }
