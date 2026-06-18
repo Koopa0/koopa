@@ -82,8 +82,13 @@ export class TodayPageComponent {
     stream: () => this.todayService.today(),
   });
 
-  /** Local working copy of the brief; advance interactions update it. */
-  protected readonly brief = linkedSignal(() => this.resource.value());
+  // Local working copy of the brief; advance interactions update it. Guard the
+  // read: rxResource.value() throws while the resource is in an error state, so
+  // gate on hasValue() (the repo idiom). isError() drives the error UI;
+  // without this guard a failed fetch throws here and the error UI is dead.
+  protected readonly brief = linkedSignal(() =>
+    this.resource.hasValue() ? this.resource.value() : undefined,
+  );
 
   protected readonly isLoading = computed(
     () => this.resource.status() === 'loading' && !this.brief(),

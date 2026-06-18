@@ -100,8 +100,14 @@ export class DailyPlanPageComponent {
 
   protected readonly date = computed(() => this.plan()?.date ?? '');
 
+  // Guard the read: rxResource.value() throws while the resource is in an
+  // error state, so gate on hasValue() (the repo idiom). planResource is
+  // already guarded via plan() above.
   protected readonly candidates = computed(() =>
-    unplannedCandidates(this.todosResource.value() ?? [], this.plan()?.items ?? []),
+    unplannedCandidates(
+      this.todosResource.hasValue() ? this.todosResource.value() : [],
+      this.plan()?.items ?? [],
+    ),
   );
 
   protected readonly isLoading = computed(

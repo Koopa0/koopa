@@ -121,7 +121,12 @@ export class NotesListPageComponent {
       }),
   });
 
-  private readonly loadedRows = computed(() => this.resource.value() ?? []);
+  // Guard the read: rxResource.value() throws while the resource is in an
+  // error state, so gate on hasValue() (the repo idiom). hasError() drives
+  // the error banner; without this guard a failed list read throws here.
+  private readonly loadedRows = computed(() =>
+    this.resource.hasValue() ? this.resource.value() : [],
+  );
 
   /** Distinct authors on the loaded page, for the author filter chips. */
   protected readonly authorChips = computed<readonly Chip<string>[]>(() => {

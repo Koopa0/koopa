@@ -83,9 +83,14 @@ export class AdminNavCountsService {
       ),
   });
 
-  /** Signal-tracked read; lookups by key are O(1). */
-  readonly counts: Signal<NavCountEnvelope> = computed(
-    () => this.resource.value() ?? EMPTY_ENVELOPE,
+  /**
+   * Signal-tracked read; lookups by key are O(1). Guard the read:
+   * rxResource.value() throws while the resource is in an error state, so
+   * gate on hasValue() (the repo idiom). Without this guard a failed nav
+   * fetch throws here and takes down every admin page's sidebar.
+   */
+  readonly counts: Signal<NavCountEnvelope> = computed(() =>
+    this.resource.hasValue() ? this.resource.value() : EMPTY_ENVELOPE,
   );
 
   /**

@@ -107,7 +107,12 @@ export class ActivityPageComponent {
       }),
   });
 
-  protected readonly days = computed(() => this.resource.value()?.days ?? []);
+  // Guard the read: rxResource.value() throws while the resource is in an
+  // error state, so gate on hasValue() (the repo idiom). The value is an
+  // envelope, so guard the source then read `.days`.
+  protected readonly days = computed(() =>
+    this.resource.hasValue() ? this.resource.value().days : [],
+  );
   protected readonly total = computed(() =>
     this.days().reduce((sum, d) => sum + d.event_count, 0),
   );

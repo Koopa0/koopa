@@ -79,31 +79,43 @@ export class GtdStore {
       this.todoService.history(params.q ? { q: params.q } : {}),
   });
 
+  // Guarded snapshots: rxResource.value() throws while the resource is in an
+  // error state, so gate every read on hasValue() (the repo idiom). viewError()
+  // drives the error UI; without these guards a failed fetch throws and the
+  // error UI is dead. Each snapshot preserves the prior fallback shape.
+  private readonly planValue = computed(() =>
+    this.plan.hasValue() ? this.plan.value() : undefined,
+  );
+  private readonly backlogValue = computed(() =>
+    this.backlog.hasValue() ? this.backlog.value() : [],
+  );
+  private readonly historyValue = computed(() =>
+    this.history.hasValue() ? this.history.value() : [],
+  );
+  private readonly recurringValue = computed(() =>
+    this.recurring.hasValue() ? this.recurring.value() : undefined,
+  );
+
   private readonly todayIso = new Date().toISOString().slice(0, 10);
   private readonly planIds = computed(() =>
-    planMemberIds(this.plan.value()?.items ?? []),
+    planMemberIds(this.planValue()?.items ?? []),
   );
   readonly rows = computed(() =>
-    rowsForView(
-      this.view(),
-      this.backlog.value() ?? [],
-      this.planIds(),
-      this.todayIso,
-    ),
+    rowsForView(this.view(), this.backlogValue(), this.planIds(), this.todayIso),
   );
   readonly selection = computed(() =>
     Math.min(this.selectedIndex(), Math.max(this.rows().length - 1, 0)),
   );
-  readonly historyRows = computed(() => this.history.value() ?? []);
+  readonly historyRows = computed(() => this.historyValue());
   readonly recurringGroups = computed(() =>
-    recurringGroupsOf(this.recurring.value()),
+    recurringGroupsOf(this.recurringValue()),
   );
   readonly counts = computed(() =>
     viewCounts(
-      this.backlog.value() ?? [],
+      this.backlogValue(),
       this.planIds(),
       this.todayIso,
-      this.recurring.value(),
+      this.recurringValue(),
       this.historyRows().length,
     ),
   );
@@ -188,7 +200,7 @@ export class GtdStore {
 
   /** Append the todo to today's plan via the atomic PUT replace. */
   pullRow(row: TodoRow): void {
-    const plan = this.plan.value();
+    const plan = this.planValue();
     if (!plan) {
       this.notifications.error('Today’s plan has not loaded yet.');
       return;

@@ -83,8 +83,14 @@ export class HypothesisProfilePageComponent {
     stream: ({ params }) => this.hypothesisService.lineage(params),
   });
 
+  // Guard the read: rxResource.value() throws while the resource is in an
+  // error state, so gate on hasValue() (the repo idiom). hasError() drives the
+  // error UI; without this guard a failed fetch throws here (and in the
+  // topbar effect below that reads this) and the error UI is dead.
   protected readonly hypothesis = computed(() =>
-    this.hypothesisResource.value(),
+    this.hypothesisResource.hasValue()
+      ? this.hypothesisResource.value()
+      : undefined,
   );
   protected readonly lineage = computed(() => this.lineageResource.value());
 

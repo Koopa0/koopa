@@ -143,13 +143,18 @@ export class ContentListPageComponent {
       }),
   });
 
-  protected readonly rows = computed(() => this.resource.value()?.data ?? []);
-  protected readonly total = computed(
-    () =>
-      this.resource.value()?.meta.total ??
-      this.resource.value()?.data.length ??
-      0,
+  // Guard the read: rxResource.value() throws while the resource is in an
+  // error state, so gate on hasValue() (the repo idiom). hasError() drives
+  // the error banner; without this guard a failed list read throws here.
+  // The value is an envelope, so guard the source then read `.data`/`.meta`.
+  protected readonly rows = computed(() =>
+    this.resource.hasValue() ? this.resource.value().data : [],
   );
+  protected readonly total = computed(() => {
+    if (!this.resource.hasValue()) return 0;
+    const value = this.resource.value();
+    return value.meta.total ?? value.data.length ?? 0;
+  });
   protected readonly isLoading = computed(
     () => this.resource.status() === 'loading',
   );

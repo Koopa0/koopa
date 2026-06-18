@@ -95,7 +95,12 @@ export class ConceptsListPageComponent {
       }),
   });
 
-  protected readonly rows = computed(() => this.resource.value() ?? []);
+  // Guard the read: rxResource.value() throws while the resource is in an
+  // error state, so gate on hasValue() (the repo idiom). hasError() drives
+  // the error banner; without this guard a failed list read throws here.
+  protected readonly rows = computed(() =>
+    this.resource.hasValue() ? this.resource.value() : [],
+  );
   protected readonly total = computed(() => this.rows().length);
   protected readonly isLoading = computed(
     () => this.resource.status() === 'loading',

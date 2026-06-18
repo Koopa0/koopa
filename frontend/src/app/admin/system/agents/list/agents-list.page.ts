@@ -57,7 +57,12 @@ export class AgentsListPageComponent {
     stream: () => this.agentService.list(),
   });
 
-  protected readonly allAgents = computed(() => this.resource.value() ?? []);
+  // Guard the read: rxResource.value() throws while the resource is in an
+  // error state, so gate on hasValue() (the repo idiom). hasError() drives
+  // the error banner; without this guard a failed list read throws here.
+  protected readonly allAgents = computed(() =>
+    this.resource.hasValue() ? this.resource.value() : [],
+  );
 
   protected readonly rows = computed(() => {
     const filter = this.statusFilter();

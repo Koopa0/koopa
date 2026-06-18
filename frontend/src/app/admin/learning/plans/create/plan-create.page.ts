@@ -71,15 +71,22 @@ export class PlanCreatePageComponent {
   protected readonly domainsResource = rxResource<Domain[], void>({
     stream: () => this.learningService.getDomains(),
   });
-  protected readonly domains = computed(
-    () => this.domainsResource.value() ?? [],
+  // Guard the read: rxResource.value() throws while the resource is in an
+  // error state, so gate on hasValue() (the repo idiom). Without this guard a
+  // failed fetch throws here instead of falling back to an empty list.
+  protected readonly domains = computed(() =>
+    this.domainsResource.hasValue() ? this.domainsResource.value() : [],
   );
   protected readonly hasDomains = computed(() => this.domains().length > 0);
 
   protected readonly goalsResource = rxResource<GoalSummary[], void>({
     stream: () => this.planService.getGoalsOverview(),
   });
-  protected readonly goals = computed(() => this.goalsResource.value() ?? []);
+  // Guard the read: rxResource.value() throws while the resource is in an
+  // error state, so gate on hasValue() (the repo idiom).
+  protected readonly goals = computed(() =>
+    this.goalsResource.hasValue() ? this.goalsResource.value() : [],
+  );
 
   protected readonly model = signal<PlanForm>({
     title: '',

@@ -148,7 +148,12 @@ export class ContentEditorPageComponent {
   protected readonly topicsResource = rxResource({
     stream: () => this.topicService.getAllTopics(),
   });
-  protected readonly topics = computed(() => this.topicsResource.value() ?? []);
+  // Guard the read: rxResource.value() throws while the resource is in an
+  // error state, so gate on hasValue() (the repo idiom). Without this guard a
+  // failed topics fetch throws here instead of falling back to an empty list.
+  protected readonly topics = computed(() =>
+    this.topicsResource.hasValue() ? this.topicsResource.value() : [],
+  );
 
   private readonly _isActioning = signal(false);
   protected readonly isActioning = this._isActioning.asReadonly();
