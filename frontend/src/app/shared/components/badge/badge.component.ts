@@ -15,7 +15,7 @@ export type BadgeTone =
 
 const TONE_CLASSES: Record<BadgeTone, string> = {
   neutral: 'bg-elevated text-fg-muted border-border-faint',
-  brand: 'bg-brand-muted text-brand border-transparent',
+  brand: 'bg-brand-muted text-brand-strong border-transparent',
   success: 'bg-success-bg text-success border-transparent',
   warn: 'bg-warn-bg text-warn border-transparent',
   error: 'bg-error-bg text-error border-transparent',
