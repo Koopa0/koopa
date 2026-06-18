@@ -3,6 +3,7 @@ import { provideHttpClient, withXhr } from '@angular/common/http';
 import {
   HttpTestingController,
   provideHttpClientTesting,
+  type TestRequest,
 } from '@angular/common/http/testing';
 import { GtdStore } from './gtd.store';
 import type { TodoRow } from '../../../core/services/todo.service';
@@ -305,5 +306,62 @@ describe('GtdStore', () => {
           r.params.get('q') === 'auth',
       )
       .flush({ data: [] });
+  });
+});
+
+describe('GtdStore (resource error)', () => {
+  let store: GtdStore;
+  let httpMock: HttpTestingController;
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({
+      providers: [
+        provideHttpClient(withXhr()),
+        provideHttpClientTesting(),
+        GtdStore,
+      ],
+    });
+    httpMock = TestBed.inject(HttpTestingController);
+    store = TestBed.inject(GtdStore);
+    TestBed.tick();
+  });
+
+  afterEach(() => {
+    httpMock.verify();
+  });
+
+  /** Fail every init read with a 500. */
+  function failInitial(): void {
+    const fail = (req: TestRequest): void =>
+      req.flush(
+        { error: { code: 'INTERNAL', message: 'boom' } },
+        { status: 500, statusText: 'Server Error' },
+      );
+    httpMock
+      .match((r) => r.url.endsWith(TODOS_URL) && r.params.get('per_page') === '200')
+      .forEach(fail);
+    httpMock.match((r) => r.url.includes(PLAN_URL)).forEach(fail);
+    httpMock.match((r) => r.url.endsWith(`${TODOS_URL}/recurring`)).forEach(fail);
+    httpMock.match((r) => r.url.endsWith(`${TODOS_URL}/history`)).forEach(fail);
+    TestBed.tick();
+  }
+
+  it('should fall back to empty rows/counts/historyRows without throwing when every read errors', () => {
+    failInitial();
+
+    // rows() reads the guarded backlogValue() (hasValue() ? value() : []) —
+    // it must return [] rather than throw a ResourceValueError.
+    expect(store.rows()).toEqual([]);
+    // historyRows() is the guarded historyValue() fallback.
+    expect(store.historyRows()).toEqual([]);
+    // counts() composes the guarded fallbacks — every view counts to 0.
+    expect(store.counts()).toEqual({
+      inbox: 0,
+      today: 0,
+      pending: 0,
+      someday: 0,
+      recurring: 0,
+      history: 0,
+    });
   });
 });

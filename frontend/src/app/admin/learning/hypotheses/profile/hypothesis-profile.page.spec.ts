@@ -120,6 +120,30 @@ describe('HypothesisProfilePageComponent', () => {
       .map((n) => n.message);
   }
 
+  it('should surface the error state without throwing when the hypothesis read fails', async () => {
+    fixture = TestBed.createComponent(HypothesisProfilePageComponent);
+    fixture.detectChanges();
+
+    // Fail the primary hypothesis read with a 500. hypothesis() must fall
+    // back to undefined via the hasValue() guard rather than throw a
+    // ResourceValueError, and the error panel must render.
+    const reqs = httpMock.match(
+      (r) => r.method === 'GET' && r.url.endsWith(HYP_URL),
+    );
+    expect(reqs.length).toBeGreaterThan(0);
+    for (const r of reqs) {
+      r.flush(
+        { error: { code: 'INTERNAL', message: 'boom' } },
+        { status: 500, statusText: 'Server Error' },
+      );
+    }
+    // The lineage read fires alongside; drain it so verify() stays clean.
+    flushLineage(hyp());
+    await settle();
+
+    expect(testid('hypothesis-error')).not.toBeNull();
+  });
+
   it('should show only Endorse + Delete for a draft, hiding investigation actions', async () => {
     await render(hyp({ state: 'draft' }));
 

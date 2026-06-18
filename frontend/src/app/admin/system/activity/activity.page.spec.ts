@@ -229,4 +229,21 @@ describe('ActivityPageComponent', () => {
     expect(el.querySelector('[data-testid="activity-empty"]')).toBeTruthy();
     expect(el.textContent).toContain('No activity in this filter window.');
   });
+
+  it('should surface the error banner without throwing when the changelog read fails', async () => {
+    configure();
+    // Fail the changelog read with a 500. days() must fall back to [] via the
+    // hasValue() guard rather than throw a ResourceValueError, and the error
+    // banner must render. (The agents roster read was drained in configure().)
+    httpMock
+      .expectOne((r) => r.url.includes('/api/admin/system/activity'))
+      .flush(
+        { error: { code: 'INTERNAL', message: 'boom' } },
+        { status: 500, statusText: 'Server Error' },
+      );
+    await settle();
+
+    expect(el.querySelector('[data-testid="activity-error"]')).toBeTruthy();
+    expect(el.querySelector('[data-testid="activity-timeline"]')).toBeNull();
+  });
 });

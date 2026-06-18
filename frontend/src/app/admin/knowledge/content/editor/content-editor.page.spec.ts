@@ -321,4 +321,29 @@ describe('ContentEditorPageComponent', () => {
       ).toBe('true');
     });
   });
+
+  describe('topics resource error', () => {
+    it('should fall back to the no-topics notice without throwing when the topics read fails', async () => {
+      // The Topics fieldset reads from a secondary resource. A failed read
+      // must leave topics() as [] via the hasValue() guard (not throw a
+      // ResourceValueError) so the "No topics available" notice renders and
+      // the editor form stays usable.
+      harness = await RouterTestingHarness.create(
+        '/admin/knowledge/content/new',
+      );
+      await settle();
+      httpMock
+        .expectOne((r) => r.url.endsWith(TOPICS_URL))
+        .flush(
+          { error: { code: 'INTERNAL', message: 'boom' } },
+          { status: 500, statusText: 'Server Error' },
+        );
+      await settle();
+
+      expect(el().querySelector('[data-testid="content-editor"]')).toBeTruthy();
+      expect(
+        el().querySelector('[data-testid="editor-topics-empty"]'),
+      ).toBeTruthy();
+    });
+  });
 });

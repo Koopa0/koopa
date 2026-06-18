@@ -1,7 +1,7 @@
 import { vi } from 'vitest';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
-import { of } from 'rxjs';
+import { of, throwError } from 'rxjs';
 
 import { PlansListPageComponent } from './plans-list.page';
 import { LearningService } from '../../../../core/services/learning.service';
@@ -94,5 +94,16 @@ describe('PlansListPageComponent', () => {
     expect(el.textContent).toContain(
       'Create a plan to sequence your learning targets.',
     );
+  });
+
+  it('should surface the error banner without throwing when the list read fails', async () => {
+    // A failed read puts the resource in an error state; the rows() guard
+    // (hasValue() ? value() : []) must fall back to [] instead of throwing a
+    // ResourceValueError, and the error banner must render.
+    plans.mockReturnValue(throwError(() => new Error('boom')));
+    await setup();
+
+    expect(el.querySelector('[data-testid="plans-list-error"]')).not.toBeNull();
+    expect(el.querySelector('[data-testid="plans-list-table"]')).toBeNull();
   });
 });

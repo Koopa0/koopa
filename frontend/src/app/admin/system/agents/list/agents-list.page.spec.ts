@@ -153,4 +153,38 @@ describe('AgentsListPageComponent', () => {
     expect(el.querySelector('[data-testid="agents-list-table"]')).toBeNull();
     expect(el.textContent).toContain('No agents match this filter');
   });
+
+  it('should surface the error banner without throwing when the roster read fails', async () => {
+    TestBed.configureTestingModule({
+      imports: [AgentsListPageComponent],
+      providers: [
+        provideHttpClient(withXhr()),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        {
+          provide: AdminTopbarService,
+          useValue: { set: () => undefined, reset: () => undefined },
+        },
+      ],
+    });
+    fixture = TestBed.createComponent(AgentsListPageComponent);
+    httpMock = TestBed.inject(HttpTestingController);
+    fixture.detectChanges();
+
+    // Fail the roster read. allAgents() must fall back to [] via the
+    // hasValue() guard rather than throw a ResourceValueError, and the error
+    // banner must render.
+    httpMock
+      .expectOne((r) => r.url.includes('/api/admin/system/agents'))
+      .flush(
+        { error: { code: 'INTERNAL', message: 'boom' } },
+        { status: 500, statusText: 'Server Error' },
+      );
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    fixture.detectChanges();
+    el = fixture.nativeElement as HTMLElement;
+
+    expect(el.querySelector('[data-testid="agents-list-error"]')).not.toBeNull();
+    expect(el.querySelector('[data-testid="agents-list-table"]')).toBeNull();
+  });
 });

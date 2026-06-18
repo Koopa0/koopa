@@ -1,7 +1,7 @@
 import { vi } from 'vitest';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
-import { of } from 'rxjs';
+import { of, throwError } from 'rxjs';
 
 import { DomainsListPageComponent } from './domains-list.page';
 import { LearningService } from '../../../../core/services/learning.service';
@@ -64,5 +64,18 @@ describe('DomainsListPageComponent', () => {
     expect(el.textContent).toContain(
       'Create a domain to organise learning plans and concepts.',
     );
+  });
+
+  it('should surface the error banner without throwing when the list read fails', async () => {
+    // A failed read leaves the resource in an error state; rows() must fall
+    // back to [] via the hasValue() guard (not throw a ResourceValueError),
+    // and the error banner must render.
+    getDomains.mockReturnValue(throwError(() => new Error('boom')));
+    await setup();
+
+    expect(
+      el.querySelector('[data-testid="domains-list-error"]'),
+    ).not.toBeNull();
+    expect(el.querySelector('[data-testid="domains-list-table"]')).toBeNull();
   });
 });

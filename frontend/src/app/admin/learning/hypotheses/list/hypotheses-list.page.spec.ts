@@ -103,4 +103,23 @@ describe('HypothesesListPageComponent', () => {
     expect(draftRow?.textContent).toContain('Goroutine leaks');
     expect(draftRow?.textContent).toContain('draft');
   });
+
+  it('should surface the error banner without throwing when the list read fails', async () => {
+    fixture = TestBed.createComponent(HypothesesListPageComponent);
+    fixture.detectChanges();
+
+    // Fail the default (unverified) list read with a 500. The rows() guard
+    // (hasValue() ? value() : []) must fall back to [] rather than throw a
+    // ResourceValueError, and the error banner must render.
+    httpMock
+      .expectOne((r) => r.method === 'GET' && r.url.endsWith(LIST_URL))
+      .flush(
+        { error: { code: 'INTERNAL', message: 'boom' } },
+        { status: 500, statusText: 'Server Error' },
+      );
+    await settle();
+
+    expect(testid('hypotheses-list-error')).not.toBeNull();
+    expect(testid('hypotheses-list-row-0')).toBeNull();
+  });
 });

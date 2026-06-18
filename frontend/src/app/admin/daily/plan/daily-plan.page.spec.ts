@@ -155,6 +155,32 @@ describe('DailyPlanPageComponent', () => {
     expect(testid('daily-plan-error')).toBeTruthy();
   });
 
+  it('should fall back to the no-candidates notice without throwing when the todos read fails', async () => {
+    // The plan resolves but the candidate-todos read fails. candidates()
+    // must fall back to [] via the hasValue() guard rather than throw a
+    // ResourceValueError, so the "Add to today" panel shows the no-candidates
+    // notice and its toggle is disabled — the plan itself still renders.
+    fixture = TestBed.createComponent(DailyPlanPageComponent);
+    fixture.detectChanges();
+
+    httpMock
+      .expectOne((r) => r.url.endsWith(PLAN_URL) && r.method === 'GET')
+      .flush({
+        data: plan([entry({ todo_id: 'p1', title: 'Ship it', state: 'planned' })]),
+      });
+    httpMock
+      .expectOne((r) => r.url.endsWith(TODOS_URL) && r.method === 'GET')
+      .flush(null, { status: 500, statusText: 'Server Error' });
+    await settle();
+
+    expect(testid('daily-plan-item-p1')).toBeTruthy();
+    expect(testid('daily-plan-no-candidates')).toBeTruthy();
+    const toggle = testid('daily-plan-add-toggle') as HTMLButtonElement | null;
+    expect(toggle?.disabled).toBe(true);
+    // The plan did not enter an error state — only the todos read failed.
+    expect(testid('daily-plan-error')).toBeNull();
+  });
+
   it('should reorder via the atomic PUT and re-render from the envelope', async () => {
     await render([
       entry({ todo_id: 'a', title: 'First', state: 'planned' }),

@@ -1,7 +1,7 @@
 import { vi } from 'vitest';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter, Router } from '@angular/router';
-import { of } from 'rxjs';
+import { of, throwError } from 'rxjs';
 
 import { PlanCreatePageComponent } from './plan-create.page';
 import { LearningService } from '../../../../core/services/learning.service';
@@ -146,5 +146,38 @@ describe('PlanCreatePageComponent', () => {
     await fixture.whenStable();
 
     expect(createPlan.mock.calls[0][0]).toMatchObject({ target_count: 14 });
+  });
+
+  it('should fall back to the no-domains notice without throwing when the domains read fails', async () => {
+    // The page reads the domains dropdown from a secondary resource. A failed
+    // read must leave domains() as [] via the hasValue() guard (not throw a
+    // ResourceValueError) so hasDomains() is false and the fallback notice
+    // renders in place of the select. Rebuild the component with a failing
+    // getDomains while goals still resolve.
+    TestBed.resetTestingModule();
+    getDomains.mockReturnValue(throwError(() => new Error('boom')));
+    getGoalsOverview.mockReturnValue(of([]));
+
+    TestBed.configureTestingModule({
+      imports: [PlanCreatePageComponent],
+      providers: [
+        provideRouter([]),
+        { provide: LearningService, useValue: { createPlan, getDomains } },
+        { provide: PlanService, useValue: { getGoalsOverview } },
+        {
+          provide: AdminTopbarService,
+          useValue: { set: () => undefined, reset: () => undefined },
+        },
+      ],
+    });
+
+    fixture = TestBed.createComponent(PlanCreatePageComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    el = fixture.nativeElement as HTMLElement;
+
+    expect(el.querySelector('[data-testid="plan-no-domains"]')).not.toBeNull();
+    expect(el.querySelector('[data-testid="plan-domain-select"]')).toBeNull();
   });
 });

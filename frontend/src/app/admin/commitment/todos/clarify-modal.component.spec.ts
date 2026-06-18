@@ -118,4 +118,27 @@ describe('ClarifyModalComponent', () => {
     expect(deferred).toBe(1);
     expect(closed).toBe(1);
   });
+
+  it('should degrade to only the default option without throwing when the projects read fails', async () => {
+    fixture = TestBed.createComponent(ClarifyModalComponent);
+    fixture.componentRef.setInput('item', capture);
+    fixture.detectChanges();
+    // Fail the projects read. projects() must fall back to [] via the
+    // hasValue() guard rather than throw a ResourceValueError, leaving only
+    // the "(no project)" option and a still-usable modal.
+    httpMock
+      .expectOne((r) => r.url.includes(PROJECTS_URL))
+      .flush(
+        { error: { code: 'INTERNAL', message: 'boom' } },
+        { status: 500, statusText: 'Server Error' },
+      );
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const host = fixture.nativeElement as HTMLElement;
+    expect(host.textContent).toContain('Research pgvector indexing');
+    const select = testid('clarify-project') as HTMLSelectElement;
+    expect(select.options).toHaveLength(1);
+    expect(select.options[0].textContent).toContain('(no project)');
+  });
 });
