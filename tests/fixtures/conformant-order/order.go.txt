@@ -1,0 +1,48 @@
+// Package order models customer orders and their lifecycle.
+package order
+
+import (
+	"errors"
+	"fmt"
+	"time"
+)
+
+// Sentinel errors the handler branches on.
+var (
+	// ErrNotFound means no order exists for the given id.
+	ErrNotFound = errors.New("order not found")
+	// ErrConflict means a uniqueness constraint was violated.
+	ErrConflict = errors.New("order already exists")
+	// ErrInvalidInput means caller-supplied data failed validation.
+	ErrInvalidInput = errors.New("invalid order input")
+)
+
+// Status is the lifecycle state of an order.
+type Status string
+
+// Order lifecycle states.
+const (
+	StatusPending   Status = "pending"
+	StatusShipped   Status = "shipped"
+	StatusDelivered Status = "delivered"
+	StatusCancelled Status = "cancelled"
+)
+
+// Order is a customer order.
+type Order struct {
+	ID        string    `json:"id"`
+	Status    Status    `json:"status"`
+	Total     int64     `json:"total"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// ParseStatus converts s to a Status, returning ErrInvalidInput if s is not a
+// known lifecycle state.
+func ParseStatus(s string) (Status, error) {
+	switch Status(s) {
+	case StatusPending, StatusShipped, StatusDelivered, StatusCancelled:
+		return Status(s), nil
+	default:
+		return "", fmt.Errorf("parsing status %q: %w", s, ErrInvalidInput)
+	}
+}

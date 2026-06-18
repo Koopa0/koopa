@@ -1,0 +1,16 @@
+{
+  "pair": "test-strategy-vs-go-testing-advanced",
+  "note": "WHICH tests vs HOW to write them. test-strategy = decision tree producing a test plan. go-testing-advanced = golden files, fixtures, cmpopts, parallel mechanics.",
+  "cases": [
+    { "query": "which tests should the new status parser get", "expect": "test-strategy", "reject": "go-testing-advanced" },
+    { "query": "does this validator need fuzz tests or are table tests enough", "expect": "test-strategy", "reject": "go-testing-advanced" },
+    { "query": "give me a test plan for the order feature", "expect": "test-strategy", "reject": "go-testing-advanced" },
+    { "query": "should this function get a benchmark or is that overkill", "expect": "test-strategy", "reject": "go-testing-advanced" },
+    { "query": "unit test or integration test for the store methods?", "expect": "test-strategy", "reject": "go-testing-advanced" },
+    { "query": "set up golden file comparison for the report output", "expect": "go-testing-advanced", "reject": "test-strategy" },
+    { "query": "cmpopts to ignore the timestamp fields in the diff", "expect": "go-testing-advanced", "reject": "test-strategy" },
+    { "query": "t.Parallel and t.Setenv together panics, what gives", "expect": "go-testing-advanced", "reject": "test-strategy" },
+    { "query": "how do i structure the test fixtures under testdata", "expect": "go-testing-advanced", "reject": "test-strategy" },
+    { "query": "generate the html coverage report", "expect": "go-testing-advanced", "reject": "test-strategy" }
+  ]
+}

@@ -1,0 +1,90 @@
+package order
+
+import (
+	"context"
+	"errors"
+	"log/slog"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+
+	"github.com/google/go-cmp/cmp"
+)
+
+func TestParseStatus(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name    string
+		input   string
+		want    Status
+		wantErr bool
+	}{
+		{name: "pending", input: "pending", want: StatusPending},
+		{name: "delivered", input: "delivered", want: StatusDelivered},
+		{name: "empty", input: "", wantErr: true},
+		{name: "unknown", input: "bogus", wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := ParseStatus(tt.input)
+			if tt.wantErr {
+				if !errors.Is(err, ErrInvalidInput) {
+					t.Fatalf("ParseStatus(%q) err = %v, want ErrInvalidInput", tt.input, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("ParseStatus(%q) unexpected err = %v", tt.input, err)
+			}
+			if diff := cmp.Diff(tt.want, got); diff != "" {
+				t.Errorf("ParseStatus(%q) mismatch (-want +got):\n%s", tt.input, diff)
+			}
+		})
+	}
+}
+
+// fakeReader is a hand-written test double (Test Doubles doctrine: a fake, not
+// a mock framework) used only because exercising the HTTP layer here does not
+// warrant a full testcontainers spin-up. It asserts via outputs, never calls.
+type fakeReader struct {
+	order *Order
+	err   error
+}
+
+func (f *fakeReader) Order(_ context.Context, _ string) (*Order, error) {
+	return f.order, f.err
+}
+
+func TestGetOrder(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name     string
+		reader   *fakeReader
+		wantCode int
+	}{
+		{name: "found", reader: &fakeReader{order: &Order{ID: "abc", Status: StatusPending}}, wantCode: http.StatusOK},
+		{name: "not found", reader: &fakeReader{err: ErrNotFound}, wantCode: http.StatusNotFound},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			h := getOrder(tt.reader, slog.New(slog.DiscardHandler))
+			req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/orders/abc", nil)
+			req.SetPathValue("id", "abc")
+			w := httptest.NewRecorder()
+
+			h.ServeHTTP(w, req)
+
+			if w.Code != tt.wantCode {
+				t.Errorf("getOrder status = %d, want %d", w.Code, tt.wantCode)
+			}
+		})
+	}
+}
+
+func BenchmarkParseStatus(b *testing.B) {
+	for b.Loop() {
+		_, _ = ParseStatus("delivered")
+	}
+}

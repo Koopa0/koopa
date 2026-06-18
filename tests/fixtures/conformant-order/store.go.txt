@@ -1,0 +1,44 @@
+package order
+
+import (
+	"context"
+	"errors"
+	"fmt"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
+)
+
+// querier is the subset of pgx the store consumes. The store defines what it
+// needs; the caller passes a *pgxpool.Pool (which satisfies this).
+type querier interface {
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+}
+
+// Store reads and writes orders.
+type Store struct {
+	db querier
+}
+
+// New returns a Store backed by db.
+func New(db querier) *Store {
+	return &Store{db: db}
+}
+
+// Order returns the order with the given id, or ErrNotFound if none exists.
+func (s *Store) Order(ctx context.Context, id string) (*Order, error) {
+	var o Order
+	err := s.db.QueryRow(ctx,
+		`SELECT id, status, total, created_at FROM orders WHERE id = $1`, id,
+	).Scan(&o.ID, &o.Status, &o.Total, &o.CreatedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok && pgErr.Code == "23505" {
+			return nil, ErrConflict
+		}
+		return nil, fmt.Errorf("querying order %s: %w", id, err)
+	}
+	return &o, nil
+}

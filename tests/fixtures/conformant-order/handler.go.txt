@@ -1,0 +1,51 @@
+package order
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"log/slog"
+	"net/http"
+)
+
+// orderReader is the consumer-side view the handler needs of the store.
+type orderReader interface {
+	Order(ctx context.Context, id string) (*Order, error)
+}
+
+// getOrder returns a handler that reads a single order by path id.
+func getOrder(store orderReader, logger *slog.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id := r.PathValue("id")
+		if id == "" {
+			respondError(w, http.StatusBadRequest, "missing id")
+			return
+		}
+
+		o, err := store.Order(r.Context(), id)
+		switch {
+		case errors.Is(err, ErrNotFound):
+			respondError(w, http.StatusNotFound, "not found")
+			return
+		case err != nil:
+			logger.Error("reading order", "order_id", id, "error", err)
+			respondError(w, http.StatusInternalServerError, "internal error")
+			return
+		}
+
+		encode(w, http.StatusOK, o)
+	}
+}
+
+func encode[T any](w http.ResponseWriter, status int, v T) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.WriteHeader(status)
+	if err := json.NewEncoder(w).Encode(v); err != nil {
+		slog.Default().Error("encoding response", "error", err)
+	}
+}
+
+func respondError(w http.ResponseWriter, status int, msg string) {
+	encode(w, status, map[string]string{"error": msg})
+}

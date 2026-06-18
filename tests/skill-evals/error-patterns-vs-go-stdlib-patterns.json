@@ -1,0 +1,16 @@
+{
+  "pair": "error-patterns-vs-go-stdlib-patterns",
+  "note": "Shared keyword space: both touch fmt/errors/json. error-patterns = domain error design + mapping. go-stdlib-patterns = io/json/time/sort/strings/context mechanics.",
+  "cases": [
+    { "query": "should ErrNotFound be a sentinel or a custom error type", "expect": "error-patterns", "reject": "go-stdlib-patterns" },
+    { "query": "map the pgx unique violation to a 409 in the handler", "expect": "error-patterns", "reject": "go-stdlib-patterns" },
+    { "query": "errors.Is or errors.AsType for this check?", "expect": "error-patterns", "reject": "go-stdlib-patterns" },
+    { "query": "wrap with %w or %v at the api boundary", "expect": "error-patterns", "reject": "go-stdlib-patterns" },
+    { "query": "define the domain errors for the order package", "expect": "error-patterns", "reject": "go-stdlib-patterns" },
+    { "query": "json.Decoder or json.Unmarshal for this request body", "expect": "go-stdlib-patterns", "reject": "error-patterns" },
+    { "query": "whats the right way to compare two time.Time values", "expect": "go-stdlib-patterns", "reject": "error-patterns" },
+    { "query": "use io.TeeReader to log the body while still decoding it", "expect": "go-stdlib-patterns", "reject": "error-patterns" },
+    { "query": "strings.Builder or bytes.Buffer for building this query string", "expect": "go-stdlib-patterns", "reject": "error-patterns" },
+    { "query": "sort the orders slice by created_at descending", "expect": "go-stdlib-patterns", "reject": "error-patterns" }
+  ]
+}

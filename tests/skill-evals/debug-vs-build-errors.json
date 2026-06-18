@@ -1,0 +1,16 @@
+{
+  "pair": "debug-vs-build-errors",
+  "note": "Boundary test: debug skill is for RUNTIME problems only; build/vet/lint errors route to the build-resolver agent, NOT the debug skill. expect \"none\" means the debug skill must NOT fire.",
+  "cases": [
+    { "query": "the test passes alone but fails when the whole suite runs", "expect": "debug", "reject": "" },
+    { "query": "handler returns 500 but only under load, cant reproduce locally", "expect": "debug", "reject": "" },
+    { "query": "why is this goroutine leaking, count keeps growing", "expect": "debug", "reject": "" },
+    { "query": "the store query returns the wrong total for mixed currencies", "expect": "debug", "reject": "" },
+    { "query": "production logs show panic: assignment to entry in nil map", "expect": "debug", "reject": "" },
+    { "query": "undefined: order.NewStore when building", "expect": "none", "reject": "debug" },
+    { "query": "go vet is complaining about copylocks on this struct", "expect": "none", "reject": "debug" },
+    { "query": "golangci-lint errcheck failures all over the new file", "expect": "none", "reject": "debug" },
+    { "query": "cannot use x (type int) as int64 - build is failing", "expect": "none", "reject": "debug" },
+    { "query": "missing go.sum entry for the new import", "expect": "none", "reject": "debug" }
+  ]
+}

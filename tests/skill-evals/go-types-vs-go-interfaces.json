@@ -1,0 +1,16 @@
+{
+  "pair": "go-types-vs-go-interfaces",
+  "note": "Highest-confusion pair: both cover type design. go-types = value/pointer semantics, receivers, nil, slices/maps, embedding. go-interfaces = interface placement, consumer-side design, satisfaction, test doubles.",
+  "cases": [
+    { "query": "should Order have a pointer or value receiver here?", "expect": "go-types", "reject": "go-interfaces" },
+    { "query": "why does my nil check fail when the interface holds a typed nil", "expect": "go-types", "reject": "go-interfaces" },
+    { "query": "appending to the slice inside the function doesnt change the callers slice??", "expect": "go-types", "reject": "go-interfaces" },
+    { "query": "how should i order the struct fields, does it matter for memory", "expect": "go-types", "reject": "go-interfaces" },
+    { "query": "pass this big struct by value or pointer", "expect": "go-types", "reject": "go-interfaces" },
+    { "query": "where should the OrderReader interface live, in order or in notification?", "expect": "go-interfaces", "reject": "go-types" },
+    { "query": "should NewStore return an interface or the concrete *Store", "expect": "go-interfaces", "reject": "go-types" },
+    { "query": "accept interfaces return structs - does that apply here", "expect": "go-interfaces", "reject": "go-types" },
+    { "query": "does *Store automatically satisfy OrderReader or do i declare it", "expect": "go-interfaces", "reject": "go-types" },
+    { "query": "i need a fake for the payment gateway client in tests", "expect": "go-interfaces", "reject": "go-types" }
+  ]
+}
