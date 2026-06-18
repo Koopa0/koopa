@@ -307,11 +307,18 @@ func (h *Handler) Merge(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	store := h.store
-	if tx, ok := api.TxFromContext(r.Context()); ok {
-		store = h.store.WithTx(tx)
+	// MergeTags fans 5 writes across tag_aliases + content_tags + tags and must
+	// commit as a unit; running it on the pool would let the merge half-apply.
+	// This route is on adminMid, so the actor tx is always present — its absence
+	// is a wiring error, not a client one. Require it instead of degrading to
+	// the pool.
+	tx, ok := api.TxFromContext(r.Context())
+	if !ok {
+		h.logger.Error("tag merge: no actor transaction in context (route must be on adminMid)")
+		api.Error(w, http.StatusInternalServerError, "INTERNAL", "internal error")
+		return
 	}
-	result, err := store.MergeTags(r.Context(), p.SourceID, p.TargetID)
+	result, err := h.store.WithTx(tx).MergeTags(r.Context(), p.SourceID, p.TargetID)
 	if err != nil {
 		api.HandleError(w, h.logger, err, storeErrors...)
 		return
