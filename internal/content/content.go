@@ -594,21 +594,19 @@ func (s *Store) CreateContent(ctx context.Context, p *CreateParams) (*Content, e
 		CreatedAt:   r.CreatedAt, UpdatedAt: r.UpdatedAt,
 	})
 
-	// Topic and tag fetch can run on the same DBTX (tx or pool) — callers
-	// who opened a tx will see the rows they just wrote. On lookup error,
-	// return the content with empty collections rather than failing the
-	// whole operation (the content write succeeded).
+	// Topic/tag fetch runs on the caller's tx; a read failure aborts that tx,
+	// so it MUST propagate. Masking it as an empty-collection success would let
+	// the handler emit 2xx before the middleware's commit fails — an
+	// inconsistency the client never hears about.
 	topics, err := s.TopicsForContent(ctx, c.ID)
 	if err != nil {
-		c.Topics = []TopicRef{}
-		return &c, nil
+		return nil, fmt.Errorf("fetching topics for content %s: %w", c.ID, err)
 	}
 	c.Topics = topics
 
 	tags, err := s.TagsForContent(ctx, c.ID)
 	if err != nil {
-		c.Tags = []string{}
-		return &c, nil
+		return nil, fmt.Errorf("fetching tags for content %s: %w", c.ID, err)
 	}
 	c.Tags = tags
 
@@ -696,19 +694,19 @@ func (s *Store) UpdateContent(ctx context.Context, id uuid.UUID, p *UpdateParams
 		CreatedAt:   r.CreatedAt, UpdatedAt: r.UpdatedAt,
 	})
 
-	// Topic and tag fetch is outside the transaction — update is already committed.
-	// On failure, return the content with empty collections rather than failing.
+	// Topic/tag fetch runs on the caller's STILL-OPEN tx (not post-commit); a
+	// read failure aborts that tx, so it MUST propagate. Masking it as an
+	// empty-collection success would let the handler emit 2xx before the
+	// middleware's commit fails.
 	topics, err := s.TopicsForContent(ctx, c.ID)
 	if err != nil {
-		c.Topics = []TopicRef{}
-		return &c, nil
+		return nil, fmt.Errorf("fetching topics for content %s: %w", c.ID, err)
 	}
 	c.Topics = topics
 
 	tags, err := s.TagsForContent(ctx, c.ID)
 	if err != nil {
-		c.Tags = []string{}
-		return &c, nil
+		return nil, fmt.Errorf("fetching tags for content %s: %w", c.ID, err)
 	}
 	c.Tags = tags
 
