@@ -371,31 +371,32 @@ func (s *Server) fillContentPipeline(ctx context.Context, out *BriefOutput) {
 }
 
 // fillBriefReflection populates the reflection fields: the day's plan items
-// plus plan-vs-actual completion counts. It references ZERO agent_notes — the
-// former reflection_context today_notes / today_plan sections are dropped.
+// plus plan-vs-actual counts. Completion is derived from each planned todo's
+// CURRENT state (done -> completed, someday -> deferred, anything else ->
+// still planned), not the daily_plan_item.status column, which has no write
+// path. It references ZERO agent_notes — the former reflection_context
+// today_notes / today_plan sections are dropped.
 func (s *Server) fillBriefReflection(ctx context.Context, date time.Time, out *BriefOutput) {
 	out.PlannedItems = []daily.Item{}
 
-	if items, err := s.dayplan.ItemsByDate(ctx, date); err == nil {
-		out.PlannedItems = items
-		for i := range items {
-			switch items[i].Status {
-			case daily.StatusDone:
-				out.CompletedCount++
-			case daily.StatusDeferred:
-				out.DeferredCount++
-			case daily.StatusPlanned:
-				out.PlannedCount++
-			case daily.StatusDropped:
-				// dropped items are not counted in any category
-			}
-		}
-		total := len(items)
-		if total > 0 {
-			out.CompletionRate = float64(out.CompletedCount) / float64(total)
-		}
-	} else {
+	items, err := s.dayplan.ItemsByDate(ctx, date)
+	if err != nil {
 		s.logger.Warn("brief: reflection plan items", "error", err)
+		return
+	}
+	out.PlannedItems = items
+	for i := range items {
+		switch items[i].TodoState {
+		case string(todo.StateDone):
+			out.CompletedCount++
+		case string(todo.StateSomeday):
+			out.DeferredCount++
+		default:
+			out.PlannedCount++
+		}
+	}
+	if total := len(items); total > 0 {
+		out.CompletionRate = float64(out.CompletedCount) / float64(total)
 	}
 }
 

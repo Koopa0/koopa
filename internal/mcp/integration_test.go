@@ -3422,6 +3422,61 @@ func TestIntegration_BriefMorning_ExcludesDraftHypotheses(t *testing.T) {
 	}
 }
 
+// TestIntegration_BriefReflection_CountsFromTodoState pins that brief(reflection)
+// derives completed/deferred/planned from each planned todo's CURRENT state, not
+// the daily_plan_item.status column (which has no write path — it stays 'planned'
+// forever, so the old switch reported 0% completion regardless of reality).
+func TestIntegration_BriefReflection_CountsFromTodoState(t *testing.T) {
+	s := setupServer(t)
+
+	const planDate = "2026-05-27"
+	// A done todo needs completed_at set (chk_todo_completed_at_consistency);
+	// seedTodoState only covers non-terminal states.
+	done := func(title string) uuid.UUID {
+		t.Helper()
+		var id uuid.UUID
+		if err := testPool.QueryRow(t.Context(),
+			`INSERT INTO todos (title, state, completed_at) VALUES ($1, 'done', now()) RETURNING id`,
+			title).Scan(&id); err != nil {
+			t.Fatalf("seeding done todo %q: %v", title, err)
+		}
+		return id
+	}
+	ids := []uuid.UUID{
+		done("reflection-done-A"),
+		done("reflection-done-B"),
+		seedTodoState(t, "reflection-someday", "someday"),
+		seedTodoState(t, "reflection-pending", "todo"),
+	}
+	for pos, id := range ids {
+		if _, err := testPool.Exec(t.Context(),
+			`INSERT INTO daily_plan_items (plan_date, todo_id, selected_by, position)
+			 VALUES ($1::date, $2, 'human', $3)`,
+			planDate, id, pos); err != nil {
+			t.Fatalf("seeding plan item %d: %v", pos, err)
+		}
+	}
+
+	date := planDate
+	_, out, err := callHandler(t, s.brief, BriefInput{Mode: "reflection", Date: &date})
+	if err != nil {
+		t.Fatalf("brief(reflection): %v", err)
+	}
+
+	if out.CompletedCount != 2 {
+		t.Errorf("CompletedCount = %d, want 2 (two done todos)", out.CompletedCount)
+	}
+	if out.DeferredCount != 1 {
+		t.Errorf("DeferredCount = %d, want 1 (one someday todo)", out.DeferredCount)
+	}
+	if out.PlannedCount != 1 {
+		t.Errorf("PlannedCount = %d, want 1 (one still-todo todo)", out.PlannedCount)
+	}
+	if out.CompletionRate != 0.5 {
+		t.Errorf("CompletionRate = %v, want 0.5 (2 of 4)", out.CompletionRate)
+	}
+}
+
 // --- manage_plan(reorder) atomicity + collision safety ---
 
 // mcpEntryPositions reads the plan's id → position map for reorder assertions.
