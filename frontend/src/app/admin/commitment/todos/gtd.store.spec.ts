@@ -227,6 +227,50 @@ describe('GtdStore', () => {
       .flush({ data: backlogRows });
   });
 
+  it('should clarify an inbox capture then pull it into today on t', () => {
+    const inboxRow = backlogRows[0];
+
+    // 't' on an inbox row opens clarify with pull intent — an inbox-state
+    // row can't be appended to the plan directly, so nothing fires yet.
+    store.pullRow(inboxRow);
+    expect(store.clarifyTarget()).toBe(inboxRow);
+    httpMock.expectNone((r) => r.method === 'PUT');
+
+    // Submitting clarifies inbox→todo, then appends the new todo to today.
+    store.clarified({ project_id: null, energy: null, due: null });
+
+    const advance = httpMock.expectOne((r) =>
+      r.url.endsWith(`${TODOS_URL}/${inboxRow.id}/advance`),
+    );
+    expect(advance.request.body).toEqual({ action: 'clarify' });
+    advance.flush({ data: { ...inboxRow, state: 'todo' } });
+
+    const put = httpMock.expectOne(
+      (r) => r.url.includes(PLAN_URL) && r.method === 'PUT',
+    );
+    expect(put.request.body).toEqual({
+      items: [
+        { todo_id: 'planned-1', position: 0 },
+        { todo_id: inboxRow.id, position: 1 },
+      ],
+    });
+    put.flush({
+      data: { date: todayIso, items: [], total: 2, items_removed: [] },
+    });
+
+    // Reloads: backlog + plan.
+    TestBed.tick();
+    httpMock
+      .expectOne(
+        (r) => r.url.endsWith(TODOS_URL) && r.params.get('per_page') === '200',
+      )
+      .flush({ data: backlogRows });
+    httpMock
+      .expectOne((r) => r.url.includes(PLAN_URL) && r.method === 'GET')
+      .flush({ data: planFixture });
+    TestBed.tick();
+  });
+
   it('should drop an inbox capture via the advance verb and reload', () => {
     store.dropRow(backlogRows[0]);
 

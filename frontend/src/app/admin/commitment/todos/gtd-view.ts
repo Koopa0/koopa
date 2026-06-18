@@ -285,6 +285,7 @@ export function keyboardLegend(view: GtdView): KeyHint[] {
       return [
         ...NAV_HINTS,
         { keys: 'e', label: 'clarify' },
+        { keys: 't', label: 'today' },
         { keys: 'd', label: 'defer' },
         { keys: 'x', label: 'drop' },
       ];
@@ -353,7 +354,9 @@ export function keyActionFor(key: string, view: GtdView): GtdKeyAction | null {
     case 'x':
       return view === 'inbox' ? 'drop' : null;
     case 't':
-      return view === 'pending' || view === 'someday' ? 'pull' : null;
+      return view === 'pending' || view === 'someday' || view === 'inbox'
+        ? 'pull'
+        : null;
     default:
       return null;
   }

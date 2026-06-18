@@ -151,7 +151,7 @@ describe('gtd-view', () => {
     expect(keyActionFor('x', 'today')).toBeNull();
     expect(keyActionFor('d', 'someday')).toBeNull();
     expect(keyActionFor('t', 'someday')).toBe('pull');
-    expect(keyActionFor('t', 'inbox')).toBeNull();
+    expect(keyActionFor('t', 'inbox')).toBe('pull');
   });
 
   it('builds the clarify field update only from set fields', () => {

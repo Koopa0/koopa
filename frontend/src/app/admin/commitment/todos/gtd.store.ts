@@ -38,6 +38,14 @@ const HISTORY_DEBOUNCE_MS = 250;
 const BACKLOG_STATES = ['inbox', 'todo', 'in_progress', 'someday'] as const;
 
 /**
+ * Why the clarify modal was opened. `clarify` lands the capture as a plain
+ * todo; `pull` additionally appends it to today's plan after the inbox→todo
+ * transition — the daily-plan PUT rejects inbox-state rows, so a capture
+ * can't be pulled into today without clarifying first.
+ */
+export type ClarifyIntent = 'clarify' | 'pull';
+
+/**
  * Page-scoped state for the GTD surface: the four data resources
  * (backlog list, daily plan, recurring buckets, completed history),
  * the active view + row selection, and every mutation round-trip
@@ -54,6 +62,7 @@ export class GtdStore {
   readonly view = signal<GtdView>('inbox');
   readonly selectedIndex = signal(0);
   readonly clarifyTarget = signal<TodoRow | null>(null);
+  private readonly clarifyIntent = signal<ClarifyIntent>('clarify');
   readonly searchDraft = signal('');
   private readonly historyQuery = signal('');
   private historyTimer: ReturnType<typeof setTimeout> | null = null;
@@ -183,7 +192,7 @@ export class GtdStore {
   /** Primary advance: inbox rows open clarify, others run their verb. */
   advanceRow(row: TodoRow): void {
     if (row.state === 'inbox') {
-      this.clarifyTarget.set(row);
+      this.openClarify(row);
       return;
     }
     const action = advanceActionFor(row.state);
@@ -198,8 +207,19 @@ export class GtdStore {
     this.runAdvance(row, 'drop');
   }
 
-  /** Append the todo to today's plan via the atomic PUT replace. */
+  /**
+   * Pull a row into today's plan. Inbox captures can't join the plan
+   * directly — the daily-plan PUT rejects inbox-state rows — so 't' on an
+   * inbox row opens clarify with pull intent and the append runs after the
+   * inbox→todo transition (see clarified). Already-todo rows append via the
+   * atomic PUT replace.
+   */
   pullRow(row: TodoRow): void {
+    if (row.state === 'inbox') {
+      this.clarifyIntent.set('pull');
+      this.clarifyTarget.set(row);
+      return;
+    }
     const plan = this.planValue();
     if (!plan) {
       this.notifications.error('Today’s plan has not loaded yet.');
@@ -216,27 +236,73 @@ export class GtdStore {
     );
   }
 
-  /** Clarify-modal submit: optional field PUT, then advance(clarify). */
+  /** Open the clarify modal for a row with plain clarify intent. */
+  openClarify(row: TodoRow): void {
+    this.clarifyIntent.set('clarify');
+    this.clarifyTarget.set(row);
+  }
+
+  /** Dismiss the clarify modal without acting; resets the pull intent. */
+  closeClarify(): void {
+    this.clarifyTarget.set(null);
+    this.clarifyIntent.set('clarify');
+  }
+
+  /**
+   * Clarify-modal submit: optional field PUT, then advance(clarify). When the
+   * modal was opened with pull intent ('t' on an inbox row) the freshly
+   * clarified todo is appended to today's plan.
+   */
   clarified(result: ClarifyResult): void {
     const row = this.clarifyTarget();
     if (!row) return;
+    const pull = this.clarifyIntent() === 'pull';
     this.clarifyTarget.set(null);
+    this.clarifyIntent.set('clarify');
     const fields = clarifyUpdate(result);
     const update$: Observable<TodoItem | null> = fields
       ? this.todoService.update(row.id, fields)
       : of(null);
-    this.mutate(
-      update$.pipe(switchMap(() => this.todoService.advance(row.id, 'clarify'))),
-      ADVANCE_TOAST.clarify,
-      {},
+    const clarify$ = update$.pipe(
+      switchMap(() => this.todoService.advance(row.id, 'clarify')),
     );
+    if (pull) {
+      this.runPullChain(row, clarify$);
+    } else {
+      this.mutate(clarify$, ADVANCE_TOAST.clarify, {});
+    }
   }
 
   deferInstead(): void {
     const row = this.clarifyTarget();
     if (!row) return;
     this.clarifyTarget.set(null);
+    this.clarifyIntent.set('clarify');
     this.runAdvance(row, 'defer');
+  }
+
+  // Append the freshly-clarified capture to today's plan. The plan must be
+  // loaded; a stale/missing plan aborts before the clarify fires so nothing
+  // half-applies. An already-planned row just clarifies (no double append).
+  private runPullChain(
+    row: TodoRow,
+    clarify$: Observable<TodoItem | null>,
+  ): void {
+    const plan = this.planValue();
+    if (!plan) {
+      this.notifications.error('Today’s plan has not loaded yet.');
+      return;
+    }
+    if (this.planIds().has(row.id)) {
+      this.mutate(clarify$, ADVANCE_TOAST.clarify, {});
+      return;
+    }
+    const pull$ = clarify$.pipe(
+      switchMap(() =>
+        this.dailyPlanService.replace(appendToPlan(plan.items, row.id)),
+      ),
+    );
+    this.mutate(pull$, 'Pulled into today', { plan: true });
   }
 
   private runAdvance(row: TodoRow, action: TodoAdvanceAction): void {
