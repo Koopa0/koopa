@@ -472,9 +472,6 @@ func (s *Store) SystemHealth(ctx context.Context) (*SystemHealthSnapshot, error)
 	out.Database.ContentsCount = int(dbCounts.ContentsCount)
 	out.Database.TodosCount = int(dbCounts.TodosCount)
 	out.Database.NotesCount = int(dbCounts.NotesCount)
-	out.Database.AttemptsCount = int(dbCounts.AttemptsCount)
-	out.Database.SessionsCount = int(dbCounts.SessionsCount)
-	out.Database.ConceptsCount = int(dbCounts.ConceptsCount)
 
 	return out, nil
 }

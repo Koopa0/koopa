@@ -163,18 +163,8 @@ WHERE created_at >= @since;
 -- Core entity counts for SystemHealth. todos is the personal GTD store;
 -- the inter-agent coordination tasks table is intentionally NOT counted
 -- here (it would mix two entirely different concepts with the same word).
--- notes lives in its own table (Phase 2 entry extracted Zettelkasten
--- notes from the old contents.type='note' polymorphism).
---
--- Learning-domain counts added in F-3 follow-up: a learning-studio
--- audit reported the previous shape made the learning surface invisible
--- in system_status. attempts/sessions/concepts covers the three
--- top-level entities a learning coach checks for "is the system
--- populated yet". One query keeps the round-trip at 1.
+-- notes lives in its own table, separate from contents.
 SELECT
     (SELECT COUNT(*) FROM contents)::int                 AS contents_count,
     (SELECT COUNT(*) FROM todos)::int                    AS todos_count,
-    (SELECT COUNT(*) FROM notes)::int                    AS notes_count,
-    (SELECT COUNT(*) FROM learning_attempts)::int        AS attempts_count,
-    (SELECT COUNT(*) FROM learning_sessions)::int        AS sessions_count,
-    (SELECT COUNT(*) FROM concepts)::int                 AS concepts_count;
+    (SELECT COUNT(*) FROM notes)::int                    AS notes_count;
