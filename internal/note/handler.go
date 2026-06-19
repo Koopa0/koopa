@@ -13,7 +13,6 @@
 package note
 
 import (
-	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -30,7 +29,6 @@ var storeErrors = []api.ErrMap{
 	{Target: ErrInvalidInput, Status: http.StatusBadRequest, Code: "BAD_REQUEST", Message: "invalid note input"},
 	{Target: ErrInvalidKind, Status: http.StatusBadRequest, Code: "INVALID_KIND", Message: "invalid note kind"},
 	{Target: ErrInvalidMaturity, Status: http.StatusBadRequest, Code: "INVALID_MATURITY", Message: "invalid note maturity"},
-	{Target: ErrInvalidLink, Status: http.StatusUnprocessableEntity, Code: "INVALID_LINK", Message: "unknown concept or target id"},
 }
 
 // Handler handles note HTTP requests. The public surface is empty — notes
@@ -58,15 +56,6 @@ func (h *Handler) mustAdminTx(w http.ResponseWriter, r *http.Request) (store *St
 		return nil, false
 	}
 	return h.store.WithTx(tx), true
-}
-
-// response is the wire shape of a note. Extends the stored fields with
-// resolved concept / target refs so the admin editor does not need a
-// second round-trip for display data.
-type response struct {
-	*Note
-	Concepts []ConceptRef `json:"concepts"`
-	Targets  []TargetRef  `json:"targets"`
 }
 
 // List handles GET /api/admin/knowledge/notes.
@@ -108,17 +97,11 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Strip body from list responses — list is for browsing, callers hit
-	// Get for the full body. Concepts / targets stay for UI badges.
-	out := make([]response, len(notes))
+	// Get for the full body.
+	out := make([]Note, len(notes))
 	for i := range notes {
-		n := notes[i]
-		n.Body = ""
-		enriched, err := h.enrich(r, &n)
-		if err != nil {
-			api.HandleError(w, h.logger, err, storeErrors...)
-			return
-		}
-		out[i] = enriched
+		out[i] = notes[i]
+		out[i].Body = ""
 	}
 	api.Encode(w, http.StatusOK, api.PagedResponse(out, total, f.Page, f.PerPage))
 }
@@ -135,32 +118,21 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 		api.HandleError(w, h.logger, err, storeErrors...)
 		return
 	}
-	resp, err := h.enrich(r, n)
-	if err != nil {
-		api.HandleError(w, h.logger, err, storeErrors...)
-		return
-	}
-	api.Encode(w, http.StatusOK, api.Response{Data: resp})
+	api.Encode(w, http.StatusOK, api.Response{Data: n})
 }
 
 // createRequest is the POST body for Create. created_by is not caller-
 // supplied — the middleware actor fills it.
 type createRequest struct {
-	Slug         string         `json:"slug"`
-	Title        string         `json:"title"`
-	Body         string         `json:"body"`
-	Kind         Kind           `json:"kind"`
-	Maturity     Maturity       `json:"maturity,omitempty"`
-	Metadata     map[string]any `json:"metadata,omitempty"`
-	ConceptSlugs []string       `json:"concept_slugs,omitempty"`
-	TargetIDs    []uuid.UUID    `json:"target_ids,omitempty"`
+	Slug     string         `json:"slug"`
+	Title    string         `json:"title"`
+	Body     string         `json:"body"`
+	Kind     Kind           `json:"kind"`
+	Maturity Maturity       `json:"maturity,omitempty"`
+	Metadata map[string]any `json:"metadata,omitempty"`
 }
 
 // Create handles POST /api/admin/knowledge/notes.
-// Links are NOT resolved on create — set concept_ids / target_ids via
-// PUT /notes/{id} once the note exists (see Update). createRequest still
-// decodes concept_slugs / target_ids only so a caller sending them gets an
-// explicit 400 instead of having them silently dropped.
 func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	req, err := api.Decode[createRequest](w, r)
 	if err != nil {
@@ -177,13 +149,6 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Maturity != "" && !req.Maturity.Valid() {
 		api.Error(w, http.StatusBadRequest, "INVALID_MATURITY", "invalid note maturity")
-		return
-	}
-	// Links are an edit-mode operation: set concept_ids / target_ids via PUT
-	// once the note exists. Reject them here rather than silently dropping —
-	// keeps Create consistent with Update's explicit link handling.
-	if len(req.ConceptSlugs) > 0 || len(req.TargetIDs) > 0 {
-		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "links are set via PUT after the note is created, not on create")
 		return
 	}
 
@@ -206,12 +171,7 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		api.HandleError(w, h.logger, err, storeErrors...)
 		return
 	}
-	resp, err := h.enrich(r, n)
-	if err != nil {
-		api.HandleError(w, h.logger, err, storeErrors...)
-		return
-	}
-	api.Encode(w, http.StatusCreated, api.Response{Data: resp})
+	api.Encode(w, http.StatusCreated, api.Response{Data: n})
 }
 
 // updateRequest is the PUT body for Update. Structurally identical to
@@ -245,12 +205,7 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 		api.HandleError(w, h.logger, err, storeErrors...)
 		return
 	}
-	resp, err := h.enrich(r, n)
-	if err != nil {
-		api.HandleError(w, h.logger, err, storeErrors...)
-		return
-	}
-	api.Encode(w, http.StatusOK, api.Response{Data: resp})
+	api.Encode(w, http.StatusOK, api.Response{Data: n})
 }
 
 // Maturity handles POST /api/admin/knowledge/notes/{id}/maturity.
@@ -284,12 +239,7 @@ func (h *Handler) Maturity(w http.ResponseWriter, r *http.Request) {
 		api.HandleError(w, h.logger, err, storeErrors...)
 		return
 	}
-	resp, err := h.enrich(r, n)
-	if err != nil {
-		api.HandleError(w, h.logger, err, storeErrors...)
-		return
-	}
-	api.Encode(w, http.StatusOK, api.Response{Data: resp})
+	api.Encode(w, http.StatusOK, api.Response{Data: n})
 }
 
 // Delete handles DELETE /api/admin/knowledge/notes/{id}.
@@ -308,45 +258,6 @@ func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
-}
-
-// enrich attaches resolved concept / target refs to a Note before wire
-// encoding. When the request carries a tx (a mutation in flight) the reads run
-// inside that tx so the response reflects the request's own uncommitted edits;
-// in that case a read failure is FATAL and returned, because a failed
-// statement aborts the tx — swallowing the error would let the handler return
-// 2xx while the middleware's commit fails, silently losing the write. Outside
-// a tx (a plain GET) a read failure is tolerated: empty badges, logged.
-func (h *Handler) enrich(r *http.Request, n *Note) (response, error) {
-	out := response{Note: n, Concepts: []ConceptRef{}, Targets: []TargetRef{}}
-	if n == nil {
-		return out, nil
-	}
-	ctx := r.Context()
-	store := h.store
-	tx, inTx := api.TxFromContext(ctx)
-	if inTx {
-		store = h.store.WithTx(tx)
-	}
-	concepts, err := store.ConceptRefsForNote(ctx, n.ID)
-	if err != nil {
-		if inTx {
-			return out, fmt.Errorf("enriching note %s concepts: %w", n.ID, err)
-		}
-		h.logger.Warn("note enrich: loading concepts failed", "note_id", n.ID, "error", err)
-	} else {
-		out.Concepts = concepts
-	}
-	targets, err := store.TargetRefsForNote(ctx, n.ID)
-	if err != nil {
-		if inTx {
-			return out, fmt.Errorf("enriching note %s targets: %w", n.ID, err)
-		}
-		h.logger.Warn("note enrich: loading targets failed", "note_id", n.ID, "error", err)
-	} else {
-		out.Targets = targets
-	}
-	return out, nil
 }
 
 // actorFromContext resolves the authenticated agent identity for a

@@ -238,42 +238,6 @@ func (q *Queries) AddContentTopic(ctx context.Context, arg AddContentTopicParams
 	return err
 }
 
-const addNoteConcept = `-- name: AddNoteConcept :exec
-INSERT INTO note_concepts (note_id, concept_id, relevance)
-VALUES ($1, $2, $3)
-ON CONFLICT DO NOTHING
-`
-
-type AddNoteConceptParams struct {
-	NoteID    uuid.UUID `json:"note_id"`
-	ConceptID uuid.UUID `json:"concept_id"`
-	Relevance string    `json:"relevance"`
-}
-
-// Link a note to a concept. Relevance defaults to 'primary'; caller passes
-// 'secondary' for supporting concepts.
-func (q *Queries) AddNoteConcept(ctx context.Context, arg AddNoteConceptParams) error {
-	_, err := q.db.Exec(ctx, addNoteConcept, arg.NoteID, arg.ConceptID, arg.Relevance)
-	return err
-}
-
-const addNoteTarget = `-- name: AddNoteTarget :exec
-INSERT INTO learning_target_notes (note_id, target_id)
-VALUES ($1, $2)
-ON CONFLICT DO NOTHING
-`
-
-type AddNoteTargetParams struct {
-	NoteID   uuid.UUID `json:"note_id"`
-	TargetID uuid.UUID `json:"target_id"`
-}
-
-// Link a note to a learning target. Idempotent — a repeat attach is a no-op.
-func (q *Queries) AddNoteTarget(ctx context.Context, arg AddNoteTargetParams) error {
-	_, err := q.db.Exec(ctx, addNoteTarget, arg.NoteID, arg.TargetID)
-	return err
-}
-
 const addPlanEntry = `-- name: AddPlanEntry :one
 INSERT INTO learning_plan_entries (plan_id, learning_target_id, position, phase)
 VALUES ($1, $2, $3, $4)
@@ -1412,43 +1376,6 @@ func (q *Queries) ConceptParentChildren(ctx context.Context, conceptID uuid.UUID
 	return items, nil
 }
 
-const conceptRefsForNote = `-- name: ConceptRefsForNote :many
-SELECT c.id, c.slug, c.name
-FROM note_concepts nc
-JOIN concepts c ON c.id = nc.concept_id
-WHERE nc.note_id = $1
-ORDER BY c.name
-`
-
-type ConceptRefsForNoteRow struct {
-	ID   uuid.UUID `json:"id"`
-	Slug string    `json:"slug"`
-	Name string    `json:"name"`
-}
-
-// Resolved concepts (slug + name) attached to a note — used by HTTP note
-// detail / list enrichment where wire consumers need human-readable slugs
-// instead of raw UUIDs.
-func (q *Queries) ConceptRefsForNote(ctx context.Context, noteID uuid.UUID) ([]ConceptRefsForNoteRow, error) {
-	rows, err := q.db.Query(ctx, conceptRefsForNote, noteID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []ConceptRefsForNoteRow{}
-	for rows.Next() {
-		var i ConceptRefsForNoteRow
-		if err := rows.Scan(&i.ID, &i.Slug, &i.Name); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const conceptsBySlug = `-- name: ConceptsBySlug :many
 SELECT id, slug FROM concepts WHERE slug = ANY($1::text[]) AND archived_at IS NULL
 `
@@ -1571,30 +1498,6 @@ func (q *Queries) ConceptsForList(ctx context.Context, arg ConceptsForListParams
 			return nil, err
 		}
 		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const conceptsForNote = `-- name: ConceptsForNote :many
-SELECT concept_id FROM note_concepts WHERE note_id = $1
-`
-
-func (q *Queries) ConceptsForNote(ctx context.Context, noteID uuid.UUID) ([]uuid.UUID, error) {
-	rows, err := q.db.Query(ctx, conceptsForNote, noteID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []uuid.UUID{}
-	for rows.Next() {
-		var concept_id uuid.UUID
-		if err := rows.Scan(&concept_id); err != nil {
-			return nil, err
-		}
-		items = append(items, concept_id)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -2600,9 +2503,9 @@ type CreateNoteRow struct {
 }
 
 // Queries for the note package. See migrations/001_initial.up.sql for the
-// notes table + note_concepts junction. slug uniqueness is enforced by the
-// UNIQUE constraint on notes.slug; callers rely on pgerrcode 23505 →
-// ErrConflict mapping. note_kind / note_maturity are PostgreSQL ENUMs.
+// notes table. slug uniqueness is enforced by the UNIQUE constraint on
+// notes.slug; callers rely on pgerrcode 23505 → ErrConflict mapping.
+// note_kind / note_maturity are PostgreSQL ENUMs.
 func (q *Queries) CreateNote(ctx context.Context, arg CreateNoteParams) (CreateNoteRow, error) {
 	row := q.db.QueryRow(ctx, createNote,
 		arg.Slug,
@@ -3395,34 +3298,6 @@ func (q *Queries) DeleteNote(ctx context.Context, id uuid.UUID) (int64, error) {
 		return 0, err
 	}
 	return result.RowsAffected(), nil
-}
-
-const deleteNoteConcept = `-- name: DeleteNoteConcept :exec
-DELETE FROM note_concepts WHERE note_id = $1 AND concept_id = $2
-`
-
-type DeleteNoteConceptParams struct {
-	NoteID    uuid.UUID `json:"note_id"`
-	ConceptID uuid.UUID `json:"concept_id"`
-}
-
-func (q *Queries) DeleteNoteConcept(ctx context.Context, arg DeleteNoteConceptParams) error {
-	_, err := q.db.Exec(ctx, deleteNoteConcept, arg.NoteID, arg.ConceptID)
-	return err
-}
-
-const deleteNoteTarget = `-- name: DeleteNoteTarget :exec
-DELETE FROM learning_target_notes WHERE note_id = $1 AND target_id = $2
-`
-
-type DeleteNoteTargetParams struct {
-	NoteID   uuid.UUID `json:"note_id"`
-	TargetID uuid.UUID `json:"target_id"`
-}
-
-func (q *Queries) DeleteNoteTarget(ctx context.Context, arg DeleteNoteTargetParams) error {
-	_, err := q.db.Exec(ctx, deleteNoteTarget, arg.NoteID, arg.TargetID)
-	return err
 }
 
 const deleteOldIgnored = `-- name: DeleteOldIgnored :execrows
@@ -10410,43 +10285,6 @@ func (q *Queries) TargetByID(ctx context.Context, id uuid.UUID) (LearningTarget,
 	return i, err
 }
 
-const targetRefsForNote = `-- name: TargetRefsForNote :many
-SELECT lt.id, lt.title, lt.domain
-FROM learning_target_notes ltn
-JOIN learning_targets lt ON lt.id = ltn.target_id
-WHERE ltn.note_id = $1
-ORDER BY lt.title
-`
-
-type TargetRefsForNoteRow struct {
-	ID     uuid.UUID `json:"id"`
-	Title  string    `json:"title"`
-	Domain string    `json:"domain"`
-}
-
-// Learning targets attached to a note via the learning_target_notes
-// junction. Returned id + title are the minimum the admin note editor
-// surfaces; full target detail stays behind the learning endpoints.
-func (q *Queries) TargetRefsForNote(ctx context.Context, noteID uuid.UUID) ([]TargetRefsForNoteRow, error) {
-	rows, err := q.db.Query(ctx, targetRefsForNote, noteID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []TargetRefsForNoteRow{}
-	for rows.Next() {
-		var i TargetRefsForNoteRow
-		if err := rows.Scan(&i.ID, &i.Title, &i.Domain); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const targetsForList = `-- name: TargetsForList :many
 SELECT id, title, domain
 FROM learning_targets
@@ -10486,32 +10324,6 @@ func (q *Queries) TargetsForList(ctx context.Context, arg TargetsForListParams) 
 			return nil, err
 		}
 		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const targetsForNote = `-- name: TargetsForNote :many
-SELECT target_id FROM learning_target_notes WHERE note_id = $1
-`
-
-// Target ids currently linked to a note — the set Store.SetTargets diffs
-// the desired ids against. Mirrors ConceptsForNote.
-func (q *Queries) TargetsForNote(ctx context.Context, noteID uuid.UUID) ([]uuid.UUID, error) {
-	rows, err := q.db.Query(ctx, targetsForNote, noteID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []uuid.UUID{}
-	for rows.Next() {
-		var target_id uuid.UUID
-		if err := rows.Scan(&target_id); err != nil {
-			return nil, err
-		}
-		items = append(items, target_id)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err

@@ -1,7 +1,7 @@
 -- Queries for the note package. See migrations/001_initial.up.sql for the
--- notes table + note_concepts junction. slug uniqueness is enforced by the
--- UNIQUE constraint on notes.slug; callers rely on pgerrcode 23505 →
--- ErrConflict mapping. note_kind / note_maturity are PostgreSQL ENUMs.
+-- notes table. slug uniqueness is enforced by the UNIQUE constraint on
+-- notes.slug; callers rely on pgerrcode 23505 → ErrConflict mapping.
+-- note_kind / note_maturity are PostgreSQL ENUMs.
 
 -- name: CreateNote :one
 INSERT INTO notes (
@@ -68,53 +68,6 @@ RETURNING id, slug, title, body, kind, maturity, created_by,
 
 -- name: DeleteNote :execrows
 DELETE FROM notes WHERE id = $1;
-
--- name: AddNoteConcept :exec
--- Link a note to a concept. Relevance defaults to 'primary'; caller passes
--- 'secondary' for supporting concepts.
-INSERT INTO note_concepts (note_id, concept_id, relevance)
-VALUES ($1, $2, $3)
-ON CONFLICT DO NOTHING;
-
--- name: DeleteNoteConcept :exec
-DELETE FROM note_concepts WHERE note_id = $1 AND concept_id = $2;
-
--- name: ConceptsForNote :many
-SELECT concept_id FROM note_concepts WHERE note_id = $1;
-
--- name: ConceptRefsForNote :many
--- Resolved concepts (slug + name) attached to a note — used by HTTP note
--- detail / list enrichment where wire consumers need human-readable slugs
--- instead of raw UUIDs.
-SELECT c.id, c.slug, c.name
-FROM note_concepts nc
-JOIN concepts c ON c.id = nc.concept_id
-WHERE nc.note_id = $1
-ORDER BY c.name;
-
--- name: TargetRefsForNote :many
--- Learning targets attached to a note via the learning_target_notes
--- junction. Returned id + title are the minimum the admin note editor
--- surfaces; full target detail stays behind the learning endpoints.
-SELECT lt.id, lt.title, lt.domain
-FROM learning_target_notes ltn
-JOIN learning_targets lt ON lt.id = ltn.target_id
-WHERE ltn.note_id = $1
-ORDER BY lt.title;
-
--- name: AddNoteTarget :exec
--- Link a note to a learning target. Idempotent — a repeat attach is a no-op.
-INSERT INTO learning_target_notes (note_id, target_id)
-VALUES ($1, $2)
-ON CONFLICT DO NOTHING;
-
--- name: DeleteNoteTarget :exec
-DELETE FROM learning_target_notes WHERE note_id = $1 AND target_id = $2;
-
--- name: TargetsForNote :many
--- Target ids currently linked to a note — the set Store.SetTargets diffs
--- the desired ids against. Mirrors ConceptsForNote.
-SELECT target_id FROM learning_target_notes WHERE note_id = $1;
 
 -- name: SearchNotes :many
 -- FTS over notes.search_vector (title weight A, body weight C). Returns

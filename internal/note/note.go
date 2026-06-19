@@ -70,8 +70,7 @@ func (m Maturity) Valid() bool {
 	}
 }
 
-// Note is the Zettelkasten artifact as stored. Concepts are not embedded — use
-// Store.ConceptsForNote or the junction queries when concept resolution is needed.
+// Note is the Zettelkasten artifact as stored.
 type Note struct {
 	ID        uuid.UUID      `json:"id"`
 	Slug      string         `json:"slug"`
@@ -107,14 +106,6 @@ type UpdateParams struct {
 	Body     *string         `json:"body,omitempty"`
 	Kind     *Kind           `json:"kind,omitempty"`
 	Metadata *map[string]any `json:"metadata,omitempty"`
-
-	// ConceptIDs / TargetIDs reconcile the note's concept / learning-target
-	// links. A nil pointer leaves the existing links untouched; a non-nil
-	// pointer sets the links to exactly the given ids — an empty slice clears
-	// them. New concept links are recorded with 'secondary' relevance;
-	// designating a primary concept is a separate admin action.
-	ConceptIDs *[]uuid.UUID `json:"concept_ids,omitempty"`
-	TargetIDs  *[]uuid.UUID `json:"target_ids,omitempty"`
 }
 
 // Filter holds list parameters. A nil pointer means "no filter on this
@@ -125,21 +116,6 @@ type Filter struct {
 	Kind      *Kind
 	Maturity  *Maturity
 	CreatedBy *string
-}
-
-// ConceptRef is a lightweight concept reference for note detail enrichment.
-type ConceptRef struct {
-	ID   uuid.UUID `json:"id"`
-	Slug string    `json:"slug"`
-	Name string    `json:"name"`
-}
-
-// TargetRef is a lightweight learning_target reference for note detail
-// enrichment. Consumers needing full target detail hit /learning/* paths.
-type TargetRef struct {
-	ID     uuid.UUID `json:"id"`
-	Title  string    `json:"title"`
-	Domain string    `json:"domain"`
 }
 
 var (
@@ -159,11 +135,6 @@ var (
 
 	// ErrInvalidMaturity signals an unrecognized maturity value on input.
 	ErrInvalidMaturity = errors.New("note: invalid maturity")
-
-	// ErrInvalidLink signals an update referenced a concept_id or target_id
-	// that does not exist (foreign-key violation on a junction insert). It is
-	// caller input error, not an internal fault — handlers map it to 422.
-	ErrInvalidLink = errors.New("note: invalid link target")
 )
 
 // containsControlChars reports whether s contains any control character —
