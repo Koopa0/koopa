@@ -66,51 +66,6 @@ func setup(t *testing.T) *Store {
 // learning_target_notes junction (note package); integration coverage
 // lives in the note/learning packages' own tests.
 
-// seedConcept inserts a concepts row via SQL. Same rationale as seedTopic:
-// avoid importing the learning package to dodge an import cycle.
-func seedConcept(t *testing.T, pool *pgxpool.Pool, domain, slug, name, kind string) uuid.UUID {
-	t.Helper()
-	var id uuid.UUID
-	err := pool.QueryRow(t.Context(),
-		`INSERT INTO concepts (domain, slug, name, kind, created_by)
-		 VALUES ($1, $2, $3, $4, 'human') RETURNING id`,
-		domain, slug, name, kind,
-	).Scan(&id)
-	if err != nil {
-		t.Fatalf("seedConcept(%q/%q) error: %v", domain, slug, err)
-	}
-	return id
-}
-
-// contentIDForTarget reads back learning_targets.content_id for atomicity
-// assertions in the note+learning_target test.
-// contentIDForTarget helper removed — learning_targets.content_id no
-// longer exists. Caller used to assert 1:1 atomicity; target-writeup
-// linkage is now N:M via learning_target_notes, tested from the note package.
-
-// contentConceptIDs reads back concept_id rows from the content_concepts
-// junction for the given content row, for atomicity assertions.
-func contentConceptIDs(t *testing.T, pool *pgxpool.Pool, contentID uuid.UUID) []uuid.UUID {
-	t.Helper()
-	rows, err := pool.Query(context.Background(),
-		`SELECT concept_id FROM content_concepts WHERE content_id = $1 ORDER BY concept_id`,
-		contentID,
-	)
-	if err != nil {
-		t.Fatalf("contentConceptIDs(%s) error: %v", contentID, err)
-	}
-	defer rows.Close()
-	ids := make([]uuid.UUID, 0)
-	for rows.Next() {
-		var id uuid.UUID
-		if err := rows.Scan(&id); err != nil {
-			t.Fatalf("contentConceptIDs scan: %v", err)
-		}
-		ids = append(ids, id)
-	}
-	return ids
-}
-
 // cmpContentOpts are reusable cmp options for Content comparison.
 // Timestamps are compared with 1-second tolerance, and Topics slice ordering is ignored.
 var cmpContentOpts = cmp.Options{
@@ -120,11 +75,11 @@ var cmpContentOpts = cmp.Options{
 
 // createContentTx runs CreateContent inside a committed pgx.Tx, mirroring the
 // production admin path where api.ActorMiddleware opens the tx and the handler
-// binds the store via WithTx. CreateContent with junction rows (TopicIDs /
-// Concepts) rejects a pool-backed store with ErrNotTransactional — the write
-// fans out to contents + content_topics + content_concepts and must commit as
-// a unit — so the integration suite must drive it through a transaction just
-// like the real caller does. Same shape as TestStore_CreateContent_DuplicateSlug_InTx.
+// binds the store via WithTx. CreateContent with junction rows (TopicIDs)
+// rejects a pool-backed store with ErrNotTransactional — the write fans out to
+// contents + content_topics and must commit as a unit — so the integration
+// suite must drive it through a transaction just like the real caller does.
+// Same shape as TestStore_CreateContent_DuplicateSlug_InTx.
 func createContentTx(t *testing.T, ctx context.Context, p *CreateParams) *Content {
 	t.Helper()
 	tx, err := testPool.Begin(ctx)
@@ -335,52 +290,6 @@ func TestStore_CreateContent_DuplicateSlug_InTx(t *testing.T) {
 	}
 	if slugErr.ContentID != first.ID {
 		t.Errorf("SlugConflictError.ContentID = %s, want %s", slugErr.ContentID, first.ID)
-	}
-}
-
-// TestStore_CreateContent_LearningTargetNotFound, _NoteWithLearningTarget,
-// and _NoteWithConcepts (with note+learning_target wiring) were removed in
-// schema cleanup when the 1:1 learning_targets.content_id FK was dropped.
-// Target↔writeup linkage is now N:M via the learning_target_notes
-// junction; integration coverage for that lives in the note package's
-// tests. The bare content_concepts junction
-// path (below) still stands on its own.
-
-// TestStore_CreateContent_ArticleWithConcepts verifies CreateContent
-// atomically inserts content_concepts rows for every ConceptID attached
-// to a public content row.
-func TestStore_CreateContent_ArticleWithConcepts(t *testing.T) {
-	// setup truncates and seeds the system/human agents; the create itself
-	// runs through createContentTx, so the returned pool-backed store is not
-	// needed here.
-	setup(t)
-	ctx := t.Context()
-
-	cid1 := seedConcept(t, testPool, "leetcode", "binary-search-basic", "Binary Search (basic)", "pattern")
-	cid2 := seedConcept(t, testPool, "leetcode", "binary-search-on-rotated", "Binary Search (rotated)", "pattern")
-
-	// Concepts attach content_concepts junction rows, so CreateContent fans
-	// out to two tables and requires a transactional store.
-	created := createContentTx(t, ctx, &CreateParams{
-		Slug:    "binary-search-family",
-		Title:   "Binary Search family",
-		Body:    "Cross-variant notes on binary search.",
-		Excerpt: "Common invariants across rotated / answer-space variants.",
-		Type:    TypeArticle,
-		Status:  StatusDraft,
-		Concepts: []ConceptRef{
-			{ID: cid1, Relevance: "primary"},
-			{ID: cid2, Relevance: "secondary"},
-		},
-	})
-
-	// Verify both rows in content_concepts.
-	got := contentConceptIDs(t, testPool, created.ID)
-	want := []uuid.UUID{cid1, cid2}
-	// Sort both slices so ordering differences don't fail the test.
-	sortUUIDs := cmpopts.SortSlices(func(a, b uuid.UUID) bool { return a.String() < b.String() })
-	if diff := cmp.Diff(want, got, sortUUIDs); diff != "" {
-		t.Errorf("content_concepts for %s mismatch (-want +got):\n%s", created.ID, diff)
 	}
 }
 

@@ -121,18 +121,7 @@ type Filter struct {
 	Project  *uuid.UUID
 }
 
-// ConceptRef is a concept link on a content row with its relevance label.
-// primary = core concept covered; secondary = supporting concept referenced.
-// At most one primary per content (enforced by idx_content_concepts_one_primary).
-type ConceptRef struct {
-	ID        uuid.UUID `json:"id"`
-	Relevance string    `json:"relevance"`
-}
-
 // CreateParams are the parameters for creating content.
-//
-// Concepts is an additive transactional side-effect: each entry INSERTs
-// into content_concepts in the same tx as the content row.
 type CreateParams struct {
 	Slug           string          `json:"slug"`
 	Title          string          `json:"title"`
@@ -148,7 +137,6 @@ type CreateParams struct {
 	AIMetadata     json.RawMessage `json:"ai_metadata,omitempty"`
 	ReadingTimeMin int             `json:"reading_time_min"`
 	CoverImage     *string         `json:"cover_image,omitempty"`
-	Concepts       []ConceptRef    `json:"concepts,omitempty"`
 }
 
 // UpdateParams are the parameters for updating content.
@@ -235,7 +223,7 @@ var (
 	ErrInvalidState = errors.New("content: invalid state for transition")
 
 	// ErrNotTransactional indicates a multi-row write (the content row plus
-	// the content_topics / content_concepts junctions) was invoked on a
+	// the content_topics junction) was invoked on a
 	// non-transactional store. Production admin routes always bind a tx via
 	// api.ActorMiddleware; surfacing this as a 500 turns a wiring bug into a
 	// loud failure instead of a silent partial write. Mirrors feed.Store.
@@ -511,22 +499,21 @@ func (s *Store) ContentsByTopicID(ctx context.Context, topicID uuid.UUID, page, 
 }
 
 // CreateContent inserts a new content row and synchronously wires the
-// associated junction writes (content_topics, content_concepts) plus the
-// optional learning_targets back-link. All writes run on the DBTX passed
-// in at Store construction — callers own the transaction boundary. For
-// atomic behavior, construct the Store with a pgx.Tx (HTTP handler opens
-// one from the pool; MCP uses withActorTx).
+// associated content_topics junction writes. All writes run on the DBTX
+// passed in at Store construction — callers own the transaction boundary.
+// For atomic behavior, construct the Store with a pgx.Tx (HTTP handler
+// opens one from the pool; MCP uses withActorTx).
 //
 // Slug collisions return *SlugConflictError carrying the existing row's ID
 // so callers can decide whether to update or pick a new slug (see
 // Koopa-Learning.md Step 9 revisit policy). Other unique violations
 // return the bare ErrConflict.
 func (s *Store) CreateContent(ctx context.Context, p *CreateParams) (*Content, error) {
-	// Atomicity: the content row plus its content_topics / content_concepts
-	// junction rows must be written on one transaction so a junction failure
-	// rolls back the row. Reject a non-tx store before any write rather than
-	// leaving an orphan row with partial junctions.
-	if len(p.TopicIDs) > 0 || len(p.Concepts) > 0 {
+	// Atomicity: the content row plus its content_topics junction rows must
+	// be written on one transaction so a junction failure rolls back the
+	// row. Reject a non-tx store before any write rather than leaving an
+	// orphan row with partial junctions.
+	if len(p.TopicIDs) > 0 {
 		if _, ok := s.dbtx.(pgx.Tx); !ok {
 			return nil, ErrNotTransactional
 		}
@@ -571,16 +558,6 @@ func (s *Store) CreateContent(ctx context.Context, p *CreateParams) (*Content, e
 			TopicID:   topicID,
 		}); topicErr != nil {
 			return nil, fmt.Errorf("adding content topic: %w", topicErr)
-		}
-	}
-
-	for _, c := range p.Concepts {
-		if cErr := s.q.AddContentConcept(ctx, db.AddContentConceptParams{
-			ContentID: r.ID,
-			ConceptID: c.ID,
-			Relevance: c.Relevance,
-		}); cErr != nil {
-			return nil, fmt.Errorf("adding content concept: %w", cErr)
 		}
 	}
 

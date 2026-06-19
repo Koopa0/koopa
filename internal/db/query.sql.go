@@ -223,25 +223,6 @@ func (q *Queries) ActiveSession(ctx context.Context) (LearningSession, error) {
 	return i, err
 }
 
-const addContentConcept = `-- name: AddContentConcept :exec
-INSERT INTO content_concepts (content_id, concept_id, relevance)
-VALUES ($1, $2, $3)
-ON CONFLICT DO NOTHING
-`
-
-type AddContentConceptParams struct {
-	ContentID uuid.UUID `json:"content_id"`
-	ConceptID uuid.UUID `json:"concept_id"`
-	Relevance string    `json:"relevance"`
-}
-
-// Link a content row to a concept (content_concepts junction). Relevance
-// defaults to 'primary'; caller passes 'secondary' for supporting concepts.
-func (q *Queries) AddContentConcept(ctx context.Context, arg AddContentConceptParams) error {
-	_, err := q.db.Exec(ctx, addContentConcept, arg.ContentID, arg.ConceptID, arg.Relevance)
-	return err
-}
-
 const addContentTopic = `-- name: AddContentTopic :exec
 INSERT INTO content_topics (content_id, topic_id) VALUES ($1, $2)
 ON CONFLICT DO NOTHING

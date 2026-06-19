@@ -292,10 +292,3 @@ LIMIT @max_results;
 -- when CreateContent hits a unique violation on the slug index.
 SELECT id FROM contents WHERE slug = $1;
 
--- name: AddContentConcept :exec
--- Link a content row to a concept (content_concepts junction). Relevance
--- defaults to 'primary'; caller passes 'secondary' for supporting concepts.
-INSERT INTO content_concepts (content_id, concept_id, relevance)
-VALUES ($1, $2, $3)
-ON CONFLICT DO NOTHING;
-
