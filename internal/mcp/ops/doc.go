@@ -35,7 +35,6 @@ var domainOrder = []Domain{
 	DomainDaily,
 	DomainLearning,
 	DomainContent,
-	DomainSystem,
 }
 
 func domainRank(d Domain) int {

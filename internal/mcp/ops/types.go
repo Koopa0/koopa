@@ -22,7 +22,6 @@ const (
 	DomainDaily    Domain = "daily"    // GTD capture, task lifecycle, daily plan
 	DomainLearning Domain = "learning" // sessions, attempts, learning plans
 	DomainContent  Domain = "content"  // content lifecycle, feeds
-	DomainSystem   Domain = "system"   // system health, cross-session bridges
 )
 
 // Writability describes the side-effect character of a tool. It maps to
@@ -36,8 +35,8 @@ const (
 	Additive Writability = "additive"
 	// Idempotent tools may write, but repeating the same call is a no-op.
 	Idempotent Writability = "idempotent"
-	// Destructive tools transition state in ways that matter (task complete,
-	// plan activate, directive resolve).
+	// Destructive tools transition state in ways that matter (e.g. mutating
+	// a learning plan's entries).
 	Destructive Writability = "destructive"
 )
 
