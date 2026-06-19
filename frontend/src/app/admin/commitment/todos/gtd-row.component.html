@@ -13,17 +13,9 @@
     (click)="openDetail.emit()"
     [attr.aria-label]="'Open ' + item().title"
     data-testid="gtd-row-open"
-    class="flex min-w-0 flex-1 flex-col items-start rounded-xs bg-transparent p-0 text-left focus-visible:outline-2 focus-visible:outline-brand focus-visible:outline-offset-2"
+    class="flex min-w-0 flex-1 items-center rounded-xs bg-transparent p-0 text-left focus-visible:outline-2 focus-visible:outline-brand focus-visible:outline-offset-2"
   >
     <span class="truncate text-[13px] text-fg">{{ item().title }}</span>
-    @if (item().description) {
-      <span
-        class="truncate text-[11px] text-fg-subtle"
-        data-testid="gtd-row-description"
-      >
-        {{ descriptionPreview() }}
-      </span>
-    }
   </button>
   @if (item().created_by) {
     <span

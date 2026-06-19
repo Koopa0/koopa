@@ -61,42 +61,6 @@ describe('GtdRowComponent', () => {
     expect(dropped).toHaveLength(1);
   });
 
-  it('should render the capture description under the title on an inbox row', () => {
-    render(
-      makeRow({ state: 'inbox', description: 'check HNSW vs IVFFlat tradeoffs' }),
-      'inbox',
-    );
-
-    expect(testid('gtd-row-description')?.textContent).toContain(
-      'check HNSW vs IVFFlat tradeoffs',
-    );
-  });
-
-  it('should omit the description line on an inbox row with no detail', () => {
-    render(makeRow({ state: 'inbox' }), 'inbox');
-
-    expect(testid('gtd-row-description')).toBeNull();
-  });
-
-  it('should strip markdown from the description preview on an inbox row', () => {
-    render(
-      makeRow({
-        state: 'inbox',
-        description:
-          '**Move** the JWT parsing into a `dedicated` [middleware](https://x)',
-      }),
-      'inbox',
-    );
-
-    const preview = testid('gtd-row-description')?.textContent ?? '';
-    expect(preview).not.toContain('**');
-    expect(preview).not.toContain('`');
-    expect(preview).not.toContain('](');
-    expect(preview).toContain('Move');
-    expect(preview).toContain('dedicated');
-    expect(preview).toContain('middleware');
-  });
-
   it('should emit openDetail from the row body without firing it from Clarify', () => {
     render(makeRow({ state: 'inbox' }), 'inbox');
     const opened: unknown[] = [];

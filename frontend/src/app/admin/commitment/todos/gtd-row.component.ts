@@ -22,7 +22,6 @@ import {
   ageLabel,
   dueChip,
   energyOf,
-  plainPreview,
   recurLabel,
   type GtdView,
 } from './gtd-view';
@@ -107,11 +106,6 @@ export class GtdRowComponent {
     () => this.view() === 'pending' || this.view() === 'someday',
   );
   protected readonly showDefer = computed(() => this.view() !== 'someday');
-  // Markdown-stripped one-line preview; the full body renders in the dialog.
-  protected readonly descriptionPreview = computed(() => {
-    const detail = this.item().description;
-    return detail ? plainPreview(detail) : null;
-  });
 
   /**
    * Focus the open-detail trigger. The page calls this before opening the
