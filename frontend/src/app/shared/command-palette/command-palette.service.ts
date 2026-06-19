@@ -93,27 +93,6 @@ const ADMIN_NAV_ACTIONS: readonly AdminNavActionEntry[] = [
     keywords: ['inbox', 'triage'],
   },
   {
-    id: 'admin-learning',
-    label: 'Learning dashboard',
-    group: 'Learning',
-    path: '/admin/learning',
-    keywords: ['mastery', 'concepts'],
-  },
-  {
-    id: 'admin-concepts',
-    label: 'Concepts',
-    group: 'Learning',
-    path: '/admin/learning/concepts',
-    keywords: ['mastery', 'weakness'],
-  },
-  {
-    id: 'admin-hypotheses',
-    label: 'Hypotheses',
-    group: 'Learning',
-    path: '/admin/learning/hypotheses',
-    keywords: ['claim', 'verify'],
-  },
-  {
     id: 'admin-agents',
     label: 'Agents',
     group: 'System',

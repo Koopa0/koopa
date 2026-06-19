@@ -153,23 +153,6 @@ export interface CellState {
 }
 
 // ============================================================
-// Learning Summary (matches internal/learning/handler.go response)
-// ============================================================
-
-export interface DomainMastery {
-  domain: string;
-  concepts_total: number;
-  concepts_mastered: number;
-  concepts_weak: number;
-  concepts_developing: number;
-}
-
-export interface LearningSummary extends CellState {
-  streak_days: number;
-  domains: DomainMastery[];
-}
-
-// ============================================================
 // Todo — shared enums (todo list / plan / detail views).
 // ============================================================
 
@@ -177,11 +160,3 @@ export type TodoState = 'inbox' | 'todo' | 'in_progress' | 'done' | 'someday';
 
 export type EnergyLevel = 'low' | 'medium' | 'high';
 export type PriorityLevel = 'low' | 'medium' | 'high';
-
-// ============================================================
-// Concept — shared mastery / observation enums.
-// ============================================================
-
-export type MasteryStage = 'developing' | 'struggling' | 'solid';
-export type ObservationSignal = 'weakness' | 'improvement' | 'mastery';
-export type ObservationSeverity = 'critical' | 'moderate' | 'minor';

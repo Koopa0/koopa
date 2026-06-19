@@ -3,7 +3,6 @@ import { rxResource } from '@angular/core/rxjs-interop';
 import { combineLatest, map, of } from 'rxjs';
 import { catchError } from 'rxjs/operators';
 import { ContentService } from '../../core/services/content.service';
-import { HypothesisService } from '../../core/services/hypothesis.service';
 import { PlanService } from '../../core/services/plan.service';
 import { ProposalService } from '../../core/services/proposal.service';
 import { SystemService } from '../../core/services/system.service';
@@ -18,7 +17,6 @@ export type NavCountKey =
   | 'contents_total'
   | 'review_queue'
   | 'feeds_active'
-  | 'hypotheses_unverified'
   | 'proposals_pending';
 
 export type NavCountEnvelope = Record<NavCountKey, number | null>;
@@ -29,7 +27,6 @@ const EMPTY_ENVELOPE: NavCountEnvelope = {
   contents_total: null,
   review_queue: null,
   feeds_active: null,
-  hypotheses_unverified: null,
   proposals_pending: null,
 };
 
@@ -46,7 +43,6 @@ const EMPTY_ENVELOPE: NavCountEnvelope = {
 @Injectable({ providedIn: 'root' })
 export class AdminNavCountsService {
   private readonly contentService = inject(ContentService);
-  private readonly hypothesisService = inject(HypothesisService);
   private readonly planService = inject(PlanService);
   private readonly proposalService = inject(ProposalService);
   private readonly systemService = inject(SystemService);
@@ -71,10 +67,6 @@ export class AdminNavCountsService {
                 (g) => g.status === 'in_progress' || g.status === 'not_started',
               ).length,
           ),
-          catchError(() => of<number | null>(null)),
-        ),
-        hypotheses_unverified: this.hypothesisService.list('unverified').pipe(
-          map((list) => list.length),
           catchError(() => of<number | null>(null)),
         ),
         feeds_active: this.systemService.getHealth().pipe(

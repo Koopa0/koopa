@@ -29,8 +29,6 @@ function notePayload(overrides: Partial<NoteDetail> = {}): NoteDetail {
     kind: 'solve-note',
     maturity: 'seed',
     created_by: 'human',
-    concepts: [],
-    targets: [],
     created_at: '2026-06-01T00:00:00Z',
     updated_at: '2026-06-02T00:00:00Z',
     ...overrides,
@@ -203,7 +201,7 @@ describe('NoteEditorPageComponent', () => {
       ).toBe(true);
     });
 
-    it('should PUT the note on submit with concept_ids/target_ids and reload', async () => {
+    it('should PUT the note on submit and reload', async () => {
       setValue('[data-testid="note-title"]', 'Renamed note');
       await settle();
 
@@ -215,11 +213,7 @@ describe('NoteEditorPageComponent', () => {
       const req = httpMock.expectOne(
         (r) => r.method === 'PUT' && r.url.endsWith(`${NOTES_URL}/n-1`),
       );
-      // The seeded note had no links; the editor always sends both arrays.
       expect(req.request.body).toMatchObject({ title: 'Renamed note' });
-      expect(req.request.body.concept_ids).toEqual([]);
-      expect(req.request.body.target_ids).toEqual([]);
-      expect(req.request.body.concept_slugs).toBeUndefined();
       req.flush({ data: notePayload({ title: 'Renamed note' }) });
       await settle();
 
@@ -228,97 +222,6 @@ describe('NoteEditorPageComponent', () => {
           (r) => r.method === 'GET' && r.url.endsWith(`${NOTES_URL}/n-1`),
         )
         .flush({ data: notePayload({ title: 'Renamed note' }) });
-      await settle();
-    });
-  });
-
-  describe('edit mode — concept/target links', () => {
-    const CONCEPTS_URL = '/api/admin/learning/concepts';
-
-    /** Waits out the picker's input debounce, then settles. */
-    async function settleDebounce(): Promise<void> {
-      harness.detectChanges();
-      await new Promise<void>((resolve) => setTimeout(resolve, 300));
-      harness.detectChanges();
-    }
-
-    beforeEach(async () => {
-      harness = await RouterTestingHarness.create(
-        '/admin/knowledge/notes/n-1/edit',
-      );
-      await settle();
-      httpMock.expectOne((r) => r.url.endsWith(`${NOTES_URL}/n-1`)).flush({
-        data: notePayload({
-          concepts: [{ id: 'concept-1', slug: 'arrays', name: 'Arrays' }],
-          targets: [{ id: 'target-1', title: 'Two Sum', domain: 'dsa' }],
-        }),
-      });
-      await settle();
-    });
-
-    it('should seed chips from the loaded note links', () => {
-      expect(
-        el().querySelector('[data-testid="entity-picker-chip-concept-1"]')
-          ?.textContent,
-      ).toContain('Arrays');
-      expect(
-        el().querySelector('[data-testid="entity-picker-chip-target-1"]')
-          ?.textContent,
-      ).toContain('Two Sum');
-    });
-
-    it('should PUT the edited concept_ids/target_ids after picking and removing links', async () => {
-      // Add a concept through the picker.
-      const conceptInput = el().querySelectorAll<HTMLInputElement>(
-        '[data-testid="entity-picker-search-input"]',
-      )[0];
-      conceptInput.value = 'hash';
-      conceptInput.dispatchEvent(new Event('input'));
-      await settleDebounce();
-
-      httpMock
-        .expectOne((r) => r.method === 'GET' && r.url.endsWith(CONCEPTS_URL))
-        .flush({ data: [{ id: 'concept-2', slug: 'hashing', name: 'Hashing' }] });
-      await settle();
-
-      const result = el().querySelector<HTMLButtonElement>(
-        '[data-testid="entity-picker-result-concept-2"]',
-      );
-      expect(result).toBeTruthy();
-      result!.click();
-      await settle();
-
-      // The new concept should now be a chip alongside the seeded one.
-      expect(
-        el().querySelector('[data-testid="entity-picker-chip-concept-2"]'),
-      ).toBeTruthy();
-
-      // Remove the seeded target link.
-      el()
-        .querySelector<HTMLButtonElement>(
-          '[data-testid="entity-picker-chip-remove-target-1"]',
-        )
-        ?.click();
-      await settle();
-
-      el()
-        .querySelector<HTMLFormElement>('[data-testid="note-editor"]')
-        ?.dispatchEvent(new Event('submit'));
-      await settle();
-
-      const req = httpMock.expectOne(
-        (r) => r.method === 'PUT' && r.url.endsWith(`${NOTES_URL}/n-1`),
-      );
-      expect(req.request.body.concept_ids).toEqual(['concept-1', 'concept-2']);
-      expect(req.request.body.target_ids).toEqual([]);
-      req.flush({ data: notePayload() });
-      await settle();
-
-      httpMock
-        .expectOne(
-          (r) => r.method === 'GET' && r.url.endsWith(`${NOTES_URL}/n-1`),
-        )
-        .flush({ data: notePayload() });
       await settle();
     });
   });

@@ -77,7 +77,7 @@ const KIND_SHORT: Record<NoteKind, string> = {
  * Notes list. On an unexpected 404/405/501 from the list endpoint the
  * page renders a "couldn't load" banner instead of an empty table.
  *
- * Columns: Kind / Title / Maturity / Actor / Concepts / Updated / ID.
+ * Columns: Kind / Title / Maturity / Actor / Updated / ID.
  * Row click opens the editor.
  */
 @Component({
@@ -230,14 +230,6 @@ export class NotesListPageComponent {
 
   protected maturityTextClass(m: NoteMaturity): string {
     return MATURITY_TEXT[m];
-  }
-
-  protected conceptsLabel(row: NoteRow): string {
-    if (row.concepts.length === 0) return '—';
-    const first = row.concepts[0].name;
-    return row.concepts.length > 1
-      ? `${first} +${row.concepts.length - 1}`
-      : first;
   }
 
   protected handleKeydown(event: KeyboardEvent): void {

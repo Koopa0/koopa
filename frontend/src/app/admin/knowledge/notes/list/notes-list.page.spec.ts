@@ -25,8 +25,6 @@ function note(overrides: Partial<NoteRow> = {}): NoteRow {
     kind: 'concept-note',
     maturity: 'seed',
     created_by: 'human',
-    concepts: [],
-    targets: [],
     created_at: '2026-06-01T10:00:00Z',
     updated_at: '2026-06-10T10:00:00Z',
     ...overrides,

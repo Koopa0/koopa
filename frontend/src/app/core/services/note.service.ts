@@ -12,8 +12,6 @@ export interface NoteRow {
   maturity: NoteMaturity;
   /** Authoring agent identity — the `created_by` wire field (e.g. human, hermes). */
   created_by: string;
-  concepts: { id: string; slug: string; name: string }[];
-  targets: { id: string; title: string; domain?: string }[];
   created_at: string;
   updated_at: string;
 }
@@ -26,8 +24,6 @@ export interface NoteDetail extends NoteRow {
 export interface NoteListQuery {
   kind?: NoteKind;
   maturity?: NoteMaturity;
-  concept_slug?: string;
-  target_id?: string;
   q?: string;
 }
 
@@ -37,23 +33,12 @@ export interface NoteCreateRequest {
   kind: NoteKind;
   maturity?: NoteMaturity;
   slug?: string;
-  concept_slugs?: string[];
-  target_ids?: string[];
 }
 
 export interface NoteUpdateRequest {
   title?: string;
   body?: string;
   kind?: NoteKind;
-  /**
-   * Set-semantics for the note's concept links: absent ⇒ leave untouched,
-   * `[]` ⇒ clear all, `[ids…]` ⇒ set to exactly these. Concept ids (not
-   * slugs) because concept slugs scope per-domain and a bare slug cannot
-   * resolve to one concept.
-   */
-  concept_ids?: string[];
-  /** Set-semantics for the note's learning-target links (see {@link concept_ids}). */
-  target_ids?: string[];
 }
 
 /**
@@ -71,8 +56,6 @@ export class NoteService {
     const params: Record<string, string> = {};
     if (query.kind) params['kind'] = query.kind;
     if (query.maturity) params['maturity'] = query.maturity;
-    if (query.concept_slug) params['concept_slug'] = query.concept_slug;
-    if (query.target_id) params['target_id'] = query.target_id;
     if (query.q) params['q'] = query.q;
     return this.api.getData<NoteRow[]>('/api/admin/knowledge/notes', params);
   }

@@ -1,19 +1,14 @@
 import {
   Activity as ActivityIcon,
-  BookOpen,
   Bot,
-  Brain,
   Calendar,
   ChartColumn,
   CheckSquare,
-  Compass,
   FileText,
   HeartPulse,
   Home,
   Inbox as InboxIcon,
-  Layers,
   Library,
-  ListChecks,
   Moon,
   Music,
   Rss,
@@ -22,7 +17,6 @@ import {
   StickyNote,
   Tag,
   Target,
-  Timer,
 } from 'lucide-angular';
 import type { NavCountKey } from './admin-nav-counts.service';
 
@@ -46,10 +40,9 @@ export interface AdminNavItem {
   testId: string;
   /**
    * Require an exact URL match for the active-state highlight. Set this
-   * on "index" routes whose URL is a prefix of sibling nav items (e.g.
-   * `/admin/learning` is a prefix of `/admin/learning/concepts`); without
-   * it, RouterLinkActive's default prefix match keeps the index item
-   * highlighted on every descendant route.
+   * on "index" routes whose URL is a prefix of sibling nav items;
+   * without it, RouterLinkActive's default prefix match keeps the index
+   * item highlighted on every descendant route.
    */
   exact?: boolean;
 }
@@ -60,8 +53,8 @@ export interface AdminNavGroup {
 }
 
 /**
- * 5-domain nav structure (Daily / Commitment / Knowledge / Learning /
- * System) per the Mission Control design IA. Kept here, not inlined in
+ * 4-domain nav structure (Daily / Commitment / Knowledge / System) per
+ * the Mission Control design IA. Kept here, not inlined in
  * AdminLayoutComponent, so the component stays small and the structure
  * is reusable by tests and the command palette.
  */
@@ -189,55 +182,6 @@ export const ADMIN_NAV: readonly AdminNavGroup[] = [
         icon: Tag,
         shortcutHint: '',
         testId: 'admin-nav-tags',
-      },
-    ],
-  },
-  {
-    label: 'Learning',
-    items: [
-      {
-        label: 'Dashboard',
-        route: '/admin/learning',
-        icon: Brain,
-        shortcutHint: 'G L',
-        testId: 'admin-nav-learning',
-        exact: true,
-      },
-      {
-        label: 'Sessions',
-        route: '/admin/learning/sessions',
-        icon: Timer,
-        shortcutHint: '',
-        testId: 'admin-nav-sessions',
-      },
-      {
-        label: 'Domains',
-        route: '/admin/learning/domains',
-        icon: Layers,
-        shortcutHint: 'G D',
-        testId: 'admin-nav-domains',
-      },
-      {
-        label: 'Concepts',
-        route: '/admin/learning/concepts',
-        icon: Compass,
-        shortcutHint: 'G P',
-        testId: 'admin-nav-concepts',
-      },
-      {
-        label: 'Plans',
-        route: '/admin/learning/plans',
-        icon: ListChecks,
-        shortcutHint: 'G S',
-        testId: 'admin-nav-plans',
-      },
-      {
-        label: 'Hypotheses',
-        route: '/admin/learning/hypotheses',
-        icon: BookOpen,
-        countKey: 'hypotheses_unverified',
-        shortcutHint: 'G Y',
-        testId: 'admin-nav-hypotheses',
       },
     ],
   },

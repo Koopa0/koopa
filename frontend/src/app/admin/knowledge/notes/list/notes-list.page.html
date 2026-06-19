@@ -136,7 +136,6 @@
           <th scope="col" class="px-3 py-2 font-normal">Title</th>
           <th scope="col" class="px-3 py-2 font-normal">Maturity</th>
           <th scope="col" class="px-3 py-2 font-normal">Actor</th>
-          <th scope="col" class="px-3 py-2 font-normal">Concepts</th>
           <th scope="col" class="px-3 py-2 font-normal">Updated</th>
           <th scope="col" class="px-3 py-2 font-normal">ID</th>
         </tr>
@@ -178,9 +177,6 @@
             </td>
             <td class="px-3 py-2 font-mono text-[11px] text-fg-muted">
               {{ row.created_by }}
-            </td>
-            <td class="px-3 py-2 truncate text-fg-muted">
-              {{ conceptsLabel(row) }}
             </td>
             <td class="px-3 py-2 text-fg-muted">
               {{ row.updated_at | date: 'short' }}

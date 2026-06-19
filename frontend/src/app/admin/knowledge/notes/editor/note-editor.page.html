@@ -144,32 +144,6 @@
             }
           </select>
         </div>
-
-        @if (note()) {
-          <div class="mb-2.5" data-testid="note-concepts">
-            <app-entity-picker
-              label="Concepts"
-              inputId="note-concept-picker"
-              placeholder="Search concepts…"
-              [search]="searchConcepts"
-              [(selected)]="selectedConcepts"
-            />
-          </div>
-
-          <div data-testid="note-targets">
-            <app-entity-picker
-              label="Learning targets"
-              inputId="note-target-picker"
-              placeholder="Search targets…"
-              [search]="searchTargets"
-              [(selected)]="selectedTargets"
-            />
-          </div>
-        } @else {
-          <p class="text-[11px] leading-relaxed text-fg-faint" data-testid="note-links-hint">
-            Concepts and learning targets can be linked once the note is created.
-          </p>
-        }
       </div>
 
       <!-- Maturity ladder (edit mode only; the create endpoint defaults maturity server-side) -->
