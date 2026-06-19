@@ -1,7 +1,7 @@
 @if (isLoading()) {
   <div class="flex flex-1 items-center justify-center" data-testid="concept-loading">
     <div
-      class="size-5 animate-spin rounded-full border-2 border-border-strong border-t-zinc-300"
+      class="size-5 animate-spin rounded-full border-2 border-border-strong border-t-fg-faint"
       aria-label="Loading concept"
     ></div>
   </div>
@@ -29,7 +29,7 @@
 } @else if (hasError()) {
   <div class="flex flex-1 items-center justify-center p-8 text-center" data-testid="concept-error">
     <div>
-      <p class="mb-2 text-sm text-red-400">Failed to load concept.</p>
+      <p class="mb-2 text-sm text-error">Failed to load concept.</p>
       <button
         type="button"
         (click)="back()"
@@ -93,9 +93,9 @@
         </div>
       </header>
       <div class="grid grid-cols-3 gap-3 font-mono text-xs">
-        <div class="rounded-xs border border-amber-900 bg-amber-950/10 px-3 py-2">
-          <div class="text-[10px] uppercase text-amber-400">Weakness</div>
-          <div class="text-lg text-amber-200">{{ c.mastery_counts.weakness }}</div>
+        <div class="rounded-xs border border-warn/40 bg-warn-bg px-3 py-2">
+          <div class="text-[10px] uppercase text-warn">Weakness</div>
+          <div class="text-lg text-warn">{{ c.mastery_counts.weakness }}</div>
           @if (c.low_confidence_counts.weakness > 0) {
             <div class="text-[10px] text-fg-subtle">+{{ c.low_confidence_counts.weakness }} low-conf</div>
           }
@@ -107,9 +107,9 @@
             <div class="text-[10px] text-fg-subtle">+{{ c.low_confidence_counts.improvement }} low-conf</div>
           }
         </div>
-        <div class="rounded-xs border border-emerald-900 bg-emerald-950/10 px-3 py-2">
-          <div class="text-[10px] uppercase text-emerald-400">Mastery</div>
-          <div class="text-lg text-emerald-200">{{ c.mastery_counts.mastery }}</div>
+        <div class="rounded-xs border border-success/40 bg-success-bg px-3 py-2">
+          <div class="text-[10px] uppercase text-success">Mastery</div>
+          <div class="text-lg text-success">{{ c.mastery_counts.mastery }}</div>
           @if (c.low_confidence_counts.mastery > 0) {
             <div class="text-[10px] text-fg-subtle">+{{ c.low_confidence_counts.mastery }} low-conf</div>
           }
@@ -233,9 +233,9 @@
               <div class="mb-1 flex flex-wrap items-center gap-2 font-mono text-[11px]">
                 <span
                   class="uppercase"
-                  [class.text-amber-300]="obs.signal === 'weakness'"
+                  [class.text-warn]="obs.signal === 'weakness'"
                   [class.text-brand]="obs.signal === 'improvement'"
-                  [class.text-emerald-300]="obs.signal === 'mastery'"
+                  [class.text-success]="obs.signal === 'mastery'"
                 >{{ obs.signal }}</span>
                 <span class="text-fg-muted">{{ obs.category }}</span>
                 @if (obs.confidence === 'low') {
