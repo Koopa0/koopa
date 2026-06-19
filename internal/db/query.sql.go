@@ -9782,27 +9782,6 @@ func (q *Queries) StatsFeedHealthCounts(ctx context.Context) (StatsFeedHealthCou
 	return i, err
 }
 
-const statsFeedHealthSummary = `-- name: StatsFeedHealthSummary :one
-SELECT
-    COUNT(*)::int AS total,
-    COUNT(*) FILTER (WHERE enabled)::int AS enabled,
-    COUNT(*) FILTER (WHERE consecutive_failures > 0)::int AS failing_feeds
-FROM feeds
-`
-
-type StatsFeedHealthSummaryRow struct {
-	Total        int32 `json:"total"`
-	Enabled      int32 `json:"enabled"`
-	FailingFeeds int32 `json:"failing_feeds"`
-}
-
-func (q *Queries) StatsFeedHealthSummary(ctx context.Context) (StatsFeedHealthSummaryRow, error) {
-	row := q.db.QueryRow(ctx, statsFeedHealthSummary)
-	var i StatsFeedHealthSummaryRow
-	err := row.Scan(&i.Total, &i.Enabled, &i.FailingFeeds)
-	return i, err
-}
-
 const statsGoalsByArea = `-- name: StatsGoalsByArea :many
 SELECT COALESCE(a.name, 'unset') AS area, COUNT(*)::int AS count
 FROM goals g
@@ -9828,45 +9807,6 @@ func (q *Queries) StatsGoalsByArea(ctx context.Context) ([]StatsGoalsByAreaRow, 
 	for rows.Next() {
 		var i StatsGoalsByAreaRow
 		if err := rows.Scan(&i.Area, &i.Count); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const statsLastAgentScheduleRuns = `-- name: StatsLastAgentScheduleRuns :many
-SELECT split_part(name, ':', 1)::text   AS agent_name,
-       MAX(started_at)::timestamptz     AS last_run_at
-FROM process_runs
-WHERE kind = 'agent_schedule'
-  AND started_at IS NOT NULL
-GROUP BY split_part(name, ':', 1)
-`
-
-type StatsLastAgentScheduleRunsRow struct {
-	AgentName string    `json:"agent_name"`
-	LastRunAt time.Time `json:"last_run_at"`
-}
-
-// Latest started_at per agent across all agent_schedule runs.
-// process_runs.name format is "<agent>:<schedule>" (see migration COMMENT on
-// process_runs.name); split_part extracts the agent identifier. Rows whose
-// started_at is NULL (still pending) are skipped so the result reports only
-// runs the external scheduler has actually begun.
-func (q *Queries) StatsLastAgentScheduleRuns(ctx context.Context) ([]StatsLastAgentScheduleRunsRow, error) {
-	rows, err := q.db.Query(ctx, statsLastAgentScheduleRuns)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []StatsLastAgentScheduleRunsRow{}
-	for rows.Next() {
-		var i StatsLastAgentScheduleRunsRow
-		if err := rows.Scan(&i.AgentName, &i.LastRunAt); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -9905,68 +9845,6 @@ func (q *Queries) StatsNoteGrowth(ctx context.Context) (StatsNoteGrowthRow, erro
 	var i StatsNoteGrowthRow
 	err := row.Scan(&i.Total, &i.LastWeek, &i.LastMonth)
 	return i, err
-}
-
-const statsProcessRunsByName = `-- name: StatsProcessRunsByName :many
-SELECT
-    name,
-    COUNT(*)::int AS total,
-    COUNT(*) FILTER (WHERE status = 'completed')::int AS completed,
-    COUNT(*) FILTER (WHERE status = 'failed')::int AS failed,
-    COUNT(*) FILTER (WHERE status = 'running')::int AS running,
-    MAX(created_at)::timestamptz AS last_run_at,
-    ((array_agg(status::text ORDER BY created_at DESC))[1])::text AS last_status
-FROM process_runs
-WHERE kind = $1::text
-  AND created_at >= $2
-GROUP BY name
-ORDER BY name
-`
-
-type StatsProcessRunsByNameParams struct {
-	Kind  string    `json:"kind"`
-	Since time.Time `json:"since"`
-}
-
-type StatsProcessRunsByNameRow struct {
-	Name       string    `json:"name"`
-	Total      int32     `json:"total"`
-	Completed  int32     `json:"completed"`
-	Failed     int32     `json:"failed"`
-	Running    int32     `json:"running"`
-	LastRunAt  time.Time `json:"last_run_at"`
-	LastStatus string    `json:"last_status"`
-}
-
-// Per-name aggregate within a single kind over a time window, plus the
-// last status seen (the array_agg trick returns the most recent row by
-// created_at DESC).
-func (q *Queries) StatsProcessRunsByName(ctx context.Context, arg StatsProcessRunsByNameParams) ([]StatsProcessRunsByNameRow, error) {
-	rows, err := q.db.Query(ctx, statsProcessRunsByName, arg.Kind, arg.Since)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []StatsProcessRunsByNameRow{}
-	for rows.Next() {
-		var i StatsProcessRunsByNameRow
-		if err := rows.Scan(
-			&i.Name,
-			&i.Total,
-			&i.Completed,
-			&i.Failed,
-			&i.Running,
-			&i.LastRunAt,
-			&i.LastStatus,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
 }
 
 const statsProcessRunsByStatus = `-- name: StatsProcessRunsByStatus :many

@@ -305,19 +305,6 @@ func (s *Store) ProcessRunsSince(ctx context.Context, since time.Time, kind stri
 	}, nil
 }
 
-// FeedHealth returns feed health summary including failing feed count.
-func (s *Store) FeedHealth(ctx context.Context) (*FeedHealthSummary, error) {
-	row, err := s.q.StatsFeedHealthSummary(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("querying feed health: %w", err)
-	}
-	return &FeedHealthSummary{
-		Total:        int(row.Total),
-		Enabled:      int(row.Enabled),
-		FailingFeeds: int(row.FailingFeeds),
-	}, nil
-}
-
 // RecentProcessRuns returns recent process_runs within a single kind over a
 // time window, optionally filtered by name and status.
 func (s *Store) RecentProcessRuns(ctx context.Context, since time.Time, kind string, name, status *string, limit int) ([]RecentProcessRun, error) {
@@ -347,60 +334,6 @@ func (s *Store) RecentProcessRuns(ctx context.Context, since time.Time, kind str
 		runs = append(runs, r)
 	}
 	return runs, nil
-}
-
-// ProcessRunsByName returns per-name aggregated stats within a single kind.
-// For kind=crawl this is per-collector-name (e.g. feed_fetch); for
-// agent_schedule it is per-schedule-name.
-func (s *Store) ProcessRunsByName(ctx context.Context, since time.Time, kind string) ([]ProcessRunNameSummary, error) {
-	rows, err := s.q.StatsProcessRunsByName(ctx, db.StatsProcessRunsByNameParams{
-		Kind:  kind,
-		Since: since,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("querying process_runs[%s] by name: %w", kind, err)
-	}
-	summaries := make([]ProcessRunNameSummary, 0, len(rows))
-	for i := range rows {
-		ps := ProcessRunNameSummary{
-			Name:      rows[i].Name,
-			Total:     int(rows[i].Total),
-			Completed: int(rows[i].Completed),
-			Failed:    int(rows[i].Failed),
-			Running:   int(rows[i].Running),
-		}
-		if rows[i].LastStatus != "" {
-			s := rows[i].LastStatus
-			ps.LastStatus = &s
-		}
-		if !rows[i].LastRunAt.IsZero() {
-			s := rows[i].LastRunAt.Format(time.RFC3339)
-			ps.LastRunAt = &s
-		}
-		summaries = append(summaries, ps)
-	}
-	return summaries, nil
-}
-
-// LastAgentScheduleRuns returns the most recent observed started_at per
-// agent across rows where process_runs.kind='agent_schedule'. The map key
-// is the agent identifier extracted from process_runs.name (the
-// "<agent>:<schedule>" composite); the value is the latest started_at.
-//
-// Agents that have never executed a schedule are absent from the returned
-// map. Callers that need a complete view (including built-in agents with a
-// declared Schedule that have not yet run) must overlay the registry —
-// this method reports observed data only and does not synthesize entries.
-func (s *Store) LastAgentScheduleRuns(ctx context.Context) (map[string]time.Time, error) {
-	rows, err := s.q.StatsLastAgentScheduleRuns(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("querying last agent_schedule runs: %w", err)
-	}
-	out := make(map[string]time.Time, len(rows))
-	for i := range rows {
-		out[rows[i].AgentName] = rows[i].LastRunAt
-	}
-	return out, nil
 }
 
 // Learning returns aggregated learning metrics for the admin dashboard.

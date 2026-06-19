@@ -153,13 +153,6 @@ type ProcessRunSummary struct {
 	Pending   int `json:"pending"`
 }
 
-// FeedHealthSummary holds feed health stats.
-type FeedHealthSummary struct {
-	Total        int `json:"total"`
-	Enabled      int `json:"enabled"`
-	FailingFeeds int `json:"failing_feeds"`
-}
-
 // RecentProcessRun holds a single process_runs row for the recent runs list.
 type RecentProcessRun struct {
 	ID        string  `json:"id"`
@@ -168,19 +161,6 @@ type RecentProcessRun struct {
 	Error     *string `json:"error,omitempty"`
 	CreatedAt string  `json:"created_at"`
 	EndedAt   *string `json:"ended_at,omitempty"`
-}
-
-// ProcessRunNameSummary holds per-name aggregated stats within a single kind.
-// For kind=crawl this is per-collector name (e.g. feed_fetch); for
-// agent_schedule it is per-schedule.
-type ProcessRunNameSummary struct {
-	Name       string  `json:"name"`
-	Total      int     `json:"total"`
-	Completed  int     `json:"completed"`
-	Failed     int     `json:"failed"`
-	Running    int     `json:"running"`
-	LastRunAt  *string `json:"last_run_at,omitempty"`
-	LastStatus *string `json:"last_status,omitempty"`
 }
 
 // SystemHealthSnapshot is the wire shape served at GET /api/admin/system/health.
