@@ -4,7 +4,7 @@
   data-testid="project-loading"
 >
   <div
-    class="size-5 animate-spin rounded-full border-2 border-border-strong border-t-zinc-300"
+    class="size-5 animate-spin rounded-full border-2 border-border-strong border-t-fg-muted"
     aria-label="Loading project"
   ></div>
 </div>
@@ -14,7 +14,7 @@
   data-testid="project-error"
 >
   <div>
-    <p class="mb-2 text-sm text-red-400">Failed to load project.</p>
+    <p class="mb-2 text-sm text-error">Failed to load project.</p>
     <button
       type="button"
       (click)="back()"
@@ -176,7 +176,7 @@
               } @if (t.due) {
               <span>· due {{ t.due | date: 'shortDate' }}</span>
               } @if (t.is_in_today_plan) {
-              <span class="text-amber-400">· today</span>
+              <span class="text-warn">· today</span>
               }
             </div>
           </li>
