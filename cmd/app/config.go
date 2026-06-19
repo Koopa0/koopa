@@ -19,9 +19,9 @@ import (
 )
 
 // config holds every value the app server reads from the environment.
-// Optional integrations (Google OAuth, R2 upload) are gated by emptiness
-// of their respective fields in main; required fields are loaded via
-// requireEnv and never empty by the time main observes them.
+// Optional integrations (Google OAuth) are gated by emptiness of their
+// respective fields in main; required fields are loaded via requireEnv
+// and never empty by the time main observes them.
 type config struct {
 	Port       string
 	CORSOrigin string
@@ -35,13 +35,6 @@ type config struct {
 	GoogleClientSecret string
 	GoogleRedirectURI  string
 	AdminEmail         string
-
-	// R2 upload
-	R2Endpoint        string
-	R2AccessKeyID     string
-	R2SecretAccessKey string
-	R2Bucket          string
-	R2PublicURL       string
 
 	// Gemini embedding. Empty = embedding reconciler disabled; search
 	// stays FTS-only.
@@ -77,11 +70,6 @@ func loadConfig(logger *slog.Logger) config {
 		GoogleClientSecret: os.Getenv("GOOGLE_CLIENT_SECRET"),
 		GoogleRedirectURI:  os.Getenv("GOOGLE_REDIRECT_URI"),
 		AdminEmail:         os.Getenv("ADMIN_EMAIL"),
-		R2Endpoint:         os.Getenv("R2_ENDPOINT"),
-		R2AccessKeyID:      os.Getenv("R2_ACCESS_KEY_ID"),
-		R2SecretAccessKey:  os.Getenv("R2_SECRET_ACCESS_KEY"),
-		R2Bucket:           os.Getenv("R2_BUCKET"),
-		R2PublicURL:        os.Getenv("R2_PUBLIC_URL"),
 		GeminiAPIKey:       os.Getenv("GEMINI_API_KEY"),
 		SiteURL:            envOr("SITE_URL", "https://koopa0.dev"),
 

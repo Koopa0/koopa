@@ -45,7 +45,6 @@ import (
 	"github.com/Koopa0/koopa/internal/today"
 	"github.com/Koopa0/koopa/internal/todo"
 	"github.com/Koopa0/koopa/internal/topic"
-	"github.com/Koopa0/koopa/internal/upload"
 )
 
 // handlers holds all handler dependencies for route registration.
@@ -60,7 +59,6 @@ type handlers struct {
 	tag        *tag.Handler
 	stats      *stats.Handler
 	activity   *activity.Handler
-	upload     *upload.Handler
 	hypothesis *hypothesis.Handler
 	agent      *agent.Handler
 	daily      *daily.Handler
@@ -338,17 +336,6 @@ func registerRoutes(
 	// source gets an even slice of the limit so one kind cannot dominate
 	// the result envelope.
 	mux.Handle("GET /api/admin/search", authMid(http.HandlerFunc(h.search.Search)))
-
-	// --- Admin: Upload ---
-	if h.upload != nil {
-		// Upload is intentionally on authMid (not adminMid): it writes to R2
-		// storage only, no audited DB mutation. Wrapping in adminMid would
-		// pin a pool connection and commit an empty tx for every upload.
-		// If Upload later records a metadata row to an audited table,
-		// promote back to adminMid AND plumb api.TxFromContext into the
-		// handler so the binding actually flows to the write.
-		mux.Handle("POST /api/admin/upload", authMid(http.HandlerFunc(h.upload.Upload)))
-	}
 
 	// --- Admin: Learning / Hypotheses ---
 	mux.Handle("GET /api/admin/learning/hypotheses", authMid(http.HandlerFunc(h.hypothesis.List)))

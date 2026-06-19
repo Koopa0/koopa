@@ -51,7 +51,6 @@ import (
 	"github.com/Koopa0/koopa/internal/today"
 	"github.com/Koopa0/koopa/internal/todo"
 	"github.com/Koopa0/koopa/internal/topic"
-	"github.com/Koopa0/koopa/internal/upload"
 )
 
 // agentSyncTimeout caps how long startup waits for agent.SyncToTable.
@@ -230,13 +229,6 @@ func run(logger *slog.Logger) error {
 		logger.Info("embedding reconciler disabled, search stays FTS-only (GEMINI_API_KEY unset)")
 	}
 
-	// Upload (optional — only if R2 is configured)
-	var uploadHandler *upload.Handler
-	if cfg.R2Endpoint != "" {
-		s3Client := upload.NewS3Client(ctx, cfg.R2Endpoint, cfg.R2AccessKeyID, cfg.R2SecretAccessKey)
-		uploadHandler = upload.NewHandler(s3Client, cfg.R2Bucket, cfg.R2PublicURL, logger)
-	}
-
 	// Auth (optional — only if Google OAuth is configured)
 	var authHandler *auth.Handler
 	if cfg.GoogleClientID != "" {
@@ -266,7 +258,6 @@ func run(logger *slog.Logger) error {
 		tag:        tag.NewHandler(tagStore, logger),
 		stats:      stats.NewHandler(statsStore, logger),
 		activity:   activity.NewHandler(activityStore, logger),
-		upload:     uploadHandler,
 		hypothesis: hypothesis.NewHandler(hypothesisStore, logger),
 		agent:      agent.NewHandler(agentRegistry, logger),
 		daily:      daily.NewHandler(dailyStore, todoStore, logger),
