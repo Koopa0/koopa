@@ -1,7 +1,7 @@
 @if (isLoading()) {
   <div class="flex flex-1 items-center justify-center" data-testid="hypothesis-loading">
     <div
-      class="size-5 animate-spin rounded-full border-2 border-border-strong border-t-zinc-300"
+      class="size-5 animate-spin rounded-full border-2 border-border-strong border-t-fg-subtle"
       aria-label="Loading hypothesis"
     ></div>
   </div>
@@ -11,7 +11,7 @@
     data-testid="hypothesis-error"
   >
     <div>
-      <p class="mb-2 text-sm text-red-400">Failed to load hypothesis.</p>
+      <p class="mb-2 text-sm text-error">Failed to load hypothesis.</p>
       <button
         type="button"
         (click)="back()"
@@ -75,7 +75,7 @@
           type="button"
           (click)="endorse()"
           [disabled]="isActioning()"
-          class="rounded-sm bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-emerald-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand disabled:cursor-not-allowed disabled:bg-emerald-900/60"
+          class="rounded-sm bg-success px-3 py-1.5 text-xs font-medium text-bg transition-colors hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand disabled:cursor-not-allowed disabled:opacity-40"
           data-testid="hypothesis-action-endorse"
         >
           Endorse
@@ -90,7 +90,7 @@
             type="button"
             (click)="confirmDelete()"
             [disabled]="isActioning()"
-            class="rounded-sm bg-red-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-red-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand disabled:cursor-not-allowed disabled:bg-red-900/60"
+            class="rounded-sm bg-error px-3 py-1.5 text-xs font-medium text-bg transition-colors hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand disabled:cursor-not-allowed disabled:opacity-40"
             data-testid="hypothesis-delete-confirm"
           >
             Delete
@@ -109,7 +109,7 @@
             type="button"
             (click)="requestDelete()"
             [disabled]="isActioning()"
-            class="rounded-sm px-3 py-1.5 text-xs text-red-300 transition-colors hover:bg-red-950/40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand disabled:cursor-not-allowed"
+            class="rounded-sm px-3 py-1.5 text-xs text-error transition-colors hover:bg-error-bg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand disabled:cursor-not-allowed"
             data-testid="hypothesis-action-delete"
           >
             Delete draft
@@ -122,7 +122,7 @@
           type="button"
           (click)="verify()"
           [disabled]="isActioning()"
-          class="rounded-sm bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-emerald-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand disabled:cursor-not-allowed disabled:bg-emerald-900/60"
+          class="rounded-sm bg-success px-3 py-1.5 text-xs font-medium text-bg transition-colors hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand disabled:cursor-not-allowed disabled:opacity-40"
           data-testid="hypothesis-action-verify"
         >
           Verify
@@ -133,7 +133,7 @@
           type="button"
           (click)="invalidate()"
           [disabled]="isActioning()"
-          class="rounded-sm px-3 py-1.5 text-xs font-medium text-red-300 transition-colors hover:bg-red-950/40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand disabled:cursor-not-allowed"
+          class="rounded-sm px-3 py-1.5 text-xs font-medium text-error transition-colors hover:bg-error-bg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand disabled:cursor-not-allowed"
           data-testid="hypothesis-action-invalidate"
         >
           Invalidate
@@ -183,9 +183,9 @@
           <legend class="sr-only">Evidence kind</legend>
           <label
             class="flex h-7 cursor-pointer items-center rounded-xs border px-2.5 text-[11px] font-medium transition-colors has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-brand"
-            [class.border-emerald-700]="evidenceKind() === 'supporting'"
-            [class.bg-emerald-900/30]="evidenceKind() === 'supporting'"
-            [class.text-emerald-300]="evidenceKind() === 'supporting'"
+            [class.border-success]="evidenceKind() === 'supporting'"
+            [class.bg-success-bg]="evidenceKind() === 'supporting'"
+            [class.text-success]="evidenceKind() === 'supporting'"
             [class.border-border]="evidenceKind() !== 'supporting'"
             [class.bg-panel]="evidenceKind() !== 'supporting'"
             [class.text-fg-muted]="evidenceKind() !== 'supporting'"
@@ -203,9 +203,9 @@
           </label>
           <label
             class="flex h-7 cursor-pointer items-center rounded-xs border px-2.5 text-[11px] font-medium transition-colors has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-brand"
-            [class.border-red-700]="evidenceKind() === 'counter'"
-            [class.bg-red-900/30]="evidenceKind() === 'counter'"
-            [class.text-red-300]="evidenceKind() === 'counter'"
+            [class.border-error]="evidenceKind() === 'counter'"
+            [class.bg-error-bg]="evidenceKind() === 'counter'"
+            [class.text-error]="evidenceKind() === 'counter'"
             [class.border-border]="evidenceKind() !== 'counter'"
             [class.bg-panel]="evidenceKind() !== 'counter'"
             [class.text-fg-muted]="evidenceKind() !== 'counter'"
@@ -236,7 +236,7 @@
           type="button"
           (click)="submitEvidence()"
           [disabled]="isActioning() || !evidenceBody().trim()"
-          class="rounded-sm bg-brand px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-brand focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand disabled:cursor-not-allowed disabled:bg-brand/60 disabled:text-brand"
+          class="rounded-sm bg-brand px-3 py-1.5 text-xs font-medium text-bg transition-colors hover:bg-brand focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand disabled:cursor-not-allowed disabled:bg-brand/60 disabled:text-brand"
           data-testid="hypothesis-evidence-submit"
         >
           Record evidence
@@ -287,10 +287,10 @@
     } @else if (lineageTransientError()) {
       <section
         role="alert"
-        class="rounded-sm border border-amber-900 bg-amber-950/20 p-4 text-center"
+        class="rounded-sm border border-warn/40 bg-warn-bg p-4 text-center"
         data-testid="hypothesis-lineage-error"
       >
-        <p class="text-xs text-amber-300">
+        <p class="text-xs text-warn">
           Couldn't load lineage. Retry the page or wait for the next
           refresh.
         </p>
@@ -376,13 +376,13 @@
           <ul class="space-y-3">
             @for (ev of lin.evidence_log; track ev.id) {
               <li class="border-l-2 pl-3"
-                [class.border-emerald-700]="ev.type === 'supporting'"
-                [class.border-red-700]="ev.type === 'counter'"
+                [class.border-success]="ev.type === 'supporting'"
+                [class.border-error]="ev.type === 'counter'"
               >
                 <div class="mb-0.5 flex items-center gap-2 font-mono text-[11px]">
                   <span
-                    [class.text-emerald-300]="ev.type === 'supporting'"
-                    [class.text-red-300]="ev.type === 'counter'"
+                    [class.text-success]="ev.type === 'supporting'"
+                    [class.text-error]="ev.type === 'counter'"
                   >
                     {{ ev.type }}
                   </span>
@@ -420,9 +420,9 @@
                 <div class="mb-1 flex flex-wrap items-center gap-2 font-mono text-[11px]">
                   <span
                     class="uppercase"
-                    [class.text-amber-300]="obs.signal_type === 'weakness'"
+                    [class.text-warn]="obs.signal_type === 'weakness'"
                     [class.text-brand]="obs.signal_type === 'improvement'"
-                    [class.text-emerald-300]="obs.signal_type === 'mastery'"
+                    [class.text-success]="obs.signal_type === 'mastery'"
                   >
                     {{ obs.signal_type }}
                   </span>
