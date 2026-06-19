@@ -255,6 +255,11 @@ var (
 	// bind a tx via api.ActorMiddleware. Mirrors feed.Store and
 	// content.Store.
 	ErrNotTransactional = errors.New("project: archival requires a transactional store")
+
+	// ErrNotProposed indicates an activate/reject targeted a project that
+	// exists but is not in status=proposed. Real planning rows are not
+	// activated or hard-deleted through the proposal-triage path.
+	ErrNotProposed = errors.New("project: not proposed")
 )
 
 // nullProjectStatus converts a *Status to db.NullProjectStatus.
@@ -446,6 +451,95 @@ func (s *Store) ProposeProject(ctx context.Context, p *ProposeProjectParams) (*P
 	}
 	proj := rowToProject(&r)
 	return &proj, nil
+}
+
+// ProposedProjectSummary is a proposed project row for the triage surface.
+// ProposalRationale is the agent's why-now justification (nil when none was
+// given) — surfaced only here in triage, never in the active project list or
+// the public portfolio.
+type ProposedProjectSummary struct {
+	ID                uuid.UUID `json:"id"`
+	Slug              string    `json:"slug"`
+	Title             string    `json:"title"`
+	Description       string    `json:"description"`
+	CreatedBy         *string   `json:"created_by,omitempty"`
+	ProposalRationale *string   `json:"proposal_rationale,omitempty"`
+	CreatedAt         time.Time `json:"created_at"`
+}
+
+// ActivateProject transitions a proposed project to in_progress. Proposed-only:
+// ErrNotFound when the project is missing, ErrNotProposed when it exists but is
+// not proposed (the zero-rows case is disambiguated with a follow-up read).
+func (s *Store) ActivateProject(ctx context.Context, id uuid.UUID) (*Project, error) {
+	r, err := s.q.ActivateProject(ctx, id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, s.classifyProposedProjectMiss(ctx, id)
+		}
+		return nil, fmt.Errorf("activating project %s: %w", id, err)
+	}
+	proj := rowToProject(&r)
+	return &proj, nil
+}
+
+// RejectProject hard-deletes a proposed project. Proposed-only: ErrNotFound when
+// missing, ErrNotProposed when the row exists but is not proposed — a real
+// project is never deleted by this path. Linked todos and contents survive
+// unclassified (their project_id is SET NULL by the FK); the project_profile
+// CASCADEs.
+func (s *Store) RejectProject(ctx context.Context, id uuid.UUID) error {
+	n, err := s.q.DeleteProposedProject(ctx, id)
+	if err != nil {
+		return fmt.Errorf("rejecting project %s: %w", id, err)
+	}
+	if n > 0 {
+		return nil
+	}
+	return s.classifyProposedProjectMiss(ctx, id)
+}
+
+// ProposedProjects returns every proposed project awaiting triage, newest first.
+func (s *Store) ProposedProjects(ctx context.Context) ([]ProposedProjectSummary, error) {
+	rows, err := s.q.ProposedProjects(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("listing proposed projects: %w", err)
+	}
+	out := make([]ProposedProjectSummary, len(rows))
+	for i := range rows {
+		r := &rows[i]
+		out[i] = ProposedProjectSummary{
+			ID:                r.ID,
+			Slug:              r.Slug,
+			Title:             r.Title,
+			Description:       r.Description,
+			CreatedBy:         r.CreatedBy,
+			ProposalRationale: r.ProposalRationale,
+			CreatedAt:         r.CreatedAt,
+		}
+	}
+	return out, nil
+}
+
+// ProposedProjectsCount returns the number of proposed projects awaiting triage.
+func (s *Store) ProposedProjectsCount(ctx context.Context) (int64, error) {
+	n, err := s.q.ProposedProjectsCount(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("counting proposed projects: %w", err)
+	}
+	return n, nil
+}
+
+// classifyProposedProjectMiss disambiguates a zero-rows proposed-project
+// mutation: the row is missing (ErrNotFound) or exists but is not proposed
+// (ErrNotProposed).
+func (s *Store) classifyProposedProjectMiss(ctx context.Context, id uuid.UUID) error {
+	if _, err := s.q.ProjectByID(ctx, id); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrNotFound
+		}
+		return fmt.Errorf("classifying proposed-project miss %s: %w", id, err)
+	}
+	return ErrNotProposed
 }
 
 // UpdateProject updates a project.

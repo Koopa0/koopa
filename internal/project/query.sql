@@ -191,3 +191,33 @@ INSERT INTO projects (slug, title, description, status, created_by, proposal_rat
 VALUES (@slug, @title, @description, 'proposed', @created_by, @proposal_rationale)
 RETURNING id, slug, title, description, status, repo, area_id, goal_id, deadline, last_activity_at,
           expected_cadence, created_by, proposal_rationale, created_at, updated_at;
+
+-- name: ActivateProject :one
+-- Owner stamp on a proposed project: proposed → in_progress. The state-scoped
+-- WHERE makes the transition atomic; zero rows means the row is missing or not
+-- proposed (the store disambiguates with a follow-up read).
+UPDATE projects SET status = 'in_progress', updated_at = now()
+WHERE id = @id AND status = 'proposed'
+RETURNING id, slug, title, description, status, repo, area_id, goal_id, deadline, last_activity_at,
+          expected_cadence, created_by, proposal_rationale, created_at, updated_at;
+
+-- name: DeleteProposedProject :execrows
+-- Reject (hard DELETE) a proposed project. Proposed-only: a non-proposed project
+-- is a real planning record and must never be deleted by this path. Linked todos
+-- and contents survive unclassified (their project_id is ON DELETE SET NULL); the
+-- project_profile CASCADEs.
+DELETE FROM projects WHERE id = @id AND status = 'proposed';
+
+-- name: ProposedProjects :many
+-- Every proposed project awaiting owner triage, newest first. Feeds the
+-- proposals triage surface. proposal_rationale is the agent's why-now
+-- justification, shown on the triage card.
+SELECT id, slug, title, description, created_by, proposal_rationale, created_at
+FROM projects
+WHERE status = 'proposed'
+ORDER BY created_at DESC;
+
+-- name: ProposedProjectsCount :one
+-- Count of proposed projects awaiting owner triage (the project component of the
+-- nav-badge proposals count; goals and areas are counted in the goal package).
+SELECT count(*)::bigint AS proposed_projects FROM projects WHERE status = 'proposed';

@@ -35,6 +35,7 @@ import (
 
 	"github.com/Koopa0/koopa/internal/activity"
 	"github.com/Koopa0/koopa/internal/agent"
+	"github.com/Koopa0/koopa/internal/api"
 	"github.com/Koopa0/koopa/internal/content"
 	"github.com/Koopa0/koopa/internal/project"
 	"github.com/Koopa0/koopa/internal/testdb"
@@ -580,4 +581,138 @@ func containsProjectID(projects []project.Project, id uuid.UUID) bool {
 		}
 	}
 	return false
+}
+
+// serveProject runs an admin request through ActorMiddleware (actor="human",
+// the admin-write convention) into the given handler, mirroring the production
+// adminMid chain that binds the per-request actor tx the audit triggers read.
+func serveProject(t *testing.T, h http.HandlerFunc, req *http.Request) *httptest.ResponseRecorder {
+	t.Helper()
+	mid := api.ActorMiddleware(testPool, "human", slog.Default())
+	rec := httptest.NewRecorder()
+	mid(h).ServeHTTP(rec, req)
+	return rec
+}
+
+// activateReq / rejectReq build the commitment triage requests with the path id
+// pre-bound (the handlers read r.PathValue("id")).
+func activateReq(t *testing.T, id uuid.UUID) *http.Request {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPost, "/api/admin/commitment/projects/"+id.String()+"/activate", nil)
+	req.SetPathValue("id", id.String())
+	return req
+}
+
+func rejectReq(t *testing.T, id uuid.UUID) *http.Request {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodDelete, "/api/admin/commitment/projects/"+id.String()+"/proposed", nil)
+	req.SetPathValue("id", id.String())
+	return req
+}
+
+// TestIntegration_Project_ActivateProject drives POST /projects/{id}/activate:
+// a proposed project flips to in_progress (200); a real project is 409
+// NOT_PROPOSED; a missing project is 404.
+func TestIntegration_Project_ActivateProject(t *testing.T) {
+	truncate(t)
+	h := newDetailHandler(t)
+
+	proposedID := seedProjectWithStatus(t, "activate-me", "Activate Me", "proposed")
+	rec := serveProject(t, h.ActivateProject, activateReq(t, proposedID))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("activate proposed status = %d, want 200 (body=%s)", rec.Code, rec.Body.String())
+	}
+	var status string
+	if err := testPool.QueryRow(t.Context(), `SELECT status FROM projects WHERE id=$1`, proposedID).Scan(&status); err != nil {
+		t.Fatalf("reading activated project: %v", err)
+	}
+	if status != "in_progress" {
+		t.Errorf("activated status = %q, want in_progress", status)
+	}
+
+	// A real (already in_progress) project is not a proposed draft → 409.
+	realID := seedProjectWithStatus(t, "already-real", "Already Real", "in_progress")
+	if rec := serveProject(t, h.ActivateProject, activateReq(t, realID)); rec.Code != http.StatusConflict {
+		t.Errorf("activate real project status = %d, want 409 NOT_PROPOSED", rec.Code)
+	}
+
+	// A missing project is 404.
+	if rec := serveProject(t, h.ActivateProject, activateReq(t, uuid.New())); rec.Code != http.StatusNotFound {
+		t.Errorf("activate missing project status = %d, want 404", rec.Code)
+	}
+}
+
+// TestIntegration_Project_RejectProject drives DELETE /projects/{id}/proposed:
+// a proposed project is hard-deleted (204); a real project is 409 NOT_PROPOSED
+// and survives.
+func TestIntegration_Project_RejectProject(t *testing.T) {
+	truncate(t)
+	h := newDetailHandler(t)
+
+	proposedID := seedProjectWithStatus(t, "reject-me", "Reject Me", "proposed")
+	if rec := serveProject(t, h.RejectProject, rejectReq(t, proposedID)); rec.Code != http.StatusNoContent {
+		t.Fatalf("reject proposed status = %d, want 204 (body=%s)", rec.Code, rec.Body.String())
+	}
+	var count int
+	if err := testPool.QueryRow(t.Context(), `SELECT count(*) FROM projects WHERE id=$1`, proposedID).Scan(&count); err != nil {
+		t.Fatalf("counting rejected project: %v", err)
+	}
+	if count != 0 {
+		t.Errorf("rejected project still present (count=%d), want hard-deleted", count)
+	}
+
+	// A real project rejected through this path is 409 and survives untouched.
+	realID := seedProjectWithStatus(t, "keep-me", "Keep Me", "in_progress")
+	if rec := serveProject(t, h.RejectProject, rejectReq(t, realID)); rec.Code != http.StatusConflict {
+		t.Errorf("reject real project status = %d, want 409 NOT_PROPOSED", rec.Code)
+	}
+	var realStatus string
+	if err := testPool.QueryRow(t.Context(), `SELECT status FROM projects WHERE id=$1`, realID).Scan(&realStatus); err != nil {
+		t.Fatalf("real project must survive a rejected reject: %v", err)
+	}
+	if realStatus != "in_progress" {
+		t.Errorf("real project status after rejected reject = %q, want in_progress", realStatus)
+	}
+}
+
+// TestIntegration_Project_ProposedProjectsTriage covers the store triage reads:
+// ProposedProjects lists only proposed rows (with rationale surfaced), and
+// ProposedProjectsCount counts them; non-proposed projects are excluded.
+func TestIntegration_Project_ProposedProjectsTriage(t *testing.T) {
+	truncate(t)
+	store := project.NewStore(testPool)
+	ctx := t.Context()
+
+	const rationale = "Terminal entry point keeps coming up."
+	var proposedID uuid.UUID
+	if err := testPool.QueryRow(ctx,
+		`INSERT INTO projects (slug, title, description, status, created_by, proposal_rationale)
+		 VALUES ('triage-one', 'Triage One', '', 'proposed', 'koopa0-dev', $1) RETURNING id`,
+		rationale,
+	).Scan(&proposedID); err != nil {
+		t.Fatalf("seeding proposed project: %v", err)
+	}
+	_ = seedProjectWithStatus(t, "triage-real", "Triage Real", "in_progress")
+
+	list, err := store.ProposedProjects(ctx)
+	if err != nil {
+		t.Fatalf("ProposedProjects: %v", err)
+	}
+	if len(list) != 1 {
+		t.Fatalf("ProposedProjects len = %d, want 1 (only the proposed row)", len(list))
+	}
+	if list[0].ID != proposedID {
+		t.Errorf("ProposedProjects[0].ID = %s, want %s", list[0].ID, proposedID)
+	}
+	if list[0].ProposalRationale == nil || *list[0].ProposalRationale != rationale {
+		t.Errorf("ProposedProjects[0].ProposalRationale = %v, want %q", list[0].ProposalRationale, rationale)
+	}
+
+	count, err := store.ProposedProjectsCount(ctx)
+	if err != nil {
+		t.Fatalf("ProposedProjectsCount: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("ProposedProjectsCount = %d, want 1", count)
+	}
 }

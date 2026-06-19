@@ -22,6 +22,7 @@ var storeErrors = []api.ErrMap{
 	{Target: ErrNotFound, Status: http.StatusNotFound, Code: "NOT_FOUND", Message: "project not found"},
 	{Target: ErrConflict, Status: http.StatusConflict, Code: "CONFLICT", Message: "project conflict"},
 	{Target: ErrInvalidInput, Status: http.StatusBadRequest, Code: "BAD_REQUEST", Message: "invalid project input"},
+	{Target: ErrNotProposed, Status: http.StatusConflict, Code: "NOT_PROPOSED", Message: "project is not a proposed draft"},
 }
 
 // recentActivityLimit caps how many activity rows the detail endpoint
@@ -429,6 +430,58 @@ func (h *Handler) DeleteProfile(w http.ResponseWriter, r *http.Request) {
 		store = h.store.WithTx(tx)
 	}
 	if err := store.DeleteProfile(r.Context(), id); err != nil {
+		api.HandleError(w, h.logger, err, storeErrors...)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// --- Proposals triage (activate / reject) ---
+//
+// Agents propose inert project drafts via MCP (propose_project); these admin
+// handlers are where the single human owner acts on them. Activate flips
+// proposed → in_progress; reject is a hard DELETE (linked todos/contents are
+// SET NULL by their FKs, the profile CASCADEs). Both are behind adminMid, which
+// binds the actor tx. The triage LIST/COUNT lives in the goal handler, which
+// aggregates proposed goals + areas + projects into one response.
+
+// ActivateProject handles POST /api/admin/commitment/projects/{id}/activate —
+// proposed → in_progress. 404 when the project does not exist; 409 NOT_PROPOSED
+// when it exists but is not a proposed draft.
+func (h *Handler) ActivateProject(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid project id")
+		return
+	}
+
+	store := h.store
+	if tx, ok := api.TxFromContext(r.Context()); ok {
+		store = h.store.WithTx(tx)
+	}
+	p, err := store.ActivateProject(r.Context(), id)
+	if err != nil {
+		api.HandleError(w, h.logger, err, storeErrors...)
+		return
+	}
+	api.Encode(w, http.StatusOK, api.Response{Data: p})
+}
+
+// RejectProject handles DELETE /api/admin/commitment/projects/{id}/proposed —
+// hard DELETE of a proposed project. 404 missing, 409 NOT_PROPOSED when the
+// project is real. Returns 204 on success.
+func (h *Handler) RejectProject(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid project id")
+		return
+	}
+
+	store := h.store
+	if tx, ok := api.TxFromContext(r.Context()); ok {
+		store = h.store.WithTx(tx)
+	}
+	if err := store.RejectProject(r.Context(), id); err != nil {
 		api.HandleError(w, h.logger, err, storeErrors...)
 		return
 	}

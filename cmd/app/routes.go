@@ -240,6 +240,8 @@ func registerRoutes(
 	mux.Handle("DELETE /api/admin/commitment/goals/{id}/proposed", adminMid(http.HandlerFunc(h.goal.RejectGoal)))
 	mux.Handle("POST /api/admin/commitment/areas/{id}/activate", adminMid(http.HandlerFunc(h.goal.ActivateArea)))
 	mux.Handle("DELETE /api/admin/commitment/areas/{id}/proposed", adminMid(http.HandlerFunc(h.goal.RejectArea)))
+	mux.Handle("POST /api/admin/commitment/projects/{id}/activate", adminMid(http.HandlerFunc(h.project.ActivateProject)))
+	mux.Handle("DELETE /api/admin/commitment/projects/{id}/proposed", adminMid(http.HandlerFunc(h.project.RejectProject)))
 
 	// --- Admin: Commitment / Todos ---
 	// State transitions route through POST /advance so each transition is a

@@ -48,6 +48,7 @@ import (
 	"github.com/Koopa0/koopa/internal/agent"
 	"github.com/Koopa0/koopa/internal/api"
 	"github.com/Koopa0/koopa/internal/goal"
+	"github.com/Koopa0/koopa/internal/project"
 	"github.com/Koopa0/koopa/internal/testdb"
 )
 
@@ -86,10 +87,17 @@ func truncate(t *testing.T) {
 
 // newHandler wires a goal.Handler against the shared test pool. The project
 // store is nil because none of the mutation handlers under test (Create,
-// CreateMilestone, UpdateStatus) dereference it — only Detail does, and Detail
-// is not exercised here.
+// CreateMilestone, UpdateStatus) dereference it — only Detail and the
+// project-aware triage reads do, and those are not exercised here.
 func newHandler() *goal.Handler {
 	return goal.NewHandler(goal.NewStore(testPool), nil, slog.Default())
+}
+
+// newHandlerWithProjects wires a goal.Handler with a real project store so the
+// proposals triage (Proposals / ProposalsCount) can read proposed projects —
+// the project component the goal store cannot see.
+func newHandlerWithProjects() *goal.Handler {
+	return goal.NewHandler(goal.NewStore(testPool), project.NewStore(testPool), slog.Default())
 }
 
 // serve runs an admin request through ActorMiddleware (actor="human", the
@@ -1139,6 +1147,76 @@ func TestIntegration_Goal_ProposalsCount(t *testing.T) {
 	}
 	if env.Data.Areas != 2 {
 		t.Errorf("proposed_areas = %d, want 2", env.Data.Areas)
+	}
+}
+
+// TestIntegration_Goal_ProposalsIncludeProjects pins that the triage list and
+// count surface proposed PROJECTS alongside proposed goals/areas — the project
+// component the goal store cannot see is read through the project store the
+// handler holds. A non-proposed project is excluded.
+func TestIntegration_Goal_ProposalsIncludeProjects(t *testing.T) {
+	truncate(t)
+	t.Cleanup(func() {
+		// goal's truncate does not touch projects; clean up the rows this test seeds.
+		_, _ = testPool.Exec(context.Background(), `DELETE FROM projects`)
+	})
+	h := newHandlerWithProjects()
+
+	var proposedID uuid.UUID
+	if err := testPool.QueryRow(t.Context(),
+		`INSERT INTO projects (slug, title, status, created_by)
+		 VALUES ('triage-proj', 'Triage Proj', 'proposed', 'koopa0-dev') RETURNING id`,
+	).Scan(&proposedID); err != nil {
+		t.Fatalf("seeding proposed project: %v", err)
+	}
+	// A real project must NOT appear in the triage.
+	if _, err := testPool.Exec(t.Context(),
+		`INSERT INTO projects (slug, title, status) VALUES ('triage-real', 'Triage Real', 'in_progress')`,
+	); err != nil {
+		t.Fatalf("seeding real project: %v", err)
+	}
+
+	// Triage list includes the proposed project and excludes the real one.
+	reqList := httptest.NewRequest(http.MethodGet, "/api/admin/commitment/proposals", nil)
+	recList := httptest.NewRecorder()
+	h.Proposals(recList, reqList)
+	if recList.Code != http.StatusOK {
+		t.Fatalf("proposals status = %d, want 200 (body=%s)", recList.Code, recList.Body.String())
+	}
+	var listEnv struct {
+		Data struct {
+			Projects []struct {
+				ID uuid.UUID `json:"id"`
+			} `json:"projects"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(recList.Body.Bytes(), &listEnv); err != nil {
+		t.Fatalf("decode proposals: %v (body=%s)", err, recList.Body.String())
+	}
+	if len(listEnv.Data.Projects) != 1 {
+		t.Fatalf("triage projects len = %d, want 1 (real project excluded): %+v", len(listEnv.Data.Projects), listEnv.Data.Projects)
+	}
+	if listEnv.Data.Projects[0].ID != proposedID {
+		t.Errorf("triage project = %s, want %s", listEnv.Data.Projects[0].ID, proposedID)
+	}
+
+	// Triage count reports the proposed project.
+	reqCount := httptest.NewRequest(http.MethodGet, "/api/admin/commitment/proposals/count", nil)
+	recCount := httptest.NewRecorder()
+	h.ProposalsCount(recCount, reqCount)
+	if recCount.Code != http.StatusOK {
+		t.Fatalf("proposals count status = %d, want 200", recCount.Code)
+	}
+	var countEnv struct {
+		Data struct {
+			Projects int64 `json:"proposed_projects"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(recCount.Body.Bytes(), &countEnv); err != nil {
+		t.Fatalf("decode count: %v (body=%s)", err, recCount.Body.String())
+	}
+	if countEnv.Data.Projects != 1 {
+		t.Errorf("proposed_projects = %d, want 1", countEnv.Data.Projects)
 	}
 }
 

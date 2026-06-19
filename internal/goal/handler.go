@@ -3,6 +3,7 @@
 package goal
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -647,8 +648,18 @@ func (h *Handler) RejectArea(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// proposalsCount is the nav-badge breakdown of items awaiting owner triage.
+// It extends the goal-store ProposalsPending shape (goals + areas) with the
+// proposed-project count, which the goal store cannot see — projects are
+// another aggregate, read through the project store the handler holds.
+type proposalsCount struct {
+	Goals    int64 `json:"proposed_goals"`
+	Areas    int64 `json:"proposed_areas"`
+	Projects int64 `json:"proposed_projects"`
+}
+
 // ProposalsCount handles GET /api/admin/commitment/proposals/count — the nav
-// badge count of proposed goals + proposed areas awaiting triage.
+// badge count of proposed goals + areas + projects awaiting triage.
 func (h *Handler) ProposalsCount(w http.ResponseWriter, r *http.Request) {
 	count, err := h.store.ProposalsPendingCount(r.Context())
 	if err != nil {
@@ -656,18 +667,29 @@ func (h *Handler) ProposalsCount(w http.ResponseWriter, r *http.Request) {
 		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to count proposals")
 		return
 	}
-	api.Encode(w, http.StatusOK, api.Response{Data: count})
+	projects, err := h.proposedProjectsCount(r.Context())
+	if err != nil {
+		h.logger.Error("counting proposed projects", "error", err)
+		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to count proposals")
+		return
+	}
+	api.Encode(w, http.StatusOK, api.Response{Data: proposalsCount{
+		Goals:    count.Goals,
+		Areas:    count.Areas,
+		Projects: projects,
+	}})
 }
 
-// proposalsResponse is the triage payload: every proposed goal + every proposed
-// area awaiting owner review.
+// proposalsResponse is the triage payload: every proposed goal + area + project
+// awaiting owner review.
 type proposalsResponse struct {
-	Goals []ProposedGoalSummary `json:"goals"`
-	Areas []ProposedAreaSummary `json:"areas"`
+	Goals    []ProposedGoalSummary            `json:"goals"`
+	Areas    []ProposedAreaSummary            `json:"areas"`
+	Projects []project.ProposedProjectSummary `json:"projects"`
 }
 
 // Proposals handles GET /api/admin/commitment/proposals — the triage list of
-// every proposed goal and area awaiting owner review.
+// every proposed goal, area, and project awaiting owner review.
 func (h *Handler) Proposals(w http.ResponseWriter, r *http.Request) {
 	goals, err := h.store.ProposedGoals(r.Context())
 	if err != nil {
@@ -681,7 +703,32 @@ func (h *Handler) Proposals(w http.ResponseWriter, r *http.Request) {
 		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to list proposals")
 		return
 	}
-	api.Encode(w, http.StatusOK, api.Response{Data: proposalsResponse{Goals: goals, Areas: areas}})
+	projects, err := h.proposedProjects(r.Context())
+	if err != nil {
+		h.logger.Error("listing proposed projects", "error", err)
+		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to list proposals")
+		return
+	}
+	api.Encode(w, http.StatusOK, api.Response{Data: proposalsResponse{Goals: goals, Areas: areas, Projects: projects}})
+}
+
+// proposedProjects returns the proposed-project triage list. The goal handler
+// reads projects through the project store it already holds; a nil store (some
+// tests wire the handler without one) yields an empty list rather than a panic.
+func (h *Handler) proposedProjects(ctx context.Context) ([]project.ProposedProjectSummary, error) {
+	if h.projects == nil {
+		return []project.ProposedProjectSummary{}, nil
+	}
+	return h.projects.ProposedProjects(ctx)
+}
+
+// proposedProjectsCount returns the proposed-project count, tolerating a nil
+// project store by reporting 0.
+func (h *Handler) proposedProjectsCount(ctx context.Context) (int64, error) {
+	if h.projects == nil {
+		return 0, nil
+	}
+	return h.projects.ProposedProjectsCount(ctx)
 }
 
 func mapHTTPGoalStatus(s string) (Status, error) {

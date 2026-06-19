@@ -3917,6 +3917,90 @@ func TestIntegration_ProposeProject_BlankNameRejected(t *testing.T) {
 	}
 }
 
+// TestIntegration_ProposeProject_CaptureThenActivate proves the capture↔proposed
+// ordering: capture_inbox links a todo to a still-proposed project by slug, and
+// activating the project (a status flip) leaves the link intact — the todo
+// auto-associates with the now-active project, no re-link needed.
+func TestIntegration_ProposeProject_CaptureThenActivate(t *testing.T) {
+	s := setupServer(t)
+
+	_, proposed, err := callHandlerAs(t, "planner", s.proposeProject, ProposeProjectInput{Name: "Ordering Project"})
+	if err != nil {
+		t.Fatalf("proposeProject: %v", err)
+	}
+
+	_, captured, err := callHandlerAs(t, "planner", s.captureInbox, CaptureInboxInput{
+		Title:   "todo for the proposed project",
+		Project: "ordering-project",
+	})
+	if err != nil {
+		t.Fatalf("captureInbox: %v", err)
+	}
+	if got := todoProjectID(t, captured.Task.ID); got == nil || *got != proposed.Project.ID {
+		t.Fatalf("todo.project_id = %v at capture, want %s (resolveProjectID must match a proposed project)", got, proposed.Project.ID)
+	}
+
+	// Activation is a status flip; the todo's project_id is untouched.
+	if _, err := s.projects.ActivateProject(t.Context(), proposed.Project.ID); err != nil {
+		t.Fatalf("ActivateProject: %v", err)
+	}
+	if got := todoProjectID(t, captured.Task.ID); got == nil || *got != proposed.Project.ID {
+		t.Errorf("todo.project_id = %v after activation, want %s (link must survive activation)", got, proposed.Project.ID)
+	}
+}
+
+// TestIntegration_ProposeProject_CaptureThenReject proves the rejection branch:
+// rejecting (hard-deleting) a proposed project a todo points at unlinks the todo
+// (project_id SET NULL by the FK) while the todo itself survives unclassified.
+func TestIntegration_ProposeProject_CaptureThenReject(t *testing.T) {
+	s := setupServer(t)
+
+	_, proposed, err := callHandlerAs(t, "planner", s.proposeProject, ProposeProjectInput{Name: "Doomed Project"})
+	if err != nil {
+		t.Fatalf("proposeProject: %v", err)
+	}
+	_, captured, err := callHandlerAs(t, "planner", s.captureInbox, CaptureInboxInput{
+		Title:   "todo for the doomed project",
+		Project: "doomed-project",
+	})
+	if err != nil {
+		t.Fatalf("captureInbox: %v", err)
+	}
+	if got := todoProjectID(t, captured.Task.ID); got == nil || *got != proposed.Project.ID {
+		t.Fatalf("todo.project_id = %v at capture, want %s", got, proposed.Project.ID)
+	}
+
+	if err := s.projects.RejectProject(t.Context(), proposed.Project.ID); err != nil {
+		t.Fatalf("RejectProject: %v", err)
+	}
+
+	// The project is gone; the todo survives with project_id SET NULL.
+	var exists bool
+	if err := testPool.QueryRow(t.Context(),
+		`SELECT EXISTS(SELECT 1 FROM todos WHERE id=$1)`, captured.Task.ID,
+	).Scan(&exists); err != nil {
+		t.Fatalf("checking todo survival: %v", err)
+	}
+	if !exists {
+		t.Fatal("todo was deleted when its proposed project was rejected; want survive with project_id NULL")
+	}
+	if got := todoProjectID(t, captured.Task.ID); got != nil {
+		t.Errorf("todo.project_id = %v after reject, want NULL", *got)
+	}
+}
+
+// todoProjectID reads a todo's project_id, returning nil when it is NULL.
+func todoProjectID(t *testing.T, todoID uuid.UUID) *uuid.UUID {
+	t.Helper()
+	var pid *uuid.UUID
+	if err := testPool.QueryRow(t.Context(),
+		`SELECT project_id FROM todos WHERE id=$1`, todoID,
+	).Scan(&pid); err != nil {
+		t.Fatalf("reading todo.project_id: %v", err)
+	}
+	return pid
+}
+
 // seedTodoForCreator inserts a todo with an explicit created_by, state, and
 // created_at so the list_tasks readback tests can assert creator-scoping,
 // state passthrough, and newest-first ordering deterministically. created_by

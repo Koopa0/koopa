@@ -72,6 +72,39 @@ func (q *Queries) ActivateGoal(ctx context.Context, id uuid.UUID) (Goal, error) 
 	return i, err
 }
 
+const activateProject = `-- name: ActivateProject :one
+UPDATE projects SET status = 'in_progress', updated_at = now()
+WHERE id = $1 AND status = 'proposed'
+RETURNING id, slug, title, description, status, repo, area_id, goal_id, deadline, last_activity_at,
+          expected_cadence, created_by, proposal_rationale, created_at, updated_at
+`
+
+// Owner stamp on a proposed project: proposed → in_progress. The state-scoped
+// WHERE makes the transition atomic; zero rows means the row is missing or not
+// proposed (the store disambiguates with a follow-up read).
+func (q *Queries) ActivateProject(ctx context.Context, id uuid.UUID) (Project, error) {
+	row := q.db.QueryRow(ctx, activateProject, id)
+	var i Project
+	err := row.Scan(
+		&i.ID,
+		&i.Slug,
+		&i.Title,
+		&i.Description,
+		&i.Status,
+		&i.Repo,
+		&i.AreaID,
+		&i.GoalID,
+		&i.Deadline,
+		&i.LastActivityAt,
+		&i.ExpectedCadence,
+		&i.CreatedBy,
+		&i.ProposalRationale,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const activateTodoItem = `-- name: ActivateTodoItem :one
 UPDATE todos
 SET state = 'todo',
@@ -3538,6 +3571,22 @@ DELETE FROM goals WHERE area_id = $1 AND status = 'proposed'
 // transaction as DeleteProposedArea.
 func (q *Queries) DeleteProposedGoalsByArea(ctx context.Context, areaID *uuid.UUID) (int64, error) {
 	result, err := q.db.Exec(ctx, deleteProposedGoalsByArea, areaID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const deleteProposedProject = `-- name: DeleteProposedProject :execrows
+DELETE FROM projects WHERE id = $1 AND status = 'proposed'
+`
+
+// Reject (hard DELETE) a proposed project. Proposed-only: a non-proposed project
+// is a real planning record and must never be deleted by this path. Linked todos
+// and contents survive unclassified (their project_id is ON DELETE SET NULL); the
+// project_profile CASCADEs.
+func (q *Queries) DeleteProposedProject(ctx context.Context, id uuid.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteProposedProject, id)
 	if err != nil {
 		return 0, err
 	}
@@ -7596,6 +7645,67 @@ func (q *Queries) ProposedGoals(ctx context.Context) ([]ProposedGoalsRow, error)
 		return nil, err
 	}
 	return items, nil
+}
+
+const proposedProjects = `-- name: ProposedProjects :many
+SELECT id, slug, title, description, created_by, proposal_rationale, created_at
+FROM projects
+WHERE status = 'proposed'
+ORDER BY created_at DESC
+`
+
+type ProposedProjectsRow struct {
+	ID                uuid.UUID `json:"id"`
+	Slug              string    `json:"slug"`
+	Title             string    `json:"title"`
+	Description       string    `json:"description"`
+	CreatedBy         *string   `json:"created_by"`
+	ProposalRationale *string   `json:"proposal_rationale"`
+	CreatedAt         time.Time `json:"created_at"`
+}
+
+// Every proposed project awaiting owner triage, newest first. Feeds the
+// proposals triage surface. proposal_rationale is the agent's why-now
+// justification, shown on the triage card.
+func (q *Queries) ProposedProjects(ctx context.Context) ([]ProposedProjectsRow, error) {
+	rows, err := q.db.Query(ctx, proposedProjects)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ProposedProjectsRow{}
+	for rows.Next() {
+		var i ProposedProjectsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Slug,
+			&i.Title,
+			&i.Description,
+			&i.CreatedBy,
+			&i.ProposalRationale,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const proposedProjectsCount = `-- name: ProposedProjectsCount :one
+SELECT count(*)::bigint AS proposed_projects FROM projects WHERE status = 'proposed'
+`
+
+// Count of proposed projects awaiting owner triage (the project component of the
+// nav-badge proposals count; goals and areas are counted in the goal package).
+func (q *Queries) ProposedProjectsCount(ctx context.Context) (int64, error) {
+	row := q.db.QueryRow(ctx, proposedProjectsCount)
+	var proposed_projects int64
+	err := row.Scan(&proposed_projects)
+	return proposed_projects, err
 }
 
 const publicProfiles = `-- name: PublicProfiles :many
