@@ -69,7 +69,7 @@
   } @else if (hasError()) {
     <div
       role="alert"
-      class="mb-3 rounded-xs border border-red-800 bg-red-900/20 px-3 py-2 text-xs text-red-300"
+      class="mb-3 rounded-xs border border-error bg-error-bg px-3 py-2 text-xs text-error"
     >
       Couldn't load concepts.
     </div>
@@ -121,11 +121,11 @@
               </span>
             </td>
             <td class="px-3 py-2 font-mono text-[11px] text-fg-muted">
-              <span class="text-amber-300">{{ row.mastery_counts.weakness }}</span>
+              <span class="text-warn">{{ row.mastery_counts.weakness }}</span>
               /
               <span class="text-brand">{{ row.mastery_counts.improvement }}</span>
               /
-              <span class="text-emerald-300">{{ row.mastery_counts.mastery }}</span>
+              <span class="text-success">{{ row.mastery_counts.mastery }}</span>
             </td>
             <td class="px-3 py-2 font-mono text-[11px] text-fg-muted">{{ row.obs_count }}</td>
           </tr>

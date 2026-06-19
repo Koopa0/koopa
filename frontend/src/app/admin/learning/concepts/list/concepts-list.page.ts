@@ -44,15 +44,15 @@ const STAGE_CHIPS: readonly Chip<StageFilter>[] = [
 ];
 
 const STAGE_TEXT: Record<MasteryStage, string> = {
-  struggling: 'text-red-300',
+  struggling: 'text-error',
   developing: 'text-brand',
-  solid: 'text-emerald-300',
+  solid: 'text-success',
 };
 
 const STAGE_DOT: Record<MasteryStage, string> = {
-  struggling: 'bg-red-500',
+  struggling: 'bg-error',
   developing: 'bg-brand',
-  solid: 'bg-emerald-500',
+  solid: 'bg-success',
 };
 
 /**
