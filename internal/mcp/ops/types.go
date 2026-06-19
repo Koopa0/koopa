@@ -44,9 +44,7 @@ const (
 type Stability string
 
 const (
-	StabilityStable     Stability = "stable"
-	StabilityBeta       Stability = "beta"
-	StabilityDeprecated Stability = "deprecated"
+	StabilityStable Stability = "stable"
 )
 
 // Meta is the static metadata for one MCP tool. Handler code lives in the
