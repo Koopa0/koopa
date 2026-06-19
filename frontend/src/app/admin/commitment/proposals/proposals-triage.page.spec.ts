@@ -19,6 +19,10 @@ const goalProposed = (id: string) =>
 const areaProposed = (id: string) =>
   `/api/admin/commitment/areas/${id}/proposed`;
 const goalEdit = (id: string) => `/api/admin/commitment/goals/${id}`;
+const projectActivate = (id: string) =>
+  `/api/admin/commitment/projects/${id}/activate`;
+const projectProposed = (id: string) =>
+  `/api/admin/commitment/projects/${id}/proposed`;
 
 /** Two cards: a proposed area bundle (Health + Run 5k), then a standalone
  *  proposed goal (Learn Go generics, under an already-active area). */
@@ -55,6 +59,7 @@ function proposals(overrides: Partial<ProposalsResponse> = {}): ProposalsRespons
         milestone_total: 0,
       },
     ],
+    projects: [],
     ...overrides,
   };
 }
@@ -72,6 +77,26 @@ function goalOnly(): ProposalsResponse {
         created_by: 'planner',
         created_at: '2026-06-18T00:00:00Z',
         milestone_total: 0,
+      },
+    ],
+    projects: [],
+  };
+}
+
+/** A single standalone proposed project. */
+function projectOnly(): ProposalsResponse {
+  return {
+    areas: [],
+    goals: [],
+    projects: [
+      {
+        id: 'pr-1',
+        slug: 'koopa-cli',
+        title: 'Build koopa CLI',
+        description: 'A command-line companion',
+        created_by: 'planner',
+        created_at: '2026-06-18T00:00:00Z',
+        proposal_rationale: 'You keep scripting the same admin calls by hand.',
       },
     ],
   };
@@ -174,6 +199,7 @@ describe('ProposalsTriagePageComponent', () => {
           milestone_total: 0,
         },
       ],
+      projects: [],
     });
     await settle();
 
@@ -196,6 +222,7 @@ describe('ProposalsTriagePageComponent', () => {
         },
       ],
       goals: [],
+      projects: [],
     });
 
     const rationale = testid('proposals-rationale');
@@ -220,6 +247,7 @@ describe('ProposalsTriagePageComponent', () => {
           proposal_rationale: 'Generics keep coming up in your reading.',
         },
       ],
+      projects: [],
     });
 
     expect(testid('proposals-rationale')?.textContent).toContain(
@@ -319,6 +347,88 @@ describe('ProposalsTriagePageComponent', () => {
     expect(testid('proposals-position')?.textContent).toContain('2 of 2');
   });
 
+  it('should render a proposed project card with its rationale', async () => {
+    await render(projectOnly());
+
+    const card = testid('proposals-project-card');
+    expect(card).toBeTruthy();
+    expect(card?.textContent).toContain('Build koopa CLI');
+    expect(card?.textContent).toContain('A command-line companion');
+    expect(testid('proposals-rationale')?.textContent).toContain(
+      'You keep scripting the same admin calls',
+    );
+  });
+
+  it('should queue a proposed project after a standalone goal', async () => {
+    await render({
+      areas: [],
+      goals: [
+        {
+          id: 'gl-2',
+          title: 'Learn Go generics',
+          description: 'deep dive',
+          area_name: 'Build',
+          created_by: 'planner',
+          created_at: '2026-06-18T00:00:00Z',
+          milestone_total: 0,
+        },
+      ],
+      projects: [
+        {
+          id: 'pr-1',
+          slug: 'koopa-cli',
+          title: 'Build koopa CLI',
+          description: 'A command-line companion',
+          created_by: 'planner',
+          created_at: '2026-06-18T00:00:00Z',
+        },
+      ],
+    });
+
+    // Goals lead, projects trail — the project is in the queue (2 total) but
+    // the goal card surfaces first.
+    expect(testid('proposals-position')?.textContent).toContain('1 of 2');
+    expect(testid('proposals-goal-card')).toBeTruthy();
+    expect(testid('proposals-project-card')).toBeNull();
+  });
+
+  it('should activate a proposed project and then show the all-clear state', async () => {
+    await render(projectOnly());
+
+    expect(testid('proposals-position')?.textContent).toContain('1 of 1');
+    testid('proposals-project-activate')?.click();
+    await settle();
+
+    httpMock
+      .expectOne(
+        (r) => r.method === 'POST' && r.url.endsWith(projectActivate('pr-1')),
+      )
+      .flush({});
+    await settle();
+
+    expect(testid('proposals-all-clear')).toBeTruthy();
+  });
+
+  it('should reject a proposed project after confirmation', async () => {
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    await render(projectOnly());
+
+    testid('proposals-project-reject')?.click();
+    await settle();
+
+    expect(confirmSpy).toHaveBeenCalledWith(
+      'Reject "Build koopa CLI"? This permanently removes the proposed project.',
+    );
+    httpMock
+      .expectOne(
+        (r) => r.method === 'DELETE' && r.url.endsWith(projectProposed('pr-1')),
+      )
+      .flush(null, { status: 204, statusText: 'No Content' });
+    await settle();
+
+    expect(testid('proposals-all-clear')).toBeTruthy();
+  });
+
   it('should not call the API when a reject confirmation is dismissed', async () => {
     vi.spyOn(window, 'confirm').mockReturnValue(false);
     await render(goalOnly());
@@ -329,11 +439,12 @@ describe('ProposalsTriagePageComponent', () => {
   });
 
   it('should show the empty state when there are no proposals', async () => {
-    await render({ areas: [], goals: [] });
+    await render({ areas: [], goals: [], projects: [] });
 
     expect(testid('proposals-empty')).toBeTruthy();
     expect(testid('proposals-area-card')).toBeNull();
     expect(testid('proposals-goal-card')).toBeNull();
+    expect(testid('proposals-project-card')).toBeNull();
   });
 
   it('should show the error state and re-request on retry when the load fails', async () => {

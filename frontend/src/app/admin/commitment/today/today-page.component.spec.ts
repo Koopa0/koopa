@@ -161,11 +161,15 @@ describe('TodayPageComponent', () => {
 
   // The Today page also fires a standalone proposals-count read for the
   // awaiting-review pointer; it must be flushed before settle for the same
-  // zoneless reason below (an unflushed request hangs whenStable).
+  // zoneless reason below (an unflushed request hangs whenStable). The endpoint
+  // returns a per-entity breakdown the service sums; the pointer only cares
+  // about the total, so the whole `pending` is placed in one bucket.
   function flushCount(pending = 0): void {
     httpMock
       .expectOne((r) => r.url.endsWith(COUNT_URL))
-      .flush({ data: pending });
+      .flush({
+        data: { proposed_goals: pending, proposed_areas: 0, proposed_projects: 0 },
+      });
   }
 
   // Note: fixture.whenStable() must not be awaited while a request is

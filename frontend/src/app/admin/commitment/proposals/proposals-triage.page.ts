@@ -14,6 +14,7 @@ import {
   type ProposalsResponse,
   type ProposedArea,
   type ProposedGoal,
+  type ProposedProject,
 } from '../../../core/services/proposal.service';
 import { NotificationService } from '../../../core/services/notification.service';
 import { AdminTopbarService } from '../../admin-layout/admin-topbar.service';
@@ -33,12 +34,20 @@ interface GoalCard {
   goal: ProposedGoal;
 }
 
-type TriageCard = AreaCard | GoalCard;
+/** A standalone proposed project. */
+interface ProjectCard {
+  kind: 'project';
+  key: string;
+  project: ProposedProject;
+}
+
+type TriageCard = AreaCard | GoalCard | ProjectCard;
 
 /** Splits a proposals payload into review cards: each proposed area becomes a
  *  bundle card carrying its proposed child goals; every goal not under a
- *  proposed area is a standalone card. Areas (bundles) lead, then standalone
- *  goals — both already newest-first from the backend. */
+ *  proposed area is a standalone card; every proposed project is a standalone
+ *  card. Areas (bundles) lead, then standalone goals, then projects — each
+ *  group already newest-first from the backend. */
 function buildCards(resp: ProposalsResponse): TriageCard[] {
   const proposedAreaIds = new Set(resp.areas.map((a) => a.id));
   const areaCards: AreaCard[] = resp.areas.map((area) => ({
@@ -50,19 +59,24 @@ function buildCards(resp: ProposalsResponse): TriageCard[] {
   const goalCards: GoalCard[] = resp.goals
     .filter((g) => !g.area_id || !proposedAreaIds.has(g.area_id))
     .map((goal) => ({ kind: 'goal', key: `goal:${goal.id}`, goal }));
-  return [...areaCards, ...goalCards];
+  const projectCards: ProjectCard[] = resp.projects.map((project) => ({
+    kind: 'project',
+    key: `project:${project.id}`,
+    project,
+  }));
+  return [...areaCards, ...goalCards, ...projectCards];
 }
 
 /**
  * Proposals triage — the owner's one-card-at-a-time review of agent-proposed
- * inert goal/area drafts. Each card is either a proposed area (reviewed on its
- * own) or a standalone proposed goal. Activate promotes a draft into the live
- * planning lifecycle; reject hard-deletes it (an area reject cascades its
- * proposed goals server-side). Most resolutions splice the head card off the
- * queue locally — no reload flash. Activating an area is the exception: it
- * touches only the area, so its still-proposed child goals are re-fetched and
- * resurface as standalone cards for individual review. The nav badge re-reads
- * its count after each action so it tracks the queue.
+ * inert goal/area/project drafts. Each card is a proposed area (reviewed on its
+ * own), a standalone proposed goal, or a proposed project. Activate promotes a
+ * draft into the live planning lifecycle; reject hard-deletes it (an area reject
+ * cascades its proposed goals server-side). Most resolutions splice the head
+ * card off the queue locally — no reload flash. Activating an area is the
+ * exception: it touches only the area, so its still-proposed child goals are
+ * re-fetched and resurface as standalone cards for individual review. The nav
+ * badge re-reads its count after each action so it tracks the queue.
  */
 @Component({
   selector: 'app-proposals-triage-page',
@@ -101,6 +115,10 @@ export class ProposalsTriagePageComponent {
   protected readonly currentGoal = computed(() => {
     const c = this.current();
     return c && c.kind === 'goal' ? c : undefined;
+  });
+  protected readonly currentProject = computed(() => {
+    const c = this.current();
+    return c && c.kind === 'project' ? c : undefined;
   });
 
   /** Total cards at load (stable — the queue is never reloaded mid-review). */
@@ -223,6 +241,34 @@ export class ProposalsTriagePageComponent {
     this.run(
       this.proposalService.rejectArea(card.area.id),
       'Proposal bundle rejected',
+    );
+  }
+
+  // ── Project card ───────────────────────────────────────────────
+
+  /** Activate the current proposed project (proposed → in_progress). */
+  protected activateProject(): void {
+    const card = this.currentProject();
+    if (!card) return;
+    this.run(
+      this.proposalService.activateProject(card.project.id),
+      `Activated "${card.project.title}"`,
+    );
+  }
+
+  protected rejectProject(): void {
+    const card = this.currentProject();
+    if (!card || this.busy()) return;
+    if (
+      !window.confirm(
+        `Reject "${card.project.title}"? This permanently removes the proposed project.`,
+      )
+    ) {
+      return;
+    }
+    this.run(
+      this.proposalService.rejectProject(card.project.id),
+      'Proposal rejected',
     );
   }
 

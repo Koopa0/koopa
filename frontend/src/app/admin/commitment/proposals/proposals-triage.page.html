@@ -27,8 +27,8 @@
     >
       <p class="font-serif text-base text-fg italic">Nothing to review.</p>
       <p class="max-w-xs text-[13px] leading-relaxed text-fg-subtle">
-        When an agent proposes a goal or area, it lands here for your decision —
-        one card at a time. The inbox is clear.
+        When an agent proposes a goal, area, or project, it lands here for your
+        decision — one card at a time. The inbox is clear.
       </p>
     </div>
   } @else if (allClear()) {
@@ -285,6 +285,72 @@
               Reject
             </button>
           }
+        </div>
+      </article>
+    } @else if (currentProject(); as card) {
+      <!-- Standalone proposed project -->
+      <article
+        class="flex flex-col gap-4 rounded-md border border-border bg-panel p-5"
+        data-testid="proposals-project-card"
+      >
+        <div class="flex items-center gap-2">
+          <span
+            class="rounded-sm bg-brand-muted px-2 py-0.5 font-mono text-[10px] tracking-wide text-brand uppercase"
+          >
+            Proposed project
+          </span>
+          @if (card.project.created_by) {
+            <span class="font-mono text-[10px] text-fg-faint">
+              by {{ card.project.created_by }}
+            </span>
+          }
+        </div>
+
+        <div>
+          <h1 class="font-display text-xl font-semibold text-fg">
+            {{ card.project.title }}
+          </h1>
+          @if (card.project.description) {
+            <p class="mt-1.5 text-[13px] leading-relaxed text-fg-muted">
+              {{ card.project.description }}
+            </p>
+          }
+        </div>
+
+        @if (card.project.proposal_rationale; as rationale) {
+          <div
+            class="rounded-sm border-l-2 border-l-brand bg-bg px-3 py-2.5"
+            aria-live="polite"
+            data-testid="proposals-rationale"
+          >
+            <p
+              class="pb-1 font-mono text-[10px] tracking-wide text-fg-faint uppercase"
+            >
+              Why now
+            </p>
+            <p class="text-[13px] leading-relaxed text-fg-muted">{{ rationale }}</p>
+          </div>
+        }
+
+        <div class="flex items-center gap-2 pt-1">
+          <button
+            type="button"
+            (click)="activateProject()"
+            [disabled]="busy()"
+            class="rounded-sm bg-brand px-3 py-1.5 text-xs font-medium text-bg transition-colors hover:bg-brand-strong disabled:cursor-not-allowed disabled:opacity-40"
+            data-testid="proposals-project-activate"
+          >
+            Activate
+          </button>
+          <button
+            type="button"
+            (click)="rejectProject()"
+            [disabled]="busy()"
+            class="rounded-sm border border-border px-3 py-1.5 text-xs text-fg-muted transition-colors hover:border-error hover:text-error disabled:cursor-not-allowed disabled:opacity-40"
+            data-testid="proposals-project-reject"
+          >
+            Reject
+          </button>
         </div>
       </article>
     }

@@ -82,9 +82,13 @@ describe('AdminNavCountsService', () => {
     httpMock
       .expectOne((r) => r.url.endsWith(HEALTH_URL))
       .flush({ data: { feeds: { healthy: 7 } } });
+    // The count endpoint returns a per-entity breakdown; the service sums
+    // goals + areas + projects into the single badge number (here 2+1+1 = 4).
     httpMock
       .expectOne((r) => r.url.endsWith(PROPOSALS_COUNT_URL))
-      .flush({ data: 4 });
+      .flush({
+        data: { proposed_goals: 2, proposed_areas: 1, proposed_projects: 1 },
+      });
     // rxResource resolves the combined stream on a macrotask.
     await new Promise<void>((r) => setTimeout(r, 0));
     TestBed.tick();
