@@ -133,15 +133,6 @@ func (s *Store) PlansByDomain(ctx context.Context, domain string, status *string
 	return result, nil
 }
 
-// PlansByGoal returns all plans linked to a specific goal.
-func (s *Store) PlansByGoal(ctx context.Context, goalID uuid.UUID) ([]Plan, error) {
-	rows, err := s.q.PlansByGoal(ctx, &goalID)
-	if err != nil {
-		return nil, fmt.Errorf("querying plans by goal %s: %w", goalID, err)
-	}
-	return rowsToPlans(rows), nil
-}
-
 // PlansInManagement returns all plans visible to the management UI —
 // status in ('draft', 'active') — with per-plan entry progress counts.
 // entry: the old name misrepresented the query body, which always
@@ -484,12 +475,4 @@ func rowToEntry(r *db.LearningPlanEntry) *Entry {
 		AddedAt:              r.AddedAt,
 		CompletedAt:          r.CompletedAt,
 	}
-}
-
-func rowsToPlans(rows []db.LearningPlan) []Plan {
-	result := make([]Plan, len(rows))
-	for i := range rows {
-		result[i] = *rowToPlan(&rows[i])
-	}
-	return result
 }

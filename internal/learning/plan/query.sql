@@ -27,10 +27,6 @@ WHERE lp.domain = @domain
   AND (sqlc.narg('status')::text IS NULL OR lp.status = sqlc.narg('status'))
 ORDER BY lp.created_at DESC;
 
--- name: PlansByGoal :many
-SELECT * FROM learning_plans WHERE goal_id = @goal_id
-ORDER BY created_at DESC;
-
 -- name: PlansInManagement :many
 -- Plans visible to the management UI: draft + active. Name reflects the
 -- actual semantic (a draft plan is not "active" but is in the management

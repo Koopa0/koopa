@@ -7070,43 +7070,6 @@ func (q *Queries) PlansByDomain(ctx context.Context, arg PlansByDomainParams) ([
 	return items, nil
 }
 
-const plansByGoal = `-- name: PlansByGoal :many
-SELECT id, title, description, domain, goal_id, status, target_count, plan_config, created_by, created_at, updated_at FROM learning_plans WHERE goal_id = $1
-ORDER BY created_at DESC
-`
-
-func (q *Queries) PlansByGoal(ctx context.Context, goalID *uuid.UUID) ([]LearningPlan, error) {
-	rows, err := q.db.Query(ctx, plansByGoal, goalID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []LearningPlan{}
-	for rows.Next() {
-		var i LearningPlan
-		if err := rows.Scan(
-			&i.ID,
-			&i.Title,
-			&i.Description,
-			&i.Domain,
-			&i.GoalID,
-			&i.Status,
-			&i.TargetCount,
-			&i.PlanConfig,
-			&i.CreatedBy,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const plansInManagement = `-- name: PlansInManagement :many
 SELECT lp.id, lp.title, lp.description, lp.domain, lp.goal_id, lp.status,
        lp.target_count, lp.plan_config, lp.created_by, lp.created_at, lp.updated_at,
