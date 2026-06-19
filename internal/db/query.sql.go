@@ -7242,7 +7242,7 @@ const projectSummariesByGoalIDs = `-- name: ProjectSummariesByGoalIDs :many
 SELECT id, slug, title, status, goal_id, last_activity_at
 FROM projects
 WHERE goal_id = ANY($1::uuid[])
-  AND status NOT IN ('archived')
+  AND status NOT IN ('proposed', 'archived')
 ORDER BY goal_id
 `
 
@@ -7255,7 +7255,9 @@ type ProjectSummariesByGoalIDsRow struct {
 	LastActivityAt *time.Time    `json:"last_activity_at"`
 }
 
-// Lightweight project info for goal_progress output.
+// Lightweight project info for goal_progress output. Proposed projects are
+// inert drafts excluded from the goal's project view (they also carry no
+// goal_id today, so the exclusion is belt-and-suspenders against future linking).
 func (q *Queries) ProjectSummariesByGoalIDs(ctx context.Context, goalIds []uuid.UUID) ([]ProjectSummariesByGoalIDsRow, error) {
 	rows, err := q.db.Query(ctx, projectSummariesByGoalIDs, goalIds)
 	if err != nil {
@@ -7286,9 +7288,12 @@ func (q *Queries) ProjectSummariesByGoalIDs(ctx context.Context, goalIds []uuid.
 const projects = `-- name: Projects :many
 SELECT id, slug, title, description, status, repo, area_id, goal_id, deadline, last_activity_at,
        expected_cadence, created_by, proposal_rationale, created_at, updated_at
-FROM projects ORDER BY title
+FROM projects WHERE status <> 'proposed' ORDER BY title
 `
 
+// Admin project list. Excludes proposed projects — an agent-proposed project
+// is an inert draft that surfaces only in the admin proposals triage, never
+// the normal project list or picker.
 func (q *Queries) Projects(ctx context.Context) ([]Project, error) {
 	rows, err := q.db.Query(ctx, projects)
 	if err != nil {
@@ -7549,7 +7554,7 @@ SELECT p.id, p.slug, p.title, p.description, p.status, p.repo,
        pp.featured, pp.sort_order, pp.updated_at
 FROM projects p
 JOIN project_profiles pp ON pp.project_id = p.id
-WHERE pp.is_public = true
+WHERE pp.is_public = true AND p.status <> 'proposed'
 ORDER BY pp.featured DESC, pp.sort_order, p.title
 `
 
@@ -7579,7 +7584,9 @@ type PublicProfilesRow struct {
 	UpdatedAt        time.Time     `json:"updated_at"`
 }
 
-// List public project profiles joined with their projects for the portfolio page.
+// List public project profiles joined with their projects for the portfolio
+// page. Proposed projects are inert drafts, never publicly listed (same guard
+// as PublicProjects).
 func (q *Queries) PublicProfiles(ctx context.Context) ([]PublicProfilesRow, error) {
 	rows, err := q.db.Query(ctx, publicProfiles)
 	if err != nil {
@@ -7630,11 +7637,14 @@ SELECT p.id, p.slug, p.title, p.description, p.status, p.repo, p.area_id, p.goal
        p.created_at, p.updated_at
 FROM projects p
 JOIN project_profiles pp ON pp.project_id = p.id
-WHERE pp.is_public = true
+WHERE pp.is_public = true AND p.status <> 'proposed'
 ORDER BY pp.featured DESC, pp.sort_order, p.title
 `
 
-// Public projects join project_profiles; portfolio flags live there.
+// Public projects join project_profiles; portfolio flags live there. Proposed
+// projects are inert drafts and are never publicly listed — the is_public join
+// already excludes them (a proposed project has no profile), and the explicit
+// status guard keeps that invariant true even if a profile is created out of band.
 func (q *Queries) PublicProjects(ctx context.Context) ([]Project, error) {
 	rows, err := q.db.Query(ctx, publicProjects)
 	if err != nil {

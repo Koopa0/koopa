@@ -118,6 +118,22 @@ func seedBareProject(t *testing.T, slug, title string) uuid.UUID {
 	return id
 }
 
+// seedProjectWithStatus inserts a project in the given lifecycle status,
+// stamping created_by with a registered agent so a proposed row carries the
+// provenance propose_project would. Returns the id.
+func seedProjectWithStatus(t *testing.T, slug, title, status string) uuid.UUID {
+	t.Helper()
+	var id uuid.UUID
+	if err := testPool.QueryRow(t.Context(),
+		`INSERT INTO projects (slug, title, description, status, created_by)
+		 VALUES ($1, $2, '', $3::project_status, 'koopa0-dev') RETURNING id`,
+		slug, title, status,
+	).Scan(&id); err != nil {
+		t.Fatalf("seeding %s project: %v", status, err)
+	}
+	return id
+}
+
 // truncate resets every table the Detail endpoint reads from so each test
 // runs against a clean slate without leaking seed data from earlier cases.
 func truncate(t *testing.T) {
@@ -489,4 +505,79 @@ func TestIntegration_Project_InvalidInput(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestIntegration_ProposedProject_InertButResolvable pins the propose_project
+// leak contract: a proposed project is excluded from the admin project list and
+// the public portfolio — even when a public profile is attached out of band,
+// proving the exclusion is the explicit status guard and not merely the absence
+// of a profile — yet remains resolvable by slug so capture_inbox can link a todo
+// to it before the owner activates it.
+func TestIntegration_ProposedProject_InertButResolvable(t *testing.T) {
+	truncate(t)
+	store := project.NewStore(testPool)
+	ctx := t.Context()
+
+	proposedID := seedProjectWithStatus(t, "ghost-tool", "Ghost Tool", "proposed")
+	realID := seedProjectWithStatus(t, "real-tool", "Real Tool", "in_progress")
+
+	// Give BOTH a public profile out of band. The proposed one must STILL be
+	// excluded from the public list — if the guard relied only on the proposed
+	// row lacking a profile, this would leak it.
+	for _, id := range []uuid.UUID{proposedID, realID} {
+		if _, err := store.UpsertProfile(ctx, &project.UpsertProfileParams{
+			ProjectID:  id,
+			IsPublic:   true,
+			TechStack:  []string{},
+			Highlights: []string{},
+		}); err != nil {
+			t.Fatalf("UpsertProfile(%s): %v", id, err)
+		}
+	}
+
+	// Admin list: real present, proposed absent.
+	admin, err := store.Projects(ctx)
+	if err != nil {
+		t.Fatalf("Projects: %v", err)
+	}
+	if containsProjectID(admin, proposedID) {
+		t.Errorf("admin project list includes proposed project %s, want excluded", proposedID)
+	}
+	if !containsProjectID(admin, realID) {
+		t.Errorf("admin project list missing real project %s", realID)
+	}
+
+	// Public list: real present, proposed absent despite the public profile.
+	pub, err := store.PublicProjects(ctx)
+	if err != nil {
+		t.Fatalf("PublicProjects: %v", err)
+	}
+	if containsProjectID(pub, proposedID) {
+		t.Errorf("public project list includes proposed project %s, want excluded by status guard", proposedID)
+	}
+	if !containsProjectID(pub, realID) {
+		t.Errorf("public project list missing real project %s", realID)
+	}
+
+	// Resolver: the proposed project is still resolvable by slug for capture.
+	got, err := store.ProjectBySlug(ctx, "ghost-tool")
+	if err != nil {
+		t.Fatalf("ProjectBySlug(ghost-tool): %v (a proposed project must resolve for capture_inbox)", err)
+	}
+	if got.ID != proposedID {
+		t.Errorf("ProjectBySlug(ghost-tool).ID = %s, want %s", got.ID, proposedID)
+	}
+	if got.Status != project.StatusProposed {
+		t.Errorf("ProjectBySlug(ghost-tool).Status = %q, want %q", got.Status, project.StatusProposed)
+	}
+}
+
+// containsProjectID reports whether any project in the slice has the given id.
+func containsProjectID(projects []project.Project, id uuid.UUID) bool {
+	for i := range projects {
+		if projects[i].ID == id {
+			return true
+		}
+	}
+	return false
 }

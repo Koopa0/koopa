@@ -18,18 +18,24 @@ LEFT JOIN goals g ON g.id = p.goal_id
 WHERE p.id = $1;
 
 -- name: Projects :many
+-- Admin project list. Excludes proposed projects — an agent-proposed project
+-- is an inert draft that surfaces only in the admin proposals triage, never
+-- the normal project list or picker.
 SELECT id, slug, title, description, status, repo, area_id, goal_id, deadline, last_activity_at,
        expected_cadence, created_by, proposal_rationale, created_at, updated_at
-FROM projects ORDER BY title;
+FROM projects WHERE status <> 'proposed' ORDER BY title;
 
 -- name: PublicProjects :many
--- Public projects join project_profiles; portfolio flags live there.
+-- Public projects join project_profiles; portfolio flags live there. Proposed
+-- projects are inert drafts and are never publicly listed — the is_public join
+-- already excludes them (a proposed project has no profile), and the explicit
+-- status guard keeps that invariant true even if a profile is created out of band.
 SELECT p.id, p.slug, p.title, p.description, p.status, p.repo, p.area_id, p.goal_id,
        p.deadline, p.last_activity_at, p.expected_cadence, p.created_by, p.proposal_rationale,
        p.created_at, p.updated_at
 FROM projects p
 JOIN project_profiles pp ON pp.project_id = p.id
-WHERE pp.is_public = true
+WHERE pp.is_public = true AND p.status <> 'proposed'
 ORDER BY pp.featured DESC, pp.sort_order, p.title;
 
 -- name: ProjectBySlug :one
@@ -112,11 +118,13 @@ UPDATE project_profiles
  WHERE project_id = $1;
 
 -- name: ProjectSummariesByGoalIDs :many
--- Lightweight project info for goal_progress output.
+-- Lightweight project info for goal_progress output. Proposed projects are
+-- inert drafts excluded from the goal's project view (they also carry no
+-- goal_id today, so the exclusion is belt-and-suspenders against future linking).
 SELECT id, slug, title, status, goal_id, last_activity_at
 FROM projects
 WHERE goal_id = ANY(@goal_ids::uuid[])
-  AND status NOT IN ('archived')
+  AND status NOT IN ('proposed', 'archived')
 ORDER BY goal_id;
 
 -- name: ProfileByProjectID :one
@@ -155,7 +163,9 @@ RETURNING project_id, long_description, role, tech_stack, highlights,
 DELETE FROM project_profiles WHERE project_id = $1;
 
 -- name: PublicProfiles :many
--- List public project profiles joined with their projects for the portfolio page.
+-- List public project profiles joined with their projects for the portfolio
+-- page. Proposed projects are inert drafts, never publicly listed (same guard
+-- as PublicProjects).
 SELECT p.id, p.slug, p.title, p.description, p.status, p.repo,
        p.deadline, p.last_activity_at, p.created_at AS project_created_at,
        pp.long_description, pp.role, pp.tech_stack, pp.highlights,
@@ -164,5 +174,5 @@ SELECT p.id, p.slug, p.title, p.description, p.status, p.repo,
        pp.featured, pp.sort_order, pp.updated_at
 FROM projects p
 JOIN project_profiles pp ON pp.project_id = p.id
-WHERE pp.is_public = true
+WHERE pp.is_public = true AND p.status <> 'proposed'
 ORDER BY pp.featured DESC, pp.sort_order, p.title;
