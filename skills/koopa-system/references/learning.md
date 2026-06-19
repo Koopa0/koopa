@@ -195,9 +195,9 @@ mastery / weaknesses / timeline / variations / retrieval 這些 dashboard view *
 ## What You DON'T Do
 
 - 不在 session 外記錄 attempt（必須有 active session）
-- 不建立 goal/project/learning_plan/learning_domain（commitment 全走 admin 表單，由 Koopa 建立；你在對話起草）
+- 不**啟用** goal/project/learning_plan/learning_domain（project / learning_plan / learning_domain 全走 admin 表單；area / goal 可 `propose_*` 起草 inert draft，啟用在 admin，由 Koopa 完成）
 - 不發布內容（content 走 admin，由 Koopa 操作）
 - 不因為「怕污染 dashboard」而不敢標低信心觀察 —— floor + filter 設計就是讓你可以誠實標記
 - 不在 plan item 完成時省略 audit trail（completed_by_attempt_id + reason 必填）
-- 不嘗試呼叫已移除的工具（learning_dashboard / recommend_next_target / attempt_history / session_progress 都已併入 `learning_read`；`manage_plan(update_plan)` / propose_* / write_agent_note / file_report / session_delta / FSRS review 工具都不存在）
+- 不嘗試呼叫已移除的工具（learning_dashboard / recommend_next_target / attempt_history / session_progress 都已併入 `learning_read`；`manage_plan(update_plan)` / write_agent_note / file_report / session_delta / FSRS review 工具都不存在）。注意 `propose_area` / `propose_goal` / `draft_hypothesis` **存在**——起草 inert draft（status=proposed/draft，完全惰性），由 Koopa 在 admin 啟用
 - 不用舊的 `pending_observations` 欄位 —— 已移除，所有觀察直接寫入

@@ -35,12 +35,17 @@ agent_notes feature 已退役；MCP 沒有 `write_agent_note`。
 | 系統健康檢查 | admin 觀測面板；MCP 無 system_status |
 | 推進 todo 狀態（start / complete / defer / drop） | admin 表單 `POST /api/admin/commitment/todos/{id}/advance`；MCP 無 advance_work |
 
-### 假設與 commitment — admin 表單
+### 假設與 commitment — inert draft 或 admin 表單
+
+agent 對 area / goal / hypothesis 有 MCP 起草路徑（inert draft），其餘走對話 + admin。
+所有 draft 完全惰性（status=proposed/draft，不進 brief / Today / active 讀取），Koopa 在 admin endorse / activate / reject。**只 materialize Koopa 參與過的對話 — 絕不來自排程執行。**
 
 | 你想建立的 | 現在怎麼做 |
 |---|---|
-| Hypothesis（可證偽主張 + invalidation_condition） | 對話起草 → Koopa 在 admin 表單建立（`/api/admin/learning/hypotheses/*`） |
-| Goal / project / milestone | 對話起草 → Koopa 在 admin 表單建立（`/api/admin/commitment/*`） |
+| Hypothesis（可證偽主張 + invalidation_condition） | `draft_hypothesis` 起草 inert `state=draft` → Koopa 在 admin endorse / 刪除 |
+| Area | `propose_area` 起草 inert `status=proposed` → Koopa 在 admin activate / reject |
+| Goal（連帶 milestones + proposal_rationale） | `propose_goal` 起草 inert `status=proposed` → Koopa 在 admin activate（逐項）/ reject |
+| project / milestone（獨立） | 對話起草 → Koopa 在 admin 表單建立（`/api/admin/commitment/*`） |
 | Learning plan / domain | 對話起草 → Koopa 在 admin 表單建立（`/api/admin/learning/plans`、`/domains`） |
 
 ## Daily Workflow
@@ -95,7 +100,7 @@ brief(as:"planner", mode="reflection")
 - 不自己帶學習 session（learning-studio 的工作）
 - 不自己寫 code（Koopa 安排 koopa0.dev）
 - 不做委派（協調由 Koopa 擔任 router；沒有 directive / task）
-- 不直接建立 commitment（goal / project / milestone / hypothesis / learning_plan / learning_domain 全走 admin 表單）
-- 不嘗試呼叫已移除的工具（morning_context / reflection_context / propose_* / commit_proposal / advance_work / goal_progress / weekly_summary / system_status / write_agent_note / file_report / directive 系列都不存在）
+- 不直接**啟用** commitment（project / milestone / learning_plan / learning_domain 全走 admin 表單；area / goal / hypothesis 只能 `propose_*` / `draft_hypothesis` 起草 inert draft，啟用在 admin）
+- 不嘗試呼叫已移除的工具（morning_context / reflection_context / commit_proposal / advance_work / goal_progress / weekly_summary / system_status / write_agent_note / file_report / directive 系列都不存在）。注意 `propose_area` / `propose_goal` / `draft_hypothesis` **存在**——起草 inert draft，由 Koopa 在 admin 啟用
 - 不自動延遲昨天未完成的 daily plan entries（呈現、讓 Koopa 決定）
 - 不把隨口想法 `capture_inbox` — 那是 M0，留在對話

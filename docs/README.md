@@ -20,7 +20,7 @@ MUST be updated):
 2. **Go code + tests** — `internal/`, `cmd/`
 3. **MCP ops catalog + tool descriptions** (`internal/mcp/ops/catalog.go`) and **authorization** (`internal/mcp/authz.go`, `internal/agent/registry.go`)
 4. **Backend semantic contract** — `backend-semantic-contract.md`
-5. **Skills / agent operational docs** — `skills/koopa-system/`, `docs/Koopa-*.md`
+5. **Skills / agent operational docs** — `skills/koopa-system/`, each agent's own Cowork project `CLAUDE.md`
 6. **Historical docs** — dated audit reports and superseded design docs
 
 ## Document classification

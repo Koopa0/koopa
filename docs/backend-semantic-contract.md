@@ -8,13 +8,11 @@
 > It is intended to become the basis for: MCP tool contract tests, hybrid
 > search judgment tests, multi-agent IPC tests, learning analytics
 > correctness tests, frontend UI/UX golden flows, and the observability
-> event taxonomy. The companion document
-> `docs/usage-scenario-catalog.md` carries the user-centered scenarios.
+> event taxonomy.
 >
 > Track 0.1 corrected the Today-surface claim (endpoints exist; the risk is
 > fan-out vs partially-wired aggregate), tightened §6 to claim-level
-> confidence, and reworded the search conclusion. See
-> `docs/reports/track-0-1-correction-report.md`.
+> confidence, and reworded the search conclusion.
 
 **Grounding discipline used in this rewrite:**
 
@@ -46,11 +44,11 @@ It is **all of the following, with explicit boundaries** (§4):
 | **Personal semantic infrastructure** | `agents.name` as universal actor identity; `activity_events` as the canonical change log written only by triggers | `internal/agent/`, `internal/activity/`, schema triggers `migrations/001_initial.up.sql` |
 | **PARA / GTD / OKR-ish system** | areas, goals, milestones, projects, todos, daily plan | `internal/goal/`, `internal/project/`, `internal/todo/`, `internal/daily/` |
 | **Learning analytics engine** | domains, concepts, targets, sessions, attempts, observations | `internal/learning/` |
-| **MCP tool surface** | **12 agent-facing tools** | `internal/mcp/ops/catalog.go::All()` (canonical list) |
+| **MCP tool surface** | **15 agent-facing tools** | `internal/mcp/ops/catalog.go::All()` (canonical list) |
 | **Knowledge / search system** | content, notes, topics, tags, feeds; hybrid search | `internal/content/`, `internal/note/`, `internal/search/`, `internal/mcp/search.go` |
 
 > **This is a closed single-owner + ≤10-agent knowledge / learning OS.** The
-> agent-facing MCP surface is **12 tools** (`internal/mcp/ops/catalog.go::All()`).
+> agent-facing MCP surface is **15 tools** (`internal/mcp/ops/catalog.go::All()`).
 > High-commitment entity creation (goal / milestone / learning plan / learning
 > domain) and content publication are **admin-only HTTP forms** under
 > `/api/admin/` (`cmd/app/routes.go`). There is no inter-agent coordination
@@ -96,7 +94,7 @@ and are resolved only by the human owner.
 | **sqlc-generated code** | `internal/db/` | **Derived** | Generated from `query.sql` files; never hand-edited. |
 | **This contract** | `docs/backend-semantic-contract.md` | **Derived** | Shared vocabulary; below schema/code/catalog. |
 | **Learning contract** | `docs/LEARNING-CONTRACT.md` | **Derived** | Concept-mastery model. There is no FSRS-retention model. |
-| **Cowork agent op docs** | `docs/Koopa-*.md` | **Advisory** | Per-agent operational guidance; never structural truth. |
+| **Cowork agent op docs** | `skills/koopa-system/` + each agent's own Cowork project `CLAUDE.md` | **Advisory** | Per-agent operational guidance; never structural truth. |
 | **Frontend route/service code** | `frontend/src/app/**` | **Advisory / assumption** | Encodes the frontend's *assumed* backend contract. The endpoints it calls (incl. `/api/admin/commitment/today`, `/api/admin/learning/summary`, `/api/admin/system/health`) **do exist** (`cmd/app/routes.go:204,269,333`); the open risk is payload compatibility and the Today fan-out-vs-aggregate split — see §6. |
 | **Audit reports** | `docs/audit/`, `docs/audit-prompts/` | **Stale / point-in-time** | Historical context only; NOT runtime truth. |
 
@@ -222,7 +220,7 @@ them wrong is a semantic bug, not a naming quibble.
 
 - **MCP tool** — a registered handler in the MCP server, described by an
   `ops.Meta` (`ops/types.go:56-71`): name, domain, writability, stability,
-  since, description, field enums. **12 tools** (`catalog.go::All()`).
+  since, description, field enums. **15 tools** (`catalog.go::All()`).
 - **schedule** — a per-agent recurring trigger declared on the Go
   `agent.Agent` literal (`Schedule{Name, Trigger, Expr, Backend, Purpose}`,
   `registry.go:27-33` etc.). E.g. `planner` runs `morning-briefing` at `0 8 * * *`
@@ -496,6 +494,3 @@ is schema- or policy-enforced or simply absent; see §3.)
    `change_kind` · actor attribution · write path · user-visible event ·
    observability category · alert/dashboard relevance. Build the taxonomy from
    producers, not from prose. Do NOT design dashboards yet.
-4. **Scenario→test-spec conversion** — turn each scenario in
-   `usage-scenario-catalog.md` into a fixture-backed spec (the catalog now
-   carries seed specs; Track 1 makes them executable).

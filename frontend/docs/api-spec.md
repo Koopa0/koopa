@@ -4,13 +4,16 @@
 > 結構以 4 個 domain 為主軸（Commitment / Knowledge / Learning / Coordination），加上跨切面的 Activity / System / Auth / Search。
 > 每個 endpoint 標：狀態（`✓ existing` / `🔨 new` / `🔧 extend`）、消費它的 UI surface。
 
-**版本**：v2.3 — 2026-05-28
+**版本**：v2.4 — 2026-06-19
 **語意來源**：`migrations/001_initial.up.sql`、`docs/backend-semantic-contract.md`
 **base URL**：admin 路徑用 `/api/admin/*`；公開站對外 GET surface 用 `/api/*`（不含 `/admin/`）— 完整契約見 §11.
 **認證**：所有 `/api/admin/*` 需 JWT via `Authorization: Bearer <token>`。mutation 路徑需 admin middleware（actor tx binding）。`/api/*` 公開 surface 無認證（§11）。
 
+**v2.4 changelog**：
+- 退場已退役的 surface：整個 **Coordination domain**（tasks / task messages / artifacts / a2a / Submit-directive / task approve·cancel·reply / `query_agent_notes`）改為 read-only **System domain**（agents 唯讀、process-runs、activity，路徑 `/api/admin/system/*`，對齊 `cmd/app/routes.go`）；§3.3 **Bookmarks** 與 §4.20 **FSRS review** 改為 tombstone（無 entity / 無 FSRS layer，見 `docs/backend-semantic-contract.md` §3）；§6.1 health envelope 移除 `bookmarks_total` / `due_reviews` / `tasks_awaiting_human`；§8 phase 表、§9/§10 後端筆記、§11 public surface 同步移除 bookmark / task。
+
 **v2.3 changelog**：
-- 新增 §11 "Public site contract" — 文件化公開站對外的 `/api/*` GET surface（content / topic / project / bookmark / search / knowledge-graph / RSS / sitemap），逐條標註 frontend service consumer 與 backend route 證據；frontend 未消費的 endpoint 顯式標記。
+- 新增 §11 "Public site contract" — 文件化公開站對外的 `/api/*` GET surface（content / topic / project / search / knowledge-graph / RSS / sitemap），逐條標註 frontend service consumer 與 backend route 證據；frontend 未消費的 endpoint 顯式標記。
 - §11.7 explicit ruling: tags 為 content metadata，無公開 `/api/tags` endpoint、無公開 `/tags/:tag` browse route、`?tag=` 在 `/api/contents` 上 backend 靜默忽略。Frontend tag chips 可作為 label 渲染，但不是公開導航。
 - 既有 §11 版本歷史 renumber 至 §12。
 
@@ -66,8 +69,7 @@
 | schema enum | CSS class | label |
 |---|---|---|
 | content_status | `.status-draft/.status-review/.status-published/.status-archived` | verbatim |
-| task_state | `.status-submitted/.status-working/.status-revision_requested/.status-completed/.status-canceled` | verbatim |
-| hypothesis_state | `.status-unverified/.status-verified/.status-invalidated/.status-archived` | verbatim |
+| hypothesis_state | `.status-draft/.status-unverified/.status-verified/.status-invalidated/.status-archived` | verbatim |
 | goal_status / project_status / todo_state / note_maturity | same pattern | verbatim |
 | feed_entry_status | `.status-unread/.status-read/.status-curated/.status-ignored` | verbatim |
 | process_run status | `.status-pending/.status-running/.status-completed/.status-failed/.status-skipped` | verbatim |
@@ -92,9 +94,6 @@
     ],
     "unverified_hypotheses": [
       { "id": "...", "claim": "...", "actor": "learning-studio", "created_at": "..." }
-    ],
-    "completed_tasks_awaiting_approval": [
-      { "id": "...", "title": "...", "source": "research-lab", "assignee": "human", "completed_at": "..." }
     ]
   },
   "plan": {
@@ -109,19 +108,17 @@
     ],
     "summary": { "total": 8, "done": 4, "overdue": 1 }
   },
-  "due_reviews": {
-    "count": 3,
-    "items": [
-      { "card_id": "...", "target": { "id": "...", "title": "LC 76" },
-        "domain": "leetcode", "retention": 0.62, "last_reviewed_at": "..." }
-    ]
-  },
   "warnings": [
     { "source": "feed", "severity": "warn", "message": "thoughtbot.com failing for 3d" },
     { "source": "goal", "severity": "warn", "message": "Koopa Studio launch stale 14d" }
   ]
 }
 ```
+
+> **Dropped sections (do NOT re-add):** `awaiting_judgment.completed_tasks_awaiting_approval`
+> (no tasks entity) and the `due_reviews` block (no FSRS layer) — per
+> `docs/backend-semantic-contract.md` §6F, both back onto surfaces that do not
+> exist and the Today aggregate should drop them.
 
 ### 2.2 `GET /api/admin/commitment/todos`  🔨 new
 
@@ -153,7 +150,7 @@
 
 ### 2.4 `POST /api/admin/commitment/todos/:id/advance`  🔨 new
 
-**Purpose**：wraps MCP `advance_work`. 推進 state machine.
+**Purpose**：推進 todo state machine（admin-only；`advance_work` 不在 MCP surface，todo lifecycle 由 Koopa 在 admin 操作）.
 **Body**：
 ```json
 { "action": "clarify" | "start" | "complete" | "defer" | "drop" }
@@ -342,44 +339,15 @@ Wraps MCP `update_note_maturity`. 獨立 audit.
 
 #### `DELETE /api/admin/knowledge/notes/:id`  🔨 new
 
-### 3.3 Bookmarks
+### 3.3 Bookmarks — RETIRED (no entity)
 
-#### `GET /api/admin/knowledge/bookmarks`  ✓ existing (rename)
-
-既有 `GET /api/admin/bookmarks`.
-**Response row**：
-```json
-{
-  "id": "...", "slug": "...", "title": "...",
-  "url": "https://...",
-  "note": "Koopa's commentary in md",
-  "topic": { "slug": "go", "name": "Go" },
-  "tags": ["gotchas"],
-  "source_feed_entry_id": null,
-  "source_feed_name": null,
-  "relevance_score": null,
-  "is_public": true,
-  "actor": "human",
-  "published_at": "..."
-}
-```
-
-#### `GET /api/admin/knowledge/bookmarks/:id`  ✓ existing (rename)
-
-#### `POST /api/admin/knowledge/bookmarks`  ✓ existing (rename)
-
-建立即發佈.
-**Body**：`{ "title": "...", "url": "...", "note": "?", "topic_slug": "?", "tags": [] }`
-Response: 201 + bookmark（預設 `is_public=true, published_at=now()`）.
-
-#### `PUT /api/admin/knowledge/bookmarks/:id`  🔨 new
-
-**Purpose**：更新 title / note / tags / topic. URL 不可改（URL 就是 identity）.
-**Body**：`{ "title": "?", "note": "?", "topic_slug": "?", "tags": [] }`
-**Response**：200 + updated bookmark.
-**UI**：Bookmark List row side panel quick edit.
-
-#### `DELETE /api/admin/knowledge/bookmarks/:id`  ✓ existing (rename)
+> **There is no bookmark entity.** No `bookmarks` table, no admin or public
+> bookmark endpoint, no frontend service. The contract is explicit:
+> `docs/backend-semantic-contract.md` §3 ("bookmark — there is no bookmark
+> entity, lifecycle, or endpoint") and §7 forbidden assumptions ("no
+> `bookmarks` of any kind"). Saving an external link is a `note`
+> (`reading-note`) via `create_note`, not a bookmark. This section is kept as
+> a tombstone so the retired surface is not re-proposed.
 
 ### 3.4 Feeds
 
@@ -703,12 +671,17 @@ Wraps `manage_plan(update_entry)`. status 轉 completed 時 **policy-mandatory**
 Add evidence row.
 **Body**：`{ "type": "supporting" | "counter", "body": "...", "linked_attempt_id": "?", "linked_observation_id": "?" }`
 
-### 4.20 `POST /api/admin/learning/reviews/:card_id`  🔨 new
+### 4.20 FSRS review — RETIRED (no FSRS layer)
 
-Record FSRS review.
-**Body**：`{ "rating": "again" | "hard" | "good" | "easy", "attempt_id": "?" }`
-**Response**：200 + updated review_card（含新 due）.
-**UI**：Dashboard `Due today` card rating buttons.
+> **There is no FSRS spaced-repetition layer.** No `review_cards` table, no
+> scheduler, no due-review surface, and no review-rating endpoint. The contract
+> is explicit: `docs/backend-semantic-contract.md` §3 ("review card / FSRS —
+> there is no FSRS layer") and §7 forbidden assumptions ("no review cards /
+> FSRS state of any kind"). The FSRS-shaped fields still shown in §4.1
+> (`due_reviews_count`, `next_due`, `last_reviewed_at`, FSRS card) and §4.21
+> (`due_reviews`) describe a surface that does not exist — treat them as stale
+> and do NOT bind them; mastery is the single learning axis. This section is a
+> tombstone so the retired endpoint is not re-proposed.
 
 ### 4.21 `GET /api/admin/learning/summary`  🔨 new
 
@@ -734,111 +707,41 @@ Record FSRS review.
 
 ---
 
-## 5. Coordination domain
+## 5. System domain
 
-### 5.1 Tasks
+> **Retired surface (do NOT re-introduce):** the inter-agent **coordination
+> triad** — `tasks` / `task_messages` / `artifacts`, the a2a message-part
+> contract, `Submit directive` / `resolve-directive`, task approve/cancel/reply,
+> and the `query_agent_notes` agent-notes tab — **does not exist**. There is no
+> `tasks` entity, no `agent_notes` entity (agent memory is each agent's own
+> `.md`), and no agent→agent coordination layer. Koopa is the sole router; what
+> was "Coordination" is now read-only **System** observability. (See
+> `docs/backend-semantic-contract.md` §3, §7 forbidden assumptions.)
 
-#### `GET /api/admin/coordination/tasks`  ✓ existing (rename)
+### 5.1 Agents (read-only registry projection)
 
-既有 `GET /api/admin/tasks`.
-**UI**：Tasks List（UX §2、design §5.11）.
-**Query**：`state=submitted|working|revision_requested|completed|canceled,source=<agent>,assignee=<agent>,priority=high|medium|low,sort=updated_at`
+#### `GET /api/admin/system/agents`  ✓ existing
+
+既有 `GET /api/admin/system/agents` → `agent.Handler.List`. Read-only — agents are
+compiled into the binary (`internal/agent/registry.go`); no CRUD.
 **Response row**：
 ```json
 {
-  "id": "...", "title": "...",
-  "source": "human", "assignee": "research-lab",
-  "state": "completed", "priority": "high",
-  "submitted_at": "...", "accepted_at": "...", "completed_at": "...",
-  "message_count": 3, "artifact_count": 2
-}
-```
-
-#### `GET /api/admin/coordination/tasks/open` | `/completed` | `/:id`  ✓ existing (rename)
-
-Returns full task object including description.
-
-#### `GET /api/admin/coordination/tasks/:id/messages`  ✓ existing (rename)
-#### `GET /api/admin/coordination/tasks/:id/artifacts`  ✓ existing (rename)
-
-**UI**：Task Timeline main + side rail（UX §5.4、design §5.12）.
-Message parts: a2a shape `{"text": "..."} | {"data": {...}}`. **不得** 有 `{"code": ...}` / `{"markdown": ...}` 等非 a2a 變體.
-
-#### `POST /api/admin/coordination/tasks`  🔨 new
-
-**Purpose**：human 發起 task（`Submit directive` button）.
-**Body**：
-```json
-{ "title": "...", "description": "...",
-  "assignee": "research-lab", "priority": "medium",
-  "parts": [{"text": "..."}] }
-```
-**Response**：201 + task. Source auto-set to caller agent name (`human`).
-
-#### `POST /api/admin/coordination/tasks/:id/reply`  ✓ existing (rename)
-
-既有. 回覆 task.
-**Body**：`{ "parts": [{"text": "..."}] }`
-
-#### `POST /api/admin/coordination/tasks/:id/request-revision`  ✓ existing (rename)
-
-既有. 當 task 已 completed 但 human 不滿意.
-**Body**：`{ "reason": "...", "parts": [{"text": "..."}] }`
-**Response**：200 + task (state=revision_requested).
-
-#### `POST /api/admin/coordination/tasks/:id/approve`  🔨 new
-
-**Purpose**：human 接受一個 completed task.
-**Body**：`{ "notes": "?" }`
-**Response**：200 + task.
-**UI**：Task Timeline `[Approve]` button.
-**Note**：若 backend task lifecycle 無 `approved` state，此 endpoint 可以只寫一筆 `response` message + 無 state transition；前端 UI affordance 是「acknowledge 完成」的明確動作。
-
-#### `POST /api/admin/coordination/tasks/:id/cancel`  🔨 new
-
-**Purpose**：human 取消 submitted/working task.
-**Body**：`{ "reason": "?" }`
-**Response**：200 + task (state=canceled).
-
-### 5.2 Agents
-
-#### `GET /api/admin/coordination/agents`  ✓ existing (rename)
-
-既有 `GET /api/admin/agents`.
-**Response row**：
-```json
-{
-  "name": "research-lab", "display_name": "Research Lab",
+  "name": "planner", "display_name": "Planner",
   "platform": "claude-cowork", "status": "active",
-  "capabilities": ["task.accept", "task.complete", "content.create"],
-  "as_creator_open": 2, "as_assignee_open": 1,
   "last_active_at": "..."
 }
 ```
 
-#### `GET /api/admin/coordination/agents/:name`  ✓ existing (rename)
+#### `GET /api/admin/system/agents/:name`  ✓ existing
 
-Agent profile detail. row + recent artifacts + capability flags.
+既有 `GET /api/admin/system/agents/{name}` → `agent.Handler.Get`. Agent identity detail.
 
-#### `GET /api/admin/coordination/agents/:name/tasks`  ✓ existing (rename)
+### 5.2 Process runs
 
-Agent's task history.
+#### `GET /api/admin/system/process-runs`  ✓ existing
 
-#### `GET /api/admin/coordination/agents/:name/notes`  🔨 new
-
-**Purpose**：Agent profile Context notes tab. Wraps MCP `query_agent_notes`.
-**UI**：Agent Profile（UX §4.2、design §5.13）.
-**Query**：`kind=plan|context|reflection,since=<iso>,until=<iso>`（kind 支援逗號分隔多值）.
-**Response row**：
-```json
-{ "id": "...", "kind": "context", "body_md": "...", "metadata": {},
-  "created_at": "...", "actor": "research-lab" }
-```
-
-### 5.3 Process runs
-
-#### `GET /api/admin/coordination/process-runs`  🔨 new
-
+既有 `GET /api/admin/system/process-runs` → `stats.Handler.ProcessRuns`.
 **UI**：Process runs list（design §5.14）.
 **Query**：`kind=crawl|agent_schedule,subsystem=<>,status=pending|running|completed|failed|skipped,since=<iso>`
 **Response envelope with aggregate summary**：
@@ -868,15 +771,15 @@ Agent's task history.
 
 > 注意：stages 的 `name` 是 scheduler 活動 label（**不是** `process_runs.kind`）. backend 應在此 endpoint 內 compute aggregate；前端不推導.
 
-### 5.4 Activity (cross-domain audit log)
+### 5.3 Activity (cross-domain audit log)
 
-#### `GET /api/admin/coordination/activity`  ✓ existing (rename)
+#### `GET /api/admin/system/activity`  ✓ existing
 
-既有 `GET /api/admin/activity/changelog`.
+既有 `GET /api/admin/system/activity` → `activity.Handler.Changelog`.
 **UI**：Activity List（design §5.15）.
 **Query**：
 ```
-entity_type=todo|goal|milestone|project|content|bookmark|note|learning_attempt|task|learning_hypothesis|learning_plan_entry|learning_session
+entity_type=todo|goal|milestone|project|content|note|learning_attempt|learning_hypothesis|learning_plan_entry|learning_session
 change_kind=created|updated|state_changed|published|completed|archived
 since=<iso>,until=<iso>
 ```
@@ -908,9 +811,9 @@ since=<iso>,until=<iso>
 
 目前 wire type 缺 `actor`（contract §8.1）. 加上後啟用前端 by-agent filter（query param `actor=<name>` 或 `actor=<name1>,<name2>`）.
 
-#### `GET /api/admin/coordination/activity/sessions`  ✓ existing (rename)
+#### `GET /api/admin/system/activity/sessions`  ✓ existing
 
-既有 `GET /api/admin/activity/sessions`. GitHub push events 分組視圖.
+既有 `GET /api/admin/system/activity/sessions` → `activity.Handler.Sessions`. GitHub push events 分組視圖.
 
 ---
 
@@ -918,7 +821,7 @@ since=<iso>,until=<iso>
 
 ### 6.1 `GET /api/admin/system/health`  🔧 extend
 
-**Purpose**：nav count + Today warnings + 4-domain overview.
+**Purpose**：nav count + Today warnings + domain overview.
 **UI**：Shell nav（all pages）、Today warnings section.
 **Response envelope**：
 ```json
@@ -932,24 +835,24 @@ since=<iso>,until=<iso>
     "contents_total":   { "count": 22 },
     "review_queue":     { "count":  3, "state": "warn", "reason": "oldest 5d" },
     "notes_total":      { "count": 84 },
-    "bookmarks_total":  { "count": 37 },
     "feeds_active":     { "count": 14, "state": "error", "reason": "1 failing" }
   },
   "learning": {
     "concepts_total":   { "count": 48 },
     "weak_concepts":    { "count":  3, "state": "warn" },
-    "due_reviews":      { "count": 12 },
     "hypotheses_unverified": { "count": 4 }
   },
-  "coordination": {
-    "tasks_awaiting_human":    { "count": 2, "state": "warn", "reason": "1 revision_requested" },
+  "system": {
     "process_runs_24h_success_pct": { "value": 98.2, "state": "ok" },
     "agents_active":           { "count": 4 }
   }
 }
 ```
 
-**Note**：backend 目前 `/api/admin/system/health` shape 可能是舊 SystemHealth；此 spec 要求擴充到完整 4-domain envelope.
+> No `bookmarks_total` (no bookmark entity), no `due_reviews` (no FSRS layer),
+> and no `tasks_awaiting_human` (no tasks entity) — see §3.3, §4.20, §5 tombstones.
+
+**Note**：backend 目前 `/api/admin/system/health` shape 可能是舊 SystemHealth；此 spec 要求擴充到完整 domain envelope.
 
 ### 6.2 `GET /api/admin/system/stats*`  ✓ existing (keep)
 
@@ -959,7 +862,7 @@ since=<iso>,until=<iso>
 
 **Purpose**：全域 ⌘K search. Phase 2 lexical；Phase 3 semantic（wraps `search_knowledge` MCP）.
 **UI**：Topbar ⌘K launcher.
-**Query**：`q=<query>,types=content,note,bookmark,hypothesis,concept,task,goal,todo,project,limit=20,mode=lexical|semantic`
+**Query**：`q=<query>,types=content,note,hypothesis,concept,goal,todo,project,limit=20,mode=lexical|semantic`
 **Response**：
 ```json
 {
@@ -988,7 +891,7 @@ Token 存記憶體 signal：access 與 refresh 皆存記憶體 signal，refresh 
 
 ## 8. Phase 分層
 
-### Phase 1（shell + list + content editor + todos + tasks basics）
+### Phase 1（shell + list + content editor + todos）
 
 | Endpoint | Status |
 |---|---|
@@ -1005,25 +908,19 @@ Token 存記憶體 signal：access 與 refresh 皆存記憶體 signal，refresh 
 | `POST /knowledge/content/:id/archive` | 🔨 |
 | `PATCH /knowledge/content/:id/is-public` | ✓ rename |
 | `DELETE /knowledge/content/:id` | ✓ rename |
-| `GET /knowledge/bookmarks` + CRUD | ✓ rename |
-| `PUT /knowledge/bookmarks/:id` | 🔨 |
 | `GET/POST/PUT/DELETE /knowledge/feeds[/:id]` | ✓ rename |
 | `POST /knowledge/feeds/:id/fetch` | ✓ rename |
 | `GET /knowledge/feed-entries` | ✓ rename |
 | `POST /knowledge/feed-entries/:id/curate\|ignore\|feedback` | ✓ rename |
 | `GET /commitment/goals` + `:id` + `:id/status` | ✓ rename |
 | `GET /commitment/projects*` | ✓ rename |
-| `GET /coordination/tasks*` + `messages` + `artifacts` | ✓ rename |
-| `POST /coordination/tasks/:id/reply\|request-revision` | ✓ rename |
-| `POST /coordination/tasks` | 🔨 |
-| `POST /coordination/tasks/:id/approve\|cancel` | 🔨 |
-| `GET /coordination/agents` + `:name` + `:name/tasks` | ✓ rename |
-| `GET /coordination/activity` | ✓ rename |
+| `GET /system/agents` + `:name` | ✓ existing |
+| `GET /system/activity` | ✓ existing |
 | `GET /knowledge/topics*` | ✓ rename |
 | `GET /system/health` (4-domain envelope) | 🔧 extend |
 | Upload / Auth | ✓ existing |
 
-### Phase 2（learning depth + hypothesis lineage + agent notes + ⌘K lexical）
+### Phase 2（learning depth + hypothesis lineage + ⌘K lexical）
 
 | Endpoint | Status |
 |---|---|
@@ -1036,8 +933,6 @@ Token 存記憶體 signal：access 與 refresh 皆存記憶體 signal，refresh 
 | `GET /learning/hypotheses*` | ✓ rename |
 | `GET /learning/hypotheses/:id/lineage` | 🔨 |
 | `POST /learning/hypotheses/:id/{verify,invalidate,archive,evidence}` | ✓ rename |
-| `POST /learning/reviews/:card_id` | 🔨 |
-| `GET /coordination/agents/:name/notes` | 🔨 |
 | `GET /search?mode=lexical` | 🔨 |
 
 ### Phase 3（notes + process runs + activity widen + semantic search）
@@ -1047,7 +942,7 @@ Token 存記憶體 signal：access 與 refresh 皆存記憶體 signal，refresh 
 | `GET /knowledge/notes` + `:id` | 🔨 |
 | `POST/PUT/DELETE /knowledge/notes` | 🔨 |
 | `POST /knowledge/notes/:id/maturity` | 🔨 |
-| `GET /coordination/process-runs` | 🔨 |
+| `GET /system/process-runs` | ✓ existing |
 | `ChangelogEvent.actor` widen + activity `actor` filter | 🔧 |
 | `GET /search?mode=semantic` | 🔨 (wraps search_knowledge) |
 
@@ -1081,19 +976,19 @@ v1 api-spec 曾列過、v2 移除：
 
 ## 10. 給後端的筆記
 
-1. **路徑命名 — 直接切換，不留 alias**：所有 admin REST endpoint 使用 `/api/admin/<domain>/<entity>` 形式（Commitment / Knowledge / Learning / Coordination）. 現有 `/api/admin/contents`、`/api/admin/goals`、`/api/admin/tasks`、`/api/admin/agents`、`/api/admin/hypotheses`、`/api/admin/concepts`、`/api/admin/bookmarks`、`/api/admin/feeds`、`/api/admin/feed-entries`、`/api/admin/projects`、`/api/admin/daily-plan`、`/api/admin/activity/changelog` 一律改為 domain-prefixed 新路徑，**不保留 alias**. 前端 service 在後端 ship 新路徑時同步替換 URL，一個 PR 原子完成. 理由：solo dev 單一消費者、沒有外部 client、尚未上線；alias 會變成永久雙路徑維護成本.
+1. **路徑命名 — 直接切換，不留 alias**：所有 admin REST endpoint 使用 `/api/admin/<domain>/<entity>` 形式（Commitment / Knowledge / Learning / System）. 現有 `/api/admin/contents`、`/api/admin/goals`、`/api/admin/hypotheses`、`/api/admin/concepts`、`/api/admin/feeds`、`/api/admin/feed-entries`、`/api/admin/projects`、`/api/admin/daily-plan` 一律改為 domain-prefixed 新路徑，**不保留 alias**. 前端 service 在後端 ship 新路徑時同步替換 URL，一個 PR 原子完成. 理由：solo dev 單一消費者、沒有外部 client、尚未上線；alias 會變成永久雙路徑維護成本.
 2. **Actor propagation**：`ChangelogEvent` 目前不含 `actor`（contract §8.1）. Phase 2 widen 解鎖 Activity by-agent filter + Agent Profile activity tab.
 3. **Human gate**：`publish_content` REST 必須驗證 caller agent 的 `platform='human'`；non-human 回 403.
 4. **MCP 與 REST 解耦（決定：(b) duplicated + decoupled）**：REST handler 直接打 store，不走 MCP 管線；MCP tool 走自己的 MCP 管線. 兩條路徑各自實作 handler，但為了不讓兩邊的 audit 資料 / 狀態機判定 drift，下面兩個 invariant 必須由共用 helper 實作（不是共用整個 service/handler）：
    - **`activity_events` 一律經 `changelog.Record(ctx, EventSpec)` helper 寫入**：REST 和 MCP 都呼叫同一個函式，保證 `actor` / `entity_type` / `event_type` / `payload` 形狀一致. Activity 頁 + Agent Profile activity tab 依賴這個不變量.
-   - **狀態機合法轉移由 `<feature>/transitions.go` 定義，single source**：`Legal(from, action) bool` 和 `Apply(from, action) (to, error)` 由 REST handler 和 MCP tool 共同查詢. 包含 Todo / Content / Hypothesis / Goal / Task 五組 transition. 非法轉移一律 400（REST）/ Invalid Argument（MCP）.
+   - **狀態機合法轉移由 `<feature>/transitions.go` 定義，single source**：`Legal(from, action) bool` 和 `Apply(from, action) (to, error)` 由 REST handler 和 MCP tool 共同查詢. 包含 Todo / Content / Hypothesis / Goal 四組 transition（無 Task — 不存在 tasks entity）. 非法轉移一律 400（REST）/ Invalid Argument（MCP）.
 
    除上述兩個 invariant 外，handler 邏輯可以自由 duplicate，不強制共用 service 層.
-5. **Aggregate endpoints**：Today (§2.1)、System health (§6.1)、Process runs (§5.3) 三個 aggregate 有多個 join. backend 可根據效能決定是否快取（前端不做）.
+5. **Aggregate endpoints**：Today (§2.1)、System health (§6.1)、Process runs (§5.2) 三個 aggregate 有多個 join. backend 可根據效能決定是否快取（前端不做）.
 6. **Empty state**：list endpoint 在無資料時回 `{"data": [], "total": 0}`，不要 404.
 7. **Filter validation**：enum 值錯誤回 400 with clear error code，不要 silent ignore.
 8. **Status transitions are explicit**：不允許 `PUT` 改 status；必須走專屬 transition endpoint（publish / archive / submit-for-review / revert-to-draft / advance / verify / invalidate / ...）. 每次 transition 都是一個 audit event（經 §10.4 的 `changelog.Record`）.
-9. **Pagination envelope 一律 `{data, total, page, per_page}`**（§1.2）：所有 list endpoint 包含 todos / content / bookmarks / notes / feeds / feed-entries / tasks / agents / hypotheses / concepts / plans / sessions / activity / search. 不允許回傳 raw array.
+9. **Pagination envelope 一律 `{data, total, page, per_page}`**（§1.2）：所有 list endpoint 包含 todos / content / notes / feeds / feed-entries / agents / hypotheses / concepts / plans / sessions / activity / search. 不允許回傳 raw array.
 
 ---
 
@@ -1102,8 +997,8 @@ v1 api-spec 曾列過、v2 移除：
 > 公開站對外的 `/api/*` GET surface（不含 `/api/admin/*` 與 `/api/auth/*`）。
 > Read-only — 沒有任何公開 mutation endpoint。
 > 來源：`cmd/app/routes.go` 中 `--- Public API ---` 區塊（routes.go:127-143）。
-> Frontend consumer 證據：`frontend/src/app/core/services/{content,topic,project,bookmark}.service.ts`。
-> 此章節**不**重複 §1.1 的 envelope / pagination / time format 規則 —— 公開列表 endpoint 同樣遵守 `{data, total, page, per_page}` 形狀（§1.1、§11.4 注意例外）。
+> Frontend consumer 證據：`frontend/src/app/core/services/{content,topic,project}.service.ts`。
+> 此章節**不**重複 §1.1 的 envelope / pagination / time format 規則 —— 公開列表 endpoint 同樣遵守 `{data, total, page, per_page}` 形狀（§1.1）。
 
 ### 11.1 Content
 
@@ -1129,12 +1024,11 @@ v1 api-spec 曾列過、v2 移除：
 | `GET /api/projects/{slug}` | `ProjectService.bySlug` (`project.service.ts:26`) | 單一 project by slug。 |
 | `GET /api/portfolio` | **Frontend SPA 目前未消費** (`grep -r 'api/portfolio' frontend/src` 無命中)。 | Backend `project.PublicPortfolio` handler 已註冊；用途 uncertain — 可能為未來 portfolio landing page 或 SSR meta 預留，未消費於本次 audit 範圍內。 |
 
-### 11.4 Bookmarks
+### 11.4 Bookmarks — RETIRED (no entity)
 
-| Endpoint | Frontend consumer | Notes |
-|---|---|---|
-| `GET /api/bookmarks` | `BookmarkService.listPublic` (`bookmark.service.ts:39`) | Public bookmark list。 |
-| `GET /api/bookmarks/{slug}` | **Frontend SPA 目前未消費** (`grep -r 'api/bookmarks/' frontend/src` 在公開路徑無命中)。 | Backend `bookmark.PublicBySlug` handler 已註冊；frontend 目前沒有單一 bookmark detail page 路由。 |
+There is no bookmark entity and no public bookmark endpoint — `cmd/app/routes.go`
+registers no `/api/bookmarks` route and the frontend has no `bookmark.service.ts`.
+See §3.3 tombstone and `docs/backend-semantic-contract.md` §3.
 
 ### 11.5 Search and knowledge graph
 
@@ -1167,6 +1061,7 @@ Tags 目前**只是 content 的 metadata**，不是公開瀏覽軸：每個 publ
 
 ## 12. 版本歷史
 
+- **v2.4 (2026-06-19)**：退場已退役 surface — Coordination domain（tasks / a2a / Submit-directive / `query_agent_notes`）改為 read-only System domain（agents 唯讀 / process-runs / activity，`/api/admin/system/*`）；§3.3 Bookmarks、§4.20 FSRS review 改 tombstone；§6.1 health 移除對應欄位；§8/§9/§10/§11 同步清理 bookmark / task。對齊 `cmd/app/routes.go` 與 `docs/backend-semantic-contract.md` §3。
 - **v2.3 (2026-05-28)**：新增 §11 "Public site contract" — 文件化公開站對外的 `/api/*` GET surface（content / topic / project / bookmark / search / knowledge-graph / RSS / sitemap）；顯式標記 frontend 目前未消費的 endpoint（`/api/portfolio`、`/api/bookmarks/{slug}`、`/api/feed/rss`、`/api/feed/sitemap`）；鎖定 §11.7 tags-as-metadata-only ruling（無 `/api/tags`、無 `/tags/:tag` route、`?tag=` 靜默忽略）。既有 §11 版本歷史 renumber 至 §12。
 - **v2.1 (2026-04-24)**：鎖 rename 策略為「直接切換，不留 alias」（§10.1）；鎖 MCP 與 REST 解耦策略為 (b) + 兩個共用 invariant（`changelog.Record` helper + `transitions.go` 狀態機）（§10.4）；補上 §2.7 todo detail、§2.12 daily-plan、§4.21 learning summary 三個原本前端在呼叫但 spec 未文件化的 endpoint.
 - **v2 (2026-04-23)**：按 4-domain 重組；退場 v1 的 mode-based 章節（NOW/ATLAS/REWIND/STREAM/STUDIO）；明確列出不需要的 endpoint.
