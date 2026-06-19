@@ -43,6 +43,13 @@ import (
 type Status string
 
 const (
+	// StatusProposed indicates an agent-proposed inert draft awaiting owner
+	// triage. A proposed project is excluded from the admin project list, the
+	// public portfolio, and the goal project view; the owner activates it
+	// (→ in_progress) or rejects it (hard DELETE) in admin. Slug/alias/title/id
+	// resolvers still match it so capture_inbox can link a todo before activation.
+	StatusProposed Status = "proposed"
+
 	// StatusPlanned indicates the project is planned but not yet started.
 	StatusPlanned Status = "planned"
 

@@ -21,7 +21,7 @@ CREATE TYPE goal_status AS ENUM (
 );
 
 CREATE TYPE project_status AS ENUM (
-    'planned', 'in_progress', 'on_hold', 'completed', 'maintained', 'archived'
+    'proposed', 'planned', 'in_progress', 'on_hold', 'completed', 'maintained', 'archived'
 );
 
 CREATE TYPE todo_state AS ENUM (
@@ -384,6 +384,8 @@ CREATE TABLE projects (
     deadline          TIMESTAMPTZ,
     last_activity_at  TIMESTAMPTZ,
     expected_cadence  TEXT CHECK (expected_cadence IN ('daily', 'weekly', 'biweekly', 'monthly')),
+    created_by        TEXT REFERENCES agents(name) ON DELETE RESTRICT,
+    proposal_rationale TEXT,
     created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
 
@@ -398,6 +400,19 @@ COMMENT ON TABLE projects IS
     'with clear outcomes. Projects and milestones are siblings under a goal: '
     'a project may advance a goal without mapping to a specific milestone. '
     'Public portfolio/case-study fields live in project_profiles (1:1).';
+COMMENT ON COLUMN projects.status IS
+    'Lifecycle: proposed → planned | in_progress → on_hold → completed | maintained | archived. '
+    'proposed = agent-proposed draft, inert — excluded from the admin project list, the public '
+    'portfolio, and the goal project view; the owner activates it to in_progress in admin triage '
+    'or rejects (hard DELETE). Slug/alias/title/id resolvers still match a proposed project so '
+    'capture_inbox can link a todo to it before activation. archived = no longer active.';
+COMMENT ON COLUMN projects.created_by IS
+    'Provenance. NULL = system/admin origin; an agent name marks a project that agent proposed. '
+    'NULLABLE with no default, mirroring goals.created_by / areas.created_by.';
+COMMENT ON COLUMN projects.proposal_rationale IS
+    'Agent''s why-propose-this-now justification, captured on a proposed row and shown to the owner '
+    'in admin triage to support activate/reject. NULL for admin/seeded rows and acceptable to keep '
+    'or clear on activation.';
 COMMENT ON COLUMN projects.area_id IS
     'PARA Area of Responsibility. FK to areas. SET NULL on area deletion. NULL = unclassified.';
 COMMENT ON COLUMN projects.repo IS 'GitHub repository full name (e.g. Koopa0/koopa0.dev). Informational only — used by activity event resolution.';

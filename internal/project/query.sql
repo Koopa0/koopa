@@ -1,6 +1,6 @@
 -- name: ProjectByID :one
 SELECT id, slug, title, description, status, repo, area_id, goal_id, deadline, last_activity_at,
-       expected_cadence, created_at, updated_at
+       expected_cadence, created_by, proposal_rationale, created_at, updated_at
 FROM projects WHERE id = $1;
 
 -- name: ProjectDetailByID :one
@@ -19,13 +19,14 @@ WHERE p.id = $1;
 
 -- name: Projects :many
 SELECT id, slug, title, description, status, repo, area_id, goal_id, deadline, last_activity_at,
-       expected_cadence, created_at, updated_at
+       expected_cadence, created_by, proposal_rationale, created_at, updated_at
 FROM projects ORDER BY title;
 
 -- name: PublicProjects :many
 -- Public projects join project_profiles; portfolio flags live there.
 SELECT p.id, p.slug, p.title, p.description, p.status, p.repo, p.area_id, p.goal_id,
-       p.deadline, p.last_activity_at, p.expected_cadence, p.created_at, p.updated_at
+       p.deadline, p.last_activity_at, p.expected_cadence, p.created_by, p.proposal_rationale,
+       p.created_at, p.updated_at
 FROM projects p
 JOIN project_profiles pp ON pp.project_id = p.id
 WHERE pp.is_public = true
@@ -33,7 +34,7 @@ ORDER BY pp.featured DESC, pp.sort_order, p.title;
 
 -- name: ProjectBySlug :one
 SELECT id, slug, title, description, status, repo, area_id, goal_id, deadline, last_activity_at,
-       expected_cadence, created_at, updated_at
+       expected_cadence, created_by, proposal_rationale, created_at, updated_at
 FROM projects WHERE slug = $1;
 
 -- name: CreateProject :one
@@ -44,7 +45,7 @@ FROM projects WHERE slug = $1;
 INSERT INTO projects (slug, title, description, status, goal_id, area_id)
 VALUES ($1, $2, $3, $4, sqlc.narg('goal_id'), sqlc.narg('area_id'))
 RETURNING id, slug, title, description, status, repo, area_id, goal_id, deadline, last_activity_at,
-          expected_cadence, created_at, updated_at;
+          expected_cadence, created_by, proposal_rationale, created_at, updated_at;
 
 -- name: UpdateProject :one
 UPDATE projects SET
@@ -55,16 +56,18 @@ UPDATE projects SET
     updated_at = now()
 WHERE id = $1
 RETURNING id, slug, title, description, status, repo, area_id, goal_id, deadline, last_activity_at,
-          expected_cadence, created_at, updated_at;
+          expected_cadence, created_by, proposal_rationale, created_at, updated_at;
 
 -- name: DeleteProject :exec
 DELETE FROM projects WHERE id = $1;
 
 -- name: ProjectByAlias :one
--- Resolve a project alias to a project via the project_aliases table.
+-- Resolve a project alias to a project via the project_aliases table. Resolves
+-- regardless of status (including proposed) so capture_inbox can link a todo to
+-- a just-proposed project before activation.
 SELECT p.id, p.slug, p.title, p.description,
        p.status, p.repo, p.area_id, p.goal_id, p.deadline, p.last_activity_at,
-       p.expected_cadence, p.created_at, p.updated_at
+       p.expected_cadence, p.created_by, p.proposal_rationale, p.created_at, p.updated_at
 FROM project_aliases pa
 JOIN projects p ON p.id = pa.project_id
 WHERE LOWER(pa.alias) = LOWER(@alias);
@@ -72,7 +75,7 @@ WHERE LOWER(pa.alias) = LOWER(@alias);
 -- name: ProjectByTitle :one
 -- Resolve a project by case-insensitive title match.
 SELECT id, slug, title, description, status, repo, area_id, goal_id, deadline, last_activity_at,
-       expected_cadence, created_at, updated_at
+       expected_cadence, created_by, proposal_rationale, created_at, updated_at
 FROM projects WHERE LOWER(title) = LOWER($1);
 
 -- name: UpdateProjectStatus :one

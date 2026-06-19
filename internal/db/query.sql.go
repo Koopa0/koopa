@@ -2708,7 +2708,7 @@ const createProject = `-- name: CreateProject :one
 INSERT INTO projects (slug, title, description, status, goal_id, area_id)
 VALUES ($1, $2, $3, $4, $5, $6)
 RETURNING id, slug, title, description, status, repo, area_id, goal_id, deadline, last_activity_at,
-          expected_cadence, created_at, updated_at
+          expected_cadence, created_by, proposal_rationale, created_at, updated_at
 `
 
 type CreateProjectParams struct {
@@ -2746,6 +2746,8 @@ func (q *Queries) CreateProject(ctx context.Context, arg CreateProjectParams) (P
 		&i.Deadline,
 		&i.LastActivityAt,
 		&i.ExpectedCadence,
+		&i.CreatedBy,
+		&i.ProposalRationale,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -7062,13 +7064,15 @@ func (q *Queries) ProfileByProjectID(ctx context.Context, projectID uuid.UUID) (
 const projectByAlias = `-- name: ProjectByAlias :one
 SELECT p.id, p.slug, p.title, p.description,
        p.status, p.repo, p.area_id, p.goal_id, p.deadline, p.last_activity_at,
-       p.expected_cadence, p.created_at, p.updated_at
+       p.expected_cadence, p.created_by, p.proposal_rationale, p.created_at, p.updated_at
 FROM project_aliases pa
 JOIN projects p ON p.id = pa.project_id
 WHERE LOWER(pa.alias) = LOWER($1)
 `
 
-// Resolve a project alias to a project via the project_aliases table.
+// Resolve a project alias to a project via the project_aliases table. Resolves
+// regardless of status (including proposed) so capture_inbox can link a todo to
+// a just-proposed project before activation.
 func (q *Queries) ProjectByAlias(ctx context.Context, alias string) (Project, error) {
 	row := q.db.QueryRow(ctx, projectByAlias, alias)
 	var i Project
@@ -7084,6 +7088,8 @@ func (q *Queries) ProjectByAlias(ctx context.Context, alias string) (Project, er
 		&i.Deadline,
 		&i.LastActivityAt,
 		&i.ExpectedCadence,
+		&i.CreatedBy,
+		&i.ProposalRationale,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -7092,7 +7098,7 @@ func (q *Queries) ProjectByAlias(ctx context.Context, alias string) (Project, er
 
 const projectByID = `-- name: ProjectByID :one
 SELECT id, slug, title, description, status, repo, area_id, goal_id, deadline, last_activity_at,
-       expected_cadence, created_at, updated_at
+       expected_cadence, created_by, proposal_rationale, created_at, updated_at
 FROM projects WHERE id = $1
 `
 
@@ -7111,6 +7117,8 @@ func (q *Queries) ProjectByID(ctx context.Context, id uuid.UUID) (Project, error
 		&i.Deadline,
 		&i.LastActivityAt,
 		&i.ExpectedCadence,
+		&i.CreatedBy,
+		&i.ProposalRationale,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -7119,7 +7127,7 @@ func (q *Queries) ProjectByID(ctx context.Context, id uuid.UUID) (Project, error
 
 const projectBySlug = `-- name: ProjectBySlug :one
 SELECT id, slug, title, description, status, repo, area_id, goal_id, deadline, last_activity_at,
-       expected_cadence, created_at, updated_at
+       expected_cadence, created_by, proposal_rationale, created_at, updated_at
 FROM projects WHERE slug = $1
 `
 
@@ -7138,6 +7146,8 @@ func (q *Queries) ProjectBySlug(ctx context.Context, slug string) (Project, erro
 		&i.Deadline,
 		&i.LastActivityAt,
 		&i.ExpectedCadence,
+		&i.CreatedBy,
+		&i.ProposalRationale,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -7146,7 +7156,7 @@ func (q *Queries) ProjectBySlug(ctx context.Context, slug string) (Project, erro
 
 const projectByTitle = `-- name: ProjectByTitle :one
 SELECT id, slug, title, description, status, repo, area_id, goal_id, deadline, last_activity_at,
-       expected_cadence, created_at, updated_at
+       expected_cadence, created_by, proposal_rationale, created_at, updated_at
 FROM projects WHERE LOWER(title) = LOWER($1)
 `
 
@@ -7166,6 +7176,8 @@ func (q *Queries) ProjectByTitle(ctx context.Context, lower string) (Project, er
 		&i.Deadline,
 		&i.LastActivityAt,
 		&i.ExpectedCadence,
+		&i.CreatedBy,
+		&i.ProposalRationale,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -7273,7 +7285,7 @@ func (q *Queries) ProjectSummariesByGoalIDs(ctx context.Context, goalIds []uuid.
 
 const projects = `-- name: Projects :many
 SELECT id, slug, title, description, status, repo, area_id, goal_id, deadline, last_activity_at,
-       expected_cadence, created_at, updated_at
+       expected_cadence, created_by, proposal_rationale, created_at, updated_at
 FROM projects ORDER BY title
 `
 
@@ -7298,6 +7310,8 @@ func (q *Queries) Projects(ctx context.Context) ([]Project, error) {
 			&i.Deadline,
 			&i.LastActivityAt,
 			&i.ExpectedCadence,
+			&i.CreatedBy,
+			&i.ProposalRationale,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -7612,7 +7626,8 @@ func (q *Queries) PublicProfiles(ctx context.Context) ([]PublicProfilesRow, erro
 
 const publicProjects = `-- name: PublicProjects :many
 SELECT p.id, p.slug, p.title, p.description, p.status, p.repo, p.area_id, p.goal_id,
-       p.deadline, p.last_activity_at, p.expected_cadence, p.created_at, p.updated_at
+       p.deadline, p.last_activity_at, p.expected_cadence, p.created_by, p.proposal_rationale,
+       p.created_at, p.updated_at
 FROM projects p
 JOIN project_profiles pp ON pp.project_id = p.id
 WHERE pp.is_public = true
@@ -7641,6 +7656,8 @@ func (q *Queries) PublicProjects(ctx context.Context) ([]Project, error) {
 			&i.Deadline,
 			&i.LastActivityAt,
 			&i.ExpectedCadence,
+			&i.CreatedBy,
+			&i.ProposalRationale,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -11663,7 +11680,7 @@ UPDATE projects SET
     updated_at = now()
 WHERE id = $1
 RETURNING id, slug, title, description, status, repo, area_id, goal_id, deadline, last_activity_at,
-          expected_cadence, created_at, updated_at
+          expected_cadence, created_by, proposal_rationale, created_at, updated_at
 `
 
 type UpdateProjectParams struct {
@@ -11695,6 +11712,8 @@ func (q *Queries) UpdateProject(ctx context.Context, arg UpdateProjectParams) (P
 		&i.Deadline,
 		&i.LastActivityAt,
 		&i.ExpectedCadence,
+		&i.CreatedBy,
+		&i.ProposalRationale,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)

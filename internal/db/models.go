@@ -417,6 +417,7 @@ func (ns NullNoteMaturity) Value() (driver.Value, error) {
 type ProjectStatus string
 
 const (
+	ProjectStatusProposed   ProjectStatus = "proposed"
 	ProjectStatusPlanned    ProjectStatus = "planned"
 	ProjectStatusInProgress ProjectStatus = "in_progress"
 	ProjectStatusOnHold     ProjectStatus = "on_hold"
@@ -1077,11 +1078,12 @@ type ProcessRun struct {
 
 // PARA projects — planning aggregate, execution vehicles. Short-term efforts with clear outcomes. Projects and milestones are siblings under a goal: a project may advance a goal without mapping to a specific milestone. Public portfolio/case-study fields live in project_profiles (1:1).
 type Project struct {
-	ID          uuid.UUID     `json:"id"`
-	Slug        string        `json:"slug"`
-	Title       string        `json:"title"`
-	Description string        `json:"description"`
-	Status      ProjectStatus `json:"status"`
+	ID          uuid.UUID `json:"id"`
+	Slug        string    `json:"slug"`
+	Title       string    `json:"title"`
+	Description string    `json:"description"`
+	// Lifecycle: proposed → planned | in_progress → on_hold → completed | maintained | archived. proposed = agent-proposed draft, inert — excluded from the admin project list, the public portfolio, and the goal project view; the owner activates it to in_progress in admin triage or rejects (hard DELETE). Slug/alias/title/id resolvers still match a proposed project so capture_inbox can link a todo to it before activation. archived = no longer active.
+	Status ProjectStatus `json:"status"`
 	// GitHub repository full name (e.g. Koopa0/koopa0.dev). Informational only — used by activity event resolution.
 	Repo *string `json:"repo"`
 	// PARA Area of Responsibility. FK to areas. SET NULL on area deletion. NULL = unclassified.
@@ -1092,8 +1094,12 @@ type Project struct {
 	// Timestamp of most recent activity event for this project. Updated by cron.
 	LastActivityAt *time.Time `json:"last_activity_at"`
 	// Expected development activity frequency. NULL = not set.
-	ExpectedCadence *string   `json:"expected_cadence"`
-	CreatedAt       time.Time `json:"created_at"`
+	ExpectedCadence *string `json:"expected_cadence"`
+	// Provenance. NULL = system/admin origin; an agent name marks a project that agent proposed. NULLABLE with no default, mirroring goals.created_by / areas.created_by.
+	CreatedBy *string `json:"created_by"`
+	// Agent's why-propose-this-now justification, captured on a proposed row and shown to the owner in admin triage to support activate/reject. NULL for admin/seeded rows and acceptable to keep or clear on activation.
+	ProposalRationale *string   `json:"proposal_rationale"`
+	CreatedAt         time.Time `json:"created_at"`
 	// Application-managed. Set explicitly in UPDATE queries.
 	UpdatedAt time.Time `json:"updated_at"`
 }
