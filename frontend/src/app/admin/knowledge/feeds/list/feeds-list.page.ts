@@ -113,14 +113,14 @@ export class FeedsListPageComponent {
 
   protected healthTextClass(row: FeedRow): string {
     if (!row.enabled) return 'text-fg-subtle';
-    if (row.consecutive_failures > 0) return 'text-red-300';
-    return 'text-emerald-300';
+    if (row.consecutive_failures > 0) return 'text-error';
+    return 'text-success';
   }
 
   protected healthDotClass(row: FeedRow): string {
     if (!row.enabled) return 'bg-fg-faint';
-    if (row.consecutive_failures > 0) return 'bg-red-500';
-    return 'bg-emerald-500';
+    if (row.consecutive_failures > 0) return 'bg-error';
+    return 'bg-success';
   }
 
   protected fetchNow(row: FeedRow): void {

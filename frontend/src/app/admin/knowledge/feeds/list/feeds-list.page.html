@@ -43,7 +43,7 @@
   @if (hasError()) {
     <div
       role="alert"
-      class="mb-3 rounded-xs border border-red-800 bg-red-900/20 px-3 py-2 text-xs text-red-300"
+      class="mb-3 rounded-xs border border-error bg-error-bg px-3 py-2 text-xs text-error"
       data-testid="feeds-list-error"
     >
       Couldn't load feeds.
@@ -73,7 +73,7 @@
         @for (row of rows(); track row.id) {
           <tr
             class="border-b border-border-faint transition-colors hover:bg-elevated/40"
-            [class.bg-red-950/10]="
+            [class.bg-error-bg]="
               row.enabled && row.consecutive_failures > 0
             "
             [attr.data-testid]="'feeds-list-row-' + row.id"
@@ -111,7 +111,7 @@
               </span>
               @if (!row.enabled && row.disabled_reason) {
                 <div
-                  class="mt-0.5 truncate text-[10px] text-amber-400"
+                  class="mt-0.5 truncate text-[10px] text-warn"
                   [title]="row.disabled_reason"
                   data-testid="feeds-list-disabled-reason"
                 >
@@ -120,7 +120,7 @@
               }
               @if (row.last_error) {
                 <div
-                  class="mt-0.5 truncate text-[10px] text-red-400"
+                  class="mt-0.5 truncate text-[10px] text-error"
                   [title]="row.last_error"
                   data-testid="feeds-list-last-error"
                 >
