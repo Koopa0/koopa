@@ -56,12 +56,6 @@ type TagCount struct {
 	Count int    `json:"count"`
 }
 
-// Slug is a lightweight topic reference for AI classification.
-type Slug struct {
-	Slug string `json:"slug"`
-	Name string `json:"name"`
-}
-
 var (
 	// ErrNotFound indicates the topic does not exist.
 	ErrNotFound = errors.New("topic: not found")

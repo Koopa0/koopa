@@ -450,35 +450,6 @@ func (q *Queries) AllPublishedSlugs(ctx context.Context) ([]AllPublishedSlugsRow
 	return items, nil
 }
 
-const allTopicSlugs = `-- name: AllTopicSlugs :many
-SELECT slug, name FROM topics ORDER BY name
-`
-
-type AllTopicSlugsRow struct {
-	Slug string `json:"slug"`
-	Name string `json:"name"`
-}
-
-func (q *Queries) AllTopicSlugs(ctx context.Context) ([]AllTopicSlugsRow, error) {
-	rows, err := q.db.Query(ctx, allTopicSlugs)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []AllTopicSlugsRow{}
-	for rows.Next() {
-		var i AllTopicSlugsRow
-		if err := rows.Scan(&i.Slug, &i.Name); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const appendHypothesisEvidence = `-- name: AppendHypothesisEvidence :one
 UPDATE learning_hypotheses
 SET metadata = jsonb_set(

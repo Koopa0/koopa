@@ -33,19 +33,6 @@ func (s *Store) WithTx(tx pgx.Tx) *Store {
 	return &Store{q: s.q.WithTx(tx)}
 }
 
-// AllTopicSlugs returns all topic slugs and names, lightweight for AI tag classification.
-func (s *Store) AllTopicSlugs(ctx context.Context) ([]Slug, error) {
-	rows, err := s.q.AllTopicSlugs(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("listing topic slugs: %w", err)
-	}
-	slugs := make([]Slug, len(rows))
-	for i, r := range rows {
-		slugs[i] = Slug{Slug: r.Slug, Name: r.Name}
-	}
-	return slugs, nil
-}
-
 // Topics returns all topics with published content counts.
 func (s *Store) Topics(ctx context.Context) ([]Topic, error) {
 	rows, err := s.q.Topics(ctx)
