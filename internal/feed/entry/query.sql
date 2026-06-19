@@ -13,15 +13,6 @@ LIMIT $1 OFFSET $2;
 SELECT COUNT(*) FROM feed_entries
 WHERE (sqlc.narg('status')::feed_entry_status IS NULL OR status = sqlc.narg('status'));
 
--- name: FeedEntryByID :one
-SELECT cd.id, cd.source_url, cd.title, cd.original_content,
-       cd.status, cd.curated_content_id, cd.collected_at,
-       cd.url_hash, cd.feed_id, cd.published_at,
-       COALESCE(f.name, '') AS feed_name
-FROM feed_entries cd
-LEFT JOIN feeds f ON cd.feed_id = f.id
-WHERE cd.id = $1;
-
 -- name: FeedEntryByURLHash :one
 SELECT cd.id, cd.source_url, cd.title, cd.original_content,
        cd.status, cd.curated_content_id, cd.collected_at,
@@ -83,18 +74,6 @@ LEFT JOIN feeds f ON cd.feed_id = f.id
 WHERE cd.collected_at >= @since
   AND cd.status = 'unread'
 ORDER BY COALESCE(cd.published_at, cd.collected_at) DESC
-LIMIT @max_results;
-
--- name: LatestFeedEntriesByRecency :many
--- Get latest collected data ordered by recency (collected_at DESC), optionally filtered by time.
-SELECT cd.id, cd.source_url, cd.title, cd.original_content,
-       cd.status, cd.curated_content_id, cd.collected_at,
-       cd.url_hash, cd.feed_id, cd.published_at,
-       COALESCE(f.name, '') AS feed_name
-FROM feed_entries cd
-LEFT JOIN feeds f ON cd.feed_id = f.id
-WHERE (sqlc.narg('since')::timestamptz IS NULL OR cd.collected_at >= sqlc.narg('since'))
-ORDER BY cd.collected_at DESC
 LIMIT @max_results;
 
 -- name: HighPriorityRecentFeedEntries :many

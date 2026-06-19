@@ -75,25 +75,6 @@ func (s *Store) Items(ctx context.Context, f Filter) ([]Item, int, error) {
 	return data, int(count), nil
 }
 
-// Item returns a single collected item by ID.
-func (s *Store) Item(ctx context.Context, id uuid.UUID) (*Item, error) {
-	r, err := s.q.FeedEntryByID(ctx, id)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, ErrNotFound
-		}
-		return nil, fmt.Errorf("querying collected data %s: %w", id, err)
-	}
-	d := rowToItem(collectedRow{
-		ID: r.ID, SourceUrl: r.SourceUrl, Title: r.Title, OriginalContent: r.OriginalContent,
-		Status:           r.Status,
-		CuratedContentID: r.CuratedContentID, CollectedAt: r.CollectedAt, UrlHash: r.UrlHash,
-		FeedID:      r.FeedID,
-		PublishedAt: r.PublishedAt, FeedName: r.FeedName,
-	})
-	return &d, nil
-}
-
 // Curate marks collected data as curated and links to content.
 // trg_feed_entries_curation_exclusion will reject the UPDATE if the same
 // feed_entry is already referenced by bookmarks.source_feed_entry_id —
@@ -228,29 +209,6 @@ func (s *Store) TopUnreadFeedEntriesRecent(ctx context.Context, since time.Time,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("listing top unread collected data: %w", err)
-	}
-	data := make([]Item, len(rows))
-	for i := range rows {
-		r := &rows[i]
-		data[i] = rowToItem(collectedRow{
-			ID: r.ID, SourceUrl: r.SourceUrl, Title: r.Title, OriginalContent: r.OriginalContent,
-			Status:           r.Status,
-			CuratedContentID: r.CuratedContentID, CollectedAt: r.CollectedAt, UrlHash: r.UrlHash,
-			FeedID:      r.FeedID,
-			PublishedAt: r.PublishedAt, FeedName: r.FeedName,
-		})
-	}
-	return data, nil
-}
-
-// LatestByRecency returns collected items ordered by recency, optionally filtered by time.
-func (s *Store) LatestByRecency(ctx context.Context, since *time.Time, maxResults int32) ([]Item, error) {
-	rows, err := s.q.LatestFeedEntriesByRecency(ctx, db.LatestFeedEntriesByRecencyParams{
-		Since:      since,
-		MaxResults: maxResults,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("listing collected data by recency: %w", err)
 	}
 	data := make([]Item, len(rows))
 	for i := range rows {

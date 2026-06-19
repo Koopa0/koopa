@@ -4137,49 +4137,6 @@ func (q *Queries) FeedEntriesList(ctx context.Context, arg FeedEntriesListParams
 	return items, nil
 }
 
-const feedEntryByID = `-- name: FeedEntryByID :one
-SELECT cd.id, cd.source_url, cd.title, cd.original_content,
-       cd.status, cd.curated_content_id, cd.collected_at,
-       cd.url_hash, cd.feed_id, cd.published_at,
-       COALESCE(f.name, '') AS feed_name
-FROM feed_entries cd
-LEFT JOIN feeds f ON cd.feed_id = f.id
-WHERE cd.id = $1
-`
-
-type FeedEntryByIDRow struct {
-	ID               uuid.UUID       `json:"id"`
-	SourceUrl        string          `json:"source_url"`
-	Title            string          `json:"title"`
-	OriginalContent  string          `json:"original_content"`
-	Status           FeedEntryStatus `json:"status"`
-	CuratedContentID *uuid.UUID      `json:"curated_content_id"`
-	CollectedAt      time.Time       `json:"collected_at"`
-	UrlHash          string          `json:"url_hash"`
-	FeedID           *uuid.UUID      `json:"feed_id"`
-	PublishedAt      *time.Time      `json:"published_at"`
-	FeedName         string          `json:"feed_name"`
-}
-
-func (q *Queries) FeedEntryByID(ctx context.Context, id uuid.UUID) (FeedEntryByIDRow, error) {
-	row := q.db.QueryRow(ctx, feedEntryByID, id)
-	var i FeedEntryByIDRow
-	err := row.Scan(
-		&i.ID,
-		&i.SourceUrl,
-		&i.Title,
-		&i.OriginalContent,
-		&i.Status,
-		&i.CuratedContentID,
-		&i.CollectedAt,
-		&i.UrlHash,
-		&i.FeedID,
-		&i.PublishedAt,
-		&i.FeedName,
-	)
-	return i, err
-}
-
 const feedEntryByURLHash = `-- name: FeedEntryByURLHash :one
 SELECT cd.id, cd.source_url, cd.title, cd.original_content,
        cd.status, cd.curated_content_id, cd.collected_at,
@@ -5514,70 +5471,6 @@ func (q *Queries) LatestFeedEntries(ctx context.Context, arg LatestFeedEntriesPa
 	items := []LatestFeedEntriesRow{}
 	for rows.Next() {
 		var i LatestFeedEntriesRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.SourceUrl,
-			&i.Title,
-			&i.OriginalContent,
-			&i.Status,
-			&i.CuratedContentID,
-			&i.CollectedAt,
-			&i.UrlHash,
-			&i.FeedID,
-			&i.PublishedAt,
-			&i.FeedName,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const latestFeedEntriesByRecency = `-- name: LatestFeedEntriesByRecency :many
-SELECT cd.id, cd.source_url, cd.title, cd.original_content,
-       cd.status, cd.curated_content_id, cd.collected_at,
-       cd.url_hash, cd.feed_id, cd.published_at,
-       COALESCE(f.name, '') AS feed_name
-FROM feed_entries cd
-LEFT JOIN feeds f ON cd.feed_id = f.id
-WHERE ($1::timestamptz IS NULL OR cd.collected_at >= $1)
-ORDER BY cd.collected_at DESC
-LIMIT $2
-`
-
-type LatestFeedEntriesByRecencyParams struct {
-	Since      *time.Time `json:"since"`
-	MaxResults int32      `json:"max_results"`
-}
-
-type LatestFeedEntriesByRecencyRow struct {
-	ID               uuid.UUID       `json:"id"`
-	SourceUrl        string          `json:"source_url"`
-	Title            string          `json:"title"`
-	OriginalContent  string          `json:"original_content"`
-	Status           FeedEntryStatus `json:"status"`
-	CuratedContentID *uuid.UUID      `json:"curated_content_id"`
-	CollectedAt      time.Time       `json:"collected_at"`
-	UrlHash          string          `json:"url_hash"`
-	FeedID           *uuid.UUID      `json:"feed_id"`
-	PublishedAt      *time.Time      `json:"published_at"`
-	FeedName         string          `json:"feed_name"`
-}
-
-// Get latest collected data ordered by recency (collected_at DESC), optionally filtered by time.
-func (q *Queries) LatestFeedEntriesByRecency(ctx context.Context, arg LatestFeedEntriesByRecencyParams) ([]LatestFeedEntriesByRecencyRow, error) {
-	rows, err := q.db.Query(ctx, latestFeedEntriesByRecency, arg.Since, arg.MaxResults)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []LatestFeedEntriesByRecencyRow{}
-	for rows.Next() {
-		var i LatestFeedEntriesByRecencyRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.SourceUrl,
