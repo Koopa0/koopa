@@ -14,33 +14,9 @@
  *   agent ≠ participant — schema is `agents`
  */
 
-import type { ContentStatus, ContentType, GoalStatus } from './api.model';
-
 // ============================================================
 // Content (matches internal/content/content.go::Content)
 // ============================================================
-
-export interface WorkbenchContent {
-  id: string;
-  slug: string;
-  title: string;
-  body: string;
-  excerpt: string;
-  type: ContentType;
-  status: ContentStatus;
-  tags: string[];
-  topics: TopicRef[];
-  origin_ref?: string;
-  origin_system?: OriginSystem;
-  is_public: boolean;
-  project_id?: string;
-  ai_metadata?: ContentAiMetadata;
-  reading_time_min: number;
-  cover_image?: string;
-  published_at?: string;
-  created_at: string;
-  updated_at: string;
-}
 
 export type OriginSystem = 'ai-generated' | 'manual';
 
@@ -145,25 +121,6 @@ export interface AgentSchedule {
   purpose: string;
 }
 
-// ============================================================
-// Goal detail (matches internal/goal/store.go::GoalProgress)
-// ============================================================
-
-export interface WorkbenchGoalDetail {
-  id: string;
-  title: string;
-  description: string;
-  status: GoalStatus;
-  area_id?: string;
-  area_name?: string;
-  deadline?: string;
-  quarter: string;
-  milestones: GoalMilestone[];
-  projects: GoalLinkedProject[];
-  recent_activity: GoalActivityItem[];
-  created_at: string;
-}
-
 export interface GoalMilestone {
   id: string;
   title: string;
@@ -210,35 +167,6 @@ export interface DomainMastery {
 export interface LearningSummary extends CellState {
   streak_days: number;
   domains: DomainMastery[];
-}
-
-// ============================================================
-// Agents (read-only registry projection)
-//
-// GET /api/admin/system/agents returns a bare []Agent; the single-agent
-// route returns one Agent. Both rows and detail carry the same six
-// fields — list and detail are identical shapes.
-// ============================================================
-
-/** Row shape for the agents roster — the full registry projection. */
-export type AgentSummary = Agent;
-
-/** Single-agent detail — same six-field projection as the roster row. */
-export type AgentDetail = Agent;
-
-// ============================================================
-// Judgment Queue (frontend-composed from 3 sources)
-// ============================================================
-
-export type JudgmentItemType = 'content' | 'task' | 'hypothesis';
-
-export interface JudgmentQueueItem {
-  type: JudgmentItemType;
-  id: string;
-  title: string;
-  subtitle: string;
-  submitted_at: string;
-  age_days: number;
 }
 
 // ============================================================

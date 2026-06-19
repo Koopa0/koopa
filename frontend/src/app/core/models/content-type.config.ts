@@ -61,11 +61,6 @@ export const CONTENT_TYPE_CONFIG: Record<ContentType, ContentTypeConfig> = {
   },
 };
 
-/** Get content type label (localized) */
-export function contentTypeLabel(type: ContentType): string {
-  return CONTENT_TYPE_CONFIG[type]?.labelZh ?? type;
-}
-
 /** Get content type English label */
 export function contentTypeLabelEn(type: ContentType): string {
   return CONTENT_TYPE_CONFIG[type]?.label ?? type;

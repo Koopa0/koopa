@@ -17,7 +17,6 @@ export {
   type ButtonVariant,
   type ButtonSize,
 } from './button/button.component';
-export { CardComponent, type CardPadding } from './card/card.component';
 export { BadgeComponent, type BadgeTone } from './badge/badge.component';
 export {
   CalloutComponent,

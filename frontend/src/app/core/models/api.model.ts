@@ -16,13 +16,6 @@ export interface ApiPaginationMeta {
   total_pages: number;
 }
 
-export interface ApiError {
-  error: {
-    code: string;
-    message: string;
-  };
-}
-
 /** Backend Content object (snake_case, matches internal/content/content.go::Content).
  *
  * Schema truth: migrations/001_initial.up.sql::contents.
@@ -271,10 +264,4 @@ export interface ApiRelatedContent {
   type: ContentType;
   similarity: number;
   topics: ApiTopicRef[];
-}
-
-export interface ApiTopicRef {
-  id: string;
-  slug: string;
-  name: string;
 }
