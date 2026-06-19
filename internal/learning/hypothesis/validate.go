@@ -11,9 +11,9 @@ import (
 )
 
 // MaxResolutionSummary caps the free-text resolution_summary field at 2 KB.
-// The same cap is enforced by every transport (HTTP admin handler and MCP
-// track_hypothesis) via ValidateResolveInput so oversize payloads never
-// reach the query layer regardless of how the request arrived.
+// Resolution (verify/invalidate) is admin-only — the HTTP admin handler
+// enforces this cap via ValidateResolveInput so oversize payloads never
+// reach the query layer.
 const MaxResolutionSummary = 2 * 1024
 
 // Sentinel errors returned by ValidateResolveInput.
