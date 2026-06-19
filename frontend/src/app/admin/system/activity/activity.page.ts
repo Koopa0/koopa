@@ -168,11 +168,11 @@ export class ActivityPageComponent {
       case 'updated':
         return 'bg-fg-subtle';
       case 'state_changed':
-        return 'bg-amber-400';
+        return 'bg-warn';
       case 'published':
-        return 'bg-emerald-500';
+        return 'bg-success';
       case 'completed':
-        return 'bg-emerald-400';
+        return 'bg-success';
       case 'archived':
         return 'bg-fg-faint';
     }

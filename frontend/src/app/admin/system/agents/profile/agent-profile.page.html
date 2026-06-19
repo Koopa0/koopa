@@ -1,7 +1,7 @@
 @if (isLoading()) {
   <div class="flex flex-1 items-center justify-center" data-testid="agent-loading">
     <div
-      class="size-5 animate-spin rounded-full border-2 border-border-strong border-t-zinc-300"
+      class="size-5 animate-spin rounded-full border-2 border-border-strong border-t-fg-muted"
       aria-label="Loading agent"
     ></div>
   </div>
@@ -11,7 +11,7 @@
     data-testid="agent-error"
   >
     <div>
-      <p class="mb-2 text-sm text-red-400">Failed to load agent.</p>
+      <p class="mb-2 text-sm text-error">Failed to load agent.</p>
       <button
         type="button"
         (click)="back()"
@@ -38,7 +38,7 @@
         <span>{{ a.platform }}</span>
         <span
           class="capitalize"
-          [class.text-emerald-300]="a.status === 'active'"
+          [class.text-success]="a.status === 'active'"
           [class.text-fg-subtle]="a.status === 'retired'"
         >
           {{ a.status }}
