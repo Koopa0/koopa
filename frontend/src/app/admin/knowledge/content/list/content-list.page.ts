@@ -66,15 +66,15 @@ const STATUS_CHIPS: readonly StatusChip[] = [
 
 const STATUS_DOT_CLASS: Record<ContentStatus, string> = {
   draft: 'bg-fg-subtle',
-  review: 'bg-amber-400',
-  published: 'bg-emerald-500',
+  review: 'bg-warn',
+  published: 'bg-success',
   archived: 'bg-fg-faint',
 };
 
 const STATUS_TEXT_CLASS: Record<ContentStatus, string> = {
   draft: 'text-fg-muted',
-  review: 'text-amber-300',
-  published: 'text-emerald-300',
+  review: 'text-warn',
+  published: 'text-success',
   archived: 'text-fg-subtle',
 };
 

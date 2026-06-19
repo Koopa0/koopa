@@ -38,16 +38,16 @@ const STATUS_CHIPS: readonly StatusChip[] = [
 const STATUS_DOT_CLASS: Record<GoalStatus, string> = {
   not_started: 'bg-fg-subtle',
   in_progress: 'bg-brand',
-  on_hold: 'bg-amber-400',
-  done: 'bg-emerald-500',
+  on_hold: 'bg-warn',
+  done: 'bg-success',
   abandoned: 'bg-fg-faint',
 };
 
 const STATUS_TEXT_CLASS: Record<GoalStatus, string> = {
   not_started: 'text-fg-muted',
   in_progress: 'text-brand',
-  on_hold: 'text-amber-300',
-  done: 'text-emerald-300',
+  on_hold: 'text-warn',
+  done: 'text-success',
   abandoned: 'text-fg-subtle',
 };
 

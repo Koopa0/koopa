@@ -51,16 +51,16 @@ const MATURITY_CHIPS: readonly Chip<MaturityFilter>[] = [
 const MATURITY_DOT: Record<NoteMaturity, string> = {
   seed: 'bg-fg-subtle',
   stub: 'bg-brand',
-  evergreen: 'bg-emerald-500',
-  needs_revision: 'bg-amber-400',
+  evergreen: 'bg-success',
+  needs_revision: 'bg-warn',
   archived: 'bg-fg-faint',
 };
 
 const MATURITY_TEXT: Record<NoteMaturity, string> = {
   seed: 'text-fg-muted',
   stub: 'text-brand',
-  evergreen: 'text-emerald-300',
-  needs_revision: 'text-amber-300',
+  evergreen: 'text-success',
+  needs_revision: 'text-warn',
   archived: 'text-fg-subtle',
 };
 
