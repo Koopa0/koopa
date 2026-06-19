@@ -67,17 +67,6 @@ func NewPool(t *testing.T) *pgxpool.Pool {
 	return pool
 }
 
-// Truncate removes all data from the given tables (in order).
-// Use between tests to ensure isolation without recreating the container.
-func Truncate(t *testing.T, pool *pgxpool.Pool, tables ...string) {
-	t.Helper()
-	for _, table := range tables {
-		if _, err := pool.Exec(t.Context(), "TRUNCATE "+table+" CASCADE"); err != nil {
-			t.Fatalf("truncating %s: %v", table, err)
-		}
-	}
-}
-
 // StartPool is for use in TestMain where *testing.T is not available.
 // Returns pool + cleanup function. Call cleanup after m.Run().
 //

@@ -140,17 +140,6 @@ func decodeSong(t *testing.T, body []byte) songWire {
 	return env.Data
 }
 
-func decodeSongs(t *testing.T, body []byte) []songWire {
-	t.Helper()
-	var env struct {
-		Data []songWire `json:"data"`
-	}
-	if err := json.Unmarshal(body, &env); err != nil {
-		t.Fatalf("decode songs response: %v (body=%s)", err, body)
-	}
-	return env.Data
-}
-
 func decodeReflection(t *testing.T, body []byte) reflectionWire {
 	t.Helper()
 	var env struct {
