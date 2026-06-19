@@ -4,7 +4,7 @@
   data-testid="session-loading"
 >
   <div
-    class="size-5 animate-spin rounded-full border-2 border-border-strong border-t-zinc-300"
+    class="size-5 animate-spin rounded-full border-2 border-border-strong border-t-fg-subtle"
     aria-label="Loading session"
   ></div>
 </div>
@@ -37,7 +37,7 @@
   data-testid="session-error"
 >
   <div>
-    <p class="mb-2 text-sm text-red-400">Failed to load session.</p>
+    <p class="mb-2 text-sm text-error">Failed to load session.</p>
     <button
       type="button"
       (click)="back()"
@@ -68,7 +68,7 @@
         @if (s.ended_at) {
         <span>ended {{ s.ended_at | date: 'short' }}</span>
         } @else {
-        <span class="text-amber-300">ongoing</span>
+        <span class="text-warn">ongoing</span>
         }
         <span>· {{ durationLabel() }}</span>
       </div>
@@ -107,7 +107,7 @@
             >
           </header>
           @if (a.stuck_at) {
-          <p class="mb-1 text-xs text-amber-300">Stuck at: {{ a.stuck_at }}</p>
+          <p class="mb-1 text-xs text-warn">Stuck at: {{ a.stuck_at }}</p>
           } @if (a.approach_used) {
           <p class="mb-2 text-xs text-fg-muted">
             Approach: {{ a.approach_used }}
@@ -124,9 +124,9 @@
               <li class="flex flex-wrap items-baseline gap-2 text-xs">
                 <span
                   class="font-mono text-[10px] uppercase"
-                  [class.text-amber-300]="obs.signal_type === 'weakness'"
+                  [class.text-warn]="obs.signal_type === 'weakness'"
                   [class.text-brand]="obs.signal_type === 'improvement'"
-                  [class.text-emerald-300]="obs.signal_type === 'mastery'"
+                  [class.text-success]="obs.signal_type === 'mastery'"
                   >{{ obs.signal_type }}</span
                 >
                 <span class="font-mono text-[10px] text-fg-subtle"
@@ -178,7 +178,7 @@
         </div>
         <div class="flex items-baseline justify-between">
           <dt class="text-[11px] text-fg-subtle">Solved independent</dt>
-          <dd class="font-mono text-emerald-300">
+          <dd class="font-mono text-success">
             {{ s.summary.solved_independent }}
           </dd>
         </div>
@@ -202,7 +202,7 @@
         </div>
         <div class="h-1.5 overflow-hidden rounded-full bg-elevated">
           <div
-            class="h-full bg-emerald-500 transition-all"
+            class="h-full bg-success transition-all"
             [style.width.%]="solvedPercent()"
           ></div>
         </div>
