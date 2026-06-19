@@ -36,11 +36,6 @@ SELECT id, slug, title, description, status, repo, area_id, goal_id, deadline, l
        expected_cadence, created_at, updated_at
 FROM projects WHERE slug = $1;
 
--- name: ProjectByRepo :one
-SELECT id, slug, title, description, status, repo, area_id, goal_id, deadline, last_activity_at,
-       expected_cadence, created_at, updated_at
-FROM projects WHERE repo = $1;
-
 -- name: CreateProject :one
 -- Insert a new project. goal_id and area_id are optional links to the
 -- parent goal / area; when supplied at create time the project shows up
@@ -61,12 +56,6 @@ UPDATE projects SET
 WHERE id = $1
 RETURNING id, slug, title, description, status, repo, area_id, goal_id, deadline, last_activity_at,
           expected_cadence, created_at, updated_at;
-
--- name: ActiveProjects :many
-SELECT id, slug, title, description, status, repo, area_id, goal_id, deadline, last_activity_at,
-       expected_cadence, created_at, updated_at
-FROM projects WHERE status IN ('in_progress', 'maintained')
-ORDER BY updated_at DESC;
 
 -- name: DeleteProject :exec
 DELETE FROM projects WHERE id = $1;
@@ -118,18 +107,6 @@ UPDATE project_profiles
        featured  = FALSE,
        updated_at = now()
  WHERE project_id = $1;
-
--- name: ListByStatus :many
--- List projects filtered by status. "active" maps to in_progress + maintained.
-SELECT id, slug, title, description, status, repo, area_id, goal_id, deadline, last_activity_at,
-       expected_cadence, created_at, updated_at
-FROM projects
-WHERE CASE @status_filter::text
-    WHEN 'active' THEN status IN ('in_progress', 'maintained')
-    WHEN 'all' THEN true
-    ELSE status = @status_filter::project_status
-END
-ORDER BY title;
 
 -- name: ProjectSummariesByGoalIDs :many
 -- Lightweight project info for goal_progress output.

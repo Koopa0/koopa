@@ -166,47 +166,6 @@ func (q *Queries) ActiveGoals(ctx context.Context) ([]ActiveGoalsRow, error) {
 	return items, nil
 }
 
-const activeProjects = `-- name: ActiveProjects :many
-SELECT id, slug, title, description, status, repo, area_id, goal_id, deadline, last_activity_at,
-       expected_cadence, created_at, updated_at
-FROM projects WHERE status IN ('in_progress', 'maintained')
-ORDER BY updated_at DESC
-`
-
-func (q *Queries) ActiveProjects(ctx context.Context) ([]Project, error) {
-	rows, err := q.db.Query(ctx, activeProjects)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []Project{}
-	for rows.Next() {
-		var i Project
-		if err := rows.Scan(
-			&i.ID,
-			&i.Slug,
-			&i.Title,
-			&i.Description,
-			&i.Status,
-			&i.Repo,
-			&i.AreaID,
-			&i.GoalID,
-			&i.Deadline,
-			&i.LastActivityAt,
-			&i.ExpectedCadence,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const activeSession = `-- name: ActiveSession :one
 SELECT id, domain, session_mode, daily_plan_item_id, started_at, ended_at, metadata, created_at, updated_at
 FROM learning_sessions WHERE ended_at IS NULL
@@ -5910,53 +5869,6 @@ func (q *Queries) ListAliases(ctx context.Context) ([]TagAlias, error) {
 	return items, nil
 }
 
-const listByStatus = `-- name: ListByStatus :many
-SELECT id, slug, title, description, status, repo, area_id, goal_id, deadline, last_activity_at,
-       expected_cadence, created_at, updated_at
-FROM projects
-WHERE CASE $1::text
-    WHEN 'active' THEN status IN ('in_progress', 'maintained')
-    WHEN 'all' THEN true
-    ELSE status = $1::project_status
-END
-ORDER BY title
-`
-
-// List projects filtered by status. "active" maps to in_progress + maintained.
-func (q *Queries) ListByStatus(ctx context.Context, statusFilter string) ([]Project, error) {
-	rows, err := q.db.Query(ctx, listByStatus, statusFilter)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []Project{}
-	for rows.Next() {
-		var i Project
-		if err := rows.Scan(
-			&i.ID,
-			&i.Slug,
-			&i.Title,
-			&i.Description,
-			&i.Status,
-			&i.Repo,
-			&i.AreaID,
-			&i.GoalID,
-			&i.Deadline,
-			&i.LastActivityAt,
-			&i.ExpectedCadence,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const listContents = `-- name: ListContents :many
 SELECT id, slug, title, excerpt, type, status, is_public, project_id,
        reading_time_min, published_at, created_at, updated_at
@@ -7359,33 +7271,6 @@ FROM projects WHERE id = $1
 
 func (q *Queries) ProjectByID(ctx context.Context, id uuid.UUID) (Project, error) {
 	row := q.db.QueryRow(ctx, projectByID, id)
-	var i Project
-	err := row.Scan(
-		&i.ID,
-		&i.Slug,
-		&i.Title,
-		&i.Description,
-		&i.Status,
-		&i.Repo,
-		&i.AreaID,
-		&i.GoalID,
-		&i.Deadline,
-		&i.LastActivityAt,
-		&i.ExpectedCadence,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
-const projectByRepo = `-- name: ProjectByRepo :one
-SELECT id, slug, title, description, status, repo, area_id, goal_id, deadline, last_activity_at,
-       expected_cadence, created_at, updated_at
-FROM projects WHERE repo = $1
-`
-
-func (q *Queries) ProjectByRepo(ctx context.Context, repo *string) (Project, error) {
-	row := q.db.QueryRow(ctx, projectByRepo, repo)
 	var i Project
 	err := row.Scan(
 		&i.ID,

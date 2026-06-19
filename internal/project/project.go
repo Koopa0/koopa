@@ -438,19 +438,6 @@ func (s *Store) DeleteProject(ctx context.Context, id uuid.UUID) error {
 	return nil
 }
 
-// ActiveProjects returns projects with in_progress or maintained status.
-func (s *Store) ActiveProjects(ctx context.Context) ([]Project, error) {
-	rows, err := s.q.ActiveProjects(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("listing active projects: %w", err)
-	}
-	projects := make([]Project, len(rows))
-	for i := range rows {
-		projects[i] = rowToProject(&rows[i])
-	}
-	return projects, nil
-}
-
 // ProjectByAlias resolves a project alias to a project via the project_aliases table.
 func (s *Store) ProjectByAlias(ctx context.Context, alias string) (*Project, error) {
 	r, err := s.q.ProjectByAlias(ctx, alias)
@@ -472,19 +459,6 @@ func (s *Store) ProjectByTitle(ctx context.Context, title string) (*Project, err
 			return nil, ErrNotFound
 		}
 		return nil, fmt.Errorf("querying project by title %s: %w", title, err)
-	}
-	p := rowToProject(&r)
-	return &p, nil
-}
-
-// ProjectByRepo returns a project by its GitHub repository full name (e.g. "owner/repo").
-func (s *Store) ProjectByRepo(ctx context.Context, repo string) (*Project, error) {
-	r, err := s.q.ProjectByRepo(ctx, &repo)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, ErrNotFound
-		}
-		return nil, fmt.Errorf("querying project by repo %s: %w", repo, err)
 	}
 	p := rowToProject(&r)
 	return &p, nil
@@ -584,20 +558,6 @@ type ProjectSummary struct {
 	Status         Status     `json:"status"`
 	GoalID         *uuid.UUID `json:"goal_id,omitempty"`
 	LastActivityAt *time.Time `json:"last_activity_at,omitempty"`
-}
-
-// ListByStatus returns projects filtered by status.
-// Special values: "active" returns in_progress + maintained, "all" returns everything.
-func (s *Store) ListByStatus(ctx context.Context, status string) ([]Project, error) {
-	rows, err := s.q.ListByStatus(ctx, status)
-	if err != nil {
-		return nil, fmt.Errorf("listing projects by status %q: %w", status, err)
-	}
-	projects := make([]Project, len(rows))
-	for i := range rows {
-		projects[i] = rowToProject(&rows[i])
-	}
-	return projects, nil
 }
 
 // SummariesByGoalIDs returns lightweight project info for a set of goal IDs.
