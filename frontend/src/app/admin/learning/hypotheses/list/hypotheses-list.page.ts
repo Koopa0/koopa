@@ -37,7 +37,7 @@ const STATE_CHIPS: readonly StateChip[] = [
 ];
 
 const STATE_DOT_CLASS: Record<HypothesisState, string> = {
-  draft: 'bg-violet-400',
+  draft: 'bg-info',
   unverified: 'bg-warn',
   verified: 'bg-success',
   invalidated: 'bg-error',
@@ -45,7 +45,7 @@ const STATE_DOT_CLASS: Record<HypothesisState, string> = {
 };
 
 const STATE_TEXT_CLASS: Record<HypothesisState, string> = {
-  draft: 'text-violet-300',
+  draft: 'text-info',
   unverified: 'text-warn',
   verified: 'text-success',
   invalidated: 'text-error',
