@@ -72,24 +72,6 @@ func (s *Store) CreateRefreshToken(ctx context.Context, userID uuid.UUID, tokenH
 	return nil
 }
 
-// RefreshTokenByHash returns the refresh token with the given hash.
-func (s *Store) RefreshTokenByHash(ctx context.Context, tokenHash string) (*RefreshToken, error) {
-	row, err := s.q.RefreshTokenByHash(ctx, tokenHash)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, ErrNotFound
-		}
-		return nil, fmt.Errorf("querying refresh token: %w", err)
-	}
-	return &RefreshToken{
-		ID:        row.ID,
-		UserID:    row.UserID,
-		TokenHash: row.TokenHash,
-		ExpiresAt: row.ExpiresAt,
-		CreatedAt: row.CreatedAt,
-	}, nil
-}
-
 // ConsumeRefreshToken atomically deletes a refresh token by hash and returns it.
 // Returns ErrNotFound if the token does not exist (already consumed or never existed).
 func (s *Store) ConsumeRefreshToken(ctx context.Context, tokenHash string) (*RefreshToken, error) {
@@ -107,20 +89,4 @@ func (s *Store) ConsumeRefreshToken(ctx context.Context, tokenHash string) (*Ref
 		ExpiresAt: row.ExpiresAt,
 		CreatedAt: row.CreatedAt,
 	}, nil
-}
-
-// DeleteRefreshToken removes a refresh token by hash.
-func (s *Store) DeleteRefreshToken(ctx context.Context, tokenHash string) error {
-	if err := s.q.DeleteRefreshToken(ctx, tokenHash); err != nil {
-		return fmt.Errorf("deleting refresh token: %w", err)
-	}
-	return nil
-}
-
-// DeleteExpiredTokens removes all expired refresh tokens.
-func (s *Store) DeleteExpiredTokens(ctx context.Context) error {
-	if err := s.q.DeleteExpiredTokens(ctx); err != nil {
-		return fmt.Errorf("deleting expired tokens: %w", err)
-	}
-	return nil
 }

@@ -3385,16 +3385,6 @@ func (q *Queries) DeleteDuplicateContentTags(ctx context.Context, arg DeleteDupl
 	return result.RowsAffected(), nil
 }
 
-const deleteExpiredTokens = `-- name: DeleteExpiredTokens :exec
-DELETE FROM refresh_tokens
-WHERE expires_at < now()
-`
-
-func (q *Queries) DeleteExpiredTokens(ctx context.Context) error {
-	_, err := q.db.Exec(ctx, deleteExpiredTokens)
-	return err
-}
-
 const deleteFeed = `-- name: DeleteFeed :exec
 DELETE FROM feeds WHERE id = $1
 `
@@ -3652,16 +3642,6 @@ func (q *Queries) DeleteReflection(ctx context.Context, arg DeleteReflectionPara
 		return 0, err
 	}
 	return result.RowsAffected(), nil
-}
-
-const deleteRefreshToken = `-- name: DeleteRefreshToken :exec
-DELETE FROM refresh_tokens
-WHERE token_hash = $1
-`
-
-func (q *Queries) DeleteRefreshToken(ctx context.Context, tokenHash string) error {
-	_, err := q.db.Exec(ctx, deleteRefreshToken, tokenHash)
-	return err
 }
 
 const deleteSong = `-- name: DeleteSong :execrows
@@ -8704,25 +8684,6 @@ func (q *Queries) ReflectionsForSong(ctx context.Context, songID uuid.UUID) ([]S
 		return nil, err
 	}
 	return items, nil
-}
-
-const refreshTokenByHash = `-- name: RefreshTokenByHash :one
-SELECT id, user_id, token_hash, expires_at, created_at
-FROM refresh_tokens
-WHERE token_hash = $1
-`
-
-func (q *Queries) RefreshTokenByHash(ctx context.Context, tokenHash string) (RefreshToken, error) {
-	row := q.db.QueryRow(ctx, refreshTokenByHash, tokenHash)
-	var i RefreshToken
-	err := row.Scan(
-		&i.ID,
-		&i.UserID,
-		&i.TokenHash,
-		&i.ExpiresAt,
-		&i.CreatedAt,
-	)
-	return i, err
 }
 
 const rejectAlias = `-- name: RejectAlias :one

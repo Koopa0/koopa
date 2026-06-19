@@ -13,20 +13,7 @@ RETURNING id, email, created_at, updated_at;
 INSERT INTO refresh_tokens (user_id, token_hash, expires_at)
 VALUES ($1, $2, $3);
 
--- name: RefreshTokenByHash :one
-SELECT id, user_id, token_hash, expires_at, created_at
-FROM refresh_tokens
-WHERE token_hash = $1;
-
 -- name: ConsumeRefreshToken :one
 DELETE FROM refresh_tokens
 WHERE token_hash = $1
 RETURNING id, user_id, token_hash, expires_at, created_at;
-
--- name: DeleteRefreshToken :exec
-DELETE FROM refresh_tokens
-WHERE token_hash = $1;
-
--- name: DeleteExpiredTokens :exec
-DELETE FROM refresh_tokens
-WHERE expires_at < now();
