@@ -38,17 +38,17 @@ const STATE_CHIPS: readonly StateChip[] = [
 
 const STATE_DOT_CLASS: Record<HypothesisState, string> = {
   draft: 'bg-violet-400',
-  unverified: 'bg-amber-400',
-  verified: 'bg-emerald-500',
-  invalidated: 'bg-red-500',
+  unverified: 'bg-warn',
+  verified: 'bg-success',
+  invalidated: 'bg-error',
   archived: 'bg-fg-faint',
 };
 
 const STATE_TEXT_CLASS: Record<HypothesisState, string> = {
   draft: 'text-violet-300',
-  unverified: 'text-amber-300',
-  verified: 'text-emerald-300',
-  invalidated: 'text-red-300',
+  unverified: 'text-warn',
+  verified: 'text-success',
+  invalidated: 'text-error',
   archived: 'text-fg-subtle',
 };
 
