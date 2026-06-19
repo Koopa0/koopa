@@ -30,7 +30,6 @@ import {
   removeLooseTodo,
   truncateTitle,
 } from './today-view';
-import { TodaySessionCardComponent } from './session-card.component';
 import { AdminTopbarService } from '../../admin-layout/admin-topbar.service';
 import { CommandPaletteService } from '../../../shared/command-palette/command-palette.service';
 import { NotificationService } from '../../../core/services/notification.service';
@@ -48,10 +47,9 @@ import type { EnergyLevel } from '../../../core/models/workbench.model';
  * Today — the Daily landing page, bound to the brief(morning) aggregate
  * (GET /api/admin/commitment/today). Day header with capture bar, live
  * plan-completion strip, the committed plan with advance-on-click, loose
- * todos grouped overdue/today/upcoming, and the right rail: active
- * session (only when the brief carries one), active goals, unverified
- * hypotheses, RSS highlights. Lists are always [] on the wire; advances
- * mutate a local working copy after the server confirms.
+ * todos grouped overdue/today/upcoming, and the right rail: active goals
+ * and RSS highlights. Lists are always [] on the wire; advances mutate a
+ * local working copy after the server confirms.
  */
 @Component({
   selector: 'app-today-page',
@@ -59,7 +57,6 @@ import type { EnergyLevel } from '../../../core/models/workbench.model';
     RouterLink,
     DatePipe,
     LucideAngularModule,
-    TodaySessionCardComponent,
     EnergyMeterComponent,
     StatusBadgeComponent,
   ],

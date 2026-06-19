@@ -42,19 +42,17 @@ const ENTITY_CHIPS: readonly Chip<EntityFilter>[] = [
 /**
  * Routes from `entity_type` to the canonical detail surface. `%` is
  * replaced with the event's `entity_id`; targets without an id
- * placeholder land on the entity's list route.
+ * placeholder land on the entity's list route. Entity types with no
+ * mapping (the retired learning_* events, still categorized in the
+ * historical feed) are non-openable — {@link canOpen} returns false.
  */
-const ENTITY_ROUTE: Record<ActivityEntityType, string> = {
+const ENTITY_ROUTE: Partial<Record<ActivityEntityType, string>> = {
   content: '/admin/knowledge/content/%/edit',
   note: '/admin/knowledge/notes',
   goal: '/admin/commitment/goals/%',
   milestone: '/admin/commitment/goals',
   project: '/admin/commitment/projects/%',
   todo: '/admin/daily/todos',
-  learning_hypothesis: '/admin/learning/hypotheses/%',
-  learning_attempt: '/admin/learning/hypotheses',
-  learning_session: '/admin/learning',
-  learning_plan_entry: '/admin/learning',
 };
 
 /**

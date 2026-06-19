@@ -13,8 +13,7 @@ import { CommandPaletteService } from '../../../shared/command-palette/command-p
 
 // Pins the Today render against the brief(morning) contract
 // (GET /api/admin/commitment/today): every section binds the wire field
-// names, the session card appears only when active_session is present,
-// and advance clicks drive the todo state machine over HTTP.
+// names and advance clicks drive the todo state machine over HTTP.
 
 const TODAY_URL = '/api/admin/commitment/today';
 const COUNT_URL = '/api/admin/commitment/proposals/count';
@@ -81,25 +80,6 @@ function populatedBrief(): TodayBrief {
         updated_at: '2026-06-07T00:00:00Z',
       },
     ],
-    unverified_hypotheses: [
-      {
-        id: 'h1',
-        created_by: 'human',
-        content: '',
-        state: 'unverified',
-        claim: 'I reach for channels when a mutex is simpler',
-        invalidation_condition: 'Three drills picking the simplest primitive',
-        observed_date: '2026-06-02T00:00:00Z',
-        created_at: '2026-06-02T00:00:00Z',
-      },
-    ],
-    active_session: {
-      id: 's1',
-      domain: 'system-design',
-      mode: 'reading',
-      started_at: '2026-06-07T09:00:00Z',
-      created_at: '2026-06-07T09:00:00Z',
-    },
     rss_highlights: [
       {
         title: 'Why HNSW beats IVF',
@@ -120,7 +100,6 @@ function quietBrief(): TodayBrief {
     upcoming_todos: [],
     plan_completion: { planned: 0, completed: 0, deferred: 0 },
     active_goals: [],
-    unverified_hypotheses: [],
     rss_highlights: [],
   };
 }
@@ -232,28 +211,6 @@ describe('TodayPageComponent', () => {
     expect(goals?.textContent).toContain('in progress');
     expect(goals?.textContent).toContain('2/5');
     expect(goals?.textContent).toContain('Build');
-  });
-
-  it('should render a hypothesis with claim, invalidation, and unverified pill', async () => {
-    await render(populatedBrief());
-    const hyp = testid('today-hypotheses');
-    expect(hyp?.textContent).toContain(
-      'I reach for channels when a mutex is simpler',
-    );
-    expect(hyp?.textContent).toContain('Invalidates if');
-    expect(hyp?.textContent).toContain('unverified');
-  });
-
-  it('should show the session card only when active_session is present', async () => {
-    await render(populatedBrief());
-    expect(testid('today-session')?.textContent).toContain('system-design');
-  });
-
-  it('should omit the session card when active_session is absent', async () => {
-    const brief = quietBrief();
-    brief.rss_highlights = populatedBrief().rss_highlights;
-    await render(brief);
-    expect(testid('today-session')).toBeNull();
   });
 
   it('should render RSS highlights with feed name and timestamp', async () => {

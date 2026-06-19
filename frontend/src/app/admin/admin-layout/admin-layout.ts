@@ -17,10 +17,10 @@ import { ADMIN_NAV, type AdminNavItem } from './admin-nav.config';
 import { AdminNavCountsService } from './admin-nav-counts.service';
 
 /**
- * Admin shell — 5-domain nav rail + Topbar + main router-outlet.
+ * Admin shell — 4-domain nav rail + Topbar + main router-outlet.
  * Replaces the legacy NOW/ATLAS 2-mode shell. Nav groups follow the
- * Mission Control design IA (Daily / Commitment / Knowledge / Learning
- * / System). Counts are synthesized by
+ * Mission Control design IA (Daily / Commitment / Knowledge / System).
+ * Counts are synthesized by
  * {@link AdminNavCountsService} until the unified
  * `/api/admin/system/health` envelope lands, and refreshed on every
  * navigation end so post-mutation pages see up-to-date counts.
@@ -53,8 +53,8 @@ export class AdminLayoutComponent {
 
   /**
    * Resolve the live count for a nav item, or `null` when the item has
-   * no wired count source yet (e.g. Today, Learning dashboard). Template
-   * gates the count span on `!== null`.
+   * no wired count source yet (e.g. Today). Template gates the count
+   * span on `!== null`.
    */
   protected countFor(item: AdminNavItem): number | null {
     if (!item.countKey) return null;

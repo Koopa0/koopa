@@ -410,13 +410,8 @@
           }
         </div>
 
-        <!-- RIGHT: session, goals, hypotheses, rss -->
+        <!-- RIGHT: goals, rss -->
         <div class="flex flex-col gap-5">
-          <!-- Active learning session — only when the brief carries one -->
-          @if (v.active_session; as session) {
-            <app-today-session-card [session]="session" />
-          }
-
           <!-- Active goals -->
           @if (v.active_goals.length > 0) {
             <section
@@ -467,54 +462,6 @@
                         milestones{{ goal.area_name ? ' · ' + goal.area_name : '' }}
                       </span>
                     </div>
-                  </li>
-                }
-              </ul>
-            </section>
-          }
-
-          <!-- Unverified hypotheses -->
-          @if (v.unverified_hypotheses.length > 0) {
-            <section
-              class="rounded-md border border-border bg-panel"
-              aria-labelledby="today-hyp-heading"
-              data-testid="today-hypotheses"
-            >
-              <header class="border-b border-border px-4 py-2.5">
-                <h2
-                  id="today-hyp-heading"
-                  class="font-mono text-[11px] tracking-wide text-fg-faint uppercase"
-                >
-                  Unverified hypotheses
-                </h2>
-              </header>
-              <ul class="divide-y divide-border-faint">
-                @for (hyp of v.unverified_hypotheses; track hyp.id) {
-                  <li class="px-4 py-3">
-                    <p
-                      class="font-serif text-[13px] leading-relaxed text-fg italic"
-                    >
-                      “{{ hyp.claim }}”
-                    </p>
-                    <p class="mt-2 text-[11.5px] text-fg-subtle">
-                      <span
-                        class="mr-1 font-mono text-[9px] tracking-wider text-warn uppercase"
-                      >
-                        Invalidates if
-                      </span>
-                      {{ hyp.invalidation_condition }}
-                    </p>
-                    <p
-                      class="mt-1.5 flex items-center gap-2 font-mono text-[10px] text-fg-faint"
-                    >
-                      <app-status-badge variant="warning">
-                        unverified
-                      </app-status-badge>
-                      <span>
-                        {{ hyp.created_by }} ·
-                        {{ hyp.observed_date | date: 'MMM d' }}
-                      </span>
-                    </p>
                   </li>
                 }
               </ul>

@@ -4,7 +4,6 @@ import { ApiService } from '../../../core/services/api.service';
 import type { GoalStatus } from '../../../core/models/api.model';
 import type {
   EnergyLevel,
-  HypothesisState,
   TodoState,
 } from '../../../core/models/workbench.model';
 
@@ -12,9 +11,8 @@ import type {
  * Today read-models — bound to GET /api/admin/commitment/today, the HTTP
  * mirror of the agent brief(mode=morning) tool. Field names track the Go
  * wire structs verbatim (internal/today/today.go and the nested
- * todo.PendingDetail / daily.Item / goal.ActiveGoalSummary /
- * hypothesis.Record / learning.Session). Lists are always present ([],
- * never null); active_session is omitted when no session is open.
+ * todo.PendingDetail / daily.Item / goal.ActiveGoalSummary). Lists are
+ * always present ([], never null).
  */
 
 /** A pending todo joined with its project — overdue / today / upcoming. */
@@ -77,28 +75,6 @@ export interface ActiveGoalSummary {
   updated_at: string;
 }
 
-/** An unverified hypothesis (hypothesis.Record, state=unverified). */
-export interface UnverifiedHypothesis {
-  id: string;
-  created_by: string;
-  content: string;
-  state: HypothesisState;
-  claim: string;
-  invalidation_condition: string;
-  observed_date: string;
-  created_at: string;
-}
-
-/** The open learning session, if any (learning.Session). */
-export interface ActiveSession {
-  id: string;
-  domain: string;
-  mode: string;
-  daily_plan_item_id?: string;
-  started_at: string;
-  created_at: string;
-}
-
 export interface RssHighlight {
   title: string;
   url: string;
@@ -115,8 +91,6 @@ export interface TodayBrief {
   upcoming_todos: PendingDetail[];
   plan_completion: PlanCompletion;
   active_goals: ActiveGoalSummary[];
-  unverified_hypotheses: UnverifiedHypothesis[];
-  active_session?: ActiveSession;
   rss_highlights: RssHighlight[];
 }
 

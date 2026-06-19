@@ -17,7 +17,6 @@ function emptyBrief(): TodayBrief {
     upcoming_todos: [],
     plan_completion: { planned: 0, completed: 0, deferred: 0 },
     active_goals: [],
-    unverified_hypotheses: [],
     rss_highlights: [],
   };
 }
@@ -47,16 +46,5 @@ describe('TodayService', () => {
     req.flush(brief);
 
     expect(await promise).toEqual(brief);
-  });
-
-  it('should preserve omitted active_session when no session is open', async () => {
-    const promise = firstValueFrom(service.today());
-    const req = httpMock.expectOne((r) =>
-      r.url.endsWith('/api/admin/commitment/today'),
-    );
-    req.flush(emptyBrief());
-
-    const result = await promise;
-    expect(result.active_session).toBeUndefined();
   });
 });

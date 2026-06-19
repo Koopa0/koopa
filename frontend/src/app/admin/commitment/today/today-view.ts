@@ -124,9 +124,7 @@ export function isQuietBrief(v: TodayBrief): boolean {
     v.today_todos.length === 0 &&
     v.upcoming_todos.length === 0 &&
     v.active_goals.length === 0 &&
-    v.unverified_hypotheses.length === 0 &&
-    v.rss_highlights.length === 0 &&
-    !v.active_session
+    v.rss_highlights.length === 0
   );
 }
 
