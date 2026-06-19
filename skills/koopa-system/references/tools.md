@@ -13,15 +13,15 @@ is hand-maintained.
 > Run `go generate ./internal/mcp/ops` after any change to the tool surface;
 > the drift test `TestToolInventoryDocInSync` fails CI if this is stale.
 
-**15 tools** across 4 domains.
+**16 tools** across 4 domains.
 
 | Domain | Count |
 |---|---|
 | `query` | 2 |
-| `daily` | 5 |
+| `daily` | 6 |
 | `learning` | 6 |
 | `content` | 2 |
-| **Total** | **15** |
+| **Total** | **16** |
 
 | Tool | Domain | Writability | Purpose |
 |---|---|---|---|
@@ -32,6 +32,7 @@ is hand-maintained.
 | `plan_day` | `daily` | idempotent | Set the day's plan as one atomic replacement |
 | `propose_area` | `daily` | additive | Propose a PARA area (ongoing domain of responsibility) as an INERT draft in status=proposed |
 | `propose_goal` | `daily` | additive | Propose a goal (with optional ordered milestones) as an INERT draft in status=proposed |
+| `propose_project` | `daily` | additive | Propose a NEW project (a short-term effort with a clear outcome) as an INERT draft in status=proposed |
 | `draft_hypothesis` | `learning` | additive | Draft a falsifiable learning hypothesis (claim + invalidation_condition) in state=draft |
 | `end_session` | `learning` | additive | End the active learning session |
 | `learning_read` | `learning` | read_only | Read-only learning analytics |

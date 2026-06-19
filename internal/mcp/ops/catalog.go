@@ -224,6 +224,19 @@ func ProposeGoal() Meta {
 	}
 }
 
+// ProposeProject returns metadata for the agent project-proposal tool — an
+// inert project draft for the owner to activate or reject in admin triage.
+func ProposeProject() Meta {
+	return Meta{
+		Name:        "propose_project",
+		Domain:      DomainDaily,
+		Writability: Additive,
+		Stability:   StabilityStable,
+		Since:       "1.4.0",
+		Description: "Propose a NEW project (a short-term effort with a clear outcome) as an INERT draft in status=proposed. A proposed project is invisible until the owner activates it — it appears in no project list or picker and no public portfolio, surfacing only in the admin proposals triage. The slug is derived from name. capture_inbox can still link a todo to the proposed project by slug before activation; the link survives activation, and a rejected project's todos are unlinked (not deleted). Reference an EXISTING project directly via capture_inbox.project — propose_project is for genuinely-new projects only. Propose only to materialize a project that surfaced in a conversation the owner was part of — NEVER from scheduled or autonomous runs. Activation (proposed→in_progress) and rejection (hard delete) are owner actions in admin, not MCP.",
+	}
+}
+
 // ListTasks returns metadata for the read-only proposal-readback tool — an
 // agent reads the disposition of the todos it created.
 func ListTasks() Meta {
@@ -281,6 +294,7 @@ func All() []Meta {
 		DraftHypothesis(),
 		ProposeArea(),
 		ProposeGoal(),
+		ProposeProject(),
 		ListTasks(),
 		CreateNote(),
 		UpdateNote(),

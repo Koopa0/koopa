@@ -3831,6 +3831,92 @@ func TestIntegration_ProposeArea_RationalePersistsTriageOnly(t *testing.T) {
 	}
 }
 
+// TestIntegration_ProposeProject_AsPlanner drives propose_project and asserts
+// the inert-draft contract: the persisted row is status=proposed with
+// created_by=the proposing agent and a slug derived from the name, and the
+// proposed project is absent from the admin project list.
+func TestIntegration_ProposeProject_AsPlanner(t *testing.T) {
+	s := setupServer(t)
+
+	_, out, err := callHandlerAs(t, "planner", s.proposeProject, ProposeProjectInput{
+		Name:        "Koopa CLI",
+		Description: "A command-line companion for the knowledge engine.",
+		Rationale:   "Recurring requests for a terminal entry point.",
+	})
+	if err != nil {
+		t.Fatalf("proposeProject: %v", err)
+	}
+	if out.Project == nil || out.Project.ID == uuid.Nil {
+		t.Fatal("proposeProject returned no project / zero ID")
+	}
+	if out.Project.Slug != "koopa-cli" {
+		t.Errorf("output slug = %q, want %q (derived from name)", out.Project.Slug, "koopa-cli")
+	}
+	if string(out.Project.Status) != "proposed" {
+		t.Errorf("output status = %q, want %q", out.Project.Status, "proposed")
+	}
+
+	var status, createdBy string
+	if err := testPool.QueryRow(t.Context(),
+		`SELECT status, created_by FROM projects WHERE id = $1`, out.Project.ID,
+	).Scan(&status, &createdBy); err != nil {
+		t.Fatalf("reading proposed project: %v", err)
+	}
+	if status != "proposed" {
+		t.Errorf("persisted status = %q, want %q (agent proposals land inert)", status, "proposed")
+	}
+	if createdBy != "planner" {
+		t.Errorf("persisted created_by = %q, want %q", createdBy, "planner")
+	}
+
+	// Inert: absent from the admin project list.
+	admin, err := s.projects.Projects(t.Context())
+	if err != nil {
+		t.Fatalf("Projects: %v", err)
+	}
+	for i := range admin {
+		if admin[i].ID == out.Project.ID {
+			t.Errorf("proposed project %s leaked into the admin project list", out.Project.ID)
+		}
+	}
+}
+
+// TestIntegration_ProposeProject_CallerGate asserts the registered-caller gate:
+// the zero-privilege "unknown" fallback and a fabricated name are refused
+// before any write.
+func TestIntegration_ProposeProject_CallerGate(t *testing.T) {
+	s := setupServer(t)
+
+	for _, caller := range []string{"unknown", "fabricated-agent"} {
+		_, _, err := callHandlerAs(t, caller, s.proposeProject, ProposeProjectInput{Name: "Should Never Persist"})
+		if err == nil {
+			t.Errorf("proposeProject as %q err = nil, want registered-caller refusal", caller)
+		}
+	}
+
+	var count int
+	if err := testPool.QueryRow(t.Context(),
+		`SELECT COUNT(*) FROM projects WHERE status = 'proposed'`,
+	).Scan(&count); err != nil {
+		t.Fatalf("counting proposed projects: %v", err)
+	}
+	if count != 0 {
+		t.Errorf("proposed project count = %d, want 0 (gate must precede any write)", count)
+	}
+}
+
+// TestIntegration_ProposeProject_BlankNameRejected asserts the handler rejects a
+// blank or non-sluggable name before any write.
+func TestIntegration_ProposeProject_BlankNameRejected(t *testing.T) {
+	s := setupServer(t)
+
+	for _, name := range []string{"", "   ", "!!!"} {
+		if _, _, err := callHandlerAs(t, "planner", s.proposeProject, ProposeProjectInput{Name: name}); err == nil {
+			t.Errorf("proposeProject(name=%q) err = nil, want rejection", name)
+		}
+	}
+}
+
 // seedTodoForCreator inserts a todo with an explicit created_by, state, and
 // created_at so the list_tasks readback tests can assert creator-scoping,
 // state passthrough, and newest-first ordering deterministically. created_by

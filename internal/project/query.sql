@@ -176,3 +176,18 @@ FROM projects p
 JOIN project_profiles pp ON pp.project_id = p.id
 WHERE pp.is_public = true AND p.status <> 'proposed'
 ORDER BY pp.featured DESC, pp.sort_order, p.title;
+
+-- ============================================================
+-- Proposals — agent-proposed inert project drafts (propose_project)
+-- and the owner's admin-side triage (activate / reject / list / count).
+-- ============================================================
+
+-- name: ProposeProject :one
+-- Insert an agent-proposed project as an inert draft (status='proposed').
+-- created_by is the proposing agent. The project is excluded from every
+-- list/picker until the owner activates it, but slug/alias/title/id resolvers
+-- still match it so capture_inbox can link a todo before activation.
+INSERT INTO projects (slug, title, description, status, created_by, proposal_rationale)
+VALUES (@slug, @title, @description, 'proposed', @created_by, @proposal_rationale)
+RETURNING id, slug, title, description, status, repo, area_id, goal_id, deadline, last_activity_at,
+          expected_cadence, created_by, proposal_rationale, created_at, updated_at;

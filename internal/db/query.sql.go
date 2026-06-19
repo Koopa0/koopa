@@ -7442,6 +7442,59 @@ func (q *Queries) ProposeGoal(ctx context.Context, arg ProposeGoalParams) (Goal,
 	return i, err
 }
 
+const proposeProject = `-- name: ProposeProject :one
+
+INSERT INTO projects (slug, title, description, status, created_by, proposal_rationale)
+VALUES ($1, $2, $3, 'proposed', $4, $5)
+RETURNING id, slug, title, description, status, repo, area_id, goal_id, deadline, last_activity_at,
+          expected_cadence, created_by, proposal_rationale, created_at, updated_at
+`
+
+type ProposeProjectParams struct {
+	Slug              string  `json:"slug"`
+	Title             string  `json:"title"`
+	Description       string  `json:"description"`
+	CreatedBy         *string `json:"created_by"`
+	ProposalRationale *string `json:"proposal_rationale"`
+}
+
+// ============================================================
+// Proposals — agent-proposed inert project drafts (propose_project)
+// and the owner's admin-side triage (activate / reject / list / count).
+// ============================================================
+// Insert an agent-proposed project as an inert draft (status='proposed').
+// created_by is the proposing agent. The project is excluded from every
+// list/picker until the owner activates it, but slug/alias/title/id resolvers
+// still match it so capture_inbox can link a todo before activation.
+func (q *Queries) ProposeProject(ctx context.Context, arg ProposeProjectParams) (Project, error) {
+	row := q.db.QueryRow(ctx, proposeProject,
+		arg.Slug,
+		arg.Title,
+		arg.Description,
+		arg.CreatedBy,
+		arg.ProposalRationale,
+	)
+	var i Project
+	err := row.Scan(
+		&i.ID,
+		&i.Slug,
+		&i.Title,
+		&i.Description,
+		&i.Status,
+		&i.Repo,
+		&i.AreaID,
+		&i.GoalID,
+		&i.Deadline,
+		&i.LastActivityAt,
+		&i.ExpectedCadence,
+		&i.CreatedBy,
+		&i.ProposalRationale,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const proposedAreas = `-- name: ProposedAreas :many
 SELECT id, slug, name, description, created_by, proposal_rationale, created_at
 FROM areas

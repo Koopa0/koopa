@@ -417,6 +417,37 @@ func mapWriteError(err error, operation string) error {
 	}
 }
 
+// ProposeProjectParams holds the fields for an agent-proposed project draft.
+// Slug is derived by the caller (handler) and must satisfy
+// chk_project_slug_format. Rationale is the agent's optional why-now
+// justification; nil when omitted, stored as NULL.
+type ProposeProjectParams struct {
+	Slug        string
+	Title       string
+	Description string
+	CreatedBy   string
+	Rationale   *string
+}
+
+// ProposeProject inserts an agent-proposed project as an inert draft
+// (status='proposed'). A unique violation on the slug (23505) becomes
+// ErrConflict; a CHECK violation (blank title, malformed slug) or a bad
+// created_by FK (23503) becomes ErrInvalidInput.
+func (s *Store) ProposeProject(ctx context.Context, p *ProposeProjectParams) (*Project, error) {
+	r, err := s.q.ProposeProject(ctx, db.ProposeProjectParams{
+		Slug:              p.Slug,
+		Title:             p.Title,
+		Description:       p.Description,
+		CreatedBy:         &p.CreatedBy,
+		ProposalRationale: p.Rationale,
+	})
+	if err != nil {
+		return nil, mapWriteError(err, "proposing project")
+	}
+	proj := rowToProject(&r)
+	return &proj, nil
+}
+
 // UpdateProject updates a project.
 func (s *Store) UpdateProject(ctx context.Context, id uuid.UUID, p *UpdateParams) (*Project, error) {
 	r, err := s.q.UpdateProject(ctx, db.UpdateProjectParams{

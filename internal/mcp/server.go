@@ -173,6 +173,7 @@ func NewServer(pool *pgxpool.Pool, logger *slog.Logger, opts ...ServerOption) *S
 	// --- Proposals (agent inert drafts for owner triage) ---
 	addTool(s, toolFrom(ops.ProposeArea), s.proposeArea)
 	addTool(s, toolFrom(ops.ProposeGoal), s.proposeGoal)
+	addTool(s, toolFrom(ops.ProposeProject), s.proposeProject)
 
 	// --- Proposal readback (read-only; the read half of the capture loop) ---
 	addTool(s, toolFrom(ops.ListTasks), s.listTasks)

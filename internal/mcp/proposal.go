@@ -37,6 +37,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/Koopa0/koopa/internal/goal"
+	"github.com/Koopa0/koopa/internal/project"
 )
 
 // slugSep collapses every run of non-alphanumeric characters into a single
@@ -196,6 +197,72 @@ func (s *Server) proposeGoal(ctx context.Context, _ *mcp.CallToolRequest, input 
 
 	s.logger.Info("propose_goal", "goal_id", created.ID, "milestones", len(input.Milestones), "created_by", deref(created.CreatedBy))
 	return nil, ProposeGoalOutput{Goal: created}, nil
+}
+
+// --- propose_project ---
+
+// ProposeProjectInput is the input for the propose_project tool. The created
+// row always lands in status=proposed — an inert draft: the agent suggests a
+// NEW project, only the owner makes it real (activation or rejection live in
+// the admin UI, off the MCP surface). EXISTING projects are referenced directly
+// via capture_inbox.project; propose_project is for genuinely-new projects only.
+type ProposeProjectInput struct {
+	As          string `json:"as,omitempty" jsonschema_description:"Self-identification — the agent making this call. Stamped on projects.created_by."`
+	Name        string `json:"name" jsonschema:"required" jsonschema_description:"Display name / title of the proposed project (e.g. 'Koopa CLI'). Required and non-blank. The slug is derived from it."`
+	Description string `json:"description,omitempty" jsonschema_description:"What this project delivers and what 'done' looks like."`
+	Rationale   string `json:"rationale,omitempty" jsonschema_description:"Why this project is worth proposing now — shown to the owner in triage to support the activate/reject decision."`
+}
+
+// ProposeProjectOutput is the output of the propose_project tool.
+type ProposeProjectOutput struct {
+	Project *project.Project `json:"project"`
+}
+
+func (s *Server) proposeProject(ctx context.Context, _ *mcp.CallToolRequest, input ProposeProjectInput) (*mcp.CallToolResult, ProposeProjectOutput, error) {
+	if err := s.requireRegisteredCaller(ctx, "propose_project"); err != nil {
+		return nil, ProposeProjectOutput{}, err
+	}
+	if strings.TrimSpace(input.Name) == "" {
+		return nil, ProposeProjectOutput{}, fmt.Errorf("name is required")
+	}
+	if goal.ContainsControlChars(input.Name) {
+		return nil, ProposeProjectOutput{}, fmt.Errorf("name must not contain control characters")
+	}
+	if goal.ContainsControlChars(input.Description) {
+		return nil, ProposeProjectOutput{}, fmt.Errorf("description must not contain control characters")
+	}
+	if goal.ContainsControlChars(input.Rationale) {
+		return nil, ProposeProjectOutput{}, fmt.Errorf("rationale must not contain control characters")
+	}
+	slug := deriveSlug(input.Name)
+	if slug == "" {
+		return nil, ProposeProjectOutput{}, fmt.Errorf("name %q has no slug-able characters; provide a name with letters or digits", input.Name)
+	}
+
+	var created *project.Project
+	err := s.withActorTx(ctx, func(tx pgx.Tx) error {
+		var createErr error
+		created, createErr = s.projects.WithTx(tx).ProposeProject(ctx, &project.ProposeProjectParams{
+			Slug:        slug,
+			Title:       strings.TrimSpace(input.Name),
+			Description: input.Description,
+			CreatedBy:   s.callerIdentity(ctx),
+			Rationale:   nilIfBlank(input.Rationale),
+		})
+		return createErr
+	})
+	if err != nil {
+		if errors.Is(err, project.ErrConflict) {
+			return nil, ProposeProjectOutput{}, fmt.Errorf("a project with slug %q already exists", slug)
+		}
+		if errors.Is(err, project.ErrInvalidInput) {
+			return nil, ProposeProjectOutput{}, fmt.Errorf("invalid project input: name must be non-blank and slug url-safe")
+		}
+		return nil, ProposeProjectOutput{}, fmt.Errorf("proposing project: %w", err)
+	}
+
+	s.logger.Info("propose_project", "project_id", created.ID, "slug", created.Slug, "created_by", s.callerIdentity(ctx))
+	return nil, ProposeProjectOutput{Project: created}, nil
 }
 
 // resolveProposalArea resolves the optional area identifier to an area_id,
