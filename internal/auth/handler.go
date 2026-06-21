@@ -47,8 +47,20 @@ type Handler struct {
 	logger      *slog.Logger
 }
 
-// NewHandler returns an auth Handler configured for Google OAuth.
+// minJWTSecretBytes is the minimum acceptable length for the signing key. A
+// 256-bit (32-byte) key matches the HS256 / HMAC-SHA256 output size; anything
+// shorter weakens both the JWT signature and the OAuth-state HMAC.
+const minJWTSecretBytes = 32
+
+// NewHandler returns an auth Handler configured for Google OAuth. It panics if
+// the JWT secret is shorter than minJWTSecretBytes — a misconfigured signing
+// key is a startup-time programmer/operator error, not a recoverable runtime
+// condition, and the constructor must validate this invariant before any token
+// is signed or verified.
 func NewHandler(store *Store, jwtSecret string, gcfg *GoogleConfig, logger *slog.Logger) *Handler {
+	if len(jwtSecret) < minJWTSecretBytes {
+		panic("auth: JWT secret must be >= 32 bytes")
+	}
 	return &Handler{
 		store:  store,
 		secret: []byte(jwtSecret),

@@ -18,7 +18,8 @@ import (
 	"github.com/google/go-cmp/cmp"
 )
 
-const testSecret = "test-secret-for-auth-unit-tests"
+// testSecret is >= 32 bytes to satisfy the NewHandler minimum-length invariant.
+const testSecret = "test-secret-for-auth-unit-tests-0123456789"
 
 // signToken creates a signed JWT for testing.
 func signToken(t *testing.T, email, secret string, expiresAt time.Time, method jwt.SigningMethod) string {

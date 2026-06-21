@@ -49,6 +49,38 @@ func newTestHandler(t *testing.T) *Handler {
 	}
 }
 
+// ─── NewHandler invariant ───────────────────────────────────────────────────
+
+// TestNewHandler_ShortSecretPanics pins the constructor invariant: a JWT secret
+// shorter than 32 bytes is a misconfiguration that must fail loudly at startup,
+// not produce a Handler that signs tokens with a weak key. A 32-byte secret
+// constructs cleanly.
+func TestNewHandler_ShortSecretPanics(t *testing.T) {
+	t.Parallel()
+	gcfg := &GoogleConfig{
+		ClientID:    "client-id",
+		RedirectURI: "https://koopa0.dev/callback",
+		AdminEmail:  "admin@koopa0.dev",
+		FrontendURL: "https://koopa0.dev",
+	}
+
+	t.Run("short secret panics", func(t *testing.T) {
+		defer func() {
+			if recover() == nil {
+				t.Error("NewHandler with a 31-byte secret did not panic, want panic")
+			}
+		}()
+		_ = NewHandler(nil, strings.Repeat("a", 31), gcfg, discardLogger(t))
+	})
+
+	t.Run("32-byte secret constructs", func(t *testing.T) {
+		h := NewHandler(nil, strings.Repeat("a", 32), gcfg, discardLogger(t))
+		if h == nil {
+			t.Fatal("NewHandler returned nil for a valid secret")
+		}
+	})
+}
+
 // ─── GoogleLogin ──────────────────────────────────────────────────────────────
 
 func TestGoogleLogin(t *testing.T) {
