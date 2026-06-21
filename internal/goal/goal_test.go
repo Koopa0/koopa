@@ -292,6 +292,10 @@ func TestDeriveSlug(t *testing.T) {
 		{name: "katakana preserved", in: "ヨルシカ", want: "ヨルシカ"},
 		{name: "mixed cjk ascii", in: "Go と Rust", want: "go-と-rust"},
 		{name: "trim and collapse hyphens", in: "  --Hello--World--  ", want: "hello-world"},
+		// No letter or number at all → "" so the caller rejects it (a pure-
+		// punctuation string is not a name).
+		{name: "pure punctuation is empty", in: "!!!", want: ""},
+		{name: "symbols only is empty", in: "—··—", want: ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -299,16 +303,5 @@ func TestDeriveSlug(t *testing.T) {
 				t.Errorf("DeriveSlug(%q) = %q, want %q", tt.in, got, tt.want)
 			}
 		})
-	}
-
-	// Pure-punctuation name has no letters/numbers → deterministic fallback,
-	// never empty, and stable across calls (so a repeat still collides on the
-	// unique index).
-	a, b := DeriveSlug("!!!"), DeriveSlug("!!!")
-	if a == "" {
-		t.Error("DeriveSlug(pure punctuation) = empty, want a fallback token")
-	}
-	if a != b {
-		t.Errorf("DeriveSlug fallback not deterministic: %q vs %q", a, b)
 	}
 }

@@ -370,6 +370,10 @@ func (h *Handler) CreateArea(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	slug := DeriveSlug(req.Name)
+	if slug == "" {
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "name must contain at least one letter or number")
+		return
+	}
 
 	store := h.store
 	if tx, ok := api.TxFromContext(r.Context()); ok {

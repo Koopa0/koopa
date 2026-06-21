@@ -283,7 +283,7 @@ describe('GtdPageComponent', () => {
     keydown('e');
     httpMock
       .expectOne((r) => r.url.includes('/api/admin/commitment/projects'))
-      .flush({ data: { projects: [] } });
+      .flush({ data: [] });
     await settle();
     expect(testid('clarify-modal')).toBeTruthy();
 
@@ -314,7 +314,7 @@ describe('GtdPageComponent', () => {
     fixture.detectChanges();
     httpMock
       .expectOne((r) => r.url.includes('/api/admin/commitment/projects'))
-      .flush({ data: { projects: [] } });
+      .flush({ data: [] });
     await settle();
 
     expect(testid('clarify-modal')).toBeTruthy();
@@ -333,7 +333,7 @@ describe('GtdPageComponent', () => {
     fixture.detectChanges();
     httpMock
       .expectOne((r) => r.url.includes('/api/admin/commitment/projects'))
-      .flush({ data: { projects: [] } });
+      .flush({ data: [] });
     await settle();
   });
 

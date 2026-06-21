@@ -8,8 +8,6 @@
 package goal
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"regexp"
 	"strings"
@@ -92,15 +90,11 @@ var slugSep = regexp.MustCompile(`[^\p{L}\p{N}]+`)
 // CJK has none), runs of non-letter/non-number collapsed to single hyphens,
 // leading/trailing hyphens trimmed. Unicode letters and numbers — including
 // CJK — are PRESERVED, so a Japanese/Chinese name yields a Japanese/Chinese
-// slug (URLs carry UTF-8 fine). Only a name with no letters or numbers at all
-// (e.g. pure punctuation) falls back to a deterministic short token so the
-// result is never empty and a repeated name still collides on the unique index.
-// Shared by the owner direct-create handlers and the agent propose paths (area
-// + project) so a name yields the same slug on every path.
+// slug (URLs carry UTF-8 fine). Returns "" when the name has no letter or
+// number at all (e.g. pure punctuation "!!!") — the caller rejects that as
+// invalid input rather than inventing a slug, since such a string is not a
+// name. Shared by the owner direct-create handlers and the agent propose paths
+// (area + project) so a name yields the same slug on every path.
 func DeriveSlug(name string) string {
-	if s := strings.Trim(slugSep.ReplaceAllString(strings.ToLower(name), "-"), "-"); s != "" {
-		return s
-	}
-	sum := sha256.Sum256([]byte(name))
-	return "x-" + hex.EncodeToString(sum[:])[:10]
+	return strings.Trim(slugSep.ReplaceAllString(strings.ToLower(name), "-"), "-")
 }

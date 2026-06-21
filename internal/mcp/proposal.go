@@ -72,6 +72,9 @@ func (s *Server) proposeArea(ctx context.Context, _ *mcp.CallToolRequest, input 
 		return nil, ProposeAreaOutput{}, fmt.Errorf("rationale must not contain control characters")
 	}
 	slug := goal.DeriveSlug(input.Name)
+	if slug == "" {
+		return nil, ProposeAreaOutput{}, fmt.Errorf("name %q must contain at least one letter or number", input.Name)
+	}
 
 	var created *goal.ProposedArea
 	err := s.withActorTx(ctx, func(tx pgx.Tx) error {
@@ -216,6 +219,9 @@ func (s *Server) proposeProject(ctx context.Context, _ *mcp.CallToolRequest, inp
 		return nil, ProposeProjectOutput{}, fmt.Errorf("rationale must not contain control characters")
 	}
 	slug := goal.DeriveSlug(input.Name)
+	if slug == "" {
+		return nil, ProposeProjectOutput{}, fmt.Errorf("name %q must contain at least one letter or number", input.Name)
+	}
 
 	var created *project.Project
 	err := s.withActorTx(ctx, func(tx pgx.Tx) error {
