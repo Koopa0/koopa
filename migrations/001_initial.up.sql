@@ -1353,6 +1353,7 @@ CREATE TABLE readings (
     started_on  DATE,
     finished_on DATE,
     is_public   BOOLEAN NOT NULL DEFAULT false,
+    goal_id     UUID REFERENCES goals(id) ON DELETE SET NULL,
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
 
@@ -1363,8 +1364,9 @@ CREATE TABLE readings (
 COMMENT ON TABLE readings IS
     'Literature reading shelf — one row per book, Koopa-private. Evaluation '
     'happens only through reading_reflections (dated diary entries); there is '
-    'intentionally no rating column. No agent surface: not exposed via MCP, '
-    'not in the search_knowledge corpus, admin HTTP only.';
+    'intentionally no rating column. Agent surface is read-only: list_readings '
+    'and get_reading expose the shelf over MCP, but no agent write path exists. '
+    'Not in the search_knowledge corpus; mutations are admin HTTP only.';
 COMMENT ON COLUMN readings.title IS
     'Book title as Koopa records it. Required, never blank (chk_reading_title_not_blank).';
 COMMENT ON COLUMN readings.author IS
@@ -1386,12 +1388,21 @@ COMMENT ON COLUMN readings.finished_on IS
 COMMENT ON COLUMN readings.is_public IS
     'Reserved for a future public shelf. Default false; nothing public-facing '
     'reads this yet — flipping it has no effect until a public surface exists.';
+COMMENT ON COLUMN readings.goal_id IS
+    'Optional link to the goal this book serves (e.g. reading toward a learning '
+    'objective). NULL when the book stands on its own — most books do, so '
+    'nullable rather than required. ON DELETE SET NULL: deleting a goal unlinks '
+    'the book, never deletes it. Inert until goals exist; set via admin.';
 COMMENT ON COLUMN readings.created_at IS
     'Row creation time. Set by the database, never updated.';
 COMMENT ON COLUMN readings.updated_at IS
     'Application-managed. Set explicitly in UPDATE queries.';
 
 CREATE INDEX idx_readings_status ON readings(status);
+-- Partial: goal_id is NULL for most books (they stand on their own), so the
+-- index covers only the linked minority. Backs the ON DELETE SET NULL parent
+-- lookup when a goal is deleted (mirrors idx_projects_goal_id).
+CREATE INDEX idx_readings_goal_id ON readings(goal_id) WHERE goal_id IS NOT NULL;
 
 CREATE TABLE reading_reflections (
     id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),

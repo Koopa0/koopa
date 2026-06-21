@@ -11,11 +11,11 @@ INSERT INTO readings (
     $1, $2, $3, $4
 )
 RETURNING id, title, author, status, started_on, finished_on, is_public,
-          created_at, updated_at;
+          goal_id, created_at, updated_at;
 
 -- name: ReadingByID :one
 SELECT id, title, author, status, started_on, finished_on, is_public,
-       created_at, updated_at
+       goal_id, created_at, updated_at
 FROM readings
 WHERE id = $1;
 
@@ -23,7 +23,7 @@ WHERE id = $1;
 -- Shelf list with optional status filter. Ordered by recency of edit —
 -- status-group ordering for the shelf view is the frontend's concern.
 SELECT id, title, author, status, started_on, finished_on, is_public,
-       created_at, updated_at
+       goal_id, created_at, updated_at
 FROM readings
 WHERE (sqlc.narg('status')::text IS NULL OR status = sqlc.narg('status'))
 ORDER BY updated_at DESC;
@@ -49,7 +49,7 @@ UPDATE readings SET
     updated_at = now()
 WHERE id = @id
 RETURNING id, title, author, status, started_on, finished_on, is_public,
-          created_at, updated_at;
+          goal_id, created_at, updated_at;
 
 -- name: DeleteReading :execrows
 -- ON DELETE CASCADE removes the book's entire diary with it.

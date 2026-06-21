@@ -1666,7 +1666,7 @@ INSERT INTO readings (
     $1, $2, $3, $4
 )
 RETURNING id, title, author, status, started_on, finished_on, is_public,
-          created_at, updated_at
+          goal_id, created_at, updated_at
 `
 
 type CreateReadingParams struct {
@@ -1697,6 +1697,7 @@ func (q *Queries) CreateReading(ctx context.Context, arg CreateReadingParams) (R
 		&i.StartedOn,
 		&i.FinishedOn,
 		&i.IsPublic,
+		&i.GoalID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -5544,7 +5545,7 @@ func (q *Queries) PublishedWithEmbeddings(ctx context.Context) ([]PublishedWithE
 
 const readingByID = `-- name: ReadingByID :one
 SELECT id, title, author, status, started_on, finished_on, is_public,
-       created_at, updated_at
+       goal_id, created_at, updated_at
 FROM readings
 WHERE id = $1
 `
@@ -5560,6 +5561,7 @@ func (q *Queries) ReadingByID(ctx context.Context, id uuid.UUID) (Reading, error
 		&i.StartedOn,
 		&i.FinishedOn,
 		&i.IsPublic,
+		&i.GoalID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -5568,7 +5570,7 @@ func (q *Queries) ReadingByID(ctx context.Context, id uuid.UUID) (Reading, error
 
 const readings = `-- name: Readings :many
 SELECT id, title, author, status, started_on, finished_on, is_public,
-       created_at, updated_at
+       goal_id, created_at, updated_at
 FROM readings
 WHERE ($1::text IS NULL OR status = $1)
 ORDER BY updated_at DESC
@@ -5593,6 +5595,7 @@ func (q *Queries) Readings(ctx context.Context, status *string) ([]Reading, erro
 			&i.StartedOn,
 			&i.FinishedOn,
 			&i.IsPublic,
+			&i.GoalID,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -8545,7 +8548,7 @@ UPDATE readings SET
     updated_at = now()
 WHERE id = $7
 RETURNING id, title, author, status, started_on, finished_on, is_public,
-          created_at, updated_at
+          goal_id, created_at, updated_at
 `
 
 type UpdateReadingParams struct {
@@ -8583,6 +8586,7 @@ func (q *Queries) UpdateReading(ctx context.Context, arg UpdateReadingParams) (R
 		&i.StartedOn,
 		&i.FinishedOn,
 		&i.IsPublic,
+		&i.GoalID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)

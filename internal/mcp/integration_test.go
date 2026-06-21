@@ -82,6 +82,7 @@ func truncateApplicationTables(t *testing.T) {
 		"todos",
 		"contents",
 		"notes",
+		"readings",
 		"milestones",
 		"goals",
 		"projects",
@@ -2184,5 +2185,165 @@ func TestIntegration_BriefReflection_CountsFromTodoState(t *testing.T) {
 	}
 	if out.CompletionRate != 0.5 {
 		t.Errorf("CompletionRate = %v, want 0.5 (2 of 4)", out.CompletionRate)
+	}
+}
+
+// --- reading shelf read tools (list_readings / get_reading) ---
+
+// seedReading inserts a book directly. The readings tables carry no audit
+// trigger and no created_by FK (single human writer, by design — see the
+// readings table comment in 001_initial.up.sql), so a raw INSERT is the
+// whole story. A status outside the four shelf states fails the CHECK, which
+// is the intended guard.
+func seedReading(t *testing.T, title, author, status string) uuid.UUID {
+	t.Helper()
+	var id uuid.UUID
+	if err := testPool.QueryRow(t.Context(),
+		`INSERT INTO readings (title, author, status) VALUES ($1, $2, $3) RETURNING id`,
+		title, author, status,
+	).Scan(&id); err != nil {
+		t.Fatalf("seedReading(%q, status=%q): %v", title, status, err)
+	}
+	return id
+}
+
+// seedReflection inserts a diary entry under a reading with an explicit
+// entry_date so thread ordering is deterministic.
+func seedReflection(t *testing.T, readingID uuid.UUID, entryDate, body string) uuid.UUID {
+	t.Helper()
+	var id uuid.UUID
+	if err := testPool.QueryRow(t.Context(),
+		`INSERT INTO reading_reflections (reading_id, entry_date, body)
+		 VALUES ($1, $2::date, $3) RETURNING id`,
+		readingID, entryDate, body,
+	).Scan(&id); err != nil {
+		t.Fatalf("seedReflection(reading=%s, %s, %q): %v", readingID, entryDate, body, err)
+	}
+	return id
+}
+
+// TestIntegration_ListReadings_ReturnsShelf drives the happy path: every
+// seeded book comes back, newest-updated first, with goal_id null when the
+// book serves no goal. Without the goal_id column wired through, the GoalID
+// field would be absent or wrong here.
+func TestIntegration_ListReadings_ReturnsShelf(t *testing.T) {
+	s := setupServer(t)
+
+	wantID := seedReading(t, "Wishlist Book", "A. Author", "want_to_read")
+	readingID := seedReading(t, "Current Book", "", "reading")
+
+	_, out, err := callHandlerAs(t, "planner", s.listReadings, ListReadingsInput{})
+	if err != nil {
+		t.Fatalf("listReadings: %v", err)
+	}
+
+	got := make(map[string]ReadingListItem, len(out.Readings))
+	for _, it := range out.Readings {
+		got[it.ID] = it
+	}
+	if len(got) != 2 {
+		t.Fatalf("listReadings returned %d books, want 2", len(out.Readings))
+	}
+	if w := got[wantID.String()]; w.Title != "Wishlist Book" || w.Author != "A. Author" || w.Status != "want_to_read" || w.GoalID != nil {
+		t.Errorf("listReadings[%s] = %+v, want title/author/status set and goal_id nil", wantID, w)
+	}
+	if r := got[readingID.String()]; r.Status != "reading" || r.Author != "" {
+		t.Errorf("listReadings[%s] = %+v, want status=reading author empty", readingID, r)
+	}
+}
+
+// TestIntegration_ListReadings_StatusFilter narrows the shelf to one state and
+// rejects a non-empty invalid status without touching the store. A handler
+// that forwarded the bad value to the DB would surface a 500-shaped error
+// (or return everything); the clean rejection here pins the enum guard.
+func TestIntegration_ListReadings_StatusFilter(t *testing.T) {
+	s := setupServer(t)
+
+	seedReading(t, "Wishlist", "", "want_to_read")
+	currentID := seedReading(t, "Current", "", "reading")
+	seedReading(t, "Done", "", "finished")
+
+	_, out, err := callHandlerAs(t, "planner", s.listReadings, ListReadingsInput{Status: "reading"})
+	if err != nil {
+		t.Fatalf("listReadings(status=reading): %v", err)
+	}
+	if len(out.Readings) != 1 || out.Readings[0].ID != currentID.String() {
+		t.Errorf("listReadings(status=reading) = %d rows, want exactly the reading-status book %s", len(out.Readings), currentID)
+	}
+
+	if _, _, err := callHandlerAs(t, "planner", s.listReadings, ListReadingsInput{Status: "bogus"}); err == nil {
+		t.Error("listReadings(status=bogus) err = nil, want invalid-status rejection")
+	}
+}
+
+// TestIntegration_ListReadings_CallerGate refuses the zero-privilege fallback
+// and a fabricated caller — the private shelf must not be readable without a
+// known identity.
+func TestIntegration_ListReadings_CallerGate(t *testing.T) {
+	s := setupServer(t)
+	seedReading(t, "Private Book", "", "reading")
+
+	for _, caller := range []string{"unknown", "fabricated-agent"} {
+		if _, _, err := callHandlerAs(t, caller, s.listReadings, ListReadingsInput{}); err == nil {
+			t.Errorf("listReadings as %q err = nil, want registered-caller refusal", caller)
+		}
+	}
+}
+
+// TestIntegration_GetReading_ReturnsBookAndThread pins the detail path: the
+// book plus its diary in entry_date order (created_at tiebreak), the two
+// same-day entries exercising the tiebreak. A missing/DESC ORDER BY or a
+// dropped reflection fails the body-order assertion.
+func TestIntegration_GetReading_ReturnsBookAndThread(t *testing.T) {
+	s := setupServer(t)
+
+	bookID := seedReading(t, "Threaded Book", "T. Writer", "reading")
+	// Inserted out of diary order; the two 06-01 entries pin the created_at
+	// tiebreak (insertion order).
+	seedReflection(t, bookID, "2026-06-02", "second day")
+	seedReflection(t, bookID, "2026-06-01", "first day")
+	seedReflection(t, bookID, "2026-06-01", "first day, later thought")
+
+	_, out, err := callHandlerAs(t, "planner", s.getReading, GetReadingInput{ID: bookID.String()})
+	if err != nil {
+		t.Fatalf("getReading: %v", err)
+	}
+
+	if out.Reading.ID != bookID.String() || out.Reading.Title != "Threaded Book" || out.Reading.Author != "T. Writer" {
+		t.Errorf("getReading.Reading = %+v, want the seeded book", out.Reading)
+	}
+	if out.Reading.GoalID != nil {
+		t.Errorf("getReading.Reading.GoalID = %v, want nil (no goal linked)", out.Reading.GoalID)
+	}
+	gotBodies := make([]string, len(out.Reflections))
+	for i, r := range out.Reflections {
+		gotBodies[i] = r.Body
+	}
+	wantBodies := []string{"first day", "first day, later thought", "second day"}
+	if diff := cmp.Diff(wantBodies, gotBodies); diff != "" {
+		t.Errorf("getReading reflection thread order mismatch (-want +got):\n%s", diff)
+	}
+}
+
+// TestIntegration_GetReading_UnknownID maps a missing book to a clean
+// not-found error, never a 500-shaped store error.
+func TestIntegration_GetReading_UnknownID(t *testing.T) {
+	s := setupServer(t)
+
+	if _, _, err := callHandlerAs(t, "planner", s.getReading, GetReadingInput{ID: uuid.New().String()}); err == nil {
+		t.Error("getReading(unknown id) err = nil, want not-found")
+	}
+}
+
+// TestIntegration_GetReading_CallerGate refuses the zero-privilege fallback
+// and a fabricated caller for the detail path too.
+func TestIntegration_GetReading_CallerGate(t *testing.T) {
+	s := setupServer(t)
+	bookID := seedReading(t, "Private Book", "", "reading")
+
+	for _, caller := range []string{"unknown", "fabricated-agent"} {
+		if _, _, err := callHandlerAs(t, caller, s.getReading, GetReadingInput{ID: bookID.String()}); err == nil {
+			t.Errorf("getReading as %q err = nil, want registered-caller refusal", caller)
+		}
 	}
 }

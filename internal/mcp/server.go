@@ -27,6 +27,7 @@ import (
 	"github.com/Koopa0/koopa/internal/mcp/ops"
 	"github.com/Koopa0/koopa/internal/note"
 	"github.com/Koopa0/koopa/internal/project"
+	"github.com/Koopa0/koopa/internal/reading"
 	"github.com/Koopa0/koopa/internal/stats"
 	"github.com/Koopa0/koopa/internal/todo"
 )
@@ -40,6 +41,7 @@ type Server struct {
 	dayplan  *daily.Store
 	contents *content.Store
 	notes    *note.Store
+	readings *reading.Store
 	projects *project.Store
 
 	// Goals
@@ -112,6 +114,7 @@ func NewServer(pool *pgxpool.Pool, logger *slog.Logger, opts ...ServerOption) *S
 		dayplan:     daily.NewStore(pool),
 		contents:    content.NewStore(pool),
 		notes:       note.NewStore(pool),
+		readings:    reading.NewStore(pool),
 		projects:    project.NewStore(pool),
 		goals:       goal.NewStore(pool),
 		registry:    agent.NewBuiltinRegistry(),
@@ -159,6 +162,10 @@ func NewServer(pool *pgxpool.Pool, logger *slog.Logger, opts ...ServerOption) *S
 	// --- Proposal readback (the read + self-close halves of the capture loop) ---
 	addTool(s, toolFrom(ops.ListTasks), s.listTasks)
 	addTool(s, toolFrom(ops.ResolveTask), s.resolveTask)
+
+	// --- Reading shelf (read-only agent window onto Koopa's books) ---
+	addTool(s, toolFrom(ops.ListReadings), s.listReadings)
+	addTool(s, toolFrom(ops.GetReading), s.getReading)
 
 	// --- Notes (flat tools) ---
 	addTool(s, toolFrom(ops.CreateNote), s.createNote)

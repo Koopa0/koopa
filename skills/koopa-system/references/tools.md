@@ -13,18 +13,20 @@ is hand-maintained.
 > Run `go generate ./internal/mcp/ops` after any change to the tool surface;
 > the drift test `TestToolInventoryDocInSync` fails CI if this is stale.
 
-**11 tools** across 3 domains.
+**13 tools** across 3 domains.
 
 | Domain | Count |
 |---|---|
-| `query` | 2 |
+| `query` | 4 |
 | `daily` | 7 |
 | `content` | 2 |
-| **Total** | **11** |
+| **Total** | **13** |
 
 | Tool | Domain | Writability | Purpose |
 |---|---|---|---|
 | `brief` | `query` | read_only | Read-only planning-state pull |
+| `get_reading` | `query` | read_only | Read-only fetch of one book by id, returning the reading (incl |
+| `list_readings` | `query` | read_only | Read-only list of Koopa's reading shelf |
 | `search_knowledge` | `query` | read_only | Search across content (articles, build logs, TILs, etc.) and notes (Zettelkasten) |
 | `capture_inbox` | `daily` | additive | Quick task capture to inbox |
 | `list_tasks` | `daily` | read_only | Read-only readback of the todos you created (created_by = your resolved caller identity) so you can learn their disposition |

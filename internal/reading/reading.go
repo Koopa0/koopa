@@ -51,6 +51,7 @@ type Reading struct {
 	StartedOn  *time.Time // nil until reading starts (or never recorded)
 	FinishedOn *time.Time // nil until the reading concludes
 	IsPublic   bool
+	GoalID     *uuid.UUID // nil when the book serves no goal (the common case)
 	CreatedAt  time.Time
 	UpdatedAt  time.Time
 }

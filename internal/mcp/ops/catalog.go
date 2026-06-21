@@ -148,6 +148,35 @@ func ResolveTask() Meta {
 	}
 }
 
+// ListReadings returns metadata for the read-only reading-shelf list tool —
+// the agent's window onto the books Koopa is reading or wants to read.
+func ListReadings() Meta {
+	return Meta{
+		Name:        "list_readings",
+		Domain:      DomainQuery,
+		Writability: ReadOnly,
+		Stability:   StabilityStable,
+		Since:       "1.6.0",
+		Description: "Read-only list of Koopa's reading shelf — one entry per book with title, author, status, started_on/finished_on dates, is_public, and an optional goal_id link. Optional status filter: want_to_read, reading, finished, abandoned (omit for the whole shelf). This is your read access only: the shelf has no agent write path, so use it to ground a conversation in what Koopa is reading, never to change it.",
+		FieldEnums: map[string][]string{
+			"status": {"want_to_read", "reading", "finished", "abandoned"},
+		},
+	}
+}
+
+// GetReading returns metadata for the read-only single-book tool — one book
+// plus its full diary thread.
+func GetReading() Meta {
+	return Meta{
+		Name:        "get_reading",
+		Domain:      DomainQuery,
+		Writability: ReadOnly,
+		Stability:   StabilityStable,
+		Since:       "1.6.0",
+		Description: "Read-only fetch of one book by id, returning the reading (incl. goal_id) and its full reflection thread — dated diary entries in entry_date order (created_at tiebreak). Use after list_readings to read Koopa's notes on a specific book. Read access only: there is no agent path to add or edit reflections.",
+	}
+}
+
 // Note tools — flat per-intent design. Three tools map 1:1 to user intent.
 
 // CreateNote returns metadata for create_note.
@@ -189,6 +218,8 @@ func All() []Meta {
 		ProposeProject(),
 		ListTasks(),
 		ResolveTask(),
+		ListReadings(),
+		GetReading(),
 		CreateNote(),
 		UpdateNote(),
 	}

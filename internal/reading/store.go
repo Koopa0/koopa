@@ -211,6 +211,7 @@ func buildReading(r *db.Reading) *Reading {
 		StartedOn:  r.StartedOn,
 		FinishedOn: r.FinishedOn,
 		IsPublic:   r.IsPublic,
+		GoalID:     r.GoalID,
 		CreatedAt:  r.CreatedAt,
 		UpdatedAt:  r.UpdatedAt,
 	}

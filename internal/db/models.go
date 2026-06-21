@@ -790,7 +790,7 @@ type ProjectProfile struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
-// Literature reading shelf — one row per book, Koopa-private. Evaluation happens only through reading_reflections (dated diary entries); there is intentionally no rating column. No agent surface: not exposed via MCP, not in the search_knowledge corpus, admin HTTP only.
+// Literature reading shelf — one row per book, Koopa-private. Evaluation happens only through reading_reflections (dated diary entries); there is intentionally no rating column. Agent surface is read-only: list_readings and get_reading expose the shelf over MCP, but no agent write path exists. Not in the search_knowledge corpus; mutations are admin HTTP only.
 type Reading struct {
 	ID uuid.UUID `json:"id"`
 	// Book title as Koopa records it. Required, never blank (chk_reading_title_not_blank).
@@ -805,6 +805,8 @@ type Reading struct {
 	FinishedOn *time.Time `json:"finished_on"`
 	// Reserved for a future public shelf. Default false; nothing public-facing reads this yet — flipping it has no effect until a public surface exists.
 	IsPublic bool `json:"is_public"`
+	// Optional link to the goal this book serves (e.g. reading toward a learning objective). NULL when the book stands on its own — most books do, so nullable rather than required. ON DELETE SET NULL: deleting a goal unlinks the book, never deletes it. Inert until goals exist; set via admin.
+	GoalID *uuid.UUID `json:"goal_id"`
 	// Row creation time. Set by the database, never updated.
 	CreatedAt time.Time `json:"created_at"`
 	// Application-managed. Set explicitly in UPDATE queries.
