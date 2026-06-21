@@ -162,6 +162,28 @@ func (s *Store) TodosByCreator(ctx context.Context, createdBy string) ([]Creator
 	return items, nil
 }
 
+// ResolveByCreator moves a todo the caller created to a terminal state
+// (done / archived / dismissed) for the resolve_task readback loop. createdBy
+// is the resolved caller identity — caller-scoped, never a client-supplied
+// filter — so a todo owned by a different creator (or a non-existent id)
+// matches 0 rows and returns ErrNotFound, never a cross-creator mutation.
+// completed_at is reconciled in SQL to satisfy chk_todo_completed_at_consistency
+// (now() for done, cleared otherwise). Backed by idx_todos_created_by.
+func (s *Store) ResolveByCreator(ctx context.Context, id uuid.UUID, createdBy string, state State) (*Resolution, error) {
+	row, err := s.q.ResolveTodoByCreator(ctx, db.ResolveTodoByCreatorParams{
+		ID:        id,
+		CreatedBy: createdBy,
+		State:     db.TodoState(state),
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("resolving todo %s created by %q to %s: %w", id, createdBy, state, err)
+	}
+	return &Resolution{ID: row.ID, State: State(row.State)}, nil
+}
+
 // UpdateState updates a todo item's state.
 func (s *Store) UpdateState(ctx context.Context, id uuid.UUID, state State) (*Item, error) {
 	r, err := s.q.UpdateTodoItemState(ctx, db.UpdateTodoItemStateParams{
@@ -307,6 +329,11 @@ var ErrInvalidInput = errors.New("todo: invalid input")
 
 // State represents a todo item's GTD lifecycle state. Mirrors the todo_state
 // SQL enum. Uses underscores (in_progress) to match Go naming conventions.
+//
+// archived and dismissed are terminal self-close states an agent sets via the
+// resolve_task MCP readback loop on a todo it created — distinct from done
+// (completed) in intent: archived = filed away, dismissed = won't do. Like
+// every non-done state they carry no completed_at (chk_todo_completed_at_consistency).
 type State string
 
 const (
@@ -315,6 +342,8 @@ const (
 	StateInProgress State = "in_progress"
 	StateDone       State = "done"
 	StateSomeday    State = "someday"
+	StateArchived   State = "archived"
+	StateDismissed  State = "dismissed"
 )
 
 // Item represents a personal GTD work item.
@@ -458,6 +487,13 @@ func derefStr(p *string) string {
 type CreatorItem struct {
 	ID    uuid.UUID
 	Title string
+	State State
+}
+
+// Resolution is the slim result of ResolveByCreator — the resolved todo's id
+// and the terminal state now stored, enough for the resolve_task readback ack.
+type Resolution struct {
+	ID    uuid.UUID
 	State State
 }
 

@@ -6025,6 +6025,43 @@ func (q *Queries) ResetRecurringTodoItem(ctx context.Context, arg ResetRecurring
 	return i, err
 }
 
+const resolveTodoByCreator = `-- name: ResolveTodoByCreator :one
+UPDATE todos SET
+    state = $1::todo_state,
+    completed_at = CASE
+        WHEN $1::todo_state = 'done' THEN COALESCE(completed_at, now())
+        ELSE NULL
+    END,
+    updated_at = now()
+WHERE id = $2 AND created_by = $3
+RETURNING id, state
+`
+
+type ResolveTodoByCreatorParams struct {
+	State     TodoState `json:"state"`
+	ID        uuid.UUID `json:"id"`
+	CreatedBy string    `json:"created_by"`
+}
+
+type ResolveTodoByCreatorRow struct {
+	ID    uuid.UUID `json:"id"`
+	State TodoState `json:"state"`
+}
+
+// Caller-scoped terminal close for the resolve_task MCP readback loop: an agent
+// moves a todo IT created to a terminal state (done/archived/dismissed). The
+// created_by predicate scopes the write to the caller's own rows — a mismatched
+// creator (or unknown id) matches 0 rows, surfacing as pgx.ErrNoRows → not-found,
+// never another agent's todo. completed_at follows chk_todo_completed_at_consistency:
+// now() for done (preserving any existing stamp), cleared to NULL otherwise.
+// created_by is the resolved caller identity, never a client-supplied filter.
+func (q *Queries) ResolveTodoByCreator(ctx context.Context, arg ResolveTodoByCreatorParams) (ResolveTodoByCreatorRow, error) {
+	row := q.db.QueryRow(ctx, resolveTodoByCreator, arg.State, arg.ID, arg.CreatedBy)
+	var i ResolveTodoByCreatorRow
+	err := row.Scan(&i.ID, &i.State)
+	return i, err
+}
+
 const retireAgent = `-- name: RetireAgent :execrows
 UPDATE agents
 SET status     = 'retired',

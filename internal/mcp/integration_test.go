@@ -2062,6 +2062,76 @@ func TestIntegration_ListTasks_CallerScoped(t *testing.T) {
 	}
 }
 
+// TestIntegration_ResolveTask_ClosesOwnTodo pins the write half of the readback
+// loop: an agent moves a todo IT created to a terminal state and the row's state
+// changes in the DB.
+func TestIntegration_ResolveTask_ClosesOwnTodo(t *testing.T) {
+	s := setupServer(t)
+
+	id := seedTodoForCreator(t, "planner", "captured idea", "inbox", time.Now())
+
+	_, out, err := callHandlerAs(t, "planner", s.resolveTask, ResolveTaskInput{ID: id.String(), State: "dismissed"})
+	if err != nil {
+		t.Fatalf("resolveTask: %v", err)
+	}
+	want := ResolveTaskOutput{ID: id.String(), State: "dismissed", OK: true}
+	if diff := cmp.Diff(want, out); diff != "" {
+		t.Errorf("resolveTask mismatch (-want +got):\n%s", diff)
+	}
+
+	var state string
+	if err := testPool.QueryRow(t.Context(), "SELECT state FROM todos WHERE id = $1", id).Scan(&state); err != nil {
+		t.Fatalf("reading back todo state: %v", err)
+	}
+	if state != "dismissed" {
+		t.Errorf("todo %s state = %q, want dismissed", id, state)
+	}
+}
+
+// TestIntegration_ResolveTask_InvalidState rejects any state outside the
+// done/archived/dismissed terminal set without mutating.
+func TestIntegration_ResolveTask_InvalidState(t *testing.T) {
+	s := setupServer(t)
+	id := seedTodoForCreator(t, "planner", "captured idea", "inbox", time.Now())
+
+	if _, _, err := callHandlerAs(t, "planner", s.resolveTask, ResolveTaskInput{ID: id.String(), State: "todo"}); err == nil {
+		t.Error("resolveTask(state=todo) err = nil, want invalid-state rejection")
+	}
+}
+
+// TestIntegration_ResolveTask_CallerGate refuses the zero-privilege fallback and
+// a fabricated caller — the registered-caller gate must run before any write.
+func TestIntegration_ResolveTask_CallerGate(t *testing.T) {
+	s := setupServer(t)
+	id := seedTodoForCreator(t, "planner", "captured idea", "inbox", time.Now())
+
+	for _, caller := range []string{"unknown", "fabricated-agent"} {
+		if _, _, err := callHandlerAs(t, caller, s.resolveTask, ResolveTaskInput{ID: id.String(), State: "done"}); err == nil {
+			t.Errorf("resolveTask as %q err = nil, want registered-caller refusal", caller)
+		}
+	}
+}
+
+// TestIntegration_ResolveTask_CallerScoped pins the privacy invariant: caller A
+// cannot resolve a todo created by caller B — it returns not-found and the row
+// is left untouched, never a cross-creator mutation.
+func TestIntegration_ResolveTask_CallerScoped(t *testing.T) {
+	s := setupServer(t)
+	theirs := seedTodoForCreator(t, "learning-studio", "studio todo", "inbox", time.Now())
+
+	if _, _, err := callHandlerAs(t, "planner", s.resolveTask, ResolveTaskInput{ID: theirs.String(), State: "dismissed"}); err == nil {
+		t.Error("resolveTask(planner) on learning-studio's todo err = nil, want not-found (caller-scoping)")
+	}
+
+	var state string
+	if err := testPool.QueryRow(t.Context(), "SELECT state FROM todos WHERE id = $1", theirs).Scan(&state); err != nil {
+		t.Fatalf("reading back todo state: %v", err)
+	}
+	if state != "inbox" {
+		t.Errorf("learning-studio todo %s state = %q after cross-creator resolve, want unchanged inbox", theirs, state)
+	}
+}
+
 // TestIntegration_BriefReflection_CountsFromTodoState pins that brief(reflection)
 // derives completed/deferred/planned from each planned todo's CURRENT state, not
 // the daily_plan_item.status column (which has no write path — it stays 'planned'

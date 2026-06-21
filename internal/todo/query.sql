@@ -104,6 +104,24 @@ FROM todos
 WHERE created_by = @created_by
 ORDER BY created_at DESC;
 
+-- name: ResolveTodoByCreator :one
+-- Caller-scoped terminal close for the resolve_task MCP readback loop: an agent
+-- moves a todo IT created to a terminal state (done/archived/dismissed). The
+-- created_by predicate scopes the write to the caller's own rows — a mismatched
+-- creator (or unknown id) matches 0 rows, surfacing as pgx.ErrNoRows → not-found,
+-- never another agent's todo. completed_at follows chk_todo_completed_at_consistency:
+-- now() for done (preserving any existing stamp), cleared to NULL otherwise.
+-- created_by is the resolved caller identity, never a client-supplied filter.
+UPDATE todos SET
+    state = @state::todo_state,
+    completed_at = CASE
+        WHEN @state::todo_state = 'done' THEN COALESCE(completed_at, now())
+        ELSE NULL
+    END,
+    updated_at = now()
+WHERE id = @id AND created_by = @created_by
+RETURNING id, state;
+
 -- name: UpdateTodoItemState :one
 -- Update a todo item's state. Sets completed_at on transition to done.
 UPDATE todos SET

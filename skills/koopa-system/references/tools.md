@@ -13,14 +13,14 @@ is hand-maintained.
 > Run `go generate ./internal/mcp/ops` after any change to the tool surface;
 > the drift test `TestToolInventoryDocInSync` fails CI if this is stale.
 
-**10 tools** across 3 domains.
+**11 tools** across 3 domains.
 
 | Domain | Count |
 |---|---|
 | `query` | 2 |
-| `daily` | 6 |
+| `daily` | 7 |
 | `content` | 2 |
-| **Total** | **10** |
+| **Total** | **11** |
 
 | Tool | Domain | Writability | Purpose |
 |---|---|---|---|
@@ -32,6 +32,7 @@ is hand-maintained.
 | `propose_area` | `daily` | additive | Propose a PARA area (ongoing domain of responsibility) as an INERT draft in status=proposed |
 | `propose_goal` | `daily` | additive | Propose a goal (with optional ordered milestones) as an INERT draft in status=proposed |
 | `propose_project` | `daily` | additive | Propose a NEW project (a short-term effort with a clear outcome) as an INERT draft in status=proposed |
+| `resolve_task` | `daily` | destructive | Move a todo YOU created to a terminal state: done (completed), archived (filed away), or dismissed (won't do) |
 | `create_note` | `content` | additive | Create a Zettelkasten note (notes table) |
 | `update_note` | `content` | additive | Update editable fields (slug / title / body / kind) on a note |
 <!-- GENERATED:TOOL-INVENTORY END -->

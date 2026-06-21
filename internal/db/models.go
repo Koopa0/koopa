@@ -381,6 +381,8 @@ const (
 	TodoStateInProgress TodoState = "in_progress"
 	TodoStateDone       TodoState = "done"
 	TodoStateSomeday    TodoState = "someday"
+	TodoStateArchived   TodoState = "archived"
+	TodoStateDismissed  TodoState = "dismissed"
 )
 
 func (e *TodoState) Scan(src interface{}) error {
@@ -906,7 +908,7 @@ type Todo struct {
 	ID uuid.UUID `json:"id"`
 	// Short summary of the todo. Non-blank (chk_todo_title_not_blank).
 	Title string `json:"title"`
-	// GTD lifecycle: inbox → todo | someday. todo → in_progress → done. inbox = captured but not clarified (missing project/due/priority). someday = interested but not acting now — reviewed periodically.
+	// GTD lifecycle: inbox → todo | someday. todo → in_progress → done. inbox = captured but not clarified (missing project/due/priority). someday = interested but not acting now — reviewed periodically. archived | dismissed = terminal self-close states set by an agent via the resolve_task MCP readback loop on a todo it created (archived = filed away, dismissed = won't do); like every non-done state they keep completed_at NULL, enforced by chk_todo_completed_at_consistency.
 	State TodoState `json:"state"`
 	// Due date. NULL = no deadline.
 	Due *time.Time `json:"due"`

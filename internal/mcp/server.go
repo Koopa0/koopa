@@ -156,8 +156,9 @@ func NewServer(pool *pgxpool.Pool, logger *slog.Logger, opts ...ServerOption) *S
 	addTool(s, toolFrom(ops.ProposeGoal), s.proposeGoal)
 	addTool(s, toolFrom(ops.ProposeProject), s.proposeProject)
 
-	// --- Proposal readback (read-only; the read half of the capture loop) ---
+	// --- Proposal readback (the read + self-close halves of the capture loop) ---
 	addTool(s, toolFrom(ops.ListTasks), s.listTasks)
+	addTool(s, toolFrom(ops.ResolveTask), s.resolveTask)
 
 	// --- Notes (flat tools) ---
 	addTool(s, toolFrom(ops.CreateNote), s.createNote)

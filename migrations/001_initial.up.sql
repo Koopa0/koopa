@@ -25,7 +25,7 @@ CREATE TYPE project_status AS ENUM (
 );
 
 CREATE TYPE todo_state AS ENUM (
-    'inbox', 'todo', 'in_progress', 'done', 'someday'
+    'inbox', 'todo', 'in_progress', 'done', 'someday', 'archived', 'dismissed'
 );
 
 CREATE TYPE agent_status AS ENUM ('active', 'retired');
@@ -911,7 +911,11 @@ COMMENT ON TABLE todos IS
 COMMENT ON COLUMN todos.state IS
     'GTD lifecycle: inbox → todo | someday. todo → in_progress → done. '
     'inbox = captured but not clarified (missing project/due/priority). '
-    'someday = interested but not acting now — reviewed periodically.';
+    'someday = interested but not acting now — reviewed periodically. '
+    'archived | dismissed = terminal self-close states set by an agent via the '
+    'resolve_task MCP readback loop on a todo it created (archived = filed away, '
+    'dismissed = won''t do); like every non-done state they keep completed_at '
+    'NULL, enforced by chk_todo_completed_at_consistency.';
 COMMENT ON COLUMN todos.title IS 'Short summary of the todo. Non-blank (chk_todo_title_not_blank).';
 COMMENT ON COLUMN todos.due IS 'Due date. NULL = no deadline.';
 COMMENT ON COLUMN todos.project_id IS 'Optional parent project. SET NULL on project deletion — the todo survives unclassified.';

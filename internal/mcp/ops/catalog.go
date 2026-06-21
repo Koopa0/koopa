@@ -132,6 +132,22 @@ func ListTasks() Meta {
 	}
 }
 
+// ResolveTask returns metadata for the write half of the proposal-readback
+// loop — an agent moves a todo IT created to a terminal state to self-clear it.
+func ResolveTask() Meta {
+	return Meta{
+		Name:        "resolve_task",
+		Domain:      DomainDaily,
+		Writability: Destructive,
+		Stability:   StabilityStable,
+		Since:       "1.5.0",
+		Description: "Move a todo YOU created to a terminal state: done (completed), archived (filed away), or dismissed (won't do). Caller-scoped — you can only resolve todos whose created_by = your resolved identity; resolving anyone else's todo returns not-found and changes nothing. Closes the write half of the capture_inbox/list_tasks readback loop: after you read a todo's disposition, resolve_task lets you self-clear the ones you've finished processing instead of leaving them for the owner to archive.",
+		FieldEnums: map[string][]string{
+			"state": {"done", "archived", "dismissed"},
+		},
+	}
+}
+
 // Note tools — flat per-intent design. Three tools map 1:1 to user intent.
 
 // CreateNote returns metadata for create_note.
@@ -172,6 +188,7 @@ func All() []Meta {
 		ProposeGoal(),
 		ProposeProject(),
 		ListTasks(),
+		ResolveTask(),
 		CreateNote(),
 		UpdateNote(),
 	}

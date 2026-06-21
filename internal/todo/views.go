@@ -268,10 +268,11 @@ func (s *Store) ItemsByProjectGrouped(ctx context.Context, projectID uuid.UUID) 
 			result.Done = append(result.Done, b)
 		case StateSomeday:
 			result.Someday = append(result.Someday, b)
-		case StateInbox:
-			// Inbox items are pre-project triage and never belong to a
-			// project's task breakdown. Intentionally dropped — see the
-			// doc comment on GroupedItems.
+		case StateInbox, StateArchived, StateDismissed:
+			// Inbox items are pre-project triage; archived/dismissed are
+			// agent self-closed terminal states. None belong in a project's
+			// active task breakdown. Intentionally dropped — see the doc
+			// comment on GroupedItems.
 		}
 	}
 	return result, nil
