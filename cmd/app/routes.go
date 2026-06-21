@@ -213,6 +213,7 @@ func registerRoutes(
 	// (goal, milestone) that replaced the removed propose_*/commit MCP flow.
 	// Areas back the goal-create/update area selector (PARA classification).
 	mux.Handle("GET /api/admin/commitment/areas", authMid(http.HandlerFunc(h.goal.ListAreas)))
+	mux.Handle("GET /api/admin/commitment/areas/{id}", authMid(http.HandlerFunc(h.goal.AreaDetail)))
 	mux.Handle("POST /api/admin/commitment/areas", adminMid(http.HandlerFunc(h.goal.CreateArea)))
 	mux.Handle("GET /api/admin/commitment/goals", authMid(http.HandlerFunc(h.goal.List)))
 	mux.Handle("GET /api/admin/commitment/goals/{id}", authMid(http.HandlerFunc(h.goal.Detail)))

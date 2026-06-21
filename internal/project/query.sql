@@ -140,6 +140,16 @@ WHERE goal_id = ANY(@goal_ids::uuid[])
   AND status NOT IN ('proposed', 'archived')
 ORDER BY goal_id;
 
+-- name: ProjectsByArea :many
+-- Lightweight project info for the admin area-detail page. Excludes proposed
+-- (inert drafts) and archived projects — same active-read filter as
+-- ProjectSummariesByGoalIDs. Indexed by idx_projects_area on projects.area_id.
+SELECT id, slug, title, status, goal_id, last_activity_at
+FROM projects
+WHERE area_id = @area_id
+  AND status NOT IN ('proposed', 'archived')
+ORDER BY title;
+
 -- name: ProfileByProjectID :one
 SELECT project_id, long_description, role, tech_stack, highlights,
        problem, solution, architecture, results, github_url, live_url,

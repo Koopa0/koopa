@@ -733,3 +733,25 @@ func (s *Store) SummariesByGoalIDs(ctx context.Context, goalIDs []uuid.UUID) ([]
 	}
 	return result, nil
 }
+
+// ProjectsByArea returns the active (non-proposed, non-archived) projects filed
+// under an area as lightweight summaries, mirroring SummariesByGoalIDs. Returns
+// an empty slice (never nil) when the area has no projects.
+func (s *Store) ProjectsByArea(ctx context.Context, areaID uuid.UUID) ([]ProjectSummary, error) {
+	rows, err := s.q.ProjectsByArea(ctx, &areaID)
+	if err != nil {
+		return nil, fmt.Errorf("querying projects by area %s: %w", areaID, err)
+	}
+	result := make([]ProjectSummary, len(rows))
+	for i := range rows {
+		result[i] = ProjectSummary{
+			ID:             rows[i].ID,
+			Slug:           rows[i].Slug,
+			Title:          rows[i].Title,
+			Status:         Status(rows[i].Status),
+			GoalID:         rows[i].GoalID,
+			LastActivityAt: rows[i].LastActivityAt,
+		}
+	}
+	return result, nil
+}

@@ -4,6 +4,7 @@ package goal
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -384,6 +385,96 @@ func (h *Handler) CreateArea(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	api.Encode(w, http.StatusCreated, api.Response{Data: a})
+}
+
+// areaItem is the area header on the area-detail response.
+type areaItem struct {
+	ID          uuid.UUID `json:"id"`
+	Slug        string    `json:"slug"`
+	Name        string    `json:"name"`
+	Description string    `json:"description"`
+	Status      string    `json:"status"`
+	SortOrder   int32     `json:"sort_order"`
+	CreatedAt   string    `json:"created_at"`
+	UpdatedAt   string    `json:"updated_at"`
+}
+
+// areaDetailResponse is the admin area-detail aggregate for
+// GET /api/admin/commitment/areas/{id}: the area row plus its non-proposed
+// child goals and active child projects. goals reuse the goal-list
+// ActiveGoalSummary shape; projects are minimal {id, title, status}
+// references. Both are always a JSON array (never null), empty when the area
+// has no children.
+type areaDetailResponse struct {
+	Area     areaItem            `json:"area"`
+	Goals    []ActiveGoalSummary `json:"goals"`
+	Projects []projectItem       `json:"projects"`
+}
+
+// AreaDetail handles GET /api/admin/commitment/areas/{id} — the area row plus
+// the goals and projects filed under it. 404 when the area does not exist.
+// Proposed goals/projects are inert drafts and excluded; empty children render
+// as [] not null.
+func (h *Handler) AreaDetail(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid area id")
+		return
+	}
+
+	area, err := h.store.AreaByID(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			api.Error(w, http.StatusNotFound, "NOT_FOUND", "area not found")
+			return
+		}
+		h.logger.Error("loading area", "area_id", id, "error", err)
+		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to load area")
+		return
+	}
+
+	goals, err := h.store.GoalsByArea(r.Context(), id)
+	if err != nil {
+		h.logger.Error("listing goals for area", "area_id", id, "error", err)
+		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to list goals")
+		return
+	}
+
+	projects := []projectItem{}
+	if h.projects != nil {
+		var summaries []project.ProjectSummary
+		summaries, err = h.projects.ProjectsByArea(r.Context(), id)
+		if err != nil {
+			h.logger.Error("listing projects for area", "area_id", id, "error", err)
+			api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to list projects")
+			return
+		}
+		projects = make([]projectItem, len(summaries))
+		for i := range summaries {
+			projects[i] = projectItem{
+				ID:     summaries[i].ID,
+				Title:  summaries[i].Title,
+				Status: string(summaries[i].Status),
+			}
+		}
+	}
+
+	const isoFormat = "2006-01-02T15:04:05Z07:00"
+	resp := areaDetailResponse{
+		Area: areaItem{
+			ID:          area.ID,
+			Slug:        area.Slug,
+			Name:        area.Name,
+			Description: area.Description,
+			Status:      area.Status,
+			SortOrder:   area.SortOrder,
+			CreatedAt:   area.CreatedAt.Format(isoFormat),
+			UpdatedAt:   area.UpdatedAt.Format(isoFormat),
+		},
+		Goals:    goals,
+		Projects: projects,
+	}
+	api.Encode(w, http.StatusOK, api.Response{Data: resp})
 }
 
 // updateRequest is the JSON body for PUT /api/admin/commitment/goals/{id}.

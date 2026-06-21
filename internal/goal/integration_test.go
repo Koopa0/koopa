@@ -23,6 +23,9 @@
 //     mutations; a goal/milestone mismatch is a 404, never a cross-goal
 //     write.
 //   - ListAreas — GET /areas returns the migration-seeded PARA rows.
+//   - AreaDetail — GET /areas/{id} returns the area plus its non-proposed
+//     goals and active projects; proposed/archived/other-area children are
+//     excluded; empty children are [] not null; an unknown id is a 404.
 //
 // Run with:
 //
@@ -1392,5 +1395,175 @@ func TestIntegration_Goal_InvalidInput(t *testing.T) {
 				t.Fatalf("err = %v, want goal.ErrInvalidInput", err)
 			}
 		})
+	}
+}
+
+// TestIntegration_Goal_AreaDetail drives GET /api/admin/commitment/areas/{id}:
+// the area row plus its non-proposed goals and active projects come back, while
+// a proposed goal, a proposed/archived project, and another area's children are
+// all excluded. Uses newHandlerWithProjects so the projects-by-area read (the
+// project component the goal store cannot see) is wired.
+func TestIntegration_Goal_AreaDetail(t *testing.T) {
+	truncate(t)
+	t.Cleanup(func() {
+		// goal's truncate touches neither projects nor areas — clean both up.
+		_, _ = testPool.Exec(context.Background(), `DELETE FROM projects`)
+		deleteAreasBySlug(t, "detail-area", "other-area")
+	})
+	h := newHandlerWithProjects()
+	ctx := t.Context()
+
+	// The area under test + a second area whose children must NOT leak in.
+	var areaID, otherAreaID uuid.UUID
+	if err := testPool.QueryRow(ctx,
+		`INSERT INTO areas (slug, name, description, status)
+		 VALUES ('detail-area', 'Detail Area', 'What this area covers.', 'active') RETURNING id`,
+	).Scan(&areaID); err != nil {
+		t.Fatalf("seeding area: %v", err)
+	}
+	if err := testPool.QueryRow(ctx,
+		`INSERT INTO areas (slug, name, status) VALUES ('other-area', 'Other Area', 'active') RETURNING id`,
+	).Scan(&otherAreaID); err != nil {
+		t.Fatalf("seeding other area: %v", err)
+	}
+
+	// Two real goals under the area; a proposed goal (excluded) and a real goal
+	// under the other area (must not leak in).
+	if _, err := testPool.Exec(ctx,
+		`INSERT INTO goals (title, status, area_id) VALUES
+		   ('Goal one', 'in_progress', $1),
+		   ('Goal two', 'not_started', $1),
+		   ('Proposed goal', 'proposed', $1),
+		   ('Other area goal', 'in_progress', $2)`,
+		areaID, otherAreaID,
+	); err != nil {
+		t.Fatalf("seeding goals: %v", err)
+	}
+
+	// One active project under the area; a proposed and an archived (both
+	// excluded) filed under the same area, and one under the other area.
+	if _, err := testPool.Exec(ctx,
+		`INSERT INTO projects (slug, title, status, area_id, created_by) VALUES
+		   ('area-proj', 'Area Proj', 'in_progress', $1, NULL),
+		   ('area-proposed', 'Area Proposed', 'proposed', $1, 'koopa0-dev'),
+		   ('area-archived', 'Area Archived', 'archived', $1, NULL),
+		   ('other-proj', 'Other Proj', 'in_progress', $2, NULL)`,
+		areaID, otherAreaID,
+	); err != nil {
+		t.Fatalf("seeding projects: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/admin/commitment/areas/"+areaID.String(), nil)
+	req.SetPathValue("id", areaID.String())
+	rec := httptest.NewRecorder()
+	h.AreaDetail(rec, req)
+
+	resp := rec.Result()
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body=%s)", resp.StatusCode, body)
+	}
+
+	var env struct {
+		Data struct {
+			Area struct {
+				ID          uuid.UUID `json:"id"`
+				Name        string    `json:"name"`
+				Description string    `json:"description"`
+				Status      string    `json:"status"`
+			} `json:"area"`
+			Goals []struct {
+				Title string `json:"title"`
+			} `json:"goals"`
+			Projects []struct {
+				Title string `json:"title"`
+			} `json:"projects"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &env); err != nil {
+		t.Fatalf("decode area detail: %v (body=%s)", err, body)
+	}
+
+	if env.Data.Area.ID != areaID {
+		t.Errorf("area.id = %s, want %s", env.Data.Area.ID, areaID)
+	}
+	if env.Data.Area.Name != "Detail Area" {
+		t.Errorf("area.name = %q, want %q", env.Data.Area.Name, "Detail Area")
+	}
+	if env.Data.Area.Description != "What this area covers." {
+		t.Errorf("area.description = %q, want %q", env.Data.Area.Description, "What this area covers.")
+	}
+	if env.Data.Area.Status != "active" {
+		t.Errorf("area.status = %q, want %q", env.Data.Area.Status, "active")
+	}
+
+	// Two non-proposed goals under THIS area; proposed + other-area excluded.
+	if len(env.Data.Goals) != 2 {
+		t.Fatalf("goals len = %d, want 2 (proposed + other-area excluded): %+v", len(env.Data.Goals), env.Data.Goals)
+	}
+	for _, g := range env.Data.Goals {
+		if g.Title == "Proposed goal" || g.Title == "Other area goal" {
+			t.Errorf("goal %q leaked into the area detail", g.Title)
+		}
+	}
+
+	// One active project; proposed + archived + other-area excluded.
+	if len(env.Data.Projects) != 1 {
+		t.Fatalf("projects len = %d, want 1 (proposed/archived/other-area excluded): %+v", len(env.Data.Projects), env.Data.Projects)
+	}
+	if env.Data.Projects[0].Title != "Area Proj" {
+		t.Errorf("project = %q, want %q", env.Data.Projects[0].Title, "Area Proj")
+	}
+}
+
+// TestIntegration_Goal_AreaDetail_EmptyAndNotFound pins the empty-children
+// contract (goals/projects are [] not null when the area has none) and the 404
+// for an unknown area id.
+func TestIntegration_Goal_AreaDetail_EmptyAndNotFound(t *testing.T) {
+	truncate(t)
+	t.Cleanup(func() { deleteAreasBySlug(t, "empty-area") })
+	h := newHandlerWithProjects()
+
+	areaID := seedArea(t, "empty-area", "Empty Area", "active")
+
+	req := httptest.NewRequest(http.MethodGet, "/api/admin/commitment/areas/"+areaID.String(), nil)
+	req.SetPathValue("id", areaID.String())
+	rec := httptest.NewRecorder()
+	h.AreaDetail(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body=%s)", rec.Code, rec.Body.String())
+	}
+
+	// Empty children must serialize as [] (non-nil), never null. Decoding into
+	// []json.RawMessage leaves a JSON null as a nil slice — the regression this
+	// guards against.
+	var env struct {
+		Data struct {
+			Goals    []json.RawMessage `json:"goals"`
+			Projects []json.RawMessage `json:"projects"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &env); err != nil {
+		t.Fatalf("decode area detail: %v (body=%s)", err, rec.Body.String())
+	}
+	if env.Data.Goals == nil {
+		t.Errorf("goals serialized as null, want [] (body=%s)", rec.Body.String())
+	}
+	if env.Data.Projects == nil {
+		t.Errorf("projects serialized as null, want [] (body=%s)", rec.Body.String())
+	}
+
+	// Unknown id → 404 NOT_FOUND.
+	missing := uuid.New()
+	reqMiss := httptest.NewRequest(http.MethodGet, "/api/admin/commitment/areas/"+missing.String(), nil)
+	reqMiss.SetPathValue("id", missing.String())
+	recMiss := httptest.NewRecorder()
+	h.AreaDetail(recMiss, reqMiss)
+	if recMiss.Code != http.StatusNotFound {
+		t.Fatalf("missing area status = %d, want 404 (body=%s)", recMiss.Code, recMiss.Body.String())
+	}
+	if code := errCode(t, recMiss.Body.Bytes()); code != "NOT_FOUND" {
+		t.Errorf("missing area error.code = %q, want NOT_FOUND", code)
 	}
 }

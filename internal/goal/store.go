@@ -221,6 +221,38 @@ func (s *Store) GoalsByOptionalStatus(ctx context.Context, status *string) ([]Ac
 	return result, nil
 }
 
+// GoalsByArea returns the non-proposed goals filed under an area, with
+// milestone counts and area name resolved. Row shape and ordering match
+// GoalsByOptionalStatus, so it maps to the same ActiveGoalSummary. Returns an
+// empty slice (never nil) when the area has no goals.
+func (s *Store) GoalsByArea(ctx context.Context, areaID uuid.UUID) ([]ActiveGoalSummary, error) {
+	rows, err := s.q.GoalsByArea(ctx, &areaID)
+	if err != nil {
+		return nil, fmt.Errorf("querying goals for area %s: %w", areaID, err)
+	}
+	result := make([]ActiveGoalSummary, len(rows))
+	for i := range rows {
+		r := &rows[i]
+		result[i] = ActiveGoalSummary{
+			Goal: Goal{
+				ID:          r.ID,
+				Title:       r.Title,
+				Description: r.Description,
+				Status:      Status(r.Status),
+				AreaID:      r.AreaID,
+				Quarter:     r.Quarter,
+				Deadline:    r.Deadline,
+				CreatedAt:   r.CreatedAt,
+				UpdatedAt:   r.UpdatedAt,
+			},
+			AreaName:       r.AreaName,
+			MilestoneTotal: r.MilestoneTotal,
+			MilestoneDone:  r.MilestoneDone,
+		}
+	}
+	return result, nil
+}
+
 // GoalWithArea is a goal with its area name resolved.
 type GoalWithArea struct {
 	Goal
@@ -446,6 +478,41 @@ func (s *Store) Areas(ctx context.Context) ([]Area, error) {
 		}
 	}
 	return areas, nil
+}
+
+// AreaDetail is a single PARA area's full row, backing the admin area-detail
+// page header.
+type AreaDetail struct {
+	ID          uuid.UUID `json:"id"`
+	Slug        string    `json:"slug"`
+	Name        string    `json:"name"`
+	Description string    `json:"description"`
+	Status      string    `json:"status"`
+	SortOrder   int32     `json:"sort_order"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+}
+
+// AreaByID returns a single PARA area by id. Returns ErrNotFound when no area
+// matches.
+func (s *Store) AreaByID(ctx context.Context, id uuid.UUID) (*AreaDetail, error) {
+	r, err := s.q.AreaDetailByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("querying area %s: %w", id, err)
+	}
+	return &AreaDetail{
+		ID:          r.ID,
+		Slug:        r.Slug,
+		Name:        r.Name,
+		Description: r.Description,
+		Status:      r.Status,
+		SortOrder:   r.SortOrder,
+		CreatedAt:   r.CreatedAt,
+		UpdatedAt:   r.UpdatedAt,
+	}, nil
 }
 
 // CreatedArea is the active PARA area returned by CreateArea — the owner's

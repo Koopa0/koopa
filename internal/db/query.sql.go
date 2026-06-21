@@ -462,6 +462,42 @@ func (q *Queries) AreaByID(ctx context.Context, id uuid.UUID) (AreaByIDRow, erro
 	return i, err
 }
 
+const areaDetailByID = `-- name: AreaDetailByID :one
+SELECT id, slug, name, description, status, sort_order, created_at, updated_at
+FROM areas WHERE id = $1
+`
+
+type AreaDetailByIDRow struct {
+	ID          uuid.UUID `json:"id"`
+	Slug        string    `json:"slug"`
+	Name        string    `json:"name"`
+	Description string    `json:"description"`
+	Status      string    `json:"status"`
+	SortOrder   int32     `json:"sort_order"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+}
+
+// Full PARA area row for the admin area-detail page. Distinct from AreaByID
+// (which returns only the {id, slug, name, status, created_by} fields the
+// proposed-area miss disambiguation needs) — the detail header also shows the
+// description and timestamps.
+func (q *Queries) AreaDetailByID(ctx context.Context, id uuid.UUID) (AreaDetailByIDRow, error) {
+	row := q.db.QueryRow(ctx, areaDetailByID, id)
+	var i AreaDetailByIDRow
+	err := row.Scan(
+		&i.ID,
+		&i.Slug,
+		&i.Name,
+		&i.Description,
+		&i.Status,
+		&i.SortOrder,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const areaIDBySlugOrName = `-- name: AreaIDBySlugOrName :one
 SELECT id FROM areas
 WHERE (slug = $1 OR LOWER(name) = LOWER($1))
@@ -3072,6 +3108,71 @@ func (q *Queries) GoalRecentActivity(ctx context.Context, arg GoalRecentActivity
 	return items, nil
 }
 
+const goalsByArea = `-- name: GoalsByArea :many
+SELECT g.id, g.title, g.description, g.status, g.area_id, g.quarter, g.deadline,
+       g.created_at, g.updated_at,
+       COALESCE(a.name, '') AS area_name,
+       (SELECT count(*) FROM milestones m WHERE m.goal_id = g.id) AS milestone_total,
+       (SELECT count(*) FROM milestones m WHERE m.goal_id = g.id AND m.completed_at IS NOT NULL) AS milestone_done
+FROM goals g
+LEFT JOIN areas a ON a.id = g.area_id
+WHERE g.area_id = $1 AND g.status <> 'proposed'
+ORDER BY g.deadline NULLS LAST, g.created_at
+`
+
+type GoalsByAreaRow struct {
+	ID             uuid.UUID  `json:"id"`
+	Title          string     `json:"title"`
+	Description    string     `json:"description"`
+	Status         GoalStatus `json:"status"`
+	AreaID         *uuid.UUID `json:"area_id"`
+	Quarter        *string    `json:"quarter"`
+	Deadline       *time.Time `json:"deadline"`
+	CreatedAt      time.Time  `json:"created_at"`
+	UpdatedAt      time.Time  `json:"updated_at"`
+	AreaName       string     `json:"area_name"`
+	MilestoneTotal int64      `json:"milestone_total"`
+	MilestoneDone  int64      `json:"milestone_done"`
+}
+
+// Non-proposed goals filed under an area, with milestone counts, for the admin
+// area-detail page. Excludes proposed goals (inert drafts that surface only in
+// triage) — same exclusion as GoalsByOptionalStatus(NULL). Row shape matches
+// GoalsByOptionalStatus so it maps to the same ActiveGoalSummary. Indexed by
+// idx_goals_area on goals.area_id.
+func (q *Queries) GoalsByArea(ctx context.Context, areaID *uuid.UUID) ([]GoalsByAreaRow, error) {
+	rows, err := q.db.Query(ctx, goalsByArea, areaID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []GoalsByAreaRow{}
+	for rows.Next() {
+		var i GoalsByAreaRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Title,
+			&i.Description,
+			&i.Status,
+			&i.AreaID,
+			&i.Quarter,
+			&i.Deadline,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.AreaName,
+			&i.MilestoneTotal,
+			&i.MilestoneDone,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const goalsByOptionalStatus = `-- name: GoalsByOptionalStatus :many
 SELECT g.id, g.title, g.description, g.status, g.area_id, g.quarter, g.deadline,
        g.created_at, g.updated_at,
@@ -4875,6 +4976,53 @@ func (q *Queries) Projects(ctx context.Context) ([]Project, error) {
 			&i.ProposalRationale,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const projectsByArea = `-- name: ProjectsByArea :many
+SELECT id, slug, title, status, goal_id, last_activity_at
+FROM projects
+WHERE area_id = $1
+  AND status NOT IN ('proposed', 'archived')
+ORDER BY title
+`
+
+type ProjectsByAreaRow struct {
+	ID             uuid.UUID     `json:"id"`
+	Slug           string        `json:"slug"`
+	Title          string        `json:"title"`
+	Status         ProjectStatus `json:"status"`
+	GoalID         *uuid.UUID    `json:"goal_id"`
+	LastActivityAt *time.Time    `json:"last_activity_at"`
+}
+
+// Lightweight project info for the admin area-detail page. Excludes proposed
+// (inert drafts) and archived projects — same active-read filter as
+// ProjectSummariesByGoalIDs. Indexed by idx_projects_area on projects.area_id.
+func (q *Queries) ProjectsByArea(ctx context.Context, areaID *uuid.UUID) ([]ProjectsByAreaRow, error) {
+	rows, err := q.db.Query(ctx, projectsByArea, areaID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ProjectsByAreaRow{}
+	for rows.Next() {
+		var i ProjectsByAreaRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Slug,
+			&i.Title,
+			&i.Status,
+			&i.GoalID,
+			&i.LastActivityAt,
 		); err != nil {
 			return nil, err
 		}

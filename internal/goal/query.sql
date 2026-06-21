@@ -53,6 +53,22 @@ WHERE (sqlc.narg('status')::text IS NULL AND g.status <> 'proposed'
        OR g.status::text = sqlc.narg('status'))
 ORDER BY g.deadline NULLS LAST, g.created_at;
 
+-- name: GoalsByArea :many
+-- Non-proposed goals filed under an area, with milestone counts, for the admin
+-- area-detail page. Excludes proposed goals (inert drafts that surface only in
+-- triage) — same exclusion as GoalsByOptionalStatus(NULL). Row shape matches
+-- GoalsByOptionalStatus so it maps to the same ActiveGoalSummary. Indexed by
+-- idx_goals_area on goals.area_id.
+SELECT g.id, g.title, g.description, g.status, g.area_id, g.quarter, g.deadline,
+       g.created_at, g.updated_at,
+       COALESCE(a.name, '') AS area_name,
+       (SELECT count(*) FROM milestones m WHERE m.goal_id = g.id) AS milestone_total,
+       (SELECT count(*) FROM milestones m WHERE m.goal_id = g.id AND m.completed_at IS NOT NULL) AS milestone_done
+FROM goals g
+LEFT JOIN areas a ON a.id = g.area_id
+WHERE g.area_id = @area_id AND g.status <> 'proposed'
+ORDER BY g.deadline NULLS LAST, g.created_at;
+
 -- name: CreateMilestone :one
 -- Appends to the goal's milestone list: position = current max + 1, 0 when
 -- the goal has none (position carries UNIQUE(goal_id, position)).
@@ -182,6 +198,14 @@ ORDER BY sort_order, name;
 INSERT INTO areas (slug, name, description, status)
 VALUES (@slug, @name, @description, 'active')
 RETURNING id, slug, name, description, status, sort_order, created_by, created_at, updated_at;
+
+-- name: AreaDetailByID :one
+-- Full PARA area row for the admin area-detail page. Distinct from AreaByID
+-- (which returns only the {id, slug, name, status, created_by} fields the
+-- proposed-area miss disambiguation needs) — the detail header also shows the
+-- description and timestamps.
+SELECT id, slug, name, description, status, sort_order, created_at, updated_at
+FROM areas WHERE id = @id;
 
 -- name: UpdateGoal :one
 -- Partial update of a goal's shaping fields. NULL parameters leave the
