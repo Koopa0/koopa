@@ -799,6 +799,49 @@ func TestIntegration_Goal_CreateArea(t *testing.T) {
 	}
 }
 
+// TestIntegration_Goal_CreateArea_CJK pins that a pure Japanese/Chinese area
+// name creates successfully — the slug keeps its CJK characters (Unicode-aware
+// derivation) and the relaxed chk_area_slug_format accepts it against real
+// PostgreSQL. Before the slug-restriction fix this returned 400 ("no slug-able
+// characters") because the ascii-only deriver stripped every character.
+func TestIntegration_Goal_CreateArea_CJK(t *testing.T) {
+	h := newHandler()
+
+	const name = "日本語学習"
+	const wantSlug = "日本語学習"
+	t.Cleanup(func() {
+		if _, err := testPool.Exec(context.Background(),
+			`DELETE FROM areas WHERE slug = $1`, wantSlug,
+		); err != nil {
+			t.Errorf("cleanup area %q: %v", wantSlug, err)
+		}
+	})
+
+	req := postJSON(t, "/api/admin/commitment/areas", map[string]any{
+		"name":        name,
+		"description": "ヨルシカの歌詞を読む。",
+	})
+	rec := serve(t, h.CreateArea, req)
+	resp := rec.Result()
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("CJK area status = %d, want 201 (body=%s)", resp.StatusCode, body)
+	}
+	id := decodeID(t, body)
+
+	var slug string
+	if err := testPool.QueryRow(t.Context(),
+		`SELECT slug FROM areas WHERE id = $1`, id,
+	).Scan(&slug); err != nil {
+		t.Fatalf("reading CJK area %s: %v", id, err)
+	}
+	if slug != wantSlug {
+		t.Errorf("CJK slug = %q, want %q (Unicode-preserving derivation)", slug, wantSlug)
+	}
+}
+
 // TestIntegration_Goal_ProposedExcludedFromList is the leak pin for proposed
 // goals: a proposed goal is an inert draft that must NEVER appear in the
 // normal goal list (GoalsByOptionalStatus with no status filter) nor in

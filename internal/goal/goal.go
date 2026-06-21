@@ -8,6 +8,8 @@
 package goal
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"regexp"
 	"strings"
@@ -81,17 +83,24 @@ func ContainsControlChars(s string) bool {
 	return false
 }
 
-// areaSlugSep collapses every run of non-alphanumeric characters into a single
-// hyphen so DeriveAreaSlug can satisfy chk_area_slug_format.
-var areaSlugSep = regexp.MustCompile(`[^a-z0-9]+`)
+// slugSep collapses every run of non-(letter|number) characters into a single
+// hyphen. Unicode-aware (\p{L}\p{N}), so CJK letters survive while spaces and
+// punctuation become separators — DeriveSlug satisfies the slug-format CHECKs.
+var slugSep = regexp.MustCompile(`[^\p{L}\p{N}]+`)
 
-// DeriveAreaSlug turns an area display name into a URL-safe slug matching
-// chk_area_slug_format (`^[a-z0-9]+(-[a-z0-9]+)*$`): lowercase, runs of
-// non-alphanumerics collapsed to single hyphens, leading/trailing hyphens
-// trimmed. Returns "" when the name has no alphanumeric content — the caller
-// rejects that as invalid input rather than inserting a malformed slug. The
-// owner direct-create handler and the agent propose_area path derive area slugs
-// identically so the same name yields the same slug on both paths.
-func DeriveAreaSlug(name string) string {
-	return strings.Trim(areaSlugSep.ReplaceAllString(strings.ToLower(name), "-"), "-")
+// DeriveSlug turns a display name into a URL-safe slug: lowercase (ascii case;
+// CJK has none), runs of non-letter/non-number collapsed to single hyphens,
+// leading/trailing hyphens trimmed. Unicode letters and numbers — including
+// CJK — are PRESERVED, so a Japanese/Chinese name yields a Japanese/Chinese
+// slug (URLs carry UTF-8 fine). Only a name with no letters or numbers at all
+// (e.g. pure punctuation) falls back to a deterministic short token so the
+// result is never empty and a repeated name still collides on the unique index.
+// Shared by the owner direct-create handlers and the agent propose paths (area
+// + project) so a name yields the same slug on every path.
+func DeriveSlug(name string) string {
+	if s := strings.Trim(slugSep.ReplaceAllString(strings.ToLower(name), "-"), "-"); s != "" {
+		return s
+	}
+	sum := sha256.Sum256([]byte(name))
+	return "x-" + hex.EncodeToString(sum[:])[:10]
 }

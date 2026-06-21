@@ -136,13 +136,13 @@ CREATE TABLE topics (
     updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
 
     CONSTRAINT chk_topic_slug_format
-        CHECK (slug ~ '^[a-z0-9]+(-[a-z0-9]+)*$'),
+        CHECK (slug ~ '^[^[:space:]/-]+(-[^[:space:]/-]+)*$'),
     CONSTRAINT chk_topic_name_not_blank
         CHECK (btrim(name) <> '')
 );
 
 COMMENT ON TABLE topics IS 'High-level knowledge domains (Go, AI, System Design). 10-20, manually managed. Used for content categorization and feed association.';
-COMMENT ON COLUMN topics.slug IS 'URL-safe identifier (e.g. system-design). Used in feed_topics and content_topics junctions. Format: lowercase alphanumeric segments separated by single hyphens (chk_topic_slug_format) — no consecutive or trailing hyphens.';
+COMMENT ON COLUMN topics.slug IS 'URL-safe identifier (e.g. system-design, or 日本語). Used in feed_topics and content_topics junctions. Format (chk_topic_slug_format): hyphen-separated segments, no whitespace or slash, no leading/trailing/consecutive hyphens. Unicode letters/numbers (incl. CJK) allowed — slugs carry UTF-8 in URLs.';
 COMMENT ON COLUMN topics.icon IS 'Optional emoji or icon identifier for UI display.';
 COMMENT ON COLUMN topics.sort_order IS 'Priority tier for display ordering (lower = higher priority). Convention: sort_order is for tier-based UI placement that may have gaps; position is for sequence-based 0-based indexing within a parent. See top-of-file ordering convention block.';
 
@@ -156,13 +156,13 @@ CREATE TABLE tags (
     updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
 
     CONSTRAINT chk_tag_slug_format
-        CHECK (slug ~ '^[a-z0-9]+(-[a-z0-9]+)*$'),
+        CHECK (slug ~ '^[^[:space:]/-]+(-[^[:space:]/-]+)*$'),
     CONSTRAINT chk_tag_name_not_blank
         CHECK (btrim(name) <> '')
 );
 
 COMMENT ON TABLE tags IS 'Canonical tag registry. Fine-grained content-classification labels (two-pointers, error-handling). Resolved through tag_aliases pipeline.';
-COMMENT ON COLUMN tags.slug IS 'Canonical form (e.g. two-pointers, dp). Controlled vocabulary. Format: lowercase alphanumeric segments separated by single hyphens (chk_tag_slug_format). Namespaced slugs (weakness:xxx, improvement:xxx) are not used — tags are pure classification labels.';
+COMMENT ON COLUMN tags.slug IS 'Canonical form (e.g. two-pointers, dp). Controlled vocabulary. Format (chk_tag_slug_format): hyphen-separated segments, no whitespace or slash, no leading/trailing/consecutive hyphens; Unicode letters/numbers (incl. CJK) allowed. Tags are pure classification labels.';
 COMMENT ON COLUMN tags.parent_id IS 'Hierarchical parent tag. SET NULL on parent deletion — orphaned tags remain valid.';
 
 CREATE INDEX idx_tags_parent ON tags(parent_id);
@@ -214,7 +214,7 @@ CREATE TABLE areas (
     updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
 
     CONSTRAINT chk_area_slug_format
-        CHECK (slug ~ '^[a-z0-9]+(-[a-z0-9]+)*$'),
+        CHECK (slug ~ '^[^[:space:]/-]+(-[^[:space:]/-]+)*$'),
     CONSTRAINT chk_area_name_not_blank
         CHECK (btrim(name) <> '')
 );
@@ -382,7 +382,7 @@ CREATE TABLE projects (
     updated_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
 
     CONSTRAINT chk_project_slug_format
-        CHECK (slug ~ '^[a-z0-9]+(-[a-z0-9]+)*$'),
+        CHECK (slug ~ '^[^[:space:]/-]+(-[^[:space:]/-]+)*$'),
     CONSTRAINT chk_project_title_not_blank
         CHECK (btrim(title) <> '')
 );
@@ -530,7 +530,7 @@ CREATE TABLE contents (
         (series_id IS NOT NULL AND series_order IS NOT NULL)
     ),
     CONSTRAINT chk_content_slug_format
-        CHECK (slug ~ '^[a-z0-9]+(-[a-z0-9]+)*$'),
+        CHECK (slug ~ '^[^[:space:]/-]+(-[^[:space:]/-]+)*$'),
     CONSTRAINT chk_content_title_not_blank
         CHECK (btrim(title) <> ''),
     CONSTRAINT chk_content_publication
@@ -540,7 +540,7 @@ CREATE TABLE contents (
 );
 
 COMMENT ON TABLE contents IS 'First-party publishable knowledge layer. Five content types (article, essay, build-log, til, digest) share one editorial lifecycle: draft → review → published → archived. The review state is a two-actor handoff signal — Claude marks a draft ready (set_content_review_state), human admin publishes (publish_content). Notes (Zettelkasten) live in a separate notes table with maturity-based lifecycle — intentionally not mixed here. published status and published_at are tied by chk_content_publication; is_public requires published by chk_content_public_requires_published.';
-COMMENT ON COLUMN contents.slug IS 'URL-safe identifier. Globally unique. Used in public URLs. Format: lowercase alphanumeric segments separated by single hyphens (chk_content_slug_format).';
+COMMENT ON COLUMN contents.slug IS 'URL-safe identifier. Globally unique. Used in public URLs. Format (chk_content_slug_format): hyphen-separated segments, no whitespace or slash, no leading/trailing/consecutive hyphens. Unicode letters/numbers (incl. CJK) allowed — a 中日文 slug carries UTF-8 in the URL.';
 COMMENT ON COLUMN contents.type IS 'Content format: article, essay, build-log, til, digest. All are public-facing first-party content going through the review lifecycle. Notes are NOT a content type — they live in the notes table.';
 COMMENT ON COLUMN contents.status IS 'Lifecycle: draft → review → published. review = Claude-submitted, awaiting human publish. archived = soft delete. Transition review → published is human-admin only (enforced at MCP tool boundary).';
 COMMENT ON COLUMN contents.series_id IS 'Groups content into a series. Paired with series_order (chk_contents_series).';
@@ -605,7 +605,7 @@ CREATE TABLE notes (
     ) STORED,
 
     CONSTRAINT chk_note_slug_format
-        CHECK (slug ~ '^[a-z0-9]+(-[a-z0-9]+)*$'),
+        CHECK (slug ~ '^[^[:space:]/-]+(-[^[:space:]/-]+)*$'),
     CONSTRAINT chk_note_title_not_blank
         CHECK (btrim(title) <> '')
 );

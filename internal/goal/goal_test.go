@@ -275,3 +275,40 @@ func TestHandler_CreateMilestone_Validation(t *testing.T) {
 // Handler.List / Create / CreateMilestone success paths — require a real
 // store. Not yet covered by an in-package integration test.
 // ---------------------------------------------------------------------------
+
+// TestDeriveSlug covers the Unicode-aware slug derivation: ascii kebab-cases,
+// CJK is preserved (so a Japanese/Chinese name yields a CJK slug rather than
+// being stripped to empty and rejected), and a name with no letters/numbers
+// falls back to a deterministic non-empty token.
+func TestDeriveSlug(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{name: "ascii", in: "System Design", want: "system-design"},
+		{name: "ascii punctuation collapses", in: "AI & Agents!!", want: "ai-agents"},
+		{name: "cjk preserved", in: "日本語学習", want: "日本語学習"},
+		{name: "katakana preserved", in: "ヨルシカ", want: "ヨルシカ"},
+		{name: "mixed cjk ascii", in: "Go と Rust", want: "go-と-rust"},
+		{name: "trim and collapse hyphens", in: "  --Hello--World--  ", want: "hello-world"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := DeriveSlug(tt.in); got != tt.want {
+				t.Errorf("DeriveSlug(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+
+	// Pure-punctuation name has no letters/numbers → deterministic fallback,
+	// never empty, and stable across calls (so a repeat still collides on the
+	// unique index).
+	a, b := DeriveSlug("!!!"), DeriveSlug("!!!")
+	if a == "" {
+		t.Error("DeriveSlug(pure punctuation) = empty, want a fallback token")
+	}
+	if a != b {
+		t.Errorf("DeriveSlug fallback not deterministic: %q vs %q", a, b)
+	}
+}

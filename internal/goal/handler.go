@@ -348,9 +348,8 @@ type createAreaRequest struct {
 // (owner-made, no proposing agent). This is the admin counterpart to the agent
 // propose_area draft: proposed areas still go through Proposals triage; this is
 // the owner's bypass-triage path for areas they want active immediately. The
-// slug is derived + validated from name. Validation mirrors goal Create (blank,
-// control chars). A duplicate slug is 409; a name with no slug-able characters
-// is 400.
+// slug is derived from name (Unicode-aware — CJK names keep their characters).
+// Validation mirrors goal Create (blank, control chars). A duplicate slug is 409.
 func (h *Handler) CreateArea(w http.ResponseWriter, r *http.Request) {
 	req, err := api.Decode[createAreaRequest](w, r)
 	if err != nil {
@@ -369,11 +368,7 @@ func (h *Handler) CreateArea(w http.ResponseWriter, r *http.Request) {
 		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "description must not contain control characters")
 		return
 	}
-	slug := DeriveAreaSlug(req.Name)
-	if slug == "" {
-		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "name has no slug-able characters; use a name with letters or digits")
-		return
-	}
+	slug := DeriveSlug(req.Name)
 
 	store := h.store
 	if tx, ok := api.TxFromContext(r.Context()); ok {

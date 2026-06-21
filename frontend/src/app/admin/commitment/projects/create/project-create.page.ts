@@ -40,16 +40,19 @@ const TITLE_MAX = 90;
 const TITLE_MIN = 4;
 const TITLE_TOO_SHORT = 'Give it at least 4 characters.';
 const SLUG_MAX = 80;
-const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+// Hyphen-separated segments with no whitespace, slash, or leading/trailing/
+// consecutive hyphens. Unicode letters/numbers (incl. CJK) are allowed — slugs
+// carry UTF-8 fine in URLs — mirroring the server's chk_*_slug_format.
+const SLUG_PATTERN = /^[^\s/-]+(?:-[^\s/-]+)*$/;
 const SLUG_INVALID =
-  'Lowercase letters, numbers and single hyphens only (e.g. knowledge-engine).';
+  'No spaces or slashes, and no leading, trailing, or doubled hyphens (e.g. knowledge-engine or 知識引擎).';
 
 /** Derive a URL slug from free text — the same shape the server expects. */
 function slugify(text: string): string {
   return text
     .toLowerCase()
     .trim()
-    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/[^\p{L}\p{N}]+/gu, '-')
     .replace(/^-+|-+$/g, '')
     .slice(0, SLUG_MAX);
 }

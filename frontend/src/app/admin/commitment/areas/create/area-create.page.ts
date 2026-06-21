@@ -35,10 +35,12 @@ const NAME_NO_SLUG =
 
 /** Mirror the server's slug derivation so the preview matches the result. */
 function slugify(text: string): string {
+  // Unicode-aware: keep letters/numbers (incl. CJK), collapse the rest to
+  // hyphens. A Japanese/Chinese name yields a Japanese/Chinese slug.
   return text
     .toLowerCase()
     .trim()
-    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/[^\p{L}\p{N}]+/gu, '-')
     .replace(/^-+|-+$/g, '');
 }
 

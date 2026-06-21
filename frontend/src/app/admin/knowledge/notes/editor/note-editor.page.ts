@@ -75,7 +75,10 @@ const MATURITY_DOT: Record<NoteMaturity, string> = {
   archived: 'bg-fg-faint',
 };
 
-const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+// Hyphen-separated segments, no whitespace/slash, no leading/trailing/doubled
+// hyphens. Unicode letters/numbers (incl. CJK) allowed — mirrors the server's
+// chk_note_slug_format; slugs carry UTF-8 fine in URLs.
+const SLUG_PATTERN = /^[^\s/-]+(?:-[^\s/-]+)*$/;
 
 /**
  * Note Editor — create + edit route for Zettelkasten notes.

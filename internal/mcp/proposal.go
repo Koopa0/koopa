@@ -71,10 +71,7 @@ func (s *Server) proposeArea(ctx context.Context, _ *mcp.CallToolRequest, input 
 	if goal.ContainsControlChars(input.Rationale) {
 		return nil, ProposeAreaOutput{}, fmt.Errorf("rationale must not contain control characters")
 	}
-	slug := goal.DeriveAreaSlug(input.Name)
-	if slug == "" {
-		return nil, ProposeAreaOutput{}, fmt.Errorf("name %q has no slug-able characters; provide a name with letters or digits", input.Name)
-	}
+	slug := goal.DeriveSlug(input.Name)
 
 	var created *goal.ProposedArea
 	err := s.withActorTx(ctx, func(tx pgx.Tx) error {
@@ -218,10 +215,7 @@ func (s *Server) proposeProject(ctx context.Context, _ *mcp.CallToolRequest, inp
 	if goal.ContainsControlChars(input.Rationale) {
 		return nil, ProposeProjectOutput{}, fmt.Errorf("rationale must not contain control characters")
 	}
-	slug := goal.DeriveAreaSlug(input.Name)
-	if slug == "" {
-		return nil, ProposeProjectOutput{}, fmt.Errorf("name %q has no slug-able characters; provide a name with letters or digits", input.Name)
-	}
+	slug := goal.DeriveSlug(input.Name)
 
 	var created *project.Project
 	err := s.withActorTx(ctx, func(tx pgx.Tx) error {

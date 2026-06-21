@@ -73,7 +73,10 @@ const STATUS_BADGE_VARIANT: Record<ContentStatus, BadgeVariant> = {
   archived: 'neutral',
 };
 
-const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+// Hyphen-separated segments, no whitespace/slash, no leading/trailing/doubled
+// hyphens. Unicode letters/numbers (incl. CJK) allowed — mirrors the server's
+// chk_content_slug_format; slugs carry UTF-8 fine in URLs.
+const SLUG_PATTERN = /^[^\s/-]+(?:-[^\s/-]+)*$/;
 const WORDS_PER_MINUTE = 220;
 
 /**
