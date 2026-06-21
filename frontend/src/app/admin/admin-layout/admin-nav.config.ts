@@ -105,6 +105,15 @@ export const ADMIN_NAV: readonly AdminNavGroup[] = [
   {
     label: 'Commitment',
     items: [
+      // PARA order: Areas (ongoing domains) contain Goals (outcomes), which
+      // drive Projects (finite efforts) — container → outcome → action.
+      {
+        label: 'Areas',
+        route: '/admin/commitment/areas',
+        icon: Layers,
+        shortcutHint: '',
+        testId: 'admin-nav-areas',
+      },
       {
         label: 'Goals',
         route: '/admin/commitment/goals',
@@ -119,13 +128,6 @@ export const ADMIN_NAV: readonly AdminNavGroup[] = [
         icon: FolderKanban,
         shortcutHint: '',
         testId: 'admin-nav-projects',
-      },
-      {
-        label: 'Areas',
-        route: '/admin/commitment/areas',
-        icon: Layers,
-        shortcutHint: '',
-        testId: 'admin-nav-areas',
       },
       {
         label: 'Proposals',

@@ -131,12 +131,20 @@
     <!-- Detail top: title + description + status control -->
     <header class="flex items-start gap-4" data-testid="goal-hero">
       <div class="min-w-0 flex-1">
-        <h1 class="font-display text-2xl font-semibold text-fg">
+        <p class="font-mono text-[10px] uppercase tracking-[0.08em] text-fg-faint">
+          Goal
+        </p>
+        <h1 class="mt-1 font-display text-2xl font-semibold text-fg">
           {{ g.title }}
         </h1>
         @if (g.description) {
           <p class="mt-2 text-sm whitespace-pre-wrap text-fg-muted" data-testid="goal-description">
             {{ g.description }}
+          </p>
+        } @else {
+          <p class="mt-2 text-sm text-fg-faint" data-testid="goal-purpose-hint">
+            Shape the outcome — use Edit to set its area, quarter, and deadline,
+            add milestones below, and move its status as it progresses.
           </p>
         }
       </div>
