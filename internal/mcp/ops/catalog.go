@@ -32,7 +32,7 @@ func Brief() Meta {
 		Writability: ReadOnly,
 		Stability:   StabilityStable,
 		Since:       since,
-		Description: "Read-only planning-state pull. Pick a mode (required): 'morning' = single-call daily-planning briefing (overdue/today/committed/upcoming todos, active_goals, unverified_hypotheses, rss_highlights, content_pipeline); 'reflection' = end-of-day plan-vs-actual retrospective (planned_items + completed/deferred/planned counts + completion_rate). brief is a pure planning-state pull and carries no agent memory. Morning mode is filterable via the sections parameter (ignored in reflection mode) — valid keys (omit or pass [] for all): 'tasks' (overdue/today/committed/upcoming todos), 'goals' (active_goals), 'hypotheses' (unverified_hypotheses), 'rss' (rss_highlights — feeds tagged priority=high, NOT relevance-ranked; use search_knowledge for ranked retrieval), 'content_pipeline' (content_pipeline). Per-agent default sections: learning-studio defaults to ['tasks', 'hypotheses']; every other caller (incl. planner) gets all sections. Scope is the target date (default today), not since-last-session.",
+		Description: "Read-only planning-state pull. Pick a mode (required): 'morning' = single-call daily-planning briefing (overdue/today/committed/upcoming todos, active_goals, rss_highlights, content_pipeline); 'reflection' = end-of-day plan-vs-actual retrospective (planned_items + completed/deferred/planned counts + completion_rate). brief is a pure planning-state pull and carries no agent memory. Morning mode is filterable via the sections parameter (ignored in reflection mode) — valid keys (omit or pass [] for all): 'tasks' (overdue/today/committed/upcoming todos), 'goals' (active_goals), 'rss' (rss_highlights — feeds tagged priority=high, NOT relevance-ranked; use search_knowledge for ranked retrieval), 'content_pipeline' (content_pipeline). Per-agent default sections: learning-studio defaults to ['tasks']; every other caller (incl. planner) gets all sections. Scope is the target date (default today), not since-last-session.",
 		FieldEnums: map[string][]string{
 			"mode": {"morning", "reflection"},
 		},
@@ -77,124 +77,6 @@ func PlanDay() Meta {
 		Stability:   StabilityStable,
 		Since:       since,
 		Description: "Set the day's plan as one atomic replacement. Each todo MUST already be in state=todo (inbox/done/someday rejected — clarify inbox todos to state=todo via the admin UI first). The items list MUST be non-empty; to leave the day unplanned, do not call plan_day at all. The whole call (delete-existing + insert-new) runs in one transaction, so any per-item validation failure rolls back to the previous plan. items_removed reports todos that were in the previous plan but are NOT in the new list (true displacements only — todos carried over with the same task_id are not reported as removed even though their plan_item row gets a new id).",
-	}
-}
-
-// StartSession returns metadata for the learning session start tool.
-func StartSession() Meta {
-	return Meta{
-		Name:        "start_session",
-		Domain:      DomainLearning,
-		Writability: Additive,
-		Stability:   StabilityStable,
-		Since:       since,
-		Description: "Begin a learning session. Required: domain (e.g. leetcode, japanese), mode (retrieval/practice/mixed/review/reading). Validates no other active session exists. Use when the user wants to start a learning/practice session.",
-		FieldEnums: map[string][]string{
-			"mode": {"retrieval", "practice", "mixed", "review", "reading"},
-		},
-	}
-}
-
-// RecordAttempt returns metadata for the in-session attempt recorder.
-// FieldEnums lists every accepted outcome value — both canonical DB
-// enums (solved_independent, solved_with_hint, ...) and the semantic
-// synonyms the coach is encouraged to type ("got it", "needed help",
-// ...). Sourced from learning.mapProblemSolving + learning.mapImmersive.
-//
-// Description prose duplicates the partial-write contract from
-// internal/mcp/learning.go::RecordAttemptOutput doc — keep both in sync
-// when changing the contract. They serve different audiences (Description
-// is the MCP client tooltip; the Go doc is for code authors) so neither
-// can be eliminated.
-func RecordAttempt() Meta {
-	return Meta{
-		Name:        "record_attempt",
-		Domain:      DomainLearning,
-		Writability: Additive,
-		Stability:   StabilityStable,
-		Since:       since,
-		Description: "Record an attempt within the active learning session. Accepts semantic outcomes ('got it', 'needed help', 'gave up') mapped to schema enums by session mode. Response echoes canonical_outcome alongside the input so the coach sees the normalized storage form. Auto-creates learning targets and concepts. Both high and low confidence observations are persisted; dashboard filters at read time. Partial-write contract: observations are validated per-element. Severity is only valid for signal='weakness'; passing severity on mastery/improvement rejects that observation only — sibling observations still try independently and the attempt row still persists. observations_recorded < input length is therefore a legal state; rejected indices are named in observation_warnings. Same per-element semantics apply to related_targets — relations_linked < len(related_targets) is legal and rejected entries land in relation_warnings. Response.attempt_number is PER-TARGET, not per-session: it counts how many times this same learning_target_id has been attempted across all sessions. Three attempts on three different targets in one session all return attempt_number=1. For session-scoped count use session_progress.attempt_count.",
-		FieldEnums: map[string][]string{
-			"outcome": {
-				// Canonical DB-stored values.
-				"solved_independent", "solved_with_hint", "solved_after_solution",
-				"completed", "completed_with_support",
-				"incomplete", "gave_up",
-				// Semantic synonyms — problem_solving.
-				"got it", "solved it", "nailed it",
-				"needed help", "needed a hint", "got help",
-				"saw answer", "saw the answer", "saw the answer first",
-				"didn't finish", "not done",
-				"gave up", "stuck",
-				// Semantic synonyms — immersive (overlap with problem_solving
-				// for shared outcomes; duplicates are acceptable in the enum
-				// list since JSON Schema treats enum as a set).
-				"finished", "done", "needed support",
-			},
-		},
-	}
-}
-
-// EndSession returns metadata for the learning session terminator.
-func EndSession() Meta {
-	return Meta{
-		Name:        "end_session",
-		Domain:      DomainLearning,
-		Writability: Additive,
-		Stability:   StabilityStable,
-		Since:       since,
-		Description: "End the active learning session. Returns session summary with all attempts.",
-	}
-}
-
-// LearningRead returns metadata for the read-only learning-analytics
-// multiplexer. It subsumes the former learning_dashboard (overview view only),
-// recommend_next_target, attempt_history, and session_progress tools behind a
-// single `view` discriminator. FieldEnums advertises the view enum so
-// tools/list callers see valid values structurally.
-//
-// The former dashboard mastery / weaknesses / timeline / variations views are
-// deliberately NOT exposed here — they remain HTTP-admin-only. learning_read
-// rejects any view outside the four below.
-func LearningRead() Meta {
-	return Meta{
-		Name:        "learning_read",
-		Domain:      DomainLearning,
-		Writability: ReadOnly,
-		Stability:   StabilityStable,
-		Since:       since,
-		Description: "Read-only learning analytics. Pick a view: overview (recent learning sessions; filter by domain + window_days), next_target (in-session next-problem recommendation combining weakness analysis with the untried-variation graph — requires session_id, the active session, plus optional count + exclude_patterns), attempts (attempt history: exactly one of target {title+domain}, concept_slug, or session_id; each attempt carries its observation list with confidence labels, and concept_slug mode adds matched_observation_id; sort is target/concept DESC, session ASC; resolved=false means the lookup target does not exist), session_progress (in-session aggregate for the currently-active session: attempt count, elapsed time, paradigm/concept/category distributions; when no session is active returns {active:false, last_ended_session_id} as a pivot affordance). Response is the selected view's payload plus a top-level `view` tag.",
-		FieldEnums: map[string][]string{
-			"view": {"overview", "next_target", "attempts", "session_progress"},
-		},
-	}
-}
-
-// ManagePlan returns metadata for the learning plan lifecycle multiplexer.
-func ManagePlan() Meta {
-	return Meta{
-		Name:        "manage_plan",
-		Domain:      DomainLearning,
-		Writability: Destructive,
-		Stability:   StabilityStable,
-		Since:       since,
-		Description: "Learning plan lifecycle and entries. Actions: add_entries (accepts learning_target_id OR title for find-or-create using plan domain), remove_entries (draft only), update_entry (complete/skip/substitute), reorder, progress. The progress action returns aggregate counts plus a flat entry list with plan_entry_id, learning_target_id, title, position, status, phase — call it before update_entry to look up plan_entry_id. Completing an entry (status=completed) requires a non-blank reason and a completed_by_attempt_id whose learning_target matches the entry's; mismatched IDs are rejected. Skipping an entry (status=skipped) also requires a non-blank reason — skip is a decision and cross-agent review needs to know why an active plan entry was dropped (no force-mode escape hatch for skip). Use force=true with a reason starting with 'manual override:' (≥60 chars) when no aligned attempt exists for completion — the prefix is the audit signal for retroactive completions.",
-		FieldEnums: map[string][]string{
-			"action": {"add_entries", "remove_entries", "update_entry", "reorder", "progress"},
-		},
-	}
-}
-
-// DraftHypothesis returns metadata for the agent hypothesis-drafting tool —
-// the only write surface that produces an inert draft for the owner to act on.
-func DraftHypothesis() Meta {
-	return Meta{
-		Name:        "draft_hypothesis",
-		Domain:      DomainLearning,
-		Writability: Additive,
-		Stability:   StabilityStable,
-		Since:       "1.1.0",
-		Description: "Draft a falsifiable learning hypothesis (claim + invalidation_condition) in state=draft. A draft is INERT until the owner endorses it in the admin UI — it feeds no dashboard, counts toward no progress, and never appears in brief(morning), the Today page, or any default listing. Draft only to materialize a pattern that surfaced in a conversation the owner was part of — NEVER from scheduled or autonomous runs. Use when the user exhibits a recurring, falsifiable pattern (e.g. 'graph 題每次卡在 DFS 終止條件'). Endorsement (draft→unverified), verdicts (verify/invalidate), and draft deletion are owner actions in admin, not MCP.",
 	}
 }
 
@@ -286,12 +168,6 @@ func All() []Meta {
 		SearchKnowledge(),
 		CaptureInbox(),
 		PlanDay(),
-		StartSession(),
-		RecordAttempt(),
-		EndSession(),
-		LearningRead(),
-		ManagePlan(),
-		DraftHypothesis(),
 		ProposeArea(),
 		ProposeGoal(),
 		ProposeProject(),

@@ -33,7 +33,6 @@ const (
 var domainOrder = []Domain{
 	DomainQuery,
 	DomainDaily,
-	DomainLearning,
 	DomainContent,
 }
 

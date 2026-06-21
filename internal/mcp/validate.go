@@ -7,36 +7,6 @@
 
 package mcp
 
-import (
-	"fmt"
-	"regexp"
-)
-
-// slugPattern mirrors every chk_*_slug_format CHECK constraint in
-// migrations/001 (learning_domains, concepts, contents, tags, topics,
-// observation_categories, ...). Validating client-side lets handlers
-// return a specific error instead of a generic CheckViolation from PG.
-//
-// The canonical form is strictly aligned with the DB so a slug accepted
-// here is always accepted by INSERT: it allows leading digits (e.g.
-// "n2-grammar") and rejects trailing/consecutive hyphens.
-//
-// If a future migration changes the schema rule, update this regex in
-// the same commit so client-side and server-side stay aligned.
-var slugPattern = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
-
-// validateSlug returns an error suitable for caller-facing messages
-// when s does not match slugPattern. fieldName is the human-readable
-// name to show ("concept slug", "content slug", "observation category").
-// Returns nil for valid slugs. The wording is intentionally uniform so
-// all slug rejections read the same regardless of which tool the caller used.
-func validateSlug(fieldName, s string) error {
-	if slugPattern.MatchString(s) {
-		return nil
-	}
-	return fmt.Errorf("invalid %s %q: must be lowercase kebab-case (pattern: %s)", fieldName, s, slugPattern.String())
-}
-
 // isValidEnergy mirrors the todos.energy CHECK in 001_initial.up.sql.
 // Used by capture_inbox.
 func isValidEnergy(e string) bool {

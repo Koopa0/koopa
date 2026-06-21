@@ -24,9 +24,6 @@ import (
 	"github.com/Koopa0/koopa/internal/feed"
 	"github.com/Koopa0/koopa/internal/feed/entry"
 	"github.com/Koopa0/koopa/internal/goal"
-	"github.com/Koopa0/koopa/internal/learning"
-	"github.com/Koopa0/koopa/internal/learning/hypothesis"
-	"github.com/Koopa0/koopa/internal/learning/plan"
 	"github.com/Koopa0/koopa/internal/mcp/ops"
 	"github.com/Koopa0/koopa/internal/note"
 	"github.com/Koopa0/koopa/internal/project"
@@ -45,19 +42,14 @@ type Server struct {
 	notes    *note.Store
 	projects *project.Store
 
-	// Goals and hypotheses
-	goals      *goal.Store
-	hypotheses *hypothesis.Store
+	// Goals
+	goals *goal.Store
 
 	// Agent registry — source of truth for caller identity resolution and
 	// the requireAuthor / requireRegisteredCaller gates. Wired in from
 	// cmd/app/main.go so the CLI and tests can inject custom rosters when
 	// needed.
 	registry *agent.Registry
-
-	// Learning domain
-	learn *learning.Store
-	plans *plan.Store
 
 	// Content and feeds
 	feeds       *feed.Store
@@ -122,10 +114,7 @@ func NewServer(pool *pgxpool.Pool, logger *slog.Logger, opts ...ServerOption) *S
 		notes:       note.NewStore(pool),
 		projects:    project.NewStore(pool),
 		goals:       goal.NewStore(pool),
-		hypotheses:  hypothesis.NewStore(pool),
 		registry:    agent.NewBuiltinRegistry(),
-		learn:       learning.NewStore(pool),
-		plans:       plan.NewStore(pool),
 		feedEntries: entry.NewStore(pool),
 		feeds:       feed.NewStore(pool, logger),
 		stats:       stats.NewStore(pool),
@@ -161,14 +150,6 @@ func NewServer(pool *pgxpool.Pool, logger *slog.Logger, opts ...ServerOption) *S
 	addTool(s, toolFrom(ops.SearchKnowledge), s.searchKnowledge)
 	addTool(s, toolFrom(ops.CaptureInbox), s.captureInbox)
 	addTool(s, toolFrom(ops.PlanDay), s.planDay)
-
-	// --- Learning Domain ---
-	addTool(s, toolFrom(ops.StartSession), s.startSession)
-	addTool(s, toolFrom(ops.RecordAttempt), s.recordAttempt)
-	addTool(s, toolFrom(ops.EndSession), s.endSession)
-	addTool(s, toolFrom(ops.LearningRead), s.learningRead)
-	addTool(s, toolFrom(ops.ManagePlan), s.managePlan)
-	addTool(s, toolFrom(ops.DraftHypothesis), s.draftHypothesis)
 
 	// --- Proposals (agent inert drafts for owner triage) ---
 	addTool(s, toolFrom(ops.ProposeArea), s.proposeArea)
@@ -375,15 +356,7 @@ func addTool[I, O any](s *Server, tool *mcp.Tool, handler func(context.Context, 
 	})
 }
 
-// clamp constrains v to [lo, hi], returning def if v is 0.
-//
-// All current callers pass lo=1 (limits / counts / window sizes that
-// must be at least 1). The parameter stays in the signature because
-// the next caller that emerges from a future redesign may legitimately
-// want lo=0 (a "0 means strict" semantic) and forcing such a caller to
-// re-introduce the parameter would be churn for no gain.
-//
-//nolint:unparam // lo=1 across current callers; signature reserved for non-1 callers.
+// clamp constrains v to [lo, hi], returning def when v is 0.
 func clamp(v, lo, hi, def int) int {
 	if v == 0 {
 		return def

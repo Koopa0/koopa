@@ -121,8 +121,7 @@ func containsControlChars(s string) bool {
 // containsProseControlChars reports whether s contains a control character
 // that is forbidden in free-text prose: the containsControlChars set
 // EXCEPT HT (0x09), LF (0x0A), and CR (0x0D). Diary bodies are multi-line
-// prose where line breaks and tabs are legitimate formatting — same
-// exemption as internal/learning/hypothesis resolution summaries.
+// prose where line breaks and tabs are legitimate formatting.
 func containsProseControlChars(s string) bool {
 	for _, r := range s {
 		switch {

@@ -1,11 +1,10 @@
 // Copyright 2026 Koopa. All rights reserved.
 
 // proposal.go holds the agent proposal tools: propose_area and propose_goal.
-// Both mirror draft_hypothesis (hypothesis.go) — an agent writes an INERT
-// draft (status=proposed) that the owner reviews and activates or rejects in
-// the admin UI. The tools exist to remove Koopa's authoring-from-blank
-// paralysis: an agent that has surfaced a theme or objective in conversation
-// can propose it, and Koopa decides in triage.
+// Each tool writes an INERT draft (status=proposed) that the owner reviews
+// and activates or rejects in the admin UI. The tools exist to remove
+// Koopa's authoring-from-blank paralysis: an agent that has surfaced a theme
+// or objective in conversation can propose it, and Koopa decides in triage.
 //
 // # Inertness contract
 //
@@ -19,9 +18,8 @@
 // # When to propose
 //
 // Only materialize a theme or objective that surfaced in a conversation the
-// owner was part of — NEVER from a scheduled or autonomous run. This mirrors
-// draft_hypothesis's pull-only clause: a proposal is a notification-worthy
-// suggestion, not an autonomous write.
+// owner was part of — NEVER from a scheduled or autonomous run. A proposal is
+// a pull-only, notification-worthy suggestion, not an autonomous write.
 
 package mcp
 

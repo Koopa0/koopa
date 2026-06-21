@@ -38,9 +38,6 @@ import (
 	"github.com/Koopa0/koopa/internal/feed/collector"
 	"github.com/Koopa0/koopa/internal/feed/entry"
 	"github.com/Koopa0/koopa/internal/goal"
-	"github.com/Koopa0/koopa/internal/learning"
-	"github.com/Koopa0/koopa/internal/learning/hypothesis"
-	learningplan "github.com/Koopa0/koopa/internal/learning/plan"
 	"github.com/Koopa0/koopa/internal/note"
 	"github.com/Koopa0/koopa/internal/project"
 	"github.com/Koopa0/koopa/internal/reading"
@@ -187,14 +184,11 @@ func run(logger *slog.Logger) error {
 	statsStore := stats.NewStore(pool)
 	activityStore := activity.NewStore(pool)
 	authStore := auth.NewStore(pool)
-	hypothesisStore := hypothesis.NewStore(pool)
 	todoStore := todo.NewStore(pool)
 	dailyStore := daily.NewStore(pool)
-	learningStore := learning.NewStore(pool)
 	noteStore := note.NewStore(pool)
 	readingStore := reading.NewStore(pool)
 	songStore := song.NewStore(pool)
-	planStore := learningplan.NewStore(pool)
 
 	// Feed collector for manual fetch + scheduled fetch
 	feedCollector := collector.New(entryStore, feedStore, logger)
@@ -258,25 +252,19 @@ func run(logger *slog.Logger) error {
 		tag:        tag.NewHandler(tagStore, logger),
 		stats:      stats.NewHandler(statsStore, logger),
 		activity:   activity.NewHandler(activityStore, logger),
-		hypothesis: hypothesis.NewHandler(hypothesisStore, logger),
 		agent:      agent.NewHandler(agentRegistry, logger),
 		daily:      daily.NewHandler(dailyStore, todoStore, logger),
-		learning:   learning.NewHandler(learningStore, logger),
 		note:       note.NewHandler(noteStore, logger),
 		reading:    reading.NewHandler(readingStore, logger),
 		song:       song.NewHandler(songStore, logger),
 		todo:       todo.NewHandler(todoStore, logger),
-		plan:       learningplan.NewHandler(planStore, logger),
 		// Today is the HTTP mirror of brief(mode=morning): the same domain
 		// stores feed both. The contracted readers — todo date views, the
-		// day's committed plan, active goals, unverified hypotheses, the
-		// active learning session, and RSS highlights — are wired to the
-		// real stores below.
+		// day's committed plan, active goals, and RSS highlights — are wired
+		// to the real stores below.
 		today: today.NewHandler(dailyStore, logger).WithSources(
 			todoStore,
 			goalStore,
-			hypothesisStore,
-			learningStore,
 			entryStore,
 		),
 		search: search.NewHandler([]search.Source{

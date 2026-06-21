@@ -12,7 +12,6 @@ import (
 
 	"github.com/Koopa0/koopa/internal/daily"
 	"github.com/Koopa0/koopa/internal/goal"
-	"github.com/Koopa0/koopa/internal/learning/hypothesis"
 	"github.com/Koopa0/koopa/internal/todo"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/uuid"
@@ -55,16 +54,15 @@ func TestBriefOutput_MorningSlicesMarshalAsEmptyArray(t *testing.T) {
 	t.Parallel()
 
 	out := BriefOutput{
-		Mode:                 briefModeMorning,
-		Date:                 time.Now().Format(time.DateOnly),
-		OverdueTodos:         []todo.PendingDetail{},
-		TodayTodos:           []todo.PendingDetail{},
-		CommittedTodos:       []daily.Item{},
-		UpcomingTodos:        []todo.PendingDetail{},
-		ActiveGoals:          []goal.ActiveGoalSummary{},
-		UnverifiedHypotheses: []hypothesis.Record{},
-		RSSHighlights:        []RSSHighlight{},
-		ContentPipeline:      []ContentSummary{},
+		Mode:            briefModeMorning,
+		Date:            time.Now().Format(time.DateOnly),
+		OverdueTodos:    []todo.PendingDetail{},
+		TodayTodos:      []todo.PendingDetail{},
+		CommittedTodos:  []daily.Item{},
+		UpcomingTodos:   []todo.PendingDetail{},
+		ActiveGoals:     []goal.ActiveGoalSummary{},
+		RSSHighlights:   []RSSHighlight{},
+		ContentPipeline: []ContentSummary{},
 	}
 
 	b, err := json.Marshal(out)
@@ -78,7 +76,6 @@ func TestBriefOutput_MorningSlicesMarshalAsEmptyArray(t *testing.T) {
 		"committed_todos",
 		"upcoming_todos",
 		"active_goals",
-		"unverified_hypotheses",
 		"rss_highlights",
 		"content_pipeline",
 	}
@@ -107,7 +104,7 @@ func TestResolveDefaultSections(t *testing.T) {
 		{
 			name:   "learning-studio gets focused subset",
 			caller: "learning-studio",
-			want:   []string{"tasks", "hypotheses"},
+			want:   []string{"tasks"},
 		},
 	}
 	for _, tt := range tests {
@@ -160,7 +157,6 @@ func TestBriefOutput_MorningWireShape(t *testing.T) {
 		"committed_todos",
 		"upcoming_todos",
 		"active_goals",
-		"unverified_hypotheses",
 		"rss_highlights",
 		"content_pipeline",
 	}
@@ -179,16 +175,15 @@ func TestBriefOutput_MorningWireShape(t *testing.T) {
 		{
 			name: "zero — every list field is [] not null",
 			out: BriefOutput{
-				Mode:                 briefModeMorning,
-				Date:                 "2026-05-27",
-				OverdueTodos:         []todo.PendingDetail{},
-				TodayTodos:           []todo.PendingDetail{},
-				CommittedTodos:       []daily.Item{},
-				UpcomingTodos:        []todo.PendingDetail{},
-				ActiveGoals:          []goal.ActiveGoalSummary{},
-				UnverifiedHypotheses: []hypothesis.Record{},
-				RSSHighlights:        []RSSHighlight{},
-				ContentPipeline:      []ContentSummary{},
+				Mode:            briefModeMorning,
+				Date:            "2026-05-27",
+				OverdueTodos:    []todo.PendingDetail{},
+				TodayTodos:      []todo.PendingDetail{},
+				CommittedTodos:  []daily.Item{},
+				UpcomingTodos:   []todo.PendingDetail{},
+				ActiveGoals:     []goal.ActiveGoalSummary{},
+				RSSHighlights:   []RSSHighlight{},
+				ContentPipeline: []ContentSummary{},
 			},
 			expect: []fieldExpectation{
 				{"overdue_todos", 0},
@@ -196,7 +191,6 @@ func TestBriefOutput_MorningWireShape(t *testing.T) {
 				{"committed_todos", 0},
 				{"upcoming_todos", 0},
 				{"active_goals", 0},
-				{"unverified_hypotheses", 0},
 				{"rss_highlights", 0},
 				{"content_pipeline", 0},
 			},
@@ -209,13 +203,12 @@ func TestBriefOutput_MorningWireShape(t *testing.T) {
 				OverdueTodos: []todo.PendingDetail{
 					{ID: uuid.New(), Title: "ship audit memo"},
 				},
-				TodayTodos:           []todo.PendingDetail{{ID: uuid.New(), Title: "review draft"}},
-				CommittedTodos:       []daily.Item{},
-				UpcomingTodos:        []todo.PendingDetail{},
-				ActiveGoals:          []goal.ActiveGoalSummary{},
-				UnverifiedHypotheses: []hypothesis.Record{},
-				RSSHighlights:        []RSSHighlight{},
-				ContentPipeline:      []ContentSummary{},
+				TodayTodos:      []todo.PendingDetail{{ID: uuid.New(), Title: "review draft"}},
+				CommittedTodos:  []daily.Item{},
+				UpcomingTodos:   []todo.PendingDetail{},
+				ActiveGoals:     []goal.ActiveGoalSummary{},
+				RSSHighlights:   []RSSHighlight{},
+				ContentPipeline: []ContentSummary{},
 			},
 			expect: []fieldExpectation{
 				{"overdue_todos", 1},
@@ -228,14 +221,13 @@ func TestBriefOutput_MorningWireShape(t *testing.T) {
 		{
 			name: "rss section populated — RSSHighlights uses local DTO shape",
 			out: BriefOutput{
-				Mode:                 briefModeMorning,
-				Date:                 "2026-05-27",
-				OverdueTodos:         []todo.PendingDetail{},
-				TodayTodos:           []todo.PendingDetail{},
-				CommittedTodos:       []daily.Item{},
-				UpcomingTodos:        []todo.PendingDetail{},
-				ActiveGoals:          []goal.ActiveGoalSummary{},
-				UnverifiedHypotheses: []hypothesis.Record{},
+				Mode:           briefModeMorning,
+				Date:           "2026-05-27",
+				OverdueTodos:   []todo.PendingDetail{},
+				TodayTodos:     []todo.PendingDetail{},
+				CommittedTodos: []daily.Item{},
+				UpcomingTodos:  []todo.PendingDetail{},
+				ActiveGoals:    []goal.ActiveGoalSummary{},
 				RSSHighlights: []RSSHighlight{
 					{Title: "Go 1.27 preview", URL: "https://example/g127", FeedName: "Go Blog", CreatedAt: "2026-05-26T10:00:00Z"},
 				},

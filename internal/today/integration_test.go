@@ -8,9 +8,8 @@
 // domain stores and that empty sections marshal as [] (never null).
 //
 // Coverage:
-//   - seeded todo (due today) + goal (in_progress) + hypothesis (unverified)
-//   - active learning session populate their sections.
-//   - empty database returns every list as [] and omits active_session.
+//   - seeded todo (due today) + goal (in_progress) populate their sections.
+//   - empty database returns every list as [].
 //
 // Run with:
 //
@@ -28,15 +27,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/Koopa0/koopa/internal/agent"
 	"github.com/Koopa0/koopa/internal/daily"
 	"github.com/Koopa0/koopa/internal/feed/entry"
 	"github.com/Koopa0/koopa/internal/goal"
-	"github.com/Koopa0/koopa/internal/learning"
-	"github.com/Koopa0/koopa/internal/learning/hypothesis"
 	"github.com/Koopa0/koopa/internal/testdb"
 	"github.com/Koopa0/koopa/internal/today"
 	"github.com/Koopa0/koopa/internal/todo"
@@ -62,12 +58,11 @@ func TestMain(m *testing.M) {
 }
 
 // truncate clears every table the Today aggregate reads so each test starts
-// clean. CASCADE handles the FK chains (sessions → domains, plan → todos).
+// clean. CASCADE handles the FK chains (plan → todos).
 func truncate(t *testing.T) {
 	t.Helper()
 	if _, err := testPool.Exec(t.Context(),
-		`TRUNCATE learning_sessions, learning_domains, learning_hypotheses,
-		          daily_plan_items, todos, goals, activity_events CASCADE`,
+		`TRUNCATE daily_plan_items, todos, goals, activity_events CASCADE`,
 	); err != nil {
 		t.Fatalf("truncate: %v", err)
 	}
@@ -80,8 +75,6 @@ func newHandler() *today.Handler {
 	return today.NewHandler(daily.NewStore(testPool), logger).WithSources(
 		todo.NewStore(testPool),
 		goal.NewStore(testPool),
-		hypothesis.NewStore(testPool),
-		learning.NewStore(testPool),
 		entry.NewStore(testPool),
 	)
 }
@@ -125,30 +118,6 @@ func TestIntegration_Today_SectionsPopulate(t *testing.T) {
 		t.Fatalf("seed goal: %v", err)
 	}
 
-	// unverified hypothesis → unverified_hypotheses
-	if _, err := testPool.Exec(ctx,
-		`INSERT INTO learning_hypotheses
-		   (created_by, content, state, claim, invalidation_condition, observed_date)
-		 VALUES ('human', 'DFS termination', 'unverified',
-		         'I keep failing graph DFS termination', 'pass 3 graph drills clean', CURRENT_DATE)`,
-	); err != nil {
-		t.Fatalf("seed hypothesis: %v", err)
-	}
-
-	// active learning session (ended_at IS NULL) → active_session.
-	// The session FKs to a learning_domains slug, so seed the domain first.
-	if _, err := testPool.Exec(ctx,
-		`INSERT INTO learning_domains (slug, name) VALUES ('leetcode', 'LeetCode')`,
-	); err != nil {
-		t.Fatalf("seed domain: %v", err)
-	}
-	var sessionID uuid.UUID
-	if err := testPool.QueryRow(ctx,
-		`INSERT INTO learning_sessions (domain, session_mode) VALUES ('leetcode', 'practice') RETURNING id`,
-	).Scan(&sessionID); err != nil {
-		t.Fatalf("seed session: %v", err)
-	}
-
 	_, got := getToday(t, h)
 
 	if len(got.TodayTodos) != 1 || got.TodayTodos[0].Title != "review the PR" {
@@ -157,19 +126,10 @@ func TestIntegration_Today_SectionsPopulate(t *testing.T) {
 	if len(got.ActiveGoals) != 1 || got.ActiveGoals[0].Title != "GDE application" {
 		t.Errorf("active_goals = %+v, want one 'GDE application'", got.ActiveGoals)
 	}
-	if len(got.UnverifiedHypotheses) != 1 || got.UnverifiedHypotheses[0].State != hypothesis.StateUnverified {
-		t.Errorf("unverified_hypotheses = %+v, want one unverified", got.UnverifiedHypotheses)
-	}
-	if got.ActiveSession == nil || got.ActiveSession.ID != sessionID {
-		t.Errorf("active_session = %+v, want session id %s", got.ActiveSession, sessionID)
-	}
-	if got.ActiveSession != nil && got.ActiveSession.Domain != "leetcode" {
-		t.Errorf("active_session.domain = %q, want %q", got.ActiveSession.Domain, "leetcode")
-	}
 }
 
 // TestIntegration_Today_EmptyStateArrays asserts an empty database yields []
-// for every list section and omits active_session entirely.
+// for every list section.
 func TestIntegration_Today_EmptyStateArrays(t *testing.T) {
 	truncate(t)
 	h := newHandler()
@@ -185,68 +145,21 @@ func TestIntegration_Today_EmptyStateArrays(t *testing.T) {
 		{"committed_todos", len(got.CommittedTodos)},
 		{"upcoming_todos", len(got.UpcomingTodos)},
 		{"active_goals", len(got.ActiveGoals)},
-		{"unverified_hypotheses", len(got.UnverifiedHypotheses)},
 		{"rss_highlights", len(got.RSSHighlights)},
 	} {
 		if tc.n != 0 {
 			t.Errorf("%s len = %d, want 0", tc.name, tc.n)
 		}
 	}
-	if got.ActiveSession != nil {
-		t.Errorf("active_session = %+v, want nil (no open session)", got.ActiveSession)
-	}
 
-	// Wire-level: no list field may serialize as null, and active_session
-	// must be omitted (omitempty), not present-as-null.
+	// Wire-level: no list field may serialize as null.
 	raw := rec.Body.String()
 	for _, field := range []string{
 		"overdue_todos", "today_todos", "committed_todos", "upcoming_todos",
-		"active_goals", "unverified_hypotheses", "rss_highlights",
+		"active_goals", "rss_highlights",
 	} {
 		if strings.Contains(raw, `"`+field+`":null`) {
 			t.Errorf("field %q serialized as null, want []", field)
 		}
-	}
-	if strings.Contains(raw, "active_session") {
-		t.Errorf("active_session present in empty-state body, want omitted: %s", raw)
-	}
-}
-
-// TestIntegration_Today_ExcludesDraftHypotheses is the HTTP-side inertness
-// pin for v3.1 inert drafts: the Today aggregate pulls hypotheses through
-// the state='unverified'-scoped query, so a seeded draft must NEVER appear
-// in unverified_hypotheses (or anywhere else in the payload) while a
-// sibling unverified row does.
-func TestIntegration_Today_ExcludesDraftHypotheses(t *testing.T) {
-	truncate(t)
-	ctx := t.Context()
-	h := newHandler()
-
-	if _, err := testPool.Exec(ctx,
-		`INSERT INTO learning_hypotheses
-		   (created_by, content, state, claim, invalidation_condition, observed_date)
-		 VALUES
-		   ('planner', '', 'draft', 'inert draft claim', 'disproof condition', CURRENT_DATE),
-		   ('human', '', 'unverified', 'endorsed unverified claim', 'disproof condition', CURRENT_DATE)`,
-	); err != nil {
-		t.Fatalf("seed hypotheses: %v", err)
-	}
-
-	rec, got := getToday(t, h)
-
-	if len(got.UnverifiedHypotheses) != 1 {
-		t.Fatalf("unverified_hypotheses len = %d, want 1 (draft must be excluded): %+v",
-			len(got.UnverifiedHypotheses), got.UnverifiedHypotheses)
-	}
-	if got.UnverifiedHypotheses[0].State != hypothesis.StateUnverified ||
-		got.UnverifiedHypotheses[0].Claim != "endorsed unverified claim" {
-		t.Errorf("unverified_hypotheses[0] = {state:%q claim:%q}, want the unverified row only",
-			got.UnverifiedHypotheses[0].State, got.UnverifiedHypotheses[0].Claim)
-	}
-
-	// Wire-level: the draft's claim must not leak into ANY section of the
-	// Today payload — inert means absent, not merely relabeled.
-	if raw := rec.Body.String(); strings.Contains(raw, "inert draft claim") {
-		t.Errorf("today payload contains the draft claim, want it absent: %s", raw)
 	}
 }

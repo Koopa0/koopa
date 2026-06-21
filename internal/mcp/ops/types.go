@@ -18,10 +18,9 @@ package ops
 type Domain string
 
 const (
-	DomainQuery    Domain = "query"    // read-only context, dashboards, search
-	DomainDaily    Domain = "daily"    // GTD capture, task lifecycle, daily plan
-	DomainLearning Domain = "learning" // sessions, attempts, learning plans
-	DomainContent  Domain = "content"  // content lifecycle, feeds
+	DomainQuery   Domain = "query"   // read-only context, dashboards, search
+	DomainDaily   Domain = "daily"   // GTD capture, task lifecycle, daily plan
+	DomainContent Domain = "content" // content lifecycle, feeds
 )
 
 // Writability describes the side-effect character of a tool. It maps to

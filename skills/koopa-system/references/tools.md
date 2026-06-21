@@ -13,15 +13,14 @@ is hand-maintained.
 > Run `go generate ./internal/mcp/ops` after any change to the tool surface;
 > the drift test `TestToolInventoryDocInSync` fails CI if this is stale.
 
-**16 tools** across 4 domains.
+**10 tools** across 3 domains.
 
 | Domain | Count |
 |---|---|
 | `query` | 2 |
 | `daily` | 6 |
-| `learning` | 6 |
 | `content` | 2 |
-| **Total** | **16** |
+| **Total** | **10** |
 
 | Tool | Domain | Writability | Purpose |
 |---|---|---|---|
@@ -33,12 +32,6 @@ is hand-maintained.
 | `propose_area` | `daily` | additive | Propose a PARA area (ongoing domain of responsibility) as an INERT draft in status=proposed |
 | `propose_goal` | `daily` | additive | Propose a goal (with optional ordered milestones) as an INERT draft in status=proposed |
 | `propose_project` | `daily` | additive | Propose a NEW project (a short-term effort with a clear outcome) as an INERT draft in status=proposed |
-| `draft_hypothesis` | `learning` | additive | Draft a falsifiable learning hypothesis (claim + invalidation_condition) in state=draft |
-| `end_session` | `learning` | additive | End the active learning session |
-| `learning_read` | `learning` | read_only | Read-only learning analytics |
-| `manage_plan` | `learning` | destructive | Learning plan lifecycle and entries |
-| `record_attempt` | `learning` | additive | Record an attempt within the active learning session |
-| `start_session` | `learning` | additive | Begin a learning session |
 | `create_note` | `content` | additive | Create a Zettelkasten note (notes table) |
 | `update_note` | `content` | additive | Update editable fields (slug / title / body / kind) on a note |
 <!-- GENERATED:TOOL-INVENTORY END -->

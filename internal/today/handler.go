@@ -4,7 +4,6 @@ package today
 
 import (
 	"context"
-	"errors"
 	"log/slog"
 	"net/http"
 	"time"
@@ -13,8 +12,6 @@ import (
 	"github.com/Koopa0/koopa/internal/daily"
 	"github.com/Koopa0/koopa/internal/feed/entry"
 	"github.com/Koopa0/koopa/internal/goal"
-	"github.com/Koopa0/koopa/internal/learning"
-	"github.com/Koopa0/koopa/internal/learning/hypothesis"
 	"github.com/Koopa0/koopa/internal/todo"
 )
 
@@ -43,18 +40,6 @@ type ActiveGoalReader interface {
 	ActiveGoals(ctx context.Context) ([]goal.ActiveGoalSummary, error)
 }
 
-// UnverifiedHypothesisReader returns hypotheses still awaiting judgment.
-// Backed by *hypothesis.Store.
-type UnverifiedHypothesisReader interface {
-	Unverified(ctx context.Context, maxResults int32) ([]hypothesis.Record, error)
-}
-
-// ActiveSessionReader returns the open learning session, or learning's
-// ErrNoActive sentinel when none is open. Backed by *learning.Store.
-type ActiveSessionReader interface {
-	ActiveSession(ctx context.Context) (*learning.Session, error)
-}
-
 // RSSHighlightReader returns recent high-priority feed entries. Backed by
 // *entry.Store.
 type RSSHighlightReader interface {
@@ -63,13 +48,11 @@ type RSSHighlightReader interface {
 
 // Handler handles the Today aggregate HTTP request.
 type Handler struct {
-	planItems  PlanItemReader
-	todos      TodoReader
-	goals      ActiveGoalReader
-	hypotheses UnverifiedHypothesisReader
-	sessions   ActiveSessionReader
-	rss        RSSHighlightReader
-	logger     *slog.Logger
+	planItems PlanItemReader
+	todos     TodoReader
+	goals     ActiveGoalReader
+	rss       RSSHighlightReader
+	logger    *slog.Logger
 }
 
 // NewHandler returns a today Handler. planItems is required; every other
@@ -84,23 +67,18 @@ func NewHandler(planItems PlanItemReader, logger *slog.Logger) *Handler {
 func (h *Handler) WithSources(
 	todos TodoReader,
 	goals ActiveGoalReader,
-	hypotheses UnverifiedHypothesisReader,
-	sessions ActiveSessionReader,
 	rss RSSHighlightReader,
 ) *Handler {
 	h.todos = todos
 	h.goals = goals
-	h.hypotheses = hypotheses
-	h.sessions = sessions
 	h.rss = rss
 	return h
 }
 
 const (
-	hypothesisListLimit = 10 // mirrors brief(morning) fillHypotheses
-	rssHighlightLimit   = 10 // mirrors brief(morning) fillRSSHighlights
-	rssLookbackDays     = 2  // mirrors brief(morning): since = date - 2d
-	upcomingWindowDays  = 7  // mirrors brief(morning): upcoming = date .. date+7d
+	rssHighlightLimit  = 10 // mirrors brief(morning) fillRSSHighlights
+	rssLookbackDays    = 2  // mirrors brief(morning): since = date - 2d
+	upcomingWindowDays = 7  // mirrors brief(morning): upcoming = date .. date+7d
 )
 
 // Today handles GET /api/admin/commitment/today.
@@ -117,21 +95,18 @@ func (h *Handler) Today(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 	resp := Response{
-		Date:                 date.Format(time.DateOnly),
-		OverdueTodos:         []todo.PendingDetail{},
-		TodayTodos:           []todo.PendingDetail{},
-		CommittedTodos:       []daily.Item{},
-		UpcomingTodos:        []todo.PendingDetail{},
-		ActiveGoals:          []goal.ActiveGoalSummary{},
-		UnverifiedHypotheses: []hypothesis.Record{},
-		RSSHighlights:        []RSSHighlight{},
+		Date:           date.Format(time.DateOnly),
+		OverdueTodos:   []todo.PendingDetail{},
+		TodayTodos:     []todo.PendingDetail{},
+		CommittedTodos: []daily.Item{},
+		UpcomingTodos:  []todo.PendingDetail{},
+		ActiveGoals:    []goal.ActiveGoalSummary{},
+		RSSHighlights:  []RSSHighlight{},
 	}
 
 	h.loadTodos(ctx, date, &resp)
 	h.loadPlan(ctx, date, &resp)
 	h.loadGoals(ctx, &resp)
-	h.loadHypotheses(ctx, &resp)
-	h.loadSession(ctx, &resp)
 	h.loadRSS(ctx, date, &resp)
 
 	api.Encode(w, http.StatusOK, api.Response{Data: resp})
@@ -191,32 +166,6 @@ func (h *Handler) loadGoals(ctx context.Context, resp *Response) {
 	} else if rows != nil {
 		resp.ActiveGoals = rows
 	}
-}
-
-func (h *Handler) loadHypotheses(ctx context.Context, resp *Response) {
-	if h.hypotheses == nil {
-		return
-	}
-	if rows, err := h.hypotheses.Unverified(ctx, hypothesisListLimit); err != nil {
-		h.logger.Warn("today: unverified hypotheses failed", "error", err)
-	} else if rows != nil {
-		resp.UnverifiedHypotheses = rows
-	}
-}
-
-func (h *Handler) loadSession(ctx context.Context, resp *Response) {
-	if h.sessions == nil {
-		return
-	}
-	session, err := h.sessions.ActiveSession(ctx)
-	if err != nil {
-		// ErrNoActive is the expected "no session open" case, not a failure.
-		if !errors.Is(err, learning.ErrNoActive) {
-			h.logger.Warn("today: active session failed", "error", err)
-		}
-		return
-	}
-	resp.ActiveSession = session
 }
 
 func (h *Handler) loadRSS(ctx context.Context, date time.Time, resp *Response) {

@@ -32,9 +32,6 @@ import (
 	"github.com/Koopa0/koopa/internal/feed"
 	"github.com/Koopa0/koopa/internal/feed/entry"
 	"github.com/Koopa0/koopa/internal/goal"
-	"github.com/Koopa0/koopa/internal/learning"
-	"github.com/Koopa0/koopa/internal/learning/hypothesis"
-	learningplan "github.com/Koopa0/koopa/internal/learning/plan"
 	"github.com/Koopa0/koopa/internal/note"
 	"github.com/Koopa0/koopa/internal/project"
 	"github.com/Koopa0/koopa/internal/reading"
@@ -59,15 +56,12 @@ type handlers struct {
 	tag        *tag.Handler
 	stats      *stats.Handler
 	activity   *activity.Handler
-	hypothesis *hypothesis.Handler
 	agent      *agent.Handler
 	daily      *daily.Handler
-	learning   *learning.Handler
 	note       *note.Handler
 	reading    *reading.Handler
 	song       *song.Handler
 	todo       *todo.Handler
-	plan       *learningplan.Handler
 	today      *today.Handler
 	search     *search.Handler
 	pool       *pgxpool.Pool
@@ -339,59 +333,6 @@ func registerRoutes(
 	// the result envelope.
 	mux.Handle("GET /api/admin/search", authMid(http.HandlerFunc(h.search.Search)))
 
-	// --- Admin: Learning / Hypotheses ---
-	mux.Handle("GET /api/admin/learning/hypotheses", authMid(http.HandlerFunc(h.hypothesis.List)))
-	mux.Handle("GET /api/admin/learning/hypotheses/{id}", authMid(http.HandlerFunc(h.hypothesis.Get)))
-	// Create is the owner decision-stamp that replaces the removed
-	// propose_hypothesis / commit MCP flow. Mutation → adminMid.
-	mux.Handle("POST /api/admin/learning/hypotheses", adminMid(http.HandlerFunc(h.hypothesis.Create)))
-	mux.Handle("GET /api/admin/learning/hypotheses/{id}/lineage", authMid(http.HandlerFunc(h.hypothesis.Lineage)))
-	mux.Handle("POST /api/admin/learning/hypotheses/{id}/verify", adminMid(http.HandlerFunc(h.hypothesis.Verify)))
-	mux.Handle("POST /api/admin/learning/hypotheses/{id}/invalidate", adminMid(http.HandlerFunc(h.hypothesis.Invalidate)))
-	mux.Handle("POST /api/admin/learning/hypotheses/{id}/archive", adminMid(http.HandlerFunc(h.hypothesis.Archive)))
-	mux.Handle("POST /api/admin/learning/hypotheses/{id}/evidence", adminMid(http.HandlerFunc(h.hypothesis.AddEvidence)))
-	// v3.1 inert drafts: endorse is the owner stamp on an agent-drafted
-	// hypothesis (draft → unverified); DELETE is draft-only — non-draft
-	// rows are permanent records. Mutations → adminMid.
-	mux.Handle("POST /api/admin/learning/hypotheses/{id}/endorse", adminMid(http.HandlerFunc(h.hypothesis.Endorse)))
-	mux.Handle("DELETE /api/admin/learning/hypotheses/{id}", adminMid(http.HandlerFunc(h.hypothesis.Delete)))
-
-	// --- Admin: Learning / Dashboard + concepts + sessions + plans ---
-	// Dashboard is the aggregate landing endpoint; concepts / sessions /
-	// plans are the domain-entity views.
-	mux.Handle("GET /api/admin/learning/dashboard", authMid(http.HandlerFunc(h.learning.Dashboard)))
-	// Next up card: the single concept to practice next + a one-line reason.
-	// Session-independent (no MCP next_target session scope); empty state is a
-	// 200 with {empty: true}, never a 404.
-	mux.Handle("GET /api/admin/learning/next-target", authMid(http.HandlerFunc(h.learning.NextTarget)))
-	mux.Handle("GET /api/admin/learning/concepts", authMid(http.HandlerFunc(h.learning.ConceptsList)))
-	mux.Handle("GET /api/admin/learning/concepts/{slug}", authMid(http.HandlerFunc(h.learning.ConceptDetail)))
-	mux.Handle("GET /api/admin/learning/sessions", authMid(http.HandlerFunc(h.learning.SessionsList)))
-	mux.Handle("GET /api/admin/learning/sessions/{id}", authMid(http.HandlerFunc(h.learning.SessionDetail)))
-	mux.Handle("POST /api/admin/learning/sessions", adminMid(http.HandlerFunc(h.learning.StartSession)))
-	mux.Handle("POST /api/admin/learning/sessions/{id}/end", adminMid(http.HandlerFunc(h.learning.EndSession)))
-	mux.Handle("POST /api/admin/learning/sessions/{id}/attempts", adminMid(http.HandlerFunc(h.learning.RecordAttempt)))
-	// Targets list backs the admin note-editor's learning-target picker.
-	mux.Handle("GET /api/admin/learning/targets", authMid(http.HandlerFunc(h.learning.TargetsList)))
-	// Target attempts back the plan-detail audit-gate modal's picker of
-	// candidate justifying attempts (completed_by_attempt_id).
-	mux.Handle("GET /api/admin/learning/targets/{id}/attempts", authMid(http.HandlerFunc(h.learning.TargetAttempts)))
-	mux.Handle("GET /api/admin/learning/plans", authMid(http.HandlerFunc(h.plan.List)))
-	mux.Handle("GET /api/admin/learning/plans/{id}", authMid(http.HandlerFunc(h.plan.Detail)))
-	mux.Handle("POST /api/admin/learning/plans", adminMid(http.HandlerFunc(h.plan.Create)))
-	// Plan lifecycle + curriculum maintenance: status transitions, atomic
-	// entry reordering, and draft-only entry removal.
-	mux.Handle("PUT /api/admin/learning/plans/{id}/status", adminMid(http.HandlerFunc(h.plan.UpdateStatus)))
-	mux.Handle("PUT /api/admin/learning/plans/{id}/reorder", adminMid(http.HandlerFunc(h.plan.Reorder)))
-	mux.Handle("POST /api/admin/learning/plans/{id}/entries", adminMid(http.HandlerFunc(h.plan.AddEntries)))
-	mux.Handle("PUT /api/admin/learning/plans/{id}/entries/{entry_id}", adminMid(http.HandlerFunc(h.plan.UpdateEntry)))
-	mux.Handle("DELETE /api/admin/learning/plans/{id}/entries/{entry_id}", adminMid(http.HandlerFunc(h.plan.RemoveEntry)))
-
-	// Learning domains — read populates the admin plan/domain selectors; create
-	// is the decision-stamp that replaces the removed propose_learning_domain flow.
-	mux.Handle("GET /api/admin/learning/domains", authMid(http.HandlerFunc(h.learning.ListDomains)))
-	mux.Handle("POST /api/admin/learning/domains", adminMid(http.HandlerFunc(h.learning.CreateDomain)))
-
 	// --- Admin: System / Agents ---
 	// Agents are registry-managed — the admin surface is read-only.
 	mux.Handle("GET /api/admin/system/agents", authMid(http.HandlerFunc(h.agent.List)))
@@ -402,11 +343,4 @@ func registerRoutes(
 
 	// (Goal Detail moved to /api/admin/commitment/goals/{id} above.)
 	// (Daily Plan replaced by /api/admin/commitment/today aggregate.)
-
-	// --- Admin: Learning / Summary ---
-	// Lightweight envelope ({ streak_days, domains }) for surfaces that
-	// need streak + per-domain mastery without paying for the full
-	// dashboard fan-out. Shares its aggregation query with
-	// /learning/dashboard.
-	mux.Handle("GET /api/admin/learning/summary", authMid(http.HandlerFunc(h.learning.Summary)))
 }

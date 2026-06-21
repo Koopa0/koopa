@@ -19,8 +19,6 @@ import (
 
 	"github.com/Koopa0/koopa/internal/daily"
 	"github.com/Koopa0/koopa/internal/goal"
-	"github.com/Koopa0/koopa/internal/learning"
-	"github.com/Koopa0/koopa/internal/learning/hypothesis"
 	"github.com/Koopa0/koopa/internal/todo"
 )
 
@@ -63,28 +61,6 @@ func (f fakeGoals) ActiveGoals(context.Context) ([]goal.ActiveGoalSummary, error
 	return f.goals, nil
 }
 
-// fakeHypotheses satisfies UnverifiedHypothesisReader.
-type fakeHypotheses struct {
-	recs []hypothesis.Record
-}
-
-func (f fakeHypotheses) Unverified(context.Context, int32) ([]hypothesis.Record, error) {
-	return f.recs, nil
-}
-
-// fakeSession satisfies ActiveSessionReader. When session is nil it returns
-// learning.ErrNoActive, mirroring the store's no-open-session behavior.
-type fakeSession struct {
-	session *learning.Session
-}
-
-func (f fakeSession) ActiveSession(context.Context) (*learning.Session, error) {
-	if f.session == nil {
-		return nil, learning.ErrNoActive
-	}
-	return f.session, nil
-}
-
 func newTestHandler(t *testing.T) *Handler {
 	t.Helper()
 	return NewHandler(fakePlanItems{}, slog.New(slog.NewTextHandler(io.Discard, nil)))
@@ -113,24 +89,23 @@ func doToday(t *testing.T, h *Handler) *httptest.ResponseRecorder {
 }
 
 // TestToday_EmptyStateReturnsEmptyArrays proves every list section marshals
-// as [] (never null) and that the active session is omitted when no reader
-// is wired — the json-api.md "lists return [], never null" contract.
+// as [] (never null) when no reader is wired — the json-api.md "lists return
+// [], never null" contract.
 func TestToday_EmptyStateReturnsEmptyArrays(t *testing.T) {
 	t.Parallel()
 
-	h := newTestHandler(t).WithSources(nil, nil, nil, nil, nil)
+	h := newTestHandler(t).WithSources(nil, nil, nil)
 	rec := doToday(t, h)
 	got := decodeResponse(t, rec)
 
 	wantEmpty := Response{
-		Date:                 got.Date, // date is request-relative; copy it through
-		OverdueTodos:         []todo.PendingDetail{},
-		TodayTodos:           []todo.PendingDetail{},
-		CommittedTodos:       []daily.Item{},
-		UpcomingTodos:        []todo.PendingDetail{},
-		ActiveGoals:          []goal.ActiveGoalSummary{},
-		UnverifiedHypotheses: []hypothesis.Record{},
-		RSSHighlights:        []RSSHighlight{},
+		Date:           got.Date, // date is request-relative; copy it through
+		OverdueTodos:   []todo.PendingDetail{},
+		TodayTodos:     []todo.PendingDetail{},
+		CommittedTodos: []daily.Item{},
+		UpcomingTodos:  []todo.PendingDetail{},
+		ActiveGoals:    []goal.ActiveGoalSummary{},
+		RSSHighlights:  []RSSHighlight{},
 	}
 	if diff := cmp.Diff(wantEmpty, got); diff != "" {
 		t.Errorf("empty-state Today() mismatch (-want +got):\n%s", diff)
@@ -140,21 +115,16 @@ func TestToday_EmptyStateReturnsEmptyArrays(t *testing.T) {
 	raw := rec.Body.String()
 	for _, field := range []string{
 		"overdue_todos", "today_todos", "committed_todos", "upcoming_todos",
-		"active_goals", "unverified_hypotheses", "rss_highlights",
+		"active_goals", "rss_highlights",
 	} {
 		if strings.Contains(raw, `"`+field+`":null`) {
 			t.Errorf("field %q serialized as null, want []", field)
 		}
 	}
-	// active_session is omitempty — must be absent, not null.
-	if strings.Contains(raw, "active_session") {
-		t.Errorf("active_session present in empty-state body, want omitted: %s", raw)
-	}
 }
 
 // TestToday_WiredSectionsPopulate proves each wired reader contributes its
-// section, plan completion counts derive from the committed items, and the
-// active session is surfaced when one is open.
+// section and plan completion counts derive from the committed items.
 func TestToday_WiredSectionsPopulate(t *testing.T) {
 	t.Parallel()
 
@@ -162,9 +132,6 @@ func TestToday_WiredSectionsPopulate(t *testing.T) {
 	dueOn := []todo.PendingDetail{{ID: uuid.New(), Title: "review draft"}}
 	inRange := []todo.PendingDetail{{ID: uuid.New(), Title: "next week task"}}
 	goals := []goal.ActiveGoalSummary{{Goal: goal.Goal{ID: uuid.New(), Title: "GDE application"}}}
-	hyps := []hypothesis.Record{{ID: uuid.New(), Claim: "DFS termination is the gap"}}
-	sessionID := uuid.New()
-	session := &learning.Session{ID: sessionID, Domain: "leetcode"}
 
 	planItems := []daily.Item{
 		{ID: uuid.New(), Status: daily.StatusPlanned},
@@ -177,8 +144,6 @@ func TestToday_WiredSectionsPopulate(t *testing.T) {
 		WithSources(
 			fakeTodos{overdue: overdue, dueOn: dueOn, inRange: inRange},
 			fakeGoals{goals: goals},
-			fakeHypotheses{recs: hyps},
-			fakeSession{session: session},
 			nil, // rss left nil — its section must stay []
 		)
 
@@ -197,12 +162,6 @@ func TestToday_WiredSectionsPopulate(t *testing.T) {
 	if diff := cmp.Diff(goals, got.ActiveGoals); diff != "" {
 		t.Errorf("active_goals mismatch (-want +got):\n%s", diff)
 	}
-	if diff := cmp.Diff(hyps, got.UnverifiedHypotheses, cmpopts.EquateApproxTime(0)); diff != "" {
-		t.Errorf("unverified_hypotheses mismatch (-want +got):\n%s", diff)
-	}
-	if got.ActiveSession == nil || got.ActiveSession.ID != sessionID {
-		t.Errorf("active_session = %+v, want session id %s", got.ActiveSession, sessionID)
-	}
 
 	wantCompletion := PlanCompletion{Planned: 1, Completed: 1, Deferred: 1}
 	if diff := cmp.Diff(wantCompletion, got.PlanCompletion); diff != "" {
@@ -220,7 +179,7 @@ func TestToday_WiredSectionsPopulate(t *testing.T) {
 func TestToday_InvalidDateRejected(t *testing.T) {
 	t.Parallel()
 
-	h := newTestHandler(t).WithSources(nil, nil, nil, nil, nil)
+	h := newTestHandler(t).WithSources(nil, nil, nil)
 	req := httptest.NewRequest(http.MethodGet, "/api/admin/commitment/today?date=not-a-date", http.NoBody)
 	rec := httptest.NewRecorder()
 	h.Today(rec, req)

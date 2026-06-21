@@ -14,15 +14,14 @@ import (
 	"github.com/Koopa0/koopa/internal/content"
 	"github.com/Koopa0/koopa/internal/daily"
 	"github.com/Koopa0/koopa/internal/goal"
-	"github.com/Koopa0/koopa/internal/learning/hypothesis"
 	"github.com/Koopa0/koopa/internal/todo"
 )
 
 // --- brief ---
 //
 // brief is the read-only planning-state multiplexer. mode=morning is the
-// single-call daily-planning briefing (todos, goals, hypotheses, RSS,
-// content pipeline); mode=reflection is the end-of-day plan-vs-actual
+// single-call daily-planning briefing (todos, goals, RSS, content
+// pipeline); mode=reflection is the end-of-day plan-vs-actual
 // retrospective (daily plan items + completion counts). brief is a pure
 // planning-state pull and carries no agent memory of its own.
 
@@ -46,7 +45,7 @@ const (
 // scatter the per-agent override logic across the section fillers.
 // Section names must match the runSection labels in fillBriefMorning.
 var defaultSectionsByAgent = map[string][]string{
-	"learning-studio": {"tasks", "hypotheses"},
+	"learning-studio": {"tasks"},
 }
 
 // resolveDefaultSections returns the section set to use when the caller
@@ -75,15 +74,14 @@ func resolveDefaultSections(caller string) []string {
 //
 //	"tasks"            → overdue_todos, today_todos, committed_todos, upcoming_todos
 //	"goals"            → active_goals
-//	"hypotheses"       → unverified_hypotheses
 //	"rss"              → rss_highlights
 //	"content_pipeline" → content_pipeline
 //
 // Unknown group names are ignored silently (no error, no warning).
 type BriefInput struct {
 	As       string          `json:"as,omitempty" jsonschema_description:"Caller agent identity (e.g. planner, learning-studio)."`
-	Mode     string          `json:"mode" jsonschema_description:"Briefing mode (required): 'morning' = daily-planning pull (todos/goals/hypotheses/rss/content_pipeline); 'reflection' = end-of-day plan-vs-actual retrospective (daily plan items + completion counts). brief is a pure planning-state pull and carries no agent memory."`
-	Sections FlexStringSlice `json:"sections,omitempty" jsonschema_description:"MORNING-ONLY strict filter on which groups to populate (default: all). Ignored in reflection mode. Omit or pass [] to get the full morning briefing. Group key → response fields: 'tasks' → overdue_todos/today_todos/committed_todos/upcoming_todos; 'goals' → active_goals; 'hypotheses' → unverified_hypotheses; 'rss' → rss_highlights; 'content_pipeline' → content_pipeline. Unknown keys silently ignored."`
+	Mode     string          `json:"mode" jsonschema_description:"Briefing mode (required): 'morning' = daily-planning pull (todos/goals/rss/content_pipeline); 'reflection' = end-of-day plan-vs-actual retrospective (daily plan items + completion counts). brief is a pure planning-state pull and carries no agent memory."`
+	Sections FlexStringSlice `json:"sections,omitempty" jsonschema_description:"MORNING-ONLY strict filter on which groups to populate (default: all). Ignored in reflection mode. Omit or pass [] to get the full morning briefing. Group key → response fields: 'tasks' → overdue_todos/today_todos/committed_todos/upcoming_todos; 'goals' → active_goals; 'rss' → rss_highlights; 'content_pipeline' → content_pipeline. Unknown keys silently ignored."`
 	Date     *string         `json:"date,omitempty" jsonschema_description:"Target date YYYY-MM-DD (default: today)"`
 }
 
@@ -97,14 +95,13 @@ type BriefOutput struct {
 	Date string `json:"date"`
 
 	// Morning fields.
-	OverdueTodos         []todo.PendingDetail     `json:"-"`
-	TodayTodos           []todo.PendingDetail     `json:"-"`
-	CommittedTodos       []daily.Item             `json:"-"`
-	UpcomingTodos        []todo.PendingDetail     `json:"-"`
-	ActiveGoals          []goal.ActiveGoalSummary `json:"-"`
-	UnverifiedHypotheses []hypothesis.Record      `json:"-"`
-	RSSHighlights        []RSSHighlight           `json:"-"`
-	ContentPipeline      []ContentSummary         `json:"-"`
+	OverdueTodos    []todo.PendingDetail     `json:"-"`
+	TodayTodos      []todo.PendingDetail     `json:"-"`
+	CommittedTodos  []daily.Item             `json:"-"`
+	UpcomingTodos   []todo.PendingDetail     `json:"-"`
+	ActiveGoals     []goal.ActiveGoalSummary `json:"-"`
+	RSSHighlights   []RSSHighlight           `json:"-"`
+	ContentPipeline []ContentSummary         `json:"-"`
 
 	// Reflection fields.
 	PlannedItems   []daily.Item `json:"-"`
@@ -117,16 +114,15 @@ type BriefOutput struct {
 // briefMorningWire is the wire shape for mode=morning. Field tags mirror the
 // former morning briefing exactly, minus the dropped daily-plan-note section.
 type briefMorningWire struct {
-	Mode                 string                   `json:"mode"`
-	Date                 string                   `json:"date"`
-	OverdueTodos         []todo.PendingDetail     `json:"overdue_todos"`
-	TodayTodos           []todo.PendingDetail     `json:"today_todos"`
-	CommittedTodos       []daily.Item             `json:"committed_todos"`
-	UpcomingTodos        []todo.PendingDetail     `json:"upcoming_todos"`
-	ActiveGoals          []goal.ActiveGoalSummary `json:"active_goals"`
-	UnverifiedHypotheses []hypothesis.Record      `json:"unverified_hypotheses"`
-	RSSHighlights        []RSSHighlight           `json:"rss_highlights"`
-	ContentPipeline      []ContentSummary         `json:"content_pipeline"`
+	Mode            string                   `json:"mode"`
+	Date            string                   `json:"date"`
+	OverdueTodos    []todo.PendingDetail     `json:"overdue_todos"`
+	TodayTodos      []todo.PendingDetail     `json:"today_todos"`
+	CommittedTodos  []daily.Item             `json:"committed_todos"`
+	UpcomingTodos   []todo.PendingDetail     `json:"upcoming_todos"`
+	ActiveGoals     []goal.ActiveGoalSummary `json:"active_goals"`
+	RSSHighlights   []RSSHighlight           `json:"rss_highlights"`
+	ContentPipeline []ContentSummary         `json:"content_pipeline"`
 }
 
 // briefReflectionWire is the wire shape for mode=reflection. Field tags mirror
@@ -151,16 +147,15 @@ func (o BriefOutput) MarshalJSON() ([]byte, error) {
 	switch o.Mode {
 	case briefModeMorning:
 		return json.Marshal(briefMorningWire{
-			Mode:                 o.Mode,
-			Date:                 o.Date,
-			OverdueTodos:         o.OverdueTodos,
-			TodayTodos:           o.TodayTodos,
-			CommittedTodos:       o.CommittedTodos,
-			UpcomingTodos:        o.UpcomingTodos,
-			ActiveGoals:          o.ActiveGoals,
-			UnverifiedHypotheses: o.UnverifiedHypotheses,
-			RSSHighlights:        o.RSSHighlights,
-			ContentPipeline:      o.ContentPipeline,
+			Mode:            o.Mode,
+			Date:            o.Date,
+			OverdueTodos:    o.OverdueTodos,
+			TodayTodos:      o.TodayTodos,
+			CommittedTodos:  o.CommittedTodos,
+			UpcomingTodos:   o.UpcomingTodos,
+			ActiveGoals:     o.ActiveGoals,
+			RSSHighlights:   o.RSSHighlights,
+			ContentPipeline: o.ContentPipeline,
 		})
 	case briefModeReflection:
 		return json.Marshal(briefReflectionWire{
@@ -242,7 +237,6 @@ func (s *Server) fillBriefMorning(ctx context.Context, date time.Time, requested
 	out.CommittedTodos = []daily.Item{}
 	out.UpcomingTodos = []todo.PendingDetail{}
 	out.ActiveGoals = []goal.ActiveGoalSummary{}
-	out.UnverifiedHypotheses = []hypothesis.Record{}
 	out.RSSHighlights = []RSSHighlight{}
 	out.ContentPipeline = []ContentSummary{}
 
@@ -276,7 +270,6 @@ func (s *Server) fillBriefMorning(ctx context.Context, date time.Time, requested
 
 	runSection("tasks", func(c context.Context) { s.fillMorningTasks(c, date, out) })
 	runSection("goals", func(c context.Context) { s.fillGoals(c, out) })
-	runSection("hypotheses", func(c context.Context) { s.fillHypotheses(c, out) })
 	runSection("rss", func(c context.Context) { s.fillRSSHighlights(c, date, out) })
 	runSection("content_pipeline", func(c context.Context) { s.fillContentPipeline(c, out) })
 	wg.Wait()
@@ -324,14 +317,6 @@ func (s *Server) fillGoals(ctx context.Context, out *BriefOutput) {
 		out.ActiveGoals = goals
 	} else {
 		s.logger.Warn("brief: active goals", "error", err)
-	}
-}
-
-func (s *Server) fillHypotheses(ctx context.Context, out *BriefOutput) {
-	if recs, err := s.hypotheses.Unverified(ctx, 10); err == nil {
-		out.UnverifiedHypotheses = recs
-	} else {
-		s.logger.Warn("brief: unverified hypotheses", "error", err)
 	}
 }
 
