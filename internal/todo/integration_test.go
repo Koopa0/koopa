@@ -35,6 +35,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -540,5 +541,83 @@ func TestIntegration_Todo_InvalidInput(t *testing.T) {
 				t.Fatalf("err = %v, want todo.ErrInvalidInput", err)
 			}
 		})
+	}
+}
+
+// seedDueTodo inserts a todo in the given state with the given due date and
+// returns its id. archived/dismissed/someday/inbox keep completed_at NULL
+// (chk_todo_completed_at_consistency), so a due-dated terminal todo is a valid
+// row — the exact shape that must NOT appear in the active date-relative reads.
+func seedDueTodo(t *testing.T, title, state string, due time.Time) uuid.UUID {
+	t.Helper()
+	var id uuid.UUID
+	if err := testPool.QueryRow(t.Context(),
+		`INSERT INTO todos (title, state, due, created_by)
+		 VALUES ($1, $2::todo_state, $3, 'human') RETURNING id`,
+		title, state, due,
+	).Scan(&id); err != nil {
+		t.Fatalf("seeding due todo %q (state=%s): %v", title, state, err)
+	}
+	return id
+}
+
+// idSet collects the ids from a PendingDetail slice for membership assertions.
+func idSet(items []todo.PendingDetail) map[uuid.UUID]struct{} {
+	out := make(map[uuid.UUID]struct{}, len(items))
+	for i := range items {
+		out[items[i].ID] = struct{}{}
+	}
+	return out
+}
+
+// TestIntegration_Todo_DateReads_ExcludeTerminal pins the regression fix:
+// resolve_task added the terminal states archived/dismissed, but the morning
+// brief overdue/today reads (and the Today page) only excluded done/someday/
+// inbox, so a self-closed todo leaked back as active. After the fix, an archived
+// or dismissed todo — even one carrying an overdue due date — must NOT appear in
+// OverdueItems or ItemsDueOn, while an active overdue todo still does.
+func TestIntegration_Todo_DateReads_ExcludeTerminal(t *testing.T) {
+	truncate(t)
+	store := todo.NewStore(testPool)
+	ctx := t.Context()
+
+	// One due date in the past so every row is "overdue" relative to today.
+	due := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+	today := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	active := seedDueTodo(t, "Active overdue", "todo", due)
+	archived := seedDueTodo(t, "Archived overdue", "archived", due)
+	dismissed := seedDueTodo(t, "Dismissed overdue", "dismissed", due)
+
+	// Overdue: the active row only; terminal rows must be excluded.
+	overdue, err := store.OverdueItems(ctx, today)
+	if err != nil {
+		t.Fatalf("OverdueItems: %v", err)
+	}
+	got := idSet(overdue)
+	if _, ok := got[active]; !ok {
+		t.Errorf("OverdueItems missing active overdue todo %s", active)
+	}
+	if _, ok := got[archived]; ok {
+		t.Errorf("OverdueItems includes archived todo %s, want excluded", archived)
+	}
+	if _, ok := got[dismissed]; ok {
+		t.Errorf("OverdueItems includes dismissed todo %s, want excluded", dismissed)
+	}
+
+	// Due-on (the Today section / Today page): same exclusion on the due date.
+	dueOn, err := store.ItemsDueOn(ctx, due)
+	if err != nil {
+		t.Fatalf("ItemsDueOn: %v", err)
+	}
+	got = idSet(dueOn)
+	if _, ok := got[active]; !ok {
+		t.Errorf("ItemsDueOn missing active todo %s", active)
+	}
+	if _, ok := got[archived]; ok {
+		t.Errorf("ItemsDueOn includes archived todo %s, want excluded", archived)
+	}
+	if _, ok := got[dismissed]; ok {
+		t.Errorf("ItemsDueOn includes dismissed todo %s, want excluded", dismissed)
 	}
 }

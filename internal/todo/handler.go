@@ -86,7 +86,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 			}
 			if !validState(s) {
 				api.Error(w, http.StatusBadRequest, "BAD_REQUEST",
-					"state must be a comma-separated subset of {inbox, todo, in_progress, done, someday}")
+					"state must be a comma-separated subset of {inbox, todo, in_progress, done, someday, archived, dismissed}")
 				return
 			}
 			states = append(states, s)
@@ -579,10 +579,12 @@ func validPriority(p string) bool {
 
 // validState reports whether s is a member of the todo_state enum.
 // Validated at the handler boundary so a bad filter value is a 400, not
-// a PostgreSQL cast error surfacing as 500.
+// a PostgreSQL cast error surfacing as 500. Covers all seven todo_state
+// values including the terminal archived/dismissed states, which the admin
+// backlog must be able to filter by.
 func validState(s string) bool {
 	switch State(s) {
-	case StateInbox, StateTodo, StateInProgress, StateDone, StateSomeday:
+	case StateInbox, StateTodo, StateInProgress, StateDone, StateSomeday, StateArchived, StateDismissed:
 		return true
 	default:
 		return false

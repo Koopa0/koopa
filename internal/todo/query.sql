@@ -7,7 +7,9 @@ RETURNING id, title, state, due, project_id,
           description, created_by, created_at, updated_at;
 
 -- name: OverdueTodoItems :many
--- Todo items past due that are not done (for morning_context).
+-- Todo items past due that are still active (for morning_context). Excludes the
+-- terminal states (done, archived, dismissed) plus the non-date-relevant
+-- someday/inbox holding states, so a self-closed todo never reappears as active.
 SELECT t.id, t.title, t.state, t.due, t.project_id,
        t.energy, t.priority, t.recur_interval, t.recur_unit,
        t.created_by, t.created_at, t.updated_at,
@@ -15,12 +17,14 @@ SELECT t.id, t.title, t.state, t.due, t.project_id,
        COALESCE(p.slug, '') AS project_slug
 FROM todos t
 LEFT JOIN projects p ON p.id = t.project_id
-WHERE t.state NOT IN ('done', 'someday', 'inbox')
+WHERE t.state NOT IN ('done', 'someday', 'inbox', 'archived', 'dismissed')
   AND t.due IS NOT NULL AND t.due < @today
 ORDER BY t.due, t.priority NULLS LAST;
 
 -- name: TodoItemsDueOn :many
 -- Todo items due on a specific date (for morning_context today section).
+-- Excludes terminal states (done, archived, dismissed) and the someday/inbox
+-- holding states so a self-closed todo never reappears in the Today view.
 SELECT t.id, t.title, t.state, t.due, t.project_id,
        t.energy, t.priority, t.recur_interval, t.recur_unit,
        t.created_by, t.created_at, t.updated_at,
@@ -28,12 +32,14 @@ SELECT t.id, t.title, t.state, t.due, t.project_id,
        COALESCE(p.slug, '') AS project_slug
 FROM todos t
 LEFT JOIN projects p ON p.id = t.project_id
-WHERE t.state NOT IN ('done', 'someday', 'inbox')
+WHERE t.state NOT IN ('done', 'someday', 'inbox', 'archived', 'dismissed')
   AND t.due = @target_date
 ORDER BY t.priority NULLS LAST, t.created_at;
 
 -- name: TodoItemsDueInRange :many
 -- Todo items due within a date range (for morning_context upcoming section).
+-- Excludes terminal states (done, archived, dismissed) and the someday/inbox
+-- holding states so a self-closed todo never reappears in the upcoming view.
 SELECT t.id, t.title, t.state, t.due, t.project_id,
        t.energy, t.priority, t.recur_interval, t.recur_unit,
        t.created_by, t.created_at, t.updated_at,
@@ -41,7 +47,7 @@ SELECT t.id, t.title, t.state, t.due, t.project_id,
        COALESCE(p.slug, '') AS project_slug
 FROM todos t
 LEFT JOIN projects p ON p.id = t.project_id
-WHERE t.state NOT IN ('done', 'someday', 'inbox')
+WHERE t.state NOT IN ('done', 'someday', 'inbox', 'archived', 'dismissed')
   AND t.due > @start_date AND t.due <= @end_date
 ORDER BY t.due, t.priority NULLS LAST;
 

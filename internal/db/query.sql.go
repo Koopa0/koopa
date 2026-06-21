@@ -4359,7 +4359,7 @@ SELECT t.id, t.title, t.state, t.due, t.project_id,
        COALESCE(p.slug, '') AS project_slug
 FROM todos t
 LEFT JOIN projects p ON p.id = t.project_id
-WHERE t.state NOT IN ('done', 'someday', 'inbox')
+WHERE t.state NOT IN ('done', 'someday', 'inbox', 'archived', 'dismissed')
   AND t.due IS NOT NULL AND t.due < $1
 ORDER BY t.due, t.priority NULLS LAST
 `
@@ -4381,7 +4381,9 @@ type OverdueTodoItemsRow struct {
 	ProjectSlug   string     `json:"project_slug"`
 }
 
-// Todo items past due that are not done (for morning_context).
+// Todo items past due that are still active (for morning_context). Excludes the
+// terminal states (done, archived, dismissed) plus the non-date-relevant
+// someday/inbox holding states, so a self-closed todo never reappears as active.
 func (q *Queries) OverdueTodoItems(ctx context.Context, today *time.Time) ([]OverdueTodoItemsRow, error) {
 	rows, err := q.db.Query(ctx, overdueTodoItems, today)
 	if err != nil {
@@ -7657,7 +7659,7 @@ SELECT t.id, t.title, t.state, t.due, t.project_id,
        COALESCE(p.slug, '') AS project_slug
 FROM todos t
 LEFT JOIN projects p ON p.id = t.project_id
-WHERE t.state NOT IN ('done', 'someday', 'inbox')
+WHERE t.state NOT IN ('done', 'someday', 'inbox', 'archived', 'dismissed')
   AND t.due > $1 AND t.due <= $2
 ORDER BY t.due, t.priority NULLS LAST
 `
@@ -7685,6 +7687,8 @@ type TodoItemsDueInRangeRow struct {
 }
 
 // Todo items due within a date range (for morning_context upcoming section).
+// Excludes terminal states (done, archived, dismissed) and the someday/inbox
+// holding states so a self-closed todo never reappears in the upcoming view.
 func (q *Queries) TodoItemsDueInRange(ctx context.Context, arg TodoItemsDueInRangeParams) ([]TodoItemsDueInRangeRow, error) {
 	rows, err := q.db.Query(ctx, todoItemsDueInRange, arg.StartDate, arg.EndDate)
 	if err != nil {
@@ -7728,7 +7732,7 @@ SELECT t.id, t.title, t.state, t.due, t.project_id,
        COALESCE(p.slug, '') AS project_slug
 FROM todos t
 LEFT JOIN projects p ON p.id = t.project_id
-WHERE t.state NOT IN ('done', 'someday', 'inbox')
+WHERE t.state NOT IN ('done', 'someday', 'inbox', 'archived', 'dismissed')
   AND t.due = $1
 ORDER BY t.priority NULLS LAST, t.created_at
 `
@@ -7751,6 +7755,8 @@ type TodoItemsDueOnRow struct {
 }
 
 // Todo items due on a specific date (for morning_context today section).
+// Excludes terminal states (done, archived, dismissed) and the someday/inbox
+// holding states so a self-closed todo never reappears in the Today view.
 func (q *Queries) TodoItemsDueOn(ctx context.Context, targetDate *time.Time) ([]TodoItemsDueOnRow, error) {
 	rows, err := q.db.Query(ctx, todoItemsDueOn, targetDate)
 	if err != nil {
