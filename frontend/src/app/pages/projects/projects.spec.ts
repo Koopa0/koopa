@@ -75,7 +75,7 @@ describe('ProjectsComponent', () => {
     expect(component).toBeTruthy();
   });
 
-  it('should render the backend-flagged project as the featured card', async () => {
+  it('should order the backend-flagged project first', async () => {
     await settle();
     flushPortfolio([
       buildMockListing({ id: '1', slug: 'fsrs-go', title: 'fsrs-go' }),
@@ -89,15 +89,14 @@ describe('ProjectsComponent', () => {
     await settle();
 
     const el = fixture.nativeElement as HTMLElement;
-    const featured = el.querySelector('[data-testid="featured-project"]');
-    expect(featured?.textContent).toContain('koopa');
-
     const rows = el.querySelectorAll('[data-testid="project-row"]');
-    expect(rows.length).toBe(1);
-    expect(rows[0].textContent).toContain('fsrs-go');
+    expect(rows.length).toBe(2);
+    // Featured (koopa) leads even though it is second in the response.
+    expect(rows[0].textContent).toContain('koopa');
+    expect(rows[1].textContent).toContain('fsrs-go');
   });
 
-  it('should render only compact rows when no project is flagged featured', async () => {
+  it('should render a row per project', async () => {
     await settle();
     flushPortfolio([
       buildMockListing({ id: '1', slug: 'a', title: 'Project A' }),
@@ -106,8 +105,21 @@ describe('ProjectsComponent', () => {
     await settle();
 
     const el = fixture.nativeElement as HTMLElement;
-    expect(el.querySelector('[data-testid="featured-project"]')).toBeNull();
     expect(el.querySelectorAll('[data-testid="project-row"]').length).toBe(2);
+  });
+
+  it('should render a View action only when the project has a live url', async () => {
+    await settle();
+    flushPortfolio([
+      buildMockListing({ id: '1', slug: 'a', title: 'Live', live_url: 'https://x.dev' }),
+      buildMockListing({ id: '2', slug: 'b', title: 'No live' }),
+    ]);
+    await settle();
+
+    const el = fixture.nativeElement as HTMLElement;
+    const liveActions = el.querySelectorAll('[data-testid="project-live"]');
+    expect(liveActions.length).toBe(1);
+    expect(liveActions[0].getAttribute('href')).toBe('https://x.dev');
   });
 
   it('should show an error state with retry when the request fails', async () => {

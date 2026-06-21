@@ -1,165 +1,47 @@
+<!-- Skip to main content (WCAG 2.4.1) -->
 @if (!isChromeless()) {
-  <!-- Skip to main content (WCAG 2.4.1) -->
   <a
     href="#main-content"
     class="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[100] focus:rounded-xs focus:bg-panel focus:px-4 focus:py-2 focus:text-sm focus:font-semibold focus:text-fg focus:shadow-lg"
   >
     Skip to content
   </a>
-
-  <!-- Slim header: logo · Articles / Projects · search · theme · GitHub -->
-  <header
-    class="sticky top-0 z-50 border-b border-border bg-bg/80 backdrop-blur-md"
-  >
-    <nav
-      class="mx-auto flex max-w-(--container) items-center gap-5 px-5 py-3 sm:px-7"
-      aria-label="Main navigation"
-    >
-      <!-- Brand -->
-      <a
-        routerLink="/"
-        class="flex shrink-0 items-center gap-2 no-underline"
-        aria-label="koopa.dev home"
-      >
-        <img
-          src="/logo.png"
-          alt="Koopa"
-          width="24"
-          height="24"
-          class="size-6 rounded-xs"
-        />
-        <span class="font-display hidden text-sm font-semibold text-fg sm:inline">
-          {{ title }}
-        </span>
-      </a>
-
-      <!-- Tabs -->
-      <div class="ml-1 flex items-center gap-0.5 sm:ml-3">
-        <a
-          routerLink="/"
-          class="rounded-xs px-3 py-1.5 text-[13px] font-medium no-underline transition-colors"
-          [class.text-fg]="articlesActive()"
-          [class.bg-overlay]="articlesActive()"
-          [class.text-fg-muted]="!articlesActive()"
-          [class.hover:text-fg]="!articlesActive()"
-          [class.hover:bg-brand-faint]="!articlesActive()"
-          [attr.aria-current]="articlesActive() ? 'page' : null"
-        >
-          Articles
-        </a>
-        <a
-          routerLink="/projects"
-          class="rounded-xs px-3 py-1.5 text-[13px] font-medium no-underline transition-colors"
-          [class.text-fg]="projectsActive()"
-          [class.bg-overlay]="projectsActive()"
-          [class.text-fg-muted]="!projectsActive()"
-          [class.hover:text-fg]="!projectsActive()"
-          [class.hover:bg-brand-faint]="!projectsActive()"
-          [attr.aria-current]="projectsActive() ? 'page' : null"
-        >
-          Projects
-        </a>
-      </div>
-
-      <div class="flex-1"></div>
-
-      <!-- Search (⌘K command palette) -->
-      <button
-        type="button"
-        (click)="commandPalette.open()"
-        class="flex items-center gap-2 rounded-xs border border-border bg-elevated px-2.5 py-1.5 text-xs text-fg-subtle transition-colors hover:border-border-strong hover:text-fg"
-        aria-label="Search (⌘K)"
-      >
-        <lucide-icon [img]="SearchIcon" [size]="13" [strokeWidth]="1.6" />
-        <span class="hidden sm:inline">Search</span>
-        <kbd class="kbd hidden sm:inline">⌘K</kbd>
-      </button>
-
-      <!-- Theme toggle -->
-      <app-theme-toggle />
-
-      <!-- GitHub -->
-      <a
-        href="https://github.com/koopa0"
-        target="_blank"
-        rel="noopener noreferrer"
-        class="flex size-8 items-center justify-center rounded-xs text-fg-subtle transition-colors hover:bg-overlay hover:text-fg"
-        aria-label="GitHub"
-      >
-        <lucide-icon [img]="GithubIcon" [size]="16" [strokeWidth]="1.6" />
-      </a>
-
-      @if (isAuthenticated()) {
-        <div class="flex items-center gap-0.5">
-          <a
-            routerLink="/admin"
-            class="flex size-8 items-center justify-center rounded-xs text-fg-subtle transition-colors no-underline hover:bg-overlay hover:text-fg"
-            aria-label="Admin dashboard"
-          >
-            <lucide-icon [img]="DashboardIcon" [size]="16" [strokeWidth]="1.6" />
-          </a>
-          <button
-            type="button"
-            (click)="logout()"
-            class="flex size-8 items-center justify-center rounded-xs text-fg-subtle transition-colors hover:bg-overlay hover:text-error"
-            aria-label="Sign out"
-          >
-            <lucide-icon [img]="LogOutIcon" [size]="16" [strokeWidth]="1.6" />
-          </button>
-        </div>
-      }
-    </nav>
-  </header>
 }
 
-<!-- Main Content -->
-<main
-  id="main-content"
-  class="flex-1"
-  style="view-transition-name: page-content"
->
-  <router-outlet />
-</main>
+@if (isPublicSite()) {
+  <!-- Public reading site — the editorial Tone B frame. -->
+  <div class="ed flex min-h-dvh flex-1 flex-col" data-tone="b">
+    <app-editorial-masthead />
+    <main
+      id="main-content"
+      class="flex-1"
+      style="view-transition-name: page-content"
+    >
+      <router-outlet />
+    </main>
+    <app-editorial-footer />
+  </div>
+} @else if (isAdminArea()) {
+  <!-- Admin area — carries its own shell (sidebar + topbar). -->
+  <main
+    id="main-content"
+    class="flex flex-1 flex-col"
+    style="view-transition-name: page-content"
+  >
+    <router-outlet />
+  </main>
+} @else {
+  <!-- Chrome-less preview column for the admin publish-preview iframe. -->
+  <main
+    id="main-content"
+    class="flex-1"
+    style="view-transition-name: page-content"
+  >
+    <router-outlet />
+  </main>
+}
 
 @if (!isChromeless()) {
-  <!-- Quiet footer -->
-  <footer class="border-t border-border">
-    <div
-      class="mx-auto flex max-w-(--container) flex-col items-center justify-between gap-3 px-5 py-6 sm:flex-row sm:px-7"
-    >
-      <span class="text-xs text-fg-subtle">
-        &copy; {{ currentYear }} koopa0.dev
-      </span>
-      <div class="flex items-center gap-4">
-        <a
-          routerLink="/about"
-          class="text-xs text-fg-subtle no-underline transition-colors hover:text-fg"
-          >About</a
-        >
-        <a
-          routerLink="/uses"
-          class="text-xs text-fg-subtle no-underline transition-colors hover:text-fg"
-          >Uses</a
-        >
-        <a
-          href="/feed.xml"
-          class="text-xs text-fg-subtle no-underline transition-colors hover:text-fg"
-          >RSS</a
-        >
-        <a
-          routerLink="/privacy"
-          class="text-xs text-fg-subtle no-underline transition-colors hover:text-fg"
-          >Privacy</a
-        >
-        <a
-          routerLink="/terms"
-          class="text-xs text-fg-subtle no-underline transition-colors hover:text-fg"
-          >Terms</a
-        >
-      </div>
-    </div>
-  </footer>
-
   <!-- Back to Top Button -->
   <app-back-to-top />
 

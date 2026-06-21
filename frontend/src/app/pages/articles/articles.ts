@@ -14,10 +14,7 @@ import { environment } from '../../../environments/environment';
 import { ContentService } from '../../core/services/content.service';
 import { TopicService } from '../../core/services/topic.service';
 import { SeoService } from '../../core/services/seo/seo.service';
-import {
-  buildCollectionPageSchema,
-  buildWebSiteSchema,
-} from '../../core/services/seo/json-ld.util';
+import { buildCollectionPageSchema } from '../../core/services/seo/json-ld.util';
 import { PostRowComponent } from '../../shared/post-row/post-row.component';
 import { SkeletonComponent } from '../../shared/skeleton/skeleton.component';
 import type {
@@ -142,23 +139,19 @@ export class ArticlesComponent implements OnInit {
   );
 
   ngOnInit(): void {
-    const isHome = !this.router.url.split('?')[0].startsWith('/articles');
-    const path = isHome ? '/' : '/articles';
     const description =
-      'Let the work speak — writing on Go, systems, and learning in public.';
+      'Every written piece — articles, essays, build logs, TILs, and digests.';
 
     this.seoService.updateMeta({
-      title: 'Articles',
+      title: 'Writing',
       description,
-      ogUrl: `${environment.siteUrl}${path}`,
-      canonicalUrl: `${environment.siteUrl}${path}`,
-      jsonLd: isHome
-        ? buildWebSiteSchema()
-        : buildCollectionPageSchema({
-            name: 'Articles',
-            description,
-            url: `${environment.siteUrl}/articles`,
-          }),
+      ogUrl: `${environment.siteUrl}/articles`,
+      canonicalUrl: `${environment.siteUrl}/articles`,
+      jsonLd: buildCollectionPageSchema({
+        name: 'Writing',
+        description,
+        url: `${environment.siteUrl}/articles`,
+      }),
     });
   }
 

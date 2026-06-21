@@ -8,6 +8,7 @@ import { provideRouter } from '@angular/router';
 import { PLATFORM_ID } from '@angular/core';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ArticleDetailComponent } from './article-detail';
+import { contentTypeLabelEn } from '../../core/models';
 import type { ApiContent, ContentType } from '../../core/models';
 
 function buildMockContent(overrides: Partial<ApiContent> = {}): ApiContent {
@@ -89,7 +90,7 @@ describe('ArticleDetailComponent', () => {
     expect(el.querySelector('nav[aria-label="Breadcrumb"]')).toBeTruthy();
     expect(el.querySelector('app-table-of-contents')).toBeTruthy();
     expect(el.textContent).toContain('Test Article');
-    expect(el.textContent).toContain('5 min read');
+    expect(el.textContent).toContain('5 min');
   });
 
   it.each<ContentType>(['article', 'essay', 'build-log', 'til', 'digest'])(
@@ -105,7 +106,8 @@ describe('ArticleDetailComponent', () => {
 
       const el = fixture.nativeElement as HTMLElement;
       expect(el.textContent).toContain(`A ${type}`);
-      expect(el.textContent).toContain(type);
+      // The reading surface shows the human type label (e.g. "Build Log").
+      expect(el.textContent).toContain(contentTypeLabelEn(type));
     },
   );
 
@@ -122,6 +124,24 @@ describe('ArticleDetailComponent', () => {
     expect(el.querySelector('app-table-of-contents')).toBeNull();
     expect(el.querySelector('app-related-articles')).toBeNull();
     expect(el.textContent).toContain('Test Article');
+  });
+
+  it('should show the error state when the detail request fails (500)', () => {
+    fixture.componentRef.setInput('slug', 'broken');
+    fixture.detectChanges();
+
+    const req = httpTesting.expectOne(
+      (r) => r.url.includes('/api/contents/') && r.method === 'GET',
+    );
+    req.flush('Server error', {
+      status: 500,
+      statusText: 'Internal Server Error',
+    });
+    fixture.detectChanges();
+
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.textContent).toContain('Failed to load');
+    expect(component['error']()).toBe('Failed to load article');
   });
 
   it('should mark the page noindex in preview mode', () => {

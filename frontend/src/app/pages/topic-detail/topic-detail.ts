@@ -10,7 +10,7 @@ import {
   OnInit,
   PLATFORM_ID,
 } from '@angular/core';
-import { isPlatformBrowser } from '@angular/common';
+import { isPlatformBrowser, DatePipe } from '@angular/common';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
 import { LucideAngularModule, Layers } from 'lucide-angular';
@@ -18,13 +18,19 @@ import { environment } from '../../../environments/environment';
 import { TopicService } from '../../core/services/topic.service';
 import { SeoService } from '../../core/services/seo/seo.service';
 import { buildCollectionPageSchema } from '../../core/services/seo/json-ld.util';
-import { PostRowComponent } from '../../shared/post-row/post-row.component';
+import { contentTypeLabelEn } from '../../core/models';
 import type {
   ApiTopic,
   ApiContent,
   ApiPaginationMeta,
   ContentType,
 } from '../../core/models';
+
+/** Per-type tally for the topic head meta line. */
+interface TypeCount {
+  type: ContentType;
+  count: number;
+}
 
 const CONTENTS_PER_PAGE = 12;
 const CONTENT_TYPES: readonly ContentType[] = [
@@ -42,7 +48,7 @@ const CONTENT_TYPES: readonly ContentType[] = [
  */
 @Component({
   selector: 'app-topic-detail',
-  imports: [RouterLink, LucideAngularModule, PostRowComponent],
+  imports: [RouterLink, LucideAngularModule, DatePipe],
   templateUrl: './topic-detail.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
@@ -77,6 +83,17 @@ export class TopicDetailComponent implements OnInit {
     const present = new Set(this.contents().map((c) => c.type));
     return CONTENT_TYPES.filter((type) => present.has(type));
   });
+
+  /** Per-type tallies for the head meta line, in canonical order. */
+  protected readonly typeCounts = computed<TypeCount[]>(() => {
+    const all = this.contents();
+    return CONTENT_TYPES.map((type) => ({
+      type,
+      count: all.filter((c) => c.type === type).length,
+    })).filter((entry) => entry.count > 0);
+  });
+
+  protected readonly typeLabel = contentTypeLabelEn;
 
   protected readonly filteredContents = computed(() => {
     const type = this.selectedType();

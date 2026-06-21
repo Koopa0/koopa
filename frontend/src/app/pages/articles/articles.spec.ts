@@ -259,7 +259,7 @@ describe('ArticlesComponent', () => {
     await settle();
 
     const el = fixture.nativeElement as HTMLElement;
-    expect(el.textContent).toContain('Let the work speak.');
+    expect(el.textContent).toContain("Everything I've written down.");
     expect(
       el.querySelector('[data-testid="topic-chip-all"]'),
     ).toBeTruthy();

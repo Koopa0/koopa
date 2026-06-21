@@ -1,183 +1,196 @@
-<section>
-  <div class="mx-auto max-w-3xl px-6 pt-11 pb-28 sm:px-11">
-    @if (isLoading()) {
-      <!-- Loading skeleton -->
-      <div class="animate-pulse pt-2">
-        <div class="mb-6 h-3 w-1/4 rounded-xs bg-overlay"></div>
-        <div class="mb-3 h-9 w-1/3 rounded-xs bg-overlay"></div>
-        <div class="mb-10 h-5 w-2/3 rounded-xs bg-overlay"></div>
-        @for (placeholder of [1, 2, 3, 4]; track placeholder) {
-          <div class="py-4">
-            <div class="mb-2 h-3 w-1/4 rounded-xs bg-overlay"></div>
+<div class="ed-main pb-20">
+  @if (isLoading()) {
+    <!-- Loading skeleton -->
+    <div class="ed-topic-head animate-pulse">
+      <div class="mb-6 h-3 w-20 rounded-xs bg-overlay"></div>
+      <div class="mb-4 h-10 w-1/3 rounded-xs bg-overlay"></div>
+      <div class="h-5 w-2/3 rounded-xs bg-overlay"></div>
+    </div>
+    <div class="ed-topic-list animate-pulse">
+      @for (placeholder of [1, 2, 3, 4]; track placeholder) {
+        <div class="ed-row">
+          <div class="ed-row-aside">
+            <div class="h-3 w-16 rounded-xs bg-overlay"></div>
+          </div>
+          <div class="ed-row-main">
             <div class="mb-2 h-6 w-3/4 rounded-xs bg-overlay"></div>
             <div class="h-4 w-full rounded-xs bg-overlay"></div>
           </div>
-        }
-      </div>
-    } @else if (isNotFound()) {
-      <div class="flex flex-col items-center gap-4 py-32 text-center">
-        <lucide-icon [img]="LayersIcon" [size]="40" class="text-fg-faint" />
-        <h1 class="font-display text-2xl font-bold text-fg-muted">
-          Topic not found
-        </h1>
-        <p class="text-sm text-fg-faint">
-          This topic does not exist or has been removed
-        </p>
-        <a
-          routerLink="/topics"
-          class="mt-2 rounded-xs border border-border px-4 py-2 text-sm text-fg-muted no-underline transition-colors hover:border-border-strong hover:text-fg"
-        >
-          Back to topics
-        </a>
-      </div>
-    } @else if (error()) {
-      <div class="flex flex-col items-center gap-4 py-32 text-center">
-        <p class="text-fg-subtle">{{ error() }}</p>
-        <a
-          routerLink="/topics"
-          class="rounded-xs border border-border px-4 py-2 text-sm text-fg-muted no-underline transition-colors hover:border-border-strong hover:text-fg"
-        >
-          Back to topics
-        </a>
-      </div>
-    } @else if (topic(); as t) {
-      <!-- Breadcrumbs -->
-      <nav aria-label="Breadcrumb" class="mb-5 font-mono text-[11px]">
-        <a
-          routerLink="/"
-          class="text-fg-subtle no-underline transition-colors hover:text-brand"
-          >koopa.dev</a
-        >
-        <span class="mx-1.5 text-fg-faint" aria-hidden="true">/</span>
-        <a
-          routerLink="/topics"
-          class="text-fg-subtle no-underline transition-colors hover:text-brand"
-          >topics</a
-        >
-      </nav>
+        </div>
+      }
+    </div>
+  } @else if (isNotFound()) {
+    <div class="flex flex-col items-center gap-4 py-32 text-center">
+      <lucide-icon [img]="LayersIcon" [size]="40" class="text-fg-faint" />
+      <h1 class="ed-topic-name">Topic not found</h1>
+      <p class="text-sm text-fg-faint">
+        This topic does not exist or has been removed.
+      </p>
+      <a routerLink="/articles" class="ed-btn ed-btn-ghost mt-2">
+        Back to writing
+      </a>
+    </div>
+  } @else if (error()) {
+    <div class="flex flex-col items-center gap-4 py-32 text-center">
+      <p class="text-fg-subtle">{{ error() }}</p>
+      <a routerLink="/articles" class="ed-btn ed-btn-ghost">Back to writing</a>
+    </div>
+  } @else if (topic(); as t) {
+    <!-- Topic head -->
+    <header class="ed-topic-head">
+      <p class="ed-topic-kicker">Topic</p>
+      <h1 class="ed-topic-name">{{ t.name }}</h1>
+      @if (t.description) {
+        <p class="ed-topic-desc">{{ t.description }}</p>
+      }
+      @if (typeCounts().length > 0) {
+        <div class="ed-topic-meta">
+          @for (entry of typeCounts(); track entry.type) {
+            <span class="ed-type">
+              <span
+                class="dot"
+                [style.background]="
+                  'var(--dot-' + entry.type + ', var(--fg-faint))'
+                "
+                aria-hidden="true"
+              ></span>
+              {{ entry.count }} {{ typeLabel(entry.type) }}
+            </span>
+          }
+        </div>
+      }
+    </header>
 
-      <!-- Topic hero -->
-      <header class="mb-2 border-b border-border pt-2 pb-7">
-        <p
-          class="font-mono text-[11px] tracking-[0.06em] uppercase text-brand"
+    <!-- Type filter tabs -->
+    @if (typesPresent().length > 0) {
+      <div
+        class="mt-7 flex flex-wrap gap-1"
+        role="group"
+        aria-label="Filter by type"
+      >
+        <button
+          type="button"
+          class="rounded-xs border px-[11px] py-[5px] font-mono text-xs transition-colors"
+          [class.bg-brand-muted]="selectedType() === 'all'"
+          [class.text-brand]="selectedType() === 'all'"
+          [class.border-transparent]="selectedType() === 'all'"
+          [class.border-border-faint]="selectedType() !== 'all'"
+          [class.text-fg-subtle]="selectedType() !== 'all'"
+          [class.hover:text-fg]="selectedType() !== 'all'"
+          [attr.aria-pressed]="selectedType() === 'all'"
+          (click)="selectType('all')"
+          data-testid="type-tab-all"
         >
-          Topic · {{ meta()?.total ?? contents().length }} pieces
-        </p>
-        <h1
-          class="font-display mt-3 text-[2.375rem] font-bold leading-[1.1] tracking-[-0.025em] text-balance text-fg"
-        >
-          {{ t.name }}
-        </h1>
-        @if (t.description) {
-          <p
-            class="mt-3.5 max-w-[620px] font-serif text-lg leading-[1.65] text-fg-muted"
-          >
-            {{ t.description }}
-          </p>
-        }
-      </header>
-
-      <!-- Type filter tabs -->
-      @if (typesPresent().length > 0) {
-        <div
-          class="mt-[22px] mb-1.5 flex flex-wrap gap-1"
-          role="group"
-          aria-label="Filter by type"
-        >
+          all
+        </button>
+        @for (type of typesPresent(); track type) {
           <button
             type="button"
             class="rounded-xs border px-[11px] py-[5px] font-mono text-xs transition-colors"
-            [class.bg-brand-muted]="selectedType() === 'all'"
-            [class.text-brand]="selectedType() === 'all'"
-            [class.border-transparent]="selectedType() === 'all'"
-            [class.border-border-faint]="selectedType() !== 'all'"
-            [class.text-fg-subtle]="selectedType() !== 'all'"
-            [class.hover:text-fg]="selectedType() !== 'all'"
-            [attr.aria-pressed]="selectedType() === 'all'"
-            (click)="selectType('all')"
-            data-testid="type-tab-all"
+            [class.bg-brand-muted]="selectedType() === type"
+            [class.text-brand]="selectedType() === type"
+            [class.border-transparent]="selectedType() === type"
+            [class.border-border-faint]="selectedType() !== type"
+            [class.text-fg-subtle]="selectedType() !== type"
+            [class.hover:text-fg]="selectedType() !== type"
+            [attr.aria-pressed]="selectedType() === type"
+            (click)="selectType(type)"
+            data-testid="type-tab"
           >
-            all
+            {{ type }}
           </button>
-          @for (type of typesPresent(); track type) {
-            <button
-              type="button"
-              class="rounded-xs border px-[11px] py-[5px] font-mono text-xs transition-colors"
-              [class.bg-brand-muted]="selectedType() === type"
-              [class.text-brand]="selectedType() === type"
-              [class.border-transparent]="selectedType() === type"
-              [class.border-border-faint]="selectedType() !== type"
-              [class.text-fg-subtle]="selectedType() !== type"
-              [class.hover:text-fg]="selectedType() !== type"
-              [attr.aria-pressed]="selectedType() === type"
-              (click)="selectType(type)"
-              data-testid="type-tab"
-            >
-              {{ type }}
-            </button>
-          }
-        </div>
-      }
+        }
+      </div>
+    }
 
-      <!-- Editorial list -->
-      @if (contents().length === 0) {
-        <div class="flex flex-col items-center gap-4 py-20 text-center">
-          <lucide-icon [img]="LayersIcon" [size]="40" class="text-fg-faint" />
-          <h2 class="text-lg font-medium text-fg-muted">
-            No content in this topic yet
-          </h2>
-          <p class="text-sm text-fg-faint">
-            Content will appear here once published
-          </p>
-        </div>
-      } @else if (filteredContents().length === 0) {
-        <div class="flex flex-col items-center gap-4 py-12 text-center">
-          <p class="text-sm text-fg-faint">No content of this type here</p>
+    <!-- Editorial row list -->
+    @if (contents().length === 0) {
+      <div class="flex flex-col items-center gap-4 py-20 text-center">
+        <lucide-icon [img]="LayersIcon" [size]="40" class="text-fg-faint" />
+        <h2 class="text-lg font-medium text-fg-muted">
+          No content in this topic yet
+        </h2>
+        <p class="text-sm text-fg-faint">
+          Content will appear here once published.
+        </p>
+      </div>
+    } @else if (filteredContents().length === 0) {
+      <div class="flex flex-col items-center gap-4 py-12 text-center">
+        <p class="text-sm text-fg-faint">No content of this type here.</p>
+        <button type="button" class="ed-btn ed-btn-ghost" (click)="selectType('all')">
+          Clear filter
+        </button>
+      </div>
+    } @else {
+      <div class="ed-topic-list">
+        @for (content of filteredContents(); track content.id) {
+          <a
+            class="ed-row"
+            [routerLink]="['/articles', content.slug]"
+            data-testid="topic-row"
+          >
+            <div class="ed-row-aside">
+              <span class="ed-type">
+                <span
+                  class="dot"
+                  [style.background]="
+                    'var(--dot-' + content.type + ', var(--fg-faint))'
+                  "
+                  aria-hidden="true"
+                ></span>
+                {{ content.type }}
+              </span>
+              @if (content.published_at) {
+                <span class="ed-rail-v">{{
+                  content.published_at | date: 'MMM d, yyyy'
+                }}</span>
+              }
+              <span class="ed-rail-v">{{ content.reading_time_min }} min</span>
+            </div>
+            <div class="ed-row-main">
+              <h2 class="ed-row-title">{{ content.title }}</h2>
+              @if (content.excerpt) {
+                <p class="ed-row-x">{{ content.excerpt }}</p>
+              }
+              @if (content.tags.length > 0) {
+                <div class="ed-row-tags">
+                  @for (tag of content.tags.slice(0, 4); track tag) {
+                    <span>#{{ tag }}</span>
+                  }
+                </div>
+              }
+            </div>
+          </a>
+        }
+      </div>
+
+      <!-- Pagination -->
+      @if (totalPages() > 1) {
+        <nav
+          aria-label="Pagination"
+          class="mt-12 flex items-center justify-center gap-4 font-mono text-xs text-fg-subtle"
+        >
           <button
             type="button"
-            class="rounded-xs border border-border px-4 py-2 text-sm text-fg-muted transition-colors hover:border-border-strong hover:text-fg"
-            (click)="selectType('all')"
+            class="rounded-xs border border-border px-3 py-1.5 transition-colors hover:border-border-strong hover:text-fg disabled:opacity-30"
+            [disabled]="currentPage() === 1"
+            (click)="onPageChange(currentPage() - 1)"
           >
-            Clear filter
+            Newer
           </button>
-        </div>
-      } @else {
-        <ul>
-          @for (content of filteredContents(); track content.id) {
-            <li class="border-border-faint [&:not(:first-child)]:border-t">
-              <app-post-row [content]="content" />
-            </li>
-          }
-        </ul>
-
-        <!-- Pagination -->
-        @if (totalPages() > 1) {
-          <nav
-            aria-label="Pagination"
-            class="mt-12 flex items-center justify-center gap-4 font-mono text-xs text-fg-subtle"
+          <span class="text-fg-faint"
+            >{{ currentPage() }} / {{ totalPages() }}</span
           >
-            <button
-              type="button"
-              class="rounded-xs border border-border px-3 py-1.5 transition-colors hover:border-border-strong hover:text-fg disabled:opacity-30"
-              [disabled]="currentPage() === 1"
-              (click)="onPageChange(currentPage() - 1)"
-            >
-              Newer
-            </button>
-            <span class="text-fg-faint"
-              >{{ currentPage() }} / {{ totalPages() }}</span
-            >
-            <button
-              type="button"
-              class="rounded-xs border border-border px-3 py-1.5 transition-colors hover:border-border-strong hover:text-fg disabled:opacity-30"
-              [disabled]="currentPage() === totalPages()"
-              (click)="onPageChange(currentPage() + 1)"
-            >
-              Older
-            </button>
-          </nav>
-        }
+          <button
+            type="button"
+            class="rounded-xs border border-border px-3 py-1.5 transition-colors hover:border-border-strong hover:text-fg disabled:opacity-30"
+            [disabled]="currentPage() === totalPages()"
+            (click)="onPageChange(currentPage() + 1)"
+          >
+            Older
+          </button>
+        </nav>
       }
     }
-  </div>
-</section>
+  }
+</div>

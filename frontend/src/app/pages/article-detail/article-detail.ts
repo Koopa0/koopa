@@ -92,16 +92,6 @@ export class ArticleDetailComponent implements OnInit {
     () => this.article()?.topics[0] ?? null,
   );
 
-  /**
-   * Layout wrapper: full mode centers a reading column with the
-   * "On this page" rail; preview mode is a bare, left-aligned column.
-   */
-  protected readonly wrapperClass = computed(() =>
-    this.preview()
-      ? 'max-w-[760px] px-6 pt-8 pb-16 sm:px-10'
-      : 'mx-auto max-w-6xl px-6 pt-11 pb-28 sm:px-10 lg:grid lg:grid-cols-[minmax(0,680px)_192px] lg:justify-center lg:gap-14',
-  );
-
   protected readonly ArrowLeftIcon = ArrowLeft;
   protected readonly AlertCircleIcon = AlertCircle;
 
@@ -200,7 +190,7 @@ export class ArticleDetailComponent implements OnInit {
 
   private injectCopyButtons(): void {
     const root = this.el.nativeElement as HTMLElement;
-    const preBlocks = root.querySelectorAll('.prose pre');
+    const preBlocks = root.querySelectorAll('.ed-prose pre');
 
     for (const pre of Array.from(preBlocks)) {
       if (pre.querySelector('.copy-btn')) continue;

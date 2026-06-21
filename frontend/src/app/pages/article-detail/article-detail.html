@@ -1,135 +1,121 @@
 @if (isLoading()) {
-  <section>
+  <div
+    class="mx-auto flex max-w-3xl flex-col items-center justify-center gap-3 px-6 py-20 text-fg-muted"
+  >
     <div
-      class="mx-auto flex max-w-3xl flex-col items-center justify-center gap-3 px-6 py-20 text-fg-muted"
-    >
-      <div
-        class="size-8 animate-spin rounded-full border-2 border-border border-t-fg-muted"
-      ></div>
-      <p class="text-sm">Loading…</p>
-    </div>
-  </section>
+      class="size-8 animate-spin rounded-full border-2 border-border border-t-fg-muted"
+    ></div>
+    <p class="text-sm">Loading…</p>
+  </div>
 } @else if (error()) {
-  <section>
-    <div
-      class="mx-auto flex max-w-3xl flex-col items-center justify-center gap-4 px-6 py-20 text-center"
-    >
-      <lucide-icon [img]="AlertCircleIcon" [size]="40" class="text-error" />
-      <p class="text-xl font-semibold text-fg">Failed to Load</p>
-      <p class="text-sm text-fg-muted">{{ error() }}</p>
-      @if (!preview()) {
-        <button
-          type="button"
-          class="inline-flex items-center gap-2 rounded-xs border border-border px-4 py-2 text-sm text-fg-muted transition-colors hover:border-border-strong hover:text-fg"
-          (click)="goBack()"
-        >
-          <lucide-icon [img]="ArrowLeftIcon" [size]="16" />
-          Back
-        </button>
-      }
-    </div>
-  </section>
-} @else if (article(); as content) {
-  <div [class]="wrapperClass()">
-    <article class="min-w-0 max-w-article">
-      <!-- Breadcrumbs -->
-      @if (!preview()) {
-        <nav
-          aria-label="Breadcrumb"
-          class="mb-[26px] flex flex-wrap items-center gap-2 font-mono text-[11px] text-fg-subtle"
-        >
-          <a
-            routerLink="/"
-            class="no-underline transition-colors hover:text-brand"
-            >koopa.dev</a
-          >
-          @if (primaryTopic(); as topic) {
-            <span class="text-fg-faint" aria-hidden="true">/</span>
-            <a
-              [routerLink]="'/topics/' + topic.slug"
-              class="no-underline transition-colors hover:text-brand"
-              >{{ topic.name }}</a
-            >
-          }
-          <span class="text-fg-faint" aria-hidden="true">/</span>
-          <span class="text-fg-muted" aria-current="page">{{
-            typeLabel()
-          }}</span>
-        </nav>
-      }
-
-      <!-- Meta -->
-      <div
-        class="mb-3.5 flex flex-wrap items-center gap-[9px] font-mono text-[11px] text-fg-faint"
-      >
-        <span
-          class="size-[7px] rounded-full"
-          [style.background]="'var(--dot-' + content.type + ', var(--fg-faint))'"
-          aria-hidden="true"
-        ></span>
-        <span class="tracking-[0.03em] text-fg-subtle">{{ content.type }}</span>
-        @if (content.published_at) {
-          <span aria-hidden="true">·</span>
-          <span>{{ content.published_at | date: 'MMM d, yyyy' }}</span>
-        }
-        <span aria-hidden="true">·</span>
-        <span>{{ content.reading_time_min }} min read</span>
-      </div>
-
-      <!-- Title -->
-      <h1
-        class="font-display mb-[18px] text-[2rem] font-bold leading-[1.12] tracking-[-0.025em] text-balance text-fg sm:text-(length:--fs-ed-38)"
-      >
-        {{ content.title }}
-      </h1>
-
-      <!-- Lead -->
-      @if (content.excerpt) {
-        <p
-          class="mb-[30px] border-b border-border pb-7 font-serif text-[1.1875rem] italic leading-[1.6] text-fg-muted"
-        >
-          {{ content.excerpt }}
-        </p>
-      }
-
-      <!-- Body -->
-      <div class="prose" [innerHTML]="parsedContent()"></div>
-
-      <!-- Footer: tags + read next -->
-      <footer class="mt-12 border-t border-border pt-6">
-        @if (content.tags.length > 0) {
-          <ul class="mb-9 flex flex-wrap gap-2" aria-label="Tags">
-            @for (tag of content.tags; track tag) {
-              <li
-                class="rounded-xs border border-border-faint px-[9px] py-[3px] font-mono text-[11px] text-fg-subtle"
-              >
-                #{{ tag }}
-              </li>
-            }
-          </ul>
-        }
-
-        @if (!preview()) {
-          <app-related-articles [articles]="relatedArticles()" />
-        }
-
-        @if (
-          !preview() && content.updated_at !== content.published_at
-        ) {
-          <p class="mt-9 font-mono text-[11px] text-fg-faint">
-            Last updated: {{ content.updated_at | date: 'MMM d, yyyy' }}
-          </p>
-        }
-      </footer>
-    </article>
-
-    <!-- "On this page" rail -->
+  <div
+    class="mx-auto flex max-w-3xl flex-col items-center justify-center gap-4 px-6 py-20 text-center"
+  >
+    <lucide-icon [img]="AlertCircleIcon" [size]="40" class="text-error" />
+    <p class="text-xl font-semibold text-fg">Failed to load</p>
+    <p class="text-sm text-fg-muted">{{ error() }}</p>
     @if (!preview()) {
-      <aside class="hidden lg:block">
-        <div class="sticky top-[84px]">
-          <app-table-of-contents [content]="rawHtml()" />
-        </div>
-      </aside>
+      <button
+        type="button"
+        class="ed-btn ed-btn-ghost"
+        (click)="goBack()"
+      >
+        <lucide-icon [img]="ArrowLeftIcon" [size]="16" />
+        Back
+      </button>
     }
   </div>
+} @else if (article(); as content) {
+  @if (preview()) {
+    <!-- Chrome-less preview column for the admin publish-preview iframe. -->
+    <article class="mx-auto max-w-[640px] px-6 pb-16 pt-8 sm:px-10">
+      <h1 class="ed-article-title">{{ content.title }}</h1>
+      @if (content.excerpt) {
+        <p class="ed-lead">{{ content.excerpt }}</p>
+        <hr class="ed-lead-rule" />
+      }
+      <div class="ed-prose" [innerHTML]="parsedContent()"></div>
+    </article>
+  } @else {
+    <div class="ed-main ed-read">
+      <!-- Breadcrumbs -->
+      <nav class="ed-crumbs" aria-label="Breadcrumb">
+        <a routerLink="/articles">Writing</a>
+        @if (primaryTopic(); as topic) {
+          <span class="sep" aria-hidden="true">/</span>
+          <a [routerLink]="['/topics', topic.slug]">{{ topic.name }}</a>
+        }
+        <span class="sep" aria-hidden="true">/</span>
+        <span class="here" aria-current="page">{{ typeLabel() }}</span>
+      </nav>
+
+      <div class="ed-spread has-toc">
+        <!-- LEFT: mono metadata rail (machine voice) -->
+        <aside class="ed-rail" aria-label="Article metadata">
+          <div class="ed-rail-row">
+            <span class="ed-rail-k">Type</span>
+            <span class="ed-rail-v">{{ typeLabel() }}</span>
+          </div>
+          @if (content.published_at) {
+            <div class="ed-rail-row">
+              <span class="ed-rail-k">Published</span>
+              <span class="ed-rail-v">{{
+                content.published_at | date: 'MMM d, yyyy'
+              }}</span>
+            </div>
+          }
+          <div class="ed-rail-row">
+            <span class="ed-rail-k">Reading</span>
+            <span class="ed-rail-v">{{ content.reading_time_min }} min</span>
+          </div>
+          @if (content.tags.length > 0) {
+            <div class="ed-rail-line" aria-hidden="true"></div>
+            <div class="ed-rail-row">
+              <span class="ed-rail-k">Filed under</span>
+              <span class="ed-rail-tags">
+                @for (tag of content.tags; track tag) {
+                  <span>#{{ tag }}</span>
+                }
+              </span>
+            </div>
+          }
+        </aside>
+
+        <!-- CENTRE: serif reading column (human voice) -->
+        <article class="ed-read-col min-w-0">
+          <h1 class="ed-article-title">{{ content.title }}</h1>
+          @if (content.excerpt) {
+            <p class="ed-lead">{{ content.excerpt }}</p>
+          }
+          <hr class="ed-lead-rule" />
+
+          <div class="ed-prose" [innerHTML]="parsedContent()"></div>
+
+          <div class="ed-colophon">
+            <span class="sig">Koopa</span>
+            @if (content.published_at) {
+              <span>written {{ content.published_at | date: 'MMM d, yyyy' }}</span>
+            }
+            <span>{{ content.reading_time_min }} min</span>
+            @if (content.updated_at !== content.published_at) {
+              <span
+                >updated {{ content.updated_at | date: 'MMM d, yyyy' }}</span
+              >
+            }
+          </div>
+
+          @if (relatedArticles().length > 0) {
+            <div class="ed-readnext">
+              <app-related-articles [articles]="relatedArticles()" />
+            </div>
+          }
+        </article>
+
+        <!-- RIGHT: mono TOC (machine voice) -->
+        <aside class="ed-toc hidden lg:block">
+          <app-table-of-contents [content]="rawHtml()" />
+        </aside>
+      </div>
+    </div>
+  }
 }

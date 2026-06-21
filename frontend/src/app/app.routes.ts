@@ -4,14 +4,13 @@ import { contentEditorCanDeactivate } from './admin/knowledge/content/editor/con
 import { noteEditorCanDeactivate } from './admin/knowledge/notes/editor/note-editor.guard';
 
 export const routes: Routes = [
-  // The articles index IS the home page — one consolidated reading index
-  // for every written content type (article / essay / build-log / til /
-  // digest), filterable via the `type` query param.
+  // The front door — a three-band editorial home (positioning statement,
+  // themes-as-list, recent pieces). The full reading wall lives at /articles.
   {
     path: '',
     pathMatch: 'full',
     loadComponent: () =>
-      import('./pages/articles/articles').then((m) => m.ArticlesComponent),
+      import('./pages/home/home').then((m) => m.HomeComponent),
   },
   { path: 'home', redirectTo: '/', pathMatch: 'full' },
   {

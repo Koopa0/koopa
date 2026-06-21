@@ -1,0 +1,112 @@
+<div class="ed-fd">
+  <!-- ① Positioning -->
+  <section class="ed-fd-band ed-fd-pos">
+    <p class="ed-fd-stmt">Notes, systems, and what I'm working out.</p>
+  </section>
+
+  <hr class="ed-fd-rule" />
+
+  <!-- ② Themes as a scaling list -->
+  <section class="ed-fd-band ed-fd-themes">
+    <p class="ed-fd-label">What I'm working through</p>
+
+    @if (isLoading()) {
+      <div class="ed-fd-list" aria-hidden="true">
+        @for (placeholder of [1, 2, 3]; track placeholder) {
+          <div class="ed-fd-theme">
+            <div class="ed-fd-theme-head">
+              <span
+                class="inline-block h-5 w-40 animate-pulse rounded-xs bg-overlay"
+              ></span>
+              <span
+                class="inline-block h-3 w-16 animate-pulse rounded-xs bg-overlay"
+              ></span>
+            </div>
+          </div>
+        }
+      </div>
+    } @else {
+      <div class="ed-fd-list">
+        @for (theme of themes(); track theme.topic.slug) {
+          <a
+            class="ed-fd-theme"
+            [routerLink]="['/topics', theme.topic.slug]"
+            data-testid="theme-row"
+          >
+            <div class="ed-fd-theme-head">
+              <span class="ed-fd-theme-name">{{ theme.topic.name }}</span>
+              <span class="ed-fd-theme-meta">
+                <span>{{ theme.count }} {{ theme.count === 1 ? 'piece' : 'pieces' }}</span>
+                <lucide-icon
+                  class="ed-fd-arrow"
+                  [img]="ArrowRightIcon"
+                  [size]="13"
+                  [strokeWidth]="1.6"
+                />
+              </span>
+            </div>
+            @if (theme.topic.description) {
+              <p class="ed-fd-theme-desc">{{ theme.topic.description }}</p>
+            }
+            @if (theme.latest; as latest) {
+              <span class="ed-fd-latest">
+                <span class="t">{{ latest.title }}</span>
+                <span class="m"
+                  >{{ typeLabel(latest.type) }} ·
+                  {{ latest.published_at | date: 'MMM d, yyyy' }}</span
+                >
+              </span>
+            }
+          </a>
+        }
+      </div>
+
+      @if (following().length > 0) {
+        <div class="ed-fd-following" data-testid="following">
+          <span class="lbl">Also following</span>
+          @for (topic of following(); track topic.slug; let last = $last) {
+            <a [routerLink]="['/topics', topic.slug]">{{ topic.name }}</a>
+            @if (!last) {
+              <span class="dot" aria-hidden="true">·</span>
+            }
+          }
+        </div>
+      }
+    }
+  </section>
+
+  <hr class="ed-fd-rule" />
+
+  <!-- ③ Recent -->
+  <section class="ed-fd-band ed-fd-recent-band">
+    <p class="ed-fd-label">Recent</p>
+
+    @if (!isLoading()) {
+      <div class="ed-fd-recent">
+        @for (piece of recent(); track piece.id) {
+          <a
+            class="ed-fd-rec"
+            [routerLink]="['/articles', piece.slug]"
+            data-testid="recent-row"
+          >
+            <span class="t">{{ piece.title }}</span>
+            <span class="m">
+              <span class="topic">{{ primaryTopicName(piece) }}</span>
+              <span aria-hidden="true">·</span>
+              <span>{{ piece.published_at | date: 'MMM d, yyyy' }}</span>
+            </span>
+          </a>
+        } @empty {
+          <p class="ed-fd-theme-desc" data-testid="recent-empty">
+            Nothing published yet.
+          </p>
+        }
+      </div>
+
+      <a class="ed-fd-all" routerLink="/articles" data-testid="read-everything">
+        Read everything
+        <lucide-icon [img]="ArrowRightIcon" [size]="13" [strokeWidth]="1.6" />
+      </a>
+    }
+  </section>
+</div>

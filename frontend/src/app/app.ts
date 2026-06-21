@@ -6,40 +6,31 @@ import {
   PLATFORM_ID,
   afterNextRender,
 } from '@angular/core';
-import {
-  Router,
-  RouterOutlet,
-  RouterLink,
-  NavigationEnd,
-} from '@angular/router';
+import { Router, RouterOutlet, NavigationEnd } from '@angular/router';
 import { isPlatformBrowser } from '@angular/common';
 import { filter, map } from 'rxjs/operators';
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
-import {
-  LucideAngularModule,
-  LogOut,
-  LayoutDashboard,
-  Search,
-  Github,
-} from 'lucide-angular';
 import { BackToTopComponent } from './shared/back-to-top/back-to-top.component';
 import { CommandPaletteComponent } from './shared/command-palette/command-palette.component';
 import { ToastComponent } from './shared/toast/toast.component';
-import { ThemeToggleComponent } from './shared/theme-toggle/theme-toggle';
-import { CommandPaletteService } from './shared/command-palette/command-palette.service';
-import { AuthService } from './core/services/auth.service';
+import { EditorialMastheadComponent } from './shared/editorial/editorial-masthead';
+import { EditorialFooterComponent } from './shared/editorial/editorial-footer';
 import { KeyboardShortcutsService } from './core/services/keyboard-shortcuts.service';
 
+/**
+ * The application shell — picks the chrome for the current route. The public
+ * reading site wears the editorial Tone B frame (masthead + footer); the
+ * admin area carries its own shell; the publish-preview iframe is bare.
+ */
 @Component({
   selector: 'app-root',
   imports: [
     RouterOutlet,
-    RouterLink,
-    LucideAngularModule,
     BackToTopComponent,
     CommandPaletteComponent,
     ToastComponent,
-    ThemeToggleComponent,
+    EditorialMastheadComponent,
+    EditorialFooterComponent,
   ],
   templateUrl: './app.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -48,16 +39,9 @@ import { KeyboardShortcutsService } from './core/services/keyboard-shortcuts.ser
   },
 })
 export class AppComponent {
-  protected readonly title = 'koopa.dev';
-
-  private readonly authService = inject(AuthService);
   private readonly router = inject(Router);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly keyboardShortcuts = inject(KeyboardShortcutsService);
-  protected readonly commandPalette = inject(CommandPaletteService);
-
-  protected readonly isAuthenticated = this.authService.isAuthenticated;
-  protected readonly currentYear = new Date().getFullYear();
 
   private readonly currentUrl = toSignal(
     this.router.events.pipe(
@@ -76,27 +60,18 @@ export class AppComponent {
     this.currentPath().startsWith('/preview'),
   );
 
-  protected readonly articlesActive = computed(() => {
-    const path = this.currentPath();
-    return (
-      path === '/' ||
-      path.startsWith('/articles') ||
-      path.startsWith('/topics') ||
-      path.startsWith('/essays') ||
-      path.startsWith('/til') ||
-      path.startsWith('/build-logs')
-    );
-  });
-
-  protected readonly projectsActive = computed(() =>
-    this.currentPath().startsWith('/projects'),
+  /** The admin area carries its own shell (sidebar + topbar). */
+  protected readonly isAdminArea = computed(() =>
+    this.currentPath().startsWith('/admin'),
   );
 
-  // Lucide icons
-  protected readonly LogOutIcon = LogOut;
-  protected readonly DashboardIcon = LayoutDashboard;
-  protected readonly SearchIcon = Search;
-  protected readonly GithubIcon = Github;
+  /**
+   * Public reading site: everything that is neither the chrome-less preview
+   * nor the admin area. This is the surface that wears the editorial frame.
+   */
+  protected readonly isPublicSite = computed(
+    () => !this.isChromeless() && !this.isAdminArea(),
+  );
 
   constructor() {
     afterNextRender(() => {
@@ -115,10 +90,5 @@ export class AppComponent {
           window.scrollTo(0, 0);
         }
       });
-  }
-
-  protected logout(): void {
-    this.authService.logout();
-    this.router.navigate(['/']);
   }
 }

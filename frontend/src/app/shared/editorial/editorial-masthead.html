@@ -1,0 +1,66 @@
+<header class="ed-mast">
+  <div class="ed-mast-row">
+    <a routerLink="/" class="ed-mast-stack" aria-label="koopa.dev home">
+      <span class="ed-wordmark">koopa<span class="tld">.dev</span></span>
+      <span class="ed-letterhead">written &amp; maintained by one person</span>
+    </a>
+
+    <nav class="ed-nav" aria-label="Main navigation">
+      <a
+        routerLink="/"
+        [attr.data-active]="writingActive()"
+        [attr.aria-current]="writingActive() ? 'page' : null"
+        >Writing</a
+      >
+      <a
+        routerLink="/projects"
+        [attr.data-active]="projectsActive()"
+        [attr.aria-current]="projectsActive() ? 'page' : null"
+        >Projects</a
+      >
+    </nav>
+
+    <span class="ed-mast-sp"></span>
+
+    <button
+      type="button"
+      class="ed-search"
+      (click)="commandPalette.open()"
+      aria-label="Search (⌘K)"
+      data-testid="ed-search"
+    >
+      <span>Search</span>
+      <span class="ed-kbd">⌘K</span>
+    </button>
+
+    <app-theme-toggle />
+
+    <a
+      href="https://github.com/koopa0"
+      target="_blank"
+      rel="noopener noreferrer"
+      class="ed-iconbtn"
+      aria-label="GitHub"
+    >
+      <lucide-icon [img]="GithubIcon" [size]="16" [strokeWidth]="1.6" />
+    </a>
+
+    @if (isAuthenticated()) {
+      <a
+        routerLink="/admin"
+        class="ed-iconbtn"
+        aria-label="Admin dashboard"
+      >
+        <lucide-icon [img]="DashboardIcon" [size]="16" [strokeWidth]="1.6" />
+      </a>
+      <button
+        type="button"
+        class="ed-iconbtn"
+        (click)="logout()"
+        aria-label="Sign out"
+      >
+        <lucide-icon [img]="LogOutIcon" [size]="16" [strokeWidth]="1.6" />
+      </button>
+    }
+  </div>
+</header>
