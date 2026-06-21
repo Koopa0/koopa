@@ -41,6 +41,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/Koopa0/koopa/internal/goal"
 	"github.com/Koopa0/koopa/internal/note"
 )
 
@@ -84,6 +85,12 @@ func (s *Server) createNote(ctx context.Context, _ *mcp.CallToolRequest, input C
 	}
 	if input.Title == "" {
 		return nil, NoteReply{}, fmt.Errorf("title is required")
+	}
+	if goal.ContainsControlChars(input.Title) {
+		return nil, NoteReply{}, fmt.Errorf("title must not contain control characters")
+	}
+	if goal.ContainsControlChars(input.Body) {
+		return nil, NoteReply{}, fmt.Errorf("body must not contain control characters")
 	}
 	kind := note.Kind(input.Kind)
 	if !kind.Valid() {
@@ -142,6 +149,12 @@ func (s *Server) updateNote(ctx context.Context, _ *mcp.CallToolRequest, input U
 	id, err := uuid.Parse(input.NoteID)
 	if err != nil {
 		return nil, NoteReply{}, fmt.Errorf("invalid note_id: %w", err)
+	}
+	if input.Title != nil && goal.ContainsControlChars(*input.Title) {
+		return nil, NoteReply{}, fmt.Errorf("title must not contain control characters")
+	}
+	if input.Body != nil && goal.ContainsControlChars(*input.Body) {
+		return nil, NoteReply{}, fmt.Errorf("body must not contain control characters")
 	}
 
 	params := note.UpdateParams{

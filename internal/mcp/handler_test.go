@@ -44,6 +44,8 @@ func TestCaptureInbox_Validation(t *testing.T) {
 	}{
 		{name: "empty title", input: CaptureInboxInput{}, wantErr: "title is required"},
 		{name: "invalid due", input: CaptureInboxInput{Title: "test", Due: new("not-a-date")}, wantErr: "invalid due date"},
+		{name: "C0 control char in title", input: CaptureInboxInput{Title: "bad\x07title"}, wantErr: "title must not contain control characters"},
+		{name: "control char in description", input: CaptureInboxInput{Title: "ok", Description: "line1\x00line2"}, wantErr: "description must not contain control characters"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -56,6 +58,50 @@ func TestCaptureInbox_Validation(t *testing.T) {
 			}
 		})
 	}
+}
+
+// --- create_note / update_note control-char validation ---
+
+// TestNote_ControlCharValidation pins that the note tools reject control
+// characters in title/body before any store write, mirroring the propose_*
+// and HTTP handler validation. These run on the unit test server (caller
+// "human" is registered) and the control-char check fires before any DB call,
+// so no testcontainer is needed.
+func TestNote_ControlCharValidation(t *testing.T) {
+	s := newTestServer()
+
+	t.Run("create_note rejects control char in title", func(t *testing.T) {
+		_, _, err := callHandler(t, s.createNote, CreateNoteInput{
+			Slug:  "valid-slug",
+			Title: "bad\x1ftitle",
+			Kind:  "musing",
+		})
+		if err == nil || !contains(err.Error(), "title must not contain control characters") {
+			t.Errorf("createNote error = %v, want control-char title rejection", err)
+		}
+	})
+
+	t.Run("create_note rejects control char in body", func(t *testing.T) {
+		_, _, err := callHandler(t, s.createNote, CreateNoteInput{
+			Slug:  "valid-slug",
+			Title: "ok title",
+			Body:  "para\u009fwith C1",
+			Kind:  "musing",
+		})
+		if err == nil || !contains(err.Error(), "body must not contain control characters") {
+			t.Errorf("createNote error = %v, want control-char body rejection", err)
+		}
+	})
+
+	t.Run("update_note rejects control char in title", func(t *testing.T) {
+		_, _, err := callHandler(t, s.updateNote, UpdateNoteInput{
+			NoteID: "550e8400-e29b-41d4-a716-446655440000",
+			Title:  new("bad\x07title"),
+		})
+		if err == nil || !contains(err.Error(), "title must not contain control characters") {
+			t.Errorf("updateNote error = %v, want control-char title rejection", err)
+		}
+	})
 }
 
 // --- plan_day ---

@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/Koopa0/koopa/internal/goal"
 	"github.com/Koopa0/koopa/internal/todo"
 )
 
@@ -38,6 +39,12 @@ func (s *Server) captureInbox(ctx context.Context, _ *mcp.CallToolRequest, input
 	}
 	if input.Title == "" {
 		return nil, CaptureInboxOutput{}, fmt.Errorf("title is required")
+	}
+	if goal.ContainsControlChars(input.Title) {
+		return nil, CaptureInboxOutput{}, fmt.Errorf("title must not contain control characters")
+	}
+	if goal.ContainsControlChars(input.Description) {
+		return nil, CaptureInboxOutput{}, fmt.Errorf("description must not contain control characters")
 	}
 	if input.Energy != nil && *input.Energy != "" && !isValidEnergy(*input.Energy) {
 		return nil, CaptureInboxOutput{}, fmt.Errorf("energy must be one of: high, medium, low (got %q)", *input.Energy)
