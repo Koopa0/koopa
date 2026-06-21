@@ -191,7 +191,7 @@ describe('ProjectDetailComponent', () => {
     };
     expect(jsonLd['@type']).toBe('BreadcrumbList');
     expect(jsonLd.itemListElement.map((i) => i.name)).toEqual([
-      'koopa.dev',
+      'koopa0.dev',
       'projects',
       'Test Project',
     ]);

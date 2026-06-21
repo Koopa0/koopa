@@ -112,7 +112,7 @@ export class HomeComponent implements OnInit {
 
   ngOnInit(): void {
     this.seoService.updateMeta({
-      title: 'koopa.dev',
+      title: 'koopa0.dev',
       description: 'Notes, systems, and what I am working out.',
       ogUrl: environment.siteUrl,
       canonicalUrl: environment.siteUrl,

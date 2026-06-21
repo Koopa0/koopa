@@ -145,7 +145,7 @@ export class ProjectDetailComponent {
       ogType: 'website',
       canonicalUrl: projectUrl,
       jsonLd: buildBreadcrumbSchema([
-        { name: 'koopa.dev', url: environment.siteUrl },
+        { name: 'koopa0.dev', url: environment.siteUrl },
         { name: 'projects', url: `${environment.siteUrl}/projects` },
         { name: project.title, url: projectUrl },
       ]),

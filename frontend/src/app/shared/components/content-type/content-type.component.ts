@@ -5,7 +5,7 @@ import {
   computed,
 } from '@angular/core';
 
-/** koopa.dev content-type taxonomy (pack). The live, published surface. */
+/** koopa0.dev content-type taxonomy (pack). The live, published surface. */
 export type ContentType =
   | 'article'
   | 'essay'
