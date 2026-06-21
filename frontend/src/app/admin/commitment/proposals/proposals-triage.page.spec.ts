@@ -307,16 +307,31 @@ describe('ProposalsTriagePageComponent', () => {
     expect(testid('proposals-all-clear')).toBeTruthy();
   });
 
-  it('should reject a standalone goal after confirmation', async () => {
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+  it('should open the reject dialog without deleting when reject is clicked on a goal', async () => {
     await render(goalOnly());
 
     testid('proposals-goal-reject')?.click();
     await settle();
 
-    expect(confirmSpy).toHaveBeenCalledWith(
-      'Reject "Learn Go generics"? This permanently removes the proposed goal.',
+    // The dialog is open with the goal's wording — but nothing was deleted yet.
+    const body = testid('proposals-reject-body');
+    expect(body).toBeTruthy();
+    expect(body?.textContent).toContain(
+      'This permanently removes the proposed goal.',
     );
+    expect(testid('proposals-reject-confirm')).toBeTruthy();
+    // afterEach httpMock.verify() asserts no DELETE went out from opening alone.
+  });
+
+  it('should reject a standalone goal only after confirming in the dialog', async () => {
+    await render(goalOnly());
+
+    testid('proposals-goal-reject')?.click();
+    await settle();
+
+    testid('proposals-reject-confirm')?.click();
+    await settle();
+
     httpMock
       .expectOne(
         (r) => r.method === 'DELETE' && r.url.endsWith(goalProposed('gl-2')),
@@ -324,19 +339,120 @@ describe('ProposalsTriagePageComponent', () => {
       .flush(null, { status: 204, statusText: 'No Content' });
     await settle();
 
+    // Dialog closed and the queue advanced.
+    expect(testid('proposals-reject-body')).toBeNull();
     expect(testid('proposals-all-clear')).toBeTruthy();
   });
 
-  it('should surface the goal cascade in the confirm when rejecting an area bundle', async () => {
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+  it('should close the dialog and keep the card when reject is cancelled', async () => {
+    await render(goalOnly());
+
+    testid('proposals-goal-reject')?.click();
+    await settle();
+    expect(testid('proposals-reject-body')).toBeTruthy();
+
+    testid('proposals-reject-cancel')?.click();
+    await settle();
+
+    // Dialog gone, the goal card is still here, no DELETE went out.
+    expect(testid('proposals-reject-body')).toBeNull();
+    expect(testid('proposals-goal-card')?.textContent).toContain(
+      'Learn Go generics',
+    );
+    // afterEach httpMock.verify() asserts no DELETE was issued.
+  });
+
+  it('should omit the cascade line in the dialog when an area has no proposed goals', async () => {
+    await render({
+      areas: [
+        {
+          id: 'ar-1',
+          slug: 'health',
+          name: 'Health',
+          description: 'Body upkeep',
+          created_by: 'planner',
+          created_at: '2026-06-18T00:00:00Z',
+        },
+      ],
+      goals: [],
+      projects: [],
+    });
+
+    testid('proposals-area-reject')?.click();
+    await settle();
+
+    const body = testid('proposals-reject-body');
+    expect(body?.textContent).toContain(
+      'This permanently removes the proposed area.',
+    );
+    expect(body?.textContent).not.toContain('proposed goal');
+  });
+
+  it('should show the singular cascade line in the dialog for an area with one proposed goal', async () => {
     await render();
 
     testid('proposals-area-reject')?.click();
     await settle();
 
-    expect(confirmSpy).toHaveBeenCalledWith(
-      'Reject "Health"? This also rejects 1 proposed goal under it.',
+    expect(testid('proposals-reject-body')?.textContent).toContain(
+      'This also rejects 1 proposed goal under it.',
     );
+  });
+
+  it('should show the plural cascade line in the dialog for an area with two proposed goals', async () => {
+    await render({
+      areas: [
+        {
+          id: 'ar-1',
+          slug: 'health',
+          name: 'Health',
+          description: 'Body upkeep',
+          created_by: 'planner',
+          created_at: '2026-06-18T00:00:00Z',
+        },
+      ],
+      goals: [
+        {
+          id: 'gl-1',
+          title: 'Run 5k',
+          description: '',
+          area_id: 'ar-1',
+          area_name: 'Health',
+          created_by: 'planner',
+          created_at: '2026-06-18T00:00:00Z',
+          milestone_total: 2,
+        },
+        {
+          id: 'gl-3',
+          title: 'Sleep 8h',
+          description: '',
+          area_id: 'ar-1',
+          area_name: 'Health',
+          created_by: 'planner',
+          created_at: '2026-06-18T00:00:00Z',
+          milestone_total: 0,
+        },
+      ],
+      projects: [],
+    });
+
+    testid('proposals-area-reject')?.click();
+    await settle();
+
+    expect(testid('proposals-reject-body')?.textContent).toContain(
+      'This also rejects 2 proposed goals under it.',
+    );
+  });
+
+  it('should reject an area bundle only after confirming in the dialog', async () => {
+    await render();
+
+    testid('proposals-area-reject')?.click();
+    await settle();
+
+    testid('proposals-reject-confirm')?.click();
+    await settle();
+
     httpMock
       .expectOne(
         (r) => r.method === 'DELETE' && r.url.endsWith(areaProposed('ar-1')),
@@ -344,6 +460,7 @@ describe('ProposalsTriagePageComponent', () => {
       .flush(null, { status: 204, statusText: 'No Content' });
     await settle();
 
+    expect(testid('proposals-reject-body')).toBeNull();
     expect(testid('proposals-position')?.textContent).toContain('2 of 2');
   });
 
@@ -409,16 +526,28 @@ describe('ProposalsTriagePageComponent', () => {
     expect(testid('proposals-all-clear')).toBeTruthy();
   });
 
-  it('should reject a proposed project after confirmation', async () => {
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+  it('should open the reject dialog without deleting when reject is clicked on a project', async () => {
     await render(projectOnly());
 
     testid('proposals-project-reject')?.click();
     await settle();
 
-    expect(confirmSpy).toHaveBeenCalledWith(
-      'Reject "Build koopa CLI"? This permanently removes the proposed project.',
+    const body = testid('proposals-reject-body');
+    expect(body?.textContent).toContain(
+      'This permanently removes the proposed project.',
     );
+    // afterEach httpMock.verify() asserts no DELETE went out from opening alone.
+  });
+
+  it('should reject a proposed project only after confirming in the dialog', async () => {
+    await render(projectOnly());
+
+    testid('proposals-project-reject')?.click();
+    await settle();
+
+    testid('proposals-reject-confirm')?.click();
+    await settle();
+
     httpMock
       .expectOne(
         (r) => r.method === 'DELETE' && r.url.endsWith(projectProposed('pr-1')),
@@ -426,16 +555,8 @@ describe('ProposalsTriagePageComponent', () => {
       .flush(null, { status: 204, statusText: 'No Content' });
     await settle();
 
+    expect(testid('proposals-reject-body')).toBeNull();
     expect(testid('proposals-all-clear')).toBeTruthy();
-  });
-
-  it('should not call the API when a reject confirmation is dismissed', async () => {
-    vi.spyOn(window, 'confirm').mockReturnValue(false);
-    await render(goalOnly());
-
-    testid('proposals-goal-reject')?.click();
-    await settle();
-    // afterEach httpMock.verify() asserts no DELETE went out.
   });
 
   it('should show the empty state when there are no proposals', async () => {

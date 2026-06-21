@@ -355,4 +355,42 @@
       </article>
     }
   }
+
+  @if (pendingReject(); as p) {
+    <app-modal
+      [title]="p.title"
+      titleId="proposals-reject-title"
+      [maxWidth]="'sm'"
+      (closed)="cancelReject()"
+    >
+      <p
+        class="text-[13px] leading-relaxed text-fg-muted"
+        role="alert"
+        aria-live="assertive"
+        data-testid="proposals-reject-body"
+      >
+        {{ p.body }}
+      </p>
+
+      <div modal-footer class="flex w-full items-center justify-end gap-2.5">
+        <button
+          type="button"
+          (click)="cancelReject()"
+          class="rounded-sm border border-border bg-elevated px-3 py-1.5 text-xs text-fg-muted transition-colors hover:bg-overlay hover:text-fg"
+          data-testid="proposals-reject-cancel"
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          (click)="confirmReject()"
+          [disabled]="busy()"
+          class="rounded-sm bg-error px-3 py-1.5 text-xs font-medium text-bg transition-colors hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+          data-testid="proposals-reject-confirm"
+        >
+          {{ p.confirmLabel }}
+        </button>
+      </div>
+    </app-modal>
+  }
 </div>

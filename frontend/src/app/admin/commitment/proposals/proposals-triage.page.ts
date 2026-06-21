@@ -18,6 +18,7 @@ import {
 } from '../../../core/services/proposal.service';
 import { NotificationService } from '../../../core/services/notification.service';
 import { AdminTopbarService } from '../../admin-layout/admin-topbar.service';
+import { ModalComponent } from '../../../shared/components/modal/modal.component';
 
 /** A proposed area plus its proposed child goals — reviewed as one bundle. */
 interface AreaCard {
@@ -42,6 +43,16 @@ interface ProjectCard {
 }
 
 type TriageCard = AreaCard | GoalCard | ProjectCard;
+
+/** A pending reject awaiting the owner's confirmation in the dialog. `action`
+ *  runs the actual hard-delete once confirmed — the service is never touched
+ *  until then, so dismissing the dialog leaves the proposal untouched. */
+interface PendingReject {
+  title: string;
+  body: string;
+  confirmLabel: string;
+  action: () => void;
+}
 
 /** Splits a proposals payload into review cards: each proposed area becomes a
  *  bundle card carrying its proposed child goals; every goal not under a
@@ -81,6 +92,7 @@ function buildCards(resp: ProposalsResponse): TriageCard[] {
 @Component({
   selector: 'app-proposals-triage-page',
   templateUrl: './proposals-triage.page.html',
+  imports: [ModalComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: { class: 'flex min-h-full flex-1 flex-col' },
 })
@@ -149,6 +161,10 @@ export class ProposalsTriagePageComponent {
   /** True while an action is in flight — gates the card's buttons. */
   protected readonly busy = signal(false);
 
+  /** Set when a reject is awaiting confirmation; drives the confirm dialog.
+   *  Null means no dialog is open. */
+  protected readonly pendingReject = signal<PendingReject | null>(null);
+
   // Inline edit-then-activate for a standalone goal.
   protected readonly editing = signal(false);
   protected readonly editTitle = signal('');
@@ -202,14 +218,16 @@ export class ProposalsTriagePageComponent {
   protected rejectGoal(): void {
     const card = this.currentGoal();
     if (!card || this.busy()) return;
-    if (
-      !window.confirm(
-        `Reject "${card.goal.title}"? This permanently removes the proposed goal.`,
-      )
-    ) {
-      return;
-    }
-    this.run(this.proposalService.rejectGoal(card.goal.id), 'Proposal rejected');
+    this.pendingReject.set({
+      title: `Reject "${card.goal.title}"?`,
+      body: 'This permanently removes the proposed goal.',
+      confirmLabel: 'Reject goal',
+      action: () =>
+        this.run(
+          this.proposalService.rejectGoal(card.goal.id),
+          'Proposal rejected',
+        ),
+    });
   }
 
   // ── Area bundle card ───────────────────────────────────────────
@@ -231,17 +249,22 @@ export class ProposalsTriagePageComponent {
     const card = this.currentArea();
     if (!card || this.busy()) return;
     const n = card.goals.length;
-    const message =
+    const body =
       n === 0
-        ? `Reject "${card.area.name}"?`
+        ? 'This permanently removes the proposed area.'
         : n === 1
-          ? `Reject "${card.area.name}"? This also rejects 1 proposed goal under it.`
-          : `Reject "${card.area.name}"? This also rejects ${n} proposed goals under it.`;
-    if (!window.confirm(message)) return;
-    this.run(
-      this.proposalService.rejectArea(card.area.id),
-      'Proposal bundle rejected',
-    );
+          ? 'This also rejects 1 proposed goal under it.'
+          : `This also rejects ${n} proposed goals under it.`;
+    this.pendingReject.set({
+      title: `Reject "${card.area.name}"?`,
+      body,
+      confirmLabel: 'Reject bundle',
+      action: () =>
+        this.run(
+          this.proposalService.rejectArea(card.area.id),
+          'Proposal bundle rejected',
+        ),
+    });
   }
 
   // ── Project card ───────────────────────────────────────────────
@@ -259,17 +282,32 @@ export class ProposalsTriagePageComponent {
   protected rejectProject(): void {
     const card = this.currentProject();
     if (!card || this.busy()) return;
-    if (
-      !window.confirm(
-        `Reject "${card.project.title}"? This permanently removes the proposed project.`,
-      )
-    ) {
-      return;
-    }
-    this.run(
-      this.proposalService.rejectProject(card.project.id),
-      'Proposal rejected',
-    );
+    this.pendingReject.set({
+      title: `Reject "${card.project.title}"?`,
+      body: 'This permanently removes the proposed project.',
+      confirmLabel: 'Reject project',
+      action: () =>
+        this.run(
+          this.proposalService.rejectProject(card.project.id),
+          'Proposal rejected',
+        ),
+    });
+  }
+
+  // ── Reject confirmation dialog ─────────────────────────────────
+
+  /** Runs the pending reject's action and closes the dialog. The action runs
+   *  the real hard-delete (deferred until now), then `run` settles the queue. */
+  protected confirmReject(): void {
+    const pending = this.pendingReject();
+    if (!pending || this.busy()) return;
+    this.pendingReject.set(null);
+    pending.action();
+  }
+
+  /** Dismisses the dialog without touching the proposal. */
+  protected cancelReject(): void {
+    this.pendingReject.set(null);
   }
 
   // ── Shared action runner ───────────────────────────────────────
