@@ -87,11 +87,12 @@ func TestBriefOutput_MorningSlicesMarshalAsEmptyArray(t *testing.T) {
 	}
 }
 
-// TestResolveDefaultSections pins the per-agent allowlist contract: an
-// unlisted caller falls through to "all sections" semantics (nil return), and
-// learning-studio explicitly skips rss + content_pipeline so the morning-brief
-// token cost stays focused on learning-relevant signals. Explicit sections are
-// handled by brief, not this function — this only locks the map.
+// TestResolveDefaultSections pins the per-agent allowlist contract: a caller
+// not listed in defaultSectionsByAgent falls through to "all sections"
+// semantics (nil return). The map is currently empty (learning-studio, its
+// only former entry, has been retired), so every caller falls through.
+// Explicit sections are handled by brief, not this function — this only locks
+// the map.
 func TestResolveDefaultSections(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
@@ -101,11 +102,7 @@ func TestResolveDefaultSections(t *testing.T) {
 	}{
 		{name: "unlisted caller falls through to all", caller: "planner", want: nil},
 		{name: "empty caller falls through to all", caller: "", want: nil},
-		{
-			name:   "learning-studio gets focused subset",
-			caller: "learning-studio",
-			want:   []string{"tasks"},
-		},
+		{name: "retired learning-studio falls through to all", caller: "learning-studio", want: nil},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -116,16 +113,6 @@ func TestResolveDefaultSections(t *testing.T) {
 			for i, w := range tt.want {
 				if got[i] != w {
 					t.Errorf("resolveDefaultSections(%q)[%d] = %q, want %q", tt.caller, i, got[i], w)
-				}
-			}
-			// learning-studio's set must NEVER include rss or content_pipeline
-			// regardless of how the map grows — these are the noise the brief
-			// specifically wanted to silence.
-			if tt.caller == "learning-studio" {
-				for _, sec := range got {
-					if sec == "rss" || sec == "content_pipeline" {
-						t.Errorf("resolveDefaultSections(learning-studio) included %q — that noise should stay gone", sec)
-					}
 				}
 			}
 		})

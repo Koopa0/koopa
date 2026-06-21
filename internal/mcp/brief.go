@@ -38,15 +38,13 @@ const (
 // Callers not listed here keep the historical "all sections" default.
 // Explicit `sections` always wins over this map.
 //
-// This exists because callers like learning-studio routinely paid the
-// token cost of unrelated sections (e.g. 10 Google Developers Blog RSS
-// items) before learning to pass an explicit sections list. The map is
-// the single auditable point where per-agent defaults live — DO NOT
-// scatter the per-agent override logic across the section fillers.
-// Section names must match the runSection labels in fillBriefMorning.
-var defaultSectionsByAgent = map[string][]string{
-	"learning-studio": {"tasks"},
-}
+// The map is the single auditable point where a per-agent default trims
+// the briefing to the sections a caller actually uses (avoiding the token
+// cost of unrelated sections) — DO NOT scatter the per-agent override
+// logic across the section fillers. Currently empty: every caller gets
+// the full morning briefing. Section names must match the runSection
+// labels in fillBriefMorning.
+var defaultSectionsByAgent = map[string][]string{}
 
 // resolveDefaultSections returns the section set to use when the caller
 // omitted `sections`. nil means "fall through to the historical all-

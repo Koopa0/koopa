@@ -50,9 +50,9 @@ func TestMain(m *testing.M) {
 
 // setupServer truncates application-written rows, reconciles the agent
 // registry the way cmd/mcp/main.go does at startup, and returns a Server
-// wired to the shared test pool. callerAgent is set to learning-studio —
-// the agent whose audit produced this suite — so every activity_events
-// row in a happy-path test should carry that actor.
+// wired to the shared test pool. callerAgent is set to planner — a
+// registered claude-cowork daily-driver — so every activity_events row in a
+// happy-path test should carry that actor.
 func setupServer(t *testing.T) *Server {
 	t.Helper()
 	truncateApplicationTables(t)
@@ -63,7 +63,7 @@ func setupServer(t *testing.T) *Server {
 	}
 	return NewServer(testPool, slog.Default(),
 		WithRegistry(registry),
-		WithCallerAgent("learning-studio"),
+		WithCallerAgent("planner"),
 	)
 }
 
@@ -111,11 +111,11 @@ func activityActorFor(t *testing.T, entityType string, entityID uuid.UUID) strin
 
 // --- 1. capture_inbox end-to-end ---
 
-// TestIntegration_ColdStart_CaptureInbox was Learning's first failure mode
-// in the audit: activity_events_actor_fkey violation because koopa.actor
-// was unset and the fallback 'system' wasn't in agents. With the registry
-// seed and the withActorTx wrapper in place, this must write both the todo
-// and the audit row with actor = learning-studio.
+// TestIntegration_ColdStart_CaptureInbox was a cold-start failure mode in the
+// audit: activity_events_actor_fkey violation because koopa.actor was unset and
+// the fallback 'system' wasn't in agents. With the registry seed and the
+// withActorTx wrapper in place, this must write both the todo and the audit row
+// with actor = planner (the configured caller).
 func TestIntegration_ColdStart_CaptureInbox(t *testing.T) {
 	s := setupServer(t)
 
@@ -130,8 +130,8 @@ func TestIntegration_ColdStart_CaptureInbox(t *testing.T) {
 		t.Fatal("captureInbox returned zero task ID")
 	}
 
-	if got := activityActorFor(t, "todo", out.Task.ID); got != "learning-studio" {
-		t.Errorf("activity_events.actor = %q, want %q (koopa.actor propagation)", got, "learning-studio")
+	if got := activityActorFor(t, "todo", out.Task.ID); got != "planner" {
+		t.Errorf("activity_events.actor = %q, want %q (koopa.actor propagation)", got, "planner")
 	}
 }
 
@@ -244,7 +244,7 @@ func seedSearchNote(t *testing.T, slug, term, kind string) uuid.UUID {
 	var id uuid.UUID
 	if err := testPool.QueryRow(t.Context(),
 		`INSERT INTO notes (slug, title, body, kind, created_by)
-		 VALUES ($1, $2, $3, $4, 'learning-studio') RETURNING id`,
+		 VALUES ($1, $2, $3, $4, 'planner') RETURNING id`,
 		slug, term+" note", term+" note body", kind,
 	).Scan(&id); err != nil {
 		t.Fatalf("seedSearchNote(%q): %v", slug, err)
@@ -822,7 +822,7 @@ func seedRelNote(t *testing.T, slug, term, kind, maturity string) uuid.UUID {
 	var id uuid.UUID
 	if err := testPool.QueryRow(t.Context(),
 		`INSERT INTO notes (slug, title, body, kind, maturity, created_by)
-		 VALUES ($1, $2, $3, $4, $5, 'learning-studio') RETURNING id`,
+		 VALUES ($1, $2, $3, $4, $5, 'planner') RETURNING id`,
 		slug, term+" note", term+" note body", kind, maturity,
 	).Scan(&id); err != nil {
 		t.Fatalf("seedRelNote(%q): %v", slug, err)
@@ -1589,9 +1589,9 @@ func TestIntegration_ProposeGoal_Inert(t *testing.T) {
 		t.Fatalf("seeding active goal: %v", err)
 	}
 
-	// Explicit sections=['goals'] — setupServer's learning-studio caller
-	// otherwise defaults to ['tasks','hypotheses'] and active_goals stays empty
-	// regardless of the goal's status.
+	// Explicit sections=['goals'] narrows the morning brief to active_goals so
+	// this test asserts only the goals projection (the caller would otherwise
+	// get every section).
 	_, out, err := callHandler(t, s.brief, BriefInput{Mode: "morning", Sections: FlexStringSlice{"goals"}})
 	if err != nil {
 		t.Fatalf("brief(morning): %v", err)
@@ -2031,12 +2031,12 @@ func TestIntegration_ListTasks_CallerGate(t *testing.T) {
 
 // TestIntegration_ListTasks_CallerScoped pins the privacy invariant: the list
 // is scoped to the resolved caller, so caller A (planner) never sees caller B's
-// (learning-studio) todos.
+// (codex) todos.
 func TestIntegration_ListTasks_CallerScoped(t *testing.T) {
 	s := setupServer(t)
 
 	mineID := seedTodoForCreator(t, "planner", "planner todo", "inbox", time.Now())
-	theirsID := seedTodoForCreator(t, "learning-studio", "studio todo", "inbox", time.Now())
+	theirsID := seedTodoForCreator(t, "codex", "codex todo", "inbox", time.Now())
 
 	_, out, err := callHandlerAs(t, "planner", s.listTasks, ListTasksInput{})
 	if err != nil {
@@ -2118,10 +2118,10 @@ func TestIntegration_ResolveTask_CallerGate(t *testing.T) {
 // is left untouched, never a cross-creator mutation.
 func TestIntegration_ResolveTask_CallerScoped(t *testing.T) {
 	s := setupServer(t)
-	theirs := seedTodoForCreator(t, "learning-studio", "studio todo", "inbox", time.Now())
+	theirs := seedTodoForCreator(t, "codex", "codex todo", "inbox", time.Now())
 
 	if _, _, err := callHandlerAs(t, "planner", s.resolveTask, ResolveTaskInput{ID: theirs.String(), State: "dismissed"}); err == nil {
-		t.Error("resolveTask(planner) on learning-studio's todo err = nil, want not-found (caller-scoping)")
+		t.Error("resolveTask(planner) on codex's todo err = nil, want not-found (caller-scoping)")
 	}
 
 	var state string
@@ -2129,7 +2129,7 @@ func TestIntegration_ResolveTask_CallerScoped(t *testing.T) {
 		t.Fatalf("reading back todo state: %v", err)
 	}
 	if state != "inbox" {
-		t.Errorf("learning-studio todo %s state = %q after cross-creator resolve, want unchanged inbox", theirs, state)
+		t.Errorf("codex todo %s state = %q after cross-creator resolve, want unchanged inbox", theirs, state)
 	}
 }
 

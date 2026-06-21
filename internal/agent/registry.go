@@ -30,12 +30,6 @@ func BuiltinAgents() []Agent {
 			},
 		},
 		{
-			Name:        "learning-studio",
-			DisplayName: "Learning Studio",
-			Platform:    "claude-cowork",
-			Description: "Learning coach — session lifecycle, curriculum, weakness diagnosis",
-		},
-		{
 			Name:        "koopa0-dev",
 			DisplayName: "koopa",
 			Platform:    "claude-code",

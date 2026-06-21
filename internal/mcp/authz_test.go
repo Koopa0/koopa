@@ -38,10 +38,12 @@ func TestRequireAuthor(t *testing.T) {
 			authors: []string{"planner", "content-studio"},
 		},
 		{
+			// A registered cowork/dev agent that is not on the allowlist is
+			// rejected by the allowlist axis (not the registration axis).
 			name:    "caller not in allowlist",
-			ctx:     withCallerAs(t.Context(), "learning-studio"),
-			authors: []string{"planner", "content-studio"},
-			wantErr: `caller "learning-studio" is not in the author allowlist`,
+			ctx:     withCallerAs(t.Context(), "codex"),
+			authors: []string{"planner"},
+			wantErr: `caller "codex" is not in the author allowlist`,
 		},
 		{
 			name:    "unregistered caller",
@@ -115,7 +117,7 @@ func TestServerDefaultCallerAgent_FailsClosed(t *testing.T) {
 	// the hardened default protects — before the default was hardened to
 	// "unknown", this branch silently passed via the human-implicit short
 	// circuit under the old default "human".
-	if err := s.requireAuthor(t.Context(), "test_op", "planner", "learning-studio"); err == nil {
+	if err := s.requireAuthor(t.Context(), "test_op", "planner"); err == nil {
 		t.Fatal("requireAuthor without `as` (default unknown) = nil, want refusal")
 	} else if !strings.Contains(err.Error(), `caller "unknown" is not in the author allowlist`) {
 		t.Errorf("requireAuthor error = %q, want unknown-not-in-allowlist refusal", err)
@@ -154,10 +156,10 @@ func TestPlanDayGate(t *testing.T) {
 		}
 	})
 
-	t.Run("learning-studio rejected", func(t *testing.T) {
-		ctx := withCallerAs(t.Context(), "learning-studio")
+	t.Run("codex rejected", func(t *testing.T) {
+		ctx := withCallerAs(t.Context(), "codex")
 		_, _, err := s.planDay(ctx, nil, input)
-		if err == nil || !strings.Contains(err.Error(), `caller "learning-studio" is not in the author allowlist`) {
+		if err == nil || !strings.Contains(err.Error(), `caller "codex" is not in the author allowlist`) {
 			t.Errorf("planDay error = %v, want allowlist refusal", err)
 		}
 	})
