@@ -59,12 +59,10 @@ export class ClarifyModalComponent {
     stream: () => this.planService.getProjectsOverview(),
   });
   // Guard the read: rxResource.value() throws while the resource is in an
-  // error state, so gate on hasValue() (the repo idiom). The value is an
-  // envelope, so guard the source then read `.projects`.
+  // error state, so gate on hasValue() (the repo idiom). The value is the
+  // project array directly (getProjectsOverview unwraps {data:[...]}).
   protected readonly projects = computed(() =>
-    this.projectsResource.hasValue()
-      ? this.projectsResource.value().projects
-      : [],
+    this.projectsResource.hasValue() ? this.projectsResource.value() : [],
   );
 
   protected readonly project = signal('');

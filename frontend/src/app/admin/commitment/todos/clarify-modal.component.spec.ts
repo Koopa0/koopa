@@ -50,21 +50,19 @@ describe('ClarifyModalComponent', () => {
     httpMock
       .expectOne((r) => r.url.includes(PROJECTS_URL))
       .flush({
-        data: {
-          projects: [
-            {
-              id: 'proj-1',
-              title: 'koopa-core',
-              slug: 'koopa-core',
-              status: 'active',
-              area: 'work',
-              goal_breadcrumb: null,
-              task_progress: { done: 0, total: 0 },
-              staleness_days: 0,
-              last_activity_at: null,
-            },
-          ],
-        },
+        data: [
+          {
+            id: 'proj-1',
+            title: 'koopa-core',
+            slug: 'koopa-core',
+            status: 'active',
+            area: 'work',
+            goal_breadcrumb: null,
+            task_progress: { done: 0, total: 0 },
+            staleness_days: 0,
+            last_activity_at: null,
+          },
+        ],
       });
     await fixture.whenStable();
     fixture.detectChanges();

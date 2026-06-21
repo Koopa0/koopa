@@ -78,7 +78,7 @@ describe('ProjectsListPageComponent', () => {
     fixture.detectChanges();
     httpMock
       .expectOne((r) => r.url.endsWith(PROJECTS_URL))
-      .flush({ projects: body });
+      .flush({ data: body });
     await fixture.whenStable();
     fixture.detectChanges();
   }
@@ -92,7 +92,7 @@ describe('ProjectsListPageComponent', () => {
     const req = httpMock.expectOne((r) => r.url.endsWith(PROJECTS_URL));
     expect(req.request.method).toBe('GET');
     expect(req.request.params.has('status')).toBe(false);
-    req.flush({ projects: ROWS });
+    req.flush({ data: ROWS });
     await fixture.whenStable();
     fixture.detectChanges();
   });

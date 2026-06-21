@@ -250,7 +250,7 @@ export class CommandPaletteService {
           action: () => this.navigate(`/admin/commitment/goals/${g.id}`),
         }));
 
-        const projectActions: CommandAction[] = projects.projects.map((p) => ({
+        const projectActions: CommandAction[] = projects.map((p) => ({
           id: `project:${p.id}`,
           label: p.title,
           group: 'Projects',

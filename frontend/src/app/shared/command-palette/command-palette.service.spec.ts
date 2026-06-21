@@ -91,7 +91,7 @@ describe('CommandPaletteService', () => {
     httpMock.expectOne('/bff/api/admin/commitment/goals').flush([]);
     httpMock
       .expectOne('/bff/api/admin/commitment/projects')
-      .flush({ projects: [] });
+      .flush({ data: [] });
     httpMock
       .expectOne((r) => r.url.includes('/bff/api/admin/knowledge/content'))
       .flush({ data: [] });
@@ -124,8 +124,8 @@ describe('CommandPaletteService', () => {
       },
     ];
 
-    const projectsResponse: { projects: ProjectSummary[] } = {
-      projects: [
+    const projectsResponse: { data: ProjectSummary[] } = {
+      data: [
         {
           id: 'p1',
           title: 'studio launch',
@@ -180,7 +180,7 @@ describe('CommandPaletteService', () => {
 
     service.open();
     httpMock.expectOne('/bff/api/admin/commitment/goals').flush([]);
-    httpMock.expectOne('/bff/api/admin/commitment/projects').flush({ projects: [] });
+    httpMock.expectOne('/bff/api/admin/commitment/projects').flush({ data: [] });
     httpMock
       .expectOne((r) => r.url.includes('/bff/api/admin/knowledge/content'))
       .flush({ data: [] });

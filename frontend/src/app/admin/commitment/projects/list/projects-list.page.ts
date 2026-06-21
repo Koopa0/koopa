@@ -86,17 +86,15 @@ export class ProjectsListPageComponent {
   protected readonly statusChips = STATUS_CHIPS;
   protected readonly statusFilter = signal<StatusFilter>('active');
 
-  protected readonly resource = rxResource<{ projects: ProjectSummary[] }, void>(
-    {
-      stream: () => this.planService.getProjectsOverview(),
-    },
-  );
+  protected readonly resource = rxResource<ProjectSummary[], void>({
+    stream: () => this.planService.getProjectsOverview(),
+  });
 
   // Guard the read: rxResource.value() throws while the resource is in an
   // error state, so gate on hasValue() (the repo idiom). hasError() drives
   // the banner separately.
   protected readonly allProjects = computed<ProjectSummary[]>(() =>
-    this.resource.hasValue() ? this.resource.value().projects : [],
+    this.resource.hasValue() ? this.resource.value() : [],
   );
 
   protected readonly rows = computed(() => {

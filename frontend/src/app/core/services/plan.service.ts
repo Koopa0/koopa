@@ -178,8 +178,10 @@ export class PlanService {
 
   getProjectsOverview(
     statusFilter?: string,
-  ): Observable<{ projects: ProjectSummary[] }> {
-    return this.api.getData<{ projects: ProjectSummary[] }>(
+  ): Observable<ProjectSummary[]> {
+    // GET list endpoints return {data: [...]} → getData unwraps to the array
+    // (same convention as getAreas). NOT a {projects:[]} envelope.
+    return this.api.getData<ProjectSummary[]>(
       '/api/admin/commitment/projects',
       statusFilter ? { status: statusFilter } : undefined,
     );
