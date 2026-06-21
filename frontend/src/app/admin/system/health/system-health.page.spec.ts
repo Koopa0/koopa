@@ -34,9 +34,6 @@ function healthPayload(): Record<string, unknown> {
       contents_count: 120,
       todos_count: 45,
       notes_count: 84,
-      attempts_count: 30,
-      sessions_count: 12,
-      concepts_count: 48,
     },
   };
 }
@@ -49,9 +46,6 @@ function allHealthyPayload(): Record<string, unknown> {
       contents_count: 0,
       todos_count: 0,
       notes_count: 0,
-      attempts_count: 0,
-      sessions_count: 0,
-      concepts_count: 0,
     },
   };
 }
@@ -106,13 +100,42 @@ describe('SystemHealthPageComponent', () => {
         ?.textContent,
     ).toContain('12');
     expect(
-      el().querySelector('[data-testid="health-tile-db-concepts"]')
-        ?.textContent,
-    ).toContain('48');
+      el().querySelector('[data-testid="health-tile-db-notes"]')?.textContent,
+    ).toContain('84');
     expect(
       el().querySelector('[data-testid="health-tile-pipelines-runs"]')
         ?.textContent,
     ).toContain('226');
+  });
+
+  it('should render exactly the contents/todos/notes database tiles', async () => {
+    await settle();
+    httpMock
+      .expectOne((r) => r.url.endsWith(HEALTH_URL))
+      .flush({ data: healthPayload() });
+    await settle();
+
+    // Pin the database panel's tile set so a dropped or re-added tile
+    // (e.g. the removed learning attempts/sessions/concepts tiles) fails
+    // here instead of rendering an undefined value. Scope the query to the
+    // database panel so feed/pipeline tiles don't bleed into the assertion.
+    const panel = el().querySelector('[data-testid="health-database"]');
+    expect(panel).toBeTruthy();
+    const tileIds = Array.from(
+      panel!.querySelectorAll('[data-testid^="health-tile-"]'),
+    ).map((node) => node.getAttribute('data-testid'));
+    expect(tileIds).toEqual([
+      'health-tile-db-contents',
+      'health-tile-db-todos',
+      'health-tile-db-notes',
+    ]);
+    expect(
+      el().querySelector('[data-testid="health-tile-db-contents"]')
+        ?.textContent,
+    ).toContain('120');
+    expect(
+      el().querySelector('[data-testid="health-tile-db-todos"]')?.textContent,
+    ).toContain('45');
   });
 
   it('should list failing feeds with their error text when feeds fail', async () => {

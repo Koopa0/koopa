@@ -27,9 +27,6 @@ const mockHealth: SystemHealth = {
     contents_count: 120,
     todos_count: 45,
     notes_count: 84,
-    attempts_count: 30,
-    sessions_count: 12,
-    concepts_count: 48,
   },
 };
 
@@ -91,7 +88,7 @@ describe('SystemService', () => {
     service.getHealth().subscribe((res) => {
       expect(res.feeds.failing).toBe(2);
       expect(res.feeds.failing_feeds[1].since).toBeUndefined();
-      expect(res.database.concepts_count).toBe(48);
+      expect(res.database.notes_count).toBe(84);
     });
 
     const req = httpMock.expectOne((r) =>

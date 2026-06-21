@@ -96,9 +96,6 @@ export class SystemHealthPageComponent {
       { id: 'db-contents', label: 'contents', value: d.contents_count, tone: 'default' },
       { id: 'db-todos', label: 'todos', value: d.todos_count, tone: 'default' },
       { id: 'db-notes', label: 'notes', value: d.notes_count, tone: 'default' },
-      { id: 'db-attempts', label: 'attempts', value: d.attempts_count, tone: 'default' },
-      { id: 'db-sessions', label: 'sessions', value: d.sessions_count, tone: 'default' },
-      { id: 'db-concepts', label: 'concepts', value: d.concepts_count, tone: 'default' },
     ];
   });
 

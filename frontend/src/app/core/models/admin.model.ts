@@ -179,9 +179,6 @@ export interface DatabaseStats {
   contents_count: number;
   todos_count: number;
   notes_count: number;
-  attempts_count: number;
-  sessions_count: number;
-  concepts_count: number;
 }
 
 // === System stats ===
