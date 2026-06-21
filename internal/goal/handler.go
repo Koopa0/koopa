@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -332,6 +333,62 @@ func (h *Handler) ListAreas(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	api.Encode(w, http.StatusOK, api.Response{Data: areas})
+}
+
+// createAreaRequest is the JSON body for POST /api/admin/commitment/areas. The
+// slug is derived from name (not client-supplied) — the owner names an area and
+// the handler URL-safes it, matching the agent propose_area path.
+type createAreaRequest struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+}
+
+// CreateArea handles POST /api/admin/commitment/areas — the owner's
+// direct-create of a PARA area. The area lands status=active, created_by=NULL
+// (owner-made, no proposing agent). This is the admin counterpart to the agent
+// propose_area draft: proposed areas still go through Proposals triage; this is
+// the owner's bypass-triage path for areas they want active immediately. The
+// slug is derived + validated from name. Validation mirrors goal Create (blank,
+// control chars). A duplicate slug is 409; a name with no slug-able characters
+// is 400.
+func (h *Handler) CreateArea(w http.ResponseWriter, r *http.Request) {
+	req, err := api.Decode[createAreaRequest](w, r)
+	if err != nil {
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid request body")
+		return
+	}
+	if req.Name == "" {
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "name is required")
+		return
+	}
+	if ContainsControlChars(req.Name) {
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "name must not contain control characters")
+		return
+	}
+	if ContainsControlChars(req.Description) {
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "description must not contain control characters")
+		return
+	}
+	slug := DeriveAreaSlug(req.Name)
+	if slug == "" {
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "name has no slug-able characters; use a name with letters or digits")
+		return
+	}
+
+	store := h.store
+	if tx, ok := api.TxFromContext(r.Context()); ok {
+		store = h.store.WithTx(tx)
+	}
+	a, err := store.CreateArea(r.Context(), &CreateAreaParams{
+		Slug:        slug,
+		Name:        strings.TrimSpace(req.Name),
+		Description: strings.TrimSpace(req.Description),
+	})
+	if err != nil {
+		api.HandleError(w, h.logger, err, storeErrors...)
+		return
+	}
+	api.Encode(w, http.StatusCreated, api.Response{Data: a})
 }
 
 // updateRequest is the JSON body for PUT /api/admin/commitment/goals/{id}.

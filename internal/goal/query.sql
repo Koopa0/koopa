@@ -173,6 +173,16 @@ FROM areas
 WHERE status = 'active'
 ORDER BY sort_order, name;
 
+-- name: CreateArea :one
+-- Owner direct-create of a PARA area: status='active', created_by NULL
+-- (owner-made, no proposing agent). This is the admin counterpart to the
+-- agent ProposeArea draft path — the owner makes active areas directly,
+-- bypassing triage. slug is derived + validated by the caller against
+-- chk_area_slug_format. A 23505 on the unique slug becomes ErrConflict.
+INSERT INTO areas (slug, name, description, status)
+VALUES (@slug, @name, @description, 'active')
+RETURNING id, slug, name, description, status, sort_order, created_by, created_at, updated_at;
+
 -- name: UpdateGoal :one
 -- Partial update of a goal's shaping fields. NULL parameters leave the
 -- column unchanged. Status is not touched here — it has its own

@@ -46,26 +46,26 @@ import (
 
 // handlers holds all handler dependencies for route registration.
 type handlers struct {
-	auth       *auth.Handler
-	content    *content.Handler
-	project    *project.Handler
-	topic      *topic.Handler
-	feed       *feed.Handler
-	entry      *entry.Handler
-	goal       *goal.Handler
-	tag        *tag.Handler
-	stats      *stats.Handler
-	activity   *activity.Handler
-	agent      *agent.Handler
-	daily      *daily.Handler
-	note       *note.Handler
-	reading    *reading.Handler
-	song       *song.Handler
-	todo       *todo.Handler
-	today      *today.Handler
-	search     *search.Handler
-	pool       *pgxpool.Pool
-	logger     *slog.Logger
+	auth     *auth.Handler
+	content  *content.Handler
+	project  *project.Handler
+	topic    *topic.Handler
+	feed     *feed.Handler
+	entry    *entry.Handler
+	goal     *goal.Handler
+	tag      *tag.Handler
+	stats    *stats.Handler
+	activity *activity.Handler
+	agent    *agent.Handler
+	daily    *daily.Handler
+	note     *note.Handler
+	reading  *reading.Handler
+	song     *song.Handler
+	todo     *todo.Handler
+	today    *today.Handler
+	search   *search.Handler
+	pool     *pgxpool.Pool
+	logger   *slog.Logger
 
 	// metricsHandler is mounted at GET /metrics by registerRoutes. The
 	// MeterProvider itself is consumed via a local var in main.go (passed
@@ -213,6 +213,7 @@ func registerRoutes(
 	// (goal, milestone) that replaced the removed propose_*/commit MCP flow.
 	// Areas back the goal-create/update area selector (PARA classification).
 	mux.Handle("GET /api/admin/commitment/areas", authMid(http.HandlerFunc(h.goal.ListAreas)))
+	mux.Handle("POST /api/admin/commitment/areas", adminMid(http.HandlerFunc(h.goal.CreateArea)))
 	mux.Handle("GET /api/admin/commitment/goals", authMid(http.HandlerFunc(h.goal.List)))
 	mux.Handle("GET /api/admin/commitment/goals/{id}", authMid(http.HandlerFunc(h.goal.Detail)))
 	mux.Handle("POST /api/admin/commitment/goals", adminMid(http.HandlerFunc(h.goal.Create)))

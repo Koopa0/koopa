@@ -1188,6 +1188,52 @@ func (q *Queries) CountContents(ctx context.Context, arg CountContentsParams) (i
 	return count, err
 }
 
+const createArea = `-- name: CreateArea :one
+INSERT INTO areas (slug, name, description, status)
+VALUES ($1, $2, $3, 'active')
+RETURNING id, slug, name, description, status, sort_order, created_by, created_at, updated_at
+`
+
+type CreateAreaParams struct {
+	Slug        string `json:"slug"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+}
+
+type CreateAreaRow struct {
+	ID          uuid.UUID `json:"id"`
+	Slug        string    `json:"slug"`
+	Name        string    `json:"name"`
+	Description string    `json:"description"`
+	Status      string    `json:"status"`
+	SortOrder   int32     `json:"sort_order"`
+	CreatedBy   *string   `json:"created_by"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+}
+
+// Owner direct-create of a PARA area: status='active', created_by NULL
+// (owner-made, no proposing agent). This is the admin counterpart to the
+// agent ProposeArea draft path — the owner makes active areas directly,
+// bypassing triage. slug is derived + validated by the caller against
+// chk_area_slug_format. A 23505 on the unique slug becomes ErrConflict.
+func (q *Queries) CreateArea(ctx context.Context, arg CreateAreaParams) (CreateAreaRow, error) {
+	row := q.db.QueryRow(ctx, createArea, arg.Slug, arg.Name, arg.Description)
+	var i CreateAreaRow
+	err := row.Scan(
+		&i.ID,
+		&i.Slug,
+		&i.Name,
+		&i.Description,
+		&i.Status,
+		&i.SortOrder,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const createContent = `-- name: CreateContent :one
 INSERT INTO contents (slug, title, body, excerpt, type, status,
                       series_id, series_order, is_public, project_id, ai_metadata,

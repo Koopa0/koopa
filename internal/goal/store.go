@@ -448,6 +448,57 @@ func (s *Store) Areas(ctx context.Context) ([]Area, error) {
 	return areas, nil
 }
 
+// CreatedArea is the active PARA area returned by CreateArea — the owner's
+// direct-create counterpart to ProposedArea. created_by is NULL (owner-made),
+// so the field is omitted from JSON.
+type CreatedArea struct {
+	ID          uuid.UUID `json:"id"`
+	Slug        string    `json:"slug"`
+	Name        string    `json:"name"`
+	Description string    `json:"description"`
+	Status      string    `json:"status"`
+	SortOrder   int32     `json:"sort_order"`
+	CreatedBy   *string   `json:"created_by,omitempty"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+}
+
+// CreateAreaParams holds the fields for the owner's direct area create. Slug
+// is derived + validated by the caller (handler) against chk_area_slug_format.
+type CreateAreaParams struct {
+	Slug        string
+	Name        string
+	Description string
+}
+
+// CreateArea inserts an active PARA area (status='active', created_by=NULL) —
+// the owner's direct-create path, distinct from the agent ProposeArea draft.
+// Error mapping via mapProposeError: a 23505 on the unique slug becomes
+// ErrConflict; a CHECK violation (23514 — blank name, malformed slug) becomes
+// ErrInvalidInput. The 23503 (FK) branch mapProposeError also covers is dead on
+// this path — the INSERT writes no FK column (created_by is NULL, no area_id).
+func (s *Store) CreateArea(ctx context.Context, p *CreateAreaParams) (*CreatedArea, error) {
+	r, err := s.q.CreateArea(ctx, db.CreateAreaParams{
+		Slug:        p.Slug,
+		Name:        p.Name,
+		Description: p.Description,
+	})
+	if err != nil {
+		return nil, mapProposeError(err, "creating area")
+	}
+	return &CreatedArea{
+		ID:          r.ID,
+		Slug:        r.Slug,
+		Name:        r.Name,
+		Description: r.Description,
+		Status:      r.Status,
+		SortOrder:   r.SortOrder,
+		CreatedBy:   r.CreatedBy,
+		CreatedAt:   r.CreatedAt,
+		UpdatedAt:   r.UpdatedAt,
+	}, nil
+}
+
 // UpdateParams holds optional fields for updating a goal. nil means
 // "leave unchanged".
 type UpdateParams struct {

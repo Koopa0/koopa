@@ -722,6 +722,83 @@ func TestIntegration_Goal_ListAreas(t *testing.T) {
 	}
 }
 
+// TestIntegration_Goal_CreateArea drives POST /api/admin/commitment/areas
+// through the admin middleware and asserts the owner direct-create invariants:
+// the area persists status='active' / created_by=NULL (owner-made, no proposing
+// agent), the slug is derived from the name, a blank name is a 400, and a
+// duplicate slug is a 409. Created areas are cleaned up so the seeded PARA rows
+// the ListAreas test relies on are not disturbed.
+func TestIntegration_Goal_CreateArea(t *testing.T) {
+	h := newHandler()
+
+	const name = "Integration Create Area Probe"
+	const wantSlug = "integration-create-area-probe"
+	t.Cleanup(func() {
+		// Direct-created areas are not in the truncate set (it skips areas to
+		// preserve seeds). Remove this test's row by its derived slug.
+		if _, err := testPool.Exec(context.Background(),
+			`DELETE FROM areas WHERE slug = $1`, wantSlug,
+		); err != nil {
+			t.Errorf("cleanup area %q: %v", wantSlug, err)
+		}
+	})
+
+	// Success: owner direct-create lands active, created_by NULL.
+	req := postJSON(t, "/api/admin/commitment/areas", map[string]any{
+		"name":        name,
+		"description": "What this probe area covers.",
+	})
+	rec := serve(t, h.CreateArea, req)
+
+	resp := rec.Result()
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("status = %d, want 201 (body=%s)", resp.StatusCode, body)
+	}
+	id := decodeID(t, body)
+
+	var slug, status string
+	var createdBy *string
+	if err := testPool.QueryRow(t.Context(),
+		`SELECT slug, status, created_by FROM areas WHERE id = $1`, id,
+	).Scan(&slug, &status, &createdBy); err != nil {
+		t.Fatalf("reading created area %s: %v", id, err)
+	}
+	if slug != wantSlug {
+		t.Errorf("slug = %q, want %q (derived from name)", slug, wantSlug)
+	}
+	if status != "active" {
+		t.Errorf("status = %q, want %q (owner direct-create is active)", status, "active")
+	}
+	if createdBy != nil {
+		t.Errorf("created_by = %q, want NULL (owner-made, no proposing agent)", *createdBy)
+	}
+
+	// Blank name → 400. The handler rejects before the store.
+	blankReq := postJSON(t, "/api/admin/commitment/areas", map[string]any{
+		"name":        "",
+		"description": "no name",
+	})
+	blankRec := serve(t, h.CreateArea, blankReq)
+	if blankRec.Result().StatusCode != http.StatusBadRequest {
+		t.Errorf("blank-name status = %d, want 400", blankRec.Result().StatusCode)
+	}
+
+	// Duplicate slug → 409. A second create with a name deriving to the same
+	// slug hits the unique(slug) constraint → ErrConflict → 409.
+	dupReq := postJSON(t, "/api/admin/commitment/areas", map[string]any{
+		"name":        "Integration Create Area PROBE",
+		"description": "same derived slug",
+	})
+	dupRec := serve(t, h.CreateArea, dupReq)
+	if dupRec.Result().StatusCode != http.StatusConflict {
+		dupBody, _ := io.ReadAll(dupRec.Result().Body)
+		t.Errorf("duplicate-slug status = %d, want 409 (body=%s)", dupRec.Result().StatusCode, dupBody)
+	}
+}
+
 // TestIntegration_Goal_ProposedExcludedFromList is the leak pin for proposed
 // goals: a proposed goal is an inert draft that must NEVER appear in the
 // normal goal list (GoalsByOptionalStatus with no status filter) nor in

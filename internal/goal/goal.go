@@ -9,6 +9,8 @@ package goal
 
 import (
 	"errors"
+	"regexp"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -77,4 +79,19 @@ func ContainsControlChars(s string) bool {
 		}
 	}
 	return false
+}
+
+// areaSlugSep collapses every run of non-alphanumeric characters into a single
+// hyphen so DeriveAreaSlug can satisfy chk_area_slug_format.
+var areaSlugSep = regexp.MustCompile(`[^a-z0-9]+`)
+
+// DeriveAreaSlug turns an area display name into a URL-safe slug matching
+// chk_area_slug_format (`^[a-z0-9]+(-[a-z0-9]+)*$`): lowercase, runs of
+// non-alphanumerics collapsed to single hyphens, leading/trailing hyphens
+// trimmed. Returns "" when the name has no alphanumeric content — the caller
+// rejects that as invalid input rather than inserting a malformed slug. The
+// owner direct-create handler and the agent propose_area path derive area slugs
+// identically so the same name yields the same slug on both paths.
+func DeriveAreaSlug(name string) string {
+	return strings.Trim(areaSlugSep.ReplaceAllString(strings.ToLower(name), "-"), "-")
 }

@@ -27,7 +27,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"regexp"
 	"strings"
 
 	"github.com/google/uuid"
@@ -37,19 +36,6 @@ import (
 	"github.com/Koopa0/koopa/internal/goal"
 	"github.com/Koopa0/koopa/internal/project"
 )
-
-// slugSep collapses every run of non-alphanumeric characters into a single
-// hyphen so deriveSlug can satisfy chk_area_slug_format.
-var slugSep = regexp.MustCompile(`[^a-z0-9]+`)
-
-// deriveSlug turns a display name into a URL-safe slug matching
-// chk_area_slug_format (`^[a-z0-9]+(-[a-z0-9]+)*$`): lowercase, runs of
-// non-alphanumerics collapsed to single hyphens, leading/trailing hyphens
-// trimmed. Returns "" when the name has no alphanumeric content — the caller
-// rejects that as invalid input rather than inserting a malformed slug.
-func deriveSlug(name string) string {
-	return strings.Trim(slugSep.ReplaceAllString(strings.ToLower(name), "-"), "-")
-}
 
 // --- propose_area ---
 
@@ -85,7 +71,7 @@ func (s *Server) proposeArea(ctx context.Context, _ *mcp.CallToolRequest, input 
 	if goal.ContainsControlChars(input.Rationale) {
 		return nil, ProposeAreaOutput{}, fmt.Errorf("rationale must not contain control characters")
 	}
-	slug := deriveSlug(input.Name)
+	slug := goal.DeriveAreaSlug(input.Name)
 	if slug == "" {
 		return nil, ProposeAreaOutput{}, fmt.Errorf("name %q has no slug-able characters; provide a name with letters or digits", input.Name)
 	}
@@ -232,7 +218,7 @@ func (s *Server) proposeProject(ctx context.Context, _ *mcp.CallToolRequest, inp
 	if goal.ContainsControlChars(input.Rationale) {
 		return nil, ProposeProjectOutput{}, fmt.Errorf("rationale must not contain control characters")
 	}
-	slug := deriveSlug(input.Name)
+	slug := goal.DeriveAreaSlug(input.Name)
 	if slug == "" {
 		return nil, ProposeProjectOutput{}, fmt.Errorf("name %q has no slug-able characters; provide a name with letters or digits", input.Name)
 	}
