@@ -5,22 +5,32 @@
 -- 1. Triggers (drop before their parent tables and functions)
 -- ============================================================
 
+DROP TRIGGER IF EXISTS trg_notes_audit ON notes;
 DROP TRIGGER IF EXISTS trg_contents_audit ON contents;
 DROP TRIGGER IF EXISTS trg_projects_audit ON projects;
 DROP TRIGGER IF EXISTS trg_milestones_audit ON milestones;
 DROP TRIGGER IF EXISTS trg_goals_audit ON goals;
 DROP TRIGGER IF EXISTS trg_todos_audit ON todos;
+DROP TRIGGER IF EXISTS trg_daily_plan_items_not_already_skipped ON daily_plan_items;
+DROP TRIGGER IF EXISTS trg_todo_skips_not_already_dropped ON todo_skips;
+DROP TRIGGER IF EXISTS trg_project_profile_not_public_if_archived ON project_profiles;
 
 -- ============================================================
 -- 2. Functions
+--
+-- Each function is dropped only after every trigger that EXECUTEs it (above),
+-- otherwise DROP FUNCTION without CASCADE errors on the dependency.
 -- ============================================================
 
+DROP FUNCTION IF EXISTS audit_notes();
 DROP FUNCTION IF EXISTS audit_contents();
 DROP FUNCTION IF EXISTS audit_projects();
 DROP FUNCTION IF EXISTS audit_milestones();
 DROP FUNCTION IF EXISTS audit_goals();
 DROP FUNCTION IF EXISTS audit_todos();
 DROP FUNCTION IF EXISTS current_actor();
+DROP FUNCTION IF EXISTS enforce_todo_skip_not_already_dropped();
+DROP FUNCTION IF EXISTS enforce_project_profile_not_public_if_archived();
 
 -- ============================================================
 -- 3. Deferred foreign keys
