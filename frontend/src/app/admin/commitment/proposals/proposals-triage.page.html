@@ -1,8 +1,9 @@
 <div class="mx-auto flex w-full max-w-2xl min-w-0 flex-1 flex-col px-6 py-6">
   @if (isLoading()) {
     <div class="flex flex-col gap-3" data-testid="proposals-loading">
-      <div class="h-4 w-32 animate-pulse rounded-sm bg-elevated"></div>
-      <div class="mt-2 h-56 animate-pulse rounded-md bg-elevated"></div>
+      <div class="h-3 w-24 animate-pulse rounded-sm bg-elevated"></div>
+      <div class="mt-1 h-28 animate-pulse rounded-md bg-elevated"></div>
+      <div class="h-28 animate-pulse rounded-md bg-elevated"></div>
     </div>
   } @else if (hasError()) {
     <div
@@ -25,335 +26,241 @@
       class="mt-16 flex flex-col items-center gap-2 px-6 text-center"
       data-testid="proposals-empty"
     >
-      <p class="font-serif text-base text-fg italic">Nothing to review.</p>
+      <p class="font-serif text-base text-fg italic">
+        No proposals awaiting review.
+      </p>
       <p class="max-w-xs text-[13px] leading-relaxed text-fg-subtle">
         When an agent proposes a goal, area, or project, it lands here for your
-        decision — one card at a time. The inbox is clear.
-      </p>
-    </div>
-  } @else if (allClear()) {
-    <div
-      class="mt-16 flex flex-col items-center gap-2 px-6 text-center"
-      data-testid="proposals-all-clear"
-    >
-      <p class="font-serif text-base text-fg italic">All reviewed.</p>
-      <p class="max-w-xs text-[13px] leading-relaxed text-fg-subtle">
-        You worked through every proposal. Activated drafts are now in your
-        planning lifecycle.
+        decision.
       </p>
     </div>
   } @else {
-    <!-- Position -->
-    <div class="flex items-center gap-3 pb-4">
-      <span
-        class="font-mono text-[11px] tracking-wide text-fg-faint uppercase"
-        aria-live="polite"
-        data-testid="proposals-position"
-      >
-        {{ position() }} of {{ total() }}
-      </span>
-      <div class="flex h-1.5 flex-1 overflow-hidden rounded-full bg-bg">
-        <div
-          class="h-full bg-brand transition-all"
-          [style.width.%]="((position() - 1) / total()) * 100"
-        ></div>
-      </div>
-    </div>
-
-    @if (currentArea(); as card) {
-      <!-- Proposed area bundle -->
-      <article
-        class="flex flex-col gap-4 rounded-md border border-border bg-panel p-5"
-        data-testid="proposals-area-card"
-      >
-        <div class="flex items-center gap-2">
-          <span
-            class="rounded-sm bg-brand-muted px-2 py-0.5 font-mono text-[10px] tracking-wide text-brand uppercase"
+    <div class="flex flex-col gap-8">
+      @if (areaCards().length > 0) {
+        <section data-testid="proposals-section-areas">
+          <h2
+            class="pb-3 font-mono text-[10px] tracking-[0.08em] text-fg-faint uppercase"
           >
-            Proposed area
-          </span>
-          @if (card.area.created_by) {
-            <span class="font-mono text-[10px] text-fg-faint">
-              by {{ card.area.created_by }}
-            </span>
-          }
-        </div>
+            AREAS · {{ areaCards().length }}
+          </h2>
+          <div class="flex flex-col gap-3">
+            @for (card of areaCards(); track card.key) {
+              <article
+                class="flex flex-col gap-3 rounded-md border border-border bg-panel p-4"
+                [attr.data-testid]="'proposals-area-row-' + card.area.id"
+              >
+                <div class="flex items-start justify-between gap-4">
+                  <div class="min-w-0">
+                    <h3 class="font-display text-base font-semibold text-fg">
+                      {{ card.area.name }}
+                    </h3>
+                    @if (card.area.description) {
+                      <p class="mt-1 text-[13px] leading-relaxed text-fg-muted">
+                        {{ card.area.description }}
+                      </p>
+                    }
+                  </div>
+                  <div class="flex shrink-0 items-center gap-2">
+                    <button
+                      type="button"
+                      (click)="acceptArea(card)"
+                      [disabled]="busy()"
+                      class="rounded-sm bg-brand px-3 py-1.5 text-xs font-medium text-bg transition-colors hover:bg-brand-strong disabled:cursor-not-allowed disabled:opacity-40"
+                      [attr.data-testid]="'proposals-area-accept-' + card.area.id"
+                    >
+                      Accept
+                    </button>
+                    <button
+                      type="button"
+                      (click)="rejectArea(card)"
+                      [disabled]="busy()"
+                      class="rounded-sm border border-border px-3 py-1.5 text-xs text-fg-muted transition-colors hover:border-error hover:text-error disabled:cursor-not-allowed disabled:opacity-40"
+                      [attr.data-testid]="'proposals-area-reject-' + card.area.id"
+                    >
+                      Reject
+                    </button>
+                  </div>
+                </div>
 
-        <div>
-          <h1 class="font-display text-xl font-semibold text-fg">
-            {{ card.area.name }}
-          </h1>
-          @if (card.area.description) {
-            <p class="mt-1.5 text-[13px] leading-relaxed text-fg-muted">
-              {{ card.area.description }}
-            </p>
-          }
-        </div>
+                @if (card.area.proposal_rationale; as rationale) {
+                  <div class="rounded-sm border-l-2 border-l-brand bg-bg px-3 py-2.5">
+                    <p
+                      class="pb-1 font-mono text-[10px] tracking-wide text-fg-faint uppercase"
+                    >
+                      Why now
+                    </p>
+                    <p class="text-[13px] leading-relaxed text-fg-muted">
+                      {{ rationale }}
+                    </p>
+                  </div>
+                }
 
-        @if (card.area.proposal_rationale; as rationale) {
-          <div
-            class="rounded-sm border-l-2 border-l-brand bg-bg px-3 py-2.5"
-            aria-live="polite"
-            data-testid="proposals-rationale"
-          >
-            <p
-              class="pb-1 font-mono text-[10px] tracking-wide text-fg-faint uppercase"
-            >
-              Why now
-            </p>
-            <p class="text-[13px] leading-relaxed text-fg-muted">{{ rationale }}</p>
+                @if (card.goals.length > 0) {
+                  <div class="rounded-sm border border-border-faint bg-bg p-3">
+                    <p
+                      class="pb-1.5 font-mono text-[10px] tracking-wide text-fg-faint uppercase"
+                    >
+                      Includes {{ card.goals.length }}
+                      {{ card.goals.length === 1 ? 'goal' : 'goals' }}
+                    </p>
+                    <ul class="flex flex-col gap-1">
+                      @for (goal of card.goals; track goal.id) {
+                        <li class="flex items-baseline gap-2 text-[13px] text-fg">
+                          <span
+                            class="mt-1.5 size-1 shrink-0 rounded-full bg-brand"
+                            aria-hidden="true"
+                          ></span>
+                          <span class="min-w-0 flex-1">{{ goal.title }}</span>
+                        </li>
+                      }
+                    </ul>
+                    <p class="pt-2 text-[11px] leading-relaxed text-fg-subtle">
+                      Accepting the area keeps these as proposals — they move to
+                      Goals for individual review.
+                    </p>
+                  </div>
+                }
+              </article>
+            }
           </div>
-        }
+        </section>
+      }
 
-        @if (card.goals.length > 0) {
-          <div
-            class="rounded-sm border border-border-faint bg-bg p-3"
-            data-testid="proposals-area-goals"
+      @if (goalCards().length > 0) {
+        <section data-testid="proposals-section-goals">
+          <h2
+            class="pb-3 font-mono text-[10px] tracking-[0.08em] text-fg-faint uppercase"
           >
-            <p
-              class="pb-1.5 font-mono text-[10px] tracking-wide text-fg-faint uppercase"
-            >
-              Includes {{ card.goals.length }}
-              {{ card.goals.length === 1 ? 'goal' : 'goals' }}
-            </p>
-            <ul class="flex flex-col gap-1">
-              @for (goal of card.goals; track goal.id) {
-                <li class="flex items-baseline gap-2 text-[13px] text-fg">
-                  <span
-                    class="mt-1.5 size-1 shrink-0 rounded-full bg-brand"
-                    aria-hidden="true"
-                  ></span>
-                  <span class="min-w-0 flex-1">{{ goal.title }}</span>
-                  @if (goal.milestone_total > 0) {
-                    <span class="shrink-0 font-mono text-[10px] text-fg-faint">
-                      {{ goal.milestone_total }}
-                      {{ goal.milestone_total === 1 ? 'milestone' : 'milestones' }}
-                    </span>
+            GOALS · {{ goalCards().length }}
+          </h2>
+          <div class="flex flex-col gap-3">
+            @for (card of goalCards(); track card.key) {
+              <article
+                class="flex items-start justify-between gap-4 rounded-md border border-border bg-panel p-4"
+                [attr.data-testid]="'proposals-goal-row-' + card.goal.id"
+              >
+                <div class="flex min-w-0 flex-col gap-2">
+                  <div>
+                    <h3 class="font-display text-base font-semibold text-fg">
+                      {{ card.goal.title }}
+                    </h3>
+                    @if (card.goal.description) {
+                      <p class="mt-1 text-[13px] leading-relaxed text-fg-muted">
+                        {{ card.goal.description }}
+                      </p>
+                    }
+                    @if (card.goal.area_name) {
+                      <p class="mt-1.5 font-mono text-[10px] text-fg-subtle">
+                        {{ card.goal.area_name }}
+                      </p>
+                    }
+                  </div>
+                  @if (card.goal.proposal_rationale; as rationale) {
+                    <div
+                      class="rounded-sm border-l-2 border-l-brand bg-bg px-3 py-2.5"
+                    >
+                      <p
+                        class="pb-1 font-mono text-[10px] tracking-wide text-fg-faint uppercase"
+                      >
+                        Why now
+                      </p>
+                      <p class="text-[13px] leading-relaxed text-fg-muted">
+                        {{ rationale }}
+                      </p>
+                    </div>
                   }
-                </li>
-              }
-            </ul>
-            <p class="pt-2 text-[11px] leading-relaxed text-fg-subtle">
-              Activating the area keeps these as proposals — you'll review each
-              one next.
-            </p>
-          </div>
-        }
-
-        <div class="flex items-center gap-2 pt-1">
-          <button
-            type="button"
-            (click)="activateArea()"
-            [disabled]="busy()"
-            class="rounded-sm bg-brand px-3 py-1.5 text-xs font-medium text-bg transition-colors hover:bg-brand-strong disabled:cursor-not-allowed disabled:opacity-40"
-            data-testid="proposals-area-activate"
-          >
-            Activate area
-          </button>
-          <button
-            type="button"
-            (click)="rejectArea()"
-            [disabled]="busy()"
-            class="rounded-sm border border-border px-3 py-1.5 text-xs text-fg-muted transition-colors hover:border-error hover:text-error disabled:cursor-not-allowed disabled:opacity-40"
-            data-testid="proposals-area-reject"
-          >
-            Reject bundle
-          </button>
-        </div>
-      </article>
-    } @else if (currentGoal(); as card) {
-      <!-- Standalone proposed goal -->
-      <article
-        class="flex flex-col gap-4 rounded-md border border-border bg-panel p-5"
-        data-testid="proposals-goal-card"
-      >
-        <div class="flex items-center gap-2">
-          <span
-            class="rounded-sm bg-brand-muted px-2 py-0.5 font-mono text-[10px] tracking-wide text-brand uppercase"
-          >
-            Proposed goal
-          </span>
-          @if (card.goal.area_name) {
-            <span class="font-mono text-[10px] text-fg-subtle">
-              {{ card.goal.area_name }}
-            </span>
-          }
-          @if (card.goal.created_by) {
-            <span class="font-mono text-[10px] text-fg-faint">
-              by {{ card.goal.created_by }}
-            </span>
-          }
-        </div>
-
-        @if (editing()) {
-          <div class="flex flex-col gap-1.5">
-            <label
-              for="proposals-goal-title"
-              class="font-mono text-[10px] tracking-wide text-fg-faint uppercase"
-            >
-              Title
-            </label>
-            <input
-              id="proposals-goal-title"
-              type="text"
-              [value]="editTitle()"
-              (input)="editTitle.set(readValue($event))"
-              class="rounded-sm border border-border bg-elevated px-3 py-2 text-sm text-fg outline-none focus:border-brand"
-              data-testid="proposals-goal-edit-title"
-            />
-          </div>
-        } @else {
-          <div>
-            <h1 class="font-display text-xl font-semibold text-fg">
-              {{ card.goal.title }}
-            </h1>
-            @if (card.goal.description) {
-              <p class="mt-1.5 text-[13px] leading-relaxed text-fg-muted">
-                {{ card.goal.description }}
-              </p>
-            }
-            @if (card.goal.milestone_total > 0) {
-              <p class="mt-2 font-mono text-[10px] text-fg-faint">
-                {{ card.goal.milestone_total }}
-                {{ card.goal.milestone_total === 1 ? 'milestone' : 'milestones' }}
-              </p>
+                </div>
+                <div class="flex shrink-0 items-center gap-2">
+                  <button
+                    type="button"
+                    (click)="acceptGoal(card)"
+                    [disabled]="busy()"
+                    class="rounded-sm bg-brand px-3 py-1.5 text-xs font-medium text-bg transition-colors hover:bg-brand-strong disabled:cursor-not-allowed disabled:opacity-40"
+                    [attr.data-testid]="'proposals-goal-accept-' + card.goal.id"
+                  >
+                    Accept
+                  </button>
+                  <button
+                    type="button"
+                    (click)="rejectGoal(card)"
+                    [disabled]="busy()"
+                    class="rounded-sm border border-border px-3 py-1.5 text-xs text-fg-muted transition-colors hover:border-error hover:text-error disabled:cursor-not-allowed disabled:opacity-40"
+                    [attr.data-testid]="'proposals-goal-reject-' + card.goal.id"
+                  >
+                    Reject
+                  </button>
+                </div>
+              </article>
             }
           </div>
-        }
+        </section>
+      }
 
-        @if (card.goal.proposal_rationale; as rationale) {
-          <div
-            class="rounded-sm border-l-2 border-l-brand bg-bg px-3 py-2.5"
-            aria-live="polite"
-            data-testid="proposals-rationale"
+      @if (projectCards().length > 0) {
+        <section data-testid="proposals-section-projects">
+          <h2
+            class="pb-3 font-mono text-[10px] tracking-[0.08em] text-fg-faint uppercase"
           >
-            <p
-              class="pb-1 font-mono text-[10px] tracking-wide text-fg-faint uppercase"
-            >
-              Why now
-            </p>
-            <p class="text-[13px] leading-relaxed text-fg-muted">{{ rationale }}</p>
+            PROJECTS · {{ projectCards().length }}
+          </h2>
+          <div class="flex flex-col gap-3">
+            @for (card of projectCards(); track card.key) {
+              <article
+                class="flex items-start justify-between gap-4 rounded-md border border-border bg-panel p-4"
+                [attr.data-testid]="'proposals-project-row-' + card.project.id"
+              >
+                <div class="flex min-w-0 flex-col gap-2">
+                  <div>
+                    <h3 class="font-display text-base font-semibold text-fg">
+                      {{ card.project.title }}
+                    </h3>
+                    @if (card.project.description) {
+                      <p class="mt-1 text-[13px] leading-relaxed text-fg-muted">
+                        {{ card.project.description }}
+                      </p>
+                    }
+                  </div>
+                  @if (card.project.proposal_rationale; as rationale) {
+                    <div
+                      class="rounded-sm border-l-2 border-l-brand bg-bg px-3 py-2.5"
+                    >
+                      <p
+                        class="pb-1 font-mono text-[10px] tracking-wide text-fg-faint uppercase"
+                      >
+                        Why now
+                      </p>
+                      <p class="text-[13px] leading-relaxed text-fg-muted">
+                        {{ rationale }}
+                      </p>
+                    </div>
+                  }
+                </div>
+                <div class="flex shrink-0 items-center gap-2">
+                  <button
+                    type="button"
+                    (click)="acceptProject(card)"
+                    [disabled]="busy()"
+                    class="rounded-sm bg-brand px-3 py-1.5 text-xs font-medium text-bg transition-colors hover:bg-brand-strong disabled:cursor-not-allowed disabled:opacity-40"
+                    [attr.data-testid]="'proposals-project-accept-' + card.project.id"
+                  >
+                    Accept
+                  </button>
+                  <button
+                    type="button"
+                    (click)="rejectProject(card)"
+                    [disabled]="busy()"
+                    class="rounded-sm border border-border px-3 py-1.5 text-xs text-fg-muted transition-colors hover:border-error hover:text-error disabled:cursor-not-allowed disabled:opacity-40"
+                    [attr.data-testid]="'proposals-project-reject-' + card.project.id"
+                  >
+                    Reject
+                  </button>
+                </div>
+              </article>
+            }
           </div>
-        }
-
-        <div class="flex items-center gap-2 pt-1">
-          @if (editing()) {
-            <button
-              type="button"
-              (click)="activateGoal()"
-              [disabled]="!canSaveEdit()"
-              class="rounded-sm bg-brand px-3 py-1.5 text-xs font-medium text-bg transition-colors hover:bg-brand-strong disabled:cursor-not-allowed disabled:opacity-40"
-              data-testid="proposals-goal-save"
-            >
-              Save &amp; activate
-            </button>
-            <button
-              type="button"
-              (click)="cancelEdit()"
-              [disabled]="busy()"
-              class="rounded-sm px-3 py-1.5 text-xs text-fg-subtle transition-colors hover:text-fg disabled:opacity-40"
-              data-testid="proposals-goal-cancel"
-            >
-              Cancel
-            </button>
-          } @else {
-            <button
-              type="button"
-              (click)="activateGoal()"
-              [disabled]="busy()"
-              class="rounded-sm bg-brand px-3 py-1.5 text-xs font-medium text-bg transition-colors hover:bg-brand-strong disabled:cursor-not-allowed disabled:opacity-40"
-              data-testid="proposals-goal-activate"
-            >
-              Activate
-            </button>
-            <button
-              type="button"
-              (click)="startEdit()"
-              [disabled]="busy()"
-              class="rounded-sm border border-border px-3 py-1.5 text-xs text-fg-muted transition-colors hover:bg-overlay hover:text-fg disabled:cursor-not-allowed disabled:opacity-40"
-              data-testid="proposals-goal-edit"
-            >
-              Edit
-            </button>
-            <button
-              type="button"
-              (click)="rejectGoal()"
-              [disabled]="busy()"
-              class="rounded-sm border border-border px-3 py-1.5 text-xs text-fg-muted transition-colors hover:border-error hover:text-error disabled:cursor-not-allowed disabled:opacity-40"
-              data-testid="proposals-goal-reject"
-            >
-              Reject
-            </button>
-          }
-        </div>
-      </article>
-    } @else if (currentProject(); as card) {
-      <!-- Standalone proposed project -->
-      <article
-        class="flex flex-col gap-4 rounded-md border border-border bg-panel p-5"
-        data-testid="proposals-project-card"
-      >
-        <div class="flex items-center gap-2">
-          <span
-            class="rounded-sm bg-brand-muted px-2 py-0.5 font-mono text-[10px] tracking-wide text-brand uppercase"
-          >
-            Proposed project
-          </span>
-          @if (card.project.created_by) {
-            <span class="font-mono text-[10px] text-fg-faint">
-              by {{ card.project.created_by }}
-            </span>
-          }
-        </div>
-
-        <div>
-          <h1 class="font-display text-xl font-semibold text-fg">
-            {{ card.project.title }}
-          </h1>
-          @if (card.project.description) {
-            <p class="mt-1.5 text-[13px] leading-relaxed text-fg-muted">
-              {{ card.project.description }}
-            </p>
-          }
-        </div>
-
-        @if (card.project.proposal_rationale; as rationale) {
-          <div
-            class="rounded-sm border-l-2 border-l-brand bg-bg px-3 py-2.5"
-            aria-live="polite"
-            data-testid="proposals-rationale"
-          >
-            <p
-              class="pb-1 font-mono text-[10px] tracking-wide text-fg-faint uppercase"
-            >
-              Why now
-            </p>
-            <p class="text-[13px] leading-relaxed text-fg-muted">{{ rationale }}</p>
-          </div>
-        }
-
-        <div class="flex items-center gap-2 pt-1">
-          <button
-            type="button"
-            (click)="activateProject()"
-            [disabled]="busy()"
-            class="rounded-sm bg-brand px-3 py-1.5 text-xs font-medium text-bg transition-colors hover:bg-brand-strong disabled:cursor-not-allowed disabled:opacity-40"
-            data-testid="proposals-project-activate"
-          >
-            Activate
-          </button>
-          <button
-            type="button"
-            (click)="rejectProject()"
-            [disabled]="busy()"
-            class="rounded-sm border border-border px-3 py-1.5 text-xs text-fg-muted transition-colors hover:border-error hover:text-error disabled:cursor-not-allowed disabled:opacity-40"
-            data-testid="proposals-project-reject"
-          >
-            Reject
-          </button>
-        </div>
-      </article>
-    }
+        </section>
+      }
+    </div>
   }
 
   @if (pendingReject(); as p) {

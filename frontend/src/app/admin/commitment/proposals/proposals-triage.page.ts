@@ -54,11 +54,16 @@ interface PendingReject {
   action: () => void;
 }
 
+/** Wraps a proposed goal as a standalone review card. */
+function goalCard(goal: ProposedGoal): GoalCard {
+  return { kind: 'goal', key: `goal:${goal.id}`, goal };
+}
+
 /** Splits a proposals payload into review cards: each proposed area becomes a
  *  bundle card carrying its proposed child goals; every goal not under a
  *  proposed area is a standalone card; every proposed project is a standalone
- *  card. Areas (bundles) lead, then standalone goals, then projects — each
- *  group already newest-first from the backend. */
+ *  card. The template groups them back into Areas → Goals → Projects sections;
+ *  each group is already newest-first from the backend. */
 function buildCards(resp: ProposalsResponse): TriageCard[] {
   const proposedAreaIds = new Set(resp.areas.map((a) => a.id));
   const areaCards: AreaCard[] = resp.areas.map((area) => ({
@@ -69,7 +74,7 @@ function buildCards(resp: ProposalsResponse): TriageCard[] {
   }));
   const goalCards: GoalCard[] = resp.goals
     .filter((g) => !g.area_id || !proposedAreaIds.has(g.area_id))
-    .map((goal) => ({ kind: 'goal', key: `goal:${goal.id}`, goal }));
+    .map(goalCard);
   const projectCards: ProjectCard[] = resp.projects.map((project) => ({
     kind: 'project',
     key: `project:${project.id}`,
@@ -79,15 +84,16 @@ function buildCards(resp: ProposalsResponse): TriageCard[] {
 }
 
 /**
- * Proposals triage — the owner's one-card-at-a-time review of agent-proposed
- * inert goal/area/project drafts. Each card is a proposed area (reviewed on its
- * own), a standalone proposed goal, or a proposed project. Activate promotes a
- * draft into the live planning lifecycle; reject hard-deletes it (an area reject
- * cascades its proposed goals server-side). Most resolutions splice the head
- * card off the queue locally — no reload flash. Activating an area is the
- * exception: it touches only the area, so its still-proposed child goals are
- * re-fetched and resurface as standalone cards for individual review. The nav
- * badge re-reads its count after each action so it tracks the queue.
+ * Proposals triage — the owner reviews every agent-proposed inert
+ * goal/area/project draft at once, grouped Areas → Goals → Projects (PARA
+ * order). Accept promotes a draft into the live planning lifecycle and drops
+ * its row; reject opens a confirm dialog, then hard-deletes it (an area reject
+ * cascades its proposed child goals server-side). Resolutions splice the row
+ * out of the working list locally — no reload flash. Accepting an area is the
+ * exception: it touches only the area, so its still-proposed child goals
+ * resurface as standalone goal rows for individual review rather than vanishing
+ * with the bundle. The nav badge re-reads its own count on the next
+ * navigation, so the page stays decoupled from it while triaging in place.
  */
 @Component({
   selector: 'app-proposals-triage-page',
@@ -112,33 +118,21 @@ export class ProposalsTriagePageComponent {
     this.resource.hasValue() ? buildCards(this.resource.value()) : [],
   );
 
-  // Working queue: seeded from the loaded cards, spliced locally as the owner
+  // Working list: seeded from the loaded cards, spliced locally as the owner
   // resolves each one. linkedSignal re-seeds only on (re)load — never on a
-  // local splice — so a resolved card stays gone without a refetch.
+  // local splice — so a resolved row stays gone without a refetch.
   protected readonly cards = linkedSignal(() => this.builtCards());
 
-  protected readonly current = computed<TriageCard | undefined>(
-    () => this.cards()[0],
+  // The template renders one section per kind; each reads its slice off the
+  // working list, so a local splice updates exactly the right group.
+  protected readonly areaCards = computed(() =>
+    this.cards().filter((c): c is AreaCard => c.kind === 'area'),
   );
-  protected readonly currentArea = computed(() => {
-    const c = this.current();
-    return c && c.kind === 'area' ? c : undefined;
-  });
-  protected readonly currentGoal = computed(() => {
-    const c = this.current();
-    return c && c.kind === 'goal' ? c : undefined;
-  });
-  protected readonly currentProject = computed(() => {
-    const c = this.current();
-    return c && c.kind === 'project' ? c : undefined;
-  });
-
-  /** Total cards at load (stable — the queue is never reloaded mid-review). */
-  protected readonly total = computed(() => this.builtCards().length);
-  protected readonly remaining = computed(() => this.cards().length);
-  /** 1-based position of the current card in the original queue. */
-  protected readonly position = computed(
-    () => this.total() - this.remaining() + 1,
+  protected readonly goalCards = computed(() =>
+    this.cards().filter((c): c is GoalCard => c.kind === 'goal'),
+  );
+  protected readonly projectCards = computed(() =>
+    this.cards().filter((c): c is ProjectCard => c.kind === 'project'),
   );
 
   protected readonly isLoading = computed(
@@ -147,107 +141,56 @@ export class ProposalsTriagePageComponent {
   protected readonly hasError = computed(
     () => this.resource.status() === 'error',
   );
+  // Empty once nothing is left to review — covers both "none was ever proposed"
+  // and "the owner cleared the list".
   protected readonly isEmpty = computed(
-    () => !this.isLoading() && !this.hasError() && this.total() === 0,
-  );
-  protected readonly allClear = computed(
-    () =>
-      !this.isLoading() &&
-      !this.hasError() &&
-      this.total() > 0 &&
-      this.remaining() === 0,
+    () => !this.isLoading() && !this.hasError() && this.cards().length === 0,
   );
 
-  /** True while an action is in flight — gates the card's buttons. */
+  /** True while an action is in flight — gates every row's buttons. */
   protected readonly busy = signal(false);
 
   /** Set when a reject is awaiting confirmation; drives the confirm dialog.
    *  Null means no dialog is open. */
   protected readonly pendingReject = signal<PendingReject | null>(null);
 
-  // Inline edit-then-activate for a standalone goal.
-  protected readonly editing = signal(false);
-  protected readonly editTitle = signal('');
-  protected readonly canSaveEdit = computed(
-    () => this.editTitle().trim().length > 0 && !this.busy(),
-  );
-
   constructor() {
     this.topbar.set({ title: 'Proposals', crumbs: ['Commitment', 'Proposals'] });
     this.destroyRef.onDestroy(() => this.topbar.reset());
   }
 
-  protected readValue(event: Event): string {
-    return (event.target as HTMLInputElement).value;
-  }
+  // ── Accept ─────────────────────────────────────────────────────
 
-  // ── Goal card ──────────────────────────────────────────────────
-
-  protected startEdit(): void {
-    const card = this.currentGoal();
-    if (!card) return;
-    this.editTitle.set(card.goal.title);
-    this.editing.set(true);
-  }
-
-  protected cancelEdit(): void {
-    this.editing.set(false);
-  }
-
-  /** Activate the current standalone goal. In edit mode, persist the new
-   *  title first when it changed, then activate. */
-  protected activateGoal(): void {
-    const card = this.currentGoal();
-    if (!card) return;
-    const edited = this.editTitle().trim();
-    if (this.editing()) {
-      if (!edited) return;
-      const op =
-        edited === card.goal.title
-          ? this.proposalService.activateGoal(card.goal.id)
-          : this.proposalService.editThenActivateGoal(card.goal.id, edited);
-      this.run(op, `Activated "${edited}"`);
-    } else {
-      this.run(
-        this.proposalService.activateGoal(card.goal.id),
-        `Activated "${card.goal.title}"`,
-      );
-    }
-  }
-
-  protected rejectGoal(): void {
-    const card = this.currentGoal();
-    if (!card || this.busy()) return;
-    this.pendingReject.set({
-      title: `Reject "${card.goal.title}"?`,
-      body: 'This permanently removes the proposed goal.',
-      confirmLabel: 'Reject goal',
-      action: () =>
-        this.run(
-          this.proposalService.rejectGoal(card.goal.id),
-          'Proposal rejected',
-        ),
-    });
-  }
-
-  // ── Area bundle card ───────────────────────────────────────────
-
-  /** Activate the current area only. Its proposed child goals stay proposed
-   *  under the now-active area, so the queue re-fetches and they resurface as
-   *  standalone cards for individual review. */
-  protected activateArea(): void {
-    const card = this.currentArea();
-    if (!card) return;
+  /** Activate the area only. Its proposed child goals stay proposed under the
+   *  now-active area, so they resurface locally as standalone goal rows. */
+  protected acceptArea(card: AreaCard): void {
     this.run(
       this.proposalService.activateArea(card.area.id),
       `Activated "${card.area.name}"`,
-      { reload: true },
+      () => this.resurfaceAreaGoals(card),
     );
   }
 
-  protected rejectArea(): void {
-    const card = this.currentArea();
-    if (!card || this.busy()) return;
+  protected acceptGoal(card: GoalCard): void {
+    this.run(
+      this.proposalService.activateGoal(card.goal.id),
+      `Activated "${card.goal.title}"`,
+      () => this.removeCard(card.key),
+    );
+  }
+
+  protected acceptProject(card: ProjectCard): void {
+    this.run(
+      this.proposalService.activateProject(card.project.id),
+      `Activated "${card.project.title}"`,
+      () => this.removeCard(card.key),
+    );
+  }
+
+  // ── Reject (deferred behind the confirm dialog) ────────────────
+
+  protected rejectArea(card: AreaCard): void {
+    if (this.busy()) return;
     const n = card.goals.length;
     const body =
       n === 0
@@ -263,25 +206,28 @@ export class ProposalsTriagePageComponent {
         this.run(
           this.proposalService.rejectArea(card.area.id),
           'Proposal bundle rejected',
+          () => this.removeCard(card.key),
         ),
     });
   }
 
-  // ── Project card ───────────────────────────────────────────────
-
-  /** Activate the current proposed project (proposed → in_progress). */
-  protected activateProject(): void {
-    const card = this.currentProject();
-    if (!card) return;
-    this.run(
-      this.proposalService.activateProject(card.project.id),
-      `Activated "${card.project.title}"`,
-    );
+  protected rejectGoal(card: GoalCard): void {
+    if (this.busy()) return;
+    this.pendingReject.set({
+      title: `Reject "${card.goal.title}"?`,
+      body: 'This permanently removes the proposed goal.',
+      confirmLabel: 'Reject goal',
+      action: () =>
+        this.run(
+          this.proposalService.rejectGoal(card.goal.id),
+          'Proposal rejected',
+          () => this.removeCard(card.key),
+        ),
+    });
   }
 
-  protected rejectProject(): void {
-    const card = this.currentProject();
-    if (!card || this.busy()) return;
+  protected rejectProject(card: ProjectCard): void {
+    if (this.busy()) return;
     this.pendingReject.set({
       title: `Reject "${card.project.title}"?`,
       body: 'This permanently removes the proposed project.',
@@ -290,6 +236,7 @@ export class ProposalsTriagePageComponent {
         this.run(
           this.proposalService.rejectProject(card.project.id),
           'Proposal rejected',
+          () => this.removeCard(card.key),
         ),
     });
   }
@@ -297,7 +244,7 @@ export class ProposalsTriagePageComponent {
   // ── Reject confirmation dialog ─────────────────────────────────
 
   /** Runs the pending reject's action and closes the dialog. The action runs
-   *  the real hard-delete (deferred until now), then `run` settles the queue. */
+   *  the real hard-delete (deferred until now), then `run` settles the list. */
   protected confirmReject(): void {
     const pending = this.pendingReject();
     if (!pending || this.busy()) return;
@@ -312,26 +259,15 @@ export class ProposalsTriagePageComponent {
 
   // ── Shared action runner ───────────────────────────────────────
 
-  /** Runs a triage mutation, then settles the queue and shows a toast. By
-   *  default the resolved head card is spliced off locally; pass `reload` to
-   *  re-fetch instead — used by area activate so still-proposed children
-   *  resurface. On failure the card stays put so the owner can retry. */
-  private run(
-    op: Observable<void>,
-    success: string,
-    opts: { reload?: boolean } = {},
-  ): void {
+  /** Runs a triage mutation, then applies `resolve` (the local list edit) and
+   *  shows a toast. On failure the row stays put so the owner can retry. */
+  private run(op: Observable<void>, success: string, resolve: () => void): void {
     if (this.busy()) return;
     this.busy.set(true);
     op.pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: () => {
         this.busy.set(false);
-        if (opts.reload) {
-          this.editing.set(false);
-          this.resource.reload();
-        } else {
-          this.advance();
-        }
+        resolve();
         this.notifications.success(success);
       },
       error: () => {
@@ -343,11 +279,18 @@ export class ProposalsTriagePageComponent {
     });
   }
 
-  /** Drops the resolved head card and resets per-card edit state. The nav
-   *  badge re-reads its count on the next NavigationEnd (AdminLayout), so the
-   *  page stays decoupled from the nav-count service while triaging in place. */
-  private advance(): void {
-    this.editing.set(false);
-    this.cards.update((list) => list.slice(1));
+  /** Drops a resolved row from the working list. */
+  private removeCard(key: string): void {
+    this.cards.update((list) => list.filter((c) => c.key !== key));
+  }
+
+  /** Replaces an accepted area bundle with standalone goal rows for its
+   *  still-proposed children, so they don't vanish before review — the local
+   *  equivalent of what a refetch would surface now the area is active. */
+  private resurfaceAreaGoals(card: AreaCard): void {
+    this.cards.update((list) => [
+      ...list.filter((c) => c.key !== card.key),
+      ...card.goals.map(goalCard),
+    ]);
   }
 }

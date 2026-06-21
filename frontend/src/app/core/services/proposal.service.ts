@@ -1,6 +1,6 @@
 import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
-import { concatMap, map } from 'rxjs/operators';
+import { map } from 'rxjs/operators';
 import { ApiService } from './api.service';
 
 /**
@@ -107,15 +107,6 @@ export class ProposalService {
    *  triage as standalone goal cards for individual review. */
   activateArea(id: string): Observable<void> {
     return this.api.postVoid(`${BASE}/areas/${id}/activate`, {});
-  }
-
-  /** Edit a proposed goal's title, then activate it (proposed → not_started).
-   *  The PUT must complete before the activate, so the two are sequenced with
-   *  concatMap rather than run in parallel. */
-  editThenActivateGoal(id: string, title: string): Observable<void> {
-    return this.api
-      .putData<unknown>(`${BASE}/goals/${id}`, { title })
-      .pipe(concatMap(() => this.activateGoal(id)));
   }
 
   /** Reject a standalone proposed goal (hard delete; milestones cascade). */

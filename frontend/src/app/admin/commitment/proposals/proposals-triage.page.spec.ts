@@ -7,99 +7,60 @@ import {
 import { provideRouter } from '@angular/router';
 
 import { ProposalsTriagePageComponent } from './proposals-triage.page';
-import type { ProposalsResponse } from '../../../core/services/proposal.service';
+import type {
+  ProposalsResponse,
+  ProposedArea,
+  ProposedGoal,
+  ProposedProject,
+} from '../../../core/services/proposal.service';
 
 const PROPOSALS_URL = '/api/admin/commitment/proposals';
 const goalActivate = (id: string) =>
   `/api/admin/commitment/goals/${id}/activate`;
 const areaActivate = (id: string) =>
   `/api/admin/commitment/areas/${id}/activate`;
-const goalProposed = (id: string) =>
-  `/api/admin/commitment/goals/${id}/proposed`;
 const areaProposed = (id: string) =>
   `/api/admin/commitment/areas/${id}/proposed`;
-const goalEdit = (id: string) => `/api/admin/commitment/goals/${id}`;
-const projectActivate = (id: string) =>
-  `/api/admin/commitment/projects/${id}/activate`;
-const projectProposed = (id: string) =>
-  `/api/admin/commitment/projects/${id}/proposed`;
 
-/** Two cards: a proposed area bundle (Health + Run 5k), then a standalone
- *  proposed goal (Learn Go generics, under an already-active area). */
-function proposals(overrides: Partial<ProposalsResponse> = {}): ProposalsResponse {
+function area(over: Partial<ProposedArea> = {}): ProposedArea {
   return {
-    areas: [
-      {
-        id: 'ar-1',
-        slug: 'health',
-        name: 'Health',
-        description: 'Body upkeep',
-        created_by: 'planner',
-        created_at: '2026-06-18T00:00:00Z',
-      },
-    ],
-    goals: [
-      {
-        id: 'gl-1',
-        title: 'Run 5k',
-        description: '',
-        area_id: 'ar-1',
-        area_name: 'Health',
-        created_by: 'planner',
-        created_at: '2026-06-18T00:00:00Z',
-        milestone_total: 2,
-      },
-      {
-        id: 'gl-2',
-        title: 'Learn Go generics',
-        description: 'deep dive',
-        area_name: 'Build',
-        created_by: 'planner',
-        created_at: '2026-06-18T00:00:00Z',
-        milestone_total: 0,
-      },
-    ],
-    projects: [],
-    ...overrides,
+    id: 'ar-1',
+    slug: 'health',
+    name: 'Health',
+    description: 'Body upkeep',
+    created_by: 'planner',
+    created_at: '2026-06-18T00:00:00Z',
+    ...over,
   };
 }
 
-/** A single standalone proposed goal (no proposed-area parent). */
-function goalOnly(): ProposalsResponse {
+function goal(over: Partial<ProposedGoal> = {}): ProposedGoal {
   return {
-    areas: [],
-    goals: [
-      {
-        id: 'gl-2',
-        title: 'Learn Go generics',
-        description: 'deep dive',
-        area_name: 'Build',
-        created_by: 'planner',
-        created_at: '2026-06-18T00:00:00Z',
-        milestone_total: 0,
-      },
-    ],
-    projects: [],
+    id: 'gl-1',
+    title: 'Learn Go generics',
+    description: 'deep dive',
+    area_name: 'Build',
+    created_by: 'planner',
+    created_at: '2026-06-18T00:00:00Z',
+    milestone_total: 0,
+    ...over,
   };
 }
 
-/** A single standalone proposed project. */
-function projectOnly(): ProposalsResponse {
+function project(over: Partial<ProposedProject> = {}): ProposedProject {
   return {
-    areas: [],
-    goals: [],
-    projects: [
-      {
-        id: 'pr-1',
-        slug: 'koopa-cli',
-        title: 'Build koopa CLI',
-        description: 'A command-line companion',
-        created_by: 'planner',
-        created_at: '2026-06-18T00:00:00Z',
-        proposal_rationale: 'You keep scripting the same admin calls by hand.',
-      },
-    ],
+    id: 'pr-1',
+    slug: 'koopa-cli',
+    title: 'Build koopa CLI',
+    description: 'A command-line companion',
+    created_by: 'planner',
+    created_at: '2026-06-18T00:00:00Z',
+    ...over,
   };
+}
+
+function payload(over: Partial<ProposalsResponse> = {}): ProposalsResponse {
+  return { areas: [], goals: [], projects: [], ...over };
 }
 
 describe('ProposalsTriagePageComponent', () => {
@@ -138,317 +99,145 @@ describe('ProposalsTriagePageComponent', () => {
     fixture.detectChanges();
   }
 
-  function flushList(payload: ProposalsResponse): void {
+  function flushList(body: ProposalsResponse): void {
     httpMock
       .expectOne((r) => r.method === 'GET' && r.url.endsWith(PROPOSALS_URL))
-      .flush({ data: payload });
+      .flush({ data: body });
   }
 
-  async function render(payload: ProposalsResponse = proposals()): Promise<void> {
+  async function render(body: ProposalsResponse): Promise<void> {
     await settle();
-    flushList(payload);
+    flushList(body);
     await settle();
   }
 
-  it('should show the area bundle first with its goals and the X-of-N position', async () => {
-    await render();
+  it('should render every pending proposal grouped under its type section', async () => {
+    await render(
+      payload({
+        areas: [area({ id: 'ar-1', name: 'Health' }), area({ id: 'ar-2', name: 'Finance' })],
+        goals: [goal({ id: 'gl-1', title: 'Learn Go generics' })],
+        projects: [project({ id: 'pr-1', title: 'Build koopa CLI' })],
+      }),
+    );
 
-    expect(testid('proposals-position')?.textContent).toContain('1 of 2');
-    const card = testid('proposals-area-card');
-    expect(card).toBeTruthy();
-    expect(card?.textContent).toContain('Health');
-    expect(testid('proposals-area-goals')?.textContent).toContain('Includes 1');
-    expect(card?.textContent).toContain('Run 5k');
+    // Section headers carry the per-type count.
+    expect(testid('proposals-section-areas')?.textContent).toContain('AREAS · 2');
+    expect(testid('proposals-section-goals')?.textContent).toContain('GOALS · 1');
+    expect(testid('proposals-section-projects')?.textContent).toContain(
+      'PROJECTS · 1',
+    );
+
+    // All four rows land under the right section.
+    expect(testid('proposals-area-row-ar-1')?.textContent).toContain('Health');
+    expect(testid('proposals-area-row-ar-2')?.textContent).toContain('Finance');
+    expect(testid('proposals-goal-row-gl-1')?.textContent).toContain(
+      'Learn Go generics',
+    );
+    expect(testid('proposals-project-row-pr-1')?.textContent).toContain(
+      'Build koopa CLI',
+    );
   });
 
-  it('should activate only the area and resurface its child goal as a standalone card', async () => {
-    await render();
+  it('should show each row its own proposal rationale', async () => {
+    await render(
+      payload({
+        areas: [
+          area({ id: 'ar-1', proposal_rationale: 'You logged three runs last week.' }),
+        ],
+        goals: [
+          goal({ id: 'gl-1', proposal_rationale: 'Generics keep coming up in your reading.' }),
+        ],
+        projects: [
+          project({ id: 'pr-1', proposal_rationale: 'You keep scripting admin calls by hand.' }),
+        ],
+      }),
+    );
 
-    testid('proposals-area-activate')?.click();
+    expect(testid('proposals-area-row-ar-1')?.textContent).toContain(
+      'You logged three runs last week.',
+    );
+    expect(testid('proposals-goal-row-gl-1')?.textContent).toContain(
+      'Generics keep coming up in your reading.',
+    );
+    expect(testid('proposals-project-row-pr-1')?.textContent).toContain(
+      'You keep scripting admin calls by hand.',
+    );
+  });
+
+  it('should accept a goal in place — activate it, drop its row, keep the rest, no refetch', async () => {
+    await render(
+      payload({
+        goals: [
+          goal({ id: 'gl-1', title: 'Learn Go generics' }),
+          goal({ id: 'gl-2', title: 'Read SICP' }),
+        ],
+        projects: [project({ id: 'pr-1' })],
+      }),
+    );
+
+    testid('proposals-goal-accept-gl-1')?.click();
     await settle();
 
-    // Area-only: exactly the per-area activate, never a per-goal activate.
+    httpMock
+      .expectOne((r) => r.method === 'POST' && r.url.endsWith(goalActivate('gl-1')))
+      .flush({});
+    await settle();
+
+    // The accepted row is gone; the others stay; the list was NOT refetched.
+    expect(testid('proposals-goal-row-gl-1')).toBeNull();
+    expect(testid('proposals-goal-row-gl-2')).toBeTruthy();
+    expect(testid('proposals-project-row-pr-1')).toBeTruthy();
+    httpMock.expectNone((r) => r.method === 'GET' && r.url.endsWith(PROPOSALS_URL));
+  });
+
+  it('should accept an area in place and resurface its still-proposed child goals as goal rows', async () => {
+    await render(
+      payload({
+        areas: [area({ id: 'ar-1', name: 'Health' })],
+        goals: [
+          goal({ id: 'gl-1', title: 'Run 5k', area_id: 'ar-1', area_name: 'Health' }),
+        ],
+      }),
+    );
+
+    // The child goal renders inside the area bundle, not as a standalone row yet.
+    expect(testid('proposals-area-row-ar-1')?.textContent).toContain('Run 5k');
+    expect(testid('proposals-goal-row-gl-1')).toBeNull();
+
+    testid('proposals-area-accept-ar-1')?.click();
+    await settle();
+
     httpMock
       .expectOne((r) => r.method === 'POST' && r.url.endsWith(areaActivate('ar-1')))
       .flush({});
+    await settle();
+
+    // Area-only: the goal was never activated, the bundle is gone, and the
+    // still-proposed child resurfaces as a standalone goal row — no refetch.
     httpMock.expectNone((r) => r.url.endsWith(goalActivate('gl-1')));
-    await settle();
-
-    // The queue re-fetches; the still-proposed child comes back standalone now
-    // that its parent area is active (no longer a proposed bundle).
-    flushList({
-      areas: [],
-      goals: [
-        {
-          id: 'gl-1',
-          title: 'Run 5k',
-          description: '',
-          area_id: 'ar-1',
-          area_name: 'Health',
-          created_by: 'planner',
-          created_at: '2026-06-18T00:00:00Z',
-          milestone_total: 2,
-        },
-        {
-          id: 'gl-2',
-          title: 'Learn Go generics',
-          description: 'deep dive',
-          area_name: 'Build',
-          created_by: 'planner',
-          created_at: '2026-06-18T00:00:00Z',
-          milestone_total: 0,
-        },
-      ],
-      projects: [],
-    });
-    await settle();
-
-    expect(testid('proposals-area-card')).toBeNull();
-    expect(testid('proposals-goal-card')?.textContent).toContain('Run 5k');
-    expect(testid('proposals-position')?.textContent).toContain('1 of 2');
+    expect(testid('proposals-area-row-ar-1')).toBeNull();
+    expect(testid('proposals-goal-row-gl-1')?.textContent).toContain('Run 5k');
+    httpMock.expectNone((r) => r.method === 'GET' && r.url.endsWith(PROPOSALS_URL));
   });
 
-  it('should render the proposal rationale on the area card when present', async () => {
-    await render({
-      areas: [
-        {
-          id: 'ar-1',
-          slug: 'health',
-          name: 'Health',
-          description: 'Body upkeep',
-          created_by: 'planner',
-          created_at: '2026-06-18T00:00:00Z',
-          proposal_rationale: 'You logged three runs last week — worth committing to.',
-        },
-      ],
-      goals: [],
-      projects: [],
-    });
-
-    const rationale = testid('proposals-rationale');
-    expect(rationale).toBeTruthy();
-    expect(rationale?.textContent).toContain(
-      'You logged three runs last week',
+  it('should reject an area only after confirming the cascade in the dialog', async () => {
+    await render(
+      payload({
+        areas: [area({ id: 'ar-1', name: 'Health' })],
+        goals: [
+          goal({ id: 'gl-1', title: 'Run 5k', area_id: 'ar-1', area_name: 'Health' }),
+          goal({ id: 'gl-2', title: 'Sleep 8h', area_id: 'ar-1', area_name: 'Health' }),
+        ],
+      }),
     );
-  });
 
-  it('should render the proposal rationale on the standalone goal card when present', async () => {
-    await render({
-      areas: [],
-      goals: [
-        {
-          id: 'gl-2',
-          title: 'Learn Go generics',
-          description: 'deep dive',
-          area_name: 'Build',
-          created_by: 'planner',
-          created_at: '2026-06-18T00:00:00Z',
-          milestone_total: 0,
-          proposal_rationale: 'Generics keep coming up in your reading.',
-        },
-      ],
-      projects: [],
-    });
-
-    expect(testid('proposals-rationale')?.textContent).toContain(
-      'Generics keep coming up',
-    );
-  });
-
-  it('should omit the rationale block when none was given', async () => {
-    await render(goalOnly());
-
-    expect(testid('proposals-rationale')).toBeNull();
-  });
-
-  it('should activate a standalone goal and then show the all-clear state', async () => {
-    await render(goalOnly());
-
-    expect(testid('proposals-position')?.textContent).toContain('1 of 1');
-    testid('proposals-goal-activate')?.click();
+    testid('proposals-area-reject-ar-1')?.click();
     await settle();
 
-    httpMock
-      .expectOne((r) => r.method === 'POST' && r.url.endsWith(goalActivate('gl-2')))
-      .flush({});
-    await settle();
-
-    expect(testid('proposals-all-clear')).toBeTruthy();
-  });
-
-  it('should edit the title then PUT and activate when save & activate is clicked', async () => {
-    await render(goalOnly());
-
-    testid('proposals-goal-edit')?.click();
-    await settle();
-
-    const input = el().querySelector<HTMLInputElement>(
-      '[data-testid="proposals-goal-edit-title"]',
-    );
-    expect(input?.value).toBe('Learn Go generics');
-    input!.value = 'Learn Go generics deeply';
-    input!.dispatchEvent(new Event('input'));
-    await settle();
-
-    testid('proposals-goal-save')?.click();
-    await settle();
-
-    const put = httpMock.expectOne(
-      (r) => r.method === 'PUT' && r.url.endsWith(goalEdit('gl-2')),
-    );
-    expect(put.request.body).toEqual({ title: 'Learn Go generics deeply' });
-    put.flush({ data: {} });
-
-    httpMock
-      .expectOne((r) => r.method === 'POST' && r.url.endsWith(goalActivate('gl-2')))
-      .flush({});
-    await settle();
-
-    expect(testid('proposals-all-clear')).toBeTruthy();
-  });
-
-  it('should open the reject dialog without deleting when reject is clicked on a goal', async () => {
-    await render(goalOnly());
-
-    testid('proposals-goal-reject')?.click();
-    await settle();
-
-    // The dialog is open with the goal's wording — but nothing was deleted yet.
-    const body = testid('proposals-reject-body');
-    expect(body).toBeTruthy();
-    expect(body?.textContent).toContain(
-      'This permanently removes the proposed goal.',
-    );
-    expect(testid('proposals-reject-confirm')).toBeTruthy();
-    // afterEach httpMock.verify() asserts no DELETE went out from opening alone.
-  });
-
-  it('should reject a standalone goal only after confirming in the dialog', async () => {
-    await render(goalOnly());
-
-    testid('proposals-goal-reject')?.click();
-    await settle();
-
-    testid('proposals-reject-confirm')?.click();
-    await settle();
-
-    httpMock
-      .expectOne(
-        (r) => r.method === 'DELETE' && r.url.endsWith(goalProposed('gl-2')),
-      )
-      .flush(null, { status: 204, statusText: 'No Content' });
-    await settle();
-
-    // Dialog closed and the queue advanced.
-    expect(testid('proposals-reject-body')).toBeNull();
-    expect(testid('proposals-all-clear')).toBeTruthy();
-  });
-
-  it('should close the dialog and keep the card when reject is cancelled', async () => {
-    await render(goalOnly());
-
-    testid('proposals-goal-reject')?.click();
-    await settle();
-    expect(testid('proposals-reject-body')).toBeTruthy();
-
-    testid('proposals-reject-cancel')?.click();
-    await settle();
-
-    // Dialog gone, the goal card is still here, no DELETE went out.
-    expect(testid('proposals-reject-body')).toBeNull();
-    expect(testid('proposals-goal-card')?.textContent).toContain(
-      'Learn Go generics',
-    );
-    // afterEach httpMock.verify() asserts no DELETE was issued.
-  });
-
-  it('should omit the cascade line in the dialog when an area has no proposed goals', async () => {
-    await render({
-      areas: [
-        {
-          id: 'ar-1',
-          slug: 'health',
-          name: 'Health',
-          description: 'Body upkeep',
-          created_by: 'planner',
-          created_at: '2026-06-18T00:00:00Z',
-        },
-      ],
-      goals: [],
-      projects: [],
-    });
-
-    testid('proposals-area-reject')?.click();
-    await settle();
-
-    const body = testid('proposals-reject-body');
-    expect(body?.textContent).toContain(
-      'This permanently removes the proposed area.',
-    );
-    expect(body?.textContent).not.toContain('proposed goal');
-  });
-
-  it('should show the singular cascade line in the dialog for an area with one proposed goal', async () => {
-    await render();
-
-    testid('proposals-area-reject')?.click();
-    await settle();
-
-    expect(testid('proposals-reject-body')?.textContent).toContain(
-      'This also rejects 1 proposed goal under it.',
-    );
-  });
-
-  it('should show the plural cascade line in the dialog for an area with two proposed goals', async () => {
-    await render({
-      areas: [
-        {
-          id: 'ar-1',
-          slug: 'health',
-          name: 'Health',
-          description: 'Body upkeep',
-          created_by: 'planner',
-          created_at: '2026-06-18T00:00:00Z',
-        },
-      ],
-      goals: [
-        {
-          id: 'gl-1',
-          title: 'Run 5k',
-          description: '',
-          area_id: 'ar-1',
-          area_name: 'Health',
-          created_by: 'planner',
-          created_at: '2026-06-18T00:00:00Z',
-          milestone_total: 2,
-        },
-        {
-          id: 'gl-3',
-          title: 'Sleep 8h',
-          description: '',
-          area_id: 'ar-1',
-          area_name: 'Health',
-          created_by: 'planner',
-          created_at: '2026-06-18T00:00:00Z',
-          milestone_total: 0,
-        },
-      ],
-      projects: [],
-    });
-
-    testid('proposals-area-reject')?.click();
-    await settle();
-
+    // The dialog spells out the cascade; nothing is deleted on open alone.
     expect(testid('proposals-reject-body')?.textContent).toContain(
       'This also rejects 2 proposed goals under it.',
     );
-  });
-
-  it('should reject an area bundle only after confirming in the dialog', async () => {
-    await render();
-
-    testid('proposals-area-reject')?.click();
-    await settle();
 
     testid('proposals-reject-confirm')?.click();
     await settle();
@@ -461,114 +250,44 @@ describe('ProposalsTriagePageComponent', () => {
     await settle();
 
     expect(testid('proposals-reject-body')).toBeNull();
-    expect(testid('proposals-position')?.textContent).toContain('2 of 2');
+    expect(testid('proposals-area-row-ar-1')).toBeNull();
   });
 
-  it('should render a proposed project card with its rationale', async () => {
-    await render(projectOnly());
-
-    const card = testid('proposals-project-card');
-    expect(card).toBeTruthy();
-    expect(card?.textContent).toContain('Build koopa CLI');
-    expect(card?.textContent).toContain('A command-line companion');
-    expect(testid('proposals-rationale')?.textContent).toContain(
-      'You keep scripting the same admin calls',
+  it('should cancel an area reject without deleting anything and keep the row', async () => {
+    await render(
+      payload({
+        areas: [area({ id: 'ar-1', name: 'Health' })],
+        goals: [
+          goal({ id: 'gl-1', title: 'Run 5k', area_id: 'ar-1', area_name: 'Health' }),
+        ],
+      }),
     );
-  });
 
-  it('should queue a proposed project after a standalone goal', async () => {
-    await render({
-      areas: [],
-      goals: [
-        {
-          id: 'gl-2',
-          title: 'Learn Go generics',
-          description: 'deep dive',
-          area_name: 'Build',
-          created_by: 'planner',
-          created_at: '2026-06-18T00:00:00Z',
-          milestone_total: 0,
-        },
-      ],
-      projects: [
-        {
-          id: 'pr-1',
-          slug: 'koopa-cli',
-          title: 'Build koopa CLI',
-          description: 'A command-line companion',
-          created_by: 'planner',
-          created_at: '2026-06-18T00:00:00Z',
-        },
-      ],
-    });
+    testid('proposals-area-reject-ar-1')?.click();
+    await settle();
+    expect(testid('proposals-reject-body')).toBeTruthy();
 
-    // Goals lead, projects trail — the project is in the queue (2 total) but
-    // the goal card surfaces first.
-    expect(testid('proposals-position')?.textContent).toContain('1 of 2');
-    expect(testid('proposals-goal-card')).toBeTruthy();
-    expect(testid('proposals-project-card')).toBeNull();
-  });
-
-  it('should activate a proposed project and then show the all-clear state', async () => {
-    await render(projectOnly());
-
-    expect(testid('proposals-position')?.textContent).toContain('1 of 1');
-    testid('proposals-project-activate')?.click();
+    testid('proposals-reject-cancel')?.click();
     await settle();
 
-    httpMock
-      .expectOne(
-        (r) => r.method === 'POST' && r.url.endsWith(projectActivate('pr-1')),
-      )
-      .flush({});
-    await settle();
-
-    expect(testid('proposals-all-clear')).toBeTruthy();
-  });
-
-  it('should open the reject dialog without deleting when reject is clicked on a project', async () => {
-    await render(projectOnly());
-
-    testid('proposals-project-reject')?.click();
-    await settle();
-
-    const body = testid('proposals-reject-body');
-    expect(body?.textContent).toContain(
-      'This permanently removes the proposed project.',
-    );
-    // afterEach httpMock.verify() asserts no DELETE went out from opening alone.
-  });
-
-  it('should reject a proposed project only after confirming in the dialog', async () => {
-    await render(projectOnly());
-
-    testid('proposals-project-reject')?.click();
-    await settle();
-
-    testid('proposals-reject-confirm')?.click();
-    await settle();
-
-    httpMock
-      .expectOne(
-        (r) => r.method === 'DELETE' && r.url.endsWith(projectProposed('pr-1')),
-      )
-      .flush(null, { status: 204, statusText: 'No Content' });
-    await settle();
-
+    // Dialog closed, area still here — and afterEach httpMock.verify() asserts
+    // no DELETE was ever issued.
     expect(testid('proposals-reject-body')).toBeNull();
-    expect(testid('proposals-all-clear')).toBeTruthy();
+    expect(testid('proposals-area-row-ar-1')?.textContent).toContain('Health');
   });
 
-  it('should show the empty state when there are no proposals', async () => {
-    await render({ areas: [], goals: [], projects: [] });
+  it('should show the empty state and no sections when nothing is pending', async () => {
+    await render(payload());
 
-    expect(testid('proposals-empty')).toBeTruthy();
-    expect(testid('proposals-area-card')).toBeNull();
-    expect(testid('proposals-goal-card')).toBeNull();
-    expect(testid('proposals-project-card')).toBeNull();
+    expect(testid('proposals-empty')?.textContent).toContain(
+      'No proposals awaiting review.',
+    );
+    expect(testid('proposals-section-areas')).toBeNull();
+    expect(testid('proposals-section-goals')).toBeNull();
+    expect(testid('proposals-section-projects')).toBeNull();
   });
 
-  it('should show the error state and re-request on retry when the load fails', async () => {
+  it('should show the error state without throwing when the load fails', async () => {
     await settle();
     httpMock
       .expectOne((r) => r.method === 'GET' && r.url.endsWith(PROPOSALS_URL))
@@ -578,15 +297,10 @@ describe('ProposalsTriagePageComponent', () => {
       );
     await settle();
 
+    // hasValue() guards the read, so the error state renders rather than the
+    // resource throwing on value().
     expect(testid('proposals-error')).toBeTruthy();
-
-    testid('proposals-retry')?.click();
-    await settle();
-
-    flushList(proposals());
-    await settle();
-
-    expect(testid('proposals-error')).toBeNull();
-    expect(testid('proposals-area-card')).toBeTruthy();
+    expect(testid('proposals-empty')).toBeNull();
+    expect(testid('proposals-section-areas')).toBeNull();
   });
 });
