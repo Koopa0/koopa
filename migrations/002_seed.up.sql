@@ -17,31 +17,19 @@ ON CONFLICT (slug) DO NOTHING;
 -- Topics
 -- ============================================================
 
-INSERT INTO topics (slug, name, sort_order) VALUES
-    ('go',             'Go',              1),
-    ('rust',           'Rust',            2),
-    ('angular',        'Angular',         3),
-    ('flutter',        'Flutter',         4),
-    ('dart',           'Dart',            5),
-    ('frontend',       'Frontend',        6),
-    ('mobile',         'Mobile',          7),
-    ('ai',             'AI',              8),
-    ('llm',            'LLM',             9),
-    ('ml',             'Machine Learning', 10),
-    ('claude',         'Claude',          11),
-    ('kubernetes',     'Kubernetes',      12),
-    ('docker',         'Docker',          13),
-    ('infra',          'Infrastructure',  14),
-    ('networking',     'Networking',      15),
-    ('workers',        'Workers',         16),
-    ('devops',         'DevOps',          17),
-    ('system-design',  'System Design',   18),
-    ('database',       'Database',        19),
-    ('security',       'Security',        20),
-    ('performance',    'Performance',     21),
-    ('design',         'Design',          22),
-    ('career',         'Career',          23),
-    ('open-source',    'Open Source',     24)
+-- Eight domains, not tags — each is an ongoing area of attention ("what I'm
+-- working through"), the organizing axis of the public writing index. Kept
+-- deliberately few so the home reads as a publication, not a tag cloud.
+INSERT INTO topics (slug, name, description, sort_order) VALUES
+    ('go',             'Go',             'Stdlib-first, no frameworks. Concurrency you can reason about.',                1),
+    ('rust',           'Rust',           'Ownership, zero-cost abstractions, and what the borrow checker buys.',          2),
+    ('system-design',  'System design',  'Tradeoffs under real constraints — storage, indexes, replication, the cost of convenience.', 3),
+    ('infrastructure', 'Infrastructure', 'Containers, orchestration, networking — running a system and knowing what it is doing.', 4),
+    ('ai-agents',      'AI & agents',    'LLMs, retrieval, and agents that share one semantic runtime with a human in the loop.', 5),
+    ('frontend',       'Frontend',       'Angular, signals, and client craft where the interface gets out of the way.',   6),
+    ('security',       'Security',       'Input boundaries, authz, and the failure modes you only see when you look for them.', 7),
+    ('craft',          'Learning & craft','Reading above my level on purpose, problem-solving patterns, and working in the open.', 8),
+    ('literature',     'Literature',     'Books, essays, and lyrics read as text worth close attention — ヨルシカ, and what stays with me.', 9)
 ON CONFLICT (slug) DO NOTHING;
 
 -- ============================================================
