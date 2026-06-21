@@ -164,9 +164,10 @@ func ListReadings() Meta {
 	}
 }
 
-// GetReading returns metadata for the read-only single-book tool — one book
-// plus its full diary thread.
-func GetReading() Meta {
+// Reading returns metadata for the read-only single-book tool — one book
+// plus its full diary thread. (Tool name get_reading; accessor named Reading
+// to match the catalog's no-Get convention.)
+func Reading() Meta {
 	return Meta{
 		Name:        "get_reading",
 		Domain:      DomainQuery,
@@ -219,7 +220,7 @@ func All() []Meta {
 		ListTasks(),
 		ResolveTask(),
 		ListReadings(),
-		GetReading(),
+		Reading(),
 		CreateNote(),
 		UpdateNote(),
 	}

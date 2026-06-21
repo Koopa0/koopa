@@ -165,7 +165,7 @@ func NewServer(pool *pgxpool.Pool, logger *slog.Logger, opts ...ServerOption) *S
 
 	// --- Reading shelf (read-only agent window onto Koopa's books) ---
 	addTool(s, toolFrom(ops.ListReadings), s.listReadings)
-	addTool(s, toolFrom(ops.GetReading), s.getReading)
+	addTool(s, toolFrom(ops.Reading), s.getReading)
 
 	// --- Notes (flat tools) ---
 	addTool(s, toolFrom(ops.CreateNote), s.createNote)
