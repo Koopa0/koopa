@@ -56,49 +56,6 @@ func (ns NullAgentStatus) Value() (driver.Value, error) {
 	return string(ns.AgentStatus), nil
 }
 
-type ConceptKind string
-
-const (
-	ConceptKindPattern   ConceptKind = "pattern"
-	ConceptKindSkill     ConceptKind = "skill"
-	ConceptKindPrinciple ConceptKind = "principle"
-)
-
-func (e *ConceptKind) Scan(src interface{}) error {
-	switch s := src.(type) {
-	case []byte:
-		*e = ConceptKind(s)
-	case string:
-		*e = ConceptKind(s)
-	default:
-		return fmt.Errorf("unsupported scan type for ConceptKind: %T", src)
-	}
-	return nil
-}
-
-type NullConceptKind struct {
-	ConceptKind ConceptKind `json:"concept_kind"`
-	Valid       bool        `json:"valid"` // Valid is true if ConceptKind is not NULL
-}
-
-// Scan implements the Scanner interface.
-func (ns *NullConceptKind) Scan(value interface{}) error {
-	if value == nil {
-		ns.ConceptKind, ns.Valid = "", false
-		return nil
-	}
-	ns.Valid = true
-	return ns.ConceptKind.Scan(value)
-}
-
-// Value implements the driver Valuer interface.
-func (ns NullConceptKind) Value() (driver.Value, error) {
-	if !ns.Valid {
-		return nil, nil
-	}
-	return string(ns.ConceptKind), nil
-}
-
 type ContentStatus string
 
 const (
@@ -276,51 +233,6 @@ func (ns NullGoalStatus) Value() (driver.Value, error) {
 		return nil, nil
 	}
 	return string(ns.GoalStatus), nil
-}
-
-type HypothesisState string
-
-const (
-	HypothesisStateDraft       HypothesisState = "draft"
-	HypothesisStateUnverified  HypothesisState = "unverified"
-	HypothesisStateVerified    HypothesisState = "verified"
-	HypothesisStateInvalidated HypothesisState = "invalidated"
-	HypothesisStateArchived    HypothesisState = "archived"
-)
-
-func (e *HypothesisState) Scan(src interface{}) error {
-	switch s := src.(type) {
-	case []byte:
-		*e = HypothesisState(s)
-	case string:
-		*e = HypothesisState(s)
-	default:
-		return fmt.Errorf("unsupported scan type for HypothesisState: %T", src)
-	}
-	return nil
-}
-
-type NullHypothesisState struct {
-	HypothesisState HypothesisState `json:"hypothesis_state"`
-	Valid           bool            `json:"valid"` // Valid is true if HypothesisState is not NULL
-}
-
-// Scan implements the Scanner interface.
-func (ns *NullHypothesisState) Scan(value interface{}) error {
-	if value == nil {
-		ns.HypothesisState, ns.Valid = "", false
-		return nil
-	}
-	ns.Valid = true
-	return ns.HypothesisState.Scan(value)
-}
-
-// Value implements the driver Valuer interface.
-func (ns NullHypothesisState) Value() (driver.Value, error) {
-	if !ns.Valid {
-		return nil, nil
-	}
-	return string(ns.HypothesisState), nil
 }
 
 type NoteKind string
@@ -530,7 +442,7 @@ type ActivityEvent struct {
 	CreatedAt time.Time       `json:"created_at"`
 }
 
-// DB projection of the Go BuiltinAgents() registry. Rows are upserted at startup by agent.SyncToTable. Stores identity only (name, platform, status). FK targets for coordination references (learning_hypotheses) use ON DELETE RESTRICT so historical records cannot dangle. Removed registry entries transition to status=retired rather than being deleted.
+// DB projection of the Go BuiltinAgents() registry. Rows are upserted at startup by agent.SyncToTable. Stores identity only (name, platform, status). Provenance columns (created_by on notes/todos/areas/goals/projects) use ON DELETE RESTRICT so historical records cannot dangle. Removed registry entries transition to status=retired rather than being deleted.
 type Agent struct {
 	// Unique agent identifier. Used as the caller identity (as: field) in MCP tool calls and as FK target for created_by / assignee / curated_by columns. Format: lowercase, must start with a letter, alphanumeric + hyphens.
 	Name string `json:"name"`
@@ -574,32 +486,6 @@ type Area struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
-// Learning ontology — concepts, patterns, skills, and principles that can be learned, practiced, and diagnosed. Independent from tags (which handle content classification). Hierarchy via parent_id (typical: pattern contains skill, skill refines principle — but kind ordering is convention, not DDL-enforced). Mastery is a derived state computed from attempt_observations aggregation, not stored on this table.
-type Concept struct {
-	ID uuid.UUID `json:"id"`
-	// URL-safe identifier. Case-insensitive uniqueness per domain enforced by idx_concepts_domain_slug. Convention: lowercase-kebab (e.g. binary-search, two-pointers, te-form).
-	Slug string `json:"slug"`
-	// Human-readable display name (e.g. "Binary Search", "Te-form Conjugation").
-	Name string `json:"name"`
-	// Learning domain. FK to learning_domains. Same-domain invariant for parent_id is enforced by trg_concepts_parent_domain.
-	Domain string `json:"domain"`
-	// Concept classification. pattern: strategic framework (two-pointers, binary-search, sliding-window). skill: practicable ability (constraint-analysis, edge-case-handling). principle: theoretical foundation (amortized analysis, CAP theorem, N3 grammar).
-	Kind ConceptKind `json:"kind"`
-	// Self-referencing hierarchy. SET NULL on parent deletion — children become roots. Acyclicity is enforced by trg_concepts_acyclicity. Same-domain invariant is enforced by trg_concepts_parent_domain. kind ordering (pattern > skill > principle) is CONVENTION, not DDL. A kind='skill' concept with a kind='pattern' parent is typical; the reverse (pattern with skill parent) is semantically odd but not rejected by the schema. Queries that assume a fixed kind root (e.g. "list top-level patterns for leetcode") MUST filter by kind AND parent_id IS NULL; do NOT rely on kind being monotonic up the hierarchy. Cross-kind edges are legitimate — e.g. the Japanese domain where a principle (N3 grammar) subsumes a skill (te-form conjugation).
-	ParentID *uuid.UUID `json:"parent_id"`
-	// Optional elaboration. Empty string default — not nullable.
-	Description string `json:"description"`
-	// Agent that first created this concept. NOT NULL. FK to agents(name). Default is intentionally absent — every INSERT must thread a real caller; the FindOrCreateConcept Store method enforces this, ON CONFLICT preserves the original creator (does not overwrite). Used by manage_concepts for U2 self-bound archive (caller == created_by + Platform=human override).
-	CreatedBy string `json:"created_by"`
-	// Soft-delete timestamp. NULL = live; non-NULL = archived. All read paths (recommend_next_target, learning_dashboard, attempt_history, weekly_summary) filter WHERE archived_at IS NULL by default. Reversible via manage_concepts(action=unarchive_concept). Paired with archive_batch_id so cascade-archived rows know which batch to unarchive together.
-	ArchivedAt *time.Time `json:"archived_at"`
-	// Groups rows archived by the same manage_concepts(action=archive_concept) call so unarchive can reverse exactly that batch (not all archived rows). NULL when row is live; NULL also when row is archived but predates batch-aware archive (manual SQL). Paired with archived_at via CHECK.
-	ArchiveBatchID *uuid.UUID `json:"archive_batch_id"`
-	CreatedAt      time.Time  `json:"created_at"`
-	// Application-managed. Set explicitly in UPDATE queries.
-	UpdatedAt time.Time `json:"updated_at"`
-}
-
 // First-party publishable knowledge layer. Five content types (article, essay, build-log, til, digest) share one editorial lifecycle: draft → review → published → archived. The review state is a two-actor handoff signal — Claude marks a draft ready (set_content_review_state), human admin publishes (publish_content). Notes (Zettelkasten) live in a separate notes table with maturity-based lifecycle — intentionally not mixed here. published status and published_at are tied by chk_content_publication; is_public requires published by chk_content_public_requires_published.
 type Content struct {
 	ID uuid.UUID `json:"id"`
@@ -635,18 +521,6 @@ type Content struct {
 	Embedding *pgvector_go.Vector `json:"embedding"`
 	// Generated tsvector for full-text search. Uses 'simple' config (no stemming/language-specific tokenization) for multilingual safety. Weight A = title, C = body (first 10K chars). Semantic search via embedding compensates for tsvector recall limitations.
 	SearchVector string `json:"search_vector"`
-}
-
-// Many-to-many junction between contents and concepts. One public content (article / essay / til / build-log / digest) may cover multiple concepts. Notes use the separate note_concepts junction — intentionally not polymorphic. Cascade on either side keeps the junction free of dangling references.
-type ContentConcept struct {
-	// Content row. CASCADE on content deletion.
-	ContentID uuid.UUID `json:"content_id"`
-	// Concept row. CASCADE on concept deletion.
-	ConceptID uuid.UUID `json:"concept_id"`
-	// primary = the core concept this content covers. secondary = a supporting concept also referenced. At most one primary per content, enforced by idx_content_concepts_one_primary.
-	Relevance string `json:"relevance"`
-	// When the link was created. Matches the project junction convention (content_topics, content_tags, learning_target_concepts).
-	CreatedAt time.Time `json:"created_at"`
 }
 
 type ContentTag struct {
@@ -762,225 +636,6 @@ type Goal struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
-// Individual learning attempt records. One learning target can have multiple attempts (first try, revisit, re-practice). CASCADE from learning_targets. Append-only — no updated_at. RETENTION: indefinite (learning history is a permanent personal asset).
-type LearningAttempt struct {
-	ID uuid.UUID `json:"id"`
-	// The learning target attempted. CASCADE — attempts are meaningless without their item.
-	LearningTargetID uuid.UUID `json:"learning_target_id"`
-	// The session this attempt occurred in. NOT NULL — every attempt must live in a session. ON DELETE RESTRICT — sessions with attempts cannot be deleted; end them instead.
-	SessionID uuid.UUID `json:"session_id"`
-	// Nth attempt against this target across all sessions (per-TARGET, NOT per-session). 1 = first try ever on this learning_target_id, 2+ = revisit. The Improvement Verification Loop in Koopa-Learning.md depends on this per-target semantics: comparing attempt N vs attempt N-1 of the same target is the core coaching signal. For session-scoped progress (how many attempts in THIS session), use session_progress.attempt_count or len(attempt_history(session_id=...).attempts). Application must compute MAX(attempt_number) + 1 before inserting — DEFAULT 1 only applies to first attempts. UNIQUE with learning_target_id enforces no duplicate numbering.
-	AttemptNumber int32 `json:"attempt_number"`
-	// Paradigm of the attempt. Own column so a new paradigm extends by (enum value + joint CHECK arm) instead of by re-auditing every outcome-filtered query. problem_solving: LeetCode, grammar drills, Japanese output practice — outcome expresses how much help the learner needed. immersive: DDIA reading, literary analysis, listening practice — outcome expresses whether comprehension was self-sustained. Extending: add enum value + add joint CHECK arm with that paradigm's outcome vocabulary.
-	Paradigm string `json:"paradigm"`
-	// Paradigm-scoped outcome value. Joint CHECK (chk_learning_attempts_paradigm_outcome) enforces that outcome belongs to paradigm's vocabulary. problem_solving ⇒ {solved_independent, solved_with_hint, solved_after_solution, incomplete, gave_up}. immersive ⇒ {completed, completed_with_support, incomplete, gave_up}. Shared values (incomplete, gave_up) are legal under both paradigms. Cross-paradigm analytics use learning_targets.domain / learning_sessions.domain as the filter — do NOT use session_mode to infer paradigm (mixed and review cross paradigms; shared outcomes break the inference).
-	Outcome string `json:"outcome"`
-	// Time spent on this attempt in minutes. NULL = not tracked. Must be positive.
-	DurationMinutes *int32 `json:"duration_minutes"`
-	// Free-text: where you got stuck. High cardinality, not a queryable category.
-	StuckAt *string `json:"stuck_at"`
-	// Free-text: what method you used. Coaching context, not a queryable enum.
-	ApproachUsed *string `json:"approach_used"`
-	// Narrative data: coaching hints given, alternative approaches considered, code quality observations, LLM transcript excerpts. Not queryable — stays in JSONB. If a field needs WHERE/JOIN/GROUP BY, promote to a column.
-	Metadata json.RawMessage `json:"metadata"`
-	// When this attempt occurred. May differ from created_at if backfilled.
-	AttemptedAt time.Time `json:"attempted_at"`
-	CreatedAt   time.Time `json:"created_at"`
-}
-
-// Micro-cognitive signals observed during a specific attempt on a specific concept. Powers weakness overview, progression tracking, and drill-down UI. Append-only. CASCADE from attempts, RESTRICT from concepts. RETENTION: indefinite (learning history is a permanent personal asset).
-type LearningAttemptObservation struct {
-	ID uuid.UUID `json:"id"`
-	// The attempt during which this signal was observed. CASCADE — observations die with their attempt.
-	AttemptID uuid.UUID `json:"attempt_id"`
-	// The concept this signal pertains to. RESTRICT — cannot delete a concept that has observations. To merge concepts: UPDATE observations to surviving concept_id first, then DELETE the old concept. Observations are irreplaceable historical analytics.
-	ConceptID uuid.UUID `json:"concept_id"`
-	// weakness: something went wrong with this concept during this attempt. improvement: noticeable progress compared to previous attempts. mastery: demonstrated independent, fluent application.
-	SignalType string `json:"signal_type"`
-	// Observation dimension. Enforced by FK to observation_categories(slug) — unknown or typo values are rejected at write time, not silently split in dashboard aggregation. Curate the closed set via the observation_categories table; seeded sets live in migrations/002_seed.up.sql.
-	Category string `json:"category"`
-	// Granularity within a signal. minor: forgot one edge case. moderate: correct approach, failed execution. critical: did not recognize the pattern at all. NULL for improvement/mastery signals where severity does not apply.
-	Severity *string `json:"severity"`
-	// Free-text evidence or explanation. NULL when the signal is self-explanatory from category alone.
-	Detail *string `json:"detail"`
-	// high (default): signal directly evidenced by the attempt outcome — user said "I forgot how X works" or repeatedly failed at X. low: coach inferred the signal from indirect evidence — user struggled with the problem and coach suspects X is the missing skill. Both persist. Dashboard mastery and weakness views default to high only; pass confidence_filter=all to include low-confidence observations.
-	Confidence string `json:"confidence"`
-	// Zero-based insertion order within the attempt. Application-assigned at record_attempt time (the array index of the observation in the request). Enables coach-insertion ordering on attempt_history reads — created_at ties within a transaction (PG now() is txn-start-constant) and id is gen_random_uuid (v4, random), so neither alone preserves insertion order. DEFAULT 0 is a schema-level guard; application code always sets position explicitly. Historical rows backfilled via ROW_NUMBER() over (created_at, id) before this column shipped — best-effort, not true insertion order for pre-existing data.
-	Position  int32     `json:"position"`
-	CreatedAt time.Time `json:"created_at"`
-}
-
-// Closed set of learning domains. FK target for concepts.domain, learning_targets.domain, learning_sessions.domain, and learning_plans.domain. Adding a domain requires INSERT here first.
-type LearningDomain struct {
-	// Unique domain identifier. Lowercase kebab-case.
-	Slug string `json:"slug"`
-	// Display name.
-	Name string `json:"name"`
-	// Whether new entities can reference this domain.
-	Active bool `json:"active"`
-	// Which notes.kind serves as the canonical writeup for targets in this domain. E.g., leetcode domain canonical = solve-note; ddia-chapter canonical = reading-note. NULL = no canonical rule (caller must enumerate all attached notes). Used by read-side queries (learning_target_notes JOIN notes WHERE kind = learning_domains.canonical_writeup_kind ORDER BY updated_at DESC LIMIT 1) to pick the "primary" writeup for a target.
-	CanonicalWriteupKind NullNoteKind `json:"canonical_writeup_kind"`
-	CreatedAt            time.Time    `json:"created_at"`
-}
-
-// Falsifiable hypothesis tracker for the LEARNING domain — LeetCode pattern failures, Japanese grammar misconceptions, system-design principle gaps. Each row carries a one-line claim plus the invalidation condition that would disprove it. Evidence FKs (resolved_by_attempt_id, resolved_by_observation_id) point only into learning structures. CROSS-DOMAIN HYPOTHESES DO NOT BELONG HERE — if you need hypothesis tracking for another domain (Resonance pipeline, system-design decisions outside learning, UX experiments), open an RFC for a domain-scoped sibling table (pipeline_hypotheses, design_hypotheses, ...). Adding non-learning rows to this table and satisfying chk_learning_hypothesis_resolution via free-text resolution_summary is a semantic bug: learning analytics will then include non-learning signals and vice versa.
-type LearningHypothesis struct {
-	ID uuid.UUID `json:"id"`
-	// Which agent recorded the hypothesis. FK to agents.
-	CreatedBy string `json:"created_by"`
-	// Full narrative context. claim is the one-line prediction; content is the supporting analysis.
-	Content string `json:"content"`
-	// Lifecycle: draft → unverified → verified | invalidated → archived. draft is the agent-created pre-endorsement state, inert by definition: it feeds no dashboard, counts toward no progress, and never appears in brief(morning), the Today aggregate, or any default listing — visible only in the admin hypotheses list (the triage surface). draft leaves draft only via owner endorsement in admin (draft → unverified) or draft-only DELETE. Admin-created rows land directly in unverified.
-	State HypothesisState `json:"state"`
-	// One-line falsifiable prediction.
-	Claim string `json:"claim"`
-	// What evidence would disprove the claim. Required — a hypothesis without one is not falsifiable.
-	InvalidationCondition string `json:"invalidation_condition"`
-	// supporting_evidence, counter_evidence, conclusion, category, project, tags. Promote fields to columns when WHERE/JOIN/GROUP BY usage exceeds 3 occurrences.
-	Metadata json.RawMessage `json:"metadata"`
-	// Date the hypothesis was first observed or recorded.
-	ObservedDate time.Time `json:"observed_date"`
-	// When the state transitioned to verified or invalidated. NULL otherwise. Tied to state by chk_learning_hypothesis_resolved_at.
-	ResolvedAt *time.Time `json:"resolved_at"`
-	// Optional FK to the learning attempt whose outcome resolved this hypothesis. RESTRICT on attempt deletion — a resolved hypothesis pins its evidence (deleting it via SET NULL would violate chk_learning_hypothesis_resolution when no other evidence column is set).
-	ResolvedByAttemptID *uuid.UUID `json:"resolved_by_attempt_id"`
-	// Optional FK to the observation whose evidence resolved this hypothesis. RESTRICT on observation deletion — a resolved hypothesis pins its evidence (deleting it via SET NULL would violate chk_learning_hypothesis_resolution when no other evidence column is set).
-	ResolvedByObservationID *uuid.UUID `json:"resolved_by_observation_id"`
-	// Free-text resolution rationale. Required when state is verified/invalidated and neither resolved_by_* FK is set.
-	ResolutionSummary *string   `json:"resolution_summary"`
-	CreatedAt         time.Time `json:"created_at"`
-}
-
-// Ordered, mutable learning curricula — a named commitment to practice a specific set of learning targets. Plans serve aspirations (goals), not execution vehicles (projects). Status lifecycle: draft → active → completed/paused/abandoned. Draft = workspace/uncommitted. Active = committed curriculum being tracked against execution.
-type LearningPlan struct {
-	// Primary key. Auto-generated UUID.
-	ID uuid.UUID `json:"id"`
-	// Display title (e.g., "LeetCode 200 題計畫"). Not unique — allows v1/v2 scenarios.
-	Title string `json:"title"`
-	// Plan description, strategy notes. Empty string = no description.
-	Description string `json:"description"`
-	// Learning domain. FK to learning_domains.
-	Domain string `json:"domain"`
-	// Optional aspirational target. NULL = area-level maintenance plan (no specific goal). SET NULL on goal deletion.
-	GoalID *uuid.UUID `json:"goal_id"`
-	// Lifecycle state. draft → active → completed. Can pause from active, abandon from draft/active/paused. Draft plans are not tracked in execution.
-	Status string `json:"status"`
-	// Advisory target item count (e.g., 200). NULL = open-ended plan. Not enforced by DB.
-	TargetCount *int32 `json:"target_count"`
-	// Plan-creation parameters that do NOT need WHERE/JOIN/GROUP BY. If any field needs filtering, promote to a column. Examples: difficulty_distribution, focus_areas, pacing_notes.
-	PlanConfig json.RawMessage `json:"plan_config"`
-	// Which agent created this plan. FK to agents. RESTRICT on delete — cannot remove an agent who owns plans.
-	CreatedBy string `json:"created_by"`
-	// Row creation timestamp.
-	CreatedAt time.Time `json:"created_at"`
-	// Application-managed. Set explicitly in UPDATE queries.
-	UpdatedAt time.Time `json:"updated_at"`
-}
-
-// Junction between plans and items — plan membership with ordering and per-item lifecycle. Same item can appear in multiple plans (cross-plan reuse). CASCADE from plan deletion. RESTRICT from item deletion — cannot silently remove items from a plan. Append-style with status tracking — no updated_at (status transitions are the audit trail).
-type LearningPlanEntry struct {
-	// Primary key. Auto-generated UUID.
-	ID uuid.UUID `json:"id"`
-	// Parent learning plan. CASCADE — deleting a plan removes all its items.
-	PlanID uuid.UUID `json:"plan_id"`
-	// The learning target included in this plan. RESTRICT on delete — cannot silently remove a plan item by deleting its catalog entry. Resolve plan references first.
-	LearningTargetID uuid.UUID `json:"learning_target_id"`
-	// 0-based ordering within the plan. Enforced by UNIQUE (plan_id, position) — application must choose non-colliding positions, typically via max(position)+1 append or explicit reorder transaction.
-	Position int32 `json:"position"`
-	// Plan-item lifecycle: planned → completed (via explicit tool call after successful attempt) | skipped (plan decision to not do it) | substituted (replaced by another item). Distinct from attempt.outcome — plan_status is a plan-domain decision, not an execution result.
-	Status string `json:"status"`
-	// Optional grouping label within the plan (e.g., "1-arrays", "phase-2-trees"). Free-text with kebab-case validation enforced in Go, not DB. NULL = no phase grouping.
-	Phase *string `json:"phase"`
-	// If status='substituted', points to the learning_plan_entries.id of the replacement entry WITHIN THE SAME PLAN. NULL for non-substituted entries. SET NULL if replacement entry is deleted.
-	SubstitutedBy *uuid.UUID `json:"substituted_by"`
-	// The attempt that triggered plan-item completion. FK to attempts(id). NULL for planned/skipped/substituted items, and for manually completed items (e.g., completed outside a session or on another platform with no attempt record). Policy: when Claude marks an item completed via manage_plan, this field is MANDATORY (enforced by policy, not schema). Schema stays nullable to allow future manual/UI completion paths. SET NULL on attempt deletion — completion decision survives.
-	CompletedByAttemptID *uuid.UUID `json:"completed_by_attempt_id"`
-	// Context for status transitions. For completed: what attempt outcome and reasoning informed the completion decision (policy-mandatory when Claude completes). For skipped/substituted: why the item was removed from active tracking. NULL for planned items only.
-	Reason *string `json:"reason"`
-	// When this item was added to the plan.
-	AddedAt time.Time `json:"added_at"`
-	// When this item was marked completed in the plan context. NULL until status → completed. Set by manage_plan tool call, not derived from attempts.
-	CompletedAt *time.Time `json:"completed_at"`
-}
-
-// Session orchestration boundary — explicit start/end, mode, and attempt container. updated_at tracks mutation: ended_at is written by EndSession, and metadata may be updated mid-session by orchestration code.
-type LearningSession struct {
-	ID uuid.UUID `json:"id"`
-	// Learning domain for this session. FK to learning_domains.
-	Domain string `json:"domain"`
-	// retrieval: recall-based testing (no hints). practice: active problem-solving with coaching. mixed: combination of retrieval and practice. review: revisiting previously solved items. reading: comprehension-focused (DDIA, O'Reilly, literary texts).
-	SessionMode string `json:"session_mode"`
-	// If this session was planned in the daily plan, link here. Enables plan adherence analysis. SET NULL on plan item deletion.
-	DailyPlanItemID *uuid.UUID `json:"daily_plan_item_id"`
-	// Session start time. DEFAULT now() for immediate starts.
-	StartedAt time.Time `json:"started_at"`
-	// NULL until session ends. NULL + old started_at = abandoned/crashed session.
-	EndedAt *time.Time `json:"ended_at"`
-	// Session orchestration details: coaching prompt used, session summary, configuration. Not queryable — stays in JSONB.
-	Metadata  json.RawMessage `json:"metadata"`
-	CreatedAt time.Time       `json:"created_at"`
-	// Application-managed. Set explicitly in UPDATE queries (notably EndSession).
-	UpdatedAt time.Time `json:"updated_at"`
-}
-
-// Learning targets — what to learn, practice, and revisit. Lifecycle differs from notes: targets follow not-attempted → practicing → mastered (learning progress), while notes follow seed → evergreen → archived (knowledge maturity). Targets exist before notes are written. Writeups attach via the learning_target_notes junction table (N:M — a single target may accumulate multiple writeups of different kinds over time: solve-note → concept-note → debug-postmortem). Canonical writeup per domain = notes row whose kind matches learning_domains.canonical_writeup_kind.
-type LearningTarget struct {
-	ID uuid.UUID `json:"id"`
-	// Learning domain. FK to learning_domains.
-	Domain string `json:"domain"`
-	// Display title. LeetCode: problem name. Reading: chapter title. Japanese: grammar point or drill name.
-	Title string `json:"title"`
-	// Provider-specific identifier. LeetCode problem number, textbook section ID, JLPT grammar point ID. NULL for custom drills without external identity. Partial unique: one item per (domain, external_id) where external_id IS NOT NULL.
-	ExternalID *string `json:"external_id"`
-	// Generic 3-tier difficulty. Domain-specific info (JLPT N5-N1, etc.) goes in metadata. NULL = not categorized.
-	Difficulty *string `json:"difficulty"`
-	// Domain-specific data not needing WHERE/JOIN/GROUP BY. Not queryable — if a field needs WHERE/JOIN/GROUP BY, promote to a column. LeetCode: {problem_url, companies, frequency, constraints}. Japanese: {jlpt_level, textbook, chapter, grammar_point}. System Design: {source_book, chapter, scenario_type}. Reading: {book_title, chapter, page_range}.
-	Metadata json.RawMessage `json:"metadata"`
-	// Agent that first created this target. NOT NULL. FK to agents(name). Same semantics as concepts.created_by — FindOrCreateTarget threads the caller; ON CONFLICT preserves the original creator; archive_learning_target uses this column for U2 self-bound archive.
-	CreatedBy string `json:"created_by"`
-	// Soft-delete timestamp. NULL = live; non-NULL = archived. Reversible. Read paths default to WHERE archived_at IS NULL — see concepts.archived_at for the full filter inventory.
-	ArchivedAt *time.Time `json:"archived_at"`
-	// Groups rows archived together. Same semantics as concepts.archive_batch_id. archive_learning_target cascades into learning_target_relations using this batch id, so unarchive_target restores exactly the relations that were cascaded.
-	ArchiveBatchID *uuid.UUID `json:"archive_batch_id"`
-	CreatedAt      time.Time  `json:"created_at"`
-	// Application-managed. Set explicitly in UPDATE queries.
-	UpdatedAt time.Time `json:"updated_at"`
-}
-
-// Junction: which concepts a learning target exercises. CASCADE on both sides.
-type LearningTargetConcept struct {
-	LearningTargetID uuid.UUID `json:"learning_target_id"`
-	ConceptID        uuid.UUID `json:"concept_id"`
-	// primary = the core concept this target drills. secondary = a supporting concept also exercised. At most one primary per target, enforced by idx_learning_target_concepts_one_primary.
-	Relevance string    `json:"relevance"`
-	CreatedAt time.Time `json:"created_at"`
-}
-
-// Many-to-many: which notes are writeups of a learning target. One target may have multiple notes of different kinds (solve-note, concept-note, debug-postmortem, etc.) accumulated over time. Canonical writeup per domain resolves via learning_domains.canonical_writeup_kind.
-type LearningTargetNote struct {
-	TargetID  uuid.UUID `json:"target_id"`
-	NoteID    uuid.UUID `json:"note_id"`
-	CreatedAt time.Time `json:"created_at"`
-}
-
-// Directed graph of learning target relationships. anchor is the reference target; related is the other target; relation_type describes how related relates to anchor. Example: (anchor=42, related=167, easier_variant) means "167 is an easier variant of 42". CASCADE on both sides. Append-only. Same-domain invariant enforced by trg_learning_target_relations_domain. Symmetric relations (same_pattern, similar_structure) auto-insert the reverse edge via trg_learning_target_relations_symmetry — writers insert one direction, the schema stores both. ON CONFLICT DO NOTHING keeps the second insert idempotent.
-type LearningTargetRelation struct {
-	ID uuid.UUID `json:"id"`
-	// The reference target. CASCADE on deletion.
-	AnchorID uuid.UUID `json:"anchor_id"`
-	// The target related to anchor. CASCADE on deletion.
-	RelatedID uuid.UUID `json:"related_id"`
-	// Directed types (anchor → related reads one-way): easier_variant (related is simpler), harder_variant (related is more complex), prerequisite (related should be done before anchor), follow_up (related is a natural next step after anchor). Symmetric types (A-related-to-B ⇔ B-related-to-A): same_pattern (same core pattern), similar_structure (structural similarity, different pattern). The reverse edge of a symmetric insert is auto-created by trg_learning_target_relations_symmetry — callers insert one direction only.
-	RelationType string `json:"relation_type"`
-	// Agent that recorded this relation. NOT NULL. FK to agents(name). The symmetry trigger propagates created_by onto the auto-inserted reverse edge so both directions trace to the same author.
-	CreatedBy string `json:"created_by"`
-	// Soft-delete timestamp. Cascade-archived when a parent target is archived. Symmetric relation types (same_pattern, similar_structure) archive both directions together so the graph never holds a half-edge.
-	ArchivedAt *time.Time `json:"archived_at"`
-	// Groups rows cascaded together by a single archive_learning_target archive call. unarchive_target uses this batch id to restore exactly the relations that were cascaded — NOT every relation involving the target.
-	ArchiveBatchID *uuid.UUID `json:"archive_batch_id"`
-	CreatedAt      time.Time  `json:"created_at"`
-}
-
 // Goal progress checkpoints — binary completion markers within a goal. Milestones and projects are siblings under a goal: a project advances a goal through work, a milestone marks progress. Completion determined by completed_at IS NOT NULL — no separate status column. Goal progress = completed milestones / total milestones (advisory, not auto-derived). NOT OKR Key Results — milestones are binary (done/not-done), not quantitative metrics with target_value/current_value.
 type Milestone struct {
 	ID uuid.UUID `json:"id"`
@@ -1001,14 +656,14 @@ type Milestone struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
-// Zettelkasten knowledge artifacts — Koopa-private. Maturity-based lifecycle (seed → evergreen → archived), no publication state. Writeups for learning_targets attach via learning_target_notes. Public-facing content (articles, essays, etc.) lives in contents — a separate entity with its own draft → review → published editorial lifecycle. Publication state and maturity state are distinct state machines; notes and contents are kept as separate tables rather than single-table inheritance for this reason.
+// Zettelkasten knowledge artifacts — Koopa-private. Maturity-based lifecycle (seed → evergreen → archived), no publication state. Public-facing content (articles, essays, etc.) lives in contents — a separate entity with its own draft → review → published editorial lifecycle. Publication state and maturity state are distinct state machines; notes and contents are kept as separate tables rather than single-table inheritance for this reason.
 type Note struct {
 	ID uuid.UUID `json:"id"`
 	// URL-safe identifier. Globally unique within notes. Same format rules as contents.slug.
 	Slug  string `json:"slug"`
 	Title string `json:"title"`
 	Body  string `json:"body"`
-	// Note sub-type. Six values: solve-note (LeetCode problem write-up), concept-note (cross-target pattern synthesis), debug-postmortem (production debug analysis), decision-log (technical decision record), reading-note (book chapter takeaway), musing (unstructured thought). Uses the note_kind ENUM, shared with learning_domains.canonical_writeup_kind.
+	// Note sub-type. Six values: solve-note (LeetCode problem write-up), concept-note (cross-target pattern synthesis), debug-postmortem (production debug analysis), decision-log (technical decision record), reading-note (book chapter takeaway), musing (unstructured thought). Uses the note_kind ENUM.
 	Kind NoteKind `json:"kind"`
 	// Refinement stage: seed (just captured), stub (skeleton), evergreen (verified), needs_revision (known issue), archived (no longer maintained). Default seed on creation; transitioned by update_note_maturity MCP tool. archived is operationally terminal but not one-way — recovery via update_note_maturity is supported.
 	Maturity NoteMaturity `json:"maturity"`
@@ -1025,23 +680,6 @@ type Note struct {
 	UpdatedAt time.Time `json:"updated_at"`
 	// Generated tsvector for full-text search. Mirrors contents.search_vector shape.
 	SearchVector string `json:"search_vector"`
-}
-
-// Many-to-many junction: which concepts a note synthesizes. One concept-note may cover multiple concepts; one concept may be covered by many notes (solve, concept, postmortem). Separate from content_concepts because notes and contents are distinct entities.
-type NoteConcept struct {
-	NoteID    uuid.UUID `json:"note_id"`
-	ConceptID uuid.UUID `json:"concept_id"`
-	// primary = the core concept this note synthesizes. secondary = a supporting concept also referenced. At most one primary per note, enforced by idx_note_concepts_one_primary.
-	Relevance string    `json:"relevance"`
-	CreatedAt time.Time `json:"created_at"`
-}
-
-// Canonical observation.category registry. FK from learning_attempt_observations.category makes the dashboard's GROUP BY category a typo-free aggregation key. Domain is metadata; slugs are global.
-type ObservationCategory struct {
-	Slug        string    `json:"slug"`
-	Domain      string    `json:"domain"`
-	Description string    `json:"description"`
-	CreatedAt   time.Time `json:"created_at"`
 }
 
 // Run-history records for background processes. kind discriminates: crawl (internal crawl/fetch runs such as RSS feed collector), agent_schedule (external AI scheduler runs). Kind-specific fields live in metadata. subsystem carries the external-AI-scheduler identifier (only when kind=agent_schedule). RETENTION: 90 days for terminal runs; pending/running rows are operational state.
@@ -1234,10 +872,10 @@ type SongReflection struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
-// Canonical tag registry. Fine-grained content-classification labels (two-pointers, error-handling). Resolved through tag_aliases pipeline. Mastery diagnosis and weakness tracking live in the concepts + learning_attempt_observations path — tags MUST NOT carry diagnostic semantics.
+// Canonical tag registry. Fine-grained content-classification labels (two-pointers, error-handling). Resolved through tag_aliases pipeline.
 type Tag struct {
 	ID uuid.UUID `json:"id"`
-	// Canonical form (e.g. two-pointers, dp). Controlled vocabulary. Format: lowercase alphanumeric segments separated by single hyphens (chk_tag_slug_format). Namespaced slugs (weakness:xxx, improvement:xxx) were removed — weakness/mastery diagnosis runs through concepts + learning_attempt_observations.
+	// Canonical form (e.g. two-pointers, dp). Controlled vocabulary. Format: lowercase alphanumeric segments separated by single hyphens (chk_tag_slug_format). Namespaced slugs (weakness:xxx, improvement:xxx) are not used — tags are pure classification labels.
 	Slug string `json:"slug"`
 	Name string `json:"name"`
 	// Hierarchical parent tag. SET NULL on parent deletion — orphaned tags remain valid.

@@ -85,15 +85,6 @@ func truncateApplicationTables(t *testing.T) {
 		"milestones",
 		"goals",
 		"projects",
-		"learning_hypotheses",
-		"learning_attempt_observations",
-		"learning_attempts",
-		"learning_sessions",
-		"learning_plan_entries",
-		"learning_plans",
-		"learning_target_relations",
-		"learning_targets",
-		"concepts",
 	}
 	sql := "TRUNCATE " + strings.Join(tables, ", ") + " RESTART IDENTITY CASCADE"
 	if _, err := testPool.Exec(t.Context(), sql); err != nil {

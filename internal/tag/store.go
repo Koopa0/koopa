@@ -404,7 +404,7 @@ func (s *Store) UpdateTag(ctx context.Context, id uuid.UUID, p *UpdateParams) (*
 // DeleteTag removes a canonical tag, but only if no aliases reference it.
 // The count check provides a good error message; the DB FK constraint (23503)
 // is the real safety net against the TOCTOU window between check and delete
-// (covers content_tags / content_concepts / concepts and any future references).
+// (covers content_tags and any future references).
 func (s *Store) DeleteTag(ctx context.Context, id uuid.UUID) error {
 	aliasCount, err := s.q.AliasCountByTagID(ctx, &id)
 	if err != nil {

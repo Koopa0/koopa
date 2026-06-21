@@ -31,15 +31,9 @@ func TestMain(m *testing.M) {
 
 func setup(t *testing.T) *Store {
 	t.Helper()
-	// Junction + dependent tables first, then contents, then the catalogs
-	// that contents/learning_targets reference (topics / concepts).
-	// learning_targets references contents (content_id ON DELETE SET NULL)
-	// and concepts (via learning_target_concepts), so it must be truncated
-	// before concepts.
+	// Junction + dependent tables first, then contents, then the topic catalog.
 	if err := testdb.TruncateCtx(t.Context(), testPool,
-		"content_concepts", "content_topics",
-		"learning_target_concepts", "learning_targets",
-		"contents", "concepts", "topics"); err != nil {
+		"content_topics", "contents", "topics"); err != nil {
 		t.Fatal(err)
 	}
 	// Seed the 'system' agent so the contents/learning_attempts AFTER

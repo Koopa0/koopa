@@ -5,36 +5,22 @@
 -- 1. Triggers (drop before their parent tables and functions)
 -- ============================================================
 
-DROP TRIGGER IF EXISTS trg_learning_sessions_audit ON learning_sessions;
-DROP TRIGGER IF EXISTS trg_learning_plan_entries_audit ON learning_plan_entries;
-DROP TRIGGER IF EXISTS trg_learning_hypotheses_audit ON learning_hypotheses;
-DROP TRIGGER IF EXISTS trg_learning_attempts_audit ON learning_attempts;
 DROP TRIGGER IF EXISTS trg_contents_audit ON contents;
 DROP TRIGGER IF EXISTS trg_projects_audit ON projects;
 DROP TRIGGER IF EXISTS trg_milestones_audit ON milestones;
 DROP TRIGGER IF EXISTS trg_goals_audit ON goals;
 DROP TRIGGER IF EXISTS trg_todos_audit ON todos;
-DROP TRIGGER IF EXISTS trg_learning_target_relations_domain ON learning_target_relations;
-DROP TRIGGER IF EXISTS trg_concepts_acyclicity ON concepts;
-DROP TRIGGER IF EXISTS trg_concepts_parent_domain ON concepts;
 
 -- ============================================================
 -- 2. Functions
 -- ============================================================
 
-DROP FUNCTION IF EXISTS audit_learning_sessions();
-DROP FUNCTION IF EXISTS audit_learning_plan_entries();
-DROP FUNCTION IF EXISTS audit_learning_hypotheses();
-DROP FUNCTION IF EXISTS audit_learning_attempts();
 DROP FUNCTION IF EXISTS audit_contents();
 DROP FUNCTION IF EXISTS audit_projects();
 DROP FUNCTION IF EXISTS audit_milestones();
 DROP FUNCTION IF EXISTS audit_goals();
 DROP FUNCTION IF EXISTS audit_todos();
 DROP FUNCTION IF EXISTS current_actor();
-DROP FUNCTION IF EXISTS enforce_learning_target_relation_domain();
-DROP FUNCTION IF EXISTS enforce_concept_acyclicity();
-DROP FUNCTION IF EXISTS enforce_concept_parent_domain();
 
 -- ============================================================
 -- 3. Deferred foreign keys
@@ -52,30 +38,6 @@ DROP TABLE IF EXISTS song_reflections;
 DROP TABLE IF EXISTS songs;
 DROP TABLE IF EXISTS reading_reflections;
 DROP TABLE IF EXISTS readings;
-
--- Learning plans
-DROP TABLE IF EXISTS learning_plan_entries;
-DROP TABLE IF EXISTS learning_plans;
-
--- Hypotheses (FKs into learning_attempts and observations)
-DROP TABLE IF EXISTS learning_hypotheses;
-
--- Learning analytics (reverse creation order)
-DROP TABLE IF EXISTS learning_target_relations;
-DROP TABLE IF EXISTS learning_attempt_observations;
-DROP TABLE IF EXISTS learning_attempts;
-DROP TABLE IF EXISTS learning_sessions;
--- Note junctions (FKs into notes, learning_targets, contents, concepts)
-DROP TABLE IF EXISTS note_concepts;
-DROP TABLE IF EXISTS learning_target_notes;
-DROP TABLE IF EXISTS learning_target_concepts;
-DROP TABLE IF EXISTS learning_targets;
-DROP TABLE IF EXISTS content_concepts;
-DROP TABLE IF EXISTS concepts;
--- observation_categories: FK target of learning_attempt_observations.category
--- (dropped above), FK source onto learning_domains (dropped below).
-DROP TABLE IF EXISTS observation_categories;
-DROP TABLE IF EXISTS learning_domains;
 
 -- Project aliases
 DROP TABLE IF EXISTS project_aliases;
@@ -100,7 +62,7 @@ DROP TABLE IF EXISTS feeds;
 DROP TABLE IF EXISTS content_tags;
 DROP TABLE IF EXISTS content_topics;
 
--- Notes (FK target of note-junctions — dropped above)
+-- Notes
 DROP TABLE IF EXISTS notes;
 
 -- Contents
@@ -141,7 +103,6 @@ DROP TABLE IF EXISTS agents;
 
 DROP TYPE IF EXISTS note_maturity;
 DROP TYPE IF EXISTS note_kind;
-DROP TYPE IF EXISTS hypothesis_state;
 DROP TYPE IF EXISTS agent_status;
 DROP TYPE IF EXISTS todo_state;
 DROP TYPE IF EXISTS project_status;
@@ -149,7 +110,6 @@ DROP TYPE IF EXISTS goal_status;
 DROP TYPE IF EXISTS feed_entry_status;
 DROP TYPE IF EXISTS content_status;
 DROP TYPE IF EXISTS content_type;
-DROP TYPE IF EXISTS concept_kind;
 
 -- ============================================================
 -- 6. Extensions
