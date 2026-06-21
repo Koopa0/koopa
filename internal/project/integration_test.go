@@ -573,6 +573,86 @@ func TestIntegration_ProposedProject_InertButResolvable(t *testing.T) {
 	}
 }
 
+// callPublicBySlug runs the PUBLIC GET /api/projects/{slug} handler against a
+// fabricated request and returns the HTTP status. The public route is
+// unauthenticated, so it must 404 anything that is not publicly visible.
+func callPublicBySlug(t *testing.T, h *project.Handler, slug string) int {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodGet, "/api/projects/"+slug, http.NoBody)
+	req.SetPathValue("slug", slug)
+	w := httptest.NewRecorder()
+	h.BySlug(w, req)
+	resp := w.Result()
+	defer resp.Body.Close()
+	return resp.StatusCode
+}
+
+// TestIntegration_PublicBySlug_GatesVisibility pins the publicity guard on the
+// unauthenticated /api/projects/{slug} route: a proposed inert draft and a
+// non-public project each 404, while a non-proposed project with a public
+// profile 200s. Before the guard, the route returned ANY project by slug,
+// leaking proposed drafts and private work. Each case carries a public-ish
+// shape that would 200 under the old plain-by-slug query, so the test fails if
+// the gate is removed.
+func TestIntegration_PublicBySlug_GatesVisibility(t *testing.T) {
+	truncate(t)
+	store := project.NewStore(testPool)
+	ctx := t.Context()
+	h := newDetailHandler(t)
+
+	// Public project: non-proposed + public profile → must 200.
+	publicID := seedProjectWithStatus(t, "public-slug", "Public Slug", "in_progress")
+	if _, err := store.UpsertProfile(ctx, &project.UpsertProfileParams{
+		ProjectID:  publicID,
+		IsPublic:   true,
+		TechStack:  []string{},
+		Highlights: []string{},
+	}); err != nil {
+		t.Fatalf("UpsertProfile(public): %v", err)
+	}
+
+	// Private project: non-proposed but profile is_public=false → must 404.
+	privateID := seedProjectWithStatus(t, "private-slug", "Private Slug", "in_progress")
+	if _, err := store.UpsertProfile(ctx, &project.UpsertProfileParams{
+		ProjectID:  privateID,
+		IsPublic:   false,
+		TechStack:  []string{},
+		Highlights: []string{},
+	}); err != nil {
+		t.Fatalf("UpsertProfile(private): %v", err)
+	}
+
+	// Proposed project: a public profile attached out of band must NOT save it —
+	// the status guard still excludes it → must 404.
+	proposedID := seedProjectWithStatus(t, "proposed-slug", "Proposed Slug", "proposed")
+	if _, err := store.UpsertProfile(ctx, &project.UpsertProfileParams{
+		ProjectID:  proposedID,
+		IsPublic:   true,
+		TechStack:  []string{},
+		Highlights: []string{},
+	}); err != nil {
+		t.Fatalf("UpsertProfile(proposed): %v", err)
+	}
+
+	tests := []struct {
+		name string
+		slug string
+		want int
+	}{
+		{name: "public project 200s", slug: "public-slug", want: http.StatusOK},
+		{name: "private project 404s", slug: "private-slug", want: http.StatusNotFound},
+		{name: "proposed project 404s despite public profile", slug: "proposed-slug", want: http.StatusNotFound},
+		{name: "missing slug 404s", slug: "no-such-slug", want: http.StatusNotFound},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := callPublicBySlug(t, h, tt.slug); got != tt.want {
+				t.Errorf("BySlug(%q) status = %d, want %d", tt.slug, got, tt.want)
+			}
+		})
+	}
+}
+
 // containsProjectID reports whether any project in the slice has the given id.
 func containsProjectID(projects []project.Project, id uuid.UUID) bool {
 	for i := range projects {

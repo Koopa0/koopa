@@ -369,7 +369,9 @@ func (s *Store) ProjectDetailByID(ctx context.Context, id uuid.UUID) (*DetailRow
 	}, nil
 }
 
-// ProjectBySlug returns a single project by slug.
+// ProjectBySlug returns a single project by slug, regardless of status or
+// public visibility. Internal/admin callers only — the public slug route
+// uses PublicProjectBySlug.
 func (s *Store) ProjectBySlug(ctx context.Context, slug string) (*Project, error) {
 	r, err := s.q.ProjectBySlug(ctx, slug)
 	if err != nil {
@@ -377,6 +379,23 @@ func (s *Store) ProjectBySlug(ctx context.Context, slug string) (*Project, error
 			return nil, ErrNotFound
 		}
 		return nil, fmt.Errorf("querying project %s: %w", slug, err)
+	}
+	p := rowToProject(&r)
+	return &p, nil
+}
+
+// PublicProjectBySlug returns a project by slug only when it is publicly
+// visible: a non-proposed project carrying a public profile (is_public=true).
+// A proposed inert draft or a private project yields ErrNotFound so the
+// unauthenticated slug route never reveals it. Same publicity model as
+// PublicProjects.
+func (s *Store) PublicProjectBySlug(ctx context.Context, slug string) (*Project, error) {
+	r, err := s.q.PublicProjectBySlug(ctx, slug)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("querying public project %s: %w", slug, err)
 	}
 	p := rowToProject(&r)
 	return &p, nil

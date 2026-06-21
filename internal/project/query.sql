@@ -43,6 +43,19 @@ SELECT id, slug, title, description, status, repo, area_id, goal_id, deadline, l
        expected_cadence, created_by, proposal_rationale, created_at, updated_at
 FROM projects WHERE slug = $1;
 
+-- name: PublicProjectBySlug :one
+-- Public project lookup by slug. Gated to publicly-visible projects only:
+-- the project must have a project_profiles row with is_public = true and a
+-- non-proposed status. This is the same publicity model as PublicProjects /
+-- PublicProfiles — a proposed inert draft or a private project must NOT be
+-- reachable through the unauthenticated /api/projects/{slug} route.
+SELECT p.id, p.slug, p.title, p.description, p.status, p.repo, p.area_id, p.goal_id,
+       p.deadline, p.last_activity_at, p.expected_cadence, p.created_by, p.proposal_rationale,
+       p.created_at, p.updated_at
+FROM projects p
+JOIN project_profiles pp ON pp.project_id = p.id
+WHERE p.slug = $1 AND pp.is_public = true AND p.status <> 'proposed';
+
 -- name: CreateProject :one
 -- Insert a new project. goal_id and area_id are optional links to the
 -- parent goal / area; when supplied at create time the project shows up

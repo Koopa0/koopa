@@ -245,10 +245,13 @@ func contentSummariesFromBriefs(briefs []content.Brief) []ContentSummary {
 	return out
 }
 
-// BySlug handles GET /api/projects/{slug}.
+// BySlug handles GET /api/projects/{slug} — the PUBLIC, unauthenticated slug
+// route. It returns only publicly-visible projects (non-proposed, with a public
+// profile); a proposed inert draft or a private project yields 404 so the route
+// cannot leak unpublished work. Admin reads use the by-id Detail endpoint.
 func (h *Handler) BySlug(w http.ResponseWriter, r *http.Request) {
 	slug := r.PathValue("slug")
-	p, err := h.store.ProjectBySlug(r.Context(), slug)
+	p, err := h.store.PublicProjectBySlug(r.Context(), slug)
 	if err != nil {
 		api.HandleError(w, h.logger, err, storeErrors...)
 		return
