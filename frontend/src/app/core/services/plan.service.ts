@@ -7,6 +7,7 @@ import type {
   Milestone,
   ProjectSummary,
   ProjectDetail,
+  AreaDetail,
 } from '../models/admin.model';
 import type { GoalStatus } from '../models';
 
@@ -147,6 +148,16 @@ export class PlanService {
   /** PARA areas for the goal area selector, ordered by `sort_order`. */
   getAreas(): Observable<Area[]> {
     return this.api.getData<Area[]>('/api/admin/commitment/areas');
+  }
+
+  /**
+   * Area detail — the area row plus its non-proposed goals and active
+   * projects. `getData` unwraps the `{data: {...}}` envelope to the object.
+   */
+  getAreaDetail(id: string): Observable<AreaDetail> {
+    return this.api.getData<AreaDetail>(
+      `/api/admin/commitment/areas/${id}`,
+    );
   }
 
   /**

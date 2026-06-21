@@ -1,0 +1,138 @@
+<div class="flex min-w-0 flex-1 flex-col px-6 py-5">
+  <a
+    routerLink="/admin/commitment/areas"
+    class="mb-4 inline-flex w-fit items-center gap-1 font-mono text-[11px] text-fg-subtle transition-colors hover:text-fg"
+    data-testid="area-back"
+  >
+    ← Areas
+  </a>
+
+  @if (hasError()) {
+    <div
+      role="alert"
+      class="mb-3 rounded-xs border border-error bg-error-bg px-3 py-2 text-xs text-error"
+      data-testid="area-detail-error"
+    >
+      Couldn't load this area.
+    </div>
+  }
+
+  @if (area(); as a) {
+    <!-- Header -->
+    <header class="mb-8" data-testid="area-hero">
+      <div class="flex flex-wrap items-center gap-3">
+        <h1 class="text-lg font-semibold text-fg">{{ a.name }}</h1>
+        <span
+          class="rounded-xs bg-elevated px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider text-fg-muted"
+          data-testid="area-status"
+        >
+          {{ a.status }}
+        </span>
+        <span class="ml-auto font-mono text-[11px] text-fg-subtle">
+          {{ a.slug }}
+        </span>
+      </div>
+      @if (a.description) {
+        <p
+          class="mt-2 max-w-2xl text-sm text-fg-muted"
+          data-testid="area-description"
+        >
+          {{ a.description }}
+        </p>
+      }
+    </header>
+
+    <!-- Goals -->
+    <section class="mb-8" data-testid="area-goals">
+      <div class="mb-2 flex items-center gap-2">
+        <h2
+          class="font-mono text-[10px] uppercase tracking-wider text-fg-subtle"
+        >
+          Goals
+        </h2>
+        <span class="font-mono text-[11px] text-fg-subtle">
+          {{ goals().length }}
+        </span>
+      </div>
+
+      @if (goals().length === 0) {
+        <p
+          class="rounded-xs border border-border-faint px-3 py-4 text-xs text-fg-subtle"
+          data-testid="area-goals-empty"
+        >
+          No goals in this area yet.
+        </p>
+      } @else {
+        <ul class="border-t border-border-faint">
+          @for (goal of goals(); track goal.id) {
+            <li>
+              <a
+                [routerLink]="['/admin/commitment/goals', goal.id]"
+                class="flex items-center gap-3 border-b border-border-faint px-3 py-2 transition-colors hover:bg-elevated/40 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-brand"
+                [attr.data-testid]="'area-goal-' + goal.id"
+              >
+                <span class="min-w-0 flex-1 truncate text-sm text-fg">
+                  {{ goal.title }}
+                </span>
+                <span class="font-mono text-[11px] text-fg-muted">
+                  {{ goal.milestone_done }}/{{ goal.milestone_total }}
+                </span>
+                <span
+                  class="rounded-xs bg-elevated px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider text-fg-muted"
+                >
+                  {{ goal.status }}
+                </span>
+              </a>
+            </li>
+          }
+        </ul>
+      }
+    </section>
+
+    <!-- Projects -->
+    <section data-testid="area-projects">
+      <div class="mb-2 flex items-center gap-2">
+        <h2
+          class="font-mono text-[10px] uppercase tracking-wider text-fg-subtle"
+        >
+          Projects
+        </h2>
+        <span class="font-mono text-[11px] text-fg-subtle">
+          {{ projects().length }}
+        </span>
+      </div>
+
+      @if (projects().length === 0) {
+        <p
+          class="rounded-xs border border-border-faint px-3 py-4 text-xs text-fg-subtle"
+          data-testid="area-projects-empty"
+        >
+          No projects in this area yet.
+        </p>
+      } @else {
+        <ul class="border-t border-border-faint">
+          @for (project of projects(); track project.id) {
+            <li>
+              <a
+                [routerLink]="['/admin/commitment/projects', project.id]"
+                class="flex items-center gap-3 border-b border-border-faint px-3 py-2 transition-colors hover:bg-elevated/40 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-brand"
+                [attr.data-testid]="'area-project-' + project.id"
+              >
+                <span class="min-w-0 flex-1 truncate text-sm text-fg">
+                  {{ project.title }}
+                </span>
+                <span
+                  class="rounded-xs bg-elevated px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider text-fg-muted"
+                >
+                  {{ project.status }}
+                </span>
+              </a>
+            </li>
+          }
+        </ul>
+      }
+    </section>
+  } @else if (isLoading()) {
+    <p class="text-sm text-fg-subtle" data-testid="area-loading">Loading…</p>
+  }
+</div>

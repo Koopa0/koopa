@@ -10,7 +10,7 @@ import {
   viewChildren,
 } from '@angular/core';
 import { rxResource } from '@angular/core/rxjs-interop';
-import { RouterLink } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { PlanService, type Area } from '../../../../core/services/plan.service';
 import { AdminTopbarService } from '../../../admin-layout/admin-topbar.service';
 import { DataTableComponent } from '../../../../shared/components/data-table/data-table.component';
@@ -33,6 +33,7 @@ import { DataTableComponent } from '../../../../shared/components/data-table/dat
 })
 export class AreasListPageComponent {
   private readonly planService = inject(PlanService);
+  private readonly router = inject(Router);
   private readonly topbar = inject(AdminTopbarService);
   private readonly destroyRef = inject(DestroyRef);
 
@@ -81,6 +82,11 @@ export class AreasListPageComponent {
 
   protected rowTabIndex(i: number): number {
     return i === this.focusedIndex() ? 0 : -1;
+  }
+
+  /** Open an area's detail (row click, or Enter on the focused row). */
+  protected open(id: string): void {
+    this.router.navigate(['/admin/commitment/areas', id]);
   }
 
   protected handleKeydown(event: KeyboardEvent): void {

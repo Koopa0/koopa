@@ -4,7 +4,8 @@ import {
   HttpTestingController,
   provideHttpClientTesting,
 } from '@angular/common/http/testing';
-import { provideRouter } from '@angular/router';
+import { Router, provideRouter } from '@angular/router';
+import { vi } from 'vitest';
 
 import { AreasListPageComponent } from './areas-list.page';
 import type { Area } from '../../../../core/services/plan.service';
@@ -77,6 +78,20 @@ describe('AreasListPageComponent', () => {
     expect(firstRow?.textContent).toContain('Career');
     expect(firstRow?.textContent).toContain('career');
     expect(firstRow?.textContent).toContain('1');
+  });
+
+  it('should navigate to the area detail when a row is clicked', async () => {
+    await render(ROWS);
+
+    const navigate = vi
+      .spyOn(TestBed.inject(Router), 'navigate')
+      .mockResolvedValue(true);
+    (testid('areas-list-row-0') as HTMLTableRowElement).click();
+
+    expect(navigate).toHaveBeenCalledWith([
+      '/admin/commitment/areas',
+      'area-1',
+    ]);
   });
 
   it('should render the empty state when there are no areas', async () => {

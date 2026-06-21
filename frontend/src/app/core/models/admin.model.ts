@@ -82,6 +82,40 @@ export interface ActivityItem {
   timestamp: string;
 }
 
+// === Plan — Areas ===
+
+/**
+ * GET /api/admin/commitment/areas/{id} — a PARA area plus the goals and
+ * projects filed under it. Mirrors `areaDetailResponse`
+ * (internal/goal/handler.go): `goals` reuse the goal-list `GoalSummary` shape,
+ * `projects` are minimal references. Both are always arrays (never null),
+ * empty when the area has no children.
+ */
+export interface AreaDetail {
+  area: AreaInfo;
+  goals: GoalSummary[];
+  projects: AreaProject[];
+}
+
+/** The area header on the area-detail response. */
+export interface AreaInfo {
+  id: string;
+  slug: string;
+  name: string;
+  description: string;
+  status: string;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
+/** A project filed under an area; links by id to the project detail. */
+export interface AreaProject {
+  id: string;
+  title: string;
+  status: string;
+}
+
 // === Plan — Projects ===
 
 export interface ProjectSummary {

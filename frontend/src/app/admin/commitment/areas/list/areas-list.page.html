@@ -57,9 +57,11 @@
           <tr
             #row
             [attr.tabindex]="rowTabIndex(i)"
-            class="border-b border-border-faint transition-colors hover:bg-elevated/40 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-brand"
+            class="cursor-pointer border-b border-border-faint transition-colors hover:bg-elevated/40 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-brand"
             [class.bg-elevated/40]="i === focusedIndex()"
             (focus)="focusedIndex.set(i)"
+            (click)="open(row.id)"
+            (keydown.enter)="open(row.id)"
             [attr.data-testid]="'areas-list-row-' + i"
           >
             <td class="truncate px-3 py-2 text-fg">{{ row.name }}</td>

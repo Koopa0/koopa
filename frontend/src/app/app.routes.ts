@@ -231,6 +231,13 @@ export const routes: Routes = [
             (m) => m.AreaCreatePageComponent,
           ),
       },
+      {
+        path: 'commitment/areas/:id',
+        loadComponent: () =>
+          import('./admin/commitment/areas/detail/area-detail.page').then(
+            (m) => m.AreaDetailPageComponent,
+          ),
+      },
 
       // ── Knowledge ────────────────────────────────────────────────
       {
