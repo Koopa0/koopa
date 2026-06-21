@@ -160,19 +160,6 @@ LEFT JOIN projects p ON t.project_id = p.id
 WHERE t.created_at >= @since
 ORDER BY t.created_at DESC;
 
--- name: RecurringTodoItemByProject :one
--- Find a recurring pending todo item under a given project that is due today or overdue.
-SELECT id, title, state, due, project_id,
-       completed_at, energy, priority, recur_interval, recur_unit,
-       description, created_by, created_at, updated_at
-FROM todos
-WHERE project_id = @project_id
-  AND state != 'done'
-  AND recur_interval IS NOT NULL AND recur_interval > 0
-  AND due <= @today
-ORDER BY due ASC NULLS LAST
-LIMIT 1;
-
 -- name: UpdateTodoItem :one
 -- Update editable todo item fields. State transitions go through
 -- UpdateTodoItemState, never here. Only non-null parameters are applied.
@@ -245,17 +232,6 @@ ORDER BY due ASC;
 -- name: UpdateTodoItemDue :execrows
 -- Update only the due date for a todo item.
 UPDATE todos SET due = @due, updated_at = now() WHERE id = @id;
-
--- name: ResetRecurringTodoItem :one
--- Reset a recurring todo item after completion: advance due, reset state to todo.
-UPDATE todos SET
-    due = @due,
-    state = 'todo',
-    updated_at = now()
-WHERE id = @id
-RETURNING id, title, state, due, project_id,
-          completed_at, energy, priority, recur_interval, recur_unit,
-          description, created_by, created_at, updated_at;
 
 -- name: TodoInboxCount :one
 -- Count of todo items in inbox state (for needs_attention badge).

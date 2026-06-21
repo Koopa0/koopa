@@ -33,8 +33,7 @@ func escapeILIKE(s string) string {
 
 // Store handles database operations for todo items.
 type Store struct {
-	q                    *db.Queries
-	recurringDoneHandler RecurringDoneHandler
+	q *db.Queries
 }
 
 // NewStore returns a Store backed by the given database connection.
@@ -46,14 +45,8 @@ func NewStore(dbtx db.DBTX) *Store {
 // composing multi-store transactions — typically via api.ActorMiddleware
 // (HTTP) or mcp.Server.withActorTx (MCP). The tx carries koopa.actor
 // so audit triggers attribute mutations correctly.
-//
-// recurringDoneHandler is propagated so the tx-bound store retains its
-// async-completion side channel for recurring todo lifecycle events.
 func (s *Store) WithTx(tx pgx.Tx) *Store {
-	return &Store{
-		q:                    s.q.WithTx(tx),
-		recurringDoneHandler: s.recurringDoneHandler,
-	}
+	return &Store{q: s.q.WithTx(tx)}
 }
 
 // CreateParams holds the parameters for creating a new todo item.
@@ -367,116 +360,12 @@ type Item struct {
 	UpdatedAt     time.Time  `json:"updated_at"`
 }
 
-// RecurringDoneHandler is called when a recurring todo item is completed.
-type RecurringDoneHandler func(ctx context.Context, t *Item) error
-
-// IsRecurring reports whether the item has a recurrence schedule.
+// IsRecurring reports whether the item has a recurrence schedule. The
+// recurring-todo read queries (OverdueRecurringItems / RecurringItemsDueToday)
+// filter on recur_interval in SQL; this in-memory predicate is the Go-side
+// equivalent for callers holding an Item.
 func (t *Item) IsRecurring() bool {
 	return t.RecurInterval != nil && *t.RecurInterval > 0
-}
-
-// NextDue calculates the next due date based on recurrence settings.
-// Returns nil if the item is not recurring or has no due date.
-// For months, clamps to the last day of the target month to prevent drift
-// (e.g., Jan 31 + 1 month = Feb 28, not Mar 3).
-func (t *Item) NextDue() *time.Time {
-	if !t.IsRecurring() || t.Due == nil {
-		return nil
-	}
-	next := advanceDate(*t.Due, int(*t.RecurInterval), derefStr(t.RecurUnit))
-	return &next
-}
-
-// NextCycleDateOnOrAfter returns the first recurrence date on or after cutoff.
-func (t *Item) NextCycleDateOnOrAfter(cutoff time.Time) *time.Time {
-	if !t.IsRecurring() || t.Due == nil {
-		return nil
-	}
-	base := *t.Due
-	interval := int(*t.RecurInterval)
-	unit := derefStr(t.RecurUnit)
-	cutoffDate := truncateToDate(cutoff)
-	baseDate := truncateToDate(base)
-
-	if !baseDate.Before(cutoffDate) {
-		return &baseDate
-	}
-
-	switch unit {
-	case "days":
-		days := daysBetween(baseDate, cutoffDate)
-		cycles := (days + interval - 1) / interval
-		next := baseDate.AddDate(0, 0, cycles*interval)
-		return &next
-	case "weeks":
-		days := daysBetween(baseDate, cutoffDate)
-		stepDays := interval * 7
-		cycles := (days + stepDays - 1) / stepDays
-		next := baseDate.AddDate(0, 0, cycles*stepDays)
-		return &next
-	default:
-		cur := baseDate
-		for cur.Before(cutoffDate) {
-			cur = advanceDate(cur, interval, unit)
-		}
-		return &cur
-	}
-}
-
-// MissedOccurrences returns all occurrence dates between the current due and cutoff (exclusive).
-func (t *Item) MissedOccurrences(cutoff time.Time) []time.Time {
-	if !t.IsRecurring() || t.Due == nil {
-		return nil
-	}
-	cutoffDate := truncateToDate(cutoff)
-	cur := truncateToDate(*t.Due)
-	var missed []time.Time
-	for cur.Before(cutoffDate) {
-		missed = append(missed, cur)
-		cur = advanceDate(cur, int(*t.RecurInterval), derefStr(t.RecurUnit))
-	}
-	return missed
-}
-
-func advanceDate(base time.Time, interval int, unit string) time.Time {
-	switch unit {
-	case "days":
-		return base.AddDate(0, 0, interval)
-	case "weeks":
-		return base.AddDate(0, 0, interval*7)
-	case "months":
-		return addMonthsClamped(base, interval)
-	case "years":
-		return addMonthsClamped(base, interval*12)
-	default:
-		return base.AddDate(0, 0, interval)
-	}
-}
-
-func addMonthsClamped(base time.Time, months int) time.Time {
-	y, m, d := base.Date()
-	targetMonth := time.Month(int(m) + months)
-	lastDay := time.Date(y, targetMonth+1, 0, 0, 0, 0, 0, base.Location()).Day()
-	if d > lastDay {
-		d = lastDay
-	}
-	return time.Date(y, targetMonth, d, 0, 0, 0, 0, base.Location())
-}
-
-func truncateToDate(t time.Time) time.Time {
-	y, m, d := t.Date()
-	return time.Date(y, m, d, 0, 0, 0, 0, t.Location())
-}
-
-func daysBetween(a, b time.Time) int {
-	return int(b.Sub(a).Hours() / 24)
-}
-
-func derefStr(p *string) string {
-	if p != nil {
-		return *p
-	}
-	return ""
 }
 
 // CreatorItem is a slim todo projection for the list_tasks readback loop —

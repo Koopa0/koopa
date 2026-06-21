@@ -1,29 +1,21 @@
 // Copyright 2026 Koopa. All rights reserved.
 
-// recurring.go owns recurrence semantics for todos. Completing a
-// recurring todo fires RecurringDoneHandler which schedules the next
-// cycle; OverdueRecurringItems / RecurringItemsDueToday feed the
-// daily-plan reader. Recurrence math (intervals, units, month-clamping)
-// is in todo.go so it can be reused by non-recurring due-date queries.
+// recurring.go owns the recurring-todo read queries behind
+// GET /api/admin/commitment/todos/recurring: OverdueRecurringItems and
+// RecurringItemsDueToday feed the daily-plan reader (todo.Handler.Recurring).
+// UpdateDue is the lone due-date write used by that surface.
 
 package todo
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 
 	"github.com/Koopa0/koopa/internal/db"
 )
-
-// SetRecurringDoneHandler registers the callback for recurring todo completion.
-func (s *Store) SetRecurringDoneHandler(h RecurringDoneHandler) {
-	s.recurringDoneHandler = h
-}
 
 // OverdueRecurringItems returns recurring todo items with due < today.
 func (s *Store) OverdueRecurringItems(ctx context.Context, today time.Time) ([]Item, error) {
@@ -61,33 +53,4 @@ func (s *Store) UpdateDue(ctx context.Context, id uuid.UUID, due time.Time) erro
 		return ErrNotFound
 	}
 	return nil
-}
-
-// ResetRecurring advances a recurring todo item's due date and resets state to todo.
-func (s *Store) ResetRecurring(ctx context.Context, id uuid.UUID, nextDue time.Time) (*Item, error) {
-	r, err := s.q.ResetRecurringTodoItem(ctx, db.ResetRecurringTodoItemParams{ID: id, Due: &nextDue})
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, ErrNotFound
-		}
-		return nil, fmt.Errorf("resetting recurring todo item %s: %w", id, err)
-	}
-	t := rowToItem(&r)
-	return &t, nil
-}
-
-// RecurringItemByProject finds a recurring pending todo item under a project due today or overdue.
-func (s *Store) RecurringItemByProject(ctx context.Context, projectID uuid.UUID, today time.Time) (*Item, error) {
-	r, err := s.q.RecurringTodoItemByProject(ctx, db.RecurringTodoItemByProjectParams{
-		ProjectID: &projectID,
-		Today:     &today,
-	})
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("querying recurring todo item for project %s: %w", projectID, err)
-	}
-	t := rowToItem(&r)
-	return &t, nil
 }

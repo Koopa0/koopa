@@ -5796,47 +5796,6 @@ func (q *Queries) RecentFeedEntries(ctx context.Context, arg RecentFeedEntriesPa
 	return items, nil
 }
 
-const recurringTodoItemByProject = `-- name: RecurringTodoItemByProject :one
-SELECT id, title, state, due, project_id,
-       completed_at, energy, priority, recur_interval, recur_unit,
-       description, created_by, created_at, updated_at
-FROM todos
-WHERE project_id = $1
-  AND state != 'done'
-  AND recur_interval IS NOT NULL AND recur_interval > 0
-  AND due <= $2
-ORDER BY due ASC NULLS LAST
-LIMIT 1
-`
-
-type RecurringTodoItemByProjectParams struct {
-	ProjectID *uuid.UUID `json:"project_id"`
-	Today     *time.Time `json:"today"`
-}
-
-// Find a recurring pending todo item under a given project that is due today or overdue.
-func (q *Queries) RecurringTodoItemByProject(ctx context.Context, arg RecurringTodoItemByProjectParams) (Todo, error) {
-	row := q.db.QueryRow(ctx, recurringTodoItemByProject, arg.ProjectID, arg.Today)
-	var i Todo
-	err := row.Scan(
-		&i.ID,
-		&i.Title,
-		&i.State,
-		&i.Due,
-		&i.ProjectID,
-		&i.CompletedAt,
-		&i.Energy,
-		&i.Priority,
-		&i.RecurInterval,
-		&i.RecurUnit,
-		&i.Description,
-		&i.CreatedBy,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
 const recurringTodoItemsDueToday = `-- name: RecurringTodoItemsDueToday :many
 SELECT id, title, state, due, project_id,
        completed_at, energy, priority, recur_interval, recur_unit,
@@ -6072,45 +6031,6 @@ type ResetFeedFailureParams struct {
 func (q *Queries) ResetFeedFailure(ctx context.Context, arg ResetFeedFailureParams) error {
 	_, err := q.db.Exec(ctx, resetFeedFailure, arg.ID, arg.Etag, arg.LastModified)
 	return err
-}
-
-const resetRecurringTodoItem = `-- name: ResetRecurringTodoItem :one
-UPDATE todos SET
-    due = $1,
-    state = 'todo',
-    updated_at = now()
-WHERE id = $2
-RETURNING id, title, state, due, project_id,
-          completed_at, energy, priority, recur_interval, recur_unit,
-          description, created_by, created_at, updated_at
-`
-
-type ResetRecurringTodoItemParams struct {
-	Due *time.Time `json:"due"`
-	ID  uuid.UUID  `json:"id"`
-}
-
-// Reset a recurring todo item after completion: advance due, reset state to todo.
-func (q *Queries) ResetRecurringTodoItem(ctx context.Context, arg ResetRecurringTodoItemParams) (Todo, error) {
-	row := q.db.QueryRow(ctx, resetRecurringTodoItem, arg.Due, arg.ID)
-	var i Todo
-	err := row.Scan(
-		&i.ID,
-		&i.Title,
-		&i.State,
-		&i.Due,
-		&i.ProjectID,
-		&i.CompletedAt,
-		&i.Energy,
-		&i.Priority,
-		&i.RecurInterval,
-		&i.RecurUnit,
-		&i.Description,
-		&i.CreatedBy,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
 }
 
 const resolveTodoByCreator = `-- name: ResolveTodoByCreator :one
