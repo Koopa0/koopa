@@ -491,7 +491,7 @@ type Area struct {
 // First-party publishable knowledge layer. Five content types (article, essay, build-log, til, digest) share one editorial lifecycle: draft → review → published → archived. The review state is a two-actor handoff signal — Claude marks a draft ready (set_content_review_state), human admin publishes (publish_content). Notes (Zettelkasten) live in a separate notes table with maturity-based lifecycle — intentionally not mixed here. published status and published_at are tied by chk_content_publication; is_public requires published by chk_content_public_requires_published.
 type Content struct {
 	ID uuid.UUID `json:"id"`
-	// URL-safe identifier. Globally unique. Used in public URLs. Format: lowercase alphanumeric segments separated by single hyphens (chk_content_slug_format).
+	// URL-safe identifier. Globally unique. Used in public URLs. Format (chk_content_slug_format): hyphen-separated segments, no whitespace or slash, no leading/trailing/consecutive hyphens. Unicode letters/numbers (incl. CJK) allowed — a 中日文 slug carries UTF-8 in the URL.
 	Slug    string `json:"slug"`
 	Title   string `json:"title"`
 	Body    string `json:"body"`
@@ -879,7 +879,7 @@ type SongReflection struct {
 // Canonical tag registry. Fine-grained content-classification labels (two-pointers, error-handling). Resolved through tag_aliases pipeline.
 type Tag struct {
 	ID uuid.UUID `json:"id"`
-	// Canonical form (e.g. two-pointers, dp). Controlled vocabulary. Format: lowercase alphanumeric segments separated by single hyphens (chk_tag_slug_format). Namespaced slugs (weakness:xxx, improvement:xxx) are not used — tags are pure classification labels.
+	// Canonical form (e.g. two-pointers, dp). Controlled vocabulary. Format (chk_tag_slug_format): hyphen-separated segments, no whitespace or slash, no leading/trailing/consecutive hyphens; Unicode letters/numbers (incl. CJK) allowed. Tags are pure classification labels.
 	Slug string `json:"slug"`
 	Name string `json:"name"`
 	// Hierarchical parent tag. SET NULL on parent deletion — orphaned tags remain valid.
@@ -954,7 +954,7 @@ type TodoSkip struct {
 // High-level knowledge domains (Go, AI, System Design). 10-20, manually managed. Used for content categorization and feed association.
 type Topic struct {
 	ID uuid.UUID `json:"id"`
-	// URL-safe identifier (e.g. system-design). Used in feed_topics and content_topics junctions. Format: lowercase alphanumeric segments separated by single hyphens (chk_topic_slug_format) — no consecutive or trailing hyphens.
+	// URL-safe identifier (e.g. system-design, or 日本語). Used in feed_topics and content_topics junctions. Format (chk_topic_slug_format): hyphen-separated segments, no whitespace or slash, no leading/trailing/consecutive hyphens. Unicode letters/numbers (incl. CJK) allowed — slugs carry UTF-8 in URLs.
 	Slug        string `json:"slug"`
 	Name        string `json:"name"`
 	Description string `json:"description"`
