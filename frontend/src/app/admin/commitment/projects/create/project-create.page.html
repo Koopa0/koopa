@@ -1,0 +1,190 @@
+<div class="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-5 px-6 py-6">
+  <!-- Header -->
+  <div class="border-b border-border pb-3">
+    <h1 class="font-display text-2xl font-semibold text-fg">New project</h1>
+    <p class="mt-1 text-[13px] text-fg-subtle">
+      A project is a unit of work with an outcome. Status is set by the system
+      to <span class="font-mono text-fg-muted">in_progress</span> on create.
+    </p>
+  </div>
+
+  @if (submitted() && projectForm().invalid()) {
+    <div
+      class="rounded-sm bg-error-bg px-3 py-2 text-xs text-error"
+      role="alert"
+      data-testid="project-create-banner"
+    >
+      Some fields need attention before this can be created.
+    </div>
+  }
+
+  @if (serverError(); as err) {
+    <div
+      class="rounded-sm border border-error/40 bg-error-bg px-3 py-2 text-sm text-error"
+      role="alert"
+      data-testid="project-create-error"
+    >
+      {{ err }}
+    </div>
+  }
+
+  <form
+    novalidate
+    (submit)="$event.preventDefault(); save()"
+    class="flex flex-col gap-4.5"
+    data-testid="project-create-form"
+  >
+    <!-- Title (required) -->
+    <div class="flex flex-col gap-1.5">
+      <div class="flex items-baseline">
+        <label for="project-title" class="font-mono text-[11px] text-fg-muted">
+          Title <span class="text-brand">*</span>
+        </label>
+        <span
+          class="ml-auto font-mono text-[10px] text-fg-faint"
+          data-testid="project-title-count"
+        >
+          {{ projectForm.title().value().length }}/{{ titleMax }}
+        </span>
+      </div>
+      <input
+        id="project-title"
+        type="text"
+        [formField]="projectForm.title"
+        placeholder="Personal knowledge engine"
+        class="rounded-sm border border-border bg-elevated px-3 py-2 text-sm text-fg outline-none focus:border-brand"
+        [class.border-error]="showErrors(projectForm.title())"
+      />
+      @if (showErrors(projectForm.title())) {
+        @for (e of projectForm.title().errors(); track e.message) {
+          <p class="font-mono text-[11px] text-error" role="alert">
+            {{ e.message }}
+          </p>
+        }
+      } @else {
+        <p class="text-[11px] text-fg-faint">
+          What is this project building toward?
+        </p>
+      }
+    </div>
+
+    <!-- Slug (required, explicit) -->
+    <div class="flex flex-col gap-1.5">
+      <div class="flex items-baseline">
+        <label for="project-slug" class="font-mono text-[11px] text-fg-muted">
+          Slug <span class="text-brand">*</span>
+        </label>
+        <span
+          class="ml-auto font-mono text-[10px] text-fg-faint"
+          data-testid="project-slug-count"
+        >
+          {{ projectForm.slug().value().length }}/{{ slugMax }}
+        </span>
+      </div>
+      <input
+        id="project-slug"
+        type="text"
+        [formField]="projectForm.slug"
+        (input)="onSlugInput()"
+        placeholder="knowledge-engine"
+        class="rounded-sm border border-border bg-elevated px-3 py-2 font-mono text-sm text-fg outline-none focus:border-brand"
+        [class.border-error]="showErrors(projectForm.slug())"
+        data-testid="project-slug"
+      />
+      @if (showErrors(projectForm.slug())) {
+        @for (e of projectForm.slug().errors(); track e.message) {
+          <p class="font-mono text-[11px] text-error" role="alert">
+            {{ e.message }}
+          </p>
+        }
+      } @else {
+        <p class="text-[11px] text-fg-faint">
+          Auto-suggested from the title — edit it to take control. Used in the
+          project URL.
+        </p>
+      }
+    </div>
+
+    <!-- Description -->
+    <div class="flex flex-col gap-1.5">
+      <label for="project-desc" class="font-mono text-[11px] text-fg-muted">
+        Description <span class="text-fg-faint">(optional)</span>
+      </label>
+      <textarea
+        id="project-desc"
+        rows="4"
+        [formField]="projectForm.description"
+        placeholder="What does done look like, and why does it matter?"
+        class="resize-y rounded-sm border border-border bg-elevated px-3 py-2 text-sm leading-relaxed text-fg outline-none focus:border-brand"
+      ></textarea>
+      <p class="text-[11px] text-fg-faint">
+        Context for future-you and the agents that read this.
+      </p>
+    </div>
+
+    <!-- Area (optional, PARA classification) -->
+    <div class="flex flex-col gap-1.5">
+      <label for="project-area" class="font-mono text-[11px] text-fg-muted">
+        Area <span class="text-fg-faint">(optional)</span>
+      </label>
+      <select
+        id="project-area"
+        [formField]="projectForm.area_id"
+        class="rounded-sm border border-border bg-elevated px-3 py-2 text-sm text-fg outline-none focus:border-brand"
+        data-testid="project-area"
+      >
+        <option value="">No area</option>
+        @for (area of areas(); track area.id) {
+          <option [value]="area.id">{{ area.name }}</option>
+        }
+      </select>
+      <p class="text-[11px] text-fg-faint">
+        PARA classification — which area of responsibility this project sits in.
+      </p>
+    </div>
+
+    <!-- Goal (optional link) -->
+    <div class="flex flex-col gap-1.5">
+      <label for="project-goal" class="font-mono text-[11px] text-fg-muted">
+        Goal <span class="text-fg-faint">(optional)</span>
+      </label>
+      <select
+        id="project-goal"
+        [formField]="projectForm.goal_id"
+        class="rounded-sm border border-border bg-elevated px-3 py-2 text-sm text-fg outline-none focus:border-brand"
+        data-testid="project-goal"
+      >
+        <option value="">No goal</option>
+        @for (goal of goals(); track goal.id) {
+          <option [value]="goal.id">{{ goal.title }}</option>
+        }
+      </select>
+      <p class="text-[11px] text-fg-faint">
+        Which goal does this project advance?
+      </p>
+    </div>
+
+    <!-- Actions -->
+    <div class="flex items-center gap-3 border-t border-border pt-4">
+      <button
+        type="submit"
+        [disabled]="submitting() || (submitted() && projectForm().invalid())"
+        class="rounded-sm bg-brand px-4 py-2 text-sm font-medium text-bg transition-colors hover:bg-brand-strong disabled:cursor-not-allowed disabled:opacity-40"
+        data-testid="project-create-submit"
+      >
+        {{ submitting() ? 'Creating…' : 'Create project' }}
+      </button>
+      <a
+        routerLink="/admin/commitment/projects"
+        class="rounded-sm border border-border px-4 py-2 text-sm text-fg-muted transition-colors hover:text-fg"
+      >
+        Cancel
+      </a>
+      <span
+        class="ml-auto rounded-sm bg-overlay px-2 py-1 font-mono text-[10px] uppercase tracking-wider text-fg-subtle"
+      >
+        status set on create: in_progress
+      </span>
+    </div>
+  </form>
+</div>

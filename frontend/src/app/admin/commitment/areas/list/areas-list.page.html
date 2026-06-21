@@ -1,0 +1,80 @@
+<div class="flex min-w-0 flex-1 flex-col px-6 py-5">
+  <!-- Toolbar -->
+  <div class="mb-4 flex flex-wrap items-center gap-x-4 gap-y-2">
+    <span
+      class="font-mono text-[10px] uppercase tracking-wider text-fg-subtle"
+    >
+      Areas of responsibility
+    </span>
+
+    <div class="ml-auto flex items-center gap-3">
+      <span
+        class="font-mono text-[11px] text-fg-subtle"
+        aria-live="polite"
+        data-testid="areas-count"
+      >
+        Showing {{ total() }} {{ total() === 1 ? 'area' : 'areas' }}
+      </span>
+      <a
+        routerLink="/admin/commitment/areas/new"
+        class="rounded-sm bg-brand px-3 py-1.5 text-xs font-medium text-bg transition-colors hover:bg-brand-strong"
+        data-testid="areas-new"
+      >
+        New area
+      </a>
+    </div>
+  </div>
+
+  @if (hasError()) {
+    <div
+      role="alert"
+      class="mb-3 rounded-xs border border-error bg-error-bg px-3 py-2 text-xs text-error"
+      data-testid="areas-list-error"
+    >
+      Couldn't load areas.
+    </div>
+  }
+
+  <app-data-table
+    [isLoading]="isLoading()"
+    [isEmpty]="isEmpty()"
+    emptyTitle="No areas yet"
+    emptyDescription="Create an area to classify your goals and projects."
+  >
+    <table class="w-full text-sm" data-testid="areas-list-table">
+      <thead>
+        <tr
+          class="border-b border-border text-left font-mono text-[10px] uppercase tracking-wider text-fg-subtle"
+        >
+          <th scope="col" class="px-3 py-2 font-normal">Name</th>
+          <th scope="col" class="px-3 py-2 font-normal">Slug</th>
+          <th scope="col" class="px-3 py-2 font-normal">Order</th>
+          <th scope="col" class="px-3 py-2 font-normal">ID</th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (row of rows(); let i = $index; track row.id) {
+          <tr
+            #row
+            [attr.tabindex]="rowTabIndex(i)"
+            class="border-b border-border-faint transition-colors hover:bg-elevated/40 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-brand"
+            [class.bg-elevated/40]="i === focusedIndex()"
+            (focus)="focusedIndex.set(i)"
+            [attr.data-testid]="'areas-list-row-' + i"
+          >
+            <td class="truncate px-3 py-2 text-fg">{{ row.name }}</td>
+            <td class="px-3 py-2 font-mono text-[12px] text-fg-muted">
+              {{ row.slug }}
+            </td>
+            <td class="px-3 py-2 font-mono text-[11px] text-fg-muted">
+              {{ row.sort_order }}
+            </td>
+            <td class="px-3 py-2 font-mono text-[11px] text-fg-subtle">
+              {{ row.id.slice(0, 8) }}
+            </td>
+          </tr>
+        }
+      </tbody>
+    </table>
+  </app-data-table>
+</div>

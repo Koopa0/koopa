@@ -1,0 +1,131 @@
+<div class="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-5 px-6 py-6">
+  <!-- Header -->
+  <div class="border-b border-border pb-3">
+    <h1 class="font-display text-2xl font-semibold text-fg">New area</h1>
+    <p class="mt-1 text-[13px] text-fg-subtle">
+      An area is an ongoing sphere of responsibility (PARA). The slug is
+      derived from the name by the system.
+    </p>
+  </div>
+
+  @if (submitted() && areaForm().invalid()) {
+    <div
+      class="rounded-sm bg-error-bg px-3 py-2 text-xs text-error"
+      role="alert"
+      data-testid="area-create-banner"
+    >
+      Some fields need attention before this can be created.
+    </div>
+  }
+
+  @if (serverError(); as err) {
+    <div
+      class="rounded-sm border border-error/40 bg-error-bg px-3 py-2 text-sm text-error"
+      role="alert"
+      data-testid="area-create-error"
+    >
+      {{ err }}
+    </div>
+  }
+
+  <form
+    novalidate
+    (submit)="$event.preventDefault(); save()"
+    class="flex flex-col gap-4.5"
+    data-testid="area-create-form"
+  >
+    <!-- Name (required) -->
+    <div class="flex flex-col gap-1.5">
+      <div class="flex items-baseline">
+        <label for="area-name" class="font-mono text-[11px] text-fg-muted">
+          Name <span class="text-brand">*</span>
+        </label>
+        <span
+          class="ml-auto font-mono text-[10px] text-fg-faint"
+          data-testid="area-name-count"
+        >
+          {{ areaForm.name().value().length }}/{{ nameMax }}
+        </span>
+      </div>
+      <input
+        id="area-name"
+        type="text"
+        [formField]="areaForm.name"
+        placeholder="Health & fitness"
+        class="rounded-sm border border-border bg-elevated px-3 py-2 text-sm text-fg outline-none focus:border-brand"
+        [class.border-error]="showErrors(areaForm.name())"
+      />
+      @if (showErrors(areaForm.name())) {
+        @for (e of areaForm.name().errors(); track e.message) {
+          <p class="font-mono text-[11px] text-error" role="alert">
+            {{ e.message }}
+          </p>
+        }
+      } @else {
+        <p class="text-[11px] text-fg-faint">
+          A durable area of responsibility, not a one-off project.
+        </p>
+      }
+    </div>
+
+    <!-- Slug preview (derived, not editable) -->
+    <div class="flex flex-col gap-1.5">
+      <span class="font-mono text-[11px] text-fg-muted">
+        Slug <span class="text-fg-faint">(derived)</span>
+      </span>
+      <div
+        class="rounded-sm border border-dashed border-border bg-overlay px-3 py-2 font-mono text-sm"
+        data-testid="area-slug-preview"
+      >
+        @if (slugPreview()) {
+          <span class="text-fg-muted">{{ slugPreview() }}</span>
+        } @else {
+          <span class="text-fg-faint">derived from the name</span>
+        }
+      </div>
+      <p class="text-[11px] text-fg-faint">
+        The server generates this slug from the name on create.
+      </p>
+    </div>
+
+    <!-- Description -->
+    <div class="flex flex-col gap-1.5">
+      <label for="area-desc" class="font-mono text-[11px] text-fg-muted">
+        Description <span class="text-fg-faint">(optional)</span>
+      </label>
+      <textarea
+        id="area-desc"
+        rows="4"
+        [formField]="areaForm.description"
+        placeholder="What does maintaining this area look like?"
+        class="resize-y rounded-sm border border-border bg-elevated px-3 py-2 text-sm leading-relaxed text-fg outline-none focus:border-brand"
+      ></textarea>
+      <p class="text-[11px] text-fg-faint">
+        Context for future-you and the agents that read this.
+      </p>
+    </div>
+
+    <!-- Actions -->
+    <div class="flex items-center gap-3 border-t border-border pt-4">
+      <button
+        type="submit"
+        [disabled]="submitting() || (submitted() && areaForm().invalid())"
+        class="rounded-sm bg-brand px-4 py-2 text-sm font-medium text-bg transition-colors hover:bg-brand-strong disabled:cursor-not-allowed disabled:opacity-40"
+        data-testid="area-create-submit"
+      >
+        {{ submitting() ? 'Creating…' : 'Create area' }}
+      </button>
+      <a
+        routerLink="/admin/commitment/areas"
+        class="rounded-sm border border-border px-4 py-2 text-sm text-fg-muted transition-colors hover:text-fg"
+      >
+        Cancel
+      </a>
+      <span
+        class="ml-auto rounded-sm bg-overlay px-2 py-1 font-mono text-[10px] uppercase tracking-wider text-fg-subtle"
+      >
+        slug derived from name
+      </span>
+    </div>
+  </form>
+</div>

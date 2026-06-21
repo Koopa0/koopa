@@ -197,10 +197,38 @@ export const routes: Routes = [
           ),
       },
       {
+        path: 'commitment/projects',
+        loadComponent: () =>
+          import('./admin/commitment/projects/list/projects-list.page').then(
+            (m) => m.ProjectsListPageComponent,
+          ),
+      },
+      {
+        path: 'commitment/projects/new',
+        loadComponent: () =>
+          import('./admin/commitment/projects/create/project-create.page').then(
+            (m) => m.ProjectCreatePageComponent,
+          ),
+      },
+      {
         path: 'commitment/projects/:id',
         loadComponent: () =>
           import('./admin/commitment/projects/profile/project-profile.page').then(
             (m) => m.ProjectProfilePageComponent,
+          ),
+      },
+      {
+        path: 'commitment/areas',
+        loadComponent: () =>
+          import('./admin/commitment/areas/list/areas-list.page').then(
+            (m) => m.AreasListPageComponent,
+          ),
+      },
+      {
+        path: 'commitment/areas/new',
+        loadComponent: () =>
+          import('./admin/commitment/areas/create/area-create.page').then(
+            (m) => m.AreaCreatePageComponent,
           ),
       },
 

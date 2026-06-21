@@ -1,0 +1,141 @@
+<div class="flex min-w-0 flex-1 flex-col px-6 py-5">
+  <!-- Filter chips -->
+  <div class="mb-4 flex flex-wrap items-center gap-x-4 gap-y-2">
+    <div
+      class="flex flex-wrap items-center gap-1"
+      role="toolbar"
+      aria-label="Filter by status"
+      data-testid="projects-filter-status"
+    >
+      <span
+        class="mr-1 font-mono text-[10px] uppercase tracking-wider text-fg-subtle"
+      >
+        Status
+      </span>
+      @for (chip of statusChips; track chip.value) {
+        <button
+          type="button"
+          (click)="setStatusFilter(chip.value)"
+          class="h-7 rounded-xs border px-2.5 text-[11px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+          [class.border-brand]="statusFilter() === chip.value"
+          [class.bg-brand/30]="statusFilter() === chip.value"
+          [class.text-brand]="statusFilter() === chip.value"
+          [class.border-border]="statusFilter() !== chip.value"
+          [class.bg-panel]="statusFilter() !== chip.value"
+          [class.text-fg-muted]="statusFilter() !== chip.value"
+          [attr.aria-pressed]="statusFilter() === chip.value"
+          [attr.data-testid]="'projects-filter-status-' + chip.value"
+        >
+          {{ chip.label }}
+        </button>
+      }
+    </div>
+
+    <div class="ml-auto flex items-center gap-3">
+      <span
+        class="font-mono text-[11px] text-fg-subtle"
+        aria-live="polite"
+        data-testid="projects-count"
+      >
+        Showing {{ total() }} {{ total() === 1 ? 'project' : 'projects' }}
+      </span>
+      <a
+        routerLink="/admin/commitment/projects/new"
+        class="rounded-sm bg-brand px-3 py-1.5 text-xs font-medium text-bg transition-colors hover:bg-brand-strong"
+        data-testid="projects-new"
+      >
+        New project
+      </a>
+    </div>
+  </div>
+
+  @if (hasError()) {
+    <div
+      role="alert"
+      class="mb-3 rounded-xs border border-error bg-error-bg px-3 py-2 text-xs text-error"
+      data-testid="projects-list-error"
+    >
+      Couldn't load projects.
+    </div>
+  }
+
+  <app-data-table
+    [isLoading]="isLoading()"
+    [isEmpty]="isEmpty()"
+    emptyTitle="No projects match this filter"
+    emptyDescription="Create a project to start tracking the work."
+  >
+    <table class="w-full text-sm" data-testid="projects-list-table">
+      <thead>
+        <tr
+          class="border-b border-border text-left font-mono text-[10px] uppercase tracking-wider text-fg-subtle"
+        >
+          <th scope="col" class="px-3 py-2 font-normal">Title</th>
+          <th scope="col" class="px-3 py-2 font-normal">Area</th>
+          <th scope="col" class="px-3 py-2 font-normal">Status</th>
+          <th scope="col" class="px-3 py-2 font-normal">Tasks</th>
+          <th scope="col" class="px-3 py-2 font-normal">Last activity</th>
+          <th scope="col" class="px-3 py-2 font-normal">ID</th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (row of rows(); let i = $index; track row.id) {
+          <tr
+            #row
+            [attr.tabindex]="rowTabIndex(i)"
+            class="cursor-pointer border-b border-border-faint transition-colors hover:bg-elevated/40 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-brand"
+            [class.bg-elevated/40]="i === focusedIndex()"
+            (click)="openRow(row)"
+            (keydown.enter)="openRow(row)"
+            (focus)="focusedIndex.set(i)"
+            [attr.data-testid]="'projects-list-row-' + i"
+          >
+            <td class="truncate px-3 py-2 text-fg">{{ row.title }}</td>
+            <td class="px-3 py-2 text-fg-muted">{{ row.area || '—' }}</td>
+            <td class="px-3 py-2">
+              <span
+                class="inline-flex items-center gap-1.5 text-xs"
+                [class]="statusTextClass(row.status)"
+              >
+                <span
+                  class="inline-block size-1.5 rounded-full"
+                  [class]="statusDotClass(row.status)"
+                  aria-hidden="true"
+                ></span>
+                {{ statusLabel(row.status) }}
+              </span>
+            </td>
+            <td class="px-3 py-2">
+              <div class="flex items-center gap-2">
+                <span class="font-mono text-[11px] text-fg-muted">
+                  {{ row.task_progress.done }} / {{ row.task_progress.total }}
+                </span>
+                <div class="h-1.5 w-16 overflow-hidden rounded-full bg-elevated">
+                  <div
+                    class="h-full bg-brand"
+                    [style.width.%]="
+                      taskPercent(row.task_progress.done, row.task_progress.total)
+                    "
+                  ></div>
+                </div>
+              </div>
+            </td>
+            <td class="px-3 py-2 text-fg-muted">
+              @if (row.last_activity_at) {
+                {{ row.last_activity_at | date: 'shortDate' }}
+                <span class="ml-1 font-mono text-[10px] text-fg-subtle">
+                  ({{ row.staleness_days }}d)
+                </span>
+              } @else {
+                —
+              }
+            </td>
+            <td class="px-3 py-2 font-mono text-[11px] text-fg-subtle">
+              {{ row.id.slice(0, 8) }}
+            </td>
+          </tr>
+        }
+      </tbody>
+    </table>
+  </app-data-table>
+</div>

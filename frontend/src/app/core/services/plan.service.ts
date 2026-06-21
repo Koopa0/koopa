@@ -32,6 +32,54 @@ export interface Area {
   sort_order: number;
 }
 
+/**
+ * Project create request. `slug` is explicit (unlike goals, whose slug is
+ * derived server-side) and required alongside `title`. `status` defaults to
+ * `in_progress` server-side; `goal_id` links the project to a goal and
+ * `area_id` is the optional PARA classification (server treats NULL as
+ * unclassified). Optional fields are sent only when present so the server
+ * applies its defaults.
+ */
+export interface ProjectCreateRequest {
+  slug: string;
+  title: string;
+  description?: string;
+  status?: string;
+  goal_id?: string;
+  area_id?: string;
+}
+
+/** POST /projects response — the created project row (includes its id). */
+export interface ProjectCreated {
+  id: string;
+  slug: string;
+  title: string;
+  description?: string;
+  status: string;
+}
+
+/**
+ * Area create request. NO `slug` field — the server derives the slug from
+ * `name`. `name` is required (non-blank, must contain slug-able characters);
+ * `description` is optional.
+ */
+export interface AreaCreateRequest {
+  name: string;
+  description: string;
+}
+
+/** POST /areas response — the created area row (slug derived from name). */
+export interface AreaCreated {
+  id: string;
+  slug: string;
+  name: string;
+  description: string;
+  status: string;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
 /** POST /goals response — the bare goal row (no milestones/projects). */
 export interface GoalCreated {
   id: string;
@@ -102,6 +150,20 @@ export class PlanService {
   }
 
   /**
+   * Create a PARA area (human-only, adminMid). The body carries only
+   * `name` + `description`; the slug is DERIVED server-side from the name.
+   * The server responds 409 when the derived slug already exists and 400
+   * when the name is blank / produces no slug-able characters. Returns the
+   * created area so the caller can route back to the area list.
+   */
+  createArea(body: AreaCreateRequest): Observable<AreaCreated> {
+    return this.api.postData<AreaCreated>(
+      '/api/admin/commitment/areas',
+      body,
+    );
+  }
+
+  /**
    * Create a goal (human-only, adminMid). The server always sets
    * status=not_started; transitions go through {@link updateGoalStatus}.
    * Returns the created goal so the caller can route to its detail page.
@@ -120,6 +182,19 @@ export class PlanService {
     return this.api.getData<{ projects: ProjectSummary[] }>(
       '/api/admin/commitment/projects',
       statusFilter ? { status: statusFilter } : undefined,
+    );
+  }
+
+  /**
+   * Create a project (human-only, adminMid). The project takes an EXPLICIT
+   * `slug` (unlike goals). `status` defaults to `in_progress` server-side
+   * and `goal_id` optionally links the project to a goal. Returns the
+   * created project so the caller can route to its detail page.
+   */
+  createProject(body: ProjectCreateRequest): Observable<ProjectCreated> {
+    return this.api.postData<ProjectCreated>(
+      '/api/admin/commitment/projects',
+      body,
     );
   }
 
