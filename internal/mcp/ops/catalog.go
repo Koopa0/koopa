@@ -102,7 +102,7 @@ func ProposeGoal() Meta {
 		Writability: Additive,
 		Stability:   StabilityStable,
 		Since:       "1.2.0",
-		Description: "Propose a goal (with optional ordered milestones) as an INERT draft in status=proposed. A proposed goal feeds no list, no alignment, and never appears in brief or any default goal listing — it surfaces only in the admin proposals triage. Optionally file it under an area: an existing ACTIVE area's slug/name, or an area that has been proposed but not yet activated (the proposal bundle). Propose only to materialize an objective that surfaced in a conversation the owner was part of — NEVER from scheduled or autonomous runs. Activation (proposed→not_started) and rejection (hard delete, milestones cascade) are owner actions in admin, not MCP.",
+		Description: "Propose a goal (with optional ordered milestones) as an INERT draft in status=proposed. A proposed goal feeds no list, no alignment, and never appears in brief or any default goal listing — it surfaces only in the admin proposals triage. Optionally file it under an area: an existing ACTIVE area's slug/name, or an area that has been proposed but not yet activated (the proposal bundle). Propose only to materialize an objective that surfaced in a conversation the owner was part of — NEVER from scheduled or autonomous runs. Activation (proposed→in_progress — it starts being tracked, so it appears in brief's active_goals immediately) and rejection (hard delete, milestones cascade) are owner actions in admin, not MCP.",
 	}
 }
 

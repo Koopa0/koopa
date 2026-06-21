@@ -44,15 +44,18 @@ func (q *Queries) ActivateArea(ctx context.Context, id uuid.UUID) (ActivateAreaR
 }
 
 const activateGoal = `-- name: ActivateGoal :one
-UPDATE goals SET status = 'not_started', updated_at = now()
+UPDATE goals SET status = 'in_progress', updated_at = now()
 WHERE id = $1 AND status = 'proposed'
 RETURNING id, title, description, status, area_id, quarter, deadline, created_by, proposal_rationale,
           created_at, updated_at
 `
 
-// Owner stamp on a proposed goal: proposed → not_started. The state-scoped
-// WHERE makes the transition atomic; zero rows means the row is missing or
-// not proposed (the store disambiguates with a follow-up read).
+// Owner stamp on a proposed goal: proposed → in_progress. Activation means
+// "I'm tracking this now", so it lands directly in_progress and shows up in
+// brief's active_goals (which reads status='in_progress') immediately — no
+// separate "start" step. The state-scoped WHERE makes the transition atomic;
+// zero rows means the row is missing or not proposed (the store disambiguates
+// with a follow-up read).
 func (q *Queries) ActivateGoal(ctx context.Context, id uuid.UUID) (Goal, error) {
 	row := q.db.QueryRow(ctx, activateGoal, id)
 	var i Goal

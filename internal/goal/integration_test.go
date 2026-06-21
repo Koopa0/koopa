@@ -996,7 +996,7 @@ func deleteAreasBySlug(t *testing.T, slugs ...string) {
 }
 
 // TestIntegration_Goal_ActivateGoal drives POST /goals/{id}/activate: a
-// proposed goal flips to not_started; a non-proposed goal is a 409 NOT_PROPOSED;
+// proposed goal flips to in_progress; a non-proposed goal is a 409 NOT_PROPOSED;
 // a missing goal is a 404.
 func TestIntegration_Goal_ActivateGoal(t *testing.T) {
 	truncate(t)
@@ -1017,8 +1017,8 @@ func TestIntegration_Goal_ActivateGoal(t *testing.T) {
 	).Scan(&status); err != nil {
 		t.Fatalf("reading activated goal: %v", err)
 	}
-	if status != string(goal.StatusNotStarted) {
-		t.Errorf("activated goal status = %q, want %q", status, goal.StatusNotStarted)
+	if status != string(goal.StatusInProgress) {
+		t.Errorf("activated goal status = %q, want %q (activation = tracking now)", status, goal.StatusInProgress)
 	}
 
 	// A non-proposed goal → 409 NOT_PROPOSED, untouched.
