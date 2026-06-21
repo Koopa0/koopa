@@ -3,11 +3,12 @@
 // Package reading provides Koopa's private literature shelf and reading
 // diary: one Reading per book, many dated Reflections threaded under it.
 //
-// The domain is deeply private by design. It has zero agent surface — no
-// MCP tool touches these tables, they are not part of the search_knowledge
-// corpus (no embeddings, no tsvector), and the only access path is the
-// admin HTTP API in handler.go. Evaluation happens exclusively through
-// reflections; there is intentionally no rating field (owner decision).
+// The domain is private by design. Writes go only through the admin HTTP
+// API in handler.go — no agent write path exists. Agents have a read-only
+// window via the list_readings / get_reading MCP tools (internal/mcp); the
+// tables are still NOT part of the search_knowledge corpus (no embeddings,
+// no tsvector). Evaluation happens exclusively through reflections; there is
+// intentionally no rating field (owner decision).
 //
 // This package is the sole read and write path for the readings and
 // reading_reflections tables.
