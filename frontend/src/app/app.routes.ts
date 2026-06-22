@@ -158,13 +158,6 @@ export const routes: Routes = [
           ),
         data: { gtdView: 'today' },
       },
-      {
-        path: 'daily/close',
-        loadComponent: () =>
-          import('./admin/commitment/day-close/day-close.page').then(
-            (m) => m.DayClosePageComponent,
-          ),
-      },
 
       // ── Commitment ───────────────────────────────────────────────
       {

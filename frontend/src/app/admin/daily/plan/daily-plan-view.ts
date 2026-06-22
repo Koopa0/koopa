@@ -69,7 +69,7 @@ export function unplannedCandidates(
 /**
  * Whether removing `todoId` would empty the plan. The atomic PUT rejects an
  * empty items list (400), so the last planned item can't be removed through
- * the builder — it's dropped from Today or the day-close flow instead.
+ * the builder — it's dropped from Today instead.
  */
 export function isLastPlanned(
   planned: readonly DailyPlanEntry[],

@@ -47,7 +47,7 @@ import {
  * daily-plan PUT (DailyPlanService.replace) which rewrites positions and
  * leaves done/deferred/dropped history untouched. The PUT rejects an empty
  * item list, so the last planned item can't be removed here — that belongs
- * to Today or day-close. After each write the page re-renders from the
+ * to Today. After each write the page re-renders from the
  * server's returned plan, never a local guess.
  */
 @Component({
