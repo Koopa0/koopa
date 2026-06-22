@@ -8,13 +8,12 @@ import { provideRouter } from '@angular/router';
 
 import { SystemStatsPageComponent } from './system-stats.page';
 
-// The page reads three live endpoints. Each section owns its state, so
+// The page reads two live endpoints. Each section owns its state, so
 // the specs exercise the per-section degradation contract: a failing
 // overview read must not blank the drift table, and vice versa.
 
 const OVERVIEW_URL = '/api/admin/system/stats';
 const DRIFT_URL = '/api/admin/system/stats/drift';
-const LEARNING_URL = '/api/admin/system/stats/learning';
 
 function overviewPayload(): Record<string, unknown> {
   return {
@@ -70,18 +69,6 @@ function driftPayload(): Record<string, unknown> {
   };
 }
 
-function learningPayload(): Record<string, unknown> {
-  return {
-    notes: {
-      total: 84,
-      last_week: 4,
-      last_month: 12,
-      by_type: { 'solve-note': 8 },
-    },
-    activity: { this_week: 9, last_week: 6, trend: 'up' },
-  };
-}
-
 describe('SystemStatsPageComponent', () => {
   let fixture: ComponentFixture<SystemStatsPageComponent>;
   let httpMock: HttpTestingController;
@@ -121,9 +108,6 @@ describe('SystemStatsPageComponent', () => {
     httpMock
       .expectOne((r) => r.url.endsWith(DRIFT_URL))
       .flush({ data: driftPayload() });
-    httpMock
-      .expectOne((r) => r.url.endsWith(LEARNING_URL))
-      .flush({ data: learningPayload() });
   }
 
   it('should render tiles, breakdowns, and tables when all reads succeed', async () => {
@@ -156,14 +140,9 @@ describe('SystemStatsPageComponent', () => {
     );
     expect(driftRow?.textContent).toContain('engineering');
     expect(driftRow?.textContent).toContain('22.5%');
-
-    expect(
-      el().querySelector('[data-testid="stats-learning-cadence"]')
-        ?.textContent,
-    ).toContain('9');
   });
 
-  it('should keep drift and learning sections alive when the overview read fails', async () => {
+  it('should keep the drift section alive when the overview read fails', async () => {
     await settle();
     httpMock
       .expectOne((r) => r.url.endsWith(OVERVIEW_URL))
@@ -174,9 +153,6 @@ describe('SystemStatsPageComponent', () => {
     httpMock
       .expectOne((r) => r.url.endsWith(DRIFT_URL))
       .flush({ data: driftPayload() });
-    httpMock
-      .expectOne((r) => r.url.endsWith(LEARNING_URL))
-      .flush({ data: learningPayload() });
     await settle();
 
     expect(
@@ -184,9 +160,6 @@ describe('SystemStatsPageComponent', () => {
     ).toBeTruthy();
     expect(
       el().querySelector('[data-testid="stats-drift-row-engineering"]'),
-    ).toBeTruthy();
-    expect(
-      el().querySelector('[data-testid="stats-learning-cadence"]'),
     ).toBeTruthy();
   });
 
@@ -201,9 +174,6 @@ describe('SystemStatsPageComponent', () => {
         { error: { code: 'INTERNAL', message: 'boom' } },
         { status: 500, statusText: 'Internal Server Error' },
       );
-    httpMock
-      .expectOne((r) => r.url.endsWith(LEARNING_URL))
-      .flush({ data: learningPayload() });
     await settle();
 
     expect(
@@ -225,9 +195,6 @@ describe('SystemStatsPageComponent', () => {
         { error: { code: 'INTERNAL', message: 'boom' } },
         { status: 500, statusText: 'Internal Server Error' },
       );
-    httpMock
-      .expectOne((r) => r.url.endsWith(LEARNING_URL))
-      .flush({ data: learningPayload() });
     await settle();
 
     el()

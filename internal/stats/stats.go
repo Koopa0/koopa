@@ -90,27 +90,6 @@ type AreaDrift struct {
 	DriftPercent float64 `json:"drift_percent"`
 }
 
-// LearningDashboard aggregates learning-related metrics.
-type LearningDashboard struct {
-	Notes    NoteGrowth     `json:"notes"`
-	Activity WeeklyActivity `json:"activity"`
-}
-
-// NoteGrowth tracks note creation over time.
-type NoteGrowth struct {
-	Total     int            `json:"total"`
-	LastWeek  int            `json:"last_week"`
-	LastMonth int            `json:"last_month"`
-	ByType    map[string]int `json:"by_type"`
-}
-
-// WeeklyActivity tracks activity trends.
-type WeeklyActivity struct {
-	ThisWeek int    `json:"this_week"`
-	LastWeek int    `json:"last_week"`
-	Trend    string `json:"trend"` // "up", "down", "stable"
-}
-
 // ProcessRunSummary holds process_runs counts by status within a time window
 // for a specific kind. Used by ProcessRunsSince.
 //

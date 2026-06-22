@@ -52,17 +52,6 @@ func (h *Handler) Drift(w http.ResponseWriter, r *http.Request) {
 	api.Encode(w, http.StatusOK, api.Response{Data: report})
 }
 
-// Learning handles GET /api/admin/stats/learning.
-func (h *Handler) Learning(w http.ResponseWriter, r *http.Request) {
-	dashboard, err := h.store.Learning(r.Context())
-	if err != nil {
-		h.logger.Error("querying learning dashboard", "error", err)
-		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to query learning stats")
-		return
-	}
-	api.Encode(w, http.StatusOK, api.Response{Data: dashboard})
-}
-
 // Health handles GET /api/admin/system/health. Returns the canonical
 // system snapshot consumed by the admin shell ribbon, today warnings,
 // and nav counters: feed health, recent pipeline runs, and core entity

@@ -293,7 +293,6 @@ func registerRoutes(
 	// --- Admin: System / Stats ---
 	mux.Handle("GET /api/admin/system/stats", authMid(http.HandlerFunc(h.stats.Overview)))
 	mux.Handle("GET /api/admin/system/stats/drift", authMid(http.HandlerFunc(h.stats.Drift)))
-	mux.Handle("GET /api/admin/system/stats/learning", authMid(http.HandlerFunc(h.stats.Learning)))
 
 	// --- Admin: System / Health ---
 	// Served out of internal/stats — the snapshot consumed by the admin

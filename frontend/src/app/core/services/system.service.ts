@@ -3,7 +3,6 @@ import { Observable } from 'rxjs';
 import { ApiService } from './api.service';
 import type {
   DriftReport,
-  StatsLearning,
   StatsOverview,
   SystemHealth,
 } from '../models/admin.model';
@@ -29,10 +28,5 @@ export class SystemService {
       '/api/admin/system/stats/drift',
       days === undefined ? undefined : { days },
     );
-  }
-
-  /** Get learning content stats: note growth, weekly cadence, top tags */
-  getLearningStats(): Observable<StatsLearning> {
-    return this.api.getData<StatsLearning>('/api/admin/system/stats/learning');
   }
 }

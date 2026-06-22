@@ -280,22 +280,3 @@ export interface AreaDrift {
   drift_percent: number;
 }
 
-/** GET /api/admin/system/stats/learning — note growth + weekly cadence. */
-export interface StatsLearning {
-  notes: StatsNoteGrowth;
-  activity: StatsWeeklyActivity;
-}
-
-export interface StatsNoteGrowth {
-  total: number;
-  last_week: number;
-  last_month: number;
-  by_type: Record<string, number>;
-}
-
-export interface StatsWeeklyActivity {
-  this_week: number;
-  last_week: number;
-  trend: 'up' | 'down' | 'stable';
-}
-

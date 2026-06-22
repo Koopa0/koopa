@@ -7,7 +7,6 @@ package stats
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"slices"
 	"time"
 
@@ -313,68 +312,6 @@ func (s *Store) RecentProcessRuns(ctx context.Context, since time.Time, kind str
 		runs = append(runs, r)
 	}
 	return runs, nil
-}
-
-// Learning returns aggregated learning metrics for the admin dashboard.
-func (s *Store) Learning(ctx context.Context) (*LearningDashboard, error) {
-	ld := &LearningDashboard{
-		Notes:    NoteGrowth{ByType: map[string]int{}},
-		Activity: WeeklyActivity{Trend: "stable"},
-	}
-
-	// Each section is independent — partial failures return zeros so the
-	// tool always returns a response even when some tables are empty.
-	var hasData bool
-
-	if err := s.learningNoteGrowth(ctx, ld); err != nil {
-		slog.Warn("learning: note growth query failed, returning zeros", "error", err)
-	} else {
-		hasData = true
-	}
-
-	if err := s.learningWeeklyActivity(ctx, ld); err != nil {
-		slog.Warn("learning: weekly activity query failed, returning zeros", "error", err)
-	} else {
-		hasData = true
-	}
-
-	if !hasData {
-		return nil, fmt.Errorf("all learning queries failed: check database connectivity and migration status")
-	}
-
-	return ld, nil
-}
-
-func (s *Store) learningNoteGrowth(ctx context.Context, ld *LearningDashboard) error {
-	row, err := s.q.StatsNoteGrowth(ctx)
-	if err != nil {
-		return fmt.Errorf("note growth: %w", err)
-	}
-	ld.Notes.Total = int(row.Total)
-	ld.Notes.LastWeek = int(row.LastWeek)
-	ld.Notes.LastMonth = int(row.LastMonth)
-
-	// ByType is not populated — the dashboard widget shows total only.
-	return nil
-}
-
-func (s *Store) learningWeeklyActivity(ctx context.Context, ld *LearningDashboard) error {
-	row, err := s.q.StatsWeeklyActivity(ctx)
-	if err != nil {
-		return fmt.Errorf("weekly activity: %w", err)
-	}
-	ld.Activity.ThisWeek = int(row.ThisWeek)
-	ld.Activity.LastWeek = int(row.LastWeek)
-
-	switch {
-	case ld.Activity.ThisWeek > ld.Activity.LastWeek:
-		ld.Activity.Trend = "up"
-	case ld.Activity.ThisWeek < ld.Activity.LastWeek:
-		ld.Activity.Trend = "down"
-	default:
-		ld.Activity.Trend = "stable"
-	}
-	return nil
 }
 
 // SystemHealth returns the snapshot served at GET /api/admin/system/health.

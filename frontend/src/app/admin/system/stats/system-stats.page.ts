@@ -23,11 +23,11 @@ interface StatTile {
 }
 
 /**
- * System stats page. Three independent reads — GET
- * /api/admin/system/stats (inventory tiles, breakdowns, process runs),
- * /stats/drift (area drift table), and /stats/learning (note growth +
- * weekly cadence). Each section degrades on its own: a failing read renders
- * an inline error with Retry while sibling sections stay live.
+ * System stats page. Two independent reads — GET
+ * /api/admin/system/stats (inventory tiles, breakdowns, process runs) and
+ * /stats/drift (area drift table). Each section degrades on its own: a
+ * failing read renders an inline error with Retry while sibling sections
+ * stay live.
  */
 @Component({
   selector: 'app-system-stats-page',
@@ -47,9 +47,6 @@ export class SystemStatsPageComponent {
   private readonly driftResource = rxResource({
     stream: () => this.systemService.getDrift(),
   });
-  private readonly learningResource = rxResource({
-    stream: () => this.systemService.getLearningStats(),
-  });
 
   // resource.value() throws while a resource is in the error state, so
   // every downstream read goes through these hasValue()-guarded views.
@@ -60,11 +57,6 @@ export class SystemStatsPageComponent {
   );
   protected readonly drift = computed(() =>
     this.driftResource.hasValue() ? this.driftResource.value() : undefined,
-  );
-  protected readonly learning = computed(() =>
-    this.learningResource.hasValue()
-      ? this.learningResource.value()
-      : undefined,
   );
 
   protected readonly overviewLoading = computed(
@@ -78,12 +70,6 @@ export class SystemStatsPageComponent {
   );
   protected readonly driftError = computed(
     () => this.driftResource.status() === 'error',
-  );
-  protected readonly learningLoading = computed(
-    () => this.learningResource.status() === 'loading',
-  );
-  protected readonly learningError = computed(
-    () => this.learningResource.status() === 'error',
   );
 
   protected readonly tiles = computed<StatTile[]>(() => {
@@ -141,13 +127,8 @@ export class SystemStatsPageComponent {
     this.driftResource.reload();
   }
 
-  protected retryLearning(): void {
-    this.learningResource.reload();
-  }
-
   private reloadAll(): void {
     this.overviewResource.reload();
     this.driftResource.reload();
-    this.learningResource.reload();
   }
 }

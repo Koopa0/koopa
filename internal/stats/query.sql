@@ -86,23 +86,6 @@ WHERE kind = @kind::text
 ORDER BY created_at DESC
 LIMIT @max_results;
 
-
--- name: StatsNoteGrowth :one
--- Short-form knowledge growth over TIL contents.
-SELECT
-    COUNT(*)::int AS total,
-    COUNT(*) FILTER (WHERE created_at > now() - interval '7 days')::int AS last_week,
-    COUNT(*) FILTER (WHERE created_at > now() - interval '30 days')::int AS last_month
-FROM contents
-WHERE type = 'til';
-
--- name: StatsWeeklyActivity :one
--- Compares this week (last 7 days) vs last week (7-14 days ago).
-SELECT
-    COUNT(*) FILTER (WHERE occurred_at > now() - interval '7 days')::int AS this_week,
-    COUNT(*) FILTER (WHERE occurred_at > now() - interval '14 days' AND occurred_at <= now() - interval '7 days')::int AS last_week
-FROM activity_events;
-
 -- name: StatsFeedHealthCounts :one
 SELECT
     COUNT(*)::int AS total,

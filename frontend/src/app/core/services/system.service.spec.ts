@@ -7,7 +7,6 @@ import { provideHttpClient, withXhr } from '@angular/common/http';
 import { SystemService } from './system.service';
 import type {
   DriftReport,
-  StatsLearning,
   StatsOverview,
   SystemHealth,
 } from '../models/admin.model';
@@ -57,11 +56,6 @@ const mockDrift: DriftReport = {
       drift_percent: 22.5,
     },
   ],
-};
-
-const mockLearning: StatsLearning = {
-  notes: { total: 84, last_week: 4, last_month: 12, by_type: { 'solve-note': 8 } },
-  activity: { this_week: 9, last_week: 6, trend: 'up' },
 };
 
 describe('SystemService', () => {
@@ -129,17 +123,5 @@ describe('SystemService', () => {
     );
     expect(req.request.params.get('days')).toBe('7');
     req.flush({ data: mockDrift });
-  });
-
-  it('should fetch learning stats', () => {
-    service.getLearningStats().subscribe((res) => {
-      expect(res.activity.trend).toBe('up');
-    });
-
-    const req = httpMock.expectOne((r) =>
-      r.url.endsWith('/api/admin/system/stats/learning'),
-    );
-    expect(req.request.method).toBe('GET');
-    req.flush({ data: mockLearning });
   });
 });

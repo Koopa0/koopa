@@ -7,7 +7,7 @@ package stats
 // Scope:
 //   - computeAreaDrift: pure business logic — division-by-zero guards, empty maps,
 //     single-side data (goals but no events, events but no goals), sort order.
-//   - Handler.Overview / Handler.Drift / Handler.Learning: HTTP handler tests via
+//   - Handler.Overview / Handler.Drift: HTTP handler tests via
 //     httptest with a stub db.DBTX that controls which queries succeed or fail.
 //   - days param parsing in Handler.Drift: boundary clamping (0, negative, >90, exact
 //     boundaries 1 and 90) plus a fuzz test for the raw string path.
@@ -417,104 +417,6 @@ func TestHandler_Drift_StoreError(t *testing.T) {
 		t.Fatalf("Drift() on DB error: status = %d, want %d", w.Code, http.StatusInternalServerError)
 	}
 	assertErrorCode(t, w, "INTERNAL")
-}
-
-// ── Handler.Learning tests ─────────────────────────────────────────────────────
-
-func TestHandler_Learning_Success(t *testing.T) {
-	t.Parallel()
-
-	dbtx := &stubDBTX{
-		queryFn: func(_ context.Context, _ string, _ ...any) (pgx.Rows, error) {
-			return &emptyRows{}, nil
-		},
-		queryRowFn: func(_ context.Context, _ string, _ ...any) pgx.Row {
-			return &zeroRow{}
-		},
-	}
-
-	h := NewHandler(NewStore(dbtx), silentLogger())
-
-	req := httptest.NewRequest(http.MethodGet, "/api/admin/stats/learning", http.NoBody)
-	w := httptest.NewRecorder()
-	h.Learning(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("Learning() status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
-	}
-
-	var resp struct {
-		Data LearningDashboard `json:"data"`
-	}
-	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
-		t.Fatalf("decoding Learning() response: %v", err)
-	}
-
-	// Empty DB — all counts must be zero, trend stable.
-	if resp.Data.Notes.Total != 0 {
-		t.Errorf("Learning().Notes.Total = %d, want 0", resp.Data.Notes.Total)
-	}
-	if resp.Data.Activity.Trend != "stable" {
-		t.Errorf("Learning().Activity.Trend = %q, want %q", resp.Data.Activity.Trend, "stable")
-	}
-}
-
-func TestHandler_Learning_AllQueriesFail_ReturnsError(t *testing.T) {
-	t.Parallel()
-
-	// Both sub-queries (learningNoteGrowth, learningWeeklyActivity)
-	// rely on QueryRow or Query. Make both fail so hasData stays false and the store
-	// returns the "all learning queries failed" error.
-	boom := errors.New("total outage")
-	dbtx := &stubDBTX{
-		queryFn: func(_ context.Context, _ string, _ ...any) (pgx.Rows, error) {
-			return nil, boom
-		},
-		queryRowFn: func(_ context.Context, _ string, _ ...any) pgx.Row {
-			return &errRow{err: boom}
-		},
-	}
-
-	h := NewHandler(NewStore(dbtx), silentLogger())
-
-	req := httptest.NewRequest(http.MethodGet, "/api/admin/stats/learning", http.NoBody)
-	w := httptest.NewRecorder()
-	h.Learning(w, req)
-
-	if w.Code != http.StatusInternalServerError {
-		t.Fatalf("Learning() all-fail: status = %d, want %d", w.Code, http.StatusInternalServerError)
-	}
-	assertErrorCode(t, w, "INTERNAL")
-}
-
-func TestHandler_Learning_PartialFailure_StillSucceeds(t *testing.T) {
-	t.Parallel()
-
-	// learningNoteGrowth and learningWeeklyActivity both use QueryRow.
-	// Let every QueryRow succeed (zeros) but every Query fail. hasData
-	// should be true (both QueryRow sub-queries contributed data), so the
-	// handler returns 200 even though the Query path is broken.
-	boom := errors.New("query path broken")
-	dbtx := &stubDBTX{
-		queryFn: func(_ context.Context, _ string, _ ...any) (pgx.Rows, error) {
-			return nil, boom
-		},
-		queryRowFn: func(_ context.Context, _ string, _ ...any) pgx.Row {
-			return &zeroRow{}
-		},
-	}
-
-	h := NewHandler(NewStore(dbtx), silentLogger())
-
-	req := httptest.NewRequest(http.MethodGet, "/api/admin/stats/learning", http.NoBody)
-	w := httptest.NewRecorder()
-	h.Learning(w, req)
-
-	// learningWeeklyActivity succeeds via QueryRow so hasData = true.
-	if w.Code != http.StatusOK {
-		t.Fatalf("Learning() partial-fail: status = %d, want %d; body: %s",
-			w.Code, http.StatusOK, w.Body.String())
-	}
 }
 
 // ── Drift days param fuzz test ─────────────────────────────────────────────────

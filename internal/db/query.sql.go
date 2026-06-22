@@ -6002,29 +6002,6 @@ func (q *Queries) StatsGoalsByArea(ctx context.Context) ([]StatsGoalsByAreaRow, 
 	return items, nil
 }
 
-const statsNoteGrowth = `-- name: StatsNoteGrowth :one
-SELECT
-    COUNT(*)::int AS total,
-    COUNT(*) FILTER (WHERE created_at > now() - interval '7 days')::int AS last_week,
-    COUNT(*) FILTER (WHERE created_at > now() - interval '30 days')::int AS last_month
-FROM contents
-WHERE type = 'til'
-`
-
-type StatsNoteGrowthRow struct {
-	Total     int32 `json:"total"`
-	LastWeek  int32 `json:"last_week"`
-	LastMonth int32 `json:"last_month"`
-}
-
-// Short-form knowledge growth over TIL contents.
-func (q *Queries) StatsNoteGrowth(ctx context.Context) (StatsNoteGrowthRow, error) {
-	row := q.db.QueryRow(ctx, statsNoteGrowth)
-	var i StatsNoteGrowthRow
-	err := row.Scan(&i.Total, &i.LastWeek, &i.LastMonth)
-	return i, err
-}
-
 const statsProcessRunsByStatus = `-- name: StatsProcessRunsByStatus :many
 SELECT status::text AS status, COUNT(*)::int AS count
 FROM process_runs
@@ -6231,26 +6208,6 @@ func (q *Queries) StatsRecentProcessRuns(ctx context.Context, arg StatsRecentPro
 		return nil, err
 	}
 	return items, nil
-}
-
-const statsWeeklyActivity = `-- name: StatsWeeklyActivity :one
-SELECT
-    COUNT(*) FILTER (WHERE occurred_at > now() - interval '7 days')::int AS this_week,
-    COUNT(*) FILTER (WHERE occurred_at > now() - interval '14 days' AND occurred_at <= now() - interval '7 days')::int AS last_week
-FROM activity_events
-`
-
-type StatsWeeklyActivityRow struct {
-	ThisWeek int32 `json:"this_week"`
-	LastWeek int32 `json:"last_week"`
-}
-
-// Compares this week (last 7 days) vs last week (7-14 days ago).
-func (q *Queries) StatsWeeklyActivity(ctx context.Context) (StatsWeeklyActivityRow, error) {
-	row := q.db.QueryRow(ctx, statsWeeklyActivity)
-	var i StatsWeeklyActivityRow
-	err := row.Scan(&i.ThisWeek, &i.LastWeek)
-	return i, err
 }
 
 const submitContentForReview = `-- name: SubmitContentForReview :one
