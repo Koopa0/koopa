@@ -150,6 +150,117 @@ WHERE area_id = @area_id
   AND status NOT IN ('proposed', 'archived')
 ORDER BY title;
 
+-- ============================================================
+-- project_progress — owner PARA momentum/stalled intelligence.
+-- Read-only, computed LIVE at read time. Nothing is stored: there is
+-- no momentum/stalled column and no snapshot table; activity_events is
+-- the single source of truth for "what happened, by whom".
+-- ============================================================
+
+-- name: ProjectMomentum :many
+-- Per-project momentum row for the project_progress tool. One row per
+-- candidate project (status in_progress|planned AND expected_cadence set —
+-- proposed/archived/cadence-less projects are excluded because a project
+-- without a cadence has no "expected frequency" to be stalled against).
+--
+-- HUMAN ACTIVITY ONLY: last_human_activity_at is the latest
+-- activity_events.occurred_at for an event scoped to this project
+-- (activity_events.project_id = p.id) where actor = 'human'. Agent/system
+-- actors (planner, hermes, codex, claude, system, …) never count as owner
+-- progress, so the correlated subquery filters actor = 'human'. We compute
+-- this live rather than trusting projects.last_activity_at, which is a cron
+-- denormalisation that records ANY actor.
+--
+-- open_next_action is true when the project has at least one OPEN todo
+-- (state in inbox|todo|someday — anything not done) OR at least one
+-- INCOMPLETE milestone on its goal (completed_at IS NULL). A project with no
+-- open next action is "待規劃", never stalled — the handler decides stalled.
+--
+-- milestone_done/milestone_total count the project's GOAL's milestones (0/0
+-- when the project has no goal). The decision of WHAT counts as stalled lives
+-- in Go (project.Stalled), not in SQL: this query only surfaces the inputs.
+SELECT
+    p.id,
+    p.slug,
+    p.title,
+    p.goal_id,
+    g.title AS goal_title,
+    p.expected_cadence,
+    ha.last_human_activity_at,
+    (
+        EXISTS (
+            SELECT 1 FROM todos t
+            WHERE t.project_id = p.id
+              AND t.state <> 'done'
+        )
+        OR EXISTS (
+            SELECT 1 FROM milestones m
+            WHERE m.goal_id = p.goal_id
+              AND m.completed_at IS NULL
+        )
+    ) AS open_next_action,
+    (
+        SELECT count(*) FROM milestones m
+        WHERE m.goal_id = p.goal_id AND m.completed_at IS NOT NULL
+    )::bigint AS milestone_done,
+    (
+        SELECT count(*) FROM milestones m
+        WHERE m.goal_id = p.goal_id
+    )::bigint AS milestone_total
+FROM projects p
+LEFT JOIN goals g ON g.id = p.goal_id
+LEFT JOIN (
+    SELECT ae.project_id, max(ae.occurred_at) AS last_human_activity_at
+    FROM activity_events ae
+    WHERE ae.actor = 'human'
+    GROUP BY ae.project_id
+) ha ON ha.project_id = p.id
+WHERE p.status IN ('in_progress', 'planned')
+  AND p.expected_cadence IS NOT NULL
+ORDER BY p.title;
+
+-- name: ActiveGoalMilestones :many
+-- Milestone counts for every active (in_progress) goal, for the goals[]
+-- rollup in project_progress. The projects' momentum rollup is assembled in
+-- Go by grouping ProjectMomentum rows on goal_id — this query supplies the
+-- per-goal milestone progress that has no project to hang off.
+SELECT
+    g.id,
+    g.title,
+    (
+        SELECT count(*) FROM milestones m
+        WHERE m.goal_id = g.id AND m.completed_at IS NOT NULL
+    )::bigint AS milestone_done,
+    (
+        SELECT count(*) FROM milestones m
+        WHERE m.goal_id = g.id
+    )::bigint AS milestone_total
+FROM goals g
+WHERE g.status = 'in_progress'
+ORDER BY g.title;
+
+-- name: ActiveAreaActivity :many
+-- One row per active PARA area for the areas[] neglect rollup in
+-- project_progress. last_human_activity_at is the latest human-actor
+-- activity_events.occurred_at across every project filed under the area
+-- (NULL when the area has no human activity at all). The handler applies the
+-- 14-day neglect threshold (project.AreaNeglectedThreshold); this query only
+-- surfaces the live signal.
+SELECT
+    a.slug,
+    a.name,
+    ha.last_human_activity_at
+FROM areas a
+LEFT JOIN (
+    SELECT p.area_id, max(ae.occurred_at) AS last_human_activity_at
+    FROM activity_events ae
+    JOIN projects p ON p.id = ae.project_id
+    WHERE ae.actor = 'human'
+    GROUP BY p.area_id
+) ha ON ha.area_id = a.id
+WHERE a.status = 'active'
+ORDER BY a.sort_order, a.name;
+
 -- name: ProfileByProjectID :one
 SELECT project_id, long_description, role, tech_stack, highlights,
        problem, solution, architecture, results, github_url, live_url,

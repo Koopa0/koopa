@@ -164,6 +164,9 @@ func NewServer(pool *pgxpool.Pool, logger *slog.Logger, opts ...ServerOption) *S
 	addTool(s, toolFrom(ops.ListReadings), s.listReadings)
 	addTool(s, toolFrom(ops.Reading), s.getReading)
 
+	// --- PARA momentum (read-only owner project/goal/area progress) ---
+	addTool(s, toolFrom(ops.ProjectProgress), s.projectProgress)
+
 	return s
 }
 

@@ -1734,3 +1734,272 @@ func TestIntegration_GetReading_CallerGate(t *testing.T) {
 		}
 	}
 }
+
+// --- project_progress (read-only PARA momentum/stalled) ---
+//
+// These tests pin the load-bearing semantics: the HUMAN-ONLY activity
+// filter (agent/system actors must not count as progress), the stalled
+// threshold (2× cadence + open next action), and area neglect (>14 days
+// with no human activity anywhere under the area). activity_events rows are
+// seeded DIRECTLY with controlled occurred_at + actor — the only way to pin
+// a timestamp, since the audit trigger stamps now(). A direct INSERT is a
+// convention violation for application code, never the schema (the table
+// comment says so), and is exactly what a fixture needs here.
+
+// seedProgressProject inserts an active project with an expected cadence,
+// optionally linked to a goal and an area, and returns its id.
+func seedProgressProject(t *testing.T, slug, title, cadence string, goalID, areaID *uuid.UUID) uuid.UUID {
+	t.Helper()
+	var id uuid.UUID
+	if err := testPool.QueryRow(t.Context(),
+		`INSERT INTO projects (slug, title, status, expected_cadence, goal_id, area_id)
+		 VALUES ($1, $2, 'in_progress', $3, $4, $5) RETURNING id`,
+		slug, title, cadence, goalID, areaID,
+	).Scan(&id); err != nil {
+		t.Fatalf("seedProgressProject(%q, cadence=%s): %v", slug, cadence, err)
+	}
+	return id
+}
+
+// seedProgressGoal inserts an in_progress goal and returns its id.
+func seedProgressGoal(t *testing.T, title string) uuid.UUID {
+	t.Helper()
+	var id uuid.UUID
+	if err := testPool.QueryRow(t.Context(),
+		`INSERT INTO goals (title, status) VALUES ($1, 'in_progress') RETURNING id`,
+		title,
+	).Scan(&id); err != nil {
+		t.Fatalf("seedProgressGoal(%q): %v", title, err)
+	}
+	return id
+}
+
+// seedProgressMilestone inserts a milestone under a goal, completed when
+// completed is true.
+func seedProgressMilestone(t *testing.T, goalID uuid.UUID, title string, position int, completed bool) {
+	t.Helper()
+	var completedAt *time.Time
+	if completed {
+		now := time.Now()
+		completedAt = &now
+	}
+	if _, err := testPool.Exec(t.Context(),
+		`INSERT INTO milestones (goal_id, title, position, completed_at)
+		 VALUES ($1, $2, $3, $4)`,
+		goalID, title, position, completedAt,
+	); err != nil {
+		t.Fatalf("seedProgressMilestone(goal=%s, %q): %v", goalID, title, err)
+	}
+}
+
+// seedProgressTodo inserts a todo linked to a project in the given state.
+func seedProgressTodo(t *testing.T, projectID uuid.UUID, title, state string) {
+	t.Helper()
+	if _, err := testPool.Exec(t.Context(),
+		`INSERT INTO todos (title, state, project_id) VALUES ($1, $2::todo_state, $3)`,
+		title, state, projectID,
+	); err != nil {
+		t.Fatalf("seedProgressTodo(project=%s, %q, %s): %v", projectID, title, state, err)
+	}
+}
+
+// areaIDBySlug resolves a seeded/migration area slug to its id.
+func areaIDBySlug(t *testing.T, slug string) uuid.UUID {
+	t.Helper()
+	var id uuid.UUID
+	if err := testPool.QueryRow(t.Context(),
+		`SELECT id FROM areas WHERE slug = $1`, slug,
+	).Scan(&id); err != nil {
+		t.Fatalf("areaIDBySlug(%q): %v", slug, err)
+	}
+	return id
+}
+
+// seedActivityEvent inserts an activity_events row directly with a controlled
+// actor and occurred_at. Fixture-only: the audit trigger would stamp now()
+// and current_actor(), which a momentum test cannot control. project_id is
+// what project_progress scopes its human-activity read to.
+func seedActivityEvent(t *testing.T, projectID uuid.UUID, actor string, occurredAt time.Time) {
+	t.Helper()
+	if _, err := testPool.Exec(t.Context(),
+		`INSERT INTO activity_events (entity_type, entity_id, change_kind, project_id, actor, occurred_at)
+		 VALUES ('project', $1, 'updated', $1, $2, $3)`,
+		projectID, actor, occurredAt,
+	); err != nil {
+		t.Fatalf("seedActivityEvent(project=%s, actor=%s): %v", projectID, actor, err)
+	}
+}
+
+// TestIntegration_ProjectProgress_HumanOnlyAndStalled pins the two core
+// rules at once. A project whose ONLY recent activity is by a non-human
+// actor (planner) must read as stalled — the agent event does not count —
+// while a sibling with a recent HUMAN event on the same cadence must not.
+// A bug that counted any-actor activity (e.g. trusting projects.last_activity_at
+// or dropping the actor='human' filter) would flip the stalled verdict on
+// the agent-only project to false and fail this test.
+func TestIntegration_ProjectProgress_HumanOnlyAndStalled(t *testing.T) {
+	s := setupServer(t)
+
+	goalID := seedProgressGoal(t, "Ship the engine")
+	seedProgressMilestone(t, goalID, "API layer", 0, true)     // done
+	seedProgressMilestone(t, goalID, "Search layer", 1, false) // open
+
+	// Agent-only project: human touched it 30 days ago (well past the
+	// daily 2-day threshold); a planner event yesterday must NOT rescue it.
+	agentOnly := seedProgressProject(t, "agent-only", "Agent Only", "daily", &goalID, nil)
+	seedProgressTodo(t, agentOnly, "wire search", "todo") // open next action
+	seedActivityEvent(t, agentOnly, "human", time.Now().AddDate(0, 0, -30))
+	seedActivityEvent(t, agentOnly, "planner", time.Now().AddDate(0, 0, -1))
+
+	// Fresh-human project: human event yesterday, daily cadence → not stalled.
+	fresh := seedProgressProject(t, "fresh-human", "Fresh Human", "daily", &goalID, nil)
+	seedProgressTodo(t, fresh, "polish", "todo")
+	seedActivityEvent(t, fresh, "human", time.Now().AddDate(0, 0, -1))
+
+	// To-plan project: stale human activity but NO open next action → 待規劃,
+	// never stalled.
+	toPlan := seedProgressProject(t, "to-plan", "To Plan", "daily", nil, nil)
+	seedActivityEvent(t, toPlan, "human", time.Now().AddDate(0, 0, -30))
+
+	_, out, err := callHandlerAs(t, "planner", s.projectProgress, ProjectProgressInput{})
+	if err != nil {
+		t.Fatalf("projectProgress: %v", err)
+	}
+
+	got := make(map[string]ProgressProject, len(out.Projects))
+	for _, p := range out.Projects {
+		got[p.Slug] = p
+	}
+	if len(got) != 3 {
+		t.Fatalf("projectProgress returned %d projects, want 3: %+v", len(out.Projects), out.Projects)
+	}
+
+	if p := got["agent-only"]; !p.Stalled {
+		t.Errorf("agent-only stalled = false, want true (planner event must not count as human progress); days_since=%v", p.DaysSinceHumanAction)
+	}
+	if p := got["agent-only"]; p.DaysSinceHumanAction == nil || *p.DaysSinceHumanAction < 29 {
+		t.Errorf("agent-only days_since_human_activity = %v, want ~30 (human event, not the day-old planner one)", p.DaysSinceHumanAction)
+	}
+	if p := got["fresh-human"]; p.Stalled {
+		t.Errorf("fresh-human stalled = true, want false (human active yesterday on daily cadence)")
+	}
+	if p := got["to-plan"]; p.Stalled {
+		t.Errorf("to-plan stalled = true, want false (no open next action → 待規劃)")
+	}
+	if p := got["to-plan"]; p.OpenNextAction {
+		t.Errorf("to-plan open_next_action = true, want false")
+	}
+	if p := got["agent-only"]; !p.OpenNextAction {
+		t.Errorf("agent-only open_next_action = false, want true (has an open todo)")
+	}
+
+	// Goal rollup: 1 done / 2 total milestones, 2 candidate projects under
+	// the goal, 1 of them stalled (agent-only).
+	var goalRollup *ProgressGoal
+	for i := range out.Goals {
+		if out.Goals[i].ID == goalID.String() {
+			goalRollup = &out.Goals[i]
+		}
+	}
+	if goalRollup == nil {
+		t.Fatalf("goal %s missing from goals[] rollup", goalID)
+	}
+	if goalRollup.MilestoneDone != 1 || goalRollup.MilestoneTotal != 2 {
+		t.Errorf("goal milestones = %d/%d, want 1/2", goalRollup.MilestoneDone, goalRollup.MilestoneTotal)
+	}
+	if goalRollup.ProjectsTotal != 2 || goalRollup.ProjectsStalled != 1 {
+		t.Errorf("goal projects total/stalled = %d/%d, want 2/1", goalRollup.ProjectsTotal, goalRollup.ProjectsStalled)
+	}
+}
+
+// TestIntegration_ProjectProgress_AreaNeglect pins the area rollup: an area
+// whose project's only human activity is 20 days old (>14) is neglected,
+// while an area with a human event today is not. A non-human event inside
+// the neglect window must NOT clear the flag.
+func TestIntegration_ProjectProgress_AreaNeglect(t *testing.T) {
+	s := setupServer(t)
+
+	backendID := areaIDBySlug(t, "backend")
+	studioID := areaIDBySlug(t, "studio")
+
+	// backend: human active today → not neglected.
+	bproj := seedProgressProject(t, "backend-proj", "Backend Proj", "weekly", nil, &backendID)
+	seedActivityEvent(t, bproj, "human", time.Now())
+
+	// studio: human active 20 days ago, plus a planner event today inside
+	// the window — must stay neglected (agent doesn't reset the clock).
+	sproj := seedProgressProject(t, "studio-proj", "Studio Proj", "weekly", nil, &studioID)
+	seedActivityEvent(t, sproj, "human", time.Now().AddDate(0, 0, -20))
+	seedActivityEvent(t, sproj, "planner", time.Now())
+
+	_, out, err := callHandlerAs(t, "planner", s.projectProgress, ProjectProgressInput{})
+	if err != nil {
+		t.Fatalf("projectProgress: %v", err)
+	}
+
+	got := make(map[string]ProgressArea, len(out.Areas))
+	for _, a := range out.Areas {
+		got[a.Slug] = a
+	}
+	if a, ok := got["backend"]; !ok || a.AreaNeglected {
+		t.Errorf("backend area_neglected = %v (present=%v), want false (human active today)", a.AreaNeglected, ok)
+	}
+	if a, ok := got["studio"]; !ok || !a.AreaNeglected {
+		t.Errorf("studio area_neglected = %v (present=%v), want true (human silent 20 days; planner event must not count)", a.AreaNeglected, ok)
+	}
+}
+
+// TestIntegration_ProjectProgress_CandidateFilter pins the candidate gate:
+// proposed/archived projects and projects WITHOUT an expected_cadence are
+// excluded from projects[]. Only in_progress|planned with a cadence appear.
+func TestIntegration_ProjectProgress_CandidateFilter(t *testing.T) {
+	s := setupServer(t)
+
+	seedProgressProject(t, "candidate", "Candidate", "weekly", nil, nil)
+	// No cadence → excluded.
+	if _, err := testPool.Exec(t.Context(),
+		`INSERT INTO projects (slug, title, status) VALUES ('no-cadence', 'No Cadence', 'in_progress')`,
+	); err != nil {
+		t.Fatalf("seed no-cadence project: %v", err)
+	}
+	// proposed → excluded even with a cadence.
+	if _, err := testPool.Exec(t.Context(),
+		`INSERT INTO projects (slug, title, status, expected_cadence, created_by)
+		 VALUES ('proposed-proj', 'Proposed', 'proposed', 'weekly', 'planner')`,
+	); err != nil {
+		t.Fatalf("seed proposed project: %v", err)
+	}
+
+	_, out, err := callHandlerAs(t, "planner", s.projectProgress, ProjectProgressInput{})
+	if err != nil {
+		t.Fatalf("projectProgress: %v", err)
+	}
+
+	slugs := make(map[string]bool, len(out.Projects))
+	for _, p := range out.Projects {
+		slugs[p.Slug] = true
+	}
+	if !slugs["candidate"] {
+		t.Errorf("candidate project missing from projects[]")
+	}
+	if slugs["no-cadence"] {
+		t.Errorf("no-cadence project present in projects[], want excluded (cadence-less)")
+	}
+	if slugs["proposed-proj"] {
+		t.Errorf("proposed project present in projects[], want excluded")
+	}
+}
+
+// TestIntegration_ProjectProgress_CallerGate refuses the zero-privilege
+// fallback and a fabricated caller — the owner's PARA must not be readable
+// without a known identity, same gate as the readings tools.
+func TestIntegration_ProjectProgress_CallerGate(t *testing.T) {
+	s := setupServer(t)
+	seedProgressProject(t, "gated", "Gated", "weekly", nil, nil)
+
+	for _, caller := range []string{"unknown", "fabricated-agent"} {
+		if _, _, err := callHandlerAs(t, caller, s.projectProgress, ProjectProgressInput{}); err == nil {
+			t.Errorf("projectProgress as %q err = nil, want registered-caller refusal", caller)
+		}
+	}
+}
