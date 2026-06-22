@@ -43,7 +43,8 @@ func (s *Store) Song(ctx context.Context, id uuid.UUID) (*Song, error) {
 		}
 		return nil, fmt.Errorf("querying song %s: %w", id, err)
 	}
-	return buildSong(&r), nil
+	row := songRow(r)
+	return buildSong(&row), nil
 }
 
 // Songs lists the shelf, ordered by most recently updated. The whole shelf
@@ -56,7 +57,8 @@ func (s *Store) Songs(ctx context.Context) ([]Song, error) {
 	}
 	out := make([]Song, len(rows))
 	for i := range rows {
-		out[i] = *buildSong(&rows[i])
+		row := songRow(rows[i])
+		out[i] = *buildSong(&row)
 	}
 	return out, nil
 }
@@ -75,7 +77,8 @@ func (s *Store) Create(ctx context.Context, p *CreateParams) (*Song, error) {
 	if err != nil {
 		return nil, fmt.Errorf("inserting song: %w", err)
 	}
-	return buildSong(&r), nil
+	row := songRow(r)
+	return buildSong(&row), nil
 }
 
 // Update modifies editable fields; nil params stay unchanged.
@@ -95,7 +98,8 @@ func (s *Store) Update(ctx context.Context, id uuid.UUID, p UpdateParams) (*Song
 		}
 		return nil, fmt.Errorf("updating song %s: %w", id, err)
 	}
-	return buildSong(&r), nil
+	row := songRow(r)
+	return buildSong(&row), nil
 }
 
 // Delete removes a song by ID. ON DELETE CASCADE removes the song's entire
@@ -120,7 +124,8 @@ func (s *Store) Reflections(ctx context.Context, songID uuid.UUID) ([]Reflection
 	}
 	out := make([]Reflection, len(rows))
 	for i := range rows {
-		out[i] = buildReflection(&rows[i])
+		row := reflectionRow(rows[i])
+		out[i] = buildReflection(&row)
 	}
 	return out, nil
 }
@@ -140,7 +145,8 @@ func (s *Store) CreateReflection(ctx context.Context, songID uuid.UUID, entryDat
 		}
 		return nil, fmt.Errorf("inserting reflection under song %s: %w", songID, err)
 	}
-	out := buildReflection(&r)
+	row := reflectionRow(r)
+	out := buildReflection(&row)
 	return &out, nil
 }
 
@@ -160,7 +166,8 @@ func (s *Store) UpdateReflection(ctx context.Context, songID, id uuid.UUID, p Up
 		}
 		return nil, fmt.Errorf("updating reflection %s under song %s: %w", id, songID, err)
 	}
-	out := buildReflection(&r)
+	row := reflectionRow(r)
+	out := buildReflection(&row)
 	return &out, nil
 }
 
@@ -180,8 +187,26 @@ func (s *Store) DeleteReflection(ctx context.Context, songID, id uuid.UUID) erro
 	return nil
 }
 
-// buildSong converts the sqlc row into the domain type.
-func buildSong(r *db.Song) *Song {
+// songRow is the field subset buildSong needs. Adding the embedding +
+// search_vector columns to the songs table gave each explicit-column query its
+// own sqlc *Row type (the table struct db.Song now carries the two extra
+// columns the shelf queries do not select), so the build helper takes this
+// shared shape rather than any single generated type. Every shelf-row query
+// converts its row to a songRow at the call site.
+type songRow struct {
+	ID          uuid.UUID
+	TitleJa     string
+	Album       string
+	LyricsJa    string
+	Translation string
+	Vocabulary  string
+	IsPublic    bool
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+}
+
+// buildSong converts the shared row shape into the domain type.
+func buildSong(r *songRow) *Song {
 	return &Song{
 		ID:          r.ID,
 		TitleJa:     r.TitleJa,
@@ -195,14 +220,20 @@ func buildSong(r *db.Song) *Song {
 	}
 }
 
-// buildReflection converts the sqlc row into the domain type.
-func buildReflection(r *db.SongReflection) Reflection {
-	return Reflection{
-		ID:        r.ID,
-		SongID:    r.SongID,
-		EntryDate: r.EntryDate,
-		Body:      r.Body,
-		CreatedAt: r.CreatedAt,
-		UpdatedAt: r.UpdatedAt,
-	}
+// reflectionRow mirrors the Reflection domain type field-for-field — same
+// reasoning as songRow (the song_reflections table gained embedding +
+// search_vector, so each diary query gets its own *Row type). Because the
+// fields match exactly, buildReflection is a direct struct conversion.
+type reflectionRow struct {
+	ID        uuid.UUID
+	SongID    uuid.UUID
+	EntryDate time.Time
+	Body      string
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+// buildReflection converts the shared row shape into the domain type.
+func buildReflection(r *reflectionRow) Reflection {
+	return Reflection(*r)
 }

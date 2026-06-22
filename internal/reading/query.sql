@@ -90,3 +90,93 @@ RETURNING id, reading_id, entry_date, body, created_at, updated_at;
 -- Delete a diary entry, bound to its parent reading (same membership guard
 -- as UpdateReflection).
 DELETE FROM reading_reflections WHERE id = @id AND reading_id = @reading_id;
+
+-- ============================================================
+-- search_knowledge corpus (source_type=reading)
+--
+-- The reading shelf and its diary feed the read-only search_knowledge corpus.
+-- Both a shelf-row hit and a reflection hit surface as source_type=reading,
+-- linking back to the parent book (its id + title). A shelf hit's excerpt is
+-- the book title; a reflection hit's excerpt is the diary body. The two FTS
+-- queries and the two semantic queries are UNIONed in the store, ranked per
+-- branch, then RRF-merged by the MCP search handler — the same hybrid path the
+-- contents corpus uses.
+-- ============================================================
+
+-- name: ReadingsMissingEmbedding :many
+-- Shelf rows the embedding reconciler still has to process. Oldest first so a
+-- backfill progresses deterministically. Embed input = title + author.
+SELECT id, title, author
+FROM readings
+WHERE embedding IS NULL
+ORDER BY created_at
+LIMIT $1;
+
+-- name: SetReadingEmbedding :exec
+-- Persist a derived embedding. updated_at is deliberately untouched — the
+-- embedding derives from title/author and carries no editorial change.
+UPDATE readings SET embedding = $2 WHERE id = $1;
+
+-- name: ReadingReflectionsMissingEmbedding :many
+-- Diary rows the reconciler still has to process. Embed input = body.
+SELECT id, body
+FROM reading_reflections
+WHERE embedding IS NULL
+ORDER BY created_at
+LIMIT $1;
+
+-- name: SetReadingReflectionEmbedding :exec
+UPDATE reading_reflections SET embedding = $2 WHERE id = $1;
+
+-- name: SearchReadingCorpus :many
+-- FTS over the reading corpus: shelf rows + diary entries, both folded under
+-- the parent book. excerpt carries the matched text (book title for a shelf
+-- hit, diary body for a reflection hit). Ordered by ts_rank across the union.
+SELECT reading_id, title, excerpt, created_at
+FROM (
+    SELECT r.id AS reading_id,
+           r.title AS title,
+           r.title AS excerpt,
+           r.created_at AS created_at,
+           ts_rank(r.search_vector, websearch_to_tsquery('simple', $1)) AS rank
+    FROM readings r
+    WHERE r.search_vector @@ websearch_to_tsquery('simple', $1)
+    UNION ALL
+    SELECT rr.reading_id AS reading_id,
+           r.title AS title,
+           rr.body AS excerpt,
+           rr.created_at AS created_at,
+           ts_rank(rr.search_vector, websearch_to_tsquery('simple', $1)) AS rank
+    FROM reading_reflections rr
+    JOIN readings r ON r.id = rr.reading_id
+    WHERE rr.search_vector @@ websearch_to_tsquery('simple', $1)
+) hits
+ORDER BY rank DESC
+LIMIT $2;
+
+-- name: SemanticSearchReadingCorpus :many
+-- pgvector cosine search over the reading corpus: shelf rows + diary entries,
+-- both folded under the parent book. Mirrors SearchReadingCorpus's projection;
+-- rows without an embedding are skipped. Ordered by cosine distance across the
+-- union.
+SELECT reading_id, title, excerpt, created_at
+FROM (
+    SELECT r.id AS reading_id,
+           r.title AS title,
+           r.title AS excerpt,
+           r.created_at AS created_at,
+           (r.embedding <=> @target_embedding::vector) AS distance
+    FROM readings r
+    WHERE r.embedding IS NOT NULL
+    UNION ALL
+    SELECT rr.reading_id AS reading_id,
+           r.title AS title,
+           rr.body AS excerpt,
+           rr.created_at AS created_at,
+           (rr.embedding <=> @target_embedding::vector) AS distance
+    FROM reading_reflections rr
+    JOIN readings r ON r.id = rr.reading_id
+    WHERE rr.embedding IS NOT NULL
+) hits
+ORDER BY distance
+LIMIT @max_results;

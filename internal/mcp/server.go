@@ -27,6 +27,7 @@ import (
 	"github.com/Koopa0/koopa/internal/mcp/ops"
 	"github.com/Koopa0/koopa/internal/project"
 	"github.com/Koopa0/koopa/internal/reading"
+	"github.com/Koopa0/koopa/internal/song"
 	"github.com/Koopa0/koopa/internal/stats"
 	"github.com/Koopa0/koopa/internal/todo"
 )
@@ -40,6 +41,7 @@ type Server struct {
 	dayplan  *daily.Store
 	contents *content.Store
 	readings *reading.Store
+	songs    *song.Store
 	projects *project.Store
 
 	// Goals
@@ -112,6 +114,7 @@ func NewServer(pool *pgxpool.Pool, logger *slog.Logger, opts ...ServerOption) *S
 		dayplan:     daily.NewStore(pool),
 		contents:    content.NewStore(pool),
 		readings:    reading.NewStore(pool),
+		songs:       song.NewStore(pool),
 		projects:    project.NewStore(pool),
 		goals:       goal.NewStore(pool),
 		registry:    agent.NewBuiltinRegistry(),

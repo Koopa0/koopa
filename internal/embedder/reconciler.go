@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"time"
 	"unicode/utf8"
 
@@ -45,8 +46,8 @@ type Document struct {
 	Body  string
 }
 
-// Source is a store whose rows the reconciler keeps embedded. Implemented
-// by *content.Store.
+// Source is a store whose rows the reconciler keeps embedded. Implemented by
+// *content.Store and the reading / song embedding sources.
 type Source interface {
 	// MissingEmbeddings returns up to limit rows whose embedding is NULL,
 	// oldest first.
@@ -56,48 +57,78 @@ type Source interface {
 	SetEmbedding(ctx context.Context, id uuid.UUID, embedding pgvector.Vector) error
 }
 
-// Result counts what one RunOnce pass did. Failed counts embed or persist
-// attempts that errored — those rows keep a NULL embedding and are picked
-// up again on a later pass, so a row that fails repeatedly within one pass
-// is counted once per attempt.
+// NamedSource pairs a Source with the label used to key its progress in
+// Result.BySource and to tag its log lines. Name is a stable, short
+// identifier (e.g. "contents", "readings", "reading_reflections").
+type NamedSource struct {
+	Name   string
+	Source Source
+}
+
+// Result counts what one RunOnce pass did. BySource maps each source's name to
+// the number of rows it embedded this pass (a source that embedded nothing is
+// still present with a zero count). Failed is the total embed-or-persist
+// failures across all sources — those rows keep a NULL embedding and are
+// picked up again on a later pass, so a row that fails repeatedly within one
+// pass is counted once per attempt.
 type Result struct {
-	Contents int
+	BySource map[string]int
 	Failed   int
 }
 
-// Reconciler keeps the contents embedding column current by embedding rows
-// whose embedding is NULL. It runs outside any request path or transaction:
-// the Gemini call is slow, networked, and must never sit inside a handler's
-// per-request tx.
+// Reconciler keeps every wired source's embedding column current by embedding
+// rows whose embedding is NULL. It runs outside any request path or
+// transaction: the Gemini call is slow, networked, and must never sit inside a
+// handler's per-request tx.
 type Reconciler struct {
 	embedder TextEmbedder
-	contents Source
+	sources  []NamedSource
 	logger   *slog.Logger
 }
 
-// NewReconciler returns a Reconciler over the content source. All
-// dependencies are required.
-func NewReconciler(e TextEmbedder, contents Source, logger *slog.Logger) *Reconciler {
-	if e == nil || contents == nil || logger == nil {
-		panic("embedder: NewReconciler requires non-nil embedder, source, and logger")
+// NewReconciler returns a Reconciler over the given named sources. The
+// embedder, logger, and at least one source are required, and every source
+// must carry a non-nil Source and a non-empty, unique Name — a misconfigured
+// reconciler is a wiring bug, surfaced at startup rather than as silent
+// dropped work.
+func NewReconciler(e TextEmbedder, logger *slog.Logger, sources ...NamedSource) *Reconciler {
+	if e == nil || logger == nil {
+		panic("embedder: NewReconciler requires non-nil embedder and logger")
 	}
-	return &Reconciler{embedder: e, contents: contents, logger: logger}
+	if len(sources) == 0 {
+		panic("embedder: NewReconciler requires at least one source")
+	}
+	seen := make(map[string]bool, len(sources))
+	for _, ns := range sources {
+		if ns.Source == nil || ns.Name == "" {
+			panic("embedder: NewReconciler requires every source to have a non-nil Source and a non-empty Name")
+		}
+		if seen[ns.Name] {
+			panic("embedder: NewReconciler requires unique source names, got duplicate " + ns.Name)
+		}
+		seen[ns.Name] = true
+	}
+	return &Reconciler{embedder: e, sources: sources, logger: logger}
 }
 
-// RunOnce drains the content source in batches of reconcileBatchSize until no
-// missing rows remain. Per-row failures are logged, counted in Result.Failed,
-// and skipped — the row stays NULL for the next pass. The returned error
-// reports source-level failures (a listing query that errored, or ctx
-// cancellation); Result still carries whatever progress was made before it.
+// RunOnce drains every source in registration order, each in batches of
+// reconcileBatchSize until no missing rows remain. Per-row failures are
+// logged, counted in Result.Failed, and skipped — the row stays NULL for the
+// next pass. The returned error joins any source-level failures (a listing
+// query that errored, or ctx cancellation); Result still carries whatever
+// progress was made before it. Result.BySource always has an entry for every
+// wired source, even one that embedded nothing.
 func (r *Reconciler) RunOnce(ctx context.Context) (Result, error) {
-	var res Result
+	res := Result{BySource: make(map[string]int, len(r.sources))}
 	var errs []error
 
-	embedded, failed, err := r.drain(ctx, r.contents, "contents")
-	res.Contents = embedded
-	res.Failed += failed
-	if err != nil {
-		errs = append(errs, fmt.Errorf("draining contents: %w", err))
+	for _, ns := range r.sources {
+		embedded, failed, err := r.drain(ctx, ns.Source, ns.Name)
+		res.BySource[ns.Name] = embedded
+		res.Failed += failed
+		if err != nil {
+			errs = append(errs, fmt.Errorf("draining %s: %w", ns.Name, err))
+		}
 	}
 	return res, errors.Join(errs...)
 }
@@ -125,17 +156,41 @@ func (r *Reconciler) Run(ctx context.Context, interval time.Duration) {
 // log.
 func (r *Reconciler) runPass(ctx context.Context) {
 	res, err := r.RunOnce(ctx)
+	attrs := passLogAttrs(res)
 	switch {
 	case errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded):
-		r.logger.Debug("embedding pass interrupted",
-			"contents", res.Contents, "failed", res.Failed)
+		r.logger.Debug("embedding pass interrupted", attrs...)
 	case err != nil:
-		r.logger.Error("embedding pass failed",
-			"contents", res.Contents, "failed", res.Failed, "error", err)
-	case res.Contents > 0 || res.Failed > 0:
-		r.logger.Info("embedding pass complete",
-			"contents", res.Contents, "failed", res.Failed)
+		r.logger.Error("embedding pass failed", append(attrs, "error", err)...)
+	case res.totalEmbedded() > 0 || res.Failed > 0:
+		r.logger.Info("embedding pass complete", attrs...)
 	}
+}
+
+// passLogAttrs flattens a Result into slog key/value pairs: one key per source
+// (its embedded count) plus the failed total. Sorting the source names keeps
+// log output deterministic across passes.
+func passLogAttrs(res Result) []any {
+	names := make([]string, 0, len(res.BySource))
+	for name := range res.BySource {
+		names = append(names, name)
+	}
+	slices.Sort(names)
+	attrs := make([]any, 0, len(names)*2+2)
+	for _, name := range names {
+		attrs = append(attrs, name, res.BySource[name])
+	}
+	attrs = append(attrs, "failed", res.Failed)
+	return attrs
+}
+
+// totalEmbedded sums the per-source embedded counts.
+func (res Result) totalEmbedded() int {
+	total := 0
+	for _, n := range res.BySource {
+		total += n
+	}
+	return total
 }
 
 // drain embeds src's missing rows batch by batch until none remain. A

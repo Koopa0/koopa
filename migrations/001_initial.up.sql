@@ -1182,10 +1182,12 @@ CREATE TRIGGER trg_contents_audit
 -- Readings — literature shelf + reading diary
 --
 -- One book per readings row; one dated diary entry per reading_reflections
--- row. Deeply private: no agent surface (no MCP, not in the search_knowledge
--- corpus), admin HTTP only. No audit triggers (every write is the single
--- human admin behind adminMid — an actor trail would record a constant) and
--- no rating column, ever — reflections are the only evaluation (owner decision).
+-- row. Private: no agent WRITE path (admin HTTP only), but the shelf and its
+-- diary are part of the read-only search_knowledge corpus (source_type=reading)
+-- via a generated search_vector + a reconciler-filled embedding. No audit
+-- triggers (every write is the single human admin behind adminMid — an actor
+-- trail would record a constant) and no rating column, ever — reflections are
+-- the only evaluation (owner decision).
 -- ============================================================
 
 CREATE TABLE readings (
@@ -1200,6 +1202,11 @@ CREATE TABLE readings (
     goal_id     UUID REFERENCES goals(id) ON DELETE SET NULL,
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    embedding   vector(1536),
+    search_vector TSVECTOR GENERATED ALWAYS AS (
+        setweight(to_tsvector('simple', coalesce(title, '')), 'A') ||
+        setweight(to_tsvector('simple', coalesce(author, '')), 'B')
+    ) STORED,
 
     CONSTRAINT chk_reading_title_not_blank
         CHECK (btrim(title) <> '')
@@ -1209,8 +1216,9 @@ COMMENT ON TABLE readings IS
     'Literature reading shelf — one row per book, Koopa-private. Evaluation '
     'happens only through reading_reflections (dated diary entries); there is '
     'intentionally no rating column. Agent surface is read-only: list_readings '
-    'and get_reading expose the shelf over MCP, but no agent write path exists. '
-    'Not in the search_knowledge corpus; mutations are admin HTTP only.';
+    'and get_reading expose the shelf over MCP, and the shelf is part of the '
+    'search_knowledge corpus (source_type=reading) via search_vector + embedding. '
+    'No agent write path exists; mutations are admin HTTP only.';
 COMMENT ON COLUMN readings.title IS
     'Book title as Koopa records it. Required, never blank (chk_reading_title_not_blank).';
 COMMENT ON COLUMN readings.author IS
@@ -1241,12 +1249,26 @@ COMMENT ON COLUMN readings.created_at IS
     'Row creation time. Set by the database, never updated.';
 COMMENT ON COLUMN readings.updated_at IS
     'Application-managed. Set explicitly in UPDATE queries.';
+COMMENT ON COLUMN readings.embedding IS
+    'pgvector embedding (1536d) from gemini-embedding-2, derived from title + '
+    'author. NULL until the background reconciler fills it; feeds the '
+    'search_knowledge semantic branch (source_type=reading). See '
+    'internal/embedder.Dimension — schema + Go must match exactly or pgvector '
+    'rejects writes.';
+COMMENT ON COLUMN readings.search_vector IS
+    'Generated tsvector for full-text search over the shelf row. ''simple'' '
+    'config (no stemming) for multilingual safety. Weight A = title, B = '
+    'author. Backs the search_knowledge FTS branch (source_type=reading); a '
+    'reflection-body hit comes from reading_reflections.search_vector instead.';
 
 CREATE INDEX idx_readings_status ON readings(status);
 -- Partial: goal_id is NULL for most books (they stand on their own), so the
 -- index covers only the linked minority. Backs the ON DELETE SET NULL parent
 -- lookup when a goal is deleted (mirrors idx_projects_goal_id).
 CREATE INDEX idx_readings_goal_id ON readings(goal_id) WHERE goal_id IS NOT NULL;
+CREATE INDEX idx_readings_search ON readings USING GIN(search_vector);
+CREATE INDEX idx_readings_embedding_hnsw ON readings USING hnsw (embedding vector_cosine_ops)
+    WITH (m = 16, ef_construction = 64);
 
 CREATE TABLE reading_reflections (
     id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -1255,6 +1277,10 @@ CREATE TABLE reading_reflections (
     body       TEXT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    embedding  vector(1536),
+    search_vector TSVECTOR GENERATED ALWAYS AS (
+        to_tsvector('simple', coalesce(left(body, 10000), ''))
+    ) STORED,
 
     CONSTRAINT chk_reading_reflection_body_not_blank
         CHECK (btrim(body) <> '')
@@ -1263,7 +1289,8 @@ CREATE TABLE reading_reflections (
 COMMENT ON TABLE reading_reflections IS
     'Reading diary — dated entries under one book, shown as a time-ordered '
     'thread (entry_date, then created_at) on the book page. Many per book. '
-    'Private like readings: no agent surface, no search corpus, admin HTTP only.';
+    'Private like readings: no agent write path, admin HTTP only. A body hit is '
+    'searchable via search_knowledge, folded under the parent book (source_type=reading).';
 COMMENT ON COLUMN reading_reflections.reading_id IS
     'The book this entry belongs to. ON DELETE CASCADE — deleting a book '
     'deletes its entire diary; the entries have no meaning without the book.';
@@ -1279,17 +1306,31 @@ COMMENT ON COLUMN reading_reflections.created_at IS
     'entry_date.';
 COMMENT ON COLUMN reading_reflections.updated_at IS
     'Application-managed. Set explicitly in UPDATE queries.';
+COMMENT ON COLUMN reading_reflections.embedding IS
+    'pgvector embedding (1536d) from gemini-embedding-2, derived from the diary '
+    'body. NULL until the background reconciler fills it. A hit here surfaces '
+    'in search_knowledge under source_type=reading, linked to the parent book.';
+COMMENT ON COLUMN reading_reflections.search_vector IS
+    'Generated tsvector over the diary body (first 10K chars), ''simple'' config '
+    'for multilingual safety. Backs the search_knowledge FTS branch; a hit folds '
+    'under the parent reading (source_type=reading), not a separate corpus.';
 
 CREATE INDEX idx_reading_reflections_thread
     ON reading_reflections(reading_id, entry_date, created_at);
+CREATE INDEX idx_reading_reflections_search ON reading_reflections USING GIN(search_vector);
+CREATE INDEX idx_reading_reflections_embedding_hnsw
+    ON reading_reflections USING hnsw (embedding vector_cosine_ops)
+    WITH (m = 16, ef_construction = 64);
 
 
 -- ============================================================
 -- Songs — ヨルシカ song shelf + reflection diary
 --
 -- Mirrors the readings/reading_reflections pattern: one song per row, many
--- dated reflections threaded under it. Same privacy posture (no agent surface,
--- no search corpus, admin HTTP only) and no rating/progress column. The
+-- dated reflections threaded under it. Same privacy posture (no agent WRITE
+-- path, admin HTTP only) and no rating/progress column. The shelf and diary
+-- ARE part of the read-only search_knowledge corpus (source_type=song) — this
+-- is ヨルシカ's first agent-visible surface, and it is intentional. The
 -- distinct dimension is the Japanese-study reference layer (lyrics / owner
 -- translation / vocabulary) — all owner-filled, never generated. album is a
 -- free-text grouping label; there is no album entity and no narrative relation
@@ -1306,6 +1347,12 @@ CREATE TABLE songs (
     is_public   BOOLEAN NOT NULL DEFAULT false,
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    embedding   vector(1536),
+    search_vector TSVECTOR GENERATED ALWAYS AS (
+        setweight(to_tsvector('simple', coalesce(title_ja, '')), 'A') ||
+        setweight(to_tsvector('simple', coalesce(album, '')), 'B') ||
+        setweight(to_tsvector('simple', coalesce(left(translation, 5000), '')), 'C')
+    ) STORED,
 
     CONSTRAINT chk_song_title_ja_not_blank
         CHECK (btrim(title_ja) <> '')
@@ -1313,8 +1360,10 @@ CREATE TABLE songs (
 
 COMMENT ON TABLE songs IS
     'ヨルシカ song shelf — one row per song, Koopa-private. Reflections live in '
-    'song_reflections (dated thread). No rating column; no agent surface (no '
-    'MCP, not in the search_knowledge corpus), admin HTTP only.';
+    'song_reflections (dated thread). No rating column; no agent write path, '
+    'admin HTTP only. The shelf gained read-only search visibility: it is part '
+    'of the search_knowledge corpus (source_type=song) via search_vector + '
+    'embedding, but no MCP write tool touches it.';
 COMMENT ON COLUMN songs.title_ja IS
     'Japanese song title (original). Required, never blank (chk_song_title_ja_not_blank).';
 COMMENT ON COLUMN songs.album IS
@@ -1334,6 +1383,22 @@ COMMENT ON COLUMN songs.created_at IS
     'Row creation time. Set by the database, never updated.';
 COMMENT ON COLUMN songs.updated_at IS
     'Application-managed. Set explicitly in UPDATE queries.';
+COMMENT ON COLUMN songs.embedding IS
+    'pgvector embedding (1536d) from gemini-embedding-2, derived from title_ja + '
+    'album + the study fields (lyrics/translation/vocabulary). NULL until the '
+    'background reconciler fills it; feeds the search_knowledge semantic branch '
+    '(source_type=song). See internal/embedder.Dimension — schema + Go must '
+    'match exactly or pgvector rejects writes.';
+COMMENT ON COLUMN songs.search_vector IS
+    'Generated tsvector for full-text search over the song row. ''simple'' config '
+    'for multilingual safety. Weight A = title_ja, B = album, C = owner '
+    'translation (first 5K chars) — the translation gives the otherwise '
+    'Japanese-only row lexical reach in the owner''s working language. Backs the '
+    'search_knowledge FTS branch (source_type=song).';
+
+CREATE INDEX idx_songs_search ON songs USING GIN(search_vector);
+CREATE INDEX idx_songs_embedding_hnsw ON songs USING hnsw (embedding vector_cosine_ops)
+    WITH (m = 16, ef_construction = 64);
 
 CREATE TABLE song_reflections (
     id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -1342,6 +1407,10 @@ CREATE TABLE song_reflections (
     body       TEXT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    embedding  vector(1536),
+    search_vector TSVECTOR GENERATED ALWAYS AS (
+        to_tsvector('simple', coalesce(left(body, 10000), ''))
+    ) STORED,
 
     CONSTRAINT chk_song_reflection_body_not_blank
         CHECK (btrim(body) <> '')
@@ -1350,7 +1419,8 @@ CREATE TABLE song_reflections (
 COMMENT ON TABLE song_reflections IS
     'Song reflection diary — dated entries under one song (理解/感受/意境), shown '
     'as a thread ordered by (entry_date, created_at). Many per song. Private '
-    'like songs: no agent surface, no search corpus, admin HTTP only.';
+    'like songs: no agent write path, admin HTTP only. A body hit is searchable '
+    'via search_knowledge, folded under the parent song (source_type=song).';
 COMMENT ON COLUMN song_reflections.song_id IS
     'The song this entry belongs to. ON DELETE CASCADE — deleting a song deletes '
     'its entire reflection thread; the entries have no meaning without the song.';
@@ -1365,6 +1435,18 @@ COMMENT ON COLUMN song_reflections.created_at IS
     'Row creation time. Tiebreak for thread ordering when two entries share an entry_date.';
 COMMENT ON COLUMN song_reflections.updated_at IS
     'Application-managed. Set explicitly in UPDATE queries.';
+COMMENT ON COLUMN song_reflections.embedding IS
+    'pgvector embedding (1536d) from gemini-embedding-2, derived from the '
+    'reflection body. NULL until the background reconciler fills it. A hit here '
+    'surfaces in search_knowledge under source_type=song, linked to the parent song.';
+COMMENT ON COLUMN song_reflections.search_vector IS
+    'Generated tsvector over the reflection body (first 10K chars), ''simple'' '
+    'config for multilingual safety. Backs the search_knowledge FTS branch; a hit '
+    'folds under the parent song (source_type=song), not a separate corpus.';
 
 CREATE INDEX idx_song_reflections_thread
     ON song_reflections(song_id, entry_date, created_at);
+CREATE INDEX idx_song_reflections_search ON song_reflections USING GIN(search_vector);
+CREATE INDEX idx_song_reflections_embedding_hnsw
+    ON song_reflections USING hnsw (embedding vector_cosine_ops)
+    WITH (m = 16, ef_construction = 64);

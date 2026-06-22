@@ -13,10 +13,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/google/uuid"
 	"gopkg.in/yaml.v3"
 
 	"github.com/Koopa0/koopa/internal/content"
+	"github.com/Koopa0/koopa/internal/reading"
+	"github.com/Koopa0/koopa/internal/song"
 )
 
 // Stable per-index IDs so tests don't depend on random UUID generation.
@@ -201,6 +204,266 @@ func TestSearchKnowledge_SourceTypeValidation(t *testing.T) {
 			err := validateSourceTypes(tt.filter)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("validateSourceTypes(%v) error = %v, wantErr = %v", tt.filter, err, tt.wantErr)
+			}
+		})
+	}
+}
+
+// TestSearchKnowledge_SourceTypeValidation_Corpora pins that the expanded
+// corpus set {content, reading, song} is accepted and reflections are not a
+// source type. The pre-DB validator must accept each known corpus and any
+// combination of them, while still rejecting unknown tokens and the
+// reflection-as-corpus mistake.
+func TestSearchKnowledge_SourceTypeValidation_Corpora(t *testing.T) {
+	tests := []struct {
+		name    string
+		filter  []string
+		wantErr bool
+	}{
+		{name: "reading accepted", filter: []string{SourceTypeReading}, wantErr: false},
+		{name: "song accepted", filter: []string{SourceTypeSong}, wantErr: false},
+		{name: "all three accepted", filter: []string{SourceTypeContent, SourceTypeReading, SourceTypeSong}, wantErr: false},
+		{name: "reading plus song accepted", filter: []string{SourceTypeReading, SourceTypeSong}, wantErr: false},
+		{name: "reflection is not a source type", filter: []string{"reflection"}, wantErr: true},
+		{name: "song_reflection rejected", filter: []string{"song_reflection"}, wantErr: true},
+		{name: "reading plus unknown rejected", filter: []string{SourceTypeReading, "bookmark"}, wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateSourceTypes(tt.filter)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("validateSourceTypes(%v) error = %v, wantErr = %v", tt.filter, err, tt.wantErr)
+			}
+		})
+	}
+}
+
+// TestSelectSources pins the corpus-resolution rules: nil/empty defaults to all
+// three in canonical order, a subset is normalised to canonical order (caller
+// order/repeats ignored), and a content_type filter collapses the corpus to
+// content alone.
+func TestSelectSources(t *testing.T) {
+	article := "article"
+	tests := []struct {
+		name        string
+		requested   []string
+		contentType *string
+		want        []string
+	}{
+		{name: "nil defaults to all", requested: nil, want: []string{SourceTypeContent, SourceTypeReading, SourceTypeSong}},
+		{name: "empty defaults to all", requested: []string{}, want: []string{SourceTypeContent, SourceTypeReading, SourceTypeSong}},
+		{name: "subset normalised to canonical order", requested: []string{SourceTypeSong, SourceTypeContent}, want: []string{SourceTypeContent, SourceTypeSong}},
+		{name: "repeats deduped", requested: []string{SourceTypeReading, SourceTypeReading}, want: []string{SourceTypeReading}},
+		{name: "content_type collapses to content", requested: nil, contentType: &article, want: []string{SourceTypeContent}},
+		{name: "content_type collapses even with reading requested", requested: []string{SourceTypeContent, SourceTypeReading}, contentType: &article, want: []string{SourceTypeContent}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := selectSources(tt.requested, tt.contentType)
+			if diff := cmp.Diff(tt.want, got); diff != "" {
+				t.Errorf("selectSources(%v, %v) mismatch (-want +got):\n%s", tt.requested, tt.contentType, diff)
+			}
+		})
+	}
+}
+
+// TestSearchKnowledge_ContentTypeConflict pins that content_type combined with
+// an explicit source_types list that excludes content is rejected — a content
+// filter over a non-content corpus is a contradiction, not a silent no-op.
+func TestSearchKnowledge_ContentTypeConflict(t *testing.T) {
+	article := "article"
+	tests := []struct {
+		name    string
+		input   SearchKnowledgeInput
+		wantErr bool
+	}{
+		{
+			name:    "content_type with reading-only source rejected",
+			input:   SearchKnowledgeInput{Query: "go", ContentType: &article, SourceTypes: []string{SourceTypeReading}},
+			wantErr: true,
+		},
+		{
+			name:    "content_type with content in source accepted",
+			input:   SearchKnowledgeInput{Query: "go", ContentType: &article, SourceTypes: []string{SourceTypeContent, SourceTypeReading}},
+			wantErr: false,
+		},
+		{
+			name:    "content_type with empty source accepted",
+			input:   SearchKnowledgeInput{Query: "go", ContentType: &article},
+			wantErr: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateSearchKnowledgeInput(tt.input)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("validateSearchKnowledgeInput error = %v, wantErr = %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+// TestMergeByRank pins the round-robin interleave: each corpus's rank-0 hit
+// first, then rank-1, etc., preserving per-corpus order, stopping at limit, and
+// not starving a shorter corpus. Cross-corpus order at the same rank follows
+// the perCorpus slice order.
+func TestMergeByRank(t *testing.T) {
+	mk := func(st, id string) SearchKnowledgeResult {
+		return SearchKnowledgeResult{ID: id, SourceType: st}
+	}
+	contentHits := []SearchKnowledgeResult{mk("content", "c0"), mk("content", "c1"), mk("content", "c2")}
+	readingHits := []SearchKnowledgeResult{mk("reading", "r0")}
+	songHits := []SearchKnowledgeResult{mk("song", "s0"), mk("song", "s1")}
+
+	tests := []struct {
+		name      string
+		perCorpus [][]SearchKnowledgeResult
+		limit     int
+		wantIDs   []string
+	}{
+		{
+			name:      "round robin interleaves by rank",
+			perCorpus: [][]SearchKnowledgeResult{contentHits, readingHits, songHits},
+			limit:     20,
+			// rank 0: c0,r0,s0 — rank 1: c1,(reading exhausted),s1 — rank 2: c2
+			wantIDs: []string{"c0", "r0", "s0", "c1", "s1", "c2"},
+		},
+		{
+			name:      "limit caps output mid-rank",
+			perCorpus: [][]SearchKnowledgeResult{contentHits, readingHits, songHits},
+			limit:     4,
+			wantIDs:   []string{"c0", "r0", "s0", "c1"},
+		},
+		{
+			name:      "single corpus preserves order",
+			perCorpus: [][]SearchKnowledgeResult{contentHits},
+			limit:     20,
+			wantIDs:   []string{"c0", "c1", "c2"},
+		},
+		{
+			name:      "all empty yields empty non-nil",
+			perCorpus: [][]SearchKnowledgeResult{{}, {}},
+			limit:     20,
+			wantIDs:   []string{},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := mergeByRank(tt.perCorpus, tt.limit)
+			gotIDs := make([]string, len(got))
+			for i := range got {
+				gotIDs[i] = got[i].ID
+			}
+			if diff := cmp.Diff(tt.wantIDs, gotIDs); diff != "" {
+				t.Errorf("mergeByRank IDs mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+// TestRrfMergeResults_ConsensusAndDistinctReflections pins two properties of
+// the reading/song RRF: (1) the same matched row appearing in both branches
+// (same id + excerpt) fuses and outranks single-branch hits; (2) two distinct
+// reflections under the SAME parent book (same id, different excerpt) stay
+// separate — keying on parent id alone would wrongly collapse them.
+func TestRrfMergeResults_ConsensusAndDistinctReflections(t *testing.T) {
+	const book = "book-1"
+	shelf := SearchKnowledgeResult{ID: book, SourceType: SourceTypeReading, Excerpt: "The Title"}
+	reflA := SearchKnowledgeResult{ID: book, SourceType: SourceTypeReading, Excerpt: "diary entry A"}
+	reflB := SearchKnowledgeResult{ID: book, SourceType: SourceTypeReading, Excerpt: "diary entry B"}
+
+	// reflA is rank 2 in FTS and rank 0 in semantic — consensus. shelf and
+	// reflB appear once each.
+	fts := []SearchKnowledgeResult{shelf, reflB, reflA}
+	sem := []SearchKnowledgeResult{reflA}
+
+	got := rrfMergeResults(fts, sem, 10)
+
+	if len(got) != 3 {
+		t.Fatalf("len(got) = %d, want 3 (shelf + two distinct reflections, none collapsed)", len(got))
+	}
+	if got[0].Excerpt != "diary entry A" {
+		t.Errorf("consensus hit rank = %q, want %q first", got[0].Excerpt, "diary entry A")
+	}
+	excerpts := map[string]bool{}
+	for _, r := range got {
+		excerpts[r.Excerpt] = true
+	}
+	for _, want := range []string{"The Title", "diary entry A", "diary entry B"} {
+		if !excerpts[want] {
+			t.Errorf("rrfMergeResults dropped distinct row %q", want)
+		}
+	}
+}
+
+// TestReadingHitsToResults pins the reading hit → uniform result mapping: the
+// parent book id/title link, the matched excerpt, source_type=reading, and an
+// empty slug (readings have no slug).
+func TestReadingHitsToResults(t *testing.T) {
+	id := uuid.New()
+	created := time.Date(2026, 5, 1, 9, 0, 0, 0, time.UTC)
+	hits := []reading.CorpusHit{{ReadingID: id, Title: "Norwegian Wood", Excerpt: "a diary line", CreatedAt: created}}
+
+	got := readingHitsToResults(hits)
+	want := []SearchKnowledgeResult{{
+		ID:         id.String(),
+		SourceType: SourceTypeReading,
+		Title:      "Norwegian Wood",
+		Excerpt:    "a diary line",
+		CreatedAt:  created.Format(time.RFC3339),
+	}}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("readingHitsToResults mismatch (-want +got):\n%s", diff)
+	}
+}
+
+// TestSongHitsToResults pins the song hit → uniform result mapping.
+func TestSongHitsToResults(t *testing.T) {
+	id := uuid.New()
+	created := time.Date(2026, 6, 2, 12, 0, 0, 0, time.UTC)
+	hits := []song.CorpusHit{{SongID: id, Title: "花に亡霊", Excerpt: "a reflection line", CreatedAt: created}}
+
+	got := songHitsToResults(hits)
+	want := []SearchKnowledgeResult{{
+		ID:         id.String(),
+		SourceType: SourceTypeSong,
+		Title:      "花に亡霊",
+		Excerpt:    "a reflection line",
+		CreatedAt:  created.Format(time.RFC3339),
+	}}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("songHitsToResults mismatch (-want +got):\n%s", diff)
+	}
+}
+
+// TestFilterResultsByDate pins the whole-day-inclusive date window over the
+// uniform result shape (the reading/song corpora path): after=before=D keeps a
+// row created any time during D and drops D-1 / D+1; an unparseable timestamp
+// is kept (the bound is best-effort over a server-formatted value).
+func TestFilterResultsByDate(t *testing.T) {
+	loc := time.UTC
+	const day = "2026-05-22"
+	after, _ := parseDateStart(new(day), loc)
+	before, _ := parseDateEnd(new(day), loc)
+
+	mk := func(ts string) SearchKnowledgeResult { return SearchKnowledgeResult{ID: "x", CreatedAt: ts} }
+	tests := []struct {
+		name   string
+		in     SearchKnowledgeResult
+		wantIn bool
+	}{
+		{name: "start of day kept", in: mk("2026-05-22T00:00:00Z"), wantIn: true},
+		{name: "last second kept", in: mk("2026-05-22T23:59:59Z"), wantIn: true},
+		{name: "previous day dropped", in: mk("2026-05-21T23:59:59Z"), wantIn: false},
+		{name: "next day dropped", in: mk("2026-05-23T00:00:00Z"), wantIn: false},
+		{name: "unparseable kept", in: mk("not-a-time"), wantIn: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := filterResultsByDate([]SearchKnowledgeResult{tt.in}, after, before)
+			gotIn := len(got) == 1
+			if gotIn != tt.wantIn {
+				t.Errorf("filterResultsByDate(%q) kept=%v, want %v", tt.in.CreatedAt, gotIn, tt.wantIn)
 			}
 		})
 	}

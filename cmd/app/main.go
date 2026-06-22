@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"slices"
 	"sync"
 	"time"
 
@@ -95,18 +96,48 @@ func runBackfill(logger *slog.Logger) error {
 	if err != nil {
 		return fmt.Errorf("initializing gemini embedder: %w", err)
 	}
-	reconciler := embedder.NewReconciler(emb, content.NewStore(pool), logger)
+	reconciler := embedder.NewReconciler(emb, logger,
+		embedSources(content.NewStore(pool), reading.NewStore(pool), song.NewStore(pool))...)
 
 	res, err := reconciler.RunOnce(ctx)
 	if err != nil {
 		return fmt.Errorf("embed backfill: %w", err)
 	}
-	logger.Info("embed backfill complete",
-		"contents", res.Contents, "failed", res.Failed)
+	logger.Info("embed backfill complete", append(passLogAttrs(res), "operation", "backfill")...)
 	if res.Failed > 0 {
 		return fmt.Errorf("embed backfill: %d rows failed to embed", res.Failed)
 	}
 	return nil
+}
+
+// embedSources builds the named source list the reconciler drains: the
+// contents corpus plus the reading and song shelves and their reflection
+// diaries (five tables, five NULL-embedding columns). The names key
+// embedder.Result.BySource and tag log lines; they match the table names.
+func embedSources(contentStore *content.Store, readingStore *reading.Store, songStore *song.Store) []embedder.NamedSource {
+	return []embedder.NamedSource{
+		{Name: "contents", Source: contentStore},
+		{Name: "readings", Source: reading.NewShelfEmbeddingSource(readingStore)},
+		{Name: "reading_reflections", Source: reading.NewReflectionEmbeddingSource(readingStore)},
+		{Name: "songs", Source: song.NewShelfEmbeddingSource(songStore)},
+		{Name: "song_reflections", Source: song.NewReflectionEmbeddingSource(songStore)},
+	}
+}
+
+// passLogAttrs flattens an embedder.Result into slog key/value pairs for the
+// backfill log line, mirroring the reconciler's own per-source logging.
+func passLogAttrs(res embedder.Result) []any {
+	names := make([]string, 0, len(res.BySource))
+	for name := range res.BySource {
+		names = append(names, name)
+	}
+	slices.Sort(names)
+	attrs := make([]any, 0, len(names)*2+2)
+	for _, name := range names {
+		attrs = append(attrs, name, res.BySource[name])
+	}
+	attrs = append(attrs, "failed", res.Failed)
+	return attrs
 }
 
 // run wires every subsystem and starts the HTTP server. Its cyclomatic
@@ -212,7 +243,7 @@ func run(logger *slog.Logger) error {
 		if embErr != nil {
 			return fmt.Errorf("initializing gemini embedder: %w", embErr)
 		}
-		reconciler := embedder.NewReconciler(emb, contentStore, logger)
+		reconciler := embedder.NewReconciler(emb, logger, embedSources(contentStore, readingStore, songStore)...)
 		wg.Go(func() { reconciler.Run(ctx, embedReconcileInterval) })
 		logger.Info("embedding reconciler started", "interval", embedReconcileInterval.String())
 	} else {

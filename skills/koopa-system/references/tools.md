@@ -28,7 +28,7 @@ is hand-maintained.
 | `get_reading` | `query` | read_only | Read-only fetch of one book by id, returning the reading (incl |
 | `list_readings` | `query` | read_only | Read-only list of Koopa's reading shelf |
 | `project_progress` | `query` | read_only | Read-only PARA momentum/stalled intelligence for Koopa's projects, goals, and areas |
-| `search_knowledge` | `query` | read_only | Search across content (articles, build logs, TILs, etc.) |
+| `search_knowledge` | `query` | read_only | Read-only search across Koopa's corpus: content (articles, essays, build-logs, TILs, digests), the reading shelf (books + reading diary), and the ヨルシカ… |
 | `capture_inbox` | `daily` | additive | Quick task capture to inbox |
 | `list_tasks` | `daily` | read_only | Read-only readback of the todos you created (created_by = your resolved caller identity) so you can learn their disposition |
 | `plan_day` | `daily` | idempotent | Set the day's plan as one atomic replacement |
@@ -46,7 +46,7 @@ is hand-maintained.
 | Tool | Key params | Returns |
 |---|---|---|
 | `brief` | `mode` (`morning` / `reflection`), `sections?` (morning only), `date?` | `morning` = single-call daily-planning briefing (overdue/today/committed/upcoming todos, active_goals, unverified_hypotheses, rss_highlights, content_pipeline). `reflection` = end-of-day plan-vs-actual retrospective (planned_items + completed/deferred/planned counts + completion_rate). `mode` is required. Read-only; carries no agent memory. Scope is the target date (default today), not since-last-session. |
-| `search_knowledge` | `query`, `source_types?`, `content_type?`, `note_kind?`, `project?`, `after?`, `before?`, `limit?` | FTS retrieval over contents and notes. See Search section below. |
+| `search_knowledge` | `query`, `source_types?`, `content_type?`, `after?`, `before?`, `limit?` | Hybrid (FTS + pgvector) retrieval over content + the reading shelf + the ヨルシカ song shelf. See Search section below. |
 
 ### `brief` modes and sections
 
@@ -69,16 +69,24 @@ Per-agent default sections: `learning-studio` defaults to `['tasks', 'hypotheses
 
 ### `search_knowledge` retrieval
 
-CURRENT behavior is PostgreSQL full-text search only (lexical, tsvector + websearch syntax, GIN-indexed). There is no production document-embedding write path today, so the semantic / pgvector branch returns no rows for app-created content. Hybrid lexical + pgvector + RRF is PLANNED but not active — do not assume semantic recall.
+Read-only hybrid retrieval over three corpora, each searched independently and then interleaved by per-corpus rank:
 
-- **FTS**: `websearch_to_tsquery('simple', query)` on the search vectors (GIN).
-- Searches across content (articles, build logs, TILs, etc.).
+- **content** — articles, essays, build-logs, TILs, digests.
+- **reading** — the reading shelf (books) plus the reading diary. A diary-entry hit folds under its parent book (same `source_type=reading`), linking back via the book's id/title; the excerpt is the diary body (or the book title for a shelf hit). Use `get_reading` with the returned id to read the full thread.
+- **song** — the ヨルシカ song shelf plus its reflection diary. A reflection hit folds under its parent song (`source_type=song`); the excerpt is the reflection body (or the song title for a shelf hit). This is the song shelf's only agent-visible surface, and it is read-only.
+
+Each corpus runs FTS fused with pgvector semantic search via reciprocal-rank fusion (RRF):
+
+- **FTS**: `websearch_to_tsquery('simple', query)` on the per-table generated `search_vector` (GIN).
+- **Semantic**: query embedded once (gemini-embedding-2), cosine-ranked over the corpus's `embedding` column (HNSW). A background reconciler fills embeddings as rows land; without `GEMINI_API_KEY` the semantic branch is skipped and search degrades to FTS-only.
+
+Reflections are NOT a separate source type — they always surface linked to their parent shelf row.
 
 Filters:
 
-- `source_types` — content only (default content); the token `note` is rejected.
-- `content_type` — implies content-only.
-- `project`, `after`, `before`, `limit`.
+- `source_types` — subset of `{content, reading, song}`; default is all three. Any other token is rejected.
+- `content_type` — content only (narrows the corpus to content). Combining it with a `source_types` list that excludes `content` is rejected as `unsupported_filter`.
+- `after`, `before`, `limit`.
 
 Query syntax (websearch):
 

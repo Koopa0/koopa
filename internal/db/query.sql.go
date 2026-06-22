@@ -1667,19 +1667,32 @@ type CreateReadingParams struct {
 	StartedOn *time.Time `json:"started_on"`
 }
 
+type CreateReadingRow struct {
+	ID         uuid.UUID  `json:"id"`
+	Title      string     `json:"title"`
+	Author     string     `json:"author"`
+	Status     string     `json:"status"`
+	StartedOn  *time.Time `json:"started_on"`
+	FinishedOn *time.Time `json:"finished_on"`
+	IsPublic   bool       `json:"is_public"`
+	GoalID     *uuid.UUID `json:"goal_id"`
+	CreatedAt  time.Time  `json:"created_at"`
+	UpdatedAt  time.Time  `json:"updated_at"`
+}
+
 // Queries for the reading package, over the readings + reading_reflections
 // tables. status is TEXT + CHECK (not an
 // ENUM); the Go layer validates before writing so the constraint never
 // surfaces as a 500. No audit triggers fire on these tables — single human
 // writer, diary stays out of activity feeds (rationale in the migration).
-func (q *Queries) CreateReading(ctx context.Context, arg CreateReadingParams) (Reading, error) {
+func (q *Queries) CreateReading(ctx context.Context, arg CreateReadingParams) (CreateReadingRow, error) {
 	row := q.db.QueryRow(ctx, createReading,
 		arg.Title,
 		arg.Author,
 		arg.Status,
 		arg.StartedOn,
 	)
-	var i Reading
+	var i CreateReadingRow
 	err := row.Scan(
 		&i.ID,
 		&i.Title,
@@ -1710,13 +1723,22 @@ type CreateReflectionParams struct {
 	EntryDate *time.Time `json:"entry_date"`
 }
 
+type CreateReflectionRow struct {
+	ID        uuid.UUID `json:"id"`
+	ReadingID uuid.UUID `json:"reading_id"`
+	EntryDate time.Time `json:"entry_date"`
+	Body      string    `json:"body"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
 // A NULL entry_date defaults to today. COALESCE here rather than relying
 // on the column DEFAULT so the "today" clock is the same (the database's
 // CURRENT_DATE) whether the handler passes a date or not — and the same
 // clock the finished auto-stamp in UpdateReading uses.
-func (q *Queries) CreateReflection(ctx context.Context, arg CreateReflectionParams) (ReadingReflection, error) {
+func (q *Queries) CreateReflection(ctx context.Context, arg CreateReflectionParams) (CreateReflectionRow, error) {
 	row := q.db.QueryRow(ctx, createReflection, arg.ReadingID, arg.Body, arg.EntryDate)
-	var i ReadingReflection
+	var i CreateReflectionRow
 	err := row.Scan(
 		&i.ID,
 		&i.ReadingID,
@@ -1763,6 +1785,18 @@ type CreateSongParams struct {
 	Vocabulary  string `json:"vocabulary"`
 }
 
+type CreateSongRow struct {
+	ID          uuid.UUID `json:"id"`
+	TitleJa     string    `json:"title_ja"`
+	Album       string    `json:"album"`
+	LyricsJa    string    `json:"lyrics_ja"`
+	Translation string    `json:"translation"`
+	Vocabulary  string    `json:"vocabulary"`
+	IsPublic    bool      `json:"is_public"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+}
+
 // Queries for the song package — the songs + song_reflections tables (the
 // ヨルシカ shelf). title_ja carries a
 // not-blank CHECK; the Go layer validates before writing so the constraint
@@ -1770,7 +1804,7 @@ type CreateSongParams struct {
 // vocabulary) are owner-filled free text, never generated. No audit triggers
 // fire on these tables — single human writer, the diary stays out of activity
 // feeds (same privacy posture as the reading shelf).
-func (q *Queries) CreateSong(ctx context.Context, arg CreateSongParams) (Song, error) {
+func (q *Queries) CreateSong(ctx context.Context, arg CreateSongParams) (CreateSongRow, error) {
 	row := q.db.QueryRow(ctx, createSong,
 		arg.TitleJa,
 		arg.Album,
@@ -1778,7 +1812,7 @@ func (q *Queries) CreateSong(ctx context.Context, arg CreateSongParams) (Song, e
 		arg.Translation,
 		arg.Vocabulary,
 	)
-	var i Song
+	var i CreateSongRow
 	err := row.Scan(
 		&i.ID,
 		&i.TitleJa,
@@ -1808,12 +1842,21 @@ type CreateSongReflectionParams struct {
 	EntryDate *time.Time `json:"entry_date"`
 }
 
+type CreateSongReflectionRow struct {
+	ID        uuid.UUID `json:"id"`
+	SongID    uuid.UUID `json:"song_id"`
+	EntryDate time.Time `json:"entry_date"`
+	Body      string    `json:"body"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
 // A NULL entry_date defaults to today. COALESCE here rather than relying on
 // the column DEFAULT so the "today" clock is the same (the database's
 // CURRENT_DATE) whether the handler passes a date or not.
-func (q *Queries) CreateSongReflection(ctx context.Context, arg CreateSongReflectionParams) (SongReflection, error) {
+func (q *Queries) CreateSongReflection(ctx context.Context, arg CreateSongReflectionParams) (CreateSongReflectionRow, error) {
 	row := q.db.QueryRow(ctx, createSongReflection, arg.SongID, arg.Body, arg.EntryDate)
-	var i SongReflection
+	var i CreateSongReflectionRow
 	err := row.Scan(
 		&i.ID,
 		&i.SongID,
@@ -5225,9 +5268,22 @@ FROM readings
 WHERE id = $1
 `
 
-func (q *Queries) ReadingByID(ctx context.Context, id uuid.UUID) (Reading, error) {
+type ReadingByIDRow struct {
+	ID         uuid.UUID  `json:"id"`
+	Title      string     `json:"title"`
+	Author     string     `json:"author"`
+	Status     string     `json:"status"`
+	StartedOn  *time.Time `json:"started_on"`
+	FinishedOn *time.Time `json:"finished_on"`
+	IsPublic   bool       `json:"is_public"`
+	GoalID     *uuid.UUID `json:"goal_id"`
+	CreatedAt  time.Time  `json:"created_at"`
+	UpdatedAt  time.Time  `json:"updated_at"`
+}
+
+func (q *Queries) ReadingByID(ctx context.Context, id uuid.UUID) (ReadingByIDRow, error) {
 	row := q.db.QueryRow(ctx, readingByID, id)
-	var i Reading
+	var i ReadingByIDRow
 	err := row.Scan(
 		&i.ID,
 		&i.Title,
@@ -5243,6 +5299,40 @@ func (q *Queries) ReadingByID(ctx context.Context, id uuid.UUID) (Reading, error
 	return i, err
 }
 
+const readingReflectionsMissingEmbedding = `-- name: ReadingReflectionsMissingEmbedding :many
+SELECT id, body
+FROM reading_reflections
+WHERE embedding IS NULL
+ORDER BY created_at
+LIMIT $1
+`
+
+type ReadingReflectionsMissingEmbeddingRow struct {
+	ID   uuid.UUID `json:"id"`
+	Body string    `json:"body"`
+}
+
+// Diary rows the reconciler still has to process. Embed input = body.
+func (q *Queries) ReadingReflectionsMissingEmbedding(ctx context.Context, limit int32) ([]ReadingReflectionsMissingEmbeddingRow, error) {
+	rows, err := q.db.Query(ctx, readingReflectionsMissingEmbedding, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ReadingReflectionsMissingEmbeddingRow{}
+	for rows.Next() {
+		var i ReadingReflectionsMissingEmbeddingRow
+		if err := rows.Scan(&i.ID, &i.Body); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const readings = `-- name: Readings :many
 SELECT id, title, author, status, started_on, finished_on, is_public,
        goal_id, created_at, updated_at
@@ -5251,17 +5341,30 @@ WHERE ($1::text IS NULL OR status = $1)
 ORDER BY updated_at DESC
 `
 
+type ReadingsRow struct {
+	ID         uuid.UUID  `json:"id"`
+	Title      string     `json:"title"`
+	Author     string     `json:"author"`
+	Status     string     `json:"status"`
+	StartedOn  *time.Time `json:"started_on"`
+	FinishedOn *time.Time `json:"finished_on"`
+	IsPublic   bool       `json:"is_public"`
+	GoalID     *uuid.UUID `json:"goal_id"`
+	CreatedAt  time.Time  `json:"created_at"`
+	UpdatedAt  time.Time  `json:"updated_at"`
+}
+
 // Shelf list with optional status filter. Ordered by recency of edit —
 // status-group ordering for the shelf view is the frontend's concern.
-func (q *Queries) Readings(ctx context.Context, status *string) ([]Reading, error) {
+func (q *Queries) Readings(ctx context.Context, status *string) ([]ReadingsRow, error) {
 	rows, err := q.db.Query(ctx, readings, status)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []Reading{}
+	items := []ReadingsRow{}
 	for rows.Next() {
-		var i Reading
+		var i ReadingsRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.Title,
@@ -5274,6 +5377,54 @@ func (q *Queries) Readings(ctx context.Context, status *string) ([]Reading, erro
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const readingsMissingEmbedding = `-- name: ReadingsMissingEmbedding :many
+
+SELECT id, title, author
+FROM readings
+WHERE embedding IS NULL
+ORDER BY created_at
+LIMIT $1
+`
+
+type ReadingsMissingEmbeddingRow struct {
+	ID     uuid.UUID `json:"id"`
+	Title  string    `json:"title"`
+	Author string    `json:"author"`
+}
+
+// ============================================================
+// search_knowledge corpus (source_type=reading)
+//
+// The reading shelf and its diary feed the read-only search_knowledge corpus.
+// Both a shelf-row hit and a reflection hit surface as source_type=reading,
+// linking back to the parent book (its id + title). A shelf hit's excerpt is
+// the book title; a reflection hit's excerpt is the diary body. The two FTS
+// queries and the two semantic queries are UNIONed in the store, ranked per
+// branch, then RRF-merged by the MCP search handler — the same hybrid path the
+// contents corpus uses.
+// ============================================================
+// Shelf rows the embedding reconciler still has to process. Oldest first so a
+// backfill progresses deterministically. Embed input = title + author.
+func (q *Queries) ReadingsMissingEmbedding(ctx context.Context, limit int32) ([]ReadingsMissingEmbeddingRow, error) {
+	rows, err := q.db.Query(ctx, readingsMissingEmbedding, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ReadingsMissingEmbeddingRow{}
+	for rows.Next() {
+		var i ReadingsMissingEmbeddingRow
+		if err := rows.Scan(&i.ID, &i.Title, &i.Author); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -5402,17 +5553,26 @@ WHERE reading_id = $1
 ORDER BY entry_date ASC, created_at ASC
 `
 
+type ReflectionsForReadingRow struct {
+	ID        uuid.UUID `json:"id"`
+	ReadingID uuid.UUID `json:"reading_id"`
+	EntryDate time.Time `json:"entry_date"`
+	Body      string    `json:"body"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
 // The diary thread for one book: diary-date order, creation order as the
 // same-day tiebreak. Served by idx_reading_reflections_thread.
-func (q *Queries) ReflectionsForReading(ctx context.Context, readingID uuid.UUID) ([]ReadingReflection, error) {
+func (q *Queries) ReflectionsForReading(ctx context.Context, readingID uuid.UUID) ([]ReflectionsForReadingRow, error) {
 	rows, err := q.db.Query(ctx, reflectionsForReading, readingID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []ReadingReflection{}
+	items := []ReflectionsForReadingRow{}
 	for rows.Next() {
-		var i ReadingReflection
+		var i ReflectionsForReadingRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.ReadingID,
@@ -5438,17 +5598,26 @@ WHERE song_id = $1
 ORDER BY entry_date ASC, created_at ASC
 `
 
+type ReflectionsForSongRow struct {
+	ID        uuid.UUID `json:"id"`
+	SongID    uuid.UUID `json:"song_id"`
+	EntryDate time.Time `json:"entry_date"`
+	Body      string    `json:"body"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
 // The diary thread for one song: diary-date order, creation order as the
 // same-day tiebreak. Served by idx_song_reflections_thread.
-func (q *Queries) ReflectionsForSong(ctx context.Context, songID uuid.UUID) ([]SongReflection, error) {
+func (q *Queries) ReflectionsForSong(ctx context.Context, songID uuid.UUID) ([]ReflectionsForSongRow, error) {
 	rows, err := q.db.Query(ctx, reflectionsForSong, songID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []SongReflection{}
+	items := []ReflectionsForSongRow{}
 	for rows.Next() {
-		var i SongReflection
+		var i ReflectionsForSongRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.SongID,
@@ -5703,6 +5872,134 @@ func (q *Queries) SearchContentsCount(ctx context.Context, arg SearchContentsCou
 	return count, err
 }
 
+const searchReadingCorpus = `-- name: SearchReadingCorpus :many
+SELECT reading_id, title, excerpt, created_at
+FROM (
+    SELECT r.id AS reading_id,
+           r.title AS title,
+           r.title AS excerpt,
+           r.created_at AS created_at,
+           ts_rank(r.search_vector, websearch_to_tsquery('simple', $1)) AS rank
+    FROM readings r
+    WHERE r.search_vector @@ websearch_to_tsquery('simple', $1)
+    UNION ALL
+    SELECT rr.reading_id AS reading_id,
+           r.title AS title,
+           rr.body AS excerpt,
+           rr.created_at AS created_at,
+           ts_rank(rr.search_vector, websearch_to_tsquery('simple', $1)) AS rank
+    FROM reading_reflections rr
+    JOIN readings r ON r.id = rr.reading_id
+    WHERE rr.search_vector @@ websearch_to_tsquery('simple', $1)
+) hits
+ORDER BY rank DESC
+LIMIT $2
+`
+
+type SearchReadingCorpusParams struct {
+	WebsearchToTsquery string `json:"websearch_to_tsquery"`
+	Limit              int32  `json:"limit"`
+}
+
+type SearchReadingCorpusRow struct {
+	ReadingID uuid.UUID `json:"reading_id"`
+	Title     string    `json:"title"`
+	Excerpt   string    `json:"excerpt"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// FTS over the reading corpus: shelf rows + diary entries, both folded under
+// the parent book. excerpt carries the matched text (book title for a shelf
+// hit, diary body for a reflection hit). Ordered by ts_rank across the union.
+func (q *Queries) SearchReadingCorpus(ctx context.Context, arg SearchReadingCorpusParams) ([]SearchReadingCorpusRow, error) {
+	rows, err := q.db.Query(ctx, searchReadingCorpus, arg.WebsearchToTsquery, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []SearchReadingCorpusRow{}
+	for rows.Next() {
+		var i SearchReadingCorpusRow
+		if err := rows.Scan(
+			&i.ReadingID,
+			&i.Title,
+			&i.Excerpt,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const searchSongCorpus = `-- name: SearchSongCorpus :many
+SELECT song_id, title, excerpt, created_at
+FROM (
+    SELECT s.id AS song_id,
+           s.title_ja AS title,
+           s.title_ja AS excerpt,
+           s.created_at AS created_at,
+           ts_rank(s.search_vector, websearch_to_tsquery('simple', $1)) AS rank
+    FROM songs s
+    WHERE s.search_vector @@ websearch_to_tsquery('simple', $1)
+    UNION ALL
+    SELECT sr.song_id AS song_id,
+           s.title_ja AS title,
+           sr.body AS excerpt,
+           sr.created_at AS created_at,
+           ts_rank(sr.search_vector, websearch_to_tsquery('simple', $1)) AS rank
+    FROM song_reflections sr
+    JOIN songs s ON s.id = sr.song_id
+    WHERE sr.search_vector @@ websearch_to_tsquery('simple', $1)
+) hits
+ORDER BY rank DESC
+LIMIT $2
+`
+
+type SearchSongCorpusParams struct {
+	WebsearchToTsquery string `json:"websearch_to_tsquery"`
+	Limit              int32  `json:"limit"`
+}
+
+type SearchSongCorpusRow struct {
+	SongID    uuid.UUID `json:"song_id"`
+	Title     string    `json:"title"`
+	Excerpt   string    `json:"excerpt"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// FTS over the song corpus: shelf rows + reflection entries, both folded under
+// the parent song. excerpt carries the matched text (song title for a shelf
+// hit, diary body for a reflection hit). Ordered by ts_rank across the union.
+func (q *Queries) SearchSongCorpus(ctx context.Context, arg SearchSongCorpusParams) ([]SearchSongCorpusRow, error) {
+	rows, err := q.db.Query(ctx, searchSongCorpus, arg.WebsearchToTsquery, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []SearchSongCorpusRow{}
+	for rows.Next() {
+		var i SearchSongCorpusRow
+		if err := rows.Scan(
+			&i.SongID,
+			&i.Title,
+			&i.Excerpt,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const searchTodoItems = `-- name: SearchTodoItems :many
 SELECT t.id, t.title, t.state, t.due, t.project_id,
        t.energy, t.priority, t.recur_interval, t.recur_unit,
@@ -5803,6 +6100,135 @@ func (q *Queries) SearchTodoItems(ctx context.Context, arg SearchTodoItemsParams
 	return items, nil
 }
 
+const semanticSearchReadingCorpus = `-- name: SemanticSearchReadingCorpus :many
+SELECT reading_id, title, excerpt, created_at
+FROM (
+    SELECT r.id AS reading_id,
+           r.title AS title,
+           r.title AS excerpt,
+           r.created_at AS created_at,
+           (r.embedding <=> $1::vector) AS distance
+    FROM readings r
+    WHERE r.embedding IS NOT NULL
+    UNION ALL
+    SELECT rr.reading_id AS reading_id,
+           r.title AS title,
+           rr.body AS excerpt,
+           rr.created_at AS created_at,
+           (rr.embedding <=> $1::vector) AS distance
+    FROM reading_reflections rr
+    JOIN readings r ON r.id = rr.reading_id
+    WHERE rr.embedding IS NOT NULL
+) hits
+ORDER BY distance
+LIMIT $2
+`
+
+type SemanticSearchReadingCorpusParams struct {
+	TargetEmbedding pgvector_go.Vector `json:"target_embedding"`
+	MaxResults      int32              `json:"max_results"`
+}
+
+type SemanticSearchReadingCorpusRow struct {
+	ReadingID uuid.UUID `json:"reading_id"`
+	Title     string    `json:"title"`
+	Excerpt   string    `json:"excerpt"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// pgvector cosine search over the reading corpus: shelf rows + diary entries,
+// both folded under the parent book. Mirrors SearchReadingCorpus's projection;
+// rows without an embedding are skipped. Ordered by cosine distance across the
+// union.
+func (q *Queries) SemanticSearchReadingCorpus(ctx context.Context, arg SemanticSearchReadingCorpusParams) ([]SemanticSearchReadingCorpusRow, error) {
+	rows, err := q.db.Query(ctx, semanticSearchReadingCorpus, arg.TargetEmbedding, arg.MaxResults)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []SemanticSearchReadingCorpusRow{}
+	for rows.Next() {
+		var i SemanticSearchReadingCorpusRow
+		if err := rows.Scan(
+			&i.ReadingID,
+			&i.Title,
+			&i.Excerpt,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const semanticSearchSongCorpus = `-- name: SemanticSearchSongCorpus :many
+SELECT song_id, title, excerpt, created_at
+FROM (
+    SELECT s.id AS song_id,
+           s.title_ja AS title,
+           s.title_ja AS excerpt,
+           s.created_at AS created_at,
+           (s.embedding <=> $1::vector) AS distance
+    FROM songs s
+    WHERE s.embedding IS NOT NULL
+    UNION ALL
+    SELECT sr.song_id AS song_id,
+           s.title_ja AS title,
+           sr.body AS excerpt,
+           sr.created_at AS created_at,
+           (sr.embedding <=> $1::vector) AS distance
+    FROM song_reflections sr
+    JOIN songs s ON s.id = sr.song_id
+    WHERE sr.embedding IS NOT NULL
+) hits
+ORDER BY distance
+LIMIT $2
+`
+
+type SemanticSearchSongCorpusParams struct {
+	TargetEmbedding pgvector_go.Vector `json:"target_embedding"`
+	MaxResults      int32              `json:"max_results"`
+}
+
+type SemanticSearchSongCorpusRow struct {
+	SongID    uuid.UUID `json:"song_id"`
+	Title     string    `json:"title"`
+	Excerpt   string    `json:"excerpt"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// pgvector cosine search over the song corpus: shelf rows + reflection entries,
+// both folded under the parent song. Mirrors SearchSongCorpus's projection;
+// rows without an embedding are skipped. Ordered by cosine distance.
+func (q *Queries) SemanticSearchSongCorpus(ctx context.Context, arg SemanticSearchSongCorpusParams) ([]SemanticSearchSongCorpusRow, error) {
+	rows, err := q.db.Query(ctx, semanticSearchSongCorpus, arg.TargetEmbedding, arg.MaxResults)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []SemanticSearchSongCorpusRow{}
+	for rows.Next() {
+		var i SemanticSearchSongCorpusRow
+		if err := rows.Scan(
+			&i.SongID,
+			&i.Title,
+			&i.Excerpt,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const setContentEmbedding = `-- name: SetContentEmbedding :exec
 UPDATE contents SET embedding = $2 WHERE id = $1
 `
@@ -5820,6 +6246,65 @@ type SetContentEmbeddingParams struct {
 // this write produces no activity_events row.
 func (q *Queries) SetContentEmbedding(ctx context.Context, arg SetContentEmbeddingParams) error {
 	_, err := q.db.Exec(ctx, setContentEmbedding, arg.ID, arg.Embedding)
+	return err
+}
+
+const setReadingEmbedding = `-- name: SetReadingEmbedding :exec
+UPDATE readings SET embedding = $2 WHERE id = $1
+`
+
+type SetReadingEmbeddingParams struct {
+	ID        uuid.UUID           `json:"id"`
+	Embedding *pgvector_go.Vector `json:"embedding"`
+}
+
+// Persist a derived embedding. updated_at is deliberately untouched — the
+// embedding derives from title/author and carries no editorial change.
+func (q *Queries) SetReadingEmbedding(ctx context.Context, arg SetReadingEmbeddingParams) error {
+	_, err := q.db.Exec(ctx, setReadingEmbedding, arg.ID, arg.Embedding)
+	return err
+}
+
+const setReadingReflectionEmbedding = `-- name: SetReadingReflectionEmbedding :exec
+UPDATE reading_reflections SET embedding = $2 WHERE id = $1
+`
+
+type SetReadingReflectionEmbeddingParams struct {
+	ID        uuid.UUID           `json:"id"`
+	Embedding *pgvector_go.Vector `json:"embedding"`
+}
+
+func (q *Queries) SetReadingReflectionEmbedding(ctx context.Context, arg SetReadingReflectionEmbeddingParams) error {
+	_, err := q.db.Exec(ctx, setReadingReflectionEmbedding, arg.ID, arg.Embedding)
+	return err
+}
+
+const setSongEmbedding = `-- name: SetSongEmbedding :exec
+UPDATE songs SET embedding = $2 WHERE id = $1
+`
+
+type SetSongEmbeddingParams struct {
+	ID        uuid.UUID           `json:"id"`
+	Embedding *pgvector_go.Vector `json:"embedding"`
+}
+
+// Persist a derived embedding. updated_at is deliberately untouched.
+func (q *Queries) SetSongEmbedding(ctx context.Context, arg SetSongEmbeddingParams) error {
+	_, err := q.db.Exec(ctx, setSongEmbedding, arg.ID, arg.Embedding)
+	return err
+}
+
+const setSongReflectionEmbedding = `-- name: SetSongReflectionEmbedding :exec
+UPDATE song_reflections SET embedding = $2 WHERE id = $1
+`
+
+type SetSongReflectionEmbeddingParams struct {
+	ID        uuid.UUID           `json:"id"`
+	Embedding *pgvector_go.Vector `json:"embedding"`
+}
+
+func (q *Queries) SetSongReflectionEmbedding(ctx context.Context, arg SetSongReflectionEmbeddingParams) error {
+	_, err := q.db.Exec(ctx, setSongReflectionEmbedding, arg.ID, arg.Embedding)
 	return err
 }
 
@@ -5883,9 +6368,21 @@ FROM songs
 WHERE id = $1
 `
 
-func (q *Queries) SongByID(ctx context.Context, id uuid.UUID) (Song, error) {
+type SongByIDRow struct {
+	ID          uuid.UUID `json:"id"`
+	TitleJa     string    `json:"title_ja"`
+	Album       string    `json:"album"`
+	LyricsJa    string    `json:"lyrics_ja"`
+	Translation string    `json:"translation"`
+	Vocabulary  string    `json:"vocabulary"`
+	IsPublic    bool      `json:"is_public"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+}
+
+func (q *Queries) SongByID(ctx context.Context, id uuid.UUID) (SongByIDRow, error) {
 	row := q.db.QueryRow(ctx, songByID, id)
-	var i Song
+	var i SongByIDRow
 	err := row.Scan(
 		&i.ID,
 		&i.TitleJa,
@@ -5900,6 +6397,40 @@ func (q *Queries) SongByID(ctx context.Context, id uuid.UUID) (Song, error) {
 	return i, err
 }
 
+const songReflectionsMissingEmbedding = `-- name: SongReflectionsMissingEmbedding :many
+SELECT id, body
+FROM song_reflections
+WHERE embedding IS NULL
+ORDER BY created_at
+LIMIT $1
+`
+
+type SongReflectionsMissingEmbeddingRow struct {
+	ID   uuid.UUID `json:"id"`
+	Body string    `json:"body"`
+}
+
+// Diary rows the reconciler still has to process. Embed input = body.
+func (q *Queries) SongReflectionsMissingEmbedding(ctx context.Context, limit int32) ([]SongReflectionsMissingEmbeddingRow, error) {
+	rows, err := q.db.Query(ctx, songReflectionsMissingEmbedding, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []SongReflectionsMissingEmbeddingRow{}
+	for rows.Next() {
+		var i SongReflectionsMissingEmbeddingRow
+		if err := rows.Scan(&i.ID, &i.Body); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const songs = `-- name: Songs :many
 SELECT id, title_ja, album, lyrics_ja, translation, vocabulary, is_public,
        created_at, updated_at
@@ -5907,17 +6438,29 @@ FROM songs
 ORDER BY updated_at DESC
 `
 
+type SongsRow struct {
+	ID          uuid.UUID `json:"id"`
+	TitleJa     string    `json:"title_ja"`
+	Album       string    `json:"album"`
+	LyricsJa    string    `json:"lyrics_ja"`
+	Translation string    `json:"translation"`
+	Vocabulary  string    `json:"vocabulary"`
+	IsPublic    bool      `json:"is_public"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+}
+
 // Shelf list, ordered by recency of edit. The whole table is ヨルシカ, so
 // there is no artist filter; grouping by album is the frontend's concern.
-func (q *Queries) Songs(ctx context.Context) ([]Song, error) {
+func (q *Queries) Songs(ctx context.Context) ([]SongsRow, error) {
 	rows, err := q.db.Query(ctx, songs)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []Song{}
+	items := []SongsRow{}
 	for rows.Next() {
-		var i Song
+		var i SongsRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.TitleJa,
@@ -5928,6 +6471,63 @@ func (q *Queries) Songs(ctx context.Context) ([]Song, error) {
 			&i.IsPublic,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const songsMissingEmbedding = `-- name: SongsMissingEmbedding :many
+
+SELECT id, title_ja, album, lyrics_ja, translation, vocabulary
+FROM songs
+WHERE embedding IS NULL
+ORDER BY created_at
+LIMIT $1
+`
+
+type SongsMissingEmbeddingRow struct {
+	ID          uuid.UUID `json:"id"`
+	TitleJa     string    `json:"title_ja"`
+	Album       string    `json:"album"`
+	LyricsJa    string    `json:"lyrics_ja"`
+	Translation string    `json:"translation"`
+	Vocabulary  string    `json:"vocabulary"`
+}
+
+// ============================================================
+// search_knowledge corpus (source_type=song)
+//
+// The ヨルシカ shelf and its reflection diary feed the read-only
+// search_knowledge corpus — the shelf's first agent-visible surface. Both a
+// song-row hit and a reflection hit surface as source_type=song, linking back
+// to the parent song (its id + title_ja). A song hit's excerpt is the title;
+// a reflection hit's excerpt is the diary body. Mirrors the reading corpus
+// queries exactly.
+// ============================================================
+// Shelf rows the embedding reconciler still has to process. Oldest first.
+// Embed input = title_ja + album + the study fields (lyrics/translation/vocabulary).
+func (q *Queries) SongsMissingEmbedding(ctx context.Context, limit int32) ([]SongsMissingEmbeddingRow, error) {
+	rows, err := q.db.Query(ctx, songsMissingEmbedding, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []SongsMissingEmbeddingRow{}
+	for rows.Next() {
+		var i SongsMissingEmbeddingRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.TitleJa,
+			&i.Album,
+			&i.LyricsJa,
+			&i.Translation,
+			&i.Vocabulary,
 		); err != nil {
 			return nil, err
 		}
@@ -7575,13 +8175,26 @@ type UpdateReadingParams struct {
 	ID         uuid.UUID  `json:"id"`
 }
 
+type UpdateReadingRow struct {
+	ID         uuid.UUID  `json:"id"`
+	Title      string     `json:"title"`
+	Author     string     `json:"author"`
+	Status     string     `json:"status"`
+	StartedOn  *time.Time `json:"started_on"`
+	FinishedOn *time.Time `json:"finished_on"`
+	IsPublic   bool       `json:"is_public"`
+	GoalID     *uuid.UUID `json:"goal_id"`
+	CreatedAt  time.Time  `json:"created_at"`
+	UpdatedAt  time.Time  `json:"updated_at"`
+}
+
 // Partial update — omitted (NULL) args leave the column unchanged, so
 // nullable dates cannot be cleared back to NULL through this query.
 // finished_on resolution order: explicit caller value wins, then the
 // existing value, then the convenience auto-stamp — CURRENT_DATE when this
 // update sets status to finished. The existing-value guard means a repeat
 // "finished" update never silently moves an already-recorded finish date.
-func (q *Queries) UpdateReading(ctx context.Context, arg UpdateReadingParams) (Reading, error) {
+func (q *Queries) UpdateReading(ctx context.Context, arg UpdateReadingParams) (UpdateReadingRow, error) {
 	row := q.db.QueryRow(ctx, updateReading,
 		arg.Title,
 		arg.Author,
@@ -7591,7 +8204,7 @@ func (q *Queries) UpdateReading(ctx context.Context, arg UpdateReadingParams) (R
 		arg.IsPublic,
 		arg.ID,
 	)
-	var i Reading
+	var i UpdateReadingRow
 	err := row.Scan(
 		&i.ID,
 		&i.Title,
@@ -7623,17 +8236,26 @@ type UpdateReflectionParams struct {
 	ReadingID uuid.UUID  `json:"reading_id"`
 }
 
+type UpdateReflectionRow struct {
+	ID        uuid.UUID `json:"id"`
+	ReadingID uuid.UUID `json:"reading_id"`
+	EntryDate time.Time `json:"entry_date"`
+	Body      string    `json:"body"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
 // Partial update of a diary entry, bound to its parent reading: the WHERE
 // clause enforces membership, so a {reading_id, id} mismatch is a no-row
 // miss (404) rather than a cross-book write.
-func (q *Queries) UpdateReflection(ctx context.Context, arg UpdateReflectionParams) (ReadingReflection, error) {
+func (q *Queries) UpdateReflection(ctx context.Context, arg UpdateReflectionParams) (UpdateReflectionRow, error) {
 	row := q.db.QueryRow(ctx, updateReflection,
 		arg.Body,
 		arg.EntryDate,
 		arg.ID,
 		arg.ReadingID,
 	)
-	var i ReadingReflection
+	var i UpdateReflectionRow
 	err := row.Scan(
 		&i.ID,
 		&i.ReadingID,
@@ -7669,11 +8291,23 @@ type UpdateSongParams struct {
 	ID          uuid.UUID `json:"id"`
 }
 
+type UpdateSongRow struct {
+	ID          uuid.UUID `json:"id"`
+	TitleJa     string    `json:"title_ja"`
+	Album       string    `json:"album"`
+	LyricsJa    string    `json:"lyrics_ja"`
+	Translation string    `json:"translation"`
+	Vocabulary  string    `json:"vocabulary"`
+	IsPublic    bool      `json:"is_public"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+}
+
 // Partial update — omitted (NULL) args leave the column unchanged. The study
 // fields are plain text columns, so an explicit empty string clears one while
 // a NULL leaves it; the Go layer passes a pointer only when the caller sent
 // the field.
-func (q *Queries) UpdateSong(ctx context.Context, arg UpdateSongParams) (Song, error) {
+func (q *Queries) UpdateSong(ctx context.Context, arg UpdateSongParams) (UpdateSongRow, error) {
 	row := q.db.QueryRow(ctx, updateSong,
 		arg.TitleJa,
 		arg.Album,
@@ -7683,7 +8317,7 @@ func (q *Queries) UpdateSong(ctx context.Context, arg UpdateSongParams) (Song, e
 		arg.IsPublic,
 		arg.ID,
 	)
-	var i Song
+	var i UpdateSongRow
 	err := row.Scan(
 		&i.ID,
 		&i.TitleJa,
@@ -7714,17 +8348,26 @@ type UpdateSongReflectionParams struct {
 	SongID    uuid.UUID  `json:"song_id"`
 }
 
+type UpdateSongReflectionRow struct {
+	ID        uuid.UUID `json:"id"`
+	SongID    uuid.UUID `json:"song_id"`
+	EntryDate time.Time `json:"entry_date"`
+	Body      string    `json:"body"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
 // Partial update of a diary entry, bound to its parent song: the WHERE clause
 // enforces membership, so a {song_id, id} mismatch is a no-row miss (404)
 // rather than a cross-song write.
-func (q *Queries) UpdateSongReflection(ctx context.Context, arg UpdateSongReflectionParams) (SongReflection, error) {
+func (q *Queries) UpdateSongReflection(ctx context.Context, arg UpdateSongReflectionParams) (UpdateSongReflectionRow, error) {
 	row := q.db.QueryRow(ctx, updateSongReflection,
 		arg.Body,
 		arg.EntryDate,
 		arg.ID,
 		arg.SongID,
 	)
-	var i SongReflection
+	var i UpdateSongReflectionRow
 	err := row.Scan(
 		&i.ID,
 		&i.SongID,

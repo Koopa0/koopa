@@ -47,7 +47,7 @@ func SearchKnowledge() Meta {
 		Writability: ReadOnly,
 		Stability:   StabilityStable,
 		Since:       since,
-		Description: "Search across content (articles, build logs, TILs, etc.) — i.e. what we KNOW. CURRENT behavior: PostgreSQL full-text search (lexical, tsvector + websearch syntax, GIN-indexed) only — there is no production document-embedding write path today, so the semantic / pgvector branch returns no rows for app-created content. Hybrid lexical + pgvector + RRF is PLANNED but not active; do not assume semantic recall. Filters: source_types (content only), content_type, project, date range.",
+		Description: "Read-only search across Koopa's corpus: content (articles, essays, build-logs, TILs, digests), the reading shelf (books + reading diary), and the ヨルシカ song shelf (songs + reflections). Hybrid retrieval per corpus — PostgreSQL full-text search (lexical, tsvector + websearch syntax, GIN-indexed) fused with pgvector semantic search (HNSW, cosine) via reciprocal-rank fusion; a background reconciler embeds rows as they land, and without GEMINI_API_KEY the semantic branch degrades to FTS-only. A reading-diary hit folds under its parent book (source_type=reading) and a song-reflection hit under its parent song (source_type=song) — reflections are NOT a separate source type. Filters: source_types ({content, reading, song}; default all three), content_type (content only), date range. The reading and song shelves are read-only here — no MCP tool writes them.",
 	}
 }
 

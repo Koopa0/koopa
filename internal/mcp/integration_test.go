@@ -77,6 +77,7 @@ func truncateApplicationTables(t *testing.T) {
 		"todos",
 		"contents",
 		"readings",
+		"songs",
 		"milestones",
 		"goals",
 		"projects",
@@ -232,7 +233,10 @@ func seedSearchContentAt(t *testing.T, slug, term string, createdAt time.Time) u
 }
 
 // assertSearchResultShape checks the stable required fields of a single result
-// envelope item. Does not assert order or relevance.
+// envelope item. Does not assert order or relevance. The corpus is now
+// {content, reading, song}: content hits carry a slug + content_type; reading
+// and song hits link to the parent shelf row by id/title and carry no slug
+// (those tables have none) and no content_type.
 func assertSearchResultShape(t *testing.T, r *SearchKnowledgeResult) {
 	t.Helper()
 	if r.ID == "" {
@@ -241,9 +245,6 @@ func assertSearchResultShape(t *testing.T, r *SearchKnowledgeResult) {
 	if r.Title == "" {
 		t.Errorf("result.title empty: %+v", r)
 	}
-	if r.Slug == "" {
-		t.Errorf("result.slug empty: %+v", r)
-	}
 	if r.CreatedAt == "" {
 		t.Errorf("result.created_at empty: %+v", r)
 	} else if _, err := time.Parse(time.RFC3339, r.CreatedAt); err != nil {
@@ -251,11 +252,18 @@ func assertSearchResultShape(t *testing.T, r *SearchKnowledgeResult) {
 	}
 	switch r.SourceType {
 	case SourceTypeContent:
+		if r.Slug == "" {
+			t.Errorf("content result missing slug: %+v", r)
+		}
 		if r.ContentType == "" {
 			t.Errorf("content result missing content_type: %+v", r)
 		}
+	case SourceTypeReading, SourceTypeSong:
+		if r.Excerpt == "" {
+			t.Errorf("%s result missing excerpt (matched text): %+v", r.SourceType, r)
+		}
 	default:
-		t.Errorf("unknown source_type %q (corpus is content only)", r.SourceType)
+		t.Errorf("unknown source_type %q (corpus is content, reading, song)", r.SourceType)
 	}
 }
 
@@ -1607,6 +1615,178 @@ func seedReflection(t *testing.T, readingID uuid.UUID, entryDate, body string) u
 		t.Fatalf("seedReflection(reading=%s, %s, %q): %v", readingID, entryDate, body, err)
 	}
 	return id
+}
+
+// seedSong inserts a song directly. Like readings, the songs tables carry no
+// audit trigger and no created_by FK (single human writer). translation is the
+// owner's working-language layer the FTS search_vector weights, so a seed sets
+// it to drive lexical matches.
+func seedSong(t *testing.T, titleJa, album, translation string) uuid.UUID {
+	t.Helper()
+	var id uuid.UUID
+	if err := testPool.QueryRow(t.Context(),
+		`INSERT INTO songs (title_ja, album, translation) VALUES ($1, $2, $3) RETURNING id`,
+		titleJa, album, translation,
+	).Scan(&id); err != nil {
+		t.Fatalf("seedSong(%q): %v", titleJa, err)
+	}
+	return id
+}
+
+// seedSongReflection inserts a reflection under a song with an explicit
+// entry_date.
+func seedSongReflection(t *testing.T, songID uuid.UUID, entryDate, body string) uuid.UUID {
+	t.Helper()
+	var id uuid.UUID
+	if err := testPool.QueryRow(t.Context(),
+		`INSERT INTO song_reflections (song_id, entry_date, body)
+		 VALUES ($1, $2::date, $3) RETURNING id`,
+		songID, entryDate, body,
+	).Scan(&id); err != nil {
+		t.Fatalf("seedSongReflection(song=%s, %s, %q): %v", songID, entryDate, body, err)
+	}
+	return id
+}
+
+// --- search_knowledge: reading + song corpora (FTS path) ---
+
+// TestIntegration_SearchKnowledge_ReadingSongCorpora is the end-to-end proof
+// that the reading shelf and the ヨルシカ song shelf joined the search corpus.
+// Embeddings need GEMINI_API_KEY, so this asserts the FTS path only (the
+// server here has no embedder, so the semantic branch is skipped) plus the
+// source_types narrowing. It pins the load-bearing semantics:
+//   - a reading SHELF hit surfaces with source_type=reading, linking to the book;
+//   - a reading REFLECTION hit folds under its parent book (same source_type,
+//     parent id, excerpt = the diary body) — NOT a separate reflection corpus;
+//   - the same for the song shelf + reflections (source_type=song);
+//   - source_types narrows the corpus, and the default searches all three.
+func TestIntegration_SearchKnowledge_ReadingSongCorpora(t *testing.T) {
+	s := setupServer(t)
+
+	// A term unique to each matchable surface so a hit is unambiguous.
+	bookID := seedReading(t, "Norwegian Wood", "Murakami", "finished")
+	const reflTerm = "zqxreflread"
+	seedReflection(t, bookID, "2026-05-10", "today the "+reflTerm+" theme finally landed")
+
+	songID := seedSong(t, "花に亡霊", "創作", "a song about loneliness")
+	const songReflTerm = "zqxreflsong"
+	seedSongReflection(t, songID, "2026-05-11", "the bridge captures "+songReflTerm+" perfectly")
+
+	t.Run("reading reflection hit folds under parent book", func(t *testing.T) {
+		_, out, err := callHandler(t, s.searchKnowledge, SearchKnowledgeInput{Query: reflTerm})
+		if err != nil {
+			t.Fatalf("searchKnowledge(%q): %v", reflTerm, err)
+		}
+		r := findResultByID(t, out.Results, bookID.String())
+		if r == nil {
+			t.Fatalf("reflection term %q did not surface parent book %s; got %d results", reflTerm, bookID, len(out.Results))
+		}
+		if r.SourceType != SourceTypeReading {
+			t.Errorf("source_type = %q, want %q (reflection folds under reading)", r.SourceType, SourceTypeReading)
+		}
+		if r.Title != "Norwegian Wood" {
+			t.Errorf("title = %q, want the parent book title", r.Title)
+		}
+		if !strings.Contains(r.Excerpt, reflTerm) {
+			t.Errorf("excerpt = %q, want the matched diary body containing %q", r.Excerpt, reflTerm)
+		}
+		assertSearchResultShape(t, r)
+	})
+
+	t.Run("song reflection hit folds under parent song", func(t *testing.T) {
+		_, out, err := callHandler(t, s.searchKnowledge, SearchKnowledgeInput{Query: songReflTerm})
+		if err != nil {
+			t.Fatalf("searchKnowledge(%q): %v", songReflTerm, err)
+		}
+		r := findResultByID(t, out.Results, songID.String())
+		if r == nil {
+			t.Fatalf("reflection term %q did not surface parent song %s; got %d results", songReflTerm, songID, len(out.Results))
+		}
+		if r.SourceType != SourceTypeSong {
+			t.Errorf("source_type = %q, want %q (reflection folds under song)", r.SourceType, SourceTypeSong)
+		}
+		if !strings.Contains(r.Excerpt, songReflTerm) {
+			t.Errorf("excerpt = %q, want the matched reflection body containing %q", r.Excerpt, songReflTerm)
+		}
+		assertSearchResultShape(t, r)
+	})
+
+	t.Run("reading shelf hit surfaces by title", func(t *testing.T) {
+		_, out, err := callHandler(t, s.searchKnowledge, SearchKnowledgeInput{Query: "Murakami"})
+		if err != nil {
+			t.Fatalf("searchKnowledge(Murakami): %v", err)
+		}
+		r := findResultByID(t, out.Results, bookID.String())
+		if r == nil {
+			t.Fatalf("author term did not surface the book %s (search_vector weights author B)", bookID)
+		}
+		if r.SourceType != SourceTypeReading {
+			t.Errorf("source_type = %q, want %q", r.SourceType, SourceTypeReading)
+		}
+	})
+
+	t.Run("song shelf hit via translation", func(t *testing.T) {
+		_, out, err := callHandler(t, s.searchKnowledge, SearchKnowledgeInput{Query: "loneliness"})
+		if err != nil {
+			t.Fatalf("searchKnowledge(loneliness): %v", err)
+		}
+		r := findResultByID(t, out.Results, songID.String())
+		if r == nil {
+			t.Fatalf("translation term did not surface the song %s (search_vector weights translation C)", songID)
+		}
+		if r.SourceType != SourceTypeSong {
+			t.Errorf("source_type = %q, want %q", r.SourceType, SourceTypeSong)
+		}
+	})
+
+	t.Run("source_types narrows to reading only", func(t *testing.T) {
+		_, out, err := callHandler(t, s.searchKnowledge, SearchKnowledgeInput{Query: reflTerm, SourceTypes: []string{SourceTypeReading}})
+		if err != nil {
+			t.Fatalf("searchKnowledge(reading-only): %v", err)
+		}
+		if diff := cmp.Diff([]string{SourceTypeReading}, out.SearchedCorpus); diff != "" {
+			t.Errorf("searched_corpus mismatch (-want +got):\n%s", diff)
+		}
+		for i := range out.Results {
+			if out.Results[i].SourceType != SourceTypeReading {
+				t.Errorf("result %d source_type = %q, want reading-only", i, out.Results[i].SourceType)
+			}
+		}
+	})
+
+	t.Run("source_types=song excludes the reading hit", func(t *testing.T) {
+		_, out, err := callHandler(t, s.searchKnowledge, SearchKnowledgeInput{Query: reflTerm, SourceTypes: []string{SourceTypeSong}})
+		if err != nil {
+			t.Fatalf("searchKnowledge(song-only): %v", err)
+		}
+		if r := findResultByID(t, out.Results, bookID.String()); r != nil {
+			t.Errorf("song-only search returned the reading hit %s — corpus narrowing failed", bookID)
+		}
+	})
+
+	t.Run("default corpus is all three", func(t *testing.T) {
+		_, out, err := callHandler(t, s.searchKnowledge, SearchKnowledgeInput{Query: reflTerm})
+		if err != nil {
+			t.Fatalf("searchKnowledge(default): %v", err)
+		}
+		want := []string{SourceTypeContent, SourceTypeReading, SourceTypeSong}
+		if diff := cmp.Diff(want, out.SearchedCorpus); diff != "" {
+			t.Errorf("default searched_corpus mismatch (-want +got):\n%s", diff)
+		}
+	})
+}
+
+// findResultByID returns the first result with the given id, or nil. Order- and
+// rank-agnostic so this stays inside the tier-1 contract (presence/absence
+// only, no ranking metric).
+func findResultByID(t *testing.T, results []SearchKnowledgeResult, id string) *SearchKnowledgeResult {
+	t.Helper()
+	for i := range results {
+		if results[i].ID == id {
+			return &results[i]
+		}
+	}
+	return nil
 }
 
 // TestIntegration_ListReadings_ReturnsShelf drives the happy path: every

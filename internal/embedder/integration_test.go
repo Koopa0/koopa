@@ -96,14 +96,14 @@ func TestReconcilerRunOnce_DrainsContents(t *testing.T) {
 		t.Fatalf("reading content updated_at: %v", err)
 	}
 
-	r := embedder.NewReconciler(stubTextEmbedder{},
-		content.NewStore(testPool), slog.New(slog.DiscardHandler))
+	r := embedder.NewReconciler(stubTextEmbedder{}, slog.New(slog.DiscardHandler),
+		embedder.NamedSource{Name: "contents", Source: content.NewStore(testPool)})
 
 	got, err := r.RunOnce(t.Context())
 	if err != nil {
 		t.Fatalf("RunOnce() error = %v, want nil", err)
 	}
-	want := embedder.Result{Contents: 2}
+	want := embedder.Result{BySource: map[string]int{"contents": 2}}
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Fatalf("RunOnce() result mismatch (-want +got):\n%s", diff)
 	}
@@ -152,12 +152,14 @@ func TestReconcilerRunOnce_DrainsContents(t *testing.T) {
 			contentUpdatedAfter, contentUpdatedBefore)
 	}
 
-	// A second pass finds nothing left to do.
+	// A second pass finds nothing left to do — the source is still reported
+	// with a zero count (BySource always carries an entry per wired source).
 	again, err := r.RunOnce(t.Context())
 	if err != nil {
 		t.Fatalf("second RunOnce() error = %v, want nil", err)
 	}
-	if diff := cmp.Diff(embedder.Result{}, again); diff != "" {
+	want = embedder.Result{BySource: map[string]int{"contents": 0}}
+	if diff := cmp.Diff(want, again); diff != "" {
 		t.Errorf("second RunOnce() result mismatch (-want +got):\n%s", diff)
 	}
 }

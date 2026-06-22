@@ -84,3 +84,90 @@ RETURNING id, song_id, entry_date, body, created_at, updated_at;
 -- Delete a diary entry, bound to its parent song (same membership guard as
 -- UpdateSongReflection).
 DELETE FROM song_reflections WHERE id = @id AND song_id = @song_id;
+
+-- ============================================================
+-- search_knowledge corpus (source_type=song)
+--
+-- The ヨルシカ shelf and its reflection diary feed the read-only
+-- search_knowledge corpus — the shelf's first agent-visible surface. Both a
+-- song-row hit and a reflection hit surface as source_type=song, linking back
+-- to the parent song (its id + title_ja). A song hit's excerpt is the title;
+-- a reflection hit's excerpt is the diary body. Mirrors the reading corpus
+-- queries exactly.
+-- ============================================================
+
+-- name: SongsMissingEmbedding :many
+-- Shelf rows the embedding reconciler still has to process. Oldest first.
+-- Embed input = title_ja + album + the study fields (lyrics/translation/vocabulary).
+SELECT id, title_ja, album, lyrics_ja, translation, vocabulary
+FROM songs
+WHERE embedding IS NULL
+ORDER BY created_at
+LIMIT $1;
+
+-- name: SetSongEmbedding :exec
+-- Persist a derived embedding. updated_at is deliberately untouched.
+UPDATE songs SET embedding = $2 WHERE id = $1;
+
+-- name: SongReflectionsMissingEmbedding :many
+-- Diary rows the reconciler still has to process. Embed input = body.
+SELECT id, body
+FROM song_reflections
+WHERE embedding IS NULL
+ORDER BY created_at
+LIMIT $1;
+
+-- name: SetSongReflectionEmbedding :exec
+UPDATE song_reflections SET embedding = $2 WHERE id = $1;
+
+-- name: SearchSongCorpus :many
+-- FTS over the song corpus: shelf rows + reflection entries, both folded under
+-- the parent song. excerpt carries the matched text (song title for a shelf
+-- hit, diary body for a reflection hit). Ordered by ts_rank across the union.
+SELECT song_id, title, excerpt, created_at
+FROM (
+    SELECT s.id AS song_id,
+           s.title_ja AS title,
+           s.title_ja AS excerpt,
+           s.created_at AS created_at,
+           ts_rank(s.search_vector, websearch_to_tsquery('simple', $1)) AS rank
+    FROM songs s
+    WHERE s.search_vector @@ websearch_to_tsquery('simple', $1)
+    UNION ALL
+    SELECT sr.song_id AS song_id,
+           s.title_ja AS title,
+           sr.body AS excerpt,
+           sr.created_at AS created_at,
+           ts_rank(sr.search_vector, websearch_to_tsquery('simple', $1)) AS rank
+    FROM song_reflections sr
+    JOIN songs s ON s.id = sr.song_id
+    WHERE sr.search_vector @@ websearch_to_tsquery('simple', $1)
+) hits
+ORDER BY rank DESC
+LIMIT $2;
+
+-- name: SemanticSearchSongCorpus :many
+-- pgvector cosine search over the song corpus: shelf rows + reflection entries,
+-- both folded under the parent song. Mirrors SearchSongCorpus's projection;
+-- rows without an embedding are skipped. Ordered by cosine distance.
+SELECT song_id, title, excerpt, created_at
+FROM (
+    SELECT s.id AS song_id,
+           s.title_ja AS title,
+           s.title_ja AS excerpt,
+           s.created_at AS created_at,
+           (s.embedding <=> @target_embedding::vector) AS distance
+    FROM songs s
+    WHERE s.embedding IS NOT NULL
+    UNION ALL
+    SELECT sr.song_id AS song_id,
+           s.title_ja AS title,
+           sr.body AS excerpt,
+           sr.created_at AS created_at,
+           (sr.embedding <=> @target_embedding::vector) AS distance
+    FROM song_reflections sr
+    JOIN songs s ON s.id = sr.song_id
+    WHERE sr.embedding IS NOT NULL
+) hits
+ORDER BY distance
+LIMIT @max_results;

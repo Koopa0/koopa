@@ -102,6 +102,8 @@ func TestReconcilerRunOnce(t *testing.T) {
 	tests := []struct {
 		name          string
 		contents      int
+		readings      int
+		songs         int
 		failSubstring string
 		want          Result
 	}{
@@ -109,35 +111,56 @@ func TestReconcilerRunOnce(t *testing.T) {
 			// 120 contents force three drain iterations (50+50+20).
 			name:     "drains the content source across batches",
 			contents: 120,
-			want:     Result{Contents: 120},
+			want:     Result{BySource: map[string]int{"contents": 120, "readings": 0, "songs": 0}},
 		},
 		{
-			name: "empty source does nothing",
-			want: Result{},
+			name: "empty sources do nothing but report every source",
+			want: Result{BySource: map[string]int{"contents": 0, "readings": 0, "songs": 0}},
+		},
+		{
+			// Every wired source is drained in one pass; counts are kept
+			// per source.
+			name:     "drains content reading and song sources independently",
+			contents: 4,
+			readings: 3,
+			songs:    2,
+			want:     Result{BySource: map[string]int{"contents": 4, "readings": 3, "songs": 2}},
 		},
 		{
 			// The failing row is skipped and stays missing; the rest of
-			// the batch persists.
-			name:          "failed row skipped others persist",
-			contents:      3,
-			failSubstring: "content-001",
-			want:          Result{Contents: 2, Failed: 1},
+			// the batch persists. Only the reading source has the failing
+			// title, so the failure is attributed to it and content/song
+			// drain fully.
+			name:          "failed row skipped others persist across sources",
+			contents:      2,
+			readings:      3,
+			songs:         2,
+			failSubstring: "reading-001",
+			want:          Result{BySource: map[string]int{"contents": 2, "readings": 2, "songs": 2}, Failed: 1},
 		},
 		{
-			// Every row fails: the drain stops after one zero-success
-			// batch instead of refetching the same rows forever.
-			name:          "all rows failing terminates",
-			contents:      50,
-			failSubstring: "-",
-			want:          Result{Failed: 50},
+			// Every row in one source fails: that drain stops after one
+			// zero-success batch while the siblings still drain.
+			name:          "one source all-failing terminates without starving siblings",
+			contents:      3,
+			readings:      5,
+			songs:         1,
+			failSubstring: "reading-",
+			want:          Result{BySource: map[string]int{"contents": 3, "readings": 0, "songs": 1}, Failed: 5},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			contents := newFakeSource(tt.contents, "content")
+			readings := newFakeSource(tt.readings, "reading")
+			songs := newFakeSource(tt.songs, "song")
 			emb := &stubEmbedder{failSubstring: tt.failSubstring}
-			r := NewReconciler(emb, contents, slog.New(slog.DiscardHandler))
+			r := NewReconciler(emb, slog.New(slog.DiscardHandler),
+				NamedSource{Name: "contents", Source: contents},
+				NamedSource{Name: "readings", Source: readings},
+				NamedSource{Name: "songs", Source: songs},
+			)
 
 			got, err := r.RunOnce(t.Context())
 			if err != nil {
@@ -147,20 +170,22 @@ func TestReconcilerRunOnce(t *testing.T) {
 				t.Errorf("RunOnce() result mismatch (-want +got):\n%s", diff)
 			}
 
-			if n := contents.embeddedCount(); n != tt.want.Contents {
-				t.Errorf("contents persisted = %d, want %d", n, tt.want.Contents)
-			}
-			for _, d := range contents.docs {
-				vec, ok := contents.vectors[d.ID]
-				shouldFail := tt.failSubstring != "" && strings.Contains(d.Title, tt.failSubstring)
-				if shouldFail && ok {
-					t.Errorf("doc %q has an embedding, want none (embed fails for it)", d.Title)
+			for name, src := range map[string]*fakeSource{"contents": contents, "readings": readings, "songs": songs} {
+				if n := src.embeddedCount(); n != tt.want.BySource[name] {
+					t.Errorf("%s persisted = %d, want %d", name, n, tt.want.BySource[name])
 				}
-				if !shouldFail && !ok {
-					t.Errorf("doc %q has no embedding, want one", d.Title)
-				}
-				if ok && len(vec.Slice()) != Dimension {
-					t.Errorf("doc %q embedding dims = %d, want %d", d.Title, len(vec.Slice()), Dimension)
+				for _, d := range src.docs {
+					vec, ok := src.vectors[d.ID]
+					shouldFail := tt.failSubstring != "" && strings.Contains(d.Title, tt.failSubstring)
+					if shouldFail && ok {
+						t.Errorf("doc %q has an embedding, want none (embed fails for it)", d.Title)
+					}
+					if !shouldFail && !ok {
+						t.Errorf("doc %q has no embedding, want one", d.Title)
+					}
+					if ok && len(vec.Slice()) != Dimension {
+						t.Errorf("doc %q embedding dims = %d, want %d", d.Title, len(vec.Slice()), Dimension)
+					}
 				}
 			}
 		})
@@ -168,18 +193,25 @@ func TestReconcilerRunOnce(t *testing.T) {
 }
 
 func TestReconcilerRunOnce_ListErrorReturned(t *testing.T) {
-	contents := newFakeSource(0, "content")
-	contents.listErr = errors.New("list boom")
-	r := NewReconciler(&stubEmbedder{}, contents, slog.New(slog.DiscardHandler))
+	// The failing source is drained second, so the error names it specifically
+	// and the first source still records its progress.
+	good := newFakeSource(2, "content")
+	bad := newFakeSource(0, "reading")
+	bad.listErr = errors.New("list boom")
+	r := NewReconciler(&stubEmbedder{}, slog.New(slog.DiscardHandler),
+		NamedSource{Name: "contents", Source: good},
+		NamedSource{Name: "readings", Source: bad},
+	)
 
 	got, err := r.RunOnce(t.Context())
 	if err == nil {
-		t.Fatal("RunOnce() error = nil, want contents listing error")
+		t.Fatal("RunOnce() error = nil, want readings listing error")
 	}
-	if !strings.Contains(err.Error(), "draining contents") {
-		t.Errorf("RunOnce() error = %q, want it to mention draining contents", err)
+	if !strings.Contains(err.Error(), "draining readings") {
+		t.Errorf("RunOnce() error = %q, want it to mention draining readings", err)
 	}
-	if diff := cmp.Diff(Result{}, got); diff != "" {
+	want := Result{BySource: map[string]int{"contents": 2, "readings": 0}}
+	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("RunOnce() result mismatch (-want +got):\n%s", diff)
 	}
 }
@@ -187,7 +219,8 @@ func TestReconcilerRunOnce_ListErrorReturned(t *testing.T) {
 func TestReconcilerRunOnce_CanceledContext(t *testing.T) {
 	contents := newFakeSource(5, "content")
 	emb := &stubEmbedder{}
-	r := NewReconciler(emb, contents, slog.New(slog.DiscardHandler))
+	r := NewReconciler(emb, slog.New(slog.DiscardHandler),
+		NamedSource{Name: "contents", Source: contents})
 
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
@@ -196,7 +229,8 @@ func TestReconcilerRunOnce_CanceledContext(t *testing.T) {
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("RunOnce() error = %v, want context.Canceled", err)
 	}
-	if diff := cmp.Diff(Result{}, got); diff != "" {
+	want := Result{BySource: map[string]int{"contents": 0}}
+	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("RunOnce() result mismatch (-want +got):\n%s", diff)
 	}
 	if emb.calls != 0 {
@@ -207,7 +241,8 @@ func TestReconcilerRunOnce_CanceledContext(t *testing.T) {
 func TestReconcilerRun_StopsOnCancel(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		contents := newFakeSource(2, "content")
-		r := NewReconciler(&stubEmbedder{}, contents, slog.New(slog.DiscardHandler))
+		r := NewReconciler(&stubEmbedder{}, slog.New(slog.DiscardHandler),
+			NamedSource{Name: "contents", Source: contents})
 
 		ctx, cancel := context.WithCancel(t.Context())
 		done := make(chan struct{})
@@ -232,6 +267,59 @@ func TestReconcilerRun_StopsOnCancel(t *testing.T) {
 			t.Fatal("Run did not return after ctx cancel")
 		}
 	})
+}
+
+func TestNewReconciler_PanicsOnMisconfiguration(t *testing.T) {
+	emb := &stubEmbedder{}
+	logger := slog.New(slog.DiscardHandler)
+	good := newFakeSource(0, "content")
+
+	tests := []struct {
+		name    string
+		build   func()
+		wantMsg string
+	}{
+		{
+			name:    "no sources",
+			build:   func() { NewReconciler(emb, logger) },
+			wantMsg: "at least one source",
+		},
+		{
+			name:    "nil source",
+			build:   func() { NewReconciler(emb, logger, NamedSource{Name: "contents", Source: nil}) },
+			wantMsg: "non-nil Source",
+		},
+		{
+			name:    "empty name",
+			build:   func() { NewReconciler(emb, logger, NamedSource{Name: "", Source: good}) },
+			wantMsg: "non-empty Name",
+		},
+		{
+			name: "duplicate name",
+			build: func() {
+				NewReconciler(emb, logger,
+					NamedSource{Name: "dup", Source: good},
+					NamedSource{Name: "dup", Source: good},
+				)
+			},
+			wantMsg: "duplicate dup",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			defer func() {
+				r := recover()
+				if r == nil {
+					t.Fatalf("NewReconciler(%s) did not panic", tt.name)
+				}
+				msg, ok := r.(string)
+				if !ok || !strings.Contains(msg, tt.wantMsg) {
+					t.Errorf("panic = %v, want message containing %q", r, tt.wantMsg)
+				}
+			}()
+			tt.build()
+		})
+	}
 }
 
 func TestEmbedText(t *testing.T) {

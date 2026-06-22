@@ -671,7 +671,7 @@ type ProjectProfile struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
-// Literature reading shelf — one row per book, Koopa-private. Evaluation happens only through reading_reflections (dated diary entries); there is intentionally no rating column. Agent surface is read-only: list_readings and get_reading expose the shelf over MCP, but no agent write path exists. Not in the search_knowledge corpus; mutations are admin HTTP only.
+// Literature reading shelf — one row per book, Koopa-private. Evaluation happens only through reading_reflections (dated diary entries); there is intentionally no rating column. Agent surface is read-only: list_readings and get_reading expose the shelf over MCP, and the shelf is part of the search_knowledge corpus (source_type=reading) via search_vector + embedding. No agent write path exists; mutations are admin HTTP only.
 type Reading struct {
 	ID uuid.UUID `json:"id"`
 	// Book title as Koopa records it. Required, never blank (chk_reading_title_not_blank).
@@ -692,9 +692,13 @@ type Reading struct {
 	CreatedAt time.Time `json:"created_at"`
 	// Application-managed. Set explicitly in UPDATE queries.
 	UpdatedAt time.Time `json:"updated_at"`
+	// pgvector embedding (1536d) from gemini-embedding-2, derived from title + author. NULL until the background reconciler fills it; feeds the search_knowledge semantic branch (source_type=reading). See internal/embedder.Dimension — schema + Go must match exactly or pgvector rejects writes.
+	Embedding *pgvector_go.Vector `json:"embedding"`
+	// Generated tsvector for full-text search over the shelf row. 'simple' config (no stemming) for multilingual safety. Weight A = title, B = author. Backs the search_knowledge FTS branch (source_type=reading); a reflection-body hit comes from reading_reflections.search_vector instead.
+	SearchVector interface{} `json:"search_vector"`
 }
 
-// Reading diary — dated entries under one book, shown as a time-ordered thread (entry_date, then created_at) on the book page. Many per book. Private like readings: no agent surface, no search corpus, admin HTTP only.
+// Reading diary — dated entries under one book, shown as a time-ordered thread (entry_date, then created_at) on the book page. Many per book. Private like readings: no agent write path, admin HTTP only. A body hit is searchable via search_knowledge, folded under the parent book (source_type=reading).
 type ReadingReflection struct {
 	ID uuid.UUID `json:"id"`
 	// The book this entry belongs to. ON DELETE CASCADE — deleting a book deletes its entire diary; the entries have no meaning without the book.
@@ -707,6 +711,10 @@ type ReadingReflection struct {
 	CreatedAt time.Time `json:"created_at"`
 	// Application-managed. Set explicitly in UPDATE queries.
 	UpdatedAt time.Time `json:"updated_at"`
+	// pgvector embedding (1536d) from gemini-embedding-2, derived from the diary body. NULL until the background reconciler fills it. A hit here surfaces in search_knowledge under source_type=reading, linked to the parent book.
+	Embedding *pgvector_go.Vector `json:"embedding"`
+	// Generated tsvector over the diary body (first 10K chars), 'simple' config for multilingual safety. Backs the search_knowledge FTS branch; a hit folds under the parent reading (source_type=reading), not a separate corpus.
+	SearchVector interface{} `json:"search_vector"`
 }
 
 // JWT refresh token hashes. One user may have multiple active tokens (multi-device).
@@ -721,7 +729,7 @@ type RefreshToken struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
-// ヨルシカ song shelf — one row per song, Koopa-private. Reflections live in song_reflections (dated thread). No rating column; no agent surface (no MCP, not in the search_knowledge corpus), admin HTTP only.
+// ヨルシカ song shelf — one row per song, Koopa-private. Reflections live in song_reflections (dated thread). No rating column; no agent write path, admin HTTP only. The shelf gained read-only search visibility: it is part of the search_knowledge corpus (source_type=song) via search_vector + embedding, but no MCP write tool touches it.
 type Song struct {
 	ID uuid.UUID `json:"id"`
 	// Japanese song title (original). Required, never blank (chk_song_title_ja_not_blank).
@@ -740,9 +748,13 @@ type Song struct {
 	CreatedAt time.Time `json:"created_at"`
 	// Application-managed. Set explicitly in UPDATE queries.
 	UpdatedAt time.Time `json:"updated_at"`
+	// pgvector embedding (1536d) from gemini-embedding-2, derived from title_ja + album + the study fields (lyrics/translation/vocabulary). NULL until the background reconciler fills it; feeds the search_knowledge semantic branch (source_type=song). See internal/embedder.Dimension — schema + Go must match exactly or pgvector rejects writes.
+	Embedding *pgvector_go.Vector `json:"embedding"`
+	// Generated tsvector for full-text search over the song row. 'simple' config for multilingual safety. Weight A = title_ja, B = album, C = owner translation (first 5K chars) — the translation gives the otherwise Japanese-only row lexical reach in the owner's working language. Backs the search_knowledge FTS branch (source_type=song).
+	SearchVector interface{} `json:"search_vector"`
 }
 
-// Song reflection diary — dated entries under one song (理解/感受/意境), shown as a thread ordered by (entry_date, created_at). Many per song. Private like songs: no agent surface, no search corpus, admin HTTP only.
+// Song reflection diary — dated entries under one song (理解/感受/意境), shown as a thread ordered by (entry_date, created_at). Many per song. Private like songs: no agent write path, admin HTTP only. A body hit is searchable via search_knowledge, folded under the parent song (source_type=song).
 type SongReflection struct {
 	ID uuid.UUID `json:"id"`
 	// The song this entry belongs to. ON DELETE CASCADE — deleting a song deletes its entire reflection thread; the entries have no meaning without the song.
@@ -755,6 +767,10 @@ type SongReflection struct {
 	CreatedAt time.Time `json:"created_at"`
 	// Application-managed. Set explicitly in UPDATE queries.
 	UpdatedAt time.Time `json:"updated_at"`
+	// pgvector embedding (1536d) from gemini-embedding-2, derived from the reflection body. NULL until the background reconciler fills it. A hit here surfaces in search_knowledge under source_type=song, linked to the parent song.
+	Embedding *pgvector_go.Vector `json:"embedding"`
+	// Generated tsvector over the reflection body (first 10K chars), 'simple' config for multilingual safety. Backs the search_knowledge FTS branch; a hit folds under the parent song (source_type=song), not a separate corpus.
+	SearchVector interface{} `json:"search_vector"`
 }
 
 // Personal GTD work items. Distinct from the tasks coordination entity (inter-agent work units). Lifecycle: inbox (captured, not clarified) → todo (clarified, actionable) → in_progress → done. someday = interested but not now, reviewed in Weekly Review. inbox items lack project/due/priority — clarification promotes them to todo.

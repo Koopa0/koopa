@@ -40,6 +40,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -446,5 +447,101 @@ func TestIntegration_Reflection_UnderMissingReading(t *testing.T) {
 	if rec := serve(t, h.CreateReflection, req); rec.Code != http.StatusNotFound {
 		t.Errorf("CreateReflection(missing reading) status = %d, want %d (FK must map to 404, not 500)",
 			rec.Code, http.StatusNotFound)
+	}
+}
+
+// --- search corpus + embedding source (search_knowledge wiring) ---
+
+// TestIntegration_SearchCorpus_FoldsReflectionUnderBook proves the read-side
+// search surface the MCP search_knowledge handler folds in: a shelf row and a
+// diary entry both surface as CorpusHit linked to the parent book, with the
+// matched text as the excerpt. FTS only (no embedder needed). A broken UNION
+// projection or a missing JOIN to the parent title fails here.
+func TestIntegration_SearchCorpus_FoldsReflectionUnderBook(t *testing.T) {
+	truncate(t)
+	store := reading.NewStore(testPool)
+	ctx := t.Context()
+
+	book, err := store.Create(ctx, &reading.CreateParams{Title: "Kafka on the Shore", Author: "Murakami"})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	const reflTerm = "zqxcorpus"
+	if _, err := store.CreateReflection(ctx, book.ID, nil, "the "+reflTerm+" motif recurs"); err != nil {
+		t.Fatalf("CreateReflection: %v", err)
+	}
+
+	t.Run("reflection body matches, folded under book", func(t *testing.T) {
+		hits, err := store.SearchCorpus(ctx, reflTerm, 20)
+		if err != nil {
+			t.Fatalf("SearchCorpus(%q): %v", reflTerm, err)
+		}
+		if len(hits) != 1 {
+			t.Fatalf("SearchCorpus(%q) = %d hits, want 1", reflTerm, len(hits))
+		}
+		if hits[0].ReadingID != book.ID {
+			t.Errorf("hit.ReadingID = %s, want parent book %s", hits[0].ReadingID, book.ID)
+		}
+		if hits[0].Title != "Kafka on the Shore" {
+			t.Errorf("hit.Title = %q, want parent book title", hits[0].Title)
+		}
+		if !strings.Contains(hits[0].Excerpt, reflTerm) {
+			t.Errorf("hit.Excerpt = %q, want the diary body containing %q", hits[0].Excerpt, reflTerm)
+		}
+	})
+
+	t.Run("author matches the shelf row", func(t *testing.T) {
+		hits, err := store.SearchCorpus(ctx, "Murakami", 20)
+		if err != nil {
+			t.Fatalf("SearchCorpus(Murakami): %v", err)
+		}
+		var found bool
+		for _, h := range hits {
+			if h.ReadingID == book.ID && h.Excerpt == "Kafka on the Shore" {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("author search did not surface the shelf row (excerpt=title); got %+v", hits)
+		}
+	})
+}
+
+// TestIntegration_EmbeddingSources_ListMissing proves the reconciler-facing
+// SQL: freshly seeded rows have NULL embeddings and are returned by the shelf
+// and reflection sources' MissingEmbeddings, with the document text the embed
+// derives from (title+author for the shelf, body for the diary). This is the
+// DB half of the embedding write path — the Gemini call needs GEMINI_API_KEY,
+// so only the query is exercised here.
+func TestIntegration_EmbeddingSources_ListMissing(t *testing.T) {
+	truncate(t)
+	store := reading.NewStore(testPool)
+	ctx := t.Context()
+
+	book, err := store.Create(ctx, &reading.CreateParams{Title: "Sputnik Sweetheart", Author: "Murakami"})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if _, err := store.CreateReflection(ctx, book.ID, nil, "a body to embed"); err != nil {
+		t.Fatalf("CreateReflection: %v", err)
+	}
+
+	shelfDocs, err := reading.NewShelfEmbeddingSource(store).MissingEmbeddings(ctx, 10)
+	if err != nil {
+		t.Fatalf("shelf MissingEmbeddings: %v", err)
+	}
+	if len(shelfDocs) != 1 {
+		t.Fatalf("shelf MissingEmbeddings = %d, want 1 (the seeded book has a NULL embedding)", len(shelfDocs))
+	}
+	if shelfDocs[0].Title != "Sputnik Sweetheart" || shelfDocs[0].Body != "Murakami" {
+		t.Errorf("shelf doc = {Title:%q Body:%q}, want title + author", shelfDocs[0].Title, shelfDocs[0].Body)
+	}
+
+	reflDocs, err := reading.NewReflectionEmbeddingSource(store).MissingEmbeddings(ctx, 10)
+	if err != nil {
+		t.Fatalf("reflection MissingEmbeddings: %v", err)
+	}
+	if len(reflDocs) != 1 || reflDocs[0].Title != "a body to embed" {
+		t.Fatalf("reflection MissingEmbeddings = %+v, want one doc carrying the body", reflDocs)
 	}
 }
