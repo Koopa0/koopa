@@ -37,7 +37,6 @@ function overviewPayload(): Record<string, unknown> {
       },
     },
     projects: { total: 11, by_status: { active: 6, paused: 5 } },
-    notes: { total: 84, by_type: { 'concept-note': 50, 'solve-note': 34 } },
     activity: {
       total: 4000,
       last_24h: 12,

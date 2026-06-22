@@ -19,7 +19,6 @@ export interface ApiPaginationMeta {
 /** Backend Content object (snake_case, matches internal/content/content.go::Content).
  *
  * Schema truth: migrations/001_initial.up.sql::contents.
- * Notes are a separate entity (see ApiNote + internal/note) — not a content type.
  */
 export interface ApiContent {
   id: string;
@@ -42,45 +41,9 @@ export interface ApiContent {
 }
 
 // Backend content_type enum (migrations/001_initial.up.sql).
-// Notes live in the separate notes table (ApiNote).
 export type ContentType = 'article' | 'essay' | 'build-log' | 'til' | 'digest';
 
 export type ContentStatus = 'draft' | 'review' | 'published' | 'archived';
-
-/** Backend Note object (snake_case, matches internal/note/note.go::Note).
- *
- * Schema truth: migrations/001_initial.up.sql::notes. Maturity-based lifecycle,
- * no publication state. Kept structurally distinct from contents. The notes
- * table has an ai_metadata column, but the Go Note struct does not surface it
- * over the wire — keep this type aligned with the Go struct, not the table.
- */
-export interface ApiNote {
-  id: string;
-  slug: string;
-  title: string;
-  body: string;
-  kind: NoteKind;
-  maturity: NoteMaturity;
-  created_by: string;
-  metadata: Record<string, unknown> | null;
-  created_at: string;
-  updated_at: string;
-}
-
-export type NoteKind =
-  | 'solve-note'
-  | 'concept-note'
-  | 'debug-postmortem'
-  | 'decision-log'
-  | 'reading-note'
-  | 'musing';
-
-export type NoteMaturity =
-  | 'seed'
-  | 'stub'
-  | 'evergreen'
-  | 'needs_revision'
-  | 'archived';
 
 /** Backend Topic object */
 export interface ApiTopic {

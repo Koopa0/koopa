@@ -102,14 +102,12 @@ describe('SearchService', () => {
             excerpt: 'HNSW vs IVFFlat',
             score: 0.9,
           },
-          { type: 'note', id: 'n1', title: 'pgvector note', score: 0 },
         ],
       },
     });
 
-    expect(results?.length).toBe(2);
+    expect(results?.length).toBe(1);
     expect(results?.[0].type).toBe('content');
-    expect(results?.[1].type).toBe('note');
   });
 
   it('should return an empty array when adminSearch results are missing', () => {

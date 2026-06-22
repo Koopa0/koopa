@@ -72,13 +72,6 @@ const ADMIN_NAV_ACTIONS: readonly AdminNavActionEntry[] = [
     keywords: ['review', 'drafts', 'approve'],
   },
   {
-    id: 'admin-notes',
-    label: 'Notes',
-    group: 'Knowledge',
-    path: '/admin/knowledge/notes',
-    keywords: ['zettelkasten', 'knowledge'],
-  },
-  {
     id: 'admin-feeds',
     label: 'Feeds',
     group: 'Knowledge',

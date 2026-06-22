@@ -5,7 +5,7 @@ import { ContentService } from './content.service';
 import type { ApiContent, ApiPaginationMeta } from '../models';
 
 /** Entity kind of an admin search hit — routes the click target. */
-export type AdminSearchKind = 'content' | 'note';
+export type AdminSearchKind = 'content';
 
 /** Single hit from the admin global search endpoint. */
 export interface AdminSearchResult {
@@ -73,8 +73,8 @@ export class SearchService {
   }
 
   /**
-   * Admin global search — merged content + note hits from
-   * GET /api/admin/search. Stateless; callers own the result signal.
+   * Admin global search — content hits from GET /api/admin/search.
+   * Stateless; callers own the result signal.
    */
   adminSearch(query: string, limit = 20): Observable<AdminSearchResult[]> {
     return this.api

@@ -88,21 +88,19 @@ describe('KnowledgeSearchPageComponent', () => {
           excerpt: 'HNSW vs IVFFlat',
           score: 0.9,
         },
-        { type: 'note', id: 'n1', title: 'pgvector capture', score: 0 },
       ],
       'pgvector',
     );
     await settle();
 
     const rows = el().querySelectorAll('[data-testid^="knowledge-search-row-"]');
-    expect(rows.length).toBe(2);
+    expect(rows.length).toBe(1);
     expect(rows[0].textContent).toContain('content');
     expect(rows[0].textContent).toContain('pgvector indexing');
     expect(rows[0].textContent).toContain('HNSW vs IVFFlat');
-    expect(rows[1].textContent).toContain('note');
     expect(
       el().querySelector('[data-testid="knowledge-search-count"]')?.textContent,
-    ).toContain('2 results');
+    ).toContain('1 result');
   });
 
   it('should navigate to the matching editor route when a row is clicked', async () => {
@@ -114,7 +112,6 @@ describe('KnowledgeSearchPageComponent', () => {
     await settleDebounce();
     flushResults([
       { type: 'content', id: 'c1', title: 'Go values', score: 0 },
-      { type: 'note', id: 'n1', title: 'Go note', score: 0 },
     ]);
     await settle();
 
@@ -126,17 +123,6 @@ describe('KnowledgeSearchPageComponent', () => {
     expect(navigate).toHaveBeenCalledWith([
       '/admin/knowledge/content',
       'c1',
-      'edit',
-    ]);
-
-    el()
-      .querySelector<HTMLButtonElement>(
-        '[data-testid="knowledge-search-row-1"]',
-      )
-      ?.click();
-    expect(navigate).toHaveBeenCalledWith([
-      '/admin/knowledge/notes',
-      'n1',
       'edit',
     ]);
   });

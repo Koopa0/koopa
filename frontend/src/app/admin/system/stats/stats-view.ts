@@ -30,14 +30,13 @@ export function sortedCounts(map: Record<string, number>): CountRow[] {
     .sort((a, b) => b.count - a.count || a.key.localeCompare(b.key));
 }
 
-/** The six key/count breakdown panels rendered under the stat tiles. */
+/** The key/count breakdown panels rendered under the stat tiles. */
 export function computeBreakdowns(v: StatsOverview | undefined): Breakdown[] {
   if (!v) return [];
   return [
     { id: 'contents-status', title: 'Contents by status', rows: sortedCounts(v.contents.by_status) },
     { id: 'contents-type', title: 'Contents by type', rows: sortedCounts(v.contents.by_type) },
     { id: 'collected-status', title: 'Collected by status', rows: sortedCounts(v.collected.by_status) },
-    { id: 'notes-kind', title: 'Notes by kind', rows: sortedCounts(v.notes.by_type) },
     { id: 'activity-source', title: 'Activity by source', rows: sortedCounts(v.activity.by_source) },
   ];
 }

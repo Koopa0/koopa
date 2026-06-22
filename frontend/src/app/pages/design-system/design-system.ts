@@ -316,7 +316,6 @@ export class DesignSystemComponent {
     'essay',
     'build-log',
     'til',
-    'note',
     'digest',
   ];
   protected readonly alertVariants = [

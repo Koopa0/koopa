@@ -95,7 +95,6 @@ export class SystemHealthPageComponent {
     return [
       { id: 'db-contents', label: 'contents', value: d.contents_count, tone: 'default' },
       { id: 'db-todos', label: 'todos', value: d.todos_count, tone: 'default' },
-      { id: 'db-notes', label: 'notes', value: d.notes_count, tone: 'default' },
     ];
   });
 

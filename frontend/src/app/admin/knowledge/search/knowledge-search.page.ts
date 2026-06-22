@@ -29,18 +29,16 @@ const RESULT_LIMIT = 30;
 /** Per-kind row presentation: dot color + jump target. */
 const KIND_DOT: Record<AdminSearchKind, string> = {
   content: 'bg-(--dot-article)',
-  note: 'bg-(--dot-note)',
 };
 
 const KIND_ROUTE: Record<AdminSearchKind, string[]> = {
   content: ['/admin/knowledge/content'],
-  note: ['/admin/knowledge/notes'],
 };
 
 /**
- * Admin global search over GET /api/admin/search (content + note
- * sources, merged server-side). Typing re-queries after a debounce;
- * a row click jumps to the entity's editor route.
+ * Admin global search over GET /api/admin/search (content source).
+ * Typing re-queries after a debounce; a row click jumps to the
+ * entity's editor route.
  *
  * Keyboard: j/k move row focus, Enter opens the focused row.
  */

@@ -100,7 +100,6 @@ export class SystemStatsPageComponent {
         sub: `of ${v.feeds.total}`,
       },
       { id: 'projects', label: 'projects', value: v.projects.total },
-      { id: 'notes', label: 'notes', value: v.notes.total },
       {
         id: 'activity',
         label: 'events 24h',

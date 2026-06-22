@@ -33,7 +33,6 @@ function healthPayload(): Record<string, unknown> {
     database: {
       contents_count: 120,
       todos_count: 45,
-      notes_count: 84,
     },
   };
 }
@@ -45,7 +44,6 @@ function allHealthyPayload(): Record<string, unknown> {
     database: {
       contents_count: 0,
       todos_count: 0,
-      notes_count: 0,
     },
   };
 }
@@ -100,15 +98,12 @@ describe('SystemHealthPageComponent', () => {
         ?.textContent,
     ).toContain('12');
     expect(
-      el().querySelector('[data-testid="health-tile-db-notes"]')?.textContent,
-    ).toContain('84');
-    expect(
       el().querySelector('[data-testid="health-tile-pipelines-runs"]')
         ?.textContent,
     ).toContain('226');
   });
 
-  it('should render exactly the contents/todos/notes database tiles', async () => {
+  it('should render exactly the contents/todos database tiles', async () => {
     await settle();
     httpMock
       .expectOne((r) => r.url.endsWith(HEALTH_URL))
@@ -127,7 +122,6 @@ describe('SystemHealthPageComponent', () => {
     expect(tileIds).toEqual([
       'health-tile-db-contents',
       'health-tile-db-todos',
-      'health-tile-db-notes',
     ]);
     expect(
       el().querySelector('[data-testid="health-tile-db-contents"]')

@@ -12,7 +12,7 @@
       type="search"
       autocomplete="off"
       spellcheck="false"
-      placeholder="Search content and notes…"
+      placeholder="Search content…"
       class="h-[38px] w-full min-w-0 border-0 bg-transparent p-0 text-[13px] text-fg placeholder:text-fg-faint focus:outline-hidden focus:ring-0"
       [value]="query()"
       (input)="setQuery($event)"
@@ -38,8 +38,8 @@
         Search the knowledge corpus
       </h4>
       <p class="max-w-[280px] text-xs leading-normal text-fg-subtle">
-        Published pieces, drafts, and Zettelkasten notes — one merged
-        result list. Type to search.
+        Published pieces and drafts — one merged result list. Type to
+        search.
       </p>
     </div>
   } @else if (isLoading()) {

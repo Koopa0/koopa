@@ -43,12 +43,11 @@
   --info-bg: oklch(0.72 0.1 210 / 0.12);
 
   /* Content-type dots (bookmark/FSRS retired in backend; kept for the
-     live types: article/essay/build-log/til/note/digest) */
+     live types: article/essay/build-log/til/digest) */
   --dot-article: oklch(0.72 0.1 210);
   --dot-essay: oklch(0.76 0.09 320);
   --dot-build-log: oklch(0.76 0.12 70);
   --dot-til: oklch(0.78 0.13 150);
-  --dot-note: oklch(0.7 0.02 260);
   --dot-digest: oklch(0.8 0.1 50);
 
   /* Shadows — two levels only, true-black low-alpha in dark */

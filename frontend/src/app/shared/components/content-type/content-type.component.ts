@@ -11,7 +11,6 @@ export type ContentType =
   | 'essay'
   | 'build-log'
   | 'til'
-  | 'note'
   | 'digest';
 
 /**
@@ -39,5 +38,7 @@ export type ContentType =
 export class ContentTypeComponent {
   readonly type = input.required<ContentType>();
 
-  protected readonly dotColor = computed(() => `var(--dot-${this.type()})`);
+  protected readonly dotColor = computed(
+    () => `var(--dot-${this.type()}, var(--fg-faint))`,
+  );
 }

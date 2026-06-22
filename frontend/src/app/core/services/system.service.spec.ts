@@ -26,7 +26,6 @@ const mockHealth: SystemHealth = {
   database: {
     contents_count: 120,
     todos_count: 45,
-    notes_count: 84,
   },
 };
 
@@ -43,7 +42,6 @@ const mockStats: StatsOverview = {
     crawl: { total: 226, by_status: { completed: 220, failed: 6 } },
   },
   projects: { total: 11, by_status: { active: 6 } },
-  notes: { total: 84, by_type: { 'concept-note': 50 } },
   activity: { total: 4000, last_24h: 12, last_7d: 90, by_source: { human: 60 } },
 };
 
@@ -86,7 +84,7 @@ describe('SystemService', () => {
     service.getHealth().subscribe((res) => {
       expect(res.feeds.failing).toBe(2);
       expect(res.feeds.failing_feeds[1].since).toBeUndefined();
-      expect(res.database.notes_count).toBe(84);
+      expect(res.database.todos_count).toBe(45);
     });
 
     const req = httpMock.expectOne((r) =>

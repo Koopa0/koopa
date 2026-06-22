@@ -54,7 +54,6 @@ describe('ContentTypeComponent', () => {
       'essay',
       'build-log',
       'til',
-      'note',
       'digest',
     ];
 
@@ -75,7 +74,9 @@ describe('ContentTypeComponent', () => {
       const dot = fixture.nativeElement.querySelector(
         '[data-testid="content-type-essay"] span[aria-hidden="true"]',
       ) as HTMLElement;
-      expect(dot.style.backgroundColor).toBe('var(--dot-essay)');
+      expect(dot.style.backgroundColor).toBe(
+        'var(--dot-essay, var(--fg-faint))',
+      );
     });
 
     it('should apply different CSS variable when type changes', async () => {
@@ -83,13 +84,15 @@ describe('ContentTypeComponent', () => {
       const dot = fixture.nativeElement.querySelector(
         '[data-testid="content-type-digest"] span[aria-hidden="true"]',
       ) as HTMLElement;
-      expect(dot.style.backgroundColor).toBe('var(--dot-digest)');
+      expect(dot.style.backgroundColor).toBe(
+        'var(--dot-digest, var(--fg-faint))',
+      );
     });
 
     it('should mark dot span as aria-hidden', async () => {
-      await setup('note');
+      await setup('article');
       const dot = fixture.nativeElement.querySelector(
-        '[data-testid="content-type-note"] span[aria-hidden="true"]',
+        '[data-testid="content-type-article"] span[aria-hidden="true"]',
       );
       expect(dot).toBeTruthy();
       expect(dot.getAttribute('aria-hidden')).toBe('true');

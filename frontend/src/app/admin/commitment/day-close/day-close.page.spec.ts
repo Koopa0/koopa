@@ -18,14 +18,13 @@ import { DAY_CLOSE_LOOKBACK_DAYS } from './day-close-view';
 
 // Pins the Day-close render + actions against the existing endpoints
 // (GET /commitment/daily-plan per lookback date, PUT /commitment/daily-plan,
-// POST todos/{id}/advance, POST knowledge/notes). The page probes 14 past
-// days on init; the spec flushes each probe and asserts the confrontation
-// surfaces only days with unresolved planned items.
+// POST todos/{id}/advance). The page probes 14 past days on init; the spec
+// flushes each probe and asserts the confrontation surfaces only days with
+// unresolved planned items.
 
 const PLAN_URL = '/api/admin/commitment/daily-plan';
 const ADVANCE_URL = (id: string) =>
   `/api/admin/commitment/todos/${id}/advance`;
-const NOTES_URL = '/api/admin/knowledge/notes';
 
 function entry(over: Partial<DailyPlanEntry> = {}): DailyPlanEntry {
   return {
@@ -214,42 +213,6 @@ describe('DayClosePageComponent', () => {
     // No request fired; the item still confronts.
     httpMock.verify(); // no outstanding requests
     expect(testid('day-close-item-lv-1')).toBeTruthy();
-  });
-
-  it('should save the reflection as a draft musing note', async () => {
-    await render({});
-
-    const input = testid(
-      'day-close-reflection-input',
-    ) as HTMLInputElement | null;
-    expect(input).toBeTruthy();
-    input!.value = 'Slow day, but I shipped the migration.';
-    input!.dispatchEvent(new Event('input'));
-    fixture.detectChanges();
-
-    testid('day-close-reflection-save')!.dispatchEvent(new Event('click'));
-
-    const note = httpMock.expectOne((r) => r.url.endsWith(NOTES_URL));
-    expect(note.request.method).toBe('POST');
-    const body = note.request.body as { kind: string; body: string };
-    expect(body.kind).toBe('musing');
-    expect(body.body).toContain('shipped the migration');
-    note.flush({
-      id: 'n1',
-      slug: 'day-close',
-      title: body['title' as keyof typeof body] ?? 'Day close',
-      kind: 'musing',
-      maturity: 'seed',
-      actor: 'human',
-      concepts: [],
-      targets: [],
-      body: body.body,
-      created_at: '2026-06-17T00:00:00Z',
-      updated_at: '2026-06-17T00:00:00Z',
-    });
-    await settle();
-
-    expect(testid('day-close-reflection-save')?.textContent).toContain('Saved');
   });
 });
 

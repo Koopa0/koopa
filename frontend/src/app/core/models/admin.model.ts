@@ -212,7 +212,6 @@ export interface PipelineHealth {
 export interface DatabaseStats {
   contents_count: number;
   todos_count: number;
-  notes_count: number;
 }
 
 // === System stats ===
@@ -228,7 +227,6 @@ export interface StatsOverview {
   feeds: StatsFeeds;
   process_runs: Record<string, StatsProcessRuns>;
   projects: StatsProjects;
-  notes: StatsNotes;
   activity: StatsActivity;
 }
 
@@ -258,11 +256,6 @@ export interface StatsProcessRuns {
 export interface StatsProjects {
   total: number;
   by_status: Record<string, number>;
-}
-
-export interface StatsNotes {
-  total: number;
-  by_type: Record<string, number>;
 }
 
 export interface StatsActivity {

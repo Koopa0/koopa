@@ -38,10 +38,11 @@ const CHANGELOG_WIRE = {
           },
           {
             id: '22222222-2222-2222-2222-222222222222',
-            entity_type: 'note',
+            entity_type: 'goal',
+            entity_id: 'g1',
             change_kind: 'created',
             actor: 'human',
-            title: 'pgvector indexing notes',
+            title: 'ship the publish-only pivot',
             timestamp: '2026-06-16T10:30:00Z',
           },
         ],

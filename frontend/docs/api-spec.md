@@ -298,55 +298,13 @@ Wraps MCP `archive_content`. 任何 status → archived.
 
 既有 `DELETE /api/admin/contents/:id`.
 
-### 3.2 Notes (Zettelkasten, 獨立 entity)
-
-#### `GET /api/admin/knowledge/notes`  🔨 new
-
-**UI**：Notes List route / Concept profile linked notes.
-**Query**：`kind=solve-note|concept-note|debug-postmortem|decision-log|reading-note|musing,maturity=seed|stub|evergreen|needs_revision|archived,concept_slug=<>,target_id=<>,q=<>`
-**Response row**：
-```json
-{
-  "id": "...", "slug": "...", "title": "...",
-  "kind": "solve-note", "maturity": "seed",
-  "actor": "human",
-  "concepts": [{ "slug": "sliding-window", "name": "Sliding window" }],
-  "targets": [{ "id": "...", "title": "LC 295" }],
-  "created_at": "...", "updated_at": "..."
-}
-```
-
-#### `GET /api/admin/knowledge/notes/:id`  🔨 new
-
-Returns row + `body: string`.
-
-#### `POST /api/admin/knowledge/notes`  🔨 new
-
-Wraps MCP `create_note`.
-**Body**：`{ "title": "...", "body": "...", "kind": "solve-note", "maturity": "seed", "slug": "?", "concept_slugs": [], "target_ids": [] }`
-**Response**：201 + full note.
-
-#### `PUT /api/admin/knowledge/notes/:id`  🔨 new
-
-Wraps MCP `update_note`. 更新 title / body / kind / relations. **不**改 maturity.
-
-#### `POST /api/admin/knowledge/notes/:id/maturity`  🔨 new
-
-Wraps MCP `update_note_maturity`. 獨立 audit.
-**Body**：`{ "maturity": "evergreen" }`
-**Response**：200 + updated note.
-**UI**：Note Editor maturity slider. 反向 transition（e.g. evergreen→stub）backend 可能 warn，前端二次確認。
-
-#### `DELETE /api/admin/knowledge/notes/:id`  🔨 new
-
 ### 3.3 Bookmarks — RETIRED (no entity)
 
 > **There is no bookmark entity.** No `bookmarks` table, no admin or public
 > bookmark endpoint, no frontend service. The contract is explicit:
 > `docs/backend-semantic-contract.md` §3 ("bookmark — there is no bookmark
 > entity, lifecycle, or endpoint") and §7 forbidden assumptions ("no
-> `bookmarks` of any kind"). Saving an external link is a `note`
-> (`reading-note`) via `create_note`, not a bookmark. This section is kept as
+> `bookmarks` of any kind"). This section is kept as
 > a tombstone so the retired surface is not re-proposed.
 
 ### 3.4 Feeds
@@ -935,13 +893,10 @@ Token 存記憶體 signal：access 與 refresh 皆存記憶體 signal，refresh 
 | `POST /learning/hypotheses/:id/{verify,invalidate,archive,evidence}` | ✓ rename |
 | `GET /search?mode=lexical` | 🔨 |
 
-### Phase 3（notes + process runs + activity widen + semantic search）
+### Phase 3（process runs + activity widen + semantic search）
 
 | Endpoint | Status |
 |---|---|
-| `GET /knowledge/notes` + `:id` | 🔨 |
-| `POST/PUT/DELETE /knowledge/notes` | 🔨 |
-| `POST /knowledge/notes/:id/maturity` | 🔨 |
 | `GET /system/process-runs` | ✓ existing |
 | `ChangelogEvent.actor` widen + activity `actor` filter | 🔧 |
 | `GET /search?mode=semantic` | 🔨 (wraps search_knowledge) |

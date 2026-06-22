@@ -1,7 +1,6 @@
 import { Routes } from '@angular/router';
 import { adminGuard } from './core/guards/auth.guard';
 import { contentEditorCanDeactivate } from './admin/knowledge/content/editor/content-editor.guard';
-import { noteEditorCanDeactivate } from './admin/knowledge/notes/editor/note-editor.guard';
 
 export const routes: Routes = [
   // The front door — a three-band editorial home (positioning statement,
@@ -275,29 +274,6 @@ export const routes: Routes = [
           crumbs: ['Knowledge', 'Review queue'],
           initialStatus: 'review',
         },
-      },
-      {
-        path: 'knowledge/notes',
-        loadComponent: () =>
-          import('./admin/knowledge/notes/list/notes-list.page').then(
-            (m) => m.NotesListPageComponent,
-          ),
-      },
-      {
-        path: 'knowledge/notes/new',
-        loadComponent: () =>
-          import('./admin/knowledge/notes/editor/note-editor.page').then(
-            (m) => m.NoteEditorPageComponent,
-          ),
-        canDeactivate: [noteEditorCanDeactivate],
-      },
-      {
-        path: 'knowledge/notes/:id/edit',
-        loadComponent: () =>
-          import('./admin/knowledge/notes/editor/note-editor.page').then(
-            (m) => m.NoteEditorPageComponent,
-          ),
-        canDeactivate: [noteEditorCanDeactivate],
       },
       {
         path: 'knowledge/reading',

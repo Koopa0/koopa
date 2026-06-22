@@ -16,7 +16,6 @@ import {
   Rss,
   Search,
   Sparkles,
-  StickyNote,
   Tag,
   Target,
 } from 'lucide-angular';
@@ -159,13 +158,6 @@ export const ADMIN_NAV: readonly AdminNavGroup[] = [
         countKey: 'review_queue',
         shortcutHint: 'G R',
         testId: 'admin-nav-review-queue',
-      },
-      {
-        label: 'Notes',
-        route: '/admin/knowledge/notes',
-        icon: StickyNote,
-        shortcutHint: 'G N',
-        testId: 'admin-nav-notes',
       },
       {
         label: 'Search',
