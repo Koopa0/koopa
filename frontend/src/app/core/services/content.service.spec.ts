@@ -16,7 +16,6 @@ function createMockContent(overrides: Partial<ApiContent> = {}): ApiContent {
     excerpt: 'A test content',
     type: 'article',
     status: 'published',
-    tags: ['Angular'],
     topics: [],
     cover_image: null,
     series_id: null,

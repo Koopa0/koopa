@@ -34,7 +34,6 @@ function contentPayload(overrides: Partial<ApiContent> = {}): ApiContent {
     excerpt: 'An excerpt.',
     type: 'article',
     status: 'draft',
-    tags: ['go'],
     topics: [],
     cover_image: null,
     series_id: null,

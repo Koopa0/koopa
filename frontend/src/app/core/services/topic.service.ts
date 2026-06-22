@@ -3,15 +3,9 @@ import { Observable, map } from 'rxjs';
 import { ApiService } from './api.service';
 import type { ApiTopic, ApiContent, ApiPaginationMeta } from '../models';
 
-export interface RelatedTag {
-  tag: string;
-  count: number;
-}
-
 export interface TopicWithContents {
   topic: ApiTopic;
   contents: ApiContent[];
-  related_tags: RelatedTag[];
   meta: ApiPaginationMeta;
 }
 
@@ -60,13 +54,12 @@ export class TopicService {
       .pipe(
         map((res) => {
           const raw = res as unknown as {
-            data: { topic: ApiTopic; contents: ApiContent[]; related_tags?: RelatedTag[] };
+            data: { topic: ApiTopic; contents: ApiContent[] };
             meta: ApiPaginationMeta;
           };
           return {
             topic: raw.data.topic,
             contents: raw.data.contents,
-            related_tags: raw.data.related_tags ?? [],
             meta: raw.meta,
           };
         }),

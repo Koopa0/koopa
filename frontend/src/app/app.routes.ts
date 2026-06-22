@@ -349,10 +349,10 @@ export const routes: Routes = [
           ),
       },
       {
-        path: 'knowledge/tags',
+        path: 'knowledge/topics',
         loadComponent: () =>
-          import('./admin/knowledge/tags/tags-topics.page').then(
-            (m) => m.TagsTopicsPageComponent,
+          import('./admin/knowledge/topics/topics.page').then(
+            (m) => m.TopicsPageComponent,
           ),
       },
 

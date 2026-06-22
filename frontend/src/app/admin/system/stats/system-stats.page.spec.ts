@@ -44,7 +44,6 @@ function overviewPayload(): Record<string, unknown> {
       last_7d: 90,
       by_source: { human: 60, system: 30 },
     },
-    tags: { canonical: 30, aliases: 12, unconfirmed: 4 },
   };
 }
 
@@ -81,10 +80,6 @@ function learningPayload(): Record<string, unknown> {
       by_type: { 'solve-note': 8 },
     },
     activity: { this_week: 9, last_week: 6, trend: 'up' },
-    top_tags: [
-      { name: 'go', count: 21 },
-      { name: 'postgres', count: 9 },
-    ],
   };
 }
 
@@ -164,9 +159,6 @@ describe('SystemStatsPageComponent', () => {
     expect(driftRow?.textContent).toContain('22.5%');
 
     expect(
-      el().querySelector('[data-testid="stats-top-tag-go"]')?.textContent,
-    ).toContain('21');
-    expect(
       el().querySelector('[data-testid="stats-learning-cadence"]')
         ?.textContent,
     ).toContain('9');
@@ -195,7 +187,7 @@ describe('SystemStatsPageComponent', () => {
       el().querySelector('[data-testid="stats-drift-row-engineering"]'),
     ).toBeTruthy();
     expect(
-      el().querySelector('[data-testid="stats-top-tag-go"]'),
+      el().querySelector('[data-testid="stats-learning-cadence"]'),
     ).toBeTruthy();
   });
 

@@ -45,7 +45,6 @@ const mockStats: StatsOverview = {
   projects: { total: 11, by_status: { active: 6 } },
   notes: { total: 84, by_type: { 'concept-note': 50 } },
   activity: { total: 4000, last_24h: 12, last_7d: 90, by_source: { human: 60 } },
-  tags: { canonical: 30, aliases: 12, unconfirmed: 4 },
 };
 
 const mockDrift: DriftReport = {
@@ -65,7 +64,6 @@ const mockDrift: DriftReport = {
 const mockLearning: StatsLearning = {
   notes: { total: 84, last_week: 4, last_month: 12, by_type: { 'solve-note': 8 } },
   activity: { this_week: 9, last_week: 6, trend: 'up' },
-  top_tags: [{ name: 'go', count: 21 }],
 };
 
 describe('SystemService', () => {
@@ -138,7 +136,6 @@ describe('SystemService', () => {
   it('should fetch learning stats', () => {
     service.getLearningStats().subscribe((res) => {
       expect(res.activity.trend).toBe('up');
-      expect(res.top_tags[0].name).toBe('go');
     });
 
     const req = httpMock.expectOne((r) =>

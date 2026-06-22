@@ -68,17 +68,6 @@
             <span class="ed-rail-k">Reading</span>
             <span class="ed-rail-v">{{ content.reading_time_min }} min</span>
           </div>
-          @if (content.tags.length > 0) {
-            <div class="ed-rail-line" aria-hidden="true"></div>
-            <div class="ed-rail-row">
-              <span class="ed-rail-k">Filed under</span>
-              <span class="ed-rail-tags">
-                @for (tag of content.tags; track tag) {
-                  <span>#{{ tag }}</span>
-                }
-              </span>
-            </div>
-          }
         </aside>
 
         <!-- CENTRE: serif reading column (human voice) -->

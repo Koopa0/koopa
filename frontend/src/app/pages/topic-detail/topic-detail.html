@@ -152,13 +152,6 @@
               @if (content.excerpt) {
                 <p class="ed-row-x">{{ content.excerpt }}</p>
               }
-              @if (content.tags.length > 0) {
-                <div class="ed-row-tags">
-                  @for (tag of content.tags.slice(0, 4); track tag) {
-                    <span>#{{ tag }}</span>
-                  }
-                </div>
-              }
             </div>
           </a>
         }

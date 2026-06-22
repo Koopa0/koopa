@@ -362,43 +362,6 @@
           </div>
         </div>
       </div>
-
-      <app-data-table
-        [isLoading]="false"
-        [isEmpty]="topTags().length === 0"
-        emptyTitle="No tags yet"
-        emptyDescription="Top tags appear once notes accumulate tags."
-      >
-        <table class="w-full text-sm" data-testid="stats-top-tags-table">
-          <thead>
-            <tr
-              class="border-b border-border text-left font-mono text-[10px] tracking-wider text-fg-faint uppercase"
-            >
-              <th scope="col" class="px-3 py-2 font-normal">Tag</th>
-              <th scope="col" class="px-3 py-2 text-right font-normal">
-                Notes
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            @for (tag of topTags(); track tag.name) {
-              <tr
-                class="border-b border-border-faint transition-colors hover:bg-overlay"
-                [attr.data-testid]="'stats-top-tag-' + tag.name"
-              >
-                <td class="px-3 py-1.5 font-mono text-[11px] text-fg">
-                  {{ tag.name }}
-                </td>
-                <td
-                  class="px-3 py-1.5 text-right font-mono text-[11px] text-fg-muted tabular-nums"
-                >
-                  {{ tag.count | number }}
-                </td>
-              </tr>
-            }
-          </tbody>
-        </table>
-      </app-data-table>
     }
   </section>
 </div>

@@ -13,7 +13,6 @@ function makeMockContent(overrides: Partial<ApiContent> = {}): ApiContent {
     excerpt: 'Test excerpt',
     type: 'article',
     status: 'published',
-    tags: ['test'],
     topics: [],
     cover_image: null,
     series_id: null,

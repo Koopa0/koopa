@@ -230,7 +230,6 @@ export interface StatsOverview {
   projects: StatsProjects;
   notes: StatsNotes;
   activity: StatsActivity;
-  tags: StatsTags;
 }
 
 export interface StatsContents {
@@ -273,12 +272,6 @@ export interface StatsActivity {
   by_source: Record<string, number>;
 }
 
-export interface StatsTags {
-  canonical: number;
-  aliases: number;
-  unconfirmed: number;
-}
-
 /** GET /api/admin/system/stats/drift — goal attention vs activity share. */
 export interface DriftReport {
   period: string;
@@ -298,7 +291,6 @@ export interface AreaDrift {
 export interface StatsLearning {
   notes: StatsNoteGrowth;
   activity: StatsWeeklyActivity;
-  top_tags: StatsTagCount[];
 }
 
 export interface StatsNoteGrowth {
@@ -314,7 +306,3 @@ export interface StatsWeeklyActivity {
   trend: 'up' | 'down' | 'stable';
 }
 
-export interface StatsTagCount {
-  name: string;
-  count: number;
-}

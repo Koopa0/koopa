@@ -274,16 +274,6 @@
   background: var(--ed-rule);
   margin: 4px 0 16px;
 }
-.ed-rail-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-}
-.ed-rail-tags span {
-  font-size: 11px;
-  color: var(--fg-subtle);
-}
-
 /* ---------- ARTICLE reading page ---------- */
 .ed-read {
   padding: 44px 0 0;
@@ -744,16 +734,6 @@
   margin: 7px 0 0;
   max-width: 58ch;
 }
-.ed-row-tags {
-  display: flex;
-  gap: 9px;
-  margin: 10px 0 0;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--fg-subtle);
-  flex-wrap: wrap;
-}
-
 /* ============================================================
    HOME — FRONT DOOR: three bands, centred single column.
    ① positioning (serif statement) ② themes as a scaling list ③ recent.

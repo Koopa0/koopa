@@ -39,7 +39,6 @@ export function buildBlogPostingSchema(article: {
   publishedAt: string;
   updatedAt?: string;
   coverImage?: string;
-  tags?: string[];
 }): Record<string, unknown> {
   return {
     '@context': 'https://schema.org',
@@ -62,10 +61,6 @@ export function buildBlogPostingSchema(article: {
       name: 'koopa0.dev',
       url: SITE_URL,
     },
-    ...(article.tags &&
-      article.tags.length > 0 && {
-        keywords: article.tags.join(', '),
-      }),
     mainEntityOfPage: {
       '@type': 'WebPage',
       '@id': article.url,

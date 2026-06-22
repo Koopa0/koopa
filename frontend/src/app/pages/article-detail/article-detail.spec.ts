@@ -20,7 +20,6 @@ function buildMockContent(overrides: Partial<ApiContent> = {}): ApiContent {
     body: '## Section one\n\nBody text.',
     type: 'article',
     status: 'published',
-    tags: ['go'],
     topics: [],
     cover_image: null,
     series_id: null,

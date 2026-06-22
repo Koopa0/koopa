@@ -39,15 +39,6 @@ export function computeBreakdowns(v: StatsOverview | undefined): Breakdown[] {
     { id: 'collected-status', title: 'Collected by status', rows: sortedCounts(v.collected.by_status) },
     { id: 'notes-kind', title: 'Notes by kind', rows: sortedCounts(v.notes.by_type) },
     { id: 'activity-source', title: 'Activity by source', rows: sortedCounts(v.activity.by_source) },
-    {
-      id: 'tags',
-      title: 'Tags',
-      rows: [
-        { key: 'canonical', count: v.tags.canonical },
-        { key: 'aliases', count: v.tags.aliases },
-        { key: 'unconfirmed', count: v.tags.unconfirmed },
-      ],
-    },
   ];
 }
 

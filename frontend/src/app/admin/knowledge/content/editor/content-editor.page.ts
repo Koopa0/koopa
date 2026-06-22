@@ -50,7 +50,6 @@ interface ContentEditorForm {
   body: FormControl<string>;
   excerpt: FormControl<string>;
   type: FormControl<ContentType>;
-  tags: FormControl<string>;
   coverImage: FormControl<string>;
   readingTimeMin: FormControl<number>;
 }
@@ -89,7 +88,7 @@ const WORDS_PER_MINUTE = 220;
  * Edit mode (`:id/edit`): markdown editor on the left; the sidebar
  * carries the lifecycle rail (draft → review → published → archived
  * with the legal transition buttons), the is_public switch (PATCH
- * …/is-public), and the type/topics/tags metadata column. Publishing
+ * …/is-public), and the type/topics metadata column. Publishing
  * is human-only server-side — a 403 surfaces as a refusal toast.
  *
  * Keyboard:
@@ -179,7 +178,6 @@ export class ContentEditorPageComponent {
       nonNullable: true,
       validators: [Validators.required],
     }),
-    tags: new FormControl('', { nonNullable: true }),
     coverImage: new FormControl('', { nonNullable: true }),
     readingTimeMin: new FormControl(0, { nonNullable: true }),
   });
@@ -252,7 +250,6 @@ export class ContentEditorPageComponent {
           body: c.body,
           excerpt: c.excerpt,
           type: c.type,
-          tags: (c.tags ?? []).join(', '),
           coverImage: c.cover_image ?? '',
           readingTimeMin: c.reading_time_min,
         },
@@ -336,7 +333,6 @@ export class ContentEditorPageComponent {
       type: v.type,
       body: v.body,
       excerpt: v.excerpt,
-      tags: parseTags(v.tags),
       topic_ids: this.selectedTopicIds(),
       cover_image: v.coverImage || undefined,
       reading_time_min: v.readingTimeMin,
@@ -373,7 +369,6 @@ export class ContentEditorPageComponent {
       title: v.title.trim(),
       body: v.body,
       excerpt: v.excerpt,
-      tags: parseTags(v.tags),
       topic_ids: this.selectedTopicIds(),
       cover_image: v.coverImage || undefined,
       reading_time_min: v.readingTimeMin,
@@ -589,13 +584,6 @@ export class ContentEditorPageComponent {
     const v = c.ai_metadata?.['quality_score'];
     return typeof v === 'number' ? v : null;
   }
-}
-
-function parseTags(raw: string): string[] {
-  return raw
-    .split(',')
-    .map((t) => t.trim())
-    .filter((t) => t.length > 0);
 }
 
 function httpStatus(err: unknown): number | null {

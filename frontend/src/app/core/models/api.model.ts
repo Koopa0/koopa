@@ -29,7 +29,6 @@ export interface ApiContent {
   excerpt: string;
   type: ContentType;
   status: ContentStatus;
-  tags: string[];
   topics: ApiTopicRef[];
   cover_image: string | null;
   series_id: string | null;
@@ -206,7 +205,6 @@ export interface ApiCreateContentRequest {
   excerpt?: string;
   type: ContentType;
   status?: ContentStatus;
-  tags?: string[];
   topic_ids?: string[];
   cover_image?: string;
   source?: string;
@@ -223,7 +221,6 @@ export interface ApiUpdateContentRequest {
   title?: string;
   body?: string;
   excerpt?: string;
-  tags?: string[];
   topic_ids?: string[];
   cover_image?: string;
   status?: ContentStatus;

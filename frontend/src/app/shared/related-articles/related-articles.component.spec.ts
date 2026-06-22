@@ -14,7 +14,6 @@ function createMockContent(
     excerpt: 'Excerpt',
     type: 'article',
     status: 'published',
-    tags: [],
     topics: [],
     cover_image: null,
     series_id: null,

@@ -28,7 +28,6 @@ function content(overrides: Partial<ApiContent> = {}): ApiContent {
     excerpt: '',
     type: 'article',
     status: 'draft',
-    tags: [],
     topics: [],
     cover_image: null,
     series_id: null,

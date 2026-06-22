@@ -26,7 +26,7 @@ interface StatTile {
  * System stats page. Three independent reads — GET
  * /api/admin/system/stats (inventory tiles, breakdowns, process runs),
  * /stats/drift (area drift table), and /stats/learning (note growth +
- * top tags). Each section degrades on its own: a failing read renders
+ * weekly cadence). Each section degrades on its own: a failing read renders
  * an inline error with Retry while sibling sections stay live.
  */
 @Component({
@@ -107,7 +107,6 @@ export class SystemStatsPageComponent {
         value: v.activity.last_24h,
         sub: `${v.activity.last_7d} in 7d`,
       },
-      { id: 'tags', label: 'canonical tags', value: v.tags.canonical },
     ];
   });
 
@@ -118,7 +117,6 @@ export class SystemStatsPageComponent {
     computeProcessRunRows(this.overview()),
   );
   protected readonly driftAreas = computed(() => this.drift()?.areas ?? []);
-  protected readonly topTags = computed(() => this.learning()?.top_tags ?? []);
 
   constructor() {
     this.topbar.set({

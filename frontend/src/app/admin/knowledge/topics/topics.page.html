@@ -1,0 +1,90 @@
+<div class="grid min-w-0 flex-1 grid-cols-1 items-start gap-4 px-6 py-5">
+  <!-- Topics panel -->
+  <section
+    class="overflow-hidden rounded-md border border-border bg-panel"
+    aria-label="Topics"
+  >
+    <div class="flex items-center gap-2 border-b border-border px-3.5 py-[11px]">
+      <h3 class="font-display text-sm font-semibold whitespace-nowrap text-fg">Topics</h3>
+      <span class="font-mono text-[11px] text-fg-faint" data-testid="topics-count">
+        {{ topics().length }}
+      </span>
+      <span class="flex-1"></span>
+      <span class="font-mono text-[10px] uppercase tracking-[0.06em] text-fg-faint">
+        published
+      </span>
+    </div>
+
+    @if (topicsError()) {
+      <div
+        role="alert"
+        class="m-3 rounded-sm border border-error bg-error-bg px-3 py-2 text-xs text-error"
+        data-testid="topics-error"
+      >
+        Couldn't load topics.
+      </div>
+    } @else if (topics().length === 0) {
+      <p class="px-3.5 py-6 text-center text-xs text-fg-subtle" data-testid="topics-empty">
+        No topics yet.
+      </p>
+    } @else {
+      <ul>
+        @for (topic of topics(); track topic.id) {
+          <li
+            class="group flex min-h-8 items-center gap-2.5 border-b border-border-faint px-3.5 py-[6px] last:border-b-0 hover:bg-overlay"
+            [attr.data-testid]="'topic-row-' + topic.slug"
+          >
+            @if (isRenaming(topic.id)) {
+              <label class="sr-only" [for]="'topic-rename-' + topic.id">New topic name</label>
+              <input
+                [id]="'topic-rename-' + topic.id"
+                type="text"
+                [value]="renaming()?.name ?? ''"
+                (input)="setRenameValue($event)"
+                (keydown.enter)="commitRename()"
+                (keydown.escape)="cancelRename()"
+                class="w-full min-w-0 rounded-sm border border-brand bg-elevated px-2 py-[3px] text-[13px] text-fg focus:outline-hidden"
+                data-testid="rename-input"
+              />
+              <button
+                type="button"
+                (click)="commitRename()"
+                [disabled]="busy()"
+                class="shrink-0 rounded-sm bg-brand px-2.5 py-[3px] text-[11px] font-semibold text-[oklch(0.14_0.02_260)] disabled:opacity-40"
+                data-testid="rename-save"
+              >
+                Save
+              </button>
+              <button
+                type="button"
+                (click)="cancelRename()"
+                class="shrink-0 rounded-sm px-2 py-[3px] text-[11px] text-fg-muted hover:bg-overlay hover:text-fg"
+                data-testid="rename-cancel"
+              >
+                Cancel
+              </button>
+            } @else {
+              <span class="truncate text-[13px] font-medium text-fg">{{ topic.name }}</span>
+              <span class="truncate font-mono text-[11px] text-fg-faint">{{ topic.slug }}</span>
+              <span class="flex-1"></span>
+              <button
+                type="button"
+                (click)="startRename(topic.id, topic.name)"
+                class="shrink-0 rounded-sm px-2 py-[3px] text-[11px] text-fg-muted opacity-0 transition-opacity group-hover:opacity-100 hover:bg-elevated hover:text-fg focus-visible:opacity-100"
+                [attr.data-testid]="'topic-rename-' + topic.slug"
+              >
+                Rename
+              </button>
+              <span
+                class="w-10 shrink-0 text-right font-mono text-[11px] text-fg-muted tabular-nums"
+                [attr.data-testid]="'topic-count-' + topic.slug"
+              >
+                {{ topic.content_count }}
+              </span>
+            }
+          </li>
+        }
+      </ul>
+    }
+  </section>
+</div>

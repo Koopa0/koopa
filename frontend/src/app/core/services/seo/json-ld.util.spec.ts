@@ -38,11 +38,9 @@ describe('JSON-LD Utilities', () => {
       publishedAt: '2026-01-01',
       updatedAt: '2026-02-01',
       coverImage: 'https://img.com/a.jpg',
-      tags: ['Go', 'Angular'],
     });
     expect(schema['dateModified']).toBe('2026-02-01');
     expect(schema['image']).toBe('https://img.com/a.jpg');
-    expect(schema['keywords']).toBe('Go, Angular');
   });
 
   it('should build CollectionPage schema', () => {

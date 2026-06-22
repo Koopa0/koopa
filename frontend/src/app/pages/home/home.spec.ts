@@ -38,7 +38,6 @@ function buildMockContent(overrides: Partial<ApiContent> = {}): ApiContent {
     body: '',
     type: 'article',
     status: 'published',
-    tags: [],
     topics: [{ id: 'topic-1', slug: 'go', name: 'Go' }],
     cover_image: null,
     series_id: null,

@@ -183,7 +183,6 @@ export class ArticleDetailComponent implements OnInit {
         publishedAt: article.published_at ?? article.created_at,
         updatedAt: article.updated_at,
         coverImage: article.cover_image ?? undefined,
-        tags: article.tags,
       }),
     });
   }
