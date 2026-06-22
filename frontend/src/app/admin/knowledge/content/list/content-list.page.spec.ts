@@ -101,6 +101,44 @@ describe('ContentListPageComponent', () => {
     expect(testid('content-count')?.textContent).toContain('1');
   });
 
+  it('should render the proposer and rationale when the content was agent-pushed', async () => {
+    fixture = TestBed.createComponent(ContentListPageComponent);
+    fixture.detectChanges();
+    httpMock
+      .expectOne((r) => r.method === 'GET' && r.url.endsWith(LIST_URL))
+      .flush(
+        envelope([
+          content({
+            title: 'Value semantics in Go',
+            created_by: 'hermes',
+            proposal_rationale: 'Finished the Obsidian draft; ready for review.',
+          }),
+        ]),
+      );
+    await settle();
+
+    // Catches a regression where created_by/proposal_rationale are dropped
+    // from the row (the review queue would then lose who pushed it and why).
+    expect(testid('content-list-proposer-0')?.textContent).toContain('hermes');
+    expect(testid('content-list-rationale-0')?.textContent).toContain(
+      'Finished the Obsidian draft; ready for review.',
+    );
+  });
+
+  it('should not render proposer or rationale for admin-authored content', async () => {
+    fixture = TestBed.createComponent(ContentListPageComponent);
+    fixture.detectChanges();
+    httpMock
+      .expectOne((r) => r.method === 'GET' && r.url.endsWith(LIST_URL))
+      .flush(envelope([content({ created_by: null, proposal_rationale: null })]));
+    await settle();
+
+    // Admin-authored content carries no agent provenance — the extra lines
+    // must stay absent rather than render an empty "Proposed by".
+    expect(testid('content-list-proposer-0')).toBeNull();
+    expect(testid('content-list-rationale-0')).toBeNull();
+  });
+
   it('should surface the error banner without throwing when the list read fails', async () => {
     fixture = TestBed.createComponent(ContentListPageComponent);
     fixture.detectChanges();

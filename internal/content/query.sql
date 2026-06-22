@@ -1,7 +1,7 @@
 -- name: ContentByID :one
 SELECT id, slug, title, body, excerpt, type, status,
        series_id, series_order, is_public, project_id, ai_metadata, reading_time_min,
-       cover_image, published_at, created_at, updated_at
+       cover_image, created_by, proposal_rationale, published_at, created_at, updated_at
 FROM contents WHERE id = $1;
 
 -- name: PublishedContents :many
@@ -101,7 +101,7 @@ LIMIT $1;
 -- name: ListContents :many
 -- Admin list: all statuses, with optional type, status, and is_public filter.
 SELECT id, slug, title, excerpt, type, status, is_public, project_id,
-       reading_time_min, published_at, created_at, updated_at
+       reading_time_min, created_by, proposal_rationale, published_at, created_at, updated_at
 FROM contents
 WHERE (sqlc.narg('content_type')::content_type IS NULL OR type = sqlc.narg('content_type'))
   AND (sqlc.narg('content_status')::content_status IS NULL OR status = sqlc.narg('content_status'))
@@ -135,11 +135,11 @@ ORDER BY created_at DESC;
 -- name: CreateContent :one
 INSERT INTO contents (slug, title, body, excerpt, type, status,
                       series_id, series_order, is_public, project_id, ai_metadata,
-                      reading_time_min, cover_image)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+                      reading_time_min, cover_image, created_by, proposal_rationale)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
 RETURNING id, slug, title, body, excerpt, type, status,
           series_id, series_order, is_public, project_id, ai_metadata, reading_time_min,
-          cover_image, published_at, created_at, updated_at;
+          cover_image, created_by, proposal_rationale, published_at, created_at, updated_at;
 
 -- name: UpdateContent :one
 UPDATE contents SET

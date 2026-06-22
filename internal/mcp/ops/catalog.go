@@ -119,6 +119,23 @@ func ProposeProject() Meta {
 	}
 }
 
+// ProposeContent returns metadata for the agent content-proposal tool — a
+// finished content draft pushed into the editorial review queue for the owner
+// to publish or reject.
+func ProposeContent() Meta {
+	return Meta{
+		Name:        "propose_content",
+		Domain:      DomainContent,
+		Writability: Additive,
+		Stability:   StabilityStable,
+		Since:       "1.8.0",
+		Description: "Propose a FINISHED content piece (article, essay, build-log, til, or digest) into the editorial review queue. The content always lands in status=review with is_public=false — an agent can NEVER publish; only the owner publishes or rejects it in the admin review queue. Required: title, type (one of article|essay|build-log|til|digest), and body (the finished Markdown draft — this is not for stubs). Optional: excerpt, slug (derived from title when omitted), topic_ids ([]uuid), and proposal_rationale (your 'why I propose this' note, shown to the owner in the review queue). The proposing agent is recorded as created_by. Use to push a finished draft (e.g. a completed Obsidian Writing article) for the owner's review — publishing stays an owner action in admin, off the MCP surface.",
+		FieldEnums: map[string][]string{
+			"type": {"article", "essay", "build-log", "til", "digest"},
+		},
+	}
+}
+
 // ListTasks returns metadata for the read-only proposal-readback tool — an
 // agent reads the disposition of the todos it created.
 func ListTasks() Meta {
@@ -204,6 +221,7 @@ func All() []Meta {
 		ProposeArea(),
 		ProposeGoal(),
 		ProposeProject(),
+		ProposeContent(),
 		ListTasks(),
 		ResolveTask(),
 		ListReadings(),

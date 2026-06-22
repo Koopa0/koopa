@@ -111,7 +111,25 @@
             (focus)="focusedIndex.set(i)"
             [attr.data-testid]="'content-list-row-' + i"
           >
-            <td class="truncate px-3 py-2 font-serif text-fg">{{ row.title }}</td>
+            <td class="px-3 py-2">
+              <div class="truncate font-serif text-fg">{{ row.title }}</div>
+              @if (proposer(row); as by) {
+                <div
+                  class="mt-0.5 font-mono text-[10px] text-fg-subtle"
+                  [attr.data-testid]="'content-list-proposer-' + i"
+                >
+                  Proposed by {{ by }}
+                </div>
+              }
+              @if (rationale(row); as why) {
+                <div
+                  class="mt-0.5 line-clamp-2 max-w-md text-[11px] italic text-fg-muted"
+                  [attr.data-testid]="'content-list-rationale-' + i"
+                >
+                  {{ why }}
+                </div>
+              }
+            </td>
             <td class="px-3 py-2">
               <span
                 class="inline-block rounded-xs border px-2 py-0.5 font-mono text-[10px] uppercase"
@@ -121,7 +139,9 @@
               </span>
             </td>
             <td class="truncate px-3 py-2 text-fg-muted">{{ topicLabel(row) }}</td>
-            <td class="px-3 py-2 font-mono text-[11px] text-fg-subtle">—</td>
+            <td class="px-3 py-2 font-mono text-[11px] text-fg-subtle">
+              {{ proposer(row) ?? '—' }}
+            </td>
             <td class="px-3 py-2">
               <span
                 class="inline-flex items-center gap-1.5 text-xs capitalize"

@@ -423,6 +423,10 @@ type Content struct {
 	IsPublic bool `json:"is_public"`
 	// Associated project. SET NULL on project deletion — content survives independently.
 	ProjectID *uuid.UUID `json:"project_id"`
+	// Proposing agent for agent-pushed content (references agents(name), e.g. hermes pushing a finished draft via the propose_content MCP tool). NULL for owner/admin-authored content created through the admin UI. ON DELETE RESTRICT — a registered agent that has proposed content cannot be removed while its proposals exist.
+	CreatedBy *string `json:"created_by"`
+	// The proposing agent's "why I propose this" note, shown alongside the row in the admin review queue. NULL for admin-authored content (no agent rationale).
+	ProposalRationale *string `json:"proposal_rationale"`
 	// When content was published. NULL = not yet published.
 	PublishedAt *time.Time `json:"published_at"`
 	CreatedAt   time.Time  `json:"created_at"`

@@ -459,6 +459,8 @@ CREATE TABLE contents (
     cover_image   TEXT,
     is_public     BOOLEAN NOT NULL DEFAULT false,
     project_id    UUID REFERENCES projects(id) ON DELETE SET NULL,
+    created_by    TEXT REFERENCES agents(name) ON DELETE RESTRICT,
+    proposal_rationale TEXT,
     published_at  TIMESTAMPTZ,
     created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -496,6 +498,8 @@ COMMENT ON COLUMN contents.is_public IS
     '(chk_content_public_requires_published). PublishContent flips status, '
     'published_at, and is_public together — publishing makes public in this system.';
 COMMENT ON COLUMN contents.project_id IS 'Associated project. SET NULL on project deletion — content survives independently.';
+COMMENT ON COLUMN contents.created_by IS 'Proposing agent for agent-pushed content (references agents(name), e.g. hermes pushing a finished draft via the propose_content MCP tool). NULL for owner/admin-authored content created through the admin UI. ON DELETE RESTRICT — a registered agent that has proposed content cannot be removed while its proposals exist.';
+COMMENT ON COLUMN contents.proposal_rationale IS 'The proposing agent''s "why I propose this" note, shown alongside the row in the admin review queue. NULL for admin-authored content (no agent rationale).';
 COMMENT ON COLUMN contents.published_at IS 'When content was published. NULL = not yet published.';
 COMMENT ON COLUMN contents.search_vector IS
     'Generated tsvector for full-text search. Uses ''simple'' config (no stemming/language-specific '

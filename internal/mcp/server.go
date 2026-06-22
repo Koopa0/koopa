@@ -156,6 +156,9 @@ func NewServer(pool *pgxpool.Pool, logger *slog.Logger, opts ...ServerOption) *S
 	addTool(s, toolFrom(ops.ProposeGoal), s.proposeGoal)
 	addTool(s, toolFrom(ops.ProposeProject), s.proposeProject)
 
+	// --- Content proposal (finished draft → editorial review queue) ---
+	addTool(s, toolFrom(ops.ProposeContent), s.proposeContent)
+
 	// --- Proposal readback (the read + self-close halves of the capture loop) ---
 	addTool(s, toolFrom(ops.ListTasks), s.listTasks)
 	addTool(s, toolFrom(ops.ResolveTask), s.resolveTask)

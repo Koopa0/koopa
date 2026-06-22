@@ -33,6 +33,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/Koopa0/koopa/internal/content"
 	"github.com/Koopa0/koopa/internal/goal"
 	"github.com/Koopa0/koopa/internal/project"
 )
@@ -247,6 +248,143 @@ func (s *Server) proposeProject(ctx context.Context, _ *mcp.CallToolRequest, inp
 
 	s.logger.Info("propose_project", "project_id", created.ID, "slug", created.Slug, "created_by", s.callerIdentity(ctx))
 	return nil, ProposeProjectOutput{Project: created}, nil
+}
+
+// --- propose_content ---
+
+// ProposeContentInput is the input for the propose_content tool. A registered
+// agent (e.g. hermes pushing a finished Obsidian draft) proposes a finished
+// content piece; it always lands in status=review with is_public=false — the
+// agent CANNOT publish. Koopa reviews it in the admin review queue and
+// publishes or rejects.
+type ProposeContentInput struct {
+	As                string   `json:"as,omitempty" jsonschema_description:"Self-identification — the agent making this call. Stamped on contents.created_by."`
+	Title             string   `json:"title" jsonschema:"required" jsonschema_description:"Content title. Required and non-blank. The slug is derived from it when slug is omitted."`
+	Type              string   `json:"type" jsonschema:"required" jsonschema_description:"Content type. One of: article, essay, build-log, til, digest."`
+	Body              string   `json:"body" jsonschema:"required" jsonschema_description:"The finished content body (Markdown). Required and non-blank — propose_content is for finished drafts, not stubs."`
+	Excerpt           string   `json:"excerpt,omitempty" jsonschema_description:"Optional short summary / excerpt shown in listings."`
+	Slug              string   `json:"slug,omitempty" jsonschema_description:"Optional URL-safe slug. Derived from title when omitted. Hyphen-separated, no leading/trailing/consecutive hyphens; Unicode letters/numbers allowed."`
+	TopicIDs          []string `json:"topic_ids,omitempty" jsonschema_description:"Optional topic UUIDs to associate with the content."`
+	ProposalRationale string   `json:"proposal_rationale,omitempty" jsonschema_description:"Why this content is worth proposing now — shown to the owner in the review queue to support the publish/reject decision."`
+}
+
+// ProposeContentOutput is the output of the propose_content tool.
+type ProposeContentOutput struct {
+	Content *content.Content `json:"content"`
+}
+
+// validateProposeContent enforces propose_content's client-side input rules
+// and returns the resolved content type, slug, and parsed topic ids. Keeping
+// the branchy validation here keeps the handler's cyclomatic complexity in
+// check (gocyclo). Title/excerpt/rationale are single-line fields (strict
+// control-char check); body is multi-line Markdown (prose check permits
+// HT/LF/CR). An omitted slug is derived from the title; an all-punctuation
+// title yields no slug and is rejected rather than inventing one.
+//
+//nolint:gocritic // hugeParam: input mirrors the handler's by-value contract
+func validateProposeContent(input ProposeContentInput) (content.Type, string, []uuid.UUID, error) {
+	if strings.TrimSpace(input.Title) == "" {
+		return "", "", nil, fmt.Errorf("title is required")
+	}
+	if strings.TrimSpace(input.Type) == "" {
+		return "", "", nil, fmt.Errorf("type is required")
+	}
+	if strings.TrimSpace(input.Body) == "" {
+		return "", "", nil, fmt.Errorf("body is required")
+	}
+	contentType := content.Type(input.Type)
+	if !contentType.Valid() {
+		return "", "", nil, fmt.Errorf("type must be one of: article, essay, build-log, til, digest (got %q)", input.Type)
+	}
+	if goal.ContainsControlChars(input.Title) {
+		return "", "", nil, fmt.Errorf("title must not contain control characters")
+	}
+	if containsProseControlChars(input.Body) {
+		return "", "", nil, fmt.Errorf("body must not contain control characters")
+	}
+	if goal.ContainsControlChars(input.Excerpt) {
+		return "", "", nil, fmt.Errorf("excerpt must not contain control characters")
+	}
+	if goal.ContainsControlChars(input.ProposalRationale) {
+		return "", "", nil, fmt.Errorf("proposal_rationale must not contain control characters")
+	}
+
+	slug := strings.TrimSpace(input.Slug)
+	if slug == "" {
+		slug = goal.DeriveSlug(input.Title)
+	}
+	if slug == "" {
+		return "", "", nil, fmt.Errorf("title %q must contain at least one letter or number to derive a slug", input.Title)
+	}
+
+	topicIDs, err := parseTopicIDs(input.TopicIDs)
+	if err != nil {
+		return "", "", nil, err
+	}
+	return contentType, slug, topicIDs, nil
+}
+
+//nolint:gocritic // hugeParam: input passed by value per addTool[I,O] generic contract
+func (s *Server) proposeContent(ctx context.Context, _ *mcp.CallToolRequest, input ProposeContentInput) (*mcp.CallToolResult, ProposeContentOutput, error) {
+	if err := s.requireRegisteredCaller(ctx, "propose_content"); err != nil {
+		return nil, ProposeContentOutput{}, err
+	}
+	contentType, slug, topicIDs, err := validateProposeContent(input)
+	if err != nil {
+		return nil, ProposeContentOutput{}, err
+	}
+
+	caller := s.callerIdentity(ctx)
+
+	var created *content.Content
+	err = s.withActorTx(ctx, func(tx pgx.Tx) error {
+		var createErr error
+		created, createErr = s.contents.WithTx(tx).CreateContent(ctx, &content.CreateParams{
+			Slug:              slug,
+			Title:             strings.TrimSpace(input.Title),
+			Body:              input.Body,
+			Excerpt:           input.Excerpt,
+			Type:              contentType,
+			Status:            content.StatusReview,
+			IsPublic:          false,
+			TopicIDs:          topicIDs,
+			CreatedBy:         &caller,
+			ProposalRationale: nilIfBlank(input.ProposalRationale),
+		})
+		return createErr
+	})
+	if err != nil {
+		if sc, ok := errors.AsType[*content.SlugConflictError](err); ok {
+			return nil, ProposeContentOutput{}, fmt.Errorf("a content with slug %q already exists (id %s); pick a different slug", sc.Slug, sc.ContentID)
+		}
+		if errors.Is(err, content.ErrConflict) {
+			return nil, ProposeContentOutput{}, fmt.Errorf("a content with slug %q already exists", slug)
+		}
+		if errors.Is(err, content.ErrInvalidInput) {
+			return nil, ProposeContentOutput{}, fmt.Errorf("invalid content input: check slug format and topic ids")
+		}
+		return nil, ProposeContentOutput{}, fmt.Errorf("proposing content: %w", err)
+	}
+
+	s.logger.Info("propose_content", "content_id", created.ID, "slug", created.Slug, "type", created.Type, "created_by", caller)
+	return nil, ProposeContentOutput{Content: created}, nil
+}
+
+// parseTopicIDs converts the string topic ids supplied by an agent into UUIDs,
+// rejecting any malformed value as a clean caller error.
+func parseTopicIDs(raw []string) ([]uuid.UUID, error) {
+	if len(raw) == 0 {
+		return nil, nil
+	}
+	ids := make([]uuid.UUID, 0, len(raw))
+	for _, s := range raw {
+		id, err := uuid.Parse(strings.TrimSpace(s))
+		if err != nil {
+			return nil, fmt.Errorf("topic id %q is not a valid uuid", s)
+		}
+		ids = append(ids, id)
+	}
+	return ids, nil
 }
 
 // resolveProposalArea resolves the optional area identifier to an area_id,

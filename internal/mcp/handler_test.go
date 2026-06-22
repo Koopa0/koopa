@@ -89,6 +89,106 @@ func TestPlanDay_Validation(t *testing.T) {
 	}
 }
 
+// --- propose_content ---
+
+// TestProposeContent_Validation covers the validation that runs BEFORE any DB
+// call: the required-field, content-type, control-char, slug-derivation, and
+// topic-id checks. The default caller ("human") clears requireRegisteredCaller
+// so these paths execute. A finished-draft body and a derivable title are the
+// happy preconditions; each case violates exactly one of them.
+func TestProposeContent_Validation(t *testing.T) {
+	s := newTestServer()
+	tests := []struct {
+		name    string
+		input   ProposeContentInput
+		wantErr string
+	}{
+		{
+			name:    "empty title",
+			input:   ProposeContentInput{Type: "article", Body: "x"},
+			wantErr: "title is required",
+		},
+		{
+			name:    "empty type",
+			input:   ProposeContentInput{Title: "Hello", Body: "x"},
+			wantErr: "type is required",
+		},
+		{
+			name:    "empty body",
+			input:   ProposeContentInput{Title: "Hello", Type: "article"},
+			wantErr: "body is required",
+		},
+		{
+			name:    "invalid type",
+			input:   ProposeContentInput{Title: "Hello", Type: "tweet", Body: "x"},
+			wantErr: "type must be one of",
+		},
+		{
+			name:    "note type rejected",
+			input:   ProposeContentInput{Title: "Hello", Type: "note", Body: "x"},
+			wantErr: "type must be one of",
+		},
+		{
+			name:    "C0 control char in title",
+			input:   ProposeContentInput{Title: "bad\x07title", Type: "article", Body: "x"},
+			wantErr: "title must not contain control characters",
+		},
+		{
+			name:    "C1 control char in body",
+			input:   ProposeContentInput{Title: "Hello", Type: "article", Body: "line\u009fline"},
+			wantErr: "body must not contain control characters",
+		},
+		{
+			name:    "control char in excerpt",
+			input:   ProposeContentInput{Title: "Hello", Type: "article", Body: "x", Excerpt: "bad\x00excerpt"},
+			wantErr: "excerpt must not contain control characters",
+		},
+		{
+			name:    "control char in proposal_rationale",
+			input:   ProposeContentInput{Title: "Hello", Type: "article", Body: "x", ProposalRationale: "why\x01now"},
+			wantErr: "proposal_rationale must not contain control characters",
+		},
+		{
+			name:    "title with no slug-able chars",
+			input:   ProposeContentInput{Title: "!!!", Type: "article", Body: "x"},
+			wantErr: "must contain at least one letter or number",
+		},
+		{
+			name:    "malformed topic id",
+			input:   ProposeContentInput{Title: "Hello", Type: "article", Body: "x", TopicIDs: []string{"not-a-uuid"}},
+			wantErr: "is not a valid uuid",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, err := callHandler(t, s.proposeContent, tt.input)
+			if err == nil {
+				t.Fatal("expected error, got nil")
+			}
+			if !contains(err.Error(), tt.wantErr) {
+				t.Errorf("error = %q, want containing %q", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+// TestProposeContent_UnregisteredCallerRefused asserts the identity gate
+// rejects a caller that names no registry row, before any validation or DB
+// access — mirroring propose_project's CallerGate behaviour.
+func TestProposeContent_UnregisteredCallerRefused(t *testing.T) {
+	s := newTestServer()
+	ctx := context.WithValue(t.Context(), callerKey{}, "ghost-agent")
+	_, _, err := s.proposeContent(ctx, nil, ProposeContentInput{
+		Title: "Hello", Type: "article", Body: "finished draft",
+	})
+	if err == nil {
+		t.Fatal("expected error for unregistered caller, got nil")
+	}
+	if !contains(err.Error(), "is not registered") {
+		t.Errorf("error = %q, want containing %q", err, "is not registered")
+	}
+}
+
 // --- JSON schema addTool ---
 
 func TestToolSchemaGeneration(t *testing.T) {

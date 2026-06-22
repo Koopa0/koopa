@@ -2003,3 +2003,86 @@ func TestIntegration_ProjectProgress_CallerGate(t *testing.T) {
 		}
 	}
 }
+
+// TestIntegration_ProposeContent_AsHermes drives propose_content as a
+// registered agent and asserts the editorial contract on the persisted row:
+// status=review (NOT published — an agent can never publish), is_public=false,
+// created_by=the proposing agent, proposal_rationale persisted, and a slug
+// derived from the title. It also asserts the row is NOT published.
+func TestIntegration_ProposeContent_AsHermes(t *testing.T) {
+	s := setupServer(t)
+
+	_, out, err := callHandlerAs(t, "hermes", s.proposeContent, ProposeContentInput{
+		Title:             "Value Semantics in Go",
+		Type:              "article",
+		Body:              "# Value Semantics\n\nA finished draft body.",
+		Excerpt:           "Why Go copies.",
+		ProposalRationale: "Finished the Obsidian Writing/articles draft; ready for review.",
+	})
+	if err != nil {
+		t.Fatalf("proposeContent: %v", err)
+	}
+	if out.Content == nil || out.Content.ID == uuid.Nil {
+		t.Fatal("proposeContent returned no content / zero ID")
+	}
+	if out.Content.Slug != "value-semantics-in-go" {
+		t.Errorf("output slug = %q, want %q (derived from title)", out.Content.Slug, "value-semantics-in-go")
+	}
+
+	var (
+		status            string
+		isPublic          bool
+		publishedAt       *time.Time
+		createdBy         *string
+		proposalRationale *string
+	)
+	if err := testPool.QueryRow(t.Context(),
+		`SELECT status, is_public, published_at, created_by, proposal_rationale FROM contents WHERE id = $1`,
+		out.Content.ID,
+	).Scan(&status, &isPublic, &publishedAt, &createdBy, &proposalRationale); err != nil {
+		t.Fatalf("reading proposed content: %v", err)
+	}
+	if status != "review" {
+		t.Errorf("persisted status = %q, want %q (agent push lands in review, never published)", status, "review")
+	}
+	if isPublic {
+		t.Error("persisted is_public = true, want false (agents cannot make content public)")
+	}
+	if publishedAt != nil {
+		t.Errorf("persisted published_at = %v, want NULL (content is NOT published)", *publishedAt)
+	}
+	if createdBy == nil || *createdBy != "hermes" {
+		t.Errorf("persisted created_by = %v, want %q", createdBy, "hermes")
+	}
+	if proposalRationale == nil || *proposalRationale != "Finished the Obsidian Writing/articles draft; ready for review." {
+		t.Errorf("persisted proposal_rationale = %v, want the supplied rationale", proposalRationale)
+	}
+}
+
+// TestIntegration_ProposeContent_CallerGate asserts the registered-caller gate:
+// the zero-privilege "unknown" fallback and a fabricated name are refused
+// before any write, so no contents row is created.
+func TestIntegration_ProposeContent_CallerGate(t *testing.T) {
+	s := setupServer(t)
+
+	for _, caller := range []string{"unknown", "fabricated-agent"} {
+		_, _, err := callHandlerAs(t, caller, s.proposeContent, ProposeContentInput{
+			Title: "Should Never Persist",
+			Type:  "article",
+			Body:  "finished draft",
+		})
+		if err == nil {
+			t.Errorf("proposeContent as %q err = nil, want registered-caller refusal", caller)
+		}
+	}
+
+	var count int
+	if err := testPool.QueryRow(t.Context(),
+		`SELECT COUNT(*) FROM contents`,
+	).Scan(&count); err != nil {
+		t.Fatalf("counting contents: %v", err)
+	}
+	if count != 0 {
+		t.Errorf("contents count = %d, want 0 (gate must precede any write)", count)
+	}
+}

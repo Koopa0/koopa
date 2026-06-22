@@ -84,8 +84,10 @@ const STATUS_TEXT_CLASS: Record<ContentStatus, string> = {
  * status filter and the page title, both resolved from route data.
  *
  * Columns: Title / Type / Topic / Actor / Status / Public / Updated / ID.
- * `actor` is rendered as `—` until backend propagates
- * `activity_events.actor` onto the content row.
+ * `actor` shows the proposing agent (`created_by`) for content pushed via the
+ * MCP propose_content tool, and `—` for owner/admin-authored content. The
+ * review queue (initialStatus='review') is the primary consumer: a proposed
+ * row also renders "Proposed by {agent}" and its rationale under the title.
  *
  * Keyboard:
  *   j / k   — move row focus down / up (roving tabindex)
@@ -250,6 +252,16 @@ export class ContentListPageComponent {
 
   protected topicLabel(row: ApiContent): string {
     return row.topics?.[0]?.name ?? '—';
+  }
+
+  /** The proposing agent, when this row was pushed via propose_content. */
+  protected proposer(row: ApiContent): string | null {
+    return row.created_by ?? null;
+  }
+
+  /** The proposing agent's rationale, when present. */
+  protected rationale(row: ApiContent): string | null {
+    return row.proposal_rationale ?? null;
   }
 
   /**

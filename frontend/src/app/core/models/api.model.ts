@@ -35,6 +35,10 @@ export interface ApiContent {
   is_public: boolean;
   ai_metadata: Record<string, unknown> | null;
   reading_time_min: number;
+  /** Proposing agent for agent-pushed content (MCP propose_content). Null for owner/admin-authored content. */
+  created_by?: string | null;
+  /** The proposing agent's rationale, shown in the review queue. Null for admin-authored content. */
+  proposal_rationale?: string | null;
   published_at: string | null;
   created_at: string;
   updated_at: string;

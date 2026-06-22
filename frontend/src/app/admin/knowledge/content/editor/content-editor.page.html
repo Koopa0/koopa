@@ -51,6 +51,20 @@
           }
         </div>
 
+        @if (content(); as c) {
+          @if (c.created_by) {
+            <div
+              class="rounded-xs border border-border-faint bg-elevated/40 px-2.5 py-1.5 text-[11px] text-fg-muted"
+              data-testid="editor-proposal"
+            >
+              <span class="font-mono text-fg-subtle">Proposed by {{ c.created_by }}</span>
+              @if (c.proposal_rationale) {
+                <span class="ml-1 italic">— {{ c.proposal_rationale }}</span>
+              }
+            </div>
+          }
+        }
+
         <label class="sr-only" for="content-title">Title</label>
         <input
           id="content-title"

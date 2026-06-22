@@ -83,9 +83,16 @@ type Content struct {
 	AIMetadata     json.RawMessage `json:"ai_metadata,omitempty"`
 	ReadingTimeMin int             `json:"reading_time_min"`
 	CoverImage     *string         `json:"cover_image,omitempty"`
-	PublishedAt    *time.Time      `json:"published_at,omitempty"`
-	CreatedAt      time.Time       `json:"created_at"`
-	UpdatedAt      time.Time       `json:"updated_at"`
+	// CreatedBy is the proposing agent for agent-pushed content (the MCP
+	// propose_content tool stamps the caller identity here). NULL for
+	// owner/admin-authored content.
+	CreatedBy *string `json:"created_by,omitempty"`
+	// ProposalRationale is the proposing agent's "why I propose this" note,
+	// surfaced in the admin review queue. NULL for admin-authored content.
+	ProposalRationale *string    `json:"proposal_rationale,omitempty"`
+	PublishedAt       *time.Time `json:"published_at,omitempty"`
+	CreatedAt         time.Time  `json:"created_at"`
+	UpdatedAt         time.Time  `json:"updated_at"`
 }
 
 // Brief is the minimal content projection used when a consumer only needs
@@ -136,6 +143,14 @@ type CreateParams struct {
 	AIMetadata     json.RawMessage `json:"ai_metadata,omitempty"`
 	ReadingTimeMin int             `json:"reading_time_min"`
 	CoverImage     *string         `json:"cover_image,omitempty"`
+	// CreatedBy stamps the proposing agent on agent-pushed content. The MCP
+	// propose_content tool sets it to the resolved caller identity; the admin
+	// HTTP Create path leaves it nil (owner-authored content has no agent
+	// author — it is NOT forced to 'human').
+	CreatedBy *string `json:"created_by,omitempty"`
+	// ProposalRationale carries the proposing agent's justification. Set by
+	// propose_content, nil for admin-authored content.
+	ProposalRationale *string `json:"proposal_rationale,omitempty"`
 }
 
 // UpdateParams are the parameters for updating content.
@@ -358,6 +373,7 @@ func (s *Store) Content(ctx context.Context, id uuid.UUID) (*Content, error) {
 		SeriesID: r.SeriesID, SeriesOrder: r.SeriesOrder,
 		IsPublic: r.IsPublic, ProjectID: r.ProjectID, AiMetadata: r.AiMetadata,
 		ReadingTimeMin: r.ReadingTimeMin, CoverImage: r.CoverImage,
+		CreatedBy: r.CreatedBy, ProposalRationale: r.ProposalRationale,
 		PublishedAt: r.PublishedAt,
 		CreatedAt:   r.CreatedAt, UpdatedAt: r.UpdatedAt,
 	})
@@ -521,19 +537,21 @@ func (s *Store) CreateContent(ctx context.Context, p *CreateParams) (*Content, e
 	preResolvedID := s.preResolveSlugID(ctx, p.Slug)
 
 	r, err := s.q.CreateContent(ctx, db.CreateContentParams{
-		Slug:           p.Slug,
-		Title:          p.Title,
-		Body:           p.Body,
-		Excerpt:        p.Excerpt,
-		Type:           db.ContentType(p.Type),
-		Status:         db.ContentStatus(p.Status),
-		SeriesID:       p.SeriesID,
-		SeriesOrder:    seriesOrder,
-		IsPublic:       p.IsPublic,
-		ProjectID:      p.ProjectID,
-		AiMetadata:     p.AIMetadata,
-		ReadingTimeMin: int32(p.ReadingTimeMin), // #nosec G115 -- reading time in minutes is bounded, not user-controlled
-		CoverImage:     p.CoverImage,
+		Slug:              p.Slug,
+		Title:             p.Title,
+		Body:              p.Body,
+		Excerpt:           p.Excerpt,
+		Type:              db.ContentType(p.Type),
+		Status:            db.ContentStatus(p.Status),
+		SeriesID:          p.SeriesID,
+		SeriesOrder:       seriesOrder,
+		IsPublic:          p.IsPublic,
+		ProjectID:         p.ProjectID,
+		AiMetadata:        p.AIMetadata,
+		ReadingTimeMin:    int32(p.ReadingTimeMin), // #nosec G115 -- reading time in minutes is bounded, not user-controlled
+		CoverImage:        p.CoverImage,
+		CreatedBy:         p.CreatedBy,
+		ProposalRationale: p.ProposalRationale,
 	})
 	if err != nil {
 		return nil, mapWriteError(err, p.Slug, preResolvedID, "creating content")
@@ -554,6 +572,7 @@ func (s *Store) CreateContent(ctx context.Context, p *CreateParams) (*Content, e
 		SeriesID: r.SeriesID, SeriesOrder: r.SeriesOrder,
 		IsPublic: r.IsPublic, ProjectID: r.ProjectID, AiMetadata: r.AiMetadata,
 		ReadingTimeMin: r.ReadingTimeMin, CoverImage: r.CoverImage,
+		CreatedBy: r.CreatedBy, ProposalRationale: r.ProposalRationale,
 		PublishedAt: r.PublishedAt,
 		CreatedAt:   r.CreatedAt, UpdatedAt: r.UpdatedAt,
 	})
@@ -733,42 +752,46 @@ func (s *Store) topicsForContents(ctx context.Context, ids []uuid.UUID) (map[uui
 // types. Callers construct a contentRow from their specific row type, then pass
 // it to rowToContent. This eliminates a 21-parameter positional call.
 type contentRow struct {
-	ID             uuid.UUID
-	Slug           string
-	Title          string
-	Body           string
-	Excerpt        string
-	Type           db.ContentType
-	Status         db.ContentStatus
-	SeriesID       *string
-	SeriesOrder    *int32
-	IsPublic       bool
-	ProjectID      *uuid.UUID
-	AiMetadata     json.RawMessage
-	ReadingTimeMin int32
-	CoverImage     *string
-	PublishedAt    *time.Time
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
+	ID                uuid.UUID
+	Slug              string
+	Title             string
+	Body              string
+	Excerpt           string
+	Type              db.ContentType
+	Status            db.ContentStatus
+	SeriesID          *string
+	SeriesOrder       *int32
+	IsPublic          bool
+	ProjectID         *uuid.UUID
+	AiMetadata        json.RawMessage
+	ReadingTimeMin    int32
+	CoverImage        *string
+	CreatedBy         *string
+	ProposalRationale *string
+	PublishedAt       *time.Time
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
 }
 
 func rowToContent(r contentRow) Content { //nolint:gocritic // hugeParam: struct passed by value matches existing pattern across all call sites
 	c := Content{
-		ID:             r.ID,
-		Slug:           r.Slug,
-		Title:          r.Title,
-		Body:           r.Body,
-		Excerpt:        r.Excerpt,
-		Type:           Type(r.Type),
-		Status:         Status(r.Status),
-		IsPublic:       r.IsPublic,
-		ProjectID:      r.ProjectID,
-		AIMetadata:     r.AiMetadata,
-		ReadingTimeMin: int(r.ReadingTimeMin),
-		CoverImage:     r.CoverImage,
-		PublishedAt:    r.PublishedAt,
-		CreatedAt:      r.CreatedAt,
-		UpdatedAt:      r.UpdatedAt,
+		ID:                r.ID,
+		Slug:              r.Slug,
+		Title:             r.Title,
+		Body:              r.Body,
+		Excerpt:           r.Excerpt,
+		Type:              Type(r.Type),
+		Status:            Status(r.Status),
+		IsPublic:          r.IsPublic,
+		ProjectID:         r.ProjectID,
+		AIMetadata:        r.AiMetadata,
+		ReadingTimeMin:    int(r.ReadingTimeMin),
+		CoverImage:        r.CoverImage,
+		CreatedBy:         r.CreatedBy,
+		ProposalRationale: r.ProposalRationale,
+		PublishedAt:       r.PublishedAt,
+		CreatedAt:         r.CreatedAt,
+		UpdatedAt:         r.UpdatedAt,
 	}
 	if r.SeriesID != nil {
 		c.SeriesID = r.SeriesID

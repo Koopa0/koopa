@@ -59,18 +59,20 @@ func (s *Store) Contents(ctx context.Context, f Filter) ([]Content, int, error) 
 	for i := range rows {
 		r := rows[i]
 		contents[i] = Content{
-			ID:             r.ID,
-			Slug:           r.Slug,
-			Title:          r.Title,
-			Excerpt:        r.Excerpt,
-			Type:           Type(r.Type),
-			Status:         Status(r.Status),
-			IsPublic:       r.IsPublic,
-			ProjectID:      r.ProjectID,
-			ReadingTimeMin: int(r.ReadingTimeMin),
-			PublishedAt:    r.PublishedAt,
-			CreatedAt:      r.CreatedAt,
-			UpdatedAt:      r.UpdatedAt,
+			ID:                r.ID,
+			Slug:              r.Slug,
+			Title:             r.Title,
+			Excerpt:           r.Excerpt,
+			Type:              Type(r.Type),
+			Status:            Status(r.Status),
+			IsPublic:          r.IsPublic,
+			ProjectID:         r.ProjectID,
+			ReadingTimeMin:    int(r.ReadingTimeMin),
+			CreatedBy:         r.CreatedBy,
+			ProposalRationale: r.ProposalRationale,
+			PublishedAt:       r.PublishedAt,
+			CreatedAt:         r.CreatedAt,
+			UpdatedAt:         r.UpdatedAt,
 		}
 		ids[i] = r.ID
 	}
