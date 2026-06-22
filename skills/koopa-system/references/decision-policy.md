@@ -4,13 +4,13 @@
 
 | Signal | Action |
 |---|---|
-| Question ("what / show / how is") | Read-only query tool (`brief`, `search_knowledge`, `learning_read`) |
-| Reference to existing entity | Transition / update on that entity (`manage_plan(update_entry)`) |
-| Active learning session exists | `record_attempt` / `end_session` |
+| Question ("what / show / how is") | Read-only query tool (`brief`, `search_knowledge`, `list_tasks`, `list_readings`, `get_reading`, `project_progress`) |
 | Capture impulse ("add / remind me / 記一下") | `capture_inbox` |
-| Commitment intent ("create goal / plan project") | 對話起草 → 請 Koopa 在 admin 表單建立（no MCP propose tool） |
-| Reflection intent ("how did today go / 反思") | 寫進 agent 自己的 `.md`（agent_notes feature 已退役） |
-| Learning intent ("let's practice / 開始學") | `start_session` |
+| Plan today | `plan_day`（候選 plan） |
+| Commitment intent ("create area / goal / project") | `propose_area` / `propose_goal` / `propose_project`（inert draft，Koopa 在 admin activate） |
+| Finished content piece ("這篇可以推") | `propose_content`（進審核佇列，Koopa 在 admin publish / reject） |
+| Self-clear a todo you created | `resolve_task`（done / archived / dismissed） |
+| Reflection intent ("how did today go / 反思") | 寫進 agent 自己的 `.md` |
 
 ## Maturity gate
 
@@ -18,31 +18,27 @@
 |---|---|---|
 | M0 | vague, exploratory, no outcome | Conversation only — write nothing |
 | M1 | direction exists, missing specifics | `capture_inbox`，或記進 agent 自己的 `.md` |
-| M2 | outcome + rough scope | 對話起草 commitment 草稿 → 請 Koopa 在 admin 表單建立 |
-| M3 | specific, time-bound, complete | 同上 — 草稿完整，Koopa 在 admin 表單快速建立 |
+| M2 | outcome + rough scope | `propose_area` / `propose_goal` / `propose_project`（inert draft），Koopa 在 admin activate |
+| M3 | specific, time-bound, complete | 同上 — draft 完整，Koopa 在 admin 快速 activate |
 
 If uncertain between two levels, pick the lower one.
 
-## Commitment entities — admin HTTP forms only (no MCP)
+## Commitment proposals (MCP inert draft → admin activate)
 
-高承諾實體不在 MCP surface；agent 在對話中起草，Koopa（human）在 admin 表單建立：
+agent 用 `propose_*` 起草 inert draft（`status=proposed`，完全惰性 — 不進 brief / Today / active 讀取）；activate（proposed→active / in_progress）與 reject（hard delete）全在 admin，由 Koopa（human）完成。只 materialize Koopa 參與過的對話 — 絕不來自排程執行：
 
-| Entity | Admin form |
-|---|---|
-| Goal | `POST /api/admin/commitment/goals` |
-| Milestone | `POST /api/admin/commitment/goals/{id}/milestones` |
-| Project | `POST /api/admin/commitment/projects` |
-| Hypothesis | admin 表單（`/api/admin/learning/hypotheses/*`） |
-| Learning plan (shell) | `POST /api/admin/learning/plans` |
-| Learning domain (5 core domains seeded at bootstrap) | `POST /api/admin/learning/domains` |
+| Entity | MCP draft tool | Activate |
+|---|---|---|
+| Area | `propose_area` | admin triage（proposed→active；reject cascade 其 proposed 子 goal） |
+| Goal（連帶 milestones） | `propose_goal` | admin triage（proposed→in_progress；reject 連帶 milestones cascade） |
+| Project | `propose_project` | admin triage（proposed→in_progress；reject 後 todo 解除連結存活） |
+| Milestone（獨立） | 對話起草 | `POST /api/admin/commitment/goals/{id}/milestones` |
 
 ## Direct-commit entities (MCP)
 
 - Todo (inbox) — `capture_inbox`
 - Daily plan entry — `plan_day`
-- Attempt + observation — `record_attempt` (within active session)
-- Learning session start — `start_session`
-- Plan entries (into existing plan) — `manage_plan(add_entries)`
+- Finished content into the review queue — `propose_content`（lands `status=review`，Koopa 在 admin publish / reject）
 
 ## Agent memory
 
@@ -51,41 +47,9 @@ agent 的內部敘事、計畫、決策、反思 → 寫進 agent 自己的 `.md
 
 ## Never via MCP
 
-- Area (human life decision)
-- Goal / project / milestone / hypothesis / learning_plan / learning_domain (admin forms only)
-- Content 發布生命週期 (admin HTTP only)
+- Milestone 建立（admin form only）
+- Commitment activation（area / goal / project 的 activate / reject 在 admin triage）
+- Content 發布生命週期（`propose_content` 只進審核佇列；publish 是 admin HTTP）
+- Reading shelf / ヨルシカ song shelf 寫入（MCP 只讀，admin 寫）
 - Agent registry row (reconciled from `BuiltinAgents()` at startup)
 - `activity_events` (written only by AFTER triggers on covered tables)
-
-## Concept auto-creation boundary
-
-Auto-create allowed in `record_attempt` if ALL:
-
-- Leaf concept (no children)
-- Same domain as active session
-- Kind inferable from context (pattern / skill / principle)
-- No `parent_id` being set
-
-Otherwise → 對話起草，請 Koopa 在 admin 表單建立 hypothesis / 處理 structural concept changes.
-
-## Observation confidence
-
-`confidence` is a label, not a gate. Mark honestly:
-
-- **high** — directly evidenced by attempt outcome, user-stated gap, behavior-confirmed
-- **low** — coach-inferred, user didn't name it, uncertain severity
-
-3-observation floor: a concept with fewer than 3 filtered observations
-always reports `developing`, regardless of signal mix. Marking a signal
-`low` cannot lift a concept out of `developing` under the default
-`confidence_filter=high` read.
-
-## Plan entry completion (mandatory fields)
-
-When Claude marks a plan entry completed via
-`manage_plan(action=update_entry, status=completed)`, you MUST provide:
-
-- `completed_by_attempt_id` — the attempt that informed the decision
-- `reason` — attempt outcome + reasoning
-
-Both are required. A completion without them is a policy violation.

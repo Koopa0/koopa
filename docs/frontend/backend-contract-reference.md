@@ -75,9 +75,10 @@ field). Unknown target / no attempts → `[]` (never 404); out-of-range or non-n
 
 **Hypothesis state enum (5):** `draft · unverified · verified · invalidated · archived`.
 Machine: `draft → unverified → verified | invalidated → archived`. `draft` is the
-agent-created pre-endorsement state (MCP `draft_hypothesis`, v3.1 inert drafts) —
-inert: excluded from brief(morning), the Today aggregate, and every dashboard;
-visible ONLY in the admin hypotheses list (render as a drafts/triage group).
+pre-endorsement state — inert: excluded from brief(morning), the Today aggregate,
+and every dashboard; visible ONLY in the admin hypotheses list (render as a
+drafts/triage group). The agent MCP surface does not write hypotheses; this is
+an admin-HTTP surface.
 
 **Hypothesis create** `POST /learning/hypotheses` `{ "claim": "…", "invalidation_condition": "…", "content"?: "…", "observed_date"?: "YYYY-MM-DD" }` → lands `state=unverified` (admin create IS the endorsement). (`created_by` from the session actor.)
 **List** `GET /learning/hypotheses?state=<enum>&page=&per_page=` — optional state filter; `state=draft` is the triage view; bad value 400.
@@ -108,7 +109,7 @@ Lifecycle: `POST /learning/hypotheses/{id}/{verify|invalidate|archive|evidence}`
 `{ streak_days, concepts: { count_total, counts_by_domain, rows[] }, recent_observations[], week_activity: [{ "date": "YYYY-MM-DD", "attempts": 0 }] }`.
 `week_activity` = the last 7 UTC days of attempt logging (`learning_attempts.created_at`), zero-filled, today last.
 **Summary** `GET /learning/summary` → `{ streak_days, domains: [DomainMastery] }` — the lightweight streak + per-domain mastery envelope (no due-review data).
-**Next up** `GET /learning/next-target?domain=` → `{ empty, concept_slug, concept_name, domain, mastery_stage, severity, days_since_practice, reason }` — the single concept to practice next plus a one-line human `reason`, for the dashboard "Next up" card. Session-independent: it reads the severity-ordered weakness signal over the last 30 days (NOT the MCP `learning_read(view=next_target)` session-scoped variation recommender). Optional `domain` scopes to one practice track.
+**Next up** `GET /learning/next-target?domain=` → `{ empty, concept_slug, concept_name, domain, mastery_stage, severity, days_since_practice, reason }` — the single concept to practice next plus a one-line human `reason`, for the dashboard "Next up" card. Session-independent: it reads the severity-ordered weakness signal over the last 30 days. This is an admin-HTTP dashboard surface, not the agent MCP surface. Optional `domain` scopes to one practice track.
 `severity` ∈ `critical · moderate · minor` (dominant band, `""` when no severity counts set); `mastery_stage` ∈ `struggling · developing` (a recommended concept is always weakness-led, never `solid`).
 **Empty state** — when there is no weakness signal in the window the response is **200** (never 404) with `{ "empty": true, "reason": "no concepts need practice in the last 30 days — nothing to recommend yet" }`; the concept fields are omitted (`omitempty`). The card renders its empty state from `reason`.
 
@@ -143,10 +144,10 @@ No rating field, ever — reflections are the only evaluation. DATE fields are `
 
 ---
 
-## ✅ Alignment points — RESOLVED (2026-06-07)
+## Wire-shape notes
 
-1. **#9 plan-detail:** kept `progress` (matches `manage_plan(progress)` + the `Progress` type); de-embedded. Real wire shape: `{ "plan": {...}, "entries": [EntryDetail], "progress": { total, completed, skipped, substituted, remaining } }` — plan fields nest under `plan`, NOT flat. Same fix applied to session detail → `{ "session": {...}, "attempts": [...] }`.
-2. **Today aggregate:** WIRED to the contracted brief(morning) shape (no longer a stub; stale task/agent_note fields dropped). Contract below.
+1. **Plan detail** carries a `progress` block (the `Progress` type), de-embedded. Wire shape: `{ "plan": {...}, "entries": [EntryDetail], "progress": { total, completed, skipped, substituted, remaining } }` — plan fields nest under `plan`, NOT flat. Session detail follows the same nesting → `{ "session": {...}, "attempts": [...] }`.
+2. **Today aggregate** follows the contracted brief(morning) shape. Contract below.
 
 ## Daily — Today (real, wired)
 

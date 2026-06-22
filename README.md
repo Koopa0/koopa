@@ -26,13 +26,13 @@
 
 **koopa** is a private-by-default personal OS where AI agents share a semantic runtime — so the AI reads your state, not your prompts.
 
-It's 8 a.m. You ask for the day. The planner doesn't ask what's on your plate — it reads yesterday's unfinished daily plan, this week's goal progress, the learning targets your last sessions flagged as weak, and the RSS highlights the ingest pipeline collected overnight, and hands you one briefing. You skim it, set today's plan, and start. Through the day the agents stay in their lane: the planner sets the day, the learning coach runs a practice session, any agent searches the corpus or co-authors a note — all in conversation with you. Nothing high-stakes happens behind your back: every goal, project, milestone, and published article is **your** decision, made in the admin UI. The agents surface structure; you make the call.
+It's 8 a.m. You ask for the day. The planner doesn't ask what's on your plate — it reads yesterday's unfinished daily plan, this week's goal progress, the projects that have gone quiet, and the RSS highlights the ingest pipeline collected overnight, and hands you one briefing. You skim it, set today's plan, and start. Through the day the agents stay in their lane: the planner sets the day and drafts a goal or project proposal, any agent searches the corpus, and a finished article gets pushed into your review queue — all in conversation with you. Nothing high-stakes happens behind your back: every goal, project, milestone, and published article is **your** decision, made in the admin UI. The agents surface structure; you make the call.
 
 ## Why this exists
 
 Most AI integrations are stateless: every conversation starts from zero, every agent is a fresh amnesiac, and you spend your time re-explaining context. The more agents you add — Claude Code in your editor, Cowork agents on schedulers, background summarizers — the worse it gets, because each produces output the others never see.
 
-koopa models the work instead. Goals, projects, todos, learning attempts, daily plans, content drafts, cognitive observations — all first-class entities with precise schemas and their own lifecycles, in one store every agent reads and writes through MCP. When the learning coach opens a practice session, it already knows which concepts you struggled with last week and which plan you're executing. When the planner assembles your morning briefing, it reads yesterday's daily plan and surfaces what didn't get done — not because you summarized it, but because the state is there. Understanding is queried, not reconstructed; there is no drift between agents and no "I think you mentioned…".
+koopa models the work instead. Areas, goals, projects, milestones, todos, daily plans, content, the reading shelf — all first-class entities with precise schemas and their own lifecycles, in one store every agent reads through MCP and writes through bounded workflow steps. When the planner assembles your morning briefing, it reads yesterday's daily plan and surfaces what didn't get done — not because you summarized it, but because the state is there. When it proposes a new goal, the draft lands inert in your triage queue with the milestones already laid out. Understanding is queried, not reconstructed; there is no drift between agents and no "I think you mentioned…".
 
 ## How it works
 
@@ -46,8 +46,7 @@ The working roster (`internal/agent/registry.go::BuiltinAgents()`):
 
 | Identity | Runs as | Role |
 |---|---|---|
-| `planner` | Claude Cowork | Morning briefing, candidate day plans, inbox capture, search, note co-author |
-| `learning-studio` | Claude Cowork | Learning coach — sessions, attempts, curriculum |
+| `planner` | Claude Cowork | Morning briefing, candidate day plans, inbox capture, search, PARA proposals |
 | `koopa0-dev` / `go-spec` | Claude Code | Development sessions in this repo |
 | `codex` | Codex CLI | Dev collaborator — repo work and cross-review sessions |
 | `hermes` | Claude Code (scheduled) | Curates the personal Obsidian vault on assigned cron jobs |
@@ -65,7 +64,7 @@ Two structural invariants hold:
 
 ### Autonomy with a gate
 
-Agents capture a raw todo to your inbox, draft a note, run a search, recommend the next learning target — useful, low-stakes flows. High-commitment entities — goals, projects, milestones, hypotheses, learning plans, learning domains, and published content — are created **only through the admin UI** (authenticated HTTP), by you. The agent surfaces the option in conversation; you commit it.
+Agents capture a raw todo to your inbox, draft an inert area / goal / project proposal, push a finished article into your review queue, run a search — useful, low-stakes flows. Activating a proposal, creating a milestone, and publishing content are **only through the admin UI** (authenticated HTTP), by you. The agent surfaces the option in conversation and drafts it inert; you commit it.
 
 That boundary is what makes the autonomy useful: agents can run on their own _because_ the commitment surface is yours. Without it, autonomy floods the system with entities you never decided to keep. A system that makes decisions for you eventually makes you worse at making them.
 
@@ -73,33 +72,33 @@ That boundary is what makes the autonomy useful: agents can run on their own _be
 
 The system models three bounded contexts, each with its own vocabulary and lifecycle:
 
-**Commitment** — PARA + GTD. Areas (ongoing responsibilities), goals (outcomes with optional deadlines), milestones (binary progress checkpoints), projects (execution vehicles), todos (personal GTD items), daily plan items (today's commitments). The daily plan has **no auto-carryover**: yesterday's unfinished work surfaces in the morning briefing but does not roll forward on its own. Confrontation is the feature — silent carryover erodes your relationship with your own commitments.
+**Commitment** — PARA + GTD. Areas (ongoing responsibilities), goals (outcomes with optional deadlines), milestones (binary progress checkpoints), projects (execution vehicles), todos (personal GTD items), daily plan items (today's commitments). Agents draft areas, goals, and projects as **inert proposals** (`status=proposed`) that surface only in your triage queue; you activate or reject each one. The daily plan has **no auto-carryover**: yesterday's unfinished work surfaces in the morning briefing but does not roll forward on its own. Confrontation is the feature — silent carryover erodes your relationship with your own commitments.
 
-**Knowledge** — five first-party content types (`article`, `essay`, `build-log`, `til`, `digest`) with an editorial lifecycle (`draft → review → published → archived`); Zettelkasten notes in a separate table with six sub-kinds (`solve-note`, `concept-note`, `debug-postmortem`, `decision-log`, `reading-note`, `musing`) and a maturity lifecycle (`seed → stub → evergreen → needs_revision → archived`); RSS feeds with scheduled fetch and auto-disable on consecutive failures. Content is authored in the admin UI; agents co-author notes via MCP.
+**Knowledge** — five first-party content types (`article`, `essay`, `build-log`, `til`, `digest`) with an editorial lifecycle (`draft → review → published → archived`); a reading shelf (books plus a dated reflection diary) and a ヨルシカ song shelf (songs plus reflections); RSS feeds with scheduled fetch and auto-disable on consecutive failures. Content is authored in the admin UI; an agent can push a finished draft into the review queue via `propose_content`, and the reading and song shelves are read-only on the MCP surface.
 
-**Learning** — a concept ontology, learning targets (individual problems, chapters, drills), sessions with a declared mode, attempts with an outcome taxonomy, confidence-labeled observations, learning plans with ordered entries. It is a concept-mastery and weakness-review coach grounded in deliberate practice — Ericsson for attempt structure, Bjork for desirable difficulty. The signal is mastery and weakness derived from observed attempts: the coach knows which concepts decayed and which patterns you miss, and steers the next session from that.
-
-The vocabulary splits are load-bearing. A `note` is a private Zettelkasten artifact with its own maturity lifecycle; published `content` is a different table with a different lifecycle. Conflating them breaks the system's guarantees.
+The vocabulary splits are load-bearing. A proposed area / goal / project is inert until you activate it; published `content` carries its own editorial lifecycle and only an owner publishes. Conflating a draft proposal with an active commitment breaks the system's guarantees.
 
 ## Knowledge retrieval
 
-Any agent queries published content and Zettelkasten notes through MCP via `search_knowledge`, backed by hybrid retrieval: PostgreSQL full-text search (tsvector with websearch syntax, GIN-indexed) and pgvector semantic search (HNSW, cosine) fused per corpus with reciprocal-rank fusion. A background reconciler embeds new contents and notes as they land (`gemini-embedding-2`), so the semantic side stays current without touching any request path; without `GEMINI_API_KEY`, search runs FTS-only.
+Any agent queries the corpus through MCP via `search_knowledge` — published content, the reading shelf, and the song shelf — backed by hybrid retrieval: PostgreSQL full-text search (tsvector with websearch syntax, GIN-indexed) and pgvector semantic search (HNSW, cosine) fused per corpus with reciprocal-rank fusion. A background reconciler embeds rows as they land (`gemini-embedding-2`), so the semantic side stays current without touching any request path; without `GEMINI_API_KEY`, search runs FTS-only.
 
 ## The agent toolset
 
-Eleven MCP tools — small on purpose. Everything an agent can do is a workflow step with valid transitions and invariant checks, never raw table access:
+Thirteen MCP tools — small on purpose. Everything an agent can do is a workflow step with valid transitions and invariant checks, never raw table access:
 
 | Tool | What it does |
 |---|---|
-| `brief` | Read-only planning-state pull. `mode=morning` is the daily briefing (overdue / today / committed / upcoming todos, active goals, unverified hypotheses, RSS highlights, content pipeline); `mode=reflection` is the end-of-day plan-vs-actual retrospective. |
-| `search_knowledge` | Search across content and notes — the agent's window into what you know. |
+| `brief` | Read-only planning-state pull. `mode=morning` is the daily briefing (overdue / today / committed / upcoming todos, active goals, RSS highlights, content pipeline); `mode=reflection` is the end-of-day plan-vs-actual retrospective. |
+| `search_knowledge` | Hybrid search across content, the reading shelf, and the song shelf — the agent's window into the corpus. |
+| `list_readings` / `get_reading` | Read-only view of the reading shelf — the books you're reading and your reflection diary. |
+| `project_progress` | Read-only PARA momentum/stalled intelligence for projects, goals, and areas, computed live and counting owner activity only. |
 | `capture_inbox` | Drop a raw todo into your GTD inbox; you clarify it later. |
 | `plan_day` | Set today's plan as one atomic replacement. No auto-carryover. |
-| `start_session` / `record_attempt` / `end_session` | Learning-session lifecycle: begin, record attempts + observations, end with a summary. |
-| `learning_read` | Read-only learning analytics (`view = overview \| next_target \| attempts \| session_progress`). |
-| `manage_plan` | Learning-plan curriculum (`action = add_entries \| remove_entries \| update_entry \| reorder \| progress`). |
+| `propose_area` / `propose_goal` / `propose_project` | Draft an inert PARA proposal (`status=proposed`) for you to activate or reject in admin triage. |
+| `list_tasks` / `resolve_task` | Read back the disposition of the todos an agent created, and self-clear the ones it has finished. |
+| `propose_content` | Push a finished content piece into the editorial review queue (`status=review`); you publish or reject it. |
 
-`brief` and `learning_read` are read-only; the mutating tools each encapsulate one workflow step with required fields and valid transitions, so the rules live in the tool layer, not in prompt instructions scattered across agents.
+`brief`, `search_knowledge`, `list_readings`, `get_reading`, `list_tasks`, and `project_progress` are read-only; the mutating tools each encapsulate one workflow step with required fields and valid transitions, so the rules live in the tool layer, not in prompt instructions scattered across agents.
 
 ## What this enables
 
@@ -107,13 +106,13 @@ Eleven MCP tools — small on purpose. Everything an agent can do is a workflow 
 
 **Briefings grounded in yesterday.** The planner reads yesterday's daily plan, checks which items completed / deferred / dropped, and shows goal progress against milestones — generated from state, not from your recollection.
 
-**Coaching grounded in evidence.** The learning coach sees that your last three sliding-window attempts produced pattern-recognition failures with moderate severity, and that mastery of the concept declined over two weeks. The coaching is specific because the evidence is — and every observation carries a confidence label that controls whether it counts toward the primary view.
+**Momentum grounded in real activity.** `project_progress` computes which projects and areas have gone quiet, counting owner activity only — agent and system writes never register as progress — so a project that only agents touched still shows as stalled until you act on it.
 
 **One audited trail.** Because every mutation writes an `activity_events` row with its actor, the whole system has a single structural history — who changed what, when — that no agent can opt out of.
 
 ## Scope and limits
 
-A single-admin system by design: no RBAC, no multi-tenant, no "share with a colleague" — one human, several AI agents. The admin UI is private; only a subset of content (articles, build logs, TILs, the project portfolio) renders on the public site, and only after you explicitly publish it. Goals, attempts, and notes stay private. If you want a team wiki or a Notion clone, this is not it.
+A single-admin system by design: no RBAC, no multi-tenant, no "share with a colleague" — one human, several AI agents. The admin UI is private; only a subset of content (articles, build logs, TILs, the project portfolio) renders on the public site, and only after you explicitly publish it. Goals and the reading shelf stay private. Private Zettelkasten knowledge lives in Obsidian; koopa0.dev is the publishing layer. If you want a team wiki or a Notion clone, this is not it.
 
 ## Tech stack
 
@@ -121,10 +120,10 @@ A single-admin system by design: no RBAC, no multi-tenant, no "share with a coll
 | ---------------- | ----------------------------------------------------------------------------- |
 | Backend          | Go 1.26+ (stdlib-first), PostgreSQL 17, pgx/v5, sqlc                           |
 | Search           | Hybrid: PostgreSQL FTS (tsvector + websearch + GIN) + pgvector semantic (HNSW, cosine), RRF-fused; FTS-only without `GEMINI_API_KEY` |
-| Embedding        | `gemini-embedding-2` (1536d Matryoshka); background reconciler keeps contents + notes embedded |
+| Embedding        | `gemini-embedding-2` (1536d Matryoshka); background reconciler keeps the search corpus embedded |
 | Scheduling       | Agent cadences declared in `internal/agent/registry.go`; execution driven by an external Cowork/Desktop runner; audited via `process_runs` |
 | Frontend         | Angular 22 (SSR, zoneless, Signal Forms), Tailwind CSS v4                      |
-| AI collaboration | Claude (Cowork + Code), Codex CLI, MCP (11 workflow tools)                    |
+| AI collaboration | Claude (Cowork + Code), Codex CLI, MCP (13 workflow tools)                    |
 | Cache            | Ristretto (in-memory, single machine)                                         |
 | Object storage   | Cloudflare R2 (S3-compatible)                                                  |
 

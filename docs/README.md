@@ -28,7 +28,6 @@ MUST be updated):
 | Document | Tier | Runtime truth? | Notes |
 |---|---|---|---|
 | `backend-semantic-contract.md` | 4 (canonical) | **Yes** — shared vocabulary + cross-entity contract | 7 sections (§1–§7): core domain vocabulary is §3, domain boundaries §4. The MCP tool inventory lives in `internal/mcp/ops/catalog.go::All()` (§5 points there). |
-| `LEARNING-CONTRACT.md` | 4 (canonical companion) | **Yes** — concept-mastery signal + the learning tool surface | Single mastery axis, no FSRS. |
 | `audit-prompts/*.md` | 5 (operational) | **No** — executable prompt templates | Stage prompts for the adversarial-review protocol (`.claude/rules/adversarial-review.md`); templates, not contracts. |
 
 MCP write-tool authorization is identity-based (platform / author / self), enforced in code at `internal/mcp/authz.go` (roster: `internal/agent/registry.go`).
@@ -52,12 +51,11 @@ automated gates. Listed for a future task; none is wired today.
 2. **Stale test-filename references.** Same idea, scoped to `*_test.go`
    filenames named in comments — assert the referenced test file exists
    (would have caught `store_integration_test.go` / `server_test.go`).
-3. **Retired-vocabulary gate.** `forbidigo` (already enabled in
-   `.golangci.yml`) configured to reject `flow`, `bookmark_rss`,
-   `resolve_directive` as identifiers in new non-test code. (`p0/p1/p2`
-   are currently accepted input aliases — see contract §3 (priority) and §7
-   Open Question #3; keep-vs-remove is an open decision — so they are NOT in
-   this list.)
+3. **Vocabulary-discipline gate.** `forbidigo` (already enabled in
+   `.golangci.yml`) configured to keep a fixed list of off-vocabulary
+   identifiers out of new non-test code. (`p0/p1/p2` are currently accepted
+   input aliases — see contract §3 (priority) and §7 Open Question #2;
+   keep-vs-remove is an open decision — so they are NOT in this list.)
 4. **Search-corpus pin.** A unit test asserting `search_knowledge`'s
    `selectSources` corpus matches a documented constant, so README/corpus
    claims and code cannot silently diverge again.

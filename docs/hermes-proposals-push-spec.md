@@ -44,7 +44,7 @@ hypotheses for exactly this reason).
   - **absent** → **rejected** (Koopa dropped it)
 - Feed accept/reject counts into hermes's own surfacing heuristic (the
   readback.py ledger) so it proposes more of what Koopa keeps, less of what he drops.
-- Once hermes has read an item's disposition and no longer needs to track it,
+- Once hermes has read an item's disposition and is done tracking it,
   `resolve_task(id, state=archived, as=hermes)` to self-clear it.
 
 ## Notes / boundaries
