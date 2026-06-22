@@ -235,97 +235,6 @@ func (ns NullGoalStatus) Value() (driver.Value, error) {
 	return string(ns.GoalStatus), nil
 }
 
-type NoteKind string
-
-const (
-	NoteKindSolveNote       NoteKind = "solve-note"
-	NoteKindConceptNote     NoteKind = "concept-note"
-	NoteKindDebugPostmortem NoteKind = "debug-postmortem"
-	NoteKindDecisionLog     NoteKind = "decision-log"
-	NoteKindReadingNote     NoteKind = "reading-note"
-	NoteKindMusing          NoteKind = "musing"
-)
-
-func (e *NoteKind) Scan(src interface{}) error {
-	switch s := src.(type) {
-	case []byte:
-		*e = NoteKind(s)
-	case string:
-		*e = NoteKind(s)
-	default:
-		return fmt.Errorf("unsupported scan type for NoteKind: %T", src)
-	}
-	return nil
-}
-
-type NullNoteKind struct {
-	NoteKind NoteKind `json:"note_kind"`
-	Valid    bool     `json:"valid"` // Valid is true if NoteKind is not NULL
-}
-
-// Scan implements the Scanner interface.
-func (ns *NullNoteKind) Scan(value interface{}) error {
-	if value == nil {
-		ns.NoteKind, ns.Valid = "", false
-		return nil
-	}
-	ns.Valid = true
-	return ns.NoteKind.Scan(value)
-}
-
-// Value implements the driver Valuer interface.
-func (ns NullNoteKind) Value() (driver.Value, error) {
-	if !ns.Valid {
-		return nil, nil
-	}
-	return string(ns.NoteKind), nil
-}
-
-type NoteMaturity string
-
-const (
-	NoteMaturitySeed          NoteMaturity = "seed"
-	NoteMaturityStub          NoteMaturity = "stub"
-	NoteMaturityEvergreen     NoteMaturity = "evergreen"
-	NoteMaturityNeedsRevision NoteMaturity = "needs_revision"
-	NoteMaturityArchived      NoteMaturity = "archived"
-)
-
-func (e *NoteMaturity) Scan(src interface{}) error {
-	switch s := src.(type) {
-	case []byte:
-		*e = NoteMaturity(s)
-	case string:
-		*e = NoteMaturity(s)
-	default:
-		return fmt.Errorf("unsupported scan type for NoteMaturity: %T", src)
-	}
-	return nil
-}
-
-type NullNoteMaturity struct {
-	NoteMaturity NoteMaturity `json:"note_maturity"`
-	Valid        bool         `json:"valid"` // Valid is true if NoteMaturity is not NULL
-}
-
-// Scan implements the Scanner interface.
-func (ns *NullNoteMaturity) Scan(value interface{}) error {
-	if value == nil {
-		ns.NoteMaturity, ns.Valid = "", false
-		return nil
-	}
-	ns.Valid = true
-	return ns.NoteMaturity.Scan(value)
-}
-
-// Value implements the driver Valuer interface.
-func (ns NullNoteMaturity) Value() (driver.Value, error) {
-	if !ns.Valid {
-		return nil, nil
-	}
-	return string(ns.NoteMaturity), nil
-}
-
 type ProjectStatus string
 
 const (
@@ -444,7 +353,7 @@ type ActivityEvent struct {
 	CreatedAt time.Time       `json:"created_at"`
 }
 
-// DB projection of the Go BuiltinAgents() registry. Rows are upserted at startup by agent.SyncToTable. Stores identity only (name, platform, status). Provenance columns (created_by on notes/todos/areas/goals/projects) use ON DELETE RESTRICT so historical records cannot dangle. Removed registry entries transition to status=retired rather than being deleted.
+// DB projection of the Go BuiltinAgents() registry. Rows are upserted at startup by agent.SyncToTable. Stores identity only (name, platform, status). Provenance columns (created_by on todos/areas/goals/projects) use ON DELETE RESTRICT so historical records cannot dangle. Removed registry entries transition to status=retired rather than being deleted.
 type Agent struct {
 	// Unique agent identifier. Used as the caller identity (as: field) in MCP tool calls and as FK target for created_by / assignee / curated_by columns. Format: lowercase, must start with a letter, alphanumeric + hyphens.
 	Name string `json:"name"`
@@ -488,7 +397,7 @@ type Area struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
-// First-party publishable knowledge layer. Five content types (article, essay, build-log, til, digest) share one editorial lifecycle: draft → review → published → archived. The review state is a two-actor handoff signal — Claude marks a draft ready (set_content_review_state), human admin publishes (publish_content). Notes (Zettelkasten) live in a separate notes table with maturity-based lifecycle — intentionally not mixed here. published status and published_at are tied by chk_content_publication; is_public requires published by chk_content_public_requires_published.
+// First-party publishable knowledge layer. Five content types (article, essay, build-log, til, digest) share one editorial lifecycle: draft → review → published → archived. The review state is a two-actor handoff signal — Claude marks a draft ready (set_content_review_state), human admin publishes (publish_content). published status and published_at are tied by chk_content_publication; is_public requires published by chk_content_public_requires_published.
 type Content struct {
 	ID uuid.UUID `json:"id"`
 	// URL-safe identifier. Globally unique. Used in public URLs. Format (chk_content_slug_format): hyphen-separated segments, no whitespace or slash, no leading/trailing/consecutive hyphens. Unicode letters/numbers (incl. CJK) allowed — a 中日文 slug carries UTF-8 in the URL.
@@ -496,7 +405,7 @@ type Content struct {
 	Title   string `json:"title"`
 	Body    string `json:"body"`
 	Excerpt string `json:"excerpt"`
-	// Content format: article, essay, build-log, til, digest. All are public-facing first-party content going through the review lifecycle. Notes are NOT a content type — they live in the notes table.
+	// Content format: article, essay, build-log, til, digest. All are public-facing first-party content going through the review lifecycle.
 	Type ContentType `json:"type"`
 	// Lifecycle: draft → review → published. review = Claude-submitted, awaiting human publish. archived = soft delete. Transition review → published is human-admin only (enforced at MCP tool boundary).
 	Status ContentStatus `json:"status"`
@@ -650,32 +559,6 @@ type Milestone struct {
 	CreatedAt time.Time `json:"created_at"`
 	// Application-managed. Set explicitly in UPDATE queries.
 	UpdatedAt time.Time `json:"updated_at"`
-}
-
-// Zettelkasten knowledge artifacts — Koopa-private. Maturity-based lifecycle (seed → evergreen → archived), no publication state. Public-facing content (articles, essays, etc.) lives in contents — a separate entity with its own draft → review → published editorial lifecycle. Publication state and maturity state are distinct state machines; notes and contents are kept as separate tables rather than single-table inheritance for this reason.
-type Note struct {
-	ID uuid.UUID `json:"id"`
-	// URL-safe identifier. Globally unique within notes. Same format rules as contents.slug.
-	Slug  string `json:"slug"`
-	Title string `json:"title"`
-	Body  string `json:"body"`
-	// Note sub-type. Six values: solve-note (LeetCode problem write-up), concept-note (cross-target pattern synthesis), debug-postmortem (production debug analysis), decision-log (technical decision record), reading-note (book chapter takeaway), musing (unstructured thought). Uses the note_kind ENUM.
-	Kind NoteKind `json:"kind"`
-	// Refinement stage: seed (just captured), stub (skeleton), evergreen (verified), needs_revision (known issue), archived (no longer maintained). Default seed on creation; transitioned by update_note_maturity MCP tool. archived is operationally terminal but not one-way — recovery via update_note_maturity is supported.
-	Maturity NoteMaturity `json:"maturity"`
-	// Which agent wrote this note. FK to agents. RESTRICT on agent deletion.
-	CreatedBy string `json:"created_by"`
-	// Free-form JSONB. If a field needs WHERE/JOIN/GROUP BY ≥ 3 times, promote to a column.
-	Metadata json.RawMessage `json:"metadata"`
-	// AI pipeline metadata: {summary, keywords, extracted_concepts}. Set by background enrichment.
-	AiMetadata json.RawMessage `json:"ai_metadata"`
-	// pgvector embedding (1536d) from gemini-embedding-2. Used by search_knowledge.
-	Embedding *pgvector_go.Vector `json:"embedding"`
-	CreatedAt time.Time           `json:"created_at"`
-	// Application-managed. Set explicitly in UPDATE queries.
-	UpdatedAt time.Time `json:"updated_at"`
-	// Generated tsvector for full-text search. Mirrors contents.search_vector shape.
-	SearchVector string `json:"search_vector"`
 }
 
 // Run-history records for background processes. kind discriminates: crawl (internal crawl/fetch runs such as RSS feed collector), agent_schedule (external AI scheduler runs). Kind-specific fields live in metadata. subsystem carries the external-AI-scheduler identifier (only when kind=agent_schedule). RETENTION: 90 days for terminal runs; pending/running rows are operational state.

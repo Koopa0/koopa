@@ -17,11 +17,8 @@ package mcp
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"log/slog"
-	"maps"
 	"os"
-	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -32,9 +29,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/Koopa0/koopa/internal/agent"
-	"github.com/Koopa0/koopa/internal/content"
 	"github.com/Koopa0/koopa/internal/mcp/ops"
-	"github.com/Koopa0/koopa/internal/note"
 	"github.com/Koopa0/koopa/internal/testdb"
 )
 
@@ -81,7 +76,6 @@ func truncateApplicationTables(t *testing.T) {
 		"daily_plan_items",
 		"todos",
 		"contents",
-		"notes",
 		"readings",
 		"milestones",
 		"goals",
@@ -237,21 +231,6 @@ func seedSearchContentAt(t *testing.T, slug, term string, createdAt time.Time) u
 	return id
 }
 
-// seedSearchNote inserts a Zettelkasten note whose title and body contain term.
-// kind must be a valid note_kind enum value.
-func seedSearchNote(t *testing.T, slug, term, kind string) uuid.UUID {
-	t.Helper()
-	var id uuid.UUID
-	if err := testPool.QueryRow(t.Context(),
-		`INSERT INTO notes (slug, title, body, kind, created_by)
-		 VALUES ($1, $2, $3, $4, 'planner') RETURNING id`,
-		slug, term+" note", term+" note body", kind,
-	).Scan(&id); err != nil {
-		t.Fatalf("seedSearchNote(%q): %v", slug, err)
-	}
-	return id
-}
-
 // assertSearchResultShape checks the stable required fields of a single result
 // envelope item. Does not assert order or relevance.
 func assertSearchResultShape(t *testing.T, r *SearchKnowledgeResult) {
@@ -275,25 +254,20 @@ func assertSearchResultShape(t *testing.T, r *SearchKnowledgeResult) {
 		if r.ContentType == "" {
 			t.Errorf("content result missing content_type: %+v", r)
 		}
-	case SourceTypeNote:
-		if r.NoteKind == "" {
-			t.Errorf("note result missing note_kind: %+v", r)
-		}
 	default:
-		t.Errorf("unknown source_type %q (corpus is content|note only)", r.SourceType)
+		t.Errorf("unknown source_type %q (corpus is content only)", r.SourceType)
 	}
 }
 
 // --- corpus inclusion ---
 
-// TestIntegration_SearchKnowledge_CorpusInclusion seeds one content row and one
-// note matching a unique term and asserts both corpora surface, each with a
-// stable result shape and the correct source_type. No order assertion.
+// TestIntegration_SearchKnowledge_CorpusInclusion seeds one content row matching
+// a unique term and asserts the content corpus surfaces it with a stable result
+// shape and the correct source_type. No order assertion.
 func TestIntegration_SearchKnowledge_CorpusInclusion(t *testing.T) {
 	s := setupServer(t)
 	const term = "zqxincl"
 	cID := seedSearchContent(t, "sk-incl-content", term, "draft")
-	nID := seedSearchNote(t, "sk-incl-note", term, "concept-note")
 
 	_, out, err := callHandler(t, s.searchKnowledge, SearchKnowledgeInput{Query: term})
 	if err != nil {
@@ -308,38 +282,29 @@ func TestIntegration_SearchKnowledge_CorpusInclusion(t *testing.T) {
 		t.Errorf("out.Total = %d, want len(results) = %d", out.Total, len(out.Results))
 	}
 
-	var sawContent, sawNote bool
+	var sawContent bool
 	for i := range out.Results {
 		r := &out.Results[i]
 		assertSearchResultShape(t, r)
-		switch r.ID {
-		case cID.String():
+		if r.ID == cID.String() {
 			sawContent = true
 			if r.SourceType != SourceTypeContent {
 				t.Errorf("content row source_type = %q, want %q", r.SourceType, SourceTypeContent)
-			}
-		case nID.String():
-			sawNote = true
-			if r.SourceType != SourceTypeNote {
-				t.Errorf("note row source_type = %q, want %q", r.SourceType, SourceTypeNote)
 			}
 		}
 	}
 	if !sawContent {
 		t.Error("content corpus not represented in results (expected the seeded content row)")
 	}
-	if !sawNote {
-		t.Error("note corpus not represented in results (expected the seeded note)")
-	}
 }
 
 // --- corpus exclusion ---
 
-// TestIntegration_SearchKnowledge_CorpusExclusion seeds a confusable non-corpus
-// note that matches the query term alongside one in-corpus content row, and
-// asserts only corpus source types (content, note) surface in search_knowledge
-// results. The in-corpus content row presence guards against a vacuous pass (a
-// non-matching term would make exclusion trivially true).
+// TestIntegration_SearchKnowledge_CorpusExclusion seeds one in-corpus content
+// row and asserts only the content source type surfaces in search_knowledge
+// results — no non-content entity leaks. The in-corpus content row presence
+// guards against a vacuous pass (a non-matching term would make the exclusion
+// trivially true).
 func TestIntegration_SearchKnowledge_CorpusExclusion(t *testing.T) {
 	s := setupServer(t)
 	const term = "zqxexcl"
@@ -354,7 +319,7 @@ func TestIntegration_SearchKnowledge_CorpusExclusion(t *testing.T) {
 		t.Fatal("expected at least the in-corpus content row; got 0 — term not matching, exclusion assertion would be vacuous")
 	}
 	for _, r := range out.Results {
-		if r.SourceType != SourceTypeContent && r.SourceType != SourceTypeNote {
+		if r.SourceType != SourceTypeContent {
 			t.Errorf("non-corpus entity leaked: source_type = %q", r.SourceType)
 		}
 	}
@@ -397,7 +362,7 @@ func TestIntegration_SearchKnowledge_EmptyResult(t *testing.T) {
 // --- filter: content_type ---
 
 // TestIntegration_SearchKnowledge_ContentTypeFilter pins three behaviors:
-// (1) a valid content_type narrows to the content branch and excludes notes;
+// (1) a valid content_type narrows to the content branch;
 // (2) a valid-but-unmatched content_type yields empty (no error);
 // (3) an UNKNOWN content_type is rejected with a validation error (Track 1I
 //
@@ -407,9 +372,8 @@ func TestIntegration_SearchKnowledge_ContentTypeFilter(t *testing.T) {
 	s := setupServer(t)
 	const term = "zqxctf"
 	seedSearchContent(t, "sk-ctf-content", term, "draft") // type=article
-	seedSearchNote(t, "sk-ctf-note", term, "concept-note")
 
-	t.Run("article narrows to content, excludes notes", func(t *testing.T) {
+	t.Run("article narrows to content", func(t *testing.T) {
 		article := "article"
 		_, out, err := callHandler(t, s.searchKnowledge, SearchKnowledgeInput{Query: term, ContentType: &article})
 		if err != nil {
@@ -444,45 +408,6 @@ func TestIntegration_SearchKnowledge_ContentTypeFilter(t *testing.T) {
 		}
 		if !strings.Contains(err.Error(), "unsupported content_type") {
 			t.Errorf("error = %q, want containing %q", err, "unsupported content_type")
-		}
-	})
-}
-
-// --- filter: note_kind ---
-
-// TestIntegration_SearchKnowledge_NoteKindFilter mirrors the content_type cases
-// for notes: a valid note_kind narrows to the note branch and excludes content;
-// a valid-but-unmatched note_kind yields empty.
-func TestIntegration_SearchKnowledge_NoteKindFilter(t *testing.T) {
-	s := setupServer(t)
-	const term = "zqxnkf"
-	seedSearchContent(t, "sk-nkf-content", term, "draft")
-	seedSearchNote(t, "sk-nkf-note", term, "concept-note")
-
-	t.Run("concept-note narrows to notes, excludes content", func(t *testing.T) {
-		ck := "concept-note"
-		_, out, err := callHandler(t, s.searchKnowledge, SearchKnowledgeInput{Query: term, NoteKind: &ck})
-		if err != nil {
-			t.Fatalf("note_kind=concept-note: %v", err)
-		}
-		if len(out.Results) == 0 {
-			t.Fatal("note_kind=concept-note should match the seeded note")
-		}
-		for _, r := range out.Results {
-			if r.SourceType != SourceTypeNote {
-				t.Errorf("note_kind filter leaked source_type %q", r.SourceType)
-			}
-		}
-	})
-
-	t.Run("unmatched kind yields empty", func(t *testing.T) {
-		sn := "solve-note"
-		_, out, err := callHandler(t, s.searchKnowledge, SearchKnowledgeInput{Query: term, NoteKind: &sn})
-		if err != nil {
-			t.Fatalf("note_kind=solve-note: %v", err)
-		}
-		if len(out.Results) != 0 {
-			t.Errorf("note_kind=solve-note (none seeded) = %d results, want 0", len(out.Results))
 		}
 	})
 }
@@ -560,7 +485,7 @@ func TestIntegration_SearchKnowledge_LimitCaps(t *testing.T) {
 
 	t.Run("default limit returns all three", func(t *testing.T) {
 		// Exact count is load-bearing on seed-term uniqueness: setupServer
-		// truncates contents+notes per test, and every term in this file uses a
+		// truncates contents per test, and every term in this file uses a
 		// distinct "zqx…" prefix, so only the three rows seeded above match.
 		_, out, err := callHandler(t, s.searchKnowledge, SearchKnowledgeInput{Query: term})
 		if err != nil {
@@ -694,17 +619,17 @@ func TestIntegration_SearchKnowledge_DateBoundaryInclusive(t *testing.T) {
 
 // TestIntegration_SearchKnowledge_SourceTypesEndToEnd closes the coverage gap
 // flagged in the search-product contract: source_types selection was only unit-
-// tested (TestSelectSources). It seeds one content row and one note matching the
-// same term and asserts source_types=[content] returns only the content row,
-// source_types=[note] only the note, both returns both, and an unknown token is
-// rejected at the handler with an error (not a silent empty success).
+// tested (TestSelectSources). It seeds one content row matching the term and
+// asserts source_types=[content] returns only the content row, and that any
+// token outside {content} — including the now-retired "note" corpus and an
+// arbitrary "bookmark" — is rejected at the handler with an error (not a silent
+// empty success).
 func TestIntegration_SearchKnowledge_SourceTypesEndToEnd(t *testing.T) {
 	s := setupServer(t)
 	const term = "zqxsrc"
 	cID := seedSearchContent(t, "sk-src-content", term, "draft")
-	nID := seedSearchNote(t, "sk-src-note", term, "concept-note")
 
-	t.Run("content only returns content, excludes note", func(t *testing.T) {
+	t.Run("content only returns content", func(t *testing.T) {
 		_, out, err := callHandler(t, s.searchKnowledge, SearchKnowledgeInput{Query: term, SourceTypes: []string{SourceTypeContent}})
 		if err != nil {
 			t.Fatalf("source_types=[content]: %v", err)
@@ -714,36 +639,19 @@ func TestIntegration_SearchKnowledge_SourceTypesEndToEnd(t *testing.T) {
 		}
 	})
 
-	t.Run("note only returns note, excludes content", func(t *testing.T) {
-		_, out, err := callHandler(t, s.searchKnowledge, SearchKnowledgeInput{Query: term, SourceTypes: []string{SourceTypeNote}})
-		if err != nil {
-			t.Fatalf("source_types=[note]: %v", err)
-		}
-		if len(out.Results) != 1 || out.Results[0].ID != nID.String() {
-			t.Errorf("source_types=[note] = %d results, want exactly the note %s", len(out.Results), nID)
-		}
-	})
-
-	t.Run("both returns content and note", func(t *testing.T) {
-		_, out, err := callHandler(t, s.searchKnowledge, SearchKnowledgeInput{Query: term, SourceTypes: []string{SourceTypeContent, SourceTypeNote}})
-		if err != nil {
-			t.Fatalf("source_types=[content,note]: %v", err)
-		}
-		// Exact count is load-bearing on seed-term uniqueness: setupServer
-		// truncates contents+notes per test, and "zqxsrc" is unique to this
-		// test, so only the one content row + one note seeded above match.
-		if len(out.Results) != 2 {
-			t.Errorf("source_types=[content,note] = %d results, want 2", len(out.Results))
-		}
-	})
-
-	t.Run("unknown source_type rejected, not silent empty", func(t *testing.T) {
-		_, _, err := callHandler(t, s.searchKnowledge, SearchKnowledgeInput{Query: term, SourceTypes: []string{"bookmark"}})
-		if err == nil {
-			t.Fatal("unknown source_type must error, not return empty success")
-		}
-		if !strings.Contains(err.Error(), "unsupported source_type") {
-			t.Errorf("error = %q, want containing %q", err, "unsupported source_type")
+	t.Run("unsupported source_type rejected, not silent empty", func(t *testing.T) {
+		// "note" is a retired corpus token, "bookmark" was never a corpus —
+		// both must be rejected so "unsupported filter" stays distinguishable
+		// from "no match".
+		for _, st := range []string{"note", "bookmark"} {
+			_, _, err := callHandler(t, s.searchKnowledge, SearchKnowledgeInput{Query: term, SourceTypes: []string{st}})
+			if err == nil {
+				t.Errorf("source_types=[%q] must error, not return empty success", st)
+				continue
+			}
+			if !strings.Contains(err.Error(), "unsupported source_type") {
+				t.Errorf("source_types=[%q] error = %q, want containing %q", st, err, "unsupported source_type")
+			}
 		}
 	})
 }
@@ -781,527 +689,6 @@ func TestIntegration_SearchKnowledge_ProjectRejected(t *testing.T) {
 			t.Error("empty project must not filter out the matching content row")
 		}
 	})
-}
-
-// ============================================================================
-// Consolidated from search_relevance_eval_test.go (Track-1K test-file consolidation).
-// ============================================================================
-
-// --- tier-1 seed loaders (synthetic; mirror search-relevance-seed-plan.md) ---
-
-// seedRelContent inserts a contents row whose title and body both carry term so
-// websearch_to_tsquery('simple', term) matches. type/status are caller-chosen.
-// A non-published status leaves published_at NULL (chk_content_publication).
-func seedRelContent(t *testing.T, slug, term, ctype, status string, createdAt *time.Time) uuid.UUID {
-	t.Helper()
-	var id uuid.UUID
-	var err error
-	if createdAt != nil {
-		err = testPool.QueryRow(t.Context(),
-			`INSERT INTO contents (slug, title, body, type, status, created_at)
-			 VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
-			slug, term+" title", term+" "+term+" body", ctype, status, *createdAt,
-		).Scan(&id)
-	} else {
-		err = testPool.QueryRow(t.Context(),
-			`INSERT INTO contents (slug, title, body, type, status)
-			 VALUES ($1, $2, $3, $4, $5) RETURNING id`,
-			slug, term+" title", term+" "+term+" body", ctype, status,
-		).Scan(&id)
-	}
-	if err != nil {
-		t.Fatalf("seedRelContent(%q): %v", slug, err)
-	}
-	return id
-}
-
-// seedRelNote inserts a notes row carrying term, with caller-chosen kind and
-// maturity (so the archived-note asymmetry control can set maturity='archived').
-func seedRelNote(t *testing.T, slug, term, kind, maturity string) uuid.UUID {
-	t.Helper()
-	var id uuid.UUID
-	if err := testPool.QueryRow(t.Context(),
-		`INSERT INTO notes (slug, title, body, kind, maturity, created_by)
-		 VALUES ($1, $2, $3, $4, $5, 'planner') RETURNING id`,
-		slug, term+" note", term+" note body", kind, maturity,
-	).Scan(&id); err != nil {
-		t.Fatalf("seedRelNote(%q): %v", slug, err)
-	}
-	return id
-}
-
-// relSeeder seeds one seed_id row and reports whether it has a stable id worth
-// pinning in the evaluator (content/note do; non-corpus controls do not).
-type relSeeder func(t *testing.T) (uuid.UUID, bool)
-
-// tier1SeederRegistry maps every seed_id reachable by the NEG/FLT subset to a
-// seeder. Terms match the fixtures' verbatim queries exactly. Only the seeds
-// needed by NEG-01..05 / FLT-01..08 are registered (Track 1K scope).
-func tier1SeederRegistry() map[string]relSeeder {
-	// at parses a fixed RFC3339 seed timestamp; the strings are compile-time
-	// constants, so a parse error is a typo in this file — surfaced via the
-	// seeder's own *testing.T rather than a panic.
-	at := func(t *testing.T, rfc3339 string) *time.Time {
-		t.Helper()
-		ts, err := time.Parse(time.RFC3339, rfc3339)
-		if err != nil {
-			t.Fatalf("tier1SeederRegistry: bad timestamp %q: %v", rfc3339, err)
-		}
-		return &ts
-	}
-	noID := func(seed func(*testing.T)) relSeeder {
-		return func(t *testing.T) (uuid.UUID, bool) { seed(t); return uuid.Nil, false }
-	}
-	withID := func(seed func(*testing.T) uuid.UUID) relSeeder {
-		return func(t *testing.T) (uuid.UUID, bool) { return seed(t), true }
-	}
-
-	return map[string]relSeeder{
-		// NEG controls (corpus boundary).
-		"C-ARCHIVED": withID(func(t *testing.T) uuid.UUID {
-			return seedRelContent(t, "rel-c-archived", "zqxarchcontent", "article", "archived", nil)
-		}),
-		"N-ARCHIVED": withID(func(t *testing.T) uuid.UUID {
-			return seedRelNote(t, "rel-n-archived", "zqxarchnote", "reading-note", "archived")
-		}),
-
-		// FLT-01/02 — source_types narrowing.
-		"C-SRC": withID(func(t *testing.T) uuid.UUID { return seedRelContent(t, "rel-c-src", "zqxsrc", "article", "draft", nil) }),
-		"N-SRC": withID(func(t *testing.T) uuid.UUID { return seedRelNote(t, "rel-n-src", "zqxsrc", "concept-note", "seed") }),
-
-		// FLT-03 — content_type narrowing.
-		"C-CTF-ARTICLE": withID(func(t *testing.T) uuid.UUID {
-			return seedRelContent(t, "rel-c-ctf-article", "zqxctf", "article", "draft", nil)
-		}),
-		"C-CTF-ESSAY": withID(func(t *testing.T) uuid.UUID {
-			return seedRelContent(t, "rel-c-ctf-essay", "zqxctf", "essay", "draft", nil)
-		}),
-		"N-CTF": withID(func(t *testing.T) uuid.UUID { return seedRelNote(t, "rel-n-ctf", "zqxctf", "concept-note", "seed") }),
-
-		// FLT-04 — note_kind narrowing.
-		"N-NKF-SOLVE": withID(func(t *testing.T) uuid.UUID { return seedRelNote(t, "rel-n-nkf-solve", "zqxnkf", "solve-note", "seed") }),
-		"N-NKF-CONCEPT": withID(func(t *testing.T) uuid.UUID {
-			return seedRelNote(t, "rel-n-nkf-concept", "zqxnkf", "concept-note", "seed")
-		}),
-		"C-NKF": withID(func(t *testing.T) uuid.UUID { return seedRelContent(t, "rel-c-nkf", "zqxnkf", "article", "draft", nil) }),
-
-		// FLT-05 — whole-day-inclusive date window, anchor 2026-05-22 (UTC).
-		"C-DAY-START": withID(func(t *testing.T) uuid.UUID {
-			return seedRelContent(t, "rel-c-day-start", "zqxbound", "article", "draft", at(t, "2026-05-22T00:00:00Z"))
-		}),
-		"C-DAY-MID": withID(func(t *testing.T) uuid.UUID {
-			return seedRelContent(t, "rel-c-day-mid", "zqxbound", "article", "draft", at(t, "2026-05-22T12:30:00Z"))
-		}),
-		"C-DAY-END": withID(func(t *testing.T) uuid.UUID {
-			return seedRelContent(t, "rel-c-day-end", "zqxbound", "article", "draft", at(t, "2026-05-22T23:59:59Z"))
-		}),
-		"C-DAY-PREV": withID(func(t *testing.T) uuid.UUID {
-			return seedRelContent(t, "rel-c-day-prev", "zqxbound", "article", "draft", at(t, "2026-05-21T23:59:59Z"))
-		}),
-		"C-DAY-NEXT": withID(func(t *testing.T) uuid.UUID {
-			return seedRelContent(t, "rel-c-day-next", "zqxbound", "article", "draft", at(t, "2026-05-23T00:00:00Z"))
-		}),
-
-		// FLT-06/07/08 — rejection probes share C-VALID (proves the rejection
-		// is the filter, not an empty corpus).
-		"C-VALID": withID(func(t *testing.T) uuid.UUID {
-			return seedRelContent(t, "rel-c-valid", "zqxreject", "article", "draft", nil)
-		}),
-
-		// FLT-01..04 — typed corpus rows the new judgment-set fixtures refer to
-		// by generic seed_ids. Term "go" matches the fixtures' verbatim query.
-		"content:article:any": withID(func(t *testing.T) uuid.UUID {
-			return seedRelContent(t, "rel-c-article-any", "go", "article", "draft", nil)
-		}),
-		"content:til:any": withID(func(t *testing.T) uuid.UUID {
-			return seedRelContent(t, "rel-c-til-any", "go", "til", "draft", nil)
-		}),
-		"note:concept-note:any": withID(func(t *testing.T) uuid.UUID {
-			return seedRelNote(t, "rel-n-concept-any", "go", "concept-note", "seed")
-		}),
-		"note:solve-note:any": withID(func(t *testing.T) uuid.UUID {
-			return seedRelNote(t, "rel-n-solve-any", "go", "solve-note", "seed")
-		}),
-
-		// FLT-05 — dated articles bracketing the after=2026-01-01 / before=2026-03-31
-		// window. The -2025-12-01 row sits before the window; -2026-02-15 sits inside.
-		"content:article:dated-2025-12-01": withID(func(t *testing.T) uuid.UUID {
-			return seedRelContent(t, "rel-c-article-2025-12-01", "go", "article", "draft", at(t, "2025-12-01T00:00:00Z"))
-		}),
-		"content:article:dated-2026-02-15": withID(func(t *testing.T) uuid.UUID {
-			return seedRelContent(t, "rel-c-article-2026-02-15", "go", "article", "draft", at(t, "2026-02-15T00:00:00Z"))
-		}),
-
-		// FLT-06 — enough matching articles that limit=5 actually caps a non-empty
-		// remainder. 12 > 10 leaves room for any future stricter "10-plus" reading.
-		"content:article:bulk-10-plus": noID(func(t *testing.T) {
-			for i := range 12 {
-				slug := fmt.Sprintf("rel-c-bulk-%02d", i)
-				seedRelContent(t, slug, "go", "article", "draft", nil)
-			}
-		}),
-	}
-}
-
-// requiredSeedIDs is the sorted union of seed_ids referenced by the selected
-// fixtures' seed_requirements.
-func requiredSeedIDs(selected []searchFixture) []string {
-	set := map[string]struct{}{}
-	for i := range selected {
-		for _, s := range selected[i].SeedRequirements {
-			set[s] = struct{}{}
-		}
-	}
-	return slices.Sorted(maps.Keys(set))
-}
-
-// seedTier1Corpus seeds every required seed_id once and returns the id of each
-// content/note row (the rows the evaluator pins by id). It fatals if a required
-// seed has no registered seeder — that is a coverage gap, not a guess.
-func seedTier1Corpus(t *testing.T, required []string, registry map[string]relSeeder) map[string]uuid.UUID {
-	t.Helper()
-	ids := map[string]uuid.UUID{}
-	for _, seedID := range required {
-		seed, ok := registry[seedID]
-		if !ok {
-			t.Fatalf("no seeder registered for required seed_id %q", seedID)
-		}
-		if id, hasID := seed(t); hasID {
-			ids[seedID] = id
-		}
-	}
-	return ids
-}
-
-// --- evaluator ---
-
-// tier1Expectation is the per-fixture test oracle for the `results` outcome:
-// which seeded rows must appear / be absent, the narrowing every returned row
-// must satisfy, and an optional exact result count (used to verify limit-cap
-// behavior). Empty / zero fields mean "no constraint". Keys reference seed_ids
-// from docs/testing/search-relevance-judgment-set.md; empty/validation_error
-// fixtures need no entry — their outcome branch in evaluateFixture is
-// self-pinning. A results-outcome fixture missing here fails loudly (see the
-// oracle guard).
-type tier1Expectation struct {
-	mustAppear     []string // seed_ids that must be in results
-	mustBeAbsent   []string // seed_ids that must NOT be in results
-	allSourceType  string   // every result.SourceType must equal this
-	allContentType string   // every result.ContentType must equal this
-	allNoteKind    string   // every result.NoteKind must equal this
-	exactCount     int      // if non-zero, len(results) must equal this — used for limit-cap fixtures
-}
-
-// tier1Expectations is keyed by fixture_id. Each entry pins the rows the
-// fixture's seed_requirements explicitly name, so the oracle stays aligned
-// with the judgment-set declaration rather than incidental corpus state.
-var tier1Expectations = map[string]tier1Expectation{
-	// FLT-01: content_type=article filters out the til content and the note.
-	"FLT-01": {
-		mustAppear:     []string{"content:article:any"},
-		mustBeAbsent:   []string{"content:til:any", "note:solve-note:any"},
-		allSourceType:  SourceTypeContent,
-		allContentType: "article",
-	},
-	// FLT-02: content_type=til filters out the plain article.
-	"FLT-02": {
-		mustAppear:     []string{"content:til:any"},
-		mustBeAbsent:   []string{"content:article:any"},
-		allSourceType:  SourceTypeContent,
-		allContentType: "til",
-	},
-	// FLT-03: note_kind=solve-note implies source_types=[note] and excludes content.
-	"FLT-03": {
-		mustAppear:    []string{"note:solve-note:any"},
-		mustBeAbsent:  []string{"content:article:any"},
-		allSourceType: SourceTypeNote,
-		allNoteKind:   "solve-note",
-	},
-	// FLT-04: source_types=[content] filters out every seeded note.
-	"FLT-04": {
-		mustAppear:    []string{"content:article:any"},
-		mustBeAbsent:  []string{"note:concept-note:any"},
-		allSourceType: SourceTypeContent,
-	},
-	// FLT-05: after=2026-01-01 / before=2026-03-31 admits the 2026-02-15 row
-	// and rejects the 2025-12-01 row. No source-type / type narrowing applies.
-	"FLT-05": {
-		mustAppear:   []string{"content:article:dated-2026-02-15"},
-		mustBeAbsent: []string{"content:article:dated-2025-12-01"},
-	},
-	// FLT-06: limit=5 with >5 matching rows must return exactly 5. The bulk
-	// seeder inserts 12 articles, so matching count > limit is guaranteed.
-	"FLT-06": {exactCount: 5},
-}
-
-// evalOutcome is the structured result for one fixture run.
-type evalOutcome struct {
-	FixtureID       string
-	Status          string // pass | fail | skip
-	Reason          string
-	ObservedIDs     []string
-	ObservedTypes   []string
-	ExpectedSummary string
-}
-
-// expectedRejectionSubstring derives, from the structured filters alone, the
-// substring the handler's validation error must contain. It mirrors
-// validateSearchKnowledgeInput — no prose is read.
-func expectedRejectionSubstring(f *searchFixtureFilters) string {
-	if f.Project != "" {
-		return "unsupported_filter"
-	}
-	for _, st := range f.SourceTypes {
-		if st != SourceTypeContent && st != SourceTypeNote {
-			return "unsupported source_type"
-		}
-	}
-	if f.ContentType != "" && !content.Type(f.ContentType).Valid() {
-		return "unsupported content_type"
-	}
-	if f.NoteKind != "" && !note.Kind(f.NoteKind).Valid() {
-		return "unsupported note_kind"
-	}
-	return ""
-}
-
-// buildSearchInput maps a fixture's verbatim query + structured filters onto a
-// SearchKnowledgeInput, exactly as specified — no inference.
-func buildSearchInput(fx *searchFixture) SearchKnowledgeInput {
-	in := SearchKnowledgeInput{Query: fx.Query}
-	f := &fx.Filters
-	if len(f.SourceTypes) > 0 {
-		in.SourceTypes = f.SourceTypes
-	}
-	if f.ContentType != "" {
-		ct := f.ContentType
-		in.ContentType = &ct
-	}
-	if f.NoteKind != "" {
-		nk := f.NoteKind
-		in.NoteKind = &nk
-	}
-	if f.Project != "" {
-		p := f.Project
-		in.Project = &p
-	}
-	if f.After != "" {
-		a := f.After
-		in.After = &a
-	}
-	if f.Before != "" {
-		b := f.Before
-		in.Before = &b
-	}
-	if f.Limit > 0 {
-		in.Limit = FlexInt(f.Limit)
-	}
-	return in
-}
-
-func observedResults(out SearchKnowledgeOutput) (ids, types []string) {
-	for i := range out.Results {
-		ids = append(ids, out.Results[i].ID)
-		types = append(types, out.Results[i].SourceType)
-	}
-	return ids, types
-}
-
-func summarizeExpectation(e *tier1Expectation) string {
-	var parts []string
-	if e.exactCount > 0 {
-		parts = append(parts, fmt.Sprintf("exactly %d results", e.exactCount))
-	}
-	if len(e.mustAppear) > 0 {
-		parts = append(parts, "present="+strings.Join(e.mustAppear, ","))
-	}
-	if len(e.mustBeAbsent) > 0 {
-		parts = append(parts, "absent="+strings.Join(e.mustBeAbsent, ","))
-	}
-	if e.allSourceType != "" {
-		parts = append(parts, "all source_type="+e.allSourceType)
-	}
-	if e.allContentType != "" {
-		parts = append(parts, "all content_type="+e.allContentType)
-	}
-	if e.allNoteKind != "" {
-		parts = append(parts, "all note_kind="+e.allNoteKind)
-	}
-	if len(parts) == 0 {
-		return "≥1 result"
-	}
-	return strings.Join(parts, "; ")
-}
-
-// evaluateFixture runs one fixture's query+filters through search_knowledge and
-// scores ONLY mechanical criteria per its expected_outcome. It never asserts
-// rank order or relevance.
-func evaluateFixture(t *testing.T, s *Server, fx *searchFixture, ids map[string]uuid.UUID) evalOutcome {
-	t.Helper()
-	_, out, err := callHandler(t, s.searchKnowledge, buildSearchInput(fx))
-	oc := evalOutcome{FixtureID: fx.FixtureID}
-
-	switch fx.ExpectedOutcome {
-	case "validation_error":
-		sub := expectedRejectionSubstring(&fx.Filters)
-		oc.ExpectedSummary = fmt.Sprintf("validation error containing %q", sub)
-		switch {
-		case err == nil:
-			oc.Status, oc.Reason = "fail", "expected a validation error, got success"
-		case sub != "" && !strings.Contains(err.Error(), sub):
-			oc.Status, oc.Reason = "fail", fmt.Sprintf("error %q missing expected substring %q", err.Error(), sub)
-		default:
-			oc.Status, oc.Reason = "pass", "rejected before any store call"
-		}
-
-	case "empty":
-		oc.ExpectedSummary = "empty success — no corpus leak"
-		oc.ObservedIDs, oc.ObservedTypes = observedResults(out)
-		switch {
-		case err != nil:
-			oc.Status, oc.Reason = "fail", fmt.Sprintf("expected empty success, got error: %v", err)
-		case len(out.Results) != 0:
-			oc.Status, oc.Reason = "fail", fmt.Sprintf("expected 0 results (no leak), got %d", len(out.Results))
-		default:
-			oc.Status, oc.Reason = "pass", "no leak from the non-corpus / archived seed"
-		}
-
-	case "results":
-		// A results-outcome fixture MUST have an oracle entry; without one the
-		// run would silently assert nothing beyond "≥1 result". Fail loudly.
-		exp, ok := tier1Expectations[fx.FixtureID]
-		oc.ObservedIDs, oc.ObservedTypes = observedResults(out)
-		if !ok {
-			oc.Status = "fail"
-			oc.Reason = "expected_outcome=results but no tier1Expectations oracle entry"
-			return oc
-		}
-		oc.ExpectedSummary = summarizeExpectation(&exp)
-		oc.Status, oc.Reason = scoreResults(out, err, &exp, ids)
-
-	default:
-		oc.Status = "skip"
-		oc.Reason = fmt.Sprintf("expected_outcome %q is not tier-1 mechanical", fx.ExpectedOutcome)
-	}
-	return oc
-}
-
-// scoreResults applies the `results` expectation: success, ≥1 row, required
-// rows present, excluded rows absent, and the per-result narrowing. Membership
-// checks are by seed id (timezone-robust); narrowing checks are by result field
-// — never by rank.
-func scoreResults(out SearchKnowledgeOutput, err error, exp *tier1Expectation, ids map[string]uuid.UUID) (status, reason string) {
-	if err != nil {
-		return "fail", fmt.Sprintf("expected results, got error: %v", err)
-	}
-	if exp.exactCount > 0 && len(out.Results) != exp.exactCount {
-		return "fail", fmt.Sprintf("expected exactly %d results (limit cap), got %d", exp.exactCount, len(out.Results))
-	}
-	if len(out.Results) == 0 {
-		return "fail", "expected ≥1 result, got 0 (zero-result-with-match)"
-	}
-	got := map[string]bool{}
-	for i := range out.Results {
-		got[out.Results[i].ID] = true
-	}
-	for _, key := range exp.mustAppear {
-		if !got[ids[key].String()] {
-			return "fail", fmt.Sprintf("required row %s absent from results", key)
-		}
-	}
-	for _, key := range exp.mustBeAbsent {
-		if got[ids[key].String()] {
-			return "fail", fmt.Sprintf("excluded row %s leaked into results", key)
-		}
-	}
-	for i := range out.Results {
-		r := &out.Results[i]
-		if exp.allSourceType != "" && r.SourceType != exp.allSourceType {
-			return "fail", fmt.Sprintf("result %s source_type=%q, want %q", r.ID, r.SourceType, exp.allSourceType)
-		}
-		if exp.allContentType != "" && r.ContentType != exp.allContentType {
-			return "fail", fmt.Sprintf("result %s content_type=%q, want %q", r.ID, r.ContentType, exp.allContentType)
-		}
-		if exp.allNoteKind != "" && r.NoteKind != exp.allNoteKind {
-			return "fail", fmt.Sprintf("result %s note_kind=%q, want %q", r.ID, r.NoteKind, exp.allNoteKind)
-		}
-	}
-	return "pass", "narrowing + presence/absence hold"
-}
-
-// --- the tier-1 run ---
-
-// TestIntegration_SearchRelevance_Tier1 is the fixture loader / evaluation
-// harness for the tier-1 mechanical subset. It parses the judgment set, selects
-// NEG-01..05 / FLT-01..08, confirms every required seed resolves, seeds the
-// corpus once into the integration testcontainer, and evaluates each fixture
-// mechanically. No ranking, relevance, or vector behavior is asserted.
-func TestIntegration_SearchRelevance_Tier1(t *testing.T) {
-	fixtures := loadSearchFixtures(t)
-	selected, skipped := selectTier1(fixtures)
-
-	t.Logf("tier-1 selection: %d fixtures; skipped %d non-tier-1 fixtures", len(selected), len(skipped))
-	for _, sk := range skipped {
-		t.Logf("  skip %-7s — %s", sk.FixtureID, sk.Reason)
-	}
-
-	registry := tier1SeederRegistry()
-	required := requiredSeedIDs(selected)
-
-	t.Run("seed references resolve", func(t *testing.T) {
-		for _, seedID := range required {
-			if _, ok := registry[seedID]; !ok {
-				t.Errorf("seed_id %q required by a selected fixture has no registered seeder", seedID)
-			}
-		}
-	})
-
-	s := setupServer(t)
-	ids := seedTier1Corpus(t, required, registry)
-
-	// Evaluate and collect OUTSIDE t.Run so the shared outcomes slice is never
-	// touched from a subtest closure — the run is sequential today, but keeping
-	// the append off the closure removes a latent data race if a future edit
-	// adds t.Parallel(). The named subtest carries only the per-fixture assertion.
-	outcomes := make([]evalOutcome, 0, len(selected))
-	for i := range selected {
-		fx := &selected[i]
-		oc := evaluateFixture(t, s, fx, ids)
-		outcomes = append(outcomes, oc)
-		t.Run(fx.FixtureID, func(t *testing.T) {
-			if oc.Status != "pass" {
-				t.Errorf("%s [%s]: %s\n  expected: %s\n  observed ids:   %v\n  observed types: %v",
-					oc.FixtureID, oc.Status, oc.Reason, oc.ExpectedSummary, oc.ObservedIDs, oc.ObservedTypes)
-			}
-		})
-	}
-
-	logTier1Results(t, outcomes)
-}
-
-// logTier1Results writes the structured per-fixture result table to the test
-// log: fixture_id, status, reason, observed ids/types, expected summary.
-func logTier1Results(t *testing.T, outcomes []evalOutcome) {
-	t.Helper()
-	var b strings.Builder
-	b.WriteString("\n=== Tier-1 fixture evaluation results ===\n")
-	var pass, fail, skip int
-	for i := range outcomes {
-		oc := &outcomes[i]
-		switch oc.Status {
-		case "pass":
-			pass++
-		case "fail":
-			fail++
-		default:
-			skip++
-		}
-		fmt.Fprintf(&b, "%-7s %-5s %s\n", oc.FixtureID, oc.Status, oc.Reason)
-		fmt.Fprintf(&b, "         expected: %s\n", oc.ExpectedSummary)
-		fmt.Fprintf(&b, "         observed: ids=%v types=%v\n", oc.ObservedIDs, oc.ObservedTypes)
-	}
-	fmt.Fprintf(&b, "totals: %d pass, %d fail, %d skip (of %d)\n", pass, fail, skip, len(outcomes))
-	t.Log(b.String())
 }
 
 // --- plan_day position bounds (#13) ---

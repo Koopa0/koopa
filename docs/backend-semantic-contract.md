@@ -45,7 +45,7 @@ It is **all of the following, with explicit boundaries** (§4):
 | **PARA / GTD / OKR-ish system** | areas, goals, milestones, projects, todos, daily plan | `internal/goal/`, `internal/project/`, `internal/todo/`, `internal/daily/` |
 | **Learning analytics engine** | domains, concepts, targets, sessions, attempts, observations | `internal/learning/` |
 | **MCP tool surface** | **15 agent-facing tools** | `internal/mcp/ops/catalog.go::All()` (canonical list) |
-| **Knowledge / search system** | content, notes, topics, tags, feeds; hybrid search | `internal/content/`, `internal/note/`, `internal/search/`, `internal/mcp/search.go` |
+| **Knowledge / search system** | content, notes, topics, tags, feeds; hybrid search | `internal/content/`, `internal/search/`, `internal/mcp/search.go` |
 
 > **This is a closed single-owner + ≤10-agent knowledge / learning OS.** The
 > agent-facing MCP surface is **15 tools** (`internal/mcp/ops/catalog.go::All()`).
@@ -129,8 +129,8 @@ them wrong is a semantic bug, not a naming quibble.
   set from the `koopa.actor` GUC inside the audit trigger
   (`migrations/001_initial.up.sql:2646-2656`).
 - **planner / Koopa** — `planner` is the `claude-cowork` daily-driver agent:
-  morning briefing, candidate day plans, inbox capture, search, note
-  co-authoring (`registry.go`). "Koopa" is the human owner (display name on
+  morning briefing, candidate day plans, inbox capture, search
+  (`registry.go`). "Koopa" is the human owner (display name on
   the `human` agent) — the sole decision-maker and sole router.
 - **Claude Cowork project** — a `claude-cowork` platform agent: `planner` or
   `learning-studio` (`registry.go`). A platform/identity, not a PARA
@@ -173,14 +173,6 @@ them wrong is a semantic bug, not a naming quibble.
   archive are **admin-only HTTP** under `/api/admin/knowledge/content`
   (`cmd/app/routes.go:147-156`); the write surface is the admin UI / human, not
   any agent tool.
-- **note** — a Zettelkasten artifact (`notes` table), maturity lifecycle
-  `seed → stub → evergreen → needs_revision → archived`. Private; **never
-  publishes**. Six kinds: `solve-note`, `concept-note`, `debug-postmortem`,
-  `decision-log`, `reading-note`, `musing` (`catalog.go::CreateNote`). Notes
-  are the one knowledge entity still writable from the agent surface:
-  `create_note` and `update_note` (field edits). Maturity transitions are
-  **admin-only HTTP** (`POST /api/admin/knowledge/notes/{id}/maturity`,
-  `routes.go:165`) — the MCP `update_note_maturity` tool was removed.
 - **bookmark** — there is no bookmark entity, lifecycle, or endpoint. No
   bookmark table, junctions, admin pages, public `/api/bookmarks`, or Angular
   page exist.
@@ -249,7 +241,7 @@ The named confusions and their resolutions, each grounded.
 |---|---|---|---|---|
 | **PARA project vs agent identity** | `projects` row (work vehicle) | Cowork "project" = a `claude-cowork` agent | A PARA project is data in `projects`; a Cowork project is an actor in `agents`. They never share a table or ID. | `projects` schema; `registry.go:17-81` |
 | **todo is the only work-item entity** | `todos` (personal GTD) | (no `tasks` entity) | There is no inter-agent `tasks` triad, so there is no "task vs todo" boundary to police — a todo is the system's only work-item entity. | `todo_state` enum |
-| **learning observation vs knowledge note** | `learning_attempt_observation` (diagnostic signal on a concept) | `note` (Zettelkasten artifact) | Observations drive mastery diagnosis; notes are durable knowledge. Different tables, different lifecycles. | schema; §3 |
+| **learning observation** | `learning_attempt_observation` (diagnostic signal on a concept) | — | Observations drive mastery diagnosis. | schema; §3 |
 | **MCP tool call vs semantic write** | a `tools/call` invocation | the resulting row + `activity_event` | A read-only tool call (`ReadOnly` writability — `brief`, `learning_read`, `search_knowledge`) produces no semantic write. Only Additive/Idempotent/Destructive tools write; the *write* is the row + its trigger-emitted audit event, not the call. | `ops/types.go:32-42` |
 | **Cowork project vs internal participant** | `claude-cowork` agent | (retired term "participant") | "Participant" is dead vocabulary; the live entity is `agent`. A Cowork project IS an agent. | `registry.go` |
 | **Claude Code runtime vs Koopa identity** | `claude-code` agent (dev session, no capability) | `human` agent (Koopa) | Claude Code agents attribute writes via `as` but hold no capability flags; Koopa (human) carries the platform-human override. No live MCP tool consumes a capability flag — the live distinction is actor-attribution identity, not coordination authority. | `registry.go` |
@@ -310,7 +302,7 @@ Confidence levels used below:
 |---|---|---|
 | The catalog matches handler registration | surface-tested (**parity only**) | `ops_catalog_test.go` compares *names only* — proves registration completeness, **not** per-tool contract behavior |
 | `search_knowledge` RRF merge + filter mutex logic | surface-tested (unit, no DB) | `search_test.go` — unit tests on the merge function; no end-to-end search |
-| Agent-surface note write tools (`create_note`, `update_note`, `manage_plan`) input validation | surface-tested | `handler_test.go` — validation only, limited business-logic integration |
+| Agent-surface write tool (`manage_plan`) input validation | surface-tested | `handler_test.go` — validation only, limited business-logic integration |
 
 ### C. Implemented but WEAKLY tested (happy path only; rejection paths open)
 
@@ -327,15 +319,15 @@ do not exist.)
 
 | Feature | Reality | Evidence |
 |---|---|---|
-| **Document embedding write path** | **No automatic document-embedding write path exists — this is the current decision, not a TODO.** `embedder.Embed()` is defined (`embedder.go:65`) but has no production call site; app-created `content`/`note` rows therefore behave **FTS-only** unless embeddings are externally/backfill-populated. The vector-*read* path is real (`InternalSemanticSearch`, `content/public.go:104-115`) and *would* return rows if embeddings were backfilled — so "no write path" must not be conflated with "semantic branch can never return rows". **Decided (Phase 1D, 2026-05-27):** keep schema, indexes, and embedder package in place; do not implement write/backfill until agent recall ceilings on FTS are observed in practice. `search_knowledge` is documented as FTS-backed today. | `search.go:182-235` (only `EmbedQuery`); no `Embed()` call site; cols `migrations/001_initial.up.sql:495,573` |
+| **Document embedding write path** | **No automatic document-embedding write path exists — this is the current decision, not a TODO.** `embedder.Embed()` is defined (`embedder.go:65`) but has no production call site; app-created `content` rows therefore behave **FTS-only** unless embeddings are externally/backfill-populated. The vector-*read* path is real (`InternalSemanticSearch`, `content/public.go:104-115`) and *would* return rows if embeddings were backfilled — so "no write path" must not be conflated with "semantic branch can never return rows". **Decided (Phase 1D, 2026-05-27):** keep schema, indexes, and embedder package in place; do not implement write/backfill until agent recall ceilings on FTS are observed in practice. `search_knowledge` is documented as FTS-backed today. | `search.go:182-235` (only `EmbedQuery`); no `Embed()` call site; cols `migrations/001_initial.up.sql:495,573` |
 | **Feed AI relevance scoring** | Not active — "scoring pipeline not yet active, all items have score=0"; highlights recency/priority-ordered | `internal/feed/entry/query.sql` |
-| **Admin global-search Kind taxonomy** | `internal/search/search.go` declares **2 Kinds, both wired**: `KindContent` + `KindNote`. The earlier declared-but-unwired Kinds were removed in the just-landed cleanup. | `internal/search/search.go:22-25` |
+| **Admin global-search Kind taxonomy** | `internal/search/search.go` declares **`KindContent` (wired)**. The earlier declared-but-unwired Kinds were removed in the just-landed cleanup. | `internal/search/search.go:22-25` |
 
 ### E. Untested entirely (no test files — confidence: unclear / requires evidence)
 
 | Package / tool | Note |
 |---|---|
-| `internal/daily`, `internal/note`, `internal/search`, `internal/today`, `internal/todo` | **No `*_test.go` files.** `internal/db` is sqlc-generated (acceptable). |
+| `internal/daily`, `internal/search`, `internal/today`, `internal/todo` | **No `*_test.go` files.** `internal/db` is sqlc-generated (acceptable). |
 | MCP tools `brief` (morning + reflection modes), `learning_read` (4 views) | No direct contract tests found — output shape unverified. These are the surviving aggregate readers; the former `reflection_context` / `session_delta` / `weekly_summary` / `goal_progress` tools were removed. |
 
 ### F. Today surface (CORRECTED in Track 0.1)

@@ -17,7 +17,6 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/Koopa0/koopa/internal/content"
-	"github.com/Koopa0/koopa/internal/note"
 )
 
 // Stable per-index IDs so tests don't depend on random UUID generation.
@@ -110,130 +109,6 @@ func TestRrfMerge_AllIDsPresentUnderLimit(t *testing.T) {
 	}
 }
 
-func testNote(i byte) note.Note {
-	return note.Note{ID: testID(i)}
-}
-
-// testNoteRank returns the zero-based rank of want in out, or -1 if absent.
-func testNoteRank(out []note.Note, want uuid.UUID) int {
-	for i := range out {
-		if out[i].ID == want {
-			return i
-		}
-	}
-	return -1
-}
-
-// TestRrfMergeNotes_SharedNoteRanksFirst mirrors the content-side
-// consensus invariant for the note branch: a note appearing in both FTS
-// and semantic rankings must beat single-branch notes at the same rank.
-func TestRrfMergeNotes_SharedNoteRanksFirst(t *testing.T) {
-	fts := []note.Note{testNote(1), testNote(2), testNote(3)}
-	sem := []note.Note{testNote(3), testNote(4), testNote(5)}
-	got := rrfMergeNotes(fts, sem, 5)
-
-	if testNoteRank(got, testID(3)) != 0 {
-		t.Errorf("shared note id(3) rank = %d, want 0 (consensus pick)",
-			testNoteRank(got, testID(3)))
-	}
-	if len(got) != 5 {
-		t.Errorf("len(got) = %d, want 5 (all distinct notes preserved)", len(got))
-	}
-}
-
-// TestRrfMergeNotes_LimitCapsOutput verifies the caller's limit is
-// respected even when the union of inputs is larger.
-func TestRrfMergeNotes_LimitCapsOutput(t *testing.T) {
-	fts := []note.Note{testNote(1), testNote(2), testNote(3)}
-	sem := []note.Note{testNote(4), testNote(5)}
-	got := rrfMergeNotes(fts, sem, 2)
-	if len(got) != 2 {
-		t.Errorf("len(got) = %d, want 2 (limit)", len(got))
-	}
-}
-
-// TestRrfMergeNotes_EmptySemanticPreservesFTSOrder verifies single-branch
-// RRF is a no-op on ordering — the FTS-only fallback must not reshuffle
-// note ranks.
-func TestRrfMergeNotes_EmptySemanticPreservesFTSOrder(t *testing.T) {
-	fts := []note.Note{testNote(1), testNote(2), testNote(3)}
-	got := rrfMergeNotes(fts, nil, 5)
-	if len(got) != 3 {
-		t.Fatalf("len(got) = %d, want 3", len(got))
-	}
-	for i := range fts {
-		if got[i].ID != fts[i].ID {
-			t.Errorf("rank %d: got %s, want %s (FTS order must be preserved)",
-				i, got[i].ID, fts[i].ID)
-		}
-	}
-}
-
-// TestMergeByRelevance_RelevanceBeatsRecency is the regression guard for the
-// cross-source merge: the merge MUST preserve each branch's relevance order
-// and never let recency dominate it. The branches arrive already ranked by
-// their own relevance score (content: fused RRF; notes: ts_rank) on
-// incompatible scales, so mergeByRelevance fuses by rank POSITION (RRF), with
-// CreatedAt only as a tie-breaker.
-//
-// Scenario (the historical bug: union re-sorted newest-first, discarding rank):
-//   - doc A: created earliest, query term ~12× → highest relevance → branch rank 0
-//   - doc B: created latest,   query term  1× → lowest  relevance → branch rank 1
-//
-// search(term) MUST return A before B. The old recency sort returned B first.
-func TestMergeByRelevance_RelevanceBeatsRecency(t *testing.T) {
-	mkResult := func(id byte, createdAt string) SearchKnowledgeResult {
-		return SearchKnowledgeResult{
-			ID:         testID(id).String(),
-			SourceType: SourceTypeContent,
-			CreatedAt:  createdAt,
-		}
-	}
-	// Branch order encodes relevance: A (12× term) outranks B (1× term), so A
-	// is first in the relevance-ranked branch slice. A is also the OLDEST and
-	// B the NEWEST — the case where recency and relevance disagree.
-	docA := mkResult(0xA, "2026-01-01T00:00:00Z") // earliest, most relevant
-	docB := mkResult(0xB, "2026-05-01T00:00:00Z") // latest, least relevant
-	contentResults := []SearchKnowledgeResult{docA, docB}
-
-	got := mergeByRelevance(contentResults, nil, 20)
-
-	rankOf := func(id string) int {
-		for i := range got {
-			if got[i].ID == id {
-				return i
-			}
-		}
-		return -1
-	}
-	rankA, rankB := rankOf(docA.ID), rankOf(docB.ID)
-	if rankA == -1 || rankB == -1 {
-		t.Fatalf("merge dropped a doc: A rank=%d, B rank=%d (got %d results)", rankA, rankB, len(got))
-	}
-	if rankA >= rankB {
-		t.Errorf("merge ordered A (most relevant, oldest) at rank %d and B (least relevant, newest) at rank %d; want A before B — relevance must beat recency",
-			rankA, rankB)
-	}
-}
-
-// TestMergeByRelevance_RecencyTieBreaks pins recency as a minor tie-breaker:
-// when two results carry the SAME branch rank (one leads the content branch,
-// one leads the note branch), the newer one comes first. This confirms
-// recency still participates — just never above relevance.
-func TestMergeByRelevance_RecencyTieBreaks(t *testing.T) {
-	older := SearchKnowledgeResult{ID: testID(1).String(), SourceType: SourceTypeContent, CreatedAt: "2026-01-01T00:00:00Z"}
-	newer := SearchKnowledgeResult{ID: testID(2).String(), SourceType: SourceTypeNote, CreatedAt: "2026-05-01T00:00:00Z"}
-
-	// Each leads its own branch → both at branch rank 0 → relevance tie.
-	got := mergeByRelevance([]SearchKnowledgeResult{older}, []SearchKnowledgeResult{newer}, 20)
-	if len(got) != 2 {
-		t.Fatalf("len(got) = %d, want 2", len(got))
-	}
-	if got[0].ID != newer.ID {
-		t.Errorf("rank-tie order: got[0] = %s, want %s (newer wins the tie)", got[0].ID, newer.ID)
-	}
-}
-
 // ============================================================================
 // Consolidated from search_contract_test.go (Track-1K test-file consolidation).
 // ============================================================================
@@ -243,18 +118,15 @@ func TestMergeByRelevance_RecencyTieBreaks(t *testing.T) {
 // the source_types resolution helper. DB-backed corpus / envelope / filter /
 // degradation coverage lives in search_integration_test.go.
 //
-// These units assert error contracts and source selection only. Cross-source
-// merge ordering — once the undecided contract Track 1G fenced off — is now a
-// decided contract, exercised by TestMergeByRelevance_* above (relevance beats
-// recency; recency only tie-breaks). The Track 1G boundary remains intact for
-// the DB-backed tier-1 evaluator, which still asserts presence/absence/
-// narrowing only, never ranking METRICS (guarded by
+// These units assert error contracts only. The Track 1G boundary remains
+// intact for the DB-backed tier-1 evaluator, which still asserts presence/
+// absence/narrowing only, never ranking METRICS (guarded by
 // TestSearchRelevanceHarness_NoRankingAssertions).
 
 // TestSearchKnowledge_Validation pins the handler validation paths that return
-// before search_knowledge touches the content/note stores. newTestServer has
-// nil stores, so any case here that reached a store would panic — the fact
-// that these return a clean error proves the rejection is pre-store.
+// before search_knowledge touches the content store. newTestServer has nil
+// stores, so any case here that reached a store would panic — the fact that
+// these return a clean error proves the rejection is pre-store.
 func TestSearchKnowledge_Validation(t *testing.T) {
 	s := newTestServer()
 	tests := []struct {
@@ -274,23 +146,9 @@ func TestSearchKnowledge_Validation(t *testing.T) {
 			wantErr: "invalid before date",
 		},
 		{
-			name: "content_type and note_kind are mutually exclusive",
-			input: SearchKnowledgeInput{
-				Query:       "go",
-				ContentType: new("article"),
-				NoteKind:    new("solve-note"),
-			},
-			wantErr: "mutually exclusive",
-		},
-		{
 			name:    "unsupported content_type rejected",
 			input:   SearchKnowledgeInput{Query: "go", ContentType: new("banana-not-a-type")},
 			wantErr: "unsupported content_type",
-		},
-		{
-			name:    "unsupported note_kind rejected",
-			input:   SearchKnowledgeInput{Query: "go", NoteKind: new("banana-not-a-kind")},
-			wantErr: "unsupported note_kind",
 		},
 		{
 			name:    "unknown source_type rejected",
@@ -321,41 +179,10 @@ func TestSearchKnowledge_Validation(t *testing.T) {
 	}
 }
 
-// TestSelectSources documents the source_types → (wantContent, wantNote)
-// resolution contract for the VALID token set. Unknown tokens never reach
-// selectSources in production — they are rejected upstream by
-// validateSourceTypes (see TestSearchKnowledge_SourceTypeValidation and the
-// "unknown source_type rejected" cases in TestSearchKnowledge_Validation). The
-// two trailing cases pin selectSources's defensive tolerance of an already-
-// validated input only.
-func TestSelectSources(t *testing.T) {
-	tests := []struct {
-		name        string
-		filter      []string
-		wantContent bool
-		wantNote    bool
-	}{
-		{name: "nil = all", filter: nil, wantContent: true, wantNote: true},
-		{name: "empty = all", filter: []string{}, wantContent: true, wantNote: true},
-		{name: "content only", filter: []string{SourceTypeContent}, wantContent: true, wantNote: false},
-		{name: "note only", filter: []string{SourceTypeNote}, wantContent: false, wantNote: true},
-		{name: "content+note", filter: []string{SourceTypeContent, SourceTypeNote}, wantContent: true, wantNote: true},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			gotContent, gotNote := selectSources(tt.filter)
-			if gotContent != tt.wantContent || gotNote != tt.wantNote {
-				t.Errorf("selectSources(%v) = (content=%v, note=%v), want (content=%v, note=%v)",
-					tt.filter, gotContent, gotNote, tt.wantContent, tt.wantNote)
-			}
-		})
-	}
-}
-
 // TestSearchKnowledge_SourceTypeValidation pins the strict source_types
-// contract: only {content, note} are accepted; any other token (typo or an
+// contract: only {content} is accepted; any other token (typo or an
 // unsupported corpus) is a validation error, and an all-unknown list does NOT
-// degrade to a silent empty success. Empty/nil is valid (resolves to both).
+// degrade to a silent empty success. Empty/nil is valid (resolves to content).
 func TestSearchKnowledge_SourceTypeValidation(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -365,8 +192,6 @@ func TestSearchKnowledge_SourceTypeValidation(t *testing.T) {
 		{name: "nil accepted", filter: nil, wantErr: false},
 		{name: "empty accepted", filter: []string{}, wantErr: false},
 		{name: "content accepted", filter: []string{SourceTypeContent}, wantErr: false},
-		{name: "note accepted", filter: []string{SourceTypeNote}, wantErr: false},
-		{name: "both accepted", filter: []string{SourceTypeContent, SourceTypeNote}, wantErr: false},
 		{name: "single unknown rejected", filter: []string{"bookmark"}, wantErr: true},
 		{name: "all unknown rejected", filter: []string{"bookmark", "task"}, wantErr: true},
 		{name: "mixed valid and invalid rejected", filter: []string{SourceTypeContent, "task"}, wantErr: true},
@@ -420,10 +245,11 @@ func TestSearchKnowledge_DateBoundaryFilter(t *testing.T) {
 		{name: "last second of D-1 dropped", created: at("2026-05-21T23:59:59Z"), wantIn: false},
 		{name: "start of D+1 dropped", created: at("2026-05-23T00:00:00Z"), wantIn: false},
 	}
+	s := newTestServer()
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			notes := []note.Note{{ID: uuid.New(), Kind: note.KindConcept, CreatedAt: tt.created}}
-			got := filterNoteResults(notes, nil, after, before)
+			contents := []content.Content{{ID: uuid.New(), CreatedAt: tt.created}}
+			got := s.filterContentResults(t.Context(), contents, nil, after, before)
 			gotIn := len(got) == 1
 			if gotIn != tt.wantIn {
 				t.Errorf("before=after=%s, created=%s: kept=%v, want %v",
@@ -460,7 +286,6 @@ var expectedOutcomeValues = map[string]bool{
 type searchFixtureFilters struct {
 	SourceTypes []string `yaml:"source_types"`
 	ContentType string   `yaml:"content_type"`
-	NoteKind    string   `yaml:"note_kind"`
 	Project     string   `yaml:"project"`
 	After       string   `yaml:"after"`
 	Before      string   `yaml:"before"`

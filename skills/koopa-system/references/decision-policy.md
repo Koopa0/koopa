@@ -5,7 +5,7 @@
 | Signal | Action |
 |---|---|
 | Question ("what / show / how is") | Read-only query tool (`brief`, `search_knowledge`, `learning_read`) |
-| Reference to existing entity | Transition / update on that entity (`manage_plan(update_entry)`, `update_note`) |
+| Reference to existing entity | Transition / update on that entity (`manage_plan(update_entry)`) |
 | Active learning session exists | `record_attempt` / `end_session` |
 | Capture impulse ("add / remind me / 記一下") | `capture_inbox` |
 | Commitment intent ("create goal / plan project") | 對話起草 → 請 Koopa 在 admin 表單建立（no MCP propose tool） |
@@ -42,14 +42,12 @@ If uncertain between two levels, pick the lower one.
 - Daily plan entry — `plan_day`
 - Attempt + observation — `record_attempt` (within active session)
 - Learning session start — `start_session`
-- Note (Zettelkasten) — `create_note` / `update_note`
 - Plan entries (into existing plan) — `manage_plan(add_entries)`
 
 ## Agent memory
 
 agent 的內部敘事、計畫、決策、反思 → 寫進 agent 自己的 `.md` 檔。
 這**不是**系統 entity，不經 MCP，不會被 `search_knowledge` 檢索。
-跨 session 需被系統檢索的知識 → `create_note`（`notes` 表，slug-addressable）。
 
 ## Never via MCP
 

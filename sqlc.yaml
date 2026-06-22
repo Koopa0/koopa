@@ -14,7 +14,6 @@ sql:
       - "internal/agent/query.sql"
       - "internal/daily/query.sql"
       - "internal/stats/query.sql"
-      - "internal/note/query.sql"
       - "internal/reading/query.sql"
       - "internal/song/query.sql"
     schema: "migrations/"
@@ -79,8 +78,6 @@ sql:
             nullable: true
           # tsvector GENERATED columns — never written from Go, map to string
           - column: "contents.search_vector"
-            go_type: "string"
-          - column: "notes.search_vector"
             go_type: "string"
           # non-nullable JSONB → json.RawMessage
           - column: "feeds.filter_config"

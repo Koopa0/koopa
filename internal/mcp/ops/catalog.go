@@ -47,7 +47,7 @@ func SearchKnowledge() Meta {
 		Writability: ReadOnly,
 		Stability:   StabilityStable,
 		Since:       since,
-		Description: "Search across content (articles, build logs, TILs, etc.) and notes (Zettelkasten) — i.e. what we KNOW. CURRENT behavior: PostgreSQL full-text search (lexical, tsvector + websearch syntax, GIN-indexed) only — there is no production document-embedding write path today, so the semantic / pgvector branch returns no rows for app-created content. Hybrid lexical + pgvector + RRF is PLANNED but not active; do not assume semantic recall. Filters: source_types (default both), content_type (implies content-only; mutex with note_kind), note_kind (implies note-only; mutex with content_type), project, date range.",
+		Description: "Search across content (articles, build logs, TILs, etc.) — i.e. what we KNOW. CURRENT behavior: PostgreSQL full-text search (lexical, tsvector + websearch syntax, GIN-indexed) only — there is no production document-embedding write path today, so the semantic / pgvector branch returns no rows for app-created content. Hybrid lexical + pgvector + RRF is PLANNED but not active; do not assume semantic recall. Filters: source_types (content only), content_type, project, date range.",
 	}
 }
 
@@ -178,32 +178,6 @@ func Reading() Meta {
 	}
 }
 
-// Note tools — flat per-intent design. Three tools map 1:1 to user intent.
-
-// CreateNote returns metadata for create_note.
-func CreateNote() Meta {
-	return Meta{
-		Name:        "create_note",
-		Domain:      DomainContent,
-		Writability: Additive,
-		Stability:   StabilityStable,
-		Since:       since,
-		Description: "Create a Zettelkasten note (notes table). kind one of: solve-note, concept-note, debug-postmortem, decision-log, reading-note, musing. Default maturity 'seed'. Notes are Koopa-private; no publication lifecycle.",
-	}
-}
-
-// UpdateNote returns metadata for update_note.
-func UpdateNote() Meta {
-	return Meta{
-		Name:        "update_note",
-		Domain:      DomainContent,
-		Writability: Additive,
-		Stability:   StabilityStable,
-		Since:       since,
-		Description: "Update editable fields (slug / title / body / kind) on a note. Maturity is not editable via the MCP surface.",
-	}
-}
-
 // All returns every tool meta in stable registration order. The order
 // mirrors the addTool call sequence in internal/mcp/server.go and is
 // enforced by TestOpsCatalogDrift. Adding a new tool requires appending
@@ -221,7 +195,5 @@ func All() []Meta {
 		ResolveTask(),
 		ListReadings(),
 		Reading(),
-		CreateNote(),
-		UpdateNote(),
 	}
 }

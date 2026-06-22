@@ -32,7 +32,6 @@ import (
 	"github.com/Koopa0/koopa/internal/feed"
 	"github.com/Koopa0/koopa/internal/feed/entry"
 	"github.com/Koopa0/koopa/internal/goal"
-	"github.com/Koopa0/koopa/internal/note"
 	"github.com/Koopa0/koopa/internal/project"
 	"github.com/Koopa0/koopa/internal/reading"
 	"github.com/Koopa0/koopa/internal/search"
@@ -56,7 +55,6 @@ type handlers struct {
 	activity *activity.Handler
 	agent    *agent.Handler
 	daily    *daily.Handler
-	note     *note.Handler
 	reading  *reading.Handler
 	song     *song.Handler
 	todo     *todo.Handler
@@ -154,16 +152,6 @@ func registerRoutes(
 	mux.Handle("POST /api/admin/knowledge/content/{id}/revert-to-draft", adminMid(http.HandlerFunc(h.content.RevertToDraft)))
 	mux.Handle("POST /api/admin/knowledge/content/{id}/archive", adminMid(http.HandlerFunc(h.content.Archive)))
 	mux.Handle("PATCH /api/admin/knowledge/content/{id}/is-public", adminMid(http.HandlerFunc(h.content.SetIsPublic)))
-
-	// --- Admin: Knowledge / Notes (Zettelkasten) ---
-	// Maturity transitions go through their own endpoint so every maturity
-	// change is auditable separately from field edits.
-	mux.Handle("GET /api/admin/knowledge/notes", authMid(http.HandlerFunc(h.note.List)))
-	mux.Handle("GET /api/admin/knowledge/notes/{id}", authMid(http.HandlerFunc(h.note.Get)))
-	mux.Handle("POST /api/admin/knowledge/notes", adminMid(http.HandlerFunc(h.note.Create)))
-	mux.Handle("PUT /api/admin/knowledge/notes/{id}", adminMid(http.HandlerFunc(h.note.Update)))
-	mux.Handle("POST /api/admin/knowledge/notes/{id}/maturity", adminMid(http.HandlerFunc(h.note.Maturity)))
-	mux.Handle("DELETE /api/admin/knowledge/notes/{id}", adminMid(http.HandlerFunc(h.note.Delete)))
 
 	// --- Admin: Knowledge / Readings (literature shelf + diary) ---
 	// Deeply private domain: no public routes, no MCP tool, not in the

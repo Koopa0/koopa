@@ -3,13 +3,13 @@
 //go:build integration
 
 // Integration coverage for the embedding reconciler against a real
-// pgvector PostgreSQL: RunOnce drains contents and notes rows with NULL
-// embeddings through the real store methods, archived contents are
-// skipped, and the embedding-only UPDATE neither bumps updated_at nor
-// writes activity_events rows.
+// pgvector PostgreSQL: RunOnce drains contents rows with NULL embeddings
+// through the real store methods, archived contents are skipped, and the
+// embedding-only UPDATE neither bumps updated_at nor writes activity_events
+// rows.
 //
-// External test package: content and note import embedder for the
-// Source seam, so an in-package test importing them back would cycle.
+// External test package: content imports embedder for the Source seam, so
+// an in-package test importing it back would cycle.
 //
 // Run with:
 //
@@ -28,7 +28,6 @@ import (
 
 	"github.com/Koopa0/koopa/internal/content"
 	"github.com/Koopa0/koopa/internal/embedder"
-	"github.com/Koopa0/koopa/internal/note"
 	"github.com/Koopa0/koopa/internal/testdb"
 )
 
@@ -53,13 +52,13 @@ func (stubTextEmbedder) Embed(_ context.Context, text string) ([]float32, error)
 }
 
 // setup truncates the tables this suite writes and seeds the agents the
-// audit triggers and notes.created_by FK depend on (mirrors the content
-// package's integration setup — these tests don't boot a server, so the
-// registry sync is done as a direct seed).
+// audit triggers depend on (mirrors the content package's integration
+// setup — these tests don't boot a server, so the registry sync is done
+// as a direct seed).
 func setup(t *testing.T) {
 	t.Helper()
 	if err := testdb.TruncateCtx(t.Context(), testPool,
-		"activity_events", "notes", "contents"); err != nil {
+		"activity_events", "contents"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := testPool.Exec(t.Context(),
@@ -80,46 +79,31 @@ func seedContent(t *testing.T, slug, title, body, status string) {
 	}
 }
 
-func seedNote(t *testing.T, slug, title, body string) {
-	t.Helper()
-	if _, err := testPool.Exec(t.Context(),
-		`INSERT INTO notes (slug, title, body, kind, created_by) VALUES ($1, $2, $3, 'musing', 'human')`,
-		slug, title, body); err != nil {
-		t.Fatalf("seeding note %q: %v", slug, err)
-	}
-}
-
-func TestReconcilerRunOnce_DrainsContentsAndNotes(t *testing.T) {
+func TestReconcilerRunOnce_DrainsContents(t *testing.T) {
 	setup(t)
 	seedContent(t, "active-one", "Active one", "body one", "draft")
 	seedContent(t, "active-two", "Active two", "body two", "draft")
 	seedContent(t, "archived-row", "Archived row", "buried body", "archived")
-	seedNote(t, "note-one", "Note one", "note body one")
-	seedNote(t, "note-two", "Note two", "note body two")
 
 	var auditRowsBefore int
 	if err := testPool.QueryRow(t.Context(),
 		`SELECT COUNT(*) FROM activity_events`).Scan(&auditRowsBefore); err != nil {
 		t.Fatalf("counting activity_events: %v", err)
 	}
-	var contentUpdatedBefore, noteUpdatedBefore time.Time
+	var contentUpdatedBefore time.Time
 	if err := testPool.QueryRow(t.Context(),
 		`SELECT updated_at FROM contents WHERE slug = 'active-one'`).Scan(&contentUpdatedBefore); err != nil {
 		t.Fatalf("reading content updated_at: %v", err)
 	}
-	if err := testPool.QueryRow(t.Context(),
-		`SELECT updated_at FROM notes WHERE slug = 'note-one'`).Scan(&noteUpdatedBefore); err != nil {
-		t.Fatalf("reading note updated_at: %v", err)
-	}
 
 	r := embedder.NewReconciler(stubTextEmbedder{},
-		content.NewStore(testPool), note.NewStore(testPool), slog.New(slog.DiscardHandler))
+		content.NewStore(testPool), slog.New(slog.DiscardHandler))
 
 	got, err := r.RunOnce(t.Context())
 	if err != nil {
 		t.Fatalf("RunOnce() error = %v, want nil", err)
 	}
-	want := embedder.Result{Contents: 2, Notes: 2}
+	want := embedder.Result{Contents: 2}
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Fatalf("RunOnce() result mismatch (-want +got):\n%s", diff)
 	}
@@ -138,8 +122,6 @@ func TestReconcilerRunOnce_DrainsContentsAndNotes(t *testing.T) {
 	}
 	assertDims("contents", "active-one")
 	assertDims("contents", "active-two")
-	assertDims("notes", "note-one")
-	assertDims("notes", "note-two")
 
 	var archivedHasEmbedding bool
 	if err := testPool.QueryRow(t.Context(),
@@ -160,22 +142,14 @@ func TestReconcilerRunOnce_DrainsContentsAndNotes(t *testing.T) {
 		t.Errorf("activity_events rows = %d after RunOnce, want %d (embedding UPDATE must not audit)",
 			auditRowsAfter, auditRowsBefore)
 	}
-	var contentUpdatedAfter, noteUpdatedAfter time.Time
+	var contentUpdatedAfter time.Time
 	if err := testPool.QueryRow(t.Context(),
 		`SELECT updated_at FROM contents WHERE slug = 'active-one'`).Scan(&contentUpdatedAfter); err != nil {
 		t.Fatalf("reading content updated_at: %v", err)
 	}
-	if err := testPool.QueryRow(t.Context(),
-		`SELECT updated_at FROM notes WHERE slug = 'note-one'`).Scan(&noteUpdatedAfter); err != nil {
-		t.Fatalf("reading note updated_at: %v", err)
-	}
 	if !contentUpdatedAfter.Equal(contentUpdatedBefore) {
 		t.Errorf("content updated_at = %v after RunOnce, want %v (unchanged)",
 			contentUpdatedAfter, contentUpdatedBefore)
-	}
-	if !noteUpdatedAfter.Equal(noteUpdatedBefore) {
-		t.Errorf("note updated_at = %v after RunOnce, want %v (unchanged)",
-			noteUpdatedAfter, noteUpdatedBefore)
 	}
 
 	// A second pass finds nothing left to do.

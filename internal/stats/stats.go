@@ -14,10 +14,6 @@
 //     through to an overall error rather than silently zeroing one
 //     section.
 //   - handler.go           — thin HTTP wrappers around the store.
-//
-// Load-bearing invariant: NoteStats is currently a no-op — the
-// aggregation query isn't wired yet. The dashboard row renders as
-// zero; do NOT add a nil check on the frontend that branches on it.
 package stats
 
 // Overview contains aggregated stats across all platform data sources.
@@ -32,7 +28,6 @@ type Overview struct {
 	Feeds       FeedStats                  `json:"feeds"`
 	ProcessRuns map[string]ProcessRunStats `json:"process_runs"`
 	Projects    ProjectStats               `json:"projects"`
-	Notes       NoteStats                  `json:"notes"`
 	Activity    ActivityStats              `json:"activity"`
 }
 
@@ -67,12 +62,6 @@ type ProcessRunStats struct {
 type ProjectStats struct {
 	Total    int            `json:"total"`
 	ByStatus map[string]int `json:"by_status"`
-}
-
-// NoteStats holds counts of note-type contents broken down by note_kind.
-type NoteStats struct {
-	Total  int            `json:"total"`
-	ByType map[string]int `json:"by_type"`
 }
 
 // ActivityStats holds activity event counts.
@@ -187,5 +176,4 @@ type PipelineHealth struct {
 type DatabaseStats struct {
 	ContentsCount int `json:"contents_count"`
 	TodosCount    int `json:"todos_count"`
-	NotesCount    int `json:"notes_count"`
 }

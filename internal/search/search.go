@@ -20,7 +20,6 @@ type Kind string
 
 const (
 	KindContent Kind = "content"
-	KindNote    Kind = "note"
 )
 
 // Result is a single hit surfaced by any Source. Score is a 0..1

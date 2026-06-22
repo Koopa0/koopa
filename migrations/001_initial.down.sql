@@ -5,7 +5,6 @@
 -- 1. Triggers (drop before their parent tables and functions)
 -- ============================================================
 
-DROP TRIGGER IF EXISTS trg_notes_audit ON notes;
 DROP TRIGGER IF EXISTS trg_contents_audit ON contents;
 DROP TRIGGER IF EXISTS trg_projects_audit ON projects;
 DROP TRIGGER IF EXISTS trg_milestones_audit ON milestones;
@@ -22,7 +21,6 @@ DROP TRIGGER IF EXISTS trg_project_profile_not_public_if_archived ON project_pro
 -- otherwise DROP FUNCTION without CASCADE errors on the dependency.
 -- ============================================================
 
-DROP FUNCTION IF EXISTS audit_notes();
 DROP FUNCTION IF EXISTS audit_contents();
 DROP FUNCTION IF EXISTS audit_projects();
 DROP FUNCTION IF EXISTS audit_milestones();
@@ -71,9 +69,6 @@ DROP TABLE IF EXISTS feeds;
 -- Content junctions
 DROP TABLE IF EXISTS content_topics;
 
--- Notes
-DROP TABLE IF EXISTS notes;
-
 -- Contents
 DROP TABLE IF EXISTS contents;
 
@@ -104,8 +99,6 @@ DROP TABLE IF EXISTS agents;
 -- 5. Enum types
 -- ============================================================
 
-DROP TYPE IF EXISTS note_maturity;
-DROP TYPE IF EXISTS note_kind;
 DROP TYPE IF EXISTS agent_status;
 DROP TYPE IF EXISTS todo_state;
 DROP TYPE IF EXISTS project_status;

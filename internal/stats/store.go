@@ -40,7 +40,6 @@ func (s *Store) Overview(ctx context.Context) (*Overview, error) {
 		Collected:   CollectedStats{ByStatus: map[string]int{}},
 		ProcessRuns: make(map[string]ProcessRunStats, len(ProcessRunKinds)),
 		Projects:    ProjectStats{ByStatus: map[string]int{}},
-		Notes:       NoteStats{ByType: map[string]int{}},
 		Activity:    ActivityStats{BySource: map[string]int{}},
 	}
 	// Seed zero entries so every kind is always present in the response,
@@ -66,7 +65,6 @@ func (s *Store) Overview(ctx context.Context) (*Overview, error) {
 		return nil
 	})
 	g.Go(func() error { return s.queryProjectStats(ctx, &o.Projects) })
-	g.Go(func() error { return s.queryNoteStats(ctx, &o.Notes) })
 	g.Go(func() error { return s.queryActivityStats(ctx, &o.Activity) })
 
 	if err := g.Wait(); err != nil {
@@ -141,13 +139,6 @@ func (s *Store) queryProjectStats(ctx context.Context, ps *ProjectStats) error {
 		ps.Total += count
 		ps.ByStatus[rows[i].Status] += count
 	}
-	return nil
-}
-
-func (s *Store) queryNoteStats(_ context.Context, _ *NoteStats) error {
-	// Deliberate no-op: notes-by-kind stats are not yet wired to the
-	// notes table. Callers see zero counts on the notes dashboard row
-	// until the aggregation query lands.
 	return nil
 }
 
@@ -438,7 +429,6 @@ func (s *Store) SystemHealth(ctx context.Context) (*SystemHealthSnapshot, error)
 	}
 	out.Database.ContentsCount = int(dbCounts.ContentsCount)
 	out.Database.TodosCount = int(dbCounts.TodosCount)
-	out.Database.NotesCount = int(dbCounts.NotesCount)
 
 	return out, nil
 }

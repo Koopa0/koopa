@@ -8,9 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
-	"sync"
 	"time"
-	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -19,7 +17,6 @@ import (
 
 	"github.com/Koopa0/koopa/internal/content"
 	"github.com/Koopa0/koopa/internal/embedder"
-	"github.com/Koopa0/koopa/internal/note"
 )
 
 // searchKnowledgeHybridDeadline bounds the combined embed-query + semantic-SQL
@@ -45,15 +42,13 @@ const rrfK = 60.0
 // SourceType values for search results.
 const (
 	SourceTypeContent = "content"
-	SourceTypeNote    = "note"
 )
 
 // SearchKnowledgeInput is the input for the search_knowledge tool.
 type SearchKnowledgeInput struct {
 	Query       string   `json:"query" jsonschema:"required" jsonschema_description:"Search query text"`
-	ContentType *string  `json:"content_type,omitempty" jsonschema_description:"Filter by content type: article, essay, build-log, til, digest. An unknown value is rejected. Implies source_types=[\"content\"]; notes are excluded automatically. Mutually exclusive with note_kind."`
-	NoteKind    *string  `json:"note_kind,omitempty" jsonschema_description:"Filter by note kind: solve-note, concept-note, debug-postmortem, decision-log, reading-note, musing. An unknown value is rejected. Implies source_types=[\"note\"]; content is excluded automatically. Mutually exclusive with content_type."`
-	SourceTypes []string `json:"source_types,omitempty" jsonschema_description:"Filter by source: 'content' (articles/essays/etc), 'note' (Zettelkasten). Default: both. Any token outside {content, note} is rejected. Overridden by content_type or note_kind if either is set."`
+	ContentType *string  `json:"content_type,omitempty" jsonschema_description:"Filter by content type: article, essay, build-log, til, digest. An unknown value is rejected."`
+	SourceTypes []string `json:"source_types,omitempty" jsonschema_description:"Filter by source: 'content' (articles/essays/etc). Default: content. Any token outside {content} is rejected."`
 	Project     *string  `json:"project,omitempty" jsonschema_description:"NOT SUPPORTED — passing a non-empty value is rejected as an unsupported_filter. Reserved for a future content-only project filter."`
 	After       *string  `json:"after,omitempty" jsonschema_description:"Filter by created date YYYY-MM-DD: keep rows created on or after the whole of this day (server timezone, UTC by default)."`
 	Before      *string  `json:"before,omitempty" jsonschema_description:"Filter by created date YYYY-MM-DD: keep rows created on or before the whole of this day, i.e. through 23:59:59 of the date (server timezone, UTC by default)."`
@@ -63,11 +58,10 @@ type SearchKnowledgeInput struct {
 // SearchKnowledgeResult is a single search result.
 type SearchKnowledgeResult struct {
 	ID          string `json:"id"`
-	SourceType  string `json:"source_type"` // 'content' or 'note'
+	SourceType  string `json:"source_type"` // always 'content'
 	Title       string `json:"title"`
 	Slug        string `json:"slug"`
 	ContentType string `json:"content_type,omitempty"` // content.type when source_type=content
-	NoteKind    string `json:"note_kind,omitempty"`    // note.kind when source_type=note
 	Excerpt     string `json:"excerpt"`
 	Project     string `json:"project,omitempty"`
 	CreatedAt   string `json:"created_at"`
@@ -78,9 +72,9 @@ type SearchKnowledgeOutput struct {
 	Results []SearchKnowledgeResult `json:"results"`
 	Total   int                     `json:"total"`
 	Query   string                  `json:"query"`
-	// SearchedCorpus lists the source types actually queried ("content",
-	// "note"). It lets a caller read a 0-result response as "found none in
-	// these corpora" rather than "does not exist".
+	// SearchedCorpus lists the source types actually queried ("content").
+	// It lets a caller read a 0-result response as "found none in these
+	// corpora" rather than "does not exist".
 	SearchedCorpus []string `json:"searched_corpus"`
 }
 
@@ -99,150 +93,72 @@ func (s *Server) searchKnowledge(ctx context.Context, _ *mcp.CallToolRequest, in
 	}
 
 	limit := clamp(int(input.Limit), 1, 50, 20)
-	wantContent, wantNote := selectSources(input.SourceTypes)
-	// A type-specific filter implies the corresponding source. Caller's
-	// mental model is "I asked for articles, why did notes leak in?" —
-	// passing content_type narrows to the content branch even if
-	// source_types was unset (default both). Symmetric for note_kind.
-	if input.ContentType != nil && *input.ContentType != "" {
-		wantNote = false
-	}
-	if input.NoteKind != nil && *input.NoteKind != "" {
-		wantContent = false
-	}
 
-	contentRows, noteRows, err := s.hybridSearch(ctx, input.Query, limit, wantContent, wantNote)
+	contentRows, err := s.hybridSearch(ctx, input.Query, limit)
 	if err != nil {
 		return nil, SearchKnowledgeOutput{}, err
 	}
 
-	// Each branch arrives already ordered by its own relevance score (fused
-	// RRF rank, or native FTS rank when the semantic side came back empty).
-	// The two scores live on incompatible scales, so the cross-source merge
-	// fuses by rank position rather than comparing raw scores — see
-	// mergeByRelevance.
-	var contentResults, noteResults []SearchKnowledgeResult
-	if wantContent {
-		contentResults = s.filterContentResults(ctx, contentRows, input.ContentType, after, before)
-	}
-	if wantNote {
-		noteResults = filterNoteResults(noteRows, input.NoteKind, after, before)
-	}
+	// Rows arrive already ordered by relevance (fused RRF rank, or native
+	// FTS rank when the semantic side came back empty).
+	contentResults := s.filterContentResults(ctx, contentRows, input.ContentType, after, before)
 
-	results := mergeByRelevance(contentResults, noteResults, limit)
+	results := rankByRelevance(contentResults, limit)
 
 	return nil, SearchKnowledgeOutput{
 		Results:        results,
 		Total:          len(results),
 		Query:          input.Query,
-		SearchedCorpus: searchedCorpusOf(wantContent, wantNote),
+		SearchedCorpus: []string{SourceTypeContent},
 	}, nil
 }
 
-// searchedCorpusOf lists the source types actually queried, in stable order. It
-// lets a 0-result response read as "found none in these corpora" rather than
-// "does not exist".
-func searchedCorpusOf(wantContent, wantNote bool) []string {
-	out := make([]string, 0, 2)
-	if wantContent {
-		out = append(out, SourceTypeContent)
-	}
-	if wantNote {
-		out = append(out, SourceTypeNote)
-	}
-	return out
-}
-
-// mergeByRelevance fuses the already-relevance-ranked branch result lists
-// (content, note) into a single ranking, capped at limit. Each branch
-// arrives ordered by its own relevance score — content by fused RRF rank,
-// notes by ts_rank — and those scores live on incompatible scales, so raw
-// scores are never compared across branches. Instead each result is scored by
-// its RANK POSITION within its own branch via reciprocal rank fusion: a result
-// at branch rank r (1-based) scores 1/(rrfK + r).
-//
-// CreatedAt (newer first) is a deterministic tie-breaker ONLY; it never
-// outranks a more relevant result. The result envelope is always non-nil
-// (JSON serialises to "results":[] when empty) — the json-api rule forbids
-// null on list fields.
-func mergeByRelevance(contentResults, noteResults []SearchKnowledgeResult, limit int) []SearchKnowledgeResult {
-	type scored struct {
-		result SearchKnowledgeResult
-		score  float64
-	}
-	ranked := make([]scored, 0, len(contentResults)+len(noteResults))
-	accumulate := func(branch []SearchKnowledgeResult, weight float64) {
-		for i := range branch {
-			ranked = append(ranked, scored{
-				result: branch[i],
-				score:  weight * (1.0 / (rrfK + float64(i+1))),
-			})
-		}
-	}
-	accumulate(contentResults, 1.0)
-	accumulate(noteResults, 1.0)
-
-	slices.SortStableFunc(ranked, func(a, b scored) int {
-		if c := cmp.Compare(b.score, a.score); c != 0 {
-			return c // higher fused rank score first
-		}
-		return cmp.Compare(b.result.CreatedAt, a.result.CreatedAt) // newer first on a tie
-	})
-
-	results := make([]SearchKnowledgeResult, 0, min(len(ranked), limit))
-	for i := range ranked {
+// rankByRelevance caps the already-relevance-ranked content results at limit.
+// Results arrive ordered by relevance score (fused RRF rank, or native FTS
+// rank when the semantic side is empty). The result envelope is always
+// non-nil (JSON serialises to "results":[] when empty) — the json-api rule
+// forbids null on list fields.
+func rankByRelevance(contentResults []SearchKnowledgeResult, limit int) []SearchKnowledgeResult {
+	results := make([]SearchKnowledgeResult, 0, min(len(contentResults), limit))
+	for i := range contentResults {
 		if i >= limit {
 			break
 		}
-		results = append(results, ranked[i].result)
+		results = append(results, contentResults[i])
 	}
 	return results
 }
 
-// hybridSearch runs the FTS branches and — when the embedder is wired —
-// the semantic branches for the selected corpora in parallel, then fuses
-// each corpus's two rankings with reciprocal rank fusion. An FTS error
-// aborts the search; semantic failures degrade that corpus to FTS-only,
-// so search stays useful when Gemini is slow or unreachable. Returned
-// slices are ordered by fused rank (FTS rank when the semantic side is
-// empty), capped at limit.
-func (s *Server) hybridSearch(ctx context.Context, query string, limit int, wantContent, wantNote bool) ([]content.Content, []note.Note, error) {
+// hybridSearch runs the content FTS branch and — when the embedder is wired —
+// the content semantic branch in parallel, then fuses the two rankings with
+// reciprocal rank fusion. An FTS error aborts the search; a semantic failure
+// degrades to FTS-only, so search stays useful when Gemini is slow or
+// unreachable. Returned slice is ordered by fused rank (FTS rank when the
+// semantic side is empty), capped at limit.
+func (s *Server) hybridSearch(ctx context.Context, query string, limit int) ([]content.Content, error) {
 	branchSize := max(limit, searchKnowledgeBranchSize)
 
 	var (
 		contentFTS, contentSem []content.Content
-		noteFTS, noteSem       []note.Note
 	)
 
 	g, gctx := errgroup.WithContext(ctx)
-	if wantContent {
+	g.Go(func() error {
+		rows, _, err := s.contents.InternalSearch(gctx, query, 1, branchSize)
+		if err != nil {
+			return fmt.Errorf("searching content: fts: %w", err)
+		}
+		contentFTS = rows
+		return nil
+	})
+	if s.embedder != nil {
 		g.Go(func() error {
-			rows, _, err := s.contents.InternalSearch(gctx, query, 1, branchSize)
-			if err != nil {
-				return fmt.Errorf("searching content: fts: %w", err)
-			}
-			contentFTS = rows
-			return nil
-		})
-	}
-	if wantNote {
-		g.Go(func() error {
-			rows, err := s.notes.Search(gctx, query, branchSize)
-			if err != nil {
-				return fmt.Errorf("searching notes: fts: %w", err)
-			}
-			noteFTS = rows
-			return nil
-		})
-	}
-	if s.embedder != nil && (wantContent || wantNote) {
-		g.Go(func() error {
-			contentSem, noteSem = s.semanticBranches(gctx, query, branchSize, wantContent, wantNote)
+			contentSem = s.semanticBranch(gctx, query, branchSize)
 			return nil
 		})
 	}
 	if err := g.Wait(); err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	contentRows := contentFTS
@@ -253,25 +169,17 @@ func (s *Server) hybridSearch(ctx context.Context, query string, limit int, want
 		// would be a no-op transform that discards the FTS-native rank.
 		contentRows = contentRows[:limit]
 	}
-	noteRows := noteFTS
-	if len(noteSem) > 0 {
-		noteRows = rrfMergeNotes(noteFTS, noteSem, limit)
-	} else if len(noteRows) > limit {
-		noteRows = noteRows[:limit]
-	}
-	return contentRows, noteRows, nil
+	return contentRows, nil
 }
 
-// semanticBranches produces the vector side of hybrid search: embed the
-// query once via Gemini, then cosine-rank contents and notes in parallel
-// with that one vector — EmbedQuery is never called twice for a single
-// search. The embed plus both vector queries share a single
-// searchKnowledgeHybridDeadline window, so a slow Gemini call cannot
-// stall the MCP handler. Every failure is logged and swallowed; the
-// caller treats an empty slice as "degrade that corpus to FTS-only"
+// semanticBranch produces the vector side of hybrid search: embed the query
+// once via Gemini, then cosine-rank contents with that vector. The embed plus
+// the vector query share a single searchKnowledgeHybridDeadline window, so a
+// slow Gemini call cannot stall the MCP handler. Every failure is logged and
+// swallowed; the caller treats an empty slice as "degrade to FTS-only"
 // (ErrEmptyInput is the one shape that does not even log, since it is a
 // caller-input issue).
-func (s *Server) semanticBranches(ctx context.Context, query string, limit int, wantContent, wantNote bool) (contentRows []content.Content, noteRows []note.Note) {
+func (s *Server) semanticBranch(ctx context.Context, query string, limit int) []content.Content {
 	semCtx, cancel := context.WithTimeout(ctx, searchKnowledgeHybridDeadline)
 	defer cancel()
 
@@ -280,33 +188,16 @@ func (s *Server) semanticBranches(ctx context.Context, query string, limit int, 
 		if !errors.Is(err, embedder.ErrEmptyInput) {
 			s.logger.Warn("search_knowledge semantic branch skipped: embed_query failed", "err", err)
 		}
-		return nil, nil
+		return nil
 	}
 	queryVec := pgvector.NewVector(vec)
 
-	var wg sync.WaitGroup
-	if wantContent {
-		wg.Go(func() {
-			rows, semErr := s.contents.InternalSemanticSearch(semCtx, queryVec, limit)
-			if semErr != nil {
-				s.logger.Warn("search_knowledge semantic branch skipped: content vector query failed", "err", semErr)
-				return
-			}
-			contentRows = rows
-		})
+	rows, semErr := s.contents.InternalSemanticSearch(semCtx, queryVec, limit)
+	if semErr != nil {
+		s.logger.Warn("search_knowledge semantic branch skipped: content vector query failed", "err", semErr)
+		return nil
 	}
-	if wantNote {
-		wg.Go(func() {
-			rows, semErr := s.notes.SemanticSearch(semCtx, queryVec, limit)
-			if semErr != nil {
-				s.logger.Warn("search_knowledge semantic branch skipped: note vector query failed", "err", semErr)
-				return
-			}
-			noteRows = rows
-		})
-	}
-	wg.Wait()
-	return contentRows, noteRows
+	return rows
 }
 
 // rrfMerge fuses two ranked content lists via reciprocal rank fusion:
@@ -355,113 +246,6 @@ func rrfMerge(fts, sem []content.Content, limit int) []content.Content {
 		out[i] = byID[ranked[i].id]
 	}
 	return out
-}
-
-// rrfMergeNotes fuses two ranked note lists via reciprocal rank fusion —
-// the note counterpart of rrfMerge: score(n) = Σ 1 / (k + rank_i(n)) over
-// the branches where n appears, rank_i starting at 1. Notes appearing in
-// only one branch still score. Score ties break on note ID so output
-// stays deterministic. Input slices are treated as already ranked in
-// index order.
-func rrfMergeNotes(fts, sem []note.Note, limit int) []note.Note {
-	scores := make(map[uuid.UUID]float64, len(fts)+len(sem))
-	byID := make(map[uuid.UUID]note.Note, len(fts)+len(sem))
-	accumulate := func(rows []note.Note) {
-		for i := range rows {
-			id := rows[i].ID
-			scores[id] += 1.0 / (rrfK + float64(i+1))
-			if _, ok := byID[id]; !ok {
-				byID[id] = rows[i]
-			}
-		}
-	}
-	accumulate(fts)
-	accumulate(sem)
-
-	type scored struct {
-		id    uuid.UUID
-		score float64
-	}
-	ranked := make([]scored, 0, len(scores))
-	for id, sc := range scores {
-		ranked = append(ranked, scored{id: id, score: sc})
-	}
-	slices.SortFunc(ranked, func(a, b scored) int {
-		if a.score != b.score {
-			return cmp.Compare(b.score, a.score) // higher score first
-		}
-		return cmp.Compare(a.id.String(), b.id.String())
-	})
-
-	if len(ranked) > limit {
-		ranked = ranked[:limit]
-	}
-	out := make([]note.Note, len(ranked))
-	for i := range ranked {
-		out[i] = byID[ranked[i].id]
-	}
-	return out
-}
-
-// selectSources resolves the source_types filter into branch flags. Empty
-// list = all sources. Tokens are assumed already validated by
-// validateSourceTypes, so any unrecognized token here is a no-op rather than
-// an error. Named wantContent / wantNote to avoid shadowing the
-// internal/content package.
-func selectSources(filter []string) (wantContent, wantNote bool) {
-	if len(filter) == 0 {
-		return true, true
-	}
-	for _, t := range filter {
-		switch t {
-		case SourceTypeContent:
-			wantContent = true
-		case SourceTypeNote:
-			wantNote = true
-		}
-	}
-	return wantContent, wantNote
-}
-
-// filterNoteResults applies note-specific filters and converts to wire shape.
-func filterNoteResults(notes []note.Note, kindFilter *string, after, before *time.Time) []SearchKnowledgeResult {
-	out := make([]SearchKnowledgeResult, 0, len(notes))
-	for i := range notes {
-		n := &notes[i]
-		if kindFilter != nil && *kindFilter != "" && string(n.Kind) != *kindFilter {
-			continue
-		}
-		if after != nil && n.CreatedAt.Before(*after) {
-			continue
-		}
-		// before is the exclusive upper bound (start of the day after the
-		// requested date), so the whole requested day is kept.
-		if before != nil && !n.CreatedAt.Before(*before) {
-			continue
-		}
-		out = append(out, SearchKnowledgeResult{
-			ID:         n.ID.String(),
-			SourceType: SourceTypeNote,
-			Title:      n.Title,
-			Slug:       n.Slug,
-			NoteKind:   string(n.Kind),
-			Excerpt:    truncate(n.Body, 200),
-			CreatedAt:  n.CreatedAt.Format(time.RFC3339),
-		})
-	}
-	return out
-}
-
-// truncate cuts s to at most n runes, appending an ellipsis if
-// truncated. Rune-counted (not byte-counted) so a multi-byte UTF-8
-// body — Koopa writes Chinese; CJK runes are 3 bytes — never gets
-// split mid-rune into invalid UTF-8.
-func truncate(s string, n int) string {
-	if utf8.RuneCountInString(s) <= n {
-		return s
-	}
-	runes := []rune(s)
-	return string(runes[:n]) + "…"
 }
 
 func (s *Server) filterContentResults(ctx context.Context, contents []content.Content, contentType *string, after, before *time.Time) []SearchKnowledgeResult {
@@ -535,31 +319,23 @@ func parseDateEnd(s *string, loc *time.Location) (*time.Time, error) {
 }
 
 // validateSearchKnowledgeInput runs the pre-store filter validation for
-// search_knowledge — required query, strict enum filters, source-type tokens,
-// the content_type⊕note_kind mutex, and the unsupported project filter —
-// returning the first violation. Date parsing stays in the handler because it
-// needs the server timezone and produces values the handler consumes.
+// search_knowledge — required query, strict content_type enum, source-type
+// tokens, and the unsupported project filter — returning the first violation.
+// Date parsing stays in the handler because it needs the server timezone and
+// produces values the handler consumes.
 func validateSearchKnowledgeInput(input SearchKnowledgeInput) error {
 	if input.Query == "" {
 		return fmt.Errorf("query is required")
 	}
 
 	hasContentTypeFilter := input.ContentType != nil && *input.ContentType != ""
-	hasNoteKindFilter := input.NoteKind != nil && *input.NoteKind != ""
 
-	// Enum filters reject unknown values. The allowed sets (content.Type,
-	// note.Kind) are closed and stable, so an out-of-enum value is a caller
-	// bug — not a legitimate zero-result. Rejecting keeps "unsupported
-	// filter" distinguishable from "no match" and matches create_content,
-	// which already rejects invalid content types.
+	// The content_type enum rejects unknown values. The allowed set
+	// (content.Type) is closed and stable, so an out-of-enum value is a
+	// caller bug — not a legitimate zero-result. Rejecting keeps
+	// "unsupported filter" distinguishable from "no match".
 	if hasContentTypeFilter && !content.Type(*input.ContentType).Valid() {
 		return fmt.Errorf("unsupported content_type %q (supported: article, essay, build-log, til, digest)", *input.ContentType)
-	}
-	if hasNoteKindFilter && !note.Kind(*input.NoteKind).Valid() {
-		return fmt.Errorf("unsupported note_kind %q (supported: solve-note, concept-note, debug-postmortem, decision-log, reading-note, musing)", *input.NoteKind)
-	}
-	if hasContentTypeFilter && hasNoteKindFilter {
-		return fmt.Errorf("content_type and note_kind are mutually exclusive — content_type filters articles/essays/etc; note_kind filters notes")
 	}
 
 	if err := validateSourceTypes(input.SourceTypes); err != nil {
@@ -578,15 +354,15 @@ func validateSearchKnowledgeInput(input SearchKnowledgeInput) error {
 }
 
 // validateSourceTypes rejects any source token outside the supported corpus
-// set {content, note}. An unknown token (a typo, or an unsupported corpus
-// like "bookmark"/"task") is a caller error, not a silent no-op: returning it
-// as an error keeps "unsupported filter" distinguishable from "no results".
+// set {content}. An unknown token (a typo, or an unsupported corpus like
+// "bookmark"/"task") is a caller error, not a silent no-op: returning it as an
+// error keeps "unsupported filter" distinguishable from "no results".
 func validateSourceTypes(filter []string) error {
 	for _, t := range filter {
 		switch t {
-		case SourceTypeContent, SourceTypeNote:
+		case SourceTypeContent:
 		default:
-			return fmt.Errorf("unsupported source_type %q (supported: content, note)", t)
+			return fmt.Errorf("unsupported source_type %q (supported: content)", t)
 		}
 	}
 	return nil

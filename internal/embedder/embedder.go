@@ -1,7 +1,7 @@
 // Copyright 2026 Koopa. All rights reserved.
 
 // Package embedder generates vector embeddings for knowledge content,
-// and reconciles the contents/notes embedding columns in the background.
+// and reconciles the contents embedding column in the background.
 //
 // Backed by Google's gemini-embedding-2 model at 1536 dimensions
 // (Matryoshka-truncated from the model's native 3072d). Callers depend on

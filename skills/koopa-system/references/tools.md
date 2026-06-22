@@ -13,21 +13,21 @@ is hand-maintained.
 > Run `go generate ./internal/mcp/ops` after any change to the tool surface;
 > the drift test `TestToolInventoryDocInSync` fails CI if this is stale.
 
-**13 tools** across 3 domains.
+**11 tools** across 3 domains.
 
 | Domain | Count |
 |---|---|
 | `query` | 4 |
 | `daily` | 7 |
-| `content` | 2 |
-| **Total** | **13** |
+| `content` | 0 |
+| **Total** | **11** |
 
 | Tool | Domain | Writability | Purpose |
 |---|---|---|---|
 | `brief` | `query` | read_only | Read-only planning-state pull |
 | `get_reading` | `query` | read_only | Read-only fetch of one book by id, returning the reading (incl |
 | `list_readings` | `query` | read_only | Read-only list of Koopa's reading shelf |
-| `search_knowledge` | `query` | read_only | Search across content (articles, build logs, TILs, etc.) and notes (Zettelkasten) |
+| `search_knowledge` | `query` | read_only | Search across content (articles, build logs, TILs, etc.) |
 | `capture_inbox` | `daily` | additive | Quick task capture to inbox |
 | `list_tasks` | `daily` | read_only | Read-only readback of the todos you created (created_by = your resolved caller identity) so you can learn their disposition |
 | `plan_day` | `daily` | idempotent | Set the day's plan as one atomic replacement |
@@ -35,8 +35,6 @@ is hand-maintained.
 | `propose_goal` | `daily` | additive | Propose a goal (with optional ordered milestones) as an INERT draft in status=proposed |
 | `propose_project` | `daily` | additive | Propose a NEW project (a short-term effort with a clear outcome) as an INERT draft in status=proposed |
 | `resolve_task` | `daily` | destructive | Move a todo YOU created to a terminal state: done (completed), archived (filed away), or dismissed (won't do) |
-| `create_note` | `content` | additive | Create a Zettelkasten note (notes table) |
-| `update_note` | `content` | additive | Update editable fields (slug / title / body / kind) on a note |
 <!-- GENERATED:TOOL-INVENTORY END -->
 
 ---
@@ -72,13 +70,12 @@ Per-agent default sections: `learning-studio` defaults to `['tasks', 'hypotheses
 CURRENT behavior is PostgreSQL full-text search only (lexical, tsvector + websearch syntax, GIN-indexed). There is no production document-embedding write path today, so the semantic / pgvector branch returns no rows for app-created content. Hybrid lexical + pgvector + RRF is PLANNED but not active — do not assume semantic recall.
 
 - **FTS**: `websearch_to_tsquery('simple', query)` on the search vectors (GIN).
-- Searches across content (articles, build logs, TILs, etc.) and notes (Zettelkasten).
+- Searches across content (articles, build logs, TILs, etc.).
 
 Filters:
 
-- `source_types` — default both (content + notes).
-- `content_type` — implies content-only; mutually exclusive with `note_kind`.
-- `note_kind` — implies note-only; mutually exclusive with `content_type`.
+- `source_types` — content only (default content); the token `note` is rejected.
+- `content_type` — implies content-only.
 - `project`, `after`, `before`, `limit`.
 
 Query syntax (websearch):
@@ -146,17 +143,6 @@ Completing an entry (`status=completed`) requires:
 - `reason` — non-blank, includes attempt outcome.
 
 Skipping an entry (`status=skipped`) also requires a non-blank `reason` (no force-mode escape hatch for skip). For completion only, use `force=true` with a `reason` starting with `manual override:` (≥60 chars) when no aligned attempt exists — the prefix is the audit signal for retroactive completions.
-
----
-
-## Notes (Zettelkasten)
-
-Separate entity, separate package. Notes are Koopa-private and mature in place; they do not publish.
-
-| Tool | Key params | Annotation |
-|---|---|---|
-| `create_note` | `title`, `body`, `kind`, `slug?`, `concepts?`, `target_ids?` | Additive. Creates at `seed` maturity. `kind` one of `solve-note` / `concept-note` / `debug-postmortem` / `decision-log` / `reading-note` / `musing`. |
-| `update_note` | `id`, `slug?` / `title?` / `body?` / `kind?` patches | Additive. Maturity is NOT editable via the MCP surface (maturity transitions are admin-UI/HTTP only). |
 
 ---
 

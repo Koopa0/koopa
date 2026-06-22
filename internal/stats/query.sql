@@ -88,20 +88,13 @@ LIMIT @max_results;
 
 
 -- name: StatsNoteGrowth :one
--- Short-form knowledge growth: Zettelkasten notes (notes table) plus
--- TIL contents. Phase 2 entry split notes out of contents — the two
--- short-form formats now live in separate tables and the union here
--- reassembles the dashboard view.
-WITH knowledge AS (
-    SELECT created_at FROM notes
-    UNION ALL
-    SELECT created_at FROM contents WHERE type = 'til'
-)
+-- Short-form knowledge growth over TIL contents.
 SELECT
     COUNT(*)::int AS total,
     COUNT(*) FILTER (WHERE created_at > now() - interval '7 days')::int AS last_week,
     COUNT(*) FILTER (WHERE created_at > now() - interval '30 days')::int AS last_month
-FROM knowledge;
+FROM contents
+WHERE type = 'til';
 
 -- name: StatsWeeklyActivity :one
 -- Compares this week (last 7 days) vs last week (7-14 days ago).
@@ -145,8 +138,6 @@ WHERE created_at >= @since;
 -- Core entity counts for SystemHealth. todos is the personal GTD store;
 -- the inter-agent coordination tasks table is intentionally NOT counted
 -- here (it would mix two entirely different concepts with the same word).
--- notes lives in its own table, separate from contents.
 SELECT
     (SELECT COUNT(*) FROM contents)::int                 AS contents_count,
-    (SELECT COUNT(*) FROM todos)::int                    AS todos_count,
-    (SELECT COUNT(*) FROM notes)::int                    AS notes_count;
+    (SELECT COUNT(*) FROM todos)::int                    AS todos_count;

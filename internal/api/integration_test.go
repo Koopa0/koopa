@@ -22,12 +22,16 @@
 //     risk so future reviewers audit every admin mutation wired by the
 //     middleware.
 //
+// The concrete vehicle is the content Create route (POST /api/admin/knowledge/content):
+// its audit trigger writes activity_events with actor=current_actor() on
+// INSERT, exactly the propagation the middleware contract guarantees.
+//
 // Known coverage gap (review-code M8 backlog):
-// This file asserts the WithTx contract on ONE route (note Create).
-// The other audited admin mutations (content / project / goal / topic
-// / feed / feed/entry / hypothesis + sub-routes) are covered by
-// per-feature integration tests that exercise the WithTx path when wired,
-// but there is no single table-driven proof-of-universal-coverage here.
+// This file asserts the WithTx contract on ONE route (content Create).
+// The other audited admin mutations (project / goal / topic / feed /
+// feed/entry / hypothesis + sub-routes) are covered by per-feature
+// integration tests that exercise the WithTx path when wired, but there is
+// no single table-driven proof-of-universal-coverage here.
 // If a future dev adds a new admin route and forgets store.WithTx(tx),
 // no test in this file will catch it. The practical guard is the code
 // review pattern documented in cmd/app/routes.go + the existing silent-
@@ -63,7 +67,7 @@ import (
 
 	"github.com/Koopa0/koopa/internal/agent"
 	"github.com/Koopa0/koopa/internal/api"
-	"github.com/Koopa0/koopa/internal/note"
+	"github.com/Koopa0/koopa/internal/content"
 	"github.com/Koopa0/koopa/internal/testdb"
 )
 
@@ -73,9 +77,9 @@ func TestMain(m *testing.M) {
 	pool, cleanup := testdb.StartPool()
 	testPool = pool
 
-	// The audit trigger on notes writes activity_events.actor which has an
-	// FK onto agents. Without reconciling the builtin registry, every note
-	// insert fails with 23503 before the middleware contract can be
+	// The audit trigger on contents writes activity_events.actor which has
+	// an FK onto agents. Without reconciling the builtin registry, every
+	// content insert fails with 23503 before the middleware contract can be
 	// exercised. Matches cmd/app/main.go startup.
 	registry := agent.NewBuiltinRegistry()
 	if _, err := agent.SyncToTable(context.Background(), registry, agent.NewStore(pool), nil, slog.Default()); err != nil {
@@ -89,61 +93,61 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-// truncateNotes wipes every table the note create path can write to so a
-// previous test's row cannot satisfy the "most recent note" query used by
+// truncateContents wipes every table the content create path can write to so a
+// previous test's row cannot satisfy the "most recent content" query used by
 // the assertions.
-func truncateNotes(t *testing.T) {
+func truncateContents(t *testing.T) {
 	t.Helper()
 	if _, err := testPool.Exec(t.Context(),
-		`TRUNCATE notes, activity_events CASCADE`,
+		`TRUNCATE contents, activity_events CASCADE`,
 	); err != nil {
 		t.Fatalf("truncate: %v", err)
 	}
 }
 
-// actorForNote reads the activity_events.actor column for the given note
+// actorForContent reads the activity_events.actor column for the given content
 // id. Fails the test if no row is found — absence means the audit trigger
 // silently didn't fire, which is itself a regression.
-func actorForNote(t *testing.T, noteID uuid.UUID) string {
+func actorForContent(t *testing.T, contentID uuid.UUID) string {
 	t.Helper()
 	var actor string
 	err := testPool.QueryRow(t.Context(),
 		`SELECT actor FROM activity_events
-		 WHERE entity_type = 'note' AND entity_id = $1
+		 WHERE entity_type = 'content' AND entity_id = $1
 		 ORDER BY occurred_at DESC LIMIT 1`,
-		noteID,
+		contentID,
 	).Scan(&actor)
 	if err != nil {
-		t.Fatalf("fetching activity_events for note %s: %v", noteID, err)
+		t.Fatalf("fetching activity_events for content %s: %v", contentID, err)
 	}
 	return actor
 }
 
-// noteBody is the POST /api/admin/knowledge/notes request shape. created_by
-// is not caller-supplied — the middleware actor fills it — so it is absent
-// here, mirroring the production createRequest.
-type noteBody struct {
+// contentBody is the POST /api/admin/knowledge/content request shape. The audit actor
+// is supplied by the middleware via set_config, not the request body, so no
+// author field appears here — mirroring the production CreateParams.
+type contentBody struct {
 	Slug  string `json:"slug"`
 	Title string `json:"title"`
 	Body  string `json:"body"`
-	Kind  string `json:"kind"`
+	Type  string `json:"type"`
 }
 
-// postNote builds a POST /api/admin/knowledge/notes request with a unique
-// slug so successive calls don't collide on the notes slug UNIQUE index.
-func postNote(t *testing.T, title string) *http.Request {
+// postContent builds a POST /api/admin/knowledge/content request with a unique slug so
+// successive calls don't collide on the contents slug UNIQUE index.
+func postContent(t *testing.T, title string) *http.Request {
 	t.Helper()
-	body := noteBody{
-		Slug:  "note-" + randomHex(t, 8),
+	body := contentBody{
+		Slug:  "content-" + randomHex(t, 8),
 		Title: title,
 		Body:  "integration-test body",
-		Kind:  string(note.KindMusing),
+		Type:  string(content.TypeArticle),
 	}
 	buf, err := json.Marshal(body)
 	if err != nil {
-		t.Fatalf("marshal note body: %v", err)
+		t.Fatalf("marshal content body: %v", err)
 	}
-	req := httptest.NewRequest(http.MethodPost, "/api/admin/knowledge/notes", bytes.NewReader(buf))
+	req := httptest.NewRequest(http.MethodPost, "/api/admin/contents", bytes.NewReader(buf))
 	req.Header.Set("Content-Type", "application/json")
 	return req
 }
@@ -158,9 +162,9 @@ func randomHex(t *testing.T, size int) string {
 	return hex.EncodeToString(b)
 }
 
-// decodeNoteID extracts the created note's id from an api.Response
+// decodeContentID extracts the created content's id from an api.Response
 // envelope.
-func decodeNoteID(t *testing.T, body []byte) uuid.UUID {
+func decodeContentID(t *testing.T, body []byte) uuid.UUID {
 	t.Helper()
 	var env struct {
 		Data struct {
@@ -171,27 +175,27 @@ func decodeNoteID(t *testing.T, body []byte) uuid.UUID {
 		t.Fatalf("decode response: %v (body=%s)", err, string(body))
 	}
 	if env.Data.ID == uuid.Nil {
-		t.Fatalf("response missing note id: %s", string(body))
+		t.Fatalf("response missing content id: %s", string(body))
 	}
 	return env.Data.ID
 }
 
 // TestActorMiddleware_PropagatesHumanActor wires the production handler
-// (note.Handler.Create, which requires api.TxFromContext via mustAdminTx)
-// behind ActorMiddleware and asserts the audit row lands with
+// (content.Handler.Create, which routes through api.TxFromContext via
+// mustAdminTx) behind ActorMiddleware and asserts the audit row lands with
 // actor='human'. This is the happy-path regression guard for commit 21 —
 // any future change that breaks the tx-in-context contract fails here.
 func TestActorMiddleware_PropagatesHumanActor(t *testing.T) {
-	truncateNotes(t)
+	truncateContents(t)
 
 	logger := slog.Default()
-	noteStore := note.NewStore(testPool)
-	h := note.NewHandler(noteStore, logger)
+	contentStore := content.NewStore(testPool)
+	h := content.NewHandler(contentStore, "https://example.test", logger)
 
 	mid := api.ActorMiddleware(testPool, "human", logger)
 	wrapped := mid(http.HandlerFunc(h.Create))
 
-	req := postNote(t, "Propagates Human Actor")
+	req := postContent(t, "Propagates Human Actor")
 	rec := httptest.NewRecorder()
 	wrapped.ServeHTTP(rec, req)
 
@@ -207,8 +211,8 @@ func TestActorMiddleware_PropagatesHumanActor(t *testing.T) {
 		t.Fatalf("status = %d, want 201 (body=%s)", resp.StatusCode, string(bodyBytes))
 	}
 
-	id := decodeNoteID(t, bodyBytes)
-	if got := actorForNote(t, id); got != "human" {
+	id := decodeContentID(t, bodyBytes)
+	if got := actorForContent(t, id); got != "human" {
 		t.Errorf("activity_events.actor = %q, want %q (tx-in-context did not propagate)", got, "human")
 	}
 }
@@ -222,45 +226,45 @@ func TestActorMiddleware_PropagatesHumanActor(t *testing.T) {
 // handler, check you routed through WithTx(tx) or the trigger will
 // silently misattribute the write.
 func TestActorMiddleware_SilentDegradation_WhenWithTxForgotten(t *testing.T) {
-	truncateNotes(t)
+	truncateContents(t)
 
 	logger := slog.Default()
-	noteStore := note.NewStore(testPool)
+	contentStore := content.NewStore(testPool)
 
 	// Forgetful handler: writes with the bare pool-backed store and never
 	// consults api.TxFromContext. Mirrors the public contract of
-	// note.Handler.Create so the middleware path is identical — only the
+	// content.Handler.Create so the middleware path is identical — only the
 	// WithTx(tx) call is missing.
 	forgetful := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		req, err := api.Decode[noteBody](w, r)
+		req, err := api.Decode[contentBody](w, r)
 		if err != nil {
 			api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid body")
 			return
 		}
 
-		params := &note.CreateParams{
-			Slug:      req.Slug,
-			Title:     req.Title,
-			Body:      req.Body,
-			Kind:      note.Kind(req.Kind),
-			CreatedBy: "human",
+		params := &content.CreateParams{
+			Slug:   req.Slug,
+			Title:  req.Title,
+			Body:   req.Body,
+			Type:   content.Type(req.Type),
+			Status: content.StatusDraft,
 		}
 
 		// The important omission: NO api.TxFromContext call. The store sees
 		// the raw pool and the audit trigger never observes the middleware's
 		// koopa.actor binding.
-		n, err := noteStore.Create(r.Context(), params)
+		c, err := contentStore.CreateContent(r.Context(), params)
 		if err != nil {
 			api.Error(w, http.StatusInternalServerError, "INTERNAL", "create failed: "+err.Error())
 			return
 		}
-		api.Encode(w, http.StatusCreated, api.Response{Data: n})
+		api.Encode(w, http.StatusCreated, api.Response{Data: c})
 	})
 
 	mid := api.ActorMiddleware(testPool, "human", logger)
 	wrapped := mid(forgetful)
 
-	req := postNote(t, "Silent Degradation")
+	req := postContent(t, "Silent Degradation")
 	rec := httptest.NewRecorder()
 	wrapped.ServeHTTP(rec, req)
 
@@ -276,8 +280,8 @@ func TestActorMiddleware_SilentDegradation_WhenWithTxForgotten(t *testing.T) {
 		t.Fatalf("status = %d, want 201 (forgetful handler still writes; body=%s)", resp.StatusCode, string(bodyBytes))
 	}
 
-	id := decodeNoteID(t, bodyBytes)
-	if got := actorForNote(t, id); got != "system" {
+	id := decodeContentID(t, bodyBytes)
+	if got := actorForContent(t, id); got != "system" {
 		t.Errorf("activity_events.actor = %q, want %q (silent-degradation failure mode: tx binding didn't reach the store, trigger fell back)", got, "system")
 	}
 }

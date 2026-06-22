@@ -38,7 +38,6 @@ import (
 	"github.com/Koopa0/koopa/internal/feed/collector"
 	"github.com/Koopa0/koopa/internal/feed/entry"
 	"github.com/Koopa0/koopa/internal/goal"
-	"github.com/Koopa0/koopa/internal/note"
 	"github.com/Koopa0/koopa/internal/project"
 	"github.com/Koopa0/koopa/internal/reading"
 	"github.com/Koopa0/koopa/internal/search"
@@ -55,7 +54,7 @@ import (
 const agentSyncTimeout = 10 * time.Second
 
 // embedReconcileInterval is how often the embedding reconciler rescans
-// contents and notes for rows with NULL embeddings. New rows are embedded
+// contents for rows with NULL embeddings. New rows are embedded
 // within roughly one interval of landing.
 const embedReconcileInterval = 60 * time.Second
 
@@ -74,7 +73,7 @@ func main() {
 	}
 }
 
-// runBackfill is the embed-backfill one-shot: drain every contents/notes
+// runBackfill is the embed-backfill one-shot: drain every contents
 // row missing an embedding, log the counts, and exit without serving
 // HTTP. The exit status reflects success — rows that failed to embed
 // surface as an error so a partially-drained run is visible to the
@@ -96,14 +95,14 @@ func runBackfill(logger *slog.Logger) error {
 	if err != nil {
 		return fmt.Errorf("initializing gemini embedder: %w", err)
 	}
-	reconciler := embedder.NewReconciler(emb, content.NewStore(pool), note.NewStore(pool), logger)
+	reconciler := embedder.NewReconciler(emb, content.NewStore(pool), logger)
 
 	res, err := reconciler.RunOnce(ctx)
 	if err != nil {
 		return fmt.Errorf("embed backfill: %w", err)
 	}
 	logger.Info("embed backfill complete",
-		"contents", res.Contents, "notes", res.Notes, "failed", res.Failed)
+		"contents", res.Contents, "failed", res.Failed)
 	if res.Failed > 0 {
 		return fmt.Errorf("embed backfill: %d rows failed to embed", res.Failed)
 	}
@@ -184,7 +183,6 @@ func run(logger *slog.Logger) error {
 	authStore := auth.NewStore(pool)
 	todoStore := todo.NewStore(pool)
 	dailyStore := daily.NewStore(pool)
-	noteStore := note.NewStore(pool)
 	readingStore := reading.NewStore(pool)
 	songStore := song.NewStore(pool)
 
@@ -214,7 +212,7 @@ func run(logger *slog.Logger) error {
 		if embErr != nil {
 			return fmt.Errorf("initializing gemini embedder: %w", embErr)
 		}
-		reconciler := embedder.NewReconciler(emb, contentStore, noteStore, logger)
+		reconciler := embedder.NewReconciler(emb, contentStore, logger)
 		wg.Go(func() { reconciler.Run(ctx, embedReconcileInterval) })
 		logger.Info("embedding reconciler started", "interval", embedReconcileInterval.String())
 	} else {
@@ -251,7 +249,6 @@ func run(logger *slog.Logger) error {
 		activity: activity.NewHandler(activityStore, logger),
 		agent:    agent.NewHandler(agentRegistry, logger),
 		daily:    daily.NewHandler(dailyStore, todoStore, logger),
-		note:     note.NewHandler(noteStore, logger),
 		reading:  reading.NewHandler(readingStore, logger),
 		song:     song.NewHandler(songStore, logger),
 		todo:     todo.NewHandler(todoStore, logger),
@@ -266,7 +263,6 @@ func run(logger *slog.Logger) error {
 		),
 		search: search.NewHandler([]search.Source{
 			content.NewSearchSource(contentStore),
-			note.NewSearchSource(noteStore),
 		}, logger),
 		pool:           pool,
 		logger:         logger,

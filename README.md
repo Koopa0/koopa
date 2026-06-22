@@ -98,7 +98,6 @@ Eleven MCP tools — small on purpose. Everything an agent can do is a workflow 
 | `start_session` / `record_attempt` / `end_session` | Learning-session lifecycle: begin, record attempts + observations, end with a summary. |
 | `learning_read` | Read-only learning analytics (`view = overview \| next_target \| attempts \| session_progress`). |
 | `manage_plan` | Learning-plan curriculum (`action = add_entries \| remove_entries \| update_entry \| reorder \| progress`). |
-| `create_note` / `update_note` | Co-author the Zettelkasten — body and links. |
 
 `brief` and `learning_read` are read-only; the mutating tools each encapsulate one workflow step with required fields and valid transitions, so the rules live in the tool layer, not in prompt instructions scattered across agents.
 

@@ -46,7 +46,7 @@ type Document struct {
 }
 
 // Source is a store whose rows the reconciler keeps embedded. Implemented
-// by *content.Store and *note.Store.
+// by *content.Store.
 type Source interface {
 	// MissingEmbeddings returns up to limit rows whose embedding is NULL,
 	// oldest first.
@@ -62,36 +62,33 @@ type Source interface {
 // is counted once per attempt.
 type Result struct {
 	Contents int
-	Notes    int
 	Failed   int
 }
 
-// Reconciler keeps the contents and notes embedding columns current by
-// embedding rows whose embedding is NULL. It runs outside any request
-// path or transaction: the Gemini call is slow, networked, and must never
-// sit inside a handler's per-request tx.
+// Reconciler keeps the contents embedding column current by embedding rows
+// whose embedding is NULL. It runs outside any request path or transaction:
+// the Gemini call is slow, networked, and must never sit inside a handler's
+// per-request tx.
 type Reconciler struct {
 	embedder TextEmbedder
 	contents Source
-	notes    Source
 	logger   *slog.Logger
 }
 
-// NewReconciler returns a Reconciler over the two sources. All
+// NewReconciler returns a Reconciler over the content source. All
 // dependencies are required.
-func NewReconciler(e TextEmbedder, contents, notes Source, logger *slog.Logger) *Reconciler {
-	if e == nil || contents == nil || notes == nil || logger == nil {
-		panic("embedder: NewReconciler requires non-nil embedder, sources, and logger")
+func NewReconciler(e TextEmbedder, contents Source, logger *slog.Logger) *Reconciler {
+	if e == nil || contents == nil || logger == nil {
+		panic("embedder: NewReconciler requires non-nil embedder, source, and logger")
 	}
-	return &Reconciler{embedder: e, contents: contents, notes: notes, logger: logger}
+	return &Reconciler{embedder: e, contents: contents, logger: logger}
 }
 
-// RunOnce drains both sources: contents first, then notes, in batches of
-// reconcileBatchSize until no missing rows remain. Per-row failures are
-// logged, counted in Result.Failed, and skipped — the row stays NULL for
-// the next pass. The returned error reports source-level failures (a
-// listing query that errored, or ctx cancellation); Result still carries
-// whatever progress was made before it.
+// RunOnce drains the content source in batches of reconcileBatchSize until no
+// missing rows remain. Per-row failures are logged, counted in Result.Failed,
+// and skipped — the row stays NULL for the next pass. The returned error
+// reports source-level failures (a listing query that errored, or ctx
+// cancellation); Result still carries whatever progress was made before it.
 func (r *Reconciler) RunOnce(ctx context.Context) (Result, error) {
 	var res Result
 	var errs []error
@@ -101,16 +98,6 @@ func (r *Reconciler) RunOnce(ctx context.Context) (Result, error) {
 	res.Failed += failed
 	if err != nil {
 		errs = append(errs, fmt.Errorf("draining contents: %w", err))
-	}
-	if ctx.Err() != nil {
-		return res, errors.Join(errs...)
-	}
-
-	embedded, failed, err = r.drain(ctx, r.notes, "notes")
-	res.Notes = embedded
-	res.Failed += failed
-	if err != nil {
-		errs = append(errs, fmt.Errorf("draining notes: %w", err))
 	}
 	return res, errors.Join(errs...)
 }
@@ -141,13 +128,13 @@ func (r *Reconciler) runPass(ctx context.Context) {
 	switch {
 	case errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded):
 		r.logger.Debug("embedding pass interrupted",
-			"contents", res.Contents, "notes", res.Notes, "failed", res.Failed)
+			"contents", res.Contents, "failed", res.Failed)
 	case err != nil:
 		r.logger.Error("embedding pass failed",
-			"contents", res.Contents, "notes", res.Notes, "failed", res.Failed, "error", err)
-	case res.Contents > 0 || res.Notes > 0 || res.Failed > 0:
+			"contents", res.Contents, "failed", res.Failed, "error", err)
+	case res.Contents > 0 || res.Failed > 0:
 		r.logger.Info("embedding pass complete",
-			"contents", res.Contents, "notes", res.Notes, "failed", res.Failed)
+			"contents", res.Contents, "failed", res.Failed)
 	}
 }
 
@@ -204,8 +191,8 @@ func (r *Reconciler) embedOne(ctx context.Context, src Source, doc Document) err
 // embedText joins title and body into the embedding input, capping the
 // body at maxEmbedBodyBytes. The cut lands on a rune boundary — bodies
 // are frequently CJK and a split rune would send invalid UTF-8 to the
-// API. Title is never blank (schema-enforced for both contents and
-// notes), so the input is never empty.
+// API. Title is never blank (schema-enforced for contents), so the
+// input is never empty.
 func embedText(title, body string) string {
 	if len(body) > maxEmbedBodyBytes {
 		body = truncateUTF8(body, maxEmbedBodyBytes)

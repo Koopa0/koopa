@@ -60,50 +60,6 @@ func TestCaptureInbox_Validation(t *testing.T) {
 	}
 }
 
-// --- create_note / update_note control-char validation ---
-
-// TestNote_ControlCharValidation pins that the note tools reject control
-// characters in title/body before any store write, mirroring the propose_*
-// and HTTP handler validation. These run on the unit test server (caller
-// "human" is registered) and the control-char check fires before any DB call,
-// so no testcontainer is needed.
-func TestNote_ControlCharValidation(t *testing.T) {
-	s := newTestServer()
-
-	t.Run("create_note rejects control char in title", func(t *testing.T) {
-		_, _, err := callHandler(t, s.createNote, CreateNoteInput{
-			Slug:  "valid-slug",
-			Title: "bad\x1ftitle",
-			Kind:  "musing",
-		})
-		if err == nil || !contains(err.Error(), "title must not contain control characters") {
-			t.Errorf("createNote error = %v, want control-char title rejection", err)
-		}
-	})
-
-	t.Run("create_note rejects control char in body", func(t *testing.T) {
-		_, _, err := callHandler(t, s.createNote, CreateNoteInput{
-			Slug:  "valid-slug",
-			Title: "ok title",
-			Body:  "para\u009fwith C1",
-			Kind:  "musing",
-		})
-		if err == nil || !contains(err.Error(), "body must not contain control characters") {
-			t.Errorf("createNote error = %v, want control-char body rejection", err)
-		}
-	})
-
-	t.Run("update_note rejects control char in title", func(t *testing.T) {
-		_, _, err := callHandler(t, s.updateNote, UpdateNoteInput{
-			NoteID: "550e8400-e29b-41d4-a716-446655440000",
-			Title:  new("bad\x07title"),
-		})
-		if err == nil || !contains(err.Error(), "title must not contain control characters") {
-			t.Errorf("updateNote error = %v, want control-char title rejection", err)
-		}
-	})
-}
-
 // --- plan_day ---
 
 func TestPlanDay_Validation(t *testing.T) {
@@ -143,8 +99,6 @@ func TestToolSchemaGeneration(t *testing.T) {
 	}{
 		{"CaptureInboxInput", testSchema[CaptureInboxInput]},
 		{"PlanDayInput", testSchema[PlanDayInput]},
-		{"CreateNoteInput", testSchema[CreateNoteInput]},
-		{"UpdateNoteInput", testSchema[UpdateNoteInput]},
 	}
 	for _, tt := range types {
 		t.Run(tt.name, func(t *testing.T) {

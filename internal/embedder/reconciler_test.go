@@ -102,19 +102,17 @@ func TestReconcilerRunOnce(t *testing.T) {
 	tests := []struct {
 		name          string
 		contents      int
-		notes         int
 		failSubstring string
 		want          Result
 	}{
 		{
 			// 120 contents force three drain iterations (50+50+20).
-			name:     "drains both sources across batches",
+			name:     "drains the content source across batches",
 			contents: 120,
-			notes:    30,
-			want:     Result{Contents: 120, Notes: 30},
+			want:     Result{Contents: 120},
 		},
 		{
-			name: "empty sources do nothing",
+			name: "empty source does nothing",
 			want: Result{},
 		},
 		{
@@ -122,27 +120,24 @@ func TestReconcilerRunOnce(t *testing.T) {
 			// the batch persists.
 			name:          "failed row skipped others persist",
 			contents:      3,
-			notes:         2,
 			failSubstring: "content-001",
-			want:          Result{Contents: 2, Notes: 2, Failed: 1},
+			want:          Result{Contents: 2, Failed: 1},
 		},
 		{
-			// Every row fails: each source stops after one zero-success
+			// Every row fails: the drain stops after one zero-success
 			// batch instead of refetching the same rows forever.
 			name:          "all rows failing terminates",
 			contents:      50,
-			notes:         10,
 			failSubstring: "-",
-			want:          Result{Failed: 60},
+			want:          Result{Failed: 50},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			contents := newFakeSource(tt.contents, "content")
-			notes := newFakeSource(tt.notes, "note")
 			emb := &stubEmbedder{failSubstring: tt.failSubstring}
-			r := NewReconciler(emb, contents, notes, slog.New(slog.DiscardHandler))
+			r := NewReconciler(emb, contents, slog.New(slog.DiscardHandler))
 
 			got, err := r.RunOnce(t.Context())
 			if err != nil {
@@ -155,33 +150,27 @@ func TestReconcilerRunOnce(t *testing.T) {
 			if n := contents.embeddedCount(); n != tt.want.Contents {
 				t.Errorf("contents persisted = %d, want %d", n, tt.want.Contents)
 			}
-			if n := notes.embeddedCount(); n != tt.want.Notes {
-				t.Errorf("notes persisted = %d, want %d", n, tt.want.Notes)
-			}
-			for _, src := range []*fakeSource{contents, notes} {
-				for _, d := range src.docs {
-					vec, ok := src.vectors[d.ID]
-					shouldFail := tt.failSubstring != "" && strings.Contains(d.Title, tt.failSubstring)
-					if shouldFail && ok {
-						t.Errorf("doc %q has an embedding, want none (embed fails for it)", d.Title)
-					}
-					if !shouldFail && !ok {
-						t.Errorf("doc %q has no embedding, want one", d.Title)
-					}
-					if ok && len(vec.Slice()) != Dimension {
-						t.Errorf("doc %q embedding dims = %d, want %d", d.Title, len(vec.Slice()), Dimension)
-					}
+			for _, d := range contents.docs {
+				vec, ok := contents.vectors[d.ID]
+				shouldFail := tt.failSubstring != "" && strings.Contains(d.Title, tt.failSubstring)
+				if shouldFail && ok {
+					t.Errorf("doc %q has an embedding, want none (embed fails for it)", d.Title)
+				}
+				if !shouldFail && !ok {
+					t.Errorf("doc %q has no embedding, want one", d.Title)
+				}
+				if ok && len(vec.Slice()) != Dimension {
+					t.Errorf("doc %q embedding dims = %d, want %d", d.Title, len(vec.Slice()), Dimension)
 				}
 			}
 		})
 	}
 }
 
-func TestReconcilerRunOnce_ListErrorStillDrainsOtherSource(t *testing.T) {
+func TestReconcilerRunOnce_ListErrorReturned(t *testing.T) {
 	contents := newFakeSource(0, "content")
 	contents.listErr = errors.New("list boom")
-	notes := newFakeSource(2, "note")
-	r := NewReconciler(&stubEmbedder{}, contents, notes, slog.New(slog.DiscardHandler))
+	r := NewReconciler(&stubEmbedder{}, contents, slog.New(slog.DiscardHandler))
 
 	got, err := r.RunOnce(t.Context())
 	if err == nil {
@@ -190,17 +179,15 @@ func TestReconcilerRunOnce_ListErrorStillDrainsOtherSource(t *testing.T) {
 	if !strings.Contains(err.Error(), "draining contents") {
 		t.Errorf("RunOnce() error = %q, want it to mention draining contents", err)
 	}
-	want := Result{Notes: 2}
-	if diff := cmp.Diff(want, got); diff != "" {
+	if diff := cmp.Diff(Result{}, got); diff != "" {
 		t.Errorf("RunOnce() result mismatch (-want +got):\n%s", diff)
 	}
 }
 
 func TestReconcilerRunOnce_CanceledContext(t *testing.T) {
 	contents := newFakeSource(5, "content")
-	notes := newFakeSource(5, "note")
 	emb := &stubEmbedder{}
-	r := NewReconciler(emb, contents, notes, slog.New(slog.DiscardHandler))
+	r := NewReconciler(emb, contents, slog.New(slog.DiscardHandler))
 
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
@@ -220,8 +207,7 @@ func TestReconcilerRunOnce_CanceledContext(t *testing.T) {
 func TestReconcilerRun_StopsOnCancel(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		contents := newFakeSource(2, "content")
-		notes := newFakeSource(1, "note")
-		r := NewReconciler(&stubEmbedder{}, contents, notes, slog.New(slog.DiscardHandler))
+		r := NewReconciler(&stubEmbedder{}, contents, slog.New(slog.DiscardHandler))
 
 		ctx, cancel := context.WithCancel(t.Context())
 		done := make(chan struct{})
@@ -236,9 +222,6 @@ func TestReconcilerRun_StopsOnCancel(t *testing.T) {
 		synctest.Wait()
 		if n := contents.embeddedCount(); n != 2 {
 			t.Errorf("initial pass: contents persisted = %d, want 2", n)
-		}
-		if n := notes.embeddedCount(); n != 1 {
-			t.Errorf("initial pass: notes persisted = %d, want 1", n)
 		}
 
 		cancel()

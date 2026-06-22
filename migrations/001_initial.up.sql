@@ -30,15 +30,6 @@ CREATE TYPE todo_state AS ENUM (
 
 CREATE TYPE agent_status AS ENUM ('active', 'retired');
 
-CREATE TYPE note_kind AS ENUM (
-    'solve-note', 'concept-note', 'debug-postmortem',
-    'decision-log', 'reading-note', 'musing'
-);
-
-CREATE TYPE note_maturity AS ENUM (
-    'seed', 'stub', 'evergreen', 'needs_revision', 'archived'
-);
-
 -- ============================================================
 -- Identity model: agents (registry projection)
 --
@@ -48,7 +39,7 @@ CREATE TYPE note_maturity AS ENUM (
 -- identity only (name, platform, status); the registry carries any
 -- additional in-process metadata.
 --
--- The table exists so that provenance columns (created_by on notes, todos,
+-- The table exists so that provenance columns (created_by on todos,
 -- areas, goals, projects) can maintain referential integrity to a known agent
 -- identity, and so that retiring an agent leaves an auditable trace
 -- (status='retired', retired_at).
@@ -76,7 +67,7 @@ CREATE TABLE agents (
     )
 );
 
-COMMENT ON TABLE agents IS 'DB projection of the Go BuiltinAgents() registry. Rows are upserted at startup by agent.SyncToTable. Stores identity only (name, platform, status). Provenance columns (created_by on notes/todos/areas/goals/projects) use ON DELETE RESTRICT so historical records cannot dangle. Removed registry entries transition to status=retired rather than being deleted.';
+COMMENT ON TABLE agents IS 'DB projection of the Go BuiltinAgents() registry. Rows are upserted at startup by agent.SyncToTable. Stores identity only (name, platform, status). Provenance columns (created_by on todos/areas/goals/projects) use ON DELETE RESTRICT so historical records cannot dangle. Removed registry entries transition to status=retired rather than being deleted.';
 COMMENT ON COLUMN agents.name IS 'Unique agent identifier. Used as the caller identity (as: field) in MCP tool calls and as FK target for created_by / assignee / curated_by columns. Format: lowercase, must start with a letter, alphanumeric + hyphens.';
 COMMENT ON COLUMN agents.display_name IS 'Human-readable label for admin UI and logs. Non-blank (chk_agent_display_name_not_blank).';
 COMMENT ON COLUMN agents.platform IS 'Execution context. Closed set: claude-cowork, claude-code, claude-web, codex, human, system (chk_agent_platform). The system value is reserved for the database-level fallback agent registered by BuiltinAgents — it attributes writes that bypass the Go actor middleware (pg_cron, manual psql ops, bug safety net). Routing decisions are driven by agent registry lookups, not this column.';
@@ -490,9 +481,9 @@ CREATE TABLE contents (
         CHECK (NOT is_public OR status = 'published')
 );
 
-COMMENT ON TABLE contents IS 'First-party publishable knowledge layer. Five content types (article, essay, build-log, til, digest) share one editorial lifecycle: draft → review → published → archived. The review state is a two-actor handoff signal — Claude marks a draft ready (set_content_review_state), human admin publishes (publish_content). Notes (Zettelkasten) live in a separate notes table with maturity-based lifecycle — intentionally not mixed here. published status and published_at are tied by chk_content_publication; is_public requires published by chk_content_public_requires_published.';
+COMMENT ON TABLE contents IS 'First-party publishable knowledge layer. Five content types (article, essay, build-log, til, digest) share one editorial lifecycle: draft → review → published → archived. The review state is a two-actor handoff signal — Claude marks a draft ready (set_content_review_state), human admin publishes (publish_content). published status and published_at are tied by chk_content_publication; is_public requires published by chk_content_public_requires_published.';
 COMMENT ON COLUMN contents.slug IS 'URL-safe identifier. Globally unique. Used in public URLs. Format (chk_content_slug_format): hyphen-separated segments, no whitespace or slash, no leading/trailing/consecutive hyphens. Unicode letters/numbers (incl. CJK) allowed — a 中日文 slug carries UTF-8 in the URL.';
-COMMENT ON COLUMN contents.type IS 'Content format: article, essay, build-log, til, digest. All are public-facing first-party content going through the review lifecycle. Notes are NOT a content type — they live in the notes table.';
+COMMENT ON COLUMN contents.type IS 'Content format: article, essay, build-log, til, digest. All are public-facing first-party content going through the review lifecycle.';
 COMMENT ON COLUMN contents.status IS 'Lifecycle: draft → review → published. review = Claude-submitted, awaiting human publish. archived = soft delete. Transition review → published is human-admin only (enforced at MCP tool boundary).';
 COMMENT ON COLUMN contents.series_id IS 'Groups content into a series. Paired with series_order (chk_contents_series).';
 COMMENT ON COLUMN contents.series_order IS 'Position within the series. Paired with series_id (chk_contents_series).';
@@ -526,81 +517,6 @@ CREATE INDEX idx_contents_project_id ON contents(project_id) WHERE project_id IS
 CREATE INDEX idx_contents_created_at ON contents(created_at DESC);
 CREATE INDEX idx_contents_published_at_pub ON contents (published_at DESC NULLS LAST)
     WHERE status = 'published';
-
--- ============================================================
--- Notes — Zettelkasten knowledge artifacts
---
--- Notes are Koopa-private knowledge artifacts with a maturity-based lifecycle
--- (seed → stub → evergreen → needs_revision → archived). Distinct from contents:
--- contents is publishable editorial writing (article/essay/til/build-log/digest)
--- going through draft → review → published. Notes never "publish" — they
--- mature in place.
--- ============================================================
-
-CREATE TABLE notes (
-    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    slug          TEXT NOT NULL UNIQUE,
-    title         TEXT NOT NULL,
-    body          TEXT NOT NULL DEFAULT '',
-    kind          note_kind NOT NULL,
-    maturity      note_maturity NOT NULL DEFAULT 'seed',
-    created_by    TEXT NOT NULL REFERENCES agents(name) ON DELETE RESTRICT,
-    metadata      JSONB,
-    ai_metadata   JSONB,
-    embedding     vector(1536),
-    created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
-    search_vector TSVECTOR GENERATED ALWAYS AS (
-        setweight(to_tsvector('simple', coalesce(title, '')), 'A') ||
-        setweight(to_tsvector('simple', coalesce(left(body, 10000), '')), 'C')
-    ) STORED,
-
-    CONSTRAINT chk_note_slug_format
-        CHECK (slug ~ '^[^[:space:]/-]+(-[^[:space:]/-]+)*$'),
-    CONSTRAINT chk_note_title_not_blank
-        CHECK (btrim(title) <> '')
-);
-
-COMMENT ON TABLE notes IS
-    'Zettelkasten knowledge artifacts — Koopa-private. Maturity-based lifecycle '
-    '(seed → evergreen → archived), no publication state. Public-facing content '
-    '(articles, essays, etc.) lives in contents — a separate entity with its own '
-    'draft → review → published editorial lifecycle. Publication state and '
-    'maturity state are distinct state machines; notes and contents are kept '
-    'as separate tables rather than single-table inheritance for this reason.';
-COMMENT ON COLUMN notes.slug IS
-    'URL-safe identifier. Globally unique within notes. Same format rules as contents.slug.';
-COMMENT ON COLUMN notes.kind IS
-    'Note sub-type. Six values: solve-note (LeetCode problem write-up), '
-    'concept-note (cross-target pattern synthesis), debug-postmortem (production '
-    'debug analysis), decision-log (technical decision record), reading-note '
-    '(book chapter takeaway), musing (unstructured thought). Uses the note_kind '
-    'ENUM.';
-COMMENT ON COLUMN notes.maturity IS
-    'Refinement stage: seed (just captured), stub (skeleton), evergreen (verified), '
-    'needs_revision (known issue), archived (no longer maintained). Default seed '
-    'on creation; transitioned by update_note_maturity MCP tool. archived is '
-    'operationally terminal but not one-way — recovery via update_note_maturity '
-    'is supported.';
-COMMENT ON COLUMN notes.created_by IS
-    'Which agent wrote this note. FK to agents. RESTRICT on agent deletion.';
-COMMENT ON COLUMN notes.metadata IS
-    'Free-form JSONB. If a field needs WHERE/JOIN/GROUP BY ≥ 3 times, promote to a column.';
-COMMENT ON COLUMN notes.ai_metadata IS
-    'AI pipeline metadata: {summary, keywords, extracted_concepts}. Set by background enrichment.';
-COMMENT ON COLUMN notes.embedding IS
-    'pgvector embedding (1536d) from gemini-embedding-2. Used by search_knowledge.';
-COMMENT ON COLUMN notes.search_vector IS
-    'Generated tsvector for full-text search. Mirrors contents.search_vector shape.';
-COMMENT ON COLUMN notes.updated_at IS
-    'Application-managed. Set explicitly in UPDATE queries.';
-
-CREATE INDEX idx_notes_kind ON notes(kind);
-CREATE INDEX idx_notes_maturity ON notes(maturity);
-CREATE INDEX idx_notes_search ON notes USING GIN(search_vector);
-CREATE INDEX idx_notes_created_at ON notes(created_at DESC);
-CREATE INDEX idx_notes_embedding_hnsw ON notes USING hnsw (embedding vector_cosine_ops)
-    WITH (m = 16, ef_construction = 64);
 
 -- ============================================================
 -- Junction: contents ↔ topics
@@ -1251,23 +1167,6 @@ $$ LANGUAGE plpgsql;
 CREATE TRIGGER trg_contents_audit
     AFTER INSERT OR UPDATE OF status ON contents
     FOR EACH ROW EXECUTE FUNCTION audit_contents();
-
--- notes: INSERT audit (entity_type='note' was previously registered in the
--- entity_type CHECK but had no trigger — closing that coverage gap).
-CREATE OR REPLACE FUNCTION audit_notes() RETURNS TRIGGER AS $$
-BEGIN
-    INSERT INTO activity_events (entity_type, entity_id, entity_title, entity_slug, change_kind, actor, payload)
-    VALUES ('note', NEW.id, NEW.title, NEW.slug, 'created', current_actor(),
-            jsonb_build_object('kind', NEW.kind, 'maturity', NEW.maturity));
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE TRIGGER trg_notes_audit
-    AFTER INSERT ON notes
-    FOR EACH ROW EXECUTE FUNCTION audit_notes();
-COMMENT ON TRIGGER trg_notes_audit ON notes
-    IS 'Writes activity_events entity_type=''note'' on INSERT. Snapshot columns carry title/slug so consumers read without JOIN.';
 
 -- Note: the coupling between projects.status = 'archived' and its
 -- project_profile demotion (is_public = false) is enforced in

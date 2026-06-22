@@ -25,7 +25,6 @@ import (
 	"github.com/Koopa0/koopa/internal/feed/entry"
 	"github.com/Koopa0/koopa/internal/goal"
 	"github.com/Koopa0/koopa/internal/mcp/ops"
-	"github.com/Koopa0/koopa/internal/note"
 	"github.com/Koopa0/koopa/internal/project"
 	"github.com/Koopa0/koopa/internal/reading"
 	"github.com/Koopa0/koopa/internal/stats"
@@ -40,7 +39,6 @@ type Server struct {
 	todos    *todo.Store
 	dayplan  *daily.Store
 	contents *content.Store
-	notes    *note.Store
 	readings *reading.Store
 	projects *project.Store
 
@@ -113,7 +111,6 @@ func NewServer(pool *pgxpool.Pool, logger *slog.Logger, opts ...ServerOption) *S
 		todos:       todo.NewStore(pool),
 		dayplan:     daily.NewStore(pool),
 		contents:    content.NewStore(pool),
-		notes:       note.NewStore(pool),
 		readings:    reading.NewStore(pool),
 		projects:    project.NewStore(pool),
 		goals:       goal.NewStore(pool),
@@ -166,10 +163,6 @@ func NewServer(pool *pgxpool.Pool, logger *slog.Logger, opts ...ServerOption) *S
 	// --- Reading shelf (read-only agent window onto Koopa's books) ---
 	addTool(s, toolFrom(ops.ListReadings), s.listReadings)
 	addTool(s, toolFrom(ops.Reading), s.getReading)
-
-	// --- Notes (flat tools) ---
-	addTool(s, toolFrom(ops.CreateNote), s.createNote)
-	addTool(s, toolFrom(ops.UpdateNote), s.updateNote)
 
 	return s
 }

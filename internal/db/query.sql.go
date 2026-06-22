@@ -1485,70 +1485,6 @@ func (q *Queries) CreateMilestoneWithPosition(ctx context.Context, arg CreateMil
 	return i, err
 }
 
-const createNote = `-- name: CreateNote :one
-
-INSERT INTO notes (
-    slug, title, body, kind, maturity, created_by, metadata
-) VALUES (
-    $1, $2, $3, $4, $5, $6, $7
-)
-RETURNING id, slug, title, body, kind, maturity, created_by,
-          metadata, created_at, updated_at
-`
-
-type CreateNoteParams struct {
-	Slug      string          `json:"slug"`
-	Title     string          `json:"title"`
-	Body      string          `json:"body"`
-	Kind      NoteKind        `json:"kind"`
-	Maturity  NoteMaturity    `json:"maturity"`
-	CreatedBy string          `json:"created_by"`
-	Metadata  json.RawMessage `json:"metadata"`
-}
-
-type CreateNoteRow struct {
-	ID        uuid.UUID       `json:"id"`
-	Slug      string          `json:"slug"`
-	Title     string          `json:"title"`
-	Body      string          `json:"body"`
-	Kind      NoteKind        `json:"kind"`
-	Maturity  NoteMaturity    `json:"maturity"`
-	CreatedBy string          `json:"created_by"`
-	Metadata  json.RawMessage `json:"metadata"`
-	CreatedAt time.Time       `json:"created_at"`
-	UpdatedAt time.Time       `json:"updated_at"`
-}
-
-// Queries for the note package. See migrations/001_initial.up.sql for the
-// notes table. slug uniqueness is enforced by the UNIQUE constraint on
-// notes.slug; callers rely on pgerrcode 23505 → ErrConflict mapping.
-// note_kind / note_maturity are PostgreSQL ENUMs.
-func (q *Queries) CreateNote(ctx context.Context, arg CreateNoteParams) (CreateNoteRow, error) {
-	row := q.db.QueryRow(ctx, createNote,
-		arg.Slug,
-		arg.Title,
-		arg.Body,
-		arg.Kind,
-		arg.Maturity,
-		arg.CreatedBy,
-		arg.Metadata,
-	)
-	var i CreateNoteRow
-	err := row.Scan(
-		&i.ID,
-		&i.Slug,
-		&i.Title,
-		&i.Body,
-		&i.Kind,
-		&i.Maturity,
-		&i.CreatedBy,
-		&i.Metadata,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
 const createProject = `-- name: CreateProject :one
 INSERT INTO projects (slug, title, description, status, goal_id, area_id)
 VALUES ($1, $2, $3, $4, $5, $6)
@@ -1936,18 +1872,6 @@ type DeleteMilestoneParams struct {
 // the remaining siblings are left as-is.
 func (q *Queries) DeleteMilestone(ctx context.Context, arg DeleteMilestoneParams) (int64, error) {
 	result, err := q.db.Exec(ctx, deleteMilestone, arg.ID, arg.GoalID)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected(), nil
-}
-
-const deleteNote = `-- name: DeleteNote :execrows
-DELETE FROM notes WHERE id = $1
-`
-
-func (q *Queries) DeleteNote(ctx context.Context, id uuid.UUID) (int64, error) {
-	result, err := q.db.Exec(ctx, deleteNote, id)
 	if err != nil {
 		return 0, err
 	}
@@ -3353,72 +3277,6 @@ func (q *Queries) InternalSemanticSearchContents(ctx context.Context, arg Intern
 	return items, nil
 }
 
-const internalSemanticSearchNotes = `-- name: InternalSemanticSearchNotes :many
-SELECT id, slug, title, body, kind, maturity, created_by,
-       metadata, created_at, updated_at,
-       (1 - (embedding <=> $1::vector))::float8 AS similarity
-FROM notes
-WHERE embedding IS NOT NULL
-ORDER BY embedding <=> $1::vector
-LIMIT $2
-`
-
-type InternalSemanticSearchNotesParams struct {
-	TargetEmbedding pgvector_go.Vector `json:"target_embedding"`
-	MaxResults      int32              `json:"max_results"`
-}
-
-type InternalSemanticSearchNotesRow struct {
-	ID         uuid.UUID       `json:"id"`
-	Slug       string          `json:"slug"`
-	Title      string          `json:"title"`
-	Body       string          `json:"body"`
-	Kind       NoteKind        `json:"kind"`
-	Maturity   NoteMaturity    `json:"maturity"`
-	CreatedBy  string          `json:"created_by"`
-	Metadata   json.RawMessage `json:"metadata"`
-	CreatedAt  time.Time       `json:"created_at"`
-	UpdatedAt  time.Time       `json:"updated_at"`
-	Similarity float64         `json:"similarity"`
-}
-
-// Semantic search over notes via pgvector cosine distance — the vector
-// counterpart of SearchNotes, feeding the hybrid RRF merge in
-// search_knowledge. No maturity filter: every note (archived included)
-// is reachable through FTS, and the semantic branch mirrors that
-// visibility. Notes without embeddings are skipped.
-func (q *Queries) InternalSemanticSearchNotes(ctx context.Context, arg InternalSemanticSearchNotesParams) ([]InternalSemanticSearchNotesRow, error) {
-	rows, err := q.db.Query(ctx, internalSemanticSearchNotes, arg.TargetEmbedding, arg.MaxResults)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []InternalSemanticSearchNotesRow{}
-	for rows.Next() {
-		var i InternalSemanticSearchNotesRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.Slug,
-			&i.Title,
-			&i.Body,
-			&i.Kind,
-			&i.Maturity,
-			&i.CreatedBy,
-			&i.Metadata,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-			&i.Similarity,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const itemByID = `-- name: ItemByID :one
 SELECT id, plan_date, todo_id, selected_by, position, reason, status, created_at, updated_at
 FROM daily_plan_items WHERE id = $1
@@ -3745,209 +3603,6 @@ func (q *Queries) MilestonesByGoal(ctx context.Context, goalID uuid.UUID) ([]Mil
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const noteByID = `-- name: NoteByID :one
-SELECT id, slug, title, body, kind, maturity, created_by,
-       metadata, created_at, updated_at
-FROM notes
-WHERE id = $1
-`
-
-type NoteByIDRow struct {
-	ID        uuid.UUID       `json:"id"`
-	Slug      string          `json:"slug"`
-	Title     string          `json:"title"`
-	Body      string          `json:"body"`
-	Kind      NoteKind        `json:"kind"`
-	Maturity  NoteMaturity    `json:"maturity"`
-	CreatedBy string          `json:"created_by"`
-	Metadata  json.RawMessage `json:"metadata"`
-	CreatedAt time.Time       `json:"created_at"`
-	UpdatedAt time.Time       `json:"updated_at"`
-}
-
-func (q *Queries) NoteByID(ctx context.Context, id uuid.UUID) (NoteByIDRow, error) {
-	row := q.db.QueryRow(ctx, noteByID, id)
-	var i NoteByIDRow
-	err := row.Scan(
-		&i.ID,
-		&i.Slug,
-		&i.Title,
-		&i.Body,
-		&i.Kind,
-		&i.Maturity,
-		&i.CreatedBy,
-		&i.Metadata,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
-const noteBySlug = `-- name: NoteBySlug :one
-SELECT id, slug, title, body, kind, maturity, created_by,
-       metadata, created_at, updated_at
-FROM notes
-WHERE slug = $1
-`
-
-type NoteBySlugRow struct {
-	ID        uuid.UUID       `json:"id"`
-	Slug      string          `json:"slug"`
-	Title     string          `json:"title"`
-	Body      string          `json:"body"`
-	Kind      NoteKind        `json:"kind"`
-	Maturity  NoteMaturity    `json:"maturity"`
-	CreatedBy string          `json:"created_by"`
-	Metadata  json.RawMessage `json:"metadata"`
-	CreatedAt time.Time       `json:"created_at"`
-	UpdatedAt time.Time       `json:"updated_at"`
-}
-
-func (q *Queries) NoteBySlug(ctx context.Context, slug string) (NoteBySlugRow, error) {
-	row := q.db.QueryRow(ctx, noteBySlug, slug)
-	var i NoteBySlugRow
-	err := row.Scan(
-		&i.ID,
-		&i.Slug,
-		&i.Title,
-		&i.Body,
-		&i.Kind,
-		&i.Maturity,
-		&i.CreatedBy,
-		&i.Metadata,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
-const notes = `-- name: Notes :many
-SELECT id, slug, title, body, kind, maturity, created_by,
-       metadata, created_at, updated_at
-FROM notes
-WHERE ($3::note_kind IS NULL OR kind = $3)
-  AND ($4::note_maturity IS NULL OR maturity = $4)
-  AND ($5::text IS NULL OR created_by = $5)
-ORDER BY updated_at DESC
-LIMIT $1 OFFSET $2
-`
-
-type NotesParams struct {
-	Limit     int32            `json:"limit"`
-	Offset    int32            `json:"offset"`
-	Kind      NullNoteKind     `json:"kind"`
-	Maturity  NullNoteMaturity `json:"maturity"`
-	CreatedBy *string          `json:"created_by"`
-}
-
-type NotesRow struct {
-	ID        uuid.UUID       `json:"id"`
-	Slug      string          `json:"slug"`
-	Title     string          `json:"title"`
-	Body      string          `json:"body"`
-	Kind      NoteKind        `json:"kind"`
-	Maturity  NoteMaturity    `json:"maturity"`
-	CreatedBy string          `json:"created_by"`
-	Metadata  json.RawMessage `json:"metadata"`
-	CreatedAt time.Time       `json:"created_at"`
-	UpdatedAt time.Time       `json:"updated_at"`
-}
-
-func (q *Queries) Notes(ctx context.Context, arg NotesParams) ([]NotesRow, error) {
-	rows, err := q.db.Query(ctx, notes,
-		arg.Limit,
-		arg.Offset,
-		arg.Kind,
-		arg.Maturity,
-		arg.CreatedBy,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []NotesRow{}
-	for rows.Next() {
-		var i NotesRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.Slug,
-			&i.Title,
-			&i.Body,
-			&i.Kind,
-			&i.Maturity,
-			&i.CreatedBy,
-			&i.Metadata,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const notesCount = `-- name: NotesCount :one
-SELECT COUNT(*) FROM notes
-WHERE ($1::note_kind IS NULL OR kind = $1)
-  AND ($2::note_maturity IS NULL OR maturity = $2)
-  AND ($3::text IS NULL OR created_by = $3)
-`
-
-type NotesCountParams struct {
-	Kind      NullNoteKind     `json:"kind"`
-	Maturity  NullNoteMaturity `json:"maturity"`
-	CreatedBy *string          `json:"created_by"`
-}
-
-func (q *Queries) NotesCount(ctx context.Context, arg NotesCountParams) (int64, error) {
-	row := q.db.QueryRow(ctx, notesCount, arg.Kind, arg.Maturity, arg.CreatedBy)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
-}
-
-const notesMissingEmbedding = `-- name: NotesMissingEmbedding :many
-SELECT id, title, body
-FROM notes
-WHERE embedding IS NULL
-ORDER BY created_at
-LIMIT $1
-`
-
-type NotesMissingEmbeddingRow struct {
-	ID    uuid.UUID `json:"id"`
-	Title string    `json:"title"`
-	Body  string    `json:"body"`
-}
-
-// Rows the embedding reconciler still has to process. No maturity filter —
-// archived notes stay searchable (SearchNotes does not exclude them), so
-// they get embeddings too. Oldest first so a backfill progresses
-// deterministically.
-func (q *Queries) NotesMissingEmbedding(ctx context.Context, limit int32) ([]NotesMissingEmbeddingRow, error) {
-	rows, err := q.db.Query(ctx, notesMissingEmbedding, limit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []NotesMissingEmbeddingRow{}
-	for rows.Next() {
-		var i NotesMissingEmbeddingRow
-		if err := rows.Scan(&i.ID, &i.Title, &i.Body); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -5816,71 +5471,6 @@ func (q *Queries) SearchContentsCount(ctx context.Context, arg SearchContentsCou
 	return count, err
 }
 
-const searchNotes = `-- name: SearchNotes :many
-SELECT id, slug, title, body, kind, maturity, created_by,
-       metadata, created_at, updated_at,
-       ts_rank(search_vector, websearch_to_tsquery('simple', $1)) AS rank
-FROM notes
-WHERE search_vector @@ websearch_to_tsquery('simple', $1)
-ORDER BY rank DESC
-LIMIT $2
-`
-
-type SearchNotesParams struct {
-	Query      string `json:"query"`
-	MaxResults int32  `json:"max_results"`
-}
-
-type SearchNotesRow struct {
-	ID        uuid.UUID       `json:"id"`
-	Slug      string          `json:"slug"`
-	Title     string          `json:"title"`
-	Body      string          `json:"body"`
-	Kind      NoteKind        `json:"kind"`
-	Maturity  NoteMaturity    `json:"maturity"`
-	CreatedBy string          `json:"created_by"`
-	Metadata  json.RawMessage `json:"metadata"`
-	CreatedAt time.Time       `json:"created_at"`
-	UpdatedAt time.Time       `json:"updated_at"`
-	Rank      float32         `json:"rank"`
-}
-
-// FTS over notes.search_vector (title weight A, body weight C). Returns
-// relevance-ranked rows capped by LIMIT. Query terms are websearch-style —
-// quotes and OR/- operators work. Used by the MCP search_knowledge tool to
-// union note hits with content hits.
-func (q *Queries) SearchNotes(ctx context.Context, arg SearchNotesParams) ([]SearchNotesRow, error) {
-	rows, err := q.db.Query(ctx, searchNotes, arg.Query, arg.MaxResults)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []SearchNotesRow{}
-	for rows.Next() {
-		var i SearchNotesRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.Slug,
-			&i.Title,
-			&i.Body,
-			&i.Kind,
-			&i.Maturity,
-			&i.CreatedBy,
-			&i.Metadata,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-			&i.Rank,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const searchTodoItems = `-- name: SearchTodoItems :many
 SELECT t.id, t.title, t.state, t.due, t.project_id,
        t.energy, t.priority, t.recur_interval, t.recur_unit,
@@ -5998,25 +5588,6 @@ type SetContentEmbeddingParams struct {
 // this write produces no activity_events row.
 func (q *Queries) SetContentEmbedding(ctx context.Context, arg SetContentEmbeddingParams) error {
 	_, err := q.db.Exec(ctx, setContentEmbedding, arg.ID, arg.Embedding)
-	return err
-}
-
-const setNoteEmbedding = `-- name: SetNoteEmbedding :exec
-UPDATE notes SET embedding = $2 WHERE id = $1
-`
-
-type SetNoteEmbeddingParams struct {
-	ID        uuid.UUID           `json:"id"`
-	Embedding *pgvector_go.Vector `json:"embedding"`
-}
-
-// Persist a derived embedding. updated_at is deliberately untouched: the
-// embedding derives from title/body and carries no edit, and the admin
-// notes list orders by updated_at — a background re-embed must not make
-// notes look freshly edited. The notes audit trigger fires only on
-// INSERT, so this write produces no activity_events row.
-func (q *Queries) SetNoteEmbedding(ctx context.Context, arg SetNoteEmbeddingParams) error {
-	_, err := q.db.Exec(ctx, setNoteEmbedding, arg.ID, arg.Embedding)
 	return err
 }
 
@@ -6241,24 +5812,21 @@ func (q *Queries) StatsContentsByStatusType(ctx context.Context) ([]StatsContent
 const statsDatabaseCounts = `-- name: StatsDatabaseCounts :one
 SELECT
     (SELECT COUNT(*) FROM contents)::int                 AS contents_count,
-    (SELECT COUNT(*) FROM todos)::int                    AS todos_count,
-    (SELECT COUNT(*) FROM notes)::int                    AS notes_count
+    (SELECT COUNT(*) FROM todos)::int                    AS todos_count
 `
 
 type StatsDatabaseCountsRow struct {
 	ContentsCount int32 `json:"contents_count"`
 	TodosCount    int32 `json:"todos_count"`
-	NotesCount    int32 `json:"notes_count"`
 }
 
 // Core entity counts for SystemHealth. todos is the personal GTD store;
 // the inter-agent coordination tasks table is intentionally NOT counted
 // here (it would mix two entirely different concepts with the same word).
-// notes lives in its own table, separate from contents.
 func (q *Queries) StatsDatabaseCounts(ctx context.Context) (StatsDatabaseCountsRow, error) {
 	row := q.db.QueryRow(ctx, statsDatabaseCounts)
 	var i StatsDatabaseCountsRow
-	err := row.Scan(&i.ContentsCount, &i.TodosCount, &i.NotesCount)
+	err := row.Scan(&i.ContentsCount, &i.TodosCount)
 	return i, err
 }
 
@@ -6435,16 +6003,12 @@ func (q *Queries) StatsGoalsByArea(ctx context.Context) ([]StatsGoalsByAreaRow, 
 }
 
 const statsNoteGrowth = `-- name: StatsNoteGrowth :one
-WITH knowledge AS (
-    SELECT created_at FROM notes
-    UNION ALL
-    SELECT created_at FROM contents WHERE type = 'til'
-)
 SELECT
     COUNT(*)::int AS total,
     COUNT(*) FILTER (WHERE created_at > now() - interval '7 days')::int AS last_week,
     COUNT(*) FILTER (WHERE created_at > now() - interval '30 days')::int AS last_month
-FROM knowledge
+FROM contents
+WHERE type = 'til'
 `
 
 type StatsNoteGrowthRow struct {
@@ -6453,10 +6017,7 @@ type StatsNoteGrowthRow struct {
 	LastMonth int32 `json:"last_month"`
 }
 
-// Short-form knowledge growth: Zettelkasten notes (notes table) plus
-// TIL contents. Phase 2 entry split notes out of contents — the two
-// short-form formats now live in separate tables and the union here
-// reassembles the dashboard view.
+// Short-form knowledge growth over TIL contents.
 func (q *Queries) StatsNoteGrowth(ctx context.Context) (StatsNoteGrowthRow, error) {
 	row := q.db.QueryRow(ctx, statsNoteGrowth)
 	var i StatsNoteGrowthRow
@@ -7668,117 +7229,6 @@ func (q *Queries) UpdateMilestone(ctx context.Context, arg UpdateMilestoneParams
 		&i.TargetDeadline,
 		&i.CompletedAt,
 		&i.Position,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
-const updateNote = `-- name: UpdateNote :one
-UPDATE notes SET
-    slug = COALESCE($2, slug),
-    title = COALESCE($3, title),
-    body = COALESCE($4, body),
-    kind = COALESCE($5::note_kind, kind),
-    metadata = COALESCE($6, metadata),
-    updated_at = now()
-WHERE id = $1
-RETURNING id, slug, title, body, kind, maturity, created_by,
-          metadata, created_at, updated_at
-`
-
-type UpdateNoteParams struct {
-	ID       uuid.UUID       `json:"id"`
-	Slug     *string         `json:"slug"`
-	Title    *string         `json:"title"`
-	Body     *string         `json:"body"`
-	Kind     NullNoteKind    `json:"kind"`
-	Metadata json.RawMessage `json:"metadata"`
-}
-
-type UpdateNoteRow struct {
-	ID        uuid.UUID       `json:"id"`
-	Slug      string          `json:"slug"`
-	Title     string          `json:"title"`
-	Body      string          `json:"body"`
-	Kind      NoteKind        `json:"kind"`
-	Maturity  NoteMaturity    `json:"maturity"`
-	CreatedBy string          `json:"created_by"`
-	Metadata  json.RawMessage `json:"metadata"`
-	CreatedAt time.Time       `json:"created_at"`
-	UpdatedAt time.Time       `json:"updated_at"`
-}
-
-// Editable fields only. Maturity is intentionally separated — use
-// UpdateNoteMaturity so maturity transitions are distinct from body/title
-// edits.
-func (q *Queries) UpdateNote(ctx context.Context, arg UpdateNoteParams) (UpdateNoteRow, error) {
-	row := q.db.QueryRow(ctx, updateNote,
-		arg.ID,
-		arg.Slug,
-		arg.Title,
-		arg.Body,
-		arg.Kind,
-		arg.Metadata,
-	)
-	var i UpdateNoteRow
-	err := row.Scan(
-		&i.ID,
-		&i.Slug,
-		&i.Title,
-		&i.Body,
-		&i.Kind,
-		&i.Maturity,
-		&i.CreatedBy,
-		&i.Metadata,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
-const updateNoteMaturity = `-- name: UpdateNoteMaturity :one
-UPDATE notes SET
-    maturity = $1::note_maturity,
-    updated_at = now()
-WHERE id = $2
-RETURNING id, slug, title, body, kind, maturity, created_by,
-          metadata, created_at, updated_at
-`
-
-type UpdateNoteMaturityParams struct {
-	Maturity NoteMaturity `json:"maturity"`
-	ID       uuid.UUID    `json:"id"`
-}
-
-type UpdateNoteMaturityRow struct {
-	ID        uuid.UUID       `json:"id"`
-	Slug      string          `json:"slug"`
-	Title     string          `json:"title"`
-	Body      string          `json:"body"`
-	Kind      NoteKind        `json:"kind"`
-	Maturity  NoteMaturity    `json:"maturity"`
-	CreatedBy string          `json:"created_by"`
-	Metadata  json.RawMessage `json:"metadata"`
-	CreatedAt time.Time       `json:"created_at"`
-	UpdatedAt time.Time       `json:"updated_at"`
-}
-
-// Transitions maturity explicitly. Any transition is permitted (including
-// → archived and recovery from archived); maturity is not a one-way state
-// machine at the schema level.
-func (q *Queries) UpdateNoteMaturity(ctx context.Context, arg UpdateNoteMaturityParams) (UpdateNoteMaturityRow, error) {
-	row := q.db.QueryRow(ctx, updateNoteMaturity, arg.Maturity, arg.ID)
-	var i UpdateNoteMaturityRow
-	err := row.Scan(
-		&i.ID,
-		&i.Slug,
-		&i.Title,
-		&i.Body,
-		&i.Kind,
-		&i.Maturity,
-		&i.CreatedBy,
-		&i.Metadata,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
