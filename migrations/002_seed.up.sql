@@ -33,31 +33,6 @@ INSERT INTO topics (slug, name, description, sort_order) VALUES
 ON CONFLICT (slug) DO NOTHING;
 
 -- ============================================================
--- Tags (canonical LeetCode/HackerRank vocabulary)
--- ============================================================
-
-INSERT INTO tags (slug, name) VALUES
-    ('array', 'Array'), ('string', 'String'), ('hash-table', 'Hash Table'),
-    ('two-pointers', 'Two Pointers'), ('sliding-window', 'Sliding Window'),
-    ('binary-search', 'Binary Search'), ('stack', 'Stack'), ('queue', 'Queue'),
-    ('monotonic-stack', 'Monotonic Stack'), ('linked-list', 'Linked List'),
-    ('tree', 'Tree'), ('binary-tree', 'Binary Tree'), ('bst', 'BST'),
-    ('graph', 'Graph'), ('bfs', 'BFS'), ('dfs', 'DFS'),
-    ('heap', 'Heap'), ('trie', 'Trie'), ('union-find', 'Union Find'),
-    ('dp', 'Dynamic Programming'), ('greedy', 'Greedy'), ('backtracking', 'Backtracking'),
-    ('bit-manipulation', 'Bit Manipulation'), ('math', 'Math'), ('matrix', 'Matrix'),
-    ('interval', 'Interval'), ('topological-sort', 'Topological Sort'),
-    ('sorting', 'Sorting'), ('simulation', 'Simulation'), ('prefix-sum', 'Prefix Sum'),
-    ('divide-and-conquer', 'Divide and Conquer'), ('segment-tree', 'Segment Tree'),
-    ('binary-indexed-tree', 'Binary Indexed Tree'),
-    ('design', 'Design'),
-    ('easy', 'Easy'), ('medium', 'Medium'), ('hard', 'Hard'),
-    ('ac-independent', 'AC Independent'), ('ac-with-hints', 'AC With Hints'),
-    ('ac-after-solution', 'AC After Solution'), ('incomplete', 'Incomplete'),
-    ('leetcode', 'LeetCode'), ('hackerrank', 'HackerRank')
-ON CONFLICT (slug) DO NOTHING;
-
--- ============================================================
 -- Feeds (with correct priority inline, no UPDATE needed)
 -- ============================================================
 

@@ -32,18 +32,5 @@ UPDATE topics SET
 WHERE id = $1
 RETURNING id, slug, name, description, icon, sort_order, created_at, updated_at;
 
--- name: RelatedTagsForTopic :many
-SELECT tg.slug AS tag, COUNT(*)::int AS count
-FROM contents c
-JOIN content_topics ct ON ct.content_id = c.id
-JOIN content_tags ct2 ON ct2.content_id = c.id
-JOIN tags tg ON tg.id = ct2.tag_id
-WHERE ct.topic_id = $1
-  AND c.status = 'published'
-  AND c.is_public = true
-GROUP BY tg.slug
-ORDER BY count DESC
-LIMIT $2;
-
 -- name: DeleteTopic :exec
 DELETE FROM topics WHERE id = $1;

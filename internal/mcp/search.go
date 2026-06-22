@@ -62,16 +62,15 @@ type SearchKnowledgeInput struct {
 
 // SearchKnowledgeResult is a single search result.
 type SearchKnowledgeResult struct {
-	ID          string   `json:"id"`
-	SourceType  string   `json:"source_type"` // 'content' or 'note'
-	Title       string   `json:"title"`
-	Slug        string   `json:"slug"`
-	ContentType string   `json:"content_type,omitempty"` // content.type when source_type=content
-	NoteKind    string   `json:"note_kind,omitempty"`    // note.kind when source_type=note
-	Excerpt     string   `json:"excerpt"`
-	Tags        []string `json:"tags,omitempty"`
-	Project     string   `json:"project,omitempty"`
-	CreatedAt   string   `json:"created_at"`
+	ID          string `json:"id"`
+	SourceType  string `json:"source_type"` // 'content' or 'note'
+	Title       string `json:"title"`
+	Slug        string `json:"slug"`
+	ContentType string `json:"content_type,omitempty"` // content.type when source_type=content
+	NoteKind    string `json:"note_kind,omitempty"`    // note.kind when source_type=note
+	Excerpt     string `json:"excerpt"`
+	Project     string `json:"project,omitempty"`
+	CreatedAt   string `json:"created_at"`
 }
 
 // SearchKnowledgeOutput is the output of the search_knowledge tool.
@@ -499,7 +498,6 @@ func (s *Server) contentToResult(ctx context.Context, c *content.Content) Search
 		Slug:        c.Slug,
 		ContentType: string(c.Type),
 		Excerpt:     c.Excerpt,
-		Tags:        c.Tags,
 		Project:     projectTitle,
 		CreatedAt:   c.CreatedAt.Format(time.RFC3339),
 	}

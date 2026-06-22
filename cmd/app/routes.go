@@ -38,7 +38,6 @@ import (
 	"github.com/Koopa0/koopa/internal/search"
 	"github.com/Koopa0/koopa/internal/song"
 	"github.com/Koopa0/koopa/internal/stats"
-	"github.com/Koopa0/koopa/internal/tag"
 	"github.com/Koopa0/koopa/internal/today"
 	"github.com/Koopa0/koopa/internal/todo"
 	"github.com/Koopa0/koopa/internal/topic"
@@ -53,7 +52,6 @@ type handlers struct {
 	feed     *feed.Handler
 	entry    *entry.Handler
 	goal     *goal.Handler
-	tag      *tag.Handler
 	stats    *stats.Handler
 	activity *activity.Handler
 	agent    *agent.Handler
@@ -278,20 +276,6 @@ func registerRoutes(
 	mux.Handle("POST /api/admin/knowledge/topics", adminMid(http.HandlerFunc(h.topic.Create)))
 	mux.Handle("PUT /api/admin/knowledge/topics/{id}", adminMid(http.HandlerFunc(h.topic.Update)))
 	mux.Handle("DELETE /api/admin/knowledge/topics/{id}", adminMid(http.HandlerFunc(h.topic.Delete)))
-
-	// --- Admin: Knowledge / Tags ---
-	mux.Handle("GET /api/admin/knowledge/tags", authMid(http.HandlerFunc(h.tag.List)))
-	mux.Handle("POST /api/admin/knowledge/tags", adminMid(http.HandlerFunc(h.tag.Create)))
-	mux.Handle("PUT /api/admin/knowledge/tags/{id}", adminMid(http.HandlerFunc(h.tag.Update)))
-	mux.Handle("DELETE /api/admin/knowledge/tags/{id}", adminMid(http.HandlerFunc(h.tag.Delete)))
-	mux.Handle("POST /api/admin/knowledge/tags/merge", adminMid(http.HandlerFunc(h.tag.Merge)))
-
-	// --- Admin: Knowledge / Tag aliases ---
-	mux.Handle("GET /api/admin/knowledge/tag-aliases", authMid(http.HandlerFunc(h.tag.ListAliases)))
-	mux.Handle("POST /api/admin/knowledge/tag-aliases/{id}/map", adminMid(http.HandlerFunc(h.tag.MapAlias)))
-	mux.Handle("POST /api/admin/knowledge/tag-aliases/{id}/confirm", adminMid(http.HandlerFunc(h.tag.ConfirmAlias)))
-	mux.Handle("POST /api/admin/knowledge/tag-aliases/{id}/reject", adminMid(http.HandlerFunc(h.tag.RejectAlias)))
-	mux.Handle("DELETE /api/admin/knowledge/tag-aliases/{id}", adminMid(http.HandlerFunc(h.tag.DeleteAlias)))
 
 	// --- Admin: Knowledge / Feeds ---
 	// Fetch stays on authMid (not adminMid): it triggers the feed collector,

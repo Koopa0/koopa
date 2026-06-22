@@ -49,7 +49,7 @@ func (s *Store) Search(ctx context.Context, query string, contentType *Type, pag
 		ids[i] = r.ID
 	}
 
-	if err := s.attachBatchTopicsAndTags(ctx, contents, ids); err != nil {
+	if err := s.attachBatchTopics(ctx, contents, ids); err != nil {
 		return nil, 0, err
 	}
 
@@ -89,7 +89,7 @@ func (s *Store) InternalSearch(ctx context.Context, query string, page, perPage 
 		ids[i] = r.ID
 	}
 
-	if err := s.attachBatchTopicsAndTags(ctx, contents, ids); err != nil {
+	if err := s.attachBatchTopics(ctx, contents, ids); err != nil {
 		return nil, 0, err
 	}
 

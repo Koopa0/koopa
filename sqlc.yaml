@@ -9,7 +9,6 @@ sql:
       - "internal/feed/entry/query.sql"
       - "internal/feed/query.sql"
       - "internal/goal/query.sql"
-      - "internal/tag/query.sql"
       - "internal/activity/query.sql"
       - "internal/todo/query.sql"
       - "internal/agent/query.sql"

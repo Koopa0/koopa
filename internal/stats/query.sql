@@ -42,12 +42,6 @@ SELECT entity_type AS source, COUNT(*)::int AS count
 FROM activity_events
 GROUP BY entity_type;
 
--- name: StatsTagCounts :one
-SELECT
-    (SELECT COUNT(*) FROM tags)::int AS canonical,
-    (SELECT COUNT(*) FROM tag_aliases)::int AS aliases,
-    (SELECT COUNT(*) FROM tag_aliases WHERE NOT confirmed)::int AS unconfirmed;
-
 -- name: StatsGoalsByArea :many
 -- Active goals (not started or in progress) grouped by area name.
 -- Goals without an area appear as 'unset'.
@@ -115,18 +109,6 @@ SELECT
     COUNT(*) FILTER (WHERE occurred_at > now() - interval '7 days')::int AS this_week,
     COUNT(*) FILTER (WHERE occurred_at > now() - interval '14 days' AND occurred_at <= now() - interval '7 days')::int AS last_week
 FROM activity_events;
-
--- name: StatsTopTags :many
--- Top tags across TIL contents, ranked by usage. notes table has no
--- tag relationships post Phase 2 entry — tags here count TILs only.
-SELECT t.name, COUNT(ct.content_id)::int AS count
-FROM tags t
-JOIN content_tags ct ON ct.tag_id = t.id
-JOIN contents c ON c.id = ct.content_id
-WHERE c.type = 'til'
-GROUP BY t.id, t.name
-ORDER BY count DESC
-LIMIT 10;
 
 -- name: StatsFeedHealthCounts :one
 SELECT

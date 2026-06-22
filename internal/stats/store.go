@@ -68,7 +68,6 @@ func (s *Store) Overview(ctx context.Context) (*Overview, error) {
 	g.Go(func() error { return s.queryProjectStats(ctx, &o.Projects) })
 	g.Go(func() error { return s.queryNoteStats(ctx, &o.Notes) })
 	g.Go(func() error { return s.queryActivityStats(ctx, &o.Activity) })
-	g.Go(func() error { return s.queryTagStats(ctx, &o.Tags) })
 
 	if err := g.Wait(); err != nil {
 		return nil, err
@@ -168,17 +167,6 @@ func (s *Store) queryActivityStats(ctx context.Context, as *ActivityStats) error
 	for i := range rows {
 		as.BySource[rows[i].Source] += int(rows[i].Count)
 	}
-	return nil
-}
-
-func (s *Store) queryTagStats(ctx context.Context, ts *TagStats) error {
-	row, err := s.q.StatsTagCounts(ctx)
-	if err != nil {
-		return fmt.Errorf("tag stats: %w", err)
-	}
-	ts.Canonical = int(row.Canonical)
-	ts.Aliases = int(row.Aliases)
-	ts.Unconfirmed = int(row.Unconfirmed)
 	return nil
 }
 
@@ -341,7 +329,6 @@ func (s *Store) Learning(ctx context.Context) (*LearningDashboard, error) {
 	ld := &LearningDashboard{
 		Notes:    NoteGrowth{ByType: map[string]int{}},
 		Activity: WeeklyActivity{Trend: "stable"},
-		TopTags:  []TagCount{},
 	}
 
 	// Each section is independent — partial failures return zeros so the
@@ -356,12 +343,6 @@ func (s *Store) Learning(ctx context.Context) (*LearningDashboard, error) {
 
 	if err := s.learningWeeklyActivity(ctx, ld); err != nil {
 		slog.Warn("learning: weekly activity query failed, returning zeros", "error", err)
-	} else {
-		hasData = true
-	}
-
-	if err := s.learningTopTags(ctx, ld); err != nil {
-		slog.Warn("learning: top tags query failed, returning zeros", "error", err)
 	} else {
 		hasData = true
 	}
@@ -401,20 +382,6 @@ func (s *Store) learningWeeklyActivity(ctx context.Context, ld *LearningDashboar
 		ld.Activity.Trend = "down"
 	default:
 		ld.Activity.Trend = "stable"
-	}
-	return nil
-}
-
-func (s *Store) learningTopTags(ctx context.Context, ld *LearningDashboard) error {
-	rows, err := s.q.StatsTopTags(ctx)
-	if err != nil {
-		return fmt.Errorf("top tags: %w", err)
-	}
-	for i := range rows {
-		ld.TopTags = append(ld.TopTags, TagCount{
-			Name:  rows[i].Name,
-			Count: int(rows[i].Count),
-		})
 	}
 	return nil
 }

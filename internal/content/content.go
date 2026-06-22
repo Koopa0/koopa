@@ -75,7 +75,6 @@ type Content struct {
 	Excerpt        string          `json:"excerpt"`
 	Type           Type            `json:"type"`
 	Status         Status          `json:"status"`
-	Tags           []string        `json:"tags"`
 	Topics         []TopicRef      `json:"topics"`
 	SeriesID       *string         `json:"series_id,omitempty"`
 	SeriesOrder    *int            `json:"series_order,omitempty"`
@@ -369,12 +368,6 @@ func (s *Store) Content(ctx context.Context, id uuid.UUID) (*Content, error) {
 	}
 	c.Topics = topics
 
-	tags, err := s.TagsForContent(ctx, c.ID)
-	if err != nil {
-		return nil, err
-	}
-	c.Tags = tags
-
 	return &c, nil
 }
 
@@ -417,7 +410,7 @@ func (s *Store) PublicContents(ctx context.Context, f PublicFilter) ([]Content, 
 		ids[i] = r.ID
 	}
 
-	if err := s.attachBatchTopicsAndTags(ctx, contents, ids); err != nil {
+	if err := s.attachBatchTopics(ctx, contents, ids); err != nil {
 		return nil, 0, err
 	}
 
@@ -449,12 +442,6 @@ func (s *Store) ContentBySlug(ctx context.Context, slug string) (*Content, error
 		return nil, err
 	}
 	c.Topics = topics
-
-	tags, err := s.TagsForContent(ctx, c.ID)
-	if err != nil {
-		return nil, err
-	}
-	c.Tags = tags
 
 	return &c, nil
 }
@@ -491,7 +478,7 @@ func (s *Store) ContentsByTopicID(ctx context.Context, topicID uuid.UUID, page, 
 		ids[i] = r.ID
 	}
 
-	if err := s.attachBatchTopicsAndTags(ctx, contents, ids); err != nil {
+	if err := s.attachBatchTopics(ctx, contents, ids); err != nil {
 		return nil, 0, err
 	}
 
@@ -571,7 +558,7 @@ func (s *Store) CreateContent(ctx context.Context, p *CreateParams) (*Content, e
 		CreatedAt:   r.CreatedAt, UpdatedAt: r.UpdatedAt,
 	})
 
-	// Topic/tag fetch runs on the caller's tx; a read failure aborts that tx,
+	// Topic fetch runs on the caller's tx; a read failure aborts that tx,
 	// so it MUST propagate. Masking it as an empty-collection success would let
 	// the handler emit 2xx before the middleware's commit fails — an
 	// inconsistency the client never hears about.
@@ -580,12 +567,6 @@ func (s *Store) CreateContent(ctx context.Context, p *CreateParams) (*Content, e
 		return nil, fmt.Errorf("fetching topics for content %s: %w", c.ID, err)
 	}
 	c.Topics = topics
-
-	tags, err := s.TagsForContent(ctx, c.ID)
-	if err != nil {
-		return nil, fmt.Errorf("fetching tags for content %s: %w", c.ID, err)
-	}
-	c.Tags = tags
 
 	return &c, nil
 }
@@ -671,7 +652,7 @@ func (s *Store) UpdateContent(ctx context.Context, id uuid.UUID, p *UpdateParams
 		CreatedAt:   r.CreatedAt, UpdatedAt: r.UpdatedAt,
 	})
 
-	// Topic/tag fetch runs on the caller's STILL-OPEN tx (not post-commit); a
+	// Topic fetch runs on the caller's STILL-OPEN tx (not post-commit); a
 	// read failure aborts that tx, so it MUST propagate. Masking it as an
 	// empty-collection success would let the handler emit 2xx before the
 	// middleware's commit fails.
@@ -680,12 +661,6 @@ func (s *Store) UpdateContent(ctx context.Context, id uuid.UUID, p *UpdateParams
 		return nil, fmt.Errorf("fetching topics for content %s: %w", c.ID, err)
 	}
 	c.Topics = topics
-
-	tags, err := s.TagsForContent(ctx, c.ID)
-	if err != nil {
-		return nil, fmt.Errorf("fetching tags for content %s: %w", c.ID, err)
-	}
-	c.Tags = tags
 
 	return &c, nil
 }
@@ -698,12 +673,12 @@ func (s *Store) DeleteContent(ctx context.Context, id uuid.UUID) error {
 	return nil
 }
 
-// attachBatchTopicsAndTags populates Topics and Tags for a list of content
-// rows with two batch queries instead of 2N round-trips. Every entry in
-// out gets non-nil Topics / Tags slices (the loaders pre-init empty
-// slices for IDs with zero rows), so the wire shape is always [] rather
-// than null. ids must be aligned with out: ids[i] is the ID of out[i].
-func (s *Store) attachBatchTopicsAndTags(ctx context.Context, out []Content, ids []uuid.UUID) error {
+// attachBatchTopics populates Topics for a list of content rows with one
+// batch query instead of N round-trips. Every entry in out gets a non-nil
+// Topics slice (the loader pre-inits empty slices for IDs with zero rows),
+// so the wire shape is always [] rather than null. ids must be aligned
+// with out: ids[i] is the ID of out[i].
+func (s *Store) attachBatchTopics(ctx context.Context, out []Content, ids []uuid.UUID) error {
 	if len(out) == 0 {
 		return nil
 	}
@@ -711,13 +686,8 @@ func (s *Store) attachBatchTopicsAndTags(ctx context.Context, out []Content, ids
 	if err != nil {
 		return err
 	}
-	tagMap, err := s.tagsForContents(ctx, ids)
-	if err != nil {
-		return err
-	}
 	for i := range out {
 		out[i].Topics = topicMap[out[i].ID]
-		out[i].Tags = tagMap[out[i].ID]
 	}
 	return nil
 }
@@ -755,43 +725,6 @@ func (s *Store) topicsForContents(ctx context.Context, ids []uuid.UUID) (map[uui
 	}
 	for _, r := range rows {
 		result[r.ContentID] = append(result[r.ContentID], TopicRef{ID: r.ID, Slug: r.Slug, Name: r.Name})
-	}
-	return result, nil
-}
-
-// TagsForContent returns tag slugs for a single content item.
-func (s *Store) TagsForContent(ctx context.Context, contentID uuid.UUID) ([]string, error) {
-	rows, err := s.q.TagsForContent(ctx, contentID)
-	if err != nil {
-		return nil, fmt.Errorf("querying tags for content %s: %w", contentID, err)
-	}
-	tags := make([]string, len(rows))
-	for i, r := range rows {
-		tags[i] = r.Slug
-	}
-	return tags, nil
-}
-
-// tagsForContents fetches tags for multiple content IDs in a single query,
-// returning a map from content ID to tag slugs. Every requested ID is
-// guaranteed to be present in the result map — IDs with zero tags map to
-// an empty (non-nil) slice so JSON marshaling emits "tags": [] rather
-// than "tags": null. Callers can assign the map value directly to a
-// Content.Tags field without a nil check.
-func (s *Store) tagsForContents(ctx context.Context, ids []uuid.UUID) (map[uuid.UUID][]string, error) {
-	if len(ids) == 0 {
-		return map[uuid.UUID][]string{}, nil
-	}
-	rows, err := s.q.TagsForContents(ctx, ids)
-	if err != nil {
-		return nil, fmt.Errorf("batch querying tags: %w", err)
-	}
-	result := make(map[uuid.UUID][]string, len(ids))
-	for _, id := range ids {
-		result[id] = []string{}
-	}
-	for _, r := range rows {
-		result[r.ContentID] = append(result[r.ContentID], r.Slug)
 	}
 	return result, nil
 }

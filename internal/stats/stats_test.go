@@ -450,22 +450,19 @@ func TestHandler_Learning_Success(t *testing.T) {
 		t.Fatalf("decoding Learning() response: %v", err)
 	}
 
-	// Empty DB — all counts must be zero, trend stable, top tags empty (not nil).
+	// Empty DB — all counts must be zero, trend stable.
 	if resp.Data.Notes.Total != 0 {
 		t.Errorf("Learning().Notes.Total = %d, want 0", resp.Data.Notes.Total)
 	}
 	if resp.Data.Activity.Trend != "stable" {
 		t.Errorf("Learning().Activity.Trend = %q, want %q", resp.Data.Activity.Trend, "stable")
 	}
-	if resp.Data.TopTags == nil {
-		t.Error("Learning().TopTags is nil, want empty slice")
-	}
 }
 
 func TestHandler_Learning_AllQueriesFail_ReturnsError(t *testing.T) {
 	t.Parallel()
 
-	// All three sub-queries (learningNoteGrowth, learningWeeklyActivity, learningTopTags)
+	// Both sub-queries (learningNoteGrowth, learningWeeklyActivity)
 	// rely on QueryRow or Query. Make both fail so hasData stays false and the store
 	// returns the "all learning queries failed" error.
 	boom := errors.New("total outage")
@@ -493,26 +490,14 @@ func TestHandler_Learning_AllQueriesFail_ReturnsError(t *testing.T) {
 func TestHandler_Learning_PartialFailure_StillSucceeds(t *testing.T) {
 	t.Parallel()
 
-	// learningNoteGrowth uses QueryRow first, then Query.
-	// Let QueryRow succeed (zeros) but Query fail.
-	// learningWeeklyActivity uses QueryRow — also succeeds.
-	// learningTopTags uses Query — fails.
-	// hasData should be true (at least learningNoteGrowth + learningWeeklyActivity
-	// contributed some data via QueryRow), so the handler returns 200.
-	boom := errors.New("tags table missing")
+	// learningNoteGrowth and learningWeeklyActivity both use QueryRow.
+	// Let every QueryRow succeed (zeros) but every Query fail. hasData
+	// should be true (both QueryRow sub-queries contributed data), so the
+	// handler returns 200 even though the Query path is broken.
+	boom := errors.New("query path broken")
 	dbtx := &stubDBTX{
-		queryFn: func(_ context.Context, sql string, _ ...any) (pgx.Rows, error) {
-			// Fail only the top-tags join (`content_tags` is the
-			// distinguishing keyword in StatsTopTags).
-			if strings.Contains(sql, "content_tags") {
-				return nil, boom
-			}
-			// The by-type breakdown query (contains "combined") also returns error
-			// to exercise the partial-failure branch in learningNoteGrowth.
-			if strings.Contains(sql, "combined") {
-				return nil, boom
-			}
-			return &emptyRows{}, nil
+		queryFn: func(_ context.Context, _ string, _ ...any) (pgx.Rows, error) {
+			return nil, boom
 		},
 		queryRowFn: func(_ context.Context, _ string, _ ...any) pgx.Row {
 			return &zeroRow{}

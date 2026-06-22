@@ -69,7 +69,6 @@ DROP TABLE IF EXISTS feed_topics;
 DROP TABLE IF EXISTS feeds;
 
 -- Content junctions
-DROP TABLE IF EXISTS content_tags;
 DROP TABLE IF EXISTS content_topics;
 
 -- Notes
@@ -90,12 +89,6 @@ DROP TABLE IF EXISTS goals;
 
 -- Areas
 DROP TABLE IF EXISTS areas;
-
--- Tag aliases (FK to tags)
-DROP TABLE IF EXISTS tag_aliases;
-
--- Tags
-DROP TABLE IF EXISTS tags;
 
 -- Topics
 DROP TABLE IF EXISTS topics;

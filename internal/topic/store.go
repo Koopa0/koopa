@@ -136,22 +136,6 @@ func (s *Store) UpdateTopic(ctx context.Context, id uuid.UUID, p *UpdateParams) 
 	}, nil
 }
 
-// RelatedTags returns the most frequent tags in published content for a topic.
-func (s *Store) RelatedTags(ctx context.Context, topicID uuid.UUID, limit int) ([]TagCount, error) {
-	rows, err := s.q.RelatedTagsForTopic(ctx, db.RelatedTagsForTopicParams{
-		TopicID: topicID,
-		Limit:   int32(limit), // #nosec G115 -- small UI limit
-	})
-	if err != nil {
-		return nil, fmt.Errorf("querying related tags for topic %s: %w", topicID, err)
-	}
-	tags := make([]TagCount, len(rows))
-	for i, r := range rows {
-		tags[i] = TagCount{Tag: r.Tag, Count: int(r.Count)}
-	}
-	return tags, nil
-}
-
 // DeleteTopic deletes a topic by ID.
 func (s *Store) DeleteTopic(ctx context.Context, id uuid.UUID) error {
 	err := s.q.DeleteTopic(ctx, id)

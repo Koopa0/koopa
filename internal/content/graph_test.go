@@ -548,7 +548,6 @@ func TestContent_JSONContract(t *testing.T) {
 		Excerpt:        "excerpt",
 		Type:           TypeArticle,
 		Status:         StatusPublished,
-		Tags:           []string{"go", "testing"},
 		Topics:         []TopicRef{},
 		IsPublic:       true,
 		ReadingTimeMin: 5,
@@ -568,7 +567,7 @@ func TestContent_JSONContract(t *testing.T) {
 	// These fields MUST be present and non-null in the serialised output.
 	requiredFields := []string{
 		"id", "slug", "title", "body", "excerpt",
-		"type", "status", "tags", "topics",
+		"type", "status", "topics",
 		"is_public", "reading_time_min",
 		"created_at", "updated_at",
 	}
@@ -578,20 +577,10 @@ func TestContent_JSONContract(t *testing.T) {
 		}
 	}
 
-	// Tags must be [] not null when empty.
-	c.Tags = []string{}
-	emptyData, _ := json.Marshal(c)
-	var emptyRaw map[string]json.RawMessage
-	_ = json.Unmarshal(emptyData, &emptyRaw)
-	if string(emptyRaw["tags"]) == "null" {
-		t.Errorf("Content.Tags = [] should serialise as [], got null")
-	}
-
 	// Optional omitempty fields must not appear when nil.
 	omitFields := []string{"series_id", "series_order",
 		"project_id", "ai_metadata", "cover_image"}
 	noOptionalData, _ := json.Marshal(Content{
-		Tags:   []string{},
 		Topics: []TopicRef{},
 	})
 	var noOptRaw map[string]json.RawMessage

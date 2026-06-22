@@ -75,7 +75,7 @@ func (s *Store) Contents(ctx context.Context, f Filter) ([]Content, int, error) 
 		ids[i] = r.ID
 	}
 
-	if err := s.attachBatchTopicsAndTags(ctx, contents, ids); err != nil {
+	if err := s.attachBatchTopics(ctx, contents, ids); err != nil {
 		return nil, 0, err
 	}
 

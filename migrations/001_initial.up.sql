@@ -89,7 +89,7 @@ COMMENT ON COLUMN agents.created_at IS 'When the row was first upserted. Useful 
 CREATE INDEX idx_agents_status ON agents (status);
 
 -- ============================================================
--- Core domain: topics, tags, users
+-- Core domain: topics, users
 -- ============================================================
 
 CREATE TABLE users (
@@ -145,55 +145,6 @@ COMMENT ON TABLE topics IS 'High-level knowledge domains (Go, AI, System Design)
 COMMENT ON COLUMN topics.slug IS 'URL-safe identifier (e.g. system-design, or 日本語). Used in feed_topics and content_topics junctions. Format (chk_topic_slug_format): hyphen-separated segments, no whitespace or slash, no leading/trailing/consecutive hyphens. Unicode letters/numbers (incl. CJK) allowed — slugs carry UTF-8 in URLs.';
 COMMENT ON COLUMN topics.icon IS 'Optional emoji or icon identifier for UI display.';
 COMMENT ON COLUMN topics.sort_order IS 'Priority tier for display ordering (lower = higher priority). Convention: sort_order is for tier-based UI placement that may have gaps; position is for sequence-based 0-based indexing within a parent. See top-of-file ordering convention block.';
-
-CREATE TABLE tags (
-    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    slug        TEXT NOT NULL UNIQUE,
-    name        TEXT NOT NULL,
-    parent_id   UUID REFERENCES tags(id) ON DELETE SET NULL,
-    description TEXT NOT NULL DEFAULT '',
-    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
-
-    CONSTRAINT chk_tag_slug_format
-        CHECK (slug ~ '^[^[:space:]/-]+(-[^[:space:]/-]+)*$'),
-    CONSTRAINT chk_tag_name_not_blank
-        CHECK (btrim(name) <> '')
-);
-
-COMMENT ON TABLE tags IS 'Canonical tag registry. Fine-grained content-classification labels (two-pointers, error-handling). Resolved through tag_aliases pipeline.';
-COMMENT ON COLUMN tags.slug IS 'Canonical form (e.g. two-pointers, dp). Controlled vocabulary. Format (chk_tag_slug_format): hyphen-separated segments, no whitespace or slash, no leading/trailing/consecutive hyphens; Unicode letters/numbers (incl. CJK) allowed. Tags are pure classification labels.';
-COMMENT ON COLUMN tags.parent_id IS 'Hierarchical parent tag. SET NULL on parent deletion — orphaned tags remain valid.';
-
-CREATE INDEX idx_tags_parent ON tags(parent_id);
-
-CREATE TABLE tag_aliases (
-    id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    raw_tag      TEXT NOT NULL UNIQUE,
-    tag_id       UUID REFERENCES tags(id) ON DELETE CASCADE,
-    resolution_source TEXT NOT NULL DEFAULT 'admin'
-                 CHECK (resolution_source IN ('auto-exact', 'auto-ci', 'auto-slug', 'admin', 'unmapped', 'rejected')),
-    confirmed    BOOLEAN NOT NULL DEFAULT false,
-    confirmed_at TIMESTAMPTZ,
-    created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
-
-    CONSTRAINT chk_confirmed_pair
-        CHECK ((confirmed = false AND confirmed_at IS NULL)
-            OR (confirmed = true AND confirmed_at IS NOT NULL))
-);
-
-COMMENT ON TABLE tag_aliases IS 'Maps raw tag strings (from frontmatter/external) to canonical tags. Pipeline: raw_tag → lookup alias → resolve to tag_id.';
-COMMENT ON COLUMN tag_aliases.raw_tag IS 'Original tag string as found in source (e.g. "golang", "JS", "dynamic-programming").';
-COMMENT ON COLUMN tag_aliases.tag_id IS 'Resolved canonical tag. NULL for unmapped/rejected aliases.';
-COMMENT ON COLUMN tag_aliases.resolution_source IS 'How the alias was resolved: auto-exact (exact match), auto-ci (case-insensitive), auto-slug (Slugify matched a canonical tag), admin (manually mapped by admin), unmapped (pending), rejected (admin declined).';
-COMMENT ON COLUMN tag_aliases.confirmed IS 'Whether an admin has verified this mapping. Unconfirmed auto-matches may be wrong.';
-COMMENT ON COLUMN tag_aliases.confirmed_at IS
-    'When an admin confirmed this mapping. NULL iff confirmed = false '
-    '(enforced by chk_confirmed_pair). Set together with confirmed = true.';
-
-CREATE INDEX idx_tag_aliases_tag ON tag_aliases(tag_id);
-CREATE INDEX idx_tag_aliases_confirmed ON tag_aliases(confirmed);
-CREATE INDEX idx_tag_aliases_lower_raw_tag ON tag_aliases (LOWER(raw_tag));
 
 -- ============================================================
 -- Areas (PARA Areas of Responsibility)
@@ -652,7 +603,7 @@ CREATE INDEX idx_notes_embedding_hnsw ON notes USING hnsw (embedding vector_cosi
     WITH (m = 16, ef_construction = 64);
 
 -- ============================================================
--- Junction: contents ↔ topics, contents ↔ tags
+-- Junction: contents ↔ topics
 -- ============================================================
 
 CREATE TABLE content_topics (
@@ -664,16 +615,6 @@ CREATE TABLE content_topics (
 COMMENT ON TABLE content_topics IS 'Junction: content ↔ topic. Many-to-many. Curated knowledge domain categories.';
 
 CREATE INDEX idx_content_topics_topic_id ON content_topics(topic_id);
-
-CREATE TABLE content_tags (
-    content_id UUID NOT NULL REFERENCES contents(id) ON DELETE CASCADE,
-    tag_id     UUID NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
-    PRIMARY KEY (content_id, tag_id)
-);
-
-COMMENT ON COLUMN content_tags.tag_id IS 'References canonical tag. Distinct from content_topics: topics are curated categories, tags are raw labels resolved through the alias pipeline.';
-
-CREATE INDEX idx_content_tags_tag_id ON content_tags(tag_id);
 
 -- ============================================================
 -- Feeds + feed entries

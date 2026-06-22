@@ -44,7 +44,6 @@ import (
 	"github.com/Koopa0/koopa/internal/search"
 	"github.com/Koopa0/koopa/internal/song"
 	"github.com/Koopa0/koopa/internal/stats"
-	"github.com/Koopa0/koopa/internal/tag"
 	"github.com/Koopa0/koopa/internal/today"
 	"github.com/Koopa0/koopa/internal/todo"
 	"github.com/Koopa0/koopa/internal/topic"
@@ -180,7 +179,6 @@ func run(logger *slog.Logger) error {
 	feedStore := feed.NewStore(pool, logger)
 	entryStore := entry.NewStore(pool)
 	goalStore := goal.NewStore(pool)
-	tagStore := tag.NewStore(pool)
 	statsStore := stats.NewStore(pool)
 	activityStore := activity.NewStore(pool)
 	authStore := auth.NewStore(pool)
@@ -242,22 +240,21 @@ func run(logger *slog.Logger) error {
 	}
 
 	h := &handlers{
-		auth:       authHandler,
-		content:    content.NewHandler(contentStore, cfg.SiteURL, logger),
-		project:    project.NewHandler(projectStore, todoStore, activityStore, contentStore, logger),
-		topic:      topic.NewHandler(topicStore, contentStore, logger),
-		feed:       feedHandler,
-		entry:      entry.NewHandler(entryStore, logger),
-		goal:       goal.NewHandler(goalStore, projectStore, logger),
-		tag:        tag.NewHandler(tagStore, logger),
-		stats:      stats.NewHandler(statsStore, logger),
-		activity:   activity.NewHandler(activityStore, logger),
-		agent:      agent.NewHandler(agentRegistry, logger),
-		daily:      daily.NewHandler(dailyStore, todoStore, logger),
-		note:       note.NewHandler(noteStore, logger),
-		reading:    reading.NewHandler(readingStore, logger),
-		song:       song.NewHandler(songStore, logger),
-		todo:       todo.NewHandler(todoStore, logger),
+		auth:     authHandler,
+		content:  content.NewHandler(contentStore, cfg.SiteURL, logger),
+		project:  project.NewHandler(projectStore, todoStore, activityStore, contentStore, logger),
+		topic:    topic.NewHandler(topicStore, contentStore, logger),
+		feed:     feedHandler,
+		entry:    entry.NewHandler(entryStore, logger),
+		goal:     goal.NewHandler(goalStore, projectStore, logger),
+		stats:    stats.NewHandler(statsStore, logger),
+		activity: activity.NewHandler(activityStore, logger),
+		agent:    agent.NewHandler(agentRegistry, logger),
+		daily:    daily.NewHandler(dailyStore, todoStore, logger),
+		note:     note.NewHandler(noteStore, logger),
+		reading:  reading.NewHandler(readingStore, logger),
+		song:     song.NewHandler(songStore, logger),
+		todo:     todo.NewHandler(todoStore, logger),
 		// Today is the HTTP mirror of brief(mode=morning): the same domain
 		// stores feed both. The contracted readers — todo date views, the
 		// day's committed plan, active goals, and RSS highlights — are wired

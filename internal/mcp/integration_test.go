@@ -68,7 +68,7 @@ func setupServer(t *testing.T) *Server {
 }
 
 // truncateApplicationTables clears every table an MCP handler can write to
-// while preserving seed data from 002 (areas, topics, tags, feeds,
+// while preserving seed data from 002 (areas, topics, feeds,
 // learning_domains). agents stays intact because SyncToTable reconciles
 // it in setupServer, not via TRUNCATE.
 //

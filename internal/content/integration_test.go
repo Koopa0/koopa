@@ -173,8 +173,6 @@ func TestStore_CreateContent_and_Content(t *testing.T) {
 	// IsPublic defaults to false post notes-unification (private-by-default
 	// per chk_content_public_requires_published — publishing is an atomic
 	// flip of status + is_public + published_at via PublishContent).
-	// Tags come from a separate tag-resolution path (not CreateParams),
-	// so a freshly created row always reads back with Tags=[].
 	want := &Content{
 		ID:             created.ID,
 		Slug:           "test-article",
@@ -183,7 +181,6 @@ func TestStore_CreateContent_and_Content(t *testing.T) {
 		Excerpt:        "A short excerpt.",
 		Type:           TypeArticle,
 		Status:         StatusDraft,
-		Tags:           []string{},
 		Topics:         []TopicRef{{ID: tp.ID, Slug: "golang", Name: "Go Language"}},
 		IsPublic:       false,
 		ReadingTimeMin: 5,

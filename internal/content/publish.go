@@ -142,12 +142,6 @@ func (s *Store) PublishContent(ctx context.Context, id uuid.UUID) (*Content, err
 	}
 	c.Topics = topics
 
-	tags, err := s.TagsForContent(ctx, c.ID)
-	if err != nil {
-		return nil, err
-	}
-	c.Tags = tags
-
 	return &c, nil
 }
 
@@ -233,7 +227,7 @@ func (s *Store) transitionRejectionReason(ctx context.Context, id uuid.UUID) err
 	return ErrInvalidState
 }
 
-// hydrateContentRow attaches topics and tags to a Content produced by a
+// hydrateContentRow attaches topics to a Content produced by a
 // state-transition query. Shared between all transitions that return the
 // updated row.
 func (s *Store) hydrateContentRow(ctx context.Context, id uuid.UUID, row *contentRow) (*Content, error) {
@@ -243,10 +237,5 @@ func (s *Store) hydrateContentRow(ctx context.Context, id uuid.UUID, row *conten
 		return nil, fmt.Errorf("hydrating topics for content %s: %w", id, err)
 	}
 	c.Topics = topics
-	tags, err := s.TagsForContent(ctx, id)
-	if err != nil {
-		return nil, fmt.Errorf("hydrating tags for content %s: %w", id, err)
-	}
-	c.Tags = tags
 	return &c, nil
 }

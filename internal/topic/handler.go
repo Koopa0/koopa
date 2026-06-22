@@ -63,13 +63,12 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 
 // topicWithContents is the response for GET /api/topics/{slug}.
 type topicWithContents struct {
-	Topic       *Topic            `json:"topic"`
-	Contents    []content.Content `json:"contents"`
-	RelatedTags []TagCount        `json:"related_tags"`
+	Topic    *Topic            `json:"topic"`
+	Contents []content.Content `json:"contents"`
 }
 
 // BySlug handles GET /api/topics/{slug}.
-// Returns the topic, its published contents (paginated), and top related tags.
+// Returns the topic and its published contents (paginated).
 func (h *Handler) BySlug(w http.ResponseWriter, r *http.Request) {
 	slug := r.PathValue("slug")
 	t, err := h.store.TopicBySlug(r.Context(), slug)
@@ -87,14 +86,8 @@ func (h *Handler) BySlug(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tags, err := h.store.RelatedTags(r.Context(), t.ID, 15)
-	if err != nil {
-		h.logger.Error("listing related tags", "slug", slug, "error", err)
-		tags = []TagCount{} // non-fatal: return empty tags, don't fail the request
-	}
-
 	api.Encode(w, http.StatusOK, api.PagedResponse(
-		topicWithContents{Topic: t, Contents: contents, RelatedTags: tags},
+		topicWithContents{Topic: t, Contents: contents},
 		total, page, perPage,
 	))
 }

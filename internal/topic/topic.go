@@ -50,12 +50,6 @@ type UpdateParams struct {
 	SortOrder   *int    `json:"sort_order,omitempty"`
 }
 
-// TagCount is a tag with its frequency within a topic.
-type TagCount struct {
-	Tag   string `json:"tag"`
-	Count int    `json:"count"`
-}
-
 var (
 	// ErrNotFound indicates the topic does not exist.
 	ErrNotFound = errors.New("topic: not found")

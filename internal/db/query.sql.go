@@ -217,126 +217,6 @@ func (q *Queries) AddContentTopic(ctx context.Context, arg AddContentTopicParams
 	return err
 }
 
-const aliasByCaseInsensitiveRawTag = `-- name: AliasByCaseInsensitiveRawTag :one
-SELECT id, raw_tag, tag_id, resolution_source, confirmed, confirmed_at, created_at FROM tag_aliases WHERE LOWER(raw_tag) = LOWER($1) AND tag_id IS NOT NULL
-LIMIT 1
-`
-
-// Step 2: case-insensitive match on raw_tag with a mapped tag_id.
-func (q *Queries) AliasByCaseInsensitiveRawTag(ctx context.Context, rawTag string) (TagAlias, error) {
-	row := q.db.QueryRow(ctx, aliasByCaseInsensitiveRawTag, rawTag)
-	var i TagAlias
-	err := row.Scan(
-		&i.ID,
-		&i.RawTag,
-		&i.TagID,
-		&i.ResolutionSource,
-		&i.Confirmed,
-		&i.ConfirmedAt,
-		&i.CreatedAt,
-	)
-	return i, err
-}
-
-const aliasByExactRawTag = `-- name: AliasByExactRawTag :one
-SELECT id, raw_tag, tag_id, resolution_source, confirmed, confirmed_at, created_at FROM tag_aliases WHERE raw_tag = $1 AND tag_id IS NOT NULL
-`
-
-// Step 1: exact match on raw_tag with a mapped tag_id.
-func (q *Queries) AliasByExactRawTag(ctx context.Context, rawTag string) (TagAlias, error) {
-	row := q.db.QueryRow(ctx, aliasByExactRawTag, rawTag)
-	var i TagAlias
-	err := row.Scan(
-		&i.ID,
-		&i.RawTag,
-		&i.TagID,
-		&i.ResolutionSource,
-		&i.Confirmed,
-		&i.ConfirmedAt,
-		&i.CreatedAt,
-	)
-	return i, err
-}
-
-const aliasCountByTagID = `-- name: AliasCountByTagID :one
-SELECT COUNT(*)::int AS count FROM tag_aliases WHERE tag_id = $1
-`
-
-// Admin: count aliases referencing a tag.
-func (q *Queries) AliasCountByTagID(ctx context.Context, tagID *uuid.UUID) (int32, error) {
-	row := q.db.QueryRow(ctx, aliasCountByTagID, tagID)
-	var count int32
-	err := row.Scan(&count)
-	return count, err
-}
-
-const aliasesByCaseInsensitiveRawTags = `-- name: AliasesByCaseInsensitiveRawTags :many
-SELECT DISTINCT ON (LOWER(raw_tag)) raw_tag, tag_id FROM tag_aliases
-WHERE LOWER(raw_tag) = ANY(SELECT LOWER(t) FROM unnest($1::text[]) AS t)
-  AND tag_id IS NOT NULL
-ORDER BY LOWER(raw_tag)
-`
-
-type AliasesByCaseInsensitiveRawTagsRow struct {
-	RawTag string     `json:"raw_tag"`
-	TagID  *uuid.UUID `json:"tag_id"`
-}
-
-// Batch step 2: case-insensitive alias matches with a mapped tag_id. One row
-// per lower-cased raw_tag; the caller keys results by LOWER(input).
-func (q *Queries) AliasesByCaseInsensitiveRawTags(ctx context.Context, rawTags []string) ([]AliasesByCaseInsensitiveRawTagsRow, error) {
-	rows, err := q.db.Query(ctx, aliasesByCaseInsensitiveRawTags, rawTags)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []AliasesByCaseInsensitiveRawTagsRow{}
-	for rows.Next() {
-		var i AliasesByCaseInsensitiveRawTagsRow
-		if err := rows.Scan(&i.RawTag, &i.TagID); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const aliasesByExactRawTags = `-- name: AliasesByExactRawTags :many
-SELECT id, raw_tag, tag_id, resolution_source, confirmed, confirmed_at, created_at FROM tag_aliases WHERE raw_tag = ANY($1::text[]) AND tag_id IS NOT NULL
-`
-
-// Batch resolve: find all exact alias matches for a list of raw tags.
-func (q *Queries) AliasesByExactRawTags(ctx context.Context, rawTags []string) ([]TagAlias, error) {
-	rows, err := q.db.Query(ctx, aliasesByExactRawTags, rawTags)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []TagAlias{}
-	for rows.Next() {
-		var i TagAlias
-		if err := rows.Scan(
-			&i.ID,
-			&i.RawTag,
-			&i.TagID,
-			&i.ResolutionSource,
-			&i.Confirmed,
-			&i.ConfirmedAt,
-			&i.CreatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const allPublishedSlugs = `-- name: AllPublishedSlugs :many
 SELECT slug, type, updated_at
 FROM contents
@@ -778,30 +658,6 @@ func (q *Queries) CompletedTodoDetailSince(ctx context.Context, since *time.Time
 		return nil, err
 	}
 	return items, nil
-}
-
-const confirmAlias = `-- name: ConfirmAlias :one
-UPDATE tag_aliases SET
-    confirmed = true,
-    confirmed_at = now()
-WHERE id = $1
-RETURNING id, raw_tag, tag_id, resolution_source, confirmed, confirmed_at, created_at
-`
-
-// Admin: confirm an alias mapping.
-func (q *Queries) ConfirmAlias(ctx context.Context, id uuid.UUID) (TagAlias, error) {
-	row := q.db.QueryRow(ctx, confirmAlias, id)
-	var i TagAlias
-	err := row.Scan(
-		&i.ID,
-		&i.RawTag,
-		&i.TagID,
-		&i.ResolutionSource,
-		&i.Confirmed,
-		&i.ConfirmedAt,
-		&i.CreatedAt,
-	)
-	return i, err
 }
 
 const consumeRefreshToken = `-- name: ConsumeRefreshToken :one
@@ -1919,40 +1775,6 @@ func (q *Queries) CreateSongReflection(ctx context.Context, arg CreateSongReflec
 	return i, err
 }
 
-const createTag = `-- name: CreateTag :one
-INSERT INTO tags (slug, name, parent_id, description)
-VALUES ($1, $2, $3, $4)
-RETURNING id, slug, name, parent_id, description, created_at, updated_at
-`
-
-type CreateTagParams struct {
-	Slug        string     `json:"slug"`
-	Name        string     `json:"name"`
-	ParentID    *uuid.UUID `json:"parent_id"`
-	Description string     `json:"description"`
-}
-
-// Admin: create a canonical tag.
-func (q *Queries) CreateTag(ctx context.Context, arg CreateTagParams) (Tag, error) {
-	row := q.db.QueryRow(ctx, createTag,
-		arg.Slug,
-		arg.Name,
-		arg.ParentID,
-		arg.Description,
-	)
-	var i Tag
-	err := row.Scan(
-		&i.ID,
-		&i.Slug,
-		&i.Name,
-		&i.ParentID,
-		&i.Description,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
 const createTodoItem = `-- name: CreateTodoItem :one
 INSERT INTO todos (title, state, due, project_id, energy, priority, description, created_by)
 VALUES ($1, $2::todo_state, $3, $4, $5, $6, $7, $8)
@@ -2071,16 +1893,6 @@ func (q *Queries) CurateFeedEntry(ctx context.Context, arg CurateFeedEntryParams
 	return i, err
 }
 
-const deleteAlias = `-- name: DeleteAlias :exec
-DELETE FROM tag_aliases WHERE id = $1
-`
-
-// Admin: delete an alias.
-func (q *Queries) DeleteAlias(ctx context.Context, id uuid.UUID) error {
-	_, err := q.db.Exec(ctx, deleteAlias, id)
-	return err
-}
-
 const deleteContentTopics = `-- name: DeleteContentTopics :exec
 DELETE FROM content_topics WHERE content_id = $1
 `
@@ -2088,48 +1900,6 @@ DELETE FROM content_topics WHERE content_id = $1
 func (q *Queries) DeleteContentTopics(ctx context.Context, contentID uuid.UUID) error {
 	_, err := q.db.Exec(ctx, deleteContentTopics, contentID)
 	return err
-}
-
-const deleteDuplicateAliases = `-- name: DeleteDuplicateAliases :execrows
-DELETE FROM tag_aliases
-WHERE tag_aliases.tag_id = $1
-  AND tag_aliases.raw_tag IN (SELECT ta.raw_tag FROM tag_aliases ta WHERE ta.tag_id = $2)
-`
-
-type DeleteDuplicateAliasesParams struct {
-	TagID   *uuid.UUID `json:"tag_id"`
-	TagID_2 *uuid.UUID `json:"tag_id_2"`
-}
-
-// Merge: delete duplicate aliases before reassignment (source aliases whose raw_tag already exists under target).
-// $1 = source_id, $2 = target_id
-func (q *Queries) DeleteDuplicateAliases(ctx context.Context, arg DeleteDuplicateAliasesParams) (int64, error) {
-	result, err := q.db.Exec(ctx, deleteDuplicateAliases, arg.TagID, arg.TagID_2)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected(), nil
-}
-
-const deleteDuplicateContentTags = `-- name: DeleteDuplicateContentTags :execrows
-DELETE FROM content_tags
-WHERE content_tags.tag_id = $1
-  AND content_tags.content_id IN (SELECT ct.content_id FROM content_tags ct WHERE ct.tag_id = $2)
-`
-
-type DeleteDuplicateContentTagsParams struct {
-	TagID   uuid.UUID `json:"tag_id"`
-	TagID_2 uuid.UUID `json:"tag_id_2"`
-}
-
-// Merge: delete duplicate content tags (source already attached to same content as target).
-// $1 = source_id, $2 = target_id
-func (q *Queries) DeleteDuplicateContentTags(ctx context.Context, arg DeleteDuplicateContentTagsParams) (int64, error) {
-	result, err := q.db.Exec(ctx, deleteDuplicateContentTags, arg.TagID, arg.TagID_2)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected(), nil
 }
 
 const deleteFeed = `-- name: DeleteFeed :exec
@@ -2380,16 +2150,6 @@ func (q *Queries) DeleteSongReflection(ctx context.Context, arg DeleteSongReflec
 		return 0, err
 	}
 	return result.RowsAffected(), nil
-}
-
-const deleteTag = `-- name: DeleteTag :exec
-DELETE FROM tags WHERE id = $1
-`
-
-// Admin: delete a canonical tag (only if no aliases reference it).
-func (q *Queries) DeleteTag(ctx context.Context, id uuid.UUID) error {
-	_, err := q.db.Exec(ctx, deleteTag, id)
-	return err
 }
 
 const deleteTodoItem = `-- name: DeleteTodoItem :execrows
@@ -3374,24 +3134,6 @@ func (q *Queries) IncrementFeedFailure(ctx context.Context, arg IncrementFeedFai
 	return consecutive_failures, err
 }
 
-const insertAliasWithTag = `-- name: InsertAliasWithTag :exec
-INSERT INTO tag_aliases (raw_tag, tag_id, resolution_source, confirmed)
-VALUES ($1, $2, $3, false)
-ON CONFLICT (raw_tag) DO NOTHING
-`
-
-type InsertAliasWithTagParams struct {
-	RawTag           string     `json:"raw_tag"`
-	TagID            *uuid.UUID `json:"tag_id"`
-	ResolutionSource string     `json:"resolution_source"`
-}
-
-// Record a resolved alias mapping (steps 2-3 auto-create alias for future exact match).
-func (q *Queries) InsertAliasWithTag(ctx context.Context, arg InsertAliasWithTagParams) error {
-	_, err := q.db.Exec(ctx, insertAliasWithTag, arg.RawTag, arg.TagID, arg.ResolutionSource)
-	return err
-}
-
 const insertCrawlRun = `-- name: InsertCrawlRun :exec
 INSERT INTO process_runs (kind, name, input, output, status, error, started_at, ended_at)
 VALUES ('crawl', $1, $2, $3, $4, $5, $6, $7)
@@ -3438,54 +3180,6 @@ type InsertFeedTopicsParams struct {
 // leaking 23505 as a 500 — idempotent per (feed_id, topic_id) pair.
 func (q *Queries) InsertFeedTopics(ctx context.Context, arg InsertFeedTopicsParams) error {
 	_, err := q.db.Exec(ctx, insertFeedTopics, arg.FeedID, arg.TopicIds)
-	return err
-}
-
-const insertResolvedAliases = `-- name: InsertResolvedAliases :exec
-INSERT INTO tag_aliases (raw_tag, tag_id, resolution_source, confirmed)
-SELECT
-    unnest($1::text[]),
-    unnest($2::uuid[]),
-    unnest($3::text[]),
-    false
-ON CONFLICT (raw_tag) DO NOTHING
-`
-
-type InsertResolvedAliasesParams struct {
-	RawTags []string    `json:"raw_tags"`
-	TagIds  []uuid.UUID `json:"tag_ids"`
-	Sources []string    `json:"sources"`
-}
-
-// Batch memoize resolved aliases (steps 2-3) for future exact match. The three
-// arrays are positionally aligned by the caller (equal length).
-func (q *Queries) InsertResolvedAliases(ctx context.Context, arg InsertResolvedAliasesParams) error {
-	_, err := q.db.Exec(ctx, insertResolvedAliases, arg.RawTags, arg.TagIds, arg.Sources)
-	return err
-}
-
-const insertUnmappedAlias = `-- name: InsertUnmappedAlias :exec
-INSERT INTO tag_aliases (raw_tag, tag_id, resolution_source, confirmed)
-VALUES ($1, NULL, 'unmapped', false)
-ON CONFLICT (raw_tag) DO NOTHING
-`
-
-// Step 4: record unmapped raw tag for admin review.
-func (q *Queries) InsertUnmappedAlias(ctx context.Context, rawTag string) error {
-	_, err := q.db.Exec(ctx, insertUnmappedAlias, rawTag)
-	return err
-}
-
-const insertUnmappedAliases = `-- name: InsertUnmappedAliases :exec
-INSERT INTO tag_aliases (raw_tag, tag_id, resolution_source, confirmed)
-SELECT t, NULL, 'unmapped', false
-FROM unnest($1::text[]) AS t
-ON CONFLICT (raw_tag) DO NOTHING
-`
-
-// Batch step 4: record unmapped raw tags for admin review.
-func (q *Queries) InsertUnmappedAliases(ctx context.Context, rawTags []string) error {
-	_, err := q.db.Exec(ctx, insertUnmappedAliases, rawTags)
 	return err
 }
 
@@ -3725,18 +3419,6 @@ func (q *Queries) InternalSemanticSearchNotes(ctx context.Context, arg InternalS
 	return items, nil
 }
 
-const isAliasRejected = `-- name: IsAliasRejected :one
-SELECT EXISTS(SELECT 1 FROM tag_aliases WHERE raw_tag = $1 AND resolution_source = 'rejected') AS rejected
-`
-
-// Check if a raw_tag has been explicitly rejected by admin.
-func (q *Queries) IsAliasRejected(ctx context.Context, rawTag string) (bool, error) {
-	row := q.db.QueryRow(ctx, isAliasRejected, rawTag)
-	var rejected bool
-	err := row.Scan(&rejected)
-	return rejected, err
-}
-
 const itemByID = `-- name: ItemByID :one
 SELECT id, plan_date, todo_id, selected_by, position, reason, status, created_at, updated_at
 FROM daily_plan_items WHERE id = $1
@@ -3946,39 +3628,6 @@ func (q *Queries) ListAgents(ctx context.Context) ([]ListAgentsRow, error) {
 	return items, nil
 }
 
-const listAliases = `-- name: ListAliases :many
-SELECT id, raw_tag, tag_id, resolution_source, confirmed, confirmed_at, created_at FROM tag_aliases ORDER BY created_at DESC
-`
-
-// Admin: list aliases with optional unmapped filter.
-func (q *Queries) ListAliases(ctx context.Context) ([]TagAlias, error) {
-	rows, err := q.db.Query(ctx, listAliases)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []TagAlias{}
-	for rows.Next() {
-		var i TagAlias
-		if err := rows.Scan(
-			&i.ID,
-			&i.RawTag,
-			&i.TagID,
-			&i.ResolutionSource,
-			&i.Confirmed,
-			&i.ConfirmedAt,
-			&i.CreatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const listContents = `-- name: ListContents :many
 SELECT id, slug, title, excerpt, type, status, is_public, project_id,
        reading_time_min, published_at, created_at, updated_at
@@ -4054,103 +3703,6 @@ func (q *Queries) ListContents(ctx context.Context, arg ListContentsParams) ([]L
 		return nil, err
 	}
 	return items, nil
-}
-
-const listTags = `-- name: ListTags :many
-SELECT id, slug, name, parent_id, description, created_at, updated_at FROM tags ORDER BY name
-`
-
-// Admin: list all canonical tags ordered by name.
-func (q *Queries) ListTags(ctx context.Context) ([]Tag, error) {
-	rows, err := q.db.Query(ctx, listTags)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []Tag{}
-	for rows.Next() {
-		var i Tag
-		if err := rows.Scan(
-			&i.ID,
-			&i.Slug,
-			&i.Name,
-			&i.ParentID,
-			&i.Description,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listUnmappedAliases = `-- name: ListUnmappedAliases :many
-SELECT id, raw_tag, tag_id, resolution_source, confirmed, confirmed_at, created_at FROM tag_aliases WHERE tag_id IS NULL ORDER BY created_at DESC
-`
-
-// Admin: list only unmapped aliases (tag_id IS NULL).
-func (q *Queries) ListUnmappedAliases(ctx context.Context) ([]TagAlias, error) {
-	rows, err := q.db.Query(ctx, listUnmappedAliases)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []TagAlias{}
-	for rows.Next() {
-		var i TagAlias
-		if err := rows.Scan(
-			&i.ID,
-			&i.RawTag,
-			&i.TagID,
-			&i.ResolutionSource,
-			&i.Confirmed,
-			&i.ConfirmedAt,
-			&i.CreatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const mapAlias = `-- name: MapAlias :one
-UPDATE tag_aliases SET
-    tag_id = $2,
-    resolution_source = 'admin',
-    confirmed = true,
-    confirmed_at = now()
-WHERE id = $1
-RETURNING id, raw_tag, tag_id, resolution_source, confirmed, confirmed_at, created_at
-`
-
-type MapAliasParams struct {
-	ID    uuid.UUID  `json:"id"`
-	TagID *uuid.UUID `json:"tag_id"`
-}
-
-// Admin: map an alias to a canonical tag.
-func (q *Queries) MapAlias(ctx context.Context, arg MapAliasParams) (TagAlias, error) {
-	row := q.db.QueryRow(ctx, mapAlias, arg.ID, arg.TagID)
-	var i TagAlias
-	err := row.Scan(
-		&i.ID,
-		&i.RawTag,
-		&i.TagID,
-		&i.ResolutionSource,
-		&i.Confirmed,
-		&i.ConfirmedAt,
-		&i.CreatedAt,
-	)
-	return i, err
 }
 
 const milestonesByGoal = `-- name: MilestonesByGoal :many
@@ -5845,44 +5397,6 @@ func (q *Queries) Readings(ctx context.Context, status *string) ([]Reading, erro
 	return items, nil
 }
 
-const reassignAliases = `-- name: ReassignAliases :execrows
-UPDATE tag_aliases SET tag_id = $1 WHERE tag_aliases.tag_id = $2
-`
-
-type ReassignAliasesParams struct {
-	TagID   *uuid.UUID `json:"tag_id"`
-	TagID_2 *uuid.UUID `json:"tag_id_2"`
-}
-
-// Merge: reassign remaining aliases from source to target.
-// $1 = target_id, $2 = source_id
-func (q *Queries) ReassignAliases(ctx context.Context, arg ReassignAliasesParams) (int64, error) {
-	result, err := q.db.Exec(ctx, reassignAliases, arg.TagID, arg.TagID_2)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected(), nil
-}
-
-const reassignContentTags = `-- name: ReassignContentTags :execrows
-UPDATE content_tags SET tag_id = $1 WHERE content_tags.tag_id = $2
-`
-
-type ReassignContentTagsParams struct {
-	TagID   uuid.UUID `json:"tag_id"`
-	TagID_2 uuid.UUID `json:"tag_id_2"`
-}
-
-// Merge: reassign remaining content tags from source to target.
-// $1 = target_id, $2 = source_id
-func (q *Queries) ReassignContentTags(ctx context.Context, arg ReassignContentTagsParams) (int64, error) {
-	result, err := q.db.Exec(ctx, reassignContentTags, arg.TagID, arg.TagID_2)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected(), nil
-}
-
 const recentFeedEntries = `-- name: RecentFeedEntries :many
 SELECT cd.id, cd.source_url, cd.title, cd.original_content,
        cd.status, cd.curated_content_id, cd.collected_at,
@@ -6056,102 +5570,6 @@ func (q *Queries) ReflectionsForSong(ctx context.Context, songID uuid.UUID) ([]S
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const rejectAlias = `-- name: RejectAlias :one
-UPDATE tag_aliases SET
-    tag_id = NULL,
-    resolution_source = 'rejected',
-    confirmed = false,
-    confirmed_at = NULL
-WHERE id = $1
-RETURNING id, raw_tag, tag_id, resolution_source, confirmed, confirmed_at, created_at
-`
-
-// Admin: reject an alias — set tag_id to NULL and resolution_source to 'rejected'.
-func (q *Queries) RejectAlias(ctx context.Context, id uuid.UUID) (TagAlias, error) {
-	row := q.db.QueryRow(ctx, rejectAlias, id)
-	var i TagAlias
-	err := row.Scan(
-		&i.ID,
-		&i.RawTag,
-		&i.TagID,
-		&i.ResolutionSource,
-		&i.Confirmed,
-		&i.ConfirmedAt,
-		&i.CreatedAt,
-	)
-	return i, err
-}
-
-const rejectedRawTags = `-- name: RejectedRawTags :many
-SELECT raw_tag FROM tag_aliases
-WHERE raw_tag = ANY($1::text[]) AND resolution_source = 'rejected'
-`
-
-// Batch step 0: which of these raw tags are admin-rejected (skip resolution).
-func (q *Queries) RejectedRawTags(ctx context.Context, rawTags []string) ([]string, error) {
-	rows, err := q.db.Query(ctx, rejectedRawTags, rawTags)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []string{}
-	for rows.Next() {
-		var raw_tag string
-		if err := rows.Scan(&raw_tag); err != nil {
-			return nil, err
-		}
-		items = append(items, raw_tag)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const relatedTagsForTopic = `-- name: RelatedTagsForTopic :many
-SELECT tg.slug AS tag, COUNT(*)::int AS count
-FROM contents c
-JOIN content_topics ct ON ct.content_id = c.id
-JOIN content_tags ct2 ON ct2.content_id = c.id
-JOIN tags tg ON tg.id = ct2.tag_id
-WHERE ct.topic_id = $1
-  AND c.status = 'published'
-  AND c.is_public = true
-GROUP BY tg.slug
-ORDER BY count DESC
-LIMIT $2
-`
-
-type RelatedTagsForTopicParams struct {
-	TopicID uuid.UUID `json:"topic_id"`
-	Limit   int32     `json:"limit"`
-}
-
-type RelatedTagsForTopicRow struct {
-	Tag   string `json:"tag"`
-	Count int32  `json:"count"`
-}
-
-func (q *Queries) RelatedTagsForTopic(ctx context.Context, arg RelatedTagsForTopicParams) ([]RelatedTagsForTopicRow, error) {
-	rows, err := q.db.Query(ctx, relatedTagsForTopic, arg.TopicID, arg.Limit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []RelatedTagsForTopicRow{}
-	for rows.Next() {
-		var i RelatedTagsForTopicRow
-		if err := rows.Scan(&i.Tag, &i.Count); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -7254,64 +6672,6 @@ func (q *Queries) StatsRecentProcessRuns(ctx context.Context, arg StatsRecentPro
 	return items, nil
 }
 
-const statsTagCounts = `-- name: StatsTagCounts :one
-SELECT
-    (SELECT COUNT(*) FROM tags)::int AS canonical,
-    (SELECT COUNT(*) FROM tag_aliases)::int AS aliases,
-    (SELECT COUNT(*) FROM tag_aliases WHERE NOT confirmed)::int AS unconfirmed
-`
-
-type StatsTagCountsRow struct {
-	Canonical   int32 `json:"canonical"`
-	Aliases     int32 `json:"aliases"`
-	Unconfirmed int32 `json:"unconfirmed"`
-}
-
-func (q *Queries) StatsTagCounts(ctx context.Context) (StatsTagCountsRow, error) {
-	row := q.db.QueryRow(ctx, statsTagCounts)
-	var i StatsTagCountsRow
-	err := row.Scan(&i.Canonical, &i.Aliases, &i.Unconfirmed)
-	return i, err
-}
-
-const statsTopTags = `-- name: StatsTopTags :many
-SELECT t.name, COUNT(ct.content_id)::int AS count
-FROM tags t
-JOIN content_tags ct ON ct.tag_id = t.id
-JOIN contents c ON c.id = ct.content_id
-WHERE c.type = 'til'
-GROUP BY t.id, t.name
-ORDER BY count DESC
-LIMIT 10
-`
-
-type StatsTopTagsRow struct {
-	Name  string `json:"name"`
-	Count int32  `json:"count"`
-}
-
-// Top tags across TIL contents, ranked by usage. notes table has no
-// tag relationships post Phase 2 entry — tags here count TILs only.
-func (q *Queries) StatsTopTags(ctx context.Context) ([]StatsTopTagsRow, error) {
-	rows, err := q.db.Query(ctx, statsTopTags)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []StatsTopTagsRow{}
-	for rows.Next() {
-		var i StatsTopTagsRow
-		if err := rows.Scan(&i.Name, &i.Count); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const statsWeeklyActivity = `-- name: StatsWeeklyActivity :one
 SELECT
     COUNT(*) FILTER (WHERE occurred_at > now() - interval '7 days')::int AS this_week,
@@ -7388,151 +6748,6 @@ func (q *Queries) SubmitContentForReview(ctx context.Context, id uuid.UUID) (Sub
 		&i.UpdatedAt,
 	)
 	return i, err
-}
-
-const tagByID = `-- name: TagByID :one
-SELECT id, slug, name, parent_id, description, created_at, updated_at FROM tags WHERE id = $1
-`
-
-// Admin: get a single tag by ID.
-func (q *Queries) TagByID(ctx context.Context, id uuid.UUID) (Tag, error) {
-	row := q.db.QueryRow(ctx, tagByID, id)
-	var i Tag
-	err := row.Scan(
-		&i.ID,
-		&i.Slug,
-		&i.Name,
-		&i.ParentID,
-		&i.Description,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
-const tagBySlug = `-- name: TagBySlug :one
-SELECT id, slug, name, parent_id, description, created_at, updated_at FROM tags WHERE slug = $1
-`
-
-// Step 3: match canonical tag by slug.
-func (q *Queries) TagBySlug(ctx context.Context, slug string) (Tag, error) {
-	row := q.db.QueryRow(ctx, tagBySlug, slug)
-	var i Tag
-	err := row.Scan(
-		&i.ID,
-		&i.Slug,
-		&i.Name,
-		&i.ParentID,
-		&i.Description,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
-const tagsBySlugs = `-- name: TagsBySlugs :many
-SELECT id, slug, name, parent_id, description, created_at, updated_at FROM tags WHERE slug = ANY($1::text[])
-`
-
-// Batch step 3: canonical tags by slug.
-func (q *Queries) TagsBySlugs(ctx context.Context, slugs []string) ([]Tag, error) {
-	rows, err := q.db.Query(ctx, tagsBySlugs, slugs)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []Tag{}
-	for rows.Next() {
-		var i Tag
-		if err := rows.Scan(
-			&i.ID,
-			&i.Slug,
-			&i.Name,
-			&i.ParentID,
-			&i.Description,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const tagsForContent = `-- name: TagsForContent :many
-SELECT t.id, t.slug, t.name
-FROM content_tags ct
-JOIN tags t ON t.id = ct.tag_id
-WHERE ct.content_id = $1
-`
-
-type TagsForContentRow struct {
-	ID   uuid.UUID `json:"id"`
-	Slug string    `json:"slug"`
-	Name string    `json:"name"`
-}
-
-func (q *Queries) TagsForContent(ctx context.Context, contentID uuid.UUID) ([]TagsForContentRow, error) {
-	rows, err := q.db.Query(ctx, tagsForContent, contentID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []TagsForContentRow{}
-	for rows.Next() {
-		var i TagsForContentRow
-		if err := rows.Scan(&i.ID, &i.Slug, &i.Name); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const tagsForContents = `-- name: TagsForContents :many
-SELECT ct.content_id, t.id, t.slug, t.name
-FROM content_tags ct
-JOIN tags t ON t.id = ct.tag_id
-WHERE ct.content_id = ANY($1::uuid[])
-`
-
-type TagsForContentsRow struct {
-	ContentID uuid.UUID `json:"content_id"`
-	ID        uuid.UUID `json:"id"`
-	Slug      string    `json:"slug"`
-	Name      string    `json:"name"`
-}
-
-func (q *Queries) TagsForContents(ctx context.Context, dollar_1 []uuid.UUID) ([]TagsForContentsRow, error) {
-	rows, err := q.db.Query(ctx, tagsForContents, dollar_1)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []TagsForContentsRow{}
-	for rows.Next() {
-		var i TagsForContentsRow
-		if err := rows.Scan(
-			&i.ContentID,
-			&i.ID,
-			&i.Slug,
-			&i.Name,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
 }
 
 const todoInboxCount = `-- name: TodoInboxCount :one
@@ -8876,47 +8091,6 @@ func (q *Queries) UpdateSongReflection(ctx context.Context, arg UpdateSongReflec
 		&i.SongID,
 		&i.EntryDate,
 		&i.Body,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
-const updateTag = `-- name: UpdateTag :one
-UPDATE tags SET
-    slug = COALESCE($2, slug),
-    name = COALESCE($3, name),
-    parent_id = $4,
-    description = COALESCE($5, description),
-    updated_at = now()
-WHERE id = $1
-RETURNING id, slug, name, parent_id, description, created_at, updated_at
-`
-
-type UpdateTagParams struct {
-	ID          uuid.UUID  `json:"id"`
-	Slug        *string    `json:"slug"`
-	Name        *string    `json:"name"`
-	ParentID    *uuid.UUID `json:"parent_id"`
-	Description *string    `json:"description"`
-}
-
-// Admin: update a canonical tag.
-func (q *Queries) UpdateTag(ctx context.Context, arg UpdateTagParams) (Tag, error) {
-	row := q.db.QueryRow(ctx, updateTag,
-		arg.ID,
-		arg.Slug,
-		arg.Name,
-		arg.ParentID,
-		arg.Description,
-	)
-	var i Tag
-	err := row.Scan(
-		&i.ID,
-		&i.Slug,
-		&i.Name,
-		&i.ParentID,
-		&i.Description,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)

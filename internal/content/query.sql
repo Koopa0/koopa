@@ -225,18 +225,6 @@ ON CONFLICT DO NOTHING;
 -- name: DeleteContentTopics :exec
 DELETE FROM content_topics WHERE content_id = $1;
 
--- name: TagsForContent :many
-SELECT t.id, t.slug, t.name
-FROM content_tags ct
-JOIN tags t ON t.id = ct.tag_id
-WHERE ct.content_id = $1;
-
--- name: TagsForContents :many
-SELECT ct.content_id, t.id, t.slug, t.name
-FROM content_tags ct
-JOIN tags t ON t.id = ct.tag_id
-WHERE ct.content_id = ANY($1::uuid[]);
-
 -- name: ContentEmbeddingBySlug :one
 SELECT id, embedding FROM contents WHERE slug = $1 AND status = 'published' AND is_public = true;
 

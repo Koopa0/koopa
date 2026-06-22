@@ -525,12 +525,6 @@ type Content struct {
 	SearchVector string `json:"search_vector"`
 }
 
-type ContentTag struct {
-	ContentID uuid.UUID `json:"content_id"`
-	// References canonical tag. Distinct from content_topics: topics are curated categories, tags are raw labels resolved through the alias pipeline.
-	TagID uuid.UUID `json:"tag_id"`
-}
-
 // Junction: content ↔ topic. Many-to-many. Curated knowledge domain categories.
 type ContentTopic struct {
 	ContentID uuid.UUID `json:"content_id"`
@@ -874,35 +868,6 @@ type SongReflection struct {
 	CreatedAt time.Time `json:"created_at"`
 	// Application-managed. Set explicitly in UPDATE queries.
 	UpdatedAt time.Time `json:"updated_at"`
-}
-
-// Canonical tag registry. Fine-grained content-classification labels (two-pointers, error-handling). Resolved through tag_aliases pipeline.
-type Tag struct {
-	ID uuid.UUID `json:"id"`
-	// Canonical form (e.g. two-pointers, dp). Controlled vocabulary. Format (chk_tag_slug_format): hyphen-separated segments, no whitespace or slash, no leading/trailing/consecutive hyphens; Unicode letters/numbers (incl. CJK) allowed. Tags are pure classification labels.
-	Slug string `json:"slug"`
-	Name string `json:"name"`
-	// Hierarchical parent tag. SET NULL on parent deletion — orphaned tags remain valid.
-	ParentID    *uuid.UUID `json:"parent_id"`
-	Description string     `json:"description"`
-	CreatedAt   time.Time  `json:"created_at"`
-	UpdatedAt   time.Time  `json:"updated_at"`
-}
-
-// Maps raw tag strings (from frontmatter/external) to canonical tags. Pipeline: raw_tag → lookup alias → resolve to tag_id.
-type TagAlias struct {
-	ID uuid.UUID `json:"id"`
-	// Original tag string as found in source (e.g. "golang", "JS", "dynamic-programming").
-	RawTag string `json:"raw_tag"`
-	// Resolved canonical tag. NULL for unmapped/rejected aliases.
-	TagID *uuid.UUID `json:"tag_id"`
-	// How the alias was resolved: auto-exact (exact match), auto-ci (case-insensitive), auto-slug (Slugify matched a canonical tag), admin (manually mapped by admin), unmapped (pending), rejected (admin declined).
-	ResolutionSource string `json:"resolution_source"`
-	// Whether an admin has verified this mapping. Unconfirmed auto-matches may be wrong.
-	Confirmed bool `json:"confirmed"`
-	// When an admin confirmed this mapping. NULL iff confirmed = false (enforced by chk_confirmed_pair). Set together with confirmed = true.
-	ConfirmedAt *time.Time `json:"confirmed_at"`
-	CreatedAt   time.Time  `json:"created_at"`
 }
 
 // Personal GTD work items. Distinct from the tasks coordination entity (inter-agent work units). Lifecycle: inbox (captured, not clarified) → todo (clarified, actionable) → in_progress → done. someday = interested but not now, reviewed in Weekly Review. inbox items lack project/due/priority — clarification promotes them to todo.

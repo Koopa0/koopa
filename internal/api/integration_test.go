@@ -25,7 +25,7 @@
 // Known coverage gap (review-code M8 backlog):
 // This file asserts the WithTx contract on ONE route (note Create).
 // The other audited admin mutations (content / project / goal / topic
-// / tag / feed / feed/entry / hypothesis + sub-routes) are covered by
+// / feed / feed/entry / hypothesis + sub-routes) are covered by
 // per-feature integration tests that exercise the WithTx path when wired,
 // but there is no single table-driven proof-of-universal-coverage here.
 // If a future dev adds a new admin route and forgets store.WithTx(tx),

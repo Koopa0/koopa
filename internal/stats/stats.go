@@ -4,7 +4,7 @@
 // dashboard. It is a READ-ONLY aggregator — no writes, no mutations.
 // Every method runs N independent queries against existing feature
 // tables (contents, collected, feeds, process_runs, projects,
-// activity_events, tag_aliases, goals) and assembles a response shape
+// activity_events, goals) and assembles a response shape
 // matched to the frontend dashboard contract.
 //
 // File map:
@@ -34,7 +34,6 @@ type Overview struct {
 	Projects    ProjectStats               `json:"projects"`
 	Notes       NoteStats                  `json:"notes"`
 	Activity    ActivityStats              `json:"activity"`
-	Tags        TagStats                   `json:"tags"`
 }
 
 // ContentStats holds content counts by status and type.
@@ -86,13 +85,6 @@ type ActivityStats struct {
 	BySource map[string]int `json:"by_source"`
 }
 
-// TagStats holds tag system stats.
-type TagStats struct {
-	Canonical   int `json:"canonical"`
-	Aliases     int `json:"aliases"`
-	Unconfirmed int `json:"unconfirmed"`
-}
-
 // DriftReport compares activity distribution vs goal areas.
 type DriftReport struct {
 	Period string      `json:"period"`
@@ -113,7 +105,6 @@ type AreaDrift struct {
 type LearningDashboard struct {
 	Notes    NoteGrowth     `json:"notes"`
 	Activity WeeklyActivity `json:"activity"`
-	TopTags  []TagCount     `json:"top_tags"`
 }
 
 // NoteGrowth tracks note creation over time.
@@ -129,12 +120,6 @@ type WeeklyActivity struct {
 	ThisWeek int    `json:"this_week"`
 	LastWeek int    `json:"last_week"`
 	Trend    string `json:"trend"` // "up", "down", "stable"
-}
-
-// TagCount pairs a tag name with its usage count.
-type TagCount struct {
-	Name  string `json:"name"`
-	Count int    `json:"count"`
 }
 
 // ProcessRunSummary holds process_runs counts by status within a time window

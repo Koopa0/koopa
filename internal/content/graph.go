@@ -86,7 +86,7 @@ func (s *Store) InternalSemanticSearch(ctx context.Context, queryEmbedding pgvec
 		})
 		ids[i] = r.ID
 	}
-	if err := s.attachBatchTopicsAndTags(ctx, contents, ids); err != nil {
+	if err := s.attachBatchTopics(ctx, contents, ids); err != nil {
 		return nil, err
 	}
 	return contents, nil
