@@ -55,8 +55,10 @@ export interface AdminNavGroup {
 }
 
 /**
- * 4-domain nav structure (Daily / Commitment / Knowledge / System) per
- * the Mission Control design IA. Kept here, not inlined in
+ * 6-group nav structure (Daily / Commitment / Knowledge / Library /
+ * 輸入 Input / System) per the Mission Control design IA. Library holds
+ * personal consumption shelves (Reading, ヨルシカ); 輸入 Input holds the
+ * ingestion pipeline (Feeds). Kept here, not inlined in
  * AdminLayoutComponent, so the component stays small and the structure
  * is reusable by tests and the command palette.
  */
@@ -166,6 +168,25 @@ export const ADMIN_NAV: readonly AdminNavGroup[] = [
         testId: 'admin-nav-notes',
       },
       {
+        label: 'Search',
+        route: '/admin/knowledge/search',
+        icon: Search,
+        shortcutHint: '',
+        testId: 'admin-nav-search',
+      },
+      {
+        label: 'Tags & topics',
+        route: '/admin/knowledge/tags',
+        icon: Tag,
+        shortcutHint: '',
+        testId: 'admin-nav-tags',
+      },
+    ],
+  },
+  {
+    label: 'Library',
+    items: [
+      {
         label: 'Reading',
         route: '/admin/knowledge/reading',
         icon: Library,
@@ -179,6 +200,11 @@ export const ADMIN_NAV: readonly AdminNavGroup[] = [
         shortcutHint: '',
         testId: 'admin-nav-song',
       },
+    ],
+  },
+  {
+    label: '輸入 / Input',
+    items: [
       {
         label: 'Feeds',
         route: '/admin/knowledge/feeds',
@@ -186,20 +212,6 @@ export const ADMIN_NAV: readonly AdminNavGroup[] = [
         countKey: 'feeds_active',
         shortcutHint: 'G F',
         testId: 'admin-nav-feeds',
-      },
-      {
-        label: 'Search',
-        route: '/admin/knowledge/search',
-        icon: Search,
-        shortcutHint: '',
-        testId: 'admin-nav-search',
-      },
-      {
-        label: 'Tags & topics',
-        route: '/admin/knowledge/tags',
-        icon: Tag,
-        shortcutHint: '',
-        testId: 'admin-nav-tags',
       },
     ],
   },
