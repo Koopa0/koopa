@@ -4,7 +4,7 @@
 
 | Signal | Action |
 |---|---|
-| Question ("what / show / how is") | Read-only query tool (`brief`, `search_knowledge`, `list_tasks`, `list_readings`, `get_reading`, `project_progress`) |
+| Question ("what / show / how is") | Read-only query tool (`brief`, `search_knowledge`, `list_tasks`, `list_content`, `review_period`, `project_progress`) |
 | Capture impulse ("add / remind me / 記一下") | `capture_inbox` |
 | Plan today | `plan_day`（候選 plan） |
 | Commitment intent ("create area / goal / project") | `propose_area` / `propose_goal` / `propose_project`（inert draft，Koopa 在 admin activate） |
@@ -50,6 +50,5 @@ agent 的內部敘事、計畫、決策、反思 → 寫進 agent 自己的 `.md
 - Milestone 建立（admin form only）
 - Commitment activation（area / goal / project 的 activate / reject 在 admin triage）
 - Content 發布生命週期（`propose_content` 只進審核佇列；publish 是 admin HTTP）
-- Reading shelf / ヨルシカ song shelf 寫入（MCP 只讀，admin 寫）
 - Agent registry row (reconciled from `BuiltinAgents()` at startup)
 - `activity_events` (written only by AFTER triggers on covered tables)

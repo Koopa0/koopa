@@ -33,9 +33,7 @@ import (
 	"github.com/Koopa0/koopa/internal/feed/entry"
 	"github.com/Koopa0/koopa/internal/goal"
 	"github.com/Koopa0/koopa/internal/project"
-	"github.com/Koopa0/koopa/internal/reading"
 	"github.com/Koopa0/koopa/internal/search"
-	"github.com/Koopa0/koopa/internal/song"
 	"github.com/Koopa0/koopa/internal/stats"
 	"github.com/Koopa0/koopa/internal/today"
 	"github.com/Koopa0/koopa/internal/todo"
@@ -55,8 +53,6 @@ type handlers struct {
 	activity *activity.Handler
 	agent    *agent.Handler
 	daily    *daily.Handler
-	reading  *reading.Handler
-	song     *song.Handler
 	todo     *todo.Handler
 	today    *today.Handler
 	search   *search.Handler
@@ -150,34 +146,6 @@ func registerRoutes(
 	mux.Handle("POST /api/admin/knowledge/content/{id}/send-back", adminMid(http.HandlerFunc(h.content.SendBack)))
 	mux.Handle("POST /api/admin/knowledge/content/{id}/archive", adminMid(http.HandlerFunc(h.content.Archive)))
 	mux.Handle("PATCH /api/admin/knowledge/content/{id}/is-public", adminMid(http.HandlerFunc(h.content.SetIsPublic)))
-
-	// --- Admin: Knowledge / Readings (literature shelf + diary) ---
-	// Deeply private domain: no public routes, no MCP tool, not in the
-	// search_knowledge corpus — this admin surface is the only access path.
-	// Reflections are membership-bound sub-resources: {rid} must belong to
-	// {id} or the handler 404s.
-	mux.Handle("GET /api/admin/knowledge/readings", authMid(http.HandlerFunc(h.reading.List)))
-	mux.Handle("GET /api/admin/knowledge/readings/{id}", authMid(http.HandlerFunc(h.reading.Get)))
-	mux.Handle("POST /api/admin/knowledge/readings", adminMid(http.HandlerFunc(h.reading.Create)))
-	mux.Handle("PUT /api/admin/knowledge/readings/{id}", adminMid(http.HandlerFunc(h.reading.Update)))
-	mux.Handle("DELETE /api/admin/knowledge/readings/{id}", adminMid(http.HandlerFunc(h.reading.Delete)))
-	mux.Handle("POST /api/admin/knowledge/readings/{id}/reflections", adminMid(http.HandlerFunc(h.reading.CreateReflection)))
-	mux.Handle("PUT /api/admin/knowledge/readings/{id}/reflections/{rid}", adminMid(http.HandlerFunc(h.reading.UpdateReflection)))
-	mux.Handle("DELETE /api/admin/knowledge/readings/{id}/reflections/{rid}", adminMid(http.HandlerFunc(h.reading.DeleteReflection)))
-
-	// --- Admin: Knowledge / Songs (ヨルシカ shelf + reflection diary) ---
-	// Same privacy posture as readings: no public routes, no MCP tool, not in
-	// the search_knowledge corpus — this admin surface is the only access
-	// path. Reflections are membership-bound sub-resources: {rid} must belong
-	// to {id} or the handler 404s.
-	mux.Handle("GET /api/admin/knowledge/songs", authMid(http.HandlerFunc(h.song.List)))
-	mux.Handle("GET /api/admin/knowledge/songs/{id}", authMid(http.HandlerFunc(h.song.Get)))
-	mux.Handle("POST /api/admin/knowledge/songs", adminMid(http.HandlerFunc(h.song.Create)))
-	mux.Handle("PUT /api/admin/knowledge/songs/{id}", adminMid(http.HandlerFunc(h.song.Update)))
-	mux.Handle("DELETE /api/admin/knowledge/songs/{id}", adminMid(http.HandlerFunc(h.song.Delete)))
-	mux.Handle("POST /api/admin/knowledge/songs/{id}/reflections", adminMid(http.HandlerFunc(h.song.CreateReflection)))
-	mux.Handle("PUT /api/admin/knowledge/songs/{id}/reflections/{rid}", adminMid(http.HandlerFunc(h.song.UpdateReflection)))
-	mux.Handle("DELETE /api/admin/knowledge/songs/{id}/reflections/{rid}", adminMid(http.HandlerFunc(h.song.DeleteReflection)))
 
 	// --- Admin: Commitment / Projects ---
 	mux.Handle("GET /api/admin/commitment/projects", authMid(http.HandlerFunc(h.project.List)))

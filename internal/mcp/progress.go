@@ -5,13 +5,12 @@
 // their cadence, goal milestone rollups, and neglected areas — computed
 // LIVE from activity_events at read time. Nothing is stored.
 //
-// Authorization: gated by requireRegisteredCaller, like the readings read
+// Authorization: gated by requireRegisteredCaller, like the other read-only
 // tools. It is deliberately NOT caller-scoped (no created_by=caller filter):
 // project / goal / area are the single owner's data, so a caller-scope would
 // return empty. The caller-scoped pattern is reserved for list_tasks /
 // resolve_task, which act on the caller's OWN proposed todos. Any registered
-// agent reads the whole owner PARA here, the same way it reads the whole
-// reading shelf.
+// agent reads the whole owner PARA here.
 //
 // HUMAN-ACTIVITY-ONLY: progress is measured solely from activity_events rows
 // with actor='human'. Agent/system actors never count — a project a cron
@@ -23,6 +22,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/Koopa0/koopa/internal/project"
@@ -176,4 +176,13 @@ func rfc3339(t *time.Time) *string {
 		return nil
 	}
 	return new(t.Format(time.RFC3339))
+}
+
+// uuidString renders a nullable UUID as its string form. nil → nil (JSON
+// null) so an unlinked project reports goal_id: null rather than a zero UUID.
+func uuidString(id *uuid.UUID) *string {
+	if id == nil {
+		return nil
+	}
+	return new(id.String())
 }

@@ -17,7 +17,7 @@
 | `plan_day` | 排每日計劃 | 設定 `items[{todo_id, position?}]`，atomic 替換（每個 todo 須已是 state=todo）。組的是**候選** plan，不決優先級、不自動排程 |
 | `brief(mode="reflection")` | 結束一天 | Planned vs actual, completion_rate（read-only） |
 | `capture_inbox` | 快速捕獲個人 todo | 只需 `title`。schema 是 `todos`，落在 `inbox`。 |
-| `search_knowledge` | 找過去的素材 | 橫跨 content + 閱讀書架 + ヨルシカ 歌曲書架的檢索 |
+| `search_knowledge` | 找過去的素材 | content corpus（article / essay / build-log / til / digest）的 hybrid 檢索 |
 | `list_tasks` / `resolve_task` | 看自建 todo 的處置、自清 | `list_tasks` 讀回你建立的 todo 當前 state；`resolve_task` 把你建立的 todo 移到 done / archived / dismissed |
 
 ### Agent memory

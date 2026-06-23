@@ -14,8 +14,6 @@ sql:
       - "internal/agent/query.sql"
       - "internal/daily/query.sql"
       - "internal/stats/query.sql"
-      - "internal/reading/query.sql"
-      - "internal/song/query.sql"
     schema: "migrations/"
     gen:
       go:

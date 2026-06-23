@@ -47,7 +47,7 @@ type Document struct {
 }
 
 // Source is a store whose rows the reconciler keeps embedded. Implemented by
-// *content.Store and the reading / song embedding sources.
+// *content.Store.
 type Source interface {
 	// MissingEmbeddings returns up to limit rows whose embedding is NULL,
 	// oldest first.
@@ -59,7 +59,7 @@ type Source interface {
 
 // NamedSource pairs a Source with the label used to key its progress in
 // Result.BySource and to tag its log lines. Name is a stable, short
-// identifier (e.g. "contents", "readings", "reading_reflections").
+// identifier (e.g. "contents").
 type NamedSource struct {
 	Name   string
 	Source Source

@@ -32,12 +32,6 @@ DROP FUNCTION IF EXISTS enforce_todo_skip_not_already_dropped();
 -- 3. Tables (reverse creation order, respecting FK dependencies)
 -- ============================================================
 
--- Songs + readings shelves (private; reflections FK their parent — drop first)
-DROP TABLE IF EXISTS song_reflections;
-DROP TABLE IF EXISTS songs;
-DROP TABLE IF EXISTS reading_reflections;
-DROP TABLE IF EXISTS readings;
-
 -- Project aliases
 DROP TABLE IF EXISTS project_aliases;
 

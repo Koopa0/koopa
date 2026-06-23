@@ -13,23 +13,21 @@ is hand-maintained.
 > Run `go generate ./internal/mcp/ops` after any change to the tool surface;
 > the drift test `TestToolInventoryDocInSync` fails CI if this is stale.
 
-**16 tools** across 3 domains.
+**14 tools** across 3 domains.
 
 | Domain | Count |
 |---|---|
-| `query` | 6 |
+| `query` | 4 |
 | `daily` | 7 |
 | `content` | 3 |
-| **Total** | **16** |
+| **Total** | **14** |
 
 | Tool | Domain | Writability | Purpose |
 |---|---|---|---|
 | `brief` | `query` | read_only | Read-only planning-state pull |
-| `get_reading` | `query` | read_only | Read-only fetch of one book by id, returning the reading (incl |
-| `list_readings` | `query` | read_only | Read-only list of Koopa's reading shelf |
 | `project_progress` | `query` | read_only | Read-only PARA momentum/stalled intelligence for Koopa's projects, goals, and areas |
 | `review_period` | `query` | read_only | Read-only windowed retrospective of what KOOPA got done over a date window |
-| `search_knowledge` | `query` | read_only | Read-only search across Koopa's corpus: content (articles, essays, build-logs, TILs, digests), the reading shelf (books + reading diary), and the ヨルシカ… |
+| `search_knowledge` | `query` | read_only | Read-only search across Koopa's content corpus: articles, essays, build-logs, TILs, and digests |
 | `capture_inbox` | `daily` | additive | Quick task capture to inbox |
 | `list_tasks` | `daily` | read_only | Read-only readback of the todos you created (created_by = your resolved caller identity) so you can learn their disposition |
 | `plan_day` | `daily` | idempotent | Set the day's plan as one atomic replacement |
@@ -49,9 +47,7 @@ is hand-maintained.
 | Tool | Key params | Returns |
 |---|---|---|
 | `brief` | `mode` (`morning` / `reflection`), `sections?` (morning only), `date?` | `morning` = single-call daily-planning briefing (overdue/today/committed/upcoming todos, active_goals, rss_highlights, content_pipeline). `reflection` = end-of-day plan-vs-actual retrospective (planned_items + completed/deferred/planned counts + completion_rate). `mode` is required. Read-only; carries no agent memory. Scope is the target date (default today), not since-last-session. |
-| `search_knowledge` | `query`, `source_types?`, `content_type?`, `after?`, `before?`, `limit?` | Hybrid (FTS + pgvector) retrieval over content + the reading shelf + the ヨルシカ song shelf. See Search section below. |
-| `list_readings` | `status?` (`want_to_read` / `reading` / `finished` / `abandoned`) | One entry per book on Koopa's reading shelf — title, author, status, started_on/finished_on, is_public, optional goal_id. Omit `status` for the whole shelf. Read access only; the shelf has no agent write path. |
-| `get_reading` | `id` | One book plus its full reflection thread — dated diary entries in entry_date order (created_at tiebreak). Use after `list_readings` to read Koopa's notes on a specific book. Read access only. |
+| `search_knowledge` | `query`, `content_type?`, `after?`, `before?`, `limit?` | Hybrid (FTS + pgvector) retrieval over the content corpus. See Search section below. |
 | `project_progress` | (none) | Live PARA momentum/stalled intelligence for Koopa's projects, goals, and areas, computed at read time. Returns the owner's full PARA (not caller-scoped): `projects[]` with expected_cadence, days_since_human_activity, open_next_action, milestone_done/total, and a `stalled` flag; `goals[]` with milestone progress + stalled-project rollup; `areas[]` with `area_neglected`. Progress counts owner activity only (`actor='human'`); agent/system actors never count. |
 
 ### `brief` modes and sections
@@ -74,23 +70,14 @@ Every caller gets all sections by default; pass an explicit `sections` list to n
 
 ### `search_knowledge` retrieval
 
-Read-only hybrid retrieval over three corpora, each searched independently and then interleaved by per-corpus rank:
+Read-only hybrid retrieval over the content corpus (articles, essays, build-logs, TILs, digests). FTS fused with pgvector semantic search via reciprocal-rank fusion (RRF):
 
-- **content** — articles, essays, build-logs, TILs, digests.
-- **reading** — the reading shelf (books) plus the reading diary. A diary-entry hit folds under its parent book (same `source_type=reading`), linking back via the book's id/title; the excerpt is the diary body (or the book title for a shelf hit). Use `get_reading` with the returned id to read the full thread.
-- **song** — the ヨルシカ song shelf plus its reflection diary. A reflection hit folds under its parent song (`source_type=song`); the excerpt is the reflection body (or the song title for a shelf hit). This is the song shelf's only agent-visible surface, and it is read-only.
-
-Each corpus runs FTS fused with pgvector semantic search via reciprocal-rank fusion (RRF):
-
-- **FTS**: `websearch_to_tsquery('simple', query)` on the per-table generated `search_vector` (GIN).
-- **Semantic**: query embedded once (gemini-embedding-2), cosine-ranked over the corpus's `embedding` column (HNSW). A background reconciler fills embeddings as rows land; without `GEMINI_API_KEY` the semantic branch is skipped and search degrades to FTS-only.
-
-Reflections are NOT a separate source type — they always surface linked to their parent shelf row.
+- **FTS**: `websearch_to_tsquery('simple', query)` on the generated `search_vector` (GIN).
+- **Semantic**: query embedded once (gemini-embedding-2), cosine-ranked over the `embedding` column (HNSW). A background reconciler fills embeddings as rows land; without `GEMINI_API_KEY` the semantic branch is skipped and search degrades to FTS-only.
 
 Filters:
 
-- `source_types` — subset of `{content, reading, song}`; default is all three. Any other token is rejected.
-- `content_type` — content only (narrows the corpus to content). Combining it with a `source_types` list that excludes `content` is rejected as `unsupported_filter`.
+- `content_type` — narrows to one content type (article / essay / build-log / til / digest).
 - `after`, `before`, `limit`.
 
 Query syntax (websearch):
@@ -136,8 +123,8 @@ Publishing stays an owner action in admin, off the MCP surface.
 
 **Caller identity**: every tool accepts optional `as: "<agent_name>"`. Server trusts the `as` value and authorizes by identity (platform / author / self) in `internal/mcp/authz.go`, against the roster in `internal/agent/registry.go::BuiltinAgents()`. Default caller is from env `KOOPA_MCP_CALLER_AGENT`.
 
-**Read-only forever**: `brief`, `search_knowledge`, `list_tasks`, `list_readings`, `get_reading`, and `project_progress` are read-only by design and will not gain write actions.
+**Read-only forever**: `brief`, `search_knowledge`, `list_tasks`, `list_content`, `review_period`, and `project_progress` are read-only by design and will not gain write actions.
 
-**Off the MCP surface**: high-commitment lifecycle steps stay in the admin UI / HTTP — milestone creation, proposal triage (area / goal / project activation + rejection), content publishing, feed curation, and the owner's own todo lifecycle transitions. The reading shelf and ヨルシカ song shelf are written in admin too; the MCP surface only reads them.
+**Off the MCP surface**: high-commitment lifecycle steps stay in the admin UI / HTTP — milestone creation, proposal triage (area / goal / project activation + rejection), content publishing, feed curation, and the owner's own todo lifecycle transitions.
 
 **Cross-references**: `docs/backend-semantic-contract.md` §2 (vocabulary), §3 (entity responsibilities), §4 (lifecycles). The canonical tool surface, intent routing, and multiplexer semantics live in `internal/mcp/ops/catalog.go::All()` and the per-tool handlers in `internal/mcp/`.

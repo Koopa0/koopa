@@ -40,9 +40,7 @@ import (
 	"github.com/Koopa0/koopa/internal/feed/entry"
 	"github.com/Koopa0/koopa/internal/goal"
 	"github.com/Koopa0/koopa/internal/project"
-	"github.com/Koopa0/koopa/internal/reading"
 	"github.com/Koopa0/koopa/internal/search"
-	"github.com/Koopa0/koopa/internal/song"
 	"github.com/Koopa0/koopa/internal/stats"
 	"github.com/Koopa0/koopa/internal/today"
 	"github.com/Koopa0/koopa/internal/todo"
@@ -97,7 +95,7 @@ func runBackfill(logger *slog.Logger) error {
 		return fmt.Errorf("initializing gemini embedder: %w", err)
 	}
 	reconciler := embedder.NewReconciler(emb, logger,
-		embedSources(content.NewStore(pool), reading.NewStore(pool), song.NewStore(pool))...)
+		embedSources(content.NewStore(pool))...)
 
 	res, err := reconciler.RunOnce(ctx)
 	if err != nil {
@@ -111,16 +109,11 @@ func runBackfill(logger *slog.Logger) error {
 }
 
 // embedSources builds the named source list the reconciler drains: the
-// contents corpus plus the reading and song shelves and their reflection
-// diaries (five tables, five NULL-embedding columns). The names key
-// embedder.Result.BySource and tag log lines; they match the table names.
-func embedSources(contentStore *content.Store, readingStore *reading.Store, songStore *song.Store) []embedder.NamedSource {
+// contents corpus. The name keys embedder.Result.BySource and tags log
+// lines; it matches the table name.
+func embedSources(contentStore *content.Store) []embedder.NamedSource {
 	return []embedder.NamedSource{
 		{Name: "contents", Source: contentStore},
-		{Name: "readings", Source: reading.NewShelfEmbeddingSource(readingStore)},
-		{Name: "reading_reflections", Source: reading.NewReflectionEmbeddingSource(readingStore)},
-		{Name: "songs", Source: song.NewShelfEmbeddingSource(songStore)},
-		{Name: "song_reflections", Source: song.NewReflectionEmbeddingSource(songStore)},
 	}
 }
 
@@ -214,8 +207,6 @@ func run(logger *slog.Logger) error {
 	authStore := auth.NewStore(pool)
 	todoStore := todo.NewStore(pool)
 	dailyStore := daily.NewStore(pool)
-	readingStore := reading.NewStore(pool)
-	songStore := song.NewStore(pool)
 
 	// Feed collector for manual fetch + scheduled fetch
 	feedCollector := collector.New(entryStore, feedStore, logger)
@@ -243,7 +234,7 @@ func run(logger *slog.Logger) error {
 		if embErr != nil {
 			return fmt.Errorf("initializing gemini embedder: %w", embErr)
 		}
-		reconciler := embedder.NewReconciler(emb, logger, embedSources(contentStore, readingStore, songStore)...)
+		reconciler := embedder.NewReconciler(emb, logger, embedSources(contentStore)...)
 		wg.Go(func() { reconciler.Run(ctx, embedReconcileInterval) })
 		logger.Info("embedding reconciler started", "interval", embedReconcileInterval.String())
 	} else {
@@ -280,8 +271,6 @@ func run(logger *slog.Logger) error {
 		activity: activity.NewHandler(activityStore, logger),
 		agent:    agent.NewHandler(agentRegistry, logger),
 		daily:    daily.NewHandler(dailyStore, todoStore, logger),
-		reading:  reading.NewHandler(readingStore, logger),
-		song:     song.NewHandler(songStore, logger),
 		todo:     todo.NewHandler(todoStore, logger),
 		// Today is the HTTP mirror of brief(mode=morning): the same domain
 		// stores feed both. The contracted readers — todo date views, the

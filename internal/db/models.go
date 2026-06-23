@@ -640,52 +640,6 @@ type ProjectAlias struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
-// Literature reading shelf — one row per book, Koopa-private. Evaluation happens only through reading_reflections (dated diary entries); there is intentionally no rating column. Agent surface is read-only: list_readings and get_reading expose the shelf over MCP, and the shelf is part of the search_knowledge corpus (source_type=reading) via search_vector + embedding. No agent write path exists; mutations are admin HTTP only.
-type Reading struct {
-	ID uuid.UUID `json:"id"`
-	// Book title as Koopa records it. Required, never blank (chk_reading_title_not_blank).
-	Title string `json:"title"`
-	// Author name(s), free text. Empty string when not recorded — "unknown author" carries no distinct meaning from "not entered", so NOT NULL DEFAULT '' instead of nullable.
-	Author string `json:"author"`
-	// Shelf state: want_to_read → reading → finished | abandoned. The CHECK closes the value set; transitions are NOT schema-enforced — any change is allowed (abandoned books get picked back up, finished books get re-read). Set by the admin HTTP handler, never by trigger.
-	Status string `json:"status"`
-	// Date Koopa started reading. NULL while the book sits on the want-to-read shelf or when the start date was never recorded.
-	StartedOn *time.Time `json:"started_on"`
-	// Date Koopa finished (or gave up on) the book. NULL until the reading concludes. The handler auto-stamps today on a transition to finished when no explicit date is supplied.
-	FinishedOn *time.Time `json:"finished_on"`
-	// Reserved for a future public shelf. Default false; nothing public-facing reads this yet — flipping it has no effect until a public surface exists.
-	IsPublic bool `json:"is_public"`
-	// Optional link to the goal this book serves (e.g. reading toward a learning objective). NULL when the book stands on its own — most books do, so nullable rather than required. ON DELETE SET NULL: deleting a goal unlinks the book, never deletes it. Inert until goals exist; set via admin.
-	GoalID *uuid.UUID `json:"goal_id"`
-	// Row creation time. Set by the database, never updated.
-	CreatedAt time.Time `json:"created_at"`
-	// Application-managed. Set explicitly in UPDATE queries.
-	UpdatedAt time.Time `json:"updated_at"`
-	// pgvector embedding (1536d) from gemini-embedding-2, derived from title + author. NULL until the background reconciler fills it; feeds the search_knowledge semantic branch (source_type=reading). See internal/embedder.Dimension — schema + Go must match exactly or pgvector rejects writes.
-	Embedding *pgvector_go.Vector `json:"embedding"`
-	// Generated tsvector for full-text search over the shelf row. 'simple' config (no stemming) for multilingual safety. Weight A = title, B = author. Backs the search_knowledge FTS branch (source_type=reading); a reflection-body hit comes from reading_reflections.search_vector instead.
-	SearchVector interface{} `json:"search_vector"`
-}
-
-// Reading diary — dated entries under one book, shown as a time-ordered thread (entry_date, then created_at) on the book page. Many per book. Private like readings: no agent write path, admin HTTP only. A body hit is searchable via search_knowledge, folded under the parent book (source_type=reading).
-type ReadingReflection struct {
-	ID uuid.UUID `json:"id"`
-	// The book this entry belongs to. ON DELETE CASCADE — deleting a book deletes its entire diary; the entries have no meaning without the book.
-	ReadingID uuid.UUID `json:"reading_id"`
-	// The diary date the entry belongs to — the day of reading, not necessarily the day it was typed in. Defaults to the current date; the handler applies the same default when the field is omitted.
-	EntryDate time.Time `json:"entry_date"`
-	// The diary entry text. Required, never blank (chk_reading_reflection_body_not_blank). Free-form prose; newlines allowed.
-	Body string `json:"body"`
-	// Row creation time. Tiebreak for thread ordering when two entries share an entry_date.
-	CreatedAt time.Time `json:"created_at"`
-	// Application-managed. Set explicitly in UPDATE queries.
-	UpdatedAt time.Time `json:"updated_at"`
-	// pgvector embedding (1536d) from gemini-embedding-2, derived from the diary body. NULL until the background reconciler fills it. A hit here surfaces in search_knowledge under source_type=reading, linked to the parent book.
-	Embedding *pgvector_go.Vector `json:"embedding"`
-	// Generated tsvector over the diary body (first 10K chars), 'simple' config for multilingual safety. Backs the search_knowledge FTS branch; a hit folds under the parent reading (source_type=reading), not a separate corpus.
-	SearchVector interface{} `json:"search_vector"`
-}
-
 // JWT refresh token hashes. One user may have multiple active tokens (multi-device).
 type RefreshToken struct {
 	ID uuid.UUID `json:"id"`
@@ -696,50 +650,6 @@ type RefreshToken struct {
 	// Absolute expiration. Tokens past this time are invalid and eligible for cleanup.
 	ExpiresAt time.Time `json:"expires_at"`
 	CreatedAt time.Time `json:"created_at"`
-}
-
-// ヨルシカ song shelf — one row per song, Koopa-private. Reflections live in song_reflections (dated thread). No rating column; no agent write path, admin HTTP only. The shelf gained read-only search visibility: it is part of the search_knowledge corpus (source_type=song) via search_vector + embedding, but no MCP write tool touches it.
-type Song struct {
-	ID uuid.UUID `json:"id"`
-	// Japanese song title (original). Required, never blank (chk_song_title_ja_not_blank).
-	TitleJa string `json:"title_ja"`
-	// Album name as a free-text grouping label. No album entity, no narrative relation (v1). Empty string when not recorded.
-	Album string `json:"album"`
-	// Japanese lyrics. Owner-filled for study; never generated. Empty until entered.
-	LyricsJa string `json:"lyrics_ja"`
-	// Owner translation of the lyrics. Owner-filled; never generated. Empty until entered.
-	Translation string `json:"translation"`
-	// Vocabulary notes for Japanese study (free-form). Owner-filled; never generated. Empty until entered.
-	Vocabulary string `json:"vocabulary"`
-	// Reserved for a future public surface. Default false; nothing public-facing reads this yet.
-	IsPublic bool `json:"is_public"`
-	// Row creation time. Set by the database, never updated.
-	CreatedAt time.Time `json:"created_at"`
-	// Application-managed. Set explicitly in UPDATE queries.
-	UpdatedAt time.Time `json:"updated_at"`
-	// pgvector embedding (1536d) from gemini-embedding-2, derived from title_ja + album + the study fields (lyrics/translation/vocabulary). NULL until the background reconciler fills it; feeds the search_knowledge semantic branch (source_type=song). See internal/embedder.Dimension — schema + Go must match exactly or pgvector rejects writes.
-	Embedding *pgvector_go.Vector `json:"embedding"`
-	// Generated tsvector for full-text search over the song row. 'simple' config for multilingual safety. Weight A = title_ja, B = album, C = owner translation (first 5K chars) — the translation gives the otherwise Japanese-only row lexical reach in the owner's working language. Backs the search_knowledge FTS branch (source_type=song).
-	SearchVector interface{} `json:"search_vector"`
-}
-
-// Song reflection diary — dated entries under one song (理解/感受/意境), shown as a thread ordered by (entry_date, created_at). Many per song. Private like songs: no agent write path, admin HTTP only. A body hit is searchable via search_knowledge, folded under the parent song (source_type=song).
-type SongReflection struct {
-	ID uuid.UUID `json:"id"`
-	// The song this entry belongs to. ON DELETE CASCADE — deleting a song deletes its entire reflection thread; the entries have no meaning without the song.
-	SongID uuid.UUID `json:"song_id"`
-	// The reflection date — the day of listening/understanding, not necessarily the typing date. Defaults to the current date; the handler applies the same default when omitted.
-	EntryDate time.Time `json:"entry_date"`
-	// The reflection text. Required, never blank (chk_song_reflection_body_not_blank). Free-form prose; newlines allowed.
-	Body string `json:"body"`
-	// Row creation time. Tiebreak for thread ordering when two entries share an entry_date.
-	CreatedAt time.Time `json:"created_at"`
-	// Application-managed. Set explicitly in UPDATE queries.
-	UpdatedAt time.Time `json:"updated_at"`
-	// pgvector embedding (1536d) from gemini-embedding-2, derived from the reflection body. NULL until the background reconciler fills it. A hit here surfaces in search_knowledge under source_type=song, linked to the parent song.
-	Embedding *pgvector_go.Vector `json:"embedding"`
-	// Generated tsvector over the reflection body (first 10K chars), 'simple' config for multilingual safety. Backs the search_knowledge FTS branch; a hit folds under the parent song (source_type=song), not a separate corpus.
-	SearchVector interface{} `json:"search_vector"`
 }
 
 // Personal GTD work items. Distinct from the tasks coordination entity (inter-agent work units). Lifecycle: inbox (captured, not clarified) → todo (clarified, actionable) → in_progress → done. someday = interested but not now, reviewed in Weekly Review. inbox items lack project/due/priority — clarification promotes them to todo.

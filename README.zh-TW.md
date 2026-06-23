@@ -31,7 +31,7 @@
 
 大多數 AI 整合是無狀態的：每次對話從零開始、每個 agent 都是新鮮的失憶者，你把時間花在重複解釋脈絡。你加的 agent 越多 — 編輯器裡的 Claude Code、scheduler 上的 Cowork agent、背景跑的 summarizer — 問題就越嚴重，因為每個 agent 產出的東西，別人從來看不到。
 
-koopa 改成把工作本身建模。Area、goal、project、milestone、todo、daily plan、content、閱讀書架 — 全都是一等公民實體，有精確的 schema 和各自的 lifecycle，存在同一份儲存裡，每個 agent 都透過 MCP 讀取，並透過有界的工作流步驟寫入。規劃者組裝晨間 briefing 時，它讀昨天的 daily plan 並浮現未完成的項目 — 不是因為你總結了，而是因為狀態就在那裡。它提一個新 goal 時，草稿帶著排好的 milestone，惰性地落進你的 triage 佇列。理解是查詢出來的，不是重建出來的；agent 之間沒有漂移，也沒有「我好像記得你提過⋯」。
+koopa 改成把工作本身建模。Area、goal、project、milestone、todo、daily plan、content — 全都是一等公民實體，有精確的 schema 和各自的 lifecycle，存在同一份儲存裡，每個 agent 都透過 MCP 讀取，並透過有界的工作流步驟寫入。規劃者組裝晨間 briefing 時，它讀昨天的 daily plan 並浮現未完成的項目 — 不是因為你總結了，而是因為狀態就在那裡。它提一個新 goal 時，草稿帶著排好的 milestone，惰性地落進你的 triage 佇列。理解是查詢出來的，不是重建出來的；agent 之間沒有漂移，也沒有「我好像記得你提過⋯」。
 
 ## 運作方式
 
@@ -73,23 +73,22 @@ Agent 可以把一個 raw todo 丟進你的 inbox、起草一份惰性的 area /
 
 **Commitment** — PARA + GTD。Area（持續性責任領域）、goal（帶可選 deadline 的結果）、milestone（二元進度檢查點）、project（執行載具）、todo（個人 GTD 項目）、daily plan item（今天的承諾）。Agent 把 area、goal、project 起草成**惰性提案**（`status=proposed`），只在你的 triage 佇列裡浮現；你逐項啟用或拒絕。Daily plan **沒有 auto-carryover**：昨天未完成的工作會在晨間 briefing 中浮現，但不會自動滾到今天。面對未完成是 feature — 默默 carryover 會侵蝕你跟自己承諾的關係。
 
-**Knowledge** — 五種第一方內容類型（`article`、`essay`、`build-log`、`til`、`digest`）走 editorial lifecycle（`draft → review → published → archived`，外加 `review → changes_requested → review` 的改稿迴路）；一個閱讀書架（書 + 一份帶日期的反思 diary）和一個 ヨルシカ 歌曲書架（歌曲 + 反思）；RSS feed 帶排程抓取，連續失敗自動停用。內容在 admin UI 裡撰寫；agent 可用 `propose_content` 推進完成稿、用 `list_content` 看處置、用 `revise_content` 改被退回的稿 — 由你 publish 或帶修改原因退件。閱讀與歌曲書架在 MCP 上是唯讀的。
+**Knowledge** — 五種第一方內容類型（`article`、`essay`、`build-log`、`til`、`digest`）走 editorial lifecycle（`draft → review → published → archived`，外加 `review → changes_requested → review` 的改稿迴路）；RSS feed 帶排程抓取，連續失敗自動停用。內容在 admin UI 裡撰寫；agent 可用 `propose_content` 推進完成稿、用 `list_content` 看處置、用 `revise_content` 改被退回的稿 — 由你 publish 或帶修改原因退件。
 
 詞彙切分是承重的。一個 proposed 的 area / goal / project 在你啟用前完全惰性；已發佈的 `content` 有自己的 editorial lifecycle，只有 owner 能 publish。把草稿提案跟已啟用的 commitment 混為一談會破壞系統的保證。
 
 ## 知識檢索
 
-任何 agent 都能透過 MCP 用 `search_knowledge` 查詢語料庫 — 已發佈的 content、閱讀書架、歌曲書架 — 背後是 hybrid 檢索：PostgreSQL 全文搜尋（tsvector 配 websearch 語法、GIN 索引）加上 pgvector 語意搜尋（HNSW、cosine），每個 corpus 各自以 reciprocal-rank fusion 融合。背景的 reconciler 會在新的 row 落地後自動產生 embedding（`gemini-embedding-2`），語意側保持最新而不碰任何 request path；沒有設定 `GEMINI_API_KEY` 時，搜尋以 FTS-only 運作。
+任何 agent 都能透過 MCP 用 `search_knowledge` 查詢語料庫 — 已發佈的 content — 背後是 hybrid 檢索：PostgreSQL 全文搜尋（tsvector 配 websearch 語法、GIN 索引）加上 pgvector 語意搜尋（HNSW、cosine），以 reciprocal-rank fusion 融合。背景的 reconciler 會在新的 row 落地後自動產生 embedding（`gemini-embedding-2`），語意側保持最新而不碰任何 request path；沒有設定 `GEMINI_API_KEY` 時，搜尋以 FTS-only 運作。
 
 ## Agent 工具集
 
-十六個 MCP 工具 — 刻意做得小。agent 能做的每一件事都是一個工作流步驟，帶合法轉換與不變量檢查，絕不是原始的 table 存取：
+十四個 MCP 工具 — 刻意做得小。agent 能做的每一件事都是一個工作流步驟，帶合法轉換與不變量檢查，絕不是原始的 table 存取：
 
 | 工具 | 它做什麼 |
 |---|---|
 | `brief` | 唯讀的規劃狀態拉取。`mode=morning` 是每日 briefing（逾期 / 今天 / 已承諾 / 即將到來的 todo、active goal、RSS 重點、內容管道）；`mode=reflection` 是一天結束時 plan-vs-actual 的回顧。 |
-| `search_knowledge` | 跨 content、閱讀書架、歌曲書架的 hybrid 搜尋 — agent 通往語料庫的窗口。 |
-| `list_readings` / `get_reading` | 唯讀地看閱讀書架 — 你在讀的書與反思 diary。 |
+| `search_knowledge` | content 語料庫的 hybrid 搜尋 — agent 通往語料庫的窗口。 |
 | `project_progress` | 唯讀的 PARA momentum / 停滯情報，對 project、goal、area 即時計算，只計入 owner 的活動。 |
 | `review_period` | 唯讀的時間窗回顧 — 你在一段日期區間內完成了什麼（todo、milestone、目標推進、領域冷熱、發佈內容），只計入 owner 活動；週報 / 月報反思的原料。 |
 | `capture_inbox` | 把一個 raw todo 丟進你的 GTD inbox；之後再由你釐清。 |
@@ -99,7 +98,7 @@ Agent 可以把一個 raw todo 丟進你的 inbox、起草一份惰性的 area /
 | `propose_content` | 把完成的內容推進 editorial 審核佇列（`status=review`）；由你 publish 或退回要求修改。 |
 | `list_content` / `revise_content` | 讀回 agent 提的內容的處置 — 包含你退件時寫的修改原因 — 並把被退回的稿子改好、送回 review。 |
 
-`brief`、`search_knowledge`、`list_readings`、`get_reading`、`list_tasks`、`list_content`、`project_progress`、`review_period` 是唯讀的；會 mutation 的工具各自封裝一個工作流步驟，帶必填欄位與合法轉換，所以規則活在 tool 層，不是散落在各個 agent 的 prompt 指示裡。
+`brief`、`search_knowledge`、`list_tasks`、`list_content`、`project_progress`、`review_period` 是唯讀的；會 mutation 的工具各自封裝一個工作流步驟，帶必填欄位與合法轉換，所以規則活在 tool 層，不是散落在各個 agent 的 prompt 指示裡。
 
 ## 這帶來什麼
 
@@ -113,7 +112,7 @@ Agent 可以把一個 raw todo 丟進你的 inbox、起草一份惰性的 area /
 
 ## 範圍與限制
 
-這是設計上的單管理員系統：沒有 RBAC、沒有 multi-tenant、沒有「分享給同事」— 一個人，多個 AI agent。Admin UI 是私有的；公開網站只顯示一部分內容（article、build log、TIL、專案作品集），而且只有在你明確發佈之後。Goal 與閱讀書架永遠私有。私人 Zettelkasten 知識活在 Obsidian；koopa0.dev 是發布層。如果你想要團隊 wiki 或 Notion clone，不是這個。
+這是設計上的單管理員系統：沒有 RBAC、沒有 multi-tenant、沒有「分享給同事」— 一個人，多個 AI agent。Admin UI 是私有的；公開網站只顯示一部分內容（article、build log、TIL），而且只有在你明確發佈之後。Goal 永遠私有。私人 Zettelkasten 知識活在 Obsidian；koopa0.dev 是發布層。如果你想要團隊 wiki 或 Notion clone，不是這個。
 
 ## 技術棧
 
@@ -124,7 +123,7 @@ Agent 可以把一個 raw todo 丟進你的 inbox、起草一份惰性的 area /
 | Embedding     | `gemini-embedding-2`（1536d Matryoshka）；背景 reconciler 維持搜尋語料庫的 embedding 最新 |
 | 排程          | Agent 節奏在 `internal/agent/registry.go` 宣告；執行由外部 Cowork/Desktop runner 驅動；以 `process_runs` 留 audit |
 | 前端          | Angular 22（SSR、zoneless、Signal Forms）、Tailwind CSS v4                     |
-| AI 協作       | Claude（Cowork + Code）、Codex CLI、MCP（16 個工作流工具）                     |
+| AI 協作       | Claude（Cowork + Code）、Codex CLI、MCP（14 個工作流工具）                     |
 | Cache         | Ristretto（in-memory，單機）                                                   |
 | Object 儲存   | Cloudflare R2（S3 相容）                                                       |
 

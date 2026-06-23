@@ -10,8 +10,6 @@ import {
   Home,
   Inbox as InboxIcon,
   Layers,
-  Library,
-  Music,
   Rss,
   Search,
   Sparkles,
@@ -53,12 +51,11 @@ export interface AdminNavGroup {
 }
 
 /**
- * 6-group nav structure (Daily / Commitment / Knowledge / Library /
- * Input / System) per the Mission Control design IA. Library holds
- * personal consumption shelves (Reading, ヨルシカ); Input holds the
- * ingestion pipeline (Feeds). Kept here, not inlined in
- * AdminLayoutComponent, so the component stays small and the structure
- * is reusable by tests and the command palette.
+ * 5-group nav structure (Daily / Commitment / Knowledge / Input /
+ * System) per the Mission Control design IA. Input holds the ingestion
+ * pipeline (Feeds). Kept here, not inlined in AdminLayoutComponent, so
+ * the component stays small and the structure is reusable by tests and
+ * the command palette.
  */
 export const ADMIN_NAV: readonly AdminNavGroup[] = [
   {
@@ -164,25 +161,6 @@ export const ADMIN_NAV: readonly AdminNavGroup[] = [
         icon: Tag,
         shortcutHint: '',
         testId: 'admin-nav-topics',
-      },
-    ],
-  },
-  {
-    label: 'Library',
-    items: [
-      {
-        label: 'Reading',
-        route: '/admin/knowledge/reading',
-        icon: Library,
-        shortcutHint: '',
-        testId: 'admin-nav-reading',
-      },
-      {
-        label: 'ヨルシカ',
-        route: '/admin/knowledge/song',
-        icon: Music,
-        shortcutHint: '',
-        testId: 'admin-nav-song',
       },
     ],
   },

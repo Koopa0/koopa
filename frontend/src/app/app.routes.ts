@@ -257,34 +257,6 @@ export const routes: Routes = [
         },
       },
       {
-        path: 'knowledge/reading',
-        loadComponent: () =>
-          import('./admin/knowledge/reading/shelf/reading-shelf.page').then(
-            (m) => m.ReadingShelfPageComponent,
-          ),
-      },
-      {
-        path: 'knowledge/reading/:id',
-        loadComponent: () =>
-          import('./admin/knowledge/reading/detail/reading-detail.page').then(
-            (m) => m.ReadingDetailPageComponent,
-          ),
-      },
-      {
-        path: 'knowledge/song',
-        loadComponent: () =>
-          import('./admin/knowledge/song/shelf/song-shelf.page').then(
-            (m) => m.SongShelfPageComponent,
-          ),
-      },
-      {
-        path: 'knowledge/song/:id',
-        loadComponent: () =>
-          import('./admin/knowledge/song/detail/song-detail.page').then(
-            (m) => m.SongDetailPageComponent,
-          ),
-      },
-      {
         path: 'knowledge/feeds',
         loadComponent: () =>
           import('./admin/knowledge/feeds/list/feeds-list.page').then(

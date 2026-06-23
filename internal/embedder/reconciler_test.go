@@ -102,8 +102,8 @@ func TestReconcilerRunOnce(t *testing.T) {
 	tests := []struct {
 		name          string
 		contents      int
-		readings      int
-		songs         int
+		alpha         int
+		beta          int
 		failSubstring string
 		want          Result
 	}{
@@ -111,55 +111,56 @@ func TestReconcilerRunOnce(t *testing.T) {
 			// 120 contents force three drain iterations (50+50+20).
 			name:     "drains the content source across batches",
 			contents: 120,
-			want:     Result{BySource: map[string]int{"contents": 120, "readings": 0, "songs": 0}},
+			want:     Result{BySource: map[string]int{"contents": 120, "alpha": 0, "beta": 0}},
 		},
 		{
 			name: "empty sources do nothing but report every source",
-			want: Result{BySource: map[string]int{"contents": 0, "readings": 0, "songs": 0}},
+			want: Result{BySource: map[string]int{"contents": 0, "alpha": 0, "beta": 0}},
 		},
 		{
 			// Every wired source is drained in one pass; counts are kept
-			// per source.
-			name:     "drains content reading and song sources independently",
+			// per source. Multiple sources exercise the generic multi-source
+			// drain even though production currently wires only contents.
+			name:     "drains every wired source independently",
 			contents: 4,
-			readings: 3,
-			songs:    2,
-			want:     Result{BySource: map[string]int{"contents": 4, "readings": 3, "songs": 2}},
+			alpha:    3,
+			beta:     2,
+			want:     Result{BySource: map[string]int{"contents": 4, "alpha": 3, "beta": 2}},
 		},
 		{
 			// The failing row is skipped and stays missing; the rest of
-			// the batch persists. Only the reading source has the failing
-			// title, so the failure is attributed to it and content/song
+			// the batch persists. Only the alpha source has the failing
+			// title, so the failure is attributed to it and the siblings
 			// drain fully.
 			name:          "failed row skipped others persist across sources",
 			contents:      2,
-			readings:      3,
-			songs:         2,
-			failSubstring: "reading-001",
-			want:          Result{BySource: map[string]int{"contents": 2, "readings": 2, "songs": 2}, Failed: 1},
+			alpha:         3,
+			beta:          2,
+			failSubstring: "alpha-001",
+			want:          Result{BySource: map[string]int{"contents": 2, "alpha": 2, "beta": 2}, Failed: 1},
 		},
 		{
 			// Every row in one source fails: that drain stops after one
 			// zero-success batch while the siblings still drain.
 			name:          "one source all-failing terminates without starving siblings",
 			contents:      3,
-			readings:      5,
-			songs:         1,
-			failSubstring: "reading-",
-			want:          Result{BySource: map[string]int{"contents": 3, "readings": 0, "songs": 1}, Failed: 5},
+			alpha:         5,
+			beta:          1,
+			failSubstring: "alpha-",
+			want:          Result{BySource: map[string]int{"contents": 3, "alpha": 0, "beta": 1}, Failed: 5},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			contents := newFakeSource(tt.contents, "content")
-			readings := newFakeSource(tt.readings, "reading")
-			songs := newFakeSource(tt.songs, "song")
+			alpha := newFakeSource(tt.alpha, "alpha")
+			beta := newFakeSource(tt.beta, "beta")
 			emb := &stubEmbedder{failSubstring: tt.failSubstring}
 			r := NewReconciler(emb, slog.New(slog.DiscardHandler),
 				NamedSource{Name: "contents", Source: contents},
-				NamedSource{Name: "readings", Source: readings},
-				NamedSource{Name: "songs", Source: songs},
+				NamedSource{Name: "alpha", Source: alpha},
+				NamedSource{Name: "beta", Source: beta},
 			)
 
 			got, err := r.RunOnce(t.Context())
@@ -170,7 +171,7 @@ func TestReconcilerRunOnce(t *testing.T) {
 				t.Errorf("RunOnce() result mismatch (-want +got):\n%s", diff)
 			}
 
-			for name, src := range map[string]*fakeSource{"contents": contents, "readings": readings, "songs": songs} {
+			for name, src := range map[string]*fakeSource{"contents": contents, "alpha": alpha, "beta": beta} {
 				if n := src.embeddedCount(); n != tt.want.BySource[name] {
 					t.Errorf("%s persisted = %d, want %d", name, n, tt.want.BySource[name])
 				}
@@ -196,21 +197,21 @@ func TestReconcilerRunOnce_ListErrorReturned(t *testing.T) {
 	// The failing source is drained second, so the error names it specifically
 	// and the first source still records its progress.
 	good := newFakeSource(2, "content")
-	bad := newFakeSource(0, "reading")
+	bad := newFakeSource(0, "alpha")
 	bad.listErr = errors.New("list boom")
 	r := NewReconciler(&stubEmbedder{}, slog.New(slog.DiscardHandler),
 		NamedSource{Name: "contents", Source: good},
-		NamedSource{Name: "readings", Source: bad},
+		NamedSource{Name: "alpha", Source: bad},
 	)
 
 	got, err := r.RunOnce(t.Context())
 	if err == nil {
-		t.Fatal("RunOnce() error = nil, want readings listing error")
+		t.Fatal("RunOnce() error = nil, want alpha listing error")
 	}
-	if !strings.Contains(err.Error(), "draining readings") {
-		t.Errorf("RunOnce() error = %q, want it to mention draining readings", err)
+	if !strings.Contains(err.Error(), "draining alpha") {
+		t.Errorf("RunOnce() error = %q, want it to mention draining alpha", err)
 	}
-	want := Result{BySource: map[string]int{"contents": 2, "readings": 0}}
+	want := Result{BySource: map[string]int{"contents": 2, "alpha": 0}}
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("RunOnce() result mismatch (-want +got):\n%s", diff)
 	}

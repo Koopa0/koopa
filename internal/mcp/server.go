@@ -26,8 +26,6 @@ import (
 	"github.com/Koopa0/koopa/internal/goal"
 	"github.com/Koopa0/koopa/internal/mcp/ops"
 	"github.com/Koopa0/koopa/internal/project"
-	"github.com/Koopa0/koopa/internal/reading"
-	"github.com/Koopa0/koopa/internal/song"
 	"github.com/Koopa0/koopa/internal/stats"
 	"github.com/Koopa0/koopa/internal/todo"
 )
@@ -40,8 +38,6 @@ type Server struct {
 	todos    *todo.Store
 	dayplan  *daily.Store
 	contents *content.Store
-	readings *reading.Store
-	songs    *song.Store
 	projects *project.Store
 
 	// Goals
@@ -113,8 +109,6 @@ func NewServer(pool *pgxpool.Pool, logger *slog.Logger, opts ...ServerOption) *S
 		todos:       todo.NewStore(pool),
 		dayplan:     daily.NewStore(pool),
 		contents:    content.NewStore(pool),
-		readings:    reading.NewStore(pool),
-		songs:       song.NewStore(pool),
 		projects:    project.NewStore(pool),
 		goals:       goal.NewStore(pool),
 		registry:    agent.NewBuiltinRegistry(),
@@ -165,10 +159,6 @@ func NewServer(pool *pgxpool.Pool, logger *slog.Logger, opts ...ServerOption) *S
 	// --- Proposal readback (the read + self-close halves of the capture loop) ---
 	addTool(s, toolFrom(ops.ListTasks), s.listTasks)
 	addTool(s, toolFrom(ops.ResolveTask), s.resolveTask)
-
-	// --- Reading shelf (read-only agent window onto Koopa's books) ---
-	addTool(s, toolFrom(ops.ListReadings), s.listReadings)
-	addTool(s, toolFrom(ops.Reading), s.getReading)
 
 	// --- PARA momentum (read-only owner project/goal/area progress) ---
 	addTool(s, toolFrom(ops.ProjectProgress), s.projectProgress)

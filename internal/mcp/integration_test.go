@@ -76,8 +76,6 @@ func truncateApplicationTables(t *testing.T) {
 		"daily_plan_items",
 		"todos",
 		"contents",
-		"readings",
-		"songs",
 		"milestones",
 		"goals",
 		"projects",
@@ -233,10 +231,8 @@ func seedSearchContentAt(t *testing.T, slug, term string, createdAt time.Time) u
 }
 
 // assertSearchResultShape checks the stable required fields of a single result
-// envelope item. Does not assert order or relevance. The corpus is now
-// {content, reading, song}: content hits carry a slug + content_type; reading
-// and song hits link to the parent shelf row by id/title and carry no slug
-// (those tables have none) and no content_type.
+// envelope item. Does not assert order or relevance. The corpus is content-only:
+// every hit carries a slug + content_type.
 func assertSearchResultShape(t *testing.T, r *SearchKnowledgeResult) {
 	t.Helper()
 	if r.ID == "" {
@@ -258,12 +254,8 @@ func assertSearchResultShape(t *testing.T, r *SearchKnowledgeResult) {
 		if r.ContentType == "" {
 			t.Errorf("content result missing content_type: %+v", r)
 		}
-	case SourceTypeReading, SourceTypeSong:
-		if r.Excerpt == "" {
-			t.Errorf("%s result missing excerpt (matched text): %+v", r.SourceType, r)
-		}
 	default:
-		t.Errorf("unknown source_type %q (corpus is content, reading, song)", r.SourceType)
+		t.Errorf("unknown source_type %q (corpus is content)", r.SourceType)
 	}
 }
 
@@ -618,47 +610,6 @@ func TestIntegration_SearchKnowledge_DateBoundaryInclusive(t *testing.T) {
 		for _, drop := range []uuid.UUID{prevDay, nextDay} {
 			if got[drop.String()] {
 				t.Errorf("after=before=%s must exclude off-day row %s", day, drop)
-			}
-		}
-	})
-}
-
-// --- source_types filter: end-to-end (Track 1I) ---
-
-// TestIntegration_SearchKnowledge_SourceTypesEndToEnd closes the coverage gap
-// flagged in the search-product contract: source_types selection was only unit-
-// tested (TestSelectSources). It seeds one content row matching the term and
-// asserts source_types=[content] returns only the content row, and that any
-// token outside {content} — including the now-retired "note" corpus and an
-// arbitrary "bookmark" — is rejected at the handler with an error (not a silent
-// empty success).
-func TestIntegration_SearchKnowledge_SourceTypesEndToEnd(t *testing.T) {
-	s := setupServer(t)
-	const term = "zqxsrc"
-	cID := seedSearchContent(t, "sk-src-content", term, "draft")
-
-	t.Run("content only returns content", func(t *testing.T) {
-		_, out, err := callHandler(t, s.searchKnowledge, SearchKnowledgeInput{Query: term, SourceTypes: []string{SourceTypeContent}})
-		if err != nil {
-			t.Fatalf("source_types=[content]: %v", err)
-		}
-		if len(out.Results) != 1 || out.Results[0].ID != cID.String() {
-			t.Errorf("source_types=[content] = %d results, want exactly the content row %s", len(out.Results), cID)
-		}
-	})
-
-	t.Run("unsupported source_type rejected, not silent empty", func(t *testing.T) {
-		// "note" is a retired corpus token, "bookmark" was never a corpus —
-		// both must be rejected so "unsupported filter" stays distinguishable
-		// from "no match".
-		for _, st := range []string{"note", "bookmark"} {
-			_, _, err := callHandler(t, s.searchKnowledge, SearchKnowledgeInput{Query: term, SourceTypes: []string{st}})
-			if err == nil {
-				t.Errorf("source_types=[%q] must error, not return empty success", st)
-				continue
-			}
-			if !strings.Contains(err.Error(), "unsupported source_type") {
-				t.Errorf("source_types=[%q] error = %q, want containing %q", st, err, "unsupported source_type")
 			}
 		}
 	})
@@ -1583,338 +1534,6 @@ func TestIntegration_BriefReflection_CountsFromTodoState(t *testing.T) {
 	}
 }
 
-// --- reading shelf read tools (list_readings / get_reading) ---
-
-// seedReading inserts a book directly. The readings tables carry no audit
-// trigger and no created_by FK (single human writer, by design — see the
-// readings table comment in 001_initial.up.sql), so a raw INSERT is the
-// whole story. A status outside the four shelf states fails the CHECK, which
-// is the intended guard.
-func seedReading(t *testing.T, title, author, status string) uuid.UUID {
-	t.Helper()
-	var id uuid.UUID
-	if err := testPool.QueryRow(t.Context(),
-		`INSERT INTO readings (title, author, status) VALUES ($1, $2, $3) RETURNING id`,
-		title, author, status,
-	).Scan(&id); err != nil {
-		t.Fatalf("seedReading(%q, status=%q): %v", title, status, err)
-	}
-	return id
-}
-
-// seedReflection inserts a diary entry under a reading with an explicit
-// entry_date so thread ordering is deterministic.
-func seedReflection(t *testing.T, readingID uuid.UUID, entryDate, body string) uuid.UUID {
-	t.Helper()
-	var id uuid.UUID
-	if err := testPool.QueryRow(t.Context(),
-		`INSERT INTO reading_reflections (reading_id, entry_date, body)
-		 VALUES ($1, $2::date, $3) RETURNING id`,
-		readingID, entryDate, body,
-	).Scan(&id); err != nil {
-		t.Fatalf("seedReflection(reading=%s, %s, %q): %v", readingID, entryDate, body, err)
-	}
-	return id
-}
-
-// seedSong inserts a song directly. Like readings, the songs tables carry no
-// audit trigger and no created_by FK (single human writer). translation is the
-// owner's working-language layer the FTS search_vector weights, so a seed sets
-// it to drive lexical matches.
-func seedSong(t *testing.T, titleJa, album, translation string) uuid.UUID {
-	t.Helper()
-	var id uuid.UUID
-	if err := testPool.QueryRow(t.Context(),
-		`INSERT INTO songs (title_ja, album, translation) VALUES ($1, $2, $3) RETURNING id`,
-		titleJa, album, translation,
-	).Scan(&id); err != nil {
-		t.Fatalf("seedSong(%q): %v", titleJa, err)
-	}
-	return id
-}
-
-// seedSongReflection inserts a reflection under a song with an explicit
-// entry_date.
-func seedSongReflection(t *testing.T, songID uuid.UUID, entryDate, body string) uuid.UUID {
-	t.Helper()
-	var id uuid.UUID
-	if err := testPool.QueryRow(t.Context(),
-		`INSERT INTO song_reflections (song_id, entry_date, body)
-		 VALUES ($1, $2::date, $3) RETURNING id`,
-		songID, entryDate, body,
-	).Scan(&id); err != nil {
-		t.Fatalf("seedSongReflection(song=%s, %s, %q): %v", songID, entryDate, body, err)
-	}
-	return id
-}
-
-// --- search_knowledge: reading + song corpora (FTS path) ---
-
-// TestIntegration_SearchKnowledge_ReadingSongCorpora is the end-to-end proof
-// that the reading shelf and the ヨルシカ song shelf joined the search corpus.
-// Embeddings need GEMINI_API_KEY, so this asserts the FTS path only (the
-// server here has no embedder, so the semantic branch is skipped) plus the
-// source_types narrowing. It pins the load-bearing semantics:
-//   - a reading SHELF hit surfaces with source_type=reading, linking to the book;
-//   - a reading REFLECTION hit folds under its parent book (same source_type,
-//     parent id, excerpt = the diary body) — NOT a separate reflection corpus;
-//   - the same for the song shelf + reflections (source_type=song);
-//   - source_types narrows the corpus, and the default searches all three.
-func TestIntegration_SearchKnowledge_ReadingSongCorpora(t *testing.T) {
-	s := setupServer(t)
-
-	// A term unique to each matchable surface so a hit is unambiguous.
-	bookID := seedReading(t, "Norwegian Wood", "Murakami", "finished")
-	const reflTerm = "zqxreflread"
-	seedReflection(t, bookID, "2026-05-10", "today the "+reflTerm+" theme finally landed")
-
-	songID := seedSong(t, "花に亡霊", "創作", "a song about loneliness")
-	const songReflTerm = "zqxreflsong"
-	seedSongReflection(t, songID, "2026-05-11", "the bridge captures "+songReflTerm+" perfectly")
-
-	t.Run("reading reflection hit folds under parent book", func(t *testing.T) {
-		_, out, err := callHandler(t, s.searchKnowledge, SearchKnowledgeInput{Query: reflTerm})
-		if err != nil {
-			t.Fatalf("searchKnowledge(%q): %v", reflTerm, err)
-		}
-		r := findResultByID(t, out.Results, bookID.String())
-		if r == nil {
-			t.Fatalf("reflection term %q did not surface parent book %s; got %d results", reflTerm, bookID, len(out.Results))
-		}
-		if r.SourceType != SourceTypeReading {
-			t.Errorf("source_type = %q, want %q (reflection folds under reading)", r.SourceType, SourceTypeReading)
-		}
-		if r.Title != "Norwegian Wood" {
-			t.Errorf("title = %q, want the parent book title", r.Title)
-		}
-		if !strings.Contains(r.Excerpt, reflTerm) {
-			t.Errorf("excerpt = %q, want the matched diary body containing %q", r.Excerpt, reflTerm)
-		}
-		assertSearchResultShape(t, r)
-	})
-
-	t.Run("song reflection hit folds under parent song", func(t *testing.T) {
-		_, out, err := callHandler(t, s.searchKnowledge, SearchKnowledgeInput{Query: songReflTerm})
-		if err != nil {
-			t.Fatalf("searchKnowledge(%q): %v", songReflTerm, err)
-		}
-		r := findResultByID(t, out.Results, songID.String())
-		if r == nil {
-			t.Fatalf("reflection term %q did not surface parent song %s; got %d results", songReflTerm, songID, len(out.Results))
-		}
-		if r.SourceType != SourceTypeSong {
-			t.Errorf("source_type = %q, want %q (reflection folds under song)", r.SourceType, SourceTypeSong)
-		}
-		if !strings.Contains(r.Excerpt, songReflTerm) {
-			t.Errorf("excerpt = %q, want the matched reflection body containing %q", r.Excerpt, songReflTerm)
-		}
-		assertSearchResultShape(t, r)
-	})
-
-	t.Run("reading shelf hit surfaces by title", func(t *testing.T) {
-		_, out, err := callHandler(t, s.searchKnowledge, SearchKnowledgeInput{Query: "Murakami"})
-		if err != nil {
-			t.Fatalf("searchKnowledge(Murakami): %v", err)
-		}
-		r := findResultByID(t, out.Results, bookID.String())
-		if r == nil {
-			t.Fatalf("author term did not surface the book %s (search_vector weights author B)", bookID)
-		}
-		if r.SourceType != SourceTypeReading {
-			t.Errorf("source_type = %q, want %q", r.SourceType, SourceTypeReading)
-		}
-	})
-
-	t.Run("song shelf hit via translation", func(t *testing.T) {
-		_, out, err := callHandler(t, s.searchKnowledge, SearchKnowledgeInput{Query: "loneliness"})
-		if err != nil {
-			t.Fatalf("searchKnowledge(loneliness): %v", err)
-		}
-		r := findResultByID(t, out.Results, songID.String())
-		if r == nil {
-			t.Fatalf("translation term did not surface the song %s (search_vector weights translation C)", songID)
-		}
-		if r.SourceType != SourceTypeSong {
-			t.Errorf("source_type = %q, want %q", r.SourceType, SourceTypeSong)
-		}
-	})
-
-	t.Run("source_types narrows to reading only", func(t *testing.T) {
-		_, out, err := callHandler(t, s.searchKnowledge, SearchKnowledgeInput{Query: reflTerm, SourceTypes: []string{SourceTypeReading}})
-		if err != nil {
-			t.Fatalf("searchKnowledge(reading-only): %v", err)
-		}
-		if diff := cmp.Diff([]string{SourceTypeReading}, out.SearchedCorpus); diff != "" {
-			t.Errorf("searched_corpus mismatch (-want +got):\n%s", diff)
-		}
-		for i := range out.Results {
-			if out.Results[i].SourceType != SourceTypeReading {
-				t.Errorf("result %d source_type = %q, want reading-only", i, out.Results[i].SourceType)
-			}
-		}
-	})
-
-	t.Run("source_types=song excludes the reading hit", func(t *testing.T) {
-		_, out, err := callHandler(t, s.searchKnowledge, SearchKnowledgeInput{Query: reflTerm, SourceTypes: []string{SourceTypeSong}})
-		if err != nil {
-			t.Fatalf("searchKnowledge(song-only): %v", err)
-		}
-		if r := findResultByID(t, out.Results, bookID.String()); r != nil {
-			t.Errorf("song-only search returned the reading hit %s — corpus narrowing failed", bookID)
-		}
-	})
-
-	t.Run("default corpus is all three", func(t *testing.T) {
-		_, out, err := callHandler(t, s.searchKnowledge, SearchKnowledgeInput{Query: reflTerm})
-		if err != nil {
-			t.Fatalf("searchKnowledge(default): %v", err)
-		}
-		want := []string{SourceTypeContent, SourceTypeReading, SourceTypeSong}
-		if diff := cmp.Diff(want, out.SearchedCorpus); diff != "" {
-			t.Errorf("default searched_corpus mismatch (-want +got):\n%s", diff)
-		}
-	})
-}
-
-// findResultByID returns the first result with the given id, or nil. Order- and
-// rank-agnostic so this stays inside the tier-1 contract (presence/absence
-// only, no ranking metric).
-func findResultByID(t *testing.T, results []SearchKnowledgeResult, id string) *SearchKnowledgeResult {
-	t.Helper()
-	for i := range results {
-		if results[i].ID == id {
-			return &results[i]
-		}
-	}
-	return nil
-}
-
-// TestIntegration_ListReadings_ReturnsShelf drives the happy path: every
-// seeded book comes back, newest-updated first, with goal_id null when the
-// book serves no goal. Without the goal_id column wired through, the GoalID
-// field would be absent or wrong here.
-func TestIntegration_ListReadings_ReturnsShelf(t *testing.T) {
-	s := setupServer(t)
-
-	wantID := seedReading(t, "Wishlist Book", "A. Author", "want_to_read")
-	readingID := seedReading(t, "Current Book", "", "reading")
-
-	_, out, err := callHandlerAs(t, "planner", s.listReadings, ListReadingsInput{})
-	if err != nil {
-		t.Fatalf("listReadings: %v", err)
-	}
-
-	got := make(map[string]ReadingListItem, len(out.Readings))
-	for _, it := range out.Readings {
-		got[it.ID] = it
-	}
-	if len(got) != 2 {
-		t.Fatalf("listReadings returned %d books, want 2", len(out.Readings))
-	}
-	if w := got[wantID.String()]; w.Title != "Wishlist Book" || w.Author != "A. Author" || w.Status != "want_to_read" || w.GoalID != nil {
-		t.Errorf("listReadings[%s] = %+v, want title/author/status set and goal_id nil", wantID, w)
-	}
-	if r := got[readingID.String()]; r.Status != "reading" || r.Author != "" {
-		t.Errorf("listReadings[%s] = %+v, want status=reading author empty", readingID, r)
-	}
-}
-
-// TestIntegration_ListReadings_StatusFilter narrows the shelf to one state and
-// rejects a non-empty invalid status without touching the store. A handler
-// that forwarded the bad value to the DB would surface a 500-shaped error
-// (or return everything); the clean rejection here pins the enum guard.
-func TestIntegration_ListReadings_StatusFilter(t *testing.T) {
-	s := setupServer(t)
-
-	seedReading(t, "Wishlist", "", "want_to_read")
-	currentID := seedReading(t, "Current", "", "reading")
-	seedReading(t, "Done", "", "finished")
-
-	_, out, err := callHandlerAs(t, "planner", s.listReadings, ListReadingsInput{Status: "reading"})
-	if err != nil {
-		t.Fatalf("listReadings(status=reading): %v", err)
-	}
-	if len(out.Readings) != 1 || out.Readings[0].ID != currentID.String() {
-		t.Errorf("listReadings(status=reading) = %d rows, want exactly the reading-status book %s", len(out.Readings), currentID)
-	}
-
-	if _, _, err := callHandlerAs(t, "planner", s.listReadings, ListReadingsInput{Status: "bogus"}); err == nil {
-		t.Error("listReadings(status=bogus) err = nil, want invalid-status rejection")
-	}
-}
-
-// TestIntegration_ListReadings_CallerGate refuses the zero-privilege fallback
-// and a fabricated caller — the private shelf must not be readable without a
-// known identity.
-func TestIntegration_ListReadings_CallerGate(t *testing.T) {
-	s := setupServer(t)
-	seedReading(t, "Private Book", "", "reading")
-
-	for _, caller := range []string{"unknown", "fabricated-agent"} {
-		if _, _, err := callHandlerAs(t, caller, s.listReadings, ListReadingsInput{}); err == nil {
-			t.Errorf("listReadings as %q err = nil, want registered-caller refusal", caller)
-		}
-	}
-}
-
-// TestIntegration_GetReading_ReturnsBookAndThread pins the detail path: the
-// book plus its diary in entry_date order (created_at tiebreak), the two
-// same-day entries exercising the tiebreak. A missing/DESC ORDER BY or a
-// dropped reflection fails the body-order assertion.
-func TestIntegration_GetReading_ReturnsBookAndThread(t *testing.T) {
-	s := setupServer(t)
-
-	bookID := seedReading(t, "Threaded Book", "T. Writer", "reading")
-	// Inserted out of diary order; the two 06-01 entries pin the created_at
-	// tiebreak (insertion order).
-	seedReflection(t, bookID, "2026-06-02", "second day")
-	seedReflection(t, bookID, "2026-06-01", "first day")
-	seedReflection(t, bookID, "2026-06-01", "first day, later thought")
-
-	_, out, err := callHandlerAs(t, "planner", s.getReading, GetReadingInput{ID: bookID.String()})
-	if err != nil {
-		t.Fatalf("getReading: %v", err)
-	}
-
-	if out.Reading.ID != bookID.String() || out.Reading.Title != "Threaded Book" || out.Reading.Author != "T. Writer" {
-		t.Errorf("getReading.Reading = %+v, want the seeded book", out.Reading)
-	}
-	if out.Reading.GoalID != nil {
-		t.Errorf("getReading.Reading.GoalID = %v, want nil (no goal linked)", out.Reading.GoalID)
-	}
-	gotBodies := make([]string, len(out.Reflections))
-	for i, r := range out.Reflections {
-		gotBodies[i] = r.Body
-	}
-	wantBodies := []string{"first day", "first day, later thought", "second day"}
-	if diff := cmp.Diff(wantBodies, gotBodies); diff != "" {
-		t.Errorf("getReading reflection thread order mismatch (-want +got):\n%s", diff)
-	}
-}
-
-// TestIntegration_GetReading_UnknownID maps a missing book to a clean
-// not-found error, never a 500-shaped store error.
-func TestIntegration_GetReading_UnknownID(t *testing.T) {
-	s := setupServer(t)
-
-	if _, _, err := callHandlerAs(t, "planner", s.getReading, GetReadingInput{ID: uuid.New().String()}); err == nil {
-		t.Error("getReading(unknown id) err = nil, want not-found")
-	}
-}
-
-// TestIntegration_GetReading_CallerGate refuses the zero-privilege fallback
-// and a fabricated caller for the detail path too.
-func TestIntegration_GetReading_CallerGate(t *testing.T) {
-	s := setupServer(t)
-	bookID := seedReading(t, "Private Book", "", "reading")
-
-	for _, caller := range []string{"unknown", "fabricated-agent"} {
-		if _, _, err := callHandlerAs(t, caller, s.getReading, GetReadingInput{ID: bookID.String()}); err == nil {
-			t.Errorf("getReading as %q err = nil, want registered-caller refusal", caller)
-		}
-	}
-}
-
 // --- project_progress (read-only PARA momentum/stalled) ---
 //
 // These tests pin the load-bearing semantics: the HUMAN-ONLY activity
@@ -2172,7 +1791,8 @@ func TestIntegration_ProjectProgress_CandidateFilter(t *testing.T) {
 
 // TestIntegration_ProjectProgress_CallerGate refuses the zero-privilege
 // fallback and a fabricated caller — the owner's PARA must not be readable
-// without a known identity, same gate as the readings tools.
+// without a known identity, same registered-caller gate as the other
+// read-only tools.
 func TestIntegration_ProjectProgress_CallerGate(t *testing.T) {
 	s := setupServer(t)
 	seedProgressProject(t, "gated", "Gated", "weekly", nil, nil)

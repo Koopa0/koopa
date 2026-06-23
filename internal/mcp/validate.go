@@ -24,7 +24,6 @@ func isValidEnergy(e string) bool {
 // where line breaks and tabs are legitimate formatting, so propose_content
 // validates the body with this instead of goal.ContainsControlChars (which
 // rejects every C0 control and is reserved for single-line fields like title).
-// Mirrors internal/reading and internal/song.
 func containsProseControlChars(s string) bool {
 	for _, r := range s {
 		switch {

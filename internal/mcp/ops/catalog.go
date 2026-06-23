@@ -47,7 +47,7 @@ func SearchKnowledge() Meta {
 		Writability: ReadOnly,
 		Stability:   StabilityStable,
 		Since:       since,
-		Description: "Read-only search across Koopa's corpus: content (articles, essays, build-logs, TILs, digests), the reading shelf (books + reading diary), and the ヨルシカ song shelf (songs + reflections). Hybrid retrieval per corpus — PostgreSQL full-text search (lexical, tsvector + websearch syntax, GIN-indexed) fused with pgvector semantic search (HNSW, cosine) via reciprocal-rank fusion; a background reconciler embeds rows as they land, and without GEMINI_API_KEY the semantic branch degrades to FTS-only. A reading-diary hit folds under its parent book (source_type=reading) and a song-reflection hit under its parent song (source_type=song) — reflections are NOT a separate source type. Filters: source_types ({content, reading, song}; default all three), content_type (content only), date range. The reading and song shelves are read-only here — no MCP tool writes them.",
+		Description: "Read-only search across Koopa's content corpus: articles, essays, build-logs, TILs, and digests. Hybrid retrieval — PostgreSQL full-text search (lexical, tsvector + websearch syntax, GIN-indexed) fused with pgvector semantic search (HNSW, cosine) via reciprocal-rank fusion; a background reconciler embeds rows as they land, and without GEMINI_API_KEY the semantic branch degrades to FTS-only. Filters: content_type (article, essay, build-log, til, digest) and date range (after/before, YYYY-MM-DD).",
 	}
 }
 
@@ -165,36 +165,6 @@ func ResolveTask() Meta {
 	}
 }
 
-// ListReadings returns metadata for the read-only reading-shelf list tool —
-// the agent's window onto the books Koopa is reading or wants to read.
-func ListReadings() Meta {
-	return Meta{
-		Name:        "list_readings",
-		Domain:      DomainQuery,
-		Writability: ReadOnly,
-		Stability:   StabilityStable,
-		Since:       "1.6.0",
-		Description: "Read-only list of Koopa's reading shelf — one entry per book with title, author, status, started_on/finished_on dates, is_public, and an optional goal_id link. Optional status filter: want_to_read, reading, finished, abandoned (omit for the whole shelf). This is your read access only: the shelf has no agent write path, so use it to ground a conversation in what Koopa is reading, never to change it.",
-		FieldEnums: map[string][]string{
-			"status": {"want_to_read", "reading", "finished", "abandoned"},
-		},
-	}
-}
-
-// Reading returns metadata for the read-only single-book tool — one book
-// plus its full diary thread. (Tool name get_reading; accessor named Reading
-// to match the catalog's no-Get convention.)
-func Reading() Meta {
-	return Meta{
-		Name:        "get_reading",
-		Domain:      DomainQuery,
-		Writability: ReadOnly,
-		Stability:   StabilityStable,
-		Since:       "1.6.0",
-		Description: "Read-only fetch of one book by id, returning the reading (incl. goal_id) and its full reflection thread — dated diary entries in entry_date order (created_at tiebreak). Use after list_readings to read Koopa's notes on a specific book. Read access only: there is no agent path to add or edit reflections.",
-	}
-}
-
 // ProjectProgress returns metadata for the read-only PARA momentum/stalled
 // tool — the owner's project/goal/area progress intelligence, computed live.
 func ProjectProgress() Meta {
@@ -264,8 +234,6 @@ func All() []Meta {
 		ProposeContent(),
 		ListTasks(),
 		ResolveTask(),
-		ListReadings(),
-		Reading(),
 		ProjectProgress(),
 		ListContent(),
 		ReviseContent(),
