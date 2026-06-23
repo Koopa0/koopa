@@ -74,7 +74,7 @@ The system models three bounded contexts, each with its own vocabulary and lifec
 
 **Commitment** — PARA + GTD. Areas (ongoing responsibilities), goals (outcomes with optional deadlines), milestones (binary progress checkpoints), projects (execution vehicles), todos (personal GTD items), daily plan items (today's commitments). Agents draft areas, goals, and projects as **inert proposals** (`status=proposed`) that surface only in your triage queue; you activate or reject each one. The daily plan has **no auto-carryover**: yesterday's unfinished work surfaces in the morning briefing but does not roll forward on its own. Confrontation is the feature — silent carryover erodes your relationship with your own commitments.
 
-**Knowledge** — five first-party content types (`article`, `essay`, `build-log`, `til`, `digest`) with an editorial lifecycle (`draft → review → published → archived`); a reading shelf (books plus a dated reflection diary) and a ヨルシカ song shelf (songs plus reflections); RSS feeds with scheduled fetch and auto-disable on consecutive failures. Content is authored in the admin UI; an agent can push a finished draft into the review queue via `propose_content`, and the reading and song shelves are read-only on the MCP surface.
+**Knowledge** — five first-party content types (`article`, `essay`, `build-log`, `til`, `digest`) with an editorial lifecycle (`draft → review → published → archived`, plus a `review → changes_requested → review` revision loop); a reading shelf (books plus a dated reflection diary) and a ヨルシカ song shelf (songs plus reflections); RSS feeds with scheduled fetch and auto-disable on consecutive failures. Content is authored in the admin UI; an agent can push a finished draft via `propose_content`, read its disposition via `list_content`, and revise a sent-back draft via `revise_content` — you publish it or send it back with a revision note. The reading and song shelves are read-only on the MCP surface.
 
 The vocabulary splits are load-bearing. A proposed area / goal / project is inert until you activate it; published `content` carries its own editorial lifecycle and only an owner publishes. Conflating a draft proposal with an active commitment breaks the system's guarantees.
 
@@ -84,7 +84,7 @@ Any agent queries the corpus through MCP via `search_knowledge` — published co
 
 ## The agent toolset
 
-Thirteen MCP tools — small on purpose. Everything an agent can do is a workflow step with valid transitions and invariant checks, never raw table access:
+Sixteen MCP tools — small on purpose. Everything an agent can do is a workflow step with valid transitions and invariant checks, never raw table access:
 
 | Tool | What it does |
 |---|---|
@@ -92,13 +92,15 @@ Thirteen MCP tools — small on purpose. Everything an agent can do is a workflo
 | `search_knowledge` | Hybrid search across content, the reading shelf, and the song shelf — the agent's window into the corpus. |
 | `list_readings` / `get_reading` | Read-only view of the reading shelf — the books you're reading and your reflection diary. |
 | `project_progress` | Read-only PARA momentum/stalled intelligence for projects, goals, and areas, computed live and counting owner activity only. |
+| `review_period` | Read-only windowed retrospective — what you completed across a date range (todos, milestones, goal advancement, area heat, published content), counting owner activity only; the raw material for a weekly/monthly reflection report. |
 | `capture_inbox` | Drop a raw todo into your GTD inbox; you clarify it later. |
 | `plan_day` | Set today's plan as one atomic replacement. No auto-carryover. |
 | `propose_area` / `propose_goal` / `propose_project` | Draft an inert PARA proposal (`status=proposed`) for you to activate or reject in admin triage. |
 | `list_tasks` / `resolve_task` | Read back the disposition of the todos an agent created, and self-clear the ones it has finished. |
-| `propose_content` | Push a finished content piece into the editorial review queue (`status=review`); you publish or reject it. |
+| `propose_content` | Push a finished content piece into the editorial review queue (`status=review`); you publish it or send it back for revision. |
+| `list_content` / `revise_content` | Read back the disposition of the content an agent proposed — including your revision note when you send a draft back — and revise a sent-back draft back into review. |
 
-`brief`, `search_knowledge`, `list_readings`, `get_reading`, `list_tasks`, and `project_progress` are read-only; the mutating tools each encapsulate one workflow step with required fields and valid transitions, so the rules live in the tool layer, not in prompt instructions scattered across agents.
+`brief`, `search_knowledge`, `list_readings`, `get_reading`, `list_tasks`, `list_content`, `project_progress`, and `review_period` are read-only; the mutating tools each encapsulate one workflow step with required fields and valid transitions, so the rules live in the tool layer, not in prompt instructions scattered across agents.
 
 ## What this enables
 
@@ -123,7 +125,7 @@ A single-admin system by design: no RBAC, no multi-tenant, no "share with a coll
 | Embedding        | `gemini-embedding-2` (1536d Matryoshka); background reconciler keeps the search corpus embedded |
 | Scheduling       | Agent cadences declared in `internal/agent/registry.go`; execution driven by an external Cowork/Desktop runner; audited via `process_runs` |
 | Frontend         | Angular 22 (SSR, zoneless, Signal Forms), Tailwind CSS v4                      |
-| AI collaboration | Claude (Cowork + Code), Codex CLI, MCP (13 workflow tools)                    |
+| AI collaboration | Claude (Cowork + Code), Codex CLI, MCP (16 workflow tools)                    |
 | Cache            | Ristretto (in-memory, single machine)                                         |
 | Object storage   | Cloudflare R2 (S3-compatible)                                                  |
 
