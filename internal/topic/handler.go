@@ -3,6 +3,7 @@
 package topic
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
 	"time"
@@ -43,22 +44,57 @@ func NewHandler(store *Store, contentReader ContentByTopicLister, logger *slog.L
 	return &Handler{store: store, content: contentReader, topicCache: topicCache, logger: logger}
 }
 
-// List handles GET /api/topics.
-func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
+// topics returns the full topic list, served from the cache when warm and
+// loaded from the store otherwise. Both the admin and public list handlers
+// share this so they share one cache entry.
+func (h *Handler) topics(ctx context.Context) ([]Topic, error) {
 	if topics, ok := h.topicCache.Get("topics"); ok {
-		api.Encode(w, http.StatusOK, api.Response{Data: topics})
-		return
+		return topics, nil
 	}
+	topics, err := h.store.Topics(ctx)
+	if err != nil {
+		return nil, err
+	}
+	h.topicCache.SetWithTTL("topics", topics, 1, topicsTTL)
+	return topics, nil
+}
 
-	topics, err := h.store.Topics(r.Context())
+// List handles GET /api/admin/knowledge/topics — every topic, including those
+// with no published content, so the admin can manage and assign empty topics.
+func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
+	topics, err := h.topics(r.Context())
 	if err != nil {
 		h.logger.Error("listing topics", "error", err)
 		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to list topics")
 		return
 	}
-
-	h.topicCache.SetWithTTL("topics", topics, 1, topicsTTL)
 	api.Encode(w, http.StatusOK, api.Response{Data: topics})
+}
+
+// ListPublished handles GET /api/topics — only topics that carry at least one
+// published piece, so the public index never surfaces an empty category.
+func (h *Handler) ListPublished(w http.ResponseWriter, r *http.Request) {
+	all, err := h.topics(r.Context())
+	if err != nil {
+		h.logger.Error("listing topics", "error", err)
+		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to list topics")
+		return
+	}
+	api.Encode(w, http.StatusOK, api.Response{Data: publishedOnly(all)})
+}
+
+// publishedOnly keeps the topics that carry at least one publicly visible
+// published piece. The store's content_count counts only published content with
+// is_public = true (the same predicate the public content listing uses), so a
+// positive count means the topic has something live to show on the public index.
+func publishedOnly(topics []Topic) []Topic {
+	published := make([]Topic, 0, len(topics))
+	for i := range topics {
+		if topics[i].ContentCount > 0 {
+			published = append(published, topics[i])
+		}
+	}
+	return published
 }
 
 // topicWithContents is the response for GET /api/topics/{slug}.

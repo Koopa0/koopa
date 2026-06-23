@@ -121,7 +121,7 @@ func registerRoutes(
 	mux.HandleFunc("GET /api/knowledge-graph", h.content.KnowledgeGraph)
 	mux.HandleFunc("GET /api/feed/rss", h.content.RSS)
 	mux.HandleFunc("GET /api/feed/sitemap", h.content.Sitemap)
-	mux.HandleFunc("GET /api/topics", h.topic.List)
+	mux.HandleFunc("GET /api/topics", h.topic.ListPublished)
 	mux.HandleFunc("GET /api/topics/{slug}", h.topic.BySlug)
 
 	// --- Auth ---
@@ -218,8 +218,9 @@ func registerRoutes(
 	mux.Handle("PUT /api/admin/commitment/daily-plan", adminMid(http.HandlerFunc(h.daily.PutPlan)))
 
 	// --- Admin: Knowledge / Topics ---
-	// List is reachable as admin (same payload as the public /api/topics list)
-	// for the content-editor picker.
+	// Admin List returns every topic, including those with no published
+	// content, so the content-editor picker can assign empty topics. The
+	// public /api/topics list (ListPublished) hides empty ones.
 	mux.Handle("GET /api/admin/knowledge/topics", authMid(http.HandlerFunc(h.topic.List)))
 	mux.Handle("POST /api/admin/knowledge/topics", adminMid(http.HandlerFunc(h.topic.Create)))
 	mux.Handle("PUT /api/admin/knowledge/topics/{id}", adminMid(http.HandlerFunc(h.topic.Update)))

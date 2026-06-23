@@ -12,7 +12,9 @@ import { AdminTopbarService } from '../../../admin-layout/admin-topbar.service';
 import type { ApiContent } from '../../../../core/models/api.model';
 
 const CONTENT_URL = '/api/admin/knowledge/content';
-const TOPICS_URL = '/api/topics';
+// The editor picker reads the admin all-topics endpoint (empty topics included),
+// not the public /api/topics list which hides empty categories.
+const TOPICS_URL = '/api/admin/knowledge/topics';
 
 const routes: Routes = [
   {

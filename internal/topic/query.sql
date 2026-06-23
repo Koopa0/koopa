@@ -1,6 +1,6 @@
 -- name: Topics :many
 SELECT t.id, t.slug, t.name, t.description, t.icon, t.sort_order, t.created_at, t.updated_at,
-       COUNT(ct.content_id) FILTER (WHERE c.status = 'published') AS content_count
+       COUNT(ct.content_id) FILTER (WHERE c.status = 'published' AND c.is_public = true) AS content_count
 FROM topics t
 LEFT JOIN content_topics ct ON ct.topic_id = t.id
 LEFT JOIN contents c ON c.id = ct.content_id
@@ -9,7 +9,7 @@ ORDER BY t.sort_order, t.name;
 
 -- name: TopicBySlug :one
 SELECT t.id, t.slug, t.name, t.description, t.icon, t.sort_order, t.created_at, t.updated_at,
-       COUNT(ct.content_id) FILTER (WHERE c.status = 'published') AS content_count
+       COUNT(ct.content_id) FILTER (WHERE c.status = 'published' AND c.is_public = true) AS content_count
 FROM topics t
 LEFT JOIN content_topics ct ON ct.topic_id = t.id
 LEFT JOIN contents c ON c.id = ct.content_id

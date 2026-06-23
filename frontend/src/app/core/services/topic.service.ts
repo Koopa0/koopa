@@ -22,12 +22,14 @@ export interface TopicUpdateRequest {
 export class TopicService {
   private readonly api = inject(ApiService);
 
-  /** Get all topics (public) */
+  /** Public topics — only those with at least one published piece (empty
+   * categories are hidden). For an exhaustive list use {@link adminList}. */
   getAllTopics(): Observable<ApiTopic[]> {
     return this.api.getData<ApiTopic[]>('/api/topics');
   }
 
-  /** Admin — list topics (same payload as the public list, auth-gated) */
+  /** Admin — every topic including empty ones (auth-gated), for management and
+   * the content-editor picker. */
   adminList(): Observable<ApiTopic[]> {
     return this.api.getData<ApiTopic[]>('/api/admin/knowledge/topics');
   }

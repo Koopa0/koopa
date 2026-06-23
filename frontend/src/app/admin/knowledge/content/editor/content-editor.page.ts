@@ -150,8 +150,11 @@ export class ContentEditorPageComponent {
     () => this.contentResource.status() === 'error',
   );
 
+  // The editor picker must offer every topic, including ones with no published
+  // content yet, so a draft can be filed under a fresh topic. adminList() is the
+  // all-topics endpoint; getAllTopics() (public) hides empty categories.
   protected readonly topicsResource = rxResource({
-    stream: () => this.topicService.getAllTopics(),
+    stream: () => this.topicService.adminList(),
   });
   // Guard the read: rxResource.value() throws while the resource is in an
   // error state, so gate on hasValue() (the repo idiom). Without this guard a

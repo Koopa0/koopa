@@ -208,5 +208,63 @@ func TestHandler_Delete_Validation(t *testing.T) {
 	}
 }
 
-// Handler.List, Handler.BySlug, and store-interaction paths for Create/Update/Delete
-// are tested via integration tests (require a real database connection).
+// ---------------------------------------------------------------------------
+// publishedOnly — the public /api/topics filter that hides empty categories.
+// Pure function, so it is tested directly (the cache/store path is best-effort
+// and covered by integration tests).
+// ---------------------------------------------------------------------------
+
+func TestPublishedOnly(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		in   []Topic
+		want []string // slugs, in order
+	}{
+		{
+			name: "hides zero-content topics, keeps the rest in order",
+			in: []Topic{
+				{Slug: "go", ContentCount: 3},
+				{Slug: "rust", ContentCount: 0},
+				{Slug: "security", ContentCount: 1},
+			},
+			want: []string{"go", "security"},
+		},
+		{
+			name: "all empty yields an empty (non-nil) slice",
+			in: []Topic{
+				{Slug: "go", ContentCount: 0},
+				{Slug: "rust", ContentCount: 0},
+			},
+			want: []string{},
+		},
+		{
+			name: "nil input yields an empty (non-nil) slice",
+			in:   nil,
+			want: []string{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := publishedOnly(tt.in)
+			if got == nil {
+				t.Fatal("publishedOnly returned nil; want non-nil slice for JSON []")
+			}
+			gotSlugs := make([]string, len(got))
+			for i, topic := range got {
+				gotSlugs[i] = topic.Slug
+			}
+			if diff := cmp.Diff(tt.want, gotSlugs); diff != "" {
+				t.Errorf("publishedOnly() slugs mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+// Handler.List, Handler.ListPublished, Handler.BySlug, and store-interaction
+// paths for Create/Update/Delete are tested via integration tests (require a
+// real database connection).
