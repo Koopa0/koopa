@@ -20,7 +20,7 @@ import { AdminNavCountsService } from './admin-nav-counts.service';
  * Admin shell — 6-group nav rail + Topbar + main router-outlet.
  * Replaces the legacy NOW/ATLAS 2-mode shell. Nav groups follow the
  * Mission Control design IA (Daily / Commitment / Knowledge / Library /
- * 輸入 Input / System).
+ * Input / System).
  * Counts are synthesized by
  * {@link AdminNavCountsService} until the unified
  * `/api/admin/system/health` envelope lands, and refreshed on every

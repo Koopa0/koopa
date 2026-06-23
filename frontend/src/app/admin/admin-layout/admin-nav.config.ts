@@ -54,8 +54,8 @@ export interface AdminNavGroup {
 
 /**
  * 6-group nav structure (Daily / Commitment / Knowledge / Library /
- * 輸入 Input / System) per the Mission Control design IA. Library holds
- * personal consumption shelves (Reading, ヨルシカ); 輸入 Input holds the
+ * Input / System) per the Mission Control design IA. Library holds
+ * personal consumption shelves (Reading, ヨルシカ); Input holds the
  * ingestion pipeline (Feeds). Kept here, not inlined in
  * AdminLayoutComponent, so the component stays small and the structure
  * is reusable by tests and the command palette.
@@ -187,7 +187,7 @@ export const ADMIN_NAV: readonly AdminNavGroup[] = [
     ],
   },
   {
-    label: '輸入 / Input',
+    label: 'Input',
     items: [
       {
         label: 'Feeds',

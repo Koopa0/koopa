@@ -138,6 +138,16 @@
   color: var(--fg-faint);
   font-weight: 500;
 }
+.ed-mast-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.ed-mast-mark {
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+}
 .ed-mast-stack {
   display: flex;
   flex-direction: column;
