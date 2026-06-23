@@ -4,10 +4,12 @@ import {
   HttpRequest,
   HttpHandlerFn,
 } from '@angular/common/http';
-import { inject, Injectable, signal } from '@angular/core';
+import { isPlatformBrowser } from '@angular/common';
+import { inject, Injectable, PLATFORM_ID, signal } from '@angular/core';
 import { Router } from '@angular/router';
 import { catchError, switchMap, throwError } from 'rxjs';
 import { AuthService } from '../services/auth.service';
+import { NotificationService } from '../services/notification.service';
 
 /**
  * Request-scoped refresh state to avoid SSR state leaks.
@@ -28,6 +30,8 @@ export const errorInterceptor: HttpInterceptorFn = (req, next) => {
   const router = inject(Router);
   const authService = inject(AuthService);
   const refreshState = inject(RefreshStateService);
+  const notifications = inject(NotificationService);
+  const isBrowser = isPlatformBrowser(inject(PLATFORM_ID));
 
   return next(req).pipe(
     catchError((error: HttpErrorResponse) => {
@@ -50,6 +54,18 @@ export const errorInterceptor: HttpInterceptorFn = (req, next) => {
               url: error.url ?? undefined,
             }),
         );
+      }
+
+      // Server and network failures: surface a friendly notice so the user is
+      // not left staring at a silent failure. Browser only — the toast host is
+      // client-side and SSR has no user to inform. The error still propagates
+      // so components can render their own state too.
+      if (isBrowser) {
+        if (error.status === 0) {
+          notifications.error('網路連線失敗，請檢查您的網路後再試');
+        } else if (error.status >= 500) {
+          notifications.error('伺服器發生錯誤，請稍後再試');
+        }
       }
 
       return throwError(() => error);

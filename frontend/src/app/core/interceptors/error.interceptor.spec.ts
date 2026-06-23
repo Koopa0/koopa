@@ -14,6 +14,7 @@ import { signal } from '@angular/core';
 import { of, throwError } from 'rxjs';
 import { errorInterceptor, RefreshStateService } from './error.interceptor';
 import { AuthService } from '../services/auth.service';
+import { NotificationService } from '../services/notification.service';
 
 describe('errorInterceptor', () => {
   let httpClient: HttpClient;
@@ -206,6 +207,45 @@ describe('errorInterceptor', () => {
         status: 0,
         statusText: 'Unknown Error',
       });
+    });
+  });
+
+  describe('server/network notifications', () => {
+    it('should show a server-error notice on 5xx', () => {
+      const notifications = TestBed.inject(NotificationService);
+      httpClient.get('/api/broken').subscribe({ error: () => undefined });
+      httpMock.expectOne('/api/broken').flush('Server Error', {
+        status: 503,
+        statusText: 'Service Unavailable',
+      });
+      expect(
+        notifications
+          .notifications()
+          .some((n) => n.type === 'error' && n.message.includes('伺服器')),
+      ).toBe(true);
+    });
+
+    it('should show a network-failure notice on status 0', () => {
+      const notifications = TestBed.inject(NotificationService);
+      httpClient.get('/api/offline').subscribe({ error: () => undefined });
+      httpMock.expectOne('/api/offline').error(new ProgressEvent('error'), {
+        status: 0,
+        statusText: 'Unknown Error',
+      });
+      expect(
+        notifications
+          .notifications()
+          .some((n) => n.type === 'error' && n.message.includes('網路')),
+      ).toBe(true);
+    });
+
+    it('should NOT notify on a 4xx client error', () => {
+      const notifications = TestBed.inject(NotificationService);
+      httpClient.get('/api/missing').subscribe({ error: () => undefined });
+      httpMock
+        .expectOne('/api/missing')
+        .flush('Not Found', { status: 404, statusText: 'Not Found' });
+      expect(notifications.notifications().length).toBe(0);
     });
   });
 
