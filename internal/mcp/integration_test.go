@@ -877,13 +877,13 @@ func TestIntegration_ProposeGoal_AsPlanner(t *testing.T) {
 	// Resolve a seeded active area to file under.
 	var areaID uuid.UUID
 	if err := testPool.QueryRow(t.Context(),
-		`SELECT id FROM areas WHERE slug = 'learning'`,
+		`SELECT id FROM areas WHERE slug = 'japanese'`,
 	).Scan(&areaID); err != nil {
 		t.Fatalf("resolving seeded area: %v", err)
 	}
 
 	_, out, err := callHandlerAs(t, "planner", s.proposeGoal, ProposeGoalInput{
-		Area:       "learning",
+		Area:       "japanese",
 		Title:      "Reach conversational Japanese",
 		Milestones: []string{"Finish Genki I", "Finish Genki II"},
 	})
@@ -2099,12 +2099,12 @@ func TestIntegration_ProjectProgress_HumanOnlyAndStalled(t *testing.T) {
 func TestIntegration_ProjectProgress_AreaNeglect(t *testing.T) {
 	s := setupServer(t)
 
-	backendID := areaIDBySlug(t, "backend")
+	careerID := areaIDBySlug(t, "career")
 	studioID := areaIDBySlug(t, "studio")
 
-	// backend: human active today → not neglected.
-	bproj := seedProgressProject(t, "backend-proj", "Backend Proj", "weekly", nil, &backendID)
-	seedActivityEvent(t, bproj, "human", time.Now())
+	// career: human active today → not neglected.
+	cproj := seedProgressProject(t, "career-proj", "Career Proj", "weekly", nil, &careerID)
+	seedActivityEvent(t, cproj, "human", time.Now())
 
 	// studio: human active 20 days ago, plus a planner event today inside
 	// the window — must stay neglected (agent doesn't reset the clock).
@@ -2121,8 +2121,8 @@ func TestIntegration_ProjectProgress_AreaNeglect(t *testing.T) {
 	for _, a := range out.Areas {
 		got[a.Slug] = a
 	}
-	if a, ok := got["backend"]; !ok || a.AreaNeglected {
-		t.Errorf("backend area_neglected = %v (present=%v), want false (human active today)", a.AreaNeglected, ok)
+	if a, ok := got["career"]; !ok || a.AreaNeglected {
+		t.Errorf("career area_neglected = %v (present=%v), want false (human active today)", a.AreaNeglected, ok)
 	}
 	if a, ok := got["studio"]; !ok || !a.AreaNeglected {
 		t.Errorf("studio area_neglected = %v (present=%v), want true (human silent 20 days; planner event must not count)", a.AreaNeglected, ok)
