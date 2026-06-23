@@ -1,9 +1,9 @@
 # Backend contract reference — admin UI (real shapes)
 
-> The **real** routes, request/response shapes, and enums from the Go backend
-> (verified against source 2026-06-07). Bind the design + Angular build to *these*
-> — don't invent field names. Domain model is backend SSOT; these are the
-> read-model contracts the views consume. ⚠️ marks alignment points to decide.
+> The **real** routes, request/response shapes, and enums from the Go backend.
+> Bind the design + Angular build to *these* — don't invent field names. Domain
+> model is backend SSOT; these are the read-model contracts the views consume.
+> ⚠️ marks alignment points to decide.
 
 All admin routes are under `/api/admin`. Mutations require `adminMid` (human-only);
 reads require `authMid`. Envelope: `{ "data": ... }`; errors `{ "error": { code, message } }`.
@@ -33,61 +33,6 @@ go through `PUT /commitment/goals/{id}/status` `{ "status": "<enum>" }`.
 
 ---
 
-## Learning — Plan
-
-**Create** `POST /learning/plans` — body:
-```json
-{ "title": "…", "description": "…", "domain": "leetcode", "goal_id"?: "uuid", "target_count"?: 10 }
-```
-**Plan status enum (5):** `draft · active · completed · paused · abandoned`.
-
-**List** `GET /learning/plans?domain=&status=` — no `domain` → management view (`draft`+`active`);
-with `domain` → all statuses unless `status=` narrows. Rows = plan fields + **`entry_total`** +
-**`entry_done`** (per-plan entry counts for the Entries/Progress columns).
-
-**Detail** `GET /learning/plans/{id}` → ⚠️ **field-name decision (#9):**
-```json
-{ "plan": {…}, "goal_name": "…", "entries": [EntryDetail], "progress": { "total", "completed", "skipped", "substituted", "remaining" } }
-```
-`goal_name` = the linked goal's title for the meta strip (`""` when the plan has no goal — never a UUID).
-The real field is **`progress`** (not `summary`). The detail response *also* currently
-embeds the plan's fields (anti-pattern) — I'll switch it to the explicit `{ plan, entries, progress }`
-above. **⚠️ Decide: keep `progress` or rename to `summary`?** I lean **`progress`**
-(matches the entity); say the word and I rename the backend (one line) if the design prefers `summary`.
-
-**EntryDetail:** `{ plan_entry_id, plan_id, learning_target_id, position, status, phase?, substituted_by?, completed_by_attempt_id?, reason? }`.
-
-**Entries** `POST /learning/plans/{id}/entries` `{ entries: [{ learning_target_id, phase? }] }` (max 100).
-**Update entry** (the **audit-gate** modal): marking `status=completed` REQUIRES
-`completed_by_attempt_id` + non-blank `reason` (server rejects otherwise, 400 `AUDIT_REQUIRED`).
-`status=substituted` requires `substituted_by` (400 otherwise). `skipped` has no extra gate.
-**Attempt picker** `GET /learning/targets/{id}/attempts?limit=` (limit 1–100, default 20) →
-newest-first attempts on one learning target:
-`[{ id, outcome, duration_minutes?, attempted_at, created_at, session_id, attempt_number, paradigm, target_title, … }]`
-— the candidate `completed_by_attempt_id` values for the audit-gate modal (replaces the raw UUID
-field). Unknown target / no attempts → `[]` (never 404); out-of-range or non-numeric limit → 400.
-
----
-
-## Learning — Domain & Hypothesis
-
-**Domain create** `POST /learning/domains` `{ "slug": "kebab-case", "name": "…" }` (slug: `[a-z0-9-]`, no leading/trailing/double hyphen; both control-char validated).
-
-**Hypothesis state enum (5):** `draft · unverified · verified · invalidated · archived`.
-Machine: `draft → unverified → verified | invalidated → archived`. `draft` is the
-pre-endorsement state — inert: excluded from brief(morning), the Today aggregate,
-and every dashboard; visible ONLY in the admin hypotheses list (render as a
-drafts/triage group). The agent MCP surface does not write hypotheses; this is
-an admin-HTTP surface.
-
-**Hypothesis create** `POST /learning/hypotheses` `{ "claim": "…", "invalidation_condition": "…", "content"?: "…", "observed_date"?: "YYYY-MM-DD" }` → lands `state=unverified` (admin create IS the endorsement). (`created_by` from the session actor.)
-**List** `GET /learning/hypotheses?state=<enum>&page=&per_page=` — optional state filter; `state=draft` is the triage view; bad value 400.
-Lifecycle: `POST /learning/hypotheses/{id}/{verify|invalidate|archive|evidence}`.
-**Endorse** `POST /learning/hypotheses/{id}/endorse` → `draft → unverified`; 200 + updated record; 409 `NOT_DRAFT` on a non-draft row; 404 unknown. *(new, v3.1)*
-**Delete (draft-only)** `DELETE /learning/hypotheses/{id}` → 204; 409 `NOT_DRAFT` for any non-draft state — endorsed/resolved rows are permanent records. *(new, v3.1)*
-
----
-
 ## Daily & GTD — Todo
 
 **Todo (Item) shape:** `{ id, title, state, due?, project_id?, completed_at?, energy?, priority?, recur_interval?, recur_unit?, description?, created_by, created_at, updated_at }`.
@@ -96,29 +41,16 @@ Lifecycle: `POST /learning/hypotheses/{id}/{verify|invalidate|archive|evidence}`
 **List (state-filtered)** `GET /commitment/todos?state=&project=&priority=&energy=&q=&sort=&limit=` — serves Inbox / Today / Pending / Someday / Done. `state` accepts a single value or a comma-separated list (`state=inbox,todo,in_progress,someday` — the server-side done exclusion for the backlog); every element must be a valid state, else 400. List rows carry `created_by`.
 **Create** `POST /commitment/todos` (`state` defaults to `inbox`; pass `state=todo` to skip clarify).
 **Advance** `POST /commitment/todos/{id}/advance` (clarify / start / complete / defer / activate / drop). `activate` = someday → todo; wrong-state → 400 `INVALID_TRANSITION`.
-**Recurring view** `GET /commitment/todos/recurring` → `{ "due_today": [Item], "overdue": [Item] }`. *(new)*
-**History view** `GET /commitment/todos/history?since=YYYY-MM-DD&q=&project=&limit=` → completed/searched items. *(new)*
+**Recurring view** `GET /commitment/todos/recurring` → `{ "due_today": [Item], "overdue": [Item] }`.
+**History view** `GET /commitment/todos/history?since=YYYY-MM-DD&q=&project=&limit=` → completed/searched items.
 
-**Daily plan** `GET /commitment/daily-plan?date=` (read) · **`PUT /commitment/daily-plan`** *(new)* `{ date?, items: [{ todo_id, position? }] }` → atomic set/reorder; rejects empty + inbox-state todos; returns the new plan + `items_removed`.
-
----
-
-## Learning — Dashboard & Summary
-
-**Dashboard** `GET /learning/dashboard?view=&domain=&confidence_filter=` →
-`{ streak_days, concepts: { count_total, counts_by_domain, rows[] }, recent_observations[], week_activity: [{ "date": "YYYY-MM-DD", "attempts": 0 }] }`.
-`week_activity` = the last 7 UTC days of attempt logging (`learning_attempts.created_at`), zero-filled, today last.
-**Summary** `GET /learning/summary` → `{ streak_days, domains: [DomainMastery] }` — the lightweight streak + per-domain mastery envelope (no due-review data).
-**Next up** `GET /learning/next-target?domain=` → `{ empty, concept_slug, concept_name, domain, mastery_stage, severity, days_since_practice, reason }` — the single concept to practice next plus a one-line human `reason`, for the dashboard "Next up" card. Session-independent: it reads the severity-ordered weakness signal over the last 30 days. This is an admin-HTTP dashboard surface, not the agent MCP surface. Optional `domain` scopes to one practice track.
-`severity` ∈ `critical · moderate · minor` (dominant band, `""` when no severity counts set); `mastery_stage` ∈ `struggling · developing` (a recommended concept is always weakness-led, never `solid`).
-**Empty state** — when there is no weakness signal in the window the response is **200** (never 404) with `{ "empty": true, "reason": "no concepts need practice in the last 30 days — nothing to recommend yet" }`; the concept fields are omitted (`omitempty`). The card renders its empty state from `reason`.
+**Daily plan** `GET /commitment/daily-plan?date=` (read) · **`PUT /commitment/daily-plan`** `{ date?, items: [{ todo_id, position? }] }` → atomic set/reorder; rejects empty + inbox-state todos; returns the new plan + `items_removed`.
 
 ---
 
-## Knowledge — Content & Note (enums for the editors)
+## Knowledge — Content (enums for the editors)
 
 **Content** type: `article · essay · build-log · til · digest`; status: `draft · review · published · archived` (lifecycle via `submit-for-review / publish / archive / revert-to-draft`); `is_public` toggle via `PATCH …/is-public`.
-**Note** kind: `solve-note · concept-note · debug-postmortem · decision-log · reading-note · musing`; maturity: `seed · stub · evergreen · needs_revision · archived` (via `POST /notes/{id}/maturity`).
 
 ---
 
@@ -146,8 +78,7 @@ No rating field, ever — reflections are the only evaluation. DATE fields are `
 
 ## Wire-shape notes
 
-1. **Plan detail** carries a `progress` block (the `Progress` type), de-embedded. Wire shape: `{ "plan": {...}, "entries": [EntryDetail], "progress": { total, completed, skipped, substituted, remaining } }` — plan fields nest under `plan`, NOT flat. Session detail follows the same nesting → `{ "session": {...}, "attempts": [...] }`.
-2. **Today aggregate** follows the contracted brief(morning) shape. Contract below.
+1. **Today aggregate** follows the contracted brief(morning) shape. Contract below.
 
 ## Daily — Today (real, wired)
 
@@ -161,9 +92,7 @@ No rating field, ever — reflections are the only evaluation. DATE fields are `
   "upcoming_todos": [PendingDetail],
   "plan_completion": { "planned": 0, "completed": 0, "deferred": 0 },
   "active_goals": [ActiveGoalSummary],
-  "unverified_hypotheses": [Hypothesis],
-  "active_session": "Session | absent (omitempty)",
   "rss_highlights": [{ "title", "url", "feed_name", "created_at" }]
 }
 ```
-All list fields are `[]`, never `null`. `active_session` is omitted (not null) when no session is open. `PendingDetail` = a todo + its project; `Item` = a daily-plan item; `ActiveGoalSummary` / `Hypothesis` / `Session` match the goal/hypothesis/learning endpoints. `unverified_hypotheses` is state-scoped to `unverified` — `draft` hypotheses (v3.1 inert drafts) never appear here.
+All list fields are `[]`, never `null`. `PendingDetail` = a todo + its project; `Item` = a daily-plan item; `ActiveGoalSummary` matches the goal endpoints.

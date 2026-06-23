@@ -196,7 +196,8 @@ func registerRoutes(
 
 	// --- Admin: Commitment / Goals ---
 	// List + Detail + status-transition + the owner decision-stamp creates
-	// (goal, milestone) that replaced the removed propose_*/commit MCP flow.
+	// (goal, milestone). Agents draft goals as inert proposals via propose_goal;
+	// Koopa activates and creates milestones here in admin.
 	// Areas back the goal-create/update area selector (PARA classification).
 	mux.Handle("GET /api/admin/commitment/areas", authMid(http.HandlerFunc(h.goal.ListAreas)))
 	mux.Handle("GET /api/admin/commitment/areas/{id}", authMid(http.HandlerFunc(h.goal.AreaDetail)))
@@ -242,8 +243,7 @@ func registerRoutes(
 	// --- Admin: Commitment / Today (aggregate) ---
 	// Today is the HTTP mirror of brief(mode=morning): todo date views
 	// (overdue / today / upcoming), the day's committed plan + completion
-	// counts, active goals, unverified hypotheses, the active learning
-	// session, and RSS highlights.
+	// counts, active goals and RSS highlights.
 	mux.Handle("GET /api/admin/commitment/today", authMid(http.HandlerFunc(h.today.Today)))
 
 	// --- Admin: Commitment / Daily plan ---

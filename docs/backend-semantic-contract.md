@@ -43,7 +43,7 @@ It is **all of the following, with explicit boundaries** (§4):
 | **Personal semantic infrastructure** | `agents.name` as universal actor identity; `activity_events` as the canonical change log written only by triggers | `internal/agent/`, `internal/activity/`, schema triggers `migrations/001_initial.up.sql` |
 | **PARA / GTD / OKR-ish system** | areas, goals, milestones, projects, todos, daily plan | `internal/goal/`, `internal/project/`, `internal/todo/`, `internal/daily/` |
 | **MCP tool surface** | **13 agent-facing tools** | `internal/mcp/ops/catalog.go::All()` (canonical list) |
-| **Knowledge / search system** | content, topics, tags, feeds, the reading shelf, the song shelf; hybrid search | `internal/content/`, `internal/search/`, `internal/mcp/search.go` |
+| **Knowledge / search system** | content, topics, feeds, the reading shelf, the song shelf; hybrid search | `internal/content/`, `internal/search/`, `internal/mcp/search.go` |
 
 > **This is a closed single-owner + ≤10-agent knowledge OS.** The
 > agent-facing MCP surface is **13 tools** (`internal/mcp/ops/catalog.go::All()`).
@@ -94,7 +94,7 @@ and are resolved only by the human owner.
 | **sqlc-generated code** | `internal/db/` | **Derived** | Generated from `query.sql` files; never hand-edited. |
 | **This contract** | `docs/backend-semantic-contract.md` | **Derived** | Shared vocabulary; below schema/code/catalog. |
 | **Cowork agent op docs** | `skills/koopa-system/` + each agent's own Cowork project `CLAUDE.md` | **Advisory** | Per-agent operational guidance; never structural truth. |
-| **Frontend route/service code** | `frontend/src/app/**` | **Advisory / assumption** | Encodes the frontend's *assumed* backend contract. The endpoints it calls (incl. `/api/admin/commitment/today`, `/api/admin/learning/summary`, `/api/admin/system/health`) **do exist** (`cmd/app/routes.go:204,269,333`); the open risk is payload compatibility and the Today fan-out-vs-aggregate split — see §6. |
+| **Frontend route/service code** | `frontend/src/app/**` | **Advisory / assumption** | Encodes the frontend's *assumed* backend contract. The endpoints it calls (incl. `/api/admin/commitment/today`, `/api/admin/system/health`) exist (`cmd/app/routes.go:247,301`); the open risk is payload compatibility and the Today fan-out-vs-aggregate split — see §6. |
 | **Audit reports** | `docs/audit/`, `docs/audit-prompts/` | **Stale / point-in-time** | Historical context only; NOT runtime truth. |
 
 **Implementation-only (no doc is authoritative; read the code):**
@@ -280,7 +280,6 @@ Confidence levels used below:
 |---|---|---|
 | Login + refresh-token rotation + token security behave as specified | claim-tested | `internal/auth/` — 27 tests incl. `auth_security_test.go` |
 | Content draft→review→publish→archive transitions enforce their CHECKs (admin-HTTP-driven; `propose_content` lands at `status=review`) | claim-tested | `internal/content/` integration (testcontainers) |
-| Tag raw→canonical alias resolution (auto + admin paths) | claim-tested | `internal/tag/` integration |
 | Feed fetch + scheduler cadence + auto-disable on failures | claim-tested | `internal/feed/scheduler_test.go` (testcontainers) |
 
 ### B. Implemented and only SURFACE-tested (parity/validation, not semantics)

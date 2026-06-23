@@ -85,11 +85,10 @@ const unknownAgent = "unknown"
 
 // requireRegisteredCaller is the weakest identity gate in the package: it
 // asserts only that a mutating call carries a KNOWN author, not that the
-// author holds any particular capability or platform. It exists for the
-// write tools that previously had no identity gate at all (capture_inbox,
-// draft_hypothesis, start_session, record_attempt, end_session, manage_plan),
-// where an unregistered or unidentified caller
-// could write to the knowledge base.
+// author holds any particular capability or platform. It guards the write
+// tools that need an attributable author (capture_inbox, propose_area,
+// propose_goal, propose_project, propose_content, resolve_task), where an
+// unregistered or unidentified caller could write to the knowledge base.
 //
 // It reuses the same registry requireAuthor already consults — no parallel
 // map — and refuses two callers:

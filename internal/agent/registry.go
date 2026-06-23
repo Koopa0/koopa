@@ -26,7 +26,7 @@ func BuiltinAgents() []Agent {
 				Trigger: TriggerCron,
 				Expr:    "0 8 * * *",
 				Backend: "cowork_desktop",
-				Purpose: "Daily briefing — todos, projects, goals, hypotheses, RSS highlights",
+				Purpose: "Daily briefing — todos, goals, RSS highlights, content pipeline",
 			},
 		},
 		{

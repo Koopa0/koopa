@@ -70,7 +70,7 @@ type ActivityStats struct {
 	Last24h int `json:"last_24h"`
 	Last7d  int `json:"last_7d"`
 	// BySource is keyed by the activity event's entity_type (todo, content,
-	// note, ...) — the changed entity's kind, not a provenance source.
+	// project, goal, ...) — the changed entity's kind, not a provenance source.
 	BySource map[string]int `json:"by_source"`
 }
 

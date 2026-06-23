@@ -84,7 +84,3 @@ sql:
             go_type:
               import: "encoding/json"
               type: "RawMessage"
-          - column: "learning_plans.plan_config"
-            go_type:
-              import: "encoding/json"
-              type: "RawMessage"

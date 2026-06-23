@@ -36,7 +36,7 @@ Out of `docs/` but in the order: `migrations/*.sql` (tier 1),
 `internal/`+`cmd/` (tier 2), `internal/mcp/ops/catalog.go` +
 `internal/mcp/authz.go` (tier 3),
 `skills/koopa-system/references/*.md` (tier 5, incl. `tools.md` — the MCP
-tool parameter reference, formerly `docs/MCP-TOOLS-v2.md`).
+tool parameter reference).
 
 ## Proposed drift checks (NOT implemented — proposals only)
 

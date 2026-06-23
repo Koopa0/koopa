@@ -1,10 +1,13 @@
 // Copyright 2026 Koopa. All rights reserved.
 
-// proposal.go holds the agent proposal tools: propose_area and propose_goal.
-// Each tool writes an INERT draft (status=proposed) that the owner reviews
-// and activates or rejects in the admin UI. The tools exist to remove
-// Koopa's authoring-from-blank paralysis: an agent that has surfaced a theme
-// or objective in conversation can propose it, and Koopa decides in triage.
+// proposal.go holds the agent proposal tools: propose_area, propose_goal,
+// propose_project, and propose_content. propose_area, propose_goal, and
+// propose_project each write an INERT draft (status=proposed) that the owner
+// activates or rejects in the admin UI; propose_content pushes a finished
+// piece into the review queue (status=review). The tools exist to remove
+// Koopa's authoring-from-blank paralysis: an agent that has surfaced a theme,
+// objective, project, or piece in conversation can propose it, and Koopa
+// decides in triage.
 //
 // # Inertness contract
 //

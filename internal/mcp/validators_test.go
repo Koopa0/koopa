@@ -23,12 +23,6 @@ func TestValidators(t *testing.T) {
 			good: []string{"high", "medium", "low"},
 			bad:  []string{"", "HIGH", "urgent", "none", "light"},
 		},
-		{
-			name: "plan_entry_status",
-			fn:   isValidPlanEntryStatus,
-			good: []string{"completed", "skipped", "substituted"},
-			bad:  []string{"", "active", "abandoned", "Completed"},
-		},
 	}
 
 	for _, tt := range tests {

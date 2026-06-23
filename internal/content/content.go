@@ -32,11 +32,8 @@ const (
 	TypeBuildLog Type = "build-log"
 	TypeTIL      Type = "til"
 	TypeDigest   Type = "digest"
-	// TypeNote has been removed — notes are a separate entity
-	// now (internal/note, notes table). The content_type ENUM no longer
-	// accepts 'note'. Use note.Kind for note sub-type typed aliases.
-	// TypeBookmark was split out earlier into the bookmarks table; the
-	// bookmark feature was later removed entirely.
+	// content_type is exactly these five values: article, essay, build-log,
+	// til, digest.
 )
 
 // Valid reports whether t is a known content type.
@@ -245,10 +242,10 @@ var (
 )
 
 // SlugConflictError is returned by CreateContent when the new slug collides
-// with an existing contents row. Callers (notably learning-studio via MCP)
-// use Slug + ContentID to decide whether the conflict represents an update
-// target (same logical note, fetch and update) or a revisit that needs a
-// new slug (with a -v2 / -revisit-<date> suffix).
+// with an existing contents row. Callers (propose_content via MCP and the
+// admin create flow) use Slug + ContentID to decide whether the conflict
+// represents an update target (same logical content piece, fetch and update)
+// or a revisit that needs a new slug (with a -v2 / -revisit-<date> suffix).
 type SlugConflictError struct {
 	Slug      string
 	ContentID uuid.UUID
@@ -508,9 +505,8 @@ func (s *Store) ContentsByTopicID(ctx context.Context, topicID uuid.UUID, page, 
 // opens one from the pool; MCP uses withActorTx).
 //
 // Slug collisions return *SlugConflictError carrying the existing row's ID
-// so callers can decide whether to update or pick a new slug (see
-// Koopa-Learning.md Step 9 revisit policy). Other unique violations
-// return the bare ErrConflict.
+// so callers can decide whether to update or pick a new slug. Other unique
+// violations return the bare ErrConflict.
 func (s *Store) CreateContent(ctx context.Context, p *CreateParams) (*Content, error) {
 	// Atomicity: the content row plus its content_topics junction rows must
 	// be written on one transaction so a junction failure rolls back the

@@ -9,9 +9,9 @@ Koopa's proposal/triage loop has two halves. The **in-app** half is built on
 koopa0.dev (nav badge + a "N proposals awaiting review →" pointer on Today).
 The **push** half — something that actively nudges Koopa to *go* review when he
 isn't already in the admin — is NOT built, and it lives on the hermes side.
-Without it the triage queue risks becoming a graveyard (Koopa's own words: an
-in-app-only surface is one he never returns to — he never reviewed draft
-hypotheses for exactly this reason).
+Without it the triage queue risks becoming a graveyard: an in-app-only surface
+is one Koopa returns to only when something actively pulls him back to the
+proposals triage queue.
 
 ## What koopa0.dev already provides (ready to consume)
 
