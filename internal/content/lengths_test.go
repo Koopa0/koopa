@@ -56,3 +56,12 @@ func TestCheckReviewNoteLength(t *testing.T) {
 		t.Error("CheckReviewNoteLength(over cap) = nil, want error")
 	}
 }
+
+func TestCheckRationaleLength(t *testing.T) {
+	if err := CheckRationaleLength(strings.Repeat("x", MaxRationaleLen)); err != nil {
+		t.Errorf("CheckRationaleLength(at cap) = %v, want nil", err)
+	}
+	if err := CheckRationaleLength(strings.Repeat("x", MaxRationaleLen+1)); err == nil {
+		t.Error("CheckRationaleLength(over cap) = nil, want error")
+	}
+}

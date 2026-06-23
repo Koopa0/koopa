@@ -68,6 +68,7 @@ const (
 	MaxExcerptLen    = 1000
 	MaxBodyBytes     = 256 * 1024
 	MaxReviewNoteLen = 4000
+	MaxRationaleLen  = 4000
 )
 
 // CheckFieldLengths enforces the content field length caps. A nil argument is
@@ -91,6 +92,15 @@ func CheckFieldLengths(title, excerpt, body *string) error {
 func CheckReviewNoteLength(note string) error {
 	if utf8.RuneCountInString(note) > MaxReviewNoteLen {
 		return fmt.Errorf("review_note too long: %d characters (max %d)", utf8.RuneCountInString(note), MaxReviewNoteLen)
+	}
+	return nil
+}
+
+// CheckRationaleLength enforces the proposal_rationale cap (runes) for the
+// propose_* agent tools.
+func CheckRationaleLength(rationale string) error {
+	if utf8.RuneCountInString(rationale) > MaxRationaleLen {
+		return fmt.Errorf("proposal_rationale too long: %d characters (max %d)", utf8.RuneCountInString(rationale), MaxRationaleLen)
 	}
 	return nil
 }

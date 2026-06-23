@@ -314,6 +314,9 @@ func validateProposeContent(input ProposeContentInput) (content.Type, string, []
 	if err := content.CheckFieldLengths(&input.Title, &input.Excerpt, &input.Body); err != nil {
 		return "", "", nil, err
 	}
+	if err := content.CheckRationaleLength(input.ProposalRationale); err != nil {
+		return "", "", nil, err
+	}
 
 	slug := strings.TrimSpace(input.Slug)
 	if slug == "" {
