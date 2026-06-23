@@ -12,7 +12,6 @@ import (
 	"log"
 	"path/filepath"
 	"runtime"
-	"testing"
 	"time"
 
 	"github.com/golang-migrate/migrate/v4"
@@ -24,60 +23,19 @@ import (
 	"github.com/testcontainers/testcontainers-go/wait"
 )
 
-// NewPool starts a pgvector PostgreSQL container, applies all migrations from
-// the project's migrations/ directory, and returns a pgxpool.Pool.
-// The container is automatically terminated when the test completes.
-func NewPool(t *testing.T) *pgxpool.Pool {
-	t.Helper()
-	ctx := t.Context()
-
-	pgContainer, err := postgres.Run(ctx,
-		"pgvector/pgvector:pg17",
-		postgres.WithDatabase("test"),
-		postgres.WithUsername("test"),
-		postgres.WithPassword("test"),
-		testcontainers.WithWaitStrategy(
-			wait.ForLog("database system is ready to accept connections").
-				WithOccurrence(2).
-				WithStartupTimeout(30*time.Second),
-		),
-	)
-	if err != nil {
-		t.Fatalf("starting postgres container: %v", err)
-	}
-	t.Cleanup(func() {
-		if termErr := pgContainer.Terminate(context.Background()); termErr != nil {
-			t.Logf("terminating postgres container: %v", termErr)
-		}
-	})
-
-	connStr, err := pgContainer.ConnectionString(ctx, "sslmode=disable")
-	if err != nil {
-		t.Fatalf("getting connection string: %v", err)
-	}
-
-	runMigrations(t, connStr)
-
-	pool, err := pgxpool.New(ctx, connStr)
-	if err != nil {
-		t.Fatalf("creating pool: %v", err)
-	}
-	t.Cleanup(pool.Close)
-
-	return pool
-}
-
-// StartPool is for use in TestMain where *testing.T is not available.
-// Returns pool + cleanup function. Call cleanup after m.Run().
+// NewPool starts a pgvector PostgreSQL container, applies all migrations, and
+// returns the pool plus a cleanup function. It uses log.Fatal rather than
+// *testing.T so it can run from TestMain (where no *testing.T exists); call
+// cleanup after m.Run().
 //
 //	var testPool *pgxpool.Pool
 //	func TestMain(m *testing.M) {
-//	    testPool, cleanup := testdb.StartPool()
+//	    testPool, cleanup := testdb.NewPool()
 //	    code := m.Run()
 //	    cleanup()
 //	    os.Exit(code)
 //	}
-func StartPool() (pool *pgxpool.Pool, cleanup func()) {
+func NewPool() (pool *pgxpool.Pool, cleanup func()) {
 	ctx := context.Background()
 
 	pgContainer, err := postgres.Run(ctx,
@@ -146,26 +104,4 @@ func TruncateCtx(ctx context.Context, pool *pgxpool.Pool, tables ...string) erro
 		}
 	}
 	return nil
-}
-
-func runMigrations(t *testing.T, connStr string) {
-	t.Helper()
-
-	_, thisFile, _, _ := runtime.Caller(0)
-	migrationsDir := filepath.Join(filepath.Dir(thisFile), "..", "..", "migrations")
-
-	m, err := migrate.New("file://"+migrationsDir, "pgx5://"+connStr[len("postgres://"):])
-	if err != nil {
-		t.Fatalf("creating migrator: %v", err)
-	}
-	if err := m.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
-		t.Fatalf("running migrations: %v", err)
-	}
-	srcErr, dbErr := m.Close()
-	if srcErr != nil {
-		t.Fatalf("closing migration source: %v", srcErr)
-	}
-	if dbErr != nil {
-		t.Fatalf("closing migration db: %v", dbErr)
-	}
 }

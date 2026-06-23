@@ -33,7 +33,7 @@ import (
 var testPool *pgxpool.Pool
 
 func TestMain(m *testing.M) {
-	pool, cleanup := testdb.StartPool()
+	pool, cleanup := testdb.NewPool()
 	testPool = pool
 
 	// feeds writes fire an audit trigger that writes activity_events.actor

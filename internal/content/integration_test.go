@@ -22,7 +22,7 @@ import (
 var testPool *pgxpool.Pool
 
 func TestMain(m *testing.M) {
-	pool, cleanup := testdb.StartPool()
+	pool, cleanup := testdb.NewPool()
 	testPool = pool
 	code := m.Run()
 	cleanup()

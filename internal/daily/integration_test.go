@@ -52,7 +52,7 @@ import (
 var testPool *pgxpool.Pool
 
 func TestMain(m *testing.M) {
-	pool, cleanup := testdb.StartPool()
+	pool, cleanup := testdb.NewPool()
 	testPool = pool
 
 	// daily_plan_items.selected_by + the audit trigger's actor FK onto agents.

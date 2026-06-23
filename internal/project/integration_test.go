@@ -45,7 +45,7 @@ import (
 var testPool *pgxpool.Pool
 
 func TestMain(m *testing.M) {
-	pool, cleanup := testdb.StartPool()
+	pool, cleanup := testdb.NewPool()
 	testPool = pool
 
 	// activity_events.actor has an FK onto agents; without seeded agent

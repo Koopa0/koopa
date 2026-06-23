@@ -58,7 +58,7 @@ import (
 var testPool *pgxpool.Pool
 
 func TestMain(m *testing.M) {
-	pool, cleanup := testdb.StartPool()
+	pool, cleanup := testdb.NewPool()
 	testPool = pool
 
 	// goals / milestones audit triggers write activity_events.actor, which
