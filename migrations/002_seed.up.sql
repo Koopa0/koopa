@@ -4,13 +4,16 @@
 -- Areas (PARA Areas of Responsibility)
 -- ============================================================
 
+-- The six real life-domains (PARA Areas). Names are authoritative; slugs are
+-- ASCII romanizations for URL-safe addressing; descriptions are left blank for
+-- the owner to fill in admin rather than seeded with assumed framing.
 INSERT INTO areas (slug, name, description, sort_order) VALUES
-    ('backend',   'Backend',   'Go API development, system design, infrastructure',  1),
-    ('learning',  'Learning',  'Language study, LeetCode, books, courses',            2),
-    ('studio',    'Studio',    'Content production, writing, publishing',             3),
-    ('frontend',  'Frontend',  'Angular, UI/UX, SSR',                                4),
-    ('career',    'Career',    'GDE application, community, professional growth',     5),
-    ('ops',       'Ops',       'DevOps, deployment, monitoring, VPS',                 6)
+    ('studio',     '工作室與系統', '', 1),
+    ('japanese',   '日語',         '', 2),
+    ('literature', '文學閱讀',     '', 3),
+    ('yorushika',  'ヨルシカ',     '', 4),
+    ('career',     '職涯',         '', 5),
+    ('body',       '身體',         '', 6)
 ON CONFLICT (slug) DO NOTHING;
 
 -- ============================================================
@@ -87,26 +90,26 @@ BEGIN
     -- Feed-topic mapping: (feed_name, topic_slugs[])
     FOR _mapping IN
         SELECT * FROM (VALUES
-            ('Ardan Labs',              ARRAY['go','rust','kubernetes','ai','devops','design']),
+            ('Ardan Labs',              ARRAY['go','rust','infrastructure']),
             ('The Go Blog',             ARRAY['go']),
             ('Golang Weekly',           ARRAY['go']),
             ('Alex Edwards',            ARRAY['go']),
             ('Rust Blog',               ARRAY['rust']),
             ('This Week in Rust',       ARRAY['rust']),
-            ('Angular Blog',            ARRAY['angular','frontend']),
-            ('Flutter Blog',            ARRAY['flutter','dart','mobile']),
-            ('Cloudflare Blog',         ARRAY['infra','networking','workers']),
-            ('Simon Willison''s Weblog', ARRAY['ai','llm']),
-            ('Google Research Blog',    ARRAY['ai','ml']),
-            ('Latent Space',            ARRAY['ai','llm']),
-            ('Google AI Blog',          ARRAY['ai','llm','ml']),
-            ('DeepMind Blog',           ARRAY['ai','ml']),
-            ('Google Developers Blog',  ARRAY['go','angular','flutter','ai','mobile','frontend']),
-            ('Google Cloud Blog',       ARRAY['kubernetes','docker','infra','database','ai']),
-            ('Google Dev Updates',      ARRAY['go','angular','flutter','ai']),
-            ('Hugging Face Blog',       ARRAY['ai','llm','ml']),
+            ('Angular Blog',            ARRAY['frontend']),
+            ('Flutter Blog',            ARRAY['frontend']),
+            ('Cloudflare Blog',         ARRAY['infrastructure','security']),
+            ('Simon Willison''s Weblog', ARRAY['ai-agents']),
+            ('Google Research Blog',    ARRAY['ai-agents']),
+            ('Latent Space',            ARRAY['ai-agents']),
+            ('Google AI Blog',          ARRAY['ai-agents']),
+            ('DeepMind Blog',           ARRAY['ai-agents']),
+            ('Google Developers Blog',  ARRAY['go','frontend','ai-agents']),
+            ('Google Cloud Blog',       ARRAY['infrastructure','ai-agents']),
+            ('Google Dev Updates',      ARRAY['go','frontend','ai-agents']),
+            ('Hugging Face Blog',       ARRAY['ai-agents']),
             ('ByteByteGo',             ARRAY['system-design']),
-            ('Anthropic Blog',          ARRAY['ai','llm'])
+            ('Anthropic Blog',          ARRAY['ai-agents'])
         ) AS t(feed_name, topic_slugs)
     LOOP
         SELECT id INTO _feed_id FROM feeds WHERE name = _mapping.feed_name;
@@ -124,9 +127,8 @@ BEGIN
 END $$;
 
 -- ============================================================
--- Agent schedules (known schedules from Cowork instructions)
+-- Agent schedules
 -- ============================================================
--- NOTE: As of the coordination rebuild, schedule definitions live in the Go
--- BuiltinAgents() literal under internal/agent/registry.go, not in the database.
--- Only the run audit log (process_runs, kind='agent_schedule', subsystem=
--- agent.Platform) persists in the DB.
+-- Schedule definitions live in the Go BuiltinAgents() literal under
+-- internal/agent/registry.go, not in the database. Only the run audit log
+-- (process_runs, kind='agent_schedule', subsystem=agent.Platform) persists here.
