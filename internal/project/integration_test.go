@@ -3,8 +3,8 @@
 //go:build integration
 
 // Integration coverage for the admin project detail endpoint. The handler
-// aggregates data from five sources (project row, profile, goal, todos,
-// activity, content) and had to exist for the ProjectInspector frontend
+// aggregates data from four sources (project row, goal, todos, activity,
+// content) and had to exist for the ProjectInspector frontend
 // to stop 404'ing. This suite pins the wire contract so a future refactor
 // cannot silently drop a field.
 //
@@ -105,7 +105,7 @@ func callDetail(t *testing.T, h *project.Handler, id string) (detail project.Det
 }
 
 // seedBareProject inserts a minimal project row and returns its id. Used
-// by tests that need a project without a profile / tasks / activity.
+// by tests that need a project without tasks / activity.
 func seedBareProject(t *testing.T, slug, title string) uuid.UUID {
 	t.Helper()
 	var id uuid.UUID
@@ -141,32 +141,10 @@ func truncate(t *testing.T) {
 	t.Helper()
 	_, err := testPool.Exec(t.Context(), `
 		TRUNCATE contents, todos, activity_events,
-		         project_profiles, projects, goals
+		         projects, goals
 		RESTART IDENTITY CASCADE`)
 	if err != nil {
 		t.Fatalf("truncate: %v", err)
-	}
-}
-
-// archiveProjectTx runs project.Store.UpdateStatus(archived) inside a
-// committed pgx.Tx. The archived transition demotes the project_profile in
-// the same tx, so UpdateStatus rejects a pool-backed store with
-// ErrNotTransactional — the integration suite must drive it through a
-// transaction just like api.ActorMiddleware does for the admin route.
-func archiveProjectTx(t *testing.T, projectID uuid.UUID) {
-	t.Helper()
-	ctx := t.Context()
-	tx, err := testPool.Begin(ctx)
-	if err != nil {
-		t.Fatalf("Begin tx: %v", err)
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-
-	if _, err := project.NewStore(tx).UpdateStatus(ctx, projectID, project.StatusArchived, nil, nil); err != nil {
-		t.Fatalf("store.UpdateStatus(archived): %v", err)
-	}
-	if err := tx.Commit(ctx); err != nil {
-		t.Fatalf("Commit tx: %v", err)
 	}
 }
 
@@ -195,10 +173,9 @@ func TestIntegration_Detail_InvalidIDReturns400(t *testing.T) {
 }
 
 // TestIntegration_Detail_BareProject is the minimal happy path — a
-// project row exists but has no profile, no goal, no tasks, no activity,
-// no related content. The handler must still return 200 with all
-// aggregate fields rendered as empty collections (never null) and
-// nullable string fields as nil.
+// project row exists but has no goal, no tasks, no activity, no related
+// content. The handler must still return 200 with all aggregate fields
+// rendered as empty collections (never null).
 func TestIntegration_Detail_BareProject(t *testing.T) {
 	truncate(t)
 	id := seedBareProject(t, "test-bare", "Bare Project")
@@ -217,9 +194,6 @@ func TestIntegration_Detail_BareProject(t *testing.T) {
 	}
 	if detail.Slug != "test-bare" {
 		t.Errorf("slug = %q, want %q", detail.Slug, "test-bare")
-	}
-	if detail.Problem != nil || detail.Solution != nil || detail.Architecture != nil {
-		t.Error("problem/solution/architecture should be nil when profile absent")
 	}
 	if detail.GoalBreadcrumb != nil {
 		t.Error("goal_breadcrumb should be nil when project has no goal")
@@ -255,16 +229,6 @@ func TestIntegration_Detail_FullAggregate(t *testing.T) {
 		"test-full", "Full Project", goalID,
 	).Scan(&projectID); err != nil {
 		t.Fatalf("seeding project: %v", err)
-	}
-
-	// Profile — case-study fields are the only reason the detail
-	// endpoint surfaces problem/solution/architecture.
-	if _, err := testPool.Exec(t.Context(),
-		`INSERT INTO project_profiles (project_id, problem, solution, architecture)
-		 VALUES ($1, 'prob', 'soln', 'arch')`,
-		projectID,
-	); err != nil {
-		t.Fatalf("seeding profile: %v", err)
 	}
 
 	// Todos across four states to exercise the grouping. The schema
@@ -315,14 +279,6 @@ func TestIntegration_Detail_FullAggregate(t *testing.T) {
 		t.Fatalf("status = %d, want 200", status)
 	}
 
-	// Profile fields — the inspector's main header content.
-	if detail.Problem == nil || *detail.Problem != "prob" {
-		t.Errorf("problem = %v, want 'prob'", detail.Problem)
-	}
-	if detail.Solution == nil || *detail.Solution != "soln" {
-		t.Errorf("solution = %v, want 'soln'", detail.Solution)
-	}
-
 	// Goal breadcrumb.
 	if detail.GoalBreadcrumb == nil {
 		t.Fatal("goal_breadcrumb should be present")
@@ -357,80 +313,12 @@ func TestIntegration_Detail_FullAggregate(t *testing.T) {
 	}
 }
 
-// TestIntegration_ProjectArchive_TogglesProfilePublic exercises the archive
-// coupling: archiving a project must demote its project_profile from
-// public display so archived work stays off the public portfolio. The
-// coupling used to live in the archive_project_profile() trigger; it now
-// lives in project.Store.UpdateStatus (per .claude/rules/postgres-
-// patterns.md — no business logic in triggers). Going through the Go
-// store here is the point — a raw UPDATE would silently skip the demote
-// and that is the guarantee we want the test to fail on.
-// Scenario: seed a project (status=in_progress) + project_profile
-// (is_public=true, featured=true) → store.UpdateStatus(archived) →
-// assert profile.is_public and profile.featured are now both false.
-func TestIntegration_ProjectArchive_TogglesProfilePublic(t *testing.T) {
-	truncate(t)
-
-	var projectID uuid.UUID
-	if err := testPool.QueryRow(t.Context(),
-		`INSERT INTO projects (slug, title, description, status)
-		 VALUES ('archive-coupling', 'Archive Coupling Fixture', 'fixture', 'in_progress')
-		 RETURNING id`,
-	).Scan(&projectID); err != nil {
-		t.Fatalf("seeding project: %v", err)
-	}
-
-	if _, err := testPool.Exec(t.Context(),
-		`INSERT INTO project_profiles (project_id, is_public, featured)
-		 VALUES ($1, true, true)`, projectID,
-	); err != nil {
-		t.Fatalf("seeding project_profile: %v", err)
-	}
-
-	// Precondition: the profile starts public + featured.
-	var preIsPublic, preFeatured bool
-	if err := testPool.QueryRow(t.Context(),
-		`SELECT is_public, featured FROM project_profiles WHERE project_id = $1`, projectID,
-	).Scan(&preIsPublic, &preFeatured); err != nil {
-		t.Fatalf("reading profile pre-archive: %v", err)
-	}
-	if !preIsPublic || !preFeatured {
-		t.Fatalf("pre-archive profile state = (is_public=%v, featured=%v), want both true",
-			preIsPublic, preFeatured)
-	}
-
-	// Archive the project via the Go store — the path that owns the
-	// coupling now. UpdateStatus(archived) performs the status UPDATE plus
-	// the profile demote as a unit and rejects a pool-backed store with
-	// ErrNotTransactional, so drive it through a committed pgx.Tx exactly as
-	// api.ActorMiddleware does for the production admin route.
-	archiveProjectTx(t, projectID)
-
-	// Post-update: is_public and featured must both have flipped to
-	// false. A regression in project.Store.UpdateStatus or a missing
-	// DemoteProjectProfileOnArchive call shows up here.
-	var postIsPublic, postFeatured bool
-	if err := testPool.QueryRow(t.Context(),
-		`SELECT is_public, featured FROM project_profiles WHERE project_id = $1`, projectID,
-	).Scan(&postIsPublic, &postFeatured); err != nil {
-		t.Fatalf("reading profile post-archive: %v", err)
-	}
-	if postIsPublic {
-		t.Error("profile.is_public = true after archive, want false (archive coupling regression)")
-	}
-	if postFeatured {
-		t.Error("profile.featured = true after archive, want false (archive coupling regression)")
-	}
-}
-
 // TestIntegration_Project_InvalidInput verifies that values the database
 // rejects on the project write paths surface as project.ErrInvalidInput —
 // which the handler maps to HTTP 400 — instead of a wrapped error rendered as
-// an opaque 500. It covers the four reachable classes: a foreign key pointing
+// an opaque 500. It covers the three reachable classes: a foreign key pointing
 // at a non-existent goal_id (23503), a malformed slug (chk_project_slug_format
-// 23514), an out-of-range expected_cadence (the cadence CHECK 23514), a
-// malformed profile url (chk_project_profile_github_url 23514), and the
-// not-public-if-archived trigger (P0001).
+// 23514), and an out-of-range expected_cadence (the cadence CHECK 23514).
 func TestIntegration_Project_InvalidInput(t *testing.T) {
 	truncate(t)
 	store := project.NewStore(testPool)
@@ -473,30 +361,6 @@ func TestIntegration_Project_InvalidInput(t *testing.T) {
 				return err
 			},
 		},
-		{
-			name: "upsert profile with non-https github_url (chk_project_profile_github_url 23514)",
-			run: func() error {
-				id := seedBareProject(t, "github-url-target", "GitHub URL Target")
-				badURL := "http://gitlab.com/owner/repo"
-				_, err := store.UpsertProfile(ctx, &project.UpsertProfileParams{
-					ProjectID: id,
-					GithubURL: &badURL,
-				})
-				return err
-			},
-		},
-		{
-			name: "upsert public profile on archived project (not_public_if_archived trigger P0001)",
-			run: func() error {
-				id := seedBareProject(t, "archived-public-target", "Archived Public Target")
-				archiveProjectTx(t, id)
-				_, err := store.UpsertProfile(ctx, &project.UpsertProfileParams{
-					ProjectID: id,
-					IsPublic:  true,
-				})
-				return err
-			},
-		},
 	}
 
 	for _, tt := range tests {
@@ -509,11 +373,9 @@ func TestIntegration_Project_InvalidInput(t *testing.T) {
 }
 
 // TestIntegration_ProposedProject_InertButResolvable pins the propose_project
-// leak contract: a proposed project is excluded from the admin project list and
-// the public portfolio — even when a public profile is attached out of band,
-// proving the exclusion is the explicit status guard and not merely the absence
-// of a profile — yet remains resolvable by slug so capture_inbox can link a todo
-// to it before the owner activates it.
+// contract: a proposed project is excluded from the admin project list (the
+// explicit status guard) yet remains resolvable by slug so capture_inbox can
+// link a todo to it before the owner activates it.
 func TestIntegration_ProposedProject_InertButResolvable(t *testing.T) {
 	truncate(t)
 	store := project.NewStore(testPool)
@@ -521,20 +383,6 @@ func TestIntegration_ProposedProject_InertButResolvable(t *testing.T) {
 
 	proposedID := seedProjectWithStatus(t, "ghost-tool", "Ghost Tool", "proposed")
 	realID := seedProjectWithStatus(t, "real-tool", "Real Tool", "in_progress")
-
-	// Give BOTH a public profile out of band. The proposed one must STILL be
-	// excluded from the public list — if the guard relied only on the proposed
-	// row lacking a profile, this would leak it.
-	for _, id := range []uuid.UUID{proposedID, realID} {
-		if _, err := store.UpsertProfile(ctx, &project.UpsertProfileParams{
-			ProjectID:  id,
-			IsPublic:   true,
-			TechStack:  []string{},
-			Highlights: []string{},
-		}); err != nil {
-			t.Fatalf("UpsertProfile(%s): %v", id, err)
-		}
-	}
 
 	// Admin list: real present, proposed absent.
 	admin, err := store.Projects(ctx)
@@ -548,18 +396,6 @@ func TestIntegration_ProposedProject_InertButResolvable(t *testing.T) {
 		t.Errorf("admin project list missing real project %s", realID)
 	}
 
-	// Public list: real present, proposed absent despite the public profile.
-	pub, err := store.PublicProjects(ctx)
-	if err != nil {
-		t.Fatalf("PublicProjects: %v", err)
-	}
-	if containsProjectID(pub, proposedID) {
-		t.Errorf("public project list includes proposed project %s, want excluded by status guard", proposedID)
-	}
-	if !containsProjectID(pub, realID) {
-		t.Errorf("public project list missing real project %s", realID)
-	}
-
 	// Resolver: the proposed project is still resolvable by slug for capture.
 	got, err := store.ProjectBySlug(ctx, "ghost-tool")
 	if err != nil {
@@ -570,86 +406,6 @@ func TestIntegration_ProposedProject_InertButResolvable(t *testing.T) {
 	}
 	if got.Status != project.StatusProposed {
 		t.Errorf("ProjectBySlug(ghost-tool).Status = %q, want %q", got.Status, project.StatusProposed)
-	}
-}
-
-// callPublicBySlug runs the PUBLIC GET /api/projects/{slug} handler against a
-// fabricated request and returns the HTTP status. The public route is
-// unauthenticated, so it must 404 anything that is not publicly visible.
-func callPublicBySlug(t *testing.T, h *project.Handler, slug string) int {
-	t.Helper()
-	req := httptest.NewRequest(http.MethodGet, "/api/projects/"+slug, http.NoBody)
-	req.SetPathValue("slug", slug)
-	w := httptest.NewRecorder()
-	h.BySlug(w, req)
-	resp := w.Result()
-	defer resp.Body.Close()
-	return resp.StatusCode
-}
-
-// TestIntegration_PublicBySlug_GatesVisibility pins the publicity guard on the
-// unauthenticated /api/projects/{slug} route: a proposed inert draft and a
-// non-public project each 404, while a non-proposed project with a public
-// profile 200s. Before the guard, the route returned ANY project by slug,
-// leaking proposed drafts and private work. Each case carries a public-ish
-// shape that would 200 under the old plain-by-slug query, so the test fails if
-// the gate is removed.
-func TestIntegration_PublicBySlug_GatesVisibility(t *testing.T) {
-	truncate(t)
-	store := project.NewStore(testPool)
-	ctx := t.Context()
-	h := newDetailHandler(t)
-
-	// Public project: non-proposed + public profile → must 200.
-	publicID := seedProjectWithStatus(t, "public-slug", "Public Slug", "in_progress")
-	if _, err := store.UpsertProfile(ctx, &project.UpsertProfileParams{
-		ProjectID:  publicID,
-		IsPublic:   true,
-		TechStack:  []string{},
-		Highlights: []string{},
-	}); err != nil {
-		t.Fatalf("UpsertProfile(public): %v", err)
-	}
-
-	// Private project: non-proposed but profile is_public=false → must 404.
-	privateID := seedProjectWithStatus(t, "private-slug", "Private Slug", "in_progress")
-	if _, err := store.UpsertProfile(ctx, &project.UpsertProfileParams{
-		ProjectID:  privateID,
-		IsPublic:   false,
-		TechStack:  []string{},
-		Highlights: []string{},
-	}); err != nil {
-		t.Fatalf("UpsertProfile(private): %v", err)
-	}
-
-	// Proposed project: a public profile attached out of band must NOT save it —
-	// the status guard still excludes it → must 404.
-	proposedID := seedProjectWithStatus(t, "proposed-slug", "Proposed Slug", "proposed")
-	if _, err := store.UpsertProfile(ctx, &project.UpsertProfileParams{
-		ProjectID:  proposedID,
-		IsPublic:   true,
-		TechStack:  []string{},
-		Highlights: []string{},
-	}); err != nil {
-		t.Fatalf("UpsertProfile(proposed): %v", err)
-	}
-
-	tests := []struct {
-		name string
-		slug string
-		want int
-	}{
-		{name: "public project 200s", slug: "public-slug", want: http.StatusOK},
-		{name: "private project 404s", slug: "private-slug", want: http.StatusNotFound},
-		{name: "proposed project 404s despite public profile", slug: "proposed-slug", want: http.StatusNotFound},
-		{name: "missing slug 404s", slug: "no-such-slug", want: http.StatusNotFound},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := callPublicBySlug(t, h, tt.slug); got != tt.want {
-				t.Errorf("BySlug(%q) status = %d, want %d", tt.slug, got, tt.want)
-			}
-		})
 	}
 }
 

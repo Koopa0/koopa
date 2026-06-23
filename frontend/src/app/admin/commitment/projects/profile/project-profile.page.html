@@ -94,51 +94,6 @@
   </section>
   }
 
-  <!-- Facets: Problem / Solution / Architecture -->
-  @if (p.problem || p.solution || p.architecture) {
-  <div class="grid gap-4 md:grid-cols-3">
-    @if (p.problem) {
-    <section
-      class="rounded-sm border border-border p-4"
-      data-testid="project-problem"
-    >
-      <h3
-        class="mb-2 font-mono text-[10px] uppercase tracking-wider text-fg-subtle"
-      >
-        Problem
-      </h3>
-      <p class="whitespace-pre-wrap text-xs text-fg-muted">{{ p.problem }}</p>
-    </section>
-    } @if (p.solution) {
-    <section
-      class="rounded-sm border border-border p-4"
-      data-testid="project-solution"
-    >
-      <h3
-        class="mb-2 font-mono text-[10px] uppercase tracking-wider text-fg-subtle"
-      >
-        Solution
-      </h3>
-      <p class="whitespace-pre-wrap text-xs text-fg-muted">{{ p.solution }}</p>
-    </section>
-    } @if (p.architecture) {
-    <section
-      class="rounded-sm border border-border p-4"
-      data-testid="project-architecture"
-    >
-      <h3
-        class="mb-2 font-mono text-[10px] uppercase tracking-wider text-fg-subtle"
-      >
-        Architecture
-      </h3>
-      <p class="whitespace-pre-wrap text-xs text-fg-muted">
-        {{ p.architecture }}
-      </p>
-    </section>
-    }
-  </div>
-  }
-
   <!-- Todos by state -->
   <section
     class="rounded-sm border border-border p-5"

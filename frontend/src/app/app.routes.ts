@@ -55,18 +55,6 @@ export const routes: Routes = [
   { path: 'til/:slug', redirectTo: '/articles/:slug' },
   { path: 'build-logs/:slug', redirectTo: '/articles/:slug' },
   {
-    path: 'projects',
-    loadComponent: () =>
-      import('./pages/projects/projects').then((m) => m.ProjectsComponent),
-  },
-  {
-    path: 'projects/:slug',
-    loadComponent: () =>
-      import('./pages/project-detail/project-detail').then(
-        (m) => m.ProjectDetailComponent,
-      ),
-  },
-  {
     path: 'topics',
     loadComponent: () =>
       import('./pages/topics/topics').then((m) => m.TopicsComponent),

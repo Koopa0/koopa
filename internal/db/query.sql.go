@@ -2409,15 +2409,6 @@ func (q *Queries) DeletePlannedItemsByDate(ctx context.Context, planDate time.Ti
 	return items, nil
 }
 
-const deleteProfile = `-- name: DeleteProfile :exec
-DELETE FROM project_profiles WHERE project_id = $1
-`
-
-func (q *Queries) DeleteProfile(ctx context.Context, projectID uuid.UUID) error {
-	_, err := q.db.Exec(ctx, deleteProfile, projectID)
-	return err
-}
-
 const deleteProject = `-- name: DeleteProject :exec
 DELETE FROM projects WHERE id = $1
 `
@@ -2478,8 +2469,7 @@ DELETE FROM projects WHERE id = $1 AND status = 'proposed'
 
 // Reject (hard DELETE) a proposed project. Proposed-only: a non-proposed project
 // is a real planning record and must never be deleted by this path. Linked todos
-// and contents survive unclassified (their project_id is ON DELETE SET NULL); the
-// project_profile CASCADEs.
+// and contents survive unclassified (their project_id is ON DELETE SET NULL).
 func (q *Queries) DeleteProposedProject(ctx context.Context, id uuid.UUID) (int64, error) {
 	result, err := q.db.Exec(ctx, deleteProposedProject, id)
 	if err != nil {
@@ -2571,23 +2561,6 @@ DELETE FROM topics WHERE id = $1
 
 func (q *Queries) DeleteTopic(ctx context.Context, id uuid.UUID) error {
 	_, err := q.db.Exec(ctx, deleteTopic, id)
-	return err
-}
-
-const demoteProjectProfileOnArchive = `-- name: DemoteProjectProfileOnArchive :exec
-UPDATE project_profiles
-   SET is_public = FALSE,
-       featured  = FALSE,
-       updated_at = now()
- WHERE project_id = $1
-`
-
-// Demote the project_profile from public display. Used by
-// project.Store.UpdateStatus when a project transitions to archived.
-// Replaces the former archive_project_profile() trigger; business logic
-// belongs in Go (per .claude/rules/postgres-patterns.md).
-func (q *Queries) DemoteProjectProfileOnArchive(ctx context.Context, projectID uuid.UUID) error {
-	_, err := q.db.Exec(ctx, demoteProjectProfileOnArchive, projectID)
 	return err
 }
 
@@ -4360,38 +4333,6 @@ func (q *Queries) PendingTodoItemsWithProject(ctx context.Context, arg PendingTo
 	return items, nil
 }
 
-const profileByProjectID = `-- name: ProfileByProjectID :one
-SELECT project_id, long_description, role, tech_stack, highlights,
-       problem, solution, architecture, results, github_url, live_url,
-       cover_image, featured, is_public, sort_order, created_at, updated_at
-FROM project_profiles WHERE project_id = $1
-`
-
-func (q *Queries) ProfileByProjectID(ctx context.Context, projectID uuid.UUID) (ProjectProfile, error) {
-	row := q.db.QueryRow(ctx, profileByProjectID, projectID)
-	var i ProjectProfile
-	err := row.Scan(
-		&i.ProjectID,
-		&i.LongDescription,
-		&i.Role,
-		&i.TechStack,
-		&i.Highlights,
-		&i.Problem,
-		&i.Solution,
-		&i.Architecture,
-		&i.Results,
-		&i.GithubUrl,
-		&i.LiveUrl,
-		&i.CoverImage,
-		&i.Featured,
-		&i.IsPublic,
-		&i.SortOrder,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
 const projectByAlias = `-- name: ProjectByAlias :one
 SELECT p.id, p.slug, p.title, p.description,
        p.status, p.repo, p.area_id, p.goal_id, p.deadline, p.last_activity_at,
@@ -5149,179 +5090,6 @@ func (q *Queries) ProposedProjectsCount(ctx context.Context) (int64, error) {
 	var proposed_projects int64
 	err := row.Scan(&proposed_projects)
 	return proposed_projects, err
-}
-
-const publicProfiles = `-- name: PublicProfiles :many
-SELECT p.id, p.slug, p.title, p.description, p.status, p.repo,
-       p.deadline, p.last_activity_at, p.created_at AS project_created_at,
-       pp.long_description, pp.role, pp.tech_stack, pp.highlights,
-       pp.problem, pp.solution, pp.architecture, pp.results,
-       pp.github_url, pp.live_url, pp.cover_image,
-       pp.featured, pp.sort_order, pp.updated_at
-FROM projects p
-JOIN project_profiles pp ON pp.project_id = p.id
-WHERE pp.is_public = true AND p.status <> 'proposed'
-ORDER BY pp.featured DESC, pp.sort_order, p.title
-`
-
-type PublicProfilesRow struct {
-	ID               uuid.UUID     `json:"id"`
-	Slug             string        `json:"slug"`
-	Title            string        `json:"title"`
-	Description      string        `json:"description"`
-	Status           ProjectStatus `json:"status"`
-	Repo             *string       `json:"repo"`
-	Deadline         *time.Time    `json:"deadline"`
-	LastActivityAt   *time.Time    `json:"last_activity_at"`
-	ProjectCreatedAt time.Time     `json:"project_created_at"`
-	LongDescription  *string       `json:"long_description"`
-	Role             *string       `json:"role"`
-	TechStack        []string      `json:"tech_stack"`
-	Highlights       []string      `json:"highlights"`
-	Problem          *string       `json:"problem"`
-	Solution         *string       `json:"solution"`
-	Architecture     *string       `json:"architecture"`
-	Results          *string       `json:"results"`
-	GithubUrl        *string       `json:"github_url"`
-	LiveUrl          *string       `json:"live_url"`
-	CoverImage       *string       `json:"cover_image"`
-	Featured         bool          `json:"featured"`
-	SortOrder        int32         `json:"sort_order"`
-	UpdatedAt        time.Time     `json:"updated_at"`
-}
-
-// List public project profiles joined with their projects for the portfolio
-// page. Proposed projects are inert drafts, never publicly listed (same guard
-// as PublicProjects).
-func (q *Queries) PublicProfiles(ctx context.Context) ([]PublicProfilesRow, error) {
-	rows, err := q.db.Query(ctx, publicProfiles)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []PublicProfilesRow{}
-	for rows.Next() {
-		var i PublicProfilesRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.Slug,
-			&i.Title,
-			&i.Description,
-			&i.Status,
-			&i.Repo,
-			&i.Deadline,
-			&i.LastActivityAt,
-			&i.ProjectCreatedAt,
-			&i.LongDescription,
-			&i.Role,
-			&i.TechStack,
-			&i.Highlights,
-			&i.Problem,
-			&i.Solution,
-			&i.Architecture,
-			&i.Results,
-			&i.GithubUrl,
-			&i.LiveUrl,
-			&i.CoverImage,
-			&i.Featured,
-			&i.SortOrder,
-			&i.UpdatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const publicProjectBySlug = `-- name: PublicProjectBySlug :one
-SELECT p.id, p.slug, p.title, p.description, p.status, p.repo, p.area_id, p.goal_id,
-       p.deadline, p.last_activity_at, p.expected_cadence, p.created_by, p.proposal_rationale,
-       p.created_at, p.updated_at
-FROM projects p
-JOIN project_profiles pp ON pp.project_id = p.id
-WHERE p.slug = $1 AND pp.is_public = true AND p.status <> 'proposed'
-`
-
-// Public project lookup by slug. Gated to publicly-visible projects only:
-// the project must have a project_profiles row with is_public = true and a
-// non-proposed status. This is the same publicity model as PublicProjects /
-// PublicProfiles — a proposed inert draft or a private project must NOT be
-// reachable through the unauthenticated /api/projects/{slug} route.
-func (q *Queries) PublicProjectBySlug(ctx context.Context, slug string) (Project, error) {
-	row := q.db.QueryRow(ctx, publicProjectBySlug, slug)
-	var i Project
-	err := row.Scan(
-		&i.ID,
-		&i.Slug,
-		&i.Title,
-		&i.Description,
-		&i.Status,
-		&i.Repo,
-		&i.AreaID,
-		&i.GoalID,
-		&i.Deadline,
-		&i.LastActivityAt,
-		&i.ExpectedCadence,
-		&i.CreatedBy,
-		&i.ProposalRationale,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
-const publicProjects = `-- name: PublicProjects :many
-SELECT p.id, p.slug, p.title, p.description, p.status, p.repo, p.area_id, p.goal_id,
-       p.deadline, p.last_activity_at, p.expected_cadence, p.created_by, p.proposal_rationale,
-       p.created_at, p.updated_at
-FROM projects p
-JOIN project_profiles pp ON pp.project_id = p.id
-WHERE pp.is_public = true AND p.status <> 'proposed'
-ORDER BY pp.featured DESC, pp.sort_order, p.title
-`
-
-// Public projects join project_profiles; portfolio flags live there. Proposed
-// projects are inert drafts and are never publicly listed — the is_public join
-// already excludes them (a proposed project has no profile), and the explicit
-// status guard keeps that invariant true even if a profile is created out of band.
-func (q *Queries) PublicProjects(ctx context.Context) ([]Project, error) {
-	rows, err := q.db.Query(ctx, publicProjects)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []Project{}
-	for rows.Next() {
-		var i Project
-		if err := rows.Scan(
-			&i.ID,
-			&i.Slug,
-			&i.Title,
-			&i.Description,
-			&i.Status,
-			&i.Repo,
-			&i.AreaID,
-			&i.GoalID,
-			&i.Deadline,
-			&i.LastActivityAt,
-			&i.ExpectedCadence,
-			&i.CreatedBy,
-			&i.ProposalRationale,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
 }
 
 const publishContent = `-- name: PublishContent :one
@@ -8611,21 +8379,16 @@ func (q *Queries) UpdateProject(ctx context.Context, arg UpdateProjectParams) (P
 }
 
 const updateProjectStatus = `-- name: UpdateProjectStatus :one
-WITH prev AS (
-    SELECT status AS old_status FROM projects WHERE id = $4
-)
 UPDATE projects SET
     status = $1::project_status,
     description = COALESCE($2, description),
     expected_cadence = COALESCE($3, expected_cadence),
     updated_at = now()
-FROM prev
 WHERE projects.id = $4
 RETURNING projects.id, projects.slug, projects.title, projects.description,
           projects.status, projects.repo, projects.area_id, projects.goal_id,
           projects.deadline, projects.last_activity_at, projects.expected_cadence,
-          projects.created_at, projects.updated_at,
-          prev.old_status AS old_status
+          projects.created_at, projects.updated_at
 `
 
 type UpdateProjectStatusParams struct {
@@ -8649,14 +8412,10 @@ type UpdateProjectStatusRow struct {
 	ExpectedCadence *string       `json:"expected_cadence"`
 	CreatedAt       time.Time     `json:"created_at"`
 	UpdatedAt       time.Time     `json:"updated_at"`
-	OldStatus       ProjectStatus `json:"old_status"`
 }
 
 // Update a project's status and optionally its description and expected
-// cadence. Returns the new row plus the previous status so the caller can
-// detect a transition into archived and demote the project_profile in the
-// same transaction (business coupling the archive_project_profile trigger
-// used to own). See project.Store.UpdateStatus.
+// cadence. See project.Store.UpdateStatus.
 func (q *Queries) UpdateProjectStatus(ctx context.Context, arg UpdateProjectStatusParams) (UpdateProjectStatusRow, error) {
 	row := q.db.QueryRow(ctx, updateProjectStatus,
 		arg.Status,
@@ -8679,7 +8438,6 @@ func (q *Queries) UpdateProjectStatus(ctx context.Context, arg UpdateProjectStat
 		&i.ExpectedCadence,
 		&i.CreatedAt,
 		&i.UpdatedAt,
-		&i.OldStatus,
 	)
 	return i, err
 }
@@ -9107,92 +8865,6 @@ func (q *Queries) UpsertAgent(ctx context.Context, arg UpsertAgentParams) error 
 		arg.Description,
 	)
 	return err
-}
-
-const upsertProfile = `-- name: UpsertProfile :one
-INSERT INTO project_profiles (
-    project_id, long_description, role, tech_stack, highlights,
-    problem, solution, architecture, results, github_url, live_url,
-    cover_image, featured, is_public, sort_order
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
-ON CONFLICT (project_id) DO UPDATE SET
-    long_description = EXCLUDED.long_description,
-    role = EXCLUDED.role,
-    tech_stack = EXCLUDED.tech_stack,
-    highlights = EXCLUDED.highlights,
-    problem = EXCLUDED.problem,
-    solution = EXCLUDED.solution,
-    architecture = EXCLUDED.architecture,
-    results = EXCLUDED.results,
-    github_url = EXCLUDED.github_url,
-    live_url = EXCLUDED.live_url,
-    cover_image = EXCLUDED.cover_image,
-    featured = EXCLUDED.featured,
-    is_public = EXCLUDED.is_public,
-    sort_order = EXCLUDED.sort_order,
-    updated_at = now()
-RETURNING project_id, long_description, role, tech_stack, highlights,
-          problem, solution, architecture, results, github_url, live_url,
-          cover_image, featured, is_public, sort_order, created_at, updated_at
-`
-
-type UpsertProfileParams struct {
-	ProjectID       uuid.UUID `json:"project_id"`
-	LongDescription *string   `json:"long_description"`
-	Role            *string   `json:"role"`
-	TechStack       []string  `json:"tech_stack"`
-	Highlights      []string  `json:"highlights"`
-	Problem         *string   `json:"problem"`
-	Solution        *string   `json:"solution"`
-	Architecture    *string   `json:"architecture"`
-	Results         *string   `json:"results"`
-	GithubUrl       *string   `json:"github_url"`
-	LiveUrl         *string   `json:"live_url"`
-	CoverImage      *string   `json:"cover_image"`
-	Featured        bool      `json:"featured"`
-	IsPublic        bool      `json:"is_public"`
-	SortOrder       int32     `json:"sort_order"`
-}
-
-func (q *Queries) UpsertProfile(ctx context.Context, arg UpsertProfileParams) (ProjectProfile, error) {
-	row := q.db.QueryRow(ctx, upsertProfile,
-		arg.ProjectID,
-		arg.LongDescription,
-		arg.Role,
-		arg.TechStack,
-		arg.Highlights,
-		arg.Problem,
-		arg.Solution,
-		arg.Architecture,
-		arg.Results,
-		arg.GithubUrl,
-		arg.LiveUrl,
-		arg.CoverImage,
-		arg.Featured,
-		arg.IsPublic,
-		arg.SortOrder,
-	)
-	var i ProjectProfile
-	err := row.Scan(
-		&i.ProjectID,
-		&i.LongDescription,
-		&i.Role,
-		&i.TechStack,
-		&i.Highlights,
-		&i.Problem,
-		&i.Solution,
-		&i.Architecture,
-		&i.Results,
-		&i.GithubUrl,
-		&i.LiveUrl,
-		&i.CoverImage,
-		&i.Featured,
-		&i.IsPublic,
-		&i.SortOrder,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
 }
 
 const upsertUserByEmail = `-- name: UpsertUserByEmail :one

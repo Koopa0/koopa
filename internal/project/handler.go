@@ -4,7 +4,6 @@ package project
 
 import (
 	"context"
-	"errors"
 	"log/slog"
 	"net/http"
 	"time"
@@ -77,23 +76,11 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	api.Encode(w, http.StatusOK, api.Response{Data: projects})
 }
 
-// PublicList handles GET /api/projects — returns only public projects.
-func (h *Handler) PublicList(w http.ResponseWriter, r *http.Request) {
-	projects, err := h.store.PublicProjects(r.Context())
-	if err != nil {
-		h.logger.Error("listing public projects", "error", err)
-		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to list projects")
-		return
-	}
-	api.Encode(w, http.StatusOK, api.Response{Data: projects})
-}
-
 // Detail handles GET /api/admin/projects/{id} — returns the admin-facing
-// aggregate (project + profile + goal breadcrumb + tasks grouped by state
-// + recent activity + related content). Assembled from the core project
-// row plus reader dependencies. Missing cross-feature data (e.g. profile
-// absent because no case study yet, goal deleted) renders as nil or
-// empty slices rather than 404'ing the detail response.
+// aggregate (project + goal breadcrumb + tasks grouped by state + recent
+// activity + related content). Assembled from the core project row plus
+// reader dependencies. Missing cross-feature data (e.g. goal deleted)
+// renders as nil or empty slices rather than 404'ing the detail response.
 func (h *Handler) Detail(w http.ResponseWriter, r *http.Request) {
 	id, err := uuid.Parse(r.PathValue("id"))
 	if err != nil {
@@ -125,27 +112,11 @@ func (h *Handler) Detail(w http.ResponseWriter, r *http.Request) {
 			GoalTitle: *row.GoalTitle,
 		}
 	}
-	h.loadDetailProfile(ctx, id, &detail)
 	h.loadDetailTasks(ctx, id, &detail)
 	h.loadDetailActivity(ctx, proj.Slug, &detail)
 	h.loadDetailContent(ctx, id, &detail)
 
 	api.Encode(w, http.StatusOK, api.Response{Data: detail})
-}
-
-// loadDetailProfile fills profile-sourced case-study fields. Missing
-// profile is normal — a project may exist before a case study is written.
-func (h *Handler) loadDetailProfile(ctx context.Context, id uuid.UUID, detail *Detail) {
-	profile, err := h.store.ProfileByProjectID(ctx, id)
-	if err == nil {
-		detail.Problem = profile.Problem
-		detail.Solution = profile.Solution
-		detail.Architecture = profile.Architecture
-		return
-	}
-	if !errors.Is(err, ErrNotFound) {
-		h.logger.Warn("project detail: profile lookup failed", "project_id", id, "error", err)
-	}
 }
 
 // loadDetailTasks fills TodosByState from the grouped todo store. The
@@ -245,20 +216,6 @@ func contentSummariesFromBriefs(briefs []content.Brief) []ContentSummary {
 	return out
 }
 
-// BySlug handles GET /api/projects/{slug} — the PUBLIC, unauthenticated slug
-// route. It returns only publicly-visible projects (non-proposed, with a public
-// profile); a proposed inert draft or a private project yields 404 so the route
-// cannot leak unpublished work. Admin reads use the by-id Detail endpoint.
-func (h *Handler) BySlug(w http.ResponseWriter, r *http.Request) {
-	slug := r.PathValue("slug")
-	p, err := h.store.PublicProjectBySlug(r.Context(), slug)
-	if err != nil {
-		api.HandleError(w, h.logger, err, storeErrors...)
-		return
-	}
-	api.Encode(w, http.StatusOK, api.Response{Data: p})
-}
-
 // Create handles POST /api/admin/projects.
 func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	p, err := api.Decode[CreateParams](w, r)
@@ -335,118 +292,14 @@ func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// PublicPortfolio handles GET /api/portfolio — returns all public project profiles.
-func (h *Handler) PublicPortfolio(w http.ResponseWriter, r *http.Request) {
-	listings, err := h.store.PublicProfiles(r.Context())
-	if err != nil {
-		h.logger.Error("listing public profiles", "error", err)
-		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to list portfolio")
-		return
-	}
-	api.Encode(w, http.StatusOK, api.Response{Data: listings})
-}
-
-// GetProfile handles GET /api/admin/projects/{id}/profile.
-func (h *Handler) GetProfile(w http.ResponseWriter, r *http.Request) {
-	id, err := uuid.Parse(r.PathValue("id"))
-	if err != nil {
-		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid project id")
-		return
-	}
-	profile, err := h.store.ProfileByProjectID(r.Context(), id)
-	if err != nil {
-		api.HandleError(w, h.logger, err, storeErrors...)
-		return
-	}
-	api.Encode(w, http.StatusOK, api.Response{Data: profile})
-}
-
-// profileBody is the request body for PUT /api/admin/projects/{id}/profile.
-// project_id comes from the path parameter, not the body.
-type profileBody struct {
-	LongDescription *string  `json:"long_description,omitempty"`
-	Role            *string  `json:"role,omitempty"`
-	TechStack       []string `json:"tech_stack"`
-	Highlights      []string `json:"highlights"`
-	Problem         *string  `json:"problem,omitempty"`
-	Solution        *string  `json:"solution,omitempty"`
-	Architecture    *string  `json:"architecture,omitempty"`
-	Results         *string  `json:"results,omitempty"`
-	GithubURL       *string  `json:"github_url,omitempty"`
-	LiveURL         *string  `json:"live_url,omitempty"`
-	CoverImage      *string  `json:"cover_image,omitempty"`
-	Featured        bool     `json:"featured"`
-	IsPublic        bool     `json:"is_public"`
-	SortOrder       int      `json:"sort_order"`
-}
-
-// UpsertProfile handles PUT /api/admin/projects/{id}/profile.
-func (h *Handler) UpsertProfile(w http.ResponseWriter, r *http.Request) {
-	id, err := uuid.Parse(r.PathValue("id"))
-	if err != nil {
-		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid project id")
-		return
-	}
-	body, err := api.Decode[profileBody](w, r)
-	if err != nil {
-		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid request body")
-		return
-	}
-
-	store := h.store
-	if tx, ok := api.TxFromContext(r.Context()); ok {
-		store = h.store.WithTx(tx)
-	}
-	profile, err := store.UpsertProfile(r.Context(), &UpsertProfileParams{
-		ProjectID:       id,
-		LongDescription: body.LongDescription,
-		Role:            body.Role,
-		TechStack:       body.TechStack,
-		Highlights:      body.Highlights,
-		Problem:         body.Problem,
-		Solution:        body.Solution,
-		Architecture:    body.Architecture,
-		Results:         body.Results,
-		GithubURL:       body.GithubURL,
-		LiveURL:         body.LiveURL,
-		CoverImage:      body.CoverImage,
-		Featured:        body.Featured,
-		IsPublic:        body.IsPublic,
-		SortOrder:       body.SortOrder,
-	})
-	if err != nil {
-		api.HandleError(w, h.logger, err, storeErrors...)
-		return
-	}
-	api.Encode(w, http.StatusOK, api.Response{Data: profile})
-}
-
-// DeleteProfile handles DELETE /api/admin/projects/{id}/profile.
-func (h *Handler) DeleteProfile(w http.ResponseWriter, r *http.Request) {
-	id, err := uuid.Parse(r.PathValue("id"))
-	if err != nil {
-		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid project id")
-		return
-	}
-	store := h.store
-	if tx, ok := api.TxFromContext(r.Context()); ok {
-		store = h.store.WithTx(tx)
-	}
-	if err := store.DeleteProfile(r.Context(), id); err != nil {
-		api.HandleError(w, h.logger, err, storeErrors...)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
-}
-
 // --- Proposals triage (activate / reject) ---
 //
 // Agents propose inert project drafts via MCP (propose_project); these admin
 // handlers are where the single human owner acts on them. Activate flips
 // proposed → in_progress; reject is a hard DELETE (linked todos/contents are
-// SET NULL by their FKs, the profile CASCADEs). Both are behind adminMid, which
-// binds the actor tx. The triage LIST/COUNT lives in the goal handler, which
-// aggregates proposed goals + areas + projects into one response.
+// SET NULL by their FKs). Both are behind adminMid, which binds the actor tx.
+// The triage LIST/COUNT lives in the goal handler, which aggregates proposed
+// goals + areas + projects into one response.
 
 // ActivateProject handles POST /api/admin/commitment/projects/{id}/activate —
 // proposed → in_progress. 404 when the project does not exist; 409 NOT_PROPOSED

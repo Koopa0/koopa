@@ -140,9 +140,6 @@ export interface ProjectDetail {
   title: string;
   slug: string;
   description: string;
-  problem: string | null;
-  solution: string | null;
-  architecture: string | null;
   status: string;
   area: string;
   goal_breadcrumb: GoalBreadcrumb | null;

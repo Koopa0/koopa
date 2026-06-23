@@ -160,13 +160,6 @@ export class CommandPaletteService {
           }),
       },
       {
-        id: 'projects',
-        label: 'Projects',
-        group: 'Pages',
-        keywords: ['portfolio', 'work'],
-        action: () => this.navigate('/projects'),
-      },
-      {
         id: 'uses',
         label: 'Uses',
         group: 'Pages',

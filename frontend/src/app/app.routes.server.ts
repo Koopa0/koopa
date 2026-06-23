@@ -14,14 +14,6 @@ export const serverRoutes: ServerRoute[] = [
     renderMode: RenderMode.Server,
   },
   {
-    path: 'projects',
-    renderMode: RenderMode.Server,
-  },
-  {
-    path: 'projects/:slug',
-    renderMode: RenderMode.Server,
-  },
-  {
     path: 'topics',
     renderMode: RenderMode.Server,
   },

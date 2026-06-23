@@ -127,9 +127,6 @@ func registerRoutes(
 	mux.HandleFunc("GET /api/feed/sitemap", h.content.Sitemap)
 	mux.HandleFunc("GET /api/topics", h.topic.List)
 	mux.HandleFunc("GET /api/topics/{slug}", h.topic.BySlug)
-	mux.HandleFunc("GET /api/projects", h.project.PublicList)
-	mux.HandleFunc("GET /api/projects/{slug}", h.project.BySlug)
-	mux.HandleFunc("GET /api/portfolio", h.project.PublicPortfolio)
 
 	// --- Auth ---
 	if h.auth != nil {
@@ -183,17 +180,11 @@ func registerRoutes(
 	mux.Handle("DELETE /api/admin/knowledge/songs/{id}/reflections/{rid}", adminMid(http.HandlerFunc(h.song.DeleteReflection)))
 
 	// --- Admin: Commitment / Projects ---
-	// Full CRUD + profile variants for the public-portfolio facet.
 	mux.Handle("GET /api/admin/commitment/projects", authMid(http.HandlerFunc(h.project.List)))
 	mux.Handle("GET /api/admin/commitment/projects/{id}", authMid(http.HandlerFunc(h.project.Detail)))
 	mux.Handle("POST /api/admin/commitment/projects", adminMid(http.HandlerFunc(h.project.Create)))
 	mux.Handle("PUT /api/admin/commitment/projects/{id}", adminMid(http.HandlerFunc(h.project.Update)))
 	mux.Handle("DELETE /api/admin/commitment/projects/{id}", adminMid(http.HandlerFunc(h.project.Delete)))
-
-	// --- Admin: Commitment / Project profiles ---
-	mux.Handle("GET /api/admin/commitment/projects/{id}/profile", authMid(http.HandlerFunc(h.project.GetProfile)))
-	mux.Handle("PUT /api/admin/commitment/projects/{id}/profile", adminMid(http.HandlerFunc(h.project.UpsertProfile)))
-	mux.Handle("DELETE /api/admin/commitment/projects/{id}/profile", adminMid(http.HandlerFunc(h.project.DeleteProfile)))
 
 	// --- Admin: Commitment / Goals ---
 	// List + Detail + status-transition + the owner decision-stamp creates

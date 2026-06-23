@@ -12,7 +12,6 @@ DROP TRIGGER IF EXISTS trg_goals_audit ON goals;
 DROP TRIGGER IF EXISTS trg_todos_audit ON todos;
 DROP TRIGGER IF EXISTS trg_daily_plan_items_not_already_skipped ON daily_plan_items;
 DROP TRIGGER IF EXISTS trg_todo_skips_not_already_dropped ON todo_skips;
-DROP TRIGGER IF EXISTS trg_project_profile_not_public_if_archived ON project_profiles;
 
 -- ============================================================
 -- 2. Functions
@@ -28,7 +27,6 @@ DROP FUNCTION IF EXISTS audit_goals();
 DROP FUNCTION IF EXISTS audit_todos();
 DROP FUNCTION IF EXISTS current_actor();
 DROP FUNCTION IF EXISTS enforce_todo_skip_not_already_dropped();
-DROP FUNCTION IF EXISTS enforce_project_profile_not_public_if_archived();
 
 -- ============================================================
 -- 3. Tables (reverse creation order, respecting FK dependencies)
@@ -65,8 +63,7 @@ DROP TABLE IF EXISTS content_topics;
 -- Contents
 DROP TABLE IF EXISTS contents;
 
--- Projects + profiles
-DROP TABLE IF EXISTS project_profiles;
+-- Projects
 DROP TABLE IF EXISTS projects;
 
 -- Milestones (FK to goals)

@@ -297,13 +297,10 @@ COMMENT ON COLUMN milestones.updated_at IS
     'Application-managed. Set explicitly in UPDATE queries.';
 
 -- ============================================================
--- Projects (PARA execution vehicles) + project_profiles (public portfolio)
+-- Projects (PARA execution vehicles)
 --
--- Split rationale: projects is a planning aggregate with PARA lifecycle
--- (status: planned → in_progress → completed | archived). project_profiles
--- is a curated public artifact whose lifecycle is independent — a profile
--- may be edited months after the project completed. One-to-one relationship
--- (project_id is the profile's PRIMARY KEY).
+-- projects is a planning aggregate with PARA lifecycle
+-- (status: planned → in_progress → completed | archived).
 -- ============================================================
 
 CREATE TABLE projects (
@@ -332,8 +329,7 @@ CREATE TABLE projects (
 COMMENT ON TABLE projects IS
     'PARA projects — planning aggregate, execution vehicles. Short-term efforts '
     'with clear outcomes. Projects and milestones are siblings under a goal: '
-    'a project may advance a goal without mapping to a specific milestone. '
-    'Public portfolio/case-study fields live in project_profiles (1:1).';
+    'a project may advance a goal without mapping to a specific milestone.';
 COMMENT ON COLUMN projects.status IS
     'Lifecycle: proposed → planned | in_progress → on_hold → completed | maintained | archived. '
     'proposed = agent-proposed draft, inert — excluded from the admin project list, the public '
@@ -362,83 +358,6 @@ CREATE INDEX idx_projects_repo ON projects (repo) WHERE repo IS NOT NULL;
 CREATE INDEX idx_projects_status ON projects (status) WHERE status NOT IN ('completed', 'archived');
 CREATE INDEX idx_projects_goal_id ON projects(goal_id) WHERE goal_id IS NOT NULL;
 CREATE INDEX idx_projects_area ON projects (area_id) WHERE area_id IS NOT NULL;
-
-CREATE TABLE project_profiles (
-    project_id        UUID PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
-    long_description  TEXT,
-    role              TEXT,
-    tech_stack        TEXT[] NOT NULL DEFAULT '{}',
-    highlights        TEXT[] NOT NULL DEFAULT '{}',
-    problem           TEXT,
-    solution          TEXT,
-    architecture      TEXT,
-    results           TEXT,
-    github_url        TEXT,
-    live_url          TEXT,
-    cover_image       TEXT,
-    featured          BOOLEAN NOT NULL DEFAULT false,
-    is_public         BOOLEAN NOT NULL DEFAULT false,
-    sort_order        INT NOT NULL DEFAULT 0,
-    created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
-
-    CONSTRAINT chk_project_profile_github_url
-        CHECK (github_url IS NULL OR github_url ~ '^https://github\.com/'),
-    CONSTRAINT chk_project_profile_live_url
-        CHECK (live_url IS NULL OR live_url ~ '^https?://')
-);
-
-COMMENT ON TABLE project_profiles IS
-    'Public portfolio / case-study facet of a project. 1:1 with projects (project_id PK). '
-    'Lifecycle is independent: a profile can be edited long after its project completed. '
-    'Existence of a row means the project has been curated for public display (even if is_public=false). '
-    'CASCADE on project deletion — orphaned profiles make no sense. '
-    'Invariant: is_public=true is only permitted when the owning projects.status != ''archived''. '
-    'Enforced by trg_project_profile_not_public_if_archived (structural invariant trigger); '
-    'archived→private demote on the project side runs in internal/project.Store.UpdateStatus.';
-COMMENT ON COLUMN project_profiles.role IS 'User role in this project (e.g. Lead Engineer, Sole Developer). NULL = not specified.';
-COMMENT ON COLUMN project_profiles.long_description IS 'Extended description for project detail page. NULL = use projects.description.';
-COMMENT ON COLUMN project_profiles.problem IS 'Case study: what problem this project solves.';
-COMMENT ON COLUMN project_profiles.solution IS 'Case study: how the problem was solved.';
-COMMENT ON COLUMN project_profiles.architecture IS 'Case study: system architecture description.';
-COMMENT ON COLUMN project_profiles.results IS 'Case study: measurable outcomes.';
-COMMENT ON COLUMN project_profiles.github_url IS 'Full GitHub repository URL. NULL = no public repo.';
-COMMENT ON COLUMN project_profiles.live_url IS 'Production deployment URL. NULL = not deployed.';
-COMMENT ON COLUMN project_profiles.cover_image IS 'Cover image URL/path for portfolio cards. NULL = no cover.';
-COMMENT ON COLUMN project_profiles.featured IS 'Whether to show on the public portfolio homepage. Requires is_public=true to take effect.';
-COMMENT ON COLUMN project_profiles.is_public IS 'Whether this profile is visible on the public website.';
-COMMENT ON COLUMN project_profiles.sort_order IS 'Display ordering in portfolio listings. Lower = higher priority.';
-COMMENT ON COLUMN project_profiles.updated_at IS 'Application-managed. Set explicitly in UPDATE queries.';
-
-CREATE INDEX idx_project_profiles_featured ON project_profiles (featured DESC, sort_order) WHERE is_public = true;
-CREATE INDEX idx_project_profiles_public ON project_profiles (sort_order) WHERE is_public = true;
-
--- Structural invariant: a public project_profile must belong to a non-archived
--- project. The reverse direction (project → archived also demotes the profile)
--- is handled by internal/project.Store.UpdateStatus per the no-business-logic-
--- in-triggers rule. This trigger catches the complementary gap: any path that
--- sets project_profiles.is_public=true (INSERT or UPDATE) when the owning
--- project is already archived — e.g. manual psql, admin UI bug, migration
--- backfill. It is read-only (no cross-aggregate side effect); it only raises
--- EXCEPTION when the invariant would be broken.
-CREATE OR REPLACE FUNCTION enforce_project_profile_not_public_if_archived() RETURNS TRIGGER AS $$
-DECLARE
-    owning_status project_status;
-BEGIN
-    IF NEW.is_public IS NOT TRUE THEN
-        RETURN NEW;
-    END IF;
-    SELECT status INTO owning_status FROM projects WHERE id = NEW.project_id;
-    IF owning_status = 'archived' THEN
-        RAISE EXCEPTION 'project_profile.is_public=true is not permitted when projects.status=''archived'' (project_id=%). Unarchive the project first, or demote the profile (is_public=false).', NEW.project_id;
-    END IF;
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE TRIGGER trg_project_profile_not_public_if_archived
-    BEFORE INSERT OR UPDATE OF is_public, project_id ON project_profiles
-    FOR EACH ROW EXECUTE FUNCTION enforce_project_profile_not_public_if_archived();
 
 -- ============================================================
 -- Contents
@@ -1173,11 +1092,6 @@ $$ LANGUAGE plpgsql;
 CREATE TRIGGER trg_contents_audit
     AFTER INSERT OR UPDATE OF status ON contents
     FOR EACH ROW EXECUTE FUNCTION audit_contents();
-
--- Note: the coupling between projects.status = 'archived' and its
--- project_profile demotion (is_public = false) is enforced in
--- internal/project.Store.UpdateStatus, not in a trigger — per the
--- trigger policy that keeps cross-aggregate side effects out of the DB.
 
 
 -- ============================================================

@@ -600,7 +600,7 @@ type ProcessRun struct {
 	CreatedAt time.Time       `json:"created_at"`
 }
 
-// PARA projects — planning aggregate, execution vehicles. Short-term efforts with clear outcomes. Projects and milestones are siblings under a goal: a project may advance a goal without mapping to a specific milestone. Public portfolio/case-study fields live in project_profiles (1:1).
+// PARA projects — planning aggregate, execution vehicles. Short-term efforts with clear outcomes. Projects and milestones are siblings under a goal: a project may advance a goal without mapping to a specific milestone.
 type Project struct {
 	ID          uuid.UUID `json:"id"`
 	Slug        string    `json:"slug"`
@@ -638,40 +638,6 @@ type ProjectAlias struct {
 	// Where this alias was discovered (e.g. github, manual).
 	Source    string    `json:"source"`
 	CreatedAt time.Time `json:"created_at"`
-}
-
-// Public portfolio / case-study facet of a project. 1:1 with projects (project_id PK). Lifecycle is independent: a profile can be edited long after its project completed. Existence of a row means the project has been curated for public display (even if is_public=false). CASCADE on project deletion — orphaned profiles make no sense. Invariant: is_public=true is only permitted when the owning projects.status != 'archived'. Enforced by trg_project_profile_not_public_if_archived (structural invariant trigger); archived→private demote on the project side runs in internal/project.Store.UpdateStatus.
-type ProjectProfile struct {
-	ProjectID uuid.UUID `json:"project_id"`
-	// Extended description for project detail page. NULL = use projects.description.
-	LongDescription *string `json:"long_description"`
-	// User role in this project (e.g. Lead Engineer, Sole Developer). NULL = not specified.
-	Role       *string  `json:"role"`
-	TechStack  []string `json:"tech_stack"`
-	Highlights []string `json:"highlights"`
-	// Case study: what problem this project solves.
-	Problem *string `json:"problem"`
-	// Case study: how the problem was solved.
-	Solution *string `json:"solution"`
-	// Case study: system architecture description.
-	Architecture *string `json:"architecture"`
-	// Case study: measurable outcomes.
-	Results *string `json:"results"`
-	// Full GitHub repository URL. NULL = no public repo.
-	GithubUrl *string `json:"github_url"`
-	// Production deployment URL. NULL = not deployed.
-	LiveUrl *string `json:"live_url"`
-	// Cover image URL/path for portfolio cards. NULL = no cover.
-	CoverImage *string `json:"cover_image"`
-	// Whether to show on the public portfolio homepage. Requires is_public=true to take effect.
-	Featured bool `json:"featured"`
-	// Whether this profile is visible on the public website.
-	IsPublic bool `json:"is_public"`
-	// Display ordering in portfolio listings. Lower = higher priority.
-	SortOrder int32     `json:"sort_order"`
-	CreatedAt time.Time `json:"created_at"`
-	// Application-managed. Set explicitly in UPDATE queries.
-	UpdatedAt time.Time `json:"updated_at"`
 }
 
 // Literature reading shelf — one row per book, Koopa-private. Evaluation happens only through reading_reflections (dated diary entries); there is intentionally no rating column. Agent surface is read-only: list_readings and get_reading expose the shelf over MCP, and the shelf is part of the search_knowledge corpus (source_type=reading) via search_vector + embedding. No agent write path exists; mutations are admin HTTP only.

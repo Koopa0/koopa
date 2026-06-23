@@ -41,6 +41,8 @@ describe('EditorialMastheadComponent', () => {
 
     const el = fixture.nativeElement as HTMLElement;
     const links = Array.from(el.querySelectorAll('.ed-nav a'));
+    // Writing is the sole nav link — the public Projects portfolio was removed.
+    expect(links.length).toBe(1);
     const writing = links.find((a) => a.textContent?.includes('Writing'));
     expect(writing?.getAttribute('data-active')).toBe('true');
   });

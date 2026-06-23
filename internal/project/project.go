@@ -1,28 +1,18 @@
 // Copyright 2026 Koopa. All rights reserved.
 
-// Package project provides project planning and public portfolio profiles.
+// Package project provides PARA project planning.
 //
 // File map:
 //   - project.go (this file) — types + core Store methods for the
 //     projects table (CRUD, status transitions, identity lookups by
 //     id/slug/alias/title/repo, list-by-goal summaries).
-//   - profile.go              — Store methods for project_profiles
-//     (the public portfolio facet, 1:1 with projects).
 //   - handler.go              — HTTP handlers, including the Detail
 //     aggregator that fans out to todo/activity/content stores.
 //
 // project.go mixes types and Store deliberately: the wire-contract
-// shapes (Project, Profile, Detail, PublicListing, ActivityItem,
-// ContentSummary) are all populated against this package's Store
-// methods, so splitting into a types-only file would fragment the
-// cohesion. profile.go IS split because the profile methods own a
-// separate primary key and their own transactional contract.
-//
-// Load-bearing invariant: UpdateStatus detects transitions into
-// 'archived' and demotes the matching profile in the SAME tx. This
-// replaces the former archive_project_profile trigger — per the
-// trigger policy in .claude/rules/database.md, cross-aggregate side
-// effects belong in Go. Do NOT move this back into a trigger.
+// shapes (Project, Detail, ActivityItem, ContentSummary) are all
+// populated against this package's Store methods, so splitting into a
+// types-only file would fragment the cohesion.
 package project
 
 import (
@@ -44,8 +34,8 @@ type Status string
 
 const (
 	// StatusProposed indicates an agent-proposed inert draft awaiting owner
-	// triage. A proposed project is excluded from the admin project list, the
-	// public portfolio, and the goal project view; the owner activates it
+	// triage. A proposed project is excluded from the admin project list and
+	// the goal project view; the owner activates it
 	// (→ in_progress) or rejects it (hard DELETE) in admin. Slug/alias/title/id
 	// resolvers still match it so capture_inbox can link a todo before activation.
 	StatusProposed Status = "proposed"
@@ -69,9 +59,7 @@ const (
 	StatusArchived Status = "archived"
 )
 
-// Project is the PARA planning aggregate. Public portfolio/case-study fields
-// live on Profile (1:1). A project may exist without a profile; a profile
-// without its project is impossible (project_id is the profile's primary key).
+// Project is the PARA planning aggregate.
 type Project struct {
 	ID              uuid.UUID  `json:"id"`
 	Slug            string     `json:"slug"`
@@ -113,80 +101,12 @@ type UpdateParams struct {
 	Status      *Status `json:"status,omitempty"`
 }
 
-// Profile is the public portfolio facet of a project. 1:1 with Project.
-type Profile struct {
-	ProjectID       uuid.UUID `json:"project_id"`
-	LongDescription *string   `json:"long_description,omitempty"`
-	Role            *string   `json:"role,omitempty"`
-	TechStack       []string  `json:"tech_stack"`
-	Highlights      []string  `json:"highlights"`
-	Problem         *string   `json:"problem,omitempty"`
-	Solution        *string   `json:"solution,omitempty"`
-	Architecture    *string   `json:"architecture,omitempty"`
-	Results         *string   `json:"results,omitempty"`
-	GithubURL       *string   `json:"github_url,omitempty"`
-	LiveURL         *string   `json:"live_url,omitempty"`
-	CoverImage      *string   `json:"cover_image,omitempty"`
-	Featured        bool      `json:"featured"`
-	IsPublic        bool      `json:"is_public"`
-	SortOrder       int       `json:"sort_order"`
-	CreatedAt       time.Time `json:"created_at"`
-	UpdatedAt       time.Time `json:"updated_at"`
-}
-
-// UpsertProfileParams holds the parameters for creating or updating a project profile.
-// project_id is the primary key; existing profiles are replaced.
-type UpsertProfileParams struct {
-	ProjectID       uuid.UUID `json:"project_id"`
-	LongDescription *string   `json:"long_description,omitempty"`
-	Role            *string   `json:"role,omitempty"`
-	TechStack       []string  `json:"tech_stack"`
-	Highlights      []string  `json:"highlights"`
-	Problem         *string   `json:"problem,omitempty"`
-	Solution        *string   `json:"solution,omitempty"`
-	Architecture    *string   `json:"architecture,omitempty"`
-	Results         *string   `json:"results,omitempty"`
-	GithubURL       *string   `json:"github_url,omitempty"`
-	LiveURL         *string   `json:"live_url,omitempty"`
-	CoverImage      *string   `json:"cover_image,omitempty"`
-	Featured        bool      `json:"featured"`
-	IsPublic        bool      `json:"is_public"`
-	SortOrder       int       `json:"sort_order"`
-}
-
-// PublicListing combines a Project's planning fields with its Profile's
-// public portfolio fields for the portfolio listing endpoint.
-type PublicListing struct {
-	ID              uuid.UUID  `json:"id"`
-	Slug            string     `json:"slug"`
-	Title           string     `json:"title"`
-	Description     string     `json:"description"`
-	Status          Status     `json:"status"`
-	Repo            *string    `json:"repo,omitempty"`
-	Deadline        *time.Time `json:"deadline,omitempty"`
-	LastActivityAt  *time.Time `json:"last_activity_at,omitempty"`
-	LongDescription *string    `json:"long_description,omitempty"`
-	Role            *string    `json:"role,omitempty"`
-	TechStack       []string   `json:"tech_stack"`
-	Highlights      []string   `json:"highlights"`
-	Problem         *string    `json:"problem,omitempty"`
-	Solution        *string    `json:"solution,omitempty"`
-	Architecture    *string    `json:"architecture,omitempty"`
-	Results         *string    `json:"results,omitempty"`
-	GithubURL       *string    `json:"github_url,omitempty"`
-	LiveURL         *string    `json:"live_url,omitempty"`
-	CoverImage      *string    `json:"cover_image,omitempty"`
-	Featured        bool       `json:"featured"`
-	SortOrder       int        `json:"sort_order"`
-	UpdatedAt       time.Time  `json:"updated_at"`
-}
-
 // Detail is the admin project detail aggregate returned by
 // GET /api/admin/projects/{id}. Assembled by the handler from the core
-// project row, its profile (for problem/solution/architecture), goal
-// breadcrumb, grouped tasks, recent activity, and related content. The
-// shape matches the frontend ProjectDetail contract so the inspector
-// panel renders directly from the wire response.
+// project row, goal breadcrumb, grouped tasks, recent activity, and
+// related content. The shape matches the frontend ProjectDetail
+// contract so the inspector panel renders directly from the wire
+// response.
 //
 // Area is the project's area id as a string (empty when the project has
 // no area). Deriving a human-readable name would require a separate
@@ -196,9 +116,6 @@ type Detail struct {
 	Title          string           `json:"title"`
 	Slug           string           `json:"slug"`
 	Description    string           `json:"description"`
-	Problem        *string          `json:"problem"`
-	Solution       *string          `json:"solution"`
-	Architecture   *string          `json:"architecture"`
 	Status         Status           `json:"status"`
 	Area           string           `json:"area"`
 	GoalBreadcrumb *GoalBreadcrumb  `json:"goal_breadcrumb"`
@@ -235,26 +152,16 @@ type ContentSummary struct {
 }
 
 var (
-	// ErrNotFound indicates the project or profile does not exist.
+	// ErrNotFound indicates the project does not exist.
 	ErrNotFound = errors.New("project: not found")
 
 	// ErrConflict indicates a duplicate slug or primary key conflict.
 	ErrConflict = errors.New("project: conflict")
 
 	// ErrInvalidInput signals a client-supplied value the database rejected:
-	// a foreign key pointing at a non-existent area_id / goal_id, a check
-	// violation (chk_project_slug_format, the expected_cadence CHECK, the
-	// project_profile github_url / live_url format CHECKs), or the
-	// not-public-if-archived trigger raising an exception.
+	// a foreign key pointing at a non-existent area_id / goal_id, or a check
+	// violation (chk_project_slug_format, the expected_cadence CHECK).
 	ErrInvalidInput = errors.New("project: invalid input")
-
-	// ErrNotTransactional indicates an archival transition (which also
-	// demotes the project_profile) was invoked on a non-transactional
-	// store. The status UPDATE and the profile demote must commit as a
-	// unit; a pool-backed store cannot guarantee that. Admin HTTP routes
-	// bind a tx via api.ActorMiddleware. Mirrors feed.Store and
-	// content.Store.
-	ErrNotTransactional = errors.New("project: archival requires a transactional store")
 
 	// ErrNotProposed indicates an activate/reject targeted a project that
 	// exists but is not in status=proposed. Real planning rows are not
@@ -294,19 +201,6 @@ func (s *Store) Projects(ctx context.Context) ([]Project, error) {
 	rows, err := s.q.Projects(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("listing projects: %w", err)
-	}
-	projects := make([]Project, len(rows))
-	for i := range rows {
-		projects[i] = rowToProject(&rows[i])
-	}
-	return projects, nil
-}
-
-// PublicProjects returns only public projects ordered by featured status and sort order.
-func (s *Store) PublicProjects(ctx context.Context) ([]Project, error) {
-	rows, err := s.q.PublicProjects(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("listing public projects: %w", err)
 	}
 	projects := make([]Project, len(rows))
 	for i := range rows {
@@ -369,9 +263,7 @@ func (s *Store) ProjectDetailByID(ctx context.Context, id uuid.UUID) (*DetailRow
 	}, nil
 }
 
-// ProjectBySlug returns a single project by slug, regardless of status or
-// public visibility. Internal/admin callers only — the public slug route
-// uses PublicProjectBySlug.
+// ProjectBySlug returns a single project by slug, regardless of status.
 func (s *Store) ProjectBySlug(ctx context.Context, slug string) (*Project, error) {
 	r, err := s.q.ProjectBySlug(ctx, slug)
 	if err != nil {
@@ -379,23 +271,6 @@ func (s *Store) ProjectBySlug(ctx context.Context, slug string) (*Project, error
 			return nil, ErrNotFound
 		}
 		return nil, fmt.Errorf("querying project %s: %w", slug, err)
-	}
-	p := rowToProject(&r)
-	return &p, nil
-}
-
-// PublicProjectBySlug returns a project by slug only when it is publicly
-// visible: a non-proposed project carrying a public profile (is_public=true).
-// A proposed inert draft or a private project yields ErrNotFound so the
-// unauthenticated slug route never reveals it. Same publicity model as
-// PublicProjects.
-func (s *Store) PublicProjectBySlug(ctx context.Context, slug string) (*Project, error) {
-	r, err := s.q.PublicProjectBySlug(ctx, slug)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, ErrNotFound
-		}
-		return nil, fmt.Errorf("querying public project %s: %w", slug, err)
 	}
 	p := rowToProject(&r)
 	return &p, nil
@@ -421,11 +296,10 @@ func (s *Store) CreateProject(ctx context.Context, p *CreateParams) (*Project, e
 
 // mapWriteError classifies a PostgreSQL project-write failure into a feature
 // sentinel. A unique violation (23505) on the slug becomes ErrConflict; a
-// foreign-key (23503 — area_id / goal_id pointing at a non-existent row),
+// foreign-key (23503 — area_id / goal_id pointing at a non-existent row) or
 // check-constraint (23514 — chk_project_slug_format, the expected_cadence
-// CHECK, the project_profile url-format CHECKs), or raised-exception (P0001 —
-// the not-public-if-archived trigger) violation becomes ErrInvalidInput; any
-// other error is wrapped with the supplied context.
+// CHECK) violation becomes ErrInvalidInput; any other error is wrapped with
+// the supplied context.
 func mapWriteError(err error, operation string) error {
 	pgErr, ok := errors.AsType[*pgconn.PgError](err)
 	if !ok {
@@ -434,7 +308,7 @@ func mapWriteError(err error, operation string) error {
 	switch pgErr.Code {
 	case pgerrcode.UniqueViolation:
 		return ErrConflict
-	case pgerrcode.ForeignKeyViolation, pgerrcode.CheckViolation, pgerrcode.RaiseException:
+	case pgerrcode.ForeignKeyViolation, pgerrcode.CheckViolation:
 		return ErrInvalidInput
 	default:
 		return fmt.Errorf("%s: %w", operation, err)
@@ -474,8 +348,7 @@ func (s *Store) ProposeProject(ctx context.Context, p *ProposeProjectParams) (*P
 
 // ProposedProjectSummary is a proposed project row for the triage surface.
 // ProposalRationale is the agent's why-now justification (nil when none was
-// given) — surfaced only here in triage, never in the active project list or
-// the public portfolio.
+// given) — surfaced only here in triage, never in the active project list.
 type ProposedProjectSummary struct {
 	ID                uuid.UUID `json:"id"`
 	Slug              string    `json:"slug"`
@@ -504,8 +377,7 @@ func (s *Store) ActivateProject(ctx context.Context, id uuid.UUID) (*Project, er
 // RejectProject hard-deletes a proposed project. Proposed-only: ErrNotFound when
 // missing, ErrNotProposed when the row exists but is not proposed — a real
 // project is never deleted by this path. Linked todos and contents survive
-// unclassified (their project_id is SET NULL by the FK); the project_profile
-// CASCADEs.
+// unclassified (their project_id is SET NULL by the FK).
 func (s *Store) RejectProject(ctx context.Context, id uuid.UUID) error {
 	n, err := s.q.DeleteProposedProject(ctx, id)
 	if err != nil {
@@ -616,32 +488,9 @@ func (s *Store) ProjectByTitle(ctx context.Context, title string) (*Project, err
 }
 
 // UpdateStatus updates a project's status and optionally its description
-// and expected cadence. When a project transitions into the archived
-// state from any other state, the matching project_profile is demoted
-// (is_public=false, featured=false). This replaces the former
-// archive_project_profile() trigger — per .claude/rules/postgres-patterns.md
-// business logic belongs in Go.
-//
-// CALLER CONTRACT: a transition into archived performs two writes (the
-// status UPDATE plus the profile demote) that must commit as a unit, so
-// an archival on a non-transactional store is rejected with
-// ErrNotTransactional before any write — a pool-backed Store cannot keep
-// the two writes atomic. Admin HTTP callers get the tx via
-// ActorMiddleware; tests and offline callers must open their own.
-// Non-archival transitions are a single UPDATE and run on any store.
+// and expected cadence. Any status transition is a single UPDATE and runs
+// on any store.
 func (s *Store) UpdateStatus(ctx context.Context, id uuid.UUID, status Status, description, expectedCadence *string) (*Project, error) {
-	// A transition into archived also demotes the project_profile; the two
-	// writes must be atomic. Reject a non-tx store before the first write.
-	// We pre-check on the target status (not the post-UPDATE old→new delta)
-	// because on a pool the first write would already have committed by the
-	// time we learn it was a real transition. A no-op archived→archived
-	// call is conservatively required to be transactional too.
-	if status == StatusArchived {
-		if _, ok := s.dbtx.(pgx.Tx); !ok {
-			return nil, ErrNotTransactional
-		}
-	}
-
 	r, err := s.q.UpdateProjectStatus(ctx, db.UpdateProjectStatusParams{
 		ID:              id,
 		Status:          db.ProjectStatus(status),
@@ -653,16 +502,6 @@ func (s *Store) UpdateStatus(ctx context.Context, id uuid.UUID, status Status, d
 			return nil, ErrNotFound
 		}
 		return nil, mapWriteError(err, fmt.Sprintf("updating project %s status", id))
-	}
-
-	// Archive coupling: when the row transitioned into archived, demote
-	// the profile. The transition check mirrors the old trigger's
-	// WHEN clause (NEW.status = 'archived' AND OLD.status IS DISTINCT
-	// FROM NEW.status) so this is a behaviour-preserving move.
-	if r.Status == db.ProjectStatusArchived && r.OldStatus != db.ProjectStatusArchived {
-		if err := s.q.DemoteProjectProfileOnArchive(ctx, id); err != nil {
-			return nil, fmt.Errorf("demoting profile for archived project %s: %w", id, err)
-		}
 	}
 
 	p := Project{

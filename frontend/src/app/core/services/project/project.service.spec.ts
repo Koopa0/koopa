@@ -5,7 +5,7 @@ import {
   provideHttpClientTesting,
 } from '@angular/common/http/testing';
 import { ProjectService } from './project.service';
-import type { ApiPortfolioProject, ApiProject } from '../../models';
+import type { ApiProject } from '../../models';
 
 function createMockProject(overrides: Partial<ApiProject> = {}): ApiProject {
   return {
@@ -13,19 +13,6 @@ function createMockProject(overrides: Partial<ApiProject> = {}): ApiProject {
     slug: 'test-project',
     title: 'Test Project',
     description: 'A test project',
-    long_description: null,
-    role: 'Developer',
-    tech_stack: ['Angular', 'Go'],
-    highlights: ['Feature A'],
-    problem: null,
-    solution: null,
-    architecture: null,
-    results: null,
-    github_url: null,
-    live_url: null,
-    featured: false,
-    is_public: true,
-    sort_order: 0,
     status: 'in_progress',
     repo: null,
     area: '',
@@ -57,93 +44,44 @@ describe('ProjectService', () => {
     expect(service).toBeTruthy();
   });
 
-  describe('getAllProjects', () => {
-    it('should fetch all projects', () => {
+  describe('getAdminProjects', () => {
+    it('should fetch admin projects from the commitment endpoint', () => {
       const mockProjects = [
         createMockProject({ id: 'proj-001', slug: 'project-a' }),
         createMockProject({ id: 'proj-002', slug: 'project-b' }),
       ];
 
-      service.getAllProjects().subscribe((projects) => {
-        expect(projects.length).toBe(2);
-        expect(projects).toEqual(mockProjects);
+      let received: ApiProject[] = [];
+      service.getAdminProjects().subscribe((projects) => {
+        received = projects;
       });
 
-      const req = httpMock.expectOne((r) => r.url.includes('/api/projects'));
+      const req = httpMock.expectOne((r) =>
+        r.url.includes('/api/admin/commitment/projects'),
+      );
       expect(req.request.method).toBe('GET');
       req.flush({ data: mockProjects });
+
+      expect(received).toEqual(mockProjects);
     });
 
     it('should propagate error to subscriber', () => {
-      service.getAllProjects().subscribe({
+      let captured: unknown;
+      service.getAdminProjects().subscribe({
         error: (err) => {
-          expect(err).toBeTruthy();
+          captured = err;
         },
       });
 
-      const req = httpMock.expectOne((r) => r.url.includes('/api/projects'));
+      const req = httpMock.expectOne((r) =>
+        r.url.includes('/api/admin/commitment/projects'),
+      );
       req.flush('Server error', {
         status: 500,
         statusText: 'Internal Server Error',
       });
-    });
-  });
 
-  describe('getPortfolio', () => {
-    it('should fetch the portfolio and normalize missing array fields', () => {
-      const listing = {
-        id: 'proj-001',
-        slug: 'koopa',
-        title: 'koopa',
-        description: 'Personal knowledge engine',
-        status: 'in_progress',
-        featured: true,
-        sort_order: 0,
-        updated_at: '2026-01-15T10:00:00Z',
-      } as unknown as ApiPortfolioProject;
-
-      let received: ApiPortfolioProject[] = [];
-      service.getPortfolio().subscribe((listings) => {
-        received = listings;
-      });
-
-      const req = httpMock.expectOne((r) => r.url.includes('/api/portfolio'));
-      expect(req.request.method).toBe('GET');
-      req.flush({ data: [listing] });
-
-      expect(received.length).toBe(1);
-      expect(received[0].featured).toBe(true);
-      expect(received[0].tech_stack).toEqual([]);
-      expect(received[0].highlights).toEqual([]);
-    });
-  });
-
-  describe('getProjectBySlug', () => {
-    it('should fetch a single project by slug', () => {
-      const mockProject = createMockProject({ slug: 'my-project' });
-
-      service.getProjectBySlug('my-project').subscribe((project) => {
-        expect(project).toEqual(mockProject);
-      });
-
-      const req = httpMock.expectOne((r) =>
-        r.url.includes('/api/projects/my-project'),
-      );
-      expect(req.request.method).toBe('GET');
-      req.flush({ data: mockProject });
-    });
-
-    it('should propagate error to subscriber on failure', () => {
-      service.getProjectBySlug('not-found').subscribe({
-        error: (err) => {
-          expect(err).toBeTruthy();
-        },
-      });
-
-      const req = httpMock.expectOne((r) =>
-        r.url.includes('/api/projects/not-found'),
-      );
-      req.flush('Not found', { status: 404, statusText: 'Not Found' });
+      expect(captured).toBeTruthy();
     });
   });
 });
