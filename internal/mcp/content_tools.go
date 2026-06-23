@@ -136,6 +136,9 @@ func (s *Server) reviseContent(ctx context.Context, _ *mcp.CallToolRequest, inpu
 	if input.Body != nil && containsProseControlChars(*input.Body) {
 		return nil, ReviseContentOutput{}, fmt.Errorf("body must not contain control characters")
 	}
+	if err := content.CheckFieldLengths(input.Title, input.Excerpt, input.Body); err != nil {
+		return nil, ReviseContentOutput{}, err
+	}
 
 	caller := s.callerIdentity(ctx)
 

@@ -117,6 +117,10 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid content type")
 		return
 	}
+	if err := CheckFieldLengths(&p.Title, &p.Excerpt, &p.Body); err != nil {
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+		return
+	}
 	if p.Status == "" {
 		p.Status = StatusDraft
 	}
@@ -152,6 +156,10 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 	if p.Type != nil && !p.Type.Valid() {
 		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid content type")
+		return
+	}
+	if err := CheckFieldLengths(p.Title, p.Excerpt, p.Body); err != nil {
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", err.Error())
 		return
 	}
 	// IsPublic is a bool pointer — no validation needed beyond JSON decode
@@ -381,6 +389,10 @@ func (h *Handler) SendBack(w http.ResponseWriter, r *http.Request) {
 	}
 	if containsProseControlChars(reviewNote) {
 		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "review_note must not contain control characters")
+		return
+	}
+	if err := CheckReviewNoteLength(reviewNote); err != nil {
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", err.Error())
 		return
 	}
 

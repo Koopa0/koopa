@@ -311,6 +311,9 @@ func validateProposeContent(input ProposeContentInput) (content.Type, string, []
 	if goal.ContainsControlChars(input.ProposalRationale) {
 		return "", "", nil, fmt.Errorf("proposal_rationale must not contain control characters")
 	}
+	if err := content.CheckFieldLengths(&input.Title, &input.Excerpt, &input.Body); err != nil {
+		return "", "", nil, err
+	}
 
 	slug := strings.TrimSpace(input.Slug)
 	if slug == "" {

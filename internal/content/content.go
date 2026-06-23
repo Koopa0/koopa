@@ -14,6 +14,7 @@ import (
 	"errors"
 	"fmt"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgerrcode"
@@ -56,6 +57,43 @@ const (
 	StatusPublished        Status = "published"
 	StatusArchived         Status = "archived"
 )
+
+// Field length caps for content write paths (propose_content, revise_content,
+// admin create/update, send-back). Single-line fields are bounded in runes so a
+// multibyte title is not unfairly cut by byte count; body is bounded in bytes
+// (Markdown payload size). Enforced at each write boundary via CheckFieldLengths
+// and CheckReviewNoteLength.
+const (
+	MaxTitleLen      = 300
+	MaxExcerptLen    = 1000
+	MaxBodyBytes     = 256 * 1024
+	MaxReviewNoteLen = 4000
+)
+
+// CheckFieldLengths enforces the content field length caps. A nil argument is
+// skipped (an omitted optional field), so the same check serves create (all
+// present) and partial update (only changed fields). It returns a descriptive
+// error naming the first offending field, or nil.
+func CheckFieldLengths(title, excerpt, body *string) error {
+	if title != nil && utf8.RuneCountInString(*title) > MaxTitleLen {
+		return fmt.Errorf("title too long: %d characters (max %d)", utf8.RuneCountInString(*title), MaxTitleLen)
+	}
+	if excerpt != nil && utf8.RuneCountInString(*excerpt) > MaxExcerptLen {
+		return fmt.Errorf("excerpt too long: %d characters (max %d)", utf8.RuneCountInString(*excerpt), MaxExcerptLen)
+	}
+	if body != nil && len(*body) > MaxBodyBytes {
+		return fmt.Errorf("body too long: %d bytes (max %d)", len(*body), MaxBodyBytes)
+	}
+	return nil
+}
+
+// CheckReviewNoteLength enforces the send-back review_note cap (runes).
+func CheckReviewNoteLength(note string) error {
+	if utf8.RuneCountInString(note) > MaxReviewNoteLen {
+		return fmt.Errorf("review_note too long: %d characters (max %d)", utf8.RuneCountInString(note), MaxReviewNoteLen)
+	}
+	return nil
+}
 
 // TopicRef is a lightweight topic reference embedded in content.
 type TopicRef struct {
