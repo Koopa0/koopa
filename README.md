@@ -124,7 +124,7 @@ A single-admin system by design: no RBAC, no multi-tenant, no "share with a coll
 | Embedding        | `gemini-embedding-2` (1536d Matryoshka); background reconciler keeps the search corpus embedded |
 | Scheduling       | Agent cadences declared in `internal/agent/registry.go`; execution driven by an external Cowork/Desktop runner; audited via `process_runs` |
 | Frontend         | Angular 22 (SSR, zoneless, Signal Forms), Tailwind CSS v4                      |
-| AI collaboration | Claude (Cowork + Code), Codex CLI, MCP (16 workflow tools)                    |
+| AI collaboration | Claude (Cowork + Code), Codex CLI, MCP (14 workflow tools)                    |
 | Cache            | Ristretto (in-memory, single machine)                                         |
 | Object storage   | Cloudflare R2 (S3-compatible)                                                  |
 

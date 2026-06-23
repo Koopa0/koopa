@@ -252,8 +252,10 @@ points at the catalog rather than duplicating the per-tool table; read
 The agent write surface is exactly: `capture_inbox` (Additive), `plan_day`
 (Idempotent — atomic replacement), `propose_area` / `propose_goal` /
 `propose_project` / `propose_content` (Additive — inert drafts / review-queue
-push), and `resolve_task` (Destructive — caller-scoped self-clear of a todo the
-agent created).
+push), `revise_content` (Destructive — caller-scoped revise of the agent's own
+`review` / `changes_requested` content, resent to the review queue), and
+`resolve_task` (Destructive — caller-scoped self-clear of a todo the agent
+created).
 
 ---
 
@@ -344,8 +346,9 @@ a backend table. The agent commitment write surface is exactly: `capture_inbox`
 `status=proposed` drafts — agents never activate or reject; that is admin HTTP,
 and proposals materialize only from owner-present conversations, never from
 scheduled runs), `propose_content` (finished piece into `status=review`, never
-published by an agent), `plan_day`, and `resolve_task` (caller-scoped
-self-clear). Content publishing is admin HTTP only. Other structural guarantees: no daily-plan
+published by an agent), `revise_content` (caller-scoped revise of the agent's
+own `review` / `changes_requested` content), `plan_day`, and `resolve_task`
+(caller-scoped self-clear). Content publishing is admin HTTP only. Other structural guarantees: no daily-plan
 auto-carryover; no RBAC; no quantitative milestones; no goal auto-status; no
 direct `activity_events` INSERT. (Each is schema- or policy-enforced; see §3.)
 
