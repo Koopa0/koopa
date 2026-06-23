@@ -219,9 +219,9 @@ func (s *Store) RevertContentToDraft(ctx context.Context, id uuid.UUID) (*Conten
 	})
 }
 
-// ArchiveContentReturning archives content and returns the updated row. The
-// :exec variant ArchiveContent is reserved for DeleteContent's soft-delete
-// path which discards the row.
+// ArchiveContentReturning archives content and returns the updated row. Both
+// the REST archive endpoint and DeleteContent call it; DeleteContent discards
+// the row but relies on the RETURNING to detect a missing id (ErrNotFound).
 func (s *Store) ArchiveContentReturning(ctx context.Context, id uuid.UUID) (*Content, error) {
 	r, err := s.q.ArchiveContentReturning(ctx, id)
 	if err != nil {

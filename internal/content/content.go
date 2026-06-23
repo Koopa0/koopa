@@ -58,6 +58,16 @@ const (
 	StatusArchived         Status = "archived"
 )
 
+// Valid reports whether s is a known content status.
+func (s Status) Valid() bool {
+	switch s {
+	case StatusDraft, StatusReview, StatusChangesRequested, StatusPublished, StatusArchived:
+		return true
+	default:
+		return false
+	}
+}
+
 // Field length caps for content write paths (propose_content, revise_content,
 // admin create/update, send-back). Single-line fields are bounded in runes so a
 // multibyte title is not unfairly cut by byte count; body is bounded in bytes
@@ -790,8 +800,12 @@ func (s *Store) UpdateContent(ctx context.Context, id uuid.UUID, p *UpdateParams
 }
 
 func (s *Store) DeleteContent(ctx context.Context, id uuid.UUID) error {
-	err := s.q.ArchiveContent(ctx, id)
-	if err != nil {
+	// Use the RETURNING variant so a missing id surfaces as ErrNotFound (→ 404),
+	// consistent with the /archive route, instead of a silent no-op → 204.
+	if _, err := s.q.ArchiveContentReturning(ctx, id); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrNotFound
+		}
 		return fmt.Errorf("archiving content %s: %w", id, err)
 	}
 	return nil

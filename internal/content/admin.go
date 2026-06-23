@@ -124,6 +124,10 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	if p.Status == "" {
 		p.Status = StatusDraft
 	}
+	if !p.Status.Valid() {
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid content status")
+		return
+	}
 	// IsPublic defaults to false (zero value for bool) — callers set explicitly if needed
 
 	tx, ok := h.mustAdminTx(w, r)
@@ -156,6 +160,10 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 	if p.Type != nil && !p.Type.Valid() {
 		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid content type")
+		return
+	}
+	if p.Status != nil && !p.Status.Valid() {
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid content status")
 		return
 	}
 	if err := CheckFieldLengths(p.Title, p.Excerpt, p.Body); err != nil {
@@ -192,8 +200,7 @@ func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.store.WithTx(tx).DeleteContent(r.Context(), id); err != nil {
-		h.logger.Error("deleting content", "id", id, "error", err)
-		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to delete content")
+		api.HandleError(w, h.logger, err, storeErrors...)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

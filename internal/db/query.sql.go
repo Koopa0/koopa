@@ -445,15 +445,6 @@ func (q *Queries) AllPublishedSlugs(ctx context.Context) ([]AllPublishedSlugsRow
 	return items, nil
 }
 
-const archiveContent = `-- name: ArchiveContent :exec
-UPDATE contents SET status = 'archived', review_note = NULL, updated_at = now() WHERE id = $1
-`
-
-func (q *Queries) ArchiveContent(ctx context.Context, id uuid.UUID) error {
-	_, err := q.db.Exec(ctx, archiveContent, id)
-	return err
-}
-
 const archiveContentReturning = `-- name: ArchiveContentReturning :one
 UPDATE contents SET status = 'archived', review_note = NULL, updated_at = now()
 WHERE id = $1
@@ -482,9 +473,9 @@ type ArchiveContentReturningRow struct {
 	UpdatedAt      time.Time       `json:"updated_at"`
 }
 
-// Archive a content row and return the updated row. Used by the REST
-// archive endpoint which returns the row body; ArchiveContent (:exec) is
-// kept for DeleteContent's soft-delete path which discards the row.
+// Archive a content row and return the updated row. Both the REST archive
+// endpoint and DeleteContent use it — the RETURNING row lets a missing id
+// surface as ErrNotFound (→ 404) instead of a silent no-op.
 func (q *Queries) ArchiveContentReturning(ctx context.Context, id uuid.UUID) (ArchiveContentReturningRow, error) {
 	row := q.db.QueryRow(ctx, archiveContentReturning, id)
 	var i ArchiveContentReturningRow

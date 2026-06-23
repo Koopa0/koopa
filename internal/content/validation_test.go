@@ -251,6 +251,14 @@ func TestHandler_Create_Validation(t *testing.T) {
 			wantErrCode: "BAD_REQUEST",
 		},
 		{
+			// Invalid status must be rejected at the handler (400), not cast to
+			// the PG enum where it surfaces as 22P02 → 500.
+			name:        "invalid status",
+			body:        `{"slug":"s","title":"T","type":"article","status":"bogus"}`,
+			wantCode:    http.StatusBadRequest,
+			wantErrCode: "BAD_REQUEST",
+		},
+		{
 			name:        "malformed json",
 			body:        `{"slug":`,
 			wantCode:    http.StatusBadRequest,

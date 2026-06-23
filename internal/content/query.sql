@@ -170,13 +170,10 @@ RETURNING id, slug, title, body, excerpt, type, status,
           series_id, series_order, is_public, project_id, ai_metadata, reading_time_min,
           cover_image, published_at, created_at, updated_at;
 
--- name: ArchiveContent :exec
-UPDATE contents SET status = 'archived', review_note = NULL, updated_at = now() WHERE id = $1;
-
 -- name: ArchiveContentReturning :one
--- Archive a content row and return the updated row. Used by the REST
--- archive endpoint which returns the row body; ArchiveContent (:exec) is
--- kept for DeleteContent's soft-delete path which discards the row.
+-- Archive a content row and return the updated row. Both the REST archive
+-- endpoint and DeleteContent use it — the RETURNING row lets a missing id
+-- surface as ErrNotFound (→ 404) instead of a silent no-op.
 UPDATE contents SET status = 'archived', review_note = NULL, updated_at = now()
 WHERE id = $1
 RETURNING id, slug, title, body, excerpt, type, status,
