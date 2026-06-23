@@ -329,8 +329,8 @@ func (s *Store) IncrementFailure(ctx context.Context, id uuid.UUID, errMsg strin
 func (s *Store) ResetFailure(ctx context.Context, id uuid.UUID, etag, lastModified string) error {
 	if err := s.q.ResetFeedFailure(ctx, db.ResetFeedFailureParams{
 		ID:           id,
-		Etag:         &etag,
-		LastModified: &lastModified,
+		Etag:         etag,
+		LastModified: lastModified,
 	}); err != nil {
 		return fmt.Errorf("resetting feed failure %s: %w", id, err)
 	}

@@ -89,14 +89,17 @@ UPDATE feeds SET
 WHERE id = $1;
 
 -- name: ResetFeedFailure :exec
+-- Preserve the stored validators when the response omits them: a 304 (and some
+-- 200s) frequently carry no ETag/Last-Modified, and overwriting with '' would
+-- drop the conditional-GET validator and force a full refetch every poll.
 UPDATE feeds SET
     consecutive_failures = 0,
     last_error = '',
-    etag = $2,
-    last_modified = $3,
+    etag = COALESCE(NULLIF(sqlc.arg('etag')::text, ''), etag),
+    last_modified = COALESCE(NULLIF(sqlc.arg('last_modified')::text, ''), last_modified),
     last_fetched_at = now(),
     updated_at = now()
-WHERE id = $1;
+WHERE id = sqlc.arg('id');
 
 -- name: InsertCrawlRun :exec
 INSERT INTO process_runs (kind, name, input, output, status, error, started_at, ended_at)

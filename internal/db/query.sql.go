@@ -5226,21 +5226,24 @@ const resetFeedFailure = `-- name: ResetFeedFailure :exec
 UPDATE feeds SET
     consecutive_failures = 0,
     last_error = '',
-    etag = $2,
-    last_modified = $3,
+    etag = COALESCE(NULLIF($1::text, ''), etag),
+    last_modified = COALESCE(NULLIF($2::text, ''), last_modified),
     last_fetched_at = now(),
     updated_at = now()
-WHERE id = $1
+WHERE id = $3
 `
 
 type ResetFeedFailureParams struct {
+	Etag         string    `json:"etag"`
+	LastModified string    `json:"last_modified"`
 	ID           uuid.UUID `json:"id"`
-	Etag         *string   `json:"etag"`
-	LastModified *string   `json:"last_modified"`
 }
 
+// Preserve the stored validators when the response omits them: a 304 (and some
+// 200s) frequently carry no ETag/Last-Modified, and overwriting with ” would
+// drop the conditional-GET validator and force a full refetch every poll.
 func (q *Queries) ResetFeedFailure(ctx context.Context, arg ResetFeedFailureParams) error {
-	_, err := q.db.Exec(ctx, resetFeedFailure, arg.ID, arg.Etag, arg.LastModified)
+	_, err := q.db.Exec(ctx, resetFeedFailure, arg.Etag, arg.LastModified, arg.ID)
 	return err
 }
 
