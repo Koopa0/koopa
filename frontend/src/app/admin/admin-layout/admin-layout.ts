@@ -17,17 +17,17 @@ import { ADMIN_NAV, type AdminNavItem } from './admin-nav.config';
 import { AdminNavCountsService } from './admin-nav-counts.service';
 
 /**
- * Admin shell — 6-group nav rail + Topbar + main router-outlet.
- * Replaces the legacy NOW/ATLAS 2-mode shell. Nav groups follow the
- * Mission Control design IA (Daily / Commitment / Knowledge / Library /
- * Input / System).
+ * Admin shell — 6-group nav rail + Topbar + main router-outlet. Nav groups
+ * follow the Mission Control design IA (Daily / Commitment / Knowledge /
+ * Library / Input / System).
  * Counts are synthesized by
  * {@link AdminNavCountsService} until the unified
  * `/api/admin/system/health` envelope lands, and refreshed on every
  * navigation end so post-mutation pages see up-to-date counts.
  *
- * Height: `100dvh - 57px` matches the public AppShell navbar. The magic
- * number is intentional until that shell exports a CSS custom property.
+ * Height: `100dvh`. The admin area carries its own shell with no public
+ * masthead above it (see app.html `isAdminArea` branch), so the rail fills
+ * the full viewport.
  */
 @Component({
   selector: 'app-admin-layout',
@@ -41,7 +41,7 @@ import { AdminNavCountsService } from './admin-nav-counts.service';
   ],
   templateUrl: './admin-layout.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  host: { class: 'flex h-[calc(100dvh-57px)] flex-col' },
+  host: { class: 'flex h-dvh flex-col' },
 })
 export class AdminLayoutComponent {
   private readonly router = inject(Router);
