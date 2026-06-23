@@ -481,13 +481,9 @@ func TestIntegration_Goal_Update(t *testing.T) {
 
 	id := seedGoal(t, "Original title")
 
-	// Resolve a real area so the partial update can also rewire area_id.
-	var areaID uuid.UUID
-	if err := testPool.QueryRow(t.Context(),
-		`SELECT id FROM areas WHERE slug = 'japanese'`,
-	).Scan(&areaID); err != nil {
-		t.Fatalf("resolving seeded area: %v", err)
-	}
+	// Create a real area so the partial update can also rewire area_id
+	// (areas are no longer seeded by the migration).
+	areaID := seedArea(t, "japanese", "Japanese", "active")
 
 	req := putJSON(t, "/api/admin/commitment/goals/"+id.String(), map[string]any{
 		"title":   "Updated title",

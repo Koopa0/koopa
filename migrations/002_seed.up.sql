@@ -1,20 +1,7 @@
 -- Seed data — separated from schema definition for clarity.
-
--- ============================================================
--- Areas (PARA Areas of Responsibility)
--- ============================================================
-
--- The six real life-domains (PARA Areas). Names are authoritative; slugs are
--- ASCII romanizations for URL-safe addressing; descriptions are left blank for
--- the owner to fill in admin rather than seeded with assumed framing.
-INSERT INTO areas (slug, name, description, sort_order) VALUES
-    ('studio',     '工作室與系統', '', 1),
-    ('japanese',   '日語',         '', 2),
-    ('literature', '文學閱讀',     '', 3),
-    ('yorushika',  'ヨルシカ',     '', 4),
-    ('career',     '職涯',         '', 5),
-    ('body',       '身體',         '', 6)
-ON CONFLICT (slug) DO NOTHING;
+--
+-- PARA Areas are intentionally NOT seeded: areas are personal life-domains the
+-- owner grows on demand in admin when first filing a goal or project under one.
 
 -- ============================================================
 -- Topics
@@ -36,7 +23,7 @@ INSERT INTO topics (slug, name, description, sort_order) VALUES
 ON CONFLICT (slug) DO NOTHING;
 
 -- ============================================================
--- Feeds (with correct priority inline, no UPDATE needed)
+-- Feeds
 -- ============================================================
 
 -- Helper: resolve topic slugs to UUIDs for feed_topics junction.
@@ -76,7 +63,7 @@ INSERT INTO feeds (url, name, schedule, priority, filter_config) VALUES
 ON CONFLICT (url) DO NOTHING;
 
 -- ============================================================
--- Feed ↔ Topic associations (replaces old TEXT[] column)
+-- Feed ↔ Topic associations
 -- ============================================================
 
 -- Using a DO block to resolve slugs → UUIDs without repeating subqueries.

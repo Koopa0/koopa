@@ -825,13 +825,8 @@ func TestIntegration_ProposeArea_BlankNameRejected(t *testing.T) {
 func TestIntegration_ProposeGoal_AsPlanner(t *testing.T) {
 	s := setupServer(t)
 
-	// Resolve a seeded active area to file under.
-	var areaID uuid.UUID
-	if err := testPool.QueryRow(t.Context(),
-		`SELECT id FROM areas WHERE slug = 'japanese'`,
-	).Scan(&areaID); err != nil {
-		t.Fatalf("resolving seeded area: %v", err)
-	}
+	// Create an active area to file under (areas are no longer seeded).
+	areaID := ensureArea(t, "japanese")
 
 	_, out, err := callHandlerAs(t, "planner", s.proposeGoal, ProposeGoalInput{
 		Area:       "japanese",
@@ -1602,14 +1597,18 @@ func seedProgressTodo(t *testing.T, projectID uuid.UUID, title, state string) {
 	}
 }
 
-// areaIDBySlug resolves a seeded/migration area slug to its id.
-func areaIDBySlug(t *testing.T, slug string) uuid.UUID {
+// ensureArea creates an active area with the given slug if it does not already
+// exist and returns its id. Areas are no longer seeded by the migration, so
+// tests that need one provision it themselves.
+func ensureArea(t *testing.T, slug string) uuid.UUID {
 	t.Helper()
 	var id uuid.UUID
 	if err := testPool.QueryRow(t.Context(),
-		`SELECT id FROM areas WHERE slug = $1`, slug,
+		`INSERT INTO areas (slug, name, status) VALUES ($1, $1, 'active')
+		 ON CONFLICT (slug) DO UPDATE SET slug = EXCLUDED.slug
+		 RETURNING id`, slug,
 	).Scan(&id); err != nil {
-		t.Fatalf("areaIDBySlug(%q): %v", slug, err)
+		t.Fatalf("ensureArea(%q): %v", slug, err)
 	}
 	return id
 }
@@ -1718,8 +1717,8 @@ func TestIntegration_ProjectProgress_HumanOnlyAndStalled(t *testing.T) {
 func TestIntegration_ProjectProgress_AreaNeglect(t *testing.T) {
 	s := setupServer(t)
 
-	careerID := areaIDBySlug(t, "career")
-	studioID := areaIDBySlug(t, "studio")
+	careerID := ensureArea(t, "career")
+	studioID := ensureArea(t, "studio")
 
 	// career: human active today → not neglected.
 	cproj := seedProgressProject(t, "career-proj", "Career Proj", "weekly", nil, &careerID)
