@@ -70,6 +70,20 @@ describe('gtd-view', () => {
     ).toEqual(['parked']);
   });
 
+  it('keeps a started (in_progress) todo in Today even when unplanned and not due today', () => {
+    // Regression: starting a Pending todo (→ in_progress) once made it
+    // vanish from every view when it was neither in the plan nor due today.
+    const started = row({
+      id: 'started',
+      state: 'in_progress',
+      due: '2026-06-20T00:00:00Z',
+    });
+    const ids = rowsForView('today', [started], new Set<string>(), TODAY).map(
+      (r) => r.id,
+    );
+    expect(ids).toEqual(['started']);
+  });
+
   it('counts every view, including recurring buckets and history length', () => {
     const counts = viewCounts(
       backlog,

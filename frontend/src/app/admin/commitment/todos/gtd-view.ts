@@ -148,11 +148,16 @@ export function rowsForView(
     case 'inbox':
       return rows.filter((r) => r.state === 'inbox');
     case 'today':
+      // An in_progress todo is active work — it always belongs in Today
+      // (with its Complete action) regardless of plan membership or due
+      // date, so starting a task never makes it vanish from every view.
       return rows.filter(
         (r) =>
           r.state !== 'done' &&
           r.state !== 'inbox' &&
-          (planTodoIds.has(r.id) || dueDay(r.due) === todayIso),
+          (r.state === 'in_progress' ||
+            planTodoIds.has(r.id) ||
+            dueDay(r.due) === todayIso),
       );
     case 'pending':
       return rows.filter(
