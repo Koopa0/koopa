@@ -112,7 +112,7 @@ describe('CommandPaletteComponent', () => {
       httpMock.expectOne('/bff/api/admin/commitment/goals').flush([]);
       httpMock
         .expectOne('/bff/api/admin/commitment/projects')
-        .flush({ projects: [] });
+        .flush({ data: [] });
       httpMock
         .expectOne((r) => r.url.includes('/bff/api/admin/knowledge/content'))
         .flush({ data: [] });
