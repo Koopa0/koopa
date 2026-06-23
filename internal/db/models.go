@@ -428,7 +428,7 @@ type Content struct {
 	CreatedBy *string `json:"created_by"`
 	// The proposing agent's "why I propose this" note, shown alongside the row in the admin review queue. NULL for admin-authored content (no agent rationale).
 	ProposalRationale *string `json:"proposal_rationale"`
-	// The owner's revision reason, set when the owner sends a draft back (status → changes_requested) from the admin review queue. The authoring agent reads it via list_content and addresses it with revise_content (which returns the row to review). NULL when the row has never been sent back.
+	// The owner's revision reason, set when the owner sends a draft back (status → changes_requested) from the admin review queue. The authoring agent reads it via list_content and addresses it with revise_content (which returns the row to review). NULL when the row has never been sent back. Invariant (chk_content_review_note_state): non-NULL only while status=changes_requested — every transition out of that state clears it.
 	ReviewNote *string `json:"review_note"`
 	// When content was published. NULL = not yet published.
 	PublishedAt *time.Time `json:"published_at"`

@@ -13,14 +13,14 @@ is hand-maintained.
 > Run `go generate ./internal/mcp/ops` after any change to the tool surface;
 > the drift test `TestToolInventoryDocInSync` fails CI if this is stale.
 
-**13 tools** across 3 domains.
+**16 tools** across 3 domains.
 
 | Domain | Count |
 |---|---|
-| `query` | 5 |
+| `query` | 6 |
 | `daily` | 7 |
-| `content` | 1 |
-| **Total** | **13** |
+| `content` | 3 |
+| **Total** | **16** |
 
 | Tool | Domain | Writability | Purpose |
 |---|---|---|---|
@@ -28,6 +28,7 @@ is hand-maintained.
 | `get_reading` | `query` | read_only | Read-only fetch of one book by id, returning the reading (incl |
 | `list_readings` | `query` | read_only | Read-only list of Koopa's reading shelf |
 | `project_progress` | `query` | read_only | Read-only PARA momentum/stalled intelligence for Koopa's projects, goals, and areas |
+| `review_period` | `query` | read_only | Read-only windowed retrospective of what KOOPA got done over a date window |
 | `search_knowledge` | `query` | read_only | Read-only search across Koopa's corpus: content (articles, essays, build-logs, TILs, digests), the reading shelf (books + reading diary), and the ヨルシカ… |
 | `capture_inbox` | `daily` | additive | Quick task capture to inbox |
 | `list_tasks` | `daily` | read_only | Read-only readback of the todos you created (created_by = your resolved caller identity) so you can learn their disposition |
@@ -36,7 +37,9 @@ is hand-maintained.
 | `propose_goal` | `daily` | additive | Propose a goal (with optional ordered milestones) as an INERT draft in status=proposed |
 | `propose_project` | `daily` | additive | Propose a NEW project (a short-term effort with a clear outcome) as an INERT draft in status=proposed |
 | `resolve_task` | `daily` | destructive | Move a todo YOU created to a terminal state: done (completed), archived (filed away), or dismissed (won't do) |
+| `list_content` | `content` | read_only | Read-only readback of the content YOU proposed (created_by = your resolved caller identity) so you can learn its disposition |
 | `propose_content` | `content` | additive | Propose a FINISHED content piece (article, essay, build-log, til, or digest) into the editorial review queue |
+| `revise_content` | `content` | destructive | Revise content YOU created that is in review or changes_requested, returning it to the review queue and clearing the owner's review_note |
 <!-- GENERATED:TOOL-INVENTORY END -->
 
 ---

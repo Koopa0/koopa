@@ -39,6 +39,8 @@ export interface ApiContent {
   created_by?: string | null;
   /** The proposing agent's rationale, shown in the review queue. Null for admin-authored content. */
   proposal_rationale?: string | null;
+  /** Owner's revision note when sending content back from review. Populated only when status=changes_requested. */
+  review_note?: string | null;
   published_at: string | null;
   created_at: string;
   updated_at: string;
@@ -47,7 +49,12 @@ export interface ApiContent {
 // Backend content_type enum (migrations/001_initial.up.sql).
 export type ContentType = 'article' | 'essay' | 'build-log' | 'til' | 'digest';
 
-export type ContentStatus = 'draft' | 'review' | 'published' | 'archived';
+export type ContentStatus =
+  | 'draft'
+  | 'review'
+  | 'changes_requested'
+  | 'published'
+  | 'archived';
 
 /** Backend Topic object */
 export interface ApiTopic {

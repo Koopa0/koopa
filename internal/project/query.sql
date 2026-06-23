@@ -261,6 +261,123 @@ LEFT JOIN (
 WHERE a.status = 'active'
 ORDER BY a.sort_order, a.name;
 
+-- ============================================================
+-- review_period — windowed owner retrospective. Read-only, computed LIVE
+-- from activity_events (the canonical "what happened, by whom" log) over a
+-- [since, until] window. HUMAN ACTIVITY ONLY for the owner-progress rows:
+-- actor = 'human' — IDENTICAL to ProjectMomentum. The window bounds are
+-- whole-day-inclusive instants passed by the handler ([since 00:00,
+-- until 23:59:59] in the owner's timezone).
+-- ============================================================
+
+-- name: CompletedTodosInWindow :many
+-- Todos the owner completed in the window, for review_period.completed_todos.
+-- Sourced from activity_events (entity_type='todo', change_kind='completed',
+-- actor='human'); title is the write-time entity_title snapshot so a
+-- since-deleted todo still reports. project/area resolved via the event's
+-- project_id (LEFT JOIN, null when the event had no project association).
+SELECT
+    ae.entity_title AS title,
+    ae.occurred_at  AS completed_at,
+    p.title         AS project_title,
+    a.name          AS area_name
+FROM activity_events ae
+LEFT JOIN projects p ON p.id = ae.project_id
+LEFT JOIN areas a ON a.id = p.area_id
+WHERE ae.entity_type = 'todo'
+  AND ae.change_kind = 'completed'
+  AND ae.actor = 'human'
+  AND ae.occurred_at >= @since AND ae.occurred_at <= @until
+ORDER BY ae.occurred_at DESC;
+
+-- name: CompletedMilestonesInWindow :many
+-- Milestones the owner completed in the window, for
+-- review_period.completed_milestones. Sourced from activity_events
+-- (entity_type='milestone', change_kind='completed', actor='human'). goal/area
+-- are resolved by joining the live milestone row (entity_id → milestones → goals
+-- → areas); a hard-deleted milestone falls back to the entity_title snapshot
+-- with null goal/area.
+SELECT
+    ae.entity_title AS title,
+    ae.occurred_at  AS completed_at,
+    g.title         AS goal_title,
+    a.name          AS area_name
+FROM activity_events ae
+LEFT JOIN milestones m ON m.id = ae.entity_id
+LEFT JOIN goals g ON g.id = m.goal_id
+LEFT JOIN areas a ON a.id = g.area_id
+WHERE ae.entity_type = 'milestone'
+  AND ae.change_kind = 'completed'
+  AND ae.actor = 'human'
+  AND ae.occurred_at >= @since AND ae.occurred_at <= @until
+ORDER BY ae.occurred_at DESC;
+
+-- name: ActiveGoalsAdvancedInWindow :many
+-- Every active (in_progress) goal with milestone progress and an "advanced"
+-- flag for review_period.goals. milestone_done/total mirror ActiveGoalMilestones;
+-- advanced is true when the goal had at least one milestone completed within the
+-- window (completed_at in [since, until]).
+SELECT
+    g.id,
+    g.title,
+    a.name AS area_name,
+    (
+        SELECT count(*) FROM milestones m
+        WHERE m.goal_id = g.id AND m.completed_at IS NOT NULL
+    )::bigint AS milestone_done,
+    (
+        SELECT count(*) FROM milestones m
+        WHERE m.goal_id = g.id
+    )::bigint AS milestone_total,
+    EXISTS (
+        SELECT 1 FROM milestones m
+        WHERE m.goal_id = g.id
+          AND m.completed_at IS NOT NULL
+          AND m.completed_at >= @since AND m.completed_at <= @until
+    ) AS advanced
+FROM goals g
+LEFT JOIN areas a ON a.id = g.area_id
+WHERE g.status = 'in_progress'
+ORDER BY g.title;
+
+-- name: AreaActivityInWindow :many
+-- Per-active-area owner-activity count over the window, for review_period.areas.
+-- activity_count is the number of activity_events (actor='human', occurred_at in
+-- window) attributable to the area via project_id → projects.area_id. neglected
+-- is derived by the handler as activity_count = 0.
+SELECT
+    a.name,
+    count(ae.id)::bigint AS activity_count
+FROM areas a
+LEFT JOIN projects p ON p.area_id = a.id
+LEFT JOIN activity_events ae
+    ON ae.project_id = p.id
+   AND ae.actor = 'human'
+   AND ae.occurred_at >= @since AND ae.occurred_at <= @until
+WHERE a.status = 'active'
+GROUP BY a.id, a.name
+ORDER BY a.sort_order, a.name;
+
+-- name: TodosOpenedCountInWindow :one
+-- Count of todos CREATED in the window across ALL actors (backlog inflow), for
+-- review_period.counts.todos_opened. No actor filter: inflow is inflow whoever
+-- captured it.
+SELECT count(*)::bigint AS todos_opened
+FROM activity_events ae
+WHERE ae.entity_type = 'todo'
+  AND ae.change_kind = 'created'
+  AND ae.occurred_at >= @since AND ae.occurred_at <= @until;
+
+-- name: ActiveDaysInWindow :one
+-- Count of DISTINCT calendar days on which the owner had any activity in the
+-- window, for review_period.counts.active_days. Human actor only; date() uses
+-- the database session timezone, matching the whole-day window bounds the
+-- handler supplies.
+SELECT count(DISTINCT date(ae.occurred_at))::bigint AS active_days
+FROM activity_events ae
+WHERE ae.actor = 'human'
+  AND ae.occurred_at >= @since AND ae.occurred_at <= @until;
+
 -- name: ProfileByProjectID :one
 SELECT project_id, long_description, role, tech_stack, highlights,
        problem, solution, architecture, results, github_url, live_url,

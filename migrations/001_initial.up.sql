@@ -481,7 +481,9 @@ CREATE TABLE contents (
     CONSTRAINT chk_content_publication
         CHECK ((status = 'published') = (published_at IS NOT NULL)),
     CONSTRAINT chk_content_public_requires_published
-        CHECK (NOT is_public OR status = 'published')
+        CHECK (NOT is_public OR status = 'published'),
+    CONSTRAINT chk_content_review_note_state
+        CHECK (review_note IS NULL OR status = 'changes_requested')
 );
 
 COMMENT ON TABLE contents IS 'First-party publishable knowledge layer. Five content types (article, essay, build-log, til, digest) share one editorial lifecycle: draft → review → published, with a review → changes_requested → review revision loop. The review state is a two-actor handoff — an agent pushes a finished draft into review (propose_content) or the owner drafts in admin; from the admin review queue the human admin publishes OR sends it back (status changes_requested + review_note), and the authoring agent revises (revise_content) back into review. published status and published_at are tied by chk_content_publication; is_public requires published by chk_content_public_requires_published.';
@@ -501,7 +503,7 @@ COMMENT ON COLUMN contents.is_public IS
 COMMENT ON COLUMN contents.project_id IS 'Associated project. SET NULL on project deletion — content survives independently.';
 COMMENT ON COLUMN contents.created_by IS 'Proposing agent for agent-pushed content (references agents(name), e.g. hermes pushing a finished draft via the propose_content MCP tool). NULL for owner/admin-authored content created through the admin UI. ON DELETE RESTRICT — a registered agent that has proposed content cannot be removed while its proposals exist.';
 COMMENT ON COLUMN contents.proposal_rationale IS 'The proposing agent''s "why I propose this" note, shown alongside the row in the admin review queue. NULL for admin-authored content (no agent rationale).';
-COMMENT ON COLUMN contents.review_note IS 'The owner''s revision reason, set when the owner sends a draft back (status → changes_requested) from the admin review queue. The authoring agent reads it via list_content and addresses it with revise_content (which returns the row to review). NULL when the row has never been sent back.';
+COMMENT ON COLUMN contents.review_note IS 'The owner''s revision reason, set when the owner sends a draft back (status → changes_requested) from the admin review queue. The authoring agent reads it via list_content and addresses it with revise_content (which returns the row to review). NULL when the row has never been sent back. Invariant (chk_content_review_note_state): non-NULL only while status=changes_requested — every transition out of that state clears it.';
 COMMENT ON COLUMN contents.published_at IS 'When content was published. NULL = not yet published.';
 COMMENT ON COLUMN contents.search_vector IS
     'Generated tsvector for full-text search. Uses ''simple'' config (no stemming/language-specific '
@@ -521,6 +523,7 @@ CREATE INDEX idx_contents_is_public ON contents(status, is_public)
     WHERE status = 'published' AND is_public = true;
 CREATE INDEX idx_contents_project_id ON contents(project_id) WHERE project_id IS NOT NULL;
 CREATE INDEX idx_contents_created_at ON contents(created_at DESC);
+CREATE INDEX idx_contents_created_by ON contents (created_by, created_at DESC) WHERE created_by IS NOT NULL;
 CREATE INDEX idx_contents_published_at_pub ON contents (published_at DESC NULLS LAST)
     WHERE status = 'published';
 

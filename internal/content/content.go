@@ -50,10 +50,11 @@ func (t Type) Valid() bool {
 type Status string
 
 const (
-	StatusDraft     Status = "draft"
-	StatusReview    Status = "review"
-	StatusPublished Status = "published"
-	StatusArchived  Status = "archived"
+	StatusDraft            Status = "draft"
+	StatusReview           Status = "review"
+	StatusChangesRequested Status = "changes_requested" // owner sent a review draft back; the authoring agent revises via revise_content (→ review)
+	StatusPublished        Status = "published"
+	StatusArchived         Status = "archived"
 )
 
 // TopicRef is a lightweight topic reference embedded in content.
@@ -86,10 +87,15 @@ type Content struct {
 	CreatedBy *string `json:"created_by,omitempty"`
 	// ProposalRationale is the proposing agent's "why I propose this" note,
 	// surfaced in the admin review queue. NULL for admin-authored content.
-	ProposalRationale *string    `json:"proposal_rationale,omitempty"`
-	PublishedAt       *time.Time `json:"published_at,omitempty"`
-	CreatedAt         time.Time  `json:"created_at"`
-	UpdatedAt         time.Time  `json:"updated_at"`
+	ProposalRationale *string `json:"proposal_rationale,omitempty"`
+	// ReviewNote is the owner's revision reason, set when the owner sends a
+	// review draft back (status → changes_requested) from the admin review
+	// queue. The authoring agent reads it via list_content and addresses it
+	// with revise_content. NULL when the row has never been sent back.
+	ReviewNote  *string    `json:"review_note,omitempty"`
+	PublishedAt *time.Time `json:"published_at,omitempty"`
+	CreatedAt   time.Time  `json:"created_at"`
+	UpdatedAt   time.Time  `json:"updated_at"`
 }
 
 // Brief is the minimal content projection used when a consumer only needs
@@ -166,6 +172,34 @@ type UpdateParams struct {
 	AIMetadata     json.RawMessage `json:"ai_metadata,omitempty"`
 	ReadingTimeMin *int            `json:"reading_time_min,omitempty"`
 	CoverImage     *string         `json:"cover_image,omitempty"`
+}
+
+// CreatorItem is a slim content projection for the list_content readback loop —
+// just enough for an agent to learn the disposition (status) of content it
+// proposed, plus the owner's ReviewNote when the row was sent back for changes.
+// The heavyweight fields (body / topics / metadata) the readback does not need
+// are omitted; created_by is implied by the query filter and supplied by the
+// caller, so it is not re-selected here.
+type CreatorItem struct {
+	ID         uuid.UUID `json:"id"`
+	Slug       string    `json:"slug"`
+	Title      string    `json:"title"`
+	Type       Type      `json:"type"`
+	Status     Status    `json:"status"`
+	ReviewNote *string   `json:"review_note,omitempty"`
+	CreatedAt  time.Time `json:"created_at"`
+}
+
+// RevisionParams are the parameters for the caller-scoped revise_content write.
+// ID + CreatedBy scope the write to the caller's own content; Body/Excerpt/Title
+// are optional edits (nil leaves the column unchanged via COALESCE). The
+// transition always returns the row to review and clears the owner's review_note.
+type RevisionParams struct {
+	ID        uuid.UUID
+	CreatedBy string
+	Body      *string
+	Excerpt   *string
+	Title     *string
 }
 
 // RelatedContent is a content item with a similarity score.
@@ -382,6 +416,33 @@ func (s *Store) Content(ctx context.Context, id uuid.UUID) (*Content, error) {
 	c.Topics = topics
 
 	return &c, nil
+}
+
+// ContentsByCreator returns the content rows created by createdBy, newest
+// first. It backs the list_content MCP readback loop: an agent reads the
+// disposition (status) of the content it proposed, plus the owner's ReviewNote
+// when the owner sent a draft back for changes. createdBy is the resolved
+// caller identity — caller-scoped, never a client-supplied filter — so the
+// result is exactly the caller's own content.
+func (s *Store) ContentsByCreator(ctx context.Context, createdBy string) ([]CreatorItem, error) {
+	rows, err := s.q.ContentsByCreator(ctx, &createdBy)
+	if err != nil {
+		return nil, fmt.Errorf("listing content created by %q: %w", createdBy, err)
+	}
+	items := make([]CreatorItem, len(rows))
+	for i := range rows {
+		r := &rows[i]
+		items[i] = CreatorItem{
+			ID:         r.ID,
+			Slug:       r.Slug,
+			Title:      r.Title,
+			Type:       Type(r.Type),
+			Status:     Status(r.Status),
+			ReviewNote: r.ReviewNote,
+			CreatedAt:  r.CreatedAt,
+		}
+	}
+	return items, nil
 }
 
 // PublicContents returns a paginated list of published-and-public
@@ -764,6 +825,7 @@ type contentRow struct {
 	CoverImage        *string
 	CreatedBy         *string
 	ProposalRationale *string
+	ReviewNote        *string
 	PublishedAt       *time.Time
 	CreatedAt         time.Time
 	UpdatedAt         time.Time
@@ -785,6 +847,7 @@ func rowToContent(r contentRow) Content { //nolint:gocritic // hugeParam: struct
 		CoverImage:        r.CoverImage,
 		CreatedBy:         r.CreatedBy,
 		ProposalRationale: r.ProposalRationale,
+		ReviewNote:        r.ReviewNote,
 		PublishedAt:       r.PublishedAt,
 		CreatedAt:         r.CreatedAt,
 		UpdatedAt:         r.UpdatedAt,

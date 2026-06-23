@@ -12,6 +12,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -82,6 +83,28 @@ func (s *Store) AllPublishedSlugs(ctx context.Context) ([]Content, error) {
 	return contents, nil
 }
 
+// PublishedInWindow returns the content published within [since, until], for
+// review_period.published_content. status='published' guarantees published_at is
+// non-null (chk_content_publication), so the window filter is well-defined.
+// Read-only; the returned rows carry only the display fields the retrospective
+// needs (title, type, published_at).
+func (s *Store) PublishedInWindow(ctx context.Context, since, until time.Time) ([]Content, error) {
+	rows, err := s.q.PublishedContentsInWindow(ctx, db.PublishedContentsInWindowParams{Since: &since, Until: &until})
+	if err != nil {
+		return nil, fmt.Errorf("listing content published in window: %w", err)
+	}
+	contents := make([]Content, len(rows))
+	for i := range rows {
+		r := &rows[i]
+		contents[i] = Content{
+			Title:       r.Title,
+			Type:        Type(r.Type),
+			PublishedAt: r.PublishedAt,
+		}
+	}
+	return contents, nil
+}
+
 // PublishFromReview is the canonical, state-guarded publish transition behind
 // the admin publish handler — the single editorial gate that promotes a review
 // row to published. The policy (Policy B):
@@ -95,6 +118,11 @@ func (s *Store) AllPublishedSlugs(ctx context.Context) ([]Content, error) {
 // It reads the current row then acts; callers already run inside an admin /
 // actor transaction, so the read and the conditional write share one tx. The
 // promotion delegates to PublishContent once the source state is validated.
+//
+// Concurrency: publish is the owner's terminal decision and wins races — a
+// concurrent agent revise_content on the same row is rejected (not-found) by
+// revise_content's status guard, by design; the owner publishes the version
+// they reviewed.
 func (s *Store) PublishFromReview(ctx context.Context, id uuid.UUID) (*Content, error) {
 	current, err := s.Content(ctx, id)
 	if err != nil {
@@ -208,6 +236,73 @@ func (s *Store) ArchiveContentReturning(ctx context.Context, id uuid.UUID) (*Con
 		SeriesID: r.SeriesID, SeriesOrder: r.SeriesOrder,
 		IsPublic: r.IsPublic, ProjectID: r.ProjectID, AiMetadata: r.AiMetadata,
 		ReadingTimeMin: r.ReadingTimeMin, CoverImage: r.CoverImage,
+		PublishedAt: r.PublishedAt,
+		CreatedAt:   r.CreatedAt, UpdatedAt: r.UpdatedAt,
+	})
+}
+
+// ReviseByCreator applies the caller-scoped revise_content edit: an agent
+// revises content IT created that is in review or changes_requested, returning
+// it to review and clearing the owner's review_note. createdBy is the resolved
+// caller identity — caller-scoped, never a client-supplied filter — so a
+// mismatched creator, a wrong status, or an unknown id all match 0 rows and
+// return ErrNotFound. The single sentinel is deliberate: a caller-scoped miss
+// must NOT leak whether the row exists, belongs to someone else, or is in a
+// non-revisable state. Body / Excerpt / Title are optional (nil leaves the
+// column unchanged via COALESCE).
+func (s *Store) ReviseByCreator(ctx context.Context, p RevisionParams) (*Content, error) {
+	r, err := s.q.ReviseContentByCreator(ctx, db.ReviseContentByCreatorParams{
+		ID:        p.ID,
+		CreatedBy: &p.CreatedBy,
+		Body:      p.Body,
+		Excerpt:   p.Excerpt,
+		Title:     p.Title,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("revising content %s created by %q: %w", p.ID, p.CreatedBy, err)
+	}
+	return s.hydrateContentRow(ctx, r.ID, &contentRow{
+		ID: r.ID, Slug: r.Slug, Title: r.Title, Body: r.Body, Excerpt: r.Excerpt,
+		Type: r.Type, Status: r.Status,
+		SeriesID: r.SeriesID, SeriesOrder: r.SeriesOrder,
+		IsPublic: r.IsPublic, ProjectID: r.ProjectID, AiMetadata: r.AiMetadata,
+		ReadingTimeMin: r.ReadingTimeMin, CoverImage: r.CoverImage,
+		CreatedBy: r.CreatedBy, ProposalRationale: r.ProposalRationale,
+		ReviewNote:  r.ReviewNote,
+		PublishedAt: r.PublishedAt,
+		CreatedAt:   r.CreatedAt, UpdatedAt: r.UpdatedAt,
+	})
+}
+
+// SendBackForChanges is the admin send-back transition: the owner returns a
+// review draft to its authoring agent for revision (review → changes_requested)
+// with reviewNote carrying the revision reason. Returns ErrInvalidState when the
+// content exists but is not in review, ErrNotFound when the id does not exist.
+// Same race-safety rationale as SubmitContentForReview: the conditional UPDATE
+// is the gate, the extra lookup only runs on the rejection path to distinguish
+// "wrong status" from "no such row" for correct HTTP mapping.
+func (s *Store) SendBackForChanges(ctx context.Context, id uuid.UUID, reviewNote string) (*Content, error) {
+	r, err := s.q.SendContentChangesRequested(ctx, db.SendContentChangesRequestedParams{
+		ID:         id,
+		ReviewNote: &reviewNote,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, s.transitionRejectionReason(ctx, id)
+		}
+		return nil, fmt.Errorf("sending content %s back for changes: %w", id, err)
+	}
+	return s.hydrateContentRow(ctx, r.ID, &contentRow{
+		ID: r.ID, Slug: r.Slug, Title: r.Title, Body: r.Body, Excerpt: r.Excerpt,
+		Type: r.Type, Status: r.Status,
+		SeriesID: r.SeriesID, SeriesOrder: r.SeriesOrder,
+		IsPublic: r.IsPublic, ProjectID: r.ProjectID, AiMetadata: r.AiMetadata,
+		ReadingTimeMin: r.ReadingTimeMin, CoverImage: r.CoverImage,
+		CreatedBy: r.CreatedBy, ProposalRationale: r.ProposalRationale,
+		ReviewNote:  r.ReviewNote,
 		PublishedAt: r.PublishedAt,
 		CreatedAt:   r.CreatedAt, UpdatedAt: r.UpdatedAt,
 	})

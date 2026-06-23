@@ -126,6 +126,14 @@ export class ContentService {
     );
   }
 
+  /** Send content back from review to the agent for revision, with a required reason. */
+  sendBack(id: string, reviewNote: string): Observable<ApiContent> {
+    return this.api.postData<ApiContent>(
+      `/api/admin/knowledge/content/${id}/send-back`,
+      { review_note: reviewNote },
+    );
+  }
+
   /** Revert content back to draft. The handler takes no body. */
   revertToDraft(id: string): Observable<ApiContent> {
     return this.api.postData<ApiContent>(

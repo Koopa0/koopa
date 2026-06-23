@@ -17,6 +17,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/google/uuid"
 
@@ -269,7 +270,7 @@ func parseAdminListFilter(w http.ResponseWriter, r *http.Request) (Filter, bool)
 	if s := r.URL.Query().Get("status"); s != "" {
 		cs := Status(s)
 		switch cs {
-		case StatusDraft, StatusReview, StatusPublished, StatusArchived:
+		case StatusDraft, StatusReview, StatusChangesRequested, StatusPublished, StatusArchived:
 			f.Status = &cs
 		default:
 			api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid content status")
@@ -327,6 +328,67 @@ func (h *Handler) RevertToDraft(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	c, err := h.store.WithTx(tx).RevertContentToDraft(r.Context(), id)
+	if err != nil {
+		api.HandleError(w, h.logger, err, storeErrors...)
+		return
+	}
+	api.Encode(w, http.StatusOK, api.Response{Data: c})
+}
+
+// sendBackBody is the request payload for SendBack: the owner's revision reason.
+type sendBackBody struct {
+	ReviewNote string `json:"review_note"`
+}
+
+// containsProseControlChars reports whether s contains a control character
+// forbidden in multi-line free-text prose: every control char EXCEPT HT (0x09),
+// LF (0x0A), and CR (0x0D). A review_note is a short, possibly multi-line
+// revision reason where line breaks are legitimate, so SendBack validates it
+// with this rather than rejecting every C0 control. Mirrors the MCP prose check.
+func containsProseControlChars(s string) bool {
+	for _, r := range s {
+		switch {
+		case r == 0x09, r == 0x0a, r == 0x0d:
+			continue
+		case r < 0x20, r == 0x7f, r >= 0x80 && r <= 0x9f:
+			return true
+		}
+	}
+	return false
+}
+
+// SendBack handles POST /api/admin/knowledge/content/{id}/send-back.
+// Transitions review → changes_requested with the owner's review_note reason.
+// Rejects an empty/whitespace review_note (400) and any control characters
+// other than line breaks/tabs (400). Returns 400 INVALID_STATE when the content
+// is not in review.
+func (h *Handler) SendBack(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid content id")
+		return
+	}
+
+	body, decErr := api.Decode[sendBackBody](w, r)
+	if decErr != nil {
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid request body")
+		return
+	}
+	reviewNote := strings.TrimSpace(body.ReviewNote)
+	if reviewNote == "" {
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "review_note is required")
+		return
+	}
+	if containsProseControlChars(reviewNote) {
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "review_note must not contain control characters")
+		return
+	}
+
+	tx, ok := h.mustAdminTx(w, r)
+	if !ok {
+		return
+	}
+	c, err := h.store.WithTx(tx).SendBackForChanges(r.Context(), id, reviewNote)
 	if err != nil {
 		api.HandleError(w, h.logger, err, storeErrors...)
 		return

@@ -151,6 +151,10 @@ UPDATE contents SET
     ai_metadata = COALESCE(sqlc.narg('ai_metadata'), ai_metadata),
     reading_time_min = COALESCE(sqlc.narg('reading_time_min'), reading_time_min),
     cover_image = COALESCE(sqlc.narg('cover_image'), cover_image),
+    review_note = CASE
+        WHEN COALESCE(sqlc.narg('status')::content_status, status) = 'changes_requested' THEN review_note
+        ELSE NULL
+    END,
     updated_at = now()
 WHERE id = $1
 RETURNING id, slug, title, body, excerpt, type, status,
@@ -160,20 +164,20 @@ RETURNING id, slug, title, body, excerpt, type, status,
 -- name: PublishContent :one
 -- Atomically sets status=published, is_public=true, and published_at.
 -- Publishing always makes content publicly visible in this system.
-UPDATE contents SET status = 'published', is_public = true, published_at = now(), updated_at = now()
+UPDATE contents SET status = 'published', is_public = true, published_at = now(), review_note = NULL, updated_at = now()
 WHERE id = $1
 RETURNING id, slug, title, body, excerpt, type, status,
           series_id, series_order, is_public, project_id, ai_metadata, reading_time_min,
           cover_image, published_at, created_at, updated_at;
 
 -- name: ArchiveContent :exec
-UPDATE contents SET status = 'archived', updated_at = now() WHERE id = $1;
+UPDATE contents SET status = 'archived', review_note = NULL, updated_at = now() WHERE id = $1;
 
 -- name: ArchiveContentReturning :one
 -- Archive a content row and return the updated row. Used by the REST
 -- archive endpoint which returns the row body; ArchiveContent (:exec) is
 -- kept for DeleteContent's soft-delete path which discards the row.
-UPDATE contents SET status = 'archived', updated_at = now()
+UPDATE contents SET status = 'archived', review_note = NULL, updated_at = now()
 WHERE id = $1
 RETURNING id, slug, title, body, excerpt, type, status,
           series_id, series_order, is_public, project_id, ai_metadata, reading_time_min,
@@ -200,6 +204,17 @@ WHERE id = $1 AND status = 'review'
 RETURNING id, slug, title, body, excerpt, type, status,
           series_id, series_order, is_public, project_id, ai_metadata, reading_time_min,
           cover_image, published_at, created_at, updated_at;
+
+-- name: PublishedContentsInWindow :many
+-- Content published within a [since, until] window, for
+-- review_period.published_content. Sourced directly from the contents row
+-- (status='published' guarantees published_at is non-null via
+-- chk_content_publication), newest first.
+SELECT title, type, published_at
+FROM contents
+WHERE status = 'published'
+  AND published_at >= @since AND published_at <= @until
+ORDER BY published_at DESC;
 
 -- name: TopicsForContent :many
 SELECT t.id, t.slug, t.name
@@ -274,4 +289,53 @@ LIMIT @max_results;
 -- Fetch existing content id for a given slug. Used to return structured conflict info
 -- when CreateContent hits a unique violation on the slug index.
 SELECT id FROM contents WHERE slug = $1;
+
+-- name: ContentsByCreator :many
+-- List the content rows created by a given agent, newest first. Powers the
+-- list_content MCP readback loop: an agent reads the disposition (status) of
+-- the content it proposed, plus the owner's review_note when the owner sent a
+-- draft back (status=changes_requested). created_by is the resolved caller
+-- identity (caller-scoped), never a client-supplied filter.
+SELECT id, slug, title, type, status, review_note, created_at
+FROM contents
+WHERE created_by = @created_by
+ORDER BY created_at DESC;
+
+-- name: ReviseContentByCreator :one
+-- Caller-scoped revise for the revise_content MCP tool: an agent edits content
+-- IT created that is in review or changes_requested, returning it to review and
+-- clearing the owner's review_note. Each editable field uses COALESCE so an
+-- omitted parameter leaves the column unchanged. The created_by + status guard
+-- scopes the write to the caller's own revisable rows — a mismatched creator,
+-- a wrong status, or an unknown id all match 0 rows (pgx.ErrNoRows → not-found),
+-- never another agent's content and never a published row. created_by is the
+-- resolved caller identity, never a client-supplied filter.
+UPDATE contents SET
+    body = COALESCE(sqlc.narg('body'), body),
+    excerpt = COALESCE(sqlc.narg('excerpt'), excerpt),
+    title = COALESCE(sqlc.narg('title'), title),
+    status = 'review',
+    review_note = NULL,
+    updated_at = now()
+WHERE id = @id AND created_by = @created_by
+  AND status IN ('review', 'changes_requested')
+RETURNING id, slug, title, body, excerpt, type, status,
+          series_id, series_order, is_public, project_id, ai_metadata, reading_time_min,
+          cover_image, created_by, proposal_rationale, review_note, published_at, created_at, updated_at;
+
+-- name: SendContentChangesRequested :one
+-- Admin send-back transition: the owner returns a review draft to the authoring
+-- agent for revision (status → changes_requested) with a review_note reason. The
+-- WHERE-status guard makes the transition race-safe: pgx.ErrNoRows means the row
+-- is missing OR not in review (the store disambiguates into ErrNotFound vs
+-- ErrInvalidState). review_note carries the owner's revision reason, read back by
+-- the agent via list_content.
+UPDATE contents SET
+    status = 'changes_requested',
+    review_note = @review_note,
+    updated_at = now()
+WHERE id = @id AND status = 'review'
+RETURNING id, slug, title, body, excerpt, type, status,
+          series_id, series_order, is_public, project_id, ai_metadata, reading_time_min,
+          cover_image, created_by, proposal_rationale, review_note, published_at, created_at, updated_at;
 

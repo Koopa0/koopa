@@ -36,6 +36,7 @@ import {
   type ContentLifecycleAction,
 } from './lifecycle-rail.component';
 import { ContentPreviewOverlayComponent } from './preview-overlay.component';
+import { SendBackReasonDialogComponent } from './send-back-reason-dialog.component';
 import type {
   ApiContent,
   ApiCreateContentRequest,
@@ -68,6 +69,7 @@ const CONTENT_TYPE_OPTIONS: readonly {
 const STATUS_BADGE_VARIANT: Record<ContentStatus, BadgeVariant> = {
   draft: 'neutral',
   review: 'warning',
+  changes_requested: 'warning',
   published: 'success',
   archived: 'neutral',
 };
@@ -104,6 +106,7 @@ const WORDS_PER_MINUTE = 220;
     StatusBadgeComponent,
     ContentLifecycleRailComponent,
     ContentPreviewOverlayComponent,
+    SendBackReasonDialogComponent,
   ],
   templateUrl: './content-editor.page.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -162,6 +165,9 @@ export class ContentEditorPageComponent {
 
   /** Publish-preview overlay visibility (edit mode, saved content only). */
   protected readonly showPreview = signal(false);
+
+  /** Send-back reason dialog visibility. */
+  protected readonly showSendBackDialog = signal(false);
 
   /** Selected topic ids; kept outside the FormGroup so toggling stays a plain signal write. */
   protected readonly selectedTopicIds = signal<string[]>([]);
@@ -403,6 +409,9 @@ export class ContentEditorPageComponent {
       case 'publish':
         this.publish();
         break;
+      case 'send-back':
+        this.showSendBackDialog.set(true);
+        break;
       case 'revert-to-draft':
         this.revertToDraft();
         break;
@@ -459,6 +468,28 @@ export class ContentEditorPageComponent {
           } else {
             this.notifications.error('Failed to publish.');
           }
+        },
+      });
+  }
+
+  protected sendBack(reviewNote: string): void {
+    const c = this.content();
+    if (!c || this._isActioning()) return;
+
+    this._isActioning.set(true);
+    this.contentService
+      .sendBack(c.id, reviewNote)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: () => {
+          this._isActioning.set(false);
+          this.showSendBackDialog.set(false);
+          this.notifications.success('Sent back for revision.');
+          this.contentResource.reload();
+        },
+        error: (err: unknown) => {
+          this._isActioning.set(false);
+          this.handleTransitionError(err, 'send-back');
         },
       });
   }

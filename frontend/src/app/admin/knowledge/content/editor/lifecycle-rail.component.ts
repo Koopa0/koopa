@@ -11,6 +11,7 @@ import type { ContentStatus } from '../../../../core/models/api.model';
 export type ContentLifecycleAction =
   | 'submit-for-review'
   | 'publish'
+  | 'send-back'
   | 'revert-to-draft'
   | 'archive';
 
@@ -28,6 +29,7 @@ interface RailAction {
 const STATUS_ORDER: readonly ContentStatus[] = [
   'draft',
   'review',
+  'changes_requested',
   'published',
   'archived',
 ];
@@ -36,8 +38,13 @@ const STATUS_ORDER: readonly ContentStatus[] = [
 const ACTIONS_BY_STATUS: Record<ContentStatus, readonly RailAction[]> = {
   draft: [{ id: 'submit-for-review', label: 'Submit for review', primary: true }],
   review: [
+    { id: 'send-back', label: 'Send back', primary: false },
     { id: 'revert-to-draft', label: 'Revert to draft', primary: false },
     { id: 'publish', label: 'Publish', primary: true },
+  ],
+  changes_requested: [
+    { id: 'revert-to-draft', label: 'Revert to draft', primary: false },
+    { id: 'archive', label: 'Archive', primary: false },
   ],
   published: [{ id: 'archive', label: 'Archive', primary: false }],
   archived: [{ id: 'revert-to-draft', label: 'Revert to draft', primary: false }],

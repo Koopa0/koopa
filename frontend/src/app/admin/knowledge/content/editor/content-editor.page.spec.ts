@@ -319,6 +319,134 @@ describe('ContentEditorPageComponent', () => {
           ?.getAttribute('aria-checked'),
       ).toBe('true');
     });
+
+  });
+
+  describe('send-back flow (status=review)', () => {
+    beforeEach(async () => {
+      harness = await RouterTestingHarness.create(
+        '/admin/knowledge/content/abc-1/edit',
+      );
+      await settle();
+      httpMock
+        .expectOne((r) => r.url.endsWith(`${CONTENT_URL}/abc-1`))
+        .flush({ data: contentPayload({ status: 'review' }) });
+      flushTopics();
+      await settle();
+    });
+
+    it('should open the send-back dialog when the "Send back" rail action is clicked', async () => {
+      el()
+        .querySelector<HTMLButtonElement>(
+          '[data-testid="lifecycle-action-send-back"]',
+        )
+        ?.click();
+      await settle();
+
+      expect(
+        el().querySelector('[data-testid="send-back-reason-textarea"]'),
+      ).toBeTruthy();
+    });
+
+    it('should POST send-back with the review note and reload on confirm', async () => {
+      // Open dialog.
+      el()
+        .querySelector<HTMLButtonElement>(
+          '[data-testid="lifecycle-action-send-back"]',
+        )
+        ?.click();
+      await settle();
+
+      // Type a reason into the textarea.
+      const textarea = el().querySelector<HTMLTextAreaElement>(
+        '[data-testid="send-back-reason-textarea"]',
+      )!;
+      textarea.value = 'Please expand the introduction with more context.';
+      textarea.dispatchEvent(new Event('input'));
+      await settle();
+
+      // Click submit.
+      el()
+        .querySelector<HTMLButtonElement>('[data-testid="send-back-submit"]')
+        ?.click();
+      await settle();
+
+      const req = httpMock.expectOne(
+        (r) =>
+          r.method === 'POST' &&
+          r.url.endsWith(`${CONTENT_URL}/abc-1/send-back`),
+      );
+      expect(req.request.body).toEqual({
+        review_note: 'Please expand the introduction with more context.',
+      });
+      req.flush({
+        data: contentPayload({
+          status: 'changes_requested',
+          review_note: 'Please expand the introduction with more context.',
+        }),
+      });
+      await settle();
+
+      // Resource reload.
+      httpMock
+        .expectOne((r) => r.url.endsWith(`${CONTENT_URL}/abc-1`))
+        .flush({
+          data: contentPayload({
+            status: 'changes_requested',
+            review_note: 'Please expand the introduction with more context.',
+          }),
+        });
+      await settle();
+
+      // Dialog should be closed.
+      expect(
+        el().querySelector('[data-testid="send-back-reason-textarea"]'),
+      ).toBeNull();
+    });
+
+    it('should close the send-back dialog without a request when cancel is clicked', async () => {
+      el()
+        .querySelector<HTMLButtonElement>(
+          '[data-testid="lifecycle-action-send-back"]',
+        )
+        ?.click();
+      await settle();
+
+      el()
+        .querySelector<HTMLButtonElement>('[data-testid="send-back-cancel"]')
+        ?.click();
+      await settle();
+
+      expect(
+        el().querySelector('[data-testid="send-back-reason-textarea"]'),
+      ).toBeNull();
+      httpMock.expectNone((r) => r.url.includes('send-back'));
+    });
+  });
+
+  describe('changes_requested display', () => {
+    beforeEach(async () => {
+      harness = await RouterTestingHarness.create(
+        '/admin/knowledge/content/abc-1/edit',
+      );
+      await settle();
+      httpMock
+        .expectOne((r) => r.url.endsWith(`${CONTENT_URL}/abc-1`))
+        .flush({
+          data: contentPayload({
+            status: 'changes_requested',
+            review_note: 'Add more examples.',
+          }),
+        });
+      flushTopics();
+      await settle();
+    });
+
+    it('should display the review note when status is changes_requested', () => {
+      expect(
+        el().querySelector('[data-testid="editor-review-note"]')?.textContent,
+      ).toContain('Add more examples.');
+    });
   });
 
   describe('topics resource error', () => {

@@ -150,6 +150,7 @@ func registerRoutes(
 	mux.Handle("POST /api/admin/knowledge/content/{id}/publish", adminMid(http.HandlerFunc(h.content.Publish)))
 	mux.Handle("POST /api/admin/knowledge/content/{id}/submit-for-review", adminMid(http.HandlerFunc(h.content.SubmitForReview)))
 	mux.Handle("POST /api/admin/knowledge/content/{id}/revert-to-draft", adminMid(http.HandlerFunc(h.content.RevertToDraft)))
+	mux.Handle("POST /api/admin/knowledge/content/{id}/send-back", adminMid(http.HandlerFunc(h.content.SendBack)))
 	mux.Handle("POST /api/admin/knowledge/content/{id}/archive", adminMid(http.HandlerFunc(h.content.Archive)))
 	mux.Handle("PATCH /api/admin/knowledge/content/{id}/is-public", adminMid(http.HandlerFunc(h.content.SetIsPublic)))
 

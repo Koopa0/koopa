@@ -208,6 +208,46 @@ func ProjectProgress() Meta {
 	}
 }
 
+// ListContent returns metadata for the read-only content-readback tool — an
+// agent reads the disposition of the content it proposed, including the owner's
+// review_note when a draft was sent back for changes.
+func ListContent() Meta {
+	return Meta{
+		Name:        "list_content",
+		Domain:      DomainContent,
+		Writability: ReadOnly,
+		Stability:   StabilityStable,
+		Since:       "1.9.0",
+		Description: "Read-only readback of the content YOU proposed (created_by = your resolved caller identity) so you can learn its disposition — review = awaiting the owner's decision, changes_requested = the owner sent it back for revision (the reason is in review_note), published = live. Caller-scoped: returns only your own content, never the owner's admin-authored content or another agent's. Use to close the propose_content loop — after you push a finished draft, list_content shows whether the owner published it or asked for changes, and revise_content addresses any change request.",
+	}
+}
+
+// ReviseContent returns metadata for the caller-scoped content revision tool —
+// an agent edits its own review/changes_requested content back into review.
+func ReviseContent() Meta {
+	return Meta{
+		Name:        "revise_content",
+		Domain:      DomainContent,
+		Writability: Destructive,
+		Stability:   StabilityStable,
+		Since:       "1.9.0",
+		Description: "Revise content YOU created that is in review or changes_requested, returning it to the review queue and clearing the owner's review_note. Supply the content id plus at least one of body, title, or excerpt (omitted fields are left unchanged). Caller-scoped — you can only revise content whose created_by = your resolved identity; revising another agent's content, the owner's admin-authored content, or a published row returns not-found and changes nothing. This is the agent's response to a changes_requested disposition read via list_content: edit the draft and it re-enters review for the owner to publish or send back again. Publishing stays an owner action in admin, off the MCP surface.",
+	}
+}
+
+// ReviewPeriod returns metadata for the read-only windowed owner retrospective —
+// what the owner got done across a date window, computed live.
+func ReviewPeriod() Meta {
+	return Meta{
+		Name:        "review_period",
+		Domain:      DomainQuery,
+		Writability: ReadOnly,
+		Stability:   StabilityStable,
+		Since:       "1.9.0",
+		Description: "Read-only windowed retrospective of what KOOPA got done over a date window — computed LIVE from the activity log at read time, nothing stored. Required: since (YYYY-MM-DD). Optional: until (YYYY-MM-DD, default today); the window is whole-day-inclusive in the owner's timezone. Returns completed_todos and completed_milestones (with project/area/goal context), goals[] (every active goal with milestone progress and an advanced flag for the window), areas[] (each active area's activity_count and a neglected flag), published_content, and a counts headline (todos_completed/opened, milestones_completed, content_published, areas_active/neglected, active_days). Owner-scoped, NOT caller-scoped — it always returns the single owner's retrospective. HUMAN ACTIVITY ONLY for progress: counts solely activity by the owner (actor='human'); the one exception is todos_opened, which counts backlog inflow from all actors. Read this to ground a conversation in what the owner actually accomplished in a period, never to change anything.",
+	}
+}
+
 // All returns every tool meta in stable registration order. The order
 // mirrors the addTool call sequence in internal/mcp/server.go and is
 // enforced by TestOpsCatalogDrift. Adding a new tool requires appending
@@ -227,5 +267,8 @@ func All() []Meta {
 		ListReadings(),
 		Reading(),
 		ProjectProgress(),
+		ListContent(),
+		ReviseContent(),
+		ReviewPeriod(),
 	}
 }

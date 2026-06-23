@@ -173,6 +173,13 @@ func NewServer(pool *pgxpool.Pool, logger *slog.Logger, opts ...ServerOption) *S
 	// --- PARA momentum (read-only owner project/goal/area progress) ---
 	addTool(s, toolFrom(ops.ProjectProgress), s.projectProgress)
 
+	// --- Content collaboration loop (agent readback + revise) ---
+	addTool(s, toolFrom(ops.ListContent), s.listContent)
+	addTool(s, toolFrom(ops.ReviseContent), s.reviseContent)
+
+	// --- Windowed owner retrospective (read-only) ---
+	addTool(s, toolFrom(ops.ReviewPeriod), s.reviewPeriod)
+
 	return s
 }
 

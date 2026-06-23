@@ -60,6 +60,7 @@ const STATUS_CHIPS: readonly StatusChip[] = [
   { value: 'all', label: 'All' },
   { value: 'draft', label: 'Draft' },
   { value: 'review', label: 'Review' },
+  { value: 'changes_requested', label: 'Changes requested' },
   { value: 'published', label: 'Published' },
   { value: 'archived', label: 'Archived' },
 ];
@@ -67,6 +68,7 @@ const STATUS_CHIPS: readonly StatusChip[] = [
 const STATUS_DOT_CLASS: Record<ContentStatus, string> = {
   draft: 'bg-fg-subtle',
   review: 'bg-warn',
+  changes_requested: 'bg-amber-500',
   published: 'bg-success',
   archived: 'bg-fg-faint',
 };
@@ -74,6 +76,7 @@ const STATUS_DOT_CLASS: Record<ContentStatus, string> = {
 const STATUS_TEXT_CLASS: Record<ContentStatus, string> = {
   draft: 'text-fg-muted',
   review: 'text-warn',
+  changes_requested: 'text-amber-400',
   published: 'text-success',
   archived: 'text-fg-subtle',
 };

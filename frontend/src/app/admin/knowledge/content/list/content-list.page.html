@@ -129,6 +129,14 @@
                   {{ why }}
                 </div>
               }
+              @if (row.status === 'changes_requested' && row.review_note) {
+                <div
+                  class="mt-0.5 line-clamp-2 max-w-md text-[11px] text-amber-400"
+                  [attr.data-testid]="'content-list-review-note-' + i"
+                >
+                  ↩ {{ row.review_note }}
+                </div>
+              }
             </td>
             <td class="px-3 py-2">
               <span

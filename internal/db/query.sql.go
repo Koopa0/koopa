@@ -190,6 +190,29 @@ func (q *Queries) ActiveAreaActivity(ctx context.Context) ([]ActiveAreaActivityR
 	return items, nil
 }
 
+const activeDaysInWindow = `-- name: ActiveDaysInWindow :one
+SELECT count(DISTINCT date(ae.occurred_at))::bigint AS active_days
+FROM activity_events ae
+WHERE ae.actor = 'human'
+  AND ae.occurred_at >= $1 AND ae.occurred_at <= $2
+`
+
+type ActiveDaysInWindowParams struct {
+	Since time.Time `json:"since"`
+	Until time.Time `json:"until"`
+}
+
+// Count of DISTINCT calendar days on which the owner had any activity in the
+// window, for review_period.counts.active_days. Human actor only; date() uses
+// the database session timezone, matching the whole-day window bounds the
+// handler supplies.
+func (q *Queries) ActiveDaysInWindow(ctx context.Context, arg ActiveDaysInWindowParams) (int64, error) {
+	row := q.db.QueryRow(ctx, activeDaysInWindow, arg.Since, arg.Until)
+	var active_days int64
+	err := row.Scan(&active_days)
+	return active_days, err
+}
+
 const activeGoalMilestones = `-- name: ActiveGoalMilestones :many
 SELECT
     g.id,
@@ -304,6 +327,76 @@ func (q *Queries) ActiveGoals(ctx context.Context) ([]ActiveGoalsRow, error) {
 	return items, nil
 }
 
+const activeGoalsAdvancedInWindow = `-- name: ActiveGoalsAdvancedInWindow :many
+SELECT
+    g.id,
+    g.title,
+    a.name AS area_name,
+    (
+        SELECT count(*) FROM milestones m
+        WHERE m.goal_id = g.id AND m.completed_at IS NOT NULL
+    )::bigint AS milestone_done,
+    (
+        SELECT count(*) FROM milestones m
+        WHERE m.goal_id = g.id
+    )::bigint AS milestone_total,
+    EXISTS (
+        SELECT 1 FROM milestones m
+        WHERE m.goal_id = g.id
+          AND m.completed_at IS NOT NULL
+          AND m.completed_at >= $1 AND m.completed_at <= $2
+    ) AS advanced
+FROM goals g
+LEFT JOIN areas a ON a.id = g.area_id
+WHERE g.status = 'in_progress'
+ORDER BY g.title
+`
+
+type ActiveGoalsAdvancedInWindowParams struct {
+	Since *time.Time `json:"since"`
+	Until *time.Time `json:"until"`
+}
+
+type ActiveGoalsAdvancedInWindowRow struct {
+	ID             uuid.UUID `json:"id"`
+	Title          string    `json:"title"`
+	AreaName       *string   `json:"area_name"`
+	MilestoneDone  int64     `json:"milestone_done"`
+	MilestoneTotal int64     `json:"milestone_total"`
+	Advanced       bool      `json:"advanced"`
+}
+
+// Every active (in_progress) goal with milestone progress and an "advanced"
+// flag for review_period.goals. milestone_done/total mirror ActiveGoalMilestones;
+// advanced is true when the goal had at least one milestone completed within the
+// window (completed_at in [since, until]).
+func (q *Queries) ActiveGoalsAdvancedInWindow(ctx context.Context, arg ActiveGoalsAdvancedInWindowParams) ([]ActiveGoalsAdvancedInWindowRow, error) {
+	rows, err := q.db.Query(ctx, activeGoalsAdvancedInWindow, arg.Since, arg.Until)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ActiveGoalsAdvancedInWindowRow{}
+	for rows.Next() {
+		var i ActiveGoalsAdvancedInWindowRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Title,
+			&i.AreaName,
+			&i.MilestoneDone,
+			&i.MilestoneTotal,
+			&i.Advanced,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const addContentTopic = `-- name: AddContentTopic :exec
 INSERT INTO content_topics (content_id, topic_id) VALUES ($1, $2)
 ON CONFLICT DO NOTHING
@@ -353,7 +446,7 @@ func (q *Queries) AllPublishedSlugs(ctx context.Context) ([]AllPublishedSlugsRow
 }
 
 const archiveContent = `-- name: ArchiveContent :exec
-UPDATE contents SET status = 'archived', updated_at = now() WHERE id = $1
+UPDATE contents SET status = 'archived', review_note = NULL, updated_at = now() WHERE id = $1
 `
 
 func (q *Queries) ArchiveContent(ctx context.Context, id uuid.UUID) error {
@@ -362,7 +455,7 @@ func (q *Queries) ArchiveContent(ctx context.Context, id uuid.UUID) error {
 }
 
 const archiveContentReturning = `-- name: ArchiveContentReturning :one
-UPDATE contents SET status = 'archived', updated_at = now()
+UPDATE contents SET status = 'archived', review_note = NULL, updated_at = now()
 WHERE id = $1
 RETURNING id, slug, title, body, excerpt, type, status,
           series_id, series_order, is_public, project_id, ai_metadata, reading_time_min,
@@ -415,6 +508,55 @@ func (q *Queries) ArchiveContentReturning(ctx context.Context, id uuid.UUID) (Ar
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const areaActivityInWindow = `-- name: AreaActivityInWindow :many
+SELECT
+    a.name,
+    count(ae.id)::bigint AS activity_count
+FROM areas a
+LEFT JOIN projects p ON p.area_id = a.id
+LEFT JOIN activity_events ae
+    ON ae.project_id = p.id
+   AND ae.actor = 'human'
+   AND ae.occurred_at >= $1 AND ae.occurred_at <= $2
+WHERE a.status = 'active'
+GROUP BY a.id, a.name
+ORDER BY a.sort_order, a.name
+`
+
+type AreaActivityInWindowParams struct {
+	Since time.Time `json:"since"`
+	Until time.Time `json:"until"`
+}
+
+type AreaActivityInWindowRow struct {
+	Name          string `json:"name"`
+	ActivityCount int64  `json:"activity_count"`
+}
+
+// Per-active-area owner-activity count over the window, for review_period.areas.
+// activity_count is the number of activity_events (actor='human', occurred_at in
+// window) attributable to the area via project_id → projects.area_id. neglected
+// is derived by the handler as activity_count = 0.
+func (q *Queries) AreaActivityInWindow(ctx context.Context, arg AreaActivityInWindowParams) ([]AreaActivityInWindowRow, error) {
+	rows, err := q.db.Query(ctx, areaActivityInWindow, arg.Since, arg.Until)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AreaActivityInWindowRow{}
+	for rows.Next() {
+		var i AreaActivityInWindowRow
+		if err := rows.Scan(&i.Name, &i.ActivityCount); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const areaByID = `-- name: AreaByID :one
@@ -718,6 +860,66 @@ func (q *Queries) ClarifyTodoItem(ctx context.Context, arg ClarifyTodoItemParams
 	return i, err
 }
 
+const completedMilestonesInWindow = `-- name: CompletedMilestonesInWindow :many
+SELECT
+    ae.entity_title AS title,
+    ae.occurred_at  AS completed_at,
+    g.title         AS goal_title,
+    a.name          AS area_name
+FROM activity_events ae
+LEFT JOIN milestones m ON m.id = ae.entity_id
+LEFT JOIN goals g ON g.id = m.goal_id
+LEFT JOIN areas a ON a.id = g.area_id
+WHERE ae.entity_type = 'milestone'
+  AND ae.change_kind = 'completed'
+  AND ae.actor = 'human'
+  AND ae.occurred_at >= $1 AND ae.occurred_at <= $2
+ORDER BY ae.occurred_at DESC
+`
+
+type CompletedMilestonesInWindowParams struct {
+	Since time.Time `json:"since"`
+	Until time.Time `json:"until"`
+}
+
+type CompletedMilestonesInWindowRow struct {
+	Title       *string   `json:"title"`
+	CompletedAt time.Time `json:"completed_at"`
+	GoalTitle   *string   `json:"goal_title"`
+	AreaName    *string   `json:"area_name"`
+}
+
+// Milestones the owner completed in the window, for
+// review_period.completed_milestones. Sourced from activity_events
+// (entity_type='milestone', change_kind='completed', actor='human'). goal/area
+// are resolved by joining the live milestone row (entity_id → milestones → goals
+// → areas); a hard-deleted milestone falls back to the entity_title snapshot
+// with null goal/area.
+func (q *Queries) CompletedMilestonesInWindow(ctx context.Context, arg CompletedMilestonesInWindowParams) ([]CompletedMilestonesInWindowRow, error) {
+	rows, err := q.db.Query(ctx, completedMilestonesInWindow, arg.Since, arg.Until)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []CompletedMilestonesInWindowRow{}
+	for rows.Next() {
+		var i CompletedMilestonesInWindowRow
+		if err := rows.Scan(
+			&i.Title,
+			&i.CompletedAt,
+			&i.GoalTitle,
+			&i.AreaName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const completedTodoDetailSince = `-- name: CompletedTodoDetailSince :many
 SELECT t.id, t.title, t.completed_at, t.project_id,
        COALESCE(p.title, '') AS project_title
@@ -751,6 +953,73 @@ func (q *Queries) CompletedTodoDetailSince(ctx context.Context, since *time.Time
 			&i.CompletedAt,
 			&i.ProjectID,
 			&i.ProjectTitle,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const completedTodosInWindow = `-- name: CompletedTodosInWindow :many
+
+SELECT
+    ae.entity_title AS title,
+    ae.occurred_at  AS completed_at,
+    p.title         AS project_title,
+    a.name          AS area_name
+FROM activity_events ae
+LEFT JOIN projects p ON p.id = ae.project_id
+LEFT JOIN areas a ON a.id = p.area_id
+WHERE ae.entity_type = 'todo'
+  AND ae.change_kind = 'completed'
+  AND ae.actor = 'human'
+  AND ae.occurred_at >= $1 AND ae.occurred_at <= $2
+ORDER BY ae.occurred_at DESC
+`
+
+type CompletedTodosInWindowParams struct {
+	Since time.Time `json:"since"`
+	Until time.Time `json:"until"`
+}
+
+type CompletedTodosInWindowRow struct {
+	Title        *string   `json:"title"`
+	CompletedAt  time.Time `json:"completed_at"`
+	ProjectTitle *string   `json:"project_title"`
+	AreaName     *string   `json:"area_name"`
+}
+
+// ============================================================
+// review_period — windowed owner retrospective. Read-only, computed LIVE
+// from activity_events (the canonical "what happened, by whom" log) over a
+// [since, until] window. HUMAN ACTIVITY ONLY for the owner-progress rows:
+// actor = 'human' — IDENTICAL to ProjectMomentum. The window bounds are
+// whole-day-inclusive instants passed by the handler ([since 00:00,
+// until 23:59:59] in the owner's timezone).
+// ============================================================
+// Todos the owner completed in the window, for review_period.completed_todos.
+// Sourced from activity_events (entity_type='todo', change_kind='completed',
+// actor='human'); title is the write-time entity_title snapshot so a
+// since-deleted todo still reports. project/area resolved via the event's
+// project_id (LEFT JOIN, null when the event had no project association).
+func (q *Queries) CompletedTodosInWindow(ctx context.Context, arg CompletedTodosInWindowParams) ([]CompletedTodosInWindowRow, error) {
+	rows, err := q.db.Query(ctx, completedTodosInWindow, arg.Since, arg.Until)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []CompletedTodosInWindowRow{}
+	for rows.Next() {
+		var i CompletedTodosInWindowRow
+		if err := rows.Scan(
+			&i.Title,
+			&i.CompletedAt,
+			&i.ProjectTitle,
+			&i.AreaName,
 		); err != nil {
 			return nil, err
 		}
@@ -958,6 +1227,56 @@ func (q *Queries) ContentIDBySlug(ctx context.Context, slug string) (uuid.UUID, 
 	var id uuid.UUID
 	err := row.Scan(&id)
 	return id, err
+}
+
+const contentsByCreator = `-- name: ContentsByCreator :many
+SELECT id, slug, title, type, status, review_note, created_at
+FROM contents
+WHERE created_by = $1
+ORDER BY created_at DESC
+`
+
+type ContentsByCreatorRow struct {
+	ID         uuid.UUID     `json:"id"`
+	Slug       string        `json:"slug"`
+	Title      string        `json:"title"`
+	Type       ContentType   `json:"type"`
+	Status     ContentStatus `json:"status"`
+	ReviewNote *string       `json:"review_note"`
+	CreatedAt  time.Time     `json:"created_at"`
+}
+
+// List the content rows created by a given agent, newest first. Powers the
+// list_content MCP readback loop: an agent reads the disposition (status) of
+// the content it proposed, plus the owner's review_note when the owner sent a
+// draft back (status=changes_requested). created_by is the resolved caller
+// identity (caller-scoped), never a client-supplied filter.
+func (q *Queries) ContentsByCreator(ctx context.Context, createdBy *string) ([]ContentsByCreatorRow, error) {
+	rows, err := q.db.Query(ctx, contentsByCreator, createdBy)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ContentsByCreatorRow{}
+	for rows.Next() {
+		var i ContentsByCreatorRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Slug,
+			&i.Title,
+			&i.Type,
+			&i.Status,
+			&i.ReviewNote,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const contentsByStatus = `-- name: ContentsByStatus :many
@@ -5006,7 +5325,7 @@ func (q *Queries) PublicProjects(ctx context.Context) ([]Project, error) {
 }
 
 const publishContent = `-- name: PublishContent :one
-UPDATE contents SET status = 'published', is_public = true, published_at = now(), updated_at = now()
+UPDATE contents SET status = 'published', is_public = true, published_at = now(), review_note = NULL, updated_at = now()
 WHERE id = $1
 RETURNING id, slug, title, body, excerpt, type, status,
           series_id, series_order, is_public, project_id, ai_metadata, reading_time_min,
@@ -5159,6 +5478,49 @@ func (q *Queries) PublishedContentsCount(ctx context.Context, arg PublishedConte
 	var count int64
 	err := row.Scan(&count)
 	return count, err
+}
+
+const publishedContentsInWindow = `-- name: PublishedContentsInWindow :many
+SELECT title, type, published_at
+FROM contents
+WHERE status = 'published'
+  AND published_at >= $1 AND published_at <= $2
+ORDER BY published_at DESC
+`
+
+type PublishedContentsInWindowParams struct {
+	Since *time.Time `json:"since"`
+	Until *time.Time `json:"until"`
+}
+
+type PublishedContentsInWindowRow struct {
+	Title       string      `json:"title"`
+	Type        ContentType `json:"type"`
+	PublishedAt *time.Time  `json:"published_at"`
+}
+
+// Content published within a [since, until] window, for
+// review_period.published_content. Sourced directly from the contents row
+// (status='published' guarantees published_at is non-null via
+// chk_content_publication), newest first.
+func (q *Queries) PublishedContentsInWindow(ctx context.Context, arg PublishedContentsInWindowParams) ([]PublishedContentsInWindowRow, error) {
+	rows, err := q.db.Query(ctx, publishedContentsInWindow, arg.Since, arg.Until)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []PublishedContentsInWindowRow{}
+	for rows.Next() {
+		var i PublishedContentsInWindowRow
+		if err := rows.Scan(&i.Title, &i.Type, &i.PublishedAt); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const publishedForRSS = `-- name: PublishedForRSS :many
@@ -5758,6 +6120,94 @@ func (q *Queries) RevertContentToDraft(ctx context.Context, id uuid.UUID) (Rever
 	return i, err
 }
 
+const reviseContentByCreator = `-- name: ReviseContentByCreator :one
+UPDATE contents SET
+    body = COALESCE($1, body),
+    excerpt = COALESCE($2, excerpt),
+    title = COALESCE($3, title),
+    status = 'review',
+    review_note = NULL,
+    updated_at = now()
+WHERE id = $4 AND created_by = $5
+  AND status IN ('review', 'changes_requested')
+RETURNING id, slug, title, body, excerpt, type, status,
+          series_id, series_order, is_public, project_id, ai_metadata, reading_time_min,
+          cover_image, created_by, proposal_rationale, review_note, published_at, created_at, updated_at
+`
+
+type ReviseContentByCreatorParams struct {
+	Body      *string   `json:"body"`
+	Excerpt   *string   `json:"excerpt"`
+	Title     *string   `json:"title"`
+	ID        uuid.UUID `json:"id"`
+	CreatedBy *string   `json:"created_by"`
+}
+
+type ReviseContentByCreatorRow struct {
+	ID                uuid.UUID       `json:"id"`
+	Slug              string          `json:"slug"`
+	Title             string          `json:"title"`
+	Body              string          `json:"body"`
+	Excerpt           string          `json:"excerpt"`
+	Type              ContentType     `json:"type"`
+	Status            ContentStatus   `json:"status"`
+	SeriesID          *string         `json:"series_id"`
+	SeriesOrder       *int32          `json:"series_order"`
+	IsPublic          bool            `json:"is_public"`
+	ProjectID         *uuid.UUID      `json:"project_id"`
+	AiMetadata        json.RawMessage `json:"ai_metadata"`
+	ReadingTimeMin    int32           `json:"reading_time_min"`
+	CoverImage        *string         `json:"cover_image"`
+	CreatedBy         *string         `json:"created_by"`
+	ProposalRationale *string         `json:"proposal_rationale"`
+	ReviewNote        *string         `json:"review_note"`
+	PublishedAt       *time.Time      `json:"published_at"`
+	CreatedAt         time.Time       `json:"created_at"`
+	UpdatedAt         time.Time       `json:"updated_at"`
+}
+
+// Caller-scoped revise for the revise_content MCP tool: an agent edits content
+// IT created that is in review or changes_requested, returning it to review and
+// clearing the owner's review_note. Each editable field uses COALESCE so an
+// omitted parameter leaves the column unchanged. The created_by + status guard
+// scopes the write to the caller's own revisable rows — a mismatched creator,
+// a wrong status, or an unknown id all match 0 rows (pgx.ErrNoRows → not-found),
+// never another agent's content and never a published row. created_by is the
+// resolved caller identity, never a client-supplied filter.
+func (q *Queries) ReviseContentByCreator(ctx context.Context, arg ReviseContentByCreatorParams) (ReviseContentByCreatorRow, error) {
+	row := q.db.QueryRow(ctx, reviseContentByCreator,
+		arg.Body,
+		arg.Excerpt,
+		arg.Title,
+		arg.ID,
+		arg.CreatedBy,
+	)
+	var i ReviseContentByCreatorRow
+	err := row.Scan(
+		&i.ID,
+		&i.Slug,
+		&i.Title,
+		&i.Body,
+		&i.Excerpt,
+		&i.Type,
+		&i.Status,
+		&i.SeriesID,
+		&i.SeriesOrder,
+		&i.IsPublic,
+		&i.ProjectID,
+		&i.AiMetadata,
+		&i.ReadingTimeMin,
+		&i.CoverImage,
+		&i.CreatedBy,
+		&i.ProposalRationale,
+		&i.ReviewNote,
+		&i.PublishedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const searchContents = `-- name: SearchContents :many
 SELECT id, slug, title, body, excerpt, type, status,
        series_id, series_order, is_public, project_id, ai_metadata, reading_time_min,
@@ -6214,6 +6664,79 @@ func (q *Queries) SemanticSearchSongCorpus(ctx context.Context, arg SemanticSear
 		return nil, err
 	}
 	return items, nil
+}
+
+const sendContentChangesRequested = `-- name: SendContentChangesRequested :one
+UPDATE contents SET
+    status = 'changes_requested',
+    review_note = $1,
+    updated_at = now()
+WHERE id = $2 AND status = 'review'
+RETURNING id, slug, title, body, excerpt, type, status,
+          series_id, series_order, is_public, project_id, ai_metadata, reading_time_min,
+          cover_image, created_by, proposal_rationale, review_note, published_at, created_at, updated_at
+`
+
+type SendContentChangesRequestedParams struct {
+	ReviewNote *string   `json:"review_note"`
+	ID         uuid.UUID `json:"id"`
+}
+
+type SendContentChangesRequestedRow struct {
+	ID                uuid.UUID       `json:"id"`
+	Slug              string          `json:"slug"`
+	Title             string          `json:"title"`
+	Body              string          `json:"body"`
+	Excerpt           string          `json:"excerpt"`
+	Type              ContentType     `json:"type"`
+	Status            ContentStatus   `json:"status"`
+	SeriesID          *string         `json:"series_id"`
+	SeriesOrder       *int32          `json:"series_order"`
+	IsPublic          bool            `json:"is_public"`
+	ProjectID         *uuid.UUID      `json:"project_id"`
+	AiMetadata        json.RawMessage `json:"ai_metadata"`
+	ReadingTimeMin    int32           `json:"reading_time_min"`
+	CoverImage        *string         `json:"cover_image"`
+	CreatedBy         *string         `json:"created_by"`
+	ProposalRationale *string         `json:"proposal_rationale"`
+	ReviewNote        *string         `json:"review_note"`
+	PublishedAt       *time.Time      `json:"published_at"`
+	CreatedAt         time.Time       `json:"created_at"`
+	UpdatedAt         time.Time       `json:"updated_at"`
+}
+
+// Admin send-back transition: the owner returns a review draft to the authoring
+// agent for revision (status → changes_requested) with a review_note reason. The
+// WHERE-status guard makes the transition race-safe: pgx.ErrNoRows means the row
+// is missing OR not in review (the store disambiguates into ErrNotFound vs
+// ErrInvalidState). review_note carries the owner's revision reason, read back by
+// the agent via list_content.
+func (q *Queries) SendContentChangesRequested(ctx context.Context, arg SendContentChangesRequestedParams) (SendContentChangesRequestedRow, error) {
+	row := q.db.QueryRow(ctx, sendContentChangesRequested, arg.ReviewNote, arg.ID)
+	var i SendContentChangesRequestedRow
+	err := row.Scan(
+		&i.ID,
+		&i.Slug,
+		&i.Title,
+		&i.Body,
+		&i.Excerpt,
+		&i.Type,
+		&i.Status,
+		&i.SeriesID,
+		&i.SeriesOrder,
+		&i.IsPublic,
+		&i.ProjectID,
+		&i.AiMetadata,
+		&i.ReadingTimeMin,
+		&i.CoverImage,
+		&i.CreatedBy,
+		&i.ProposalRationale,
+		&i.ReviewNote,
+		&i.PublishedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }
 
 const setContentEmbedding = `-- name: SetContentEmbedding :exec
@@ -7452,6 +7975,29 @@ func (q *Queries) TodosByCreator(ctx context.Context, createdBy string) ([]Todos
 	return items, nil
 }
 
+const todosOpenedCountInWindow = `-- name: TodosOpenedCountInWindow :one
+SELECT count(*)::bigint AS todos_opened
+FROM activity_events ae
+WHERE ae.entity_type = 'todo'
+  AND ae.change_kind = 'created'
+  AND ae.occurred_at >= $1 AND ae.occurred_at <= $2
+`
+
+type TodosOpenedCountInWindowParams struct {
+	Since time.Time `json:"since"`
+	Until time.Time `json:"until"`
+}
+
+// Count of todos CREATED in the window across ALL actors (backlog inflow), for
+// review_period.counts.todos_opened. No actor filter: inflow is inflow whoever
+// captured it.
+func (q *Queries) TodosOpenedCountInWindow(ctx context.Context, arg TodosOpenedCountInWindowParams) (int64, error) {
+	row := q.db.QueryRow(ctx, todosOpenedCountInWindow, arg.Since, arg.Until)
+	var todos_opened int64
+	err := row.Scan(&todos_opened)
+	return todos_opened, err
+}
+
 const toggleMilestone = `-- name: ToggleMilestone :one
 UPDATE milestones SET
     completed_at = CASE WHEN completed_at IS NULL THEN now() ELSE NULL END,
@@ -7733,6 +8279,10 @@ UPDATE contents SET
     ai_metadata = COALESCE($12, ai_metadata),
     reading_time_min = COALESCE($13, reading_time_min),
     cover_image = COALESCE($14, cover_image),
+    review_note = CASE
+        WHEN COALESCE($7::content_status, status) = 'changes_requested' THEN review_note
+        ELSE NULL
+    END,
     updated_at = now()
 WHERE id = $1
 RETURNING id, slug, title, body, excerpt, type, status,
