@@ -54,11 +54,12 @@ automated gates. Listed for a future task; none is wired today.
 3. **Vocabulary-discipline gate.** `forbidigo` (already enabled in
    `.golangci.yml`) configured to keep a fixed list of off-vocabulary
    identifiers out of new non-test code. (`p0/p1/p2` are currently accepted
-   input aliases — see contract §3 (priority) and §7 Open Question #2;
-   keep-vs-remove is an open decision — so they are NOT in this list.)
-4. **Search-corpus pin.** A unit test asserting `search_knowledge`'s
-   `selectSources` corpus matches a documented constant, so README/corpus
-   claims and code cannot silently diverge again.
+   input aliases — see contract §3 (priority); keep-vs-remove is an open
+   decision — so they are NOT in this list.)
+4. **Search-corpus pin.** `search_knowledge` is now single-corpus
+   (content-only; the former `selectSources` multi-corpus selector was
+   removed with the reading/song shelves). A unit test could assert it
+   stays content-only so README/corpus claims and code cannot diverge again.
 
 ## Maintenance rule
 

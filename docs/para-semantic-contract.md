@@ -13,16 +13,15 @@ A piece of work sits on two orthogonal axes. The schema gives a project both `ar
 | **Life-domain** | which sphere of my life/responsibility | `area` | in use — 6 real domains |
 | **Artifact** | which concrete thing I am building | `project` | **dormant — 0 rows** |
 
-Everything is currently tracked as **goals under life-domain areas**. The artifact (project) axis is unused and is only populated when a concrete deliverable needs build-logs or a public case study.
+Everything is currently tracked as **goals under life-domain areas**. The artifact (project) axis is unused and is only populated when a concrete deliverable needs build-logs.
 
 ## 2. Entities
 
 - **area** — a sphere of life / ongoing responsibility (a standard to maintain, no completion). PARA-canonical. *Is not* a product line, *is not* a competency label. Koopa's real areas are life-domains (日語, 文學閱讀, ヨルシカ, 工作室與系統, 職涯, 身體).
 - **goal** — a finite objective under an area (has `quarter`/`deadline`/`status`). **Owns milestones** (`milestone.goal_id NOT NULL`). This is where a roadmap with checkpoints lives.
-- **project** — a concrete execution vehicle / shippable artifact. Has nullable `area_id` and `goal_id`; can be `maintained` (continuous). It is the unit a public case study (`project_profiles`, 1:1) attaches to. A project **cannot own milestones** (they are goal-rooted).
+- **project** — a concrete execution vehicle / shippable artifact. Has nullable `area_id` and `goal_id`; can be `maintained` (continuous). A project **cannot own milestones** (they are goal-rooted).
 - **milestone** — a binary checkpoint under a goal (`completed_at` = done). Only attaches to a goal.
 - **todo** — a GTD work item, optional `project_id` only. `inbox` / `someday` / unclassified are first-class states, not defects. No `goal_id`/`area_id` edge.
-- **project_profiles** — the public case-study facet of a project (1:1, independent lifecycle; can be edited after the project completes). Deferred — see §4.
 
 ## 3. Koopa's real material → entity (runtime-verified)
 
@@ -31,11 +30,11 @@ Everything is currently tracked as **goals under life-domain areas**. The artifa
 | 工作室與系統 / 日語 / 文學閱讀 / ヨルシカ / 職涯 / 身體 | **area** | the 6 real life-domains |
 | backend / learning / studio / frontend / career / ops | (dead seeded areas) | unused, overlap the real ones → **cleanup** |
 | "koopa0.dev 前後端架構完成、整合進工作流穩定運作" | **goal** (in_progress, under 工作室與系統) | finite objective — correct as a goal; **do not** reclassify to a project |
-| reading a book | `reading` (has `goal_id`) | not a todo/project |
+| reading a book / a book's notes | — | private; lives in Obsidian, not in this model |
 | 日語 / kana practice | goal + milestones | |
 | obsidian | — | private upstream; not in this model |
-| koopa0.dev *as a continuous product* | project (`maintained`) | **deferred** — only when build-logs / portfolio are needed; would link to the goal via `project.goal_id` |
-| whetstone / kotonoha | project (each) | deferred with portfolio |
+| koopa0.dev *as a continuous product* | project (`maintained`) | **deferred** — only when build-logs are needed; would link to the goal via `project.goal_id` |
+| whetstone / kotonoha | project (each) | deferred |
 
 koopa is a single monorepo (`go.mod` module `github.com/Koopa0/koopa`) — one repo, one `github_url`.
 
@@ -43,32 +42,31 @@ koopa is a single monorepo (`go.mod` module `github.com/Koopa0/koopa`) — one r
 
 **Internal loop (the real need):** agent-assisted content drafting + daily planning + goal execution + periodic reflection. Tracked by area/goal/milestone/todo + `activity_events`.
 
-**External loop:** published **content** (article / essay / build-log / til / digest) via the editorial queue — `propose_content` (agent) or admin draft → `status=review`, `is_public=false` → **owner publishes** in admin. 雜談 / 隨筆 map to `essay` losslessly. The public site renders content; the **projects portfolio is tertiary and dormant** (kept, not invested in).
+**External loop:** published **content** (article / essay / build-log / til / digest) via the editorial queue — `propose_content` (agent) or admin draft → `status=review`, `is_public=false` → **owner publishes** in admin. 雜談 / 隨筆 map to `essay` losslessly. The public site renders published content only; the public project portfolio was **removed** (2026-06-23) — built work is shown as content, not a separate portfolio surface.
 
 ## 5. Decided
 
 - **No schema change.** The model is semantically sound; existing FKs suffice. Do **not** add `todo→goal/area` edges.
 - The classification/usage layer lives here + in judgment, not in extra DB tables.
-- External presence = content via review queue. Portfolio = dormant.
+- External presence = content via review queue. The public project portfolio was removed (2026-06-23).
 - `koopa0.dev` stays a **goal**. A koopa0.dev *project* is deferred (§6).
 
 ## 6. Deferred (each behind a tripwire — do not build now)
 
 | Deferred item | Tripwire |
 |---------------|----------|
-| `koopa0.dev` project entity | when build-logs / a public case study are actually needed |
-| Model B — `products` table + `projects.product_id` | when one product fans into 2+ separately-displayable efforts **and** the portfolio goes live |
+| `koopa0.dev` project entity | when build-logs are actually needed |
 | `resolve_task` state guard (block terminal-izing an already-adopted todo) | when an orphaned `daily_plan_items` row actually occurs |
 | koopa0 `requireAuthor` on `propose_*` (identity allowlist) | when the hermes write-surface tripwire fires, or any wrapper wires `propose_*` |
 
-## 7. Open tool-surface gaps (read-only / additive — **no schema**, validate before building)
+## 7. Tool-surface gaps (adversarial-gate findings — all RESOLVED 2026-06-23)
 
-Found by the adversarial gate; all are tool-surface, the schema already holds the data.
+Found by the adversarial gate; all were tool-surface (the schema already held the data) and have since shipped.
 
-- **G1 — revise-after-propose.** `propose_content` is one-shot. If iteration happens after proposal (owner sends a draft back), there is no agent update path. *Decide:* iterate in-conversation before proposing (no tool), or add `revise_content`.
-- **G2 — content proposal readback.** No analog to `list_tasks` for content: an agent cannot see if its proposal was published / rejected / still in review. Matters for non-conversational agents (hermes).
-- **G3 — `propose_content` is project-blind. RESOLVED (2026-06-23): intentional decoupling, not a gap.** Content is the external loop, decoupled from the project/GTD axis. `contents.project_id` is nullable by design; the link is meaningful only for `build-log` and is applied by the owner in admin if/when the portfolio needs it (deferred). The agent content surface deliberately stays project-agnostic — `article`/`essay`/`til`/`digest` (incl. 雜談/隨筆) are standalone writing. Tripwire: revisit only if build-log volume + a live portfolio make manual linking painful.
-- **G4 — windowed reflection look-back.** The reflection step ("what did I complete over the last N weeks") has no agent tool. `brief(reflection)` is single-date and depends on `daily_plan_items` existing; `list_tasks` is caller-scoped (can't see the owner's completions); `project_progress` is a current-state snapshot, not a windowed retrospective. The data exists (`activity_events.occurred_at` actor=human, `todos.completed_at`, `milestones.completed_at`); the published-content listing (`internal/content/query.sql`) even already takes a `since` window but is wired only to the public site, not MCP. *Decide:* add a `since`/`window` param to `brief(reflection)` or a small read-only look-back tool, and surface published-content accumulation on the agent surface.
+- **G1 — revise-after-propose. RESOLVED (2026-06-23): `revise_content` shipped.** An agent revises content it created that is in `review`/`changes_requested`, returning it to the review queue and clearing the owner's review note.
+- **G2 — content proposal readback. RESOLVED (2026-06-23): `list_content` shipped.** An agent reads back the disposition (review / changes_requested / published / archived) of the content it proposed — closing the loop for non-conversational agents (hermes).
+- **G3 — `propose_content` is project-blind. RESOLVED (2026-06-23): intentional decoupling, not a gap.** Content is the external loop, decoupled from the project/GTD axis. `contents.project_id` is nullable by design; the link is meaningful only for `build-log` and is applied by the owner in admin if/when a build-log needs project context. The agent content surface deliberately stays project-agnostic — `article`/`essay`/`til`/`digest` (incl. 雜談/隨筆) are standalone writing.
+- **G4 — windowed reflection look-back. RESOLVED (2026-06-23): `review_period` shipped.** A read-only windowed retrospective ("what did KOOPA complete between `since` and `until`") computed live from the activity log — closing the gap that `brief(reflection)` (single-date), `list_tasks` (caller-scoped), and `project_progress` (current-state snapshot) left open.
 
 ## 8. Data actions (not schema)
 

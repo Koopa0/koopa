@@ -2,7 +2,7 @@
 
 > The visitor-facing (non-admin) read API for the koopa public reading site
 > (the Zed-docs-aesthetic "let the work speak" surface). All **already built** —
-> no auth, no admin gate. Verified against source 2026-06-07. Envelope `{ "data": … }`;
+> no auth, no admin gate. Verified against source 2026-06-23. Envelope `{ "data": … }`;
 > lists are `[]` never `null`. `body` is **Markdown**. Only `is_public=true`,
 > published content is exposed (detail 404s if not public).
 
@@ -37,14 +37,6 @@
 
 - `GET /api/topics` → `[Topic]` — the topic index (docs-style left nav source).
 - `GET /api/topics/{slug}` → `{ "topic": {Topic}, "contents": [Content], "related_tags": [{TagCount}] }` — the **topic page** (a topic + its published content + related tags).
-
-## Project / Portfolio (the "用作品說話" surface)
-
-- `GET /api/projects` → `[ProjectSummary]` · `GET /api/projects/{slug}` → the **bare project row**
-  (`{slug, title, description, status, repo?, …}` — no profile fields).
-- `GET /api/portfolio` → `[PublicListing]` — the rich profile shape:
-  `{ title, long_description?, role?, tech_stack[], highlights[], problem?, solution?, architecture?, results?, github_url?, live_url?, cover_image?, featured, is_public, sort_order }`.
-  A project-detail page composes from portfolio (find by slug), falling back to the bare row.
 
 ## Misc public reads
 - `GET /api/search?q=` → public search across published content.

@@ -144,8 +144,7 @@ them wrong is a semantic bug, not a naming quibble.
   deliverables (`projects` table, `migrations/001_initial.up.sql:314`). Has
   nullable `area_id` and `goal_id` (`:317`); may be `maintained` (continuous).
   Its status lifecycle is `project_status` (`:23` — `proposed | planned |
-  in_progress | on_hold | completed | maintained | archived`). 1:1 optional
-  `project_profiles` for public display (`:367`, project_id is the PK). An agent
+  in_progress | on_hold | completed | maintained | archived`). An agent
   may draft an inert `status='proposed'` project via `propose_project` —
   invisible until the owner activates (proposed→in_progress) or rejects it;
   `capture_inbox` can link a todo to a proposed project by slug, and the link
