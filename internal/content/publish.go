@@ -82,10 +82,9 @@ func (s *Store) AllPublishedSlugs(ctx context.Context) ([]Content, error) {
 	return contents, nil
 }
 
-// PublishFromReview is the canonical, state-guarded publish transition shared
-// by every caller boundary — the HTTP admin publish handler and the MCP
-// publish_content tool both route through it so the editorial gate cannot
-// drift between transports. The policy (Policy B):
+// PublishFromReview is the canonical, state-guarded publish transition behind
+// the admin publish handler — the single editorial gate that promotes a review
+// row to published. The policy (Policy B):
 //
 //   - review    → published   promote (sets is_public + published_at)
 //   - published → published    idempotent no-op (returns the row unchanged,

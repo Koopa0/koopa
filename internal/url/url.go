@@ -1,11 +1,10 @@
 // Copyright 2026 Koopa. All rights reserved.
 
 // Package url provides a canonical form for external URLs and its SHA-256
-// hash, used as dedup identity across tables that store external URLs
-// (feed_entries.url_hash and bookmarks.url_hash). A single authoritative
-// canonicalisation is required because both tables share UNIQUE(url_hash) —
-// if two writers disagree on the canonical form, the same URL from two
-// ingress points hashes differently and dedup fails.
+// hash, used as the dedup identity for feed_entries.url_hash. A single
+// authoritative canonicalisation is required because the column carries
+// UNIQUE(url_hash) — if two writers disagree on the canonical form, the same
+// URL from two ingress points hashes differently and dedup fails.
 //
 // This package shadows stdlib net/url by package name. Callers that need
 // both must alias one import:

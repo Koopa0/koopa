@@ -386,7 +386,7 @@ type Resolution struct {
 	State State
 }
 
-// Pending is a lightweight projection used by morning_context.
+// Pending is a lightweight projection used by brief(morning) and the Today aggregate.
 type Pending struct {
 	Title string
 	Due   string

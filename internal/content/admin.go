@@ -194,8 +194,8 @@ func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
 // State-guarded per the editorial lifecycle (Policy B): only a review row is
 // promoted; an already-published row is an idempotent success; draft and
 // archived are rejected with 400 INVALID_STATE. The gate lives in
-// content.Store.PublishFromReview, shared with the MCP publish_content tool so
-// the two boundaries cannot diverge.
+// content.Store.PublishFromReview. Publishing is admin HTTP only — no MCP tool
+// publishes; an agent's reach ends at propose_content (lands at status=review).
 func (h *Handler) Publish(w http.ResponseWriter, r *http.Request) {
 	id, err := uuid.Parse(r.PathValue("id"))
 	if err != nil {

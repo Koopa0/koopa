@@ -7,7 +7,7 @@ RETURNING id, title, state, due, project_id,
           description, created_by, created_at, updated_at;
 
 -- name: OverdueTodoItems :many
--- Todo items past due that are still active (for morning_context). Excludes the
+-- Todo items past due that are still active (for brief(morning) + Today). Excludes the
 -- terminal states (done, archived, dismissed) plus the non-date-relevant
 -- someday/inbox holding states, so a self-closed todo never reappears as active.
 SELECT t.id, t.title, t.state, t.due, t.project_id,
@@ -22,7 +22,7 @@ WHERE t.state NOT IN ('done', 'someday', 'inbox', 'archived', 'dismissed')
 ORDER BY t.due, t.priority NULLS LAST;
 
 -- name: TodoItemsDueOn :many
--- Todo items due on a specific date (for morning_context today section).
+-- Todo items due on a specific date (for brief(morning) + the Today aggregate, due-today section).
 -- Excludes terminal states (done, archived, dismissed) and the someday/inbox
 -- holding states so a self-closed todo never reappears in the Today view.
 SELECT t.id, t.title, t.state, t.due, t.project_id,
@@ -37,7 +37,7 @@ WHERE t.state NOT IN ('done', 'someday', 'inbox', 'archived', 'dismissed')
 ORDER BY t.priority NULLS LAST, t.created_at;
 
 -- name: TodoItemsDueInRange :many
--- Todo items due within a date range (for morning_context upcoming section).
+-- Todo items due within a date range (for brief(morning) + the Today aggregate, upcoming section).
 -- Excludes terminal states (done, archived, dismissed) and the someday/inbox
 -- holding states so a self-closed todo never reappears in the upcoming view.
 SELECT t.id, t.title, t.state, t.due, t.project_id,

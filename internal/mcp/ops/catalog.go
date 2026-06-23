@@ -23,8 +23,8 @@ const since = "1.0.0"
 // metadata endpoint runs well under a QPS — the allocation cost is
 // irrelevant in both paths and not worth a global-state optimisation.
 
-// Brief returns metadata for the read-only planning-state multiplexer that
-// replaces the former morning_context + reflection_context tools.
+// Brief returns metadata for the read-only planning-state multiplexer with two
+// modes: morning (daily-planning briefing) and reflection (plan-vs-actual).
 func Brief() Meta {
 	return Meta{
 		Name:        "brief",

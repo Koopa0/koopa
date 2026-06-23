@@ -1,7 +1,7 @@
 // Copyright 2026 Koopa. All rights reserved.
 
-// views.go owns the filtered-list read queries consumed by the MCP
-// morning_context / reflection_context aggregators and the daily-plan
+// views.go owns the filtered-list read queries consumed by the MCP brief
+// aggregator (morning + reflection modes), the Today aggregate, and the daily-plan
 // UI: overdue, due-today, due-range, pending-with-project, inbox, stale
 // someday, backlog, and per-project groupings. Pure reads, no writes.
 

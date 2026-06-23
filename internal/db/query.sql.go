@@ -3840,7 +3840,7 @@ type OverdueTodoItemsRow struct {
 	ProjectSlug   string     `json:"project_slug"`
 }
 
-// Todo items past due that are still active (for morning_context). Excludes the
+// Todo items past due that are still active (for brief(morning) + Today). Excludes the
 // terminal states (done, archived, dismissed) plus the non-date-relevant
 // someday/inbox holding states, so a self-closed todo never reappears as active.
 func (q *Queries) OverdueTodoItems(ctx context.Context, today *time.Time) ([]OverdueTodoItemsRow, error) {
@@ -7309,7 +7309,7 @@ type TodoItemsDueInRangeRow struct {
 	ProjectSlug   string     `json:"project_slug"`
 }
 
-// Todo items due within a date range (for morning_context upcoming section).
+// Todo items due within a date range (for brief(morning) + the Today aggregate, upcoming section).
 // Excludes terminal states (done, archived, dismissed) and the someday/inbox
 // holding states so a self-closed todo never reappears in the upcoming view.
 func (q *Queries) TodoItemsDueInRange(ctx context.Context, arg TodoItemsDueInRangeParams) ([]TodoItemsDueInRangeRow, error) {
@@ -7377,7 +7377,7 @@ type TodoItemsDueOnRow struct {
 	ProjectSlug   string     `json:"project_slug"`
 }
 
-// Todo items due on a specific date (for morning_context today section).
+// Todo items due on a specific date (for brief(morning) + the Today aggregate, due-today section).
 // Excludes terminal states (done, archived, dismissed) and the someday/inbox
 // holding states so a self-closed todo never reappears in the Today view.
 func (q *Queries) TodoItemsDueOn(ctx context.Context, targetDate *time.Time) ([]TodoItemsDueOnRow, error) {

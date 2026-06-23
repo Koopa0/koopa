@@ -85,9 +85,8 @@ type BriefInput struct {
 
 // BriefOutput is the output of the brief tool. The active mode determines
 // which group of fields carries data; MarshalJSON emits {mode, date} plus
-// only the active mode's fields so the wire shape mirrors the former
-// morning_context / reflection_context tools (minus their agent_notes
-// sections). The unused mode's fields are dropped, not emitted as empty.
+// only the active mode's fields. The wire shape carries no agent memory, and
+// the inactive mode's fields are dropped, not emitted as empty.
 type BriefOutput struct {
 	Mode string `json:"mode"`
 	Date string `json:"date"`
@@ -136,9 +135,8 @@ type briefReflectionWire struct {
 }
 
 // MarshalJSON emits {mode, date, ...only the active mode's fields}. Selecting
-// by Mode keeps each mode's wire shape identical to its former standalone tool
-// (morning_context / reflection_context) plus the `mode` tag, and prevents the
-// inactive mode's zero-value fields from leaking into the response.
+// by Mode keeps each mode's wire shape stable under the `mode` tag and prevents
+// the inactive mode's zero-value fields from leaking into the response.
 //
 //nolint:gocritic // hugeParam: stdlib json.Marshaler interface takes value receiver
 func (o BriefOutput) MarshalJSON() ([]byte, error) {
@@ -357,8 +355,7 @@ func (s *Server) fillContentPipeline(ctx context.Context, out *BriefOutput) {
 // plus plan-vs-actual counts. Completion is derived from each planned todo's
 // CURRENT state (done -> completed, someday -> deferred, anything else ->
 // still planned), not the daily_plan_item.status column, which has no write
-// path. It references ZERO agent_notes — the former reflection_context
-// today_notes / today_plan sections are dropped.
+// path. It carries no agent memory — brief is a pure planning-state pull.
 func (s *Server) fillBriefReflection(ctx context.Context, date time.Time, out *BriefOutput) {
 	out.PlannedItems = []daily.Item{}
 
