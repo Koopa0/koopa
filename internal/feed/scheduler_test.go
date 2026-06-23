@@ -149,16 +149,19 @@ func TestFilterConfig_MatchTitle(t *testing.T) {
 			want:   false,
 		},
 		{
-			name:   "invalid regex falls back to case-insensitive substring",
+			// A malformed regexp is skipped, NOT reinterpreted as a substring, so
+			// a title containing the literal pattern text is NOT filtered.
+			name:   "invalid regex is skipped not substring-matched",
 			config: FilterConfig{DenyTitlePatterns: []string{"[invalid regex"}},
 			title:  "[Invalid Regex match",
-			want:   true,
+			want:   false,
 		},
 		{
-			name:   "invalid regex substring no match",
-			config: FilterConfig{DenyTitlePatterns: []string{"[invalid regex"}},
-			title:  "totally different title",
-			want:   false,
+			// A malformed sibling pattern must not suppress a valid one.
+			name:   "valid pattern still matches alongside an invalid sibling",
+			config: FilterConfig{DenyTitlePatterns: []string{"[invalid regex", "(?i)sponsored"}},
+			title:  "A Sponsored item",
+			want:   true,
 		},
 		{
 			name:   "empty title never matches non-empty pattern",

@@ -130,3 +130,37 @@ func overCapUUIDs(n int) []uuid.UUID {
 	}
 	return out
 }
+
+func TestFilterConfig_Validate(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		fc      FilterConfig
+		wantErr bool
+	}{
+		{name: "empty config is valid", fc: FilterConfig{}},
+		{
+			name: "valid patterns",
+			fc:   FilterConfig{DenyTitlePatterns: []string{"(?i)sponsored", "^ad: "}},
+		},
+		{
+			name:    "malformed pattern is rejected",
+			fc:      FilterConfig{DenyTitlePatterns: []string{"(?i)ok", "[unclosed"}},
+			wantErr: true,
+		},
+		{
+			name: "non-regexp fields are not compiled",
+			fc:   FilterConfig{DenyPaths: []string{"[not-a-regex"}, DenyTags: []string{"[also-literal"}},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if err := tt.fc.Validate(); (err != nil) != tt.wantErr {
+				t.Errorf("Validate() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}

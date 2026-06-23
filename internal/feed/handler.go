@@ -145,6 +145,10 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid schedule value")
 		return
 	}
+	if err := req.Filter.Validate(); err != nil {
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+		return
+	}
 
 	topicIDs, err := parseTopicIDs(req.TopicIDs)
 	if err != nil {
@@ -201,6 +205,12 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 	if req.Schedule != nil && !ValidSchedule(*req.Schedule) {
 		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid schedule value")
 		return
+	}
+	if req.Filter != nil {
+		if err := req.Filter.Validate(); err != nil {
+			api.Error(w, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+			return
+		}
 	}
 
 	// parseTopicIDs preserves the nil-vs-empty distinction: nil input

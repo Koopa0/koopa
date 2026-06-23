@@ -6,6 +6,7 @@ package feed
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/url"
 	"regexp"
 	"strings"
@@ -20,6 +21,19 @@ type FilterConfig struct {
 	DenyTitlePatterns []string `json:"deny_title_patterns,omitempty"`
 	AllowTags         []string `json:"allow_tags,omitempty"`
 	DenyTags          []string `json:"deny_tags,omitempty"`
+}
+
+// Validate reports the first malformed regexp among the filter's regexp fields,
+// so a bad pattern is rejected at the write boundary (400) instead of silently
+// degrading at collection time. Only DenyTitlePatterns are regexp; DenyPaths is
+// a path-prefix match and the tag fields are literal matches.
+func (fc *FilterConfig) Validate() error {
+	for _, pattern := range fc.DenyTitlePatterns {
+		if _, err := regexp.Compile(pattern); err != nil {
+			return fmt.Errorf("invalid deny_title_pattern %q: %w", pattern, err)
+		}
+	}
+	return nil
 }
 
 // MatchURL reports whether the given item URL should be skipped by this filter.
@@ -48,10 +62,10 @@ func (fc *FilterConfig) MatchTitle(title string) bool {
 	for _, pattern := range fc.DenyTitlePatterns {
 		re, err := regexp.Compile(pattern)
 		if err != nil {
-			// fall back to case-insensitive substring match for invalid patterns
-			if strings.Contains(strings.ToLower(title), strings.ToLower(pattern)) {
-				return true
-			}
+			// Patterns are validated at the write boundary (Validate), so this is
+			// unreachable for data written through the handlers. For a legacy or
+			// out-of-band row, skip the malformed pattern rather than silently
+			// reinterpreting it as a substring match.
 			continue
 		}
 		if re.MatchString(title) {
