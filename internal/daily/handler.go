@@ -18,8 +18,7 @@ import (
 
 // Handler handles daily plan HTTP requests. The admin Today aggregate is
 // served out of internal/today; this Handler serves the per-date plan
-// envelope that the Today HERO and legacy now-page dashboard consume
-// directly.
+// envelope that the Today HERO consumes directly.
 //
 // todos is the base (pool-bound) todo store. The plan-write path
 // (PutPlan) rebinds both it and the daily store to the per-request tx so
@@ -39,8 +38,8 @@ func NewHandler(store *Store, todos *todo.Store, logger *slog.Logger) *Handler {
 }
 
 // PlanItem is the wire-level projection of a daily_plan_items row
-// joined with its backing todo. Shape mirrors the row layout consumed
-// by the now-page dashboard.
+// joined with its backing todo. Shape mirrors the row layout the Today
+// HERO consumes.
 type PlanItem struct {
 	ID          string  `json:"id"`
 	TodoID      string  `json:"todo_id"`

@@ -88,12 +88,11 @@ func TestRequireAuthor(t *testing.T) {
 // WithCallerAgent, so it observes the bare default from NewServer's
 // initializer at server.go.
 //
-// Why this matters: before the default was hardened to "unknown", it was
-// "human", which let any caller that omitted `as` silently inherit human
-// authority through requireAuthor (the human-implicit branch). The audit
-// author chain for such a call would attribute it to "human" even though
-// no human review occurred. The "unknown" default closes that path: a
-// missing `as` resolves to a Platform=system agent that fails the gate.
+// Why this matters: a caller that omits `as` must NOT inherit human
+// authority through requireAuthor's human-implicit branch — that would
+// attribute the audit author chain to "human" with no human review. The
+// "unknown" default closes the path: a missing `as` resolves to a
+// Platform=system agent that fails the gate.
 func TestServerDefaultCallerAgent_FailsClosed(t *testing.T) {
 	// Construct a Server with the same default initializer NewServer uses,
 	// without WithCallerAgent. handler_test.go's newTestServer() pins
@@ -114,9 +113,9 @@ func TestServerDefaultCallerAgent_FailsClosed(t *testing.T) {
 	// server default ("unknown"). The "unknown" registry row has
 	// Platform=system (not human) and is not in any allowlist, so the gate
 	// rejects with the "not in the author allowlist" path. This is the gate
-	// the hardened default protects — before the default was hardened to
-	// "unknown", this branch silently passed via the human-implicit short
-	// circuit under the old default "human".
+	// the hardened default protects: with `as` omitted, the unknown identity
+	// takes the allowlist-refusal path instead of the human-implicit short
+	// circuit.
 	if err := s.requireAuthor(t.Context(), "test_op", "planner"); err == nil {
 		t.Fatal("requireAuthor without `as` (default unknown) = nil, want refusal")
 	} else if !strings.Contains(err.Error(), `caller "unknown" is not in the author allowlist`) {

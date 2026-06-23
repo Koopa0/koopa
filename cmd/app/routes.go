@@ -208,8 +208,8 @@ func registerRoutes(
 
 	// --- Admin: Commitment / Daily plan ---
 	// Per-date plan envelope — the raw daily_plan_items join consumed
-	// directly by the Today HERO and legacy now-page dashboard. /today
-	// is the richer aggregate; /daily-plan is the focused read.
+	// directly by the Today HERO. /today is the richer aggregate;
+	// /daily-plan is the focused read.
 	mux.Handle("GET /api/admin/commitment/daily-plan", authMid(http.HandlerFunc(h.daily.Plan)))
 	// Plan-write is the human equivalent of the MCP plan_day tool: it
 	// idempotently replaces the date's planned rows in one tx and reports
