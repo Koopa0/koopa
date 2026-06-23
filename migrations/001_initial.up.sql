@@ -9,7 +9,7 @@ CREATE TYPE content_type AS ENUM (
 );
 
 CREATE TYPE content_status AS ENUM (
-    'draft', 'review', 'published', 'archived'
+    'draft', 'review', 'changes_requested', 'published', 'archived'
 );
 
 CREATE TYPE feed_entry_status AS ENUM (
@@ -182,9 +182,9 @@ COMMENT ON TABLE areas IS
     'Goals and projects reference areas via FK.';
 
 COMMENT ON COLUMN areas.slug IS
-    'URL-safe identifier (e.g. backend, learning, studio). Used in filters and API.';
+    'URL-safe identifier (e.g. studio, japanese, literature). Used in filters and API.';
 COMMENT ON COLUMN areas.name IS
-    'Display name (e.g. Backend, Learning, Studio).';
+    'Display name (e.g. 工作室與系統, 日語, 文學閱讀).';
 COMMENT ON COLUMN areas.description IS
     'What this area of responsibility covers and what "maintaining the standard" means.';
 COMMENT ON COLUMN areas.icon IS
@@ -461,6 +461,7 @@ CREATE TABLE contents (
     project_id    UUID REFERENCES projects(id) ON DELETE SET NULL,
     created_by    TEXT REFERENCES agents(name) ON DELETE RESTRICT,
     proposal_rationale TEXT,
+    review_note   TEXT,
     published_at  TIMESTAMPTZ,
     created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -483,10 +484,10 @@ CREATE TABLE contents (
         CHECK (NOT is_public OR status = 'published')
 );
 
-COMMENT ON TABLE contents IS 'First-party publishable knowledge layer. Five content types (article, essay, build-log, til, digest) share one editorial lifecycle: draft → review → published → archived. The review state is a two-actor handoff signal — Claude marks a draft ready (set_content_review_state), human admin publishes (publish_content). published status and published_at are tied by chk_content_publication; is_public requires published by chk_content_public_requires_published.';
+COMMENT ON TABLE contents IS 'First-party publishable knowledge layer. Five content types (article, essay, build-log, til, digest) share one editorial lifecycle: draft → review → published, with a review → changes_requested → review revision loop. The review state is a two-actor handoff — an agent pushes a finished draft into review (propose_content) or the owner drafts in admin; from the admin review queue the human admin publishes OR sends it back (status changes_requested + review_note), and the authoring agent revises (revise_content) back into review. published status and published_at are tied by chk_content_publication; is_public requires published by chk_content_public_requires_published.';
 COMMENT ON COLUMN contents.slug IS 'URL-safe identifier. Globally unique. Used in public URLs. Format (chk_content_slug_format): hyphen-separated segments, no whitespace or slash, no leading/trailing/consecutive hyphens. Unicode letters/numbers (incl. CJK) allowed — a 中日文 slug carries UTF-8 in the URL.';
 COMMENT ON COLUMN contents.type IS 'Content format: article, essay, build-log, til, digest. All are public-facing first-party content going through the review lifecycle.';
-COMMENT ON COLUMN contents.status IS 'Lifecycle: draft → review → published. review = Claude-submitted, awaiting human publish. archived = soft delete. Transition review → published is human-admin only (enforced at MCP tool boundary).';
+COMMENT ON COLUMN contents.status IS 'Lifecycle: draft → review → published | changes_requested; changes_requested → review. review = awaiting a human decision (an agent submits via propose_content, or the owner drafts in admin). changes_requested = the owner sent the draft back for revision, reason in review_note; the authoring agent addresses it with revise_content, which returns the row to review. published = live; archived = soft delete. review → published and review → changes_requested are human-admin only (admin HTTP); the agent tools propose_content/revise_content only ever land a row in review.';
 COMMENT ON COLUMN contents.series_id IS 'Groups content into a series. Paired with series_order (chk_contents_series).';
 COMMENT ON COLUMN contents.series_order IS 'Position within the series. Paired with series_id (chk_contents_series).';
 COMMENT ON COLUMN contents.reading_time_min IS 'Estimated reading time in minutes. Computed from body word count. Always >= 0.';
@@ -495,11 +496,12 @@ COMMENT ON COLUMN contents.cover_image IS 'Cover image URL or path for content c
 COMMENT ON COLUMN contents.is_public IS
     'Whether this content is rendered on the public website. Defaults to false '
     '(private-by-default). When true, status MUST be ''published'' '
-    '(chk_content_public_requires_published). PublishContent flips status, '
+    '(chk_content_public_requires_published). Publishing flips status, '
     'published_at, and is_public together — publishing makes public in this system.';
 COMMENT ON COLUMN contents.project_id IS 'Associated project. SET NULL on project deletion — content survives independently.';
 COMMENT ON COLUMN contents.created_by IS 'Proposing agent for agent-pushed content (references agents(name), e.g. hermes pushing a finished draft via the propose_content MCP tool). NULL for owner/admin-authored content created through the admin UI. ON DELETE RESTRICT — a registered agent that has proposed content cannot be removed while its proposals exist.';
 COMMENT ON COLUMN contents.proposal_rationale IS 'The proposing agent''s "why I propose this" note, shown alongside the row in the admin review queue. NULL for admin-authored content (no agent rationale).';
+COMMENT ON COLUMN contents.review_note IS 'The owner''s revision reason, set when the owner sends a draft back (status → changes_requested) from the admin review queue. The authoring agent reads it via list_content and addresses it with revise_content (which returns the row to review). NULL when the row has never been sent back.';
 COMMENT ON COLUMN contents.published_at IS 'When content was published. NULL = not yet published.';
 COMMENT ON COLUMN contents.search_vector IS
     'Generated tsvector for full-text search. Uses ''simple'' config (no stemming/language-specific '
@@ -612,13 +614,13 @@ CREATE TABLE feed_entries (
 );
 
 COMMENT ON TABLE feed_entries IS 'RSS feed items collected by the fetch pipeline. Topic association is read-through feed_topics at query time — changing a feed''s topics retroactively changes its entries'' visible topics. status=curated requires curated_content_id to be set.';
-COMMENT ON COLUMN feed_entries.url_hash IS 'SHA256 hex of canonical source_url. Dedup identity. Computed in application code via internal/urlhash before INSERT.';
+COMMENT ON COLUMN feed_entries.url_hash IS 'SHA256 hex of canonical source_url. Dedup identity. Computed in application code via internal/url before INSERT.';
 COMMENT ON COLUMN feed_entries.feed_id IS 'Source feed. SET NULL on feed deletion — entries retained for curation.';
 COMMENT ON COLUMN feed_entries.title IS 'Article title from the RSS feed. Raw, not cleaned.';
 COMMENT ON COLUMN feed_entries.original_content IS 'RSS entry content/summary as delivered by the feed. Empty string when none.';
 COMMENT ON COLUMN feed_entries.source_url IS 'Original article URL.';
 COMMENT ON COLUMN feed_entries.status IS 'Curation lifecycle: unread → read → curated | ignored.';
-COMMENT ON COLUMN feed_entries.curated_content_id IS 'When curated into first-party content, references the contents row. SET NULL on content deletion. feed_entry → bookmark curation is not supported — use the bookmark UI directly.';
+COMMENT ON COLUMN feed_entries.curated_content_id IS 'When curated into first-party content, references the contents row. SET NULL on content deletion.';
 COMMENT ON COLUMN feed_entries.collected_at IS 'When the pipeline first fetched this entry.';
 COMMENT ON COLUMN feed_entries.published_at IS 'Original publication date from the feed. NULL if not provided.';
 
@@ -952,9 +954,7 @@ COMMENT ON TRIGGER trg_daily_plan_items_not_already_skipped ON daily_plan_items
 CREATE TABLE activity_events (
     id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     entity_type   TEXT NOT NULL CHECK (entity_type IN (
-                      'todo', 'goal', 'milestone', 'project', 'content',
-                      'note', 'learning_attempt', 'learning_hypothesis',
-                      'learning_plan_entry', 'learning_session'
+                      'todo', 'goal', 'milestone', 'project', 'content'
                   )),
     entity_id     UUID NOT NULL,
     entity_title  TEXT,
@@ -980,16 +980,15 @@ COMMENT ON COLUMN activity_events.entity_type IS
 COMMENT ON COLUMN activity_events.entity_id IS
     'UUID of the changed row. Polymorphic — FK integrity is not enforced (would require '
     'separate FK per entity_type). entity_title and entity_slug carry the write-time '
-    'snapshot so consumers (morning_context, weekly_summary, session_delta) do not '
+    'snapshot so read-side consumers (e.g. brief and the admin dashboards) do not '
     'need to JOIN live entity tables; a hard-deleted entity_id still has a usable '
     'historical record.';
 COMMENT ON COLUMN activity_events.entity_title IS
     'Human-readable title of the entity AT THE TIME of the event. NULL when the '
-    'entity has no natural title (learning_session) or the trigger cannot resolve '
-    'one. Survives hard-delete of the referenced entity.';
+    'trigger cannot resolve one. Survives hard-delete of the referenced entity.';
 COMMENT ON COLUMN activity_events.entity_slug IS
     'Slug of the entity AT THE TIME of the event, for slug-addressable types '
-    '(content, bookmark, note, project). NULL otherwise.';
+    '(content, project). NULL otherwise.';
 COMMENT ON COLUMN activity_events.change_kind IS
     'Closed set of mutation kinds. created = INSERT. state_changed = enum/status transition. '
     'completed/published/archived = specific terminal transitions worth distinguishing. '

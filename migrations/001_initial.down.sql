@@ -1,5 +1,5 @@
 -- Reverse of 001_initial.up.sql
--- Drop order: triggers → functions → deferred FKs → tables (reverse FK order) → types → extensions
+-- Drop order: triggers → functions → tables (reverse FK order) → types → extensions
 
 -- ============================================================
 -- 1. Triggers (drop before their parent tables and functions)
@@ -31,14 +31,7 @@ DROP FUNCTION IF EXISTS enforce_todo_skip_not_already_dropped();
 DROP FUNCTION IF EXISTS enforce_project_profile_not_public_if_archived();
 
 -- ============================================================
--- 3. Deferred foreign keys
---
--- (The previous feed_entries → bookmarks deferred FK was removed
--- entry when the feed→bookmark curation path was dropped.)
--- ============================================================
-
--- ============================================================
--- 4. Tables (reverse creation order, respecting FK dependencies)
+-- 3. Tables (reverse creation order, respecting FK dependencies)
 -- ============================================================
 
 -- Songs + readings shelves (private; reflections FK their parent — drop first)
@@ -96,7 +89,7 @@ DROP TABLE IF EXISTS users;
 DROP TABLE IF EXISTS agents;
 
 -- ============================================================
--- 5. Enum types
+-- 4. Enum types
 -- ============================================================
 
 DROP TYPE IF EXISTS agent_status;
@@ -108,7 +101,7 @@ DROP TYPE IF EXISTS content_status;
 DROP TYPE IF EXISTS content_type;
 
 -- ============================================================
--- 6. Extensions
+-- 5. Extensions
 -- ============================================================
 
 DROP EXTENSION IF EXISTS vector;

@@ -59,10 +59,11 @@ func (ns NullAgentStatus) Value() (driver.Value, error) {
 type ContentStatus string
 
 const (
-	ContentStatusDraft     ContentStatus = "draft"
-	ContentStatusReview    ContentStatus = "review"
-	ContentStatusPublished ContentStatus = "published"
-	ContentStatusArchived  ContentStatus = "archived"
+	ContentStatusDraft            ContentStatus = "draft"
+	ContentStatusReview           ContentStatus = "review"
+	ContentStatusChangesRequested ContentStatus = "changes_requested"
+	ContentStatusPublished        ContentStatus = "published"
+	ContentStatusArchived         ContentStatus = "archived"
 )
 
 func (e *ContentStatus) Scan(src interface{}) error {
@@ -334,11 +335,11 @@ type ActivityEvent struct {
 	ID uuid.UUID `json:"id"`
 	// Which entity domain this event describes. Closed set via CHECK. Used in conjunction with entity_id to identify the specific row that changed.
 	EntityType string `json:"entity_type"`
-	// UUID of the changed row. Polymorphic — FK integrity is not enforced (would require separate FK per entity_type). entity_title and entity_slug carry the write-time snapshot so consumers (morning_context, weekly_summary, session_delta) do not need to JOIN live entity tables; a hard-deleted entity_id still has a usable historical record.
+	// UUID of the changed row. Polymorphic — FK integrity is not enforced (would require separate FK per entity_type). entity_title and entity_slug carry the write-time snapshot so read-side consumers (e.g. brief and the admin dashboards) do not need to JOIN live entity tables; a hard-deleted entity_id still has a usable historical record.
 	EntityID uuid.UUID `json:"entity_id"`
-	// Human-readable title of the entity AT THE TIME of the event. NULL when the entity has no natural title (learning_session) or the trigger cannot resolve one. Survives hard-delete of the referenced entity.
+	// Human-readable title of the entity AT THE TIME of the event. NULL when the trigger cannot resolve one. Survives hard-delete of the referenced entity.
 	EntityTitle *string `json:"entity_title"`
-	// Slug of the entity AT THE TIME of the event, for slug-addressable types (content, bookmark, note, project). NULL otherwise.
+	// Slug of the entity AT THE TIME of the event, for slug-addressable types (content, project). NULL otherwise.
 	EntitySlug *string `json:"entity_slug"`
 	// Closed set of mutation kinds. created = INSERT. state_changed = enum/status transition. completed/published/archived = specific terminal transitions worth distinguishing. updated = generic field change.
 	ChangeKind string `json:"change_kind"`
@@ -376,9 +377,9 @@ type Agent struct {
 // PARA Areas of Responsibility — ongoing domains requiring sustained attention. Unlike projects (which complete), areas persist indefinitely. Each area has a standard to maintain, not a goal to achieve. Goals and projects reference areas via FK.
 type Area struct {
 	ID uuid.UUID `json:"id"`
-	// URL-safe identifier (e.g. backend, learning, studio). Used in filters and API.
+	// URL-safe identifier (e.g. studio, japanese, literature). Used in filters and API.
 	Slug string `json:"slug"`
-	// Display name (e.g. Backend, Learning, Studio).
+	// Display name (e.g. 工作室與系統, 日語, 文學閱讀).
 	Name string `json:"name"`
 	// What this area of responsibility covers and what "maintaining the standard" means.
 	Description string `json:"description"`
@@ -397,7 +398,7 @@ type Area struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
-// First-party publishable knowledge layer. Five content types (article, essay, build-log, til, digest) share one editorial lifecycle: draft → review → published → archived. The review state is a two-actor handoff signal — Claude marks a draft ready (set_content_review_state), human admin publishes (publish_content). published status and published_at are tied by chk_content_publication; is_public requires published by chk_content_public_requires_published.
+// First-party publishable knowledge layer. Five content types (article, essay, build-log, til, digest) share one editorial lifecycle: draft → review → published, with a review → changes_requested → review revision loop. The review state is a two-actor handoff — an agent pushes a finished draft into review (propose_content) or the owner drafts in admin; from the admin review queue the human admin publishes OR sends it back (status changes_requested + review_note), and the authoring agent revises (revise_content) back into review. published status and published_at are tied by chk_content_publication; is_public requires published by chk_content_public_requires_published.
 type Content struct {
 	ID uuid.UUID `json:"id"`
 	// URL-safe identifier. Globally unique. Used in public URLs. Format (chk_content_slug_format): hyphen-separated segments, no whitespace or slash, no leading/trailing/consecutive hyphens. Unicode letters/numbers (incl. CJK) allowed — a 中日文 slug carries UTF-8 in the URL.
@@ -407,7 +408,7 @@ type Content struct {
 	Excerpt string `json:"excerpt"`
 	// Content format: article, essay, build-log, til, digest. All are public-facing first-party content going through the review lifecycle.
 	Type ContentType `json:"type"`
-	// Lifecycle: draft → review → published. review = Claude-submitted, awaiting human publish. archived = soft delete. Transition review → published is human-admin only (enforced at MCP tool boundary).
+	// Lifecycle: draft → review → published | changes_requested; changes_requested → review. review = awaiting a human decision (an agent submits via propose_content, or the owner drafts in admin). changes_requested = the owner sent the draft back for revision, reason in review_note; the authoring agent addresses it with revise_content, which returns the row to review. published = live; archived = soft delete. review → published and review → changes_requested are human-admin only (admin HTTP); the agent tools propose_content/revise_content only ever land a row in review.
 	Status ContentStatus `json:"status"`
 	// Groups content into a series. Paired with series_order (chk_contents_series).
 	SeriesID *string `json:"series_id"`
@@ -419,7 +420,7 @@ type Content struct {
 	ReadingTimeMin int32 `json:"reading_time_min"`
 	// Cover image URL or path for content cards and social sharing. NULL = no cover image.
 	CoverImage *string `json:"cover_image"`
-	// Whether this content is rendered on the public website. Defaults to false (private-by-default). When true, status MUST be 'published' (chk_content_public_requires_published). PublishContent flips status, published_at, and is_public together — publishing makes public in this system.
+	// Whether this content is rendered on the public website. Defaults to false (private-by-default). When true, status MUST be 'published' (chk_content_public_requires_published). Publishing flips status, published_at, and is_public together — publishing makes public in this system.
 	IsPublic bool `json:"is_public"`
 	// Associated project. SET NULL on project deletion — content survives independently.
 	ProjectID *uuid.UUID `json:"project_id"`
@@ -427,6 +428,8 @@ type Content struct {
 	CreatedBy *string `json:"created_by"`
 	// The proposing agent's "why I propose this" note, shown alongside the row in the admin review queue. NULL for admin-authored content (no agent rationale).
 	ProposalRationale *string `json:"proposal_rationale"`
+	// The owner's revision reason, set when the owner sends a draft back (status → changes_requested) from the admin review queue. The authoring agent reads it via list_content and addresses it with revise_content (which returns the row to review). NULL when the row has never been sent back.
+	ReviewNote *string `json:"review_note"`
 	// When content was published. NULL = not yet published.
 	PublishedAt *time.Time `json:"published_at"`
 	CreatedAt   time.Time  `json:"created_at"`
@@ -505,11 +508,11 @@ type FeedEntry struct {
 	OriginalContent string `json:"original_content"`
 	// Curation lifecycle: unread → read → curated | ignored.
 	Status FeedEntryStatus `json:"status"`
-	// When curated into first-party content, references the contents row. SET NULL on content deletion. feed_entry → bookmark curation is not supported — use the bookmark UI directly.
+	// When curated into first-party content, references the contents row. SET NULL on content deletion.
 	CuratedContentID *uuid.UUID `json:"curated_content_id"`
 	// When the pipeline first fetched this entry.
 	CollectedAt time.Time `json:"collected_at"`
-	// SHA256 hex of canonical source_url. Dedup identity. Computed in application code via internal/urlhash before INSERT.
+	// SHA256 hex of canonical source_url. Dedup identity. Computed in application code via internal/url before INSERT.
 	UrlHash string `json:"url_hash"`
 	// Source feed. SET NULL on feed deletion — entries retained for curation.
 	FeedID *uuid.UUID `json:"feed_id"`
