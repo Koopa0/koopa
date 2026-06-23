@@ -79,10 +79,9 @@ type ProcessRunsCell struct {
 // intentionally left empty — see
 // frontend/docs/decisions/process-runs-stages.md for the rationale.
 type ProcessRunsSummary struct {
-	SuccessRate24h    ProcessRunsCell `json:"success_rate_24h"`
-	AvgLatencySeconds float64         `json:"avg_latency_seconds"`
-	InRetry           ProcessRunsCell `json:"in_retry"`
-	FailedLastHour    ProcessRunsCell `json:"failed_last_hour"`
+	SuccessRate24h ProcessRunsCell `json:"success_rate_24h"`
+	InRetry        ProcessRunsCell `json:"in_retry"`
+	FailedLastHour ProcessRunsCell `json:"failed_last_hour"`
 }
 
 // ProcessRunsResponse is the wire shape for GET /coordination/process-runs.
