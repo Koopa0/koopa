@@ -384,4 +384,32 @@ describe('GoalProfilePageComponent', () => {
 
     expect(toastMessages()).toContain('Milestone updated');
   });
+
+  it('should render the error notice without throwing when the detail load fails', async () => {
+    // goal() reads rxResource.value(), which throws in the error state. The
+    // constructor effect reads it eagerly, so without the hasValue() guard this
+    // throws during change detection instead of showing the error notice.
+    fixture = TestBed.createComponent(GoalProfilePageComponent);
+    fixture.detectChanges();
+
+    const failDetail = (): number => {
+      const reqs = httpMock.match(
+        (r) => r.method === 'GET' && r.url.endsWith(DETAIL_URL),
+      );
+      for (const r of reqs) {
+        r.flush({ error: 'boom' }, { status: 500, statusText: 'Server Error' });
+      }
+      return reqs.length;
+    };
+
+    expect(failDetail()).toBeGreaterThan(0);
+    flushAreas();
+    await settle();
+    failDetail(); // drain any loader the resource re-fired on settle
+    flushAreas();
+    await settle();
+
+    expect(testid('goal-error')).not.toBeNull();
+    expect(testid('goal-hero')).toBeNull();
+  });
 });

@@ -62,7 +62,12 @@ export class ProjectProfilePageComponent {
     stream: ({ params }) => this.planService.getProjectDetail(params),
   });
 
-  protected readonly project = computed(() => this.resource.value());
+  // Guard the read: rxResource.value() throws while the resource is in an error
+  // state. The constructor effect reads project() eagerly, so without hasValue()
+  // a failed detail load throws there instead of falling through to hasError().
+  protected readonly project = computed(() =>
+    this.resource.hasValue() ? this.resource.value() : undefined,
+  );
   protected readonly isLoading = computed(
     () => this.resource.status() === 'loading' && !this.project(),
   );

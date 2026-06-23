@@ -83,7 +83,12 @@ export class GoalProfilePageComponent {
     stream: ({ params }) => this.planService.getGoalDetail(params),
   });
 
-  protected readonly goal = computed(() => this.resource.value());
+  // Guard the read: rxResource.value() throws while the resource is in an error
+  // state. The constructor effect reads goal() eagerly, so without hasValue() a
+  // failed detail load throws there instead of falling through to hasError().
+  protected readonly goal = computed(() =>
+    this.resource.hasValue() ? this.resource.value() : undefined,
+  );
   protected readonly isLoading = computed(
     () => this.resource.status() === 'loading' && !this.goal(),
   );

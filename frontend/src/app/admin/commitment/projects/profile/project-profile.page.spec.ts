@@ -120,4 +120,30 @@ describe('ProjectProfilePageComponent', () => {
     expect(testid('project-profile')).not.toBeNull();
     expect(testid('project-hero')?.textContent).toContain('koopa-core');
   });
+
+  it('should render the error notice without throwing when the detail load fails', async () => {
+    // project() reads rxResource.value(), which throws in the error state. The
+    // constructor effect reads it eagerly, so without the hasValue() guard this
+    // throws during change detection instead of showing the error notice.
+    fixture = TestBed.createComponent(ProjectProfilePageComponent);
+    fixture.detectChanges();
+
+    const failDetail = (): number => {
+      const reqs = httpMock.match(
+        (r) => r.method === 'GET' && r.url.endsWith(DETAIL_URL),
+      );
+      for (const r of reqs) {
+        r.flush({ error: 'boom' }, { status: 500, statusText: 'Server Error' });
+      }
+      return reqs.length;
+    };
+
+    expect(failDetail()).toBeGreaterThan(0);
+    await settle();
+    failDetail(); // drain any loader the resource re-fired on settle
+    await settle();
+
+    expect(testid('project-error')).not.toBeNull();
+    expect(testid('project-hero')).toBeNull();
+  });
 });
