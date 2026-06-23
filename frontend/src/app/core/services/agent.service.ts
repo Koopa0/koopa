@@ -10,8 +10,7 @@ import type { Agent } from '../models/workbench.model';
  * returns a bare []agentResponse; `Get` (GET /api/admin/system/agents/{name})
  * returns a single agentResponse. Each row is the six-field identity
  * projection — name, display_name, platform, description, optional schedule,
- * status. There are no task counts or capability flags; the MCP-v3
- * contraction retired the A2A coordination surface.
+ * status. There are no task counts or capability flags.
  */
 @Injectable({ providedIn: 'root' })
 export class AgentService {

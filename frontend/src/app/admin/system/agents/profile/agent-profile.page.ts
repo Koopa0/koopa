@@ -17,7 +17,7 @@ import type { Agent } from '../../../../core/models/workbench.model';
  * Agent Profile — read-only registry view. Renders the six-field
  * projection (name / display_name / platform / description / status) plus
  * the schedule detail when present. There are no capabilities, tasks, or
- * activity state; the MCP-v3 contraction retired the A2A surface.
+ * activity state.
  */
 @Component({
   selector: 'app-agent-profile-page',

@@ -443,6 +443,3 @@ func injectCallerIdentityField(s *jsonschema.Schema) {
 	// additionalProperties:false by default which would reject it.
 	s.AdditionalProperties = nil
 }
-
-// reflectType is a helper for jsonschema type mapping.
-var _ = reflect.TypeFor[FlexInt]

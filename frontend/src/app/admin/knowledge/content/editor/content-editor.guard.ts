@@ -7,12 +7,9 @@ import type { ContentEditorPageComponent } from './content-editor.page';
  * Blocks navigation away from the Content Editor while the form is
  * dirty. Falls through silently on the server (no `confirm` there).
  *
- * Angular 21 — functional guard, no class-based guards per
- * angular-conventions.md.
- *
- * TODO(ux): replace `window.confirm` with the Catalyst Dialog component
- * once a shared DialogService lands. Native confirm is acceptable MVP
- * but visually breaks the dark-themed shell.
+ * Functional guard (no class-based guards per angular-conventions.md). The
+ * unsaved-changes prompt uses the native `window.confirm` by design — a
+ * deliberate, dependency-free guard that does not pull in a dialog service.
  */
 export const contentEditorCanDeactivate: CanDeactivateFn<
   ContentEditorPageComponent

@@ -76,8 +76,7 @@ export interface HypothesisMetadata {
 // internal/agent/registry.go::BuiltinAgents)
 //
 // The agents table is a read-only identity projection. The HTTP shape is
-// exactly six fields — there is no capability, task, or activity concept
-// (the MCP-v3 contraction retired the A2A coordination surface).
+// exactly six fields — there is no capability, task, or activity concept.
 // ============================================================
 
 /**

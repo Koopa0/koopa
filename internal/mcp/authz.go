@@ -22,8 +22,7 @@
 //
 //  3. Self — is the caller the row's owner? The model reserves this axis
 //     for personal-GTD mutations (caller == row.created_by / row.target).
-//     No tool on the current MCP surface exercises it — advance_work, its
-//     original consumer, is an admin-only HTTP action — so there is no
+//     No tool on the current MCP surface exercises it, so there is no
 //     requireSelf helper; a handler that needed it would gate inline
 //     against the loaded row.
 //

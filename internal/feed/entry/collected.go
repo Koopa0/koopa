@@ -11,22 +11,9 @@ import (
 	"github.com/google/uuid"
 )
 
-// Status represents the status of collected data.
+// Status represents the status of collected data. Values mirror the
+// feed_entries.status enum; the entry endpoints carry them as raw strings.
 type Status string
-
-const (
-	// StatusUnread indicates the item has not been reviewed yet.
-	StatusUnread Status = "unread"
-
-	// StatusRead indicates the item has been seen but not curated.
-	StatusRead Status = "read"
-
-	// StatusCurated indicates the item was promoted to content.
-	StatusCurated Status = "curated"
-
-	// StatusIgnored indicates the item was dismissed.
-	StatusIgnored Status = "ignored"
-)
 
 // Item represents externally collected data.
 type Item struct {
@@ -66,7 +53,4 @@ var (
 
 	// ErrConflict indicates a duplicate URL hash.
 	ErrConflict = errors.New("entry: conflict")
-
-	// ErrInvalidInput indicates the request fails validation.
-	ErrInvalidInput = errors.New("invalid input")
 )
