@@ -3340,19 +3340,6 @@ func (q *Queries) InternalSearchContents(ctx context.Context, arg InternalSearch
 	return items, nil
 }
 
-const internalSearchContentsCount = `-- name: InternalSearchContentsCount :one
-SELECT COUNT(*) FROM contents
-WHERE status != 'archived'
-  AND search_vector @@ websearch_to_tsquery('simple', $1)
-`
-
-func (q *Queries) InternalSearchContentsCount(ctx context.Context, websearchToTsquery string) (int64, error) {
-	row := q.db.QueryRow(ctx, internalSearchContentsCount, websearchToTsquery)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
-}
-
 const internalSemanticSearchContents = `-- name: InternalSemanticSearchContents :many
 SELECT id, slug, title, body, excerpt, type, status,
        series_id, series_order, is_public, project_id, ai_metadata, reading_time_min,

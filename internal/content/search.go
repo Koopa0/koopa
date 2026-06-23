@@ -58,19 +58,14 @@ func (s *Store) Search(ctx context.Context, query string, contentType *Type, pag
 
 // InternalSearch performs full-text search on published content without visibility filter.
 // Used by MCP tools that need access to all content including private.
-func (s *Store) InternalSearch(ctx context.Context, query string, page, perPage int) ([]Content, int, error) {
+func (s *Store) InternalSearch(ctx context.Context, query string, page, perPage int) ([]Content, error) {
 	rows, err := s.q.InternalSearchContents(ctx, db.InternalSearchContentsParams{
 		WebsearchToTsquery: query,
 		Limit:              int32(perPage),              // #nosec G115 -- pagination values are bounded by API layer
 		Offset:             int32((page - 1) * perPage), // #nosec G115 -- pagination values are bounded by API layer
 	})
 	if err != nil {
-		return nil, 0, fmt.Errorf("internal searching contents: %w", err)
-	}
-
-	count, err := s.q.InternalSearchContentsCount(ctx, query)
-	if err != nil {
-		return nil, 0, fmt.Errorf("counting internal search results: %w", err)
+		return nil, fmt.Errorf("internal searching contents: %w", err)
 	}
 
 	contents := make([]Content, len(rows))
@@ -90,8 +85,8 @@ func (s *Store) InternalSearch(ctx context.Context, query string, page, perPage 
 	}
 
 	if err := s.attachBatchTopics(ctx, contents, ids); err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 
-	return contents, int(count), nil
+	return contents, nil
 }

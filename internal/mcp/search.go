@@ -231,7 +231,7 @@ func (s *Server) hybridSearch(ctx context.Context, query string, limit int) ([]c
 
 	g, gctx := errgroup.WithContext(ctx)
 	g.Go(func() error {
-		rows, _, err := s.contents.InternalSearch(gctx, query, 1, branchSize)
+		rows, err := s.contents.InternalSearch(gctx, query, 1, branchSize)
 		if err != nil {
 			return fmt.Errorf("searching content: fts: %w", err)
 		}

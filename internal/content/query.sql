@@ -71,11 +71,6 @@ WHERE status != 'archived'
 ORDER BY ts_rank(search_vector, websearch_to_tsquery('simple', $1)) DESC
 LIMIT $2 OFFSET $3;
 
--- name: InternalSearchContentsCount :one
-SELECT COUNT(*) FROM contents
-WHERE status != 'archived'
-  AND search_vector @@ websearch_to_tsquery('simple', $1);
-
 -- name: InternalSemanticSearchContents :many
 -- Semantic search over all contents via pgvector cosine distance. Mirrors
 -- InternalSearchContents visibility (excludes only 'archived'); does NOT
