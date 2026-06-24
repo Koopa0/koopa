@@ -48,7 +48,6 @@ const SourceTypeContent = "content"
 type SearchKnowledgeInput struct {
 	Query       string  `json:"query" jsonschema:"required" jsonschema_description:"Search query text"`
 	ContentType *string `json:"content_type,omitempty" jsonschema_description:"Filter by content type: article, essay, build-log, til, digest. An unknown value is rejected."`
-	Project     *string `json:"project,omitempty" jsonschema_description:"NOT SUPPORTED — passing a non-empty value is rejected as an unsupported_filter. Reserved for a future content project filter."`
 	After       *string `json:"after,omitempty" jsonschema_description:"Filter by created date YYYY-MM-DD: keep rows created on or after the whole of this day (server timezone, UTC by default)."`
 	Before      *string `json:"before,omitempty" jsonschema_description:"Filter by created date YYYY-MM-DD: keep rows created on or before the whole of this day, i.e. through 23:59:59 of the date (server timezone, UTC by default)."`
 	Limit       FlexInt `json:"limit,omitempty" jsonschema_description:"Max results (default 20, max 50)."`
@@ -316,14 +315,6 @@ func validateSearchKnowledgeInput(input SearchKnowledgeInput) error {
 	// "unsupported filter" distinguishable from "no match".
 	if hasContentTypeFilter && !content.Type(*input.ContentType).Valid() {
 		return fmt.Errorf("unsupported content_type %q (supported: article, essay, build-log, til, digest)", *input.ContentType)
-	}
-
-	// project is declared in the schema but has no retrieval path. Rather
-	// than silently ignore it (a caller passing project would get unfiltered
-	// results and never know), reject it as an unsupported filter until a
-	// real content project filter is wired.
-	if input.Project != nil && *input.Project != "" {
-		return fmt.Errorf("unsupported_filter: project is not supported by search_knowledge")
 	}
 
 	return nil

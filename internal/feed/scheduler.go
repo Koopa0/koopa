@@ -130,6 +130,18 @@ func (s *Scheduler) fetchDueFeeds(ctx context.Context) {
 	}
 }
 
+// isDue reports whether a feed is due for a fetch on this tick. A feed that has
+// never been fetched (lastFetched == nil) is always due; otherwise it is due
+// once its age (now - *lastFetched) reaches the schedule interval. The boundary
+// is inclusive — age exactly equal to interval is due — because the comparison
+// skips only when the age is strictly less than the interval.
+func isDue(lastFetched *time.Time, now time.Time, interval time.Duration) bool {
+	if lastFetched == nil {
+		return true
+	}
+	return now.Sub(*lastFetched) >= interval
+}
+
 // fetchSchedule fetches all enabled feeds for a given schedule that are past their interval.
 func (s *Scheduler) fetchSchedule(ctx context.Context, schedule string, interval time.Duration) error {
 	feeds, err := s.feeds.EnabledFeedsBySchedule(ctx, schedule)
@@ -146,7 +158,7 @@ func (s *Scheduler) fetchSchedule(ctx context.Context, schedule string, interval
 		}
 
 		f := &feeds[i]
-		if f.LastFetchedAt != nil && now.Sub(*f.LastFetchedAt) < interval {
+		if !isDue(f.LastFetchedAt, now, interval) {
 			skipped++
 			continue
 		}

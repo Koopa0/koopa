@@ -18,7 +18,7 @@ FROM feeds;
 
 -- name: StatsProcessRunsByStatus :many
 -- Count process_runs grouped by status within a single kind
--- (one of: crawl, agent_schedule).
+-- (one of: crawl).
 SELECT status::text AS status, COUNT(*)::int AS count
 FROM process_runs
 WHERE kind = @kind::text

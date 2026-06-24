@@ -158,28 +158,6 @@ export interface ApiUpdateContentRequest {
   is_public?: boolean;
 }
 
-/** Public — Knowledge Graph */
-export interface ApiKnowledgeGraph {
-  nodes: ApiGraphNode[];
-  links: ApiGraphLink[];
-}
-
-export interface ApiGraphNode {
-  id: string;
-  label: string;
-  type: string;
-  content_type: string | null;
-  topic: string | null;
-  count: number | null;
-}
-
-export interface ApiGraphLink {
-  source: string;
-  target: string;
-  type: string;
-  similarity: number | null;
-}
-
 /** Public — Related Content */
 export interface ApiRelatedContent {
   slug: string;

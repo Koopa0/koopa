@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -41,7 +42,7 @@ func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
 	cfg := loadConfig(logger)
 
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	err := run(ctx, &cfg, logger)
 	stop()
 	if err != nil {
@@ -85,7 +86,6 @@ func run(ctx context.Context, cfg *config, logger *slog.Logger) error {
 	opts := []mcp.ServerOption{
 		mcp.WithLocation(taipeiLoc),
 		mcp.WithCallerAgent(cfg.CallerAgent),
-		mcp.WithRegistry(agentRegistry),
 	}
 	// Enable search_knowledge semantic branch when Gemini is configured.
 	// Embedder construction fails fast on an invalid client setup; FTS-only

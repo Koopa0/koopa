@@ -141,11 +141,6 @@ func TestSearchKnowledge_Validation(t *testing.T) {
 			input:   SearchKnowledgeInput{Query: "go", ContentType: new("banana-not-a-type")},
 			wantErr: "unsupported content_type",
 		},
-		{
-			name:    "project filter rejected as unsupported",
-			input:   SearchKnowledgeInput{Query: "go", Project: new("koopa")},
-			wantErr: "unsupported_filter",
-		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -7,7 +7,6 @@ import type {
   ApiCreateContentRequest,
   ApiUpdateContentRequest,
   ApiRelatedContent,
-  ApiKnowledgeGraph,
   ContentStatus,
   ContentType,
 } from '../models';
@@ -163,10 +162,5 @@ export class ContentService {
     return this.api.getData<ApiRelatedContent[]>(
       `/api/contents/related/${slug}`,
     );
-  }
-
-  /** Public — get knowledge graph (rate-limited) */
-  getKnowledgeGraph(): Observable<ApiKnowledgeGraph> {
-    return this.api.getData<ApiKnowledgeGraph>('/api/knowledge-graph');
   }
 }

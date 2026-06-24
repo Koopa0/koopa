@@ -57,7 +57,6 @@ func setupServer(t *testing.T) *Server {
 		t.Fatalf("agent.SyncToTable: %v", err)
 	}
 	return NewServer(testPool, slog.Default(),
-		WithRegistry(registry),
 		WithCallerAgent("planner"),
 	)
 }
@@ -658,39 +657,6 @@ func TestIntegration_SearchKnowledge_DateBoundaryInclusive(t *testing.T) {
 }
 
 // --- project filter rejection: end-to-end (Track 1I) ---
-
-// TestIntegration_SearchKnowledge_ProjectRejected pins that a non-empty project
-// filter is rejected at the MCP handler boundary with an unsupported_filter
-// error, against a corpus that WOULD match the query — proving the rejection is
-// the project field, not an empty corpus. An empty project value is ignored
-// (treated as absent) and the search succeeds.
-func TestIntegration_SearchKnowledge_ProjectRejected(t *testing.T) {
-	s := setupServer(t)
-	const term = "zqxproj"
-	seedSearchContent(t, "sk-proj-content", term, "draft")
-
-	t.Run("non-empty project rejected", func(t *testing.T) {
-		p := "koopa"
-		_, _, err := callHandler(t, s.searchKnowledge, SearchKnowledgeInput{Query: term, Project: &p})
-		if err == nil {
-			t.Fatal("non-empty project must be rejected as unsupported_filter")
-		}
-		if !strings.Contains(err.Error(), "unsupported_filter") {
-			t.Errorf("error = %q, want containing %q", err, "unsupported_filter")
-		}
-	})
-
-	t.Run("empty project ignored, search succeeds", func(t *testing.T) {
-		empty := ""
-		_, out, err := callHandler(t, s.searchKnowledge, SearchKnowledgeInput{Query: term, Project: &empty})
-		if err != nil {
-			t.Fatalf("empty project must be treated as absent: %v", err)
-		}
-		if len(out.Results) == 0 {
-			t.Error("empty project must not filter out the matching content row")
-		}
-	})
-}
 
 // --- plan_day position bounds (#13) ---
 

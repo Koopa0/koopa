@@ -1,7 +1,7 @@
 -- name: ContentByID :one
 SELECT id, slug, title, body, excerpt, type, status,
        series_id, series_order, is_public, project_id, ai_metadata, reading_time_min,
-       cover_image, created_by, proposal_rationale, published_at, created_at, updated_at
+       cover_image, created_by, proposal_rationale, review_note, published_at, created_at, updated_at
 FROM contents WHERE id = $1;
 
 -- name: PublishedContents :many

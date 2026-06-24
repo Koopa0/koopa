@@ -39,43 +39,6 @@ RETURNING id, source_url, title, original_content,
 -- name: IgnoreFeedEntry :exec
 UPDATE feed_entries SET status = 'ignored' WHERE id = $1;
 
--- name: RecentFeedEntries :many
-SELECT cd.id, cd.source_url, cd.title, cd.original_content,
-       cd.status, cd.curated_content_id, cd.collected_at,
-       cd.url_hash, cd.feed_id, cd.published_at,
-       COALESCE(f.name, '') AS feed_name
-FROM feed_entries cd
-LEFT JOIN feeds f ON cd.feed_id = f.id
-WHERE cd.collected_at >= $1 AND cd.collected_at < $2
-ORDER BY COALESCE(cd.published_at, cd.collected_at) DESC
-LIMIT $3;
-
--- name: LatestFeedEntries :many
--- Get latest collected data, optionally filtered by time range.
--- When days is NULL, returns the latest N items regardless of time.
-SELECT cd.id, cd.source_url, cd.title, cd.original_content,
-       cd.status, cd.curated_content_id, cd.collected_at,
-       cd.url_hash, cd.feed_id, cd.published_at,
-       COALESCE(f.name, '') AS feed_name
-FROM feed_entries cd
-LEFT JOIN feeds f ON cd.feed_id = f.id
-WHERE (sqlc.narg('since')::timestamptz IS NULL OR cd.collected_at >= sqlc.narg('since'))
-ORDER BY COALESCE(cd.published_at, cd.collected_at) DESC
-LIMIT @max_results;
-
--- name: TopUnreadFeedEntriesRecent :many
--- Get unread collected data since a given time.
-SELECT cd.id, cd.source_url, cd.title, cd.original_content,
-       cd.status, cd.curated_content_id, cd.collected_at,
-       cd.url_hash, cd.feed_id, cd.published_at,
-       COALESCE(f.name, '') AS feed_name
-FROM feed_entries cd
-LEFT JOIN feeds f ON cd.feed_id = f.id
-WHERE cd.collected_at >= @since
-  AND cd.status = 'unread'
-ORDER BY COALESCE(cd.published_at, cd.collected_at) DESC
-LIMIT @max_results;
-
 -- name: HighPriorityRecentFeedEntries :many
 -- Get unread collected data from high-priority feeds in the past N hours.
 SELECT cd.id, cd.source_url, cd.title, cd.original_content,
@@ -89,7 +52,3 @@ WHERE f.priority = 'high'
   AND cd.collected_at >= @since
 ORDER BY COALESCE(cd.published_at, cd.collected_at) DESC
 LIMIT @max_results;
-
--- name: DeleteOldIgnored :execrows
--- Cleanup: delete ignored collected data older than the given cutoff.
-DELETE FROM feed_entries WHERE status = 'ignored' AND collected_at < @cutoff;

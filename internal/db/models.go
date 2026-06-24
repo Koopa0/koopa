@@ -631,7 +631,7 @@ type RefreshToken struct {
 	ID uuid.UUID `json:"id"`
 	// Token owner. CASCADE — user deletion invalidates all tokens.
 	UserID uuid.UUID `json:"user_id"`
-	// Bcrypt or SHA256 hash of the actual token. Never store plaintext.
+	// SHA256 (base64url) hash of the opaque refresh token. Never store plaintext.
 	TokenHash string `json:"token_hash"`
 	// Absolute expiration. Tokens past this time are invalid and eligible for cleanup.
 	ExpiresAt time.Time `json:"expires_at"`

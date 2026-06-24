@@ -5,7 +5,6 @@ package activity
 
 import (
 	"encoding/json"
-	"errors"
 	"time"
 
 	"github.com/google/uuid"
@@ -35,14 +34,6 @@ type Event struct {
 	CreatedAt  time.Time       `json:"created_at"`
 }
 
-// DiffStats holds GitHub diff statistics for a push event.
-type DiffStats struct {
-	LinesAdded   int `json:"lines_added"`
-	LinesRemoved int `json:"lines_removed"`
-	FilesChanged int `json:"files_changed"`
-	CommitCount  int `json:"commit_count"`
-}
-
 // ChangelogDay groups events for a single calendar date.
 type ChangelogDay struct {
 	Date       string           `json:"date"`
@@ -69,11 +60,3 @@ type ChangelogEvent struct {
 type ChangelogResponse struct {
 	Days []ChangelogDay `json:"days"`
 }
-
-var (
-	// ErrNotFound indicates the event does not exist.
-	ErrNotFound = errors.New("activity: not found")
-
-	// ErrConflict indicates a duplicate event (dedup hit).
-	ErrConflict = errors.New("activity: conflict")
-)

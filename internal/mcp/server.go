@@ -17,7 +17,6 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/Koopa0/koopa/internal/agent"
 	"github.com/Koopa0/koopa/internal/content"
 	"github.com/Koopa0/koopa/internal/daily"
 	"github.com/Koopa0/koopa/internal/embedder"
@@ -42,13 +41,6 @@ type Server struct {
 
 	// Goals
 	goals *goal.Store
-
-	// Agent registry — source of truth for caller identity resolution: the
-	// `as` value maps to an agent name used for attribution (created_by /
-	// activity_events.actor). Wired in from
-	// cmd/app/main.go so the CLI and tests can inject custom rosters when
-	// needed.
-	registry *agent.Registry
 
 	// Content and feeds
 	feeds       *feed.Store
@@ -89,13 +81,6 @@ func WithLocation(loc *time.Location) ServerOption {
 	return func(s *Server) { s.loc = loc }
 }
 
-// WithRegistry injects a pre-built agent registry. Required in production
-// because callers of mutation tools must be resolved against it; optional in
-// tests that use the default BuiltinAgents.
-func WithRegistry(r *agent.Registry) ServerOption {
-	return func(s *Server) { s.registry = r }
-}
-
 // WithEmbedder enables the semantic branch of search_knowledge. When unset
 // (or set to nil) the tool falls back to FTS-only — that path remains
 // functional in every deployment, so embedder wiring is deliberately
@@ -112,7 +97,6 @@ func NewServer(pool *pgxpool.Pool, logger *slog.Logger, opts ...ServerOption) *S
 		contents:    content.NewStore(pool),
 		projects:    project.NewStore(pool),
 		goals:       goal.NewStore(pool),
-		registry:    agent.NewBuiltinRegistry(),
 		feedEntries: entry.NewStore(pool),
 		feeds:       feed.NewStore(pool, logger),
 		stats:       stats.NewStore(pool),

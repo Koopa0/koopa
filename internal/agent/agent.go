@@ -10,7 +10,6 @@ package agent
 
 import (
 	"errors"
-	"time"
 )
 
 // ErrUnknownAgent means the caller name is not present in the registry or
@@ -91,6 +90,4 @@ type RegistryRow struct {
 	Platform    string
 	Description string
 	Status      Status
-	SyncedAt    time.Time
-	RetiredAt   *time.Time
 }

@@ -25,6 +25,65 @@ import (
 	"github.com/Koopa0/koopa/internal/db"
 )
 
+// containsControlChars reports whether s contains any control character — ASCII
+// C0 (0x00–0x1F), DEL (0x7F), or Unicode C1 (0x80–0x9F). This is the strict
+// single-line check for title/excerpt; it is the same predicate the MCP write
+// path applies via goal.ContainsControlChars (kept local here because content
+// cannot import goal without an import cycle: content → goal → project →
+// content). Body uses containsProseControlChars instead, which permits HT/LF/CR.
+func containsControlChars(s string) bool {
+	for _, r := range s {
+		if r < 0x20 || r == 0x7f || (r >= 0x80 && r <= 0x9f) {
+			return true
+		}
+	}
+	return false
+}
+
+// checkContentControlChars rejects control characters in the content write
+// fields. slug, title, and excerpt are single-line fields validated with the
+// strict check (every control char), while body is multi-line Markdown
+// validated with the prose check (HT/LF/CR permitted). This mirrors the MCP
+// write path for title/excerpt/body (propose_content / revise_content); slug is
+// admin-only — the MCP path derives the slug server-side, and the DB
+// slug-format CHECK rejects whitespace and slashes but NOT non-whitespace
+// control chars, so this is the boundary that keeps them out of the URL path
+// segment. A nil argument is skipped so the same check serves Create (all
+// present) and partial Update (only changed fields). Returns the first
+// offending field name, or "" when clean.
+func checkContentControlChars(slug, title, excerpt, body *string) string {
+	if slug != nil && containsControlChars(*slug) {
+		return "slug"
+	}
+	if title != nil && containsControlChars(*title) {
+		return "title"
+	}
+	if excerpt != nil && containsControlChars(*excerpt) {
+		return "excerpt"
+	}
+	if body != nil && containsProseControlChars(*body) {
+		return "body"
+	}
+	return ""
+}
+
+// containsProseControlChars reports whether s contains a control character
+// forbidden in multi-line free-text prose: every control char EXCEPT HT (0x09),
+// LF (0x0A), and CR (0x0D). Body and review_note are short, possibly multi-line
+// free text where line breaks are legitimate, so they are validated with this
+// rather than the strict containsControlChars above. Mirrors the MCP prose check.
+func containsProseControlChars(s string) bool {
+	for _, r := range s {
+		switch {
+		case r == 0x09, r == 0x0a, r == 0x0d:
+			continue
+		case r < 0x20, r == 0x7f, r >= 0x80 && r <= 0x9f:
+			return true
+		}
+	}
+	return false
+}
+
 // Contents returns a paginated list across all statuses / visibilities.
 // The authenticated admin listing route consumes this; the public-facing
 // variant is PublicContents.
@@ -121,6 +180,10 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", err.Error())
 		return
 	}
+	if field := checkContentControlChars(&p.Slug, &p.Title, &p.Excerpt, &p.Body); field != "" {
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", field+" must not contain control characters")
+		return
+	}
 	if p.Status == "" {
 		p.Status = StatusDraft
 	}
@@ -168,6 +231,10 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := CheckFieldLengths(p.Title, p.Excerpt, p.Body); err != nil {
 		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+		return
+	}
+	if field := checkContentControlChars(p.Slug, p.Title, p.Excerpt, p.Body); field != "" {
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", field+" must not contain control characters")
 		return
 	}
 	// IsPublic is a bool pointer — no validation needed beyond JSON decode
@@ -353,23 +420,6 @@ func (h *Handler) RevertToDraft(w http.ResponseWriter, r *http.Request) {
 // sendBackBody is the request payload for SendBack: the owner's revision reason.
 type sendBackBody struct {
 	ReviewNote string `json:"review_note"`
-}
-
-// containsProseControlChars reports whether s contains a control character
-// forbidden in multi-line free-text prose: every control char EXCEPT HT (0x09),
-// LF (0x0A), and CR (0x0D). A review_note is a short, possibly multi-line
-// revision reason where line breaks are legitimate, so SendBack validates it
-// with this rather than rejecting every C0 control. Mirrors the MCP prose check.
-func containsProseControlChars(s string) bool {
-	for _, r := range s {
-		switch {
-		case r == 0x09, r == 0x0a, r == 0x0d:
-			continue
-		case r < 0x20, r == 0x7f, r >= 0x80 && r <= 0x9f:
-			return true
-		}
-	}
-	return false
 }
 
 // SendBack handles POST /api/admin/knowledge/content/{id}/send-back.

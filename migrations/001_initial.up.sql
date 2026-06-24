@@ -110,7 +110,7 @@ CREATE TABLE refresh_tokens (
 
 COMMENT ON TABLE refresh_tokens IS 'JWT refresh token hashes. One user may have multiple active tokens (multi-device).';
 COMMENT ON COLUMN refresh_tokens.user_id IS 'Token owner. CASCADE — user deletion invalidates all tokens.';
-COMMENT ON COLUMN refresh_tokens.token_hash IS 'Bcrypt or SHA256 hash of the actual token. Never store plaintext.';
+COMMENT ON COLUMN refresh_tokens.token_hash IS 'SHA256 (base64url) hash of the opaque refresh token. Never store plaintext.';
 COMMENT ON COLUMN refresh_tokens.expires_at IS 'Absolute expiration. Tokens past this time are invalid and eligible for cleanup.';
 
 CREATE INDEX idx_refresh_tokens_user_id ON refresh_tokens(user_id);

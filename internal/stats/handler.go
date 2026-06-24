@@ -22,7 +22,7 @@ func NewHandler(store *Store, logger *slog.Logger) *Handler {
 	return &Handler{store: store, logger: logger}
 }
 
-// Overview handles GET /api/admin/stats.
+// Overview handles GET /api/admin/system/stats.
 func (h *Handler) Overview(w http.ResponseWriter, r *http.Request) {
 	overview, err := h.store.Overview(r.Context())
 	if err != nil {
@@ -33,15 +33,29 @@ func (h *Handler) Overview(w http.ResponseWriter, r *http.Request) {
 	api.Encode(w, http.StatusOK, api.Response{Data: overview})
 }
 
-// Drift handles GET /api/admin/stats/drift.
+// driftDefaultDays / driftMaxDays bound the drift window. A request outside
+// [1, driftMaxDays] (or unparseable) falls back to the default.
+const (
+	driftDefaultDays = 30
+	driftMaxDays     = 90
+)
+
+// parseDays parses the drift window's days query parameter, clamping to the
+// valid range [1, driftMaxDays]. Any value that is empty, non-numeric, ≤ 0, or
+// above driftMaxDays falls back to driftDefaultDays. Pure so the bounds logic is
+// testable without a request or a store.
+func parseDays(raw string) int {
+	d, err := strconv.Atoi(raw)
+	if err != nil || d <= 0 || d > driftMaxDays {
+		return driftDefaultDays
+	}
+	return d
+}
+
+// Drift handles GET /api/admin/system/stats/drift.
 // Query params: days (default 30, max 90).
 func (h *Handler) Drift(w http.ResponseWriter, r *http.Request) {
-	days := 30
-	if v := r.URL.Query().Get("days"); v != "" {
-		if d, err := strconv.Atoi(v); err == nil && d > 0 && d <= 90 {
-			days = d
-		}
-	}
+	days := parseDays(r.URL.Query().Get("days"))
 
 	report, err := h.store.Drift(r.Context(), days)
 	if err != nil {
@@ -84,7 +98,7 @@ type ProcessRunsSummary struct {
 	FailedLastHour ProcessRunsCell `json:"failed_last_hour"`
 }
 
-// ProcessRunsResponse is the wire shape for GET /coordination/process-runs.
+// ProcessRunsResponse is the wire shape for GET /api/admin/system/process-runs.
 type ProcessRunsResponse struct {
 	Summary ProcessRunsSummary `json:"summary"`
 	Stages  []any              `json:"stages"`

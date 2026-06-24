@@ -90,3 +90,16 @@ func (s *Store) ConsumeRefreshToken(ctx context.Context, tokenHash string) (*Ref
 		CreatedAt: row.CreatedAt,
 	}, nil
 }
+
+// DeleteExpiredRefreshTokens removes every refresh token whose expires_at is in
+// the past, returning the number of rows deleted. ConsumeRefreshToken only
+// deletes the exact presented token, so expired-but-unconsumed rows accumulate
+// forever; a periodic call to this method is the cleanup the expires_at index
+// exists to support.
+func (s *Store) DeleteExpiredRefreshTokens(ctx context.Context) (int64, error) {
+	n, err := s.q.DeleteExpiredRefreshTokens(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("deleting expired refresh tokens: %w", err)
+	}
+	return n, nil
+}

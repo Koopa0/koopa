@@ -16,6 +16,7 @@ import (
 	"os/signal"
 	"slices"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/exaring/otelpgx"
@@ -57,6 +58,11 @@ const agentSyncTimeout = 10 * time.Second
 // within roughly one interval of landing.
 const embedReconcileInterval = 60 * time.Second
 
+// refreshTokenCleanupInterval is how often expired refresh tokens are purged.
+// ConsumeRefreshToken only deletes the exact presented token, so expired-but-
+// unconsumed rows would accumulate forever without this periodic sweep.
+const refreshTokenCleanupInterval = time.Hour
+
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	if len(os.Args) == 2 && os.Args[1] == "embed-backfill" {
@@ -81,7 +87,7 @@ func main() {
 func runBackfill(logger *slog.Logger) error {
 	cfg := loadBackfillConfig(logger)
 
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
 	pool, err := connectDB(ctx, cfg.DatabaseURL, nil)
@@ -144,7 +150,7 @@ func passLogAttrs(res embedder.Result) []any {
 func run(logger *slog.Logger) error {
 	cfg := loadConfig(logger)
 
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
 	meterProvider, metricsHandler, observabilityShutdown, err := setupObservability(ctx, observabilityConfig{
@@ -240,6 +246,12 @@ func run(logger *slog.Logger) error {
 	} else {
 		logger.Info("embedding reconciler disabled, search stays FTS-only (GEMINI_API_KEY unset)")
 	}
+
+	// Refresh-token cleanup — background goroutine purging expired tokens.
+	// Shares the scheduler WaitGroup so a SIGTERM-cancelled ctx drains it
+	// before pool.Close(), exactly like the feed scheduler and embedding
+	// reconciler above.
+	wg.Go(func() { runRefreshTokenCleanup(ctx, authStore, logger) })
 
 	// Auth (optional — only if Google OAuth is configured)
 	var authHandler *auth.Handler
@@ -343,9 +355,15 @@ func run(logger *slog.Logger) error {
 		}
 	}()
 
+	// A listener error and a shutdown signal share one drain path: capture the
+	// error, then cancel ctx via stop() so the scheduler and reconciler — both
+	// selecting on ctx — exit and wg.Wait() can return before the deferred
+	// pool.Close() runs. Returning early on the errCh branch would leak those
+	// workers and close the pool out from under an in-flight query.
+	var runErr error
 	select {
-	case err := <-errCh:
-		return err
+	case runErr = <-errCh:
+		stop()
 	case <-ctx.Done():
 	}
 
@@ -354,11 +372,13 @@ func run(logger *slog.Logger) error {
 	defer cancel()
 
 	if err := srv.Shutdown(shutdownCtx); err != nil {
-		return fmt.Errorf("server shutdown: %w", err)
+		// Surface both: a listener error (runErr) and a shutdown error are
+		// independent failures. errors.Join(nil, x) is just x.
+		runErr = errors.Join(runErr, fmt.Errorf("server shutdown: %w", err))
 	}
 	wg.Wait()
 	logger.Info("server stopped")
-	return nil
+	return runErr
 }
 
 // connectDB opens the pgxpool. When tracer is non-nil, it is set on the
@@ -411,6 +431,40 @@ func startFeedScheduler(ctx context.Context, wg *sync.WaitGroup, deps feedSchedu
 	}
 	wg.Go(func() { scheduler.Run(ctx) })
 	return nil
+}
+
+// runRefreshTokenCleanup purges expired refresh tokens once immediately, then
+// again on every refreshTokenCleanupInterval tick, until ctx is cancelled. It
+// owns no goroutine — the caller launches it on the scheduler WaitGroup and
+// waits for it during shutdown, so a SIGTERM-cancelled ctx drains it before the
+// pool closes. A cleanup error is logged and the loop continues; a transient DB
+// blip must not kill the worker. Mirrors the embedding reconciler's run loop.
+func runRefreshTokenCleanup(ctx context.Context, store *auth.Store, logger *slog.Logger) {
+	cleanup := func() {
+		n, err := store.DeleteExpiredRefreshTokens(ctx)
+		if err != nil {
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				return
+			}
+			logger.Error("refresh token cleanup failed", "error", err)
+			return
+		}
+		if n > 0 {
+			logger.Info("refresh token cleanup", "expired_refresh_tokens_deleted", n)
+		}
+	}
+
+	cleanup()
+	ticker := time.NewTicker(refreshTokenCleanupInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			cleanup()
+		}
+	}
 }
 
 // setupPool opens the pgxpool with an optional otelpgx tracer and, when

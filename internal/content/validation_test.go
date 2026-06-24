@@ -55,18 +55,11 @@ func TestParseFilter_Adversarial(t *testing.T) {
 		name         string
 		query        string
 		wantType     *Type
-		wantTag      *string
 		wantSinceNil bool
 	}{
 		{
 			name:         "sql injection in type is rejected",
 			query:        "type='%3BDROP%20TABLE%20contents%3B--",
-			wantType:     nil,
-			wantSinceNil: true,
-		},
-		{
-			name:         "xss payload in tag is passed through (no sanitisation at this layer)",
-			query:        "tag=<script>alert(1)</script>",
 			wantType:     nil,
 			wantSinceNil: true,
 		},
@@ -413,6 +406,140 @@ func TestHandler_Update_OversizedBody(t *testing.T) {
 }
 
 // =============================================================================
+// Handler.Create / Handler.Update — control-character rejection
+// =============================================================================
+
+// TestHandler_Create_RejectsControlChars verifies Create rejects a control
+// character in title, excerpt, or body with 400 BAD_REQUEST, matching the MCP
+// write path (propose_content) so the two write boundaries are identical.
+// title/excerpt use the strict check (every C0/DEL/C1 char); body uses the
+// prose check, which still rejects C0 chars other than HT/LF/CR (here U+0001).
+// Each case carries all required fields so the only reason to reject is the
+// control char — and rejection happens before the nil store is reached.
+func TestHandler_Create_RejectsControlChars(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		body      string
+		wantField string
+	}{
+		{
+			// Slug becomes a URL path segment; the DB slug-format CHECK rejects
+			// whitespace/slash but not non-whitespace control chars, so the
+			// handler is the boundary; the body uses a JSON escape decoding to byte 0x01.
+			name:      "control char in slug",
+			body:      "{\"slug\":\"bad\\u0001slug\",\"title\":\"T\",\"type\":\"article\"}",
+			wantField: "slug",
+		},
+		{
+			name:      "control char in title",
+			body:      `{"slug":"s","title":"bad\u0001title","type":"article"}`,
+			wantField: "title",
+		},
+		{
+			name:      "control char in excerpt",
+			body:      `{"slug":"s","title":"T","type":"article","excerpt":"bad\u0001excerpt"}`,
+			wantField: "excerpt",
+		},
+		{
+			name:      "control char in body",
+			body:      `{"slug":"s","title":"T","type":"article","body":"bad\u0001body"}`,
+			wantField: "body",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			h := newTestHandler()
+			req := httptest.NewRequest(http.MethodPost, "/api/admin/contents",
+				strings.NewReader(tt.body))
+			req.Header.Set("Content-Type", "application/json")
+			w := httptest.NewRecorder()
+
+			h.Create(w, req)
+
+			if w.Code != http.StatusBadRequest {
+				t.Fatalf("Create(%q) status = %d, want %d\nbody: %s",
+					tt.name, w.Code, http.StatusBadRequest, w.Body.String())
+			}
+			got := decodeErrorBody(t, w.Body)
+			if got.Error.Code != "BAD_REQUEST" {
+				t.Errorf("Create(%q) error.code = %q, want BAD_REQUEST", tt.name, got.Error.Code)
+			}
+			wantMsg := tt.wantField + " must not contain control characters"
+			if got.Error.Message != wantMsg {
+				t.Errorf("Create(%q) error.message = %q, want %q", tt.name, got.Error.Message, wantMsg)
+			}
+		})
+	}
+}
+
+// TestHandler_Update_RejectsControlChars verifies Update rejects a control
+// character in title, excerpt, or body with 400 BAD_REQUEST. Update fields are
+// optional pointers, so each case sets only the field under test — the same
+// control-char gate must fire regardless of which field is supplied.
+func TestHandler_Update_RejectsControlChars(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		body      string
+		wantField string
+	}{
+		{
+			name:      "control char in slug",
+			body:      "{\"slug\":\"bad\\u0001slug\"}",
+			wantField: "slug",
+		},
+		{
+			name:      "control char in title",
+			body:      `{"title":"bad\u0001title"}`,
+			wantField: "title",
+		},
+		{
+			name:      "control char in excerpt",
+			body:      `{"excerpt":"bad\u0001excerpt"}`,
+			wantField: "excerpt",
+		},
+		{
+			name:      "control char in body",
+			body:      `{"body":"bad\u0001body"}`,
+			wantField: "body",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			h := newTestHandler()
+			id := uuid.New().String()
+			req := httptest.NewRequest(http.MethodPut, "/api/admin/contents/"+id,
+				strings.NewReader(tt.body))
+			req.Header.Set("Content-Type", "application/json")
+			req.SetPathValue("id", id)
+			w := httptest.NewRecorder()
+
+			h.Update(w, req)
+
+			if w.Code != http.StatusBadRequest {
+				t.Fatalf("Update(%q) status = %d, want %d\nbody: %s",
+					tt.name, w.Code, http.StatusBadRequest, w.Body.String())
+			}
+			got := decodeErrorBody(t, w.Body)
+			if got.Error.Code != "BAD_REQUEST" {
+				t.Errorf("Update(%q) error.code = %q, want BAD_REQUEST", tt.name, got.Error.Code)
+			}
+			wantMsg := tt.wantField + " must not contain control characters"
+			if got.Error.Message != wantMsg {
+				t.Errorf("Update(%q) error.message = %q, want %q", tt.name, got.Error.Message, wantMsg)
+			}
+		})
+	}
+}
+
+// =============================================================================
 // Handler.Delete — invalid UUID path parameter
 // =============================================================================
 
@@ -672,7 +799,7 @@ func TestHandler_ErrorResponse_Contract(t *testing.T) {
 func BenchmarkParseFilter(b *testing.B) {
 	h := &Handler{}
 	req := httptest.NewRequest(http.MethodGet,
-		"/?type=article&tag=golang&since=2026-03-20&page=1&per_page=20",
+		"/?type=article&since=2026-03-20&page=1&per_page=20",
 		http.NoBody)
 	b.ReportAllocs()
 	for b.Loop() {
@@ -710,34 +837,6 @@ func keysOf(m map[string]json.RawMessage) []string {
 // =============================================================================
 // Regression tests
 // =============================================================================
-
-// TestRegression_BySlug_PrivateContentReturns404 documents the visibility gate:
-// a private content hit by slug must return 404, not 200.
-// This was a design decision — the gate lives in the handler, not the store.
-//
-// Visibility is modelled as Content.IsPublic bool (true = public, false = private).
-// The handler checks c.IsPublic before returning content via the public slug route.
-// This test verifies the zero-value semantics: a newly created Content is private
-// by default (IsPublic == false), so the gate fires correctly without explicit setup.
-//
-// Full end-to-end enforcement is covered by the integration tests in
-// integration_test.go.
-func TestRegression_BySlug_PrivateContentReturns404(t *testing.T) {
-	t.Parallel()
-
-	// Verify that the zero value of Content has IsPublic == false (private by default).
-	// The visibility gate checks c.IsPublic; a false value must cause a 404.
-	var c Content
-	if c.IsPublic {
-		t.Error("Content zero value has IsPublic = true, want false (private by default)")
-	}
-
-	// Verify that setting IsPublic to true makes it public.
-	c.IsPublic = true
-	if !c.IsPublic {
-		t.Error("Content.IsPublic = true did not set the field correctly")
-	}
-}
 
 // TestRegression_ErrNotFound_SentinelIdentity verifies that ErrNotFound and
 // ErrConflict use errors.Is correctly and are distinct.

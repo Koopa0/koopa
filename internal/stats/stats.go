@@ -18,8 +18,8 @@ package stats
 
 // Overview contains aggregated stats across all platform data sources.
 //
-// ProcessRuns is a map keyed by process_runs.kind — currently one of
-// "crawl", "agent_schedule". The map is always populated with every valid
+// ProcessRuns is a map keyed by process_runs.kind — currently only
+// "crawl". The map is always populated with every valid
 // kind (zero-valued stats when no rows exist) so the frontend does not
 // need to distinguish "missing key" from "zero runs".
 type Overview struct {
@@ -52,7 +52,7 @@ type FeedStats struct {
 }
 
 // ProcessRunStats holds process_runs counts by status for a single kind
-// (crawl or agent_schedule). Used as the value type in Overview.ProcessRuns map.
+// (crawl). Used as the value type in Overview.ProcessRuns map.
 type ProcessRunStats struct {
 	Total    int            `json:"total"`
 	ByStatus map[string]int `json:"by_status"`

@@ -1128,7 +1128,7 @@ func (q *Queries) ContentBriefsByProjectID(ctx context.Context, projectID *uuid.
 const contentByID = `-- name: ContentByID :one
 SELECT id, slug, title, body, excerpt, type, status,
        series_id, series_order, is_public, project_id, ai_metadata, reading_time_min,
-       cover_image, created_by, proposal_rationale, published_at, created_at, updated_at
+       cover_image, created_by, proposal_rationale, review_note, published_at, created_at, updated_at
 FROM contents WHERE id = $1
 `
 
@@ -1149,6 +1149,7 @@ type ContentByIDRow struct {
 	CoverImage        *string         `json:"cover_image"`
 	CreatedBy         *string         `json:"created_by"`
 	ProposalRationale *string         `json:"proposal_rationale"`
+	ReviewNote        *string         `json:"review_note"`
 	PublishedAt       *time.Time      `json:"published_at"`
 	CreatedAt         time.Time       `json:"created_at"`
 	UpdatedAt         time.Time       `json:"updated_at"`
@@ -1174,6 +1175,7 @@ func (q *Queries) ContentByID(ctx context.Context, id uuid.UUID) (ContentByIDRow
 		&i.CoverImage,
 		&i.CreatedBy,
 		&i.ProposalRationale,
+		&i.ReviewNote,
 		&i.PublishedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -2146,6 +2148,18 @@ func (q *Queries) DeleteContentTopics(ctx context.Context, contentID uuid.UUID) 
 	return err
 }
 
+const deleteExpiredRefreshTokens = `-- name: DeleteExpiredRefreshTokens :execrows
+DELETE FROM refresh_tokens WHERE expires_at < now()
+`
+
+func (q *Queries) DeleteExpiredRefreshTokens(ctx context.Context) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteExpiredRefreshTokens)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const deleteFeed = `-- name: DeleteFeed :exec
 DELETE FROM feeds WHERE id = $1
 `
@@ -2180,19 +2194,6 @@ type DeleteMilestoneParams struct {
 // the remaining siblings are left as-is.
 func (q *Queries) DeleteMilestone(ctx context.Context, arg DeleteMilestoneParams) (int64, error) {
 	result, err := q.db.Exec(ctx, deleteMilestone, arg.ID, arg.GoalID)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected(), nil
-}
-
-const deleteOldIgnored = `-- name: DeleteOldIgnored :execrows
-DELETE FROM feed_entries WHERE status = 'ignored' AND collected_at < $1
-`
-
-// Cleanup: delete ignored collected data older than the given cutoff.
-func (q *Queries) DeleteOldIgnored(ctx context.Context, cutoff time.Time) (int64, error) {
-	result, err := q.db.Exec(ctx, deleteOldIgnored, cutoff)
 	if err != nil {
 		return 0, err
 	}
@@ -2330,50 +2331,6 @@ DELETE FROM topics WHERE id = $1
 func (q *Queries) DeleteTopic(ctx context.Context, id uuid.UUID) error {
 	_, err := q.db.Exec(ctx, deleteTopic, id)
 	return err
-}
-
-const enabledFeeds = `-- name: EnabledFeeds :many
-SELECT id, url, name, schedule, enabled, priority, etag, last_modified,
-       last_fetched_at, consecutive_failures, last_error, disabled_reason,
-       filter_config, created_at, updated_at
-FROM feeds WHERE enabled = true
-ORDER BY created_at
-`
-
-func (q *Queries) EnabledFeeds(ctx context.Context) ([]Feed, error) {
-	rows, err := q.db.Query(ctx, enabledFeeds)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []Feed{}
-	for rows.Next() {
-		var i Feed
-		if err := rows.Scan(
-			&i.ID,
-			&i.Url,
-			&i.Name,
-			&i.Schedule,
-			&i.Enabled,
-			&i.Priority,
-			&i.Etag,
-			&i.LastModified,
-			&i.LastFetchedAt,
-			&i.ConsecutiveFailures,
-			&i.LastError,
-			&i.DisabledReason,
-			&i.FilterConfig,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
 }
 
 const enabledFeedsBySchedule = `-- name: EnabledFeedsBySchedule :many
@@ -2888,32 +2845,6 @@ func (q *Queries) GoalByIDWithArea(ctx context.Context, id uuid.UUID) (GoalByIDW
 	return i, err
 }
 
-const goalByTitle = `-- name: GoalByTitle :one
-SELECT id, title, description, status, area_id, quarter, deadline, created_by, proposal_rationale,
-       created_at, updated_at
-FROM goals WHERE LOWER(title) = LOWER($1)
-`
-
-// Find a goal by case-insensitive title match.
-func (q *Queries) GoalByTitle(ctx context.Context, title string) (Goal, error) {
-	row := q.db.QueryRow(ctx, goalByTitle, title)
-	var i Goal
-	err := row.Scan(
-		&i.ID,
-		&i.Title,
-		&i.Description,
-		&i.Status,
-		&i.AreaID,
-		&i.Quarter,
-		&i.Deadline,
-		&i.CreatedBy,
-		&i.ProposalRationale,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
 const goalRecentActivity = `-- name: GoalRecentActivity :many
 SELECT
     activity_type::text AS activity_type,
@@ -3214,48 +3145,6 @@ func (q *Queries) IgnoreFeedEntry(ctx context.Context, id uuid.UUID) error {
 	return err
 }
 
-const inboxTodoItems = `-- name: InboxTodoItems :many
-SELECT id, title, state, due, project_id, completed_at, energy, priority, recur_interval, recur_unit, recur_weekdays, last_completed_on, description, created_by, created_at, updated_at FROM todos WHERE state = 'inbox' ORDER BY created_at DESC
-`
-
-// List all inbox todo items, newest first.
-func (q *Queries) InboxTodoItems(ctx context.Context) ([]Todo, error) {
-	rows, err := q.db.Query(ctx, inboxTodoItems)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []Todo{}
-	for rows.Next() {
-		var i Todo
-		if err := rows.Scan(
-			&i.ID,
-			&i.Title,
-			&i.State,
-			&i.Due,
-			&i.ProjectID,
-			&i.CompletedAt,
-			&i.Energy,
-			&i.Priority,
-			&i.RecurInterval,
-			&i.RecurUnit,
-			&i.RecurWeekdays,
-			&i.LastCompletedOn,
-			&i.Description,
-			&i.CreatedBy,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const incrementFeedFailure = `-- name: IncrementFeedFailure :one
 UPDATE feeds SET
     consecutive_failures = consecutive_failures + 1,
@@ -3511,29 +3400,6 @@ func (q *Queries) InternalSemanticSearchContents(ctx context.Context, arg Intern
 	return items, nil
 }
 
-const itemByID = `-- name: ItemByID :one
-SELECT id, plan_date, todo_id, selected_by, position, reason, status, created_at, updated_at
-FROM daily_plan_items WHERE id = $1
-`
-
-// Get a single daily plan item by ID.
-func (q *Queries) ItemByID(ctx context.Context, id uuid.UUID) (DailyPlanItem, error) {
-	row := q.db.QueryRow(ctx, itemByID, id)
-	var i DailyPlanItem
-	err := row.Scan(
-		&i.ID,
-		&i.PlanDate,
-		&i.TodoID,
-		&i.SelectedBy,
-		&i.Position,
-		&i.Reason,
-		&i.Status,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
 const itemsByDate = `-- name: ItemsByDate :many
 SELECT
     dpi.id, dpi.plan_date, dpi.todo_id, dpi.selected_by, dpi.position,
@@ -3597,71 +3463,6 @@ func (q *Queries) ItemsByDate(ctx context.Context, planDate time.Time) ([]ItemsB
 			&i.TodoPriority,
 			&i.ProjectTitle,
 			&i.ProjectSlug,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const latestFeedEntries = `-- name: LatestFeedEntries :many
-SELECT cd.id, cd.source_url, cd.title, cd.original_content,
-       cd.status, cd.curated_content_id, cd.collected_at,
-       cd.url_hash, cd.feed_id, cd.published_at,
-       COALESCE(f.name, '') AS feed_name
-FROM feed_entries cd
-LEFT JOIN feeds f ON cd.feed_id = f.id
-WHERE ($1::timestamptz IS NULL OR cd.collected_at >= $1)
-ORDER BY COALESCE(cd.published_at, cd.collected_at) DESC
-LIMIT $2
-`
-
-type LatestFeedEntriesParams struct {
-	Since      *time.Time `json:"since"`
-	MaxResults int32      `json:"max_results"`
-}
-
-type LatestFeedEntriesRow struct {
-	ID               uuid.UUID       `json:"id"`
-	SourceUrl        string          `json:"source_url"`
-	Title            string          `json:"title"`
-	OriginalContent  string          `json:"original_content"`
-	Status           FeedEntryStatus `json:"status"`
-	CuratedContentID *uuid.UUID      `json:"curated_content_id"`
-	CollectedAt      time.Time       `json:"collected_at"`
-	UrlHash          string          `json:"url_hash"`
-	FeedID           *uuid.UUID      `json:"feed_id"`
-	PublishedAt      *time.Time      `json:"published_at"`
-	FeedName         string          `json:"feed_name"`
-}
-
-// Get latest collected data, optionally filtered by time range.
-// When days is NULL, returns the latest N items regardless of time.
-func (q *Queries) LatestFeedEntries(ctx context.Context, arg LatestFeedEntriesParams) ([]LatestFeedEntriesRow, error) {
-	rows, err := q.db.Query(ctx, latestFeedEntries, arg.Since, arg.MaxResults)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []LatestFeedEntriesRow{}
-	for rows.Next() {
-		var i LatestFeedEntriesRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.SourceUrl,
-			&i.Title,
-			&i.OriginalContent,
-			&i.Status,
-			&i.CuratedContentID,
-			&i.CollectedAt,
-			&i.UrlHash,
-			&i.FeedID,
-			&i.PublishedAt,
-			&i.FeedName,
 		); err != nil {
 			return nil, err
 		}
@@ -3908,177 +3709,6 @@ func (q *Queries) OverdueTodoItems(ctx context.Context, today *time.Time) ([]Ove
 			&i.RecurWeekdays,
 			&i.LastCompletedOn,
 			&i.CreatedBy,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-			&i.ProjectTitle,
-			&i.ProjectSlug,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const pendingTodoItems = `-- name: PendingTodoItems :many
-SELECT id, title, state, due, project_id,
-       completed_at, energy, priority, recur_interval, recur_unit, recur_weekdays, last_completed_on,
-       description, created_by, created_at, updated_at
-FROM todos WHERE state != 'done'
-ORDER BY due NULLS LAST, created_at
-`
-
-// List todo items that are not done, ordered by due date.
-func (q *Queries) PendingTodoItems(ctx context.Context) ([]Todo, error) {
-	rows, err := q.db.Query(ctx, pendingTodoItems)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []Todo{}
-	for rows.Next() {
-		var i Todo
-		if err := rows.Scan(
-			&i.ID,
-			&i.Title,
-			&i.State,
-			&i.Due,
-			&i.ProjectID,
-			&i.CompletedAt,
-			&i.Energy,
-			&i.Priority,
-			&i.RecurInterval,
-			&i.RecurUnit,
-			&i.RecurWeekdays,
-			&i.LastCompletedOn,
-			&i.Description,
-			&i.CreatedBy,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const pendingTodoItemsByTitle = `-- name: PendingTodoItemsByTitle :many
-SELECT id, title, state, due, project_id,
-       completed_at, energy, priority, recur_interval, recur_unit, recur_weekdays, last_completed_on,
-       description, created_by, created_at, updated_at
-FROM todos
-WHERE state != 'done' AND title ILIKE '%' || $1 || '%'
-ORDER BY due NULLS LAST, updated_at ASC
-LIMIT 10
-`
-
-// Find pending todo items matching a title (case-insensitive contains).
-func (q *Queries) PendingTodoItemsByTitle(ctx context.Context, searchTitle *string) ([]Todo, error) {
-	rows, err := q.db.Query(ctx, pendingTodoItemsByTitle, searchTitle)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []Todo{}
-	for rows.Next() {
-		var i Todo
-		if err := rows.Scan(
-			&i.ID,
-			&i.Title,
-			&i.State,
-			&i.Due,
-			&i.ProjectID,
-			&i.CompletedAt,
-			&i.Energy,
-			&i.Priority,
-			&i.RecurInterval,
-			&i.RecurUnit,
-			&i.RecurWeekdays,
-			&i.LastCompletedOn,
-			&i.Description,
-			&i.CreatedBy,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const pendingTodoItemsWithProject = `-- name: PendingTodoItemsWithProject :many
-SELECT t.id, t.title, t.state, t.due, t.project_id,
-       t.energy, t.priority, t.recur_interval, t.recur_unit, t.recur_weekdays, t.last_completed_on,
-       t.created_at, t.updated_at,
-       COALESCE(p.title, '') AS project_title,
-       COALESCE(p.slug, '') AS project_slug
-FROM todos t
-LEFT JOIN projects p ON t.project_id = p.id
-WHERE t.state != 'done'
-  AND ($1::text IS NULL OR p.slug = $1)
-ORDER BY
-    (t.due IS NOT NULL) DESC,
-    t.due ASC NULLS LAST,
-    t.updated_at ASC
-LIMIT $2
-`
-
-type PendingTodoItemsWithProjectParams struct {
-	ProjectSlug *string `json:"project_slug"`
-	MaxResults  int32   `json:"max_results"`
-}
-
-type PendingTodoItemsWithProjectRow struct {
-	ID              uuid.UUID  `json:"id"`
-	Title           string     `json:"title"`
-	State           TodoState  `json:"state"`
-	Due             *time.Time `json:"due"`
-	ProjectID       *uuid.UUID `json:"project_id"`
-	Energy          *string    `json:"energy"`
-	Priority        *string    `json:"priority"`
-	RecurInterval   *int32     `json:"recur_interval"`
-	RecurUnit       *string    `json:"recur_unit"`
-	RecurWeekdays   *int16     `json:"recur_weekdays"`
-	LastCompletedOn *time.Time `json:"last_completed_on"`
-	CreatedAt       time.Time  `json:"created_at"`
-	UpdatedAt       time.Time  `json:"updated_at"`
-	ProjectTitle    string     `json:"project_title"`
-	ProjectSlug     string     `json:"project_slug"`
-}
-
-// List pending todo items with project info.
-func (q *Queries) PendingTodoItemsWithProject(ctx context.Context, arg PendingTodoItemsWithProjectParams) ([]PendingTodoItemsWithProjectRow, error) {
-	rows, err := q.db.Query(ctx, pendingTodoItemsWithProject, arg.ProjectSlug, arg.MaxResults)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []PendingTodoItemsWithProjectRow{}
-	for rows.Next() {
-		var i PendingTodoItemsWithProjectRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.Title,
-			&i.State,
-			&i.Due,
-			&i.ProjectID,
-			&i.Energy,
-			&i.Priority,
-			&i.RecurInterval,
-			&i.RecurUnit,
-			&i.RecurWeekdays,
-			&i.LastCompletedOn,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.ProjectTitle,
@@ -5104,70 +4734,6 @@ func (q *Queries) PublishedWithEmbeddings(ctx context.Context) ([]PublishedWithE
 	return items, nil
 }
 
-const recentFeedEntries = `-- name: RecentFeedEntries :many
-SELECT cd.id, cd.source_url, cd.title, cd.original_content,
-       cd.status, cd.curated_content_id, cd.collected_at,
-       cd.url_hash, cd.feed_id, cd.published_at,
-       COALESCE(f.name, '') AS feed_name
-FROM feed_entries cd
-LEFT JOIN feeds f ON cd.feed_id = f.id
-WHERE cd.collected_at >= $1 AND cd.collected_at < $2
-ORDER BY COALESCE(cd.published_at, cd.collected_at) DESC
-LIMIT $3
-`
-
-type RecentFeedEntriesParams struct {
-	CollectedAt   time.Time `json:"collected_at"`
-	CollectedAt_2 time.Time `json:"collected_at_2"`
-	Limit         int32     `json:"limit"`
-}
-
-type RecentFeedEntriesRow struct {
-	ID               uuid.UUID       `json:"id"`
-	SourceUrl        string          `json:"source_url"`
-	Title            string          `json:"title"`
-	OriginalContent  string          `json:"original_content"`
-	Status           FeedEntryStatus `json:"status"`
-	CuratedContentID *uuid.UUID      `json:"curated_content_id"`
-	CollectedAt      time.Time       `json:"collected_at"`
-	UrlHash          string          `json:"url_hash"`
-	FeedID           *uuid.UUID      `json:"feed_id"`
-	PublishedAt      *time.Time      `json:"published_at"`
-	FeedName         string          `json:"feed_name"`
-}
-
-func (q *Queries) RecentFeedEntries(ctx context.Context, arg RecentFeedEntriesParams) ([]RecentFeedEntriesRow, error) {
-	rows, err := q.db.Query(ctx, recentFeedEntries, arg.CollectedAt, arg.CollectedAt_2, arg.Limit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []RecentFeedEntriesRow{}
-	for rows.Next() {
-		var i RecentFeedEntriesRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.SourceUrl,
-			&i.Title,
-			&i.OriginalContent,
-			&i.Status,
-			&i.CuratedContentID,
-			&i.CollectedAt,
-			&i.UrlHash,
-			&i.FeedID,
-			&i.PublishedAt,
-			&i.FeedName,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const recurringTodoItemsDueToday = `-- name: RecurringTodoItemsDueToday :many
 
 SELECT id, title, state, due, project_id,
@@ -5841,19 +5407,6 @@ func (q *Queries) SimilarContents(ctx context.Context, arg SimilarContentsParams
 	return items, nil
 }
 
-const staleSomedayTodoCount = `-- name: StaleSomedayTodoCount :one
-SELECT count(*)::int FROM todos
-WHERE state = 'someday' AND updated_at < $1
-`
-
-// Count of someday todo items not updated in N days (GTD review signal).
-func (q *Queries) StaleSomedayTodoCount(ctx context.Context, staleBefore time.Time) (int32, error) {
-	row := q.db.QueryRow(ctx, staleSomedayTodoCount, staleBefore)
-	var column_1 int32
-	err := row.Scan(&column_1)
-	return column_1, err
-}
-
 const statsActivityBySource = `-- name: StatsActivityBySource :many
 SELECT entity_type AS source, COUNT(*)::int AS count
 FROM activity_events
@@ -6149,7 +5702,7 @@ type StatsProcessRunsByStatusRow struct {
 }
 
 // Count process_runs grouped by status within a single kind
-// (one of: crawl, agent_schedule).
+// (one of: crawl).
 func (q *Queries) StatsProcessRunsByStatus(ctx context.Context, kind string) ([]StatsProcessRunsByStatusRow, error) {
 	rows, err := q.db.Query(ctx, statsProcessRunsByStatus, kind)
 	if err != nil {
@@ -6402,18 +5955,6 @@ func (q *Queries) SubmitContentForReview(ctx context.Context, id uuid.UUID) (Sub
 	return i, err
 }
 
-const todoInboxCount = `-- name: TodoInboxCount :one
-SELECT count(*)::int FROM todos WHERE state = 'inbox'
-`
-
-// Count of todo items in inbox state (for needs_attention badge).
-func (q *Queries) TodoInboxCount(ctx context.Context) (int32, error) {
-	row := q.db.QueryRow(ctx, todoInboxCount)
-	var column_1 int32
-	err := row.Scan(&column_1)
-	return column_1, err
-}
-
 const todoItemByID = `-- name: TodoItemByID :one
 SELECT id, title, state, due, project_id,
        completed_at, energy, priority, recur_interval, recur_unit, recur_weekdays, last_completed_on,
@@ -6538,50 +6079,6 @@ func (q *Queries) TodoItemsByProjectGrouped(ctx context.Context, projectID *uuid
 			&i.Priority,
 			&i.CreatedAt,
 			&i.UpdatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const todoItemsCreatedSince = `-- name: TodoItemsCreatedSince :many
-SELECT t.id, t.title, t.created_at, t.project_id,
-       COALESCE(p.title, '') AS project_title
-FROM todos t
-LEFT JOIN projects p ON t.project_id = p.id
-WHERE t.created_at >= $1
-ORDER BY t.created_at DESC
-`
-
-type TodoItemsCreatedSinceRow struct {
-	ID           uuid.UUID  `json:"id"`
-	Title        string     `json:"title"`
-	CreatedAt    time.Time  `json:"created_at"`
-	ProjectID    *uuid.UUID `json:"project_id"`
-	ProjectTitle string     `json:"project_title"`
-}
-
-// Get todo items created since a given time with project context.
-func (q *Queries) TodoItemsCreatedSince(ctx context.Context, since time.Time) ([]TodoItemsCreatedSinceRow, error) {
-	rows, err := q.db.Query(ctx, todoItemsCreatedSince, since)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []TodoItemsCreatedSinceRow{}
-	for rows.Next() {
-		var i TodoItemsCreatedSinceRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.Title,
-			&i.CreatedAt,
-			&i.ProjectID,
-			&i.ProjectTitle,
 		); err != nil {
 			return nil, err
 		}
@@ -6838,71 +6335,6 @@ func (q *Queries) ToggleMilestone(ctx context.Context, id uuid.UUID) (ToggleMile
 		&i.UpdatedAt,
 	)
 	return i, err
-}
-
-const topUnreadFeedEntriesRecent = `-- name: TopUnreadFeedEntriesRecent :many
-SELECT cd.id, cd.source_url, cd.title, cd.original_content,
-       cd.status, cd.curated_content_id, cd.collected_at,
-       cd.url_hash, cd.feed_id, cd.published_at,
-       COALESCE(f.name, '') AS feed_name
-FROM feed_entries cd
-LEFT JOIN feeds f ON cd.feed_id = f.id
-WHERE cd.collected_at >= $1
-  AND cd.status = 'unread'
-ORDER BY COALESCE(cd.published_at, cd.collected_at) DESC
-LIMIT $2
-`
-
-type TopUnreadFeedEntriesRecentParams struct {
-	Since      time.Time `json:"since"`
-	MaxResults int32     `json:"max_results"`
-}
-
-type TopUnreadFeedEntriesRecentRow struct {
-	ID               uuid.UUID       `json:"id"`
-	SourceUrl        string          `json:"source_url"`
-	Title            string          `json:"title"`
-	OriginalContent  string          `json:"original_content"`
-	Status           FeedEntryStatus `json:"status"`
-	CuratedContentID *uuid.UUID      `json:"curated_content_id"`
-	CollectedAt      time.Time       `json:"collected_at"`
-	UrlHash          string          `json:"url_hash"`
-	FeedID           *uuid.UUID      `json:"feed_id"`
-	PublishedAt      *time.Time      `json:"published_at"`
-	FeedName         string          `json:"feed_name"`
-}
-
-// Get unread collected data since a given time.
-func (q *Queries) TopUnreadFeedEntriesRecent(ctx context.Context, arg TopUnreadFeedEntriesRecentParams) ([]TopUnreadFeedEntriesRecentRow, error) {
-	rows, err := q.db.Query(ctx, topUnreadFeedEntriesRecent, arg.Since, arg.MaxResults)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []TopUnreadFeedEntriesRecentRow{}
-	for rows.Next() {
-		var i TopUnreadFeedEntriesRecentRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.SourceUrl,
-			&i.Title,
-			&i.OriginalContent,
-			&i.Status,
-			&i.CuratedContentID,
-			&i.CollectedAt,
-			&i.UrlHash,
-			&i.FeedID,
-			&i.PublishedAt,
-			&i.FeedName,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
 }
 
 const topicBySlug = `-- name: TopicBySlug :one

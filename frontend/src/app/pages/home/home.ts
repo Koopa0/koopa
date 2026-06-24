@@ -79,6 +79,10 @@ export class HomeComponent implements OnInit {
       this.topicsResource.status() === 'loading',
   );
 
+  protected readonly hasError = computed(
+    () => this.contentsResource.status() === 'error',
+  );
+
   /** Themes with published pieces, sorted by the topic's own sort order. */
   protected readonly themes = computed<ThemeRow[]>(() => {
     const feed = this.contents();
@@ -122,5 +126,10 @@ export class HomeComponent implements OnInit {
 
   protected primaryTopicName(content: ApiContent): string {
     return content.topics[0]?.name ?? this.typeLabel(content.type);
+  }
+
+  protected retry(): void {
+    this.contentsResource.reload();
+    this.topicsResource.reload();
   }
 }

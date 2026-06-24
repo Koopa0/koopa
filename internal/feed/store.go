@@ -114,20 +114,6 @@ func (s *Store) Feed(ctx context.Context, id uuid.UUID) (*Feed, error) {
 	return &f, nil
 }
 
-// EnabledFeeds returns all enabled feeds regardless of schedule.
-func (s *Store) EnabledFeeds(ctx context.Context) ([]Feed, error) {
-	rows, err := s.q.EnabledFeeds(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("listing enabled feeds: %w", err)
-	}
-	feeds := make([]Feed, len(rows))
-	for i := range rows {
-		r := rows[i]
-		feeds[i] = dbToFeed(&r)
-	}
-	return feeds, nil
-}
-
 // EnabledFeedsBySchedule returns all enabled feeds for the given schedule.
 func (s *Store) EnabledFeedsBySchedule(ctx context.Context, schedule string) ([]Feed, error) {
 	rows, err := s.q.EnabledFeedsBySchedule(ctx, schedule)

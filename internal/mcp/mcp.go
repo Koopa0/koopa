@@ -5,6 +5,7 @@
 // planning briefs, GTD capture, and knowledge search over the content
 // corpus. Tools are organized by workflow rather than
 // entity CRUD; the canonical tool catalog lives in internal/mcp/ops.
-// Callers self-identify per call and every mutation is authorized
-// against the caller's agent identity.
+// Callers self-identify per call; that identity is recorded as attribution
+// (created_by / activity actor) and scopes caller-owned reads and writes.
+// Access control is the MCP transport, not a tool-layer authorization gate.
 package mcp

@@ -734,6 +734,41 @@ func TestStore_UpdateContent_NotFound(t *testing.T) {
 	}
 }
 
+// TestStore_Content_SurfacesReviewNote proves the admin detail read (the Content
+// store method backing ContentByID) returns the owner's review_note after a
+// send-back, so reopening a changes_requested item in admin shows the note. The
+// MCP list_content readback (ContentsByCreator) already surfaced it; this closes
+// the gap where the detail read selected every column EXCEPT review_note.
+func TestStore_Content_SurfacesReviewNote(t *testing.T) {
+	s := setup(t)
+	ctx := t.Context()
+
+	id := createDraftContent(t, s, ctx, "review-note-detail")
+	if _, err := s.SubmitContentForReview(ctx, id); err != nil {
+		t.Fatalf("SubmitContentForReview() error: %v", err)
+	}
+
+	const note = "please tighten the intro and add a code sample"
+	sentBack, err := s.SendBackForChanges(ctx, id, note)
+	if err != nil {
+		t.Fatalf("SendBackForChanges() error: %v", err)
+	}
+	if sentBack.Status != StatusChangesRequested {
+		t.Fatalf("SendBackForChanges() status = %q, want %q", sentBack.Status, StatusChangesRequested)
+	}
+
+	got, err := s.Content(ctx, id)
+	if err != nil {
+		t.Fatalf("Content() error: %v", err)
+	}
+	if got.ReviewNote == nil {
+		t.Fatal("Content() review_note = nil, want the owner's send-back note")
+	}
+	if *got.ReviewNote != note {
+		t.Errorf("Content() review_note = %q, want %q", *got.ReviewNote, note)
+	}
+}
+
 // TestStore_CreateContent_InvalidInput verifies that a client-supplied value
 // the database rejects — a foreign key pointing at a non-existent project, or
 // a slug that violates chk_content_slug_format — surfaces as ErrInvalidInput
