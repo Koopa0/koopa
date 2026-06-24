@@ -64,13 +64,14 @@ func TestBuiltinAgentsInvariants(t *testing.T) {
 		// assertion.
 		_ = u
 	}
-	// Defense-in-depth: the unknown fallback agent MUST NOT have
+	// Attribution integrity: the unknown fallback agent MUST NOT have
 	// Platform=human. If a future edit set it to human, a caller that
-	// omitted `as` would pass requireAuthor via the human-implicit
-	// branch — the exact failure mode this agent is designed to prevent.
+	// omitted `as` would be attributed as the owner — inflating the
+	// owner's project_progress / review_period momentum with anonymous
+	// writes (the exact failure mode this agent is designed to prevent).
 	for _, a := range agents {
 		if a.Name == "unknown" && a.Platform == "human" {
-			t.Errorf("agent 'unknown' must NOT have Platform=human (would defeat the requireAuthor / requireRegisteredCaller gates)")
+			t.Errorf("agent 'unknown' must NOT have Platform=human (anonymous writes would be miscounted as owner activity)")
 		}
 	}
 }

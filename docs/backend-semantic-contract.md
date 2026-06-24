@@ -114,10 +114,11 @@ them wrong is a semantic bug, not a naming quibble.
 - **agent** — an actor that may write to the system (human, Cowork Claude
   instance, Claude Code, system bot). *Source of truth*
   `registry.go::BuiltinAgents()` (`:17-101`); DB row is an identity projection
-  (name / platform / status). **Enforced**: FK target for every actor column;
-  authorization is identity-based at runtime (`internal/mcp/authz.go` —
-  author allowlists, registration, self). *Is not* a user account; *is not* a
-  Cowork project (one platform an agent can run on).
+  (name / platform / status). **Enforced**: FK target for every actor column.
+  There is **no tool-layer authorization** (Option B, 2026-06): access is gated
+  by the MCP transport, and `as` only carries attribution + caller-scope
+  (`server.go::callerIdentity`). *Is not* a user account; *is not* a Cowork
+  project (one platform an agent can run on).
 - **user** — a login identity (`users` table) + `refresh_tokens`. Exactly one
   admin today; the admin logs in and acts as agent name `human`
   (`registry.go:63-67`). `user_id` is **not** used as actor identity.
@@ -233,7 +234,7 @@ The named confusions and their resolutions, each grounded.
 | **inert proposal vs active commitment** | `status='proposed'` area / goal / project (agent draft) | the activated row (owner action) | A proposed entity is fully inert — invisible to brief / Today / active listings / selectors — until the owner activates it in admin triage. The agent drafts; the owner commits. | `propose_*` handlers; `cmd/app/routes.go:220-227` |
 | **MCP tool call vs semantic write** | a `tools/call` invocation | the resulting row + `activity_event` | A read-only tool call (`ReadOnly` writability — `brief`, `search_knowledge`, `list_tasks`, `list_content`, `review_period`, `project_progress`) produces no semantic write. Only Additive/Idempotent/Destructive tools write; the *write* is the row + its trigger-emitted audit event, not the call. | `ops/types.go:28-39` |
 | **Cowork project vs agent identity** | `claude-cowork` agent | the live `agent` entity | A Cowork project IS an agent — a row in `agents` keyed by `name`, the universal actor identity. | `registry.go:20-31` |
-| **Claude Code runtime vs Koopa identity** | `claude-code` agent (dev session) | `human` agent (Koopa) | Claude Code agents attribute writes via `as` but hold no platform-human override; Koopa (human) carries it (`requireAuthor` admits `Platform=="human"` unconditionally). The live distinction is actor-attribution identity, not coordination authority. | `authz.go:65-78`; `registry.go` |
+| **Claude Code runtime vs Koopa identity** | `claude-code` agent (dev session) | `human` agent (Koopa) | Both attribute writes via `as`; there is no tool-layer override for either (Option B — no `requireAuthor`). The live distinction is actor-attribution identity (`actor='human'` is what `project_progress` / `review_period` count as owner momentum), not coordination authority. | `server.go::callerIdentity`; `registry.go` |
 | **frontend page model vs backend domain model** | Angular admin pages (composed views) | backend entities | Page-level view-models are **not** backend entities. The Today page is now backed by a fully-wired backend aggregate (§6F). | `internal/today/handler.go`; §2 |
 
 ---

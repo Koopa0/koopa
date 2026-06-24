@@ -1,6 +1,6 @@
 # PARA Semantic Contract
 
-> The **classification / usage** layer for koopa's PARA model (area / goal / project / milestone / todo) and the content layer. The schema `COMMENT`s in `migrations/001_initial.up.sql` are the **grammar** SSOT (what each column means); this document is the **usage** SSOT (which real thing maps to which entity, and why). On any conflict the code wins — `migrations/001_initial.up.sql`, `internal/mcp/ops/catalog.go::All()`, `internal/mcp/authz.go`.
+> The **classification / usage** layer for koopa's PARA model (area / goal / project / milestone / todo) and the content layer. The schema `COMMENT`s in `migrations/001_initial.up.sql` are the **grammar** SSOT (what each column means); this document is the **usage** SSOT (which real thing maps to which entity, and why). On any conflict the code wins — `migrations/001_initial.up.sql`, `internal/mcp/ops/catalog.go::All()`, `internal/mcp/server.go::callerIdentity`.
 >
 > Status: reconciled with live runtime (`project_progress`) and an adversarial gate, 2026-06-23. Real driver = the **internal knowledge-OS loop**, not an external portfolio.
 
@@ -57,7 +57,7 @@ koopa is a single monorepo (`go.mod` module `github.com/Koopa0/koopa`) — one r
 |---------------|----------|
 | `koopa0.dev` project entity | when build-logs are actually needed |
 | `resolve_task` state guard (block terminal-izing an already-adopted todo) | when an orphaned `daily_plan_items` row actually occurs |
-| koopa0 `requireAuthor` on `propose_*` (identity allowlist) | when the hermes write-surface tripwire fires, or any wrapper wires `propose_*` |
+| ~~koopa0 `requireAuthor` on `propose_*`~~ | **CLOSED by Option B (2026-06)** — no tool-layer authz; the MCP transport is the access boundary, not a per-tool gate |
 
 ## 7. Tool-surface gaps (adversarial-gate findings — all RESOLVED 2026-06-23)
 
@@ -75,8 +75,8 @@ Found by the adversarial gate; all were tool-surface (the schema already held th
 
 ## 9. D-4 — authz resolution
 
-`propose_*` safety is the **inert-draft lifecycle** (`status=proposed`; the owner activates in admin), not caller-gating. All five write tools + `resolve_task` use `requireRegisteredCaller` (the weakest gate; rejects only the `unknown` fallback). authz has no cron-vs-chat axis (an MCP call carries no such signal), so "NEVER from scheduled runs" is prose guidance, not enforced. Blocking the caller would break the intended agent-propose → owner-approve loop. The real guard is detection on the hermes side (audit_write_surface tripwire, hermes commit c81bdd2). koopa0 adds no authz guard now (see §6 tripwire).
+`propose_*` safety is the **inert-draft lifecycle** (`status=proposed`; the owner activates in admin) plus **tool-absence** (no publish / activate / hard-delete tool exists), not caller-gating. There is **no tool-layer authz at all** (Option B, 2026-06 — the `requireAuthor` / `requireRegisteredCaller` gates were removed): the MCP transport is the access boundary, and `as` only carries attribution + caller-scope. An MCP call carries no cron-vs-chat signal, so "NEVER from scheduled runs" is prose guidance, not enforced. The real guard against a misbehaving scheduled agent is detection on the hermes side (audit_write_surface tripwire, hermes commit c81bdd2); a fabricated `as` is rejected by the `created_by` FK.
 
 ---
 
-*Verification: reconciled with live `project_progress` and a 3-angle adversarial gate (koopa0.dev-as-project milestone hole, internal-loop sufficiency, content-collab completeness), all re-derived from source. Authorities remain the code: `migrations/001_initial.up.sql`, `internal/mcp/ops/catalog.go::All()`, `internal/mcp/authz.go`.*
+*Verification: reconciled with live `project_progress` and a 3-angle adversarial gate (koopa0.dev-as-project milestone hole, internal-loop sufficiency, content-collab completeness), all re-derived from source. Authorities remain the code: `migrations/001_initial.up.sql`, `internal/mcp/ops/catalog.go::All()`, `internal/mcp/server.go::callerIdentity`.*

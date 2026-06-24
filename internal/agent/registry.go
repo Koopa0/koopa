@@ -79,19 +79,20 @@ func BuiltinAgents() []Agent {
 			Description: "Database-level writes without Go caller context — pg_cron jobs, manual ops, or fallback when koopa.actor is unset",
 		},
 		{
-			// Zero-privilege fallback for MCP calls that omit the `as`
+			// Attribution fallback for MCP calls that omit the `as`
 			// field. Lives at the SERVER default (server.go callerAgent
-			// + cmd/mcp KOOPA_MCP_CALLER_AGENT default) so a caller that
-			// forgot to identify itself cannot inherit human or any
-			// cowork-agent privileges through the env-var backdoor.
-			// Platform != "human", so requireRegisteredCaller and
-			// requireAuthor both refuse it. Distinct from "system":
-			// "system" attributes DB-level writes that bypass the Go
-			// actor middleware; "unknown" attributes MCP calls whose
-			// Go middleware DID run but received no identity. Surfacing
-			// "unknown" as actor in activity_events is a client-side
-			// red flag — the cowork project instruction must include
-			// `as: "<agent_name>"` on every tool call.
+			// + cmd/mcp KOOPA_MCP_CALLER_AGENT default). There is no
+			// tool-layer authz (Option B), so this does not gate access;
+			// it controls ATTRIBUTION — a call with no identity writes as
+			// "unknown", which project_progress / review_period do NOT
+			// count as owner (human) activity. Do NOT default this to
+			// "human": that would stamp anonymous writes as Koopa's own.
+			// Distinct from "system": "system" attributes DB-level writes
+			// that bypass the Go actor middleware; "unknown" attributes
+			// MCP calls whose middleware ran but received no identity.
+			// Surfacing "unknown" as actor in activity_events is a
+			// client-side red flag — the cowork project instruction must
+			// include `as: "<agent_name>"` on every tool call.
 			Name:        "unknown",
 			DisplayName: "Unknown caller",
 			Platform:    "system",

@@ -43,12 +43,12 @@ func loadConfig(logger *slog.Logger) config {
 
 	// Default caller agent: "unknown" — fail-closed. Each Cowork project's
 	// instructions tell the AI to pass as: "planner" (or its real agent name)
-	// in every tool call. A client that forgets ends up attributed to the
-	// zero-privilege "unknown" agent, which requireAuthor /
-	// requireRegisteredCaller both refuse. Override only when the deployment
-	// genuinely has a single legitimate default (e.g. a personal-use
-	// deploy where all calls are from Koopa) — pin to "human" explicitly
-	// in that case rather than relying on the prior implicit default.
+	// in every tool call. A client that forgets is attributed to "unknown",
+	// which project_progress / review_period do NOT count as owner activity
+	// (there is no tool-layer authz to refuse it — Option B). Override only
+	// when the deployment genuinely has a single legitimate default (e.g. a
+	// personal-use deploy where all calls are from Koopa) — pin to "human"
+	// explicitly in that case rather than relying on the implicit default.
 	cfg.CallerAgent = envOr("KOOPA_MCP_CALLER_AGENT", "unknown")
 
 	// HTTP transport requires MCP_TOKEN + Google OAuth
