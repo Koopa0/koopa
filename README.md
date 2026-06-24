@@ -54,7 +54,7 @@ The working roster (`internal/agent/registry.go::BuiltinAgents()`):
 
 Cowork agents run on declared cadences — the planner at 8 a.m., pinned in the registry — but execution is driven by external runners, not by this repo; the backend owns the registry metadata, the schema, and the `process_runs` table that audits each external run.
 
-Writes are gated by **identity**. Every MCP call self-identifies via an `as` field; the server resolves it against the registry and applies three-axis authorization (`internal/mcp/authz.go`): an **author** allowlist (a human is always permitted), **registration** (a known, non-anonymous caller), and **self** (you may only act on your own rows). An unknown caller fails closed on every mutating tool.
+Writes carry an **actor**, not a tool-layer gate. Every MCP call self-identifies via an `as` field; the server (`internal/mcp/server.go::callerIdentity`) records it as attribution — it sets `created_by`, the `activity_events` actor, and the caller-scope of an agent's own rows — but no tool checks it for permission. Access control is the MCP transport itself: the HTTP `/mcp` endpoint sits behind admin-email OAuth and a bearer token, and stdio is an OS process boundary. A fabricated `as` is caught downstream by the `created_by` foreign key to the agent roster, so an unknown caller's writes are attributed to `unknown`, never to you.
 
 Two structural invariants hold:
 
@@ -84,7 +84,7 @@ Any agent queries the corpus through MCP via `search_knowledge` — published co
 
 ## The agent toolset
 
-Fourteen MCP tools — small on purpose. Everything an agent can do is a workflow step with valid transitions and invariant checks, never raw table access:
+Fifteen MCP tools — small on purpose. Everything an agent can do is a workflow step with valid transitions and invariant checks, never raw table access:
 
 | Tool | What it does |
 |---|---|
@@ -96,6 +96,7 @@ Fourteen MCP tools — small on purpose. Everything an agent can do is a workflo
 | `plan_day` | Set today's plan as one atomic replacement. No auto-carryover. |
 | `propose_area` / `propose_goal` / `propose_project` | Draft an inert PARA proposal (`status=proposed`) for you to activate or reject in admin triage. |
 | `list_tasks` / `resolve_task` | Read back the disposition of the todos an agent created, and self-clear the ones it has finished. |
+| `set_todo_recurrence` | Make a todo the agent created recurring — by weekday (e.g. Mon–Sat) or interval (every N days/weeks/months) — or clear it; recurring todos resurface in the brief on each matching day, computed on read. |
 | `propose_content` | Push a finished content piece into the editorial review queue (`status=review`); you publish it or send it back for revision. |
 | `list_content` / `revise_content` | Read back the disposition of the content an agent proposed — including your revision note when you send a draft back — and revise a sent-back draft back into review. |
 

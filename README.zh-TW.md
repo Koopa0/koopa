@@ -53,7 +53,7 @@ actor 的軸線是**流程 vs. 決策**，不是人類 vs. agent：
 
 Cowork agent 跑在宣告好的節奏上 — 規劃者早 8 點，釘在 registry 裡 — 但執行由外部 runner 驅動，不是這個 repo 自己跑的；backend 持有的是 registry metadata、schema，以及記錄每次外部執行的 `process_runs` audit 表。
 
-把守寫入的是**身分**。每一次 MCP call 都透過 `as` 欄位自我表明身分；server 對著 registry 解析它，套用三軸授權（`internal/mcp/authz.go`）：一個 **author** 白名單（人類永遠被允許）、**registration**（已知、非匿名的 caller），以及 **self**（你只能操作自己的 row）。未知的 caller 對每一個會 mutation 的工具都 fail closed。
+寫入帶的是 **actor**,不是 tool 層的授權閘。每一次 MCP call 都透過 `as` 欄位自我表明身分;server(`internal/mcp/server.go::callerIdentity`)把它當 attribution 記下來 — 設定 `created_by`、`activity_events` 的 actor,以及該 agent 自己 row 的 caller-scope — 但沒有任何工具拿它來檢查權限。存取控制是 MCP transport 本身:HTTP `/mcp` 端點走 admin-email OAuth + bearer token,stdio 則是 OS 行程邊界。偽造的 `as` 會在下游被 `created_by` 對 agent roster 的外鍵擋下,所以未知 caller 的寫入被歸給 `unknown`,絕不會算成你。
 
 兩個結構性 invariant 成立：
 
@@ -83,7 +83,7 @@ Agent 可以把一個 raw todo 丟進你的 inbox、起草一份惰性的 area /
 
 ## Agent 工具集
 
-十四個 MCP 工具 — 刻意做得小。agent 能做的每一件事都是一個工作流步驟，帶合法轉換與不變量檢查，絕不是原始的 table 存取：
+十五個 MCP 工具 — 刻意做得小。agent 能做的每一件事都是一個工作流步驟，帶合法轉換與不變量檢查，絕不是原始的 table 存取：
 
 | 工具 | 它做什麼 |
 |---|---|
@@ -95,6 +95,7 @@ Agent 可以把一個 raw todo 丟進你的 inbox、起草一份惰性的 area /
 | `plan_day` | 把今天的 plan 設定為一次 atomic 的整體替換。沒有 auto-carryover。 |
 | `propose_area` / `propose_goal` / `propose_project` | 起草一份惰性的 PARA 提案（`status=proposed`），讓你在 admin triage 啟用或拒絕。 |
 | `list_tasks` / `resolve_task` | 讀回 agent 建立的 todo 的處置，並自清它已處理完的。 |
+| `set_todo_recurrence` | 把 agent 建立的 todo 設成循環(週幾型如 Mon–Sat,或間隔型每 N 天/週/月)或清掉;循環 todo 每逢符合的日子在 brief 重新浮現,compute-on-read。 |
 | `propose_content` | 把完成的內容推進 editorial 審核佇列（`status=review`）；由你 publish 或退回要求修改。 |
 | `list_content` / `revise_content` | 讀回 agent 提的內容的處置 — 包含你退件時寫的修改原因 — 並把被退回的稿子改好、送回 review。 |
 
@@ -123,7 +124,7 @@ Agent 可以把一個 raw todo 丟進你的 inbox、起草一份惰性的 area /
 | Embedding     | `gemini-embedding-2`（1536d Matryoshka）；背景 reconciler 維持搜尋語料庫的 embedding 最新 |
 | 排程          | Agent 節奏在 `internal/agent/registry.go` 宣告；執行由外部 Cowork/Desktop runner 驅動；以 `process_runs` 留 audit |
 | 前端          | Angular 22（SSR、zoneless、Signal Forms）、Tailwind CSS v4                     |
-| AI 協作       | Claude（Cowork + Code）、Codex CLI、MCP（14 個工作流工具）                     |
+| AI 協作       | Claude（Cowork + Code）、Codex CLI、MCP（15 個工作流工具）                     |
 | Cache         | Ristretto（in-memory，單機）                                                   |
 | Object 儲存   | Cloudflare R2（S3 相容）                                                       |
 
