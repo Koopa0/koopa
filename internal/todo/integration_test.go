@@ -10,8 +10,9 @@
 // transaction.
 //
 // Coverage:
-//   - Recurring — seed a recurring todo due today and an overdue one; assert
-//     each lands in the right bucket.
+//   - Recurring — seed weekday- and interval-mode recurring todos; assert the
+//     compute-on-read due_today bucket matches the recurrence rule + last
+//     completion (weekday bit, completed-today exclusion, interval never-done).
 //   - History — seed a completed todo; assert it appears in the default
 //     completed-since view.
 //   - List — state filter (single value, comma-separated list, invalid
@@ -156,19 +157,36 @@ func TestIntegration_Todo_Recurring(t *testing.T) {
 	truncate(t)
 	h := newHandler()
 
-	var dueToday, overdue uuid.UUID
-	if err := testPool.QueryRow(t.Context(),
-		`INSERT INTO todos (title, state, due, recur_interval, recur_unit, created_by)
-		 VALUES ('Daily standup', 'todo', CURRENT_DATE, 1, 'days', 'human') RETURNING id`,
-	).Scan(&dueToday); err != nil {
-		t.Fatalf("seeding due-today recurring todo: %v", err)
+	// today's ISODOW bit (Mon=bit0 .. Sun=bit6), computed independently of the
+	// SQL query so a Go/SQL bitmask disagreement surfaces as a failure.
+	isodow := int(time.Now().UTC().Weekday()) // Go: Sun=0 .. Sat=6
+	if isodow == 0 {
+		isodow = 7 // ISODOW: Sunday = 7
 	}
-	if err := testPool.QueryRow(t.Context(),
-		`INSERT INTO todos (title, state, due, recur_interval, recur_unit, created_by)
-		 VALUES ('Weekly review', 'todo', CURRENT_DATE - 3, 1, 'weeks', 'human') RETURNING id`,
-	).Scan(&overdue); err != nil {
-		t.Fatalf("seeding overdue recurring todo: %v", err)
+	todayBit := 1 << (isodow - 1)
+	const allWeekdays = 127
+	today := time.Now().UTC().Format(time.DateOnly)
+
+	seed := func(title string, weekdays, interval *int, unit, lastCompleted *string) uuid.UUID {
+		t.Helper()
+		var id uuid.UUID
+		if err := testPool.QueryRow(t.Context(),
+			`INSERT INTO todos (title, state, recur_weekdays, recur_interval, recur_unit, last_completed_on, created_by)
+			 VALUES ($1, 'todo', $2::smallint, $3::int, $4, $5::date, 'human') RETURNING id`,
+			title, weekdays, interval, unit, lastCompleted,
+		).Scan(&id); err != nil {
+			t.Fatalf("seeding %q: %v", title, err)
+		}
+		return id
 	}
+	iptr := func(i int) *int { return &i }
+	sptr := func(s string) *string { return &s }
+
+	dueWeekday := seed("Daily Japanese", iptr(allWeekdays), nil, nil, nil)
+	dueTodayOnly := seed("Today only", iptr(todayBit), nil, nil, nil)
+	notTodayWeekday := seed("Other days only", iptr(allWeekdays^todayBit), nil, nil, nil)
+	doneTodayWeekday := seed("Already done today", iptr(allWeekdays), nil, nil, sptr(today))
+	dueInterval := seed("Every 3 days, never done", nil, iptr(3), sptr("days"), nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/admin/commitment/todos/recurring", nil)
 	rec := serveRead(t, h.Recurring, req)
@@ -186,29 +204,34 @@ func TestIntegration_Todo_Recurring(t *testing.T) {
 			DueToday []struct {
 				ID uuid.UUID `json:"id"`
 			} `json:"due_today"`
-			Overdue []struct {
-				ID uuid.UUID `json:"id"`
-			} `json:"overdue"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(body, &env); err != nil {
 		t.Fatalf("decode recurring response: %v (body=%s)", err, body)
 	}
-
-	dueIDs := make(map[uuid.UUID]struct{}, len(env.Data.DueToday))
+	due := make(map[uuid.UUID]struct{}, len(env.Data.DueToday))
 	for _, d := range env.Data.DueToday {
-		dueIDs[d.ID] = struct{}{}
-	}
-	overdueIDs := make(map[uuid.UUID]struct{}, len(env.Data.Overdue))
-	for _, d := range env.Data.Overdue {
-		overdueIDs[d.ID] = struct{}{}
+		due[d.ID] = struct{}{}
 	}
 
-	if _, ok := dueIDs[dueToday]; !ok {
-		t.Errorf("due-today recurring todo %s missing from due_today bucket (body=%s)", dueToday, body)
+	wantDue := map[string]uuid.UUID{
+		"all-weekday todo":     dueWeekday,
+		"today-only weekday":   dueTodayOnly,
+		"interval, never done": dueInterval,
 	}
-	if _, ok := overdueIDs[overdue]; !ok {
-		t.Errorf("overdue recurring todo %s missing from overdue bucket (body=%s)", overdue, body)
+	for name, id := range wantDue {
+		if _, ok := due[id]; !ok {
+			t.Errorf("%s (%s) missing from due_today (body=%s)", name, id, body)
+		}
+	}
+	wantNotDue := map[string]uuid.UUID{
+		"weekday excluding today": notTodayWeekday,
+		"already completed today": doneTodayWeekday,
+	}
+	for name, id := range wantNotDue {
+		if _, ok := due[id]; ok {
+			t.Errorf("%s (%s) must NOT be in due_today (body=%s)", name, id, body)
+		}
 	}
 }
 

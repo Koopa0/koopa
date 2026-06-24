@@ -653,6 +653,8 @@ CREATE TABLE todos (
     priority          TEXT CHECK (priority IN ('high', 'medium', 'low')),
     recur_interval    INT,
     recur_unit        TEXT CHECK (recur_unit IN ('days', 'weeks', 'months', 'years')),
+    recur_weekdays    SMALLINT,
+    last_completed_on DATE,
     description       TEXT NOT NULL DEFAULT '',
     created_by        TEXT NOT NULL DEFAULT 'human' REFERENCES agents(name) ON DELETE RESTRICT,
     created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -663,9 +665,20 @@ CREATE TABLE todos (
     CONSTRAINT chk_todo_completed_at_consistency
         CHECK ((state = 'done' AND completed_at IS NOT NULL)
             OR (state <> 'done' AND completed_at IS NULL)),
-    CONSTRAINT chk_todo_recurrence_pair
-        CHECK ((recur_interval IS NULL AND recur_unit IS NULL)
-            OR (recur_interval IS NOT NULL AND recur_unit IS NOT NULL AND recur_interval > 0))
+    CONSTRAINT chk_todo_recurrence
+        CHECK (
+            -- not recurring
+            (recur_weekdays IS NULL AND recur_interval IS NULL AND recur_unit IS NULL)
+            -- weekday mode: 7-bit weekday mask, no interval
+            OR (recur_weekdays IS NOT NULL AND recur_weekdays BETWEEN 1 AND 127
+                AND recur_interval IS NULL AND recur_unit IS NULL)
+            -- interval mode: every N units, no weekday mask
+            OR (recur_interval IS NOT NULL AND recur_interval > 0 AND recur_unit IS NOT NULL
+                AND recur_weekdays IS NULL)
+        ),
+    CONSTRAINT chk_todo_last_completed_requires_recurrence
+        CHECK (last_completed_on IS NULL
+            OR recur_weekdays IS NOT NULL OR recur_interval IS NOT NULL)
 );
 
 COMMENT ON TABLE todos IS
@@ -688,8 +701,10 @@ COMMENT ON COLUMN todos.project_id IS 'Optional parent project. SET NULL on proj
 COMMENT ON COLUMN todos.completed_at IS 'When the todo was completed. NULL unless state=done, enforced by chk_todo_completed_at_consistency.';
 COMMENT ON COLUMN todos.energy IS 'Required energy level for GTD engage-by-energy. NULL = not set.';
 COMMENT ON COLUMN todos.priority IS 'Todo priority for GTD engage-by-priority. NULL = not set.';
-COMMENT ON COLUMN todos.recur_interval IS 'Recurrence frequency count. NULL = non-recurring. Paired with recur_unit by chk_todo_recurrence_pair.';
-COMMENT ON COLUMN todos.recur_unit IS 'Recurrence unit. NULL = non-recurring todo.';
+COMMENT ON COLUMN todos.recur_interval IS 'Interval-mode recurrence count: the todo recurs every recur_interval × recur_unit measured from last_completed_on (self-pacing). NULL = not interval-recurring. Mutually exclusive with recur_weekdays (chk_todo_recurrence).';
+COMMENT ON COLUMN todos.recur_unit IS 'Interval-mode recurrence unit (days/weeks/months/years). Set if and only if recur_interval is set.';
+COMMENT ON COLUMN todos.recur_weekdays IS 'Weekday-mode recurrence: 7-bit mask over ISODOW-1 — Mon=1, Tue=2, Wed=4, Thu=8, Fri=16, Sat=32, Sun=64. Daily=127, Mon-Sat=63. NULL = not weekday-recurring. Mutually exclusive with recur_interval (chk_todo_recurrence).';
+COMMENT ON COLUMN todos.last_completed_on IS 'Date the most recent recurring occurrence was completed (resolve_task on a recurring todo sets it instead of a terminal state). NULL = never completed / non-recurring. Compute-on-read due-today = rule matches today AND (last_completed_on IS NULL OR last_completed_on < today).';
 COMMENT ON COLUMN todos.description IS 'Free-text detail. Empty string = no detail.';
 COMMENT ON COLUMN todos.created_by IS
     'Which agent created or imported this todo into the system. '
@@ -764,86 +779,6 @@ COMMENT ON COLUMN daily_plan_items.status IS
 COMMENT ON COLUMN daily_plan_items.updated_at IS
     'Application-managed. Tracks when status last changed. '
     'Critical for Weekly Review analysis and cron debug.';
-
--- ============================================================
--- Todo skips
--- ============================================================
-
-CREATE TABLE todo_skips (
-    id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    todo_id      UUID NOT NULL REFERENCES todos(id) ON DELETE CASCADE,
-    original_due DATE NOT NULL,
-    skipped_date DATE NOT NULL,
-    reason       TEXT NOT NULL DEFAULT 'auto-expired'
-        CHECK (reason IN ('auto-expired', 'manual')),
-    created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
-    UNIQUE(todo_id, skipped_date)
-);
-
-COMMENT ON TABLE todo_skips IS
-    'Per-occurrence skip history for recurring todo items. RETENTION: 1 year. '
-    'Scope discipline vs daily_plan_items.status=''dropped'': todo_skips records '
-    'that a RECURRING todo''s scheduled occurrence did not happen; daily_plan_items '
-    '(status=dropped) records that a planner explicitly removed the todo from a '
-    'specific day''s plan. Both can apply to the same (todo_id, date) in theory — '
-    'by convention, the cron-driven skip detection runs AFTER daily_plan reconciliation '
-    'each night, so a todo the user dropped from today''s plan does NOT also get a '
-    'todo_skips row. Writers MUST preserve this order: daily_plan_items(dropped) first, '
-    'todo_skips after. Analytics that count "missed occurrences" should SELECT only '
-    'todo_skips; plan adherence metrics use daily_plan_items.';
-COMMENT ON COLUMN todo_skips.todo_id IS 'Which recurring todo was skipped. CASCADE — skips die with their todo.';
-COMMENT ON COLUMN todo_skips.original_due IS 'Due date when skip was detected by cron.';
-COMMENT ON COLUMN todo_skips.skipped_date IS 'The occurrence date that was missed.';
-COMMENT ON COLUMN todo_skips.reason IS 'auto-expired (cron detected overdue) or manual (user skipped).';
-COMMENT ON COLUMN todo_skips.created_at IS 'Row insertion timestamp.';
-
--- Structural invariant: a todo_skips row and a daily_plan_items(status='dropped')
--- row for the same (todo_id, date) MUST NOT coexist. Enforces the
--- "missed-occurrence vs dropped-plan" scope split — analytics count
--- todo_skips for missed occurrences, daily_plan_items.status='dropped' for
--- plan adherence. Bidirectional: rejects either (a) inserting a todo_skip
--- when drop already exists, or (b) updating a daily_plan_item to 'dropped'
--- when a skip already exists.
-CREATE OR REPLACE FUNCTION enforce_todo_skip_not_already_dropped() RETURNS TRIGGER AS $$
-BEGIN
-    IF TG_TABLE_NAME = 'todo_skips' THEN
-        IF EXISTS (
-            SELECT 1 FROM daily_plan_items
-            WHERE todo_id = NEW.todo_id
-              AND plan_date = NEW.skipped_date
-              AND status = 'dropped'
-        ) THEN
-            RAISE EXCEPTION 'todo_skips: (todo_id=%, skipped_date=%) already recorded as dropped in daily_plan_items; cannot also record as skipped',
-                NEW.todo_id, NEW.skipped_date;
-        END IF;
-    ELSIF TG_TABLE_NAME = 'daily_plan_items' THEN
-        IF NEW.status <> 'dropped' THEN
-            RETURN NEW;
-        END IF;
-        IF EXISTS (
-            SELECT 1 FROM todo_skips
-            WHERE todo_id = NEW.todo_id
-              AND skipped_date = NEW.plan_date
-        ) THEN
-            RAISE EXCEPTION 'daily_plan_items: (todo_id=%, plan_date=%) already recorded as a todo_skip; cannot also mark as dropped',
-                NEW.todo_id, NEW.plan_date;
-        END IF;
-    END IF;
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE TRIGGER trg_todo_skips_not_already_dropped
-    BEFORE INSERT ON todo_skips
-    FOR EACH ROW EXECUTE FUNCTION enforce_todo_skip_not_already_dropped();
-COMMENT ON TRIGGER trg_todo_skips_not_already_dropped ON todo_skips
-    IS 'Rejects INSERT when daily_plan_items already recorded the same (todo_id, date) as status=''dropped''.';
-
-CREATE TRIGGER trg_daily_plan_items_not_already_skipped
-    BEFORE INSERT OR UPDATE OF status ON daily_plan_items
-    FOR EACH ROW EXECUTE FUNCTION enforce_todo_skip_not_already_dropped();
-COMMENT ON TRIGGER trg_daily_plan_items_not_already_skipped ON daily_plan_items
-    IS 'Rejects setting status=''dropped'' when todo_skips already has a row for the same (todo_id, date). Paired with trg_todo_skips_not_already_dropped for bidirectional enforcement.';
 
 -- ============================================================
 -- Activity events

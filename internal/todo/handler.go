@@ -147,16 +147,18 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	api.Encode(w, http.StatusOK, api.Response{Data: out})
 }
 
-// recurringResponse is the wire shape for GET /todos/recurring. Both
-// arrays are non-nil so empty results serialize [] not null.
+// recurringResponse is the wire shape for GET /todos/recurring. The array is
+// non-nil so an empty result serializes [] not null.
 type recurringResponse struct {
 	DueToday []Item `json:"due_today"`
-	Overdue  []Item `json:"overdue"`
 }
 
-// Recurring handles GET /api/admin/commitment/todos/recurring — the
-// recurring-todo dashboard split into "due today" and "overdue" buckets.
-// today is the server's day boundary, matching the daily-plan read.
+// Recurring handles GET /api/admin/commitment/todos/recurring — the recurring
+// todos whose occurrence is due today, computed on read from each todo's
+// recurrence rule and last completion. today is the server's day boundary,
+// matching the daily-plan read. There is no "overdue" bucket: compute-on-read
+// has no stored next-due to fall behind — a recurrence is either due today or
+// it is not.
 func (h *Handler) Recurring(w http.ResponseWriter, r *http.Request) {
 	today := time.Now().UTC()
 
@@ -166,17 +168,8 @@ func (h *Handler) Recurring(w http.ResponseWriter, r *http.Request) {
 		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to list recurring todos")
 		return
 	}
-	overdue, err := h.store.OverdueRecurringItems(r.Context(), today)
-	if err != nil {
-		h.logger.Error("listing overdue recurring todos", "error", err)
-		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to list recurring todos")
-		return
-	}
 
-	resp := recurringResponse{
-		DueToday: ensureItems(dueToday),
-		Overdue:  ensureItems(overdue),
-	}
+	resp := recurringResponse{DueToday: ensureItems(dueToday)}
 	api.Encode(w, http.StatusOK, api.Response{Data: resp})
 }
 

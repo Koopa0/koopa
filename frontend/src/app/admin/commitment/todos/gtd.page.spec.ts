@@ -97,7 +97,6 @@ const recurringFixture = {
       updated_at: '2026-06-01T07:00:00Z',
     },
   ],
-  overdue: [],
 };
 
 const historyFixture = [

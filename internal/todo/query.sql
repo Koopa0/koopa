@@ -3,7 +3,7 @@
 INSERT INTO todos (title, state, due, project_id, energy, priority, description, created_by)
 VALUES (@title, @state::todo_state, @due, @project_id, @energy, @priority, @description, @created_by)
 RETURNING id, title, state, due, project_id,
-          completed_at, energy, priority, recur_interval, recur_unit,
+          completed_at, energy, priority, recur_interval, recur_unit, recur_weekdays, last_completed_on,
           description, created_by, created_at, updated_at;
 
 -- name: OverdueTodoItems :many
@@ -11,7 +11,7 @@ RETURNING id, title, state, due, project_id,
 -- terminal states (done, archived, dismissed) plus the non-date-relevant
 -- someday/inbox holding states, so a self-closed todo never reappears as active.
 SELECT t.id, t.title, t.state, t.due, t.project_id,
-       t.energy, t.priority, t.recur_interval, t.recur_unit,
+       t.energy, t.priority, t.recur_interval, t.recur_unit, t.recur_weekdays, t.last_completed_on,
        t.created_by, t.created_at, t.updated_at,
        COALESCE(p.title, '') AS project_title,
        COALESCE(p.slug, '') AS project_slug
@@ -26,7 +26,7 @@ ORDER BY t.due, t.priority NULLS LAST;
 -- Excludes terminal states (done, archived, dismissed) and the someday/inbox
 -- holding states so a self-closed todo never reappears in the Today view.
 SELECT t.id, t.title, t.state, t.due, t.project_id,
-       t.energy, t.priority, t.recur_interval, t.recur_unit,
+       t.energy, t.priority, t.recur_interval, t.recur_unit, t.recur_weekdays, t.last_completed_on,
        t.created_by, t.created_at, t.updated_at,
        COALESCE(p.title, '') AS project_title,
        COALESCE(p.slug, '') AS project_slug
@@ -41,7 +41,7 @@ ORDER BY t.priority NULLS LAST, t.created_at;
 -- Excludes terminal states (done, archived, dismissed) and the someday/inbox
 -- holding states so a self-closed todo never reappears in the upcoming view.
 SELECT t.id, t.title, t.state, t.due, t.project_id,
-       t.energy, t.priority, t.recur_interval, t.recur_unit,
+       t.energy, t.priority, t.recur_interval, t.recur_unit, t.recur_weekdays, t.last_completed_on,
        t.created_by, t.created_at, t.updated_at,
        COALESCE(p.title, '') AS project_title,
        COALESCE(p.slug, '') AS project_slug
@@ -54,14 +54,14 @@ ORDER BY t.due, t.priority NULLS LAST;
 -- name: TodoItems :many
 -- List all todo items ordered by state and due date.
 SELECT id, title, state, due, project_id,
-       completed_at, energy, priority, recur_interval, recur_unit,
+       completed_at, energy, priority, recur_interval, recur_unit, recur_weekdays, last_completed_on,
        description, created_by, created_at, updated_at
 FROM todos ORDER BY state, due NULLS LAST, created_at DESC;
 
 -- name: PendingTodoItems :many
 -- List todo items that are not done, ordered by due date.
 SELECT id, title, state, due, project_id,
-       completed_at, energy, priority, recur_interval, recur_unit,
+       completed_at, energy, priority, recur_interval, recur_unit, recur_weekdays, last_completed_on,
        description, created_by, created_at, updated_at
 FROM todos WHERE state != 'done'
 ORDER BY due NULLS LAST, created_at;
@@ -69,7 +69,7 @@ ORDER BY due NULLS LAST, created_at;
 -- name: PendingTodoItemsWithProject :many
 -- List pending todo items with project info.
 SELECT t.id, t.title, t.state, t.due, t.project_id,
-       t.energy, t.priority, t.recur_interval, t.recur_unit,
+       t.energy, t.priority, t.recur_interval, t.recur_unit, t.recur_weekdays, t.last_completed_on,
        t.created_at, t.updated_at,
        COALESCE(p.title, '') AS project_title,
        COALESCE(p.slug, '') AS project_slug
@@ -86,14 +86,14 @@ LIMIT sqlc.arg('max_results');
 -- name: TodoItemByID :one
 -- Get a todo item by ID.
 SELECT id, title, state, due, project_id,
-       completed_at, energy, priority, recur_interval, recur_unit,
+       completed_at, energy, priority, recur_interval, recur_unit, recur_weekdays, last_completed_on,
        description, created_by, created_at, updated_at
 FROM todos WHERE id = @id;
 
 -- name: PendingTodoItemsByTitle :many
 -- Find pending todo items matching a title (case-insensitive contains).
 SELECT id, title, state, due, project_id,
-       completed_at, energy, priority, recur_interval, recur_unit,
+       completed_at, energy, priority, recur_interval, recur_unit, recur_weekdays, last_completed_on,
        description, created_by, created_at, updated_at
 FROM todos
 WHERE state != 'done' AND title ILIKE '%' || @search_title || '%'
@@ -139,7 +139,7 @@ UPDATE todos SET
     updated_at = now()
 WHERE id = @id
 RETURNING id, title, state, due, project_id,
-          completed_at, energy, priority, recur_interval, recur_unit,
+          completed_at, energy, priority, recur_interval, recur_unit, recur_weekdays, last_completed_on,
           description, created_by, created_at, updated_at;
 
 -- name: CompletedTodoDetailSince :many
@@ -173,13 +173,13 @@ UPDATE todos SET
     updated_at = now()
 WHERE id = @id
 RETURNING id, title, state, due, project_id,
-          completed_at, energy, priority, recur_interval, recur_unit,
+          completed_at, energy, priority, recur_interval, recur_unit, recur_weekdays, last_completed_on,
           description, created_by, created_at, updated_at;
 
 -- name: SearchTodoItems :many
 -- Search todo items by title/description with optional filters.
 SELECT t.id, t.title, t.state, t.due, t.project_id,
-       t.energy, t.priority, t.recur_interval, t.recur_unit,
+       t.energy, t.priority, t.recur_interval, t.recur_unit, t.recur_weekdays, t.last_completed_on,
        t.completed_at, t.description, t.created_at, t.updated_at,
        COALESCE(p.title, '') AS project_title,
        COALESCE(p.slug, '') AS project_slug
@@ -207,31 +207,49 @@ LIMIT sqlc.arg('max_results');
 
 -- === Recurring todo item queries ===
 
--- name: OverdueRecurringTodoItems :many
--- Get all overdue recurring todo items (due < today, not done).
-SELECT id, title, state, due, project_id,
-       completed_at, energy, priority, recur_interval, recur_unit,
-       description, created_by, created_at, updated_at
-FROM todos
-WHERE state != 'done'
-  AND recur_interval IS NOT NULL AND recur_interval > 0
-  AND due < @today
-ORDER BY due ASC;
-
 -- name: RecurringTodoItemsDueToday :many
--- Get recurring todo items due on or before today.
+-- Recurring todos whose occurrence is due on @today, computed on read (no stored
+-- next-due, no scheduler). A todo qualifies when it is recurring, active, not
+-- already completed today, and the rule matches: weekday-mode → today's ISODOW
+-- bit is set in recur_weekdays; interval-mode → @today is at least
+-- recur_interval × recur_unit past last_completed_on (or it was never completed).
 SELECT id, title, state, due, project_id,
-       completed_at, energy, priority, recur_interval, recur_unit,
+       completed_at, energy, priority, recur_interval, recur_unit, recur_weekdays, last_completed_on,
        description, created_by, created_at, updated_at
 FROM todos
-WHERE state != 'done'
-  AND recur_interval IS NOT NULL AND recur_interval > 0
-  AND due <= @today
-ORDER BY due ASC;
+WHERE state NOT IN ('done', 'someday', 'inbox', 'archived', 'dismissed')
+  AND (recur_weekdays IS NOT NULL OR recur_interval IS NOT NULL)
+  AND (last_completed_on IS NULL OR last_completed_on < @today::date)
+  AND (
+        (recur_weekdays IS NOT NULL
+         AND (recur_weekdays & (1 << (EXTRACT(ISODOW FROM @today::date)::int - 1))) <> 0)
+     OR (recur_interval IS NOT NULL
+         AND (last_completed_on IS NULL
+              OR @today::date >= last_completed_on + (recur_interval::text || ' ' || recur_unit)::interval))
+      )
+ORDER BY priority NULLS LAST, title;
 
--- name: UpdateTodoItemDue :execrows
--- Update only the due date for a todo item.
-UPDATE todos SET due = @due, updated_at = now() WHERE id = @id;
+-- name: SetTodoRecurrence :execrows
+-- Set (or clear) a todo's recurrence, scoped to the caller's own todos. Pass
+-- recur_weekdays for weekday-mode, recur_interval+recur_unit for interval-mode,
+-- or all-null to clear. chk_todo_recurrence rejects an invalid combination.
+UPDATE todos
+SET recur_weekdays = sqlc.narg('recur_weekdays'),
+    recur_interval = sqlc.narg('recur_interval'),
+    recur_unit     = sqlc.narg('recur_unit'),
+    updated_at     = now()
+WHERE id = @id AND created_by = @created_by;
+
+-- name: CompleteRecurringOccurrence :execrows
+-- Stamp last_completed_on for today's occurrence of a recurring todo WITHOUT
+-- moving it to a terminal state (it keeps recurring). Scoped to the caller's own
+-- todos and only applies to recurring rows; a non-recurring or non-caller row
+-- affects zero rows.
+UPDATE todos
+SET last_completed_on = @completed_on::date,
+    updated_at        = now()
+WHERE id = @id AND created_by = @created_by
+  AND (recur_weekdays IS NOT NULL OR recur_interval IS NOT NULL);
 
 -- name: TodoInboxCount :one
 -- Count of todo items in inbox state (for needs_attention badge).
@@ -276,7 +294,7 @@ DELETE FROM todos WHERE id = @id AND state = 'inbox';
 -- todo_state values (NULL = no state filter); elements are validated at
 -- the handler boundary.
 SELECT t.id, t.title, t.state, t.due, t.project_id,
-       t.energy, t.priority, t.recur_interval, t.recur_unit,
+       t.energy, t.priority, t.recur_interval, t.recur_unit, t.recur_weekdays, t.last_completed_on,
        t.description, t.created_by, t.created_at, t.updated_at,
        COALESCE(p.title, '') AS project_title,
        COALESCE(p.slug, '') AS project_slug

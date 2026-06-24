@@ -372,14 +372,13 @@ export interface RecurringGroup {
   items: TodoItem[];
 }
 
-/** Non-empty recurring groups, due-today before overdue. */
+/** Non-empty recurring groups. Compute-on-read has only a due-today bucket. */
 export function recurringGroupsOf(
   buckets: RecurringBuckets | undefined,
 ): RecurringGroup[] {
-  return [
-    { label: 'Due today', items: buckets?.due_today ?? [] },
-    { label: 'Overdue', items: buckets?.overdue ?? [] },
-  ].filter((group) => group.items.length > 0);
+  return [{ label: 'Due today', items: buckets?.due_today ?? [] }].filter(
+    (group) => group.items.length > 0,
+  );
 }
 
 /** Live tab counts across all six views. */
@@ -397,8 +396,7 @@ export function viewCounts(
     today: count('today'),
     pending: count('pending'),
     someday: count('someday'),
-    recurring:
-      (buckets?.due_today.length ?? 0) + (buckets?.overdue.length ?? 0),
+    recurring: buckets?.due_today.length ?? 0,
     history: historyCount,
   };
 }

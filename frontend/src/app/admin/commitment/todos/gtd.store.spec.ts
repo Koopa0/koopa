@@ -96,7 +96,7 @@ describe('GtdStore', () => {
       .flush({ data: planFixture });
     httpMock
       .expectOne((r) => r.url.endsWith(`${TODOS_URL}/recurring`))
-      .flush({ data: { due_today: [], overdue: [] } });
+      .flush({ data: { due_today: [] } });
     httpMock
       .expectOne((r) => r.url.endsWith(`${TODOS_URL}/history`))
       .flush({

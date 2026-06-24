@@ -91,7 +91,6 @@ describe('gtd-view', () => {
       TODAY,
       {
         due_today: [],
-        overdue: [],
       },
       7,
     );

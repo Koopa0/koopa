@@ -48,7 +48,6 @@ describe('TodoService', () => {
     service.recurring().subscribe((res) => {
       expect(res.due_today).toHaveLength(1);
       expect(res.due_today[0].recur_interval).toBe(1);
-      expect(res.overdue).toHaveLength(0);
     });
 
     const req = httpMock.expectOne((r) =>
@@ -69,7 +68,6 @@ describe('TodoService', () => {
             updated_at: '2026-06-01T00:00:00Z',
           },
         ],
-        overdue: [],
       },
     });
   });

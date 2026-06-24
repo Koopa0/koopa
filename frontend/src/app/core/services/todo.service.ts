@@ -54,10 +54,9 @@ export interface TodoItem {
   updated_at: string;
 }
 
-/** GET /todos/recurring buckets, split by the server day boundary. */
+/** GET /todos/recurring: occurrences due today (compute-on-read). */
 export interface RecurringBuckets {
   due_today: TodoItem[];
-  overdue: TodoItem[];
 }
 
 /**

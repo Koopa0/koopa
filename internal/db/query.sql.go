@@ -113,7 +113,7 @@ UPDATE todos
 SET state = 'todo',
     updated_at = now()
 WHERE id = $1 AND state = 'someday'
-RETURNING id, title, state, due, project_id, completed_at, energy, priority, recur_interval, recur_unit, description, created_by, created_at, updated_at
+RETURNING id, title, state, due, project_id, completed_at, energy, priority, recur_interval, recur_unit, recur_weekdays, last_completed_on, description, created_by, created_at, updated_at
 `
 
 // Promote a someday todo item back to todo state. State guard mirrors
@@ -133,6 +133,8 @@ func (q *Queries) ActivateTodoItem(ctx context.Context, id uuid.UUID) (Todo, err
 		&i.Priority,
 		&i.RecurInterval,
 		&i.RecurUnit,
+		&i.RecurWeekdays,
+		&i.LastCompletedOn,
 		&i.Description,
 		&i.CreatedBy,
 		&i.CreatedAt,
@@ -718,7 +720,7 @@ func (q *Queries) AutoDisableFeed(ctx context.Context, arg AutoDisableFeedParams
 
 const backlogTodoItems = `-- name: BacklogTodoItems :many
 SELECT t.id, t.title, t.state, t.due, t.project_id,
-       t.energy, t.priority, t.recur_interval, t.recur_unit,
+       t.energy, t.priority, t.recur_interval, t.recur_unit, t.recur_weekdays, t.last_completed_on,
        t.description, t.created_by, t.created_at, t.updated_at,
        COALESCE(p.title, '') AS project_title,
        COALESCE(p.slug, '') AS project_slug
@@ -749,21 +751,23 @@ type BacklogTodoItemsParams struct {
 }
 
 type BacklogTodoItemsRow struct {
-	ID            uuid.UUID  `json:"id"`
-	Title         string     `json:"title"`
-	State         TodoState  `json:"state"`
-	Due           *time.Time `json:"due"`
-	ProjectID     *uuid.UUID `json:"project_id"`
-	Energy        *string    `json:"energy"`
-	Priority      *string    `json:"priority"`
-	RecurInterval *int32     `json:"recur_interval"`
-	RecurUnit     *string    `json:"recur_unit"`
-	Description   string     `json:"description"`
-	CreatedBy     string     `json:"created_by"`
-	CreatedAt     time.Time  `json:"created_at"`
-	UpdatedAt     time.Time  `json:"updated_at"`
-	ProjectTitle  string     `json:"project_title"`
-	ProjectSlug   string     `json:"project_slug"`
+	ID              uuid.UUID  `json:"id"`
+	Title           string     `json:"title"`
+	State           TodoState  `json:"state"`
+	Due             *time.Time `json:"due"`
+	ProjectID       *uuid.UUID `json:"project_id"`
+	Energy          *string    `json:"energy"`
+	Priority        *string    `json:"priority"`
+	RecurInterval   *int32     `json:"recur_interval"`
+	RecurUnit       *string    `json:"recur_unit"`
+	RecurWeekdays   *int16     `json:"recur_weekdays"`
+	LastCompletedOn *time.Time `json:"last_completed_on"`
+	Description     string     `json:"description"`
+	CreatedBy       string     `json:"created_by"`
+	CreatedAt       time.Time  `json:"created_at"`
+	UpdatedAt       time.Time  `json:"updated_at"`
+	ProjectTitle    string     `json:"project_title"`
+	ProjectSlug     string     `json:"project_slug"`
 }
 
 // Filtered todo item list for admin backlog view. states is a text[] of
@@ -796,6 +800,8 @@ func (q *Queries) BacklogTodoItems(ctx context.Context, arg BacklogTodoItemsPara
 			&i.Priority,
 			&i.RecurInterval,
 			&i.RecurUnit,
+			&i.RecurWeekdays,
+			&i.LastCompletedOn,
 			&i.Description,
 			&i.CreatedBy,
 			&i.CreatedAt,
@@ -821,7 +827,7 @@ SET state = 'todo',
     due = COALESCE($3, due),
     updated_at = now()
 WHERE id = $4 AND state = 'inbox'
-RETURNING id, title, state, due, project_id, completed_at, energy, priority, recur_interval, recur_unit, description, created_by, created_at, updated_at
+RETURNING id, title, state, due, project_id, completed_at, energy, priority, recur_interval, recur_unit, recur_weekdays, last_completed_on, description, created_by, created_at, updated_at
 `
 
 type ClarifyTodoItemParams struct {
@@ -851,12 +857,40 @@ func (q *Queries) ClarifyTodoItem(ctx context.Context, arg ClarifyTodoItemParams
 		&i.Priority,
 		&i.RecurInterval,
 		&i.RecurUnit,
+		&i.RecurWeekdays,
+		&i.LastCompletedOn,
 		&i.Description,
 		&i.CreatedBy,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const completeRecurringOccurrence = `-- name: CompleteRecurringOccurrence :execrows
+UPDATE todos
+SET last_completed_on = $1::date,
+    updated_at        = now()
+WHERE id = $2 AND created_by = $3
+  AND (recur_weekdays IS NOT NULL OR recur_interval IS NOT NULL)
+`
+
+type CompleteRecurringOccurrenceParams struct {
+	CompletedOn time.Time `json:"completed_on"`
+	ID          uuid.UUID `json:"id"`
+	CreatedBy   string    `json:"created_by"`
+}
+
+// Stamp last_completed_on for today's occurrence of a recurring todo WITHOUT
+// moving it to a terminal state (it keeps recurring). Scoped to the caller's own
+// todos and only applies to recurring rows; a non-recurring or non-caller row
+// affects zero rows.
+func (q *Queries) CompleteRecurringOccurrence(ctx context.Context, arg CompleteRecurringOccurrenceParams) (int64, error) {
+	result, err := q.db.Exec(ctx, completeRecurringOccurrence, arg.CompletedOn, arg.ID, arg.CreatedBy)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const completedMilestonesInWindow = `-- name: CompletedMilestonesInWindow :many
@@ -1987,7 +2021,7 @@ const createTodoItem = `-- name: CreateTodoItem :one
 INSERT INTO todos (title, state, due, project_id, energy, priority, description, created_by)
 VALUES ($1, $2::todo_state, $3, $4, $5, $6, $7, $8)
 RETURNING id, title, state, due, project_id,
-          completed_at, energy, priority, recur_interval, recur_unit,
+          completed_at, energy, priority, recur_interval, recur_unit, recur_weekdays, last_completed_on,
           description, created_by, created_at, updated_at
 `
 
@@ -2026,6 +2060,8 @@ func (q *Queries) CreateTodoItem(ctx context.Context, arg CreateTodoItemParams) 
 		&i.Priority,
 		&i.RecurInterval,
 		&i.RecurUnit,
+		&i.RecurWeekdays,
+		&i.LastCompletedOn,
 		&i.Description,
 		&i.CreatedBy,
 		&i.CreatedAt,
@@ -3179,7 +3215,7 @@ func (q *Queries) IgnoreFeedEntry(ctx context.Context, id uuid.UUID) error {
 }
 
 const inboxTodoItems = `-- name: InboxTodoItems :many
-SELECT id, title, state, due, project_id, completed_at, energy, priority, recur_interval, recur_unit, description, created_by, created_at, updated_at FROM todos WHERE state = 'inbox' ORDER BY created_at DESC
+SELECT id, title, state, due, project_id, completed_at, energy, priority, recur_interval, recur_unit, recur_weekdays, last_completed_on, description, created_by, created_at, updated_at FROM todos WHERE state = 'inbox' ORDER BY created_at DESC
 `
 
 // List all inbox todo items, newest first.
@@ -3203,6 +3239,8 @@ func (q *Queries) InboxTodoItems(ctx context.Context) ([]Todo, error) {
 			&i.Priority,
 			&i.RecurInterval,
 			&i.RecurUnit,
+			&i.RecurWeekdays,
+			&i.LastCompletedOn,
 			&i.Description,
 			&i.CreatedBy,
 			&i.CreatedAt,
@@ -3813,58 +3851,9 @@ func (q *Queries) MilestonesByGoal(ctx context.Context, goalID uuid.UUID) ([]Mil
 	return items, nil
 }
 
-const overdueRecurringTodoItems = `-- name: OverdueRecurringTodoItems :many
-
-SELECT id, title, state, due, project_id,
-       completed_at, energy, priority, recur_interval, recur_unit,
-       description, created_by, created_at, updated_at
-FROM todos
-WHERE state != 'done'
-  AND recur_interval IS NOT NULL AND recur_interval > 0
-  AND due < $1
-ORDER BY due ASC
-`
-
-// === Recurring todo item queries ===
-// Get all overdue recurring todo items (due < today, not done).
-func (q *Queries) OverdueRecurringTodoItems(ctx context.Context, today *time.Time) ([]Todo, error) {
-	rows, err := q.db.Query(ctx, overdueRecurringTodoItems, today)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []Todo{}
-	for rows.Next() {
-		var i Todo
-		if err := rows.Scan(
-			&i.ID,
-			&i.Title,
-			&i.State,
-			&i.Due,
-			&i.ProjectID,
-			&i.CompletedAt,
-			&i.Energy,
-			&i.Priority,
-			&i.RecurInterval,
-			&i.RecurUnit,
-			&i.Description,
-			&i.CreatedBy,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const overdueTodoItems = `-- name: OverdueTodoItems :many
 SELECT t.id, t.title, t.state, t.due, t.project_id,
-       t.energy, t.priority, t.recur_interval, t.recur_unit,
+       t.energy, t.priority, t.recur_interval, t.recur_unit, t.recur_weekdays, t.last_completed_on,
        t.created_by, t.created_at, t.updated_at,
        COALESCE(p.title, '') AS project_title,
        COALESCE(p.slug, '') AS project_slug
@@ -3876,20 +3865,22 @@ ORDER BY t.due, t.priority NULLS LAST
 `
 
 type OverdueTodoItemsRow struct {
-	ID            uuid.UUID  `json:"id"`
-	Title         string     `json:"title"`
-	State         TodoState  `json:"state"`
-	Due           *time.Time `json:"due"`
-	ProjectID     *uuid.UUID `json:"project_id"`
-	Energy        *string    `json:"energy"`
-	Priority      *string    `json:"priority"`
-	RecurInterval *int32     `json:"recur_interval"`
-	RecurUnit     *string    `json:"recur_unit"`
-	CreatedBy     string     `json:"created_by"`
-	CreatedAt     time.Time  `json:"created_at"`
-	UpdatedAt     time.Time  `json:"updated_at"`
-	ProjectTitle  string     `json:"project_title"`
-	ProjectSlug   string     `json:"project_slug"`
+	ID              uuid.UUID  `json:"id"`
+	Title           string     `json:"title"`
+	State           TodoState  `json:"state"`
+	Due             *time.Time `json:"due"`
+	ProjectID       *uuid.UUID `json:"project_id"`
+	Energy          *string    `json:"energy"`
+	Priority        *string    `json:"priority"`
+	RecurInterval   *int32     `json:"recur_interval"`
+	RecurUnit       *string    `json:"recur_unit"`
+	RecurWeekdays   *int16     `json:"recur_weekdays"`
+	LastCompletedOn *time.Time `json:"last_completed_on"`
+	CreatedBy       string     `json:"created_by"`
+	CreatedAt       time.Time  `json:"created_at"`
+	UpdatedAt       time.Time  `json:"updated_at"`
+	ProjectTitle    string     `json:"project_title"`
+	ProjectSlug     string     `json:"project_slug"`
 }
 
 // Todo items past due that are still active (for brief(morning) + Today). Excludes the
@@ -3914,6 +3905,8 @@ func (q *Queries) OverdueTodoItems(ctx context.Context, today *time.Time) ([]Ove
 			&i.Priority,
 			&i.RecurInterval,
 			&i.RecurUnit,
+			&i.RecurWeekdays,
+			&i.LastCompletedOn,
 			&i.CreatedBy,
 			&i.CreatedAt,
 			&i.UpdatedAt,
@@ -3932,7 +3925,7 @@ func (q *Queries) OverdueTodoItems(ctx context.Context, today *time.Time) ([]Ove
 
 const pendingTodoItems = `-- name: PendingTodoItems :many
 SELECT id, title, state, due, project_id,
-       completed_at, energy, priority, recur_interval, recur_unit,
+       completed_at, energy, priority, recur_interval, recur_unit, recur_weekdays, last_completed_on,
        description, created_by, created_at, updated_at
 FROM todos WHERE state != 'done'
 ORDER BY due NULLS LAST, created_at
@@ -3959,6 +3952,8 @@ func (q *Queries) PendingTodoItems(ctx context.Context) ([]Todo, error) {
 			&i.Priority,
 			&i.RecurInterval,
 			&i.RecurUnit,
+			&i.RecurWeekdays,
+			&i.LastCompletedOn,
 			&i.Description,
 			&i.CreatedBy,
 			&i.CreatedAt,
@@ -3976,7 +3971,7 @@ func (q *Queries) PendingTodoItems(ctx context.Context) ([]Todo, error) {
 
 const pendingTodoItemsByTitle = `-- name: PendingTodoItemsByTitle :many
 SELECT id, title, state, due, project_id,
-       completed_at, energy, priority, recur_interval, recur_unit,
+       completed_at, energy, priority, recur_interval, recur_unit, recur_weekdays, last_completed_on,
        description, created_by, created_at, updated_at
 FROM todos
 WHERE state != 'done' AND title ILIKE '%' || $1 || '%'
@@ -4005,6 +4000,8 @@ func (q *Queries) PendingTodoItemsByTitle(ctx context.Context, searchTitle *stri
 			&i.Priority,
 			&i.RecurInterval,
 			&i.RecurUnit,
+			&i.RecurWeekdays,
+			&i.LastCompletedOn,
 			&i.Description,
 			&i.CreatedBy,
 			&i.CreatedAt,
@@ -4022,7 +4019,7 @@ func (q *Queries) PendingTodoItemsByTitle(ctx context.Context, searchTitle *stri
 
 const pendingTodoItemsWithProject = `-- name: PendingTodoItemsWithProject :many
 SELECT t.id, t.title, t.state, t.due, t.project_id,
-       t.energy, t.priority, t.recur_interval, t.recur_unit,
+       t.energy, t.priority, t.recur_interval, t.recur_unit, t.recur_weekdays, t.last_completed_on,
        t.created_at, t.updated_at,
        COALESCE(p.title, '') AS project_title,
        COALESCE(p.slug, '') AS project_slug
@@ -4043,19 +4040,21 @@ type PendingTodoItemsWithProjectParams struct {
 }
 
 type PendingTodoItemsWithProjectRow struct {
-	ID            uuid.UUID  `json:"id"`
-	Title         string     `json:"title"`
-	State         TodoState  `json:"state"`
-	Due           *time.Time `json:"due"`
-	ProjectID     *uuid.UUID `json:"project_id"`
-	Energy        *string    `json:"energy"`
-	Priority      *string    `json:"priority"`
-	RecurInterval *int32     `json:"recur_interval"`
-	RecurUnit     *string    `json:"recur_unit"`
-	CreatedAt     time.Time  `json:"created_at"`
-	UpdatedAt     time.Time  `json:"updated_at"`
-	ProjectTitle  string     `json:"project_title"`
-	ProjectSlug   string     `json:"project_slug"`
+	ID              uuid.UUID  `json:"id"`
+	Title           string     `json:"title"`
+	State           TodoState  `json:"state"`
+	Due             *time.Time `json:"due"`
+	ProjectID       *uuid.UUID `json:"project_id"`
+	Energy          *string    `json:"energy"`
+	Priority        *string    `json:"priority"`
+	RecurInterval   *int32     `json:"recur_interval"`
+	RecurUnit       *string    `json:"recur_unit"`
+	RecurWeekdays   *int16     `json:"recur_weekdays"`
+	LastCompletedOn *time.Time `json:"last_completed_on"`
+	CreatedAt       time.Time  `json:"created_at"`
+	UpdatedAt       time.Time  `json:"updated_at"`
+	ProjectTitle    string     `json:"project_title"`
+	ProjectSlug     string     `json:"project_slug"`
 }
 
 // List pending todo items with project info.
@@ -4078,6 +4077,8 @@ func (q *Queries) PendingTodoItemsWithProject(ctx context.Context, arg PendingTo
 			&i.Priority,
 			&i.RecurInterval,
 			&i.RecurUnit,
+			&i.RecurWeekdays,
+			&i.LastCompletedOn,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.ProjectTitle,
@@ -5168,18 +5169,31 @@ func (q *Queries) RecentFeedEntries(ctx context.Context, arg RecentFeedEntriesPa
 }
 
 const recurringTodoItemsDueToday = `-- name: RecurringTodoItemsDueToday :many
+
 SELECT id, title, state, due, project_id,
-       completed_at, energy, priority, recur_interval, recur_unit,
+       completed_at, energy, priority, recur_interval, recur_unit, recur_weekdays, last_completed_on,
        description, created_by, created_at, updated_at
 FROM todos
-WHERE state != 'done'
-  AND recur_interval IS NOT NULL AND recur_interval > 0
-  AND due <= $1
-ORDER BY due ASC
+WHERE state NOT IN ('done', 'someday', 'inbox', 'archived', 'dismissed')
+  AND (recur_weekdays IS NOT NULL OR recur_interval IS NOT NULL)
+  AND (last_completed_on IS NULL OR last_completed_on < $1::date)
+  AND (
+        (recur_weekdays IS NOT NULL
+         AND (recur_weekdays & (1 << (EXTRACT(ISODOW FROM $1::date)::int - 1))) <> 0)
+     OR (recur_interval IS NOT NULL
+         AND (last_completed_on IS NULL
+              OR $1::date >= last_completed_on + (recur_interval::text || ' ' || recur_unit)::interval))
+      )
+ORDER BY priority NULLS LAST, title
 `
 
-// Get recurring todo items due on or before today.
-func (q *Queries) RecurringTodoItemsDueToday(ctx context.Context, today *time.Time) ([]Todo, error) {
+// === Recurring todo item queries ===
+// Recurring todos whose occurrence is due on @today, computed on read (no stored
+// next-due, no scheduler). A todo qualifies when it is recurring, active, not
+// already completed today, and the rule matches: weekday-mode → today's ISODOW
+// bit is set in recur_weekdays; interval-mode → @today is at least
+// recur_interval × recur_unit past last_completed_on (or it was never completed).
+func (q *Queries) RecurringTodoItemsDueToday(ctx context.Context, today time.Time) ([]Todo, error) {
 	rows, err := q.db.Query(ctx, recurringTodoItemsDueToday, today)
 	if err != nil {
 		return nil, err
@@ -5199,6 +5213,8 @@ func (q *Queries) RecurringTodoItemsDueToday(ctx context.Context, today *time.Ti
 			&i.Priority,
 			&i.RecurInterval,
 			&i.RecurUnit,
+			&i.RecurWeekdays,
+			&i.LastCompletedOn,
 			&i.Description,
 			&i.CreatedBy,
 			&i.CreatedAt,
@@ -5543,7 +5559,7 @@ func (q *Queries) SearchContentsCount(ctx context.Context, arg SearchContentsCou
 
 const searchTodoItems = `-- name: SearchTodoItems :many
 SELECT t.id, t.title, t.state, t.due, t.project_id,
-       t.energy, t.priority, t.recur_interval, t.recur_unit,
+       t.energy, t.priority, t.recur_interval, t.recur_unit, t.recur_weekdays, t.last_completed_on,
        t.completed_at, t.description, t.created_at, t.updated_at,
        COALESCE(p.title, '') AS project_title,
        COALESCE(p.slug, '') AS project_slug
@@ -5580,21 +5596,23 @@ type SearchTodoItemsParams struct {
 }
 
 type SearchTodoItemsRow struct {
-	ID            uuid.UUID  `json:"id"`
-	Title         string     `json:"title"`
-	State         TodoState  `json:"state"`
-	Due           *time.Time `json:"due"`
-	ProjectID     *uuid.UUID `json:"project_id"`
-	Energy        *string    `json:"energy"`
-	Priority      *string    `json:"priority"`
-	RecurInterval *int32     `json:"recur_interval"`
-	RecurUnit     *string    `json:"recur_unit"`
-	CompletedAt   *time.Time `json:"completed_at"`
-	Description   string     `json:"description"`
-	CreatedAt     time.Time  `json:"created_at"`
-	UpdatedAt     time.Time  `json:"updated_at"`
-	ProjectTitle  string     `json:"project_title"`
-	ProjectSlug   string     `json:"project_slug"`
+	ID              uuid.UUID  `json:"id"`
+	Title           string     `json:"title"`
+	State           TodoState  `json:"state"`
+	Due             *time.Time `json:"due"`
+	ProjectID       *uuid.UUID `json:"project_id"`
+	Energy          *string    `json:"energy"`
+	Priority        *string    `json:"priority"`
+	RecurInterval   *int32     `json:"recur_interval"`
+	RecurUnit       *string    `json:"recur_unit"`
+	RecurWeekdays   *int16     `json:"recur_weekdays"`
+	LastCompletedOn *time.Time `json:"last_completed_on"`
+	CompletedAt     *time.Time `json:"completed_at"`
+	Description     string     `json:"description"`
+	CreatedAt       time.Time  `json:"created_at"`
+	UpdatedAt       time.Time  `json:"updated_at"`
+	ProjectTitle    string     `json:"project_title"`
+	ProjectSlug     string     `json:"project_slug"`
 }
 
 // Search todo items by title/description with optional filters.
@@ -5624,6 +5642,8 @@ func (q *Queries) SearchTodoItems(ctx context.Context, arg SearchTodoItemsParams
 			&i.Priority,
 			&i.RecurInterval,
 			&i.RecurUnit,
+			&i.RecurWeekdays,
+			&i.LastCompletedOn,
 			&i.CompletedAt,
 			&i.Description,
 			&i.CreatedAt,
@@ -5732,6 +5752,40 @@ type SetContentEmbeddingParams struct {
 func (q *Queries) SetContentEmbedding(ctx context.Context, arg SetContentEmbeddingParams) error {
 	_, err := q.db.Exec(ctx, setContentEmbedding, arg.ID, arg.Embedding)
 	return err
+}
+
+const setTodoRecurrence = `-- name: SetTodoRecurrence :execrows
+UPDATE todos
+SET recur_weekdays = $1,
+    recur_interval = $2,
+    recur_unit     = $3,
+    updated_at     = now()
+WHERE id = $4 AND created_by = $5
+`
+
+type SetTodoRecurrenceParams struct {
+	RecurWeekdays *int16    `json:"recur_weekdays"`
+	RecurInterval *int32    `json:"recur_interval"`
+	RecurUnit     *string   `json:"recur_unit"`
+	ID            uuid.UUID `json:"id"`
+	CreatedBy     string    `json:"created_by"`
+}
+
+// Set (or clear) a todo's recurrence, scoped to the caller's own todos. Pass
+// recur_weekdays for weekday-mode, recur_interval+recur_unit for interval-mode,
+// or all-null to clear. chk_todo_recurrence rejects an invalid combination.
+func (q *Queries) SetTodoRecurrence(ctx context.Context, arg SetTodoRecurrenceParams) (int64, error) {
+	result, err := q.db.Exec(ctx, setTodoRecurrence,
+		arg.RecurWeekdays,
+		arg.RecurInterval,
+		arg.RecurUnit,
+		arg.ID,
+		arg.CreatedBy,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const similarContents = `-- name: SimilarContents :many
@@ -6362,7 +6416,7 @@ func (q *Queries) TodoInboxCount(ctx context.Context) (int32, error) {
 
 const todoItemByID = `-- name: TodoItemByID :one
 SELECT id, title, state, due, project_id,
-       completed_at, energy, priority, recur_interval, recur_unit,
+       completed_at, energy, priority, recur_interval, recur_unit, recur_weekdays, last_completed_on,
        description, created_by, created_at, updated_at
 FROM todos WHERE id = $1
 `
@@ -6382,6 +6436,8 @@ func (q *Queries) TodoItemByID(ctx context.Context, id uuid.UUID) (Todo, error) 
 		&i.Priority,
 		&i.RecurInterval,
 		&i.RecurUnit,
+		&i.RecurWeekdays,
+		&i.LastCompletedOn,
 		&i.Description,
 		&i.CreatedBy,
 		&i.CreatedAt,
@@ -6392,7 +6448,7 @@ func (q *Queries) TodoItemByID(ctx context.Context, id uuid.UUID) (Todo, error) 
 
 const todoItems = `-- name: TodoItems :many
 SELECT id, title, state, due, project_id,
-       completed_at, energy, priority, recur_interval, recur_unit,
+       completed_at, energy, priority, recur_interval, recur_unit, recur_weekdays, last_completed_on,
        description, created_by, created_at, updated_at
 FROM todos ORDER BY state, due NULLS LAST, created_at DESC
 `
@@ -6418,6 +6474,8 @@ func (q *Queries) TodoItems(ctx context.Context) ([]Todo, error) {
 			&i.Priority,
 			&i.RecurInterval,
 			&i.RecurUnit,
+			&i.RecurWeekdays,
+			&i.LastCompletedOn,
 			&i.Description,
 			&i.CreatedBy,
 			&i.CreatedAt,
@@ -6537,7 +6595,7 @@ func (q *Queries) TodoItemsCreatedSince(ctx context.Context, since time.Time) ([
 
 const todoItemsDueInRange = `-- name: TodoItemsDueInRange :many
 SELECT t.id, t.title, t.state, t.due, t.project_id,
-       t.energy, t.priority, t.recur_interval, t.recur_unit,
+       t.energy, t.priority, t.recur_interval, t.recur_unit, t.recur_weekdays, t.last_completed_on,
        t.created_by, t.created_at, t.updated_at,
        COALESCE(p.title, '') AS project_title,
        COALESCE(p.slug, '') AS project_slug
@@ -6554,20 +6612,22 @@ type TodoItemsDueInRangeParams struct {
 }
 
 type TodoItemsDueInRangeRow struct {
-	ID            uuid.UUID  `json:"id"`
-	Title         string     `json:"title"`
-	State         TodoState  `json:"state"`
-	Due           *time.Time `json:"due"`
-	ProjectID     *uuid.UUID `json:"project_id"`
-	Energy        *string    `json:"energy"`
-	Priority      *string    `json:"priority"`
-	RecurInterval *int32     `json:"recur_interval"`
-	RecurUnit     *string    `json:"recur_unit"`
-	CreatedBy     string     `json:"created_by"`
-	CreatedAt     time.Time  `json:"created_at"`
-	UpdatedAt     time.Time  `json:"updated_at"`
-	ProjectTitle  string     `json:"project_title"`
-	ProjectSlug   string     `json:"project_slug"`
+	ID              uuid.UUID  `json:"id"`
+	Title           string     `json:"title"`
+	State           TodoState  `json:"state"`
+	Due             *time.Time `json:"due"`
+	ProjectID       *uuid.UUID `json:"project_id"`
+	Energy          *string    `json:"energy"`
+	Priority        *string    `json:"priority"`
+	RecurInterval   *int32     `json:"recur_interval"`
+	RecurUnit       *string    `json:"recur_unit"`
+	RecurWeekdays   *int16     `json:"recur_weekdays"`
+	LastCompletedOn *time.Time `json:"last_completed_on"`
+	CreatedBy       string     `json:"created_by"`
+	CreatedAt       time.Time  `json:"created_at"`
+	UpdatedAt       time.Time  `json:"updated_at"`
+	ProjectTitle    string     `json:"project_title"`
+	ProjectSlug     string     `json:"project_slug"`
 }
 
 // Todo items due within a date range (for brief(morning) + the Today aggregate, upcoming section).
@@ -6592,6 +6652,8 @@ func (q *Queries) TodoItemsDueInRange(ctx context.Context, arg TodoItemsDueInRan
 			&i.Priority,
 			&i.RecurInterval,
 			&i.RecurUnit,
+			&i.RecurWeekdays,
+			&i.LastCompletedOn,
 			&i.CreatedBy,
 			&i.CreatedAt,
 			&i.UpdatedAt,
@@ -6610,7 +6672,7 @@ func (q *Queries) TodoItemsDueInRange(ctx context.Context, arg TodoItemsDueInRan
 
 const todoItemsDueOn = `-- name: TodoItemsDueOn :many
 SELECT t.id, t.title, t.state, t.due, t.project_id,
-       t.energy, t.priority, t.recur_interval, t.recur_unit,
+       t.energy, t.priority, t.recur_interval, t.recur_unit, t.recur_weekdays, t.last_completed_on,
        t.created_by, t.created_at, t.updated_at,
        COALESCE(p.title, '') AS project_title,
        COALESCE(p.slug, '') AS project_slug
@@ -6622,20 +6684,22 @@ ORDER BY t.priority NULLS LAST, t.created_at
 `
 
 type TodoItemsDueOnRow struct {
-	ID            uuid.UUID  `json:"id"`
-	Title         string     `json:"title"`
-	State         TodoState  `json:"state"`
-	Due           *time.Time `json:"due"`
-	ProjectID     *uuid.UUID `json:"project_id"`
-	Energy        *string    `json:"energy"`
-	Priority      *string    `json:"priority"`
-	RecurInterval *int32     `json:"recur_interval"`
-	RecurUnit     *string    `json:"recur_unit"`
-	CreatedBy     string     `json:"created_by"`
-	CreatedAt     time.Time  `json:"created_at"`
-	UpdatedAt     time.Time  `json:"updated_at"`
-	ProjectTitle  string     `json:"project_title"`
-	ProjectSlug   string     `json:"project_slug"`
+	ID              uuid.UUID  `json:"id"`
+	Title           string     `json:"title"`
+	State           TodoState  `json:"state"`
+	Due             *time.Time `json:"due"`
+	ProjectID       *uuid.UUID `json:"project_id"`
+	Energy          *string    `json:"energy"`
+	Priority        *string    `json:"priority"`
+	RecurInterval   *int32     `json:"recur_interval"`
+	RecurUnit       *string    `json:"recur_unit"`
+	RecurWeekdays   *int16     `json:"recur_weekdays"`
+	LastCompletedOn *time.Time `json:"last_completed_on"`
+	CreatedBy       string     `json:"created_by"`
+	CreatedAt       time.Time  `json:"created_at"`
+	UpdatedAt       time.Time  `json:"updated_at"`
+	ProjectTitle    string     `json:"project_title"`
+	ProjectSlug     string     `json:"project_slug"`
 }
 
 // Todo items due on a specific date (for brief(morning) + the Today aggregate, due-today section).
@@ -6660,6 +6724,8 @@ func (q *Queries) TodoItemsDueOn(ctx context.Context, targetDate *time.Time) ([]
 			&i.Priority,
 			&i.RecurInterval,
 			&i.RecurUnit,
+			&i.RecurWeekdays,
+			&i.LastCompletedOn,
 			&i.CreatedBy,
 			&i.CreatedAt,
 			&i.UpdatedAt,
@@ -7423,7 +7489,7 @@ UPDATE todos SET
     updated_at = now()
 WHERE id = $7
 RETURNING id, title, state, due, project_id,
-          completed_at, energy, priority, recur_interval, recur_unit,
+          completed_at, energy, priority, recur_interval, recur_unit, recur_weekdays, last_completed_on,
           description, created_by, created_at, updated_at
 `
 
@@ -7461,30 +7527,14 @@ func (q *Queries) UpdateTodoItem(ctx context.Context, arg UpdateTodoItemParams) 
 		&i.Priority,
 		&i.RecurInterval,
 		&i.RecurUnit,
+		&i.RecurWeekdays,
+		&i.LastCompletedOn,
 		&i.Description,
 		&i.CreatedBy,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
 	return i, err
-}
-
-const updateTodoItemDue = `-- name: UpdateTodoItemDue :execrows
-UPDATE todos SET due = $1, updated_at = now() WHERE id = $2
-`
-
-type UpdateTodoItemDueParams struct {
-	Due *time.Time `json:"due"`
-	ID  uuid.UUID  `json:"id"`
-}
-
-// Update only the due date for a todo item.
-func (q *Queries) UpdateTodoItemDue(ctx context.Context, arg UpdateTodoItemDueParams) (int64, error) {
-	result, err := q.db.Exec(ctx, updateTodoItemDue, arg.Due, arg.ID)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected(), nil
 }
 
 const updateTodoItemState = `-- name: UpdateTodoItemState :one
@@ -7497,7 +7547,7 @@ UPDATE todos SET
     updated_at = now()
 WHERE id = $2
 RETURNING id, title, state, due, project_id,
-          completed_at, energy, priority, recur_interval, recur_unit,
+          completed_at, energy, priority, recur_interval, recur_unit, recur_weekdays, last_completed_on,
           description, created_by, created_at, updated_at
 `
 
@@ -7521,6 +7571,8 @@ func (q *Queries) UpdateTodoItemState(ctx context.Context, arg UpdateTodoItemSta
 		&i.Priority,
 		&i.RecurInterval,
 		&i.RecurUnit,
+		&i.RecurWeekdays,
+		&i.LastCompletedOn,
 		&i.Description,
 		&i.CreatedBy,
 		&i.CreatedAt,

@@ -296,20 +296,22 @@ func (s *Store) Delete(ctx context.Context, id uuid.UUID) error {
 
 func rowToItem(r *db.Todo) Item {
 	return Item{
-		ID:            r.ID,
-		Title:         r.Title,
-		State:         State(r.State),
-		Due:           r.Due,
-		ProjectID:     r.ProjectID,
-		CompletedAt:   r.CompletedAt,
-		Energy:        r.Energy,
-		Priority:      r.Priority,
-		RecurInterval: r.RecurInterval,
-		RecurUnit:     r.RecurUnit,
-		Description:   r.Description,
-		CreatedBy:     r.CreatedBy,
-		CreatedAt:     r.CreatedAt,
-		UpdatedAt:     r.UpdatedAt,
+		ID:              r.ID,
+		Title:           r.Title,
+		State:           State(r.State),
+		Due:             r.Due,
+		ProjectID:       r.ProjectID,
+		CompletedAt:     r.CompletedAt,
+		Energy:          r.Energy,
+		Priority:        r.Priority,
+		RecurInterval:   r.RecurInterval,
+		RecurUnit:       r.RecurUnit,
+		RecurWeekdays:   r.RecurWeekdays,
+		LastCompletedOn: r.LastCompletedOn,
+		Description:     r.Description,
+		CreatedBy:       r.CreatedBy,
+		CreatedAt:       r.CreatedAt,
+		UpdatedAt:       r.UpdatedAt,
 	}
 }
 
@@ -344,28 +346,31 @@ const (
 // Unqualified "Item" reads cleanly at the call site (todo.Item) and avoids
 // the pkg.PkgSomething stutter that naming.md forbids.
 type Item struct {
-	ID            uuid.UUID  `json:"id"`
-	Title         string     `json:"title"`
-	State         State      `json:"state"`
-	Due           *time.Time `json:"due,omitempty"`
-	ProjectID     *uuid.UUID `json:"project_id,omitempty"`
-	CompletedAt   *time.Time `json:"completed_at,omitempty"`
-	Energy        *string    `json:"energy,omitempty"`
-	Priority      *string    `json:"priority,omitempty"`
-	RecurInterval *int32     `json:"recur_interval,omitempty"`
-	RecurUnit     *string    `json:"recur_unit,omitempty"`
-	Description   string     `json:"description,omitempty"`
-	CreatedBy     string     `json:"created_by"`
-	CreatedAt     time.Time  `json:"created_at"`
-	UpdatedAt     time.Time  `json:"updated_at"`
+	ID              uuid.UUID  `json:"id"`
+	Title           string     `json:"title"`
+	State           State      `json:"state"`
+	Due             *time.Time `json:"due,omitempty"`
+	ProjectID       *uuid.UUID `json:"project_id,omitempty"`
+	CompletedAt     *time.Time `json:"completed_at,omitempty"`
+	Energy          *string    `json:"energy,omitempty"`
+	Priority        *string    `json:"priority,omitempty"`
+	RecurInterval   *int32     `json:"recur_interval,omitempty"`
+	RecurUnit       *string    `json:"recur_unit,omitempty"`
+	RecurWeekdays   *int16     `json:"recur_weekdays,omitempty"`
+	LastCompletedOn *time.Time `json:"last_completed_on,omitempty"`
+	Description     string     `json:"description,omitempty"`
+	CreatedBy       string     `json:"created_by"`
+	CreatedAt       time.Time  `json:"created_at"`
+	UpdatedAt       time.Time  `json:"updated_at"`
 }
 
-// IsRecurring reports whether the item has a recurrence schedule. The
-// recurring-todo read queries (OverdueRecurringItems / RecurringItemsDueToday)
-// filter on recur_interval in SQL; this in-memory predicate is the Go-side
-// equivalent for callers holding an Item.
+// IsRecurring reports whether the item has a recurrence schedule — either
+// weekday-mode (recur_weekdays) or interval-mode (recur_interval). The
+// RecurringItemsDueToday read query computes due-today from the same two modes
+// in SQL; this in-memory predicate is the Go-side equivalent for callers
+// holding an Item.
 func (t *Item) IsRecurring() bool {
-	return t.RecurInterval != nil && *t.RecurInterval > 0
+	return t.RecurWeekdays != nil || (t.RecurInterval != nil && *t.RecurInterval > 0)
 }
 
 // CreatorItem is a slim todo projection for the list_tasks readback loop —

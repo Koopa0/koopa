@@ -573,7 +573,7 @@ type ProcessRun struct {
 	ID uuid.UUID `json:"id"`
 	// Run category. Closed set: crawl (internal fetch/collector runs). A new kind requires a CHECK update + a Go writer.
 	Kind string `json:"kind"`
-	// Run identifier within its kind. crawl: collector name (e.g. "rss-feed-collector"). agent_schedule: "<agent_name>:<schedule_name>" composite from the Go dispatcher.
+	// Run identifier within its kind. crawl: collector name (e.g. "rss-feed-collector").
 	Name string `json:"name"`
 	// Lifecycle: pending → running → completed | failed | skipped. chk_process_runs_error_on_failure ties error to failed status. chk_process_runs_ended_at_consistency ties ended_at to terminal states.
 	Status string `json:"status"`
@@ -593,7 +593,7 @@ type ProcessRun struct {
 	StartedAt *time.Time `json:"started_at"`
 	// When execution completed/failed/skipped. NULL while pending or running. NULL + old started_at = abandoned/crashed run.
 	EndedAt *time.Time `json:"ended_at"`
-	// Kind-specific fields not warranting promotion. crawl: { source_url, item_count, http_status }. agent_schedule: { produced_task_ids, missed_run_policy }. Promote to a column when a field needs WHERE/JOIN/GROUP BY ≥ 3 times in queries.
+	// Kind-specific fields not warranting promotion. crawl: { source_url, item_count, http_status }. Promote to a column when a field needs WHERE/JOIN/GROUP BY ≥ 3 times in queries.
 	Metadata  json.RawMessage `json:"metadata"`
 	CreatedAt time.Time       `json:"created_at"`
 }
@@ -655,10 +655,14 @@ type Todo struct {
 	Energy *string `json:"energy"`
 	// Todo priority for GTD engage-by-priority. NULL = not set.
 	Priority *string `json:"priority"`
-	// Recurrence frequency count. NULL = non-recurring. Paired with recur_unit by chk_todo_recurrence_pair.
+	// Interval-mode recurrence count: the todo recurs every recur_interval × recur_unit measured from last_completed_on (self-pacing). NULL = not interval-recurring. Mutually exclusive with recur_weekdays (chk_todo_recurrence).
 	RecurInterval *int32 `json:"recur_interval"`
-	// Recurrence unit. NULL = non-recurring todo.
+	// Interval-mode recurrence unit (days/weeks/months/years). Set if and only if recur_interval is set.
 	RecurUnit *string `json:"recur_unit"`
+	// Weekday-mode recurrence: 7-bit mask over ISODOW-1 — Mon=1, Tue=2, Wed=4, Thu=8, Fri=16, Sat=32, Sun=64. Daily=127, Mon-Sat=63. NULL = not weekday-recurring. Mutually exclusive with recur_interval (chk_todo_recurrence).
+	RecurWeekdays *int16 `json:"recur_weekdays"`
+	// Date the most recent recurring occurrence was completed (resolve_task on a recurring todo sets it instead of a terminal state). NULL = never completed / non-recurring. Compute-on-read due-today = rule matches today AND (last_completed_on IS NULL OR last_completed_on < today).
+	LastCompletedOn *time.Time `json:"last_completed_on"`
 	// Free-text detail. Empty string = no detail.
 	Description string `json:"description"`
 	// Which agent created or imported this todo into the system. FK to agents. Default human. Examples: human (manual or synced from external tool), planner (morning briefing).
@@ -667,21 +671,6 @@ type Todo struct {
 	CreatedAt time.Time `json:"created_at"`
 	// Set explicitly by application in UPDATE queries. No trigger — application-managed.
 	UpdatedAt time.Time `json:"updated_at"`
-}
-
-// Per-occurrence skip history for recurring todo items. RETENTION: 1 year. Scope discipline vs daily_plan_items.status='dropped': todo_skips records that a RECURRING todo's scheduled occurrence did not happen; daily_plan_items (status=dropped) records that a planner explicitly removed the todo from a specific day's plan. Both can apply to the same (todo_id, date) in theory — by convention, the cron-driven skip detection runs AFTER daily_plan reconciliation each night, so a todo the user dropped from today's plan does NOT also get a todo_skips row. Writers MUST preserve this order: daily_plan_items(dropped) first, todo_skips after. Analytics that count "missed occurrences" should SELECT only todo_skips; plan adherence metrics use daily_plan_items.
-type TodoSkip struct {
-	ID uuid.UUID `json:"id"`
-	// Which recurring todo was skipped. CASCADE — skips die with their todo.
-	TodoID uuid.UUID `json:"todo_id"`
-	// Due date when skip was detected by cron.
-	OriginalDue time.Time `json:"original_due"`
-	// The occurrence date that was missed.
-	SkippedDate time.Time `json:"skipped_date"`
-	// auto-expired (cron detected overdue) or manual (user skipped).
-	Reason string `json:"reason"`
-	// Row insertion timestamp.
-	CreatedAt time.Time `json:"created_at"`
 }
 
 // High-level knowledge domains (Go, AI, System Design). 10-20, manually managed. Used for content categorization and feed association.
