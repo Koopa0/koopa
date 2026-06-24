@@ -24,7 +24,7 @@ import { ThemeToggleComponent } from '../theme-toggle/theme-toggle';
 /**
  * The public masthead — the Tone B letterhead. Serif wordmark over a mono
  * "written & maintained by one person" subline (the serif=human /
- * mono=machine signature), a Writing nav link, a ⌘K search button wired
+ * mono=machine signature), an Article nav link, a ⌘K search button wired
  * to the command palette, and the theme toggle. Admin / sign-out controls
  * surface only for the authenticated owner.
  */
@@ -47,8 +47,8 @@ export class EditorialMastheadComponent {
 
   private readonly currentPath = computed(() => this.currentUrl().split('?')[0]);
 
-  /** Writing covers the reading index, topics, and the article surface. */
-  protected readonly writingActive = computed(() => {
+  /** The Article nav link spans the reading index, topics, and per-piece pages. */
+  protected readonly articleActive = computed(() => {
     const path = this.currentPath();
     return (
       path === '/' ||

@@ -34,17 +34,17 @@ describe('EditorialMastheadComponent', () => {
     expect(el.textContent).toContain('written & maintained by one person');
   });
 
-  it('should mark Writing active on the home route', async () => {
+  it('should mark Article active on the home route', async () => {
     await TestBed.inject(Router).navigateByUrl('/');
     await fixture.whenStable();
     fixture.detectChanges();
 
     const el = fixture.nativeElement as HTMLElement;
     const links = Array.from(el.querySelectorAll('.ed-nav a'));
-    // Writing is the sole nav link — the public Projects portfolio was removed.
+    // Article is the sole nav link — the public Projects portfolio was removed.
     expect(links.length).toBe(1);
-    const writing = links.find((a) => a.textContent?.includes('Writing'));
-    expect(writing?.getAttribute('data-active')).toBe('true');
+    const article = links.find((a) => a.textContent?.includes('Article'));
+    expect(article?.getAttribute('data-active')).toBe('true');
   });
 
   it('should open the command palette when search is clicked', async () => {

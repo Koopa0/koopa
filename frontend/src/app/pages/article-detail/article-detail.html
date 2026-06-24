@@ -40,7 +40,7 @@
     <div class="ed-main ed-read">
       <!-- Breadcrumbs -->
       <nav class="ed-crumbs" aria-label="Breadcrumb">
-        <a routerLink="/articles">Writing</a>
+        <a routerLink="/articles">Article</a>
         @if (primaryTopic(); as topic) {
           <span class="sep" aria-hidden="true">/</span>
           <a [routerLink]="['/topics', topic.slug]">{{ topic.name }}</a>

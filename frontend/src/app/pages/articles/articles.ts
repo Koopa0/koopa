@@ -143,12 +143,12 @@ export class ArticlesComponent implements OnInit {
       'Every written piece — articles, essays, build logs, TILs, and digests.';
 
     this.seoService.updateMeta({
-      title: 'Writing',
+      title: 'Article',
       description,
       ogUrl: `${environment.siteUrl}/articles`,
       canonicalUrl: `${environment.siteUrl}/articles`,
       jsonLd: buildCollectionPageSchema({
-        name: 'Writing',
+        name: 'Article',
         description,
         url: `${environment.siteUrl}/articles`,
       }),
