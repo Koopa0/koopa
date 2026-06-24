@@ -34,8 +34,8 @@ const (
 	Additive Writability = "additive"
 	// Idempotent tools may write, but repeating the same call is a no-op.
 	Idempotent Writability = "idempotent"
-	// Destructive tools transition state in ways that matter (e.g. mutating
-	// a learning plan's entries).
+	// Destructive tools transition state in ways that matter (e.g. resolving
+	// a todo to a terminal state, or revising review-queue content).
 	Destructive Writability = "destructive"
 )
 

@@ -128,7 +128,7 @@ func (h *Handler) BySlug(w http.ResponseWriter, r *http.Request) {
 	))
 }
 
-// Create handles POST /api/admin/topics.
+// Create handles POST /api/admin/knowledge/topics.
 func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	p, err := api.Decode[CreateParams](w, r)
 	if err != nil {
@@ -153,7 +153,7 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	api.Encode(w, http.StatusCreated, api.Response{Data: t})
 }
 
-// Update handles PUT /api/admin/topics/{id}.
+// Update handles PUT /api/admin/knowledge/topics/{id}.
 func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 	id, err := uuid.Parse(r.PathValue("id"))
 	if err != nil {
@@ -184,7 +184,7 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 	api.Encode(w, http.StatusOK, api.Response{Data: t})
 }
 
-// Delete handles DELETE /api/admin/topics/{id}.
+// Delete handles DELETE /api/admin/knowledge/topics/{id}.
 func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
 	id, err := uuid.Parse(r.PathValue("id"))
 	if err != nil {

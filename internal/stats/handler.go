@@ -22,7 +22,7 @@ func NewHandler(store *Store, logger *slog.Logger) *Handler {
 	return &Handler{store: store, logger: logger}
 }
 
-// Overview handles GET /api/admin/stats.
+// Overview handles GET /api/admin/system/stats.
 func (h *Handler) Overview(w http.ResponseWriter, r *http.Request) {
 	overview, err := h.store.Overview(r.Context())
 	if err != nil {
@@ -52,7 +52,7 @@ func parseDays(raw string) int {
 	return d
 }
 
-// Drift handles GET /api/admin/stats/drift.
+// Drift handles GET /api/admin/system/stats/drift.
 // Query params: days (default 30, max 90).
 func (h *Handler) Drift(w http.ResponseWriter, r *http.Request) {
 	days := parseDays(r.URL.Query().Get("days"))
@@ -98,7 +98,7 @@ type ProcessRunsSummary struct {
 	FailedLastHour ProcessRunsCell `json:"failed_last_hour"`
 }
 
-// ProcessRunsResponse is the wire shape for GET /coordination/process-runs.
+// ProcessRunsResponse is the wire shape for GET /api/admin/system/process-runs.
 type ProcessRunsResponse struct {
 	Summary ProcessRunsSummary `json:"summary"`
 	Stages  []any              `json:"stages"`

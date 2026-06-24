@@ -72,7 +72,7 @@ type listResponse struct {
 // List handles GET /api/admin/commitment/todos.
 // Query params: state (single value or comma-separated list, every
 // element validated against the state enum), project (uuid), priority,
-// energy, q, limit, due_before (YYYY-MM-DD), sort. due_before is applied
+// energy, q, per_page, due_before (YYYY-MM-DD), sort. due_before is applied
 // in Go after the SQL query returns. Unknown sort values silently fall
 // back to the default ordering (due → priority → created_at).
 func (h *Handler) List(w http.ResponseWriter, r *http.Request) {

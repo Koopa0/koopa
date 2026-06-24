@@ -147,7 +147,7 @@ func postContent(t *testing.T, title string) *http.Request {
 	if err != nil {
 		t.Fatalf("marshal content body: %v", err)
 	}
-	req := httptest.NewRequest(http.MethodPost, "/api/admin/contents", bytes.NewReader(buf))
+	req := httptest.NewRequest(http.MethodPost, "/api/admin/knowledge/content", bytes.NewReader(buf))
 	req.Header.Set("Content-Type", "application/json")
 	return req
 }
