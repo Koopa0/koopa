@@ -1853,3 +1853,102 @@ func TestIntegration_ProposeContent_AsHermes(t *testing.T) {
 		t.Errorf("persisted proposal_rationale = %v, want the supplied rationale", proposalRationale)
 	}
 }
+
+// TestIntegration_SetTodoRecurrence covers the agent recurrence write path:
+// weekday-mode sets the mask, the write is caller-scoped, and conflicting modes
+// are rejected before the DB CHECK.
+func TestIntegration_SetTodoRecurrence(t *testing.T) {
+	s := setupServer(t)
+	id := seedTodoForCreator(t, "planner", "Daily Japanese", "todo", time.Now())
+
+	_, out, err := callHandlerAs(t, "planner", s.setTodoRecurrence, SetTodoRecurrenceInput{
+		TaskID:   id.String(),
+		Weekdays: []string{"mon", "tue", "wed", "thu", "fri", "sat"},
+	})
+	if err != nil {
+		t.Fatalf("setTodoRecurrence(weekdays): %v", err)
+	}
+	if !out.OK || out.Recurrence != "weekdays: mon,tue,wed,thu,fri,sat" {
+		t.Errorf("output = %+v, want OK with Mon-Sat weekday summary", out)
+	}
+	var mask *int16
+	if err := testPool.QueryRow(t.Context(), "SELECT recur_weekdays FROM todos WHERE id = $1", id).Scan(&mask); err != nil {
+		t.Fatalf("reading recur_weekdays: %v", err)
+	}
+	if mask == nil || *mask != 63 { // Mon..Sat = bits 0..5 = 63
+		t.Errorf("recur_weekdays = %v, want 63 (Mon-Sat)", mask)
+	}
+
+	// caller-scope: codex cannot reschedule planner's todo.
+	if _, _, err := callHandlerAs(t, "codex", s.setTodoRecurrence, SetTodoRecurrenceInput{
+		TaskID: id.String(), Clear: true,
+	}); err == nil {
+		t.Error("setTodoRecurrence(codex on planner's todo) err = nil, want not-found (caller-scoping)")
+	}
+
+	// validation: weekday + interval together is rejected before any write.
+	three, unit := 3, "days"
+	if _, _, err := callHandlerAs(t, "planner", s.setTodoRecurrence, SetTodoRecurrenceInput{
+		TaskID: id.String(), Weekdays: []string{"mon"}, Interval: &three, Unit: &unit,
+	}); err == nil {
+		t.Error("setTodoRecurrence(weekdays+interval) err = nil, want mutual-exclusion rejection")
+	}
+}
+
+// TestIntegration_ResolveTask_RecurringCompletesOccurrence pins the recurring
+// branch of resolve_task: state=done on a recurring todo stamps last_completed_on
+// and keeps it recurring (not terminal); archived still ends it.
+func TestIntegration_ResolveTask_RecurringCompletesOccurrence(t *testing.T) {
+	s := setupServer(t)
+
+	seedRecurring := func(title string) uuid.UUID {
+		t.Helper()
+		var id uuid.UUID
+		if err := testPool.QueryRow(t.Context(),
+			`INSERT INTO todos (title, state, recur_weekdays, created_by)
+			 VALUES ($1, 'todo', 127, 'planner') RETURNING id`, title,
+		).Scan(&id); err != nil {
+			t.Fatalf("seeding recurring todo %q: %v", title, err)
+		}
+		return id
+	}
+
+	// done on a recurring todo → occurrence completed, todo stays recurring.
+	rec := seedRecurring("Daily standup")
+	_, out, err := callHandlerAs(t, "planner", s.resolveTask, ResolveTaskInput{ID: rec.String(), State: "done"})
+	if err != nil {
+		t.Fatalf("resolveTask(done) on recurring: %v", err)
+	}
+	if !out.OK || out.State != "done" {
+		t.Errorf("output = %+v, want OK done (occurrence completed)", out)
+	}
+	var state string
+	var lastCompleted, completedAt *time.Time
+	if err := testPool.QueryRow(t.Context(),
+		"SELECT state, last_completed_on, completed_at FROM todos WHERE id = $1", rec,
+	).Scan(&state, &lastCompleted, &completedAt); err != nil {
+		t.Fatalf("reading back recurring todo: %v", err)
+	}
+	if state != "todo" {
+		t.Errorf("recurring todo state = %q after done, want todo (keeps recurring)", state)
+	}
+	if lastCompleted == nil {
+		t.Error("last_completed_on is nil after done, want today's date")
+	}
+	if completedAt != nil {
+		t.Error("completed_at is set on a recurring todo, want nil (it did not go terminal)")
+	}
+
+	// archived on a recurring todo → terminal close (recurrence stops).
+	rec2 := seedRecurring("Old habit")
+	if _, _, err := callHandlerAs(t, "planner", s.resolveTask, ResolveTaskInput{ID: rec2.String(), State: "archived"}); err != nil {
+		t.Fatalf("resolveTask(archived) on recurring: %v", err)
+	}
+	var state2 string
+	if err := testPool.QueryRow(t.Context(), "SELECT state FROM todos WHERE id = $1", rec2).Scan(&state2); err != nil {
+		t.Fatalf("reading back archived todo: %v", err)
+	}
+	if state2 != "archived" {
+		t.Errorf("recurring todo state = %q after archived, want archived (terminal)", state2)
+	}
+}

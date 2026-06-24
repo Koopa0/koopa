@@ -13,14 +13,14 @@ is hand-maintained.
 > Run `go generate ./internal/mcp/ops` after any change to the tool surface;
 > the drift test `TestToolInventoryDocInSync` fails CI if this is stale.
 
-**14 tools** across 3 domains.
+**15 tools** across 3 domains.
 
 | Domain | Count |
 |---|---|
 | `query` | 4 |
-| `daily` | 7 |
+| `daily` | 8 |
 | `content` | 3 |
-| **Total** | **14** |
+| **Total** | **15** |
 
 | Tool | Domain | Writability | Purpose |
 |---|---|---|---|
@@ -35,6 +35,7 @@ is hand-maintained.
 | `propose_goal` | `daily` | additive | Propose a goal (with optional ordered milestones) as an INERT draft in status=proposed |
 | `propose_project` | `daily` | additive | Propose a NEW project (a short-term effort with a clear outcome) as an INERT draft in status=proposed |
 | `resolve_task` | `daily` | destructive | Move a todo YOU created to a terminal state: done (completed), archived (filed away), or dismissed (won't do) |
+| `set_todo_recurrence` | `daily` | destructive | Set or clear the recurrence of a todo YOU created |
 | `list_content` | `content` | read_only | Read-only readback of the content YOU proposed (created_by = your resolved caller identity) so you can learn its disposition |
 | `propose_content` | `content` | additive | Propose a FINISHED content piece (article, essay, build-log, til, or digest) into the editorial review queue |
 | `revise_content` | `content` | destructive | Revise content YOU created that is in review or changes_requested, returning it to the review queue and clearing the owner's review_note |

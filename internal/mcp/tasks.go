@@ -110,6 +110,16 @@ func (s *Server) resolveTask(ctx context.Context, _ *mcp.CallToolRequest, in Res
 	}
 
 	caller := s.callerIdentity(ctx)
+
+	// A recurring todo's "done" completes today's occurrence and keeps the todo
+	// recurring — not a terminal close. archived/dismissed fall through and DO
+	// end the recurrence.
+	if state == todo.StateDone {
+		if handled, out, err := s.resolveRecurringDone(ctx, id, caller); handled || err != nil {
+			return nil, out, err
+		}
+	}
+
 	res, err := s.todos.ResolveByCreator(ctx, id, caller, state)
 	if err != nil {
 		if errors.Is(err, todo.ErrNotFound) {
@@ -119,4 +129,23 @@ func (s *Server) resolveTask(ctx context.Context, _ *mcp.CallToolRequest, in Res
 	}
 
 	return nil, ResolveTaskOutput{ID: res.ID.String(), State: string(res.State), OK: true}, nil
+}
+
+// resolveRecurringDone completes today's occurrence of a recurring, caller-owned
+// todo. handled=false means the todo is not recurring (or does not exist), and
+// the caller should fall through to the normal terminal resolve. ItemByID is the
+// recurrence probe; CompleteOccurrence enforces the caller-scope, so a recurring
+// todo owned by another agent reports not-found.
+func (s *Server) resolveRecurringDone(ctx context.Context, id uuid.UUID, caller string) (bool, ResolveTaskOutput, error) {
+	item, err := s.todos.ItemByID(ctx, id)
+	if err != nil || !item.IsRecurring() {
+		return false, ResolveTaskOutput{}, nil
+	}
+	if err := s.todos.CompleteOccurrence(ctx, id, caller, s.today()); err != nil {
+		if errors.Is(err, todo.ErrNotFound) {
+			return true, ResolveTaskOutput{}, fmt.Errorf("no todo %s created by %q: it does not exist or you did not create it", id, caller)
+		}
+		return true, ResolveTaskOutput{}, fmt.Errorf("completing recurring occurrence %s: %w", id, err)
+	}
+	return true, ResolveTaskOutput{ID: id.String(), State: string(todo.StateDone), OK: true}, nil
 }

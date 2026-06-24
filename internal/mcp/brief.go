@@ -94,6 +94,7 @@ type BriefOutput struct {
 	// Morning fields.
 	OverdueTodos    []todo.PendingDetail     `json:"-"`
 	TodayTodos      []todo.PendingDetail     `json:"-"`
+	RecurringTodos  []todo.Item              `json:"-"`
 	CommittedTodos  []daily.Item             `json:"-"`
 	UpcomingTodos   []todo.PendingDetail     `json:"-"`
 	ActiveGoals     []goal.ActiveGoalSummary `json:"-"`
@@ -115,6 +116,7 @@ type briefMorningWire struct {
 	Date            string                   `json:"date"`
 	OverdueTodos    []todo.PendingDetail     `json:"overdue_todos"`
 	TodayTodos      []todo.PendingDetail     `json:"today_todos"`
+	RecurringTodos  []todo.Item              `json:"recurring_todos"`
 	CommittedTodos  []daily.Item             `json:"committed_todos"`
 	UpcomingTodos   []todo.PendingDetail     `json:"upcoming_todos"`
 	ActiveGoals     []goal.ActiveGoalSummary `json:"active_goals"`
@@ -147,6 +149,7 @@ func (o BriefOutput) MarshalJSON() ([]byte, error) {
 			Date:            o.Date,
 			OverdueTodos:    o.OverdueTodos,
 			TodayTodos:      o.TodayTodos,
+			RecurringTodos:  o.RecurringTodos,
 			CommittedTodos:  o.CommittedTodos,
 			UpcomingTodos:   o.UpcomingTodos,
 			ActiveGoals:     o.ActiveGoals,
@@ -230,6 +233,7 @@ func (s *Server) brief(ctx context.Context, _ *mcp.CallToolRequest, input BriefI
 func (s *Server) fillBriefMorning(ctx context.Context, date time.Time, requested FlexStringSlice, out *BriefOutput) {
 	out.OverdueTodos = []todo.PendingDetail{}
 	out.TodayTodos = []todo.PendingDetail{}
+	out.RecurringTodos = []todo.Item{}
 	out.CommittedTodos = []daily.Item{}
 	out.UpcomingTodos = []todo.PendingDetail{}
 	out.ActiveGoals = []goal.ActiveGoalSummary{}
@@ -282,6 +286,12 @@ func (s *Server) fillMorningTasks(ctx context.Context, date time.Time, out *Brie
 		out.TodayTodos = rows
 	} else {
 		s.logger.Warn("brief: today todo items", "error", err)
+	}
+
+	if rows, err := s.todos.RecurringItemsDueToday(ctx, date); err == nil {
+		out.RecurringTodos = rows
+	} else {
+		s.logger.Warn("brief: recurring todo items due today", "error", err)
 	}
 
 	if items, err := s.dayplan.ItemsByDate(ctx, date); err == nil {

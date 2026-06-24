@@ -158,10 +158,24 @@ func ResolveTask() Meta {
 		Writability: Destructive,
 		Stability:   StabilityStable,
 		Since:       "1.5.0",
-		Description: "Move a todo YOU created to a terminal state: done (completed), archived (filed away), or dismissed (won't do). Caller-scoped — you can only resolve todos whose created_by = your resolved identity; resolving anyone else's todo returns not-found and changes nothing. Closes the write half of the capture_inbox/list_tasks readback loop: after you read a todo's disposition, resolve_task lets you self-clear the ones you've finished processing instead of leaving them for the owner to archive.",
+		Description: "Move a todo YOU created to a terminal state: done (completed), archived (filed away), or dismissed (won't do). Caller-scoped — you can only resolve todos whose created_by = your resolved identity; resolving anyone else's todo returns not-found and changes nothing. Closes the write half of the capture_inbox/list_tasks readback loop: after you read a todo's disposition, resolve_task lets you self-clear the ones you've finished processing instead of leaving them for the owner to archive. SPECIAL CASE — if the todo is recurring (see set_todo_recurrence), state=done completes TODAY's occurrence (stamps the last-completed date and keeps the todo recurring) rather than closing it; archived/dismissed still stop the recurrence for good.",
 		FieldEnums: map[string][]string{
 			"state": {"done", "archived", "dismissed"},
 		},
+	}
+}
+
+// SetTodoRecurrence returns metadata for the agent recurrence-scheduling tool —
+// it turns a caller-created todo into a weekday- or interval-recurring one (or
+// clears it). Recurrence drives the compute-on-read due-today surface.
+func SetTodoRecurrence() Meta {
+	return Meta{
+		Name:        "set_todo_recurrence",
+		Domain:      DomainDaily,
+		Writability: Destructive,
+		Stability:   StabilityStable,
+		Since:       since,
+		Description: "Set or clear the recurrence of a todo YOU created. Weekday-mode: pass weekdays (any of mon,tue,wed,thu,fri,sat,sun) — e.g. Mon-Sat for a six-day-a-week habit, or all seven for daily. Interval-mode: pass interval + unit (days/weeks/months/years) to recur every N units measured from the last completion (self-pacing). Pass clear=true to make the todo a one-shot again. Exactly one mode per call; weekday and interval are mutually exclusive. Caller-scoped — you can only schedule todos whose created_by = your resolved identity. A recurring todo surfaces in the morning brief and the recurring view on every day its rule matches; resolve_task state=done then completes that day's occurrence and the todo keeps recurring.",
 	}
 }
 
@@ -234,6 +248,7 @@ func All() []Meta {
 		ProposeContent(),
 		ListTasks(),
 		ResolveTask(),
+		SetTodoRecurrence(),
 		ProjectProgress(),
 		ListContent(),
 		ReviseContent(),

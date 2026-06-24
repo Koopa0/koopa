@@ -161,6 +161,7 @@ func NewServer(pool *pgxpool.Pool, logger *slog.Logger, opts ...ServerOption) *S
 	// --- Proposal readback (the read + self-close halves of the capture loop) ---
 	addTool(s, toolFrom(ops.ListTasks), s.listTasks)
 	addTool(s, toolFrom(ops.ResolveTask), s.resolveTask)
+	addTool(s, toolFrom(ops.SetTodoRecurrence), s.setTodoRecurrence)
 
 	// --- PARA momentum (read-only owner project/goal/area progress) ---
 	addTool(s, toolFrom(ops.ProjectProgress), s.projectProgress)
