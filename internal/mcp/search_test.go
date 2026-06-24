@@ -199,15 +199,16 @@ func TestSearchKnowledge_DateBoundaryFilter(t *testing.T) {
 		{name: "last second of D-1 dropped", created: at("2026-05-21T23:59:59Z"), wantIn: false},
 		{name: "start of D+1 dropped", created: at("2026-05-23T00:00:00Z"), wantIn: false},
 	}
-	s := newTestServer()
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			contents := []content.Content{{ID: uuid.New(), CreatedAt: tt.created}}
-			got := s.filterContentResults(t.Context(), contents, nil, after, before)
-			gotIn := len(got) == 1
-			if gotIn != tt.wantIn {
-				t.Errorf("before=after=%s, created=%s: kept=%v, want %v",
-					day, tt.created.Format(time.RFC3339), gotIn, tt.wantIn)
+			// Filtering now happens in SQL (created_at >= after AND
+			// created_at < before). Assert the parsed bounds, applied with
+			// that exact comparison, give whole-day-D-inclusive semantics.
+			kept := !tt.created.Before(*after) && tt.created.Before(*before)
+			if kept != tt.wantIn {
+				t.Errorf("after=%s before=%s created=%s: kept=%v, want %v",
+					after.Format(time.RFC3339), before.Format(time.RFC3339),
+					tt.created.Format(time.RFC3339), kept, tt.wantIn)
 			}
 		})
 	}

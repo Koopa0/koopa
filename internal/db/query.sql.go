@@ -3295,14 +3295,20 @@ SELECT id, slug, title, body, excerpt, type, status,
 FROM contents
 WHERE status != 'archived'
   AND search_vector @@ websearch_to_tsquery('simple', $1)
+  AND ($4::content_type IS NULL OR type = $4)
+  AND ($5::timestamptz IS NULL OR created_at >= $5)
+  AND ($6::timestamptz IS NULL OR created_at < $6)
 ORDER BY ts_rank(search_vector, websearch_to_tsquery('simple', $1)) DESC
 LIMIT $2 OFFSET $3
 `
 
 type InternalSearchContentsParams struct {
-	WebsearchToTsquery string `json:"websearch_to_tsquery"`
-	Limit              int32  `json:"limit"`
-	Offset             int32  `json:"offset"`
+	WebsearchToTsquery string          `json:"websearch_to_tsquery"`
+	Limit              int32           `json:"limit"`
+	Offset             int32           `json:"offset"`
+	ContentType        NullContentType `json:"content_type"`
+	CreatedAfter       *time.Time      `json:"created_after"`
+	CreatedBefore      *time.Time      `json:"created_before"`
 }
 
 type InternalSearchContentsRow struct {
@@ -3325,9 +3331,19 @@ type InternalSearchContentsRow struct {
 	UpdatedAt      time.Time       `json:"updated_at"`
 }
 
-// Internal search without visibility filter (for MCP tools). Excludes archived.
+// Internal FTS search without visibility filter (for MCP tools). Excludes
+// archived. Optional type/date filters are pushed into the WHERE so each
+// retrieval branch returns only matching rows BEFORE the RRF limit — a
+// content_type filter must not lose recall to a top-N full of other types.
 func (q *Queries) InternalSearchContents(ctx context.Context, arg InternalSearchContentsParams) ([]InternalSearchContentsRow, error) {
-	rows, err := q.db.Query(ctx, internalSearchContents, arg.WebsearchToTsquery, arg.Limit, arg.Offset)
+	rows, err := q.db.Query(ctx, internalSearchContents,
+		arg.WebsearchToTsquery,
+		arg.Limit,
+		arg.Offset,
+		arg.ContentType,
+		arg.CreatedAfter,
+		arg.CreatedBefore,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -3372,12 +3388,18 @@ SELECT id, slug, title, body, excerpt, type, status,
 FROM contents
 WHERE status != 'archived'
   AND embedding IS NOT NULL
+  AND ($2::content_type IS NULL OR type = $2)
+  AND ($3::timestamptz IS NULL OR created_at >= $3)
+  AND ($4::timestamptz IS NULL OR created_at < $4)
 ORDER BY embedding <=> $1::vector
-LIMIT $2
+LIMIT $5
 `
 
 type InternalSemanticSearchContentsParams struct {
 	TargetEmbedding pgvector_go.Vector `json:"target_embedding"`
+	ContentType     NullContentType    `json:"content_type"`
+	CreatedAfter    *time.Time         `json:"created_after"`
+	CreatedBefore   *time.Time         `json:"created_before"`
 	MaxResults      int32              `json:"max_results"`
 }
 
@@ -3407,7 +3429,13 @@ type InternalSemanticSearchContentsRow struct {
 // exclude an anchor content id the way SimilarContents does, because this
 // is called from search_knowledge where there is no "current" content.
 func (q *Queries) InternalSemanticSearchContents(ctx context.Context, arg InternalSemanticSearchContentsParams) ([]InternalSemanticSearchContentsRow, error) {
-	rows, err := q.db.Query(ctx, internalSemanticSearchContents, arg.TargetEmbedding, arg.MaxResults)
+	rows, err := q.db.Query(ctx, internalSemanticSearchContents,
+		arg.TargetEmbedding,
+		arg.ContentType,
+		arg.CreatedAfter,
+		arg.CreatedBefore,
+		arg.MaxResults,
+	)
 	if err != nil {
 		return nil, err
 	}

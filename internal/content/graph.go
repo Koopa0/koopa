@@ -62,10 +62,13 @@ func (s *Store) SimilarContents(ctx context.Context, excludeID uuid.UUID, embedd
 // 'archived', includes drafts / private content. Contents without embeddings
 // are skipped. Used by search_knowledge alongside InternalSearch (FTS) to
 // feed hybrid retrieval.
-func (s *Store) InternalSemanticSearch(ctx context.Context, queryEmbedding pgvector.Vector, limit int) ([]Content, error) {
+func (s *Store) InternalSemanticSearch(ctx context.Context, queryEmbedding pgvector.Vector, limit int, filter SearchFilter) ([]Content, error) {
 	rows, err := s.q.InternalSemanticSearchContents(ctx, db.InternalSemanticSearchContentsParams{
 		TargetEmbedding: queryEmbedding,
 		MaxResults:      int32(limit), // #nosec G115 -- caller bounds limit via clamp
+		ContentType:     nullContentType(filter.ContentType),
+		CreatedAfter:    filter.CreatedAfter,
+		CreatedBefore:   filter.CreatedBefore,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("semantic searching contents: %w", err)

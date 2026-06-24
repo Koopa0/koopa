@@ -61,13 +61,19 @@ WHERE status = 'published' AND is_public = true
   AND (sqlc.narg('content_type')::content_type IS NULL OR type = sqlc.narg('content_type'));
 
 -- name: InternalSearchContents :many
--- Internal search without visibility filter (for MCP tools). Excludes archived.
+-- Internal FTS search without visibility filter (for MCP tools). Excludes
+-- archived. Optional type/date filters are pushed into the WHERE so each
+-- retrieval branch returns only matching rows BEFORE the RRF limit — a
+-- content_type filter must not lose recall to a top-N full of other types.
 SELECT id, slug, title, body, excerpt, type, status,
        series_id, series_order, is_public, project_id, ai_metadata, reading_time_min,
        cover_image, published_at, created_at, updated_at
 FROM contents
 WHERE status != 'archived'
   AND search_vector @@ websearch_to_tsquery('simple', $1)
+  AND (sqlc.narg('content_type')::content_type IS NULL OR type = sqlc.narg('content_type'))
+  AND (sqlc.narg('created_after')::timestamptz IS NULL OR created_at >= sqlc.narg('created_after'))
+  AND (sqlc.narg('created_before')::timestamptz IS NULL OR created_at < sqlc.narg('created_before'))
 ORDER BY ts_rank(search_vector, websearch_to_tsquery('simple', $1)) DESC
 LIMIT $2 OFFSET $3;
 
@@ -83,6 +89,9 @@ SELECT id, slug, title, body, excerpt, type, status,
 FROM contents
 WHERE status != 'archived'
   AND embedding IS NOT NULL
+  AND (sqlc.narg('content_type')::content_type IS NULL OR type = sqlc.narg('content_type'))
+  AND (sqlc.narg('created_after')::timestamptz IS NULL OR created_at >= sqlc.narg('created_after'))
+  AND (sqlc.narg('created_before')::timestamptz IS NULL OR created_at < sqlc.narg('created_before'))
 ORDER BY embedding <=> @target_embedding::vector
 LIMIT @max_results;
 

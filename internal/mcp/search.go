@@ -91,11 +91,12 @@ func (s *Server) searchKnowledge(ctx context.Context, _ *mcp.CallToolRequest, in
 
 	limit := clamp(int(input.Limit), 1, 50, 20)
 
-	rows, err := s.hybridSearch(ctx, input.Query, limit)
+	filter := buildSearchFilter(input.ContentType, after, before)
+	rows, err := s.hybridSearch(ctx, input.Query, limit, filter)
 	if err != nil {
 		return nil, SearchKnowledgeOutput{}, err
 	}
-	results := s.filterContentResults(ctx, rows, input.ContentType, after, before)
+	results := s.mapContentResults(ctx, rows)
 
 	return nil, SearchKnowledgeOutput{
 		Results: results,
@@ -104,13 +105,26 @@ func (s *Server) searchKnowledge(ctx context.Context, _ *mcp.CallToolRequest, in
 	}, nil
 }
 
+// buildSearchFilter converts the tool's wire filters into a content.SearchFilter
+// the store pushes into SQL. content_type is validated to a known enum upstream;
+// after/before are already parsed to the inclusive-lower / exclusive-upper
+// bounds the store expects.
+func buildSearchFilter(contentType *string, after, before *time.Time) content.SearchFilter {
+	var ct *content.Type
+	if contentType != nil && *contentType != "" {
+		t := content.Type(*contentType)
+		ct = &t
+	}
+	return content.SearchFilter{ContentType: ct, CreatedAfter: after, CreatedBefore: before}
+}
+
 // hybridSearch runs the content FTS branch and — when the embedder is wired —
 // the content semantic branch in parallel, then fuses the two rankings with
 // reciprocal rank fusion. An FTS error aborts the search; a semantic failure
 // degrades to FTS-only, so search stays useful when Gemini is slow or
 // unreachable. Returned slice is ordered by fused rank (FTS rank when the
 // semantic side is empty), capped at limit.
-func (s *Server) hybridSearch(ctx context.Context, query string, limit int) ([]content.Content, error) {
+func (s *Server) hybridSearch(ctx context.Context, query string, limit int, filter content.SearchFilter) ([]content.Content, error) {
 	branchSize := max(limit, searchKnowledgeBranchSize)
 
 	var (
@@ -119,7 +133,7 @@ func (s *Server) hybridSearch(ctx context.Context, query string, limit int) ([]c
 
 	g, gctx := errgroup.WithContext(ctx)
 	g.Go(func() error {
-		rows, err := s.contents.InternalSearch(gctx, query, 1, branchSize)
+		rows, err := s.contents.InternalSearch(gctx, query, 1, branchSize, filter)
 		if err != nil {
 			return fmt.Errorf("searching content: fts: %w", err)
 		}
@@ -128,7 +142,7 @@ func (s *Server) hybridSearch(ctx context.Context, query string, limit int) ([]c
 	})
 	if s.embedder != nil {
 		g.Go(func() error {
-			contentSem = s.semanticBranch(gctx, query, branchSize)
+			contentSem = s.semanticBranch(gctx, query, branchSize, filter)
 			return nil
 		})
 	}
@@ -154,7 +168,7 @@ func (s *Server) hybridSearch(ctx context.Context, query string, limit int) ([]c
 // swallowed; the caller treats an empty slice as "degrade to FTS-only"
 // (ErrEmptyInput is the one shape that does not even log, since it is a
 // caller-input issue).
-func (s *Server) semanticBranch(ctx context.Context, query string, limit int) []content.Content {
+func (s *Server) semanticBranch(ctx context.Context, query string, limit int, filter content.SearchFilter) []content.Content {
 	semCtx, cancel := context.WithTimeout(ctx, searchKnowledgeHybridDeadline)
 	defer cancel()
 
@@ -167,7 +181,7 @@ func (s *Server) semanticBranch(ctx context.Context, query string, limit int) []
 	}
 	queryVec := pgvector.NewVector(vec)
 
-	rows, semErr := s.contents.InternalSemanticSearch(semCtx, queryVec, limit)
+	rows, semErr := s.contents.InternalSemanticSearch(semCtx, queryVec, limit, filter)
 	if semErr != nil {
 		s.logger.Warn("search_knowledge semantic branch skipped: content vector query failed", "err", semErr)
 		return nil
@@ -222,22 +236,14 @@ func rrfMerge(fts, sem []content.Content, limit int) []content.Content {
 	return out
 }
 
-func (s *Server) filterContentResults(ctx context.Context, contents []content.Content, contentType *string, after, before *time.Time) []SearchKnowledgeResult {
+// mapContentResults maps fused content rows to wire results. content_type and
+// date filtering already happened in SQL (pushed into both retrieval branches),
+// so no filtering is done here — the rows are exactly the matches, in fused
+// rank order.
+func (s *Server) mapContentResults(ctx context.Context, contents []content.Content) []SearchKnowledgeResult {
 	results := make([]SearchKnowledgeResult, 0, len(contents))
 	for i := range contents {
-		c := &contents[i]
-		if contentType != nil && *contentType != "" && string(c.Type) != *contentType {
-			continue
-		}
-		if after != nil && c.CreatedAt.Before(*after) {
-			continue
-		}
-		// before is the exclusive upper bound (start of the day after the
-		// requested date), so the whole requested day is kept.
-		if before != nil && !c.CreatedAt.Before(*before) {
-			continue
-		}
-		results = append(results, s.contentToResult(ctx, c))
+		results = append(results, s.contentToResult(ctx, &contents[i]))
 	}
 	return results
 }

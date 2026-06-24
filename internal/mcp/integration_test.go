@@ -412,6 +412,48 @@ func TestIntegration_SearchKnowledge_ContentTypeFilter(t *testing.T) {
 	})
 }
 
+// TestIntegration_SearchKnowledge_TypeFilterRecall pins the filter-pushdown fix:
+// a content_type filter must find matching rows even when higher-ranked rows of
+// OTHER types fill the retrieval top-N. The filter used to run AFTER the limit
+// cut, so a til crowded out by articles returned zero. Here three articles
+// out-rank one til for the term; with limit=1 a content_type=til search must
+// still return the til (it would return 0 under the old post-limit filter).
+func TestIntegration_SearchKnowledge_TypeFilterRecall(t *testing.T) {
+	s := setupServer(t)
+	const term = "recallzz"
+
+	seedTyped := func(slug, body, ctype string) {
+		t.Helper()
+		if _, err := testPool.Exec(t.Context(),
+			`INSERT INTO contents (slug, title, body, type, status)
+			 VALUES ($1, $2, $3, $4::content_type, 'draft')`,
+			slug, term+" "+ctype, body, ctype,
+		); err != nil {
+			t.Fatalf("seedTyped(%q): %v", slug, err)
+		}
+	}
+	// Articles out-rank the til (the term appears far more often).
+	manyHits := term + " " + term + " " + term + " " + term
+	seedTyped("rcl-a1", manyHits, "article")
+	seedTyped("rcl-a2", manyHits, "article")
+	seedTyped("rcl-a3", manyHits, "article")
+	seedTyped("rcl-til", term, "til")
+
+	til := "til"
+	_, out, err := callHandler(t, s.searchKnowledge, SearchKnowledgeInput{
+		Query: term, ContentType: &til, Limit: 1,
+	})
+	if err != nil {
+		t.Fatalf("search content_type=til: %v", err)
+	}
+	if len(out.Results) != 1 {
+		t.Fatalf("content_type=til limit=1 = %d results, want 1 (the til must not be crowded out by higher-ranked articles)", len(out.Results))
+	}
+	if got := out.Results[0].ContentType; got != "til" {
+		t.Errorf("result content_type = %q, want %q", got, "til")
+	}
+}
+
 // --- filter: date range ---
 
 // TestIntegration_SearchKnowledge_DateFilter seeds a row created "now" and
@@ -825,6 +867,7 @@ func TestIntegration_ProposeArea_AsPlanner(t *testing.T) {
 		t.Errorf("persisted created_by = %q, want %q", createdBy, "planner")
 	}
 }
+
 // TestIntegration_ProposeArea_BlankNameRejected asserts the handler rejects a
 // blank name before any write (the chk_area_name_not_blank CHECK would also
 // fire, but the handler validates first for a clean error).
@@ -1203,6 +1246,7 @@ func TestIntegration_ProposeProject_AsPlanner(t *testing.T) {
 		}
 	}
 }
+
 // TestIntegration_ProposeProject_BlankNameRejected asserts the handler rejects a
 // blank or non-sluggable name before any write.
 func TestIntegration_ProposeProject_BlankNameRejected(t *testing.T) {
@@ -1349,6 +1393,7 @@ func TestIntegration_ListTasks_ReturnsCallerTodos(t *testing.T) {
 		t.Errorf("listTasks(planner) mismatch (-want +got):\n%s", diff)
 	}
 }
+
 // TestIntegration_ListTasks_CallerScoped pins the privacy invariant: the list
 // is scoped to the resolved caller, so caller A (planner) never sees caller B's
 // (codex) todos.
@@ -1419,6 +1464,7 @@ func TestIntegration_ResolveTask_InvalidState(t *testing.T) {
 		t.Error("resolveTask(state=todo) err = nil, want invalid-state rejection")
 	}
 }
+
 // TestIntegration_ResolveTask_CallerScoped pins the privacy invariant: caller A
 // cannot resolve a todo created by caller B — it returns not-found and the row
 // is left untouched, never a cross-creator mutation.
@@ -1752,6 +1798,7 @@ func TestIntegration_ProjectProgress_CandidateFilter(t *testing.T) {
 		t.Errorf("proposed project present in projects[], want excluded")
 	}
 }
+
 // TestIntegration_ProposeContent_AsHermes drives propose_content as a
 // registered agent and asserts the editorial contract on the persisted row:
 // status=review (NOT published — an agent can never publish), is_public=false,

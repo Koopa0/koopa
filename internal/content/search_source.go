@@ -32,7 +32,7 @@ func (s *SearchSource) Search(ctx context.Context, query string, limit int) ([]s
 	if limit <= 0 {
 		return []search.Result{}, nil
 	}
-	rows, err := s.store.InternalSearch(ctx, query, 1, limit)
+	rows, err := s.store.InternalSearch(ctx, query, 1, limit, SearchFilter{})
 	if err != nil {
 		return nil, fmt.Errorf("content search: %w", err)
 	}

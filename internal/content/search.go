@@ -5,11 +5,26 @@ package content
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 
 	"github.com/Koopa0/koopa/internal/db"
 )
+
+// SearchFilter narrows internal search to a content type and/or created-date
+// window. A nil field means "no filter on that dimension". The filter is pushed
+// into the SQL WHERE so it applies BEFORE the retrieval limit — a content_type
+// filter must not lose recall to a top-N page full of other types.
+type SearchFilter struct {
+	ContentType *Type
+	// CreatedAfter keeps rows created at or after this instant (inclusive).
+	CreatedAfter *time.Time
+	// CreatedBefore keeps rows created strictly before this instant. Callers
+	// wanting a whole-day-inclusive upper bound pass the start of the day AFTER
+	// the requested date.
+	CreatedBefore *time.Time
+}
 
 // Search performs full-text search on published content.
 func (s *Store) Search(ctx context.Context, query string, contentType *Type, page, perPage int) ([]Content, int, error) {
@@ -56,13 +71,17 @@ func (s *Store) Search(ctx context.Context, query string, contentType *Type, pag
 	return contents, int(count), nil
 }
 
-// InternalSearch performs full-text search on published content without visibility filter.
-// Used by MCP tools that need access to all content including private.
-func (s *Store) InternalSearch(ctx context.Context, query string, page, perPage int) ([]Content, error) {
+// InternalSearch performs full-text search on all content (no visibility
+// filter), optionally narrowed by filter. Used by MCP tools that need access to
+// all content including private.
+func (s *Store) InternalSearch(ctx context.Context, query string, page, perPage int, filter SearchFilter) ([]Content, error) {
 	rows, err := s.q.InternalSearchContents(ctx, db.InternalSearchContentsParams{
 		WebsearchToTsquery: query,
 		Limit:              int32(perPage),              // #nosec G115 -- pagination values are bounded by API layer
 		Offset:             int32((page - 1) * perPage), // #nosec G115 -- pagination values are bounded by API layer
+		ContentType:        nullContentType(filter.ContentType),
+		CreatedAfter:       filter.CreatedAfter,
+		CreatedBefore:      filter.CreatedBefore,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("internal searching contents: %w", err)
