@@ -101,7 +101,7 @@ func (s *Store) CompletedMilestonesInWindow(ctx context.Context, since, until ti
 // review_period.goals. Status is always in_progress (the query's filter), echoed
 // so the wire row is self-describing. Read-only.
 func (s *Store) GoalsAdvancedInWindow(ctx context.Context, since, until time.Time) ([]GoalAdvance, error) {
-	rows, err := s.q.ActiveGoalsAdvancedInWindow(ctx, db.ActiveGoalsAdvancedInWindowParams{Since: &since, Until: &until})
+	rows, err := s.q.ActiveGoalsAdvancedInWindow(ctx, db.ActiveGoalsAdvancedInWindowParams{Since: since, Until: until})
 	if err != nil {
 		return nil, fmt.Errorf("querying active goals advanced in window: %w", err)
 	}

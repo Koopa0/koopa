@@ -341,10 +341,14 @@ SELECT
         WHERE m.goal_id = g.id
     )::bigint AS milestone_total,
     EXISTS (
-        SELECT 1 FROM milestones m
+        SELECT 1
+        FROM milestones m
+        JOIN activity_events ae
+            ON ae.entity_type = 'milestone' AND ae.entity_id = m.id
         WHERE m.goal_id = g.id
-          AND m.completed_at IS NOT NULL
-          AND m.completed_at >= $1 AND m.completed_at <= $2
+          AND ae.change_kind = 'completed'
+          AND ae.actor = 'human'
+          AND ae.occurred_at >= $1 AND ae.occurred_at <= $2
     ) AS advanced
 FROM goals g
 LEFT JOIN areas a ON a.id = g.area_id
@@ -353,8 +357,8 @@ ORDER BY g.title
 `
 
 type ActiveGoalsAdvancedInWindowParams struct {
-	Since *time.Time `json:"since"`
-	Until *time.Time `json:"until"`
+	Since time.Time `json:"since"`
+	Until time.Time `json:"until"`
 }
 
 type ActiveGoalsAdvancedInWindowRow struct {
@@ -368,8 +372,12 @@ type ActiveGoalsAdvancedInWindowRow struct {
 
 // Every active (in_progress) goal with milestone progress and an "advanced"
 // flag for review_period.goals. milestone_done/total mirror ActiveGoalMilestones;
-// advanced is true when the goal had at least one milestone completed within the
-// window (completed_at in [since, until]).
+// advanced is true when a HUMAN completed at least one of the goal's milestones
+// within the window. It joins each milestone to its 'completed' audit event by
+// entity_id and gates on actor='human' — the same human-only actor model the
+// rest of review_period uses — so an agent/system milestone completion never
+// counts as the owner's progress. milestone_done/total are overall progress and
+// stay actor-agnostic.
 func (q *Queries) ActiveGoalsAdvancedInWindow(ctx context.Context, arg ActiveGoalsAdvancedInWindowParams) ([]ActiveGoalsAdvancedInWindowRow, error) {
 	rows, err := q.db.Query(ctx, activeGoalsAdvancedInWindow, arg.Since, arg.Until)
 	if err != nil {
