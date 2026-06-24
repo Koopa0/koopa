@@ -7,7 +7,11 @@ package content
 import (
 	"context"
 	"errors"
+	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -802,5 +806,64 @@ func TestStore_UpdateContent_InvalidInput(t *testing.T) {
 
 	if _, err := NewStore(tx).UpdateContent(ctx, existing.ID, &UpdateParams{ProjectID: &missing}); !errors.Is(err, ErrInvalidInput) {
 		t.Fatalf("UpdateContent(bad project_id) err = %v, want ErrInvalidInput", err)
+	}
+}
+
+// TestHandler_PublicBySlug_HidesNonPublic locks the only guard that keeps
+// GET /api/contents/{slug} from leaking a private or draft body: the handler's
+// !c.IsPublic → 404 check. ContentBySlug itself has no is_public/status filter,
+// so if this check is inverted or dropped the private body ships to anonymous
+// callers — this test is the regression that would catch it.
+func TestHandler_PublicBySlug_HidesNonPublic(t *testing.T) {
+	store := setup(t)
+	h := NewHandler(store, "http://test.local", slog.New(slog.DiscardHandler))
+	ctx := t.Context()
+
+	// A draft is the canonical non-public state (is_public=false by default,
+	// chk_content_public_requires_published forbids public-while-unpublished) —
+	// exactly what the guard must keep off the public reader.
+	if _, err := store.CreateContent(ctx, &CreateParams{
+		Slug: "private-piece", Title: "Private Piece", Body: "secret body",
+		Excerpt: "secret", Type: TypeArticle, Status: StatusDraft,
+	}); err != nil {
+		t.Fatalf("creating private draft: %v", err)
+	}
+	// A published, public piece via the real publish flow, which atomically sets
+	// status=published, is_public=true, published_at.
+	pub, err := store.CreateContent(ctx, &CreateParams{
+		Slug: "public-piece", Title: "Public Piece", Body: "public body",
+		Excerpt: "public", Type: TypeArticle, Status: StatusDraft,
+	})
+	if err != nil {
+		t.Fatalf("creating public draft: %v", err)
+	}
+	if _, err := store.PublishContent(ctx, pub.ID); err != nil {
+		t.Fatalf("publishing public content: %v", err)
+	}
+
+	tests := []struct {
+		name     string
+		slug     string
+		wantCode int
+	}{
+		{name: "private content is not exposed", slug: "private-piece", wantCode: http.StatusNotFound},
+		{name: "public content is served", slug: "public-piece", wantCode: http.StatusOK},
+		{name: "missing slug is 404", slug: "nonexistent", wantCode: http.StatusNotFound},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/api/contents/"+tt.slug, http.NoBody)
+			req.SetPathValue("slug", tt.slug)
+			w := httptest.NewRecorder()
+			h.PublicBySlug(w, req)
+
+			if w.Code != tt.wantCode {
+				t.Fatalf("PublicBySlug(%q) status = %d, want %d", tt.slug, w.Code, tt.wantCode)
+			}
+			if tt.slug == "private-piece" && strings.Contains(w.Body.String(), "secret body") {
+				t.Error("PublicBySlug leaked the private body in the response")
+			}
+		})
 	}
 }
