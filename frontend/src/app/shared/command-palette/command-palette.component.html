@@ -4,6 +4,7 @@
     class="fixed inset-0 z-[100] bg-black/50 backdrop-blur-xs"
     (click)="close()"
     (keydown.escape)="close()"
+    aria-hidden="true"
     tabindex="-1"
     @fadeBackdrop
   ></div>
@@ -21,6 +22,8 @@
       class="w-full max-w-[600px] overflow-hidden rounded-lg border border-border-strong bg-elevated shadow-(--shadow-2)"
       (click)="$event.stopPropagation()"
       (keydown.escape)="$event.stopPropagation()"
+      cdkTrapFocus
+      cdkTrapFocusAutoCapture
       tabindex="-1"
       @scaleIn
     >

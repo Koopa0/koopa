@@ -12,6 +12,7 @@ import {
   PLATFORM_ID,
 } from '@angular/core';
 import { isPlatformBrowser } from '@angular/common';
+import { A11yModule } from '@angular/cdk/a11y';
 import { Router } from '@angular/router';
 import { Subject, debounceTime } from 'rxjs';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
@@ -33,6 +34,7 @@ interface GroupedAction {
 
 @Component({
   selector: 'app-command-palette',
+  imports: [A11yModule],
   templateUrl: './command-palette.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
   animations: [
