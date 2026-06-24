@@ -25,6 +25,23 @@
           </div>
         }
       </div>
+    } @else if (hasError()) {
+      <div
+        class="flex flex-col items-center gap-4 py-12 text-center"
+        data-testid="home-error"
+      >
+        <p class="text-sm text-fg-muted">
+          Could not load the feed. Please try again.
+        </p>
+        <button
+          type="button"
+          class="rounded-xs border border-border px-4 py-2 text-sm text-fg-muted transition-colors hover:border-border-strong hover:text-fg"
+          (click)="retry()"
+          data-testid="home-error-retry"
+        >
+          Retry
+        </button>
+      </div>
     } @else {
       <div class="ed-fd-list">
         @for (theme of themes(); track theme.topic.slug) {
@@ -81,7 +98,7 @@
   <section class="ed-fd-band ed-fd-recent-band">
     <p class="ed-fd-label">Recent</p>
 
-    @if (!isLoading()) {
+    @if (!isLoading() && !hasError()) {
       <div class="ed-fd-recent">
         @for (piece of recent(); track piece.id) {
           <a

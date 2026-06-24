@@ -219,4 +219,25 @@ describe('HomeComponent', () => {
     expect(el.textContent).toContain("Notes, systems, and what I'm working out.");
     expect(component['recent']().length).toBe(0);
   });
+
+  it('should render the error UI with retry when the feed fails (500)', async () => {
+    await settle();
+
+    const req = httpTesting.expectOne(
+      (r) => r.url.includes('/api/contents') && r.method === 'GET',
+    );
+    req.flush('Server error', {
+      status: 500,
+      statusText: 'Internal Server Error',
+    });
+    flushTopics([buildMockTopic({ content_count: 0 })]);
+    await settle();
+
+    const el = fixture.nativeElement as HTMLElement;
+    expect(component['hasError']()).toBe(true);
+    expect(el.querySelector('[data-testid="home-error"]')).toBeTruthy();
+    expect(el.querySelector('[data-testid="home-error-retry"]')).toBeTruthy();
+    // The false "Nothing published yet" empty state must NOT render on error.
+    expect(el.querySelector('[data-testid="recent-empty"]')).toBeNull();
+  });
 });
