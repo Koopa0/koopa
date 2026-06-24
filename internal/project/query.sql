@@ -54,17 +54,6 @@ RETURNING id, slug, title, description, status, repo, area_id, goal_id, deadline
 -- name: DeleteProject :exec
 DELETE FROM projects WHERE id = $1;
 
--- name: ProjectByAlias :one
--- Resolve a project alias to a project via the project_aliases table. Resolves
--- regardless of status (including proposed) so capture_inbox can link a todo to
--- a just-proposed project before activation.
-SELECT p.id, p.slug, p.title, p.description,
-       p.status, p.repo, p.area_id, p.goal_id, p.deadline, p.last_activity_at,
-       p.expected_cadence, p.created_by, p.proposal_rationale, p.created_at, p.updated_at
-FROM project_aliases pa
-JOIN projects p ON p.id = pa.project_id
-WHERE LOWER(pa.alias) = LOWER(@alias);
-
 -- name: ProjectByTitle :one
 -- Resolve a project by case-insensitive title match.
 SELECT id, slug, title, description, status, repo, area_id, goal_id, deadline, last_activity_at,

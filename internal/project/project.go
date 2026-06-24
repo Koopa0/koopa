@@ -461,19 +461,6 @@ func (s *Store) DeleteProject(ctx context.Context, id uuid.UUID) error {
 	return nil
 }
 
-// ProjectByAlias resolves a project alias to a project via the project_aliases table.
-func (s *Store) ProjectByAlias(ctx context.Context, alias string) (*Project, error) {
-	r, err := s.q.ProjectByAlias(ctx, alias)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, ErrNotFound
-		}
-		return nil, fmt.Errorf("querying project by alias %s: %w", alias, err)
-	}
-	p := rowToProject(&r)
-	return &p, nil
-}
-
 // ProjectByTitle returns a single project by case-insensitive title match.
 func (s *Store) ProjectByTitle(ctx context.Context, title string) (*Project, error) {
 	r, err := s.q.ProjectByTitle(ctx, title)

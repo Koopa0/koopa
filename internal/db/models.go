@@ -628,18 +628,6 @@ type Project struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
-// Maps variant project names to canonical project. Used by activity event and MCP search to resolve fuzzy project references.
-type ProjectAlias struct {
-	ID uuid.UUID `json:"id"`
-	// Variant name (e.g. repo name, external title variant). Case-insensitive unique — "Koopa0.dev" and "koopa0.dev" are the same alias.
-	Alias string `json:"alias"`
-	// References canonical project. CASCADE — aliases meaningless without project.
-	ProjectID uuid.UUID `json:"project_id"`
-	// Where this alias was discovered (e.g. github, manual).
-	Source    string    `json:"source"`
-	CreatedAt time.Time `json:"created_at"`
-}
-
 // JWT refresh token hashes. One user may have multiple active tokens (multi-device).
 type RefreshToken struct {
 	ID uuid.UUID `json:"id"`

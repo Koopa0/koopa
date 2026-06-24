@@ -287,11 +287,6 @@ func (s *Server) resolveProjectID(ctx context.Context, input string) *uuid.UUID 
 		return &p.ID
 	}
 
-	// Try alias.
-	if p, err := s.projects.ProjectByAlias(ctx, input); err == nil {
-		return &p.ID
-	}
-
 	// Try title (case-insensitive).
 	if p, err := s.projects.ProjectByTitle(ctx, input); err == nil {
 		return &p.ID

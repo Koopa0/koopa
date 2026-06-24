@@ -4093,41 +4093,6 @@ func (q *Queries) PendingTodoItemsWithProject(ctx context.Context, arg PendingTo
 	return items, nil
 }
 
-const projectByAlias = `-- name: ProjectByAlias :one
-SELECT p.id, p.slug, p.title, p.description,
-       p.status, p.repo, p.area_id, p.goal_id, p.deadline, p.last_activity_at,
-       p.expected_cadence, p.created_by, p.proposal_rationale, p.created_at, p.updated_at
-FROM project_aliases pa
-JOIN projects p ON p.id = pa.project_id
-WHERE LOWER(pa.alias) = LOWER($1)
-`
-
-// Resolve a project alias to a project via the project_aliases table. Resolves
-// regardless of status (including proposed) so capture_inbox can link a todo to
-// a just-proposed project before activation.
-func (q *Queries) ProjectByAlias(ctx context.Context, alias string) (Project, error) {
-	row := q.db.QueryRow(ctx, projectByAlias, alias)
-	var i Project
-	err := row.Scan(
-		&i.ID,
-		&i.Slug,
-		&i.Title,
-		&i.Description,
-		&i.Status,
-		&i.Repo,
-		&i.AreaID,
-		&i.GoalID,
-		&i.Deadline,
-		&i.LastActivityAt,
-		&i.ExpectedCadence,
-		&i.CreatedBy,
-		&i.ProposalRationale,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
 const projectByID = `-- name: ProjectByID :one
 SELECT id, slug, title, description, status, repo, area_id, goal_id, deadline, last_activity_at,
        expected_cadence, created_by, proposal_rationale, created_at, updated_at
