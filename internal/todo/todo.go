@@ -397,12 +397,6 @@ type Pending struct {
 	Due   string
 }
 
-// ProjectCompletion holds a per-project completion count.
-type ProjectCompletion struct {
-	ProjectTitle string
-	Completed    int64
-}
-
 // PendingDetail is a pending todo with project context.
 //
 // CreatedBy and Description are populated by BacklogItems only (the admin

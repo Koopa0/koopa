@@ -41,8 +41,6 @@ func (s *Store) List(ctx context.Context) ([]RegistryRow, error) {
 			Platform:    r.Platform,
 			Description: r.Description,
 			Status:      Status(r.Status),
-			SyncedAt:    r.SyncedAt,
-			RetiredAt:   r.RetiredAt,
 		}
 	}
 	return out, nil
