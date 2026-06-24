@@ -1086,40 +1086,72 @@
   text-transform: uppercase;
   color: var(--callout-accent, var(--fg));
 }
+/* foldable callouts render as <details>/<summary> */
+.ed-prose details.callout > summary.callout-title {
+  cursor: pointer;
+  list-style: none;
+  margin-bottom: 0;
+}
+.ed-prose details.callout[open] > summary.callout-title {
+  margin-bottom: 8px;
+}
+.ed-prose details.callout > summary.callout-title::-webkit-details-marker {
+  display: none;
+}
+.ed-prose details.callout > summary.callout-title::before {
+  content: '▸';
+  display: inline-block;
+  margin-right: 6px;
+  transition: transform 0.15s ease;
+}
+.ed-prose details.callout[open] > summary.callout-title::before {
+  transform: rotate(90deg);
+}
 .ed-prose .callout-body > :first-child {
   margin-top: 0;
 }
 .ed-prose .callout-body > :last-child {
   margin-bottom: 0;
 }
+/* type accents — Obsidian's canonical palette */
 .ed-prose .callout-note,
 .ed-prose .callout-info,
-.ed-prose .callout-todo,
-.ed-prose .callout-abstract,
-.ed-prose .callout-summary {
+.ed-prose .callout-todo {
   --callout-accent: #4c8dff;
+}
+.ed-prose .callout-abstract,
+.ed-prose .callout-summary,
+.ed-prose .callout-tldr {
+  --callout-accent: #13c2c2;
 }
 .ed-prose .callout-tip,
 .ed-prose .callout-hint,
+.ed-prose .callout-important {
+  --callout-accent: #0bb5a3;
+}
 .ed-prose .callout-success,
 .ed-prose .callout-check,
 .ed-prose .callout-done {
   --callout-accent: #2ec27e;
 }
+.ed-prose .callout-question,
+.ed-prose .callout-help,
+.ed-prose .callout-faq {
+  --callout-accent: #d0a215;
+}
 .ed-prose .callout-warning,
 .ed-prose .callout-caution,
 .ed-prose .callout-attention {
-  --callout-accent: #e5a50a;
+  --callout-accent: #e5820a;
 }
 .ed-prose .callout-danger,
 .ed-prose .callout-error,
 .ed-prose .callout-bug,
 .ed-prose .callout-failure,
-.ed-prose .callout-fail {
+.ed-prose .callout-fail,
+.ed-prose .callout-missing {
   --callout-accent: #e0484d;
 }
-.ed-prose .callout-question,
-.ed-prose .callout-faq,
 .ed-prose .callout-example {
   --callout-accent: #9141ac;
 }

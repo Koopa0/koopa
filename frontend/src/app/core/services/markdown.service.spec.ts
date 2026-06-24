@@ -102,6 +102,26 @@ describe('MarkdownService', () => {
     expect(result).toContain('>Note<');
   });
 
+  it('should render a foldable +callout as an open <details>', () => {
+    const result = service.parse('> [!tip]+ Expanded\n> body');
+    expect(result).toMatch(/<details class="callout callout-tip"[^>]*\bopen\b/);
+    expect(result).toContain('<summary class="callout-title">Expanded</summary>');
+  });
+
+  it('should render a foldable -callout as a collapsed <details>', () => {
+    const result = service.parse('> [!note]- Hidden\n> body');
+    expect(result).toContain('<details class="callout callout-note">');
+    expect(result).not.toContain('callout-note" open');
+  });
+
+  it('should strip a leading YAML frontmatter block', () => {
+    const result = service.parse(
+      '---\ntype: writing\nstatus: ready\n---\n\nactual **body** text',
+    );
+    expect(result).not.toContain('type: writing');
+    expect(result).toContain('<strong>body</strong>');
+  });
+
   it('should render a wikilink alias as styled non-link text', () => {
     const result = service.parse('see [[Some Note|the note]] here');
     expect(result).toContain('class="wikilink"');

@@ -65,6 +65,7 @@ const PURIFY_CONFIG = {
     'type',
     'checked',
     'disabled',
+    'open',
   ],
   ALLOW_DATA_ATTR: false,
 };
@@ -86,8 +87,13 @@ export class MarkdownService {
   }
 
   parse(markdown: string): string {
+    // Strip a leading YAML frontmatter block. Notes authored in Obsidian carry
+    // `--- … ---` properties (type/status/domain/topics); when a body is pasted
+    // in whole, that block must not render as a table/hr/heading.
+    const body = markdown.replace(/^\uFEFF?---\r?\n[\s\S]*?\r?\n---\r?\n+/, '');
+
     // Parse markdown and then highlight code blocks
-    let html = marked.parse(markdown) as string;
+    let html = marked.parse(body) as string;
 
     // Add IDs to headings for TOC navigation
     html = this.addHeadingIds(html);

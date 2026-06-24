@@ -81,6 +81,7 @@ const wikilinkExtension: TokenizerAndRendererExtension = {
 
 interface CalloutToken extends Tokens.Generic {
   calloutType: string;
+  fold: string; // '' static · '+' foldable-open · '-' foldable-collapsed
   title: string;
   body: Token[];
 }
@@ -88,8 +89,10 @@ interface CalloutToken extends Tokens.Generic {
 /**
  * Obsidian callouts: `> [!type] optional title` followed by `> ` body lines →
  * a titled callout box. The body is parsed as block markdown so it can hold
- * paragraphs, lists, and code. A block-level extension runs before the built-in
- * blockquote tokenizer, so `> [!type]` becomes a callout, not a quote.
+ * paragraphs, lists, tables, and code. A trailing `+`/`-` on the type makes the
+ * callout foldable (`<details>`): `+` open, `-` collapsed; no marker is a static
+ * box. A block-level extension runs before the built-in blockquote tokenizer,
+ * so `> [!type]` becomes a callout, not a quote.
  */
 const calloutExtension: TokenizerAndRendererExtension = {
   name: 'callout',
@@ -99,26 +102,33 @@ const calloutExtension: TokenizerAndRendererExtension = {
   },
   tokenizer(src: string) {
     const rule =
-      /^ {0,3}> *\[!(\w+)\][+-]?([^\n]*)(?:\n((?: {0,3}>[^\n]*(?:\n|$))*))?/;
+      /^ {0,3}> *\[!(\w+)\]([+-]?)([^\n]*)(?:\n((?: {0,3}>[^\n]*(?:\n|$))*))?/;
     const match = rule.exec(src);
     if (!match) {
       return undefined;
     }
-    const bodyRaw = (match[3] ?? '').replace(/^ {0,3}> ?/gm, '');
+    const bodyRaw = (match[4] ?? '').replace(/^ {0,3}> ?/gm, '');
     return {
       type: 'callout',
       raw: match[0],
       calloutType: match[1].toLowerCase(),
-      title: match[2].trim(),
+      fold: match[2],
+      title: match[3].trim(),
       body: this.lexer.blockTokens(bodyRaw),
     } satisfies CalloutToken;
   },
   renderer(token) {
     const t = token as CalloutToken;
-    const title =
-      t.title || t.calloutType.charAt(0).toUpperCase() + t.calloutType.slice(1);
+    const type = escapeHtml(t.calloutType);
+    const title = escapeHtml(
+      t.title || t.calloutType.charAt(0).toUpperCase() + t.calloutType.slice(1),
+    );
     const body = this.parser.parse(t.body);
-    return `<div class="callout callout-${escapeHtml(t.calloutType)}"><div class="callout-title">${escapeHtml(title)}</div><div class="callout-body">${body}</div></div>`;
+    if (t.fold === '') {
+      return `<div class="callout callout-${type}"><div class="callout-title">${title}</div><div class="callout-body">${body}</div></div>`;
+    }
+    const open = t.fold === '+' ? ' open' : '';
+    return `<details class="callout callout-${type}"${open}><summary class="callout-title">${title}</summary><div class="callout-body">${body}</div></details>`;
   },
 };
 
