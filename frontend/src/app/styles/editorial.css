@@ -1048,3 +1048,98 @@
     transition: none;
   }
 }
+
+/* ============================================================
+   Obsidian-parity markdown: callouts, highlight, wikilinks, mermaid
+   ============================================================ */
+
+/* ==highlight== */
+.ed-prose mark {
+  background: color-mix(in srgb, #ffd54f 36%, transparent);
+  color: inherit;
+  padding: 0.05em 0.22em;
+  border-radius: 3px;
+}
+
+/* [[wikilink]] — styled non-link reference (no note-graph to resolve) */
+.ed-prose .wikilink {
+  color: var(--brand);
+  border-bottom: 1px dashed color-mix(in srgb, var(--brand) 55%, transparent);
+  cursor: help;
+}
+
+/* > [!type] callouts */
+.ed-prose .callout {
+  margin: 24px 0;
+  padding: 14px 18px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--callout-accent, var(--brand));
+  border-radius: 8px;
+  background: var(--elevated);
+}
+.ed-prose .callout-title {
+  margin-bottom: 8px;
+  font-family: var(--font-sans);
+  font-weight: 700;
+  font-size: 13px;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--callout-accent, var(--fg));
+}
+.ed-prose .callout-body > :first-child {
+  margin-top: 0;
+}
+.ed-prose .callout-body > :last-child {
+  margin-bottom: 0;
+}
+.ed-prose .callout-note,
+.ed-prose .callout-info,
+.ed-prose .callout-todo,
+.ed-prose .callout-abstract,
+.ed-prose .callout-summary {
+  --callout-accent: #4c8dff;
+}
+.ed-prose .callout-tip,
+.ed-prose .callout-hint,
+.ed-prose .callout-success,
+.ed-prose .callout-check,
+.ed-prose .callout-done {
+  --callout-accent: #2ec27e;
+}
+.ed-prose .callout-warning,
+.ed-prose .callout-caution,
+.ed-prose .callout-attention {
+  --callout-accent: #e5a50a;
+}
+.ed-prose .callout-danger,
+.ed-prose .callout-error,
+.ed-prose .callout-bug,
+.ed-prose .callout-failure,
+.ed-prose .callout-fail {
+  --callout-accent: #e0484d;
+}
+.ed-prose .callout-question,
+.ed-prose .callout-faq,
+.ed-prose .callout-example {
+  --callout-accent: #9141ac;
+}
+.ed-prose .callout-quote,
+.ed-prose .callout-cite {
+  --callout-accent: var(--fg-muted);
+}
+
+/* ```mermaid — source text is the SSR/no-JS fallback; renderMermaid swaps SVG in */
+.ed-prose .mermaid-diagram {
+  margin: 24px 0;
+  padding: 12px;
+  overflow-x: auto;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--fg-muted);
+  white-space: pre-wrap;
+}
+.ed-prose .mermaid-diagram svg {
+  max-width: 100%;
+  height: auto;
+}

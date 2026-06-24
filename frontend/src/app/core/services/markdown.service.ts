@@ -3,6 +3,7 @@ import { isPlatformBrowser } from '@angular/common';
 import { marked } from 'marked';
 import hljs from 'highlight.js';
 import DOMPurify from 'isomorphic-dompurify';
+import { obsidianExtensions } from './markdown-extensions';
 
 /** Allowed HTML tags and attributes for sanitized markdown output */
 const PURIFY_CONFIG = {
@@ -79,6 +80,8 @@ export class MarkdownService {
       gfm: true,
       breaks: true,
     });
+    // Obsidian-parity syntax: ==highlight==, > [!callout], [[wikilink]].
+    marked.use({ extensions: obsidianExtensions });
   }
 
   parse(markdown: string): string {

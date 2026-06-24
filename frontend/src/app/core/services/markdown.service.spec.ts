@@ -77,4 +77,35 @@ describe('MarkdownService', () => {
     const result = service.parse('```mermaid\ngraph TD\nA-->B\n```');
     expect(result).toContain('mermaid-diagram');
   });
+
+  it('should render ==text== as a highlight mark', () => {
+    const result = service.parse('some ==highlighted== text');
+    expect(result).toContain('<mark>highlighted</mark>');
+  });
+
+  it('should not treat == inside inline code as a highlight', () => {
+    const result = service.parse('`a == b`');
+    expect(result).not.toContain('<mark>');
+    expect(result).toContain('<code>a == b</code>');
+  });
+
+  it('should render a titled callout block', () => {
+    const result = service.parse('> [!warning] Be careful\n> watch out');
+    expect(result).toContain('callout callout-warning');
+    expect(result).toContain('Be careful');
+    expect(result).toContain('watch out');
+  });
+
+  it('should default a callout title to its capitalized type', () => {
+    const result = service.parse('> [!note]\n> just a note');
+    expect(result).toContain('callout-note');
+    expect(result).toContain('>Note<');
+  });
+
+  it('should render a wikilink alias as styled non-link text', () => {
+    const result = service.parse('see [[Some Note|the note]] here');
+    expect(result).toContain('class="wikilink"');
+    expect(result).toContain('the note');
+    expect(result).not.toContain('<a ');
+  });
 });
