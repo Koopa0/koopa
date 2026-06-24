@@ -832,34 +832,6 @@ func keysOf(m map[string]json.RawMessage) []string {
 // Regression tests
 // =============================================================================
 
-// TestRegression_BySlug_PrivateContentReturns404 documents the visibility gate:
-// a private content hit by slug must return 404, not 200.
-// This was a design decision — the gate lives in the handler, not the store.
-//
-// Visibility is modelled as Content.IsPublic bool (true = public, false = private).
-// The handler checks c.IsPublic before returning content via the public slug route.
-// This test verifies the zero-value semantics: a newly created Content is private
-// by default (IsPublic == false), so the gate fires correctly without explicit setup.
-//
-// Full end-to-end enforcement is covered by the integration tests in
-// integration_test.go.
-func TestRegression_BySlug_PrivateContentReturns404(t *testing.T) {
-	t.Parallel()
-
-	// Verify that the zero value of Content has IsPublic == false (private by default).
-	// The visibility gate checks c.IsPublic; a false value must cause a 404.
-	var c Content
-	if c.IsPublic {
-		t.Error("Content zero value has IsPublic = true, want false (private by default)")
-	}
-
-	// Verify that setting IsPublic to true makes it public.
-	c.IsPublic = true
-	if !c.IsPublic {
-		t.Error("Content.IsPublic = true did not set the field correctly")
-	}
-}
-
 // TestRegression_ErrNotFound_SentinelIdentity verifies that ErrNotFound and
 // ErrConflict use errors.Is correctly and are distinct.
 func TestRegression_ErrNotFound_SentinelIdentity(t *testing.T) {
