@@ -17,3 +17,6 @@ VALUES ($1, $2, $3);
 DELETE FROM refresh_tokens
 WHERE token_hash = $1
 RETURNING id, user_id, token_hash, expires_at, created_at;
+
+-- name: DeleteExpiredRefreshTokens :execrows
+DELETE FROM refresh_tokens WHERE expires_at < now();

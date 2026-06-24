@@ -58,6 +58,11 @@ const agentSyncTimeout = 10 * time.Second
 // within roughly one interval of landing.
 const embedReconcileInterval = 60 * time.Second
 
+// refreshTokenCleanupInterval is how often expired refresh tokens are purged.
+// ConsumeRefreshToken only deletes the exact presented token, so expired-but-
+// unconsumed rows would accumulate forever without this periodic sweep.
+const refreshTokenCleanupInterval = time.Hour
+
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	if len(os.Args) == 2 && os.Args[1] == "embed-backfill" {
@@ -242,6 +247,12 @@ func run(logger *slog.Logger) error {
 		logger.Info("embedding reconciler disabled, search stays FTS-only (GEMINI_API_KEY unset)")
 	}
 
+	// Refresh-token cleanup — background goroutine purging expired tokens.
+	// Shares the scheduler WaitGroup so a SIGTERM-cancelled ctx drains it
+	// before pool.Close(), exactly like the feed scheduler and embedding
+	// reconciler above.
+	wg.Go(func() { runRefreshTokenCleanup(ctx, authStore, logger) })
+
 	// Auth (optional — only if Google OAuth is configured)
 	var authHandler *auth.Handler
 	if cfg.GoogleClientID != "" {
@@ -418,6 +429,40 @@ func startFeedScheduler(ctx context.Context, wg *sync.WaitGroup, deps feedSchedu
 	}
 	wg.Go(func() { scheduler.Run(ctx) })
 	return nil
+}
+
+// runRefreshTokenCleanup purges expired refresh tokens once immediately, then
+// again on every refreshTokenCleanupInterval tick, until ctx is cancelled. It
+// owns no goroutine — the caller launches it on the scheduler WaitGroup and
+// waits for it during shutdown, so a SIGTERM-cancelled ctx drains it before the
+// pool closes. A cleanup error is logged and the loop continues; a transient DB
+// blip must not kill the worker. Mirrors the embedding reconciler's run loop.
+func runRefreshTokenCleanup(ctx context.Context, store *auth.Store, logger *slog.Logger) {
+	cleanup := func() {
+		n, err := store.DeleteExpiredRefreshTokens(ctx)
+		if err != nil {
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				return
+			}
+			logger.Error("refresh token cleanup failed", "error", err)
+			return
+		}
+		if n > 0 {
+			logger.Info("refresh token cleanup", "expired_refresh_tokens_deleted", n)
+		}
+	}
+
+	cleanup()
+	ticker := time.NewTicker(refreshTokenCleanupInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			cleanup()
+		}
+	}
 }
 
 // setupPool opens the pgxpool with an optional otelpgx tracer and, when
