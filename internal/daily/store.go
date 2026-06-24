@@ -7,9 +7,8 @@
 //     and returns ErrItemResolved when the existing row is already in a
 //     terminal state.
 //   - ItemsByDate returns Items with denormalised todo + project
-//     fields for the list view; ItemByID returns the bare row.
-//     The two converters (rawToItem vs itemsByDateRowToItem) reflect
-//     this split.
+//     fields for the list view via itemsByDateRowToItem; Create returns
+//     the bare row via rawToItem.
 //   - DeletePlannedByDate removes only items still in 'planned' state,
 //     preserving done/deferred/dropped as historical record — the
 //     safe "re-plan today" reset.
@@ -22,7 +21,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
 	"github.com/Koopa0/koopa/internal/db"
@@ -69,18 +67,6 @@ func (s *Store) ItemsByDate(ctx context.Context, date time.Time) ([]Item, error)
 		items[i] = itemsByDateRowToItem(&rows[i])
 	}
 	return items, nil
-}
-
-// ItemByID returns a single daily plan item by ID (without todo item joins).
-func (s *Store) ItemByID(ctx context.Context, id uuid.UUID) (*Item, error) {
-	r, err := s.q.ItemByID(ctx, id)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, ErrNotFound
-		}
-		return nil, fmt.Errorf("querying daily plan item %s: %w", id, err)
-	}
-	return rawToItem(&r), nil
 }
 
 // DeletePlannedByDate removes only 'planned' items for a date (re-planning).

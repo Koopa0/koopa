@@ -7,12 +7,6 @@ WHERE id = @id
 RETURNING id, title, description, status, area_id, quarter, deadline, created_by, proposal_rationale,
           created_at, updated_at;
 
--- name: GoalByTitle :one
--- Find a goal by case-insensitive title match.
-SELECT id, title, description, status, area_id, quarter, deadline, created_by, proposal_rationale,
-       created_at, updated_at
-FROM goals WHERE LOWER(title) = LOWER(@title);
-
 -- name: CreateGoal :one
 -- Create a new goal (v2: PostgreSQL-native).
 INSERT INTO goals (title, description, status, area_id, quarter, deadline)

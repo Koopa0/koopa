@@ -58,47 +58,12 @@ SELECT id, title, state, due, project_id,
        description, created_by, created_at, updated_at
 FROM todos ORDER BY state, due NULLS LAST, created_at DESC;
 
--- name: PendingTodoItems :many
--- List todo items that are not done, ordered by due date.
-SELECT id, title, state, due, project_id,
-       completed_at, energy, priority, recur_interval, recur_unit, recur_weekdays, last_completed_on,
-       description, created_by, created_at, updated_at
-FROM todos WHERE state != 'done'
-ORDER BY due NULLS LAST, created_at;
-
--- name: PendingTodoItemsWithProject :many
--- List pending todo items with project info.
-SELECT t.id, t.title, t.state, t.due, t.project_id,
-       t.energy, t.priority, t.recur_interval, t.recur_unit, t.recur_weekdays, t.last_completed_on,
-       t.created_at, t.updated_at,
-       COALESCE(p.title, '') AS project_title,
-       COALESCE(p.slug, '') AS project_slug
-FROM todos t
-LEFT JOIN projects p ON t.project_id = p.id
-WHERE t.state != 'done'
-  AND (sqlc.narg('project_slug')::text IS NULL OR p.slug = sqlc.narg('project_slug'))
-ORDER BY
-    (t.due IS NOT NULL) DESC,
-    t.due ASC NULLS LAST,
-    t.updated_at ASC
-LIMIT sqlc.arg('max_results');
-
 -- name: TodoItemByID :one
 -- Get a todo item by ID.
 SELECT id, title, state, due, project_id,
        completed_at, energy, priority, recur_interval, recur_unit, recur_weekdays, last_completed_on,
        description, created_by, created_at, updated_at
 FROM todos WHERE id = @id;
-
--- name: PendingTodoItemsByTitle :many
--- Find pending todo items matching a title (case-insensitive contains).
-SELECT id, title, state, due, project_id,
-       completed_at, energy, priority, recur_interval, recur_unit, recur_weekdays, last_completed_on,
-       description, created_by, created_at, updated_at
-FROM todos
-WHERE state != 'done' AND title ILIKE '%' || @search_title || '%'
-ORDER BY due NULLS LAST, updated_at ASC
-LIMIT 10;
 
 -- name: TodosByCreator :many
 -- List todos created by a given agent, newest first. Powers the list_tasks
@@ -150,15 +115,6 @@ FROM todos t
 LEFT JOIN projects p ON t.project_id = p.id
 WHERE t.state = 'done' AND t.completed_at >= @since
 ORDER BY t.completed_at DESC;
-
--- name: TodoItemsCreatedSince :many
--- Get todo items created since a given time with project context.
-SELECT t.id, t.title, t.created_at, t.project_id,
-       COALESCE(p.title, '') AS project_title
-FROM todos t
-LEFT JOIN projects p ON t.project_id = p.id
-WHERE t.created_at >= @since
-ORDER BY t.created_at DESC;
 
 -- name: UpdateTodoItem :one
 -- Update editable todo item fields. State transitions go through
@@ -250,19 +206,6 @@ SET last_completed_on = @completed_on::date,
     updated_at        = now()
 WHERE id = @id AND created_by = @created_by
   AND (recur_weekdays IS NOT NULL OR recur_interval IS NOT NULL);
-
--- name: TodoInboxCount :one
--- Count of todo items in inbox state (for needs_attention badge).
-SELECT count(*)::int FROM todos WHERE state = 'inbox';
-
--- name: StaleSomedayTodoCount :one
--- Count of someday todo items not updated in N days (GTD review signal).
-SELECT count(*)::int FROM todos
-WHERE state = 'someday' AND updated_at < @stale_before;
-
--- name: InboxTodoItems :many
--- List all inbox todo items, newest first.
-SELECT * FROM todos WHERE state = 'inbox' ORDER BY created_at DESC;
 
 -- name: ClarifyTodoItem :one
 -- Promote inbox todo item to todo state with clarification fields.

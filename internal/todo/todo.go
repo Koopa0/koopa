@@ -120,20 +120,6 @@ func (s *Store) ItemByID(ctx context.Context, id uuid.UUID) (*Item, error) {
 	return &t, nil
 }
 
-// PendingItemsByTitle finds pending todo items matching a title (case-insensitive).
-func (s *Store) PendingItemsByTitle(ctx context.Context, title string) ([]Item, error) {
-	escaped := escapeILIKE(title)
-	rows, err := s.q.PendingTodoItemsByTitle(ctx, &escaped)
-	if err != nil {
-		return nil, fmt.Errorf("searching pending todo items by title %q: %w", title, err)
-	}
-	items := make([]Item, len(rows))
-	for i := range rows {
-		items[i] = rowToItem(&rows[i])
-	}
-	return items, nil
-}
-
 // TodosByCreator returns the todos created by createdBy, newest first. It
 // backs the list_tasks MCP readback loop: an agent reads the disposition
 // (state) of the todos it created. createdBy is the resolved caller
@@ -389,12 +375,6 @@ type CreatorItem struct {
 type Resolution struct {
 	ID    uuid.UUID
 	State State
-}
-
-// Pending is a lightweight projection used by brief(morning) and the Today aggregate.
-type Pending struct {
-	Title string
-	Due   string
 }
 
 // PendingDetail is a pending todo with project context.

@@ -153,77 +153,6 @@ func (s *Store) ItemByURLHash(ctx context.Context, urlHash string) (*Item, error
 	return &d, nil
 }
 
-// RecentFeedEntries returns recently collected items in a time range, ordered by collected_at DESC.
-func (s *Store) RecentFeedEntries(ctx context.Context, start, end time.Time, limit int32) ([]Item, error) {
-	rows, err := s.q.RecentFeedEntries(ctx, db.RecentFeedEntriesParams{
-		CollectedAt:   start,
-		CollectedAt_2: end,
-		Limit:         limit,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("listing recent collected data: %w", err)
-	}
-	data := make([]Item, len(rows))
-	for i := range rows {
-		r := &rows[i]
-		data[i] = rowToItem(collectedRow{
-			ID: r.ID, SourceUrl: r.SourceUrl, Title: r.Title, OriginalContent: r.OriginalContent,
-			Status:           r.Status,
-			CuratedContentID: r.CuratedContentID, CollectedAt: r.CollectedAt, UrlHash: r.UrlHash,
-			FeedID:      r.FeedID,
-			PublishedAt: r.PublishedAt, FeedName: r.FeedName,
-		})
-	}
-	return data, nil
-}
-
-// LatestFeedEntries returns the latest collected items, optionally filtered by a since timestamp.
-// When since is nil, returns the latest maxResults items regardless of time.
-func (s *Store) LatestFeedEntries(ctx context.Context, since *time.Time, maxResults int32) ([]Item, error) {
-	rows, err := s.q.LatestFeedEntries(ctx, db.LatestFeedEntriesParams{
-		Since:      since,
-		MaxResults: maxResults,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("listing latest collected data: %w", err)
-	}
-	data := make([]Item, len(rows))
-	for i := range rows {
-		r := &rows[i]
-		data[i] = rowToItem(collectedRow{
-			ID: r.ID, SourceUrl: r.SourceUrl, Title: r.Title, OriginalContent: r.OriginalContent,
-			Status:           r.Status,
-			CuratedContentID: r.CuratedContentID, CollectedAt: r.CollectedAt, UrlHash: r.UrlHash,
-			FeedID:      r.FeedID,
-			PublishedAt: r.PublishedAt, FeedName: r.FeedName,
-		})
-	}
-	return data, nil
-}
-
-// TopUnreadFeedEntriesRecent returns unread collected items since the given time.
-func (s *Store) TopUnreadFeedEntriesRecent(ctx context.Context, since time.Time, maxResults int32) ([]Item, error) {
-	rows, err := s.q.TopUnreadFeedEntriesRecent(ctx, db.TopUnreadFeedEntriesRecentParams{
-		Since:      since,
-		MaxResults: maxResults,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("listing top unread collected data: %w", err)
-	}
-	data := make([]Item, len(rows))
-	for i := range rows {
-		r := &rows[i]
-		data[i] = rowToItem(collectedRow{
-			ID: r.ID, SourceUrl: r.SourceUrl, Title: r.Title, OriginalContent: r.OriginalContent,
-			Status:           r.Status,
-			CuratedContentID: r.CuratedContentID, CollectedAt: r.CollectedAt, UrlHash: r.UrlHash,
-			FeedID:      r.FeedID,
-			PublishedAt: r.PublishedAt, FeedName: r.FeedName,
-		})
-	}
-	return data, nil
-}
-
 // HighPriorityRecent returns unread items from high-priority feeds since the given time.
 func (s *Store) HighPriorityRecent(ctx context.Context, since time.Time, maxResults int32) ([]Item, error) {
 	rows, err := s.q.HighPriorityRecentFeedEntries(ctx, db.HighPriorityRecentFeedEntriesParams{
@@ -245,40 +174,6 @@ func (s *Store) HighPriorityRecent(ctx context.Context, since time.Time, maxResu
 		})
 	}
 	return data, nil
-}
-
-// DeleteOldIgnored deletes ignored collected data with collected_at before cutoff.
-// Returns the number of rows deleted.
-func (s *Store) DeleteOldIgnored(ctx context.Context, cutoff time.Time) (int64, error) {
-	n, err := s.q.DeleteOldIgnored(ctx, cutoff)
-	if err != nil {
-		return 0, fmt.Errorf("deleting old ignored collected data: %w", err)
-	}
-	return n, nil
-}
-
-// TopItems returns the top N most recent unread items from the last 7 days.
-func (s *Store) TopItems(ctx context.Context, limit int) ([]Item, error) {
-	since := time.Now().AddDate(0, 0, -7)
-	rows, err := s.q.TopUnreadFeedEntriesRecent(ctx, db.TopUnreadFeedEntriesRecentParams{
-		Since:      since,
-		MaxResults: int32(limit), // #nosec G115 -- limit bounded by caller
-	})
-	if err != nil {
-		return nil, fmt.Errorf("listing top collected items: %w", err)
-	}
-	items := make([]Item, len(rows))
-	for i := range rows {
-		r := &rows[i]
-		items[i] = rowToItem(collectedRow{
-			ID: r.ID, SourceUrl: r.SourceUrl, Title: r.Title, OriginalContent: r.OriginalContent,
-			Status:           r.Status,
-			CuratedContentID: r.CuratedContentID, CollectedAt: r.CollectedAt, UrlHash: r.UrlHash,
-			FeedID:      r.FeedID,
-			PublishedAt: r.PublishedAt, FeedName: r.FeedName,
-		})
-	}
-	return items, nil
 }
 
 // collectedRow is the common field set shared by all sqlc-generated collected data

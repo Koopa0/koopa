@@ -33,11 +33,6 @@ LEFT JOIN projects p ON p.id = t.project_id
 WHERE dpi.plan_date = @plan_date
 ORDER BY dpi.position, dpi.created_at;
 
--- name: ItemByID :one
--- Get a single daily plan item by ID.
-SELECT id, plan_date, todo_id, selected_by, position, reason, status, created_at, updated_at
-FROM daily_plan_items WHERE id = @id;
-
 -- name: DeletePlannedItemsByDate :many
 -- Remove only 'planned' items for a date (used when re-planning).
 -- Preserves done/deferred/dropped items as historical records.

@@ -73,21 +73,3 @@ func (s *Store) CompletedItemsDetailSince(ctx context.Context, since time.Time) 
 	}
 	return result, nil
 }
-
-// ItemsCreatedSince returns todo items created since the given time.
-func (s *Store) ItemsCreatedSince(ctx context.Context, since time.Time) ([]CreatedDetail, error) {
-	rows, err := s.q.TodoItemsCreatedSince(ctx, since)
-	if err != nil {
-		return nil, fmt.Errorf("listing todo items created since %s: %w", since.Format(time.DateOnly), err)
-	}
-	result := make([]CreatedDetail, len(rows))
-	for i, r := range rows {
-		result[i] = CreatedDetail{
-			ID:           r.ID,
-			Title:        r.Title,
-			CreatedAt:    r.CreatedAt,
-			ProjectTitle: r.ProjectTitle,
-		}
-	}
-	return result, nil
-}

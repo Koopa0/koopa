@@ -4,15 +4,6 @@
 // milestones, and the cross-table RecentActivity UNION. Kept in one
 // file because Milestone and ActivityItem are read-only siblings of
 // Goal with no independent lifecycle worth splitting out.
-//
-// Naming quirks worth knowing before adding callers:
-//   - Create(ctx, *CreateParams) is the idiomatic constructor.
-//     CreateGoal(ctx, title, description, status, areaID, quarter,
-//     deadline) is a legacy 7-arg signature kept for existing callers.
-//     New code should use Create + CreateParams.
-//   - ByID(ctx, id) returns *GoalWithArea (joins area name).
-//     GoalByID(ctx, id) returns bare *Goal. Pick the one matching what
-//     you need — don't pay for the join if the area name is unused.
 
 package goal
 
@@ -68,19 +59,6 @@ func mapWriteError(err error, operation string) error {
 	}
 }
 
-// GoalByTitle returns a goal by case-insensitive title match.
-func (s *Store) GoalByTitle(ctx context.Context, title string) (*Goal, error) {
-	r, err := s.q.GoalByTitle(ctx, title)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, ErrNotFound
-		}
-		return nil, fmt.Errorf("querying goal by title %q: %w", title, err)
-	}
-	g := rowToGoal(&r)
-	return &g, nil
-}
-
 // UpdateStatus updates a goal's status.
 func (s *Store) UpdateStatus(ctx context.Context, id uuid.UUID, status Status) (*Goal, error) {
 	r, err := s.q.UpdateGoalStatus(ctx, db.UpdateGoalStatusParams{
@@ -92,36 +70,6 @@ func (s *Store) UpdateStatus(ctx context.Context, id uuid.UUID, status Status) (
 			return nil, ErrNotFound
 		}
 		return nil, fmt.Errorf("updating goal %s status: %w", id, err)
-	}
-	g := rowToGoal(&r)
-	return &g, nil
-}
-
-// CreateGoal inserts a new goal.
-func (s *Store) CreateGoal(ctx context.Context, title, description, status string, areaID *uuid.UUID, quarter *string, deadline *time.Time) (*Goal, error) {
-	r, err := s.q.CreateGoal(ctx, db.CreateGoalParams{
-		Title:       title,
-		Description: description,
-		Status:      db.GoalStatus(status),
-		AreaID:      areaID,
-		Quarter:     quarter,
-		Deadline:    deadline,
-	})
-	if err != nil {
-		return nil, mapWriteError(err, "creating goal")
-	}
-	g := rowToGoal(&r)
-	return &g, nil
-}
-
-// GoalByID returns a single goal by ID.
-func (s *Store) GoalByID(ctx context.Context, id uuid.UUID) (*Goal, error) {
-	r, err := s.q.GoalByID(ctx, id)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, ErrNotFound
-		}
-		return nil, fmt.Errorf("querying goal %s: %w", id, err)
 	}
 	g := rowToGoal(&r)
 	return &g, nil
@@ -332,29 +280,6 @@ func (s *Store) Create(ctx context.Context, p *CreateParams) (*Goal, error) {
 	}
 	g := rowToGoal(&r)
 	return &g, nil
-}
-
-// CreateMilestoneSimple inserts a new milestone with only title and position.
-func (s *Store) CreateMilestoneSimple(ctx context.Context, goalID uuid.UUID, title string, position int32) (*Milestone, error) {
-	r, err := s.q.CreateMilestoneWithPosition(ctx, db.CreateMilestoneWithPositionParams{
-		GoalID:   goalID,
-		Title:    title,
-		Position: position,
-	})
-	if err != nil {
-		return nil, mapWriteError(err, "creating milestone")
-	}
-	return &Milestone{
-		ID:             r.ID,
-		GoalID:         r.GoalID,
-		Title:          r.Title,
-		Description:    r.Description,
-		TargetDeadline: r.TargetDeadline,
-		CompletedAt:    r.CompletedAt,
-		Position:       r.Position,
-		CreatedAt:      r.CreatedAt,
-		UpdatedAt:      r.UpdatedAt,
-	}, nil
 }
 
 // ToggleMilestone toggles a milestone's completed_at (set to now if null, null if set).

@@ -14,9 +14,6 @@ import (
 	"github.com/google/uuid"
 )
 
-// ErrNotFound indicates the daily plan item does not exist.
-var ErrNotFound = errors.New("dailyplan: not found")
-
 // ErrItemResolved indicates a daily plan item for the date already reached a
 // terminal state (done, deferred, or dropped) and so cannot be re-planned.
 var ErrItemResolved = errors.New("dailyplan: item already resolved for date")
