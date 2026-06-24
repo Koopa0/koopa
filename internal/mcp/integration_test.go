@@ -658,8 +658,12 @@ func TestIntegration_SearchKnowledge_ProjectRejected(t *testing.T) {
 func seedTodoState(t *testing.T, title, state string) uuid.UUID {
 	t.Helper()
 	var id uuid.UUID
+	// chk_todo_completed_at_consistency ties state='done' to a non-null
+	// completed_at, so a done fixture must stamp it.
 	if err := testPool.QueryRow(t.Context(),
-		`INSERT INTO todos (title, state) VALUES ($1, $2::todo_state) RETURNING id`,
+		`INSERT INTO todos (title, state, completed_at)
+		 VALUES ($1, $2::todo_state, CASE WHEN $2 = 'done' THEN now() ELSE NULL END)
+		 RETURNING id`,
 		title, state,
 	).Scan(&id); err != nil {
 		t.Fatalf("seeding todo %q (state=%s): %v", title, state, err)
@@ -733,6 +737,47 @@ func TestIntegration_PlanDay_PositionOutOfRangeRejected(t *testing.T) {
 	}
 	if got := countPlanItems(t, todoID); got != 1 {
 		t.Errorf("daily_plan_items for todo = %d, want 1 after in-range plan", got)
+	}
+}
+
+// TestIntegration_PlanDay_StateGate pins which todo states are plannable: only
+// todo and in_progress (things you start/continue today); inbox/done/someday are
+// rejected and roll the whole call back. The bug it catches: relaxing the gate
+// so a done or parked (someday) item silently lands back on today's plan.
+func TestIntegration_PlanDay_StateGate(t *testing.T) {
+	s := setupServer(t)
+
+	for _, state := range []string{"todo", "in_progress"} {
+		t.Run("accept_"+state, func(t *testing.T) {
+			id := seedTodoState(t, "plan-accept-"+state, state)
+			_, out, err := callHandlerAs(t, "planner", s.planDay, PlanDayInput{
+				Items: []PlanDayItem{{TaskID: id.String(), Position: 1}},
+			})
+			if err != nil {
+				t.Fatalf("plan_day rejected state=%s: %v (want accepted)", state, err)
+			}
+			if out.ItemsCreated != 1 {
+				t.Errorf("state=%s items_created = %d, want 1", state, out.ItemsCreated)
+			}
+		})
+	}
+
+	for _, state := range []string{"inbox", "done", "someday"} {
+		t.Run("reject_"+state, func(t *testing.T) {
+			id := seedTodoState(t, "plan-reject-"+state, state)
+			_, _, err := callHandlerAs(t, "planner", s.planDay, PlanDayInput{
+				Items: []PlanDayItem{{TaskID: id.String(), Position: 1}},
+			})
+			if err == nil {
+				t.Fatalf("plan_day accepted state=%s; want rejection", state)
+			}
+			if !strings.Contains(err.Error(), "only todo or in_progress") {
+				t.Errorf("state=%s error = %q, want it to name the state rule", state, err)
+			}
+			if got := countPlanItems(t, id); got != 0 {
+				t.Errorf("state=%s plan items = %d, want 0 (rollback on rejection)", state, got)
+			}
+		})
 	}
 }
 

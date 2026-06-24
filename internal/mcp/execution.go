@@ -26,12 +26,12 @@ import (
 // PlanDayInput is the input for the plan_day tool.
 type PlanDayInput struct {
 	Date  *string       `json:"date,omitempty" jsonschema_description:"Plan date YYYY-MM-DD (default: today)"`
-	Items []PlanDayItem `json:"items" jsonschema:"required" jsonschema_description:"Todo items to plan for the day. Each todo MUST already be in state=todo (not inbox/done/someday). Inbox-state items are rejected — clarify them to state=todo via the admin UI first. plan_day is idempotent for the given date: re-calling with a different items list replaces existing 'planned' rows for that date and reports the displaced items in items_removed."`
+	Items []PlanDayItem `json:"items" jsonschema:"required" jsonschema_description:"Todo items to plan for the day. Each todo MUST be in state=todo or in_progress (inbox/done/someday/archived/dismissed rejected — clarify inbox todos via the admin UI first). plan_day is idempotent for the given date: re-calling with a different items list replaces existing 'planned' rows for that date and reports the displaced items in items_removed."`
 }
 
 // PlanDayItem is a single item in the plan_day input.
 type PlanDayItem struct {
-	TaskID   string `json:"task_id" jsonschema:"required" jsonschema_description:"Todo item UUID. The todo must be in state=todo; inbox/done/someday are rejected."`
+	TaskID   string `json:"task_id" jsonschema:"required" jsonschema_description:"Todo item UUID. The todo must be in state=todo or in_progress; inbox/done/someday/archived are rejected."`
 	Position int    `json:"position,omitempty" jsonschema_description:"Position in plan (0-based, lower = higher priority)"`
 }
 
@@ -90,8 +90,11 @@ func createPlanItemTx(ctx context.Context, txTodos *todo.Store, txDayplan *daily
 	if err != nil {
 		return fmt.Errorf("todo item %s not found: %w", item.TaskID, err)
 	}
-	if t.State == todo.StateInbox {
-		return fmt.Errorf("todo item %s is in inbox state — it must be clarified to state=todo (via the admin UI) before planning", item.TaskID)
+	// Only actionable items belong on a day's plan: todo (ready to start) and
+	// in_progress (continuing). inbox is unclarified; done/someday/archived/
+	// dismissed are not things you start today.
+	if t.State != todo.StateTodo && t.State != todo.StateInProgress {
+		return fmt.Errorf("todo item %s is in state %q — only todo or in_progress items can be planned (inbox must be clarified first; done/someday are not today's work)", item.TaskID, t.State)
 	}
 	if item.Position < 0 || item.Position > maxPlanPosition {
 		return fmt.Errorf("todo item %s position %d out of range [0, %d]", item.TaskID, item.Position, maxPlanPosition)
