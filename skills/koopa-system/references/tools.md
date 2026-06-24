@@ -122,7 +122,7 @@ Publishing stays an owner action in admin, off the MCP surface.
 
 ## Cross-cutting rules
 
-**Caller identity**: every tool accepts optional `as: "<agent_name>"`. Server trusts the `as` value and authorizes by identity (platform / author / self) in `internal/mcp/authz.go`, against the roster in `internal/agent/registry.go::BuiltinAgents()`. Default caller is from env `KOOPA_MCP_CALLER_AGENT`.
+**Caller identity**: every tool accepts optional `as: "<agent_name>"`. There is **no tool-layer authorization** (Option B) — the MCP transport is the access boundary, and `as` only carries attribution + caller-scope (created_by / activity_events.actor / `*ByCreator` readback), resolved in `internal/mcp/server.go::callerIdentity` against the roster in `internal/agent/registry.go::BuiltinAgents()`. A fabricated `as` is rejected by the created_by FK. Default caller is from env `KOOPA_MCP_CALLER_AGENT`, falling back to `unknown` (which `project_progress` / `review_period` do not count as owner activity).
 
 **Read-only forever**: `brief`, `search_knowledge`, `list_tasks`, `list_content`, `review_period`, and `project_progress` are read-only by design and will not gain write actions.
 
