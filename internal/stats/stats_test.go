@@ -4,40 +4,31 @@ package stats
 
 // Tests for internal/stats.
 //
-// Scope:
-//   - computeAreaDrift: pure business logic — division-by-zero guards, empty maps,
-//     single-side data (goals but no events, events but no goals), sort order.
-//   - Handler.Overview / Handler.Drift: HTTP handler tests via
-//     httptest with a stub db.DBTX that controls which queries succeed or fail.
-//   - days param parsing in Handler.Drift: boundary clamping (0, negative, >90, exact
-//     boundaries 1 and 90) plus a fuzz test for the raw string path.
+// Scope (unit, no DB):
+//   - computeAreaDrift: pure business logic — division-by-zero guards, empty
+//     maps, single-side data (goals but no events, events but no goals), sort
+//     order.
+//   - parseDays: drift-window bounds clamping (0, negative, >90, exact
+//     boundaries 1 and 90, non-numeric) plus a fuzz test on arbitrary input.
+//   - successRateState / nonZeroState: the pure cell-state mappers consumed by
+//     the process-runs summary.
+//   - SystemHealthSnapshot wire contract: marshaling-only pins on the nested
+//     field names the Today fan-out consumes.
 //
-// Integration tests (real DB via testcontainers) are out of scope here.
-// The store-level SQL is exercised by the handler tests through the stub DBTX,
-// which validates the control-flow paths inside the store methods without a live DB.
+// The store aggregators (Overview / SystemHealth / ProcessRunsSince /
+// RecentProcessRuns) run against a real PostgreSQL container in
+// internal/stats/integration_test.go — never a hand-rolled db.DBTX, which would
+// prove nothing about the SQL.
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
-	"errors"
-	"fmt"
-	"io"
-	"log/slog"
 	"math"
-	"net/http"
-	"net/http/httptest"
-	"net/url"
 	"strconv"
-	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
-
-	"github.com/Koopa0/koopa/internal/api"
 )
 
 // ── computeAreaDrift unit tests ────────────────────────────────────────────────
@@ -196,279 +187,134 @@ func TestComputeAreaDrift_SortInvariant(t *testing.T) {
 	}
 }
 
-// ── Stub DBTX implementation ───────────────────────────────────────────────────
+// ── parseDays clamp unit tests ─────────────────────────────────────────────────
 
-// stubDBTX implements db.DBTX. Each method is controlled by a function field so
-// individual tests can inject targeted failures or canned results.
-type stubDBTX struct {
-	queryFn    func(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
-	queryRowFn func(ctx context.Context, sql string, args ...any) pgx.Row
-}
-
-func (s *stubDBTX) Exec(_ context.Context, _ string, _ ...any) (pgconn.CommandTag, error) {
-	return pgconn.CommandTag{}, nil
-}
-
-func (s *stubDBTX) Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
-	if s.queryFn != nil {
-		return s.queryFn(ctx, sql, args...)
-	}
-	return &emptyRows{}, nil
-}
-
-func (s *stubDBTX) QueryRow(ctx context.Context, sql string, args ...any) pgx.Row {
-	if s.queryRowFn != nil {
-		return s.queryRowFn(ctx, sql, args...)
-	}
-	return &zeroRow{}
-}
-
-// emptyRows is a pgx.Rows that immediately signals no rows.
-type emptyRows struct{}
-
-func (e *emptyRows) Next() bool                    { return false }
-func (e *emptyRows) Scan(_ ...any) error           { return nil }
-func (e *emptyRows) Err() error                    { return nil }
-func (e *emptyRows) Close()                        {}
-func (e *emptyRows) CommandTag() pgconn.CommandTag { return pgconn.CommandTag{} }
-func (e *emptyRows) FieldDescriptions() []pgconn.FieldDescription {
-	return nil
-}
-func (e *emptyRows) Values() ([]any, error) { return nil, nil }
-func (e *emptyRows) RawValues() [][]byte    { return nil }
-func (e *emptyRows) Conn() *pgx.Conn        { return nil }
-
-// zeroRow scans all destination pointers to their zero value.
-type zeroRow struct{}
-
-func (z *zeroRow) Scan(dest ...any) error {
-	for _, d := range dest {
-		switch v := d.(type) {
-		case *int:
-			*v = 0
-		case *int64:
-			*v = 0
-		case *string:
-			*v = ""
-		case **string:
-			*v = nil
-		}
-	}
-	return nil
-}
-
-// errRow always returns a configurable error from Scan.
-type errRow struct{ err error }
-
-func (e *errRow) Scan(_ ...any) error { return e.err }
-
-// silentLogger discards all log output from the handler.
-func silentLogger() *slog.Logger {
-	return slog.New(slog.NewTextHandler(io.Discard, nil))
-}
-
-// ── Handler.Overview tests ─────────────────────────────────────────────────────
-
-func TestHandler_Overview_Success(t *testing.T) {
-	t.Parallel()
-
-	dbtx := &stubDBTX{
-		// All Query calls return empty rows — store accumulates zeros.
-		queryFn: func(_ context.Context, _ string, _ ...any) (pgx.Rows, error) {
-			return &emptyRows{}, nil
-		},
-		// All QueryRow calls scan zeros — no error.
-		queryRowFn: func(_ context.Context, _ string, _ ...any) pgx.Row {
-			return &zeroRow{}
-		},
-	}
-
-	h := NewHandler(NewStore(dbtx), silentLogger())
-
-	req := httptest.NewRequest(http.MethodGet, "/api/admin/stats", http.NoBody)
-	w := httptest.NewRecorder()
-	h.Overview(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("Overview() status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
-	}
-	if ct := w.Header().Get("Content-Type"); ct != "application/json" {
-		t.Errorf("Content-Type = %q, want application/json", ct)
-	}
-
-	var resp api.Response
-	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
-		t.Fatalf("decoding response: %v", err)
-	}
-	if resp.Data == nil {
-		t.Fatal("Overview() response.data is nil, want overview object")
-	}
-}
-
-func TestHandler_Overview_StoreError(t *testing.T) {
-	t.Parallel()
-
-	boom := errors.New("db unavailable")
-
-	// Make every Query call fail — errgroup will return this error.
-	dbtx := &stubDBTX{
-		queryFn: func(_ context.Context, _ string, _ ...any) (pgx.Rows, error) {
-			return nil, boom
-		},
-		queryRowFn: func(_ context.Context, _ string, _ ...any) pgx.Row {
-			return &errRow{err: boom}
-		},
-	}
-
-	h := NewHandler(NewStore(dbtx), silentLogger())
-
-	req := httptest.NewRequest(http.MethodGet, "/api/admin/stats", http.NoBody)
-	w := httptest.NewRecorder()
-	h.Overview(w, req)
-
-	if w.Code != http.StatusInternalServerError {
-		t.Fatalf("Overview() on DB error: status = %d, want %d", w.Code, http.StatusInternalServerError)
-	}
-	assertErrorCode(t, w, "INTERNAL")
-}
-
-// ── Handler.Drift tests ────────────────────────────────────────────────────────
-
-func TestHandler_Drift_DaysParamClamping(t *testing.T) {
+// TestParseDays pins the drift-window bounds: valid in-range values pass
+// through, everything else (≤0, >driftMaxDays, non-numeric, empty) falls back to
+// driftDefaultDays. Expected values are hand-computed against the [1,90]/30
+// contract.
+//
+// Mutation it catches: changing `d <= 0` to `d < 0` would let 0 through;
+// dropping the upper bound would let 91 through; swapping the fallback constant
+// would break every out-of-range case.
+func TestParseDays(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name     string
-		query    string
-		wantDays int // verified via DriftReport.Period field
+		name string
+		raw  string
+		want int
 	}{
-		{name: "default — no param", query: "", wantDays: 30},
-		{name: "valid 7", query: "days=7", wantDays: 7},
-		{name: "valid 90 — upper boundary", query: "days=90", wantDays: 90},
-		{name: "valid 1 — lower boundary", query: "days=1", wantDays: 1},
-		{name: "0 — rejected, falls back to 30", query: "days=0", wantDays: 30},
-		{name: "negative — rejected, falls back to 30", query: "days=-5", wantDays: 30},
-		{name: "91 — exceeds max, falls back to 30", query: "days=91", wantDays: 30},
-		{name: "non-numeric — rejected, falls back to 30", query: "days=abc", wantDays: 30},
-		{name: "empty string — falls back to 30", query: "days=", wantDays: 30},
-		{name: "float string — rejected, falls back to 30", query: "days=7.5", wantDays: 30},
+		{name: "empty falls back to default", raw: "", want: 30},
+		{name: "valid 7", raw: "7", want: 7},
+		{name: "lower boundary 1", raw: "1", want: 1},
+		{name: "upper boundary 90", raw: "90", want: 90},
+		{name: "zero falls back", raw: "0", want: 30},
+		{name: "negative falls back", raw: "-5", want: 30},
+		{name: "91 exceeds max, falls back", raw: "91", want: 30},
+		{name: "non-numeric falls back", raw: "abc", want: 30},
+		{name: "float string falls back", raw: "7.5", want: 30},
+		{name: "trailing space falls back (Atoi rejects)", raw: "7 ", want: 30},
+		{name: "overflow falls back", raw: "9999999999999999999", want: 30},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-
-			// The Drift store method calls queryGoalsByArea and queryEventsByArea.
-			// Both use Query; return empty rows so the handler succeeds and we can
-			// inspect the period string in the response.
-			dbtx := &stubDBTX{
-				queryFn: func(_ context.Context, _ string, _ ...any) (pgx.Rows, error) {
-					return &emptyRows{}, nil
-				},
-			}
-
-			h := NewHandler(NewStore(dbtx), silentLogger())
-
-			reqURL := "/api/admin/stats/drift"
-			if tt.query != "" {
-				reqURL += "?" + tt.query
-			}
-			req := httptest.NewRequest(http.MethodGet, reqURL, http.NoBody)
-			w := httptest.NewRecorder()
-			h.Drift(w, req)
-
-			if w.Code != http.StatusOK {
-				t.Fatalf("Drift(%q) status = %d, want %d; body: %s",
-					tt.query, w.Code, http.StatusOK, w.Body.String())
-			}
-
-			var resp struct {
-				Data DriftReport `json:"data"`
-			}
-			if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
-				t.Fatalf("decoding response: %v", err)
-			}
-
-			wantPeriod := fmt.Sprintf("last %d days", tt.wantDays)
-			if resp.Data.Period != wantPeriod {
-				t.Errorf("Drift(%q).Period = %q, want %q", tt.query, resp.Data.Period, wantPeriod)
+			if got := parseDays(tt.raw); got != tt.want {
+				t.Errorf("parseDays(%q) = %d, want %d", tt.raw, got, tt.want)
 			}
 		})
 	}
 }
 
-func TestHandler_Drift_StoreError(t *testing.T) {
-	t.Parallel()
-
-	boom := errors.New("query failed")
-	dbtx := &stubDBTX{
-		queryFn: func(_ context.Context, _ string, _ ...any) (pgx.Rows, error) {
-			return nil, boom
-		},
+// FuzzParseDays verifies parseDays never panics and always returns a value
+// inside the valid window [1, driftMaxDays] for arbitrary input. It also
+// re-derives the expected result independently (Atoi on the RAW string — no
+// trimming, matching parseDays) so a drift in the bounds logic surfaces.
+func FuzzParseDays(f *testing.F) {
+	for _, seed := range []string{"30", "1", "90", "0", "-1", "91", "", "abc", "7.5", "1e2", "9999999999999999999", " 30 "} {
+		f.Add(seed)
 	}
-
-	h := NewHandler(NewStore(dbtx), silentLogger())
-
-	req := httptest.NewRequest(http.MethodGet, "/api/admin/stats/drift", http.NoBody)
-	w := httptest.NewRecorder()
-	h.Drift(w, req)
-
-	if w.Code != http.StatusInternalServerError {
-		t.Fatalf("Drift() on DB error: status = %d, want %d", w.Code, http.StatusInternalServerError)
-	}
-	assertErrorCode(t, w, "INTERNAL")
-}
-
-// ── Drift days param fuzz test ─────────────────────────────────────────────────
-
-// FuzzDriftDaysParam verifies that the days-parsing logic in Handler.Drift never
-// panics and always falls back safely on arbitrary input.
-func FuzzDriftDaysParam(f *testing.F) {
-	// Seed corpus — boundaries and tricky inputs.
-	f.Add("30")
-	f.Add("1")
-	f.Add("90")
-	f.Add("0")
-	f.Add("-1")
-	f.Add("91")
-	f.Add("")
-	f.Add("abc")
-	f.Add("7.5")
-	f.Add("1e2")
-	f.Add("9999999999999999999") // overflow
-	f.Add(" 30 ")                // whitespace
-	f.Add("30 ")                 // trailing space — not parseable by strconv.Atoi
-
-	dbtx := &stubDBTX{
-		queryFn: func(_ context.Context, _ string, _ ...any) (pgx.Rows, error) {
-			return &emptyRows{}, nil
-		},
-	}
-	h := NewHandler(NewStore(dbtx), silentLogger())
-
-	f.Fuzz(func(t *testing.T, rawDays string) {
-		// httptest.NewRequest panics when the URL contains bytes that make
-		// it structurally invalid (spaces, control chars). Use
-		// url.QueryEscape so the fuzz corpus can exercise arbitrary byte
-		// sequences through the handler's Atoi / bounds-check path without
-		// triggering the HTTP library's URL validator.
-		escaped := url.QueryEscape(rawDays)
-		req := httptest.NewRequest(http.MethodGet, "/api/admin/stats/drift?days="+escaped, http.NoBody)
-		w := httptest.NewRecorder()
-
-		// Must not panic.
-		h.Drift(w, req)
-
-		// The handler must always return a valid HTTP status.
-		if w.Code != http.StatusOK && w.Code != http.StatusInternalServerError {
-			t.Errorf("unexpected status %d for days=%q", w.Code, rawDays)
+	f.Fuzz(func(t *testing.T, raw string) {
+		got := parseDays(raw) // must not panic
+		if got < 1 || got > driftMaxDays {
+			t.Errorf("parseDays(%q) = %d, outside [1, %d]", raw, got, driftMaxDays)
 		}
 
-		// If successful, Period must match "last N days" where N is in [1, 90].
-		if w.Code == http.StatusOK {
-			assertDriftFuzzResponse(t, w, rawDays)
+		// Independent expectation: parseDays does NOT trim, so classify against
+		// the raw string exactly as strconv.Atoi sees it.
+		d, err := strconv.Atoi(raw)
+		want := driftDefaultDays
+		if err == nil && d > 0 && d <= driftMaxDays {
+			want = d
+		}
+		if got != want {
+			t.Errorf("parseDays(%q) = %d, want %d", raw, got, want)
 		}
 	})
+}
+
+// ── cell-state mapper unit tests ───────────────────────────────────────────────
+
+// TestSuccessRateState pins the three-band success-rate cell state: ≥95 ok,
+// ≥80 warn, below error. Boundary values are the ones the UI colour-codes on.
+//
+// Mutation it catches: using `>` instead of `>=` at a boundary would flip 95 to
+// warn and 80 to error.
+func TestSuccessRateState(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		pct  float64
+		want string
+	}{
+		{name: "100 is ok", pct: 100, want: "ok"},
+		{name: "95 boundary is ok", pct: 95, want: "ok"},
+		{name: "94.9 is warn", pct: 94.9, want: "warn"},
+		{name: "80 boundary is warn", pct: 80, want: "warn"},
+		{name: "79.9 is error", pct: 79.9, want: "error"},
+		{name: "0 is error", pct: 0, want: "error"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := successRateState(tt.pct); got != tt.want {
+				t.Errorf("successRateState(%v) = %q, want %q", tt.pct, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestNonZeroState pins the zero-vs-elevated cell state: a zero count is always
+// "ok", any non-zero count yields the caller-supplied elevated label.
+//
+// Mutation it catches: returning the elevated label for n==0, or always
+// returning "ok", would break the retry/failure warning surfaces.
+func TestNonZeroState(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		n        int
+		elevated string
+		want     string
+	}{
+		{name: "zero is ok regardless of elevated label", n: 0, elevated: "warn", want: "ok"},
+		{name: "one with warn label", n: 1, elevated: "warn", want: "warn"},
+		{name: "many with error label", n: 17, elevated: "error", want: "error"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := nonZeroState(tt.n, tt.elevated); got != tt.want {
+				t.Errorf("nonZeroState(%d, %q) = %q, want %q", tt.n, tt.elevated, got, tt.want)
+			}
+		})
+	}
 }
 
 // assertAreaDriftResults checks the computed drift results against expected values.
@@ -493,44 +339,6 @@ func assertAreaDriftResults(t *testing.T, testName string, got, wantAreas []Area
 	}
 	if diff := cmp.Diff(wantAreas, got, opts...); diff != "" {
 		t.Errorf("computeAreaDrift() mismatch (-want +got):\n%s", diff)
-	}
-}
-
-// assertDriftFuzzResponse validates a successful drift fuzz response: period format and range clamping.
-func assertDriftFuzzResponse(t *testing.T, w *httptest.ResponseRecorder, rawDays string) {
-	t.Helper()
-	var resp struct {
-		Data DriftReport `json:"data"`
-	}
-	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
-		t.Fatalf("decoding fuzz response: %v", err)
-	}
-	var n int
-	if _, err := fmt.Sscanf(resp.Data.Period, "last %d days", &n); err != nil {
-		t.Errorf("Period %q doesn't match 'last N days': %v", resp.Data.Period, err)
-		return
-	}
-	if n < 1 || n > 90 {
-		t.Errorf("Period N = %d, want [1, 90]", n)
-	}
-	d, err := strconv.Atoi(strings.TrimSpace(rawDays))
-	outOfRange := err != nil || d <= 0 || d > 90
-	if outOfRange && n != 30 {
-		t.Errorf("out-of-range input %q produced days=%d, want 30", rawDays, n)
-	}
-}
-
-// ── helpers ────────────────────────────────────────────────────────────────────
-
-// assertErrorCode decodes the response body and asserts the error code field.
-func assertErrorCode(t *testing.T, w *httptest.ResponseRecorder, wantCode string) {
-	t.Helper()
-	var body api.ErrorBody
-	if err := json.NewDecoder(w.Body).Decode(&body); err != nil {
-		t.Fatalf("decoding error body: %v", err)
-	}
-	if diff := cmp.Diff(wantCode, body.Error.Code); diff != "" {
-		t.Errorf("error code mismatch (-want +got):\n%s", diff)
 	}
 }
 
