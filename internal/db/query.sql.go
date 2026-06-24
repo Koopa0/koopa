@@ -5702,7 +5702,7 @@ type StatsProcessRunsByStatusRow struct {
 }
 
 // Count process_runs grouped by status within a single kind
-// (one of: crawl, agent_schedule).
+// (one of: crawl).
 func (q *Queries) StatsProcessRunsByStatus(ctx context.Context, kind string) ([]StatsProcessRunsByStatusRow, error) {
 	rows, err := q.db.Query(ctx, statsProcessRunsByStatus, kind)
 	if err != nil {
