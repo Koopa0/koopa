@@ -266,22 +266,6 @@ func TestRefresh_MissingRefreshToken(t *testing.T) {
 	assertErrorCode(t, w, "BAD_REQUEST")
 }
 
-func TestRefresh_InvalidToken_ReturnsUnauthorized(t *testing.T) {
-	t.Parallel()
-
-	// The handler calls h.store.ConsumeRefreshToken which will fail because
-	// h.store is nil. That returns a nil dereference — which reveals a bug:
-	// the handler doesn't guard against nil store. However in production the
-	// store is always non-nil (wired by NewHandler). We test here that a valid
-	// JSON payload with a non-empty token results in 401 when no store is
-	// configured (store is nil — panic guard should not be needed but let's
-	// check with a real-looking but invalid token).
-	//
-	// We skip this particular sub-case here and cover it in integration tests.
-	// This keeps the unit test layer clean.
-	t.Skip("covered by store integration tests — requires real or stub store")
-}
-
 // ─── jsRedirect ───────────────────────────────────────────────────────────────
 
 func TestJsRedirect(t *testing.T) {
