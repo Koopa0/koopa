@@ -1366,6 +1366,18 @@ func TestIntegration_Goal_InvalidInput(t *testing.T) {
 			},
 		},
 		{
+			// A whitespace-only title violates chk_goal_title_not_blank
+			// (btrim(title) <> '') → 23514, which mapWriteError classifies as
+			// ErrInvalidInput so the handler renders 400, not an opaque 500.
+			name: "create goal with whitespace-only title (check 23514)",
+			run: func() error {
+				_, err := store.Create(ctx, &goal.CreateParams{
+					Title: "   ",
+				})
+				return err
+			},
+		},
+		{
 			name: "update goal with non-existent area_id (foreign key 23503)",
 			run: func() error {
 				id := seedGoal(t, "Area update target")
