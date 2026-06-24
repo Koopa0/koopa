@@ -825,32 +825,6 @@ func TestIntegration_ProposeArea_AsPlanner(t *testing.T) {
 		t.Errorf("persisted created_by = %q, want %q", createdBy, "planner")
 	}
 }
-
-// TestIntegration_ProposeArea_CallerGate asserts the registered-caller gate:
-// the zero-privilege "unknown" fallback and a fabricated name are refused
-// before any write.
-func TestIntegration_ProposeArea_CallerGate(t *testing.T) {
-	s := setupServer(t)
-	t.Cleanup(func() { deleteProposedAreas(t) })
-
-	for _, caller := range []string{"unknown", "fabricated-agent"} {
-		_, _, err := callHandlerAs(t, caller, s.proposeArea, ProposeAreaInput{Name: "Should Never Persist"})
-		if err == nil {
-			t.Errorf("proposeArea as %q err = nil, want registered-caller refusal", caller)
-		}
-	}
-
-	var count int
-	if err := testPool.QueryRow(t.Context(),
-		`SELECT COUNT(*) FROM areas WHERE status = 'proposed'`,
-	).Scan(&count); err != nil {
-		t.Fatalf("counting proposed areas: %v", err)
-	}
-	if count != 0 {
-		t.Errorf("proposed area count = %d, want 0 (gate must precede any write)", count)
-	}
-}
-
 // TestIntegration_ProposeArea_BlankNameRejected asserts the handler rejects a
 // blank name before any write (the chk_area_name_not_blank CHECK would also
 // fire, but the handler validates first for a clean error).
@@ -1229,31 +1203,6 @@ func TestIntegration_ProposeProject_AsPlanner(t *testing.T) {
 		}
 	}
 }
-
-// TestIntegration_ProposeProject_CallerGate asserts the registered-caller gate:
-// the zero-privilege "unknown" fallback and a fabricated name are refused
-// before any write.
-func TestIntegration_ProposeProject_CallerGate(t *testing.T) {
-	s := setupServer(t)
-
-	for _, caller := range []string{"unknown", "fabricated-agent"} {
-		_, _, err := callHandlerAs(t, caller, s.proposeProject, ProposeProjectInput{Name: "Should Never Persist"})
-		if err == nil {
-			t.Errorf("proposeProject as %q err = nil, want registered-caller refusal", caller)
-		}
-	}
-
-	var count int
-	if err := testPool.QueryRow(t.Context(),
-		`SELECT COUNT(*) FROM projects WHERE status = 'proposed'`,
-	).Scan(&count); err != nil {
-		t.Fatalf("counting proposed projects: %v", err)
-	}
-	if count != 0 {
-		t.Errorf("proposed project count = %d, want 0 (gate must precede any write)", count)
-	}
-}
-
 // TestIntegration_ProposeProject_BlankNameRejected asserts the handler rejects a
 // blank or non-sluggable name before any write.
 func TestIntegration_ProposeProject_BlankNameRejected(t *testing.T) {
@@ -1400,21 +1349,6 @@ func TestIntegration_ListTasks_ReturnsCallerTodos(t *testing.T) {
 		t.Errorf("listTasks(planner) mismatch (-want +got):\n%s", diff)
 	}
 }
-
-// TestIntegration_ListTasks_CallerGate asserts the registered-caller gate: the
-// zero-privilege "unknown" fallback and a fabricated name are refused. Without
-// the gate the handler would fall through to TodosByCreator and return an empty
-// list with no error, so a nil error here means the gate is missing.
-func TestIntegration_ListTasks_CallerGate(t *testing.T) {
-	s := setupServer(t)
-
-	for _, caller := range []string{"unknown", "fabricated-agent"} {
-		if _, _, err := callHandlerAs(t, caller, s.listTasks, ListTasksInput{}); err == nil {
-			t.Errorf("listTasks as %q err = nil, want registered-caller refusal", caller)
-		}
-	}
-}
-
 // TestIntegration_ListTasks_CallerScoped pins the privacy invariant: the list
 // is scoped to the resolved caller, so caller A (planner) never sees caller B's
 // (codex) todos.
@@ -1485,20 +1419,6 @@ func TestIntegration_ResolveTask_InvalidState(t *testing.T) {
 		t.Error("resolveTask(state=todo) err = nil, want invalid-state rejection")
 	}
 }
-
-// TestIntegration_ResolveTask_CallerGate refuses the zero-privilege fallback and
-// a fabricated caller — the registered-caller gate must run before any write.
-func TestIntegration_ResolveTask_CallerGate(t *testing.T) {
-	s := setupServer(t)
-	id := seedTodoForCreator(t, "planner", "captured idea", "inbox", time.Now())
-
-	for _, caller := range []string{"unknown", "fabricated-agent"} {
-		if _, _, err := callHandlerAs(t, caller, s.resolveTask, ResolveTaskInput{ID: id.String(), State: "done"}); err == nil {
-			t.Errorf("resolveTask as %q err = nil, want registered-caller refusal", caller)
-		}
-	}
-}
-
 // TestIntegration_ResolveTask_CallerScoped pins the privacy invariant: caller A
 // cannot resolve a todo created by caller B — it returns not-found and the row
 // is left untouched, never a cross-creator mutation.
@@ -1832,22 +1752,6 @@ func TestIntegration_ProjectProgress_CandidateFilter(t *testing.T) {
 		t.Errorf("proposed project present in projects[], want excluded")
 	}
 }
-
-// TestIntegration_ProjectProgress_CallerGate refuses the zero-privilege
-// fallback and a fabricated caller — the owner's PARA must not be readable
-// without a known identity, same registered-caller gate as the other
-// read-only tools.
-func TestIntegration_ProjectProgress_CallerGate(t *testing.T) {
-	s := setupServer(t)
-	seedProgressProject(t, "gated", "Gated", "weekly", nil, nil)
-
-	for _, caller := range []string{"unknown", "fabricated-agent"} {
-		if _, _, err := callHandlerAs(t, caller, s.projectProgress, ProjectProgressInput{}); err == nil {
-			t.Errorf("projectProgress as %q err = nil, want registered-caller refusal", caller)
-		}
-	}
-}
-
 // TestIntegration_ProposeContent_AsHermes drives propose_content as a
 // registered agent and asserts the editorial contract on the persisted row:
 // status=review (NOT published — an agent can never publish), is_public=false,
@@ -1900,33 +1804,5 @@ func TestIntegration_ProposeContent_AsHermes(t *testing.T) {
 	}
 	if proposalRationale == nil || *proposalRationale != "Finished the Obsidian Writing/articles draft; ready for review." {
 		t.Errorf("persisted proposal_rationale = %v, want the supplied rationale", proposalRationale)
-	}
-}
-
-// TestIntegration_ProposeContent_CallerGate asserts the registered-caller gate:
-// the zero-privilege "unknown" fallback and a fabricated name are refused
-// before any write, so no contents row is created.
-func TestIntegration_ProposeContent_CallerGate(t *testing.T) {
-	s := setupServer(t)
-
-	for _, caller := range []string{"unknown", "fabricated-agent"} {
-		_, _, err := callHandlerAs(t, caller, s.proposeContent, ProposeContentInput{
-			Title: "Should Never Persist",
-			Type:  "article",
-			Body:  "finished draft",
-		})
-		if err == nil {
-			t.Errorf("proposeContent as %q err = nil, want registered-caller refusal", caller)
-		}
-	}
-
-	var count int
-	if err := testPool.QueryRow(t.Context(),
-		`SELECT COUNT(*) FROM contents`,
-	).Scan(&count); err != nil {
-		t.Fatalf("counting contents: %v", err)
-	}
-	if count != 0 {
-		t.Errorf("contents count = %d, want 0 (gate must precede any write)", count)
 	}
 }

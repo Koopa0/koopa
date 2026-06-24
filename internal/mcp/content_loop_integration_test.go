@@ -223,20 +223,6 @@ func TestIntegration_ListContent_EmptySlice(t *testing.T) {
 	}
 }
 
-// TestIntegration_ListContent_CallerGate refuses the zero-privilege "unknown"
-// fallback and a fabricated name before any read.
-func TestIntegration_ListContent_CallerGate(t *testing.T) {
-	s := setupServer(t)
-	seedContentForCreator(t, "cl-gate-other", "Gate Content", "planner", "review", nil)
-
-	for _, caller := range []string{"unknown", "fabricated-agent"} {
-		_, _, err := callHandlerAs(t, caller, s.listContent, ListContentInput{})
-		if err == nil {
-			t.Errorf("listContent as %q err = nil, want registered-caller refusal", caller)
-		}
-	}
-}
-
 // ============================================================================
 // revise_content — status-guard + caller-scope
 // ============================================================================
@@ -390,24 +376,6 @@ func TestIntegration_ReviseContent_NoFieldsRejected(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "at least one") {
 		t.Errorf("error = %q, want containing %q", err, "at least one")
-	}
-}
-
-// TestIntegration_ReviseContent_CallerGate refuses the zero-privilege "unknown"
-// fallback before any write.
-func TestIntegration_ReviseContent_CallerGate(t *testing.T) {
-	s := setupServer(t)
-	id := seedContentForCreator(t, "rc-gate", "Gate Article", "planner", "changes_requested", nil)
-	newBody := "gated"
-
-	for _, caller := range []string{"unknown", "fabricated-agent"} {
-		_, _, err := callHandlerAs(t, caller, s.reviseContent, ReviseContentInput{
-			ID:   id.String(),
-			Body: &newBody,
-		})
-		if err == nil {
-			t.Errorf("reviseContent as %q err = nil, want registered-caller refusal", caller)
-		}
 	}
 }
 
@@ -858,22 +826,6 @@ func TestIntegration_ReviewPeriod_SinceRequired(t *testing.T) {
 	}
 }
 
-// TestIntegration_ReviewPeriod_CallerGate refuses the zero-privilege "unknown"
-// fallback and a fabricated name.
-func TestIntegration_ReviewPeriod_CallerGate(t *testing.T) {
-	s := setupServer(t)
-
-	for _, caller := range []string{"unknown", "fabricated-agent"} {
-		_, _, err := callHandlerAs(t, caller, s.reviewPeriod, ReviewPeriodInput{
-			Since: "2025-05-01",
-			Until: "2025-05-31",
-		})
-		if err == nil {
-			t.Errorf("reviewPeriod as %q err = nil, want registered-caller refusal", caller)
-		}
-	}
-}
-
 // TestIntegration_ReviewPeriod_AreasAllActive asserts that the Areas slice
 // contains all active areas from the seed migrations, with neglected=true for
 // areas with zero human activity and neglected=false for areas with activity.
@@ -917,5 +869,39 @@ func TestIntegration_ReviewPeriod_AreasAllActive(t *testing.T) {
 		t.Errorf("areas_active(%d) + areas_neglected(%d) = %d, want len(areas) = %d",
 			out.Counts.AreasActive, out.Counts.AreasNeglected,
 			out.Counts.AreasActive+out.Counts.AreasNeglected, len(out.Areas))
+	}
+}
+
+// TestIntegration_ProposeContent_NoGate_AttributionFK pins the post-removal
+// contract for write tools: there is no caller gate, so the "unknown" fallback
+// (a call that omitted `as`) CAN write — attributed to created_by='unknown',
+// which project_progress/review_period do not count as the owner. A fabricated
+// `as` (no registry row) still fails, but now at the created_by FK, not a gate.
+// Catches: a re-introduced caller gate (would block unknown), or a dropped
+// created_by FK (would let a fabricated author persist).
+func TestIntegration_ProposeContent_NoGate_AttributionFK(t *testing.T) {
+	s := setupServer(t)
+
+	// unknown caller: write succeeds, attributed to 'unknown'.
+	if _, _, err := callHandlerAs(t, "unknown", s.proposeContent, ProposeContentInput{
+		Title: "Unknown Authored", Type: "article", Body: "finished draft",
+	}); err != nil {
+		t.Fatalf("proposeContent as unknown = %v, want success (no caller gate)", err)
+	}
+	var createdBy string
+	if err := testPool.QueryRow(t.Context(),
+		`SELECT created_by FROM contents WHERE title = 'Unknown Authored'`,
+	).Scan(&createdBy); err != nil {
+		t.Fatalf("reading created_by: %v", err)
+	}
+	if createdBy != "unknown" {
+		t.Errorf("created_by = %q, want %q", createdBy, "unknown")
+	}
+
+	// fabricated caller: no registry row → the created_by FK rejects the write.
+	if _, _, err := callHandlerAs(t, "fabricated-agent", s.proposeContent, ProposeContentInput{
+		Title: "Fabricated Authored", Type: "article", Body: "finished draft",
+	}); err == nil {
+		t.Error("proposeContent as fabricated-agent = nil, want created_by FK rejection")
 	}
 }

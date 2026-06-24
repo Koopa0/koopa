@@ -60,9 +60,6 @@ type ProposeAreaOutput struct {
 }
 
 func (s *Server) proposeArea(ctx context.Context, _ *mcp.CallToolRequest, input ProposeAreaInput) (*mcp.CallToolResult, ProposeAreaOutput, error) {
-	if err := s.requireRegisteredCaller(ctx, "propose_area"); err != nil {
-		return nil, ProposeAreaOutput{}, err
-	}
 	if strings.TrimSpace(input.Name) == "" {
 		return nil, ProposeAreaOutput{}, fmt.Errorf("name is required")
 	}
@@ -127,9 +124,6 @@ type ProposeGoalOutput struct {
 
 //nolint:gocritic // hugeParam: input passed by value per addTool[I,O] generic contract
 func (s *Server) proposeGoal(ctx context.Context, _ *mcp.CallToolRequest, input ProposeGoalInput) (*mcp.CallToolResult, ProposeGoalOutput, error) {
-	if err := s.requireRegisteredCaller(ctx, "propose_goal"); err != nil {
-		return nil, ProposeGoalOutput{}, err
-	}
 	if strings.TrimSpace(input.Title) == "" {
 		return nil, ProposeGoalOutput{}, fmt.Errorf("title is required")
 	}
@@ -207,9 +201,6 @@ type ProposeProjectOutput struct {
 }
 
 func (s *Server) proposeProject(ctx context.Context, _ *mcp.CallToolRequest, input ProposeProjectInput) (*mcp.CallToolResult, ProposeProjectOutput, error) {
-	if err := s.requireRegisteredCaller(ctx, "propose_project"); err != nil {
-		return nil, ProposeProjectOutput{}, err
-	}
 	if strings.TrimSpace(input.Name) == "" {
 		return nil, ProposeProjectOutput{}, fmt.Errorf("name is required")
 	}
@@ -335,9 +326,6 @@ func validateProposeContent(input ProposeContentInput) (content.Type, string, []
 
 //nolint:gocritic // hugeParam: input passed by value per addTool[I,O] generic contract
 func (s *Server) proposeContent(ctx context.Context, _ *mcp.CallToolRequest, input ProposeContentInput) (*mcp.CallToolResult, ProposeContentOutput, error) {
-	if err := s.requireRegisteredCaller(ctx, "propose_content"); err != nil {
-		return nil, ProposeContentOutput{}, err
-	}
 	contentType, slug, topicIDs, err := validateProposeContent(input)
 	if err != nil {
 		return nil, ProposeContentOutput{}, err

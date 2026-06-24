@@ -43,8 +43,9 @@ type Server struct {
 	// Goals
 	goals *goal.Store
 
-	// Agent registry — source of truth for caller identity resolution and
-	// the requireAuthor / requireRegisteredCaller gates. Wired in from
+	// Agent registry — source of truth for caller identity resolution: the
+	// `as` value maps to an agent name used for attribution (created_by /
+	// activity_events.actor). Wired in from
 	// cmd/app/main.go so the CLI and tests can inject custom rosters when
 	// needed.
 	registry *agent.Registry
@@ -117,13 +118,14 @@ func NewServer(pool *pgxpool.Pool, logger *slog.Logger, opts ...ServerOption) *S
 		stats:       stats.NewStore(pool),
 		pool:        pool,
 		logger:      logger,
-		// Zero-privilege fallback. cmd/mcp/main.go normally overrides this
-		// via WithCallerAgent(KOOPA_MCP_CALLER_AGENT). A NewServer without
-		// the option lands on "unknown" — by design, so a caller that omits
-		// `as` cannot inherit any cowork-agent or human privileges through
-		// the server default. The unknown agent is registered in
-		// agent.BuiltinAgents() with Platform=system so the mutating-tool
-		// gates (requireAuthor, requireRegisteredCaller) refuse it.
+		// Attribution fallback. cmd/mcp/main.go normally overrides this via
+		// WithCallerAgent(KOOPA_MCP_CALLER_AGENT). A NewServer without the
+		// option lands on "unknown" — by design, so a call that omits `as` is
+		// attributed to "unknown" (Platform=system in agent.BuiltinAgents(),
+		// which the FK on created_by/actor resolves) and is NOT counted as
+		// human activity by project_progress / review_period. Do NOT default
+		// this to "human": that would stamp anonymous writes as the owner's
+		// own activity and inflate the owner's momentum/retrospective.
 		callerAgent: "unknown",
 		loc:         time.UTC,
 	}

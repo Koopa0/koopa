@@ -34,9 +34,6 @@ type CaptureInboxOutput struct {
 }
 
 func (s *Server) captureInbox(ctx context.Context, _ *mcp.CallToolRequest, input CaptureInboxInput) (*mcp.CallToolResult, CaptureInboxOutput, error) {
-	if err := s.requireRegisteredCaller(ctx, "capture_inbox"); err != nil {
-		return nil, CaptureInboxOutput{}, err
-	}
 	if input.Title == "" {
 		return nil, CaptureInboxOutput{}, fmt.Errorf("title is required")
 	}

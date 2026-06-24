@@ -64,10 +64,6 @@ type ListContentOutput struct {
 }
 
 func (s *Server) listContent(ctx context.Context, _ *mcp.CallToolRequest, _ ListContentInput) (*mcp.CallToolResult, ListContentOutput, error) {
-	if err := s.requireRegisteredCaller(ctx, "list_content"); err != nil {
-		return nil, ListContentOutput{}, err
-	}
-
 	caller := s.callerIdentity(ctx)
 	rows, err := s.contents.ContentsByCreator(ctx, caller)
 	if err != nil {
@@ -112,10 +108,6 @@ type ReviseContentOutput struct {
 }
 
 func (s *Server) reviseContent(ctx context.Context, _ *mcp.CallToolRequest, input ReviseContentInput) (*mcp.CallToolResult, ReviseContentOutput, error) {
-	if err := s.requireRegisteredCaller(ctx, "revise_content"); err != nil {
-		return nil, ReviseContentOutput{}, err
-	}
-
 	id, err := uuid.Parse(strings.TrimSpace(input.ID))
 	if err != nil {
 		return nil, ReviseContentOutput{}, fmt.Errorf("invalid id %q: %w", input.ID, err)

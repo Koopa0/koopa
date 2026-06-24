@@ -51,10 +51,6 @@ type ListTasksOutput struct {
 }
 
 func (s *Server) listTasks(ctx context.Context, _ *mcp.CallToolRequest, _ ListTasksInput) (*mcp.CallToolResult, ListTasksOutput, error) {
-	if err := s.requireRegisteredCaller(ctx, "list_tasks"); err != nil {
-		return nil, ListTasksOutput{}, err
-	}
-
 	caller := s.callerIdentity(ctx)
 	rows, err := s.todos.TodosByCreator(ctx, caller)
 	if err != nil {
@@ -103,10 +99,6 @@ type ResolveTaskOutput struct {
 }
 
 func (s *Server) resolveTask(ctx context.Context, _ *mcp.CallToolRequest, in ResolveTaskInput) (*mcp.CallToolResult, ResolveTaskOutput, error) {
-	if err := s.requireRegisteredCaller(ctx, "resolve_task"); err != nil {
-		return nil, ResolveTaskOutput{}, err
-	}
-
 	state, ok := resolveTaskStates[in.State]
 	if !ok {
 		return nil, ResolveTaskOutput{}, fmt.Errorf("invalid state %q: must be one of done, archived, dismissed", in.State)

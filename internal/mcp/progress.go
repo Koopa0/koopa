@@ -5,8 +5,9 @@
 // their cadence, goal milestone rollups, and neglected areas — computed
 // LIVE from activity_events at read time. Nothing is stored.
 //
-// Authorization: gated by requireRegisteredCaller, like the other read-only
-// tools. It is deliberately NOT caller-scoped (no created_by=caller filter):
+// Authorization: none at the tool layer — access is gated by the MCP transport
+// (the connection is the trust boundary). It is deliberately NOT caller-scoped
+// (no created_by=caller filter):
 // project / goal / area are the single owner's data, so a caller-scope would
 // return empty. The caller-scoped pattern is reserved for list_tasks /
 // resolve_task, which act on the caller's OWN proposed todos. Any registered
@@ -80,10 +81,6 @@ type ProjectProgressOutput struct {
 }
 
 func (s *Server) projectProgress(ctx context.Context, _ *mcp.CallToolRequest, in ProjectProgressInput) (*mcp.CallToolResult, ProjectProgressOutput, error) {
-	if err := s.requireRegisteredCaller(ctx, "project_progress"); err != nil {
-		return nil, ProjectProgressOutput{}, err
-	}
-
 	// now is the live instant in the owner's timezone — the reference point
 	// for every stalled / neglected comparison, threaded into the pure
 	// decision functions so the read is reproducible against a fixed clock.

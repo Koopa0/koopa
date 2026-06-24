@@ -6,10 +6,11 @@
 // and published content — computed LIVE from activity_events at read time.
 // Nothing is stored.
 //
-// Authorization: gated by requireRegisteredCaller, like project_progress. It is
-// deliberately NOT caller-scoped (no created_by=caller filter): the
-// retrospective is the single owner's data, so a caller-scope would return
-// empty. Any registered agent reads the whole owner retrospective.
+// Authorization: none at the tool layer — access is gated by the MCP transport
+// (the connection is the trust boundary). It is deliberately NOT caller-scoped
+// (no created_by=caller filter): the retrospective is the single owner's data,
+// so a caller-scope would return empty. Any caller reads the whole owner
+// retrospective.
 //
 // HUMAN-ACTIVITY-ONLY: the owner-progress rows count solely activity_events with
 // actor='human' — IDENTICAL to project_progress. The one exception is the
@@ -105,13 +106,7 @@ type ReviewPeriodOutput struct {
 
 // store reads with a single date-parse branch — splitting it would scatter the
 // window assembly that is clearest read top to bottom.
-//
-//nolint:gocyclo // flat sequential composition of independent store reads; splitting would not cut real complexity
 func (s *Server) reviewPeriod(ctx context.Context, _ *mcp.CallToolRequest, input ReviewPeriodInput) (*mcp.CallToolResult, ReviewPeriodOutput, error) {
-	if err := s.requireRegisteredCaller(ctx, "review_period"); err != nil {
-		return nil, ReviewPeriodOutput{}, err
-	}
-
 	since, until, err := s.parseReviewWindow(input.Since, input.Until)
 	if err != nil {
 		return nil, ReviewPeriodOutput{}, err

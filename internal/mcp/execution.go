@@ -159,9 +159,6 @@ func displacedFrom(removed []daily.RemovedItem, kept []PlanDayItem) []daily.Remo
 // a previous plan existed. The atomic wrapper preserves the previous
 // plan on any failure path.
 func (s *Server) planDay(ctx context.Context, _ *mcp.CallToolRequest, input PlanDayInput) (*mcp.CallToolResult, PlanDayOutput, error) {
-	if err := s.requireAuthor(ctx, "plan_day", "planner"); err != nil {
-		return nil, PlanDayOutput{}, err
-	}
 	if len(input.Items) == 0 {
 		return nil, PlanDayOutput{}, fmt.Errorf("items must contain at least one todo. plan_day is idempotent — to replace today's plan, supply the full new list (any displaced items are reported in items_removed). To leave today unplanned, do not call plan_day at all")
 	}

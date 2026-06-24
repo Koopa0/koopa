@@ -15,10 +15,9 @@ import (
 )
 
 // newTestServer creates a Server with no stores — only useful for validation
-// tests that fail before any DB call. The default caller is "human" so the
-// authorization helpers in authz.go (requireAuthor, requireRegisteredCaller)
-// do not gate validation paths from running. Tests that need a non-human
-// caller override callerAgent or pass `as` via context.
+// tests that fail before any DB call. The default caller is "human", which is
+// the attribution stamped on any write these tests reach. Tests that need a
+// different caller override callerAgent or pass `as` via context.
 func newTestServer() *Server {
 	return &Server{
 		logger:      slog.Default(),
@@ -93,9 +92,8 @@ func TestPlanDay_Validation(t *testing.T) {
 
 // TestProposeContent_Validation covers the validation that runs BEFORE any DB
 // call: the required-field, content-type, control-char, slug-derivation, and
-// topic-id checks. The default caller ("human") clears requireRegisteredCaller
-// so these paths execute. A finished-draft body and a derivable title are the
-// happy preconditions; each case violates exactly one of them.
+// topic-id checks. A finished-draft body and a derivable title are the happy
+// preconditions; each case violates exactly one of them.
 func TestProposeContent_Validation(t *testing.T) {
 	s := newTestServer()
 	tests := []struct {
@@ -169,23 +167,6 @@ func TestProposeContent_Validation(t *testing.T) {
 				t.Errorf("error = %q, want containing %q", err, tt.wantErr)
 			}
 		})
-	}
-}
-
-// TestProposeContent_UnregisteredCallerRefused asserts the identity gate
-// rejects a caller that names no registry row, before any validation or DB
-// access — mirroring propose_project's CallerGate behaviour.
-func TestProposeContent_UnregisteredCallerRefused(t *testing.T) {
-	s := newTestServer()
-	ctx := context.WithValue(t.Context(), callerKey{}, "ghost-agent")
-	_, _, err := s.proposeContent(ctx, nil, ProposeContentInput{
-		Title: "Hello", Type: "article", Body: "finished draft",
-	})
-	if err == nil {
-		t.Fatal("expected error for unregistered caller, got nil")
-	}
-	if !contains(err.Error(), "is not registered") {
-		t.Errorf("error = %q, want containing %q", err, "is not registered")
 	}
 }
 
