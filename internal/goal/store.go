@@ -42,8 +42,9 @@ func (s *Store) WithTx(tx pgx.Tx) *Store {
 // mapWriteError classifies a PostgreSQL goal/milestone-write failure into a
 // feature sentinel. A unique violation (23505) becomes ErrConflict; a
 // foreign-key violation (23503 — a goal's area_id or a milestone's goal_id
-// pointing at a non-existent row) becomes ErrInvalidInput; any other error is
-// wrapped with the supplied context.
+// pointing at a non-existent row) or a CHECK violation (23514 — a blank
+// title via chk_goal_title_not_blank / chk_milestone_title_not_blank) becomes
+// ErrInvalidInput; any other error is wrapped with the supplied context.
 func mapWriteError(err error, operation string) error {
 	pgErr, ok := errors.AsType[*pgconn.PgError](err)
 	if !ok {
@@ -52,7 +53,7 @@ func mapWriteError(err error, operation string) error {
 	switch pgErr.Code {
 	case pgerrcode.UniqueViolation:
 		return ErrConflict
-	case pgerrcode.ForeignKeyViolation:
+	case pgerrcode.ForeignKeyViolation, pgerrcode.CheckViolation:
 		return ErrInvalidInput
 	default:
 		return fmt.Errorf("%s: %w", operation, err)
