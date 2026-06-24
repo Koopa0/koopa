@@ -41,13 +41,20 @@ func containsControlChars(s string) bool {
 }
 
 // checkContentControlChars rejects control characters in the content write
-// fields, mirroring the MCP write path (propose_content / revise_content):
-// title and excerpt are single-line fields validated with the strict check
-// (every control char), while body is multi-line Markdown validated with the
-// prose check (HT/LF/CR permitted). A nil argument is skipped so the same
-// check serves Create (all present) and partial Update (only changed fields).
-// It returns the field name of the first offending field, or "" when clean.
-func checkContentControlChars(title, excerpt, body *string) string {
+// fields. slug, title, and excerpt are single-line fields validated with the
+// strict check (every control char), while body is multi-line Markdown
+// validated with the prose check (HT/LF/CR permitted). This mirrors the MCP
+// write path for title/excerpt/body (propose_content / revise_content); slug is
+// admin-only — the MCP path derives the slug server-side, and the DB
+// slug-format CHECK rejects whitespace and slashes but NOT non-whitespace
+// control chars, so this is the boundary that keeps them out of the URL path
+// segment. A nil argument is skipped so the same check serves Create (all
+// present) and partial Update (only changed fields). Returns the first
+// offending field name, or "" when clean.
+func checkContentControlChars(slug, title, excerpt, body *string) string {
+	if slug != nil && containsControlChars(*slug) {
+		return "slug"
+	}
 	if title != nil && containsControlChars(*title) {
 		return "title"
 	}
@@ -156,7 +163,7 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", err.Error())
 		return
 	}
-	if field := checkContentControlChars(&p.Title, &p.Excerpt, &p.Body); field != "" {
+	if field := checkContentControlChars(&p.Slug, &p.Title, &p.Excerpt, &p.Body); field != "" {
 		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", field+" must not contain control characters")
 		return
 	}
@@ -209,7 +216,7 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", err.Error())
 		return
 	}
-	if field := checkContentControlChars(p.Title, p.Excerpt, p.Body); field != "" {
+	if field := checkContentControlChars(p.Slug, p.Title, p.Excerpt, p.Body); field != "" {
 		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", field+" must not contain control characters")
 		return
 	}

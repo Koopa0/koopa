@@ -432,6 +432,14 @@ func TestHandler_Create_RejectsControlChars(t *testing.T) {
 		wantField string
 	}{
 		{
+			// Slug becomes a URL path segment; the DB slug-format CHECK rejects
+			// whitespace/slash but not non-whitespace control chars, so the
+			// handler is the boundary; the body uses a JSON escape decoding to byte 0x01.
+			name:      "control char in slug",
+			body:      "{\"slug\":\"bad\\u0001slug\",\"title\":\"T\",\"type\":\"article\"}",
+			wantField: "slug",
+		},
+		{
 			name:      "control char in title",
 			body:      `{"slug":"s","title":"bad\u0001title","type":"article"}`,
 			wantField: "title",
@@ -487,6 +495,11 @@ func TestHandler_Update_RejectsControlChars(t *testing.T) {
 		body      string
 		wantField string
 	}{
+		{
+			name:      "control char in slug",
+			body:      "{\"slug\":\"bad\\u0001slug\"}",
+			wantField: "slug",
+		},
 		{
 			name:      "control char in title",
 			body:      `{"title":"bad\u0001title"}`,
