@@ -270,6 +270,43 @@ func TestIntegration_Daily_PutPlan_InboxRejected(t *testing.T) {
 	}
 }
 
+// TestIntegration_Daily_PutPlan_NonActionableRejected asserts that planning a
+// todo in a non-actionable state (someday) is rejected with 400. This pins the
+// narrowed guard: PutPlan accepts only state=todo/in_progress, mirroring the
+// plan_day allowlist, rather than rejecting inbox alone (which would let a
+// someday/done/archived todo onto today's plan via the admin API).
+func TestIntegration_Daily_PutPlan_NonActionableRejected(t *testing.T) {
+	truncate(t)
+	h := newHandler()
+
+	someday := seedTodo(t, "Maybe later", "someday")
+
+	req := putJSON(t, "/api/admin/commitment/daily-plan", map[string]any{
+		"items": []map[string]any{
+			{"todo_id": someday.String()},
+		},
+	})
+	rec := serve(t, h.PutPlan, req)
+
+	resp := rec.Result()
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 for someday-state todo (body=%s)", resp.StatusCode, body)
+	}
+
+	var count int
+	if err := testPool.QueryRow(t.Context(),
+		`SELECT COUNT(*) FROM daily_plan_items WHERE plan_date = CURRENT_DATE`,
+	).Scan(&count); err != nil {
+		t.Fatalf("counting plan rows: %v", err)
+	}
+	if count != 0 {
+		t.Errorf("plan row count = %d, want 0 (non-actionable rejection must precede any commit)", count)
+	}
+}
+
 // TestIntegration_Daily_PutPlan_PositionOutOfRange asserts an out-of-bounds
 // position is rejected with 400 before any write.
 func TestIntegration_Daily_PutPlan_PositionOutOfRange(t *testing.T) {

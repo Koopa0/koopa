@@ -149,8 +149,9 @@ type putPlanResponse struct {
 // PutPlan handles PUT /api/admin/commitment/daily-plan — the human
 // equivalent of the MCP plan_day tool. It is idempotent for the given
 // date: it replaces the date's 'planned' rows with the supplied items in
-// one transaction. Each todo MUST exist and be in state=todo (inbox-state
-// todos are rejected — clarify them first). Empty items is a 400. The
+// one transaction. Each todo MUST exist and be in state=todo or in_progress,
+// mirroring the plan_day allowlist (inbox/done/someday/archived/dismissed are
+// rejected — clarify an inbox todo first). Empty items is a 400. The
 // delete-then-insert runs atomically so a mid-loop validation failure
 // leaves the previous plan intact.
 func (h *Handler) PutPlan(w http.ResponseWriter, r *http.Request) {
@@ -255,9 +256,10 @@ func (h *Handler) insertPlanItem(w http.ResponseWriter, r *http.Request, txDaily
 		api.HandleError(w, h.logger, err, todoStoreErrors...)
 		return false
 	}
-	if t.State == todo.StateInbox {
+	if t.State != todo.StateTodo && t.State != todo.StateInProgress {
 		api.Error(w, http.StatusBadRequest, "BAD_REQUEST",
-			"todo "+item.TodoID.String()+" is in inbox state; clarify it to state=todo before planning")
+			"todo "+item.TodoID.String()+" is in state "+string(t.State)+
+				" — only todo or in_progress items can be planned (clarify an inbox todo first; done/someday/archived are not today's work)")
 		return false
 	}
 	pos := i
