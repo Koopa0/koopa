@@ -9,7 +9,10 @@ import {
   withInMemoryScrolling,
   withViewTransitions,
 } from '@angular/router';
-import { provideClientHydration } from '@angular/platform-browser';
+import {
+  provideClientHydration,
+  withHttpTransferCacheOptions,
+} from '@angular/platform-browser';
 import { provideAnimationsAsync } from '@angular/platform-browser/animations/async';
 import { provideHttpClient, withInterceptors } from '@angular/common/http';
 
@@ -53,6 +56,9 @@ export const appConfig: ApplicationConfig = {
     provideHttpClient(withInterceptors([authInterceptor, errorInterceptor])),
     // Incremental hydration is the v22 default and enables event replay
     // automatically; @defer blocks opt into lazy hydration via hydrate triggers.
-    provideClientHydration(),
+    // withHttpTransferCacheOptions() serializes server-fetched GET/HEAD responses
+    // into the hydration payload so the client reuses them instead of re-fetching
+    // on hydration. The transfer cache is on by default; this states it explicitly.
+    provideClientHydration(withHttpTransferCacheOptions({})),
   ],
 };

@@ -35,6 +35,16 @@ export const serverRoutes: ServerRoute[] = [
     renderMode: RenderMode.Prerender,
   },
   {
+    // Static single-owner legal text — prerendered like /about.
+    path: 'privacy',
+    renderMode: RenderMode.Prerender,
+  },
+  {
+    // Static single-owner legal text — prerendered like /about.
+    path: 'terms',
+    renderMode: RenderMode.Prerender,
+  },
+  {
     path: 'login',
     renderMode: RenderMode.Client,
   },
