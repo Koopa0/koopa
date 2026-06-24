@@ -67,6 +67,23 @@ func checkContentControlChars(slug, title, excerpt, body *string) string {
 	return ""
 }
 
+// containsProseControlChars reports whether s contains a control character
+// forbidden in multi-line free-text prose: every control char EXCEPT HT (0x09),
+// LF (0x0A), and CR (0x0D). Body and review_note are short, possibly multi-line
+// free text where line breaks are legitimate, so they are validated with this
+// rather than the strict containsControlChars above. Mirrors the MCP prose check.
+func containsProseControlChars(s string) bool {
+	for _, r := range s {
+		switch {
+		case r == 0x09, r == 0x0a, r == 0x0d:
+			continue
+		case r < 0x20, r == 0x7f, r >= 0x80 && r <= 0x9f:
+			return true
+		}
+	}
+	return false
+}
+
 // Contents returns a paginated list across all statuses / visibilities.
 // The authenticated admin listing route consumes this; the public-facing
 // variant is PublicContents.
@@ -403,23 +420,6 @@ func (h *Handler) RevertToDraft(w http.ResponseWriter, r *http.Request) {
 // sendBackBody is the request payload for SendBack: the owner's revision reason.
 type sendBackBody struct {
 	ReviewNote string `json:"review_note"`
-}
-
-// containsProseControlChars reports whether s contains a control character
-// forbidden in multi-line free-text prose: every control char EXCEPT HT (0x09),
-// LF (0x0A), and CR (0x0D). A review_note is a short, possibly multi-line
-// revision reason where line breaks are legitimate, so SendBack validates it
-// with this rather than rejecting every C0 control. Mirrors the MCP prose check.
-func containsProseControlChars(s string) bool {
-	for _, r := range s {
-		switch {
-		case r == 0x09, r == 0x0a, r == 0x0d:
-			continue
-		case r < 0x20, r == 0x7f, r >= 0x80 && r <= 0x9f:
-			return true
-		}
-	}
-	return false
 }
 
 // SendBack handles POST /api/admin/knowledge/content/{id}/send-back.

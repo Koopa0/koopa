@@ -485,7 +485,7 @@ func TestValidSchedule_Adversarial(t *testing.T) {
 // due — scheduler skip-vs-fetch decision (pure)
 // ---------------------------------------------------------------------------
 
-// TestDue exercises the scheduler's per-feed skip-vs-fetch predicate
+// TestIsDue exercises the scheduler's per-feed skip-vs-fetch predicate
 // (scheduler.go::due, called from fetchSchedule). The decision is a pure
 // function of (lastFetched, now, interval): a never-fetched feed is always due;
 // a fetched feed is due once its age reaches the interval, with the boundary
@@ -495,7 +495,7 @@ func TestValidSchedule_Adversarial(t *testing.T) {
 // boundary) breaks "exactly interval ago" → due; dropping the nil guard panics
 // on a never-fetched feed; using `<=` instead of `<` in the original inline
 // skip check would make "exactly interval ago" skip — each surfaces here.
-func TestDue(t *testing.T) {
+func TestIsDue(t *testing.T) {
 	t.Parallel()
 
 	now := time.Date(2026, 6, 24, 12, 0, 0, 0, time.UTC)
@@ -522,9 +522,9 @@ func TestDue(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			got := due(tt.lastFetched, now, interval)
+			got := isDue(tt.lastFetched, now, interval)
 			if got != tt.want {
-				t.Errorf("due(%v, now, %v) = %v, want %v", tt.lastFetched, interval, got, tt.want)
+				t.Errorf("isDue(%v, now, %v) = %v, want %v", tt.lastFetched, interval, got, tt.want)
 			}
 		})
 	}

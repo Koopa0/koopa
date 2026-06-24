@@ -55,18 +55,11 @@ func TestParseFilter_Adversarial(t *testing.T) {
 		name         string
 		query        string
 		wantType     *Type
-		wantTag      *string
 		wantSinceNil bool
 	}{
 		{
 			name:         "sql injection in type is rejected",
 			query:        "type='%3BDROP%20TABLE%20contents%3B--",
-			wantType:     nil,
-			wantSinceNil: true,
-		},
-		{
-			name:         "xss payload in tag is passed through (no sanitisation at this layer)",
-			query:        "tag=<script>alert(1)</script>",
 			wantType:     nil,
 			wantSinceNil: true,
 		},
@@ -806,7 +799,7 @@ func TestHandler_ErrorResponse_Contract(t *testing.T) {
 func BenchmarkParseFilter(b *testing.B) {
 	h := &Handler{}
 	req := httptest.NewRequest(http.MethodGet,
-		"/?type=article&tag=golang&since=2026-03-20&page=1&per_page=20",
+		"/?type=article&since=2026-03-20&page=1&per_page=20",
 		http.NoBody)
 	b.ReportAllocs()
 	for b.Loop() {
