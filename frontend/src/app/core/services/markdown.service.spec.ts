@@ -108,4 +108,20 @@ describe('MarkdownService', () => {
     expect(result).toContain('the note');
     expect(result).not.toContain('<a ');
   });
+
+  it('should mark $...$ inline math as a katex placeholder', () => {
+    const result = service.parse('the value $E = mc^2$ is famous');
+    expect(result).toContain('class="math-inline"');
+    expect(result).toContain('data-math=');
+  });
+
+  it('should mark $$...$$ block math as a block placeholder', () => {
+    const result = service.parse('$$\\int_0^1 x\\,dx$$');
+    expect(result).toContain('class="math-block"');
+  });
+
+  it('should not treat lone $ amounts as math', () => {
+    const result = service.parse('it cost $5 and then $10 total');
+    expect(result).not.toContain('math-inline');
+  });
 });

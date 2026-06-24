@@ -125,6 +125,17 @@ export class ArticleDetailComponent implements OnInit {
         );
       }, 0);
     });
+
+    // Render KaTeX math (lazy-loads katex only when a $…$ block is present).
+    effect(() => {
+      this.parsedContent(); // track content
+      if (!this.isBrowser || !isPlatformBrowser(this.platformId)) return;
+      setTimeout(() => {
+        void this.markdownService.renderMath(
+          this.el.nativeElement as HTMLElement,
+        );
+      }, 0);
+    });
   }
 
   ngOnInit(): void {

@@ -56,6 +56,7 @@ const PURIFY_CONFIG = {
     'target',
     'rel',
     'data-mermaid-code',
+    'data-math',
     'data-lang',
     'width',
     'height',
@@ -232,6 +233,41 @@ export class MarkdownService {
       } catch {
         // Invalid diagram — leave the source text in place as a fallback.
       }
+    }
+  }
+
+  /**
+   * Render every KaTeX math placeholder inside root. The math extensions leave
+   * each `$…$` / `$$…$$` as a `.math-inline` / `.math-block` element carrying the
+   * encoded expression; this lazily loads KaTeX (kept out of the main bundle)
+   * and renders into each element. Browser-only — a no-op during SSR, so the
+   * raw `$…$` source stays visible until hydration. throwOnError:false keeps a
+   * bad expression as inline error text rather than blowing up the page.
+   */
+  async renderMath(root: HTMLElement): Promise<void> {
+    if (!this.isBrowser) {
+      return;
+    }
+    const nodes = Array.from(
+      root.querySelectorAll<HTMLElement>('.math-inline, .math-block'),
+    ).filter((el) => el.dataset['mathRendered'] !== 'true');
+    if (nodes.length === 0) {
+      return;
+    }
+
+    const { default: katex } = await import('katex');
+    for (const el of nodes) {
+      const expr = decodeURIComponent(el.dataset['math'] ?? '');
+      if (!expr) {
+        continue;
+      }
+      // katex.render writes into el via the DOM API (no innerHTML); it runs
+      // after the DOMPurify pass, and KaTeX output is trusted math markup.
+      katex.render(expr, el, {
+        throwOnError: false,
+        displayMode: el.classList.contains('math-block'),
+      });
+      el.dataset['mathRendered'] = 'true';
     }
   }
 }
