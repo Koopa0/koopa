@@ -16,6 +16,7 @@ import (
 	"os/signal"
 	"slices"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/exaring/otelpgx"
@@ -81,7 +82,7 @@ func main() {
 func runBackfill(logger *slog.Logger) error {
 	cfg := loadBackfillConfig(logger)
 
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
 	pool, err := connectDB(ctx, cfg.DatabaseURL, nil)
@@ -144,7 +145,7 @@ func passLogAttrs(res embedder.Result) []any {
 func run(logger *slog.Logger) error {
 	cfg := loadConfig(logger)
 
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
 	meterProvider, metricsHandler, observabilityShutdown, err := setupObservability(ctx, observabilityConfig{
