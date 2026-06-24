@@ -882,6 +882,12 @@ func TestIntegration_ReviewPeriod_CallerGate(t *testing.T) {
 func TestIntegration_ReviewPeriod_AreasAllActive(t *testing.T) {
 	s := setupServer(t)
 
+	// Areas are no longer seeded, so provision active areas this test can assert
+	// on. Both have zero activity in the 2025-04 window → they must come back as
+	// neglected, proving AreaActivityInWindow includes zero-activity areas.
+	ensureArea(t, "rp-area-alpha")
+	ensureArea(t, "rp-area-beta")
+
 	const since = "2025-04-01"
 	const until = "2025-04-30"
 
@@ -893,10 +899,10 @@ func TestIntegration_ReviewPeriod_AreasAllActive(t *testing.T) {
 		t.Fatalf("reviewPeriod: %v", err)
 	}
 
-	// All active areas from the seed must appear (with neglected=true since
-	// there's no human activity in the 2025-04 window).
+	// Every active area must appear, including zero-activity ones (neglected=true
+	// since there's no human activity in the 2025-04 window).
 	if len(out.Areas) == 0 {
-		t.Error("areas[] empty — active areas from seed migrations not returned (AreaActivityInWindow must include zero-activity areas)")
+		t.Error("areas[] empty — active areas not returned (AreaActivityInWindow must include zero-activity areas)")
 	}
 	for _, a := range out.Areas {
 		if a.ActivityCount > 0 && !a.Neglected {
