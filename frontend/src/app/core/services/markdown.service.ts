@@ -180,56 +180,55 @@ export class MarkdownService {
     );
   }
 
-  // Render mermaid diagrams as placeholder (temporary solution before mermaid.js integration)
-  initializeMermaid(): void {
-    // Guard against SSR — document is not available on the server
+  /**
+   * Render every mermaid diagram inside root into SVG. The markdown pass leaves
+   * each ```mermaid block as a `<div class="mermaid-diagram" data-mermaid-code>`
+   * placeholder; this lazily loads mermaid (only when a diagram is present, so
+   * it never enters the main bundle) and replaces each placeholder's content
+   * with the rendered SVG. Browser-only — a no-op during SSR, so the source
+   * text stays visible until hydration. isDark selects the light/dark theme;
+   * re-call on theme change and only diagrams not yet rendered for the current
+   * theme are touched.
+   */
+  async renderMermaid(root: HTMLElement, isDark: boolean): Promise<void> {
     if (!this.isBrowser) {
       return;
     }
+    const theme = isDark ? 'dark' : 'light';
+    const blocks = Array.from(
+      root.querySelectorAll<HTMLElement>('.mermaid-diagram'),
+    ).filter((el) => el.dataset['mermaidTheme'] !== theme);
+    if (blocks.length === 0) {
+      return;
+    }
 
-    setTimeout(() => {
-      const mermaidElements =
-        document.querySelectorAll<HTMLElement>('.mermaid-diagram');
-      mermaidElements.forEach((element) => {
-        const code = decodeURIComponent(
-          element.getAttribute('data-mermaid-code') ?? '',
-        );
-        if (code) {
-          // Clear and use DOM API to safely construct elements, avoiding innerHTML XSS risk
-          element.textContent = '';
-          element.classList.add(
-            'rounded-lg',
-            'border-2',
-            'border-dashed',
-            'border-border-strong',
-            'bg-elevated',
-            'p-5',
-            'text-center',
-            'font-mono',
-            'text-fg-faint',
-            'dark:bg-overlay',
-            'dark:border-border-strong',
-            'dark:text-fg-muted',
-          );
+    const { default: mermaid } = await import('mermaid');
+    mermaid.initialize({
+      startOnLoad: false,
+      securityLevel: 'strict',
+      theme: isDark ? 'dark' : 'default',
+    });
 
-          const title = document.createElement('div');
-          title.className = 'mb-2 font-bold';
-          title.textContent = 'Mermaid Diagram';
-          element.appendChild(title);
-
-          const subtitle = document.createElement('div');
-          subtitle.className = 'mb-4 text-sm';
-          subtitle.textContent =
-            'Diagram type identified, waiting for Mermaid.js to load...';
-          element.appendChild(subtitle);
-
-          const pre = document.createElement('pre');
-          pre.className =
-            'rounded-sm bg-white p-2.5 text-left dark:bg-panel';
-          pre.textContent = code;
-          element.appendChild(pre);
+    for (const el of blocks) {
+      const code = decodeURIComponent(el.dataset['mermaidCode'] ?? '');
+      if (!code) {
+        continue;
+      }
+      try {
+        const { svg } = await mermaid.render(`${el.id}-svg`, code);
+        const parsed = new DOMParser().parseFromString(svg, 'image/svg+xml');
+        const svgEl = parsed.documentElement;
+        if (svgEl.nodeName.toLowerCase() !== 'svg') {
+          continue; // parse error — keep the source-text fallback
         }
-      });
-    }, 100);
+        // DOM-API replacement (no innerHTML); mermaid securityLevel:'strict'
+        // sanitizes diagram content, DOMParser does not execute script.
+        el.replaceChildren();
+        el.appendChild(document.importNode(svgEl, true));
+        el.dataset['mermaidTheme'] = theme;
+      } catch {
+        // Invalid diagram — leave the source text in place as a fallback.
+      }
+    }
   }
 }

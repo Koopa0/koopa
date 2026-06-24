@@ -21,6 +21,7 @@ import { environment } from '../../../environments/environment';
 import { ArticleService } from '../../core/services/article.service';
 import { ContentService } from '../../core/services/content.service';
 import { MarkdownService } from '../../core/services/markdown.service';
+import { ThemeService } from '../../core/services/theme.service';
 import type { ApiContent, ApiRelatedContent } from '../../core/models';
 import { contentTypeLabelEn } from '../../core/models';
 import { SeoService } from '../../core/services/seo/seo.service';
@@ -58,6 +59,7 @@ export class ArticleDetailComponent implements OnInit {
   private readonly articleService = inject(ArticleService);
   private readonly contentService = inject(ContentService);
   private readonly markdownService = inject(MarkdownService);
+  private readonly themeService = inject(ThemeService);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly seoService = inject(SeoService);
   private readonly destroyRef = inject(DestroyRef);
@@ -108,6 +110,20 @@ export class ArticleDetailComponent implements OnInit {
       if (!this.isBrowser || !isPlatformBrowser(this.platformId)) return;
       // Wait for DOM update
       setTimeout(() => this.injectCopyButtons(), 0);
+    });
+
+    // Render mermaid diagrams (lazy-loads mermaid only when one is present).
+    // Tracks the theme so a light/dark toggle re-renders in the matching palette.
+    effect(() => {
+      this.parsedContent(); // track content
+      const isDark = this.themeService.isDarkMode(); // track theme
+      if (!this.isBrowser || !isPlatformBrowser(this.platformId)) return;
+      setTimeout(() => {
+        void this.markdownService.renderMermaid(
+          this.el.nativeElement as HTMLElement,
+          isDark,
+        );
+      }, 0);
     });
   }
 
