@@ -25,6 +25,41 @@ import (
 	"github.com/Koopa0/koopa/internal/db"
 )
 
+// containsControlChars reports whether s contains any control character — ASCII
+// C0 (0x00–0x1F), DEL (0x7F), or Unicode C1 (0x80–0x9F). This is the strict
+// single-line check for title/excerpt; it is the same predicate the MCP write
+// path applies via goal.ContainsControlChars (kept local here because content
+// cannot import goal without an import cycle: content → goal → project →
+// content). Body uses containsProseControlChars instead, which permits HT/LF/CR.
+func containsControlChars(s string) bool {
+	for _, r := range s {
+		if r < 0x20 || r == 0x7f || (r >= 0x80 && r <= 0x9f) {
+			return true
+		}
+	}
+	return false
+}
+
+// checkContentControlChars rejects control characters in the content write
+// fields, mirroring the MCP write path (propose_content / revise_content):
+// title and excerpt are single-line fields validated with the strict check
+// (every control char), while body is multi-line Markdown validated with the
+// prose check (HT/LF/CR permitted). A nil argument is skipped so the same
+// check serves Create (all present) and partial Update (only changed fields).
+// It returns the field name of the first offending field, or "" when clean.
+func checkContentControlChars(title, excerpt, body *string) string {
+	if title != nil && containsControlChars(*title) {
+		return "title"
+	}
+	if excerpt != nil && containsControlChars(*excerpt) {
+		return "excerpt"
+	}
+	if body != nil && containsProseControlChars(*body) {
+		return "body"
+	}
+	return ""
+}
+
 // Contents returns a paginated list across all statuses / visibilities.
 // The authenticated admin listing route consumes this; the public-facing
 // variant is PublicContents.
@@ -121,6 +156,10 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", err.Error())
 		return
 	}
+	if field := checkContentControlChars(&p.Title, &p.Excerpt, &p.Body); field != "" {
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", field+" must not contain control characters")
+		return
+	}
 	if p.Status == "" {
 		p.Status = StatusDraft
 	}
@@ -168,6 +207,10 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := CheckFieldLengths(p.Title, p.Excerpt, p.Body); err != nil {
 		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+		return
+	}
+	if field := checkContentControlChars(p.Title, p.Excerpt, p.Body); field != "" {
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", field+" must not contain control characters")
 		return
 	}
 	// IsPublic is a bool pointer — no validation needed beyond JSON decode

@@ -413,6 +413,127 @@ func TestHandler_Update_OversizedBody(t *testing.T) {
 }
 
 // =============================================================================
+// Handler.Create / Handler.Update — control-character rejection
+// =============================================================================
+
+// TestHandler_Create_RejectsControlChars verifies Create rejects a control
+// character in title, excerpt, or body with 400 BAD_REQUEST, matching the MCP
+// write path (propose_content) so the two write boundaries are identical.
+// title/excerpt use the strict check (every C0/DEL/C1 char); body uses the
+// prose check, which still rejects C0 chars other than HT/LF/CR (here U+0001).
+// Each case carries all required fields so the only reason to reject is the
+// control char — and rejection happens before the nil store is reached.
+func TestHandler_Create_RejectsControlChars(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		body      string
+		wantField string
+	}{
+		{
+			name:      "control char in title",
+			body:      `{"slug":"s","title":"bad\u0001title","type":"article"}`,
+			wantField: "title",
+		},
+		{
+			name:      "control char in excerpt",
+			body:      `{"slug":"s","title":"T","type":"article","excerpt":"bad\u0001excerpt"}`,
+			wantField: "excerpt",
+		},
+		{
+			name:      "control char in body",
+			body:      `{"slug":"s","title":"T","type":"article","body":"bad\u0001body"}`,
+			wantField: "body",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			h := newTestHandler()
+			req := httptest.NewRequest(http.MethodPost, "/api/admin/contents",
+				strings.NewReader(tt.body))
+			req.Header.Set("Content-Type", "application/json")
+			w := httptest.NewRecorder()
+
+			h.Create(w, req)
+
+			if w.Code != http.StatusBadRequest {
+				t.Fatalf("Create(%q) status = %d, want %d\nbody: %s",
+					tt.name, w.Code, http.StatusBadRequest, w.Body.String())
+			}
+			got := decodeErrorBody(t, w.Body)
+			if got.Error.Code != "BAD_REQUEST" {
+				t.Errorf("Create(%q) error.code = %q, want BAD_REQUEST", tt.name, got.Error.Code)
+			}
+			wantMsg := tt.wantField + " must not contain control characters"
+			if got.Error.Message != wantMsg {
+				t.Errorf("Create(%q) error.message = %q, want %q", tt.name, got.Error.Message, wantMsg)
+			}
+		})
+	}
+}
+
+// TestHandler_Update_RejectsControlChars verifies Update rejects a control
+// character in title, excerpt, or body with 400 BAD_REQUEST. Update fields are
+// optional pointers, so each case sets only the field under test — the same
+// control-char gate must fire regardless of which field is supplied.
+func TestHandler_Update_RejectsControlChars(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		body      string
+		wantField string
+	}{
+		{
+			name:      "control char in title",
+			body:      `{"title":"bad\u0001title"}`,
+			wantField: "title",
+		},
+		{
+			name:      "control char in excerpt",
+			body:      `{"excerpt":"bad\u0001excerpt"}`,
+			wantField: "excerpt",
+		},
+		{
+			name:      "control char in body",
+			body:      `{"body":"bad\u0001body"}`,
+			wantField: "body",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			h := newTestHandler()
+			id := uuid.New().String()
+			req := httptest.NewRequest(http.MethodPut, "/api/admin/contents/"+id,
+				strings.NewReader(tt.body))
+			req.Header.Set("Content-Type", "application/json")
+			req.SetPathValue("id", id)
+			w := httptest.NewRecorder()
+
+			h.Update(w, req)
+
+			if w.Code != http.StatusBadRequest {
+				t.Fatalf("Update(%q) status = %d, want %d\nbody: %s",
+					tt.name, w.Code, http.StatusBadRequest, w.Body.String())
+			}
+			got := decodeErrorBody(t, w.Body)
+			if got.Error.Code != "BAD_REQUEST" {
+				t.Errorf("Update(%q) error.code = %q, want BAD_REQUEST", tt.name, got.Error.Code)
+			}
+			wantMsg := tt.wantField + " must not contain control characters"
+			if got.Error.Message != wantMsg {
+				t.Errorf("Update(%q) error.message = %q, want %q", tt.name, got.Error.Message, wantMsg)
+			}
+		})
+	}
+}
+
+// =============================================================================
 // Handler.Delete — invalid UUID path parameter
 // =============================================================================
 
