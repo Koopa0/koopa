@@ -371,8 +371,10 @@ func run(logger *slog.Logger) error {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	if err := srv.Shutdown(shutdownCtx); err != nil && runErr == nil {
-		runErr = fmt.Errorf("server shutdown: %w", err)
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		// Surface both: a listener error (runErr) and a shutdown error are
+		// independent failures. errors.Join(nil, x) is just x.
+		runErr = errors.Join(runErr, fmt.Errorf("server shutdown: %w", err))
 	}
 	wg.Wait()
 	logger.Info("server stopped")
