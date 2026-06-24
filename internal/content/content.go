@@ -463,6 +463,7 @@ func (s *Store) Content(ctx context.Context, id uuid.UUID) (*Content, error) {
 		IsPublic: r.IsPublic, ProjectID: r.ProjectID, AiMetadata: r.AiMetadata,
 		ReadingTimeMin: r.ReadingTimeMin, CoverImage: r.CoverImage,
 		CreatedBy: r.CreatedBy, ProposalRationale: r.ProposalRationale,
+		ReviewNote:  r.ReviewNote,
 		PublishedAt: r.PublishedAt,
 		CreatedAt:   r.CreatedAt, UpdatedAt: r.UpdatedAt,
 	})

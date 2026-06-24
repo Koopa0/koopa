@@ -1128,7 +1128,7 @@ func (q *Queries) ContentBriefsByProjectID(ctx context.Context, projectID *uuid.
 const contentByID = `-- name: ContentByID :one
 SELECT id, slug, title, body, excerpt, type, status,
        series_id, series_order, is_public, project_id, ai_metadata, reading_time_min,
-       cover_image, created_by, proposal_rationale, published_at, created_at, updated_at
+       cover_image, created_by, proposal_rationale, review_note, published_at, created_at, updated_at
 FROM contents WHERE id = $1
 `
 
@@ -1149,6 +1149,7 @@ type ContentByIDRow struct {
 	CoverImage        *string         `json:"cover_image"`
 	CreatedBy         *string         `json:"created_by"`
 	ProposalRationale *string         `json:"proposal_rationale"`
+	ReviewNote        *string         `json:"review_note"`
 	PublishedAt       *time.Time      `json:"published_at"`
 	CreatedAt         time.Time       `json:"created_at"`
 	UpdatedAt         time.Time       `json:"updated_at"`
@@ -1174,6 +1175,7 @@ func (q *Queries) ContentByID(ctx context.Context, id uuid.UUID) (ContentByIDRow
 		&i.CoverImage,
 		&i.CreatedBy,
 		&i.ProposalRationale,
+		&i.ReviewNote,
 		&i.PublishedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
