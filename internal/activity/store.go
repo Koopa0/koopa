@@ -7,8 +7,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/jackc/pgx/v5"
-
 	"github.com/Koopa0/koopa/internal/db"
 )
 
@@ -20,11 +18,6 @@ type Store struct {
 // NewStore returns an activity Store backed by the given connection.
 func NewStore(dbtx db.DBTX) *Store {
 	return &Store{q: db.New(dbtx)}
-}
-
-// WithTx returns a new Store that uses the given transaction.
-func (s *Store) WithTx(tx pgx.Tx) *Store {
-	return &Store{q: s.q.WithTx(tx)}
 }
 
 // EventsByTimeRange returns activity_events within [start, end).

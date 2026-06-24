@@ -207,9 +207,8 @@ func rrfMerge(fts, sem []content.Content, limit int) []content.Content {
 		if a.score != b.score {
 			return cmp.Compare(b.score, a.score) // higher score first
 		}
-		// Stable tiebreaker: prefer FTS winner (rank 1 in FTS beats
-		// rank 1 in semantic only when scores truly tie — negligible in
-		// practice but keeps output deterministic).
+		// Stable tiebreaker on id (lexicographic UUID order) so two rows with
+		// truly equal fused scores keep a deterministic, reproducible order.
 		return cmp.Compare(a.id.String(), b.id.String())
 	})
 
