@@ -1,11 +1,16 @@
 import { TestBed } from '@angular/core/testing';
+import { PLATFORM_ID } from '@angular/core';
 import { MarkdownService } from './markdown.service';
 
 describe('MarkdownService', () => {
   let service: MarkdownService;
 
   beforeEach(() => {
-    TestBed.configureTestingModule({});
+    TestBed.configureTestingModule({
+      // The service only runs DOMPurify on the browser platform; pin it so the
+      // sanitization tests below exercise the real sanitizer, not the SSR skip.
+      providers: [{ provide: PLATFORM_ID, useValue: 'browser' }],
+    });
     service = TestBed.inject(MarkdownService);
   });
 
@@ -129,4 +134,26 @@ describe('MarkdownService', () => {
     expect(result).not.toContain('<a ');
   });
 
+  // ── Sanitization (DOMPurify) ─────────────────────────────────────────────
+  // The rendered HTML is bound via [innerHTML], so any dangerous token that
+  // survives parse() becomes a live XSS sink. These assert the sink is closed.
+
+  it('should strip a raw <script> tag from the rendered output', () => {
+    const result = service.parse('<script>alert(1)</script>');
+    expect(result).not.toContain('<script');
+    expect(result).not.toContain('alert(1)');
+  });
+
+  it('should drop the onerror handler from an <img> payload', () => {
+    const result = service.parse('<img src=x onerror=alert(1)>');
+    // The img element itself is permitted, but the event handler must be gone.
+    expect(result.toLowerCase()).not.toContain('onerror');
+    expect(result).not.toContain('alert(1)');
+  });
+
+  it('should remove a javascript: scheme from a link href', () => {
+    const result = service.parse('[click me](javascript:alert(1))');
+    expect(result.toLowerCase()).not.toContain('javascript:');
+    expect(result).not.toContain('alert(1)');
+  });
 });
