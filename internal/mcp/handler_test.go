@@ -10,8 +10,6 @@ import (
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-
-	"github.com/Koopa0/koopa/internal/agent"
 )
 
 // newTestServer creates a Server with no stores — only useful for validation
@@ -22,7 +20,6 @@ func newTestServer() *Server {
 	return &Server{
 		logger:      slog.Default(),
 		callerAgent: "human",
-		registry:    agent.NewBuiltinRegistry(),
 		loc:         time.UTC,
 	}
 }

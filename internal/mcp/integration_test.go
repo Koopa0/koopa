@@ -57,7 +57,6 @@ func setupServer(t *testing.T) *Server {
 		t.Fatalf("agent.SyncToTable: %v", err)
 	}
 	return NewServer(testPool, slog.Default(),
-		WithRegistry(registry),
 		WithCallerAgent("planner"),
 	)
 }

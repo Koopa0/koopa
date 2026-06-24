@@ -85,7 +85,6 @@ func run(ctx context.Context, cfg *config, logger *slog.Logger) error {
 	opts := []mcp.ServerOption{
 		mcp.WithLocation(taipeiLoc),
 		mcp.WithCallerAgent(cfg.CallerAgent),
-		mcp.WithRegistry(agentRegistry),
 	}
 	// Enable search_knowledge semantic branch when Gemini is configured.
 	// Embedder construction fails fast on an invalid client setup; FTS-only
