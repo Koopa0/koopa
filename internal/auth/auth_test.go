@@ -3,7 +3,6 @@
 package auth
 
 import (
-	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
@@ -43,10 +42,7 @@ func signToken(t *testing.T, email, secret string, expiresAt time.Time, method j
 // callMiddleware sends a request through the auth middleware and returns the response.
 func callMiddleware(t *testing.T, authHeader string) *httptest.ResponseRecorder {
 	t.Helper()
-	var captured *Claims
 	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		c, _ := ClaimsFromContext(r.Context())
-		captured = c
 		w.WriteHeader(http.StatusOK)
 	})
 
@@ -59,11 +55,6 @@ func callMiddleware(t *testing.T, authHeader string) *httptest.ResponseRecorder 
 	}
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
-
-	// If the middleware passed, verify claims were set
-	if w.Code == http.StatusOK && captured == nil {
-		t.Error("middleware passed but claims not found in context")
-	}
 
 	return w
 }
@@ -143,39 +134,6 @@ func TestMiddleware_AlgorithmConfusion(t *testing.T) {
 	})
 }
 
-func TestMiddleware_ClaimsPassedToHandler(t *testing.T) {
-	validToken := signToken(t, "admin@koopa0.dev", testSecret, time.Now().Add(time.Hour), jwt.SigningMethodHS256)
-
-	var gotClaims *Claims
-	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		c, ok := ClaimsFromContext(r.Context())
-		if !ok {
-			t.Error("ClaimsFromContext returned false")
-			return
-		}
-		gotClaims = c
-		w.WriteHeader(http.StatusOK)
-	})
-
-	mid := Middleware(testSecret)
-	handler := mid(inner)
-
-	req := httptest.NewRequest(http.MethodGet, "/test", http.NoBody)
-	req.Header.Set("Authorization", "Bearer "+validToken)
-	w := httptest.NewRecorder()
-	handler.ServeHTTP(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
-	}
-	if gotClaims == nil {
-		t.Fatal("claims not passed to handler")
-	}
-	if gotClaims.Email != "admin@koopa0.dev" {
-		t.Errorf("claims.Email = %q, want %q", gotClaims.Email, "admin@koopa0.dev")
-	}
-}
-
 func TestMiddleware_ErrorResponseFormat(t *testing.T) {
 	// Verify error responses match the api.ErrorBody JSON format
 	w := callMiddleware(t, "")
@@ -194,44 +152,6 @@ func TestMiddleware_ErrorResponseFormat(t *testing.T) {
 	}
 	if errResp.Error.Message == "" {
 		t.Error("error.message should not be empty")
-	}
-}
-
-func TestClaimsFromContext(t *testing.T) {
-	tests := []struct {
-		name      string
-		ctx       context.Context
-		wantOK    bool
-		wantEmail string
-	}{
-		{
-			name:   "no claims in context",
-			ctx:    context.Background(),
-			wantOK: false,
-		},
-		{
-			name:      "claims present",
-			ctx:       context.WithValue(context.Background(), claimsKey, &Claims{Email: "admin@koopa0.dev"}),
-			wantOK:    true,
-			wantEmail: "admin@koopa0.dev",
-		},
-		{
-			name:   "wrong type in context",
-			ctx:    context.WithValue(context.Background(), claimsKey, "not-claims"),
-			wantOK: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			claims, ok := ClaimsFromContext(tt.ctx)
-			if ok != tt.wantOK {
-				t.Errorf("ClaimsFromContext() ok = %v, want %v", ok, tt.wantOK)
-			}
-			if ok && claims.Email != tt.wantEmail {
-				t.Errorf("ClaimsFromContext().Email = %q, want %q", claims.Email, tt.wantEmail)
-			}
-		})
 	}
 }
 

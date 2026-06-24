@@ -42,7 +42,8 @@ type actorKey struct{}
 // handler's literal can diverge silently (each admin mutation's audit
 // row and FK stamp end up with different identities). Multi-admin
 // support becomes "change the argument main passes to ActorMiddleware
-// (e.g. resolve from auth.ClaimsFromContext)"; handlers stay untouched.
+// to a resolver that derives the actor from the validated request
+// identity"; handlers stay untouched.
 //
 // Mirrors the MCP-side reference at internal/mcp/tx.go (withActorTx):
 //  1. pool.Begin(ctx)

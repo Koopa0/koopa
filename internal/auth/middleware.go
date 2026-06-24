@@ -9,7 +9,6 @@
 package auth
 
 import (
-	"context"
 	"fmt"
 	"net/http"
 	"strings"
@@ -18,10 +17,6 @@ import (
 
 	"github.com/Koopa0/koopa/internal/api"
 )
-
-type contextKey struct{}
-
-var claimsKey = contextKey{}
 
 // Middleware returns an HTTP middleware that validates JWT access tokens.
 func Middleware(secret string) func(http.Handler) http.Handler {
@@ -52,14 +47,11 @@ func Middleware(secret string) func(http.Handler) http.Handler {
 				return
 			}
 
-			ctx := context.WithValue(r.Context(), claimsKey, claims)
-			next.ServeHTTP(w, r.WithContext(ctx))
+			// The token is validated but not stored: no production path reads
+			// JWT claims (the admin actor is a literal passed to ActorMiddleware,
+			// not resolved from claims). Re-introduce a claims reader here if and
+			// when multi-admin lands.
+			next.ServeHTTP(w, r)
 		})
 	}
-}
-
-// ClaimsFromContext retrieves JWT claims from the request context.
-func ClaimsFromContext(ctx context.Context) (*Claims, bool) {
-	claims, ok := ctx.Value(claimsKey).(*Claims)
-	return claims, ok
 }

@@ -698,39 +698,6 @@ func TestMiddleware_ErrorResponseContract(t *testing.T) {
 	}
 }
 
-// ─── ClaimsFromContext edge cases ─────────────────────────────────────────────
-
-func TestClaimsFromContext_WithMiddlewareChain(t *testing.T) {
-	t.Parallel()
-
-	// Verify that claims set by Middleware are extractable by ClaimsFromContext.
-	validToken := signToken(t, "user@example.com", testSecret, time.Now().Add(time.Hour), jwt.SigningMethodHS256)
-
-	var extractedEmail string
-	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		c, ok := ClaimsFromContext(r.Context())
-		if !ok {
-			t.Error("ClaimsFromContext returned ok=false after Middleware")
-			return
-		}
-		extractedEmail = c.Email
-		w.WriteHeader(http.StatusOK)
-	})
-
-	mid := Middleware(testSecret)
-	req := httptest.NewRequest(http.MethodGet, "/test", http.NoBody)
-	req.Header.Set("Authorization", "Bearer "+validToken)
-	w := httptest.NewRecorder()
-	mid(inner).ServeHTTP(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
-	}
-	if extractedEmail != "user@example.com" {
-		t.Errorf("ClaimsFromContext().Email = %q, want %q", extractedEmail, "user@example.com")
-	}
-}
-
 // ─── generateState / validateState properties ────────────────────────────────
 
 func TestGenerateState_UniqueEachCall(t *testing.T) {
