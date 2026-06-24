@@ -244,7 +244,7 @@ export interface StatsFeeds {
   enabled: number;
 }
 
-/** Per process-run kind (map key: crawl, agent_schedule, ...). */
+/** Per process-run kind (map key: crawl). */
 export interface StatsProcessRuns {
   total: number;
   by_status: Record<string, number>;

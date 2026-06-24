@@ -30,10 +30,6 @@ function overviewPayload(): Record<string, unknown> {
         total: 226,
         by_status: { completed: 220, failed: 6 },
       },
-      agent_schedule: {
-        total: 40,
-        by_status: { completed: 40 },
-      },
     },
     projects: { total: 11, by_status: { active: 6, paused: 5 } },
     activity: {

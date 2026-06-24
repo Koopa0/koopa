@@ -568,13 +568,11 @@ type Milestone struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
-// Run-history records for background processes. kind discriminates: crawl (internal crawl/fetch runs such as RSS feed collector), agent_schedule (external AI scheduler runs). Kind-specific fields live in metadata. subsystem carries the external-AI-scheduler identifier (only when kind=agent_schedule). RETENTION: 90 days for terminal runs; pending/running rows are operational state.
+// Run-history records for background processes. kind=crawl: internal crawl/fetch runs such as the RSS feed collector. Kind-specific fields live in metadata. RETENTION: 90 days for terminal runs; pending/running rows are operational state.
 type ProcessRun struct {
 	ID uuid.UUID `json:"id"`
-	// Run category. Closed set: crawl (internal fetch/collector runs), agent_schedule (external AI scheduler runs). New kinds require CHECK update + Go writer. Use this column for dashboards, retention scoping, and metric labels.
+	// Run category. Closed set: crawl (internal fetch/collector runs). A new kind requires a CHECK update + a Go writer.
 	Kind string `json:"kind"`
-	// External AI scheduler identifier. NOT NULL iff kind='agent_schedule' (chk_process_runs_subsystem_iff_agent_schedule). Values mirror agent.Platform in BuiltinAgents() for agents with non-empty Schedule. Today the only value in use is 'claude-cowork'. Values are validated at the Go write path, not by a hardcoded CHECK list — new AI schedulers (e.g. hermes-agent) land without a schema migration.
-	Subsystem *string `json:"subsystem"`
 	// Run identifier within its kind. crawl: collector name (e.g. "rss-feed-collector"). agent_schedule: "<agent_name>:<schedule_name>" composite from the Go dispatcher.
 	Name string `json:"name"`
 	// Lifecycle: pending → running → completed | failed | skipped. chk_process_runs_error_on_failure ties error to failed status. chk_process_runs_ended_at_consistency ties ended_at to terminal states.

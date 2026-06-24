@@ -26,10 +26,10 @@ func NewStore(dbtx db.DBTX) *Store {
 }
 
 // ProcessRunKinds lists every process_runs.kind value the admin dashboard
-// reports on. Order is cosmetic: crawl (most frequent) first,
-// agent_schedule second. Must match the CHECK constraint on
-// process_runs.kind in migrations/001_initial.up.sql.
-var ProcessRunKinds = []string{"crawl", "agent_schedule"}
+// reports on. Must match the CHECK constraint on process_runs.kind in the
+// migrations (crawl is the only producer; agent schedules run in the external
+// Cowork runner and are not tracked here).
+var ProcessRunKinds = []string{"crawl"}
 
 // Overview returns aggregated stats across all platform data sources.
 // Queries run concurrently via errgroup since they are independent.

@@ -104,9 +104,9 @@ func (h *Handler) ProcessRuns(w http.ResponseWriter, r *http.Request) {
 	if kind == "" {
 		kind = "crawl"
 	}
-	var subsystem, status *string
-	if v := q.Get("subsystem"); v != "" {
-		subsystem = &v
+	var name, status *string
+	if v := q.Get("name"); v != "" {
+		name = &v
 	}
 	if v := q.Get("status"); v != "" {
 		status = &v
@@ -118,21 +118,21 @@ func (h *Handler) ProcessRuns(w http.ResponseWriter, r *http.Request) {
 	// misread the zero-filled sibling columns — fixed by taking all
 	// counts from a single 24h call, plus one narrow 1-hour call whose
 	// Failed counter is what "failed_last_hour" actually means.
-	summary24h, err := h.store.ProcessRunsSince(ctx, now.Add(-24*time.Hour), kind, subsystem, status)
+	summary24h, err := h.store.ProcessRunsSince(ctx, now.Add(-24*time.Hour), kind, name, status)
 	if err != nil {
 		h.logger.Error("process-runs 24h summary", "error", err)
 		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to query process runs")
 		return
 	}
 
-	lastHour, err := h.store.ProcessRunsSince(ctx, now.Add(-time.Hour), kind, subsystem, nil)
+	lastHour, err := h.store.ProcessRunsSince(ctx, now.Add(-time.Hour), kind, name, nil)
 	if err != nil {
 		h.logger.Error("process-runs last-hour summary", "error", err)
 		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to query process runs")
 		return
 	}
 
-	recent, err := h.store.RecentProcessRuns(ctx, now.Add(-24*time.Hour), kind, subsystem, status, 100)
+	recent, err := h.store.RecentProcessRuns(ctx, now.Add(-24*time.Hour), kind, name, status, 100)
 	if err != nil {
 		h.logger.Error("process-runs recent list", "error", err)
 		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to query process runs")
