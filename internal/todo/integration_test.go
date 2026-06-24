@@ -235,6 +235,86 @@ func TestIntegration_Todo_Recurring(t *testing.T) {
 	}
 }
 
+// TestIntegration_Todo_Recurring_Interval exercises the interval-mode
+// recurrence arithmetic in RecurringTodoItemsDueToday:
+//
+//	@today >= last_completed_on + (recur_interval || ' ' || recur_unit)::interval
+//
+// The weekday-mode test only covers last_completed_on=NULL for interval rows;
+// this test drives the actual date arithmetic with hand-computed
+// last_completed_on values relative to today, so a wrong interval addition
+// (e.g. off-by-one, or wrong unit) surfaces as an inclusion/exclusion failure.
+func TestIntegration_Todo_Recurring_Interval(t *testing.T) {
+	truncate(t)
+	store := todo.NewStore(testPool)
+	ctx := t.Context()
+
+	// today is the date the query is evaluated against (date-only, UTC).
+	today := time.Now().UTC().Truncate(24 * time.Hour)
+	daysAgo := func(n int) *string {
+		s := today.AddDate(0, 0, -n).Format(time.DateOnly)
+		return &s
+	}
+
+	// seedInterval inserts an active interval-mode recurring todo with the given
+	// last_completed_on and returns its id.
+	seedInterval := func(title string, interval int, unit string, lastCompleted *string) uuid.UUID {
+		t.Helper()
+		var id uuid.UUID
+		if err := testPool.QueryRow(ctx,
+			`INSERT INTO todos (title, state, recur_interval, recur_unit, last_completed_on, created_by)
+			 VALUES ($1, 'todo', $2::int, $3, $4::date, 'human') RETURNING id`,
+			title, interval, unit, lastCompleted,
+		).Scan(&id); err != nil {
+			t.Fatalf("seeding %q: %v", title, err)
+		}
+		return id
+	}
+
+	// every 3 days, completed exactly 3 days ago → today == lastCompleted + 3d → due.
+	dueExact := seedInterval("3d, completed exactly 3 days ago", 3, "days", daysAgo(3))
+	// every 3 days, completed 2 days ago (interval-1) → today < lastCompleted + 3d → NOT due.
+	notDueYet := seedInterval("3d, completed 2 days ago", 3, "days", daysAgo(2))
+	// every 3 days, completed 5 days ago (well past) → due.
+	dueOverdue := seedInterval("3d, completed 5 days ago", 3, "days", daysAgo(5))
+	// every 2 weeks, completed exactly 14 days ago → today == lastCompleted + 14d → due.
+	dueWeeks := seedInterval("2w, completed exactly 14 days ago", 2, "weeks", daysAgo(14))
+	// every 2 weeks, completed 13 days ago → NOT due yet.
+	notDueWeeks := seedInterval("2w, completed 13 days ago", 2, "weeks", daysAgo(13))
+	// every 1 month, completed 20 days ago → NOT due (a month is >= 28 days).
+	notDueMonth := seedInterval("1mo, completed 20 days ago", 1, "months", daysAgo(20))
+
+	items, err := store.RecurringItemsDueToday(ctx, today)
+	if err != nil {
+		t.Fatalf("RecurringItemsDueToday: %v", err)
+	}
+	due := make(map[uuid.UUID]struct{}, len(items))
+	for i := range items {
+		due[items[i].ID] = struct{}{}
+	}
+
+	wantDue := map[string]uuid.UUID{
+		"3d completed exactly 3 days ago":  dueExact,
+		"3d completed 5 days ago":          dueOverdue,
+		"2w completed exactly 14 days ago": dueWeeks,
+	}
+	for name, id := range wantDue {
+		if _, ok := due[id]; !ok {
+			t.Errorf("%s (%s) missing from due_today", name, id)
+		}
+	}
+	wantNotDue := map[string]uuid.UUID{
+		"3d completed 2 days ago (interval-1)": notDueYet,
+		"2w completed 13 days ago":             notDueWeeks,
+		"1mo completed 20 days ago":            notDueMonth,
+	}
+	for name, id := range wantNotDue {
+		if _, ok := due[id]; ok {
+			t.Errorf("%s (%s) must NOT be in due_today", name, id)
+		}
+	}
+}
+
 // TestIntegration_Todo_History seeds a completed todo and asserts it appears
 // in the default (completed-since) history view.
 func TestIntegration_Todo_History(t *testing.T) {
