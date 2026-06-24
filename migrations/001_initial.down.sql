@@ -32,9 +32,6 @@ DROP FUNCTION IF EXISTS enforce_todo_skip_not_already_dropped();
 -- 3. Tables (reverse creation order, respecting FK dependencies)
 -- ============================================================
 
--- Project aliases
-DROP TABLE IF EXISTS project_aliases;
-
 -- Activity events
 DROP TABLE IF EXISTS activity_events;
 

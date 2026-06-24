@@ -112,10 +112,3 @@ BEGIN
         END LOOP;
     END LOOP;
 END $$;
-
--- ============================================================
--- Agent schedules
--- ============================================================
--- Schedule definitions live in the Go BuiltinAgents() literal under
--- internal/agent/registry.go, not in the database. Only the run audit log
--- (process_runs, kind='agent_schedule', subsystem=agent.Platform) persists here.

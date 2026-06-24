@@ -558,17 +558,14 @@ CREATE INDEX idx_feeds_high_priority ON feeds(id) WHERE priority = 'high';
 -- ============================================================
 -- Process runs
 --
--- Run-history records for background processes. Two kinds:
---   crawl          — internal crawl/fetch runs (RSS feed collector, etc.)
---   agent_schedule — external AI scheduler runs (claude-cowork, future hermes-agent)
+-- Run-history records for background processes. One kind:
+--   crawl — internal crawl/fetch runs (RSS feed collector, etc.)
 -- kind-specific fields live in metadata per the JSONB promotion rule.
--- subsystem is the observability dimension for external AI schedulers.
 -- ============================================================
 
 CREATE TABLE process_runs (
     id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    kind          TEXT NOT NULL CHECK (kind IN ('crawl', 'agent_schedule')),
-    subsystem     TEXT,
+    kind          TEXT NOT NULL CHECK (kind IN ('crawl')),
     name          TEXT NOT NULL,
     status        TEXT NOT NULL DEFAULT 'pending'
                   CHECK (status IN ('pending', 'running', 'completed', 'failed', 'skipped')),
@@ -593,32 +590,19 @@ CREATE TABLE process_runs (
         CHECK (
             (status IN ('pending', 'running') AND ended_at IS NULL) OR
             (status IN ('completed', 'failed', 'skipped') AND ended_at IS NOT NULL)
-        ),
-    CONSTRAINT chk_process_runs_subsystem_iff_agent_schedule
-        CHECK ((kind = 'agent_schedule') = (subsystem IS NOT NULL))
+        )
 );
 
 COMMENT ON TABLE process_runs IS
-    'Run-history records for background processes. kind discriminates: crawl '
-    '(internal crawl/fetch runs such as RSS feed collector), agent_schedule '
-    '(external AI scheduler runs). Kind-specific fields live in metadata. '
-    'subsystem carries the external-AI-scheduler identifier (only when '
-    'kind=agent_schedule). RETENTION: 90 days for terminal runs; pending/running '
-    'rows are operational state.';
+    'Run-history records for background processes. kind=crawl: internal '
+    'crawl/fetch runs such as the RSS feed collector. Kind-specific fields live '
+    'in metadata. RETENTION: 90 days for terminal runs; pending/running rows are '
+    'operational state.';
 COMMENT ON COLUMN process_runs.kind IS
-    'Run category. Closed set: crawl (internal fetch/collector runs), agent_schedule '
-    '(external AI scheduler runs). New kinds require CHECK update + Go writer. '
-    'Use this column for dashboards, retention scoping, and metric labels.';
-COMMENT ON COLUMN process_runs.subsystem IS
-    'External AI scheduler identifier. NOT NULL iff kind=''agent_schedule'' '
-    '(chk_process_runs_subsystem_iff_agent_schedule). Values mirror agent.Platform '
-    'in BuiltinAgents() for agents with non-empty Schedule. Today the only value in '
-    'use is ''claude-cowork''. Values are validated at the Go write path, not by a '
-    'hardcoded CHECK list — new AI schedulers (e.g. hermes-agent) land without a '
-    'schema migration.';
+    'Run category. Closed set: crawl (internal fetch/collector runs). A new kind '
+    'requires a CHECK update + a Go writer.';
 COMMENT ON COLUMN process_runs.name IS
-    'Run identifier within its kind. crawl: collector name (e.g. "rss-feed-collector"). '
-    'agent_schedule: "<agent_name>:<schedule_name>" composite from the Go dispatcher.';
+    'Run identifier within its kind. crawl: collector name (e.g. "rss-feed-collector").';
 COMMENT ON COLUMN process_runs.status IS
     'Lifecycle: pending → running → completed | failed | skipped. chk_process_runs_error_on_failure '
     'ties error to failed status. chk_process_runs_ended_at_consistency ties ended_at to terminal states.';
@@ -640,7 +624,6 @@ COMMENT ON COLUMN process_runs.ended_at IS
 COMMENT ON COLUMN process_runs.metadata IS
     'Kind-specific fields not warranting promotion. '
     'crawl: { source_url, item_count, http_status }. '
-    'agent_schedule: { produced_task_ids, missed_run_policy }. '
     'Promote to a column when a field needs WHERE/JOIN/GROUP BY ≥ 3 times in queries.';
 
 CREATE INDEX idx_process_runs_kind_status ON process_runs (kind, status);
@@ -650,8 +633,6 @@ CREATE INDEX idx_process_runs_retry ON process_runs (created_at) WHERE status = 
 CREATE INDEX idx_process_runs_content_id ON process_runs (content_id) WHERE content_id IS NOT NULL;
 CREATE INDEX idx_process_runs_dedup ON process_runs (kind, name, content_id, status) WHERE status IN ('pending', 'running');
 CREATE INDEX idx_process_runs_completed ON process_runs (kind, name, ended_at DESC) WHERE status = 'completed';
-CREATE INDEX idx_process_runs_subsystem_recent ON process_runs (subsystem, status, started_at DESC)
-    WHERE subsystem IS NOT NULL;
 
 -- ============================================================
 -- Todos (personal GTD work list — NOT inter-agent tasks)
@@ -929,26 +910,6 @@ CREATE INDEX idx_activity_events_occurred_at ON activity_events (occurred_at DES
 CREATE INDEX idx_activity_events_project ON activity_events (project_id, occurred_at DESC) WHERE project_id IS NOT NULL;
 CREATE INDEX idx_activity_events_kind ON activity_events (entity_type, change_kind, occurred_at DESC);
 CREATE INDEX idx_activity_events_actor ON activity_events (actor, occurred_at DESC);
-
--- ============================================================
--- Project aliases
--- ============================================================
-
-CREATE TABLE project_aliases (
-    id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    alias      TEXT NOT NULL,
-    project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-    source     TEXT NOT NULL,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-COMMENT ON TABLE project_aliases IS 'Maps variant project names to canonical project. Used by activity event and MCP search to resolve fuzzy project references.';
-COMMENT ON COLUMN project_aliases.alias IS 'Variant name (e.g. repo name, external title variant). Case-insensitive unique — "Koopa0.dev" and "koopa0.dev" are the same alias.';
-COMMENT ON COLUMN project_aliases.project_id IS 'References canonical project. CASCADE — aliases meaningless without project.';
-COMMENT ON COLUMN project_aliases.source IS 'Where this alias was discovered (e.g. github, manual).';
-
--- Case-insensitive unique: prevents "Koopa0.dev" and "koopa0.dev" as separate aliases
-CREATE UNIQUE INDEX idx_project_aliases_lower_alias ON project_aliases (LOWER(alias));
 
 -- ============================================================
 -- activity_events triggers — canonical audit log writers
