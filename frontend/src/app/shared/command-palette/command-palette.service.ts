@@ -145,26 +145,8 @@ export class CommandPaletteService {
         id: 'articles',
         label: 'Articles',
         group: 'Pages',
-        keywords: ['blog', 'post', 'writing'],
+        keywords: ['blog', 'post', 'writing', 'til', 'essay'],
         action: () => this.navigate('/articles'),
-      },
-      {
-        id: 'til',
-        label: 'TIL',
-        group: 'Pages',
-        keywords: ['today', 'learned', 'learning'],
-        // TIL reads on the consolidated articles index, filtered by type.
-        action: () =>
-          void this.router.navigate(['/articles'], {
-            queryParams: { type: 'til' },
-          }),
-      },
-      {
-        id: 'uses',
-        label: 'Uses',
-        group: 'Pages',
-        keywords: ['tools', 'setup', 'stack'],
-        action: () => this.navigate('/uses'),
       },
       {
         id: 'about',

@@ -42,7 +42,7 @@ interface ContentsQuery {
  * The reading index — served at both `/` and `/articles`. One editorial
  * list consolidating every written content type (article / essay /
  * build-log / til / digest); the `type` query param narrows by type
- * (retired /essays, /til, /build-logs lists redirect here) and the topic
+ * (the per-type lists are folded into this one index) and the topic
  * chips narrow client-side by topic.
  */
 @Component({

@@ -13,13 +13,6 @@ export const routes: Routes = [
   },
   { path: 'home', redirectTo: '/', pathMatch: 'full' },
   {
-    path: 'design-system',
-    loadComponent: () =>
-      import('./pages/design-system/design-system').then(
-        (m) => m.DesignSystemComponent,
-      ),
-  },
-  {
     path: 'articles',
     loadComponent: () =>
       import('./pages/articles/articles').then((m) => m.ArticlesComponent),
@@ -41,19 +34,6 @@ export const routes: Routes = [
       ),
     data: { preview: true },
   },
-  // Retired per-type list pages — the consolidated index covers them.
-  { path: 'essays', redirectTo: '/articles?type=essay', pathMatch: 'full' },
-  { path: 'til', redirectTo: '/articles?type=til', pathMatch: 'full' },
-  {
-    path: 'build-logs',
-    redirectTo: '/articles?type=build-log',
-    pathMatch: 'full',
-  },
-  // Retired per-type detail pages — every content type reads at
-  // /articles/:slug (one reading surface).
-  { path: 'essays/:slug', redirectTo: '/articles/:slug' },
-  { path: 'til/:slug', redirectTo: '/articles/:slug' },
-  { path: 'build-logs/:slug', redirectTo: '/articles/:slug' },
   {
     path: 'topics',
     loadComponent: () =>
@@ -80,11 +60,6 @@ export const routes: Routes = [
     path: 'about',
     loadComponent: () =>
       import('./pages/about/about').then((m) => m.AboutComponent),
-  },
-  {
-    path: 'uses',
-    loadComponent: () =>
-      import('./pages/uses/uses').then((m) => m.UsesComponent),
   },
   {
     path: 'privacy',
