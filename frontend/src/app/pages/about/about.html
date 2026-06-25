@@ -1,128 +1,115 @@
-<section>
-  <div class="mx-auto max-w-3xl px-6 pt-11 pb-28 sm:px-11">
-    <!-- Hero -->
-    <header class="border-b border-border pt-2 pb-7">
-      <p class="font-mono text-[11px] tracking-[0.06em] uppercase text-brand">
-        About
-      </p>
-      <div
-        class="mt-4 flex flex-col items-center gap-5 sm:flex-row sm:items-center sm:gap-7"
-      >
-        <img
-          src="/logo.png"
-          alt="Koopa Profile"
-          width="96"
-          height="96"
-          class="size-24 shrink-0"
-        />
-        <div class="text-center sm:text-left">
-          <h1
-            class="font-display text-[2.375rem] font-bold leading-[1.1] tracking-[-0.025em] text-balance text-fg"
-          >
-            Koopa
-          </h1>
-          <p class="mt-1 text-lg text-fg-muted">Software Engineer</p>
-          <p
-            class="mt-1 flex items-center justify-center gap-1 text-sm text-fg-subtle sm:justify-start"
-          >
-            <lucide-icon [img]="MapPinIcon" [size]="14" />
-            Taipei, Taiwan
+<section class="ed-main pb-28">
+  <div class="mx-auto max-w-(--ed-measure) px-6 sm:px-11">
+    <div
+      class="grid grid-cols-1 gap-y-12 pt-12 sm:pt-16 lg:grid-cols-[1fr_17rem] lg:gap-x-16"
+    >
+      <!-- Bio -->
+      <div class="max-w-2xl">
+        <p class="font-mono text-[11px] tracking-[0.06em] text-brand uppercase">
+          About
+        </p>
+        <h1
+          class="mt-4 font-display text-[2.5rem] leading-[1.1] font-bold tracking-[-0.025em] text-balance text-fg sm:text-[3rem]"
+        >
+          I build systems, and write down what I work out.
+        </h1>
+        <div class="mt-7 space-y-5 text-lg leading-[1.7] text-fg-muted">
+          <p>
+            I'm Koopa, a software engineer based in Taipei. I work mostly in Go
+            on the backend and Angular on the frontend, with the cloud-native
+            pieces that hold a system together — PostgreSQL, Docker, Kubernetes
+            — and I reach for Rust when a problem rewards the extra rigor.
+          </p>
+          <p>
+            This site is my personal knowledge engine: input, process, output.
+            Things I read get collected and distilled; things I work out get
+            written down; the pieces worth showing get published here. It's less
+            a blog than a system I run on myself.
+          </p>
+          <p>
+            Everything here is written and maintained by one person. AI agents
+            help me collect, draft, and keep it organized — but I stay the only
+            one who decides what's kept and what ships. The tools carry the
+            work; they don't take it over.
+          </p>
+          <p>
+            If something here is useful, or you just want to talk shop, the
+            links are over there.
           </p>
         </div>
       </div>
-      <p
-        class="mt-5 max-w-[620px] font-serif text-lg leading-[1.65] text-fg-muted"
-      >
-        Building modern web applications with Go, Angular, and cloud-native
-        technologies. This site is my personal knowledge engine — input,
-        process, output.
-      </p>
-    </header>
 
-    <!-- Skills -->
-    <section class="pt-10">
-      <h2 class="font-display text-2xl font-semibold text-fg">Skills</h2>
-      <p class="mt-2 text-fg-muted">Technologies and tools I work with</p>
-      <div class="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
-        @for (skill of skills; track skill.category) {
-          <div
-            class="rounded-md border border-border bg-panel p-5 transition-colors hover:border-border-strong"
-          >
-            <h3 class="mb-3 text-sm font-semibold text-fg">
-              {{ skill.category }}
-            </h3>
-            <div class="flex flex-wrap gap-2">
-              @for (item of skill.items; track item) {
-                <span
-                  class="rounded-xs bg-elevated px-2.5 py-1 font-mono text-xs text-fg-subtle"
-                >
-                  {{ item }}
-                </span>
-              }
-            </div>
-          </div>
-        }
-      </div>
-    </section>
-
-    <!-- Contact -->
-    <section class="pt-12">
-      <h2 class="font-display text-2xl font-semibold text-fg">Contact</h2>
-      <p class="mt-2 text-fg-muted">
-        Feel free to reach out through any channel
-      </p>
-      <div class="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <a
-          href="mailto:contact@koopa0.dev"
-          class="flex items-center gap-3 rounded-md border border-border bg-panel p-5 text-fg-muted no-underline transition-colors hover:border-border-strong hover:text-fg"
-        >
-          <lucide-icon [img]="MailIcon" [size]="20" />
-          <div>
-            <div class="text-sm font-medium text-fg">Email</div>
-            <div class="text-xs text-fg-subtle">contact&#64;koopa0.dev</div>
-          </div>
-        </a>
-        <a
-          href="https://github.com/koopa0"
-          target="_blank"
-          rel="noopener noreferrer"
-          class="flex items-center gap-3 rounded-md border border-border bg-panel p-5 text-fg-muted no-underline transition-colors hover:border-border-strong hover:text-fg"
-        >
-          <lucide-icon [img]="GithubIcon" [size]="20" />
-          <div>
-            <div class="text-sm font-medium text-fg">GitHub</div>
-            <div class="text-xs text-fg-subtle">github.com/koopa0</div>
-          </div>
-        </a>
-        <a
-          href="https://www.linkedin.com/in/koopa-chen-70a4651ba/"
-          target="_blank"
-          rel="noopener noreferrer"
-          class="flex items-center gap-3 rounded-md border border-border bg-panel p-5 text-fg-muted no-underline transition-colors hover:border-border-strong hover:text-fg"
-        >
-          <lucide-icon [img]="LinkedinIcon" [size]="20" />
-          <div>
-            <div class="text-sm font-medium text-fg">LinkedIn</div>
-            <div class="text-xs text-fg-subtle">Koopa Chen</div>
-          </div>
-        </a>
-        <a
-          href="https://x.com/Koopa012426"
-          target="_blank"
-          rel="noopener noreferrer"
-          class="flex items-center gap-3 rounded-md border border-border bg-panel p-5 text-fg-muted no-underline transition-colors hover:border-border-strong hover:text-fg"
-        >
-          <svg class="size-5" viewBox="0 0 24 24" fill="currentColor">
-            <path
-              d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"
-            />
-          </svg>
-          <div>
-            <div class="text-sm font-medium text-fg">X</div>
-            <div class="text-xs text-fg-subtle">&#64;Koopa012426</div>
-          </div>
-        </a>
-      </div>
-    </section>
+      <!-- Contact -->
+      <aside class="lg:pt-16">
+        <ul class="flex flex-col gap-4">
+          <li>
+            <a
+              href="https://github.com/koopa0"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="group flex items-center gap-3 text-sm font-medium text-fg no-underline transition-colors hover:text-brand"
+            >
+              <lucide-icon
+                class="text-fg-subtle transition-colors group-hover:text-brand"
+                [img]="GithubIcon"
+                [size]="18"
+                [strokeWidth]="1.6"
+              />
+              github.com/koopa0
+            </a>
+          </li>
+          <li>
+            <a
+              href="https://www.linkedin.com/in/koopa-chen-70a4651ba/"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="group flex items-center gap-3 text-sm font-medium text-fg no-underline transition-colors hover:text-brand"
+            >
+              <lucide-icon
+                class="text-fg-subtle transition-colors group-hover:text-brand"
+                [img]="LinkedinIcon"
+                [size]="18"
+                [strokeWidth]="1.6"
+              />
+              Koopa Chen
+            </a>
+          </li>
+          <li>
+            <a
+              href="https://x.com/Koopa012426"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="group flex items-center gap-3 text-sm font-medium text-fg no-underline transition-colors hover:text-brand"
+            >
+              <svg
+                class="size-[18px] text-fg-subtle transition-colors group-hover:text-brand"
+                viewBox="0 0 24 24"
+                fill="currentColor"
+                aria-hidden="true"
+              >
+                <path
+                  d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"
+                />
+              </svg>
+              &#64;Koopa012426
+            </a>
+          </li>
+          <li class="mt-4 border-t border-border pt-4">
+            <a
+              href="mailto:contact@koopa0.dev"
+              class="group flex items-center gap-3 text-sm font-medium text-fg no-underline transition-colors hover:text-brand"
+            >
+              <lucide-icon
+                class="text-fg-subtle transition-colors group-hover:text-brand"
+                [img]="MailIcon"
+                [size]="18"
+                [strokeWidth]="1.6"
+              />
+              contact&#64;koopa0.dev
+            </a>
+          </li>
+        </ul>
+      </aside>
+    </div>
   </div>
 </section>
