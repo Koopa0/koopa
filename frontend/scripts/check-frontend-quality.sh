@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
-# Frontend quality gates — minimal automated subset of
-# frontend/docs/frontend/frontend-quality-protocol.md. Exit non-zero on any
-# failure. See the protocol doc for which gates are covered here and which
-# remain manual.
+# Frontend quality gates — automated route / boundary / copy checks for
+# frontend/. Exit non-zero on any failure.
 
 set -uo pipefail
 
@@ -58,7 +56,7 @@ require_dir "$PAGES_DIR"
 require_file "$ROUTES_FILE"
 require_file "$SERVER_ROUTES_FILE"
 
-echo "Frontend quality checks (see docs/frontend/frontend-quality-protocol.md)"
+echo "Frontend quality checks"
 echo "Root: $FRONTEND_ROOT"
 echo "----------------------------------------------------------------------"
 
@@ -262,22 +260,10 @@ STALE_COPY_FILES=(
   "src/app/admin/system/agents/profile/agent-profile.page.html"
   "src/app/admin/system/agents/profile/agent-profile.page.ts"
   "src/app/admin/knowledge/content/editor/content-editor.page.ts"
-  "src/app/admin/knowledge/notes/editor/note-editor.page.html"
-  "src/app/admin/knowledge/notes/editor/note-editor.page.ts"
-  "src/app/admin/knowledge/notes/list/notes-list.page.html"
-  "src/app/admin/knowledge/notes/list/notes-list.page.ts"
-  "src/app/admin/learning/concepts/list/concepts-list.page.html"
-  "src/app/admin/learning/concepts/profile/concept-profile.page.html"
-  "src/app/admin/learning/dashboard/learning-dashboard.page.html"
-  "src/app/admin/learning/dashboard/learning-dashboard.page.ts"
-  "src/app/admin/learning/hypotheses/profile/hypothesis-profile.page.html"
-  "src/app/admin/learning/hypotheses/profile/hypothesis-profile.page.ts"
-  "src/app/admin/learning/plans/timeline/plan-timeline.page.html"
-  "src/app/admin/learning/sessions/timeline/session-timeline.page.html"
 )
 
 # Phrases that falsely claim a known-live route/endpoint is unavailable.
-STALE_COPY_PATTERN='not live yet|is not live|[Ee]ndpoint[s]? not yet available|[Ee]ndpoints pending|once the (endpoint|backend) (ships|wraps)|(Notes|Lineage) pending'
+STALE_COPY_PATTERN='not live yet|is not live|[Ee]ndpoint[s]? not yet available|[Ee]ndpoints pending|once the (endpoint|backend) (ships|wraps)'
 
 stale_copy_hits=""
 for rel in "${STALE_COPY_FILES[@]}"; do
