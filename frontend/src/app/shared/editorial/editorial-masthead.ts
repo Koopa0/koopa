@@ -24,9 +24,9 @@ import { ThemeToggleComponent } from '../theme-toggle/theme-toggle';
 /**
  * The public masthead — the Tone B letterhead. Serif wordmark over a mono
  * "written & maintained by one person" subline (the serif=human /
- * mono=machine signature), an Article nav link, a ⌘K search button wired
- * to the command palette, and the theme toggle. Admin / sign-out controls
- * surface only for the authenticated owner.
+ * mono=machine signature), the Home / Articles / About nav links, a ⌘K search
+ * button wired to the command palette, and the theme toggle. Admin / sign-out
+ * controls surface only for the authenticated owner.
  */
 @Component({
   selector: 'app-editorial-masthead',
@@ -47,15 +47,18 @@ export class EditorialMastheadComponent {
 
   private readonly currentPath = computed(() => this.currentUrl().split('?')[0]);
 
-  /** The Article nav link spans the reading index, topics, and per-piece pages. */
-  protected readonly articleActive = computed(() => {
+  /** Home is the front door only — the exact root path. */
+  protected readonly homeActive = computed(() => this.currentPath() === '/');
+
+  /** Articles spans the reading index, topic pages, and per-piece pages. */
+  protected readonly articlesActive = computed(() => {
     const path = this.currentPath();
-    return (
-      path === '/' ||
-      path.startsWith('/articles') ||
-      path.startsWith('/topics')
-    );
+    return path.startsWith('/articles') || path.startsWith('/topics');
   });
+
+  protected readonly aboutActive = computed(() =>
+    this.currentPath().startsWith('/about'),
+  );
 
   private readonly currentUrl = toSignal(
     this.router.events.pipe(

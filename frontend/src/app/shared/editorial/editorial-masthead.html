@@ -11,9 +11,21 @@
     <nav class="ed-nav" aria-label="Main navigation">
       <a
         routerLink="/"
-        [attr.data-active]="articleActive()"
-        [attr.aria-current]="articleActive() ? 'page' : null"
-        >Article</a
+        [attr.data-active]="homeActive()"
+        [attr.aria-current]="homeActive() ? 'page' : null"
+        >Home</a
+      >
+      <a
+        routerLink="/articles"
+        [attr.data-active]="articlesActive()"
+        [attr.aria-current]="articlesActive() ? 'page' : null"
+        >Articles</a
+      >
+      <a
+        routerLink="/about"
+        [attr.data-active]="aboutActive()"
+        [attr.aria-current]="aboutActive() ? 'page' : null"
+        >About</a
       >
     </nav>
 
