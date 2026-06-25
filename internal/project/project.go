@@ -131,6 +131,29 @@ type GoalBreadcrumb struct {
 	GoalTitle string    `json:"goal_title"`
 }
 
+// TodoProgress is the per-project todo completion tally shown on the admin
+// project list: done out of total.
+type TodoProgress struct {
+	Total int `json:"total"`
+	Done  int `json:"done"`
+}
+
+// Overview is the project-list projection consumed by the admin projects page:
+// the project plus its area name, goal breadcrumb, todo progress, and last
+// activity. StalenessDays is derived by the handler from LastActivityAt; the
+// store leaves it zero.
+type Overview struct {
+	ID             uuid.UUID       `json:"id"`
+	Title          string          `json:"title"`
+	Slug           string          `json:"slug"`
+	Status         Status          `json:"status"`
+	Area           string          `json:"area"`
+	GoalBreadcrumb *GoalBreadcrumb `json:"goal_breadcrumb"`
+	TodoProgress   TodoProgress    `json:"todo_progress"`
+	StalenessDays  int             `json:"staleness_days"`
+	LastActivityAt *time.Time      `json:"last_activity_at"`
+}
+
 // ActivityItem is the activity projection consumed by the inspector.
 // Source fields (entity_type, vcs kind) are flattened into Type so the
 // frontend renders a single timeline without caring which table the row
@@ -207,6 +230,34 @@ func (s *Store) Projects(ctx context.Context) ([]Project, error) {
 		projects[i] = rowToProject(&rows[i])
 	}
 	return projects, nil
+}
+
+// ProjectsOverview returns the admin project-list projection: each non-proposed
+// project with its area name, goal breadcrumb, todo progress, and last activity.
+// StalenessDays is left zero — the handler derives it from LastActivityAt.
+func (s *Store) ProjectsOverview(ctx context.Context) ([]Overview, error) {
+	rows, err := s.q.ProjectsOverview(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("listing project overview: %w", err)
+	}
+	out := make([]Overview, len(rows))
+	for i := range rows {
+		r := &rows[i]
+		o := Overview{
+			ID:             r.ID,
+			Title:          r.Title,
+			Slug:           r.Slug,
+			Status:         Status(r.Status),
+			Area:           deref(r.AreaName),
+			TodoProgress:   TodoProgress{Total: int(r.TodoTotal), Done: int(r.TodoDone)},
+			LastActivityAt: r.LastActivityAt,
+		}
+		if r.GoalID != nil && r.GoalTitle != nil {
+			o.GoalBreadcrumb = &GoalBreadcrumb{GoalID: *r.GoalID, GoalTitle: *r.GoalTitle}
+		}
+		out[i] = o
+	}
+	return out, nil
 }
 
 // ProjectByID returns a single project by UUID.

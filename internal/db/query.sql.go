@@ -4119,6 +4119,70 @@ func (q *Queries) ProjectsByArea(ctx context.Context, areaID *uuid.UUID) ([]Proj
 	return items, nil
 }
 
+const projectsOverview = `-- name: ProjectsOverview :many
+SELECT p.id, p.slug, p.title, p.status,
+       a.name AS area_name,
+       p.goal_id, g.title AS goal_title,
+       p.last_activity_at,
+       COUNT(t.id) AS todo_total,
+       COUNT(t.id) FILTER (WHERE t.state = 'done') AS todo_done
+FROM projects p
+LEFT JOIN areas a ON a.id = p.area_id
+LEFT JOIN goals g ON g.id = p.goal_id
+LEFT JOIN todos t ON t.project_id = p.id
+WHERE p.status <> 'proposed'
+GROUP BY p.id, a.name, g.title
+ORDER BY p.title
+`
+
+type ProjectsOverviewRow struct {
+	ID             uuid.UUID     `json:"id"`
+	Slug           string        `json:"slug"`
+	Title          string        `json:"title"`
+	Status         ProjectStatus `json:"status"`
+	AreaName       *string       `json:"area_name"`
+	GoalID         *uuid.UUID    `json:"goal_id"`
+	GoalTitle      *string       `json:"goal_title"`
+	LastActivityAt *time.Time    `json:"last_activity_at"`
+	TodoTotal      int64         `json:"todo_total"`
+	TodoDone       int64         `json:"todo_done"`
+}
+
+// Admin project-list view: each non-proposed project with its parent area name,
+// goal breadcrumb, todo progress, and last activity. Powers the projects-list
+// page (todo_done/todo_total progress bar + staleness badge). area_name/goal_*
+// are NULL when unfiled; todo_total/todo_done count the project's todos.
+func (q *Queries) ProjectsOverview(ctx context.Context) ([]ProjectsOverviewRow, error) {
+	rows, err := q.db.Query(ctx, projectsOverview)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ProjectsOverviewRow{}
+	for rows.Next() {
+		var i ProjectsOverviewRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Slug,
+			&i.Title,
+			&i.Status,
+			&i.AreaName,
+			&i.GoalID,
+			&i.GoalTitle,
+			&i.LastActivityAt,
+			&i.TodoTotal,
+			&i.TodoDone,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const proposalsPendingCount = `-- name: ProposalsPendingCount :one
 SELECT
     (SELECT count(*) FROM goals WHERE status = 'proposed')::bigint AS proposed_goals,

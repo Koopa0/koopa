@@ -65,15 +65,22 @@ func NewHandler(
 	}
 }
 
-// List handles GET /api/admin/projects — returns all projects.
+// List handles GET /api/admin/projects — returns the admin project-list
+// overview (todo progress, goal breadcrumb, area, and staleness per project).
 func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
-	projects, err := h.store.Projects(r.Context())
+	overview, err := h.store.ProjectsOverview(r.Context())
 	if err != nil {
 		h.logger.Error("listing projects", "error", err)
 		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to list projects")
 		return
 	}
-	api.Encode(w, http.StatusOK, api.Response{Data: projects})
+	now := time.Now()
+	for i := range overview {
+		if d := DaysSince(overview[i].LastActivityAt, now); d != nil {
+			overview[i].StalenessDays = *d
+		}
+	}
+	api.Encode(w, http.StatusOK, api.Response{Data: overview})
 }
 
 // Detail handles GET /api/admin/projects/{id} — returns the admin-facing

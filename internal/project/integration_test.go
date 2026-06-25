@@ -30,6 +30,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -133,6 +134,58 @@ func seedProjectWithStatus(t *testing.T, slug, title, status string) uuid.UUID {
 		t.Fatalf("seeding %s project: %v", status, err)
 	}
 	return id
+}
+
+// insertTodo links a todo in the given state to a project, stamping a
+// registered agent as created_by (the FK requires it). A done todo gets a
+// completed_at to satisfy chk_todo_completed_at_consistency.
+func insertTodo(t *testing.T, projectID uuid.UUID, title, state string) {
+	t.Helper()
+	if _, err := testPool.Exec(t.Context(),
+		`INSERT INTO todos (title, state, project_id, description, created_by, completed_at)
+		 VALUES ($1, $2::todo_state, $3, '', 'koopa0-dev',
+		         CASE WHEN $2::todo_state = 'done' THEN now() ELSE NULL END)`,
+		title, state, projectID,
+	); err != nil {
+		t.Fatalf("inserting %s todo: %v", state, err)
+	}
+}
+
+// TestIntegration_ProjectsOverview_TodoProgress pins the projects-list contract:
+// ProjectsOverview reports per-project todo counts (total + done) so the admin
+// list renders its progress bar. Regression guard for the gap where the page
+// expected todo_progress the list endpoint never emitted.
+func TestIntegration_ProjectsOverview_TodoProgress(t *testing.T) {
+	truncate(t)
+	store := project.NewStore(testPool)
+	ctx := t.Context()
+
+	projID := seedProjectWithStatus(t, "counted", "Counted", "in_progress")
+	insertTodo(t, projID, "ship it", "done")
+	insertTodo(t, projID, "write it", "done")
+	insertTodo(t, projID, "plan it", "todo")
+
+	rows, err := store.ProjectsOverview(ctx)
+	if err != nil {
+		t.Fatalf("ProjectsOverview: %v", err)
+	}
+
+	var got project.TodoProgress
+	found := false
+	for i := range rows {
+		if rows[i].ID == projID {
+			got = rows[i].TodoProgress
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("ProjectsOverview missing project %s", projID)
+	}
+
+	want := project.TodoProgress{Total: 3, Done: 2}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("ProjectsOverview todo_progress mismatch (-want +got):\n%s", diff)
+	}
 }
 
 // truncate resets every table the Detail endpoint reads from so each test

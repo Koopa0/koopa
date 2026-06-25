@@ -25,6 +25,25 @@ SELECT id, slug, title, description, status, repo, area_id, goal_id, deadline, l
        expected_cadence, created_by, proposal_rationale, created_at, updated_at
 FROM projects WHERE status <> 'proposed' ORDER BY title;
 
+-- name: ProjectsOverview :many
+-- Admin project-list view: each non-proposed project with its parent area name,
+-- goal breadcrumb, todo progress, and last activity. Powers the projects-list
+-- page (todo_done/todo_total progress bar + staleness badge). area_name/goal_*
+-- are NULL when unfiled; todo_total/todo_done count the project's todos.
+SELECT p.id, p.slug, p.title, p.status,
+       a.name AS area_name,
+       p.goal_id, g.title AS goal_title,
+       p.last_activity_at,
+       COUNT(t.id) AS todo_total,
+       COUNT(t.id) FILTER (WHERE t.state = 'done') AS todo_done
+FROM projects p
+LEFT JOIN areas a ON a.id = p.area_id
+LEFT JOIN goals g ON g.id = p.goal_id
+LEFT JOIN todos t ON t.project_id = p.id
+WHERE p.status <> 'proposed'
+GROUP BY p.id, a.name, g.title
+ORDER BY p.title;
+
 -- name: ProjectBySlug :one
 SELECT id, slug, title, description, status, repo, area_id, goal_id, deadline, last_activity_at,
        expected_cadence, created_by, proposal_rationale, created_at, updated_at
