@@ -1,22 +1,4 @@
 <header class="ed-mast">
-  <div class="ed-mast-utils">
-    <app-theme-toggle />
-
-    @if (isAuthenticated()) {
-      <a routerLink="/admin" class="ed-iconbtn" aria-label="Admin dashboard">
-        <lucide-icon [img]="DashboardIcon" [size]="16" [strokeWidth]="1.6" />
-      </a>
-      <button
-        type="button"
-        class="ed-iconbtn"
-        (click)="logout()"
-        aria-label="Sign out"
-      >
-        <lucide-icon [img]="LogOutIcon" [size]="16" [strokeWidth]="1.6" />
-      </button>
-    }
-  </div>
-
   <a routerLink="/" class="ed-mast-brand" aria-label="koopa0.dev home">
     <img src="/logo.png" alt="" class="ed-mast-mark" aria-hidden="true" />
     <span class="ed-mast-stack">
@@ -45,4 +27,22 @@
       >About</a
     >
   </nav>
+
+  <div class="ed-mast-utils">
+    <app-theme-toggle />
+
+    @if (isAuthenticated()) {
+      <a routerLink="/admin" class="ed-iconbtn" aria-label="Admin dashboard">
+        <lucide-icon [img]="DashboardIcon" [size]="16" [strokeWidth]="1.6" />
+      </a>
+      <button
+        type="button"
+        class="ed-iconbtn"
+        (click)="logout()"
+        aria-label="Sign out"
+      >
+        <lucide-icon [img]="LogOutIcon" [size]="16" [strokeWidth]="1.6" />
+      </button>
+    }
+  </div>
 </header>

@@ -12,7 +12,7 @@
 
 .ed {
   /* per-frame tunables — Tone B values folded into the base */
-  --ed-measure: 680px;     /* reading column width */
+  --ed-measure: 720px;     /* reading column width */
   --ed-rail: 156px;        /* mono metadata margin rail */
   --ed-gut: 44px;          /* gutter rail↔column */
   --ed-pad: 64px;          /* page side padding */
@@ -108,20 +108,19 @@
 
 /* ---------- masthead ---------- */
 .ed-mast {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
   align-items: center;
-  gap: 22px;
-  position: relative;
-  padding: 46px var(--ed-pad) 34px;
+  gap: 24px;
+  max-width: var(--ed-shell, 920px);
+  margin: 0 auto;
+  padding: 30px var(--ed-pad) 26px;
 }
 .ed-mast-utils {
-  position: absolute;
-  top: 18px;
-  right: var(--ed-pad);
+  justify-self: end;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
 }
 .ed-wordmark {
   font-family: var(--font-serif);
@@ -138,6 +137,7 @@
   font-weight: 500;
 }
 .ed-mast-brand {
+  justify-self: start;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -159,6 +159,7 @@
   margin-top: 2px;
 }
 .ed-nav {
+  justify-self: center;
   display: flex;
   gap: 3px;
   padding: 4px;
@@ -167,7 +168,7 @@
   border: 1px solid var(--border-faint);
 }
 .ed-nav a {
-  padding: 8px 18px;
+  padding: 8px 22px;
   border-radius: 9999px;
   font-size: 14px;
   color: var(--fg-subtle);
@@ -1013,9 +1014,17 @@
     --ed-pad: 20px;
   }
   .ed-mast {
-    padding-top: 30px;
-    padding-bottom: 24px;
-    gap: 18px;
+    padding-top: 22px;
+    padding-bottom: 18px;
+    gap: 12px;
+  }
+  /* Logo-only brand so the centered nav + theme fit on a phone. */
+  .ed-mast-stack {
+    display: none;
+  }
+  .ed-nav a {
+    padding: 7px 15px;
+    font-size: 13px;
   }
   .ed-article-title {
     font-size: 30px;
@@ -1036,7 +1045,7 @@
 @keyframes ed-reveal {
   from {
     opacity: 0;
-    transform: translateY(8px);
+    transform: translateY(6px);
   }
   to {
     opacity: 1;
@@ -1044,7 +1053,7 @@
   }
 }
 .ed-reveal {
-  animation: ed-reveal 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: ed-reveal 0.38s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 @media (prefers-reduced-motion: reduce) {
