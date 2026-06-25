@@ -161,20 +161,29 @@
 }
 .ed-nav {
   display: flex;
-  gap: 4px;
-  margin-left: 8px;
+  gap: 2px;
+  margin-left: 12px;
+  padding: 3px;
+  border-radius: 9999px;
+  background: color-mix(in oklch, var(--panel) 70%, transparent);
+  border: 1px solid var(--border-faint);
 }
 .ed-nav a {
-  padding: 6px 11px;
-  border-radius: var(--r-sm);
+  padding: 5px 13px;
+  border-radius: 9999px;
   font-size: 13px;
   color: var(--fg-subtle);
+  transition:
+    color var(--dur-base, 150ms),
+    background var(--dur-base, 150ms);
 }
 .ed-nav a:hover {
   color: var(--fg);
+  background: color-mix(in oklch, var(--fg) 6%, transparent);
 }
 .ed-nav a[data-active="true"] {
   color: var(--fg);
+  background: var(--elevated);
 }
 .ed-mast-sp {
   flex: 1;
