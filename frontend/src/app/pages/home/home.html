@@ -54,9 +54,11 @@
               </span>
             </a>
           } @empty {
-            <p class="ed-fd-rec" data-testid="recent-empty">
-              <span class="t">Nothing published yet.</span>
-            </p>
+            @if (!loading()) {
+              <p class="ed-fd-rec" data-testid="recent-empty">
+                <span class="t">Nothing published yet.</span>
+              </p>
+            }
           }
         </div>
         <a

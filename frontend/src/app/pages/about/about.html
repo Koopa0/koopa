@@ -1,163 +1,118 @@
 <section class="ed-main pb-28">
-  <div class="ed-spread" #spread>
-    <!-- mono rail (sticky) -->
-    <aside class="ed-rail">
-      <div class="ed-rail-row">
-        <span class="ed-rail-k">About</span>
-      </div>
-      <div class="ed-rail-line"></div>
-      <div class="ed-rail-row">
-        <a
-          class="ed-rail-v"
-          href="#statement"
-          (click)="jump($event, 'statement')"
-          [class.is-active]="activeSection() === 'statement'"
-          >Statement</a
-        >
-        <a
-          class="ed-rail-v"
-          href="#now"
-          (click)="jump($event, 'now')"
-          [class.is-active]="activeSection() === 'now'"
-          >Now</a
-        >
-        <a
-          class="ed-rail-v"
-          href="#elsewhere"
-          (click)="jump($event, 'elsewhere')"
-          [class.is-active]="activeSection() === 'elsewhere'"
-          >Elsewhere</a
-        >
-        <a
-          class="ed-rail-v"
-          href="#colophon"
-          (click)="jump($event, 'colophon')"
-          [class.is-active]="activeSection() === 'colophon'"
-          >Colophon</a
-        >
-      </div>
-      <div class="ed-rail-line"></div>
-      <div class="ed-rail-row">
-        <span class="ed-rail-k">Maintained by</span>
-        <span class="ed-rail-v">one person</span>
-      </div>
-    </aside>
-
-    <!-- serif column -->
-    <div>
-      <!-- ① STATEMENT + prose + pull -->
-      <section id="statement" #block class="ed-about-block">
-        <h1 class="ed-about-stmt">{{ statement }}</h1>
-        <div class="ed-lead-rule"></div>
-        <div class="ed-prose">
-          <p>
-            I'm Koopa, a software engineer based in Taipei. I work mostly in Go
-            on the backend and Angular on the frontend, with the cloud-native
-            pieces that hold a system together — PostgreSQL, Docker, Kubernetes —
-            and I reach for Rust when a problem rewards the extra rigor.
-          </p>
-          <p>
-            This site is my personal knowledge engine: input, process, output.
-            Things I read get collected and distilled; things I work out get
-            written down; the pieces worth showing get published here. It's less
-            a blog than a system I run on myself.
-          </p>
-          <p>
-            Everything here is written and maintained by one person. AI agents
-            help me collect, draft, and keep it organized — but I stay the only
-            one who decides what's kept and what ships. The tools carry the work;
-            they don't take it over.
-          </p>
-        </div>
-        <p class="ed-about-pull">
-          It's less a blog than a system I run on myself.
+  <div class="mx-auto max-w-(--ed-measure) pt-[72px]" #column>
+    <!-- ① STATEMENT + prose + pull -->
+    <section id="statement" #block class="ed-about-block">
+      <p class="ed-about-kicker">About</p>
+      <h1 class="ed-about-stmt">{{ statement }}</h1>
+      <div class="ed-lead-rule"></div>
+      <div class="ed-prose">
+        <p>
+          I'm Koopa, a software engineer based in Taipei. I work mostly in Go on
+          the backend and Angular on the frontend, with the cloud-native pieces
+          that hold a system together — PostgreSQL, Docker, Kubernetes — and I
+          reach for Rust when a problem rewards the extra rigor.
         </p>
-      </section>
+        <p>
+          This site is my personal knowledge engine: input, process, output.
+          Things I read get collected and distilled; things I work out get
+          written down; the pieces worth showing get published here. It's less a
+          blog than a system I run on myself.
+        </p>
+        <p>
+          Everything here is written and maintained by one person. AI agents
+          help me collect, draft, and keep it organized — but I stay the only
+          one who decides what's kept and what ships. The tools carry the work;
+          they don't take it over.
+        </p>
+      </div>
+      <p class="ed-about-pull">
+        It's less a blog than a system I run on myself.
+      </p>
+    </section>
 
-      <!-- ② NOW -->
-      <section id="now" #block class="ed-about-block">
-        <p class="ed-about-label now">Now</p>
-        <p class="ed-about-updated">Updated {{ nowUpdated }}</p>
-        <div class="ed-prose">
-          <p>
-            Going deeper on Go and Rust — the parts that don't fit in a tutorial.
-            Building this site's knowledge engine in the open.
-          </p>
-        </div>
-      </section>
-      <div class="ed-lead-rule"></div>
+    <!-- ② NOW -->
+    <section id="now" #block class="ed-about-block">
+      <p class="ed-about-label now">Now</p>
+      <p class="ed-about-updated">Updated {{ nowUpdated }}</p>
+      <div class="ed-prose">
+        <p>
+          Going deeper on Go and Rust — the parts that don't fit in a tutorial.
+          Building this site's knowledge engine in the open.
+        </p>
+      </div>
+    </section>
+    <div class="ed-lead-rule"></div>
 
-      <!-- ③ ELSEWHERE -->
-      <section id="elsewhere" #block class="ed-about-block">
-        <p class="ed-about-label">Elsewhere</p>
-        <dl class="ed-about-dl">
-          @for (link of elsewhere; track link.term) {
-            <div class="pair">
-              <dt>{{ link.term }}</dt>
-              <dd>
-                <a [href]="link.href" rel="me noopener" target="_blank">
-                  @switch (link.kind) {
-                    @case ('github') {
-                      <lucide-icon
-                        class="ed-about-ico"
-                        [img]="GithubIcon"
-                        [size]="14"
-                        [strokeWidth]="1.6"
-                      />
-                    }
-                    @case ('linkedin') {
-                      <lucide-icon
-                        class="ed-about-ico"
-                        [img]="LinkedinIcon"
-                        [size]="14"
-                        [strokeWidth]="1.6"
-                      />
-                    }
-                    @case ('email') {
-                      <lucide-icon
-                        class="ed-about-ico"
-                        [img]="MailIcon"
-                        [size]="14"
-                        [strokeWidth]="1.6"
-                      />
-                    }
-                    @case ('x') {
-                      <svg
-                        class="ed-about-ico"
-                        viewBox="0 0 24 24"
-                        width="13"
-                        height="13"
-                        fill="currentColor"
-                        aria-hidden="true"
-                      >
-                        <path
-                          d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"
-                        />
-                      </svg>
-                    }
+    <!-- ③ ELSEWHERE -->
+    <section id="elsewhere" #block class="ed-about-block">
+      <p class="ed-about-label">Elsewhere</p>
+      <dl class="ed-about-dl">
+        @for (link of elsewhere; track link.term) {
+          <div class="pair">
+            <dt>{{ link.term }}</dt>
+            <dd>
+              <a [href]="link.href" rel="me noopener" target="_blank">
+                @switch (link.kind) {
+                  @case ('github') {
+                    <lucide-icon
+                      class="ed-about-ico"
+                      [img]="GithubIcon"
+                      [size]="14"
+                      [strokeWidth]="1.6"
+                    />
                   }
-                  {{ link.value }}
-                </a>
-              </dd>
-            </div>
-          }
-        </dl>
-      </section>
-      <div class="ed-lead-rule"></div>
+                  @case ('linkedin') {
+                    <lucide-icon
+                      class="ed-about-ico"
+                      [img]="LinkedinIcon"
+                      [size]="14"
+                      [strokeWidth]="1.6"
+                    />
+                  }
+                  @case ('email') {
+                    <lucide-icon
+                      class="ed-about-ico"
+                      [img]="MailIcon"
+                      [size]="14"
+                      [strokeWidth]="1.6"
+                    />
+                  }
+                  @case ('x') {
+                    <svg
+                      class="ed-about-ico"
+                      viewBox="0 0 24 24"
+                      width="13"
+                      height="13"
+                      fill="currentColor"
+                      aria-hidden="true"
+                    >
+                      <path
+                        d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"
+                      />
+                    </svg>
+                  }
+                }
+                {{ link.value }}
+              </a>
+            </dd>
+          </div>
+        }
+      </dl>
+    </section>
+    <div class="ed-lead-rule"></div>
 
-      <!-- ④ COLOPHON -->
-      <section id="colophon" #block class="ed-about-block">
-        <p class="ed-about-label">Colophon</p>
-        <dl class="ed-about-dl">
-          @for (row of stack; track row.term) {
-            <div class="pair">
-              <dt>{{ row.term }}</dt>
-              <dd>{{ row.value }}</dd>
-            </div>
-          }
-        </dl>
-        <p class="ed-about-sig">Written &amp; maintained by one person.</p>
-      </section>
-    </div>
+    <!-- ④ COLOPHON -->
+    <section id="colophon" #block class="ed-about-block">
+      <p class="ed-about-label">Colophon</p>
+      <dl class="ed-about-dl">
+        @for (row of stack; track row.term) {
+          <div class="pair">
+            <dt>{{ row.term }}</dt>
+            <dd>{{ row.value }}</dd>
+          </div>
+        }
+      </dl>
+      <p class="ed-about-sig">Written &amp; maintained by one person.</p>
+    </section>
   </div>
 </section>

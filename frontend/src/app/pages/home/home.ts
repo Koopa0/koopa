@@ -51,6 +51,11 @@ export class HomeComponent implements OnInit {
     this.contentsResource.hasValue() ? this.contentsResource.value().data : [],
   );
 
+  /** Still fetching — used to hold back the empty line until we truly know. */
+  protected readonly loading = computed(
+    () => this.contentsResource.status() === 'loading',
+  );
+
   /** The single featured piece — newest published, the cover's pick. */
   protected readonly lead = computed(() => this.contents().at(0) ?? null);
 

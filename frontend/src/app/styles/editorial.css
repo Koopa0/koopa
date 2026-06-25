@@ -12,9 +12,9 @@
 
 .ed {
   /* per-frame tunables — Tone B values folded into the base */
-  --ed-measure: 760px;     /* reading column width */
+  --ed-measure: 800px;     /* reading column width */
   --ed-rail: 156px;        /* mono metadata margin rail */
-  --ed-gut: 44px;          /* gutter rail↔column */
+  --ed-gut: 56px;          /* gutter rail↔column */
   --ed-pad: 64px;          /* page side padding */
   --ed-toc: 176px;         /* on-this-page rail */
   --ed-shell: 920px;       /* page max-width */
@@ -656,7 +656,7 @@
 
 /* ---------- TOPIC ---------- */
 .ed-topic-head {
-  padding: 44px 0 0;
+  padding: 72px 0 0;
 }
 .ed-topic-kicker {
   font-family: var(--font-mono);
@@ -752,7 +752,7 @@
 }
 
 .ed-fd-pos {
-  padding: 84px 0 40px;
+  padding: 72px 0 40px;
 }
 .ed-fd-kicker {
   font-family: var(--font-mono);
@@ -1075,6 +1075,14 @@
    --brand as the liveness tell. The <dl> rows share the one hairline
    grammar with the archive year-rows — one grammar, three surfaces.
    ============================================================ */
+.ed-about-kicker {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--brand);
+  margin: 0 0 16px;
+}
 .ed-about-stmt {
   font-family: var(--ed-title-font);
   font-weight: var(--ed-title-weight);

@@ -6,11 +6,9 @@ import {
   OnInit,
   afterNextRender,
   inject,
-  signal,
   viewChild,
   viewChildren,
 } from '@angular/core';
-import { DOCUMENT } from '@angular/common';
 import { LucideAngularModule, Github, Linkedin, Mail } from 'lucide-angular';
 import { SeoService } from '../../core/services/seo/seo.service';
 import { environment } from '../../../environments/environment';
@@ -29,17 +27,16 @@ interface LinkRow extends DefRow {
 }
 
 /**
- * About — the colophon. The two-rail `.ed-spread` (mono rail + serif column)
- * that the article-detail surface uses, so About reads at the weight of a
- * written piece: statement + prose + pull + a dated NOW + two definition lists
- * (Elsewhere, Colophon) + a signature.
+ * About — the colophon. A single serif column: statement + prose + pull + a
+ * dated NOW + two definition lists (Elsewhere, Colophon) + a signature. Reads
+ * at the weight of a written piece.
  *
  * The "alive" layer is progressive enhancement, browser-only via afterNextRender:
- * a scroll-spy that lights the rail jump-link for the section in view, and a
- * scroll reveal of each block. The reveal is gated by the `.ed-about-anim` class
- * (added here, in the browser) so under SSR / no-JS the content is fully visible
- * and never hidden by CSS alone. Above-fold blocks reveal synchronously in the
- * same frame, so there is no hide-then-show flash.
+ * each block scroll-reveals as it enters view, gated by the `.ed-about-anim`
+ * class (added here, in the browser) so under SSR / no-JS the content is fully
+ * visible and never hidden by CSS alone. Above-fold blocks reveal synchronously
+ * in the same frame, so there is no hide-then-show flash. Honored at the source
+ * for reduced-motion users.
  */
 @Component({
   selector: 'app-about',
@@ -50,15 +47,11 @@ interface LinkRow extends DefRow {
 export class AboutComponent implements OnInit {
   private readonly seoService = inject(SeoService);
   private readonly destroyRef = inject(DestroyRef);
-  private readonly doc = inject(DOCUMENT);
 
-  /** The `.ed-spread` container — gets `.ed-about-anim` only in the browser. */
-  private readonly spread = viewChild.required<ElementRef<HTMLElement>>('spread');
-  /** The four labelled blocks (scroll-spy + reveal targets). */
+  /** The column — gets `.ed-about-anim` only in the browser. */
+  private readonly column = viewChild.required<ElementRef<HTMLElement>>('column');
+  /** The labelled blocks (reveal targets). */
   private readonly blocks = viewChildren<ElementRef<HTMLElement>>('block');
-
-  /** The section currently in view — drives the rail highlight. */
-  protected readonly activeSection = signal('statement');
 
   protected readonly GithubIcon = Github;
   protected readonly LinkedinIcon = Linkedin;
@@ -108,83 +101,49 @@ export class AboutComponent implements OnInit {
   constructor() {
     afterNextRender(() => {
       // Progressive enhancement only. afterNextRender is browser-only (SSR never
-      // reaches here); we also bail where IntersectionObserver is unavailable, so
-      // the content always renders fully without these effects.
+      // reaches here); we also bail where IntersectionObserver is unavailable or
+      // the user prefers reduced motion, so the content always renders fully.
       if (typeof IntersectionObserver === 'undefined') {
         return;
       }
-
-      const elements = this.blocks().map((b) => b.nativeElement);
-
-      // Scroll-spy: light the rail link for the section crossing the middle
-      // band. A colour change, not motion — runs even under reduced motion.
-      const spy = new IntersectionObserver(
-        (entries) => {
-          for (const entry of entries) {
-            const id = entry.target.getAttribute('id');
-            if (entry.isIntersecting && id) {
-              this.activeSection.set(id);
-            }
-          }
-        },
-        { rootMargin: '-35% 0px -55% 0px' },
-      );
-      for (const el of elements) {
-        spy.observe(el);
-      }
-
       const reduced =
         typeof window.matchMedia === 'function' &&
         window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      if (reduced) {
+        return;
+      }
 
-      // Scroll reveal — this is motion, so it is gated at the source for
-      // reduced-motion users (the CSS media rule is the belt-and-suspenders).
-      let reveal: IntersectionObserver | undefined;
-      if (!reduced) {
-        this.spread().nativeElement.classList.add('ed-about-anim');
+      this.column().nativeElement.classList.add('ed-about-anim');
+      const elements = this.blocks().map((b) => b.nativeElement);
 
-        // Reveal whatever is already on screen in this frame — no hidden flash.
-        const fold = window.innerHeight * 0.9;
-        for (const el of elements) {
-          if (el.getBoundingClientRect().top < fold) {
-            el.classList.add('is-in');
-          }
-        }
-
-        reveal = new IntersectionObserver(
-          (entries) => {
-            for (const entry of entries) {
-              if (entry.isIntersecting) {
-                entry.target.classList.add('is-in');
-                reveal?.unobserve(entry.target);
-              }
-            }
-          },
-          { rootMargin: '0px 0px -10% 0px' },
-        );
-        for (const el of elements) {
-          if (!el.classList.contains('is-in')) {
-            reveal.observe(el);
-          }
+      // Reveal whatever is already on screen in this frame — no hidden flash.
+      const fold = window.innerHeight * 0.9;
+      for (const el of elements) {
+        if (el.getBoundingClientRect().top < fold) {
+          el.classList.add('is-in');
         }
       }
 
-      this.destroyRef.onDestroy(() => {
-        spy.disconnect();
-        reveal?.disconnect();
-      });
-    });
-  }
+      // Reveal the rest as they scroll into view (once each).
+      const reveal = new IntersectionObserver(
+        (entries) => {
+          for (const entry of entries) {
+            if (entry.isIntersecting) {
+              entry.target.classList.add('is-in');
+              reveal.unobserve(entry.target);
+            }
+          }
+        },
+        { rootMargin: '0px 0px -10% 0px' },
+      );
+      for (const el of elements) {
+        if (!el.classList.contains('is-in')) {
+          reveal.observe(el);
+        }
+      }
 
-  /** Smooth-scroll to a section. A click handler (not a bare `#` href) so the
-   *  router never treats the fragment as a navigation. */
-  protected jump(event: Event, id: string): void {
-    event.preventDefault();
-    this.doc.getElementById(id)?.scrollIntoView({
-      behavior: 'smooth',
-      block: 'start',
+      this.destroyRef.onDestroy(() => reveal.disconnect());
     });
-    this.activeSection.set(id);
   }
 
   ngOnInit(): void {
