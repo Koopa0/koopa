@@ -15,6 +15,7 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/Koopa0/koopa/internal/todo"
@@ -64,11 +65,18 @@ func (s *Server) setTodoRecurrence(ctx context.Context, _ *mcp.CallToolRequest, 
 	}
 
 	caller := s.callerIdentity(ctx)
-	if err := s.todos.SetRecurrence(ctx, id, caller, rec); err != nil {
-		if errors.Is(err, todo.ErrNotFound) {
-			return nil, SetTodoRecurrenceOutput{}, fmt.Errorf("no todo %s created by %q: it does not exist or you did not create it", id, caller)
+	// Inside withActorTx so the recurrence change's audit event is attributed
+	// to the caller rather than the trigger's fallback actor.
+	if err := s.withActorTx(ctx, func(tx pgx.Tx) error {
+		if err := s.todos.WithTx(tx).SetRecurrence(ctx, id, caller, rec); err != nil {
+			if errors.Is(err, todo.ErrNotFound) {
+				return fmt.Errorf("no todo %s created by %q: it does not exist or you did not create it", id, caller)
+			}
+			return fmt.Errorf("setting recurrence for todo %s: %w", id, err)
 		}
-		return nil, SetTodoRecurrenceOutput{}, fmt.Errorf("setting recurrence for task %s: %w", id, err)
+		return nil
+	}); err != nil {
+		return nil, SetTodoRecurrenceOutput{}, err
 	}
 
 	return nil, SetTodoRecurrenceOutput{ID: id.String(), Recurrence: desc, OK: true}, nil

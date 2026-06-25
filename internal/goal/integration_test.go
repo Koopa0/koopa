@@ -1284,7 +1284,7 @@ func TestIntegration_Goal_ProposalsIncludeProjects(t *testing.T) {
 	var proposedID uuid.UUID
 	if err := testPool.QueryRow(t.Context(),
 		`INSERT INTO projects (slug, title, status, created_by)
-		 VALUES ('triage-proj', 'Triage Proj', 'proposed', 'koopa0-dev') RETURNING id`,
+		 VALUES ('triage-proj', 'Triage Proj', 'proposed', 'claude') RETURNING id`,
 	).Scan(&proposedID); err != nil {
 		t.Fatalf("seeding proposed project: %v", err)
 	}
@@ -1453,7 +1453,7 @@ func TestIntegration_Goal_AreaDetail(t *testing.T) {
 	if _, err := testPool.Exec(ctx,
 		`INSERT INTO projects (slug, title, status, area_id, created_by) VALUES
 		   ('area-proj', 'Area Proj', 'in_progress', $1, NULL),
-		   ('area-proposed', 'Area Proposed', 'proposed', $1, 'koopa0-dev'),
+		   ('area-proposed', 'Area Proposed', 'proposed', $1, 'claude'),
 		   ('area-archived', 'Area Archived', 'archived', $1, NULL),
 		   ('other-proj', 'Other Proj', 'in_progress', $2, NULL)`,
 		areaID, otherAreaID,

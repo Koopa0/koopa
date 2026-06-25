@@ -60,7 +60,7 @@ CREATE TABLE agents (
     CONSTRAINT chk_agent_display_name_not_blank
         CHECK (btrim(display_name) <> ''),
     CONSTRAINT chk_agent_platform
-        CHECK (platform IN ('claude-cowork', 'claude-code', 'claude-web', 'codex', 'human', 'system')),
+        CHECK (platform IN ('claude-code', 'codex', 'hermes', 'human')),
     CONSTRAINT chk_agent_status_retired CHECK (
         (status = 'active'  AND retired_at IS NULL) OR
         (status = 'retired' AND retired_at IS NOT NULL)
@@ -70,7 +70,7 @@ CREATE TABLE agents (
 COMMENT ON TABLE agents IS 'DB projection of the Go BuiltinAgents() registry. Rows are upserted at startup by agent.SyncToTable. Stores identity only (name, platform, status). Provenance columns (created_by on todos/areas/goals/projects) use ON DELETE RESTRICT so historical records cannot dangle. Removed registry entries transition to status=retired rather than being deleted.';
 COMMENT ON COLUMN agents.name IS 'Unique agent identifier. Used as the caller identity (as: field) in MCP tool calls and as FK target for created_by / assignee / curated_by columns. Format: lowercase, must start with a letter, alphanumeric + hyphens.';
 COMMENT ON COLUMN agents.display_name IS 'Human-readable label for admin UI and logs. Non-blank (chk_agent_display_name_not_blank).';
-COMMENT ON COLUMN agents.platform IS 'Execution context. Closed set: claude-cowork, claude-code, claude-web, codex, human, system (chk_agent_platform). The system value is reserved for the database-level fallback agent registered by BuiltinAgents — it attributes writes that bypass the Go actor middleware (pg_cron, manual psql ops, bug safety net). Routing decisions are driven by agent registry lookups, not this column.';
+COMMENT ON COLUMN agents.platform IS 'Execution context. Closed set: claude-code, codex, hermes, human (chk_agent_platform). Routing decisions are driven by agent registry lookups, not this column.';
 COMMENT ON COLUMN agents.description IS 'Short role description. Empty string = no description.';
 COMMENT ON COLUMN agents.status IS 'active = currently present in BuiltinAgents(). retired = previously registered but no longer in the Go literal. chk_agent_status_retired ties retired_at to status=retired.';
 COMMENT ON COLUMN agents.synced_at IS 'When this row was last reconciled with BuiltinAgents() by agent.SyncToTable. Updated on every startup sync.';
@@ -708,7 +708,7 @@ COMMENT ON COLUMN todos.description IS 'Free-text detail. Empty string = no deta
 COMMENT ON COLUMN todos.created_by IS
     'Which agent created or imported this todo into the system. '
     'FK to agents. Default human. '
-    'Examples: human (manual or synced from external tool), planner (morning briefing).';
+    'Examples: human (manual or synced from external tool), koopa0-dev (captured during a dev session).';
 COMMENT ON COLUMN todos.created_at IS 'Row insertion timestamp.';
 COMMENT ON COLUMN todos.updated_at IS 'Set explicitly by application in UPDATE queries. No trigger — application-managed.';
 
@@ -764,8 +764,8 @@ COMMENT ON COLUMN daily_plan_items.plan_date IS
 COMMENT ON COLUMN daily_plan_items.todo_id IS
     'The todo committed to. CASCADE on delete — if the todo is removed, the plan item goes too.';
 COMMENT ON COLUMN daily_plan_items.selected_by IS
-    'Which agent added this item to the plan. Typically planner (morning briefing, cron auto-populate) '
-    'or human (manual selection via MCP tool).';
+    'Which agent added this item to the plan. Typically human (manual selection via MCP tool) '
+    'or an agent acting as the daily driver (plan_day).';
 COMMENT ON COLUMN daily_plan_items.position IS
     'Ordering within a day''s plan. 0-based. Semantic: first item = highest priority for today.';
 COMMENT ON COLUMN daily_plan_items.reason IS
@@ -851,7 +851,8 @@ CREATE INDEX idx_activity_events_actor ON activity_events (actor, occurred_at DE
 -- Application code MUST set the actor identity for the current transaction via
 --   SET LOCAL koopa.actor = '<agent_name>';
 -- before any covered table mutation. The triggers read this via current_setting.
--- If unset, the actor defaults to 'system'.
+-- If unset, current_actor() attributes to 'human' (the owner) — there is no
+-- synthetic 'system' agent. The application write paths always set a real actor.
 --
 -- The triggers are AFTER row triggers, so a successful mutation of a covered
 -- table always produces exactly one activity_events row per covered transition.
@@ -868,7 +869,11 @@ DECLARE
 BEGIN
     actor := current_setting('koopa.actor', true);
     IF actor IS NULL OR actor = '' THEN
-        RETURN 'system';
+        -- No synthetic 'system' agent: an un-actored write (manual psql / a
+        -- direct DB op) is attributed to the owner. The application paths all
+        -- set a real actor (MCP withActorTx refuses an empty caller; HTTP admin
+        -- sets the owner), so this fallback only covers single-user direct ops.
+        RETURN 'human';
     END IF;
     RETURN actor;
 END;

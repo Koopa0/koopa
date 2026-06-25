@@ -110,7 +110,7 @@ func NewServer(pool *pgxpool.Pool, logger *slog.Logger, opts ...ServerOption) *S
 		// human activity by project_progress / review_period. Do NOT default
 		// this to "human": that would stamp anonymous writes as the owner's
 		// own activity and inflate the owner's momentum/retrospective.
-		callerAgent: "unknown",
+		callerAgent: "",
 		loc:         time.UTC,
 	}
 
@@ -321,7 +321,7 @@ func addTool[I, O any](s *Server, tool *mcp.Tool, handler func(context.Context, 
 
 	s.server.AddTool(tool, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		// Extract optional "as" field for per-call agent override.
-		// Project instructions tell each AI: "在所有 tool call 中傳入 as: 'planner'"
+		// Project instructions tell each AI: "在所有 tool call 中傳入 as: '<agent_name>'"
 		ctx = s.extractCallerIdentity(ctx, req.Params.Arguments)
 
 		var input I
@@ -411,15 +411,15 @@ func injectFieldEnums(schema *jsonschema.Schema, toolName string) {
 
 // injectCallerIdentityField adds the "as" property to a tool schema and
 // removes additionalProperties:false so the MCP client can pass it.
-// This enables caller self-identification: each Cowork project's instructions
-// tell the AI to pass as:"planner" (or "learning-studio", etc.) in every tool call.
+// This enables caller self-identification: each project's instructions
+// tell the AI to pass as:"<agent_name>" (e.g. koopa0-dev) in every tool call.
 func injectCallerIdentityField(s *jsonschema.Schema) {
 	if s.Properties == nil {
 		s.Properties = map[string]*jsonschema.Schema{}
 	}
 	s.Properties["as"] = &jsonschema.Schema{
 		Type:        "string",
-		Description: "Caller agent identity (e.g. planner, learning-studio). Set by project instructions.",
+		Description: "Caller agent identity (e.g. koopa0-dev). Set by project instructions.",
 	}
 	// Allow the "as" field to pass through — jsonschema-go sets
 	// additionalProperties:false by default which would reject it.

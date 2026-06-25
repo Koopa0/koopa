@@ -353,7 +353,7 @@ func TestIntegration_Todo_List_SingleStateFilter(t *testing.T) {
 	truncate(t)
 	h := newHandler()
 
-	someday := seedTodo(t, "Someday item", "someday", "planner")
+	someday := seedTodo(t, "Someday item", "someday", "claude")
 	seedTodo(t, "Inbox item", "inbox", "human")
 
 	req := httptest.NewRequest(http.MethodGet, "/api/admin/commitment/todos?state=someday", nil)
@@ -386,8 +386,8 @@ func TestIntegration_Todo_List_SingleStateFilter(t *testing.T) {
 	if env.Data[0].State != "someday" {
 		t.Errorf("filtered row state = %q, want %q", env.Data[0].State, "someday")
 	}
-	if env.Data[0].CreatedBy != "planner" {
-		t.Errorf("created_by = %q, want %q (list projection must carry the creator)", env.Data[0].CreatedBy, "planner")
+	if env.Data[0].CreatedBy != "claude" {
+		t.Errorf("created_by = %q, want %q (list projection must carry the creator)", env.Data[0].CreatedBy, "claude")
 	}
 }
 

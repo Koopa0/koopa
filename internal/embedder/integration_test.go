@@ -63,8 +63,7 @@ func setup(t *testing.T) {
 	}
 	if _, err := testPool.Exec(t.Context(),
 		`INSERT INTO agents (name, display_name, platform)
-		 VALUES ('system', 'System', 'system'),
-		        ('human', 'Human', 'human')
+		 VALUES ('human', 'Human', 'human')
 		 ON CONFLICT (name) DO NOTHING`); err != nil {
 		t.Fatalf("seeding agents: %v", err)
 	}

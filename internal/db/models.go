@@ -360,7 +360,7 @@ type Agent struct {
 	Name string `json:"name"`
 	// Human-readable label for admin UI and logs. Non-blank (chk_agent_display_name_not_blank).
 	DisplayName string `json:"display_name"`
-	// Execution context. Closed set: claude-cowork, claude-code, claude-web, codex, human, system (chk_agent_platform). The system value is reserved for the database-level fallback agent registered by BuiltinAgents — it attributes writes that bypass the Go actor middleware (pg_cron, manual psql ops, bug safety net). Routing decisions are driven by agent registry lookups, not this column.
+	// Execution context. Closed set: claude-code, codex, hermes, human (chk_agent_platform). Routing decisions are driven by agent registry lookups, not this column.
 	Platform string `json:"platform"`
 	// Short role description. Empty string = no description.
 	Description string `json:"description"`
@@ -454,7 +454,7 @@ type DailyPlanItem struct {
 	PlanDate time.Time `json:"plan_date"`
 	// The todo committed to. CASCADE on delete — if the todo is removed, the plan item goes too.
 	TodoID uuid.UUID `json:"todo_id"`
-	// Which agent added this item to the plan. Typically planner (morning briefing, cron auto-populate) or human (manual selection via MCP tool).
+	// Which agent added this item to the plan. Typically human (manual selection via MCP tool) or an agent acting as the daily driver (plan_day).
 	SelectedBy string `json:"selected_by"`
 	// Ordering within a day's plan. 0-based. Semantic: first item = highest priority for today.
 	Position int32 `json:"position"`
@@ -665,7 +665,7 @@ type Todo struct {
 	LastCompletedOn *time.Time `json:"last_completed_on"`
 	// Free-text detail. Empty string = no detail.
 	Description string `json:"description"`
-	// Which agent created or imported this todo into the system. FK to agents. Default human. Examples: human (manual or synced from external tool), planner (morning briefing).
+	// Which agent created or imported this todo into the system. FK to agents. Default human. Examples: human (manual or synced from external tool), koopa0-dev (captured during a dev session).
 	CreatedBy string `json:"created_by"`
 	// Row insertion timestamp.
 	CreatedAt time.Time `json:"created_at"`

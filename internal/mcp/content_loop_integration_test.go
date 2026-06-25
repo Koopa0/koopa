@@ -10,6 +10,7 @@
 package mcp
 
 import (
+	"log/slog"
 	"strings"
 	"testing"
 	"time"
@@ -164,20 +165,20 @@ func completeMilestoneAsActor(t *testing.T, goalID uuid.UUID, title, actor strin
 
 // TestIntegration_ListContent_CallerScoped asserts the core privacy invariant:
 // list_content returns ONLY the content created by the resolved caller, never
-// another agent's. A codex row must not appear when the caller is planner, and
+// another agent's. A codex row must not appear when the caller is claude, and
 // vice versa. This would catch a missing WHERE created_by = $caller clause.
 func TestIntegration_ListContent_CallerScoped(t *testing.T) {
 	s := setupServer(t)
 
 	note := "please revise"
-	plannerReviewID := seedContentForCreator(t, "cl-planner-review", "Planner Review", "planner", "review", nil)
-	plannerCRID := seedContentForCreator(t, "cl-planner-cr", "Planner CR", "planner", "changes_requested", &note)
-	plannerPubID := seedContentForCreator(t, "cl-planner-pub", "Planner Published", "planner", "published", nil)
+	devReviewID := seedContentForCreator(t, "cl-claude-review", "Agent Review", "claude", "review", nil)
+	devCRID := seedContentForCreator(t, "cl-claude-cr", "Agent CR", "claude", "changes_requested", &note)
+	devPubID := seedContentForCreator(t, "cl-claude-pub", "Agent Published", "claude", "published", nil)
 	codexID := seedContentForCreator(t, "cl-codex-review", "Codex Content", "codex", "review", nil)
 
-	_, out, err := callHandlerAs(t, "planner", s.listContent, ListContentInput{})
+	_, out, err := callHandlerAs(t, "claude", s.listContent, ListContentInput{})
 	if err != nil {
-		t.Fatalf("listContent(planner): %v", err)
+		t.Fatalf("listContent(claude): %v", err)
 	}
 
 	ids := make(map[string]ContentListItem, len(out.Items))
@@ -185,19 +186,19 @@ func TestIntegration_ListContent_CallerScoped(t *testing.T) {
 		ids[it.ID] = it
 	}
 
-	// planner's three rows must appear.
-	for _, wantID := range []uuid.UUID{plannerReviewID, plannerCRID, plannerPubID} {
+	// claude's three rows must appear.
+	for _, wantID := range []uuid.UUID{devReviewID, devCRID, devPubID} {
 		if _, ok := ids[wantID.String()]; !ok {
-			t.Errorf("listContent(planner) missing own row %s", wantID)
+			t.Errorf("listContent(claude) missing own row %s", wantID)
 		}
 	}
 	// codex row must NOT appear.
 	if _, ok := ids[codexID.String()]; ok {
-		t.Errorf("listContent(planner) leaked codex row %s — caller-scoping violated", codexID)
+		t.Errorf("listContent(claude) leaked codex row %s — caller-scoping violated", codexID)
 	}
 
 	// The changes_requested row must carry review_note.
-	if cr, ok := ids[plannerCRID.String()]; ok {
+	if cr, ok := ids[devCRID.String()]; ok {
 		if cr.ReviewNote == nil || *cr.ReviewNote != "please revise" {
 			t.Errorf("listContent[CR].review_note = %v, want %q", cr.ReviewNote, "please revise")
 		}
@@ -211,15 +212,15 @@ func TestIntegration_ListContent_EmptySlice(t *testing.T) {
 	// Seed content for a different agent so the corpus is non-empty.
 	seedContentForCreator(t, "cl-empty-other", "Other Agent Content", "codex", "review", nil)
 
-	_, out, err := callHandlerAs(t, "planner", s.listContent, ListContentInput{})
+	_, out, err := callHandlerAs(t, "claude", s.listContent, ListContentInput{})
 	if err != nil {
-		t.Fatalf("listContent(planner) with no planner content: %v", err)
+		t.Fatalf("listContent(claude) with no claude content: %v", err)
 	}
 	if out.Items == nil {
 		t.Error("listContent returned nil Items, want [] (never nil)")
 	}
 	if len(out.Items) != 0 {
-		t.Errorf("listContent(planner) returned %d items, want 0 (no planner content seeded)", len(out.Items))
+		t.Errorf("listContent(claude) returned %d items, want 0 (no claude content seeded)", len(out.Items))
 	}
 }
 
@@ -236,10 +237,10 @@ func TestIntegration_ReviseContent_ChangesRequestedSucceeds(t *testing.T) {
 	s := setupServer(t)
 
 	note := "needs more examples"
-	id := seedContentForCreator(t, "rc-cr-happy", "Changes Requested Article", "planner", "changes_requested", &note)
+	id := seedContentForCreator(t, "rc-cr-happy", "Changes Requested Article", "claude", "changes_requested", &note)
 	newBody := "# Revised\n\nMore examples added."
 
-	_, out, err := callHandlerAs(t, "planner", s.reviseContent, ReviseContentInput{
+	_, out, err := callHandlerAs(t, "claude", s.reviseContent, ReviseContentInput{
 		ID:   id.String(),
 		Body: &newBody,
 	})
@@ -274,10 +275,10 @@ func TestIntegration_ReviseContent_ChangesRequestedSucceeds(t *testing.T) {
 func TestIntegration_ReviseContent_ReviewStatusSucceeds(t *testing.T) {
 	s := setupServer(t)
 
-	id := seedContentForCreator(t, "rc-review-happy", "Review Article", "planner", "review", nil)
+	id := seedContentForCreator(t, "rc-review-happy", "Review Article", "claude", "review", nil)
 	newTitle := "Review Article — Revised Title"
 
-	_, out, err := callHandlerAs(t, "planner", s.reviseContent, ReviseContentInput{
+	_, out, err := callHandlerAs(t, "claude", s.reviseContent, ReviseContentInput{
 		ID:    id.String(),
 		Title: &newTitle,
 	})
@@ -296,10 +297,10 @@ func TestIntegration_ReviseContent_ReviewStatusSucceeds(t *testing.T) {
 func TestIntegration_ReviseContent_PublishedReturnsNotFound(t *testing.T) {
 	s := setupServer(t)
 
-	id := seedContentForCreator(t, "rc-pub-reject", "Published Article", "planner", "published", nil)
+	id := seedContentForCreator(t, "rc-pub-reject", "Published Article", "claude", "published", nil)
 	newBody := "should not apply"
 
-	_, _, err := callHandlerAs(t, "planner", s.reviseContent, ReviseContentInput{
+	_, _, err := callHandlerAs(t, "claude", s.reviseContent, ReviseContentInput{
 		ID:   id.String(),
 		Body: &newBody,
 	})
@@ -320,7 +321,7 @@ func TestIntegration_ReviseContent_PublishedReturnsNotFound(t *testing.T) {
 }
 
 // TestIntegration_ReviseContent_CrossCreatorNotFound asserts that caller A
-// (planner) cannot revise content created by caller B (codex). The response
+// (claude) cannot revise content created by caller B (codex). The response
 // is not-found — the row must be left unchanged. This is the key privacy
 // invariant.
 // Bug this catches: ReviseByCreator not filtering on created_by = caller.
@@ -336,13 +337,13 @@ func TestIntegration_ReviseContent_CrossCreatorNotFound(t *testing.T) {
 		t.Fatalf("setting original body: %v", err)
 	}
 
-	newBody := "planner should not be able to write this"
-	_, _, err := callHandlerAs(t, "planner", s.reviseContent, ReviseContentInput{
+	newBody := "claude should not be able to write this"
+	_, _, err := callHandlerAs(t, "claude", s.reviseContent, ReviseContentInput{
 		ID:   codexID.String(),
 		Body: &newBody,
 	})
 	if err == nil {
-		t.Fatal("reviseContent(planner on codex's row) err = nil, want not-found (cross-creator)")
+		t.Fatal("reviseContent(claude on codex's row) err = nil, want not-found (cross-creator)")
 	}
 
 	// Verify the row is unchanged.
@@ -365,9 +366,9 @@ func TestIntegration_ReviseContent_CrossCreatorNotFound(t *testing.T) {
 // Bug this catches: a no-op revise silently succeeding with no changes.
 func TestIntegration_ReviseContent_NoFieldsRejected(t *testing.T) {
 	s := setupServer(t)
-	id := seedContentForCreator(t, "rc-nofield", "No Fields Article", "planner", "changes_requested", nil)
+	id := seedContentForCreator(t, "rc-nofield", "No Fields Article", "claude", "changes_requested", nil)
 
-	_, _, err := callHandlerAs(t, "planner", s.reviseContent, ReviseContentInput{
+	_, _, err := callHandlerAs(t, "claude", s.reviseContent, ReviseContentInput{
 		ID: id.String(),
 		// Body, Title, Excerpt all nil
 	})
@@ -400,14 +401,14 @@ func TestIntegration_ReviewPeriod_HumanTodoIncluded_AgentExcluded(t *testing.T) 
 	completeTodoAsActor(t, "rp-human-done", "human", time.Now())
 
 	// Agent-completed todo — must NOT appear (agent actor).
-	// Use capture_inbox (planner) then resolve_todo(done) — this logs actor='planner'.
-	_, captured, err := callHandlerAs(t, "planner", s.captureInbox, CaptureInboxInput{
+	// Use capture_inbox (claude) then resolve_todo(done) — this logs actor='claude'.
+	_, captured, err := callHandlerAs(t, "claude", s.captureInbox, CaptureInboxInput{
 		Title: "rp-agent-done",
 	})
 	if err != nil {
 		t.Fatalf("captureInbox: %v", err)
 	}
-	_, _, err = callHandlerAs(t, "planner", s.resolveTodo, ResolveTodoInput{
+	_, _, err = callHandlerAs(t, "claude", s.resolveTodo, ResolveTodoInput{
 		ID:    captured.Todo.ID.String(),
 		State: "done",
 	})
@@ -415,7 +416,7 @@ func TestIntegration_ReviewPeriod_HumanTodoIncluded_AgentExcluded(t *testing.T) 
 		t.Fatalf("resolveTodo: %v", err)
 	}
 
-	_, out, err := callHandlerAs(t, "planner", s.reviewPeriod, ReviewPeriodInput{
+	_, out, err := callHandlerAs(t, "claude", s.reviewPeriod, ReviewPeriodInput{
 		Since: today,
 		Until: today,
 	})
@@ -456,17 +457,17 @@ func TestIntegration_ReviewPeriod_TodosOpenedCountsAllActors(t *testing.T) {
 	// Instead, seed activity_event directly for TodosOpenedInWindow.
 	// But TodosOpenedInWindow queries activity_events WHERE entity_type='todo'
 	// AND change_kind='created' AND occurred_at in window.
-	// We can seed two todos via captureInbox (fires trigger with actor='planner')
+	// We can seed two todos via captureInbox (fires trigger with actor='claude')
 	// and then use a window covering the current moment.
 
 	// Use a wide window covering now so we don't need to control occurred_at.
 	today := time.Now().UTC().Format(time.DateOnly)
 
-	_, _, err := callHandlerAs(t, "planner", s.captureInbox, CaptureInboxInput{Title: "rp-inflow-1"})
+	_, _, err := callHandlerAs(t, "claude", s.captureInbox, CaptureInboxInput{Title: "rp-inflow-1"})
 	if err != nil {
 		t.Fatalf("captureInbox 1: %v", err)
 	}
-	_, _, err = callHandlerAs(t, "planner", s.captureInbox, CaptureInboxInput{Title: "rp-inflow-2"})
+	_, _, err = callHandlerAs(t, "claude", s.captureInbox, CaptureInboxInput{Title: "rp-inflow-2"})
 	if err != nil {
 		t.Fatalf("captureInbox 2: %v", err)
 	}
@@ -478,7 +479,7 @@ func TestIntegration_ReviewPeriod_TodosOpenedCountsAllActors(t *testing.T) {
 		t.Fatalf("seeding human inflow todo: %v", err)
 	}
 
-	_, out, err := callHandlerAs(t, "planner", s.reviewPeriod, ReviewPeriodInput{
+	_, out, err := callHandlerAs(t, "claude", s.reviewPeriod, ReviewPeriodInput{
 		Since: today,
 		Until: today,
 	})
@@ -486,7 +487,7 @@ func TestIntegration_ReviewPeriod_TodosOpenedCountsAllActors(t *testing.T) {
 		t.Fatalf("reviewPeriod: %v", err)
 	}
 
-	// At least 3 todos were opened this session (2 planner + 1 raw). There may
+	// At least 3 todos were opened this session (2 claude + 1 raw). There may
 	// be more from other tests in this run, so assert >= 3.
 	if out.Counts.TodosOpened < 3 {
 		t.Errorf("todos_opened = %d, want >= 3 (all-actor inflow count)", out.Counts.TodosOpened)
@@ -526,7 +527,7 @@ func TestIntegration_ReviewPeriod_AllActiveGoals(t *testing.T) {
 		t.Fatalf("seeding open milestone for goal B: %v", err)
 	}
 
-	_, out, err := callHandlerAs(t, "planner", s.reviewPeriod, ReviewPeriodInput{
+	_, out, err := callHandlerAs(t, "claude", s.reviewPeriod, ReviewPeriodInput{
 		Since: today,
 		Until: today,
 	})
@@ -575,9 +576,9 @@ func TestIntegration_ReviewPeriod_MilestoneAttribution(t *testing.T) {
 	// Human-completed milestone — must appear.
 	completeMilestoneAsActor(t, goalID, "rp-human-milestone", "human", midWindow)
 	// Agent-completed milestone — must NOT appear.
-	completeMilestoneAsActor(t, goalID, "rp-agent-milestone", "planner", midWindow)
+	completeMilestoneAsActor(t, goalID, "rp-agent-milestone", "claude", midWindow)
 
-	_, out, err := callHandlerAs(t, "planner", s.reviewPeriod, ReviewPeriodInput{
+	_, out, err := callHandlerAs(t, "claude", s.reviewPeriod, ReviewPeriodInput{
 		Since: today,
 		Until: today,
 	})
@@ -628,7 +629,7 @@ func TestIntegration_ReviewPeriod_PublishedContentInWindow(t *testing.T) {
 	seedPublishedContentAt(t, "rp-pub-before", "Published Before Window", beforeWindow)
 	seedPublishedContentAt(t, "rp-pub-after", "Published After Window", afterWindow)
 
-	_, out, err := callHandlerAs(t, "planner", s.reviewPeriod, ReviewPeriodInput{
+	_, out, err := callHandlerAs(t, "claude", s.reviewPeriod, ReviewPeriodInput{
 		Since: since,
 		Until: until,
 	})
@@ -694,7 +695,7 @@ func TestIntegration_ReviewPeriod_WindowBoundaryInclusive(t *testing.T) {
 	insertEvent("rp-bound-prev", prevDay)
 	insertEvent("rp-bound-next", nextDay)
 
-	_, out, err := callHandlerAs(t, "planner", s.reviewPeriod, ReviewPeriodInput{
+	_, out, err := callHandlerAs(t, "claude", s.reviewPeriod, ReviewPeriodInput{
 		Since: windowDay,
 		Until: windowDay,
 	})
@@ -763,7 +764,7 @@ func TestIntegration_ReviewPeriod_Counts(t *testing.T) {
 	// 1 published content in window.
 	seedPublishedContentAt(t, "rp-count-pub", "Count Published", midWindow)
 
-	_, out, err := callHandlerAs(t, "planner", s.reviewPeriod, ReviewPeriodInput{
+	_, out, err := callHandlerAs(t, "claude", s.reviewPeriod, ReviewPeriodInput{
 		Since: since,
 		Until: until,
 	})
@@ -796,7 +797,7 @@ func TestIntegration_ReviewPeriod_Counts(t *testing.T) {
 func TestIntegration_ReviewPeriod_WindowEcho(t *testing.T) {
 	s := setupServer(t)
 
-	_, out, err := callHandlerAs(t, "planner", s.reviewPeriod, ReviewPeriodInput{
+	_, out, err := callHandlerAs(t, "claude", s.reviewPeriod, ReviewPeriodInput{
 		Since: "2025-05-01",
 		Until: "2025-05-31",
 	})
@@ -815,7 +816,7 @@ func TestIntegration_ReviewPeriod_WindowEcho(t *testing.T) {
 func TestIntegration_ReviewPeriod_SinceRequired(t *testing.T) {
 	s := setupServer(t)
 
-	_, _, err := callHandlerAs(t, "planner", s.reviewPeriod, ReviewPeriodInput{
+	_, _, err := callHandlerAs(t, "claude", s.reviewPeriod, ReviewPeriodInput{
 		Until: "2025-05-31",
 	})
 	if err == nil {
@@ -843,7 +844,7 @@ func TestIntegration_ReviewPeriod_AreasAllActive(t *testing.T) {
 	const since = "2025-04-01"
 	const until = "2025-04-30"
 
-	_, out, err := callHandlerAs(t, "planner", s.reviewPeriod, ReviewPeriodInput{
+	_, out, err := callHandlerAs(t, "claude", s.reviewPeriod, ReviewPeriodInput{
 		Since: since,
 		Until: until,
 	})
@@ -872,36 +873,28 @@ func TestIntegration_ReviewPeriod_AreasAllActive(t *testing.T) {
 	}
 }
 
-// TestIntegration_ProposeContent_NoGate_AttributionFK pins the post-removal
-// contract for write tools: there is no caller gate, so the "unknown" fallback
-// (a call that omitted `as`) CAN write — attributed to created_by='unknown',
-// which project_progress/review_period do not count as the owner. A fabricated
-// `as` (no registry row) still fails, but now at the created_by FK, not a gate.
-// Catches: a re-introduced caller gate (would block unknown), or a dropped
-// created_by FK (would let a fabricated author persist).
-func TestIntegration_ProposeContent_NoGate_AttributionFK(t *testing.T) {
-	s := setupServer(t)
-
-	// unknown caller: write succeeds, attributed to 'unknown'.
-	if _, _, err := callHandlerAs(t, "unknown", s.proposeContent, ProposeContentInput{
-		Title: "Unknown Authored", Type: "article", Body: "finished draft",
-	}); err != nil {
-		t.Fatalf("proposeContent as unknown = %v, want success (no caller gate)", err)
-	}
-	var createdBy string
-	if err := testPool.QueryRow(t.Context(),
-		`SELECT created_by FROM contents WHERE title = 'Unknown Authored'`,
-	).Scan(&createdBy); err != nil {
-		t.Fatalf("reading created_by: %v", err)
-	}
-	if createdBy != "unknown" {
-		t.Errorf("created_by = %q, want %q", createdBy, "unknown")
-	}
+// TestIntegration_ProposeContent_RequiresActor pins the post-removal contract
+// for write tools: there is no synthetic 'unknown' caller. A call that omits
+// `as` is refused at withActorTx (empty caller identity); a fabricated `as`
+// (no registry row) is rejected at the created_by FK. There is still no
+// tool-layer authz gate — both failures are structural (require-actor + FK).
+// Catches: a re-introduced 'unknown' fallback (would let an actorless write
+// through), or a dropped created_by FK (would let a fabricated author persist).
+func TestIntegration_ProposeContent_RequiresActor(t *testing.T) {
+	s := setupServer(t) // agents synced; this server pins caller = "claude"
 
 	// fabricated caller: no registry row → the created_by FK rejects the write.
 	if _, _, err := callHandlerAs(t, "fabricated-agent", s.proposeContent, ProposeContentInput{
 		Title: "Fabricated Authored", Type: "article", Body: "finished draft",
 	}); err == nil {
 		t.Error("proposeContent as fabricated-agent = nil, want created_by FK rejection")
+	}
+
+	// no `as` AND no pinned default → withActorTx refuses the empty caller.
+	unpinned := NewServer(testPool, slog.Default()) // callerAgent defaults to ""
+	if _, _, err := callHandlerAs(t, "", unpinned.proposeContent, ProposeContentInput{
+		Title: "Actorless", Type: "article", Body: "finished draft",
+	}); err == nil {
+		t.Error("proposeContent with no `as` and no pinned caller = nil, want refusal (missing caller identity)")
 	}
 }

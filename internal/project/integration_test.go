@@ -128,7 +128,7 @@ func seedProjectWithStatus(t *testing.T, slug, title, status string) uuid.UUID {
 	var id uuid.UUID
 	if err := testPool.QueryRow(t.Context(),
 		`INSERT INTO projects (slug, title, description, status, created_by)
-		 VALUES ($1, $2, '', $3::project_status, 'koopa0-dev') RETURNING id`,
+		 VALUES ($1, $2, '', $3::project_status, 'claude') RETURNING id`,
 		slug, title, status,
 	).Scan(&id); err != nil {
 		t.Fatalf("seeding %s project: %v", status, err)
@@ -143,7 +143,7 @@ func insertTodo(t *testing.T, projectID uuid.UUID, title, state string) {
 	t.Helper()
 	if _, err := testPool.Exec(t.Context(),
 		`INSERT INTO todos (title, state, project_id, description, created_by, completed_at)
-		 VALUES ($1, $2::todo_state, $3, '', 'koopa0-dev',
+		 VALUES ($1, $2::todo_state, $3, '', 'claude',
 		         CASE WHEN $2::todo_state = 'done' THEN now() ELSE NULL END)`,
 		title, state, projectID,
 	); err != nil {
@@ -308,10 +308,10 @@ func TestIntegration_Detail_FullAggregate(t *testing.T) {
 	}
 
 	// Activity event scoped via slug. actor is NOT NULL and FKs onto
-	// agents — use planner, which the builtin registry sync populates.
+	// agents — use claude, which the builtin registry sync populates.
 	if _, err := testPool.Exec(t.Context(),
 		`INSERT INTO activity_events (entity_type, change_kind, entity_id, project_id, entity_title, actor, occurred_at)
-		 VALUES ('todo', 'created', $1, $2, 'seeded activity', 'planner', now())`,
+		 VALUES ('todo', 'created', $1, $2, 'seeded activity', 'claude', now())`,
 		uuid.New(), projectID,
 	); err != nil {
 		t.Fatalf("seeding activity event: %v", err)
@@ -576,7 +576,7 @@ func TestIntegration_Project_ProposedProjectsTriage(t *testing.T) {
 	var proposedID uuid.UUID
 	if err := testPool.QueryRow(ctx,
 		`INSERT INTO projects (slug, title, description, status, created_by, proposal_rationale)
-		 VALUES ('triage-one', 'Triage One', '', 'proposed', 'koopa0-dev', $1) RETURNING id`,
+		 VALUES ('triage-one', 'Triage One', '', 'proposed', 'claude', $1) RETURNING id`,
 		rationale,
 	).Scan(&proposedID); err != nil {
 		t.Fatalf("seeding proposed project: %v", err)

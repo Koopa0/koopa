@@ -17,31 +17,6 @@ import (
 func BuiltinAgents() []Agent {
 	return []Agent{
 		{
-			Name:        "planner",
-			DisplayName: "Planner",
-			Platform:    "claude-cowork",
-			Description: "Daily planner — morning briefing and candidate day plan, in conversation with Koopa",
-			Schedule: Schedule{
-				Name:    "morning-briefing",
-				Trigger: TriggerCron,
-				Expr:    "0 8 * * *",
-				Backend: "cowork_desktop",
-				Purpose: "Daily briefing — todos, goals, RSS highlights, content pipeline",
-			},
-		},
-		{
-			Name:        "koopa0-dev",
-			DisplayName: "koopa",
-			Platform:    "claude-code",
-			Description: "koopa development project",
-		},
-		{
-			Name:        "go-spec",
-			DisplayName: "go-spec",
-			Platform:    "claude-code",
-			Description: "Go spec configuration project",
-		},
-		{
 			Name:        "codex",
 			DisplayName: "Codex",
 			Platform:    "codex",
@@ -50,14 +25,14 @@ func BuiltinAgents() []Agent {
 		{
 			Name:        "hermes",
 			DisplayName: "Hermes",
-			Platform:    "claude-code",
+			Platform:    "hermes",
 			Description: "Scheduled assistant — curates the personal Obsidian vault on assigned cron jobs",
 		},
 		{
 			Name:        "claude",
 			DisplayName: "Claude",
-			Platform:    "claude-web",
-			Description: "General Claude Web session",
+			Platform:    "claude-code",
+			Description: "General Claude session — search and agent-surface work",
 		},
 		{
 			Name:        "human",
@@ -65,39 +40,11 @@ func BuiltinAgents() []Agent {
 			Platform:    "human",
 			Description: "Direct manual operation by the user",
 		},
-		{
-			// The audit trigger current_actor() falls back to the literal
-			// 'system' when koopa.actor is unset. Registering it here
-			// ensures activity_events.actor FK resolves even when the Go
-			// tx wrapper is bypassed (pg_cron, manual psql ops, or a
-			// regression where SET LOCAL is forgotten). Appearance in
-			// activity_events is a red flag — the Go path should always
-			// set koopa.actor to a real agent name.
-			Name:        "system",
-			DisplayName: "System",
-			Platform:    "system",
-			Description: "Database-level writes without Go caller context — pg_cron jobs, manual ops, or fallback when koopa.actor is unset",
-		},
-		{
-			// Attribution fallback for MCP calls that omit the `as`
-			// field. Lives at the SERVER default (server.go callerAgent
-			// + cmd/mcp KOOPA_MCP_CALLER_AGENT default). There is no
-			// tool-layer authz (Option B), so this does not gate access;
-			// it controls ATTRIBUTION — a call with no identity writes as
-			// "unknown", which project_progress / review_period do NOT
-			// count as owner (human) activity. Do NOT default this to
-			// "human": that would stamp anonymous writes as Koopa's own.
-			// Distinct from "system": "system" attributes DB-level writes
-			// that bypass the Go actor middleware; "unknown" attributes
-			// MCP calls whose middleware ran but received no identity.
-			// Surfacing "unknown" as actor in activity_events is a
-			// client-side red flag — the cowork project instruction must
-			// include `as: "<agent_name>"` on every tool call.
-			Name:        "unknown",
-			DisplayName: "Unknown caller",
-			Platform:    "system",
-			Description: "Zero-privilege fallback for MCP calls without an `as` field. Real agents MUST self-identify per project instructions — surfacing 'unknown' as actor signals a client that forgot to pass `as`.",
-		},
+		// No synthetic agents. There is no 'system': when koopa.actor is
+		// unset the audit trigger attributes to 'human' (the owner is the
+		// only one doing direct/manual DB ops in a single-user system). There
+		// is no 'unknown': an MCP call without `as` is refused at withActorTx
+		// (empty caller identity). Every agent here is a real, named caller.
 	}
 }
 

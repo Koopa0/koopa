@@ -129,7 +129,7 @@ ORDER BY title;
 -- HUMAN ACTIVITY ONLY: last_human_activity_at is the latest
 -- activity_events.occurred_at for an event scoped to this project
 -- (activity_events.project_id = p.id) where actor = 'human'. Agent/system
--- actors (planner, hermes, codex, claude, system, …) never count as owner
+-- actors (hermes, codex, claude, system, …) never count as owner
 -- progress, so the correlated subquery filters actor = 'human'. We compute
 -- this live rather than trusting projects.last_activity_at, which is a cron
 -- denormalisation that records ANY actor.

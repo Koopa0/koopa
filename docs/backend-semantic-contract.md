@@ -125,15 +125,13 @@ them wrong is a semantic bug, not a naming quibble.
 - **actor** — the `agents.name` value attributed to one `activity_events` row;
   set from the `koopa.actor` GUC inside the audit trigger via `current_actor()`
   (`migrations/001_initial.up.sql:1049`).
-- **planner / Koopa** — `planner` is the `claude-cowork` daily-driver agent:
-  morning briefing, candidate day plans, inbox capture, search
-  (`registry.go:20-31`). "Koopa" is the human owner (display name on the
-  `human` agent) — the sole decision-maker and sole router.
-- **Claude Cowork project** — a `claude-cowork` platform agent: `planner`
-  (`registry.go:22`). A platform/identity, not a PARA `project` (§4).
-- **Claude Code** — `claude-code` platform agents (`koopa0-dev`, `go-spec`,
-  `hermes`), doing repo development and scheduled vault work. A Claude Code
-  session is a dev runtime, not a coordination peer (§4).
+- **Koopa** — the human owner (display name on the `human` agent) — the sole
+  decision-maker and sole router.
+- **Agents** — `claude` (`claude-code`) does repo development and agent-surface
+  work; `codex` (`codex`) is a dev collaborator / cross-reviewer; `hermes`
+  (`hermes`) does scheduled vault curation. An agent session is a runtime, not a
+  coordination peer (§4). There are no synthetic agents: no `system` (the audit
+  trigger falls back to `human`), no `unknown` (an `as`-less write is refused).
 
 ### Commitment (PARA + GTD + goals)
 
@@ -207,8 +205,7 @@ them wrong is a semantic bug, not a naming quibble.
   (`catalog.go::All()`, `:215-231`).
 - **schedule** — a per-agent recurring trigger declared on the Go
   `agent.Agent` literal (`Schedule{Name, Trigger, Expr, Backend, Purpose}`).
-  `planner` runs `morning-briefing` at `0 8 * * *` on `cowork_desktop`
-  (`registry.go:24-30`) — the one scheduled agent. **Lives in Go, not the DB.**
+  No agent currently declares one; when present it **lives in Go, not the DB.**
   The schedule literal is metadata only; the backend has **no internal
   scheduler** — execution is driven by the external Cowork/Desktop runner. This
   repo owns the registry metadata, the schema, and the
@@ -229,12 +226,11 @@ The named confusions and their resolutions, each grounded.
 
 | Boundary | Term A | Term B | Rule | Grounding |
 |---|---|---|---|---|
-| **PARA project vs agent identity** | `projects` row (work vehicle) | Cowork "project" = a `claude-cowork` agent | A PARA project is data in `projects`; a Cowork project is an actor in `agents`. They never share a table or ID. | `projects` schema `:314`; `registry.go:20-31` |
+| **PARA project vs agent identity** | `projects` row (work vehicle) | an `agents` row (actor identity) | A PARA project is data in `projects`; an agent is an actor in `agents`. They never share a table or ID. | `projects` schema `:314`; `registry.go` |
 | **todo is the only work-item entity** | `todos` (personal GTD) | (no `tasks` entity) | There is no inter-agent `tasks` triad, so there is no "task vs todo" boundary to police — a todo is the system's only work-item entity. | `todo_state` enum `:27` |
 | **inert proposal vs active commitment** | `status='proposed'` area / goal / project (agent draft) | the activated row (owner action) | A proposed entity is fully inert — invisible to brief / Today / active listings / selectors — until the owner activates it in admin triage. The agent drafts; the owner commits. | `propose_*` handlers; `cmd/app/routes.go:220-227` |
 | **MCP tool call vs semantic write** | a `tools/call` invocation | the resulting row + `activity_event` | A read-only tool call (`ReadOnly` writability — `brief`, `search_knowledge`, `list_todos`, `list_content`, `review_period`, `project_progress`) produces no semantic write. Only Additive/Idempotent/Destructive tools write; the *write* is the row + its trigger-emitted audit event, not the call. | `ops/types.go:28-39` |
-| **Cowork project vs agent identity** | `claude-cowork` agent | the live `agent` entity | A Cowork project IS an agent — a row in `agents` keyed by `name`, the universal actor identity. | `registry.go:20-31` |
-| **Claude Code runtime vs Koopa identity** | `claude-code` agent (dev session) | `human` agent (Koopa) | Both attribute writes via `as`; there is no tool-layer override for either (Option B — no `requireAuthor`). The live distinction is actor-attribution identity (`actor='human'` is what `project_progress` / `review_period` count as owner momentum), not coordination authority. | `server.go::callerIdentity`; `registry.go` |
+| **Claude Code runtime vs Koopa identity** | `claude` agent (dev session, `claude-code`) | `human` agent (Koopa) | Both attribute writes via `as`; there is no tool-layer override for either (Option B — no `requireAuthor`). The live distinction is actor-attribution identity (`actor='human'` is what `project_progress` / `review_period` count as owner momentum), not coordination authority. | `server.go::callerIdentity`; `registry.go` |
 | **frontend page model vs backend domain model** | Angular admin pages (composed views) | backend entities | Page-level view-models are **not** backend entities. The Today page is now backed by a fully-wired backend aggregate (§6F). | `internal/today/handler.go`; §2 |
 
 ---

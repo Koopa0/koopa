@@ -19,10 +19,9 @@ import (
 // otherwise. Every write path that hits a table covered by an audit_*
 // trigger MUST go through this helper — the triggers insert into
 // activity_events with current_actor() as the actor, which reads from
-// koopa.actor. Without set_config, current_actor() falls back to the
-// literal 'system' (registered in BuiltinAgents as a safety net, but its
-// appearance in activity_events is a red flag indicating the Go path
-// forgot to set actor).
+// koopa.actor. This path always sets a real actor; the trigger's only
+// fallback (koopa.actor unset, e.g. a manual DB op) attributes to the owner
+// ('human') — there is no synthetic 'system' agent.
 //
 // Scope must be transaction-local, not session-local: pgxpool reuses
 // connections across callers, so a session-level GUC would leak one
@@ -30,12 +29,13 @@ import (
 // with is_local=true matches SET LOCAL — the value is discarded on
 // COMMIT or ROLLBACK.
 //
-// Empty caller identity is a programming error — this helper fails loud
-// rather than silently falling through to the 'system' fallback.
+// A missing caller identity is refused here: a write tool MUST be called with
+// an `as` field (or a pinned KOOPA_MCP_CALLER_AGENT). There is no `unknown`
+// fallback — every audited write carries a real, registered agent.
 func (s *Server) withActorTx(ctx context.Context, fn func(tx pgx.Tx) error) error {
 	actor := s.callerIdentity(ctx)
 	if actor == "" {
-		return fmt.Errorf("refusing to open actor-scoped tx with empty caller identity")
+		return fmt.Errorf("missing caller identity: pass an `as` field naming a registered agent (every write must declare its actor)")
 	}
 
 	tx, err := s.pool.Begin(ctx)

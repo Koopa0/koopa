@@ -44,18 +44,14 @@ func loadConfig(logger *slog.Logger) config {
 
 	cfg.DatabaseURL = requireEnv("DATABASE_URL", logger)
 
-	// Default caller agent: "unknown" — an attribution-only fallback, NOT an
-	// access gate. Each Cowork project's instructions tell the AI to pass
-	// as: "planner" (or its real agent name) in every tool call. A client
-	// that forgets is attributed to "unknown", which project_progress /
-	// review_period do NOT count as owner activity — so anonymous writes
-	// can't inflate Koopa's momentum or forge created_by = human. There is
-	// no tool-layer authz to refuse the call itself (Option B); access is
+	// Default caller agent: empty — there is no 'unknown' fallback. Each
+	// project's instructions tell the AI to pass as: "<agent_name>" in every
+	// tool call; a write call that omits it is refused at withActorTx (empty
+	// caller identity). There is no tool-layer authz (Option B) — access is
 	// bounded by the MCP transport (HTTP Bearer + admin-email OAuth, or the
-	// stdio process boundary). Override only when the deployment genuinely
-	// has a single legitimate default (e.g. a personal-use deploy where all
-	// calls are from Koopa) — pin to "human" explicitly in that case.
-	cfg.CallerAgent = envOr("KOOPA_MCP_CALLER_AGENT", "unknown")
+	// stdio process boundary). For a single-agent deployment (e.g. stdio where
+	// every call is one known agent) pin KOOPA_MCP_CALLER_AGENT to that name.
+	cfg.CallerAgent = envOr("KOOPA_MCP_CALLER_AGENT", "")
 
 	// HTTP transport requires MCP_TOKEN + Google OAuth
 	cfg.MCPToken = os.Getenv("MCP_TOKEN")

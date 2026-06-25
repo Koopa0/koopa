@@ -219,12 +219,12 @@ func TestActorMiddleware_PropagatesHumanActor(t *testing.T) {
 
 // TestActorMiddleware_SilentDegradation_WhenWithTxForgotten documents the
 // failure mode per brief §8.5. It wires a deliberately-wrong handler that
-// ignores api.TxFromContext and uses the bare pool-backed store. The
-// insert still succeeds (201) because the audit trigger falls back to
-// 'system' when koopa.actor is unset — but the recorded actor is NOT
-// 'human' anymore. Future reviewers: if you extend adminMid to any new
-// handler, check you routed through WithTx(tx) or the trigger will
-// silently misattribute the write.
+// ignores api.TxFromContext and uses the bare pool-backed store, with the
+// middleware intending a non-human actor ('codex'). The insert still succeeds
+// (201) because the audit trigger falls back to 'human' when koopa.actor is
+// unset — but the recorded actor is 'human', NOT the intended 'codex', so the
+// write is silently misattributed. Future reviewers: if you extend adminMid to
+// a new handler, route through WithTx(tx) or the trigger will misattribute.
 func TestActorMiddleware_SilentDegradation_WhenWithTxForgotten(t *testing.T) {
 	truncateContents(t)
 
@@ -261,7 +261,7 @@ func TestActorMiddleware_SilentDegradation_WhenWithTxForgotten(t *testing.T) {
 		api.Encode(w, http.StatusCreated, api.Response{Data: c})
 	})
 
-	mid := api.ActorMiddleware(testPool, "human", logger)
+	mid := api.ActorMiddleware(testPool, "codex", logger)
 	wrapped := mid(forgetful)
 
 	req := postContent(t, "Silent Degradation")
@@ -281,7 +281,7 @@ func TestActorMiddleware_SilentDegradation_WhenWithTxForgotten(t *testing.T) {
 	}
 
 	id := decodeContentID(t, bodyBytes)
-	if got := actorForContent(t, id); got != "system" {
-		t.Errorf("activity_events.actor = %q, want %q (silent-degradation failure mode: tx binding didn't reach the store, trigger fell back)", got, "system")
+	if got := actorForContent(t, id); got != "human" {
+		t.Errorf("activity_events.actor = %q, want %q (silent degradation: tx binding never reached the store, so the trigger fell back to the owner instead of the intended 'codex')", got, "human")
 	}
 }

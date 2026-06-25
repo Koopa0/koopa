@@ -26,13 +26,13 @@
 
 **koopa** is a private-by-default personal OS where AI agents share a semantic runtime — so the AI reads your state, not your prompts.
 
-Three actors drive it today, and a fourth is what it's built for. **You** make every call — each goal, project, milestone, and published article is committed by you in the admin UI. **Claude Code** runs development sessions in this repo: it searches the corpus, logs what it built, and pushes a finished draft into your review queue — reading the same state any agent sees, never re-explained. **hermes** curates your Obsidian vault on a schedule. The fourth is the **planner**: a daily driver that reads yesterday's unfinished plan, this week's goal progress, the projects that have gone quiet, and the overnight RSS highlights, and hands you one morning briefing — the flow is wired and runs on an external scheduler, the piece still becoming a daily habit. Nothing high-stakes happens behind your back: the agents surface structure; you make the call.
+Three actors drive it. **You** make every call — each goal, project, milestone, and published article is committed by you in the admin UI. **Claude Code** runs development sessions in this repo: it searches the corpus, logs what it built, and pushes a finished draft into your review queue — reading the same state any agent sees, never re-explained. **hermes** curates your Obsidian vault on a schedule. Nothing high-stakes happens behind your back: the agents surface structure; you make the call.
 
 ## Why this exists
 
-Most AI integrations are stateless: every conversation starts from zero, every agent is a fresh amnesiac, and you spend your time re-explaining context. The more agents you add — Claude Code in your editor, Cowork agents on schedulers, background summarizers — the worse it gets, because each produces output the others never see.
+Most AI integrations are stateless: every conversation starts from zero, every agent is a fresh amnesiac, and you spend your time re-explaining context. The more agents you add — Claude Code in your editor, scheduled agents, background summarizers — the worse it gets, because each produces output the others never see.
 
-koopa models the work instead. Areas, goals, projects, milestones, todos, daily plans, content — all first-class entities with precise schemas and their own lifecycles, in one store every agent reads through MCP and writes through bounded workflow steps. When an agent reads your state — Claude Code opening a session, or the planner assembling a briefing — it pulls yesterday's daily plan and goal progress through MCP, not because you summarized it, but because the state is there. When an agent proposes a new goal, the draft lands inert in your triage queue with the milestones already laid out. Understanding is queried, not reconstructed; there is no drift between agents and no "I think you mentioned…".
+koopa models the work instead. Areas, goals, projects, milestones, todos, daily plans, content — all first-class entities with precise schemas and their own lifecycles, in one store every agent reads through MCP and writes through bounded workflow steps. When an agent reads your state — Claude Code opening a session, or any agent assembling a briefing — it pulls yesterday's daily plan and goal progress through MCP, not because you summarized it, but because the state is there. When an agent proposes a new goal, the draft lands inert in your triage queue with the milestones already laid out. Understanding is queried, not reconstructed; there is no drift between agents and no "I think you mentioned…".
 
 ## How it works
 
@@ -47,14 +47,13 @@ The working roster (`internal/agent/registry.go::BuiltinAgents()`):
 | Identity | Runs as | Role |
 |---|---|---|
 | `human` | — | Koopa: the only decision-maker, the only router |
-| `koopa0-dev` / `go-spec` | Claude Code | Development sessions in this repo — search, build-logs, content drafts |
-| `hermes` | Claude Code (scheduled) | Curates the personal Obsidian vault on assigned cron jobs |
-| `planner` | Claude Cowork | The intended daily driver — morning briefing, candidate day plans, inbox capture, PARA proposals |
+| `claude` | Claude Code | Development sessions in this repo — search, build-logs, content drafts, agent-surface work |
+| `hermes` | Hermes | Curates the personal Obsidian vault on assigned cron jobs |
 | `codex` | Codex CLI | Dev collaborator — repo work and cross-review sessions |
 
-The active drivers today are you, Claude Code, and hermes. The `planner` is the daily-driver the system is designed around; its cadence (a morning briefing, pinned in the registry) is **declared in the backend but executed by an external runner**, not by this repo — the backend owns the registry metadata, the schema, and the `process_runs` table that audits each external run.
+The active drivers are you, Claude, and hermes. Scheduled work — hermes's vault curation — is **executed by an external runner, not by this repo**: the backend owns the agent registry, the schema, and the `process_runs` table that audits each external run; it has no internal scheduler.
 
-Writes carry an **actor**, not a tool-layer gate. Every MCP call self-identifies via an `as` field; the server (`internal/mcp/server.go::callerIdentity`) records it as attribution — it sets `created_by`, the `activity_events` actor, and the caller-scope of an agent's own rows — but no tool checks it for permission. Access control is the MCP transport itself: the HTTP `/mcp` endpoint sits behind admin-email OAuth and a bearer token, and stdio is an OS process boundary. A fabricated `as` is caught downstream by the `created_by` foreign key to the agent roster, so an unknown caller's writes are attributed to `unknown`, never to you.
+Writes carry an **actor**, not a tool-layer gate. Every MCP call self-identifies via an `as` field; the server (`internal/mcp/server.go::callerIdentity`) records it as attribution — it sets `created_by`, the `activity_events` actor, and the caller-scope of an agent's own rows — but no tool checks it for permission. Access control is the MCP transport itself: the HTTP `/mcp` endpoint sits behind admin-email OAuth and a bearer token, and stdio is an OS process boundary. There is no anonymous fallback: a write call that omits `as` is refused, and a fabricated `as` is caught by the `created_by` foreign key to the agent roster — so every recorded write carries a real, registered agent.
 
 Two structural invariants hold:
 
@@ -104,9 +103,9 @@ Fifteen MCP tools — small on purpose. Everything an agent can do is a workflow
 
 ## What this enables
 
-**Agents see the same state.** When the planner writes a morning briefing, it reads the same daily plan, open todos, and goal progress any other agent would — there is no "what did I tell the other agent", only the schema.
+**Agents see the same state.** When any agent assembles a morning briefing, it reads the same daily plan, open todos, and goal progress any other agent would — there is no "what did I tell the other agent", only the schema.
 
-**Briefings grounded in yesterday.** The planner reads yesterday's daily plan, checks which items completed / deferred / dropped, and shows goal progress against milestones — generated from state, not from your recollection.
+**Briefings grounded in yesterday.** `brief(mode=morning)` reads yesterday's daily plan, checks which items completed / deferred / dropped, and shows goal progress against milestones — generated from state, not from your recollection.
 
 **Momentum grounded in real activity.** `project_progress` computes which projects and areas have gone quiet, counting owner activity only — agent and system writes never register as progress — so a project that only agents touched still shows as stalled until you act on it.
 
@@ -123,9 +122,9 @@ A single-admin system by design: no RBAC, no multi-tenant, no "share with a coll
 | Backend          | Go 1.26+ (stdlib-first), PostgreSQL 17, pgx/v5, sqlc                           |
 | Search           | Hybrid: PostgreSQL FTS (tsvector + websearch + GIN) + pgvector semantic (HNSW, cosine), RRF-fused; FTS-only without `GEMINI_API_KEY` |
 | Embedding        | `gemini-embedding-2` (1536d Matryoshka); background reconciler keeps the search corpus embedded |
-| Scheduling       | Agent cadences declared in `internal/agent/registry.go`; execution driven by an external Cowork/Desktop runner; audited via `process_runs` |
+| Scheduling       | Agent cadences declared in `internal/agent/registry.go`; execution driven by an external runner; audited via `process_runs` |
 | Frontend         | Angular 22 (SSR, zoneless, Signal Forms), Tailwind CSS v4                      |
-| AI collaboration | Claude (Cowork + Code), Codex CLI, MCP (15 workflow tools)                    |
+| AI collaboration | Claude (Code + Web), Codex CLI, MCP (15 workflow tools)                    |
 | Cache            | Ristretto (in-memory, single machine)                                         |
 | Object storage   | Cloudflare R2 (S3-compatible)                                                  |
 

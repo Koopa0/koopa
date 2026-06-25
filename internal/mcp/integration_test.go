@@ -45,7 +45,7 @@ func TestMain(m *testing.M) {
 
 // setupServer truncates application-written rows, reconciles the agent
 // registry the way cmd/mcp/main.go does at startup, and returns a Server
-// wired to the shared test pool. callerAgent is set to planner — a
+// wired to the shared test pool. callerAgent is set to claude — a
 // registered claude-cowork daily-driver — so every activity_events row in a
 // happy-path test should carry that actor.
 func setupServer(t *testing.T) *Server {
@@ -57,7 +57,7 @@ func setupServer(t *testing.T) *Server {
 		t.Fatalf("agent.SyncToTable: %v", err)
 	}
 	return NewServer(testPool, slog.Default(),
-		WithCallerAgent("planner"),
+		WithCallerAgent("claude"),
 	)
 }
 
@@ -107,7 +107,7 @@ func activityActorFor(t *testing.T, entityType string, entityID uuid.UUID) strin
 // audit: activity_events_actor_fkey violation because koopa.actor was unset and
 // the fallback 'system' wasn't in agents. With the registry seed and the
 // withActorTx wrapper in place, this must write both the todo and the audit row
-// with actor = planner (the configured caller).
+// with actor = claude (the configured caller).
 func TestIntegration_ColdStart_CaptureInbox(t *testing.T) {
 	s := setupServer(t)
 
@@ -122,25 +122,23 @@ func TestIntegration_ColdStart_CaptureInbox(t *testing.T) {
 		t.Fatal("captureInbox returned zero todo ID")
 	}
 
-	if got := activityActorFor(t, "todo", out.Todo.ID); got != "planner" {
-		t.Errorf("activity_events.actor = %q, want %q (koopa.actor propagation)", got, "planner")
+	if got := activityActorFor(t, "todo", out.Todo.ID); got != "claude" {
+		t.Errorf("activity_events.actor = %q, want %q (koopa.actor propagation)", got, "claude")
 	}
 }
 
-// --- 6. Actor fallback — 'system' must resolve ---
+// --- 6. Actor fallback — 'human' when koopa.actor is unset ---
 
-// TestIntegration_ActorFallbackToSystem guards the safety net. withActorTx
-// is supposed to set koopa.actor on every covered write, but if a bug or an
-// ops-level SQL statement bypasses it, the audit trigger's fallback string
-// is the literal 'system'. The builtin registry registers that agent
-// specifically so the FK resolves — if anyone removes it, this test fails
-// and tells them why.
+// TestIntegration_ActorFallbackToHuman pins the no-synthetic-agent fallback.
+// withActorTx sets koopa.actor on every covered write; if an ops-level SQL
+// statement bypasses it, current_actor() attributes to 'human' (the owner)
+// rather than a synthetic 'system' agent — there is no 'system' in the roster.
 //
-// The test writes a todo directly via the pool WITHOUT set_config. The
-// audit trigger fires, reads an empty koopa.actor, falls back to 'system',
-// and must succeed the activity_events FK.
-func TestIntegration_ActorFallbackToSystem(t *testing.T) {
-	setupServer(t) // reconciles registry so 'system' exists in agents
+// The test writes a todo directly via the pool WITHOUT set_config. The audit
+// trigger fires, reads an empty koopa.actor, falls back to 'human', and must
+// succeed the activity_events FK.
+func TestIntegration_ActorFallbackToHuman(t *testing.T) {
+	setupServer(t)
 
 	var todoID uuid.UUID
 	err := testPool.QueryRow(t.Context(),
@@ -150,11 +148,11 @@ func TestIntegration_ActorFallbackToSystem(t *testing.T) {
 		"raw insert — no actor set", "human",
 	).Scan(&todoID)
 	if err != nil {
-		t.Fatalf("raw todos insert: %v (if 'system' isn't seeded this FK fails)", err)
+		t.Fatalf("raw todos insert: %v", err)
 	}
 
-	if got := activityActorFor(t, "todo", todoID); got != "system" {
-		t.Errorf("activity_events.actor = %q, want %q (fallback path)", got, "system")
+	if got := activityActorFor(t, "todo", todoID); got != "human" {
+		t.Errorf("activity_events.actor = %q, want %q (owner fallback)", got, "human")
 	}
 }
 
@@ -698,7 +696,7 @@ func countPlanItems(t *testing.T, todoID uuid.UUID) int {
 // a single withActorTx, the rejection rolls back the DeletePlannedByDate that
 // opened the idempotent-replace window — leaving zero daily_plan_items written.
 //
-// plan_day is author-gated to planner, so the call goes through callHandlerAs("planner").
+// plan_day is author-gated to claude, so the call goes through callHandlerAs("claude").
 func TestIntegration_PlanDay_PositionOutOfRangeRejected(t *testing.T) {
 	s := setupServer(t)
 	todoID := seedTodoState(t, "bounded-plan-item", "todo")
@@ -713,7 +711,7 @@ func TestIntegration_PlanDay_PositionOutOfRangeRejected(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			_, _, err := callHandlerAs(t, "planner", s.planDay, PlanDayInput{
+			_, _, err := callHandlerAs(t, "claude", s.planDay, PlanDayInput{
 				Items: []PlanDayItem{
 					{TodoID: todoID.String(), Position: tc.position},
 				},
@@ -732,7 +730,7 @@ func TestIntegration_PlanDay_PositionOutOfRangeRejected(t *testing.T) {
 
 	// Control: an in-range position for the same todo succeeds, proving the
 	// rejection above is the bounds gate and not a setup error.
-	_, out, err := callHandlerAs(t, "planner", s.planDay, PlanDayInput{
+	_, out, err := callHandlerAs(t, "claude", s.planDay, PlanDayInput{
 		Items: []PlanDayItem{
 			{TodoID: todoID.String(), Position: 1},
 		},
@@ -758,7 +756,7 @@ func TestIntegration_PlanDay_StateGate(t *testing.T) {
 	for _, state := range []string{"todo", "in_progress"} {
 		t.Run("accept_"+state, func(t *testing.T) {
 			id := seedTodoState(t, "plan-accept-"+state, state)
-			_, out, err := callHandlerAs(t, "planner", s.planDay, PlanDayInput{
+			_, out, err := callHandlerAs(t, "claude", s.planDay, PlanDayInput{
 				Items: []PlanDayItem{{TodoID: id.String(), Position: 1}},
 			})
 			if err != nil {
@@ -773,7 +771,7 @@ func TestIntegration_PlanDay_StateGate(t *testing.T) {
 	for _, state := range []string{"inbox", "done", "someday"} {
 		t.Run("reject_"+state, func(t *testing.T) {
 			id := seedTodoState(t, "plan-reject-"+state, state)
-			_, _, err := callHandlerAs(t, "planner", s.planDay, PlanDayInput{
+			_, _, err := callHandlerAs(t, "claude", s.planDay, PlanDayInput{
 				Items: []PlanDayItem{{TodoID: id.String(), Position: 1}},
 			})
 			if err == nil {
@@ -798,14 +796,14 @@ func deleteProposedAreas(t *testing.T) {
 	}
 }
 
-// TestIntegration_ProposeArea_AsPlanner drives propose_area and asserts the
+// TestIntegration_ProposeArea_AsAgent drives propose_area and asserts the
 // inert-draft contract on the persisted row: status=proposed, created_by=the
 // proposing agent, and a slug derived from the name.
-func TestIntegration_ProposeArea_AsPlanner(t *testing.T) {
+func TestIntegration_ProposeArea_AsAgent(t *testing.T) {
 	s := setupServer(t)
 	t.Cleanup(func() { deleteProposedAreas(t) })
 
-	_, out, err := callHandlerAs(t, "planner", s.proposeArea, ProposeAreaInput{
+	_, out, err := callHandlerAs(t, "claude", s.proposeArea, ProposeAreaInput{
 		Name:        "Backend Studio",
 		Description: "Sustained backend craft.",
 		Rationale:   "Recurring backend themes in recent sessions.",
@@ -829,8 +827,8 @@ func TestIntegration_ProposeArea_AsPlanner(t *testing.T) {
 	if status != "proposed" {
 		t.Errorf("persisted status = %q, want %q (agent proposals land inert)", status, "proposed")
 	}
-	if createdBy != "planner" {
-		t.Errorf("persisted created_by = %q, want %q", createdBy, "planner")
+	if createdBy != "claude" {
+		t.Errorf("persisted created_by = %q, want %q", createdBy, "claude")
 	}
 }
 
@@ -841,22 +839,22 @@ func TestIntegration_ProposeArea_BlankNameRejected(t *testing.T) {
 	s := setupServer(t)
 
 	for _, name := range []string{"", "   ", "!!!"} {
-		if _, _, err := callHandlerAs(t, "planner", s.proposeArea, ProposeAreaInput{Name: name}); err == nil {
+		if _, _, err := callHandlerAs(t, "claude", s.proposeArea, ProposeAreaInput{Name: name}); err == nil {
 			t.Errorf("proposeArea(name=%q) err = nil, want rejection", name)
 		}
 	}
 }
 
-// TestIntegration_ProposeGoal_AsPlanner drives propose_goal with milestones
+// TestIntegration_ProposeGoal_AsAgent drives propose_goal with milestones
 // under an existing ACTIVE area and asserts: goal status=proposed,
-// created_by=planner, area_id resolved, and milestones persisted in order.
-func TestIntegration_ProposeGoal_AsPlanner(t *testing.T) {
+// created_by=claude, area_id resolved, and milestones persisted in order.
+func TestIntegration_ProposeGoal_AsAgent(t *testing.T) {
 	s := setupServer(t)
 
 	// Create an active area to file under (areas are no longer seeded).
 	areaID := ensureArea(t, "japanese")
 
-	_, out, err := callHandlerAs(t, "planner", s.proposeGoal, ProposeGoalInput{
+	_, out, err := callHandlerAs(t, "claude", s.proposeGoal, ProposeGoalInput{
 		Area:       "japanese",
 		Title:      "Reach conversational Japanese",
 		Milestones: []string{"Finish Genki I", "Finish Genki II"},
@@ -878,8 +876,8 @@ func TestIntegration_ProposeGoal_AsPlanner(t *testing.T) {
 	if status != "proposed" {
 		t.Errorf("persisted status = %q, want %q", status, "proposed")
 	}
-	if createdBy != "planner" {
-		t.Errorf("persisted created_by = %q, want %q", createdBy, "planner")
+	if createdBy != "claude" {
+		t.Errorf("persisted created_by = %q, want %q", createdBy, "claude")
 	}
 	if gotArea == nil || *gotArea != areaID {
 		t.Errorf("persisted area_id = %v, want %s (resolved from 'learning')", gotArea, areaID)
@@ -911,13 +909,13 @@ func TestIntegration_ProposeGoal_UnderProposedArea(t *testing.T) {
 	s := setupServer(t)
 	t.Cleanup(func() { deleteProposedAreas(t) })
 
-	if _, _, err := callHandlerAs(t, "planner", s.proposeArea, ProposeAreaInput{
+	if _, _, err := callHandlerAs(t, "claude", s.proposeArea, ProposeAreaInput{
 		Name: "New Theme Studio",
 	}); err != nil {
 		t.Fatalf("proposeArea: %v", err)
 	}
 
-	_, out, err := callHandlerAs(t, "planner", s.proposeGoal, ProposeGoalInput{
+	_, out, err := callHandlerAs(t, "claude", s.proposeGoal, ProposeGoalInput{
 		Area:  "new-theme-studio",
 		Title: "First goal of the new theme",
 	})
@@ -947,7 +945,7 @@ func TestIntegration_ProposeGoal_UnderProposedArea(t *testing.T) {
 func TestIntegration_ProposeGoal_Inert(t *testing.T) {
 	s := setupServer(t)
 
-	if _, _, err := callHandlerAs(t, "planner", s.proposeGoal, ProposeGoalInput{
+	if _, _, err := callHandlerAs(t, "claude", s.proposeGoal, ProposeGoalInput{
 		Title: "Inert proposed goal",
 	}); err != nil {
 		t.Fatalf("proposeGoal: %v", err)
@@ -979,7 +977,7 @@ func TestIntegration_ProposeGoal_Inert(t *testing.T) {
 func TestIntegration_ProposeGoal_UnknownAreaRejected(t *testing.T) {
 	s := setupServer(t)
 
-	if _, _, err := callHandlerAs(t, "planner", s.proposeGoal, ProposeGoalInput{
+	if _, _, err := callHandlerAs(t, "claude", s.proposeGoal, ProposeGoalInput{
 		Area:  "no-such-area",
 		Title: "Goal under a missing area",
 	}); err == nil {
@@ -1002,10 +1000,10 @@ func TestIntegration_ProposeGoal_UnknownAreaRejected(t *testing.T) {
 func TestIntegration_ProposeGoal_BlankTitleRejected(t *testing.T) {
 	s := setupServer(t)
 
-	if _, _, err := callHandlerAs(t, "planner", s.proposeGoal, ProposeGoalInput{Title: "  "}); err == nil {
+	if _, _, err := callHandlerAs(t, "claude", s.proposeGoal, ProposeGoalInput{Title: "  "}); err == nil {
 		t.Error("proposeGoal(blank title) err = nil, want rejection")
 	}
-	if _, _, err := callHandlerAs(t, "planner", s.proposeGoal, ProposeGoalInput{
+	if _, _, err := callHandlerAs(t, "claude", s.proposeGoal, ProposeGoalInput{
 		Title:      "Has a title",
 		Milestones: []string{"ok", "  "},
 	}); err == nil {
@@ -1023,14 +1021,14 @@ func TestIntegration_ProposeGoal_RationalePersistsTriageOnly(t *testing.T) {
 
 	const rationale = "Recurring Japanese study sessions signal a real objective worth committing to."
 
-	_, withRat, err := callHandlerAs(t, "planner", s.proposeGoal, ProposeGoalInput{
+	_, withRat, err := callHandlerAs(t, "claude", s.proposeGoal, ProposeGoalInput{
 		Title:     "Reach conversational Japanese",
 		Rationale: rationale,
 	})
 	if err != nil {
 		t.Fatalf("proposeGoal(with rationale): %v", err)
 	}
-	_, noRat, err := callHandlerAs(t, "planner", s.proposeGoal, ProposeGoalInput{
+	_, noRat, err := callHandlerAs(t, "claude", s.proposeGoal, ProposeGoalInput{
 		Title: "Goal with no rationale",
 	})
 	if err != nil {
@@ -1110,7 +1108,7 @@ func TestIntegration_ProposeArea_RationalePersistsTriageOnly(t *testing.T) {
 
 	const rationale = "Backend craft keeps surfacing as a standing responsibility, not a one-off."
 
-	_, out, err := callHandlerAs(t, "planner", s.proposeArea, ProposeAreaInput{
+	_, out, err := callHandlerAs(t, "claude", s.proposeArea, ProposeAreaInput{
 		Name:      "Backend Studio",
 		Rationale: rationale,
 	})
@@ -1163,14 +1161,14 @@ func TestIntegration_ProposeArea_RationalePersistsTriageOnly(t *testing.T) {
 	}
 }
 
-// TestIntegration_ProposeProject_AsPlanner drives propose_project and asserts
+// TestIntegration_ProposeProject_AsAgent drives propose_project and asserts
 // the inert-draft contract: the persisted row is status=proposed with
 // created_by=the proposing agent and a slug derived from the name, and the
 // proposed project is absent from the admin project list.
-func TestIntegration_ProposeProject_AsPlanner(t *testing.T) {
+func TestIntegration_ProposeProject_AsAgent(t *testing.T) {
 	s := setupServer(t)
 
-	_, out, err := callHandlerAs(t, "planner", s.proposeProject, ProposeProjectInput{
+	_, out, err := callHandlerAs(t, "claude", s.proposeProject, ProposeProjectInput{
 		Name:        "Koopa CLI",
 		Description: "A command-line companion for the knowledge engine.",
 		Rationale:   "Recurring requests for a terminal entry point.",
@@ -1197,8 +1195,8 @@ func TestIntegration_ProposeProject_AsPlanner(t *testing.T) {
 	if status != "proposed" {
 		t.Errorf("persisted status = %q, want %q (agent proposals land inert)", status, "proposed")
 	}
-	if createdBy != "planner" {
-		t.Errorf("persisted created_by = %q, want %q", createdBy, "planner")
+	if createdBy != "claude" {
+		t.Errorf("persisted created_by = %q, want %q", createdBy, "claude")
 	}
 
 	// Inert: absent from the admin project list.
@@ -1219,7 +1217,7 @@ func TestIntegration_ProposeProject_BlankNameRejected(t *testing.T) {
 	s := setupServer(t)
 
 	for _, name := range []string{"", "   ", "!!!"} {
-		if _, _, err := callHandlerAs(t, "planner", s.proposeProject, ProposeProjectInput{Name: name}); err == nil {
+		if _, _, err := callHandlerAs(t, "claude", s.proposeProject, ProposeProjectInput{Name: name}); err == nil {
 			t.Errorf("proposeProject(name=%q) err = nil, want rejection", name)
 		}
 	}
@@ -1232,12 +1230,12 @@ func TestIntegration_ProposeProject_BlankNameRejected(t *testing.T) {
 func TestIntegration_ProposeProject_CaptureThenActivate(t *testing.T) {
 	s := setupServer(t)
 
-	_, proposed, err := callHandlerAs(t, "planner", s.proposeProject, ProposeProjectInput{Name: "Ordering Project"})
+	_, proposed, err := callHandlerAs(t, "claude", s.proposeProject, ProposeProjectInput{Name: "Ordering Project"})
 	if err != nil {
 		t.Fatalf("proposeProject: %v", err)
 	}
 
-	_, captured, err := callHandlerAs(t, "planner", s.captureInbox, CaptureInboxInput{
+	_, captured, err := callHandlerAs(t, "claude", s.captureInbox, CaptureInboxInput{
 		Title:   "todo for the proposed project",
 		Project: "ordering-project",
 	})
@@ -1263,11 +1261,11 @@ func TestIntegration_ProposeProject_CaptureThenActivate(t *testing.T) {
 func TestIntegration_ProposeProject_CaptureThenReject(t *testing.T) {
 	s := setupServer(t)
 
-	_, proposed, err := callHandlerAs(t, "planner", s.proposeProject, ProposeProjectInput{Name: "Doomed Project"})
+	_, proposed, err := callHandlerAs(t, "claude", s.proposeProject, ProposeProjectInput{Name: "Doomed Project"})
 	if err != nil {
 		t.Fatalf("proposeProject: %v", err)
 	}
-	_, captured, err := callHandlerAs(t, "planner", s.captureInbox, CaptureInboxInput{
+	_, captured, err := callHandlerAs(t, "claude", s.captureInbox, CaptureInboxInput{
 		Title:   "todo for the doomed project",
 		Project: "doomed-project",
 	})
@@ -1343,33 +1341,33 @@ func TestIntegration_ListTodos_ReturnsCallerTodos(t *testing.T) {
 
 	older := time.Now().Add(-2 * time.Hour)
 	newer := time.Now().Add(-1 * time.Hour)
-	oldID := seedTodoForCreator(t, "planner", "older proposal", "inbox", older)
-	newID := seedTodoForCreator(t, "planner", "newer proposal", "done", newer)
+	oldID := seedTodoForCreator(t, "claude", "older proposal", "inbox", older)
+	newID := seedTodoForCreator(t, "claude", "newer proposal", "done", newer)
 
-	_, out, err := callHandlerAs(t, "planner", s.listTodos, ListTodosInput{})
+	_, out, err := callHandlerAs(t, "claude", s.listTodos, ListTodosInput{})
 	if err != nil {
 		t.Fatalf("listTodos: %v", err)
 	}
 
 	want := []TodoListItem{
-		{ID: newID.String(), Title: "newer proposal", State: "done", CreatedBy: "planner"},
-		{ID: oldID.String(), Title: "older proposal", State: "inbox", CreatedBy: "planner"},
+		{ID: newID.String(), Title: "newer proposal", State: "done", CreatedBy: "claude"},
+		{ID: oldID.String(), Title: "older proposal", State: "inbox", CreatedBy: "claude"},
 	}
 	if diff := cmp.Diff(want, out.Todos); diff != "" {
-		t.Errorf("listTodos(planner) mismatch (-want +got):\n%s", diff)
+		t.Errorf("listTodos(claude) mismatch (-want +got):\n%s", diff)
 	}
 }
 
 // TestIntegration_ListTodos_CallerScoped pins the privacy invariant: the list
-// is scoped to the resolved caller, so caller A (planner) never sees caller B's
+// is scoped to the resolved caller, so caller A (claude) never sees caller B's
 // (codex) todos.
 func TestIntegration_ListTodos_CallerScoped(t *testing.T) {
 	s := setupServer(t)
 
-	mineID := seedTodoForCreator(t, "planner", "planner todo", "inbox", time.Now())
+	mineID := seedTodoForCreator(t, "claude", "claude todo", "inbox", time.Now())
 	theirsID := seedTodoForCreator(t, "codex", "codex todo", "inbox", time.Now())
 
-	_, out, err := callHandlerAs(t, "planner", s.listTodos, ListTodosInput{})
+	_, out, err := callHandlerAs(t, "claude", s.listTodos, ListTodosInput{})
 	if err != nil {
 		t.Fatalf("listTodos: %v", err)
 	}
@@ -1382,15 +1380,15 @@ func TestIntegration_ListTodos_CallerScoped(t *testing.T) {
 		case theirsID.String():
 			sawTheirs = true
 		}
-		if ti.CreatedBy != "planner" {
-			t.Errorf("listTodos(planner) returned created_by=%q, want planner-scoped only", ti.CreatedBy)
+		if ti.CreatedBy != "claude" {
+			t.Errorf("listTodos(claude) returned created_by=%q, want claude-scoped only", ti.CreatedBy)
 		}
 	}
 	if !sawMine {
-		t.Errorf("listTodos(planner) missing the caller's own todo %s", mineID)
+		t.Errorf("listTodos(claude) missing the caller's own todo %s", mineID)
 	}
 	if sawTheirs {
-		t.Errorf("listTodos(planner) leaked another agent's todo %s (caller-scoping violated)", theirsID)
+		t.Errorf("listTodos(claude) leaked another agent's todo %s (caller-scoping violated)", theirsID)
 	}
 }
 
@@ -1400,9 +1398,9 @@ func TestIntegration_ListTodos_CallerScoped(t *testing.T) {
 func TestIntegration_ResolveTodo_ClosesOwnTodo(t *testing.T) {
 	s := setupServer(t)
 
-	id := seedTodoForCreator(t, "planner", "captured idea", "inbox", time.Now())
+	id := seedTodoForCreator(t, "claude", "captured idea", "inbox", time.Now())
 
-	_, out, err := callHandlerAs(t, "planner", s.resolveTodo, ResolveTodoInput{ID: id.String(), State: "dismissed"})
+	_, out, err := callHandlerAs(t, "claude", s.resolveTodo, ResolveTodoInput{ID: id.String(), State: "dismissed"})
 	if err != nil {
 		t.Fatalf("resolveTodo: %v", err)
 	}
@@ -1424,9 +1422,9 @@ func TestIntegration_ResolveTodo_ClosesOwnTodo(t *testing.T) {
 // done/archived/dismissed terminal set without mutating.
 func TestIntegration_ResolveTodo_InvalidState(t *testing.T) {
 	s := setupServer(t)
-	id := seedTodoForCreator(t, "planner", "captured idea", "inbox", time.Now())
+	id := seedTodoForCreator(t, "claude", "captured idea", "inbox", time.Now())
 
-	if _, _, err := callHandlerAs(t, "planner", s.resolveTodo, ResolveTodoInput{ID: id.String(), State: "todo"}); err == nil {
+	if _, _, err := callHandlerAs(t, "claude", s.resolveTodo, ResolveTodoInput{ID: id.String(), State: "todo"}); err == nil {
 		t.Error("resolveTodo(state=todo) err = nil, want invalid-state rejection")
 	}
 }
@@ -1438,8 +1436,8 @@ func TestIntegration_ResolveTodo_CallerScoped(t *testing.T) {
 	s := setupServer(t)
 	theirs := seedTodoForCreator(t, "codex", "codex todo", "inbox", time.Now())
 
-	if _, _, err := callHandlerAs(t, "planner", s.resolveTodo, ResolveTodoInput{ID: theirs.String(), State: "dismissed"}); err == nil {
-		t.Error("resolveTodo(planner) on codex's todo err = nil, want not-found (caller-scoping)")
+	if _, _, err := callHandlerAs(t, "claude", s.resolveTodo, ResolveTodoInput{ID: theirs.String(), State: "dismissed"}); err == nil {
+		t.Error("resolveTodo(claude) on codex's todo err = nil, want not-found (caller-scoping)")
 	}
 
 	var state string
@@ -1521,13 +1519,28 @@ func TestIntegration_BriefReflection_CountsFromTodoState(t *testing.T) {
 // optionally linked to a goal and an area, and returns its id.
 func seedProgressProject(t *testing.T, slug, title, cadence string, goalID, areaID *uuid.UUID) uuid.UUID {
 	t.Helper()
+	ctx := t.Context()
+	tx, err := testPool.Begin(ctx)
+	if err != nil {
+		t.Fatalf("seedProgressProject begin: %v", err)
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck // no-op after commit
+	// Attribute creation to a non-human agent: the trigger's 'human' fallback
+	// would otherwise make the creation event count as human activity, and the
+	// momentum tests assert on human-only activity.
+	if _, err := tx.Exec(ctx, "SELECT set_config('koopa.actor', 'codex', true)"); err != nil {
+		t.Fatalf("seedProgressProject set actor: %v", err)
+	}
 	var id uuid.UUID
-	if err := testPool.QueryRow(t.Context(),
+	if err := tx.QueryRow(ctx,
 		`INSERT INTO projects (slug, title, status, expected_cadence, goal_id, area_id)
 		 VALUES ($1, $2, 'in_progress', $3, $4, $5) RETURNING id`,
 		slug, title, cadence, goalID, areaID,
 	).Scan(&id); err != nil {
 		t.Fatalf("seedProgressProject(%q, cadence=%s): %v", slug, cadence, err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		t.Fatalf("seedProgressProject commit: %v", err)
 	}
 	return id
 }
@@ -1566,11 +1579,24 @@ func seedProgressMilestone(t *testing.T, goalID uuid.UUID, title string, positio
 // seedProgressTodo inserts a todo linked to a project in the given state.
 func seedProgressTodo(t *testing.T, projectID uuid.UUID, title, state string) {
 	t.Helper()
-	if _, err := testPool.Exec(t.Context(),
+	ctx := t.Context()
+	tx, err := testPool.Begin(ctx)
+	if err != nil {
+		t.Fatalf("seedProgressTodo begin: %v", err)
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck // no-op after commit
+	// Non-human actor: keep the todo's creation event out of human-activity.
+	if _, err := tx.Exec(ctx, "SELECT set_config('koopa.actor', 'codex', true)"); err != nil {
+		t.Fatalf("seedProgressTodo set actor: %v", err)
+	}
+	if _, err := tx.Exec(ctx,
 		`INSERT INTO todos (title, state, project_id) VALUES ($1, $2::todo_state, $3)`,
 		title, state, projectID,
 	); err != nil {
 		t.Fatalf("seedProgressTodo(project=%s, %q, %s): %v", projectID, title, state, err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		t.Fatalf("seedProgressTodo commit: %v", err)
 	}
 }
 
@@ -1607,7 +1633,7 @@ func seedActivityEvent(t *testing.T, projectID uuid.UUID, actor string, occurred
 
 // TestIntegration_ProjectProgress_HumanOnlyAndStalled pins the two core
 // rules at once. A project whose ONLY recent activity is by a non-human
-// actor (planner) must read as stalled — the agent event does not count —
+// actor (claude) must read as stalled — the agent event does not count —
 // while a sibling with a recent HUMAN event on the same cadence must not.
 // A bug that counted any-actor activity (e.g. trusting projects.last_activity_at
 // or dropping the actor='human' filter) would flip the stalled verdict on
@@ -1620,11 +1646,11 @@ func TestIntegration_ProjectProgress_HumanOnlyAndStalled(t *testing.T) {
 	seedProgressMilestone(t, goalID, "Search layer", 1, false) // open
 
 	// Agent-only project: human touched it 30 days ago (well past the
-	// daily 2-day threshold); a planner event yesterday must NOT rescue it.
+	// daily 2-day threshold); a claude event yesterday must NOT rescue it.
 	agentOnly := seedProgressProject(t, "agent-only", "Agent Only", "daily", &goalID, nil)
 	seedProgressTodo(t, agentOnly, "wire search", "todo") // open next action
 	seedActivityEvent(t, agentOnly, "human", time.Now().AddDate(0, 0, -30))
-	seedActivityEvent(t, agentOnly, "planner", time.Now().AddDate(0, 0, -1))
+	seedActivityEvent(t, agentOnly, "claude", time.Now().AddDate(0, 0, -1))
 
 	// Fresh-human project: human event yesterday, daily cadence → not stalled.
 	fresh := seedProgressProject(t, "fresh-human", "Fresh Human", "daily", &goalID, nil)
@@ -1636,7 +1662,7 @@ func TestIntegration_ProjectProgress_HumanOnlyAndStalled(t *testing.T) {
 	toPlan := seedProgressProject(t, "to-plan", "To Plan", "daily", nil, nil)
 	seedActivityEvent(t, toPlan, "human", time.Now().AddDate(0, 0, -30))
 
-	_, out, err := callHandlerAs(t, "planner", s.projectProgress, ProjectProgressInput{})
+	_, out, err := callHandlerAs(t, "claude", s.projectProgress, ProjectProgressInput{})
 	if err != nil {
 		t.Fatalf("projectProgress: %v", err)
 	}
@@ -1650,10 +1676,10 @@ func TestIntegration_ProjectProgress_HumanOnlyAndStalled(t *testing.T) {
 	}
 
 	if p := got["agent-only"]; !p.Stalled {
-		t.Errorf("agent-only stalled = false, want true (planner event must not count as human progress); days_since=%v", p.DaysSinceHumanAction)
+		t.Errorf("agent-only stalled = false, want true (claude event must not count as human progress); days_since=%v", p.DaysSinceHumanAction)
 	}
 	if p := got["agent-only"]; p.DaysSinceHumanAction == nil || *p.DaysSinceHumanAction < 29 {
-		t.Errorf("agent-only days_since_human_activity = %v, want ~30 (human event, not the day-old planner one)", p.DaysSinceHumanAction)
+		t.Errorf("agent-only days_since_human_activity = %v, want ~30 (human event, not the day-old claude one)", p.DaysSinceHumanAction)
 	}
 	if p := got["fresh-human"]; p.Stalled {
 		t.Errorf("fresh-human stalled = true, want false (human active yesterday on daily cadence)")
@@ -1701,13 +1727,13 @@ func TestIntegration_ProjectProgress_AreaNeglect(t *testing.T) {
 	cproj := seedProgressProject(t, "career-proj", "Career Proj", "weekly", nil, &careerID)
 	seedActivityEvent(t, cproj, "human", time.Now())
 
-	// studio: human active 20 days ago, plus a planner event today inside
+	// studio: human active 20 days ago, plus a claude event today inside
 	// the window — must stay neglected (agent doesn't reset the clock).
 	sproj := seedProgressProject(t, "studio-proj", "Studio Proj", "weekly", nil, &studioID)
 	seedActivityEvent(t, sproj, "human", time.Now().AddDate(0, 0, -20))
-	seedActivityEvent(t, sproj, "planner", time.Now())
+	seedActivityEvent(t, sproj, "claude", time.Now())
 
-	_, out, err := callHandlerAs(t, "planner", s.projectProgress, ProjectProgressInput{})
+	_, out, err := callHandlerAs(t, "claude", s.projectProgress, ProjectProgressInput{})
 	if err != nil {
 		t.Fatalf("projectProgress: %v", err)
 	}
@@ -1720,7 +1746,7 @@ func TestIntegration_ProjectProgress_AreaNeglect(t *testing.T) {
 		t.Errorf("career area_neglected = %v (present=%v), want false (human active today)", a.AreaNeglected, ok)
 	}
 	if a, ok := got["studio"]; !ok || !a.AreaNeglected {
-		t.Errorf("studio area_neglected = %v (present=%v), want true (human silent 20 days; planner event must not count)", a.AreaNeglected, ok)
+		t.Errorf("studio area_neglected = %v (present=%v), want true (human silent 20 days; claude event must not count)", a.AreaNeglected, ok)
 	}
 }
 
@@ -1740,12 +1766,12 @@ func TestIntegration_ProjectProgress_CandidateFilter(t *testing.T) {
 	// proposed → excluded even with a cadence.
 	if _, err := testPool.Exec(t.Context(),
 		`INSERT INTO projects (slug, title, status, expected_cadence, created_by)
-		 VALUES ('proposed-proj', 'Proposed', 'proposed', 'weekly', 'planner')`,
+		 VALUES ('proposed-proj', 'Proposed', 'proposed', 'weekly', 'claude')`,
 	); err != nil {
 		t.Fatalf("seed proposed project: %v", err)
 	}
 
-	_, out, err := callHandlerAs(t, "planner", s.projectProgress, ProjectProgressInput{})
+	_, out, err := callHandlerAs(t, "claude", s.projectProgress, ProjectProgressInput{})
 	if err != nil {
 		t.Fatalf("projectProgress: %v", err)
 	}
@@ -1825,9 +1851,9 @@ func TestIntegration_ProposeContent_AsHermes(t *testing.T) {
 // are rejected before the DB CHECK.
 func TestIntegration_SetTodoRecurrence(t *testing.T) {
 	s := setupServer(t)
-	id := seedTodoForCreator(t, "planner", "Daily Japanese", "todo", time.Now())
+	id := seedTodoForCreator(t, "claude", "Daily Japanese", "todo", time.Now())
 
-	_, out, err := callHandlerAs(t, "planner", s.setTodoRecurrence, SetTodoRecurrenceInput{
+	_, out, err := callHandlerAs(t, "claude", s.setTodoRecurrence, SetTodoRecurrenceInput{
 		TodoID:   id.String(),
 		Weekdays: []string{"mon", "tue", "wed", "thu", "fri", "sat"},
 	})
@@ -1845,16 +1871,16 @@ func TestIntegration_SetTodoRecurrence(t *testing.T) {
 		t.Errorf("recur_weekdays = %v, want 63 (Mon-Sat)", mask)
 	}
 
-	// caller-scope: codex cannot reschedule planner's todo.
+	// caller-scope: codex cannot reschedule claude's todo.
 	if _, _, err := callHandlerAs(t, "codex", s.setTodoRecurrence, SetTodoRecurrenceInput{
 		TodoID: id.String(), Clear: true,
 	}); err == nil {
-		t.Error("setTodoRecurrence(codex on planner's todo) err = nil, want not-found (caller-scoping)")
+		t.Error("setTodoRecurrence(codex on claude's todo) err = nil, want not-found (caller-scoping)")
 	}
 
 	// validation: weekday + interval together is rejected before any write.
 	three, unit := 3, "days"
-	if _, _, err := callHandlerAs(t, "planner", s.setTodoRecurrence, SetTodoRecurrenceInput{
+	if _, _, err := callHandlerAs(t, "claude", s.setTodoRecurrence, SetTodoRecurrenceInput{
 		TodoID: id.String(), Weekdays: []string{"mon"}, Interval: &three, Unit: &unit,
 	}); err == nil {
 		t.Error("setTodoRecurrence(weekdays+interval) err = nil, want mutual-exclusion rejection")
@@ -1872,7 +1898,7 @@ func TestIntegration_ResolveTodo_RecurringCompletesOccurrence(t *testing.T) {
 		var id uuid.UUID
 		if err := testPool.QueryRow(t.Context(),
 			`INSERT INTO todos (title, state, recur_weekdays, created_by)
-			 VALUES ($1, 'todo', 127, 'planner') RETURNING id`, title,
+			 VALUES ($1, 'todo', 127, 'claude') RETURNING id`, title,
 		).Scan(&id); err != nil {
 			t.Fatalf("seeding recurring todo %q: %v", title, err)
 		}
@@ -1881,7 +1907,7 @@ func TestIntegration_ResolveTodo_RecurringCompletesOccurrence(t *testing.T) {
 
 	// done on a recurring todo → occurrence completed, todo stays recurring.
 	rec := seedRecurring("Daily standup")
-	_, out, err := callHandlerAs(t, "planner", s.resolveTodo, ResolveTodoInput{ID: rec.String(), State: "done"})
+	_, out, err := callHandlerAs(t, "claude", s.resolveTodo, ResolveTodoInput{ID: rec.String(), State: "done"})
 	if err != nil {
 		t.Fatalf("resolveTodo(done) on recurring: %v", err)
 	}
@@ -1907,7 +1933,7 @@ func TestIntegration_ResolveTodo_RecurringCompletesOccurrence(t *testing.T) {
 
 	// archived on a recurring todo → terminal close (recurrence stops).
 	rec2 := seedRecurring("Old habit")
-	if _, _, err := callHandlerAs(t, "planner", s.resolveTodo, ResolveTodoInput{ID: rec2.String(), State: "archived"}); err != nil {
+	if _, _, err := callHandlerAs(t, "claude", s.resolveTodo, ResolveTodoInput{ID: rec2.String(), State: "archived"}); err != nil {
 		t.Fatalf("resolveTodo(archived) on recurring: %v", err)
 	}
 	var state2 string

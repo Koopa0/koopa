@@ -25,13 +25,13 @@
 
 **koopa** 是一個預設私有的個人作業系統，讓多個 AI agent 共享同一套語意運行時 — AI 讀取的是你的狀態，不是你的 prompt。
 
-今天驅動它的有三個 actor，還有它為之設計的第四個。**你**下每一個判斷 — 每一個 goal、project、milestone、發佈的文章，都是你在 admin UI 裡 commit 的。**Claude Code** 在這個 repo 跑開發 session：搜尋語料庫、記錄它做了什麼、把完成的草稿推進你的審核佇列 — 讀的是任何 agent 都看得到的同一份狀態，不必重講。**hermes** 按排程整理你的 Obsidian vault。第四個是 **planner**:一個日常驅動者，讀昨天未完成的 plan、這週的目標進度、安靜下來的 project、還有夜裡的 RSS 重點，遞給你一份晨間 briefing — 這條流程已經接好、跑在外部 scheduler 上，是還在變成日常習慣的那一塊。沒有任何高風險的事在你背後發生：agent 浮現結構;你下判斷。
+今天驅動它的有三個 actor。**你**下每一個判斷 — 每一個 goal、project、milestone、發佈的文章，都是你在 admin UI 裡 commit 的。**Claude Code** 在這個 repo 跑開發 session：搜尋語料庫、記錄它做了什麼、把完成的草稿推進你的審核佇列 — 讀的是任何 agent 都看得到的同一份狀態，不必重講。**hermes** 按排程整理你的 Obsidian vault。沒有任何高風險的事在你背後發生：agent 浮現結構;你下判斷。
 
 ## 為什麼存在
 
-大多數 AI 整合是無狀態的：每次對話從零開始、每個 agent 都是新鮮的失憶者，你把時間花在重複解釋脈絡。你加的 agent 越多 — 編輯器裡的 Claude Code、scheduler 上的 Cowork agent、背景跑的 summarizer — 問題就越嚴重，因為每個 agent 產出的東西，別人從來看不到。
+大多數 AI 整合是無狀態的：每次對話從零開始、每個 agent 都是新鮮的失憶者，你把時間花在重複解釋脈絡。你加的 agent 越多 — 編輯器裡的 Claude Code、scheduler 上的排程 agent、背景跑的 summarizer — 問題就越嚴重，因為每個 agent 產出的東西，別人從來看不到。
 
-koopa 改成把工作本身建模。Area、goal、project、milestone、todo、daily plan、content — 全都是一等公民實體，有精確的 schema 和各自的 lifecycle，存在同一份儲存裡，每個 agent 都透過 MCP 讀取，並透過有界的工作流步驟寫入。一個 agent 讀你的狀態時 — Claude Code 開一個 session，或 planner 組裝 briefing — 它透過 MCP 拉昨天的 daily plan 與目標進度，不是因為你總結了，而是因為狀態就在那裡。一個 agent 提新 goal 時，草稿帶著排好的 milestone，惰性地落進你的 triage 佇列。理解是查詢出來的，不是重建出來的；agent 之間沒有漂移，也沒有「我好像記得你提過⋯」。
+koopa 改成把工作本身建模。Area、goal、project、milestone、todo、daily plan、content — 全都是一等公民實體，有精確的 schema 和各自的 lifecycle，存在同一份儲存裡，每個 agent 都透過 MCP 讀取，並透過有界的工作流步驟寫入。一個 agent 讀你的狀態時 — Claude Code 開一個 session，或任何 agent 組裝 briefing — 它透過 MCP 拉昨天的 daily plan 與目標進度，不是因為你總結了，而是因為狀態就在那裡。一個 agent 提新 goal 時，草稿帶著排好的 milestone，惰性地落進你的 triage 佇列。理解是查詢出來的，不是重建出來的；agent 之間沒有漂移，也沒有「我好像記得你提過⋯」。
 
 ## 運作方式
 
@@ -46,14 +46,13 @@ actor 的軸線是**流程 vs. 決策**，不是人類 vs. agent：
 | 身分 | 執行環境 | 角色 |
 |---|---|---|
 | `human` | — | Koopa：唯一的決策者、唯一的 router |
-| `koopa0-dev` / `go-spec` | Claude Code | 這個 repo 的開發 session — 搜尋、build-log、content 草稿 |
-| `hermes` | Claude Code（排程） | 按指派的 cron job 整理個人 Obsidian vault |
-| `planner` | Claude Cowork | 系統為之設計的日常驅動者 — 晨間 briefing、候選日計畫、inbox capture、PARA 提案 |
+| `claude` | Claude Code | 這個 repo 的開發 session — 搜尋、build-log、content 草稿、agent surface |
+| `hermes` | Hermes | 按指派的 cron job 整理個人 Obsidian vault |
 | `codex` | Codex CLI | 開發協作者 — repo 工作與 cross-review session |
 
-今天實際在驅動的是你、Claude Code 和 hermes。`planner` 是系統設計所圍繞的日常驅動者；它的節奏（一份晨間 briefing，釘在 registry 裡）**在 backend 宣告，但由外部 runner 執行**，不是這個 repo 自己跑的 — backend 持有的是 registry metadata、schema，以及記錄每次外部執行的 `process_runs` audit 表。
+今天實際在驅動的是你、Claude 和 hermes。排程工作 — hermes 的 vault 整理 — **由外部 runner 執行，不是這個 repo 自己跑的**：backend 持有的是 agent registry、schema，以及記錄每次外部執行的 `process_runs` audit 表；它沒有內建 scheduler。
 
-寫入帶的是 **actor**,不是 tool 層的授權閘。每一次 MCP call 都透過 `as` 欄位自我表明身分;server(`internal/mcp/server.go::callerIdentity`)把它當 attribution 記下來 — 設定 `created_by`、`activity_events` 的 actor,以及該 agent 自己 row 的 caller-scope — 但沒有任何工具拿它來檢查權限。存取控制是 MCP transport 本身:HTTP `/mcp` 端點走 admin-email OAuth + bearer token,stdio 則是 OS 行程邊界。偽造的 `as` 會在下游被 `created_by` 對 agent roster 的外鍵擋下,所以未知 caller 的寫入被歸給 `unknown`,絕不會算成你。
+寫入帶的是 **actor**,不是 tool 層的授權閘。每一次 MCP call 都透過 `as` 欄位自我表明身分;server(`internal/mcp/server.go::callerIdentity`)把它當 attribution 記下來 — 設定 `created_by`、`activity_events` 的 actor,以及該 agent 自己 row 的 caller-scope — 但沒有任何工具拿它來檢查權限。存取控制是 MCP transport 本身:HTTP `/mcp` 端點走 admin-email OAuth + bearer token,stdio 則是 OS 行程邊界。沒有匿名 fallback:沒帶 `as` 的寫入會被拒絕,偽造的 `as` 會被 `created_by` 對 agent roster 的外鍵擋下 — 所以每一筆記錄下的寫入都帶一個真實、註冊過的 agent。
 
 兩個結構性 invariant 成立：
 

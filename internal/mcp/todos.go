@@ -20,9 +20,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/Koopa0/koopa/internal/todo"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -111,41 +113,62 @@ func (s *Server) resolveTodo(ctx context.Context, _ *mcp.CallToolRequest, in Res
 
 	caller := s.callerIdentity(ctx)
 
-	// A recurring todo's "done" completes today's occurrence and keeps the todo
-	// recurring — not a terminal close. archived/dismissed fall through and DO
-	// end the recurrence.
-	if state == todo.StateDone {
-		if handled, out, err := s.resolveRecurringDone(ctx, id, caller); handled || err != nil {
-			return nil, out, err
-		}
-	}
+	// The resolve runs inside withActorTx so the 'completed'/'state_changed'
+	// audit event is attributed to the caller (not the trigger's fallback).
+	var out ResolveTodoOutput
+	err = s.withActorTx(ctx, func(tx pgx.Tx) error {
+		store := s.todos.WithTx(tx)
 
-	res, err := s.todos.ResolveByCreator(ctx, id, caller, state)
+		// A recurring todo's "done" completes today's occurrence and keeps it
+		// recurring — not a terminal close; archived/dismissed fall through.
+		if state == todo.StateDone {
+			done, o, err := completeRecurringOccurrence(ctx, store, id, caller, s.today())
+			if err != nil {
+				return err
+			}
+			if done {
+				out = o
+				return nil
+			}
+		}
+
+		res, err := store.ResolveByCreator(ctx, id, caller, state)
+		if err != nil {
+			if errors.Is(err, todo.ErrNotFound) {
+				return errNoSuchTodo(id, caller)
+			}
+			return fmt.Errorf("resolving todo %s to %s: %w", id, state, err)
+		}
+		out = ResolveTodoOutput{ID: res.ID.String(), State: string(res.State), OK: true}
+		return nil
+	})
 	if err != nil {
-		if errors.Is(err, todo.ErrNotFound) {
-			return nil, ResolveTodoOutput{}, fmt.Errorf("no todo %s created by %q: it does not exist or you did not create it", id, caller)
-		}
-		return nil, ResolveTodoOutput{}, fmt.Errorf("resolving todo %s to %s: %w", id, state, err)
+		return nil, ResolveTodoOutput{}, err
 	}
-
-	return nil, ResolveTodoOutput{ID: res.ID.String(), State: string(res.State), OK: true}, nil
+	return nil, out, nil
 }
 
-// resolveRecurringDone completes today's occurrence of a recurring, caller-owned
-// todo. handled=false means the todo is not recurring (or does not exist), and
-// the caller should fall through to the normal terminal resolve. ItemByID is the
-// recurrence probe; CompleteOccurrence enforces the caller-scope, so a recurring
-// todo owned by another agent reports not-found.
-func (s *Server) resolveRecurringDone(ctx context.Context, id uuid.UUID, caller string) (bool, ResolveTodoOutput, error) {
-	item, err := s.todos.ItemByID(ctx, id)
+// completeRecurringOccurrence completes today's occurrence of a recurring,
+// caller-owned todo. done=false means the todo is not recurring (or not found),
+// so the caller should fall through to a terminal resolve. CompleteOccurrence
+// enforces caller-scope, so a recurring todo owned by another agent is not-found.
+func completeRecurringOccurrence(ctx context.Context, store *todo.Store, id uuid.UUID, caller string, today time.Time) (bool, ResolveTodoOutput, error) {
+	item, err := store.ItemByID(ctx, id)
 	if err != nil || !item.IsRecurring() {
 		return false, ResolveTodoOutput{}, nil
 	}
-	if err := s.todos.CompleteOccurrence(ctx, id, caller, s.today()); err != nil {
+	if err := store.CompleteOccurrence(ctx, id, caller, today); err != nil {
 		if errors.Is(err, todo.ErrNotFound) {
-			return true, ResolveTodoOutput{}, fmt.Errorf("no todo %s created by %q: it does not exist or you did not create it", id, caller)
+			return true, ResolveTodoOutput{}, errNoSuchTodo(id, caller)
 		}
 		return true, ResolveTodoOutput{}, fmt.Errorf("completing recurring occurrence %s: %w", id, err)
 	}
 	return true, ResolveTodoOutput{ID: id.String(), State: string(todo.StateDone), OK: true}, nil
+}
+
+// errNoSuchTodo is the caller-scoped not-found message shared by resolve_todo's
+// terminal and recurring paths — a todo the caller did not create reads identical
+// to one that does not exist.
+func errNoSuchTodo(id uuid.UUID, caller string) error {
+	return fmt.Errorf("no todo %s created by %q: it does not exist or you did not create it", id, caller)
 }

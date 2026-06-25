@@ -51,8 +51,7 @@ func setup(t *testing.T) *Store {
 	// integration tests don't boot the MCP server so the seed is done directly.
 	if _, err := testPool.Exec(t.Context(),
 		`INSERT INTO agents (name, display_name, platform)
-		 VALUES ('system', 'System', 'system'),
-		        ('human', 'Human', 'human')
+		 VALUES ('human', 'Human', 'human')
 		 ON CONFLICT (name) DO NOTHING`); err != nil {
 		t.Fatalf("seeding agents: %v", err)
 	}

@@ -10,7 +10,7 @@
 //
 // HUMAN-ACTIVITY-ONLY is the load-bearing semantic: only activity_events
 // rows with actor = 'human' count as owner progress. Agent/system actors
-// (planner, hermes, codex, claude, system, …) are excluded in SQL, so a
+// (hermes, codex, claude, system, …) are excluded in SQL, so a
 // project worked only by a cron agent reads as having no human activity —
 // which is the point.
 

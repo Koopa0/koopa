@@ -123,7 +123,7 @@ func createPlanItemTx(ctx context.Context, txTodos *todo.Store, txDayplan *daily
 // stays in the plan, so the raw "removed" list contains rows for
 // todos the caller is keeping. Reporting those as displaced confuses
 // "Koopa override" call sites that read items_removed to confirm a
-// todo got pushed out — see Koopa-Planner.md §plan_day.
+// todo got pushed out.
 //
 // The new-plan input is the source of truth for "what's still in the
 // plan" because, by the time we return, the new rows have just been
@@ -147,9 +147,9 @@ func displacedFrom(removed []daily.RemovedItem, kept []PlanDayItem) []daily.Remo
 	return out
 }
 
-// planDay assembles a day's daily_plan_items. Only the planner (the morning
-// briefing role) and the human owner author daily plans; other agents do
-// not participate in daily_plan_items.
+// planDay assembles a day's daily_plan_items. Daily plans are authored by the
+// human owner and by an agent acting as the daily driver; other agents do not
+// participate in daily_plan_items.
 //
 // All writes (delete-existing + insert-new) run inside a single
 // transaction. Without that wrapper a mid-loop validation failure
