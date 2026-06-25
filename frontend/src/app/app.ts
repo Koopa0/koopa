@@ -55,9 +55,14 @@ export class AppComponent {
     () => this.currentUrl().split('?')[0],
   );
 
-  /** Preview routes render the bare reading column for the admin iframe. */
-  protected readonly isChromeless = computed(() =>
-    this.currentPath().startsWith('/preview'),
+  /**
+   * Routes that render bare — no editorial masthead or footer: the admin
+   * preview iframe column, and the standalone full-screen login.
+   */
+  protected readonly isChromeless = computed(
+    () =>
+      this.currentPath().startsWith('/preview') ||
+      this.currentPath() === '/login',
   );
 
   /** The admin area carries its own shell (sidebar + topbar). */
