@@ -1,55 +1,9 @@
 <header class="ed-mast">
-  <div class="ed-mast-row">
-    <a routerLink="/" class="ed-mast-brand" aria-label="koopa0.dev home">
-      <img src="/logo.png" alt="" class="ed-mast-mark" aria-hidden="true" />
-      <span class="ed-mast-stack">
-        <span class="ed-wordmark">koopa0<span class="tld">.dev</span></span>
-        <span class="ed-letterhead">written &amp; maintained by one person</span>
-      </span>
-    </a>
-
-    <nav class="ed-nav" aria-label="Main navigation">
-      <a
-        routerLink="/"
-        [attr.data-active]="homeActive()"
-        [attr.aria-current]="homeActive() ? 'page' : null"
-        >Home</a
-      >
-      <a
-        routerLink="/articles"
-        [attr.data-active]="articlesActive()"
-        [attr.aria-current]="articlesActive() ? 'page' : null"
-        >Articles</a
-      >
-      <a
-        routerLink="/about"
-        [attr.data-active]="aboutActive()"
-        [attr.aria-current]="aboutActive() ? 'page' : null"
-        >About</a
-      >
-    </nav>
-
-    <span class="ed-mast-sp"></span>
-
-    <button
-      type="button"
-      class="ed-search"
-      (click)="commandPalette.open()"
-      aria-label="Search (⌘K)"
-      data-testid="ed-search"
-    >
-      <span>Search</span>
-      <span class="ed-kbd">⌘K</span>
-    </button>
-
+  <div class="ed-mast-utils">
     <app-theme-toggle />
 
     @if (isAuthenticated()) {
-      <a
-        routerLink="/admin"
-        class="ed-iconbtn"
-        aria-label="Admin dashboard"
-      >
+      <a routerLink="/admin" class="ed-iconbtn" aria-label="Admin dashboard">
         <lucide-icon [img]="DashboardIcon" [size]="16" [strokeWidth]="1.6" />
       </a>
       <button
@@ -62,4 +16,33 @@
       </button>
     }
   </div>
+
+  <a routerLink="/" class="ed-mast-brand" aria-label="koopa0.dev home">
+    <img src="/logo.png" alt="" class="ed-mast-mark" aria-hidden="true" />
+    <span class="ed-mast-stack">
+      <span class="ed-wordmark">koopa0<span class="tld">.dev</span></span>
+      <span class="ed-letterhead">written &amp; maintained by one person</span>
+    </span>
+  </a>
+
+  <nav class="ed-nav" aria-label="Main navigation">
+    <a
+      routerLink="/"
+      [attr.data-active]="homeActive()"
+      [attr.aria-current]="homeActive() ? 'page' : null"
+      >Home</a
+    >
+    <a
+      routerLink="/articles"
+      [attr.data-active]="articlesActive()"
+      [attr.aria-current]="articlesActive() ? 'page' : null"
+      >Articles</a
+    >
+    <a
+      routerLink="/about"
+      [attr.data-active]="aboutActive()"
+      [attr.aria-current]="aboutActive() ? 'page' : null"
+      >About</a
+    >
+  </nav>
 </header>

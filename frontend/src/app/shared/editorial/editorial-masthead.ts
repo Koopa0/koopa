@@ -13,7 +13,6 @@ import { toSignal } from '@angular/core/rxjs-interop';
 import { filter, map } from 'rxjs';
 import { LucideAngularModule, LayoutDashboard, LogOut } from 'lucide-angular';
 import { AuthService } from '../../core/services/auth.service';
-import { CommandPaletteService } from '../command-palette/command-palette.service';
 import { ThemeToggleComponent } from '../theme-toggle/theme-toggle';
 
 /**
@@ -32,7 +31,6 @@ import { ThemeToggleComponent } from '../theme-toggle/theme-toggle';
 export class EditorialMastheadComponent {
   private readonly router = inject(Router);
   private readonly authService = inject(AuthService);
-  protected readonly commandPalette = inject(CommandPaletteService);
 
   protected readonly isAuthenticated = this.authService.isAuthenticated;
 

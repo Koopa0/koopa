@@ -14,7 +14,7 @@ import { ThemeService } from '../../core/services/theme.service';
     <button
       type="button"
       (click)="themeService.toggleTheme()"
-      class="flex size-8 items-center justify-center rounded-xs text-fg-subtle transition-colors hover:bg-overlay hover:text-fg"
+      class="flex size-9 items-center justify-center rounded-full border border-border-faint text-fg-subtle transition-colors hover:border-border hover:bg-overlay hover:text-fg"
       [attr.aria-label]="
         themeService.isDarkMode()
           ? 'Switch to light theme'

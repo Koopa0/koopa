@@ -12,7 +12,7 @@
 
 .ed {
   /* per-frame tunables — Tone B values folded into the base */
-  --ed-measure: 600px;     /* reading column width */
+  --ed-measure: 680px;     /* reading column width */
   --ed-rail: 156px;        /* mono metadata margin rail */
   --ed-gut: 44px;          /* gutter rail↔column */
   --ed-pad: 64px;          /* page side padding */
@@ -108,21 +108,20 @@
 
 /* ---------- masthead ---------- */
 .ed-mast {
-  position: sticky;
-  top: 0;
-  z-index: 30;
-  background: color-mix(in oklch, var(--bg) 86%, transparent);
-  backdrop-filter: blur(12px);
-  border-bottom: 1px solid var(--ed-rule);
-  padding: 0 var(--ed-pad);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 22px;
+  position: relative;
+  padding: 46px var(--ed-pad) 34px;
 }
-.ed-mast-row {
+.ed-mast-utils {
+  position: absolute;
+  top: 18px;
+  right: var(--ed-pad);
   display: flex;
   align-items: center;
-  gap: 18px;
-  height: 70px;
-  max-width: var(--ed-shell, 980px);
-  margin: 0 auto;
+  gap: 6px;
 }
 .ed-wordmark {
   font-family: var(--font-serif);
@@ -144,8 +143,8 @@
   gap: 10px;
 }
 .ed-mast-mark {
-  width: 30px;
-  height: 30px;
+  width: 34px;
+  height: 34px;
   flex-shrink: 0;
 }
 .ed-mast-stack {
@@ -161,17 +160,16 @@
 }
 .ed-nav {
   display: flex;
-  gap: 2px;
-  margin-left: 12px;
-  padding: 3px;
+  gap: 3px;
+  padding: 4px;
   border-radius: 9999px;
   background: color-mix(in oklch, var(--panel) 70%, transparent);
   border: 1px solid var(--border-faint);
 }
 .ed-nav a {
-  padding: 5px 13px;
+  padding: 8px 18px;
   border-radius: 9999px;
-  font-size: 13px;
+  font-size: 14px;
   color: var(--fg-subtle);
   transition:
     color var(--dur-base, 150ms),
@@ -184,26 +182,6 @@
 .ed-nav a[data-active="true"] {
   color: var(--fg);
   background: var(--elevated);
-}
-.ed-mast-sp {
-  flex: 1;
-}
-.ed-search {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 9px 6px 11px;
-  border: 1px solid var(--border);
-  border-radius: var(--r-sm);
-  background: transparent;
-  color: var(--fg-subtle);
-  font-size: 12px;
-  font-family: var(--font-sans);
-  cursor: pointer;
-}
-.ed-search:hover {
-  border-color: var(--border-strong);
-  color: var(--fg-muted);
 }
 .ed-iconbtn {
   width: 32px;
@@ -1034,12 +1012,10 @@
   .ed {
     --ed-pad: 20px;
   }
-  .ed-mast-row {
-    height: 60px;
-    gap: 12px;
-  }
-  .ed-nav {
-    margin-left: 0;
+  .ed-mast {
+    padding-top: 30px;
+    padding-bottom: 24px;
+    gap: 18px;
   }
   .ed-article-title {
     font-size: 30px;
