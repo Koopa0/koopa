@@ -131,7 +131,7 @@
       <!-- Editorial result rows -->
       <ul>
         @for (result of results(); track result.id) {
-          <li class="border-border-faint [&:not(:first-child)]:border-t">
+          <li>
             <app-post-row [content]="result" />
           </li>
         }

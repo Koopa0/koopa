@@ -4,10 +4,11 @@ import { RouterLink } from '@angular/router';
 import type { ApiContent } from '../../core/models';
 
 /**
- * One editorial list row — the shared reading-index row used by the
- * articles index, topic pages, and search results. Meta line (type dot ·
- * type · date · reading time), display title, serif excerpt. Every
- * content type links to the single reading surface at /articles/:slug.
+ * One editorial article card — the shared reading-index item used by the
+ * front door, the articles index, and search results. A soft surface lifts
+ * on hover; meta line (type dot · type · date · reading time), display
+ * title, serif excerpt. Every content type links to the single reading
+ * surface at /articles/:slug.
  */
 @Component({
   selector: 'app-post-row',
@@ -16,7 +17,7 @@ import type { ApiContent } from '../../core/models';
   template: `
     <a
       [routerLink]="'/articles/' + content().slug"
-      class="group block py-[22px] no-underline"
+      class="group -mx-4 block rounded-xl px-4 py-5 no-underline transition-colors duration-(--dur-base) hover:bg-panel"
       data-testid="index-row"
     >
       <div class="mb-[7px] flex items-center gap-[9px] font-mono text-[11px]">

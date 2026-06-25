@@ -88,9 +88,7 @@
     } @else if (filteredContents().length > 0) {
       <ul>
         @for (content of filteredContents(); track content.id) {
-          <li
-            class="border-border-faint [&:not(:first-child)]:border-t"
-          >
+          <li>
             <app-post-row [content]="content" />
           </li>
         }
