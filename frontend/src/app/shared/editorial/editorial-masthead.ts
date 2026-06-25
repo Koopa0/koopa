@@ -11,12 +11,7 @@ import {
 } from '@angular/router';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { filter, map } from 'rxjs';
-import {
-  LucideAngularModule,
-  Github,
-  LayoutDashboard,
-  LogOut,
-} from 'lucide-angular';
+import { LucideAngularModule, LayoutDashboard, LogOut } from 'lucide-angular';
 import { AuthService } from '../../core/services/auth.service';
 import { CommandPaletteService } from '../command-palette/command-palette.service';
 import { ThemeToggleComponent } from '../theme-toggle/theme-toggle';
@@ -41,7 +36,6 @@ export class EditorialMastheadComponent {
 
   protected readonly isAuthenticated = this.authService.isAuthenticated;
 
-  protected readonly GithubIcon = Github;
   protected readonly DashboardIcon = LayoutDashboard;
   protected readonly LogOutIcon = LogOut;
 

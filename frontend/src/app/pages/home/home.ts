@@ -7,13 +7,7 @@ import {
 } from '@angular/core';
 import { rxResource } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
-import {
-  LucideAngularModule,
-  ArrowRight,
-  Github,
-  Linkedin,
-  Mail,
-} from 'lucide-angular';
+import { LucideAngularModule, ArrowRight } from 'lucide-angular';
 import { environment } from '../../../environments/environment';
 import { ContentService } from '../../core/services/content.service';
 import { SeoService } from '../../core/services/seo/seo.service';
@@ -42,9 +36,6 @@ export class HomeComponent implements OnInit {
   private readonly seoService = inject(SeoService);
 
   protected readonly ArrowRightIcon = ArrowRight;
-  protected readonly GithubIcon = Github;
-  protected readonly LinkedinIcon = Linkedin;
-  protected readonly MailIcon = Mail;
 
   protected readonly contentsResource = rxResource<
     ApiListResponse<ApiContent>,
