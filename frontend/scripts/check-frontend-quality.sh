@@ -141,13 +141,16 @@ fi
 # src/app/app.routes.ts. "admin" is allowed here so authenticated shortcuts
 # (e.g. app.html "Admin dashboard" link, palette admin entries) don't false-fire;
 # the existing Gates 1+2 check above already keeps pages/ free of /admin links.
-# "essays", "til", "build-logs" and "home" survive as redirect routes into the
-# consolidated /articles index; "preview" is the chrome-less reading column the
-# admin publish-preview iframes; "feed.xml" is served by server.ts (RSS).
+# "essays" and "home" survive as redirect routes into the consolidated
+# /articles index; "preview" is the chrome-less reading column the admin
+# publish-preview iframes; "feed.xml" is served by server.ts (RSS).
 # "resume" is deliberately NOT allowlisted: the /resume route survives only as
 # an inbound redirect to /about for old external links — internal links and
 # navigation must target /about directly.
-PUBLIC_ROOT_ALLOWLIST="articles essays projects topics til search build-logs preview about uses home privacy terms login error admin feed.xml"
+# "til" and "build-logs" are likewise NOT allowlisted: their standalone routes
+# are permanently retired (they 404). Every content type is folded into the
+# /articles index, narrowed by the optional ?type= query param.
+PUBLIC_ROOT_ALLOWLIST="articles essays projects topics search preview about uses home privacy terms login error admin feed.xml"
 
 # Emit `file:line:/path` records by stripping the surrounding ref form from each
 # match. Each grep -oE captures the smallest substring containing the path
