@@ -102,14 +102,12 @@ func NewServer(pool *pgxpool.Pool, logger *slog.Logger, opts ...ServerOption) *S
 		stats:       stats.NewStore(pool),
 		pool:        pool,
 		logger:      logger,
-		// Attribution fallback. cmd/mcp/main.go normally overrides this via
-		// WithCallerAgent(KOOPA_MCP_CALLER_AGENT). A NewServer without the
-		// option lands on "unknown" — by design, so a call that omits `as` is
-		// attributed to "unknown" (Platform=system in agent.BuiltinAgents(),
-		// which the FK on created_by/actor resolves) and is NOT counted as
-		// human activity by project_progress / review_period. Do NOT default
-		// this to "human": that would stamp anonymous writes as the owner's
-		// own activity and inflate the owner's momentum/retrospective.
+		// Attribution default: empty. cmd/mcp/main.go normally overrides this
+		// via WithCallerAgent(KOOPA_MCP_CALLER_AGENT). A NewServer without the
+		// option keeps it empty, so a call that omits `as` has no caller
+		// identity and is refused at withActorTx — there is no "unknown"
+		// agent. Every recorded write therefore carries a real, registered
+		// actor.
 		callerAgent: "",
 		loc:         time.UTC,
 	}

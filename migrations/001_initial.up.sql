@@ -167,9 +167,9 @@ COMMENT ON COLUMN areas.status IS
     'The owner activates (→ active) or rejects (DELETE) it in admin triage. Admin/seeded areas '
     'are ''active''. Default active so existing and admin inserts need not set it.';
 COMMENT ON COLUMN areas.created_by IS
-    'Provenance. NULL = system/seed origin — areas are seeded in 002 before any agents row '
-    'exists at startup, so this is NULLABLE with NO default (a NOT NULL or DEFAULT-''human'' FK '
-    'would fail the seed with a foreign_key_violation). An agent name marks an area that agent proposed.';
+    'Provenance. Areas are not seeded — the owner grows them on demand in admin. NULL = '
+    'non-agent origin (owner-created, or system); an agent name marks an area that agent '
+    'proposed. NULLABLE with NO default so a non-agent-origin insert need not name an agent.';
 COMMENT ON COLUMN areas.proposal_rationale IS
     'Agent''s why-propose-this-now justification, captured on a proposed row and shown to the owner '
     'in admin triage to support activate/reject. NULL for admin/seeded rows and acceptable to keep '

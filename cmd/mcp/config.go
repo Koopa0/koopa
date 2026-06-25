@@ -4,15 +4,13 @@
 //
 // This file is the only place in the MCP binary permitted to call
 // os.Getenv (see .claude/rules/go-philosophy.md). It also owns the
-// default CallerAgent selection: unless overridden by the env var,
-// every incoming tool call without an explicit `as` field is
-// attributed to "unknown" — an attribution-only fallback registered in
-// agent.BuiltinAgents(). This is NOT a privilege level: there is no
-// tool-layer authorization (Option B), so an "unknown" caller can still
-// invoke every tool. What the default changes is attribution — the
-// earlier default of "human" forged owner authorship (created_by =
-// human, writes counted as Koopa's own activity) for any caller that
-// forgot to set `as`; "unknown" stops that misattribution.
+// default CallerAgent selection: it defaults to empty. There is no
+// "unknown" fallback — a tool call without an explicit `as` field, and
+// without a KOOPA_MCP_CALLER_AGENT override, has no caller identity and
+// is refused at withActorTx, so no write is ever attributed to a
+// fabricated or anonymous actor. Declaring `as` is mandatory for every
+// write; it is attribution only, not a privilege level (Option B: no
+// tool-layer authorization).
 package main
 
 import (
