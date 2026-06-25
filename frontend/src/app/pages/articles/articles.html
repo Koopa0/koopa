@@ -71,65 +71,74 @@
       }
     </div>
 
-    <!-- Editorial list -->
-    @if (isLoading()) {
-      <div class="flex flex-col gap-4 pt-6">
-        @for (placeholder of [1, 2, 3, 4, 5]; track placeholder) {
-          <app-skeleton variant="card" />
-        }
-      </div>
-    } @else if (filteredContents().length > 0) {
-      <ul>
-        @for (content of filteredContents(); track content.id; let i = $index) {
-          <li
-            class="ed-reveal"
-            [style.animation-delay]="(i < 8 ? i : 8) * 50 + 'ms'"
-          >
-            <app-post-row [content]="content" />
-          </li>
-        }
-      </ul>
-
-      @if (totalPages() > 1) {
-        <nav
-          aria-label="Pagination"
-          class="mt-12 flex items-center justify-center gap-4 font-mono text-xs text-fg-subtle"
-        >
-          <button
-            type="button"
-            class="rounded-xs border border-border px-3 py-1.5 transition-colors hover:border-border-strong hover:text-fg disabled:opacity-30"
-            [disabled]="page() === 1"
-            (click)="previousPage()"
-          >
-            Newer
-          </button>
-          <span class="text-fg-faint">{{ page() }} / {{ totalPages() }}</span>
-          <button
-            type="button"
-            class="rounded-xs border border-border px-3 py-1.5 transition-colors hover:border-border-strong hover:text-fg disabled:opacity-30"
-            [disabled]="page() === totalPages()"
-            (click)="nextPage()"
-          >
-            Older
-          </button>
-        </nav>
-      }
-    } @else {
-      <!-- Empty state — also the graceful fallback when the index fails to load. -->
-      <div
-        class="flex flex-col items-center gap-4 py-20 text-center"
-        data-testid="articles-empty"
-      >
-        <lucide-icon [img]="FileTextIcon" [size]="40" class="text-fg-faint" />
-        <h2 class="text-lg font-medium text-fg-muted">Nothing here yet</h2>
-        <p class="text-sm text-fg-faint">
-          @if (topicFilter() !== 'all' || typeFilter()) {
-            Try a different topic, or clear the filters.
-          } @else {
-            Check back soon.
+    <!-- Editorial list — deferred so the server-rendered cards stay painted
+         through hydration (no skeleton flash on first load). -->
+    @defer (hydrate on idle) {
+      @if (isLoading()) {
+        <div class="flex flex-col gap-4 pt-6">
+          @for (placeholder of [1, 2, 3, 4, 5]; track placeholder) {
+            <app-skeleton variant="card" />
           }
-        </p>
-      </div>
+        </div>
+      } @else if (filteredContents().length > 0) {
+        <ul>
+          @for (
+            content of filteredContents();
+            track content.id;
+            let i = $index
+          ) {
+            <li
+              class="ed-reveal"
+              [style.animation-delay]="(i < 8 ? i : 8) * 50 + 'ms'"
+            >
+              <app-post-row [content]="content" />
+            </li>
+          }
+        </ul>
+
+        @if (totalPages() > 1) {
+          <nav
+            aria-label="Pagination"
+            class="mt-12 flex items-center justify-center gap-4 font-mono text-xs text-fg-subtle"
+          >
+            <button
+              type="button"
+              class="rounded-xs border border-border px-3 py-1.5 transition-colors hover:border-border-strong hover:text-fg disabled:opacity-30"
+              [disabled]="page() === 1"
+              (click)="previousPage()"
+            >
+              Newer
+            </button>
+            <span class="text-fg-faint">{{ page() }} / {{ totalPages() }}</span>
+            <button
+              type="button"
+              class="rounded-xs border border-border px-3 py-1.5 transition-colors hover:border-border-strong hover:text-fg disabled:opacity-30"
+              [disabled]="page() === totalPages()"
+              (click)="nextPage()"
+            >
+              Older
+            </button>
+          </nav>
+        }
+      } @else {
+        <!-- Empty state — also the graceful fallback when the index fails to load. -->
+        <div
+          class="flex flex-col items-center gap-4 py-20 text-center"
+          data-testid="articles-empty"
+        >
+          <lucide-icon [img]="FileTextIcon" [size]="40" class="text-fg-faint" />
+          <h2 class="text-lg font-medium text-fg-muted">Nothing here yet</h2>
+          <p class="text-sm text-fg-faint">
+            @if (topicFilter() !== 'all' || typeFilter()) {
+              Try a different topic, or clear the filters.
+            } @else {
+              Check back soon.
+            }
+          </p>
+        </div>
+      }
+    } @placeholder {
+      <div class="min-h-[16rem]"></div>
     }
   </div>
 </section>

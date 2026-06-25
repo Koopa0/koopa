@@ -1,4 +1,8 @@
-import { ComponentFixture, TestBed } from '@angular/core/testing';
+import {
+  ComponentFixture,
+  DeferBlockState,
+  TestBed,
+} from '@angular/core/testing';
 import { provideHttpClient, withXhr } from '@angular/common/http';
 import {
   provideHttpClientTesting,
@@ -95,6 +99,14 @@ describe('ArticlesComponent', () => {
     fixture.detectChanges();
   }
 
+  /** Force the deferred list block into its rendered state so the inner
+   *  loading / list / empty branch shows for the current signal values. */
+  async function renderList(): Promise<void> {
+    const blocks = await fixture.getDeferBlocks();
+    await blocks[0].render(DeferBlockState.Complete);
+    fixture.detectChanges();
+  }
+
   function flushTopics(topics: ApiTopic[] = [buildMockTopic()]): void {
     const req = httpTesting.expectOne(
       (r) => r.url.includes('/api/topics') && r.method === 'GET',
@@ -130,6 +142,7 @@ describe('ArticlesComponent', () => {
     ]);
     flushTopics();
     await settle();
+    await renderList();
 
     const el = fixture.nativeElement as HTMLElement;
     const rows = el.querySelectorAll('[data-testid="index-row"]');
@@ -162,6 +175,8 @@ describe('ArticlesComponent', () => {
     ]);
     flushTopics();
     await settle();
+
+    await renderList();
 
     const row = (fixture.nativeElement as HTMLElement).querySelector(
       '[data-testid="index-row"]',
@@ -215,6 +230,7 @@ describe('ArticlesComponent', () => {
 
     component['selectTopic']('go');
     await settle();
+    await renderList();
 
     const el = fixture.nativeElement as HTMLElement;
     const rows = el.querySelectorAll('[data-testid="index-row"]');
@@ -228,6 +244,7 @@ describe('ArticlesComponent', () => {
     flushContents([]);
     flushTopics();
     await settle();
+    await renderList();
 
     const el = fixture.nativeElement as HTMLElement;
     expect(el.textContent).toContain('Nothing here yet');
@@ -245,6 +262,8 @@ describe('ArticlesComponent', () => {
     });
     flushTopics();
     await settle();
+
+    await renderList();
 
     const el = fixture.nativeElement as HTMLElement;
     // A failed index degrades to the empty state — no scary error UI.
