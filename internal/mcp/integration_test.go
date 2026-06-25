@@ -689,6 +689,19 @@ func countPlanItems(t *testing.T, todoID uuid.UUID) int {
 	return n
 }
 
+// planItemPosition reads the stored plan position for a todo's single
+// daily_plan_items row.
+func planItemPosition(t *testing.T, todoID uuid.UUID) int32 {
+	t.Helper()
+	var pos int32
+	if err := testPool.QueryRow(t.Context(),
+		`SELECT position FROM daily_plan_items WHERE todo_id = $1`, todoID,
+	).Scan(&pos); err != nil {
+		t.Fatalf("reading plan item position: %v", err)
+	}
+	return pos
+}
+
 // TestIntegration_PlanDay_PositionOutOfRangeRejected guards the position bound:
 // createPlanItemTx bounds the caller-supplied position to [0, maxPlanPosition]
 // (100000) so the int32 cast cannot overflow. A position above the ceiling or
@@ -713,7 +726,7 @@ func TestIntegration_PlanDay_PositionOutOfRangeRejected(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			_, _, err := callHandlerAs(t, "claude", s.planDay, PlanDayInput{
 				Items: []PlanDayItem{
-					{TodoID: todoID.String(), Position: tc.position},
+					{TodoID: todoID.String(), Position: new(tc.position)},
 				},
 			})
 			if err == nil {
@@ -732,7 +745,7 @@ func TestIntegration_PlanDay_PositionOutOfRangeRejected(t *testing.T) {
 	// rejection above is the bounds gate and not a setup error.
 	_, out, err := callHandlerAs(t, "claude", s.planDay, PlanDayInput{
 		Items: []PlanDayItem{
-			{TodoID: todoID.String(), Position: 1},
+			{TodoID: todoID.String(), Position: new(1)},
 		},
 	})
 	if err != nil {
@@ -743,6 +756,40 @@ func TestIntegration_PlanDay_PositionOutOfRangeRejected(t *testing.T) {
 	}
 	if got := countPlanItems(t, todoID); got != 1 {
 		t.Errorf("daily_plan_items for todo = %d, want 1 after in-range plan", got)
+	}
+}
+
+// TestIntegration_PlanDay_ExplicitZeroPositionHonored pins the *int position
+// semantics: an item that explicitly asks for position 0 keeps it, even when
+// it is not the first item. The bug it catches: a bare int field could not
+// tell "omitted" from "explicit 0", so the second item's explicit 0 was
+// overwritten with its loop index (1).
+func TestIntegration_PlanDay_ExplicitZeroPositionHonored(t *testing.T) {
+	s := setupServer(t)
+	todoA := seedTodoState(t, "plan-pos-first", "todo")
+	todoB := seedTodoState(t, "plan-pos-second", "todo")
+
+	_, out, err := callHandlerAs(t, "claude", s.planDay, PlanDayInput{
+		Items: []PlanDayItem{
+			// First item takes an explicit non-zero slot, so the second
+			// item's honored 0 cannot collide with it.
+			{TodoID: todoA.String(), Position: new(2)},
+			// Second item explicitly asks for 0 → must be honored. The bug
+			// would overwrite it with the loop index (1).
+			{TodoID: todoB.String(), Position: new(0)},
+		},
+	})
+	if err != nil {
+		t.Fatalf("plan_day: %v", err)
+	}
+	if out.ItemsCreated != 2 {
+		t.Fatalf("items_created = %d, want 2", out.ItemsCreated)
+	}
+	if got := planItemPosition(t, todoB); got != 0 {
+		t.Errorf("explicit position for the second item = %d, want 0 (honored, not the loop index)", got)
+	}
+	if got := planItemPosition(t, todoA); got != 2 {
+		t.Errorf("explicit position for the first item = %d, want 2 (honored)", got)
 	}
 }
 
@@ -757,7 +804,7 @@ func TestIntegration_PlanDay_StateGate(t *testing.T) {
 		t.Run("accept_"+state, func(t *testing.T) {
 			id := seedTodoState(t, "plan-accept-"+state, state)
 			_, out, err := callHandlerAs(t, "claude", s.planDay, PlanDayInput{
-				Items: []PlanDayItem{{TodoID: id.String(), Position: 1}},
+				Items: []PlanDayItem{{TodoID: id.String(), Position: new(1)}},
 			})
 			if err != nil {
 				t.Fatalf("plan_day rejected state=%s: %v (want accepted)", state, err)
@@ -772,7 +819,7 @@ func TestIntegration_PlanDay_StateGate(t *testing.T) {
 		t.Run("reject_"+state, func(t *testing.T) {
 			id := seedTodoState(t, "plan-reject-"+state, state)
 			_, _, err := callHandlerAs(t, "claude", s.planDay, PlanDayInput{
-				Items: []PlanDayItem{{TodoID: id.String(), Position: 1}},
+				Items: []PlanDayItem{{TodoID: id.String(), Position: new(1)}},
 			})
 			if err == nil {
 				t.Fatalf("plan_day accepted state=%s; want rejection", state)

@@ -32,7 +32,7 @@ type PlanDayInput struct {
 // PlanDayItem is a single item in the plan_day input.
 type PlanDayItem struct {
 	TodoID   string `json:"todo_id" jsonschema:"required" jsonschema_description:"Todo item UUID. The todo must be in state=todo or in_progress; inbox/done/someday/archived are rejected."`
-	Position int    `json:"position,omitempty" jsonschema_description:"Position in plan (0-based, lower = higher priority)"`
+	Position *int   `json:"position,omitempty" jsonschema_description:"Position in plan (0-based, lower = higher priority). Omit to fall back to the item's order in the list."`
 }
 
 // PlanDayOutput is the output of the plan_day tool.
@@ -96,12 +96,15 @@ func createPlanItemTx(ctx context.Context, txTodos *todo.Store, txDayplan *daily
 	if t.State != todo.StateTodo && t.State != todo.StateInProgress {
 		return fmt.Errorf("todo item %s is in state %q — only todo or in_progress items can be planned (inbox must be clarified first; done/someday are not today's work)", item.TodoID, t.State)
 	}
-	if item.Position < 0 || item.Position > maxPlanPosition {
-		return fmt.Errorf("todo item %s position %d out of range [0, %d]", item.TodoID, item.Position, maxPlanPosition)
+	// Default to the caller-loop index; an explicit position (including 0) is
+	// honored. A bare int could not tell "omitted" from "explicit 0", so the
+	// field is *int.
+	pos := i
+	if item.Position != nil {
+		pos = *item.Position
 	}
-	pos := item.Position
-	if pos == 0 {
-		pos = i
+	if pos < 0 || pos > maxPlanPosition {
+		return fmt.Errorf("todo item %s position %d out of range [0, %d]", item.TodoID, pos, maxPlanPosition)
 	}
 	if _, err := txDayplan.Create(ctx, &daily.CreateItemParams{
 		PlanDate:   date,
