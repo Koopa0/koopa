@@ -36,12 +36,12 @@ describe('ContentPreviewOverlayComponent', () => {
     expect(iframe?.getAttribute('src')).toBe('/preview/a%20b');
   });
 
-  it('should display the public URL form for the content type', () => {
+  it('should display the canonical /articles public URL regardless of type', () => {
     create({ slug: 'my-post', type: 'til' });
 
     expect(
       el().querySelector('[data-testid="preview-url"]')?.textContent,
-    ).toContain('koopa0.dev/til/my-post');
+    ).toContain('koopa0.dev/articles/my-post');
   });
 
   it('should label the preview draft when not live and live when published', () => {

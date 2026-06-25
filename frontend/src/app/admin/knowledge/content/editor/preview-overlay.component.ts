@@ -9,6 +9,7 @@ import {
 import { DomSanitizer, type SafeResourceUrl } from '@angular/platform-browser';
 import { A11yModule } from '@angular/cdk/a11y';
 import type { ContentType } from '../../../../core/models/api.model';
+import { contentTypeRoute } from '../../../../core/models/content-type.config';
 
 /**
  * Publish-preview overlay: a scrim-centered frame whose iframe renders
@@ -107,8 +108,13 @@ export class ContentPreviewOverlayComponent {
     ),
   );
 
-  /** Public URL form shown in the bar (display only). */
+  /**
+   * Public URL form shown in the bar (display only). Every content type
+   * resolves to the consolidated /articles detail route — the standalone
+   * per-type routes (/build-logs, /til, …) are retired — so the canonical
+   * URL is sourced from contentTypeRoute rather than the bare type slug.
+   */
   protected readonly displayUrl = computed(
-    () => `koopa0.dev/${this.type()}/${this.slug()}`,
+    () => `koopa0.dev${contentTypeRoute(this.type())}/${this.slug()}`,
   );
 }
