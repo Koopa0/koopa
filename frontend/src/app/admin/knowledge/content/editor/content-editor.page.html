@@ -95,10 +95,11 @@
               class="min-w-0 flex-1 border-0 bg-transparent p-0 font-mono text-[11px] text-brand placeholder:text-fg-faint focus:outline-hidden focus:ring-0"
               placeholder="my-new-slug"
               data-testid="editor-slug-input"
+              (input)="onSlugInput()"
             />
             @if (form.controls.slug.touched && form.controls.slug.invalid) {
               <span class="text-error" data-testid="editor-slug-error">
-                lowercase letters, digits, hyphens
+                no spaces or slashes; no leading, trailing, or doubled hyphens
               </span>
             }
           } @else {

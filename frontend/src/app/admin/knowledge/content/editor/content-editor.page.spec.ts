@@ -182,6 +182,16 @@ describe('ContentEditorPageComponent', () => {
         (r) => r.method === 'POST' && r.url.endsWith(CONTENT_URL),
       );
     });
+
+    it('should auto-derive the slug from the title until it is edited', async () => {
+      setValue('[data-testid="editor-title"]', 'My First Post!');
+      await settle();
+
+      const slug = el().querySelector<HTMLInputElement>(
+        '[data-testid="editor-slug-input"]',
+      );
+      expect(slug?.value).toBe('my-first-post');
+    });
   });
 
   describe('edit mode', () => {

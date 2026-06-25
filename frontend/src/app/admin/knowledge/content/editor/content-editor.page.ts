@@ -81,6 +81,19 @@ const SLUG_PATTERN = /^[^\s/-]+(?:-[^\s/-]+)*$/;
 const WORDS_PER_MINUTE = 220;
 
 /**
+ * Derive a valid slug from a title: lowercased, each run of non-alphanumeric
+ * characters collapsed to a single hyphen, edge hyphens trimmed. Unicode
+ * letters and numbers survive, so a CJK title yields a CJK slug — both pass
+ * chk_content_slug_format.
+ */
+function slugify(title: string): string {
+  return title
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
+/**
  * Content Editor — create + edit route for the content lifecycle.
  *
  * Create mode (`/new`, no :id): empty form, slug editable; saving POSTs
@@ -166,6 +179,10 @@ export class ContentEditorPageComponent {
   private readonly _isActioning = signal(false);
   protected readonly isActioning = this._isActioning.asReadonly();
 
+  /** Set once the operator types in the slug field, so the title→slug
+   * auto-derivation stops overwriting their manual edit. */
+  private readonly slugEdited = signal(false);
+
   /** Publish-preview overlay visibility (edit mode, saved content only). */
   protected readonly showPreview = signal(false);
 
@@ -239,6 +256,15 @@ export class ContentEditorPageComponent {
         Validators.pattern(SLUG_PATTERN),
       ]);
       this.form.controls.slug.updateValueAndValidity();
+
+      // Auto-derive the slug from the title until the operator edits it by
+      // hand, so an empty slug never silently disables "Create draft".
+      this.form.controls.title.valueChanges
+        .pipe(takeUntilDestroyed())
+        .subscribe((title) => {
+          if (this.slugEdited()) return;
+          this.form.controls.slug.setValue(slugify(title));
+        });
     }
 
     this.form.controls.body.valueChanges
@@ -319,6 +345,11 @@ export class ContentEditorPageComponent {
 
   protected cancel(): void {
     this.router.navigate(['/admin/knowledge/content']);
+  }
+
+  /** The operator typed in the slug field — stop deriving it from the title. */
+  protected onSlugInput(): void {
+    this.slugEdited.set(true);
   }
 
   protected save(): void {
