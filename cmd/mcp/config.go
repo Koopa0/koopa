@@ -6,10 +6,13 @@
 // os.Getenv (see .claude/rules/go-philosophy.md). It also owns the
 // default CallerAgent selection: unless overridden by the env var,
 // every incoming tool call without an explicit `as` field is
-// attributed to "unknown" — a zero-privilege agent registered in
-// agent.BuiltinAgents(). The earlier default of "human" silently
-// granted full human authority to any caller that forgot to set `as`,
-// which is the fail-open trap this default closes.
+// attributed to "unknown" — an attribution-only fallback registered in
+// agent.BuiltinAgents(). This is NOT a privilege level: there is no
+// tool-layer authorization (Option B), so an "unknown" caller can still
+// invoke every tool. What the default changes is attribution — the
+// earlier default of "human" forged owner authorship (created_by =
+// human, writes counted as Koopa's own activity) for any caller that
+// forgot to set `as`; "unknown" stops that misattribution.
 package main
 
 import (
@@ -41,14 +44,17 @@ func loadConfig(logger *slog.Logger) config {
 
 	cfg.DatabaseURL = requireEnv("DATABASE_URL", logger)
 
-	// Default caller agent: "unknown" — fail-closed. Each Cowork project's
-	// instructions tell the AI to pass as: "planner" (or its real agent name)
-	// in every tool call. A client that forgets is attributed to "unknown",
-	// which project_progress / review_period do NOT count as owner activity
-	// (there is no tool-layer authz to refuse it — Option B). Override only
-	// when the deployment genuinely has a single legitimate default (e.g. a
-	// personal-use deploy where all calls are from Koopa) — pin to "human"
-	// explicitly in that case rather than relying on the implicit default.
+	// Default caller agent: "unknown" — an attribution-only fallback, NOT an
+	// access gate. Each Cowork project's instructions tell the AI to pass
+	// as: "planner" (or its real agent name) in every tool call. A client
+	// that forgets is attributed to "unknown", which project_progress /
+	// review_period do NOT count as owner activity — so anonymous writes
+	// can't inflate Koopa's momentum or forge created_by = human. There is
+	// no tool-layer authz to refuse the call itself (Option B); access is
+	// bounded by the MCP transport (HTTP Bearer + admin-email OAuth, or the
+	// stdio process boundary). Override only when the deployment genuinely
+	// has a single legitimate default (e.g. a personal-use deploy where all
+	// calls are from Koopa) — pin to "human" explicitly in that case.
 	cfg.CallerAgent = envOr("KOOPA_MCP_CALLER_AGENT", "unknown")
 
 	// HTTP transport requires MCP_TOKEN + Google OAuth
