@@ -393,14 +393,21 @@ describe('GtdPageComponent', () => {
     search.dispatchEvent(new Event('input'));
     fixture.detectChanges();
 
-    await new Promise((resolve) => setTimeout(resolve, 300));
-    httpMock
-      .expectOne(
-        (r) =>
-          r.url.endsWith(`${TODOS_URL}/history`) &&
-          r.params.get('q') === 'auth',
-      )
-      .flush({ data: [] });
+    // Poll for the debounced request instead of sleeping a fixed interval — a
+    // wall-clock wait races the 250ms debounce under full-suite worker load
+    // (the documented flake). vi.waitFor retries until the request is issued.
+    const req = await vi.waitFor(
+      () => {
+        fixture.detectChanges();
+        return httpMock.expectOne(
+          (r) =>
+            r.url.endsWith(`${TODOS_URL}/history`) &&
+            r.params.get('q') === 'auth',
+        );
+      },
+      { timeout: 3000, interval: 20 },
+    );
+    req.flush({ data: [] });
     await settle();
 
     expect(el().textContent).toContain('No completed todos match your search.');
