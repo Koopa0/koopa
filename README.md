@@ -95,12 +95,12 @@ Fifteen MCP tools — small on purpose. Everything an agent can do is a workflow
 | `capture_inbox` | Drop a raw todo into your GTD inbox; you clarify it later. |
 | `plan_day` | Set today's plan as one atomic replacement. No auto-carryover. |
 | `propose_area` / `propose_goal` / `propose_project` | Draft an inert PARA proposal (`status=proposed`) for you to activate or reject in admin triage. |
-| `list_tasks` / `resolve_task` | Read back the disposition of the todos an agent created, and self-clear the ones it has finished. |
+| `list_todos` / `resolve_todo` | Read back the disposition of the todos an agent created, and self-clear the ones it has finished. |
 | `set_todo_recurrence` | Make a todo the agent created recurring — by weekday (e.g. Mon–Sat) or interval (every N days/weeks/months) — or clear it; recurring todos resurface in the brief on each matching day, computed on read. |
 | `propose_content` | Push a finished content piece into the editorial review queue (`status=review`); you publish it or send it back for revision. |
 | `list_content` / `revise_content` | Read back the disposition of the content an agent proposed — including your revision note when you send a draft back — and revise a sent-back draft back into review. |
 
-`brief`, `search_knowledge`, `list_tasks`, `list_content`, `project_progress`, and `review_period` are read-only; the mutating tools each encapsulate one workflow step with required fields and valid transitions, so the rules live in the tool layer, not in prompt instructions scattered across agents.
+`brief`, `search_knowledge`, `list_todos`, `list_content`, `project_progress`, and `review_period` are read-only; the mutating tools each encapsulate one workflow step with required fields and valid transitions, so the rules live in the tool layer, not in prompt instructions scattered across agents.
 
 ## What this enables
 
@@ -125,7 +125,7 @@ A single-admin system by design: no RBAC, no multi-tenant, no "share with a coll
 | Embedding        | `gemini-embedding-2` (1536d Matryoshka); background reconciler keeps the search corpus embedded |
 | Scheduling       | Agent cadences declared in `internal/agent/registry.go`; execution driven by an external Cowork/Desktop runner; audited via `process_runs` |
 | Frontend         | Angular 22 (SSR, zoneless, Signal Forms), Tailwind CSS v4                      |
-| AI collaboration | Claude (Cowork + Code), Codex CLI, MCP (14 workflow tools)                    |
+| AI collaboration | Claude (Cowork + Code), Codex CLI, MCP (15 workflow tools)                    |
 | Cache            | Ristretto (in-memory, single machine)                                         |
 | Object storage   | Cloudflare R2 (S3-compatible)                                                  |
 

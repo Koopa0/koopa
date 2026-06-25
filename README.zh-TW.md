@@ -94,12 +94,12 @@ Agent 可以把一個 raw todo 丟進你的 inbox、起草一份惰性的 area /
 | `capture_inbox` | 把一個 raw todo 丟進你的 GTD inbox；之後再由你釐清。 |
 | `plan_day` | 把今天的 plan 設定為一次 atomic 的整體替換。沒有 auto-carryover。 |
 | `propose_area` / `propose_goal` / `propose_project` | 起草一份惰性的 PARA 提案（`status=proposed`），讓你在 admin triage 啟用或拒絕。 |
-| `list_tasks` / `resolve_task` | 讀回 agent 建立的 todo 的處置，並自清它已處理完的。 |
+| `list_todos` / `resolve_todo` | 讀回 agent 建立的 todo 的處置，並自清它已處理完的。 |
 | `set_todo_recurrence` | 把 agent 建立的 todo 設成循環(週幾型如 Mon–Sat,或間隔型每 N 天/週/月)或清掉;循環 todo 每逢符合的日子在 brief 重新浮現,compute-on-read。 |
 | `propose_content` | 把完成的內容推進 editorial 審核佇列（`status=review`）；由你 publish 或退回要求修改。 |
 | `list_content` / `revise_content` | 讀回 agent 提的內容的處置 — 包含你退件時寫的修改原因 — 並把被退回的稿子改好、送回 review。 |
 
-`brief`、`search_knowledge`、`list_tasks`、`list_content`、`project_progress`、`review_period` 是唯讀的；會 mutation 的工具各自封裝一個工作流步驟，帶必填欄位與合法轉換，所以規則活在 tool 層，不是散落在各個 agent 的 prompt 指示裡。
+`brief`、`search_knowledge`、`list_todos`、`list_content`、`project_progress`、`review_period` 是唯讀的；會 mutation 的工具各自封裝一個工作流步驟，帶必填欄位與合法轉換，所以規則活在 tool 層，不是散落在各個 agent 的 prompt 指示裡。
 
 ## 這帶來什麼
 
