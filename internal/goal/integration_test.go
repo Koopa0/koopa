@@ -681,6 +681,13 @@ func TestIntegration_Goal_DeleteMilestone(t *testing.T) {
 func TestIntegration_Goal_ListAreas(t *testing.T) {
 	h := newHandler()
 
+	// Areas are not migration-seeded (002 leaves areas empty); self-provision
+	// the active rows this test asserts on. areas is not in truncate(), so
+	// clean them up explicitly.
+	t.Cleanup(func() { deleteAreasBySlug(t, "list-area-alpha", "list-area-beta") })
+	seedArea(t, "list-area-alpha", "List Area Alpha", "active")
+	seedArea(t, "list-area-beta", "List Area Beta", "active")
+
 	req := httptest.NewRequest(http.MethodGet, "/api/admin/commitment/areas", nil)
 	rec := httptest.NewRecorder()
 	h.ListAreas(rec, req)
@@ -705,7 +712,7 @@ func TestIntegration_Goal_ListAreas(t *testing.T) {
 		t.Fatalf("decode areas response: %v (body=%s)", err, body)
 	}
 	if len(env.Data) == 0 {
-		t.Fatalf("areas list is empty, want the migration-seeded PARA rows (body=%s)", body)
+		t.Fatalf("areas list is empty, want the active rows this test seeded (body=%s)", body)
 	}
 	for i, a := range env.Data {
 		if a.ID == uuid.Nil || a.Slug == "" || a.Name == "" {
@@ -725,8 +732,8 @@ func TestIntegration_Goal_ListAreas(t *testing.T) {
 // through the admin middleware and asserts the owner direct-create invariants:
 // the area persists status='active' / created_by=NULL (owner-made, no proposing
 // agent), the slug is derived from the name, a blank name is a 400, and a
-// duplicate slug is a 409. Created areas are cleaned up so the seeded PARA rows
-// the ListAreas test relies on are not disturbed.
+// duplicate slug is a 409. The created area is cleaned up afterward (areas is
+// not in truncate()).
 func TestIntegration_Goal_CreateArea(t *testing.T) {
 	h := newHandler()
 
@@ -907,9 +914,13 @@ func TestIntegration_Goal_ProposedExcludedFromList(t *testing.T) {
 // resolver (used only by propose_goal) finds it.
 func TestIntegration_Goal_ProposedAreaExcludedFromSelector(t *testing.T) {
 	truncate(t)
-	t.Cleanup(func() { deleteAreasBySlug(t, "proposed-theme") })
+	t.Cleanup(func() { deleteAreasBySlug(t, "active-theme", "proposed-theme") })
 	store := goal.NewStore(testPool)
 	ctx := t.Context()
+
+	// Areas are not migration-seeded; self-provision both an active area (must
+	// appear in the selector) and a proposed area (must not).
+	activeArea := seedArea(t, "active-theme", "Active Theme", "active")
 
 	var proposedArea uuid.UUID
 	if err := testPool.QueryRow(ctx,
@@ -923,12 +934,19 @@ func TestIntegration_Goal_ProposedAreaExcludedFromSelector(t *testing.T) {
 		t.Fatalf("Areas: %v", err)
 	}
 	if len(areas) == 0 {
-		t.Fatal("Areas returned no rows — expected the migration-seeded active areas")
+		t.Fatal("Areas returned no rows — expected the seeded active area")
 	}
+	var sawActive bool
 	for i := range areas {
 		if areas[i].ID == proposedArea {
 			t.Error("proposed area leaked into the Areas selector")
 		}
+		if areas[i].ID == activeArea {
+			sawActive = true
+		}
+	}
+	if !sawActive {
+		t.Error("seeded active area missing from the Areas selector")
 	}
 
 	// Active-only resolver refuses the proposed area.
