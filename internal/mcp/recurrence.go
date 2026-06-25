@@ -4,7 +4,7 @@
 // todo it created into a recurring one (weekday-mode or interval-mode) or clears
 // the schedule. Recurrence drives the compute-on-read due-today surface
 // (todo.RecurringItemsDueToday); resolving a recurring todo to done completes
-// today's occurrence (resolve_task) rather than ending it.
+// today's occurrence (resolve_todo) rather than ending it.
 
 package mcp
 
@@ -37,7 +37,7 @@ var recurUnits = map[string]struct{}{
 
 // SetTodoRecurrenceInput is the input for the set_todo_recurrence tool.
 type SetTodoRecurrenceInput struct {
-	TaskID   string   `json:"task_id" jsonschema:"required" jsonschema_description:"UUID of a todo YOU created (created_by = your resolved identity). Caller-scoped — setting recurrence on another agent's todo returns not-found and changes nothing."`
+	TodoID   string   `json:"todo_id" jsonschema:"required" jsonschema_description:"UUID of a todo YOU created (created_by = your resolved identity). Caller-scoped — setting recurrence on another agent's todo returns not-found and changes nothing."`
 	Weekdays []string `json:"weekdays,omitempty" jsonschema_description:"Weekday-mode: the days the todo recurs, any of mon,tue,wed,thu,fri,sat,sun. E.g. [\"mon\",\"tue\",\"wed\",\"thu\",\"fri\",\"sat\"] for Mon-Sat, or all seven for daily. Mutually exclusive with interval/unit."`
 	Interval *int     `json:"interval,omitempty" jsonschema_description:"Interval-mode: recur every N units measured from the last completion (self-pacing). Requires unit; must be > 0. Mutually exclusive with weekdays."`
 	Unit     *string  `json:"unit,omitempty" jsonschema_description:"Interval-mode unit: days, weeks, months, or years. Required with interval."`
@@ -53,9 +53,9 @@ type SetTodoRecurrenceOutput struct {
 }
 
 func (s *Server) setTodoRecurrence(ctx context.Context, _ *mcp.CallToolRequest, in SetTodoRecurrenceInput) (*mcp.CallToolResult, SetTodoRecurrenceOutput, error) {
-	id, err := uuid.Parse(in.TaskID)
+	id, err := uuid.Parse(in.TodoID)
 	if err != nil {
-		return nil, SetTodoRecurrenceOutput{}, fmt.Errorf("invalid task_id %q: %w", in.TaskID, err)
+		return nil, SetTodoRecurrenceOutput{}, fmt.Errorf("invalid todo_id %q: %w", in.TodoID, err)
 	}
 
 	rec, desc, err := buildRecurrence(in)

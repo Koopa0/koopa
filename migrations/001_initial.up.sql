@@ -635,11 +635,10 @@ CREATE INDEX idx_process_runs_dedup ON process_runs (kind, name, content_id, sta
 CREATE INDEX idx_process_runs_completed ON process_runs (kind, name, ended_at DESC) WHERE status = 'completed';
 
 -- ============================================================
--- Todos (personal GTD work list — NOT inter-agent tasks)
+-- Todos (personal GTD work list)
 --
--- Named todos (not tasks) to free the bare word "task" for the inter-agent
--- coordination entity (tasks table).
--- Vocabulary discipline: "task" = agent-to-agent work unit, "todo" = personal GTD item.
+-- "todo" is the system's sole work-item entity. Koopa is the only router; there
+-- is no agent-to-agent task coordination, so no "task" table or entity exists.
 -- ============================================================
 
 CREATE TABLE todos (
@@ -692,7 +691,7 @@ COMMENT ON COLUMN todos.state IS
     'inbox = captured but not clarified (missing project/due/priority). '
     'someday = interested but not acting now — reviewed periodically. '
     'archived | dismissed = terminal self-close states set by an agent via the '
-    'resolve_task MCP readback loop on a todo it created (archived = filed away, '
+    'resolve_todo MCP readback loop on a todo it created (archived = filed away, '
     'dismissed = won''t do); like every non-done state they keep completed_at '
     'NULL, enforced by chk_todo_completed_at_consistency.';
 COMMENT ON COLUMN todos.title IS 'Short summary of the todo. Non-blank (chk_todo_title_not_blank).';
@@ -704,7 +703,7 @@ COMMENT ON COLUMN todos.priority IS 'Todo priority for GTD engage-by-priority. N
 COMMENT ON COLUMN todos.recur_interval IS 'Interval-mode recurrence count: the todo recurs every recur_interval × recur_unit measured from last_completed_on (self-pacing). NULL = not interval-recurring. Mutually exclusive with recur_weekdays (chk_todo_recurrence).';
 COMMENT ON COLUMN todos.recur_unit IS 'Interval-mode recurrence unit (days/weeks/months/years). Set if and only if recur_interval is set.';
 COMMENT ON COLUMN todos.recur_weekdays IS 'Weekday-mode recurrence: 7-bit mask over ISODOW-1 — Mon=1, Tue=2, Wed=4, Thu=8, Fri=16, Sat=32, Sun=64. Daily=127, Mon-Sat=63. NULL = not weekday-recurring. Mutually exclusive with recur_interval (chk_todo_recurrence).';
-COMMENT ON COLUMN todos.last_completed_on IS 'Date the most recent recurring occurrence was completed (resolve_task on a recurring todo sets it instead of a terminal state). NULL = never completed / non-recurring. Compute-on-read due-today = rule matches today AND (last_completed_on IS NULL OR last_completed_on < today).';
+COMMENT ON COLUMN todos.last_completed_on IS 'Date the most recent recurring occurrence was completed (resolve_todo on a recurring todo sets it instead of a terminal state). NULL = never completed / non-recurring. Compute-on-read due-today = rule matches today AND (last_completed_on IS NULL OR last_completed_on < today).';
 COMMENT ON COLUMN todos.description IS 'Free-text detail. Empty string = no detail.';
 COMMENT ON COLUMN todos.created_by IS
     'Which agent created or imported this todo into the system. '

@@ -324,7 +324,7 @@ type ActivityItem struct {
 }
 
 // RecentActivity returns a goal's recent activity (UNION across milestones,
-// tasks via project, and contents via project), newest first.
+// todos via project, and contents via project), newest first.
 func (s *Store) RecentActivity(ctx context.Context, goalID uuid.UUID, limit int32) ([]ActivityItem, error) {
 	rows, err := s.q.GoalRecentActivity(ctx, db.GoalRecentActivityParams{
 		GoalID:     goalID,

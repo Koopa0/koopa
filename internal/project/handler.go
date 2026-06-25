@@ -77,7 +77,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 }
 
 // Detail handles GET /api/admin/projects/{id} — returns the admin-facing
-// aggregate (project + goal breadcrumb + tasks grouped by state + recent
+// aggregate (project + goal breadcrumb + todos grouped by state + recent
 // activity + related content). Assembled from the core project row plus
 // reader dependencies. Missing cross-feature data (e.g. goal deleted)
 // renders as nil or empty slices rather than 404'ing the detail response.

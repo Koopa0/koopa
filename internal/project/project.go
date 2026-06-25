@@ -103,7 +103,7 @@ type UpdateParams struct {
 
 // Detail is the admin project detail aggregate returned by
 // GET /api/admin/projects/{id}. Assembled by the handler from the core
-// project row, goal breadcrumb, grouped tasks, recent activity, and
+// project row, goal breadcrumb, grouped todos, recent activity, and
 // related content. The shape matches the frontend ProjectDetail
 // contract so the inspector panel renders directly from the wire
 // response.

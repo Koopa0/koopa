@@ -69,7 +69,7 @@ export interface GoalProject {
   status: string;
 }
 
-export interface TaskProgress {
+export interface TodoProgress {
   total: number;
   done: number;
 }
@@ -125,7 +125,7 @@ export interface ProjectSummary {
   status: string;
   area: string;
   goal_breadcrumb: GoalBreadcrumb | null;
-  task_progress: TaskProgress;
+  todo_progress: TodoProgress;
   staleness_days: number;
   last_activity_at: string | null;
 }
@@ -151,13 +151,13 @@ export interface ProjectDetail {
 }
 
 export interface TodosByState {
-  in_progress: TaskSummary[];
-  todo: TaskSummary[];
-  done: TaskSummary[];
-  someday: TaskSummary[];
+  in_progress: TodoSummary[];
+  todo: TodoSummary[];
+  done: TodoSummary[];
+  someday: TodoSummary[];
 }
 
-export interface TaskSummary {
+export interface TodoSummary {
   id: string;
   title: string;
   priority: string;

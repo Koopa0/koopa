@@ -17,11 +17,10 @@ import (
 
 // --- capture_inbox ---
 
-// CaptureInboxInput is the input for the capture_inbox tool.
-// Agent-to-agent work runs through the tasks table; capture_inbox writes a
-// personal GTD todo only.
+// CaptureInboxInput is the input for the capture_inbox tool. capture_inbox
+// writes a single personal GTD todo into the owner's inbox for triage.
 type CaptureInboxInput struct {
-	Title       string  `json:"title" jsonschema:"required" jsonschema_description:"Task title. The created todo enters state=inbox; it must be clarified to state=todo (via the admin UI) before it can be passed to plan_day."`
+	Title       string  `json:"title" jsonschema:"required" jsonschema_description:"Todo title. The created todo enters state=inbox; it must be clarified to state=todo (via the admin UI) before it can be passed to plan_day."`
 	Description string  `json:"description,omitempty" jsonschema_description:"Optional detail. Rendered as Markdown in the clarify dialog — separate paragraphs with a blank line and use '-' lists for multiple points so it stays readable; do not write one unbroken wall of text. Keep it a capture (context + why it matters + any links), not an essay."`
 	Project     string  `json:"project,omitempty" jsonschema_description:"Project slug, alias, or title (fuzzy matched)"`
 	Energy      *string `json:"energy,omitempty" jsonschema_description:"Energy level. One of: \"high\", \"medium\", \"low\". Other values are rejected at the handler layer."`
@@ -30,7 +29,7 @@ type CaptureInboxInput struct {
 
 // CaptureInboxOutput is the output of the capture_inbox tool.
 type CaptureInboxOutput struct {
-	Task todo.Item `json:"task"`
+	Todo todo.Item `json:"todo"`
 }
 
 func (s *Server) captureInbox(ctx context.Context, _ *mcp.CallToolRequest, input CaptureInboxInput) (*mcp.CallToolResult, CaptureInboxOutput, error) {
@@ -79,6 +78,6 @@ func (s *Server) captureInbox(ctx context.Context, _ *mcp.CallToolRequest, input
 		return nil, CaptureInboxOutput{}, fmt.Errorf("capturing to inbox: %w", err)
 	}
 
-	s.logger.Info("capture_inbox", "task_id", created.ID, "title", created.Title)
-	return nil, CaptureInboxOutput{Task: *created}, nil
+	s.logger.Info("capture_inbox", "todo_id", created.ID, "title", created.Title)
+	return nil, CaptureInboxOutput{Todo: *created}, nil
 }

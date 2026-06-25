@@ -70,7 +70,7 @@ func resolveDefaultSections(caller string) []string {
 //
 // Morning group → response field mapping:
 //
-//	"tasks"            → overdue_todos, today_todos, recurring_todos, committed_todos, upcoming_todos
+//	"todos"            → overdue_todos, today_todos, recurring_todos, committed_todos, upcoming_todos
 //	"goals"            → active_goals
 //	"rss"              → rss_highlights
 //	"content_pipeline" → content_pipeline
@@ -268,14 +268,14 @@ func (s *Server) fillBriefMorning(ctx context.Context, date time.Time, requested
 		}
 	}
 
-	runSection("tasks", func(c context.Context) { s.fillMorningTasks(c, date, out) })
+	runSection("todos", func(c context.Context) { s.fillMorningTodos(c, date, out) })
 	runSection("goals", func(c context.Context) { s.fillGoals(c, out) })
 	runSection("rss", func(c context.Context) { s.fillRSSHighlights(c, date, out) })
 	runSection("content_pipeline", func(c context.Context) { s.fillContentPipeline(c, out) })
 	wg.Wait()
 }
 
-func (s *Server) fillMorningTasks(ctx context.Context, date time.Time, out *BriefOutput) {
+func (s *Server) fillMorningTodos(ctx context.Context, date time.Time, out *BriefOutput) {
 	if rows, err := s.todos.OverdueItems(ctx, date); err == nil {
 		out.OverdueTodos = rows
 	} else {

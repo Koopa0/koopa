@@ -102,7 +102,7 @@ VALUES (@goal_id, @title, @position)
 RETURNING id, goal_id, title, description, target_deadline, completed_at, position, created_at, updated_at;
 
 -- name: GoalRecentActivity :many
--- Recent activity for a single goal — UNION across milestones, tasks (via project),
+-- Recent activity for a single goal — UNION across milestones, todos (via project),
 -- and contents (via project). Each row carries a typed activity_type that the admin
 -- frontend can dispatch on for icons / colors.
 --

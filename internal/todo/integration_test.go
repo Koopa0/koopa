@@ -674,7 +674,7 @@ func idSet(items []todo.PendingDetail) map[uuid.UUID]struct{} {
 }
 
 // TestIntegration_Todo_DateReads_ExcludeTerminal pins the regression fix:
-// resolve_task added the terminal states archived/dismissed, but the morning
+// resolve_todo added the terminal states archived/dismissed, but the morning
 // brief overdue/today reads (and the Today page) only excluded done/someday/
 // inbox, so a self-closed todo leaked back as active. After the fix, an archived
 // or dismissed todo — even one carrying an overdue due date — must NOT appear in

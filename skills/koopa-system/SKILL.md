@@ -51,7 +51,7 @@ Agents ──propose_content──► contents (status=review) ──publish (ad
 Admin HTTP forms ──► contents (article / essay / build-log / til / digest) — 發布生命週期人類掌握
 
 Agents ──daily work──► todos ──plan_day──► daily_plan_items
-       ──set_todo_recurrence──► 自建 todo 設週幾 / interval 循環（compute-on-read，每逢符合日進 brief；resolve_task done = 完成當日 occurrence、續循環）
+       ──set_todo_recurrence──► 自建 todo 設週幾 / interval 循環（compute-on-read，每逢符合日進 brief；resolve_todo done = 完成當日 occurrence、續循環）
        ──propose_*──► areas / goals (+ milestones) / projects (status=proposed, inert)
        ──own memory──► agent 自己的 .md（不是系統 entity）
 

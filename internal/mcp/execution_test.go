@@ -40,31 +40,31 @@ func TestDisplacedFrom(t *testing.T) {
 		{
 			name:    "empty removed returns empty",
 			removed: nil,
-			kept:    []PlanDayItem{{TaskID: todoA.String()}},
+			kept:    []PlanDayItem{{TodoID: todoA.String()}},
 			want:    nil,
 		},
 		{
 			name:    "every removed todo carried over — none displaced",
 			removed: []daily.RemovedItem{rmA, rmB},
-			kept:    []PlanDayItem{{TaskID: todoA.String()}, {TaskID: todoB.String()}},
+			kept:    []PlanDayItem{{TodoID: todoA.String()}, {TodoID: todoB.String()}},
 			want:    []daily.RemovedItem{},
 		},
 		{
 			name:    "one carried over, one dropped — only the dropped is displaced",
 			removed: []daily.RemovedItem{rmA, rmB},
-			kept:    []PlanDayItem{{TaskID: todoA.String()}},
+			kept:    []PlanDayItem{{TodoID: todoA.String()}},
 			want:    []daily.RemovedItem{rmB},
 		},
 		{
 			name:    "no overlap — every removed is displaced",
 			removed: []daily.RemovedItem{rmA, rmB},
-			kept:    []PlanDayItem{{TaskID: todoC.String()}},
+			kept:    []PlanDayItem{{TodoID: todoC.String()}},
 			want:    []daily.RemovedItem{rmA, rmB},
 		},
 		{
-			name:    "kept includes invalid task_id — invalid id is ignored, valid ones still match",
+			name:    "kept includes invalid todo_id — invalid id is ignored, valid ones still match",
 			removed: []daily.RemovedItem{rmA, rmB},
-			kept:    []PlanDayItem{{TaskID: "not-a-uuid"}, {TaskID: todoA.String()}},
+			kept:    []PlanDayItem{{TodoID: "not-a-uuid"}, {TodoID: todoA.String()}},
 			want:    []daily.RemovedItem{rmB},
 		},
 		{

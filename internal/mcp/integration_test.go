@@ -6,7 +6,7 @@
 // mcp package: the capture_inbox and actor-fallback cold-start paths,
 // search_knowledge (corpus inclusion/exclusion, filters, relevance),
 // plan_day position bounds, the propose_area / propose_goal /
-// propose_project inert-draft flow, list_tasks readback, brief(reflection),
+// propose_project inert-draft flow, list_todos readback, brief(reflection),
 // and the tools/list enum-advertising probe.
 //
 // Run with:
@@ -118,11 +118,11 @@ func TestIntegration_ColdStart_CaptureInbox(t *testing.T) {
 	if err != nil {
 		t.Fatalf("captureInbox: %v", err)
 	}
-	if out.Task.ID == uuid.Nil {
-		t.Fatal("captureInbox returned zero task ID")
+	if out.Todo.ID == uuid.Nil {
+		t.Fatal("captureInbox returned zero todo ID")
 	}
 
-	if got := activityActorFor(t, "todo", out.Task.ID); got != "planner" {
+	if got := activityActorFor(t, "todo", out.Todo.ID); got != "planner" {
 		t.Errorf("activity_events.actor = %q, want %q (koopa.actor propagation)", got, "planner")
 	}
 }
@@ -715,7 +715,7 @@ func TestIntegration_PlanDay_PositionOutOfRangeRejected(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			_, _, err := callHandlerAs(t, "planner", s.planDay, PlanDayInput{
 				Items: []PlanDayItem{
-					{TaskID: todoID.String(), Position: tc.position},
+					{TodoID: todoID.String(), Position: tc.position},
 				},
 			})
 			if err == nil {
@@ -734,7 +734,7 @@ func TestIntegration_PlanDay_PositionOutOfRangeRejected(t *testing.T) {
 	// rejection above is the bounds gate and not a setup error.
 	_, out, err := callHandlerAs(t, "planner", s.planDay, PlanDayInput{
 		Items: []PlanDayItem{
-			{TaskID: todoID.String(), Position: 1},
+			{TodoID: todoID.String(), Position: 1},
 		},
 	})
 	if err != nil {
@@ -759,7 +759,7 @@ func TestIntegration_PlanDay_StateGate(t *testing.T) {
 		t.Run("accept_"+state, func(t *testing.T) {
 			id := seedTodoState(t, "plan-accept-"+state, state)
 			_, out, err := callHandlerAs(t, "planner", s.planDay, PlanDayInput{
-				Items: []PlanDayItem{{TaskID: id.String(), Position: 1}},
+				Items: []PlanDayItem{{TodoID: id.String(), Position: 1}},
 			})
 			if err != nil {
 				t.Fatalf("plan_day rejected state=%s: %v (want accepted)", state, err)
@@ -774,7 +774,7 @@ func TestIntegration_PlanDay_StateGate(t *testing.T) {
 		t.Run("reject_"+state, func(t *testing.T) {
 			id := seedTodoState(t, "plan-reject-"+state, state)
 			_, _, err := callHandlerAs(t, "planner", s.planDay, PlanDayInput{
-				Items: []PlanDayItem{{TaskID: id.String(), Position: 1}},
+				Items: []PlanDayItem{{TodoID: id.String(), Position: 1}},
 			})
 			if err == nil {
 				t.Fatalf("plan_day accepted state=%s; want rejection", state)
@@ -1244,7 +1244,7 @@ func TestIntegration_ProposeProject_CaptureThenActivate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("captureInbox: %v", err)
 	}
-	if got := todoProjectID(t, captured.Task.ID); got == nil || *got != proposed.Project.ID {
+	if got := todoProjectID(t, captured.Todo.ID); got == nil || *got != proposed.Project.ID {
 		t.Fatalf("todo.project_id = %v at capture, want %s (resolveProjectID must match a proposed project)", got, proposed.Project.ID)
 	}
 
@@ -1252,7 +1252,7 @@ func TestIntegration_ProposeProject_CaptureThenActivate(t *testing.T) {
 	if _, err := s.projects.ActivateProject(t.Context(), proposed.Project.ID); err != nil {
 		t.Fatalf("ActivateProject: %v", err)
 	}
-	if got := todoProjectID(t, captured.Task.ID); got == nil || *got != proposed.Project.ID {
+	if got := todoProjectID(t, captured.Todo.ID); got == nil || *got != proposed.Project.ID {
 		t.Errorf("todo.project_id = %v after activation, want %s (link must survive activation)", got, proposed.Project.ID)
 	}
 }
@@ -1274,7 +1274,7 @@ func TestIntegration_ProposeProject_CaptureThenReject(t *testing.T) {
 	if err != nil {
 		t.Fatalf("captureInbox: %v", err)
 	}
-	if got := todoProjectID(t, captured.Task.ID); got == nil || *got != proposed.Project.ID {
+	if got := todoProjectID(t, captured.Todo.ID); got == nil || *got != proposed.Project.ID {
 		t.Fatalf("todo.project_id = %v at capture, want %s", got, proposed.Project.ID)
 	}
 
@@ -1285,14 +1285,14 @@ func TestIntegration_ProposeProject_CaptureThenReject(t *testing.T) {
 	// The project is gone; the todo survives with project_id SET NULL.
 	var exists bool
 	if err := testPool.QueryRow(t.Context(),
-		`SELECT EXISTS(SELECT 1 FROM todos WHERE id=$1)`, captured.Task.ID,
+		`SELECT EXISTS(SELECT 1 FROM todos WHERE id=$1)`, captured.Todo.ID,
 	).Scan(&exists); err != nil {
 		t.Fatalf("checking todo survival: %v", err)
 	}
 	if !exists {
 		t.Fatal("todo was deleted when its proposed project was rejected; want survive with project_id NULL")
 	}
-	if got := todoProjectID(t, captured.Task.ID); got != nil {
+	if got := todoProjectID(t, captured.Todo.ID); got != nil {
 		t.Errorf("todo.project_id = %v after reject, want NULL", *got)
 	}
 }
@@ -1310,12 +1310,12 @@ func todoProjectID(t *testing.T, todoID uuid.UUID) *uuid.UUID {
 }
 
 // seedTodoForCreator inserts a todo with an explicit created_by, state, and
-// created_at so the list_tasks readback tests can assert creator-scoping,
+// created_at so the list_todos readback tests can assert creator-scoping,
 // state passthrough, and newest-first ordering deterministically. created_by
 // must name a registered agent (todos.created_by FK → agents). A done state
 // carries completed_at to satisfy chk_todo_completed_at_consistency. The raw
 // INSERT fires trg_todos_audit with current_actor() falling back to 'system',
-// harmless here — list_tasks reads todos.created_by, not the audit log.
+// harmless here — list_todos reads todos.created_by, not the audit log.
 func seedTodoForCreator(t *testing.T, createdBy, title, state string, createdAt time.Time) uuid.UUID {
 	t.Helper()
 	var completedAt *time.Time
@@ -1334,11 +1334,11 @@ func seedTodoForCreator(t *testing.T, createdBy, title, state string, createdAt 
 	return id
 }
 
-// TestIntegration_ListTasks_ReturnsCallerTodos drives the happy path: a caller
+// TestIntegration_ListTodos_ReturnsCallerTodos drives the happy path: a caller
 // reads back exactly the todos it created, newest first, with state and
 // created_by carried through. Two todos in distinct states (done newest, inbox
 // older) pin both the ordering and the State passthrough.
-func TestIntegration_ListTasks_ReturnsCallerTodos(t *testing.T) {
+func TestIntegration_ListTodos_ReturnsCallerTodos(t *testing.T) {
 	s := setupServer(t)
 
 	older := time.Now().Add(-2 * time.Hour)
@@ -1346,36 +1346,36 @@ func TestIntegration_ListTasks_ReturnsCallerTodos(t *testing.T) {
 	oldID := seedTodoForCreator(t, "planner", "older proposal", "inbox", older)
 	newID := seedTodoForCreator(t, "planner", "newer proposal", "done", newer)
 
-	_, out, err := callHandlerAs(t, "planner", s.listTasks, ListTasksInput{})
+	_, out, err := callHandlerAs(t, "planner", s.listTodos, ListTodosInput{})
 	if err != nil {
-		t.Fatalf("listTasks: %v", err)
+		t.Fatalf("listTodos: %v", err)
 	}
 
-	want := []TaskListItem{
+	want := []TodoListItem{
 		{ID: newID.String(), Title: "newer proposal", State: "done", CreatedBy: "planner"},
 		{ID: oldID.String(), Title: "older proposal", State: "inbox", CreatedBy: "planner"},
 	}
-	if diff := cmp.Diff(want, out.Tasks); diff != "" {
-		t.Errorf("listTasks(planner) mismatch (-want +got):\n%s", diff)
+	if diff := cmp.Diff(want, out.Todos); diff != "" {
+		t.Errorf("listTodos(planner) mismatch (-want +got):\n%s", diff)
 	}
 }
 
-// TestIntegration_ListTasks_CallerScoped pins the privacy invariant: the list
+// TestIntegration_ListTodos_CallerScoped pins the privacy invariant: the list
 // is scoped to the resolved caller, so caller A (planner) never sees caller B's
 // (codex) todos.
-func TestIntegration_ListTasks_CallerScoped(t *testing.T) {
+func TestIntegration_ListTodos_CallerScoped(t *testing.T) {
 	s := setupServer(t)
 
 	mineID := seedTodoForCreator(t, "planner", "planner todo", "inbox", time.Now())
 	theirsID := seedTodoForCreator(t, "codex", "codex todo", "inbox", time.Now())
 
-	_, out, err := callHandlerAs(t, "planner", s.listTasks, ListTasksInput{})
+	_, out, err := callHandlerAs(t, "planner", s.listTodos, ListTodosInput{})
 	if err != nil {
-		t.Fatalf("listTasks: %v", err)
+		t.Fatalf("listTodos: %v", err)
 	}
 
 	var sawMine, sawTheirs bool
-	for _, ti := range out.Tasks {
+	for _, ti := range out.Todos {
 		switch ti.ID {
 		case mineID.String():
 			sawMine = true
@@ -1383,32 +1383,32 @@ func TestIntegration_ListTasks_CallerScoped(t *testing.T) {
 			sawTheirs = true
 		}
 		if ti.CreatedBy != "planner" {
-			t.Errorf("listTasks(planner) returned created_by=%q, want planner-scoped only", ti.CreatedBy)
+			t.Errorf("listTodos(planner) returned created_by=%q, want planner-scoped only", ti.CreatedBy)
 		}
 	}
 	if !sawMine {
-		t.Errorf("listTasks(planner) missing the caller's own todo %s", mineID)
+		t.Errorf("listTodos(planner) missing the caller's own todo %s", mineID)
 	}
 	if sawTheirs {
-		t.Errorf("listTasks(planner) leaked another agent's todo %s (caller-scoping violated)", theirsID)
+		t.Errorf("listTodos(planner) leaked another agent's todo %s (caller-scoping violated)", theirsID)
 	}
 }
 
-// TestIntegration_ResolveTask_ClosesOwnTodo pins the write half of the readback
+// TestIntegration_ResolveTodo_ClosesOwnTodo pins the write half of the readback
 // loop: an agent moves a todo IT created to a terminal state and the row's state
 // changes in the DB.
-func TestIntegration_ResolveTask_ClosesOwnTodo(t *testing.T) {
+func TestIntegration_ResolveTodo_ClosesOwnTodo(t *testing.T) {
 	s := setupServer(t)
 
 	id := seedTodoForCreator(t, "planner", "captured idea", "inbox", time.Now())
 
-	_, out, err := callHandlerAs(t, "planner", s.resolveTask, ResolveTaskInput{ID: id.String(), State: "dismissed"})
+	_, out, err := callHandlerAs(t, "planner", s.resolveTodo, ResolveTodoInput{ID: id.String(), State: "dismissed"})
 	if err != nil {
-		t.Fatalf("resolveTask: %v", err)
+		t.Fatalf("resolveTodo: %v", err)
 	}
-	want := ResolveTaskOutput{ID: id.String(), State: "dismissed", OK: true}
+	want := ResolveTodoOutput{ID: id.String(), State: "dismissed", OK: true}
 	if diff := cmp.Diff(want, out); diff != "" {
-		t.Errorf("resolveTask mismatch (-want +got):\n%s", diff)
+		t.Errorf("resolveTodo mismatch (-want +got):\n%s", diff)
 	}
 
 	var state string
@@ -1420,26 +1420,26 @@ func TestIntegration_ResolveTask_ClosesOwnTodo(t *testing.T) {
 	}
 }
 
-// TestIntegration_ResolveTask_InvalidState rejects any state outside the
+// TestIntegration_ResolveTodo_InvalidState rejects any state outside the
 // done/archived/dismissed terminal set without mutating.
-func TestIntegration_ResolveTask_InvalidState(t *testing.T) {
+func TestIntegration_ResolveTodo_InvalidState(t *testing.T) {
 	s := setupServer(t)
 	id := seedTodoForCreator(t, "planner", "captured idea", "inbox", time.Now())
 
-	if _, _, err := callHandlerAs(t, "planner", s.resolveTask, ResolveTaskInput{ID: id.String(), State: "todo"}); err == nil {
-		t.Error("resolveTask(state=todo) err = nil, want invalid-state rejection")
+	if _, _, err := callHandlerAs(t, "planner", s.resolveTodo, ResolveTodoInput{ID: id.String(), State: "todo"}); err == nil {
+		t.Error("resolveTodo(state=todo) err = nil, want invalid-state rejection")
 	}
 }
 
-// TestIntegration_ResolveTask_CallerScoped pins the privacy invariant: caller A
+// TestIntegration_ResolveTodo_CallerScoped pins the privacy invariant: caller A
 // cannot resolve a todo created by caller B — it returns not-found and the row
 // is left untouched, never a cross-creator mutation.
-func TestIntegration_ResolveTask_CallerScoped(t *testing.T) {
+func TestIntegration_ResolveTodo_CallerScoped(t *testing.T) {
 	s := setupServer(t)
 	theirs := seedTodoForCreator(t, "codex", "codex todo", "inbox", time.Now())
 
-	if _, _, err := callHandlerAs(t, "planner", s.resolveTask, ResolveTaskInput{ID: theirs.String(), State: "dismissed"}); err == nil {
-		t.Error("resolveTask(planner) on codex's todo err = nil, want not-found (caller-scoping)")
+	if _, _, err := callHandlerAs(t, "planner", s.resolveTodo, ResolveTodoInput{ID: theirs.String(), State: "dismissed"}); err == nil {
+		t.Error("resolveTodo(planner) on codex's todo err = nil, want not-found (caller-scoping)")
 	}
 
 	var state string
@@ -1828,7 +1828,7 @@ func TestIntegration_SetTodoRecurrence(t *testing.T) {
 	id := seedTodoForCreator(t, "planner", "Daily Japanese", "todo", time.Now())
 
 	_, out, err := callHandlerAs(t, "planner", s.setTodoRecurrence, SetTodoRecurrenceInput{
-		TaskID:   id.String(),
+		TodoID:   id.String(),
 		Weekdays: []string{"mon", "tue", "wed", "thu", "fri", "sat"},
 	})
 	if err != nil {
@@ -1847,7 +1847,7 @@ func TestIntegration_SetTodoRecurrence(t *testing.T) {
 
 	// caller-scope: codex cannot reschedule planner's todo.
 	if _, _, err := callHandlerAs(t, "codex", s.setTodoRecurrence, SetTodoRecurrenceInput{
-		TaskID: id.String(), Clear: true,
+		TodoID: id.String(), Clear: true,
 	}); err == nil {
 		t.Error("setTodoRecurrence(codex on planner's todo) err = nil, want not-found (caller-scoping)")
 	}
@@ -1855,16 +1855,16 @@ func TestIntegration_SetTodoRecurrence(t *testing.T) {
 	// validation: weekday + interval together is rejected before any write.
 	three, unit := 3, "days"
 	if _, _, err := callHandlerAs(t, "planner", s.setTodoRecurrence, SetTodoRecurrenceInput{
-		TaskID: id.String(), Weekdays: []string{"mon"}, Interval: &three, Unit: &unit,
+		TodoID: id.String(), Weekdays: []string{"mon"}, Interval: &three, Unit: &unit,
 	}); err == nil {
 		t.Error("setTodoRecurrence(weekdays+interval) err = nil, want mutual-exclusion rejection")
 	}
 }
 
-// TestIntegration_ResolveTask_RecurringCompletesOccurrence pins the recurring
-// branch of resolve_task: state=done on a recurring todo stamps last_completed_on
+// TestIntegration_ResolveTodo_RecurringCompletesOccurrence pins the recurring
+// branch of resolve_todo: state=done on a recurring todo stamps last_completed_on
 // and keeps it recurring (not terminal); archived still ends it.
-func TestIntegration_ResolveTask_RecurringCompletesOccurrence(t *testing.T) {
+func TestIntegration_ResolveTodo_RecurringCompletesOccurrence(t *testing.T) {
 	s := setupServer(t)
 
 	seedRecurring := func(title string) uuid.UUID {
@@ -1881,9 +1881,9 @@ func TestIntegration_ResolveTask_RecurringCompletesOccurrence(t *testing.T) {
 
 	// done on a recurring todo → occurrence completed, todo stays recurring.
 	rec := seedRecurring("Daily standup")
-	_, out, err := callHandlerAs(t, "planner", s.resolveTask, ResolveTaskInput{ID: rec.String(), State: "done"})
+	_, out, err := callHandlerAs(t, "planner", s.resolveTodo, ResolveTodoInput{ID: rec.String(), State: "done"})
 	if err != nil {
-		t.Fatalf("resolveTask(done) on recurring: %v", err)
+		t.Fatalf("resolveTodo(done) on recurring: %v", err)
 	}
 	if !out.OK || out.State != "done" {
 		t.Errorf("output = %+v, want OK done (occurrence completed)", out)
@@ -1907,8 +1907,8 @@ func TestIntegration_ResolveTask_RecurringCompletesOccurrence(t *testing.T) {
 
 	// archived on a recurring todo → terminal close (recurrence stops).
 	rec2 := seedRecurring("Old habit")
-	if _, _, err := callHandlerAs(t, "planner", s.resolveTask, ResolveTaskInput{ID: rec2.String(), State: "archived"}); err != nil {
-		t.Fatalf("resolveTask(archived) on recurring: %v", err)
+	if _, _, err := callHandlerAs(t, "planner", s.resolveTodo, ResolveTodoInput{ID: rec2.String(), State: "archived"}); err != nil {
+		t.Fatalf("resolveTodo(archived) on recurring: %v", err)
 	}
 	var state2 string
 	if err := testPool.QueryRow(t.Context(), "SELECT state FROM todos WHERE id = $1", rec2).Scan(&state2); err != nil {

@@ -163,7 +163,7 @@ export class ProjectsListPageComponent {
     return status.replaceAll('_', ' ');
   }
 
-  protected taskPercent(done: number, total: number): number {
+  protected todoPercent(done: number, total: number): number {
     if (total === 0) return 0;
     return Math.round((done / total) * 100);
   }

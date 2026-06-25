@@ -2905,7 +2905,7 @@ type GoalRecentActivityRow struct {
 	Ts           *time.Time `json:"ts"`
 }
 
-// Recent activity for a single goal — UNION across milestones, tasks (via project),
+// Recent activity for a single goal — UNION across milestones, todos (via project),
 // and contents (via project). Each row carries a typed activity_type that the admin
 // frontend can dispatch on for icons / colors.
 //
@@ -4844,7 +4844,7 @@ type ResolveTodoByCreatorRow struct {
 	State TodoState `json:"state"`
 }
 
-// Caller-scoped terminal close for the resolve_task MCP readback loop: an agent
+// Caller-scoped terminal close for the resolve_todo MCP readback loop: an agent
 // moves a todo IT created to a terminal state (done/archived/dismissed). The
 // created_by predicate scopes the write to the caller's own rows — a mismatched
 // creator (or unknown id) matches 0 rows, surfacing as pgx.ErrNoRows → not-found,
@@ -5507,9 +5507,8 @@ type StatsDatabaseCountsRow struct {
 	TodosCount    int32 `json:"todos_count"`
 }
 
-// Core entity counts for SystemHealth. todos is the personal GTD store;
-// the inter-agent coordination tasks table is intentionally NOT counted
-// here (it would mix two entirely different concepts with the same word).
+// Core entity counts for SystemHealth. todos is the system's sole work-item
+// store — there is no separate inter-agent task entity.
 func (q *Queries) StatsDatabaseCounts(ctx context.Context) (StatsDatabaseCountsRow, error) {
 	row := q.db.QueryRow(ctx, statsDatabaseCounts)
 	var i StatsDatabaseCountsRow
@@ -6252,7 +6251,7 @@ type TodosByCreatorRow struct {
 	State TodoState `json:"state"`
 }
 
-// List todos created by a given agent, newest first. Powers the list_tasks
+// List todos created by a given agent, newest first. Powers the list_todos
 // MCP readback loop: an agent reads the disposition of the todos it created.
 // created_by is the resolved caller identity (caller-scoped), never a
 // client-supplied filter. Uses idx_todos_created_by (created_by, created_at DESC).

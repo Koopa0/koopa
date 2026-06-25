@@ -118,9 +118,8 @@ FROM process_runs
 WHERE created_at >= @since;
 
 -- name: StatsDatabaseCounts :one
--- Core entity counts for SystemHealth. todos is the personal GTD store;
--- the inter-agent coordination tasks table is intentionally NOT counted
--- here (it would mix two entirely different concepts with the same word).
+-- Core entity counts for SystemHealth. todos is the system's sole work-item
+-- store — there is no separate inter-agent task entity.
 SELECT
     (SELECT COUNT(*) FROM contents)::int                 AS contents_count,
     (SELECT COUNT(*) FROM todos)::int                    AS todos_count;

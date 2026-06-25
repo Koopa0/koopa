@@ -105,7 +105,7 @@ func callDetail(t *testing.T, h *project.Handler, id string) (detail project.Det
 }
 
 // seedBareProject inserts a minimal project row and returns its id. Used
-// by tests that need a project without tasks / activity.
+// by tests that need a project without todos / activity.
 func seedBareProject(t *testing.T, slug, title string) uuid.UUID {
 	t.Helper()
 	var id uuid.UUID
@@ -173,7 +173,7 @@ func TestIntegration_Detail_InvalidIDReturns400(t *testing.T) {
 }
 
 // TestIntegration_Detail_BareProject is the minimal happy path — a
-// project row exists but has no goal, no tasks, no activity, no related
+// project row exists but has no goal, no todos, no activity, no related
 // content. The handler must still return 200 with all aggregate fields
 // rendered as empty collections (never null).
 func TestIntegration_Detail_BareProject(t *testing.T) {

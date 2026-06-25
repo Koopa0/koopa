@@ -643,7 +643,7 @@ type Todo struct {
 	ID uuid.UUID `json:"id"`
 	// Short summary of the todo. Non-blank (chk_todo_title_not_blank).
 	Title string `json:"title"`
-	// GTD lifecycle: inbox → todo | someday. todo → in_progress → done. inbox = captured but not clarified (missing project/due/priority). someday = interested but not acting now — reviewed periodically. archived | dismissed = terminal self-close states set by an agent via the resolve_task MCP readback loop on a todo it created (archived = filed away, dismissed = won't do); like every non-done state they keep completed_at NULL, enforced by chk_todo_completed_at_consistency.
+	// GTD lifecycle: inbox → todo | someday. todo → in_progress → done. inbox = captured but not clarified (missing project/due/priority). someday = interested but not acting now — reviewed periodically. archived | dismissed = terminal self-close states set by an agent via the resolve_todo MCP readback loop on a todo it created (archived = filed away, dismissed = won't do); like every non-done state they keep completed_at NULL, enforced by chk_todo_completed_at_consistency.
 	State TodoState `json:"state"`
 	// Due date. NULL = no deadline.
 	Due *time.Time `json:"due"`
@@ -661,7 +661,7 @@ type Todo struct {
 	RecurUnit *string `json:"recur_unit"`
 	// Weekday-mode recurrence: 7-bit mask over ISODOW-1 — Mon=1, Tue=2, Wed=4, Thu=8, Fri=16, Sat=32, Sun=64. Daily=127, Mon-Sat=63. NULL = not weekday-recurring. Mutually exclusive with recur_interval (chk_todo_recurrence).
 	RecurWeekdays *int16 `json:"recur_weekdays"`
-	// Date the most recent recurring occurrence was completed (resolve_task on a recurring todo sets it instead of a terminal state). NULL = never completed / non-recurring. Compute-on-read due-today = rule matches today AND (last_completed_on IS NULL OR last_completed_on < today).
+	// Date the most recent recurring occurrence was completed (resolve_todo on a recurring todo sets it instead of a terminal state). NULL = never completed / non-recurring. Compute-on-read due-today = rule matches today AND (last_completed_on IS NULL OR last_completed_on < today).
 	LastCompletedOn *time.Time `json:"last_completed_on"`
 	// Free-text detail. Empty string = no detail.
 	Description string `json:"description"`

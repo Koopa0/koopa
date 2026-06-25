@@ -21,7 +21,7 @@ function row(overrides: Partial<ProjectSummary>): ProjectSummary {
     status: 'in_progress',
     area: 'Build',
     goal_breadcrumb: null,
-    task_progress: { total: 4, done: 1 },
+    todo_progress: { total: 4, done: 1 },
     staleness_days: 2,
     last_activity_at: '2026-06-18T00:00:00Z',
     ...overrides,
@@ -36,7 +36,7 @@ const ROWS: ProjectSummary[] = [
     title: 'Old archived project',
     status: 'archived',
     area: '',
-    task_progress: { total: 2, done: 2 },
+    todo_progress: { total: 2, done: 2 },
     last_activity_at: null,
   }),
 ];

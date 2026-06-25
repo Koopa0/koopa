@@ -4,13 +4,13 @@
 
 | Signal | Action |
 |---|---|
-| Question ("what / show / how is") | Read-only query tool (`brief`, `search_knowledge`, `list_tasks`, `list_content`, `review_period`, `project_progress`) |
+| Question ("what / show / how is") | Read-only query tool (`brief`, `search_knowledge`, `list_todos`, `list_content`, `review_period`, `project_progress`) |
 | Capture impulse ("add / remind me / 記一下") | `capture_inbox` |
 | Plan today | `plan_day`（候選 plan） |
-| Recurring habit ("每天 / Mon-Sat / 每 N 天做") on a todo you created | `set_todo_recurrence`（週幾 mon..sun 或 interval+unit;clear 取消）— 之後每逢符合日進 brief，`resolve_task` done 完成當日 occurrence |
+| Recurring habit ("每天 / Mon-Sat / 每 N 天做") on a todo you created | `set_todo_recurrence`（週幾 mon..sun 或 interval+unit;clear 取消）— 之後每逢符合日進 brief，`resolve_todo` done 完成當日 occurrence |
 | Commitment intent ("create area / goal / project") | `propose_area` / `propose_goal` / `propose_project`（inert draft，Koopa 在 admin activate） |
 | Finished content piece ("這篇可以推") | `propose_content`（進審核佇列，Koopa 在 admin publish / reject） |
-| Self-clear a todo you created | `resolve_task`（done / archived / dismissed） |
+| Self-clear a todo you created | `resolve_todo`（done / archived / dismissed） |
 | Reflection intent ("how did today go / 反思") | 寫進 agent 自己的 `.md` |
 
 ## Maturity gate

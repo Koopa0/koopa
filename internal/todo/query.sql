@@ -66,7 +66,7 @@ SELECT id, title, state, due, project_id,
 FROM todos WHERE id = @id;
 
 -- name: TodosByCreator :many
--- List todos created by a given agent, newest first. Powers the list_tasks
+-- List todos created by a given agent, newest first. Powers the list_todos
 -- MCP readback loop: an agent reads the disposition of the todos it created.
 -- created_by is the resolved caller identity (caller-scoped), never a
 -- client-supplied filter. Uses idx_todos_created_by (created_by, created_at DESC).
@@ -76,7 +76,7 @@ WHERE created_by = @created_by
 ORDER BY created_at DESC;
 
 -- name: ResolveTodoByCreator :one
--- Caller-scoped terminal close for the resolve_task MCP readback loop: an agent
+-- Caller-scoped terminal close for the resolve_todo MCP readback loop: an agent
 -- moves a todo IT created to a terminal state (done/archived/dismissed). The
 -- created_by predicate scopes the write to the caller's own rows — a mismatched
 -- creator (or unknown id) matches 0 rows, surfacing as pgx.ErrNoRows → not-found,

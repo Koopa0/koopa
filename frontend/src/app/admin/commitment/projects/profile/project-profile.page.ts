@@ -14,7 +14,7 @@ import { PlanService } from '../../../../core/services/plan.service';
 import { AdminTopbarService } from '../../../admin-layout/admin-topbar.service';
 import type {
   ProjectDetail,
-  TaskSummary,
+  TodoSummary,
   TodosByState,
 } from '../../../../core/models/admin.model';
 
@@ -117,7 +117,7 @@ export class ProjectProfilePageComponent {
     this.router.navigate(['/admin/commitment/goals', goalId]);
   }
 
-  protected todosForColumn(col: TodoColumn): TaskSummary[] {
+  protected todosForColumn(col: TodoColumn): TodoSummary[] {
     return this.project()?.todos_by_state?.[col.key] ?? [];
   }
 }

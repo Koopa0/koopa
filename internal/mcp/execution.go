@@ -31,7 +31,7 @@ type PlanDayInput struct {
 
 // PlanDayItem is a single item in the plan_day input.
 type PlanDayItem struct {
-	TaskID   string `json:"task_id" jsonschema:"required" jsonschema_description:"Todo item UUID. The todo must be in state=todo or in_progress; inbox/done/someday/archived are rejected."`
+	TodoID   string `json:"todo_id" jsonschema:"required" jsonschema_description:"Todo item UUID. The todo must be in state=todo or in_progress; inbox/done/someday/archived are rejected."`
 	Position int    `json:"position,omitempty" jsonschema_description:"Position in plan (0-based, lower = higher priority)"`
 }
 
@@ -43,7 +43,7 @@ type PlanDayOutput struct {
 	// ItemsRemoved lists todos that were planned for this date in the
 	// previous successful plan but are NOT in the new items list — i.e.
 	// the todos genuinely displaced by this call. A todo carried over
-	// (same task_id appears in both the old plan and the new items
+	// (same todo_id appears in both the old plan and the new items
 	// list) does NOT appear here even though its underlying plan_item
 	// row gets a new id; the row identity churn is an implementation
 	// detail of the delete-then-insert path, not a semantic eviction.
@@ -82,22 +82,22 @@ const maxPlanPosition = 100_000
 // Index i is the caller-loop position used when the item did not
 // specify one.
 func createPlanItemTx(ctx context.Context, txTodos *todo.Store, txDayplan *daily.Store, item PlanDayItem, i int, date time.Time, caller string) error {
-	itemID, err := uuid.Parse(item.TaskID)
+	itemID, err := uuid.Parse(item.TodoID)
 	if err != nil {
-		return fmt.Errorf("invalid task_id at position %d: %w", i, err)
+		return fmt.Errorf("invalid todo_id at position %d: %w", i, err)
 	}
 	t, err := txTodos.ItemByID(ctx, itemID)
 	if err != nil {
-		return fmt.Errorf("todo item %s not found: %w", item.TaskID, err)
+		return fmt.Errorf("todo item %s not found: %w", item.TodoID, err)
 	}
 	// Only actionable items belong on a day's plan: todo (ready to start) and
 	// in_progress (continuing). inbox is unclarified; done/someday/archived/
 	// dismissed are not things you start today.
 	if t.State != todo.StateTodo && t.State != todo.StateInProgress {
-		return fmt.Errorf("todo item %s is in state %q — only todo or in_progress items can be planned (inbox must be clarified first; done/someday are not today's work)", item.TaskID, t.State)
+		return fmt.Errorf("todo item %s is in state %q — only todo or in_progress items can be planned (inbox must be clarified first; done/someday are not today's work)", item.TodoID, t.State)
 	}
 	if item.Position < 0 || item.Position > maxPlanPosition {
-		return fmt.Errorf("todo item %s position %d out of range [0, %d]", item.TaskID, item.Position, maxPlanPosition)
+		return fmt.Errorf("todo item %s position %d out of range [0, %d]", item.TodoID, item.Position, maxPlanPosition)
 	}
 	pos := item.Position
 	if pos == 0 {
@@ -110,9 +110,9 @@ func createPlanItemTx(ctx context.Context, txTodos *todo.Store, txDayplan *daily
 		Position:   int32(pos), // #nosec G115 -- pos validated to [0, maxPlanPosition] or the loop index; fits int32
 	}); err != nil {
 		if errors.Is(err, daily.ErrItemResolved) {
-			return fmt.Errorf("todo item %s is already resolved (done/deferred/dropped) for %s and cannot be re-planned", item.TaskID, date.Format(time.DateOnly))
+			return fmt.Errorf("todo item %s is already resolved (done/deferred/dropped) for %s and cannot be re-planned", item.TodoID, date.Format(time.DateOnly))
 		}
-		return fmt.Errorf("creating plan item for todo %s: %w", item.TaskID, err)
+		return fmt.Errorf("creating plan item for todo %s: %w", item.TodoID, err)
 	}
 	return nil
 }
@@ -134,7 +134,7 @@ func displacedFrom(removed []daily.RemovedItem, kept []PlanDayItem) []daily.Remo
 	}
 	keptIDs := make(map[uuid.UUID]struct{}, len(kept))
 	for _, item := range kept {
-		if id, err := uuid.Parse(item.TaskID); err == nil {
+		if id, err := uuid.Parse(item.TodoID); err == nil {
 			keptIDs[id] = struct{}{}
 		}
 	}

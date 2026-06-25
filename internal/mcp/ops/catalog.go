@@ -61,7 +61,7 @@ func CaptureInbox() Meta {
 		Writability: Additive,
 		Stability:   StabilityStable,
 		Since:       since,
-		Description: "Quick task capture to inbox. Only title is required. Status is always inbox. Use when the user says 'add a task', 'remind me to', or expresses a concrete work item to capture.",
+		Description: "Quick todo capture to the inbox. Only title is required. Status is always inbox. Use when the user says 'add a task', 'remind me to', or expresses a concrete work item to capture.",
 		FieldEnums: map[string][]string{
 			"energy": {"high", "medium", "low"},
 		},
@@ -76,7 +76,7 @@ func PlanDay() Meta {
 		Writability: Idempotent,
 		Stability:   StabilityStable,
 		Since:       since,
-		Description: "Set the day's plan as one atomic replacement. Each todo MUST be in state=todo or in_progress (inbox/done/someday/archived/dismissed rejected — clarify inbox todos via the admin UI first). The items list MUST be non-empty; to leave the day unplanned, do not call plan_day at all. The whole call (delete-existing + insert-new) runs in one transaction, so any per-item validation failure rolls back to the previous plan. items_removed reports todos that were in the previous plan but are NOT in the new list (true displacements only — todos carried over with the same task_id are not reported as removed even though their plan_item row gets a new id).",
+		Description: "Set the day's plan as one atomic replacement. Each todo MUST be in state=todo or in_progress (inbox/done/someday/archived/dismissed rejected — clarify inbox todos via the admin UI first). The items list MUST be non-empty; to leave the day unplanned, do not call plan_day at all. The whole call (delete-existing + insert-new) runs in one transaction, so any per-item validation failure rolls back to the previous plan. items_removed reports todos that were in the previous plan but are NOT in the new list (true displacements only — todos carried over with the same todo_id are not reported as removed even though their plan_item row gets a new id).",
 	}
 }
 
@@ -136,29 +136,29 @@ func ProposeContent() Meta {
 	}
 }
 
-// ListTasks returns metadata for the read-only proposal-readback tool — an
+// ListTodos returns metadata for the read-only proposal-readback tool — an
 // agent reads the disposition of the todos it created.
-func ListTasks() Meta {
+func ListTodos() Meta {
 	return Meta{
-		Name:        "list_tasks",
+		Name:        "list_todos",
 		Domain:      DomainDaily,
 		Writability: ReadOnly,
 		Stability:   StabilityStable,
 		Since:       "1.3.0",
-		Description: "Read-only readback of the todos you created (created_by = your resolved caller identity) so you can learn their disposition — accept = state todo/done, pending = inbox, reject = absent from this list (the owner triages in admin; a rejected proposal simply disappears). Caller-scoped: returns only your own todos, never the owner's personal todos or another agent's. Use to close the capture_inbox loop — after you push a suggestion, list_tasks shows how the owner acted on it.",
+		Description: "Read-only readback of the todos you created (created_by = your resolved caller identity) so you can learn their disposition — accept = state todo/done, pending = inbox, reject = absent from this list (the owner triages in admin; a rejected proposal simply disappears). Caller-scoped: returns only your own todos, never the owner's personal todos or another agent's. Use to close the capture_inbox loop — after you push a suggestion, list_todos shows how the owner acted on it.",
 	}
 }
 
-// ResolveTask returns metadata for the write half of the proposal-readback
+// ResolveTodo returns metadata for the write half of the proposal-readback
 // loop — an agent moves a todo IT created to a terminal state to self-clear it.
-func ResolveTask() Meta {
+func ResolveTodo() Meta {
 	return Meta{
-		Name:        "resolve_task",
+		Name:        "resolve_todo",
 		Domain:      DomainDaily,
 		Writability: Destructive,
 		Stability:   StabilityStable,
 		Since:       "1.5.0",
-		Description: "Move a todo YOU created to a terminal state: done (completed), archived (filed away), or dismissed (won't do). Caller-scoped — you can only resolve todos whose created_by = your resolved identity; resolving anyone else's todo returns not-found and changes nothing. Closes the write half of the capture_inbox/list_tasks readback loop: after you read a todo's disposition, resolve_task lets you self-clear the ones you've finished processing instead of leaving them for the owner to archive. SPECIAL CASE — if the todo is recurring (see set_todo_recurrence), state=done completes TODAY's occurrence (stamps the last-completed date and keeps the todo recurring) rather than closing it; archived/dismissed still stop the recurrence for good.",
+		Description: "Move a todo YOU created to a terminal state: done (completed), archived (filed away), or dismissed (won't do). Caller-scoped — you can only resolve todos whose created_by = your resolved identity; resolving anyone else's todo returns not-found and changes nothing. Closes the write half of the capture_inbox/list_todos readback loop: after you read a todo's disposition, resolve_todo lets you self-clear the ones you've finished processing instead of leaving them for the owner to archive. SPECIAL CASE — if the todo is recurring (see set_todo_recurrence), state=done completes TODAY's occurrence (stamps the last-completed date and keeps the todo recurring) rather than closing it; archived/dismissed still stop the recurrence for good.",
 		FieldEnums: map[string][]string{
 			"state": {"done", "archived", "dismissed"},
 		},
@@ -175,7 +175,7 @@ func SetTodoRecurrence() Meta {
 		Writability: Destructive,
 		Stability:   StabilityStable,
 		Since:       since,
-		Description: "Set or clear the recurrence of a todo YOU created. Weekday-mode: pass weekdays (any of mon,tue,wed,thu,fri,sat,sun) — e.g. Mon-Sat for a six-day-a-week habit, or all seven for daily. Interval-mode: pass interval + unit (days/weeks/months/years) to recur every N units measured from the last completion (self-pacing). Pass clear=true to make the todo a one-shot again. Exactly one mode per call; weekday and interval are mutually exclusive. Caller-scoped — you can only schedule todos whose created_by = your resolved identity. A recurring todo surfaces in the morning brief and the recurring view on every day its rule matches; resolve_task state=done then completes that day's occurrence and the todo keeps recurring.",
+		Description: "Set or clear the recurrence of a todo YOU created. Weekday-mode: pass weekdays (any of mon,tue,wed,thu,fri,sat,sun) — e.g. Mon-Sat for a six-day-a-week habit, or all seven for daily. Interval-mode: pass interval + unit (days/weeks/months/years) to recur every N units measured from the last completion (self-pacing). Pass clear=true to make the todo a one-shot again. Exactly one mode per call; weekday and interval are mutually exclusive. Caller-scoped — you can only schedule todos whose created_by = your resolved identity. A recurring todo surfaces in the morning brief and the recurring view on every day its rule matches; resolve_todo state=done then completes that day's occurrence and the todo keeps recurring.",
 	}
 }
 
@@ -246,8 +246,8 @@ func All() []Meta {
 		ProposeGoal(),
 		ProposeProject(),
 		ProposeContent(),
-		ListTasks(),
-		ResolveTask(),
+		ListTodos(),
+		ResolveTodo(),
 		SetTodoRecurrence(),
 		ProjectProgress(),
 		ListContent(),

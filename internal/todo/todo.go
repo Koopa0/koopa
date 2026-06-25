@@ -2,11 +2,10 @@
 
 // Package todo provides personal GTD work-item tracking.
 //
-// Named todo (not task) to free the bare word "task" for the inter-agent
-// coordination entity — the tasks table in schema and the
-// internal/agent/task package. Vocabulary discipline: task =
-// agent-to-agent work unit, todo = personal GTD item. This matches the
-// schema-level split between the todos and tasks tables.
+// "todo" is the system's sole work-item entity. Koopa is the only router and
+// there is no agent-to-agent task coordination, so no separate "task" entity
+// exists — the MCP surface (list_todos / resolve_todo / capture_inbox) and the
+// admin UI both speak "todo".
 package todo
 
 import (
@@ -121,7 +120,7 @@ func (s *Store) ItemByID(ctx context.Context, id uuid.UUID) (*Item, error) {
 }
 
 // TodosByCreator returns the todos created by createdBy, newest first. It
-// backs the list_tasks MCP readback loop: an agent reads the disposition
+// backs the list_todos MCP readback loop: an agent reads the disposition
 // (state) of the todos it created. createdBy is the resolved caller
 // identity — caller-scoped, never a client-supplied filter — so the result
 // is exactly the caller's own todos. Backed by idx_todos_created_by.
@@ -142,7 +141,7 @@ func (s *Store) TodosByCreator(ctx context.Context, createdBy string) ([]Creator
 }
 
 // ResolveByCreator moves a todo the caller created to a terminal state
-// (done / archived / dismissed) for the resolve_task readback loop. createdBy
+// (done / archived / dismissed) for the resolve_todo readback loop. createdBy
 // is the resolved caller identity — caller-scoped, never a client-supplied
 // filter — so a todo owned by a different creator (or a non-existent id)
 // matches 0 rows and returns ErrNotFound, never a cross-creator mutation.
@@ -312,7 +311,7 @@ var ErrInvalidInput = errors.New("todo: invalid input")
 // SQL enum. Uses underscores (in_progress) to match Go naming conventions.
 //
 // archived and dismissed are terminal self-close states an agent sets via the
-// resolve_task MCP readback loop on a todo it created — distinct from done
+// resolve_todo MCP readback loop on a todo it created — distinct from done
 // (completed) in intent: archived = filed away, dismissed = won't do. Like
 // every non-done state they carry no completed_at (chk_todo_completed_at_consistency).
 type State string
@@ -359,7 +358,7 @@ func (t *Item) IsRecurring() bool {
 	return t.RecurWeekdays != nil || (t.RecurInterval != nil && *t.RecurInterval > 0)
 }
 
-// CreatorItem is a slim todo projection for the list_tasks readback loop —
+// CreatorItem is a slim todo projection for the list_todos readback loop —
 // just enough for an agent to learn the disposition (state) of a todo it
 // created. The heavyweight fields (due / energy / project / recurrence) the
 // readback does not need are omitted; created_by is implied by the query
@@ -371,7 +370,7 @@ type CreatorItem struct {
 }
 
 // Resolution is the slim result of ResolveByCreator — the resolved todo's id
-// and the terminal state now stored, enough for the resolve_task readback ack.
+// and the terminal state now stored, enough for the resolve_todo readback ack.
 type Resolution struct {
 	ID    uuid.UUID
 	State State

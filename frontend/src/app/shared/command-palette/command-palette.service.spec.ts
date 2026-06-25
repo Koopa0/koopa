@@ -133,7 +133,7 @@ describe('CommandPaletteService', () => {
           status: 'in_progress',
           area: 'studio',
           goal_breadcrumb: null,
-          task_progress: { done: 2, total: 8 },
+          todo_progress: { done: 2, total: 8 },
           staleness_days: 1,
           last_activity_at: null,
         },

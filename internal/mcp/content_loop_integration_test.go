@@ -400,19 +400,19 @@ func TestIntegration_ReviewPeriod_HumanTodoIncluded_AgentExcluded(t *testing.T) 
 	completeTodoAsActor(t, "rp-human-done", "human", time.Now())
 
 	// Agent-completed todo — must NOT appear (agent actor).
-	// Use capture_inbox (planner) then resolve_task(done) — this logs actor='planner'.
+	// Use capture_inbox (planner) then resolve_todo(done) — this logs actor='planner'.
 	_, captured, err := callHandlerAs(t, "planner", s.captureInbox, CaptureInboxInput{
 		Title: "rp-agent-done",
 	})
 	if err != nil {
 		t.Fatalf("captureInbox: %v", err)
 	}
-	_, _, err = callHandlerAs(t, "planner", s.resolveTask, ResolveTaskInput{
-		ID:    captured.Task.ID.String(),
+	_, _, err = callHandlerAs(t, "planner", s.resolveTodo, ResolveTodoInput{
+		ID:    captured.Todo.ID.String(),
 		State: "done",
 	})
 	if err != nil {
-		t.Fatalf("resolveTask: %v", err)
+		t.Fatalf("resolveTodo: %v", err)
 	}
 
 	_, out, err := callHandlerAs(t, "planner", s.reviewPeriod, ReviewPeriodInput{

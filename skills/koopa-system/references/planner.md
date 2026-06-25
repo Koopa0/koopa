@@ -18,7 +18,7 @@
 | `brief(mode="reflection")` | 結束一天 | Planned vs actual, completion_rate（read-only） |
 | `capture_inbox` | 快速捕獲個人 todo | 只需 `title`。schema 是 `todos`，落在 `inbox`。 |
 | `search_knowledge` | 找過去的素材 | content corpus（article / essay / build-log / til / digest）的 hybrid 檢索 |
-| `list_tasks` / `resolve_task` | 看自建 todo 的處置、自清 | `list_tasks` 讀回你建立的 todo 當前 state；`resolve_task` 把你建立的 todo 移到 done / archived / dismissed |
+| `list_todos` / `resolve_todo` | 看自建 todo 的處置、自清 | `list_todos` 讀回你建立的 todo 當前 state；`resolve_todo` 把你建立的 todo 移到 done / archived / dismissed |
 
 ### Agent memory
 
@@ -32,7 +32,7 @@
 | 看 goals + milestones 進度 | admin dashboard（`GET /api/admin/commitment/goals`）；`brief(mode=morning)` 的 `active_goals` 給輕量摘要 |
 | 看哪些 project / area 停滯 | `project_progress`（read-only PARA momentum），或 admin dashboard |
 | 週末回顧 / 系統健康 | admin 觀測面板（Koopa 在 Angular 看） |
-| 推進 Koopa 自己的 todo 狀態（start / complete / defer / drop） | admin 表單；你只能 `resolve_task` 自己建立的 todo |
+| 推進 Koopa 自己的 todo 狀態（start / complete / defer / drop） | admin 表單；你只能 `resolve_todo` 自己建立的 todo |
 
 ### Commitment 提案 — inert draft 或 admin 表單
 
@@ -60,7 +60,7 @@ brief(as:"planner", mode="morning")
 
 [白天]
   → search_knowledge 查素材
-  → list_tasks 看自建 todo 的處置，resolve_task 自清已完成的
+  → list_todos 看自建 todo 的處置，resolve_todo 自清已完成的
   → Koopa 自己的 todo 狀態推進走 admin 表單（你呈現、Koopa 決定）
 
 brief(as:"planner", mode="reflection")

@@ -108,13 +108,13 @@
             <td class="px-3 py-2">
               <div class="flex items-center gap-2">
                 <span class="font-mono text-[11px] text-fg-muted">
-                  {{ row.task_progress.done }} / {{ row.task_progress.total }}
+                  {{ row.todo_progress.done }} / {{ row.todo_progress.total }}
                 </span>
                 <div class="h-1.5 w-16 overflow-hidden rounded-full bg-elevated">
                   <div
                     class="h-full bg-brand"
                     [style.width.%]="
-                      taskPercent(row.task_progress.done, row.task_progress.total)
+                      todoPercent(row.todo_progress.done, row.todo_progress.total)
                     "
                   ></div>
                 </div>

@@ -188,7 +188,7 @@ func TestBriefOutput_MorningWireShape(t *testing.T) {
 			},
 		},
 		{
-			name: "tasks section populated — only task-bearing keys carry data, others stay []",
+			name: "todos section populated — only todo-bearing keys carry data, others stay []",
 			out: BriefOutput{
 				Mode: briefModeMorning,
 				Date: "2026-05-27",

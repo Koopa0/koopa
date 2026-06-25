@@ -19,7 +19,7 @@ type Domain string
 
 const (
 	DomainQuery   Domain = "query"   // read-only context, dashboards, search
-	DomainDaily   Domain = "daily"   // GTD capture, task lifecycle, daily plan
+	DomainDaily   Domain = "daily"   // GTD capture, todo lifecycle, daily plan
 	DomainContent Domain = "content" // content lifecycle, feeds
 )
 

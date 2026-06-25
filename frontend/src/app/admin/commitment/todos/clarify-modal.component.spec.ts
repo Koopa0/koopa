@@ -58,7 +58,7 @@ describe('ClarifyModalComponent', () => {
             status: 'active',
             area: 'work',
             goal_breadcrumb: null,
-            task_progress: { done: 0, total: 0 },
+            todo_progress: { done: 0, total: 0 },
             staleness_days: 0,
             last_activity_at: null,
           },

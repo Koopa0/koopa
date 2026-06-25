@@ -67,10 +67,10 @@ func TestPlanDay_Validation(t *testing.T) {
 	}{
 		{name: "empty items", input: PlanDayInput{}, wantErr: "items must contain at least one todo"},
 		{name: "invalid date", input: PlanDayInput{
-			Items: []PlanDayItem{{TaskID: "550e8400-e29b-41d4-a716-446655440000"}},
+			Items: []PlanDayItem{{TodoID: "550e8400-e29b-41d4-a716-446655440000"}},
 			Date:  new("bad-date"),
 		}, wantErr: "invalid date"},
-		// task_id validation within items happens after DB call (delete existing plan)
+		// todo_id validation within items happens after DB call (delete existing plan)
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
