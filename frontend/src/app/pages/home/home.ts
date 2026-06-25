@@ -7,27 +7,29 @@ import {
 } from '@angular/core';
 import { rxResource } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
-import { LucideAngularModule, ArrowRight } from 'lucide-angular';
+import { DatePipe } from '@angular/common';
 import { environment } from '../../../environments/environment';
 import { ContentService } from '../../core/services/content.service';
 import { SeoService } from '../../core/services/seo/seo.service';
 import { buildWebSiteSchema } from '../../core/services/seo/json-ld.util';
-import { PostRowComponent } from '../../shared/post-row/post-row.component';
 import type { ApiContent, ApiListResponse } from '../../core/models';
 
 const RECENT_LIMIT = 5;
 
+/** The cover's stance — the owner's existing line (a slot he may refine). */
+const STATEMENT = "Notes, systems, and what I'm working out.";
+
 /**
- * The public front door (route `''`). A person-forward intro — positioning
- * statement, short bio, social links — then the most recent writing as cards.
- *
- * The recent list is wrapped in `@defer (hydrate on idle)` so the server-rendered
- * cards stay painted straight through hydration: no loading skeleton, no
- * content flash. The full reading wall lives at `/articles`.
+ * The public front door (route `''`) — a curated COVER, not a feed. One
+ * featured lead (the newest piece, given serif weight) over a quiet hand of
+ * recent titles and two signposts. The full reading wall lives at `/articles`;
+ * Home deliberately renders no `app-post-row` so it cannot be mistaken for the
+ * index. The recent band is deferred (`on immediate; hydrate on idle`) so the
+ * server-rendered content stays painted through hydration — no flash.
  */
 @Component({
   selector: 'app-home',
-  imports: [RouterLink, LucideAngularModule, PostRowComponent],
+  imports: [RouterLink, DatePipe],
   templateUrl: './home.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
@@ -35,7 +37,7 @@ export class HomeComponent implements OnInit {
   private readonly contentService = inject(ContentService);
   private readonly seoService = inject(SeoService);
 
-  protected readonly ArrowRightIcon = ArrowRight;
+  protected readonly statement = STATEMENT;
 
   protected readonly contentsResource = rxResource<
     ApiListResponse<ApiContent>,
@@ -49,9 +51,12 @@ export class HomeComponent implements OnInit {
     this.contentsResource.hasValue() ? this.contentsResource.value().data : [],
   );
 
-  /** The newest published pieces across every type. */
-  protected readonly recent = computed(() =>
-    this.contents().slice(0, RECENT_LIMIT),
+  /** The single featured piece — newest published, the cover's pick. */
+  protected readonly lead = computed(() => this.contents().at(0) ?? null);
+
+  /** The next few, after the lead. */
+  protected readonly more = computed(() =>
+    this.contents().slice(1, RECENT_LIMIT),
   );
 
   ngOnInit(): void {

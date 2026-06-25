@@ -1,16 +1,10 @@
 <section class="ed-main pb-20">
-  <div class="mx-auto max-w-(--ed-measure)">
-    <!-- Hero — same bold-sans treatment as the front door and About. -->
-    <header class="pt-12 sm:pt-16">
-      <p class="font-mono text-[11px] tracking-[0.06em] text-brand uppercase">
-        Article
-      </p>
-      <h1
-        class="mt-4 font-display text-[2.5rem] leading-[1.1] font-bold tracking-[-0.025em] text-balance text-fg sm:text-[3rem]"
-      >
-        Everything I've written down.
-      </h1>
-      <p class="mt-5 max-w-2xl text-lg leading-[1.65] text-fg-muted">
+  <div class="mx-auto max-w-(--ed-shell)">
+    <!-- Hero — brand editorial grammar (matches the article-detail surface). -->
+    <header class="ed-topic-head">
+      <p class="ed-topic-kicker">Archive</p>
+      <h1 class="ed-topic-name">Everything I've written down.</h1>
+      <p class="ed-topic-desc">
         Articles, essays, build logs, TILs, and digests — filter by topic or
         by type.
       </p>
@@ -80,21 +74,23 @@
             <app-skeleton variant="card" />
           }
         </div>
-      } @else if (filteredContents().length > 0) {
-        <ul>
-          @for (
-            content of filteredContents();
-            track content.id;
-            let i = $index
-          ) {
-            <li
-              class="ed-reveal"
-              [style.animation-delay]="(i < 8 ? i : 8) * 40 + 'ms'"
-            >
-              <app-post-row [content]="content" />
-            </li>
-          }
-        </ul>
+      } @else if (grouped().length > 0) {
+        @for (g of grouped(); track g.year) {
+          <div class="ed-year-head" data-testid="year-head">
+            <span class="ed-year-n">{{ g.year }}</span>
+            <span class="ed-year-c">({{ g.items.length }})</span>
+          </div>
+          <ul class="list-none p-0" [attr.aria-label]="g.year">
+            @for (content of g.items; track content.id; let i = $index) {
+              <li
+                class="ed-reveal"
+                [style.animation-delay]="(i < 8 ? i : 8) * 35 + 'ms'"
+              >
+                <app-post-row [content]="content" />
+              </li>
+            }
+          </ul>
+        }
 
         @if (totalPages() > 1) {
           <nav

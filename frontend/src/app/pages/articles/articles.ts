@@ -38,6 +38,11 @@ interface ContentsQuery {
   page: number;
 }
 
+interface YearGroup {
+  year: string;
+  items: ApiContent[];
+}
+
 /**
  * The reading index — served at both `/` and `/articles`. One editorial
  * list consolidating every written content type (article / essay /
@@ -122,6 +127,38 @@ export class ArticlesComponent implements OnInit {
       return items;
     }
     return items.filter((c) => c.topics.some((t) => t.slug === topic));
+  });
+
+  /**
+   * filteredContents() grouped by published year, newest year first; undated
+   * pieces sink into a trailing "—" bucket. Pure derivation — no query change.
+   * Page-scoped: server pagination is perPage:50, so the per-year counts
+   * reflect the current page, not corpus totals. Honest at the current corpus;
+   * once a single year exceeds one page, the counts should come from a server
+   * aggregate (flag, don't build).
+   */
+  protected readonly grouped = computed<YearGroup[]>(() => {
+    const byYear = new Map<string, ApiContent[]>();
+    for (const c of this.filteredContents()) {
+      const year = c.published_at
+        ? new Date(c.published_at).getUTCFullYear().toString()
+        : '—';
+      const bucket = byYear.get(year);
+      if (bucket) {
+        bucket.push(c);
+      } else {
+        byYear.set(year, [c]);
+      }
+    }
+    return [...byYear.entries()]
+      .map(([year, items]) => ({ year, items }))
+      .sort((a, b) =>
+        a.year === '—'
+          ? 1
+          : b.year === '—'
+            ? -1
+            : Number(b.year) - Number(a.year),
+      );
   });
 
   protected readonly isLoading = computed(

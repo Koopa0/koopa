@@ -53,6 +53,13 @@ describe('PostRowComponent', () => {
     expect(el.textContent).toContain('Why copies are not the enemy.');
   });
 
+  it('should set the title in the serif (human) voice', () => {
+    const el = render(buildMockContent());
+
+    const title = el.querySelector('[data-testid="index-row"] h2');
+    expect(title?.classList.contains('font-serif')).toBe(true);
+  });
+
   it('should link to the single reading surface at /articles/:slug', () => {
     const el = render(buildMockContent({ slug: 'my-til', type: 'til' }));
 

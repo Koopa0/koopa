@@ -1,55 +1,82 @@
-<section class="ed-main pb-24">
-  <div class="mx-auto max-w-(--ed-measure)">
-    <!-- Intro -->
-    <header class="pt-12 sm:pt-16">
-      <h1
-        class="font-display text-[2.5rem] leading-[1.08] font-bold tracking-[-0.025em] text-balance text-fg sm:text-[3rem]"
-      >
-        Notes, systems, and what I'm working out.
-      </h1>
-    </header>
+<section class="pb-24">
+  <div class="ed-fd">
+    <!-- BAND ① statement -->
+    <section class="ed-fd-pos ed-reveal">
+      <p class="ed-fd-kicker">koopa0.dev / knowledge engine</p>
+      <h1 class="ed-fd-stmt">{{ statement }}</h1>
+    </section>
+    <div class="ed-fd-rule"></div>
 
-    <!-- Recent writing -->
-    <section class="mt-16 sm:mt-20">
-      <div
-        class="flex items-baseline justify-between border-b border-border pb-3"
-      >
-        <p class="font-mono text-[11px] tracking-[0.06em] text-brand uppercase">
-          Recent
-        </p>
+    @defer (on immediate; hydrate on idle) {
+      <!-- BAND ② the lead — the one privileged piece -->
+      @if (lead(); as l) {
         <a
+          class="ed-fd-lead ed-reveal"
+          [routerLink]="'/articles/' + l.slug"
+          [style.animation-delay]="'40ms'"
+          data-testid="home-lead"
+        >
+          <p class="ed-fd-label">Lead</p>
+          <span class="ed-fd-lead-meta" aria-hidden="true">
+            <span
+              class="dot"
+              [style.background]="'var(--dot-' + l.type + ', var(--fg-faint))'"
+            ></span>
+            <span class="type">{{ l.type }}</span>
+            @if (l.published_at) {
+              <span>· {{ l.published_at | date: 'MMM d, yyyy' : 'UTC' }}</span>
+            }
+            <span>· {{ l.reading_time_min }} min</span>
+          </span>
+          <h2 class="ed-fd-lead-title">{{ l.title }}</h2>
+          @if (l.excerpt) {
+            <p class="ed-fd-lead-dek">{{ l.excerpt }}</p>
+          }
+          <span class="ed-fd-all">Read →</span>
+        </a>
+        <div class="ed-fd-rule"></div>
+      }
+
+      <!-- BAND ③ more recent — hairline list, never cards -->
+      <section class="ed-fd-recent-band">
+        <p class="ed-fd-label">More recent</p>
+        <div class="ed-fd-recent">
+          @for (p of more(); track p.id; let i = $index) {
+            <a
+              class="ed-fd-rec ed-reveal"
+              [routerLink]="'/articles/' + p.slug"
+              [style.animation-delay]="i * 45 + 'ms'"
+              data-testid="home-rec"
+            >
+              <span class="t">{{ p.title }}</span>
+              <span class="m">
+                @if (p.published_at) {
+                  {{ p.published_at | date: 'MMM yyyy' : 'UTC' }}
+                }
+              </span>
+            </a>
+          } @empty {
+            <p class="ed-fd-rec" data-testid="recent-empty">
+              <span class="t">Nothing published yet.</span>
+            </p>
+          }
+        </div>
+        <a
+          class="ed-fd-all"
           routerLink="/articles"
-          class="group inline-flex items-center gap-1 text-sm text-fg-subtle transition-colors hover:text-fg"
           data-testid="read-everything"
         >
-          Read everything
-          <lucide-icon
-            class="transition-transform group-hover:translate-x-0.5"
-            [img]="ArrowRightIcon"
-            [size]="14"
-            [strokeWidth]="1.6"
-          />
+          All writing →
         </a>
-      </div>
+      </section>
+    } @placeholder {
+      <div class="min-h-[16rem]"></div>
+    }
 
-      @defer (on immediate; hydrate on idle) {
-        <ul class="mt-2 flex flex-col">
-          @for (piece of recent(); track piece.id; let i = $index) {
-            <li class="ed-reveal" [style.animation-delay]="i * 45 + 'ms'">
-              <app-post-row [content]="piece" [cta]="true" />
-            </li>
-          } @empty {
-            <li
-              class="py-12 text-center text-sm text-fg-faint"
-              data-testid="recent-empty"
-            >
-              Nothing published yet.
-            </li>
-          }
-        </ul>
-      } @placeholder {
-        <div class="min-h-[16rem]"></div>
-      }
-    </section>
+    <!-- BAND ④ signposts -->
+    <nav class="ed-fd-signposts" aria-label="Sections">
+      <a routerLink="/articles">Writing →</a>
+      <a routerLink="/about">About →</a>
+    </nav>
   </div>
 </section>

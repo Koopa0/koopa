@@ -960,6 +960,279 @@
 }
 
 /* ============================================================
+   HOME — THE LEAD: the one featured piece, given disproportionate serif
+   weight. Front-door column; serif title one notch above any index row,
+   italic dek, single mono "Read →". Everything else reuses the live
+   .ed-fd-* grammar (kicker / label / rule / rec / all).
+   ============================================================ */
+.ed-fd-lead {
+  display: block;
+  padding: 40px 0 38px;
+}
+.ed-fd-lead-meta {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 9px;
+  margin: 0 0 10px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--fg-faint);
+}
+.ed-fd-lead-meta .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 99px;
+}
+.ed-fd-lead-meta .type {
+  letter-spacing: 0.03em;
+  color: var(--fg-subtle);
+}
+.ed-fd-lead-title {
+  font-family: var(--ed-title-font);
+  font-weight: var(--ed-title-weight);
+  font-size: var(--fs-ed-30, 1.875rem);
+  line-height: 1.15;
+  letter-spacing: var(--ed-title-track);
+  color: var(--fg);
+  margin: 0;
+  text-wrap: balance;
+  transition: color var(--dur-base) var(--ease-standard);
+}
+.ed-fd-lead:hover .ed-fd-lead-title {
+  color: var(--brand);
+}
+.ed-fd-lead-dek {
+  margin: 12px 0 0;
+  max-width: 58ch;
+  font-family: var(--font-serif);
+  font-style: var(--ed-lead-style);
+  font-size: 19px;
+  line-height: 1.55;
+  color: var(--fg-muted);
+}
+
+/* HOME — SIGNPOSTS: home-as-lobby. Two mono links on one hairline. */
+.ed-fd-signposts {
+  display: flex;
+  gap: 18px;
+  margin: 40px 0 0;
+  padding-top: 22px;
+  border-top: 1px solid var(--border-faint);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.02em;
+}
+.ed-fd-signposts a {
+  color: var(--fg-faint);
+  transition: color var(--dur-base) var(--ease-standard);
+}
+.ed-fd-signposts a:hover {
+  color: var(--brand);
+}
+
+/* ============================================================
+   ARTICLES — ARCHIVE YEAR HEADER: a large tabular serif numeral + a faint
+   mono count on the one --ed-rule hairline. Sticky so the current year
+   follows the scroll. Year is secondary metadata (--fg-subtle); titles
+   below stay primary. Same hairline grammar as the About colophon rows.
+   ============================================================ */
+.ed-year-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-top: 40px;
+  padding: 28px 0 8px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--ed-rule);
+}
+.ed-year-head:first-of-type {
+  margin-top: 8px;
+  padding-top: 8px;
+}
+.ed-year-n {
+  font-family: var(--ed-title-font);
+  font-weight: var(--ed-title-weight);
+  font-size: var(--fs-ed-24, 1.5rem);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: var(--ed-title-track);
+  color: var(--fg-subtle);
+}
+.ed-year-c {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--fg-faint);
+}
+
+/* ============================================================
+   ABOUT — THE COLOPHON: four labelled blocks in the serif column of
+   .ed-spread. Statement -> pull -> NOW (dated) -> Elsewhere -> Colophon ->
+   signature. Block labels reuse the faint mono-label grammar; NOW takes
+   --brand as the liveness tell. The <dl> rows share the one hairline
+   grammar with the archive year-rows — one grammar, three surfaces.
+   ============================================================ */
+.ed-about-stmt {
+  font-family: var(--ed-title-font);
+  font-weight: var(--ed-title-weight);
+  font-size: var(--fs-ed-30, 1.875rem);
+  line-height: 1.18;
+  letter-spacing: var(--ed-title-track);
+  color: var(--fg);
+  margin: 0;
+  max-width: 24ch;
+  text-wrap: balance;
+}
+.ed-about-pull {
+  font-family: var(--font-serif);
+  font-style: var(--ed-lead-style);
+  font-size: var(--fs-ed-24, 1.5rem);
+  line-height: 1.4;
+  letter-spacing: -0.005em;
+  color: var(--fg);
+  max-width: 30ch;
+  margin: 32px 0;
+  padding-top: 24px;
+  border-top: 1px solid var(--ed-rule);
+}
+.ed-about-label {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fg-faint);
+  margin: 44px 0 14px;
+}
+.ed-about-updated {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--fg-faint);
+  margin: 0 0 16px;
+}
+.ed-about-dl {
+  display: grid;
+  grid-template-columns: 7.25rem minmax(0, 1fr);
+  margin: 0;
+}
+.ed-about-dl > .pair {
+  display: contents;
+}
+.ed-about-dl dt {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--fg-faint);
+  padding: 11px 0;
+  border-top: 1px solid var(--border-faint);
+}
+.ed-about-dl dd {
+  margin: 0;
+  font-family: var(--font-serif);
+  font-size: 15.5px;
+  line-height: 1.45;
+  color: var(--fg);
+  padding: 11px 0;
+  border-top: 1px solid var(--border-faint);
+}
+.ed-about-dl .pair:first-child dt,
+.ed-about-dl .pair:first-child dd {
+  border-top: none;
+}
+.ed-about-dl dd a {
+  color: var(--fg);
+  text-decoration: none;
+  border-bottom: 1px solid var(--brand-muted);
+  transition: color var(--dur-base) var(--ease-standard);
+}
+.ed-about-dl dd a:hover {
+  color: var(--brand);
+}
+.ed-about-sig {
+  margin: 40px 0 0;
+  padding-top: 20px;
+  border-top: 1px solid var(--ed-rule);
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: 14px;
+  color: var(--fg-subtle);
+}
+
+/* ABOUT — "alive" effects (the fun layer): a pulsing NOW dot, a scroll-spy
+   rail highlight, and a per-block scroll reveal. The reveal is gated by
+   .ed-about-anim — a class the component adds only in the browser — so the
+   content is fully visible under SSR / no-JS and never hidden by CSS alone. */
+.ed-about-label.now {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.ed-about-label.now::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 99px;
+  background: var(--brand);
+  animation: ed-now-pulse 2.4s ease-in-out infinite;
+}
+@keyframes ed-now-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 var(--brand-muted);
+    opacity: 1;
+  }
+  70% {
+    box-shadow: 0 0 0 6px transparent;
+    opacity: 0.5;
+  }
+}
+.ed-rail-v.is-active {
+  color: var(--brand);
+}
+.ed-about-anim .ed-about-block {
+  opacity: 0;
+  transform: translateY(16px);
+  transition:
+    opacity 0.6s var(--ease-standard),
+    transform 0.6s var(--ease-standard);
+}
+.ed-about-anim .ed-about-block.is-in {
+  opacity: 1;
+  transform: none;
+}
+
+@media (max-width: 560px) {
+  .ed-fd-lead-title {
+    font-size: 26px;
+  }
+  .ed-about-stmt {
+    font-size: 26px;
+  }
+  .ed-about-pull {
+    font-size: 20px;
+  }
+  .ed-about-dl {
+    grid-template-columns: 6rem minmax(0, 1fr);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ed-about-label.now::before {
+    animation: none;
+  }
+  .ed-about-anim .ed-about-block {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+}
+
+/* ============================================================
    Tone B element rules (the chosen tone). The .ed base already carries
    the B tunables; these are the few B-specific element overrides.
    ============================================================ */

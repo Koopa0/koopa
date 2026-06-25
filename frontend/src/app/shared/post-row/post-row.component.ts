@@ -38,7 +38,7 @@ import type { ApiContent } from '../../core/models';
         @if (content().published_at) {
           <span class="text-fg-faint" aria-hidden="true">·</span>
           <span class="text-fg-faint">{{
-            content().published_at | date: 'MMM d, yyyy'
+            content().published_at | date: 'MMM d, yyyy' : 'UTC'
           }}</span>
         }
         <span class="ml-auto text-fg-faint"
@@ -46,7 +46,7 @@ import type { ApiContent } from '../../core/models';
         >
       </div>
       <h2
-        class="font-display text-[21px] font-semibold leading-[1.25] tracking-[-0.015em] text-fg transition-colors duration-(--dur-base) group-hover:text-brand"
+        class="font-serif text-[21px] font-medium leading-[1.3] tracking-[-0.005em] text-fg transition-colors duration-(--dur-base) group-hover:text-brand"
       >
         {{ content().title }}
       </h2>

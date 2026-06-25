@@ -44,7 +44,6 @@ function buildMockMeta(
 }
 
 describe('HomeComponent', () => {
-  let component: HomeComponent;
   let fixture: ComponentFixture<HomeComponent>;
   let httpTesting: HttpTestingController;
 
@@ -62,7 +61,6 @@ describe('HomeComponent', () => {
 
     httpTesting = TestBed.inject(HttpTestingController);
     fixture = TestBed.createComponent(HomeComponent);
-    component = fixture.componentInstance;
   });
 
   afterEach(() => {
@@ -86,50 +84,69 @@ describe('HomeComponent', () => {
     req.flush({ data: contents, meta });
   }
 
-  /** Force the deferred recent-list block into its rendered (Complete) state. */
+  /** Force the deferred cover block into its rendered (Complete) state. */
   async function renderDeferredList(): Promise<void> {
     const blocks = await fixture.getDeferBlocks();
     await blocks[0].render(DeferBlockState.Complete);
     fixture.detectChanges();
   }
 
-  it('should render the owner-set positioning statement', async () => {
+  it('should render the positioning statement as the single h1', async () => {
     await settle();
     flushContents([]);
     await settle();
 
     const el = fixture.nativeElement as HTMLElement;
-    expect(el.textContent).toContain(
+    // The statement is the always-present <h1> — present even with no lead.
+    expect(el.querySelectorAll('h1').length).toBe(1);
+    expect(el.querySelector('h1')?.textContent).toContain(
       "Notes, systems, and what I'm working out.",
     );
   });
 
-  it('should point the read-everything link at the article wall', async () => {
-    await settle();
-    flushContents([]);
-    await settle();
-
-    const el = fixture.nativeElement as HTMLElement;
-    expect(
-      el.querySelector('[data-testid="read-everything"]')?.getAttribute('href'),
-    ).toBe('/articles');
-  });
-
-  it('should render the recent pieces as cards once the list hydrates', async () => {
+  it('should feature the newest piece as the lead', async () => {
     await settle();
     flushContents([
-      buildMockContent({ id: '1', slug: 'a', title: 'First' }),
+      buildMockContent({ id: '1', slug: 'lead-piece', title: 'The Lead' }),
+      buildMockContent({ id: '2', slug: 'b', title: 'Second' }),
+    ]);
+    await settle();
+    await renderDeferredList();
+
+    const lead = (fixture.nativeElement as HTMLElement).querySelector(
+      '[data-testid="home-lead"]',
+    );
+    expect(lead?.textContent).toContain('The Lead');
+    expect(lead?.getAttribute('href')).toBe('/articles/lead-piece');
+  });
+
+  it('should list the remaining recent pieces under the lead', async () => {
+    await settle();
+    flushContents([
+      buildMockContent({ id: '1', slug: 'a', title: 'Lead' }),
       buildMockContent({ id: '2', slug: 'b', title: 'Second' }),
       buildMockContent({ id: '3', slug: 'c', title: 'Third' }),
     ]);
     await settle();
     await renderDeferredList();
 
-    const el = fixture.nativeElement as HTMLElement;
-    const rows = el.querySelectorAll('[data-testid="index-row"]');
-    expect(rows.length).toBe(3);
-    expect(el.textContent).toContain('First');
-    expect(rows[0].getAttribute('href')).toBe('/articles/a');
+    const rows = (fixture.nativeElement as HTMLElement).querySelectorAll(
+      '[data-testid="home-rec"]',
+    );
+    expect(rows.length).toBe(2); // 3 contents − 1 lead
+  });
+
+  it('should point the read-everything link at the article wall', async () => {
+    await settle();
+    flushContents([]);
+    await settle();
+    await renderDeferredList();
+
+    expect(
+      (fixture.nativeElement as HTMLElement)
+        .querySelector('[data-testid="read-everything"]')
+        ?.getAttribute('href'),
+    ).toBe('/articles');
   });
 
   it('should show an empty line when nothing is published', async () => {
@@ -138,29 +155,28 @@ describe('HomeComponent', () => {
     await settle();
     await renderDeferredList();
 
-    const el = fixture.nativeElement as HTMLElement;
     expect(
-      el.querySelector('[data-testid="recent-empty"]')?.textContent,
+      (fixture.nativeElement as HTMLElement).querySelector(
+        '[data-testid="recent-empty"]',
+      )?.textContent,
     ).toContain('Nothing published yet.');
   });
 
   it('should stay standing when the content request fails (500)', async () => {
     await settle();
 
-    const req = httpTesting.expectOne(
-      (r) => r.url.includes('/api/contents') && r.method === 'GET',
-    );
-    req.flush('Server error', {
-      status: 500,
-      statusText: 'Internal Server Error',
-    });
+    httpTesting
+      .expectOne((r) => r.url.includes('/api/contents') && r.method === 'GET')
+      .flush('err', { status: 500, statusText: 'Internal Server Error' });
     await settle();
+    await renderDeferredList();
 
     const el = fixture.nativeElement as HTMLElement;
-    // The intro band is static — the page renders even with no feed.
     expect(el.textContent).toContain(
       "Notes, systems, and what I'm working out.",
     );
-    expect(component['recent']().length).toBe(0);
+    // Still exactly one <h1> (the statement) even with no lead on a 500.
+    expect(el.querySelectorAll('h1').length).toBe(1);
+    expect(el.querySelector('[data-testid="home-lead"]')).toBeNull();
   });
 });

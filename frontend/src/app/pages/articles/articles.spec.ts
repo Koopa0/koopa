@@ -151,6 +151,35 @@ describe('ArticlesComponent', () => {
     expect(el.textContent).toContain('A Build Log');
   });
 
+  it('should group rows by published year, newest year first', async () => {
+    await settle();
+    flushContents([
+      buildMockContent({
+        id: '1',
+        title: 'newer',
+        published_at: '2026-06-01T00:00:00Z',
+      }),
+      buildMockContent({
+        id: '2',
+        title: 'older',
+        published_at: '2025-03-01T00:00:00Z',
+      }),
+    ]);
+    flushTopics();
+    await settle();
+    await renderList();
+
+    const heads = Array.from(
+      (fixture.nativeElement as HTMLElement).querySelectorAll(
+        '[data-testid="year-head"]',
+      ),
+    ).map((h) => h.textContent?.replace(/\s+/g, ' ').trim());
+    expect(heads.length).toBe(2);
+    expect(heads[0]).toContain('2026'); // newest year first
+    expect(heads[0]).toContain('(1)');
+    expect(heads[1]).toContain('2025');
+  });
+
   it('should only render topic chips for topics with published content', async () => {
     await settle();
     flushContents([buildMockContent()]);
