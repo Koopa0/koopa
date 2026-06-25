@@ -12,9 +12,12 @@ test.describe('Articles Page', () => {
     // Wait for loading to finish
     await page.waitForLoadState('networkidle');
 
-    // Either articles are displayed or empty state
-    const hasArticles = await articles.articleCards.count() > 0;
-    const hasEmptyState = await page.locator('text=/no articles/i').isVisible().catch(() => false);
+    // Either articles are displayed or the empty state (which is also the
+    // graceful fallback when the index fails to load).
+    const hasArticles = (await articles.articleCards.count()) > 0;
+    const hasEmptyState = await articles.emptyState
+      .isVisible()
+      .catch(() => false);
     expect(hasArticles || hasEmptyState).toBeTruthy();
   });
 

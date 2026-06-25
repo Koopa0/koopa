@@ -128,10 +128,6 @@ export class ArticlesComponent implements OnInit {
     () => this.contentsResource.status() === 'loading',
   );
 
-  protected readonly hasError = computed(
-    () => this.contentsResource.status() === 'error',
-  );
-
   protected readonly totalPages = computed(() =>
     this.contentsResource.hasValue()
       ? this.contentsResource.value().meta.total_pages
@@ -173,9 +169,5 @@ export class ArticlesComponent implements OnInit {
     if (this.page() < this.totalPages()) {
       this.page.update((p) => p + 1);
     }
-  }
-
-  protected retry(): void {
-    this.contentsResource.reload();
   }
 }

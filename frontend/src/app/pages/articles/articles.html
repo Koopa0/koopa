@@ -72,19 +72,6 @@
           <app-skeleton variant="card" />
         }
       </div>
-    } @else if (hasError()) {
-      <div class="flex flex-col items-center gap-4 py-20 text-center">
-        <p class="text-sm text-fg-muted">
-          Could not load the index. Please try again.
-        </p>
-        <button
-          type="button"
-          class="rounded-xs border border-border px-4 py-2 text-sm text-fg-muted transition-colors hover:border-border-strong hover:text-fg"
-          (click)="retry()"
-        >
-          Retry
-        </button>
-      </div>
     } @else if (filteredContents().length > 0) {
       <ul>
         @for (content of filteredContents(); track content.id) {
@@ -119,12 +106,19 @@
         </nav>
       }
     } @else {
-      <!-- Empty state -->
-      <div class="flex flex-col items-center gap-4 py-20 text-center">
+      <!-- Empty state — also the graceful fallback when the index fails to load. -->
+      <div
+        class="flex flex-col items-center gap-4 py-20 text-center"
+        data-testid="articles-empty"
+      >
         <lucide-icon [img]="FileTextIcon" [size]="40" class="text-fg-faint" />
         <h2 class="text-lg font-medium text-fg-muted">Nothing here yet</h2>
         <p class="text-sm text-fg-faint">
-          Try a different topic, or clear the filters.
+          @if (topicFilter() !== 'all' || typeFilter()) {
+            Try a different topic, or clear the filters.
+          } @else {
+            Check back soon.
+          }
         </p>
       </div>
     }
