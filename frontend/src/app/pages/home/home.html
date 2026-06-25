@@ -13,7 +13,6 @@
         <a
           class="ed-fd-lead ed-reveal"
           [routerLink]="'/articles/' + l.slug"
-          [style.animation-delay]="'40ms'"
           data-testid="home-lead"
         >
           <p class="ed-fd-label">Lead</p>
@@ -41,11 +40,10 @@
       <section class="ed-fd-recent-band">
         <p class="ed-fd-label">More recent</p>
         <div class="ed-fd-recent">
-          @for (p of more(); track p.id; let i = $index) {
+          @for (p of more(); track p.id) {
             <a
               class="ed-fd-rec ed-reveal"
               [routerLink]="'/articles/' + p.slug"
-              [style.animation-delay]="i * 45 + 'ms'"
               data-testid="home-rec"
             >
               <span class="t">{{ p.title }}</span>

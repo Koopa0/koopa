@@ -10,24 +10,28 @@
         <a
           class="ed-rail-v"
           href="#statement"
+          (click)="jump($event, 'statement')"
           [class.is-active]="activeSection() === 'statement'"
           >Statement</a
         >
         <a
           class="ed-rail-v"
           href="#now"
+          (click)="jump($event, 'now')"
           [class.is-active]="activeSection() === 'now'"
           >Now</a
         >
         <a
           class="ed-rail-v"
           href="#elsewhere"
+          (click)="jump($event, 'elsewhere')"
           [class.is-active]="activeSection() === 'elsewhere'"
           >Elsewhere</a
         >
         <a
           class="ed-rail-v"
           href="#colophon"
+          (click)="jump($event, 'colophon')"
           [class.is-active]="activeSection() === 'colophon'"
           >Colophon</a
         >
@@ -91,9 +95,49 @@
             <div class="pair">
               <dt>{{ link.term }}</dt>
               <dd>
-                <a [href]="link.href" rel="me noopener" target="_blank">{{
-                  link.value
-                }}</a>
+                <a [href]="link.href" rel="me noopener" target="_blank">
+                  @switch (link.kind) {
+                    @case ('github') {
+                      <lucide-icon
+                        class="ed-about-ico"
+                        [img]="GithubIcon"
+                        [size]="14"
+                        [strokeWidth]="1.6"
+                      />
+                    }
+                    @case ('linkedin') {
+                      <lucide-icon
+                        class="ed-about-ico"
+                        [img]="LinkedinIcon"
+                        [size]="14"
+                        [strokeWidth]="1.6"
+                      />
+                    }
+                    @case ('email') {
+                      <lucide-icon
+                        class="ed-about-ico"
+                        [img]="MailIcon"
+                        [size]="14"
+                        [strokeWidth]="1.6"
+                      />
+                    }
+                    @case ('x') {
+                      <svg
+                        class="ed-about-ico"
+                        viewBox="0 0 24 24"
+                        width="13"
+                        height="13"
+                        fill="currentColor"
+                        aria-hidden="true"
+                      >
+                        <path
+                          d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"
+                        />
+                      </svg>
+                    }
+                  }
+                  {{ link.value }}
+                </a>
               </dd>
             </div>
           }

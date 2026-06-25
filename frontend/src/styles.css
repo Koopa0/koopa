@@ -834,10 +834,10 @@ pre {
    View transitions — scoped to the content area only.
    ============================================================ */
 ::view-transition-old(page-content) {
-  animation: 100ms ease-out both vt-fade-out;
+  animation: 220ms ease both vt-fade-out;
 }
 ::view-transition-new(page-content) {
-  animation: 150ms ease-out both vt-fade-in;
+  animation: 300ms ease both vt-fade-in;
 }
 ::view-transition-old(root),
 ::view-transition-new(root) {

@@ -12,7 +12,7 @@
 
 .ed {
   /* per-frame tunables — Tone B values folded into the base */
-  --ed-measure: 720px;     /* reading column width */
+  --ed-measure: 760px;     /* reading column width */
   --ed-rail: 156px;        /* mono metadata margin rail */
   --ed-gut: 44px;          /* gutter rail↔column */
   --ed-pad: 64px;          /* page side padding */
@@ -112,9 +112,9 @@
   grid-template-columns: 1fr auto 1fr;
   align-items: center;
   gap: 24px;
-  max-width: var(--ed-shell, 920px);
+  max-width: 1200px;
   margin: 0 auto;
-  padding: 30px var(--ed-pad) 26px;
+  padding: 44px var(--ed-pad) 28px;
 }
 .ed-mast-utils {
   justify-self: end;
@@ -1145,12 +1145,22 @@
   border-top: none;
 }
 .ed-about-dl dd a {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
   color: var(--fg);
   text-decoration: none;
-  border-bottom: 1px solid var(--brand-muted);
   transition: color var(--dur-base) var(--ease-standard);
 }
 .ed-about-dl dd a:hover {
+  color: var(--brand);
+}
+.ed-about-ico {
+  flex-shrink: 0;
+  color: var(--fg-faint);
+  transition: color var(--dur-base) var(--ease-standard);
+}
+.ed-about-dl dd a:hover .ed-about-ico {
   color: var(--brand);
 }
 .ed-about-sig {
@@ -1318,15 +1328,15 @@
 @keyframes ed-reveal {
   from {
     opacity: 0;
-    transform: translateY(6px);
   }
   to {
     opacity: 1;
-    transform: none;
   }
 }
+/* A single calm fade — no rise, no stagger. The page-level view transition
+   carries the "entering a screen" motion; content just settles in. */
 .ed-reveal {
-  animation: ed-reveal 0.38s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: ed-reveal 0.5s ease both;
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -16,7 +16,6 @@ import { TopicService } from '../../core/services/topic.service';
 import { SeoService } from '../../core/services/seo/seo.service';
 import { buildCollectionPageSchema } from '../../core/services/seo/json-ld.util';
 import { PostRowComponent } from '../../shared/post-row/post-row.component';
-import { SkeletonComponent } from '../../shared/skeleton/skeleton.component';
 import type {
   ApiContent,
   ApiListResponse,
@@ -52,7 +51,7 @@ interface YearGroup {
  */
 @Component({
   selector: 'app-articles',
-  imports: [LucideAngularModule, PostRowComponent, SkeletonComponent],
+  imports: [LucideAngularModule, PostRowComponent],
   templateUrl: './articles.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })

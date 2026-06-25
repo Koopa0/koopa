@@ -69,11 +69,8 @@
          through hydration (no skeleton flash on first load). -->
     @defer (on immediate; hydrate on idle) {
       @if (isLoading()) {
-        <div class="flex flex-col gap-4 pt-6">
-          @for (placeholder of [1, 2, 3, 4, 5]; track placeholder) {
-            <app-skeleton variant="card" />
-          }
-        </div>
+        <!-- Quiet reserved space — no pulsing skeleton; the list fades in. -->
+        <div class="min-h-[50vh]"></div>
       } @else if (grouped().length > 0) {
         @for (g of grouped(); track g.year) {
           <div class="ed-year-head" data-testid="year-head">
@@ -81,11 +78,8 @@
             <span class="ed-year-c">({{ g.items.length }})</span>
           </div>
           <ul class="list-none p-0" [attr.aria-label]="g.year">
-            @for (content of g.items; track content.id; let i = $index) {
-              <li
-                class="ed-reveal"
-                [style.animation-delay]="(i < 8 ? i : 8) * 35 + 'ms'"
-              >
+            @for (content of g.items; track content.id) {
+              <li class="ed-reveal">
                 <app-post-row [content]="content" />
               </li>
             }

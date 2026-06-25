@@ -10,6 +10,8 @@ import {
   viewChild,
   viewChildren,
 } from '@angular/core';
+import { DOCUMENT } from '@angular/common';
+import { LucideAngularModule, Github, Linkedin, Mail } from 'lucide-angular';
 import { SeoService } from '../../core/services/seo/seo.service';
 import { environment } from '../../../environments/environment';
 import { buildPersonSchema } from '../../core/services/seo/json-ld.util';
@@ -19,8 +21,11 @@ interface DefRow {
   value: string;
 }
 
+type LinkKind = 'github' | 'linkedin' | 'x' | 'email';
+
 interface LinkRow extends DefRow {
   href: string;
+  kind: LinkKind;
 }
 
 /**
@@ -33,17 +38,19 @@ interface LinkRow extends DefRow {
  * a scroll-spy that lights the rail jump-link for the section in view, and a
  * scroll reveal of each block. The reveal is gated by the `.ed-about-anim` class
  * (added here, in the browser) so under SSR / no-JS the content is fully visible
- * and never hidden by CSS alone. Above-fold blocks are revealed synchronously in
- * the same frame, so there is no hide-then-show flash.
+ * and never hidden by CSS alone. Above-fold blocks reveal synchronously in the
+ * same frame, so there is no hide-then-show flash.
  */
 @Component({
   selector: 'app-about',
+  imports: [LucideAngularModule],
   templateUrl: './about.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class AboutComponent implements OnInit {
   private readonly seoService = inject(SeoService);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly doc = inject(DOCUMENT);
 
   /** The `.ed-spread` container — gets `.ed-about-anim` only in the browser. */
   private readonly spread = viewChild.required<ElementRef<HTMLElement>>('spread');
@@ -52,6 +59,10 @@ export class AboutComponent implements OnInit {
 
   /** The section currently in view — drives the rail highlight. */
   protected readonly activeSection = signal('statement');
+
+  protected readonly GithubIcon = Github;
+  protected readonly LinkedinIcon = Linkedin;
+  protected readonly MailIcon = Mail;
 
   /** Last hand-edit of the NOW block — the /now liveness stamp. */
   protected readonly nowUpdated = 'June 25, 2026';
@@ -64,7 +75,6 @@ export class AboutComponent implements OnInit {
     { term: 'Built with', value: 'Go · PostgreSQL · pgvector' },
     { term: 'Interface', value: 'Angular · Tailwind · SSR' },
     { term: 'Knowledge', value: 'MCP · AI agents' },
-    { term: 'Typeset in', value: 'IBM Plex Serif · JetBrains Mono' },
   ];
 
   /** Contacts — the real links carried over from the prior about page. */
@@ -73,17 +83,25 @@ export class AboutComponent implements OnInit {
       term: 'GitHub',
       value: 'github.com/koopa0',
       href: 'https://github.com/koopa0',
+      kind: 'github',
     },
     {
       term: 'LinkedIn',
       value: 'Koopa Chen',
       href: 'https://www.linkedin.com/in/koopa-chen-70a4651ba/',
+      kind: 'linkedin',
     },
-    { term: 'X', value: '@Koopa012426', href: 'https://x.com/Koopa012426' },
+    {
+      term: 'X',
+      value: '@Koopa012426',
+      href: 'https://x.com/Koopa012426',
+      kind: 'x',
+    },
     {
       term: 'Email',
       value: 'contact@koopa0.dev',
       href: 'mailto:contact@koopa0.dev',
+      kind: 'email',
     },
   ];
 
@@ -156,6 +174,17 @@ export class AboutComponent implements OnInit {
         reveal?.disconnect();
       });
     });
+  }
+
+  /** Smooth-scroll to a section. A click handler (not a bare `#` href) so the
+   *  router never treats the fragment as a navigation. */
+  protected jump(event: Event, id: string): void {
+    event.preventDefault();
+    this.doc.getElementById(id)?.scrollIntoView({
+      behavior: 'smooth',
+      block: 'start',
+    });
+    this.activeSection.set(id);
   }
 
   ngOnInit(): void {
