@@ -36,7 +36,7 @@
         <ul class="mt-2 flex flex-col">
           @for (piece of recent(); track piece.id; let i = $index) {
             <li class="ed-reveal" [style.animation-delay]="i * 60 + 'ms'">
-              <app-post-row [content]="piece" />
+              <app-post-row [content]="piece" [cta]="true" />
             </li>
           } @empty {
             <li

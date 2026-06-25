@@ -65,4 +65,21 @@ describe('PostRowComponent', () => {
 
     expect(el.textContent).not.toContain('·');
   });
+
+  it('should not show the read-article cta by default', () => {
+    const el = render(buildMockContent());
+
+    expect(el.querySelector('[data-testid="index-row-cta"]')).toBeNull();
+  });
+
+  it('should show the read-article cta when cta is set', () => {
+    fixture.componentRef.setInput('content', buildMockContent());
+    fixture.componentRef.setInput('cta', true);
+    fixture.detectChanges();
+
+    const el = fixture.nativeElement as HTMLElement;
+    expect(
+      el.querySelector('[data-testid="index-row-cta"]')?.textContent,
+    ).toContain('Read article');
+  });
 });
