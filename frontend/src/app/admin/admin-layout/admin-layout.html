@@ -14,6 +14,7 @@
     [class.translate-x-0]="drawerOpen()"
     [class.-translate-x-full]="!drawerOpen()"
     [cdkTrapFocus]="drawerOpen() && isMobile()"
+    [attr.inert]="!drawerOpen() && isMobile() ? '' : null"
     role="navigation"
     aria-label="Admin navigation"
   >
