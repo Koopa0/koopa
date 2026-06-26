@@ -359,4 +359,8 @@ if (isMainModule(import.meta.url)) {
   });
 }
 
-export default createNodeRequestHandler(app);
+// The Angular build tooling (dev-server SSR middleware and prerender server)
+// loads this entry and destructures a named `reqHandler` export
+// (@angular/build .../ssr-middleware.js). A default export leaves reqHandler
+// undefined and the tooling warns + falls back, so export it by name.
+export const reqHandler = createNodeRequestHandler(app);
