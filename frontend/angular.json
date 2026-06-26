@@ -45,6 +45,17 @@
           },
           "configurations": {
             "production": {
+              "optimization": {
+                "scripts": true,
+                "styles": {
+                  "minify": true,
+                  "inlineCritical": true,
+                  "removeSpecialComments": true
+                },
+                "fonts": {
+                  "inline": false
+                }
+              },
               "budgets": [
                 {
                   "type": "initial",
@@ -108,6 +119,9 @@
     }
   },
   "cli": {
+    "cache": {
+      "enabled": false
+    },
     "analytics": "54b95ba0-2e7f-46e3-8a85-f0f6d41ed666",
     "schematicCollections": [
       "angular-eslint"
