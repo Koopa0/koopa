@@ -224,6 +224,21 @@ describe('HomeComponent', () => {
     expect(topics[0].textContent).toContain('Go');
   });
 
+  it('should show an error state when the contents request fails', async () => {
+    await settle();
+
+    httpTesting
+      .expectOne((r) => r.url.includes('/api/contents') && r.method === 'GET')
+      .flush('err', { status: 500, statusText: 'Internal Server Error' });
+    flushTopics();
+    await settle();
+
+    const el = fixture.nativeElement as HTMLElement;
+    // A failed recent-posts load surfaces a distinct error line, not the empty line.
+    expect(el.querySelector('[data-testid="recent-error"]')).not.toBeNull();
+    expect(el.querySelector('[data-testid="recent-empty"]')).toBeNull();
+  });
+
   it('should stay standing when the content request fails (500)', async () => {
     await settle();
 

@@ -71,7 +71,19 @@
                 </span>
               </a>
             } @empty {
-              @if (!loading()) {
+              @if (loadError()) {
+                <p class="ed-fd-rec" data-testid="recent-error">
+                  <span class="t">Couldn't load recent posts.</span>
+                  <button
+                    type="button"
+                    class="ml-2 underline hover:text-fg"
+                    (click)="contentsResource.reload()"
+                    data-testid="recent-retry"
+                  >
+                    Try again
+                  </button>
+                </p>
+              } @else if (!loading()) {
                 <p class="ed-fd-rec" data-testid="recent-empty">
                   <span class="t">Nothing published yet.</span>
                 </p>
