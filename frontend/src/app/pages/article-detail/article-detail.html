@@ -1,31 +1,4 @@
-@if (isLoading()) {
-  <div
-    class="mx-auto flex max-w-3xl flex-col items-center justify-center gap-3 px-6 py-20 text-fg-muted"
-  >
-    <div
-      class="size-8 animate-spin rounded-full border-2 border-border border-t-fg-muted"
-    ></div>
-    <p class="text-sm">Loading…</p>
-  </div>
-} @else if (error()) {
-  <div
-    class="mx-auto flex max-w-3xl flex-col items-center justify-center gap-4 px-6 py-20 text-center"
-  >
-    <lucide-icon [img]="AlertCircleIcon" [size]="40" class="text-error" />
-    <p class="text-xl font-semibold text-fg">Failed to load</p>
-    <p class="text-sm text-fg-muted">{{ error() }}</p>
-    @if (!preview()) {
-      <button
-        type="button"
-        class="ed-btn ed-btn-ghost"
-        (click)="goBack()"
-      >
-        <lucide-icon [img]="ArrowLeftIcon" [size]="16" />
-        Back
-      </button>
-    }
-  </div>
-} @else if (article(); as content) {
+@if (article(); as content) {
   @if (preview()) {
     <!-- Chrome-less preview column for the admin publish-preview iframe. -->
     <article class="mx-auto max-w-[640px] px-6 pb-16 pt-8 sm:px-10">

@@ -56,34 +56,37 @@ describe('ArticleDetailComponent', () => {
     component = fixture.componentInstance;
   });
 
-  function flushDetail(content: ApiContent): void {
-    const req = httpTesting.expectOne(
-      (r) => r.url.includes('/api/contents/') && r.method === 'GET',
-    );
-    req.flush({ data: content });
-  }
-
-  function flushRelated(): void {
-    const req = httpTesting.expectOne(
-      (r) => r.url.includes('/api/contents/related/') && r.method === 'GET',
-    );
-    req.flush({ data: [] });
-  }
-
-  it('should create', () => {
-    fixture.componentRef.setInput('slug', 'test-article');
+  /** Let the related rxResource issue its request, then render. */
+  async function settle(): Promise<void> {
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
     fixture.detectChanges();
-    expect(component).toBeTruthy();
-    flushDetail(buildMockContent());
+  }
+
+  /** Drain the below-the-fold related request (full mode only). */
+  function flushRelated(): void {
+    httpTesting
+      .expectOne(
+        (r) =>
+          r.url.includes('/api/contents/related/') && r.method === 'GET',
+      )
+      .flush({ data: [] });
+  }
+
+  it('should create', async () => {
+    fixture.componentRef.setInput('article', buildMockContent());
+    fixture.detectChanges();
+    await settle();
     flushRelated();
+
+    expect(component).toBeTruthy();
   });
 
-  it('should render breadcrumbs, meta, and TOC rail in full mode', () => {
-    fixture.componentRef.setInput('slug', 'test-article');
+  it('should render breadcrumbs, meta, and TOC rail in full mode', async () => {
+    fixture.componentRef.setInput('article', buildMockContent());
     fixture.detectChanges();
-    flushDetail(buildMockContent());
+    await settle();
     flushRelated();
-    fixture.detectChanges();
+    await settle();
 
     const el = fixture.nativeElement as HTMLElement;
     expect(el.querySelector('nav[aria-label="Breadcrumb"]')).toBeTruthy();
@@ -94,14 +97,15 @@ describe('ArticleDetailComponent', () => {
 
   it.each<ContentType>(['article', 'essay', 'build-log', 'til', 'digest'])(
     'should render %s content on the same reading surface',
-    (type) => {
-      fixture.componentRef.setInput('slug', `some-${type}`);
-      fixture.detectChanges();
-      flushDetail(
+    async (type) => {
+      fixture.componentRef.setInput(
+        'article',
         buildMockContent({ type, slug: `some-${type}`, title: `A ${type}` }),
       );
-      flushRelated();
       fixture.detectChanges();
+      await settle();
+      flushRelated();
+      await settle();
 
       const el = fixture.nativeElement as HTMLElement;
       expect(el.textContent).toContain(`A ${type}`);
@@ -110,13 +114,12 @@ describe('ArticleDetailComponent', () => {
     },
   );
 
-  it('should hide breadcrumbs, TOC, and read-next in preview mode', () => {
-    fixture.componentRef.setInput('slug', 'test-article');
+  it('should hide breadcrumbs, TOC, and read-next in preview mode', async () => {
+    fixture.componentRef.setInput('article', buildMockContent());
     fixture.componentRef.setInput('preview', true);
     fixture.detectChanges();
-    flushDetail(buildMockContent());
-    httpTesting.verify(); // no related request in preview
-    fixture.detectChanges();
+    await settle();
+    httpTesting.verify(); // no related request in preview (resource idle)
 
     const el = fixture.nativeElement as HTMLElement;
     expect(el.querySelector('nav[aria-label="Breadcrumb"]')).toBeNull();
@@ -125,30 +128,11 @@ describe('ArticleDetailComponent', () => {
     expect(el.textContent).toContain('Test Article');
   });
 
-  it('should show the error state when the detail request fails (500)', () => {
-    fixture.componentRef.setInput('slug', 'broken');
-    fixture.detectChanges();
-
-    const req = httpTesting.expectOne(
-      (r) => r.url.includes('/api/contents/') && r.method === 'GET',
-    );
-    req.flush('Server error', {
-      status: 500,
-      statusText: 'Internal Server Error',
-    });
-    fixture.detectChanges();
-
-    const el = fixture.nativeElement as HTMLElement;
-    expect(el.textContent).toContain('Failed to load');
-    expect(component['error']()).toBe('Failed to load article');
-  });
-
-  it('should mark the page noindex in preview mode', () => {
-    fixture.componentRef.setInput('slug', 'test-article');
+  it('should mark the page noindex in preview mode', async () => {
+    fixture.componentRef.setInput('article', buildMockContent());
     fixture.componentRef.setInput('preview', true);
     fixture.detectChanges();
-    flushDetail(buildMockContent());
-    fixture.detectChanges();
+    await settle();
 
     const robots = document.querySelector('meta[name="robots"]');
     expect(robots?.getAttribute('content')).toBe('noindex, nofollow');

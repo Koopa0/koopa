@@ -1,6 +1,7 @@
 import { Routes } from '@angular/router';
 import { adminGuard } from './core/guards/auth.guard';
 import { contentEditorCanDeactivate } from './admin/knowledge/content/editor/content-editor.guard';
+import { articleResolver } from './pages/article-detail/article-resolver';
 
 export const routes: Routes = [
   // The front door — a three-band editorial home (positioning statement,
@@ -23,6 +24,7 @@ export const routes: Routes = [
       import('./pages/article-detail/article-detail').then(
         (m) => m.ArticleDetailComponent,
       ),
+    resolve: { article: articleResolver },
   },
   // Chrome-less render of the same reading surface for the admin
   // publish-preview iframe (no header / footer / TOC / nav).
@@ -33,6 +35,7 @@ export const routes: Routes = [
         (m) => m.ArticleDetailComponent,
       ),
     data: { preview: true },
+    resolve: { article: articleResolver },
   },
   {
     path: 'topics',

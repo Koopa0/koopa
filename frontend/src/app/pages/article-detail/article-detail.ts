@@ -1,24 +1,19 @@
 import {
   Component,
-  DestroyRef,
-  inject,
-  signal,
-  input,
   ChangeDetectionStrategy,
-  OnInit,
   computed,
+  inject,
+  input,
   PLATFORM_ID,
   ElementRef,
   afterNextRender,
   effect,
 } from '@angular/core';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { isPlatformBrowser } from '@angular/common';
-import { Location, DatePipe } from '@angular/common';
+import { rxResource } from '@angular/core/rxjs-interop';
+import { of } from 'rxjs';
+import { isPlatformBrowser, DatePipe } from '@angular/common';
 import { RouterLink } from '@angular/router';
-import { LucideAngularModule, ArrowLeft, AlertCircle } from 'lucide-angular';
 import { environment } from '../../../environments/environment';
-import { ArticleService } from '../../core/services/article.service';
 import { ContentService } from '../../core/services/content.service';
 import { MarkdownService } from '../../core/services/markdown.service';
 import { ThemeService } from '../../core/services/theme.service';
@@ -31,52 +26,59 @@ import { RelatedArticlesComponent } from '../../shared/related-articles/related-
 
 /**
  * The reading surface — renders every written content type (article /
- * essay / build-log / til / digest) fetched by slug. Has two homes:
- * /articles/:slug (full chrome: breadcrumbs, TOC, read next) and
- * /preview/:slug (chrome-less column for the admin publish-preview
- * iframe, noindex).
+ * essay / build-log / til / digest). The article is resolved by
+ * {@link articleResolver} before the route activates (so the page-level view
+ * transition lands on the finished page, never a spinner) and arrives via the
+ * `article` input. Has two homes: /articles/:slug (full chrome: breadcrumbs,
+ * TOC, read next) and /preview/:slug (chrome-less column for the admin
+ * publish-preview iframe, noindex).
  */
 @Component({
   selector: 'app-article-detail',
   imports: [
     DatePipe,
     RouterLink,
-    LucideAngularModule,
     TableOfContentsComponent,
     RelatedArticlesComponent,
   ],
   templateUrl: './article-detail.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
-export class ArticleDetailComponent implements OnInit {
-  /** Route param: articles/:slug or preview/:slug */
-  readonly slug = input.required<string>();
+export class ArticleDetailComponent {
+  /** The resolved article — bound from the route's resolve key via
+   * withComponentInputBinding, so it is always present at first render. */
+  readonly article = input.required<ApiContent>();
 
   /** Route data flag: /preview/:slug renders the bare reading column. */
   readonly preview = input(false);
 
-  private readonly location = inject(Location);
-  private readonly articleService = inject(ArticleService);
   private readonly contentService = inject(ContentService);
   private readonly markdownService = inject(MarkdownService);
   private readonly themeService = inject(ThemeService);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly seoService = inject(SeoService);
-  private readonly destroyRef = inject(DestroyRef);
   private readonly el = inject(ElementRef);
 
-  protected readonly article = signal<ApiContent | null>(null);
-  protected readonly relatedArticles = signal<ApiRelatedContent[]>([]);
-  protected readonly isLoading = signal(true);
-  protected readonly error = signal<string | null>(null);
+  /** Related pieces — non-critical, below the fold. A `undefined` param keeps
+   * the resource idle in preview mode (no request). */
+  private readonly relatedResource = rxResource<
+    ApiRelatedContent[],
+    string | undefined
+  >({
+    params: () => (this.preview() ? undefined : this.article().slug),
+    stream: ({ params }) =>
+      params
+        ? this.contentService.getRelated(params)
+        : of<ApiRelatedContent[]>([]),
+  });
+
+  protected readonly relatedArticles = computed(() =>
+    this.relatedResource.hasValue() ? this.relatedResource.value() : [],
+  );
 
   protected readonly rawHtml = computed(() => {
-    const article = this.article();
-    if (!article) {
-      return '';
-    }
     // Strip leading h1 from markdown — the title is already rendered in the header section
-    const body = article.body.replace(/^#\s+.+\n+/, '');
+    const body = this.article().body.replace(/^#\s+.+\n+/, '');
     return this.markdownService.parse(body);
   });
 
@@ -84,18 +86,14 @@ export class ArticleDetailComponent implements OnInit {
   protected readonly parsedContent = this.rawHtml;
 
   /** Human label for the breadcrumb tail (e.g. "Build Log"). */
-  protected readonly typeLabel = computed(() => {
-    const article = this.article();
-    return article ? contentTypeLabelEn(article.type) : '';
-  });
+  protected readonly typeLabel = computed(() =>
+    contentTypeLabelEn(this.article().type),
+  );
 
   /** First attached topic drives the breadcrumb topic link. */
   protected readonly primaryTopic = computed(
-    () => this.article()?.topics[0] ?? null,
+    () => this.article().topics[0] ?? null,
   );
-
-  protected readonly ArrowLeftIcon = ArrowLeft;
-  protected readonly AlertCircleIcon = AlertCircle;
 
   private isBrowser = false;
 
@@ -103,6 +101,11 @@ export class ArticleDetailComponent implements OnInit {
     afterNextRender(() => {
       this.isBrowser = true;
     });
+
+    // Keep SEO meta in sync with the resolved article. An effect (not ngOnInit)
+    // so it re-runs on article→article navigation, where the router reuses this
+    // component instance and only the `article` input changes.
+    effect(() => this.updateSeo(this.article()));
 
     // Inject copy buttons into <pre> blocks when content changes
     effect(() => {
@@ -125,49 +128,6 @@ export class ArticleDetailComponent implements OnInit {
         );
       }, 0);
     });
-  }
-
-  ngOnInit(): void {
-    this.loadArticle(this.slug());
-  }
-
-  protected loadArticle(slug: string): void {
-    this.isLoading.set(true);
-    this.error.set(null);
-
-    this.articleService
-      .getArticleBySlug(slug)
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe({
-        next: (article) => {
-          this.article.set(article);
-          this.isLoading.set(false);
-          this.updateSeo(article);
-          if (!this.preview()) {
-            this.loadRelated(article.slug);
-          }
-        },
-        error: () => {
-          this.error.set('Failed to load article');
-          this.isLoading.set(false);
-        },
-      });
-  }
-
-  private loadRelated(slug: string): void {
-    this.contentService
-      .getRelated(slug)
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe({
-        next: (related) => this.relatedArticles.set(related),
-        error: () => {
-          // graceful degradation — hide related section on error
-        },
-      });
-  }
-
-  protected goBack(): void {
-    this.location.back();
   }
 
   private updateSeo(article: ApiContent): void {
