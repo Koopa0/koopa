@@ -242,18 +242,11 @@
   justify-content: center;
 }
 .ed-spread.has-toc {
-  /* Article reading layout runs wider than the house --ed-shell: the serif
-     column fills the shell (a longer measure, more characters per line) and
-     the on-this-page rail is pushed out to the right margin — its gutter is
-     wider than the metadata-rail gutter. */
-  gap: 0;
-  grid-template-columns:
-    var(--ed-rail) /* metadata rail (machine voice) */
-    44px /* rail → reading gutter */
-    minmax(0, 1fr) /* serif reading column — fills the shell */
-    var(--ed-toc-gut, 96px) /* reading → toc gutter (pushes TOC right) */
-    var(--ed-toc); /* on-this-page rail */
-  justify-content: stretch;
+  /* Article reading layout runs wider than the house --ed-shell (see
+     .ed-main.ed-read): three tracks for three children — metadata rail, the
+     serif reading column (fills the wider shell for a longer measure), and the
+     on-this-page rail sitting at the right margin. */
+  grid-template-columns: var(--ed-rail) minmax(0, 1fr) var(--ed-toc);
 }
 
 .ed-rail {
