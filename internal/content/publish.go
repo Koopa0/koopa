@@ -105,31 +105,31 @@ func (s *Store) PublishedInWindow(ctx context.Context, since, until time.Time) (
 	return contents, nil
 }
 
-// PublishFromReview is the canonical, state-guarded publish transition behind
-// the admin publish handler — the single editorial gate that promotes a review
-// row to published. The policy (Policy B):
+// Publish is the state-guarded publish transition behind the admin publish
+// handler — the owner's gate that promotes a content to published. Policy:
 //
-//   - review    → published   promote (sets is_public + published_at)
-//   - published → published    idempotent no-op (returns the row unchanged,
-//     so no second 'published' mutation or audit event is emitted)
-//   - draft, archived, …       ErrInvalidState
-//   - missing id               ErrNotFound
+//   - draft     → published   the owner publishes a finished draft directly,
+//     the common path (Koopa finalises offline, then publishes — no review detour)
+//   - review    → published   the owner publishes an agent-proposed draft from
+//     the review queue (agents reach review via propose_content; they never publish)
+//   - published → published    idempotent no-op (row unchanged, no second audit event)
+//   - changes_requested, archived, … → ErrInvalidState
+//   - missing id               → ErrNotFound
 //
-// It reads the current row then acts; callers already run inside an admin /
-// actor transaction, so the read and the conditional write share one tx. The
-// promotion delegates to PublishContent once the source state is validated.
+// Promotion sets is_public + published_at. It reads the current row then acts;
+// callers run inside an admin / actor transaction, so the read and the
+// conditional write share one tx.
 //
 // Concurrency: publish is the owner's terminal decision and wins races — a
 // concurrent agent revise_content on the same row is rejected (not-found) by
-// revise_content's status guard, by design; the owner publishes the version
-// they reviewed.
-func (s *Store) PublishFromReview(ctx context.Context, id uuid.UUID) (*Content, error) {
+// revise_content's status guard, by design.
+func (s *Store) Publish(ctx context.Context, id uuid.UUID) (*Content, error) {
 	current, err := s.Content(ctx, id)
 	if err != nil {
 		return nil, err // pgx.ErrNoRows already mapped to ErrNotFound by Content
 	}
 	switch current.Status {
-	case StatusReview:
+	case StatusDraft, StatusReview:
 		return s.PublishContent(ctx, id)
 	case StatusPublished:
 		return current, nil // idempotent: already published, no re-mutation
@@ -140,10 +140,10 @@ func (s *Store) PublishFromReview(ctx context.Context, id uuid.UUID) (*Content, 
 
 // PublishContent sets content status to published, is_public=true, and
 // published_at — at the store layer this is UNCONDITIONAL (no source-status
-// guard). It is the low-level mutation that PublishFromReview delegates to
-// once the source state has been validated. Callers that need the editorial
-// gate (review-only, published-idempotent, draft/archived-rejected) MUST go
-// through PublishFromReview, not call this directly on an unvalidated id.
+// guard). It is the low-level mutation that Publish delegates to once the
+// source state has been validated. Callers that need the editorial gate
+// (draft/review-promote, published-idempotent, changes_requested/archived-rejected)
+// MUST go through Publish, not call this directly on an unvalidated id.
 func (s *Store) PublishContent(ctx context.Context, id uuid.UUID) (*Content, error) {
 	r, err := s.q.PublishContent(ctx, id)
 	if err != nil {

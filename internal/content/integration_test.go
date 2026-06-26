@@ -592,7 +592,7 @@ func TestStore_PublishContent_NotFound(t *testing.T) {
 }
 
 // createDraftContent inserts a draft content row and returns its id. Helper
-// for the PublishFromReview state-guard tests, which need rows in a known
+// for the Publish state-guard tests, which need rows in a known
 // source state before exercising the transition.
 func createDraftContent(t *testing.T, s *Store, ctx context.Context, slug string) uuid.UUID {
 	t.Helper()
@@ -610,11 +610,12 @@ func createDraftContent(t *testing.T, s *Store, ctx context.Context, slug string
 	return c.ID
 }
 
-// TestStore_PublishFromReview exercises the editorial publish gate (Policy B):
-// only a review row is promoted to published; draft and archived rows are
-// rejected with ErrInvalidState. This is the guard behind the HTTP admin
-// publish handler (publish is admin-only; agents reach review via propose_content).
-func TestStore_PublishFromReview(t *testing.T) {
+// TestStore_Publish exercises the owner's publish gate: a draft (the owner's
+// own finished work) or a review row (an agent proposal) is promoted to
+// published; an archived row is rejected with ErrInvalidState. This is the guard
+// behind the HTTP admin publish handler (publish is admin-only; agents reach
+// review via propose_content).
+func TestStore_Publish(t *testing.T) {
 	tests := []struct {
 		name       string
 		setupState func(t *testing.T, s *Store, ctx context.Context) uuid.UUID
@@ -633,11 +634,11 @@ func TestStore_PublishFromReview(t *testing.T) {
 			wantStatus: StatusPublished,
 		},
 		{
-			name: "draft is rejected",
+			name: "draft transitions to published",
 			setupState: func(t *testing.T, s *Store, ctx context.Context) uuid.UUID {
 				return createDraftContent(t, s, ctx, "pfr-draft")
 			},
-			wantErr: ErrInvalidState,
+			wantStatus: StatusPublished,
 		},
 		{
 			name: "archived is rejected",
@@ -658,30 +659,30 @@ func TestStore_PublishFromReview(t *testing.T) {
 			ctx := t.Context()
 			id := tt.setupState(t, s, ctx)
 
-			got, err := s.PublishFromReview(ctx, id)
+			got, err := s.Publish(ctx, id)
 			if tt.wantErr != nil {
 				if !errors.Is(err, tt.wantErr) {
-					t.Fatalf("PublishFromReview() error = %v, want %v", err, tt.wantErr)
+					t.Fatalf("Publish() error = %v, want %v", err, tt.wantErr)
 				}
 				return
 			}
 			if err != nil {
-				t.Fatalf("PublishFromReview() unexpected error: %v", err)
+				t.Fatalf("Publish() unexpected error: %v", err)
 			}
 			if got.Status != tt.wantStatus {
-				t.Errorf("PublishFromReview() status = %q, want %q", got.Status, tt.wantStatus)
+				t.Errorf("Publish() status = %q, want %q", got.Status, tt.wantStatus)
 			}
 			if got.PublishedAt == nil {
-				t.Error("PublishFromReview() published_at should not be nil after publish")
+				t.Error("Publish() published_at should not be nil after publish")
 			}
 		})
 	}
 }
 
-// TestStore_PublishFromReview_Idempotent proves Policy B's published → published
+// TestStore_Publish_Idempotent proves Policy B's published → published
 // branch is a true no-op: a second publish succeeds without re-mutating the row
 // (published_at is unchanged), so no spurious second 'published' audit event.
-func TestStore_PublishFromReview_Idempotent(t *testing.T) {
+func TestStore_Publish_Idempotent(t *testing.T) {
 	s := setup(t)
 	ctx := t.Context()
 
@@ -690,34 +691,34 @@ func TestStore_PublishFromReview_Idempotent(t *testing.T) {
 		t.Fatalf("SubmitContentForReview() error: %v", err)
 	}
 
-	first, err := s.PublishFromReview(ctx, id)
+	first, err := s.Publish(ctx, id)
 	if err != nil {
-		t.Fatalf("PublishFromReview() first call error: %v", err)
+		t.Fatalf("Publish() first call error: %v", err)
 	}
-	second, err := s.PublishFromReview(ctx, id)
+	second, err := s.Publish(ctx, id)
 	if err != nil {
-		t.Fatalf("PublishFromReview() second call (idempotent) error: %v", err)
+		t.Fatalf("Publish() second call (idempotent) error: %v", err)
 	}
 
 	if second.Status != StatusPublished {
-		t.Errorf("PublishFromReview() idempotent status = %q, want %q", second.Status, StatusPublished)
+		t.Errorf("Publish() idempotent status = %q, want %q", second.Status, StatusPublished)
 	}
 	if first.PublishedAt == nil || second.PublishedAt == nil {
-		t.Fatal("PublishFromReview() published_at should be set after publish")
+		t.Fatal("Publish() published_at should be set after publish")
 	}
 	if !first.PublishedAt.Equal(*second.PublishedAt) {
-		t.Errorf("PublishFromReview() idempotent published_at changed: first=%v second=%v", first.PublishedAt, second.PublishedAt)
+		t.Errorf("Publish() idempotent published_at changed: first=%v second=%v", first.PublishedAt, second.PublishedAt)
 	}
 }
 
-// TestStore_PublishFromReview_NotFound verifies a missing id surfaces as
+// TestStore_Publish_NotFound verifies a missing id surfaces as
 // ErrNotFound (mapped to 404 / not-found at the call boundaries).
-func TestStore_PublishFromReview_NotFound(t *testing.T) {
+func TestStore_Publish_NotFound(t *testing.T) {
 	s := setup(t)
 
-	_, err := s.PublishFromReview(t.Context(), uuid.New())
+	_, err := s.Publish(t.Context(), uuid.New())
 	if !errors.Is(err, ErrNotFound) {
-		t.Fatalf("PublishFromReview(missing ID) = %v, want ErrNotFound", err)
+		t.Fatalf("Publish(missing ID) = %v, want ErrNotFound", err)
 	}
 }
 
