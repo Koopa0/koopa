@@ -370,11 +370,3 @@ direct `activity_events` INSERT. (Each is schema- or policy-enforced; see §3.)
 6. **"Blocked work" definition** — a blocked-work affordance, if ever wanted,
    would be a derived condition over `todos` (the system's one work-item
    entity), not a new entity.
-
-### Known schema-comment drift (not this document's authority, flagged for cleanup)
-
-- `migrations/001_initial.up.sql:486` (the `contents` table comment) still
-  names retired MCP tools `set_content_review_state` / `publish_content` for the
-  review handoff. The live agent path is `propose_content` (review push);
-  publish is admin HTTP. The comment should be re-grounded to the current
-  surface in a future migration-comment pass.

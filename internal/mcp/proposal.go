@@ -413,7 +413,7 @@ func deref(p *string) string {
 }
 
 // nilIfBlank maps an omitted-or-whitespace rationale to nil so it persists as
-// SQL NULL (matching proposal_rationale's "NULL for admin/seeded rows"
+// SQL NULL (matching proposal_rationale's "NULL for owner-created (admin) rows"
 // semantics), and a real justification to a pointer to the original value.
 func nilIfBlank(s string) *string {
 	if strings.TrimSpace(s) == "" {

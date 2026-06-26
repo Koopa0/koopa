@@ -22,7 +22,8 @@
 //   - UpdateMilestone / DeleteMilestone — membership-bound {id, mid}
 //     mutations; a goal/milestone mismatch is a 404, never a cross-goal
 //     write.
-//   - ListAreas — GET /areas returns the migration-seeded PARA rows.
+//   - ListAreas — GET /areas returns the active PARA rows the test
+//     self-provisions (areas are never migration-seeded).
 //   - AreaDetail — GET /areas/{id} returns the area plus its non-proposed
 //     goals and active projects; proposed/archived/other-area children are
 //     excluded; empty children are [] not null; an unknown id is a 404.
@@ -675,9 +676,9 @@ func TestIntegration_Goal_DeleteMilestone(t *testing.T) {
 	}
 }
 
-// TestIntegration_Goal_ListAreas asserts GET /areas returns the
-// migration-seeded PARA rows with the {id, slug, name, sort_order} shape
-// the goal-create selector consumes.
+// TestIntegration_Goal_ListAreas asserts GET /areas returns the active PARA
+// rows the test self-provisions (areas are never migration-seeded) with the
+// {id, slug, name, sort_order} shape the goal-create selector consumes.
 func TestIntegration_Goal_ListAreas(t *testing.T) {
 	h := newHandler()
 

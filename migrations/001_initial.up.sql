@@ -164,7 +164,7 @@ CREATE TABLE areas (
 COMMENT ON COLUMN areas.status IS
     'proposed | active. An agent-proposed area lands in ''proposed'' — inert: filtered out of '
     'every area selector / resolver, so it cannot become a real goal''s parent until activated. '
-    'The owner activates (→ active) or rejects (DELETE) it in admin triage. Admin/seeded areas '
+    'The owner activates (→ active) or rejects (DELETE) it in admin triage. Owner-created (admin) areas '
     'are ''active''. Default active so existing and admin inserts need not set it.';
 COMMENT ON COLUMN areas.created_by IS
     'Provenance. Areas are not seeded — the owner grows them on demand in admin. NULL = '
@@ -172,7 +172,7 @@ COMMENT ON COLUMN areas.created_by IS
     'proposed. NULLABLE with NO default so a non-agent-origin insert need not name an agent.';
 COMMENT ON COLUMN areas.proposal_rationale IS
     'Agent''s why-propose-this-now justification, captured on a proposed row and shown to the owner '
-    'in admin triage to support activate/reject. NULL for admin/seeded rows and acceptable to keep '
+    'in admin triage to support activate/reject. NULL for owner-created (admin) rows and acceptable to keep '
     'or clear on activation.';
 
 COMMENT ON TABLE areas IS
@@ -230,7 +230,7 @@ COMMENT ON COLUMN goals.created_by IS
     'NULLABLE with no default, mirroring areas.created_by.';
 COMMENT ON COLUMN goals.proposal_rationale IS
     'Agent''s why-propose-this-now justification, captured on a proposed row and shown to the owner '
-    'in admin triage to support activate/reject. NULL for admin/seeded rows and acceptable to keep '
+    'in admin triage to support activate/reject. NULL for owner-created (admin) rows and acceptable to keep '
     'or clear on activation.';
 COMMENT ON COLUMN goals.area_id IS
     'PARA Area of Responsibility this goal belongs to. FK to areas. '
@@ -341,7 +341,7 @@ COMMENT ON COLUMN projects.created_by IS
     'NULLABLE with no default, mirroring goals.created_by / areas.created_by.';
 COMMENT ON COLUMN projects.proposal_rationale IS
     'Agent''s why-propose-this-now justification, captured on a proposed row and shown to the owner '
-    'in admin triage to support activate/reject. NULL for admin/seeded rows and acceptable to keep '
+    'in admin triage to support activate/reject. NULL for owner-created (admin) rows and acceptable to keep '
     'or clear on activation.';
 COMMENT ON COLUMN projects.area_id IS
     'PARA Area of Responsibility. FK to areas. SET NULL on area deletion. NULL = unclassified.';

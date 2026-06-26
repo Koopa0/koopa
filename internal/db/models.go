@@ -387,11 +387,11 @@ type Area struct {
 	Icon *string `json:"icon"`
 	// Display ordering. Lower = higher priority.
 	SortOrder int32 `json:"sort_order"`
-	// proposed | active. An agent-proposed area lands in 'proposed' — inert: filtered out of every area selector / resolver, so it cannot become a real goal's parent until activated. The owner activates (→ active) or rejects (DELETE) it in admin triage. Admin/seeded areas are 'active'. Default active so existing and admin inserts need not set it.
+	// proposed | active. An agent-proposed area lands in 'proposed' — inert: filtered out of every area selector / resolver, so it cannot become a real goal's parent until activated. The owner activates (→ active) or rejects (DELETE) it in admin triage. Owner-created (admin) areas are 'active'. Default active so existing and admin inserts need not set it.
 	Status string `json:"status"`
 	// Provenance. Areas are not seeded — the owner grows them on demand in admin. NULL = non-agent origin (owner-created, or system); an agent name marks an area that agent proposed. NULLABLE with NO default so a non-agent-origin insert need not name an agent.
 	CreatedBy *string `json:"created_by"`
-	// Agent's why-propose-this-now justification, captured on a proposed row and shown to the owner in admin triage to support activate/reject. NULL for admin/seeded rows and acceptable to keep or clear on activation.
+	// Agent's why-propose-this-now justification, captured on a proposed row and shown to the owner in admin triage to support activate/reject. NULL for owner-created (admin) rows and acceptable to keep or clear on activation.
 	ProposalRationale *string   `json:"proposal_rationale"`
 	CreatedAt         time.Time `json:"created_at"`
 	// Application-managed. Set explicitly in UPDATE queries.
@@ -541,7 +541,7 @@ type Goal struct {
 	Deadline *time.Time `json:"deadline"`
 	// Provenance. NULL = system/admin origin; an agent name marks a goal that agent proposed. NULLABLE with no default, mirroring areas.created_by.
 	CreatedBy *string `json:"created_by"`
-	// Agent's why-propose-this-now justification, captured on a proposed row and shown to the owner in admin triage to support activate/reject. NULL for admin/seeded rows and acceptable to keep or clear on activation.
+	// Agent's why-propose-this-now justification, captured on a proposed row and shown to the owner in admin triage to support activate/reject. NULL for owner-created (admin) rows and acceptable to keep or clear on activation.
 	ProposalRationale *string   `json:"proposal_rationale"`
 	CreatedAt         time.Time `json:"created_at"`
 	// Application-managed. Set explicitly in UPDATE queries.
@@ -619,7 +619,7 @@ type Project struct {
 	ExpectedCadence *string `json:"expected_cadence"`
 	// Provenance. NULL = system/admin origin; an agent name marks a project that agent proposed. NULLABLE with no default, mirroring goals.created_by / areas.created_by.
 	CreatedBy *string `json:"created_by"`
-	// Agent's why-propose-this-now justification, captured on a proposed row and shown to the owner in admin triage to support activate/reject. NULL for admin/seeded rows and acceptable to keep or clear on activation.
+	// Agent's why-propose-this-now justification, captured on a proposed row and shown to the owner in admin triage to support activate/reject. NULL for owner-created (admin) rows and acceptable to keep or clear on activation.
 	ProposalRationale *string   `json:"proposal_rationale"`
 	CreatedAt         time.Time `json:"created_at"`
 	// Application-managed. Set explicitly in UPDATE queries.

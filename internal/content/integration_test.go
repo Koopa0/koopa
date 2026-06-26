@@ -612,8 +612,8 @@ func createDraftContent(t *testing.T, s *Store, ctx context.Context, slug string
 
 // TestStore_PublishFromReview exercises the editorial publish gate (Policy B):
 // only a review row is promoted to published; draft and archived rows are
-// rejected with ErrInvalidState. This is the guard shared by the HTTP admin
-// publish handler and the MCP publish_content tool.
+// rejected with ErrInvalidState. This is the guard behind the HTTP admin
+// publish handler (publish is admin-only; agents reach review via propose_content).
 func TestStore_PublishFromReview(t *testing.T) {
 	tests := []struct {
 		name       string
