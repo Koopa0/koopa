@@ -242,7 +242,18 @@
   justify-content: center;
 }
 .ed-spread.has-toc {
-  grid-template-columns: var(--ed-rail) minmax(0, var(--ed-measure)) var(--ed-toc);
+  /* Article reading layout runs wider than the house --ed-shell: the serif
+     column fills the shell (a longer measure, more characters per line) and
+     the on-this-page rail is pushed out to the right margin — its gutter is
+     wider than the metadata-rail gutter. */
+  gap: 0;
+  grid-template-columns:
+    var(--ed-rail) /* metadata rail (machine voice) */
+    44px /* rail → reading gutter */
+    minmax(0, 1fr) /* serif reading column — fills the shell */
+    var(--ed-toc-gut, 96px) /* reading → toc gutter (pushes TOC right) */
+    var(--ed-toc); /* on-this-page rail */
+  justify-content: stretch;
 }
 
 .ed-rail {
@@ -275,6 +286,12 @@
 /* ---------- ARTICLE reading page ---------- */
 .ed-read {
   padding: 44px 0 0;
+}
+/* Wider shell than the rest of the house style so the reading column gets a
+   comfortable measure once the metadata rail and on-this-page rail are
+   subtracted (see .ed-spread.has-toc). */
+.ed-main.ed-read {
+  max-width: var(--ed-read-shell, 1200px);
 }
 .ed-crumbs {
   display: flex;
