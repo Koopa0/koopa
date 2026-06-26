@@ -10,6 +10,7 @@ import {
 } from '@angular/common/http/testing';
 import { provideRouter } from '@angular/router';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
+import { Title } from '@angular/platform-browser';
 import { ArticlesComponent } from './articles';
 import type {
   ApiContent,
@@ -129,6 +130,14 @@ describe('ArticlesComponent', () => {
     flushContents([]);
     flushTopics();
     expect(component).toBeTruthy();
+  });
+
+  it('should set the plural archive SEO title', async () => {
+    await settle();
+    flushContents([]);
+    flushTopics();
+
+    expect(TestBed.inject(Title).getTitle()).toContain('Articles |');
   });
 
   it('should render rows for every written content type when loaded', async () => {
