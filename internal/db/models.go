@@ -398,7 +398,7 @@ type Area struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
-// First-party publishable knowledge layer. Five content types (article, essay, build-log, til, digest) share one editorial lifecycle: draft → review → published, with a review → changes_requested → review revision loop. The review state is a two-actor handoff — an agent pushes a finished draft into review (propose_content) or the owner drafts in admin; from the admin review queue the human admin publishes OR sends it back (status changes_requested + review_note), and the authoring agent revises (revise_content) back into review. published status and published_at are tied by chk_content_publication; is_public requires published by chk_content_public_requires_published.
+// First-party publishable knowledge layer. Five content types (article, essay, build-log, til, digest) share one editorial lifecycle: draft → published, with a review handoff for agent-proposed content. The owner publishes a draft directly (admin HTTP); an agent instead pushes a finished draft into review (propose_content), and from the admin review queue the owner publishes OR sends it back (status changes_requested + review_note) for the authoring agent to revise (revise_content) back into review. published status and published_at are tied by chk_content_publication; is_public requires published by chk_content_public_requires_published.
 type Content struct {
 	ID uuid.UUID `json:"id"`
 	// URL-safe identifier. Globally unique. Used in public URLs. Format (chk_content_slug_format): hyphen-separated segments, no whitespace or slash, no leading/trailing/consecutive hyphens. Unicode letters/numbers (incl. CJK) allowed — a 中日文 slug carries UTF-8 in the URL.
@@ -408,7 +408,7 @@ type Content struct {
 	Excerpt string `json:"excerpt"`
 	// Content format: article, essay, build-log, til, digest. All are public-facing first-party content going through the review lifecycle.
 	Type ContentType `json:"type"`
-	// Lifecycle: draft → review → published | changes_requested; changes_requested → review. review = awaiting a human decision (an agent submits via propose_content, or the owner drafts in admin). changes_requested = the owner sent the draft back for revision, reason in review_note; the authoring agent addresses it with revise_content, which returns the row to review. published = live; archived = soft delete. review → published and review → changes_requested are human-admin only (admin HTTP); the agent tools propose_content/revise_content only ever land a row in review.
+	// Lifecycle: draft → published directly (the owner publishing their own finished work), or draft → review → published for agent-proposed content; changes_requested → review is the agent revision loop. review = an agent proposal (propose_content) awaiting the owner's publish-or-send-back decision. changes_requested = the owner sent it back for revision, reason in review_note; the authoring agent addresses it with revise_content, which returns the row to review. published = live; archived = soft delete. Publishing (draft or review → published) and send-back are human-admin only (admin HTTP); agents never publish — propose_content/revise_content only ever land a row in review.
 	Status ContentStatus `json:"status"`
 	// Groups content into a series. Paired with series_order (chk_contents_series).
 	SeriesID *string `json:"series_id"`

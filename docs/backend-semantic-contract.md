@@ -180,8 +180,11 @@ them wrong is a semantic bug, not a naming quibble.
 
 - **content** — first-party publishable artifact (`:447`). Five types:
   `article`, `essay`, `build-log`, `til`, `digest` (`content_type`, `:7`).
-  `content_status` (`:11`): `draft → review → published → archived`. Publishing
-  ties `status='published'` to `published_at` (`:481`) and gates `is_public` on
+  `content_status` (`:11`): `draft → review → published → archived`. The owner
+  publishes a **draft directly** (`Store.Publish` promotes draft *or* review →
+  published — the common path for Koopa's own finished work); review is the
+  **agent** handoff, not a step the owner is forced through. Publishing ties
+  `status='published'` to `published_at` (`:481`) and gates `is_public` on
   `published` (`:483`). Content authoring / lifecycle is **admin HTTP** under
   `/api/admin/knowledge/content` (`cmd/app/routes.go:145-154`); the one agent
   path is `propose_content`, which inserts a finished piece at `status='review'`
@@ -267,7 +270,7 @@ permits. Existence of a table, handler, or doc is not proof of a working path.
 | Capability | Reality | Evidence |
 |---|---|---|
 | Login + refresh-token rotation + token security | implemented, tested | `internal/auth/` (`auth_test.go`, `handler_test.go`) |
-| Content draft→review→publish→archive lifecycle (admin HTTP; `propose_content` lands at `status=review`, `is_public=false`) | implemented; publish CHECKs enforce transitions | `internal/content/`; CHECKs `migrations/001_initial.up.sql:481,483`; routes `cmd/app/routes.go:145-154` |
+| Content lifecycle (admin HTTP; owner publishes a draft directly via `Store.Publish`, or a review row from the queue; `propose_content` lands an agent piece at `status=review`, `is_public=false`) | implemented; `Store.Publish` gates draft/review→published, publish CHECKs enforce the rest | `internal/content/publish.go`; CHECKs `migrations/001_initial.up.sql:481,483`; routes `cmd/app/routes.go:145-154` |
 | Feed fetch + scheduler cadence + auto-disable on failures | implemented, tested | `internal/feed/scheduler_test.go` (testcontainers) |
 | **Document-embedding write path** | **Implemented (this is the current state, not a TODO).** `embedder.Embed` (`internal/embedder/embedder.go:67`) is driven by a background `Reconciler` (`internal/embedder/reconciler.go`) that drains every registered source — currently just `contents` (`cmd/app/main.go`) — embedding rows missing a vector. Two call sites: the `app` server runs a background `Run` loop, gated on `GEMINI_API_KEY` (`cmd/app/main.go:242-247`), and the `embed-backfill` subcommand runs a one-shot `RunOnce` (`runBackfill`, `cmd/app/main.go:83-102`, dispatched at `:64`); the `mcp` server also constructs one (`cmd/mcp/main.go:93-94`). Unset `GEMINI_API_KEY` → FTS-only (`cmd/mcp/main.go:101`). | `reconciler.go:121,139,236`; `content/embedding.go:21,27` |
 | **Hybrid search (FTS + pgvector RRF)** | implemented; per-corpus FTS fused with pgvector semantic results via reciprocal-rank fusion, degrading to FTS-only when no embedder is configured | `internal/mcp/search.go` — `mergeByRank:198`, `EmbedQuery:273`, `rrfMerge:295`, `rrfMergeResults:485`; HNSW index `migrations/001_initial.up.sql:516` |
