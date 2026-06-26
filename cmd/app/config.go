@@ -14,6 +14,7 @@
 package main
 
 import (
+	"fmt"
 	"log/slog"
 	"os"
 )
@@ -78,7 +79,41 @@ func loadConfig(logger *slog.Logger) config {
 		ServiceVersion:       envOr("KOOPA_VERSION", "dev"),
 		Environment:          envOr("KOOPA_ENV", "dev"),
 	}
+	if err := validateOAuth(&cfg); err != nil {
+		logger.Error("invalid configuration", "error", err)
+		os.Exit(1)
+	}
 	return cfg
+}
+
+// validateOAuth enforces all-or-none Google OAuth configuration. OAuth is
+// optional — all four vars empty leaves auth disabled — but a partial set is a
+// startup error: main wires auth on a non-empty GOOGLE_CLIENT_ID alone, so a
+// client id without ADMIN_EMAIL would boot "enabled" yet reject every callback
+// (auth/handler.go compares the Google email against an empty adminEmail). Fail
+// fast instead of shipping a login that can never succeed. Pointer receiver
+// avoids gocritic hugeParam on the 264B config value.
+func validateOAuth(cfg *config) error {
+	fields := []struct {
+		name, val string
+	}{
+		{"GOOGLE_CLIENT_ID", cfg.GoogleClientID},
+		{"GOOGLE_CLIENT_SECRET", cfg.GoogleClientSecret},
+		{"GOOGLE_REDIRECT_URI", cfg.GoogleRedirectURI},
+		{"ADMIN_EMAIL", cfg.AdminEmail},
+	}
+	var set, missing []string
+	for _, f := range fields {
+		if f.val == "" {
+			missing = append(missing, f.name)
+		} else {
+			set = append(set, f.name)
+		}
+	}
+	if len(set) > 0 && len(missing) > 0 {
+		return fmt.Errorf("google oauth partially configured: set %v but missing %v — set all four or none", set, missing)
+	}
+	return nil
 }
 
 // backfillConfig holds the environment the embed-backfill one-shot needs.
