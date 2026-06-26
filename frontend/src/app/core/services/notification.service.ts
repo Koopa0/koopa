@@ -87,6 +87,13 @@ export class NotificationService {
   }
 
   private add(message: string, type: NotificationType): void {
+    const duplicateActiveToast = this
+      ._notifications()
+      .some((n) => n.type === type && n.message === message);
+    if (duplicateActiveToast) {
+      return;
+    }
+
     const id = this.nextId++;
     const notification: Notification = {
       id,

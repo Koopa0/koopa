@@ -53,4 +53,20 @@ describe('NotificationService', () => {
     const ids = service.notifications().map((n) => n.id);
     expect(ids[1]).toBeGreaterThan(ids[0]);
   });
+
+  it('should not stack duplicate active notifications', () => {
+    service.error('Network failed');
+    service.error('Network failed');
+
+    expect(service.notifications().length).toBe(1);
+  });
+
+  it('should allow the same message after the previous toast is dismissed', () => {
+    service.error('Network failed');
+    vi.advanceTimersByTime(3000);
+    service.error('Network failed');
+
+    expect(service.notifications().length).toBe(1);
+    expect(service.notifications()[0].message).toBe('Network failed');
+  });
 });

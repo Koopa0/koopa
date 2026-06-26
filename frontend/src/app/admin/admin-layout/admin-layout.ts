@@ -18,7 +18,6 @@ import { filter, map } from 'rxjs/operators';
 import { Accessibility, LogOut, LucideAngularModule } from 'lucide-angular';
 import { AuthService } from '../../core/services/auth.service';
 import { KeyboardShortcutsService } from '../../core/services/keyboard-shortcuts.service';
-import { ToastComponent } from '../../shared/toast/toast.component';
 import { AdminTopbarComponent } from './admin-topbar.component';
 import { AdminTopbarService } from './admin-topbar.service';
 import { ADMIN_NAV, type AdminNavItem } from './admin-nav.config';
@@ -44,7 +43,6 @@ import { AdminNavCountsService } from './admin-nav-counts.service';
     RouterLink,
     RouterLinkActive,
     LucideAngularModule,
-    ToastComponent,
     AdminTopbarComponent,
     A11yModule,
   ],
