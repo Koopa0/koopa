@@ -19,6 +19,8 @@
   --ed-toc: 176px;         /* on-this-page rail */
   --ed-shell: 920px;       /* page max-width */
   --ed-fd-w: 600px;        /* front-door column width */
+  --ed-cover-w: 1080px;    /* home cover max-width (wider than the article) */
+  --ed-cover-stmt: clamp(2.75rem, 1.1rem + 4.6vw, 4.5rem); /* the one shout — rem-anchored for zoom */
   --ed-h1: 38px;
   --ed-title-font: var(--font-serif);
   --ed-title-weight: 500;
@@ -967,6 +969,121 @@
 }
 .ed-fd-all:hover {
   color: var(--brand);
+}
+
+/* ============================================================
+   HOME — COVER PLATE. A broadsheet cover: a mono edition frame (kicker
+   left, edition right), an oversized serif STATEMENT as the image with a
+   deliberate right-hand void, a full-width fold, then an asymmetric
+   [ serif major | mono minor ] grid. The one shout is the statement;
+   everything else stays quiet. The felt threshold into an article is the
+   type-scale step-down (statement clamp→72 · lead title 30 · body 17 ·
+   mono 11) plus the scan-vs-read grammar — both survive the mobile stack
+   where the asymmetry collapses.
+   ============================================================ */
+.ed-cover {
+  max-width: var(--ed-cover-w, 1080px);
+  margin: 0 auto;
+  padding: 0 var(--ed-pad);
+}
+.ed-cover-frame {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px 32px;
+  padding: 60px 0 0;
+}
+.ed-cover-edition {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--fg-faint);
+  font-variant-numeric: tabular-nums;
+}
+.ed-cover-edition .sep {
+  margin: 0 8px;
+  color: var(--border);
+}
+/* the cover's image: type, not photography. Capped to ~15ch so the line
+   breaks compose and the right side stays an intentional void. */
+.ed-cover-stmt {
+  margin: 40px 0 0;
+  max-width: 15ch;
+  font-family: var(--font-serif);
+  font-weight: var(--ed-title-weight);
+  font-size: var(--ed-cover-stmt, 4rem);
+  line-height: 1.03;
+  letter-spacing: -0.02em;
+  color: var(--fg);
+  text-wrap: balance;
+}
+.ed-cover .ed-fd-rule {
+  margin: 46px 0 0;
+}
+.ed-cover-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 0.6fr);
+  column-gap: var(--ed-gut);
+  align-items: start;
+  padding: 38px 0 0;
+}
+.ed-cover-major .ed-fd-lead {
+  padding: 0;
+}
+.ed-cover-major .ed-fd-recent-band {
+  padding-top: 38px;
+}
+/* the mono minor is the machine margin — dropped a hair so the two voices
+   do not share a baseline with the serif major. */
+.ed-cover-minor {
+  padding-top: 7px;
+}
+.ed-cover-topics {
+  margin-top: 12px;
+}
+.ed-cover-topic {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 14px;
+  padding: 8px 0;
+  border-top: 1px solid var(--border-faint);
+}
+.ed-cover-topic:first-child {
+  border-top: none;
+}
+.ed-cover-topic .t {
+  font-family: var(--font-serif);
+  font-size: 16px;
+  line-height: 1.3;
+  letter-spacing: -0.005em;
+  color: var(--fg-muted);
+}
+.ed-cover-topic:hover .t {
+  color: var(--brand);
+}
+.ed-cover-topic .n {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--fg-faint);
+  font-variant-numeric: tabular-nums;
+}
+.ed-cover-minor .ed-fd-all {
+  margin-top: 28px;
+}
+@media (max-width: 880px) {
+  .ed-cover-grid {
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: 36px;
+  }
+  .ed-cover-minor {
+    padding-top: 0;
+  }
+  .ed-cover-major .ed-fd-recent-band {
+    padding-top: 30px;
+  }
 }
 
 /* ============================================================
