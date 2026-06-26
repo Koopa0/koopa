@@ -5,8 +5,8 @@
 // TxFromContext. Handlers on the adminMid chain (cmd/app/routes.go)
 // MUST read the tx and call store.WithTx(tx).Mutation to propagate
 // the actor binding to the audit trigger. A handler that forgets
-// silently falls through to the 'system' audit-actor fallback — the
-// hook doesn't catch this, only code review does.
+// silently falls through to the 'human' (owner) audit-actor fallback —
+// the hook doesn't catch this, only code review does.
 
 package api
 
@@ -55,14 +55,14 @@ type actorKey struct{}
 // BUT: if an admin handler correctly receives the bound tx and then
 // forgets to call store.WithTx(tx), the store falls back to a fresh
 // pool connection whose session has NO koopa.actor set. The audit
-// trigger's current_actor() falls through to the literal 'system' agent.
+// trigger's current_actor() falls through to the literal 'human' (owner) agent.
 // This handler-wiring bug class is demonstrated end-to-end on one
 // representative route (note Create) by two integration tests in
 // internal/api/integration_test.go:
 // TestActorMiddleware_PropagatesHumanActor (happy path, asserts
 // actor='human') and
 // TestActorMiddleware_SilentDegradation_WhenWithTxForgotten (failure
-// mode, asserts a forgetful handler produces actor='system').
+// mode, asserts a forgetful handler produces actor='human').
 // Per-feature integration tests are expected to assert actor
 // provenance for their own audited mutation paths. A single universal
 // admin-route sweep is intentionally deferred per the header doc in
@@ -70,10 +70,11 @@ type actorKey struct{}
 // test scaffolding and rot.
 //
 // Why not promote current_actor() to RAISE EXCEPTION at SQL level:
-// pg_cron jobs legitimately write without Go middleware, and their
-// audit rows must land with actor='system'. The Go paths (HTTP + MCP)
-// are bounded — a handful of handlers — so integration-test detection
-// is sufficient for them.
+// direct single-user DB ops (manual psql) legitimately write without Go
+// middleware, and their audit rows must land with the owner ('human') —
+// there is no synthetic 'system' agent. The Go paths (HTTP + MCP) are
+// bounded — a handful of handlers — so integration-test detection is
+// sufficient for them.
 //
 // Actor scope MUST be transaction-local (set_config is_local=true), not
 // session-local: pgxpool reuses connections across callers, so a session
@@ -144,11 +145,11 @@ func ActorMiddleware(pool *pgxpool.Pool, actor string, logger *slog.Logger) func
 //
 // Handlers wrapped by ActorMiddleware should expect ok=true. If ok=false
 // in an admin handler, that is a wiring bug — log and fall back to the
-// bare store; the audit trigger will record 'system' actor. The
+// bare store; the audit trigger will record the owner ('human') actor. The
 // failure mode is observable thanks to
 // TestActorMiddleware_SilentDegradation_WhenWithTxForgotten in
 // internal/api/integration_test.go, which directly demonstrates a
-// forgetful handler producing actor='system'. New admin routes are
+// forgetful handler producing actor='human'. New admin routes are
 // expected to add their own actor-provenance assertion in the
 // feature's integration suite — there is no single universal CI guard
 // for every route.
