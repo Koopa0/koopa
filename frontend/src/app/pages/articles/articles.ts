@@ -9,7 +9,13 @@ import {
 } from '@angular/core';
 import { Router } from '@angular/router';
 import { rxResource } from '@angular/core/rxjs-interop';
-import { LucideAngularModule, FileText, X } from 'lucide-angular';
+import {
+  LucideAngularModule,
+  FileText,
+  X,
+  AlertTriangle,
+  RefreshCw,
+} from 'lucide-angular';
 import { environment } from '../../../environments/environment';
 import { ContentService } from '../../core/services/content.service';
 import { TopicService } from '../../core/services/topic.service';
@@ -66,6 +72,8 @@ export class ArticlesComponent implements OnInit {
 
   protected readonly FileTextIcon = FileText;
   protected readonly XIcon = X;
+  protected readonly AlertIcon = AlertTriangle;
+  protected readonly RetryIcon = RefreshCw;
 
   protected readonly typeFilter = computed<ContentType | undefined>(() => {
     const requested = this.type();
@@ -162,6 +170,10 @@ export class ArticlesComponent implements OnInit {
 
   protected readonly isLoading = computed(
     () => this.contentsResource.status() === 'loading',
+  );
+
+  protected readonly loadError = computed(
+    () => this.contentsResource.status() === 'error',
   );
 
   protected readonly totalPages = computed(() =>

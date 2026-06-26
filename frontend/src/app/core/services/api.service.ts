@@ -65,11 +65,10 @@ export class ApiService {
   }
 
   /**
-   * Get single item. Auto-unwraps { data: T } when present, otherwise returns
-   * the raw body. Public endpoints (content/handler.go) use api.Response{Data:}
-   * wrapping; admin endpoints (internal/admin/*) encode structs directly. This
-   * smart-unwrap lets one service method handle both contracts without
-   * duplicating 16 admin services.
+   * Get single item, unwrapping the { data: T } response envelope. Both public
+   * (content/handler.go) and admin (internal/*) endpoints encode via
+   * api.Response{Data:}, so the body is always wrapped; the raw-body fallback
+   * in unwrap() is a defensive guard, not a live backend contract.
    */
   getData<T>(
     path: string,

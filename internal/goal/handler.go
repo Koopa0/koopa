@@ -37,6 +37,18 @@ func NewHandler(store *Store, projects *project.Store, logger *slog.Logger) *Han
 	return &Handler{store: store, projects: projects, logger: logger}
 }
 
+func (h *Handler) mustAdminTx(w http.ResponseWriter, r *http.Request) (*Store, bool) {
+	tx, ok := api.TxFromContext(r.Context())
+	if !ok {
+		h.logger.Error("goal admin mutation without tx",
+			"event", "middleware_not_wired",
+			"method", r.Method, "path", r.URL.Path)
+		api.Error(w, http.StatusInternalServerError, "INTERNAL", "internal server error")
+		return nil, false
+	}
+	return h.store.WithTx(tx), true
+}
+
 // List handles GET /api/admin/goals — returns all goals, or only goals in
 // the requested status when ?status= is supplied. The filtered path returns
 // the richer ActiveGoalSummary shape (milestone counts + area name); the
@@ -94,9 +106,9 @@ func (h *Handler) UpdateStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	store := h.store
-	if tx, ok := api.TxFromContext(r.Context()); ok {
-		store = h.store.WithTx(tx)
+	store, ok := h.mustAdminTx(w, r)
+	if !ok {
+		return
 	}
 	updated, err := store.UpdateStatus(r.Context(), id, status)
 	if err != nil {
@@ -305,9 +317,9 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	store := h.store
-	if tx, ok := api.TxFromContext(r.Context()); ok {
-		store = h.store.WithTx(tx)
+	store, ok := h.mustAdminTx(w, r)
+	if !ok {
+		return
 	}
 	g, err := store.Create(r.Context(), &CreateParams{
 		Title:       req.Title,
@@ -375,9 +387,9 @@ func (h *Handler) CreateArea(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	store := h.store
-	if tx, ok := api.TxFromContext(r.Context()); ok {
-		store = h.store.WithTx(tx)
+	store, ok := h.mustAdminTx(w, r)
+	if !ok {
+		return
 	}
 	a, err := store.CreateArea(r.Context(), &CreateAreaParams{
 		Slug:        slug,
@@ -521,9 +533,9 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	store := h.store
-	if tx, ok := api.TxFromContext(r.Context()); ok {
-		store = h.store.WithTx(tx)
+	store, ok := h.mustAdminTx(w, r)
+	if !ok {
+		return
 	}
 	g, err := store.Update(r.Context(), &UpdateParams{
 		ID:          id,
@@ -577,9 +589,9 @@ func (h *Handler) CreateMilestone(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	store := h.store
-	if tx, ok := api.TxFromContext(r.Context()); ok {
-		store = h.store.WithTx(tx)
+	store, ok := h.mustAdminTx(w, r)
+	if !ok {
+		return
 	}
 	m, err := store.CreateMilestone(r.Context(), goalID, req.Title, req.Description, req.TargetDeadline)
 	if err != nil {
@@ -632,9 +644,9 @@ func (h *Handler) UpdateMilestone(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	store := h.store
-	if tx, ok := api.TxFromContext(r.Context()); ok {
-		store = h.store.WithTx(tx)
+	store, ok := h.mustAdminTx(w, r)
+	if !ok {
+		return
 	}
 	m, err := store.UpdateMilestone(r.Context(), &UpdateMilestoneParams{
 		ID:             mid,
@@ -665,9 +677,9 @@ func (h *Handler) DeleteMilestone(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	store := h.store
-	if tx, ok := api.TxFromContext(r.Context()); ok {
-		store = h.store.WithTx(tx)
+	store, ok := h.mustAdminTx(w, r)
+	if !ok {
+		return
 	}
 	if err := store.DeleteMilestone(r.Context(), goalID, mid); err != nil {
 		api.HandleError(w, h.logger, err, storeErrors...)
@@ -688,9 +700,9 @@ func (h *Handler) ToggleMilestone(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	store := h.store
-	if tx, ok := api.TxFromContext(r.Context()); ok {
-		store = h.store.WithTx(tx)
+	store, ok := h.mustAdminTx(w, r)
+	if !ok {
+		return
 	}
 	m, err := store.ToggleMilestone(r.Context(), mid)
 	if err != nil {
@@ -718,9 +730,9 @@ func (h *Handler) ActivateGoal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	store := h.store
-	if tx, ok := api.TxFromContext(r.Context()); ok {
-		store = h.store.WithTx(tx)
+	store, ok := h.mustAdminTx(w, r)
+	if !ok {
+		return
 	}
 	g, err := store.ActivateGoal(r.Context(), id)
 	if err != nil {
@@ -739,9 +751,9 @@ func (h *Handler) ActivateArea(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	store := h.store
-	if tx, ok := api.TxFromContext(r.Context()); ok {
-		store = h.store.WithTx(tx)
+	store, ok := h.mustAdminTx(w, r)
+	if !ok {
+		return
 	}
 	a, err := store.ActivateArea(r.Context(), id)
 	if err != nil {
@@ -761,9 +773,9 @@ func (h *Handler) RejectGoal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	store := h.store
-	if tx, ok := api.TxFromContext(r.Context()); ok {
-		store = h.store.WithTx(tx)
+	store, ok := h.mustAdminTx(w, r)
+	if !ok {
+		return
 	}
 	if err := store.RejectGoal(r.Context(), id); err != nil {
 		api.HandleError(w, h.logger, err, storeErrors...)
@@ -784,9 +796,9 @@ func (h *Handler) RejectArea(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	store := h.store
-	if tx, ok := api.TxFromContext(r.Context()); ok {
-		store = h.store.WithTx(tx)
+	store, ok := h.mustAdminTx(w, r)
+	if !ok {
+		return
 	}
 	if err := store.RejectArea(r.Context(), id); err != nil {
 		api.HandleError(w, h.logger, err, storeErrors...)

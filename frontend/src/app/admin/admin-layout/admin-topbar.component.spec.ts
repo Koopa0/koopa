@@ -80,6 +80,23 @@ describe('AdminTopbarComponent', () => {
     expect(run).not.toHaveBeenCalled();
   });
 
+  it('should open the nav drawer when the hamburger toggle is clicked', () => {
+    fixture.detectChanges();
+
+    const el: HTMLElement = fixture.nativeElement;
+    const toggle = el.querySelector(
+      '[data-testid="admin-drawer-toggle"]',
+    ) as HTMLButtonElement;
+    expect(topbar.drawerOpen()).toBe(false);
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+
+    toggle.click();
+    fixture.detectChanges();
+
+    expect(topbar.drawerOpen()).toBe(true);
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+  });
+
   it('should surface overflow actions inside the … menu when toggled', () => {
     const run = vi.fn();
     topbar.set({

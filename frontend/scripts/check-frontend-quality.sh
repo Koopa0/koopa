@@ -148,7 +148,9 @@ fi
 # "til" and "build-logs" are likewise NOT allowlisted: their standalone routes
 # are permanently retired (they 404). Every content type is folded into the
 # /articles index, narrowed by the optional ?type= query param.
-PUBLIC_ROOT_ALLOWLIST="articles essays projects topics search preview about uses home privacy terms login error admin feed.xml"
+# "projects" and "uses" are NOT allowlisted: the portfolio facet was removed,
+# so neither has a public route — they were also dropped from the sitemap.
+PUBLIC_ROOT_ALLOWLIST="articles essays topics search preview about home privacy terms login error admin feed.xml"
 
 # Emit `file:line:/path` records by stripping the surrounding ref form from each
 # match. Each grep -oE captures the smallest substring containing the path

@@ -279,7 +279,7 @@ describe('ArticlesComponent', () => {
     expect(el.textContent).toContain('Nothing here yet');
   });
 
-  it('should fall back to the empty state when the request fails', async () => {
+  it('should show an error state when the request fails', async () => {
     await settle();
 
     const req = httpTesting.expectOne(
@@ -295,9 +295,10 @@ describe('ArticlesComponent', () => {
     await renderList();
 
     const el = fixture.nativeElement as HTMLElement;
-    // A failed index degrades to the empty state — no scary error UI.
-    expect(el.textContent).toContain('Nothing here yet');
-    expect(el.textContent).not.toContain('Could not load the index');
+    // A failed index surfaces a distinct error state — not the empty state.
+    expect(el.querySelector('[data-testid="articles-error"]')).not.toBeNull();
+    expect(el.textContent).toContain('Could not load the index');
+    expect(el.textContent).not.toContain('Nothing here yet');
   });
 
   it('should render the hero lead and topic chips', async () => {

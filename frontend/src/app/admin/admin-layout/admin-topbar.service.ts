@@ -45,6 +45,22 @@ export class AdminTopbarService {
   private readonly _context = signal<TopbarContext>(DEFAULT_CONTEXT);
   readonly context = this._context.asReadonly();
 
+  // Mobile nav drawer state. Below md the sidebar is off-canvas; the topbar
+  // hamburger toggles this and AdminLayoutComponent renders the drawer +
+  // backdrop. At md+ the sidebar is static and this stays false (the
+  // hamburger is hidden and the layout closes the drawer when the viewport
+  // grows back to desktop).
+  private readonly _drawerOpen = signal(false);
+  readonly drawerOpen = this._drawerOpen.asReadonly();
+
+  toggleDrawer(): void {
+    this._drawerOpen.update((open) => !open);
+  }
+
+  closeDrawer(): void {
+    this._drawerOpen.set(false);
+  }
+
   set(ctx: TopbarContext): void {
     this._context.set({
       title: ctx.title,

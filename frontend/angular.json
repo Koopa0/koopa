@@ -27,8 +27,7 @@
             "security": {
               "allowedHosts": [
                 "localhost",
-                "koopa0.dev",
-                "www.koopa0.dev"
+                "koopa0.dev"
               ]
             },
             "polyfills": [],

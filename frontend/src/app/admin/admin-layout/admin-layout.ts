@@ -1,4 +1,9 @@
-import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  effect,
+  inject,
+} from '@angular/core';
 import {
   NavigationEnd,
   Router,
@@ -6,13 +11,16 @@ import {
   RouterLinkActive,
   RouterOutlet,
 } from '@angular/router';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { filter } from 'rxjs/operators';
+import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
+import { A11yModule } from '@angular/cdk/a11y';
+import { BreakpointObserver } from '@angular/cdk/layout';
+import { filter, map } from 'rxjs/operators';
 import { Accessibility, LogOut, LucideAngularModule } from 'lucide-angular';
 import { AuthService } from '../../core/services/auth.service';
 import { KeyboardShortcutsService } from '../../core/services/keyboard-shortcuts.service';
 import { ToastComponent } from '../../shared/toast/toast.component';
 import { AdminTopbarComponent } from './admin-topbar.component';
+import { AdminTopbarService } from './admin-topbar.service';
 import { ADMIN_NAV, type AdminNavItem } from './admin-nav.config';
 import { AdminNavCountsService } from './admin-nav-counts.service';
 
@@ -38,19 +46,31 @@ import { AdminNavCountsService } from './admin-nav-counts.service';
     LucideAngularModule,
     ToastComponent,
     AdminTopbarComponent,
+    A11yModule,
   ],
   templateUrl: './admin-layout.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  host: { class: 'flex h-dvh flex-col' },
+  host: {
+    class: 'flex h-dvh flex-col',
+    '(document:keydown.escape)': 'closeDrawer()',
+  },
 })
 export class AdminLayoutComponent {
   private readonly router = inject(Router);
   private readonly authService = inject(AuthService);
   private readonly keyboardShortcuts = inject(KeyboardShortcutsService);
   private readonly navCounts = inject(AdminNavCountsService);
+  private readonly topbar = inject(AdminTopbarService);
+  private readonly breakpoints = inject(BreakpointObserver);
 
   protected readonly navGroups = ADMIN_NAV;
   protected readonly a11yMode = this.keyboardShortcuts.a11yMode;
+
+  protected readonly drawerOpen = this.topbar.drawerOpen;
+  protected readonly isMobile = toSignal(
+    this.breakpoints.observe('(max-width: 767px)').pipe(map((s) => s.matches)),
+    { initialValue: false },
+  );
 
   /**
    * Resolve the live count for a nav item, or `null` when the item has
@@ -75,7 +95,16 @@ export class AdminLayoutComponent {
         filter((e): e is NavigationEnd => e instanceof NavigationEnd),
         takeUntilDestroyed(),
       )
-      .subscribe(() => this.navCounts.reload());
+      .subscribe(() => {
+        this.navCounts.reload();
+        this.topbar.closeDrawer();
+      });
+
+    // Close the drawer when the viewport grows to desktop so a left-open
+    // mobile drawer doesn't strand focus in a now-static sidebar.
+    effect(() => {
+      if (!this.isMobile()) this.topbar.closeDrawer();
+    });
   }
 
   protected logout(): void {
@@ -85,5 +114,9 @@ export class AdminLayoutComponent {
 
   protected toggleA11yMode(): void {
     this.keyboardShortcuts.toggleA11yMode();
+  }
+
+  protected closeDrawer(): void {
+    this.topbar.closeDrawer();
   }
 }

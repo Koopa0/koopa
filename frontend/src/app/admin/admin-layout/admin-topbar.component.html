@@ -1,5 +1,17 @@
 @let ctx = context();
 
+<button
+  type="button"
+  (click)="toggleDrawer()"
+  class="-ml-1 grid size-8 shrink-0 place-items-center rounded-sm text-fg-muted transition-colors hover:bg-overlay hover:text-fg md:hidden"
+  aria-label="Open navigation menu"
+  aria-controls="admin-drawer"
+  [attr.aria-expanded]="drawerOpen()"
+  data-testid="admin-drawer-toggle"
+>
+  <lucide-icon [img]="MenuIcon" [size]="18" />
+</button>
+
 <div class="flex min-w-0 flex-1 items-baseline gap-4">
   @if (ctx.title) {
     <h1
@@ -29,7 +41,7 @@
 <button
   type="button"
   (click)="openSearch()"
-  class="flex min-w-60 cursor-pointer items-center gap-2 rounded-sm border border-border-faint bg-elevated px-2.5 py-1 text-xs text-fg-subtle transition-colors hover:border-border-strong"
+  class="flex min-w-0 cursor-pointer items-center gap-2 rounded-sm border border-border-faint bg-elevated px-2.5 py-1 text-xs text-fg-subtle transition-colors hover:border-border-strong md:min-w-60"
   aria-label="Open search (Cmd+K)"
   data-testid="topbar-search"
 >

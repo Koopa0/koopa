@@ -71,6 +71,28 @@
       @if (isLoading()) {
         <!-- Quiet reserved space — no pulsing skeleton; the list fades in. -->
         <div class="min-h-[50vh]"></div>
+      } @else if (loadError()) {
+        <div
+          class="flex flex-col items-center gap-4 py-20 text-center"
+          data-testid="articles-error"
+        >
+          <lucide-icon [img]="AlertIcon" [size]="40" class="text-fg-faint" />
+          <h2 class="text-lg font-medium text-fg-muted">
+            Could not load the index
+          </h2>
+          <p class="text-sm text-fg-faint">
+            Something went wrong fetching the archive.
+          </p>
+          <button
+            type="button"
+            class="mt-1 flex items-center gap-1.5 rounded-xs border border-border px-3 py-1.5 font-mono text-xs text-fg-subtle transition-colors hover:border-border-strong hover:text-fg"
+            (click)="contentsResource.reload()"
+            data-testid="articles-retry"
+          >
+            <lucide-icon [img]="RetryIcon" [size]="13" />
+            Try again
+          </button>
+        </div>
       } @else if (grouped().length > 0) {
         @for (g of grouped(); track g.year) {
           <div class="ed-year-head" data-testid="year-head">
@@ -111,7 +133,7 @@
           </nav>
         }
       } @else {
-        <!-- Empty state — also the graceful fallback when the index fails to load. -->
+        <!-- Empty state — nothing published yet (load failure is handled above). -->
         <div
           class="flex flex-col items-center gap-4 py-20 text-center"
           data-testid="articles-empty"

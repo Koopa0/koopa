@@ -5,7 +5,7 @@ import {
   inject,
   signal,
 } from '@angular/core';
-import { LucideAngularModule, MoreHorizontal, Search } from 'lucide-angular';
+import { LucideAngularModule, Menu, MoreHorizontal, Search } from 'lucide-angular';
 import { AdminTopbarService, type TopbarAction } from './admin-topbar.service';
 import { CommandPaletteService } from '../../shared/command-palette/command-palette.service';
 
@@ -53,8 +53,11 @@ export class AdminTopbarComponent {
   private readonly _overflowOpen = signal(false);
   protected readonly overflowOpen = this._overflowOpen.asReadonly();
 
+  protected readonly drawerOpen = this.topbar.drawerOpen;
+
   protected readonly SearchIcon = Search;
   protected readonly OverflowIcon = MoreHorizontal;
+  protected readonly MenuIcon = Menu;
 
   protected runAction(action: TopbarAction): void {
     if (action.disabled) return;
@@ -68,6 +71,10 @@ export class AdminTopbarComponent {
 
   protected closeOverflow(): void {
     this._overflowOpen.set(false);
+  }
+
+  protected toggleDrawer(): void {
+    this.topbar.toggleDrawer();
   }
 
   protected openSearch(): void {

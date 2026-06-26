@@ -89,8 +89,41 @@
         id="command-palette-listbox"
         data-testid="command-palette-results"
       >
+        <!-- Quick Actions — matching nav commands, shown for any query
+             (and all actions when the query is empty). In search mode these
+             sit above the content results and share the flat index space. -->
+        @for (group of groupedActions(); track group.name) {
+          <div>
+            @if (!$first) {
+              <div class="my-1 border-t border-border-faint"></div>
+            }
+            <div
+              class="px-3 pt-2 pb-1 font-mono text-[10px] tracking-[0.08em] text-fg-faint uppercase"
+            >
+              {{ group.name }}
+            </div>
+            @for (item of group.items; track item.id) {
+              <button
+                type="button"
+                class="flex w-full items-center gap-3 rounded-xs px-3 py-2 text-left text-sm transition-colors"
+                [class.bg-brand-muted]="activeIndex() === item.flatIndex"
+                [class.text-brand]="activeIndex() === item.flatIndex"
+                [class.text-fg-muted]="activeIndex() !== item.flatIndex"
+                [attr.data-index]="item.flatIndex"
+                [id]="'cp-item-' + item.flatIndex"
+                (mouseenter)="activeIndex.set(item.flatIndex)"
+                (click)="executeAction(item.action)"
+                role="option"
+                [attr.aria-selected]="activeIndex() === item.flatIndex"
+              >
+                <span class="flex-1">{{ item.label }}</span>
+              </button>
+            }
+          </div>
+        }
+
         @if (isSearchMode()) {
-          <!-- Search Results -->
+          <!-- Content search results, indexed after the quick actions -->
           @if (isSearching()) {
             <div
               class="flex items-center justify-center gap-2 px-4 py-8 text-fg-subtle"
@@ -102,6 +135,9 @@
             </div>
           } @else if (searchResults().length > 0) {
             <div>
+              @if (filteredActions().length > 0) {
+                <div class="my-1 border-t border-border-faint"></div>
+              }
               <div
                 class="px-3 pb-1 font-mono text-[10px] tracking-[0.08em] text-fg-faint uppercase"
               >
@@ -152,7 +188,13 @@
                 View all results →
               </button>
             </div>
-          } @else if (captureAvailable()) {
+          }
+        }
+
+        <!-- Capture fallback / no-matches: only when nothing matched at all
+             (no nav command and no content result). -->
+        @if (isSearchMode() && !isSearching() && totalItems() === 0) {
+          @if (captureAvailable()) {
             <!-- GTD capture fallback: nothing matched, capture the raw query -->
             <div>
               <div
@@ -203,37 +245,6 @@
           } @else if (query().length >= 2) {
             <div class="px-4 py-7 text-center text-sm text-fg-subtle">
               No matches for "{{ query() }}".
-            </div>
-          }
-        } @else {
-          <!-- Quick Actions -->
-          @for (group of groupedActions(); track group.name) {
-            <div>
-              @if (!$first) {
-                <div class="my-1 border-t border-border-faint"></div>
-              }
-              <div
-                class="px-3 pt-2 pb-1 font-mono text-[10px] tracking-[0.08em] text-fg-faint uppercase"
-              >
-                {{ group.name }}
-              </div>
-              @for (item of group.items; track item.id) {
-                <button
-                  type="button"
-                  class="flex w-full items-center gap-3 rounded-xs px-3 py-2 text-left text-sm transition-colors"
-                  [class.bg-brand-muted]="activeIndex() === item.flatIndex"
-                  [class.text-brand]="activeIndex() === item.flatIndex"
-                  [class.text-fg-muted]="activeIndex() !== item.flatIndex"
-                  [attr.data-index]="item.flatIndex"
-                  [id]="'cp-item-' + item.flatIndex"
-                  (mouseenter)="activeIndex.set(item.flatIndex)"
-                  (click)="executeAction(item.action)"
-                  role="option"
-                  [attr.aria-selected]="activeIndex() === item.flatIndex"
-                >
-                  <span class="flex-1">{{ item.label }}</span>
-                </button>
-              }
             </div>
           }
         }

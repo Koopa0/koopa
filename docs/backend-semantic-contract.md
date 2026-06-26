@@ -65,10 +65,10 @@ and compiled into the binary (`internal/agent/registry.go::BuiltinAgents()`).
    (`agent_status`, `migrations/001_initial.up.sql:31`), so a name stays a
    stable FK target for the life of the audit log.
 2. **`activity_events` is written exclusively by AFTER triggers.** Application
-   code must never INSERT (`migrations/001_initial.up.sql:952` table,
-   `:975` "MUST NOT INSERT" comment; audit functions + triggers `:1049-1173`).
+   code must never INSERT (`migrations/001_initial.up.sql:791` table,
+   `:812` "MUST NOT INSERT" comment; audit function + triggers `:866-1000`).
    Actor flows from the `koopa.actor` GUC via `current_actor()`
-   (`:1049`), defaulting to `'system'`.
+   (`:866`), defaulting to `'human'` — there is no synthetic `'system'` agent.
 3. **Illegal states are made structurally impossible** through joint CHECKs,
    partial unique indexes, and narrow triggers — not application discipline
    alone. The publish CHECKs couple `status='published'` with `published_at`
@@ -124,7 +124,7 @@ them wrong is a semantic bug, not a naming quibble.
   (`registry.go:63-67`). `user_id` is **not** used as actor identity.
 - **actor** — the `agents.name` value attributed to one `activity_events` row;
   set from the `koopa.actor` GUC inside the audit trigger via `current_actor()`
-  (`migrations/001_initial.up.sql:1049`).
+  (`migrations/001_initial.up.sql:866`).
 - **Koopa** — the human owner (display name on the `human` agent) — the sole
   decision-maker and sole router.
 - **Agents** — `claude` (`claude-code`) does repo development and agent-surface

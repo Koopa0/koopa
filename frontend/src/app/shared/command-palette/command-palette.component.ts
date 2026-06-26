@@ -102,11 +102,14 @@ export class CommandPaletteComponent {
     const q = this.query().toLowerCase().trim();
     const actions = this.paletteService.actions();
 
-    if (!q || this.isSearchMode()) {
-      return this.isSearchMode() ? [] : actions;
+    if (!q) {
+      return actions;
     }
 
-    // Single character — still show actions, filtered
+    // Any query — single or multi character — filters nav actions by
+    // label/group/keywords. In search mode these matching commands sit above
+    // the content results, so "proj" surfaces the Projects command instead of
+    // collapsing straight to the GTD capture fallback.
     return actions.filter((a) => {
       const haystack = [a.label, a.group, ...(a.keywords ?? [])]
         .join(' ')

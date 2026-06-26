@@ -88,7 +88,7 @@ func NewHandler(
 // triggers attribute writes to the real actor. A missing tx is a
 // wiring bug — the handler returns 500 and logs a stable event key so
 // the failure shows up in dashboards, not silently degraded audit
-// rows with actor='system'.
+// rows with actor='human'.
 func (h *Handler) mustAdminTx(w http.ResponseWriter, r *http.Request) (pgx.Tx, bool) {
 	tx, ok := api.TxFromContext(r.Context())
 	if !ok {

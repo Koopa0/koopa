@@ -8,6 +8,7 @@ import {
 import { rxResource } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
 import { DatePipe } from '@angular/common';
+import { LucideAngularModule, AlertTriangle, RefreshCw } from 'lucide-angular';
 import { environment } from '../../../environments/environment';
 import { ContentService } from '../../core/services/content.service';
 import { TopicService } from '../../core/services/topic.service';
@@ -44,7 +45,7 @@ const MIN_PIECES = 6;
  */
 @Component({
   selector: 'app-home',
-  imports: [RouterLink, DatePipe],
+  imports: [RouterLink, DatePipe, LucideAngularModule],
   templateUrl: './home.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
@@ -54,6 +55,9 @@ export class HomeComponent implements OnInit {
   private readonly seoService = inject(SeoService);
 
   protected readonly statement = STATEMENT;
+
+  protected readonly AlertIcon = AlertTriangle;
+  protected readonly RetryIcon = RefreshCw;
 
   protected readonly contentsResource = rxResource<
     ApiListResponse<ApiContent>,
@@ -74,6 +78,11 @@ export class HomeComponent implements OnInit {
   /** Still fetching — used to hold back the empty line until we truly know. */
   protected readonly loading = computed(
     () => this.contentsResource.status() === 'loading',
+  );
+
+  /** Distinguishes a failed contents load from a genuinely empty corpus. */
+  protected readonly loadError = computed(
+    () => this.contentsResource.status() === 'error',
   );
 
   /** The single featured piece — newest published, the cover's pick. */
