@@ -12,13 +12,16 @@ test.describe('Articles Page', () => {
     // Wait for loading to finish
     await page.waitForLoadState('networkidle');
 
-    // Either articles are displayed or the empty state (which is also the
-    // graceful fallback when the index fails to load).
+    // The page has three valid terminal states: published rows, a genuinely
+    // empty corpus, or an explicit load-error state when the API is unavailable.
     const hasArticles = (await articles.articleCards.count()) > 0;
     const hasEmptyState = await articles.emptyState
       .isVisible()
       .catch(() => false);
-    expect(hasArticles || hasEmptyState).toBeTruthy();
+    const hasErrorState = await articles.errorState
+      .isVisible()
+      .catch(() => false);
+    expect(hasArticles || hasEmptyState || hasErrorState).toBeTruthy();
   });
 
   test('should show loading skeletons initially', async ({ page }) => {

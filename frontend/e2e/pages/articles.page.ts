@@ -4,6 +4,7 @@ export class ArticlesPage {
   readonly heading: Locator;
   readonly articleCards: Locator;
   readonly emptyState: Locator;
+  readonly errorState: Locator;
   readonly searchInput: Locator;
   readonly loadingIndicator: Locator;
 
@@ -11,6 +12,7 @@ export class ArticlesPage {
     this.heading = page.locator('h1');
     this.articleCards = page.locator('a[href^="/articles/"]');
     this.emptyState = page.getByTestId('articles-empty');
+    this.errorState = page.getByTestId('articles-error');
     this.searchInput = page.locator('input[type="search"], input[placeholder*="Search"]');
     this.loadingIndicator = page.locator('.animate-pulse');
   }
