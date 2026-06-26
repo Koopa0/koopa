@@ -65,6 +65,18 @@ func NewHandler(
 	}
 }
 
+func (h *Handler) mustAdminTx(w http.ResponseWriter, r *http.Request) (*Store, bool) {
+	tx, ok := api.TxFromContext(r.Context())
+	if !ok {
+		h.logger.Error("project admin mutation without tx",
+			"event", "middleware_not_wired",
+			"method", r.Method, "path", r.URL.Path)
+		api.Error(w, http.StatusInternalServerError, "INTERNAL", "internal server error")
+		return nil, false
+	}
+	return h.store.WithTx(tx), true
+}
+
 // List handles GET /api/admin/projects — returns the admin project-list
 // overview (todo progress, goal breadcrumb, area, and staleness per project).
 func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
@@ -238,9 +250,9 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		p.Status = StatusInProgress
 	}
 
-	store := h.store
-	if tx, ok := api.TxFromContext(r.Context()); ok {
-		store = h.store.WithTx(tx)
+	store, ok := h.mustAdminTx(w, r)
+	if !ok {
+		return
 	}
 	proj, err := store.CreateProject(r.Context(), &p)
 	if err != nil {
@@ -268,9 +280,9 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	store := h.store
-	if tx, ok := api.TxFromContext(r.Context()); ok {
-		store = h.store.WithTx(tx)
+	store, ok := h.mustAdminTx(w, r)
+	if !ok {
+		return
 	}
 	proj, err := store.UpdateProject(r.Context(), id, &p)
 	if err != nil {
@@ -288,9 +300,9 @@ func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	store := h.store
-	if tx, ok := api.TxFromContext(r.Context()); ok {
-		store = h.store.WithTx(tx)
+	store, ok := h.mustAdminTx(w, r)
+	if !ok {
+		return
 	}
 	if err := store.DeleteProject(r.Context(), id); err != nil {
 		api.HandleError(w, h.logger, err, storeErrors...)
@@ -318,9 +330,9 @@ func (h *Handler) ActivateProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	store := h.store
-	if tx, ok := api.TxFromContext(r.Context()); ok {
-		store = h.store.WithTx(tx)
+	store, ok := h.mustAdminTx(w, r)
+	if !ok {
+		return
 	}
 	p, err := store.ActivateProject(r.Context(), id)
 	if err != nil {
@@ -340,9 +352,9 @@ func (h *Handler) RejectProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	store := h.store
-	if tx, ok := api.TxFromContext(r.Context()); ok {
-		store = h.store.WithTx(tx)
+	store, ok := h.mustAdminTx(w, r)
+	if !ok {
+		return
 	}
 	if err := store.RejectProject(r.Context(), id); err != nil {
 		api.HandleError(w, h.logger, err, storeErrors...)

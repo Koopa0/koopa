@@ -114,6 +114,18 @@ func NewHandler(store *Store, fetcher ManualFetcher, logger *slog.Logger) *Handl
 	return &Handler{store: store, fetcher: fetcher, logger: logger}
 }
 
+func (h *Handler) mustAdminTx(w http.ResponseWriter, r *http.Request) (*Store, bool) {
+	tx, ok := api.TxFromContext(r.Context())
+	if !ok {
+		h.logger.Error("feed admin mutation without tx",
+			"event", "middleware_not_wired",
+			"method", r.Method, "path", r.URL.Path)
+		api.Error(w, http.StatusInternalServerError, "INTERNAL", "internal server error")
+		return nil, false
+	}
+	return h.store.WithTx(tx), true
+}
+
 // List handles GET /api/admin/feeds.
 func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	var schedule *string
@@ -164,9 +176,9 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		Filter:   req.Filter,
 	}
 
-	store := h.store
-	if tx, ok := api.TxFromContext(r.Context()); ok {
-		store = h.store.WithTx(tx)
+	store, ok := h.mustAdminTx(w, r)
+	if !ok {
+		return
 	}
 	f, err := store.CreateFeed(r.Context(), &p)
 	if err != nil {
@@ -232,9 +244,9 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 		Filter:   req.Filter,
 	}
 
-	store := h.store
-	if tx, ok := api.TxFromContext(r.Context()); ok {
-		store = h.store.WithTx(tx)
+	store, ok := h.mustAdminTx(w, r)
+	if !ok {
+		return
 	}
 	f, err := store.UpdateFeed(r.Context(), id, &p)
 	if err != nil {
@@ -252,9 +264,9 @@ func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	store := h.store
-	if tx, ok := api.TxFromContext(r.Context()); ok {
-		store = h.store.WithTx(tx)
+	store, ok := h.mustAdminTx(w, r)
+	if !ok {
+		return
 	}
 	if err := store.DeleteFeed(r.Context(), id); err != nil {
 		h.logger.Error("deleting feed", "id", id, "error", err)

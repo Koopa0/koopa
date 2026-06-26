@@ -44,6 +44,18 @@ func NewHandler(store *Store, contentReader ContentByTopicLister, logger *slog.L
 	return &Handler{store: store, content: contentReader, topicCache: topicCache, logger: logger}
 }
 
+func (h *Handler) mustAdminTx(w http.ResponseWriter, r *http.Request) (*Store, bool) {
+	tx, ok := api.TxFromContext(r.Context())
+	if !ok {
+		h.logger.Error("topic admin mutation without tx",
+			"event", "middleware_not_wired",
+			"method", r.Method, "path", r.URL.Path)
+		api.Error(w, http.StatusInternalServerError, "INTERNAL", "internal server error")
+		return nil, false
+	}
+	return h.store.WithTx(tx), true
+}
+
 // topics returns the full topic list, served from the cache when warm and
 // loaded from the store otherwise. Both the admin and public list handlers
 // share this so they share one cache entry.
@@ -140,9 +152,9 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	store := h.store
-	if tx, ok := api.TxFromContext(r.Context()); ok {
-		store = h.store.WithTx(tx)
+	store, ok := h.mustAdminTx(w, r)
+	if !ok {
+		return
 	}
 	t, err := store.CreateTopic(r.Context(), &p)
 	if err != nil {
@@ -171,9 +183,9 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	store := h.store
-	if tx, ok := api.TxFromContext(r.Context()); ok {
-		store = h.store.WithTx(tx)
+	store, ok := h.mustAdminTx(w, r)
+	if !ok {
+		return
 	}
 	t, err := store.UpdateTopic(r.Context(), id, &p)
 	if err != nil {
@@ -192,9 +204,9 @@ func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	store := h.store
-	if tx, ok := api.TxFromContext(r.Context()); ok {
-		store = h.store.WithTx(tx)
+	store, ok := h.mustAdminTx(w, r)
+	if !ok {
+		return
 	}
 	if err := store.DeleteTopic(r.Context(), id); err != nil {
 		h.logger.Error("deleting topic", "id", id, "error", err)
