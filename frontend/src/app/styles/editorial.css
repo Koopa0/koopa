@@ -1257,6 +1257,11 @@
 .ed-about-dl > .pair {
   display: contents;
 }
+/* Elsewhere: the logo already names the platform, so the term column is
+   dropped (kept sr-only for assistive tech) — each row is just icon + handle. */
+.ed-about-dl.ed-about-links {
+  grid-template-columns: minmax(0, 1fr);
+}
 .ed-about-dl dt {
   font-family: var(--font-mono);
   font-size: 11px;
