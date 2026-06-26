@@ -188,6 +188,24 @@ describe('CommandPaletteComponent', () => {
       expect(service.isOpen()).toBe(false);
     });
 
+    it('should keep a matching nav command visible for a multi-character query', () => {
+      // Pre-fix bug: once the query reached search-mode length (>= 2 chars)
+      // the palette cleared every nav action, so "about" collapsed straight to
+      // the GTD capture fallback instead of surfacing the About command.
+      enterCaptureState('about');
+
+      const optionLabels = Array.from(
+        fixture.nativeElement.querySelectorAll('[role="option"]'),
+      ).map((el) => (el as HTMLElement).textContent?.trim() ?? '');
+
+      expect(optionLabels.some((label) => label.includes('About'))).toBe(true);
+      expect(
+        fixture.nativeElement.querySelector(
+          '[data-testid="command-palette-capture"]',
+        ),
+      ).toBeNull();
+    });
+
     it('should keep the palette open and toast an error when capture fails', () => {
       const { httpMock } = enterCaptureState('doomed capture');
       const notifications = TestBed.inject(NotificationService);
