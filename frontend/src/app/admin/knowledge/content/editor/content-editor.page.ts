@@ -24,6 +24,7 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { map, startWith } from 'rxjs';
 import { ContentService } from '../../../../core/services/content.service';
 import { TopicService } from '../../../../core/services/topic.service';
+import { estimateReadingTime } from '../../../../shared/utils/reading-time';
 import { NotificationService } from '../../../../core/services/notification.service';
 import {
   AdminTopbarService,
@@ -52,7 +53,6 @@ interface ContentEditorForm {
   excerpt: FormControl<string>;
   type: FormControl<ContentType>;
   coverImage: FormControl<string>;
-  readingTimeMin: FormControl<number>;
 }
 
 const CONTENT_TYPE_OPTIONS: readonly {
@@ -205,7 +205,6 @@ export class ContentEditorPageComponent {
       validators: [Validators.required],
     }),
     coverImage: new FormControl('', { nonNullable: true }),
-    readingTimeMin: new FormControl(0, { nonNullable: true }),
   });
 
   // Bridge Angular FormGroup state to signals so effects re-run when
@@ -286,7 +285,6 @@ export class ContentEditorPageComponent {
           excerpt: c.excerpt,
           type: c.type,
           coverImage: c.cover_image ?? '',
-          readingTimeMin: c.reading_time_min,
         },
         { emitEvent: false },
       );
@@ -375,7 +373,7 @@ export class ContentEditorPageComponent {
       excerpt: v.excerpt,
       topic_ids: this.selectedTopicIds(),
       cover_image: v.coverImage || undefined,
-      reading_time_min: v.readingTimeMin,
+      reading_time_min: estimateReadingTime(v.body),
     };
 
     this._isActioning.set(true);
@@ -411,7 +409,7 @@ export class ContentEditorPageComponent {
       excerpt: v.excerpt,
       topic_ids: this.selectedTopicIds(),
       cover_image: v.coverImage || undefined,
-      reading_time_min: v.readingTimeMin,
+      reading_time_min: estimateReadingTime(v.body),
       // Visibility is owned by the PATCH …/is-public switch; echo the
       // server-known value so the full update does not clobber it.
       is_public: c.is_public,
