@@ -108,7 +108,7 @@ function slugify(title: string): string {
  *
  * Keyboard:
  *   ⌘S        — save (create or update)
- *   ⌘⇧P       — publish (only while status='review')
+ *   ⌘⇧P       — publish (draft directly, or a review row)
  *   ⌘⇧R       — revert to draft (only while status='review')
  */
 @Component({
@@ -617,20 +617,20 @@ export class ContentEditorPageComponent {
       return;
     }
 
-    // Below: remaining chords all require Cmd+Shift without Alt, and
-    // only apply while the content is in review.
+    // Below: remaining chords all require Cmd+Shift without Alt.
     if (!event.shiftKey || event.altKey) return;
-    const c = this.content();
-    if (c?.status !== 'review') return;
+    const status = this.content()?.status;
 
     // `event.key` is guaranteed uppercase when Shift is held,
     // independent of Caps Lock.
-    if (event.key === 'P') {
+    // ⌘⇧P — publish a draft directly, or a review row.
+    if (event.key === 'P' && (status === 'draft' || status === 'review')) {
       event.preventDefault();
       this.publish();
       return;
     }
-    if (event.key === 'R') {
+    // ⌘⇧R — revert to draft (review only).
+    if (event.key === 'R' && status === 'review') {
       event.preventDefault();
       this.revertToDraft();
     }

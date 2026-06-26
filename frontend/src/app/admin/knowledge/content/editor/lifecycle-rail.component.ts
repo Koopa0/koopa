@@ -36,7 +36,10 @@ const STATUS_ORDER: readonly ContentStatus[] = [
 
 /** Legal transition buttons offered for each current status. */
 const ACTIONS_BY_STATUS: Record<ContentStatus, readonly RailAction[]> = {
-  draft: [{ id: 'submit-for-review', label: 'Submit for review', primary: true }],
+  draft: [
+    { id: 'submit-for-review', label: 'Submit for review', primary: false },
+    { id: 'publish', label: 'Publish', primary: true },
+  ],
   review: [
     { id: 'send-back', label: 'Send back', primary: false },
     { id: 'revert-to-draft', label: 'Revert to draft', primary: false },
@@ -56,8 +59,9 @@ const ACTIONS_BY_STATUS: Record<ContentStatus, readonly RailAction[]> = {
  * (past = check, current = dot, future = empty), with the legal
  * transitions for the current status as buttons underneath.
  *
- * Publishing is a human-only action server-side; the rail surfaces the
- * gate as a caption while the status sits in review.
+ * Publishing is a human-only action server-side: the owner publishes a
+ * draft directly (the common path) or a review row from the queue. The
+ * rail surfaces the human-only gate as a caption while a row sits in review.
  */
 @Component({
   selector: 'app-content-lifecycle-rail',

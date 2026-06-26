@@ -42,16 +42,20 @@ describe('ContentLifecycleRailComponent', () => {
     ).toBeNull();
   });
 
-  it('should offer only Submit for review when status is draft', () => {
+  it('should offer Publish and Submit for review when status is draft', () => {
     create('draft');
 
     const buttons = el().querySelectorAll(
       '[data-testid^="lifecycle-action-"]',
     );
-    expect(buttons.length).toBe(1);
+    expect(buttons.length).toBe(2);
+    expect(
+      el().querySelector('[data-testid="lifecycle-action-publish"]'),
+    ).toBeTruthy();
     expect(
       el().querySelector('[data-testid="lifecycle-action-submit-for-review"]'),
     ).toBeTruthy();
+    // The human-only gate caption is for a review row, not a draft.
     expect(
       el().querySelector('[data-testid="lifecycle-publish-gate"]'),
     ).toBeNull();
