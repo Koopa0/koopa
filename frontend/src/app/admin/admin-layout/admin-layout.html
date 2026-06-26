@@ -1,7 +1,19 @@
 <!-- Shell: 220px nav rail + (Topbar + router-outlet) -->
 <div class="flex min-h-0 flex-1">
+  @if (drawerOpen()) {
+    <div
+      class="fixed inset-0 z-40 bg-black/60 md:hidden"
+      aria-hidden="true"
+      (click)="closeDrawer()"
+      data-testid="admin-drawer-backdrop"
+    ></div>
+  }
   <aside
-    class="flex w-[220px] shrink-0 flex-col border-r border-border bg-panel py-3.5"
+    id="admin-drawer"
+    class="fixed inset-y-0 left-0 z-50 flex w-[220px] shrink-0 flex-col border-r border-border bg-panel py-3.5 transition-transform duration-200 md:static md:z-auto md:translate-x-0 md:transition-none"
+    [class.translate-x-0]="drawerOpen()"
+    [class.-translate-x-full]="!drawerOpen()"
+    [cdkTrapFocus]="drawerOpen() && isMobile()"
     role="navigation"
     aria-label="Admin navigation"
   >
