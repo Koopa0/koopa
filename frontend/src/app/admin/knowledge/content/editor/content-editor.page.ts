@@ -477,9 +477,24 @@ export class ContentEditorPageComponent {
     );
   }
 
+  /** Soft reminder when publishing without a topic — a reminder, not a gate. */
+  protected readonly confirmPublishNoTopic = signal(false);
+
+  protected cancelPublishNoTopic(): void {
+    this.confirmPublishNoTopic.set(false);
+  }
+
   protected publish(): void {
     const c = this.content();
     if (!c || this._isActioning()) return;
+
+    // Topics drive the home index and topic pages; warn (don't block) when
+    // publishing without one. The second call ("Publish anyway") clears it.
+    if (this.selectedTopicIds().length === 0 && !this.confirmPublishNoTopic()) {
+      this.confirmPublishNoTopic.set(true);
+      return;
+    }
+    this.confirmPublishNoTopic.set(false);
 
     this._isActioning.set(true);
     this.contentService

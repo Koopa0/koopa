@@ -169,6 +169,35 @@
             [busy]="isActioning()"
             (action)="runLifecycleAction($event)"
           />
+          @if (confirmPublishNoTopic()) {
+            <div
+              class="mt-3 rounded-sm border border-amber-500/40 bg-amber-500/10 px-3 py-2.5"
+              data-testid="publish-no-topic-warn"
+            >
+              <p class="text-[11px] leading-relaxed text-fg-muted">
+                No topic set — readers won't find this by topic.
+              </p>
+              <div class="mt-2 flex gap-2">
+                <button
+                  type="button"
+                  (click)="publish()"
+                  [disabled]="isActioning()"
+                  data-testid="publish-anyway"
+                  class="rounded-xs bg-amber-500/20 px-2.5 py-1 font-mono text-[11px] text-fg hover:bg-amber-500/30 disabled:opacity-40"
+                >
+                  Publish anyway
+                </button>
+                <button
+                  type="button"
+                  (click)="cancelPublishNoTopic()"
+                  data-testid="publish-cancel-no-topic"
+                  class="rounded-xs border border-border px-2.5 py-1 font-mono text-[11px] text-fg-subtle hover:text-fg"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          }
         </div>
 
         <div class="border-b border-border px-5 py-[18px]">

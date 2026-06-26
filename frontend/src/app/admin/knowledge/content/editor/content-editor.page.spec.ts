@@ -253,6 +253,45 @@ describe('ContentEditorPageComponent', () => {
       ).toContain('human only');
     });
 
+    it('should warn before publishing a draft with no topic, then publish on confirm', async () => {
+      // The draft loaded in beforeEach has no topics — publishing warns first.
+      el()
+        .querySelector<HTMLButtonElement>(
+          '[data-testid="lifecycle-action-publish"]',
+        )
+        ?.click();
+      await settle();
+
+      // Soft reminder shown; no publish POST yet (afterEach verify confirms).
+      expect(
+        el().querySelector('[data-testid="publish-no-topic-warn"]'),
+      ).toBeTruthy();
+
+      // "Publish anyway" confirms and POSTs the publish.
+      el()
+        .querySelector<HTMLButtonElement>('[data-testid="publish-anyway"]')
+        ?.click();
+      await settle();
+
+      httpMock
+        .expectOne(
+          (r) =>
+            r.method === 'POST' &&
+            r.url.endsWith(`${CONTENT_URL}/abc-1/publish`),
+        )
+        .flush({ data: contentPayload({ status: 'published' }) });
+      await settle();
+
+      httpMock
+        .expectOne((r) => r.url.endsWith(`${CONTENT_URL}/abc-1`))
+        .flush({ data: contentPayload({ status: 'published' }) });
+      await settle();
+
+      expect(
+        el().querySelector('[data-testid="publish-no-topic-warn"]'),
+      ).toBeNull();
+    });
+
     it('should open the preview overlay with the /preview/:slug iframe via the topbar action', async () => {
       const topbar = TestBed.inject(AdminTopbarService);
       const previewAction = topbar
