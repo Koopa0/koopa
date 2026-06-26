@@ -1338,31 +1338,9 @@
   }
 }
 
-/* ---------- card reveal ----------
-   A gentle fade + rise so content arrives instead of popping. Plays once on
-   first paint (SSR included) and again when client-side filter/pagination
-   swaps the list. The staggered animation-delay (capped, set inline by index)
-   gives a soft cascade. */
-@keyframes ed-reveal {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-/* A single calm fade — no rise, no stagger. The page-level view transition
-   carries the "entering a screen" motion; content just settles in. */
-.ed-reveal {
-  animation: ed-reveal 0.5s ease both;
-}
-
 @media (prefers-reduced-motion: reduce) {
   .ed-fd-arrow {
     transition: none;
-  }
-  .ed-reveal {
-    animation: none;
   }
 }
 

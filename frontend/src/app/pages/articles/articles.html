@@ -79,7 +79,7 @@
           </div>
           <ul class="list-none p-0" [attr.aria-label]="g.year">
             @for (content of g.items; track content.id) {
-              <li class="ed-reveal">
+              <li>
                 <app-post-row [content]="content" />
               </li>
             }

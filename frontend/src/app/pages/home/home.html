@@ -1,7 +1,7 @@
 <section class="pb-24">
   <div class="ed-fd">
     <!-- BAND ① statement -->
-    <section class="ed-fd-pos ed-reveal">
+    <section class="ed-fd-pos">
       <p class="ed-fd-kicker">koopa0.dev / knowledge engine</p>
       <h1 class="ed-fd-stmt">{{ statement }}</h1>
     </section>
@@ -12,7 +12,7 @@
          the lead and recent list are painted at first paint and simply settle
          in with one calm fade. min-height reserves the space so a slow fetch
          never collapses the band and shoves the signposts around. -->
-    <div class="ed-reveal min-h-[16rem]">
+    <div class="min-h-[16rem]">
       <!-- BAND ② the lead — the one privileged piece -->
       @if (lead(); as l) {
         <a
