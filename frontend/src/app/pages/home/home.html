@@ -7,11 +7,16 @@
     </section>
     <div class="ed-fd-rule"></div>
 
-    @defer (on immediate; hydrate on idle) {
+    <!-- BAND ② + ③ render in the normal SSR pass: the server resolves the
+         content request and the HTTP transfer cache hands it to the client, so
+         the lead and recent list are painted at first paint and simply settle
+         in with one calm fade. min-height reserves the space so a slow fetch
+         never collapses the band and shoves the signposts around. -->
+    <div class="ed-reveal min-h-[16rem]">
       <!-- BAND ② the lead — the one privileged piece -->
       @if (lead(); as l) {
         <a
-          class="ed-fd-lead ed-reveal"
+          class="ed-fd-lead"
           [routerLink]="'/articles/' + l.slug"
           data-testid="home-lead"
         >
@@ -42,7 +47,7 @@
         <div class="ed-fd-recent">
           @for (p of more(); track p.id) {
             <a
-              class="ed-fd-rec ed-reveal"
+              class="ed-fd-rec"
               [routerLink]="'/articles/' + p.slug"
               data-testid="home-rec"
             >
@@ -69,9 +74,7 @@
           All writing →
         </a>
       </section>
-    } @placeholder {
-      <div class="min-h-[16rem]"></div>
-    }
+    </div>
 
     <!-- BAND ④ signposts -->
     <nav class="ed-fd-signposts" aria-label="Sections">

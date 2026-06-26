@@ -1,8 +1,4 @@
-import {
-  ComponentFixture,
-  DeferBlockState,
-  TestBed,
-} from '@angular/core/testing';
+import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideHttpClient, withXhr } from '@angular/common/http';
 import {
   provideHttpClientTesting,
@@ -84,13 +80,6 @@ describe('HomeComponent', () => {
     req.flush({ data: contents, meta });
   }
 
-  /** Force the deferred cover block into its rendered (Complete) state. */
-  async function renderDeferredList(): Promise<void> {
-    const blocks = await fixture.getDeferBlocks();
-    await blocks[0].render(DeferBlockState.Complete);
-    fixture.detectChanges();
-  }
-
   it('should render the positioning statement as the single h1', async () => {
     await settle();
     flushContents([]);
@@ -111,7 +100,6 @@ describe('HomeComponent', () => {
       buildMockContent({ id: '2', slug: 'b', title: 'Second' }),
     ]);
     await settle();
-    await renderDeferredList();
 
     const lead = (fixture.nativeElement as HTMLElement).querySelector(
       '[data-testid="home-lead"]',
@@ -128,7 +116,6 @@ describe('HomeComponent', () => {
       buildMockContent({ id: '3', slug: 'c', title: 'Third' }),
     ]);
     await settle();
-    await renderDeferredList();
 
     const rows = (fixture.nativeElement as HTMLElement).querySelectorAll(
       '[data-testid="home-rec"]',
@@ -140,7 +127,6 @@ describe('HomeComponent', () => {
     await settle();
     flushContents([]);
     await settle();
-    await renderDeferredList();
 
     expect(
       (fixture.nativeElement as HTMLElement)
@@ -153,7 +139,6 @@ describe('HomeComponent', () => {
     await settle();
     flushContents([]);
     await settle();
-    await renderDeferredList();
 
     expect(
       (fixture.nativeElement as HTMLElement).querySelector(
@@ -169,7 +154,6 @@ describe('HomeComponent', () => {
       .expectOne((r) => r.url.includes('/api/contents') && r.method === 'GET')
       .flush('err', { status: 500, statusText: 'Internal Server Error' });
     await settle();
-    await renderDeferredList();
 
     const el = fixture.nativeElement as HTMLElement;
     expect(el.textContent).toContain(

@@ -24,8 +24,10 @@ const STATEMENT = "Notes, systems, and what I'm working out.";
  * featured lead (the newest piece, given serif weight) over a quiet hand of
  * recent titles and two signposts. The full reading wall lives at `/articles`;
  * Home deliberately renders no `app-post-row` so it cannot be mistaken for the
- * index. The recent band is deferred (`on immediate; hydrate on idle`) so the
- * server-rendered content stays painted through hydration — no flash.
+ * index. The lead and recent band render in the normal SSR pass — the server
+ * resolves the content request and the HTTP transfer cache (see app.config)
+ * hands it to the client, so the content is painted at first paint and settles
+ * in with one calm fade rather than popping in after hydration.
  */
 @Component({
   selector: 'app-home',
