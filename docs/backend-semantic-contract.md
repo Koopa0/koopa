@@ -193,8 +193,11 @@ them wrong is a semantic bug, not a naming quibble.
   the reconciler fills (§6).
 - **source / provenance** — attribution of where a knowledge row came from.
   Columns: `contents.origin_system`, `feed_entries → feeds`.
-  `activity_events.actor` + entity-title/slug write-time snapshots give
-  per-mutation provenance. **Ambiguity:** there is no single uniform
+  `activity_events.actor` + entity-title/slug + `area_id` write-time snapshots
+  give per-mutation provenance (the `area_id` snapshot is resolved by the audit
+  triggers across all lineages — goal/project direct, milestone→goal,
+  todo/content→project — and powers the all-lineage area rollups, not just
+  project-scoped activity). **Ambiguity:** there is no single uniform
   "provenance" object; provenance is per-entity columns + the audit log.
 - **feed / feed_entry** — RSS subscription + collected items. `feed_entry`
   lifecycle `unread → read → curated | ignored` (`feed_entry_status`, `:15`);

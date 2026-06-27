@@ -121,7 +121,8 @@ func (s *Store) GoalsAdvancedInWindow(ctx context.Context, since, until time.Tim
 }
 
 // AreaActivityInWindow returns the per-active-area owner-activity count over
-// [since, until], for review_period.areas. Read-only.
+// [since, until], counted by the write-time activity_events.area_id (all
+// lineages — project, goal, milestone), for review_period.areas. Read-only.
 func (s *Store) AreaActivityInWindow(ctx context.Context, since, until time.Time) ([]AreaWindowActivity, error) {
 	rows, err := s.q.AreaActivityInWindow(ctx, db.AreaActivityInWindowParams{Since: since, Until: until})
 	if err != nil {

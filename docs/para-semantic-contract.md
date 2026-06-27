@@ -46,7 +46,7 @@ koopa is a single monorepo (`go.mod` module `github.com/Koopa0/koopa`) — one r
 
 ## 5. Decided
 
-- **No schema change.** The model is semantically sound; existing FKs suffice. Do **not** add `todo→goal/area` edges.
+- **No PARA-entity schema change.** The classification model is semantically sound; existing FKs suffice. Do **not** add `todo→goal/area` edges. (Area attribution for the audit log uses a write-time `activity_events.area_id` denormalization — 2026-06-27 — which deliberately does NOT add a `todo→area` PARA edge.)
 - The classification/usage layer lives here + in judgment, not in extra DB tables.
 - External presence = content via review queue. The public project portfolio was removed (2026-06-23).
 - `koopa0.dev` stays a **goal**. A koopa0.dev *project* is deferred (§6).

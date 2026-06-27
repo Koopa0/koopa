@@ -38,8 +38,9 @@ var cadenceDays = map[string]int{
 }
 
 // AreaNeglectedThreshold is the calendar-day window after which an area
-// with no human activity across ALL its projects is flagged neglected.
-// Owner-set; named so it is easy to tune in one place.
+// with no human activity attributed to it (via any project, goal, or
+// milestone) is flagged neglected. Owner-set; named so it is easy to tune in
+// one place.
 const AreaNeglectedThreshold = 14 * 24 * time.Hour
 
 // stalledFactor multiplies the cadence period to set the stalled threshold:
@@ -77,7 +78,8 @@ type GoalMilestones struct {
 
 // AreaActivity is one active area's live human-activity signal for the
 // areas[] neglect rollup. LastHumanActivityAt is nil when no human event is
-// scoped to any project under the area.
+// attributed to the area (via any project, goal, or milestone — the write-time
+// activity_events.area_id snapshot).
 type AreaActivity struct {
 	Slug                string     `json:"slug"`
 	Name                string     `json:"name"`
@@ -131,7 +133,9 @@ func (s *Store) ActiveGoalMilestones(ctx context.Context) ([]GoalMilestones, err
 }
 
 // ActiveAreaActivity returns the live human-activity signal for every active
-// PARA area, for the areas[] neglect rollup. Read-only.
+// PARA area, for the areas[] neglect rollup. The signal reads the write-time
+// activity_events.area_id attribution (all lineages — project, goal,
+// milestone), so a goals-only area registers activity. Read-only.
 func (s *Store) ActiveAreaActivity(ctx context.Context) ([]AreaActivity, error) {
 	rows, err := s.q.ActiveAreaActivity(ctx)
 	if err != nil {
@@ -176,10 +180,10 @@ func Stalled(lastHuman *time.Time, cadence string, openNextAction bool, now time
 	return now.Sub(*lastHuman) > threshold
 }
 
-// AreaNeglected reports whether an area has had no human activity across all
-// its projects for longer than AreaNeglectedThreshold. An area with no human
-// activity at all (lastHuman == nil) is neglected. now is passed in for
-// pure-function testability.
+// AreaNeglected reports whether an area has had no human activity attributed to
+// it (via any project, goal, or milestone) for longer than
+// AreaNeglectedThreshold. An area with no human activity at all
+// (lastHuman == nil) is neglected. now is passed in for pure-function testability.
 func AreaNeglected(lastHuman *time.Time, now time.Time) bool {
 	if lastHuman == nil {
 		return true
