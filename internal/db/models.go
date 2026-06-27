@@ -345,6 +345,8 @@ type ActivityEvent struct {
 	ChangeKind string `json:"change_kind"`
 	// Optional project association for project-scoped activity feeds. SET NULL on project deletion.
 	ProjectID *uuid.UUID `json:"project_id"`
+	// PARA area this event is attributed to, resolved AT THE TIME of the event by the audit trigger: goal and project carry area_id directly; milestone -> goal -> area_id; todo and content -> project -> area_id. Write-time attribution: re-filing a goal or project to a different area later does NOT rewrite past events (the audit triggers fire on status/state transitions, not on area_id changes). NULL when the lineage resolves to no area (e.g. a todo with no project, a goal with no area), and SET NULL if the referenced area is later deleted. Powers the area neglect/activity rollups in project_progress and review_period.
+	AreaID *uuid.UUID `json:"area_id"`
 	// Agent that caused the change. RESTRICT on agent deletion — historical audit must not dangle.
 	Actor string `json:"actor"`
 	// When the change happened. DEFAULT now() since triggers fire synchronously.

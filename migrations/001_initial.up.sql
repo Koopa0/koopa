@@ -801,6 +801,7 @@ CREATE TABLE activity_events (
                       'completed', 'archived'
                   )),
     project_id    UUID REFERENCES projects(id) ON DELETE SET NULL,
+    area_id       UUID REFERENCES areas(id) ON DELETE SET NULL,
     actor         TEXT NOT NULL REFERENCES agents(name) ON DELETE RESTRICT,
     occurred_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
     payload       JSONB NOT NULL DEFAULT '{}',
@@ -832,6 +833,14 @@ COMMENT ON COLUMN activity_events.change_kind IS
     'updated = generic field change.';
 COMMENT ON COLUMN activity_events.project_id IS
     'Optional project association for project-scoped activity feeds. SET NULL on project deletion.';
+COMMENT ON COLUMN activity_events.area_id IS
+    'PARA area this event is attributed to, resolved AT THE TIME of the event by the audit '
+    'trigger: goal and project carry area_id directly; milestone -> goal -> area_id; '
+    'todo and content -> project -> area_id. Write-time attribution: re-filing a goal or project '
+    'to a different area later does NOT rewrite past events (the audit triggers fire on '
+    'status/state transitions, not on area_id changes). NULL when the lineage resolves to no area '
+    '(e.g. a todo with no project, a goal with no area), and SET NULL if the referenced area is '
+    'later deleted. Powers the area neglect/activity rollups in project_progress and review_period.';
 COMMENT ON COLUMN activity_events.actor IS
     'Agent that caused the change. RESTRICT on agent deletion — historical audit must not dangle.';
 COMMENT ON COLUMN activity_events.occurred_at IS 'When the change happened. DEFAULT now() since triggers fire synchronously.';
@@ -842,6 +851,7 @@ COMMENT ON COLUMN activity_events.payload IS
 CREATE INDEX idx_activity_events_entity ON activity_events (entity_type, entity_id, occurred_at DESC);
 CREATE INDEX idx_activity_events_occurred_at ON activity_events (occurred_at DESC);
 CREATE INDEX idx_activity_events_project ON activity_events (project_id, occurred_at DESC) WHERE project_id IS NOT NULL;
+CREATE INDEX idx_activity_events_area ON activity_events (area_id, occurred_at DESC) WHERE area_id IS NOT NULL;
 CREATE INDEX idx_activity_events_kind ON activity_events (entity_type, change_kind, occurred_at DESC);
 CREATE INDEX idx_activity_events_actor ON activity_events (actor, occurred_at DESC);
 
@@ -883,14 +893,15 @@ $$ LANGUAGE plpgsql STABLE;
 CREATE OR REPLACE FUNCTION audit_todos() RETURNS TRIGGER AS $$
 BEGIN
     IF TG_OP = 'INSERT' THEN
-        INSERT INTO activity_events (entity_type, entity_id, entity_title, change_kind, project_id, actor, payload)
-        VALUES ('todo', NEW.id, NEW.title, 'created', NEW.project_id, current_actor(),
+        INSERT INTO activity_events (entity_type, entity_id, entity_title, change_kind, project_id, area_id, actor, payload)
+        VALUES ('todo', NEW.id, NEW.title, 'created', NEW.project_id,
+                (SELECT area_id FROM projects WHERE id = NEW.project_id), current_actor(),
                 jsonb_build_object('state', NEW.state));
     ELSIF NEW.state IS DISTINCT FROM OLD.state THEN
-        INSERT INTO activity_events (entity_type, entity_id, entity_title, change_kind, project_id, actor, payload)
+        INSERT INTO activity_events (entity_type, entity_id, entity_title, change_kind, project_id, area_id, actor, payload)
         VALUES ('todo', NEW.id, NEW.title,
                 CASE WHEN NEW.state = 'done' THEN 'completed' ELSE 'state_changed' END,
-                NEW.project_id, current_actor(),
+                NEW.project_id, (SELECT area_id FROM projects WHERE id = NEW.project_id), current_actor(),
                 jsonb_build_object('from', OLD.state, 'to', NEW.state));
     END IF;
     RETURN NEW;
@@ -905,12 +916,12 @@ CREATE TRIGGER trg_todos_audit
 CREATE OR REPLACE FUNCTION audit_goals() RETURNS TRIGGER AS $$
 BEGIN
     IF TG_OP = 'INSERT' THEN
-        INSERT INTO activity_events (entity_type, entity_id, entity_title, change_kind, actor, payload)
-        VALUES ('goal', NEW.id, NEW.title, 'created', current_actor(),
+        INSERT INTO activity_events (entity_type, entity_id, entity_title, change_kind, area_id, actor, payload)
+        VALUES ('goal', NEW.id, NEW.title, 'created', NEW.area_id, current_actor(),
                 jsonb_build_object('status', NEW.status));
     ELSIF NEW.status IS DISTINCT FROM OLD.status THEN
-        INSERT INTO activity_events (entity_type, entity_id, entity_title, change_kind, actor, payload)
-        VALUES ('goal', NEW.id, NEW.title, 'state_changed', current_actor(),
+        INSERT INTO activity_events (entity_type, entity_id, entity_title, change_kind, area_id, actor, payload)
+        VALUES ('goal', NEW.id, NEW.title, 'state_changed', NEW.area_id, current_actor(),
                 jsonb_build_object('from', OLD.status, 'to', NEW.status));
     END IF;
     RETURN NEW;
@@ -925,12 +936,14 @@ CREATE TRIGGER trg_goals_audit
 CREATE OR REPLACE FUNCTION audit_milestones() RETURNS TRIGGER AS $$
 BEGIN
     IF TG_OP = 'INSERT' THEN
-        INSERT INTO activity_events (entity_type, entity_id, entity_title, change_kind, actor, payload)
-        VALUES ('milestone', NEW.id, NEW.title, 'created', current_actor(),
+        INSERT INTO activity_events (entity_type, entity_id, entity_title, change_kind, area_id, actor, payload)
+        VALUES ('milestone', NEW.id, NEW.title, 'created',
+                (SELECT area_id FROM goals WHERE id = NEW.goal_id), current_actor(),
                 jsonb_build_object('goal_id', NEW.goal_id));
     ELSIF OLD.completed_at IS NULL AND NEW.completed_at IS NOT NULL THEN
-        INSERT INTO activity_events (entity_type, entity_id, entity_title, change_kind, actor, payload)
-        VALUES ('milestone', NEW.id, NEW.title, 'completed', current_actor(),
+        INSERT INTO activity_events (entity_type, entity_id, entity_title, change_kind, area_id, actor, payload)
+        VALUES ('milestone', NEW.id, NEW.title, 'completed',
+                (SELECT area_id FROM goals WHERE id = NEW.goal_id), current_actor(),
                 jsonb_build_object('goal_id', NEW.goal_id, 'completed_at', NEW.completed_at));
     END IF;
     RETURN NEW;
@@ -945,18 +958,18 @@ CREATE TRIGGER trg_milestones_audit
 CREATE OR REPLACE FUNCTION audit_projects() RETURNS TRIGGER AS $$
 BEGIN
     IF TG_OP = 'INSERT' THEN
-        INSERT INTO activity_events (entity_type, entity_id, entity_title, entity_slug, change_kind, project_id, actor, payload)
-        VALUES ('project', NEW.id, NEW.title, NEW.slug, 'created', NEW.id, current_actor(),
+        INSERT INTO activity_events (entity_type, entity_id, entity_title, entity_slug, change_kind, project_id, area_id, actor, payload)
+        VALUES ('project', NEW.id, NEW.title, NEW.slug, 'created', NEW.id, NEW.area_id, current_actor(),
                 jsonb_build_object('status', NEW.status));
     ELSIF NEW.status IS DISTINCT FROM OLD.status THEN
-        INSERT INTO activity_events (entity_type, entity_id, entity_title, entity_slug, change_kind, project_id, actor, payload)
+        INSERT INTO activity_events (entity_type, entity_id, entity_title, entity_slug, change_kind, project_id, area_id, actor, payload)
         VALUES ('project', NEW.id, NEW.title, NEW.slug,
                 CASE
                     WHEN NEW.status = 'completed' THEN 'completed'
                     WHEN NEW.status = 'archived'  THEN 'archived'
                     ELSE 'state_changed'
                 END,
-                NEW.id, current_actor(),
+                NEW.id, NEW.area_id, current_actor(),
                 jsonb_build_object('from', OLD.status, 'to', NEW.status));
     END IF;
     RETURN NEW;
@@ -971,18 +984,19 @@ CREATE TRIGGER trg_projects_audit
 CREATE OR REPLACE FUNCTION audit_contents() RETURNS TRIGGER AS $$
 BEGIN
     IF TG_OP = 'INSERT' THEN
-        INSERT INTO activity_events (entity_type, entity_id, entity_title, entity_slug, change_kind, project_id, actor, payload)
-        VALUES ('content', NEW.id, NEW.title, NEW.slug, 'created', NEW.project_id, current_actor(),
+        INSERT INTO activity_events (entity_type, entity_id, entity_title, entity_slug, change_kind, project_id, area_id, actor, payload)
+        VALUES ('content', NEW.id, NEW.title, NEW.slug, 'created', NEW.project_id,
+                (SELECT area_id FROM projects WHERE id = NEW.project_id), current_actor(),
                 jsonb_build_object('status', NEW.status, 'type', NEW.type));
     ELSIF NEW.status IS DISTINCT FROM OLD.status THEN
-        INSERT INTO activity_events (entity_type, entity_id, entity_title, entity_slug, change_kind, project_id, actor, payload)
+        INSERT INTO activity_events (entity_type, entity_id, entity_title, entity_slug, change_kind, project_id, area_id, actor, payload)
         VALUES ('content', NEW.id, NEW.title, NEW.slug,
                 CASE
                     WHEN NEW.status = 'published' THEN 'published'
                     WHEN NEW.status = 'archived'  THEN 'archived'
                     ELSE 'state_changed'
                 END,
-                NEW.project_id, current_actor(),
+                NEW.project_id, (SELECT area_id FROM projects WHERE id = NEW.project_id), current_actor(),
                 jsonb_build_object('from', OLD.status, 'to', NEW.status));
     END IF;
     RETURN NEW;

@@ -29,6 +29,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/uuid"
@@ -603,5 +604,217 @@ func TestIntegration_Project_ProposedProjectsTriage(t *testing.T) {
 	}
 	if count != 1 {
 		t.Errorf("ProposedProjectsCount = %d, want 1", count)
+	}
+}
+
+// seedArea inserts an active PARA area and returns its id, provisioning a
+// sphere independent of the 002 seed. Bare insert → no audit trigger (areas
+// carry none).
+func seedArea(t *testing.T, slug, name string) uuid.UUID {
+	t.Helper()
+	var id uuid.UUID
+	if err := testPool.QueryRow(t.Context(),
+		`INSERT INTO areas (slug, name) VALUES ($1, $2) RETURNING id`,
+		slug, name,
+	).Scan(&id); err != nil {
+		t.Fatalf("seeding area %q: %v", slug, err)
+	}
+	return id
+}
+
+// seedGoalUnderArea inserts an in_progress goal filed under the area and returns
+// its id. The insert fires audit_goals, emitting a 'created' event the trigger
+// attributes to the area via goals.area_id. No koopa.actor is set, so
+// current_actor() attributes the event to 'human'.
+func seedGoalUnderArea(t *testing.T, areaID uuid.UUID, title string) uuid.UUID {
+	t.Helper()
+	var id uuid.UUID
+	if err := testPool.QueryRow(t.Context(),
+		`INSERT INTO goals (title, status, area_id) VALUES ($1, 'in_progress', $2) RETURNING id`,
+		title, areaID,
+	).Scan(&id); err != nil {
+		t.Fatalf("seeding goal %q: %v", title, err)
+	}
+	return id
+}
+
+// seedMilestone inserts a milestone under a goal and returns its id. The insert
+// fires audit_milestones' 'created' branch, attributed to the goal's area via
+// milestone -> goal -> area_id.
+func seedMilestone(t *testing.T, goalID uuid.UUID, title string) uuid.UUID {
+	t.Helper()
+	var id uuid.UUID
+	if err := testPool.QueryRow(t.Context(),
+		`INSERT INTO milestones (title, goal_id) VALUES ($1, $2) RETURNING id`,
+		title, goalID,
+	).Scan(&id); err != nil {
+		t.Fatalf("seeding milestone %q: %v", title, err)
+	}
+	return id
+}
+
+// completeMilestone stamps completed_at, firing audit_milestones' completion
+// branch — the human milestone completion whose area attribution the fix
+// restores.
+func completeMilestone(t *testing.T, id uuid.UUID) {
+	t.Helper()
+	if _, err := testPool.Exec(t.Context(),
+		`UPDATE milestones SET completed_at = now() WHERE id = $1`, id,
+	); err != nil {
+		t.Fatalf("completing milestone %s: %v", id, err)
+	}
+}
+
+// truncateWithAreas resets every table the area-attribution reads touch,
+// including areas (which the shared truncate leaves alone). CASCADE clears
+// milestones via the goals FK.
+func truncateWithAreas(t *testing.T) {
+	t.Helper()
+	if _, err := testPool.Exec(t.Context(), `
+		TRUNCATE areas, goals, milestones, projects, contents, todos, activity_events
+		RESTART IDENTITY CASCADE`); err != nil {
+		t.Fatalf("truncate: %v", err)
+	}
+}
+
+// TestIntegration_AreaActivity_AttributedViaGoalLineage reproduces the defect
+// where, with active goals + completed milestones but ZERO projects, every area
+// read neglected — area activity was attributed only through
+// activity_events.project_id, which is NULL on milestone/goal events. With
+// area_id now resolved at write time across all lineages, a sphere whose only
+// activity is a completed milestone reads active, while a sphere with nothing
+// filed still reads neglected. Covers both the project_progress path
+// (ActiveAreaActivity + AreaNeglected) and the review_period path
+// (AreaActivityInWindow).
+func TestIntegration_AreaActivity_AttributedViaGoalLineage(t *testing.T) {
+	truncateWithAreas(t)
+	store := project.NewStore(testPool)
+	ctx := t.Context()
+	now := time.Now()
+
+	// Active sphere: a goal + completed milestone, NO project. Three human
+	// events land under the area: goal 'created', milestone 'created',
+	// milestone 'completed'.
+	activeAreaID := seedArea(t, "test-active-sphere", "Test Active Sphere")
+	goalID := seedGoalUnderArea(t, activeAreaID, "Kana mastery")
+	msID := seedMilestone(t, goalID, "Hiragana done")
+	completeMilestone(t, msID)
+
+	// Empty sphere: active but nothing filed under it — must still read neglected.
+	seedArea(t, "test-empty-sphere", "Test Empty Sphere")
+
+	live, err := store.ActiveAreaActivity(ctx)
+	if err != nil {
+		t.Fatalf("ActiveAreaActivity: %v", err)
+	}
+	neglectedBySlug := make(map[string]bool)
+	for i := range live {
+		neglectedBySlug[live[i].Slug] = project.AreaNeglected(live[i].LastHumanActivityAt, now)
+	}
+
+	win, err := store.AreaActivityInWindow(ctx, now.Add(-time.Hour), now.Add(time.Hour))
+	if err != nil {
+		t.Fatalf("AreaActivityInWindow: %v", err)
+	}
+	countByName := make(map[string]int64)
+	for i := range win {
+		countByName[win[i].Name] = win[i].ActivityCount
+	}
+
+	tests := []struct {
+		name          string
+		slug          string
+		areaName      string
+		wantCount     int64
+		wantNeglected bool
+	}{
+		{
+			name:          "sphere with completed milestone reads active",
+			slug:          "test-active-sphere",
+			areaName:      "Test Active Sphere",
+			wantCount:     3, // goal created + milestone created + milestone completed
+			wantNeglected: false,
+		},
+		{
+			name:          "sphere with nothing filed reads neglected",
+			slug:          "test-empty-sphere",
+			areaName:      "Test Empty Sphere",
+			wantCount:     0,
+			wantNeglected: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotNeglected, ok := neglectedBySlug[tt.slug]
+			if !ok {
+				t.Fatalf("ActiveAreaActivity missing area %q", tt.slug)
+			}
+			if gotNeglected != tt.wantNeglected {
+				t.Errorf("AreaNeglected(%q) = %v, want %v", tt.slug, gotNeglected, tt.wantNeglected)
+			}
+			gotCount, ok := countByName[tt.areaName]
+			if !ok {
+				t.Fatalf("AreaActivityInWindow missing area %q", tt.areaName)
+			}
+			if gotCount != tt.wantCount {
+				t.Errorf("AreaActivityInWindow count for %q = %d, want %d", tt.areaName, gotCount, tt.wantCount)
+			}
+		})
+	}
+}
+
+// TestIntegration_AreaActivity_SnapshotSurvivesRefile pins the load-bearing
+// reason area_id is a write-time column rather than a live join: re-filing a
+// goal to a different area must NOT move its already-recorded activity. The
+// completed milestone stays attributed to the area it was completed under, in
+// both the activity rollup (AreaActivityInWindow) and the completed-milestones
+// list (CompletedMilestonesInWindow) — the latter would show the re-filed area
+// under the old live-join behaviour.
+func TestIntegration_AreaActivity_SnapshotSurvivesRefile(t *testing.T) {
+	truncateWithAreas(t)
+	store := project.NewStore(testPool)
+	ctx := t.Context()
+	now := time.Now()
+
+	xID := seedArea(t, "test-snap-x", "Snap X")
+	yID := seedArea(t, "test-snap-y", "Snap Y")
+	goalID := seedGoalUnderArea(t, xID, "Snapshot goal")
+	msID := seedMilestone(t, goalID, "done under X")
+	completeMilestone(t, msID)
+
+	// Re-file the goal to Y. audit_goals fires only on status change, so this
+	// emits no event and must not rewrite the milestone's recorded area.
+	if _, err := testPool.Exec(ctx, `UPDATE goals SET area_id = $1 WHERE id = $2`, yID, goalID); err != nil {
+		t.Fatalf("re-filing goal: %v", err)
+	}
+
+	// Activity stays under X (3 events: goal created + milestone created +
+	// milestone completed); Y gained nothing from the re-file.
+	win, err := store.AreaActivityInWindow(ctx, now.Add(-time.Hour), now.Add(time.Hour))
+	if err != nil {
+		t.Fatalf("AreaActivityInWindow: %v", err)
+	}
+	countByName := make(map[string]int64)
+	for i := range win {
+		countByName[win[i].Name] = win[i].ActivityCount
+	}
+	if countByName["Snap X"] != 3 {
+		t.Errorf("Snap X activity_count = %d, want 3 (re-file must not move past activity)", countByName["Snap X"])
+	}
+	if countByName["Snap Y"] != 0 {
+		t.Errorf("Snap Y activity_count = %d, want 0 (re-file adds no activity)", countByName["Snap Y"])
+	}
+
+	// The completed-milestones list attributes to the completion-time area (X) —
+	// the snapshot — not the goal's current area (Y) that a live join would show.
+	done, err := store.CompletedMilestonesInWindow(ctx, now.Add(-time.Hour), now.Add(time.Hour))
+	if err != nil {
+		t.Fatalf("CompletedMilestonesInWindow: %v", err)
+	}
+	if len(done) != 1 {
+		t.Fatalf("CompletedMilestonesInWindow len = %d, want 1", len(done))
+	}
+	if done[0].Area == nil || *done[0].Area != "Snap X" {
+		t.Errorf("completed milestone area = %v, want \"Snap X\" (snapshot, not the re-filed area)", done[0].Area)
 	}
 }

@@ -362,7 +362,8 @@ func TestIntegration_Stats_Drift(t *testing.T) {
 	}
 
 	// Two content created events tied to the backend project → backend area
-	// events. (Frontend has goals but no events — that asymmetry is the drift.)
+	// events. Frontend has a goal (and thus one goal-created event) but no
+	// project/content work, so its activity share trails its goal focus — the drift.
 	execActor(t, "human", func(tx pgx.Tx) {
 		_, err := tx.Exec(ctx, `
 			INSERT INTO contents (slug, title, type, status, project_id) VALUES
@@ -394,11 +395,12 @@ func TestIntegration_Stats_Drift(t *testing.T) {
 	if be.ActiveGoals != 2 {
 		t.Errorf("Backend ActiveGoals = %d, want 2 (done goal excluded)", be.ActiveGoals)
 	}
-	// Backend events join via project.area_id: the project-created audit row
-	// (1) plus two content-created audit rows (2) all carry project_id =
-	// backendProj, which resolves to the Backend area.
-	if be.EventCount != 3 {
-		t.Errorf("Backend EventCount = %d, want 3 (1 project + 2 content created events)", be.EventCount)
+	// Backend events are attributed via activity_events.area_id (the write-time
+	// snapshot set by the audit triggers): 3 goal-created rows (BE goal 1, BE
+	// goal 2, Done goal — all in Backend), 1 project-created row, and 2
+	// content-created rows all resolve to the Backend area.
+	if be.EventCount != 6 {
+		t.Errorf("Backend EventCount = %d, want 6 (3 goal + 1 project + 2 content created events)", be.EventCount)
 	}
 
 	fe, ok := byArea["Frontend"]
@@ -408,13 +410,15 @@ func TestIntegration_Stats_Drift(t *testing.T) {
 	if fe.ActiveGoals != 1 {
 		t.Errorf("Frontend ActiveGoals = %d, want 1", fe.ActiveGoals)
 	}
-	if fe.EventCount != 0 {
-		t.Errorf("Frontend EventCount = %d, want 0 (goals but no events)", fe.EventCount)
+	// One Frontend event: the FE goal's creation, now attributed to its area via
+	// area_id (under the old project-only join it mis-bucketed to 'unset').
+	if fe.EventCount != 1 {
+		t.Errorf("Frontend EventCount = %d, want 1 (FE goal created event)", fe.EventCount)
 	}
-	// Frontend has goal focus but zero activity → negative drift; backend the
-	// opposite sign. The exact magnitudes are covered by the computeAreaDrift
-	// unit tests; here we only assert the real join produced the right sign.
+	// Frontend's activity share (1/7) trails its goal-focus share (1/3) → negative
+	// drift; backend carries the opposite sign. Magnitudes are covered by the
+	// computeAreaDrift unit tests; here we only assert the real join's sign.
 	if fe.DriftPercent >= 0 {
-		t.Errorf("Frontend DriftPercent = %f, want negative (goals but no events)", fe.DriftPercent)
+		t.Errorf("Frontend DriftPercent = %f, want negative (activity share below goal-focus share)", fe.DriftPercent)
 	}
 }

@@ -205,21 +205,21 @@ ORDER BY g.title;
 -- name: ActiveAreaActivity :many
 -- One row per active PARA area for the areas[] neglect rollup in
 -- project_progress. last_human_activity_at is the latest human-actor
--- activity_events.occurred_at across every project filed under the area
--- (NULL when the area has no human activity at all). The handler applies the
--- 14-day neglect threshold (project.AreaNeglectedThreshold); this query only
--- surfaces the live signal.
+-- activity_events.occurred_at attributed to the area via activity_events.area_id
+-- (a write-time snapshot set by the audit triggers across all lineages), NULL
+-- when the area has no human activity. The handler applies the 14-day neglect
+-- threshold (project.AreaNeglectedThreshold); this query only surfaces the live
+-- signal.
 SELECT
     a.slug,
     a.name,
     ha.last_human_activity_at
 FROM areas a
 LEFT JOIN (
-    SELECT p.area_id, max(ae.occurred_at) AS last_human_activity_at
+    SELECT ae.area_id, max(ae.occurred_at) AS last_human_activity_at
     FROM activity_events ae
-    JOIN projects p ON p.id = ae.project_id
-    WHERE ae.actor = 'human'
-    GROUP BY p.area_id
+    WHERE ae.actor = 'human' AND ae.area_id IS NOT NULL
+    GROUP BY ae.area_id
 ) ha ON ha.area_id = a.id
 WHERE a.status = 'active'
 ORDER BY a.sort_order, a.name;
@@ -237,8 +237,9 @@ ORDER BY a.sort_order, a.name;
 -- Todos the owner completed in the window, for review_period.completed_todos.
 -- Sourced from activity_events (entity_type='todo', change_kind='completed',
 -- actor='human'); title is the write-time entity_title snapshot so a
--- since-deleted todo still reports. project/area resolved via the event's
--- project_id (LEFT JOIN, null when the event had no project association).
+-- since-deleted todo still reports. project_title is the live project name;
+-- area_name is the write-time snapshot (activity_events.area_id), so it agrees
+-- with the area activity rollups and survives a later project re-filing/delete.
 SELECT
     ae.entity_title AS title,
     ae.occurred_at  AS completed_at,
@@ -246,7 +247,7 @@ SELECT
     a.name          AS area_name
 FROM activity_events ae
 LEFT JOIN projects p ON p.id = ae.project_id
-LEFT JOIN areas a ON a.id = p.area_id
+LEFT JOIN areas a ON a.id = ae.area_id
 WHERE ae.entity_type = 'todo'
   AND ae.change_kind = 'completed'
   AND ae.actor = 'human'
@@ -256,10 +257,10 @@ ORDER BY ae.occurred_at DESC;
 -- name: CompletedMilestonesInWindow :many
 -- Milestones the owner completed in the window, for
 -- review_period.completed_milestones. Sourced from activity_events
--- (entity_type='milestone', change_kind='completed', actor='human'). goal/area
--- are resolved by joining the live milestone row (entity_id → milestones → goals
--- → areas); a hard-deleted milestone falls back to the entity_title snapshot
--- with null goal/area.
+-- (entity_type='milestone', change_kind='completed', actor='human'). goal_title
+-- is the live goal name (entity_id → milestones → goals); area_name is the
+-- write-time snapshot (activity_events.area_id), so it agrees with the area
+-- activity rollups and survives a later goal re-filing or milestone delete.
 SELECT
     ae.entity_title AS title,
     ae.occurred_at  AS completed_at,
@@ -268,7 +269,7 @@ SELECT
 FROM activity_events ae
 LEFT JOIN milestones m ON m.id = ae.entity_id
 LEFT JOIN goals g ON g.id = m.goal_id
-LEFT JOIN areas a ON a.id = g.area_id
+LEFT JOIN areas a ON a.id = ae.area_id
 WHERE ae.entity_type = 'milestone'
   AND ae.change_kind = 'completed'
   AND ae.actor = 'human'
@@ -313,16 +314,16 @@ ORDER BY g.title;
 
 -- name: AreaActivityInWindow :many
 -- Per-active-area owner-activity count over the window, for review_period.areas.
--- activity_count is the number of activity_events (actor='human', occurred_at in
--- window) attributable to the area via project_id → projects.area_id. neglected
--- is derived by the handler as activity_count = 0.
+-- activity_count is the number of human-actor activity_events in the window
+-- attributed to the area via activity_events.area_id (a write-time snapshot set
+-- by the audit triggers across all lineages); neglected is derived by the
+-- handler as activity_count = 0.
 SELECT
     a.name,
     count(ae.id)::bigint AS activity_count
 FROM areas a
-LEFT JOIN projects p ON p.area_id = a.id
 LEFT JOIN activity_events ae
-    ON ae.project_id = p.id
+    ON ae.area_id = a.id
    AND ae.actor = 'human'
    AND ae.occurred_at >= @since AND ae.occurred_at <= @until
 WHERE a.status = 'active'

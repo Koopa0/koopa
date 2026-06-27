@@ -1665,13 +1665,15 @@ func ensureArea(t *testing.T, slug string) uuid.UUID {
 
 // seedActivityEvent inserts an activity_events row directly with a controlled
 // actor and occurred_at. Fixture-only: the audit trigger would stamp now()
-// and current_actor(), which a momentum test cannot control. project_id is
-// what project_progress scopes its human-activity read to.
+// and current_actor(), which a momentum test cannot control. project_id scopes
+// the project-level human-activity read (ProjectMomentum); area_id — resolved
+// from the project's area exactly as the audit_projects trigger does — scopes
+// the area-level read (ActiveAreaActivity / AreaActivityInWindow).
 func seedActivityEvent(t *testing.T, projectID uuid.UUID, actor string, occurredAt time.Time) {
 	t.Helper()
 	if _, err := testPool.Exec(t.Context(),
-		`INSERT INTO activity_events (entity_type, entity_id, change_kind, project_id, actor, occurred_at)
-		 VALUES ('project', $1, 'updated', $1, $2, $3)`,
+		`INSERT INTO activity_events (entity_type, entity_id, change_kind, project_id, area_id, actor, occurred_at)
+		 VALUES ('project', $1, 'updated', $1, (SELECT area_id FROM projects WHERE id = $1), $2, $3)`,
 		projectID, actor, occurredAt,
 	); err != nil {
 		t.Fatalf("seedActivityEvent(project=%s, actor=%s): %v", projectID, actor, err)

@@ -52,11 +52,14 @@ WHERE g.status IN ('not_started', 'in_progress')
 GROUP BY a.name;
 
 -- name: StatsEventsByArea :many
--- Activity events grouped by the area of their associated project.
+-- Activity events grouped by the area each event was attributed to at write time
+-- (activity_events.area_id, resolved across all lineages — project, goal, and
+-- milestone -> goal — by the audit triggers). Events with no area appear as
+-- 'unset'. Reads the canonical area_id column, not a live project join, so
+-- goal/milestone events (project_id NULL) bucket to their real area.
 SELECT COALESCE(a.name, 'unset') AS area, COUNT(*)::int AS count
 FROM activity_events ev
-LEFT JOIN projects p ON p.id = ev.project_id
-LEFT JOIN areas a ON a.id = p.area_id
+LEFT JOIN areas a ON a.id = ev.area_id
 WHERE ev.occurred_at > now() - make_interval(days => @days::int)
 GROUP BY a.name;
 
