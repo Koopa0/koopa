@@ -38,7 +38,7 @@ It is **all of the following, with explicit boundaries** (§4):
 
 | Facet | What it covers | Backing |
 |---|---|---|
-| **Personal semantic infrastructure** | `agents.name` as universal actor identity; `activity_events` as the canonical change log written only by triggers | `internal/agent/`, `internal/activity/`, schema triggers `migrations/001_initial.up.sql:1049-1173` |
+| **Personal semantic infrastructure** | `agents.name` as universal actor identity; `activity_events` as the canonical change log written only by triggers | `internal/agent/`, `internal/activity/`, schema triggers `migrations/001_initial.up.sql:876-1008` |
 | **PARA / GTD / OKR-ish system** | areas, goals, milestones, projects, todos, daily plan | `internal/goal/`, `internal/project/`, `internal/todo/`, `internal/daily/` |
 | **MCP tool surface** | **15 agent-facing tools** | `internal/mcp/ops/catalog.go::All()` (canonical list) |
 | **Knowledge / search system** | content, topics, feeds; hybrid FTS + pgvector search | `internal/content/`, `internal/search/`, `internal/mcp/search.go` |
@@ -66,13 +66,13 @@ and compiled into the binary (`internal/agent/registry.go::BuiltinAgents()`).
    stable FK target for the life of the audit log.
 2. **`activity_events` is written exclusively by AFTER triggers.** Application
    code must never INSERT (`migrations/001_initial.up.sql:791` table,
-   `:812` "MUST NOT INSERT" comment; audit function + triggers `:866-1000`).
+   `:813` "MUST NOT INSERT" comment; audit function + triggers `:876-1008`).
    Actor flows from the `koopa.actor` GUC via `current_actor()`
-   (`:866`), defaulting to `'human'` — there is no synthetic `'system'` agent.
+   (`:876`), defaulting to `'human'` — there is no synthetic `'system'` agent.
 3. **Illegal states are made structurally impossible** through joint CHECKs,
    partial unique indexes, and narrow triggers — not application discipline
    alone. The publish CHECKs couple `status='published'` with `published_at`
-   (`:481`) and gate `is_public` on `published` (`:483`); an inert proposal
+   (`:400`) and gate `is_public` on `published` (`:402`); an inert proposal
    carries `status='proposed'`. There is no `tasks` entity, so the task
    state↔timestamp / completion-requires-outputs invariants do not exist.
 
@@ -90,7 +90,7 @@ and are resolved only by the human owner.
 |---|---|---|---|
 | **Schema + DB constraints** | `migrations/001_initial.up.sql`, `002_seed.up.sql` | **Authoritative** | CHECKs, triggers, FKs are the last word on legal states. |
 | **Go code + tests** | `internal/`, `cmd/` | **Authoritative** (reference impl) | A passing test pins observable behavior. When prose disagrees with a green test, the test wins. |
-| **MCP ops catalog** | `internal/mcp/ops/catalog.go` | **Authoritative** (tool surface) | The `All()` list (`:215-231`) is the canonical agent-facing tool surface; drift-tested against handler registration (`ops_catalog_test.go`). |
+| **MCP ops catalog** | `internal/mcp/ops/catalog.go` | **Authoritative** (tool surface) | The `All()` list (`:239-257`) is the canonical agent-facing tool surface; drift-tested against handler registration (`ops_catalog_test.go`). |
 | **sqlc-generated code** | `internal/db/` | **Derived** | Generated from `query.sql` files; never hand-edited. |
 | **This contract** | `docs/backend-semantic-contract.md` | **Derived** | Shared vocabulary; below schema/code/catalog. |
 | **PARA usage contract** | `docs/para-semantic-contract.md` | **Derived** | The classification/usage layer (which real thing maps to which entity). Below the same three authorities. |
@@ -121,10 +121,10 @@ them wrong is a semantic bug, not a naming quibble.
   project (one platform an agent can run on).
 - **user** — a login identity (`users` table) + `refresh_tokens`. Exactly one
   admin today; the admin logs in and acts as agent name `human`
-  (`registry.go:63-67`). `user_id` is **not** used as actor identity.
+  (`registry.go:38-43`). `user_id` is **not** used as actor identity.
 - **actor** — the `agents.name` value attributed to one `activity_events` row;
   set from the `koopa.actor` GUC inside the audit trigger via `current_actor()`
-  (`migrations/001_initial.up.sql:866`).
+  (`migrations/001_initial.up.sql:876`).
 - **Koopa** — the human owner (display name on the `human` agent) — the sole
   decision-maker and sole router.
 - **Agents** — `claude` (`claude-code`) does repo development and agent-surface
@@ -140,8 +140,8 @@ them wrong is a semantic bug, not a naming quibble.
 > entities and their enforced lifecycle.
 
 - **project (PARA)** — a PARA execution vehicle: a concrete effort with
-  deliverables (`projects` table, `migrations/001_initial.up.sql:314`). Has
-  nullable `area_id` and `goal_id` (`:317`); may be `maintained` (continuous).
+  deliverables (`projects` table, `migrations/001_initial.up.sql:306`). Has
+  nullable `area_id` and `goal_id` (`:313`); may be `maintained` (continuous).
   Its status lifecycle is `project_status` (`:23` — `proposed | planned |
   in_progress | on_hold | completed | maintained | archived`). An agent
   may draft an inert `status='proposed'` project via `propose_project` —
@@ -167,29 +167,29 @@ them wrong is a semantic bug, not a naming quibble.
   result — no `target_value`/`current_value` (schema comment `:273-276`).
   Created via the admin milestone form (`cmd/app/routes.go:210`), or as part of
   a `propose_goal` proposal bundle that the owner activates.
-- **todo** — a personal GTD work item (`:740`). `todo_state` (`:27`): `inbox →
+- **todo** — a personal GTD work item (`:644`). `todo_state` (`:27`): `inbox →
   todo → in_progress → done`, plus `someday`, `archived`, `dismissed`. Optional
   `project_id` only — no `goal_id` / `area_id` edge. `completed_at` is coupled
-  to `state='done'` by CHECK (`:758-760`). *Is not* a `task`.
-- **daily_plan_item** — "today I commit to this todo" (`:802`). Status CHECK
-  `planned | done | deferred | dropped` (`:810`). **No auto-carryover** — no
+  to `state='done'` by CHECK (`:664-666`). *Is not* a `task`.
+- **daily_plan_item** — "today I commit to this todo" (`:721`). Status CHECK
+  `planned | done | deferred | dropped` (`:729`). **No auto-carryover** — no
   trigger copies yesterday's items forward; `deferred` is a manual carry-over
-  *candidate*, not an automatic one (comment `:837,857`).
+  *candidate*, not an automatic one (comment `:776`).
 
 ### Knowledge
 
-- **content** — first-party publishable artifact (`:447`). Five types:
+- **content** — first-party publishable artifact (`:366`). Five types:
   `article`, `essay`, `build-log`, `til`, `digest` (`content_type`, `:7`).
   `content_status` (`:11`): `draft → review → published → archived`. The owner
   publishes a **draft directly** (`Store.Publish` promotes draft *or* review →
   published — the common path for Koopa's own finished work); review is the
   **agent** handoff, not a step the owner is forced through. Publishing ties
-  `status='published'` to `published_at` (`:481`) and gates `is_public` on
-  `published` (`:483`). Content authoring / lifecycle is **admin HTTP** under
+  `status='published'` to `published_at` (`:400`) and gates `is_public` on
+  `published` (`:402`). Content authoring / lifecycle is **admin HTTP** under
   `/api/admin/knowledge/content` (`cmd/app/routes.go:145-154`); the one agent
   path is `propose_content`, which inserts a finished piece at `status='review'`
   with `is_public=false` for the owner to publish or reject — an agent never
-  publishes. Each row carries an `embedding vector(1536)` column (`:467`) that
+  publishes. Each row carries an `embedding vector(1536)` column (`:387`) that
   the reconciler fills (§6).
 - **source / provenance** — attribution of where a knowledge row came from.
   Columns: `contents.origin_system`, `feed_entries → feeds`.
@@ -208,7 +208,7 @@ them wrong is a semantic bug, not a naming quibble.
 - **MCP tool** — a registered handler in the MCP server, described by an
   `ops.Meta` (`internal/mcp/ops/types.go:52`): name, domain, writability,
   stability, since, description, field enums. **15 tools**
-  (`catalog.go::All()`, `:215-231`).
+  (`catalog.go::All()`, `:239-257`).
 - **schedule** — a per-agent recurring trigger declared on the Go
   `agent.Agent` literal (`Schedule{Name, Trigger, Expr, Backend, Purpose}`).
   No agent currently declares one; when present it **lives in Go, not the DB.**
@@ -218,7 +218,7 @@ them wrong is a semantic bug, not a naming quibble.
   `process_runs(kind='agent_schedule')` audit row; it does not own scheduled
   execution.
 - **schedule run** — a single execution of an external agent schedule,
-  recorded in `process_runs` (`:644`) with `kind='agent_schedule'` and a
+  recorded in `process_runs` (`:566`) with `kind='agent_schedule'` and a
   non-null `subsystem` (`chk_process_runs_subsystem_iff_agent_schedule`,
   `:673-674`). The sibling kind `crawl` is for internal fetch/collector runs
   (RSS). *Is not* a `task`. Whether the external runner is actively writing
@@ -232,7 +232,7 @@ The named confusions and their resolutions, each grounded.
 
 | Boundary | Term A | Term B | Rule | Grounding |
 |---|---|---|---|---|
-| **PARA project vs agent identity** | `projects` row (work vehicle) | an `agents` row (actor identity) | A PARA project is data in `projects`; an agent is an actor in `agents`. They never share a table or ID. | `projects` schema `:314`; `registry.go` |
+| **PARA project vs agent identity** | `projects` row (work vehicle) | an `agents` row (actor identity) | A PARA project is data in `projects`; an agent is an actor in `agents`. They never share a table or ID. | `projects` schema `:306`; `registry.go` |
 | **todo is the only work-item entity** | `todos` (personal GTD) | (no `tasks` entity) | There is no inter-agent `tasks` triad, so there is no "task vs todo" boundary to police — a todo is the system's only work-item entity. | `todo_state` enum `:27` |
 | **inert proposal vs active commitment** | `status='proposed'` area / goal / project (agent draft) | the activated row (owner action) | A proposed entity is fully inert — invisible to brief / Today / active listings / selectors — until the owner activates it in admin triage. The agent drafts; the owner commits. | `propose_*` handlers; `cmd/app/routes.go:220-227` |
 | **MCP tool call vs semantic write** | a `tools/call` invocation | the resulting row + `activity_event` | A read-only tool call (`ReadOnly` writability — `brief`, `search_knowledge`, `list_todos`, `list_content`, `review_period`, `project_progress`) produces no semantic write. Only Additive/Idempotent/Destructive tools write; the *write* is the row + its trigger-emitted audit event, not the call. | `ops/types.go:28-39` |
@@ -245,7 +245,7 @@ The named confusions and their resolutions, each grounded.
 
 The canonical tool inventory, each tool's per-tool writability (`ReadOnly |
 Additive | Idempotent | Destructive` — `ops/types.go:28-39`), and its
-description live in `internal/mcp/ops/catalog.go::All()` (`:215-231`),
+description live in `internal/mcp/ops/catalog.go::All()` (`:239-257`),
 drift-tested against handler registration in `ops_catalog_test.go`. The
 read-only tools (`brief`, `search_knowledge`, `list_todos`, `list_content`,
 `review_period`, `project_progress`) are permanently read-only. This contract
@@ -273,10 +273,10 @@ permits. Existence of a table, handler, or doc is not proof of a working path.
 | Capability | Reality | Evidence |
 |---|---|---|
 | Login + refresh-token rotation + token security | implemented, tested | `internal/auth/` (`auth_test.go`, `handler_test.go`) |
-| Content lifecycle (admin HTTP; owner publishes a draft directly via `Store.Publish`, or a review row from the queue; `propose_content` lands an agent piece at `status=review`, `is_public=false`) | implemented; `Store.Publish` gates draft/review→published, publish CHECKs enforce the rest | `internal/content/publish.go`; CHECKs `migrations/001_initial.up.sql:481,483`; routes `cmd/app/routes.go:145-154` |
+| Content lifecycle (admin HTTP; owner publishes a draft directly via `Store.Publish`, or a review row from the queue; `propose_content` lands an agent piece at `status=review`, `is_public=false`) | implemented; `Store.Publish` gates draft/review→published, publish CHECKs enforce the rest | `internal/content/publish.go`; CHECKs `migrations/001_initial.up.sql:400,483`; routes `cmd/app/routes.go:145-154` |
 | Feed fetch + scheduler cadence + auto-disable on failures | implemented, tested | `internal/feed/scheduler_test.go` (testcontainers) |
 | **Document-embedding write path** | **Implemented (this is the current state, not a TODO).** `embedder.Embed` (`internal/embedder/embedder.go:67`) is driven by a background `Reconciler` (`internal/embedder/reconciler.go`) that drains every registered source — currently just `contents` (`cmd/app/main.go`) — embedding rows missing a vector. Two call sites: the `app` server runs a background `Run` loop, gated on `GEMINI_API_KEY` (`cmd/app/main.go:242-247`), and the `embed-backfill` subcommand runs a one-shot `RunOnce` (`runBackfill`, `cmd/app/main.go:83-102`, dispatched at `:64`); the `mcp` server also constructs one (`cmd/mcp/main.go:93-94`). Unset `GEMINI_API_KEY` → FTS-only (`cmd/mcp/main.go:101`). | `reconciler.go:121,139,236`; `content/embedding.go:21,27` |
-| **Hybrid search (FTS + pgvector RRF)** | implemented; per-corpus FTS fused with pgvector semantic results via reciprocal-rank fusion, degrading to FTS-only when no embedder is configured | `internal/mcp/search.go` — `mergeByRank:198`, `EmbedQuery:273`, `rrfMerge:295`, `rrfMergeResults:485`; HNSW index `migrations/001_initial.up.sql:516` |
+| **Hybrid search (FTS + pgvector RRF)** | implemented; per-corpus FTS fused with pgvector semantic results via reciprocal-rank fusion, degrading to FTS-only when no embedder is configured | `internal/mcp/search.go` — `mergeByRank:198`, `EmbedQuery:273`, `rrfMerge:295`, `rrfMergeResults:485`; HNSW index `migrations/001_initial.up.sql:439` |
 | Today aggregate (admin HTTP) | implemented + fully wired (§6F) | `cmd/app/main.go:290`; tests `internal/today/handler_test.go:94,128` |
 | Agent-surface write tools (`propose_*`, `capture_inbox`, `resolve_todo`) | implemented; handler-level input validation tested | `internal/mcp/handler_test.go` |
 | Catalog ↔ handler registration parity | drift-tested (names) | `ops_catalog_test.go` — proves registration completeness, not per-tool contract behavior |
@@ -294,7 +294,7 @@ permits. Existence of a table, handler, or doc is not proof of a working path.
 |---|---|---|
 | **Feed AI relevance scoring** | not active — scoring pipeline not yet wired, items carry score=0; highlights are recency/priority-ordered, not relevance-ranked | `internal/feed/entry/query.sql`; `internal/mcp/brief.go:176-178` |
 | **Admin global-search Kind taxonomy** | `internal/search/search.go` declares exactly `KindContent` (`:22`), wired; no other kinds | `internal/search/search.go:19-22` |
-| **`contents.ai_metadata` consumer contract** | column exists with documented shape `{summary, keywords, quality_score, review_notes}` (schema comment `:493`); not type-checked — advisory only (§7) | `migrations/001_initial.up.sql:457,493` |
+| **`contents.ai_metadata` consumer contract** | column exists with documented shape `{summary, keywords, quality_score, review_notes}` (schema comment `:415`); not type-checked — advisory only (§7) | `migrations/001_initial.up.sql:376,493` |
 
 ### F. Today surface — fully wired
 
@@ -338,7 +338,7 @@ The Today aggregate is now a complete backend surface (the earlier
 | **Embedding** | Integration-test the reconciler: a newly-inserted content row acquires an embedding on the next pass; an embed failure leaves the row retryable (still listed by `MissingEmbeddings`) rather than silently skipped; FTS-only path when `GEMINI_API_KEY` is unset. |
 | **Commitment proposals** | Each `propose_*` writes an inert `status=proposed` row invisible to brief / Today / active listings / selectors; area-reject cascades its proposed child goals; goal-reject cascades its milestones; a `capture_inbox` link to a proposed project survives activation and is unlinked (not deleted) on reject; `resolve_todo` caller-scoping. |
 | **Frontend workflows** | A backend/frontend route compatibility matrix (every admin page: frontend endpoint ↔ backend route ↔ response envelope ↔ empty/error behavior); then golden-flow each admin area; assert no UI affordance violates a forbidden assumption below. |
-| **Observability** | Inventory `activity_events` producers (the audit triggers, `migrations/001_initial.up.sql:1049-1173`) and map each to `entity_type` × `change_kind` × actor attribution × write path × user-visible event. Confirm `koopa.actor` is set on every Go write path so `actor='system'` only appears for genuine cron/manual ops. |
+| **Observability** | Inventory `activity_events` producers (the audit triggers, `migrations/001_initial.up.sql:876-1008`) and map each to `entity_type` × `change_kind` × actor attribution × write path × user-visible event. Confirm `koopa.actor` is set on every Go write path so `actor='system'` only appears for genuine cron/manual ops. |
 
 ### Forbidden assumptions (UI / impl must NOT build on these)
 
@@ -359,7 +359,7 @@ direct `activity_events` INSERT. (Each is schema- or policy-enforced; see §3.)
 ### Open Questions (require human decision)
 
 1. **`contents.ai_metadata` consumer contract** — the documented shape
-   `{summary, keywords, quality_score, review_notes}` (`:493`) is not
+   `{summary, keywords, quality_score, review_notes}` (`:415`) is not
    type-checked; treat as advisory. Keep, formalize, or drop?
 2. **Feed AI relevance scoring** — implement (replace the score=0 placeholder)
    or formally drop?
