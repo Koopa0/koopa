@@ -97,8 +97,6 @@ describe('ArticleDetailComponent', () => {
     expect(el.querySelector('.ed-prose')).toBeTruthy();
     expect(el.textContent).toContain('Test Article');
     expect(el.textContent).toContain('5 min');
-    // The on-this-page TOC rail was dropped from this surface.
-    expect(el.querySelector('app-table-of-contents')).toBeNull();
   });
 
   it.each<ContentType>(['article', 'essay', 'build-log', 'til', 'digest'])(
@@ -120,7 +118,7 @@ describe('ArticleDetailComponent', () => {
     },
   );
 
-  it('should hide the back link, TOC, and read-next in preview mode', async () => {
+  it('should hide the back link and read-next in preview mode', async () => {
     fixture.componentRef.setInput('article', buildMockContent());
     fixture.componentRef.setInput('preview', true);
     fixture.detectChanges();
@@ -129,7 +127,6 @@ describe('ArticleDetailComponent', () => {
 
     const el = fixture.nativeElement as HTMLElement;
     expect(el.querySelector('a.ed-crumb')).toBeNull();
-    expect(el.querySelector('app-table-of-contents')).toBeNull();
     expect(el.querySelector('app-related-articles')).toBeNull();
     // The chrome-less column keeps the title, dek, and the mended seam.
     expect(el.querySelector('.ed-seam')).toBeTruthy();

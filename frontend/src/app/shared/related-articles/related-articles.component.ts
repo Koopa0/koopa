@@ -17,38 +17,24 @@ const MAX_READ_NEXT = 2;
   template: `
     @if (relatedArticles().length > 0) {
       <section aria-label="Read next">
-        <h2
-          class="mb-1 font-mono text-[11px] uppercase tracking-[0.08em] text-fg-faint"
-        >
-          Read next
-        </h2>
+        <h2 class="ed-rn-label">Read next</h2>
         @for (article of relatedArticles(); track article.slug) {
-          <a
-            [routerLink]="routeFor(article)"
-            class="group block border-border-faint py-[18px] no-underline [&:not(:first-of-type)]:border-t"
-          >
-            <div
-              class="mb-[7px] flex items-center gap-[9px] font-mono text-[11px] text-fg-subtle"
-            >
+          <a [routerLink]="routeFor(article)" class="ed-rn-row">
+            <span class="ed-rn-meta">
               <span
-                class="size-[7px] rounded-full"
+                class="ed-dot"
                 [style.background]="
                   'var(--dot-' + article.type + ', var(--fg-faint))'
                 "
                 aria-hidden="true"
               ></span>
-              <span class="tracking-[0.03em]">{{ article.type }}</span>
-            </div>
-            <h3
-              class="font-display text-[17px] font-semibold leading-snug text-fg transition-colors duration-(--dur-base) group-hover:text-brand"
-            >
-              {{ article.title }}
-            </h3>
-            <p
-              class="mt-1 line-clamp-2 font-serif text-[14.5px] leading-relaxed text-fg-muted"
-            >
-              {{ article.excerpt }}
-            </p>
+              <span class="sr-only">{{ article.type }} — </span>
+              <span aria-hidden="true">{{ article.type }}</span>
+            </span>
+            <h3 class="ed-rn-title">{{ article.title }}</h3>
+            @if (article.excerpt) {
+              <p class="ed-rn-excerpt">{{ article.excerpt }}</p>
+            }
           </a>
         }
       </section>

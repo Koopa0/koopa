@@ -64,30 +64,35 @@
       <!-- ⑥ ELSEWHERE -->
       <div class="ed-about-elsewhere ed-rise ed-rise-7">
         @for (link of elsewhere; track link.term) {
-          <a [href]="link.href" rel="me noopener" target="_blank">
+          <a
+            [href]="link.href"
+            rel="me noopener"
+            target="_blank"
+            [attr.aria-label]="link.term"
+          >
             @switch (link.kind) {
               @case ('github') {
                 <lucide-icon
                   [img]="GithubIcon"
-                  [size]="14"
+                  [size]="18"
                   [strokeWidth]="1.6"
                 />
               }
               @case ('linkedin') {
                 <lucide-icon
                   [img]="LinkedinIcon"
-                  [size]="14"
+                  [size]="18"
                   [strokeWidth]="1.6"
                 />
               }
               @case ('email') {
-                <lucide-icon [img]="MailIcon" [size]="14" [strokeWidth]="1.6" />
+                <lucide-icon [img]="MailIcon" [size]="18" [strokeWidth]="1.6" />
               }
               @case ('x') {
                 <svg
                   viewBox="0 0 24 24"
-                  width="13"
-                  height="13"
+                  width="16"
+                  height="16"
                   fill="currentColor"
                   aria-hidden="true"
                 >
@@ -97,7 +102,6 @@
                 </svg>
               }
             }
-            {{ link.value }}
           </a>
         }
       </div>

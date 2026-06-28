@@ -32,17 +32,17 @@ describe('EditorialMastheadComponent', () => {
     expect(el.querySelector('.ed-wordmark')?.textContent).toContain('koopa');
   });
 
-  it('should mark "the work" active on the front-door route', async () => {
+  it('should mark "articles" active on the front-door route', async () => {
     await TestBed.inject(Router).navigateByUrl('/');
     await fixture.whenStable();
     fixture.detectChanges();
 
     const el = fixture.nativeElement as HTMLElement;
     const links = Array.from(el.querySelectorAll('.ed-nav a'));
-    // the work / topics / about.
+    // articles / topics / about.
     expect(links.length).toBe(3);
-    const work = links.find((a) => a.textContent?.includes('the work'));
-    expect(work?.getAttribute('data-active')).toBe('true');
+    const articles = links.find((a) => a.textContent?.includes('articles'));
+    expect(articles?.getAttribute('data-active')).toBe('true');
     const topics = links.find((a) => a.textContent?.includes('topics'));
     expect(topics?.getAttribute('data-active')).toBe('false');
   });
