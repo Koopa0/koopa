@@ -27,7 +27,7 @@ function summarize(violations: Awaited<ReturnType<typeof scan>>['violations']) {
 }
 
 test.describe('Design system a11y (WCAG AA)', () => {
-  test('showcase — dark theme (default)', async ({ page }) => {
+  test('showcase — paper theme (default)', async ({ page }) => {
     await page.goto('/design-system');
     await page.waitForLoadState('networkidle');
     const { violations } = await scan(page);
@@ -35,11 +35,12 @@ test.describe('Design system a11y (WCAG AA)', () => {
     expect(blockers, `serious/critical: ${summarize(blockers)}`).toEqual([]);
   });
 
-  test('showcase — light theme', async ({ page }) => {
+  test('showcase — dark twin', async ({ page }) => {
     await page.goto('/design-system');
     await page.waitForLoadState('networkidle');
+    // The public dark twin is the `public-dark` class on <html>.
     await page.evaluate(() =>
-      document.documentElement.setAttribute('data-theme', 'light'),
+      document.documentElement.classList.add('public-dark'),
     );
     const { violations } = await scan(page);
     const blockers = blocking(violations);
@@ -49,17 +50,18 @@ test.describe('Design system a11y (WCAG AA)', () => {
   test('showcase — color-contrast clean in both themes', async ({ page }) => {
     await page.goto('/design-system');
     await page.waitForLoadState('networkidle');
-    for (const theme of ['dark', 'light']) {
+    for (const dark of [false, true]) {
       await page.evaluate(
-        (t) => document.documentElement.setAttribute('data-theme', t),
-        theme,
+        (isDark) =>
+          document.documentElement.classList.toggle('public-dark', isDark),
+        dark,
       );
       const results = await new AxeBuilder({ page })
         .withRules(['color-contrast'])
         .analyze();
       expect(
         results.violations,
-        `${theme}: ${summarize(results.violations)}`,
+        `${dark ? 'dark' : 'paper'}: ${summarize(results.violations)}`,
       ).toEqual([]);
     }
   });

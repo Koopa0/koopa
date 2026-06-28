@@ -8,7 +8,6 @@ import {
 import { rxResource } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
 import { DatePipe } from '@angular/common';
-import { LucideAngularModule, AlertTriangle, RefreshCw } from 'lucide-angular';
 import { environment } from '../../../environments/environment';
 import { ContentService } from '../../core/services/content.service';
 import { TopicService } from '../../core/services/topic.service';
@@ -31,13 +30,11 @@ const MIN_TOPICS = 3;
 const MIN_PIECES = 6;
 
 /**
- * The public front door (route `''`) — a broadsheet COVER, not a feed. A wide,
- * left-anchored asymmetric grid whose oversized serif STATEMENT is the cover's
- * "image" (no photography); the Lead and a quiet recent strip sit in the major
- * column, a mono machine-voice frame (edition line) and a topic index in the
- * minor. Opening an article steps DOWN in scale and re-centres into the reading
- * column — the differentiation is the type-scale step-down + scan-vs-read
- * grammar, which survives the mobile stack where the asymmetry collapses.
+ * The public front door (route `''`) — a left-anchored cover, not a feed. The
+ * oversized serif STATEMENT is the cover's "image" (no photography), cut from
+ * the work below by a single mended seam; the Lead and a quiet recent strip
+ * follow, with the topic index appearing once the corpus clears the cold-start
+ * floor. Opening an article re-centres into the reading column.
  *
  * The lead/recent band render in the normal SSR pass — the server resolves the
  * content request and the HTTP transfer cache hands it to the client, so the
@@ -45,7 +42,7 @@ const MIN_PIECES = 6;
  */
 @Component({
   selector: 'app-home',
-  imports: [RouterLink, DatePipe, LucideAngularModule],
+  imports: [RouterLink, DatePipe],
   templateUrl: './home.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
@@ -55,9 +52,6 @@ export class HomeComponent implements OnInit {
   private readonly seoService = inject(SeoService);
 
   protected readonly statement = STATEMENT;
-
-  protected readonly AlertIcon = AlertTriangle;
-  protected readonly RetryIcon = RefreshCw;
 
   protected readonly contentsResource = rxResource<
     ApiListResponse<ApiContent>,
@@ -93,15 +87,12 @@ export class HomeComponent implements OnInit {
     this.contents().slice(1, RECENT_LIMIT),
   );
 
-  /** Total published pieces — the edition count and the cold-start floor. */
+  /** Total published pieces — the cold-start floor for the topic index. */
   protected readonly pieceCount = computed(() =>
     this.contentsResource.hasValue()
       ? this.contentsResource.value().meta.total
       : 0,
   );
-
-  /** Show the piece count only once it reads as a corpus, not a lie. */
-  protected readonly showCount = computed(() => this.pieceCount() >= MIN_PIECES);
 
   /** Cover topic index — non-empty topics, in curated order, capped. */
   protected readonly coverTopics = computed(() =>

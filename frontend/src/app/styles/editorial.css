@@ -54,7 +54,7 @@
 
   --fg: #262420;
   --fg-muted: #56524a;
-  --fg-subtle: #6f6a5c;
+  --fg-subtle: #615c51;
   --fg-faint: #6c675a;
 
   --border: #cbc5b7;
@@ -67,6 +67,13 @@
   --accent-faint: rgb(44 124 145 / 0.06);
   --on-accent: #f4f1ea;
   --link: #1f6273;
+
+  /* --brand* are the public accent here too (the .ed-prose body uses them);
+     without this they'd inherit the admin :root oklch accent. */
+  --brand: var(--accent);
+  --brand-strong: var(--accent-strong);
+  --brand-muted: var(--accent-muted);
+  --brand-faint: var(--accent-faint);
 
   --dot-article: #2c7c91;
   --dot-essay: #a9628f;
@@ -102,6 +109,11 @@ html.public-dark .ed-theme {
   --accent-faint: rgb(92 177 198 / 0.07);
   --on-accent: #0c1216;
   --link: #5cb1c6;
+
+  --brand: var(--accent);
+  --brand-strong: var(--accent-strong);
+  --brand-muted: var(--accent-muted);
+  --brand-faint: var(--accent-faint);
 
   --dot-article: #5cb1c6;
   --dot-essay: #c79ec0;
@@ -577,8 +589,10 @@ html.public-dark .ed-theme {
 /* ---- keyboard focus, always visible (public surface + overlays) ---- */
 .ed a:focus-visible,
 .ed button:focus-visible,
+.ed input:focus-visible,
 .ed-theme a:focus-visible,
-.ed-theme button:focus-visible {
+.ed-theme button:focus-visible,
+.ed-theme input:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 3px;
   border-radius: 4px;

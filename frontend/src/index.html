@@ -5,17 +5,27 @@
     <!-- Apply the persisted PUBLIC theme before first paint. The public site
          (.ed) defaults to warm paper; this adds `public-dark` synchronously when
          the visitor previously chose the dark twin, so SSR hydration never
-         flashes. Admin keeps its own global oklch-dark tokens (independent of
-         this class), so no per-route branching is needed here. -->
+         flashes. It also sets the ROOT color-scheme + background for the public
+         surface so the viewport scrollbar and overscroll match the paper (admin
+         paths keep the global oklch-dark root). -->
     <script>
       try {
-        if (localStorage.getItem('koopa-public-theme') === 'dark') {
-          document.documentElement.classList.add('public-dark');
+        var html = document.documentElement;
+        var admin = location.pathname.indexOf('/admin') === 0;
+        var dark =
+          !admin && localStorage.getItem('koopa-public-theme') === 'dark';
+        if (dark) {
+          html.classList.add('public-dark');
+        }
+        if (!admin) {
+          html.style.colorScheme = dark ? 'dark' : 'light';
+          html.style.background = dark ? '#14130f' : '#edeae2';
         }
       } catch (e) {
         /* storage unavailable — keep the paper default */
       }
     </script>
+    <meta name="theme-color" content="#edeae2" />
     <title>Koopa | Software Engineer</title>
     <base href="/" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
