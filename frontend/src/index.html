@@ -2,6 +2,11 @@
 <html lang="zh-TW" data-theme="dark">
   <head>
     <meta charset="utf-8" />
+    <!-- Default paper theme-color; the pre-paint script below flips it (and the
+         class / root surface) to the dark twin synchronously when persisted, so
+         even the mobile address bar never flashes. Placed before the script so
+         it exists when the script updates it. -->
+    <meta name="theme-color" content="#edeae2" />
     <!-- Apply the persisted PUBLIC theme before first paint. The public site
          (.ed) defaults to warm paper; this adds `public-dark` synchronously when
          the visitor previously chose the dark twin, so SSR hydration never
@@ -20,12 +25,17 @@
         if (!admin) {
           html.style.colorScheme = dark ? 'dark' : 'light';
           html.style.background = dark ? '#14130f' : '#edeae2';
+          if (dark) {
+            var tc = document.querySelector('meta[name="theme-color"]');
+            if (tc) {
+              tc.setAttribute('content', '#14130f');
+            }
+          }
         }
       } catch (e) {
         /* storage unavailable — keep the paper default */
       }
     </script>
-    <meta name="theme-color" content="#edeae2" />
     <title>Koopa | Software Engineer</title>
     <base href="/" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />

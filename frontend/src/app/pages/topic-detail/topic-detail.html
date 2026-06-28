@@ -30,7 +30,9 @@
                 <span
                   class="ed-dot"
                   [style.background]="'var(--dot-' + entry.type + ')'"
-                ></span>
+                ></span><span class="sr-only"
+                  >{{ entry.count }} {{ entry.type }}</span
+                >
               }
             </p>
           }
