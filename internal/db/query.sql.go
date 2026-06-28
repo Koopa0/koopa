@@ -459,28 +459,27 @@ const archiveContentReturning = `-- name: ArchiveContentReturning :one
 UPDATE contents SET status = 'archived', review_note = NULL, updated_at = now()
 WHERE id = $1
 RETURNING id, slug, title, body, excerpt, type, status,
-          series_id, series_order, is_public, project_id, ai_metadata, reading_time_min,
+          series_id, series_order, is_public, project_id, reading_time_min,
           cover_image, published_at, created_at, updated_at
 `
 
 type ArchiveContentReturningRow struct {
-	ID             uuid.UUID       `json:"id"`
-	Slug           string          `json:"slug"`
-	Title          string          `json:"title"`
-	Body           string          `json:"body"`
-	Excerpt        string          `json:"excerpt"`
-	Type           ContentType     `json:"type"`
-	Status         ContentStatus   `json:"status"`
-	SeriesID       *string         `json:"series_id"`
-	SeriesOrder    *int32          `json:"series_order"`
-	IsPublic       bool            `json:"is_public"`
-	ProjectID      *uuid.UUID      `json:"project_id"`
-	AiMetadata     json.RawMessage `json:"ai_metadata"`
-	ReadingTimeMin int32           `json:"reading_time_min"`
-	CoverImage     *string         `json:"cover_image"`
-	PublishedAt    *time.Time      `json:"published_at"`
-	CreatedAt      time.Time       `json:"created_at"`
-	UpdatedAt      time.Time       `json:"updated_at"`
+	ID             uuid.UUID     `json:"id"`
+	Slug           string        `json:"slug"`
+	Title          string        `json:"title"`
+	Body           string        `json:"body"`
+	Excerpt        string        `json:"excerpt"`
+	Type           ContentType   `json:"type"`
+	Status         ContentStatus `json:"status"`
+	SeriesID       *string       `json:"series_id"`
+	SeriesOrder    *int32        `json:"series_order"`
+	IsPublic       bool          `json:"is_public"`
+	ProjectID      *uuid.UUID    `json:"project_id"`
+	ReadingTimeMin int32         `json:"reading_time_min"`
+	CoverImage     *string       `json:"cover_image"`
+	PublishedAt    *time.Time    `json:"published_at"`
+	CreatedAt      time.Time     `json:"created_at"`
+	UpdatedAt      time.Time     `json:"updated_at"`
 }
 
 // Archive a content row and return the updated row. Both the REST archive
@@ -501,7 +500,6 @@ func (q *Queries) ArchiveContentReturning(ctx context.Context, id uuid.UUID) (Ar
 		&i.SeriesOrder,
 		&i.IsPublic,
 		&i.ProjectID,
-		&i.AiMetadata,
 		&i.ReadingTimeMin,
 		&i.CoverImage,
 		&i.PublishedAt,
@@ -1128,32 +1126,31 @@ func (q *Queries) ContentBriefsByProjectID(ctx context.Context, projectID *uuid.
 
 const contentByID = `-- name: ContentByID :one
 SELECT id, slug, title, body, excerpt, type, status,
-       series_id, series_order, is_public, project_id, ai_metadata, reading_time_min,
+       series_id, series_order, is_public, project_id, reading_time_min,
        cover_image, created_by, proposal_rationale, review_note, published_at, created_at, updated_at
 FROM contents WHERE id = $1
 `
 
 type ContentByIDRow struct {
-	ID                uuid.UUID       `json:"id"`
-	Slug              string          `json:"slug"`
-	Title             string          `json:"title"`
-	Body              string          `json:"body"`
-	Excerpt           string          `json:"excerpt"`
-	Type              ContentType     `json:"type"`
-	Status            ContentStatus   `json:"status"`
-	SeriesID          *string         `json:"series_id"`
-	SeriesOrder       *int32          `json:"series_order"`
-	IsPublic          bool            `json:"is_public"`
-	ProjectID         *uuid.UUID      `json:"project_id"`
-	AiMetadata        json.RawMessage `json:"ai_metadata"`
-	ReadingTimeMin    int32           `json:"reading_time_min"`
-	CoverImage        *string         `json:"cover_image"`
-	CreatedBy         *string         `json:"created_by"`
-	ProposalRationale *string         `json:"proposal_rationale"`
-	ReviewNote        *string         `json:"review_note"`
-	PublishedAt       *time.Time      `json:"published_at"`
-	CreatedAt         time.Time       `json:"created_at"`
-	UpdatedAt         time.Time       `json:"updated_at"`
+	ID                uuid.UUID     `json:"id"`
+	Slug              string        `json:"slug"`
+	Title             string        `json:"title"`
+	Body              string        `json:"body"`
+	Excerpt           string        `json:"excerpt"`
+	Type              ContentType   `json:"type"`
+	Status            ContentStatus `json:"status"`
+	SeriesID          *string       `json:"series_id"`
+	SeriesOrder       *int32        `json:"series_order"`
+	IsPublic          bool          `json:"is_public"`
+	ProjectID         *uuid.UUID    `json:"project_id"`
+	ReadingTimeMin    int32         `json:"reading_time_min"`
+	CoverImage        *string       `json:"cover_image"`
+	CreatedBy         *string       `json:"created_by"`
+	ProposalRationale *string       `json:"proposal_rationale"`
+	ReviewNote        *string       `json:"review_note"`
+	PublishedAt       *time.Time    `json:"published_at"`
+	CreatedAt         time.Time     `json:"created_at"`
+	UpdatedAt         time.Time     `json:"updated_at"`
 }
 
 func (q *Queries) ContentByID(ctx context.Context, id uuid.UUID) (ContentByIDRow, error) {
@@ -1171,7 +1168,6 @@ func (q *Queries) ContentByID(ctx context.Context, id uuid.UUID) (ContentByIDRow
 		&i.SeriesOrder,
 		&i.IsPublic,
 		&i.ProjectID,
-		&i.AiMetadata,
 		&i.ReadingTimeMin,
 		&i.CoverImage,
 		&i.CreatedBy,
@@ -1186,29 +1182,28 @@ func (q *Queries) ContentByID(ctx context.Context, id uuid.UUID) (ContentByIDRow
 
 const contentBySlug = `-- name: ContentBySlug :one
 SELECT id, slug, title, body, excerpt, type, status,
-       series_id, series_order, is_public, project_id, ai_metadata, reading_time_min,
+       series_id, series_order, is_public, project_id, reading_time_min,
        cover_image, published_at, created_at, updated_at
 FROM contents WHERE slug = $1
 `
 
 type ContentBySlugRow struct {
-	ID             uuid.UUID       `json:"id"`
-	Slug           string          `json:"slug"`
-	Title          string          `json:"title"`
-	Body           string          `json:"body"`
-	Excerpt        string          `json:"excerpt"`
-	Type           ContentType     `json:"type"`
-	Status         ContentStatus   `json:"status"`
-	SeriesID       *string         `json:"series_id"`
-	SeriesOrder    *int32          `json:"series_order"`
-	IsPublic       bool            `json:"is_public"`
-	ProjectID      *uuid.UUID      `json:"project_id"`
-	AiMetadata     json.RawMessage `json:"ai_metadata"`
-	ReadingTimeMin int32           `json:"reading_time_min"`
-	CoverImage     *string         `json:"cover_image"`
-	PublishedAt    *time.Time      `json:"published_at"`
-	CreatedAt      time.Time       `json:"created_at"`
-	UpdatedAt      time.Time       `json:"updated_at"`
+	ID             uuid.UUID     `json:"id"`
+	Slug           string        `json:"slug"`
+	Title          string        `json:"title"`
+	Body           string        `json:"body"`
+	Excerpt        string        `json:"excerpt"`
+	Type           ContentType   `json:"type"`
+	Status         ContentStatus `json:"status"`
+	SeriesID       *string       `json:"series_id"`
+	SeriesOrder    *int32        `json:"series_order"`
+	IsPublic       bool          `json:"is_public"`
+	ProjectID      *uuid.UUID    `json:"project_id"`
+	ReadingTimeMin int32         `json:"reading_time_min"`
+	CoverImage     *string       `json:"cover_image"`
+	PublishedAt    *time.Time    `json:"published_at"`
+	CreatedAt      time.Time     `json:"created_at"`
+	UpdatedAt      time.Time     `json:"updated_at"`
 }
 
 func (q *Queries) ContentBySlug(ctx context.Context, slug string) (ContentBySlugRow, error) {
@@ -1226,7 +1221,6 @@ func (q *Queries) ContentBySlug(ctx context.Context, slug string) (ContentBySlug
 		&i.SeriesOrder,
 		&i.IsPublic,
 		&i.ProjectID,
-		&i.AiMetadata,
 		&i.ReadingTimeMin,
 		&i.CoverImage,
 		&i.PublishedAt,
@@ -1317,7 +1311,7 @@ func (q *Queries) ContentsByCreator(ctx context.Context, createdBy *string) ([]C
 
 const contentsByStatus = `-- name: ContentsByStatus :many
 SELECT id, slug, title, body, excerpt, type, status,
-       series_id, series_order, is_public, project_id, ai_metadata, reading_time_min,
+       series_id, series_order, is_public, project_id, reading_time_min,
        cover_image, published_at, created_at, updated_at
 FROM contents
 WHERE status = $1::content_status
@@ -1331,23 +1325,22 @@ type ContentsByStatusParams struct {
 }
 
 type ContentsByStatusRow struct {
-	ID             uuid.UUID       `json:"id"`
-	Slug           string          `json:"slug"`
-	Title          string          `json:"title"`
-	Body           string          `json:"body"`
-	Excerpt        string          `json:"excerpt"`
-	Type           ContentType     `json:"type"`
-	Status         ContentStatus   `json:"status"`
-	SeriesID       *string         `json:"series_id"`
-	SeriesOrder    *int32          `json:"series_order"`
-	IsPublic       bool            `json:"is_public"`
-	ProjectID      *uuid.UUID      `json:"project_id"`
-	AiMetadata     json.RawMessage `json:"ai_metadata"`
-	ReadingTimeMin int32           `json:"reading_time_min"`
-	CoverImage     *string         `json:"cover_image"`
-	PublishedAt    *time.Time      `json:"published_at"`
-	CreatedAt      time.Time       `json:"created_at"`
-	UpdatedAt      time.Time       `json:"updated_at"`
+	ID             uuid.UUID     `json:"id"`
+	Slug           string        `json:"slug"`
+	Title          string        `json:"title"`
+	Body           string        `json:"body"`
+	Excerpt        string        `json:"excerpt"`
+	Type           ContentType   `json:"type"`
+	Status         ContentStatus `json:"status"`
+	SeriesID       *string       `json:"series_id"`
+	SeriesOrder    *int32        `json:"series_order"`
+	IsPublic       bool          `json:"is_public"`
+	ProjectID      *uuid.UUID    `json:"project_id"`
+	ReadingTimeMin int32         `json:"reading_time_min"`
+	CoverImage     *string       `json:"cover_image"`
+	PublishedAt    *time.Time    `json:"published_at"`
+	CreatedAt      time.Time     `json:"created_at"`
+	UpdatedAt      time.Time     `json:"updated_at"`
 }
 
 // List contents by status, ordered by updated_at descending. Used by admin pipeline.
@@ -1372,7 +1365,6 @@ func (q *Queries) ContentsByStatus(ctx context.Context, arg ContentsByStatusPara
 			&i.SeriesOrder,
 			&i.IsPublic,
 			&i.ProjectID,
-			&i.AiMetadata,
 			&i.ReadingTimeMin,
 			&i.CoverImage,
 			&i.PublishedAt,
@@ -1392,7 +1384,7 @@ func (q *Queries) ContentsByStatus(ctx context.Context, arg ContentsByStatusPara
 const contentsByTopicID = `-- name: ContentsByTopicID :many
 SELECT c.id, c.slug, c.title, c.body, c.excerpt, c.type, c.status,
        c.series_id, c.series_order,
-       c.is_public, c.project_id, c.ai_metadata, c.reading_time_min, c.cover_image,
+       c.is_public, c.project_id, c.reading_time_min, c.cover_image,
        c.published_at, c.created_at, c.updated_at
 FROM contents c
 JOIN content_topics ct ON ct.content_id = c.id
@@ -1408,23 +1400,22 @@ type ContentsByTopicIDParams struct {
 }
 
 type ContentsByTopicIDRow struct {
-	ID             uuid.UUID       `json:"id"`
-	Slug           string          `json:"slug"`
-	Title          string          `json:"title"`
-	Body           string          `json:"body"`
-	Excerpt        string          `json:"excerpt"`
-	Type           ContentType     `json:"type"`
-	Status         ContentStatus   `json:"status"`
-	SeriesID       *string         `json:"series_id"`
-	SeriesOrder    *int32          `json:"series_order"`
-	IsPublic       bool            `json:"is_public"`
-	ProjectID      *uuid.UUID      `json:"project_id"`
-	AiMetadata     json.RawMessage `json:"ai_metadata"`
-	ReadingTimeMin int32           `json:"reading_time_min"`
-	CoverImage     *string         `json:"cover_image"`
-	PublishedAt    *time.Time      `json:"published_at"`
-	CreatedAt      time.Time       `json:"created_at"`
-	UpdatedAt      time.Time       `json:"updated_at"`
+	ID             uuid.UUID     `json:"id"`
+	Slug           string        `json:"slug"`
+	Title          string        `json:"title"`
+	Body           string        `json:"body"`
+	Excerpt        string        `json:"excerpt"`
+	Type           ContentType   `json:"type"`
+	Status         ContentStatus `json:"status"`
+	SeriesID       *string       `json:"series_id"`
+	SeriesOrder    *int32        `json:"series_order"`
+	IsPublic       bool          `json:"is_public"`
+	ProjectID      *uuid.UUID    `json:"project_id"`
+	ReadingTimeMin int32         `json:"reading_time_min"`
+	CoverImage     *string       `json:"cover_image"`
+	PublishedAt    *time.Time    `json:"published_at"`
+	CreatedAt      time.Time     `json:"created_at"`
+	UpdatedAt      time.Time     `json:"updated_at"`
 }
 
 func (q *Queries) ContentsByTopicID(ctx context.Context, arg ContentsByTopicIDParams) ([]ContentsByTopicIDRow, error) {
@@ -1448,7 +1439,6 @@ func (q *Queries) ContentsByTopicID(ctx context.Context, arg ContentsByTopicIDPa
 			&i.SeriesOrder,
 			&i.IsPublic,
 			&i.ProjectID,
-			&i.AiMetadata,
 			&i.ReadingTimeMin,
 			&i.CoverImage,
 			&i.PublishedAt,
@@ -1592,52 +1582,50 @@ func (q *Queries) CreateArea(ctx context.Context, arg CreateAreaParams) (CreateA
 
 const createContent = `-- name: CreateContent :one
 INSERT INTO contents (slug, title, body, excerpt, type, status,
-                      series_id, series_order, is_public, project_id, ai_metadata,
+                      series_id, series_order, is_public, project_id,
                       reading_time_min, cover_image, created_by, proposal_rationale)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
 RETURNING id, slug, title, body, excerpt, type, status,
-          series_id, series_order, is_public, project_id, ai_metadata, reading_time_min,
+          series_id, series_order, is_public, project_id, reading_time_min,
           cover_image, created_by, proposal_rationale, published_at, created_at, updated_at
 `
 
 type CreateContentParams struct {
-	Slug              string          `json:"slug"`
-	Title             string          `json:"title"`
-	Body              string          `json:"body"`
-	Excerpt           string          `json:"excerpt"`
-	Type              ContentType     `json:"type"`
-	Status            ContentStatus   `json:"status"`
-	SeriesID          *string         `json:"series_id"`
-	SeriesOrder       *int32          `json:"series_order"`
-	IsPublic          bool            `json:"is_public"`
-	ProjectID         *uuid.UUID      `json:"project_id"`
-	AiMetadata        json.RawMessage `json:"ai_metadata"`
-	ReadingTimeMin    int32           `json:"reading_time_min"`
-	CoverImage        *string         `json:"cover_image"`
-	CreatedBy         *string         `json:"created_by"`
-	ProposalRationale *string         `json:"proposal_rationale"`
+	Slug              string        `json:"slug"`
+	Title             string        `json:"title"`
+	Body              string        `json:"body"`
+	Excerpt           string        `json:"excerpt"`
+	Type              ContentType   `json:"type"`
+	Status            ContentStatus `json:"status"`
+	SeriesID          *string       `json:"series_id"`
+	SeriesOrder       *int32        `json:"series_order"`
+	IsPublic          bool          `json:"is_public"`
+	ProjectID         *uuid.UUID    `json:"project_id"`
+	ReadingTimeMin    int32         `json:"reading_time_min"`
+	CoverImage        *string       `json:"cover_image"`
+	CreatedBy         *string       `json:"created_by"`
+	ProposalRationale *string       `json:"proposal_rationale"`
 }
 
 type CreateContentRow struct {
-	ID                uuid.UUID       `json:"id"`
-	Slug              string          `json:"slug"`
-	Title             string          `json:"title"`
-	Body              string          `json:"body"`
-	Excerpt           string          `json:"excerpt"`
-	Type              ContentType     `json:"type"`
-	Status            ContentStatus   `json:"status"`
-	SeriesID          *string         `json:"series_id"`
-	SeriesOrder       *int32          `json:"series_order"`
-	IsPublic          bool            `json:"is_public"`
-	ProjectID         *uuid.UUID      `json:"project_id"`
-	AiMetadata        json.RawMessage `json:"ai_metadata"`
-	ReadingTimeMin    int32           `json:"reading_time_min"`
-	CoverImage        *string         `json:"cover_image"`
-	CreatedBy         *string         `json:"created_by"`
-	ProposalRationale *string         `json:"proposal_rationale"`
-	PublishedAt       *time.Time      `json:"published_at"`
-	CreatedAt         time.Time       `json:"created_at"`
-	UpdatedAt         time.Time       `json:"updated_at"`
+	ID                uuid.UUID     `json:"id"`
+	Slug              string        `json:"slug"`
+	Title             string        `json:"title"`
+	Body              string        `json:"body"`
+	Excerpt           string        `json:"excerpt"`
+	Type              ContentType   `json:"type"`
+	Status            ContentStatus `json:"status"`
+	SeriesID          *string       `json:"series_id"`
+	SeriesOrder       *int32        `json:"series_order"`
+	IsPublic          bool          `json:"is_public"`
+	ProjectID         *uuid.UUID    `json:"project_id"`
+	ReadingTimeMin    int32         `json:"reading_time_min"`
+	CoverImage        *string       `json:"cover_image"`
+	CreatedBy         *string       `json:"created_by"`
+	ProposalRationale *string       `json:"proposal_rationale"`
+	PublishedAt       *time.Time    `json:"published_at"`
+	CreatedAt         time.Time     `json:"created_at"`
+	UpdatedAt         time.Time     `json:"updated_at"`
 }
 
 func (q *Queries) CreateContent(ctx context.Context, arg CreateContentParams) (CreateContentRow, error) {
@@ -1652,7 +1640,6 @@ func (q *Queries) CreateContent(ctx context.Context, arg CreateContentParams) (C
 		arg.SeriesOrder,
 		arg.IsPublic,
 		arg.ProjectID,
-		arg.AiMetadata,
 		arg.ReadingTimeMin,
 		arg.CoverImage,
 		arg.CreatedBy,
@@ -1671,7 +1658,6 @@ func (q *Queries) CreateContent(ctx context.Context, arg CreateContentParams) (C
 		&i.SeriesOrder,
 		&i.IsPublic,
 		&i.ProjectID,
-		&i.AiMetadata,
 		&i.ReadingTimeMin,
 		&i.CoverImage,
 		&i.CreatedBy,
@@ -3218,7 +3204,7 @@ func (q *Queries) InsertFeedTopics(ctx context.Context, arg InsertFeedTopicsPara
 
 const internalSearchContents = `-- name: InternalSearchContents :many
 SELECT id, slug, title, body, excerpt, type, status,
-       series_id, series_order, is_public, project_id, ai_metadata, reading_time_min,
+       series_id, series_order, is_public, project_id, reading_time_min,
        cover_image, published_at, created_at, updated_at
 FROM contents
 WHERE status != 'archived'
@@ -3240,23 +3226,22 @@ type InternalSearchContentsParams struct {
 }
 
 type InternalSearchContentsRow struct {
-	ID             uuid.UUID       `json:"id"`
-	Slug           string          `json:"slug"`
-	Title          string          `json:"title"`
-	Body           string          `json:"body"`
-	Excerpt        string          `json:"excerpt"`
-	Type           ContentType     `json:"type"`
-	Status         ContentStatus   `json:"status"`
-	SeriesID       *string         `json:"series_id"`
-	SeriesOrder    *int32          `json:"series_order"`
-	IsPublic       bool            `json:"is_public"`
-	ProjectID      *uuid.UUID      `json:"project_id"`
-	AiMetadata     json.RawMessage `json:"ai_metadata"`
-	ReadingTimeMin int32           `json:"reading_time_min"`
-	CoverImage     *string         `json:"cover_image"`
-	PublishedAt    *time.Time      `json:"published_at"`
-	CreatedAt      time.Time       `json:"created_at"`
-	UpdatedAt      time.Time       `json:"updated_at"`
+	ID             uuid.UUID     `json:"id"`
+	Slug           string        `json:"slug"`
+	Title          string        `json:"title"`
+	Body           string        `json:"body"`
+	Excerpt        string        `json:"excerpt"`
+	Type           ContentType   `json:"type"`
+	Status         ContentStatus `json:"status"`
+	SeriesID       *string       `json:"series_id"`
+	SeriesOrder    *int32        `json:"series_order"`
+	IsPublic       bool          `json:"is_public"`
+	ProjectID      *uuid.UUID    `json:"project_id"`
+	ReadingTimeMin int32         `json:"reading_time_min"`
+	CoverImage     *string       `json:"cover_image"`
+	PublishedAt    *time.Time    `json:"published_at"`
+	CreatedAt      time.Time     `json:"created_at"`
+	UpdatedAt      time.Time     `json:"updated_at"`
 }
 
 // Internal FTS search without visibility filter (for MCP tools). Excludes
@@ -3291,7 +3276,6 @@ func (q *Queries) InternalSearchContents(ctx context.Context, arg InternalSearch
 			&i.SeriesOrder,
 			&i.IsPublic,
 			&i.ProjectID,
-			&i.AiMetadata,
 			&i.ReadingTimeMin,
 			&i.CoverImage,
 			&i.PublishedAt,
@@ -3310,7 +3294,7 @@ func (q *Queries) InternalSearchContents(ctx context.Context, arg InternalSearch
 
 const internalSemanticSearchContents = `-- name: InternalSemanticSearchContents :many
 SELECT id, slug, title, body, excerpt, type, status,
-       series_id, series_order, is_public, project_id, ai_metadata, reading_time_min,
+       series_id, series_order, is_public, project_id, reading_time_min,
        cover_image, published_at, created_at, updated_at,
        (1 - (embedding <=> $1::vector))::float8 AS similarity
 FROM contents
@@ -3332,24 +3316,23 @@ type InternalSemanticSearchContentsParams struct {
 }
 
 type InternalSemanticSearchContentsRow struct {
-	ID             uuid.UUID       `json:"id"`
-	Slug           string          `json:"slug"`
-	Title          string          `json:"title"`
-	Body           string          `json:"body"`
-	Excerpt        string          `json:"excerpt"`
-	Type           ContentType     `json:"type"`
-	Status         ContentStatus   `json:"status"`
-	SeriesID       *string         `json:"series_id"`
-	SeriesOrder    *int32          `json:"series_order"`
-	IsPublic       bool            `json:"is_public"`
-	ProjectID      *uuid.UUID      `json:"project_id"`
-	AiMetadata     json.RawMessage `json:"ai_metadata"`
-	ReadingTimeMin int32           `json:"reading_time_min"`
-	CoverImage     *string         `json:"cover_image"`
-	PublishedAt    *time.Time      `json:"published_at"`
-	CreatedAt      time.Time       `json:"created_at"`
-	UpdatedAt      time.Time       `json:"updated_at"`
-	Similarity     float64         `json:"similarity"`
+	ID             uuid.UUID     `json:"id"`
+	Slug           string        `json:"slug"`
+	Title          string        `json:"title"`
+	Body           string        `json:"body"`
+	Excerpt        string        `json:"excerpt"`
+	Type           ContentType   `json:"type"`
+	Status         ContentStatus `json:"status"`
+	SeriesID       *string       `json:"series_id"`
+	SeriesOrder    *int32        `json:"series_order"`
+	IsPublic       bool          `json:"is_public"`
+	ProjectID      *uuid.UUID    `json:"project_id"`
+	ReadingTimeMin int32         `json:"reading_time_min"`
+	CoverImage     *string       `json:"cover_image"`
+	PublishedAt    *time.Time    `json:"published_at"`
+	CreatedAt      time.Time     `json:"created_at"`
+	UpdatedAt      time.Time     `json:"updated_at"`
+	Similarity     float64       `json:"similarity"`
 }
 
 // Semantic search over all contents via pgvector cosine distance. Mirrors
@@ -3383,7 +3366,6 @@ func (q *Queries) InternalSemanticSearchContents(ctx context.Context, arg Intern
 			&i.SeriesOrder,
 			&i.IsPublic,
 			&i.ProjectID,
-			&i.AiMetadata,
 			&i.ReadingTimeMin,
 			&i.CoverImage,
 			&i.PublishedAt,
@@ -4517,28 +4499,27 @@ const publishContent = `-- name: PublishContent :one
 UPDATE contents SET status = 'published', is_public = true, published_at = now(), review_note = NULL, updated_at = now()
 WHERE id = $1
 RETURNING id, slug, title, body, excerpt, type, status,
-          series_id, series_order, is_public, project_id, ai_metadata, reading_time_min,
+          series_id, series_order, is_public, project_id, reading_time_min,
           cover_image, published_at, created_at, updated_at
 `
 
 type PublishContentRow struct {
-	ID             uuid.UUID       `json:"id"`
-	Slug           string          `json:"slug"`
-	Title          string          `json:"title"`
-	Body           string          `json:"body"`
-	Excerpt        string          `json:"excerpt"`
-	Type           ContentType     `json:"type"`
-	Status         ContentStatus   `json:"status"`
-	SeriesID       *string         `json:"series_id"`
-	SeriesOrder    *int32          `json:"series_order"`
-	IsPublic       bool            `json:"is_public"`
-	ProjectID      *uuid.UUID      `json:"project_id"`
-	AiMetadata     json.RawMessage `json:"ai_metadata"`
-	ReadingTimeMin int32           `json:"reading_time_min"`
-	CoverImage     *string         `json:"cover_image"`
-	PublishedAt    *time.Time      `json:"published_at"`
-	CreatedAt      time.Time       `json:"created_at"`
-	UpdatedAt      time.Time       `json:"updated_at"`
+	ID             uuid.UUID     `json:"id"`
+	Slug           string        `json:"slug"`
+	Title          string        `json:"title"`
+	Body           string        `json:"body"`
+	Excerpt        string        `json:"excerpt"`
+	Type           ContentType   `json:"type"`
+	Status         ContentStatus `json:"status"`
+	SeriesID       *string       `json:"series_id"`
+	SeriesOrder    *int32        `json:"series_order"`
+	IsPublic       bool          `json:"is_public"`
+	ProjectID      *uuid.UUID    `json:"project_id"`
+	ReadingTimeMin int32         `json:"reading_time_min"`
+	CoverImage     *string       `json:"cover_image"`
+	PublishedAt    *time.Time    `json:"published_at"`
+	CreatedAt      time.Time     `json:"created_at"`
+	UpdatedAt      time.Time     `json:"updated_at"`
 }
 
 // Atomically sets status=published, is_public=true, and published_at.
@@ -4558,7 +4539,6 @@ func (q *Queries) PublishContent(ctx context.Context, id uuid.UUID) (PublishCont
 		&i.SeriesOrder,
 		&i.IsPublic,
 		&i.ProjectID,
-		&i.AiMetadata,
 		&i.ReadingTimeMin,
 		&i.CoverImage,
 		&i.PublishedAt,
@@ -4570,7 +4550,7 @@ func (q *Queries) PublishContent(ctx context.Context, id uuid.UUID) (PublishCont
 
 const publishedContents = `-- name: PublishedContents :many
 SELECT id, slug, title, body, excerpt, type, status,
-       series_id, series_order, is_public, project_id, ai_metadata, reading_time_min,
+       series_id, series_order, is_public, project_id, reading_time_min,
        cover_image, published_at, created_at, updated_at
 FROM contents
 WHERE status = 'published' AND is_public = true
@@ -4588,23 +4568,22 @@ type PublishedContentsParams struct {
 }
 
 type PublishedContentsRow struct {
-	ID             uuid.UUID       `json:"id"`
-	Slug           string          `json:"slug"`
-	Title          string          `json:"title"`
-	Body           string          `json:"body"`
-	Excerpt        string          `json:"excerpt"`
-	Type           ContentType     `json:"type"`
-	Status         ContentStatus   `json:"status"`
-	SeriesID       *string         `json:"series_id"`
-	SeriesOrder    *int32          `json:"series_order"`
-	IsPublic       bool            `json:"is_public"`
-	ProjectID      *uuid.UUID      `json:"project_id"`
-	AiMetadata     json.RawMessage `json:"ai_metadata"`
-	ReadingTimeMin int32           `json:"reading_time_min"`
-	CoverImage     *string         `json:"cover_image"`
-	PublishedAt    *time.Time      `json:"published_at"`
-	CreatedAt      time.Time       `json:"created_at"`
-	UpdatedAt      time.Time       `json:"updated_at"`
+	ID             uuid.UUID     `json:"id"`
+	Slug           string        `json:"slug"`
+	Title          string        `json:"title"`
+	Body           string        `json:"body"`
+	Excerpt        string        `json:"excerpt"`
+	Type           ContentType   `json:"type"`
+	Status         ContentStatus `json:"status"`
+	SeriesID       *string       `json:"series_id"`
+	SeriesOrder    *int32        `json:"series_order"`
+	IsPublic       bool          `json:"is_public"`
+	ProjectID      *uuid.UUID    `json:"project_id"`
+	ReadingTimeMin int32         `json:"reading_time_min"`
+	CoverImage     *string       `json:"cover_image"`
+	PublishedAt    *time.Time    `json:"published_at"`
+	CreatedAt      time.Time     `json:"created_at"`
+	UpdatedAt      time.Time     `json:"updated_at"`
 }
 
 func (q *Queries) PublishedContents(ctx context.Context, arg PublishedContentsParams) ([]PublishedContentsRow, error) {
@@ -4633,7 +4612,6 @@ func (q *Queries) PublishedContents(ctx context.Context, arg PublishedContentsPa
 			&i.SeriesOrder,
 			&i.IsPublic,
 			&i.ProjectID,
-			&i.AiMetadata,
 			&i.ReadingTimeMin,
 			&i.CoverImage,
 			&i.PublishedAt,
@@ -4947,28 +4925,27 @@ const revertContentToDraft = `-- name: RevertContentToDraft :one
 UPDATE contents SET status = 'draft', updated_at = now()
 WHERE id = $1 AND status = 'review'
 RETURNING id, slug, title, body, excerpt, type, status,
-          series_id, series_order, is_public, project_id, ai_metadata, reading_time_min,
+          series_id, series_order, is_public, project_id, reading_time_min,
           cover_image, published_at, created_at, updated_at
 `
 
 type RevertContentToDraftRow struct {
-	ID             uuid.UUID       `json:"id"`
-	Slug           string          `json:"slug"`
-	Title          string          `json:"title"`
-	Body           string          `json:"body"`
-	Excerpt        string          `json:"excerpt"`
-	Type           ContentType     `json:"type"`
-	Status         ContentStatus   `json:"status"`
-	SeriesID       *string         `json:"series_id"`
-	SeriesOrder    *int32          `json:"series_order"`
-	IsPublic       bool            `json:"is_public"`
-	ProjectID      *uuid.UUID      `json:"project_id"`
-	AiMetadata     json.RawMessage `json:"ai_metadata"`
-	ReadingTimeMin int32           `json:"reading_time_min"`
-	CoverImage     *string         `json:"cover_image"`
-	PublishedAt    *time.Time      `json:"published_at"`
-	CreatedAt      time.Time       `json:"created_at"`
-	UpdatedAt      time.Time       `json:"updated_at"`
+	ID             uuid.UUID     `json:"id"`
+	Slug           string        `json:"slug"`
+	Title          string        `json:"title"`
+	Body           string        `json:"body"`
+	Excerpt        string        `json:"excerpt"`
+	Type           ContentType   `json:"type"`
+	Status         ContentStatus `json:"status"`
+	SeriesID       *string       `json:"series_id"`
+	SeriesOrder    *int32        `json:"series_order"`
+	IsPublic       bool          `json:"is_public"`
+	ProjectID      *uuid.UUID    `json:"project_id"`
+	ReadingTimeMin int32         `json:"reading_time_min"`
+	CoverImage     *string       `json:"cover_image"`
+	PublishedAt    *time.Time    `json:"published_at"`
+	CreatedAt      time.Time     `json:"created_at"`
+	UpdatedAt      time.Time     `json:"updated_at"`
 }
 
 // Transition content from review back to draft (reviewer rejection path).
@@ -4989,7 +4966,6 @@ func (q *Queries) RevertContentToDraft(ctx context.Context, id uuid.UUID) (Rever
 		&i.SeriesOrder,
 		&i.IsPublic,
 		&i.ProjectID,
-		&i.AiMetadata,
 		&i.ReadingTimeMin,
 		&i.CoverImage,
 		&i.PublishedAt,
@@ -5010,7 +4986,7 @@ UPDATE contents SET
 WHERE id = $4 AND created_by = $5
   AND status IN ('review', 'changes_requested')
 RETURNING id, slug, title, body, excerpt, type, status,
-          series_id, series_order, is_public, project_id, ai_metadata, reading_time_min,
+          series_id, series_order, is_public, project_id, reading_time_min,
           cover_image, created_by, proposal_rationale, review_note, published_at, created_at, updated_at
 `
 
@@ -5023,26 +4999,25 @@ type ReviseContentByCreatorParams struct {
 }
 
 type ReviseContentByCreatorRow struct {
-	ID                uuid.UUID       `json:"id"`
-	Slug              string          `json:"slug"`
-	Title             string          `json:"title"`
-	Body              string          `json:"body"`
-	Excerpt           string          `json:"excerpt"`
-	Type              ContentType     `json:"type"`
-	Status            ContentStatus   `json:"status"`
-	SeriesID          *string         `json:"series_id"`
-	SeriesOrder       *int32          `json:"series_order"`
-	IsPublic          bool            `json:"is_public"`
-	ProjectID         *uuid.UUID      `json:"project_id"`
-	AiMetadata        json.RawMessage `json:"ai_metadata"`
-	ReadingTimeMin    int32           `json:"reading_time_min"`
-	CoverImage        *string         `json:"cover_image"`
-	CreatedBy         *string         `json:"created_by"`
-	ProposalRationale *string         `json:"proposal_rationale"`
-	ReviewNote        *string         `json:"review_note"`
-	PublishedAt       *time.Time      `json:"published_at"`
-	CreatedAt         time.Time       `json:"created_at"`
-	UpdatedAt         time.Time       `json:"updated_at"`
+	ID                uuid.UUID     `json:"id"`
+	Slug              string        `json:"slug"`
+	Title             string        `json:"title"`
+	Body              string        `json:"body"`
+	Excerpt           string        `json:"excerpt"`
+	Type              ContentType   `json:"type"`
+	Status            ContentStatus `json:"status"`
+	SeriesID          *string       `json:"series_id"`
+	SeriesOrder       *int32        `json:"series_order"`
+	IsPublic          bool          `json:"is_public"`
+	ProjectID         *uuid.UUID    `json:"project_id"`
+	ReadingTimeMin    int32         `json:"reading_time_min"`
+	CoverImage        *string       `json:"cover_image"`
+	CreatedBy         *string       `json:"created_by"`
+	ProposalRationale *string       `json:"proposal_rationale"`
+	ReviewNote        *string       `json:"review_note"`
+	PublishedAt       *time.Time    `json:"published_at"`
+	CreatedAt         time.Time     `json:"created_at"`
+	UpdatedAt         time.Time     `json:"updated_at"`
 }
 
 // Caller-scoped revise for the revise_content MCP tool: an agent edits content
@@ -5074,7 +5049,6 @@ func (q *Queries) ReviseContentByCreator(ctx context.Context, arg ReviseContentB
 		&i.SeriesOrder,
 		&i.IsPublic,
 		&i.ProjectID,
-		&i.AiMetadata,
 		&i.ReadingTimeMin,
 		&i.CoverImage,
 		&i.CreatedBy,
@@ -5089,7 +5063,7 @@ func (q *Queries) ReviseContentByCreator(ctx context.Context, arg ReviseContentB
 
 const searchContents = `-- name: SearchContents :many
 SELECT id, slug, title, body, excerpt, type, status,
-       series_id, series_order, is_public, project_id, ai_metadata, reading_time_min,
+       series_id, series_order, is_public, project_id, reading_time_min,
        cover_image, published_at, created_at, updated_at
 FROM contents
 WHERE status = 'published' AND is_public = true
@@ -5107,23 +5081,22 @@ type SearchContentsParams struct {
 }
 
 type SearchContentsRow struct {
-	ID             uuid.UUID       `json:"id"`
-	Slug           string          `json:"slug"`
-	Title          string          `json:"title"`
-	Body           string          `json:"body"`
-	Excerpt        string          `json:"excerpt"`
-	Type           ContentType     `json:"type"`
-	Status         ContentStatus   `json:"status"`
-	SeriesID       *string         `json:"series_id"`
-	SeriesOrder    *int32          `json:"series_order"`
-	IsPublic       bool            `json:"is_public"`
-	ProjectID      *uuid.UUID      `json:"project_id"`
-	AiMetadata     json.RawMessage `json:"ai_metadata"`
-	ReadingTimeMin int32           `json:"reading_time_min"`
-	CoverImage     *string         `json:"cover_image"`
-	PublishedAt    *time.Time      `json:"published_at"`
-	CreatedAt      time.Time       `json:"created_at"`
-	UpdatedAt      time.Time       `json:"updated_at"`
+	ID             uuid.UUID     `json:"id"`
+	Slug           string        `json:"slug"`
+	Title          string        `json:"title"`
+	Body           string        `json:"body"`
+	Excerpt        string        `json:"excerpt"`
+	Type           ContentType   `json:"type"`
+	Status         ContentStatus `json:"status"`
+	SeriesID       *string       `json:"series_id"`
+	SeriesOrder    *int32        `json:"series_order"`
+	IsPublic       bool          `json:"is_public"`
+	ProjectID      *uuid.UUID    `json:"project_id"`
+	ReadingTimeMin int32         `json:"reading_time_min"`
+	CoverImage     *string       `json:"cover_image"`
+	PublishedAt    *time.Time    `json:"published_at"`
+	CreatedAt      time.Time     `json:"created_at"`
+	UpdatedAt      time.Time     `json:"updated_at"`
 }
 
 func (q *Queries) SearchContents(ctx context.Context, arg SearchContentsParams) ([]SearchContentsRow, error) {
@@ -5152,7 +5125,6 @@ func (q *Queries) SearchContents(ctx context.Context, arg SearchContentsParams) 
 			&i.SeriesOrder,
 			&i.IsPublic,
 			&i.ProjectID,
-			&i.AiMetadata,
 			&i.ReadingTimeMin,
 			&i.CoverImage,
 			&i.PublishedAt,
@@ -5299,7 +5271,7 @@ UPDATE contents SET
     updated_at = now()
 WHERE id = $2 AND status = 'review'
 RETURNING id, slug, title, body, excerpt, type, status,
-          series_id, series_order, is_public, project_id, ai_metadata, reading_time_min,
+          series_id, series_order, is_public, project_id, reading_time_min,
           cover_image, created_by, proposal_rationale, review_note, published_at, created_at, updated_at
 `
 
@@ -5309,26 +5281,25 @@ type SendContentChangesRequestedParams struct {
 }
 
 type SendContentChangesRequestedRow struct {
-	ID                uuid.UUID       `json:"id"`
-	Slug              string          `json:"slug"`
-	Title             string          `json:"title"`
-	Body              string          `json:"body"`
-	Excerpt           string          `json:"excerpt"`
-	Type              ContentType     `json:"type"`
-	Status            ContentStatus   `json:"status"`
-	SeriesID          *string         `json:"series_id"`
-	SeriesOrder       *int32          `json:"series_order"`
-	IsPublic          bool            `json:"is_public"`
-	ProjectID         *uuid.UUID      `json:"project_id"`
-	AiMetadata        json.RawMessage `json:"ai_metadata"`
-	ReadingTimeMin    int32           `json:"reading_time_min"`
-	CoverImage        *string         `json:"cover_image"`
-	CreatedBy         *string         `json:"created_by"`
-	ProposalRationale *string         `json:"proposal_rationale"`
-	ReviewNote        *string         `json:"review_note"`
-	PublishedAt       *time.Time      `json:"published_at"`
-	CreatedAt         time.Time       `json:"created_at"`
-	UpdatedAt         time.Time       `json:"updated_at"`
+	ID                uuid.UUID     `json:"id"`
+	Slug              string        `json:"slug"`
+	Title             string        `json:"title"`
+	Body              string        `json:"body"`
+	Excerpt           string        `json:"excerpt"`
+	Type              ContentType   `json:"type"`
+	Status            ContentStatus `json:"status"`
+	SeriesID          *string       `json:"series_id"`
+	SeriesOrder       *int32        `json:"series_order"`
+	IsPublic          bool          `json:"is_public"`
+	ProjectID         *uuid.UUID    `json:"project_id"`
+	ReadingTimeMin    int32         `json:"reading_time_min"`
+	CoverImage        *string       `json:"cover_image"`
+	CreatedBy         *string       `json:"created_by"`
+	ProposalRationale *string       `json:"proposal_rationale"`
+	ReviewNote        *string       `json:"review_note"`
+	PublishedAt       *time.Time    `json:"published_at"`
+	CreatedAt         time.Time     `json:"created_at"`
+	UpdatedAt         time.Time     `json:"updated_at"`
 }
 
 // Admin send-back transition: the owner returns a review draft to the authoring
@@ -5352,7 +5323,6 @@ func (q *Queries) SendContentChangesRequested(ctx context.Context, arg SendConte
 		&i.SeriesOrder,
 		&i.IsPublic,
 		&i.ProjectID,
-		&i.AiMetadata,
 		&i.ReadingTimeMin,
 		&i.CoverImage,
 		&i.CreatedBy,
@@ -5968,28 +5938,27 @@ const submitContentForReview = `-- name: SubmitContentForReview :one
 UPDATE contents SET status = 'review', updated_at = now()
 WHERE id = $1 AND status = 'draft'
 RETURNING id, slug, title, body, excerpt, type, status,
-          series_id, series_order, is_public, project_id, ai_metadata, reading_time_min,
+          series_id, series_order, is_public, project_id, reading_time_min,
           cover_image, published_at, created_at, updated_at
 `
 
 type SubmitContentForReviewRow struct {
-	ID             uuid.UUID       `json:"id"`
-	Slug           string          `json:"slug"`
-	Title          string          `json:"title"`
-	Body           string          `json:"body"`
-	Excerpt        string          `json:"excerpt"`
-	Type           ContentType     `json:"type"`
-	Status         ContentStatus   `json:"status"`
-	SeriesID       *string         `json:"series_id"`
-	SeriesOrder    *int32          `json:"series_order"`
-	IsPublic       bool            `json:"is_public"`
-	ProjectID      *uuid.UUID      `json:"project_id"`
-	AiMetadata     json.RawMessage `json:"ai_metadata"`
-	ReadingTimeMin int32           `json:"reading_time_min"`
-	CoverImage     *string         `json:"cover_image"`
-	PublishedAt    *time.Time      `json:"published_at"`
-	CreatedAt      time.Time       `json:"created_at"`
-	UpdatedAt      time.Time       `json:"updated_at"`
+	ID             uuid.UUID     `json:"id"`
+	Slug           string        `json:"slug"`
+	Title          string        `json:"title"`
+	Body           string        `json:"body"`
+	Excerpt        string        `json:"excerpt"`
+	Type           ContentType   `json:"type"`
+	Status         ContentStatus `json:"status"`
+	SeriesID       *string       `json:"series_id"`
+	SeriesOrder    *int32        `json:"series_order"`
+	IsPublic       bool          `json:"is_public"`
+	ProjectID      *uuid.UUID    `json:"project_id"`
+	ReadingTimeMin int32         `json:"reading_time_min"`
+	CoverImage     *string       `json:"cover_image"`
+	PublishedAt    *time.Time    `json:"published_at"`
+	CreatedAt      time.Time     `json:"created_at"`
+	UpdatedAt      time.Time     `json:"updated_at"`
 }
 
 // Transition content from draft to review. Returns pgx.ErrNoRows when the
@@ -6012,7 +5981,6 @@ func (q *Queries) SubmitContentForReview(ctx context.Context, id uuid.UUID) (Sub
 		&i.SeriesOrder,
 		&i.IsPublic,
 		&i.ProjectID,
-		&i.AiMetadata,
 		&i.ReadingTimeMin,
 		&i.CoverImage,
 		&i.PublishedAt,
@@ -6579,9 +6547,8 @@ UPDATE contents SET
     series_order = COALESCE($9, series_order),
     is_public = COALESCE($10, is_public),
     project_id = COALESCE($11, project_id),
-    ai_metadata = COALESCE($12, ai_metadata),
-    reading_time_min = COALESCE($13, reading_time_min),
-    cover_image = COALESCE($14, cover_image),
+    reading_time_min = COALESCE($12, reading_time_min),
+    cover_image = COALESCE($13, cover_image),
     review_note = CASE
         WHEN COALESCE($7::content_status, status) = 'changes_requested' THEN review_note
         ELSE NULL
@@ -6589,7 +6556,7 @@ UPDATE contents SET
     updated_at = now()
 WHERE id = $1
 RETURNING id, slug, title, body, excerpt, type, status,
-          series_id, series_order, is_public, project_id, ai_metadata, reading_time_min,
+          series_id, series_order, is_public, project_id, reading_time_min,
           cover_image, published_at, created_at, updated_at
 `
 
@@ -6605,29 +6572,27 @@ type UpdateContentParams struct {
 	SeriesOrder    *int32            `json:"series_order"`
 	IsPublic       *bool             `json:"is_public"`
 	ProjectID      *uuid.UUID        `json:"project_id"`
-	AiMetadata     json.RawMessage   `json:"ai_metadata"`
 	ReadingTimeMin *int32            `json:"reading_time_min"`
 	CoverImage     *string           `json:"cover_image"`
 }
 
 type UpdateContentRow struct {
-	ID             uuid.UUID       `json:"id"`
-	Slug           string          `json:"slug"`
-	Title          string          `json:"title"`
-	Body           string          `json:"body"`
-	Excerpt        string          `json:"excerpt"`
-	Type           ContentType     `json:"type"`
-	Status         ContentStatus   `json:"status"`
-	SeriesID       *string         `json:"series_id"`
-	SeriesOrder    *int32          `json:"series_order"`
-	IsPublic       bool            `json:"is_public"`
-	ProjectID      *uuid.UUID      `json:"project_id"`
-	AiMetadata     json.RawMessage `json:"ai_metadata"`
-	ReadingTimeMin int32           `json:"reading_time_min"`
-	CoverImage     *string         `json:"cover_image"`
-	PublishedAt    *time.Time      `json:"published_at"`
-	CreatedAt      time.Time       `json:"created_at"`
-	UpdatedAt      time.Time       `json:"updated_at"`
+	ID             uuid.UUID     `json:"id"`
+	Slug           string        `json:"slug"`
+	Title          string        `json:"title"`
+	Body           string        `json:"body"`
+	Excerpt        string        `json:"excerpt"`
+	Type           ContentType   `json:"type"`
+	Status         ContentStatus `json:"status"`
+	SeriesID       *string       `json:"series_id"`
+	SeriesOrder    *int32        `json:"series_order"`
+	IsPublic       bool          `json:"is_public"`
+	ProjectID      *uuid.UUID    `json:"project_id"`
+	ReadingTimeMin int32         `json:"reading_time_min"`
+	CoverImage     *string       `json:"cover_image"`
+	PublishedAt    *time.Time    `json:"published_at"`
+	CreatedAt      time.Time     `json:"created_at"`
+	UpdatedAt      time.Time     `json:"updated_at"`
 }
 
 func (q *Queries) UpdateContent(ctx context.Context, arg UpdateContentParams) (UpdateContentRow, error) {
@@ -6643,7 +6608,6 @@ func (q *Queries) UpdateContent(ctx context.Context, arg UpdateContentParams) (U
 		arg.SeriesOrder,
 		arg.IsPublic,
 		arg.ProjectID,
-		arg.AiMetadata,
 		arg.ReadingTimeMin,
 		arg.CoverImage,
 	)
@@ -6660,7 +6624,6 @@ func (q *Queries) UpdateContent(ctx context.Context, arg UpdateContentParams) (U
 		&i.SeriesOrder,
 		&i.IsPublic,
 		&i.ProjectID,
-		&i.AiMetadata,
 		&i.ReadingTimeMin,
 		&i.CoverImage,
 		&i.PublishedAt,

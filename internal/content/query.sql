@@ -1,12 +1,12 @@
 -- name: ContentByID :one
 SELECT id, slug, title, body, excerpt, type, status,
-       series_id, series_order, is_public, project_id, ai_metadata, reading_time_min,
+       series_id, series_order, is_public, project_id, reading_time_min,
        cover_image, created_by, proposal_rationale, review_note, published_at, created_at, updated_at
 FROM contents WHERE id = $1;
 
 -- name: PublishedContents :many
 SELECT id, slug, title, body, excerpt, type, status,
-       series_id, series_order, is_public, project_id, ai_metadata, reading_time_min,
+       series_id, series_order, is_public, project_id, reading_time_min,
        cover_image, published_at, created_at, updated_at
 FROM contents
 WHERE status = 'published' AND is_public = true
@@ -23,14 +23,14 @@ WHERE status = 'published' AND is_public = true
 
 -- name: ContentBySlug :one
 SELECT id, slug, title, body, excerpt, type, status,
-       series_id, series_order, is_public, project_id, ai_metadata, reading_time_min,
+       series_id, series_order, is_public, project_id, reading_time_min,
        cover_image, published_at, created_at, updated_at
 FROM contents WHERE slug = $1;
 
 -- name: ContentsByTopicID :many
 SELECT c.id, c.slug, c.title, c.body, c.excerpt, c.type, c.status,
        c.series_id, c.series_order,
-       c.is_public, c.project_id, c.ai_metadata, c.reading_time_min, c.cover_image,
+       c.is_public, c.project_id, c.reading_time_min, c.cover_image,
        c.published_at, c.created_at, c.updated_at
 FROM contents c
 JOIN content_topics ct ON ct.content_id = c.id
@@ -45,7 +45,7 @@ WHERE ct.topic_id = $1 AND c.status = 'published' AND c.is_public = true;
 
 -- name: SearchContents :many
 SELECT id, slug, title, body, excerpt, type, status,
-       series_id, series_order, is_public, project_id, ai_metadata, reading_time_min,
+       series_id, series_order, is_public, project_id, reading_time_min,
        cover_image, published_at, created_at, updated_at
 FROM contents
 WHERE status = 'published' AND is_public = true
@@ -66,7 +66,7 @@ WHERE status = 'published' AND is_public = true
 -- retrieval branch returns only matching rows BEFORE the RRF limit — a
 -- content_type filter must not lose recall to a top-N full of other types.
 SELECT id, slug, title, body, excerpt, type, status,
-       series_id, series_order, is_public, project_id, ai_metadata, reading_time_min,
+       series_id, series_order, is_public, project_id, reading_time_min,
        cover_image, published_at, created_at, updated_at
 FROM contents
 WHERE status != 'archived'
@@ -83,7 +83,7 @@ LIMIT $2 OFFSET $3;
 -- exclude an anchor content id the way SimilarContents does, because this
 -- is called from search_knowledge where there is no "current" content.
 SELECT id, slug, title, body, excerpt, type, status,
-       series_id, series_order, is_public, project_id, ai_metadata, reading_time_min,
+       series_id, series_order, is_public, project_id, reading_time_min,
        cover_image, published_at, created_at, updated_at,
        (1 - (embedding <=> @target_embedding::vector))::float8 AS similarity
 FROM contents
@@ -138,11 +138,11 @@ ORDER BY created_at DESC;
 
 -- name: CreateContent :one
 INSERT INTO contents (slug, title, body, excerpt, type, status,
-                      series_id, series_order, is_public, project_id, ai_metadata,
+                      series_id, series_order, is_public, project_id,
                       reading_time_min, cover_image, created_by, proposal_rationale)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
 RETURNING id, slug, title, body, excerpt, type, status,
-          series_id, series_order, is_public, project_id, ai_metadata, reading_time_min,
+          series_id, series_order, is_public, project_id, reading_time_min,
           cover_image, created_by, proposal_rationale, published_at, created_at, updated_at;
 
 -- name: UpdateContent :one
@@ -157,7 +157,6 @@ UPDATE contents SET
     series_order = COALESCE(sqlc.narg('series_order'), series_order),
     is_public = COALESCE(sqlc.narg('is_public'), is_public),
     project_id = COALESCE(sqlc.narg('project_id'), project_id),
-    ai_metadata = COALESCE(sqlc.narg('ai_metadata'), ai_metadata),
     reading_time_min = COALESCE(sqlc.narg('reading_time_min'), reading_time_min),
     cover_image = COALESCE(sqlc.narg('cover_image'), cover_image),
     review_note = CASE
@@ -167,7 +166,7 @@ UPDATE contents SET
     updated_at = now()
 WHERE id = $1
 RETURNING id, slug, title, body, excerpt, type, status,
-          series_id, series_order, is_public, project_id, ai_metadata, reading_time_min,
+          series_id, series_order, is_public, project_id, reading_time_min,
           cover_image, published_at, created_at, updated_at;
 
 -- name: PublishContent :one
@@ -176,7 +175,7 @@ RETURNING id, slug, title, body, excerpt, type, status,
 UPDATE contents SET status = 'published', is_public = true, published_at = now(), review_note = NULL, updated_at = now()
 WHERE id = $1
 RETURNING id, slug, title, body, excerpt, type, status,
-          series_id, series_order, is_public, project_id, ai_metadata, reading_time_min,
+          series_id, series_order, is_public, project_id, reading_time_min,
           cover_image, published_at, created_at, updated_at;
 
 -- name: ArchiveContentReturning :one
@@ -186,7 +185,7 @@ RETURNING id, slug, title, body, excerpt, type, status,
 UPDATE contents SET status = 'archived', review_note = NULL, updated_at = now()
 WHERE id = $1
 RETURNING id, slug, title, body, excerpt, type, status,
-          series_id, series_order, is_public, project_id, ai_metadata, reading_time_min,
+          series_id, series_order, is_public, project_id, reading_time_min,
           cover_image, published_at, created_at, updated_at;
 
 -- name: SubmitContentForReview :one
@@ -198,7 +197,7 @@ RETURNING id, slug, title, body, excerpt, type, status,
 UPDATE contents SET status = 'review', updated_at = now()
 WHERE id = $1 AND status = 'draft'
 RETURNING id, slug, title, body, excerpt, type, status,
-          series_id, series_order, is_public, project_id, ai_metadata, reading_time_min,
+          series_id, series_order, is_public, project_id, reading_time_min,
           cover_image, published_at, created_at, updated_at;
 
 -- name: RevertContentToDraft :one
@@ -208,7 +207,7 @@ RETURNING id, slug, title, body, excerpt, type, status,
 UPDATE contents SET status = 'draft', updated_at = now()
 WHERE id = $1 AND status = 'review'
 RETURNING id, slug, title, body, excerpt, type, status,
-          series_id, series_order, is_public, project_id, ai_metadata, reading_time_min,
+          series_id, series_order, is_public, project_id, reading_time_min,
           cover_image, published_at, created_at, updated_at;
 
 -- name: PublishedContentsInWindow :many
@@ -284,7 +283,7 @@ UPDATE contents SET embedding = $2 WHERE id = $1;
 -- name: ContentsByStatus :many
 -- List contents by status, ordered by updated_at descending. Used by admin pipeline.
 SELECT id, slug, title, body, excerpt, type, status,
-       series_id, series_order, is_public, project_id, ai_metadata, reading_time_min,
+       series_id, series_order, is_public, project_id, reading_time_min,
        cover_image, published_at, created_at, updated_at
 FROM contents
 WHERE status = @status::content_status
@@ -326,7 +325,7 @@ UPDATE contents SET
 WHERE id = @id AND created_by = @created_by
   AND status IN ('review', 'changes_requested')
 RETURNING id, slug, title, body, excerpt, type, status,
-          series_id, series_order, is_public, project_id, ai_metadata, reading_time_min,
+          series_id, series_order, is_public, project_id, reading_time_min,
           cover_image, created_by, proposal_rationale, review_note, published_at, created_at, updated_at;
 
 -- name: SendContentChangesRequested :one
@@ -342,6 +341,6 @@ UPDATE contents SET
     updated_at = now()
 WHERE id = @id AND status = 'review'
 RETURNING id, slug, title, body, excerpt, type, status,
-          series_id, series_order, is_public, project_id, ai_metadata, reading_time_min,
+          series_id, series_order, is_public, project_id, reading_time_min,
           cover_image, created_by, proposal_rationale, review_note, published_at, created_at, updated_at;
 

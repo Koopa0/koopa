@@ -373,7 +373,6 @@ CREATE TABLE contents (
     status        content_status NOT NULL DEFAULT 'draft',
     series_id     TEXT,
     series_order  INT,
-    ai_metadata   JSONB,
     reading_time_min INT NOT NULL DEFAULT 0 CHECK (reading_time_min >= 0),
     cover_image   TEXT,
     is_public     BOOLEAN NOT NULL DEFAULT false,
@@ -412,7 +411,6 @@ COMMENT ON COLUMN contents.status IS 'Lifecycle: draft → published directly (t
 COMMENT ON COLUMN contents.series_id IS 'Groups content into a series. Paired with series_order (chk_contents_series).';
 COMMENT ON COLUMN contents.series_order IS 'Position within the series. Paired with series_id (chk_contents_series).';
 COMMENT ON COLUMN contents.reading_time_min IS 'Estimated reading time in minutes. Computed from body word count. Always >= 0.';
-COMMENT ON COLUMN contents.ai_metadata IS 'AI pipeline metadata (JSONB). Structure: {summary, keywords, quality_score, review_notes}. Set by background AI enrichment.';
 COMMENT ON COLUMN contents.cover_image IS 'Cover image URL or path for content cards and social sharing. NULL = no cover image.';
 COMMENT ON COLUMN contents.is_public IS
     'Whether this content is rendered on the public website. Defaults to false '
@@ -492,10 +490,10 @@ CREATE TABLE feeds (
         CHECK (schedule IN ('hourly', 'daily', 'weekly', 'biweekly', 'monthly'))
 );
 
-COMMENT ON TABLE feeds IS 'RSS/Atom feed subscriptions. Fetch pipeline pulls entries on schedule, scores relevance, and surfaces for curation.';
+COMMENT ON TABLE feeds IS 'RSS/Atom feed subscriptions. Fetch pipeline pulls entries on schedule and surfaces them for manual curation.';
 COMMENT ON COLUMN feeds.url IS 'Feed URL (RSS/Atom). Unique — one subscription per URL. Must use http(s) scheme (chk_feed_url_scheme).';
 COMMENT ON COLUMN feeds.schedule IS 'Fetch cadence label (hourly | daily | weekly | biweekly | monthly), enforced by chk_feed_schedule. The Go scheduler maps each label to a concrete time interval. NOT a cron expression.';
-COMMENT ON COLUMN feeds.priority IS 'Feed importance for relevance scoring: high feeds get boosted scores.';
+COMMENT ON COLUMN feeds.priority IS 'Feed importance (manual ordering hint for the curation surface). No automated relevance scoring exists.';
 COMMENT ON COLUMN feeds.etag IS 'HTTP ETag header from last fetch. NULL = never fetched or server did not return ETag.';
 COMMENT ON COLUMN feeds.last_modified IS 'HTTP Last-Modified header from last fetch. NULL = never fetched or server did not return it.';
 COMMENT ON COLUMN feeds.last_error IS 'Error message from last failed fetch. NULL = no error (last fetch succeeded or never fetched).';
