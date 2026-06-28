@@ -81,8 +81,49 @@
   --dot-til: #4f9b78;
   --dot-digest: #7d6fae;
 
+  /* semantic colours, darkened for contrast on paper (toasts etc.) */
+  --success: oklch(0.5 0.13 155);
+  --success-bg: oklch(0.5 0.13 155 / 0.1);
+  --warn: oklch(0.53 0.14 65);
+  --warn-bg: oklch(0.53 0.14 65 / 0.1);
+  --error: oklch(0.52 0.18 25);
+  --error-bg: oklch(0.52 0.18 25 / 0.1);
+  --info: oklch(0.5 0.12 210);
+  --info-bg: oklch(0.5 0.12 210 / 0.1);
+
   --shadow-1: 0 2px 8px -2px rgb(38 36 32 / 0.08), 0 1px 2px rgb(38 36 32 / 0.06);
   --shadow-2: 0 18px 40px -12px rgb(38 36 32 / 0.14), 0 4px 12px rgb(38 36 32 / 0.08);
+
+  /* Re-resolve the Tailwind @theme --color-* aliases against THIS scope's
+     tokens. Without this, utilities like text-fg / bg-panel / border-border
+     (used by command-palette, toast, back-to-top, theme-toggle) read the global
+     :root (admin-dark) values even inside .ed — the cause of the dark overlay
+     box on the paper site. Admin is outside .ed, so it keeps the global ones.
+     Declared once here; the var(--*) re-resolve under the dark twin too. */
+  --color-bg: var(--bg);
+  --color-panel: var(--panel);
+  --color-elevated: var(--elevated);
+  --color-overlay: var(--overlay);
+  --color-fg: var(--fg);
+  --color-fg-muted: var(--fg-muted);
+  --color-fg-subtle: var(--fg-subtle);
+  --color-fg-faint: var(--fg-faint);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-border-faint: var(--border-faint);
+  --color-brand: var(--brand);
+  --color-brand-strong: var(--brand-strong);
+  --color-brand-muted: var(--brand-muted);
+  --color-brand-faint: var(--brand-faint);
+  --color-brand-light: var(--brand-strong);
+  --color-success: var(--success);
+  --color-success-bg: var(--success-bg);
+  --color-warn: var(--warn);
+  --color-warn-bg: var(--warn-bg);
+  --color-error: var(--error);
+  --color-error-bg: var(--error-bg);
+  --color-info: var(--info);
+  --color-info-bg: var(--info-bg);
 }
 
 html.public-dark .ed,
@@ -120,6 +161,16 @@ html.public-dark .ed-theme {
   --dot-build-log: #cb9a5f;
   --dot-til: #69c29a;
   --dot-digest: #a99bd6;
+
+  /* dark-twin semantic colours (override the paper ones inherited from .ed) */
+  --success: oklch(0.72 0.12 155);
+  --success-bg: oklch(0.72 0.12 155 / 0.12);
+  --warn: oklch(0.78 0.13 80);
+  --warn-bg: oklch(0.78 0.13 80 / 0.12);
+  --error: oklch(0.7 0.17 25);
+  --error-bg: oklch(0.7 0.17 25 / 0.12);
+  --info: oklch(0.72 0.1 210);
+  --info-bg: oklch(0.72 0.1 210 / 0.12);
 
   --shadow-1: 0 2px 8px -2px rgb(0 0 0 / 0.5), 0 1px 2px rgb(0 0 0 / 0.4);
   --shadow-2: 0 18px 40px -12px rgb(0 0 0 / 0.6), 0 4px 12px rgb(0 0 0 / 0.4);
@@ -1054,8 +1105,10 @@ html.public-dark .ed-theme {
 .ed-about-row dt { color: var(--fg-faint); width: 6.5rem; flex: none; }
 .ed-about-row dd { color: var(--fg-muted); margin: 0; }
 .ed-about-sig { margin: 1.5rem 0 0; font-family: var(--font-serif); font-style: italic; font-size: 1.04rem; color: var(--fg-muted); }
-.ed-about-elsewhere { margin-top: clamp(2.6rem, 7vh, 3.8rem); font-family: var(--font-mono); font-size: 0.74rem; display: flex; flex-wrap: wrap; align-items: center; gap: 0.85rem; color: var(--fg-faint); }
-.ed-about-elsewhere a { color: var(--fg-muted); display: inline-flex; align-items: center; gap: 0.4rem; transition: color 0.2s; }
+/* icon-only links — square hit areas (WCAG 2.5.5), pulled left 0.55rem so the
+   first icon aligns with the column edge despite the internal centering. */
+.ed-about-elsewhere { margin-top: clamp(2.6rem, 7vh, 3.8rem); display: flex; flex-wrap: wrap; align-items: center; gap: 0.15rem; margin-left: -0.55rem; }
+.ed-about-elsewhere a { color: var(--fg-muted); display: inline-flex; align-items: center; justify-content: center; width: 2.25rem; height: 2.25rem; transition: color 0.2s; }
 .ed-about-elsewhere a:hover { color: var(--accent); }
 @media (prefers-reduced-motion: no-preference) {
   @keyframes ed-now-breathe { 0%,100% { opacity: 0.92; transform: scale(1); } 50% { opacity: 0.4; transform: scale(0.78); } }
