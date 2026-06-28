@@ -13,7 +13,7 @@ services:
     depends_on:
       - backend
     networks:
-      - frontend
+      - edge
     restart: unless-stopped
     read_only: true
     tmpfs:
@@ -39,7 +39,7 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
     networks:
-      - backend
+      - internal
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U koopa -d blog"]
@@ -90,8 +90,8 @@ services:
       postgres:
         condition: service_healthy
     networks:
-      - frontend
-      - backend
+      - edge
+      - internal
     restart: unless-stopped
     read_only: true
     tmpfs:
@@ -124,7 +124,7 @@ services:
     ports:
       - '127.0.0.1:8081:8081'
     networks:
-      - backend
+      - internal
     restart: unless-stopped
     read_only: true
     tmpfs:
@@ -138,8 +138,17 @@ services:
 volumes:
   pgdata:
 
+# Shared, security-tier networks created out-of-band (server/scripts/bootstrap-vps.sh:
+#   docker network create edge && docker network create internal).
+# external: true everywhere so NO stack owns them — koopa0.dev, tw-stock-trader and
+# observability all attach to the same edge/internal. Tier names encode the one
+# invariant: edge = internet-facing (SSR frontend + backend ingress); internal =
+# data/services (postgres, mcp, trader, observability scrapers). frontend is NOT on
+# internal, so it cannot reach postgres.
 networks:
-  frontend:
-    name: blog_frontend
-  backend:
-    name: blog_backend
+  edge:
+    external: true
+    name: edge
+  internal:
+    external: true
+    name: internal
