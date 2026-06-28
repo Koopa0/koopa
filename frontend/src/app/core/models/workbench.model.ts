@@ -26,15 +26,6 @@ export interface TopicRef {
   name: string;
 }
 
-export interface ContentAiMetadata {
-  summary?: string;
-  keywords?: string[];
-  quality_score?: number;
-  review_notes?: string;
-  review_rejected_at?: string;
-  [key: string]: unknown;
-}
-
 // ============================================================
 // Hypothesis (matches internal/hypothesis/hypothesis.go::Record)
 // ============================================================

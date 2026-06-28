@@ -29,7 +29,6 @@ function buildMockContent(overrides: Partial<ApiContent> = {}): ApiContent {
     series_id: null,
     series_order: null,
     is_public: true,
-    ai_metadata: null,
     reading_time_min: 5,
     published_at: '2026-01-15T00:00:00Z',
     created_at: '2026-01-15T00:00:00Z',

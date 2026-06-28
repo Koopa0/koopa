@@ -33,7 +33,6 @@ export interface ApiContent {
   series_id: string | null;
   series_order: number | null;
   is_public: boolean;
-  ai_metadata: Record<string, unknown> | null;
   reading_time_min: number;
   /** Proposing agent for agent-pushed content (MCP propose_content). Null for owner/admin-authored content. */
   created_by?: string | null;
@@ -138,7 +137,6 @@ export interface ApiCreateContentRequest {
   source_type?: string;
   series_id?: string;
   series_order?: number;
-  ai_metadata?: Record<string, unknown>;
   reading_time_min?: number;
   is_public?: boolean;
 }
@@ -153,7 +151,6 @@ export interface ApiUpdateContentRequest {
   status?: ContentStatus;
   series_id?: string;
   series_order?: number;
-  ai_metadata?: Record<string, unknown>;
   reading_time_min?: number;
   is_public?: boolean;
 }

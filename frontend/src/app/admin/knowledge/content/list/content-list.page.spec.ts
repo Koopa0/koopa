@@ -33,7 +33,6 @@ function content(overrides: Partial<ApiContent> = {}): ApiContent {
     series_id: null,
     series_order: null,
     is_public: false,
-    ai_metadata: null,
     reading_time_min: 5,
     published_at: null,
     created_at: '2026-06-01T10:00:00Z',

@@ -42,9 +42,6 @@
             <app-status-badge [variant]="statusVariant(c.status)">
               {{ c.status }}
             </app-status-badge>
-            @if (aiQualityScore(c); as score) {
-              <span data-testid="editor-ai-quality">ai quality {{ score }}</span>
-            }
           } @else {
             <app-status-badge variant="neutral">draft</app-status-badge>
             <span data-testid="editor-create-hint">new content · not created yet</span>
@@ -308,27 +305,7 @@
         </div>
       </div>
 
-      <!-- AI metadata (advisory; read-only per contract — never edited here) -->
       @if (content(); as c) {
-        @if (aiSummary(c) || aiQualityScore(c) !== null) {
-          <div class="border-b border-border px-5 py-[18px]">
-            <div
-              class="rounded-md border border-brand-muted bg-brand-faint p-3 text-xs leading-relaxed text-fg-muted"
-              data-testid="editor-ai-note"
-            >
-              <p class="mb-1.5 font-mono text-[10px] uppercase tracking-[0.06em] text-brand">
-                AI metadata · advisory
-              </p>
-              @if (aiSummary(c); as summary) {
-                <p class="mb-1.5" data-testid="editor-ai-summary">{{ summary }}</p>
-              }
-              @if (aiQualityScore(c); as score) {
-                <p class="font-mono text-[11px]">quality_score {{ score }}</p>
-              }
-            </div>
-          </div>
-        }
-
         <!-- System facts -->
         <div class="px-5 py-[18px]">
           <h3 class="mb-2 font-mono text-[10px] uppercase tracking-[0.06em] text-fg-faint">

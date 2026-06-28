@@ -19,7 +19,6 @@ function createMockContent(
     series_id: null,
     series_order: null,
     is_public: true,
-    ai_metadata: null,
     reading_time_min: 3,
     published_at: '2026-01-01T00:00:00Z',
     created_at: '2026-01-01T00:00:00Z',
