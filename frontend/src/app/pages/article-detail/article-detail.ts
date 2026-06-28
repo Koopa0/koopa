@@ -18,7 +18,6 @@ import { ContentService } from '../../core/services/content.service';
 import { MarkdownService } from '../../core/services/markdown.service';
 import { ThemeService } from '../../core/services/theme.service';
 import type { ApiContent, ApiRelatedContent } from '../../core/models';
-import { contentTypeLabelEn } from '../../core/models';
 import { SeoService } from '../../core/services/seo/seo.service';
 import { buildBlogPostingSchema } from '../../core/services/seo/json-ld.util';
 import { RelatedArticlesComponent } from '../../shared/related-articles/related-articles.component';
@@ -79,16 +78,6 @@ export class ArticleDetailComponent {
 
   /** Sanitized HTML — MarkdownService uses DOMPurify, safe for [innerHTML] */
   protected readonly parsedContent = this.rawHtml;
-
-  /** Human label for the breadcrumb tail (e.g. "Build Log"). */
-  protected readonly typeLabel = computed(() =>
-    contentTypeLabelEn(this.article().type),
-  );
-
-  /** First attached topic drives the breadcrumb topic link. */
-  protected readonly primaryTopic = computed(
-    () => this.article().topics[0] ?? null,
-  );
 
   private isBrowser = false;
 
