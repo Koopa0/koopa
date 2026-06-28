@@ -16,7 +16,7 @@
   than a line number, because symbols survive file restructuring while line
   numbers rot. Each cite names the file plus the symbol
   (e.g. `migrations/001_initial.up.sql` (`chk_content_publication`)).
-- Statements not provable from the repo are marked **Open Question** (§7) and
+- Statements not provable from the repo are marked an **Open Question** and
   resolved only by the human owner.
 - The existence of a table, a doc, or a handler is **not** proof a feature
   works. §6 separates "implemented and wired" from "schema-supported only".
@@ -86,8 +86,8 @@ and compiled into the binary (`internal/agent/registry.go::BuiltinAgents()`).
 When two sources disagree about **what the system does**, the higher tier
 wins and the lower MUST be updated. This authority order resolves
 *descriptive* conflicts only — it does **not** settle *normative* questions
-("is this behavior intended?"). Normative questions go to §7 Open Questions
-and are resolved only by the human owner.
+("is this behavior intended?"). Normative questions are **Open Questions**
+resolved only by the human owner.
 
 | Source | Path(s) | Status | Notes |
 |---|---|---|---|
@@ -301,7 +301,7 @@ permits. Existence of a table, handler, or doc is not proof of a working path.
 |---|---|---|
 | **Feed highlight ordering** | no AI relevance scoring (a deliberate non-feature); highlights are recency/priority-ordered. The `score` field is vestigial | `internal/feed/entry/query.sql`; `internal/mcp/brief.go` |
 | **Admin global-search Kind taxonomy** | `internal/search/search.go` declares exactly `KindContent`, wired; no other kinds | `internal/search/search.go` (`Kind` / `KindContent`) |
-| **`contents.ai_metadata` consumer contract** | column exists with documented shape `{summary, keywords, quality_score, review_notes}` (schema comment on `contents.ai_metadata`); not type-checked — advisory only (§7) | `migrations/001_initial.up.sql` (`contents.ai_metadata`) |
+| **`contents.ai_metadata`** | vestigial — the column exists but has no consumer and is never populated; no AI-metadata feature is planned | `migrations/001_initial.up.sql` (`contents.ai_metadata`) |
 
 ### F. Today surface — fully wired
 
@@ -334,7 +334,7 @@ The Today aggregate is now a complete backend surface (the earlier
 
 ---
 
-## 7. Testing implications & Open Questions
+## 7. Testing implications
 
 ### What must be tested before each domain is trustworthy
 
@@ -362,14 +362,3 @@ own `review` / `changes_requested` content), `plan_day`, and `resolve_todo`
 (caller-scoped self-clear). Content publishing is admin HTTP only. Other structural guarantees: no daily-plan
 auto-carryover; no RBAC; no quantitative milestones; no goal auto-status; no
 direct `activity_events` INSERT. (Each is schema- or policy-enforced; see §3.)
-
-### Open Questions (require human decision)
-
-1. **`contents.ai_metadata` consumer contract** — the documented shape
-   `{summary, keywords, quality_score, review_notes}` (the `contents.ai_metadata`
-   COMMENT) is not type-checked; treat as advisory. Keep, formalize, or drop?
-2. **Actor attribution surfacing** — `activity_events.actor` exists but is not
-   propagated into the aggregate-reader outputs (`brief`); widen those types?
-3. **"Blocked work" definition** — a blocked-work affordance, if ever wanted,
-   would be a derived condition over `todos` (the system's one work-item
-   entity), not a new entity.

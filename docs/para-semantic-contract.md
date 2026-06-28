@@ -58,16 +58,7 @@ koopa is a single monorepo (`go.mod` module `github.com/Koopa0/koopa`) — one r
 | `resolve_todo` state guard (block terminal-izing an already-adopted todo) | when an orphaned `daily_plan_items` row actually occurs |
 | ~~koopa0 `requireAuthor` on `propose_*`~~ | **CLOSED by Option B (2026-06)** — no tool-layer authz; the MCP transport is the access boundary, not a per-tool gate |
 
-## 7. Tool-surface gaps (adversarial-gate findings — all RESOLVED 2026-06-23)
-
-Found by the adversarial gate; all were tool-surface (the schema already held the data) and have since shipped.
-
-- **G1 — revise-after-propose. RESOLVED (2026-06-23): `revise_content` shipped.** An agent revises content it created that is in `review`/`changes_requested`, returning it to the review queue and clearing the owner's review note.
-- **G2 — content proposal readback. RESOLVED (2026-06-23): `list_content` shipped.** An agent reads back the disposition (review / changes_requested / published / archived) of the content it proposed — closing the loop for non-conversational agents (hermes).
-- **G3 — `propose_content` is project-blind. RESOLVED (2026-06-23): intentional decoupling, not a gap.** Content is the external loop, decoupled from the project/GTD axis. `contents.project_id` is nullable by design; the link is meaningful only for `build-log` and is applied by the owner in admin if/when a build-log needs project context. The agent content surface deliberately stays project-agnostic — `article`/`essay`/`til`/`digest` (incl. 雜談/隨筆) are standalone writing.
-- **G4 — windowed reflection look-back. RESOLVED (2026-06-23): `review_period` shipped.** A read-only windowed retrospective ("what did KOOPA complete between `since` and `until`") computed live from the activity log — closing the gap that `brief(reflection)` (single-date), `list_todos` (caller-scoped), and `project_progress` (current-state snapshot) left open.
-
-## 8. Milestones live on the goal, not the project
+## 7. Milestones live on the goal, not the project
 
 `koopa0.dev` is a goal and carries its roadmap milestones directly. Milestone-
 shaped progress must live on the **goal**, not a `maintained` project — a
