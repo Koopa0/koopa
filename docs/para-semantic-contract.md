@@ -67,10 +67,13 @@ Found by the adversarial gate; all were tool-surface (the schema already held th
 - **G3 — `propose_content` is project-blind. RESOLVED (2026-06-23): intentional decoupling, not a gap.** Content is the external loop, decoupled from the project/GTD axis. `contents.project_id` is nullable by design; the link is meaningful only for `build-log` and is applied by the owner in admin if/when a build-log needs project context. The agent content surface deliberately stays project-agnostic — `article`/`essay`/`til`/`digest` (incl. 雜談/隨筆) are standalone writing.
 - **G4 — windowed reflection look-back. RESOLVED (2026-06-23): `review_period` shipped.** A read-only windowed retrospective ("what did KOOPA complete between `since` and `until`") computed live from the activity log — closing the gap that `brief(reflection)` (single-date), `list_todos` (caller-scoped), and `project_progress` (current-state snapshot) left open.
 
-## 8. Data state (not schema)
+## 8. Milestones live on the goal, not the project
 
-- **Areas:** no default/seeded areas exist; the prod areas are owner-curated and correct. Nothing to clean up.
-- Keep `koopa0.dev` as a goal. Milestone-shaped roadmap progress must live on the **goal**, not a project — a `maintained` project is excluded from `project_progress.Momentum` by `WHERE status IN ('in_progress','planned')`, and milestone progress surfaces via `ActiveGoalMilestones`.
+`koopa0.dev` is a goal and carries its roadmap milestones directly. Milestone-
+shaped progress must live on the **goal**, not a `maintained` project — a
+maintained project is excluded from `project_progress.Momentum` by
+`WHERE status IN ('in_progress','planned')`, and milestone progress surfaces via
+`ActiveGoalMilestones`.
 
 ## 9. D-4 — authz resolution
 

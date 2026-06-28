@@ -228,8 +228,8 @@ them wrong is a semantic bug, not a naming quibble.
   only `'crawl'` (internal fetch/collector runs, RSS) — there is no
   `agent_schedule` kind, no `subsystem` column, and no
   `chk_process_runs_subsystem_iff_agent_schedule` constraint. *Is not* a `task`.
-  Whether the external runner will ever write such rows is **not yet observable
-  from this repo** (§7 Open Question 5).
+  This repo does not back schedule execution with `process_runs` and will not —
+  schedule-run observability is out of scope here.
 
 ---
 
@@ -299,7 +299,7 @@ permits. Existence of a table, handler, or doc is not proof of a working path.
 
 | Feature | Reality | Evidence |
 |---|---|---|
-| **Feed AI relevance scoring** | not active — scoring pipeline not yet wired, items carry score=0; highlights are recency/priority-ordered, not relevance-ranked | `internal/feed/entry/query.sql`; `internal/mcp/brief.go` |
+| **Feed highlight ordering** | no AI relevance scoring (a deliberate non-feature); highlights are recency/priority-ordered. The `score` field is vestigial | `internal/feed/entry/query.sql`; `internal/mcp/brief.go` |
 | **Admin global-search Kind taxonomy** | `internal/search/search.go` declares exactly `KindContent`, wired; no other kinds | `internal/search/search.go` (`Kind` / `KindContent`) |
 | **`contents.ai_metadata` consumer contract** | column exists with documented shape `{summary, keywords, quality_score, review_notes}` (schema comment on `contents.ai_metadata`); not type-checked — advisory only (§7) | `migrations/001_initial.up.sql` (`contents.ai_metadata`) |
 
@@ -368,18 +368,8 @@ direct `activity_events` INSERT. (Each is schema- or policy-enforced; see §3.)
 1. **`contents.ai_metadata` consumer contract** — the documented shape
    `{summary, keywords, quality_score, review_notes}` (the `contents.ai_metadata`
    COMMENT) is not type-checked; treat as advisory. Keep, formalize, or drop?
-2. **Feed AI relevance scoring** — implement (replace the score=0 placeholder)
-   or formally drop?
-3. **Actor attribution surfacing** — `activity_events.actor` exists but is not
+2. **Actor attribution surfacing** — `activity_events.actor` exists but is not
    propagated into the aggregate-reader outputs (`brief`); widen those types?
-4. **External `schedule` execution observability** — scheduled execution is
-   owned by the external Cowork/Desktop runner; this repo provides the registry
-   metadata and the schema, but has **no `process_runs` backing for schedule
-   runs** (`process_runs.kind` CHECK allows only `'crawl'` — no `agent_schedule`
-   kind / `subsystem` column). Add such a run-record schema plus a read-side
-   surface ("last schedule run per agent" on `/api/admin/system/health`)?
-5. **`project_aliases` surface** — exists for fuzzy project resolution; not
-   exposed in admin UI.
-6. **"Blocked work" definition** — a blocked-work affordance, if ever wanted,
+3. **"Blocked work" definition** — a blocked-work affordance, if ever wanted,
    would be a derived condition over `todos` (the system's one work-item
    entity), not a new entity.
