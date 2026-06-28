@@ -1,17 +1,17 @@
 import {
   Component,
   ChangeDetectionStrategy,
-  DestroyRef,
   inject,
   signal,
   computed,
+  effect,
   linkedSignal,
   input,
-  OnInit,
   PLATFORM_ID,
 } from '@angular/core';
 import { isPlatformBrowser, DatePipe } from '@angular/common';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { HttpErrorResponse } from '@angular/common/http';
+import { rxResource } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
 import { environment } from '../../../environments/environment';
 import { TopicService } from '../../core/services/topic.service';
@@ -28,6 +28,12 @@ import type {
 interface TypeCount {
   type: ContentType;
   count: number;
+}
+
+interface TopicContentsResult {
+  topic: ApiTopic;
+  contents: ApiContent[];
+  meta: ApiPaginationMeta;
 }
 
 const CONTENTS_PER_PAGE = 12;
@@ -51,22 +57,52 @@ const CONTENT_TYPES: readonly ContentType[] = [
   templateUrl: './topic-detail.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
-export class TopicDetailComponent implements OnInit {
+export class TopicDetailComponent {
   /** Route param: topics/:slug */
   readonly slug = input.required<string>();
 
   private readonly topicService = inject(TopicService);
   private readonly seoService = inject(SeoService);
-  private readonly destroyRef = inject(DestroyRef);
   private readonly platformId = inject(PLATFORM_ID);
 
-  protected readonly topic = signal<ApiTopic | null>(null);
-  protected readonly contents = signal<ApiContent[]>([]);
-  protected readonly meta = signal<ApiPaginationMeta | null>(null);
-  protected readonly isLoading = signal(true);
-  protected readonly isNotFound = signal(false);
-  protected readonly error = signal<string | null>(null);
+  /** Current page — set by the pager; drives a resource refetch. */
   protected readonly currentPage = signal(1);
+
+  private readonly topicResource = rxResource<
+    TopicContentsResult,
+    { slug: string; page: number }
+  >({
+    params: () => ({ slug: this.slug(), page: this.currentPage() }),
+    stream: ({ params }) =>
+      this.topicService.getTopicBySlug(params.slug, {
+        page: params.page,
+        perPage: CONTENTS_PER_PAGE,
+      }),
+  });
+
+  // Guarded reads — a bare value() throws on a failed load and kills the error
+  // UI (project gotcha: "rxResource value() throws — guard it").
+  protected readonly topic = computed(() =>
+    this.topicResource.hasValue() ? this.topicResource.value().topic : null,
+  );
+  protected readonly contents = computed(() =>
+    this.topicResource.hasValue() ? this.topicResource.value().contents : [],
+  );
+  protected readonly meta = computed(() =>
+    this.topicResource.hasValue() ? this.topicResource.value().meta : null,
+  );
+
+  protected readonly isLoading = computed(
+    () => this.topicResource.status() === 'loading',
+  );
+  protected readonly isNotFound = computed(
+    () => httpStatus(this.topicResource.error()) === 404,
+  );
+  protected readonly error = computed(() =>
+    this.topicResource.status() === 'error' && !this.isNotFound()
+      ? 'Failed to load topic content. Please try again later.'
+      : null,
+  );
 
   /** Selected type tab — snaps back to "all" whenever new contents load. */
   protected readonly selectedType = linkedSignal<
@@ -100,8 +136,31 @@ export class TopicDetailComponent implements OnInit {
 
   protected readonly totalPages = computed(() => this.meta()?.total_pages ?? 0);
 
-  ngOnInit(): void {
-    this.loadTopicContents(this.slug(), 1);
+  constructor() {
+    // SEO is dynamic (depends on the loaded topic), so update it as a side
+    // effect when the resource resolves. Runs on both server and browser, so
+    // the SSR render emits the topic-specific title / OG / JSON-LD.
+    effect(() => {
+      const topic = this.topic();
+      if (!topic) {
+        return;
+      }
+      const url = `${environment.siteUrl}/topics/${this.slug()}`;
+      const description =
+        topic.description ||
+        `Browse all content under the "${topic.name}" topic.`;
+      this.seoService.updateMeta({
+        title: topic.name,
+        description,
+        ogUrl: url,
+        canonicalUrl: url,
+        jsonLd: buildCollectionPageSchema({
+          name: topic.name,
+          description,
+          url,
+        }),
+      });
+    });
   }
 
   protected selectType(type: 'all' | ContentType): void {
@@ -110,52 +169,12 @@ export class TopicDetailComponent implements OnInit {
 
   protected onPageChange(page: number): void {
     this.currentPage.set(page);
-    this.loadTopicContents(this.slug(), page);
     if (isPlatformBrowser(this.platformId)) {
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
   }
+}
 
-  private loadTopicContents(slug: string, page: number): void {
-    this.isLoading.set(true);
-    this.error.set(null);
-
-    this.topicService
-      .getTopicBySlug(slug, { page, perPage: CONTENTS_PER_PAGE })
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe({
-        next: (result) => {
-          this.topic.set(result.topic);
-          this.contents.set(result.contents);
-          this.meta.set(result.meta);
-          this.isLoading.set(false);
-
-          const url = `${environment.siteUrl}/topics/${slug}`;
-          const description =
-            result.topic.description ||
-            `Browse all content under the "${result.topic.name}" topic.`;
-          this.seoService.updateMeta({
-            title: result.topic.name,
-            description,
-            ogUrl: url,
-            canonicalUrl: url,
-            jsonLd: buildCollectionPageSchema({
-              name: result.topic.name,
-              description,
-              url,
-            }),
-          });
-        },
-        error: (err) => {
-          if (err?.status === 404) {
-            this.isNotFound.set(true);
-          } else {
-            this.error.set(
-              'Failed to load topic content. Please try again later.',
-            );
-          }
-          this.isLoading.set(false);
-        },
-      });
-  }
+function httpStatus(err: unknown): number | null {
+  return err instanceof HttpErrorResponse ? err.status : null;
 }
