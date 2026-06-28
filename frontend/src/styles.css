@@ -1,4 +1,13 @@
 @import 'tailwindcss';
+
+/* Self-hosted variable fonts — replaces the Google Fonts runtime round-trip.
+   Newsreader carries the optical-size axis (opsz) for the reading face. */
+@import '@fontsource-variable/newsreader/opsz.css';
+@import '@fontsource-variable/newsreader/opsz-italic.css';
+@import '@fontsource-variable/jetbrains-mono/wght.css';
+@import '@fontsource-variable/inter/wght.css';
+@import '@fontsource-variable/space-grotesk/wght.css';
+
 @import './app/styles/editorial.css';
 
 /* ============================================================
@@ -220,10 +229,10 @@
    ============================================================ */
 @theme {
   /* Type families */
-  --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, sans-serif;
-  --font-display: 'Space Grotesk', ui-sans-serif, system-ui, -apple-system, sans-serif;
-  --font-serif: 'IBM Plex Serif', ui-serif, Georgia, serif;
-  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  --font-sans: 'Inter Variable', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-display: 'Space Grotesk Variable', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-serif: 'Newsreader Variable', ui-serif, Georgia, serif;
+  --font-mono: 'JetBrains Mono Variable', ui-monospace, SFMono-Regular, Menlo, monospace;
 
   /* DS surface + text + line tokens as utilities (switch by theme) */
   --color-bg: var(--bg);

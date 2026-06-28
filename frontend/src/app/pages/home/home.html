@@ -1,120 +1,99 @@
-<section class="pb-24">
-  <div class="ed-cover">
-    <!-- FRAME — mono masthead bar: kicker left, edition line right -->
-    <header class="ed-cover-frame">
-      <p class="ed-fd-kicker">koopa0.dev / knowledge engine</p>
-      <p class="ed-cover-edition">
-        @if (showCount()) {
-          <span>{{ pieceCount() }} pieces</span>
-        }
-        @if (showCount() && lead()?.published_at) {
-          <span class="sep" aria-hidden="true">·</span>
-        }
-        @if (lead()?.published_at; as published) {
-          <span>latest {{ published | date: 'MMM yyyy' : 'UTC' }}</span>
-        }
-      </p>
-    </header>
+<section class="ed-cover-page">
+  <div class="ed-wrap">
+    <div class="ed-col-cover">
+      <!-- The thesis is the cover's image: an oversized left-anchored serif
+           statement, its right edge a deliberate compositional void. -->
+      <h1 class="ed-statement ed-rise ed-rise-1">{{ statement }}</h1>
 
-    <!-- THE STATEMENT — the cover's image. Oversized serif, left-anchored,
-         capped to ~15ch so its right side is a deliberate compositional void. -->
-    <h1 class="ed-cover-stmt">{{ statement }}</h1>
+      <!-- The one signature: a single mended seam (kintsugi). Unlabeled. -->
+      <div class="ed-seam ed-rise ed-rise-2" role="presentation"></div>
 
-    <!-- THE FOLD — one full-width hairline cuts the cover like a broadsheet -->
-    <div class="ed-fd-rule"></div>
-
-    <!-- ASYMMETRIC GRID — serif major (the read) | mono minor (the index) -->
-    <div class="ed-cover-grid">
-      <div class="ed-cover-major min-h-[18rem]">
-        <!-- The Lead — the one privileged piece -->
-        @if (lead(); as l) {
-          <a
-            class="ed-fd-lead"
-            [routerLink]="'/articles/' + l.slug"
-            data-testid="home-lead"
-          >
-            <p class="ed-fd-label">Lead</p>
-            <span class="ed-fd-lead-meta" aria-hidden="true">
-              <span
-                class="dot"
-                [style.background]="'var(--dot-' + l.type + ', var(--fg-faint))'"
-              ></span>
-              <span class="type">{{ l.type }}</span>
-              @if (l.published_at) {
-                <span>· {{ l.published_at | date: 'MMM d, yyyy' : 'UTC' }}</span>
-              }
-              <span>· {{ l.reading_time_min }} min</span>
-            </span>
-            <h2 class="ed-fd-lead-title">{{ l.title }}</h2>
-            @if (l.excerpt) {
-              <p class="ed-fd-lead-dek">{{ l.excerpt }}</p>
+      @if (lead(); as l) {
+        <a
+          class="ed-lead-piece ed-rise ed-rise-3"
+          [routerLink]="'/articles/' + l.slug"
+          data-testid="home-lead"
+        >
+          <span class="ed-metaline" aria-hidden="true">
+            <span
+              class="ed-dot"
+              [style.background]="'var(--dot-' + l.type + ', var(--fg-faint))'"
+            ></span>
+            <span>{{ l.type }}</span>
+            @if (l.published_at) {
+              <span>· {{ l.published_at | date: 'MMM yyyy' : 'UTC' }}</span>
             }
-            <span class="ed-fd-all">Read →</span>
-          </a>
-        }
+            @if (l.reading_time_min) {
+              <span>· {{ l.reading_time_min }} min</span>
+            }
+          </span>
+          <h2 class="ed-lead-title">{{ l.title }}</h2>
+          @if (l.excerpt) {
+            <p class="ed-lead-dek">{{ l.excerpt }}</p>
+          }
+        </a>
 
-        <!-- More recent — hairline list, the quiet breadth under the Lead -->
-        <section class="ed-fd-recent-band">
-          <p class="ed-fd-label">More recent</p>
-          <div class="ed-fd-recent">
+        <!-- The quiet breadth under the lead, present once a corpus exists. -->
+        @if (more().length) {
+          <div class="ed-recent ed-rise ed-rise-4">
             @for (p of more(); track p.id) {
               <a
-                class="ed-fd-rec"
+                class="ed-rowline"
                 [routerLink]="'/articles/' + p.slug"
                 data-testid="home-rec"
               >
-                <span class="t">{{ p.title }}</span>
-                <span class="m">
+                <span class="when">
                   @if (p.published_at) {
                     {{ p.published_at | date: 'MMM yyyy' : 'UTC' }}
                   }
                 </span>
+                <span class="ttl">{{ p.title }}</span>
               </a>
-            } @empty {
-              @if (loadError()) {
-                <p class="ed-fd-rec" data-testid="recent-error">
-                  <span class="t">Couldn't load recent posts.</span>
-                  <button
-                    type="button"
-                    class="ml-2 underline hover:text-fg"
-                    (click)="contentsResource.reload()"
-                    data-testid="recent-retry"
-                  >
-                    Try again
-                  </button>
-                </p>
-              } @else if (!loading()) {
-                <p class="ed-fd-rec" data-testid="recent-empty">
-                  <span class="t">Nothing published yet.</span>
-                </p>
-              }
             }
           </div>
-        </section>
-      </div>
-
-      <aside class="ed-cover-minor">
-        <!-- Topic index — the brand's organizing axis. Cold-start guarded:
-             only appears once the corpus is non-trivial (counts won't lie). -->
-        @if (showTopicIndex()) {
-          <p class="ed-fd-label">By topic</p>
-          <nav class="ed-cover-topics" aria-label="Topics">
-            @for (t of coverTopics(); track t.id) {
-              <a
-                class="ed-cover-topic"
-                [routerLink]="['/topics', t.slug]"
-                data-testid="home-topic"
-              >
-                <span class="t">{{ t.name }}</span>
-                <span class="n">{{ t.content_count }}</span>
-              </a>
-            }
-          </nav>
         }
-        <a class="ed-fd-all" routerLink="/articles" data-testid="read-everything">
-          All writing →
-        </a>
-      </aside>
+      } @else {
+        @if (loadError()) {
+          <p class="ed-emptyline" data-testid="recent-error">
+            Couldn't load the latest writing.
+            <button
+              type="button"
+              class="ed-retry"
+              (click)="contentsResource.reload()"
+              data-testid="recent-retry"
+            >
+              Try again
+            </button>
+          </p>
+        } @else if (!loading()) {
+          <p class="ed-emptyline" data-testid="recent-empty">
+            Nothing published yet.
+          </p>
+        }
+      }
+
+      <!-- Topic index — the thematic axis. Cold-start guarded: only appears
+           once the corpus is non-trivial (counts won't lie). -->
+      @if (showTopicIndex()) {
+        <nav class="ed-topics ed-rise ed-rise-5" aria-label="Topics">
+          <span class="lead">topics</span>
+          @for (t of coverTopics(); track t.id) {
+            <a
+              class="ed-topic-link"
+              [routerLink]="['/topics', t.slug]"
+              data-testid="home-topic"
+              >{{ t.name }}</a
+            >
+          }
+        </nav>
+      }
+
+      <a
+        class="ed-all ed-rise ed-rise-6"
+        routerLink="/articles"
+        data-testid="read-everything"
+        >all writing →</a
+      >
     </div>
   </div>
 </section>

@@ -12,26 +12,7 @@ import { provideRouter } from '@angular/router';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { Title } from '@angular/platform-browser';
 import { ArticlesComponent } from './articles';
-import type {
-  ApiContent,
-  ApiPaginationMeta,
-  ApiTopic,
-} from '../../core/models';
-
-function buildMockTopic(overrides: Partial<ApiTopic> = {}): ApiTopic {
-  return {
-    id: 'topic-1',
-    slug: 'go',
-    name: 'Go',
-    description: 'Go programming',
-    icon: '',
-    content_count: 1,
-    sort_order: 1,
-    created_at: '2026-01-01T00:00:00Z',
-    updated_at: '2026-01-01T00:00:00Z',
-    ...overrides,
-  };
-}
+import type { ApiContent, ApiPaginationMeta } from '../../core/models';
 
 function buildMockContent(overrides: Partial<ApiContent> = {}): ApiContent {
   return {
@@ -42,7 +23,7 @@ function buildMockContent(overrides: Partial<ApiContent> = {}): ApiContent {
     body: '',
     type: 'article',
     status: 'published',
-    topics: [buildMockTopic()],
+    topics: [],
     cover_image: null,
     series_id: null,
     series_order: null,
@@ -108,13 +89,6 @@ describe('ArticlesComponent', () => {
     fixture.detectChanges();
   }
 
-  function flushTopics(topics: ApiTopic[] = [buildMockTopic()]): void {
-    const req = httpTesting.expectOne(
-      (r) => r.url.includes('/api/topics') && r.method === 'GET',
-    );
-    req.flush({ data: topics });
-  }
-
   function flushContents(
     contents: ApiContent[],
     meta: ApiPaginationMeta = buildMockMeta({ total: contents.length }),
@@ -128,19 +102,26 @@ describe('ArticlesComponent', () => {
   it('should create', async () => {
     await settle();
     flushContents([]);
-    flushTopics();
     expect(component).toBeTruthy();
   });
 
   it('should set the plural archive SEO title', async () => {
     await settle();
     flushContents([]);
-    flushTopics();
 
     expect(TestBed.inject(Title).getTitle()).toContain('Articles |');
   });
 
-  it('should render rows for every written content type when loaded', async () => {
+  it('should render the archive page title', async () => {
+    await settle();
+    flushContents([]);
+    await settle();
+
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.textContent).toContain("Everything I've written down.");
+  });
+
+  it('should render a spine entry for every written content type when loaded', async () => {
     await settle();
     flushContents([
       buildMockContent({ id: '1', title: 'An Article', type: 'article' }),
@@ -149,12 +130,11 @@ describe('ArticlesComponent', () => {
       buildMockContent({ id: '4', title: 'A TIL', type: 'til' }),
       buildMockContent({ id: '5', title: 'A Digest', type: 'digest' }),
     ]);
-    flushTopics();
     await settle();
     await renderList();
 
     const el = fixture.nativeElement as HTMLElement;
-    const rows = el.querySelectorAll('[data-testid="index-row"]');
+    const rows = el.querySelectorAll('.ed-entry');
     expect(rows.length).toBe(5);
     expect(el.textContent).toContain('An Essay');
     expect(el.textContent).toContain('A Build Log');
@@ -174,7 +154,6 @@ describe('ArticlesComponent', () => {
         published_at: '2025-03-01T00:00:00Z',
       }),
     ]);
-    flushTopics();
     await settle();
     await renderList();
 
@@ -185,39 +164,17 @@ describe('ArticlesComponent', () => {
     ).map((h) => h.textContent?.replace(/\s+/g, ' ').trim());
     expect(heads.length).toBe(2);
     expect(heads[0]).toContain('2026'); // newest year first
-    expect(heads[0]).toContain('(1)');
     expect(heads[1]).toContain('2025');
-  });
-
-  it('should only render topic chips for topics with published content', async () => {
-    await settle();
-    flushContents([buildMockContent()]);
-    flushTopics([
-      buildMockTopic({ id: 't1', slug: 'go', name: 'Go', content_count: 2 }),
-      buildMockTopic({ id: 't2', slug: 'empty', name: 'Empty', content_count: 0 }),
-    ]);
-    await settle();
-
-    const el = fixture.nativeElement as HTMLElement;
-    const labels = Array.from(
-      el.querySelectorAll('[data-testid="topic-chip"]'),
-    ).map((c) => c.textContent?.trim());
-    expect(labels).toContain('Go');
-    expect(labels).not.toContain('Empty');
   });
 
   it('should link every row to the single reading surface at /articles/:slug', async () => {
     await settle();
-    flushContents([
-      buildMockContent({ id: '1', slug: 'my-til', type: 'til' }),
-    ]);
-    flushTopics();
+    flushContents([buildMockContent({ id: '1', slug: 'my-til', type: 'til' })]);
     await settle();
-
     await renderList();
 
     const row = (fixture.nativeElement as HTMLElement).querySelector(
-      '[data-testid="index-row"]',
+      '.ed-entry',
     );
     expect(row?.getAttribute('href')).toBe('/articles/my-til');
   });
@@ -231,7 +188,6 @@ describe('ArticlesComponent', () => {
     );
     expect(req.request.params.get('type')).toBe('til');
     req.flush({ data: [], meta: buildMockMeta({ total: 0 }) });
-    flushTopics();
   });
 
   it('should ignore an unknown type query param', async () => {
@@ -243,48 +199,18 @@ describe('ArticlesComponent', () => {
     );
     expect(req.request.params.has('type')).toBe(false);
     req.flush({ data: [], meta: buildMockMeta({ total: 0 }) });
-    flushTopics();
-  });
-
-  it('should filter rows client-side when a topic chip is selected', async () => {
-    await settle();
-    flushContents([
-      buildMockContent({
-        id: '1',
-        title: 'Go piece',
-        topics: [buildMockTopic({ slug: 'go', name: 'Go' })],
-      }),
-      buildMockContent({
-        id: '2',
-        title: 'Angular piece',
-        topics: [buildMockTopic({ id: 't2', slug: 'angular', name: 'Angular' })],
-      }),
-    ]);
-    flushTopics([
-      buildMockTopic({ slug: 'go', name: 'Go' }),
-      buildMockTopic({ id: 't2', slug: 'angular', name: 'Angular' }),
-    ]);
-    await settle();
-
-    component['selectTopic']('go');
-    await settle();
-    await renderList();
-
-    const el = fixture.nativeElement as HTMLElement;
-    const rows = el.querySelectorAll('[data-testid="index-row"]');
-    expect(rows.length).toBe(1);
-    expect(el.textContent).toContain('Go piece');
-    expect(el.textContent).not.toContain('Angular piece');
   });
 
   it('should show the empty state when no contents are returned', async () => {
     await settle();
     flushContents([]);
-    flushTopics();
     await settle();
     await renderList();
 
     const el = fixture.nativeElement as HTMLElement;
+    expect(
+      el.querySelector('[data-testid="articles-empty"]'),
+    ).not.toBeNull();
     expect(el.textContent).toContain('Nothing here yet');
   });
 
@@ -298,29 +224,39 @@ describe('ArticlesComponent', () => {
       status: 500,
       statusText: 'Internal Server Error',
     });
-    flushTopics();
     await settle();
-
     await renderList();
 
     const el = fixture.nativeElement as HTMLElement;
     // A failed index surfaces a distinct error state — not the empty state.
     expect(el.querySelector('[data-testid="articles-error"]')).not.toBeNull();
-    expect(el.textContent).toContain('Could not load the index');
+    expect(el.querySelector('[data-testid="articles-retry"]')).not.toBeNull();
+    expect(el.textContent).toContain("Couldn't load the index");
     expect(el.textContent).not.toContain('Nothing here yet');
   });
 
-  it('should render the hero lead and topic chips', async () => {
+  it('should hide pagination when there is only one page', async () => {
     await settle();
-    flushContents([]);
-    flushTopics([buildMockTopic({ slug: 'go', name: 'Go' })]);
+    flushContents([buildMockContent()], buildMockMeta({ total_pages: 1 }));
     await settle();
+    await renderList();
 
     const el = fixture.nativeElement as HTMLElement;
-    expect(el.textContent).toContain("Everything I've written down.");
-    expect(
-      el.querySelector('[data-testid="topic-chip-all"]'),
-    ).toBeTruthy();
-    expect(el.querySelectorAll('[data-testid="topic-chip"]').length).toBe(1);
+    expect(el.querySelector('nav[aria-label="Pagination"]')).toBeNull();
+  });
+
+  it('should show pagination when there are multiple pages', async () => {
+    await settle();
+    flushContents(
+      [buildMockContent()],
+      buildMockMeta({ total: 120, total_pages: 3 }),
+    );
+    await settle();
+    await renderList();
+
+    const el = fixture.nativeElement as HTMLElement;
+    const pager = el.querySelector('nav[aria-label="Pagination"]');
+    expect(pager).not.toBeNull();
+    expect(pager?.textContent).toContain('1 / 3');
   });
 });

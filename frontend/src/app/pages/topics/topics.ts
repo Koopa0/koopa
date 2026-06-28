@@ -8,7 +8,6 @@ import {
 } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
-import { LucideAngularModule, Layers } from 'lucide-angular';
 import { environment } from '../../../environments/environment';
 import { TopicService } from '../../core/services/topic.service';
 import { SeoService } from '../../core/services/seo/seo.service';
@@ -17,7 +16,7 @@ import type { ApiTopic } from '../../core/models';
 
 @Component({
   selector: 'app-topics',
-  imports: [RouterLink, LucideAngularModule],
+  imports: [RouterLink],
   templateUrl: './topics.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
@@ -29,8 +28,6 @@ export class TopicsComponent implements OnInit {
   protected readonly topics = signal<ApiTopic[]>([]);
   protected readonly isLoading = signal(true);
   protected readonly error = signal<string | null>(null);
-
-  protected readonly LayersIcon = Layers;
 
   ngOnInit(): void {
     this.seoService.updateMeta({

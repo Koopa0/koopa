@@ -1,13 +1,8 @@
 import {
   Component,
   ChangeDetectionStrategy,
-  DestroyRef,
-  ElementRef,
   OnInit,
-  afterNextRender,
   inject,
-  viewChild,
-  viewChildren,
 } from '@angular/core';
 import { LucideAngularModule, Github, Linkedin, Mail } from 'lucide-angular';
 import { SeoService } from '../../core/services/seo/seo.service';
@@ -27,16 +22,15 @@ interface LinkRow extends DefRow {
 }
 
 /**
- * About — the colophon. A single serif column: statement + prose + pull + a
- * dated NOW + two definition lists (Elsewhere, Colophon) + a signature. Reads
- * at the weight of a written piece.
+ * About — the colophon. A single centered serif reading column: a statement, one
+ * kintsugi seam, three prose paragraphs, an italic pull line, a dated NOW block
+ * (with a quiet breathing pip), a mono colophon <dl> + signature, and a tiny mono
+ * "elsewhere" links row. Reads at the weight of a written piece.
  *
- * The "alive" layer is progressive enhancement, browser-only via afterNextRender:
- * each block scroll-reveals as it enters view, gated by the `.ed-about-anim`
- * class (added here, in the browser) so under SSR / no-JS the content is fully
- * visible and never hidden by CSS alone. Above-fold blocks reveal synchronously
- * in the same frame, so there is no hide-then-show flash. Honored at the source
- * for reduced-motion users.
+ * The load-in is pure CSS: every block carries the shared `.ed-rise` orchestration
+ * class, whose keyframes live behind `prefers-reduced-motion: no-preference`. So
+ * the SSR / no-JS / reduced-motion state is the fully-visible content — nothing is
+ * ever hidden by CSS alone, and there is no JavaScript reveal or IntersectionObserver.
  */
 @Component({
   selector: 'app-about',
@@ -46,12 +40,6 @@ interface LinkRow extends DefRow {
 })
 export class AboutComponent implements OnInit {
   private readonly seoService = inject(SeoService);
-  private readonly destroyRef = inject(DestroyRef);
-
-  /** The column — gets `.ed-about-anim` only in the browser. */
-  private readonly column = viewChild.required<ElementRef<HTMLElement>>('column');
-  /** The labelled blocks (reveal targets). */
-  private readonly blocks = viewChildren<ElementRef<HTMLElement>>('block');
 
   protected readonly GithubIcon = Github;
   protected readonly LinkedinIcon = Linkedin;
@@ -97,54 +85,6 @@ export class AboutComponent implements OnInit {
       kind: 'email',
     },
   ];
-
-  constructor() {
-    afterNextRender(() => {
-      // Progressive enhancement only. afterNextRender is browser-only (SSR never
-      // reaches here); we also bail where IntersectionObserver is unavailable or
-      // the user prefers reduced motion, so the content always renders fully.
-      if (typeof IntersectionObserver === 'undefined') {
-        return;
-      }
-      const reduced =
-        typeof window.matchMedia === 'function' &&
-        window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-      if (reduced) {
-        return;
-      }
-
-      this.column().nativeElement.classList.add('ed-about-anim');
-      const elements = this.blocks().map((b) => b.nativeElement);
-
-      // Reveal whatever is already on screen in this frame — no hidden flash.
-      const fold = window.innerHeight * 0.9;
-      for (const el of elements) {
-        if (el.getBoundingClientRect().top < fold) {
-          el.classList.add('is-in');
-        }
-      }
-
-      // Reveal the rest as they scroll into view (once each).
-      const reveal = new IntersectionObserver(
-        (entries) => {
-          for (const entry of entries) {
-            if (entry.isIntersecting) {
-              entry.target.classList.add('is-in');
-              reveal.unobserve(entry.target);
-            }
-          }
-        },
-        { rootMargin: '0px 0px -10% 0px' },
-      );
-      for (const el of elements) {
-        if (!el.classList.contains('is-in')) {
-          reveal.observe(el);
-        }
-      }
-
-      this.destroyRef.onDestroy(() => reveal.disconnect());
-    });
-  }
 
   ngOnInit(): void {
     this.seoService.updateMeta({

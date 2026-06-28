@@ -2,16 +2,38 @@
 <html lang="zh-TW" data-theme="dark">
   <head>
     <meta charset="utf-8" />
-    <!-- Apply the persisted theme before first paint. SSR always emits the
-         dark default on <html>; this flips to light synchronously when the
-         visitor previously chose it, so there is no flash of wrong theme. -->
+    <!-- Default paper theme-color; the pre-paint script below flips it (and the
+         class / root surface) to the dark twin synchronously when persisted, so
+         even the mobile address bar never flashes. Placed before the script so
+         it exists when the script updates it. -->
+    <meta name="theme-color" content="#edeae2" />
+    <!-- Apply the persisted PUBLIC theme before first paint. The public site
+         (.ed) defaults to warm paper; this adds `public-dark` synchronously when
+         the visitor previously chose the dark twin, so SSR hydration never
+         flashes. It also sets the ROOT color-scheme + background for the public
+         surface so the viewport scrollbar and overscroll match the paper (admin
+         paths keep the global oklch-dark root). -->
     <script>
       try {
-        if (localStorage.getItem('koopa-theme') === 'light') {
-          document.documentElement.setAttribute('data-theme', 'light');
+        var html = document.documentElement;
+        var admin = location.pathname.indexOf('/admin') === 0;
+        var dark =
+          !admin && localStorage.getItem('koopa-public-theme') === 'dark';
+        if (dark) {
+          html.classList.add('public-dark');
+        }
+        if (!admin) {
+          html.style.colorScheme = dark ? 'dark' : 'light';
+          html.style.background = dark ? '#14130f' : '#edeae2';
+          if (dark) {
+            var tc = document.querySelector('meta[name="theme-color"]');
+            if (tc) {
+              tc.setAttribute('content', '#14130f');
+            }
+          }
         }
       } catch (e) {
-        /* storage unavailable — keep the dark default */
+        /* storage unavailable — keep the paper default */
       }
     </script>
     <title>Koopa | Software Engineer</title>
@@ -45,14 +67,10 @@
       title="Koopa's Blog RSS Feed"
       href="https://koopa0.dev/feed.xml"
     />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Serif:ital,wght@0,400;0,500;0,600;1,400;1,500&family=JetBrains+Mono:wght@400;500&display=swap"
-      rel="stylesheet"
-    />
+    <!-- Fonts are self-hosted via @fontsource-variable (imported in styles.css);
+         no Google Fonts round-trip. -->
   </head>
-  <body class="grain-overlay font-sans antialiased">
+  <body class="font-sans antialiased">
     <app-root></app-root>
   </body>
 </html>

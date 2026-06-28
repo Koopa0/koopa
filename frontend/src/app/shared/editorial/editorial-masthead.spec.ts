@@ -24,27 +24,26 @@ describe('EditorialMastheadComponent', () => {
     fixture = TestBed.createComponent(EditorialMastheadComponent);
   });
 
-  it('should render the wordmark and letterhead signature', async () => {
+  it('should render the serif wordmark', async () => {
     await fixture.whenStable();
     fixture.detectChanges();
 
     const el = fixture.nativeElement as HTMLElement;
     expect(el.querySelector('.ed-wordmark')?.textContent).toContain('koopa');
-    expect(el.textContent).toContain('written & maintained by one person');
   });
 
-  it('should mark Home active on the front-door route', async () => {
+  it('should mark "the work" active on the front-door route', async () => {
     await TestBed.inject(Router).navigateByUrl('/');
     await fixture.whenStable();
     fixture.detectChanges();
 
     const el = fixture.nativeElement as HTMLElement;
     const links = Array.from(el.querySelectorAll('.ed-nav a'));
-    // Home / Articles / About.
+    // the work / topics / about.
     expect(links.length).toBe(3);
-    const home = links.find((a) => a.textContent?.includes('Home'));
-    expect(home?.getAttribute('data-active')).toBe('true');
-    const articles = links.find((a) => a.textContent?.includes('Articles'));
-    expect(articles?.getAttribute('data-active')).toBe('false');
+    const work = links.find((a) => a.textContent?.includes('the work'));
+    expect(work?.getAttribute('data-active')).toBe('true');
+    const topics = links.find((a) => a.textContent?.includes('topics'));
+    expect(topics?.getAttribute('data-active')).toBe('false');
   });
 });

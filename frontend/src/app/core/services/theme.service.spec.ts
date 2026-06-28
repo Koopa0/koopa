@@ -42,6 +42,7 @@ describe('ThemeService', () => {
 
     beforeEach(() => {
       storage.clear();
+      document.documentElement.classList.remove('public-dark');
       TestBed.configureTestingModule({
         providers: [{ provide: PLATFORM_ID, useValue: 'browser' }],
       });
@@ -50,67 +51,72 @@ describe('ThemeService', () => {
 
     afterEach(() => {
       storage.clear();
-      document.documentElement.setAttribute('data-theme', 'dark');
+      document.documentElement.classList.remove('public-dark');
     });
 
     it('should be created', () => {
       expect(service).toBeTruthy();
     });
 
-    it('should default to dark mode when no choice is persisted', () => {
-      expect(service.theme()).toBe('dark');
-      expect(service.isDarkMode()).toBe(true);
-    });
-
-    it('should set data-theme attribute to dark by default', () => {
-      const theme = document.documentElement.getAttribute('data-theme');
-      expect(theme).toBe('dark');
-    });
-
-    it('should switch data-theme to light when setTheme is called', () => {
-      service.setTheme('light');
+    it('should default to paper (light) when no choice is persisted', () => {
       expect(service.theme()).toBe('light');
       expect(service.isDarkMode()).toBe(false);
-      expect(document.documentElement.getAttribute('data-theme')).toBe(
-        'light',
+    });
+
+    it('should leave public-dark off on the paper default', () => {
+      expect(document.documentElement.classList.contains('public-dark')).toBe(
+        false,
+      );
+    });
+
+    it('should add the public-dark class when setTheme(dark) is called', () => {
+      service.setTheme('dark');
+      expect(service.theme()).toBe('dark');
+      expect(service.isDarkMode()).toBe(true);
+      expect(document.documentElement.classList.contains('public-dark')).toBe(
+        true,
       );
     });
 
     it('should persist the choice to localStorage when toggled', () => {
       service.toggleTheme();
-      expect(service.theme()).toBe('light');
-      expect(storage.get('koopa-theme')).toBe('light');
+      expect(service.theme()).toBe('dark');
+      expect(storage.get('koopa-public-theme')).toBe('dark');
 
       service.toggleTheme();
-      expect(service.theme()).toBe('dark');
-      expect(storage.get('koopa-theme')).toBe('dark');
+      expect(service.theme()).toBe('light');
+      expect(storage.get('koopa-public-theme')).toBe('light');
+      expect(document.documentElement.classList.contains('public-dark')).toBe(
+        false,
+      );
     });
 
     it('should update the theme-color meta when the theme changes', () => {
-      service.setTheme('light');
-      const meta = document.querySelector('meta[name="theme-color"]');
-      expect(meta?.getAttribute('content')).toBe('#fbfaf8');
-
       service.setTheme('dark');
-      expect(meta?.getAttribute('content')).toBe('#141417');
+      const meta = document.querySelector('meta[name="theme-color"]');
+      expect(meta?.getAttribute('content')).toBe('#14130f');
+
+      service.setTheme('light');
+      expect(meta?.getAttribute('content')).toBe('#edeae2');
     });
   });
 
-  describe('with a persisted light choice', () => {
-    it('should restore light mode from localStorage', () => {
-      storage.set('koopa-theme', 'light');
+  describe('with a persisted dark choice', () => {
+    it('should restore the dark twin from localStorage', () => {
+      storage.set('koopa-public-theme', 'dark');
+      document.documentElement.classList.remove('public-dark');
       TestBed.configureTestingModule({
         providers: [{ provide: PLATFORM_ID, useValue: 'browser' }],
       });
       const service = TestBed.inject(ThemeService);
 
-      expect(service.theme()).toBe('light');
-      expect(document.documentElement.getAttribute('data-theme')).toBe(
-        'light',
+      expect(service.theme()).toBe('dark');
+      expect(document.documentElement.classList.contains('public-dark')).toBe(
+        true,
       );
 
       storage.clear();
-      document.documentElement.setAttribute('data-theme', 'dark');
+      document.documentElement.classList.remove('public-dark');
     });
   });
 
@@ -128,13 +134,13 @@ describe('ThemeService', () => {
       expect(service).toBeTruthy();
     });
 
-    it('should default to dark mode on server', () => {
-      expect(service.isDarkMode()).toBe(true);
+    it('should default to paper (light) on server', () => {
+      expect(service.isDarkMode()).toBe(false);
     });
 
     it('should not throw when setTheme is called on server', () => {
-      expect(() => service.setTheme('light')).not.toThrow();
-      expect(service.theme()).toBe('light');
+      expect(() => service.setTheme('dark')).not.toThrow();
+      expect(service.theme()).toBe('dark');
     });
   });
 });

@@ -13,12 +13,10 @@ import {
 import { isPlatformBrowser, DatePipe } from '@angular/common';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
-import { LucideAngularModule, Layers } from 'lucide-angular';
 import { environment } from '../../../environments/environment';
 import { TopicService } from '../../core/services/topic.service';
 import { SeoService } from '../../core/services/seo/seo.service';
 import { buildCollectionPageSchema } from '../../core/services/seo/json-ld.util';
-import { contentTypeLabelEn } from '../../core/models';
 import type {
   ApiTopic,
   ApiContent,
@@ -42,13 +40,14 @@ const CONTENT_TYPES: readonly ContentType[] = [
 ];
 
 /**
- * The topic page — topic hero (eyebrow with piece count, name,
- * description), type filter tabs over the types present in this topic,
- * and the same editorial list rows as the reading index.
+ * The topic page — a restrained header (topic name, one-line description,
+ * and a mono meta line carrying the piece count plus a dot per type
+ * present), then the type filter and the same left-biased date-spine
+ * timeline as the reading index.
  */
 @Component({
   selector: 'app-topic-detail',
-  imports: [RouterLink, LucideAngularModule, DatePipe],
+  imports: [RouterLink, DatePipe],
   templateUrl: './topic-detail.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
@@ -93,8 +92,6 @@ export class TopicDetailComponent implements OnInit {
     })).filter((entry) => entry.count > 0);
   });
 
-  protected readonly typeLabel = contentTypeLabelEn;
-
   protected readonly filteredContents = computed(() => {
     const type = this.selectedType();
     const all = this.contents();
@@ -102,8 +99,6 @@ export class TopicDetailComponent implements OnInit {
   });
 
   protected readonly totalPages = computed(() => this.meta()?.total_pages ?? 0);
-
-  protected readonly LayersIcon = Layers;
 
   ngOnInit(): void {
     this.loadTopicContents(this.slug(), 1);

@@ -56,7 +56,7 @@ describe('ThemeToggleComponent', () => {
 
   afterEach(() => {
     storage.clear();
-    document.documentElement.setAttribute('data-theme', 'dark');
+    document.documentElement.classList.remove('public-dark');
   });
 
   function toggleButton(): HTMLButtonElement {
@@ -75,9 +75,9 @@ describe('ThemeToggleComponent', () => {
     expect(button.disabled).toBe(false);
   });
 
-  it('should offer the light theme while dark is active', () => {
+  it('should offer the dark theme while paper is active', () => {
     expect(toggleButton().getAttribute('aria-label')).toBe(
-      'Switch to light theme',
+      'Switch to dark theme',
     );
   });
 
@@ -85,14 +85,14 @@ describe('ThemeToggleComponent', () => {
     toggleButton().click();
     fixture.detectChanges();
 
-    expect(themeService.theme()).toBe('light');
+    expect(themeService.theme()).toBe('dark');
     expect(toggleButton().getAttribute('aria-label')).toBe(
-      'Switch to dark theme',
+      'Switch to light theme',
     );
 
     toggleButton().click();
     fixture.detectChanges();
 
-    expect(themeService.theme()).toBe('dark');
+    expect(themeService.theme()).toBe('light');
   });
 });

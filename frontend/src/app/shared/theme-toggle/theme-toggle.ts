@@ -3,9 +3,9 @@ import { LucideAngularModule, Sun, Moon } from 'lucide-angular';
 import { ThemeService } from '../../core/services/theme.service';
 
 /**
- * ThemeToggle — flips between the dark (default) and light (warm-paper)
- * themes via ThemeService. Shows a sun while dark and a moon while light,
- * matching the action the click performs.
+ * ThemeToggle — flips the public site between warm paper (default) and its
+ * dark twin via ThemeService. Shows a moon while on paper (the click switches
+ * to dark) and a sun while dark, matching the action the click performs.
  */
 @Component({
   selector: 'app-theme-toggle',

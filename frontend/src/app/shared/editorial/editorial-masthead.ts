@@ -9,6 +9,7 @@ import {
   RouterLink,
   NavigationEnd,
 } from '@angular/router';
+import { NgOptimizedImage } from '@angular/common';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { filter, map } from 'rxjs';
 import { LucideAngularModule, LayoutDashboard, LogOut } from 'lucide-angular';
@@ -16,15 +17,14 @@ import { AuthService } from '../../core/services/auth.service';
 import { ThemeToggleComponent } from '../theme-toggle/theme-toggle';
 
 /**
- * The public masthead — the Tone B letterhead. Serif wordmark over a mono
- * "written & maintained by one person" subline (the serif=human /
- * mono=machine signature), the Home / Articles / About nav links, a ⌘K search
- * button wired to the command palette, and the theme toggle. Admin / sign-out
+ * The public masthead — the serif wordmark beside the koopa mark, a segmented
+ * mono pill nav across the site's two organizing axes (the work = by time,
+ * topics = by theme) plus about, and the theme toggle. Admin / sign-out
  * controls surface only for the authenticated owner.
  */
 @Component({
   selector: 'app-editorial-masthead',
-  imports: [RouterLink, LucideAngularModule, ThemeToggleComponent],
+  imports: [RouterLink, NgOptimizedImage, LucideAngularModule, ThemeToggleComponent],
   templateUrl: './editorial-masthead.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
@@ -39,14 +39,16 @@ export class EditorialMastheadComponent {
 
   private readonly currentPath = computed(() => this.currentUrl().split('?')[0]);
 
-  /** Home is the front door only — the exact root path. */
-  protected readonly homeActive = computed(() => this.currentPath() === '/');
-
-  /** Articles spans the reading index, topic pages, and per-piece pages. */
-  protected readonly articlesActive = computed(() => {
+  /** "the work" — the chronological axis: the front door and every piece. */
+  protected readonly theWorkActive = computed(() => {
     const path = this.currentPath();
-    return path.startsWith('/articles') || path.startsWith('/topics');
+    return path === '/' || path.startsWith('/articles');
   });
+
+  /** "topics" — the thematic axis: the index and per-topic pages. */
+  protected readonly topicsActive = computed(() =>
+    this.currentPath().startsWith('/topics'),
+  );
 
   protected readonly aboutActive = computed(() =>
     this.currentPath().startsWith('/about'),

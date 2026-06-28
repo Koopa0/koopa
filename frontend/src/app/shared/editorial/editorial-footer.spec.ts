@@ -15,9 +15,9 @@ describe('EditorialFooterComponent', () => {
     fixture.detectChanges();
   });
 
-  it('should render the colophon line and the copyright', () => {
+  it('should render the wordmark and the copyright', () => {
     const el = fixture.nativeElement as HTMLElement;
-    expect(el.textContent).toContain('the published tip of a larger system');
+    expect(el.textContent).toContain('koopa0.dev');
     expect(el.textContent).toContain('© 2026');
   });
 

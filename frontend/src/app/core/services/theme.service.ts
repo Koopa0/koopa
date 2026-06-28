@@ -7,24 +7,26 @@ import {
 } from '@angular/core';
 import { isPlatformBrowser } from '@angular/common';
 
+/** Public surface theme: 'light' is the warm-paper default, 'dark' its twin. */
 export type Theme = 'dark' | 'light';
 
-const THEME_STORAGE_KEY = 'koopa-theme';
+const THEME_STORAGE_KEY = 'koopa-public-theme';
 
-/** Browser theme-color values approximating the DS --bg surface per theme. */
+/** Browser theme-color values approximating the public --bg surface per theme. */
 const THEME_COLOR: Record<Theme, string> = {
-  dark: '#141417',
-  light: '#fbfaf8',
+  dark: '#14130f',
+  light: '#edeae2',
 };
 
 /**
- * ThemeService — dark (default) / light theme switching.
+ * ThemeService — the PUBLIC site's warm-paper (default) / dark twin switch.
  *
- * The choice is persisted to localStorage and applied as `data-theme` on
- * `<html>`, which drives the DS token swap in styles.css. An inline script
- * in index.html applies the persisted choice before first paint so SSR
- * hydration never flashes the wrong theme; this service takes over from
- * there for runtime toggling.
+ * The public palette is scoped to `.ed` / `.ed-theme` (see editorial.css), so
+ * the admin surface keeps its own global oklch-dark tokens and is never touched
+ * by this toggle. The dark twin is applied as the `public-dark` class on
+ * `<html>`; an inline script in index.html applies the persisted choice before
+ * first paint (admin paths are forced dark there too) so SSR hydration never
+ * flashes the wrong theme. This service takes over for runtime toggling.
  */
 @Injectable({
   providedIn: 'root',
@@ -63,19 +65,19 @@ export class ThemeService {
 
   private readInitialTheme(): Theme {
     if (!isPlatformBrowser(this.platformId)) {
-      return 'dark';
+      return 'light';
     }
     try {
-      return localStorage.getItem(THEME_STORAGE_KEY) === 'light'
-        ? 'light'
-        : 'dark';
+      return localStorage.getItem(THEME_STORAGE_KEY) === 'dark'
+        ? 'dark'
+        : 'light';
     } catch {
-      return 'dark';
+      return 'light';
     }
   }
 
   private applyTheme(theme: Theme): void {
-    document.documentElement.setAttribute('data-theme', theme);
+    document.documentElement.classList.toggle('public-dark', theme === 'dark');
 
     const color = THEME_COLOR[theme];
     const themeColorMeta = document.querySelector('meta[name="theme-color"]');

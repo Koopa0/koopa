@@ -2,6 +2,7 @@ import {
   Component,
   ChangeDetectionStrategy,
   computed,
+  effect,
   inject,
   PLATFORM_ID,
   afterNextRender,
@@ -16,6 +17,7 @@ import { ToastComponent } from './shared/toast/toast.component';
 import { EditorialMastheadComponent } from './shared/editorial/editorial-masthead';
 import { EditorialFooterComponent } from './shared/editorial/editorial-footer';
 import { KeyboardShortcutsService } from './core/services/keyboard-shortcuts.service';
+import { ThemeService } from './core/services/theme.service';
 
 /**
  * The application shell — picks the chrome for the current route. The public
@@ -42,6 +44,7 @@ export class AppComponent {
   private readonly router = inject(Router);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly keyboardShortcuts = inject(KeyboardShortcutsService);
+  private readonly themeService = inject(ThemeService);
 
   private readonly currentUrl = toSignal(
     this.router.events.pipe(
@@ -79,6 +82,25 @@ export class AppComponent {
   );
 
   constructor() {
+    // Keep the ROOT color-scheme + background in sync with the public surface so
+    // the viewport scrollbar and overscroll gutter match the page (the .ed paper
+    // tokens don't reach the root). Admin keeps the global oklch-dark root.
+    effect(() => {
+      if (!isPlatformBrowser(this.platformId)) {
+        return;
+      }
+      const root = document.documentElement;
+      if (this.isPublicSite()) {
+        const dark = this.themeService.isDarkMode();
+        root.style.colorScheme = dark ? 'dark' : 'light';
+        root.style.background = dark ? '#14130f' : '#edeae2';
+      } else {
+        // Hand the root back to the admin/global dark tokens.
+        root.style.removeProperty('color-scheme');
+        root.style.removeProperty('background');
+      }
+    });
+
     afterNextRender(() => {
       this.keyboardShortcuts.init();
     });

@@ -1,156 +1,98 @@
-<section class="ed-main pb-20">
-  <div class="mx-auto max-w-(--ed-shell)">
-    <!-- Hero — brand editorial grammar (matches the article-detail surface). -->
-    <header class="ed-topic-head">
-      <p class="ed-topic-kicker">Archive</p>
-      <h1 class="ed-topic-name">Everything I've written down.</h1>
-      <p class="ed-topic-desc">
-        Articles, essays, build logs, TILs, and digests — filter by topic or
-        by type.
-      </p>
-    </header>
+<section class="ed-archive-page">
+  <div class="ed-wrap">
+    <div class="ed-col-archive">
+      <h1 class="ed-page-title ed-rise ed-rise-1">Everything I've written down.</h1>
+      <div class="ed-seam ed-rise ed-rise-2" role="presentation"></div>
 
-    <!-- Topic filter chips -->
-    <div
-      class="mt-8 mb-2 flex flex-wrap items-center gap-2 border-b border-border pb-4"
-      role="group"
-      aria-label="Filter by topic"
-    >
-      <button
-        type="button"
-        class="rounded-xs border px-3 py-1 font-mono text-xs transition-colors"
-        [class.bg-brand-muted]="topicFilter() === 'all'"
-        [class.text-brand]="topicFilter() === 'all'"
-        [class.border-transparent]="topicFilter() === 'all'"
-        [class.border-border]="topicFilter() !== 'all'"
-        [class.text-fg-subtle]="topicFilter() !== 'all'"
-        [class.hover:text-fg]="topicFilter() !== 'all'"
-        [class.hover:border-border-strong]="topicFilter() !== 'all'"
-        [attr.aria-pressed]="topicFilter() === 'all'"
-        (click)="selectTopic('all')"
-        data-testid="topic-chip-all"
+      <div
+        class="ed-filter ed-rise ed-rise-3"
+        role="group"
+        aria-label="Filter by type"
       >
-        All
-      </button>
-      @for (topic of topics(); track topic.slug) {
         <button
           type="button"
-          class="rounded-xs border px-3 py-1 font-mono text-xs transition-colors"
-          [class.bg-brand-muted]="topicFilter() === topic.slug"
-          [class.text-brand]="topicFilter() === topic.slug"
-          [class.border-transparent]="topicFilter() === topic.slug"
-          [class.border-border]="topicFilter() !== topic.slug"
-          [class.text-fg-subtle]="topicFilter() !== topic.slug"
-          [class.hover:text-fg]="topicFilter() !== topic.slug"
-          [class.hover:border-border-strong]="topicFilter() !== topic.slug"
-          [attr.aria-pressed]="topicFilter() === topic.slug"
-          (click)="selectTopic(topic.slug)"
-          data-testid="topic-chip"
+          class="ed-ftog"
+          [attr.aria-pressed]="!typeFilter()"
+          (click)="setType(undefined)"
         >
-          {{ topic.name }}
+          all
         </button>
-      }
-
-      @if (typeFilter(); as activeType) {
-        <button
-          type="button"
-          class="ml-auto flex items-center gap-1.5 rounded-xs bg-brand-muted px-3 py-1 font-mono text-xs text-brand transition-colors hover:bg-overlay"
-          (click)="clearTypeFilter()"
-          [attr.aria-label]="'Clear ' + activeType + ' filter'"
-          data-testid="type-filter-clear"
-        >
-          {{ activeType }}
-          <lucide-icon [img]="XIcon" [size]="12" />
-        </button>
-      }
-    </div>
-
-    <!-- Editorial list — deferred so the server-rendered cards stay painted
-         through hydration (no skeleton flash on first load). -->
-    @defer (on immediate; hydrate on idle) {
-      @if (isLoading()) {
-        <!-- Quiet reserved space — no pulsing skeleton; the list fades in. -->
-        <div class="min-h-[50vh]"></div>
-      } @else if (loadError()) {
-        <div
-          class="flex flex-col items-center gap-4 py-20 text-center"
-          data-testid="articles-error"
-        >
-          <lucide-icon [img]="AlertIcon" [size]="40" class="text-fg-faint" />
-          <h2 class="text-lg font-medium text-fg-muted">
-            Could not load the index
-          </h2>
-          <p class="text-sm text-fg-faint">
-            Something went wrong fetching the archive.
-          </p>
+        @for (t of contentTypes; track t) {
           <button
             type="button"
-            class="mt-1 flex items-center gap-1.5 rounded-xs border border-border px-3 py-1.5 font-mono text-xs text-fg-subtle transition-colors hover:border-border-strong hover:text-fg"
-            (click)="contentsResource.reload()"
-            data-testid="articles-retry"
+            class="ed-ftog"
+            [attr.aria-pressed]="typeFilter() === t"
+            (click)="setType(t)"
           >
-            <lucide-icon [img]="RetryIcon" [size]="13" />
-            Try again
+            <span class="ed-dot" [style.background]="'var(--dot-' + t + ')'"></span>{{ t }}
           </button>
-        </div>
-      } @else if (grouped().length > 0) {
-        @for (g of grouped(); track g.year) {
-          <div class="ed-year-head" data-testid="year-head">
-            <span class="ed-year-n">{{ g.year }}</span>
-            <span class="ed-year-c">({{ g.items.length }})</span>
-          </div>
-          <ul class="list-none p-0" [attr.aria-label]="g.year">
-            @for (content of g.items; track content.id) {
-              <li>
-                <app-post-row [content]="content" />
-              </li>
-            }
-          </ul>
         }
+      </div>
 
-        @if (totalPages() > 1) {
-          <nav
-            aria-label="Pagination"
-            class="mt-12 flex items-center justify-center gap-4 font-mono text-xs text-fg-subtle"
-          >
+      @defer (on immediate; hydrate on idle) {
+        @if (isLoading()) {
+          <div class="min-h-[50vh]"></div>
+        } @else if (loadError()) {
+          <p class="ed-feed-note" data-testid="articles-error">
+            Couldn't load the index.
             <button
               type="button"
-              class="rounded-xs border border-border px-3 py-1.5 transition-colors hover:border-border-strong hover:text-fg disabled:opacity-30"
-              [disabled]="page() === 1"
-              (click)="previousPage()"
+              class="ed-retry"
+              (click)="contentsResource.reload()"
+              data-testid="articles-retry"
             >
-              Newer
+              Try again
             </button>
-            <span class="text-fg-faint">{{ page() }} / {{ totalPages() }}</span>
-            <button
-              type="button"
-              class="rounded-xs border border-border px-3 py-1.5 transition-colors hover:border-border-strong hover:text-fg disabled:opacity-30"
-              [disabled]="page() === totalPages()"
-              (click)="nextPage()"
-            >
-              Older
-            </button>
-          </nav>
-        }
-      } @else {
-        <!-- Empty state — nothing published yet (load failure is handled above). -->
-        <div
-          class="flex flex-col items-center gap-4 py-20 text-center"
-          data-testid="articles-empty"
-        >
-          <lucide-icon [img]="FileTextIcon" [size]="40" class="text-fg-faint" />
-          <h2 class="text-lg font-medium text-fg-muted">Nothing here yet</h2>
-          <p class="text-sm text-fg-faint">
-            @if (topicFilter() !== 'all' || typeFilter()) {
-              Try a different topic, or clear the filters.
-            } @else {
-              Check back soon.
-            }
           </p>
-        </div>
+        } @else if (grouped().length > 0) {
+          <div class="ed-feed ed-rise ed-rise-4">
+            @for (g of grouped(); track g.year) {
+              <section class="ed-feed-year">
+                <h2 class="ed-feed-mark" data-testid="year-head">{{ g.year }}</h2>
+                @for (content of g.items; track content.id) {
+                  <a class="ed-entry" [routerLink]="'/articles/' + content.slug">
+                    <span class="ed-entry-date">
+                      @if (content.published_at) {
+                        {{ content.published_at | date: 'MMM d' : 'UTC' }}
+                      }
+                    </span>
+                    <span class="ed-entry-title">
+                      <span
+                        class="ed-dot"
+                        [style.background]="'var(--dot-' + content.type + ')'"
+                      ></span><span class="sr-only">{{ content.type }} — </span>{{ content.title }}
+                    </span>
+                  </a>
+                }
+              </section>
+            }
+          </div>
+
+          @if (totalPages() > 1) {
+            <nav class="ed-pager" aria-label="Pagination">
+              <button
+                type="button"
+                [disabled]="page() === 1"
+                (click)="previousPage()"
+              >
+                Newer
+              </button>
+              <span class="ed-pager-n">{{ page() }} / {{ totalPages() }}</span>
+              <button
+                type="button"
+                [disabled]="page() === totalPages()"
+                (click)="nextPage()"
+              >
+                Older
+              </button>
+            </nav>
+          }
+        } @else {
+          <p class="ed-feed-note" data-testid="articles-empty">Nothing here yet.</p>
+        }
+      } @placeholder {
+        <div class="min-h-[16rem]"></div>
       }
-    } @placeholder {
-      <div class="min-h-[16rem]"></div>
-    }
+    </div>
   </div>
 </section>

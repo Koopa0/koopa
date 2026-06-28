@@ -1,30 +1,35 @@
 <header class="ed-mast">
   <a routerLink="/" class="ed-mast-brand" aria-label="koopa0.dev home">
-    <img src="/logo.png" alt="" class="ed-mast-mark" aria-hidden="true" />
-    <span class="ed-mast-stack">
-      <span class="ed-wordmark">koopa0<span class="tld">.dev</span></span>
-      <span class="ed-letterhead">written &amp; maintained by one person</span>
-    </span>
+    <img
+      ngSrc="/logo.png"
+      width="28"
+      height="28"
+      alt=""
+      class="ed-mast-mark"
+      aria-hidden="true"
+      priority
+    />
+    <span class="ed-wordmark">koopa0<span class="tld">.dev</span></span>
   </a>
 
   <nav class="ed-nav" aria-label="Main navigation">
     <a
-      routerLink="/"
-      [attr.data-active]="homeActive()"
-      [attr.aria-current]="homeActive() ? 'page' : null"
-      >Home</a
+      routerLink="/articles"
+      [attr.data-active]="theWorkActive()"
+      [attr.aria-current]="theWorkActive() ? 'page' : null"
+      >the work</a
     >
     <a
-      routerLink="/articles"
-      [attr.data-active]="articlesActive()"
-      [attr.aria-current]="articlesActive() ? 'page' : null"
-      >Articles</a
+      routerLink="/topics"
+      [attr.data-active]="topicsActive()"
+      [attr.aria-current]="topicsActive() ? 'page' : null"
+      >topics</a
     >
     <a
       routerLink="/about"
       [attr.data-active]="aboutActive()"
       [attr.aria-current]="aboutActive() ? 'page' : null"
-      >About</a
+      >about</a
     >
   </nav>
 
