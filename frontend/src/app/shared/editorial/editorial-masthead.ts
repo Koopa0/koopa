@@ -39,11 +39,11 @@ export class EditorialMastheadComponent {
 
   private readonly currentPath = computed(() => this.currentUrl().split('?')[0]);
 
-  /** "articles" — the chronological axis: the front door and every piece. */
-  protected readonly articlesActive = computed(() => {
-    const path = this.currentPath();
-    return path === '/' || path.startsWith('/articles');
-  });
+  /** "articles" — the archive and every piece. NOT the home front door, where
+   *  the brand/logo is the home affordance and no pill is highlighted. */
+  protected readonly articlesActive = computed(() =>
+    this.currentPath().startsWith('/articles'),
+  );
 
   /** "topics" — the thematic axis: the index and per-topic pages. */
   protected readonly topicsActive = computed(() =>
