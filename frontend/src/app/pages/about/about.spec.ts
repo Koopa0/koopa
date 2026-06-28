@@ -48,7 +48,7 @@ describe('AboutComponent', () => {
 
   it('should render the colophon stack and signature', () => {
     expect(el.textContent).toContain('Go · PostgreSQL · pgvector');
-    expect(el.textContent).toContain('Written & maintained by one person.');
+    expect(el.textContent).toContain('Written & maintained by Koopa.');
   });
 
   it('should carry the shared pure-CSS rise orchestration on each block', () => {
