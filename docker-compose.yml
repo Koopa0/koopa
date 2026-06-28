@@ -33,7 +33,7 @@ services:
       - "-c"
       - "log_statement=none"
     environment:
-      POSTGRES_DB: blog
+      POSTGRES_DB: koopa0dev
       POSTGRES_USER: koopa
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
     volumes:
@@ -42,7 +42,7 @@ services:
       - internal
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U koopa -d blog"]
+      test: ["CMD-SHELL", "pg_isready -U koopa -d koopa0dev"]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -64,7 +64,7 @@ services:
       context: .
       dockerfile: Dockerfile
     environment:
-      DATABASE_URL: postgres://koopa:${POSTGRES_PASSWORD:-changeme}@postgres:5432/blog?sslmode=disable
+      DATABASE_URL: postgres://koopa:${POSTGRES_PASSWORD:-changeme}@postgres:5432/koopa0dev?sslmode=disable
       JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
       CORS_ORIGIN: https://koopa0.dev
       SITE_URL: https://koopa0.dev
@@ -107,7 +107,7 @@ services:
       context: .
       dockerfile: Dockerfile.mcp
     environment:
-      DATABASE_URL: postgres://koopa:${POSTGRES_PASSWORD:-changeme}@postgres:5432/blog?sslmode=disable
+      DATABASE_URL: postgres://koopa:${POSTGRES_PASSWORD:-changeme}@postgres:5432/koopa0dev?sslmode=disable
       MCP_TOKEN: ${MCP_TOKEN}
       MCP_TRANSPORT: http
       MCP_PORT: "8081"
