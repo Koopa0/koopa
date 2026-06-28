@@ -579,7 +579,7 @@ func TestContent_JSONContract(t *testing.T) {
 
 	// Optional omitempty fields must not appear when nil.
 	omitFields := []string{"series_id", "series_order",
-		"project_id", "ai_metadata", "cover_image"}
+		"project_id", "cover_image"}
 	noOptionalData, _ := json.Marshal(Content{
 		Topics: []TopicRef{},
 	})

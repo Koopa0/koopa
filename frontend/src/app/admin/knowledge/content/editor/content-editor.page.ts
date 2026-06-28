@@ -652,16 +652,6 @@ export class ContentEditorPageComponent {
   protected statusVariant(status: ContentStatus): BadgeVariant {
     return STATUS_BADGE_VARIANT[status];
   }
-
-  protected aiSummary(c: ApiContent): string | null {
-    const v = c.ai_metadata?.['summary'];
-    return typeof v === 'string' && v.length > 0 ? v : null;
-  }
-
-  protected aiQualityScore(c: ApiContent): number | null {
-    const v = c.ai_metadata?.['quality_score'];
-    return typeof v === 'number' ? v : null;
-  }
 }
 
 function httpStatus(err: unknown): number | null {

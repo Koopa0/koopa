@@ -416,8 +416,6 @@ type Content struct {
 	SeriesID *string `json:"series_id"`
 	// Position within the series. Paired with series_id (chk_contents_series).
 	SeriesOrder *int32 `json:"series_order"`
-	// AI pipeline metadata (JSONB). Structure: {summary, keywords, quality_score, review_notes}. Set by background AI enrichment.
-	AiMetadata json.RawMessage `json:"ai_metadata"`
 	// Estimated reading time in minutes. Computed from body word count. Always >= 0.
 	ReadingTimeMin int32 `json:"reading_time_min"`
 	// Cover image URL or path for content cards and social sharing. NULL = no cover image.
@@ -469,7 +467,7 @@ type DailyPlanItem struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
-// RSS/Atom feed subscriptions. Fetch pipeline pulls entries on schedule, scores relevance, and surfaces for curation.
+// RSS/Atom feed subscriptions. Fetch pipeline pulls entries on schedule and surfaces them for manual curation.
 type Feed struct {
 	ID uuid.UUID `json:"id"`
 	// Feed URL (RSS/Atom). Unique — one subscription per URL. Must use http(s) scheme (chk_feed_url_scheme).
@@ -478,7 +476,7 @@ type Feed struct {
 	// Fetch cadence label (hourly | daily | weekly | biweekly | monthly), enforced by chk_feed_schedule. The Go scheduler maps each label to a concrete time interval. NOT a cron expression.
 	Schedule string `json:"schedule"`
 	Enabled  bool   `json:"enabled"`
-	// Feed importance for relevance scoring: high feeds get boosted scores.
+	// Feed importance (manual ordering hint for the curation surface). No automated relevance scoring exists.
 	Priority string `json:"priority"`
 	// HTTP ETag header from last fetch. NULL = never fetched or server did not return ETag.
 	Etag *string `json:"etag"`

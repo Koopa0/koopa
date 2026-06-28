@@ -82,7 +82,7 @@ func (s *Store) InternalSemanticSearch(ctx context.Context, queryEmbedding pgvec
 			ID: r.ID, Slug: r.Slug, Title: r.Title, Body: r.Body, Excerpt: r.Excerpt,
 			Type: r.Type, Status: r.Status,
 			SeriesID: r.SeriesID, SeriesOrder: r.SeriesOrder,
-			IsPublic: r.IsPublic, ProjectID: r.ProjectID, AiMetadata: r.AiMetadata,
+			IsPublic: r.IsPublic, ProjectID: r.ProjectID,
 			ReadingTimeMin: r.ReadingTimeMin, CoverImage: r.CoverImage,
 			PublishedAt: r.PublishedAt,
 			CreatedAt:   r.CreatedAt, UpdatedAt: r.UpdatedAt,

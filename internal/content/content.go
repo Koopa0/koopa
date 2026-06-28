@@ -10,7 +10,6 @@ package content
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -124,21 +123,20 @@ type TopicRef struct {
 
 // Content represents a piece of content.
 type Content struct {
-	ID             uuid.UUID       `json:"id"`
-	Slug           string          `json:"slug"`
-	Title          string          `json:"title"`
-	Body           string          `json:"body"`
-	Excerpt        string          `json:"excerpt"`
-	Type           Type            `json:"type"`
-	Status         Status          `json:"status"`
-	Topics         []TopicRef      `json:"topics"`
-	SeriesID       *string         `json:"series_id,omitempty"`
-	SeriesOrder    *int            `json:"series_order,omitempty"`
-	IsPublic       bool            `json:"is_public"`
-	ProjectID      *uuid.UUID      `json:"project_id,omitempty"`
-	AIMetadata     json.RawMessage `json:"ai_metadata,omitempty"`
-	ReadingTimeMin int             `json:"reading_time_min"`
-	CoverImage     *string         `json:"cover_image,omitempty"`
+	ID             uuid.UUID  `json:"id"`
+	Slug           string     `json:"slug"`
+	Title          string     `json:"title"`
+	Body           string     `json:"body"`
+	Excerpt        string     `json:"excerpt"`
+	Type           Type       `json:"type"`
+	Status         Status     `json:"status"`
+	Topics         []TopicRef `json:"topics"`
+	SeriesID       *string    `json:"series_id,omitempty"`
+	SeriesOrder    *int       `json:"series_order,omitempty"`
+	IsPublic       bool       `json:"is_public"`
+	ProjectID      *uuid.UUID `json:"project_id,omitempty"`
+	ReadingTimeMin int        `json:"reading_time_min"`
+	CoverImage     *string    `json:"cover_image,omitempty"`
 	// CreatedBy is the proposing agent for agent-pushed content (the MCP
 	// propose_content tool stamps the caller identity here). NULL for
 	// owner/admin-authored content.
@@ -190,20 +188,19 @@ type Filter struct {
 
 // CreateParams are the parameters for creating content.
 type CreateParams struct {
-	Slug           string          `json:"slug"`
-	Title          string          `json:"title"`
-	Body           string          `json:"body"`
-	Excerpt        string          `json:"excerpt"`
-	Type           Type            `json:"type"`
-	Status         Status          `json:"status"`
-	TopicIDs       []uuid.UUID     `json:"topic_ids"`
-	SeriesID       *string         `json:"series_id,omitempty"`
-	SeriesOrder    *int            `json:"series_order,omitempty"`
-	IsPublic       bool            `json:"is_public"`
-	ProjectID      *uuid.UUID      `json:"project_id,omitempty"`
-	AIMetadata     json.RawMessage `json:"ai_metadata,omitempty"`
-	ReadingTimeMin int             `json:"reading_time_min"`
-	CoverImage     *string         `json:"cover_image,omitempty"`
+	Slug           string      `json:"slug"`
+	Title          string      `json:"title"`
+	Body           string      `json:"body"`
+	Excerpt        string      `json:"excerpt"`
+	Type           Type        `json:"type"`
+	Status         Status      `json:"status"`
+	TopicIDs       []uuid.UUID `json:"topic_ids"`
+	SeriesID       *string     `json:"series_id,omitempty"`
+	SeriesOrder    *int        `json:"series_order,omitempty"`
+	IsPublic       bool        `json:"is_public"`
+	ProjectID      *uuid.UUID  `json:"project_id,omitempty"`
+	ReadingTimeMin int         `json:"reading_time_min"`
+	CoverImage     *string     `json:"cover_image,omitempty"`
 	// CreatedBy stamps the proposing agent on agent-pushed content. The MCP
 	// propose_content tool sets it to the resolved caller identity; the admin
 	// HTTP Create path leaves it nil (owner-authored content has no agent
@@ -216,20 +213,19 @@ type CreateParams struct {
 
 // UpdateParams are the parameters for updating content.
 type UpdateParams struct {
-	Slug           *string         `json:"slug,omitempty"`
-	Title          *string         `json:"title,omitempty"`
-	Body           *string         `json:"body,omitempty"`
-	Excerpt        *string         `json:"excerpt,omitempty"`
-	Type           *Type           `json:"type,omitempty"`
-	Status         *Status         `json:"status,omitempty"`
-	TopicIDs       []uuid.UUID     `json:"topic_ids,omitempty"`
-	SeriesID       *string         `json:"series_id,omitempty"`
-	SeriesOrder    *int            `json:"series_order,omitempty"`
-	IsPublic       *bool           `json:"is_public,omitempty"`
-	ProjectID      *uuid.UUID      `json:"project_id,omitempty"`
-	AIMetadata     json.RawMessage `json:"ai_metadata,omitempty"`
-	ReadingTimeMin *int            `json:"reading_time_min,omitempty"`
-	CoverImage     *string         `json:"cover_image,omitempty"`
+	Slug           *string     `json:"slug,omitempty"`
+	Title          *string     `json:"title,omitempty"`
+	Body           *string     `json:"body,omitempty"`
+	Excerpt        *string     `json:"excerpt,omitempty"`
+	Type           *Type       `json:"type,omitempty"`
+	Status         *Status     `json:"status,omitempty"`
+	TopicIDs       []uuid.UUID `json:"topic_ids,omitempty"`
+	SeriesID       *string     `json:"series_id,omitempty"`
+	SeriesOrder    *int        `json:"series_order,omitempty"`
+	IsPublic       *bool       `json:"is_public,omitempty"`
+	ProjectID      *uuid.UUID  `json:"project_id,omitempty"`
+	ReadingTimeMin *int        `json:"reading_time_min,omitempty"`
+	CoverImage     *string     `json:"cover_image,omitempty"`
 }
 
 // CreatorItem is a slim content projection for the list_content readback loop —
@@ -460,7 +456,7 @@ func (s *Store) Content(ctx context.Context, id uuid.UUID) (*Content, error) {
 		ID: r.ID, Slug: r.Slug, Title: r.Title, Body: r.Body, Excerpt: r.Excerpt,
 		Type: r.Type, Status: r.Status,
 		SeriesID: r.SeriesID, SeriesOrder: r.SeriesOrder,
-		IsPublic: r.IsPublic, ProjectID: r.ProjectID, AiMetadata: r.AiMetadata,
+		IsPublic: r.IsPublic, ProjectID: r.ProjectID,
 		ReadingTimeMin: r.ReadingTimeMin, CoverImage: r.CoverImage,
 		CreatedBy: r.CreatedBy, ProposalRationale: r.ProposalRationale,
 		ReviewNote:  r.ReviewNote,
@@ -535,7 +531,7 @@ func (s *Store) PublicContents(ctx context.Context, f PublicFilter) ([]Content, 
 			ID: r.ID, Slug: r.Slug, Title: r.Title, Body: r.Body, Excerpt: r.Excerpt,
 			Type: r.Type, Status: r.Status,
 			SeriesID: r.SeriesID, SeriesOrder: r.SeriesOrder,
-			IsPublic: r.IsPublic, ProjectID: r.ProjectID, AiMetadata: r.AiMetadata,
+			IsPublic: r.IsPublic, ProjectID: r.ProjectID,
 			ReadingTimeMin: r.ReadingTimeMin, CoverImage: r.CoverImage,
 			PublishedAt: r.PublishedAt,
 			CreatedAt:   r.CreatedAt, UpdatedAt: r.UpdatedAt,
@@ -564,7 +560,7 @@ func (s *Store) ContentBySlug(ctx context.Context, slug string) (*Content, error
 		ID: r.ID, Slug: r.Slug, Title: r.Title, Body: r.Body, Excerpt: r.Excerpt,
 		Type: r.Type, Status: r.Status,
 		SeriesID: r.SeriesID, SeriesOrder: r.SeriesOrder,
-		IsPublic: r.IsPublic, ProjectID: r.ProjectID, AiMetadata: r.AiMetadata,
+		IsPublic: r.IsPublic, ProjectID: r.ProjectID,
 		ReadingTimeMin: r.ReadingTimeMin, CoverImage: r.CoverImage,
 		PublishedAt: r.PublishedAt,
 		CreatedAt:   r.CreatedAt, UpdatedAt: r.UpdatedAt,
@@ -603,7 +599,7 @@ func (s *Store) ContentsByTopicID(ctx context.Context, topicID uuid.UUID, page, 
 			ID: r.ID, Slug: r.Slug, Title: r.Title, Body: r.Body, Excerpt: r.Excerpt,
 			Type: r.Type, Status: r.Status,
 			SeriesID: r.SeriesID, SeriesOrder: r.SeriesOrder,
-			IsPublic: r.IsPublic, ProjectID: r.ProjectID, AiMetadata: r.AiMetadata,
+			IsPublic: r.IsPublic, ProjectID: r.ProjectID,
 			ReadingTimeMin: r.ReadingTimeMin, CoverImage: r.CoverImage,
 			PublishedAt: r.PublishedAt,
 			CreatedAt:   r.CreatedAt, UpdatedAt: r.UpdatedAt,
@@ -663,7 +659,6 @@ func (s *Store) CreateContent(ctx context.Context, p *CreateParams) (*Content, e
 		SeriesOrder:       seriesOrder,
 		IsPublic:          p.IsPublic,
 		ProjectID:         p.ProjectID,
-		AiMetadata:        p.AIMetadata,
 		ReadingTimeMin:    int32(p.ReadingTimeMin), // #nosec G115 -- reading time in minutes is bounded, not user-controlled
 		CoverImage:        p.CoverImage,
 		CreatedBy:         p.CreatedBy,
@@ -686,7 +681,7 @@ func (s *Store) CreateContent(ctx context.Context, p *CreateParams) (*Content, e
 		ID: r.ID, Slug: r.Slug, Title: r.Title, Body: r.Body, Excerpt: r.Excerpt,
 		Type: r.Type, Status: r.Status,
 		SeriesID: r.SeriesID, SeriesOrder: r.SeriesOrder,
-		IsPublic: r.IsPublic, ProjectID: r.ProjectID, AiMetadata: r.AiMetadata,
+		IsPublic: r.IsPublic, ProjectID: r.ProjectID,
 		ReadingTimeMin: r.ReadingTimeMin, CoverImage: r.CoverImage,
 		CreatedBy: r.CreatedBy, ProposalRationale: r.ProposalRationale,
 		PublishedAt: r.PublishedAt,
@@ -752,7 +747,6 @@ func (s *Store) UpdateContent(ctx context.Context, id uuid.UUID, p *UpdateParams
 		SeriesOrder:    seriesOrder,
 		IsPublic:       p.IsPublic,
 		ProjectID:      p.ProjectID,
-		AiMetadata:     p.AIMetadata,
 		ReadingTimeMin: readingTimeMin,
 		CoverImage:     p.CoverImage,
 	})
@@ -781,7 +775,7 @@ func (s *Store) UpdateContent(ctx context.Context, id uuid.UUID, p *UpdateParams
 		ID: r.ID, Slug: r.Slug, Title: r.Title, Body: r.Body, Excerpt: r.Excerpt,
 		Type: r.Type, Status: r.Status,
 		SeriesID: r.SeriesID, SeriesOrder: r.SeriesOrder,
-		IsPublic: r.IsPublic, ProjectID: r.ProjectID, AiMetadata: r.AiMetadata,
+		IsPublic: r.IsPublic, ProjectID: r.ProjectID,
 		ReadingTimeMin: r.ReadingTimeMin, CoverImage: r.CoverImage,
 		PublishedAt: r.PublishedAt,
 		CreatedAt:   r.CreatedAt, UpdatedAt: r.UpdatedAt,
@@ -883,7 +877,6 @@ type contentRow struct {
 	SeriesOrder       *int32
 	IsPublic          bool
 	ProjectID         *uuid.UUID
-	AiMetadata        json.RawMessage
 	ReadingTimeMin    int32
 	CoverImage        *string
 	CreatedBy         *string
@@ -905,7 +898,6 @@ func rowToContent(r contentRow) Content { //nolint:gocritic // hugeParam: struct
 		Status:            Status(r.Status),
 		IsPublic:          r.IsPublic,
 		ProjectID:         r.ProjectID,
-		AIMetadata:        r.AiMetadata,
 		ReadingTimeMin:    int(r.ReadingTimeMin),
 		CoverImage:        r.CoverImage,
 		CreatedBy:         r.CreatedBy,

@@ -43,7 +43,6 @@ function buildMockContent(overrides: Partial<ApiContent> = {}): ApiContent {
     series_id: null,
     series_order: null,
     is_public: true,
-    ai_metadata: null,
     reading_time_min: 5,
     published_at: '2026-01-15T00:00:00Z',
     created_at: '2026-01-15T00:00:00Z',
@@ -80,6 +79,13 @@ describe('TopicDetailComponent', () => {
     component = fixture.componentInstance;
   });
 
+  /** Flush effects + macrotasks so the rxResource issues its request. */
+  async function settle(): Promise<void> {
+    fixture.detectChanges();
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    fixture.detectChanges();
+  }
+
   function flushTopic(
     topic: ApiTopic,
     contents: ApiContent[],
@@ -91,14 +97,14 @@ describe('TopicDetailComponent', () => {
     req.flush({ data: { topic, contents }, meta });
   }
 
-  it('should render the topic head and a row per piece', () => {
+  it('should render the topic head and a row per piece', async () => {
     fixture.componentRef.setInput('slug', 'go');
-    fixture.detectChanges();
+    await settle();
     flushTopic(buildMockTopic(), [
       buildMockContent({ id: '1', title: 'First Go piece' }),
       buildMockContent({ id: '2', title: 'Second Go piece', type: 'til' }),
     ]);
-    fixture.detectChanges();
+    await settle();
 
     const el = fixture.nativeElement as HTMLElement;
     expect(el.textContent).toContain('Go');
@@ -107,15 +113,15 @@ describe('TopicDetailComponent', () => {
     expect(rows[0].getAttribute('href')).toBe('/articles/a-piece');
   });
 
-  it('should show the piece count and one type swatch per type in the head', () => {
+  it('should show the piece count and one type swatch per type in the head', async () => {
     fixture.componentRef.setInput('slug', 'go');
-    fixture.detectChanges();
+    await settle();
     flushTopic(buildMockTopic(), [
       buildMockContent({ id: '1', type: 'article' }),
       buildMockContent({ id: '2', type: 'til' }),
       buildMockContent({ id: '3', type: 'til' }),
     ]);
-    fixture.detectChanges();
+    await settle();
 
     const el = fixture.nativeElement as HTMLElement;
     const meta = el.querySelector('.ed-metaline');
@@ -125,14 +131,14 @@ describe('TopicDetailComponent', () => {
     expect(meta?.querySelectorAll('.ed-dot').length).toBe(2);
   });
 
-  it('should filter rows by type when a tab is selected', () => {
+  it('should filter rows by type when a tab is selected', async () => {
     fixture.componentRef.setInput('slug', 'go');
-    fixture.detectChanges();
+    await settle();
     flushTopic(buildMockTopic(), [
       buildMockContent({ id: '1', title: 'An article', type: 'article' }),
       buildMockContent({ id: '2', title: 'A til', type: 'til' }),
     ]);
-    fixture.detectChanges();
+    await settle();
 
     component['selectType']('til');
     fixture.detectChanges();
@@ -144,24 +150,24 @@ describe('TopicDetailComponent', () => {
     expect(el.textContent).not.toContain('An article');
   });
 
-  it('should show the not-found state on 404', () => {
+  it('should show the not-found state on 404', async () => {
     fixture.componentRef.setInput('slug', 'missing');
-    fixture.detectChanges();
+    await settle();
 
     const req = httpTesting.expectOne(
       (r) => r.url.includes('/api/topics/') && r.method === 'GET',
     );
     req.flush('Not found', { status: 404, statusText: 'Not Found' });
-    fixture.detectChanges();
+    await settle();
 
     const el = fixture.nativeElement as HTMLElement;
     expect(el.textContent).toContain('Topic not found');
     expect(component['isNotFound']()).toBe(true);
   });
 
-  it('should show the error state on a 500', () => {
+  it('should show the error state on a 500', async () => {
     fixture.componentRef.setInput('slug', 'go');
-    fixture.detectChanges();
+    await settle();
 
     const req = httpTesting.expectOne(
       (r) => r.url.includes('/api/topics/') && r.method === 'GET',
@@ -170,7 +176,7 @@ describe('TopicDetailComponent', () => {
       status: 500,
       statusText: 'Internal Server Error',
     });
-    fixture.detectChanges();
+    await settle();
 
     const el = fixture.nativeElement as HTMLElement;
     expect(el.textContent).toContain('Failed to load topic content');
