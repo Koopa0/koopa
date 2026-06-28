@@ -3,7 +3,7 @@
   "version": 1,
   "newProjectRoot": "projects",
   "projects": {
-    "koopa-blog": {
+    "koopa0dev": {
       "projectType": "application",
       "schematics": {
         "@schematics/angular:component": {
@@ -17,7 +17,7 @@
         "build": {
           "builder": "@angular/build:application",
           "options": {
-            "outputPath": "dist/koopa-blog",
+            "outputPath": "dist/koopa0dev",
             "outputMode": "server",
             "browser": "src/main.ts",
             "server": "src/main.server.ts",
@@ -88,10 +88,10 @@
           "builder": "@angular/build:dev-server",
           "configurations": {
             "production": {
-              "buildTarget": "koopa-blog:build:production"
+              "buildTarget": "koopa0dev:build:production"
             },
             "development": {
-              "buildTarget": "koopa-blog:build:development"
+              "buildTarget": "koopa0dev:build:development"
             }
           },
           "defaultConfiguration": "development"
@@ -103,7 +103,7 @@
           "builder": "@angular/build:unit-test",
           "options": {
             "tsConfig": "tsconfig.spec.json",
-            "buildTarget": "koopa-blog:build"
+            "buildTarget": "koopa0dev:build"
           }
         },
         "lint": {

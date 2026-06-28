@@ -1,5 +1,5 @@
 services:
-  blog:
+  frontend:
     build:
       context: .
       dockerfile: Dockerfile

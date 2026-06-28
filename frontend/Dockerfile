@@ -16,7 +16,7 @@ FROM node:22-alpine AS runtime
 
 WORKDIR /app
 
-COPY --from=builder /app/dist/koopa-blog/ ./dist/koopa-blog/
+COPY --from=builder /app/dist/koopa0dev/ ./dist/koopa0dev/
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/package.json ./
 
@@ -29,4 +29,4 @@ USER app
 
 EXPOSE 4000
 
-CMD ["node", "dist/koopa-blog/server/server.mjs"]
+CMD ["node", "dist/koopa0dev/server/server.mjs"]
