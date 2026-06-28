@@ -85,7 +85,7 @@ func registerRoutes(
 	adminMid func(http.Handler) http.Handler,
 ) {
 	// --- Metrics scrape (no auth, no logging — see middleware.go::logging) ---
-	// Mounted on its own route so VPS Prometheus job blog-backend can pull
+	// Mounted on its own route so VPS Prometheus job koopa0dev-backend can pull
 	// the OTel SDK's Prometheus exposition. The handler comes from
 	// setupObservability; when KOOPA_OBSERVABILITY_ENABLED=false it is
 	// http.NotFoundHandler so /metrics returns 404 with no body.
