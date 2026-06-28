@@ -15,9 +15,9 @@
   <nav class="ed-nav" aria-label="Main navigation">
     <a
       routerLink="/articles"
-      [attr.data-active]="theWorkActive()"
-      [attr.aria-current]="theWorkActive() ? 'page' : null"
-      >the work</a
+      [attr.data-active]="articlesActive()"
+      [attr.aria-current]="articlesActive() ? 'page' : null"
+      >articles</a
     >
     <a
       routerLink="/topics"

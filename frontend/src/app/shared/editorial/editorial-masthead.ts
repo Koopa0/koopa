@@ -39,8 +39,8 @@ export class EditorialMastheadComponent {
 
   private readonly currentPath = computed(() => this.currentUrl().split('?')[0]);
 
-  /** "the work" — the chronological axis: the front door and every piece. */
-  protected readonly theWorkActive = computed(() => {
+  /** "articles" — the chronological axis: the front door and every piece. */
+  protected readonly articlesActive = computed(() => {
     const path = this.currentPath();
     return path === '/' || path.startsWith('/articles');
   });
