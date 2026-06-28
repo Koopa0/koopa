@@ -249,11 +249,13 @@ app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// BFF Proxy — 轉發 /bff/* 到後端，後端零暴露
+// API Proxy — 轉發 /api/* 到後端，後端零暴露。瀏覽器與 SSR 共用同一條 /api
+// 路徑，HTTP transfer cache 的 key 在兩端才會一致（僅 origin 不同，由
+// HTTP_TRANSFER_CACHE_ORIGIN_MAP 橋接）。/api/health 在此之前註冊，優先匹配。
 const BFF_MAX_BODY_BYTES = 10 * 1024 * 1024; // 10 MB
 
-app.use('/bff', (req, res) => {
-  const targetUrl = `${BACKEND_URL}${req.originalUrl.replace(/^\/bff/, '')}`;
+app.use('/api', (req, res) => {
+  const targetUrl = `${BACKEND_URL}${req.originalUrl}`;
   const headers: Record<string, string> = {
     'content-type': req.headers['content-type'] || 'application/json',
   };

@@ -88,12 +88,12 @@ describe('CommandPaletteService', () => {
     await router.navigateByUrl('/');
     service.open();
     // The owner is authed, so the entity load still fires — drain it.
-    httpMock.expectOne('/bff/api/admin/commitment/goals').flush([]);
+    httpMock.expectOne('https://koopa0.dev/api/admin/commitment/goals').flush([]);
     httpMock
-      .expectOne('/bff/api/admin/commitment/projects')
+      .expectOne('https://koopa0.dev/api/admin/commitment/projects')
       .flush({ data: [] });
     httpMock
-      .expectOne((r) => r.url.includes('/bff/api/admin/knowledge/content'))
+      .expectOne((r) => r.url.includes('https://koopa0.dev/api/admin/knowledge/content'))
       .flush({ data: [] });
 
     const actions = service.actions();
@@ -142,10 +142,10 @@ describe('CommandPaletteService', () => {
 
     service.open();
 
-    httpMock.expectOne('/bff/api/admin/commitment/goals').flush(goalsResponse);
-    httpMock.expectOne('/bff/api/admin/commitment/projects').flush(projectsResponse);
+    httpMock.expectOne('https://koopa0.dev/api/admin/commitment/goals').flush(goalsResponse);
+    httpMock.expectOne('https://koopa0.dev/api/admin/commitment/projects').flush(projectsResponse);
     httpMock
-      .expectOne((r) => r.url.includes('/bff/api/admin/knowledge/content'))
+      .expectOne((r) => r.url.includes('https://koopa0.dev/api/admin/knowledge/content'))
       .flush({ data: [] });
 
     const actions = service.actions();
@@ -170,8 +170,8 @@ describe('CommandPaletteService', () => {
 
     service.open();
 
-    httpMock.expectNone('/bff/api/admin/commitment/goals');
-    httpMock.expectNone('/bff/api/admin/commitment/projects');
+    httpMock.expectNone('https://koopa0.dev/api/admin/commitment/goals');
+    httpMock.expectNone('https://koopa0.dev/api/admin/commitment/projects');
     httpMock.verify();
   });
 
@@ -179,18 +179,18 @@ describe('CommandPaletteService', () => {
     const { httpMock } = setup(true);
 
     service.open();
-    httpMock.expectOne('/bff/api/admin/commitment/goals').flush([]);
-    httpMock.expectOne('/bff/api/admin/commitment/projects').flush({ data: [] });
+    httpMock.expectOne('https://koopa0.dev/api/admin/commitment/goals').flush([]);
+    httpMock.expectOne('https://koopa0.dev/api/admin/commitment/projects').flush({ data: [] });
     httpMock
-      .expectOne((r) => r.url.includes('/bff/api/admin/knowledge/content'))
+      .expectOne((r) => r.url.includes('https://koopa0.dev/api/admin/knowledge/content'))
       .flush({ data: [] });
 
     service.close();
     service.open();
 
-    httpMock.expectNone('/bff/api/admin/commitment/goals');
-    httpMock.expectNone('/bff/api/admin/commitment/projects');
-    httpMock.expectNone((r) => r.url.includes('/bff/api/admin/knowledge/content'));
+    httpMock.expectNone('https://koopa0.dev/api/admin/commitment/goals');
+    httpMock.expectNone('https://koopa0.dev/api/admin/commitment/projects');
+    httpMock.expectNone((r) => r.url.includes('https://koopa0.dev/api/admin/knowledge/content'));
     httpMock.verify();
   });
 });

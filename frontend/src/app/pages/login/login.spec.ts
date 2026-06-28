@@ -139,7 +139,7 @@ describe('LoginComponent', () => {
       fixture.detectChanges();
       component['signInWithGoogle']();
 
-      const req = httpMock.expectOne('/bff/api/auth/google');
+      const req = httpMock.expectOne('/api/auth/google');
       expect(req.request.method).toBe('GET');
       req.flush({
         data: { url: 'https://accounts.google.com/o/oauth2/auth?...' },
@@ -150,7 +150,7 @@ describe('LoginComponent', () => {
       fixture.detectChanges();
       component['signInWithGoogle']();
 
-      const req = httpMock.expectOne('/bff/api/auth/google');
+      const req = httpMock.expectOne('/api/auth/google');
       req.flush('Error', { status: 500, statusText: 'Internal Server Error' });
 
       expect(component['errorMessage']()).toBe(

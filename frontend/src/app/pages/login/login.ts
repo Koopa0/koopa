@@ -65,7 +65,7 @@ export class LoginComponent implements OnInit {
       return;
     }
 
-    this.http.get<{ data: { url: string } }>('/bff/api/auth/google').subscribe({
+    this.http.get<{ data: { url: string } }>('/api/auth/google').subscribe({
       next: (res) => {
         const redirectUrl = new URL(res.data.url);
         const allowedOrigins = [

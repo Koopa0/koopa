@@ -109,12 +109,12 @@ describe('CommandPaletteComponent', () => {
       service.open();
       fixture.detectChanges();
 
-      httpMock.expectOne('/bff/api/admin/commitment/goals').flush([]);
+      httpMock.expectOne('https://koopa0.dev/api/admin/commitment/goals').flush([]);
       httpMock
-        .expectOne('/bff/api/admin/commitment/projects')
+        .expectOne('https://koopa0.dev/api/admin/commitment/projects')
         .flush({ data: [] });
       httpMock
-        .expectOne((r) => r.url.includes('/bff/api/admin/knowledge/content'))
+        .expectOne((r) => r.url.includes('https://koopa0.dev/api/admin/knowledge/content'))
         .flush({ data: [] });
       fixture.detectChanges();
 
@@ -153,7 +153,7 @@ describe('CommandPaletteComponent', () => {
       ) as HTMLButtonElement;
       captureButton.click();
 
-      const req = httpMock.expectOne('/bff/api/admin/commitment/todos');
+      const req = httpMock.expectOne('https://koopa0.dev/api/admin/commitment/todos');
       expect(req.request.method).toBe('POST');
       expect(req.request.body).toEqual({
         title: 'water the bonsai',
@@ -176,7 +176,7 @@ describe('CommandPaletteComponent', () => {
       input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
       fixture.detectChanges();
 
-      const req = httpMock.expectOne('/bff/api/admin/commitment/todos');
+      const req = httpMock.expectOne('https://koopa0.dev/api/admin/commitment/todos');
       expect(req.request.method).toBe('POST');
       expect(req.request.body).toEqual({
         title: 'zzz nothing matches',
@@ -216,7 +216,7 @@ describe('CommandPaletteComponent', () => {
       captureButton.click();
 
       httpMock
-        .expectOne('/bff/api/admin/commitment/todos')
+        .expectOne('https://koopa0.dev/api/admin/commitment/todos')
         .flush(null, { status: 500, statusText: 'Internal Server Error' });
       fixture.detectChanges();
 
