@@ -27,8 +27,7 @@ Everything is currently tracked as **goals under life-domain areas**. The artifa
 
 | Real thing | Entity | Note |
 |------------|--------|------|
-| 工作室與系統 / 日語 / 文學閱讀 / ヨルシカ / 職涯 / 身體 | **area** | the 6 real life-domains |
-| backend / learning / studio / frontend / career / ops | (dead seeded areas) | unused, overlap the real ones → **cleanup** |
+| owner-curated life-domains (in prod) | **area** | no default/seeded areas exist; areas are added by the owner in admin and are the correct set |
 | "koopa0.dev 前後端架構完成、整合進工作流穩定運作" | **goal** (in_progress, under 工作室與系統) | finite objective — correct as a goal; **do not** reclassify to a project |
 | reading a book / a book's notes | — | private; lives in Obsidian, not in this model |
 | 日語 / kana practice | goal + milestones | |
@@ -68,10 +67,10 @@ Found by the adversarial gate; all were tool-surface (the schema already held th
 - **G3 — `propose_content` is project-blind. RESOLVED (2026-06-23): intentional decoupling, not a gap.** Content is the external loop, decoupled from the project/GTD axis. `contents.project_id` is nullable by design; the link is meaningful only for `build-log` and is applied by the owner in admin if/when a build-log needs project context. The agent content surface deliberately stays project-agnostic — `article`/`essay`/`til`/`digest` (incl. 雜談/隨筆) are standalone writing.
 - **G4 — windowed reflection look-back. RESOLVED (2026-06-23): `review_period` shipped.** A read-only windowed retrospective ("what did KOOPA complete between `since` and `until`") computed live from the activity log — closing the gap that `brief(reflection)` (single-date), `list_todos` (caller-scoped), and `project_progress` (current-state snapshot) left open.
 
-## 8. Data actions (not schema)
+## 8. Data state (not schema)
 
-- Delete the 6 dead seeded areas (backend / learning / studio / frontend / career / ops) in admin — they overlap the real life-domains.
-- Keep `koopa0.dev` as a goal. To make its roadmap ("expose MCP", "ship reflection loop", "v1 architecture") drive the reflection loop, **add milestones to that goal** — milestone progress surfaces via `ActiveGoalMilestones`. (A maintained project is excluded from `project_progress.Momentum` by `WHERE status IN ('in_progress','planned')`, so milestone-shaped roadmap progress must live on the goal, not a project.)
+- **Areas:** no default/seeded areas exist; the prod areas are owner-curated and correct. Nothing to clean up.
+- Keep `koopa0.dev` as a goal. Milestone-shaped roadmap progress must live on the **goal**, not a project — a `maintained` project is excluded from `project_progress.Momentum` by `WHERE status IN ('in_progress','planned')`, and milestone progress surfaces via `ActiveGoalMilestones`.
 
 ## 9. D-4 — authz resolution
 
