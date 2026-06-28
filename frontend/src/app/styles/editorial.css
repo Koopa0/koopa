@@ -27,13 +27,12 @@
   --ed-title-track: -0.005em;
   --ed-rule: var(--border-faint);
   --ed-lead-style: italic;
-  --ed-grain: 0.03;
 
   position: relative;
   min-height: 100%;
   background: var(--bg);
   color: var(--fg);
-  font-family: var(--font-sans);
+  font-family: var(--font-serif);   /* reading-first: Newsreader is the base voice */
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -47,18 +46,84 @@
   text-decoration: none;
 }
 
-/* Grain — public asset is /noise.svg (served from public/). The layer is
-   inert if the asset is ever absent (background just resolves to nothing). */
-.ed::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: 40;
-  pointer-events: none;
-  background-image: url('/noise.svg');
-  background-size: 200px 200px;
-  opacity: var(--ed-grain, 0);
-  mix-blend-mode: overlay;
+/* ============================================================
+   Public surface palette — warm paper default + dark twin.
+   Scoped to .ed (the public site wrapper) and .ed-theme (a token-only
+   class for the shared overlays rendered outside .ed), so admin
+   (:root oklch dark) is never touched. Dark is opt-in via the
+   `public-dark` class on <html> (ThemeService + the pre-paint script).
+   The single signature accent is muted cyan-teal; everything else is
+   a warm neutral spine. --link is a darker accent that clears WCAG AA
+   for static body-link text on paper.
+   ============================================================ */
+.ed,
+.ed-theme {
+  color-scheme: light;
+
+  --bg: #edeae2;
+  --panel: #e6e2d8;
+  --elevated: #f1eee7;
+  --overlay: rgb(38 36 32 / 0.45);
+
+  --fg: #262420;
+  --fg-muted: #56524a;
+  --fg-subtle: #6f6a5c;
+  --fg-faint: #6c675a;
+
+  --border: #cbc5b7;
+  --border-strong: #b7b0a0;
+  --border-faint: #d5d0c5;
+
+  --accent: #2c7c91;
+  --accent-strong: #246576;
+  --accent-muted: rgb(44 124 145 / 0.14);
+  --accent-faint: rgb(44 124 145 / 0.06);
+  --on-accent: #f4f1ea;
+  --link: #1f6273;
+
+  --dot-article: #2c7c91;
+  --dot-essay: #a9628f;
+  --dot-build-log: #9a7a3f;
+  --dot-til: #4f9b78;
+  --dot-digest: #7d6fae;
+
+  --shadow-1: 0 2px 8px -2px rgb(38 36 32 / 0.08), 0 1px 2px rgb(38 36 32 / 0.06);
+  --shadow-2: 0 18px 40px -12px rgb(38 36 32 / 0.14), 0 4px 12px rgb(38 36 32 / 0.08);
+}
+
+html.public-dark .ed,
+html.public-dark .ed-theme {
+  color-scheme: dark;
+
+  --bg: #14130f;
+  --panel: #1b1a15;
+  --elevated: #211f19;
+  --overlay: rgb(0 0 0 / 0.5);
+
+  --fg: #ece8df;
+  --fg-muted: #a7a298;
+  --fg-subtle: #8b8678;
+  --fg-faint: #837d6f;
+
+  --border: #34302a;
+  --border-strong: #44403a;
+  --border-faint: #2a2823;
+
+  --accent: #5cb1c6;
+  --accent-strong: #7cc3d4;
+  --accent-muted: rgb(92 177 198 / 0.16);
+  --accent-faint: rgb(92 177 198 / 0.07);
+  --on-accent: #0c1216;
+  --link: #5cb1c6;
+
+  --dot-article: #5cb1c6;
+  --dot-essay: #c79ec0;
+  --dot-build-log: #cb9a5f;
+  --dot-til: #69c29a;
+  --dot-digest: #a99bd6;
+
+  --shadow-1: 0 2px 8px -2px rgb(0 0 0 / 0.5), 0 1px 2px rgb(0 0 0 / 0.4);
+  --shadow-2: 0 18px 40px -12px rgb(0 0 0 / 0.6), 0 4px 12px rgb(0 0 0 / 0.4);
 }
 
 /* ---------- shared atoms ---------- */
@@ -114,9 +179,9 @@
   grid-template-columns: 1fr auto 1fr;
   align-items: center;
   gap: 24px;
-  max-width: 1200px;
+  max-width: 1180px;
   margin: 0 auto;
-  padding: 44px var(--ed-pad) 28px;
+  padding: clamp(1.4rem, 3vh, 2.2rem) clamp(1.5rem, 5vw, 4rem);
 }
 .ed-mast-utils {
   justify-self: end;
@@ -124,10 +189,21 @@
   align-items: center;
   gap: 8px;
 }
+.ed-mast-brand {
+  justify-self: start;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+.ed-mast-mark {
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+}
 .ed-wordmark {
   font-family: var(--font-serif);
-  font-size: 19px;
-  font-weight: 600;
+  font-size: 1.05rem;
+  font-weight: 500;
   letter-spacing: -0.01em;
   color: var(--fg);
   display: inline-flex;
@@ -136,55 +212,36 @@
 }
 .ed-wordmark .tld {
   color: var(--fg-faint);
-  font-weight: 500;
 }
-.ed-mast-brand {
-  justify-self: start;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-.ed-mast-mark {
-  width: 34px;
-  height: 34px;
-  flex-shrink: 0;
-}
-.ed-mast-stack {
-  display: flex;
-  flex-direction: column;
-}
-.ed-letterhead {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  color: var(--fg-faint);
-  letter-spacing: 0.04em;
-  margin-top: 2px;
-}
+
+/* segmented pill nav — hairline border, no panel fill; the active segment
+   is a crisp ink chip. Mono = the machine-voice wayfinding. */
 .ed-nav {
   justify-self: center;
-  display: flex;
-  gap: 3px;
-  padding: 4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
+  padding: 3px;
   border-radius: 9999px;
-  background: color-mix(in oklch, var(--panel) 70%, transparent);
   border: 1px solid var(--border-faint);
 }
 .ed-nav a {
-  padding: 8px 22px;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  letter-spacing: 0.01em;
+  color: var(--fg-muted);
+  padding: 0.32rem 0.85rem;
   border-radius: 9999px;
-  font-size: 14px;
-  color: var(--fg-subtle);
   transition:
-    color var(--dur-base, 150ms),
-    background var(--dur-base, 150ms);
+    color 0.2s,
+    background-color 0.2s;
 }
 .ed-nav a:hover {
   color: var(--fg);
-  background: color-mix(in oklch, var(--fg) 6%, transparent);
 }
 .ed-nav a[data-active="true"] {
-  color: var(--fg);
-  background: var(--elevated);
+  color: var(--bg);
+  background: var(--fg);
 }
 .ed-iconbtn {
   width: 32px;
@@ -1442,12 +1499,12 @@
     gap: 12px;
   }
   /* Logo-only brand so the centered nav + theme fit on a phone. */
-  .ed-mast-stack {
+  .ed-wordmark {
     display: none;
   }
   .ed-nav a {
-    padding: 7px 15px;
-    font-size: 13px;
+    padding: 0.3rem 0.62rem;
+    font-size: 0.72rem;
   }
   .ed-article-title {
     font-size: 30px;
@@ -1591,4 +1648,246 @@
 .ed-prose .mermaid-diagram svg {
   max-width: 100%;
   height: auto;
+}
+
+/* ============================================================
+   PUBLIC REDESIGN 2026 — shared art-direction.
+   Warm paper, ink-on-paper; one signature (the mended seam);
+   reading-first columns; a date-spine timeline; quiet mono meta.
+   Scoped to .ed. Supersedes the broadsheet grammar above (the
+   superseded ed-cover, ed-fd, ed-spread, ed-rail families are removed
+   in the cleanup pass). Reading-body links use --link for AA.
+   ============================================================ */
+.ed-prose a {
+  color: var(--link);
+}
+
+/* ---- the frame: a wide outer, content columns anchored within ---- */
+.ed-wrap {
+  width: 100%;
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 0 clamp(1.5rem, 5vw, 4rem);
+}
+
+/* placement rule — cover: left-anchored · archive: a little left of
+   centre · read/index: centred. */
+.ed-col-cover { max-width: 40rem; }
+.ed-col-read { max-width: 40rem; margin-inline: auto; }
+.ed-col-index { max-width: 37rem; margin-inline: auto; }
+.ed-col-archive {
+  max-width: 33rem;
+  margin-left: clamp(0rem, calc(50% - 21.5rem), calc(50% - 16.5rem));
+  margin-right: auto;
+}
+
+/* ---- the one signature: a single mended seam (kintsugi). The neutral
+   hairline parts at ~30%; a thread of accent bridges the gap. Unlabeled. ---- */
+.ed-seam {
+  position: relative;
+  height: 1px;
+  width: min(var(--ed-seam-w, 34rem), 100%);
+  margin: clamp(2.4rem, 9vh, 5rem) 0 clamp(1.6rem, 3.5vh, 2.4rem);
+  background: linear-gradient(
+    90deg,
+    var(--border-faint) 0 28.5%,
+    transparent 28.5% 31.5%,
+    var(--border-faint) 31.5% 100%
+  );
+}
+.ed-seam::after {
+  content: "";
+  position: absolute;
+  top: -1px;
+  left: 27.5%;
+  width: 5%;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--accent);
+  opacity: 0.85;
+}
+
+/* ---- keyboard focus, always visible (public surface + overlays) ---- */
+.ed a:focus-visible,
+.ed button:focus-visible,
+.ed-theme a:focus-visible,
+.ed-theme button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+/* ---- one orchestrated load moment. Motion-gated so the SSR/no-JS state
+   is fully visible: blocks only hide-then-rise when motion is allowed. ---- */
+@media (prefers-reduced-motion: no-preference) {
+  @keyframes ed-rise {
+    from {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  .ed-rise {
+    opacity: 0;
+    animation: ed-rise 0.7s cubic-bezier(0.2, 0.6, 0.2, 1) forwards;
+  }
+  .ed-rise-1 { animation-delay: 0.05s; }
+  .ed-rise-2 { animation-delay: 0.2s; }
+  .ed-rise-3 { animation-delay: 0.34s; }
+  .ed-rise-4 { animation-delay: 0.48s; }
+  .ed-rise-5 { animation-delay: 0.6s; }
+  .ed-rise-6 { animation-delay: 0.7s; }
+  .ed-rise-7 { animation-delay: 0.8s; }
+}
+
+/* ---- content-type dot + quiet mono meta line ---- */
+.ed-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: none;
+}
+.ed-metaline {
+  font-family: var(--font-mono);
+  font-size: 0.76rem;
+  letter-spacing: 0.01em;
+  color: var(--fg-faint);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* ---- date-spine timeline (articles, topic-detail, search results) ---- */
+.ed-feed {
+  border-left: 1px solid var(--border-faint);
+  padding-left: clamp(1.1rem, 3vw, 1.9rem);
+  max-width: 34rem;
+}
+.ed-feed-year + .ed-feed-year {
+  margin-top: clamp(2rem, 5.5vh, 3.2rem);
+}
+.ed-feed-mark {
+  font-family: var(--font-serif);
+  font-weight: 380;
+  font-size: clamp(1.8rem, 3.4vw, 2.5rem);
+  line-height: 1;
+  letter-spacing: -0.01em;
+  color: var(--fg-faint);
+  margin: 0 0 clamp(0.5rem, 1.6vh, 1rem);
+}
+.ed-entry {
+  display: grid;
+  grid-template-columns: 4.6rem 1fr;
+  column-gap: clamp(0.8rem, 2vw, 1.2rem);
+  align-items: baseline;
+  padding: clamp(0.95rem, 2.4vh, 1.45rem) 0;
+  color: inherit;
+  max-width: 34rem;
+}
+.ed-entry-date {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.01em;
+  color: var(--fg-faint);
+  white-space: nowrap;
+}
+.ed-entry-title {
+  font-family: var(--font-serif);
+  font-weight: 440;
+  font-size: clamp(1.12rem, 1.9vw, 1.32rem);
+  line-height: 1.28;
+  letter-spacing: -0.01em;
+  color: var(--fg);
+  transition: color 0.2s;
+}
+.ed-entry-title .ed-dot {
+  margin-right: 0.55rem;
+  vertical-align: 0.16em;
+}
+.ed-entry:hover .ed-entry-title,
+.ed-entry:focus-visible .ed-entry-title {
+  color: var(--accent);
+}
+
+/* ---- hairline row (home recent, topics index, related) ---- */
+.ed-rowline {
+  display: flex;
+  align-items: baseline;
+  gap: 1rem;
+  padding: 0.62rem 0;
+  border-top: 1px solid var(--border-faint);
+  color: inherit;
+  max-width: 34rem;
+}
+.ed-rowline .when {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--fg-faint);
+  width: 4.4rem;
+  flex: none;
+}
+.ed-rowline .ttl {
+  font-size: 1.05rem;
+  color: var(--fg);
+  transition: color 0.2s;
+}
+.ed-rowline:hover .ttl,
+.ed-rowline:focus-visible .ttl {
+  color: var(--accent);
+}
+
+/* ---- quiet mono type filter (articles, topic-detail, search) — active
+   segment is a crisp ink chip, echoing the nav pill ---- */
+.ed-filter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem 0.35rem;
+  max-width: 34rem;
+}
+.ed-ftog {
+  font-family: var(--font-mono);
+  font-size: 0.74rem;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  color: var(--fg-muted);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  padding: 0.3rem 0.72rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.42rem;
+  transition: color 0.2s, background-color 0.2s, border-color 0.2s, opacity 0.2s;
+}
+.ed-ftog .ed-dot {
+  width: 6px;
+  height: 6px;
+}
+.ed-ftog:not(:disabled):hover {
+  color: var(--fg);
+}
+.ed-ftog[aria-pressed="true"] {
+  color: var(--bg);
+  background: var(--fg);
+  border-color: var(--fg);
+}
+.ed-ftog:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+/* ---- mobile: stack the date above the title; columns go full-width ---- */
+@media (max-width: 560px) {
+  .ed-entry {
+    grid-template-columns: 1fr;
+    row-gap: 0.2rem;
+  }
+  .ed-entry-date {
+    order: -1;
+  }
 }

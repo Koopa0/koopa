@@ -42,16 +42,21 @@
 }
 
 @if (!isChromeless()) {
-  <!-- Back to Top Button -->
-  <app-back-to-top />
+  <!-- Shared overlays. On the public site they inherit the warm-paper
+       palette via .ed-theme (token-only, no box); on admin they fall through
+       to the global oklch-dark tokens. -->
+  <div [class.ed-theme]="isPublicSite()">
+    <!-- Back to Top Button -->
+    <app-back-to-top />
 
-  <!-- Global aria-live region — KeyboardShortcutsService writes mode-switch
-     and a11y-mode announcements here so we don't pull in CDK A11y. -->
-  <div id="koopa-announcer" role="status" aria-live="polite" class="sr-only"></div>
+    <!-- Global aria-live region — KeyboardShortcutsService writes mode-switch
+       and a11y-mode announcements here so we don't pull in CDK A11y. -->
+    <div id="koopa-announcer" role="status" aria-live="polite" class="sr-only"></div>
 
-  <!-- Command Palette (⌘K) -->
-  <app-command-palette />
+    <!-- Command Palette (⌘K) -->
+    <app-command-palette />
 
-  <!-- Global Toast Notifications -->
-  <app-toast />
+    <!-- Global Toast Notifications -->
+    <app-toast />
+  </div>
 }
