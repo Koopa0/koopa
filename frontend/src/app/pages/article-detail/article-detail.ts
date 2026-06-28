@@ -21,7 +21,6 @@ import type { ApiContent, ApiRelatedContent } from '../../core/models';
 import { contentTypeLabelEn } from '../../core/models';
 import { SeoService } from '../../core/services/seo/seo.service';
 import { buildBlogPostingSchema } from '../../core/services/seo/json-ld.util';
-import { TableOfContentsComponent } from '../../shared/table-of-contents/table-of-contents.component';
 import { RelatedArticlesComponent } from '../../shared/related-articles/related-articles.component';
 
 /**
@@ -29,18 +28,14 @@ import { RelatedArticlesComponent } from '../../shared/related-articles/related-
  * essay / build-log / til / digest). The article is resolved by
  * {@link articleResolver} before the route activates (so the page-level view
  * transition lands on the finished page, never a spinner) and arrives via the
- * `article` input. Has two homes: /articles/:slug (full chrome: breadcrumbs,
- * TOC, read next) and /preview/:slug (chrome-less column for the admin
- * publish-preview iframe, noindex).
+ * `article` input. Has two homes: /articles/:slug (a centered reading column:
+ * back link, title, dek, one mono meta line, the mended seam, the prose body,
+ * then a quiet related pair) and /preview/:slug (chrome-less column for the
+ * admin publish-preview iframe, noindex).
  */
 @Component({
   selector: 'app-article-detail',
-  imports: [
-    DatePipe,
-    RouterLink,
-    TableOfContentsComponent,
-    RelatedArticlesComponent,
-  ],
+  imports: [DatePipe, RouterLink, RelatedArticlesComponent],
   templateUrl: './article-detail.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })

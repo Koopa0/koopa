@@ -5,79 +5,48 @@
       <h1 class="ed-article-title">{{ content.title }}</h1>
       @if (content.excerpt) {
         <p class="ed-lead">{{ content.excerpt }}</p>
-        <hr class="ed-lead-rule" />
+        <div class="ed-seam" role="presentation"></div>
       }
       <div class="ed-prose" [innerHTML]="parsedContent()"></div>
     </article>
   } @else {
-    <div class="ed-main ed-read">
-      <!-- Breadcrumbs -->
-      <nav class="ed-crumbs" aria-label="Breadcrumb">
-        <a routerLink="/articles">Article</a>
-        @if (primaryTopic(); as topic) {
-          <span class="sep" aria-hidden="true">/</span>
-          <a [routerLink]="['/topics', topic.slug]">{{ topic.name }}</a>
-        }
-        <span class="sep" aria-hidden="true">/</span>
-        <span class="here" aria-current="page">{{ typeLabel() }}</span>
-      </nav>
+    <!-- A centered reading column: the primary reading surface. -->
+    <section class="ed-article-page">
+      <div class="ed-wrap">
+        <article class="ed-col-read">
+          <a class="ed-crumb ed-rise ed-rise-1" routerLink="/articles"
+            >&larr; the work</a
+          >
 
-      <div class="ed-spread has-toc">
-        <!-- LEFT: mono metadata rail (machine voice) -->
-        <aside class="ed-rail" aria-label="Article metadata">
-          <div class="ed-rail-row">
-            <span class="ed-rail-k">Type</span>
-            <span class="ed-rail-v">{{ typeLabel() }}</span>
-          </div>
-          @if (content.published_at) {
-            <div class="ed-rail-row">
-              <span class="ed-rail-k">Published</span>
-              <span class="ed-rail-v">{{
-                content.published_at | date: 'MMM d, yyyy'
-              }}</span>
-            </div>
-          }
-          <div class="ed-rail-row">
-            <span class="ed-rail-k">Reading</span>
-            <span class="ed-rail-v">{{ content.reading_time_min }} min</span>
-          </div>
-        </aside>
+          <h1 class="ed-article-title ed-rise ed-rise-2">{{ content.title }}</h1>
 
-        <!-- CENTRE: serif reading column (human voice) -->
-        <article class="ed-read-col min-w-0">
-          <h1 class="ed-article-title">{{ content.title }}</h1>
           @if (content.excerpt) {
-            <p class="ed-lead">{{ content.excerpt }}</p>
+            <p class="ed-article-dek ed-rise ed-rise-3">{{ content.excerpt }}</p>
           }
-          <hr class="ed-lead-rule" />
 
-          <div class="ed-prose" [innerHTML]="parsedContent()"></div>
-
-          <div class="ed-colophon">
-            <span class="sig">Koopa</span>
+          <p class="ed-metaline ed-rise ed-rise-4">
+            <span
+              class="ed-dot"
+              [style.background]="'var(--dot-' + content.type + ')'"
+            ></span>
+            <span>{{ content.type }}</span>
             @if (content.published_at) {
-              <span>written {{ content.published_at | date: 'MMM d, yyyy' }}</span>
+              <span>· {{ content.published_at | date: 'MMM d, yyyy' : 'UTC' }}</span>
             }
-            <span>{{ content.reading_time_min }} min</span>
-            @if (content.updated_at !== content.published_at) {
-              <span
-                >updated {{ content.updated_at | date: 'MMM d, yyyy' }}</span
-              >
-            }
-          </div>
+            <span>· {{ content.reading_time_min }} min</span>
+          </p>
+
+          <div class="ed-seam ed-rise ed-rise-5" role="presentation"></div>
+
+          <div class="ed-prose ed-rise ed-rise-6" [innerHTML]="parsedContent()"></div>
 
           @if (relatedArticles().length > 0) {
-            <div class="ed-readnext">
+            <div class="ed-readnext ed-rise ed-rise-7">
               <app-related-articles [articles]="relatedArticles()" />
             </div>
           }
         </article>
-
-        <!-- RIGHT: mono TOC (machine voice) -->
-        <aside class="ed-toc hidden lg:block">
-          <app-table-of-contents [content]="rawHtml()" />
-        </aside>
       </div>
-    </div>
+    </section>
   }
 }

@@ -1,78 +1,36 @@
-<section>
-  <div class="mx-auto max-w-3xl px-6 pt-11 pb-28 sm:px-11">
-    <!-- Hero -->
-    <header class="border-b border-border pt-2 pb-7">
-      <p class="font-mono text-[11px] tracking-[0.06em] uppercase text-brand">
-        Topics
-      </p>
-      <h1
-        class="font-display mt-3 text-[2.375rem] font-bold leading-[1.1] tracking-[-0.025em] text-balance text-fg"
-      >
-        Browse by topic
-      </h1>
-      <p
-        class="mt-3.5 max-w-[620px] font-serif text-lg leading-[1.65] text-fg-muted"
-      >
-        Browse all articles, notes, and learning records by topic.
-      </p>
-    </header>
+<section class="ed-index-page">
+  <div class="ed-wrap">
+    <div class="ed-col-index">
+      <h1 class="ed-page-title ed-rise ed-rise-1">By topic.</h1>
+      <div class="ed-seam ed-rise ed-rise-2" role="presentation"></div>
 
-    @if (isLoading()) {
-      <!-- Loading skeleton -->
-      <div class="grid grid-cols-1 gap-4 pt-8 sm:grid-cols-2">
-        @for (placeholder of [1, 2, 3, 4]; track placeholder) {
-          <div class="animate-pulse rounded-md border border-border p-5">
-            <div class="mb-3 h-5 w-1/2 rounded-xs bg-overlay"></div>
-            <div class="mb-4 h-4 w-3/4 rounded-xs bg-overlay"></div>
-            <div class="h-3 w-1/4 rounded-xs bg-overlay"></div>
-          </div>
-        }
-      </div>
-    } @else if (error()) {
-      <p class="py-20 text-center text-fg-subtle">{{ error() }}</p>
-    } @else if (topics().length === 0) {
-      <!-- Empty state -->
-      <div class="flex flex-col items-center gap-4 py-20 text-center">
-        <lucide-icon [img]="LayersIcon" [size]="40" class="text-fg-faint" />
-        <h2 class="text-lg font-medium text-fg-muted">No topics yet</h2>
-        <p class="text-sm text-fg-faint">
-          Topics will appear automatically when content is published
+      @if (isLoading()) {
+        <p class="ed-index-note">Loading…</p>
+      } @else if (error()) {
+        <p class="ed-index-note">{{ error() }}</p>
+      } @else if (topics().length === 0) {
+        <p class="ed-index-note">
+          No topics yet — they appear as content is published.
         </p>
-      </div>
-    } @else {
-      <!-- Quiet topic cards -->
-      <div class="grid grid-cols-1 gap-4 pt-8 sm:grid-cols-2">
-        @for (topic of topics(); track topic.id) {
-          <a
-            [routerLink]="'/topics/' + topic.slug"
-            class="group rounded-md border border-border bg-panel p-5 no-underline transition-colors duration-(--dur-base) hover:border-border-strong"
-            data-testid="topic-card"
-          >
-            <div class="flex items-baseline gap-2.5">
-              @if (topic.icon) {
-                <span class="text-xl leading-none">{{ topic.icon }}</span>
+      } @else {
+        <div class="ed-index ed-rise ed-rise-3">
+          @for (topic of topics(); track topic.id) {
+            <a
+              class="ed-index-row"
+              [routerLink]="['/topics', topic.slug]"
+              data-testid="topic-card"
+            >
+              <span class="ed-index-head">
+                <span class="ed-index-name">{{ topic.name }}</span>
+                <span class="ed-index-count">{{ topic.content_count }}</span>
+              </span>
+              @if (topic.description) {
+                <p class="ed-index-desc">{{ topic.description }}</p>
               }
-              <h2
-                class="font-display text-lg font-semibold text-fg transition-colors duration-(--dur-base) group-hover:text-brand"
-              >
-                {{ topic.name }}
-              </h2>
-            </div>
-
-            @if (topic.description) {
-              <p
-                class="mt-2 line-clamp-2 font-serif text-sm leading-relaxed text-fg-muted"
-              >
-                {{ topic.description }}
-              </p>
-            }
-
-            <p class="mt-3 font-mono text-[11px] text-fg-faint">
-              {{ topic.content_count }} pieces
-            </p>
-          </a>
-        }
-      </div>
-    }
+            </a>
+          }
+        </div>
+      }
+    </div>
   </div>
 </section>

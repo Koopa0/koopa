@@ -107,7 +107,7 @@ describe('TopicDetailComponent', () => {
     expect(rows[0].getAttribute('href')).toBe('/articles/a-piece');
   });
 
-  it('should show per-type counts in the head', () => {
+  it('should show the piece count and one type swatch per type in the head', () => {
     fixture.componentRef.setInput('slug', 'go');
     fixture.detectChanges();
     flushTopic(buildMockTopic(), [
@@ -118,9 +118,11 @@ describe('TopicDetailComponent', () => {
     fixture.detectChanges();
 
     const el = fixture.nativeElement as HTMLElement;
-    const meta = el.querySelector('.ed-topic-meta');
-    expect(meta?.textContent).toContain('1 Article');
-    expect(meta?.textContent).toContain('2 TIL');
+    const meta = el.querySelector('.ed-metaline');
+    expect(meta?.textContent).toContain('3 pieces');
+    // One coloured dot per distinct type present (article + til = 2),
+    // not one per piece (3) nor one per known type (5).
+    expect(meta?.querySelectorAll('.ed-dot').length).toBe(2);
   });
 
   it('should filter rows by type when a tab is selected', () => {

@@ -7,25 +7,16 @@ import {
   input,
   linkedSignal,
 } from '@angular/core';
-import { Router } from '@angular/router';
+import { DatePipe } from '@angular/common';
+import { Router, RouterLink } from '@angular/router';
 import { rxResource } from '@angular/core/rxjs-interop';
-import {
-  LucideAngularModule,
-  FileText,
-  X,
-  AlertTriangle,
-  RefreshCw,
-} from 'lucide-angular';
 import { environment } from '../../../environments/environment';
 import { ContentService } from '../../core/services/content.service';
-import { TopicService } from '../../core/services/topic.service';
 import { SeoService } from '../../core/services/seo/seo.service';
 import { buildCollectionPageSchema } from '../../core/services/seo/json-ld.util';
-import { PostRowComponent } from '../../shared/post-row/post-row.component';
 import type {
   ApiContent,
   ApiListResponse,
-  ApiTopic,
   ContentType,
 } from '../../core/models';
 
@@ -52,12 +43,11 @@ interface YearGroup {
  * The reading index — served at both `/` and `/articles`. One editorial
  * list consolidating every written content type (article / essay /
  * build-log / til / digest); the `type` query param narrows by type
- * (the per-type lists are folded into this one index) and the topic
- * chips narrow client-side by topic.
+ * (the per-type lists are folded into this one index).
  */
 @Component({
   selector: 'app-articles',
-  imports: [LucideAngularModule, PostRowComponent],
+  imports: [DatePipe, RouterLink],
   templateUrl: './articles.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
@@ -66,14 +56,11 @@ export class ArticlesComponent implements OnInit {
   readonly type = input<string>();
 
   private readonly contentService = inject(ContentService);
-  private readonly topicService = inject(TopicService);
   private readonly seoService = inject(SeoService);
   private readonly router = inject(Router);
 
-  protected readonly FileTextIcon = FileText;
-  protected readonly XIcon = X;
-  protected readonly AlertIcon = AlertTriangle;
-  protected readonly RetryIcon = RefreshCw;
+  /** The canonical content types, exposed for the type filter row. */
+  protected readonly contentTypes = CONTENT_TYPES;
 
   protected readonly typeFilter = computed<ContentType | undefined>(() => {
     const requested = this.type();
@@ -88,14 +75,6 @@ export class ArticlesComponent implements OnInit {
     computation: () => 1,
   });
 
-  /** Selected topic chip — snaps back to "all" when the type changes. */
-  protected readonly topicFilter = linkedSignal<ContentType | undefined, string>(
-    {
-      source: () => this.typeFilter(),
-      computation: () => 'all',
-    },
-  );
-
   protected readonly contentsResource = rxResource<
     ApiListResponse<ApiContent>,
     ContentsQuery
@@ -109,35 +88,12 @@ export class ArticlesComponent implements OnInit {
       }),
   });
 
-  protected readonly topicsResource = rxResource<ApiTopic[], void>({
-    stream: () => this.topicService.getAllTopics(),
-  });
-
   protected readonly contents = computed(() =>
     this.contentsResource.hasValue() ? this.contentsResource.value().data : [],
   );
 
-  // Only surface topics that actually have published content — the public
-  // /api/topics returns every seeded topic (content_count is published-only),
-  // so without this the index shows a wall of empty, dead filter chips.
-  protected readonly topics = computed(() => {
-    const all = this.topicsResource.hasValue()
-      ? this.topicsResource.value()
-      : [];
-    return all.filter((t) => t.content_count > 0);
-  });
-
-  protected readonly filteredContents = computed(() => {
-    const topic = this.topicFilter();
-    const items = this.contents();
-    if (topic === 'all') {
-      return items;
-    }
-    return items.filter((c) => c.topics.some((t) => t.slug === topic));
-  });
-
   /**
-   * filteredContents() grouped by published year, newest year first; undated
+   * contents() grouped by published year, newest year first; undated
    * pieces sink into a trailing "—" bucket. Pure derivation — no query change.
    * Page-scoped: server pagination is perPage:50, so the per-year counts
    * reflect the current page, not corpus totals. Honest at the current corpus;
@@ -146,7 +102,7 @@ export class ArticlesComponent implements OnInit {
    */
   protected readonly grouped = computed<YearGroup[]>(() => {
     const byYear = new Map<string, ApiContent[]>();
-    for (const c of this.filteredContents()) {
+    for (const c of this.contents()) {
       const year = c.published_at
         ? new Date(c.published_at).getUTCFullYear().toString()
         : '—';
@@ -199,12 +155,10 @@ export class ArticlesComponent implements OnInit {
     });
   }
 
-  protected selectTopic(slug: string): void {
-    this.topicFilter.set(slug);
-  }
-
-  protected clearTypeFilter(): void {
-    this.router.navigate(['/articles']);
+  protected setType(type?: ContentType): void {
+    void this.router.navigate(['/articles'], {
+      queryParams: type ? { type } : {},
+    });
   }
 
   protected previousPage(): void {

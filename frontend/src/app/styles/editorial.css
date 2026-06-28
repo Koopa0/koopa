@@ -270,9 +270,9 @@ html.public-dark .ed-theme {
   margin-top: 72px;
 }
 .ed-foot-inner {
-  max-width: var(--ed-shell, 980px);
+  max-width: 1180px;
   margin: 0 auto;
-  padding: 22px var(--ed-pad);
+  padding: 22px clamp(1.5rem, 5vw, 4rem);
   display: flex;
   align-items: center;
   gap: 16px;
@@ -1252,190 +1252,13 @@ html.public-dark .ed-theme {
   color: var(--fg-faint);
 }
 
-/* ============================================================
-   ABOUT — THE COLOPHON: four labelled blocks in the serif column of
-   .ed-spread. Statement -> pull -> NOW (dated) -> Elsewhere -> Colophon ->
-   signature. Block labels reuse the faint mono-label grammar; NOW takes
-   --brand as the liveness tell. The <dl> rows share the one hairline
-   grammar with the archive year-rows — one grammar, three surfaces.
-   ============================================================ */
-.ed-about-kicker {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--brand);
-  margin: 0 0 16px;
-}
-.ed-about-stmt {
-  font-family: var(--ed-title-font);
-  font-weight: var(--ed-title-weight);
-  font-size: var(--fs-ed-30, 1.875rem);
-  line-height: 1.18;
-  letter-spacing: var(--ed-title-track);
-  color: var(--fg);
-  margin: 0;
-  max-width: 24ch;
-  text-wrap: balance;
-}
-.ed-about-pull {
-  font-family: var(--font-serif);
-  font-style: var(--ed-lead-style);
-  font-size: var(--fs-ed-24, 1.5rem);
-  line-height: 1.4;
-  letter-spacing: -0.005em;
-  color: var(--fg);
-  max-width: 30ch;
-  margin: 32px 0;
-  padding-top: 24px;
-  border-top: 1px solid var(--ed-rule);
-}
-.ed-about-label {
-  display: block;
-  font-family: var(--font-mono);
-  font-size: 10px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--fg-faint);
-  margin: 44px 0 14px;
-}
-.ed-about-updated {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-  color: var(--fg-faint);
-  margin: 0 0 16px;
-}
-.ed-about-dl {
-  display: grid;
-  grid-template-columns: 7.25rem minmax(0, 1fr);
-  margin: 0;
-}
-.ed-about-dl > .pair {
-  display: contents;
-}
-/* Elsewhere: the logo already names the platform, so the term column is
-   dropped (kept sr-only for assistive tech) — each row is just icon + handle. */
-.ed-about-dl.ed-about-links {
-  grid-template-columns: minmax(0, 1fr);
-}
-.ed-about-dl dt {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
-  color: var(--fg-faint);
-  padding: 11px 0;
-  border-top: 1px solid var(--border-faint);
-}
-.ed-about-dl dd {
-  margin: 0;
-  font-family: var(--font-serif);
-  font-size: 15.5px;
-  line-height: 1.45;
-  color: var(--fg);
-  padding: 11px 0;
-  border-top: 1px solid var(--border-faint);
-}
-.ed-about-dl .pair:first-child dt,
-.ed-about-dl .pair:first-child dd {
-  border-top: none;
-}
-.ed-about-dl dd a {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  color: var(--fg);
-  text-decoration: none;
-  transition: color var(--dur-base) var(--ease-standard);
-}
-.ed-about-dl dd a:hover {
-  color: var(--brand);
-}
-.ed-about-ico {
-  flex-shrink: 0;
-  color: var(--fg-faint);
-  transition: color var(--dur-base) var(--ease-standard);
-}
-.ed-about-dl dd a:hover .ed-about-ico {
-  color: var(--brand);
-}
-.ed-about-sig {
-  margin: 40px 0 0;
-  padding-top: 20px;
-  border-top: 1px solid var(--ed-rule);
-  font-family: var(--font-serif);
-  font-style: italic;
-  font-size: 14px;
-  color: var(--fg-subtle);
-}
-
-/* ABOUT — "alive" effects (the fun layer): a pulsing NOW dot, a scroll-spy
-   rail highlight, and a per-block scroll reveal. The reveal is gated by
-   .ed-about-anim — a class the component adds only in the browser — so the
-   content is fully visible under SSR / no-JS and never hidden by CSS alone. */
-.ed-about-label.now {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-}
-.ed-about-label.now::before {
-  content: "";
-  width: 7px;
-  height: 7px;
-  border-radius: 99px;
-  background: var(--brand);
-  animation: ed-now-pulse 2.4s ease-in-out infinite;
-}
-@keyframes ed-now-pulse {
-  0%,
-  100% {
-    box-shadow: 0 0 0 0 var(--brand-muted);
-    opacity: 1;
-  }
-  70% {
-    box-shadow: 0 0 0 6px transparent;
-    opacity: 0.5;
-  }
-}
-.ed-rail-v.is-active {
-  color: var(--brand);
-}
-.ed-about-anim .ed-about-block {
-  opacity: 0;
-  transform: translateY(16px);
-  transition:
-    opacity 0.6s var(--ease-standard),
-    transform 0.6s var(--ease-standard);
-}
-.ed-about-anim .ed-about-block.is-in {
-  opacity: 1;
-  transform: none;
-}
-
+/* The about page styling now lives in its own appended block at the end of
+   this file (a centered reading column + the one alive Now pip). The only
+   non-about rule that lived in this region — the small-screen lead-title
+   override — is preserved here. */
 @media (max-width: 560px) {
   .ed-fd-lead-title {
     font-size: 26px;
-  }
-  .ed-about-stmt {
-    font-size: 26px;
-  }
-  .ed-about-pull {
-    font-size: 20px;
-  }
-  .ed-about-dl {
-    grid-template-columns: 6rem minmax(0, 1fr);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .ed-about-label.now::before {
-    animation: none;
-  }
-  .ed-about-anim .ed-about-block {
-    opacity: 1;
-    transform: none;
-    transition: none;
   }
 }
 
@@ -1891,3 +1714,279 @@ html.public-dark .ed-theme {
     order: -1;
   }
 }
+
+/* ============================================================
+   HOME — the left-anchored cover.
+   ============================================================ */
+.ed-cover-page {
+  padding-top: clamp(3rem, 16vh, 11rem);
+  padding-bottom: clamp(4rem, 12vh, 7rem);
+}
+.ed-statement {
+  font-family: var(--font-serif);
+  font-weight: 440;
+  font-size: clamp(2.3rem, 1.2rem + 4vw, 4.05rem);
+  line-height: 1.08;
+  letter-spacing: -0.018em;
+  margin: 0;
+  max-width: 17ch;
+  color: var(--fg);
+}
+.ed-lead-piece {
+  display: block;
+  max-width: 34rem;
+}
+.ed-lead-title {
+  font-family: var(--font-serif);
+  font-weight: 440;
+  font-size: clamp(1.32rem, 2.4vw, 1.62rem);
+  line-height: 1.22;
+  letter-spacing: -0.01em;
+  margin: 0.55rem 0 0;
+  color: var(--fg);
+  transition: color 0.2s;
+}
+.ed-lead-piece:hover .ed-lead-title,
+.ed-lead-piece:focus-visible .ed-lead-title {
+  color: var(--accent);
+}
+.ed-lead-dek {
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: 1.04rem;
+  line-height: 1.5;
+  color: var(--fg-muted);
+  margin: 0.5rem 0 0;
+  max-width: 30rem;
+}
+.ed-recent {
+  margin-top: clamp(2.4rem, 6vh, 3.6rem);
+}
+.ed-recent .ed-rowline:last-child {
+  border-bottom: 1px solid var(--border-faint);
+}
+.ed-emptyline {
+  font-family: var(--font-serif);
+  color: var(--fg-muted);
+  margin-top: clamp(1.4rem, 4vh, 2.2rem);
+  max-width: 34rem;
+}
+.ed-retry {
+  font: inherit;
+  color: var(--link);
+  text-decoration: underline;
+  background: none;
+  border: 0;
+  padding: 0;
+  margin-left: 0.4rem;
+  cursor: pointer;
+}
+.ed-topics {
+  margin-top: clamp(2.6rem, 6vh, 3.8rem);
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  color: var(--fg-muted);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.2rem 1.1rem;
+  max-width: 34rem;
+}
+.ed-topics .lead {
+  color: var(--fg-faint);
+}
+.ed-topic-link {
+  color: var(--fg-muted);
+  transition: color 0.2s;
+}
+.ed-topic-link:hover {
+  color: var(--accent);
+}
+.ed-all {
+  display: inline-block;
+  margin-top: clamp(2.4rem, 6vh, 3.4rem);
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  color: var(--fg-muted);
+  transition: color 0.2s;
+}
+.ed-all:hover {
+  color: var(--accent);
+}
+@media (max-width: 560px) {
+  .ed-statement {
+    max-width: none;
+  }
+}
+
+/* ============================================================
+   ARTICLES — the archive head, shared by topic-detail. A serif page
+   title, one kintsugi seam, a quiet mono TYPE filter, then the date-spine
+   timeline (.ed-feed family above). Page-specific chrome only; the spine,
+   entries, filter toggles, and seam reuse the shared .ed-* atoms.
+   ============================================================ */
+.ed-archive-page {
+  padding-top: clamp(2rem, 9vh, 5.5rem);
+  padding-bottom: clamp(4rem, 12vh, 7rem);
+}
+.ed-page-title {
+  font-family: var(--font-serif);
+  font-weight: 440;
+  font-size: clamp(2rem, 4.4vw, 3.2rem);
+  line-height: 1.1;
+  letter-spacing: -0.018em;
+  margin: 0;
+  max-width: 18ch;
+  color: var(--fg);
+}
+.ed-filter {
+  margin: 0;
+}
+.ed-feed-note {
+  font-family: var(--font-serif);
+  color: var(--fg-muted);
+  margin-top: clamp(1.8rem, 5vh, 2.8rem);
+  max-width: 34rem;
+}
+.ed-pager {
+  margin-top: clamp(2.4rem, 6vh, 3.4rem);
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--fg-muted);
+  max-width: 34rem;
+}
+.ed-pager button {
+  font: inherit;
+  cursor: pointer;
+  color: var(--fg-muted);
+  border: 1px solid var(--border-faint);
+  background: transparent;
+  border-radius: 999px;
+  padding: 0.3rem 0.8rem;
+  transition: color 0.2s, border-color 0.2s;
+}
+.ed-pager button:not(:disabled):hover {
+  color: var(--fg);
+  border-color: var(--border);
+}
+.ed-pager button:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+.ed-pager-n {
+  color: var(--fg-faint);
+}
+@media (max-width: 560px) {
+  .ed-page-title {
+    max-width: none;
+  }
+}
+
+/* ARTICLE-DETAIL — a centered reading column */
+.ed-article-page { padding-top: clamp(2rem, 7vh, 4rem); padding-bottom: clamp(4rem, 12vh, 7rem); }
+.ed-crumb {
+  display: inline-block; font-family: var(--font-mono); font-size: 0.74rem;
+  letter-spacing: 0.01em; color: var(--fg-faint); transition: color 0.2s; margin-bottom: clamp(1.4rem, 4vh, 2.2rem);
+}
+.ed-crumb:hover { color: var(--fg); }
+.ed-article-title {
+  font-family: var(--font-serif); font-weight: 440;
+  font-size: clamp(2rem, 1.2rem + 3vw, 2.7rem); line-height: 1.12;
+  letter-spacing: -0.018em; margin: 0; color: var(--fg); max-width: 22ch;
+}
+.ed-article-dek {
+  font-family: var(--font-serif); font-style: italic;
+  font-size: clamp(1.12rem, 2vw, 1.32rem); line-height: 1.42;
+  color: var(--fg-muted); margin: 0.7rem 0 0; max-width: 34rem;
+}
+.ed-article-page .ed-metaline { margin-top: 0.9rem; }
+
+/* ABOUT — a centered reading column + the one alive device (Now pip) */
+.ed-about-page { padding-top: clamp(2.5rem, 12vh, 7rem); padding-bottom: clamp(4rem, 12vh, 7rem); }
+.ed-about { --ed-seam-w: 37rem; max-width: 40rem; }
+.ed-about-statement {
+  font-family: var(--font-serif); font-weight: 440;
+  font-size: clamp(1.7rem, 1.1rem + 2vw, 2.2rem); line-height: 1.2;
+  letter-spacing: -0.014em; margin: 0; max-width: 34rem; color: var(--fg);
+}
+.ed-about-prose p {
+  font-family: var(--font-serif); font-weight: 380;
+  font-size: 1.06rem; line-height: 1.62; color: var(--fg-muted);
+  margin: 0 0 1.15rem; max-width: 37rem;
+}
+.ed-about-prose p:last-child { margin-bottom: 0; }
+.ed-about-emphasis {
+  font-family: var(--font-serif); font-style: italic; font-weight: 400;
+  font-size: clamp(1.3rem, 2.6vw, 1.55rem); line-height: 1.36;
+  letter-spacing: -0.004em; color: var(--fg); max-width: 33rem;
+  margin: clamp(2.6rem, 7vh, 3.8rem) 0;
+}
+.ed-about-now { margin-top: clamp(2.6rem, 7vh, 3.8rem); }
+.ed-about-now-label {
+  font-family: var(--font-mono); font-size: 0.74rem; letter-spacing: 0.02em;
+  color: var(--fg-faint); display: inline-flex; align-items: center; gap: 0.5rem; margin-bottom: 0.55rem;
+}
+.ed-now-pip { width: 7px; height: 7px; border-radius: 50%; flex: none; background: var(--accent); }
+.ed-about-updated { font-family: var(--font-mono); font-size: 0.72rem; color: var(--fg-faint); margin: 0 0 0.7rem; }
+.ed-about-colophon { margin-top: clamp(3rem, 8vh, 4.4rem); }
+.ed-about-colophon dl { margin: 0; }
+.ed-about-row { display: flex; gap: 1.1rem; padding: 0.22rem 0; font-family: var(--font-mono); font-size: 0.78rem; line-height: 1.5; }
+.ed-about-row dt { color: var(--fg-faint); width: 6.5rem; flex: none; }
+.ed-about-row dd { color: var(--fg-muted); margin: 0; }
+.ed-about-sig { margin: 1.5rem 0 0; font-family: var(--font-serif); font-style: italic; font-size: 1.04rem; color: var(--fg-muted); }
+.ed-about-elsewhere { margin-top: clamp(2.6rem, 7vh, 3.8rem); font-family: var(--font-mono); font-size: 0.74rem; display: flex; flex-wrap: wrap; align-items: center; gap: 0.85rem; color: var(--fg-faint); }
+.ed-about-elsewhere a { color: var(--fg-muted); display: inline-flex; align-items: center; gap: 0.4rem; transition: color 0.2s; }
+.ed-about-elsewhere a:hover { color: var(--accent); }
+@media (prefers-reduced-motion: no-preference) {
+  @keyframes ed-now-breathe { 0%,100% { opacity: 0.92; transform: scale(1); } 50% { opacity: 0.4; transform: scale(0.78); } }
+  .ed-now-pip { animation: ed-now-breathe 3s ease-in-out infinite; }
+}
+@media (max-width: 560px) {
+  .ed-about-statement { max-width: none; }
+  .ed-about-row { flex-direction: column; gap: 0.05rem; }
+  .ed-about-row dt { width: auto; }
+}
+
+/* TOPICS — the quiet index */
+.ed-index-page { padding-top: clamp(2.5rem, 11vh, 6.5rem); padding-bottom: clamp(4rem, 12vh, 7rem); }
+.ed-index { border-bottom: 1px solid var(--border-faint); margin-top: clamp(0.5rem, 2vh, 1rem); }
+.ed-index-row { display: block; border-top: 1px solid var(--border-faint); padding: 0.9rem 0; max-width: 37rem; }
+.ed-index-head { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; }
+.ed-index-name { font-family: var(--font-serif); font-weight: 440; font-size: 1.18rem; letter-spacing: -0.01em; color: var(--fg); transition: color 0.2s; }
+.ed-index-row:hover .ed-index-name, .ed-index-row:focus-visible .ed-index-name { color: var(--accent); }
+.ed-index-count { font-family: var(--font-mono); font-size: 0.78rem; color: var(--fg-faint); font-variant-numeric: tabular-nums; flex: none; }
+.ed-index-desc { font-family: var(--font-serif); font-size: 0.98rem; line-height: 1.45; color: var(--fg-muted); margin: 0.3rem 0 0; max-width: 32rem; }
+.ed-index-note { font-family: var(--font-serif); color: var(--fg-muted); margin-top: clamp(1.6rem, 5vh, 2.6rem); max-width: 37rem; }
+
+/* TOPIC-DETAIL — date-spine with a topic header */
+.ed-topic-page { padding-top: clamp(2.5rem, 11vh, 6.5rem); padding-bottom: clamp(4rem, 12vh, 7rem); }
+.ed-topic-desc { font-family: var(--font-serif); font-size: clamp(1.04rem, 2vw, 1.18rem); line-height: 1.45; color: var(--fg-muted); margin: 0.7rem 0 0; max-width: 34rem; }
+.ed-topic-page .ed-metaline { margin-top: 0.9rem; }
+.ed-topic-page .ed-page-title { max-width: 20ch; }
+
+/* SEARCH — a quiet hairline field + row results */
+.ed-search-page { padding-top: clamp(2.5rem, 11vh, 6.5rem); padding-bottom: clamp(4rem, 12vh, 7rem); }
+.ed-search-field {
+  display: flex; align-items: center; gap: 0.6rem;
+  border-bottom: 1px solid var(--border); padding: 0.5rem 0; max-width: 33rem;
+  transition: border-color 0.2s;
+}
+.ed-search-field:focus-within { border-color: var(--accent); }
+.ed-search-input {
+  flex: 1; font: inherit; font-family: var(--font-serif); font-size: 1.1rem;
+  color: var(--fg); background: transparent; border: 0; outline: none;
+}
+.ed-search-input::placeholder { font-family: var(--font-mono); font-size: 0.85rem; color: var(--fg-faint); }
+.ed-search-clear {
+  font: inherit; font-family: var(--font-mono); font-size: 0.72rem; cursor: pointer;
+  color: var(--fg-faint); background: none; border: 0; padding: 0; transition: color 0.2s; flex: none;
+}
+.ed-search-clear:hover { color: var(--fg); }
+.ed-search-count {
+  font-family: var(--font-mono); font-size: 0.74rem; color: var(--fg-faint);
+  margin: clamp(1.6rem, 4vh, 2.4rem) 0 0.2rem; max-width: 33rem;
+}
+.ed-search-note { font-family: var(--font-serif); color: var(--fg-muted); margin-top: clamp(1.6rem, 5vh, 2.6rem); max-width: 33rem; }
+.ed-search-page .ed-filter { margin-top: clamp(1.2rem, 3vh, 1.8rem); }

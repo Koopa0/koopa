@@ -1,11 +1,14 @@
-<section class="ed-main pb-28">
-  <div class="mx-auto max-w-(--ed-measure) pt-[72px]" #column>
-    <!-- ① STATEMENT + prose + pull -->
-    <section id="statement" #block class="ed-about-block">
-      <p class="ed-about-kicker">About</p>
-      <h1 class="ed-about-stmt">{{ statement }}</h1>
-      <div class="ed-lead-rule"></div>
-      <div class="ed-prose">
+<section class="ed-about-page">
+  <div class="ed-wrap">
+    <div class="ed-col-read ed-about">
+      <!-- ① STATEMENT -->
+      <h1 class="ed-about-statement ed-rise ed-rise-1">{{ statement }}</h1>
+
+      <!-- The one signature: a single mended seam (kintsugi). Unlabeled. -->
+      <div class="ed-seam ed-rise ed-rise-2" role="presentation"></div>
+
+      <!-- ② PROSE -->
+      <div class="ed-about-prose ed-rise ed-rise-3">
         <p>
           I'm Koopa, a software engineer based in Taipei. I work mostly in Go on
           the backend and Angular on the frontend, with the cloud-native pieces
@@ -25,94 +28,79 @@
           they don't take it over.
         </p>
       </div>
-      <p class="ed-about-pull">
+
+      <!-- ③ THE ONE DISTILLED LINE -->
+      <p class="ed-about-emphasis ed-rise ed-rise-4">
         It's less a blog than a system I run on myself.
       </p>
-    </section>
 
-    <!-- ② NOW -->
-    <section id="now" #block class="ed-about-block">
-      <p class="ed-about-label now">Now</p>
-      <p class="ed-about-updated">Updated {{ nowUpdated }}</p>
-      <div class="ed-prose">
-        <p>
-          Going deeper on Go and Rust — the parts that don't fit in a tutorial.
-          Building this site's knowledge engine in the open.
-        </p>
+      <!-- ④ NOW — the one alive device -->
+      <div class="ed-about-now ed-rise ed-rise-5">
+        <span class="ed-about-now-label"
+          ><span class="ed-now-pip" aria-hidden="true"></span>Now</span
+        >
+        <p class="ed-about-updated">Updated {{ nowUpdated }}</p>
+        <div class="ed-about-prose">
+          <p>
+            Going deeper on Go and Rust — the parts that don't fit in a
+            tutorial. Building this site's knowledge engine in the open.
+          </p>
+        </div>
       </div>
-    </section>
-    <div class="ed-lead-rule"></div>
 
-    <!-- ③ ELSEWHERE -->
-    <section id="elsewhere" #block class="ed-about-block">
-      <p class="ed-about-label">Elsewhere</p>
-      <dl class="ed-about-dl ed-about-links">
+      <!-- ⑤ COLOPHON -->
+      <div class="ed-about-colophon ed-rise ed-rise-6">
+        <dl>
+          @for (row of stack; track row.term) {
+            <div class="ed-about-row">
+              <dt>{{ row.term }}</dt>
+              <dd>{{ row.value }}</dd>
+            </div>
+          }
+        </dl>
+        <p class="ed-about-sig">Written &amp; maintained by one person.</p>
+      </div>
+
+      <!-- ⑥ ELSEWHERE -->
+      <div class="ed-about-elsewhere ed-rise ed-rise-7">
         @for (link of elsewhere; track link.term) {
-          <div class="pair">
-            <dt class="sr-only">{{ link.term }}</dt>
-            <dd>
-              <a [href]="link.href" rel="me noopener" target="_blank">
-                @switch (link.kind) {
-                  @case ('github') {
-                    <lucide-icon
-                      class="ed-about-ico"
-                      [img]="GithubIcon"
-                      [size]="14"
-                      [strokeWidth]="1.6"
-                    />
-                  }
-                  @case ('linkedin') {
-                    <lucide-icon
-                      class="ed-about-ico"
-                      [img]="LinkedinIcon"
-                      [size]="14"
-                      [strokeWidth]="1.6"
-                    />
-                  }
-                  @case ('email') {
-                    <lucide-icon
-                      class="ed-about-ico"
-                      [img]="MailIcon"
-                      [size]="14"
-                      [strokeWidth]="1.6"
-                    />
-                  }
-                  @case ('x') {
-                    <svg
-                      class="ed-about-ico"
-                      viewBox="0 0 24 24"
-                      width="13"
-                      height="13"
-                      fill="currentColor"
-                      aria-hidden="true"
-                    >
-                      <path
-                        d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"
-                      />
-                    </svg>
-                  }
-                }
-                {{ link.value }}
-              </a>
-            </dd>
-          </div>
+          <a [href]="link.href" rel="me noopener" target="_blank">
+            @switch (link.kind) {
+              @case ('github') {
+                <lucide-icon
+                  [img]="GithubIcon"
+                  [size]="14"
+                  [strokeWidth]="1.6"
+                />
+              }
+              @case ('linkedin') {
+                <lucide-icon
+                  [img]="LinkedinIcon"
+                  [size]="14"
+                  [strokeWidth]="1.6"
+                />
+              }
+              @case ('email') {
+                <lucide-icon [img]="MailIcon" [size]="14" [strokeWidth]="1.6" />
+              }
+              @case ('x') {
+                <svg
+                  viewBox="0 0 24 24"
+                  width="13"
+                  height="13"
+                  fill="currentColor"
+                  aria-hidden="true"
+                >
+                  <path
+                    d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"
+                  />
+                </svg>
+              }
+            }
+            {{ link.value }}
+          </a>
         }
-      </dl>
-    </section>
-    <div class="ed-lead-rule"></div>
-
-    <!-- ④ COLOPHON -->
-    <section id="colophon" #block class="ed-about-block">
-      <p class="ed-about-label">Colophon</p>
-      <dl class="ed-about-dl">
-        @for (row of stack; track row.term) {
-          <div class="pair">
-            <dt>{{ row.term }}</dt>
-            <dd>{{ row.value }}</dd>
-          </div>
-        }
-      </dl>
-      <p class="ed-about-sig">Written &amp; maintained by one person.</p>
-    </section>
+      </div>
+    </div>
   </div>
 </section>

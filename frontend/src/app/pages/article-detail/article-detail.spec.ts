@@ -8,7 +8,6 @@ import { provideRouter } from '@angular/router';
 import { PLATFORM_ID } from '@angular/core';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ArticleDetailComponent } from './article-detail';
-import { contentTypeLabelEn } from '../../core/models';
 import type { ApiContent, ContentType } from '../../core/models';
 
 function buildMockContent(overrides: Partial<ApiContent> = {}): ApiContent {
@@ -81,7 +80,7 @@ describe('ArticleDetailComponent', () => {
     expect(component).toBeTruthy();
   });
 
-  it('should render breadcrumbs, meta, and TOC rail in full mode', async () => {
+  it('should render the back link, title, meta line, and prose in full mode', async () => {
     fixture.componentRef.setInput('article', buildMockContent());
     fixture.detectChanges();
     await settle();
@@ -89,10 +88,17 @@ describe('ArticleDetailComponent', () => {
     await settle();
 
     const el = fixture.nativeElement as HTMLElement;
-    expect(el.querySelector('nav[aria-label="Breadcrumb"]')).toBeTruthy();
-    expect(el.querySelector('app-table-of-contents')).toBeTruthy();
+    // The quiet mono back link points at the archive.
+    const crumb = el.querySelector('a.ed-crumb');
+    expect(crumb?.getAttribute('href')).toBe('/articles');
+    // One inline mono meta line carries type, date, and reading time.
+    expect(el.querySelector('.ed-metaline')).toBeTruthy();
+    // The reading column rendered the title, prose body, and reading time.
+    expect(el.querySelector('.ed-prose')).toBeTruthy();
     expect(el.textContent).toContain('Test Article');
     expect(el.textContent).toContain('5 min');
+    // The on-this-page TOC rail was dropped from this surface.
+    expect(el.querySelector('app-table-of-contents')).toBeNull();
   });
 
   it.each<ContentType>(['article', 'essay', 'build-log', 'til', 'digest'])(
@@ -109,12 +115,12 @@ describe('ArticleDetailComponent', () => {
 
       const el = fixture.nativeElement as HTMLElement;
       expect(el.textContent).toContain(`A ${type}`);
-      // The reading surface shows the human type label (e.g. "Build Log").
-      expect(el.textContent).toContain(contentTypeLabelEn(type));
+      // The mono meta line shows the raw content type (e.g. "build-log").
+      expect(el.querySelector('.ed-metaline')?.textContent).toContain(type);
     },
   );
 
-  it('should hide breadcrumbs, TOC, and read-next in preview mode', async () => {
+  it('should hide the back link, TOC, and read-next in preview mode', async () => {
     fixture.componentRef.setInput('article', buildMockContent());
     fixture.componentRef.setInput('preview', true);
     fixture.detectChanges();
@@ -122,9 +128,11 @@ describe('ArticleDetailComponent', () => {
     httpTesting.verify(); // no related request in preview (resource idle)
 
     const el = fixture.nativeElement as HTMLElement;
-    expect(el.querySelector('nav[aria-label="Breadcrumb"]')).toBeNull();
+    expect(el.querySelector('a.ed-crumb')).toBeNull();
     expect(el.querySelector('app-table-of-contents')).toBeNull();
     expect(el.querySelector('app-related-articles')).toBeNull();
+    // The chrome-less column keeps the title, dek, and the mended seam.
+    expect(el.querySelector('.ed-seam')).toBeTruthy();
     expect(el.textContent).toContain('Test Article');
   });
 

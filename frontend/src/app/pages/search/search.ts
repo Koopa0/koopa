@@ -8,23 +8,14 @@ import {
   signal,
   computed,
 } from '@angular/core';
-import { isPlatformBrowser } from '@angular/common';
-import { ActivatedRoute, Router } from '@angular/router';
+import { DatePipe, isPlatformBrowser } from '@angular/common';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { Subject, debounceTime } from 'rxjs';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import {
-  LucideAngularModule,
-  Search,
-  X,
-  ChevronLeft,
-  ChevronRight,
-  FileText,
-} from 'lucide-angular';
 import { environment } from '../../../environments/environment';
 import { ContentService } from '../../core/services/content.service';
 import { SeoService } from '../../core/services/seo/seo.service';
 import { publicContentTypes } from '../../core/models';
-import { PostRowComponent } from '../../shared/post-row/post-row.component';
 import type {
   ApiContent,
   ContentType,
@@ -36,7 +27,7 @@ const SEARCH_DEBOUNCE_MS = 300;
 
 @Component({
   selector: 'app-search',
-  imports: [LucideAngularModule, PostRowComponent],
+  imports: [RouterLink, DatePipe],
   templateUrl: './search.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
@@ -64,12 +55,6 @@ export class SearchComponent implements OnInit {
     const m = this.meta();
     return m ? m.total_pages : 0;
   });
-
-  protected readonly SearchIcon = Search;
-  protected readonly XIcon = X;
-  protected readonly ChevronLeftIcon = ChevronLeft;
-  protected readonly ChevronRightIcon = ChevronRight;
-  protected readonly FileTextIcon = FileText;
 
   constructor() {
     this.searchSubject
