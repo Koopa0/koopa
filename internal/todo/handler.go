@@ -488,7 +488,9 @@ func (h *Handler) Advance(w http.ResponseWriter, r *http.Request) {
 	case "start":
 		actionErr = store.Start(r.Context(), id)
 	case "complete":
-		actionErr = h.advanceComplete(r.Context(), store, id)
+		// advanceComplete returns the fresh item directly — no reload needed.
+		item, actionErr = h.advanceComplete(r.Context(), store, id)
+		shouldLoad = false
 	case "defer":
 		actionErr = store.Defer(r.Context(), id)
 	case "activate":
@@ -530,20 +532,28 @@ func (h *Handler) Advance(w http.ResponseWriter, r *http.Request) {
 	api.Encode(w, http.StatusOK, api.Response{Data: item})
 }
 
-// advanceComplete completes a todo. A recurring todo completes today's
-// occurrence — stamping last_completed_on while keeping it recurring — so the
-// admin complete button matches the MCP resolve_todo semantics and never kills
-// a recurrence (UpdateTodoItemState → done would). A non-recurring todo
-// completes terminally. today uses the server day boundary, mirroring Recurring.
-func (h *Handler) advanceComplete(ctx context.Context, store *Store, id uuid.UUID) error {
+// advanceComplete completes a todo and returns the updated item (so the caller
+// need not re-load it). A recurring todo completes today's occurrence —
+// stamping last_completed_on while keeping it recurring — so the admin complete
+// button matches the MCP resolve_todo semantics and never kills a recurrence
+// (UpdateTodoItemState → done would). A non-recurring todo completes terminally.
+// today uses the server day boundary, mirroring Recurring.
+func (h *Handler) advanceComplete(ctx context.Context, store *Store, id uuid.UUID) (*Item, error) {
 	item, err := store.ItemByID(ctx, id)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if item.IsRecurring() {
-		return store.CompleteOccurrenceByID(ctx, id, time.Now().UTC())
+		today := time.Now().UTC()
+		if err := store.CompleteOccurrenceByID(ctx, id, today); err != nil {
+			return nil, err
+		}
+		// Reflect the occurrence stamp on the already-loaded item — its state
+		// is unchanged — so no second round-trip is needed for the response.
+		item.LastCompletedOn = &today
+		return item, nil
 	}
-	return store.Complete(ctx, id, nil)
+	return store.Complete(ctx, id)
 }
 
 // recurrenceRequest is the PUT body for Recurrence. Exactly one of weekdays,

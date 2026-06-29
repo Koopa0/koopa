@@ -255,10 +255,9 @@ func (s *Store) Start(ctx context.Context, id uuid.UUID) error {
 	return err
 }
 
-// Complete sets a todo item's state to done.
-func (s *Store) Complete(ctx context.Context, id uuid.UUID, _ *time.Time) error {
-	_, err := s.UpdateState(ctx, id, StateDone)
-	return err
+// Complete sets a todo item's state to done and returns the updated item.
+func (s *Store) Complete(ctx context.Context, id uuid.UUID) (*Item, error) {
+	return s.UpdateState(ctx, id, StateDone)
 }
 
 // Defer sets a todo item's state to someday.
