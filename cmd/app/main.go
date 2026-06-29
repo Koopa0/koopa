@@ -271,6 +271,15 @@ func run(logger *slog.Logger) error {
 		feedHandler = feed.NewHandler(feedStore, feedCollector, logger)
 	}
 
+	// Owner timezone for day boundaries (recurring due dates, "today" reads,
+	// occurrence stamps). Hardcoded to match cmd/mcp's WithLocation — both
+	// surfaces MUST agree on the day, else a recurring todo completed via the
+	// admin would roll over on a different boundary than the MCP brief.
+	loc, err := time.LoadLocation("Asia/Taipei")
+	if err != nil {
+		return fmt.Errorf("loading Asia/Taipei timezone: %w", err)
+	}
+
 	h := &handlers{
 		auth:     authHandler,
 		content:  content.NewHandler(contentStore, cfg.SiteURL, logger),
@@ -282,13 +291,13 @@ func run(logger *slog.Logger) error {
 		stats:    stats.NewHandler(statsStore, logger),
 		activity: activity.NewHandler(activityStore, logger),
 		agent:    agent.NewHandler(agentRegistry, logger),
-		daily:    daily.NewHandler(dailyStore, todoStore, logger),
-		todo:     todo.NewHandler(todoStore, logger),
+		daily:    daily.NewHandler(dailyStore, todoStore, loc, logger),
+		todo:     todo.NewHandler(todoStore, loc, logger),
 		// Today is the HTTP mirror of brief(mode=morning): the same domain
 		// stores feed both. The contracted readers — todo date views, the
 		// day's committed plan, active goals, and RSS highlights — are wired
 		// to the real stores below.
-		today: today.NewHandler(dailyStore, logger).WithSources(
+		today: today.NewHandler(dailyStore, loc, logger).WithSources(
 			todoStore,
 			goalStore,
 			entryStore,

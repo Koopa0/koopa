@@ -38,6 +38,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -83,7 +84,7 @@ func truncate(t *testing.T) {
 // newHandler wires a daily.Handler with a real todo store against the shared
 // test pool — the plan-write path needs both.
 func newHandler() *daily.Handler {
-	return daily.NewHandler(daily.NewStore(testPool), todo.NewStore(testPool), slog.Default())
+	return daily.NewHandler(daily.NewStore(testPool), todo.NewStore(testPool), time.UTC, slog.Default())
 }
 
 // serve runs an admin request through ActorMiddleware (actor="human") into the

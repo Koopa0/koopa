@@ -26,6 +26,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -72,7 +73,7 @@ func truncate(t *testing.T) {
 // test pool — exactly the wiring cmd/app/main.go installs.
 func newHandler() *today.Handler {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	return today.NewHandler(daily.NewStore(testPool), logger).WithSources(
+	return today.NewHandler(daily.NewStore(testPool), time.UTC, logger).WithSources(
 		todo.NewStore(testPool),
 		goal.NewStore(testPool),
 		entry.NewStore(testPool),

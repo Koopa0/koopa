@@ -70,14 +70,26 @@ type Handler struct {
 	todos     TodoReader
 	goals     ActiveGoalReader
 	rss       RSSHighlightReader
+	loc       *time.Location
 	logger    *slog.Logger
 }
 
 // NewHandler returns a today Handler. planItems is required; every other
 // reader is injected via WithSources. A nil reader leaves its section of
-// the response at the initialized empty-slice / zero state.
-func NewHandler(planItems PlanItemReader, logger *slog.Logger) *Handler {
-	return &Handler{planItems: planItems, logger: logger}
+// the response at the initialized empty-slice / zero state. loc is the owner's
+// timezone for the day boundary (matches the MCP server); nil falls back to UTC.
+func NewHandler(planItems PlanItemReader, loc *time.Location, logger *slog.Logger) *Handler {
+	if loc == nil {
+		loc = time.UTC
+	}
+	return &Handler{planItems: planItems, loc: loc, logger: logger}
+}
+
+// today returns the current date in the owner's timezone, at midnight. Mirrors
+// mcp.Server.today so the dashboard and brief(morning) agree on the day.
+func (h *Handler) today() time.Time {
+	now := time.Now().In(h.loc)
+	return time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, h.loc)
 }
 
 // WithSources injects the cross-domain readers and returns the handler for
@@ -101,7 +113,7 @@ const (
 
 // Today handles GET /api/admin/commitment/today.
 func (h *Handler) Today(w http.ResponseWriter, r *http.Request) {
-	date := time.Now().UTC()
+	date := h.today()
 	if d := r.URL.Query().Get("date"); d != "" {
 		parsed, err := time.Parse(time.DateOnly, d)
 		if err != nil {

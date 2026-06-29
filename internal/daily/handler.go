@@ -27,14 +27,26 @@ import (
 type Handler struct {
 	store  *Store
 	todos  *todo.Store
+	loc    *time.Location
 	logger *slog.Logger
 }
 
 // NewHandler returns a daily Handler. The todo store is required by the
 // plan-write path to validate that each planned todo exists and is in
-// state=todo; the read-only Plan handler does not touch it.
-func NewHandler(store *Store, todos *todo.Store, logger *slog.Logger) *Handler {
-	return &Handler{store: store, todos: todos, logger: logger}
+// state=todo; the read-only Plan handler does not touch it. loc is the owner's
+// timezone for the default plan date (matches the MCP server); nil → UTC.
+func NewHandler(store *Store, todos *todo.Store, loc *time.Location, logger *slog.Logger) *Handler {
+	if loc == nil {
+		loc = time.UTC
+	}
+	return &Handler{store: store, todos: todos, loc: loc, logger: logger}
+}
+
+// today returns the current date in the owner's timezone, at midnight. Mirrors
+// mcp.Server.today so the daily plan's default date rolls at local midnight.
+func (h *Handler) today() time.Time {
+	now := time.Now().In(h.loc)
+	return time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, h.loc)
 }
 
 // PlanItem is the wire-level projection of a daily_plan_items row
@@ -64,7 +76,7 @@ type PlanResponse struct {
 // Plan handles GET /api/admin/commitment/daily-plan.
 // Query params: date (YYYY-MM-DD; defaults to server today).
 func (h *Handler) Plan(w http.ResponseWriter, r *http.Request) {
-	date := time.Now().UTC()
+	date := h.today()
 	if d := r.URL.Query().Get("date"); d != "" {
 		parsed, err := time.Parse(time.DateOnly, d)
 		if err != nil {
@@ -85,7 +97,7 @@ func (h *Handler) Plan(w http.ResponseWriter, r *http.Request) {
 		Date:  date.Format(time.DateOnly),
 		Items: make([]PlanItem, len(rows)),
 	}
-	today := time.Now().UTC().Truncate(24 * time.Hour)
+	today := h.today()
 	for i := range rows {
 		resp.Items[i] = wirePlanItem(&rows[i])
 		if rows[i].Status == StatusDone {
@@ -159,7 +171,7 @@ func (h *Handler) PutPlan(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	date, ok := parsePlanWriteDate(w, req.Date)
+	date, ok := h.parsePlanWriteDate(w, req.Date)
 	if !ok {
 		return
 	}
@@ -233,9 +245,9 @@ func decodePlanWriteRequest(w http.ResponseWriter, r *http.Request) (putPlanRequ
 
 // parsePlanWriteDate resolves the optional date, defaulting to today. On a
 // malformed date it writes a 400 and returns ok=false.
-func parsePlanWriteDate(w http.ResponseWriter, raw *string) (time.Time, bool) {
+func (h *Handler) parsePlanWriteDate(w http.ResponseWriter, raw *string) (time.Time, bool) {
 	if raw == nil || *raw == "" {
-		return time.Now().UTC(), true
+		return h.today(), true
 	}
 	parsed, err := time.Parse(time.DateOnly, *raw)
 	if err != nil {

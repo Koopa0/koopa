@@ -80,7 +80,7 @@ func truncate(t *testing.T) {
 
 // newHandler wires a todo.Handler against the shared test pool.
 func newHandler() *todo.Handler {
-	return todo.NewHandler(todo.NewStore(testPool), slog.Default())
+	return todo.NewHandler(todo.NewStore(testPool), time.UTC, slog.Default())
 }
 
 // serveRead runs a read request directly into the handler (no middleware —
@@ -760,6 +760,79 @@ func TestIntegration_Todo_InProgressItems_ExcludesRecurring(t *testing.T) {
 	if _, ok := got[recurring]; ok {
 		t.Errorf("InProgressItems includes recurring todo %s; recurring work belongs to the Recurring section, not Active", recurring)
 	}
+}
+
+// TestIntegration_Recurring_TimezoneDateRoundTrips proves the day boundary is
+// the owner's civil date, not UTC. The handler computes "today" as midnight in
+// Asia/Taipei (e.g. 2026-06-30 00:00+08 == 2026-06-29 16:00 UTC). This test
+// passes that exact value through the recurrence read + occurrence stamp and
+// asserts the ::date casts resolve to the TAIPEI date (06-30), not the UTC date
+// (06-29) of the same instant — the off-by-one trap a naive timezone change hits.
+func TestIntegration_Recurring_TimezoneDateRoundTrips(t *testing.T) {
+	truncate(t)
+	store := todo.NewStore(testPool)
+	ctx := t.Context()
+
+	taipei, err := time.LoadLocation("Asia/Taipei")
+	if err != nil {
+		t.Fatalf("loading Asia/Taipei: %v", err)
+	}
+	// Taipei civil date 2026-06-30, the instant straddling the UTC boundary.
+	today := time.Date(2026, 6, 30, 0, 0, 0, 0, taipei)
+
+	// Daily (all-weekday) recurring todo, last completed the Taipei day before.
+	var id uuid.UUID
+	if err := testPool.QueryRow(ctx,
+		`INSERT INTO todos (title, state, recur_weekdays, last_completed_on, created_by)
+		 VALUES ('Daily vocab', 'todo', 127::smallint, '2026-06-29'::date, 'human') RETURNING id`,
+	).Scan(&id); err != nil {
+		t.Fatalf("seeding recurring todo: %v", err)
+	}
+
+	// Due today: last completion (06-29) is before the Taipei today (06-30).
+	due, err := store.RecurringItemsDueToday(ctx, today)
+	if err != nil {
+		t.Fatalf("RecurringItemsDueToday: %v", err)
+	}
+	if !containsID(due, id) {
+		t.Fatalf("todo last-completed 06-29 must be due on Taipei 06-30 (got %d due)", len(due))
+	}
+
+	// Complete today's occurrence using the same Taipei-midnight value.
+	if err := store.CompleteOccurrenceByID(ctx, id, today); err != nil {
+		t.Fatalf("CompleteOccurrenceByID: %v", err)
+	}
+
+	// The stamp must be the Taipei civil date (06-30), NOT the UTC date (06-29)
+	// of that instant — this is the assertion that catches the timezone trap.
+	var stamped time.Time
+	if err := testPool.QueryRow(ctx,
+		`SELECT last_completed_on FROM todos WHERE id = $1`, id,
+	).Scan(&stamped); err != nil {
+		t.Fatalf("reading last_completed_on: %v", err)
+	}
+	if got := stamped.Format(time.DateOnly); got != "2026-06-30" {
+		t.Errorf("last_completed_on = %q, want 2026-06-30 (Taipei civil date, not the UTC 06-29)", got)
+	}
+
+	// And it must now drop out of due-today (completed for the Taipei day).
+	due2, err := store.RecurringItemsDueToday(ctx, today)
+	if err != nil {
+		t.Fatalf("RecurringItemsDueToday after complete: %v", err)
+	}
+	if containsID(due2, id) {
+		t.Error("recurring todo completed for Taipei today must not still be due today")
+	}
+}
+
+// containsID reports whether items holds a todo with the given id.
+func containsID(items []todo.Item, id uuid.UUID) bool {
+	for i := range items {
+		if items[i].ID == id {
+			return true
+		}
+	}
+	return false
 }
 
 // recurrenceReq builds the PUT {id}/recurrence request with the given JSON body.

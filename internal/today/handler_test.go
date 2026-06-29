@@ -73,7 +73,7 @@ func (f fakeGoals) ActiveGoals(context.Context) ([]goal.ActiveGoalSummary, error
 
 func newTestHandler(t *testing.T) *Handler {
 	t.Helper()
-	return NewHandler(fakePlanItems{}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	return NewHandler(fakePlanItems{}, time.UTC, slog.New(slog.NewTextHandler(io.Discard, nil)))
 }
 
 func decodeResponse(t *testing.T, rec *httptest.ResponseRecorder) Response {
@@ -153,7 +153,7 @@ func TestToday_WiredSectionsPopulate(t *testing.T) {
 		{ID: uuid.New(), Status: daily.StatusDropped},
 	}
 
-	h := NewHandler(fakePlanItems{items: planItems}, slog.New(slog.NewTextHandler(io.Discard, nil))).
+	h := NewHandler(fakePlanItems{items: planItems}, time.UTC, slog.New(slog.NewTextHandler(io.Discard, nil))).
 		WithSources(
 			&fakeTodos{overdue: overdue, dueOn: dueOn, inRange: inRange},
 			fakeGoals{goals: goals},
@@ -205,6 +205,7 @@ func TestToday_ActiveDedupsAgainstOtherSections(t *testing.T) {
 
 	h := NewHandler(
 		fakePlanItems{items: []daily.Item{{ID: uuid.New(), TodoID: committedID, Status: daily.StatusPlanned}}},
+		time.UTC,
 		slog.New(slog.NewTextHandler(io.Discard, nil)),
 	).WithSources(
 		&fakeTodos{

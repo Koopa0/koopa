@@ -41,12 +41,26 @@ var ErrInvalidTransition = errors.New("todo: invalid transition")
 // Handler handles admin HTTP requests for todos.
 type Handler struct {
 	store  *Store
+	loc    *time.Location
 	logger *slog.Logger
 }
 
-// NewHandler returns a todo Handler.
-func NewHandler(store *Store, logger *slog.Logger) *Handler {
-	return &Handler{store: store, logger: logger}
+// NewHandler returns a todo Handler. loc is the owner's timezone — the day
+// boundary for "today" (recurring due dates, occurrence stamps) so the admin
+// rolls over at local midnight, matching the MCP server (cmd/mcp wires the
+// same zone). A nil loc falls back to UTC.
+func NewHandler(store *Store, loc *time.Location, logger *slog.Logger) *Handler {
+	if loc == nil {
+		loc = time.UTC
+	}
+	return &Handler{store: store, loc: loc, logger: logger}
+}
+
+// today returns the current date in the owner's timezone, at midnight. Mirrors
+// mcp.Server.today so the HTTP admin and the MCP surface agree on the day.
+func (h *Handler) today() time.Time {
+	now := time.Now().In(h.loc)
+	return time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, h.loc)
 }
 
 // mustAdminTx extracts the per-request tx. A missing tx is a wiring
@@ -162,7 +176,7 @@ type recurringResponse struct {
 // has no stored next-due to fall behind — a recurrence is either due today or
 // it is not.
 func (h *Handler) Recurring(w http.ResponseWriter, r *http.Request) {
-	today := time.Now().UTC()
+	today := h.today()
 
 	dueToday, err := h.store.RecurringItemsDueToday(r.Context(), today)
 	if err != nil {
@@ -544,7 +558,7 @@ func (h *Handler) advanceComplete(ctx context.Context, store *Store, id uuid.UUI
 		return nil, err
 	}
 	if item.IsRecurring() {
-		today := time.Now().UTC()
+		today := h.today()
 		if err := store.CompleteOccurrenceByID(ctx, id, today); err != nil {
 			return nil, err
 		}
