@@ -127,6 +127,63 @@ func TestIntegration_ColdStart_CaptureInbox(t *testing.T) {
 	}
 }
 
+// TestIntegration_CaptureInbox_WithRecurrence proves capture_inbox attaches a
+// recurrence in one call: the todo lands in state=inbox with the weekday mask
+// set, and stays dormant (excluded from the due-today recurrence surface) until
+// the owner clarifies it — recurrence is a captured attribute, not an activation.
+func TestIntegration_CaptureInbox_WithRecurrence(t *testing.T) {
+	s := setupServer(t)
+
+	_, out, err := callHandler(t, s.captureInbox, CaptureInboxInput{
+		Title:    "Memorize Japanese vocab",
+		Weekdays: []string{"mon", "tue", "wed", "thu", "fri", "sat", "sun"},
+	})
+	if err != nil {
+		t.Fatalf("captureInbox with recurrence: %v", err)
+	}
+
+	var (
+		state    string
+		weekdays *int16
+	)
+	if err := testPool.QueryRow(t.Context(),
+		`SELECT state, recur_weekdays FROM todos WHERE id = $1`, out.Todo.ID,
+	).Scan(&state, &weekdays); err != nil {
+		t.Fatalf("reading captured recurring todo: %v", err)
+	}
+	if state != "inbox" {
+		t.Errorf("state = %q, want inbox (recurrence is a captured attribute, not activation)", state)
+	}
+	if weekdays == nil || *weekdays != 127 {
+		t.Errorf("recur_weekdays = %v, want 127 (daily)", weekdays)
+	}
+
+	// Dormant until clarified: RecurringItemsDueToday excludes inbox state.
+	due, err := s.todos.RecurringItemsDueToday(t.Context(), time.Now().UTC())
+	if err != nil {
+		t.Fatalf("RecurringItemsDueToday: %v", err)
+	}
+	for _, item := range due {
+		if item.ID == out.Todo.ID {
+			t.Error("a recurring inbox todo must not surface as due-today until clarified")
+		}
+	}
+}
+
+// TestIntegration_CaptureInbox_InvalidRecurrence proves a bad recurrence rule is
+// rejected up front (before any write), not surfaced as a CHECK error.
+func TestIntegration_CaptureInbox_InvalidRecurrence(t *testing.T) {
+	s := setupServer(t)
+
+	_, _, err := callHandler(t, s.captureInbox, CaptureInboxInput{
+		Title:    "bad routine",
+		Weekdays: []string{"funday"},
+	})
+	if err == nil {
+		t.Fatal("captureInbox with an unknown weekday should error, got nil")
+	}
+}
+
 // --- 6. Actor fallback — 'human' when koopa.actor is unset ---
 
 // TestIntegration_ActorFallbackToHuman pins the no-synthetic-agent fallback.

@@ -59,7 +59,7 @@ func (s *Server) setTodoRecurrence(ctx context.Context, _ *mcp.CallToolRequest, 
 		return nil, SetTodoRecurrenceOutput{}, fmt.Errorf("invalid todo_id %q: %w", in.TodoID, err)
 	}
 
-	rec, desc, err := buildRecurrence(in)
+	rec, desc, err := buildRecurrence(in.Weekdays, in.Interval, in.Unit, in.Clear)
 	if err != nil {
 		return nil, SetTodoRecurrenceOutput{}, err
 	}
@@ -86,12 +86,14 @@ func (s *Server) setTodoRecurrence(ctx context.Context, _ *mcp.CallToolRequest, 
 // interval, or clear) and converts it to a todo.Recurrence plus a human-readable
 // description. The mutual exclusivity here mirrors chk_todo_recurrence, but the
 // tool validates first so the caller gets a 400-style message, not a CHECK error.
-func buildRecurrence(in SetTodoRecurrenceInput) (todo.Recurrence, string, error) {
-	hasWeekdays := len(in.Weekdays) > 0
-	hasInterval := in.Interval != nil || in.Unit != nil
+// Shared by set_todo_recurrence and capture_inbox (the latter never clears, so
+// it passes clear=false).
+func buildRecurrence(weekdays []string, interval *int, unit *string, clearRule bool) (todo.Recurrence, string, error) {
+	hasWeekdays := len(weekdays) > 0
+	hasInterval := interval != nil || unit != nil
 
 	modes := 0
-	for _, set := range []bool{hasWeekdays, hasInterval, in.Clear} {
+	for _, set := range []bool{hasWeekdays, hasInterval, clearRule} {
 		if set {
 			modes++
 		}
@@ -104,27 +106,27 @@ func buildRecurrence(in SetTodoRecurrenceInput) (todo.Recurrence, string, error)
 	}
 
 	switch {
-	case in.Clear:
+	case clearRule:
 		return todo.Recurrence{}, "none", nil
 	case hasWeekdays:
-		mask, days, err := weekdaysToMask(in.Weekdays)
+		mask, days, err := weekdaysToMask(weekdays)
 		if err != nil {
 			return todo.Recurrence{}, "", err
 		}
 		return todo.Recurrence{Weekdays: &mask}, "weekdays: " + strings.Join(days, ","), nil
 	default: // interval
-		if in.Interval == nil || in.Unit == nil {
+		if interval == nil || unit == nil {
 			return todo.Recurrence{}, "", fmt.Errorf("interval-mode needs both interval and unit")
 		}
-		if *in.Interval <= 0 || *in.Interval > maxRecurInterval {
-			return todo.Recurrence{}, "", fmt.Errorf("interval must be in [1, %d], got %d", maxRecurInterval, *in.Interval)
+		if *interval <= 0 || *interval > maxRecurInterval {
+			return todo.Recurrence{}, "", fmt.Errorf("interval must be in [1, %d], got %d", maxRecurInterval, *interval)
 		}
-		unit := strings.ToLower(*in.Unit)
-		if _, ok := recurUnits[unit]; !ok {
-			return todo.Recurrence{}, "", fmt.Errorf("unsupported unit %q (supported: days, weeks, months, years)", *in.Unit)
+		u := strings.ToLower(*unit)
+		if _, ok := recurUnits[u]; !ok {
+			return todo.Recurrence{}, "", fmt.Errorf("unsupported unit %q (supported: days, weeks, months, years)", *unit)
 		}
-		interval := int32(*in.Interval) // #nosec G115 -- bounded to [1, maxRecurInterval] above
-		return todo.Recurrence{Interval: &interval, Unit: &unit}, fmt.Sprintf("every %d %s", interval, unit), nil
+		n := int32(*interval) // #nosec G115 -- bounded to [1, maxRecurInterval] above
+		return todo.Recurrence{Interval: &n, Unit: &u}, fmt.Sprintf("every %d %s", n, u), nil
 	}
 }
 

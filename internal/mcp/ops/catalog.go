@@ -61,7 +61,7 @@ func CaptureInbox() Meta {
 		Writability: Additive,
 		Stability:   StabilityStable,
 		Since:       since,
-		Description: "Quick todo capture to the inbox. Only title is required. Status is always inbox. Use when the user says 'add a task', 'remind me to', or expresses a concrete work item to capture.",
+		Description: "Quick todo capture to the inbox. Only title is required. Status is always inbox. Optionally attach a recurrence (weekdays OR interval+unit) to capture a routine in one call instead of capture + set_todo_recurrence; like due/energy it is a captured attribute, so the recurring todo stays in inbox and dormant until the owner clarifies it. Use when the user says 'add a task', 'remind me to', or expresses a concrete work item to capture.",
 		FieldEnums: map[string][]string{
 			"energy": {"high", "medium", "low"},
 		},
