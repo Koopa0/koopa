@@ -137,6 +137,20 @@ function dueDay(due: string | null | undefined): string | null {
   return due ? due.slice(0, 10) : null;
 }
 
+/**
+ * Today's calendar date (YYYY-MM-DD) in the owner's timezone (Asia/Taipei),
+ * matching the backend day boundary (the Go handlers' today() and the MCP
+ * server both roll the day at Asia/Taipei midnight). `new Date().toISOString()`
+ * yields the UTC date, which trails Taipei by one day during 00:00–07:59 local,
+ * dropping due-today todos from the GTD Today tab, miscounting tabs, and
+ * mis-toning due chips. en-CA formats as YYYY-MM-DD.
+ */
+export function todayInTaipei(now: Date = new Date()): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Taipei',
+  }).format(now);
+}
+
 /** Rows for the four backlog-derived views. */
 export function rowsForView(
   view: GtdView,
@@ -151,6 +165,14 @@ export function rowsForView(
       // An in_progress todo is active work — it always belongs in Today
       // (with its Complete action) regardless of plan membership or due
       // date, so starting a task never makes it vanish from every view.
+      //
+      // NOTE (intentional, not drift): this flat triage tab DOES include a
+      // recurring in_progress todo via the in_progress branch, whereas the
+      // Today dashboard's Active section excludes recurring (routines live in
+      // its own Recurring section). The two surfaces serve different jobs —
+      // GTD-page = flat working list, dashboard = sectioned at-a-glance — and
+      // both surface the item, so this is a deliberate divergence, not the
+      // mirror-drift bug class.
       return rows.filter(
         (r) =>
           r.state !== 'done' &&
@@ -160,11 +182,13 @@ export function rowsForView(
             dueDay(r.due) === todayIso),
       );
     case 'pending':
+      // Exclude recurring todos (either mode) — they live in the Recurring
+      // tab, governed by their schedule, not in the Pending backlog.
       return rows.filter(
         (r) =>
           r.state === 'todo' &&
           !planTodoIds.has(r.id) &&
-          r.recur_interval == null,
+          !isRecurringRow(r),
       );
     case 'someday':
       return rows.filter((r) => r.state === 'someday');
@@ -193,7 +217,7 @@ export interface DueChip {
   tone: 'overdue' | 'soon' | 'default';
 }
 
-/** Due chip with overdue/soon tone, compared on the UTC day. */
+/** Due chip with overdue/soon tone, compared on the civil (Asia/Taipei) day. */
 export function dueChip(
   due: string | null | undefined,
   todayIso: string,
@@ -222,13 +246,50 @@ export function ageLabel(createdAt: string, now = Date.now()): string {
   return `${Math.floor(elapsed / DAY_MS)}d`;
 }
 
-/** Recurrence badge: "every 1d", "every 2w" (unit initial). */
+const RECUR_WEEKDAY_ABBR = [
+  'Mon',
+  'Tue',
+  'Wed',
+  'Thu',
+  'Fri',
+  'Sat',
+  'Sun',
+] as const;
+const RECUR_ALL_WEEKDAYS = 127;
+
+/**
+ * Recurrence badge for either mode: interval → "every 1d" / "every 2w" (unit
+ * initial); weekday → "daily" for the full mask, else day abbreviations
+ * ("Mon Thu"). Returns null for a non-recurring todo. Covers weekday-mode so a
+ * weekday routine carries a badge in the backlog rows and the Recurring tab.
+ */
 export function recurLabel(
   interval?: number | null,
   unit?: string | null,
+  weekdays?: number | null,
 ): string | null {
-  if (!interval || !unit) return null;
-  return `every ${interval}${unit.charAt(0)}`;
+  if (interval && unit) return `every ${interval}${unit.charAt(0)}`;
+  if (weekdays && weekdays > 0) {
+    if (weekdays === RECUR_ALL_WEEKDAYS) return 'daily';
+    const days: string[] = [];
+    for (let i = 0; i < RECUR_WEEKDAY_ABBR.length; i++) {
+      if (weekdays & (1 << i)) days.push(RECUR_WEEKDAY_ABBR[i]);
+    }
+    return days.join(' ');
+  }
+  return null;
+}
+
+/**
+ * Whether a backlog row is recurring — true when EITHER mode is set. The
+ * Pending tab uses this to exclude recurring todos (they live in the Recurring
+ * tab); checking only recur_interval missed weekday-mode routines.
+ */
+export function isRecurringRow(r: {
+  recur_interval?: number | null;
+  recur_weekdays?: number | null;
+}): boolean {
+  return r.recur_interval != null || r.recur_weekdays != null;
 }
 
 export function energyOf(value?: string | null): EnergyLevel | null {

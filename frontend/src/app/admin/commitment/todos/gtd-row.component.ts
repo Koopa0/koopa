@@ -23,6 +23,7 @@ import {
   dueChip,
   energyOf,
   recurLabel,
+  todayInTaipei,
   type GtdView,
 } from './gtd-view';
 
@@ -69,7 +70,7 @@ export class GtdRowComponent {
   protected readonly XIcon = X;
   protected readonly CalendarPlusIcon = CalendarPlus;
 
-  private readonly todayIso = new Date().toISOString().slice(0, 10);
+  private readonly todayIso = todayInTaipei();
 
   // 'manual' when Koopa captured it in the admin UI ('human'); 'agent' for a
   // capture an agent dropped in via MCP — hermes (vault sweep / Telegram
@@ -87,7 +88,11 @@ export class GtdRowComponent {
     dueChip(this.item().due, this.todayIso),
   );
   protected readonly recur = computed(() =>
-    recurLabel(this.item().recur_interval, this.item().recur_unit),
+    recurLabel(
+      this.item().recur_interval,
+      this.item().recur_unit,
+      this.item().recur_weekdays,
+    ),
   );
   protected readonly inProgress = computed(
     () => this.item().state === 'in_progress',

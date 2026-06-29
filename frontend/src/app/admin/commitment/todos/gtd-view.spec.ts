@@ -7,10 +7,12 @@ import {
   dueChip,
   emptyCopyFor,
   initialViewOf,
+  isRecurringRow,
   keyActionFor,
   planMemberIds,
   recurLabel,
   rowsForView,
+  todayInTaipei,
   viewCounts,
 } from './gtd-view';
 
@@ -126,7 +128,7 @@ describe('gtd-view', () => {
     ]);
   });
 
-  it('tones due chips by UTC day', () => {
+  it('tones due chips by civil (Asia/Taipei) day', () => {
     expect(dueChip(`${TODAY}T08:00:00Z`, TODAY)).toEqual({
       label: 'today',
       tone: 'soon',
@@ -156,6 +158,41 @@ describe('gtd-view', () => {
     expect(recurLabel(null, null)).toBeNull();
   });
 
+  it('formats the recurrence badge for weekday-mode (daily / day list)', () => {
+    expect(recurLabel(null, null, 127)).toBe('daily');
+    // Mon (bit0=1) + Thu (bit3=8) = 9, in week order.
+    expect(recurLabel(null, null, 9)).toBe('Mon Thu');
+    expect(recurLabel(null, null, 0)).toBeNull();
+    expect(recurLabel(null, null, null)).toBeNull();
+    // Interval mode wins when both are somehow present.
+    expect(recurLabel(3, 'days', 127)).toBe('every 3d');
+  });
+
+  it('treats either recurrence mode as recurring (isRecurringRow)', () => {
+    expect(isRecurringRow({ recur_interval: 2, recur_weekdays: null })).toBe(
+      true,
+    );
+    expect(isRecurringRow({ recur_interval: null, recur_weekdays: 127 })).toBe(
+      true,
+    );
+    expect(isRecurringRow({ recur_interval: null, recur_weekdays: null })).toBe(
+      false,
+    );
+  });
+
+  it('excludes weekday-mode recurring todos from the Pending tab', () => {
+    const rows: TodoRow[] = [
+      row({ id: 'plain', state: 'todo' }),
+      row({ id: 'interval-recur', state: 'todo', recur_interval: 2, recur_unit: 'days' }),
+      row({ id: 'weekday-recur', state: 'todo', recur_weekdays: 127 }),
+    ];
+    // Only the non-recurring todo remains; BOTH recurrence modes are excluded
+    // (weekday-mode was the leak this fix closes).
+    expect(
+      rowsForView('pending', rows, new Set<string>(), TODAY).map((r) => r.id),
+    ).toEqual(['plain']);
+  });
+
   it('maps triage keys per view', () => {
     expect(keyActionFor('e', 'inbox')).toBe('advance');
     expect(keyActionFor('c', 'inbox')).toBe('clarify');
@@ -165,6 +202,17 @@ describe('gtd-view', () => {
     expect(keyActionFor('d', 'someday')).toBeNull();
     expect(keyActionFor('t', 'someday')).toBe('pull');
     expect(keyActionFor('t', 'inbox')).toBe('pull');
+  });
+
+  it('returns the Asia/Taipei civil date, not the UTC date, at the boundary', () => {
+    // 17:00 UTC on Jun 9 is 01:00 Taipei on Jun 10. A UTC-based impl would
+    // return '2026-06-09'; the Taipei civil date is '2026-06-10'. Injecting a
+    // fixed instant makes this deterministic (no wall-clock dependence) and the
+    // expected value is hand-computed, so it catches both a UTC-revert and a
+    // wrong-timezone — not a tautology.
+    expect(todayInTaipei(new Date('2026-06-09T17:00:00Z'))).toBe('2026-06-10');
+    // Mid-afternoon Taipei (same civil day in both zones) — format sanity.
+    expect(todayInTaipei(new Date('2026-06-10T06:00:00Z'))).toBe('2026-06-10');
   });
 
   it('builds the clarify field update only from set fields', () => {

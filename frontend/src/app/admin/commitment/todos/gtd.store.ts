@@ -24,6 +24,7 @@ import {
   planMemberIds,
   recurringGroupsOf,
   rowsForView,
+  todayInTaipei,
   viewCounts,
   type ClarifyResult,
   type GtdView,
@@ -107,7 +108,7 @@ export class GtdStore {
     this.recurring.hasValue() ? this.recurring.value() : undefined,
   );
 
-  private readonly todayIso = new Date().toISOString().slice(0, 10);
+  private readonly todayIso = todayInTaipei();
   private readonly planIds = computed(() =>
     planMemberIds(this.planValue()?.items ?? []),
   );

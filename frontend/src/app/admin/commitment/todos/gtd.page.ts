@@ -30,6 +30,7 @@ import {
   isTriageable,
   keyActionFor,
   recurLabel,
+  todayInTaipei,
   viewLabel,
 } from './gtd-view';
 
@@ -72,7 +73,7 @@ export class GtdPageComponent {
   protected readonly tabs = GTD_TABS;
   protected readonly captureDraft = signal('');
 
-  private readonly todayIso = new Date().toISOString().slice(0, 10);
+  private readonly todayIso = todayInTaipei();
   private readonly captureInput =
     viewChild<ElementRef<HTMLInputElement>>('captureInput');
   private readonly gtdRows = viewChildren(GtdRowComponent);
@@ -111,7 +112,7 @@ export class GtdPageComponent {
   }
 
   protected recurBadge(item: TodoItem): string | null {
-    return recurLabel(item.recur_interval, item.recur_unit);
+    return recurLabel(item.recur_interval, item.recur_unit, item.recur_weekdays);
   }
 
   protected recurDue(item: TodoItem): ReturnType<typeof dueChip> {

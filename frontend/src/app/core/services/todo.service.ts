@@ -24,6 +24,13 @@ export interface TodoRow {
   priority?: PriorityLevel | null;
   recur_interval?: number | null;
   recur_unit?: string | null;
+  /**
+   * Weekday-mode recurrence mask. A row is recurring when EITHER recur_interval
+   * (interval mode) OR recur_weekdays (weekday mode) is set; treating only
+   * recur_interval as recurring let weekday routines leak into the Pending tab
+   * with no recurrence badge.
+   */
+  recur_weekdays?: number | null;
   /** Capture free-text detail (e.g. hermes context); omitted when empty. */
   description?: string;
   created_by?: string;
@@ -48,6 +55,8 @@ export interface TodoItem {
   priority?: PriorityLevel | null;
   recur_interval?: number | null;
   recur_unit?: string | null;
+  /** Weekday-mode recurrence mask (Mon=bit0..Sun=bit6); see TodoRow. */
+  recur_weekdays?: number | null;
   description?: string;
   created_by: string;
   created_at: string;

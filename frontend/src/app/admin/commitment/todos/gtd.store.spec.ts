@@ -6,12 +6,14 @@ import {
   type TestRequest,
 } from '@angular/common/http/testing';
 import { GtdStore } from './gtd.store';
+import { todayInTaipei } from './gtd-view';
 import type { TodoRow } from '../../../core/services/todo.service';
 
 const TODOS_URL = '/api/admin/commitment/todos';
 const PLAN_URL = '/api/admin/commitment/daily-plan';
 
-const todayIso = new Date().toISOString().slice(0, 10);
+// Same civil-date basis as production (Asia/Taipei), not UTC — see gtd.page.spec.
+const todayIso = todayInTaipei();
 
 const backlogRows: TodoRow[] = [
   {

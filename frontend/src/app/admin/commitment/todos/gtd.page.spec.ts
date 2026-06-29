@@ -6,6 +6,7 @@ import {
 } from '@angular/common/http/testing';
 import { ActivatedRoute } from '@angular/router';
 import { GtdPageComponent } from './gtd.page';
+import { todayInTaipei } from './gtd-view';
 import type { TodoRow } from '../../../core/services/todo.service';
 
 // Pins the GTD surface against the commitment contract: the backlog
@@ -15,7 +16,11 @@ import type { TodoRow } from '../../../core/services/todo.service';
 const TODOS_URL = '/api/admin/commitment/todos';
 const PLAN_URL = '/api/admin/commitment/daily-plan';
 
-const todayIso = new Date().toISOString().slice(0, 10);
+// Mint the seed "today" on the SAME civil-date basis production uses
+// (Asia/Taipei via todayInTaipei) — NOT new Date().toISOString() (UTC). The two
+// diverge during 16:00–23:59 UTC, which would drop the due-today seed from the
+// Today tab and flake the count assertion only in that wall-clock window.
+const todayIso = todayInTaipei();
 
 const backlogRows: TodoRow[] = [
   {
@@ -92,6 +97,17 @@ const recurringFixture = {
       state: 'todo',
       recur_interval: 1,
       recur_unit: 'days',
+      created_by: 'human',
+      created_at: '2026-06-01T07:00:00Z',
+      updated_at: '2026-06-01T07:00:00Z',
+    },
+    {
+      // Weekday-mode (Mon+Thu = 9) exercises the recurrence badge end-to-end
+      // through the recurring tab — interval-mode alone left it unverified.
+      id: 'routine-2',
+      title: 'Strength training',
+      state: 'todo',
+      recur_weekdays: 9,
       created_by: 'human',
       created_at: '2026-06-01T07:00:00Z',
       updated_at: '2026-06-01T07:00:00Z',
@@ -191,7 +207,7 @@ describe('GtdPageComponent', () => {
     expect(testid('gtd-tab-today')?.textContent).toContain('2');
     expect(testid('gtd-tab-pending')?.textContent).toContain('1');
     expect(testid('gtd-tab-someday')?.textContent).toContain('1');
-    expect(testid('gtd-tab-recurring')?.textContent).toContain('1');
+    expect(testid('gtd-tab-recurring')?.textContent).toContain('2');
     expect(testid('gtd-tab-history')?.textContent).toContain('1');
     expect(testid('gtd-row-0')?.textContent).toContain('Raw capture');
     expect(testid('gtd-count')?.textContent).toContain('2 items');
@@ -420,9 +436,14 @@ describe('GtdPageComponent', () => {
     fixture.detectChanges();
 
     expect(testid('gtd-recurring-group-Due today')).toBeTruthy();
-    const row = testid('gtd-recurring-row');
-    expect(row?.textContent).toContain('Daily review');
-    expect(row?.textContent).toContain('every 1d');
-    expect(row?.querySelector('button')).toBeNull();
+    const rows = (fixture.nativeElement as HTMLElement).querySelectorAll(
+      '[data-testid="gtd-recurring-row"]',
+    );
+    expect(rows[0]?.textContent).toContain('Daily review');
+    expect(rows[0]?.textContent).toContain('every 1d');
+    // Weekday-mode routine renders its day-list badge (Mon+Thu = mask 9).
+    expect(rows[1]?.textContent).toContain('Strength training');
+    expect(rows[1]?.textContent).toContain('Mon Thu');
+    expect(rows[0]?.querySelector('button')).toBeNull();
   });
 });
