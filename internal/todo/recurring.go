@@ -80,3 +80,43 @@ func (s *Store) CompleteOccurrence(ctx context.Context, id uuid.UUID, createdBy 
 	}
 	return nil
 }
+
+// SetRecurrenceByID sets or clears a todo's recurrence by id, NOT caller-scoped
+// — the admin (owner) write path, mirroring the unscoped admin Update. The MCP
+// SetRecurrence stays created_by-scoped for agents. Returns ErrNotFound when no
+// todo matches the id.
+func (s *Store) SetRecurrenceByID(ctx context.Context, id uuid.UUID, r Recurrence) error {
+	n, err := s.q.SetTodoRecurrenceByID(ctx, db.SetTodoRecurrenceByIDParams{
+		ID:            id,
+		RecurWeekdays: r.Weekdays,
+		RecurInterval: r.Interval,
+		RecurUnit:     r.Unit,
+	})
+	if err != nil {
+		return fmt.Errorf("setting recurrence for todo %s: %w", id, err)
+	}
+	if n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// CompleteOccurrenceByID stamps last_completed_on for today's occurrence of a
+// recurring todo by id, NOT caller-scoped — the admin (owner) complete path.
+// The todo keeps recurring; this is what the admin complete button must call
+// for a recurring todo instead of moving it to done. Returns ErrNotFound when
+// the id is missing or the todo is not recurring (the caller then falls through
+// to a terminal complete).
+func (s *Store) CompleteOccurrenceByID(ctx context.Context, id uuid.UUID, completedOn time.Time) error {
+	n, err := s.q.CompleteRecurringOccurrenceByID(ctx, db.CompleteRecurringOccurrenceByIDParams{
+		ID:          id,
+		CompletedOn: completedOn,
+	})
+	if err != nil {
+		return fmt.Errorf("completing recurring occurrence for todo %s: %w", id, err)
+	}
+	if n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}

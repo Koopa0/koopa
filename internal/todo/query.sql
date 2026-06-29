@@ -51,6 +51,23 @@ WHERE t.state NOT IN ('done', 'someday', 'inbox', 'archived', 'dismissed')
   AND t.due > @start_date AND t.due <= @end_date
 ORDER BY t.due, t.priority NULLS LAST;
 
+-- name: InProgressTodoItems :many
+-- In-progress todos with project context, for the Today aggregate + brief(morning)
+-- "Active" section: work the owner has started. The aggregator dedups these
+-- against the date-based sections (overdue/due-today/upcoming), the committed
+-- plan, and recurring-due-today, so the Active section surfaces only started
+-- work not already shown — typically the due-less in-progress items that would
+-- otherwise be invisible on the day's surfaces.
+SELECT t.id, t.title, t.state, t.due, t.project_id,
+       t.energy, t.priority, t.recur_interval, t.recur_unit, t.recur_weekdays, t.last_completed_on,
+       t.created_by, t.created_at, t.updated_at,
+       COALESCE(p.title, '') AS project_title,
+       COALESCE(p.slug, '') AS project_slug
+FROM todos t
+LEFT JOIN projects p ON p.id = t.project_id
+WHERE t.state = 'in_progress'
+ORDER BY t.priority NULLS LAST, t.created_at;
+
 -- name: TodoItems :many
 -- List all todo items ordered by state and due date.
 SELECT id, title, state, due, project_id,
@@ -196,6 +213,27 @@ SET recur_weekdays = sqlc.narg('recur_weekdays'),
     updated_at     = now()
 WHERE id = @id AND created_by = @created_by;
 
+-- name: SetTodoRecurrenceByID :execrows
+-- Admin (owner) set/clear of a todo's recurrence by id, NOT caller-scoped: the
+-- human owner manages any todo from the admin UI, mirroring the unscoped admin
+-- UpdateTodoItem / state writes. The caller-scoped SetTodoRecurrence stays the
+-- agent (MCP) path. chk_todo_recurrence rejects an invalid combination.
+-- Clearing recurrence (all three params NULL) also clears last_completed_on so
+-- chk_todo_last_completed_requires_recurrence holds — a one-shot has no
+-- occurrence-completion stamp.
+UPDATE todos
+SET recur_weekdays    = sqlc.narg('recur_weekdays'),
+    recur_interval    = sqlc.narg('recur_interval'),
+    recur_unit        = sqlc.narg('recur_unit'),
+    last_completed_on = CASE
+        WHEN sqlc.narg('recur_weekdays')::smallint IS NULL
+         AND sqlc.narg('recur_interval')::int IS NULL
+        THEN NULL
+        ELSE last_completed_on
+    END,
+    updated_at        = now()
+WHERE id = @id;
+
 -- name: CompleteRecurringOccurrence :execrows
 -- Stamp last_completed_on for today's occurrence of a recurring todo WITHOUT
 -- moving it to a terminal state (it keeps recurring). Scoped to the caller's own
@@ -205,6 +243,19 @@ UPDATE todos
 SET last_completed_on = @completed_on::date,
     updated_at        = now()
 WHERE id = @id AND created_by = @created_by
+  AND (recur_weekdays IS NOT NULL OR recur_interval IS NOT NULL);
+
+-- name: CompleteRecurringOccurrenceByID :execrows
+-- Admin (owner) complete of today's occurrence of a recurring todo, by id and
+-- NOT caller-scoped: the owner completes any recurring routine from the admin
+-- UI. Stamps last_completed_on WITHOUT a terminal state so the todo keeps
+-- recurring (the admin complete button must not kill a recurrence — that is
+-- what UpdateTodoItemState→done would do). Affects zero rows for a non-recurring
+-- row, letting the caller fall through to a terminal complete.
+UPDATE todos
+SET last_completed_on = @completed_on::date,
+    updated_at        = now()
+WHERE id = @id
   AND (recur_weekdays IS NOT NULL OR recur_interval IS NOT NULL);
 
 -- name: ClarifyTodoItem :one

@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/Koopa0/koopa/internal/api"
 	"github.com/Koopa0/koopa/internal/daily"
 	"github.com/Koopa0/koopa/internal/feed/entry"
@@ -20,12 +22,28 @@ import (
 // Each interface is consumer-defined and matched to a real store method so
 // the production wiring injects the concrete store directly — no adapter.
 
-// TodoReader returns the date-relative todo views: overdue, due-today, and
+// todoDateReader returns the date-relative todo views: overdue, due-today, and
 // the upcoming-week window. Backed by *todo.Store.
-type TodoReader interface {
+type todoDateReader interface {
 	OverdueItems(ctx context.Context, today time.Time) ([]todo.PendingDetail, error)
 	ItemsDueOn(ctx context.Context, date time.Time) ([]todo.PendingDetail, error)
 	ItemsDueInRange(ctx context.Context, start, end time.Time) ([]todo.PendingDetail, error)
+}
+
+// todoActiveReader returns the started-work view (in_progress) and today's
+// recurring occurrences that back the Today Active + Recurring sections.
+// Backed by *todo.Store.
+type todoActiveReader interface {
+	InProgressItems(ctx context.Context) ([]todo.PendingDetail, error)
+	RecurringItemsDueToday(ctx context.Context, today time.Time) ([]todo.Item, error)
+}
+
+// TodoReader is the todo-views surface the Today aggregate composes — the
+// consumer-boundary subset of *todo.Store it depends on, split by role so each
+// part stays small (interfaces.md).
+type TodoReader interface {
+	todoDateReader
+	todoActiveReader
 }
 
 // PlanItemReader returns the day's committed daily plan items. Backed by
@@ -98,6 +116,8 @@ func (h *Handler) Today(w http.ResponseWriter, r *http.Request) {
 		Date:           date.Format(time.DateOnly),
 		OverdueTodos:   []todo.PendingDetail{},
 		TodayTodos:     []todo.PendingDetail{},
+		ActiveTodos:    []todo.PendingDetail{},
+		RecurringTodos: []todo.Item{},
 		CommittedTodos: []daily.Item{},
 		UpcomingTodos:  []todo.PendingDetail{},
 		ActiveGoals:    []goal.ActiveGoalSummary{},
@@ -106,6 +126,9 @@ func (h *Handler) Today(w http.ResponseWriter, r *http.Request) {
 
 	h.loadTodos(ctx, date, &resp)
 	h.loadPlan(ctx, date, &resp)
+	// Active dedups against the date sections, the plan, and recurring, so it
+	// must run after loadTodos + loadPlan have populated them.
+	h.loadActive(ctx, &resp)
 	h.loadGoals(ctx, &resp)
 	h.loadRSS(ctx, date, &resp)
 
@@ -132,6 +155,53 @@ func (h *Handler) loadTodos(ctx context.Context, date time.Time, resp *Response)
 	} else if rows != nil {
 		resp.UpcomingTodos = rows
 	}
+	if rows, err := h.todos.RecurringItemsDueToday(ctx, date); err != nil {
+		h.logger.Warn("today: recurring todos failed", "error", err)
+	} else if rows != nil {
+		resp.RecurringTodos = rows
+	}
+}
+
+// loadActive fills ActiveTodos with in_progress work not already surfaced by a
+// date section (overdue / due-today / upcoming), the committed plan, or
+// recurring-due-today — so a started task is never double-listed yet never
+// invisible. Typically these are the due-less in_progress items. Runs after
+// loadTodos + loadPlan so the dedup set is complete.
+func (h *Handler) loadActive(ctx context.Context, resp *Response) {
+	if h.todos == nil {
+		return
+	}
+	rows, err := h.todos.InProgressItems(ctx)
+	if err != nil {
+		h.logger.Warn("today: active todos failed", "error", err)
+		return
+	}
+	shown := make(map[uuid.UUID]struct{},
+		len(resp.OverdueTodos)+len(resp.TodayTodos)+len(resp.UpcomingTodos)+
+			len(resp.RecurringTodos)+len(resp.CommittedTodos))
+	for i := range resp.OverdueTodos {
+		shown[resp.OverdueTodos[i].ID] = struct{}{}
+	}
+	for i := range resp.TodayTodos {
+		shown[resp.TodayTodos[i].ID] = struct{}{}
+	}
+	for i := range resp.UpcomingTodos {
+		shown[resp.UpcomingTodos[i].ID] = struct{}{}
+	}
+	for i := range resp.RecurringTodos {
+		shown[resp.RecurringTodos[i].ID] = struct{}{}
+	}
+	for i := range resp.CommittedTodos {
+		shown[resp.CommittedTodos[i].TodoID] = struct{}{}
+	}
+	active := make([]todo.PendingDetail, 0, len(rows))
+	for i := range rows {
+		if _, dup := shown[rows[i].ID]; dup {
+			continue
+		}
+		active = append(active, rows[i])
+	}
+	resp.ActiveTodos = active
 }
 
 func (h *Handler) loadPlan(ctx context.Context, date time.Time, resp *Response) {

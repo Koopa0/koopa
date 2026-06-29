@@ -57,6 +57,29 @@ func (s *Store) ItemsDueOn(ctx context.Context, date time.Time) ([]PendingDetail
 	return items, nil
 }
 
+// InProgressItems returns every in_progress todo with project context, for the
+// Today aggregate + brief(morning) "Active" section. The caller dedups these
+// against the date-based sections and the committed plan; what remains is the
+// started-but-otherwise-invisible work (typically due-less in_progress items).
+func (s *Store) InProgressItems(ctx context.Context) ([]PendingDetail, error) {
+	rows, err := s.q.InProgressTodoItems(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("listing in-progress todo items: %w", err)
+	}
+	items := make([]PendingDetail, len(rows))
+	for i := range rows {
+		r := &rows[i]
+		items[i] = PendingDetail{
+			ID: r.ID, Title: r.Title, State: State(r.State), Due: r.Due,
+			ProjectTitle: r.ProjectTitle, ProjectSlug: r.ProjectSlug,
+			Energy: r.Energy, Priority: r.Priority,
+			RecurInterval: r.RecurInterval, RecurUnit: r.RecurUnit,
+			CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
+		}
+	}
+	return items, nil
+}
+
 // ItemsDueInRange returns todo items due in a date range.
 func (s *Store) ItemsDueInRange(ctx context.Context, start, end time.Time) ([]PendingDetail, error) {
 	rows, err := s.q.TodoItemsDueInRange(ctx, db.TodoItemsDueInRangeParams{

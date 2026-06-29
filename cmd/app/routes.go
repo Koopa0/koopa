@@ -198,6 +198,9 @@ func registerRoutes(
 	mux.Handle("POST /api/admin/commitment/todos", adminMid(http.HandlerFunc(h.todo.Create)))
 	mux.Handle("PUT /api/admin/commitment/todos/{id}", adminMid(http.HandlerFunc(h.todo.Update)))
 	mux.Handle("POST /api/admin/commitment/todos/{id}/advance", adminMid(http.HandlerFunc(h.todo.Advance)))
+	// Owner set/clear of a todo's recurrence (weekday or interval mode). The
+	// admin equivalent of the MCP set_todo_recurrence, but not caller-scoped.
+	mux.Handle("PUT /api/admin/commitment/todos/{id}/recurrence", adminMid(http.HandlerFunc(h.todo.Recurrence)))
 	mux.Handle("DELETE /api/admin/commitment/todos/{id}", adminMid(http.HandlerFunc(h.todo.Delete)))
 
 	// --- Admin: Commitment / Today (aggregate) ---

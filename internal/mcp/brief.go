@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/Koopa0/koopa/internal/content"
@@ -94,6 +95,7 @@ type BriefOutput struct {
 	// Morning fields.
 	OverdueTodos    []todo.PendingDetail     `json:"-"`
 	TodayTodos      []todo.PendingDetail     `json:"-"`
+	ActiveTodos     []todo.PendingDetail     `json:"-"`
 	RecurringTodos  []todo.Item              `json:"-"`
 	CommittedTodos  []daily.Item             `json:"-"`
 	UpcomingTodos   []todo.PendingDetail     `json:"-"`
@@ -116,6 +118,7 @@ type briefMorningWire struct {
 	Date            string                   `json:"date"`
 	OverdueTodos    []todo.PendingDetail     `json:"overdue_todos"`
 	TodayTodos      []todo.PendingDetail     `json:"today_todos"`
+	ActiveTodos     []todo.PendingDetail     `json:"active_todos"`
 	RecurringTodos  []todo.Item              `json:"recurring_todos"`
 	CommittedTodos  []daily.Item             `json:"committed_todos"`
 	UpcomingTodos   []todo.PendingDetail     `json:"upcoming_todos"`
@@ -149,6 +152,7 @@ func (o BriefOutput) MarshalJSON() ([]byte, error) {
 			Date:            o.Date,
 			OverdueTodos:    o.OverdueTodos,
 			TodayTodos:      o.TodayTodos,
+			ActiveTodos:     o.ActiveTodos,
 			RecurringTodos:  o.RecurringTodos,
 			CommittedTodos:  o.CommittedTodos,
 			UpcomingTodos:   o.UpcomingTodos,
@@ -233,6 +237,7 @@ func (s *Server) brief(ctx context.Context, _ *mcp.CallToolRequest, input BriefI
 func (s *Server) fillBriefMorning(ctx context.Context, date time.Time, requested FlexStringSlice, out *BriefOutput) {
 	out.OverdueTodos = []todo.PendingDetail{}
 	out.TodayTodos = []todo.PendingDetail{}
+	out.ActiveTodos = []todo.PendingDetail{}
 	out.RecurringTodos = []todo.Item{}
 	out.CommittedTodos = []daily.Item{}
 	out.UpcomingTodos = []todo.PendingDetail{}
@@ -316,6 +321,48 @@ func (s *Server) fillMorningTodos(ctx context.Context, date time.Time, out *Brie
 			}
 		}
 	}
+
+	// Active = started (in_progress) work not already surfaced by a date
+	// section, the committed plan, or recurring-due-today — so a started but
+	// undated todo is never invisible in the briefing yet never double-listed.
+	// Computed last so the dedup set reflects every section above.
+	if rows, err := s.todos.InProgressItems(ctx); err != nil {
+		s.logger.Warn("brief: in-progress todo items", "error", err)
+	} else {
+		out.ActiveTodos = dedupActive(rows, out)
+	}
+}
+
+// dedupActive returns the in_progress todos not already shown by another
+// morning section (overdue / today / upcoming / recurring) or the committed
+// plan, keyed by todo id.
+func dedupActive(inProgress []todo.PendingDetail, out *BriefOutput) []todo.PendingDetail {
+	shown := make(map[uuid.UUID]struct{},
+		len(out.OverdueTodos)+len(out.TodayTodos)+len(out.UpcomingTodos)+
+			len(out.RecurringTodos)+len(out.CommittedTodos))
+	for i := range out.OverdueTodos {
+		shown[out.OverdueTodos[i].ID] = struct{}{}
+	}
+	for i := range out.TodayTodos {
+		shown[out.TodayTodos[i].ID] = struct{}{}
+	}
+	for i := range out.UpcomingTodos {
+		shown[out.UpcomingTodos[i].ID] = struct{}{}
+	}
+	for i := range out.RecurringTodos {
+		shown[out.RecurringTodos[i].ID] = struct{}{}
+	}
+	for i := range out.CommittedTodos {
+		shown[out.CommittedTodos[i].TodoID] = struct{}{}
+	}
+	active := make([]todo.PendingDetail, 0, len(inProgress))
+	for i := range inProgress {
+		if _, dup := shown[inProgress[i].ID]; dup {
+			continue
+		}
+		active = append(active, inProgress[i])
+	}
+	return active
 }
 
 func (s *Server) fillGoals(ctx context.Context, out *BriefOutput) {

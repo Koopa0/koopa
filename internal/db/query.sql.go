@@ -891,6 +891,33 @@ func (q *Queries) CompleteRecurringOccurrence(ctx context.Context, arg CompleteR
 	return result.RowsAffected(), nil
 }
 
+const completeRecurringOccurrenceByID = `-- name: CompleteRecurringOccurrenceByID :execrows
+UPDATE todos
+SET last_completed_on = $1::date,
+    updated_at        = now()
+WHERE id = $2
+  AND (recur_weekdays IS NOT NULL OR recur_interval IS NOT NULL)
+`
+
+type CompleteRecurringOccurrenceByIDParams struct {
+	CompletedOn time.Time `json:"completed_on"`
+	ID          uuid.UUID `json:"id"`
+}
+
+// Admin (owner) complete of today's occurrence of a recurring todo, by id and
+// NOT caller-scoped: the owner completes any recurring routine from the admin
+// UI. Stamps last_completed_on WITHOUT a terminal state so the todo keeps
+// recurring (the admin complete button must not kill a recurrence — that is
+// what UpdateTodoItemState→done would do). Affects zero rows for a non-recurring
+// row, letting the caller fall through to a terminal complete.
+func (q *Queries) CompleteRecurringOccurrenceByID(ctx context.Context, arg CompleteRecurringOccurrenceByIDParams) (int64, error) {
+	result, err := q.db.Exec(ctx, completeRecurringOccurrenceByID, arg.CompletedOn, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const completedMilestonesInWindow = `-- name: CompletedMilestonesInWindow :many
 SELECT
     ae.entity_title AS title,
@@ -3130,6 +3157,80 @@ UPDATE feed_entries SET status = 'ignored' WHERE id = $1
 func (q *Queries) IgnoreFeedEntry(ctx context.Context, id uuid.UUID) error {
 	_, err := q.db.Exec(ctx, ignoreFeedEntry, id)
 	return err
+}
+
+const inProgressTodoItems = `-- name: InProgressTodoItems :many
+SELECT t.id, t.title, t.state, t.due, t.project_id,
+       t.energy, t.priority, t.recur_interval, t.recur_unit, t.recur_weekdays, t.last_completed_on,
+       t.created_by, t.created_at, t.updated_at,
+       COALESCE(p.title, '') AS project_title,
+       COALESCE(p.slug, '') AS project_slug
+FROM todos t
+LEFT JOIN projects p ON p.id = t.project_id
+WHERE t.state = 'in_progress'
+ORDER BY t.priority NULLS LAST, t.created_at
+`
+
+type InProgressTodoItemsRow struct {
+	ID              uuid.UUID  `json:"id"`
+	Title           string     `json:"title"`
+	State           TodoState  `json:"state"`
+	Due             *time.Time `json:"due"`
+	ProjectID       *uuid.UUID `json:"project_id"`
+	Energy          *string    `json:"energy"`
+	Priority        *string    `json:"priority"`
+	RecurInterval   *int32     `json:"recur_interval"`
+	RecurUnit       *string    `json:"recur_unit"`
+	RecurWeekdays   *int16     `json:"recur_weekdays"`
+	LastCompletedOn *time.Time `json:"last_completed_on"`
+	CreatedBy       string     `json:"created_by"`
+	CreatedAt       time.Time  `json:"created_at"`
+	UpdatedAt       time.Time  `json:"updated_at"`
+	ProjectTitle    string     `json:"project_title"`
+	ProjectSlug     string     `json:"project_slug"`
+}
+
+// In-progress todos with project context, for the Today aggregate + brief(morning)
+// "Active" section: work the owner has started. The aggregator dedups these
+// against the date-based sections (overdue/due-today/upcoming), the committed
+// plan, and recurring-due-today, so the Active section surfaces only started
+// work not already shown — typically the due-less in-progress items that would
+// otherwise be invisible on the day's surfaces.
+func (q *Queries) InProgressTodoItems(ctx context.Context) ([]InProgressTodoItemsRow, error) {
+	rows, err := q.db.Query(ctx, inProgressTodoItems)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []InProgressTodoItemsRow{}
+	for rows.Next() {
+		var i InProgressTodoItemsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Title,
+			&i.State,
+			&i.Due,
+			&i.ProjectID,
+			&i.Energy,
+			&i.Priority,
+			&i.RecurInterval,
+			&i.RecurUnit,
+			&i.RecurWeekdays,
+			&i.LastCompletedOn,
+			&i.CreatedBy,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.ProjectTitle,
+			&i.ProjectSlug,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const incrementFeedFailure = `-- name: IncrementFeedFailure :one
@@ -5382,6 +5483,48 @@ func (q *Queries) SetTodoRecurrence(ctx context.Context, arg SetTodoRecurrencePa
 		arg.RecurUnit,
 		arg.ID,
 		arg.CreatedBy,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const setTodoRecurrenceByID = `-- name: SetTodoRecurrenceByID :execrows
+UPDATE todos
+SET recur_weekdays    = $1,
+    recur_interval    = $2,
+    recur_unit        = $3,
+    last_completed_on = CASE
+        WHEN $1::smallint IS NULL
+         AND $2::int IS NULL
+        THEN NULL
+        ELSE last_completed_on
+    END,
+    updated_at        = now()
+WHERE id = $4
+`
+
+type SetTodoRecurrenceByIDParams struct {
+	RecurWeekdays *int16    `json:"recur_weekdays"`
+	RecurInterval *int32    `json:"recur_interval"`
+	RecurUnit     *string   `json:"recur_unit"`
+	ID            uuid.UUID `json:"id"`
+}
+
+// Admin (owner) set/clear of a todo's recurrence by id, NOT caller-scoped: the
+// human owner manages any todo from the admin UI, mirroring the unscoped admin
+// UpdateTodoItem / state writes. The caller-scoped SetTodoRecurrence stays the
+// agent (MCP) path. chk_todo_recurrence rejects an invalid combination.
+// Clearing recurrence (all three params NULL) also clears last_completed_on so
+// chk_todo_last_completed_requires_recurrence holds — a one-shot has no
+// occurrence-completion stamp.
+func (q *Queries) SetTodoRecurrenceByID(ctx context.Context, arg SetTodoRecurrenceByIDParams) (int64, error) {
+	result, err := q.db.Exec(ctx, setTodoRecurrenceByID,
+		arg.RecurWeekdays,
+		arg.RecurInterval,
+		arg.RecurUnit,
+		arg.ID,
 	)
 	if err != nil {
 		return 0, err

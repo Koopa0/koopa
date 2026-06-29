@@ -35,21 +35,31 @@ func (f fakePlanItems) ItemsByDate(context.Context, time.Time) ([]daily.Item, er
 
 // fakeTodos satisfies TodoReader with canned slices per view.
 type fakeTodos struct {
-	overdue []todo.PendingDetail
-	dueOn   []todo.PendingDetail
-	inRange []todo.PendingDetail
+	overdue    []todo.PendingDetail
+	dueOn      []todo.PendingDetail
+	inRange    []todo.PendingDetail
+	inProgress []todo.PendingDetail
+	recurring  []todo.Item
 }
 
-func (f fakeTodos) OverdueItems(context.Context, time.Time) ([]todo.PendingDetail, error) {
+func (f *fakeTodos) OverdueItems(context.Context, time.Time) ([]todo.PendingDetail, error) {
 	return f.overdue, nil
 }
 
-func (f fakeTodos) ItemsDueOn(context.Context, time.Time) ([]todo.PendingDetail, error) {
+func (f *fakeTodos) ItemsDueOn(context.Context, time.Time) ([]todo.PendingDetail, error) {
 	return f.dueOn, nil
 }
 
-func (f fakeTodos) ItemsDueInRange(context.Context, time.Time, time.Time) ([]todo.PendingDetail, error) {
+func (f *fakeTodos) ItemsDueInRange(context.Context, time.Time, time.Time) ([]todo.PendingDetail, error) {
 	return f.inRange, nil
+}
+
+func (f *fakeTodos) InProgressItems(context.Context) ([]todo.PendingDetail, error) {
+	return f.inProgress, nil
+}
+
+func (f *fakeTodos) RecurringItemsDueToday(context.Context, time.Time) ([]todo.Item, error) {
+	return f.recurring, nil
 }
 
 // fakeGoals satisfies ActiveGoalReader.
@@ -102,6 +112,8 @@ func TestToday_EmptyStateReturnsEmptyArrays(t *testing.T) {
 		Date:           got.Date, // date is request-relative; copy it through
 		OverdueTodos:   []todo.PendingDetail{},
 		TodayTodos:     []todo.PendingDetail{},
+		ActiveTodos:    []todo.PendingDetail{},
+		RecurringTodos: []todo.Item{},
 		CommittedTodos: []daily.Item{},
 		UpcomingTodos:  []todo.PendingDetail{},
 		ActiveGoals:    []goal.ActiveGoalSummary{},
@@ -114,7 +126,8 @@ func TestToday_EmptyStateReturnsEmptyArrays(t *testing.T) {
 	// Raw JSON must contain "[]" for each list, never "null".
 	raw := rec.Body.String()
 	for _, field := range []string{
-		"overdue_todos", "today_todos", "committed_todos", "upcoming_todos",
+		"overdue_todos", "today_todos", "active_todos", "recurring_todos",
+		"committed_todos", "upcoming_todos",
 		"active_goals", "rss_highlights",
 	} {
 		if strings.Contains(raw, `"`+field+`":null`) {
@@ -142,7 +155,7 @@ func TestToday_WiredSectionsPopulate(t *testing.T) {
 
 	h := NewHandler(fakePlanItems{items: planItems}, slog.New(slog.NewTextHandler(io.Discard, nil))).
 		WithSources(
-			fakeTodos{overdue: overdue, dueOn: dueOn, inRange: inRange},
+			&fakeTodos{overdue: overdue, dueOn: dueOn, inRange: inRange},
 			fakeGoals{goals: goals},
 			nil, // rss left nil — its section must stay []
 		)
@@ -172,6 +185,41 @@ func TestToday_WiredSectionsPopulate(t *testing.T) {
 	}
 	if n := len(got.RSSHighlights); n != 0 {
 		t.Errorf("rss_highlights len = %d, want 0 (reader is nil)", n)
+	}
+}
+
+// TestToday_ActiveDedupsAgainstOtherSections proves the Active section surfaces
+// started work that no date section or the plan already shows (the previously-
+// invisible due-less in_progress case) while never double-listing an in_progress
+// todo that is also overdue/due-today/upcoming/committed/recurring.
+func TestToday_ActiveDedupsAgainstOtherSections(t *testing.T) {
+	t.Parallel()
+
+	// loneStarted: in_progress, due-less, in no other section → must appear.
+	loneStarted := todo.PendingDetail{ID: uuid.New(), Title: "終審 Go 課文", State: todo.StateInProgress}
+	// alsoOverdue: in_progress AND surfaced as overdue → must not double-list.
+	alsoOverdue := todo.PendingDetail{ID: uuid.New(), Title: "overdue+started", State: todo.StateInProgress}
+	// committedID: in_progress AND committed to today's plan → must not double-list.
+	committedID := uuid.New()
+	alsoCommitted := todo.PendingDetail{ID: committedID, Title: "planned+started", State: todo.StateInProgress}
+
+	h := NewHandler(
+		fakePlanItems{items: []daily.Item{{ID: uuid.New(), TodoID: committedID, Status: daily.StatusPlanned}}},
+		slog.New(slog.NewTextHandler(io.Discard, nil)),
+	).WithSources(
+		&fakeTodos{
+			overdue:    []todo.PendingDetail{alsoOverdue},
+			inProgress: []todo.PendingDetail{loneStarted, alsoOverdue, alsoCommitted},
+		},
+		nil, nil,
+	)
+
+	got := decodeResponse(t, doToday(t, h))
+
+	opt := cmpopts.IgnoreFields(todo.PendingDetail{}, "CreatedAt", "UpdatedAt")
+	want := []todo.PendingDetail{loneStarted}
+	if diff := cmp.Diff(want, got.ActiveTodos, opt); diff != "" {
+		t.Errorf("active_todos mismatch (-want +got):\n%s", diff)
 	}
 }
 

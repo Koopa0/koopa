@@ -13,7 +13,9 @@
 package todo
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -486,7 +488,7 @@ func (h *Handler) Advance(w http.ResponseWriter, r *http.Request) {
 	case "start":
 		actionErr = store.Start(r.Context(), id)
 	case "complete":
-		actionErr = store.Complete(r.Context(), id, nil)
+		actionErr = h.advanceComplete(r.Context(), store, id)
 	case "defer":
 		actionErr = store.Defer(r.Context(), id)
 	case "activate":
@@ -526,6 +528,153 @@ func (h *Handler) Advance(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	api.Encode(w, http.StatusOK, api.Response{Data: item})
+}
+
+// advanceComplete completes a todo. A recurring todo completes today's
+// occurrence — stamping last_completed_on while keeping it recurring — so the
+// admin complete button matches the MCP resolve_todo semantics and never kills
+// a recurrence (UpdateTodoItemState → done would). A non-recurring todo
+// completes terminally. today uses the server day boundary, mirroring Recurring.
+func (h *Handler) advanceComplete(ctx context.Context, store *Store, id uuid.UUID) error {
+	item, err := store.ItemByID(ctx, id)
+	if err != nil {
+		return err
+	}
+	if item.IsRecurring() {
+		return store.CompleteOccurrenceByID(ctx, id, time.Now().UTC())
+	}
+	return store.Complete(ctx, id, nil)
+}
+
+// recurrenceRequest is the PUT body for Recurrence. Exactly one of weekdays,
+// interval+unit, or clear must be set — mirrors set_todo_recurrence.
+type recurrenceRequest struct {
+	Weekdays []string `json:"weekdays,omitempty"`
+	Interval *int     `json:"interval,omitempty"`
+	Unit     *string  `json:"unit,omitempty"`
+	Clear    bool     `json:"clear,omitempty"`
+}
+
+// Recurrence handles PUT /api/admin/commitment/todos/{id}/recurrence — the
+// admin (owner) set/clear of a todo's recurrence. weekday-mode (weekdays:
+// mon..sun), interval-mode (interval + unit: days/weeks/months/years), or
+// clear=true to make it a one-shot again. NOT caller-scoped (unlike the MCP
+// set_todo_recurrence) — the owner manages any todo from the admin UI.
+func (h *Handler) Recurrence(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid todo id")
+		return
+	}
+	req, err := api.Decode[recurrenceRequest](w, r)
+	if err != nil {
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid request body")
+		return
+	}
+	rec, err := parseRecurrence(&req)
+	if err != nil {
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+		return
+	}
+
+	store, ok := h.mustAdminTx(w, r)
+	if !ok {
+		return
+	}
+	if err := store.SetRecurrenceByID(r.Context(), id, rec); err != nil {
+		api.HandleError(w, h.logger, err, storeErrors...)
+		return
+	}
+	item, err := store.ItemByID(r.Context(), id)
+	if err != nil {
+		api.HandleError(w, h.logger, err, storeErrors...)
+		return
+	}
+	api.Encode(w, http.StatusOK, api.Response{Data: item})
+}
+
+// weekdayBits maps a lowercase weekday abbreviation to its bit in the
+// recur_weekdays mask (Mon=bit0 .. Sun=bit6, matching ISODOW-1). Mirrors the
+// agent-side map in internal/mcp/recurrence.go — kept separate so the admin
+// path carries no dependency on the MCP package.
+var weekdayBits = map[string]int16{
+	"mon": 1, "tue": 2, "wed": 4, "thu": 8, "fri": 16, "sat": 32, "sun": 64,
+}
+
+// maxRecurInterval bounds interval-mode so the int32 cast cannot overflow.
+const maxRecurInterval = 10_000
+
+func validRecurUnit(u string) bool {
+	switch u {
+	case "days", "weeks", "months", "years":
+		return true
+	default:
+		return false
+	}
+}
+
+// parseRecurrence validates that exactly one mode is requested (weekdays,
+// interval+unit, or clear) and converts it to a Recurrence. The mutual
+// exclusivity mirrors chk_todo_recurrence, validated here so the caller gets a
+// 400, not a CHECK error at the DB boundary.
+func parseRecurrence(req *recurrenceRequest) (Recurrence, error) {
+	hasWeekdays := len(req.Weekdays) > 0
+	hasInterval := req.Interval != nil || req.Unit != nil
+
+	switch {
+	case !exactlyOne(hasWeekdays, hasInterval, req.Clear):
+		return Recurrence{}, errors.New("specify exactly one of: weekdays, interval+unit, or clear")
+	case req.Clear:
+		return Recurrence{}, nil
+	case hasWeekdays:
+		return weekdayRecurrence(req.Weekdays)
+	default:
+		return intervalRecurrence(req.Interval, req.Unit)
+	}
+}
+
+// exactlyOne reports whether exactly one of the flags is set.
+func exactlyOne(flags ...bool) bool {
+	set := 0
+	for _, f := range flags {
+		if f {
+			set++
+		}
+	}
+	return set == 1
+}
+
+// weekdayRecurrence converts weekday abbreviations to a weekday-mode Recurrence.
+func weekdayRecurrence(weekdays []string) (Recurrence, error) {
+	var mask int16
+	for _, day := range weekdays {
+		bit, ok := weekdayBits[strings.ToLower(strings.TrimSpace(day))]
+		if !ok {
+			return Recurrence{}, fmt.Errorf("unknown weekday %q (use mon,tue,wed,thu,fri,sat,sun)", day)
+		}
+		mask |= bit
+	}
+	if mask == 0 {
+		return Recurrence{}, errors.New("weekdays must name at least one day")
+	}
+	return Recurrence{Weekdays: &mask}, nil
+}
+
+// intervalRecurrence converts an interval count + unit to an interval-mode
+// Recurrence, bounding the count so the int32 cast cannot overflow.
+func intervalRecurrence(interval *int, unit *string) (Recurrence, error) {
+	if interval == nil || unit == nil {
+		return Recurrence{}, errors.New("interval-mode needs both interval and unit")
+	}
+	if *interval <= 0 || *interval > maxRecurInterval {
+		return Recurrence{}, fmt.Errorf("interval must be in [1, %d]", maxRecurInterval)
+	}
+	u := strings.ToLower(*unit)
+	if !validRecurUnit(u) {
+		return Recurrence{}, fmt.Errorf("unsupported unit %q (supported: days, weeks, months, years)", *unit)
+	}
+	n := int32(*interval) // #nosec G115 -- bounded to [1, maxRecurInterval] above
+	return Recurrence{Interval: &n, Unit: &u}, nil
 }
 
 // advanceActivate handles advance(action=activate): someday → todo. The

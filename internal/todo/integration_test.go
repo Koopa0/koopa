@@ -724,3 +724,123 @@ func TestIntegration_Todo_DateReads_ExcludeTerminal(t *testing.T) {
 		t.Errorf("ItemsDueOn includes dismissed todo %s, want excluded", dismissed)
 	}
 }
+
+// recurrenceReq builds the PUT {id}/recurrence request with the given JSON body.
+func recurrenceReq(t *testing.T, id uuid.UUID, body string) *http.Request {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPut,
+		"/api/admin/commitment/todos/"+id.String()+"/recurrence",
+		strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.SetPathValue("id", id.String())
+	return req
+}
+
+// TestIntegration_Todo_Advance_Complete_Recurring pins the recurring-aware
+// admin complete: completing a recurring todo stamps last_completed_on for
+// today's occurrence but keeps it recurring (state unchanged, completed_at
+// NULL) — it must NOT move to done, which would kill the recurrence
+// (RecurringItemsDueToday excludes done). This is the bug where the admin
+// complete button diverged from MCP resolve_todo's occurrence semantics.
+func TestIntegration_Todo_Advance_Complete_Recurring(t *testing.T) {
+	truncate(t)
+	h := newHandler()
+
+	// Seed a daily (all-weekday) recurring todo in 'todo' state.
+	var id uuid.UUID
+	if err := testPool.QueryRow(t.Context(),
+		`INSERT INTO todos (title, state, recur_weekdays, created_by)
+		 VALUES ('Daily Japanese vocab', 'todo', 127::smallint, 'human') RETURNING id`,
+	).Scan(&id); err != nil {
+		t.Fatalf("seeding recurring todo: %v", err)
+	}
+
+	rec := serve(t, h.Advance, advanceReq(t, id, "complete"))
+	resp := rec.Result()
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body=%s)", resp.StatusCode, body)
+	}
+
+	var (
+		state         string
+		completedAt   *time.Time
+		lastCompleted *time.Time
+	)
+	if err := testPool.QueryRow(t.Context(),
+		`SELECT state, completed_at, last_completed_on FROM todos WHERE id = $1`, id,
+	).Scan(&state, &completedAt, &lastCompleted); err != nil {
+		t.Fatalf("reading completed recurring todo: %v", err)
+	}
+	if state == "done" {
+		t.Errorf("state = %q after completing a recurring todo, want it kept recurring (not done)", state)
+	}
+	if completedAt != nil {
+		t.Errorf("completed_at = %v, want NULL for a recurring occurrence", completedAt)
+	}
+	if lastCompleted == nil {
+		t.Fatal("last_completed_on is NULL, want today's date stamped")
+	}
+	wantDay := time.Now().UTC().Format(time.DateOnly)
+	if gotDay := lastCompleted.Format(time.DateOnly); gotDay != wantDay {
+		t.Errorf("last_completed_on = %q, want %q (today)", gotDay, wantDay)
+	}
+}
+
+// TestIntegration_Todo_Recurrence_SetThenClear pins the admin recurrence route:
+// setting weekday-mode writes the mask, and clearing recurrence also resets
+// last_completed_on so chk_todo_last_completed_requires_recurrence holds (a
+// one-shot carries no occurrence stamp). Without the reset, clearing a
+// previously-completed recurring todo would violate the CHECK and surface 500.
+func TestIntegration_Todo_Recurrence_SetThenClear(t *testing.T) {
+	truncate(t)
+	h := newHandler()
+
+	id := seedTodo(t, "Maybe-routine", "todo", "human")
+
+	// Set weekday recurrence (Mon-Sun = daily).
+	rec := serve(t, h.Recurrence, recurrenceReq(t, id,
+		`{"weekdays":["mon","tue","wed","thu","fri","sat","sun"]}`))
+	if rec.Result().StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(rec.Result().Body)
+		t.Fatalf("set recurrence status = %d, want 200 (body=%s)", rec.Result().StatusCode, body)
+	}
+	var weekdays *int16
+	if err := testPool.QueryRow(t.Context(),
+		`SELECT recur_weekdays FROM todos WHERE id = $1`, id,
+	).Scan(&weekdays); err != nil {
+		t.Fatalf("reading recurrence: %v", err)
+	}
+	if weekdays == nil || *weekdays != 127 {
+		t.Fatalf("recur_weekdays = %v, want 127", weekdays)
+	}
+
+	// Complete today's occurrence so last_completed_on is set.
+	if rec := serve(t, h.Advance, advanceReq(t, id, "complete")); rec.Result().StatusCode != http.StatusOK {
+		t.Fatalf("complete occurrence status = %d, want 200", rec.Result().StatusCode)
+	}
+
+	// Clear recurrence — must also clear last_completed_on (the invariant).
+	rec = serve(t, h.Recurrence, recurrenceReq(t, id, `{"clear":true}`))
+	if rec.Result().StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(rec.Result().Body)
+		t.Fatalf("clear recurrence status = %d, want 200 (body=%s)", rec.Result().StatusCode, body)
+	}
+	var (
+		clearedWeekdays *int16
+		clearedInterval *int32
+		lastCompleted   *time.Time
+	)
+	if err := testPool.QueryRow(t.Context(),
+		`SELECT recur_weekdays, recur_interval, last_completed_on FROM todos WHERE id = $1`, id,
+	).Scan(&clearedWeekdays, &clearedInterval, &lastCompleted); err != nil {
+		t.Fatalf("reading cleared recurrence: %v", err)
+	}
+	if clearedWeekdays != nil || clearedInterval != nil {
+		t.Errorf("after clear: recur_weekdays=%v recur_interval=%v, want both NULL", clearedWeekdays, clearedInterval)
+	}
+	if lastCompleted != nil {
+		t.Errorf("after clear: last_completed_on = %v, want NULL (invariant)", lastCompleted)
+	}
+}
