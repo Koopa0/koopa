@@ -312,16 +312,6 @@ func (s *Server) fillMorningTodos(ctx context.Context, date time.Time, out *Brie
 		s.logger.Warn("brief: upcoming todo items", "error", err)
 	}
 
-	// Yesterday's unfinished plan items surface as overdue.
-	yesterday := date.AddDate(0, 0, -1)
-	if items, err := s.dayplan.ItemsByDate(ctx, yesterday); err == nil {
-		for i := range items {
-			if items[i].Status == daily.StatusPlanned {
-				out.OverdueTodos = append(out.OverdueTodos, planItemToPendingDetail(&items[i]))
-			}
-		}
-	}
-
 	// Active = started (in_progress) work not already surfaced by a date
 	// section, the committed plan, or recurring-due-today — so a started but
 	// undated todo is never invisible in the briefing yet never double-listed.
@@ -434,21 +424,6 @@ func (s *Server) fillBriefReflection(ctx context.Context, date time.Time, out *B
 	}
 	if total := len(items); total > 0 {
 		out.CompletionRate = float64(out.CompletedCount) / float64(total)
-	}
-}
-
-func planItemToPendingDetail(item *daily.Item) todo.PendingDetail {
-	return todo.PendingDetail{
-		ID:           item.TodoID,
-		Title:        item.TodoTitle,
-		State:        todo.State(item.TodoState),
-		Due:          item.TodoDue,
-		Energy:       item.TodoEnergy,
-		Priority:     item.TodoPriority,
-		ProjectTitle: item.ProjectTitle,
-		ProjectSlug:  item.ProjectSlug,
-		CreatedAt:    item.CreatedAt,
-		UpdatedAt:    item.UpdatedAt,
 	}
 }
 
