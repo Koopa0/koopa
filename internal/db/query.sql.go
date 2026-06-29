@@ -870,6 +870,7 @@ UPDATE todos
 SET last_completed_on = $1::date,
     updated_at        = now()
 WHERE id = $2 AND created_by = $3
+  AND state IN ('todo', 'in_progress')
   AND (recur_weekdays IS NOT NULL OR recur_interval IS NOT NULL)
 `
 
@@ -881,8 +882,11 @@ type CompleteRecurringOccurrenceParams struct {
 
 // Stamp last_completed_on for today's occurrence of a recurring todo WITHOUT
 // moving it to a terminal state (it keeps recurring). Scoped to the caller's own
-// todos and only applies to recurring rows; a non-recurring or non-caller row
-// affects zero rows.
+// todos and only applies to recurring rows in an ACTIVE state (todo/in_progress);
+// a non-recurring, non-caller, or non-active row (inbox/someday/done/archived/
+// dismissed) affects zero rows. The state guard prevents stamping an occurrence
+// on a recurring todo that is not actually being worked (e.g. a captured-but-
+// unclarified recurring inbox todo), which would be a contradictory state.
 func (q *Queries) CompleteRecurringOccurrence(ctx context.Context, arg CompleteRecurringOccurrenceParams) (int64, error) {
 	result, err := q.db.Exec(ctx, completeRecurringOccurrence, arg.CompletedOn, arg.ID, arg.CreatedBy)
 	if err != nil {
@@ -896,6 +900,7 @@ UPDATE todos
 SET last_completed_on = $1::date,
     updated_at        = now()
 WHERE id = $2
+  AND state IN ('todo', 'in_progress')
   AND (recur_weekdays IS NOT NULL OR recur_interval IS NOT NULL)
 `
 
@@ -908,8 +913,10 @@ type CompleteRecurringOccurrenceByIDParams struct {
 // NOT caller-scoped: the owner completes any recurring routine from the admin
 // UI. Stamps last_completed_on WITHOUT a terminal state so the todo keeps
 // recurring (the admin complete button must not kill a recurrence — that is
-// what UpdateTodoItemState→done would do). Affects zero rows for a non-recurring
-// row, letting the caller fall through to a terminal complete.
+// what UpdateTodoItemState→done would do). Only applies to recurring rows in an
+// ACTIVE state (todo/in_progress); a non-recurring or non-active row affects
+// zero rows, letting the caller fall through to a terminal complete (and never
+// stamping an occurrence on an inbox/someday/terminal recurring todo).
 func (q *Queries) CompleteRecurringOccurrenceByID(ctx context.Context, arg CompleteRecurringOccurrenceByIDParams) (int64, error) {
 	result, err := q.db.Exec(ctx, completeRecurringOccurrenceByID, arg.CompletedOn, arg.ID)
 	if err != nil {
@@ -3495,6 +3502,8 @@ SELECT
     dpi.reason, dpi.status, dpi.created_at, dpi.updated_at,
     t.title AS todo_title, t.state AS todo_state, t.due AS todo_due,
     t.energy AS todo_energy, t.priority AS todo_priority,
+    t.recur_weekdays AS todo_recur_weekdays, t.recur_interval AS todo_recur_interval,
+    t.last_completed_on AS todo_last_completed_on,
     COALESCE(p.title, '') AS project_title, COALESCE(p.slug, '') AS project_slug
 FROM daily_plan_items dpi
 JOIN todos t ON t.id = dpi.todo_id
@@ -3504,22 +3513,25 @@ ORDER BY dpi.position, dpi.created_at
 `
 
 type ItemsByDateRow struct {
-	ID           uuid.UUID  `json:"id"`
-	PlanDate     time.Time  `json:"plan_date"`
-	TodoID       uuid.UUID  `json:"todo_id"`
-	SelectedBy   string     `json:"selected_by"`
-	Position     int32      `json:"position"`
-	Reason       *string    `json:"reason"`
-	Status       string     `json:"status"`
-	CreatedAt    time.Time  `json:"created_at"`
-	UpdatedAt    time.Time  `json:"updated_at"`
-	TodoTitle    string     `json:"todo_title"`
-	TodoState    TodoState  `json:"todo_state"`
-	TodoDue      *time.Time `json:"todo_due"`
-	TodoEnergy   *string    `json:"todo_energy"`
-	TodoPriority *string    `json:"todo_priority"`
-	ProjectTitle string     `json:"project_title"`
-	ProjectSlug  string     `json:"project_slug"`
+	ID                  uuid.UUID  `json:"id"`
+	PlanDate            time.Time  `json:"plan_date"`
+	TodoID              uuid.UUID  `json:"todo_id"`
+	SelectedBy          string     `json:"selected_by"`
+	Position            int32      `json:"position"`
+	Reason              *string    `json:"reason"`
+	Status              string     `json:"status"`
+	CreatedAt           time.Time  `json:"created_at"`
+	UpdatedAt           time.Time  `json:"updated_at"`
+	TodoTitle           string     `json:"todo_title"`
+	TodoState           TodoState  `json:"todo_state"`
+	TodoDue             *time.Time `json:"todo_due"`
+	TodoEnergy          *string    `json:"todo_energy"`
+	TodoPriority        *string    `json:"todo_priority"`
+	TodoRecurWeekdays   *int16     `json:"todo_recur_weekdays"`
+	TodoRecurInterval   *int32     `json:"todo_recur_interval"`
+	TodoLastCompletedOn *time.Time `json:"todo_last_completed_on"`
+	ProjectTitle        string     `json:"project_title"`
+	ProjectSlug         string     `json:"project_slug"`
 }
 
 // Get all daily plan items for a specific date, joined with todo item details.
@@ -3550,6 +3562,9 @@ func (q *Queries) ItemsByDate(ctx context.Context, planDate time.Time) ([]ItemsB
 			&i.TodoDue,
 			&i.TodoEnergy,
 			&i.TodoPriority,
+			&i.TodoRecurWeekdays,
+			&i.TodoRecurInterval,
+			&i.TodoLastCompletedOn,
 			&i.ProjectTitle,
 			&i.ProjectSlug,
 		); err != nil {
@@ -3750,6 +3765,7 @@ SELECT t.id, t.title, t.state, t.due, t.project_id,
 FROM todos t
 LEFT JOIN projects p ON p.id = t.project_id
 WHERE t.state NOT IN ('done', 'someday', 'inbox', 'archived', 'dismissed')
+  AND t.recur_weekdays IS NULL AND t.recur_interval IS NULL
   AND t.due IS NOT NULL AND t.due < $1
 ORDER BY t.due, t.priority NULLS LAST
 `
@@ -3776,6 +3792,9 @@ type OverdueTodoItemsRow struct {
 // Todo items past due that are still active (for brief(morning) + Today). Excludes the
 // terminal states (done, archived, dismissed) plus the non-date-relevant
 // someday/inbox holding states, so a self-closed todo never reappears as active.
+// Also excludes recurring todos: a recurring routine's "when" is governed by its
+// schedule (the Recurring section), not a one-time due date — listing it here too
+// would double-list it across the overdue and recurring sections.
 func (q *Queries) OverdueTodoItems(ctx context.Context, today *time.Time) ([]OverdueTodoItemsRow, error) {
 	rows, err := q.db.Query(ctx, overdueTodoItems, today)
 	if err != nil {
@@ -5463,10 +5482,16 @@ func (q *Queries) SetContentEmbedding(ctx context.Context, arg SetContentEmbeddi
 
 const setTodoRecurrence = `-- name: SetTodoRecurrence :execrows
 UPDATE todos
-SET recur_weekdays = $1,
-    recur_interval = $2,
-    recur_unit     = $3,
-    updated_at     = now()
+SET recur_weekdays    = $1,
+    recur_interval    = $2,
+    recur_unit        = $3,
+    last_completed_on = CASE
+        WHEN $1::smallint IS NULL
+         AND $2::int IS NULL
+        THEN NULL
+        ELSE last_completed_on
+    END,
+    updated_at        = now()
 WHERE id = $4 AND created_by = $5
 `
 
@@ -5481,6 +5506,11 @@ type SetTodoRecurrenceParams struct {
 // Set (or clear) a todo's recurrence, scoped to the caller's own todos. Pass
 // recur_weekdays for weekday-mode, recur_interval+recur_unit for interval-mode,
 // or all-null to clear. chk_todo_recurrence rejects an invalid combination.
+// Clearing recurrence (both recur_weekdays and recur_interval NULL) also clears
+// last_completed_on so chk_todo_last_completed_requires_recurrence holds — a
+// one-shot has no occurrence-completion stamp. Mirrors SetTodoRecurrenceByID
+// (the admin path); without this, clearing a recurring todo that already
+// completed an occurrence hits the CHECK (SQLSTATE 23514).
 func (q *Queries) SetTodoRecurrence(ctx context.Context, arg SetTodoRecurrenceParams) (int64, error) {
 	result, err := q.db.Exec(ctx, setTodoRecurrence,
 		arg.RecurWeekdays,
@@ -6282,6 +6312,7 @@ SELECT t.id, t.title, t.state, t.due, t.project_id,
 FROM todos t
 LEFT JOIN projects p ON p.id = t.project_id
 WHERE t.state NOT IN ('done', 'someday', 'inbox', 'archived', 'dismissed')
+  AND t.recur_weekdays IS NULL AND t.recur_interval IS NULL
   AND t.due > $1 AND t.due <= $2
 ORDER BY t.due, t.priority NULLS LAST
 `
@@ -6313,6 +6344,8 @@ type TodoItemsDueInRangeRow struct {
 // Todo items due within a date range (for brief(morning) + the Today aggregate, upcoming section).
 // Excludes terminal states (done, archived, dismissed) and the someday/inbox
 // holding states so a self-closed todo never reappears in the upcoming view.
+// Recurring todos are excluded — they belong to the Recurring section, governed
+// by their schedule, not double-listed here via a due date.
 func (q *Queries) TodoItemsDueInRange(ctx context.Context, arg TodoItemsDueInRangeParams) ([]TodoItemsDueInRangeRow, error) {
 	rows, err := q.db.Query(ctx, todoItemsDueInRange, arg.StartDate, arg.EndDate)
 	if err != nil {
@@ -6359,6 +6392,7 @@ SELECT t.id, t.title, t.state, t.due, t.project_id,
 FROM todos t
 LEFT JOIN projects p ON p.id = t.project_id
 WHERE t.state NOT IN ('done', 'someday', 'inbox', 'archived', 'dismissed')
+  AND t.recur_weekdays IS NULL AND t.recur_interval IS NULL
   AND t.due = $1
 ORDER BY t.priority NULLS LAST, t.created_at
 `
@@ -6385,6 +6419,8 @@ type TodoItemsDueOnRow struct {
 // Todo items due on a specific date (for brief(morning) + the Today aggregate, due-today section).
 // Excludes terminal states (done, archived, dismissed) and the someday/inbox
 // holding states so a self-closed todo never reappears in the Today view.
+// Recurring todos are excluded — they belong to the Recurring section, governed
+// by their schedule, not double-listed here via a due date.
 func (q *Queries) TodoItemsDueOn(ctx context.Context, targetDate *time.Time) ([]TodoItemsDueOnRow, error) {
 	rows, err := q.db.Query(ctx, todoItemsDueOn, targetDate)
 	if err != nil {

@@ -391,10 +391,16 @@ type PendingDetail struct {
 	Priority      *string    `json:"priority,omitempty"`
 	RecurInterval *int32     `json:"recur_interval,omitempty"`
 	RecurUnit     *string    `json:"recur_unit,omitempty"`
-	Description   string     `json:"description,omitempty"`
-	CreatedBy     string     `json:"created_by,omitempty"`
-	CreatedAt     time.Time  `json:"created_at"`
-	UpdatedAt     time.Time  `json:"updated_at"`
+	// RecurWeekdays is the weekday-mode recurrence mask. Carried so the backlog
+	// wire lets the GTD page recognise weekday-mode routines as recurring — a
+	// todo is recurring when EITHER RecurInterval or RecurWeekdays is set, and
+	// without this the page treated only interval-mode as recurring (weekday
+	// routines then leaked into Pending with no recurrence badge).
+	RecurWeekdays *int16    `json:"recur_weekdays,omitempty"`
+	Description   string    `json:"description,omitempty"`
+	CreatedBy     string    `json:"created_by,omitempty"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
 }
 
 // SearchDetail is a search hit with project context.

@@ -26,6 +26,8 @@ SELECT
     dpi.reason, dpi.status, dpi.created_at, dpi.updated_at,
     t.title AS todo_title, t.state AS todo_state, t.due AS todo_due,
     t.energy AS todo_energy, t.priority AS todo_priority,
+    t.recur_weekdays AS todo_recur_weekdays, t.recur_interval AS todo_recur_interval,
+    t.last_completed_on AS todo_last_completed_on,
     COALESCE(p.title, '') AS project_title, COALESCE(p.slug, '') AS project_slug
 FROM daily_plan_items dpi
 JOIN todos t ON t.id = dpi.todo_id

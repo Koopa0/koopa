@@ -225,16 +225,18 @@ func (h *Handler) loadPlan(ctx context.Context, date time.Time, resp *Response) 
 	if items != nil {
 		resp.CommittedTodos = items
 	}
+	// Completion derives from the backing todo's state (and recurring-occurrence
+	// completion), NOT daily_plan_items.status — that column has no write path,
+	// so it is always 'planned'. daily.Item.IsCompletedOn/IsDeferred is the
+	// single source brief(reflection) also uses, so the two surfaces agree.
 	for i := range items {
-		switch items[i].Status {
-		case daily.StatusPlanned:
-			resp.PlanCompletion.Planned++
-		case daily.StatusDone:
+		switch {
+		case items[i].IsCompletedOn(date):
 			resp.PlanCompletion.Completed++
-		case daily.StatusDeferred:
+		case items[i].IsDeferred():
 			resp.PlanCompletion.Deferred++
-		case daily.StatusDropped:
-			// dropped items are not counted in any category
+		default:
+			resp.PlanCompletion.Planned++
 		}
 	}
 }

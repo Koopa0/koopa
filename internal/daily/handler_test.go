@@ -6,7 +6,85 @@ import (
 	"bytes"
 	"encoding/json"
 	"testing"
+	"time"
 )
+
+// TestItem_IsCompletedOn pins the completion predicate shared by the Today
+// aggregate (today.loadPlan) and brief(reflection): a planned todo counts as
+// completed when it reached done OR when it is a recurring todo whose occurrence
+// was completed on the plan date. The recurrence arm is the one that a pure
+// todo_state check misses — a routine done today never sets state=done.
+func TestItem_IsCompletedOn(t *testing.T) {
+	t.Parallel()
+	date := time.Date(2026, 6, 30, 0, 0, 0, 0, time.UTC)
+	otherDay := time.Date(2026, 6, 29, 0, 0, 0, 0, time.UTC)
+	weekdayMask := int16(127)
+	interval := int32(1)
+
+	// Cross-timezone civil-date case: the plan date is Asia/Taipei midnight
+	// (2026-06-30 00:00+08 == 2026-06-29 16:00 UTC) while last_completed_on is a
+	// DATE read as midnight UTC. sameCivilDate compares .Date() components in
+	// each location, so a 2026-06-30 stamp matches the Taipei plan date even
+	// though the underlying instants differ — and a 2026-06-29 stamp does not.
+	taipei, err := time.LoadLocation("Asia/Taipei")
+	if err != nil {
+		t.Fatalf("loading Asia/Taipei: %v", err)
+	}
+	taipeiDate := time.Date(2026, 6, 30, 0, 0, 0, 0, taipei)
+
+	tests := []struct {
+		name string
+		item Item
+		want bool
+	}{
+		{name: "terminal done", item: Item{TodoState: "done"}, want: true},
+		{name: "plain todo not done", item: Item{TodoState: "todo"}, want: false},
+		{name: "someday not done", item: Item{TodoState: "someday"}, want: false},
+		{
+			name: "weekday recurring completed today",
+			item: Item{TodoState: "in_progress", TodoRecurWeekdays: &weekdayMask, TodoLastCompletedOn: &date},
+			want: true,
+		},
+		{
+			name: "interval recurring completed today",
+			item: Item{TodoState: "todo", TodoRecurInterval: &interval, TodoLastCompletedOn: &date},
+			want: true,
+		},
+		{
+			name: "recurring completed a different day",
+			item: Item{TodoState: "todo", TodoRecurWeekdays: &weekdayMask, TodoLastCompletedOn: &otherDay},
+			want: false,
+		},
+		{
+			name: "recurring never completed",
+			item: Item{TodoState: "todo", TodoRecurWeekdays: &weekdayMask},
+			want: false,
+		},
+		{
+			name: "non-recurring with a stray stamp is not 'completed today'",
+			item: Item{TodoState: "todo", TodoLastCompletedOn: &date},
+			want: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := tt.item.IsCompletedOn(date); got != tt.want {
+				t.Errorf("IsCompletedOn(%s) = %v, want %v", date.Format(time.DateOnly), got, tt.want)
+			}
+		})
+	}
+
+	// Cross-timezone: a Taipei-midnight plan date vs a UTC-stored stamp.
+	matchTaipei := Item{TodoState: "todo", TodoRecurWeekdays: &weekdayMask, TodoLastCompletedOn: &date}        // stamp 2026-06-30 UTC
+	missTaipei := Item{TodoState: "todo", TodoRecurWeekdays: &weekdayMask, TodoLastCompletedOn: &otherDay}      // stamp 2026-06-29 UTC
+	if !matchTaipei.IsCompletedOn(taipeiDate) {
+		t.Errorf("IsCompletedOn(Taipei %s) with a 2026-06-30 UTC stamp = false, want true (same civil date)", taipeiDate.Format(time.DateOnly))
+	}
+	if missTaipei.IsCompletedOn(taipeiDate) {
+		t.Errorf("IsCompletedOn(Taipei %s) with a 2026-06-29 UTC stamp = true, want false (different civil date)", taipeiDate.Format(time.DateOnly))
+	}
+}
 
 // Track 1B — Today fan-out wire contract.
 //

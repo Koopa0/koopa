@@ -835,6 +835,128 @@ func containsID(items []todo.Item, id uuid.UUID) bool {
 	return false
 }
 
+// TestIntegration_Todo_RecurringExcludedFromDueSections pins D3/K1: a recurring
+// todo that ALSO has a due date must NOT double-list — it belongs to the
+// Recurring section only, never the due-based overdue/due-today/upcoming
+// sections. A non-recurring todo with the same due date still appears there.
+func TestIntegration_Todo_RecurringExcludedFromDueSections(t *testing.T) {
+	truncate(t)
+	store := todo.NewStore(testPool)
+	ctx := t.Context()
+	today := time.Now().UTC()
+
+	seedDue := func(title, state string, due string, weekdays *int) uuid.UUID {
+		t.Helper()
+		var id uuid.UUID
+		if err := testPool.QueryRow(ctx,
+			`INSERT INTO todos (title, state, due, recur_weekdays, created_by)
+			 VALUES ($1, $2::todo_state, $3::date, $4::smallint, 'human') RETURNING id`,
+			title, state, due, weekdays,
+		).Scan(&id); err != nil {
+			t.Fatalf("seeding %q: %v", title, err)
+		}
+		return id
+	}
+	all := 127
+	yesterday := today.AddDate(0, 0, -1).Format(time.DateOnly)
+	todayStr := today.Format(time.DateOnly)
+
+	// Non-recurring overdue + due-today: must appear in the due sections.
+	plainOverdue := seedDue("plain overdue", "todo", yesterday, nil)
+	plainToday := seedDue("plain due today", "todo", todayStr, nil)
+	// Recurring with a past/today due: must be EXCLUDED from the due sections.
+	recurOverdue := seedDue("recurring + overdue due", "todo", yesterday, &all)
+	recurToday := seedDue("recurring + today due", "todo", todayStr, &all)
+
+	overdue, err := store.OverdueItems(ctx, today)
+	if err != nil {
+		t.Fatalf("OverdueItems: %v", err)
+	}
+	od := idSet(overdue)
+	if _, ok := od[plainOverdue]; !ok {
+		t.Errorf("OverdueItems missing the plain overdue todo %s", plainOverdue)
+	}
+	if _, ok := od[recurOverdue]; ok {
+		t.Errorf("OverdueItems includes recurring todo %s — recurring must not double-list in the overdue section", recurOverdue)
+	}
+
+	dueOn, err := store.ItemsDueOn(ctx, today)
+	if err != nil {
+		t.Fatalf("ItemsDueOn: %v", err)
+	}
+	don := idSet(dueOn)
+	if _, ok := don[plainToday]; !ok {
+		t.Errorf("ItemsDueOn missing the plain due-today todo %s", plainToday)
+	}
+	if _, ok := don[recurToday]; ok {
+		t.Errorf("ItemsDueOn includes recurring todo %s — recurring must not double-list in the due-today section", recurToday)
+	}
+
+	// Upcoming (due-in-range): a plain future todo appears; a recurring one with
+	// a future due does not (the third due-based query carries the same guard).
+	tomorrow := today.AddDate(0, 0, 1).Format(time.DateOnly)
+	plainUpcoming := seedDue("plain upcoming", "todo", tomorrow, nil)
+	recurUpcoming := seedDue("recurring + upcoming due", "todo", tomorrow, &all)
+	upcoming, err := store.ItemsDueInRange(ctx, today, today.AddDate(0, 0, 7))
+	if err != nil {
+		t.Fatalf("ItemsDueInRange: %v", err)
+	}
+	up := idSet(upcoming)
+	if _, ok := up[plainUpcoming]; !ok {
+		t.Errorf("ItemsDueInRange missing the plain upcoming todo %s", plainUpcoming)
+	}
+	if _, ok := up[recurUpcoming]; ok {
+		t.Errorf("ItemsDueInRange includes recurring todo %s — recurring must not double-list in the upcoming section", recurUpcoming)
+	}
+
+	// Both recurring todos still surface in the Recurring section (daily mask).
+	due, err := store.RecurringItemsDueToday(ctx, today)
+	if err != nil {
+		t.Fatalf("RecurringItemsDueToday: %v", err)
+	}
+	if !containsID(due, recurOverdue) || !containsID(due, recurToday) {
+		t.Errorf("recurring todos must still appear in RecurringItemsDueToday (got %d)", len(due))
+	}
+}
+
+// TestIntegration_Todo_CompleteOccurrence_StateGuard pins D5: completing a
+// recurring occurrence only applies to an ACTIVE (todo/in_progress) todo. A
+// recurring todo still in inbox (e.g. captured-but-unclarified) must not be
+// stampable — the guard returns ErrNotFound and leaves last_completed_on NULL,
+// preventing the contradictory "completed today but never clarified" state.
+func TestIntegration_Todo_CompleteOccurrence_StateGuard(t *testing.T) {
+	truncate(t)
+	store := todo.NewStore(testPool)
+	ctx := t.Context()
+
+	var inboxRecurring uuid.UUID
+	if err := testPool.QueryRow(ctx,
+		`INSERT INTO todos (title, state, recur_weekdays, created_by)
+		 VALUES ('captured daily routine', 'inbox', 127::smallint, 'human') RETURNING id`,
+	).Scan(&inboxRecurring); err != nil {
+		t.Fatalf("seeding recurring inbox todo: %v", err)
+	}
+
+	// Admin (by-id) path: must be rejected as not-found by the state guard.
+	if err := store.CompleteOccurrenceByID(ctx, inboxRecurring, time.Now().UTC()); !errors.Is(err, todo.ErrNotFound) {
+		t.Errorf("CompleteOccurrenceByID on an inbox recurring todo = %v, want ErrNotFound (state guard)", err)
+	}
+	// Caller-scoped path: same guard.
+	if err := store.CompleteOccurrence(ctx, inboxRecurring, "human", time.Now().UTC()); !errors.Is(err, todo.ErrNotFound) {
+		t.Errorf("CompleteOccurrence on an inbox recurring todo = %v, want ErrNotFound (state guard)", err)
+	}
+
+	var stamped *time.Time
+	if err := testPool.QueryRow(ctx,
+		`SELECT last_completed_on FROM todos WHERE id = $1`, inboxRecurring,
+	).Scan(&stamped); err != nil {
+		t.Fatalf("reading last_completed_on: %v", err)
+	}
+	if stamped != nil {
+		t.Errorf("last_completed_on = %v, want NULL — the guard must not stamp a non-active recurring todo", stamped)
+	}
+}
+
 // recurrenceReq builds the PUT {id}/recurrence request with the given JSON body.
 func recurrenceReq(t *testing.T, id uuid.UUID, body string) *http.Request {
 	t.Helper()

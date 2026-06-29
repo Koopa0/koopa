@@ -186,3 +186,19 @@ func FuzzEscapeILIKE(f *testing.F) {
 		}
 	})
 }
+
+// canonicalWeekdayBits is the documented recur_weekdays mask (Mon=bit0 .. Sun=bit6),
+// matching the COMMENT ON COLUMN in migrations/001_initial.up.sql and the SQL
+// ISODOW-1 shift in RecurringTodoItemsDueToday. The admin weekdayBits map
+// (handler.go) is a deliberate copy of the MCP one (recurrence.go); the schema
+// CHECK only range-checks 1..127, so it would NOT catch a bit→weekday drift.
+// This test pins THIS package's copy to the spec; mcp has the mirror test.
+var canonicalWeekdayBits = map[string]int16{
+	"mon": 1, "tue": 2, "wed": 4, "thu": 8, "fri": 16, "sat": 32, "sun": 64,
+}
+
+func TestWeekdayBitsMatchesCanonicalSpec(t *testing.T) {
+	if diff := cmp.Diff(canonicalWeekdayBits, weekdayBits); diff != "" {
+		t.Errorf("todo weekdayBits drifted from the documented Mon=1..Sun=64 mask (-want +got):\n%s", diff)
+	}
+}

@@ -412,11 +412,14 @@ func (s *Server) fillBriefReflection(ctx context.Context, date time.Time, out *B
 		return
 	}
 	out.PlannedItems = items
+	// Completion mirrors the Today aggregate via the same daily.Item predicates,
+	// so a recurring todo whose occurrence was completed today (which never sets
+	// todo_state=done) is counted as completed, and the two surfaces never drift.
 	for i := range items {
-		switch items[i].TodoState {
-		case string(todo.StateDone):
+		switch {
+		case items[i].IsCompletedOn(date):
 			out.CompletedCount++
-		case string(todo.StateSomeday):
+		case items[i].IsDeferred():
 			out.DeferredCount++
 		default:
 			out.PlannedCount++

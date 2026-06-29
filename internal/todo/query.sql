@@ -10,6 +10,9 @@ RETURNING id, title, state, due, project_id,
 -- Todo items past due that are still active (for brief(morning) + Today). Excludes the
 -- terminal states (done, archived, dismissed) plus the non-date-relevant
 -- someday/inbox holding states, so a self-closed todo never reappears as active.
+-- Also excludes recurring todos: a recurring routine's "when" is governed by its
+-- schedule (the Recurring section), not a one-time due date — listing it here too
+-- would double-list it across the overdue and recurring sections.
 SELECT t.id, t.title, t.state, t.due, t.project_id,
        t.energy, t.priority, t.recur_interval, t.recur_unit, t.recur_weekdays, t.last_completed_on,
        t.created_by, t.created_at, t.updated_at,
@@ -18,6 +21,7 @@ SELECT t.id, t.title, t.state, t.due, t.project_id,
 FROM todos t
 LEFT JOIN projects p ON p.id = t.project_id
 WHERE t.state NOT IN ('done', 'someday', 'inbox', 'archived', 'dismissed')
+  AND t.recur_weekdays IS NULL AND t.recur_interval IS NULL
   AND t.due IS NOT NULL AND t.due < @today
 ORDER BY t.due, t.priority NULLS LAST;
 
@@ -25,6 +29,8 @@ ORDER BY t.due, t.priority NULLS LAST;
 -- Todo items due on a specific date (for brief(morning) + the Today aggregate, due-today section).
 -- Excludes terminal states (done, archived, dismissed) and the someday/inbox
 -- holding states so a self-closed todo never reappears in the Today view.
+-- Recurring todos are excluded — they belong to the Recurring section, governed
+-- by their schedule, not double-listed here via a due date.
 SELECT t.id, t.title, t.state, t.due, t.project_id,
        t.energy, t.priority, t.recur_interval, t.recur_unit, t.recur_weekdays, t.last_completed_on,
        t.created_by, t.created_at, t.updated_at,
@@ -33,6 +39,7 @@ SELECT t.id, t.title, t.state, t.due, t.project_id,
 FROM todos t
 LEFT JOIN projects p ON p.id = t.project_id
 WHERE t.state NOT IN ('done', 'someday', 'inbox', 'archived', 'dismissed')
+  AND t.recur_weekdays IS NULL AND t.recur_interval IS NULL
   AND t.due = @target_date
 ORDER BY t.priority NULLS LAST, t.created_at;
 
@@ -40,6 +47,8 @@ ORDER BY t.priority NULLS LAST, t.created_at;
 -- Todo items due within a date range (for brief(morning) + the Today aggregate, upcoming section).
 -- Excludes terminal states (done, archived, dismissed) and the someday/inbox
 -- holding states so a self-closed todo never reappears in the upcoming view.
+-- Recurring todos are excluded — they belong to the Recurring section, governed
+-- by their schedule, not double-listed here via a due date.
 SELECT t.id, t.title, t.state, t.due, t.project_id,
        t.energy, t.priority, t.recur_interval, t.recur_unit, t.recur_weekdays, t.last_completed_on,
        t.created_by, t.created_at, t.updated_at,
@@ -48,6 +57,7 @@ SELECT t.id, t.title, t.state, t.due, t.project_id,
 FROM todos t
 LEFT JOIN projects p ON p.id = t.project_id
 WHERE t.state NOT IN ('done', 'someday', 'inbox', 'archived', 'dismissed')
+  AND t.recur_weekdays IS NULL AND t.recur_interval IS NULL
   AND t.due > @start_date AND t.due <= @end_date
 ORDER BY t.due, t.priority NULLS LAST;
 
@@ -211,11 +221,22 @@ ORDER BY priority NULLS LAST, title;
 -- Set (or clear) a todo's recurrence, scoped to the caller's own todos. Pass
 -- recur_weekdays for weekday-mode, recur_interval+recur_unit for interval-mode,
 -- or all-null to clear. chk_todo_recurrence rejects an invalid combination.
+-- Clearing recurrence (both recur_weekdays and recur_interval NULL) also clears
+-- last_completed_on so chk_todo_last_completed_requires_recurrence holds — a
+-- one-shot has no occurrence-completion stamp. Mirrors SetTodoRecurrenceByID
+-- (the admin path); without this, clearing a recurring todo that already
+-- completed an occurrence hits the CHECK (SQLSTATE 23514).
 UPDATE todos
-SET recur_weekdays = sqlc.narg('recur_weekdays'),
-    recur_interval = sqlc.narg('recur_interval'),
-    recur_unit     = sqlc.narg('recur_unit'),
-    updated_at     = now()
+SET recur_weekdays    = sqlc.narg('recur_weekdays'),
+    recur_interval    = sqlc.narg('recur_interval'),
+    recur_unit        = sqlc.narg('recur_unit'),
+    last_completed_on = CASE
+        WHEN sqlc.narg('recur_weekdays')::smallint IS NULL
+         AND sqlc.narg('recur_interval')::int IS NULL
+        THEN NULL
+        ELSE last_completed_on
+    END,
+    updated_at        = now()
 WHERE id = @id AND created_by = @created_by;
 
 -- name: SetTodoRecurrenceByID :execrows
@@ -242,12 +263,16 @@ WHERE id = @id;
 -- name: CompleteRecurringOccurrence :execrows
 -- Stamp last_completed_on for today's occurrence of a recurring todo WITHOUT
 -- moving it to a terminal state (it keeps recurring). Scoped to the caller's own
--- todos and only applies to recurring rows; a non-recurring or non-caller row
--- affects zero rows.
+-- todos and only applies to recurring rows in an ACTIVE state (todo/in_progress);
+-- a non-recurring, non-caller, or non-active row (inbox/someday/done/archived/
+-- dismissed) affects zero rows. The state guard prevents stamping an occurrence
+-- on a recurring todo that is not actually being worked (e.g. a captured-but-
+-- unclarified recurring inbox todo), which would be a contradictory state.
 UPDATE todos
 SET last_completed_on = @completed_on::date,
     updated_at        = now()
 WHERE id = @id AND created_by = @created_by
+  AND state IN ('todo', 'in_progress')
   AND (recur_weekdays IS NOT NULL OR recur_interval IS NOT NULL);
 
 -- name: CompleteRecurringOccurrenceByID :execrows
@@ -255,12 +280,15 @@ WHERE id = @id AND created_by = @created_by
 -- NOT caller-scoped: the owner completes any recurring routine from the admin
 -- UI. Stamps last_completed_on WITHOUT a terminal state so the todo keeps
 -- recurring (the admin complete button must not kill a recurrence — that is
--- what UpdateTodoItemState→done would do). Affects zero rows for a non-recurring
--- row, letting the caller fall through to a terminal complete.
+-- what UpdateTodoItemState→done would do). Only applies to recurring rows in an
+-- ACTIVE state (todo/in_progress); a non-recurring or non-active row affects
+-- zero rows, letting the caller fall through to a terminal complete (and never
+-- stamping an occurrence on an inbox/someday/terminal recurring todo).
 UPDATE todos
 SET last_completed_on = @completed_on::date,
     updated_at        = now()
 WHERE id = @id
+  AND state IN ('todo', 'in_progress')
   AND (recur_weekdays IS NOT NULL OR recur_interval IS NOT NULL);
 
 -- name: ClarifyTodoItem :one

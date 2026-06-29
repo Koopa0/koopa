@@ -2050,3 +2050,48 @@ func TestIntegration_ResolveTodo_RecurringCompletesOccurrence(t *testing.T) {
 		t.Errorf("recurring todo state = %q after archived, want archived (terminal)", state2)
 	}
 }
+
+// TestIntegration_SetTodoRecurrence_ClearAfterOccurrence pins the agent (MCP)
+// clear path against the CHECK that the admin path was already engineered to
+// avoid: completing an occurrence stamps last_completed_on, and clearing the
+// recurrence afterward must also clear last_completed_on so
+// chk_todo_last_completed_requires_recurrence holds. Before the fix, the MCP
+// SetTodoRecurrence left last_completed_on set and the clear hit SQLSTATE 23514.
+func TestIntegration_SetTodoRecurrence_ClearAfterOccurrence(t *testing.T) {
+	s := setupServer(t)
+
+	var id uuid.UUID
+	if err := testPool.QueryRow(t.Context(),
+		`INSERT INTO todos (title, state, recur_weekdays, created_by)
+		 VALUES ('Daily vocab', 'todo', 127, 'claude') RETURNING id`,
+	).Scan(&id); err != nil {
+		t.Fatalf("seeding recurring todo: %v", err)
+	}
+
+	// Complete today's occurrence → stamps last_completed_on, stays recurring.
+	if _, out, err := callHandlerAs(t, "claude", s.resolveTodo, ResolveTodoInput{ID: id.String(), State: "done"}); err != nil || !out.OK {
+		t.Fatalf("resolveTodo(done): err=%v out=%+v", err, out)
+	}
+
+	// Clear the recurrence. This previously hit chk_todo_last_completed_requires_recurrence.
+	if _, out, err := callHandlerAs(t, "claude", s.setTodoRecurrence, SetTodoRecurrenceInput{TodoID: id.String(), Clear: true}); err != nil {
+		t.Fatalf("setTodoRecurrence(clear) after an occurrence completion must succeed, got: %v", err)
+	} else if !out.OK {
+		t.Errorf("setTodoRecurrence(clear) out = %+v, want OK", out)
+	}
+
+	var weekdays *int16
+	var interval *int32
+	var lastCompleted *time.Time
+	if err := testPool.QueryRow(t.Context(),
+		"SELECT recur_weekdays, recur_interval, last_completed_on FROM todos WHERE id = $1", id,
+	).Scan(&weekdays, &interval, &lastCompleted); err != nil {
+		t.Fatalf("reading back cleared todo: %v", err)
+	}
+	if weekdays != nil || interval != nil {
+		t.Errorf("after clear: recur_weekdays=%v recur_interval=%v, want both nil", weekdays, interval)
+	}
+	if lastCompleted != nil {
+		t.Errorf("after clear: last_completed_on = %v, want nil (invariant)", lastCompleted)
+	}
+}

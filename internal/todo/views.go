@@ -151,7 +151,8 @@ func (s *Store) BacklogItems(ctx context.Context, states []string, projectID, en
 			ProjectTitle: r.ProjectTitle, ProjectSlug: r.ProjectSlug,
 			Energy: r.Energy, Priority: r.Priority,
 			RecurInterval: r.RecurInterval, RecurUnit: r.RecurUnit,
-			Description: r.Description, CreatedBy: r.CreatedBy,
+			RecurWeekdays: r.RecurWeekdays,
+			Description:   r.Description, CreatedBy: r.CreatedBy,
 			CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
 		}
 	}

@@ -146,11 +146,19 @@ func TestToday_WiredSectionsPopulate(t *testing.T) {
 	inRange := []todo.PendingDetail{{ID: uuid.New(), Title: "next week task"}}
 	goals := []goal.ActiveGoalSummary{{Goal: goal.Goal{ID: uuid.New(), Title: "GDE application"}}}
 
+	// Completion derives from the backing todo's state (+ recurring-occurrence
+	// completion), not daily_plan_items.status (which has no write path). Each
+	// item carries Status=planned (the only value the dead column ever holds) to
+	// prove it is IGNORED; the TodoState / recurrence fields drive the counts.
+	now := time.Now().UTC()
+	todayUTC := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+	recurInterval := int32(1)
 	planItems := []daily.Item{
-		{ID: uuid.New(), Status: daily.StatusPlanned},
-		{ID: uuid.New(), Status: daily.StatusDone},
-		{ID: uuid.New(), Status: daily.StatusDeferred},
-		{ID: uuid.New(), Status: daily.StatusDropped},
+		{ID: uuid.New(), Status: daily.StatusPlanned, TodoState: "todo"},    // → Planned
+		{ID: uuid.New(), Status: daily.StatusPlanned, TodoState: "done"},    // → Completed (terminal)
+		{ID: uuid.New(), Status: daily.StatusPlanned, TodoState: "someday"}, // → Deferred
+		{ID: uuid.New(), Status: daily.StatusPlanned, TodoState: "in_progress", // recurring occurrence completed today → Completed
+			TodoRecurInterval: &recurInterval, TodoLastCompletedOn: &todayUTC},
 	}
 
 	h := NewHandler(fakePlanItems{items: planItems}, time.UTC, slog.New(slog.NewTextHandler(io.Discard, nil))).
@@ -176,7 +184,7 @@ func TestToday_WiredSectionsPopulate(t *testing.T) {
 		t.Errorf("active_goals mismatch (-want +got):\n%s", diff)
 	}
 
-	wantCompletion := PlanCompletion{Planned: 1, Completed: 1, Deferred: 1}
+	wantCompletion := PlanCompletion{Planned: 1, Completed: 2, Deferred: 1}
 	if diff := cmp.Diff(wantCompletion, got.PlanCompletion); diff != "" {
 		t.Errorf("plan_completion mismatch (-want +got):\n%s", diff)
 	}
