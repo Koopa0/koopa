@@ -19,6 +19,7 @@ import { EmptyStateComponent } from '../../../shared/components/empty-state/empt
 import { EnergyMeterComponent } from '../../../shared/components/energy-meter/energy-meter.component';
 import { GtdRowComponent } from './gtd-row.component';
 import { ClarifyModalComponent } from './clarify-modal.component';
+import { RecurrenceModalComponent } from './recurrence-modal.component';
 import { GtdStore } from './gtd.store';
 import {
   GTD_TABS,
@@ -50,6 +51,7 @@ import {
     EnergyMeterComponent,
     GtdRowComponent,
     ClarifyModalComponent,
+    RecurrenceModalComponent,
   ],
   providers: [GtdStore],
   templateUrl: './gtd.page.html',
@@ -124,6 +126,7 @@ export class GtdPageComponent {
     if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey)
       return;
     if (this.store.clarifyTarget() !== null) return;
+    if (this.store.recurrenceTarget() !== null) return;
     if (isInteractiveTarget(event.target)) return;
     const view = this.store.view();
     if (!isTriageable(view)) return;
@@ -163,6 +166,9 @@ export class GtdPageComponent {
         break;
       case 'pull':
         this.store.pullRow(row);
+        break;
+      case 'recurrence':
+        this.store.openRecurrence(row);
         break;
       default:
         break;

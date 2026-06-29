@@ -13,6 +13,8 @@ function emptyBrief(): TodayBrief {
     date: '2026-06-07',
     overdue_todos: [],
     today_todos: [],
+    active_todos: [],
+    recurring_todos: [],
     committed_todos: [],
     upcoming_todos: [],
     plan_completion: { planned: 0, completed: 0, deferred: 0 },

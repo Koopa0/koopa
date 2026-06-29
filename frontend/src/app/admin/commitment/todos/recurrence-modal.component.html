@@ -1,0 +1,138 @@
+<app-modal
+  [title]="item().title"
+  subtitle="Make this a routine — it resurfaces on its schedule until you clear it."
+  titleId="recurrence-modal-title"
+  [maxWidth]="'md'"
+  (closed)="closed.emit()"
+>
+  <div class="flex flex-col gap-4" data-testid="recurrence-modal">
+    <!-- Mode toggle: weekday-mode vs interval-mode -->
+    <app-form-field label="Repeat">
+      <div
+        class="inline-flex gap-0.5 rounded-sm border border-border bg-elevated p-0.5"
+        role="radiogroup"
+        aria-label="Recurrence mode"
+      >
+        <button
+          type="button"
+          role="radio"
+          [attr.aria-checked]="mode() === 'weekly'"
+          (click)="mode.set('weekly')"
+          class="rounded-[3px] px-2.5 py-1 font-mono text-[11px] transition-colors"
+          [class.bg-brand-muted]="mode() === 'weekly'"
+          [class.text-brand]="mode() === 'weekly'"
+          [class.text-fg-subtle]="mode() !== 'weekly'"
+          data-testid="recurrence-mode-weekly"
+        >
+          On weekdays
+        </button>
+        <button
+          type="button"
+          role="radio"
+          [attr.aria-checked]="mode() === 'interval'"
+          (click)="mode.set('interval')"
+          class="rounded-[3px] px-2.5 py-1 font-mono text-[11px] transition-colors"
+          [class.bg-brand-muted]="mode() === 'interval'"
+          [class.text-brand]="mode() === 'interval'"
+          [class.text-fg-subtle]="mode() !== 'interval'"
+          data-testid="recurrence-mode-interval"
+        >
+          Every N
+        </button>
+      </div>
+    </app-form-field>
+
+    @if (mode() === 'weekly') {
+      <app-form-field label="Days">
+        <div class="flex flex-col gap-2">
+          <div class="flex flex-wrap gap-1" role="group" aria-label="Weekdays">
+            @for (day of weekdays; track day.value) {
+              <button
+                type="button"
+                [attr.aria-pressed]="isSelected(day.value)"
+                (click)="toggleDay(day.value)"
+                class="rounded-sm border px-2.5 py-1 font-mono text-[11px] transition-colors"
+                [class.border-brand]="isSelected(day.value)"
+                [class.bg-brand-muted]="isSelected(day.value)"
+                [class.text-brand]="isSelected(day.value)"
+                [class.border-border]="!isSelected(day.value)"
+                [class.text-fg-subtle]="!isSelected(day.value)"
+                [attr.data-testid]="'recurrence-day-' + day.value"
+              >
+                {{ day.label }}
+              </button>
+            }
+          </div>
+          <button
+            type="button"
+            (click)="selectAllDays()"
+            class="self-start font-mono text-[11px] text-fg-muted underline-offset-2 transition-colors hover:text-brand hover:underline"
+            data-testid="recurrence-daily"
+          >
+            Every day
+          </button>
+        </div>
+      </app-form-field>
+    } @else {
+      <app-form-field label="Interval">
+        <div class="flex items-center gap-2">
+          <span class="font-mono text-[12px] text-fg-subtle">every</span>
+          <input
+            type="number"
+            min="1"
+            [value]="interval()"
+            (input)="readInterval($event)"
+            class="w-16 rounded-sm border border-border bg-elevated px-2 py-1.5 text-[13px] text-fg focus:border-brand focus:outline-hidden"
+            data-testid="recurrence-interval"
+            aria-label="Interval count"
+          />
+          <select
+            (change)="readUnit($event)"
+            class="rounded-sm border border-border bg-elevated px-2.5 py-1.5 text-[13px] text-fg focus:border-brand focus:outline-hidden"
+            data-testid="recurrence-unit"
+            aria-label="Interval unit"
+          >
+            @for (option of units; track option) {
+              <option [value]="option" [selected]="option === unit()">
+                {{ option }}
+              </option>
+            }
+          </select>
+        </div>
+        <p class="mt-1.5 font-mono text-[10px] text-fg-faint">
+          Counted from the last completion — self-pacing, not a fixed calendar.
+        </p>
+      </app-form-field>
+    }
+  </div>
+
+  <div modal-footer class="flex w-full items-center gap-2.5">
+    <button
+      type="button"
+      (click)="clear()"
+      [disabled]="busy()"
+      class="rounded-sm border border-transparent px-2.5 py-1.5 text-xs text-error transition-colors hover:bg-error-bg disabled:cursor-not-allowed disabled:opacity-40"
+      data-testid="recurrence-clear"
+    >
+      Clear recurrence
+    </button>
+    <span class="flex-1"></span>
+    <button
+      type="button"
+      (click)="closed.emit()"
+      class="rounded-sm border border-border bg-elevated px-2.5 py-1.5 text-xs text-fg-muted transition-colors hover:bg-overlay hover:text-fg"
+      data-testid="recurrence-cancel"
+    >
+      Cancel
+    </button>
+    <button
+      type="button"
+      (click)="save()"
+      [disabled]="busy() || !canSave()"
+      class="rounded-sm border border-brand bg-brand px-2.5 py-1.5 text-xs font-semibold text-[oklch(0.14_0.02_260)] transition-colors hover:bg-brand-strong disabled:cursor-not-allowed disabled:opacity-40"
+      data-testid="recurrence-save"
+    >
+      Save routine
+    </button>
+  </div>
+</app-modal>

@@ -16,6 +16,7 @@ import {
   TodayService,
   type CommittedItem,
   type PendingDetail,
+  type RecurringTodo,
   type TodayBrief,
 } from './today.service';
 import {
@@ -27,7 +28,9 @@ import {
   greetingForHour,
   isQuietBrief,
   planAdvanceAction,
+  recurrenceSummary,
   removeLooseTodo,
+  removeRecurringTodo,
   truncateTitle,
 } from './today-view';
 import { AdminTopbarService } from '../../admin-layout/admin-topbar.service';
@@ -162,6 +165,10 @@ export class TodayPageComponent {
     return energyOf(value);
   }
 
+  protected recurrenceLabel(item: RecurringTodo): string {
+    return recurrenceSummary(item);
+  }
+
   /** todo → in_progress → done, one server-confirmed step per click. */
   protected advancePlan(item: CommittedItem): void {
     const action = planAdvanceAction(item);
@@ -205,6 +212,28 @@ export class TodayPageComponent {
       error: () => {
         this._busy.set(false);
         this.notifications.error('Could not complete the todo.');
+      },
+    });
+  }
+
+  /**
+   * Completes today's occurrence of a recurring routine. The advance(complete)
+   * endpoint is recurring-aware on the server — it stamps last_completed_on and
+   * keeps the todo recurring, so the routine reappears on its next due day. It
+   * just drops off today's list here.
+   */
+  protected completeRecurring(todo: RecurringTodo): void {
+    if (this._busy()) return;
+    this._busy.set(true);
+    this.todoService.advance(todo.id, 'complete').subscribe({
+      next: () => {
+        this._busy.set(false);
+        this.brief.update((v) => (v ? removeRecurringTodo(v, todo.id) : v));
+        this.notifications.success('Done for today');
+      },
+      error: () => {
+        this._busy.set(false);
+        this.notifications.error('Could not complete the routine.');
       },
     });
   }

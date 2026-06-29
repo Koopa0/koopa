@@ -269,3 +269,13 @@
     (closed)="store.closeClarify()"
   />
 }
+
+<!-- Recurrence editor -->
+@if (store.recurrenceTarget(); as target) {
+  <app-recurrence-modal
+    [item]="target"
+    [busy]="store.busy()"
+    (saved)="store.saveRecurrence($event)"
+    (closed)="store.closeRecurrence()"
+  />
+}

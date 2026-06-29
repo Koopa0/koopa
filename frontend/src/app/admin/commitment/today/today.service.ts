@@ -31,6 +31,24 @@ export interface PendingDetail {
   updated_at: string;
 }
 
+/**
+ * A recurring todo whose occurrence is due today (todo.Item on the wire).
+ * Distinct from PendingDetail — recurrence rows carry the schedule fields and
+ * no project join. Completing one completes today's occurrence (the backend
+ * stamps last_completed_on and keeps it recurring).
+ */
+export interface RecurringTodo {
+  id: string;
+  title: string;
+  state: TodoState;
+  recur_interval?: number;
+  recur_unit?: string;
+  recur_weekdays?: number;
+  last_completed_on?: string;
+  energy?: EnergyLevel;
+  priority?: string;
+}
+
 export type CommittedStatus = 'planned' | 'done' | 'deferred' | 'dropped';
 
 /** A committed daily-plan item — today's plan (daily.Item). */
@@ -87,6 +105,8 @@ export interface TodayBrief {
   date: string;
   overdue_todos: PendingDetail[];
   today_todos: PendingDetail[];
+  active_todos: PendingDetail[];
+  recurring_todos: RecurringTodo[];
   committed_todos: CommittedItem[];
   upcoming_todos: PendingDetail[];
   plan_completion: PlanCompletion;

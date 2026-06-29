@@ -48,6 +48,25 @@ function populatedBrief(): TodayBrief {
         updated_at: '2026-06-07T00:00:00Z',
       },
     ],
+    active_todos: [
+      {
+        id: 'ac1',
+        title: 'Review 2 Go lessons',
+        state: 'in_progress',
+        project_title: '',
+        project_slug: '',
+        created_at: '2026-06-07T00:00:00Z',
+        updated_at: '2026-06-07T00:00:00Z',
+      },
+    ],
+    recurring_todos: [
+      {
+        id: 'rc1',
+        title: 'Memorize Japanese vocab',
+        state: 'todo',
+        recur_weekdays: 127,
+      },
+    ],
     committed_todos: [
       {
         id: 'p1',
@@ -96,6 +115,8 @@ function quietBrief(): TodayBrief {
     date: '2026-06-07',
     overdue_todos: [],
     today_todos: [],
+    active_todos: [],
+    recurring_todos: [],
     committed_todos: [],
     upcoming_todos: [],
     plan_completion: { planned: 0, completed: 0, deferred: 0 },
@@ -260,6 +281,42 @@ describe('TodayPageComponent', () => {
     expect(testid('today-loose-today')).toBeNull();
     const notifications = TestBed.inject(NotificationService).notifications();
     expect(notifications.some((n) => n.message === 'Completed')).toBe(true);
+  });
+
+  it('should render the In progress group and complete an active todo directly when clicked', async () => {
+    await render(populatedBrief());
+    const active = testid('today-loose-active');
+    expect(active?.textContent).toContain('Review 2 Go lessons');
+    expect(active?.textContent).toContain('in progress');
+
+    const check = active?.querySelector<HTMLButtonElement>(
+      '[data-testid="today-loose-check"]',
+    );
+    check?.click();
+    // in_progress → a single complete, never start-then-complete.
+    const req = httpMock.expectOne((r) => r.url.endsWith(ADVANCE_URL('ac1')));
+    expect(req.request.body).toEqual({ action: 'complete' });
+    req.flush({});
+    await settle();
+
+    expect(testid('today-loose-active')).toBeNull();
+  });
+
+  it('should render recurring routines due today and complete one as an occurrence', async () => {
+    await render(populatedBrief());
+    const recurring = testid('today-recurring');
+    expect(recurring?.textContent).toContain('Memorize Japanese vocab');
+    expect(recurring?.textContent).toContain('daily');
+
+    testid('today-recurring-check')?.click();
+    const req = httpMock.expectOne((r) => r.url.endsWith(ADVANCE_URL('rc1')));
+    expect(req.request.body).toEqual({ action: 'complete' });
+    req.flush({});
+    await settle();
+
+    expect(testid('today-recurring')).toBeNull();
+    const notifications = TestBed.inject(NotificationService).notifications();
+    expect(notifications.some((n) => n.message === 'Done for today')).toBe(true);
   });
 
   it('should show the teaching empty state when every section is empty', async () => {

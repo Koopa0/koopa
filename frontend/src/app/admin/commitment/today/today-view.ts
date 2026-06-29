@@ -1,6 +1,7 @@
 import type {
   CommittedItem,
   PendingDetail,
+  RecurringTodo,
   TodayBrief,
 } from './today.service';
 import type { BadgeVariant } from '../../../shared/components/status-badge/status-badge.component';
@@ -16,7 +17,7 @@ import type { EnergyLevel } from '../../../core/models/workbench.model';
 
 /** A labelled group of loose (unplanned) todos for the combined panel. */
 export interface LooseGroup {
-  kind: 'overdue' | 'today' | 'upcoming';
+  kind: 'overdue' | 'today' | 'active' | 'upcoming';
   label: string;
   items: PendingDetail[];
 }
@@ -105,12 +106,17 @@ export function computeFigures(v: TodayBrief | undefined): PlanFigures {
   };
 }
 
-/** Overdue / today / upcoming buckets, omitting the empty ones. */
+/**
+ * Overdue / due-today / in-progress / upcoming buckets, omitting the empty
+ * ones. "In progress" carries the started-but-undated work the backend dedups
+ * into active_todos — the bucket that was previously invisible on Today.
+ */
 export function buildLooseGroups(v: TodayBrief | undefined): LooseGroup[] {
   if (!v) return [];
   const groups: LooseGroup[] = [
     { kind: 'overdue', label: 'Overdue', items: v.overdue_todos },
     { kind: 'today', label: 'Due today', items: v.today_todos },
+    { kind: 'active', label: 'In progress', items: v.active_todos },
     { kind: 'upcoming', label: 'Upcoming', items: v.upcoming_todos },
   ];
   return groups.filter((g) => g.items.length > 0);
@@ -122,10 +128,34 @@ export function isQuietBrief(v: TodayBrief): boolean {
     v.committed_todos.length === 0 &&
     v.overdue_todos.length === 0 &&
     v.today_todos.length === 0 &&
+    v.active_todos.length === 0 &&
+    v.recurring_todos.length === 0 &&
     v.upcoming_todos.length === 0 &&
     v.active_goals.length === 0 &&
     v.rss_highlights.length === 0
   );
+}
+
+const WEEKDAY_ABBR = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] as const;
+const ALL_WEEKDAYS = 127;
+
+/**
+ * Short human label for a recurrence rule: "every N unit" for interval-mode,
+ * "daily" for the full weekday mask, or the day abbreviations (Mon=bit0 ..
+ * Sun=bit6, matching the backend ISODOW-1 mask).
+ */
+export function recurrenceSummary(item: RecurringTodo): string {
+  if (item.recur_interval && item.recur_unit) {
+    return `every ${item.recur_interval} ${item.recur_unit}`;
+  }
+  const mask = item.recur_weekdays ?? 0;
+  if (mask === 0) return 'recurring';
+  if (mask === ALL_WEEKDAYS) return 'daily';
+  const days: string[] = [];
+  for (let i = 0; i < WEEKDAY_ABBR.length; i++) {
+    if (mask & (1 << i)) days.push(WEEKDAY_ABBR[i]);
+  }
+  return days.join(' ');
 }
 
 /** Reflects a server-confirmed advance on the committed plan row. */
@@ -148,12 +178,21 @@ export function applyPlanAdvance(
   };
 }
 
-/** Drops a completed loose todo from every due bucket. */
+/** Drops a completed loose todo from every due bucket, including In progress. */
 export function removeLooseTodo(v: TodayBrief, todoId: string): TodayBrief {
   return {
     ...v,
     overdue_todos: v.overdue_todos.filter((t) => t.id !== todoId),
     today_todos: v.today_todos.filter((t) => t.id !== todoId),
+    active_todos: v.active_todos.filter((t) => t.id !== todoId),
     upcoming_todos: v.upcoming_todos.filter((t) => t.id !== todoId),
+  };
+}
+
+/** Drops a completed recurring occurrence from today's recurring list. */
+export function removeRecurringTodo(v: TodayBrief, todoId: string): TodayBrief {
+  return {
+    ...v,
+    recurring_todos: v.recurring_todos.filter((t) => t.id !== todoId),
   };
 }

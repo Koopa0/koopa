@@ -299,6 +299,7 @@ export function keyboardLegend(view: GtdView): KeyHint[] {
         ...NAV_HINTS,
         { keys: 'e', label: 'advance' },
         { keys: 'd', label: 'defer' },
+        { keys: 'r', label: 'recurrence' },
       ];
     case 'pending':
       return [
@@ -306,12 +307,14 @@ export function keyboardLegend(view: GtdView): KeyHint[] {
         { keys: 'e', label: 'start' },
         { keys: 'd', label: 'defer' },
         { keys: 't', label: 'today' },
+        { keys: 'r', label: 'recurrence' },
       ];
     case 'someday':
       return [
         ...NAV_HINTS,
         { keys: 'e', label: 'activate' },
         { keys: 't', label: 'today' },
+        { keys: 'r', label: 'recurrence' },
       ];
     default:
       return [];
@@ -338,7 +341,8 @@ export type GtdKeyAction =
   | 'clarify'
   | 'defer'
   | 'drop'
-  | 'pull';
+  | 'pull'
+  | 'recurrence';
 
 /** Triage key → action for the active view; null = not bound here. */
 export function keyActionFor(key: string, view: GtdView): GtdKeyAction | null {
@@ -362,6 +366,10 @@ export function keyActionFor(key: string, view: GtdView): GtdKeyAction | null {
       return view === 'pending' || view === 'someday' || view === 'inbox'
         ? 'pull'
         : null;
+    case 'r':
+      // Recurrence applies to clarified rows (todo/in_progress/someday), not
+      // inbox captures — those become recurring after clarify.
+      return view !== 'inbox' ? 'recurrence' : null;
     default:
       return null;
   }

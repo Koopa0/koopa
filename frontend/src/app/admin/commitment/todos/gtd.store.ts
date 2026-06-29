@@ -3,6 +3,7 @@ import { rxResource } from '@angular/core/rxjs-interop';
 import { of, switchMap, type Observable } from 'rxjs';
 import {
   TodoService,
+  type RecurrenceRequest,
   type TodoAdvanceAction,
   type TodoItem,
   type TodoRow,
@@ -62,6 +63,7 @@ export class GtdStore {
   readonly view = signal<GtdView>('inbox');
   readonly selectedIndex = signal(0);
   readonly clarifyTarget = signal<TodoRow | null>(null);
+  readonly recurrenceTarget = signal<TodoRow | null>(null);
   private readonly clarifyIntent = signal<ClarifyIntent>('clarify');
   readonly searchDraft = signal('');
   private readonly historyQuery = signal('');
@@ -271,6 +273,30 @@ export class GtdStore {
     } else {
       this.mutate(clarify$, ADVANCE_TOAST.clarify, {});
     }
+  }
+
+  /** Open the recurrence editor for a row. */
+  openRecurrence(row: TodoRow): void {
+    this.recurrenceTarget.set(row);
+  }
+
+  /** Dismiss the recurrence editor without acting. */
+  closeRecurrence(): void {
+    this.recurrenceTarget.set(null);
+  }
+
+  /**
+   * Recurrence-editor save: set or clear the row's schedule, then refresh the
+   * backlog and recurring buckets so the change shows immediately. Closes the
+   * editor before the round-trip so the modal unmounts cleanly.
+   */
+  saveRecurrence(req: RecurrenceRequest): void {
+    const row = this.recurrenceTarget();
+    if (!row) return;
+    this.recurrenceTarget.set(null);
+    const message = req.clear ? 'Recurrence cleared' : 'Routine set';
+    this.mutate(this.todoService.setRecurrence(row.id, req), message, {});
+    this.recurring.reload();
   }
 
   deferInstead(): void {

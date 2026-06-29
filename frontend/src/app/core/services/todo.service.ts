@@ -124,6 +124,21 @@ export interface TodoUpdateRequest {
   due_date?: string;
 }
 
+export type TodoWeekday = 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun';
+export type RecurUnit = 'days' | 'weeks' | 'months' | 'years';
+
+/**
+ * Set/clear a todo's recurrence (admin, owner). Exactly one of weekdays,
+ * interval+unit, or clear. Mirrors the MCP set_todo_recurrence shape; the
+ * server validates the mutual exclusivity.
+ */
+export interface RecurrenceRequest {
+  weekdays?: TodoWeekday[];
+  interval?: number;
+  unit?: RecurUnit;
+  clear?: boolean;
+}
+
 /** Todo CRUD + state-machine advance. */
 @Injectable({ providedIn: 'root' })
 export class TodoService {
@@ -189,6 +204,18 @@ export class TodoService {
   update(id: string, body: TodoUpdateRequest): Observable<TodoItem> {
     return this.api.putData<TodoItem>(
       `/api/admin/commitment/todos/${id}`,
+      body,
+    );
+  }
+
+  /**
+   * Set or clear a todo's recurrence (weekday-mode, interval-mode, or clear).
+   * The owner-side counterpart of the MCP set_todo_recurrence; turns a one-off
+   * into a routine that resurfaces on its schedule (compute-on-read).
+   */
+  setRecurrence(id: string, body: RecurrenceRequest): Observable<TodoItem> {
+    return this.api.putData<TodoItem>(
+      `/api/admin/commitment/todos/${id}/recurrence`,
       body,
     );
   }

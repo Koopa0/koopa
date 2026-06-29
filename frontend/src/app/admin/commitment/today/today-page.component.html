@@ -394,6 +394,12 @@
                           >
                             today
                           </span>
+                        } @else if (group.kind === 'active') {
+                          <span
+                            class="shrink-0 rounded-sm bg-info-bg px-1.5 py-0.5 font-mono text-[10px] text-info uppercase"
+                          >
+                            in progress
+                          </span>
                         } @else if (todo.due) {
                           <span
                             class="shrink-0 rounded-sm bg-elevated px-1.5 py-0.5 font-mono text-[10px] text-fg-subtle"
@@ -406,6 +412,54 @@
                   </ul>
                 </div>
               }
+            </section>
+          }
+
+          <!-- Recurring routines due today -->
+          @if (v.recurring_todos.length > 0) {
+            <section
+              class="rounded-md border border-border bg-panel"
+              aria-labelledby="today-recurring-heading"
+              data-testid="today-recurring"
+            >
+              <header
+                class="flex items-center justify-between border-b border-border px-4 py-2.5"
+              >
+                <h2
+                  id="today-recurring-heading"
+                  class="font-mono text-[11px] tracking-wide text-fg-faint uppercase"
+                >
+                  Recurring today
+                </h2>
+                <span class="font-mono text-[11px] text-fg-subtle">
+                  {{ v.recurring_todos.length }}
+                </span>
+              </header>
+              <ul class="divide-y divide-border-faint">
+                @for (todo of v.recurring_todos; track todo.id) {
+                  <li class="group flex min-h-8 items-center gap-3 px-4 py-1.5">
+                    <button
+                      type="button"
+                      (click)="completeRecurring(todo)"
+                      [disabled]="busy()"
+                      [attr.aria-label]="'Complete today: ' + todo.title"
+                      data-testid="today-recurring-check"
+                      class="size-[15px] shrink-0 rounded-sm border-[1.5px] border-border-strong transition-colors hover:border-brand"
+                    ></button>
+                    <span class="min-w-0 flex-1 truncate text-[13px] text-fg">
+                      {{ todo.title }}
+                    </span>
+                    @if (energyLevel(todo.energy); as level) {
+                      <app-energy-meter class="shrink-0" [level]="level" />
+                    }
+                    <span
+                      class="shrink-0 rounded-sm bg-elevated px-1.5 py-0.5 font-mono text-[10px] text-fg-subtle"
+                    >
+                      {{ recurrenceLabel(todo) }}
+                    </span>
+                  </li>
+                }
+              </ul>
             </section>
           }
         </div>
