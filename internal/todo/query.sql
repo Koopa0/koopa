@@ -52,12 +52,16 @@ WHERE t.state NOT IN ('done', 'someday', 'inbox', 'archived', 'dismissed')
 ORDER BY t.due, t.priority NULLS LAST;
 
 -- name: InProgressTodoItems :many
--- In-progress todos with project context, for the Today aggregate + brief(morning)
--- "Active" section: work the owner has started. The aggregator dedups these
--- against the date-based sections (overdue/due-today/upcoming), the committed
--- plan, and recurring-due-today, so the Active section surfaces only started
--- work not already shown — typically the due-less in-progress items that would
--- otherwise be invisible on the day's surfaces.
+-- In-progress, NON-recurring todos with project context, for the Today aggregate
+-- + brief(morning) "Active" section: one-off work the owner has started.
+-- Recurring todos are excluded by definition — they live in the Recurring
+-- section, governed by their schedule, not in Active. Without this exclusion a
+-- recurring todo left in_progress would, after its occurrence is completed
+-- (dropped from recurring-due-today), reappear in Active the same day instead of
+-- waiting for its next due day. The aggregator further dedups the result against
+-- the date sections (overdue/due-today/upcoming) and the committed plan, so
+-- Active surfaces only started one-offs not already shown — typically the
+-- due-less in-progress items that would otherwise be invisible on the day.
 SELECT t.id, t.title, t.state, t.due, t.project_id,
        t.energy, t.priority, t.recur_interval, t.recur_unit, t.recur_weekdays, t.last_completed_on,
        t.created_by, t.created_at, t.updated_at,
@@ -66,6 +70,7 @@ SELECT t.id, t.title, t.state, t.due, t.project_id,
 FROM todos t
 LEFT JOIN projects p ON p.id = t.project_id
 WHERE t.state = 'in_progress'
+  AND t.recur_weekdays IS NULL AND t.recur_interval IS NULL
 ORDER BY t.priority NULLS LAST, t.created_at;
 
 -- name: TodoItems :many

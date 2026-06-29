@@ -725,6 +725,43 @@ func TestIntegration_Todo_DateReads_ExcludeTerminal(t *testing.T) {
 	}
 }
 
+// TestIntegration_Todo_InProgressItems_ExcludesRecurring pins that the Today
+// "Active" query returns only NON-recurring in_progress work. A recurring todo
+// left in_progress must never appear in Active — otherwise, once its occurrence
+// is completed (and it drops out of recurring-due-today), it would resurface in
+// Active the same day instead of waiting for its next due day.
+func TestIntegration_Todo_InProgressItems_ExcludesRecurring(t *testing.T) {
+	truncate(t)
+	store := todo.NewStore(testPool)
+	ctx := t.Context()
+
+	// A plain in_progress one-off — must appear in Active.
+	oneOff := seedTodo(t, "Review 2 Go lessons", "in_progress", "human")
+	// A recurring (daily) in_progress todo — must NOT appear in Active.
+	var recurring uuid.UUID
+	if err := testPool.QueryRow(ctx,
+		`INSERT INTO todos (title, state, recur_weekdays, created_by)
+		 VALUES ('Daily Japanese vocab', 'in_progress', 127::smallint, 'human') RETURNING id`,
+	).Scan(&recurring); err != nil {
+		t.Fatalf("seeding recurring in_progress todo: %v", err)
+	}
+
+	items, err := store.InProgressItems(ctx)
+	if err != nil {
+		t.Fatalf("InProgressItems: %v", err)
+	}
+	got := make(map[uuid.UUID]struct{}, len(items))
+	for i := range items {
+		got[items[i].ID] = struct{}{}
+	}
+	if _, ok := got[oneOff]; !ok {
+		t.Errorf("InProgressItems missing the one-off in_progress todo %s", oneOff)
+	}
+	if _, ok := got[recurring]; ok {
+		t.Errorf("InProgressItems includes recurring todo %s; recurring work belongs to the Recurring section, not Active", recurring)
+	}
+}
+
 // recurrenceReq builds the PUT {id}/recurrence request with the given JSON body.
 func recurrenceReq(t *testing.T, id uuid.UUID, body string) *http.Request {
 	t.Helper()
