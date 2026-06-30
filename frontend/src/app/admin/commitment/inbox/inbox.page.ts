@@ -98,7 +98,10 @@ export class InboxPageComponent {
         this.store.advanceRow(row);
         break;
       case 'clarify':
-        this.store.clarifyTarget.set(row);
+        // Go through openClarify (not a raw clarifyTarget.set) so the clarify
+        // intent is reset — a stale 'pull' intent from an earlier t must not
+        // leak into a keyboard clarify and append the todo to today's plan.
+        this.store.openClarify(row);
         break;
       case 'defer':
         this.store.deferRow(row);
