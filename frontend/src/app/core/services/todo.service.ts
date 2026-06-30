@@ -69,12 +69,15 @@ export interface RecurringBuckets {
 }
 
 /**
- * History row — the common projection of the two history wire shapes
- * (completed-since default path and the ?q= full-text search path).
+ * History row — the common projection of the two history wire shapes (the
+ * resolved-since default path and the ?q= full-text search path). state carries
+ * the resolution kind so the Complete view can badge done / dropped / recurring;
+ * completed_at holds the per-kind resolution instant.
  */
 export interface TodoHistoryEntry {
   id: string;
   title: string;
+  state?: TodoState;
   completed_at?: string | null;
   project_title: string;
 }

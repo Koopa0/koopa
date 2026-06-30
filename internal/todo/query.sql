@@ -139,14 +139,43 @@ RETURNING id, title, state, due, project_id,
           completed_at, energy, priority, recur_interval, recur_unit, recur_weekdays, last_completed_on,
           description, created_by, created_at, updated_at;
 
--- name: CompletedTodoDetailSince :many
--- Get todo items completed since a given time with project context.
-SELECT t.id, t.title, t.completed_at, t.project_id,
+-- name: ResolvedTodoDetailSince :many
+-- Resolved ("已了結") todos since a given time, for the Todos page Complete tab:
+-- one-time todos done (state=done, by completed_at), todos dropped/filed
+-- (archived/dismissed, by updated_at), and recurring routines with a recent
+-- occurrence (last_completed_on, while still active so the schedule keeps
+-- running). resolved_at is the per-kind resolution instant; state lets the
+-- front end badge the kind (done / archived / dismissed / recurring-active).
+SELECT t.id, t.title, t.state,
+       CASE
+           WHEN t.state = 'done' THEN t.completed_at
+           WHEN t.state IN ('archived', 'dismissed') THEN t.updated_at
+           ELSE t.last_completed_on::timestamptz
+       END AS resolved_at,
        COALESCE(p.title, '') AS project_title
 FROM todos t
 LEFT JOIN projects p ON t.project_id = p.id
-WHERE t.state = 'done' AND t.completed_at >= @since
-ORDER BY t.completed_at DESC;
+WHERE (t.state = 'done' AND t.completed_at >= @since)
+   OR (t.state IN ('archived', 'dismissed') AND t.updated_at >= @since)
+   OR ((t.recur_weekdays IS NOT NULL OR t.recur_interval IS NOT NULL)
+       AND t.state NOT IN ('done', 'archived', 'dismissed')
+       AND t.last_completed_on IS NOT NULL
+       AND t.last_completed_on >= @since::date)
+ORDER BY resolved_at DESC NULLS LAST;
+
+-- name: AllRecurringTodoItems :many
+-- Every recurring todo's schedule, for the routines overview (manage all
+-- routines, not just today's due ones — distinct from RecurringTodoItemsDueToday).
+-- Active states only (a recurring routine that was archived/dismissed is no
+-- longer a live schedule). Selects the full todos column set so sqlc returns
+-- db.Todo and rowToItem applies.
+SELECT id, title, state, due, project_id,
+       completed_at, energy, priority, recur_interval, recur_unit, recur_weekdays, last_completed_on,
+       description, created_by, created_at, updated_at
+FROM todos
+WHERE state NOT IN ('archived', 'dismissed')
+  AND (recur_weekdays IS NOT NULL OR recur_interval IS NOT NULL)
+ORDER BY priority NULLS LAST, title;
 
 -- name: CompletedTodoItemsOn :many
 -- Todos completed on @today, for the Today dashboard's done-today count and

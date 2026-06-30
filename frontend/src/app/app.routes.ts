@@ -111,10 +111,9 @@ export const routes: Routes = [
       {
         path: 'daily/inbox',
         loadComponent: () =>
-          import('./admin/commitment/todos/gtd.page').then(
-            (m) => m.GtdPageComponent,
+          import('./admin/commitment/inbox/inbox.page').then(
+            (m) => m.InboxPageComponent,
           ),
-        data: { gtdView: 'inbox' },
       },
       {
         path: 'daily/todos',
@@ -122,7 +121,7 @@ export const routes: Routes = [
           import('./admin/commitment/todos/gtd.page').then(
             (m) => m.GtdPageComponent,
           ),
-        data: { gtdView: 'today' },
+        data: { gtdView: 'pending' },
       },
 
       // ── Commitment ───────────────────────────────────────────────

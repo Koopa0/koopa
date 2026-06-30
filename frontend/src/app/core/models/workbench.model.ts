@@ -146,7 +146,17 @@ export interface CellState {
 // Todo — shared enums (todo list / plan / detail views).
 // ============================================================
 
-export type TodoState = 'inbox' | 'todo' | 'in_progress' | 'done' | 'someday';
+// Mirrors the backend todo_state enum (internal/todo/todo.go). archived and
+// dismissed are terminal self-close states (filed away / won't do), distinct
+// from done; they surface in the Complete view as "dropped".
+export type TodoState =
+  | 'inbox'
+  | 'todo'
+  | 'in_progress'
+  | 'done'
+  | 'someday'
+  | 'archived'
+  | 'dismissed';
 
 export type EnergyLevel = 'low' | 'medium' | 'high';
 export type PriorityLevel = 'low' | 'medium' | 'high';

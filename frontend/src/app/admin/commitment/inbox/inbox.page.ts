@@ -2,78 +2,61 @@ import {
   ChangeDetectionStrategy,
   Component,
   DestroyRef,
-  computed,
-  effect,
   inject,
+  signal,
+  viewChildren,
 } from '@angular/core';
-import { ActivatedRoute } from '@angular/router';
-import { DatePipe } from '@angular/common';
-import { Hexagon, LucideAngularModule } from 'lucide-angular';
-import type { TodoHistoryEntry } from '../../../core/services/todo.service';
+import { Hexagon, LucideAngularModule, Plus } from 'lucide-angular';
 import { AdminTopbarService } from '../../admin-layout/admin-topbar.service';
 import { EmptyStateComponent } from '../../../shared/components/empty-state/empty-state.component';
-import { GtdRowComponent } from './gtd-row.component';
-import { ClarifyModalComponent } from './clarify-modal.component';
-import { RecurrenceModalComponent } from './recurrence-modal.component';
-import { GtdStore } from './gtd.store';
+import { GtdRowComponent } from '../todos/gtd-row.component';
+import { ClarifyModalComponent } from '../todos/clarify-modal.component';
+import { GtdStore } from '../todos/gtd.store';
 import {
-  GTD_TABS,
-  initialViewOf,
   isInteractiveTarget,
-  isTriageable,
   keyActionFor,
-  resolvedKindOf,
-  viewLabel,
-  type ResolvedKind,
-} from './gtd-view';
+  type GtdView,
+} from '../todos/gtd-view';
 
 /**
- * Todos — the status-flow surface over the todo backlog: Pending, In Progress,
- * Someday, and Complete (the resolved history) as segmented tabs, with j/k +
- * verb keyboard triage and the clarify / recurrence dialogs. Inbox is its own
- * page (InboxPageComponent); capture happens there. The initial tab comes from
- * route data, defaulting to Pending. State and mutations live in the
- * page-provided {@link GtdStore}.
+ * Inbox — the capture + triage surface over the unclarified backlog. A
+ * persistent capture bar drops raw thoughts into the inbox; the list
+ * below is the inbox rows with j/k + verb keyboard triage and the
+ * clarify dialog. Reuses the GTD backlog store, row, and clarify modal,
+ * locked to the inbox view (no tabs). State and mutations live in the
+ * page-provided {@link GtdStore}, so they die with the route.
  */
 @Component({
-  selector: 'app-gtd-page',
+  selector: 'app-inbox-page',
   imports: [
-    DatePipe,
     LucideAngularModule,
     EmptyStateComponent,
     GtdRowComponent,
     ClarifyModalComponent,
-    RecurrenceModalComponent,
   ],
   providers: [GtdStore],
-  templateUrl: './gtd.page.html',
+  templateUrl: './inbox.page.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
     class: 'flex min-h-full flex-1 flex-col',
     '(document:keydown)': 'handleKeydown($event)',
   },
 })
-export class GtdPageComponent {
+export class InboxPageComponent {
   protected readonly store = inject(GtdStore);
   private readonly topbar = inject(AdminTopbarService);
-  private readonly route = inject(ActivatedRoute);
   private readonly destroyRef = inject(DestroyRef);
 
   protected readonly HexagonIcon = Hexagon;
-  protected readonly tabs = GTD_TABS;
+  protected readonly PlusIcon = Plus;
+  protected readonly view: GtdView = 'inbox';
+  protected readonly captureDraft = signal('');
 
-  protected readonly showSelection = computed(() =>
-    isTriageable(this.store.view()),
-  );
+  private readonly gtdRows = viewChildren(GtdRowComponent);
 
   constructor() {
-    this.store.setView(initialViewOf(this.route.snapshot.data['gtdView']));
-    effect(() => {
-      this.topbar.set({
-        title: 'Todos',
-        crumbs: ['Daily', viewLabel(this.store.view())],
-      });
-    });
+    this.store.setView('inbox');
+    this.topbar.set({ title: 'Inbox', crumbs: ['Daily', 'Inbox'] });
     this.destroyRef.onDestroy(() => this.topbar.reset());
   }
 
@@ -81,26 +64,29 @@ export class GtdPageComponent {
     return (event.target as HTMLInputElement).value;
   }
 
-  /** Resolution kind for a Complete-tab row, from its current state. */
-  protected resolvedKind(state: TodoHistoryEntry['state']): ResolvedKind {
-    return resolvedKindOf(state);
+  protected submitCapture(): void {
+    const title = this.captureDraft().trim();
+    if (!title) return;
+    this.store.capture(title, () => this.captureDraft.set(''));
   }
 
   protected handleKeydown(event: KeyboardEvent): void {
     if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey)
       return;
     if (this.store.clarifyTarget() !== null) return;
-    if (this.store.recurrenceTarget() !== null) return;
     if (isInteractiveTarget(event.target)) return;
-    const view = this.store.view();
-    if (!isTriageable(view)) return;
     const rows = this.store.rows();
     if (rows.length === 0) return;
-    const action = keyActionFor(event.key, view);
+    const action = keyActionFor(event.key, this.view);
     if (!action) return;
     event.preventDefault();
     const index = this.store.selection();
     const row = rows[index];
+    // Inbox actions that open the clarify dialog: focus the row's trigger
+    // first so the modal's focus trap restores focus to it on close.
+    if (action === 'advance' || action === 'clarify' || action === 'pull') {
+      this.gtdRows()[index]?.focusOpen();
+    }
     switch (action) {
       case 'down':
         this.store.selectedIndex.set(Math.min(index + 1, rows.length - 1));
@@ -111,6 +97,9 @@ export class GtdPageComponent {
       case 'advance':
         this.store.advanceRow(row);
         break;
+      case 'clarify':
+        this.store.clarifyTarget.set(row);
+        break;
       case 'defer':
         this.store.deferRow(row);
         break;
@@ -119,9 +108,6 @@ export class GtdPageComponent {
         break;
       case 'pull':
         this.store.pullRow(row);
-        break;
-      case 'recurrence':
-        this.store.openRecurrence(row);
         break;
       default:
         break;

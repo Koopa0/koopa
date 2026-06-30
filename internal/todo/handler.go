@@ -163,10 +163,13 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	api.Encode(w, http.StatusOK, api.Response{Data: out})
 }
 
-// recurringResponse is the wire shape for GET /todos/recurring. The array is
-// non-nil so an empty result serializes [] not null.
+// recurringResponse is the wire shape for GET /todos/recurring. Both arrays are
+// non-nil so an empty result serializes [] not null. DueToday is the compute-on-
+// read occurrences due today; All is every active recurring schedule, for the
+// routines overview (manage-all view).
 type recurringResponse struct {
 	DueToday []Item `json:"due_today"`
+	All      []Item `json:"all"`
 }
 
 // Recurring handles GET /api/admin/commitment/todos/recurring — the recurring
@@ -185,7 +188,14 @@ func (h *Handler) Recurring(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp := recurringResponse{DueToday: ensureItems(dueToday)}
+	all, err := h.store.AllRecurringItems(r.Context())
+	if err != nil {
+		h.logger.Error("listing all recurring todos", "error", err)
+		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to list recurring todos")
+		return
+	}
+
+	resp := recurringResponse{DueToday: ensureItems(dueToday), All: ensureItems(all)}
 	api.Encode(w, http.StatusOK, api.Response{Data: resp})
 }
 
@@ -248,17 +258,18 @@ func (h *Handler) History(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Completed-since path: the default history view.
-	completed, err := h.store.CompletedItemsDetailSince(r.Context(), since)
+	// Resolved-since path: the default Complete-tab view — done, dropped, and
+	// recurring routines' recent occurrences.
+	resolved, err := h.store.ResolvedItemsDetailSince(r.Context(), since)
 	if err != nil {
-		h.logger.Error("listing completed todo history", "error", err)
+		h.logger.Error("listing resolved todo history", "error", err)
 		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to list todo history")
 		return
 	}
-	if completed == nil {
-		completed = []CompletedDetail{}
+	if resolved == nil {
+		resolved = []ResolvedDetail{}
 	}
-	api.Encode(w, http.StatusOK, api.Response{Data: completed})
+	api.Encode(w, http.StatusOK, api.Response{Data: resolved})
 }
 
 // ensureItems returns a non-nil slice so empty results serialize as [].

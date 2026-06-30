@@ -441,10 +441,15 @@ type SearchDetail struct {
 	UpdatedAt     time.Time  `json:"updated_at"`
 }
 
-// CompletedDetail is a recently completed todo with project context.
-type CompletedDetail struct {
+// ResolvedDetail is a resolved ("已了結") todo with project context for the
+// Complete tab: a one-time todo done, a todo dropped (archived/dismissed), or a
+// recurring routine's recent occurrence. State carries the kind so the front
+// end can badge it; CompletedAt holds the per-kind resolution instant (done →
+// completed_at, dropped → updated_at, recurring → last_completed_on).
+type ResolvedDetail struct {
 	ID           uuid.UUID  `json:"id"`
 	Title        string     `json:"title"`
+	State        State      `json:"state"`
 	CompletedAt  *time.Time `json:"completed_at,omitempty"`
 	ProjectTitle string     `json:"project_title"`
 }

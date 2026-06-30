@@ -11,6 +11,7 @@ import {
   keyActionFor,
   planMemberIds,
   recurLabel,
+  resolvedKindOf,
   rowsForView,
   todayInTaipei,
   viewCounts,
@@ -57,51 +58,44 @@ describe('gtd-view', () => {
   ];
   const planIds = new Set(['planned']);
 
-  it('filters the four backlog views by the exact predicates', () => {
-    expect(rowsForView('inbox', backlog, planIds, TODAY).map((r) => r.id)).toEqual(
-      ['capture'],
-    );
-    expect(rowsForView('today', backlog, planIds, TODAY).map((r) => r.id)).toEqual(
-      ['planned', 'due-today'],
-    );
+  it('filters the status views by the exact predicates', () => {
+    expect(rowsForView('inbox', backlog, planIds).map((r) => r.id)).toEqual([
+      'capture',
+    ]);
     expect(
-      rowsForView('pending', backlog, planIds, TODAY).map((r) => r.id),
+      rowsForView('pending', backlog, planIds).map((r) => r.id),
     ).toEqual(['due-today', 'pending']);
+    // In Progress = state in_progress, recurring excluded. 'planned' is the
+    // in_progress row in the backlog; its plan membership does not hide it.
     expect(
-      rowsForView('someday', backlog, planIds, TODAY).map((r) => r.id),
-    ).toEqual(['parked']);
+      rowsForView('in_progress', backlog, planIds).map((r) => r.id),
+    ).toEqual(['planned']);
+    expect(rowsForView('someday', backlog, planIds).map((r) => r.id)).toEqual([
+      'parked',
+    ]);
   });
 
-  it('keeps a started (in_progress) todo in Today even when unplanned and not due today', () => {
-    // Regression: starting a Pending todo (→ in_progress) once made it
-    // vanish from every view when it was neither in the plan nor due today.
-    const started = row({
-      id: 'started',
-      state: 'in_progress',
-      due: '2026-06-20T00:00:00Z',
-    });
-    const ids = rowsForView('today', [started], new Set<string>(), TODAY).map(
-      (r) => r.id,
-    );
-    expect(ids).toEqual(['started']);
+  it('excludes recurring routines from the In Progress tab', () => {
+    const rows: TodoRow[] = [
+      row({ id: 'started', state: 'in_progress' }),
+      row({
+        id: 'started-routine',
+        state: 'in_progress',
+        recur_weekdays: 127,
+      }),
+    ];
+    expect(
+      rowsForView('in_progress', rows, new Set<string>()).map((r) => r.id),
+    ).toEqual(['started']);
   });
 
-  it('counts every view, including recurring buckets and history length', () => {
-    const counts = viewCounts(
-      backlog,
-      planIds,
-      TODAY,
-      {
-        due_today: [],
-      },
-      7,
-    );
+  it('counts every status view plus the resolved (Complete) length', () => {
+    const counts = viewCounts(backlog, planIds, 7);
     expect(counts).toEqual({
       inbox: 1,
-      today: 2,
       pending: 2,
+      in_progress: 1,
       someday: 1,
-      recurring: 0,
       history: 7,
     });
   });
@@ -189,7 +183,7 @@ describe('gtd-view', () => {
     // Only the non-recurring todo remains; BOTH recurrence modes are excluded
     // (weekday-mode was the leak this fix closes).
     expect(
-      rowsForView('pending', rows, new Set<string>(), TODAY).map((r) => r.id),
+      rowsForView('pending', rows, new Set<string>()).map((r) => r.id),
     ).toEqual(['plain']);
   });
 
@@ -198,7 +192,7 @@ describe('gtd-view', () => {
     expect(keyActionFor('c', 'inbox')).toBe('clarify');
     expect(keyActionFor('c', 'pending')).toBeNull();
     expect(keyActionFor('x', 'inbox')).toBe('drop');
-    expect(keyActionFor('x', 'today')).toBeNull();
+    expect(keyActionFor('x', 'pending')).toBeNull();
     expect(keyActionFor('d', 'someday')).toBeNull();
     expect(keyActionFor('t', 'someday')).toBe('pull');
     expect(keyActionFor('t', 'inbox')).toBe('pull');
@@ -215,6 +209,19 @@ describe('gtd-view', () => {
     expect(todayInTaipei(new Date('2026-06-10T06:00:00Z'))).toBe('2026-06-10');
   });
 
+  it('maps a resolved row to its kind by state', () => {
+    expect(resolvedKindOf('done')).toEqual({
+      label: 'done',
+      symbol: '✓',
+      tone: 'done',
+    });
+    expect(resolvedKindOf('dismissed').tone).toBe('dropped');
+    expect(resolvedKindOf('archived').tone).toBe('dropped');
+    // A still-active recurring routine (todo/in_progress) reads as recurring.
+    expect(resolvedKindOf('in_progress').tone).toBe('recurring');
+    expect(resolvedKindOf('todo').tone).toBe('recurring');
+  });
+
   it('builds the clarify field update only from set fields', () => {
     expect(
       clarifyUpdate({ project_id: null, energy: null, due: null }),
@@ -224,12 +231,15 @@ describe('gtd-view', () => {
     ).toEqual({ project_id: 'p1', energy: 'high', due_date: '2026-06-12' });
   });
 
-  it('falls back to inbox for unknown route data and swaps history empty copy while searching', () => {
-    expect(initialViewOf('today')).toBe('today');
-    expect(initialViewOf('nope')).toBe('inbox');
+  it('falls back to pending for unknown route data and swaps Complete empty copy while searching', () => {
+    expect(initialViewOf('someday')).toBe('someday');
+    expect(initialViewOf('today')).toBe('pending');
+    expect(initialViewOf('nope')).toBe('pending');
     expect(emptyCopyFor('history', true).description).toContain(
       'match your search',
     );
-    expect(emptyCopyFor('history', false).description).toContain('kept here');
+    expect(emptyCopyFor('history', false).description).toContain(
+      'recurring completions',
+    );
   });
 });

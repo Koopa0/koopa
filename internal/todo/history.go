@@ -56,19 +56,23 @@ func (s *Store) SearchItems(ctx context.Context, query, projectSlug, stateFilter
 	return items, nil
 }
 
-// CompletedItemsDetailSince returns todo items completed since the given time.
-func (s *Store) CompletedItemsDetailSince(ctx context.Context, since time.Time) ([]CompletedDetail, error) {
-	rows, err := s.q.CompletedTodoDetailSince(ctx, &since)
+// ResolvedItemsDetailSince returns todos resolved ("已了結") since the given
+// time — done, dropped (archived/dismissed), or a recurring routine's recent
+// occurrence — for the Complete tab. See ResolvedTodoDetailSince in query.sql.
+func (s *Store) ResolvedItemsDetailSince(ctx context.Context, since time.Time) ([]ResolvedDetail, error) {
+	rows, err := s.q.ResolvedTodoDetailSince(ctx, &since)
 	if err != nil {
-		return nil, fmt.Errorf("listing completed todo items since %s: %w", since.Format(time.DateOnly), err)
+		return nil, fmt.Errorf("listing resolved todo items since %s: %w", since.Format(time.DateOnly), err)
 	}
-	result := make([]CompletedDetail, len(rows))
-	for i, r := range rows {
-		result[i] = CompletedDetail{
-			ID:           r.ID,
-			Title:        r.Title,
-			CompletedAt:  r.CompletedAt,
-			ProjectTitle: r.ProjectTitle,
+	result := make([]ResolvedDetail, len(rows))
+	for i := range rows {
+		resolvedAt := rows[i].ResolvedAt
+		result[i] = ResolvedDetail{
+			ID:           rows[i].ID,
+			Title:        rows[i].Title,
+			State:        State(rows[i].State),
+			CompletedAt:  &resolvedAt,
+			ProjectTitle: rows[i].ProjectTitle,
 		}
 	}
 	return result, nil

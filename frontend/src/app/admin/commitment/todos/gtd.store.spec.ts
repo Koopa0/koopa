@@ -97,15 +97,13 @@ describe('GtdStore', () => {
       .expectOne((r) => r.url.includes(PLAN_URL))
       .flush({ data: planFixture });
     httpMock
-      .expectOne((r) => r.url.endsWith(`${TODOS_URL}/recurring`))
-      .flush({ data: { due_today: [] } });
-    httpMock
       .expectOne((r) => r.url.endsWith(`${TODOS_URL}/history`))
       .flush({
         data: [
           {
             id: 'hist-1',
             title: 'Shipped thing',
+            state: 'done',
             completed_at: '2026-06-09T10:00:00Z',
             project_title: 'koopa-core',
           },
@@ -117,10 +115,9 @@ describe('GtdStore', () => {
   it('should derive live counts for every view from the loaded resources', () => {
     expect(store.counts()).toEqual({
       inbox: 1,
-      today: 1,
       pending: 1,
+      in_progress: 1,
       someday: 1,
-      recurring: 0,
       history: 1,
     });
   });
@@ -191,7 +188,7 @@ describe('GtdStore', () => {
     TestBed.tick();
 
     // planned-1 is already a member — no further PUT goes out.
-    store.setView('today');
+    store.setView('in_progress');
     store.pullRow(store.rows()[0]);
     httpMock.expectNone((r) => r.method === 'PUT');
   });
@@ -363,7 +360,6 @@ describe('GtdStore (resource error)', () => {
       .match((r) => r.url.endsWith(TODOS_URL) && r.params.get('per_page') === '200')
       .forEach(fail);
     httpMock.match((r) => r.url.includes(PLAN_URL)).forEach(fail);
-    httpMock.match((r) => r.url.endsWith(`${TODOS_URL}/recurring`)).forEach(fail);
     httpMock.match((r) => r.url.endsWith(`${TODOS_URL}/history`)).forEach(fail);
     TestBed.tick();
   }
@@ -379,10 +375,9 @@ describe('GtdStore (resource error)', () => {
     // counts() composes the guarded fallbacks — every view counts to 0.
     expect(store.counts()).toEqual({
       inbox: 0,
-      today: 0,
       pending: 0,
+      in_progress: 0,
       someday: 0,
-      recurring: 0,
       history: 0,
     });
   });

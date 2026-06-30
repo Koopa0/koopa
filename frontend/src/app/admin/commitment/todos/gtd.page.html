@@ -1,33 +1,3 @@
-<!-- Persistent capture bar -->
-<form
-  class="flex h-[42px] shrink-0 items-center gap-2.5 border-b border-border bg-panel px-5"
-  (submit)="$event.preventDefault(); submitCapture()"
-  data-testid="gtd-capture-form"
->
-  <lucide-icon
-    [img]="PlusIcon"
-    [size]="15"
-    class="shrink-0 text-fg-subtle"
-    aria-hidden="true"
-  />
-  <label for="gtd-capture" class="sr-only">Capture a thought</label>
-  <input
-    #captureInput
-    id="gtd-capture"
-    type="text"
-    [value]="captureDraft()"
-    (input)="captureDraft.set(readInput($event))"
-    placeholder="Capture a thought — it lands in the inbox, unclarified…"
-    class="h-full min-w-0 flex-1 bg-transparent text-[13px] text-fg outline-hidden placeholder:text-fg-faint"
-    data-testid="gtd-capture-input"
-  />
-  <kbd
-    class="shrink-0 rounded-sm border border-border border-b-2 bg-elevated px-1.5 font-mono text-[10px] whitespace-nowrap text-fg-muted"
-  >
-    ↵ capture
-  </kbd>
-</form>
-
 <!-- View tabs with live counts -->
 <div
   class="flex shrink-0 flex-wrap items-center gap-1 border-b border-border bg-panel px-5 py-2"
@@ -110,59 +80,6 @@
     </div>
   } @else {
     @switch (store.view()) {
-      @case ('recurring') {
-        @if (store.recurringGroups().length === 0) {
-          <app-empty-state
-            [icon]="HexagonIcon"
-            [title]="store.emptyCopy().title"
-            [description]="store.emptyCopy().description"
-          />
-        }
-        @for (group of store.recurringGroups(); track group.label) {
-          <p
-            class="px-5 pt-3 pb-1 font-mono text-[10px] tracking-wider text-fg-faint uppercase"
-            [attr.data-testid]="'gtd-recurring-group-' + group.label"
-          >
-            {{ group.label }}
-          </p>
-          <div role="list">
-            @for (item of group.items; track item.id) {
-              <div
-                role="listitem"
-                class="flex min-h-8 items-center gap-2.5 border-b border-border-faint px-5 py-1.5"
-                data-testid="gtd-recurring-row"
-              >
-                <span class="min-w-0 flex-1 truncate text-[13px] text-fg">
-                  {{ item.title }}
-                </span>
-                @if (recurBadge(item); as badge) {
-                  <span
-                    class="shrink-0 rounded-sm bg-brand-muted px-1.5 py-0.5 font-mono text-[10px] text-brand"
-                  >
-                    {{ badge }}
-                  </span>
-                }
-                @if (recurEnergy(item); as level) {
-                  <app-energy-meter class="shrink-0" [level]="level" />
-                }
-                @if (recurDue(item); as chip) {
-                  <span
-                    class="shrink-0 rounded-sm px-1.5 py-0.5 font-mono text-[10px]"
-                    [class.bg-error-bg]="chip.tone === 'overdue'"
-                    [class.text-error]="chip.tone === 'overdue'"
-                    [class.bg-warn-bg]="chip.tone === 'soon'"
-                    [class.text-warn]="chip.tone === 'soon'"
-                    [class.bg-elevated]="chip.tone === 'default'"
-                    [class.text-fg-subtle]="chip.tone === 'default'"
-                  >
-                    {{ chip.label }}
-                  </span>
-                }
-              </div>
-            }
-          </div>
-        }
-      }
       @case ('history') {
         @if (store.historyRows().length === 0) {
           <app-empty-state
@@ -173,16 +90,22 @@
         }
         <div role="list">
           @for (row of store.historyRows(); track row.id) {
+            @let kind = resolvedKind(row.state);
             <div
               role="listitem"
               class="flex min-h-8 items-center gap-2.5 border-b border-border-faint px-5 py-1.5"
               data-testid="gtd-history-row"
             >
               <span
-                class="flex size-[15px] shrink-0 items-center justify-center rounded-sm bg-success text-[9px] leading-none font-bold text-[oklch(0.16_0.02_260)]"
+                class="flex size-[15px] shrink-0 items-center justify-center rounded-sm text-[9px] leading-none font-bold text-[oklch(0.16_0.02_260)]"
+                [class.bg-success]="kind.tone === 'done'"
+                [class.bg-fg-faint]="kind.tone === 'dropped'"
+                [class.bg-brand]="kind.tone === 'recurring'"
+                [attr.title]="kind.label"
+                [attr.data-testid]="'gtd-history-kind-' + kind.tone"
                 aria-hidden="true"
               >
-                ✓
+                {{ kind.symbol }}
               </span>
               <span class="min-w-0 flex-1 truncate text-[13px] text-fg-faint">
                 {{ row.title }}

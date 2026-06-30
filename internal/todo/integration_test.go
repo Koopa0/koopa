@@ -315,19 +315,35 @@ func TestIntegration_Todo_Recurring_Interval(t *testing.T) {
 	}
 }
 
-// TestIntegration_Todo_History seeds a completed todo and asserts it appears
-// in the default (completed-since) history view.
+// TestIntegration_Todo_History seeds the three resolution kinds the Complete
+// ("已了結") view collects — a one-time done todo, a dropped (dismissed) todo,
+// and a still-active recurring routine with a recent occurrence — and asserts
+// all three appear, while an untouched pending todo does not.
 func TestIntegration_Todo_History(t *testing.T) {
 	truncate(t)
 	h := newHandler()
 
-	var done uuid.UUID
+	var done, dropped, recurring uuid.UUID
 	if err := testPool.QueryRow(t.Context(),
 		`INSERT INTO todos (title, state, completed_at, created_by)
 		 VALUES ('Shipped the feature', 'done', now(), 'human') RETURNING id`,
 	).Scan(&done); err != nil {
 		t.Fatalf("seeding completed todo: %v", err)
 	}
+	if err := testPool.QueryRow(t.Context(),
+		`INSERT INTO todos (title, state, created_by)
+		 VALUES ('Won''t do this', 'dismissed', 'human') RETURNING id`,
+	).Scan(&dropped); err != nil {
+		t.Fatalf("seeding dismissed todo: %v", err)
+	}
+	if err := testPool.QueryRow(t.Context(),
+		`INSERT INTO todos (title, state, recur_weekdays, last_completed_on, created_by)
+		 VALUES ('Morning Japanese', 'todo', 127, current_date, 'human') RETURNING id`,
+	).Scan(&recurring); err != nil {
+		t.Fatalf("seeding recurring todo: %v", err)
+	}
+	// A pending todo with no resolution must NOT surface in the Complete view.
+	pending := seedTodo(t, "Still to do", "todo", "human")
 
 	req := httptest.NewRequest(http.MethodGet, "/api/admin/commitment/todos/history", nil)
 	rec := serveRead(t, h.History, req)
@@ -341,8 +357,13 @@ func TestIntegration_Todo_History(t *testing.T) {
 	}
 
 	ids := dataIDs(t, body)
-	if _, ok := ids[done]; !ok {
-		t.Errorf("completed todo %s missing from history (body=%s)", done, body)
+	for name, id := range map[string]uuid.UUID{"done": done, "dropped": dropped, "recurring": recurring} {
+		if _, ok := ids[id]; !ok {
+			t.Errorf("%s todo %s missing from Complete view (body=%s)", name, id, body)
+		}
+	}
+	if _, ok := ids[pending]; ok {
+		t.Errorf("pending todo %s must NOT appear in Complete view (body=%s)", pending, body)
 	}
 }
 

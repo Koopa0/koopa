@@ -22,9 +22,7 @@ import {
   keyboardLegend,
   mutationErrorMessage,
   planMemberIds,
-  recurringGroupsOf,
   rowsForView,
-  todayInTaipei,
   viewCounts,
   type ClarifyResult,
   type GtdView,
@@ -33,7 +31,7 @@ import {
 const BACKLOG_PAGE_SIZE = 200;
 const HISTORY_DEBOUNCE_MS = 250;
 
-// The backlog feeds the inbox / today / pending / someday views — every
+// The backlog feeds the inbox / pending / in_progress / someday views — every
 // live state, never `done`. Filtering server-side (rather than fetching
 // everything and dropping done locally) keeps a long completed history from
 // pushing live rows past the per_page cap.
@@ -48,11 +46,11 @@ const BACKLOG_STATES = ['inbox', 'todo', 'in_progress', 'someday'] as const;
 export type ClarifyIntent = 'clarify' | 'pull';
 
 /**
- * Page-scoped state for the GTD surface: the four data resources
- * (backlog list, daily plan, recurring buckets, completed history),
- * the active view + row selection, and every mutation round-trip
- * (capture, advance verbs, clarify, plan append). Provided by the GTD
- * page so the state dies with the route.
+ * Page-scoped state for the GTD surface: the three data resources
+ * (backlog list, daily plan, resolved history), the active view + row
+ * selection, and every mutation round-trip (capture, advance verbs,
+ * clarify, plan append). Provided by the GTD/Inbox pages so the state dies
+ * with the route.
  */
 @Injectable()
 export class GtdStore {
@@ -82,9 +80,6 @@ export class GtdStore {
   readonly plan = rxResource<DailyPlan, void>({
     stream: () => this.dailyPlanService.today(),
   });
-  readonly recurring = rxResource({
-    stream: () => this.todoService.recurring(),
-  });
   readonly history = rxResource({
     params: () => ({ q: this.historyQuery() }),
     stream: ({ params }) =>
@@ -104,43 +99,28 @@ export class GtdStore {
   private readonly historyValue = computed(() =>
     this.history.hasValue() ? this.history.value() : [],
   );
-  private readonly recurringValue = computed(() =>
-    this.recurring.hasValue() ? this.recurring.value() : undefined,
-  );
 
-  private readonly todayIso = todayInTaipei();
   private readonly planIds = computed(() =>
     planMemberIds(this.planValue()?.items ?? []),
   );
   readonly rows = computed(() =>
-    rowsForView(this.view(), this.backlogValue(), this.planIds(), this.todayIso),
+    rowsForView(this.view(), this.backlogValue(), this.planIds()),
   );
   readonly selection = computed(() =>
     Math.min(this.selectedIndex(), Math.max(this.rows().length - 1, 0)),
   );
   readonly historyRows = computed(() => this.historyValue());
-  readonly recurringGroups = computed(() =>
-    recurringGroupsOf(this.recurringValue()),
-  );
   readonly counts = computed(() =>
-    viewCounts(
-      this.backlogValue(),
-      this.planIds(),
-      this.todayIso,
-      this.recurringValue(),
-      this.historyRows().length,
-    ),
+    viewCounts(this.backlogValue(), this.planIds(), this.historyRows().length),
   );
   readonly itemCount = computed(() => this.counts()[this.view()]);
   readonly legend = computed(() => keyboardLegend(this.view()));
   readonly emptyCopy = computed(() =>
     emptyCopyFor(this.view(), this.searchDraft().trim() !== ''),
   );
-  private readonly activeResource = computed(() => {
-    if (this.view() === 'recurring') return this.recurring;
-    if (this.view() === 'history') return this.history;
-    return this.backlog;
-  });
+  private readonly activeResource = computed(() =>
+    this.view() === 'history' ? this.history : this.backlog,
+  );
   readonly viewLoading = computed(
     () => this.activeResource().status() === 'loading',
   );
@@ -288,8 +268,8 @@ export class GtdStore {
 
   /**
    * Recurrence-editor save: set or clear the row's schedule, then refresh the
-   * backlog and recurring buckets so the change shows immediately. Closes the
-   * editor before the round-trip so the modal unmounts cleanly.
+   * backlog so the change shows immediately. Closes the editor before the
+   * round-trip so the modal unmounts cleanly.
    */
   saveRecurrence(req: RecurrenceRequest): void {
     const row = this.recurrenceTarget();
@@ -297,7 +277,6 @@ export class GtdStore {
     this.recurrenceTarget.set(null);
     const message = req.clear ? 'Recurrence cleared' : 'Routine set';
     this.mutate(this.todoService.setRecurrence(row.id, req), message, {});
-    this.recurring.reload();
   }
 
   deferInstead(): void {

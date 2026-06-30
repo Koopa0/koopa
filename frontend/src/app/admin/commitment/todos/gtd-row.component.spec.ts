@@ -111,7 +111,7 @@ describe('GtdRowComponent', () => {
   });
 
   it('should show Complete and the in-progress pill when the todo is started', () => {
-    render(makeRow({ state: 'in_progress' }), 'today');
+    render(makeRow({ state: 'in_progress' }), 'in_progress');
 
     expect(testid('gtd-row-advance')?.textContent).toContain('Complete');
     expect(testid('gtd-row-ip-dot')).toBeTruthy();
