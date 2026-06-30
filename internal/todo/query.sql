@@ -139,14 +139,64 @@ RETURNING id, title, state, due, project_id,
           completed_at, energy, priority, recur_interval, recur_unit, recur_weekdays, last_completed_on,
           description, created_by, created_at, updated_at;
 
--- name: CompletedTodoDetailSince :many
--- Get todo items completed since a given time with project context.
-SELECT t.id, t.title, t.completed_at, t.project_id,
+-- name: ResolvedTodoDetailSince :many
+-- Resolved ("已了結") todos since a given time, for the Todos page Complete tab:
+-- one-time todos done (state=done, by completed_at), todos dropped/filed
+-- (archived/dismissed, by updated_at), and recurring routines with a recent
+-- occurrence (last_completed_on, while still active so the schedule keeps
+-- running). resolved_at is the per-kind resolution instant; state lets the
+-- front end badge the kind (done / archived / dismissed / recurring-active).
+SELECT t.id, t.title, t.state,
+       CASE
+           WHEN t.state = 'done' THEN t.completed_at
+           WHEN t.state IN ('archived', 'dismissed') THEN t.updated_at
+           ELSE t.last_completed_on::timestamptz
+       END AS resolved_at,
        COALESCE(p.title, '') AS project_title
 FROM todos t
 LEFT JOIN projects p ON t.project_id = p.id
-WHERE t.state = 'done' AND t.completed_at >= @since
-ORDER BY t.completed_at DESC;
+WHERE (t.state = 'done' AND t.completed_at >= @since)
+   OR (t.state IN ('archived', 'dismissed') AND t.updated_at >= @since)
+   OR ((t.recur_weekdays IS NOT NULL OR t.recur_interval IS NOT NULL)
+       AND t.state NOT IN ('done', 'archived', 'dismissed')
+       AND t.last_completed_on IS NOT NULL
+       AND t.last_completed_on >= @since::date)
+ORDER BY resolved_at DESC NULLS LAST;
+
+-- name: AllRecurringTodoItems :many
+-- Every active recurring todo's schedule, for the routines overview (manage all
+-- routines, not just today's due ones — distinct from RecurringTodoItemsDueToday).
+-- Uses the SAME active-state filter as RecurringTodoItemsDueToday so the overview
+-- is a superset of the due-today list and never shows a closed routine: a
+-- terminally done, someday-parked, still-in-inbox, or archived/dismissed
+-- recurring row is not a live schedule and is reachable on its own surface
+-- (Complete / Someday / Inbox tabs). Selects the full todos column set so sqlc
+-- returns db.Todo and rowToItem applies.
+SELECT id, title, state, due, project_id,
+       completed_at, energy, priority, recur_interval, recur_unit, recur_weekdays, last_completed_on,
+       description, created_by, created_at, updated_at
+FROM todos
+WHERE state NOT IN ('done', 'someday', 'inbox', 'archived', 'dismissed')
+  AND (recur_weekdays IS NOT NULL OR recur_interval IS NOT NULL)
+ORDER BY priority NULLS LAST, title;
+
+-- name: CompletedTodoItemsOn :many
+-- Todos completed on @today, for the Today dashboard's done-today count and
+-- list. Two arms: a one-time todo finished within the day window [@day_start,
+-- @day_end) (state=done, completed_at in range), OR a recurring todo whose
+-- occurrence was stamped on @today (last_completed_on = @today). A recurring
+-- todo terminally closed the same day it had an occurrence stamped satisfies
+-- both arms, but a WHERE-OR over a base table emits each row once, so the done
+-- count is never inflated. Selects the full todos column set (no join) so sqlc
+-- returns db.Todo and rowToItem applies.
+SELECT id, title, state, due, project_id,
+       completed_at, energy, priority, recur_interval, recur_unit, recur_weekdays, last_completed_on,
+       description, created_by, created_at, updated_at
+FROM todos
+WHERE (state = 'done' AND completed_at >= @day_start AND completed_at < @day_end)
+   OR ((recur_weekdays IS NOT NULL OR recur_interval IS NOT NULL)
+       AND last_completed_on = @today::date)
+ORDER BY completed_at DESC NULLS LAST, last_completed_on DESC NULLS LAST, title;
 
 -- name: UpdateTodoItem :one
 -- Update editable todo item fields. State transitions go through
@@ -164,34 +214,34 @@ RETURNING id, title, state, due, project_id,
           completed_at, energy, priority, recur_interval, recur_unit, recur_weekdays, last_completed_on,
           description, created_by, created_at, updated_at;
 
--- name: SearchTodoItems :many
--- Search todo items by title/description with optional filters.
-SELECT t.id, t.title, t.state, t.due, t.project_id,
-       t.energy, t.priority, t.recur_interval, t.recur_unit, t.recur_weekdays, t.last_completed_on,
-       t.completed_at, t.description, t.created_at, t.updated_at,
-       COALESCE(p.title, '') AS project_title,
-       COALESCE(p.slug, '') AS project_slug
+-- name: SearchResolvedTodoItems :many
+-- The ?q= search counterpart of ResolvedTodoDetailSince: resolved ("已了結")
+-- todos since @since whose title or description matches @query. It applies the
+-- SAME resolution arms as ResolvedTodoDetailSince (done by completed_at, dropped
+-- by updated_at, recurring by last_completed_on) so the Complete tab's search
+-- covers done, dropped, AND recurring resolutions — not only done. @query is
+-- pre-escaped by the caller (escapeILIKE); the wrapping wildcards are the only
+-- ILIKE metacharacters. resolved_at is the per-kind resolution instant.
+SELECT t.id, t.title, t.state,
+       CASE
+           WHEN t.state = 'done' THEN t.completed_at
+           WHEN t.state IN ('archived', 'dismissed') THEN t.updated_at
+           ELSE t.last_completed_on::timestamptz
+       END AS resolved_at,
+       COALESCE(p.title, '') AS project_title
 FROM todos t
 LEFT JOIN projects p ON t.project_id = p.id
-WHERE (sqlc.narg('query')::text IS NULL OR (t.title ILIKE '%' || sqlc.narg('query') || '%' OR t.description ILIKE '%' || sqlc.narg('query') || '%'))
-  AND (sqlc.narg('project_slug')::text IS NULL OR p.slug = sqlc.narg('project_slug'))
-  AND (sqlc.narg('state_filter')::text IS NULL OR
-       CASE sqlc.narg('state_filter')
-           WHEN 'pending' THEN t.state != 'done'
-           WHEN 'done' THEN t.state = 'done'
-           ELSE true
-       END)
-  AND (sqlc.narg('completed_after')::timestamptz IS NULL OR t.completed_at >= sqlc.narg('completed_after'))
-  AND (sqlc.narg('completed_before')::timestamptz IS NULL OR t.completed_at < sqlc.narg('completed_before'))
-ORDER BY
-    CASE WHEN t.state != 'done' THEN 0 ELSE 1 END,
-    CASE WHEN t.state != 'done' THEN
-        CASE WHEN t.due IS NOT NULL THEN 0 ELSE 1 END
-    ELSE 2 END,
-    t.due ASC NULLS LAST,
-    t.completed_at DESC NULLS LAST,
-    t.updated_at ASC
-LIMIT sqlc.arg('max_results');
+WHERE (t.title ILIKE '%' || @query || '%' OR t.description ILIKE '%' || @query || '%')
+  AND (
+        (t.state = 'done' AND t.completed_at >= @since)
+     OR (t.state IN ('archived', 'dismissed') AND t.updated_at >= @since)
+     OR ((t.recur_weekdays IS NOT NULL OR t.recur_interval IS NOT NULL)
+         AND t.state NOT IN ('done', 'archived', 'dismissed')
+         AND t.last_completed_on IS NOT NULL
+         AND t.last_completed_on >= @since::date)
+      )
+ORDER BY resolved_at DESC NULLS LAST
+LIMIT @max_results;
 
 -- === Recurring todo item queries ===
 

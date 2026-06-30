@@ -163,10 +163,13 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	api.Encode(w, http.StatusOK, api.Response{Data: out})
 }
 
-// recurringResponse is the wire shape for GET /todos/recurring. The array is
-// non-nil so an empty result serializes [] not null.
+// recurringResponse is the wire shape for GET /todos/recurring. Both arrays are
+// non-nil so an empty result serializes [] not null. DueToday is the compute-on-
+// read occurrences due today; All is every active recurring schedule, for the
+// routines overview (manage-all view).
 type recurringResponse struct {
 	DueToday []Item `json:"due_today"`
+	All      []Item `json:"all"`
 }
 
 // Recurring handles GET /api/admin/commitment/todos/recurring — the recurring
@@ -185,7 +188,14 @@ func (h *Handler) Recurring(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp := recurringResponse{DueToday: ensureItems(dueToday)}
+	all, err := h.store.AllRecurringItems(r.Context())
+	if err != nil {
+		h.logger.Error("listing all recurring todos", "error", err)
+		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to list recurring todos")
+		return
+	}
+
+	resp := recurringResponse{DueToday: ensureItems(dueToday), All: ensureItems(all)}
 	api.Encode(w, http.StatusOK, api.Response{Data: resp})
 }
 
@@ -199,10 +209,11 @@ const (
 	historyMaxLimit     = 100
 )
 
-// History handles GET /api/admin/commitment/todos/history. With ?q= it
-// runs the full-text search path; without it, the completed-since path.
-// Query params: since (YYYY-MM-DD, default 30d ago), q, project (slug),
-// limit (1-100, default 20).
+// History handles GET /api/admin/commitment/todos/history — the Complete
+// ("已了結") view. With ?q= it searches the resolved set (done + dropped +
+// recurring occurrences) by title/description; without it, it lists the same
+// resolved set since the cutoff. Query params: since (YYYY-MM-DD, default 30d
+// ago), q, limit (1-100, default 20).
 func (h *Handler) History(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 
@@ -226,39 +237,36 @@ func (h *Handler) History(w http.ResponseWriter, r *http.Request) {
 		limit = n
 	}
 
-	// Search path: ?q= present → full-text search over the historical
-	// record, scoped to completed-after the since cutoff so the same
-	// window applies to both paths.
+	// Search path: ?q= present → search the SAME resolved set as the default
+	// view (done + dropped + recurring occurrences), title/description match,
+	// within the since window. Matching the default view's arms is what makes a
+	// dropped or recurring resolution searchable in the Complete tab.
 	if query := q.Get("q"); query != "" {
-		var projectSlug *string
-		if p := q.Get("project"); p != "" {
-			projectSlug = &p
-		}
-		sinceCopy := since
-		results, err := h.store.SearchItems(r.Context(), &query, projectSlug, nil, &sinceCopy, nil, int32(limit)) // #nosec G115 -- limit bounded to [1, 100]
+		results, err := h.store.SearchResolvedItems(r.Context(), query, since, int32(limit)) // #nosec G115 -- limit bounded to [1, 100]
 		if err != nil {
 			h.logger.Error("searching todo history", "error", err)
 			api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to search todo history")
 			return
 		}
 		if results == nil {
-			results = []SearchDetail{}
+			results = []ResolvedDetail{}
 		}
 		api.Encode(w, http.StatusOK, api.Response{Data: results})
 		return
 	}
 
-	// Completed-since path: the default history view.
-	completed, err := h.store.CompletedItemsDetailSince(r.Context(), since)
+	// Resolved-since path: the default Complete-tab view — done, dropped, and
+	// recurring routines' recent occurrences.
+	resolved, err := h.store.ResolvedItemsDetailSince(r.Context(), since)
 	if err != nil {
-		h.logger.Error("listing completed todo history", "error", err)
+		h.logger.Error("listing resolved todo history", "error", err)
 		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to list todo history")
 		return
 	}
-	if completed == nil {
-		completed = []CompletedDetail{}
+	if resolved == nil {
+		resolved = []ResolvedDetail{}
 	}
-	api.Encode(w, http.StatusOK, api.Response{Data: completed})
+	api.Encode(w, http.StatusOK, api.Response{Data: resolved})
 }
 
 // ensureItems returns a non-nil slice so empty results serialize as [].

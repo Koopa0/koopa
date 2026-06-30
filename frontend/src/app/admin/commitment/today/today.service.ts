@@ -71,10 +71,23 @@ export interface CommittedItem {
   updated_at: string;
 }
 
-export interface PlanCompletion {
-  planned: number;
-  completed: number;
-  deferred: number;
+/**
+ * A todo finished today (todo.Item on the wire): a one-time todo done today, or
+ * a recurring occurrence stamped today (last_completed_on = today). No project
+ * join — the done-today query selects the bare todo row.
+ */
+export interface CompletedTodo {
+  id: string;
+  title: string;
+  state: TodoState;
+  due?: string;
+  completed_at?: string;
+  last_completed_on?: string;
+  recur_interval?: number;
+  recur_unit?: string;
+  recur_weekdays?: number;
+  energy?: EnergyLevel;
+  priority?: string;
 }
 
 /** Active goal with milestone rollup (goal.ActiveGoalSummary). */
@@ -107,9 +120,9 @@ export interface TodayBrief {
   today_todos: PendingDetail[];
   active_todos: PendingDetail[];
   recurring_todos: RecurringTodo[];
+  completed_todos: CompletedTodo[];
   committed_todos: CommittedItem[];
   upcoming_todos: PendingDetail[];
-  plan_completion: PlanCompletion;
   active_goals: ActiveGoalSummary[];
   rss_highlights: RssHighlight[];
 }

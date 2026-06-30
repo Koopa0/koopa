@@ -4,8 +4,6 @@ import type {
   DailyPlanWriteItem,
 } from '../../../core/services/daily-plan.service';
 import type {
-  RecurringBuckets,
-  TodoItem,
   TodoRow,
   TodoUpdateRequest,
 } from '../../../core/services/todo.service';
@@ -18,12 +16,14 @@ import type { EnergyLevel, TodoState } from '../../../core/models/workbench.mode
  * stays a thin binding layer.
  */
 
+// 'inbox' is not a Todos-page tab — it has its own page (InboxPageComponent),
+// which reuses this view-model with view='inbox'. The Todos page tabs are the
+// status-flow views in GTD_TABS. 'history' backs the Complete ("已了結") tab.
 export type GtdView =
   | 'inbox'
-  | 'today'
   | 'pending'
+  | 'in_progress'
   | 'someday'
-  | 'recurring'
   | 'history';
 
 export interface GtdTab {
@@ -31,32 +31,32 @@ export interface GtdTab {
   label: string;
 }
 
+/** The Todos-page tab strip — status-flow views only (Inbox is its own page). */
 export const GTD_TABS: readonly GtdTab[] = [
-  { view: 'inbox', label: 'Inbox' },
-  { view: 'today', label: 'Today' },
   { view: 'pending', label: 'Pending' },
+  { view: 'in_progress', label: 'In Progress' },
   { view: 'someday', label: 'Someday' },
-  { view: 'recurring', label: 'Recurring' },
-  { view: 'history', label: 'History' },
+  { view: 'history', label: 'Complete' },
 ];
 
 /** Views where row selection and the triage keys are active. */
 export function isTriageable(view: GtdView): boolean {
   return (
     view === 'inbox' ||
-    view === 'today' ||
     view === 'pending' ||
+    view === 'in_progress' ||
     view === 'someday'
   );
 }
 
-/** Coerce route data into a valid initial view; default to inbox. */
+/** Coerce route data into a valid initial Todos view; default to pending. */
 export function initialViewOf(value: unknown): GtdView {
-  return GTD_TABS.some((t) => t.view === value) ? (value as GtdView) : 'inbox';
+  return GTD_TABS.some((t) => t.view === value) ? (value as GtdView) : 'pending';
 }
 
 export function viewLabel(view: GtdView): string {
-  return GTD_TABS.find((t) => t.view === view)?.label ?? 'Inbox';
+  if (view === 'inbox') return 'Inbox';
+  return GTD_TABS.find((t) => t.view === view)?.label ?? 'Pending';
 }
 
 export interface EmptyCopy {
@@ -70,35 +70,30 @@ const EMPTY_COPY: Record<GtdView, EmptyCopy> = {
     description:
       'Nothing to clarify. Captures land here — clear them into todos, someday, or the bin.',
   },
-  today: {
-    title: 'Nothing pulled into today',
-    description:
-      'Pull pending todos in with t, or plan your day from the Plan view.',
-  },
   pending: {
     title: 'No clarified todos waiting',
     description: 'Clarify something from the inbox and it shows up here.',
+  },
+  in_progress: {
+    title: 'Nothing in progress',
+    description: 'Start a pending todo with e and it moves here.',
   },
   someday: {
     title: 'No someday/maybe',
     description:
       'Things you might do, but not now. Defer with d to park them here.',
   },
-  recurring: {
-    title: 'No recurring todos',
-    description: 'Recurring routines surface here when they’re due.',
-  },
   history: {
-    title: 'No history yet',
-    description: 'Completed todos are kept here.',
+    title: 'Nothing resolved yet',
+    description: 'Done, dropped, and recurring completions are kept here.',
   },
 };
 
 export function emptyCopyFor(view: GtdView, searching: boolean): EmptyCopy {
   if (view === 'history' && searching) {
     return {
-      title: 'No history yet',
-      description: 'No completed todos match your search.',
+      title: 'No matches',
+      description: 'No resolved todos match your search.',
     };
   }
   return EMPTY_COPY[view];
@@ -151,44 +146,30 @@ export function todayInTaipei(now: Date = new Date()): string {
   }).format(now);
 }
 
-/** Rows for the four backlog-derived views. */
+/** Rows for the backlog-derived status views (inbox / pending / in_progress /
+ *  someday). Recurring routines are excluded from the working tabs — they live
+ *  in the routines overview, the Today dashboard's due-today list, and each
+ *  row's detail panel — so the status flow stays free of daily routines. */
 export function rowsForView(
   view: GtdView,
   rows: readonly TodoRow[],
   planTodoIds: ReadonlySet<string>,
-  todayIso: string,
 ): TodoRow[] {
   switch (view) {
     case 'inbox':
       return rows.filter((r) => r.state === 'inbox');
-    case 'today':
-      // An in_progress todo is active work — it always belongs in Today
-      // (with its Complete action) regardless of plan membership or due
-      // date, so starting a task never makes it vanish from every view.
-      //
-      // NOTE (intentional, not drift): this flat triage tab DOES include a
-      // recurring in_progress todo via the in_progress branch, whereas the
-      // Today dashboard's Active section excludes recurring (routines live in
-      // its own Recurring section). The two surfaces serve different jobs —
-      // GTD-page = flat working list, dashboard = sectioned at-a-glance — and
-      // both surface the item, so this is a deliberate divergence, not the
-      // mirror-drift bug class.
-      return rows.filter(
-        (r) =>
-          r.state !== 'done' &&
-          r.state !== 'inbox' &&
-          (r.state === 'in_progress' ||
-            planTodoIds.has(r.id) ||
-            dueDay(r.due) === todayIso),
-      );
     case 'pending':
-      // Exclude recurring todos (either mode) — they live in the Recurring
-      // tab, governed by their schedule, not in the Pending backlog.
+      // Clarified, not yet started, not already pulled into today's plan, and
+      // not a recurring routine.
       return rows.filter(
         (r) =>
           r.state === 'todo' &&
           !planTodoIds.has(r.id) &&
           !isRecurringRow(r),
+      );
+    case 'in_progress':
+      return rows.filter(
+        (r) => r.state === 'in_progress' && !isRecurringRow(r),
       );
     case 'someday':
       return rows.filter((r) => r.state === 'someday');
@@ -298,6 +279,27 @@ export function energyOf(value?: string | null): EnergyLevel | null {
     : null;
 }
 
+export interface ResolvedKind {
+  label: string;
+  symbol: string;
+  tone: 'done' | 'dropped' | 'recurring';
+}
+
+/**
+ * How a resolved (Complete-tab) row was closed, from its current state: a
+ * terminal done, a dropped/filed todo (archived/dismissed), or a still-active
+ * recurring routine whose occurrence was completed (it stays todo/in_progress).
+ */
+export function resolvedKindOf(state: TodoState | undefined): ResolvedKind {
+  if (state === 'archived' || state === 'dismissed') {
+    return { label: 'dropped', symbol: '✕', tone: 'dropped' };
+  }
+  if (state === 'todo' || state === 'in_progress') {
+    return { label: 'recurring', symbol: '↻', tone: 'recurring' };
+  }
+  return { label: 'done', symbol: '✓', tone: 'done' };
+}
+
 /**
  * Which advance verb a non-inbox row takes next. `someday` rows go
  * through `activate` (someday → todo) so re-activation returns them to the
@@ -355,10 +357,10 @@ export function keyboardLegend(view: GtdView): KeyHint[] {
         { keys: 'd', label: 'defer' },
         { keys: 'x', label: 'drop' },
       ];
-    case 'today':
+    case 'in_progress':
       return [
         ...NAV_HINTS,
-        { keys: 'e', label: 'advance' },
+        { keys: 'e', label: 'complete' },
         { keys: 'd', label: 'defer' },
         { keys: 'r', label: 'recurrence' },
       ];
@@ -436,36 +438,19 @@ export function keyActionFor(key: string, view: GtdView): GtdKeyAction | null {
   }
 }
 
-export interface RecurringGroup {
-  label: string;
-  items: TodoItem[];
-}
-
-/** Non-empty recurring groups. Compute-on-read has only a due-today bucket. */
-export function recurringGroupsOf(
-  buckets: RecurringBuckets | undefined,
-): RecurringGroup[] {
-  return [{ label: 'Due today', items: buckets?.due_today ?? [] }].filter(
-    (group) => group.items.length > 0,
-  );
-}
-
-/** Live tab counts across all six views. */
+/** Live tab counts across the status views plus the resolved (Complete) count. */
 export function viewCounts(
   backlog: readonly TodoRow[],
   planTodoIds: ReadonlySet<string>,
-  todayIso: string,
-  buckets: RecurringBuckets | undefined,
   historyCount: number,
 ): Record<GtdView, number> {
   const count = (view: GtdView): number =>
-    rowsForView(view, backlog, planTodoIds, todayIso).length;
+    rowsForView(view, backlog, planTodoIds).length;
   return {
     inbox: count('inbox'),
-    today: count('today'),
     pending: count('pending'),
+    in_progress: count('in_progress'),
     someday: count('someday'),
-    recurring: buckets?.due_today.length ?? 0,
     history: historyCount,
   };
 }

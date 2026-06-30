@@ -27,10 +27,9 @@ import {
   energyOf,
   greetingForHour,
   isQuietBrief,
+  markTodoCompleted,
   planAdvanceAction,
   recurrenceSummary,
-  removeLooseTodo,
-  removeRecurringTodo,
   truncateTitle,
 } from './today-view';
 import { AdminTopbarService } from '../../admin-layout/admin-topbar.service';
@@ -177,7 +176,13 @@ export class TodayPageComponent {
     this.todoService.advance(item.todo_id, action).subscribe({
       next: () => {
         this._busy.set(false);
-        this.brief.update((v) => (v ? applyPlanAdvance(v, item.id, action) : v));
+        this.brief.update((v) => {
+          if (!v) return v;
+          const advanced = applyPlanAdvance(v, item.id, action);
+          return action === 'complete'
+            ? markTodoCompleted(advanced, item.todo_id, item.todo_title)
+            : advanced;
+        });
         if (action === 'complete') {
           this.notifications.success(
             `Marked done · ${truncateTitle(item.todo_title)}`,
@@ -206,7 +211,7 @@ export class TodayPageComponent {
     complete$.subscribe({
       next: () => {
         this._busy.set(false);
-        this.brief.update((v) => (v ? removeLooseTodo(v, todo.id) : v));
+        this.brief.update((v) => (v ? markTodoCompleted(v, todo.id, todo.title) : v));
         this.notifications.success('Completed');
       },
       error: () => {
@@ -228,7 +233,7 @@ export class TodayPageComponent {
     this.todoService.advance(todo.id, 'complete').subscribe({
       next: () => {
         this._busy.set(false);
-        this.brief.update((v) => (v ? removeRecurringTodo(v, todo.id) : v));
+        this.brief.update((v) => (v ? markTodoCompleted(v, todo.id, todo.title) : v));
         this.notifications.success('Done for today');
       },
       error: () => {

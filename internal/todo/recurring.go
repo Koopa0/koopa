@@ -34,6 +34,21 @@ func (s *Store) RecurringItemsDueToday(ctx context.Context, today time.Time) ([]
 	return items, nil
 }
 
+// AllRecurringItems returns every active recurring todo's schedule, for the
+// routines overview — the manage-all view, distinct from the due-today list.
+// See AllRecurringTodoItems in query.sql.
+func (s *Store) AllRecurringItems(ctx context.Context) ([]Item, error) {
+	rows, err := s.q.AllRecurringTodoItems(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("listing all recurring todo items: %w", err)
+	}
+	items := make([]Item, len(rows))
+	for i := range rows {
+		items[i] = rowToItem(&rows[i])
+	}
+	return items, nil
+}
+
 // Recurrence is the schedule passed to SetRecurrence: weekday-mode (Weekdays
 // non-nil) or interval-mode (Interval and Unit non-nil), or all-nil to clear.
 // The caller validates the combination; chk_todo_recurrence is the backstop.

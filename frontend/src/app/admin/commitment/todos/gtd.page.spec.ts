@@ -9,9 +9,9 @@ import { GtdPageComponent } from './gtd.page';
 import { todayInTaipei } from './gtd-view';
 import type { TodoRow } from '../../../core/services/todo.service';
 
-// Pins the GTD surface against the commitment contract: the backlog
-// list (per_page=200), the daily plan (today membership + t append),
-// the recurring buckets, and the completed history with ?q= search.
+// Pins the Todos surface against the commitment contract: the backlog
+// list (per_page=200), the daily plan (today membership + t append), and
+// the resolved history (Complete tab) with ?q= search.
 
 const TODOS_URL = '/api/admin/commitment/todos';
 const PLAN_URL = '/api/admin/commitment/daily-plan';
@@ -89,38 +89,20 @@ const planFixture = {
   overdue_count: 0,
 };
 
-const recurringFixture = {
-  due_today: [
-    {
-      id: 'routine-1',
-      title: 'Daily review',
-      state: 'todo',
-      recur_interval: 1,
-      recur_unit: 'days',
-      created_by: 'human',
-      created_at: '2026-06-01T07:00:00Z',
-      updated_at: '2026-06-01T07:00:00Z',
-    },
-    {
-      // Weekday-mode (Mon+Thu = 9) exercises the recurrence badge end-to-end
-      // through the recurring tab — interval-mode alone left it unverified.
-      id: 'routine-2',
-      title: 'Strength training',
-      state: 'todo',
-      recur_weekdays: 9,
-      created_by: 'human',
-      created_at: '2026-06-01T07:00:00Z',
-      updated_at: '2026-06-01T07:00:00Z',
-    },
-  ],
-};
-
 const historyFixture = [
   {
     id: 'hist-1',
     title: 'Shipped thing',
+    state: 'done',
     completed_at: '2026-06-09T10:00:00Z',
     project_title: 'koopa-core',
+  },
+  {
+    id: 'hist-2',
+    title: 'Won’t pursue this',
+    state: 'dismissed',
+    completed_at: '2026-06-09T09:00:00Z',
+    project_title: '',
   },
 ];
 
@@ -146,8 +128,10 @@ describe('GtdPageComponent', () => {
     fixture.detectChanges();
   }
 
-  // Flush the four initial loads, then settle (whenStable must not be
-  // awaited while a request is still open in zoneless mode).
+  // Flush the three initial loads (backlog, plan, resolved history), then
+  // settle (whenStable must not be awaited while a request is still open in
+  // zoneless mode). Inbox is its own page now — the Todos page has no
+  // recurring resource.
   async function render(initialView: string): Promise<void> {
     TestBed.configureTestingModule({
       imports: [GtdPageComponent],
@@ -175,9 +159,6 @@ describe('GtdPageComponent', () => {
       .expectOne((r) => r.url.includes(PLAN_URL))
       .flush({ data: planFixture });
     httpMock
-      .expectOne((r) => r.url.endsWith(`${TODOS_URL}/recurring`))
-      .flush({ data: recurringFixture });
-    httpMock
       .expectOne((r) => r.url.endsWith(`${TODOS_URL}/history`))
       .flush({ data: historyFixture });
     await settle();
@@ -199,164 +180,63 @@ describe('GtdPageComponent', () => {
     fixture.detectChanges();
   }
 
-  it('should land on the Inbox view from the inbox route data with live counts', async () => {
-    await render('inbox');
-
-    expect(testid('gtd-tab-inbox')?.getAttribute('aria-selected')).toBe('true');
-    expect(testid('gtd-tab-inbox')?.textContent).toContain('2');
-    expect(testid('gtd-tab-today')?.textContent).toContain('2');
-    expect(testid('gtd-tab-pending')?.textContent).toContain('1');
-    expect(testid('gtd-tab-someday')?.textContent).toContain('1');
-    expect(testid('gtd-tab-recurring')?.textContent).toContain('2');
-    expect(testid('gtd-tab-history')?.textContent).toContain('1');
-    expect(testid('gtd-row-0')?.textContent).toContain('Raw capture');
-    expect(testid('gtd-count')?.textContent).toContain('2 items');
-  });
-
-  it('should land on the Today view from the todos route data', async () => {
+  it('should land on Pending by default with the status tabs and live counts', async () => {
+    // Unknown/legacy route data coerces to the default Pending view.
     await render('today');
 
-    expect(testid('gtd-tab-today')?.getAttribute('aria-selected')).toBe(
+    expect(testid('gtd-tab-pending')?.getAttribute('aria-selected')).toBe(
+      'true',
+    );
+    // Pending = the one non-recurring, unplanned todo; routine-1 (recurring) and
+    // planned-1 (in_progress, in the plan) are excluded.
+    expect(testid('gtd-tab-pending')?.textContent).toContain('1');
+    expect(testid('gtd-tab-in_progress')?.textContent).toContain('1');
+    expect(testid('gtd-tab-someday')?.textContent).toContain('1');
+    expect(testid('gtd-tab-history')?.textContent).toContain('2');
+    // Inbox / Today / Recurring are no longer tabs on the Todos page.
+    expect(testid('gtd-tab-inbox')).toBeNull();
+    expect(testid('gtd-tab-today')).toBeNull();
+    expect(testid('gtd-tab-recurring')).toBeNull();
+    expect(testid('gtd-row-0')?.textContent).toContain('Pending todo');
+  });
+
+  it('should render the In Progress tab with started, non-recurring work', async () => {
+    await render('in_progress');
+
+    expect(testid('gtd-tab-in_progress')?.getAttribute('aria-selected')).toBe(
       'true',
     );
     const list = testid('gtd-list');
     expect(list?.textContent).toContain('Planned thing');
-    expect(list?.textContent).toContain('Daily review');
     expect(list?.textContent).not.toContain('Pending todo');
+    expect(list?.textContent).not.toContain('Daily review');
   });
 
-  it('should capture on Enter, switch to Inbox, and reload the backlog', async () => {
-    await render('today');
+  it('should render the Complete tab with resolution-kind badges', async () => {
+    await render('history');
 
-    const input = testid('gtd-capture-input') as HTMLInputElement;
-    input.value = 'Look into NATS JetStream';
-    input.dispatchEvent(new Event('input'));
-    fixture.detectChanges();
-    (testid('gtd-capture-form') as HTMLFormElement).dispatchEvent(
-      new Event('submit'),
-    );
-
-    const post = httpMock.expectOne(
-      (r) => r.url.endsWith(TODOS_URL) && r.method === 'POST',
-    );
-    expect(post.request.body).toEqual({ title: 'Look into NATS JetStream' });
-    post.flush({
-      data: {
-        id: 'new-1',
-        title: 'Look into NATS JetStream',
-        state: 'inbox',
-        created_by: 'human',
-        created_at: '2026-06-10T08:00:00Z',
-        updated_at: '2026-06-10T08:00:00Z',
-      },
-    });
-    TestBed.tick();
-    flushBacklogReload();
-    await settle();
-
-    expect(testid('gtd-tab-inbox')?.getAttribute('aria-selected')).toBe(
-      'true',
-    );
-    expect((testid('gtd-capture-input') as HTMLInputElement).value).toBe('');
+    expect(testid('gtd-history-row')?.textContent).toContain('Shipped thing');
+    // done → green check; dropped (dismissed) → muted ✕.
+    expect(testid('gtd-history-kind-done')?.textContent).toContain('✓');
+    expect(testid('gtd-history-kind-dropped')?.textContent).toContain('✕');
   });
 
-  it('should move the selection with j and drop the selected capture with x', async () => {
-    await render('inbox');
+  it('should not render a capture bar on the Todos page', async () => {
+    await render('pending');
+    expect(testid('gtd-capture-input')).toBeNull();
+  });
 
+  it('should move the selection with j/k in a status view', async () => {
+    await render('someday');
+    // Seed two someday rows so j has somewhere to move.
     expect(testid('gtd-row-0')?.getAttribute('data-selected')).toBe('true');
     keydown('j');
-    expect(testid('gtd-row-1')?.getAttribute('data-selected')).toBe('true');
-    keydown('k');
+    // Only one someday row in the fixture, so selection stays clamped at 0.
     expect(testid('gtd-row-0')?.getAttribute('data-selected')).toBe('true');
-
-    keydown('x');
-    const advance = httpMock.expectOne((r) =>
-      r.url.endsWith(`${TODOS_URL}/inbox-1/advance`),
-    );
-    expect(advance.request.body).toEqual({ action: 'drop' });
-    advance.flush(null, { status: 204, statusText: 'No Content' });
-    TestBed.tick();
-    flushBacklogReload();
-    await settle();
-  });
-
-  it('should ignore triage keys while typing in the capture bar', async () => {
-    await render('inbox');
-
-    const input = testid('gtd-capture-input') as HTMLInputElement;
-    input.dispatchEvent(
-      new KeyboardEvent('keydown', { key: 'x', bubbles: true }),
-    );
-    fixture.detectChanges();
-
-    httpMock.expectNone((r) => r.url.includes('/advance'));
-  });
-
-  it('should open the clarify modal with e and run PUT + advance(clarify) on submit', async () => {
-    await render('inbox');
-
-    keydown('e');
-    httpMock
-      .expectOne((r) => r.url.includes('/api/admin/commitment/projects'))
-      .flush({ data: [] });
-    await settle();
-    expect(testid('clarify-modal')).toBeTruthy();
-
-    (testid('clarify-submit') as HTMLButtonElement).click();
-    // Energy defaults to medium, so the field PUT precedes the advance.
-    const put = httpMock.expectOne(
-      (r) =>
-        r.url.endsWith(`${TODOS_URL}/inbox-1`) && r.method === 'PUT',
-    );
-    expect(put.request.body).toEqual({ energy: 'medium' });
-    put.flush({ data: { ...backlogRows[0] } });
-    const advance = httpMock.expectOne((r) =>
-      r.url.endsWith(`${TODOS_URL}/inbox-1/advance`),
-    );
-    expect(advance.request.body).toEqual({ action: 'clarify' });
-    advance.flush({ data: { ...backlogRows[0], state: 'todo' } });
-    TestBed.tick();
-    flushBacklogReload();
-    await settle();
-
-    expect(testid('clarify-modal')).toBeNull();
-  });
-
-  it('should open the clarify modal when an inbox row body is clicked', async () => {
-    await render('inbox');
-
-    (testid('gtd-row-open') as HTMLButtonElement).click();
-    fixture.detectChanges();
-    httpMock
-      .expectOne((r) => r.url.includes('/api/admin/commitment/projects'))
-      .flush({ data: [] });
-    await settle();
-
-    expect(testid('clarify-modal')).toBeTruthy();
-  });
-
-  it('should focus the inbox row trigger when the dialog opens from the keyboard', async () => {
-    await render('inbox');
-    const trigger = testid('gtd-row-open') as HTMLButtonElement;
-
-    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'c' }));
-    // Pre-focus runs synchronously in the handler, before the modal mounts —
-    // it anchors the modal's focus trap so focus returns to the row on close.
-    expect(document.activeElement).toBe(trigger);
-
-    // Settle the now-open dialog so its projects read is satisfied for verify().
-    fixture.detectChanges();
-    httpMock
-      .expectOne((r) => r.url.includes('/api/admin/commitment/projects'))
-      .flush({ data: [] });
-    await settle();
   });
 
   it('should pull the selected pending todo into today with t via the atomic plan PUT', async () => {
-    await render('inbox');
-
-    (testid('gtd-tab-pending') as HTMLButtonElement).click();
-    fixture.detectChanges();
+    await render('pending');
     keydown('t');
 
     const put = httpMock.expectOne(
@@ -379,11 +259,31 @@ describe('GtdPageComponent', () => {
     await settle();
   });
 
-  it('should activate a someday row with e via advance(activate)', async () => {
-    await render('inbox');
+  it('should open the detail panel on a row click and advance from it', async () => {
+    await render('pending');
 
-    (testid('gtd-tab-someday') as HTMLButtonElement).click();
+    // Clicking the pending row's title opens the detail panel (not clarify).
+    (testid('gtd-row-open') as HTMLButtonElement).click();
     fixture.detectChanges();
+    expect(testid('todo-detail-modal')).toBeTruthy();
+    expect(testid('todo-detail-advance')?.textContent).toContain('Start');
+
+    // Advancing from the panel runs the verb and closes the panel.
+    (testid('todo-detail-advance') as HTMLButtonElement).click();
+    const advance = httpMock.expectOne((r) =>
+      r.url.endsWith(`${TODOS_URL}/pending-1/advance`),
+    );
+    expect(advance.request.body).toEqual({ action: 'start' });
+    advance.flush({ data: { ...backlogRows[3], state: 'in_progress' } });
+    TestBed.tick();
+    flushBacklogReload();
+    await settle();
+
+    expect(testid('todo-detail-modal')).toBeNull();
+  });
+
+  it('should activate a someday row with e via advance(activate)', async () => {
+    await render('someday');
     expect(testid('gtd-row-0')?.textContent).toContain('Someday idea');
 
     keydown('e');
@@ -397,11 +297,8 @@ describe('GtdPageComponent', () => {
     await settle();
   });
 
-  it('should show the history search box and run a debounced ?q= search', async () => {
-    await render('inbox');
-
-    (testid('gtd-tab-history') as HTMLButtonElement).click();
-    fixture.detectChanges();
+  it('should show the Complete search box and run a debounced ?q= search', async () => {
+    await render('history');
     expect(testid('gtd-history-row')?.textContent).toContain('Shipped thing');
 
     const search = testid('gtd-history-search') as HTMLInputElement;
@@ -426,24 +323,6 @@ describe('GtdPageComponent', () => {
     req.flush({ data: [] });
     await settle();
 
-    expect(el().textContent).toContain('No completed todos match your search.');
-  });
-
-  it('should render the recurring buckets with the every-N badge and no row actions', async () => {
-    await render('inbox');
-
-    (testid('gtd-tab-recurring') as HTMLButtonElement).click();
-    fixture.detectChanges();
-
-    expect(testid('gtd-recurring-group-Due today')).toBeTruthy();
-    const rows = (fixture.nativeElement as HTMLElement).querySelectorAll(
-      '[data-testid="gtd-recurring-row"]',
-    );
-    expect(rows[0]?.textContent).toContain('Daily review');
-    expect(rows[0]?.textContent).toContain('every 1d');
-    // Weekday-mode routine renders its day-list badge (Mon+Thu = mask 9).
-    expect(rows[1]?.textContent).toContain('Strength training');
-    expect(rows[1]?.textContent).toContain('Mon Thu');
-    expect(rows[0]?.querySelector('button')).toBeNull();
+    expect(el().textContent).toContain('No resolved todos match your search.');
   });
 });

@@ -77,9 +77,14 @@
       data-testid="gtd-row-ip-dot"
     ></span>
   }
-  <span class="min-w-0 flex-1 truncate text-[13px] text-fg">
+  <button
+    type="button"
+    (click)="openDetail.emit()"
+    class="min-w-0 flex-1 truncate text-left text-[13px] text-fg transition-colors hover:text-brand"
+    data-testid="gtd-row-open"
+  >
     {{ item().title }}
-  </span>
+  </button>
   @if (recur(); as label) {
     <span
       class="shrink-0 rounded-sm bg-brand-muted px-1.5 py-0.5 font-mono text-[10px] text-brand"

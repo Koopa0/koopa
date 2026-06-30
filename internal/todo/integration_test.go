@@ -188,6 +188,16 @@ func TestIntegration_Todo_Recurring(t *testing.T) {
 	doneTodayWeekday := seed("Already done today", iptr(allWeekdays), nil, nil, sptr(today))
 	dueInterval := seed("Every 3 days, never done", nil, iptr(3), sptr("days"), nil)
 
+	// A recurring row that was terminally closed (state=done) is no longer a
+	// live schedule — it must appear in neither bucket, including `all`.
+	var doneRecurring uuid.UUID
+	if err := testPool.QueryRow(t.Context(),
+		`INSERT INTO todos (title, state, recur_weekdays, completed_at, created_by)
+		 VALUES ('Retired routine', 'done', 127, now(), 'human') RETURNING id`,
+	).Scan(&doneRecurring); err != nil {
+		t.Fatalf("seeding done recurring todo: %v", err)
+	}
+
 	req := httptest.NewRequest(http.MethodGet, "/api/admin/commitment/todos/recurring", nil)
 	rec := serveRead(t, h.Recurring, req)
 
@@ -204,6 +214,9 @@ func TestIntegration_Todo_Recurring(t *testing.T) {
 			DueToday []struct {
 				ID uuid.UUID `json:"id"`
 			} `json:"due_today"`
+			All []struct {
+				ID uuid.UUID `json:"id"`
+			} `json:"all"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(body, &env); err != nil {
@@ -232,6 +245,32 @@ func TestIntegration_Todo_Recurring(t *testing.T) {
 		if _, ok := due[id]; ok {
 			t.Errorf("%s (%s) must NOT be in due_today (body=%s)", name, id, body)
 		}
+	}
+
+	// The `all` bucket (routines overview) carries every active recurring
+	// schedule, including the off-day and already-done-today ones that the
+	// due_today bucket excludes — that is the whole point of the manage-all view.
+	all := make(map[uuid.UUID]struct{}, len(env.Data.All))
+	for _, a := range env.Data.All {
+		all[a.ID] = struct{}{}
+	}
+	for name, id := range map[string]uuid.UUID{
+		"all-weekday todo":        dueWeekday,
+		"today-only weekday":      dueTodayOnly,
+		"interval, never done":    dueInterval,
+		"weekday excluding today": notTodayWeekday,
+		"already completed today": doneTodayWeekday,
+	} {
+		if _, ok := all[id]; !ok {
+			t.Errorf("%s (%s) missing from all (body=%s)", name, id, body)
+		}
+	}
+	// A terminally done recurring row is not a live schedule — excluded from both.
+	if _, ok := all[doneRecurring]; ok {
+		t.Errorf("done recurring %s must NOT be in all (body=%s)", doneRecurring, body)
+	}
+	if _, ok := due[doneRecurring]; ok {
+		t.Errorf("done recurring %s must NOT be in due_today (body=%s)", doneRecurring, body)
 	}
 }
 
@@ -315,19 +354,35 @@ func TestIntegration_Todo_Recurring_Interval(t *testing.T) {
 	}
 }
 
-// TestIntegration_Todo_History seeds a completed todo and asserts it appears
-// in the default (completed-since) history view.
+// TestIntegration_Todo_History seeds the three resolution kinds the Complete
+// ("已了結") view collects — a one-time done todo, a dropped (dismissed) todo,
+// and a still-active recurring routine with a recent occurrence — and asserts
+// all three appear, while an untouched pending todo does not.
 func TestIntegration_Todo_History(t *testing.T) {
 	truncate(t)
 	h := newHandler()
 
-	var done uuid.UUID
+	var done, dropped, recurring uuid.UUID
 	if err := testPool.QueryRow(t.Context(),
 		`INSERT INTO todos (title, state, completed_at, created_by)
 		 VALUES ('Shipped the feature', 'done', now(), 'human') RETURNING id`,
 	).Scan(&done); err != nil {
 		t.Fatalf("seeding completed todo: %v", err)
 	}
+	if err := testPool.QueryRow(t.Context(),
+		`INSERT INTO todos (title, state, created_by)
+		 VALUES ('Won''t do this', 'dismissed', 'human') RETURNING id`,
+	).Scan(&dropped); err != nil {
+		t.Fatalf("seeding dismissed todo: %v", err)
+	}
+	if err := testPool.QueryRow(t.Context(),
+		`INSERT INTO todos (title, state, recur_weekdays, last_completed_on, created_by)
+		 VALUES ('Morning Japanese', 'todo', 127, current_date, 'human') RETURNING id`,
+	).Scan(&recurring); err != nil {
+		t.Fatalf("seeding recurring todo: %v", err)
+	}
+	// A pending todo with no resolution must NOT surface in the Complete view.
+	pending := seedTodo(t, "Still to do", "todo", "human")
 
 	req := httptest.NewRequest(http.MethodGet, "/api/admin/commitment/todos/history", nil)
 	rec := serveRead(t, h.History, req)
@@ -341,8 +396,40 @@ func TestIntegration_Todo_History(t *testing.T) {
 	}
 
 	ids := dataIDs(t, body)
-	if _, ok := ids[done]; !ok {
-		t.Errorf("completed todo %s missing from history (body=%s)", done, body)
+	for name, id := range map[string]uuid.UUID{"done": done, "dropped": dropped, "recurring": recurring} {
+		if _, ok := ids[id]; !ok {
+			t.Errorf("%s todo %s missing from Complete view (body=%s)", name, id, body)
+		}
+	}
+	if _, ok := ids[pending]; ok {
+		t.Errorf("pending todo %s must NOT appear in Complete view (body=%s)", pending, body)
+	}
+
+	// The ?q= search path searches the SAME resolved set: "Japanese" must find
+	// the recurring occurrence (the exact gap the old completed_at-only search
+	// missed), and a token shared by a resolved and a non-resolved row ("do":
+	// dropped "Won't do this" vs pending "Still to do") must return only the
+	// resolved one.
+	searchIDs := func(query string) map[uuid.UUID]struct{} {
+		sreq := httptest.NewRequest(http.MethodGet, "/api/admin/commitment/todos/history?q="+query, nil)
+		srec := serveRead(t, h.History, sreq)
+		sresp := srec.Result()
+		defer sresp.Body.Close()
+		sbody, _ := io.ReadAll(sresp.Body)
+		if sresp.StatusCode != http.StatusOK {
+			t.Fatalf("search status = %d, want 200 (body=%s)", sresp.StatusCode, sbody)
+		}
+		return dataIDs(t, sbody)
+	}
+	if _, ok := searchIDs("Japanese")[recurring]; !ok {
+		t.Errorf("recurring %s not searchable in Complete tab via ?q=Japanese", recurring)
+	}
+	doMatches := searchIDs("do")
+	if _, ok := doMatches[dropped]; !ok {
+		t.Errorf("dropped %s not searchable via ?q=do", dropped)
+	}
+	if _, ok := doMatches[pending]; ok {
+		t.Errorf("pending %s must NOT be searchable in the Complete tab via ?q=do", pending)
 	}
 }
 

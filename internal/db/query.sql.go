@@ -455,6 +455,61 @@ func (q *Queries) AllPublishedSlugs(ctx context.Context) ([]AllPublishedSlugsRow
 	return items, nil
 }
 
+const allRecurringTodoItems = `-- name: AllRecurringTodoItems :many
+SELECT id, title, state, due, project_id,
+       completed_at, energy, priority, recur_interval, recur_unit, recur_weekdays, last_completed_on,
+       description, created_by, created_at, updated_at
+FROM todos
+WHERE state NOT IN ('done', 'someday', 'inbox', 'archived', 'dismissed')
+  AND (recur_weekdays IS NOT NULL OR recur_interval IS NOT NULL)
+ORDER BY priority NULLS LAST, title
+`
+
+// Every active recurring todo's schedule, for the routines overview (manage all
+// routines, not just today's due ones — distinct from RecurringTodoItemsDueToday).
+// Uses the SAME active-state filter as RecurringTodoItemsDueToday so the overview
+// is a superset of the due-today list and never shows a closed routine: a
+// terminally done, someday-parked, still-in-inbox, or archived/dismissed
+// recurring row is not a live schedule and is reachable on its own surface
+// (Complete / Someday / Inbox tabs). Selects the full todos column set so sqlc
+// returns db.Todo and rowToItem applies.
+func (q *Queries) AllRecurringTodoItems(ctx context.Context) ([]Todo, error) {
+	rows, err := q.db.Query(ctx, allRecurringTodoItems)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Todo{}
+	for rows.Next() {
+		var i Todo
+		if err := rows.Scan(
+			&i.ID,
+			&i.Title,
+			&i.State,
+			&i.Due,
+			&i.ProjectID,
+			&i.CompletedAt,
+			&i.Energy,
+			&i.Priority,
+			&i.RecurInterval,
+			&i.RecurUnit,
+			&i.RecurWeekdays,
+			&i.LastCompletedOn,
+			&i.Description,
+			&i.CreatedBy,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const archiveContentReturning = `-- name: ArchiveContentReturning :one
 UPDATE contents SET status = 'archived', review_note = NULL, updated_at = now()
 WHERE id = $1
@@ -985,39 +1040,57 @@ func (q *Queries) CompletedMilestonesInWindow(ctx context.Context, arg Completed
 	return items, nil
 }
 
-const completedTodoDetailSince = `-- name: CompletedTodoDetailSince :many
-SELECT t.id, t.title, t.completed_at, t.project_id,
-       COALESCE(p.title, '') AS project_title
-FROM todos t
-LEFT JOIN projects p ON t.project_id = p.id
-WHERE t.state = 'done' AND t.completed_at >= $1
-ORDER BY t.completed_at DESC
+const completedTodoItemsOn = `-- name: CompletedTodoItemsOn :many
+SELECT id, title, state, due, project_id,
+       completed_at, energy, priority, recur_interval, recur_unit, recur_weekdays, last_completed_on,
+       description, created_by, created_at, updated_at
+FROM todos
+WHERE (state = 'done' AND completed_at >= $1 AND completed_at < $2)
+   OR ((recur_weekdays IS NOT NULL OR recur_interval IS NOT NULL)
+       AND last_completed_on = $3::date)
+ORDER BY completed_at DESC NULLS LAST, last_completed_on DESC NULLS LAST, title
 `
 
-type CompletedTodoDetailSinceRow struct {
-	ID           uuid.UUID  `json:"id"`
-	Title        string     `json:"title"`
-	CompletedAt  *time.Time `json:"completed_at"`
-	ProjectID    *uuid.UUID `json:"project_id"`
-	ProjectTitle string     `json:"project_title"`
+type CompletedTodoItemsOnParams struct {
+	DayStart *time.Time `json:"day_start"`
+	DayEnd   *time.Time `json:"day_end"`
+	Today    time.Time  `json:"today"`
 }
 
-// Get todo items completed since a given time with project context.
-func (q *Queries) CompletedTodoDetailSince(ctx context.Context, since *time.Time) ([]CompletedTodoDetailSinceRow, error) {
-	rows, err := q.db.Query(ctx, completedTodoDetailSince, since)
+// Todos completed on @today, for the Today dashboard's done-today count and
+// list. Two arms: a one-time todo finished within the day window [@day_start,
+// @day_end) (state=done, completed_at in range), OR a recurring todo whose
+// occurrence was stamped on @today (last_completed_on = @today). A recurring
+// todo terminally closed the same day it had an occurrence stamped satisfies
+// both arms, but a WHERE-OR over a base table emits each row once, so the done
+// count is never inflated. Selects the full todos column set (no join) so sqlc
+// returns db.Todo and rowToItem applies.
+func (q *Queries) CompletedTodoItemsOn(ctx context.Context, arg CompletedTodoItemsOnParams) ([]Todo, error) {
+	rows, err := q.db.Query(ctx, completedTodoItemsOn, arg.DayStart, arg.DayEnd, arg.Today)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []CompletedTodoDetailSinceRow{}
+	items := []Todo{}
 	for rows.Next() {
-		var i CompletedTodoDetailSinceRow
+		var i Todo
 		if err := rows.Scan(
 			&i.ID,
 			&i.Title,
-			&i.CompletedAt,
+			&i.State,
+			&i.Due,
 			&i.ProjectID,
-			&i.ProjectTitle,
+			&i.CompletedAt,
+			&i.Energy,
+			&i.Priority,
+			&i.RecurInterval,
+			&i.RecurUnit,
+			&i.RecurWeekdays,
+			&i.LastCompletedOn,
+			&i.Description,
+			&i.CreatedBy,
+			&i.CreatedAt,
+			&i.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -5026,6 +5099,65 @@ func (q *Queries) ResolveTodoByCreator(ctx context.Context, arg ResolveTodoByCre
 	return i, err
 }
 
+const resolvedTodoDetailSince = `-- name: ResolvedTodoDetailSince :many
+SELECT t.id, t.title, t.state,
+       CASE
+           WHEN t.state = 'done' THEN t.completed_at
+           WHEN t.state IN ('archived', 'dismissed') THEN t.updated_at
+           ELSE t.last_completed_on::timestamptz
+       END AS resolved_at,
+       COALESCE(p.title, '') AS project_title
+FROM todos t
+LEFT JOIN projects p ON t.project_id = p.id
+WHERE (t.state = 'done' AND t.completed_at >= $1)
+   OR (t.state IN ('archived', 'dismissed') AND t.updated_at >= $1)
+   OR ((t.recur_weekdays IS NOT NULL OR t.recur_interval IS NOT NULL)
+       AND t.state NOT IN ('done', 'archived', 'dismissed')
+       AND t.last_completed_on IS NOT NULL
+       AND t.last_completed_on >= $1::date)
+ORDER BY resolved_at DESC NULLS LAST
+`
+
+type ResolvedTodoDetailSinceRow struct {
+	ID           uuid.UUID `json:"id"`
+	Title        string    `json:"title"`
+	State        TodoState `json:"state"`
+	ResolvedAt   time.Time `json:"resolved_at"`
+	ProjectTitle string    `json:"project_title"`
+}
+
+// Resolved ("已了結") todos since a given time, for the Todos page Complete tab:
+// one-time todos done (state=done, by completed_at), todos dropped/filed
+// (archived/dismissed, by updated_at), and recurring routines with a recent
+// occurrence (last_completed_on, while still active so the schedule keeps
+// running). resolved_at is the per-kind resolution instant; state lets the
+// front end badge the kind (done / archived / dismissed / recurring-active).
+func (q *Queries) ResolvedTodoDetailSince(ctx context.Context, since *time.Time) ([]ResolvedTodoDetailSinceRow, error) {
+	rows, err := q.db.Query(ctx, resolvedTodoDetailSince, since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ResolvedTodoDetailSinceRow{}
+	for rows.Next() {
+		var i ResolvedTodoDetailSinceRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Title,
+			&i.State,
+			&i.ResolvedAt,
+			&i.ProjectTitle,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const retireAgent = `-- name: RetireAgent :execrows
 UPDATE agents
 SET status     = 'retired',
@@ -5285,99 +5417,65 @@ func (q *Queries) SearchContentsCount(ctx context.Context, arg SearchContentsCou
 	return count, err
 }
 
-const searchTodoItems = `-- name: SearchTodoItems :many
-SELECT t.id, t.title, t.state, t.due, t.project_id,
-       t.energy, t.priority, t.recur_interval, t.recur_unit, t.recur_weekdays, t.last_completed_on,
-       t.completed_at, t.description, t.created_at, t.updated_at,
-       COALESCE(p.title, '') AS project_title,
-       COALESCE(p.slug, '') AS project_slug
+const searchResolvedTodoItems = `-- name: SearchResolvedTodoItems :many
+SELECT t.id, t.title, t.state,
+       CASE
+           WHEN t.state = 'done' THEN t.completed_at
+           WHEN t.state IN ('archived', 'dismissed') THEN t.updated_at
+           ELSE t.last_completed_on::timestamptz
+       END AS resolved_at,
+       COALESCE(p.title, '') AS project_title
 FROM todos t
 LEFT JOIN projects p ON t.project_id = p.id
-WHERE ($1::text IS NULL OR (t.title ILIKE '%' || $1 || '%' OR t.description ILIKE '%' || $1 || '%'))
-  AND ($2::text IS NULL OR p.slug = $2)
-  AND ($3::text IS NULL OR
-       CASE $3
-           WHEN 'pending' THEN t.state != 'done'
-           WHEN 'done' THEN t.state = 'done'
-           ELSE true
-       END)
-  AND ($4::timestamptz IS NULL OR t.completed_at >= $4)
-  AND ($5::timestamptz IS NULL OR t.completed_at < $5)
-ORDER BY
-    CASE WHEN t.state != 'done' THEN 0 ELSE 1 END,
-    CASE WHEN t.state != 'done' THEN
-        CASE WHEN t.due IS NOT NULL THEN 0 ELSE 1 END
-    ELSE 2 END,
-    t.due ASC NULLS LAST,
-    t.completed_at DESC NULLS LAST,
-    t.updated_at ASC
-LIMIT $6
+WHERE (t.title ILIKE '%' || $1 || '%' OR t.description ILIKE '%' || $1 || '%')
+  AND (
+        (t.state = 'done' AND t.completed_at >= $2)
+     OR (t.state IN ('archived', 'dismissed') AND t.updated_at >= $2)
+     OR ((t.recur_weekdays IS NOT NULL OR t.recur_interval IS NOT NULL)
+         AND t.state NOT IN ('done', 'archived', 'dismissed')
+         AND t.last_completed_on IS NOT NULL
+         AND t.last_completed_on >= $2::date)
+      )
+ORDER BY resolved_at DESC NULLS LAST
+LIMIT $3
 `
 
-type SearchTodoItemsParams struct {
-	Query           *string    `json:"query"`
-	ProjectSlug     *string    `json:"project_slug"`
-	StateFilter     *string    `json:"state_filter"`
-	CompletedAfter  *time.Time `json:"completed_after"`
-	CompletedBefore *time.Time `json:"completed_before"`
-	MaxResults      int32      `json:"max_results"`
+type SearchResolvedTodoItemsParams struct {
+	Query      *string    `json:"query"`
+	Since      *time.Time `json:"since"`
+	MaxResults int32      `json:"max_results"`
 }
 
-type SearchTodoItemsRow struct {
-	ID              uuid.UUID  `json:"id"`
-	Title           string     `json:"title"`
-	State           TodoState  `json:"state"`
-	Due             *time.Time `json:"due"`
-	ProjectID       *uuid.UUID `json:"project_id"`
-	Energy          *string    `json:"energy"`
-	Priority        *string    `json:"priority"`
-	RecurInterval   *int32     `json:"recur_interval"`
-	RecurUnit       *string    `json:"recur_unit"`
-	RecurWeekdays   *int16     `json:"recur_weekdays"`
-	LastCompletedOn *time.Time `json:"last_completed_on"`
-	CompletedAt     *time.Time `json:"completed_at"`
-	Description     string     `json:"description"`
-	CreatedAt       time.Time  `json:"created_at"`
-	UpdatedAt       time.Time  `json:"updated_at"`
-	ProjectTitle    string     `json:"project_title"`
-	ProjectSlug     string     `json:"project_slug"`
+type SearchResolvedTodoItemsRow struct {
+	ID           uuid.UUID `json:"id"`
+	Title        string    `json:"title"`
+	State        TodoState `json:"state"`
+	ResolvedAt   time.Time `json:"resolved_at"`
+	ProjectTitle string    `json:"project_title"`
 }
 
-// Search todo items by title/description with optional filters.
-func (q *Queries) SearchTodoItems(ctx context.Context, arg SearchTodoItemsParams) ([]SearchTodoItemsRow, error) {
-	rows, err := q.db.Query(ctx, searchTodoItems,
-		arg.Query,
-		arg.ProjectSlug,
-		arg.StateFilter,
-		arg.CompletedAfter,
-		arg.CompletedBefore,
-		arg.MaxResults,
-	)
+// The ?q= search counterpart of ResolvedTodoDetailSince: resolved ("已了結")
+// todos since @since whose title or description matches @query. It applies the
+// SAME resolution arms as ResolvedTodoDetailSince (done by completed_at, dropped
+// by updated_at, recurring by last_completed_on) so the Complete tab's search
+// covers done, dropped, AND recurring resolutions — not only done. @query is
+// pre-escaped by the caller (escapeILIKE); the wrapping wildcards are the only
+// ILIKE metacharacters. resolved_at is the per-kind resolution instant.
+func (q *Queries) SearchResolvedTodoItems(ctx context.Context, arg SearchResolvedTodoItemsParams) ([]SearchResolvedTodoItemsRow, error) {
+	rows, err := q.db.Query(ctx, searchResolvedTodoItems, arg.Query, arg.Since, arg.MaxResults)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []SearchTodoItemsRow{}
+	items := []SearchResolvedTodoItemsRow{}
 	for rows.Next() {
-		var i SearchTodoItemsRow
+		var i SearchResolvedTodoItemsRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.Title,
 			&i.State,
-			&i.Due,
-			&i.ProjectID,
-			&i.Energy,
-			&i.Priority,
-			&i.RecurInterval,
-			&i.RecurUnit,
-			&i.RecurWeekdays,
-			&i.LastCompletedOn,
-			&i.CompletedAt,
-			&i.Description,
-			&i.CreatedAt,
-			&i.UpdatedAt,
+			&i.ResolvedAt,
 			&i.ProjectTitle,
-			&i.ProjectSlug,
 		); err != nil {
 			return nil, err
 		}

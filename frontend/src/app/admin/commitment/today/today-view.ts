@@ -22,14 +22,14 @@ export interface LooseGroup {
   items: PendingDetail[];
 }
 
-/** Live day-progress figures derived from the committed plan rows. */
-export interface PlanFigures {
-  planned: number;
+/** Due-based day-progress figures for the strip, derived from section lengths. */
+export interface ProgressFigures {
+  open: number;
   completed: number;
-  deferred: number;
+  overdue: number;
   percent: number;
   doneWidth: number;
-  deferredWidth: number;
+  overdueWidth: number;
 }
 
 export const GOAL_VARIANT: Record<GoalStatus, BadgeVariant> = {
@@ -75,34 +75,28 @@ export function planAdvanceAction(
 }
 
 /**
- * Day-progress figures, counted live from the committed rows so the
- * strip and the plan stay on one source. plan_completion is only the
- * fallback when the plan section degraded to an empty list. Dropped
- * rows count toward no bucket, matching the backend aggregation.
+ * Day-progress figures for the strip, derived from the section lengths the page
+ * already renders: open = due-today + recurring-due + started work (the backend
+ * dedups these against each other), overdue = the overdue section, completed =
+ * what was finished today. Deriving from the same lists the optimistic mutators
+ * patch keeps the strip live without a committed plan and without re-counting.
  */
-export function computeFigures(v: TodayBrief | undefined): PlanFigures {
-  let planned = 0;
-  let completed = 0;
-  let deferred = 0;
-  if (v && v.committed_todos.length > 0) {
-    for (const item of v.committed_todos) {
-      if (item.status === 'planned') planned++;
-      else if (item.status === 'done') completed++;
-      else if (item.status === 'deferred') deferred++;
-    }
-  } else if (v) {
-    ({ planned, completed, deferred } = v.plan_completion);
-  }
-  const total = planned + completed + deferred;
+export function computeFigures(v: TodayBrief | undefined): ProgressFigures {
+  const open = v
+    ? v.today_todos.length + v.recurring_todos.length + v.active_todos.length
+    : 0;
+  const overdue = v ? v.overdue_todos.length : 0;
+  const completed = v ? v.completed_todos.length : 0;
+  const total = open + overdue + completed;
   const ratio = (n: number): number =>
     total === 0 ? 0 : (n / total) * PERCENT;
   return {
-    planned,
+    open,
     completed,
-    deferred,
+    overdue,
     percent: Math.round(ratio(completed)),
     doneWidth: ratio(completed),
-    deferredWidth: ratio(deferred),
+    overdueWidth: ratio(overdue),
   };
 }
 
@@ -130,6 +124,7 @@ export function isQuietBrief(v: TodayBrief): boolean {
     v.today_todos.length === 0 &&
     v.active_todos.length === 0 &&
     v.recurring_todos.length === 0 &&
+    v.completed_todos.length === 0 &&
     v.upcoming_todos.length === 0 &&
     v.active_goals.length === 0 &&
     v.rss_highlights.length === 0
@@ -178,21 +173,29 @@ export function applyPlanAdvance(
   };
 }
 
-/** Drops a completed loose todo from every due bucket, including In progress. */
-export function removeLooseTodo(v: TodayBrief, todoId: string): TodayBrief {
+/**
+ * Reflects a server-confirmed completion on the local brief: drops the todo
+ * from every still-to-do section (the due buckets and today's recurring list)
+ * and adds it to completed_todos, so the day-progress strip moves one unit from
+ * open/overdue to completed without a refetch. Idempotent — a todo already in
+ * completed_todos is not added twice (e.g. completing it from the plan list
+ * after it was already dropped from a due bucket).
+ */
+export function markTodoCompleted(
+  v: TodayBrief,
+  todoId: string,
+  title: string,
+): TodayBrief {
+  const alreadyCounted = v.completed_todos.some((t) => t.id === todoId);
   return {
     ...v,
     overdue_todos: v.overdue_todos.filter((t) => t.id !== todoId),
     today_todos: v.today_todos.filter((t) => t.id !== todoId),
     active_todos: v.active_todos.filter((t) => t.id !== todoId),
     upcoming_todos: v.upcoming_todos.filter((t) => t.id !== todoId),
-  };
-}
-
-/** Drops a completed recurring occurrence from today's recurring list. */
-export function removeRecurringTodo(v: TodayBrief, todoId: string): TodayBrief {
-  return {
-    ...v,
     recurring_todos: v.recurring_todos.filter((t) => t.id !== todoId),
+    completed_todos: alreadyCounted
+      ? v.completed_todos
+      : [{ id: todoId, title, state: 'done' as const }, ...v.completed_todos],
   };
 }

@@ -57,24 +57,34 @@ export interface TodoItem {
   recur_unit?: string | null;
   /** Weekday-mode recurrence mask (Mon=bit0..Sun=bit6); see TodoRow. */
   recur_weekdays?: number | null;
+  /** Date of the most recent recurring occurrence (YYYY-MM-DD); null if never. */
+  last_completed_on?: string | null;
   description?: string;
   created_by: string;
   created_at: string;
   updated_at: string;
 }
 
-/** GET /todos/recurring: occurrences due today (compute-on-read). */
+/**
+ * GET /todos/recurring. due_today is the compute-on-read occurrences due today;
+ * all is every active recurring schedule (the routines overview / manage-all
+ * view), regardless of whether it is due today.
+ */
 export interface RecurringBuckets {
   due_today: TodoItem[];
+  all: TodoItem[];
 }
 
 /**
- * History row — the common projection of the two history wire shapes
- * (completed-since default path and the ?q= full-text search path).
+ * History row — the common projection of the two history wire shapes (the
+ * resolved-since default path and the ?q= full-text search path). state carries
+ * the resolution kind so the Complete view can badge done / dropped / recurring;
+ * completed_at holds the per-kind resolution instant.
  */
 export interface TodoHistoryEntry {
   id: string;
   title: string;
+  state?: TodoState;
   completed_at?: string | null;
   project_title: string;
 }
