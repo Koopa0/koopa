@@ -142,7 +142,7 @@
               [selected]="showSelection() && i === store.selection()"
               [busy]="store.busy()"
               (rowHover)="store.selectedIndex.set(i)"
-              (openDetail)="store.openClarify(row)"
+              (openDetail)="store.openDetail(row)"
               (clarify)="store.openClarify(row)"
               (advance)="store.advanceRow(row)"
               (deferRow)="store.deferRow(row)"
@@ -190,6 +190,19 @@
     (deferInstead)="store.deferInstead()"
     (dropInstead)="store.dropInstead()"
     (closed)="store.closeClarify()"
+  />
+}
+
+<!-- Row detail panel -->
+@if (store.detailTarget(); as target) {
+  <app-todo-detail-modal
+    [item]="target"
+    [busy]="store.busy()"
+    (advance)="store.advanceFromDetail()"
+    (deferRow)="store.deferFromDetail()"
+    (dropRow)="store.dropFromDetail()"
+    (editRecurrence)="store.editRecurrenceFromDetail()"
+    (closed)="store.closeDetail()"
   />
 }
 

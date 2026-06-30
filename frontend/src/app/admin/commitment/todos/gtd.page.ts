@@ -15,6 +15,7 @@ import { EmptyStateComponent } from '../../../shared/components/empty-state/empt
 import { GtdRowComponent } from './gtd-row.component';
 import { ClarifyModalComponent } from './clarify-modal.component';
 import { RecurrenceModalComponent } from './recurrence-modal.component';
+import { TodoDetailModalComponent } from './todo-detail-modal.component';
 import { GtdStore } from './gtd.store';
 import {
   GTD_TABS,
@@ -44,6 +45,7 @@ import {
     GtdRowComponent,
     ClarifyModalComponent,
     RecurrenceModalComponent,
+    TodoDetailModalComponent,
   ],
   providers: [GtdStore],
   templateUrl: './gtd.page.html',
@@ -91,6 +93,7 @@ export class GtdPageComponent {
       return;
     if (this.store.clarifyTarget() !== null) return;
     if (this.store.recurrenceTarget() !== null) return;
+    if (this.store.detailTarget() !== null) return;
     if (isInteractiveTarget(event.target)) return;
     const view = this.store.view();
     if (!isTriageable(view)) return;

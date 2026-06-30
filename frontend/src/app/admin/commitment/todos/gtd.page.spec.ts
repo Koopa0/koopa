@@ -259,6 +259,29 @@ describe('GtdPageComponent', () => {
     await settle();
   });
 
+  it('should open the detail panel on a row click and advance from it', async () => {
+    await render('pending');
+
+    // Clicking the pending row's title opens the detail panel (not clarify).
+    (testid('gtd-row-open') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    expect(testid('todo-detail-modal')).toBeTruthy();
+    expect(testid('todo-detail-advance')?.textContent).toContain('Start');
+
+    // Advancing from the panel runs the verb and closes the panel.
+    (testid('todo-detail-advance') as HTMLButtonElement).click();
+    const advance = httpMock.expectOne((r) =>
+      r.url.endsWith(`${TODOS_URL}/pending-1/advance`),
+    );
+    expect(advance.request.body).toEqual({ action: 'start' });
+    advance.flush({ data: { ...backlogRows[3], state: 'in_progress' } });
+    TestBed.tick();
+    flushBacklogReload();
+    await settle();
+
+    expect(testid('todo-detail-modal')).toBeNull();
+  });
+
   it('should activate a someday row with e via advance(activate)', async () => {
     await render('someday');
     expect(testid('gtd-row-0')?.textContent).toContain('Someday idea');

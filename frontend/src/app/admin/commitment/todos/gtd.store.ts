@@ -63,6 +63,7 @@ export class GtdStore {
   readonly selectedIndex = signal(0);
   readonly clarifyTarget = signal<TodoRow | null>(null);
   readonly recurrenceTarget = signal<TodoRow | null>(null);
+  readonly detailTarget = signal<TodoRow | null>(null);
   private readonly clarifyIntent = signal<ClarifyIntent>('clarify');
   readonly searchDraft = signal('');
   private readonly historyQuery = signal('');
@@ -254,6 +255,50 @@ export class GtdStore {
     } else {
       this.mutate(clarify$, ADVANCE_TOAST.clarify, {});
     }
+  }
+
+  /** Open the detail panel for a row — the Todos-page row-click surface. */
+  openDetail(row: TodoRow): void {
+    this.detailTarget.set(row);
+  }
+
+  /** Dismiss the detail panel without acting. */
+  closeDetail(): void {
+    this.detailTarget.set(null);
+  }
+
+  /**
+   * Detail-panel actions. Each closes the panel first (the backlog reload that
+   * follows the mutation removes the row underneath it) then runs the verb on
+   * the captured target.
+   */
+  advanceFromDetail(): void {
+    const row = this.detailTarget();
+    if (!row) return;
+    this.detailTarget.set(null);
+    this.advanceRow(row);
+  }
+
+  deferFromDetail(): void {
+    const row = this.detailTarget();
+    if (!row) return;
+    this.detailTarget.set(null);
+    this.deferRow(row);
+  }
+
+  dropFromDetail(): void {
+    const row = this.detailTarget();
+    if (!row) return;
+    this.detailTarget.set(null);
+    this.dropRow(row);
+  }
+
+  /** Swap the detail panel for the recurrence editor on the same row. */
+  editRecurrenceFromDetail(): void {
+    const row = this.detailTarget();
+    if (!row) return;
+    this.detailTarget.set(null);
+    this.openRecurrence(row);
   }
 
   /** Open the recurrence editor for a row. */
