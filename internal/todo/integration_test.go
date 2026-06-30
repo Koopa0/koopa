@@ -188,6 +188,16 @@ func TestIntegration_Todo_Recurring(t *testing.T) {
 	doneTodayWeekday := seed("Already done today", iptr(allWeekdays), nil, nil, sptr(today))
 	dueInterval := seed("Every 3 days, never done", nil, iptr(3), sptr("days"), nil)
 
+	// A recurring row that was terminally closed (state=done) is no longer a
+	// live schedule — it must appear in neither bucket, including `all`.
+	var doneRecurring uuid.UUID
+	if err := testPool.QueryRow(t.Context(),
+		`INSERT INTO todos (title, state, recur_weekdays, completed_at, created_by)
+		 VALUES ('Retired routine', 'done', 127, now(), 'human') RETURNING id`,
+	).Scan(&doneRecurring); err != nil {
+		t.Fatalf("seeding done recurring todo: %v", err)
+	}
+
 	req := httptest.NewRequest(http.MethodGet, "/api/admin/commitment/todos/recurring", nil)
 	rec := serveRead(t, h.Recurring, req)
 
@@ -254,6 +264,13 @@ func TestIntegration_Todo_Recurring(t *testing.T) {
 		if _, ok := all[id]; !ok {
 			t.Errorf("%s (%s) missing from all (body=%s)", name, id, body)
 		}
+	}
+	// A terminally done recurring row is not a live schedule — excluded from both.
+	if _, ok := all[doneRecurring]; ok {
+		t.Errorf("done recurring %s must NOT be in all (body=%s)", doneRecurring, body)
+	}
+	if _, ok := due[doneRecurring]; ok {
+		t.Errorf("done recurring %s must NOT be in due_today (body=%s)", doneRecurring, body)
 	}
 }
 

@@ -460,16 +460,19 @@ SELECT id, title, state, due, project_id,
        completed_at, energy, priority, recur_interval, recur_unit, recur_weekdays, last_completed_on,
        description, created_by, created_at, updated_at
 FROM todos
-WHERE state NOT IN ('archived', 'dismissed')
+WHERE state NOT IN ('done', 'someday', 'inbox', 'archived', 'dismissed')
   AND (recur_weekdays IS NOT NULL OR recur_interval IS NOT NULL)
 ORDER BY priority NULLS LAST, title
 `
 
-// Every recurring todo's schedule, for the routines overview (manage all
+// Every active recurring todo's schedule, for the routines overview (manage all
 // routines, not just today's due ones — distinct from RecurringTodoItemsDueToday).
-// Active states only (a recurring routine that was archived/dismissed is no
-// longer a live schedule). Selects the full todos column set so sqlc returns
-// db.Todo and rowToItem applies.
+// Uses the SAME active-state filter as RecurringTodoItemsDueToday so the overview
+// is a superset of the due-today list and never shows a closed routine: a
+// terminally done, someday-parked, still-in-inbox, or archived/dismissed
+// recurring row is not a live schedule and is reachable on its own surface
+// (Complete / Someday / Inbox tabs). Selects the full todos column set so sqlc
+// returns db.Todo and rowToItem applies.
 func (q *Queries) AllRecurringTodoItems(ctx context.Context) ([]Todo, error) {
 	rows, err := q.db.Query(ctx, allRecurringTodoItems)
 	if err != nil {
