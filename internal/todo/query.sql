@@ -214,34 +214,34 @@ RETURNING id, title, state, due, project_id,
           completed_at, energy, priority, recur_interval, recur_unit, recur_weekdays, last_completed_on,
           description, created_by, created_at, updated_at;
 
--- name: SearchTodoItems :many
--- Search todo items by title/description with optional filters.
-SELECT t.id, t.title, t.state, t.due, t.project_id,
-       t.energy, t.priority, t.recur_interval, t.recur_unit, t.recur_weekdays, t.last_completed_on,
-       t.completed_at, t.description, t.created_at, t.updated_at,
-       COALESCE(p.title, '') AS project_title,
-       COALESCE(p.slug, '') AS project_slug
+-- name: SearchResolvedTodoItems :many
+-- The ?q= search counterpart of ResolvedTodoDetailSince: resolved ("已了結")
+-- todos since @since whose title or description matches @query. It applies the
+-- SAME resolution arms as ResolvedTodoDetailSince (done by completed_at, dropped
+-- by updated_at, recurring by last_completed_on) so the Complete tab's search
+-- covers done, dropped, AND recurring resolutions — not only done. @query is
+-- pre-escaped by the caller (escapeILIKE); the wrapping wildcards are the only
+-- ILIKE metacharacters. resolved_at is the per-kind resolution instant.
+SELECT t.id, t.title, t.state,
+       CASE
+           WHEN t.state = 'done' THEN t.completed_at
+           WHEN t.state IN ('archived', 'dismissed') THEN t.updated_at
+           ELSE t.last_completed_on::timestamptz
+       END AS resolved_at,
+       COALESCE(p.title, '') AS project_title
 FROM todos t
 LEFT JOIN projects p ON t.project_id = p.id
-WHERE (sqlc.narg('query')::text IS NULL OR (t.title ILIKE '%' || sqlc.narg('query') || '%' OR t.description ILIKE '%' || sqlc.narg('query') || '%'))
-  AND (sqlc.narg('project_slug')::text IS NULL OR p.slug = sqlc.narg('project_slug'))
-  AND (sqlc.narg('state_filter')::text IS NULL OR
-       CASE sqlc.narg('state_filter')
-           WHEN 'pending' THEN t.state != 'done'
-           WHEN 'done' THEN t.state = 'done'
-           ELSE true
-       END)
-  AND (sqlc.narg('completed_after')::timestamptz IS NULL OR t.completed_at >= sqlc.narg('completed_after'))
-  AND (sqlc.narg('completed_before')::timestamptz IS NULL OR t.completed_at < sqlc.narg('completed_before'))
-ORDER BY
-    CASE WHEN t.state != 'done' THEN 0 ELSE 1 END,
-    CASE WHEN t.state != 'done' THEN
-        CASE WHEN t.due IS NOT NULL THEN 0 ELSE 1 END
-    ELSE 2 END,
-    t.due ASC NULLS LAST,
-    t.completed_at DESC NULLS LAST,
-    t.updated_at ASC
-LIMIT sqlc.arg('max_results');
+WHERE (t.title ILIKE '%' || @query || '%' OR t.description ILIKE '%' || @query || '%')
+  AND (
+        (t.state = 'done' AND t.completed_at >= @since)
+     OR (t.state IN ('archived', 'dismissed') AND t.updated_at >= @since)
+     OR ((t.recur_weekdays IS NOT NULL OR t.recur_interval IS NOT NULL)
+         AND t.state NOT IN ('done', 'archived', 'dismissed')
+         AND t.last_completed_on IS NOT NULL
+         AND t.last_completed_on >= @since::date)
+      )
+ORDER BY resolved_at DESC NULLS LAST
+LIMIT @max_results;
 
 -- === Recurring todo item queries ===
 

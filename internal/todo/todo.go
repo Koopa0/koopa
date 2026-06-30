@@ -423,24 +423,6 @@ type PendingDetail struct {
 	UpdatedAt     time.Time `json:"updated_at"`
 }
 
-// SearchDetail is a search hit with project context.
-type SearchDetail struct {
-	ID            uuid.UUID  `json:"id"`
-	Title         string     `json:"title"`
-	State         State      `json:"state"`
-	Due           *time.Time `json:"due,omitempty"`
-	ProjectTitle  string     `json:"project_title"`
-	ProjectSlug   string     `json:"project_slug"`
-	Energy        *string    `json:"energy,omitempty"`
-	Priority      *string    `json:"priority,omitempty"`
-	RecurInterval *int32     `json:"recur_interval,omitempty"`
-	RecurUnit     *string    `json:"recur_unit,omitempty"`
-	CompletedAt   *time.Time `json:"completed_at,omitempty"`
-	Description   string     `json:"description,omitempty"`
-	CreatedAt     time.Time  `json:"created_at"`
-	UpdatedAt     time.Time  `json:"updated_at"`
-}
-
 // ResolvedDetail is a resolved ("已了結") todo with project context for the
 // Complete tab: a one-time todo done, a todo dropped (archived/dismissed), or a
 // recurring routine's recent occurrence. State carries the kind so the front

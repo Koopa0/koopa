@@ -404,6 +404,33 @@ func TestIntegration_Todo_History(t *testing.T) {
 	if _, ok := ids[pending]; ok {
 		t.Errorf("pending todo %s must NOT appear in Complete view (body=%s)", pending, body)
 	}
+
+	// The ?q= search path searches the SAME resolved set: "Japanese" must find
+	// the recurring occurrence (the exact gap the old completed_at-only search
+	// missed), and a token shared by a resolved and a non-resolved row ("do":
+	// dropped "Won't do this" vs pending "Still to do") must return only the
+	// resolved one.
+	searchIDs := func(query string) map[uuid.UUID]struct{} {
+		sreq := httptest.NewRequest(http.MethodGet, "/api/admin/commitment/todos/history?q="+query, nil)
+		srec := serveRead(t, h.History, sreq)
+		sresp := srec.Result()
+		defer sresp.Body.Close()
+		sbody, _ := io.ReadAll(sresp.Body)
+		if sresp.StatusCode != http.StatusOK {
+			t.Fatalf("search status = %d, want 200 (body=%s)", sresp.StatusCode, sbody)
+		}
+		return dataIDs(t, sbody)
+	}
+	if _, ok := searchIDs("Japanese")[recurring]; !ok {
+		t.Errorf("recurring %s not searchable in Complete tab via ?q=Japanese", recurring)
+	}
+	doMatches := searchIDs("do")
+	if _, ok := doMatches[dropped]; !ok {
+		t.Errorf("dropped %s not searchable via ?q=do", dropped)
+	}
+	if _, ok := doMatches[pending]; ok {
+		t.Errorf("pending %s must NOT be searchable in the Complete tab via ?q=do", pending)
+	}
 }
 
 // TestIntegration_Todo_List_SingleStateFilter pins the backward-compatible

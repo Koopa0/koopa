@@ -209,10 +209,11 @@ const (
 	historyMaxLimit     = 100
 )
 
-// History handles GET /api/admin/commitment/todos/history. With ?q= it
-// runs the full-text search path; without it, the completed-since path.
-// Query params: since (YYYY-MM-DD, default 30d ago), q, project (slug),
-// limit (1-100, default 20).
+// History handles GET /api/admin/commitment/todos/history — the Complete
+// ("已了結") view. With ?q= it searches the resolved set (done + dropped +
+// recurring occurrences) by title/description; without it, it lists the same
+// resolved set since the cutoff. Query params: since (YYYY-MM-DD, default 30d
+// ago), q, limit (1-100, default 20).
 func (h *Handler) History(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 
@@ -236,23 +237,19 @@ func (h *Handler) History(w http.ResponseWriter, r *http.Request) {
 		limit = n
 	}
 
-	// Search path: ?q= present → full-text search over the historical
-	// record, scoped to completed-after the since cutoff so the same
-	// window applies to both paths.
+	// Search path: ?q= present → search the SAME resolved set as the default
+	// view (done + dropped + recurring occurrences), title/description match,
+	// within the since window. Matching the default view's arms is what makes a
+	// dropped or recurring resolution searchable in the Complete tab.
 	if query := q.Get("q"); query != "" {
-		var projectSlug *string
-		if p := q.Get("project"); p != "" {
-			projectSlug = &p
-		}
-		sinceCopy := since
-		results, err := h.store.SearchItems(r.Context(), &query, projectSlug, nil, &sinceCopy, nil, int32(limit)) // #nosec G115 -- limit bounded to [1, 100]
+		results, err := h.store.SearchResolvedItems(r.Context(), query, since, int32(limit)) // #nosec G115 -- limit bounded to [1, 100]
 		if err != nil {
 			h.logger.Error("searching todo history", "error", err)
 			api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to search todo history")
 			return
 		}
 		if results == nil {
-			results = []SearchDetail{}
+			results = []ResolvedDetail{}
 		}
 		api.Encode(w, http.StatusOK, api.Response{Data: results})
 		return

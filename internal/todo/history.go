@@ -15,45 +15,33 @@ import (
 	"github.com/Koopa0/koopa/internal/db"
 )
 
-// SearchItems searches todo items with optional filters.
-func (s *Store) SearchItems(ctx context.Context, query, projectSlug, stateFilter *string, completedAfter, completedBefore *time.Time, maxResults int32) ([]SearchDetail, error) {
-	var escapedQuery *string
-	if query != nil {
-		v := escapeILIKE(*query)
-		escapedQuery = &v
-	}
-	rows, err := s.q.SearchTodoItems(ctx, db.SearchTodoItemsParams{
-		Query:           escapedQuery,
-		ProjectSlug:     projectSlug,
-		StateFilter:     stateFilter,
-		CompletedAfter:  completedAfter,
-		CompletedBefore: completedBefore,
-		MaxResults:      maxResults,
+// SearchResolvedItems searches resolved ("已了結") todos — done, dropped
+// (archived/dismissed), or a recurring routine's recent occurrence — by title
+// or description, for the Complete tab's ?q= path. It shares the resolution
+// arms of ResolvedItemsDetailSince so the search covers the same set the default
+// view shows, not just done items. See SearchResolvedTodoItems in query.sql.
+func (s *Store) SearchResolvedItems(ctx context.Context, query string, since time.Time, maxResults int32) ([]ResolvedDetail, error) {
+	escaped := escapeILIKE(query)
+	rows, err := s.q.SearchResolvedTodoItems(ctx, db.SearchResolvedTodoItemsParams{
+		Query:      &escaped,
+		Since:      &since,
+		MaxResults: maxResults,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("searching todo items: %w", err)
+		return nil, fmt.Errorf("searching resolved todo items: %w", err)
 	}
-	items := make([]SearchDetail, len(rows))
+	result := make([]ResolvedDetail, len(rows))
 	for i := range rows {
-		r := &rows[i]
-		items[i] = SearchDetail{
-			ID:            r.ID,
-			Title:         r.Title,
-			State:         State(r.State),
-			Due:           r.Due,
-			ProjectTitle:  r.ProjectTitle,
-			ProjectSlug:   r.ProjectSlug,
-			Energy:        r.Energy,
-			Priority:      r.Priority,
-			RecurInterval: r.RecurInterval,
-			RecurUnit:     r.RecurUnit,
-			CompletedAt:   r.CompletedAt,
-			Description:   r.Description,
-			CreatedAt:     r.CreatedAt,
-			UpdatedAt:     r.UpdatedAt,
+		resolvedAt := rows[i].ResolvedAt
+		result[i] = ResolvedDetail{
+			ID:           rows[i].ID,
+			Title:        rows[i].Title,
+			State:        State(rows[i].State),
+			CompletedAt:  &resolvedAt,
+			ProjectTitle: rows[i].ProjectTitle,
 		}
 	}
-	return items, nil
+	return result, nil
 }
 
 // ResolvedItemsDetailSince returns todos resolved ("已了結") since the given
