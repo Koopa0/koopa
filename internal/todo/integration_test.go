@@ -204,6 +204,9 @@ func TestIntegration_Todo_Recurring(t *testing.T) {
 			DueToday []struct {
 				ID uuid.UUID `json:"id"`
 			} `json:"due_today"`
+			All []struct {
+				ID uuid.UUID `json:"id"`
+			} `json:"all"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(body, &env); err != nil {
@@ -231,6 +234,25 @@ func TestIntegration_Todo_Recurring(t *testing.T) {
 	for name, id := range wantNotDue {
 		if _, ok := due[id]; ok {
 			t.Errorf("%s (%s) must NOT be in due_today (body=%s)", name, id, body)
+		}
+	}
+
+	// The `all` bucket (routines overview) carries every active recurring
+	// schedule, including the off-day and already-done-today ones that the
+	// due_today bucket excludes — that is the whole point of the manage-all view.
+	all := make(map[uuid.UUID]struct{}, len(env.Data.All))
+	for _, a := range env.Data.All {
+		all[a.ID] = struct{}{}
+	}
+	for name, id := range map[string]uuid.UUID{
+		"all-weekday todo":        dueWeekday,
+		"today-only weekday":      dueTodayOnly,
+		"interval, never done":    dueInterval,
+		"weekday excluding today": notTodayWeekday,
+		"already completed today": doneTodayWeekday,
+	} {
+		if _, ok := all[id]; !ok {
+			t.Errorf("%s (%s) missing from all (body=%s)", name, id, body)
 		}
 	}
 }

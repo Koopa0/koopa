@@ -323,6 +323,26 @@ The Today aggregate is now a complete backend surface (the earlier
 - Tested for both empty-state and wired-sections behavior
   (`internal/today/handler_test.go`).
 - Daily Plan is subsumed by this aggregate (`cmd/app/routes.go` — `GET /api/admin/commitment/today`).
+- **Day-progress is due-based, not plan-based** (2026-06-30). The human Today
+  dashboard's open / completed / overdue figures derive from what is actually
+  scheduled today — due-today + recurring-due + in_progress (open), today's
+  completions incl. recurring `last_completed_on=today` (completed), and
+  past-due-still-open (overdue) — so the strip is meaningful without a committed
+  `daily_plan`. The aggregate exposes the contributing sections (including a new
+  `completed_todos`) and the front end sums their lengths; the old
+  `PlanCompletion` block (which counted `daily_plan_items`, and whose `.status`
+  column has no write path) was removed (`internal/today/today.go`,
+  `internal/today/handler.go::loadCompleted`). The MCP `brief(mode=reflection)`
+  tool **deliberately stays plan-based** — it reports plan-vs-actual over the
+  day's committed `daily_plan_items` for the planner agent
+  (`internal/mcp/brief.go::fillBriefReflection`). The two surfaces answer
+  different questions (human: "what is my actual day"; planner agent: "how did
+  the committed plan resolve"), so this divergence is intentional, not drift.
+- **Routines have a manage-all surface.** Beyond the due-today list, every active
+  recurring schedule is exposed via `GET /api/admin/commitment/todos/recurring`'s
+  `all` bucket (`internal/todo/query.sql::AllRecurringTodoItems`), backing the
+  admin Routines overview — the home for a routine on its off-days, which the
+  due-today list and the recurring-excluding Todos status tabs do not show.
 
 ### G. Carried-forward human-resolved decisions (do not re-litigate)
 

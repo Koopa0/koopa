@@ -1,0 +1,106 @@
+<!-- Intro -->
+<header
+  class="flex shrink-0 items-center gap-2.5 border-b border-border bg-panel px-5 py-3"
+>
+  <lucide-icon
+    [img]="RepeatIcon"
+    [size]="15"
+    class="shrink-0 text-fg-subtle"
+    aria-hidden="true"
+  />
+  <p class="text-[13px] text-fg-subtle">
+    Every routine you keep and when it last ran. Edit a routine from its detail
+    on the Todos page; complete today’s occurrence on Today.
+  </p>
+</header>
+
+<!-- List -->
+<div class="min-h-0 flex-1 overflow-y-auto" data-testid="routines-list">
+  @if (isError()) {
+    <div
+      class="flex flex-col items-center gap-2 p-10 text-center"
+      data-testid="routines-error"
+    >
+      <lucide-icon
+        [img]="RepeatIcon"
+        [size]="28"
+        class="mb-1 text-error opacity-70"
+        aria-hidden="true"
+      />
+      <h2 class="font-display text-sm font-semibold text-fg">
+        Couldn’t load routines
+      </h2>
+      <p class="max-w-[280px] text-xs leading-relaxed text-fg-subtle">
+        The todos service didn’t respond. Nothing was lost.
+      </p>
+      <button
+        type="button"
+        (click)="retry()"
+        data-testid="routines-retry"
+        class="mt-2 rounded-sm border border-border bg-elevated px-3 py-1.5 text-xs text-fg-muted transition-colors hover:border-brand hover:text-brand"
+      >
+        Retry
+      </button>
+    </div>
+  } @else if (isLoading()) {
+    <div
+      class="flex flex-col gap-1 px-5 py-3"
+      data-testid="routines-loading"
+      aria-busy="true"
+      aria-label="Loading routines"
+    >
+      @for (row of [1, 2, 3, 4]; track row) {
+        <div class="h-8 animate-pulse rounded-sm bg-elevated"></div>
+      }
+    </div>
+  } @else if (routines().length === 0) {
+    <app-empty-state
+      [icon]="RepeatIcon"
+      title="No routines yet"
+      description="Make a todo recurring from its detail panel and it shows up here."
+    />
+  } @else {
+    <div role="list">
+      @for (routine of routines(); track routine.id) {
+        <div
+          role="listitem"
+          class="flex min-h-9 items-center gap-2.5 border-b border-border-faint px-5 py-2"
+          data-testid="routines-row"
+        >
+          <span class="min-w-0 flex-1 truncate text-[13px] text-fg">
+            {{ routine.title }}
+          </span>
+          @if (isDueToday(routine)) {
+            <span
+              class="shrink-0 rounded-sm bg-warn-bg px-1.5 py-0.5 font-mono text-[10px] text-warn"
+              data-testid="routines-due-today"
+            >
+              due today
+            </span>
+          }
+          @if (energyLevel(routine); as level) {
+            <app-energy-meter class="shrink-0" [level]="level" />
+          }
+          <span
+            class="shrink-0 rounded-sm bg-brand-muted px-1.5 py-0.5 font-mono text-[10px] text-brand"
+            data-testid="routines-schedule"
+          >
+            {{ scheduleLabel(routine) }}
+          </span>
+          <span
+            class="w-28 shrink-0 text-right font-mono text-[10px] text-fg-faint"
+            [attr.title]="
+              routine.last_completed_on ? 'Last completed' : 'Never completed'
+            "
+          >
+            @if (routine.last_completed_on) {
+              {{ routine.last_completed_on | date: 'MMM d' }}
+            } @else {
+              never run
+            }
+          </span>
+        </div>
+      }
+    </div>
+  }
+</div>

@@ -123,6 +123,13 @@ export const routes: Routes = [
           ),
         data: { gtdView: 'pending' },
       },
+      {
+        path: 'daily/routines',
+        loadComponent: () =>
+          import('./admin/commitment/routines/routines.page').then(
+            (m) => m.RoutinesPageComponent,
+          ),
+      },
 
       // ── Commitment ───────────────────────────────────────────────
       {
