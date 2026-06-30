@@ -106,6 +106,26 @@ func (s *Store) Items(ctx context.Context) ([]Item, error) {
 	return items, nil
 }
 
+// CompletedItemsOn returns the todos completed on the given day, for the Today
+// dashboard's done-today count and list: one-time todos finished within
+// [dayStart, dayEnd) plus recurring todos whose occurrence was stamped on today.
+// See CompletedTodoItemsOn in query.sql.
+func (s *Store) CompletedItemsOn(ctx context.Context, today, dayStart, dayEnd time.Time) ([]Item, error) {
+	rows, err := s.q.CompletedTodoItemsOn(ctx, db.CompletedTodoItemsOnParams{
+		DayStart: &dayStart,
+		DayEnd:   &dayEnd,
+		Today:    today,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("listing todos completed on %s: %w", today.Format(time.DateOnly), err)
+	}
+	items := make([]Item, len(rows))
+	for i := range rows {
+		items[i] = rowToItem(&rows[i])
+	}
+	return items, nil
+}
+
 // ItemByID returns a single todo item by its ID.
 func (s *Store) ItemByID(ctx context.Context, id uuid.UUID) (*Item, error) {
 	r, err := s.q.TodoItemByID(ctx, id)

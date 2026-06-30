@@ -148,6 +148,24 @@ LEFT JOIN projects p ON t.project_id = p.id
 WHERE t.state = 'done' AND t.completed_at >= @since
 ORDER BY t.completed_at DESC;
 
+-- name: CompletedTodoItemsOn :many
+-- Todos completed on @today, for the Today dashboard's done-today count and
+-- list. Two arms: a one-time todo finished within the day window [@day_start,
+-- @day_end) (state=done, completed_at in range), OR a recurring todo whose
+-- occurrence was stamped on @today (last_completed_on = @today). A recurring
+-- todo terminally closed the same day it had an occurrence stamped satisfies
+-- both arms, but a WHERE-OR over a base table emits each row once, so the done
+-- count is never inflated. Selects the full todos column set (no join) so sqlc
+-- returns db.Todo and rowToItem applies.
+SELECT id, title, state, due, project_id,
+       completed_at, energy, priority, recur_interval, recur_unit, recur_weekdays, last_completed_on,
+       description, created_by, created_at, updated_at
+FROM todos
+WHERE (state = 'done' AND completed_at >= @day_start AND completed_at < @day_end)
+   OR ((recur_weekdays IS NOT NULL OR recur_interval IS NOT NULL)
+       AND last_completed_on = @today::date)
+ORDER BY completed_at DESC NULLS LAST, last_completed_on DESC NULLS LAST, title;
+
 -- name: UpdateTodoItem :one
 -- Update editable todo item fields. State transitions go through
 -- UpdateTodoItemState, never here. Only non-null parameters are applied.

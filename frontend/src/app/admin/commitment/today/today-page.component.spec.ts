@@ -84,8 +84,8 @@ function populatedBrief(): TodayBrief {
         updated_at: '2026-06-07T00:00:00Z',
       },
     ],
+    completed_todos: [],
     upcoming_todos: [],
-    plan_completion: { planned: 1, completed: 0, deferred: 0 },
     active_goals: [
       {
         id: 'g1',
@@ -117,9 +117,9 @@ function quietBrief(): TodayBrief {
     today_todos: [],
     active_todos: [],
     recurring_todos: [],
+    completed_todos: [],
     committed_todos: [],
     upcoming_todos: [],
-    plan_completion: { planned: 0, completed: 0, deferred: 0 },
     active_goals: [],
     rss_highlights: [],
   };
@@ -205,14 +205,17 @@ describe('TodayPageComponent', () => {
     expect(testid('today-plan-ip-dot')).toBeTruthy();
   });
 
-  it('should derive day-progress figures live from the committed rows', async () => {
+  it('should derive due-based day-progress figures from the section lengths', async () => {
     await render(populatedBrief());
+    const strip = testid('today-plan-completion');
+    // open = due-today(1) + recurring(1) + active(1) = 3; overdue(1); completed(0)
+    // → percent = round(0 / (3+1+0) * 100) = 0%. The committed plan does not count.
+    expect(strip?.textContent).toContain('Open');
+    expect(strip?.textContent).toContain('Completed');
+    expect(strip?.textContent).toContain('Overdue');
+    expect(strip?.textContent).not.toContain('Planned');
+    expect(strip?.textContent).not.toContain('Deferred');
     expect(testid('today-percent')?.textContent).toContain('0%');
-    expect(testid('today-plan-completion')?.textContent).toContain('Planned');
-    expect(testid('today-plan-completion')?.textContent).toContain(
-      'Completed',
-    );
-    expect(testid('today-plan-completion')?.textContent).toContain('Deferred');
   });
 
   it('should group loose todos and style the due chips per bucket', async () => {
@@ -252,7 +255,9 @@ describe('TodayPageComponent', () => {
     req.flush({});
     await settle();
 
-    expect(testid('today-percent')?.textContent).toContain('100%');
+    // Completing the one planned row adds it to today's completions: the strip is
+    // due-based, so completed becomes 1 of (open 3 + overdue 1 + completed 1) = 20%.
+    expect(testid('today-percent')?.textContent).toContain('20%');
     const notifications = TestBed.inject(NotificationService).notifications();
     expect(notifications.some((n) => n.message.includes('Marked done'))).toBe(
       true,

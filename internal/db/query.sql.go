@@ -1029,6 +1029,68 @@ func (q *Queries) CompletedTodoDetailSince(ctx context.Context, since *time.Time
 	return items, nil
 }
 
+const completedTodoItemsOn = `-- name: CompletedTodoItemsOn :many
+SELECT id, title, state, due, project_id,
+       completed_at, energy, priority, recur_interval, recur_unit, recur_weekdays, last_completed_on,
+       description, created_by, created_at, updated_at
+FROM todos
+WHERE (state = 'done' AND completed_at >= $1 AND completed_at < $2)
+   OR ((recur_weekdays IS NOT NULL OR recur_interval IS NOT NULL)
+       AND last_completed_on = $3::date)
+ORDER BY completed_at DESC NULLS LAST, last_completed_on DESC NULLS LAST, title
+`
+
+type CompletedTodoItemsOnParams struct {
+	DayStart *time.Time `json:"day_start"`
+	DayEnd   *time.Time `json:"day_end"`
+	Today    time.Time  `json:"today"`
+}
+
+// Todos completed on @today, for the Today dashboard's done-today count and
+// list. Two arms: a one-time todo finished within the day window [@day_start,
+// @day_end) (state=done, completed_at in range), OR a recurring todo whose
+// occurrence was stamped on @today (last_completed_on = @today). A recurring
+// todo terminally closed the same day it had an occurrence stamped satisfies
+// both arms, but a WHERE-OR over a base table emits each row once, so the done
+// count is never inflated. Selects the full todos column set (no join) so sqlc
+// returns db.Todo and rowToItem applies.
+func (q *Queries) CompletedTodoItemsOn(ctx context.Context, arg CompletedTodoItemsOnParams) ([]Todo, error) {
+	rows, err := q.db.Query(ctx, completedTodoItemsOn, arg.DayStart, arg.DayEnd, arg.Today)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Todo{}
+	for rows.Next() {
+		var i Todo
+		if err := rows.Scan(
+			&i.ID,
+			&i.Title,
+			&i.State,
+			&i.Due,
+			&i.ProjectID,
+			&i.CompletedAt,
+			&i.Energy,
+			&i.Priority,
+			&i.RecurInterval,
+			&i.RecurUnit,
+			&i.RecurWeekdays,
+			&i.LastCompletedOn,
+			&i.Description,
+			&i.CreatedBy,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const completedTodosInWindow = `-- name: CompletedTodosInWindow :many
 
 SELECT

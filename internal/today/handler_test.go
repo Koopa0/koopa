@@ -40,6 +40,7 @@ type fakeTodos struct {
 	inRange    []todo.PendingDetail
 	inProgress []todo.PendingDetail
 	recurring  []todo.Item
+	completed  []todo.Item
 }
 
 func (f *fakeTodos) OverdueItems(context.Context, time.Time) ([]todo.PendingDetail, error) {
@@ -60,6 +61,10 @@ func (f *fakeTodos) InProgressItems(context.Context) ([]todo.PendingDetail, erro
 
 func (f *fakeTodos) RecurringItemsDueToday(context.Context, time.Time) ([]todo.Item, error) {
 	return f.recurring, nil
+}
+
+func (f *fakeTodos) CompletedItemsOn(context.Context, time.Time, time.Time, time.Time) ([]todo.Item, error) {
+	return f.completed, nil
 }
 
 // fakeGoals satisfies ActiveGoalReader.
@@ -114,6 +119,7 @@ func TestToday_EmptyStateReturnsEmptyArrays(t *testing.T) {
 		TodayTodos:     []todo.PendingDetail{},
 		ActiveTodos:    []todo.PendingDetail{},
 		RecurringTodos: []todo.Item{},
+		CompletedTodos: []todo.Item{},
 		CommittedTodos: []daily.Item{},
 		UpcomingTodos:  []todo.PendingDetail{},
 		ActiveGoals:    []goal.ActiveGoalSummary{},
@@ -127,7 +133,7 @@ func TestToday_EmptyStateReturnsEmptyArrays(t *testing.T) {
 	raw := rec.Body.String()
 	for _, field := range []string{
 		"overdue_todos", "today_todos", "active_todos", "recurring_todos",
-		"committed_todos", "upcoming_todos",
+		"completed_todos", "committed_todos", "upcoming_todos",
 		"active_goals", "rss_highlights",
 	} {
 		if strings.Contains(raw, `"`+field+`":null`) {
@@ -137,33 +143,42 @@ func TestToday_EmptyStateReturnsEmptyArrays(t *testing.T) {
 }
 
 // TestToday_WiredSectionsPopulate proves each wired reader contributes its
-// section and plan completion counts derive from the committed items.
+// section and that the day-progress strip is due-based: the front end derives
+// open from due-today + recurring + started work, overdue from the overdue
+// section, and completed from today's completions — independent of any
+// committed plan. This test pins the section lengths those figures sum.
 func TestToday_WiredSectionsPopulate(t *testing.T) {
 	t.Parallel()
 
 	overdue := []todo.PendingDetail{{ID: uuid.New(), Title: "ship audit memo"}}
 	dueOn := []todo.PendingDetail{{ID: uuid.New(), Title: "review draft"}}
 	inRange := []todo.PendingDetail{{ID: uuid.New(), Title: "next week task"}}
+	started := todo.PendingDetail{ID: uuid.New(), Title: "started, undated", State: todo.StateInProgress}
+	recurring := []todo.Item{
+		{ID: uuid.New(), Title: "morning Japanese"},
+		{ID: uuid.New(), Title: "standup"},
+	}
+	completed := []todo.Item{
+		{ID: uuid.New(), Title: "shipped one-time"},
+		{ID: uuid.New(), Title: "morning Japanese (done today)"},
+	}
 	goals := []goal.ActiveGoalSummary{{Goal: goal.Goal{ID: uuid.New(), Title: "GDE application"}}}
 
-	// Completion derives from the backing todo's state (+ recurring-occurrence
-	// completion), not daily_plan_items.status (which has no write path). Each
-	// item carries Status=planned (the only value the dead column ever holds) to
-	// prove it is IGNORED; the TodoState / recurrence fields drive the counts.
-	now := time.Now().UTC()
-	todayUTC := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
-	recurInterval := int32(1)
-	planItems := []daily.Item{
-		{ID: uuid.New(), Status: daily.StatusPlanned, TodoState: "todo"},    // → Planned
-		{ID: uuid.New(), Status: daily.StatusPlanned, TodoState: "done"},    // → Completed (terminal)
-		{ID: uuid.New(), Status: daily.StatusPlanned, TodoState: "someday"}, // → Deferred
-		{ID: uuid.New(), Status: daily.StatusPlanned, TodoState: "in_progress", // recurring occurrence completed today → Completed
-			TodoRecurInterval: &recurInterval, TodoLastCompletedOn: &todayUTC},
-	}
+	// A committed plan is present but must NOT drive progress — it is an optional
+	// pin now. If progress regressed to plan-based counting this planned item
+	// would skew Open, so the assertion below would catch the regression.
+	planItems := []daily.Item{{ID: uuid.New(), TodoID: uuid.New(), Status: daily.StatusPlanned, TodoState: "todo"}}
 
 	h := NewHandler(fakePlanItems{items: planItems}, time.UTC, slog.New(slog.NewTextHandler(io.Discard, nil))).
 		WithSources(
-			&fakeTodos{overdue: overdue, dueOn: dueOn, inRange: inRange},
+			&fakeTodos{
+				overdue:    overdue,
+				dueOn:      dueOn,
+				inRange:    inRange,
+				inProgress: []todo.PendingDetail{started},
+				recurring:  recurring,
+				completed:  completed,
+			},
 			fakeGoals{goals: goals},
 			nil, // rss left nil — its section must stay []
 		)
@@ -184,12 +199,22 @@ func TestToday_WiredSectionsPopulate(t *testing.T) {
 		t.Errorf("active_goals mismatch (-want +got):\n%s", diff)
 	}
 
-	wantCompletion := PlanCompletion{Planned: 1, Completed: 2, Deferred: 1}
-	if diff := cmp.Diff(wantCompletion, got.PlanCompletion); diff != "" {
-		t.Errorf("plan_completion mismatch (-want +got):\n%s", diff)
+	// The day-progress strip is derived (front end) from these section lengths:
+	// open = due-today(1) + recurring(2) + started(1) = 4 — the upcoming-week
+	// section is NOT today's work and must not leak in; overdue = 1; completed =
+	// today's completions = 2. Pin every contributing section so a regression in
+	// the active-dedup or completed wiring is caught here.
+	if n := len(got.ActiveTodos); n != 1 {
+		t.Errorf("active_todos len = %d, want 1", n)
 	}
-	if n := len(got.CommittedTodos); n != 4 {
-		t.Errorf("committed_todos len = %d, want 4", n)
+	if n := len(got.RecurringTodos); n != 2 {
+		t.Errorf("recurring_todos len = %d, want 2", n)
+	}
+	if n := len(got.CompletedTodos); n != 2 {
+		t.Errorf("completed_todos len = %d, want 2", n)
+	}
+	if n := len(got.CommittedTodos); n != 1 {
+		t.Errorf("committed_todos len = %d, want 1", n)
 	}
 	if n := len(got.RSSHighlights); n != 0 {
 		t.Errorf("rss_highlights len = %d, want 0 (reader is nil)", n)

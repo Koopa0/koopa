@@ -141,12 +141,12 @@
             <p
               class="font-display text-[22px] font-semibold text-fg tabular-nums"
             >
-              {{ figures().planned }}
+              {{ figures().open }}
             </p>
             <p
               class="font-mono text-[10px] tracking-wide text-fg-faint uppercase"
             >
-              Planned
+              Open
             </p>
           </div>
           <div>
@@ -164,15 +164,15 @@
           <div>
             <p
               class="font-display text-[22px] font-semibold tabular-nums"
-              [class.text-warn]="figures().deferred > 0"
-              [class.text-fg-subtle]="figures().deferred === 0"
+              [class.text-warn]="figures().overdue > 0"
+              [class.text-fg-subtle]="figures().overdue === 0"
             >
-              {{ figures().deferred }}
+              {{ figures().overdue }}
             </p>
             <p
               class="font-mono text-[10px] tracking-wide text-fg-faint uppercase"
             >
-              Deferred
+              Overdue
             </p>
           </div>
         </div>
@@ -184,7 +184,7 @@
             ></div>
             <div
               class="h-full bg-warn/70 transition-all"
-              [style.width.%]="figures().deferredWidth"
+              [style.width.%]="figures().overdueWidth"
             ></div>
           </div>
           <span

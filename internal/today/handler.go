@@ -38,12 +38,20 @@ type todoActiveReader interface {
 	RecurringItemsDueToday(ctx context.Context, today time.Time) ([]todo.Item, error)
 }
 
+// todoCompletedReader returns the todos completed today — one-time todos done
+// within the day window plus recurring occurrences stamped today — backing the
+// Today Completed count and review list. Backed by *todo.Store.
+type todoCompletedReader interface {
+	CompletedItemsOn(ctx context.Context, today, dayStart, dayEnd time.Time) ([]todo.Item, error)
+}
+
 // TodoReader is the todo-views surface the Today aggregate composes — the
 // consumer-boundary subset of *todo.Store it depends on, split by role so each
 // part stays small (interfaces.md).
 type TodoReader interface {
 	todoDateReader
 	todoActiveReader
+	todoCompletedReader
 }
 
 // PlanItemReader returns the day's committed daily plan items. Backed by
@@ -130,6 +138,7 @@ func (h *Handler) Today(w http.ResponseWriter, r *http.Request) {
 		TodayTodos:     []todo.PendingDetail{},
 		ActiveTodos:    []todo.PendingDetail{},
 		RecurringTodos: []todo.Item{},
+		CompletedTodos: []todo.Item{},
 		CommittedTodos: []daily.Item{},
 		UpcomingTodos:  []todo.PendingDetail{},
 		ActiveGoals:    []goal.ActiveGoalSummary{},
@@ -137,6 +146,7 @@ func (h *Handler) Today(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.loadTodos(ctx, date, &resp)
+	h.loadCompleted(ctx, date, &resp)
 	h.loadPlan(ctx, date, &resp)
 	// Active dedups against the date sections, the plan, and recurring, so it
 	// must run after loadTodos + loadPlan have populated them.
@@ -216,28 +226,35 @@ func (h *Handler) loadActive(ctx context.Context, resp *Response) {
 	resp.ActiveTodos = active
 }
 
+// loadCompleted fills CompletedTodos with what was finished today — one-time
+// todos done within [date, date+1d) plus recurring occurrences stamped today —
+// feeding the front end's Completed count (derived from len(CompletedTodos))
+// and the "completed today" list.
+func (h *Handler) loadCompleted(ctx context.Context, date time.Time, resp *Response) {
+	if h.todos == nil {
+		return
+	}
+	dayEnd := date.AddDate(0, 0, 1)
+	if rows, err := h.todos.CompletedItemsOn(ctx, date, date, dayEnd); err != nil {
+		h.logger.Warn("today: completed todos failed", "error", err)
+	} else if rows != nil {
+		resp.CompletedTodos = rows
+	}
+}
+
+// loadPlan fills CommittedTodos with the day's committed plan. The plan is now
+// an optional pin: it no longer drives the progress counts (the front end
+// derives those from the due/recurring/completed section lengths), so a missing
+// plan does not zero the dashboard — hence a failure logs at Warn like the other
+// optional sections, not Error.
 func (h *Handler) loadPlan(ctx context.Context, date time.Time, resp *Response) {
 	items, err := h.planItems.ItemsByDate(ctx, date)
 	if err != nil {
-		h.logger.Error("today: plan items failed", "error", err)
+		h.logger.Warn("today: plan items failed", "error", err)
 		return
 	}
 	if items != nil {
 		resp.CommittedTodos = items
-	}
-	// Completion derives from the backing todo's state (and recurring-occurrence
-	// completion), NOT daily_plan_items.status — that column has no write path,
-	// so it is always 'planned'. daily.Item.IsCompletedOn/IsDeferred is the
-	// single source brief(reflection) also uses, so the two surfaces agree.
-	for i := range items {
-		switch {
-		case items[i].IsCompletedOn(date):
-			resp.PlanCompletion.Completed++
-		case items[i].IsDeferred():
-			resp.PlanCompletion.Deferred++
-		default:
-			resp.PlanCompletion.Planned++
-		}
 	}
 }
 

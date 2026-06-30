@@ -15,9 +15,9 @@ function emptyBrief(): TodayBrief {
     today_todos: [],
     active_todos: [],
     recurring_todos: [],
+    completed_todos: [],
     committed_todos: [],
     upcoming_todos: [],
-    plan_completion: { planned: 0, completed: 0, deferred: 0 },
     active_goals: [],
     rss_highlights: [],
   };
