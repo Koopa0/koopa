@@ -808,9 +808,10 @@ func TestIntegration_Goal_CreateArea(t *testing.T) {
 
 // TestIntegration_Goal_CreateArea_CJK pins that a pure Japanese/Chinese area
 // name creates successfully — the slug keeps its CJK characters (Unicode-aware
-// derivation) and the relaxed chk_area_slug_format accepts it against real
-// PostgreSQL. Before the slug-restriction fix this returned 400 ("no slug-able
-// characters") because the ascii-only deriver stripped every character.
+// derivation, keyed on \p{L}/\p{N} rather than ASCII) and the relaxed
+// chk_area_slug_format accepts it against real PostgreSQL. An ASCII-only
+// deriver would strip every character from a CJK-only name and produce a
+// wrongful 400 ("no slug-able characters").
 func TestIntegration_Goal_CreateArea_CJK(t *testing.T) {
 	h := newHandler()
 

@@ -21,17 +21,16 @@ func (c *countingReader) Read(p []byte) (int, error) {
 	return n, err
 }
 
-// TestRegression_CollectorResponseBounded verifies that the feed parser
-// reads at most maxFeedResponseSize bytes from the response body.
+// TestRegression_CollectorResponseBounded pins the invariant that the feed
+// parser reads at most maxFeedResponseSize bytes from the response body — an
+// unbounded resp.Body would let a malicious or malfunctioning feed server
+// serve gigabytes and exhaust memory.
 //
-// Regression: before the fix, gofeed.Parser received an unbounded resp.Body.
-// A malicious or malfunctioning feed server could serve gigabytes, exhausting
-// memory. The fix wraps the body in io.LimitReader(resp.Body, maxFeedResponseSize).
-//
-// If the fix were reverted (limit removed), this test would NOT fail directly
-// because the test constructs a finite body. The test instead verifies the
-// constant exists and the LimitReader is applied: a body of exactly limit+1
-// bytes must result in the reader being stopped at the limit.
+// The parser's return value can't distinguish "body truncated at the limit"
+// from "body just isn't valid RSS", so the test verifies the mechanism
+// directly: wrapping the body in io.LimitReader(resp.Body,
+// maxFeedResponseSize) and confirming a body of limit+1 bytes is stopped at
+// exactly the limit.
 func TestRegression_CollectorResponseBounded(t *testing.T) {
 	t.Parallel()
 

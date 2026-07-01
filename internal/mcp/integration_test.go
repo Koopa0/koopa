@@ -2054,9 +2054,8 @@ func TestIntegration_ResolveTodo_RecurringCompletesOccurrence(t *testing.T) {
 // TestIntegration_SetTodoRecurrence_ClearAfterOccurrence pins the agent (MCP)
 // clear path against the CHECK that the admin path was already engineered to
 // avoid: completing an occurrence stamps last_completed_on, and clearing the
-// recurrence afterward must also clear last_completed_on so
-// chk_todo_last_completed_requires_recurrence holds. Before the fix, the MCP
-// SetTodoRecurrence left last_completed_on set and the clear hit SQLSTATE 23514.
+// recurrence afterward must also clear last_completed_on, or the write hits
+// chk_todo_last_completed_requires_recurrence (SQLSTATE 23514).
 func TestIntegration_SetTodoRecurrence_ClearAfterOccurrence(t *testing.T) {
 	s := setupServer(t)
 
@@ -2073,7 +2072,8 @@ func TestIntegration_SetTodoRecurrence_ClearAfterOccurrence(t *testing.T) {
 		t.Fatalf("resolveTodo(done): err=%v out=%+v", err, out)
 	}
 
-	// Clear the recurrence. This previously hit chk_todo_last_completed_requires_recurrence.
+	// Clear the recurrence — must also clear last_completed_on or this trips
+	// chk_todo_last_completed_requires_recurrence.
 	if _, out, err := callHandlerAs(t, "claude", s.setTodoRecurrence, SetTodoRecurrenceInput{TodoID: id.String(), Clear: true}); err != nil {
 		t.Fatalf("setTodoRecurrence(clear) after an occurrence completion must succeed, got: %v", err)
 	} else if !out.OK {

@@ -65,9 +65,9 @@ func TestItemContent_Extended(t *testing.T) {
 // internal/url/url_test.go as FuzzCanonical, covering the same invariant
 // against the authoritative canonicaliser.
 
-// TestRegression_MaxFeedResponseSize documents the bug where external RSS
-// responses were unbounded (fixed by io.LimitReader). This test verifies
-// the constant is set to a safe value.
+// TestRegression_MaxFeedResponseSize pins maxFeedResponseSize inside a safe
+// range: large enough that legitimate feeds aren't rejected, small enough to
+// bound memory when reading an untrusted response body through io.LimitReader.
 func TestRegression_MaxFeedResponseSize(t *testing.T) {
 	t.Parallel()
 
