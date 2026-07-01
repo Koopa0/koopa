@@ -670,9 +670,9 @@ type ProposeGoalParams struct {
 
 // ProposeGoal inserts an agent-proposed goal as an inert draft
 // (status='proposed') plus its milestones, all within the supplied
-// transaction so a mid-loop failure rolls the whole proposal back. Bind the
-// store to the tx with WithTx before calling. A bad area_id FK (23503) becomes
-// ErrInvalidInput; a CHECK violation (blank title) likewise.
+// transaction so a milestone-batch failure rolls the whole proposal back.
+// Bind the store to the tx with WithTx before calling. A bad area_id FK
+// (23503) becomes ErrInvalidInput; a CHECK violation (blank title) likewise.
 func (s *Store) ProposeGoal(ctx context.Context, p *ProposeGoalParams) (*Goal, error) {
 	r, err := s.q.ProposeGoal(ctx, db.ProposeGoalParams{
 		Title:             p.Title,
@@ -686,13 +686,12 @@ func (s *Store) ProposeGoal(ctx context.Context, p *ProposeGoalParams) (*Goal, e
 	}
 	g := rowToGoal(&r)
 
-	for i, title := range p.Milestones {
-		if _, err := s.q.CreateMilestoneWithPosition(ctx, db.CreateMilestoneWithPositionParams{
-			GoalID:   g.ID,
-			Title:    title,
-			Position: int32(i),
+	if len(p.Milestones) > 0 {
+		if _, err := s.q.CreateMilestonesWithPositions(ctx, db.CreateMilestonesWithPositionsParams{
+			GoalID: g.ID,
+			Titles: p.Milestones,
 		}); err != nil {
-			return nil, mapProposeError(err, "proposing goal milestone")
+			return nil, mapProposeError(err, "proposing goal milestones")
 		}
 	}
 	return &g, nil

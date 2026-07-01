@@ -95,10 +95,12 @@ UPDATE milestones SET
 WHERE id = @id
 RETURNING id, goal_id, title, description, target_deadline, completed_at, position, created_at, updated_at;
 
--- name: CreateMilestoneWithPosition :one
--- Create a milestone with an explicit position.
+-- name: CreateMilestonesWithPositions :many
+-- Batch-inserts a goal's milestones in one round trip: position is each
+-- title's index within @titles (0-based), matching proposal insertion order.
 INSERT INTO milestones (goal_id, title, position)
-VALUES (@goal_id, @title, @position)
+SELECT @goal_id::uuid, t, (ord - 1)::int
+FROM unnest(@titles::text[]) WITH ORDINALITY AS x(t, ord)
 RETURNING id, goal_id, title, description, target_deadline, completed_at, position, created_at, updated_at;
 
 -- name: GoalRecentActivity :many

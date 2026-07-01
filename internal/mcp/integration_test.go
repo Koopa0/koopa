@@ -1115,6 +1115,32 @@ func TestIntegration_ProposeGoal_BlankTitleRejected(t *testing.T) {
 	}
 }
 
+// TestIntegration_ProposeGoal_DuplicateMilestoneTitleRejected pins that two
+// milestones with the same title in one proposal hit the batch INSERT's
+// unique(goal_id, title) violation and roll the whole proposal back — the
+// same outcome as when milestones were inserted one row at a time.
+func TestIntegration_ProposeGoal_DuplicateMilestoneTitleRejected(t *testing.T) {
+	s := setupServer(t)
+
+	if _, _, err := callHandlerAs(t, "claude", s.proposeGoal, ProposeGoalInput{
+		Title:      "Duplicate milestone titles",
+		Milestones: []string{"Same title", "Same title"},
+	}); err == nil {
+		t.Error("proposeGoal(duplicate milestone titles) err = nil, want unique-constraint rejection")
+	}
+
+	var goalCount, milestoneCount int
+	if err := testPool.QueryRow(t.Context(), `SELECT COUNT(*) FROM goals`).Scan(&goalCount); err != nil {
+		t.Fatalf("counting goals: %v", err)
+	}
+	if err := testPool.QueryRow(t.Context(), `SELECT COUNT(*) FROM milestones`).Scan(&milestoneCount); err != nil {
+		t.Fatalf("counting milestones: %v", err)
+	}
+	if goalCount != 0 || milestoneCount != 0 {
+		t.Errorf("goals=%d milestones=%d after rejected proposal, want 0/0 (rollback)", goalCount, milestoneCount)
+	}
+}
+
 // TestIntegration_ProposeGoal_RationalePersistsTriageOnly proves the rationale
 // captured by propose_goal is (a) stored on the proposed row, (b) surfaced in
 // the triage-list read, and (c) NOT leaked into the normal goal list. A sibling

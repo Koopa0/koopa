@@ -2005,19 +2005,19 @@ func (q *Queries) CreateMilestone(ctx context.Context, arg CreateMilestoneParams
 	return i, err
 }
 
-const createMilestoneWithPosition = `-- name: CreateMilestoneWithPosition :one
+const createMilestonesWithPositions = `-- name: CreateMilestonesWithPositions :many
 INSERT INTO milestones (goal_id, title, position)
-VALUES ($1, $2, $3)
+SELECT $1::uuid, t, (ord - 1)::int
+FROM unnest($2::text[]) WITH ORDINALITY AS x(t, ord)
 RETURNING id, goal_id, title, description, target_deadline, completed_at, position, created_at, updated_at
 `
 
-type CreateMilestoneWithPositionParams struct {
-	GoalID   uuid.UUID `json:"goal_id"`
-	Title    string    `json:"title"`
-	Position int32     `json:"position"`
+type CreateMilestonesWithPositionsParams struct {
+	GoalID uuid.UUID `json:"goal_id"`
+	Titles []string  `json:"titles"`
 }
 
-type CreateMilestoneWithPositionRow struct {
+type CreateMilestonesWithPositionsRow struct {
 	ID             uuid.UUID  `json:"id"`
 	GoalID         uuid.UUID  `json:"goal_id"`
 	Title          string     `json:"title"`
@@ -2029,22 +2029,36 @@ type CreateMilestoneWithPositionRow struct {
 	UpdatedAt      time.Time  `json:"updated_at"`
 }
 
-// Create a milestone with an explicit position.
-func (q *Queries) CreateMilestoneWithPosition(ctx context.Context, arg CreateMilestoneWithPositionParams) (CreateMilestoneWithPositionRow, error) {
-	row := q.db.QueryRow(ctx, createMilestoneWithPosition, arg.GoalID, arg.Title, arg.Position)
-	var i CreateMilestoneWithPositionRow
-	err := row.Scan(
-		&i.ID,
-		&i.GoalID,
-		&i.Title,
-		&i.Description,
-		&i.TargetDeadline,
-		&i.CompletedAt,
-		&i.Position,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
+// Batch-inserts a goal's milestones in one round trip: position is each
+// title's index within @titles (0-based), matching proposal insertion order.
+func (q *Queries) CreateMilestonesWithPositions(ctx context.Context, arg CreateMilestonesWithPositionsParams) ([]CreateMilestonesWithPositionsRow, error) {
+	rows, err := q.db.Query(ctx, createMilestonesWithPositions, arg.GoalID, arg.Titles)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []CreateMilestonesWithPositionsRow{}
+	for rows.Next() {
+		var i CreateMilestonesWithPositionsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.GoalID,
+			&i.Title,
+			&i.Description,
+			&i.TargetDeadline,
+			&i.CompletedAt,
+			&i.Position,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const createProject = `-- name: CreateProject :one
