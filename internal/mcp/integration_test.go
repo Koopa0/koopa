@@ -1993,6 +1993,87 @@ func TestIntegration_SetTodoRecurrence(t *testing.T) {
 	}
 }
 
+// TestIntegration_SetTodoRecurrence_IntervalMode covers the interval-mode
+// branch of buildRecurrence: valid interval+unit persists recur_interval and
+// recur_unit and produces an "every N unit" summary. All five rejection cases
+// (interval<=0, interval>maxRecurInterval, unsupported unit, and a lone
+// interval or unit with the other missing) are rejected by buildRecurrence
+// itself; interval<=0 and unit are additionally backstopped by
+// chk_todo_recurrence and the recur_unit CHECK, but interval>maxRecurInterval
+// has no DB-side backstop — buildRecurrence is the only thing enforcing it.
+func TestIntegration_SetTodoRecurrence_IntervalMode(t *testing.T) {
+	s := setupServer(t)
+
+	id := seedTodoForCreator(t, "claude", "Water the plants", "todo", time.Now())
+	three, days := 3, "days"
+	_, out, err := callHandlerAs(t, "claude", s.setTodoRecurrence, SetTodoRecurrenceInput{
+		TodoID: id.String(), Interval: &three, Unit: &days,
+	})
+	if err != nil {
+		t.Fatalf("setTodoRecurrence(interval=3, unit=days): %v", err)
+	}
+	if !out.OK || out.Recurrence != "every 3 days" {
+		t.Errorf("output = %+v, want OK with \"every 3 days\" summary", out)
+	}
+	var gotInterval *int32
+	var gotUnit *string
+	if err := testPool.QueryRow(t.Context(),
+		"SELECT recur_interval, recur_unit FROM todos WHERE id = $1", id,
+	).Scan(&gotInterval, &gotUnit); err != nil {
+		t.Fatalf("reading recur_interval/recur_unit: %v", err)
+	}
+	if gotInterval == nil || *gotInterval != 3 {
+		t.Errorf("recur_interval = %v, want 3", gotInterval)
+	}
+	if gotUnit == nil || *gotUnit != "days" {
+		t.Errorf("recur_unit = %v, want %q", gotUnit, "days")
+	}
+
+	rejectID := seedTodoForCreator(t, "claude", "Reject target", "todo", time.Now())
+	zero, tooBig, badUnit, weeks := 0, maxRecurInterval+1, "fortnights", "weeks"
+	tests := []struct {
+		name  string
+		input SetTodoRecurrenceInput
+	}{
+		{
+			name:  "interval zero",
+			input: SetTodoRecurrenceInput{TodoID: rejectID.String(), Interval: &zero, Unit: &days},
+		},
+		{
+			name:  "interval exceeds max",
+			input: SetTodoRecurrenceInput{TodoID: rejectID.String(), Interval: &tooBig, Unit: &days},
+		},
+		{
+			name:  "unsupported unit",
+			input: SetTodoRecurrenceInput{TodoID: rejectID.String(), Interval: &three, Unit: &badUnit},
+		},
+		{
+			name:  "interval without unit",
+			input: SetTodoRecurrenceInput{TodoID: rejectID.String(), Interval: &three},
+		},
+		{
+			name:  "unit without interval",
+			input: SetTodoRecurrenceInput{TodoID: rejectID.String(), Unit: &weeks},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if _, _, err := callHandlerAs(t, "claude", s.setTodoRecurrence, tt.input); err == nil {
+				t.Errorf("setTodoRecurrence(%s) err = nil, want rejection", tt.name)
+			}
+		})
+	}
+	var stillNil *int32
+	if err := testPool.QueryRow(t.Context(),
+		"SELECT recur_interval FROM todos WHERE id = $1", rejectID,
+	).Scan(&stillNil); err != nil {
+		t.Fatalf("reading recur_interval after rejected attempts: %v", err)
+	}
+	if stillNil != nil {
+		t.Errorf("recur_interval = %v after rejected attempts, want nil (no write occurred)", stillNil)
+	}
+}
+
 // TestIntegration_ResolveTodo_RecurringCompletesOccurrence pins the recurring
 // branch of resolve_todo: state=done on a recurring todo stamps last_completed_on
 // and keeps it recurring (not terminal); archived still ends it.
