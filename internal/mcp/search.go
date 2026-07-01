@@ -238,21 +238,57 @@ func rrfMerge(fts, sem []content.Content, limit int) []content.Content {
 // mapContentResults maps fused content rows to wire results. content_type and
 // date filtering already happened in SQL (pushed into both retrieval branches),
 // so no filtering is done here — the rows are exactly the matches, in fused
-// rank order.
+// rank order. Project titles for every distinct linked project are
+// batch-fetched once before the loop, rather than one query per result.
 func (s *Server) mapContentResults(ctx context.Context, contents []content.Content) []SearchKnowledgeResult {
+	projectTitles := s.projectTitlesFor(ctx, contents)
 	results := make([]SearchKnowledgeResult, 0, len(contents))
 	for i := range contents {
-		results = append(results, s.contentToResult(ctx, &contents[i]))
+		results = append(results, contentToResult(&contents[i], projectTitles))
 	}
 	return results
 }
 
-func (s *Server) contentToResult(ctx context.Context, c *content.Content) SearchKnowledgeResult {
-	var projectTitle string
-	if c.ProjectID != nil && s.projects != nil {
-		if p, pErr := s.projects.ProjectByID(ctx, *c.ProjectID); pErr == nil {
-			projectTitle = p.Title
+// projectTitlesFor batch-resolves the display title for every distinct
+// content.ProjectID referenced by contents, in one round trip. Returns an
+// empty map (not an error) when s.projects is nil, no content links a
+// project, or the batch lookup itself fails — contentToResult treats a map
+// miss as "no project", matching the prior per-item best-effort lookup's
+// silent-skip-on-error behavior, now at call granularity rather than
+// per-item (one failure blanks every result's title, not just one).
+func (s *Server) projectTitlesFor(ctx context.Context, contents []content.Content) map[uuid.UUID]string {
+	if s.projects == nil {
+		return nil
+	}
+	ids := make([]uuid.UUID, 0, len(contents))
+	seen := make(map[uuid.UUID]struct{}, len(contents))
+	for i := range contents {
+		if contents[i].ProjectID == nil {
+			continue
 		}
+		id := *contents[i].ProjectID
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		ids = append(ids, id)
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	titles, err := s.projects.TitlesByIDs(ctx, ids)
+	if err != nil {
+		// Best-effort, matching the prior per-item lookup: a project-title
+		// lookup failure must not fail the whole search_knowledge call.
+		return nil
+	}
+	return titles
+}
+
+func contentToResult(c *content.Content, projectTitles map[uuid.UUID]string) SearchKnowledgeResult {
+	var projectTitle string
+	if c.ProjectID != nil {
+		projectTitle = projectTitles[*c.ProjectID]
 	}
 	return SearchKnowledgeResult{
 		ID:          c.ID.String(),

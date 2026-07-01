@@ -352,6 +352,63 @@ func TestIntegration_SearchKnowledge_CorpusInclusion(t *testing.T) {
 	}
 }
 
+// TestIntegration_SearchKnowledge_ProjectTitleBatch seeds two content rows
+// linked to the SAME project plus one with no project, and asserts every
+// result's project title resolves correctly — the thing a batch lookup with
+// a duplicate-id or map-miss bug would get wrong. Both project-linked rows
+// must independently receive the correct (identical) title from one shared
+// batch fetch, and the unlinked row must come back with an empty Project
+// field rather than leaking the other rows' title or erroring.
+func TestIntegration_SearchKnowledge_ProjectTitleBatch(t *testing.T) {
+	s := setupServer(t)
+	const term = "zqxprojbatch"
+
+	var projectID uuid.UUID
+	if err := testPool.QueryRow(t.Context(),
+		`INSERT INTO projects (slug, title, status) VALUES ('sk-batch-project', 'Batch Test Project', 'in_progress') RETURNING id`,
+	).Scan(&projectID); err != nil {
+		t.Fatalf("seeding project: %v", err)
+	}
+
+	linkedA := seedSearchContent(t, "sk-batch-linked-a", term, "draft")
+	linkedB := seedSearchContent(t, "sk-batch-linked-b", term, "draft")
+	unlinked := seedSearchContent(t, "sk-batch-unlinked", term, "draft")
+	if _, err := testPool.Exec(t.Context(),
+		`UPDATE contents SET project_id = $1 WHERE id = ANY($2::uuid[])`, projectID, []uuid.UUID{linkedA, linkedB},
+	); err != nil {
+		t.Fatalf("linking content to project: %v", err)
+	}
+
+	_, out, err := callHandler(t, s.searchKnowledge, SearchKnowledgeInput{Query: term})
+	if err != nil {
+		t.Fatalf("searchKnowledge(%q) = %v, want success", term, err)
+	}
+
+	got := make(map[uuid.UUID]string, len(out.Results))
+	for i := range out.Results {
+		id, parseErr := uuid.Parse(out.Results[i].ID)
+		if parseErr != nil {
+			continue
+		}
+		got[id] = out.Results[i].Project
+	}
+	want := map[uuid.UUID]string{
+		linkedA:  "Batch Test Project",
+		linkedB:  "Batch Test Project",
+		unlinked: "",
+	}
+	for id, wantProject := range want {
+		gotProject, ok := got[id]
+		if !ok {
+			t.Errorf("result for content %s missing from search output", id)
+			continue
+		}
+		if gotProject != wantProject {
+			t.Errorf("content %s project = %q, want %q", id, gotProject, wantProject)
+		}
+	}
+}
+
 // --- corpus exclusion ---
 
 // TestIntegration_SearchKnowledge_CorpusExclusion seeds one in-corpus content

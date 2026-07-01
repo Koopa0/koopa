@@ -273,6 +273,26 @@ func (s *Store) ProjectByID(ctx context.Context, id uuid.UUID) (*Project, error)
 	return &p, nil
 }
 
+// TitlesByIDs returns the title for every id in ids that exists, in one
+// round trip, keyed by id. Ids with no matching project are simply absent
+// from the result — callers that need per-id presence check the map. For
+// callers that only need a display title (not the full Project row), this
+// is a lighter alternative to calling ProjectByID once per id.
+func (s *Store) TitlesByIDs(ctx context.Context, ids []uuid.UUID) (map[uuid.UUID]string, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	rows, err := s.q.ProjectTitlesByIDs(ctx, ids)
+	if err != nil {
+		return nil, fmt.Errorf("querying project titles by id: %w", err)
+	}
+	titles := make(map[uuid.UUID]string, len(rows))
+	for i := range rows {
+		titles[rows[i].ID] = rows[i].Title
+	}
+	return titles, nil
+}
+
 // DetailRow bundles a Project with its goal breadcrumb title. GoalTitle
 // is nil when the project has no goal (GoalID nil) or when the referenced
 // goal was deleted. The goals table has no slug, so the breadcrumb is

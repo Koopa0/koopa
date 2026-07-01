@@ -3,6 +3,12 @@ SELECT id, slug, title, description, status, repo, area_id, goal_id, deadline, l
        expected_cadence, created_by, proposal_rationale, created_at, updated_at
 FROM projects WHERE id = $1;
 
+-- name: ProjectTitlesByIDs :many
+-- Lightweight batch title lookup for callers that only need the display
+-- title for a set of project ids (e.g. annotating search results) —
+-- avoids ProjectByID's full row per id when nothing else is needed.
+SELECT id, title FROM projects WHERE id = ANY(@ids::uuid[]);
+
 -- name: ProjectDetailByID :one
 -- Admin detail view: project row plus the goal breadcrumb via LEFT JOIN.
 -- goal_id is nullable (project may have no goal); goal_title is null when

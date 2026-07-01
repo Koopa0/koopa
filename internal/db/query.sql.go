@@ -4209,6 +4209,38 @@ func (q *Queries) ProjectSummariesByGoalIDs(ctx context.Context, goalIds []uuid.
 	return items, nil
 }
 
+const projectTitlesByIDs = `-- name: ProjectTitlesByIDs :many
+SELECT id, title FROM projects WHERE id = ANY($1::uuid[])
+`
+
+type ProjectTitlesByIDsRow struct {
+	ID    uuid.UUID `json:"id"`
+	Title string    `json:"title"`
+}
+
+// Lightweight batch title lookup for callers that only need the display
+// title for a set of project ids (e.g. annotating search results) —
+// avoids ProjectByID's full row per id when nothing else is needed.
+func (q *Queries) ProjectTitlesByIDs(ctx context.Context, ids []uuid.UUID) ([]ProjectTitlesByIDsRow, error) {
+	rows, err := q.db.Query(ctx, projectTitlesByIDs, ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ProjectTitlesByIDsRow{}
+	for rows.Next() {
+		var i ProjectTitlesByIDsRow
+		if err := rows.Scan(&i.ID, &i.Title); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const projects = `-- name: Projects :many
 SELECT id, slug, title, description, status, repo, area_id, goal_id, deadline, last_activity_at,
        expected_cadence, created_by, proposal_rationale, created_at, updated_at
