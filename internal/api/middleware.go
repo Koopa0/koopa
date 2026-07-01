@@ -144,9 +144,11 @@ func ActorMiddleware(pool *pgxpool.Pool, actor string, logger *slog.Logger) func
 // play (e.g. non-admin routes that do not mutate audited tables).
 //
 // Handlers wrapped by ActorMiddleware should expect ok=true. If ok=false
-// in an admin handler, that is a wiring bug — log and fall back to the
-// bare store; the audit trigger will record the owner ('human') actor. The
-// failure mode is observable thanks to
+// in an admin handler, that is a wiring bug — log event=middleware_not_wired
+// and return 500; do NOT proceed with the bare store, since a write on that
+// path would still succeed but silently misattribute the audit actor to
+// 'human' (the trigger's default) instead of failing loud. The failure mode
+// that this guards against is observable thanks to
 // TestActorMiddleware_SilentDegradation_WhenWithTxForgotten in
 // internal/api/integration_test.go, which directly demonstrates a
 // forgetful handler producing actor='human'. New admin routes are
