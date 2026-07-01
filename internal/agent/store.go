@@ -4,10 +4,7 @@ package agent
 
 import (
 	"context"
-	"errors"
 	"fmt"
-
-	"github.com/jackc/pgx/v5"
 
 	"github.com/Koopa0/koopa/internal/db"
 )
@@ -46,36 +43,50 @@ func (s *Store) List(ctx context.Context) ([]RegistryRow, error) {
 	return out, nil
 }
 
-// Upsert writes an active agent row. If the name already exists, the row
-// is updated and status is forced back to active (any previous retirement
-// is cleared). Called by SyncToTable for every entry present in
-// BuiltinAgents().
-func (s *Store) Upsert(ctx context.Context, a *Agent) error {
-	err := s.q.UpsertAgent(ctx, db.UpsertAgentParams{
-		Name:        string(a.Name),
-		DisplayName: a.DisplayName,
-		Platform:    a.Platform,
-		Description: a.Description,
+// UpsertAll writes every registered agent as active in one round trip. If a
+// name already exists, its row is updated and status is forced back to
+// active (any previous retirement is cleared). Called once by SyncToTable
+// with the full BuiltinAgents() literal.
+func (s *Store) UpsertAll(ctx context.Context, agents []Agent) error {
+	names := make([]string, len(agents))
+	displayNames := make([]string, len(agents))
+	platforms := make([]string, len(agents))
+	descriptions := make([]string, len(agents))
+	for i := range agents {
+		names[i] = string(agents[i].Name)
+		displayNames[i] = agents[i].DisplayName
+		platforms[i] = agents[i].Platform
+		descriptions[i] = agents[i].Description
+	}
+	err := s.q.UpsertAgents(ctx, db.UpsertAgentsParams{
+		Names:        names,
+		DisplayNames: displayNames,
+		Platforms:    platforms,
+		Descriptions: descriptions,
 	})
 	if err != nil {
-		return fmt.Errorf("agent store: upsert %s: %w", a.Name, err)
+		return fmt.Errorf("agent store: batch upsert: %w", err)
 	}
 	return nil
 }
 
-// Retire marks an existing agent row as retired. No-op if the row is
-// already retired (retired_at preserved via COALESCE in the SQL). Returns
-// ErrUnknownAgent wrapped if no row with that name exists.
-func (s *Store) Retire(ctx context.Context, name Name) error {
-	n, err := s.q.RetireAgent(ctx, string(name))
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return fmt.Errorf("%w: %s", ErrUnknownAgent, name)
-		}
-		return fmt.Errorf("agent store: retire %s: %w", name, err)
+// RetireAll marks the given existing agent rows as retired in one round
+// trip. No-op per row if already retired (retired_at preserved via
+// COALESCE in the SQL). Returns ErrUnknownAgent wrapped if fewer rows were
+// affected than names given — some name matched no row. names MUST be
+// distinct: WHERE name = ANY(...) collapses a duplicate to one matched row,
+// so a repeated name would undercount and spuriously trip this check.
+func (s *Store) RetireAll(ctx context.Context, names []Name) error {
+	rowNames := make([]string, len(names))
+	for i := range names {
+		rowNames[i] = string(names[i])
 	}
-	if n == 0 {
-		return fmt.Errorf("%w: %s", ErrUnknownAgent, name)
+	n, err := s.q.RetireAgents(ctx, rowNames)
+	if err != nil {
+		return fmt.Errorf("agent store: batch retire: %w", err)
+	}
+	if n != int64(len(names)) {
+		return fmt.Errorf("%w: retired %d of %d requested names", ErrUnknownAgent, n, len(names))
 	}
 	return nil
 }

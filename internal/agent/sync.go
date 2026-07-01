@@ -128,28 +128,29 @@ func namesSet(agents []Agent) map[Name]struct{} {
 	return out
 }
 
-// upsertAll writes every registered agent as active. Returns a partially
-// populated SyncResult with Active count; Retired/AlreadyRetired are filled
-// by retireAbsent.
+// upsertAll writes every registered agent as active in one round trip.
+// Returns a partially populated SyncResult with Active count;
+// Retired/AlreadyRetired are filled by retireAbsent.
 func upsertAll(ctx context.Context, store *Store, registered []Agent) (SyncResult, error) {
 	var result SyncResult
-	for i := range registered {
-		a := &registered[i]
-		if err := store.Upsert(ctx, a); err != nil {
-			return result, fmt.Errorf("agent sync: upsert %s: %w", a.Name, err)
-		}
-		result.Active++
+	if len(registered) == 0 {
+		return result, nil
 	}
+	if err := store.UpsertAll(ctx, registered); err != nil {
+		return result, fmt.Errorf("agent sync: upsert: %w", err)
+	}
+	result.Active = len(registered)
 	return result, nil
 }
 
-// retireAbsent lists the current DB state and marks as retired any row
-// whose name is not in the registered set.
+// retireAbsent lists the current DB state and marks as retired, in one
+// round trip, every row whose name is not in the registered set.
 func retireAbsent(ctx context.Context, store *Store, registeredNames map[Name]struct{}, result *SyncResult, logger *slog.Logger) error {
 	rows, err := store.List(ctx)
 	if err != nil {
 		return fmt.Errorf("agent sync: list: %w", err)
 	}
+	var toRetire []Name
 	for _, row := range rows {
 		if _, stillRegistered := registeredNames[row.Name]; stillRegistered {
 			continue
@@ -158,16 +159,20 @@ func retireAbsent(ctx context.Context, store *Store, registeredNames map[Name]st
 			result.AlreadyRetired++
 			continue
 		}
-		if retireErr := store.Retire(ctx, row.Name); retireErr != nil {
-			return fmt.Errorf("agent sync: retire %s: %w", row.Name, retireErr)
-		}
+		toRetire = append(toRetire, row.Name)
 		logger.Warn("agent retired",
 			slog.String("agent", string(row.Name)),
 			slog.String("display_name", row.DisplayName),
 			slog.String("reason", "absent from BuiltinAgents"),
 		)
-		result.Retired++
 	}
+	if len(toRetire) == 0 {
+		return nil
+	}
+	if err := store.RetireAll(ctx, toRetire); err != nil {
+		return fmt.Errorf("agent sync: retire: %w", err)
+	}
+	result.Retired = len(toRetire)
 	return nil
 }
 

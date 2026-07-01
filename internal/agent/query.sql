@@ -6,12 +6,19 @@ SELECT name, display_name, platform, description, status, synced_at, retired_at
 FROM agents
 ORDER BY name;
 
--- name: UpsertAgent :exec
--- Write an active agent row. ON CONFLICT clears any previous retirement —
--- a registered agent is always active after sync. Called once per entry
--- in BuiltinAgents() during startup reconciliation.
+-- name: UpsertAgents :exec
+-- Batch-writes every registered agent as active in one round trip. ON
+-- CONFLICT clears any previous retirement — a registered agent is always
+-- active after sync. Called once per SyncToTable run with the full
+-- BuiltinAgents() literal.
 INSERT INTO agents (name, display_name, platform, description, status, synced_at, retired_at)
-VALUES (@name, @display_name, @platform, @description, 'active', now(), NULL)
+SELECT n, dn, p, d, 'active', now(), NULL
+FROM ROWS FROM (
+    unnest(@names::text[]),
+    unnest(@display_names::text[]),
+    unnest(@platforms::text[]),
+    unnest(@descriptions::text[])
+) AS x(n, dn, p, d)
 ON CONFLICT (name) DO UPDATE SET
     display_name = EXCLUDED.display_name,
     platform     = EXCLUDED.platform,
@@ -20,13 +27,13 @@ ON CONFLICT (name) DO UPDATE SET
     synced_at    = now(),
     retired_at   = NULL;
 
--- name: RetireAgent :execrows
--- Mark an existing agent row as retired. No-op if already retired
--- (retired_at preserved via COALESCE). Returns rows-affected so the
--- caller can detect "retired a row that was never registered" vs
--- "no such agent".
+-- name: RetireAgents :execrows
+-- Batch-marks a set of existing agent rows as retired in one round trip.
+-- No-op per row if already retired (retired_at preserved via COALESCE).
+-- Returns total rows affected, so the caller can detect a name that
+-- matched no row (affected < len(names)).
 UPDATE agents
 SET status     = 'retired',
     retired_at = COALESCE(retired_at, now()),
     synced_at  = now()
-WHERE name = @name;
+WHERE name = ANY(@names::text[]);

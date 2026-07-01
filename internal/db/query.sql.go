@@ -5172,20 +5172,20 @@ func (q *Queries) ResolvedTodoDetailSince(ctx context.Context, since *time.Time)
 	return items, nil
 }
 
-const retireAgent = `-- name: RetireAgent :execrows
+const retireAgents = `-- name: RetireAgents :execrows
 UPDATE agents
 SET status     = 'retired',
     retired_at = COALESCE(retired_at, now()),
     synced_at  = now()
-WHERE name = $1
+WHERE name = ANY($1::text[])
 `
 
-// Mark an existing agent row as retired. No-op if already retired
-// (retired_at preserved via COALESCE). Returns rows-affected so the
-// caller can detect "retired a row that was never registered" vs
-// "no such agent".
-func (q *Queries) RetireAgent(ctx context.Context, name string) (int64, error) {
-	result, err := q.db.Exec(ctx, retireAgent, name)
+// Batch-marks a set of existing agent rows as retired in one round trip.
+// No-op per row if already retired (retired_at preserved via COALESCE).
+// Returns total rows affected, so the caller can detect a name that
+// matched no row (affected < len(names)).
+func (q *Queries) RetireAgents(ctx context.Context, names []string) (int64, error) {
+	result, err := q.db.Exec(ctx, retireAgents, names)
 	if err != nil {
 		return 0, err
 	}
@@ -7431,9 +7431,15 @@ func (q *Queries) UpdateTopic(ctx context.Context, arg UpdateTopicParams) (Topic
 	return i, err
 }
 
-const upsertAgent = `-- name: UpsertAgent :exec
+const upsertAgents = `-- name: UpsertAgents :exec
 INSERT INTO agents (name, display_name, platform, description, status, synced_at, retired_at)
-VALUES ($1, $2, $3, $4, 'active', now(), NULL)
+SELECT n, dn, p, d, 'active', now(), NULL
+FROM ROWS FROM (
+    unnest($1::text[]),
+    unnest($2::text[]),
+    unnest($3::text[]),
+    unnest($4::text[])
+) AS x(n, dn, p, d)
 ON CONFLICT (name) DO UPDATE SET
     display_name = EXCLUDED.display_name,
     platform     = EXCLUDED.platform,
@@ -7443,22 +7449,23 @@ ON CONFLICT (name) DO UPDATE SET
     retired_at   = NULL
 `
 
-type UpsertAgentParams struct {
-	Name        string `json:"name"`
-	DisplayName string `json:"display_name"`
-	Platform    string `json:"platform"`
-	Description string `json:"description"`
+type UpsertAgentsParams struct {
+	Names        []string `json:"names"`
+	DisplayNames []string `json:"display_names"`
+	Platforms    []string `json:"platforms"`
+	Descriptions []string `json:"descriptions"`
 }
 
-// Write an active agent row. ON CONFLICT clears any previous retirement —
-// a registered agent is always active after sync. Called once per entry
-// in BuiltinAgents() during startup reconciliation.
-func (q *Queries) UpsertAgent(ctx context.Context, arg UpsertAgentParams) error {
-	_, err := q.db.Exec(ctx, upsertAgent,
-		arg.Name,
-		arg.DisplayName,
-		arg.Platform,
-		arg.Description,
+// Batch-writes every registered agent as active in one round trip. ON
+// CONFLICT clears any previous retirement — a registered agent is always
+// active after sync. Called once per SyncToTable run with the full
+// BuiltinAgents() literal.
+func (q *Queries) UpsertAgents(ctx context.Context, arg UpsertAgentsParams) error {
+	_, err := q.db.Exec(ctx, upsertAgents,
+		arg.Names,
+		arg.DisplayNames,
+		arg.Platforms,
+		arg.Descriptions,
 	)
 	return err
 }
