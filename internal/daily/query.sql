@@ -1,4 +1,4 @@
--- name: CreateItem :one
+-- name: CreateItem :batchone
 -- Insert a daily plan item, or reorder it when it is still 'planned' for the
 -- date. The ON CONFLICT guard (WHERE status = 'planned') refuses to touch a
 -- row that already reached a terminal state (done/deferred/dropped): the
@@ -6,6 +6,11 @@
 -- yields pgx.ErrNoRows. The store maps that to ErrItemResolved so re-planning
 -- cannot silently resurrect a resolved item. A fresh insert (no conflict)
 -- always returns its row, defaulting status to 'planned'.
+--
+-- :batchone (not :one) — every caller inserts a whole plan's worth of items
+-- in a loop; pgx.Batch pipelines the N executions in one round trip instead
+-- of N. Each item's ON CONFLICT/RETURNING-empty outcome stays independent
+-- per index, so the ErrItemResolved-per-item contract above is unchanged.
 INSERT INTO daily_plan_items (plan_date, todo_id, selected_by, position, reason)
 VALUES (@plan_date, @todo_id, @selected_by, @position, @reason)
 ON CONFLICT (plan_date, todo_id) DO UPDATE SET

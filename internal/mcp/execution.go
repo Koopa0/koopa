@@ -68,13 +68,13 @@ func (s *Server) resolvePlanDate(date *string) (time.Time, error) {
 }
 
 // maxPlanPosition bounds the user-supplied plan position so the int32 cast
-// in createPlanItemTx cannot overflow. Daily plans are small; this is a
+// in validatePlanItem cannot overflow. Daily plans are small; this is a
 // generous safety ceiling, not a product limit.
 const maxPlanPosition = 100_000
 
 // batchFetchTodos resolves every parseable todo_id in items in one round
 // trip, keyed by id. Items with a malformed todo_id are simply skipped here
-// — createPlanItemTx re-parses each item's id itself and surfaces that error
+// — validatePlanItem re-parses each item's id itself and surfaces that error
 // at its original per-item position, so validation-error ordering is
 // unaffected by batching the DB lookups ahead of the loop.
 func batchFetchTodos(ctx context.Context, txTodos *todo.Store, items []PlanDayItem) (map[uuid.UUID]todo.Item, error) {
@@ -95,30 +95,30 @@ func batchFetchTodos(ctx context.Context, txTodos *todo.Store, items []PlanDayIt
 	return byID, nil
 }
 
-// createPlanItemTx resolves a single PlanDayItem against todosByID (the
-// batch-fetched lookup built once by batchFetchTodos) and inserts the
-// daily_plan_items row. The caller wraps all calls in a single transaction
-// so a mid-loop failure rolls back both the new inserts AND the upstream
-// DeletePlannedByDate that opens the idempotent-replace window — without
-// that the previous plan would be silently destroyed when the second item's
-// todo is in inbox-state.
+// validatePlanItem checks a single PlanDayItem against todosByID (the
+// batch-fetched lookup built once by batchFetchTodos) and builds its
+// daily.CreateItemParams. Pure in-memory — no DB call — so on any failure
+// the caller returns without having written anything; the tx rolls back
+// cleanly (also undoing the upstream DeletePlannedByDate that opened the
+// idempotent-replace window, so a mid-validation failure never destroys the
+// previous plan).
 //
 // Index i is the caller-loop position used when the item did not
 // specify one.
-func createPlanItemTx(ctx context.Context, todosByID map[uuid.UUID]todo.Item, txDayplan *daily.Store, item PlanDayItem, i int, date time.Time, caller string) error {
+func validatePlanItem(todosByID map[uuid.UUID]todo.Item, item PlanDayItem, i int, date time.Time, caller string) (daily.CreateItemParams, error) {
 	itemID, err := uuid.Parse(item.TodoID)
 	if err != nil {
-		return fmt.Errorf("invalid todo_id at position %d: %w", i, err)
+		return daily.CreateItemParams{}, fmt.Errorf("invalid todo_id at position %d: %w", i, err)
 	}
 	t, ok := todosByID[itemID]
 	if !ok {
-		return fmt.Errorf("todo item %s not found: %w", item.TodoID, todo.ErrNotFound)
+		return daily.CreateItemParams{}, fmt.Errorf("todo item %s not found: %w", item.TodoID, todo.ErrNotFound)
 	}
 	// Only actionable items belong on a day's plan: todo (ready to start) and
 	// in_progress (continuing). inbox is unclarified; done/someday/archived/
 	// dismissed are not things you start today.
 	if t.State != todo.StateTodo && t.State != todo.StateInProgress {
-		return fmt.Errorf("todo item %s is in state %q — only todo or in_progress items can be planned (inbox must be clarified first; done/someday are not today's work)", item.TodoID, t.State)
+		return daily.CreateItemParams{}, fmt.Errorf("todo item %s is in state %q — only todo or in_progress items can be planned (inbox must be clarified first; done/someday are not today's work)", item.TodoID, t.State)
 	}
 	// Default to the caller-loop index; an explicit position (including 0) is
 	// honored. A bare int could not tell "omitted" from "explicit 0", so the
@@ -128,18 +128,39 @@ func createPlanItemTx(ctx context.Context, todosByID map[uuid.UUID]todo.Item, tx
 		pos = *item.Position
 	}
 	if pos < 0 || pos > maxPlanPosition {
-		return fmt.Errorf("todo item %s position %d out of range [0, %d]", item.TodoID, pos, maxPlanPosition)
+		return daily.CreateItemParams{}, fmt.Errorf("todo item %s position %d out of range [0, %d]", item.TodoID, pos, maxPlanPosition)
 	}
-	if _, err := txDayplan.Create(ctx, &daily.CreateItemParams{
+	return daily.CreateItemParams{
 		PlanDate:   date,
 		TodoID:     itemID,
 		SelectedBy: caller,
 		Position:   int32(pos), // #nosec G115 -- pos validated to [0, maxPlanPosition] or the loop index; fits int32
-	}); err != nil {
-		if errors.Is(err, daily.ErrItemResolved) {
-			return fmt.Errorf("todo item %s is already resolved (done/deferred/dropped) for %s and cannot be re-planned", item.TodoID, date.Format(time.DateOnly))
+	}, nil
+}
+
+// writePlanItems validates every item against todosByID, then batch-inserts
+// them via CreateAll in one round trip. Returns the first validation error
+// or the first per-item batch-write failure (in list order) — matching the
+// old per-item loop's stop-at-first-failure semantics even though the
+// batch write itself is pipelined, not sequential. Split out of planDay's
+// tx closure to keep cognitive complexity down.
+func writePlanItems(ctx context.Context, todosByID map[uuid.UUID]todo.Item, txDayplan *daily.Store, items []PlanDayItem, date time.Time, caller string) error {
+	params := make([]daily.CreateItemParams, len(items))
+	for i, item := range items {
+		p, vErr := validatePlanItem(todosByID, item, i, date, caller)
+		if vErr != nil {
+			return vErr
 		}
-		return fmt.Errorf("creating plan item for todo %s: %w", item.TodoID, err)
+		params[i] = p
+	}
+	for i, result := range txDayplan.CreateAll(ctx, params) {
+		if result.Err == nil {
+			continue
+		}
+		if errors.Is(result.Err, daily.ErrItemResolved) {
+			return fmt.Errorf("todo item %s is already resolved (done/deferred/dropped) for %s and cannot be re-planned", items[i].TodoID, date.Format(time.DateOnly))
+		}
+		return fmt.Errorf("creating plan item for todo %s: %w", items[i].TodoID, result.Err)
 	}
 	return nil
 }
@@ -214,10 +235,8 @@ func (s *Server) planDay(ctx context.Context, _ *mcp.CallToolRequest, input Plan
 		if bErr != nil {
 			return bErr
 		}
-		for i, item := range input.Items {
-			if err := createPlanItemTx(ctx, todosByID, txDayplan, item, i, date, caller); err != nil {
-				return err
-			}
+		if wErr := writePlanItems(ctx, todosByID, txDayplan, input.Items, date, caller); wErr != nil {
+			return wErr
 		}
 
 		var fErr error

@@ -209,10 +209,26 @@ func (h *Handler) PutPlan(w http.ResponseWriter, r *http.Request) {
 	}
 
 	caller := actorFromContext(r)
+	params := make([]CreateItemParams, len(req.Items))
 	for i := range req.Items {
-		if !h.insertPlanItem(w, r, txDaily, todosByID, req.Items[i], i, date, caller) {
+		p, ok := h.validatePlanItem(w, todosByID, req.Items[i], i, date, caller)
+		if !ok {
 			return
 		}
+		params[i] = p
+	}
+
+	for i, result := range txDaily.CreateAll(r.Context(), params) {
+		if result.Err == nil {
+			continue
+		}
+		if errors.Is(result.Err, ErrItemResolved) {
+			api.HandleError(w, h.logger, result.Err, planItemErrors...)
+			return
+		}
+		h.logger.Error("creating plan item", "todo_id", req.Items[i].TodoID, "error", result.Err)
+		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to create plan item")
+		return
 	}
 
 	items, ferr := txDaily.ItemsByDate(r.Context(), date)
@@ -291,43 +307,35 @@ func fetchTodosByID(ctx context.Context, s *todo.Store, ids []uuid.UUID) (map[uu
 	return byID, nil
 }
 
-// insertPlanItem validates one item (todo exists + is not inbox-state) and
-// inserts its plan row within the supplied tx-bound store. todosByID is the
-// batch-fetched lookup built once by fetchTodosByID before the loop. i is
-// the loop index, used as the position when the item omits one. On any
-// failure it writes the HTTP error and returns ok=false; the caller MUST
-// return so the tx rolls back and the previous plan is preserved.
-func (h *Handler) insertPlanItem(w http.ResponseWriter, r *http.Request, txDaily *Store, todosByID map[uuid.UUID]todo.Item, item putPlanItem, i int, date time.Time, caller string) bool {
+// validatePlanItem checks one item (todo exists + is not inbox-state) and
+// builds its CreateItemParams. todosByID is the batch-fetched lookup built
+// once by fetchTodosByID before the loop. i is the loop index, used as the
+// position when the item omits one. On any failure it writes the HTTP
+// error and returns ok=false; the caller MUST return without writing
+// anything — validation is pure in-memory, so nothing has touched the tx
+// yet and the previous plan is naturally preserved.
+func (h *Handler) validatePlanItem(w http.ResponseWriter, todosByID map[uuid.UUID]todo.Item, item putPlanItem, i int, date time.Time, caller string) (CreateItemParams, bool) {
 	t, ok := todosByID[item.TodoID]
 	if !ok {
 		api.HandleError(w, h.logger, todo.ErrNotFound, todoStoreErrors...)
-		return false
+		return CreateItemParams{}, false
 	}
 	if t.State != todo.StateTodo && t.State != todo.StateInProgress {
 		api.Error(w, http.StatusBadRequest, "BAD_REQUEST",
 			"todo "+item.TodoID.String()+" is in state "+string(t.State)+
 				" — only todo or in_progress items can be planned (clarify an inbox todo first; done/someday/archived are not today's work)")
-		return false
+		return CreateItemParams{}, false
 	}
 	pos := i
 	if item.Position != nil {
 		pos = *item.Position
 	}
-	if _, err := txDaily.Create(r.Context(), &CreateItemParams{
+	return CreateItemParams{
 		PlanDate:   date,
 		TodoID:     item.TodoID,
 		SelectedBy: caller,
 		Position:   int32(pos), // #nosec G115 -- validated to [0, maxPlanPosition] or the loop index; fits int32
-	}); err != nil {
-		if errors.Is(err, ErrItemResolved) {
-			api.HandleError(w, h.logger, err, planItemErrors...)
-			return false
-		}
-		h.logger.Error("creating plan item", "todo_id", item.TodoID, "error", err)
-		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to create plan item")
-		return false
-	}
-	return true
+	}, true
 }
 
 // displacedFrom filters removed plan items down to those whose todo_id is

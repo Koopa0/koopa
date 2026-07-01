@@ -3,12 +3,13 @@
 // store.go holds Store methods for daily_plan_items.
 //
 // Naming quirks worth knowing before adding callers:
-//   - Create upserts on (plan_date, todo_id) via sqlc's CreateItem query
-//     and returns ErrItemResolved when the existing row is already in a
-//     terminal state.
+//   - CreateAll upserts a whole plan's items in one round trip
+//     (pgx.Batch, via sqlc's CreateItem :batchone query) on
+//     (plan_date, todo_id); each item's result independently reports
+//     ErrItemResolved when that row is already in a terminal state.
 //   - ItemsByDate returns Items with denormalised todo + project
-//     fields for the list view via itemsByDateRowToItem; Create returns
-//     the bare row via rawToItem.
+//     fields for the list view via itemsByDateRowToItem; CreateAll
+//     returns the bare row via rawToItem.
 //   - DeletePlannedByDate removes only items still in 'planned' state,
 //     preserving done/deferred/dropped as historical record — the
 //     safe "re-plan today" reset.
@@ -36,24 +37,44 @@ func NewStore(dbtx db.DBTX) *Store {
 	return &Store{q: db.New(dbtx)}
 }
 
-// Create inserts a daily plan item, or reorders it when it is still 'planned'
-// for the date. It returns ErrItemResolved when a row for (plan_date, todo_id)
-// already reached a terminal state — re-planning must not resurrect it.
-func (s *Store) Create(ctx context.Context, p *CreateItemParams) (*Item, error) {
-	row, err := s.q.CreateItem(ctx, db.CreateItemParams{
-		PlanDate:   p.PlanDate,
-		TodoID:     p.TodoID,
-		SelectedBy: p.SelectedBy,
-		Position:   p.Position,
-		Reason:     p.Reason,
-	})
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, ErrItemResolved
+// CreateResult is one item's outcome from Store.CreateAll, index-aligned
+// with the input slice. Err is ErrItemResolved when that item's row already
+// reached a terminal state (re-planning must not resurrect it), or a
+// wrapped infrastructure error; Item is non-nil exactly when Err is nil.
+type CreateResult struct {
+	Item *Item
+	Err  error
+}
+
+// CreateAll inserts a whole plan's worth of items in one round trip,
+// upserting on (plan_date, todo_id): pgx.Batch pipelines the N executions
+// instead of N sequential round trips. Each item's outcome is independent —
+// one item's ErrItemResolved (its row already reached a terminal state)
+// does not affect any other item's result.
+func (s *Store) CreateAll(ctx context.Context, items []CreateItemParams) []CreateResult {
+	params := make([]db.CreateItemParams, len(items))
+	for i := range items {
+		params[i] = db.CreateItemParams{
+			PlanDate:   items[i].PlanDate,
+			TodoID:     items[i].TodoID,
+			SelectedBy: items[i].SelectedBy,
+			Position:   items[i].Position,
+			Reason:     items[i].Reason,
 		}
-		return nil, fmt.Errorf("creating daily plan item: %w", err)
 	}
-	return rawToItem(&row), nil
+	results := make([]CreateResult, len(items))
+	s.q.CreateItem(ctx, params).QueryRow(func(i int, row db.DailyPlanItem, err error) {
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				results[i] = CreateResult{Err: ErrItemResolved}
+				return
+			}
+			results[i] = CreateResult{Err: fmt.Errorf("creating daily plan item: %w", err)}
+			return
+		}
+		results[i] = CreateResult{Item: rawToItem(&row)}
+	})
+	return results
 }
 
 // ItemsByDate returns all plan items for a specific date with todo item details.

@@ -468,6 +468,70 @@ func TestIntegration_Daily_PutPlan_ResolvedItemNotResurrected(t *testing.T) {
 	}
 }
 
+// TestIntegration_Daily_PutPlan_ResolvedItemNotFirst pins the same
+// ErrItemResolved rejection with the resolved item deliberately in the
+// MIDDLE of a 3-item plan (index 1), not first or last — the one case most
+// at risk from CreateAll's pgx.Batch pipeline: a wrong index-to-result
+// correlation in the batch callback would either silently accept the
+// resolved item or blame the wrong todo_id in the response.
+func TestIntegration_Daily_PutPlan_ResolvedItemNotFirst(t *testing.T) {
+	truncate(t)
+	h := newHandler()
+
+	a := seedTodo(t, "Plan A", "todo")
+	b := seedTodo(t, "Plan B (will be resolved)", "todo")
+	c := seedTodo(t, "Plan C", "todo")
+
+	plan := map[string]any{
+		"items": []map[string]any{
+			{"todo_id": a.String()},
+			{"todo_id": b.String()},
+			{"todo_id": c.String()},
+		},
+	}
+	if rec := serve(t, h.PutPlan, putJSON(t, "/api/admin/commitment/daily-plan", plan)); rec.Code != http.StatusOK {
+		t.Fatalf("initial plan status = %d, want 200 (body=%s)", rec.Code, rec.Body.String())
+	}
+
+	if _, err := testPool.Exec(t.Context(),
+		`UPDATE daily_plan_items SET status = 'done' WHERE todo_id = $1 AND plan_date = CURRENT_DATE`, b,
+	); err != nil {
+		t.Fatalf("resolving plan item for todo B: %v", err)
+	}
+
+	rec := serve(t, h.PutPlan, putJSON(t, "/api/admin/commitment/daily-plan", plan))
+	resp := rec.Result()
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+
+	if resp.StatusCode != http.StatusConflict {
+		t.Fatalf("re-plan status = %d, want 409 for resolved item (body=%s)", resp.StatusCode, body)
+	}
+	if code := errorCode(t, body); code != "PLAN_ITEM_RESOLVED" {
+		t.Errorf("error.code = %q, want %q", code, "PLAN_ITEM_RESOLVED")
+	}
+
+	// Whole-call rollback: A and C's positions (0 and 2 from the initial
+	// plan) must be untouched by the rejected re-plan.
+	var posA, posC int32
+	if err := testPool.QueryRow(t.Context(),
+		`SELECT position FROM daily_plan_items WHERE todo_id = $1 AND plan_date = CURRENT_DATE`, a,
+	).Scan(&posA); err != nil {
+		t.Fatalf("reading todo A position: %v", err)
+	}
+	if err := testPool.QueryRow(t.Context(),
+		`SELECT position FROM daily_plan_items WHERE todo_id = $1 AND plan_date = CURRENT_DATE`, c,
+	).Scan(&posC); err != nil {
+		t.Fatalf("reading todo C position: %v", err)
+	}
+	if posA != 0 {
+		t.Errorf("todo A position after rejected re-plan = %d, want 0 (unchanged)", posA)
+	}
+	if posC != 2 {
+		t.Errorf("todo C position after rejected re-plan = %d, want 2 (unchanged)", posC)
+	}
+}
+
 // TestIntegration_Daily_PutPlan_ReplanPlannedReorder asserts that re-planning a
 // day whose items are all still 'planned' keeps working after the ON CONFLICT
 // guard was added: a reordered full list replaces the prior plan, both items

@@ -817,7 +817,7 @@ func planItemPosition(t *testing.T, todoID uuid.UUID) int32 {
 }
 
 // TestIntegration_PlanDay_PositionOutOfRangeRejected guards the position bound:
-// createPlanItemTx bounds the caller-supplied position to [0, maxPlanPosition]
+// validatePlanItem bounds the caller-supplied position to [0, maxPlanPosition]
 // (100000) so the int32 cast cannot overflow. A position above the ceiling or
 // below zero must be rejected, and because the whole plan_day write runs inside
 // a single withActorTx, the rejection rolls back the DeletePlannedByDate that
@@ -974,6 +974,59 @@ func TestIntegration_PlanDay_UnknownTodoRejected(t *testing.T) {
 	}
 	if got := countPlanItems(t, valid); got != 0 {
 		t.Errorf("co-planned valid item's plan items = %d, want 0 (unknown-todo rejection must roll back the whole call)", got)
+	}
+}
+
+// TestIntegration_PlanDay_ResolvedItemRejected pins the ErrItemResolved path
+// through the batched CreateAll write: three items are planned, the MIDDLE
+// one (index 1, deliberately not first or last) is externally resolved
+// (as if completed/deferred/dropped during the day), then re-planning the
+// same three items must reject specifically because of the resolved one —
+// not misattribute the failure to a different index — and roll back the
+// whole call. This is the one behavior most at risk from switching
+// writePlanItems's per-item DB write to a single pgx.Batch pipeline: a
+// wrong index-to-result correlation in the batch callback would either
+// silently accept the resolved item or blame the wrong item.
+func TestIntegration_PlanDay_ResolvedItemRejected(t *testing.T) {
+	s := setupServer(t)
+
+	a := seedTodoState(t, "Plan A", "todo")
+	b := seedTodoState(t, "Plan B (will be resolved)", "todo")
+	c := seedTodoState(t, "Plan C", "todo")
+
+	plan := PlanDayInput{
+		Items: []PlanDayItem{
+			{TodoID: a.String(), Position: new(0)},
+			{TodoID: b.String(), Position: new(1)},
+			{TodoID: c.String(), Position: new(2)},
+		},
+	}
+	if _, out, err := callHandlerAs(t, "claude", s.planDay, plan); err != nil || out.ItemsCreated != 3 {
+		t.Fatalf("initial plan_day: err=%v itemsCreated=%d, want 3 items", err, out.ItemsCreated)
+	}
+
+	if _, err := testPool.Exec(t.Context(),
+		`UPDATE daily_plan_items SET status = 'done' WHERE todo_id = $1`, b,
+	); err != nil {
+		t.Fatalf("resolving plan item for todo B: %v", err)
+	}
+
+	_, _, err := callHandlerAs(t, "claude", s.planDay, plan)
+	if err == nil {
+		t.Fatal("plan_day re-planned a list containing a resolved item; want rejection")
+	}
+	if !strings.Contains(err.Error(), b.String()) || !strings.Contains(err.Error(), "already resolved") {
+		t.Errorf("error = %q, want it to name todo B (%s) as already resolved", err, b)
+	}
+
+	// Whole-call rollback: A and C's positions must be untouched by the
+	// rejected re-plan (still their original values, not silently
+	// re-created before the batch hit B's conflict).
+	if got := planItemPosition(t, a); got != 0 {
+		t.Errorf("todo A position after rejected re-plan = %d, want 0 (unchanged)", got)
+	}
+	if got := planItemPosition(t, c); got != 2 {
+		t.Errorf("todo C position after rejected re-plan = %d, want 2 (unchanged)", got)
 	}
 }
 

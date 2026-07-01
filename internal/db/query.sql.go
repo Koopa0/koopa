@@ -1914,56 +1914,6 @@ func (q *Queries) CreateGoal(ctx context.Context, arg CreateGoalParams) (Goal, e
 	return i, err
 }
 
-const createItem = `-- name: CreateItem :one
-INSERT INTO daily_plan_items (plan_date, todo_id, selected_by, position, reason)
-VALUES ($1, $2, $3, $4, $5)
-ON CONFLICT (plan_date, todo_id) DO UPDATE SET
-    selected_by = EXCLUDED.selected_by,
-    position = EXCLUDED.position,
-    reason = EXCLUDED.reason,
-    updated_at = now()
-WHERE daily_plan_items.status = 'planned'
-RETURNING id, plan_date, todo_id, selected_by, position, reason, status, created_at, updated_at
-`
-
-type CreateItemParams struct {
-	PlanDate   time.Time `json:"plan_date"`
-	TodoID     uuid.UUID `json:"todo_id"`
-	SelectedBy string    `json:"selected_by"`
-	Position   int32     `json:"position"`
-	Reason     *string   `json:"reason"`
-}
-
-// Insert a daily plan item, or reorder it when it is still 'planned' for the
-// date. The ON CONFLICT guard (WHERE status = 'planned') refuses to touch a
-// row that already reached a terminal state (done/deferred/dropped): the
-// conflicting UPDATE matches no row, so RETURNING is empty and the driver
-// yields pgx.ErrNoRows. The store maps that to ErrItemResolved so re-planning
-// cannot silently resurrect a resolved item. A fresh insert (no conflict)
-// always returns its row, defaulting status to 'planned'.
-func (q *Queries) CreateItem(ctx context.Context, arg CreateItemParams) (DailyPlanItem, error) {
-	row := q.db.QueryRow(ctx, createItem,
-		arg.PlanDate,
-		arg.TodoID,
-		arg.SelectedBy,
-		arg.Position,
-		arg.Reason,
-	)
-	var i DailyPlanItem
-	err := row.Scan(
-		&i.ID,
-		&i.PlanDate,
-		&i.TodoID,
-		&i.SelectedBy,
-		&i.Position,
-		&i.Reason,
-		&i.Status,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
 const createMilestone = `-- name: CreateMilestone :one
 INSERT INTO milestones (goal_id, title, description, target_deadline, position)
 VALUES ($1, $2, $3, $4,
