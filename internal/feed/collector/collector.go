@@ -5,7 +5,6 @@ package collector
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -242,9 +241,16 @@ func (c *Collector) handleFeedResponse(ctx context.Context, resp *http.Response,
 	return parsed, nil
 }
 
-// processItems deduplicates and stores new feed items.
+// processItems filters items to real candidates (non-empty link, not
+// filter-skipped, hashable URL) and batch-inserts them in one round trip.
+// Deduplication against already-collected items happens inside that single
+// INSERT (ON CONFLICT (url_hash) DO NOTHING) rather than a per-item
+// SELECT-then-INSERT. A batch-write failure drops the whole feed's new
+// items for this cycle (batch-or-nothing, unlike the old per-item loop
+// which kept whatever it had already inserted) — nothing is lost, since
+// none of them were persisted; the next scheduled fetch retries them all.
 func (c *Collector) processItems(ctx context.Context, items []*gofeed.Item, f *feed.Feed, logger *slog.Logger) []uuid.UUID {
-	var newIDs []uuid.UUID
+	candidates := make([]entry.NewItem, 0, len(items))
 	for _, item := range items {
 		if item.Link == "" {
 			continue
@@ -255,46 +261,30 @@ func (c *Collector) processItems(ctx context.Context, items []*gofeed.Item, f *f
 			continue
 		}
 
-		id := c.tryCreateItem(ctx, item, f, logger)
-		if id != nil {
-			newIDs = append(newIDs, *id)
+		urlHash, err := koopaurl.Hash(item.Link)
+		if err != nil {
+			logger.Warn("skipping item with unhashable url", "url", item.Link, "error", err)
+			continue
 		}
+
+		candidates = append(candidates, entry.NewItem{
+			SourceURL:       item.Link,
+			Title:           item.Title,
+			OriginalContent: truncateUTF8(itemContent(item), maxContentLen),
+			URLHash:         urlHash,
+			PublishedAt:     item.PublishedParsed,
+		})
+	}
+	if len(candidates) == 0 {
+		return nil
+	}
+
+	newIDs, err := c.writer.CreateNewItems(ctx, &f.ID, candidates)
+	if err != nil {
+		logger.Error("batch creating collected data", "feed_id", f.ID, "candidates", len(candidates), "error", err)
+		return nil
 	}
 	return newIDs
-}
-
-// tryCreateItem attempts to create a single collected item, returning nil if skipped.
-func (c *Collector) tryCreateItem(ctx context.Context, item *gofeed.Item, f *feed.Feed, logger *slog.Logger) *uuid.UUID {
-	urlHash, err := koopaurl.Hash(item.Link)
-	if err != nil {
-		logger.Warn("skipping item with unhashable url", "url", item.Link, "error", err)
-		return nil
-	}
-
-	if _, err := c.writer.ItemByURLHash(ctx, urlHash); err == nil {
-		return nil // already exists
-	} else if !errors.Is(err, entry.ErrNotFound) {
-		logger.Error("checking url hash dedup", "url", item.Link, "error", err)
-		return nil
-	}
-
-	content := truncateUTF8(itemContent(item), maxContentLen)
-
-	cd, err := c.writer.CreateItem(ctx, &entry.CreateParams{
-		SourceURL:       item.Link,
-		Title:           item.Title,
-		OriginalContent: content,
-		URLHash:         urlHash,
-		FeedID:          &f.ID,
-		PublishedAt:     item.PublishedParsed,
-	})
-	if err != nil {
-		if !errors.Is(err, entry.ErrConflict) {
-			logger.Error("creating collected data", "url", item.Link, "error", err)
-		}
-		return nil
-	}
-	return &cd.ID
 }
 
 // itemContent extracts the best available content from a feed item.

@@ -103,54 +103,45 @@ func (s *Store) Ignore(ctx context.Context, id uuid.UUID) error {
 	return nil
 }
 
-// CreateItem inserts a new collected item.
-func (s *Store) CreateItem(ctx context.Context, p *CreateParams) (*Item, error) {
-	r, err := s.q.CreateFeedEntry(ctx, db.CreateFeedEntryParams{
-		SourceUrl:       p.SourceURL,
-		Title:           p.Title,
-		OriginalContent: p.OriginalContent,
-		UrlHash:         p.URLHash,
-		FeedID:          p.FeedID,
-		PublishedAt:     p.PublishedAt,
+// CreateNewItems batch-inserts candidate items for one feed in a single
+// round trip, deduplicating against existing rows via ON CONFLICT (url_hash)
+// DO NOTHING. Returns only the ids that were actually inserted — conflicted
+// (already-collected) items are silently absent from the result, not
+// errored — so the caller does not need a separate pre-check per item.
+// feedID applies to every item; empty items is a no-op (nil, nil).
+func (s *Store) CreateNewItems(ctx context.Context, feedID *uuid.UUID, items []NewItem) ([]uuid.UUID, error) {
+	if len(items) == 0 {
+		return nil, nil
+	}
+	sourceURLs := make([]string, len(items))
+	titles := make([]string, len(items))
+	originalContents := make([]string, len(items))
+	urlHashes := make([]string, len(items))
+	publishedAts := make([]time.Time, len(items))
+	hasPublished := make([]bool, len(items))
+	for i := range items {
+		sourceURLs[i] = items[i].SourceURL
+		titles[i] = items[i].Title
+		originalContents[i] = items[i].OriginalContent
+		urlHashes[i] = items[i].URLHash
+		if items[i].PublishedAt != nil {
+			publishedAts[i] = *items[i].PublishedAt
+			hasPublished[i] = true
+		}
+	}
+	ids, err := s.q.CreateFeedEntries(ctx, db.CreateFeedEntriesParams{
+		FeedID:           feedID,
+		SourceUrls:       sourceURLs,
+		Titles:           titles,
+		OriginalContents: originalContents,
+		UrlHashes:        urlHashes,
+		PublishedAts:     publishedAts,
+		HasPublished:     hasPublished,
 	})
 	if err != nil {
-		if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok && pgErr.Code == pgerrcode.UniqueViolation {
-			return nil, ErrConflict
-		}
-		return nil, fmt.Errorf("creating collected data: %w", err)
+		return nil, fmt.Errorf("batch creating collected data: %w", err)
 	}
-	d := Item{
-		ID:               r.ID,
-		SourceURL:        r.SourceUrl,
-		Title:            r.Title,
-		OriginalContent:  &r.OriginalContent,
-		Status:           Status(r.Status),
-		CuratedContentID: r.CuratedContentID,
-		CollectedAt:      r.CollectedAt,
-		PublishedAt:      r.PublishedAt,
-		URLHash:          r.UrlHash,
-		FeedID:           r.FeedID,
-	}
-	return &d, nil
-}
-
-// ItemByURLHash returns a single collected item by URL hash.
-func (s *Store) ItemByURLHash(ctx context.Context, urlHash string) (*Item, error) {
-	r, err := s.q.FeedEntryByURLHash(ctx, urlHash)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, ErrNotFound
-		}
-		return nil, fmt.Errorf("querying collected data by url hash %s: %w", urlHash, err)
-	}
-	d := rowToItem(collectedRow{
-		ID: r.ID, SourceUrl: r.SourceUrl, Title: r.Title, OriginalContent: r.OriginalContent,
-		Status:           r.Status,
-		CuratedContentID: r.CuratedContentID, CollectedAt: r.CollectedAt, UrlHash: r.UrlHash,
-		FeedID:      r.FeedID,
-		PublishedAt: r.PublishedAt, FeedName: r.FeedName,
-	})
-	return &d, nil
+	return ids, nil
 }
 
 // HighPriorityRecent returns unread items from high-priority feeds since the given time.

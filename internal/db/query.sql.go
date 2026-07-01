@@ -1805,46 +1805,70 @@ func (q *Queries) CreateFeed(ctx context.Context, arg CreateFeedParams) (Feed, e
 	return i, err
 }
 
-const createFeedEntry = `-- name: CreateFeedEntry :one
+const createFeedEntries = `-- name: CreateFeedEntries :many
 INSERT INTO feed_entries (source_url, title, original_content, url_hash, feed_id, published_at)
-VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING id, source_url, title, original_content,
-          status, curated_content_id, collected_at,
-          url_hash, feed_id, published_at
+SELECT x.source_url, x.title, x.original_content, x.url_hash, $1::uuid,
+       CASE WHEN x.has_published THEN x.published_at ELSE NULL END
+FROM ROWS FROM (
+    unnest($2::text[]),
+    unnest($3::text[]),
+    unnest($4::text[]),
+    unnest($5::text[]),
+    unnest($6::timestamptz[]),
+    unnest($7::bool[])
+) AS x(source_url, title, original_content, url_hash, published_at, has_published)
+ON CONFLICT (url_hash) DO NOTHING
+RETURNING id
 `
 
-type CreateFeedEntryParams struct {
-	SourceUrl       string     `json:"source_url"`
-	Title           string     `json:"title"`
-	OriginalContent string     `json:"original_content"`
-	UrlHash         string     `json:"url_hash"`
-	FeedID          *uuid.UUID `json:"feed_id"`
-	PublishedAt     *time.Time `json:"published_at"`
+type CreateFeedEntriesParams struct {
+	FeedID           *uuid.UUID  `json:"feed_id"`
+	SourceUrls       []string    `json:"source_urls"`
+	Titles           []string    `json:"titles"`
+	OriginalContents []string    `json:"original_contents"`
+	UrlHashes        []string    `json:"url_hashes"`
+	PublishedAts     []time.Time `json:"published_ats"`
+	HasPublished     []bool      `json:"has_published"`
 }
 
-func (q *Queries) CreateFeedEntry(ctx context.Context, arg CreateFeedEntryParams) (FeedEntry, error) {
-	row := q.db.QueryRow(ctx, createFeedEntry,
-		arg.SourceUrl,
-		arg.Title,
-		arg.OriginalContent,
-		arg.UrlHash,
+// Batch-inserts new feed entries for one feed in a single round trip.
+// ON CONFLICT (url_hash) DO NOTHING deduplicates against existing rows;
+// RETURNING yields only the ids that were actually inserted — conflicted
+// (already-collected) rows are silently absent — replacing the old
+// per-item dedup-SELECT-then-INSERT pattern with one statement.
+//
+// published_at is per-item optional (a feed item may omit it), but a
+// Postgres array parameter can't carry a NULL element as a plain non-
+// nullable timestamptz[] without an sqlc type override affecting every
+// other nullable timestamptz column project-wide. @has_published sidesteps
+// that: the caller sends a real (dummy) timestamp plus a same-index
+// boolean, and the CASE converts it to a true SQL NULL here.
+func (q *Queries) CreateFeedEntries(ctx context.Context, arg CreateFeedEntriesParams) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, createFeedEntries,
 		arg.FeedID,
-		arg.PublishedAt,
+		arg.SourceUrls,
+		arg.Titles,
+		arg.OriginalContents,
+		arg.UrlHashes,
+		arg.PublishedAts,
+		arg.HasPublished,
 	)
-	var i FeedEntry
-	err := row.Scan(
-		&i.ID,
-		&i.SourceUrl,
-		&i.Title,
-		&i.OriginalContent,
-		&i.Status,
-		&i.CuratedContentID,
-		&i.CollectedAt,
-		&i.UrlHash,
-		&i.FeedID,
-		&i.PublishedAt,
-	)
-	return i, err
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []uuid.UUID{}
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const createGoal = `-- name: CreateGoal :one
@@ -2758,49 +2782,6 @@ func (q *Queries) FeedEntriesList(ctx context.Context, arg FeedEntriesListParams
 		return nil, err
 	}
 	return items, nil
-}
-
-const feedEntryByURLHash = `-- name: FeedEntryByURLHash :one
-SELECT cd.id, cd.source_url, cd.title, cd.original_content,
-       cd.status, cd.curated_content_id, cd.collected_at,
-       cd.url_hash, cd.feed_id, cd.published_at,
-       COALESCE(f.name, '') AS feed_name
-FROM feed_entries cd
-LEFT JOIN feeds f ON cd.feed_id = f.id
-WHERE cd.url_hash = $1
-`
-
-type FeedEntryByURLHashRow struct {
-	ID               uuid.UUID       `json:"id"`
-	SourceUrl        string          `json:"source_url"`
-	Title            string          `json:"title"`
-	OriginalContent  string          `json:"original_content"`
-	Status           FeedEntryStatus `json:"status"`
-	CuratedContentID *uuid.UUID      `json:"curated_content_id"`
-	CollectedAt      time.Time       `json:"collected_at"`
-	UrlHash          string          `json:"url_hash"`
-	FeedID           *uuid.UUID      `json:"feed_id"`
-	PublishedAt      *time.Time      `json:"published_at"`
-	FeedName         string          `json:"feed_name"`
-}
-
-func (q *Queries) FeedEntryByURLHash(ctx context.Context, urlHash string) (FeedEntryByURLHashRow, error) {
-	row := q.db.QueryRow(ctx, feedEntryByURLHash, urlHash)
-	var i FeedEntryByURLHashRow
-	err := row.Scan(
-		&i.ID,
-		&i.SourceUrl,
-		&i.Title,
-		&i.OriginalContent,
-		&i.Status,
-		&i.CuratedContentID,
-		&i.CollectedAt,
-		&i.UrlHash,
-		&i.FeedID,
-		&i.PublishedAt,
-		&i.FeedName,
-	)
-	return i, err
 }
 
 const feeds = `-- name: Feeds :many

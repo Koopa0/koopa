@@ -30,14 +30,15 @@ type Item struct {
 	FeedID           *uuid.UUID `json:"feed_id,omitempty"`
 }
 
-// CreateParams are the parameters for creating collected data.
-type CreateParams struct {
-	SourceURL       string     `json:"source_url"`
-	Title           string     `json:"title"`
-	OriginalContent string     `json:"original_content"`
-	URLHash         string     `json:"url_hash"`
-	FeedID          *uuid.UUID `json:"feed_id,omitempty"`
-	PublishedAt     *time.Time `json:"published_at,omitempty"`
+// NewItem is one candidate row for Store.CreateNewItems. FeedID is not a
+// per-item field — CreateNewItems takes a single feedID applied to the
+// whole batch, since a collector run always collects for one feed.
+type NewItem struct {
+	SourceURL       string
+	Title           string
+	OriginalContent string
+	URLHash         string
+	PublishedAt     *time.Time
 }
 
 // Filter holds collected data listing parameters.
