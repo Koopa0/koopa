@@ -308,6 +308,49 @@ func TestIntegration_Daily_PutPlan_NonActionableRejected(t *testing.T) {
 	}
 }
 
+// TestIntegration_Daily_PutPlan_UnknownTodoRejected asserts that planning a
+// todo_id with no matching row is rejected with 400 TODO_NOT_FOUND, and that
+// a co-planned, otherwise-valid todo in the same request is not planned
+// either — the batch todo lookup that backs this check (fetchTodosByID) must
+// still fail the whole write atomically for an id absent from its result,
+// exactly as the old per-item lookup did.
+func TestIntegration_Daily_PutPlan_UnknownTodoRejected(t *testing.T) {
+	truncate(t)
+	h := newHandler()
+
+	valid := seedTodo(t, "Still open", "todo")
+	missing := uuid.New()
+
+	req := putJSON(t, "/api/admin/commitment/daily-plan", map[string]any{
+		"items": []map[string]any{
+			{"todo_id": valid.String()},
+			{"todo_id": missing.String()},
+		},
+	})
+	rec := serve(t, h.PutPlan, req)
+
+	resp := rec.Result()
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 for unknown todo_id (body=%s)", resp.StatusCode, body)
+	}
+	if code := errorCode(t, body); code != "TODO_NOT_FOUND" {
+		t.Errorf("error.code = %q, want %q", code, "TODO_NOT_FOUND")
+	}
+
+	var count int
+	if err := testPool.QueryRow(t.Context(),
+		`SELECT COUNT(*) FROM daily_plan_items WHERE plan_date = CURRENT_DATE`,
+	).Scan(&count); err != nil {
+		t.Fatalf("counting plan rows: %v", err)
+	}
+	if count != 0 {
+		t.Errorf("plan row count = %d, want 0 (unknown-todo rejection must roll back the co-planned valid item too)", count)
+	}
+}
+
 // TestIntegration_Daily_PutPlan_PositionOutOfRange asserts an out-of-bounds
 // position is rejected with 400 before any write.
 func TestIntegration_Daily_PutPlan_PositionOutOfRange(t *testing.T) {

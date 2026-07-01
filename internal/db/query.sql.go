@@ -6357,6 +6357,54 @@ func (q *Queries) TodoItems(ctx context.Context) ([]Todo, error) {
 	return items, nil
 }
 
+const todoItemsByIDs = `-- name: TodoItemsByIDs :many
+SELECT id, title, state, due, project_id,
+       completed_at, energy, priority, recur_interval, recur_unit, recur_weekdays, last_completed_on,
+       description, created_by, created_at, updated_at
+FROM todos WHERE id = ANY($1::uuid[])
+`
+
+// Batch lookup of todo items by ID, for callers that need to validate a
+// caller-supplied set of ids in one round trip instead of one query per id.
+// Missing ids are simply absent from the result — callers detect them by
+// diffing the requested ids against the returned rows.
+func (q *Queries) TodoItemsByIDs(ctx context.Context, ids []uuid.UUID) ([]Todo, error) {
+	rows, err := q.db.Query(ctx, todoItemsByIDs, ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Todo{}
+	for rows.Next() {
+		var i Todo
+		if err := rows.Scan(
+			&i.ID,
+			&i.Title,
+			&i.State,
+			&i.Due,
+			&i.ProjectID,
+			&i.CompletedAt,
+			&i.Energy,
+			&i.Priority,
+			&i.RecurInterval,
+			&i.RecurUnit,
+			&i.RecurWeekdays,
+			&i.LastCompletedOn,
+			&i.Description,
+			&i.CreatedBy,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const todoItemsByProjectGrouped = `-- name: TodoItemsByProjectGrouped :many
 SELECT t.id, t.title, t.state, t.due, t.energy, t.priority,
        t.created_at, t.updated_at

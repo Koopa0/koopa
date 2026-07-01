@@ -139,6 +139,21 @@ func (s *Store) ItemByID(ctx context.Context, id uuid.UUID) (*Item, error) {
 	return &t, nil
 }
 
+// ItemsByIDs returns the todo items matching ids, in one round trip. Missing
+// ids are simply absent from the result — the caller diffs the requested ids
+// against the returned items to detect which ones don't exist.
+func (s *Store) ItemsByIDs(ctx context.Context, ids []uuid.UUID) ([]Item, error) {
+	rows, err := s.q.TodoItemsByIDs(ctx, ids)
+	if err != nil {
+		return nil, fmt.Errorf("querying todo items by id: %w", err)
+	}
+	items := make([]Item, len(rows))
+	for i := range rows {
+		items[i] = rowToItem(&rows[i])
+	}
+	return items, nil
+}
+
 // TodosByCreator returns the todos created by createdBy, newest first. It
 // backs the list_todos MCP readback loop: an agent reads the disposition
 // (state) of the todos it created. createdBy is the resolved caller

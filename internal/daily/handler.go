@@ -6,7 +6,9 @@
 package daily
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"time"
@@ -195,9 +197,20 @@ func (h *Handler) PutPlan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	ids := make([]uuid.UUID, len(req.Items))
+	for i := range req.Items {
+		ids[i] = req.Items[i].TodoID
+	}
+	todosByID, terr := fetchTodosByID(r.Context(), txTodos, ids)
+	if terr != nil {
+		h.logger.Error("fetching planned todos", "error", terr)
+		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to read todos")
+		return
+	}
+
 	caller := actorFromContext(r)
 	for i := range req.Items {
-		if !h.insertPlanItem(w, r, txDaily, txTodos, req.Items[i], i, date, caller) {
+		if !h.insertPlanItem(w, r, txDaily, todosByID, req.Items[i], i, date, caller) {
 			return
 		}
 	}
@@ -257,15 +270,37 @@ func (h *Handler) parsePlanWriteDate(w http.ResponseWriter, raw *string) (time.T
 	return parsed, true
 }
 
-// insertPlanItem validates one item (todo exists + is not inbox-state) and
-// inserts its plan row within the supplied tx-bound stores. i is the loop
-// index, used as the position when the item omits one. On any failure it
-// writes the HTTP error and returns ok=false; the caller MUST return so the
-// tx rolls back and the previous plan is preserved.
-func (h *Handler) insertPlanItem(w http.ResponseWriter, r *http.Request, txDaily *Store, txTodos *todo.Store, item putPlanItem, i int, date time.Time, caller string) bool {
-	t, err := txTodos.ItemByID(r.Context(), item.TodoID)
+// fetchTodosByID resolves every planned todo_id in one round trip, keyed by
+// id, so insertPlanItem can validate each item without a per-item query. This
+// snapshot is taken once before the insert loop, so a later item's read and
+// its own insert are further apart in time than a fresh per-item read would
+// be — under Read Committed with no row lock, a concurrent state UPDATE to a
+// not-yet-inserted item in this narrow window would go unnoticed (a DELETE
+// still surfaces as an FK violation on insert either way). Acceptable for
+// this single-operator admin flow; revisit with FOR UPDATE if this handler
+// ever serves concurrent writers.
+func fetchTodosByID(ctx context.Context, s *todo.Store, ids []uuid.UUID) (map[uuid.UUID]todo.Item, error) {
+	items, err := s.ItemsByIDs(ctx, ids)
 	if err != nil {
-		api.HandleError(w, h.logger, err, todoStoreErrors...)
+		return nil, fmt.Errorf("fetching todos by id: %w", err)
+	}
+	byID := make(map[uuid.UUID]todo.Item, len(items))
+	for i := range items {
+		byID[items[i].ID] = items[i]
+	}
+	return byID, nil
+}
+
+// insertPlanItem validates one item (todo exists + is not inbox-state) and
+// inserts its plan row within the supplied tx-bound store. todosByID is the
+// batch-fetched lookup built once by fetchTodosByID before the loop. i is
+// the loop index, used as the position when the item omits one. On any
+// failure it writes the HTTP error and returns ok=false; the caller MUST
+// return so the tx rolls back and the previous plan is preserved.
+func (h *Handler) insertPlanItem(w http.ResponseWriter, r *http.Request, txDaily *Store, todosByID map[uuid.UUID]todo.Item, item putPlanItem, i int, date time.Time, caller string) bool {
+	t, ok := todosByID[item.TodoID]
+	if !ok {
+		api.HandleError(w, h.logger, todo.ErrNotFound, todoStoreErrors...)
 		return false
 	}
 	if t.State != todo.StateTodo && t.State != todo.StateInProgress {

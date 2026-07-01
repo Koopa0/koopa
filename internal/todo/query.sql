@@ -97,6 +97,16 @@ SELECT id, title, state, due, project_id,
        description, created_by, created_at, updated_at
 FROM todos WHERE id = @id;
 
+-- name: TodoItemsByIDs :many
+-- Batch lookup of todo items by ID, for callers that need to validate a
+-- caller-supplied set of ids in one round trip instead of one query per id.
+-- Missing ids are simply absent from the result — callers detect them by
+-- diffing the requested ids against the returned rows.
+SELECT id, title, state, due, project_id,
+       completed_at, energy, priority, recur_interval, recur_unit, recur_weekdays, last_completed_on,
+       description, created_by, created_at, updated_at
+FROM todos WHERE id = ANY(@ids::uuid[]);
+
 -- name: TodosByCreator :many
 -- List todos created by a given agent, newest first. Powers the list_todos
 -- MCP readback loop: an agent reads the disposition of the todos it created.
