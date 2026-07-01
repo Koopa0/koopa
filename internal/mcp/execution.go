@@ -72,23 +72,47 @@ func (s *Server) resolvePlanDate(date *string) (time.Time, error) {
 // generous safety ceiling, not a product limit.
 const maxPlanPosition = 100_000
 
-// createPlanItemTx resolves a single PlanDayItem against tx-bound stores
-// and inserts the daily_plan_items row. The caller wraps all calls in a
-// single transaction so a mid-loop failure rolls back both the new
-// inserts AND the upstream DeletePlannedByDate that opens the
-// idempotent-replace window — without that the previous plan would be
-// silently destroyed when the second item's todo is in inbox-state.
+// batchFetchTodos resolves every parseable todo_id in items in one round
+// trip, keyed by id. Items with a malformed todo_id are simply skipped here
+// — createPlanItemTx re-parses each item's id itself and surfaces that error
+// at its original per-item position, so validation-error ordering is
+// unaffected by batching the DB lookups ahead of the loop.
+func batchFetchTodos(ctx context.Context, txTodos *todo.Store, items []PlanDayItem) (map[uuid.UUID]todo.Item, error) {
+	ids := make([]uuid.UUID, 0, len(items))
+	for _, item := range items {
+		if id, err := uuid.Parse(item.TodoID); err == nil {
+			ids = append(ids, id)
+		}
+	}
+	fetched, err := txTodos.ItemsByIDs(ctx, ids)
+	if err != nil {
+		return nil, fmt.Errorf("fetching todos by id: %w", err)
+	}
+	byID := make(map[uuid.UUID]todo.Item, len(fetched))
+	for i := range fetched {
+		byID[fetched[i].ID] = fetched[i]
+	}
+	return byID, nil
+}
+
+// createPlanItemTx resolves a single PlanDayItem against todosByID (the
+// batch-fetched lookup built once by batchFetchTodos) and inserts the
+// daily_plan_items row. The caller wraps all calls in a single transaction
+// so a mid-loop failure rolls back both the new inserts AND the upstream
+// DeletePlannedByDate that opens the idempotent-replace window — without
+// that the previous plan would be silently destroyed when the second item's
+// todo is in inbox-state.
 //
 // Index i is the caller-loop position used when the item did not
 // specify one.
-func createPlanItemTx(ctx context.Context, txTodos *todo.Store, txDayplan *daily.Store, item PlanDayItem, i int, date time.Time, caller string) error {
+func createPlanItemTx(ctx context.Context, todosByID map[uuid.UUID]todo.Item, txDayplan *daily.Store, item PlanDayItem, i int, date time.Time, caller string) error {
 	itemID, err := uuid.Parse(item.TodoID)
 	if err != nil {
 		return fmt.Errorf("invalid todo_id at position %d: %w", i, err)
 	}
-	t, err := txTodos.ItemByID(ctx, itemID)
-	if err != nil {
-		return fmt.Errorf("todo item %s not found: %w", item.TodoID, err)
+	t, ok := todosByID[itemID]
+	if !ok {
+		return fmt.Errorf("todo item %s not found: %w", item.TodoID, todo.ErrNotFound)
 	}
 	// Only actionable items belong on a day's plan: todo (ready to start) and
 	// in_progress (continuing). inbox is unclarified; done/someday/archived/
@@ -186,8 +210,12 @@ func (s *Server) planDay(ctx context.Context, _ *mcp.CallToolRequest, input Plan
 			return fmt.Errorf("clearing existing plan: %w", dErr)
 		}
 
+		todosByID, bErr := batchFetchTodos(ctx, txTodos, input.Items)
+		if bErr != nil {
+			return bErr
+		}
 		for i, item := range input.Items {
-			if err := createPlanItemTx(ctx, txTodos, txDayplan, item, i, date, caller); err != nil {
+			if err := createPlanItemTx(ctx, todosByID, txDayplan, item, i, date, caller); err != nil {
 				return err
 			}
 		}

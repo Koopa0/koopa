@@ -891,6 +891,35 @@ func TestIntegration_PlanDay_StateGate(t *testing.T) {
 	}
 }
 
+// TestIntegration_PlanDay_UnknownTodoRejected asserts that planning a
+// well-formed but nonexistent todo_id is rejected, and that a co-planned,
+// otherwise-valid todo in the same call is not planned either — the batch
+// todo lookup that backs this check (batchFetchTodos) must still fail the
+// whole write atomically for an id absent from its result, exactly as the
+// old per-item ItemByID lookup did.
+func TestIntegration_PlanDay_UnknownTodoRejected(t *testing.T) {
+	s := setupServer(t)
+
+	valid := seedTodoState(t, "Still open", "todo")
+	missing := uuid.New()
+
+	_, _, err := callHandlerAs(t, "claude", s.planDay, PlanDayInput{
+		Items: []PlanDayItem{
+			{TodoID: valid.String(), Position: new(0)},
+			{TodoID: missing.String(), Position: new(1)},
+		},
+	})
+	if err == nil {
+		t.Fatal("plan_day accepted an unknown todo_id; want rejection")
+	}
+	if !strings.Contains(err.Error(), "not found") {
+		t.Errorf("error = %q, want it to say the todo was not found", err)
+	}
+	if got := countPlanItems(t, valid); got != 0 {
+		t.Errorf("co-planned valid item's plan items = %d, want 0 (unknown-todo rejection must roll back the whole call)", got)
+	}
+}
+
 func deleteProposedAreas(t *testing.T) {
 	t.Helper()
 	if _, err := testPool.Exec(context.Background(),
