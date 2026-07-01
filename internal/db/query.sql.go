@@ -407,21 +407,6 @@ func (q *Queries) ActiveGoalsAdvancedInWindow(ctx context.Context, arg ActiveGoa
 	return items, nil
 }
 
-const addContentTopic = `-- name: AddContentTopic :exec
-INSERT INTO content_topics (content_id, topic_id) VALUES ($1, $2)
-ON CONFLICT DO NOTHING
-`
-
-type AddContentTopicParams struct {
-	ContentID uuid.UUID `json:"content_id"`
-	TopicID   uuid.UUID `json:"topic_id"`
-}
-
-func (q *Queries) AddContentTopic(ctx context.Context, arg AddContentTopicParams) error {
-	_, err := q.db.Exec(ctx, addContentTopic, arg.ContentID, arg.TopicID)
-	return err
-}
-
 const allPublishedSlugs = `-- name: AllPublishedSlugs :many
 SELECT slug, type, updated_at
 FROM contents
@@ -3351,6 +3336,27 @@ func (q *Queries) IncrementFeedFailure(ctx context.Context, arg IncrementFeedFai
 	var consecutive_failures int32
 	err := row.Scan(&consecutive_failures)
 	return consecutive_failures, err
+}
+
+const insertContentTopics = `-- name: InsertContentTopics :exec
+INSERT INTO content_topics (content_id, topic_id)
+SELECT $1::uuid, UNNEST($2::uuid[])
+ON CONFLICT DO NOTHING
+`
+
+type InsertContentTopicsParams struct {
+	ContentID uuid.UUID   `json:"content_id"`
+	TopicIds  []uuid.UUID `json:"topic_ids"`
+}
+
+// Bulk-insert content↔topic associations. Caller passes a uuid[] of topic
+// ids that all belong to the same content row. Runs inside the caller's
+// tx so partial writes roll back with the content insert/update. ON
+// CONFLICT DO NOTHING absorbs caller-side duplicates (same topic_id sent
+// twice) without leaking 23505 — idempotent per (content_id, topic_id) pair.
+func (q *Queries) InsertContentTopics(ctx context.Context, arg InsertContentTopicsParams) error {
+	_, err := q.db.Exec(ctx, insertContentTopics, arg.ContentID, arg.TopicIds)
+	return err
 }
 
 const insertCrawlRun = `-- name: InsertCrawlRun :exec

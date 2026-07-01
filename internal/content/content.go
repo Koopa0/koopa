@@ -668,12 +668,12 @@ func (s *Store) CreateContent(ctx context.Context, p *CreateParams) (*Content, e
 		return nil, mapWriteError(err, p.Slug, preResolvedID, "creating content")
 	}
 
-	for _, topicID := range p.TopicIDs {
-		if topicErr := s.q.AddContentTopic(ctx, db.AddContentTopicParams{
+	if len(p.TopicIDs) > 0 {
+		if topicErr := s.q.InsertContentTopics(ctx, db.InsertContentTopicsParams{
 			ContentID: r.ID,
-			TopicID:   topicID,
+			TopicIds:  p.TopicIDs,
 		}); topicErr != nil {
-			return nil, fmt.Errorf("adding content topic: %w", topicErr)
+			return nil, fmt.Errorf("adding content topics: %w", topicErr)
 		}
 	}
 
@@ -758,16 +758,8 @@ func (s *Store) UpdateContent(ctx context.Context, id uuid.UUID, p *UpdateParams
 	}
 
 	if p.TopicIDs != nil {
-		if deleteErr := s.q.DeleteContentTopics(ctx, id); deleteErr != nil {
-			return nil, fmt.Errorf("clearing content topics: %w", deleteErr)
-		}
-		for _, topicID := range p.TopicIDs {
-			if topicErr := s.q.AddContentTopic(ctx, db.AddContentTopicParams{
-				ContentID: id,
-				TopicID:   topicID,
-			}); topicErr != nil {
-				return nil, fmt.Errorf("adding content topic: %w", topicErr)
-			}
+		if err := s.replaceTopics(ctx, id, p.TopicIDs); err != nil {
+			return nil, err
 		}
 	}
 
@@ -792,6 +784,25 @@ func (s *Store) UpdateContent(ctx context.Context, id uuid.UUID, p *UpdateParams
 	c.Topics = topics
 
 	return &c, nil
+}
+
+// replaceTopics clears id's existing topic associations and re-inserts
+// topicIDs (if non-empty) in one batch call — the DELETE-then-batch-INSERT
+// UpdateContent uses to fully swap a content row's topic set.
+func (s *Store) replaceTopics(ctx context.Context, id uuid.UUID, topicIDs []uuid.UUID) error {
+	if err := s.q.DeleteContentTopics(ctx, id); err != nil {
+		return fmt.Errorf("clearing content topics: %w", err)
+	}
+	if len(topicIDs) == 0 {
+		return nil
+	}
+	if err := s.q.InsertContentTopics(ctx, db.InsertContentTopicsParams{
+		ContentID: id,
+		TopicIds:  topicIDs,
+	}); err != nil {
+		return fmt.Errorf("adding content topics: %w", err)
+	}
+	return nil
 }
 
 func (s *Store) DeleteContent(ctx context.Context, id uuid.UUID) error {

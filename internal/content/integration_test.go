@@ -196,6 +196,55 @@ func TestStore_CreateContent_and_Content(t *testing.T) {
 	}
 }
 
+// TestStore_CreateContent_MultipleTopics exercises the batch topic-insert
+// path (InsertContentTopics, UNNEST-based) with more than one topic — the
+// existing single-topic tests never call it with a real array, so a bug
+// where only the first element of a multi-topic slice were inserted (or
+// a length-mismatch edge case) would not otherwise be caught.
+func TestStore_CreateContent_MultipleTopics(t *testing.T) {
+	s := setup(t)
+	ctx := t.Context()
+
+	tp1 := seedTopic(t, testPool, "go", "Go")
+	tp2 := seedTopic(t, testPool, "rust", "Rust")
+	tp3 := seedTopic(t, testPool, "postgres", "PostgreSQL")
+
+	created := createContentTx(t, ctx, &CreateParams{
+		Slug:           "multi-topic-article",
+		Title:          "Multi Topic Article",
+		Body:           "body",
+		Excerpt:        "excerpt",
+		Type:           TypeArticle,
+		Status:         StatusDraft,
+		TopicIDs:       []uuid.UUID{tp1.ID, tp2.ID, tp3.ID},
+		ReadingTimeMin: 3,
+	})
+
+	got, err := s.Content(ctx, created.ID)
+	if err != nil {
+		t.Fatalf("Content(%s) error: %v", created.ID, err)
+	}
+	wantTopics := []TopicRef{
+		{ID: tp1.ID, Slug: "go", Name: "Go"},
+		{ID: tp2.ID, Slug: "rust", Name: "Rust"},
+		{ID: tp3.ID, Slug: "postgres", Name: "PostgreSQL"},
+	}
+	sortTopics := cmpopts.SortSlices(func(a, b TopicRef) bool { return a.ID.String() < b.ID.String() })
+	if diff := cmp.Diff(wantTopics, got.Topics, sortTopics); diff != "" {
+		t.Errorf("CreateContent() topics mismatch (-want +got):\n%s", diff)
+	}
+
+	// Replace with a different, smaller topic set — the DELETE-then-batch-
+	// INSERT path in UpdateContent must fully swap, not merge.
+	updated := updateContentTx(t, ctx, created.ID, &UpdateParams{
+		TopicIDs: []uuid.UUID{tp2.ID},
+	})
+	wantAfterUpdate := []TopicRef{{ID: tp2.ID, Slug: "rust", Name: "Rust"}}
+	if diff := cmp.Diff(wantAfterUpdate, updated.Topics, sortTopics); diff != "" {
+		t.Errorf("UpdateContent() topics mismatch (-want +got):\n%s", diff)
+	}
+}
+
 // TestStore_CreateContent_DuplicateSlug verifies slug collisions produce a
 // structured *SlugConflictError (not the bare ErrConflict) so callers —
 // notably learning-studio via MCP — can decide between "update the same

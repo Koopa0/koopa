@@ -233,8 +233,14 @@ FROM content_topics ct
 JOIN topics t ON t.id = ct.topic_id
 WHERE ct.content_id = ANY($1::uuid[]);
 
--- name: AddContentTopic :exec
-INSERT INTO content_topics (content_id, topic_id) VALUES ($1, $2)
+-- name: InsertContentTopics :exec
+-- Bulk-insert content↔topic associations. Caller passes a uuid[] of topic
+-- ids that all belong to the same content row. Runs inside the caller's
+-- tx so partial writes roll back with the content insert/update. ON
+-- CONFLICT DO NOTHING absorbs caller-side duplicates (same topic_id sent
+-- twice) without leaking 23505 — idempotent per (content_id, topic_id) pair.
+INSERT INTO content_topics (content_id, topic_id)
+SELECT sqlc.arg('content_id')::uuid, UNNEST(sqlc.arg('topic_ids')::uuid[])
 ON CONFLICT DO NOTHING;
 
 -- name: DeleteContentTopics :exec
