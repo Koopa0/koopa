@@ -51,8 +51,8 @@ const stalledFactor = 2
 // ProjectMomentum is one candidate project's live momentum signal. It is
 // populated entirely from a read-time JOIN — no field is persisted.
 // LastHumanActivityAt is nil when no human (actor='human') event is scoped
-// to the project; the project still appears (it is a candidate by status +
-// cadence), it simply has no human activity yet.
+// to the project; the project still appears (it is a candidate by status
+// alone), it simply has no human activity yet.
 type ProjectMomentum struct {
 	Slug                string     `json:"slug"`
 	Title               string     `json:"title"`
@@ -87,8 +87,10 @@ type AreaActivity struct {
 }
 
 // Momentum returns the live momentum signal for every candidate project —
-// status in_progress|planned with an expected_cadence set. Read-only: it
-// runs one SELECT and computes nothing it stores.
+// status in_progress|planned. expected_cadence is optional: a project
+// without one still appears, it simply never reads as stalled (Stalled
+// treats an unrecognised/empty cadence as no threshold to exceed). Read-only:
+// it runs one SELECT and computes nothing it stores.
 func (s *Store) Momentum(ctx context.Context) ([]ProjectMomentum, error) {
 	rows, err := s.q.ProjectMomentum(ctx)
 	if err != nil {
@@ -216,10 +218,10 @@ func asTime(v interface{}) *time.Time {
 	return &t
 }
 
-// deref returns the string a *string points to, or "" when nil. The
-// expected_cadence column is nullable in the schema but every project_progress
-// candidate row has it set (the query's WHERE excludes NULL), so the empty
-// fallback is defensive only.
+// deref returns the string a *string points to, or "" when nil. A
+// project_progress candidate row's expected_cadence is nullable — "" means the
+// owner hasn't set a cadence yet, which Stalled treats as no threshold to
+// exceed (never stalled).
 func deref(s *string) string {
 	if s == nil {
 		return ""

@@ -2022,13 +2022,14 @@ func TestIntegration_ProjectProgress_AreaNeglect(t *testing.T) {
 }
 
 // TestIntegration_ProjectProgress_CandidateFilter pins the candidate gate:
-// proposed/archived projects and projects WITHOUT an expected_cadence are
-// excluded from projects[]. Only in_progress|planned with a cadence appear.
+// proposed/archived projects are excluded from projects[]. A cadence-less
+// in_progress|planned project IS included (expected_cadence "" and stalled
+// always false — there is no threshold to exceed without a cadence).
 func TestIntegration_ProjectProgress_CandidateFilter(t *testing.T) {
 	s := setupServer(t)
 
 	seedProgressProject(t, "candidate", "Candidate", "weekly", nil, nil)
-	// No cadence → excluded.
+	// No cadence → still included, just never stalled.
 	if _, err := testPool.Exec(t.Context(),
 		`INSERT INTO projects (slug, title, status) VALUES ('no-cadence', 'No Cadence', 'in_progress')`,
 	); err != nil {
@@ -2047,17 +2048,20 @@ func TestIntegration_ProjectProgress_CandidateFilter(t *testing.T) {
 		t.Fatalf("projectProgress: %v", err)
 	}
 
-	slugs := make(map[string]bool, len(out.Projects))
+	byProjectSlug := make(map[string]ProgressProject, len(out.Projects))
 	for _, p := range out.Projects {
-		slugs[p.Slug] = true
+		byProjectSlug[p.Slug] = p
 	}
-	if !slugs["candidate"] {
+	if _, ok := byProjectSlug["candidate"]; !ok {
 		t.Errorf("candidate project missing from projects[]")
 	}
-	if slugs["no-cadence"] {
-		t.Errorf("no-cadence project present in projects[], want excluded (cadence-less)")
+	noCadence, ok := byProjectSlug["no-cadence"]
+	if !ok {
+		t.Errorf("no-cadence project missing from projects[], want included (cadence-less, not excluded)")
+	} else if noCadence.Stalled {
+		t.Errorf("no-cadence project stalled = true, want false (no cadence means no threshold to exceed)")
 	}
-	if slugs["proposed-proj"] {
+	if _, ok := byProjectSlug["proposed-proj"]; ok {
 		t.Errorf("proposed project present in projects[], want excluded")
 	}
 }
