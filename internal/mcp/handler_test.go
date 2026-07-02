@@ -56,6 +56,15 @@ func TestCaptureInbox_Validation(t *testing.T) {
 	}
 }
 
+func TestCaptureInbox_MultilineDescription(t *testing.T) {
+	// Description is multi-line Markdown prose (rendered as paragraphs and
+	// bullets), so LF/CR/HT are legitimate — same treatment as content body.
+	input := CaptureInboxInput{Title: "ok", Description: "- noticed\n\n- proposal\n\n- value"}
+	if _, _, _, err := validateCaptureInput(&input); err != nil {
+		t.Fatalf("multi-line description rejected: %v", err)
+	}
+}
+
 // --- plan_day ---
 
 func TestPlanDay_Validation(t *testing.T) {

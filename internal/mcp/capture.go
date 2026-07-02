@@ -103,7 +103,7 @@ func validateCaptureInput(input *CaptureInboxInput) (due *time.Time, rec todo.Re
 	if goal.ContainsControlChars(input.Title) {
 		return nil, rec, false, fmt.Errorf("title must not contain control characters")
 	}
-	if goal.ContainsControlChars(input.Description) {
+	if containsProseControlChars(input.Description) {
 		return nil, rec, false, fmt.Errorf("description must not contain control characters")
 	}
 	if input.Energy != nil && *input.Energy != "" && !isValidEnergy(*input.Energy) {
