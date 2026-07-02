@@ -128,9 +128,10 @@ ORDER BY title;
 
 -- name: ProjectMomentum :many
 -- Per-project momentum row for the project_progress tool. One row per
--- candidate project (status in_progress|planned AND expected_cadence set —
--- proposed/archived/cadence-less projects are excluded because a project
--- without a cadence has no "expected frequency" to be stalled against).
+-- candidate project (status in_progress|planned — proposed/archived are
+-- excluded). expected_cadence is NOT required: a project without one still
+-- appears, it simply never registers as stalled (project.Stalled treats an
+-- unrecognised/empty cadence as "no threshold to exceed").
 --
 -- HUMAN ACTIVITY ONLY: last_human_activity_at is the latest
 -- activity_events.occurred_at for an event scoped to this project
@@ -185,7 +186,6 @@ LEFT JOIN (
     GROUP BY ae.project_id
 ) ha ON ha.project_id = p.id
 WHERE p.status IN ('in_progress', 'planned')
-  AND p.expected_cadence IS NOT NULL
 ORDER BY p.title;
 
 -- name: ActiveGoalMilestones :many

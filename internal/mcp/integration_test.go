@@ -1814,6 +1814,34 @@ func seedProgressProject(t *testing.T, slug, title, cadence string, goalID, area
 	return id
 }
 
+// seedNoCadenceProject inserts an in_progress project with expected_cadence
+// left NULL (the CHECK constraint rejects an empty string, so
+// seedProgressProject's cadence param can't express "unset") under a
+// non-human actor, and returns its id.
+func seedNoCadenceProject(t *testing.T, slug, title string) uuid.UUID {
+	t.Helper()
+	ctx := t.Context()
+	tx, err := testPool.Begin(ctx)
+	if err != nil {
+		t.Fatalf("seedNoCadenceProject begin: %v", err)
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck // no-op after commit
+	if _, err := tx.Exec(ctx, "SELECT set_config('koopa.actor', 'codex', true)"); err != nil {
+		t.Fatalf("seedNoCadenceProject set actor: %v", err)
+	}
+	var id uuid.UUID
+	if err := tx.QueryRow(ctx,
+		`INSERT INTO projects (slug, title, status) VALUES ($1, $2, 'in_progress') RETURNING id`,
+		slug, title,
+	).Scan(&id); err != nil {
+		t.Fatalf("seedNoCadenceProject(%q): %v", slug, err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		t.Fatalf("seedNoCadenceProject commit: %v", err)
+	}
+	return id
+}
+
 // seedProgressGoal inserts an in_progress goal and returns its id.
 func seedProgressGoal(t *testing.T, title string) uuid.UUID {
 	t.Helper()
@@ -2022,18 +2050,29 @@ func TestIntegration_ProjectProgress_AreaNeglect(t *testing.T) {
 }
 
 // TestIntegration_ProjectProgress_CandidateFilter pins the candidate gate:
-// proposed/archived projects and projects WITHOUT an expected_cadence are
-// excluded from projects[]. Only in_progress|planned with a cadence appear.
+// proposed/archived projects are excluded from projects[]. A cadence-less
+// in_progress|planned project IS included (expected_cadence "" and stalled
+// always false — there is no threshold to exceed without a cadence), even
+// when it has an open next action, so the assertion exercises the
+// cadenceDays[""] lookup-miss branch of Stalled rather than the unrelated
+// !openNextAction short-circuit.
 func TestIntegration_ProjectProgress_CandidateFilter(t *testing.T) {
 	s := setupServer(t)
 
 	seedProgressProject(t, "candidate", "Candidate", "weekly", nil, nil)
-	// No cadence → excluded.
-	if _, err := testPool.Exec(t.Context(),
-		`INSERT INTO projects (slug, title, status) VALUES ('no-cadence', 'No Cadence', 'in_progress')`,
-	); err != nil {
-		t.Fatalf("seed no-cadence project: %v", err)
-	}
+	// No cadence → still included, just never stalled — even with an open
+	// next action and no human activity at all, so the assertion actually
+	// exercises the cadenceDays[""] lookup-miss branch of Stalled (which
+	// only matters when lastHuman is nil — see Stalled's nil-lastHuman
+	// short-circuit) rather than passing vacuously via !openNextAction or a
+	// too-recent lastHuman. expected_cadence is omitted (NULL — the CHECK
+	// constraint rejects '') under a non-human actor, like
+	// seedProgressProject, so the creation event itself doesn't count as
+	// human activity — current_actor() falls back to 'human' when
+	// koopa.actor is unset, which would otherwise give this project a
+	// last_human_activity_at of "just now" and mask the bug entirely.
+	noCadenceID := seedNoCadenceProject(t, "no-cadence", "No Cadence")
+	seedProgressTodo(t, noCadenceID, "Open next action", "todo")
 	// proposed → excluded even with a cadence.
 	if _, err := testPool.Exec(t.Context(),
 		`INSERT INTO projects (slug, title, status, expected_cadence, created_by)
@@ -2047,17 +2086,25 @@ func TestIntegration_ProjectProgress_CandidateFilter(t *testing.T) {
 		t.Fatalf("projectProgress: %v", err)
 	}
 
-	slugs := make(map[string]bool, len(out.Projects))
+	byProjectSlug := make(map[string]ProgressProject, len(out.Projects))
 	for _, p := range out.Projects {
-		slugs[p.Slug] = true
+		byProjectSlug[p.Slug] = p
 	}
-	if !slugs["candidate"] {
+	if _, ok := byProjectSlug["candidate"]; !ok {
 		t.Errorf("candidate project missing from projects[]")
 	}
-	if slugs["no-cadence"] {
-		t.Errorf("no-cadence project present in projects[], want excluded (cadence-less)")
+	noCadence, ok := byProjectSlug["no-cadence"]
+	if !ok {
+		t.Errorf("no-cadence project missing from projects[], want included (cadence-less, not excluded)")
+	} else {
+		if !noCadence.OpenNextAction {
+			t.Fatalf("no-cadence project open_next_action = false, want true (test setup didn't link the seeded todo)")
+		}
+		if noCadence.Stalled {
+			t.Errorf("no-cadence project stalled = true, want false (no cadence means no threshold to exceed)")
+		}
 	}
-	if slugs["proposed-proj"] {
+	if _, ok := byProjectSlug["proposed-proj"]; ok {
 		t.Errorf("proposed project present in projects[], want excluded")
 	}
 }
