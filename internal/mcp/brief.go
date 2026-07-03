@@ -65,9 +65,11 @@ func resolveDefaultSections(caller string) []string {
 //
 // Mode selects the briefing flavour and is required. Sections is a STRICT
 // filter that applies only in morning mode: when non-empty, only the listed
-// groups are populated and every other morning field stays at its empty-slice
-// default. Omit Sections (or pass an empty list) to populate every morning
-// group. Sections is ignored in reflection mode.
+// groups are populated and every other morning field stays at its zero-value
+// default ([] for the list fields, 0 for proposals_pending) — an unrequested
+// field's default is not a computed result. Omit Sections (or pass an empty
+// list) to populate every morning group. Sections is ignored in reflection
+// mode.
 //
 // Morning group → response field mapping:
 //
@@ -80,7 +82,7 @@ func resolveDefaultSections(caller string) []string {
 // Unknown group names are ignored silently (no error, no warning).
 type BriefInput struct {
 	As       string          `json:"as,omitempty" jsonschema_description:"Caller agent identity (e.g. koopa0-dev)."`
-	Mode     string          `json:"mode" jsonschema_description:"Briefing mode (required): 'morning' = daily-planning pull (todos/goals/rss/content_pipeline); 'reflection' = end-of-day plan-vs-actual retrospective (daily plan items + completion counts). brief is a pure planning-state pull and carries no agent memory."`
+	Mode     string          `json:"mode" jsonschema_description:"Briefing mode (required): 'morning' = daily-planning pull (todos/goals/rss/content_pipeline/proposals); 'reflection' = end-of-day plan-vs-actual retrospective (daily plan items + completion counts). brief is a pure planning-state pull and carries no agent memory."`
 	Sections FlexStringSlice `json:"sections,omitempty" jsonschema_description:"MORNING-ONLY strict filter on which groups to populate (default: all). Ignored in reflection mode. Omit or pass [] to get the full morning briefing. Group key → response fields: 'todos' → overdue_todos/today_todos/active_todos/recurring_todos/committed_todos/upcoming_todos; 'goals' → active_goals; 'rss' → rss_highlights; 'content_pipeline' → content_pipeline; 'proposals' → proposals_pending (count of agent-proposed area/goal/project drafts awaiting owner triage). Unknown keys silently ignored."`
 	Date     *string         `json:"date,omitempty" jsonschema_description:"Target date YYYY-MM-DD (default: today)"`
 }
