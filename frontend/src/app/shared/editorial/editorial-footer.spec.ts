@@ -28,4 +28,12 @@ describe('EditorialFooterComponent', () => {
     );
     expect(rss?.getAttribute('href')).toBe('/feed.xml');
   });
+
+  it('should link to the hire page', () => {
+    const el = fixture.nativeElement as HTMLElement;
+    const hire = Array.from(el.querySelectorAll('a')).find(
+      (a) => a.textContent?.trim() === 'Hire',
+    );
+    expect(hire?.getAttribute('href')).toBe('/hire');
+  });
 });
