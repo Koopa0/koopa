@@ -1773,6 +1773,66 @@ func TestIntegration_BriefReflection_CountsFromTodoState(t *testing.T) {
 	}
 }
 
+// TestIntegration_BriefMorning_ProposalsPending proves the morning brief's
+// proposals_pending sums all three proposed-entity kinds (area + goal +
+// project) awaiting owner triage — the count hermes reads to decide whether to
+// nudge Koopa back to the triage queue. setupServer truncates goals and
+// projects (so each starts with zero proposed rows) but preserves the
+// migration-002 seed areas, so proposed areas can leak in from other tests;
+// clearing them first makes the summed count deterministic. One proposed draft
+// of each kind is seeded through the real propose_* write path, so the count
+// exercises the actual status='proposed' rows the admin badge reads.
+func TestIntegration_BriefMorning_ProposalsPending(t *testing.T) {
+	s := setupServer(t)
+
+	if _, err := testPool.Exec(t.Context(), `DELETE FROM areas WHERE status = 'proposed'`); err != nil {
+		t.Fatalf("clearing pre-existing proposed areas: %v", err)
+	}
+
+	if _, _, err := callHandlerAs(t, "claude", s.proposeArea, ProposeAreaInput{
+		Name: "Brief Count Area",
+	}); err != nil {
+		t.Fatalf("proposeArea: %v", err)
+	}
+	// Area omitted → an unclassified proposed goal; still status='proposed', so
+	// it counts, without coupling the test to area resolution.
+	if _, _, err := callHandlerAs(t, "claude", s.proposeGoal, ProposeGoalInput{
+		Title: "Brief Count Goal",
+	}); err != nil {
+		t.Fatalf("proposeGoal: %v", err)
+	}
+	if _, _, err := callHandlerAs(t, "claude", s.proposeProject, ProposeProjectInput{
+		Name: "Brief Count Project",
+	}); err != nil {
+		t.Fatalf("proposeProject: %v", err)
+	}
+
+	// Cases pin both the sum (all three proposed kinds) and the section-filter
+	// wiring: an explicit ["proposals"] must run the filler (a runSection-label
+	// mismatch would silently return 0), and requesting a different section must
+	// leave it uncomputed at 0 (the strict filter must exclude it).
+	tests := []struct {
+		name     string
+		sections FlexStringSlice
+		want     int64
+	}{
+		{name: "all sections (default)", sections: nil, want: 3},
+		{name: "proposals section explicitly selected", sections: FlexStringSlice{"proposals"}, want: 3},
+		{name: "unrelated section excludes proposals", sections: FlexStringSlice{"goals"}, want: 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, out, err := callHandler(t, s.brief, BriefInput{Mode: "morning", Sections: tt.sections})
+			if err != nil {
+				t.Fatalf("brief(morning, sections=%v): %v", tt.sections, err)
+			}
+			if out.ProposalsPending != tt.want {
+				t.Errorf("ProposalsPending = %d, want %d", out.ProposalsPending, tt.want)
+			}
+		})
+	}
+}
+
 // --- project_progress (read-only PARA momentum/stalled) ---
 //
 // These tests pin the load-bearing semantics: the HUMAN-ONLY activity

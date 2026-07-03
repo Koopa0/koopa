@@ -47,7 +47,7 @@ is hand-maintained.
 
 | Tool | Key params | Returns |
 |---|---|---|
-| `brief` | `mode` (`morning` / `reflection`), `sections?` (morning only), `date?` | `morning` = single-call daily-planning briefing (overdue/today/active/recurring/committed/upcoming todos, active_goals, rss_highlights, content_pipeline). `reflection` = end-of-day plan-vs-actual retrospective (planned_items + completed/deferred/planned counts + completion_rate). `mode` is required. Read-only; carries no agent memory. Scope is the target date (default today), not since-last-session. |
+| `brief` | `mode` (`morning` / `reflection`), `sections?` (morning only), `date?` | `morning` = single-call daily-planning briefing (overdue/today/active/recurring/committed/upcoming todos, active_goals, rss_highlights, content_pipeline, proposals_pending). `reflection` = end-of-day plan-vs-actual retrospective (planned_items + completed/deferred/planned counts + completion_rate). `mode` is required. Read-only; carries no agent memory. Scope is the target date (default today), not since-last-session. |
 | `search_knowledge` | `query`, `content_type?`, `after?`, `before?`, `limit?` | Hybrid (FTS + pgvector) retrieval over the content corpus. See Search section below. |
 | `project_progress` | (none) | Live PARA momentum/stalled intelligence for Koopa's projects, goals, and areas, computed at read time. Returns the owner's full PARA (not caller-scoped): `projects[]` with expected_cadence, days_since_human_activity, open_next_action, milestone_done/total, and a `stalled` flag; `goals[]` with milestone progress + stalled-project rollup; `areas[]` with `area_neglected` (no owner activity attributed to the area via any project, goal, or milestone for >14 days). Progress counts owner activity only (`actor='human'`); agent/system actors never count. |
 
@@ -62,10 +62,11 @@ Morning mode is filterable via `sections` (omit or pass `[]` for all). Valid key
 
 | Section | Returns |
 |---|---|
-| `tasks` | overdue / today / committed / upcoming todos |
+| `todos` | overdue / today / active / recurring / committed / upcoming todos |
 | `goals` | active_goals |
 | `rss` | rss_highlights — feeds tagged `priority=high`, NOT relevance-ranked; use `search_knowledge` for ranked retrieval |
 | `content_pipeline` | content_pipeline |
+| `proposals` | proposals_pending — count of agent-proposed area/goal/project drafts awaiting owner triage |
 
 Every caller gets all sections by default; pass an explicit `sections` list to narrow the briefing.
 

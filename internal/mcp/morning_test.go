@@ -152,6 +152,7 @@ func TestBriefOutput_MorningWireShape(t *testing.T) {
 		"active_goals",
 		"rss_highlights",
 		"content_pipeline",
+		"proposals_pending",
 	}
 
 	type fieldExpectation struct {
@@ -322,5 +323,50 @@ func TestBriefOutput_ReflectionWireShape(t *testing.T) {
 		if string(raw) == "null" {
 			t.Error("BriefOutput[planned_items] = null, want []")
 		}
+	}
+}
+
+// TestBriefOutput_ProposalsPendingWire pins proposals_pending as a scalar on
+// the morning wire: it always serialises (present at 0, never omitted) so the
+// push consumer can gate its nudge on N > 0, it carries the value set on the
+// output through MarshalJSON's morning branch, and it never leaks into the
+// reflection envelope (it is a morning-only field).
+func TestBriefOutput_ProposalsPendingWire(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		out  BriefOutput
+		want string // exact JSON number expected for proposals_pending
+	}{
+		{
+			name: "morning zero — present as 0, not omitted",
+			out:  BriefOutput{Mode: briefModeMorning, Date: "2026-05-27"},
+			want: "0",
+		},
+		{
+			name: "morning positive — carries the summed count through MarshalJSON",
+			out:  BriefOutput{Mode: briefModeMorning, Date: "2026-05-27", ProposalsPending: 7},
+			want: "7",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			parsed := marshalToKeyMap(t, tt.out)
+			raw, ok := parsed["proposals_pending"]
+			if !ok {
+				t.Fatalf("morning BriefOutput missing proposals_pending key")
+			}
+			if string(raw) != tt.want {
+				t.Errorf("proposals_pending = %s, want %s", raw, tt.want)
+			}
+		})
+	}
+
+	// Reflection mode must not emit proposals_pending — it is morning-only.
+	reflection := BriefOutput{Mode: briefModeReflection, Date: "2026-05-27", ProposalsPending: 5}
+	if _, ok := marshalToKeyMap(t, reflection)["proposals_pending"]; ok {
+		t.Error("reflection BriefOutput emitted proposals_pending, want absent (morning-only field)")
 	}
 }
