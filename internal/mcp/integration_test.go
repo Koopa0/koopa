@@ -1814,7 +1814,7 @@ func TestIntegration_BriefMorning_ProposalsPending(t *testing.T) {
 	tests := []struct {
 		name     string
 		sections FlexStringSlice
-		want     int
+		want     int64
 	}{
 		{name: "all sections (default)", sections: nil, want: 3},
 		{name: "proposals section explicitly selected", sections: FlexStringSlice{"proposals"}, want: 3},

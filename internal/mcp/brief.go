@@ -103,7 +103,7 @@ type BriefOutput struct {
 	ActiveGoals      []goal.ActiveGoalSummary `json:"-"`
 	RSSHighlights    []RSSHighlight           `json:"-"`
 	ContentPipeline  []ContentSummary         `json:"-"`
-	ProposalsPending int                      `json:"-"`
+	ProposalsPending int64                    `json:"-"`
 
 	// Reflection fields.
 	PlannedItems   []daily.Item `json:"-"`
@@ -130,8 +130,9 @@ type briefMorningWire struct {
 	// ProposalsPending is the summed count of agent-proposed area/goal/project
 	// drafts awaiting owner triage. Unlike the list fields it is a scalar, so
 	// it always serialises (0 when nothing is pending) — the push consumer
-	// gates its nudge on N > 0.
-	ProposalsPending int `json:"proposals_pending"`
+	// gates its nudge on N > 0. int64 matches the count(*) source type, so no
+	// narrowing conversion is needed.
+	ProposalsPending int64 `json:"proposals_pending"`
 }
 
 // briefReflectionWire is the wire shape for mode=reflection. Field tags mirror
@@ -425,7 +426,7 @@ func (s *Server) fillProposalsPending(ctx context.Context, out *BriefOutput) {
 	} else {
 		s.logger.Warn("brief: proposed projects count", "error", err)
 	}
-	out.ProposalsPending = int(total)
+	out.ProposalsPending = total
 }
 
 // fillBriefReflection populates the reflection fields: the day's plan items
