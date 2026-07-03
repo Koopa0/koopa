@@ -66,6 +66,7 @@ Morning mode is filterable via `sections` (omit or pass `[]` for all). Valid key
 | `goals` | active_goals |
 | `rss` | rss_highlights — feeds tagged `priority=high`, NOT relevance-ranked; use `search_knowledge` for ranked retrieval |
 | `content_pipeline` | content_pipeline |
+| `proposals` | proposals_pending — count of agent-proposed area/goal/project drafts awaiting owner triage |
 
 Every caller gets all sections by default; pass an explicit `sections` list to narrow the briefing.
 

@@ -75,12 +75,13 @@ func resolveDefaultSections(caller string) []string {
 //	"goals"            → active_goals
 //	"rss"              → rss_highlights
 //	"content_pipeline" → content_pipeline
+//	"proposals"        → proposals_pending
 //
 // Unknown group names are ignored silently (no error, no warning).
 type BriefInput struct {
 	As       string          `json:"as,omitempty" jsonschema_description:"Caller agent identity (e.g. koopa0-dev)."`
 	Mode     string          `json:"mode" jsonschema_description:"Briefing mode (required): 'morning' = daily-planning pull (todos/goals/rss/content_pipeline); 'reflection' = end-of-day plan-vs-actual retrospective (daily plan items + completion counts). brief is a pure planning-state pull and carries no agent memory."`
-	Sections FlexStringSlice `json:"sections,omitempty" jsonschema_description:"MORNING-ONLY strict filter on which groups to populate (default: all). Ignored in reflection mode. Omit or pass [] to get the full morning briefing. Group key → response fields: 'todos' → overdue_todos/today_todos/active_todos/recurring_todos/committed_todos/upcoming_todos; 'goals' → active_goals; 'rss' → rss_highlights; 'content_pipeline' → content_pipeline. Unknown keys silently ignored."`
+	Sections FlexStringSlice `json:"sections,omitempty" jsonschema_description:"MORNING-ONLY strict filter on which groups to populate (default: all). Ignored in reflection mode. Omit or pass [] to get the full morning briefing. Group key → response fields: 'todos' → overdue_todos/today_todos/active_todos/recurring_todos/committed_todos/upcoming_todos; 'goals' → active_goals; 'rss' → rss_highlights; 'content_pipeline' → content_pipeline; 'proposals' → proposals_pending (count of agent-proposed area/goal/project drafts awaiting owner triage). Unknown keys silently ignored."`
 	Date     *string         `json:"date,omitempty" jsonschema_description:"Target date YYYY-MM-DD (default: today)"`
 }
 
@@ -93,15 +94,16 @@ type BriefOutput struct {
 	Date string `json:"date"`
 
 	// Morning fields.
-	OverdueTodos    []todo.PendingDetail     `json:"-"`
-	TodayTodos      []todo.PendingDetail     `json:"-"`
-	ActiveTodos     []todo.PendingDetail     `json:"-"`
-	RecurringTodos  []todo.Item              `json:"-"`
-	CommittedTodos  []daily.Item             `json:"-"`
-	UpcomingTodos   []todo.PendingDetail     `json:"-"`
-	ActiveGoals     []goal.ActiveGoalSummary `json:"-"`
-	RSSHighlights   []RSSHighlight           `json:"-"`
-	ContentPipeline []ContentSummary         `json:"-"`
+	OverdueTodos     []todo.PendingDetail     `json:"-"`
+	TodayTodos       []todo.PendingDetail     `json:"-"`
+	ActiveTodos      []todo.PendingDetail     `json:"-"`
+	RecurringTodos   []todo.Item              `json:"-"`
+	CommittedTodos   []daily.Item             `json:"-"`
+	UpcomingTodos    []todo.PendingDetail     `json:"-"`
+	ActiveGoals      []goal.ActiveGoalSummary `json:"-"`
+	RSSHighlights    []RSSHighlight           `json:"-"`
+	ContentPipeline  []ContentSummary         `json:"-"`
+	ProposalsPending int                      `json:"-"`
 
 	// Reflection fields.
 	PlannedItems   []daily.Item `json:"-"`
@@ -125,6 +127,11 @@ type briefMorningWire struct {
 	ActiveGoals     []goal.ActiveGoalSummary `json:"active_goals"`
 	RSSHighlights   []RSSHighlight           `json:"rss_highlights"`
 	ContentPipeline []ContentSummary         `json:"content_pipeline"`
+	// ProposalsPending is the summed count of agent-proposed area/goal/project
+	// drafts awaiting owner triage. Unlike the list fields it is a scalar, so
+	// it always serialises (0 when nothing is pending) — the push consumer
+	// gates its nudge on N > 0.
+	ProposalsPending int `json:"proposals_pending"`
 }
 
 // briefReflectionWire is the wire shape for mode=reflection. Field tags mirror
@@ -148,17 +155,18 @@ func (o BriefOutput) MarshalJSON() ([]byte, error) {
 	switch o.Mode {
 	case briefModeMorning:
 		return json.Marshal(briefMorningWire{
-			Mode:            o.Mode,
-			Date:            o.Date,
-			OverdueTodos:    o.OverdueTodos,
-			TodayTodos:      o.TodayTodos,
-			ActiveTodos:     o.ActiveTodos,
-			RecurringTodos:  o.RecurringTodos,
-			CommittedTodos:  o.CommittedTodos,
-			UpcomingTodos:   o.UpcomingTodos,
-			ActiveGoals:     o.ActiveGoals,
-			RSSHighlights:   o.RSSHighlights,
-			ContentPipeline: o.ContentPipeline,
+			Mode:             o.Mode,
+			Date:             o.Date,
+			OverdueTodos:     o.OverdueTodos,
+			TodayTodos:       o.TodayTodos,
+			ActiveTodos:      o.ActiveTodos,
+			RecurringTodos:   o.RecurringTodos,
+			CommittedTodos:   o.CommittedTodos,
+			UpcomingTodos:    o.UpcomingTodos,
+			ActiveGoals:      o.ActiveGoals,
+			RSSHighlights:    o.RSSHighlights,
+			ContentPipeline:  o.ContentPipeline,
+			ProposalsPending: o.ProposalsPending,
 		})
 	case briefModeReflection:
 		return json.Marshal(briefReflectionWire{
@@ -277,6 +285,7 @@ func (s *Server) fillBriefMorning(ctx context.Context, date time.Time, requested
 	runSection("goals", func(c context.Context) { s.fillGoals(c, out) })
 	runSection("rss", func(c context.Context) { s.fillRSSHighlights(c, date, out) })
 	runSection("content_pipeline", func(c context.Context) { s.fillContentPipeline(c, out) })
+	runSection("proposals", func(c context.Context) { s.fillProposalsPending(c, out) })
 	wg.Wait()
 }
 
@@ -396,6 +405,27 @@ func (s *Server) fillContentPipeline(ctx context.Context, out *BriefOutput) {
 		s.logger.Warn("brief: content pipeline reviews", "error", err)
 	}
 	out.ContentPipeline = toContentSummaries(all)
+}
+
+// fillProposalsPending sums the agent-proposed area/goal/project drafts still
+// in status=proposed — the count Koopa's admin triage badge shows, surfaced
+// here so the push consumer (hermes) can decide whether to nudge him back to
+// the queue without holding admin credentials. Each count is read
+// independently and degrades to its own zero on error, matching the other
+// section fillers.
+func (s *Server) fillProposalsPending(ctx context.Context, out *BriefOutput) {
+	var total int64
+	if pending, err := s.goals.ProposalsPendingCount(ctx); err == nil {
+		total += pending.Goals + pending.Areas
+	} else {
+		s.logger.Warn("brief: proposed goals+areas count", "error", err)
+	}
+	if projects, err := s.projects.ProposedProjectsCount(ctx); err == nil {
+		total += projects
+	} else {
+		s.logger.Warn("brief: proposed projects count", "error", err)
+	}
+	out.ProposalsPending = int(total)
 }
 
 // fillBriefReflection populates the reflection fields: the day's plan items
