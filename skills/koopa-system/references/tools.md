@@ -62,7 +62,7 @@ Morning mode is filterable via `sections` (omit or pass `[]` for all). Valid key
 
 | Section | Returns |
 |---|---|
-| `tasks` | overdue / today / committed / upcoming todos |
+| `todos` | overdue / today / active / recurring / committed / upcoming todos |
 | `goals` | active_goals |
 | `rss` | rss_highlights — feeds tagged `priority=high`, NOT relevance-ranked; use `search_knowledge` for ranked retrieval |
 | `content_pipeline` | content_pipeline |
