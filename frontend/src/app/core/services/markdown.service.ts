@@ -2,7 +2,7 @@ import { inject, Injectable, PLATFORM_ID } from '@angular/core';
 import { isPlatformBrowser } from '@angular/common';
 import { marked } from 'marked';
 import hljs from 'highlight.js';
-import DOMPurify from 'isomorphic-dompurify';
+import DOMPurify from 'dompurify';
 import { obsidianExtensions } from './markdown-extensions';
 
 /** Allowed HTML tags and attributes for sanitized markdown output */
