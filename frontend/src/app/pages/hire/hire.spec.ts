@@ -43,6 +43,14 @@ describe('HireComponent', () => {
     );
   });
 
+  it('should carry the sharpened fail-closed line and the positioning paragraphs', () => {
+    expect(el.textContent).toContain('designed away, not prompted away');
+    expect(el.textContent).toContain('Rust is the second');
+    expect(el.textContent).toContain(
+      'you hire me for the system behind the screen',
+    );
+  });
+
   it('should render the single contact address', () => {
     expect(
       el.querySelector('a[href="mailto:contact@koopa0.dev"]'),
