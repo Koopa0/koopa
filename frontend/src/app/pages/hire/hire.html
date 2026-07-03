@@ -30,10 +30,12 @@
             unattended with a bounded blast radius.
           </li>
           <li>
-            <strong>Agent orchestration that fails closed.</strong> Tool
-            scoping, approval boundaries, and delegation isolation designed so
-            the safe path is the only path, not the one you hope the model
-            follows.
+            <strong>Agent orchestration that fails closed.</strong> A tool call
+            with hallucinated arguments, a retry that fires the same side effect
+            twice, a delegated agent holding permissions it should never have —
+            designed away, not prompted away: tool scoping, idempotent
+            boundaries, approval gates, delegation isolation. The safe path is
+            the only path, not the one you hope the model follows.
           </li>
           <li>
             <strong>Grounding and integration.</strong> Wiring agents to real
@@ -63,6 +65,17 @@
             failures, nothing swallowed. If it broke, you can see that it broke.
           </li>
         </ul>
+        <p>
+          Go is the first language; Rust is the second — for the smaller
+          correctness-critical pieces (parsers, CLIs, verification tools), held
+          to the same bar.
+        </p>
+        <p>
+          When the work needs a frontend, I ship that too — this site, public
+          face and admin cockpit, is my Angular end to end. But that is the
+          supporting line, not the pitch: you hire me for the system behind the
+          screen.
+        </p>
 
         <h2>Receipts</h2>
         <p>I would rather show you the work than describe it.</p>
