@@ -43,21 +43,20 @@ describe('HireComponent', () => {
     );
   });
 
-  it('should list the real contact channels', () => {
+  it('should render the single contact address', () => {
     expect(
       el.querySelector('a[href="mailto:contact@koopa0.dev"]'),
     ).toBeTruthy();
-    expect(
-      el.querySelector(
-        'a[href="https://www.linkedin.com/in/koopa-chen-70a4651ba/"]',
-      ),
-    ).toBeTruthy();
+    expect(el.textContent).toContain('Contact:');
+    // The draft's single Contact line — not the old four-channel row.
+    expect(el.querySelector('a[href="https://x.com/Koopa012426"]')).toBeNull();
+  });
+
+  it('should link the GitHub receipt to the repo', () => {
     expect(
       el.querySelector('a[href="https://github.com/koopa0"]'),
     ).toBeTruthy();
-    expect(
-      el.querySelector('a[href="https://x.com/Koopa012426"]'),
-    ).toBeTruthy();
+    expect(el.textContent).toContain('public work and profile');
   });
 
   it('should link the koopa0.dev receipt to the writing', () => {
