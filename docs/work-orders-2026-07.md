@@ -112,7 +112,7 @@ CJK FTS：中文長句成單一 token（schema comment 已承認、embedding 補
   3. Grafana 伴生規則 `absent_over_time(koopa_db_backup_last_success_timestamp_seconds{database="koopa0dev"}[2h])`（自身 `noDataState: OK`）；**`{database=...}` matcher 與去抖皆必須**。註：不寫「Grafana 嚴格優於 file-age／off-box」——`DISASTER-RECOVERY.md:24` 的 Grafana→Telegram 故障域是 on-box，兩偵測器盲區互不包含
   4. 外部 dead-man switch（腳本成功時 ping 外部、外部沒聽到時告警）——**沒有 off-box、backup-specific 的 freshness/heartbeat monitor**：Cloudflare→email 涵蓋 VPS/tunnel 整台失效，但不涵蓋 cron/backup job/node-exporter 各自的獨立失效。新候選
 - **驗收**（證據已交 acceptance session，最終 committed-HEAD acceptance pending）：異地有今日檔（`aws s3 ls s3://koopa0-dev/backups/koopa0dev-db/`——DB 備份用 aws CLI 非 rclone）；`crontab -l` 有 `0 3 * * *`；演練還原 `exit 0` 且 stderr 空、**18 表精確 count 逐表 = dump 自身 COPY 行數**；brief 剩 5 goals（Claude MCP 自驗）；4 projects 掛載後 `project_progress` 的 `goals[].projects_total` 不再全 0（經 `Go 課綱擴展` 與 `Kotonoha 日文教材擴展`——`goals[]` 只列 in_progress，掛到降級 goal 的 project 不出現）；Cloudflare `/api/search*` rate rule 使用中；docs PR merge
-- **完成紀錄**：
+- **完成紀錄**：2026-07-10 / PR #24 / 歸檔診斷與備份／還原路徑，完成 E1–E6（備份、restore、goals／projects、Cloudflare）並納入 Augment review 修正 / **PASS**（Codex 驗收 merge HEAD `d481e5af`）
 
 ### PR-1 `ci: gate deploy on CI green`
 - **範圍**：只做一件事——deploy 不再與 CI 並行
