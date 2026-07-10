@@ -20,7 +20,8 @@ when something actively pulls him back.
   owner triage. If the pa-brief routine already pulls a full morning brief,
   read the field from that response instead of making a second call.
 - MCP `list_todos(as="hermes")` — read-only, caller-scoped: every todo hermes
-  created, as `{id, title, state}`. No filters; no server-side state trim.
+  created, as `{id, title, state, created_by}` — `created_by` echoes the
+  resolved caller. No filters; no server-side state trim.
 - MCP `resolve_todo(id, state, as="hermes")` — caller-scoped terminal setter
   (done | archived | dismissed) on todos hermes created. Read the self-clear
   rules (§3) before calling this — the server enforces creator scope but NOT
