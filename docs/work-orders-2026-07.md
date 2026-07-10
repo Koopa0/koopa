@@ -97,18 +97,21 @@ CJK FTS：中文長句成單一 token（schema comment 已承認、embedding 補
 
 ### PR-0 `docs(ops)` + VPS ops 日（非典型 PR：一個 docs PR + 三個環境動作）
 - **範圍**：備份體系、goals 降級、Cloudflare rate rule、診斷包歸檔
-- **作法**：
-  1. `server/scripts/backup-db.sh` 進 repo：`docker compose exec -T postgres pg_dump -U koopa -d koopa0dev -Fc > /var/backups/koopa0dev/koopa0dev-$(date +%F).dump`，rclone 推 `r2backup:koopa0dev-backups/db/`（**新開私有桶，勿用公開資產桶 koopa0-dev**），本地留 14 天。VPS：rclone remote 一次性設定＋R2 lifecycle 30 天＋cron `17 3 * * *`
-  2. **Restore 演練（必做）**：Mac 上 `docker run pgvector/pgvector:pg17` → `pg_restore --no-owner` → 三表 count（todos/contents/activity_events）vs prod 同日 count
-  3. goals 降級 SQL（先 SELECT 預覽確認 16 筆再 UPDATE；raw psql 的 audit trigger 正確 fallback 到 human）：
-     `UPDATE goals SET status='not_started', updated_at=now() WHERE status='in_progress' AND title NOT IN ('假名精熟','Kotonoha 日文教材擴展','Go 課綱擴展','客戶交付工作室成立','ヨルシカ LIVE TOUR 購票');`
-  4. Cloudflare WAF rate rule：`/api/search*` 10 req/10s per IP，Block
-  5. `mkdir docs/ops && mv diag.sql docs/ops/ && rm diag_out.txt`；`docs/ops/backup.md`（≤25 行：何時跑/放哪/怎麼 restore/演練日期結果）
-  6. **（07-06 和解追加，B-2）**4 個既存 projects 掛上 goal_id 與 area_id（admin 或 SQL）——現全 null，
-     造成 area neglect 假陽性（6/29–7/06 窗 6 areas 全報 neglected、activity_count 全 0，已復現）
-  7. backup 腳本加一行 file-age 自檢（最新檔 >48h 出非零 exit，交現有 Grafana/cron mail 面）
-  8. docs PR 一併收納：本檔、report-contract-v2.md、`docs/reviews/third-party-review-2026-07-06.md`（保留——獨立審查的耐久紀錄）；`docs/hermes-proposals-push-spec.md` 的既存未提交修改由 owner 判斷含入或分開。**staging 紀律（codex GO watch#3）**：只 `git add` 本 PR 指名檔案——工作樹既有 reviews/／設計筆記等 untracked 檔不得掃入
-- **驗收**：異地有今日檔（rclone ls）；演練三表 count = prod 三表 count；cron 行存在；brief 剩 5 goals（Claude 用 MCP 自驗）；4 projects 掛載後 `project_progress` 的 goals[].projects_total 不再全 0；docs PR merge
+- **作法**（07-10 reconciled；E1–E6 已執行，**證據已交 acceptance session，最終 committed-HEAD acceptance pending**）：
+  1. ~~`server/scripts/backup-db.sh` 進 repo~~ → **撤銷**（E1）。koopa0dev 的每日備份自始存在於 `Koopa0/server`（`scripts/backup-db-r2.sh`、`scripts/setup-cron.sh:42` 的 cron `0 3 * * *`、本地與 R2 各 7 天保留、`alert-rules.yml:177` 的 Grafana `db-backup-stale` 26h 告警）。owner 於 VPS 實測四探針全綠。本 PR 不新增第二套；備份硬化**登記為 repo-B candidates，NOT scheduled**（見下）。「新開私有桶，勿用公開資產桶 koopa0-dev」的**理由撤銷**（E2，owner dashboard 截圖）——該桶無 custom domain、公用開發 URL 已停用，本來就是私有 ops 桶（`R2_PUBLIC_URL` 為死設定，無 Go/TS code 讀取）
+  2. **Restore 演練（必做，已執行 E3）**：異地物件是 `pg_dump | gzip` 的**純 SQL `.sql.gz`**，不是 `-Fc`，所以是 `psql` 不是 `pg_restore`。Mac 上 `docker run pgvector/pgvector:pg17` → `gunzip -c … | psql -v ON_ERROR_STOP=1 --single-transaction`（**兩旗標缺一不可**：沒有它們 psql 語句失敗後仍 exit 0）→ oracle 是 **dump 自身 COPY 行數 vs 還原後 18 表精確 count 逐表 diff**（非抽三張）。**不用 prod 當 oracle**（03:00 dump 與演練間會漂移，是上界非等式）
+  3. goals 降級 SQL（已執行 E4）。**交易內 `SET LOCAL koopa.actor='claude'`**（owner 07-10 鎖定），基數與後置條件由 SQL 自行 `RAISE EXCEPTION` fail-closed，不靠人工判讀。不加 `SET LOCAL` → `current_actor()` fallback 到 `'human'`（`001_initial.up.sql:874-888`）。**actor 選擇的效果**：`review_period.goals` 只列 in_progress（`internal/project/query.sql:318`），**無論 actor**，降級後這段都剩 5；`claude` attribution 只避免 human-only 指標（`areas[].activity_count`/`neglected` 於 `query.sql:321-337`、`counts.active_days` 於 `:349-357`）被這 16 筆污染——**不可寫成「review_period 全然不受影響」**。語意參考（**須包在含 `SET LOCAL` 的交易內執行**；fail-closed 正本＝owner 執行 runbook 的 `DO $$…RAISE EXCEPTION` 版）：`… WHERE status='in_progress' AND title NOT IN ('假名精熟','Kotonoha 日文教材擴展','Go 課綱擴展','客戶交付工作室成立','ヨルシカ LIVE TOUR 購票')`
+  4. Cloudflare WAF rate rule（已執行 E6，owner 截圖）：`/api/search*` 10 req/10s per IP、Block、**使用中**。dashboard 設定安全——`~/server/infra` 只管 cache/headers 兩個 ruleset phase，rate rule 落在未管理的 `http_ratelimit` phase，`tofu apply` 不會還原
+  5. `docs/ops/diag.sql`（自 paste-cache 逐位元組復原，read-only）＋ `docs/ops/backup.md`（≤25 行）；工單原寫的 `diag_out.txt` 實為 `~/server/out.txt`（untracked），依 owner 明示刪除、副本先落 scratchpad
+  6. **（07-06 B-2；07-10 事實修正，已執行 E5）**4 個既存 projects 現 `goal_id`/`area_id` 全 null。掛載價值有二，**都不是修 area neglect**：①`goals[].projects_total`（live JOIN）；②**未來**歸因（`audit_todos` 經 `projects.area_id` 解析 area）。**原「造成 area neglect 假陽性」敘述為誤**：`area_neglected` 讀 `activity_events.area_id`（write-time snapshot），back-fill 不改寫歷史、`trg_projects_audit` 只在 `UPDATE OF status` 觸發、掛載零事件（實測 25→25）。owner 鎖定掛法：`go-課綱推進`→`Go 課綱擴展`、`kotonoha-教材內容擴充`→`Kotonoha 日文教材擴展`（area 由 goal 帶出）；`大家的日本語-初級i-伴讀量產-l4-l25` 與 `日語伴讀終審` **只掛 `area_id='日語'`、`goal_id` 明確 NULL**（goal 歸屬待日後釐清）。四筆皆 `updated_at=now()`（`.claude/rules/database.md`）
+  7. ~~backup 腳本加 file-age 自檢~~ → **撤銷**。監測缺口登記為 repo-B candidate（未排程）——file-age 與 Grafana `db-backup-stale` 盲區互不包含，不是取捨關係
+  8. docs PR 收納：本檔、report-contract-v2.md、`docs/reviews/third-party-review-2026-07-06.md`（保留——獨立審查耐久紀錄）；`docs/hermes-proposals-push-spec.md` **owner 裁定含入本 PR**（並修兩處事實漂移：dangling `brief-proposals-section-spec.md` 引用、`list_todos` wire 3→4 欄）。**staging 紀律**：只 `git add` 指名檔，untracked reviews/設計筆記不掃入
+- **repo-B candidates（registered, NOT scheduled；歸屬與排程待 owner 裁決）**：
+  1. `DISASTER-RECOVERY.md:116,121` 的 `psql` 補 `-v ON_ERROR_STOP=1 --single-transaction`——**confirmed correctness finding**：中段失敗的 dump 帶旗標 exit=3/tables=0（回滾）、不帶 exit=0/tables=18/triggers=4（`trg_contents_audit` 靜默消失，`m.Up()` 回 `ErrNoChange` 仍記「migrations applied」）。缺該 trigger 失去**未來** content audit events＋W-12 的 propose→publish **latency**；**不失** `review_period.published_content`／`counts.content_published`（`internal/content/query.sql:213-222` 直讀 contents）與 W-12 的 review 佇列數/最老齡。附耐久測試（還原後斷言 triggers=5、tables=18）
+  2. R2 bucket lock / versioning——備份 token 同持刪除權（`backup-db-r2.sh:64` 呼 `aws s3 rm`）且與 DB 同機（`~/koopa0.dev/.env`）；token split 縮小 roll 連坐半徑，非刪除爆炸半徑
+  3. Grafana 伴生規則 `absent_over_time(koopa_db_backup_last_success_timestamp_seconds{database="koopa0dev"}[2h])`（自身 `noDataState: OK`）；**`{database=...}` matcher 與去抖皆必須**。註：不寫「Grafana 嚴格優於 file-age／off-box」——`DISASTER-RECOVERY.md:24` 的 Grafana→Telegram 故障域是 on-box，兩偵測器盲區互不包含
+  4. 外部 dead-man switch（腳本成功時 ping 外部、外部沒聽到時告警）——**沒有 off-box、backup-specific 的 freshness/heartbeat monitor**：Cloudflare→email 涵蓋 VPS/tunnel 整台失效，但不涵蓋 cron/backup job/node-exporter 各自的獨立失效。新候選
+- **驗收**（證據已交 acceptance session，最終 committed-HEAD acceptance pending）：異地有今日檔（`aws s3 ls s3://koopa0-dev/backups/koopa0dev-db/`——DB 備份用 aws CLI 非 rclone）；`crontab -l` 有 `0 3 * * *`；演練還原 `exit 0` 且 stderr 空、**18 表精確 count 逐表 = dump 自身 COPY 行數**；brief 剩 5 goals（Claude MCP 自驗）；4 projects 掛載後 `project_progress` 的 `goals[].projects_total` 不再全 0（經 `Go 課綱擴展` 與 `Kotonoha 日文教材擴展`——`goals[]` 只列 in_progress，掛到降級 goal 的 project 不出現）；Cloudflare `/api/search*` rate rule 使用中；docs PR merge
 - **完成紀錄**：
 
 ### PR-1 `ci: gate deploy on CI green`
@@ -444,3 +447,19 @@ admin named View Transitions → `setTimeout(0)`→`afterNextRender`。
   Sonnet+medium、PR-5 用 Fable+high）、**per-PR 開工指導＋驗收＝codex supervisor session**
   （5.6 sol）、程序協調＋W-1 定稿＋W-5 陪跑＋PR-2 mini design pass＝本指導 session、
   merge＝owner。（Claude／指導 session）
+
+- 2026-07-10（PR-0 reconciliation——coordination session）：§1 存檔「DB 13MB 無任何備份」
+  在源碼層錯誤——koopa0dev 的每日備份自始存在於 `Koopa0/server`，owner 於 VPS 實測四探針
+  全綠（E1）；bucket 私有經 dashboard 截圖證實（E2），「勿用公開資產桶」理由撤銷。**owner
+  裁決：PR-0 收斂為 docs-only**——作法 1／7 的備份硬化登記為 repo-B candidates（**NOT
+  scheduled**，歸屬與排程待 owner）。E1–E6 已執行，**證據已交 acceptance session，最終
+  committed-HEAD acceptance pending**（本行不代表 PASS；PASS 與「完成紀錄」欄由獨立驗收
+  session 於通過後填）。鎖定決策：E4＝`SET LOCAL koopa.actor='claude'`（只避免 human-only
+  指標被 16 筆污染，`review_period.goals` 仍因降級剩 5，非「全然不受影響」）；E5＝2 project
+  掛 goal、2 project 只掛 `area_id='日語'`/`goal_id=NULL`；E6＝`/api/search*` 10 req/10s
+  per IP Block 使用中（dashboard，`tofu` 不還原）。作法 2 oracle 改為 dump 自身 COPY 行數
+  逐表 diff（非 prod、非三表）；作法 6「修 area neglect 假陽性」理由為誤已改寫（掛載零事件、
+  snapshot 不追溯，價值在 projects_total 與未來歸因）；作法 8 hermes spec owner 裁定含入並修
+  兩處事實漂移。restore runbook 缺 `ON_ERROR_STOP`＝confirmed correctness finding，列 repo-B
+  candidate #1。docs-only 分支已推 `docs/pr-0-ops`；本次 reconciliation 不動「完成紀錄」欄、
+  不開 PR、不宣告 PASS。（Claude／coordination session；非驗收）
