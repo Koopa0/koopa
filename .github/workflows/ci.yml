@@ -150,11 +150,14 @@ jobs:
           key: ${{ secrets.VPS_SSH_KEY }}
           script: |
             cd ~/koopa0.dev
-            # fetch + hard reset instead of pull — production always mirrors
-            # origin exactly, survives force-push / history rewrites, and
-            # refuses to get stuck on divergent branches.
+            # fetch + hard reset instead of pull — deploy the exact revision
+            # whose CI just passed (github.sha for this push), not whatever
+            # origin/main points at now: a later push can advance main while
+            # this deploy waits its turn in the deploy concurrency group. Reset
+            # also survives force-push / history rewrites and never gets stuck
+            # on a divergent branch.
             git fetch origin
-            git reset --hard origin/main
+            git reset --hard "${{ github.sha }}"
 
             # Silence Grafana alerts during deploy (5 min)
             export $(grep GRAFANA_ADMIN_PASSWORD ~/server/observability/.env)
