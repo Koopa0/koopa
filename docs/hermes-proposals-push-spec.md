@@ -2,8 +2,7 @@
 
 For the **hermes** repo (NOT koopa0.dev). koopa0.dev exposes the reads on the
 MCP surface; hermes does the pushing. Forward this to a hermes session only
-after the `proposals` brief section has shipped on koopa0.dev
-(see `brief-proposals-section-spec.md`).
+after the `proposals` brief section has shipped on koopa0.dev.
 
 ## Why this exists
 
