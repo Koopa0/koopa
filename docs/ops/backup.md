@@ -14,12 +14,12 @@ Daily 03:00 Asia/Taipei via VPS cron (`0 3 * * *`), installed by
   `db-backup-stale` pages Telegram once the newest success passes 26h.
 
 ## Restore
-`DISASTER-RECOVERY.md` scenario A, steps 8–10: bring up postgres alone, fetch
-the newest R2 object, `gunzip -c … | psql -U koopa koopa0dev`, then start the
-rest of the stack — migrations are a no-op against a restored schema.
+`DISASTER-RECOVERY.md` scenario A, steps 8–10: bring up postgres alone, fetch the
+newest R2 object, then restore with both safety flags —
+`gunzip -c … | psql -U koopa koopa0dev -v ON_ERROR_STOP=1 --single-transaction` —
+and start the rest of the stack. The runbook's own command omits both; without
+them psql exits 0 after a failed statement and leaves a partial schema.
 
 ## Drill
-2026-07-10: the 03:00 R2 object restored into a throwaway `pgvector:pg17`; all
-18 tables matched the dump's own COPY counts — todos 42, contents 4,
-activity_events 446. It ran `psql -v ON_ERROR_STOP=1 --single-transaction`; the
-runbook omits both, and without them psql exits 0 after a failed statement.
+2026-07-10: the R2 object restored clean into a throwaway `pgvector:pg17`; all 18
+tables matched the dump's own COPY counts (todos 42, contents 4, activity_events 446).
