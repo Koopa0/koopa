@@ -66,9 +66,9 @@ credentials; the MCP transport is the agent access boundary.
 ### 3. Self-clear rules (STRICT — no server-side state guard)
 
 - **MAY** archive a row in **state=done** once its disposition is recorded:
-  `resolve_todo(id, "archived")` — EXCEPT ids the ledger flags as recurring.
+  `resolve_todo(id, "archived", as="hermes")` — EXCEPT ids the ledger flags as recurring.
 - **MAY** dismiss a row still in **state=inbox** that hermes decides to
-  retract: `resolve_todo(id, "dismissed")`.
+  retract: `resolve_todo(id, "dismissed", as="hermes")`.
 - **MUST NOT** resolve rows in state `todo` / `in_progress` / `someday` —
   those are Koopa's live todos; archiving one deletes it from his active
   surface.
