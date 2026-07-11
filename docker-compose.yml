@@ -118,6 +118,7 @@ services:
       ADMIN_EMAIL: ${ADMIN_EMAIL}
       ADMIN_API_URL: http://backend:8080
       JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
     depends_on:
       postgres:
         condition: service_healthy
