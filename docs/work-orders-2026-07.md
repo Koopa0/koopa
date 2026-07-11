@@ -118,7 +118,7 @@ CJK FTS：中文長句成單一 token（schema comment 已承認、embedding 補
 - **範圍**：只做一件事——deploy 不再與 CI 並行
 - **作法**：deploy job 併入 `.github/workflows/ci.yml`，`needs: [go, integration, lint, sqlc-drift, frontend]` + `if: github.ref == 'refs/heads/main' && github.event_name == 'push'`；刪 `deploy.yml` 獨立觸發
 - **驗收**：故意紅一個測試的 branch merge 不觸發 deploy（或 needs 鏈 dry-run 驗證）；正常 merge 部署成功
-- **完成紀錄**：
+- **完成紀錄**：2026-07-11 / PR #26 / deploy 併入 CI 五項 needs gate，釘住 `github.sha` 並以 `set -e` fail-closed；main merge run #29139570921 正常部署 / **PASS**（Codex 驗收 merge HEAD `6d56522e`）
 
 ### PR-2 `refactor(daily)!: remove the daily-plan subsystem`（最大的一刀）
 - **範圍**：`plan_day` 工具＋catalog（15→14）＋drift test；migration **DROP TABLE daily_plan_items**（down=重建 schema，資料不回）；brief 移除 `mode` 參數/reflection mode/`committed_todos`（Go json 忽略 unknown field → 舊 caller 傳 mode:"morning" 不會壞）；Today aggregate 移除 committed 區；admin Plan 頁＋路由＋nav＋specs 刪除
