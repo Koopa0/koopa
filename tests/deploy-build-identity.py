@@ -189,7 +189,7 @@ def install_boundary_stubs(bin_dir: Path) -> None:
         r'''
         #!/usr/bin/env bash
         set -eu
-        printf 'curl %s\n' "$*" >> "$HARNESS_LOG"
+        printf 'curl BUILD_SHA=%s %s\n' "${BUILD_SHA:-}" "$*" >> "$HARNESS_LOG"
         if [[ " $* " == *" -X POST "* ]]; then
           printf '{"silenceID":"test-silence"}\n'
         fi
@@ -221,6 +221,7 @@ def run_deploy(
     backend_mode: str = "valid",
     mcp_mode: str = "valid",
     checked_out_sha: str = EXPECTED_SHA,
+    grafana_env: str = "GRAFANA_ADMIN_PASSWORD=test-password\n",
 ) -> tuple[subprocess.CompletedProcess[str], str]:
     with tempfile.TemporaryDirectory(prefix="koopa-deploy-identity-") as raw_tmp:
         tmp = Path(raw_tmp)
@@ -231,9 +232,7 @@ def run_deploy(
         repo.mkdir(parents=True)
         observability.mkdir(parents=True)
         bin_dir.mkdir()
-        (observability / ".env").write_text(
-            "GRAFANA_ADMIN_PASSWORD=test-password\n", encoding="utf-8"
-        )
+        (observability / ".env").write_text(grafana_env, encoding="utf-8")
         install_boundary_stubs(bin_dir)
 
         script_path = tmp / "deploy.sh"
@@ -299,6 +298,48 @@ def check_deploy_script() -> list[str]:
         failures.append(
             "caught:matching-runtime-sha-rejected "
             f"exit={positive.returncode} stderr={positive.stderr.strip()!r}"
+        )
+
+    # The deploy identity must remain bound to DEPLOY_SHA even if an
+    # intervening environment import overwrites the convenience BUILD_SHA
+    # variable. This models the production failure where both newly built
+    # services reported `dev` and the health oracle accepted that same value.
+    clobber_env = "GRAFANA_ADMIN_PASSWORD=test-password BUILD_SHA=dev\n"
+    clobbered, clobbered_log = run_deploy(
+        script,
+        backend_sha="dev",
+        mcp_sha="dev",
+        grafana_env=clobber_env,
+    )
+    failures.extend(
+        assert_invoked(
+            clobbered_log,
+            "curl BUILD_SHA=dev -sf -X POST",
+            "build-sha-clobber-applied",
+        )
+    )
+    if clobbered.returncode == 0:
+        failures.append("caught:mutable-build-sha-clobber-accepted exit=0")
+
+    recovered, recovered_log = run_deploy(script, grafana_env=clobber_env)
+    failures.extend(
+        assert_invoked(
+            recovered_log,
+            "curl BUILD_SHA=dev -sf -X POST",
+            "build-sha-positive-clobber-applied",
+        )
+    )
+    failures.extend(
+        assert_invoked(
+            recovered_log,
+            "docker BUILD_SHA=" + EXPECTED_SHA + " compose up -d --build",
+            "immutable-sha-build",
+        )
+    )
+    if recovered.returncode != 0:
+        failures.append(
+            "caught:immutable-sha-clobber-rejected "
+            f"exit={recovered.returncode} stderr={recovered.stderr.strip()!r}"
         )
 
     cases = (
