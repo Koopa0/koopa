@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -27,6 +28,7 @@ import textwrap
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / ".github/workflows/ci.yml"
 COMPOSE = ROOT / "docker-compose.yml"
+DEPLOY_ENTRYPOINT = ROOT / "scripts/deploy-production.sh"
 EXPECTED_SHA = "1111111111111111111111111111111111111111"
 
 
@@ -173,7 +175,7 @@ def install_boundary_stubs(bin_dir: Path) -> None:
         r'''
         #!/usr/bin/env bash
         set -eu
-        printf 'git %s\n' "$*" >> "$HARNESS_LOG"
+        printf 'git BUILD_SHA=%s %s\n' "${BUILD_SHA:-}" "$*" >> "$HARNESS_LOG"
         if [[ "${1:-}" == "rev-parse" && "${2:-}" == "HEAD" ]]; then
           printf '%s\n' "$CHECKED_OUT_SHA"
         fi
@@ -187,6 +189,15 @@ def install_boundary_stubs(bin_dir: Path) -> None:
         printf 'docker BUILD_SHA=%s %s\n' "${BUILD_SHA:-}" "$*" >> "$HARNESS_LOG"
 
         if [[ "${1:-}" == "compose" && "${2:-}" == "up" ]]; then
+          exit 0
+        fi
+        if [[ "${1:-}" == "compose" && "${2:-}" == "build" ]]; then
+          exit 0
+        fi
+        if [[ "${1:-}" == "compose" && "${2:-}" == "config" ]]; then
+          config_sha="${COMPOSE_CONFIG_SHA:-${BUILD_SHA:-dev}}"
+          printf '{"services":{"backend":{"build":{"args":{"BUILD_SHA":"%s"}}},"mcp":{"build":{"args":{"BUILD_SHA":"%s"}}}}}\n' \
+            "$config_sha" "$config_sha"
           exit 0
         fi
         if [[ "${1:-}" == "image" && "${2:-}" == "prune" ]]; then
@@ -269,6 +280,8 @@ def run_deploy(
     mcp_mode: str = "valid",
     checked_out_sha: str = EXPECTED_SHA,
     grafana_env: str = "GRAFANA_ADMIN_PASSWORD=test-password\n",
+    ambient_build_sha: str | None = None,
+    compose_config_sha: str | None = None,
 ) -> tuple[subprocess.CompletedProcess[str], str]:
     with tempfile.TemporaryDirectory(prefix="koopa-deploy-identity-") as raw_tmp:
         tmp = Path(raw_tmp)
@@ -281,6 +294,10 @@ def run_deploy(
         bin_dir.mkdir()
         (observability / ".env").write_text(grafana_env, encoding="utf-8")
         install_boundary_stubs(bin_dir)
+        if DEPLOY_ENTRYPOINT.exists():
+            entrypoint = repo / DEPLOY_ENTRYPOINT.relative_to(ROOT)
+            entrypoint.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(DEPLOY_ENTRYPOINT, entrypoint)
 
         script_path = tmp / "deploy.sh"
         script_path.write_text(script, encoding="utf-8")
@@ -300,6 +317,10 @@ def run_deploy(
                 "MCP_HEALTH_SHA": mcp_sha,
             }
         )
+        if ambient_build_sha is not None:
+            env["BUILD_SHA"] = ambient_build_sha
+        if compose_config_sha is not None:
+            env["COMPOSE_CONFIG_SHA"] = compose_config_sha
         proc = subprocess.run(
             ["bash", str(script_path)],
             cwd=repo,
@@ -381,18 +402,54 @@ def check_deploy_script() -> list[str]:
         return [str(err)]
 
     failures: list[str] = []
+    if not DEPLOY_ENTRYPOINT.is_file():
+        failures.append(
+            "caught:tracked-deploy-entrypoint-missing "
+            f"path={DEPLOY_ENTRYPOINT.relative_to(ROOT)}"
+        )
+        deploy_script = script
+    else:
+        deploy_script = DEPLOY_ENTRYPOINT.read_text(encoding="utf-8")
+        required_outer = (
+            'exec /bin/bash --noprofile --norc scripts/deploy-production.sh '
+            '"$DEPLOY_SHA"'
+        )
+        if required_outer not in script:
+            failures.append(
+                "caught:explicit-deploy-shell-missing "
+                f"needle={required_outer!r}"
+            )
+
     positive, positive_log = run_deploy(script)
     failures.extend(
-        assert_invoked(positive_log, "git reset --hard " + EXPECTED_SHA, "sha-reset")
+        assert_invoked(positive_log, "reset --hard " + EXPECTED_SHA, "sha-reset")
     )
     failures.extend(
-        assert_invoked(positive_log, "git rev-parse HEAD", "sha-readback")
+        assert_invoked(positive_log, "rev-parse HEAD", "sha-readback")
     )
     failures.extend(
         assert_invoked(
             positive_log,
-            "docker BUILD_SHA=" + EXPECTED_SHA + " compose up -d --build",
-            "sha-build",
+            "docker BUILD_SHA="
+            + EXPECTED_SHA
+            + " compose build --build-arg BUILD_SHA="
+            + EXPECTED_SHA
+            + " backend mcp",
+            "explicit-sha-build",
+        )
+    )
+    failures.extend(
+        assert_invoked(
+            positive_log,
+            "docker BUILD_SHA=" + EXPECTED_SHA + " compose build frontend",
+            "frontend-build",
+        )
+    )
+    failures.extend(
+        assert_invoked(
+            positive_log,
+            "docker BUILD_SHA=" + EXPECTED_SHA + " compose up -d --no-build",
+            "no-rebuild-up",
         )
     )
     failures.extend(assert_invoked(positive_log, "probe backend", "backend-health"))
@@ -403,40 +460,42 @@ def check_deploy_script() -> list[str]:
             f"exit={positive.returncode} stderr={positive.stderr.strip()!r}"
         )
 
-    # The deploy identity must remain bound to DEPLOY_SHA even if an
-    # intervening environment import overwrites the convenience BUILD_SHA
-    # variable. Production proved that both images can be built as `dev`; its
-    # health loop did not execute, so this is a controlled failure class rather
-    # than a claim about the unavailable VPS environment.
-    clobber_env = "GRAFANA_ADMIN_PASSWORD=test-password BUILD_SHA=dev\n"
+    # The deploy identity must remain bound to DEPLOY_SHA even when the remote
+    # process starts with a stale BUILD_SHA. Production proved that both images
+    # can be built as `dev`; this is a controlled ambient-environment class,
+    # not a claim about the unavailable VPS root cause.
     clobbered, clobbered_log = run_deploy(
         script,
         backend_sha="dev",
         mcp_sha="dev",
-        grafana_env=clobber_env,
+        ambient_build_sha="dev",
     )
     failures.extend(
         assert_invoked(
             clobbered_log,
-            "curl BUILD_SHA=dev -sf -X POST",
-            "build-sha-clobber-applied",
+            "git BUILD_SHA=dev fetch origin",
+            "ambient-build-sha-applied",
         )
     )
     if clobbered.returncode == 0:
         failures.append("caught:mutable-build-sha-clobber-accepted exit=0")
 
-    recovered, recovered_log = run_deploy(script, grafana_env=clobber_env)
+    recovered, recovered_log = run_deploy(script, ambient_build_sha="dev")
     failures.extend(
         assert_invoked(
             recovered_log,
-            "curl BUILD_SHA=dev -sf -X POST",
-            "build-sha-positive-clobber-applied",
+            "git BUILD_SHA=dev fetch origin",
+            "ambient-build-sha-positive-applied",
         )
     )
     failures.extend(
         assert_invoked(
             recovered_log,
-            "docker BUILD_SHA=" + EXPECTED_SHA + " compose up -d --build",
+            "docker BUILD_SHA="
+            + EXPECTED_SHA
+            + " compose build --build-arg BUILD_SHA="
+            + EXPECTED_SHA
+            + " backend mcp",
             "immutable-sha-build",
         )
     )
@@ -446,33 +505,38 @@ def check_deploy_script() -> list[str]:
             f"exit={recovered.returncode} stderr={recovered.stderr.strip()!r}"
         )
 
-    authority_clobber, authority_log = run_deploy(
-        script,
-        backend_sha="dev",
-        mcp_sha="dev",
-        grafana_env="GRAFANA_ADMIN_PASSWORD=test-password DEPLOY_SHA=dev\n",
+    config_mismatch, config_mismatch_log = run_deploy(
+        script, compose_config_sha="dev"
     )
-    if authority_clobber.returncode == 0:
-        failures.append("caught:readonly-deploy-sha-clobber-accepted exit=0")
-    if "compose up -d --build" in authority_log:
-        failures.append("caught:readonly-deploy-sha-clobber-reached-build")
-    readonly_markers = ("readonly variable", "is read only")
-    if not any(marker in authority_clobber.stderr for marker in readonly_markers):
-        failures.append(
-            "caught:readonly-deploy-sha-clobber-not-observed "
-            f"stderr={authority_clobber.stderr.strip()!r}"
+    failures.extend(
+        assert_invoked(
+            config_mismatch_log,
+            "compose config --format json",
+            "compose-config-mismatch-probed",
         )
+    )
+    if config_mismatch.returncode == 0:
+        failures.append("caught:compose-config-sha-mismatch-accepted exit=0")
+    if "compose build" in config_mismatch_log:
+        failures.append("caught:compose-config-sha-mismatch-reached-build")
 
-    health_pos = script.find("# Post-deploy health check")
-    receipt_pos = script.find("DEPLOY_RECEIPT sha=")
-    prune_pos = script.find("docker image prune -f")
-    if min(health_pos, receipt_pos, prune_pos) < 0 or not (
-        health_pos < receipt_pos < prune_pos
+    config_pos = deploy_script.find("docker compose config --format json")
+    build_pos = deploy_script.find("docker compose build --build-arg")
+    health_pos = deploy_script.find("# Post-deploy health check")
+    prune_pos = deploy_script.find("docker image prune -f")
+    receipt_pos = deploy_script.find("DEPLOY_RECEIPT sha=")
+    if min(config_pos, build_pos, health_pos, prune_pos, receipt_pos) < 0 or not (
+        config_pos < build_pos < health_pos < prune_pos < receipt_pos
     ):
         failures.append(
             "caught:deploy-receipt-order-invalid "
-            f"health={health_pos} receipt={receipt_pos} prune={prune_pos}"
+            f"config={config_pos} build={build_pos} health={health_pos} "
+            f"prune={prune_pos} receipt={receipt_pos}"
         )
+    if DEPLOY_ENTRYPOINT.is_file() and not deploy_script.rstrip().endswith(
+        '"$DEPLOY_SHA" "$backend_receipt_sha" "$mcp_receipt_sha"'
+    ):
+        failures.append("caught:deploy-receipt-not-terminal")
 
     expected_receipt = (
         f"DEPLOY_RECEIPT sha={EXPECTED_SHA} "
@@ -488,7 +552,7 @@ def check_deploy_script() -> list[str]:
         (
             "checked-out-sha-mismatch-accepted",
             {"checked_out_sha": "4" * 40},
-            "git rev-parse HEAD",
+            "rev-parse HEAD",
         ),
         (
             "backend-build-sha-mismatch-accepted",
