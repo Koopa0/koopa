@@ -212,7 +212,7 @@ func (o *Provider) Metadata(w http.ResponseWriter, _ *http.Request) {
 		"token_endpoint":                        o.baseURL + "/oauth/token",
 		"registration_endpoint":                 o.baseURL + "/oauth/register",
 		"response_types_supported":              []string{"code"},
-		"grant_types_supported":                 []string{"authorization_code", "client_credentials", "refresh_token"},
+		"grant_types_supported":                 []string{"authorization_code", "refresh_token"},
 		"token_endpoint_auth_methods_supported": []string{"client_secret_post"},
 		"code_challenge_methods_supported":      []string{"S256"},
 	})
@@ -392,11 +392,6 @@ func (o *Provider) Token(w http.ResponseWriter, r *http.Request) {
 	grantType := r.FormValue("grant_type")
 
 	switch grantType {
-	case "client_credentials":
-		if !o.checkClientCredentials(r) {
-			jsonError(w, "invalid_client", http.StatusUnauthorized)
-			return
-		}
 	case "authorization_code":
 		if !o.checkClientCredentials(r) {
 			jsonError(w, "invalid_client", http.StatusUnauthorized)

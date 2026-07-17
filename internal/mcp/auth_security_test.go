@@ -316,45 +316,6 @@ func TestToken_UnsupportedGrantType(t *testing.T) {
 	}
 }
 
-func TestToken_ClientCredentials_InvalidClient(t *testing.T) {
-	t.Parallel()
-	o := newTestOAuth(t)
-	cid, _ := registerClient(t, o)
-
-	tests := []struct {
-		name     string
-		clientID string
-		secret   string
-		wantCode int
-	}{
-		{name: "wrong secret", clientID: cid, secret: "wrong-secret", wantCode: http.StatusUnauthorized},
-		{name: "unknown client_id", clientID: "unknown", secret: "any", wantCode: http.StatusUnauthorized},
-		{name: "empty client_id", clientID: "", secret: "any", wantCode: http.StatusUnauthorized},
-		{name: "empty secret", clientID: cid, secret: "", wantCode: http.StatusUnauthorized},
-		{name: "SQL in client_id", clientID: "'; DROP TABLE clients;--", secret: "x", wantCode: http.StatusUnauthorized},
-		{name: "null byte in client_id", clientID: cid + "\x00", secret: "x", wantCode: http.StatusUnauthorized},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			form := url.Values{
-				"grant_type":    {"client_credentials"},
-				"client_id":     {tt.clientID},
-				"client_secret": {tt.secret},
-			}
-			req := httptest.NewRequest(http.MethodPost, "/oauth/token", strings.NewReader(form.Encode()))
-			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-			w := httptest.NewRecorder()
-			o.Token(w, req)
-			if w.Code != tt.wantCode {
-				t.Errorf("Token(client_credentials, client=%q) status = %d, want %d",
-					tt.clientID, w.Code, tt.wantCode)
-			}
-		})
-	}
-}
-
 func TestToken_AuthorizationCode_PKCEFailure(t *testing.T) {
 	t.Parallel()
 	o := newTestOAuth(t)
@@ -955,20 +916,19 @@ func newTestOAuthB(b *testing.B) *Provider {
 }
 
 // ---------------------------------------------------------------------------
-// Scope escalation — client_credentials cannot request elevated scopes
+// Scope escalation — the scope parameter is ignored and never crashes
 // ---------------------------------------------------------------------------
 
 func TestToken_ScopeEscalation(t *testing.T) {
 	t.Parallel()
 	o := newTestOAuth(t)
-	cid, csec := registerClient(t, o)
+	_, _, rt, _ := o.issueToken()
 
-	// The Token endpoint does not validate scope (scope is not in the spec implementation).
-	// Verify that passing an elevated scope does NOT cause a 5xx error.
+	// The Token endpoint does not implement scope. Passing an elevated scope
+	// on a supported grant must NOT cause a 5xx error.
 	form := url.Values{
-		"grant_type":    {"client_credentials"},
-		"client_id":     {cid},
-		"client_secret": {csec},
+		"grant_type":    {"refresh_token"},
+		"refresh_token": {rt},
 		"scope":         {"admin write:secrets read:all"},
 	}
 	req := httptest.NewRequest(http.MethodPost, "/oauth/token", strings.NewReader(form.Encode()))
