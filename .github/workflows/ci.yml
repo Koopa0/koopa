@@ -173,9 +173,46 @@ jobs:
               echo "ERROR: checked-out SHA $CHECKED_OUT_SHA does not match deploy SHA $DEPLOY_SHA"
               exit 1
             fi
-            # Run the tracked artifact under a known shell without profile
-            # hooks. `exec` makes its exit status the SSH command status.
-            exec /bin/bash --noprofile --norc scripts/deploy-production.sh "$DEPLOY_SHA"
+            # Do not execute or build from the VPS working tree. Sparse or
+            # alternate-worktree state can make reset report the right HEAD
+            # while leaving stale bytes on disk. Materialize the entire
+            # CI-approved commit object into an isolated release directory.
+            SOURCE_REPO=$(pwd -P)
+            DEPLOY_ENV="$SOURCE_REPO/.env"
+            if [ ! -f "$DEPLOY_ENV" ]; then
+              echo "ERROR: production Compose environment is missing: $DEPLOY_ENV"
+              exit 1
+            fi
+            DEPLOY_RELEASE=$(mktemp -d)
+            DEPLOY_ARCHIVE=$(mktemp)
+            readonly SOURCE_REPO DEPLOY_ENV DEPLOY_RELEASE DEPLOY_ARCHIVE
+            # cleanup_release is invoked by the EXIT trap below.
+            # shellcheck disable=SC2329
+            cleanup_release() {
+              rm -rf -- "$DEPLOY_RELEASE" "$DEPLOY_ARCHIVE" >/dev/null 2>&1 || true
+            }
+            trap cleanup_release 0
+
+            git archive --format=tar --output "$DEPLOY_ARCHIVE" "$DEPLOY_SHA"
+            tar -xf "$DEPLOY_ARCHIVE" -C "$DEPLOY_RELEASE"
+            DEPLOY_ENTRYPOINT_BLOB=$(git rev-parse "${DEPLOY_SHA}:scripts/deploy-production.sh")
+            RELEASE_ENTRYPOINT_BLOB=$(git hash-object --no-filters "$DEPLOY_RELEASE/scripts/deploy-production.sh")
+            readonly DEPLOY_ENTRYPOINT_BLOB RELEASE_ENTRYPOINT_BLOB
+            if [ "$RELEASE_ENTRYPOINT_BLOB" != "$DEPLOY_ENTRYPOINT_BLOB" ]; then
+              echo "ERROR: release entrypoint blob $RELEASE_ENTRYPOINT_BLOB does not match commit blob $DEPLOY_ENTRYPOINT_BLOB"
+              exit 1
+            fi
+            ln -s "$DEPLOY_ENV" "$DEPLOY_RELEASE/.env"
+            cd "$DEPLOY_RELEASE"
+
+            # Preserve the existing Compose project identity while clearing
+            # shell startup hooks. Capture the child status so cleanup still
+            # runs and failures remain the SSH command status.
+            set +e
+            BASH_ENV=/dev/null ENV=/dev/null /bin/bash --noprofile --norc scripts/deploy-production.sh "$DEPLOY_SHA"
+            DEPLOY_STATUS=$?
+            set -e
+            exit "$DEPLOY_STATUS"
 
       - name: Verify deployment receipt
         env:
