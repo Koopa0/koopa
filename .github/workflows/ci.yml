@@ -146,17 +146,20 @@ jobs:
       cancel-in-progress: false
     steps:
       - name: Deploy via SSH
+        id: deploy_ssh
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
+          capture_stdout: true
           script: |
             # Fail closed — appleboy/ssh-action has no script_stop equivalent,
             # so a failed fetch/reset must abort before docker compose runs.
             set -e
             cd ~/koopa0.dev
             DEPLOY_SHA="${{ github.sha }}"
+            readonly DEPLOY_SHA
             # fetch + hard reset instead of pull — deploy the exact revision
             # whose CI just passed (github.sha for this push), not whatever
             # origin/main points at now: a later push can advance main while
@@ -171,11 +174,6 @@ jobs:
               exit 1
             fi
 
-            # Compose forwards BUILD_SHA into both Dockerfiles. Export one
-            # trigger-bound value so backend and MCP cannot be stamped from a
-            # moving ref or from Docker's local-development fallback.
-            export BUILD_SHA="$DEPLOY_SHA"
-
             # Silence Grafana alerts during deploy (5 min)
             export $(grep GRAFANA_ADMIN_PASSWORD ~/server/observability/.env)
             SILENCE_ID=$(curl -sf -X POST http://localhost:3000/api/alertmanager/grafana/api/v2/silences \
@@ -189,11 +187,14 @@ jobs:
                 \"comment\": \"Deploy silence\"
               }" 2>/dev/null | jq -r '.silenceID' 2>/dev/null) || true
 
-            docker compose up -d --build
-            docker image prune -f
+            # Bind the Docker-only name at its consumer. BUILD_SHA is not an
+            # authority: an intervening environment import may overwrite it.
+            BUILD_SHA="$DEPLOY_SHA" docker compose up -d --build
 
             # Post-deploy health check
             echo "Waiting for services to be ready..."
+            backend_receipt_sha=
+            mcp_receipt_sha=
             for svc in backend mcp; do
               case $svc in
                 backend) endpoint="http://localhost:8080/healthz" ;;
@@ -207,11 +208,15 @@ jobs:
                     docker compose logs "$svc" --tail 20
                     exit 1
                   fi
-                  if [ "$observed_sha" != "$BUILD_SHA" ]; then
-                    echo "ERROR: $svc reports build SHA $observed_sha; expected $BUILD_SHA"
+                  if [ "$observed_sha" != "$DEPLOY_SHA" ]; then
+                    echo "ERROR: $svc reports build SHA $observed_sha; expected $DEPLOY_SHA"
                     docker compose logs "$svc" --tail 20
                     exit 1
                   fi
+                  case $svc in
+                    backend) backend_receipt_sha="$observed_sha" ;;
+                    mcp)     mcp_receipt_sha="$observed_sha" ;;
+                  esac
                   echo "$svc healthy at build $observed_sha after ${i}s"
                   break
                 fi
@@ -229,3 +234,26 @@ jobs:
               curl -sf -X DELETE "http://localhost:3000/api/alertmanager/grafana/api/v2/silence/${SILENCE_ID}" \
                 -H "Authorization: Basic $(echo -n admin:${GRAFANA_ADMIN_PASSWORD} | base64)" 2>/dev/null || true
             fi
+
+            # This is the only remote completion receipt the runner accepts.
+            # It is derived from both observed container identities, not from
+            # the expected SHA alone.
+            printf 'DEPLOY_RECEIPT sha=%s backend=%s mcp=%s\n' \
+              "$DEPLOY_SHA" "$backend_receipt_sha" "$mcp_receipt_sha"
+
+            # Image pruning is cleanup, not deployment acceptance. Keep it
+            # after the receipt because production SSH sessions have repeatedly
+            # stopped emitting output at this command.
+            docker image prune -f || true
+
+      - name: Verify deployment receipt
+        env:
+          DEPLOY_SHA: ${{ github.sha }}
+          DEPLOY_STDOUT: ${{ steps.deploy_ssh.outputs.stdout }}
+        run: |
+          set -euo pipefail
+          expected="DEPLOY_RECEIPT sha=${DEPLOY_SHA} backend=${DEPLOY_SHA} mcp=${DEPLOY_SHA}"
+          if ! grep -Fqx "$expected" <<<"$DEPLOY_STDOUT"; then
+            echo "::error::SSH action completed without the exact deployment receipt: $expected"
+            exit 1
+          fi
