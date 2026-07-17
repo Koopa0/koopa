@@ -63,6 +63,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        # CI exports the immutable push SHA; local builds intentionally use dev.
+        BUILD_SHA: ${BUILD_SHA:-dev}
     environment:
       DATABASE_URL: postgres://koopa:${POSTGRES_PASSWORD:-changeme}@postgres:5432/koopa0dev?sslmode=disable
       JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
@@ -106,6 +109,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.mcp
+      args:
+        # Keep both binaries on the same caller-provided build identity.
+        BUILD_SHA: ${BUILD_SHA:-dev}
     environment:
       DATABASE_URL: postgres://koopa:${POSTGRES_PASSWORD:-changeme}@postgres:5432/koopa0dev?sslmode=disable
       MCP_TOKEN: ${MCP_TOKEN}

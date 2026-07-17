@@ -9,9 +9,9 @@ RUN go mod download
 
 COPY . .
 
-# Build-time identity injected via -ldflags. BUILD_SHA / BUILD_VERSION can
-# be passed as --build-arg in CI; defaults derive from the in-tree git state
-# so a local `docker build .` still stamps a meaningful SHA.
+# Build-time identity injected via -ldflags. CI/Compose passes BUILD_SHA
+# explicitly. Because .dockerignore excludes .git, an ordinary local build
+# without that argument deliberately advertises the visible `dev` fallback.
 ARG BUILD_SHA
 ARG BUILD_VERSION=v0.0.0-dev
 RUN SHA="${BUILD_SHA:-$(git rev-parse HEAD 2>/dev/null || echo dev)}" \
