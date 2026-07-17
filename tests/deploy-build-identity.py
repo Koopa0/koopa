@@ -128,7 +128,7 @@ def install_boundary_stubs(bin_dir: Path) -> None:
         set -eu
         printf 'git %s\n' "$*" >> "$HARNESS_LOG"
         if [[ "${1:-}" == "rev-parse" && "${2:-}" == "HEAD" ]]; then
-          printf '%s\n' "$EXPECTED_SHA"
+          printf '%s\n' "$CHECKED_OUT_SHA"
         fi
         ''',
     )
@@ -162,6 +162,9 @@ def install_boundary_stubs(bin_dir: Path) -> None:
               ;;
             missing)
               printf '{"status":"ok","build":{"built_at":"test","version":"test"}}\n'
+              ;;
+            bad-status)
+              printf '{"status":"starting","build":{"sha":"%s","built_at":"test","version":"test"}}\n' "$sha"
               ;;
             malformed)
               printf '{not-json\n'
@@ -217,6 +220,7 @@ def run_deploy(
     mcp_sha: str = EXPECTED_SHA,
     backend_mode: str = "valid",
     mcp_mode: str = "valid",
+    checked_out_sha: str = EXPECTED_SHA,
 ) -> tuple[subprocess.CompletedProcess[str], str]:
     with tempfile.TemporaryDirectory(prefix="koopa-deploy-identity-") as raw_tmp:
         tmp = Path(raw_tmp)
@@ -243,6 +247,7 @@ def run_deploy(
                 "PATH": str(bin_dir) + os.pathsep + env["PATH"],
                 "HARNESS_LOG": str(log_path),
                 "EXPECTED_SHA": EXPECTED_SHA,
+                "CHECKED_OUT_SHA": checked_out_sha,
                 "BACKEND_HEALTH_MODE": backend_mode,
                 "BACKEND_HEALTH_SHA": backend_sha,
                 "MCP_HEALTH_MODE": mcp_mode,
@@ -275,8 +280,19 @@ def check_deploy_script() -> list[str]:
 
     failures: list[str] = []
     positive, positive_log = run_deploy(script)
-    failures.extend(assert_invoked(positive_log, "git reset --hard " + EXPECTED_SHA, "sha-reset"))
-    failures.extend(assert_invoked(positive_log, "docker BUILD_SHA=" + EXPECTED_SHA + " compose up -d --build", "sha-build"))
+    failures.extend(
+        assert_invoked(positive_log, "git reset --hard " + EXPECTED_SHA, "sha-reset")
+    )
+    failures.extend(
+        assert_invoked(positive_log, "git rev-parse HEAD", "sha-readback")
+    )
+    failures.extend(
+        assert_invoked(
+            positive_log,
+            "docker BUILD_SHA=" + EXPECTED_SHA + " compose up -d --build",
+            "sha-build",
+        )
+    )
     failures.extend(assert_invoked(positive_log, "probe backend", "backend-health"))
     failures.extend(assert_invoked(positive_log, "probe mcp", "mcp-health"))
     if positive.returncode != 0:
@@ -286,10 +302,20 @@ def check_deploy_script() -> list[str]:
         )
 
     cases = (
-        ("backend-build-sha-mismatch-accepted", {"backend_sha": "2" * 40}, "probe backend"),
+        (
+            "checked-out-sha-mismatch-accepted",
+            {"checked_out_sha": "4" * 40},
+            "git rev-parse HEAD",
+        ),
+        (
+            "backend-build-sha-mismatch-accepted",
+            {"backend_sha": "2" * 40},
+            "probe backend",
+        ),
         ("mcp-build-sha-mismatch-accepted", {"mcp_sha": "3" * 40}, "probe mcp"),
         ("backend-dev-sha-accepted", {"backend_sha": "dev"}, "probe backend"),
         ("mcp-missing-sha-accepted", {"mcp_mode": "missing"}, "probe mcp"),
+        ("backend-non-ok-status-accepted", {"backend_mode": "bad-status"}, "probe backend"),
         ("backend-malformed-health-accepted", {"backend_mode": "malformed"}, "probe backend"),
     )
     for name, kwargs, marker in cases:
