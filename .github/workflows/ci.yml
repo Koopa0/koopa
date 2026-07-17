@@ -157,6 +157,7 @@ jobs:
             set -e
             cd ~/koopa0.dev
             DEPLOY_SHA="${{ github.sha }}"
+            readonly DEPLOY_SHA
             # fetch + hard reset instead of pull — deploy the exact revision
             # whose CI just passed (github.sha for this push), not whatever
             # origin/main points at now: a later push can advance main while
@@ -171,11 +172,6 @@ jobs:
               exit 1
             fi
 
-            # Compose forwards BUILD_SHA into both Dockerfiles. Export one
-            # trigger-bound value so backend and MCP cannot be stamped from a
-            # moving ref or from Docker's local-development fallback.
-            export BUILD_SHA="$DEPLOY_SHA"
-
             # Silence Grafana alerts during deploy (5 min)
             export $(grep GRAFANA_ADMIN_PASSWORD ~/server/observability/.env)
             SILENCE_ID=$(curl -sf -X POST http://localhost:3000/api/alertmanager/grafana/api/v2/silences \
@@ -189,7 +185,9 @@ jobs:
                 \"comment\": \"Deploy silence\"
               }" 2>/dev/null | jq -r '.silenceID' 2>/dev/null) || true
 
-            docker compose up -d --build
+            # Bind the Docker-only name at its consumer. BUILD_SHA is not an
+            # authority: an intervening environment import may overwrite it.
+            BUILD_SHA="$DEPLOY_SHA" docker compose up -d --build
             docker image prune -f
 
             # Post-deploy health check
@@ -207,8 +205,8 @@ jobs:
                     docker compose logs "$svc" --tail 20
                     exit 1
                   fi
-                  if [ "$observed_sha" != "$BUILD_SHA" ]; then
-                    echo "ERROR: $svc reports build SHA $observed_sha; expected $BUILD_SHA"
+                  if [ "$observed_sha" != "$DEPLOY_SHA" ]; then
+                    echo "ERROR: $svc reports build SHA $observed_sha; expected $DEPLOY_SHA"
                     docker compose logs "$svc" --tail 20
                     exit 1
                   fi
