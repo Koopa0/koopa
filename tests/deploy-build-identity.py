@@ -6,6 +6,8 @@ The test has two independent oracles:
 1. Docker Compose must resolve BUILD_SHA into both image build arguments.
 2. The real SSH script extracted from ci.yml must reject any runtime health
    response whose build SHA differs from the push SHA.
+3. The GitHub-side receipt verifier must reject an SSH action that reports
+   success without proving both running services reached the push SHA.
 
 No production commands run. External commands in the extracted deploy script
 are replaced with deterministic boundary stubs inside a temporary HOME.
@@ -69,6 +71,51 @@ def extract_ssh_script(path: Path) -> str:
     if "${{ github.sha }}" not in script:
         raise ContractFailure("caught:github-sha-not-consumed")
     return script.replace("${{ github.sha }}", EXPECTED_SHA) + "\n"
+
+
+def extract_named_run_script(path: Path, step_name: str) -> str:
+    """Extract the literal run block from one uniquely named Actions step."""
+    lines = path.read_text(encoding="utf-8").splitlines()
+    markers = [
+        i for i, line in enumerate(lines) if line.strip() == f"- name: {step_name}"
+    ]
+    if len(markers) != 1:
+        raise ContractFailure(
+            f"caught:deploy-receipt-step-count expected=1 got={len(markers)}"
+        )
+
+    step = markers[0]
+    step_indent = len(lines[step]) - len(lines[step].lstrip())
+    run_markers: list[int] = []
+    for i in range(step + 1, len(lines)):
+        line = lines[i]
+        if line.strip():
+            indent = len(line) - len(line.lstrip())
+            if indent <= step_indent and line.lstrip().startswith("- "):
+                break
+            if line.strip() == "run: |":
+                run_markers.append(i)
+    if len(run_markers) != 1:
+        raise ContractFailure(
+            f"caught:deploy-receipt-run-count expected=1 got={len(run_markers)}"
+        )
+
+    marker = run_markers[0]
+    marker_indent = len(lines[marker]) - len(lines[marker].lstrip())
+    body: list[str] = []
+    for line in lines[marker + 1 :]:
+        if line.strip():
+            indent = len(line) - len(line.lstrip())
+            if indent <= marker_indent:
+                break
+        body.append(line)
+    if not body:
+        raise ContractFailure("caught:deploy-receipt-run-empty")
+
+    body_indent = min(len(line) - len(line.lstrip()) for line in body if line)
+    return "\n".join(
+        line[body_indent:] if line.strip() else "" for line in body
+    ) + "\n"
 
 
 def check_compose_build_args() -> list[str]:
@@ -271,6 +318,62 @@ def assert_invoked(log: str, marker: str, case: str) -> list[str]:
     return []
 
 
+def run_receipt_verifier(script: str, stdout: str) -> subprocess.CompletedProcess[str]:
+    env = os.environ.copy()
+    env.update({"DEPLOY_SHA": EXPECTED_SHA, "DEPLOY_STDOUT": stdout})
+    return subprocess.run(
+        ["bash", "-c", script],
+        cwd=ROOT,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+
+def check_deploy_receipt() -> list[str]:
+    workflow = WORKFLOW.read_text(encoding="utf-8")
+    failures: list[str] = []
+    required_wiring = (
+        "id: deploy_ssh",
+        "capture_stdout: true",
+        "DEPLOY_STDOUT: ${{ steps.deploy_ssh.outputs.stdout }}",
+    )
+    for needle in required_wiring:
+        if needle not in workflow:
+            failures.append(f"caught:deploy-receipt-wiring-missing needle={needle!r}")
+
+    try:
+        verifier = extract_named_run_script(WORKFLOW, "Verify deployment receipt")
+    except ContractFailure as err:
+        failures.append(str(err))
+        return failures
+
+    expected = (
+        f"DEPLOY_RECEIPT sha={EXPECTED_SHA} "
+        f"backend={EXPECTED_SHA} mcp={EXPECTED_SHA}"
+    )
+    positive = run_receipt_verifier(verifier, f"build output\n{expected}\n")
+    if positive.returncode != 0:
+        failures.append(
+            "caught:valid-deploy-receipt-rejected "
+            f"exit={positive.returncode} stderr={positive.stderr.strip()!r}"
+        )
+
+    cases = (
+        ("missing-deploy-receipt-accepted", "Total reclaimed space: 0B\n"),
+        (
+            "stale-deploy-receipt-accepted",
+            "DEPLOY_RECEIPT sha=dev backend=dev mcp=dev\n",
+        ),
+    )
+    for name, stdout in cases:
+        proc = run_receipt_verifier(verifier, stdout)
+        if proc.returncode == 0:
+            failures.append(f"caught:{name} exit=0")
+    return failures
+
+
 def check_deploy_script() -> list[str]:
     try:
         script = extract_ssh_script(WORKFLOW)
@@ -302,8 +405,9 @@ def check_deploy_script() -> list[str]:
 
     # The deploy identity must remain bound to DEPLOY_SHA even if an
     # intervening environment import overwrites the convenience BUILD_SHA
-    # variable. This models the production failure where both newly built
-    # services reported `dev` and the health oracle accepted that same value.
+    # variable. Production proved that both images can be built as `dev`; its
+    # health loop did not execute, so this is a controlled failure class rather
+    # than a claim about the unavailable VPS environment.
     clobber_env = "GRAFANA_ADMIN_PASSWORD=test-password BUILD_SHA=dev\n"
     clobbered, clobbered_log = run_deploy(
         script,
@@ -342,6 +446,44 @@ def check_deploy_script() -> list[str]:
             f"exit={recovered.returncode} stderr={recovered.stderr.strip()!r}"
         )
 
+    authority_clobber, authority_log = run_deploy(
+        script,
+        backend_sha="dev",
+        mcp_sha="dev",
+        grafana_env="GRAFANA_ADMIN_PASSWORD=test-password DEPLOY_SHA=dev\n",
+    )
+    if authority_clobber.returncode == 0:
+        failures.append("caught:readonly-deploy-sha-clobber-accepted exit=0")
+    if "compose up -d --build" in authority_log:
+        failures.append("caught:readonly-deploy-sha-clobber-reached-build")
+    readonly_markers = ("readonly variable", "is read only")
+    if not any(marker in authority_clobber.stderr for marker in readonly_markers):
+        failures.append(
+            "caught:readonly-deploy-sha-clobber-not-observed "
+            f"stderr={authority_clobber.stderr.strip()!r}"
+        )
+
+    health_pos = script.find("# Post-deploy health check")
+    receipt_pos = script.find("DEPLOY_RECEIPT sha=")
+    prune_pos = script.find("docker image prune -f")
+    if min(health_pos, receipt_pos, prune_pos) < 0 or not (
+        health_pos < receipt_pos < prune_pos
+    ):
+        failures.append(
+            "caught:deploy-receipt-order-invalid "
+            f"health={health_pos} receipt={receipt_pos} prune={prune_pos}"
+        )
+
+    expected_receipt = (
+        f"DEPLOY_RECEIPT sha={EXPECTED_SHA} "
+        f"backend={EXPECTED_SHA} mcp={EXPECTED_SHA}"
+    )
+    if expected_receipt not in positive.stdout.splitlines():
+        failures.append(
+            "caught:remote-deploy-receipt-missing "
+            f"expected={expected_receipt!r} stdout={positive.stdout.strip()!r}"
+        )
+
     cases = (
         (
             "checked-out-sha-mismatch-accepted",
@@ -371,6 +513,7 @@ def check_deploy_script() -> list[str]:
 def main() -> int:
     failures = check_compose_build_args()
     failures.extend(check_deploy_script())
+    failures.extend(check_deploy_receipt())
     if failures:
         for failure in failures:
             print(failure)
