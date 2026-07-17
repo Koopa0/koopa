@@ -21,6 +21,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: deploy build identity contract
+        run: python3 tests/deploy-build-identity.py
+
       - uses: actions/setup-go@v5
         with:
           go-version: "1.26"
@@ -153,6 +156,7 @@ jobs:
             # so a failed fetch/reset must abort before docker compose runs.
             set -e
             cd ~/koopa0.dev
+            DEPLOY_SHA="${{ github.sha }}"
             # fetch + hard reset instead of pull — deploy the exact revision
             # whose CI just passed (github.sha for this push), not whatever
             # origin/main points at now: a later push can advance main while
@@ -160,7 +164,17 @@ jobs:
             # also survives force-push / history rewrites and never gets stuck
             # on a divergent branch.
             git fetch origin
-            git reset --hard "${{ github.sha }}"
+            git reset --hard "$DEPLOY_SHA"
+            CHECKED_OUT_SHA=$(git rev-parse HEAD)
+            if [ "$CHECKED_OUT_SHA" != "$DEPLOY_SHA" ]; then
+              echo "ERROR: checked-out SHA $CHECKED_OUT_SHA does not match deploy SHA $DEPLOY_SHA"
+              exit 1
+            fi
+
+            # Compose forwards BUILD_SHA into both Dockerfiles. Export one
+            # trigger-bound value so backend and MCP cannot be stamped from a
+            # moving ref or from Docker's local-development fallback.
+            export BUILD_SHA="$DEPLOY_SHA"
 
             # Silence Grafana alerts during deploy (5 min)
             export $(grep GRAFANA_ADMIN_PASSWORD ~/server/observability/.env)
@@ -186,13 +200,24 @@ jobs:
                 mcp)     endpoint="http://localhost:8081/healthz" ;;
               esac
               for i in $(seq 1 30); do
-                if docker compose exec -T $svc wget -qO- $endpoint > /dev/null 2>&1; then
-                  echo "$svc healthy after ${i}s"
+                if health_json=$(docker compose exec -T "$svc" wget -qO- "$endpoint" 2>/dev/null); then
+                  if ! observed_sha=$(printf '%s' "$health_json" | jq -er \
+                    'select(.status == "ok") | .build.sha | select(type == "string" and length > 0)'); then
+                    echo "ERROR: $svc returned health JSON without status=ok and a build SHA"
+                    docker compose logs "$svc" --tail 20
+                    exit 1
+                  fi
+                  if [ "$observed_sha" != "$BUILD_SHA" ]; then
+                    echo "ERROR: $svc reports build SHA $observed_sha; expected $BUILD_SHA"
+                    docker compose logs "$svc" --tail 20
+                    exit 1
+                  fi
+                  echo "$svc healthy at build $observed_sha after ${i}s"
                   break
                 fi
                 if [ "$i" -eq 30 ]; then
                   echo "ERROR: $svc failed health check after 30s"
-                  docker compose logs $svc --tail 20
+                  docker compose logs "$svc" --tail 20
                   exit 1
                 fi
                 sleep 1

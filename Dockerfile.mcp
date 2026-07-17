@@ -9,9 +9,9 @@ RUN go mod download
 
 COPY . .
 
-# Build-time identity injected via -ldflags. See Dockerfile (app binary) for
-# the matching wiring — the MCP binary and the API binary stamp from the
-# same internal/build package so system_status.build matches across both.
+# Build-time identity injected via -ldflags. CI/Compose passes BUILD_SHA to
+# both Dockerfiles; without it this local-development image visibly falls back
+# to `dev`, matching the API binary's contract.
 ARG BUILD_SHA
 ARG BUILD_VERSION=v0.0.0-dev
 RUN SHA="${BUILD_SHA:-$(git rev-parse HEAD 2>/dev/null || echo dev)}" \
