@@ -21,6 +21,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: deploy build identity contract
+        run: python3 tests/deploy-build-identity.py
+
       - uses: actions/setup-go@v5
         with:
           go-version: "1.26"
