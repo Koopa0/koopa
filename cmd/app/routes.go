@@ -33,7 +33,6 @@ import (
 	"github.com/Koopa0/koopa/internal/feed/entry"
 	"github.com/Koopa0/koopa/internal/goal"
 	"github.com/Koopa0/koopa/internal/project"
-	"github.com/Koopa0/koopa/internal/search"
 	"github.com/Koopa0/koopa/internal/stats"
 	"github.com/Koopa0/koopa/internal/today"
 	"github.com/Koopa0/koopa/internal/todo"
@@ -55,7 +54,6 @@ type handlers struct {
 	daily    *daily.Handler
 	todo     *todo.Handler
 	today    *today.Handler
-	search   *search.Handler
 	pool     *pgxpool.Pool
 	logger   *slog.Logger
 
@@ -262,12 +260,6 @@ func registerRoutes(
 	// shell (ribbon, today warnings, nav counters): feeds, pipelines,
 	// database counts.
 	mux.Handle("GET /api/admin/system/health", authMid(http.HandlerFunc(h.stats.Health)))
-
-	// --- Admin: Search ---
-	// Composed across content and note sources in internal/search; each
-	// source gets an even slice of the limit so one kind cannot dominate
-	// the result envelope.
-	mux.Handle("GET /api/admin/search", authMid(http.HandlerFunc(h.search.Search)))
 
 	// --- Admin: System / Agents ---
 	// Agents are registry-managed — the admin surface is read-only.

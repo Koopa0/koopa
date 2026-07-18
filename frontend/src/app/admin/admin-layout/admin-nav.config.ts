@@ -12,7 +12,6 @@ import {
   Layers,
   Repeat,
   Rss,
-  Search,
   Sparkles,
   Tag,
   Target,
@@ -155,13 +154,6 @@ export const ADMIN_NAV: readonly AdminNavGroup[] = [
         countKey: 'review_queue',
         shortcutHint: 'G R',
         testId: 'admin-nav-review-queue',
-      },
-      {
-        label: 'Search',
-        route: '/admin/knowledge/search',
-        icon: Search,
-        shortcutHint: '',
-        testId: 'admin-nav-search',
       },
       {
         label: 'Topics',

@@ -1575,8 +1575,7 @@ type ContentsMissingEmbeddingRow struct {
 }
 
 // Rows the embedding reconciler still has to process. Archived content is
-// excluded — it is invisible to every search path (InternalSearchContents
-// and InternalSemanticSearchContents both filter it out), so embedding it
+// excluded from the remaining legacy semantic retrieval path, so embedding it
 // would spend API quota on unreachable rows. Oldest first so a backfill
 // progresses deterministically.
 func (q *Queries) ContentsMissingEmbedding(ctx context.Context, limit int32) ([]ContentsMissingEmbeddingRow, error) {
@@ -3339,96 +3338,6 @@ func (q *Queries) InsertFeedTopics(ctx context.Context, arg InsertFeedTopicsPara
 	return err
 }
 
-const internalSearchContents = `-- name: InternalSearchContents :many
-SELECT id, slug, title, body, excerpt, type, status,
-       series_id, series_order, is_public, project_id, reading_time_min,
-       cover_image, published_at, created_at, updated_at
-FROM contents
-WHERE status != 'archived'
-  AND search_vector @@ websearch_to_tsquery('simple', $1)
-  AND ($4::content_type IS NULL OR type = $4)
-  AND ($5::timestamptz IS NULL OR created_at >= $5)
-  AND ($6::timestamptz IS NULL OR created_at < $6)
-ORDER BY ts_rank(search_vector, websearch_to_tsquery('simple', $1)) DESC
-LIMIT $2 OFFSET $3
-`
-
-type InternalSearchContentsParams struct {
-	WebsearchToTsquery string          `json:"websearch_to_tsquery"`
-	Limit              int32           `json:"limit"`
-	Offset             int32           `json:"offset"`
-	ContentType        NullContentType `json:"content_type"`
-	CreatedAfter       *time.Time      `json:"created_after"`
-	CreatedBefore      *time.Time      `json:"created_before"`
-}
-
-type InternalSearchContentsRow struct {
-	ID             uuid.UUID     `json:"id"`
-	Slug           string        `json:"slug"`
-	Title          string        `json:"title"`
-	Body           string        `json:"body"`
-	Excerpt        string        `json:"excerpt"`
-	Type           ContentType   `json:"type"`
-	Status         ContentStatus `json:"status"`
-	SeriesID       *string       `json:"series_id"`
-	SeriesOrder    *int32        `json:"series_order"`
-	IsPublic       bool          `json:"is_public"`
-	ProjectID      *uuid.UUID    `json:"project_id"`
-	ReadingTimeMin int32         `json:"reading_time_min"`
-	CoverImage     *string       `json:"cover_image"`
-	PublishedAt    *time.Time    `json:"published_at"`
-	CreatedAt      time.Time     `json:"created_at"`
-	UpdatedAt      time.Time     `json:"updated_at"`
-}
-
-// Internal FTS search without visibility filter for the admin search. Excludes
-// archived. Optional type/date filters are pushed into the WHERE so each
-// retrieval branch returns only matching rows BEFORE the RRF limit — a
-// content_type filter must not lose recall to a top-N full of other types.
-func (q *Queries) InternalSearchContents(ctx context.Context, arg InternalSearchContentsParams) ([]InternalSearchContentsRow, error) {
-	rows, err := q.db.Query(ctx, internalSearchContents,
-		arg.WebsearchToTsquery,
-		arg.Limit,
-		arg.Offset,
-		arg.ContentType,
-		arg.CreatedAfter,
-		arg.CreatedBefore,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []InternalSearchContentsRow{}
-	for rows.Next() {
-		var i InternalSearchContentsRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.Slug,
-			&i.Title,
-			&i.Body,
-			&i.Excerpt,
-			&i.Type,
-			&i.Status,
-			&i.SeriesID,
-			&i.SeriesOrder,
-			&i.IsPublic,
-			&i.ProjectID,
-			&i.ReadingTimeMin,
-			&i.CoverImage,
-			&i.PublishedAt,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const internalSemanticSearchContents = `-- name: InternalSemanticSearchContents :many
 SELECT id, slug, title, body, excerpt, type, status,
        series_id, series_order, is_public, project_id, reading_time_min,
@@ -3473,9 +3382,9 @@ type InternalSemanticSearchContentsRow struct {
 }
 
 // Semantic search over all contents via pgvector cosine distance. Mirrors
-// InternalSearchContents visibility (excludes only 'archived'); does NOT
-// exclude an anchor content id the way SimilarContents does. This legacy
-// query has no MCP caller and remains only until backend retrieval retirement.
+// the legacy retrieval visibility rule (excludes only 'archived'); does NOT exclude
+// an anchor content id the way SimilarContents does. This query has no MCP
+// caller and remains only until backend retrieval retirement.
 func (q *Queries) InternalSemanticSearchContents(ctx context.Context, arg InternalSemanticSearchContentsParams) ([]InternalSemanticSearchContentsRow, error) {
 	rows, err := q.db.Query(ctx, internalSemanticSearchContents,
 		arg.TargetEmbedding,

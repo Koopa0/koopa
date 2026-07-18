@@ -255,13 +255,6 @@ export const routes: Routes = [
           ),
       },
       {
-        path: 'knowledge/search',
-        loadComponent: () =>
-          import('./admin/knowledge/search/knowledge-search.page').then(
-            (m) => m.KnowledgeSearchPageComponent,
-          ),
-      },
-      {
         path: 'knowledge/topics',
         loadComponent: () =>
           import('./admin/knowledge/topics/topics.page').then(

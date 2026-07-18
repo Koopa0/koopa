@@ -167,7 +167,7 @@ type Brief struct {
 
 // PublicFilter parameterises the anonymous read surface — the /api/
 // routes that render published-and-public content. The handler layer
-// pairs it with PublicContents / Search / RSS.
+// pairs it with PublicContents and RSS.
 type PublicFilter struct {
 	Page    int
 	PerPage int

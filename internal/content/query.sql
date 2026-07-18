@@ -43,28 +43,11 @@ SELECT COUNT(*) FROM contents c
 JOIN content_topics ct ON ct.content_id = c.id
 WHERE ct.topic_id = $1 AND c.status = 'published' AND c.is_public = true;
 
--- name: InternalSearchContents :many
--- Internal FTS search without visibility filter for the admin search. Excludes
--- archived. Optional type/date filters are pushed into the WHERE so each
--- retrieval branch returns only matching rows BEFORE the RRF limit — a
--- content_type filter must not lose recall to a top-N full of other types.
-SELECT id, slug, title, body, excerpt, type, status,
-       series_id, series_order, is_public, project_id, reading_time_min,
-       cover_image, published_at, created_at, updated_at
-FROM contents
-WHERE status != 'archived'
-  AND search_vector @@ websearch_to_tsquery('simple', $1)
-  AND (sqlc.narg('content_type')::content_type IS NULL OR type = sqlc.narg('content_type'))
-  AND (sqlc.narg('created_after')::timestamptz IS NULL OR created_at >= sqlc.narg('created_after'))
-  AND (sqlc.narg('created_before')::timestamptz IS NULL OR created_at < sqlc.narg('created_before'))
-ORDER BY ts_rank(search_vector, websearch_to_tsquery('simple', $1)) DESC
-LIMIT $2 OFFSET $3;
-
 -- name: InternalSemanticSearchContents :many
 -- Semantic search over all contents via pgvector cosine distance. Mirrors
--- InternalSearchContents visibility (excludes only 'archived'); does NOT
--- exclude an anchor content id the way SimilarContents does. This legacy
--- query has no MCP caller and remains only until backend retrieval retirement.
+-- the legacy retrieval visibility rule (excludes only 'archived'); does NOT exclude
+-- an anchor content id the way SimilarContents does. This query has no MCP
+-- caller and remains only until backend retrieval retirement.
 SELECT id, slug, title, body, excerpt, type, status,
        series_id, series_order, is_public, project_id, reading_time_min,
        cover_image, published_at, created_at, updated_at,
@@ -250,8 +233,7 @@ WHERE status = 'published' AND is_public = true
 
 -- name: ContentsMissingEmbedding :many
 -- Rows the embedding reconciler still has to process. Archived content is
--- excluded — it is invisible to every search path (InternalSearchContents
--- and InternalSemanticSearchContents both filter it out), so embedding it
+-- excluded from the remaining legacy semantic retrieval path, so embedding it
 -- would spend API quota on unreachable rows. Oldest first so a backfill
 -- progresses deterministically.
 SELECT id, title, body
