@@ -34,12 +34,12 @@ Most AI tools can't be that, because they forget. Every conversation starts from
 
 ## How it works
 
-The line that matters isn't human vs. agent — it's flow vs. decision. Agents handle the flow: they search, draft, and propose, in conversation with you. You handle the decisions: an agent can suggest a new goal or hand in a finished article, but it stays a draft until you accept it in the admin UI. They coordinate through the shared state, never by handing work to each other.
+The line that matters isn't human vs. agent — it's flow vs. decision. Agents handle the flow: they inspect current work, draft, and propose, in conversation with you. You handle the decisions: an agent can suggest a new goal or hand in a finished article, but it stays a draft until you accept it in the admin UI. They coordinate through the shared state, never by handing work to each other.
 
 | Who | Role |
 |---|---|
 | **You** (Koopa) | The only decision-maker |
-| **Claude Code** | Development sessions in this repo — search, build logs, content drafts |
+| **Claude Code** | Development sessions in this repo — inspection, build logs, content drafts |
 | **Hermes** | Curates a personal Obsidian vault on a schedule |
 | **Codex** | Development collaborator — repo work and code review |
 
@@ -51,13 +51,13 @@ That split is the whole point. Agents can run freely — capture a todo, draft a
 
 **Writing & publishing.** Five kinds of content — articles, essays, build logs, TILs, and digests — move through a simple editorial flow from draft to published. An agent can hand in a finished draft and revise it after you send it back, but you're the only one who publishes.
 
-**Search.** Agents search your published writing through a single tool, backed by hybrid search that blends keyword and meaning — so results stay relevant even when the wording doesn't match.
+**Shared context.** Agents read your current planning state through MCP — goals, projects, todos, and the daily plan. Koopa does not copy or search your knowledge base; knowledge authoring and retrieval stay in Obsidian／Yomihon.
 
 **One history.** Every change records who made it, so the whole system keeps a single, trustworthy timeline of what happened and when.
 
 ## Scope and limits
 
-This is a single-admin system by design: one person, several AI agents — no team accounts, no roles, no "share with a colleague." The admin side is private; only some content (articles, build logs, TILs) reaches the public site, and only after you publish it. Goals and private notes stay private — the private knowledge base lives in Obsidian, and koopa0.dev is just the publishing layer. If you want a team wiki or a Notion clone, this isn't it.
+This is a single-admin system by design: one person, several AI agents — no team accounts, no roles, no "share with a colleague." The admin side is private; only some content (articles, build logs, TILs) reaches the public site, and only after you publish it. Goals and private notes stay private. Koopa stores planning state and publishes selected writing; the private knowledge base lives in Obsidian. If you want a team wiki or a Notion clone, this isn't it.
 
 ---
 
