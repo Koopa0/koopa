@@ -114,9 +114,8 @@ export class CommandPaletteService {
 
   readonly isAuthenticated = this.authService.isAuthenticated;
 
-  // Admin quick-nav only belongs in the admin area. On the public reading
-  // site the palette only filters public page navigation, even for the
-  // signed-in owner — admin routes don't surface there.
+  // The palette is rendered only in the admin area. Keep admin navigation and
+  // entity quick-jumps gated here as a second boundary.
   private readonly currentUrl = toSignal(
     this.router.events.pipe(
       filter((e): e is NavigationEnd => e instanceof NavigationEnd),

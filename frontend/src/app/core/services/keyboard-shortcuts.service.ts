@@ -36,7 +36,8 @@ const GO_TO_REGISTRY: readonly GoToEntry[] = [
  * Global keyboard handler for the admin shell and public site.
  *
  * Shortcuts:
- *   • Global:  ⌘K opens the command palette · ⌘/ opens shortcut help
+ *   • Admin:   ⌘K opens the command palette
+ *   • Global:  ⌘/ opens shortcut help
  *   • Nav:     `G` then a letter — G H Today, G T Todos, see GO_TO_REGISTRY
  *   • Public:  `Shift+A` quick admin entry · Shift+G scroll to bottom
  *
@@ -108,8 +109,9 @@ export class KeyboardShortcutsService {
     const isPlainKey =
       !event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey;
 
-    // ⌘K is owned by `CommandPaletteComponent`'s own host
-    // `(document:keydown)` binding — don't double-dispatch here.
+    // Admin-only ⌘K is owned by `CommandPaletteComponent`'s own host
+    // `(document:keydown)` binding — don't double-dispatch here. The component
+    // is not mounted on the public site.
 
     // ⌘/ — shortcut help (bypasses a11y gate).
     if (isCmdOrCtrl && event.key === '/' && !event.shiftKey && !event.altKey) {
