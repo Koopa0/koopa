@@ -66,3 +66,24 @@ func TestRelatedContentRouteIsRetired(t *testing.T) {
 		t.Fatalf("GET %s status = %d, want %d", path, related.Code, http.StatusNotFound)
 	}
 }
+
+func TestKnowledgeGraphRouteIsRetired(t *testing.T) {
+	mux := http.NewServeMux()
+	passThrough := func(next http.Handler) http.Handler { return next }
+	registerRoutes(mux, &handlers{
+		content:        content.NewHandler(nil, "https://example.com", slog.Default()),
+		logger:         slog.Default(),
+		metricsHandler: http.NotFoundHandler(),
+	}, passThrough, passThrough)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/knowledge-graph", http.NoBody)
+	if _, pattern := mux.Handler(req); pattern != "" {
+		t.Fatalf("GET /api/knowledge-graph still matches route %q", pattern)
+	}
+
+	graph := httptest.NewRecorder()
+	mux.ServeHTTP(graph, req)
+	if graph.Code != http.StatusNotFound {
+		t.Fatalf("GET /api/knowledge-graph status = %d, want %d", graph.Code, http.StatusNotFound)
+	}
+}
