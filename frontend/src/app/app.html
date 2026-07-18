@@ -55,8 +55,10 @@
        and a11y-mode announcements here so we don't pull in CDK A11y. -->
     <div id="koopa-announcer" role="status" aria-live="polite" class="sr-only"></div>
 
-    <!-- Command Palette (⌘K) -->
-    <app-command-palette />
+    @if (isAdminArea()) {
+      <!-- Admin-only command palette (⌘K). The public site has no palette. -->
+      <app-command-palette />
+    }
 
     <!-- Global Toast Notifications -->
     <app-toast />
