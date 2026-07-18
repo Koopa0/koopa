@@ -267,7 +267,7 @@ func run(logger *slog.Logger) error {
 	}()
 
 	// A listener error and a shutdown signal share one drain path: capture the
-	// error, then cancel ctx via stop() so the scheduler and reconciler — both
+	// error, then cancel ctx via stop() so the scheduler and cleanup worker — both
 	// selecting on ctx — exit and wg.Wait() can return before the deferred
 	// pool.Close() runs. Returning early on the errCh branch would leak those
 	// workers and close the pool out from under an in-flight query.
