@@ -62,32 +62,6 @@ func (h *Handler) PublicByType(w http.ResponseWriter, r *http.Request) {
 	api.Encode(w, http.StatusOK, api.PagedResponse(contents, total, f.Page, f.PerPage))
 }
 
-// PublicSearch handles GET /api/search.
-func (h *Handler) PublicSearch(w http.ResponseWriter, r *http.Request) {
-	q := r.URL.Query().Get("q")
-	if q == "" {
-		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "query parameter q is required")
-		return
-	}
-
-	var ct *Type
-	if t := r.URL.Query().Get("type"); t != "" {
-		v := Type(t)
-		if v.Valid() {
-			ct = &v
-		}
-	}
-
-	page, perPage := api.ParsePagination(r)
-	contents, total, err := h.store.Search(r.Context(), q, ct, page, perPage)
-	if err != nil {
-		h.logger.Error("searching contents", "query", q, "error", err)
-		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to search")
-		return
-	}
-	api.Encode(w, http.StatusOK, api.PagedResponse(contents, total, page, perPage))
-}
-
 // PublicRelated handles GET /api/contents/related/{slug}.
 func (h *Handler) PublicRelated(w http.ResponseWriter, r *http.Request) {
 	slug := r.PathValue("slug")

@@ -21,13 +21,13 @@ func TestPublicSearchRouteIsRetired(t *testing.T) {
 	}, passThrough, passThrough)
 
 	search := httptest.NewRecorder()
-	mux.ServeHTTP(search, httptest.NewRequest(http.MethodGet, "/api/search", nil))
+	mux.ServeHTTP(search, httptest.NewRequest(http.MethodGet, "/api/search", http.NoBody))
 	if search.Code != http.StatusNotFound {
 		t.Fatalf("GET /api/search status = %d, want %d", search.Code, http.StatusNotFound)
 	}
 
 	health := httptest.NewRecorder()
-	mux.ServeHTTP(health, httptest.NewRequest(http.MethodGet, "/healthz", nil))
+	mux.ServeHTTP(health, httptest.NewRequest(http.MethodGet, "/healthz", http.NoBody))
 	if health.Code != http.StatusOK {
 		t.Fatalf("positive control GET /healthz status = %d, want %d", health.Code, http.StatusOK)
 	}

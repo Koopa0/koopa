@@ -188,28 +188,6 @@ func TestHandler_ByType_InvalidType(t *testing.T) {
 }
 
 // =============================================================================
-// Handler.Search — missing query, adversarial
-// =============================================================================
-
-// TestHandler_Search_MissingQuery verifies that Search returns 400 when q is absent.
-func TestHandler_Search_MissingQuery(t *testing.T) {
-	t.Parallel()
-
-	h := newTestHandler()
-	req := httptest.NewRequest(http.MethodGet, "/api/search", http.NoBody)
-	w := httptest.NewRecorder()
-	h.PublicSearch(w, req)
-
-	if w.Code != http.StatusBadRequest {
-		t.Errorf("Search() without q: status = %d, want %d", w.Code, http.StatusBadRequest)
-	}
-	got := decodeErrorBody(t, w.Body)
-	if got.Error.Code != "BAD_REQUEST" {
-		t.Errorf("Search() without q: error.code = %q, want BAD_REQUEST", got.Error.Code)
-	}
-}
-
-// =============================================================================
 // Handler.Create — required field validation
 // =============================================================================
 

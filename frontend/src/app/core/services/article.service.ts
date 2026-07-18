@@ -15,7 +15,6 @@ export interface ArticlesResponse {
 
 export interface ArticleFilters {
   tag?: string;
-  search?: string;
   page?: number;
   perPage?: number;
 }
@@ -25,17 +24,6 @@ export class ArticleService {
   private readonly content = inject(ContentService);
 
   getArticles(filters?: ArticleFilters): Observable<ArticlesResponse> {
-    if (filters?.search) {
-      return this.content
-        .search(filters.search, {
-          page: filters?.page,
-          perPage: filters?.perPage,
-        })
-        .pipe(
-          map((res) => ({ articles: res.data, meta: res.meta })),
-        );
-    }
-
     return this.content
       .listPublished({
         type: 'article',

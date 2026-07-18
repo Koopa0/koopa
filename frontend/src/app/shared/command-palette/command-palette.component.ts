@@ -13,19 +13,14 @@ import {
 } from '@angular/core';
 import { isPlatformBrowser } from '@angular/common';
 import { A11yModule } from '@angular/cdk/a11y';
-import { Router } from '@angular/router';
-import { Subject, debounceTime } from 'rxjs';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { trigger, transition, style, animate } from '@angular/animations';
 import { NotificationService } from '../../core/services/notification.service';
-import { SearchService } from '../../core/services/search.service';
 import { TodoService } from '../../core/services/todo.service';
 import {
   CommandPaletteService,
   type CommandAction,
 } from './command-palette.service';
-import type { ApiContent } from '../../core/models';
-import { contentTypeRoute } from '../../core/models';
 
 interface GroupedAction {
   name: string;
@@ -67,10 +62,8 @@ interface GroupedAction {
 })
 export class CommandPaletteComponent {
   private readonly paletteService = inject(CommandPaletteService);
-  private readonly searchService = inject(SearchService);
   private readonly todoService = inject(TodoService);
   private readonly notifications = inject(NotificationService);
-  private readonly router = inject(Router);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly destroyRef = inject(DestroyRef);
 
@@ -79,20 +72,18 @@ export class CommandPaletteComponent {
   private readonly resultsList =
     viewChild<ElementRef<HTMLDivElement>>('resultsList');
 
-  private readonly searchSubject = new Subject<string>();
-
   protected readonly isOpen = this.paletteService.isOpen;
   protected readonly query = signal('');
 
-  /** Public visitors get the kit's writing-search prompt; admin keeps the navigate hint. */
+  /** The palette filters local navigation and offers authenticated GTD capture. */
   protected readonly searchPlaceholder = computed(() =>
     this.paletteService.isAuthenticated()
-      ? 'Search content or quick navigate...'
-      : 'Search writing…',
+      ? 'Quick navigate or capture…'
+      : 'Quick navigate…',
   );
 
-  /** Whether the user is typing a search query (vs browsing actions) */
-  protected readonly isSearchMode = computed(() => {
+  /** Whether the user has typed enough text to show a no-match result. */
+  protected readonly hasQuery = computed(() => {
     const q = this.query().trim();
     return q.length >= 2;
   });
@@ -106,10 +97,8 @@ export class CommandPaletteComponent {
       return actions;
     }
 
-    // Any query — single or multi character — filters nav actions by
-    // label/group/keywords. In search mode these matching commands sit above
-    // the content results, so "proj" surfaces the Projects command instead of
-    // collapsing straight to the GTD capture fallback.
+    // Any query filters navigation by label, group, and keywords. A matching
+    // command takes precedence over the GTD capture fallback.
     return actions.filter((a) => {
       const haystack = [a.label, a.group, ...(a.keywords ?? [])]
         .join(' ')
@@ -136,13 +125,8 @@ export class CommandPaletteComponent {
     }));
   });
 
-  protected readonly searchResults = this.searchService.results;
-  protected readonly isSearching = this.searchService.searching;
-
   /** Total selectable items count */
-  protected readonly totalItems = computed(
-    () => this.filteredActions().length + this.searchResults().length,
-  );
+  protected readonly totalItems = computed(() => this.filteredActions().length);
 
   /** Active highlight index — resets to 0 when items change */
   protected readonly activeIndex = linkedSignal(() => {
@@ -163,22 +147,10 @@ export class CommandPaletteComponent {
     () =>
       this.paletteService.isAuthenticated() &&
       this.query().trim().length > 1 &&
-      this.totalItems() === 0 &&
-      !this.isSearching(),
+      this.totalItems() === 0,
   );
 
   constructor() {
-    // Debounced search
-    this.searchSubject
-      .pipe(debounceTime(300), takeUntilDestroyed())
-      .subscribe((q) => {
-        if (q.trim().length >= 2) {
-          this.searchService.search(q);
-        } else {
-          this.searchService.clearSearch();
-        }
-      });
-
     // Auto-focus input when opened
     effect(() => {
       if (this.isOpen()) {
@@ -232,7 +204,6 @@ export class CommandPaletteComponent {
   protected onInput(event: Event): void {
     const value = (event.target as HTMLInputElement).value;
     this.query.set(value);
-    this.searchSubject.next(value);
   }
 
   protected onKeydown(event: KeyboardEvent): void {
@@ -265,35 +236,12 @@ export class CommandPaletteComponent {
 
   protected close(): void {
     this.query.set('');
-    this.searchService.clearSearch();
     this.paletteService.close();
   }
 
   protected executeAction(action: CommandAction['action']): void {
     this.close();
     action();
-  }
-
-  protected selectSearchResult(result: ApiContent): void {
-    const prefix = contentTypeRoute(result.type);
-    this.close();
-    this.router.navigate([`${prefix}/${result.slug}`]);
-  }
-
-  protected navigateToSearch(): void {
-    const q = this.query().trim();
-    this.close();
-    this.router.navigate(['/search'], { queryParams: q ? { q } : {} });
-  }
-
-  /** Result meta line: `{type} · {topic} · {n} min`, skipping absent parts. */
-  protected getResultSubtitle(result: ApiContent): string {
-    const parts = [
-      result.type as string,
-      result.topics[0]?.name,
-      `${result.reading_time_min} min`,
-    ].filter((part): part is string => Boolean(part));
-    return parts.join(' · ');
   }
 
   /**
@@ -335,12 +283,6 @@ export class CommandPaletteComponent {
 
     if (idx < actions.length) {
       this.executeAction(actions[idx].action);
-    } else {
-      const searchIdx = idx - actions.length;
-      const results = this.searchResults();
-      if (searchIdx < results.length) {
-        this.selectSearchResult(results[searchIdx]);
-      }
     }
   }
 }
