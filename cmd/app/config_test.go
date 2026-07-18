@@ -2,7 +2,20 @@
 
 package main
 
-import "testing"
+import (
+	"reflect"
+	"testing"
+)
+
+// TestConfigHasNoGeminiCapability locks the owner decision that the app
+// server does not perform embedding or knowledge retrieval. Reintroducing a
+// provider credential here would recreate that retired runtime dependency.
+func TestConfigHasNoGeminiCapability(t *testing.T) {
+	typeOfConfig := reflect.TypeFor[config]()
+	if field, ok := typeOfConfig.FieldByName("GeminiAPIKey"); ok {
+		t.Fatalf("retired Gemini capability remains in app config as field %s", field.Name)
+	}
+}
 
 func TestValidateOAuth(t *testing.T) {
 	tests := []struct {

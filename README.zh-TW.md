@@ -16,16 +16,15 @@
   <img src="https://img.shields.io/badge/PostgreSQL-4169E1?style=flat&logo=postgresql&logoColor=white" alt="PostgreSQL"/>
   <img src="https://img.shields.io/badge/Angular-22-DD0031?style=flat&logo=angular&logoColor=white" alt="Angular 22"/>
   <img src="https://img.shields.io/badge/MCP-Claude-7F77DD?style=flat" alt="MCP"/>
-  <img src="https://img.shields.io/badge/pgvector-1536d-378ADD?style=flat" alt="pgvector"/>
 </p>
 
 <p align="center">
   <a href="https://koopa0.dev"><strong>koopa0.dev&nbsp;↗</strong></a>
 </p>
 
-**koopa** 是一個私有的個人知識引擎 — 把你的 area、goal、project、筆記與寫作放在同一個地方，讓 AI agent 在裡面工作。
+**koopa** 是一個私有的個人規劃與發佈系統 — 把你的 area、goal、project、daily work 與可發佈的寫作放在同一個地方，讓 AI agent 在明確邊界內協作。
 
-這些 agent 共享同一份事實來源：它們讀的是跟你一樣的即時狀態，而不是你記得告訴它們的那些。決定的人始終只有你 — 它們搜尋、起草、提案，由你決定什麼留下。
+這些 agent 共享同一份工作狀態：它們讀的是跟你一樣的即時規劃，而不是你記得告訴它們的那些。決定的人始終只有你 — 它們檢視、起草、提案，由你決定什麼留下。知識寫作與檢索留在 Obsidian／Yomihon。
 
 ## 為什麼存在
 
@@ -35,12 +34,12 @@
 
 ## 運作方式
 
-重要的分界不是「人 vs. agent」，而是「流程 vs. 決策」。agent 負責流程：搜尋、起草、提案，都在跟你的對話裡完成。你負責決策：agent 可以建議一個新 goal、或交一篇完成的文章，但在你於 admin UI 接受之前，它都只是草稿。它們靠共享狀態協調，從不把工作互相派來派去。
+重要的分界不是「人 vs. agent」，而是「流程 vs. 決策」。agent 負責流程：檢視目前工作、起草、提案，都在跟你的對話裡完成。你負責決策：agent 可以建議一個新 goal、或交一篇完成的文章，但在你於 admin UI 接受之前，它都只是草稿。它們靠共享狀態協調，從不把工作互相派來派去。
 
 | 誰 | 角色 |
 |---|---|
 | **你**（Koopa） | 唯一的決策者 |
-| **Claude Code** | 這個 repo 的開發 session — 搜尋、build log、content 草稿 |
+| **Claude Code** | 這個 repo 的開發 session — 檢視、build log、content 草稿 |
 | **Hermes** | 按排程整理個人 Obsidian vault |
 | **Codex** | 開發協作者 — repo 工作與 code review |
 
@@ -52,13 +51,13 @@
 
 **寫作與發佈。** 五種內容 — article、essay、build log、TIL、digest — 走一套簡單的編輯流程，從草稿到發佈。agent 可以交一篇完成的草稿，被退回後再改一次，但發佈的人只有你。
 
-**搜尋。** agent 透過單一工具搜尋你已發佈的寫作，背後是 hybrid 搜尋，把關鍵字與語意一起考慮 — 所以就算用字不一樣，結果也還是相關。
+**共享上下文。** agent 透過 MCP 讀取目前的規劃狀態 — goal、project、todo 與 daily plan。Koopa 不複製或搜尋你的知識庫；知識寫作與檢索留在 Obsidian／Yomihon。
 
 **一條歷史。** 每一次改動都記下是誰做的，所以整個系統保有一條單一、可信的時間軸 — 什麼時候發生了什麼。
 
 ## 範圍與限制
 
-這是設計上的單管理員系統：一個人，多個 AI agent — 沒有團隊帳號、沒有角色、沒有「分享給同事」。管理端是私有的；公開網站只顯示一部分內容（article、build log、TIL），而且只有在你發佈之後。Goal 與私人筆記永遠私有 — 私人知識庫活在 Obsidian，koopa0.dev 只是發布層。如果你想要團隊 wiki 或 Notion clone，不是這個。
+這是設計上的單管理員系統：一個人，多個 AI agent — 沒有團隊帳號、沒有角色、沒有「分享給同事」。管理端是私有的；公開網站只顯示一部分內容（article、build log、TIL），而且只有在你發佈之後。Goal 與私人筆記永遠私有。Koopa 保存規劃狀態並發佈選定的寫作；私人知識庫活在 Obsidian。如果你想要團隊 wiki 或 Notion clone，不是這個。
 
 ---
 

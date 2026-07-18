@@ -1,9 +1,8 @@
 // Copyright 2026 Koopa. All rights reserved.
 
 // Command app runs the koopa HTTP API server — the public and admin
-// JSON API consumed by the Angular frontend, plus the background feed
-// collection and embedding reconciliation loops. MCP tools are served
-// separately by cmd/mcp.
+// JSON API consumed by the Angular frontend, plus background feed
+// collection. MCP tools are served separately by cmd/mcp.
 package main
 
 import (
@@ -14,7 +13,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"slices"
 	"sync"
 	"syscall"
 	"time"
@@ -35,7 +33,6 @@ import (
 	"github.com/Koopa0/koopa/internal/content"
 	"github.com/Koopa0/koopa/internal/daily"
 	"github.com/Koopa0/koopa/internal/db"
-	"github.com/Koopa0/koopa/internal/embedder"
 	"github.com/Koopa0/koopa/internal/feed"
 	"github.com/Koopa0/koopa/internal/feed/collector"
 	"github.com/Koopa0/koopa/internal/feed/entry"
@@ -52,11 +49,6 @@ import (
 // the app behind a silent reconciliation.
 const agentSyncTimeout = 10 * time.Second
 
-// embedReconcileInterval is how often the embedding reconciler rescans
-// contents for rows with NULL embeddings. New rows are embedded
-// within roughly one interval of landing.
-const embedReconcileInterval = 60 * time.Second
-
 // refreshTokenCleanupInterval is how often expired refresh tokens are purged.
 // ConsumeRefreshToken only deletes the exact presented token, so expired-but-
 // unconsumed rows would accumulate forever without this periodic sweep.
@@ -64,78 +56,10 @@ const refreshTokenCleanupInterval = time.Hour
 
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
-	if len(os.Args) == 2 && os.Args[1] == "embed-backfill" {
-		if err := runBackfill(logger); err != nil {
-			logger.Error("embed-backfill failed", "error", err)
-			os.Exit(1)
-		}
-		return
-	}
 	if err := run(logger); err != nil {
 		logger.Error("startup failed", "error", err)
 		os.Exit(1)
 	}
-}
-
-// runBackfill is the embed-backfill one-shot: drain every contents
-// row missing an embedding, log the counts, and exit without serving
-// HTTP. The exit status reflects success — rows that failed to embed
-// surface as an error so a partially-drained run is visible to the
-// operator. Schema migrations are not run; the backfill targets a
-// database the serving binary already migrated.
-func runBackfill(logger *slog.Logger) error {
-	cfg := loadBackfillConfig(logger)
-
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-
-	pool, err := connectDB(ctx, cfg.DatabaseURL, nil)
-	if err != nil {
-		return err
-	}
-	defer pool.Close()
-
-	emb, err := embedder.New(ctx, cfg.GeminiAPIKey)
-	if err != nil {
-		return fmt.Errorf("initializing gemini embedder: %w", err)
-	}
-	reconciler := embedder.NewReconciler(emb, logger,
-		embedSources(content.NewStore(pool))...)
-
-	res, err := reconciler.RunOnce(ctx)
-	if err != nil {
-		return fmt.Errorf("embed backfill: %w", err)
-	}
-	logger.Info("embed backfill complete", append(passLogAttrs(res), "operation", "backfill")...)
-	if res.Failed > 0 {
-		return fmt.Errorf("embed backfill: %d rows failed to embed", res.Failed)
-	}
-	return nil
-}
-
-// embedSources builds the named source list the reconciler drains: the
-// contents corpus. The name keys embedder.Result.BySource and tags log
-// lines; it matches the table name.
-func embedSources(contentStore *content.Store) []embedder.NamedSource {
-	return []embedder.NamedSource{
-		{Name: "contents", Source: contentStore},
-	}
-}
-
-// passLogAttrs flattens an embedder.Result into slog key/value pairs for the
-// backfill log line, mirroring the reconciler's own per-source logging.
-func passLogAttrs(res embedder.Result) []any {
-	names := make([]string, 0, len(res.BySource))
-	for name := range res.BySource {
-		names = append(names, name)
-	}
-	slices.Sort(names)
-	attrs := make([]any, 0, len(names)*2+2)
-	for _, name := range names {
-		attrs = append(attrs, name, res.BySource[name])
-	}
-	attrs = append(attrs, "failed", res.Failed)
-	return attrs
 }
 
 // run wires every subsystem and starts the HTTP server. Its cyclomatic
@@ -229,27 +153,9 @@ func run(logger *slog.Logger) error {
 		return err
 	}
 
-	// Embedding reconciler (optional — only if Gemini is configured).
-	// Runs entirely outside the request path: the Gemini call must never
-	// sit inside a handler's per-request tx or latency budget. Shares the
-	// scheduler WaitGroup so shutdown waits for an in-flight pass to
-	// observe ctx cancellation.
-	if cfg.GeminiAPIKey != "" {
-		emb, embErr := embedder.New(ctx, cfg.GeminiAPIKey)
-		if embErr != nil {
-			return fmt.Errorf("initializing gemini embedder: %w", embErr)
-		}
-		reconciler := embedder.NewReconciler(emb, logger, embedSources(contentStore)...)
-		wg.Go(func() { reconciler.Run(ctx, embedReconcileInterval) })
-		logger.Info("embedding reconciler started", "interval", embedReconcileInterval.String())
-	} else {
-		logger.Info("embedding reconciler disabled, search stays FTS-only (GEMINI_API_KEY unset)")
-	}
-
 	// Refresh-token cleanup — background goroutine purging expired tokens.
 	// Shares the scheduler WaitGroup so a SIGTERM-cancelled ctx drains it
-	// before pool.Close(), exactly like the feed scheduler and embedding
-	// reconciler above.
+	// before pool.Close(), exactly like the feed scheduler above.
 	wg.Go(func() { runRefreshTokenCleanup(ctx, authStore, logger) })
 
 	// Auth (optional — only if Google OAuth is configured)
@@ -361,7 +267,7 @@ func run(logger *slog.Logger) error {
 	}()
 
 	// A listener error and a shutdown signal share one drain path: capture the
-	// error, then cancel ctx via stop() so the scheduler and reconciler — both
+	// error, then cancel ctx via stop() so the scheduler and cleanup worker — both
 	// selecting on ctx — exit and wg.Wait() can return before the deferred
 	// pool.Close() runs. Returning early on the errCh branch would leak those
 	// workers and close the pool out from under an in-flight query.
@@ -443,7 +349,7 @@ func startFeedScheduler(ctx context.Context, wg *sync.WaitGroup, deps feedSchedu
 // owns no goroutine — the caller launches it on the scheduler WaitGroup and
 // waits for it during shutdown, so a SIGTERM-cancelled ctx drains it before the
 // pool closes. A cleanup error is logged and the loop continues; a transient DB
-// blip must not kill the worker. Mirrors the embedding reconciler's run loop.
+// blip must not kill the worker.
 func runRefreshTokenCleanup(ctx context.Context, store *auth.Store, logger *slog.Logger) {
 	cleanup := func() {
 		n, err := store.DeleteExpiredRefreshTokens(ctx)

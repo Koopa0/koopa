@@ -2,7 +2,7 @@
 
 > The **classification / usage** layer for koopa's PARA model (area / goal / project / milestone / todo) and the content layer. The schema `COMMENT`s in `migrations/001_initial.up.sql` are the **grammar** SSOT (what each column means); this document is the **usage** SSOT (which real thing maps to which entity, and why). On any conflict the code wins — `migrations/001_initial.up.sql`, `internal/mcp/ops/catalog.go::All()`, `internal/mcp/server.go::callerIdentity`.
 >
-> Status: reconciled with live runtime (`project_progress`) and an adversarial gate, 2026-06-23. Real driver = the **internal knowledge-OS loop**, not an external portfolio.
+> Status: reconciled with live runtime (`project_progress`) and an adversarial gate, 2026-06-23. Real driver = the **internal planning loop**, not an external portfolio.
 
 ## 1. Two axes
 

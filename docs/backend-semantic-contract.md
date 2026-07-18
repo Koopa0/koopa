@@ -5,9 +5,8 @@
 > the code: the schema, the Go code, and the MCP ops catalog are authoritative;
 > this contract names what they mean and flags what is not provable from them.
 >
-> Intended basis for: MCP tool contract tests, hybrid-search judgment tests,
-> commitment-proposal lifecycle tests, frontend UI/UX golden flows, and the
-> observability event taxonomy.
+> Intended basis for: MCP tool contract tests, commitment-proposal lifecycle
+> tests, frontend UI/UX golden flows, and the observability event taxonomy.
 
 **Grounding discipline:**
 
@@ -27,13 +26,12 @@
 
 ### What koopa0.dev is
 
-A **private-by-default personal knowledge / learning OS for a single human
-owner and a small closed set of AI agents.** One Go backend serves one admin
-(`users`, single row today) and a closed roster of registered agents
-(`internal/agent/registry.go::BuiltinAgents()`). Every party reads and writes
-through the same two surfaces: the PostgreSQL schema and the MCP tool layer on
-top of it. A public Angular site is a read-only projection of the publishable
-subset.
+A **private-by-default personal planning and publication system for a single
+human owner and a small closed set of AI agents.** One Go backend serves one
+admin (`users`, single row today) and a closed roster of registered agents
+(`internal/agent/registry.go::BuiltinAgents()`). The owner works through the
+private admin surface, agents use the bounded MCP surface, and PostgreSQL backs
+both. A public Angular site is a read-only projection of the publishable subset.
 
 It is **all of the following, with explicit boundaries** (§4):
 
@@ -41,11 +39,11 @@ It is **all of the following, with explicit boundaries** (§4):
 |---|---|---|
 | **Personal semantic infrastructure** | `agents.name` as universal actor identity; `activity_events` as the canonical change log written only by triggers | `internal/agent/`, `internal/activity/`, schema triggers `migrations/001_initial.up.sql` (`current_actor` + `audit_* triggers`) |
 | **PARA / GTD / OKR-ish system** | areas, goals, milestones, projects, todos, daily plan | `internal/goal/`, `internal/project/`, `internal/todo/`, `internal/daily/` |
-| **MCP tool surface** | **15 agent-facing tools** | `internal/mcp/ops/catalog.go::All()` (canonical list) |
-| **Knowledge / search system** | content, topics, feeds; hybrid FTS + pgvector search | `internal/content/`, `internal/search/`, `internal/mcp/search.go` |
+| **MCP tool surface** | agent-facing planning and publication tools | `internal/mcp/ops/catalog.go::All()` (canonical list) |
+| **Publication and feeds** | publishable content, topics, and collected feeds; no knowledge-retrieval capability | `internal/content/`, `internal/feed/` |
 
-> **This is a closed single-owner + small-agent-roster knowledge OS.** The
-> agent-facing MCP surface is **15 tools** (`internal/mcp/ops/catalog.go::All()`).
+> **This is a closed single-owner planning + publication system.** The
+> agent-facing MCP surface is generated from `internal/mcp/ops/catalog.go::All()`.
 > Milestone creation, area/goal/project activation, and content publication are
 > **admin-only HTTP forms** under `/api/admin/` (`cmd/app/routes.go`); agents
 > draft area/goal/project as inert proposals and push finished content into the
@@ -99,10 +97,6 @@ resolved only by the human owner.
 | **PARA usage contract** | `docs/para-semantic-contract.md` | **Derived** | The classification/usage layer (which real thing maps to which entity). Below the same three authorities. |
 | **Cowork agent op docs** | `skills/koopa-system/` + each agent's own Cowork project `CLAUDE.md` | **Advisory** | Per-agent operational guidance; never structural truth. |
 | **Frontend route/service code** | `frontend/src/app/**` | **Advisory / assumption** | Encodes the frontend's *assumed* backend contract. |
-
-**Implementation-only (no doc is authoritative; read the code):**
-`internal/mcp/search.go` (RRF merge constants and FTS/semantic fusion —
-`rrfMerge`).
 
 ---
 
@@ -179,7 +173,7 @@ them wrong is a semantic bug, not a naming quibble.
   trigger copies yesterday's items forward; `deferred` is a manual carry-over
   *candidate*, not an automatic one (`daily_plan_items` table COMMENT).
 
-### Knowledge
+### Publication / content
 
 - **content** — first-party publishable artifact (`contents` table). Five types:
   `article`, `essay`, `build-log`, `til`, `digest` (`content_type`).
@@ -192,9 +186,9 @@ them wrong is a semantic bug, not a naming quibble.
   `/api/admin/knowledge/content` (the `/api/admin/knowledge/content` routes); the one agent
   path is `propose_content`, which inserts a finished piece at `status='review'`
   with `is_public=false` for the owner to publish or reject — an agent never
-  publishes. Each row carries an `embedding vector(1536)` column (`contents.embedding`) that
-  the reconciler fills (§6).
-- **source / provenance** — attribution of where a knowledge row came from.
+  publishes. A legacy `embedding vector(1536)` column remains dormant because
+  migrations 001/002 are frozen; no runtime path reads or writes it (§6).
+- **source / provenance** — attribution of where a publication row came from.
   Columns: `contents.origin_system`, `feed_entries → feeds`.
   `activity_events.actor` + entity-title/slug + `area_id` write-time snapshots
   give per-mutation provenance (the `area_id` snapshot is resolved by the audit
@@ -210,8 +204,7 @@ them wrong is a semantic bug, not a naming quibble.
 
 - **MCP tool** — a registered handler in the MCP server, described by an
   `ops.Meta` (`internal/mcp/ops/types.go` — `Meta`): name, domain, writability,
-  stability, since, description, field enums. **15 tools**
-  (`catalog.go::All()`).
+  stability, since, description, field enums (`catalog.go::All()`).
 - **schedule** — a per-agent recurring trigger declared on the Go
   `agent.Agent` literal (`Schedule{Name, Trigger, Expr, Backend, Purpose}`).
   No agent currently declares one; when present it **lives in Go, not the DB.**
@@ -282,7 +275,7 @@ permits. Existence of a table, handler, or doc is not proof of a working path.
 | Login + refresh-token rotation + token security | implemented, tested | `internal/auth/` (`auth_test.go`, `handler_test.go`) |
 | Content lifecycle (admin HTTP; owner publishes a draft directly via `Store.Publish`, or a review row from the queue; `propose_content` lands an agent piece at `status=review`, `is_public=false`) | implemented; `Store.Publish` gates draft/review→published, publish CHECKs enforce the rest | `internal/content/publish.go`; CHECKs `migrations/001_initial.up.sql` (`chk_content_publication`, `chk_content_public_requires_published`); routes the `/api/admin/knowledge/content` routes |
 | Feed fetch + scheduler cadence + auto-disable on failures | implemented, tested | `internal/feed/scheduler_test.go` (testcontainers) |
-| **Document-embedding write path** | **Legacy, pending retirement.** The app background reconciler and `embed-backfill` command still exist, but the MCP server no longer configures or consumes embeddings. Owner direction is to remove the remaining backend path in a bounded follow-up. | `internal/embedder/`; `cmd/app/main.go`; `content/embedding.go` |
+| **Document-embedding write path** | **Retired.** The app has no provider configuration, reconciler, backfill command, vector retrieval query, or graph endpoint. The legacy schema column remains dormant because migrations 001/002 are frozen. | `cmd/app/config_test.go`; `cmd/app/routes_retirement_test.go` |
 | **MCP knowledge search** | **Retired.** `search_knowledge` is absent from the catalog and server registration; MCP has no Gemini configuration or retrieval handler. Knowledge authoring and retrieval belong to Obsidian／Yomihon. | `internal/mcp/ops/catalog.go`; `internal/mcp/server.go` |
 | Today aggregate (admin HTTP) | implemented + fully wired (§6F) | `cmd/app/main.go` (`WithSources` wiring); tests `internal/today/handler_test.go` |
 | Agent-surface write tools (`propose_*`, `capture_inbox`, `resolve_todo`) | implemented; handler-level input validation tested | `internal/mcp/handler_test.go` |
@@ -299,7 +292,6 @@ permits. Existence of a table, handler, or doc is not proof of a working path.
 | Feature | Reality | Evidence |
 |---|---|---|
 | **Feed highlight ordering** | no AI relevance scoring (a deliberate non-feature); highlights are recency/priority-ordered. The `score` field is vestigial | `internal/feed/entry/query.sql`; `internal/mcp/brief.go` |
-| **Admin global-search Kind taxonomy** | `internal/search/search.go` declares exactly `KindContent`, wired; no other kinds | `internal/search/search.go` (`Kind` / `KindContent`) |
 | **`contents.ai_metadata`** | vestigial — the column exists but has no consumer and is never populated; no AI-metadata feature is planned | `migrations/001_initial.up.sql` (`contents.ai_metadata`) |
 
 ### F. Today surface — fully wired
@@ -345,10 +337,9 @@ The Today aggregate is now a complete backend surface (the earlier
 
 ### G. Carried-forward human-resolved decisions (do not re-litigate)
 
-- **Knowledge retrieval** — Koopa does not provide it. MCP search is retired;
-  knowledge authoring and retrieval live in Obsidian／Yomihon. Remaining
-  embedding, public-search, and related-content code is transitional and must
-  be retired rather than expanded.
+- **Knowledge retrieval** — Koopa does not provide it. Search, related-content,
+  graph, and embedding runtime paths are retired; knowledge authoring and
+  retrieval live in Obsidian／Yomihon.
 
 ---
 
@@ -359,7 +350,7 @@ The Today aggregate is now a complete backend surface (the earlier
 | Domain | Must test before trusting |
 |---|---|
 | **MCP tools** | Catalog parity is already drift-tested (names only, `ops_catalog_test.go`) — that is not a contract test. Add claim-level contract tests for all **14**: the `brief.mode` discriminator rejects out-of-set values; each writability annotation matches the actual side effect; the read-only tools write nothing; each `propose_*` produces an inert `status=proposed` row that feeds no dashboard / brief / Today / active listing; `propose_content` lands at `status=review` with `is_public=false`; `resolve_todo` is caller-scoped (another agent's todo returns not-found). There is NO per-tool authorization gate — Option B: `as` is attribution only, and access is bounded by the MCP transport (HTTP Bearer + admin-email OAuth, or the stdio process boundary), so a contract test must assert the absence of a caller-identity gate, not its presence. |
-| **Retired MCP retrieval** | Keep `search_knowledge` absent from catalog and registration, and keep Gemini provider configuration out of the MCP binary. Remaining backend embedding/search paths are separate retirement work, not an MCP capability to restore. |
+| **Retired knowledge retrieval** | Keep `search_knowledge` absent from catalog and registration, and keep Gemini provider configuration out of both binaries. The app must not regain embedding, search, related-content, or graph runtime paths. |
 | **Commitment proposals** | Each `propose_*` writes an inert `status=proposed` row invisible to brief / Today / active listings / selectors; area-reject cascades its proposed child goals; goal-reject cascades its milestones; a `capture_inbox` link to a proposed project survives activation and is unlinked (not deleted) on reject; `resolve_todo` caller-scoping. |
 | **Frontend workflows** | A backend/frontend route compatibility matrix (every admin page: frontend endpoint ↔ backend route ↔ response envelope ↔ empty/error behavior); then golden-flow each admin area; assert no UI affordance violates a forbidden assumption below. |
 | **Observability** | Inventory `activity_events` producers (the audit triggers, `migrations/001_initial.up.sql` — `current_actor` + `audit_* triggers`) and map each to `entity_type` × `change_kind` × actor attribution × write path × user-visible event. Confirm `koopa.actor` is set on every Go write path so `actor='system'` only appears for genuine cron/manual ops. |

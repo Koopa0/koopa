@@ -85,7 +85,7 @@ func (h *Handler) RSS(w http.ResponseWriter, r *http.Request) {
 		Channel: rssChannel{
 			Title:         "koopa0.dev",
 			Link:          h.siteURL,
-			Description:   "Koopa's knowledge engine",
+			Description:   "Writing and build notes from Koopa",
 			LastBuildDate: time.Now().Format(time.RFC1123Z),
 			Items:         items,
 		},

@@ -43,23 +43,6 @@ SELECT COUNT(*) FROM contents c
 JOIN content_topics ct ON ct.content_id = c.id
 WHERE ct.topic_id = $1 AND c.status = 'published' AND c.is_public = true;
 
--- name: InternalSemanticSearchContents :many
--- Semantic search over all contents via pgvector cosine distance. Mirrors
--- the legacy retrieval visibility rule (excludes only 'archived'). This query
--- has no MCP caller and remains only until backend retrieval retirement.
-SELECT id, slug, title, body, excerpt, type, status,
-       series_id, series_order, is_public, project_id, reading_time_min,
-       cover_image, published_at, created_at, updated_at,
-       (1 - (embedding <=> @target_embedding::vector))::float8 AS similarity
-FROM contents
-WHERE status != 'archived'
-  AND embedding IS NOT NULL
-  AND (sqlc.narg('content_type')::content_type IS NULL OR type = sqlc.narg('content_type'))
-  AND (sqlc.narg('created_after')::timestamptz IS NULL OR created_at >= sqlc.narg('created_after'))
-  AND (sqlc.narg('created_before')::timestamptz IS NULL OR created_at < sqlc.narg('created_before'))
-ORDER BY embedding <=> @target_embedding::vector
-LIMIT @max_results;
-
 -- name: PublishedForRSS :many
 SELECT id, slug, title, excerpt, type, published_at, updated_at
 FROM contents
@@ -210,32 +193,6 @@ ON CONFLICT DO NOTHING;
 
 -- name: DeleteContentTopics :exec
 DELETE FROM content_topics WHERE content_id = $1;
-
--- name: PublishedWithEmbeddings :many
-SELECT id, slug, title, type, embedding
-FROM contents
-WHERE status = 'published' AND is_public = true
-  AND embedding IS NOT NULL;
-
--- name: ContentsMissingEmbedding :many
--- Rows the embedding reconciler still has to process. Archived content is
--- excluded from the remaining legacy semantic retrieval path, so embedding it
--- would spend API quota on unreachable rows. Oldest first so a backfill
--- progresses deterministically.
-SELECT id, title, body
-FROM contents
-WHERE embedding IS NULL AND status != 'archived'
-ORDER BY created_at
-LIMIT $1;
-
--- name: SetContentEmbedding :exec
--- Persist a derived embedding. updated_at is deliberately untouched:
--- the embedding derives from title/body and carries no editorial change,
--- and updated_at orders admin lists and feeds lastmod semantics — a
--- background re-embed must not make content look freshly edited. The
--- contents audit trigger fires only on INSERT or UPDATE OF status, so
--- this write produces no activity_events row.
-UPDATE contents SET embedding = $2 WHERE id = $1;
 
 -- name: ContentsByStatus :many
 -- List contents by status, ordered by updated_at descending. Used by admin pipeline.
