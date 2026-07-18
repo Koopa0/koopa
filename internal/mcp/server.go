@@ -19,7 +19,6 @@ import (
 
 	"github.com/Koopa0/koopa/internal/content"
 	"github.com/Koopa0/koopa/internal/daily"
-	"github.com/Koopa0/koopa/internal/embedder"
 	"github.com/Koopa0/koopa/internal/feed"
 	"github.com/Koopa0/koopa/internal/feed/entry"
 	"github.com/Koopa0/koopa/internal/goal"
@@ -46,11 +45,6 @@ type Server struct {
 	feeds       *feed.Store
 	feedEntries *entry.Store
 	stats       *stats.Store
-
-	// Embedder for search_knowledge semantic branch. Nullable — when nil,
-	// search_knowledge runs FTS-only. Populated from cmd/app/main.go when
-	// GEMINI_API_KEY is set.
-	embedder *embedder.Embedder
 
 	// Database pool for cross-store transactions
 	pool *pgxpool.Pool
@@ -81,14 +75,6 @@ func WithLocation(loc *time.Location) ServerOption {
 	return func(s *Server) { s.loc = loc }
 }
 
-// WithEmbedder enables the semantic branch of search_knowledge. When unset
-// (or set to nil) the tool falls back to FTS-only — that path remains
-// functional in every deployment, so embedder wiring is deliberately
-// optional rather than required.
-func WithEmbedder(e *embedder.Embedder) ServerOption {
-	return func(s *Server) { s.embedder = e }
-}
-
 // NewServer creates an MCP v2 server. All stores are created from the pool.
 func NewServer(pool *pgxpool.Pool, logger *slog.Logger, opts ...ServerOption) *Server {
 	s := &Server{
@@ -117,7 +103,7 @@ func NewServer(pool *pgxpool.Pool, logger *slog.Logger, opts ...ServerOption) *S
 	}
 
 	s.server = mcp.NewServer(&mcp.Implementation{
-		Name:    "koopa0-knowledge",
+		Name:    "koopa0",
 		Version: "v2.0.0",
 	}, nil)
 
@@ -128,7 +114,6 @@ func NewServer(pool *pgxpool.Pool, logger *slog.Logger, opts ...ServerOption) *S
 
 	// --- Core Lifecycle ---
 	addTool(s, toolFrom(ops.Brief), s.brief)
-	addTool(s, toolFrom(ops.SearchKnowledge), s.searchKnowledge)
 	addTool(s, toolFrom(ops.CaptureInbox), s.captureInbox)
 	addTool(s, toolFrom(ops.PlanDay), s.planDay)
 
@@ -341,20 +326,6 @@ func addTool[I, O any](s *Server, tool *mcp.Tool, handler func(context.Context, 
 		}
 		return toolResultText(string(data)), nil
 	})
-}
-
-// clamp constrains v to [lo, hi], returning def when v is 0.
-func clamp(v, lo, hi, def int) int {
-	if v == 0 {
-		return def
-	}
-	if v < lo {
-		return lo
-	}
-	if v > hi {
-		return hi
-	}
-	return v
 }
 
 // fixNullableArrays walks a schema and converts ["null","array"] to "array"

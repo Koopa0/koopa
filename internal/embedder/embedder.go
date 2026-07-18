@@ -71,9 +71,8 @@ func (e *Embedder) Embed(ctx context.Context, text string) ([]float32, error) {
 // EmbedQuery returns a 1536-dim embedding for a search query. Uses
 // TaskType=RETRIEVAL_QUERY, which Gemini optimizes to match against
 // embeddings produced under RETRIEVAL_DOCUMENT — the two task types are
-// the complementary pair in Gemini's embedding API. Interactive callers
-// should bound ctx aggressively (the MCP search_knowledge handler applies
-// a sub-second deadline).
+// the complementary pair in Gemini's embedding API. Callers must bound ctx;
+// no MCP query caller remains.
 func (e *Embedder) EmbedQuery(ctx context.Context, query string) ([]float32, error) {
 	return e.embed(ctx, query, "RETRIEVAL_QUERY")
 }

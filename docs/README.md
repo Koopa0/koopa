@@ -56,11 +56,6 @@ automated gates. Listed for a future task; none is wired today.
    identifiers out of new non-test code. (`p0/p1/p2` are currently accepted
    input aliases — see contract §3 (priority); keep-vs-remove is an open
    decision — so they are NOT in this list.)
-4. **Search-corpus pin.** `search_knowledge` is now single-corpus
-   (content-only; the former `selectSources` multi-corpus selector was
-   removed with the reading/song shelves). A unit test could assert it
-   stays content-only so README/corpus claims and code cannot diverge again.
-
 ## Maintenance rule
 
 When a code/schema change makes a doc statement false, update the doc **in

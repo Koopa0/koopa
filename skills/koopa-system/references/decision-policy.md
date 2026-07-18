@@ -4,7 +4,7 @@
 
 | Signal | Action |
 |---|---|
-| Question ("what / show / how is") | Read-only query tool (`brief`, `search_knowledge`, `list_todos`, `list_content`, `review_period`, `project_progress`) |
+| Question ("what / show / how is") | Read-only query tool (`brief`, `list_todos`, `list_content`, `review_period`, `project_progress`) |
 | Capture impulse ("add / remind me / 記一下") | `capture_inbox` |
 | Plan today | `plan_day`（候選 plan） |
 | Recurring habit ("每天 / Mon-Sat / 每 N 天做") on a todo you created | `set_todo_recurrence`（週幾 mon..sun 或 interval+unit;clear 取消）— 之後每逢符合日進 brief，`resolve_todo` done 完成當日 occurrence |
@@ -44,7 +44,7 @@ agent 用 `propose_*` 起草 inert draft（`status=proposed`，完全惰性 — 
 ## Agent memory
 
 agent 的內部敘事、計畫、決策、反思 → 寫進 agent 自己的 `.md` 檔。
-這**不是**系統 entity，不經 MCP，不會被 `search_knowledge` 檢索。
+這**不是**系統 entity，也不經 MCP。知識寫作與檢索留在 Obsidian／Yomihon。
 
 ## Never via MCP
 

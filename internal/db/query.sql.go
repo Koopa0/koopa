@@ -3381,7 +3381,7 @@ type InternalSearchContentsRow struct {
 	UpdatedAt      time.Time     `json:"updated_at"`
 }
 
-// Internal FTS search without visibility filter (for MCP tools). Excludes
+// Internal FTS search without visibility filter for the admin search. Excludes
 // archived. Optional type/date filters are pushed into the WHERE so each
 // retrieval branch returns only matching rows BEFORE the RRF limit — a
 // content_type filter must not lose recall to a top-N full of other types.
@@ -3474,8 +3474,8 @@ type InternalSemanticSearchContentsRow struct {
 
 // Semantic search over all contents via pgvector cosine distance. Mirrors
 // InternalSearchContents visibility (excludes only 'archived'); does NOT
-// exclude an anchor content id the way SimilarContents does, because this
-// is called from search_knowledge where there is no "current" content.
+// exclude an anchor content id the way SimilarContents does. This legacy
+// query has no MCP caller and remains only until backend retrieval retirement.
 func (q *Queries) InternalSemanticSearchContents(ctx context.Context, arg InternalSemanticSearchContentsParams) ([]InternalSemanticSearchContentsRow, error) {
 	rows, err := q.db.Query(ctx, internalSemanticSearchContents,
 		arg.TargetEmbedding,

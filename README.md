@@ -16,16 +16,15 @@
   <img src="https://img.shields.io/badge/PostgreSQL-4169E1?style=flat&logo=postgresql&logoColor=white" alt="PostgreSQL"/>
   <img src="https://img.shields.io/badge/Angular-22-DD0031?style=flat&logo=angular&logoColor=white" alt="Angular 22"/>
   <img src="https://img.shields.io/badge/MCP-Claude-7F77DD?style=flat" alt="MCP"/>
-  <img src="https://img.shields.io/badge/pgvector-1536d-378ADD?style=flat" alt="pgvector"/>
 </p>
 
 <p align="center">
   <a href="https://koopa0.dev"><strong>koopa0.dev&nbsp;↗</strong></a>
 </p>
 
-**koopa** is a private personal knowledge engine — your areas, goals, projects, notes, and writing in one place, with AI agents working inside it.
+**koopa** is a private planning and publication system — your areas, goals, projects, daily work, and publishable writing in one place, with AI agents working inside it.
 
-The agents share one source of truth: they read the same live state you do, instead of whatever you remember to tell them. You stay the only decision-maker — they search, draft, and propose; you decide what's kept.
+The agents share one source of truth for work state: they read the same live state you do, instead of whatever you remember to tell them. You stay the only decision-maker — they inspect, draft, and propose; you decide what's kept. Knowledge authoring and retrieval stay in Obsidian／Yomihon.
 
 ## Why this exists
 

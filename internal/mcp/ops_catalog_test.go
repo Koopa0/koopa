@@ -43,6 +43,24 @@ func TestOpsCatalogDrift(t *testing.T) {
 	}
 }
 
+// TestSearchKnowledgeRetired prevents the MCP surface from silently regaining
+// the retired knowledge-retrieval capability. Knowledge retrieval belongs to
+// Obsidian/Yomihon; Koopa's MCP surface is planning and publication support.
+func TestSearchKnowledgeRetired(t *testing.T) {
+	const retired = "search_knowledge"
+
+	for _, meta := range ops.All() {
+		if meta.Name == retired {
+			t.Fatalf("retired MCP tool %q remains in the operations catalog", retired)
+		}
+	}
+
+	s := NewServer(nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if slices.Contains(s.registeredNames, retired) {
+		t.Fatalf("retired MCP tool %q remains registered", retired)
+	}
+}
+
 // TestOpsCatalogMetaFields asserts every catalog entry carries the fields
 // required for admin metadata rendering. A missing domain or description
 // would leak into the /api/admin/ops response as empty strings.

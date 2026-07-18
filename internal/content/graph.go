@@ -60,8 +60,8 @@ func (s *Store) SimilarContents(ctx context.Context, excludeID uuid.UUID, embedd
 // InternalSemanticSearch returns contents ranked by cosine similarity to
 // the query embedding. Mirrors InternalSearch visibility — excludes only
 // 'archived', includes drafts / private content. Contents without embeddings
-// are skipped. Used by search_knowledge alongside InternalSearch (FTS) to
-// feed hybrid retrieval.
+// are skipped. This is legacy backend retrieval code pending the owner-approved
+// embedding/search retirement; MCP no longer calls it.
 func (s *Store) InternalSemanticSearch(ctx context.Context, queryEmbedding pgvector.Vector, limit int, filter SearchFilter) ([]Content, error) {
 	rows, err := s.q.InternalSemanticSearchContents(ctx, db.InternalSemanticSearchContentsParams{
 		TargetEmbedding: queryEmbedding,

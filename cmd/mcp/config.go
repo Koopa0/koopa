@@ -31,7 +31,6 @@ type config struct {
 	AdminEmail         string
 	GoogleClientID     string
 	GoogleClientSecret string
-	GeminiAPIKey       string
 }
 
 func loadConfig(logger *slog.Logger) config {
@@ -57,10 +56,6 @@ func loadConfig(logger *slog.Logger) config {
 	cfg.GoogleClientID = os.Getenv("GOOGLE_CLIENT_ID")
 	cfg.GoogleClientSecret = os.Getenv("GOOGLE_CLIENT_SECRET")
 	cfg.AdminEmail = os.Getenv("ADMIN_EMAIL")
-
-	// Optional: enables the semantic branch of search_knowledge. Absent
-	// key falls back to FTS-only retrieval — server still starts.
-	cfg.GeminiAPIKey = os.Getenv("GEMINI_API_KEY")
 
 	return cfg
 }

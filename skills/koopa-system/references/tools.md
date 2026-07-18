@@ -2,7 +2,7 @@
 
 Authoritative source: `internal/mcp/ops/catalog.go::All()`. The inventory
 below is GENERATED from it (`go generate ./internal/mcp/ops`); the per-domain
-usage detail further down — params, search mechanics, coordination patterns —
+usage detail further down — params and coordination patterns —
 is hand-maintained.
 
 ## Tool inventory
@@ -13,21 +13,20 @@ is hand-maintained.
 > Run `go generate ./internal/mcp/ops` after any change to the tool surface;
 > the drift test `TestToolInventoryDocInSync` fails CI if this is stale.
 
-**15 tools** across 3 domains.
+**14 tools** across 3 domains.
 
 | Domain | Count |
 |---|---|
-| `query` | 4 |
+| `query` | 3 |
 | `daily` | 8 |
 | `content` | 3 |
-| **Total** | **15** |
+| **Total** | **14** |
 
 | Tool | Domain | Writability | Purpose |
 |---|---|---|---|
 | `brief` | `query` | read_only | Read-only planning-state pull |
 | `project_progress` | `query` | read_only | Read-only PARA momentum/stalled intelligence for Koopa's projects, goals, and areas |
 | `review_period` | `query` | read_only | Read-only windowed retrospective of what KOOPA got done over a date window |
-| `search_knowledge` | `query` | read_only | Read-only search across Koopa's content corpus: articles, essays, build-logs, TILs, and digests |
 | `capture_inbox` | `daily` | additive | Quick todo capture to the inbox |
 | `list_todos` | `daily` | read_only | Read-only readback of the todos you created (created_by = your resolved caller identity) so you can learn their disposition |
 | `plan_day` | `daily` | idempotent | Set the day's plan as one atomic replacement |
@@ -48,7 +47,6 @@ is hand-maintained.
 | Tool | Key params | Returns |
 |---|---|---|
 | `brief` | `mode` (`morning` / `reflection`), `sections?` (morning only), `date?` | `morning` = single-call daily-planning briefing (overdue/today/active/recurring/committed/upcoming todos, active_goals, rss_highlights, content_pipeline, proposals_pending). `reflection` = end-of-day plan-vs-actual retrospective (planned_items + completed/deferred/planned counts + completion_rate). `mode` is required. Read-only; carries no agent memory. Scope is the target date (default today), not since-last-session. |
-| `search_knowledge` | `query`, `content_type?`, `after?`, `before?`, `limit?` | Hybrid (FTS + pgvector) retrieval over the content corpus. See Search section below. |
 | `project_progress` | (none) | Live PARA momentum/stalled intelligence for Koopa's projects, goals, and areas, computed at read time. Returns the owner's full PARA (not caller-scoped): `projects[]` with expected_cadence, days_since_human_activity, open_next_action, milestone_done/total, and a `stalled` flag; `goals[]` with milestone progress + stalled-project rollup; `areas[]` with `area_neglected` (no owner activity attributed to the area via any project, goal, or milestone for >14 days). Progress counts owner activity only (`actor='human'`); agent/system actors never count. |
 
 ### `brief` modes and sections
@@ -64,34 +62,11 @@ Morning mode is filterable via `sections` (omit or pass `[]` for all). Valid key
 |---|---|
 | `todos` | overdue / today / active / recurring / committed / upcoming todos |
 | `goals` | active_goals |
-| `rss` | rss_highlights — feeds tagged `priority=high`, NOT relevance-ranked; use `search_knowledge` for ranked retrieval |
+| `rss` | rss_highlights — feeds tagged `priority=high`, NOT relevance-ranked |
 | `content_pipeline` | content_pipeline |
 | `proposals` | proposals_pending — count of agent-proposed area/goal/project drafts awaiting owner triage |
 
 Every caller gets all sections by default; pass an explicit `sections` list to narrow the briefing.
-
-### `search_knowledge` retrieval
-
-Read-only hybrid retrieval over the content corpus (articles, essays, build-logs, TILs, digests). FTS fused with pgvector semantic search via reciprocal-rank fusion (RRF):
-
-- **FTS**: `websearch_to_tsquery('simple', query)` on the generated `search_vector` (GIN).
-- **Semantic**: query embedded once (gemini-embedding-2), cosine-ranked over the `embedding` column (HNSW). A background reconciler fills embeddings as rows land; without `GEMINI_API_KEY` the semantic branch is skipped and search degrades to FTS-only.
-
-Filters:
-
-- `content_type` — narrows to one content type (article / essay / build-log / til / digest).
-- `after`, `before`, `limit`.
-
-Query syntax (websearch):
-
-- Quoted phrases: `"value semantics"` — exact match.
-- AND (default): `Go generics` — both words appear.
-- OR: `goroutine OR channel`.
-- Exclusion: `-draft`.
-
-Visibility: `search_knowledge` sees all statuses including drafts and private — it is the internal-search surface, not the public-site search.
-
----
 
 ## Daily — personal work
 
@@ -125,7 +100,7 @@ Publishing stays an owner action in admin, off the MCP surface.
 
 **Caller identity**: every tool accepts optional `as: "<agent_name>"`. There is **no tool-layer authorization** (Option B) — the MCP transport is the access boundary, and `as` only carries attribution + caller-scope (created_by / activity_events.actor / `*ByCreator` readback), resolved in `internal/mcp/server.go::callerIdentity` against the roster in `internal/agent/registry.go::BuiltinAgents()`. A fabricated `as` is rejected by the created_by FK. There is no synthetic fallback caller: the default comes from env `KOOPA_MCP_CALLER_AGENT`, and with none set an `as`-less write is refused at `withActorTx` — every recorded write carries a real, registered agent.
 
-**Read-only forever**: `brief`, `search_knowledge`, `list_todos`, `list_content`, `review_period`, and `project_progress` are read-only by design and will not gain write actions.
+**Read-only forever**: `brief`, `list_todos`, `list_content`, `review_period`, and `project_progress` are read-only by design and will not gain write actions.
 
 **Off the MCP surface**: high-commitment lifecycle steps stay in the admin UI / HTTP — milestone creation, proposal triage (area / goal / project activation + rejection), content publishing, feed curation, and the owner's own todo lifecycle transitions.
 
