@@ -1322,22 +1322,6 @@ func (q *Queries) ContentBySlug(ctx context.Context, slug string) (ContentBySlug
 	return i, err
 }
 
-const contentEmbeddingBySlug = `-- name: ContentEmbeddingBySlug :one
-SELECT id, embedding FROM contents WHERE slug = $1 AND status = 'published' AND is_public = true
-`
-
-type ContentEmbeddingBySlugRow struct {
-	ID        uuid.UUID           `json:"id"`
-	Embedding *pgvector_go.Vector `json:"embedding"`
-}
-
-func (q *Queries) ContentEmbeddingBySlug(ctx context.Context, slug string) (ContentEmbeddingBySlugRow, error) {
-	row := q.db.QueryRow(ctx, contentEmbeddingBySlug, slug)
-	var i ContentEmbeddingBySlugRow
-	err := row.Scan(&i.ID, &i.Embedding)
-	return i, err
-}
-
 const contentIDBySlug = `-- name: ContentIDBySlug :one
 SELECT id FROM contents WHERE slug = $1
 `
@@ -3382,9 +3366,8 @@ type InternalSemanticSearchContentsRow struct {
 }
 
 // Semantic search over all contents via pgvector cosine distance. Mirrors
-// the legacy retrieval visibility rule (excludes only 'archived'); does NOT exclude
-// an anchor content id the way SimilarContents does. This query has no MCP
-// caller and remains only until backend retrieval retirement.
+// the legacy retrieval visibility rule (excludes only 'archived'). This query
+// has no MCP caller and remains only until backend retrieval retirement.
 func (q *Queries) InternalSemanticSearchContents(ctx context.Context, arg InternalSemanticSearchContentsParams) ([]InternalSemanticSearchContentsRow, error) {
 	rows, err := q.db.Query(ctx, internalSemanticSearchContents,
 		arg.TargetEmbedding,
@@ -5456,59 +5439,6 @@ func (q *Queries) SetTodoRecurrenceByID(ctx context.Context, arg SetTodoRecurren
 		return 0, err
 	}
 	return result.RowsAffected(), nil
-}
-
-const similarContents = `-- name: SimilarContents :many
-SELECT c.id, c.slug, c.title, c.excerpt, c.type,
-       (1 - (c.embedding <=> $1::vector))::float8 AS similarity
-FROM contents c
-WHERE c.status = 'published' AND c.is_public = true
-  AND c.id != $2
-  AND c.embedding IS NOT NULL
-ORDER BY c.embedding <=> $1::vector
-LIMIT $3
-`
-
-type SimilarContentsParams struct {
-	TargetEmbedding pgvector_go.Vector `json:"target_embedding"`
-	ExcludeID       uuid.UUID          `json:"exclude_id"`
-	MaxResults      int32              `json:"max_results"`
-}
-
-type SimilarContentsRow struct {
-	ID         uuid.UUID   `json:"id"`
-	Slug       string      `json:"slug"`
-	Title      string      `json:"title"`
-	Excerpt    string      `json:"excerpt"`
-	Type       ContentType `json:"type"`
-	Similarity float64     `json:"similarity"`
-}
-
-func (q *Queries) SimilarContents(ctx context.Context, arg SimilarContentsParams) ([]SimilarContentsRow, error) {
-	rows, err := q.db.Query(ctx, similarContents, arg.TargetEmbedding, arg.ExcludeID, arg.MaxResults)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []SimilarContentsRow{}
-	for rows.Next() {
-		var i SimilarContentsRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.Slug,
-			&i.Title,
-			&i.Excerpt,
-			&i.Type,
-			&i.Similarity,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
 }
 
 const statsActivityBySource = `-- name: StatsActivityBySource :many

@@ -154,13 +154,3 @@ export interface ApiUpdateContentRequest {
   reading_time_min?: number;
   is_public?: boolean;
 }
-
-/** Public — Related Content */
-export interface ApiRelatedContent {
-  slug: string;
-  title: string;
-  excerpt: string;
-  type: ContentType;
-  similarity: number;
-  topics: ApiTopicRef[];
-}

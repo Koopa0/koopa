@@ -10,14 +10,12 @@ package content
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"math"
 	"net/http"
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 	"github.com/pgvector/pgvector-go"
 
 	"github.com/Koopa0/koopa/internal/api"
@@ -33,39 +31,6 @@ type SearchFilter struct {
 	// CreatedBefore keeps rows created strictly before this instant. Callers
 	// wanting a whole-day-inclusive upper bound pass the start of the next day.
 	CreatedBefore *time.Time
-}
-
-// SimilarContents returns published contents most similar to the given embedding.
-func (s *Store) SimilarContents(ctx context.Context, excludeID uuid.UUID, embedding pgvector.Vector, limit int) ([]RelatedContent, error) {
-	rows, err := s.q.SimilarContents(ctx, db.SimilarContentsParams{
-		TargetEmbedding: embedding,
-		ExcludeID:       excludeID,
-		MaxResults:      int32(limit), // #nosec G115 -- limit is bounded by handler (max 20)
-	})
-	if err != nil {
-		return nil, fmt.Errorf("querying similar contents: %w", err)
-	}
-	ids := make([]uuid.UUID, len(rows))
-	for i, r := range rows {
-		ids[i] = r.ID
-	}
-	topicMap, err := s.topicsForContents(ctx, ids)
-	if err != nil {
-		return nil, err
-	}
-
-	results := make([]RelatedContent, len(rows))
-	for i, r := range rows {
-		results[i] = RelatedContent{
-			Slug:       r.Slug,
-			Title:      r.Title,
-			Excerpt:    r.Excerpt,
-			Type:       Type(r.Type),
-			Similarity: r.Similarity,
-			Topics:     topicMap[r.ID],
-		}
-	}
-	return results, nil
 }
 
 // InternalSemanticSearch returns contents ranked by cosine similarity to the
@@ -103,18 +68,6 @@ func (s *Store) InternalSemanticSearch(ctx context.Context, queryEmbedding pgvec
 		return nil, err
 	}
 	return contents, nil
-}
-
-// ContentEmbeddingBySlug returns the ID and embedding for a content by slug.
-func (s *Store) ContentEmbeddingBySlug(ctx context.Context, slug string) (uuid.UUID, *pgvector.Vector, error) {
-	r, err := s.q.ContentEmbeddingBySlug(ctx, slug)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return uuid.Nil, nil, ErrNotFound
-		}
-		return uuid.Nil, nil, fmt.Errorf("querying embedding for content %s: %w", slug, err)
-	}
-	return r.ID, r.Embedding, nil
 }
 
 // PublishedWithEmbeddings returns all published contents that have embeddings.

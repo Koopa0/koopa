@@ -9,18 +9,14 @@ import {
   afterNextRender,
   effect,
 } from '@angular/core';
-import { rxResource } from '@angular/core/rxjs-interop';
-import { of } from 'rxjs';
 import { isPlatformBrowser, DatePipe } from '@angular/common';
 import { RouterLink } from '@angular/router';
 import { environment } from '../../../environments/environment';
-import { ContentService } from '../../core/services/content.service';
 import { MarkdownService } from '../../core/services/markdown.service';
 import { ThemeService } from '../../core/services/theme.service';
-import type { ApiContent, ApiRelatedContent } from '../../core/models';
+import type { ApiContent } from '../../core/models';
 import { SeoService } from '../../core/services/seo/seo.service';
 import { buildBlogPostingSchema } from '../../core/services/seo/json-ld.util';
-import { RelatedArticlesComponent } from '../../shared/related-articles/related-articles.component';
 
 /**
  * The reading surface — renders every written content type (article /
@@ -28,13 +24,13 @@ import { RelatedArticlesComponent } from '../../shared/related-articles/related-
  * {@link articleResolver} before the route activates (so the page-level view
  * transition lands on the finished page, never a spinner) and arrives via the
  * `article` input. Has two homes: /articles/:slug (a centered reading column:
- * back link, title, dek, one mono meta line, the mended seam, the prose body,
- * then a quiet related pair) and /preview/:slug (chrome-less column for the
- * admin publish-preview iframe, noindex).
+ * back link, title, dek, one mono meta line, the mended seam, and the prose
+ * body) and /preview/:slug (chrome-less column for the admin publish-preview
+ * iframe, noindex).
  */
 @Component({
   selector: 'app-article-detail',
-  imports: [DatePipe, RouterLink, RelatedArticlesComponent],
+  imports: [DatePipe, RouterLink],
   templateUrl: './article-detail.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
@@ -46,29 +42,11 @@ export class ArticleDetailComponent {
   /** Route data flag: /preview/:slug renders the bare reading column. */
   readonly preview = input(false);
 
-  private readonly contentService = inject(ContentService);
   private readonly markdownService = inject(MarkdownService);
   private readonly themeService = inject(ThemeService);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly seoService = inject(SeoService);
   private readonly el = inject(ElementRef);
-
-  /** Related pieces — non-critical, below the fold. A `undefined` param keeps
-   * the resource idle in preview mode (no request). */
-  private readonly relatedResource = rxResource<
-    ApiRelatedContent[],
-    string | undefined
-  >({
-    params: () => (this.preview() ? undefined : this.article().slug),
-    stream: ({ params }) =>
-      params
-        ? this.contentService.getRelated(params)
-        : of<ApiRelatedContent[]>([]),
-  });
-
-  protected readonly relatedArticles = computed(() =>
-    this.relatedResource.hasValue() ? this.relatedResource.value() : [],
-  );
 
   protected readonly rawHtml = computed(() => {
     // Strip leading h1 from markdown — the title is already rendered in the header section
