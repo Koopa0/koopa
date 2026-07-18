@@ -32,3 +32,19 @@ func TestPublicSearchRouteIsRetired(t *testing.T) {
 		t.Fatalf("positive control GET /healthz status = %d, want %d", health.Code, http.StatusOK)
 	}
 }
+
+func TestAdminSearchRouteIsRetired(t *testing.T) {
+	mux := http.NewServeMux()
+	passThrough := func(next http.Handler) http.Handler { return next }
+	registerRoutes(mux, &handlers{
+		content:        content.NewHandler(nil, "https://example.com", slog.Default()),
+		logger:         slog.Default(),
+		metricsHandler: http.NotFoundHandler(),
+	}, passThrough, passThrough)
+
+	search := httptest.NewRecorder()
+	mux.ServeHTTP(search, httptest.NewRequest(http.MethodGet, "/api/admin/search", http.NoBody))
+	if search.Code != http.StatusNotFound {
+		t.Fatalf("GET /api/admin/search status = %d, want %d", search.Code, http.StatusNotFound)
+	}
+}
