@@ -45,9 +45,8 @@ WHERE ct.topic_id = $1 AND c.status = 'published' AND c.is_public = true;
 
 -- name: InternalSemanticSearchContents :many
 -- Semantic search over all contents via pgvector cosine distance. Mirrors
--- the legacy retrieval visibility rule (excludes only 'archived'); does NOT exclude
--- an anchor content id the way SimilarContents does. This query has no MCP
--- caller and remains only until backend retrieval retirement.
+-- the legacy retrieval visibility rule (excludes only 'archived'). This query
+-- has no MCP caller and remains only until backend retrieval retirement.
 SELECT id, slug, title, body, excerpt, type, status,
        series_id, series_order, is_public, project_id, reading_time_min,
        cover_image, published_at, created_at, updated_at,
@@ -211,19 +210,6 @@ ON CONFLICT DO NOTHING;
 
 -- name: DeleteContentTopics :exec
 DELETE FROM content_topics WHERE content_id = $1;
-
--- name: ContentEmbeddingBySlug :one
-SELECT id, embedding FROM contents WHERE slug = $1 AND status = 'published' AND is_public = true;
-
--- name: SimilarContents :many
-SELECT c.id, c.slug, c.title, c.excerpt, c.type,
-       (1 - (c.embedding <=> @target_embedding::vector))::float8 AS similarity
-FROM contents c
-WHERE c.status = 'published' AND c.is_public = true
-  AND c.id != @exclude_id
-  AND c.embedding IS NOT NULL
-ORDER BY c.embedding <=> @target_embedding::vector
-LIMIT @max_results;
 
 -- name: PublishedWithEmbeddings :many
 SELECT id, slug, title, type, embedding

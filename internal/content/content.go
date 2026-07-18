@@ -256,16 +256,6 @@ type RevisionParams struct {
 	Title     *string
 }
 
-// RelatedContent is a content item with a similarity score.
-type RelatedContent struct {
-	Slug       string     `json:"slug"`
-	Title      string     `json:"title"`
-	Excerpt    string     `json:"excerpt"`
-	Type       Type       `json:"type"`
-	Similarity float64    `json:"similarity"`
-	Topics     []TopicRef `json:"topics"`
-}
-
 // GraphNode represents a node in the knowledge graph.
 type GraphNode struct {
 	ID          string `json:"id"`

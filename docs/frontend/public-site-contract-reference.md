@@ -31,7 +31,6 @@
 - `GET /api/contents` → `[Content]` — published list (the index / article cards: title, excerpt, type, tags, topics, reading_time_min, cover_image, published_at).
 - `GET /api/contents/{slug}` → `Content` — the **article page** (full `body` Markdown). 404 if not public.
 - `GET /api/contents/by-type/{type}` → `[Content]` — by type (article / essay / build-log / til / digest).
-- `GET /api/contents/related/{slug}` → `[Content]` — related (for the "read next" rail).
 
 ## Topic
 
@@ -44,6 +43,6 @@
 
 ## Design notes (Zed-docs aesthetic — the right home for it)
 - This surface is **the opposite of admin**: generous whitespace, serif long-form body, quiet docs-style left nav (topics), mono code blocks, calm reading. Density is NOT the goal here.
-- `body` is Markdown → render with a Markdown pipeline + your prose/typography styles; `reading_time_min`, `excerpt`, `cover_image` feed the article cards; `topics` drives the docs nav; `related/{slug}` feeds "read next".
+- `body` is Markdown → render with a Markdown pipeline + your prose/typography styles; `reading_time_min`, `excerpt`, `cover_image` feed the article cards; `topics` drives the docs nav.
 - The bound design bundle already has the public-site kit (Home/Article/Topic) — extend those, dark-default kept but lean into the reading typography.
 - **Admin reuse (option 3, free):** the admin content editor's "publish preview" embeds this same article component against `GET /api/contents/{slug}` (or an admin draft-preview variant) — DRY, no separate build.

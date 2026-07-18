@@ -54,28 +54,16 @@ describe('ArticleDetailComponent', () => {
     component = fixture.componentInstance;
   });
 
-  /** Let the related rxResource issue its request, then render. */
+  /** Let deferred rendering work settle, then render. */
   async function settle(): Promise<void> {
     await new Promise<void>((resolve) => setTimeout(resolve, 0));
     fixture.detectChanges();
-  }
-
-  /** Drain the below-the-fold related request (full mode only). */
-  function flushRelated(): void {
-    httpTesting
-      .expectOne(
-        (r) =>
-          r.url.includes('/api/contents/related/') && r.method === 'GET',
-      )
-      .flush({ data: [] });
   }
 
   it('should create', async () => {
     fixture.componentRef.setInput('article', buildMockContent());
     fixture.detectChanges();
     await settle();
-    flushRelated();
-
     expect(component).toBeTruthy();
   });
 
@@ -83,9 +71,6 @@ describe('ArticleDetailComponent', () => {
     fixture.componentRef.setInput('article', buildMockContent());
     fixture.detectChanges();
     await settle();
-    flushRelated();
-    await settle();
-
     const el = fixture.nativeElement as HTMLElement;
     // The quiet mono back link points at the archive.
     const crumb = el.querySelector('a.ed-crumb');
@@ -98,6 +83,21 @@ describe('ArticleDetailComponent', () => {
     expect(el.textContent).toContain('5 min');
   });
 
+  it('should not fetch or render the retired read-next surface', async () => {
+    fixture.componentRef.setInput('article', buildMockContent());
+    fixture.detectChanges();
+    await settle();
+
+    httpTesting.expectNone((r) =>
+      r.url.includes('/api/contents/related/'),
+    );
+    expect(
+      (fixture.nativeElement as HTMLElement).querySelector(
+        'app-related-articles',
+      ),
+    ).toBeNull();
+  });
+
   it.each<ContentType>(['article', 'essay', 'build-log', 'til', 'digest'])(
     'should render %s content on the same reading surface',
     async (type) => {
@@ -107,9 +107,6 @@ describe('ArticleDetailComponent', () => {
       );
       fixture.detectChanges();
       await settle();
-      flushRelated();
-      await settle();
-
       const el = fixture.nativeElement as HTMLElement;
       expect(el.textContent).toContain(`A ${type}`);
       // The mono meta line shows the raw content type (e.g. "build-log").
@@ -117,16 +114,15 @@ describe('ArticleDetailComponent', () => {
     },
   );
 
-  it('should hide the back link and read-next in preview mode', async () => {
+  it('should hide the back link in preview mode', async () => {
     fixture.componentRef.setInput('article', buildMockContent());
     fixture.componentRef.setInput('preview', true);
     fixture.detectChanges();
     await settle();
-    httpTesting.verify(); // no related request in preview (resource idle)
+    httpTesting.verify();
 
     const el = fixture.nativeElement as HTMLElement;
     expect(el.querySelector('a.ed-crumb')).toBeNull();
-    expect(el.querySelector('app-related-articles')).toBeNull();
     // The chrome-less column keeps the title, dek, and the mended seam.
     expect(el.querySelector('.ed-seam')).toBeTruthy();
     expect(el.textContent).toContain('Test Article');

@@ -9,13 +9,10 @@ package content
 
 import (
 	"net/http"
-	"strconv"
 	"time"
 
 	"github.com/Koopa0/koopa/internal/api"
 )
-
-const maxSlugLength = 200
 
 // PublicList handles GET /api/contents.
 func (h *Handler) PublicList(w http.ResponseWriter, r *http.Request) {
@@ -60,41 +57,6 @@ func (h *Handler) PublicByType(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	api.Encode(w, http.StatusOK, api.PagedResponse(contents, total, f.Page, f.PerPage))
-}
-
-// PublicRelated handles GET /api/contents/related/{slug}.
-func (h *Handler) PublicRelated(w http.ResponseWriter, r *http.Request) {
-	slug := r.PathValue("slug")
-	if len(slug) > maxSlugLength {
-		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid slug")
-		return
-	}
-
-	limit := 5
-	if l := r.URL.Query().Get("limit"); l != "" {
-		if v, err := strconv.Atoi(l); err == nil && v > 0 && v <= 20 {
-			limit = v
-		}
-	}
-
-	id, embedding, err := h.store.ContentEmbeddingBySlug(r.Context(), slug)
-	if err != nil {
-		api.HandleError(w, h.logger, err, storeErrors...)
-		return
-	}
-
-	if embedding == nil {
-		api.Encode(w, http.StatusOK, api.Response{Data: []RelatedContent{}})
-		return
-	}
-
-	related, err := h.store.SimilarContents(r.Context(), id, *embedding, limit)
-	if err != nil {
-		h.logger.Error("querying similar contents", "slug", slug, "error", err)
-		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to get related contents")
-		return
-	}
-	api.Encode(w, http.StatusOK, api.Response{Data: related})
 }
 
 func (h *Handler) parsePublicFilter(r *http.Request) PublicFilter {

@@ -114,7 +114,6 @@ func registerRoutes(
 	mux.HandleFunc("GET /api/contents", h.content.PublicList)
 	mux.HandleFunc("GET /api/contents/{slug}", h.content.PublicBySlug)
 	mux.HandleFunc("GET /api/contents/by-type/{type}", h.content.PublicByType)
-	mux.HandleFunc("GET /api/contents/related/{slug}", h.content.PublicRelated)
 	mux.HandleFunc("GET /api/knowledge-graph", h.content.KnowledgeGraph)
 	mux.HandleFunc("GET /api/feed/rss", h.content.RSS)
 	mux.HandleFunc("GET /api/feed/sitemap", h.content.Sitemap)

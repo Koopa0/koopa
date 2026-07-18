@@ -589,66 +589,6 @@ func TestHandler_Publish_InvalidID(t *testing.T) {
 }
 
 // =============================================================================
-// Handler.Related — slug length limit and path traversal
-// =============================================================================
-
-// TestHandler_Related_SlugValidation verifies Related enforces the maxSlugLength
-// limit and prevents path-traversal-looking slugs from reaching the store.
-func TestHandler_Related_SlugValidation(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name     string
-		slug     string
-		wantCode int
-	}{
-		{
-			name: "slug at max length is accepted (but store is nil)",
-			slug: strings.Repeat("a", maxSlugLength),
-			// Store is nil; after validation passes we expect a panic on nil
-			// dereference. We only test slugs that should be REJECTED here.
-			wantCode: 0, // skip — reaches store
-		},
-		{
-			name:     "slug over max length is rejected",
-			slug:     strings.Repeat("a", maxSlugLength+1),
-			wantCode: http.StatusBadRequest,
-		},
-		{
-			name:     "very long slug (10 000 chars) is rejected",
-			slug:     strings.Repeat("x", 10_000),
-			wantCode: http.StatusBadRequest,
-		},
-	}
-
-	for _, tt := range tests {
-		if tt.wantCode == 0 {
-			continue // reaches store, skip with nil store
-		}
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			h := newTestHandler()
-			req := httptest.NewRequest(http.MethodGet,
-				"/api/contents/related/"+tt.slug, http.NoBody)
-			req.SetPathValue("slug", tt.slug)
-			w := httptest.NewRecorder()
-
-			h.PublicRelated(w, req)
-
-			if w.Code != tt.wantCode {
-				t.Errorf("Related(%d char slug) status = %d, want %d\nbody: %s",
-					len(tt.slug), w.Code, tt.wantCode, w.Body.String())
-			}
-			got := decodeErrorBody(t, w.Body)
-			if got.Error.Code != "BAD_REQUEST" {
-				t.Errorf("Related(oversized slug) error.code = %q, want BAD_REQUEST",
-					got.Error.Code)
-			}
-		})
-	}
-}
-
-// =============================================================================
 // Handler.SetIsPublic — validation
 // =============================================================================
 

@@ -6,7 +6,6 @@ import type {
   ApiListResponse,
   ApiCreateContentRequest,
   ApiUpdateContentRequest,
-  ApiRelatedContent,
   ContentStatus,
   ContentType,
 } from '../models';
@@ -145,10 +144,4 @@ export class ContentService {
     );
   }
 
-  /** Public — get related content by slug */
-  getRelated(slug: string): Observable<ApiRelatedContent[]> {
-    return this.api.getData<ApiRelatedContent[]>(
-      `/api/contents/related/${slug}`,
-    );
-  }
 }
