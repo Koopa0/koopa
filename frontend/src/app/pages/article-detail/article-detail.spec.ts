@@ -98,6 +98,21 @@ describe('ArticleDetailComponent', () => {
     expect(el.textContent).toContain('5 min');
   });
 
+  it('should not fetch or render the retired read-next surface', async () => {
+    fixture.componentRef.setInput('article', buildMockContent());
+    fixture.detectChanges();
+    await settle();
+
+    httpTesting.expectNone((r) =>
+      r.url.includes('/api/contents/related/'),
+    );
+    expect(
+      (fixture.nativeElement as HTMLElement).querySelector(
+        'app-related-articles',
+      ),
+    ).toBeNull();
+  });
+
   it.each<ContentType>(['article', 'essay', 'build-log', 'til', 'digest'])(
     'should render %s content on the same reading surface',
     async (type) => {
