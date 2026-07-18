@@ -55,7 +55,7 @@
           autocomplete="off"
           spellcheck="false"
           role="combobox"
-          aria-label="Search commands and content"
+          aria-label="Filter commands or capture a todo"
           aria-autocomplete="list"
           aria-controls="command-palette-listbox"
           [attr.aria-activedescendant]="
@@ -89,9 +89,7 @@
         id="command-palette-listbox"
         data-testid="command-palette-results"
       >
-        <!-- Quick Actions — matching nav commands, shown for any query
-             (and all actions when the query is empty). In search mode these
-             sit above the content results and share the flat index space. -->
+        <!-- Matching navigation commands, or all commands when empty. -->
         @for (group of groupedActions(); track group.name) {
           <div>
             @if (!$first) {
@@ -122,78 +120,8 @@
           </div>
         }
 
-        @if (isSearchMode()) {
-          <!-- Content search results, indexed after the quick actions -->
-          @if (isSearching()) {
-            <div
-              class="flex items-center justify-center gap-2 px-4 py-8 text-fg-subtle"
-            >
-              <div
-                class="size-4 animate-spin rounded-full border-2 border-border border-t-fg-subtle"
-              ></div>
-              <span class="text-sm">Searching…</span>
-            </div>
-          } @else if (searchResults().length > 0) {
-            <div>
-              @if (filteredActions().length > 0) {
-                <div class="my-1 border-t border-border-faint"></div>
-              }
-              <div
-                class="px-3 pb-1 font-mono text-[10px] tracking-[0.08em] text-fg-faint uppercase"
-              >
-                Search Results
-              </div>
-              @for (
-                result of searchResults();
-                track result.id;
-                let i = $index
-              ) {
-                <button
-                  type="button"
-                  class="flex w-full flex-col items-start gap-0.5 rounded-xs px-3 py-2.5 text-left transition-colors"
-                  [class.bg-brand-muted]="
-                    activeIndex() === i + filteredActions().length
-                  "
-                  [attr.data-index]="i + filteredActions().length"
-                  [id]="'cp-item-' + (i + filteredActions().length)"
-                  (mouseenter)="activeIndex.set(i + filteredActions().length)"
-                  (click)="selectSearchResult(result)"
-                  role="option"
-                  [attr.aria-selected]="
-                    activeIndex() === i + filteredActions().length
-                  "
-                >
-                  <span
-                    class="w-full truncate text-sm font-medium"
-                    [class.text-brand]="
-                      activeIndex() === i + filteredActions().length
-                    "
-                    [class.text-fg]="
-                      activeIndex() !== i + filteredActions().length
-                    "
-                  >
-                    {{ result.title }}
-                  </span>
-                  <span class="font-mono text-[10px] text-fg-faint">
-                    {{ getResultSubtitle(result) }}
-                  </span>
-                </button>
-              }
-              <!-- View all results -->
-              <button
-                type="button"
-                class="mt-1 flex w-full items-center justify-center gap-1 rounded-xs px-3 py-2 text-xs text-fg-subtle transition-colors hover:bg-overlay hover:text-fg"
-                (click)="navigateToSearch()"
-              >
-                View all results →
-              </button>
-            </div>
-          }
-        }
-
-        <!-- Capture fallback / no-matches: only when nothing matched at all
-             (no nav command and no content result). -->
-        @if (isSearchMode() && !isSearching() && totalItems() === 0) {
+        <!-- Capture fallback / no-matches when no command matched. -->
+        @if (hasQuery() && totalItems() === 0) {
           @if (captureAvailable()) {
             <!-- GTD capture fallback: nothing matched, capture the raw query -->
             <div>

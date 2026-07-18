@@ -50,18 +50,6 @@ export class ContentService {
     );
   }
 
-  /** Full-text search (public) */
-  search(
-    q: string,
-    params?: { page?: number; perPage?: number; type?: string },
-  ): Observable<ApiListResponse<ApiContent>> {
-    const query: Record<string, string | number> = { q };
-    if (params?.page) query['page'] = params.page;
-    if (params?.perPage) query['per_page'] = params.perPage;
-    if (params?.type) query['type'] = params.type;
-    return this.api.getListData<ApiContent>('/api/search', query);
-  }
-
   /** Admin — get single content by ID (full fields, no is_public check) */
   adminGet(id: string): Observable<ApiContent> {
     return this.api.getData<ApiContent>(`/api/admin/knowledge/content/${id}`);

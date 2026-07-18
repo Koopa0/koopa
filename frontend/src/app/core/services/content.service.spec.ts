@@ -169,34 +169,6 @@ describe('ContentService', () => {
     });
   });
 
-  describe('search', () => {
-    it('should search content with query string', () => {
-      service.search('angular signals').subscribe((response) => {
-        expect(response.data).toHaveLength(0);
-      });
-
-      const req = httpMock.expectOne(
-        (r) =>
-          r.url.includes('/api/search') &&
-          r.params.get('q') === 'angular signals',
-      );
-      expect(req.request.method).toBe('GET');
-      req.flush({ data: [], meta: createMockMeta() });
-    });
-
-    it('should pass pagination params for search', () => {
-      service.search('go', { page: 2, perPage: 10 }).subscribe();
-
-      const req = httpMock.expectOne(
-        (r) =>
-          r.url.includes('/api/search') &&
-          r.params.get('q') === 'go' &&
-          r.params.get('page') === '2',
-      );
-      req.flush({ data: [], meta: createMockMeta() });
-    });
-  });
-
   describe('create', () => {
     it('should POST to admin contents endpoint', () => {
       const request = {

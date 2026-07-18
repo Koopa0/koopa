@@ -50,11 +50,6 @@ export const routes: Routes = [
       ),
   },
   {
-    path: 'search',
-    loadComponent: () =>
-      import('./pages/search/search').then((m) => m.SearchComponent),
-  },
-  {
     path: 'resume',
     redirectTo: '/about',
     pathMatch: 'full',

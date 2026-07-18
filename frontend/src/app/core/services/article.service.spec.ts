@@ -97,16 +97,6 @@ describe('ArticleService', () => {
       req.flush({ data: [], meta: createMockMeta({ page: 2, per_page: 5 }) });
     });
 
-    it('should use search endpoint when search filter is provided', () => {
-      service.getArticles({ search: 'angular signals' }).subscribe();
-
-      const req = httpMock.expectOne((r) =>
-        r.url.includes('/api/search') && r.params.get('q') === 'angular signals',
-      );
-      expect(req.request.method).toBe('GET');
-      req.flush({ data: [], meta: createMockMeta() });
-    });
-
     it('should propagate error to subscriber', () => {
       service.getArticles().subscribe({
         error: (err) => {

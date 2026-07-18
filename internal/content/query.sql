@@ -43,23 +43,6 @@ SELECT COUNT(*) FROM contents c
 JOIN content_topics ct ON ct.content_id = c.id
 WHERE ct.topic_id = $1 AND c.status = 'published' AND c.is_public = true;
 
--- name: SearchContents :many
-SELECT id, slug, title, body, excerpt, type, status,
-       series_id, series_order, is_public, project_id, reading_time_min,
-       cover_image, published_at, created_at, updated_at
-FROM contents
-WHERE status = 'published' AND is_public = true
-  AND search_vector @@ websearch_to_tsquery('simple', $1)
-  AND (sqlc.narg('content_type')::content_type IS NULL OR type = sqlc.narg('content_type'))
-ORDER BY ts_rank(search_vector, websearch_to_tsquery('simple', $1)) DESC
-LIMIT $2 OFFSET $3;
-
--- name: SearchContentsCount :one
-SELECT COUNT(*) FROM contents
-WHERE status = 'published' AND is_public = true
-  AND search_vector @@ websearch_to_tsquery('simple', $1)
-  AND (sqlc.narg('content_type')::content_type IS NULL OR type = sqlc.narg('content_type'));
-
 -- name: InternalSearchContents :many
 -- Internal FTS search without visibility filter for the admin search. Excludes
 -- archived. Optional type/date filters are pushed into the WHERE so each

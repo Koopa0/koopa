@@ -39,7 +39,6 @@
 - `GET /api/topics/{slug}` → `{ "topic": {Topic}, "contents": [Content], "related_tags": [{TagCount}] }` — the **topic page** (a topic + its published content + related tags).
 
 ## Misc public reads
-- `GET /api/search?q=` → public search across published content.
 - `GET /api/knowledge-graph` → content/topic graph (nodes + edges) for a graph view.
 - `GET /api/feed/rss` (RSS) · `GET /api/feed/sitemap` (sitemap XML).
 
