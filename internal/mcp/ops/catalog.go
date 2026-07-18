@@ -32,22 +32,10 @@ func Brief() Meta {
 		Writability: ReadOnly,
 		Stability:   StabilityStable,
 		Since:       since,
-		Description: "Read-only planning-state pull. Pick a mode (required): 'morning' = single-call daily-planning briefing (overdue/today/active/recurring/committed/upcoming todos, active_goals, rss_highlights, content_pipeline, proposals_pending); 'reflection' = end-of-day plan-vs-actual retrospective (planned_items + completed/deferred/planned counts + completion_rate). brief is a pure planning-state pull and carries no agent memory. Morning mode is filterable via the sections parameter (ignored in reflection mode) — valid keys (omit or pass [] for all): 'todos' (overdue/today/active/recurring/committed/upcoming todos), 'goals' (active_goals), 'rss' (rss_highlights — feeds tagged priority=high, NOT relevance-ranked; use search_knowledge for ranked retrieval), 'content_pipeline' (content_pipeline), 'proposals' (proposals_pending — count of agent-proposed area/goal/project drafts awaiting owner triage). Every caller gets all sections by default; pass an explicit sections list to narrow the briefing. Scope is the target date (default today), not since-last-session.",
+		Description: "Read-only planning-state pull. Pick a mode (required): 'morning' = single-call daily-planning briefing (overdue/today/active/recurring/committed/upcoming todos, active_goals, rss_highlights, content_pipeline, proposals_pending); 'reflection' = end-of-day plan-vs-actual retrospective (planned_items + completed/deferred/planned counts + completion_rate). brief is a pure planning-state pull and carries no agent memory. Morning mode is filterable via the sections parameter (ignored in reflection mode) — valid keys (omit or pass [] for all): 'todos' (overdue/today/active/recurring/committed/upcoming todos), 'goals' (active_goals), 'rss' (rss_highlights — feeds tagged priority=high, not relevance-ranked), 'content_pipeline' (content_pipeline), 'proposals' (proposals_pending — count of agent-proposed area/goal/project drafts awaiting owner triage). Every caller gets all sections by default; pass an explicit sections list to narrow the briefing. Scope is the target date (default today), not since-last-session.",
 		FieldEnums: map[string][]string{
 			"mode": {"morning", "reflection"},
 		},
-	}
-}
-
-// SearchKnowledge returns metadata for the cross-content search tool.
-func SearchKnowledge() Meta {
-	return Meta{
-		Name:        "search_knowledge",
-		Domain:      DomainQuery,
-		Writability: ReadOnly,
-		Stability:   StabilityStable,
-		Since:       since,
-		Description: "Read-only search across Koopa's content corpus: articles, essays, build-logs, TILs, and digests. Hybrid retrieval — PostgreSQL full-text search (lexical, tsvector + websearch syntax, GIN-indexed) fused with pgvector semantic search (HNSW, cosine) via reciprocal-rank fusion; a background reconciler embeds rows as they land, and without GEMINI_API_KEY the semantic branch degrades to FTS-only. Filters: content_type (article, essay, build-log, til, digest) and date range (after/before, YYYY-MM-DD).",
 	}
 }
 
@@ -239,7 +227,6 @@ func ReviewPeriod() Meta {
 func All() []Meta {
 	return []Meta{
 		Brief(),
-		SearchKnowledge(),
 		CaptureInbox(),
 		PlanDay(),
 		ProposeArea(),

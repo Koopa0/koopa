@@ -1,7 +1,7 @@
 // Copyright 2026 Koopa. All rights reserved.
 
-// Command mcp runs a Model Context Protocol server, exposing the koopa
-// knowledge engine as workflow-driven tools.
+// Command mcp runs a Model Context Protocol server, exposing Koopa's
+// planning and publication workflows to AI agents.
 //
 // Transport is selected by the MCP_TRANSPORT env var:
 //   - "http" (default): Streamable HTTP on MCP_PORT (default 8081), requires MCP_TOKEN
@@ -27,7 +27,6 @@ import (
 
 	"github.com/Koopa0/koopa/internal/agent"
 	"github.com/Koopa0/koopa/internal/build"
-	"github.com/Koopa0/koopa/internal/embedder"
 	"github.com/Koopa0/koopa/internal/mcp"
 )
 
@@ -83,24 +82,10 @@ func run(ctx context.Context, cfg *config, logger *slog.Logger) error {
 		return fmt.Errorf("loading Asia/Taipei timezone: %w", locErr)
 	}
 
-	opts := []mcp.ServerOption{
+	server := mcp.NewServer(pool, logger,
 		mcp.WithLocation(taipeiLoc),
 		mcp.WithCallerAgent(cfg.CallerAgent),
-	}
-	// Enable search_knowledge semantic branch when Gemini is configured.
-	// Embedder construction fails fast on an invalid client setup; FTS-only
-	// is always the safe fallback when the key is absent.
-	if cfg.GeminiAPIKey != "" {
-		emb, embErr := embedder.New(ctx, cfg.GeminiAPIKey)
-		if embErr != nil {
-			return fmt.Errorf("initializing gemini embedder: %w", embErr)
-		}
-		opts = append(opts, mcp.WithEmbedder(emb))
-		logger.Info("search_knowledge hybrid mode enabled (embedder wired)")
-	} else {
-		logger.Info("search_knowledge running FTS-only (GEMINI_API_KEY unset)")
-	}
-	server := mcp.NewServer(pool, logger, opts...)
+	)
 
 	switch cfg.Transport {
 	case "stdio":

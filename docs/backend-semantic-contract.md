@@ -242,7 +242,7 @@ The named confusions and their resolutions, each grounded.
 | **PARA project vs agent identity** | `projects` row (work vehicle) | an `agents` row (actor identity) | A PARA project is data in `projects`; an agent is an actor in `agents`. They never share a table or ID. | `projects` table; `registry.go` |
 | **todo is the only work-item entity** | `todos` (personal GTD) | (no `tasks` entity) | There is no inter-agent `tasks` triad, so there is no "task vs todo" boundary to police — a todo is the system's only work-item entity. | `todo_state` enum |
 | **inert proposal vs active commitment** | `status='proposed'` area / goal / project (agent draft) | the activated row (owner action) | A proposed entity is fully inert — invisible to brief / Today / active listings / selectors — until the owner activates it in admin triage. The agent drafts; the owner commits. | `propose_*` handlers; the `/api/admin/commitment/projects\|areas\|goals` routes |
-| **MCP tool call vs semantic write** | a `tools/call` invocation | the resulting row + `activity_event` | A read-only tool call (`ReadOnly` writability — `brief`, `search_knowledge`, `list_todos`, `list_content`, `review_period`, `project_progress`) produces no semantic write. Only Additive/Idempotent/Destructive tools write; the *write* is the row + its trigger-emitted audit event, not the call. | `ops/types.go` (`Writability`) |
+| **MCP tool call vs semantic write** | a `tools/call` invocation | the resulting row + `activity_event` | A read-only tool call (`ReadOnly` writability — `brief`, `list_todos`, `list_content`, `review_period`, `project_progress`) produces no semantic write. Only Additive/Idempotent/Destructive tools write; the *write* is the row + its trigger-emitted audit event, not the call. | `ops/types.go` (`Writability`) |
 | **Claude Code runtime vs Koopa identity** | `claude` agent (dev session, `claude-code`) | `human` agent (Koopa) | Both attribute writes via `as`; there is no tool-layer override for either (Option B — no `requireAuthor`). The live distinction is actor-attribution identity (`actor='human'` is what `project_progress` / `review_period` count as owner momentum), not coordination authority. | `server.go::callerIdentity`; `registry.go` |
 | **frontend page model vs backend domain model** | Angular admin pages (composed views) | backend entities | Page-level view-models are **not** backend entities. The Today page is now backed by a fully-wired backend aggregate (§6F). | `internal/today/handler.go`; §2 |
 
@@ -254,7 +254,7 @@ The canonical tool inventory, each tool's per-tool writability (`ReadOnly |
 Additive | Idempotent | Destructive` — `ops/types.go` (`Writability`)), and its
 description live in `internal/mcp/ops/catalog.go::All()`,
 drift-tested against handler registration in `ops_catalog_test.go`. The
-read-only tools (`brief`, `search_knowledge`, `list_todos`, `list_content`,
+read-only tools (`brief`, `list_todos`, `list_content`,
 `review_period`, `project_progress`) are permanently read-only. This contract
 points at the catalog rather than duplicating the per-tool table; read
 `catalog.go::All()` for the authoritative surface.
@@ -282,8 +282,8 @@ permits. Existence of a table, handler, or doc is not proof of a working path.
 | Login + refresh-token rotation + token security | implemented, tested | `internal/auth/` (`auth_test.go`, `handler_test.go`) |
 | Content lifecycle (admin HTTP; owner publishes a draft directly via `Store.Publish`, or a review row from the queue; `propose_content` lands an agent piece at `status=review`, `is_public=false`) | implemented; `Store.Publish` gates draft/review→published, publish CHECKs enforce the rest | `internal/content/publish.go`; CHECKs `migrations/001_initial.up.sql` (`chk_content_publication`, `chk_content_public_requires_published`); routes the `/api/admin/knowledge/content` routes |
 | Feed fetch + scheduler cadence + auto-disable on failures | implemented, tested | `internal/feed/scheduler_test.go` (testcontainers) |
-| **Document-embedding write path** | **Implemented (this is the current state, not a TODO).** `embedder.Embed` (`internal/embedder/embedder.go`) is driven by a background `Reconciler` (`internal/embedder/reconciler.go`) that drains every registered source — currently just `contents` (`cmd/app/main.go`) — embedding rows missing a vector. Two call sites: the `app` server runs a background `Run` loop, gated on `GEMINI_API_KEY` (`cmd/app/main.go`), and the `embed-backfill` subcommand runs a one-shot `RunOnce` (`runBackfill`, `cmd/app/main.go`, dispatched from `main`); the `mcp` server also constructs one (`cmd/mcp/main.go`). Unset `GEMINI_API_KEY` → FTS-only (`cmd/mcp/main.go`). | `reconciler.go` (`Reconciler`); `content/embedding.go` |
-| **Hybrid search (FTS + pgvector RRF)** | implemented; per-corpus FTS fused with pgvector semantic results via reciprocal-rank fusion, degrading to FTS-only when no embedder is configured | `internal/mcp/search.go` — `rrfMerge`; HNSW index `migrations/001_initial.up.sql` (`idx_contents_embedding_hnsw`) |
+| **Document-embedding write path** | **Legacy, pending retirement.** The app background reconciler and `embed-backfill` command still exist, but the MCP server no longer configures or consumes embeddings. Owner direction is to remove the remaining backend path in a bounded follow-up. | `internal/embedder/`; `cmd/app/main.go`; `content/embedding.go` |
+| **MCP knowledge search** | **Retired.** `search_knowledge` is absent from the catalog and server registration; MCP has no Gemini configuration or retrieval handler. Knowledge authoring and retrieval belong to Obsidian／Yomihon. | `internal/mcp/ops/catalog.go`; `internal/mcp/server.go` |
 | Today aggregate (admin HTTP) | implemented + fully wired (§6F) | `cmd/app/main.go` (`WithSources` wiring); tests `internal/today/handler_test.go` |
 | Agent-surface write tools (`propose_*`, `capture_inbox`, `resolve_todo`) | implemented; handler-level input validation tested | `internal/mcp/handler_test.go` |
 | Catalog ↔ handler registration parity | drift-tested (names) | `ops_catalog_test.go` — proves registration completeness, not per-tool contract behavior |
@@ -293,7 +293,6 @@ permits. Existence of a table, handler, or doc is not proof of a working path.
 | Claim | Gap |
 |---|---|
 | `propose_*` inert-draft visibility | the invariant that a `status=proposed` row stays out of brief / Today / active listings / selectors has thin coverage — assert it explicitly (§7) |
-| Hybrid search semantic branch | the degradation path (embedder nil / timeout) and cross-corpus ranking lack an integration test against real pgvector |
 
 ### C. Schema-supported only (NOT implemented — do not assume it works)
 
@@ -346,11 +345,10 @@ The Today aggregate is now a complete backend surface (the earlier
 
 ### G. Carried-forward human-resolved decisions (do not re-litigate)
 
-- **Search corpus** — `search_knowledge` covers the content corpus only
-  (article / essay / build-log / til / digest); the reading and song shelves
-  were removed (that material lives in Obsidian) (`catalog.go::SearchKnowledge`).
-- **Embedding posture** — the owner decided to build the embedding write path;
-  it is implemented (§6A) rather than deferred.
+- **Knowledge retrieval** — Koopa does not provide it. MCP search is retired;
+  knowledge authoring and retrieval live in Obsidian／Yomihon. Remaining
+  embedding, public-search, and related-content code is transitional and must
+  be retired rather than expanded.
 
 ---
 
@@ -360,9 +358,8 @@ The Today aggregate is now a complete backend surface (the earlier
 
 | Domain | Must test before trusting |
 |---|---|
-| **MCP tools** | Catalog parity is already drift-tested (names only, `ops_catalog_test.go`) — that is not a contract test. Add claim-level contract tests for all **15**: the `brief.mode` discriminator rejects out-of-set values; each writability annotation matches the actual side effect; the read-only tools write nothing; each `propose_*` produces an inert `status=proposed` row that feeds no dashboard / brief / Today / active listing; `propose_content` lands at `status=review` with `is_public=false`; `resolve_todo` is caller-scoped (another agent's todo returns not-found). There is NO per-tool authorization gate — Option B: `as` is attribution only, and access is bounded by the MCP transport (HTTP Bearer + admin-email OAuth, or the stdio process boundary), so a contract test must assert the absence of a caller-identity gate, not its presence. |
-| **Search** | Integration-test the hybrid path against real pgvector: FTS + pgvector fusion over the content corpus, RRF ranking judgment, and graceful degradation when the embedder is nil / times out. |
-| **Embedding** | Integration-test the reconciler: a newly-inserted content row acquires an embedding on the next pass; an embed failure leaves the row retryable (still listed by `MissingEmbeddings`) rather than silently skipped; FTS-only path when `GEMINI_API_KEY` is unset. |
+| **MCP tools** | Catalog parity is already drift-tested (names only, `ops_catalog_test.go`) — that is not a contract test. Add claim-level contract tests for all **14**: the `brief.mode` discriminator rejects out-of-set values; each writability annotation matches the actual side effect; the read-only tools write nothing; each `propose_*` produces an inert `status=proposed` row that feeds no dashboard / brief / Today / active listing; `propose_content` lands at `status=review` with `is_public=false`; `resolve_todo` is caller-scoped (another agent's todo returns not-found). There is NO per-tool authorization gate — Option B: `as` is attribution only, and access is bounded by the MCP transport (HTTP Bearer + admin-email OAuth, or the stdio process boundary), so a contract test must assert the absence of a caller-identity gate, not its presence. |
+| **Retired MCP retrieval** | Keep `search_knowledge` absent from catalog and registration, and keep Gemini provider configuration out of the MCP binary. Remaining backend embedding/search paths are separate retirement work, not an MCP capability to restore. |
 | **Commitment proposals** | Each `propose_*` writes an inert `status=proposed` row invisible to brief / Today / active listings / selectors; area-reject cascades its proposed child goals; goal-reject cascades its milestones; a `capture_inbox` link to a proposed project survives activation and is unlinked (not deleted) on reject; `resolve_todo` caller-scoping. |
 | **Frontend workflows** | A backend/frontend route compatibility matrix (every admin page: frontend endpoint ↔ backend route ↔ response envelope ↔ empty/error behavior); then golden-flow each admin area; assert no UI affordance violates a forbidden assumption below. |
 | **Observability** | Inventory `activity_events` producers (the audit triggers, `migrations/001_initial.up.sql` — `current_actor` + `audit_* triggers`) and map each to `entity_type` × `change_kind` × actor attribution × write path × user-visible event. Confirm `koopa.actor` is set on every Go write path so `actor='system'` only appears for genuine cron/manual ops. |

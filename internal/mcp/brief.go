@@ -192,9 +192,8 @@ func (o BriefOutput) MarshalJSON() ([]byte, error) {
 // priority='high'. The "highlight" name is historical: nothing about
 // the row is relevance-scored or curated — it is recency-ordered and
 // filtered by the feed's pre-tagged priority. A prolific high-priority
-// feed will fill all 10 slots. For ranked retrieval, callers use
-// search_knowledge; the morning briefing surfaces these as a
-// situational-awareness signal, not a recommendation.
+// feed will fill all 10 slots. The morning briefing surfaces these as a
+// situational-awareness signal, not a recommendation or search result.
 type RSSHighlight struct {
 	Title     string `json:"title"`
 	URL       string `json:"url"`
