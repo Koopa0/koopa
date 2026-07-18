@@ -4,10 +4,10 @@ package content
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
-	"github.com/google/go-cmp/cmp"
 	"github.com/google/uuid"
 )
 
@@ -35,6 +35,12 @@ func TestTypeValid(t *testing.T) {
 		{name: "unknown type is invalid", typ: "podcast", want: false},
 		{name: "case sensitive", typ: "Article", want: false},
 		{name: "partial match is invalid", typ: "build", want: false},
+		{name: "sql injection", typ: "'; DROP TABLE contents;--", want: false},
+		{name: "xss payload", typ: `<script>alert(1)</script>`, want: false},
+		{name: "unicode look-alike", typ: "аrticle", want: false}, // Cyrillic 'а'
+		{name: "whitespace prefix", typ: " article", want: false},
+		{name: "whitespace suffix", typ: "article ", want: false},
+		{name: "oversized", typ: Type(strings.Repeat("a", 512)), want: false},
 	}
 
 	for _, tt := range tests {
@@ -107,23 +113,6 @@ func TestContentTypeConstants(t *testing.T) {
 	}
 }
 
-// TestKnowledgeGraphEmptySlices ensures graph JSON serialization produces [] not null.
-// Scene: frontend receives graph data — null arrays break JavaScript .map() calls.
-func TestKnowledgeGraphEmptySlices(t *testing.T) {
-	t.Parallel()
-
-	g := KnowledgeGraph{
-		Nodes: []GraphNode{},
-		Links: []GraphLink{},
-	}
-	if diff := cmp.Diff(0, len(g.Nodes)); diff != "" {
-		t.Errorf("empty Nodes length mismatch: %s", diff)
-	}
-	if diff := cmp.Diff(0, len(g.Links)); diff != "" {
-		t.Errorf("empty Links length mismatch: %s", diff)
-	}
-}
-
 // Track 1B-correction — Today fan-out wire contract (content review queue).
 //
 // GET /api/admin/knowledge/content?status=review is one of the six Today
@@ -152,9 +141,58 @@ func TestContentWireContract(t *testing.T) {
 	}
 	// id/title/type/updated_at/reading_time_min are consumed by TodayService;
 	// status is the list filter param the frontend relies on.
-	for _, want := range []string{"id", "title", "type", "status", "updated_at", "reading_time_min"} {
+	for _, want := range []string{
+		"id", "slug", "title", "body", "excerpt", "type", "status", "topics",
+		"is_public", "reading_time_min", "created_at", "updated_at",
+	} {
 		if _, ok := m[want]; !ok {
 			t.Errorf("content.Content missing wire field %q (Today content row / status filter consumes it)", want)
 		}
 	}
+	for _, omitted := range []string{"series_id", "series_order", "project_id", "cover_image"} {
+		if _, ok := m[omitted]; ok {
+			t.Errorf("content.Content unexpectedly includes empty optional field %q", omitted)
+		}
+	}
+}
+
+func TestTopicRefWireContract(t *testing.T) {
+	t.Parallel()
+
+	b, err := json.Marshal(TopicRef{Slug: "golang", Name: "Go Language"})
+	if err != nil {
+		t.Fatalf("marshal TopicRef: %v", err)
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(b, &fields); err != nil {
+		t.Fatalf("unmarshal TopicRef: %v", err)
+	}
+	for _, field := range []string{"id", "slug", "name"} {
+		if _, ok := fields[field]; !ok {
+			t.Errorf("TopicRef missing wire field %q", field)
+		}
+	}
+}
+
+func TestNullConvertersNil(t *testing.T) {
+	t.Parallel()
+
+	if nullContentType(nil).Valid {
+		t.Error("nullContentType(nil).Valid = true, want false")
+	}
+	if nullContentStatus(nil).Valid {
+		t.Error("nullContentStatus(nil).Valid = true, want false")
+	}
+}
+
+func FuzzTypeValid(f *testing.F) {
+	f.Add("article")
+	f.Add("")
+	f.Add("'; DROP TABLE contents;--")
+	f.Add("<script>alert(1)</script>")
+	f.Add("\x00\x01\x02")
+	f.Add(strings.Repeat("a", 10_000))
+	f.Fuzz(func(t *testing.T, input string) {
+		_ = Type(input).Valid()
+	})
 }

@@ -37,10 +37,6 @@ type config struct {
 	GoogleRedirectURI  string
 	AdminEmail         string
 
-	// Gemini embedding. Empty = embedding reconciler disabled; search
-	// stays FTS-only.
-	GeminiAPIKey string
-
 	// Site URL for RSS/sitemap
 	SiteURL string
 
@@ -71,7 +67,6 @@ func loadConfig(logger *slog.Logger) config {
 		GoogleClientSecret: os.Getenv("GOOGLE_CLIENT_SECRET"),
 		GoogleRedirectURI:  os.Getenv("GOOGLE_REDIRECT_URI"),
 		AdminEmail:         os.Getenv("ADMIN_EMAIL"),
-		GeminiAPIKey:       os.Getenv("GEMINI_API_KEY"),
 		SiteURL:            envOr("SITE_URL", "https://koopa0.dev"),
 
 		ObservabilityEnabled: envBoolOr("KOOPA_OBSERVABILITY_ENABLED", true),
@@ -114,21 +109,6 @@ func validateOAuth(cfg *config) error {
 		return fmt.Errorf("google oauth partially configured: set %v but missing %v — set all four or none", set, missing)
 	}
 	return nil
-}
-
-// backfillConfig holds the environment the embed-backfill one-shot needs.
-// Both values are required — a backfill cannot run without a database or
-// a Gemini key, so missing either exits at startup.
-type backfillConfig struct {
-	DatabaseURL  string
-	GeminiAPIKey string
-}
-
-func loadBackfillConfig(logger *slog.Logger) backfillConfig {
-	return backfillConfig{
-		DatabaseURL:  requireEnv("DATABASE_URL", logger),
-		GeminiAPIKey: requireEnv("GEMINI_API_KEY", logger),
-	}
 }
 
 // queryTracingOn folds the all-or-nothing kill-switch semantics (Q3):

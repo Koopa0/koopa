@@ -9,7 +9,6 @@ import (
 
 	"github.com/dgraph-io/ristretto/v2"
 	"github.com/jackc/pgx/v5"
-	"golang.org/x/sync/singleflight"
 
 	"github.com/Koopa0/koopa/internal/api"
 )
@@ -37,11 +36,10 @@ type slugConflictDetail struct {
 	ContentID string `json:"content_id"`
 }
 
-// Cache TTLs for pre-serialized feed responses and knowledge graph.
+// Cache TTLs for pre-serialized feed responses.
 // These caches expire on TTL only — no active invalidation on content writes.
 // This is intentional: content mutations are infrequent and eventual consistency is acceptable.
 const (
-	graphTTL   = 10 * time.Minute
 	rssTTL     = 10 * time.Minute
 	sitemapTTL = 30 * time.Minute
 )
@@ -52,9 +50,7 @@ type Handler struct {
 	siteURL string
 	logger  *slog.Logger
 
-	graphCache *ristretto.Cache[string, *KnowledgeGraph]
-	graphSF    singleflight.Group
-	feedCache  *ristretto.Cache[string, []byte]
+	feedCache *ristretto.Cache[string, []byte]
 }
 
 // NewHandler returns a content Handler. Admin mutation handlers rely on
@@ -64,22 +60,16 @@ func NewHandler(
 	siteURL string,
 	logger *slog.Logger,
 ) *Handler {
-	graphCache, _ := ristretto.NewCache(&ristretto.Config[string, *KnowledgeGraph]{
-		NumCounters: 10, // 10x expected items (1 key: "graph")
-		MaxCost:     1,  // count-based: 1 item max
-		BufferItems: 64,
-	})
 	feedCache, _ := ristretto.NewCache(&ristretto.Config[string, []byte]{
 		NumCounters: 100,     // 10x expected items (2 keys: "rss", "sitemap")
 		MaxCost:     1 << 20, // 1 MB byte budget
 		BufferItems: 64,
 	})
 	return &Handler{
-		store:      store,
-		siteURL:    siteURL,
-		graphCache: graphCache,
-		feedCache:  feedCache,
-		logger:     logger,
+		store:     store,
+		siteURL:   siteURL,
+		feedCache: feedCache,
+		logger:    logger,
 	}
 }
 

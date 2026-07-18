@@ -247,8 +247,8 @@ CJK FTS：中文長句成單一 token（schema comment 已承認、embedding 補
 - **完成紀錄**：
 
 ### PR-19 `fix(search): CJK retrieval integrity`（07-06 和解新增，第三方 B-1——唯一推翻鎖定事實的發現）
-> **07-18 reconciliation.** 19a 的 MCP Gemini injection 已被 D5 取代並由
-> MCP retirement 反向移除；不得再次補回。19b 的 public search retirement 仍成立。
+> **07-18 reconciliation.** D5 已取代本節所有 Gemini／search／related
+> 保留語意；下方「明確不砍」與舊驗收文字僅保留歷史脈絡，不得再作為實作指令。
 
 - **事實**（主 session 復現）：`search_knowledge("成本意識")` 0 筆，語料裡就有同名標題的已發佈文章；
   `search_knowledge("成本")` 命中的是另一篇（body 恰有孤立 token）。根因兩層：
@@ -472,6 +472,7 @@ admin named View Transitions → `setTimeout(0)`→`afterNextRender`。
 
 - 2026-07-18（D5 retirement reconciliation）：owner 鎖定 Koopa 不需要 embedding／search；
   知識寫作與檢索歸 Obsidian／Yomihon，兩者可搭配但不構成 Koopa runtime prerequisite。
-  PR-18 改名保留方案與 PR-19a MCP Gemini injection 均被取代，禁止再執行；PR-19b 公開 search
-  退役仍有效。當前 bounded slice 只退役 MCP `search_knowledge` 與 MCP Gemini wiring；backend
-  embedding/backfill、public/admin search、related/read-next、graph 仍須後續分片退役，本條不宣告完成。
+  PR-18 改名保留方案與 PR-19a MCP Gemini injection 均被取代，禁止再執行。分片退役已涵蓋
+  MCP `search_knowledge`、兩個 binary 的 Gemini wiring、public/admin search、related/read-next、
+  graph、backend reconciler 與 backfill；001/002 內的 legacy vector column 因 migration freeze
+  保持 dormant，無 runtime reader/writer。本條只記錄 D5 retirement，不宣稱其他工作項完成。

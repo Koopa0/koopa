@@ -53,9 +53,9 @@ export class AboutComponent implements OnInit {
 
   /** Colophon stack — known from the repository, safe to state. */
   protected readonly stack: readonly DefRow[] = [
-    { term: 'Built with', value: 'Go · PostgreSQL · pgvector' },
+    { term: 'Built with', value: 'Go · PostgreSQL' },
     { term: 'Interface', value: 'Angular · Tailwind · SSR' },
-    { term: 'Knowledge', value: 'MCP · AI agents' },
+    { term: 'Tools', value: 'MCP · AI agents' },
   ];
 
   /** Contacts — the real links carried over from the prior about page. */

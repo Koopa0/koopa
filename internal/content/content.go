@@ -3,9 +3,8 @@
 // Package content manages the public editorial corpus — articles,
 // essays, build logs, TILs, and digests — through the draft → review →
 // published → archived lifecycle. It owns the contents table end to
-// end: admin CRUD, the anonymous read surface with RSS and sitemap
-// syndication for published rows, search integration, and the pgvector
-// embedding columns behind the knowledge graph.
+// end: admin CRUD and the anonymous read surface with RSS and sitemap
+// syndication for published rows.
 package content
 
 import (
@@ -254,39 +253,6 @@ type RevisionParams struct {
 	Body      *string
 	Excerpt   *string
 	Title     *string
-}
-
-// GraphNode represents a node in the knowledge graph.
-type GraphNode struct {
-	ID          string `json:"id"`
-	Label       string `json:"label"`
-	Type        string `json:"type"`
-	ContentType string `json:"content_type,omitempty"`
-	Topic       string `json:"topic,omitempty"`
-	Count       int    `json:"count,omitempty"`
-}
-
-// GraphLink represents an edge in the knowledge graph.
-type GraphLink struct {
-	Source     string   `json:"source"`
-	Target     string   `json:"target"`
-	Type       string   `json:"type"`
-	Similarity *float64 `json:"similarity,omitempty"`
-}
-
-// KnowledgeGraph is the full graph response.
-type KnowledgeGraph struct {
-	Nodes []GraphNode `json:"nodes"`
-	Links []GraphLink `json:"links"`
-}
-
-// EmbeddingContent holds a published content with its embedding vector for graph computation.
-type EmbeddingContent struct {
-	ID        uuid.UUID
-	Slug      string
-	Title     string
-	Type      Type
-	Embedding []float32
 }
 
 var (

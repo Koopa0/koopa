@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	pgvector_go "github.com/pgvector/pgvector-go"
 )
 
 const activateArea = `-- name: ActivateArea :one
@@ -1542,44 +1541,6 @@ func (q *Queries) ContentsByTopicIDCount(ctx context.Context, topicID uuid.UUID)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
-}
-
-const contentsMissingEmbedding = `-- name: ContentsMissingEmbedding :many
-SELECT id, title, body
-FROM contents
-WHERE embedding IS NULL AND status != 'archived'
-ORDER BY created_at
-LIMIT $1
-`
-
-type ContentsMissingEmbeddingRow struct {
-	ID    uuid.UUID `json:"id"`
-	Title string    `json:"title"`
-	Body  string    `json:"body"`
-}
-
-// Rows the embedding reconciler still has to process. Archived content is
-// excluded from the remaining legacy semantic retrieval path, so embedding it
-// would spend API quota on unreachable rows. Oldest first so a backfill
-// progresses deterministically.
-func (q *Queries) ContentsMissingEmbedding(ctx context.Context, limit int32) ([]ContentsMissingEmbeddingRow, error) {
-	rows, err := q.db.Query(ctx, contentsMissingEmbedding, limit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []ContentsMissingEmbeddingRow{}
-	for rows.Next() {
-		var i ContentsMissingEmbeddingRow
-		if err := rows.Scan(&i.ID, &i.Title, &i.Body); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
 }
 
 const countContents = `-- name: CountContents :one
@@ -3322,96 +3283,6 @@ func (q *Queries) InsertFeedTopics(ctx context.Context, arg InsertFeedTopicsPara
 	return err
 }
 
-const internalSemanticSearchContents = `-- name: InternalSemanticSearchContents :many
-SELECT id, slug, title, body, excerpt, type, status,
-       series_id, series_order, is_public, project_id, reading_time_min,
-       cover_image, published_at, created_at, updated_at,
-       (1 - (embedding <=> $1::vector))::float8 AS similarity
-FROM contents
-WHERE status != 'archived'
-  AND embedding IS NOT NULL
-  AND ($2::content_type IS NULL OR type = $2)
-  AND ($3::timestamptz IS NULL OR created_at >= $3)
-  AND ($4::timestamptz IS NULL OR created_at < $4)
-ORDER BY embedding <=> $1::vector
-LIMIT $5
-`
-
-type InternalSemanticSearchContentsParams struct {
-	TargetEmbedding pgvector_go.Vector `json:"target_embedding"`
-	ContentType     NullContentType    `json:"content_type"`
-	CreatedAfter    *time.Time         `json:"created_after"`
-	CreatedBefore   *time.Time         `json:"created_before"`
-	MaxResults      int32              `json:"max_results"`
-}
-
-type InternalSemanticSearchContentsRow struct {
-	ID             uuid.UUID     `json:"id"`
-	Slug           string        `json:"slug"`
-	Title          string        `json:"title"`
-	Body           string        `json:"body"`
-	Excerpt        string        `json:"excerpt"`
-	Type           ContentType   `json:"type"`
-	Status         ContentStatus `json:"status"`
-	SeriesID       *string       `json:"series_id"`
-	SeriesOrder    *int32        `json:"series_order"`
-	IsPublic       bool          `json:"is_public"`
-	ProjectID      *uuid.UUID    `json:"project_id"`
-	ReadingTimeMin int32         `json:"reading_time_min"`
-	CoverImage     *string       `json:"cover_image"`
-	PublishedAt    *time.Time    `json:"published_at"`
-	CreatedAt      time.Time     `json:"created_at"`
-	UpdatedAt      time.Time     `json:"updated_at"`
-	Similarity     float64       `json:"similarity"`
-}
-
-// Semantic search over all contents via pgvector cosine distance. Mirrors
-// the legacy retrieval visibility rule (excludes only 'archived'). This query
-// has no MCP caller and remains only until backend retrieval retirement.
-func (q *Queries) InternalSemanticSearchContents(ctx context.Context, arg InternalSemanticSearchContentsParams) ([]InternalSemanticSearchContentsRow, error) {
-	rows, err := q.db.Query(ctx, internalSemanticSearchContents,
-		arg.TargetEmbedding,
-		arg.ContentType,
-		arg.CreatedAfter,
-		arg.CreatedBefore,
-		arg.MaxResults,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []InternalSemanticSearchContentsRow{}
-	for rows.Next() {
-		var i InternalSemanticSearchContentsRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.Slug,
-			&i.Title,
-			&i.Body,
-			&i.Excerpt,
-			&i.Type,
-			&i.Status,
-			&i.SeriesID,
-			&i.SeriesOrder,
-			&i.IsPublic,
-			&i.ProjectID,
-			&i.ReadingTimeMin,
-			&i.CoverImage,
-			&i.PublishedAt,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-			&i.Similarity,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const itemsByDate = `-- name: ItemsByDate :many
 SELECT
     dpi.id, dpi.plan_date, dpi.todo_id, dpi.selected_by, dpi.position,
@@ -4809,47 +4680,6 @@ func (q *Queries) PublishedForRSS(ctx context.Context, limit int32) ([]Published
 	return items, nil
 }
 
-const publishedWithEmbeddings = `-- name: PublishedWithEmbeddings :many
-SELECT id, slug, title, type, embedding
-FROM contents
-WHERE status = 'published' AND is_public = true
-  AND embedding IS NOT NULL
-`
-
-type PublishedWithEmbeddingsRow struct {
-	ID        uuid.UUID           `json:"id"`
-	Slug      string              `json:"slug"`
-	Title     string              `json:"title"`
-	Type      ContentType         `json:"type"`
-	Embedding *pgvector_go.Vector `json:"embedding"`
-}
-
-func (q *Queries) PublishedWithEmbeddings(ctx context.Context) ([]PublishedWithEmbeddingsRow, error) {
-	rows, err := q.db.Query(ctx, publishedWithEmbeddings)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []PublishedWithEmbeddingsRow{}
-	for rows.Next() {
-		var i PublishedWithEmbeddingsRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.Slug,
-			&i.Title,
-			&i.Type,
-			&i.Embedding,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const recurringTodoItemsDueToday = `-- name: RecurringTodoItemsDueToday :many
 
 SELECT id, title, state, due, project_id,
@@ -5332,26 +5162,6 @@ func (q *Queries) SendContentChangesRequested(ctx context.Context, arg SendConte
 		&i.UpdatedAt,
 	)
 	return i, err
-}
-
-const setContentEmbedding = `-- name: SetContentEmbedding :exec
-UPDATE contents SET embedding = $2 WHERE id = $1
-`
-
-type SetContentEmbeddingParams struct {
-	ID        uuid.UUID           `json:"id"`
-	Embedding *pgvector_go.Vector `json:"embedding"`
-}
-
-// Persist a derived embedding. updated_at is deliberately untouched:
-// the embedding derives from title/body and carries no editorial change,
-// and updated_at orders admin lists and feeds lastmod semantics — a
-// background re-embed must not make content look freshly edited. The
-// contents audit trigger fires only on INSERT or UPDATE OF status, so
-// this write produces no activity_events row.
-func (q *Queries) SetContentEmbedding(ctx context.Context, arg SetContentEmbeddingParams) error {
-	_, err := q.db.Exec(ctx, setContentEmbedding, arg.ID, arg.Embedding)
-	return err
 }
 
 const setTodoRecurrence = `-- name: SetTodoRecurrence :execrows
