@@ -80,8 +80,8 @@ LIMIT $2 OFFSET $3;
 -- name: InternalSemanticSearchContents :many
 -- Semantic search over all contents via pgvector cosine distance. Mirrors
 -- InternalSearchContents visibility (excludes only 'archived'); does NOT
--- exclude an anchor content id the way SimilarContents does, because this
--- is called from search_knowledge where there is no "current" content.
+-- exclude an anchor content id the way SimilarContents does. This legacy
+-- query has no MCP caller and remains only until backend retrieval retirement.
 SELECT id, slug, title, body, excerpt, type, status,
        series_id, series_order, is_public, project_id, reading_time_min,
        cover_image, published_at, created_at, updated_at,
@@ -349,4 +349,3 @@ WHERE id = @id AND status = 'review'
 RETURNING id, slug, title, body, excerpt, type, status,
           series_id, series_order, is_public, project_id, reading_time_min,
           cover_image, created_by, proposal_rationale, review_note, published_at, created_at, updated_at;
-

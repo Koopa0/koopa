@@ -76,7 +76,7 @@
 | — | Option B（無 tool-layer authz；`as`=attribution；transport=邊界）重審後**維持** | 封閉 roster；互冒名=配置錯誤非敵手；token 管理買不到真安全 | 07-05 |
 | — | agents 表**保留**（FK 錨 + retired 化石保存）；砍 admin agents profile 頁；platform CHECK 不動 | 它是 Option B 唯一硬防線 | 07-05 |
 | — | 留 Angular（Go+templ 路線永久關閉）；leverage 見 PR 隊列 Batch-4 註記 | zoneless+OnPush 100%、成熟度已驗證 | 07-05 |
-| — | hybrid search / embeddings：凍結不加碼、不回退。**07-06 修正**：「無害」不成立——CJK 檢索在生產實測失效（B-1，見 PR-19；根因：mcp 容器缺 GEMINI_API_KEY → FTS-only，而 'simple' parser 不分詞 CJK）。凍結維持，但 PR-19 的修復是 bug fix 不算加碼 | 柏拉圖模式實例，但成本已付；補償層在生產缺席是事實錯誤（第三方 review B-1 抓出，主 session 復現確認） | 07-06 |
+| — | **07-18 D5 取代舊決策：Koopa 不需要 embedding 或 search。** MCP `search_knowledge`、MCP Gemini wiring、public/admin search、related/read-next、knowledge graph 與 backend embedding/backfill 只可退役，不可改名保留或重新引入 | 知識寫作／檢索由 Obsidian／Yomihon 負責；Koopa 聚焦 planning + publication，兩側可搭配但不互為 runtime prerequisite | 07-18 |
 | — | publish 永遠 admin-only（owner 鐵則）＝唯一固定 admin 觸點；先觀察不預先重設計 | 硬 gate 留在 owner 指定的位置 | 07-05 |
 | — | rs 重寫（~/.hermes pylib→rs）與本隊列**零耦合**，owner 明示不管 | — | 07-05 |
 | G-1 | **D-A 驗證閘（止損）**：W-5 完成日起 28 天為觀察窗；判準與判決見 W-12。PASS → 解鎖條件層（PR-11/12/13/16）；FAIL → 條件層凍結、D-A 的報告半重審（對話半保留——行為證據已支持）。**07-10 補**（codex B-2：相對窗偵測不到「沒起跑」）：W-5 最遲日 **2026-07-17**——依 owner 07-10 節奏承諾（今明兩天收工第一波＋W-5）自動滿足；逾期則執行閘問題重開、隊列規模重議。**窗開定義（codex GO watch#2）**：觀察窗自「W-5 完成**且** W-1 canonical 版已安裝進 Cowork（含 Q6 和解 cadence）」起算——單一完成邊界，缺 W-1 不開窗 | D-A 是「拓撲問題 vs 需求問題」兩個診斷之一的賭注；DA-2/feed 都有 tripwire，唯獨最大賭注沒有止損（第四輪審查 C1） | 07-07 |
@@ -230,6 +230,9 @@ CJK FTS：中文長句成單一 token（schema comment 已承認、embedding 補
 - **完成紀錄**：
 
 ### PR-18 `refactor(mcp)!: rename search_knowledge → search_content + pin visibility`（2026-07-06 追加）
+> **SUPERSEDED 2026-07-18 — DO NOT EXECUTE.** Owner D5 改為完整退役 MCP
+> search；下列內容只保留歷史脈絡，不再是工作指令。
+
 - **為什麼**：雙平面模型下「knowledge」無歧義指 vault；此工具搜的是 contents 發布層——名字說謊。
   改名後歸隊 content 工具家族（propose/list/revise_content）
 - **範圍**：catalog+server+search.go+測試（~10 Go 檔）＋ docs/skills 4 檔；
@@ -244,6 +247,9 @@ CJK FTS：中文長句成單一 token（schema comment 已承認、embedding 補
 - **完成紀錄**：
 
 ### PR-19 `fix(search): CJK retrieval integrity`（07-06 和解新增，第三方 B-1——唯一推翻鎖定事實的發現）
+> **07-18 reconciliation.** 19a 的 MCP Gemini injection 已被 D5 取代並由
+> MCP retirement 反向移除；不得再次補回。19b 的 public search retirement 仍成立。
+
 - **事實**（主 session 復現）：`search_knowledge("成本意識")` 0 筆，語料裡就有同名標題的已發佈文章；
   `search_knowledge("成本")` 命中的是另一篇（body 恰有孤立 token）。根因兩層：
   ① 'simple' parser 不分詞 CJK（已知）②補償層在生產缺席——**docker-compose 的 mcp service 沒有
@@ -294,10 +300,10 @@ PR-0 標「今天」兩日未動＝執行容量的 live 證據。修訂為兩層
 ### 4a. 無條件核心（無論 G-1 結果都該做）
 
 ```
-第一波（本週）：PR-0 → PR-1（＋W-11 隨手設）→ PR-19a → PR-5 → W-5（清倉!）→ W-1（完整版，07-10 提前——判準③儀器窗開就位）
+第一波（歷史執行序）：PR-0 → PR-1（＋W-11 隨手設）→ PR-19a（07-18 已被 D5 取代）→ PR-5 → W-5（清倉!）→ W-1（完整版，07-10 提前——判準③儀器窗開就位）
 並行（零依賴，不佔隊列位）：W-7、W-9、W-13（②/build-log 例行化即日起；①兩筆內容提案隨 W-5 清倉處理）
 第二波（W-5 後）：W-6（校準運行，第一個週日）→ W-4 → PR-2 → PR-3 → PR-4 → PR-10
-第三波（穩態整備）：PR-18 → W-2/W-3 → PR-6 → PR-7 → PR-8 → PR-9
+第三波（穩態整備）：W-2/W-3 → PR-6 → PR-7 → PR-8 → PR-9
 → PR-14 → PR-15 → PR-19b → PR-17 → W-10
 ```
 
@@ -332,7 +338,7 @@ PR-0（今天）→ PR-1 → PR-5 → W-5（清倉!）→ W-4 → PR-2 → PR-3 
 → PR-7 → PR-8 → PR-9 → PR-14 → PR-15 → W-6 → PR-16（可選）→ W-8（9/01）
 ```
 
-07-06 追加項的插入位置：PR-18 排在 W-2 之前（prompt 只寫一次新名）；PR-17 排在 PR-15 之後
+07-06 追加項的歷史插入位置：PR-18 原排在 W-2 之前，已由 07-18 D5 取代；PR-17 排在 PR-15 之後
 （兩刀殘渣一起掃）；W-10 隨 PR-13 後的 docs 輪；W-11 隨 PR-1 落地即設。
 PR-19a 隨時可上，建議 PR-1 後立即；19b 排在 PR-15 之後、PR-17 之前。
 W-7/W-9 零依賴——與 PR-0 同日並行。
@@ -463,3 +469,9 @@ admin named View Transitions → `setTimeout(0)`→`afterNextRender`。
   兩處事實漂移。restore runbook 缺 `ON_ERROR_STOP`＝confirmed correctness finding，列 repo-B
   candidate #1。docs-only 分支已推 `docs/pr-0-ops`；本次 reconciliation 不動「完成紀錄」欄、
   不開 PR、不宣告 PASS。（Claude／coordination session；非驗收）
+
+- 2026-07-18（D5 retirement reconciliation）：owner 鎖定 Koopa 不需要 embedding／search；
+  知識寫作與檢索歸 Obsidian／Yomihon，兩者可搭配但不構成 Koopa runtime prerequisite。
+  PR-18 改名保留方案與 PR-19a MCP Gemini injection 均被取代，禁止再執行；PR-19b 公開 search
+  退役仍有效。當前 bounded slice 只退役 MCP `search_knowledge` 與 MCP Gemini wiring；backend
+  embedding/backfill、public/admin search、related/read-next、graph 仍須後續分片退役，本條不宣告完成。
