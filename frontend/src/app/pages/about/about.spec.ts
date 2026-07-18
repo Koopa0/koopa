@@ -24,9 +24,15 @@ describe('AboutComponent', () => {
   });
 
   it('should render the prose, pull line, and NOW copy', () => {
-    expect(el.textContent).toContain('personal knowledge engine');
     expect(el.textContent).toContain('less a blog than a system I run on myself');
     expect(el.textContent).toContain('Going deeper on Go and Rust');
+  });
+
+  it('should describe a publication surface, not a knowledge engine', () => {
+    expect(el.textContent).toContain(
+      'publish the parts of my work worth sharing',
+    );
+    expect(el.textContent).not.toContain('knowledge engine');
   });
 
   it('should list the real contact links', () => {
@@ -47,7 +53,8 @@ describe('AboutComponent', () => {
   });
 
   it('should render the colophon stack and signature', () => {
-    expect(el.textContent).toContain('Go · PostgreSQL · pgvector');
+    expect(el.textContent).toContain('Go · PostgreSQL');
+    expect(el.textContent).not.toContain('pgvector');
     expect(el.textContent).toContain('Written & maintained by Koopa.');
   });
 
