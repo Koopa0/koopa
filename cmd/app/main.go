@@ -41,7 +41,6 @@ import (
 	"github.com/Koopa0/koopa/internal/feed/entry"
 	"github.com/Koopa0/koopa/internal/goal"
 	"github.com/Koopa0/koopa/internal/project"
-	"github.com/Koopa0/koopa/internal/search"
 	"github.com/Koopa0/koopa/internal/stats"
 	"github.com/Koopa0/koopa/internal/today"
 	"github.com/Koopa0/koopa/internal/todo"
@@ -302,9 +301,6 @@ func run(logger *slog.Logger) error {
 			goalStore,
 			entryStore,
 		),
-		search: search.NewHandler([]search.Source{
-			content.NewSearchSource(contentStore),
-		}, logger),
 		pool:           pool,
 		logger:         logger,
 		metricsHandler: metricsHandler,

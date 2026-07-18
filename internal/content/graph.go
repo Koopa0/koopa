@@ -24,6 +24,17 @@ import (
 	"github.com/Koopa0/koopa/internal/db"
 )
 
+// SearchFilter narrows legacy semantic retrieval to a content type and/or
+// created-date window. A nil field means "no filter on that dimension".
+type SearchFilter struct {
+	ContentType *Type
+	// CreatedAfter keeps rows created at or after this instant (inclusive).
+	CreatedAfter *time.Time
+	// CreatedBefore keeps rows created strictly before this instant. Callers
+	// wanting a whole-day-inclusive upper bound pass the start of the next day.
+	CreatedBefore *time.Time
+}
+
 // SimilarContents returns published contents most similar to the given embedding.
 func (s *Store) SimilarContents(ctx context.Context, excludeID uuid.UUID, embedding pgvector.Vector, limit int) ([]RelatedContent, error) {
 	rows, err := s.q.SimilarContents(ctx, db.SimilarContentsParams{
@@ -57,11 +68,10 @@ func (s *Store) SimilarContents(ctx context.Context, excludeID uuid.UUID, embedd
 	return results, nil
 }
 
-// InternalSemanticSearch returns contents ranked by cosine similarity to
-// the query embedding. Mirrors InternalSearch visibility — excludes only
-// 'archived', includes drafts / private content. Contents without embeddings
-// are skipped. This is legacy backend retrieval code pending the owner-approved
-// embedding/search retirement; MCP no longer calls it.
+// InternalSemanticSearch returns contents ranked by cosine similarity to the
+// query embedding. It excludes archived content, includes drafts and private
+// content, and skips rows without embeddings. This legacy retrieval path is
+// pending the owner-approved embedding/search retirement.
 func (s *Store) InternalSemanticSearch(ctx context.Context, queryEmbedding pgvector.Vector, limit int, filter SearchFilter) ([]Content, error) {
 	rows, err := s.q.InternalSemanticSearchContents(ctx, db.InternalSemanticSearchContentsParams{
 		TargetEmbedding: queryEmbedding,
