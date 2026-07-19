@@ -25,8 +25,8 @@ import { buildBlogPostingSchema } from '../../core/services/seo/json-ld.util';
  * transition lands on the finished page, never a spinner) and arrives via the
  * `article` input. Has two homes: /articles/:slug (a centered reading column:
  * back link, title, dek, one mono meta line, the mended seam, and the prose
- * body) and /preview/:slug (chrome-less column for the admin publish-preview
- * iframe, noindex).
+ * body) and the admin's inline publication preview (a chrome-less column that
+ * does not own document metadata).
  */
 @Component({
   selector: 'app-article-detail',
@@ -39,7 +39,7 @@ export class ArticleDetailComponent {
    * withComponentInputBinding, so it is always present at first render. */
   readonly article = input.required<ApiContent>();
 
-  /** Route data flag: /preview/:slug renders the bare reading column. */
+  /** Embedded admin preview flag: renders the bare reading column. */
   readonly preview = input(false);
 
   private readonly markdownService = inject(MarkdownService);
@@ -67,7 +67,12 @@ export class ArticleDetailComponent {
     // Keep SEO meta in sync with the resolved article. An effect (not ngOnInit)
     // so it re-runs on article→article navigation, where the router reuses this
     // component instance and only the `article` input changes.
-    effect(() => this.updateSeo(this.article()));
+    effect(() => {
+      const article = this.article();
+      if (!this.preview()) {
+        this.updateSeo(article);
+      }
+    });
 
     // Inject copy buttons into <pre> blocks when content changes
     effect(() => {
@@ -93,16 +98,6 @@ export class ArticleDetailComponent {
   }
 
   private updateSeo(article: ApiContent): void {
-    if (this.preview()) {
-      // The preview iframe must never be indexed or carry canonical/JSON-LD.
-      this.seoService.updateMeta({
-        title: article.title,
-        description: article.excerpt,
-        noIndex: true,
-      });
-      return;
-    }
-
     const articleUrl = `${environment.siteUrl}/articles/${article.slug}`;
     this.seoService.updateMeta({
       title: article.title,

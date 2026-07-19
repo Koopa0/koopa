@@ -22,7 +22,7 @@ import { ThemeService } from './core/services/theme.service';
 /**
  * The application shell — picks the chrome for the current route. The public
  * reading site wears the editorial Tone B frame (masthead + footer); the
- * admin area carries its own shell; the publish-preview iframe is bare.
+ * admin area carries its own shell; login is a standalone full-screen page.
  */
 @Component({
   selector: 'app-root',
@@ -59,13 +59,10 @@ export class AppComponent {
   );
 
   /**
-   * Routes that render bare — no editorial masthead or footer: the admin
-   * preview iframe column, and the standalone full-screen login.
+   * Routes that render bare — no editorial masthead or footer.
    */
   protected readonly isChromeless = computed(
-    () =>
-      this.currentPath().startsWith('/preview') ||
-      this.currentPath() === '/login',
+    () => this.currentPath() === '/login',
   );
 
   /** The admin area carries its own shell (sidebar + topbar). */
@@ -74,8 +71,8 @@ export class AppComponent {
   );
 
   /**
-   * Public reading site: everything that is neither the chrome-less preview
-   * nor the admin area. This is the surface that wears the editorial frame.
+   * Public reading site: everything that is neither login nor the admin area.
+   * This is the surface that wears the editorial frame.
    */
   protected readonly isPublicSite = computed(
     () => !this.isChromeless() && !this.isAdminArea(),

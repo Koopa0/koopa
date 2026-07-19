@@ -353,9 +353,7 @@
 
   @if (showPreview() && content(); as c) {
     <app-content-preview-overlay
-      [slug]="c.slug"
-      [type]="c.type"
-      [live]="c.status === 'published'"
+      [content]="c"
       (closed)="showPreview.set(false)"
     />
   }

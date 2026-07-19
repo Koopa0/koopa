@@ -1,16 +1,35 @@
 import { TestBed, type ComponentFixture } from '@angular/core/testing';
 import { ContentPreviewOverlayComponent } from './preview-overlay.component';
+import type { ApiContent } from '../../../../core/models/api.model';
+
+function contentPayload(overrides: Partial<ApiContent> = {}): ApiContent {
+  return {
+    id: 'abc-1',
+    slug: 'value-semantics',
+    title: 'Value semantics in Go',
+    body: '# Heading\n\nPersisted body.',
+    excerpt: 'A persisted excerpt.',
+    type: 'article',
+    status: 'draft',
+    topics: [],
+    cover_image: null,
+    series_id: null,
+    series_order: null,
+    is_public: false,
+    reading_time_min: 3,
+    published_at: null,
+    created_at: '2026-06-01T00:00:00Z',
+    updated_at: '2026-06-02T00:00:00Z',
+    ...overrides,
+  };
+}
 
 describe('ContentPreviewOverlayComponent', () => {
   let fixture: ComponentFixture<ContentPreviewOverlayComponent>;
 
-  function create(
-    inputs: { slug?: string; type?: string; live?: boolean } = {},
-  ): void {
+  function create(overrides: Partial<ApiContent> = {}): void {
     fixture = TestBed.createComponent(ContentPreviewOverlayComponent);
-    fixture.componentRef.setInput('slug', inputs.slug ?? 'value-semantics');
-    fixture.componentRef.setInput('type', inputs.type ?? 'article');
-    fixture.componentRef.setInput('live', inputs.live ?? false);
+    fixture.componentRef.setInput('content', contentPayload(overrides));
     fixture.detectChanges();
   }
 
@@ -18,22 +37,13 @@ describe('ContentPreviewOverlayComponent', () => {
     return fixture.nativeElement as HTMLElement;
   }
 
-  it('should point the iframe at the /preview/:slug route', () => {
-    create({ slug: 'value-semantics' });
+  it('should render the persisted content inline without an iframe', () => {
+    create();
 
-    const iframe = el().querySelector<HTMLIFrameElement>(
-      '[data-testid="preview-iframe"]',
-    );
-    expect(iframe?.getAttribute('src')).toBe('/preview/value-semantics');
-  });
-
-  it('should URI-encode the slug in the iframe src', () => {
-    create({ slug: 'a b' });
-
-    const iframe = el().querySelector<HTMLIFrameElement>(
-      '[data-testid="preview-iframe"]',
-    );
-    expect(iframe?.getAttribute('src')).toBe('/preview/a%20b');
+    expect(el().querySelector('[data-testid="preview-iframe"]')).toBeNull();
+    expect(el().querySelector('[data-testid="preview-content"]')).toBeTruthy();
+    expect(el().textContent).toContain('Value semantics in Go');
+    expect(el().textContent).toContain('Persisted body.');
   });
 
   it('should display the canonical /articles public URL regardless of type', () => {
@@ -44,16 +54,16 @@ describe('ContentPreviewOverlayComponent', () => {
     ).toContain('koopa0.dev/articles/my-post');
   });
 
-  it('should label the preview draft when not live and live when published', () => {
-    create({ live: false });
+  it('should distinguish saved non-public content from a live snapshot', () => {
+    create();
     expect(
       el().querySelector('[data-testid="preview-note"]')?.textContent,
-    ).toContain('draft preview');
+    ).toContain('not public');
 
-    create({ live: true });
+    create({ status: 'published', is_public: true });
     expect(
       el().querySelector('[data-testid="preview-note"]')?.textContent,
-    ).toContain('live preview');
+    ).toContain('live on the public site');
   });
 
   it('should emit closed on scrim mousedown but not on frame mousedown', () => {

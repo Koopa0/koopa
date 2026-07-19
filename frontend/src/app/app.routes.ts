@@ -26,17 +26,6 @@ export const routes: Routes = [
       ),
     resolve: { article: articleResolver },
   },
-  // Chrome-less render of the same reading surface for the admin
-  // publish-preview iframe (no header / footer / TOC / nav).
-  {
-    path: 'preview/:slug',
-    loadComponent: () =>
-      import('./pages/article-detail/article-detail').then(
-        (m) => m.ArticleDetailComponent,
-      ),
-    data: { preview: true },
-    resolve: { article: articleResolver },
-  },
   {
     path: 'topics',
     loadComponent: () =>
