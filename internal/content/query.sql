@@ -113,6 +113,17 @@ UPDATE contents SET
     END,
     updated_at = now()
 WHERE id = $1
+  AND status <> 'published'
+RETURNING id, slug, title, body, excerpt, type, status,
+          series_id, series_order, is_public, project_id, reading_time_min,
+          cover_image, published_at, created_at, updated_at;
+
+-- name: SetContentVisibility :one
+-- Visibility is an operational exposure control, separate from editing the
+-- authored publication snapshot. Durable withdrawal/restore semantics belong
+-- to their own lifecycle transition rather than this boolean switch.
+UPDATE contents SET is_public = $2, updated_at = now()
+WHERE id = $1
 RETURNING id, slug, title, body, excerpt, type, status,
           series_id, series_order, is_public, project_id, reading_time_min,
           cover_image, published_at, created_at, updated_at;

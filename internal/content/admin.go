@@ -506,7 +506,7 @@ func (h *Handler) SetIsPublic(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	c, err := h.store.WithTx(tx).UpdateContent(r.Context(), id, &UpdateParams{IsPublic: &body.IsPublic})
+	c, err := h.store.WithTx(tx).SetContentVisibility(r.Context(), id, body.IsPublic)
 	if err != nil {
 		api.HandleError(w, h.logger, err, storeErrors...)
 		return

@@ -156,6 +156,9 @@ export class ContentEditorPageComponent {
   });
 
   protected readonly content = this.contentResource.value;
+  protected readonly isPublishedSnapshot = computed(
+    () => this.content()?.status === 'published',
+  );
   protected readonly isLoading = computed(
     () => this.contentResource.status() === 'loading',
   );
@@ -291,6 +294,11 @@ export class ContentEditorPageComponent {
       this.bodyText.set(c.body);
       this.typeValue.set(c.type);
       this.selectedTopicIds.set((c.topics ?? []).map((t) => t.id));
+      if (c.status === 'published') {
+        this.form.controls.type.disable({ emitEvent: false });
+      } else {
+        this.form.controls.type.enable({ emitEvent: false });
+      }
     });
 
     effect(() => this.topbar.set(this.buildTopbarContext()));
@@ -301,6 +309,7 @@ export class ContentEditorPageComponent {
   private buildTopbarContext() {
     const c = this.content();
     const create = this.isCreate();
+    const publishedSnapshot = c?.status === 'published';
     const formInvalid = this.formStatus() === 'INVALID';
 
     const actions: TopbarAction[] = [
@@ -322,10 +331,18 @@ export class ContentEditorPageComponent {
       },
       {
         id: 'save',
-        label: create ? 'Create draft' : 'Save',
+        label: create
+          ? 'Create draft'
+          : publishedSnapshot
+            ? 'Read only'
+            : 'Save',
         kind: 'primary',
         shortcutHint: '⌘S',
-        disabled: this.isActioning() || formInvalid || (!create && !c),
+        disabled:
+          this.isActioning() ||
+          formInvalid ||
+          (!create && !c) ||
+          publishedSnapshot,
         run: () => this.save(),
       },
     ];
@@ -352,6 +369,7 @@ export class ContentEditorPageComponent {
 
   protected save(): void {
     if (this._isActioning()) return;
+    if (this.isPublishedSnapshot()) return;
     if (this.form.invalid) {
       this.form.markAllAsTouched();
       return;
@@ -589,6 +607,7 @@ export class ContentEditorPageComponent {
   }
 
   protected toggleTopic(id: string): void {
+    if (this.isPublishedSnapshot()) return;
     this.selectedTopicIds.update((ids) =>
       ids.includes(id) ? ids.filter((t) => t !== id) : [...ids, id],
     );

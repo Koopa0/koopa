@@ -708,7 +708,7 @@ func (s *Store) UpdateContent(ctx context.Context, id uuid.UUID, p *UpdateParams
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, ErrNotFound
+			return nil, s.transitionRejectionReason(ctx, id)
 		}
 		return nil, mapWriteError(err, slug, preResolvedID, fmt.Sprintf("updating content %s", id))
 	}
@@ -740,6 +740,32 @@ func (s *Store) UpdateContent(ctx context.Context, id uuid.UUID, p *UpdateParams
 	c.Topics = topics
 
 	return &c, nil
+}
+
+// SetContentVisibility changes only the operational public exposure flag. It
+// intentionally bypasses the published-snapshot edit guard without granting a
+// path to alter authored fields. This is not a durable withdrawal receipt.
+func (s *Store) SetContentVisibility(ctx context.Context, id uuid.UUID, isPublic bool) (*Content, error) {
+	r, err := s.q.SetContentVisibility(ctx, db.SetContentVisibilityParams{
+		ID:       id,
+		IsPublic: isPublic,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, mapWriteError(err, "", uuid.Nil, fmt.Sprintf("setting content %s visibility", id))
+	}
+
+	return s.hydrateContentRow(ctx, r.ID, &contentRow{
+		ID: r.ID, Slug: r.Slug, Title: r.Title, Body: r.Body, Excerpt: r.Excerpt,
+		Type: r.Type, Status: r.Status,
+		SeriesID: r.SeriesID, SeriesOrder: r.SeriesOrder,
+		IsPublic: r.IsPublic, ProjectID: r.ProjectID,
+		ReadingTimeMin: r.ReadingTimeMin, CoverImage: r.CoverImage,
+		PublishedAt: r.PublishedAt,
+		CreatedAt:   r.CreatedAt, UpdatedAt: r.UpdatedAt,
+	})
 }
 
 // replaceTopics clears id's existing topic associations and re-inserts
