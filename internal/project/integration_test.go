@@ -189,6 +189,35 @@ func TestIntegration_ProjectsOverview_TodoProgress(t *testing.T) {
 	}
 }
 
+// TestIntegration_ProjectMomentum_TerminalTodosAreNotOpen pins the project
+// progress meaning of an open next action. Archived and dismissed todos are
+// terminal self-close states, so neither may keep an otherwise empty project
+// eligible for the stalled-work signal.
+func TestIntegration_ProjectMomentum_TerminalTodosAreNotOpen(t *testing.T) {
+	truncate(t)
+	store := project.NewStore(testPool)
+	ctx := t.Context()
+
+	projectID := seedProjectWithStatus(t, "terminal-only", "Terminal Only", "in_progress")
+	insertTodo(t, projectID, "filed away", "archived")
+	insertTodo(t, projectID, "won't do", "dismissed")
+
+	rows, err := store.Momentum(ctx)
+	if err != nil {
+		t.Fatalf("Momentum: %v", err)
+	}
+	for i := range rows {
+		if rows[i].Slug != "terminal-only" {
+			continue
+		}
+		if rows[i].OpenNextAction {
+			t.Error("Momentum(terminal-only).OpenNextAction = true, want false for terminal-only todos")
+		}
+		return
+	}
+	t.Fatal("Momentum missing project terminal-only")
+}
+
 // truncate resets every table the Detail endpoint reads from so each test
 // runs against a clean slate without leaking seed data from earlier cases.
 func truncate(t *testing.T) {
