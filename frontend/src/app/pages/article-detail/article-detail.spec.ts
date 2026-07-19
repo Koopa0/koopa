@@ -9,6 +9,7 @@ import { PLATFORM_ID } from '@angular/core';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ArticleDetailComponent } from './article-detail';
 import type { ApiContent, ContentType } from '../../core/models';
+import { SeoService } from '../../core/services/seo/seo.service';
 
 function buildMockContent(overrides: Partial<ApiContent> = {}): ApiContent {
   return {
@@ -88,9 +89,7 @@ describe('ArticleDetailComponent', () => {
     fixture.detectChanges();
     await settle();
 
-    httpTesting.expectNone((r) =>
-      r.url.includes('/api/contents/related/'),
-    );
+    httpTesting.expectNone((r) => r.url.includes('/api/contents/related/'));
     expect(
       (fixture.nativeElement as HTMLElement).querySelector(
         'app-related-articles',
@@ -128,13 +127,22 @@ describe('ArticleDetailComponent', () => {
     expect(el.textContent).toContain('Test Article');
   });
 
-  it('should mark the page noindex in preview mode', async () => {
+  it('should not mutate document metadata when embedded as a preview', async () => {
+    const updateMeta = vi.spyOn(TestBed.inject(SeoService), 'updateMeta');
     fixture.componentRef.setInput('article', buildMockContent());
     fixture.componentRef.setInput('preview', true);
     fixture.detectChanges();
     await settle();
 
-    const robots = document.querySelector('meta[name="robots"]');
-    expect(robots?.getAttribute('content')).toBe('noindex, nofollow');
+    expect(updateMeta).not.toHaveBeenCalled();
+  });
+
+  it('should update document metadata on the public article page', async () => {
+    const updateMeta = vi.spyOn(TestBed.inject(SeoService), 'updateMeta');
+    fixture.componentRef.setInput('article', buildMockContent());
+    fixture.detectChanges();
+    await settle();
+
+    expect(updateMeta).toHaveBeenCalledOnce();
   });
 });

@@ -12,11 +12,26 @@ describe('public route retirement', () => {
     expect(routes.some((route) => route.path === 'articles')).toBe(true);
     expect(serverRoutes.some((route) => route.path === 'articles')).toBe(true);
   });
+
+  it('does not expose the retired iframe preview route', () => {
+    expect(routes.some((route) => route.path === 'preview/:slug')).toBe(false);
+    expect(serverRoutes.some((route) => route.path === 'preview/:slug')).toBe(
+      false,
+    );
+
+    // The real public reading route remains available.
+    expect(routes.some((route) => route.path === 'articles/:slug')).toBe(true);
+    expect(serverRoutes.some((route) => route.path === 'articles/:slug')).toBe(
+      true,
+    );
+  });
 });
 
 describe('admin route retirement', () => {
   it('does not expose the retired dedicated content-search page', () => {
-    const adminRoutes = routes.find((route) => route.path === 'admin')?.children;
+    const adminRoutes = routes.find(
+      (route) => route.path === 'admin',
+    )?.children;
 
     expect(
       adminRoutes?.some((route) => route.path === 'knowledge/search'),

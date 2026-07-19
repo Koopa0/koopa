@@ -293,7 +293,11 @@ describe('ContentEditorPageComponent', () => {
       ).toBeNull();
     });
 
-    it('should open the preview overlay with the /preview/:slug iframe via the topbar action', async () => {
+    it('should preview the persisted snapshot instead of unsaved form edits', async () => {
+      setValue('[data-testid="editor-title"]', 'Unsaved replacement title');
+      setValue('[data-testid="editor-body"]', 'Unsaved replacement body');
+      await settle();
+
       const topbar = TestBed.inject(AdminTopbarService);
       const previewAction = topbar
         .context()
@@ -303,13 +307,17 @@ describe('ContentEditorPageComponent', () => {
       previewAction!.run();
       await settle();
 
-      const iframe = el().querySelector<HTMLIFrameElement>(
-        '[data-testid="preview-iframe"]',
+      const preview = el().querySelector<HTMLElement>(
+        '[data-testid="preview-frame"]',
       );
-      expect(iframe?.getAttribute('src')).toBe('/preview/value-semantics');
+      expect(preview).toBeTruthy();
       expect(
-        el().querySelector('[data-testid="preview-note"]')?.textContent,
-      ).toContain('draft preview');
+        preview?.querySelector('[data-testid="preview-iframe"]'),
+      ).toBeNull();
+      expect(preview?.textContent).toContain('Value semantics in Go');
+      expect(preview?.textContent).toContain('Some body text here.');
+      expect(preview?.textContent).not.toContain('Unsaved replacement title');
+      expect(preview?.textContent).not.toContain('Unsaved replacement body');
     });
 
     it('should close the preview overlay on scrim mousedown', async () => {
