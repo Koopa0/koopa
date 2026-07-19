@@ -2,26 +2,26 @@ import {
   ChangeDetectionStrategy,
   Component,
   computed,
-  inject,
   input,
   output,
 } from '@angular/core';
-import { DomSanitizer, type SafeResourceUrl } from '@angular/platform-browser';
 import { A11yModule } from '@angular/cdk/a11y';
-import type { ContentType } from '../../../../core/models/api.model';
+import type { ApiContent } from '../../../../core/models/api.model';
 import { contentTypeRoute } from '../../../../core/models/content-type.config';
+import { ArticleDetailComponent } from '../../../../pages/article-detail/article-detail';
 
 /**
- * Publish-preview overlay: a scrim-centered frame whose iframe renders
- * the chrome-less public reading surface at `/preview/{slug}`.
+ * Publish-preview overlay for the content snapshot already loaded by the
+ * editor. It renders the shared reading component inline, so private drafts do
+ * not cross the public API boundary and unsaved form edits cannot masquerade
+ * as the persisted snapshot.
  *
  * Closes on Escape, on scrim mousedown, and via the Close button.
- * The bar shows the public URL form and whether the preview reflects
- * the live article (published) or a pre-publish state.
+ * The bar shows the public URL form and whether that saved snapshot is live.
  */
 @Component({
   selector: 'app-content-preview-overlay',
-  imports: [A11yModule],
+  imports: [A11yModule, ArticleDetailComponent],
   template: `
     <div
       class="fixed inset-0 z-[100] grid place-items-center bg-black/60"
@@ -57,8 +57,8 @@ import { contentTypeRoute } from '../../../../core/models/content-type.config';
             class="hidden font-mono text-[10px] text-fg-faint sm:inline"
             data-testid="preview-note"
           >
-            renders the live public article component ·
-            {{ live() ? 'live preview' : 'draft preview' }}
+            saved snapshot ·
+            {{ isLive() ? 'live on the public site' : 'not public' }}
           </span>
           <span class="flex-1"></span>
           <button
@@ -70,12 +70,17 @@ import { contentTypeRoute } from '../../../../core/models/content-type.config';
             Close
           </button>
         </div>
-        <iframe
-          [src]="iframeSrc()"
-          title="Publish preview"
-          class="block w-full flex-1 border-0 bg-bg"
-          data-testid="preview-iframe"
-        ></iframe>
+        <div
+          class="ed flex-1 overflow-y-auto bg-bg"
+          data-tone="b"
+          data-testid="preview-content"
+        >
+          <app-article-detail
+            class="block min-h-full"
+            [article]="content()"
+            [preview]="true"
+          />
+        </div>
       </div>
     </div>
   `,
@@ -85,27 +90,13 @@ import { contentTypeRoute } from '../../../../core/models/content-type.config';
   },
 })
 export class ContentPreviewOverlayComponent {
-  readonly slug = input.required<string>();
-  readonly type = input.required<ContentType>();
-  /** True when the content is published — the iframe shows the live article. */
-  readonly live = input(false);
+  /** Persisted API snapshot; never constructed from the editor form. */
+  readonly content = input.required<ApiContent>();
 
   readonly closed = output();
 
-  private readonly sanitizer = inject(DomSanitizer);
-
-  /**
-   * Same-origin preview route for the iframe.
-   *
-   * SECURITY_REVIEW: bypassSecurityTrustResourceUrl is safe here — the
-   * URL is built from the constant `/preview/` prefix plus a
-   * URI-encoded path segment, so no caller-controlled scheme, host, or
-   * path traversal can reach the iframe src.
-   */
-  protected readonly iframeSrc = computed<SafeResourceUrl>(() =>
-    this.sanitizer.bypassSecurityTrustResourceUrl(
-      `/preview/${encodeURIComponent(this.slug())}`,
-    ),
+  protected readonly isLive = computed(
+    () => this.content().status === 'published' && this.content().is_public,
   );
 
   /**
@@ -115,6 +106,7 @@ export class ContentPreviewOverlayComponent {
    * URL is sourced from contentTypeRoute rather than the bare type slug.
    */
   protected readonly displayUrl = computed(
-    () => `koopa0.dev${contentTypeRoute(this.type())}/${this.slug()}`,
+    () =>
+      `koopa0.dev${contentTypeRoute(this.content().type)}/${this.content().slug}`,
   );
 }

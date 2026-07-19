@@ -1,6 +1,6 @@
 @if (article(); as content) {
   @if (preview()) {
-    <!-- Chrome-less preview column for the admin publish-preview iframe. -->
+    <!-- Chrome-less reading column embedded in the admin preview dialog. -->
     <article class="mx-auto max-w-[640px] px-6 pb-16 pt-8 sm:px-10">
       <h1 class="ed-article-title">{{ content.title }}</h1>
       @if (content.excerpt) {

@@ -22,11 +22,6 @@ export const serverRoutes: ServerRoute[] = [
     renderMode: RenderMode.Server,
   },
   {
-    // Admin publish-preview iframe target — browser-only render.
-    path: 'preview/:slug',
-    renderMode: RenderMode.Client,
-  },
-  {
     path: 'about',
     renderMode: RenderMode.Prerender,
   },
