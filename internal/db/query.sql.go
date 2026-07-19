@@ -3775,7 +3775,7 @@ SELECT
         EXISTS (
             SELECT 1 FROM todos t
             WHERE t.project_id = p.id
-              AND t.state <> 'done'
+              AND t.state NOT IN ('done', 'archived', 'dismissed')
         )
         OR EXISTS (
             SELECT 1 FROM milestones m
@@ -3837,7 +3837,7 @@ type ProjectMomentumRow struct {
 // denormalisation that records ANY actor.
 //
 // open_next_action is true when the project has at least one OPEN todo
-// (state in inbox|todo|someday — anything not done) OR at least one
+// (any non-terminal state; done/archived/dismissed are terminal) OR at least one
 // INCOMPLETE milestone on its goal (completed_at IS NULL). A project with no
 // open next action is "待規劃", never stalled — the handler decides stalled.
 //
