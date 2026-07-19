@@ -5164,6 +5164,65 @@ func (q *Queries) SendContentChangesRequested(ctx context.Context, arg SendConte
 	return i, err
 }
 
+const setContentVisibility = `-- name: SetContentVisibility :one
+UPDATE contents SET is_public = $2, updated_at = now()
+WHERE id = $1
+RETURNING id, slug, title, body, excerpt, type, status,
+          series_id, series_order, is_public, project_id, reading_time_min,
+          cover_image, published_at, created_at, updated_at
+`
+
+type SetContentVisibilityParams struct {
+	ID       uuid.UUID `json:"id"`
+	IsPublic bool      `json:"is_public"`
+}
+
+type SetContentVisibilityRow struct {
+	ID             uuid.UUID     `json:"id"`
+	Slug           string        `json:"slug"`
+	Title          string        `json:"title"`
+	Body           string        `json:"body"`
+	Excerpt        string        `json:"excerpt"`
+	Type           ContentType   `json:"type"`
+	Status         ContentStatus `json:"status"`
+	SeriesID       *string       `json:"series_id"`
+	SeriesOrder    *int32        `json:"series_order"`
+	IsPublic       bool          `json:"is_public"`
+	ProjectID      *uuid.UUID    `json:"project_id"`
+	ReadingTimeMin int32         `json:"reading_time_min"`
+	CoverImage     *string       `json:"cover_image"`
+	PublishedAt    *time.Time    `json:"published_at"`
+	CreatedAt      time.Time     `json:"created_at"`
+	UpdatedAt      time.Time     `json:"updated_at"`
+}
+
+// Visibility is an operational exposure control, separate from editing the
+// authored publication snapshot. Durable withdrawal/restore semantics belong
+// to their own lifecycle transition rather than this boolean switch.
+func (q *Queries) SetContentVisibility(ctx context.Context, arg SetContentVisibilityParams) (SetContentVisibilityRow, error) {
+	row := q.db.QueryRow(ctx, setContentVisibility, arg.ID, arg.IsPublic)
+	var i SetContentVisibilityRow
+	err := row.Scan(
+		&i.ID,
+		&i.Slug,
+		&i.Title,
+		&i.Body,
+		&i.Excerpt,
+		&i.Type,
+		&i.Status,
+		&i.SeriesID,
+		&i.SeriesOrder,
+		&i.IsPublic,
+		&i.ProjectID,
+		&i.ReadingTimeMin,
+		&i.CoverImage,
+		&i.PublishedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const setTodoRecurrence = `-- name: SetTodoRecurrence :execrows
 UPDATE todos
 SET recur_weekdays    = $1,
@@ -6418,6 +6477,7 @@ UPDATE contents SET
     END,
     updated_at = now()
 WHERE id = $1
+  AND status <> 'published'
 RETURNING id, slug, title, body, excerpt, type, status,
           series_id, series_order, is_public, project_id, reading_time_min,
           cover_image, published_at, created_at, updated_at
