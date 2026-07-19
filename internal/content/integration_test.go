@@ -20,6 +20,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/Koopa0/koopa/internal/api"
 	"github.com/Koopa0/koopa/internal/testdb"
 )
 
@@ -504,6 +505,75 @@ func TestStore_UpdateContent(t *testing.T) {
 	}
 	if updated.Topics[0].ID != tp2.ID {
 		t.Errorf("UpdateContent() topic ID = %s, want %s", updated.Topics[0].ID, tp2.ID)
+	}
+}
+
+// TestStore_UpdateContent_PublishedSnapshotIsImmutable locks the authoring
+// boundary: Vault is the source of a published revision, so the generic admin
+// update path must not silently rewrite the publication snapshot in Koopa.
+// Visibility remains a separate operational control.
+func TestStore_UpdateContent_PublishedSnapshotIsImmutable(t *testing.T) {
+	s := setup(t)
+	ctx := t.Context()
+
+	id := createDraftContent(t, s, ctx, "published-snapshot")
+	published, err := s.Publish(ctx, id)
+	if err != nil {
+		t.Fatalf("Publish() error: %v", err)
+	}
+
+	newTitle := "Edited only in Koopa"
+	newBody := "this edit did not originate from a new Vault snapshot"
+	notPublic := false
+	_, err = s.UpdateContent(ctx, id, &UpdateParams{
+		Title:    &newTitle,
+		Body:     &newBody,
+		IsPublic: &notPublic,
+	})
+	if !errors.Is(err, ErrInvalidState) {
+		t.Fatalf("UpdateContent(published) = %v, want ErrInvalidState", err)
+	}
+
+	got, err := s.Content(ctx, id)
+	if err != nil {
+		t.Fatalf("Content() after rejected update: %v", err)
+	}
+	if diff := cmp.Diff(published, got, cmpContentOpts); diff != "" {
+		t.Errorf("published snapshot changed after rejected update (-want +got):\n%s", diff)
+	}
+}
+
+// TestHandler_SetIsPublic_PublishedOffSwitchRemainsAvailable is the positive
+// control for the snapshot guard. Until durable withdrawal exists, the
+// dedicated visibility endpoint must still be able to take a published row
+// off the public surface without editing its authored snapshot.
+func TestHandler_SetIsPublic_PublishedOffSwitchRemainsAvailable(t *testing.T) {
+	s := setup(t)
+	ctx := t.Context()
+
+	id := createDraftContent(t, s, ctx, "published-off-switch")
+	if _, err := s.Publish(ctx, id); err != nil {
+		t.Fatalf("Publish() error: %v", err)
+	}
+
+	h := NewHandler(s, "https://example.test", slog.Default())
+	wrapped := api.ActorMiddleware(testPool, "human", slog.Default())(http.HandlerFunc(h.SetIsPublic))
+	req := httptest.NewRequest(http.MethodPatch,
+		"/api/admin/contents/"+id.String()+"/is-public",
+		strings.NewReader(`{"is_public":false}`))
+	req.SetPathValue("id", id.String())
+	rec := httptest.NewRecorder()
+	wrapped.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("SetIsPublic(false) status = %d, want 200 (body=%s)", rec.Code, rec.Body.String())
+	}
+	got, err := s.Content(ctx, id)
+	if err != nil {
+		t.Fatalf("Content() after visibility update: %v", err)
+	}
+	if got.Status != StatusPublished || got.IsPublic {
+		t.Errorf("visibility update = status %q, is_public %t; want published, false", got.Status, got.IsPublic)
 	}
 }
 

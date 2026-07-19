@@ -215,7 +215,9 @@ describe('ContentEditorPageComponent', () => {
           '[data-testid="lifecycle-action-submit-for-review"]',
         ),
       ).toBeTruthy();
-      expect(el().querySelector('[data-testid="editor-slug-input"]')).toBeNull();
+      expect(
+        el().querySelector('[data-testid="editor-slug-input"]'),
+      ).toBeNull();
       expect(
         el().querySelector('[data-testid="editor-slug"]')?.textContent,
       ).toContain('value-semantics');
@@ -316,9 +318,7 @@ describe('ContentEditorPageComponent', () => {
         .actions?.find((a) => a.id === 'preview')
         ?.run();
       await settle();
-      expect(
-        el().querySelector('[data-testid="preview-scrim"]'),
-      ).toBeTruthy();
+      expect(el().querySelector('[data-testid="preview-scrim"]')).toBeTruthy();
 
       el()
         .querySelector<HTMLElement>('[data-testid="preview-scrim"]')
@@ -369,7 +369,70 @@ describe('ContentEditorPageComponent', () => {
           ?.getAttribute('aria-checked'),
       ).toBe('true');
     });
+  });
 
+  describe('published snapshot mode', () => {
+    beforeEach(async () => {
+      harness = await RouterTestingHarness.create(
+        '/admin/knowledge/content/abc-1/edit',
+      );
+      await settle();
+      httpMock
+        .expectOne((r) => r.url.endsWith(`${CONTENT_URL}/abc-1`))
+        .flush({
+          data: contentPayload({
+            status: 'published',
+            is_public: true,
+            published_at: '2026-06-03T00:00:00Z',
+          }),
+        });
+      flushTopics();
+      await settle();
+    });
+
+    it('should make authored fields read-only while keeping visibility operational', async () => {
+      const saveAction = TestBed.inject(AdminTopbarService)
+        .context()
+        .actions?.find((a) => a.id === 'save');
+      expect(saveAction?.disabled).toBe(true);
+      expect(saveAction?.label).toBe('Read only');
+
+      for (const testID of [
+        'editor-title',
+        'editor-body',
+        'editor-excerpt',
+        'editor-cover',
+      ]) {
+        const control = el().querySelector<
+          HTMLInputElement | HTMLTextAreaElement
+        >(`[data-testid="${testID}"]`);
+        expect(control?.readOnly).toBe(true);
+      }
+      for (const testID of ['editor-type', 'editor-topic-go']) {
+        const control = el().querySelector<
+          HTMLSelectElement | HTMLInputElement
+        >(`[data-testid="${testID}"]`);
+        expect(control?.disabled).toBe(true);
+      }
+
+      expect(
+        el().querySelector('[data-testid="published-snapshot-notice"]')
+          ?.textContent,
+      ).toContain('Vault');
+      expect(
+        el().querySelector<HTMLButtonElement>(
+          '[data-testid="editor-is-public"]',
+        )?.disabled,
+      ).toBe(false);
+
+      el()
+        .querySelector<HTMLFormElement>('[data-testid="content-editor"]')
+        ?.dispatchEvent(new Event('submit'));
+      await settle();
+      httpMock.expectNone(
+        (r) => r.method === 'PUT' && r.url.endsWith(`${CONTENT_URL}/abc-1`),
+      );
+    });
   });
 
   describe('send-back flow (status=review)', () => {
