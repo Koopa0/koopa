@@ -464,8 +464,10 @@ def install_boundary_stubs(bin_dir: Path) -> None:
               aliases='["tw-stock-trader-trader-1"]'
               dns_names='["trader","tw-stock-trader-trader-1"]'
               dns_names_field=",\"DNSNames\":$dns_names"
+              trader_network_mode="$TRADER_PRE_NETWORK_MODE"
               trader_dns_mode="$TRADER_PRE_DNS_MODE"
               if [[ "$inspect_phase" -gt 1 ]]; then
+                trader_network_mode="$TRADER_NETWORK_MODE"
                 trader_dns_mode="$TRADER_DNS_MODE"
               fi
               case "$trader_dns_mode" in
@@ -478,7 +480,13 @@ def install_boundary_stubs(bin_dir: Path) -> None:
                 malformed) dns_names_field=',"DNSNames":"trader"' ;;
                 *) printf 'unexpected trader DNS mode: %s\n' "$trader_dns_mode" >&2; exit 71 ;;
               esac
-              printf '[{"Config":{"Labels":{"com.docker.compose.project":"tw-stock-trader","com.docker.compose.service":"trader"}},"NetworkSettings":{"Networks":{"trader-db":{"Aliases":%s%s}}}}]\n' "$aliases" "$dns_names_field"
+              networks=$(printf '{"trader-db":{"Aliases":%s%s}}' "$aliases" "$dns_names_field")
+              case "$trader_network_mode" in
+                valid) ;;
+                extra-internal) networks=$(jq -c '.internal = {"Aliases":["trader"]}' <<<"$networks") ;;
+                *) printf 'unexpected trader network mode: %s\n' "$trader_network_mode" >&2; exit 72 ;;
+              esac
+              printf '[{"Config":{"Labels":{"com.docker.compose.project":"tw-stock-trader","com.docker.compose.service":"trader"}},"NetworkSettings":{"Networks":%s}}]\n' "$networks"
               ;;
             rogue-id)
               printf '[{"Config":{"Labels":{"com.docker.compose.project":"rogue","com.docker.compose.service":"rogue"}},"NetworkSettings":{"Networks":{"trader-db":{"Aliases":["rogue"]}}}}]\n'
@@ -617,6 +625,8 @@ def run_deploy(
     postgres_live_mode: str = "valid",
     trader_pre_dns_mode: str = "valid",
     trader_dns_mode: str = "valid",
+    trader_pre_network_mode: str = "valid",
+    trader_network_mode: str = "valid",
     release_entrypoint_blob_override: str | None = None,
 ) -> tuple[subprocess.CompletedProcess[str], str]:
     with tempfile.TemporaryDirectory(prefix="koopa-deploy-identity-") as raw_tmp:
@@ -664,6 +674,8 @@ def run_deploy(
                 "POSTGRES_LIVE_MODE": postgres_live_mode,
                 "TRADER_PRE_DNS_MODE": trader_pre_dns_mode,
                 "TRADER_DNS_MODE": trader_dns_mode,
+                "TRADER_PRE_NETWORK_MODE": trader_pre_network_mode,
+                "TRADER_NETWORK_MODE": trader_network_mode,
                 "HARNESS_STATE_DIR": str(harness_state),
                 "DEPLOY_ENTRYPOINT_SOURCE": str(DEPLOY_ENTRYPOINT),
                 "DEPLOY_ENTRYPOINT_BLOB": subprocess.check_output(
@@ -1289,6 +1301,21 @@ def check_deploy_script() -> list[str]:
         if "compose build" in log:
             failures.append(f"caught:network-preflight-dns-names-{mode}-reached-build")
 
+    extra_trader_network, extra_trader_network_log = run_deploy(
+        script, trader_pre_network_mode="extra-internal"
+    )
+    failures.extend(
+        assert_invoked(
+            extra_trader_network_log,
+            "network-inspect phase=1",
+            "network-trader-extra-internal",
+        )
+    )
+    if extra_trader_network.returncode == 0:
+        failures.append("caught:network-preflight-trader-extra-internal-accepted exit=0")
+    if "compose build" in extra_trader_network_log:
+        failures.append("caught:network-preflight-trader-extra-internal-reached-build")
+
     first_cutover, first_cutover_log = run_deploy(
         script, network_pre_mode="empty", network_post_mode="postgres-only"
     )
@@ -1344,6 +1371,10 @@ def check_deploy_script() -> list[str]:
         (
             "live-dns-name-collision",
             {"trader_dns_mode": "collision"},
+        ),
+        (
+            "trader-extra-internal",
+            {"trader_network_mode": "extra-internal"},
         ),
     )
     for name, kwargs in postflight_cases:
