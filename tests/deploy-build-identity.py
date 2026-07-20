@@ -418,9 +418,17 @@ def install_boundary_stubs(bin_dir: Path) -> None:
 
         if [[ "${1:-}" == "inspect" ]]; then
           container_id="${2:-}"
+          inspect_phase=1
+          if [[ -f "$HARNESS_STATE_DIR/network-inspect-count" ]]; then
+            inspect_phase=$(cat "$HARNESS_STATE_DIR/network-inspect-count")
+          fi
           case "$container_id" in
             provider-postgres-id)
-              case "$POSTGRES_LIVE_MODE" in
+              postgres_mode="$POSTGRES_PRE_MODE"
+              if [[ "$inspect_phase" -gt 1 ]]; then
+                postgres_mode="$POSTGRES_LIVE_MODE"
+              fi
+              case "$postgres_mode" in
                 valid)
                   networks='{"internal":{"Aliases":["koopa0dev-postgres-1","postgres"]},"trader-db":{"Aliases":["koopa0dev-postgres-1","postgres"]}}'
                   ;;
@@ -436,13 +444,17 @@ def install_boundary_stubs(bin_dir: Path) -> None:
                 extra-network)
                   networks='{"edge":{"Aliases":["koopa0dev-postgres-1"]},"internal":{"Aliases":["koopa0dev-postgres-1","postgres"]},"trader-db":{"Aliases":["koopa0dev-postgres-1","postgres"]}}'
                   ;;
-                *) printf 'unexpected postgres live mode: %s\n' "$POSTGRES_LIVE_MODE" >&2; exit 67 ;;
+                *) printf 'unexpected postgres live mode: %s\n' "$postgres_mode" >&2; exit 67 ;;
               esac
               printf '[{"Config":{"Labels":{"com.docker.compose.project":"koopa0dev","com.docker.compose.service":"postgres"}},"NetworkSettings":{"Networks":%s}}]\n' "$networks"
               ;;
             trader-id)
               aliases='["tw-stock-trader-trader-1"]'
-              if [[ "$TRADER_ALIAS_MODE" == "collision" ]]; then
+              trader_alias_mode="$TRADER_PRE_ALIAS_MODE"
+              if [[ "$inspect_phase" -gt 1 ]]; then
+                trader_alias_mode="$TRADER_ALIAS_MODE"
+              fi
+              if [[ "$trader_alias_mode" == "collision" ]]; then
                 aliases='["tw-stock-trader-trader-1","postgres"]'
               fi
               printf '[{"Config":{"Labels":{"com.docker.compose.project":"tw-stock-trader","com.docker.compose.service":"trader"}},"NetworkSettings":{"Networks":{"trader-db":{"Aliases":%s}}}}]\n' "$aliases"
@@ -580,7 +592,9 @@ def run_deploy(
     compose_topology_mode: str = "valid",
     network_pre_mode: str = "valid",
     network_post_mode: str = "valid",
+    postgres_pre_mode: str = "valid",
     postgres_live_mode: str = "valid",
+    trader_pre_alias_mode: str = "valid",
     trader_alias_mode: str = "valid",
     release_entrypoint_blob_override: str | None = None,
 ) -> tuple[subprocess.CompletedProcess[str], str]:
@@ -591,11 +605,13 @@ def run_deploy(
         observability = home / "server/observability"
         bin_dir = tmp / "bin"
         runtime_tmp = tmp / "runtime-tmp"
+        harness_state = tmp / "harness-state"
         repo.mkdir(parents=True)
         (repo / ".env").write_text("# deploy harness\n", encoding="utf-8")
         observability.mkdir(parents=True)
         bin_dir.mkdir()
         runtime_tmp.mkdir()
+        harness_state.mkdir()
         (observability / ".env").write_text(grafana_env, encoding="utf-8")
         install_boundary_stubs(bin_dir)
         if DEPLOY_ENTRYPOINT.exists():
@@ -623,9 +639,11 @@ def run_deploy(
                 "COMPOSE_TOPOLOGY_MODE": compose_topology_mode,
                 "NETWORK_PRE_MODE": network_pre_mode,
                 "NETWORK_POST_MODE": network_post_mode,
+                "POSTGRES_PRE_MODE": postgres_pre_mode,
                 "POSTGRES_LIVE_MODE": postgres_live_mode,
+                "TRADER_PRE_ALIAS_MODE": trader_pre_alias_mode,
                 "TRADER_ALIAS_MODE": trader_alias_mode,
-                "HARNESS_STATE_DIR": str(runtime_tmp),
+                "HARNESS_STATE_DIR": str(harness_state),
                 "DEPLOY_ENTRYPOINT_SOURCE": str(DEPLOY_ENTRYPOINT),
                 "DEPLOY_ENTRYPOINT_BLOB": subprocess.check_output(
                     [shutil.which("git") or "git", "hash-object", str(DEPLOY_ENTRYPOINT)],
