@@ -90,12 +90,25 @@ func TestKnowledgeGraphRouteIsRetired(t *testing.T) {
 
 func TestContentWithdrawalRoutesReplaceVisibilityBypass(t *testing.T) {
 	mux := http.NewServeMux()
-	passThrough := func(next http.Handler) http.Handler { return next }
+	authCalls := 0
+	adminCalls := 0
+	authOnly := func(_ http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			authCalls++
+			w.WriteHeader(http.StatusAccepted)
+		})
+	}
+	adminOnly := func(_ http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			adminCalls++
+			w.WriteHeader(http.StatusNoContent)
+		})
+	}
 	registerRoutes(mux, &handlers{
 		content:        content.NewHandler(nil, "https://example.com", slog.Default()),
 		logger:         slog.Default(),
 		metricsHandler: http.NotFoundHandler(),
-	}, passThrough, passThrough)
+	}, authOnly, adminOnly)
 
 	const id = "11111111-1111-4111-8111-111111111111"
 	tests := []struct {
@@ -123,6 +136,14 @@ func TestContentWithdrawalRoutesReplaceVisibilityBypass(t *testing.T) {
 			req := httptest.NewRequest(tt.method, tt.path, http.NoBody)
 			if _, pattern := mux.Handler(req); pattern != tt.wantPattern {
 				t.Fatalf("%s %s matched %q, want %q", tt.method, tt.path, pattern, tt.wantPattern)
+			}
+			beforeAdmin := adminCalls
+			beforeAuth := authCalls
+			w := httptest.NewRecorder()
+			mux.ServeHTTP(w, req)
+			if w.Code != http.StatusNoContent || adminCalls != beforeAdmin+1 || authCalls != beforeAuth {
+				t.Fatalf("%s %s did not traverse admin middleware: status=%d admin=%d->%d auth=%d->%d",
+					tt.method, tt.path, w.Code, beforeAdmin, adminCalls, beforeAuth, authCalls)
 			}
 		})
 	}

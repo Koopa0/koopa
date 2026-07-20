@@ -230,9 +230,9 @@ describe('ContentService', () => {
         .withdraw('content-001', 'The source is no longer accurate.')
         .subscribe();
 
-      const req = httpMock.expectOne(
-        '/api/admin/knowledge/content/content-001/withdraw',
-      );
+		const req = httpMock.expectOne((r) =>
+			r.url.endsWith('/api/admin/knowledge/content/content-001/withdraw'),
+		);
       expect(req.request.method).toBe('POST');
       expect(req.request.body).toEqual({
         reason: 'The source is no longer accurate.',
@@ -246,9 +246,9 @@ describe('ContentService', () => {
       const withdrawal = service as unknown as WithdrawalService;
       withdrawal.restore('content-001').subscribe();
 
-      const req = httpMock.expectOne(
-        '/api/admin/knowledge/content/content-001/restore',
-      );
+		const req = httpMock.expectOne((r) =>
+			r.url.endsWith('/api/admin/knowledge/content/content-001/restore'),
+		);
       expect(req.request.method).toBe('POST');
       expect(req.request.body).toEqual({});
       req.flush({ data: createMockContent() });

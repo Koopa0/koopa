@@ -58,7 +58,7 @@ func TestHandler_WithdrawRejectsInvalidInput(t *testing.T) {
 		{name: "missing reason", id: validID, body: `{}`},
 		{name: "empty reason", id: validID, body: `{"reason":""}`},
 		{name: "whitespace reason", id: validID, body: `{"reason":"  \t "}`},
-		{name: "oversized body", id: validID, body: strings.Repeat("x", 2<<20)},
+		{name: "oversized reason", id: validID, body: `{"reason":"` + strings.Repeat("x", MaxWithdrawalReasonLen+1) + `"}`},
 	}
 
 	for _, tc := range tests {
