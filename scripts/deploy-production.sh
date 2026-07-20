@@ -122,12 +122,15 @@ validate_trader_db_endpoints() {
       tw-stock-trader:trader)
         trader_count=$((trader_count + 1))
         if ! jq -e \
-          '.[0].NetworkSettings.Networks["trader-db"].DNSNames |
-            if type == "array" then
-              all(.[]; type == "string") and (index("postgres") == null)
-            else false end' \
+          '.[0].NetworkSettings.Networks as $networks |
+            ($networks | type == "object") and
+            (($networks | keys) == ["trader-db"]) and
+            ($networks["trader-db"].DNSNames |
+              if type == "array" then
+                all(.[]; type == "string") and (index("postgres") == null)
+              else false end)' \
           >/dev/null <<<"$endpoint_json"; then
-          echo "ERROR: trader-db trader endpoint has invalid or colliding DNS names" >&2
+          echo "ERROR: trader-db trader endpoint has invalid networks or DNS names" >&2
           return 1
         fi
         ;;
