@@ -50,3 +50,35 @@ describe('admin route retirement', () => {
     expect(navRoutes).toContain('/admin/knowledge/content');
   });
 });
+
+describe('admin publication language', () => {
+  it('presents publication management without claiming knowledge ownership', () => {
+    const publishing = ADMIN_NAV.find((group) => group.label === 'Publishing');
+    expect(publishing?.items.map((item) => item.label)).toEqual([
+      'Publications',
+      'Review queue',
+      'Topics',
+    ]);
+    expect(ADMIN_NAV.some((group) => group.label === 'Knowledge')).toBe(false);
+
+    const input = ADMIN_NAV.find((group) => group.label === 'Input');
+    expect(input?.items.map((item) => item.label)).toContain('Feeds');
+
+    const adminRoutes = routes.find(
+      (route) => route.path === 'admin',
+    )?.children;
+    expect(
+      adminRoutes?.find((route) => route.path === 'knowledge/content')?.data,
+    ).toMatchObject({
+      title: 'Publications',
+      crumbs: ['Publishing', 'Publications'],
+    });
+    expect(
+      adminRoutes?.find((route) => route.path === 'knowledge/review-queue')
+        ?.data,
+    ).toMatchObject({
+      title: 'Review queue',
+      crumbs: ['Publishing', 'Review queue'],
+    });
+  });
+});
