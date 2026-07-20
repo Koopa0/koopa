@@ -40,14 +40,12 @@ import { ContentPreviewOverlayComponent } from './preview-overlay.component';
 import { SendBackReasonDialogComponent } from './send-back-reason-dialog.component';
 import type {
   ApiContent,
-  ApiCreateContentRequest,
   ApiUpdateContentRequest,
   ContentStatus,
   ContentType,
 } from '../../../../core/models/api.model';
 
 interface ContentEditorForm {
-  slug: FormControl<string>;
   title: FormControl<string>;
   body: FormControl<string>;
   excerpt: FormControl<string>;
@@ -74,41 +72,21 @@ const STATUS_BADGE_VARIANT: Record<ContentStatus, BadgeVariant> = {
   archived: 'neutral',
 };
 
-// Hyphen-separated segments, no whitespace/slash, no leading/trailing/doubled
-// hyphens. Unicode letters/numbers (incl. CJK) allowed — mirrors the server's
-// chk_content_slug_format; slugs carry UTF-8 fine in URLs.
-const SLUG_PATTERN = /^[^\s/-]+(?:-[^\s/-]+)*$/;
 const WORDS_PER_MINUTE = 220;
 
 /**
- * Derive a valid slug from a title: lowercased, each run of non-alphanumeric
- * characters collapsed to a single hyphen, edge hyphens trimmed. Unicode
- * letters and numbers survive, so a CJK title yields a CJK slug — both pass
- * chk_content_slug_format.
- */
-function slugify(title: string): string {
-  return title
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}]+/gu, '-')
-    .replace(/^-+|-+$/g, '');
-}
-
-/**
- * Content Editor — create + edit route for the content lifecycle.
- *
- * Create mode (`/new`, no :id): empty form, slug editable; saving POSTs
- * the new content (status defaults to draft server-side) and navigates
- * to the `:id/edit` route of the created record.
- *
- * Edit mode (`:id/edit`): markdown editor on the left; the sidebar
+ * Content Editor for an existing publication snapshot. Markdown authoring
+ * happens in Vault; source-bound snapshots are read-only here, while legacy
+ * unbound rows remain available for recovery but cannot enter publication.
+ * The sidebar
  * carries the lifecycle rail (draft → review → published → archived
  * with the legal transition buttons), the is_public switch (PATCH
  * …/is-public), and the type/topics metadata column. Publishing
  * is human-only server-side — a 403 surfaces as a refusal toast.
  *
  * Keyboard:
- *   ⌘S        — save (create or update)
- *   ⌘⇧P       — publish (draft directly, or a review row)
+ *   ⌘S        — save a legacy unbound draft
+ *   ⌘⇧P       — publish a source-bound draft or review snapshot
  *   ⌘⇧R       — revert to draft (only while status='review')
  */
 @Component({
@@ -144,9 +122,6 @@ export class ContentEditorPageComponent {
     { initialValue: null },
   );
 
-  /** Create mode when the route carries no :id. */
-  protected readonly isCreate = computed(() => this.idFromRoute() === null);
-
   protected readonly contentResource = rxResource<
     ApiContent,
     string | undefined
@@ -158,6 +133,9 @@ export class ContentEditorPageComponent {
   protected readonly content = this.contentResource.value;
   protected readonly isPublishedSnapshot = computed(
     () => this.content()?.status === 'published',
+  );
+  protected readonly isAuthoredSnapshotReadOnly = computed(
+    () => this.isPublishedSnapshot() || this.content()?.source != null,
   );
   protected readonly isLoading = computed(
     () => this.contentResource.status() === 'loading',
@@ -182,10 +160,6 @@ export class ContentEditorPageComponent {
   private readonly _isActioning = signal(false);
   protected readonly isActioning = this._isActioning.asReadonly();
 
-  /** Set once the operator types in the slug field, so the title→slug
-   * auto-derivation stops overwriting their manual edit. */
-  private readonly slugEdited = signal(false);
-
   /** Publish-preview overlay visibility (edit mode, saved content only). */
   protected readonly showPreview = signal(false);
 
@@ -196,7 +170,6 @@ export class ContentEditorPageComponent {
   protected readonly selectedTopicIds = signal<string[]>([]);
 
   protected readonly form = new FormGroup<ContentEditorForm>({
-    slug: new FormControl('', { nonNullable: true }),
     title: new FormControl('', {
       nonNullable: true,
       validators: [Validators.required, Validators.maxLength(200)],
@@ -236,39 +209,20 @@ export class ContentEditorPageComponent {
     Math.max(1, Math.round(this.wordCount() / WORDS_PER_MINUTE)),
   );
 
-  protected readonly saveState = computed<
-    'saving' | 'dirty' | 'new' | 'saved'
-  >(() => {
+  protected readonly saveState = computed<'saving' | 'dirty' | 'saved'>(() => {
     if (this.isActioning()) return 'saving';
     if (this.formDirty()) return 'dirty';
-    return this.isCreate() ? 'new' : 'saved';
+    return 'saved';
   });
 
   /**
    * True when the form has unsaved edits. Used by the
    * {@link contentEditorCanDeactivate} route guard to confirm before
-   * leaving the page — in create and edit mode alike.
+   * leaving the page.
    */
   readonly hasUnsavedChanges = this.formDirty;
 
   constructor() {
-    if (this.isCreate()) {
-      this.form.controls.slug.addValidators([
-        Validators.required,
-        Validators.pattern(SLUG_PATTERN),
-      ]);
-      this.form.controls.slug.updateValueAndValidity();
-
-      // Auto-derive the slug from the title until the operator edits it by
-      // hand, so an empty slug never silently disables "Create draft".
-      this.form.controls.title.valueChanges
-        .pipe(takeUntilDestroyed())
-        .subscribe((title) => {
-          if (this.slugEdited()) return;
-          this.form.controls.slug.setValue(slugify(title));
-        });
-    }
-
     this.form.controls.body.valueChanges
       .pipe(takeUntilDestroyed())
       .subscribe((v) => this.bodyText.set(v));
@@ -282,7 +236,6 @@ export class ContentEditorPageComponent {
       if (!c) return;
       this.form.reset(
         {
-          slug: c.slug,
           title: c.title,
           body: c.body,
           excerpt: c.excerpt,
@@ -294,7 +247,7 @@ export class ContentEditorPageComponent {
       this.bodyText.set(c.body);
       this.typeValue.set(c.type);
       this.selectedTopicIds.set((c.topics ?? []).map((t) => t.id));
-      if (c.status === 'published') {
+      if (this.isAuthoredSnapshotReadOnly()) {
         this.form.controls.type.disable({ emitEvent: false });
       } else {
         this.form.controls.type.enable({ emitEvent: false });
@@ -308,12 +261,12 @@ export class ContentEditorPageComponent {
 
   private buildTopbarContext() {
     const c = this.content();
-    const create = this.isCreate();
-    const publishedSnapshot = c?.status === 'published';
+    const authoredSnapshotReadOnly =
+      c?.status === 'published' || c?.source != null;
     const formInvalid = this.formStatus() === 'INVALID';
 
     const actions: TopbarAction[] = [
-      ...(!create && c
+      ...(c
         ? [
             {
               id: 'preview',
@@ -331,29 +284,20 @@ export class ContentEditorPageComponent {
       },
       {
         id: 'save',
-        label: create
-          ? 'Create draft'
-          : publishedSnapshot
-            ? 'Read only'
-            : 'Save',
+        label: authoredSnapshotReadOnly ? 'Read only' : 'Save',
         kind: 'primary',
         shortcutHint: '⌘S',
         disabled:
-          this.isActioning() ||
-          formInvalid ||
-          (!create && !c) ||
-          publishedSnapshot,
+          this.isActioning() || formInvalid || !c || authoredSnapshotReadOnly,
         run: () => this.save(),
       },
     ];
 
     return {
-      title: create ? 'New content' : c ? `Editing · ${c.type}` : 'Content editor',
-      crumbs: create
-        ? ['Knowledge', 'Content', 'New']
-        : c
-          ? ['Knowledge', 'Content', c.id.slice(0, 8)]
-          : ['Knowledge', 'Content'],
+      title: c ? `Editing · ${c.type}` : 'Content editor',
+      crumbs: c
+        ? ['Knowledge', 'Content', c.id.slice(0, 8)]
+        : ['Knowledge', 'Content'],
       actions,
     };
   }
@@ -362,58 +306,14 @@ export class ContentEditorPageComponent {
     this.router.navigate(['/admin/knowledge/content']);
   }
 
-  /** The operator typed in the slug field — stop deriving it from the title. */
-  protected onSlugInput(): void {
-    this.slugEdited.set(true);
-  }
-
   protected save(): void {
     if (this._isActioning()) return;
-    if (this.isPublishedSnapshot()) return;
+    if (this.isAuthoredSnapshotReadOnly()) return;
     if (this.form.invalid) {
       this.form.markAllAsTouched();
       return;
     }
-    if (this.isCreate()) {
-      this.createContent();
-    } else {
-      this.updateContent();
-    }
-  }
-
-  private createContent(): void {
-    const v = this.form.getRawValue();
-    const body: ApiCreateContentRequest = {
-      slug: v.slug.trim(),
-      title: v.title.trim(),
-      type: v.type,
-      body: v.body,
-      excerpt: v.excerpt,
-      topic_ids: this.selectedTopicIds(),
-      cover_image: v.coverImage || undefined,
-      reading_time_min: estimateReadingTime(v.body),
-    };
-
-    this._isActioning.set(true);
-    this.contentService
-      .create(body)
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe({
-        next: (created) => {
-          this._isActioning.set(false);
-          this.form.markAsPristine();
-          this.notifications.success(`Draft "${created.title}" created.`);
-          this.router.navigate([
-            '/admin/knowledge/content',
-            created.id,
-            'edit',
-          ]);
-        },
-        error: () => {
-          this._isActioning.set(false);
-          this.notifications.error('Failed to create content.');
-        },
-      });
+    this.updateContent();
   }
 
   private updateContent(): void {
@@ -607,7 +507,7 @@ export class ContentEditorPageComponent {
   }
 
   protected toggleTopic(id: string): void {
-    if (this.isPublishedSnapshot()) return;
+    if (this.isAuthoredSnapshotReadOnly()) return;
     this.selectedTopicIds.update((ids) =>
       ids.includes(id) ? ids.filter((t) => t !== id) : [...ids, id],
     );
@@ -642,7 +542,7 @@ export class ContentEditorPageComponent {
     const isCmdOrCtrl = event.metaKey || event.ctrlKey;
     if (!isCmdOrCtrl) return;
 
-    // ⌘S — save (create or update)
+    // ⌘S — save an editable legacy row.
     if (event.key === 's' && !event.shiftKey && !event.altKey) {
       event.preventDefault();
       this.save();
@@ -651,12 +551,18 @@ export class ContentEditorPageComponent {
 
     // Below: remaining chords all require Cmd+Shift without Alt.
     if (!event.shiftKey || event.altKey) return;
-    const status = this.content()?.status;
+    const content = this.content();
+    const status = content?.status;
 
     // `event.key` is guaranteed uppercase when Shift is held,
     // independent of Caps Lock.
-    // ⌘⇧P — publish a draft directly, or a review row.
-    if (event.key === 'P' && (status === 'draft' || status === 'review')) {
+    // ⌘⇧P — publish only a source-bound snapshot. Keep the keyboard
+    // path aligned with the lifecycle rail so hidden actions cannot be invoked.
+    if (
+      event.key === 'P' &&
+      content?.source != null &&
+      (status === 'draft' || status === 'review')
+    ) {
       event.preventDefault();
       this.publish();
       return;

@@ -34,12 +34,17 @@ export interface ApiContent {
   series_order: number | null;
   is_public: boolean;
   reading_time_min: number;
-  /** Proposing agent for agent-pushed content (MCP propose_content). Null for owner/admin-authored content. */
+  /** Proposing agent for agent-submitted content. Null on legacy owner-authored rows. */
   created_by?: string | null;
-  /** The proposing agent's rationale, shown in the review queue. Null for admin-authored content. */
+  /** The proposing agent's rationale, shown in the review queue. Null on legacy owner-authored rows. */
   proposal_rationale?: string | null;
   /** Owner's revision note when sending content back from review. Populated only when status=changes_requested. */
   review_note?: string | null;
+  /** Authenticated-only provenance for a Vault-authored publication snapshot. */
+  source?: {
+    vault_path: string;
+    git_blob_sha: string;
+  } | null;
   published_at: string | null;
   created_at: string;
   updated_at: string;
@@ -123,24 +128,7 @@ export interface JwtPayload {
   iat: number;
 }
 
-/** Admin — Create/Update Content request */
-export interface ApiCreateContentRequest {
-  slug: string;
-  title: string;
-  body?: string;
-  excerpt?: string;
-  type: ContentType;
-  status?: ContentStatus;
-  topic_ids?: string[];
-  cover_image?: string;
-  source?: string;
-  source_type?: string;
-  series_id?: string;
-  series_order?: number;
-  reading_time_min?: number;
-  is_public?: boolean;
-}
-
+/** Admin — Update legacy, source-unbound content fields. */
 export interface ApiUpdateContentRequest {
   slug?: string;
   title?: string;
@@ -148,7 +136,6 @@ export interface ApiUpdateContentRequest {
   excerpt?: string;
   topic_ids?: string[];
   cover_image?: string;
-  status?: ContentStatus;
   series_id?: string;
   series_order?: number;
   reading_time_min?: number;

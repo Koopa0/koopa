@@ -29,7 +29,9 @@ function createMockContent(overrides: Partial<ApiContent> = {}): ApiContent {
   };
 }
 
-function createMockMeta(overrides: Partial<ApiPaginationMeta> = {}): ApiPaginationMeta {
+function createMockMeta(
+  overrides: Partial<ApiPaginationMeta> = {},
+): ApiPaginationMeta {
   return {
     total: 1,
     page: 1,
@@ -69,18 +71,23 @@ describe('ArticleService', () => {
         expect(response.meta).toEqual(mockMeta);
       });
 
-      const req = httpMock.expectOne((r) =>
-        r.url.includes('/api/contents') && r.params.get('type') === 'article',
+      const req = httpMock.expectOne(
+        (r) =>
+          r.url.includes('/api/contents') && r.params.get('type') === 'article',
       );
       expect(req.request.method).toBe('GET');
-      req.flush({ data: [mockArticle], meta: mockMeta } as ApiListResponse<ApiContent>);
+      req.flush({
+        data: [mockArticle],
+        meta: mockMeta,
+      } as ApiListResponse<ApiContent>);
     });
 
     it('should pass tag filter parameter', () => {
       service.getArticles({ tag: 'Angular' }).subscribe();
 
-      const req = httpMock.expectOne((r) =>
-        r.url.includes('/api/contents') && r.params.get('tag') === 'Angular',
+      const req = httpMock.expectOne(
+        (r) =>
+          r.url.includes('/api/contents') && r.params.get('tag') === 'Angular',
       );
       expect(req.request.method).toBe('GET');
       req.flush({ data: [], meta: createMockMeta() });
@@ -89,10 +96,11 @@ describe('ArticleService', () => {
     it('should pass page and perPage parameters', () => {
       service.getArticles({ page: 2, perPage: 5 }).subscribe();
 
-      const req = httpMock.expectOne((r) =>
-        r.url.includes('/api/contents') &&
-        r.params.get('page') === '2' &&
-        r.params.get('per_page') === '5',
+      const req = httpMock.expectOne(
+        (r) =>
+          r.url.includes('/api/contents') &&
+          r.params.get('page') === '2' &&
+          r.params.get('per_page') === '5',
       );
       req.flush({ data: [], meta: createMockMeta({ page: 2, per_page: 5 }) });
     });
@@ -105,7 +113,10 @@ describe('ArticleService', () => {
       });
 
       const req = httpMock.expectOne((r) => r.url.includes('/api/contents'));
-      req.flush('Server error', { status: 500, statusText: 'Internal Server Error' });
+      req.flush('Server error', {
+        status: 500,
+        statusText: 'Internal Server Error',
+      });
     });
   });
 
@@ -131,28 +142,10 @@ describe('ArticleService', () => {
         },
       });
 
-      const req = httpMock.expectOne((r) => r.url.includes('/api/contents/not-found'));
+      const req = httpMock.expectOne((r) =>
+        r.url.includes('/api/contents/not-found'),
+      );
       req.flush('Not found', { status: 404, statusText: 'Not Found' });
-    });
-  });
-
-  describe('createArticle', () => {
-    it('should POST to admin contents endpoint with type article', () => {
-      const request = {
-        slug: 'new-article',
-        title: 'New Article',
-        type: 'article' as const,
-      };
-      const mockResponse = createMockContent({ slug: 'new-article', title: 'New Article' });
-
-      service.createArticle(request).subscribe((article) => {
-        expect(article.title).toBe('New Article');
-      });
-
-      const req = httpMock.expectOne((r) => r.url.includes('/api/admin/knowledge/content'));
-      expect(req.request.method).toBe('POST');
-      expect(req.request.body.type).toBe('article');
-      req.flush({ data: mockResponse });
     });
   });
 
@@ -160,9 +153,11 @@ describe('ArticleService', () => {
     it('should PUT to admin contents endpoint with id', () => {
       const mockResponse = createMockContent({ title: 'Updated Title' });
 
-      service.updateArticle('content-001', { title: 'Updated Title' }).subscribe((article) => {
-        expect(article.title).toBe('Updated Title');
-      });
+      service
+        .updateArticle('content-001', { title: 'Updated Title' })
+        .subscribe((article) => {
+          expect(article.title).toBe('Updated Title');
+        });
 
       const req = httpMock.expectOne((r) =>
         r.url.includes('/api/admin/knowledge/content/content-001'),

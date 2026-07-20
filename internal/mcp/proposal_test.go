@@ -214,6 +214,10 @@ func TestValidateProposeContent(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
+			if !tt.wantErr {
+				tt.input.SourceVaultPath = "Writing/articles/validation-fixture.md"
+				tt.input.SourceGitBlobSHA = "0123456789abcdef0123456789abcdef01234567"
+			}
 
 			gotType, gotSlug, gotIDs, err := validateProposeContent(tt.input)
 

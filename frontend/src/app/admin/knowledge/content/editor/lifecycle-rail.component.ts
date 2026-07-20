@@ -59,9 +59,9 @@ const ACTIONS_BY_STATUS: Record<ContentStatus, readonly RailAction[]> = {
  * (past = check, current = dot, future = empty), with the legal
  * transitions for the current status as buttons underneath.
  *
- * Publishing is a human-only action server-side: the owner publishes a
- * draft directly (the common path) or a review row from the queue. The
- * rail surfaces the human-only gate as a caption while a row sits in review.
+ * Publishing is a human-only action server-side and requires a source-bound
+ * snapshot. The rail hides promotion actions for legacy unbound rows and
+ * surfaces the human-only gate while a bound row sits in review.
  */
 @Component({
   selector: 'app-content-lifecycle-rail',
@@ -71,6 +71,7 @@ const ACTIONS_BY_STATUS: Record<ContentStatus, readonly RailAction[]> = {
 export class ContentLifecycleRailComponent {
   readonly status = input.required<ContentStatus>();
   readonly busy = input(false);
+  readonly sourceBound = input(true);
   readonly action = output<ContentLifecycleAction>();
 
   protected readonly steps = computed<RailStep[]>(() => {
@@ -81,12 +82,16 @@ export class ContentLifecycleRailComponent {
     }));
   });
 
-  protected readonly actions = computed<readonly RailAction[]>(
-    () => ACTIONS_BY_STATUS[this.status()],
-  );
+  protected readonly actions = computed<readonly RailAction[]>(() => {
+    const actions = ACTIONS_BY_STATUS[this.status()];
+    if (this.sourceBound()) return actions;
+    return actions.filter(
+      (action) => action.id !== 'publish' && action.id !== 'submit-for-review',
+    );
+  });
 
   protected readonly showPublishGate = computed(
-    () => this.status() === 'review',
+    () => this.status() === 'review' && this.sourceBound(),
   );
 
   protected run(id: ContentLifecycleAction): void {

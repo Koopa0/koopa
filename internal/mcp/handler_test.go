@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"strings"
 	"testing"
 	"time"
 
@@ -171,6 +172,79 @@ func TestProposeContent_Validation(t *testing.T) {
 			}
 			if !contains(err.Error(), tt.wantErr) {
 				t.Errorf("error = %q, want containing %q", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+// TestProposeContent_SourceSnapshotValidation locks the D4 authoring
+// boundary without constructing fields that do not exist on the old code.
+// JSON decoding makes the test compile on the base while the old input type
+// silently discards source_vault_path/source_git_blob_sha and therefore fails
+// the missing/invalid-source assertions below.
+func TestProposeContent_SourceSnapshotValidation(t *testing.T) {
+	const validSHA = "0123456789abcdef0123456789abcdef01234567"
+	tests := []struct {
+		name    string
+		raw     string
+		wantErr string
+	}{
+		{
+			name:    "source path required",
+			raw:     `{"title":"Hello","type":"article","body":"body","source_git_blob_sha":"` + validSHA + `"}`,
+			wantErr: "source_vault_path is required",
+		},
+		{
+			name:    "source sha required",
+			raw:     `{"title":"Hello","type":"article","body":"body","source_vault_path":"Writing/articles/hello.md"}`,
+			wantErr: "source_git_blob_sha is required",
+		},
+		{
+			name:    "absolute path rejected",
+			raw:     `{"title":"Hello","type":"article","body":"body","source_vault_path":"/Writing/articles/hello.md","source_git_blob_sha":"` + validSHA + `"}`,
+			wantErr: "Vault-relative",
+		},
+		{
+			name:    "parent traversal rejected",
+			raw:     `{"title":"Hello","type":"article","body":"body","source_vault_path":"Writing/../Diary/secret.md","source_git_blob_sha":"` + validSHA + `"}`,
+			wantErr: "must not contain . or .. path segments",
+		},
+		{
+			name:    "Diary path rejected",
+			raw:     `{"title":"Hello","type":"article","body":"body","source_vault_path":"Diary/2026-07-20.md","source_git_blob_sha":"` + validSHA + `"}`,
+			wantErr: "Diary is private",
+		},
+		{
+			name:    "Markdown path required",
+			raw:     `{"title":"Hello","type":"article","body":"body","source_vault_path":"Writing/articles/hello.txt","source_git_blob_sha":"` + validSHA + `"}`,
+			wantErr: "must end in .md",
+		},
+		{
+			name:    "Git object id required",
+			raw:     `{"title":"Hello","type":"article","body":"body","source_vault_path":"Writing/articles/hello.md","source_git_blob_sha":"not-a-sha"}`,
+			wantErr: "40 or 64 lowercase hexadecimal",
+		},
+		{
+			name: "valid source snapshot",
+			raw:  `{"title":"Hello","type":"article","body":"body","source_vault_path":"Writing/articles/hello.md","source_git_blob_sha":"` + validSHA + `"}`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var input ProposeContentInput
+			if err := json.Unmarshal([]byte(tt.raw), &input); err != nil {
+				t.Fatalf("decoding test input: %v", err)
+			}
+			_, _, _, err := validateProposeContent(input)
+			if tt.wantErr == "" {
+				if err != nil {
+					t.Fatalf("valid source snapshot rejected: %v", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("validateProposeContent() error = %v, want containing %q", err, tt.wantErr)
 			}
 		})
 	}

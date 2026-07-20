@@ -4,7 +4,7 @@ import {
   HttpTestingController,
   provideHttpClientTesting,
 } from '@angular/common/http/testing';
-import { provideRouter, Router, type Routes } from '@angular/router';
+import { provideRouter, type Routes } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
 
 import { ContentEditorPageComponent } from './content-editor.page';
@@ -17,10 +17,6 @@ const CONTENT_URL = '/api/admin/knowledge/content';
 const TOPICS_URL = '/api/admin/knowledge/topics';
 
 const routes: Routes = [
-  {
-    path: 'admin/knowledge/content/new',
-    component: ContentEditorPageComponent,
-  },
   {
     path: 'admin/knowledge/content/:id/edit',
     component: ContentEditorPageComponent,
@@ -42,10 +38,31 @@ function contentPayload(overrides: Partial<ApiContent> = {}): ApiContent {
     series_order: null,
     is_public: false,
     reading_time_min: 3,
+    source: {
+      vault_path: 'Writing/articles/value-semantics.md',
+      git_blob_sha: '0123456789abcdef0123456789abcdef01234567',
+    },
     published_at: null,
     created_at: '2026-06-01T00:00:00Z',
     updated_at: '2026-06-02T00:00:00Z',
     ...overrides,
+  };
+}
+
+type SourceBoundContent = ApiContent & {
+  source: {
+    vault_path: string;
+    git_blob_sha: string;
+  };
+};
+
+function sourceBoundContentPayload(): SourceBoundContent {
+  return {
+    ...contentPayload({ status: 'review', created_by: 'claude' }),
+    source: {
+      vault_path: 'Writing/articles/value-semantics.md',
+      git_blob_sha: '0123456789abcdef0123456789abcdef01234567',
+    },
   };
 }
 
@@ -106,92 +123,6 @@ describe('ContentEditorPageComponent', () => {
     input!.value = value;
     input!.dispatchEvent(new Event('input'));
   }
-
-  describe('create mode', () => {
-    beforeEach(async () => {
-      harness = await RouterTestingHarness.create(
-        '/admin/knowledge/content/new',
-      );
-      await settle();
-      flushTopics();
-      await settle();
-    });
-
-    it('should render an empty form with slug input and no lifecycle rail', () => {
-      expect(el().querySelector('[data-testid="content-editor"]')).toBeTruthy();
-      expect(
-        el().querySelector('[data-testid="editor-slug-input"]'),
-      ).toBeTruthy();
-      expect(el().querySelector('[data-testid="editor-lifecycle"]')).toBeNull();
-      expect(el().querySelector('[data-testid="editor-is-public"]')).toBeNull();
-      expect(
-        el().querySelector('[data-testid="editor-create-hint"]')?.textContent,
-      ).toContain('not created yet');
-    });
-
-    it('should POST the new content and navigate to its edit route on submit', async () => {
-      setValue('[data-testid="editor-slug-input"]', 'my-new-post');
-      setValue('[data-testid="editor-title"]', 'My new post');
-      setValue('[data-testid="editor-body"]', 'Hello world');
-      await settle();
-
-      el()
-        .querySelector<HTMLFormElement>('[data-testid="content-editor"]')
-        ?.dispatchEvent(new Event('submit'));
-      await settle();
-
-      const req = httpMock.expectOne(
-        (r) => r.method === 'POST' && r.url.endsWith(CONTENT_URL),
-      );
-      expect(req.request.body).toMatchObject({
-        slug: 'my-new-post',
-        title: 'My new post',
-        type: 'article',
-        body: 'Hello world',
-      });
-      req.flush({
-        data: contentPayload({ id: 'created-9', slug: 'my-new-post' }),
-      });
-      await settle();
-
-      expect(TestBed.inject(Router).url).toBe(
-        '/admin/knowledge/content/created-9/edit',
-      );
-      // The edit route instance loads the created record and topics.
-      httpMock
-        .expectOne((r) => r.url.endsWith(`${CONTENT_URL}/created-9`))
-        .flush({ data: contentPayload({ id: 'created-9' }) });
-      flushTopics();
-      await settle();
-    });
-
-    it('should not expose a preview action in create mode', () => {
-      const actions =
-        TestBed.inject(AdminTopbarService).context().actions ?? [];
-      expect(actions.find((a) => a.id === 'preview')).toBeUndefined();
-    });
-
-    it('should not POST when required fields are missing', async () => {
-      el()
-        .querySelector<HTMLFormElement>('[data-testid="content-editor"]')
-        ?.dispatchEvent(new Event('submit'));
-      await settle();
-
-      httpMock.expectNone(
-        (r) => r.method === 'POST' && r.url.endsWith(CONTENT_URL),
-      );
-    });
-
-    it('should auto-derive the slug from the title until it is edited', async () => {
-      setValue('[data-testid="editor-title"]', 'My First Post!');
-      await settle();
-
-      const slug = el().querySelector<HTMLInputElement>(
-        '[data-testid="editor-slug-input"]',
-      );
-      expect(slug?.value).toBe('my-first-post');
-    });
-  });
 
   describe('edit mode', () => {
     beforeEach(async () => {
@@ -443,6 +374,110 @@ describe('ContentEditorPageComponent', () => {
     });
   });
 
+  describe('legacy source-unbound snapshot mode', () => {
+    beforeEach(async () => {
+      harness = await RouterTestingHarness.create(
+        '/admin/knowledge/content/abc-1/edit',
+      );
+      await settle();
+      httpMock
+        .expectOne((r) => r.url.endsWith(`${CONTENT_URL}/abc-1`))
+        .flush({ data: contentPayload({ status: 'draft', source: null }) });
+      flushTopics();
+      await settle();
+    });
+
+    it('should explain that legacy content is not publishable and hide promotion actions', () => {
+      expect(
+        el().querySelector('[data-testid="legacy-source-notice"]')?.textContent,
+      ).toContain('Author in Vault');
+      expect(
+        el().querySelector('[data-testid="lifecycle-action-publish"]'),
+      ).toBeNull();
+      expect(
+        el().querySelector(
+          '[data-testid="lifecycle-action-submit-for-review"]',
+        ),
+      ).toBeNull();
+    });
+
+    it('should not let the publish shortcut bypass the hidden promotion actions', async () => {
+      document.dispatchEvent(
+        new KeyboardEvent('keydown', {
+          key: 'P',
+          metaKey: true,
+          shiftKey: true,
+          bubbles: true,
+        }),
+      );
+      await settle();
+
+      expect(
+        el().querySelector('[data-testid="publish-no-topic-warn"]'),
+      ).toBeNull();
+      httpMock.expectNone(
+        (r) => r.method === 'POST' && r.url.endsWith('/publish'),
+      );
+    });
+  });
+
+  describe('source-bound review snapshot mode', () => {
+    beforeEach(async () => {
+      harness = await RouterTestingHarness.create(
+        '/admin/knowledge/content/abc-1/edit',
+      );
+      await settle();
+      httpMock
+        .expectOne((r) => r.url.endsWith(`${CONTENT_URL}/abc-1`))
+        .flush({ data: sourceBoundContentPayload() });
+      flushTopics();
+      await settle();
+    });
+
+    it('should show provenance and lock authored fields without blocking lifecycle actions', async () => {
+      expect(
+        el().querySelector('[data-testid="source-snapshot-notice"]')
+          ?.textContent,
+      ).toContain('Writing/articles/value-semantics.md');
+      expect(
+        el().querySelector('[data-testid="source-snapshot-notice"]')
+          ?.textContent,
+      ).toContain('0123456');
+
+      const saveAction = TestBed.inject(AdminTopbarService)
+        .context()
+        .actions?.find((a) => a.id === 'save');
+      expect(saveAction?.disabled).toBe(true);
+      expect(saveAction?.label).toBe('Read only');
+
+      for (const testID of [
+        'editor-title',
+        'editor-body',
+        'editor-excerpt',
+        'editor-cover',
+      ]) {
+        const control = el().querySelector<
+          HTMLInputElement | HTMLTextAreaElement
+        >(`[data-testid="${testID}"]`);
+        expect(control?.readOnly).toBe(true);
+      }
+      expect(
+        el().querySelector('[data-testid="lifecycle-action-publish"]'),
+      ).toBeTruthy();
+      expect(
+        el().querySelector('[data-testid="lifecycle-action-send-back"]'),
+      ).toBeTruthy();
+
+      el()
+        .querySelector<HTMLFormElement>('[data-testid="content-editor"]')
+        ?.dispatchEvent(new Event('submit'));
+      await settle();
+      httpMock.expectNone(
+        (r) => r.method === 'PUT' && r.url.endsWith(`${CONTENT_URL}/abc-1`),
+      );
+    });
+  });
+
   describe('send-back flow (status=review)', () => {
     beforeEach(async () => {
       harness = await RouterTestingHarness.create(
@@ -577,9 +612,12 @@ describe('ContentEditorPageComponent', () => {
       // ResourceValueError) so the "No topics available" notice renders and
       // the editor form stays usable.
       harness = await RouterTestingHarness.create(
-        '/admin/knowledge/content/new',
+        '/admin/knowledge/content/abc-1/edit',
       );
       await settle();
+      httpMock
+        .expectOne((r) => r.url.endsWith(`${CONTENT_URL}/abc-1`))
+        .flush({ data: contentPayload() });
       httpMock
         .expectOne((r) => r.url.endsWith(TOPICS_URL))
         .flush(

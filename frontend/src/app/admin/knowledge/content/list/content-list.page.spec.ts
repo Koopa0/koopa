@@ -8,10 +8,7 @@ import { provideRouter } from '@angular/router';
 
 import { ContentListPageComponent } from './content-list.page';
 import { AdminTopbarService } from '../../../admin-layout/admin-topbar.service';
-import type {
-  ApiContent,
-  ApiListResponse,
-} from '../../../../core/models';
+import type { ApiContent, ApiListResponse } from '../../../../core/models';
 
 // Mocks only the real HTTP boundary (GET /api/admin/knowledge/content). The
 // rows() guard reads the envelope via hasValue() ? value().data : [] — a
@@ -51,8 +48,10 @@ function envelope(rows: ApiContent[]): ApiListResponse<ApiContent> {
 describe('ContentListPageComponent', () => {
   let fixture: ComponentFixture<ContentListPageComponent>;
   let httpMock: HttpTestingController;
+  let topbarSet: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
+    topbarSet = vi.fn();
     TestBed.configureTestingModule({
       imports: [ContentListPageComponent],
       providers: [
@@ -61,7 +60,7 @@ describe('ContentListPageComponent', () => {
         provideHttpClientTesting(),
         {
           provide: AdminTopbarService,
-          useValue: { set: () => undefined, reset: () => undefined },
+          useValue: { set: topbarSet, reset: () => undefined },
         },
       ],
     });
@@ -100,6 +99,22 @@ describe('ContentListPageComponent', () => {
     expect(testid('content-count')?.textContent).toContain('1');
   });
 
+  it('should not advertise direct Admin authoring', async () => {
+    fixture = TestBed.createComponent(ContentListPageComponent);
+    fixture.detectChanges();
+    httpMock
+      .expectOne((r) => r.method === 'GET' && r.url.endsWith(LIST_URL))
+      .flush(envelope([]));
+    await settle();
+
+    const latestContext = topbarSet.mock.calls.at(-1)?.[0] as {
+      actions?: { id: string }[];
+    };
+    expect(
+      latestContext.actions?.some((action) => action.id === 'new-content'),
+    ).toBe(false);
+  });
+
   it('should render the proposer and rationale when the content was agent-pushed', async () => {
     fixture = TestBed.createComponent(ContentListPageComponent);
     fixture.detectChanges();
@@ -110,7 +125,8 @@ describe('ContentListPageComponent', () => {
           content({
             title: 'Value semantics in Go',
             created_by: 'hermes',
-            proposal_rationale: 'Finished the Obsidian draft; ready for review.',
+            proposal_rationale:
+              'Finished the Obsidian draft; ready for review.',
           }),
         ]),
       );
@@ -129,7 +145,9 @@ describe('ContentListPageComponent', () => {
     fixture.detectChanges();
     httpMock
       .expectOne((r) => r.method === 'GET' && r.url.endsWith(LIST_URL))
-      .flush(envelope([content({ created_by: null, proposal_rationale: null })]));
+      .flush(
+        envelope([content({ created_by: null, proposal_rationale: null })]),
+      );
     await settle();
 
     // Admin-authored content carries no agent provenance — the extra lines

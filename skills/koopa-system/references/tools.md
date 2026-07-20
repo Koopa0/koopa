@@ -35,9 +35,9 @@ is hand-maintained.
 | `propose_project` | `daily` | additive | Propose a NEW project (a short-term effort with a clear outcome) as an INERT draft in status=proposed |
 | `resolve_todo` | `daily` | destructive | Move a todo YOU created to a terminal state: done (completed), archived (filed away), or dismissed (won't do) |
 | `set_todo_recurrence` | `daily` | destructive | Set or clear the recurrence of a todo YOU created |
-| `list_content` | `content` | read_only | Read-only readback of the content YOU proposed (created_by = your resolved caller identity) so you can learn its disposition |
-| `propose_content` | `content` | additive | Propose a FINISHED content piece (article, essay, build-log, til, or digest) into the editorial review queue |
-| `revise_content` | `content` | destructive | Revise content YOU created that is in review or changes_requested, returning it to the review queue and clearing the owner's review_note |
+| `list_content` | `content` | read_only | Read-only readback of content YOU submitted |
+| `propose_content` | `content` | additive | Submit a FINISHED publication snapshot (article, essay, build-log, til, or digest) into the editorial review queue |
+| `revise_content` | `content` | destructive | Replace the complete publication snapshot YOU submitted after changing the Vault source first |
 <!-- GENERATED:TOOL-INVENTORY END -->
 
 ---
@@ -90,7 +90,9 @@ Proposals (`propose_area` / `propose_goal` / `propose_project`) only ever materi
 
 | Tool | Key params | Annotation |
 |---|---|---|
-| `propose_content` | `title`, `type` (`article` / `essay` / `build-log` / `til` / `digest`), `body`, `excerpt?`, `slug?`, `topic_ids?[]`, `proposal_rationale?` | Additive. Pushes a FINISHED content piece into the editorial review queue. It always lands in `status=review` with `is_public=false` — an agent never publishes; the owner publishes or rejects it in the admin review queue. `body` is the finished Markdown draft (not a stub); `slug` is derived from title when omitted; `proposal_rationale` is the "why I propose this" note shown to the owner. The proposing agent is recorded as `created_by`. Use to push a finished draft (e.g. a completed Obsidian article) for the owner's review. |
+| `propose_content` | `title`, `type` (`article` / `essay` / `build-log` / `til` / `digest`), `body`, `source_vault_path`, `source_git_blob_sha`, `excerpt?`, `slug?`, `topic_ids?[]`, `proposal_rationale?` | Additive. Submits a complete publication snapshot into the editorial review queue. The source path must be Vault-relative Markdown outside Diary; the SHA must be a lowercase 40- or 64-hex Git blob ID. Koopa records this coordinate but never reads the Vault. The row lands in `status=review` with `is_public=false`; only the owner can publish. |
+| `list_content` | (none) | Read-only caller-scoped disposition readback. Returns each submitted row's status, review note, source path/blob SHA, and `published_at` when live. These fields are receipt ingredients for an optional external Vault writer; Koopa never writes the Vault. |
+| `revise_content` | `id`, `title`, `body`, `excerpt`, `source_vault_path`, `source_git_blob_sha` | Destructive caller-scoped full snapshot replacement. Change the Vault first, then submit all authored fields plus a new blob SHA. The authored fields and provenance move atomically, the row returns to review, and the owner's review note clears. Reusing the existing SHA changes nothing. |
 
 Publishing stays an owner action in admin, off the MCP surface.
 

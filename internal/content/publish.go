@@ -38,6 +38,7 @@ func (s *Store) ByStatus(ctx context.Context, status string, limit int) ([]Conte
 			SeriesID: r.SeriesID, SeriesOrder: r.SeriesOrder,
 			IsPublic: r.IsPublic, ProjectID: r.ProjectID,
 			ReadingTimeMin: r.ReadingTimeMin, CoverImage: r.CoverImage,
+			SourceVaultPath: r.SourceVaultPath, SourceGitBlobSHA: r.SourceGitBlobSha,
 			PublishedAt: r.PublishedAt,
 			CreatedAt:   r.CreatedAt, UpdatedAt: r.UpdatedAt,
 		})
@@ -105,52 +106,34 @@ func (s *Store) PublishedInWindow(ctx context.Context, since, until time.Time) (
 	return contents, nil
 }
 
-// Publish is the state-guarded publish transition behind the admin publish
-// handler — the owner's gate that promotes a content to published. Policy:
+// Publish is the state- and provenance-guarded transition behind the admin
+// publish handler. Policy:
 //
-//   - draft     → published   the owner publishes a finished draft directly,
-//     the common path (Koopa finalises offline, then publishes — no review detour)
-//   - review    → published   the owner publishes an agent-proposed draft from
-//     the review queue (agents reach review via propose_content; they never publish)
+//   - draft     → published   the owner publishes a source-bound snapshot
+//     reverted from review without requiring another review detour
+//   - review    → published   the owner publishes an agent-submitted snapshot
+//     from the review queue (agents never publish)
 //   - published → published    idempotent no-op (row unchanged, no second audit event)
 //   - changes_requested, archived, … → ErrInvalidState
 //   - missing id               → ErrNotFound
 //
-// Promotion sets is_public + published_at. It reads the current row then acts;
-// callers run inside an admin / actor transaction, so the read and the
-// conditional write share one tx.
-//
-// Concurrency: publish is the owner's terminal decision and wins races — a
-// concurrent agent revise_content on the same row is rejected (not-found) by
-// revise_content's status guard, by design.
+// A draft/review row without a complete Vault path + Git blob SHA returns
+// ErrSourceRequired. The guarded UPDATE is the authority boundary; the
+// read-after-rejection below only classifies a miss and cannot authorize it.
 func (s *Store) Publish(ctx context.Context, id uuid.UUID) (*Content, error) {
-	current, err := s.Content(ctx, id)
-	if err != nil {
-		return nil, err // pgx.ErrNoRows already mapped to ErrNotFound by Content
-	}
-	switch current.Status {
-	case StatusDraft, StatusReview:
-		return s.PublishContent(ctx, id)
-	case StatusPublished:
-		return current, nil // idempotent: already published, no re-mutation
-	default:
-		return nil, ErrInvalidState
-	}
+	return s.PublishContent(ctx, id)
 }
 
-// PublishContent sets content status to published, is_public=true, and
-// published_at — at the store layer this is UNCONDITIONAL (no source-status
-// guard). It is the low-level mutation that Publish delegates to once the
-// source state has been validated. Callers that need the editorial gate
-// (draft/review-promote, published-idempotent, changes_requested/archived-rejected)
-// MUST go through Publish, not call this directly on an unvalidated id.
+// PublishContent atomically promotes a source-bound draft/review snapshot.
+// Kept as the store-level entry point used by existing internal callers; it
+// enforces the same guard as Publish and cannot bypass provenance.
 func (s *Store) PublishContent(ctx context.Context, id uuid.UUID) (*Content, error) {
 	r, err := s.q.PublishContent(ctx, id)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, ErrNotFound
-		}
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return nil, fmt.Errorf("publishing content %s: %w", id, err)
+	}
+	if errors.Is(err, pgx.ErrNoRows) {
+		return s.classifyPublishRejection(ctx, id)
 	}
 
 	c := rowToContent(contentRow{
@@ -159,6 +142,7 @@ func (s *Store) PublishContent(ctx context.Context, id uuid.UUID) (*Content, err
 		SeriesID: r.SeriesID, SeriesOrder: r.SeriesOrder,
 		IsPublic: r.IsPublic, ProjectID: r.ProjectID,
 		ReadingTimeMin: r.ReadingTimeMin, CoverImage: r.CoverImage,
+		SourceVaultPath: r.SourceVaultPath, SourceGitBlobSHA: r.SourceGitBlobSha,
 		PublishedAt: r.PublishedAt,
 		CreatedAt:   r.CreatedAt, UpdatedAt: r.UpdatedAt,
 	})
@@ -172,18 +156,31 @@ func (s *Store) PublishContent(ctx context.Context, id uuid.UUID) (*Content, err
 	return &c, nil
 }
 
-// SubmitContentForReview transitions a draft content to review atomically.
-// Returns ErrInvalidState if the content exists but is not in draft,
-// ErrNotFound if the id does not exist at all. The conditional UPDATE is
-// race-safe; the extra existence lookup only runs on the rejection path
-// to distinguish "wrong status" from "no such row" for correct HTTP mapping.
+func (s *Store) classifyPublishRejection(ctx context.Context, id uuid.UUID) (*Content, error) {
+	current, err := s.Content(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if current.Status == StatusPublished {
+		return current, nil
+	}
+	if (current.Status == StatusDraft || current.Status == StatusReview) && current.Source() == nil {
+		return nil, ErrSourceRequired
+	}
+	return nil, ErrInvalidState
+}
+
+// SubmitContentForReview transitions a source-bound draft to review atomically.
+// Missing provenance returns ErrSourceRequired; an existing row in another
+// state returns ErrInvalidState; a missing id returns ErrNotFound. The guarded
+// UPDATE owns the transition and the rejection lookup is read-only.
 func (s *Store) SubmitContentForReview(ctx context.Context, id uuid.UUID) (*Content, error) {
 	r, err := s.q.SubmitContentForReview(ctx, id)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, s.transitionRejectionReason(ctx, id)
-		}
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return nil, fmt.Errorf("submitting content %s for review: %w", id, err)
+	}
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, s.submitRejectionReason(ctx, id)
 	}
 	return s.hydrateContentRow(ctx, r.ID, &contentRow{
 		ID: r.ID, Slug: r.Slug, Title: r.Title, Body: r.Body, Excerpt: r.Excerpt,
@@ -191,9 +188,21 @@ func (s *Store) SubmitContentForReview(ctx context.Context, id uuid.UUID) (*Cont
 		SeriesID: r.SeriesID, SeriesOrder: r.SeriesOrder,
 		IsPublic: r.IsPublic, ProjectID: r.ProjectID,
 		ReadingTimeMin: r.ReadingTimeMin, CoverImage: r.CoverImage,
+		SourceVaultPath: r.SourceVaultPath, SourceGitBlobSHA: r.SourceGitBlobSha,
 		PublishedAt: r.PublishedAt,
 		CreatedAt:   r.CreatedAt, UpdatedAt: r.UpdatedAt,
 	})
+}
+
+func (s *Store) submitRejectionReason(ctx context.Context, id uuid.UUID) error {
+	current, err := s.Content(ctx, id)
+	if err != nil {
+		return err
+	}
+	if current.Status == StatusDraft && current.Source() == nil {
+		return ErrSourceRequired
+	}
+	return ErrInvalidState
 }
 
 // RevertContentToDraft transitions a review content back to draft atomically.
@@ -214,6 +223,7 @@ func (s *Store) RevertContentToDraft(ctx context.Context, id uuid.UUID) (*Conten
 		SeriesID: r.SeriesID, SeriesOrder: r.SeriesOrder,
 		IsPublic: r.IsPublic, ProjectID: r.ProjectID,
 		ReadingTimeMin: r.ReadingTimeMin, CoverImage: r.CoverImage,
+		SourceVaultPath: r.SourceVaultPath, SourceGitBlobSHA: r.SourceGitBlobSha,
 		PublishedAt: r.PublishedAt,
 		CreatedAt:   r.CreatedAt, UpdatedAt: r.UpdatedAt,
 	})
@@ -236,6 +246,7 @@ func (s *Store) ArchiveContentReturning(ctx context.Context, id uuid.UUID) (*Con
 		SeriesID: r.SeriesID, SeriesOrder: r.SeriesOrder,
 		IsPublic: r.IsPublic, ProjectID: r.ProjectID,
 		ReadingTimeMin: r.ReadingTimeMin, CoverImage: r.CoverImage,
+		SourceVaultPath: r.SourceVaultPath, SourceGitBlobSHA: r.SourceGitBlobSha,
 		PublishedAt: r.PublishedAt,
 		CreatedAt:   r.CreatedAt, UpdatedAt: r.UpdatedAt,
 	})
@@ -246,23 +257,27 @@ func (s *Store) ArchiveContentReturning(ctx context.Context, id uuid.UUID) (*Con
 // it to review and clearing the owner's review_note. createdBy is the resolved
 // caller identity — caller-scoped, never a client-supplied filter — so a
 // mismatched creator, a wrong status, or an unknown id all match 0 rows and
-// return ErrNotFound. The single sentinel is deliberate: a caller-scoped miss
-// must NOT leak whether the row exists, belongs to someone else, or is in a
-// non-revisable state. Body / Excerpt / Title are optional (nil leaves the
-// column unchanged via COALESCE).
-func (s *Store) ReviseByCreator(ctx context.Context, p RevisionParams) (*Content, error) {
+// return ErrNotFound. A same-SHA retry returns ErrSourceUnchanged without
+// changing any authored field; the classifier query is guarded by the same
+// caller and status predicates, so it does not reveal another agent's row.
+func (s *Store) ReviseByCreator(ctx context.Context, p *RevisionParams) (*Content, error) {
+	if err := ValidateSourceSnapshot(p.SourceVaultPath, p.SourceGitBlobSHA); err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrInvalidInput, err)
+	}
 	r, err := s.q.ReviseContentByCreator(ctx, db.ReviseContentByCreatorParams{
-		ID:        p.ID,
-		CreatedBy: &p.CreatedBy,
-		Body:      p.Body,
-		Excerpt:   p.Excerpt,
-		Title:     p.Title,
+		ID:               p.ID,
+		CreatedBy:        &p.CreatedBy,
+		Body:             p.Body,
+		Excerpt:          p.Excerpt,
+		Title:            p.Title,
+		SourceVaultPath:  &p.SourceVaultPath,
+		SourceGitBlobSha: &p.SourceGitBlobSHA,
 	})
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, ErrNotFound
-		}
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return nil, fmt.Errorf("revising content %s created by %q: %w", p.ID, p.CreatedBy, err)
+	}
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, s.reviseRejectionReason(ctx, p)
 	}
 	return s.hydrateContentRow(ctx, r.ID, &contentRow{
 		ID: r.ID, Slug: r.Slug, Title: r.Title, Body: r.Body, Excerpt: r.Excerpt,
@@ -271,10 +286,24 @@ func (s *Store) ReviseByCreator(ctx context.Context, p RevisionParams) (*Content
 		IsPublic: r.IsPublic, ProjectID: r.ProjectID,
 		ReadingTimeMin: r.ReadingTimeMin, CoverImage: r.CoverImage,
 		CreatedBy: r.CreatedBy, ProposalRationale: r.ProposalRationale,
-		ReviewNote:  r.ReviewNote,
+		ReviewNote:      r.ReviewNote,
+		SourceVaultPath: r.SourceVaultPath, SourceGitBlobSHA: r.SourceGitBlobSha,
 		PublishedAt: r.PublishedAt,
 		CreatedAt:   r.CreatedAt, UpdatedAt: r.UpdatedAt,
 	})
+}
+
+func (s *Store) reviseRejectionReason(ctx context.Context, p *RevisionParams) error {
+	existingSHA, err := s.q.RevisableContentSourceByCreator(ctx, db.RevisableContentSourceByCreatorParams{
+		ID: p.ID, CreatedBy: &p.CreatedBy,
+	})
+	if err == nil && existingSHA != nil && *existingSHA == p.SourceGitBlobSHA {
+		return ErrSourceUnchanged
+	}
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return fmt.Errorf("classifying rejected revision %s: %w", p.ID, err)
+	}
+	return ErrNotFound
 }
 
 // SendBackForChanges is the admin send-back transition: the owner returns a
@@ -302,7 +331,8 @@ func (s *Store) SendBackForChanges(ctx context.Context, id uuid.UUID, reviewNote
 		IsPublic: r.IsPublic, ProjectID: r.ProjectID,
 		ReadingTimeMin: r.ReadingTimeMin, CoverImage: r.CoverImage,
 		CreatedBy: r.CreatedBy, ProposalRationale: r.ProposalRationale,
-		ReviewNote:  r.ReviewNote,
+		ReviewNote:      r.ReviewNote,
+		SourceVaultPath: r.SourceVaultPath, SourceGitBlobSHA: r.SourceGitBlobSha,
 		PublishedAt: r.PublishedAt,
 		CreatedAt:   r.CreatedAt, UpdatedAt: r.UpdatedAt,
 	})

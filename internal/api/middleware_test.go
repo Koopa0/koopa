@@ -146,15 +146,16 @@ func TestStatusCapturingWriter_UnwrapReturnsInner(t *testing.T) {
 // The status thresholds the middleware uses to decide commit vs rollback
 // ([200, 400) commits, everything else rolls back) are exercised end to end —
 // against a real pool, asserting the audit row actually commits/rolls back — by
-// TestActorMiddleware_PropagatesHumanActor in api integration_test.go. A unit
+// TestActorMiddleware_PropagatesActorThroughProductionTransition in api
+// integration_test.go. A unit
 // test that re-implements the `status >= 200 && status < 400` predicate and
 // compares it to itself would be a tautology (testing.md Low-Value #1/#2), so it
 // is intentionally absent here.
 //
 // Likewise, the tx-in-context round-trip (ActorMiddleware injects a pgx.Tx that
 // the handler retrieves via TxFromContext) is covered by that same integration
-// test, which drives content.Handler.Create — a real handler that reads
-// api.TxFromContext — through ActorMiddleware against a real pool. The unexported
-// txKey{} contract is therefore proven by exercising the real code path rather
-// than by a context.WithValue/Value round-trip that never touches the
-// middleware.
+// test, which drives content.Handler.SubmitForReview — a real handler that
+// reads api.TxFromContext — through ActorMiddleware against a real pool. The
+// unexported txKey{} contract is therefore proven by exercising the real code
+// path rather than by a context.WithValue/Value round-trip that never touches
+// the middleware.

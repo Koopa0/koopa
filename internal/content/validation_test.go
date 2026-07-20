@@ -297,6 +297,32 @@ func TestHandler_Create_Validation(t *testing.T) {
 	}
 }
 
+// TestHandler_Create_Retired verifies that a formerly valid Admin create
+// request cannot produce a source-unbound draft. Vault is the authoring truth;
+// Koopa accepts complete publication snapshots through propose_content.
+func TestHandler_Create_Retired(t *testing.T) {
+	t.Parallel()
+
+	h := newTestHandler()
+	req := httptest.NewRequest(http.MethodPost, "/api/admin/knowledge/content",
+		strings.NewReader(`{"slug":"new","title":"New","type":"article"}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	h.Create(w, req)
+
+	if w.Code != http.StatusGone {
+		t.Fatalf("Create() status = %d, want %d\nbody: %s", w.Code, http.StatusGone, w.Body.String())
+	}
+	got := decodeErrorBody(t, w.Body)
+	if got.Error.Code != "CONTENT_AUTHORING_RETIRED" {
+		t.Errorf("Create() error.code = %q, want CONTENT_AUTHORING_RETIRED", got.Error.Code)
+	}
+	if !strings.Contains(got.Error.Message, "Author in Vault") || !strings.Contains(got.Error.Message, "propose_content") {
+		t.Errorf("Create() error.message = %q, want actionable Vault/propose_content guidance", got.Error.Message)
+	}
+}
+
 // TestHandler_Create_OversizedBody verifies that Create rejects bodies over 1 MB.
 // The body size limit is enforced by api.Decode via http.MaxBytesReader.
 func TestHandler_Create_OversizedBody(t *testing.T) {

@@ -400,7 +400,7 @@ type Area struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
-// First-party publishable knowledge layer. Five content types (article, essay, build-log, til, digest) share one editorial lifecycle: draft → published, with a review handoff for agent-proposed content. The owner publishes a draft directly (admin HTTP); an agent instead pushes a finished draft into review (propose_content), and from the admin review queue the owner publishes OR sends it back (status changes_requested + review_note) for the authoring agent to revise (revise_content) back into review. published status and published_at are tied by chk_content_publication; is_public requires published by chk_content_public_requires_published.
+// Publication snapshots submitted from Vault for owner review and public display. Koopa is not an authoring source and never reads or writes Vault at runtime. Pre-003 source-unbound rows are legacy recovery data and cannot enter review or publication.
 type Content struct {
 	ID uuid.UUID `json:"id"`
 	// URL-safe identifier. Globally unique. Used in public URLs. Format (chk_content_slug_format): hyphen-separated segments, no whitespace or slash, no leading/trailing/consecutive hyphens. Unicode letters/numbers (incl. CJK) allowed — a 中日文 slug carries UTF-8 in the URL.
@@ -410,7 +410,7 @@ type Content struct {
 	Excerpt string `json:"excerpt"`
 	// Content format: article, essay, build-log, til, digest. All are public-facing first-party content going through the review lifecycle.
 	Type ContentType `json:"type"`
-	// Lifecycle: draft → published directly (the owner publishing their own finished work), or draft → review → published for agent-proposed content; changes_requested → review is the agent revision loop. review = an agent proposal (propose_content) awaiting the owner's publish-or-send-back decision. changes_requested = the owner sent it back for revision, reason in review_note; the authoring agent addresses it with revise_content, which returns the row to review. published = live; archived = soft delete. Publishing (draft or review → published) and send-back are human-admin only (admin HTTP); agents never publish — propose_content/revise_content only ever land a row in review.
+	// Editorial lifecycle for source-bound snapshots: review -> published or changes_requested; revise_content returns changes_requested to review with a new source blob SHA. Only Admin HTTP publishes. Legacy unbound rows cannot enter review or publication.
 	Status ContentStatus `json:"status"`
 	// Groups content into a series. Paired with series_order (chk_contents_series).
 	SeriesID *string `json:"series_id"`
@@ -424,7 +424,7 @@ type Content struct {
 	IsPublic bool `json:"is_public"`
 	// Associated project. SET NULL on project deletion — content survives independently.
 	ProjectID *uuid.UUID `json:"project_id"`
-	// Proposing agent for agent-pushed content (references agents(name), e.g. hermes pushing a finished draft via the propose_content MCP tool). NULL for owner/admin-authored content created through the admin UI. ON DELETE RESTRICT — a registered agent that has proposed content cannot be removed while its proposals exist.
+	// Submitting agent identity for source-bound snapshots. NULL is retained only on legacy owner-authored rows.
 	CreatedBy *string `json:"created_by"`
 	// The proposing agent's "why I propose this" note, shown alongside the row in the admin review queue. NULL for admin-authored content (no agent rationale).
 	ProposalRationale *string `json:"proposal_rationale"`
@@ -439,6 +439,10 @@ type Content struct {
 	Embedding *pgvector_go.Vector `json:"embedding"`
 	// Generated tsvector for full-text search. Uses 'simple' config (no stemming/language-specific tokenization) for multilingual safety. Weight A = title, C = body (first 10K chars). Semantic search via embedding compensates for tsvector recall limitations.
 	SearchVector string `json:"search_vector"`
+	// Declared Vault-relative Markdown source path for this publication snapshot. Koopa records the coordinate but never reads the Vault at runtime. Diary paths are rejected at ingress because Diary is private and never publishable.
+	SourceVaultPath *string `json:"source_vault_path"`
+	// Declared Git blob object ID for source_vault_path at submission time (40-char SHA-1 or 64-char SHA-256). This is provenance, not proof that Koopa fetched or verified the blob.
+	SourceGitBlobSha *string `json:"source_git_blob_sha"`
 }
 
 // Junction: content ↔ topic. Many-to-many. Curated knowledge domain categories.

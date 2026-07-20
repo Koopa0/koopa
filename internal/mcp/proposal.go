@@ -3,11 +3,10 @@
 // proposal.go holds the agent proposal tools: propose_area, propose_goal,
 // propose_project, and propose_content. propose_area, propose_goal, and
 // propose_project each write an INERT draft (status=proposed) that the owner
-// activates or rejects in the admin UI; propose_content pushes a finished
-// piece into the review queue (status=review). The tools exist to remove
-// Koopa's authoring-from-blank paralysis: an agent that has surfaced a theme,
-// objective, project, or piece in conversation can propose it, and Koopa
-// decides in triage.
+// activates or rejects in the admin UI; propose_content submits a source-bound
+// publication snapshot into the review queue (status=review). An agent can
+// surface a theme, objective, project, or Vault-authored piece for the owner's
+// decision without activating or publishing it.
 //
 // # Inertness contract
 //
@@ -260,11 +259,14 @@ type ProposeContentInput struct {
 	Slug              string   `json:"slug,omitempty" jsonschema_description:"Optional URL-safe slug. Derived from title when omitted. Hyphen-separated, no leading/trailing/consecutive hyphens; Unicode letters/numbers allowed."`
 	TopicIDs          []string `json:"topic_ids,omitempty" jsonschema_description:"Optional topic UUIDs to associate with the content."`
 	ProposalRationale string   `json:"proposal_rationale,omitempty" jsonschema_description:"Why this content is worth proposing now — shown to the owner in the review queue to support the publish/reject decision."`
+	SourceVaultPath   string   `json:"source_vault_path" jsonschema:"required" jsonschema_description:"Vault-relative Markdown path of the authoring source, for example Writing/articles/example.md. Koopa records this coordinate but does not read the Vault."`
+	SourceGitBlobSHA  string   `json:"source_git_blob_sha" jsonschema:"required" jsonschema_description:"Lowercase 40- or 64-hex Git blob object ID for source_vault_path. A revision must submit a new blob SHA."`
 }
 
 // ProposeContentOutput is the output of the propose_content tool.
 type ProposeContentOutput struct {
-	Content *content.Content `json:"content"`
+	Content *content.Content        `json:"content"`
+	Source  *content.SourceSnapshot `json:"source"`
 }
 
 // validateProposeContent enforces propose_content's client-side input rules
@@ -321,6 +323,9 @@ func validateProposeContent(input ProposeContentInput) (content.Type, string, []
 	if err != nil {
 		return "", "", nil, err
 	}
+	if err := content.ValidateSourceSnapshot(input.SourceVaultPath, input.SourceGitBlobSHA); err != nil {
+		return "", "", nil, err
+	}
 	return contentType, slug, topicIDs, nil
 }
 
@@ -347,6 +352,8 @@ func (s *Server) proposeContent(ctx context.Context, _ *mcp.CallToolRequest, inp
 			TopicIDs:          topicIDs,
 			CreatedBy:         &caller,
 			ProposalRationale: nilIfBlank(input.ProposalRationale),
+			SourceVaultPath:   &input.SourceVaultPath,
+			SourceGitBlobSHA:  &input.SourceGitBlobSHA,
 		})
 		return createErr
 	})
@@ -364,7 +371,7 @@ func (s *Server) proposeContent(ctx context.Context, _ *mcp.CallToolRequest, inp
 	}
 
 	s.logger.Info("propose_content", "content_id", created.ID, "slug", created.Slug, "type", created.Type, "created_by", caller)
-	return nil, ProposeContentOutput{Content: created}, nil
+	return nil, ProposeContentOutput{Content: created, Source: created.Source()}, nil
 }
 
 // parseTopicIDs converts the string topic ids supplied by an agent into UUIDs,

@@ -169,33 +169,6 @@ describe('ContentService', () => {
     });
   });
 
-  describe('create', () => {
-    it('should POST to admin contents endpoint', () => {
-      const request = {
-        slug: 'new-til',
-        title: 'New TIL',
-        type: 'til' as const,
-      };
-      const mockResponse = createMockContent({
-        slug: 'new-til',
-        title: 'New TIL',
-        type: 'til',
-      });
-
-      service.create(request).subscribe((content) => {
-        expect(content.title).toBe('New TIL');
-        expect(content.type).toBe('til');
-      });
-
-      const req = httpMock.expectOne((r) =>
-        r.url.includes('/api/admin/knowledge/content'),
-      );
-      expect(req.request.method).toBe('POST');
-      expect(req.request.body).toEqual(request);
-      req.flush({ data: mockResponse });
-    });
-  });
-
   describe('update', () => {
     it('should PUT to admin contents endpoint with id', () => {
       const mockResponse = createMockContent({ title: 'Updated Title' });

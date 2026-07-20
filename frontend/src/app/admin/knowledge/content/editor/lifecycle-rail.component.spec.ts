@@ -8,10 +8,13 @@ import {
 describe('ContentLifecycleRailComponent', () => {
   let fixture: ComponentFixture<ContentLifecycleRailComponent>;
 
-  function create(status: string, busy = false): void {
+  function create(status: string, busy = false, sourceBound?: boolean): void {
     fixture = TestBed.createComponent(ContentLifecycleRailComponent);
     fixture.componentRef.setInput('status', status);
     fixture.componentRef.setInput('busy', busy);
+    if (sourceBound !== undefined) {
+      fixture.componentRef.setInput('sourceBound', sourceBound);
+    }
     fixture.detectChanges();
   }
 
@@ -45,9 +48,7 @@ describe('ContentLifecycleRailComponent', () => {
   it('should offer Publish and Submit for review when status is draft', () => {
     create('draft');
 
-    const buttons = el().querySelectorAll(
-      '[data-testid^="lifecycle-action-"]',
-    );
+    const buttons = el().querySelectorAll('[data-testid^="lifecycle-action-"]');
     expect(buttons.length).toBe(2);
     expect(
       el().querySelector('[data-testid="lifecycle-action-publish"]'),
@@ -58,6 +59,17 @@ describe('ContentLifecycleRailComponent', () => {
     // The human-only gate caption is for a review row, not a draft.
     expect(
       el().querySelector('[data-testid="lifecycle-publish-gate"]'),
+    ).toBeNull();
+  });
+
+  it('should not offer promotion actions for a legacy source-unbound draft', () => {
+    create('draft', false, false);
+
+    expect(
+      el().querySelector('[data-testid="lifecycle-action-publish"]'),
+    ).toBeNull();
+    expect(
+      el().querySelector('[data-testid="lifecycle-action-submit-for-review"]'),
     ).toBeNull();
   });
 
@@ -74,8 +86,7 @@ describe('ContentLifecycleRailComponent', () => {
       el().querySelector('[data-testid="lifecycle-action-publish"]'),
     ).toBeTruthy();
     expect(
-      el().querySelector('[data-testid="lifecycle-publish-gate"]')
-        ?.textContent,
+      el().querySelector('[data-testid="lifecycle-publish-gate"]')?.textContent,
     ).toContain('human only');
   });
 

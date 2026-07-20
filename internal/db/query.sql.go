@@ -499,26 +499,29 @@ UPDATE contents SET status = 'archived', review_note = NULL, updated_at = now()
 WHERE id = $1
 RETURNING id, slug, title, body, excerpt, type, status,
           series_id, series_order, is_public, project_id, reading_time_min,
-          cover_image, published_at, created_at, updated_at
+          cover_image, source_vault_path, source_git_blob_sha,
+          published_at, created_at, updated_at
 `
 
 type ArchiveContentReturningRow struct {
-	ID             uuid.UUID     `json:"id"`
-	Slug           string        `json:"slug"`
-	Title          string        `json:"title"`
-	Body           string        `json:"body"`
-	Excerpt        string        `json:"excerpt"`
-	Type           ContentType   `json:"type"`
-	Status         ContentStatus `json:"status"`
-	SeriesID       *string       `json:"series_id"`
-	SeriesOrder    *int32        `json:"series_order"`
-	IsPublic       bool          `json:"is_public"`
-	ProjectID      *uuid.UUID    `json:"project_id"`
-	ReadingTimeMin int32         `json:"reading_time_min"`
-	CoverImage     *string       `json:"cover_image"`
-	PublishedAt    *time.Time    `json:"published_at"`
-	CreatedAt      time.Time     `json:"created_at"`
-	UpdatedAt      time.Time     `json:"updated_at"`
+	ID               uuid.UUID     `json:"id"`
+	Slug             string        `json:"slug"`
+	Title            string        `json:"title"`
+	Body             string        `json:"body"`
+	Excerpt          string        `json:"excerpt"`
+	Type             ContentType   `json:"type"`
+	Status           ContentStatus `json:"status"`
+	SeriesID         *string       `json:"series_id"`
+	SeriesOrder      *int32        `json:"series_order"`
+	IsPublic         bool          `json:"is_public"`
+	ProjectID        *uuid.UUID    `json:"project_id"`
+	ReadingTimeMin   int32         `json:"reading_time_min"`
+	CoverImage       *string       `json:"cover_image"`
+	SourceVaultPath  *string       `json:"source_vault_path"`
+	SourceGitBlobSha *string       `json:"source_git_blob_sha"`
+	PublishedAt      *time.Time    `json:"published_at"`
+	CreatedAt        time.Time     `json:"created_at"`
+	UpdatedAt        time.Time     `json:"updated_at"`
 }
 
 // Archive a content row and return the updated row. Both the REST archive
@@ -541,6 +544,8 @@ func (q *Queries) ArchiveContentReturning(ctx context.Context, id uuid.UUID) (Ar
 		&i.ProjectID,
 		&i.ReadingTimeMin,
 		&i.CoverImage,
+		&i.SourceVaultPath,
+		&i.SourceGitBlobSha,
 		&i.PublishedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -1218,7 +1223,9 @@ func (q *Queries) ContentBriefsByProjectID(ctx context.Context, projectID *uuid.
 const contentByID = `-- name: ContentByID :one
 SELECT id, slug, title, body, excerpt, type, status,
        series_id, series_order, is_public, project_id, reading_time_min,
-       cover_image, created_by, proposal_rationale, review_note, published_at, created_at, updated_at
+       cover_image, created_by, proposal_rationale, review_note,
+       source_vault_path, source_git_blob_sha,
+       published_at, created_at, updated_at
 FROM contents WHERE id = $1
 `
 
@@ -1239,6 +1246,8 @@ type ContentByIDRow struct {
 	CreatedBy         *string       `json:"created_by"`
 	ProposalRationale *string       `json:"proposal_rationale"`
 	ReviewNote        *string       `json:"review_note"`
+	SourceVaultPath   *string       `json:"source_vault_path"`
+	SourceGitBlobSha  *string       `json:"source_git_blob_sha"`
 	PublishedAt       *time.Time    `json:"published_at"`
 	CreatedAt         time.Time     `json:"created_at"`
 	UpdatedAt         time.Time     `json:"updated_at"`
@@ -1264,6 +1273,8 @@ func (q *Queries) ContentByID(ctx context.Context, id uuid.UUID) (ContentByIDRow
 		&i.CreatedBy,
 		&i.ProposalRationale,
 		&i.ReviewNote,
+		&i.SourceVaultPath,
+		&i.SourceGitBlobSha,
 		&i.PublishedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -1335,20 +1346,24 @@ func (q *Queries) ContentIDBySlug(ctx context.Context, slug string) (uuid.UUID, 
 }
 
 const contentsByCreator = `-- name: ContentsByCreator :many
-SELECT id, slug, title, type, status, review_note, created_at
+SELECT id, slug, title, type, status, review_note,
+       source_vault_path, source_git_blob_sha, published_at, created_at
 FROM contents
 WHERE created_by = $1
 ORDER BY created_at DESC
 `
 
 type ContentsByCreatorRow struct {
-	ID         uuid.UUID     `json:"id"`
-	Slug       string        `json:"slug"`
-	Title      string        `json:"title"`
-	Type       ContentType   `json:"type"`
-	Status     ContentStatus `json:"status"`
-	ReviewNote *string       `json:"review_note"`
-	CreatedAt  time.Time     `json:"created_at"`
+	ID               uuid.UUID     `json:"id"`
+	Slug             string        `json:"slug"`
+	Title            string        `json:"title"`
+	Type             ContentType   `json:"type"`
+	Status           ContentStatus `json:"status"`
+	ReviewNote       *string       `json:"review_note"`
+	SourceVaultPath  *string       `json:"source_vault_path"`
+	SourceGitBlobSha *string       `json:"source_git_blob_sha"`
+	PublishedAt      *time.Time    `json:"published_at"`
+	CreatedAt        time.Time     `json:"created_at"`
 }
 
 // List the content rows created by a given agent, newest first. Powers the
@@ -1372,6 +1387,9 @@ func (q *Queries) ContentsByCreator(ctx context.Context, createdBy *string) ([]C
 			&i.Type,
 			&i.Status,
 			&i.ReviewNote,
+			&i.SourceVaultPath,
+			&i.SourceGitBlobSha,
+			&i.PublishedAt,
 			&i.CreatedAt,
 		); err != nil {
 			return nil, err
@@ -1387,7 +1405,8 @@ func (q *Queries) ContentsByCreator(ctx context.Context, createdBy *string) ([]C
 const contentsByStatus = `-- name: ContentsByStatus :many
 SELECT id, slug, title, body, excerpt, type, status,
        series_id, series_order, is_public, project_id, reading_time_min,
-       cover_image, published_at, created_at, updated_at
+       cover_image, source_vault_path, source_git_blob_sha,
+       published_at, created_at, updated_at
 FROM contents
 WHERE status = $1::content_status
 ORDER BY updated_at DESC
@@ -1400,22 +1419,24 @@ type ContentsByStatusParams struct {
 }
 
 type ContentsByStatusRow struct {
-	ID             uuid.UUID     `json:"id"`
-	Slug           string        `json:"slug"`
-	Title          string        `json:"title"`
-	Body           string        `json:"body"`
-	Excerpt        string        `json:"excerpt"`
-	Type           ContentType   `json:"type"`
-	Status         ContentStatus `json:"status"`
-	SeriesID       *string       `json:"series_id"`
-	SeriesOrder    *int32        `json:"series_order"`
-	IsPublic       bool          `json:"is_public"`
-	ProjectID      *uuid.UUID    `json:"project_id"`
-	ReadingTimeMin int32         `json:"reading_time_min"`
-	CoverImage     *string       `json:"cover_image"`
-	PublishedAt    *time.Time    `json:"published_at"`
-	CreatedAt      time.Time     `json:"created_at"`
-	UpdatedAt      time.Time     `json:"updated_at"`
+	ID               uuid.UUID     `json:"id"`
+	Slug             string        `json:"slug"`
+	Title            string        `json:"title"`
+	Body             string        `json:"body"`
+	Excerpt          string        `json:"excerpt"`
+	Type             ContentType   `json:"type"`
+	Status           ContentStatus `json:"status"`
+	SeriesID         *string       `json:"series_id"`
+	SeriesOrder      *int32        `json:"series_order"`
+	IsPublic         bool          `json:"is_public"`
+	ProjectID        *uuid.UUID    `json:"project_id"`
+	ReadingTimeMin   int32         `json:"reading_time_min"`
+	CoverImage       *string       `json:"cover_image"`
+	SourceVaultPath  *string       `json:"source_vault_path"`
+	SourceGitBlobSha *string       `json:"source_git_blob_sha"`
+	PublishedAt      *time.Time    `json:"published_at"`
+	CreatedAt        time.Time     `json:"created_at"`
+	UpdatedAt        time.Time     `json:"updated_at"`
 }
 
 // List contents by status, ordered by updated_at descending. Used by admin pipeline.
@@ -1442,6 +1463,8 @@ func (q *Queries) ContentsByStatus(ctx context.Context, arg ContentsByStatusPara
 			&i.ProjectID,
 			&i.ReadingTimeMin,
 			&i.CoverImage,
+			&i.SourceVaultPath,
+			&i.SourceGitBlobSha,
 			&i.PublishedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
@@ -1619,11 +1642,14 @@ func (q *Queries) CreateArea(ctx context.Context, arg CreateAreaParams) (CreateA
 const createContent = `-- name: CreateContent :one
 INSERT INTO contents (slug, title, body, excerpt, type, status,
                       series_id, series_order, is_public, project_id,
-                      reading_time_min, cover_image, created_by, proposal_rationale)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+                      reading_time_min, cover_image, created_by, proposal_rationale,
+                      source_vault_path, source_git_blob_sha)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
 RETURNING id, slug, title, body, excerpt, type, status,
           series_id, series_order, is_public, project_id, reading_time_min,
-          cover_image, created_by, proposal_rationale, published_at, created_at, updated_at
+          cover_image, created_by, proposal_rationale,
+          source_vault_path, source_git_blob_sha,
+          published_at, created_at, updated_at
 `
 
 type CreateContentParams struct {
@@ -1641,6 +1667,8 @@ type CreateContentParams struct {
 	CoverImage        *string       `json:"cover_image"`
 	CreatedBy         *string       `json:"created_by"`
 	ProposalRationale *string       `json:"proposal_rationale"`
+	SourceVaultPath   *string       `json:"source_vault_path"`
+	SourceGitBlobSha  *string       `json:"source_git_blob_sha"`
 }
 
 type CreateContentRow struct {
@@ -1659,6 +1687,8 @@ type CreateContentRow struct {
 	CoverImage        *string       `json:"cover_image"`
 	CreatedBy         *string       `json:"created_by"`
 	ProposalRationale *string       `json:"proposal_rationale"`
+	SourceVaultPath   *string       `json:"source_vault_path"`
+	SourceGitBlobSha  *string       `json:"source_git_blob_sha"`
 	PublishedAt       *time.Time    `json:"published_at"`
 	CreatedAt         time.Time     `json:"created_at"`
 	UpdatedAt         time.Time     `json:"updated_at"`
@@ -1680,6 +1710,8 @@ func (q *Queries) CreateContent(ctx context.Context, arg CreateContentParams) (C
 		arg.CoverImage,
 		arg.CreatedBy,
 		arg.ProposalRationale,
+		arg.SourceVaultPath,
+		arg.SourceGitBlobSha,
 	)
 	var i CreateContentRow
 	err := row.Scan(
@@ -1698,6 +1730,8 @@ func (q *Queries) CreateContent(ctx context.Context, arg CreateContentParams) (C
 		&i.CoverImage,
 		&i.CreatedBy,
 		&i.ProposalRationale,
+		&i.SourceVaultPath,
+		&i.SourceGitBlobSha,
 		&i.PublishedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -3414,7 +3448,9 @@ func (q *Queries) ListAgents(ctx context.Context) ([]ListAgentsRow, error) {
 
 const listContents = `-- name: ListContents :many
 SELECT id, slug, title, excerpt, type, status, is_public, project_id,
-       reading_time_min, created_by, proposal_rationale, published_at, created_at, updated_at
+       reading_time_min, created_by, proposal_rationale,
+       source_vault_path, source_git_blob_sha,
+       published_at, created_at, updated_at
 FROM contents
 WHERE ($3::content_type IS NULL OR type = $3)
   AND ($4::content_status IS NULL OR status = $4)
@@ -3445,6 +3481,8 @@ type ListContentsRow struct {
 	ReadingTimeMin    int32         `json:"reading_time_min"`
 	CreatedBy         *string       `json:"created_by"`
 	ProposalRationale *string       `json:"proposal_rationale"`
+	SourceVaultPath   *string       `json:"source_vault_path"`
+	SourceGitBlobSha  *string       `json:"source_git_blob_sha"`
 	PublishedAt       *time.Time    `json:"published_at"`
 	CreatedAt         time.Time     `json:"created_at"`
 	UpdatedAt         time.Time     `json:"updated_at"`
@@ -3479,6 +3517,8 @@ func (q *Queries) ListContents(ctx context.Context, arg ListContentsParams) ([]L
 			&i.ReadingTimeMin,
 			&i.CreatedBy,
 			&i.ProposalRationale,
+			&i.SourceVaultPath,
+			&i.SourceGitBlobSha,
 			&i.PublishedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
@@ -4442,32 +4482,39 @@ func (q *Queries) ProposedProjectsCount(ctx context.Context) (int64, error) {
 const publishContent = `-- name: PublishContent :one
 UPDATE contents SET status = 'published', is_public = true, published_at = now(), review_note = NULL, updated_at = now()
 WHERE id = $1
+  AND status IN ('draft', 'review')
+  AND source_vault_path IS NOT NULL
+  AND source_git_blob_sha IS NOT NULL
 RETURNING id, slug, title, body, excerpt, type, status,
           series_id, series_order, is_public, project_id, reading_time_min,
-          cover_image, published_at, created_at, updated_at
+          cover_image, source_vault_path, source_git_blob_sha,
+          published_at, created_at, updated_at
 `
 
 type PublishContentRow struct {
-	ID             uuid.UUID     `json:"id"`
-	Slug           string        `json:"slug"`
-	Title          string        `json:"title"`
-	Body           string        `json:"body"`
-	Excerpt        string        `json:"excerpt"`
-	Type           ContentType   `json:"type"`
-	Status         ContentStatus `json:"status"`
-	SeriesID       *string       `json:"series_id"`
-	SeriesOrder    *int32        `json:"series_order"`
-	IsPublic       bool          `json:"is_public"`
-	ProjectID      *uuid.UUID    `json:"project_id"`
-	ReadingTimeMin int32         `json:"reading_time_min"`
-	CoverImage     *string       `json:"cover_image"`
-	PublishedAt    *time.Time    `json:"published_at"`
-	CreatedAt      time.Time     `json:"created_at"`
-	UpdatedAt      time.Time     `json:"updated_at"`
+	ID               uuid.UUID     `json:"id"`
+	Slug             string        `json:"slug"`
+	Title            string        `json:"title"`
+	Body             string        `json:"body"`
+	Excerpt          string        `json:"excerpt"`
+	Type             ContentType   `json:"type"`
+	Status           ContentStatus `json:"status"`
+	SeriesID         *string       `json:"series_id"`
+	SeriesOrder      *int32        `json:"series_order"`
+	IsPublic         bool          `json:"is_public"`
+	ProjectID        *uuid.UUID    `json:"project_id"`
+	ReadingTimeMin   int32         `json:"reading_time_min"`
+	CoverImage       *string       `json:"cover_image"`
+	SourceVaultPath  *string       `json:"source_vault_path"`
+	SourceGitBlobSha *string       `json:"source_git_blob_sha"`
+	PublishedAt      *time.Time    `json:"published_at"`
+	CreatedAt        time.Time     `json:"created_at"`
+	UpdatedAt        time.Time     `json:"updated_at"`
 }
 
-// Atomically sets status=published, is_public=true, and published_at.
-// Publishing always makes content publicly visible in this system.
+// Atomically promotes only a source-bound draft/review snapshot. A missing
+// provenance pair, another lifecycle state, or an unknown id matches no row;
+// the store performs a read-only classification after the failed transition.
 func (q *Queries) PublishContent(ctx context.Context, id uuid.UUID) (PublishContentRow, error) {
 	row := q.db.QueryRow(ctx, publishContent, id)
 	var i PublishContentRow
@@ -4485,6 +4532,8 @@ func (q *Queries) PublishContent(ctx context.Context, id uuid.UUID) (PublishCont
 		&i.ProjectID,
 		&i.ReadingTimeMin,
 		&i.CoverImage,
+		&i.SourceVaultPath,
+		&i.SourceGitBlobSha,
 		&i.PublishedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -4888,26 +4937,29 @@ UPDATE contents SET status = 'draft', updated_at = now()
 WHERE id = $1 AND status = 'review'
 RETURNING id, slug, title, body, excerpt, type, status,
           series_id, series_order, is_public, project_id, reading_time_min,
-          cover_image, published_at, created_at, updated_at
+          cover_image, source_vault_path, source_git_blob_sha,
+          published_at, created_at, updated_at
 `
 
 type RevertContentToDraftRow struct {
-	ID             uuid.UUID     `json:"id"`
-	Slug           string        `json:"slug"`
-	Title          string        `json:"title"`
-	Body           string        `json:"body"`
-	Excerpt        string        `json:"excerpt"`
-	Type           ContentType   `json:"type"`
-	Status         ContentStatus `json:"status"`
-	SeriesID       *string       `json:"series_id"`
-	SeriesOrder    *int32        `json:"series_order"`
-	IsPublic       bool          `json:"is_public"`
-	ProjectID      *uuid.UUID    `json:"project_id"`
-	ReadingTimeMin int32         `json:"reading_time_min"`
-	CoverImage     *string       `json:"cover_image"`
-	PublishedAt    *time.Time    `json:"published_at"`
-	CreatedAt      time.Time     `json:"created_at"`
-	UpdatedAt      time.Time     `json:"updated_at"`
+	ID               uuid.UUID     `json:"id"`
+	Slug             string        `json:"slug"`
+	Title            string        `json:"title"`
+	Body             string        `json:"body"`
+	Excerpt          string        `json:"excerpt"`
+	Type             ContentType   `json:"type"`
+	Status           ContentStatus `json:"status"`
+	SeriesID         *string       `json:"series_id"`
+	SeriesOrder      *int32        `json:"series_order"`
+	IsPublic         bool          `json:"is_public"`
+	ProjectID        *uuid.UUID    `json:"project_id"`
+	ReadingTimeMin   int32         `json:"reading_time_min"`
+	CoverImage       *string       `json:"cover_image"`
+	SourceVaultPath  *string       `json:"source_vault_path"`
+	SourceGitBlobSha *string       `json:"source_git_blob_sha"`
+	PublishedAt      *time.Time    `json:"published_at"`
+	CreatedAt        time.Time     `json:"created_at"`
+	UpdatedAt        time.Time     `json:"updated_at"`
 }
 
 // Transition content from review back to draft (reviewer rejection path).
@@ -4930,6 +4982,8 @@ func (q *Queries) RevertContentToDraft(ctx context.Context, id uuid.UUID) (Rever
 		&i.ProjectID,
 		&i.ReadingTimeMin,
 		&i.CoverImage,
+		&i.SourceVaultPath,
+		&i.SourceGitBlobSha,
 		&i.PublishedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -4937,27 +4991,55 @@ func (q *Queries) RevertContentToDraft(ctx context.Context, id uuid.UUID) (Rever
 	return i, err
 }
 
+const revisableContentSourceByCreator = `-- name: RevisableContentSourceByCreator :one
+SELECT source_git_blob_sha
+FROM contents
+WHERE id = $1 AND created_by = $2
+  AND status IN ('review', 'changes_requested')
+`
+
+type RevisableContentSourceByCreatorParams struct {
+	ID        uuid.UUID `json:"id"`
+	CreatedBy *string   `json:"created_by"`
+}
+
+// Read-only rejection classifier for revise_content. Caller/status scoping is
+// identical to the update so it cannot reveal another agent's row.
+func (q *Queries) RevisableContentSourceByCreator(ctx context.Context, arg RevisableContentSourceByCreatorParams) (*string, error) {
+	row := q.db.QueryRow(ctx, revisableContentSourceByCreator, arg.ID, arg.CreatedBy)
+	var source_git_blob_sha *string
+	err := row.Scan(&source_git_blob_sha)
+	return source_git_blob_sha, err
+}
+
 const reviseContentByCreator = `-- name: ReviseContentByCreator :one
 UPDATE contents SET
-    body = COALESCE($1, body),
-    excerpt = COALESCE($2, excerpt),
-    title = COALESCE($3, title),
+    body = $1,
+    excerpt = $2,
+    title = $3,
+    source_vault_path = $4,
+    source_git_blob_sha = $5,
     status = 'review',
     review_note = NULL,
     updated_at = now()
-WHERE id = $4 AND created_by = $5
+WHERE id = $6 AND created_by = $7
   AND status IN ('review', 'changes_requested')
+  AND source_git_blob_sha IS DISTINCT FROM $5
 RETURNING id, slug, title, body, excerpt, type, status,
           series_id, series_order, is_public, project_id, reading_time_min,
-          cover_image, created_by, proposal_rationale, review_note, published_at, created_at, updated_at
+          cover_image, created_by, proposal_rationale, review_note,
+          source_vault_path, source_git_blob_sha,
+          published_at, created_at, updated_at
 `
 
 type ReviseContentByCreatorParams struct {
-	Body      *string   `json:"body"`
-	Excerpt   *string   `json:"excerpt"`
-	Title     *string   `json:"title"`
-	ID        uuid.UUID `json:"id"`
-	CreatedBy *string   `json:"created_by"`
+	Body             string    `json:"body"`
+	Excerpt          string    `json:"excerpt"`
+	Title            string    `json:"title"`
+	SourceVaultPath  *string   `json:"source_vault_path"`
+	SourceGitBlobSha *string   `json:"source_git_blob_sha"`
+	ID               uuid.UUID `json:"id"`
+	CreatedBy        *string   `json:"created_by"`
 }
 
 type ReviseContentByCreatorRow struct {
@@ -4977,24 +5059,23 @@ type ReviseContentByCreatorRow struct {
 	CreatedBy         *string       `json:"created_by"`
 	ProposalRationale *string       `json:"proposal_rationale"`
 	ReviewNote        *string       `json:"review_note"`
+	SourceVaultPath   *string       `json:"source_vault_path"`
+	SourceGitBlobSha  *string       `json:"source_git_blob_sha"`
 	PublishedAt       *time.Time    `json:"published_at"`
 	CreatedAt         time.Time     `json:"created_at"`
 	UpdatedAt         time.Time     `json:"updated_at"`
 }
 
-// Caller-scoped revise for the revise_content MCP tool: an agent edits content
-// IT created that is in review or changes_requested, returning it to review and
-// clearing the owner's review_note. Each editable field uses COALESCE so an
-// omitted parameter leaves the column unchanged. The created_by + status guard
-// scopes the write to the caller's own revisable rows — a mismatched creator,
-// a wrong status, or an unknown id all match 0 rows (pgx.ErrNoRows → not-found),
-// never another agent's content and never a published row. created_by is the
-// resolved caller identity, never a client-supplied filter.
+// Caller-scoped full snapshot replacement for revise_content. All authored
+// fields and the provenance pair move together; reusing the existing blob SHA
+// matches no row. The caller/status guard never exposes another agent's row.
 func (q *Queries) ReviseContentByCreator(ctx context.Context, arg ReviseContentByCreatorParams) (ReviseContentByCreatorRow, error) {
 	row := q.db.QueryRow(ctx, reviseContentByCreator,
 		arg.Body,
 		arg.Excerpt,
 		arg.Title,
+		arg.SourceVaultPath,
+		arg.SourceGitBlobSha,
 		arg.ID,
 		arg.CreatedBy,
 	)
@@ -5016,6 +5097,8 @@ func (q *Queries) ReviseContentByCreator(ctx context.Context, arg ReviseContentB
 		&i.CreatedBy,
 		&i.ProposalRationale,
 		&i.ReviewNote,
+		&i.SourceVaultPath,
+		&i.SourceGitBlobSha,
 		&i.PublishedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -5101,7 +5184,9 @@ UPDATE contents SET
 WHERE id = $2 AND status = 'review'
 RETURNING id, slug, title, body, excerpt, type, status,
           series_id, series_order, is_public, project_id, reading_time_min,
-          cover_image, created_by, proposal_rationale, review_note, published_at, created_at, updated_at
+          cover_image, created_by, proposal_rationale, review_note,
+          source_vault_path, source_git_blob_sha,
+          published_at, created_at, updated_at
 `
 
 type SendContentChangesRequestedParams struct {
@@ -5126,6 +5211,8 @@ type SendContentChangesRequestedRow struct {
 	CreatedBy         *string       `json:"created_by"`
 	ProposalRationale *string       `json:"proposal_rationale"`
 	ReviewNote        *string       `json:"review_note"`
+	SourceVaultPath   *string       `json:"source_vault_path"`
+	SourceGitBlobSha  *string       `json:"source_git_blob_sha"`
 	PublishedAt       *time.Time    `json:"published_at"`
 	CreatedAt         time.Time     `json:"created_at"`
 	UpdatedAt         time.Time     `json:"updated_at"`
@@ -5157,6 +5244,8 @@ func (q *Queries) SendContentChangesRequested(ctx context.Context, arg SendConte
 		&i.CreatedBy,
 		&i.ProposalRationale,
 		&i.ReviewNote,
+		&i.SourceVaultPath,
+		&i.SourceGitBlobSha,
 		&i.PublishedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -5169,7 +5258,8 @@ UPDATE contents SET is_public = $2, updated_at = now()
 WHERE id = $1
 RETURNING id, slug, title, body, excerpt, type, status,
           series_id, series_order, is_public, project_id, reading_time_min,
-          cover_image, published_at, created_at, updated_at
+          cover_image, source_vault_path, source_git_blob_sha,
+          published_at, created_at, updated_at
 `
 
 type SetContentVisibilityParams struct {
@@ -5178,22 +5268,24 @@ type SetContentVisibilityParams struct {
 }
 
 type SetContentVisibilityRow struct {
-	ID             uuid.UUID     `json:"id"`
-	Slug           string        `json:"slug"`
-	Title          string        `json:"title"`
-	Body           string        `json:"body"`
-	Excerpt        string        `json:"excerpt"`
-	Type           ContentType   `json:"type"`
-	Status         ContentStatus `json:"status"`
-	SeriesID       *string       `json:"series_id"`
-	SeriesOrder    *int32        `json:"series_order"`
-	IsPublic       bool          `json:"is_public"`
-	ProjectID      *uuid.UUID    `json:"project_id"`
-	ReadingTimeMin int32         `json:"reading_time_min"`
-	CoverImage     *string       `json:"cover_image"`
-	PublishedAt    *time.Time    `json:"published_at"`
-	CreatedAt      time.Time     `json:"created_at"`
-	UpdatedAt      time.Time     `json:"updated_at"`
+	ID               uuid.UUID     `json:"id"`
+	Slug             string        `json:"slug"`
+	Title            string        `json:"title"`
+	Body             string        `json:"body"`
+	Excerpt          string        `json:"excerpt"`
+	Type             ContentType   `json:"type"`
+	Status           ContentStatus `json:"status"`
+	SeriesID         *string       `json:"series_id"`
+	SeriesOrder      *int32        `json:"series_order"`
+	IsPublic         bool          `json:"is_public"`
+	ProjectID        *uuid.UUID    `json:"project_id"`
+	ReadingTimeMin   int32         `json:"reading_time_min"`
+	CoverImage       *string       `json:"cover_image"`
+	SourceVaultPath  *string       `json:"source_vault_path"`
+	SourceGitBlobSha *string       `json:"source_git_blob_sha"`
+	PublishedAt      *time.Time    `json:"published_at"`
+	CreatedAt        time.Time     `json:"created_at"`
+	UpdatedAt        time.Time     `json:"updated_at"`
 }
 
 // Visibility is an operational exposure control, separate from editing the
@@ -5216,6 +5308,8 @@ func (q *Queries) SetContentVisibility(ctx context.Context, arg SetContentVisibi
 		&i.ProjectID,
 		&i.ReadingTimeMin,
 		&i.CoverImage,
+		&i.SourceVaultPath,
+		&i.SourceGitBlobSha,
 		&i.PublishedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -5805,35 +5899,39 @@ func (q *Queries) StatsRecentProcessRuns(ctx context.Context, arg StatsRecentPro
 const submitContentForReview = `-- name: SubmitContentForReview :one
 UPDATE contents SET status = 'review', updated_at = now()
 WHERE id = $1 AND status = 'draft'
+  AND source_vault_path IS NOT NULL
+  AND source_git_blob_sha IS NOT NULL
 RETURNING id, slug, title, body, excerpt, type, status,
           series_id, series_order, is_public, project_id, reading_time_min,
-          cover_image, published_at, created_at, updated_at
+          cover_image, source_vault_path, source_git_blob_sha,
+          published_at, created_at, updated_at
 `
 
 type SubmitContentForReviewRow struct {
-	ID             uuid.UUID     `json:"id"`
-	Slug           string        `json:"slug"`
-	Title          string        `json:"title"`
-	Body           string        `json:"body"`
-	Excerpt        string        `json:"excerpt"`
-	Type           ContentType   `json:"type"`
-	Status         ContentStatus `json:"status"`
-	SeriesID       *string       `json:"series_id"`
-	SeriesOrder    *int32        `json:"series_order"`
-	IsPublic       bool          `json:"is_public"`
-	ProjectID      *uuid.UUID    `json:"project_id"`
-	ReadingTimeMin int32         `json:"reading_time_min"`
-	CoverImage     *string       `json:"cover_image"`
-	PublishedAt    *time.Time    `json:"published_at"`
-	CreatedAt      time.Time     `json:"created_at"`
-	UpdatedAt      time.Time     `json:"updated_at"`
+	ID               uuid.UUID     `json:"id"`
+	Slug             string        `json:"slug"`
+	Title            string        `json:"title"`
+	Body             string        `json:"body"`
+	Excerpt          string        `json:"excerpt"`
+	Type             ContentType   `json:"type"`
+	Status           ContentStatus `json:"status"`
+	SeriesID         *string       `json:"series_id"`
+	SeriesOrder      *int32        `json:"series_order"`
+	IsPublic         bool          `json:"is_public"`
+	ProjectID        *uuid.UUID    `json:"project_id"`
+	ReadingTimeMin   int32         `json:"reading_time_min"`
+	CoverImage       *string       `json:"cover_image"`
+	SourceVaultPath  *string       `json:"source_vault_path"`
+	SourceGitBlobSha *string       `json:"source_git_blob_sha"`
+	PublishedAt      *time.Time    `json:"published_at"`
+	CreatedAt        time.Time     `json:"created_at"`
+	UpdatedAt        time.Time     `json:"updated_at"`
 }
 
 // Transition content from draft to review. Returns pgx.ErrNoRows when the
-// row does not exist OR the current status is not 'draft' — the handler
-// translates "not found under this transition" into a 400 INVALID_STATE.
-// The WHERE-status guard makes the transition race-safe without a
-// separate read-then-write round trip.
+// row does not exist, the current status is not draft, or provenance is
+// missing. The store classifies the read-only rejection after this atomic
+// guard; it never authorizes the transition with a read-then-write check.
 func (q *Queries) SubmitContentForReview(ctx context.Context, id uuid.UUID) (SubmitContentForReviewRow, error) {
 	row := q.db.QueryRow(ctx, submitContentForReview, id)
 	var i SubmitContentForReviewRow
@@ -5851,6 +5949,8 @@ func (q *Queries) SubmitContentForReview(ctx context.Context, id uuid.UUID) (Sub
 		&i.ProjectID,
 		&i.ReadingTimeMin,
 		&i.CoverImage,
+		&i.SourceVaultPath,
+		&i.SourceGitBlobSha,
 		&i.PublishedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -6464,58 +6564,56 @@ UPDATE contents SET
     body = COALESCE($4, body),
     excerpt = COALESCE($5, excerpt),
     type = COALESCE($6::content_type, type),
-    status = COALESCE($7::content_status, status),
-    series_id = COALESCE($8, series_id),
-    series_order = COALESCE($9, series_order),
-    is_public = COALESCE($10, is_public),
-    project_id = COALESCE($11, project_id),
-    reading_time_min = COALESCE($12, reading_time_min),
-    cover_image = COALESCE($13, cover_image),
-    review_note = CASE
-        WHEN COALESCE($7::content_status, status) = 'changes_requested' THEN review_note
-        ELSE NULL
-    END,
+    series_id = COALESCE($7, series_id),
+    series_order = COALESCE($8, series_order),
+    is_public = COALESCE($9, is_public),
+    project_id = COALESCE($10, project_id),
+    reading_time_min = COALESCE($11, reading_time_min),
+    cover_image = COALESCE($12, cover_image),
     updated_at = now()
 WHERE id = $1
   AND status <> 'published'
+  AND source_vault_path IS NULL
 RETURNING id, slug, title, body, excerpt, type, status,
           series_id, series_order, is_public, project_id, reading_time_min,
-          cover_image, published_at, created_at, updated_at
+          cover_image, source_vault_path, source_git_blob_sha,
+          published_at, created_at, updated_at
 `
 
 type UpdateContentParams struct {
-	ID             uuid.UUID         `json:"id"`
-	Slug           *string           `json:"slug"`
-	Title          *string           `json:"title"`
-	Body           *string           `json:"body"`
-	Excerpt        *string           `json:"excerpt"`
-	ContentType    NullContentType   `json:"content_type"`
-	Status         NullContentStatus `json:"status"`
-	SeriesID       *string           `json:"series_id"`
-	SeriesOrder    *int32            `json:"series_order"`
-	IsPublic       *bool             `json:"is_public"`
-	ProjectID      *uuid.UUID        `json:"project_id"`
-	ReadingTimeMin *int32            `json:"reading_time_min"`
-	CoverImage     *string           `json:"cover_image"`
+	ID             uuid.UUID       `json:"id"`
+	Slug           *string         `json:"slug"`
+	Title          *string         `json:"title"`
+	Body           *string         `json:"body"`
+	Excerpt        *string         `json:"excerpt"`
+	ContentType    NullContentType `json:"content_type"`
+	SeriesID       *string         `json:"series_id"`
+	SeriesOrder    *int32          `json:"series_order"`
+	IsPublic       *bool           `json:"is_public"`
+	ProjectID      *uuid.UUID      `json:"project_id"`
+	ReadingTimeMin *int32          `json:"reading_time_min"`
+	CoverImage     *string         `json:"cover_image"`
 }
 
 type UpdateContentRow struct {
-	ID             uuid.UUID     `json:"id"`
-	Slug           string        `json:"slug"`
-	Title          string        `json:"title"`
-	Body           string        `json:"body"`
-	Excerpt        string        `json:"excerpt"`
-	Type           ContentType   `json:"type"`
-	Status         ContentStatus `json:"status"`
-	SeriesID       *string       `json:"series_id"`
-	SeriesOrder    *int32        `json:"series_order"`
-	IsPublic       bool          `json:"is_public"`
-	ProjectID      *uuid.UUID    `json:"project_id"`
-	ReadingTimeMin int32         `json:"reading_time_min"`
-	CoverImage     *string       `json:"cover_image"`
-	PublishedAt    *time.Time    `json:"published_at"`
-	CreatedAt      time.Time     `json:"created_at"`
-	UpdatedAt      time.Time     `json:"updated_at"`
+	ID               uuid.UUID     `json:"id"`
+	Slug             string        `json:"slug"`
+	Title            string        `json:"title"`
+	Body             string        `json:"body"`
+	Excerpt          string        `json:"excerpt"`
+	Type             ContentType   `json:"type"`
+	Status           ContentStatus `json:"status"`
+	SeriesID         *string       `json:"series_id"`
+	SeriesOrder      *int32        `json:"series_order"`
+	IsPublic         bool          `json:"is_public"`
+	ProjectID        *uuid.UUID    `json:"project_id"`
+	ReadingTimeMin   int32         `json:"reading_time_min"`
+	CoverImage       *string       `json:"cover_image"`
+	SourceVaultPath  *string       `json:"source_vault_path"`
+	SourceGitBlobSha *string       `json:"source_git_blob_sha"`
+	PublishedAt      *time.Time    `json:"published_at"`
+	CreatedAt        time.Time     `json:"created_at"`
+	UpdatedAt        time.Time     `json:"updated_at"`
 }
 
 func (q *Queries) UpdateContent(ctx context.Context, arg UpdateContentParams) (UpdateContentRow, error) {
@@ -6526,7 +6624,6 @@ func (q *Queries) UpdateContent(ctx context.Context, arg UpdateContentParams) (U
 		arg.Body,
 		arg.Excerpt,
 		arg.ContentType,
-		arg.Status,
 		arg.SeriesID,
 		arg.SeriesOrder,
 		arg.IsPublic,
@@ -6549,6 +6646,8 @@ func (q *Queries) UpdateContent(ctx context.Context, arg UpdateContentParams) (U
 		&i.ProjectID,
 		&i.ReadingTimeMin,
 		&i.CoverImage,
+		&i.SourceVaultPath,
+		&i.SourceGitBlobSha,
 		&i.PublishedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,

@@ -4,7 +4,6 @@ import { ContentService } from './content.service';
 import type {
   ApiContent,
   ApiPaginationMeta,
-  ApiCreateContentRequest,
   ApiUpdateContentRequest,
 } from '../models';
 
@@ -38,11 +37,6 @@ export class ArticleService {
 
   getArticleBySlug(slug: string): Observable<ApiContent> {
     return this.content.getBySlug(slug);
-  }
-
-  /** Admin — create article */
-  createArticle(request: ApiCreateContentRequest): Observable<ApiContent> {
-    return this.content.create({ ...request, type: 'article' });
   }
 
   /** Admin — update article */

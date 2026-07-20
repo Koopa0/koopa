@@ -10,6 +10,8 @@
 package mcp
 
 import (
+	"encoding/json"
+	"errors"
 	"log/slog"
 	"strings"
 	"testing"
@@ -17,6 +19,8 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/uuid"
+
+	"github.com/Koopa0/koopa/internal/content"
 )
 
 // ============================================================================
@@ -64,6 +68,17 @@ func seedPublishedContentAt(t *testing.T, slug, title string, publishedAt time.T
 		t.Fatalf("seedPublishedContentAt(slug=%q): %v", slug, err)
 	}
 	return id
+}
+
+func completeRevisionInput(id uuid.UUID, title, body, excerpt string) ReviseContentInput {
+	return ReviseContentInput{
+		ID:               id.String(),
+		Title:            &title,
+		Body:             &body,
+		Excerpt:          &excerpt,
+		SourceVaultPath:  "Writing/articles/" + id.String() + ".md",
+		SourceGitBlobSHA: "0123456789abcdef0123456789abcdef01234567",
+	}
 }
 
 // completeTodoAsActor opens a transaction, binds koopa.actor to actor, then
@@ -240,10 +255,8 @@ func TestIntegration_ReviseContent_ChangesRequestedSucceeds(t *testing.T) {
 	id := seedContentForCreator(t, "rc-cr-happy", "Changes Requested Article", "claude", "changes_requested", &note)
 	newBody := "# Revised\n\nMore examples added."
 
-	_, out, err := callHandlerAs(t, "claude", s.reviseContent, ReviseContentInput{
-		ID:   id.String(),
-		Body: &newBody,
-	})
+	input := completeRevisionInput(id, "Changes Requested Article", newBody, "")
+	_, out, err := callHandlerAs(t, "claude", s.reviseContent, input)
 	if err != nil {
 		t.Fatalf("reviseContent(changes_requested): %v", err)
 	}
@@ -269,6 +282,178 @@ func TestIntegration_ReviseContent_ChangesRequestedSucceeds(t *testing.T) {
 	}
 }
 
+// TestIntegration_ContentSourceSnapshotRoundTrip exercises the complete agent
+// boundary: propose stores the declared Vault coordinate, list_content returns
+// it, and a changes-requested revision replaces the full snapshot and SHA in
+// one guarded write. JSON decoding keeps this test compilable on the base,
+// where the unknown source fields are silently discarded and the assertions
+// intentionally fail.
+func TestIntegration_ContentSourceSnapshotRoundTrip(t *testing.T) {
+	s := setupServer(t)
+	const (
+		path = "Writing/articles/source-round-trip.md"
+		sha1 = "0123456789abcdef0123456789abcdef01234567"
+		sha2 = "89abcdef0123456789abcdef0123456789abcdef"
+	)
+
+	var proposal ProposeContentInput
+	decodeJSONTestInput(t, `{
+		"title":"Source round trip",
+		"type":"article",
+		"body":"first snapshot",
+		"excerpt":"first excerpt",
+		"source_vault_path":"`+path+`",
+		"source_git_blob_sha":"`+sha1+`"
+	}`, &proposal)
+	_, proposed, err := callHandlerAs(t, "claude", s.proposeContent, proposal)
+	if err != nil {
+		t.Fatalf("proposeContent(source snapshot): %v", err)
+	}
+
+	var gotPath, gotSHA *string
+	if err := testPool.QueryRow(t.Context(),
+		`SELECT source_vault_path, source_git_blob_sha FROM contents WHERE id = $1`,
+		proposed.Content.ID,
+	).Scan(&gotPath, &gotSHA); err != nil {
+		t.Fatalf("reading persisted source snapshot: %v", err)
+	}
+	if gotPath == nil || *gotPath != path || gotSHA == nil || *gotSHA != sha1 {
+		t.Fatalf("persisted source = (%v, %v), want (%q, %q)", gotPath, gotSHA, path, sha1)
+	}
+
+	_, listed, err := callHandlerAs(t, "claude", s.listContent, ListContentInput{})
+	if err != nil {
+		t.Fatalf("listContent: %v", err)
+	}
+	if len(listed.Items) != 1 {
+		t.Fatalf("listContent items = %d, want 1", len(listed.Items))
+	}
+	encodedItem, err := json.Marshal(listed.Items[0])
+	if err != nil {
+		t.Fatalf("encoding listContent item: %v", err)
+	}
+	var sourceFields struct {
+		SourceVaultPath  string `json:"source_vault_path"`
+		SourceGitBlobSHA string `json:"source_git_blob_sha"`
+	}
+	if err := json.Unmarshal(encodedItem, &sourceFields); err != nil {
+		t.Fatalf("decoding listContent item: %v", err)
+	}
+	if sourceFields.SourceVaultPath != path || sourceFields.SourceGitBlobSHA != sha1 {
+		t.Fatalf("listContent source = (%q, %q), want (%q, %q)", sourceFields.SourceVaultPath, sourceFields.SourceGitBlobSHA, path, sha1)
+	}
+
+	if _, err := testPool.Exec(t.Context(),
+		`UPDATE contents SET status = 'changes_requested', review_note = 'revise it' WHERE id = $1`,
+		proposed.Content.ID,
+	); err != nil {
+		t.Fatalf("seeding changes_requested: %v", err)
+	}
+
+	var revision ReviseContentInput
+	decodeJSONTestInput(t, `{
+		"id":"`+proposed.Content.ID.String()+`",
+		"title":"Source round trip revised",
+		"body":"second snapshot",
+		"excerpt":"second excerpt",
+		"source_vault_path":"`+path+`",
+		"source_git_blob_sha":"`+sha2+`"
+	}`, &revision)
+	if _, _, err := callHandlerAs(t, "claude", s.reviseContent, revision); err != nil {
+		t.Fatalf("reviseContent(new source snapshot): %v", err)
+	}
+
+	var title, body, excerpt, revisedPath, revisedSHA string
+	if err := testPool.QueryRow(t.Context(),
+		`SELECT title, body, excerpt, source_vault_path, source_git_blob_sha FROM contents WHERE id = $1`,
+		proposed.Content.ID,
+	).Scan(&title, &body, &excerpt, &revisedPath, &revisedSHA); err != nil {
+		t.Fatalf("reading revised source snapshot: %v", err)
+	}
+	if title != "Source round trip revised" || body != "second snapshot" || excerpt != "second excerpt" || revisedPath != path || revisedSHA != sha2 {
+		t.Fatalf("revised snapshot = (%q, %q, %q, %q, %q), want exact second snapshot", title, body, excerpt, revisedPath, revisedSHA)
+	}
+}
+
+func TestIntegration_ReviseContent_RejectsReusedSourceSHAAtomically(t *testing.T) {
+	s := setupServer(t)
+	const sha = "0123456789abcdef0123456789abcdef01234567"
+
+	var proposal ProposeContentInput
+	decodeJSONTestInput(t, `{
+		"title":"No SHA reuse",
+		"type":"article",
+		"body":"original body",
+		"excerpt":"original excerpt",
+		"source_vault_path":"Writing/articles/no-sha-reuse.md",
+		"source_git_blob_sha":"`+sha+`"
+	}`, &proposal)
+	_, proposed, err := callHandlerAs(t, "claude", s.proposeContent, proposal)
+	if err != nil {
+		t.Fatalf("proposeContent: %v", err)
+	}
+	if _, err := testPool.Exec(t.Context(),
+		`UPDATE contents SET status = 'changes_requested', review_note = 'revise it' WHERE id = $1`,
+		proposed.Content.ID,
+	); err != nil {
+		t.Fatalf("seeding changes_requested: %v", err)
+	}
+
+	var revision ReviseContentInput
+	decodeJSONTestInput(t, `{
+		"id":"`+proposed.Content.ID.String()+`",
+		"title":"mutated title",
+		"body":"mutated body",
+		"excerpt":"mutated excerpt",
+		"source_vault_path":"Writing/articles/no-sha-reuse.md",
+		"source_git_blob_sha":"`+sha+`"
+	}`, &revision)
+	_, _, err = callHandlerAs(t, "claude", s.reviseContent, revision)
+	if err == nil || !strings.Contains(err.Error(), "new Git blob SHA") {
+		t.Fatalf("reviseContent(reused SHA) = %v, want new Git blob SHA rejection", err)
+	}
+
+	var title, body, excerpt, persistedSHA string
+	if err := testPool.QueryRow(t.Context(),
+		`SELECT title, body, excerpt, source_git_blob_sha FROM contents WHERE id = $1`,
+		proposed.Content.ID,
+	).Scan(&title, &body, &excerpt, &persistedSHA); err != nil {
+		t.Fatalf("reading row after rejected revision: %v", err)
+	}
+	if title != "No SHA reuse" || body != "original body" || excerpt != "original excerpt" || persistedSHA != sha {
+		t.Fatalf("reused-SHA rejection was not atomic: title=%q body=%q excerpt=%q sha=%q", title, body, excerpt, persistedSHA)
+	}
+}
+
+func TestIntegration_AdminUpdateRejectsSourceBoundSnapshot(t *testing.T) {
+	s := setupServer(t)
+	var proposal ProposeContentInput
+	decodeJSONTestInput(t, `{
+		"title":"Admin immutable source",
+		"type":"article",
+		"body":"Vault snapshot",
+		"source_vault_path":"Writing/articles/admin-immutable.md",
+		"source_git_blob_sha":"0123456789abcdef0123456789abcdef01234567"
+	}`, &proposal)
+	_, proposed, err := callHandlerAs(t, "claude", s.proposeContent, proposal)
+	if err != nil {
+		t.Fatalf("proposeContent: %v", err)
+	}
+
+	mutated := "edited directly in Koopa"
+	_, err = s.contents.UpdateContent(t.Context(), proposed.Content.ID, &content.UpdateParams{Body: &mutated})
+	if !errors.Is(err, content.ErrInvalidState) {
+		t.Fatalf("UpdateContent(source-bound review) = %v, want ErrInvalidState", err)
+	}
+}
+
+func decodeJSONTestInput(t *testing.T, raw string, dst any) {
+	t.Helper()
+	if err := json.Unmarshal([]byte(raw), dst); err != nil {
+		t.Fatalf("decoding test input: %v", err)
+	}
+}
+
 // TestIntegration_ReviseContent_ReviewStatusSucceeds asserts that a row already
 // in 'review' can also be revised (status IN review/changes_requested).
 // Bug this catches: ReviseByCreator rejecting review-status rows.
@@ -278,10 +463,8 @@ func TestIntegration_ReviseContent_ReviewStatusSucceeds(t *testing.T) {
 	id := seedContentForCreator(t, "rc-review-happy", "Review Article", "claude", "review", nil)
 	newTitle := "Review Article — Revised Title"
 
-	_, out, err := callHandlerAs(t, "claude", s.reviseContent, ReviseContentInput{
-		ID:    id.String(),
-		Title: &newTitle,
-	})
+	input := completeRevisionInput(id, newTitle, "body text", "")
+	_, out, err := callHandlerAs(t, "claude", s.reviseContent, input)
 	if err != nil {
 		t.Fatalf("reviseContent(review): %v", err)
 	}
@@ -300,10 +483,8 @@ func TestIntegration_ReviseContent_PublishedReturnsNotFound(t *testing.T) {
 	id := seedContentForCreator(t, "rc-pub-reject", "Published Article", "claude", "published", nil)
 	newBody := "should not apply"
 
-	_, _, err := callHandlerAs(t, "claude", s.reviseContent, ReviseContentInput{
-		ID:   id.String(),
-		Body: &newBody,
-	})
+	input := completeRevisionInput(id, "Published Article", newBody, "")
+	_, _, err := callHandlerAs(t, "claude", s.reviseContent, input)
 	if err == nil {
 		t.Fatal("reviseContent(published) err = nil, want not-found (published not revisable)")
 	}
@@ -338,10 +519,8 @@ func TestIntegration_ReviseContent_CrossCreatorNotFound(t *testing.T) {
 	}
 
 	newBody := "claude should not be able to write this"
-	_, _, err := callHandlerAs(t, "claude", s.reviseContent, ReviseContentInput{
-		ID:   codexID.String(),
-		Body: &newBody,
-	})
+	input := completeRevisionInput(codexID, "Codex Changes Requested", newBody, "")
+	_, _, err := callHandlerAs(t, "claude", s.reviseContent, input)
 	if err == nil {
 		t.Fatal("reviseContent(claude on codex's row) err = nil, want not-found (cross-creator)")
 	}
@@ -375,8 +554,8 @@ func TestIntegration_ReviseContent_NoFieldsRejected(t *testing.T) {
 	if err == nil {
 		t.Fatal("reviseContent(no fields) err = nil, want validation error")
 	}
-	if !strings.Contains(err.Error(), "at least one") {
-		t.Errorf("error = %q, want containing %q", err, "at least one")
+	if !strings.Contains(err.Error(), "title, body, and excerpt") {
+		t.Errorf("error = %q, want complete snapshot requirement", err)
 	}
 }
 
@@ -886,6 +1065,7 @@ func TestIntegration_ProposeContent_RequiresActor(t *testing.T) {
 	// fabricated caller: no registry row → the created_by FK rejects the write.
 	if _, _, err := callHandlerAs(t, "fabricated-agent", s.proposeContent, ProposeContentInput{
 		Title: "Fabricated Authored", Type: "article", Body: "finished draft",
+		SourceVaultPath: "Writing/articles/fabricated.md", SourceGitBlobSHA: "0123456789abcdef0123456789abcdef01234567",
 	}); err == nil {
 		t.Error("proposeContent as fabricated-agent = nil, want created_by FK rejection")
 	}
@@ -894,6 +1074,7 @@ func TestIntegration_ProposeContent_RequiresActor(t *testing.T) {
 	unpinned := NewServer(testPool, slog.Default()) // callerAgent defaults to ""
 	if _, _, err := callHandlerAs(t, "", unpinned.proposeContent, ProposeContentInput{
 		Title: "Actorless", Type: "article", Body: "finished draft",
+		SourceVaultPath: "Writing/articles/actorless.md", SourceGitBlobSHA: "0123456789abcdef0123456789abcdef01234567",
 	}); err == nil {
 		t.Error("proposeContent with no `as` and no pinned caller = nil, want refusal (missing caller identity)")
 	}

@@ -130,6 +130,8 @@ func (s *Store) Contents(ctx context.Context, f Filter) ([]Content, int, error) 
 			ReadingTimeMin:    int(r.ReadingTimeMin),
 			CreatedBy:         r.CreatedBy,
 			ProposalRationale: r.ProposalRationale,
+			SourceVaultPath:   r.SourceVaultPath,
+			SourceGitBlobSHA:  r.SourceGitBlobSha,
 			PublishedAt:       r.PublishedAt,
 			CreatedAt:         r.CreatedAt,
 			UpdatedAt:         r.UpdatedAt,
@@ -161,7 +163,10 @@ func handleSlugConflict(w http.ResponseWriter, err error) bool {
 	return false
 }
 
-// Create handles POST /api/admin/contents.
+// Create rejects the retired direct Admin authoring surface. The request is
+// still decoded and validated so malformed/oversized input retains the normal
+// 400 contract, but a formerly valid draft can no longer create a second
+// authoring truth outside the Vault.
 func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	p, err := api.Decode[CreateParams](w, r)
 	if err != nil {
@@ -191,21 +196,8 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid content status")
 		return
 	}
-	// IsPublic defaults to false (zero value for bool) — callers set explicitly if needed
-
-	tx, ok := h.mustAdminTx(w, r)
-	if !ok {
-		return
-	}
-	c, err := h.store.WithTx(tx).CreateContent(r.Context(), &p)
-	if err != nil {
-		if handleSlugConflict(w, err) {
-			return
-		}
-		api.HandleError(w, h.logger, err, storeErrors...)
-		return
-	}
-	api.Encode(w, http.StatusCreated, api.Response{Data: c})
+	api.Error(w, http.StatusGone, "CONTENT_AUTHORING_RETIRED",
+		"Direct content authoring is retired. Author in Vault, then submit a source-bound snapshot with propose_content.")
 }
 
 // Update handles PUT /api/admin/contents/{id}.
@@ -251,7 +243,7 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 		api.HandleError(w, h.logger, err, storeErrors...)
 		return
 	}
-	api.Encode(w, http.StatusOK, api.Response{Data: c})
+	api.Encode(w, http.StatusOK, api.Response{Data: adminContent(c)})
 }
 
 // Delete handles DELETE /api/admin/contents/{id}.
@@ -274,11 +266,10 @@ func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
 }
 
 // Publish handles POST /api/admin/knowledge/content/{id}/publish.
-// State-guarded by content.Store.Publish: the owner publishes a draft directly
-// (the common path) or a review row from the review queue; an already-published
-// row is an idempotent success; changes_requested and archived are rejected with
-// 400 INVALID_STATE. Publishing is admin HTTP only — no MCP tool publishes; an
-// agent's reach ends at propose_content (lands at status=review).
+// State- and source-guarded by content.Store.Publish: the owner publishes a
+// source-bound draft or review snapshot; an already-published row is an
+// idempotent success; legacy unbound rows and invalid states are rejected.
+// Publishing is admin HTTP only — no MCP tool publishes.
 func (h *Handler) Publish(w http.ResponseWriter, r *http.Request) {
 	id, err := uuid.Parse(r.PathValue("id"))
 	if err != nil {
@@ -295,7 +286,7 @@ func (h *Handler) Publish(w http.ResponseWriter, r *http.Request) {
 		api.HandleError(w, h.logger, err, storeErrors...)
 		return
 	}
-	api.Encode(w, http.StatusOK, api.Response{Data: c})
+	api.Encode(w, http.StatusOK, api.Response{Data: adminContent(c)})
 }
 
 // Get handles GET /api/admin/knowledge/content/{id}.
@@ -311,7 +302,7 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 		api.HandleError(w, h.logger, err, storeErrors...)
 		return
 	}
-	api.Encode(w, http.StatusOK, api.Response{Data: c})
+	api.Encode(w, http.StatusOK, api.Response{Data: adminContent(c)})
 }
 
 // List handles GET /api/admin/knowledge/content.
@@ -327,7 +318,11 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to list contents")
 		return
 	}
-	api.Encode(w, http.StatusOK, api.PagedResponse(contents, total, f.Page, f.PerPage))
+	views := make([]AdminContent, len(contents))
+	for i := range contents {
+		views[i] = adminContent(&contents[i])
+	}
+	api.Encode(w, http.StatusOK, api.PagedResponse(views, total, f.Page, f.PerPage))
 }
 
 // parseAdminListFilter builds a Filter from the admin List query parameters,
@@ -393,7 +388,7 @@ func (h *Handler) SubmitForReview(w http.ResponseWriter, r *http.Request) {
 		api.HandleError(w, h.logger, err, storeErrors...)
 		return
 	}
-	api.Encode(w, http.StatusOK, api.Response{Data: c})
+	api.Encode(w, http.StatusOK, api.Response{Data: adminContent(c)})
 }
 
 // RevertToDraft handles POST /api/admin/knowledge/content/{id}/revert-to-draft.
@@ -414,7 +409,7 @@ func (h *Handler) RevertToDraft(w http.ResponseWriter, r *http.Request) {
 		api.HandleError(w, h.logger, err, storeErrors...)
 		return
 	}
-	api.Encode(w, http.StatusOK, api.Response{Data: c})
+	api.Encode(w, http.StatusOK, api.Response{Data: adminContent(c)})
 }
 
 // sendBackBody is the request payload for SendBack: the owner's revision reason.
@@ -462,7 +457,7 @@ func (h *Handler) SendBack(w http.ResponseWriter, r *http.Request) {
 		api.HandleError(w, h.logger, err, storeErrors...)
 		return
 	}
-	api.Encode(w, http.StatusOK, api.Response{Data: c})
+	api.Encode(w, http.StatusOK, api.Response{Data: adminContent(c)})
 }
 
 // Archive handles POST /api/admin/knowledge/content/{id}/archive.
@@ -482,7 +477,7 @@ func (h *Handler) Archive(w http.ResponseWriter, r *http.Request) {
 		api.HandleError(w, h.logger, err, storeErrors...)
 		return
 	}
-	api.Encode(w, http.StatusOK, api.Response{Data: c})
+	api.Encode(w, http.StatusOK, api.Response{Data: adminContent(c)})
 }
 
 // SetIsPublic handles PATCH /api/admin/contents/{id}/is-public.
@@ -511,5 +506,5 @@ func (h *Handler) SetIsPublic(w http.ResponseWriter, r *http.Request) {
 		api.HandleError(w, h.logger, err, storeErrors...)
 		return
 	}
-	api.Encode(w, http.StatusOK, api.Response{Data: c})
+	api.Encode(w, http.StatusOK, api.Response{Data: adminContent(c)})
 }

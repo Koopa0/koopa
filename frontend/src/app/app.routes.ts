@@ -202,14 +202,6 @@ export const routes: Routes = [
         data: { title: 'All content', crumbs: ['Knowledge', 'Content'] },
       },
       {
-        path: 'knowledge/content/new',
-        loadComponent: () =>
-          import('./admin/knowledge/content/editor/content-editor.page').then(
-            (m) => m.ContentEditorPageComponent,
-          ),
-        canDeactivate: [contentEditorCanDeactivate],
-      },
-      {
         path: 'knowledge/content/:id/edit',
         loadComponent: () =>
           import('./admin/knowledge/content/editor/content-editor.page').then(
