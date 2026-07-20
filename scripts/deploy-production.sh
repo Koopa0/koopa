@@ -109,7 +109,10 @@ validate_trader_db_endpoints() {
           return 1
         fi
         if ! jq -e \
-          '.[0].NetworkSettings.Networks["trader-db"].DNSNames // [] | index("postgres") != null' \
+          '.[0].NetworkSettings.Networks["trader-db"].DNSNames |
+            if type == "array" then
+              all(.[]; type == "string") and (index("postgres") != null)
+            else false end' \
           >/dev/null <<<"$endpoint_json"; then
           echo "ERROR: trader-db PostgreSQL endpoint does not own the postgres DNS name" >&2
           return 1
@@ -118,10 +121,13 @@ validate_trader_db_endpoints() {
         ;;
       tw-stock-trader:trader)
         trader_count=$((trader_count + 1))
-        if jq -e \
-          '.[0].NetworkSettings.Networks["trader-db"].DNSNames // [] | index("postgres") != null' \
+        if ! jq -e \
+          '.[0].NetworkSettings.Networks["trader-db"].DNSNames |
+            if type == "array" then
+              all(.[]; type == "string") and (index("postgres") == null)
+            else false end' \
           >/dev/null <<<"$endpoint_json"; then
-          echo "ERROR: trader-db postgres DNS name is claimed by the trader endpoint" >&2
+          echo "ERROR: trader-db trader endpoint has invalid or colliding DNS names" >&2
           return 1
         fi
         ;;
@@ -284,7 +290,10 @@ fi
 if ! jq -e '
   length == 1 and
   ((.[0].NetworkSettings.Networks | keys | sort) == ["internal", "trader-db"]) and
-  (.[0].NetworkSettings.Networks["trader-db"].DNSNames // [] | index("postgres") != null)
+  (.[0].NetworkSettings.Networks["trader-db"].DNSNames |
+    if type == "array" then
+      all(.[]; type == "string") and (index("postgres") != null)
+    else false end)
 ' >/dev/null <<<"$postgres_container"; then
   echo "ERROR: deployed PostgreSQL container is not exact dual-home" >&2
   exit 1
