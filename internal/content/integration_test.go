@@ -586,37 +586,276 @@ func TestStore_PublishRequiresSourceSnapshot(t *testing.T) {
 	}
 }
 
-// TestHandler_SetIsPublic_PublishedOffSwitchRemainsAvailable is the positive
-// control for the snapshot guard. Until durable withdrawal exists, the
-// dedicated visibility endpoint must still be able to take a published row
-// off the public surface without editing its authored snapshot.
-func TestHandler_SetIsPublic_PublishedOffSwitchRemainsAvailable(t *testing.T) {
+// TestStore_WithdrawalLifecycle drives the production handlers through
+// ActorMiddleware. It deliberately warms both syndication responses before
+// withdrawal: a TTL-only cache would keep serving the removed snapshot and
+// make this test fail even if the database transition itself were correct.
+func TestStore_WithdrawalLifecycle(t *testing.T) {
 	s := setup(t)
 	ctx := t.Context()
+	id := createDraftContent(t, s, ctx, "withdrawal-lifecycle")
+	published, err := s.Publish(ctx, id)
+	if err != nil {
+		t.Fatalf("Publish() error: %v", err)
+	}
+	if published.PublishedAt == nil {
+		t.Fatal("Publish() published_at is nil")
+	}
+	originalPublishedAt := *published.PublishedAt
 
-	id := createDraftContent(t, s, ctx, "published-off-switch")
+	h := NewHandler(s, "https://example.test", slog.Default())
+	for _, endpoint := range []struct {
+		name string
+		call http.HandlerFunc
+	}{
+		{name: "rss", call: h.RSS},
+		{name: "sitemap", call: h.Sitemap},
+	} {
+		rec := httptest.NewRecorder()
+		endpoint.call(rec, httptest.NewRequest(http.MethodGet, "/api/feed/"+endpoint.name, http.NoBody))
+		if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "withdrawal-lifecycle") {
+			t.Fatalf("warm %s = status %d body %q, want published slug", endpoint.name, rec.Code, rec.Body.String())
+		}
+	}
+
+	actions := requireWithdrawalHandler(t, h)
+	withdraw := api.ActorMiddleware(testPool, "human", slog.Default())(http.HandlerFunc(actions.Withdraw))
+	withdrawReq := httptest.NewRequest(http.MethodPost,
+		"/api/admin/knowledge/content/"+id.String()+"/withdraw",
+		strings.NewReader(`{"reason":"  Contains private contact details.  "}`))
+	withdrawReq.Header.Set("Content-Type", "application/json")
+	withdrawReq.SetPathValue("id", id.String())
+	withdrawRec := httptest.NewRecorder()
+	withdraw.ServeHTTP(withdrawRec, withdrawReq)
+	if withdrawRec.Code != http.StatusOK {
+		t.Fatalf("Withdraw() status = %d, want 200 (body=%s)", withdrawRec.Code, withdrawRec.Body.String())
+	}
+
+	withdrawn, err := s.Content(ctx, id)
+	if err != nil {
+		t.Fatalf("Content() after withdraw: %v", err)
+	}
+	if withdrawn.Status != StatusPublished || withdrawn.IsPublic {
+		t.Fatalf("withdrawn state = status %q public=%t, want published/private", withdrawn.Status, withdrawn.IsPublic)
+	}
+	if withdrawn.WithdrawnAt == nil || withdrawn.WithdrawalReason == nil || *withdrawn.WithdrawalReason != "Contains private contact details." {
+		t.Fatalf("withdrawal metadata = at %v reason %v, want timestamp and trimmed reason", withdrawn.WithdrawnAt, withdrawn.WithdrawalReason)
+	}
+	if withdrawn.PublishedAt == nil || !withdrawn.PublishedAt.Equal(originalPublishedAt) {
+		t.Fatalf("published_at after withdraw = %v, want %v", withdrawn.PublishedAt, originalPublishedAt)
+	}
+
+	assertNotPublic := func(name string, call http.HandlerFunc, req *http.Request) {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		call(rec, req)
+		if strings.Contains(rec.Body.String(), "withdrawal-lifecycle") || strings.Contains(rec.Body.String(), "Contains private contact details") {
+			t.Fatalf("%s leaked withdrawn content: %s", name, rec.Body.String())
+		}
+	}
+	detailReq := httptest.NewRequest(http.MethodGet, "/api/contents/withdrawal-lifecycle", http.NoBody)
+	detailReq.SetPathValue("slug", "withdrawal-lifecycle")
+	detailRec := httptest.NewRecorder()
+	h.PublicBySlug(detailRec, detailReq)
+	if detailRec.Code != http.StatusNotFound {
+		t.Fatalf("public detail after withdraw = %d, want 404 (body=%s)", detailRec.Code, detailRec.Body.String())
+	}
+	assertNotPublic("list", h.PublicList, httptest.NewRequest(http.MethodGet, "/api/contents", http.NoBody))
+	assertNotPublic("rss", h.RSS, httptest.NewRequest(http.MethodGet, "/api/feed/rss", http.NoBody))
+	assertNotPublic("sitemap", h.Sitemap, httptest.NewRequest(http.MethodGet, "/api/feed/sitemap", http.NoBody))
+
+	var withdrawEventID uuid.UUID
+	var withdrawActor, withdrawKind string
+	var withdrawPayload []byte
+	err = testPool.QueryRow(ctx, `
+		SELECT id, actor, change_kind, payload
+		FROM activity_events
+		WHERE entity_type = 'content' AND entity_id = $1
+		  AND payload->>'transition' = 'withdrawn'`, id).
+		Scan(&withdrawEventID, &withdrawActor, &withdrawKind, &withdrawPayload)
+	if err != nil {
+		t.Fatalf("query withdrawal receipt: %v", err)
+	}
+	if withdrawEventID == uuid.Nil || withdrawActor != "human" || withdrawKind != "state_changed" {
+		t.Fatalf("withdraw receipt = id %s actor %q kind %q", withdrawEventID, withdrawActor, withdrawKind)
+	}
+	var withdrawMeta map[string]any
+	if err := json.Unmarshal(withdrawPayload, &withdrawMeta); err != nil {
+		t.Fatalf("decode withdrawal receipt: %v", err)
+	}
+	for key, want := range map[string]string{
+		"from": "public", "to": "withdrawn", "reason": "Contains private contact details.",
+	} {
+		if got := withdrawMeta[key]; got != want {
+			t.Errorf("withdraw payload[%q] = %v, want %q", key, got, want)
+		}
+	}
+
+	window, err := s.PublishedInWindow(ctx, originalPublishedAt.Add(-time.Minute), time.Now().Add(time.Minute))
+	if err != nil {
+		t.Fatalf("PublishedInWindow() after withdraw: %v", err)
+	}
+	if len(window) != 1 || window[0].Title != published.Title {
+		t.Fatalf("PublishedInWindow() after withdraw = %+v, want original publication", window)
+	}
+
+	restore := api.ActorMiddleware(testPool, "human", slog.Default())(http.HandlerFunc(actions.Restore))
+	restoreReq := httptest.NewRequest(http.MethodPost,
+		"/api/admin/knowledge/content/"+id.String()+"/restore", http.NoBody)
+	restoreReq.SetPathValue("id", id.String())
+	restoreRec := httptest.NewRecorder()
+	restore.ServeHTTP(restoreRec, restoreReq)
+	if restoreRec.Code != http.StatusOK {
+		t.Fatalf("Restore() status = %d, want 200 (body=%s)", restoreRec.Code, restoreRec.Body.String())
+	}
+
+	restored, err := s.Content(ctx, id)
+	if err != nil {
+		t.Fatalf("Content() after restore: %v", err)
+	}
+	if restored.Status != StatusPublished || !restored.IsPublic || restored.WithdrawnAt != nil || restored.WithdrawalReason != nil {
+		t.Fatalf("restored state = status %q public=%t at=%v reason=%v", restored.Status, restored.IsPublic, restored.WithdrawnAt, restored.WithdrawalReason)
+	}
+	if restored.PublishedAt == nil || !restored.PublishedAt.Equal(originalPublishedAt) {
+		t.Fatalf("published_at after restore = %v, want %v", restored.PublishedAt, originalPublishedAt)
+	}
+
+	for _, endpoint := range []struct {
+		name string
+		call http.HandlerFunc
+	}{
+		{name: "rss", call: h.RSS},
+		{name: "sitemap", call: h.Sitemap},
+	} {
+		rec := httptest.NewRecorder()
+		endpoint.call(rec, httptest.NewRequest(http.MethodGet, "/api/feed/"+endpoint.name, http.NoBody))
+		if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "withdrawal-lifecycle") {
+			t.Fatalf("%s after restore = status %d body %q, want restored slug", endpoint.name, rec.Code, rec.Body.String())
+		}
+	}
+
+	var restorePayload []byte
+	err = testPool.QueryRow(ctx, `
+		SELECT payload
+		FROM activity_events
+		WHERE entity_type = 'content' AND entity_id = $1
+		  AND payload->>'transition' = 'restored'`, id).Scan(&restorePayload)
+	if err != nil {
+		t.Fatalf("query restore receipt: %v", err)
+	}
+	var restoreCount int
+	if err := testPool.QueryRow(ctx, `
+		SELECT count(*) FROM activity_events
+		WHERE entity_type = 'content' AND entity_id = $1
+		  AND payload->>'transition' = 'restored'`, id).Scan(&restoreCount); err != nil {
+		t.Fatalf("count restore receipts: %v", err)
+	}
+	if restoreCount != 1 {
+		t.Fatalf("restore receipt count = %d, want 1", restoreCount)
+	}
+	var restoreMeta map[string]any
+	if err := json.Unmarshal(restorePayload, &restoreMeta); err != nil {
+		t.Fatalf("decode restore receipt: %v", err)
+	}
+	for key, want := range map[string]string{
+		"from": "withdrawn", "to": "public", "reason": "Contains private contact details.",
+	} {
+		if got := restoreMeta[key]; got != want {
+			t.Errorf("restore payload[%q] = %v, want %q", key, got, want)
+		}
+	}
+}
+
+func TestSchema_ContentWithdrawalConstraints(t *testing.T) {
+	s := setup(t)
+	ctx := t.Context()
+	id := createDraftContent(t, s, ctx, "withdrawal-constraints")
 	if _, err := s.Publish(ctx, id); err != nil {
 		t.Fatalf("Publish() error: %v", err)
 	}
 
-	h := NewHandler(s, "https://example.test", slog.Default())
-	wrapped := api.ActorMiddleware(testPool, "human", slog.Default())(http.HandlerFunc(h.SetIsPublic))
-	req := httptest.NewRequest(http.MethodPatch,
-		"/api/admin/contents/"+id.String()+"/is-public",
-		strings.NewReader(`{"is_public":false}`))
-	req.SetPathValue("id", id.String())
-	rec := httptest.NewRecorder()
-	wrapped.ServeHTTP(rec, req)
+	if _, err := testPool.Exec(ctx, `
+		UPDATE contents
+		SET is_public = false,
+		    withdrawn_at = now(),
+		    withdrawal_reason = 'Valid migration-level withdrawal'
+		WHERE id = $1`, id); err != nil {
+		t.Fatalf("valid withdrawal tuple rejected: %v", err)
+	}
+	if _, err := testPool.Exec(ctx, `
+		UPDATE contents
+		SET is_public = true, withdrawn_at = NULL, withdrawal_reason = NULL
+		WHERE id = $1`, id); err != nil {
+		t.Fatalf("valid restore tuple rejected: %v", err)
+	}
 
-	if rec.Code != http.StatusOK {
-		t.Fatalf("SetIsPublic(false) status = %d, want 200 (body=%s)", rec.Code, rec.Body.String())
+	invalid := []struct {
+		name string
+		sql  string
+	}{
+		{name: "missing reason", sql: `UPDATE contents SET is_public=false, withdrawn_at=now(), withdrawal_reason=NULL WHERE id=$1`},
+		{name: "blank reason", sql: `UPDATE contents SET is_public=false, withdrawn_at=now(), withdrawal_reason='   ' WHERE id=$1`},
+		{name: "missing timestamp", sql: `UPDATE contents SET is_public=false, withdrawn_at=NULL, withdrawal_reason='reason' WHERE id=$1`},
+		{name: "metadata while public", sql: `UPDATE contents SET is_public=true, withdrawn_at=now(), withdrawal_reason='reason' WHERE id=$1`},
+		{name: "oversized reason", sql: `UPDATE contents SET is_public=false, withdrawn_at=now(), withdrawal_reason=repeat('x', 501) WHERE id=$1`},
 	}
-	got, err := s.Content(ctx, id)
+	for _, tc := range invalid {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := testPool.Exec(ctx, tc.sql, id); err == nil {
+				t.Fatalf("invalid withdrawal tuple was accepted")
+			}
+		})
+	}
+}
+
+func TestStore_WithdrawalGuards(t *testing.T) {
+	s := setup(t)
+	ctx := t.Context()
+	actions := requireWithdrawalStore(t, s)
+
+	draft, err := s.CreateContent(ctx, &CreateParams{
+		Slug: "withdraw-draft", Title: "Draft", Body: "body", Excerpt: "excerpt",
+		Type: TypeArticle, Status: StatusDraft,
+	})
 	if err != nil {
-		t.Fatalf("Content() after visibility update: %v", err)
+		t.Fatalf("CreateContent() error: %v", err)
 	}
-	if got.Status != StatusPublished || got.IsPublic {
-		t.Errorf("visibility update = status %q, is_public %t; want published, false", got.Status, got.IsPublic)
+	if _, err := actions.Withdraw(ctx, draft.ID, "not published"); !errors.Is(err, ErrInvalidState) {
+		t.Fatalf("Withdraw(draft) = %v, want ErrInvalidState", err)
+	}
+	if _, err := actions.Withdraw(ctx, uuid.New(), "missing"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("Withdraw(missing) = %v, want ErrNotFound", err)
+	}
+	if _, err := actions.Restore(ctx, draft.ID); !errors.Is(err, ErrInvalidState) {
+		t.Fatalf("Restore(draft) = %v, want ErrInvalidState", err)
+	}
+
+	publishedID := createDraftContent(t, s, ctx, "withdraw-once")
+	if _, err := s.Publish(ctx, publishedID); err != nil {
+		t.Fatalf("Publish() error: %v", err)
+	}
+	if _, err := actions.Withdraw(ctx, publishedID, "first reason"); err != nil {
+		t.Fatalf("Withdraw() error: %v", err)
+	}
+	if _, err := actions.Withdraw(ctx, publishedID, "replacement reason"); !errors.Is(err, ErrInvalidState) {
+		t.Fatalf("repeated Withdraw() = %v, want ErrInvalidState", err)
+	}
+	if _, err := actions.Restore(ctx, publishedID); err != nil {
+		t.Fatalf("Restore() error: %v", err)
+	}
+	if _, err := actions.Restore(ctx, publishedID); !errors.Is(err, ErrInvalidState) {
+		t.Fatalf("repeated Restore() = %v, want ErrInvalidState", err)
+	}
+
+	var transitionCount int
+	if err := testPool.QueryRow(ctx, `
+		SELECT count(*) FROM activity_events
+		WHERE entity_type='content' AND entity_id=$1
+		  AND payload->>'transition' IN ('withdrawn','restored')`, publishedID).Scan(&transitionCount); err != nil {
+		t.Fatalf("count transition receipts: %v", err)
+	}
+	if transitionCount != 2 {
+		t.Fatalf("transition receipt count = %d, want 2", transitionCount)
 	}
 }
 
