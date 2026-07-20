@@ -39,7 +39,10 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
     networks:
-      - internal
+      internal:
+      trader-db:
+        aliases:
+          - postgres
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U koopa -d koopa0dev"]
@@ -143,13 +146,10 @@ services:
 volumes:
   pgdata:
 
-# Shared, security-tier networks created out-of-band (server/scripts/bootstrap-vps.sh:
-#   docker network create edge && docker network create internal).
-# external: true everywhere so NO stack owns them — koopa0.dev, tw-stock-trader and
-# observability all attach to the same edge/internal. Tier names encode the one
-# invariant: edge = internet-facing (SSR frontend + backend ingress); internal =
-# data/services (postgres, mcp, trader, observability scrapers). frontend is NOT on
-# internal, so it cannot reach postgres.
+# Shared, security-tier networks are created out-of-band by the server repository.
+# external: true means no application stack owns their lifecycle. edge carries
+# public ingress, internal carries Koopa data/services, and trader-db is the narrow
+# PostgreSQL-to-trader bridge. Only postgres joins trader-db from this stack.
 networks:
   edge:
     external: true
@@ -157,3 +157,6 @@ networks:
   internal:
     external: true
     name: internal
+  trader-db:
+    external: true
+    name: trader-db

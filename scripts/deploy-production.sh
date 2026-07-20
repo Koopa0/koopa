@@ -43,6 +43,105 @@ compose() {
     "$@"
 }
 
+trader_db_snapshot() {
+  local snapshot
+  if ! snapshot=$(docker network inspect "trader-db" 2>/dev/null); then
+    echo "ERROR: required trader-db network is missing or unreadable" >&2
+    return 1
+  fi
+  printf '%s\n' "$snapshot"
+}
+
+validate_trader_db_network() {
+  local snapshot=$1
+  if ! jq -e '
+    length == 1 and
+    .[0].Name == "trader-db" and
+    .[0].Driver == "bridge" and
+    .[0].Scope == "local" and
+    .[0].Internal == false and
+    ((.[0].Options // {})["com.docker.network.bridge.enable_ip_masquerade"] // "true") != "false" and
+    ((.[0].Options // {})["com.docker.network.bridge.gateway_mode_ipv4"] // "nat") == "nat" and
+    ((.[0].Containers // {}) | type == "object")
+  ' >/dev/null <<<"$snapshot"; then
+    echo "ERROR: trader-db network attributes do not match the approved bridge contract" >&2
+    return 1
+  fi
+}
+
+validate_trader_db_endpoints() {
+  local snapshot=$1
+  local require_postgres=$2
+  local expected_postgres_id=${3:-}
+  local endpoint_id endpoint_json project service
+  local provider_count=0
+  local trader_count=0
+  local postgres_alias_count=0
+  local -a endpoint_ids=()
+
+  mapfile -t endpoint_ids < <(
+    jq -r '.[0].Containers // {} | keys[]' <<<"$snapshot"
+  )
+  for endpoint_id in "${endpoint_ids[@]}"; do
+    if ! endpoint_json=$(docker inspect "$endpoint_id" 2>/dev/null); then
+      echo "ERROR: trader-db endpoint ownership is unreadable" >&2
+      return 1
+    fi
+    if ! project=$(jq -er \
+      '.[0].Config.Labels["com.docker.compose.project"] | select(type == "string" and length > 0)' \
+      <<<"$endpoint_json"); then
+      echo "ERROR: trader-db contains an endpoint without Compose ownership" >&2
+      return 1
+    fi
+    if ! service=$(jq -er \
+      '.[0].Config.Labels["com.docker.compose.service"] | select(type == "string" and length > 0)' \
+      <<<"$endpoint_json"); then
+      echo "ERROR: trader-db contains an endpoint without a Compose service" >&2
+      return 1
+    fi
+
+    case "$project:$service" in
+      koopa0dev:postgres)
+        provider_count=$((provider_count + 1))
+        if [[ -n "$expected_postgres_id" && "$endpoint_id" != "$expected_postgres_id" ]]; then
+          echo "ERROR: trader-db PostgreSQL endpoint is not owned by this Compose deployment" >&2
+          return 1
+        fi
+        if ! jq -e \
+          '.[0].NetworkSettings.Networks["trader-db"].Aliases // [] | index("postgres") != null' \
+          >/dev/null <<<"$endpoint_json"; then
+          echo "ERROR: trader-db PostgreSQL endpoint has no postgres alias" >&2
+          return 1
+        fi
+        postgres_alias_count=$((postgres_alias_count + 1))
+        ;;
+      tw-stock-trader:trader)
+        trader_count=$((trader_count + 1))
+        if jq -e \
+          '.[0].NetworkSettings.Networks["trader-db"].Aliases // [] | index("postgres") != null' \
+          >/dev/null <<<"$endpoint_json"; then
+          echo "ERROR: trader-db postgres alias is claimed by the trader endpoint" >&2
+          return 1
+        fi
+        ;;
+      *)
+        echo "ERROR: trader-db contains an unexpected endpoint" >&2
+        return 1
+        ;;
+    esac
+  done
+
+  if ((provider_count > 1 || trader_count > 1 || postgres_alias_count > 1)); then
+    echo "ERROR: trader-db contains duplicate approved endpoints or aliases" >&2
+    return 1
+  fi
+  if [[ "$require_postgres" == "true" ]] &&
+    ((provider_count != 1 || postgres_alias_count != 1)); then
+    echo "ERROR: trader-db PostgreSQL endpoint is missing after deployment" >&2
+    return 1
+  fi
+}
+
 compose_config=$(compose config --format json)
 for svc in backend mcp; do
   if ! resolved_sha=$(jq -er --arg svc "$svc" \
@@ -56,6 +155,30 @@ for svc in backend mcp; do
     exit 1
   fi
 done
+
+if ! jq -e '
+  .networks["trader-db"].name == "trader-db" and
+  .networks["trader-db"].external == true and
+  ((.services.postgres.networks | keys | sort) == ["internal", "trader-db"]) and
+  (.services.postgres.networks["trader-db"].aliases == ["postgres"]) and
+  (((.services.postgres.networks.internal // {}).aliases // []) | length == 0) and
+  all(
+    .services | to_entries[];
+    .key == "postgres" or
+    ((((.value.networks // {}) | has("trader-db"))) | not)
+  )
+' >/dev/null <<<"$compose_config"; then
+  echo "ERROR: effective Compose config violates the trader-db topology contract" >&2
+  exit 1
+fi
+
+if ! trader_db_preflight=$(trader_db_snapshot); then
+  exit 1
+fi
+if ! validate_trader_db_network "$trader_db_preflight" ||
+  ! validate_trader_db_endpoints "$trader_db_preflight" false; then
+  exit 1
+fi
 
 # Silence Grafana alerts during deploy (5 min). Monitoring integration is
 # best-effort and cannot change the build identity or deployment outcome.
@@ -121,6 +244,51 @@ for svc in backend mcp; do
   done
 done
 
+backend_ready=false
+for i in $(seq 1 30); do
+  if compose exec -T backend wget -qO- http://localhost:8080/readyz \
+    >/dev/null 2>&1; then
+    backend_ready=true
+    echo "backend ready after ${i}s"
+    break
+  fi
+  if [[ "$i" -eq 30 ]]; then
+    echo "ERROR: backend failed database readiness after 30s"
+    exit 1
+  fi
+  sleep 1
+done
+if [[ "$backend_ready" != "true" ]]; then
+  echo "ERROR: backend database readiness was not established"
+  exit 1
+fi
+
+postgres_container_id=$(compose ps -q postgres)
+if [[ -z "$postgres_container_id" ]]; then
+  echo "ERROR: Compose did not report a running PostgreSQL container" >&2
+  exit 1
+fi
+if ! trader_db_postflight=$(trader_db_snapshot); then
+  exit 1
+fi
+if ! validate_trader_db_network "$trader_db_postflight" ||
+  ! validate_trader_db_endpoints \
+    "$trader_db_postflight" true "$postgres_container_id"; then
+  exit 1
+fi
+if ! postgres_container=$(docker inspect "$postgres_container_id" 2>/dev/null); then
+  echo "ERROR: deployed PostgreSQL topology is unreadable" >&2
+  exit 1
+fi
+if ! jq -e '
+  length == 1 and
+  ((.[0].NetworkSettings.Networks | keys | sort) == ["internal", "trader-db"]) and
+  (.[0].NetworkSettings.Networks["trader-db"].Aliases // [] | index("postgres") != null)
+' >/dev/null <<<"$postgres_container"; then
+  echo "ERROR: deployed PostgreSQL container is not exact dual-home" >&2
+  exit 1
+fi
+
 # Expire the silence early after both running identities pass.
 if [[ -n "$SILENCE_ID" && "$SILENCE_ID" != "null" ]]; then
   curl -sf -X DELETE "http://localhost:3000/api/alertmanager/grafana/api/v2/silence/${SILENCE_ID}" \
@@ -128,8 +296,9 @@ if [[ -n "$SILENCE_ID" && "$SILENCE_ID" != "null" ]]; then
     2>/dev/null || true
 fi
 
-# Cleanup is non-material. The terminal remote line is the only receipt the
-# runner accepts, and it is derived from both observed container identities.
-docker image prune -f || true
+# Cleanup is non-material. The final two lines are bounded receipts: topology
+# gates first, then the unchanged terminal build-identity receipt.
+docker image prune -f >/dev/null || true
+printf '%s\n' 'TOPOLOGY_RECEIPT network=trader-db postgres=internal,trader-db alias=postgres unexpected_endpoints=none backend_ready=ok mcp_health=ok'
 printf 'DEPLOY_RECEIPT sha=%s backend=%s mcp=%s\n' \
   "$DEPLOY_SHA" "$backend_receipt_sha" "$mcp_receipt_sha"
