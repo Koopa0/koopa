@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -19,6 +20,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/Koopa0/koopa/internal/api"
@@ -1133,5 +1135,52 @@ func TestHandler_SourceProvenanceIsAdminOnly(t *testing.T) {
 		if strings.Contains(publicJSON, forbidden) {
 			t.Fatalf("public response leaked %q: %s", forbidden, publicJSON)
 		}
+	}
+}
+
+// TestSchema_SourceSnapshotConstraints proves the database is the final
+// provenance boundary even when a caller bypasses the Go validator.
+func TestSchema_SourceSnapshotConstraints(t *testing.T) {
+	setup(t)
+	const validSHA = "0123456789abcdef0123456789abcdef01234567"
+	tests := []struct {
+		name string
+		path any
+		sha  any
+	}{
+		{name: "half pair path only", path: "Writing/articles/path-only.md", sha: nil},
+		{name: "absolute path", path: "/Writing/articles/absolute.md", sha: validSHA},
+		{name: "empty segment", path: "Writing//articles/empty.md", sha: validSHA},
+		{name: "parent traversal", path: "Writing/../Diary/private.md", sha: validSHA},
+		{name: "Diary", path: "Diary/2026-07-20.md", sha: validSHA},
+		{name: "non Markdown", path: "Writing/articles/plain.txt", sha: validSHA},
+		{name: "invalid SHA", path: "Writing/articles/bad-sha.md", sha: "ABC123"},
+	}
+
+	for i, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := testPool.Exec(t.Context(), `
+				INSERT INTO contents (
+					slug, title, body, type, status,
+					source_vault_path, source_git_blob_sha
+				) VALUES ($1, 'Invalid source', 'body', 'article', 'review', $2, $3)`,
+				fmt.Sprintf("invalid-source-%d", i), tt.path, tt.sha,
+			)
+			var pgErr *pgconn.PgError
+			if !errors.As(err, &pgErr) || pgErr.Code != "23514" {
+				t.Fatalf("invalid source insert error = %v, want check violation 23514", err)
+			}
+		})
+	}
+
+	if _, err := testPool.Exec(t.Context(), `
+		INSERT INTO contents (
+			slug, title, body, type, status,
+			source_vault_path, source_git_blob_sha
+		) VALUES (
+			'valid-source-constraint', 'Valid source', 'body', 'article', 'review', $1, $2
+		)`, "Writing/articles/valid-source.md", validSHA,
+	); err != nil {
+		t.Fatalf("valid source insert rejected: %v", err)
 	}
 }
