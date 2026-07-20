@@ -571,6 +571,11 @@ func TestStore_PublishRequiresSourceSnapshot(t *testing.T) {
 	if !errors.Is(err, ErrSourceRequired) {
 		t.Fatalf("SubmitContentForReview(unbound draft) = %v, want ErrSourceRequired", err)
 	}
+	review := StatusReview
+	_, err = s.UpdateContent(ctx, id, &UpdateParams{Status: &review})
+	if !errors.Is(err, ErrInvalidState) {
+		t.Fatalf("UpdateContent(unbound draft, status=review) = %v, want ErrInvalidState", err)
+	}
 
 	got, err := s.Content(ctx, id)
 	if err != nil {
