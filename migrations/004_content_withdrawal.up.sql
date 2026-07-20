@@ -92,7 +92,8 @@ WHERE status = 'published' AND NOT is_public;
 -- Published is a historical fact and the row is an immutable Vault snapshot.
 -- Only current exposure, its paired withdrawal metadata, and updated_at may
 -- change after publication. search_vector is generated from immutable authored
--- fields, so it is excluded from the record comparison itself.
+-- fields, so it is excluded from the record comparison itself. This belongs at
+-- the database boundary because raw SQL and future write paths can bypass Go.
 CREATE FUNCTION guard_content_withdrawal_metadata() RETURNS TRIGGER AS $$
 BEGIN
     IF OLD.status = 'published'

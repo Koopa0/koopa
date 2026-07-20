@@ -1,6 +1,7 @@
 -- A rollback cannot represent an active withdrawal after dropping its reason
 -- and timestamp. Refuse data loss; restore the publication first (or restore a
 -- backup) before deliberately removing this migration.
+-- approved: drop column
 DO $$
 BEGIN
     IF EXISTS (SELECT 1 FROM contents WHERE withdrawn_at IS NOT NULL) THEN
