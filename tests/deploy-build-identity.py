@@ -450,6 +450,9 @@ def install_boundary_stubs(bin_dir: Path) -> None:
                 missing-dns-name)
                   networks='{"internal":{"Aliases":["koopa0dev-postgres-1","postgres"],"DNSNames":["postgres","koopa0dev-postgres-1"]},"trader-db":{"Aliases":["koopa0dev-postgres-1","postgres"],"DNSNames":["koopa0dev-postgres-1"]}}'
                   ;;
+                malformed-dns-names)
+                  networks='{"internal":{"Aliases":["koopa0dev-postgres-1","postgres"],"DNSNames":["postgres","koopa0dev-postgres-1"]},"trader-db":{"Aliases":["koopa0dev-postgres-1","postgres"],"DNSNames":"postgres"}}'
+                  ;;
                 extra-network)
                   networks='{"edge":{"Aliases":["koopa0dev-postgres-1"],"DNSNames":["koopa0dev-postgres-1"]},"internal":{"Aliases":["koopa0dev-postgres-1","postgres"],"DNSNames":["postgres","koopa0dev-postgres-1"]},"trader-db":{"Aliases":["koopa0dev-postgres-1","postgres"],"DNSNames":["postgres","koopa0dev-postgres-1"]}}'
                   ;;
@@ -460,14 +463,22 @@ def install_boundary_stubs(bin_dir: Path) -> None:
             trader-id)
               aliases='["tw-stock-trader-trader-1"]'
               dns_names='["trader","tw-stock-trader-trader-1"]'
+              dns_names_field=",\"DNSNames\":$dns_names"
               trader_dns_mode="$TRADER_PRE_DNS_MODE"
               if [[ "$inspect_phase" -gt 1 ]]; then
                 trader_dns_mode="$TRADER_DNS_MODE"
               fi
-              if [[ "$trader_dns_mode" == "collision" ]]; then
-                dns_names='["postgres","trader","tw-stock-trader-trader-1"]'
-              fi
-              printf '[{"Config":{"Labels":{"com.docker.compose.project":"tw-stock-trader","com.docker.compose.service":"trader"}},"NetworkSettings":{"Networks":{"trader-db":{"Aliases":%s,"DNSNames":%s}}}}]\n' "$aliases" "$dns_names"
+              case "$trader_dns_mode" in
+                valid) ;;
+                collision)
+                  dns_names='["postgres","trader","tw-stock-trader-trader-1"]'
+                  dns_names_field=",\"DNSNames\":$dns_names"
+                  ;;
+                missing) dns_names_field= ;;
+                malformed) dns_names_field=',"DNSNames":"trader"' ;;
+                *) printf 'unexpected trader DNS mode: %s\n' "$trader_dns_mode" >&2; exit 71 ;;
+              esac
+              printf '[{"Config":{"Labels":{"com.docker.compose.project":"tw-stock-trader","com.docker.compose.service":"trader"}},"NetworkSettings":{"Networks":{"trader-db":{"Aliases":%s%s}}}}]\n' "$aliases" "$dns_names_field"
               ;;
             rogue-id)
               printf '[{"Config":{"Labels":{"com.docker.compose.project":"rogue","com.docker.compose.service":"rogue"}},"NetworkSettings":{"Networks":{"trader-db":{"Aliases":["rogue"]}}}}]\n'
@@ -1268,6 +1279,16 @@ def check_deploy_script() -> list[str]:
     if "compose build" in dns_collision_log:
         failures.append("caught:network-preflight-dns-name-collision-reached-build")
 
+    for mode in ("missing", "malformed"):
+        proc, log = run_deploy(script, trader_pre_dns_mode=mode)
+        failures.extend(
+            assert_invoked(log, "network-inspect phase=1", f"network-dns-names-{mode}")
+        )
+        if proc.returncode == 0:
+            failures.append(f"caught:network-preflight-dns-names-{mode}-accepted exit=0")
+        if "compose build" in log:
+            failures.append(f"caught:network-preflight-dns-names-{mode}-reached-build")
+
     first_cutover, first_cutover_log = run_deploy(
         script, network_pre_mode="empty", network_post_mode="postgres-only"
     )
@@ -1307,6 +1328,10 @@ def check_deploy_script() -> list[str]:
         (
             "postgres-missing-dns-name",
             {"postgres_live_mode": "missing-dns-name"},
+        ),
+        (
+            "postgres-malformed-dns-names",
+            {"postgres_live_mode": "malformed-dns-names"},
         ),
         (
             "postgres-extra-network",
