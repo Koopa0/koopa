@@ -38,6 +38,10 @@ function contentPayload(overrides: Partial<ApiContent> = {}): ApiContent {
     series_order: null,
     is_public: false,
     reading_time_min: 3,
+    source: {
+      vault_path: 'Writing/articles/value-semantics.md',
+      git_blob_sha: '0123456789abcdef0123456789abcdef01234567',
+    },
     published_at: null,
     created_at: '2026-06-01T00:00:00Z',
     updated_at: '2026-06-02T00:00:00Z',
@@ -378,7 +382,7 @@ describe('ContentEditorPageComponent', () => {
       await settle();
       httpMock
         .expectOne((r) => r.url.endsWith(`${CONTENT_URL}/abc-1`))
-        .flush({ data: contentPayload({ status: 'draft' }) });
+        .flush({ data: contentPayload({ status: 'draft', source: null }) });
       flushTopics();
       await settle();
     });
@@ -589,9 +593,12 @@ describe('ContentEditorPageComponent', () => {
       // ResourceValueError) so the "No topics available" notice renders and
       // the editor form stays usable.
       harness = await RouterTestingHarness.create(
-        '/admin/knowledge/content/new',
+        '/admin/knowledge/content/abc-1/edit',
       );
       await settle();
+      httpMock
+        .expectOne((r) => r.url.endsWith(`${CONTENT_URL}/abc-1`))
+        .flush({ data: contentPayload() });
       httpMock
         .expectOne((r) => r.url.endsWith(TOPICS_URL))
         .flush(
