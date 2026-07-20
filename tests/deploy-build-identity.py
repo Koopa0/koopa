@@ -411,6 +411,7 @@ def install_boundary_stubs(bin_dir: Path) -> None:
             internal) internal=true ;;
             ipv4-disabled) enable_ipv4=false ;;
             unsafe-egress) options='{"com.docker.network.bridge.enable_ip_masquerade":"false"}' ;;
+            icc-disabled) options='{"com.docker.network.bridge.enable_icc":"false"}' ;;
             inhibit-ipv4) options='{"com.docker.network.bridge.inhibit_ipv4":"true"}' ;;
             routed-gateway) options='{"com.docker.network.bridge.gateway_mode_ipv4":"routed"}' ;;
             isolated-gateway) options='{"com.docker.network.bridge.gateway_mode_ipv4":"isolated"}' ;;
@@ -1231,6 +1232,7 @@ def check_deploy_script() -> list[str]:
         "internal",
         "ipv4-disabled",
         "unsafe-egress",
+        "icc-disabled",
         "inhibit-ipv4",
         "routed-gateway",
         "isolated-gateway",
