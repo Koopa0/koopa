@@ -77,12 +77,8 @@ validate_trader_db_endpoints() {
   local provider_count=0
   local trader_count=0
   local postgres_alias_count=0
-  local -a endpoint_ids=()
 
-  mapfile -t endpoint_ids < <(
-    jq -r '.[0].Containers // {} | keys[]' <<<"$snapshot"
-  )
-  for endpoint_id in "${endpoint_ids[@]}"; do
+  while IFS= read -r endpoint_id; do
     if ! endpoint_json=$(docker inspect "$endpoint_id" 2>/dev/null); then
       echo "ERROR: trader-db endpoint ownership is unreadable" >&2
       return 1
@@ -129,7 +125,7 @@ validate_trader_db_endpoints() {
         return 1
         ;;
     esac
-  done
+  done < <(jq -r '.[0].Containers // {} | keys[]' <<<"$snapshot")
 
   if ((provider_count > 1 || trader_count > 1 || postgres_alias_count > 1)); then
     echo "ERROR: trader-db contains duplicate approved endpoints or aliases" >&2
