@@ -108,7 +108,7 @@ describe('ContentListPageComponent', () => {
     await settle();
 
     const latestContext = topbarSet.mock.calls.at(-1)?.[0] as {
-      actions?: Array<{ id: string }>;
+      actions?: { id: string }[];
     };
     expect(
       latestContext.actions?.some((action) => action.id === 'new-content'),
