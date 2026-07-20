@@ -51,7 +51,7 @@ export interface AdminNavGroup {
 }
 
 /**
- * 5-group nav structure (Daily / Commitment / Knowledge / Input /
+ * 5-group nav structure (Daily / Commitment / Publishing / Input /
  * System) per the Mission Control design IA. Input holds the ingestion
  * pipeline (Feeds). Kept here, not inlined in AdminLayoutComponent, so
  * the component stays small and the structure is reusable by tests and
@@ -137,10 +137,10 @@ export const ADMIN_NAV: readonly AdminNavGroup[] = [
     ],
   },
   {
-    label: 'Knowledge',
+    label: 'Publishing',
     items: [
       {
-        label: 'Content',
+        label: 'Publications',
         route: '/admin/knowledge/content',
         icon: FileText,
         countKey: 'contents_total',

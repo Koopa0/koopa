@@ -85,7 +85,7 @@ export class FeedTriagePageComponent {
   constructor() {
     this.topbar.set({
       title: 'Feed triage',
-      crumbs: ['Knowledge', 'Feeds', 'Triage'],
+      crumbs: ['Input', 'Feeds', 'Triage'],
       actions: [
         {
           id: 'back-to-feeds',

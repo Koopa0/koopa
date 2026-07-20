@@ -26,7 +26,7 @@ const GO_TO_REGISTRY: readonly GoToEntry[] = [
   { key: 'h', label: 'Today', path: '/admin/daily/today' },
   { key: 't', label: 'Todos', path: '/admin/daily/todos' },
   { key: 'g', label: 'Goals & projects', path: '/admin/commitment/goals' },
-  { key: 'c', label: 'Content', path: '/admin/knowledge/content' },
+  { key: 'c', label: 'Publications', path: '/admin/knowledge/content' },
   { key: 'r', label: 'Review queue', path: '/admin/knowledge/review-queue' },
   { key: 'f', label: 'Feeds', path: '/admin/knowledge/feeds' },
   { key: 'a', label: 'Activity', path: '/admin/system/activity' },
