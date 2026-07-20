@@ -459,14 +459,15 @@ def install_boundary_stubs(bin_dir: Path) -> None:
               ;;
             trader-id)
               aliases='["tw-stock-trader-trader-1"]'
-              trader_alias_mode="$TRADER_PRE_ALIAS_MODE"
+              dns_names='["trader","tw-stock-trader-trader-1"]'
+              trader_dns_mode="$TRADER_PRE_DNS_MODE"
               if [[ "$inspect_phase" -gt 1 ]]; then
-                trader_alias_mode="$TRADER_ALIAS_MODE"
+                trader_dns_mode="$TRADER_DNS_MODE"
               fi
-              if [[ "$trader_alias_mode" == "collision" ]]; then
-                aliases='["tw-stock-trader-trader-1","postgres"]'
+              if [[ "$trader_dns_mode" == "collision" ]]; then
+                dns_names='["postgres","trader","tw-stock-trader-trader-1"]'
               fi
-              printf '[{"Config":{"Labels":{"com.docker.compose.project":"tw-stock-trader","com.docker.compose.service":"trader"}},"NetworkSettings":{"Networks":{"trader-db":{"Aliases":%s}}}}]\n' "$aliases"
+              printf '[{"Config":{"Labels":{"com.docker.compose.project":"tw-stock-trader","com.docker.compose.service":"trader"}},"NetworkSettings":{"Networks":{"trader-db":{"Aliases":%s,"DNSNames":%s}}}}]\n' "$aliases" "$dns_names"
               ;;
             rogue-id)
               printf '[{"Config":{"Labels":{"com.docker.compose.project":"rogue","com.docker.compose.service":"rogue"}},"NetworkSettings":{"Networks":{"trader-db":{"Aliases":["rogue"]}}}}]\n'
@@ -603,8 +604,8 @@ def run_deploy(
     network_post_mode: str = "valid",
     postgres_pre_mode: str = "valid",
     postgres_live_mode: str = "valid",
-    trader_pre_alias_mode: str = "valid",
-    trader_alias_mode: str = "valid",
+    trader_pre_dns_mode: str = "valid",
+    trader_dns_mode: str = "valid",
     release_entrypoint_blob_override: str | None = None,
 ) -> tuple[subprocess.CompletedProcess[str], str]:
     with tempfile.TemporaryDirectory(prefix="koopa-deploy-identity-") as raw_tmp:
@@ -650,8 +651,8 @@ def run_deploy(
                 "NETWORK_POST_MODE": network_post_mode,
                 "POSTGRES_PRE_MODE": postgres_pre_mode,
                 "POSTGRES_LIVE_MODE": postgres_live_mode,
-                "TRADER_PRE_ALIAS_MODE": trader_pre_alias_mode,
-                "TRADER_ALIAS_MODE": trader_alias_mode,
+                "TRADER_PRE_DNS_MODE": trader_pre_dns_mode,
+                "TRADER_DNS_MODE": trader_dns_mode,
                 "HARNESS_STATE_DIR": str(harness_state),
                 "DEPLOY_ENTRYPOINT_SOURCE": str(DEPLOY_ENTRYPOINT),
                 "DEPLOY_ENTRYPOINT_BLOB": subprocess.check_output(
@@ -1252,6 +1253,21 @@ def check_deploy_script() -> list[str]:
         if "compose build" in log:
             failures.append(f"caught:network-preflight-{mode}-reached-build")
 
+    dns_collision, dns_collision_log = run_deploy(
+        script, trader_pre_dns_mode="collision"
+    )
+    failures.extend(
+        assert_invoked(
+            dns_collision_log,
+            "network-inspect phase=1",
+            "network-dns-name-collision",
+        )
+    )
+    if dns_collision.returncode == 0:
+        failures.append("caught:network-preflight-dns-name-collision-accepted exit=0")
+    if "compose build" in dns_collision_log:
+        failures.append("caught:network-preflight-dns-name-collision-reached-build")
+
     first_cutover, first_cutover_log = run_deploy(
         script, network_pre_mode="empty", network_post_mode="postgres-only"
     )
@@ -1301,8 +1317,8 @@ def check_deploy_script() -> list[str]:
             {"network_post_mode": "missing-postgres"},
         ),
         (
-            "live-alias-collision",
-            {"trader_alias_mode": "collision"},
+            "live-dns-name-collision",
+            {"trader_dns_mode": "collision"},
         ),
     )
     for name, kwargs in postflight_cases:
