@@ -436,19 +436,22 @@ def install_boundary_stubs(bin_dir: Path) -> None:
               fi
               case "$postgres_mode" in
                 valid)
-                  networks='{"internal":{"Aliases":["koopa0dev-postgres-1","postgres"]},"trader-db":{"Aliases":["koopa0dev-postgres-1","postgres"]}}'
+                  networks='{"internal":{"Aliases":["koopa0dev-postgres-1","postgres"],"DNSNames":["postgres","koopa0dev-postgres-1"]},"trader-db":{"Aliases":["koopa0dev-postgres-1","postgres"],"DNSNames":["postgres","koopa0dev-postgres-1"]}}'
                   ;;
                 missing-internal)
-                  networks='{"trader-db":{"Aliases":["koopa0dev-postgres-1","postgres"]}}'
+                  networks='{"trader-db":{"Aliases":["koopa0dev-postgres-1","postgres"],"DNSNames":["postgres","koopa0dev-postgres-1"]}}'
                   ;;
                 missing-provider)
-                  networks='{"internal":{"Aliases":["koopa0dev-postgres-1","postgres"]}}'
+                  networks='{"internal":{"Aliases":["koopa0dev-postgres-1","postgres"],"DNSNames":["postgres","koopa0dev-postgres-1"]}}'
                   ;;
                 missing-alias)
-                  networks='{"internal":{"Aliases":["koopa0dev-postgres-1","postgres"]},"trader-db":{"Aliases":["koopa0dev-postgres-1"]}}'
+                  networks='{"internal":{"Aliases":["koopa0dev-postgres-1","postgres"],"DNSNames":["postgres","koopa0dev-postgres-1"]},"trader-db":{"Aliases":["koopa0dev-postgres-1"],"DNSNames":["koopa0dev-postgres-1"]}}'
+                  ;;
+                missing-dns-name)
+                  networks='{"internal":{"Aliases":["koopa0dev-postgres-1","postgres"],"DNSNames":["postgres","koopa0dev-postgres-1"]},"trader-db":{"Aliases":["koopa0dev-postgres-1","postgres"],"DNSNames":["koopa0dev-postgres-1"]}}'
                   ;;
                 extra-network)
-                  networks='{"edge":{"Aliases":["koopa0dev-postgres-1"]},"internal":{"Aliases":["koopa0dev-postgres-1","postgres"]},"trader-db":{"Aliases":["koopa0dev-postgres-1","postgres"]}}'
+                  networks='{"edge":{"Aliases":["koopa0dev-postgres-1"],"DNSNames":["koopa0dev-postgres-1"]},"internal":{"Aliases":["koopa0dev-postgres-1","postgres"],"DNSNames":["postgres","koopa0dev-postgres-1"]},"trader-db":{"Aliases":["koopa0dev-postgres-1","postgres"],"DNSNames":["postgres","koopa0dev-postgres-1"]}}'
                   ;;
                 *) printf 'unexpected postgres live mode: %s\n' "$postgres_mode" >&2; exit 67 ;;
               esac
@@ -1284,6 +1287,10 @@ def check_deploy_script() -> list[str]:
         (
             "postgres-missing-alias",
             {"postgres_live_mode": "missing-alias"},
+        ),
+        (
+            "postgres-missing-dns-name",
+            {"postgres_live_mode": "missing-dns-name"},
         ),
         (
             "postgres-extra-network",
