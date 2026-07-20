@@ -64,10 +64,10 @@ def check_provider_deployment_docs() -> list[str]:
         "server-owned lifecycle contract mismatch",
         "postgres DNS name is claimed by the trader endpoint",
         "trader endpoint joins networks other than trader-db",
-        "d703d7ebf09aef69bc5cc7188e4882ac6f30e4c2",
+        "f46ff552fa14d48e7ebf8077bf81db28d026e5bb",
         "must be landed and deployed before this rollout",
-        "Koopa0/server/blob/d703d7ebf09aef69bc5cc7188e4882ac6f30e4c2/VPS-SETUP.md",
-        "Koopa0/server/blob/d703d7ebf09aef69bc5cc7188e4882ac6f30e4c2/DISASTER-RECOVERY.md",
+        "Koopa0/server/blob/f46ff552fa14d48e7ebf8077bf81db28d026e5bb/VPS-SETUP.md",
+        "Koopa0/server/blob/f46ff552fa14d48e7ebf8077bf81db28d026e5bb/DISASTER-RECOVERY.md",
     )
     missing = [needle for needle in required if needle not in readme]
     readme_zh_tw = README_ZH_TW.read_text(encoding="utf-8")
