@@ -81,7 +81,7 @@ validate_trader_db_endpoints() {
   local endpoint_id endpoint_json project service
   local provider_count=0
   local trader_count=0
-  local postgres_alias_count=0
+  local postgres_name_count=0
 
   while IFS= read -r endpoint_id; do
     if ! endpoint_json=$(docker inspect "$endpoint_id" 2>/dev/null); then
@@ -109,12 +109,12 @@ validate_trader_db_endpoints() {
           return 1
         fi
         if ! jq -e \
-          '.[0].NetworkSettings.Networks["trader-db"].Aliases // [] | index("postgres") != null' \
+          '.[0].NetworkSettings.Networks["trader-db"].DNSNames // [] | index("postgres") != null' \
           >/dev/null <<<"$endpoint_json"; then
-          echo "ERROR: trader-db PostgreSQL endpoint has no postgres alias" >&2
+          echo "ERROR: trader-db PostgreSQL endpoint does not own the postgres DNS name" >&2
           return 1
         fi
-        postgres_alias_count=$((postgres_alias_count + 1))
+        postgres_name_count=$((postgres_name_count + 1))
         ;;
       tw-stock-trader:trader)
         trader_count=$((trader_count + 1))
@@ -132,12 +132,12 @@ validate_trader_db_endpoints() {
     esac
   done < <(jq -r '.[0].Containers // {} | keys[]' <<<"$snapshot")
 
-  if ((provider_count > 1 || trader_count > 1 || postgres_alias_count > 1)); then
-    echo "ERROR: trader-db contains duplicate approved endpoints or aliases" >&2
+  if ((provider_count > 1 || trader_count > 1 || postgres_name_count > 1)); then
+    echo "ERROR: trader-db contains duplicate approved endpoints or DNS names" >&2
     return 1
   fi
   if [[ "$require_postgres" == "true" ]] &&
-    ((provider_count != 1 || postgres_alias_count != 1)); then
+    ((provider_count != 1 || postgres_name_count != 1)); then
     echo "ERROR: trader-db PostgreSQL endpoint is missing after deployment" >&2
     return 1
   fi
@@ -284,7 +284,7 @@ fi
 if ! jq -e '
   length == 1 and
   ((.[0].NetworkSettings.Networks | keys | sort) == ["internal", "trader-db"]) and
-  (.[0].NetworkSettings.Networks["trader-db"].Aliases // [] | index("postgres") != null)
+  (.[0].NetworkSettings.Networks["trader-db"].DNSNames // [] | index("postgres") != null)
 ' >/dev/null <<<"$postgres_container"; then
   echo "ERROR: deployed PostgreSQL container is not exact dual-home" >&2
   exit 1
