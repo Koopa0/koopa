@@ -60,8 +60,12 @@ validate_trader_db_network() {
     .[0].Driver == "bridge" and
     .[0].Scope == "local" and
     .[0].Internal == false and
-    ((.[0].Options // {})["com.docker.network.bridge.enable_ip_masquerade"] // "true") != "false" and
+    (((.[0] | has("EnableIPv4")) | not) or .[0].EnableIPv4 == true) and
+    ((.[0].Options // {})["com.docker.network.bridge.enable_ip_masquerade"] // "true") == "true" and
+    ((.[0].Options // {})["com.docker.network.bridge.inhibit_ipv4"] // "false") == "false" and
     ((.[0].Options // {})["com.docker.network.bridge.gateway_mode_ipv4"] // "nat") == "nat" and
+    ((.[0].Labels // {}) | type == "object") and
+    all((.[0].Labels // {}) | keys[]; startswith("com.docker.compose.") | not) and
     ((.[0].Containers // {}) | type == "object")
   ' >/dev/null <<<"$snapshot"; then
     echo "ERROR: trader-db network attributes do not match the approved bridge contract" >&2
