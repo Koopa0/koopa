@@ -76,7 +76,7 @@ interface ContentItem {
   title: string;
   excerpt: string;
   type: string;
-  tags: string[];
+  topics: Array<{ name: string }> | null;
   published_at: string | null;
   updated_at: string;
 }
@@ -197,8 +197,8 @@ app.get('/feed.xml', async (_req, res) => {
       const prefix = TYPE_ROUTE_PREFIX[c.type];
       const link = `${SITE_URL}${prefix}/${c.slug}`;
       const pubDate = new Date(c.published_at ?? c.updated_at).toUTCString();
-      const categories = c.tags
-        .map((tag) => `      <category>${escapeXml(tag)}</category>`)
+      const categories = (c.topics ?? [])
+        .map((topic) => `      <category>${escapeXml(topic.name)}</category>`)
         .join('\n');
       return `    <item>
       <title>${escapeXml(c.title)}</title>

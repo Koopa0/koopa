@@ -28,12 +28,11 @@ interface RailAction {
   primary: boolean;
 }
 
-const STATUS_ORDER: readonly ContentStatus[] = [
+const PUBLICATION_STATUS_ORDER: readonly ContentStatus[] = [
   'draft',
   'review',
   'changes_requested',
   'published',
-  'archived',
 ];
 
 /** Legal transition buttons offered for each current status. */
@@ -56,10 +55,10 @@ const ACTIONS_BY_STATUS: Record<ContentStatus, readonly RailAction[]> = {
 };
 
 /**
- * Vertical lifecycle rail for the content editor sidebar: the four
- * stages draft → review → published → archived rendered as a stepper
- * (past = check, current = dot, future = empty), with the legal
- * transitions for the current status as buttons underneath.
+ * Vertical lifecycle rail for the content editor sidebar. The publication
+ * path ends at published; archived is a separate terminal disposal state for
+ * never-published work and therefore renders alone rather than pretending a
+ * publication passed through it.
  *
  * Publishing is a human-only action server-side and requires a source-bound
  * snapshot. The rail hides promotion actions for legacy unbound rows and
@@ -79,8 +78,11 @@ export class ContentLifecycleRailComponent {
   readonly action = output<ContentLifecycleAction>();
 
   protected readonly steps = computed<RailStep[]>(() => {
-    const current = STATUS_ORDER.indexOf(this.status());
-    return STATUS_ORDER.map((status, i) => ({
+    if (this.status() === 'archived') {
+      return [{ status: 'archived', state: 'active' }];
+    }
+    const current = PUBLICATION_STATUS_ORDER.indexOf(this.status());
+    return PUBLICATION_STATUS_ORDER.map((status, i) => ({
       status,
       state: i < current ? 'done' : i === current ? 'active' : 'future',
     }));

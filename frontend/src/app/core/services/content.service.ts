@@ -119,7 +119,7 @@ export class ContentService {
     );
   }
 
-  /** Archive content (any status → archived). */
+  /** Archive never-published content. Published snapshots use Withdraw. */
   archive(id: string): Observable<ApiContent> {
     return this.api.postData<ApiContent>(
       `/api/admin/knowledge/content/${id}/archive`,
