@@ -62,6 +62,7 @@ validate_trader_db_network() {
     .[0].Internal == false and
     (((.[0] | has("EnableIPv4")) | not) or .[0].EnableIPv4 == true) and
     ((.[0].Options // {})["com.docker.network.bridge.enable_ip_masquerade"] // "true") == "true" and
+    ((.[0].Options // {})["com.docker.network.bridge.enable_icc"] // "true") == "true" and
     ((.[0].Options // {})["com.docker.network.bridge.inhibit_ipv4"] // "false") == "false" and
     ((.[0].Options // {})["com.docker.network.bridge.gateway_mode_ipv4"] // "nat") == "nat" and
     ((.[0].Labels // {}) | type == "object") and
