@@ -36,7 +36,7 @@ const MAX_REASON_LENGTH = 500;
             <span class="text-fg-faint">({{ reasonLength() }}/{{ maxLength }})</span>
           </label>
           <p id="withdrawal-reason-hint" class="text-[11px] text-fg-faint">
-            Required. This reason is retained in the admin audit history.
+            Required. Koopa retains this reason in its audit log.
           </p>
           <textarea
             id="withdrawal-reason"
