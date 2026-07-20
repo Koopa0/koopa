@@ -543,6 +543,28 @@ func TestStore_UpdateContent_PublishedSnapshotIsImmutable(t *testing.T) {
 	}
 }
 
+// TestStore_PublishRequiresSourceSnapshot locks the D4 promotion boundary:
+// an unbound Koopa row is not a publishable Vault snapshot. The failed
+// transition must leave state, visibility, and published_at untouched.
+func TestStore_PublishRequiresSourceSnapshot(t *testing.T) {
+	s := setup(t)
+	ctx := t.Context()
+
+	id := createDraftContent(t, s, ctx, "unbound-publish")
+	_, err := s.Publish(ctx, id)
+	if err == nil || !strings.Contains(err.Error(), "source snapshot required") {
+		t.Fatalf("Publish(unbound draft) = %v, want source snapshot required", err)
+	}
+
+	got, err := s.Content(ctx, id)
+	if err != nil {
+		t.Fatalf("Content() after rejected publish: %v", err)
+	}
+	if got.Status != StatusDraft || got.IsPublic || got.PublishedAt != nil {
+		t.Fatalf("rejected publish mutated row: status=%q public=%t published_at=%v", got.Status, got.IsPublic, got.PublishedAt)
+	}
+}
+
 // TestHandler_SetIsPublic_PublishedOffSwitchRemainsAvailable is the positive
 // control for the snapshot guard. Until durable withdrawal exists, the
 // dedicated visibility endpoint must still be able to take a published row

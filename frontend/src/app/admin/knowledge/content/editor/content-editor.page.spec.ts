@@ -49,6 +49,23 @@ function contentPayload(overrides: Partial<ApiContent> = {}): ApiContent {
   };
 }
 
+type SourceBoundContent = ApiContent & {
+  source: {
+    vault_path: string;
+    git_blob_sha: string;
+  };
+};
+
+function sourceBoundContentPayload(): SourceBoundContent {
+  return {
+    ...contentPayload({ status: 'review', created_by: 'claude' }),
+    source: {
+      vault_path: 'Writing/articles/value-semantics.md',
+      git_blob_sha: '0123456789abcdef0123456789abcdef01234567',
+    },
+  };
+}
+
 describe('ContentEditorPageComponent', () => {
   let harness: RouterTestingHarness;
   let httpMock: HttpTestingController;
@@ -432,6 +449,63 @@ describe('ContentEditorPageComponent', () => {
           '[data-testid="editor-is-public"]',
         )?.disabled,
       ).toBe(false);
+
+      el()
+        .querySelector<HTMLFormElement>('[data-testid="content-editor"]')
+        ?.dispatchEvent(new Event('submit'));
+      await settle();
+      httpMock.expectNone(
+        (r) => r.method === 'PUT' && r.url.endsWith(`${CONTENT_URL}/abc-1`),
+      );
+    });
+  });
+
+  describe('source-bound review snapshot mode', () => {
+    beforeEach(async () => {
+      harness = await RouterTestingHarness.create(
+        '/admin/knowledge/content/abc-1/edit',
+      );
+      await settle();
+      httpMock
+        .expectOne((r) => r.url.endsWith(`${CONTENT_URL}/abc-1`))
+        .flush({ data: sourceBoundContentPayload() });
+      flushTopics();
+      await settle();
+    });
+
+    it('should show provenance and lock authored fields without blocking lifecycle actions', async () => {
+      expect(
+        el().querySelector('[data-testid="source-snapshot-notice"]')
+          ?.textContent,
+      ).toContain('Writing/articles/value-semantics.md');
+      expect(
+        el().querySelector('[data-testid="source-snapshot-notice"]')
+          ?.textContent,
+      ).toContain('0123456');
+
+      const saveAction = TestBed.inject(AdminTopbarService)
+        .context()
+        .actions?.find((a) => a.id === 'save');
+      expect(saveAction?.disabled).toBe(true);
+      expect(saveAction?.label).toBe('Read only');
+
+      for (const testID of [
+        'editor-title',
+        'editor-body',
+        'editor-excerpt',
+        'editor-cover',
+      ]) {
+        const control = el().querySelector<
+          HTMLInputElement | HTMLTextAreaElement
+        >(`[data-testid="${testID}"]`);
+        expect(control?.readOnly).toBe(true);
+      }
+      expect(
+        el().querySelector('[data-testid="lifecycle-action-publish"]'),
+      ).toBeTruthy();
+      expect(
+        el().querySelector('[data-testid="lifecycle-action-send-back"]'),
+      ).toBeTruthy();
 
       el()
         .querySelector<HTMLFormElement>('[data-testid="content-editor"]')
