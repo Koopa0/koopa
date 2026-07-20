@@ -11,7 +11,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
+	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/google/uuid"
@@ -34,6 +37,56 @@ const (
 	// content_type is exactly these five values: article, essay, build-log,
 	// til, digest.
 )
+
+var gitBlobSHA = regexp.MustCompile(`^[0-9a-f]{40}([0-9a-f]{24})?$`)
+
+// SourceSnapshot identifies the immutable Vault revision from which Koopa's
+// publication snapshot was submitted. It is a declared coordinate: Koopa does
+// not read or verify Vault bytes at runtime.
+type SourceSnapshot struct {
+	VaultPath  string `json:"vault_path"`
+	GitBlobSHA string `json:"git_blob_sha"`
+}
+
+// ValidateSourceSnapshot validates a declared Vault-relative Markdown path
+// and Git object id. The path is deliberately platform-neutral: forward
+// slashes only, no absolute/traversal/empty segments. A segment named Diary is
+// rejected case-insensitively at the final ingress boundary because Diary is
+// private and never publishable.
+func ValidateSourceSnapshot(vaultPath, blobSHA string) error {
+	if vaultPath == "" {
+		return fmt.Errorf("source_vault_path is required")
+	}
+	if blobSHA == "" {
+		return fmt.Errorf("source_git_blob_sha is required")
+	}
+	if vaultPath != strings.TrimSpace(vaultPath) || strings.HasPrefix(vaultPath, "/") || strings.Contains(vaultPath, `\`) {
+		return fmt.Errorf("source_vault_path must be a canonical Vault-relative path")
+	}
+	for _, r := range vaultPath {
+		if unicode.IsControl(r) {
+			return fmt.Errorf("source_vault_path must not contain control characters")
+		}
+	}
+	segments := strings.Split(vaultPath, "/")
+	for _, segment := range segments {
+		switch {
+		case segment == "":
+			return fmt.Errorf("source_vault_path must not contain empty path segments")
+		case segment == "." || segment == "..":
+			return fmt.Errorf("source_vault_path must not contain . or .. path segments")
+		case strings.EqualFold(segment, "Diary"):
+			return fmt.Errorf("source_vault_path is not publishable: Diary is private")
+		}
+	}
+	if !strings.HasSuffix(vaultPath, ".md") {
+		return fmt.Errorf("source_vault_path must end in .md")
+	}
+	if !gitBlobSHA.MatchString(blobSHA) {
+		return fmt.Errorf("source_git_blob_sha must be a 40 or 64 lowercase hexadecimal Git object id")
+	}
+	return nil
+}
 
 // Valid reports whether t is a known content type.
 func (t Type) Valid() bool {
@@ -138,19 +191,49 @@ type Content struct {
 	CoverImage     *string    `json:"cover_image,omitempty"`
 	// CreatedBy is the proposing agent for agent-pushed content (the MCP
 	// propose_content tool stamps the caller identity here). NULL for
-	// owner/admin-authored content.
+	// legacy owner-authored content created before direct Admin authoring was
+	// retired.
 	CreatedBy *string `json:"created_by,omitempty"`
 	// ProposalRationale is the proposing agent's "why I propose this" note,
-	// surfaced in the admin review queue. NULL for admin-authored content.
+	// surfaced in the admin review queue. NULL on legacy owner-authored rows.
 	ProposalRationale *string `json:"proposal_rationale,omitempty"`
 	// ReviewNote is the owner's revision reason, set when the owner sends a
 	// review draft back (status → changes_requested) from the admin review
 	// queue. The authoring agent reads it via list_content and addresses it
 	// with revise_content. NULL when the row has never been sent back.
-	ReviewNote  *string    `json:"review_note,omitempty"`
-	PublishedAt *time.Time `json:"published_at,omitempty"`
-	CreatedAt   time.Time  `json:"created_at"`
-	UpdatedAt   time.Time  `json:"updated_at"`
+	ReviewNote *string `json:"review_note,omitempty"`
+	// SourceVaultPath and SourceGitBlobSHA are intentionally excluded from the
+	// default Content JSON shape. Anonymous endpoints serialize Content
+	// directly; authenticated admin and MCP responses expose provenance through
+	// explicit wrappers so this private Vault coordinate cannot leak by accident.
+	SourceVaultPath  *string    `json:"-"`
+	SourceGitBlobSHA *string    `json:"-"`
+	PublishedAt      *time.Time `json:"published_at,omitempty"`
+	CreatedAt        time.Time  `json:"created_at"`
+	UpdatedAt        time.Time  `json:"updated_at"`
+}
+
+// Source returns the complete provenance pair or nil for a pre-003/legacy
+// row. The schema enforces all-or-nothing storage, so a half-bound snapshot is
+// impossible after migrations apply.
+func (c *Content) Source() *SourceSnapshot {
+	if c.SourceVaultPath == nil || c.SourceGitBlobSHA == nil {
+		return nil
+	}
+	return &SourceSnapshot{VaultPath: *c.SourceVaultPath, GitBlobSHA: *c.SourceGitBlobSHA}
+}
+
+// AdminContent is the authenticated wire view. Embedding Content preserves
+// the established flat response while adding a read-only nested source
+// coordinate. Anonymous handlers continue to serialize Content and therefore
+// cannot expose the json-excluded provenance fields.
+type AdminContent struct {
+	Content
+	SourceSnapshot *SourceSnapshot `json:"source,omitempty"`
+}
+
+func adminContent(c *Content) AdminContent {
+	return AdminContent{Content: *c, SourceSnapshot: c.Source()}
 }
 
 // Brief is the minimal content projection used when a consumer only needs
@@ -200,14 +283,15 @@ type CreateParams struct {
 	ProjectID      *uuid.UUID  `json:"project_id,omitempty"`
 	ReadingTimeMin int         `json:"reading_time_min"`
 	CoverImage     *string     `json:"cover_image,omitempty"`
-	// CreatedBy stamps the proposing agent on agent-pushed content. The MCP
-	// propose_content tool sets it to the resolved caller identity; the admin
-	// HTTP Create path leaves it nil (owner-authored content has no agent
-	// author — it is NOT forced to 'human').
+	// CreatedBy stamps the submitting agent. The only production creation path,
+	// propose_content, sets it to the resolved caller identity. Legacy rows may
+	// still carry nil; the retired Admin HTTP Create path no longer writes rows.
 	CreatedBy *string `json:"created_by,omitempty"`
-	// ProposalRationale carries the proposing agent's justification. Set by
-	// propose_content, nil for admin-authored content.
+	// ProposalRationale carries the submitting agent's justification. Set by
+	// propose_content; nil on legacy owner-authored rows.
 	ProposalRationale *string `json:"proposal_rationale,omitempty"`
+	SourceVaultPath   *string `json:"-"`
+	SourceGitBlobSHA  *string `json:"-"`
 }
 
 // UpdateParams are the parameters for updating content.
@@ -234,25 +318,30 @@ type UpdateParams struct {
 // are omitted; created_by is implied by the query filter and supplied by the
 // caller, so it is not re-selected here.
 type CreatorItem struct {
-	ID         uuid.UUID `json:"id"`
-	Slug       string    `json:"slug"`
-	Title      string    `json:"title"`
-	Type       Type      `json:"type"`
-	Status     Status    `json:"status"`
-	ReviewNote *string   `json:"review_note,omitempty"`
-	CreatedAt  time.Time `json:"created_at"`
+	ID               uuid.UUID  `json:"id"`
+	Slug             string     `json:"slug"`
+	Title            string     `json:"title"`
+	Type             Type       `json:"type"`
+	Status           Status     `json:"status"`
+	ReviewNote       *string    `json:"review_note,omitempty"`
+	SourceVaultPath  string     `json:"source_vault_path"`
+	SourceGitBlobSHA string     `json:"source_git_blob_sha"`
+	PublishedAt      *time.Time `json:"published_at,omitempty"`
+	CreatedAt        time.Time  `json:"created_at"`
 }
 
 // RevisionParams are the parameters for the caller-scoped revise_content write.
-// ID + CreatedBy scope the write to the caller's own content; Body/Excerpt/Title
-// are optional edits (nil leaves the column unchanged via COALESCE). The
-// transition always returns the row to review and clears the owner's review_note.
+// ID + CreatedBy scope the write to the caller's own content. The complete
+// authored snapshot and a new source coordinate replace the prior revision
+// atomically, return the row to review, and clear the owner's review_note.
 type RevisionParams struct {
-	ID        uuid.UUID
-	CreatedBy string
-	Body      *string
-	Excerpt   *string
-	Title     *string
+	ID               uuid.UUID
+	CreatedBy        string
+	Body             string
+	Excerpt          string
+	Title            string
+	SourceVaultPath  string
+	SourceGitBlobSHA string
 }
 
 var (
@@ -276,6 +365,14 @@ var (
 	// SubmitForReview (draft→review) and RevertToDraft (review→draft)
 	// surface this when the conditional UPDATE matches zero rows.
 	ErrInvalidState = errors.New("content: invalid state for transition")
+
+	// ErrSourceRequired means a row is not bound to a declared Vault path and
+	// Git blob SHA, so it is not a publishable source snapshot.
+	ErrSourceRequired = errors.New("content: source snapshot required")
+
+	// ErrSourceUnchanged rejects a revision that reuses the existing Git blob
+	// SHA; a revision must represent a new Vault commit object.
+	ErrSourceUnchanged = errors.New("content: revision requires a new Git blob SHA")
 
 	// ErrNotTransactional indicates a multi-row write (the content row plus
 	// the content_topics junction) was invoked on a
@@ -415,7 +512,8 @@ func (s *Store) Content(ctx context.Context, id uuid.UUID) (*Content, error) {
 		IsPublic: r.IsPublic, ProjectID: r.ProjectID,
 		ReadingTimeMin: r.ReadingTimeMin, CoverImage: r.CoverImage,
 		CreatedBy: r.CreatedBy, ProposalRationale: r.ProposalRationale,
-		ReviewNote:  r.ReviewNote,
+		ReviewNote:      r.ReviewNote,
+		SourceVaultPath: r.SourceVaultPath, SourceGitBlobSHA: r.SourceGitBlobSha,
 		PublishedAt: r.PublishedAt,
 		CreatedAt:   r.CreatedAt, UpdatedAt: r.UpdatedAt,
 	})
@@ -444,13 +542,16 @@ func (s *Store) ContentsByCreator(ctx context.Context, createdBy string) ([]Crea
 	for i := range rows {
 		r := &rows[i]
 		items[i] = CreatorItem{
-			ID:         r.ID,
-			Slug:       r.Slug,
-			Title:      r.Title,
-			Type:       Type(r.Type),
-			Status:     Status(r.Status),
-			ReviewNote: r.ReviewNote,
-			CreatedAt:  r.CreatedAt,
+			ID:               r.ID,
+			Slug:             r.Slug,
+			Title:            r.Title,
+			Type:             Type(r.Type),
+			Status:           Status(r.Status),
+			ReviewNote:       r.ReviewNote,
+			SourceVaultPath:  valueOrEmpty(r.SourceVaultPath),
+			SourceGitBlobSHA: valueOrEmpty(r.SourceGitBlobSha),
+			PublishedAt:      r.PublishedAt,
+			CreatedAt:        r.CreatedAt,
 		}
 	}
 	return items, nil
@@ -580,6 +681,14 @@ func (s *Store) ContentsByTopicID(ctx context.Context, topicID uuid.UUID, page, 
 // so callers can decide whether to update or pick a new slug. Other unique
 // violations return the bare ErrConflict.
 func (s *Store) CreateContent(ctx context.Context, p *CreateParams) (*Content, error) {
+	if (p.SourceVaultPath == nil) != (p.SourceGitBlobSHA == nil) {
+		return nil, ErrInvalidInput
+	}
+	if p.SourceVaultPath != nil {
+		if err := ValidateSourceSnapshot(*p.SourceVaultPath, *p.SourceGitBlobSHA); err != nil {
+			return nil, fmt.Errorf("%w: %w", ErrInvalidInput, err)
+		}
+	}
 	// Atomicity: the content row plus its content_topics junction rows must
 	// be written on one transaction so a junction failure rolls back the
 	// row. Reject a non-tx store before any write rather than leaving an
@@ -619,6 +728,8 @@ func (s *Store) CreateContent(ctx context.Context, p *CreateParams) (*Content, e
 		CoverImage:        p.CoverImage,
 		CreatedBy:         p.CreatedBy,
 		ProposalRationale: p.ProposalRationale,
+		SourceVaultPath:   p.SourceVaultPath,
+		SourceGitBlobSha:  p.SourceGitBlobSHA,
 	})
 	if err != nil {
 		return nil, mapWriteError(err, p.Slug, preResolvedID, "creating content")
@@ -640,6 +751,7 @@ func (s *Store) CreateContent(ctx context.Context, p *CreateParams) (*Content, e
 		IsPublic: r.IsPublic, ProjectID: r.ProjectID,
 		ReadingTimeMin: r.ReadingTimeMin, CoverImage: r.CoverImage,
 		CreatedBy: r.CreatedBy, ProposalRationale: r.ProposalRationale,
+		SourceVaultPath: r.SourceVaultPath, SourceGitBlobSHA: r.SourceGitBlobSha,
 		PublishedAt: r.PublishedAt,
 		CreatedAt:   r.CreatedAt, UpdatedAt: r.UpdatedAt,
 	})
@@ -662,6 +774,12 @@ func (s *Store) CreateContent(ctx context.Context, p *CreateParams) (*Content, e
 // the caller owns the transaction boundary. Pass a pgx.Tx when you need
 // atomic update + topic replacement.
 func (s *Store) UpdateContent(ctx context.Context, id uuid.UUID, p *UpdateParams) (*Content, error) {
+	// Lifecycle is owned by the named transition methods. Reject a generic
+	// status write before touching the database so callers cannot bypass their
+	// state/provenance guards (notably for pre-003 source-unbound rows).
+	if p.Status != nil {
+		return nil, ErrInvalidState
+	}
 	// Atomicity: when TopicIDs is non-nil the update does DELETE-then-INSERT
 	// on content_topics alongside the content UPDATE; reject a non-tx store
 	// so the topic replacement cannot half-apply.
@@ -698,7 +816,6 @@ func (s *Store) UpdateContent(ctx context.Context, id uuid.UUID, p *UpdateParams
 		Body:           p.Body,
 		Excerpt:        p.Excerpt,
 		ContentType:    nullContentType(p.Type),
-		Status:         nullContentStatus(p.Status),
 		SeriesID:       p.SeriesID,
 		SeriesOrder:    seriesOrder,
 		IsPublic:       p.IsPublic,
@@ -725,6 +842,7 @@ func (s *Store) UpdateContent(ctx context.Context, id uuid.UUID, p *UpdateParams
 		SeriesID: r.SeriesID, SeriesOrder: r.SeriesOrder,
 		IsPublic: r.IsPublic, ProjectID: r.ProjectID,
 		ReadingTimeMin: r.ReadingTimeMin, CoverImage: r.CoverImage,
+		SourceVaultPath: r.SourceVaultPath, SourceGitBlobSHA: r.SourceGitBlobSha,
 		PublishedAt: r.PublishedAt,
 		CreatedAt:   r.CreatedAt, UpdatedAt: r.UpdatedAt,
 	})
@@ -763,6 +881,7 @@ func (s *Store) SetContentVisibility(ctx context.Context, id uuid.UUID, isPublic
 		SeriesID: r.SeriesID, SeriesOrder: r.SeriesOrder,
 		IsPublic: r.IsPublic, ProjectID: r.ProjectID,
 		ReadingTimeMin: r.ReadingTimeMin, CoverImage: r.CoverImage,
+		SourceVaultPath: r.SourceVaultPath, SourceGitBlobSHA: r.SourceGitBlobSha,
 		PublishedAt: r.PublishedAt,
 		CreatedAt:   r.CreatedAt, UpdatedAt: r.UpdatedAt,
 	})
@@ -875,6 +994,8 @@ type contentRow struct {
 	CreatedBy         *string
 	ProposalRationale *string
 	ReviewNote        *string
+	SourceVaultPath   *string
+	SourceGitBlobSHA  *string
 	PublishedAt       *time.Time
 	CreatedAt         time.Time
 	UpdatedAt         time.Time
@@ -896,6 +1017,8 @@ func rowToContent(r contentRow) Content { //nolint:gocritic // hugeParam: struct
 		CreatedBy:         r.CreatedBy,
 		ProposalRationale: r.ProposalRationale,
 		ReviewNote:        r.ReviewNote,
+		SourceVaultPath:   r.SourceVaultPath,
+		SourceGitBlobSHA:  r.SourceGitBlobSHA,
 		PublishedAt:       r.PublishedAt,
 		CreatedAt:         r.CreatedAt,
 		UpdatedAt:         r.UpdatedAt,
@@ -908,4 +1031,11 @@ func rowToContent(r contentRow) Content { //nolint:gocritic // hugeParam: struct
 		c.SeriesOrder = &v
 	}
 	return c
+}
+
+func valueOrEmpty(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
 }

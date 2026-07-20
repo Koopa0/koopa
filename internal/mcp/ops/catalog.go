@@ -117,7 +117,7 @@ func ProposeContent() Meta {
 		Writability: Additive,
 		Stability:   StabilityStable,
 		Since:       "1.8.0",
-		Description: "Propose a FINISHED content piece (article, essay, build-log, til, or digest) into the editorial review queue. The content always lands in status=review with is_public=false — an agent can NEVER publish; only the owner publishes or rejects it in the admin review queue. Required: title, type (one of article|essay|build-log|til|digest), and body (the finished Markdown draft — this is not for stubs). Optional: excerpt, slug (derived from title when omitted), topic_ids ([]uuid), and proposal_rationale (your 'why I propose this' note, shown to the owner in the review queue). The proposing agent is recorded as created_by. Use to push a finished draft (e.g. a completed Obsidian Writing article) for the owner's review — publishing stays an owner action in admin, off the MCP surface.",
+		Description: "Submit a FINISHED publication snapshot (article, essay, build-log, til, or digest) into the editorial review queue. Required: title, type, body, source_vault_path, and source_git_blob_sha. The source coordinate must identify the Vault-relative Markdown file and its lowercase Git blob object ID; Koopa records but does not fetch or verify Vault bytes. The row always lands in review/private and cannot be edited in Koopa. The owner can publish or send it back; an agent can never publish. Optional: excerpt, slug, topic_ids, and proposal_rationale.",
 		FieldEnums: map[string][]string{
 			"type": {"article", "essay", "build-log", "til", "digest"},
 		},
@@ -190,7 +190,7 @@ func ListContent() Meta {
 		Writability: ReadOnly,
 		Stability:   StabilityStable,
 		Since:       "1.9.0",
-		Description: "Read-only readback of the content YOU proposed (created_by = your resolved caller identity) so you can learn its disposition — review = awaiting the owner's decision, changes_requested = the owner sent it back for revision (the reason is in review_note), published = live. Caller-scoped: returns only your own content, never the owner's admin-authored content or another agent's. Use to close the propose_content loop — after you push a finished draft, list_content shows whether the owner published it or asked for changes, and revise_content addresses any change request.",
+		Description: "Read-only readback of content YOU submitted. It returns disposition, review_note, the exact source_vault_path/source_git_blob_sha binding, and published_at when live. Caller-scoped: it never exposes the owner's or another agent's content. Use the published fields as receipt ingredients for an optional external Vault writer; Koopa itself never writes the Vault.",
 	}
 }
 
@@ -203,7 +203,7 @@ func ReviseContent() Meta {
 		Writability: Destructive,
 		Stability:   StabilityStable,
 		Since:       "1.9.0",
-		Description: "Revise content YOU created that is in review or changes_requested, returning it to the review queue and clearing the owner's review_note. Supply the content id plus at least one of body, title, or excerpt (omitted fields are left unchanged). Caller-scoped — you can only revise content whose created_by = your resolved identity; revising another agent's content, the owner's admin-authored content, or a published row returns not-found and changes nothing. This is the agent's response to a changes_requested disposition read via list_content: edit the draft and it re-enters review for the owner to publish or send back again. Publishing stays an owner action in admin, off the MCP surface.",
+		Description: "Replace the complete publication snapshot YOU submitted after changing the Vault source first. Required: id, complete title/body/excerpt, source_vault_path, and a NEW source_git_blob_sha. Authored fields and provenance update atomically, the row returns to review, and review_note clears. Reusing the current SHA or targeting another caller/non-revisable row changes nothing. Publishing remains owner-only.",
 	}
 }
 

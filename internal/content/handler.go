@@ -19,6 +19,7 @@ var storeErrors = []api.ErrMap{
 	{Target: ErrConflict, Status: http.StatusConflict, Code: "CONFLICT", Message: "content conflict"},
 	{Target: ErrInvalidInput, Status: http.StatusBadRequest, Code: "BAD_REQUEST", Message: "invalid content input"},
 	{Target: ErrInvalidState, Status: http.StatusBadRequest, Code: "INVALID_STATE", Message: "content not in required state for this transition"},
+	{Target: ErrSourceRequired, Status: http.StatusBadRequest, Code: "SOURCE_REQUIRED", Message: "content source snapshot required before publication"},
 }
 
 // slugConflictBody is the structured 409 payload returned when a write

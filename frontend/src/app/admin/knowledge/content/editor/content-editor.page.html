@@ -24,7 +24,7 @@
       </button>
     </div>
   </div>
-} @else if (isCreate() || content()) {
+} @else if (content()) {
   <form
     [formGroup]="form"
     class="flex min-h-0 flex-1"
@@ -42,9 +42,6 @@
             <app-status-badge [variant]="statusVariant(c.status)">
               {{ c.status }}
             </app-status-badge>
-          } @else {
-            <app-status-badge variant="neutral">draft</app-status-badge>
-            <span data-testid="editor-create-hint">new content · not created yet</span>
           }
         </div>
 
@@ -55,6 +52,24 @@
           >
             Published snapshot is read-only. Revise the source in Vault, then submit a new
             publication snapshot.
+          </p>
+        }
+
+        @if (content()?.source; as source) {
+          <p
+            class="rounded-xs border border-border-faint bg-elevated/40 px-2.5 py-1.5 font-mono text-[11px] leading-relaxed text-fg-muted"
+            data-testid="source-snapshot-notice"
+          >
+            Vault snapshot · {{ source.vault_path }} · {{ source.git_blob_sha.slice(0, 7) }}
+            <span class="font-sans">— edit the Vault source and submit a new SHA to revise.</span>
+          </p>
+        } @else {
+          <p
+            class="rounded-xs border border-amber-500/30 bg-amber-500/10 px-2.5 py-1.5 text-[11px] leading-relaxed text-fg-muted"
+            data-testid="legacy-source-notice"
+          >
+            Legacy content has no Vault source and cannot enter publication. Author in Vault,
+            then submit a source-bound snapshot with propose_content.
           </p>
         }
 
@@ -89,32 +104,14 @@
           class="w-full border-0 bg-transparent p-0 font-serif text-[26px] font-semibold text-fg placeholder:text-fg-faint focus:outline-hidden focus:ring-0"
           placeholder="Untitled"
           data-testid="editor-title"
-          [readOnly]="isPublishedSnapshot()"
+          [readOnly]="isAuthoredSnapshotReadOnly()"
         />
 
         <div class="flex items-center gap-1 font-mono text-[11px]">
           <span class="text-fg-faint">koopa0.dev/{{ typeValue() }}/</span>
-          @if (isCreate()) {
-            <label class="sr-only" for="content-slug">Slug</label>
-            <input
-              id="content-slug"
-              type="text"
-              formControlName="slug"
-              class="min-w-0 flex-1 border-0 bg-transparent p-0 font-mono text-[11px] text-brand placeholder:text-fg-faint focus:outline-hidden focus:ring-0"
-              placeholder="my-new-slug"
-              data-testid="editor-slug-input"
-              (input)="onSlugInput()"
-            />
-            @if (form.controls.slug.touched && form.controls.slug.invalid) {
-              <span class="text-error" data-testid="editor-slug-error">
-                no spaces or slashes; no leading, trailing, or doubled hyphens
-              </span>
-            }
-          } @else {
-            <span class="text-brand" data-testid="editor-slug">
-              {{ content()?.slug }}
-            </span>
-          }
+          <span class="text-brand" data-testid="editor-slug">
+            {{ content()?.slug }}
+          </span>
         </div>
       </div>
 
@@ -126,7 +123,7 @@
         placeholder="# Start writing…"
         data-testid="editor-body"
         spellcheck="false"
-        [readOnly]="isPublishedSnapshot()"
+        [readOnly]="isAuthoredSnapshotReadOnly()"
       ></textarea>
 
       <div
@@ -148,10 +145,6 @@
             @case ('dirty') {
               <span class="size-[7px] rounded-full bg-warn" aria-hidden="true"></span>
               Unsaved changes
-            }
-            @case ('new') {
-              <span class="size-[7px] rounded-full bg-border-strong" aria-hidden="true"></span>
-              Draft not created yet
             }
             @case ('saved') {
               <span class="size-[7px] rounded-full bg-success" aria-hidden="true"></span>
@@ -176,6 +169,7 @@
           <app-content-lifecycle-rail
             [status]="c.status"
             [busy]="isActioning()"
+            [sourceBound]="c.source !== null && c.source !== undefined"
             (action)="runLifecycleAction($event)"
           />
           @if (confirmPublishNoTopic()) {
@@ -284,7 +278,7 @@
                 (change)="toggleTopic(topic.id)"
                 class="rounded-sm border-border-strong bg-elevated text-brand focus:ring-brand"
                 [attr.data-testid]="'editor-topic-' + topic.slug"
-                [disabled]="isPublishedSnapshot()"
+                [disabled]="isAuthoredSnapshotReadOnly()"
               />
               {{ topic.name }}
             </label>
@@ -301,7 +295,7 @@
             rows="2"
             class="rounded-sm border border-border bg-elevated px-2 py-[5px] text-xs text-fg focus:border-brand focus:shadow-[0_0_0_1px_var(--brand)] focus:outline-hidden"
             data-testid="editor-excerpt"
-            [readOnly]="isPublishedSnapshot()"
+            [readOnly]="isAuthoredSnapshotReadOnly()"
           ></textarea>
         </div>
 
@@ -315,7 +309,7 @@
             formControlName="coverImage"
             class="rounded-sm border border-border bg-elevated px-2 py-[5px] text-xs text-fg focus:border-brand focus:shadow-[0_0_0_1px_var(--brand)] focus:outline-hidden"
             data-testid="editor-cover"
-            [readOnly]="isPublishedSnapshot()"
+            [readOnly]="isAuthoredSnapshotReadOnly()"
           />
         </div>
       </div>

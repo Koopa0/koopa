@@ -1,7 +1,9 @@
 -- name: ContentByID :one
 SELECT id, slug, title, body, excerpt, type, status,
        series_id, series_order, is_public, project_id, reading_time_min,
-       cover_image, created_by, proposal_rationale, review_note, published_at, created_at, updated_at
+       cover_image, created_by, proposal_rationale, review_note,
+       source_vault_path, source_git_blob_sha,
+       published_at, created_at, updated_at
 FROM contents WHERE id = $1;
 
 -- name: PublishedContents :many
@@ -53,7 +55,9 @@ LIMIT $1;
 -- name: ListContents :many
 -- Admin list: all statuses, with optional type, status, and is_public filter.
 SELECT id, slug, title, excerpt, type, status, is_public, project_id,
-       reading_time_min, created_by, proposal_rationale, published_at, created_at, updated_at
+       reading_time_min, created_by, proposal_rationale,
+       source_vault_path, source_git_blob_sha,
+       published_at, created_at, updated_at
 FROM contents
 WHERE (sqlc.narg('content_type')::content_type IS NULL OR type = sqlc.narg('content_type'))
   AND (sqlc.narg('content_status')::content_status IS NULL OR status = sqlc.narg('content_status'))
@@ -87,11 +91,14 @@ ORDER BY created_at DESC;
 -- name: CreateContent :one
 INSERT INTO contents (slug, title, body, excerpt, type, status,
                       series_id, series_order, is_public, project_id,
-                      reading_time_min, cover_image, created_by, proposal_rationale)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+                      reading_time_min, cover_image, created_by, proposal_rationale,
+                      source_vault_path, source_git_blob_sha)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
 RETURNING id, slug, title, body, excerpt, type, status,
           series_id, series_order, is_public, project_id, reading_time_min,
-          cover_image, created_by, proposal_rationale, published_at, created_at, updated_at;
+          cover_image, created_by, proposal_rationale,
+          source_vault_path, source_git_blob_sha,
+          published_at, created_at, updated_at;
 
 -- name: UpdateContent :one
 UPDATE contents SET
@@ -100,23 +107,20 @@ UPDATE contents SET
     body = COALESCE(sqlc.narg('body'), body),
     excerpt = COALESCE(sqlc.narg('excerpt'), excerpt),
     type = COALESCE(sqlc.narg('content_type')::content_type, type),
-    status = COALESCE(sqlc.narg('status')::content_status, status),
     series_id = COALESCE(sqlc.narg('series_id'), series_id),
     series_order = COALESCE(sqlc.narg('series_order'), series_order),
     is_public = COALESCE(sqlc.narg('is_public'), is_public),
     project_id = COALESCE(sqlc.narg('project_id'), project_id),
     reading_time_min = COALESCE(sqlc.narg('reading_time_min'), reading_time_min),
     cover_image = COALESCE(sqlc.narg('cover_image'), cover_image),
-    review_note = CASE
-        WHEN COALESCE(sqlc.narg('status')::content_status, status) = 'changes_requested' THEN review_note
-        ELSE NULL
-    END,
     updated_at = now()
 WHERE id = $1
   AND status <> 'published'
+  AND source_vault_path IS NULL
 RETURNING id, slug, title, body, excerpt, type, status,
           series_id, series_order, is_public, project_id, reading_time_min,
-          cover_image, published_at, created_at, updated_at;
+          cover_image, source_vault_path, source_git_blob_sha,
+          published_at, created_at, updated_at;
 
 -- name: SetContentVisibility :one
 -- Visibility is an operational exposure control, separate from editing the
@@ -126,16 +130,22 @@ UPDATE contents SET is_public = $2, updated_at = now()
 WHERE id = $1
 RETURNING id, slug, title, body, excerpt, type, status,
           series_id, series_order, is_public, project_id, reading_time_min,
-          cover_image, published_at, created_at, updated_at;
+          cover_image, source_vault_path, source_git_blob_sha,
+          published_at, created_at, updated_at;
 
 -- name: PublishContent :one
--- Atomically sets status=published, is_public=true, and published_at.
--- Publishing always makes content publicly visible in this system.
+-- Atomically promotes only a source-bound draft/review snapshot. A missing
+-- provenance pair, another lifecycle state, or an unknown id matches no row;
+-- the store performs a read-only classification after the failed transition.
 UPDATE contents SET status = 'published', is_public = true, published_at = now(), review_note = NULL, updated_at = now()
 WHERE id = $1
+  AND status IN ('draft', 'review')
+  AND source_vault_path IS NOT NULL
+  AND source_git_blob_sha IS NOT NULL
 RETURNING id, slug, title, body, excerpt, type, status,
           series_id, series_order, is_public, project_id, reading_time_min,
-          cover_image, published_at, created_at, updated_at;
+          cover_image, source_vault_path, source_git_blob_sha,
+          published_at, created_at, updated_at;
 
 -- name: ArchiveContentReturning :one
 -- Archive a content row and return the updated row. Both the REST archive
@@ -145,19 +155,22 @@ UPDATE contents SET status = 'archived', review_note = NULL, updated_at = now()
 WHERE id = $1
 RETURNING id, slug, title, body, excerpt, type, status,
           series_id, series_order, is_public, project_id, reading_time_min,
-          cover_image, published_at, created_at, updated_at;
+          cover_image, source_vault_path, source_git_blob_sha,
+          published_at, created_at, updated_at;
 
 -- name: SubmitContentForReview :one
 -- Transition content from draft to review. Returns pgx.ErrNoRows when the
--- row does not exist OR the current status is not 'draft' — the handler
--- translates "not found under this transition" into a 400 INVALID_STATE.
--- The WHERE-status guard makes the transition race-safe without a
--- separate read-then-write round trip.
+-- row does not exist, the current status is not draft, or provenance is
+-- missing. The store classifies the read-only rejection after this atomic
+-- guard; it never authorizes the transition with a read-then-write check.
 UPDATE contents SET status = 'review', updated_at = now()
 WHERE id = $1 AND status = 'draft'
+  AND source_vault_path IS NOT NULL
+  AND source_git_blob_sha IS NOT NULL
 RETURNING id, slug, title, body, excerpt, type, status,
           series_id, series_order, is_public, project_id, reading_time_min,
-          cover_image, published_at, created_at, updated_at;
+          cover_image, source_vault_path, source_git_blob_sha,
+          published_at, created_at, updated_at;
 
 -- name: RevertContentToDraft :one
 -- Transition content from review back to draft (reviewer rejection path).
@@ -167,7 +180,8 @@ UPDATE contents SET status = 'draft', updated_at = now()
 WHERE id = $1 AND status = 'review'
 RETURNING id, slug, title, body, excerpt, type, status,
           series_id, series_order, is_public, project_id, reading_time_min,
-          cover_image, published_at, created_at, updated_at;
+          cover_image, source_vault_path, source_git_blob_sha,
+          published_at, created_at, updated_at;
 
 -- name: PublishedContentsInWindow :many
 -- Content published within a [since, until] window, for
@@ -209,7 +223,8 @@ DELETE FROM content_topics WHERE content_id = $1;
 -- List contents by status, ordered by updated_at descending. Used by admin pipeline.
 SELECT id, slug, title, body, excerpt, type, status,
        series_id, series_order, is_public, project_id, reading_time_min,
-       cover_image, published_at, created_at, updated_at
+       cover_image, source_vault_path, source_git_blob_sha,
+       published_at, created_at, updated_at
 FROM contents
 WHERE status = @status::content_status
 ORDER BY updated_at DESC
@@ -226,32 +241,41 @@ SELECT id FROM contents WHERE slug = $1;
 -- the content it proposed, plus the owner's review_note when the owner sent a
 -- draft back (status=changes_requested). created_by is the resolved caller
 -- identity (caller-scoped), never a client-supplied filter.
-SELECT id, slug, title, type, status, review_note, created_at
+SELECT id, slug, title, type, status, review_note,
+       source_vault_path, source_git_blob_sha, published_at, created_at
 FROM contents
 WHERE created_by = @created_by
 ORDER BY created_at DESC;
 
 -- name: ReviseContentByCreator :one
--- Caller-scoped revise for the revise_content MCP tool: an agent edits content
--- IT created that is in review or changes_requested, returning it to review and
--- clearing the owner's review_note. Each editable field uses COALESCE so an
--- omitted parameter leaves the column unchanged. The created_by + status guard
--- scopes the write to the caller's own revisable rows — a mismatched creator,
--- a wrong status, or an unknown id all match 0 rows (pgx.ErrNoRows → not-found),
--- never another agent's content and never a published row. created_by is the
--- resolved caller identity, never a client-supplied filter.
+-- Caller-scoped full snapshot replacement for revise_content. All authored
+-- fields and the provenance pair move together; reusing the existing blob SHA
+-- matches no row. The caller/status guard never exposes another agent's row.
 UPDATE contents SET
-    body = COALESCE(sqlc.narg('body'), body),
-    excerpt = COALESCE(sqlc.narg('excerpt'), excerpt),
-    title = COALESCE(sqlc.narg('title'), title),
+    body = @body,
+    excerpt = @excerpt,
+    title = @title,
+    source_vault_path = @source_vault_path,
+    source_git_blob_sha = @source_git_blob_sha,
     status = 'review',
     review_note = NULL,
     updated_at = now()
 WHERE id = @id AND created_by = @created_by
   AND status IN ('review', 'changes_requested')
+  AND source_git_blob_sha IS DISTINCT FROM @source_git_blob_sha
 RETURNING id, slug, title, body, excerpt, type, status,
           series_id, series_order, is_public, project_id, reading_time_min,
-          cover_image, created_by, proposal_rationale, review_note, published_at, created_at, updated_at;
+          cover_image, created_by, proposal_rationale, review_note,
+          source_vault_path, source_git_blob_sha,
+          published_at, created_at, updated_at;
+
+-- name: RevisableContentSourceByCreator :one
+-- Read-only rejection classifier for revise_content. Caller/status scoping is
+-- identical to the update so it cannot reveal another agent's row.
+SELECT source_git_blob_sha
+FROM contents
+WHERE id = @id AND created_by = @created_by
+  AND status IN ('review', 'changes_requested');
 
 -- name: SendContentChangesRequested :one
 -- Admin send-back transition: the owner returns a review draft to the authoring
@@ -267,4 +291,6 @@ UPDATE contents SET
 WHERE id = @id AND status = 'review'
 RETURNING id, slug, title, body, excerpt, type, status,
           series_id, series_order, is_public, project_id, reading_time_min,
-          cover_image, created_by, proposal_rationale, review_note, published_at, created_at, updated_at;
+          cover_image, created_by, proposal_rationale, review_note,
+          source_vault_path, source_git_blob_sha,
+          published_at, created_at, updated_at;

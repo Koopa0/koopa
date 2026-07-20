@@ -4,7 +4,6 @@ import { ApiService } from './api.service';
 import type {
   ApiContent,
   ApiListResponse,
-  ApiCreateContentRequest,
   ApiUpdateContentRequest,
   ContentStatus,
   ContentType,
@@ -72,14 +71,6 @@ export class ContentService {
     return this.api.getListData<ApiContent>(
       '/api/admin/knowledge/content',
       query,
-    );
-  }
-
-  /** Admin — create content */
-  create(request: ApiCreateContentRequest): Observable<ApiContent> {
-    return this.api.postData<ApiContent>(
-      '/api/admin/knowledge/content',
-      request,
     );
   }
 

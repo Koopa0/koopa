@@ -88,7 +88,7 @@ const STATUS_TEXT_CLASS: Record<ContentStatus, string> = {
  *
  * Columns: Title / Type / Topic / Actor / Status / Public / Updated / ID.
  * `actor` shows the proposing agent (`created_by`) for content pushed via the
- * MCP propose_content tool, and `—` for owner/admin-authored content. The
+ * MCP propose_content tool, and `—` for legacy owner-authored content. The
  * review queue (initialStatus='review') is the primary consumer: a proposed
  * row also renders "Proposed by {agent}" and its rationale under the title.
  *
@@ -185,16 +185,7 @@ export class ContentListPageComponent {
       this.topbar.set({
         title: data.title ?? 'All content',
         crumbs: data.crumbs ?? ['Knowledge', 'Content'],
-        actions: [
-          {
-            id: 'new-content',
-            label: 'New',
-            kind: 'primary',
-            run: () => {
-              void this.router.navigate(['/admin/knowledge/content/new']);
-            },
-          },
-        ],
+        actions: [],
       });
     });
     effect(() => {
