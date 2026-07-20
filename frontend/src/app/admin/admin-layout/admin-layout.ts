@@ -25,7 +25,7 @@ import { AdminNavCountsService } from './admin-nav-counts.service';
 
 /**
  * Admin shell — 6-group nav rail + Topbar + main router-outlet. Nav groups
- * follow the Mission Control design IA (Daily / Commitment / Knowledge /
+ * follow the Mission Control design IA (Daily / Commitment / Publishing /
  * Library / Input / System).
  * Counts are synthesized by
  * {@link AdminNavCountsService} until the unified

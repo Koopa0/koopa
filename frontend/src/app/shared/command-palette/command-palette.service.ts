@@ -59,29 +59,29 @@ const ADMIN_NAV_ACTIONS: readonly AdminNavActionEntry[] = [
   },
   {
     id: 'admin-content',
-    label: 'Content',
-    group: 'Knowledge',
+    label: 'Publications',
+    group: 'Publishing',
     path: '/admin/knowledge/content',
     keywords: ['articles', 'essays', 'til', 'digest'],
   },
   {
     id: 'admin-review-queue',
     label: 'Review queue',
-    group: 'Knowledge',
+    group: 'Publishing',
     path: '/admin/knowledge/review-queue',
     keywords: ['review', 'drafts', 'approve'],
   },
   {
     id: 'admin-feeds',
     label: 'Feeds',
-    group: 'Knowledge',
+    group: 'Input',
     path: '/admin/knowledge/feeds',
     keywords: ['rss', 'sources'],
   },
   {
     id: 'admin-feeds-triage',
     label: 'Feed triage',
-    group: 'Knowledge',
+    group: 'Input',
     path: '/admin/knowledge/feeds/triage',
     keywords: ['inbox', 'triage'],
   },
@@ -230,7 +230,7 @@ export class CommandPaletteService {
           .map((c) => ({
             id: `content:${c.id}`,
             label: c.title,
-            group: 'Content',
+            group: 'Publications',
             keywords: [c.type, c.status, c.slug],
             action: () =>
               this.navigate(`/admin/knowledge/content/${c.id}/edit`),

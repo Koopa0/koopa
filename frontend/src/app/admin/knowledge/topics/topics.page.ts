@@ -54,7 +54,7 @@ export class TopicsPageComponent {
   constructor() {
     this.topbar.set({
       title: 'Topics',
-      crumbs: ['Knowledge', 'Topics'],
+      crumbs: ['Publishing', 'Topics'],
     });
     this.destroyRef.onDestroy(() => this.topbar.reset());
   }
