@@ -27,6 +27,8 @@ from copy import deepcopy
 
 
 ROOT = Path(__file__).resolve().parents[1]
+README = ROOT / "README.md"
+README_ZH_TW = ROOT / "README.zh-TW.md"
 WORKFLOW = ROOT / ".github/workflows/ci.yml"
 COMPOSE = ROOT / "docker-compose.yml"
 DEPLOY_ENTRYPOINT = ROOT / "scripts/deploy-production.sh"
@@ -39,6 +41,46 @@ TOPOLOGY_RECEIPT = (
 
 class ContractFailure(RuntimeError):
     """A deploy identity invariant was not satisfied."""
+
+
+def check_provider_deployment_docs() -> list[str]:
+    """Require one discoverable provider-side cutover and rollback contract."""
+    readme = README.read_text(encoding="utf-8")
+    required = (
+        "## Provider deployment boundary",
+        "server-owned",
+        "Docker Engine 28",
+        "DNSNames",
+        "bash ~/server/scripts/ensure-trader-db-network.sh",
+        "server → provider → consumer",
+        "`postgres`: exactly `internal` + `trader-db`",
+        "`trader`: exactly `trader-db`",
+        "recreates PostgreSQL",
+        "interrupts existing database connections",
+        "Do not deploy the consumer",
+        "prior binary with the current secure topology",
+        "IPv4 NAT egress contract mismatch",
+        "ICC connectivity contract mismatch",
+        "server-owned lifecycle contract mismatch",
+        "postgres DNS name is claimed by the trader endpoint",
+        "trader endpoint joins networks other than trader-db",
+        "Koopa0/server/blob/main/VPS-SETUP.md",
+        "Koopa0/server/blob/main/DISASTER-RECOVERY.md",
+    )
+    missing = [needle for needle in required if needle not in readme]
+    readme_zh_tw = README_ZH_TW.read_text(encoding="utf-8")
+    zh_tw_required = (
+        "README.md#provider-deployment-boundary",
+        "英文 README 為唯一正式版本",
+    )
+    missing.extend(
+        f"README.zh-TW.md:{needle}"
+        for needle in zh_tw_required
+        if needle not in readme_zh_tw
+    )
+    if not missing:
+        return []
+    return [f"caught:provider-deployment-docs-missing needles={missing!r}"]
 
 
 def extract_ssh_script(path: Path, deploy_sha: str = EXPECTED_SHA) -> str:
@@ -722,6 +764,22 @@ def assert_invoked(log: str, marker: str, case: str) -> list[str]:
     return []
 
 
+def assert_exact_error(
+    proc: subprocess.CompletedProcess[str], expected: str, case: str
+) -> list[str]:
+    """Require one sanitized operator-facing failure and no inspect payload."""
+    lines = proc.stderr.splitlines()
+    failures: list[str] = []
+    if lines != [expected]:
+        failures.append(
+            f"caught:{case}-diagnostic-mismatch expected={expected!r} actual={lines!r}"
+        )
+    forbidden = ("provider-postgres-id", "trader-id", "NetworkSettings", '"Config"')
+    if any(needle in proc.stderr for needle in forbidden):
+        failures.append(f"caught:{case}-diagnostic-leaked-inspect-payload")
+    return failures
+
+
 def run_receipt_verifier(script: str, stdout: str) -> subprocess.CompletedProcess[str]:
     env = os.environ.copy()
     env.update({"DEPLOY_SHA": EXPECTED_SHA, "DEPLOY_STDOUT": stdout})
@@ -1253,28 +1311,52 @@ def check_deploy_script() -> list[str]:
             failures.append(f"caught:compose-topology-{mode}-reached-build")
 
     network_preflight_cases = (
-        "inspect-fail",
-        "wrong-driver",
-        "wrong-scope",
-        "internal",
-        "ipv4-disabled",
-        "unsafe-egress",
-        "icc-disabled",
-        "inhibit-ipv4",
-        "routed-gateway",
-        "isolated-gateway",
-        "compose-owned",
-        "unexpected-endpoint",
+        (
+            "inspect-fail",
+            "ERROR: required trader-db network is missing or unreadable",
+        ),
+        ("wrong-driver", "ERROR: trader-db base bridge contract mismatch"),
+        ("wrong-scope", "ERROR: trader-db base bridge contract mismatch"),
+        ("internal", "ERROR: trader-db base bridge contract mismatch"),
+        ("ipv4-disabled", "ERROR: trader-db IPv4 NAT egress contract mismatch"),
+        ("unsafe-egress", "ERROR: trader-db IPv4 NAT egress contract mismatch"),
+        ("inhibit-ipv4", "ERROR: trader-db IPv4 NAT egress contract mismatch"),
+        ("routed-gateway", "ERROR: trader-db IPv4 NAT egress contract mismatch"),
+        ("isolated-gateway", "ERROR: trader-db IPv4 NAT egress contract mismatch"),
+        ("icc-disabled", "ERROR: trader-db ICC connectivity contract mismatch"),
+        (
+            "compose-owned",
+            "ERROR: trader-db server-owned lifecycle contract mismatch",
+        ),
+        ("unexpected-endpoint", "ERROR: trader-db contains an unexpected endpoint"),
     )
-    for mode in network_preflight_cases:
+    for mode, expected_error in network_preflight_cases:
         proc, log = run_deploy(script, network_pre_mode=mode)
         failures.extend(
             assert_invoked(log, "network-inspect phase=1", f"network-{mode}")
         )
+        failures.extend(assert_exact_error(proc, expected_error, f"network-{mode}"))
         if proc.returncode == 0:
             failures.append(f"caught:network-preflight-{mode}-accepted exit=0")
         if "compose build" in log:
             failures.append(f"caught:network-preflight-{mode}-reached-build")
+
+    for mode in ("missing-dns-name", "malformed-dns-names"):
+        proc, log = run_deploy(script, postgres_pre_mode=mode)
+        failures.extend(
+            assert_invoked(log, "network-inspect phase=1", f"provider-dns-{mode}")
+        )
+        failures.extend(
+            assert_exact_error(
+                proc,
+                "ERROR: trader-db PostgreSQL endpoint does not own the postgres DNS name",
+                f"provider-dns-{mode}",
+            )
+        )
+        if proc.returncode == 0:
+            failures.append(f"caught:provider-dns-{mode}-accepted exit=0")
+        if "compose build" in log:
+            failures.append(f"caught:provider-dns-{mode}-reached-build")
 
     dns_collision, dns_collision_log = run_deploy(
         script, trader_pre_dns_mode="collision"
@@ -1288,6 +1370,13 @@ def check_deploy_script() -> list[str]:
     )
     if dns_collision.returncode == 0:
         failures.append("caught:network-preflight-dns-name-collision-accepted exit=0")
+    failures.extend(
+        assert_exact_error(
+            dns_collision,
+            "ERROR: trader-db postgres DNS name is claimed by the trader endpoint",
+            "network-dns-name-collision",
+        )
+    )
     if "compose build" in dns_collision_log:
         failures.append("caught:network-preflight-dns-name-collision-reached-build")
 
@@ -1297,7 +1386,16 @@ def check_deploy_script() -> list[str]:
             assert_invoked(log, "network-inspect phase=1", f"network-dns-names-{mode}")
         )
         if proc.returncode == 0:
-            failures.append(f"caught:network-preflight-dns-names-{mode}-accepted exit=0")
+            failures.append(
+                f"caught:network-preflight-dns-names-{mode}-accepted exit=0"
+            )
+        failures.extend(
+            assert_exact_error(
+                proc,
+                "ERROR: trader-db trader endpoint DNS names are missing or unreadable",
+                f"network-dns-names-{mode}",
+            )
+        )
         if "compose build" in log:
             failures.append(f"caught:network-preflight-dns-names-{mode}-reached-build")
 
@@ -1312,7 +1410,16 @@ def check_deploy_script() -> list[str]:
         )
     )
     if extra_trader_network.returncode == 0:
-        failures.append("caught:network-preflight-trader-extra-internal-accepted exit=0")
+        failures.append(
+            "caught:network-preflight-trader-extra-internal-accepted exit=0"
+        )
+    failures.extend(
+        assert_exact_error(
+            extra_trader_network,
+            "ERROR: trader-db trader endpoint joins networks other than trader-db",
+            "network-trader-extra-internal",
+        )
+    )
     if "compose build" in extra_trader_network_log:
         failures.append("caught:network-preflight-trader-extra-internal-reached-build")
 
@@ -1427,6 +1534,7 @@ def check_deploy_script() -> list[str]:
 
 def main() -> int:
     config, failures = render_compose_config()
+    failures.extend(check_provider_deployment_docs())
     if config is not None:
         failures.extend(check_compose_build_args(config))
         failures.extend(check_compose_topology_mutations(config))

@@ -59,6 +59,61 @@ That split is the whole point. Agents can run freely — capture a todo, draft a
 
 This is a single-admin system by design: one person, several AI agents — no team accounts, no roles, no "share with a colleague." The admin side is private; only some content (articles, build logs, TILs) reaches the public site, and only after you publish it. Goals and private notes stay private. Koopa stores planning state and publishes selected writing; the private knowledge base lives in Obsidian. If you want a team wiki or a Notion clone, this isn't it.
 
+## Provider deployment boundary
+
+This repository provides PostgreSQL to the stock trader; it does not own the
+shared network. `trader-db` is a **server-owned** external Docker network. Its
+creation, validation, and disaster recovery remain canonical in the server
+repository's [VPS setup](https://github.com/Koopa0/server/blob/main/VPS-SETUP.md)
+and [disaster recovery](https://github.com/Koopa0/server/blob/main/DISASTER-RECOVERY.md)
+documents. Do not copy or improvise their network lifecycle commands here.
+
+The coordinated cutover requires Docker Engine 28 or newer and an Engine API
+whose container-network inspection exposes array-valued `DNSNames`. From an
+independently accepted server checkout, the exact owner-approved existing-VPS
+operation is:
+
+```bash
+bash ~/server/scripts/ensure-trader-db-network.sh
+```
+
+That command must report `TRADER_DB_NETWORK_READY`. This provider must never
+create, delete, repair, connect, or disconnect the external network.
+
+The only supported rollout order is **server → provider → consumer**:
+
+1. The server-owned gate creates or validates an empty, unowned `trader-db`.
+2. Deploy this provider and wait for its terminal `TOPOLOGY_RECEIPT`. The first
+   transition recreates PostgreSQL and interrupts existing database connections;
+   use an approved maintenance window and a fresh backup.
+3. Only then deploy `tw-stock-trader`; never deploy the consumer first.
+
+The steady-state topology is exact:
+
+- `postgres`: exactly `internal` + `trader-db`, and the sole owner of the
+  `postgres` DNS name on `trader-db`;
+- `trader`: exactly `trader-db`, without the `postgres` DNS name;
+- `trader-db`: exactly those two endpoints, with no Compose ownership labels;
+- frontend, backend, MCP, and observability services never join `trader-db`.
+
+The preflight and postflight emit one sanitized diagnostic without Docker
+inspect payloads. Use it as a stop reason, not as permission to mutate the
+server-owned network manually:
+
+| Diagnostic | Operator action |
+|---|---|
+| `required trader-db network is missing or unreadable` | Stop and run the canonical server gate; check access there. |
+| `base bridge contract mismatch`, `IPv4 NAT egress contract mismatch`, `ICC connectivity contract mismatch`, or `server-owned lifecycle contract mismatch` | Stop; the server-owned network contract is not safe for rollout. Return to the server gate and owner-reviewed recovery. |
+| `PostgreSQL endpoint does not own the postgres DNS name` or `trader endpoint DNS names are missing or unreadable` | Confirm Docker Engine/API support for `DNSNames`, then restore and redeploy the provider before any consumer deploy. |
+| `postgres DNS name is claimed by the trader endpoint`, `trader endpoint joins networks other than trader-db`, or `contains an unexpected endpoint` | Stop; endpoint ownership has drifted. Keep the consumer stopped and use owner-reviewed provider/consumer rollback. |
+
+Any topology error is a stop condition. Do not deploy the consumer while the
+provider gate is red. If the provider cutover fails, restore provider service
+before continuing and leave `trader-db` in place. After consumer cutover, never
+remove PostgreSQL from `trader-db` or return trader to `internal`: rollback uses
+the prior binary with the current secure topology. If that is unavailable, keep
+the consumer stopped and return to owner-reviewed recovery.
+
 ---
 
 ## License

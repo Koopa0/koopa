@@ -59,17 +59,32 @@ validate_trader_db_network() {
     .[0].Name == "trader-db" and
     .[0].Driver == "bridge" and
     .[0].Scope == "local" and
-    .[0].Internal == false and
+    .[0].Internal == false
+  ' >/dev/null 2>&1 <<<"$snapshot"; then
+    echo "ERROR: trader-db base bridge contract mismatch" >&2
+    return 1
+  fi
+  if ! jq -e '
     (((.[0] | has("EnableIPv4")) | not) or .[0].EnableIPv4 == true) and
     ((.[0].Options // {})["com.docker.network.bridge.enable_ip_masquerade"] // "true") == "true" and
-    ((.[0].Options // {})["com.docker.network.bridge.enable_icc"] // "true") == "true" and
     ((.[0].Options // {})["com.docker.network.bridge.inhibit_ipv4"] // "false") == "false" and
-    ((.[0].Options // {})["com.docker.network.bridge.gateway_mode_ipv4"] // "nat") == "nat" and
+    ((.[0].Options // {})["com.docker.network.bridge.gateway_mode_ipv4"] // "nat") == "nat"
+  ' >/dev/null 2>&1 <<<"$snapshot"; then
+    echo "ERROR: trader-db IPv4 NAT egress contract mismatch" >&2
+    return 1
+  fi
+  if ! jq -e '
+    ((.[0].Options // {})["com.docker.network.bridge.enable_icc"] // "true") == "true"
+  ' >/dev/null 2>&1 <<<"$snapshot"; then
+    echo "ERROR: trader-db ICC connectivity contract mismatch" >&2
+    return 1
+  fi
+  if ! jq -e '
     ((.[0].Labels // {}) | type == "object") and
     all((.[0].Labels // {}) | keys[]; startswith("com.docker.compose.") | not) and
     ((.[0].Containers // {}) | type == "object")
-  ' >/dev/null <<<"$snapshot"; then
-    echo "ERROR: trader-db network attributes do not match the approved bridge contract" >&2
+  ' >/dev/null 2>&1 <<<"$snapshot"; then
+    echo "ERROR: trader-db server-owned lifecycle contract mismatch" >&2
     return 1
   fi
 }
@@ -90,13 +105,13 @@ validate_trader_db_endpoints() {
     fi
     if ! project=$(jq -er \
       '.[0].Config.Labels["com.docker.compose.project"] | select(type == "string" and length > 0)' \
-      <<<"$endpoint_json"); then
+      2>/dev/null <<<"$endpoint_json"); then
       echo "ERROR: trader-db contains an endpoint without Compose ownership" >&2
       return 1
     fi
     if ! service=$(jq -er \
       '.[0].Config.Labels["com.docker.compose.service"] | select(type == "string" and length > 0)' \
-      <<<"$endpoint_json"); then
+      2>/dev/null <<<"$endpoint_json"); then
       echo "ERROR: trader-db contains an endpoint without a Compose service" >&2
       return 1
     fi
@@ -113,7 +128,7 @@ validate_trader_db_endpoints() {
             if type == "array" then
               all(.[]; type == "string") and (index("postgres") != null)
             else false end' \
-          >/dev/null <<<"$endpoint_json"; then
+          >/dev/null 2>&1 <<<"$endpoint_json"; then
           echo "ERROR: trader-db PostgreSQL endpoint does not own the postgres DNS name" >&2
           return 1
         fi
@@ -124,13 +139,23 @@ validate_trader_db_endpoints() {
         if ! jq -e \
           '.[0].NetworkSettings.Networks as $networks |
             ($networks | type == "object") and
-            (($networks | keys) == ["trader-db"]) and
-            ($networks["trader-db"].DNSNames |
-              if type == "array" then
-                all(.[]; type == "string") and (index("postgres") == null)
-              else false end)' \
-          >/dev/null <<<"$endpoint_json"; then
-          echo "ERROR: trader-db trader endpoint has invalid networks or DNS names" >&2
+            (($networks | keys) == ["trader-db"])' \
+          >/dev/null 2>&1 <<<"$endpoint_json"; then
+          echo "ERROR: trader-db trader endpoint joins networks other than trader-db" >&2
+          return 1
+        fi
+        if ! jq -e \
+          '.[0].NetworkSettings.Networks["trader-db"].DNSNames |
+            type == "array" and all(.[]; type == "string")' \
+          >/dev/null 2>&1 <<<"$endpoint_json"; then
+          echo "ERROR: trader-db trader endpoint DNS names are missing or unreadable" >&2
+          return 1
+        fi
+        if jq -e \
+          '.[0].NetworkSettings.Networks["trader-db"].DNSNames |
+            index("postgres") != null' \
+          >/dev/null 2>&1 <<<"$endpoint_json"; then
+          echo "ERROR: trader-db postgres DNS name is claimed by the trader endpoint" >&2
           return 1
         fi
         ;;
@@ -139,7 +164,7 @@ validate_trader_db_endpoints() {
         return 1
         ;;
     esac
-  done < <(jq -r '.[0].Containers // {} | keys[]' <<<"$snapshot")
+  done < <(jq -r '.[0].Containers // {} | keys[]' 2>/dev/null <<<"$snapshot")
 
   if ((provider_count > 1 || trader_count > 1 || postgres_name_count > 1)); then
     echo "ERROR: trader-db contains duplicate approved endpoints or DNS names" >&2
