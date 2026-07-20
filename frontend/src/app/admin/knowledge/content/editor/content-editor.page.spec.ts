@@ -460,6 +460,34 @@ describe('ContentEditorPageComponent', () => {
     });
   });
 
+  describe('legacy source-unbound snapshot mode', () => {
+    beforeEach(async () => {
+      harness = await RouterTestingHarness.create(
+        '/admin/knowledge/content/abc-1/edit',
+      );
+      await settle();
+      httpMock
+        .expectOne((r) => r.url.endsWith(`${CONTENT_URL}/abc-1`))
+        .flush({ data: contentPayload({ status: 'draft' }) });
+      flushTopics();
+      await settle();
+    });
+
+    it('should explain that legacy content is not publishable and hide promotion actions', () => {
+      expect(
+        el().querySelector('[data-testid="legacy-source-notice"]')?.textContent,
+      ).toContain('Author in Vault');
+      expect(
+        el().querySelector('[data-testid="lifecycle-action-publish"]'),
+      ).toBeNull();
+      expect(
+        el().querySelector(
+          '[data-testid="lifecycle-action-submit-for-review"]',
+        ),
+      ).toBeNull();
+    });
+  });
+
   describe('source-bound review snapshot mode', () => {
     beforeEach(async () => {
       harness = await RouterTestingHarness.create(

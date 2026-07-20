@@ -567,6 +567,10 @@ func TestStore_PublishRequiresSourceSnapshot(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "source snapshot required") {
 		t.Fatalf("Publish(unbound draft) = %v, want source snapshot required", err)
 	}
+	_, err = s.SubmitContentForReview(ctx, id)
+	if !errors.Is(err, ErrSourceRequired) {
+		t.Fatalf("SubmitContentForReview(unbound draft) = %v, want ErrSourceRequired", err)
+	}
 
 	got, err := s.Content(ctx, id)
 	if err != nil {
