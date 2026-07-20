@@ -525,7 +525,7 @@ func (h *Handler) SendBack(w http.ResponseWriter, r *http.Request) {
 }
 
 // Archive handles POST /api/admin/knowledge/content/{id}/archive.
-// Unconditional → archived; returns the updated row.
+// Only never-published work can enter the terminal archived state.
 func (h *Handler) Archive(w http.ResponseWriter, r *http.Request) {
 	id, err := uuid.Parse(r.PathValue("id"))
 	if err != nil {

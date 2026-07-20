@@ -1,3 +1,14 @@
+-- A rollback cannot represent an active withdrawal after dropping its reason
+-- and timestamp. Refuse data loss; restore the publication first (or restore a
+-- backup) before deliberately removing this migration.
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM contents WHERE withdrawn_at IS NOT NULL) THEN
+        RAISE EXCEPTION 'cannot roll back migration 004 while withdrawn publications exist';
+    END IF;
+END;
+$$;
+
 ALTER TABLE contents
     DROP CONSTRAINT chk_content_withdrawal_reason,
     DROP CONSTRAINT chk_content_withdrawal_state,

@@ -89,15 +89,17 @@ SET withdrawn_at = updated_at,
     withdrawal_reason = 'Migrated from the retired private-visibility control'
 WHERE status = 'published' AND NOT is_public;
 
--- Published is a historical fact: it cannot become archived or acquire a new
--- publication timestamp. Current withdrawal metadata is likewise audit-bearing
--- state, not editable prose; only a visibility transition may set or clear it.
+-- Published is a historical fact and the row is an immutable Vault snapshot.
+-- Only current exposure, its paired withdrawal metadata, and updated_at may
+-- change after publication. search_vector is generated from immutable authored
+-- fields, so it is excluded from the record comparison itself.
 CREATE FUNCTION guard_content_withdrawal_metadata() RETURNS TRIGGER AS $$
 BEGIN
     IF OLD.status = 'published'
-       AND (NEW.status IS DISTINCT FROM OLD.status
-            OR NEW.published_at IS DISTINCT FROM OLD.published_at) THEN
-        RAISE EXCEPTION 'published status and published_at are immutable'
+       AND (to_jsonb(NEW) - ARRAY['is_public', 'withdrawn_at', 'withdrawal_reason', 'updated_at', 'search_vector']::TEXT[])
+           IS DISTINCT FROM
+           (to_jsonb(OLD) - ARRAY['is_public', 'withdrawn_at', 'withdrawal_reason', 'updated_at', 'search_vector']::TEXT[]) THEN
+        RAISE EXCEPTION 'published snapshots are immutable'
             USING ERRCODE = '23514';
     ELSIF NEW.is_public IS NOT DISTINCT FROM OLD.is_public
        AND (NEW.withdrawn_at IS DISTINCT FROM OLD.withdrawn_at
@@ -110,7 +112,7 @@ END;
 $$ LANGUAGE plpgsql;
 
 CREATE TRIGGER trg_contents_withdrawal_metadata_guard
-    BEFORE UPDATE OF status, published_at, withdrawn_at, withdrawal_reason ON contents
+    BEFORE UPDATE ON contents
     FOR EACH ROW EXECUTE FUNCTION guard_content_withdrawal_metadata();
 
 ALTER TABLE contents
