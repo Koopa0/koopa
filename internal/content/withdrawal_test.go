@@ -3,7 +3,6 @@
 package content
 
 import (
-	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -12,26 +11,9 @@ import (
 	"github.com/google/uuid"
 )
 
-// These test-local contracts let the regression suite remain buildable on the
-// pre-withdrawal base. The RED is therefore the missing behavior, not an
-// unrelated compiler failure. Production remains free of test-only interfaces.
-type withdrawalStore interface {
-	Withdraw(context.Context, uuid.UUID, string) (*Content, error)
-	Restore(context.Context, uuid.UUID) (*Content, error)
-}
-
 type withdrawalHandler interface {
 	Withdraw(http.ResponseWriter, *http.Request)
 	Restore(http.ResponseWriter, *http.Request)
-}
-
-func requireWithdrawalStore(t *testing.T, store *Store) withdrawalStore {
-	t.Helper()
-	lifecycle, ok := any(store).(withdrawalStore)
-	if !ok {
-		t.Fatal("Store does not implement dedicated Withdraw and Restore transitions")
-	}
-	return lifecycle
 }
 
 func requireWithdrawalHandler(t *testing.T, handler *Handler) withdrawalHandler {

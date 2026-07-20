@@ -29,6 +29,23 @@ import (
 	"github.com/Koopa0/koopa/internal/testdb"
 )
 
+// This test-local contract keeps the regression suite buildable on the
+// pre-withdrawal base. The RED is therefore missing behavior, not an unrelated
+// compiler failure. Production remains free of test-only interfaces.
+type withdrawalStore interface {
+	Withdraw(context.Context, uuid.UUID, string) (*Content, error)
+	Restore(context.Context, uuid.UUID) (*Content, error)
+}
+
+func requireWithdrawalStore(t *testing.T, store *Store) withdrawalStore {
+	t.Helper()
+	lifecycle, ok := any(store).(withdrawalStore)
+	if !ok {
+		t.Fatal("Store does not implement dedicated Withdraw and Restore transitions")
+	}
+	return lifecycle
+}
+
 var testPool *pgxpool.Pool
 
 func TestMain(m *testing.M) {
