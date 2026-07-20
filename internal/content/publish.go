@@ -12,6 +12,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -39,8 +40,9 @@ func (s *Store) ByStatus(ctx context.Context, status string, limit int) ([]Conte
 			IsPublic: r.IsPublic, ProjectID: r.ProjectID,
 			ReadingTimeMin: r.ReadingTimeMin, CoverImage: r.CoverImage,
 			SourceVaultPath: r.SourceVaultPath, SourceGitBlobSHA: r.SourceGitBlobSha,
-			PublishedAt: r.PublishedAt,
-			CreatedAt:   r.CreatedAt, UpdatedAt: r.UpdatedAt,
+			PublishedAt: r.PublishedAt, WithdrawnAt: r.WithdrawnAt,
+			WithdrawalReason: r.WithdrawalReason,
+			CreatedAt:        r.CreatedAt, UpdatedAt: r.UpdatedAt,
 		})
 	}
 	return contents, nil
@@ -113,7 +115,8 @@ func (s *Store) PublishedInWindow(ctx context.Context, since, until time.Time) (
 //     reverted from review without requiring another review detour
 //   - review    → published   the owner publishes an agent-submitted snapshot
 //     from the review queue (agents never publish)
-//   - published → published    idempotent no-op (row unchanged, no second audit event)
+//   - published+public → published+public idempotent no-op
+//   - published+withdrawn → ErrInvalidState (restore is a named transition)
 //   - changes_requested, archived, … → ErrInvalidState
 //   - missing id               → ErrNotFound
 //
@@ -143,8 +146,9 @@ func (s *Store) PublishContent(ctx context.Context, id uuid.UUID) (*Content, err
 		IsPublic: r.IsPublic, ProjectID: r.ProjectID,
 		ReadingTimeMin: r.ReadingTimeMin, CoverImage: r.CoverImage,
 		SourceVaultPath: r.SourceVaultPath, SourceGitBlobSHA: r.SourceGitBlobSha,
-		PublishedAt: r.PublishedAt,
-		CreatedAt:   r.CreatedAt, UpdatedAt: r.UpdatedAt,
+		PublishedAt: r.PublishedAt, WithdrawnAt: r.WithdrawnAt,
+		WithdrawalReason: r.WithdrawalReason,
+		CreatedAt:        r.CreatedAt, UpdatedAt: r.UpdatedAt,
 	})
 
 	topics, err := s.TopicsForContent(ctx, c.ID)
@@ -161,13 +165,73 @@ func (s *Store) classifyPublishRejection(ctx context.Context, id uuid.UUID) (*Co
 	if err != nil {
 		return nil, err
 	}
-	if current.Status == StatusPublished {
+	if current.Status == StatusPublished && current.IsPublic {
 		return current, nil
 	}
 	if (current.Status == StatusDraft || current.Status == StatusReview) && current.Source() == nil {
 		return nil, ErrSourceRequired
 	}
 	return nil, ErrInvalidState
+}
+
+// Withdraw stops serving a historically published snapshot while preserving
+// its publication status, date, authored bytes, and source coordinate. The
+// guarded UPDATE and audit trigger commit current state and receipt atomically.
+func (s *Store) Withdraw(ctx context.Context, id uuid.UUID, reason string) (*Content, error) {
+	reason = strings.TrimSpace(reason)
+	if err := CheckWithdrawalReason(reason); err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrInvalidInput, err)
+	}
+	if containsProseControlChars(reason) {
+		return nil, fmt.Errorf("%w: withdrawal reason must not contain control characters", ErrInvalidInput)
+	}
+
+	r, err := s.q.WithdrawContent(ctx, db.WithdrawContentParams{ID: id, WithdrawalReason: &reason})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, s.transitionRejectionReason(ctx, id)
+		}
+		return nil, fmt.Errorf("withdrawing content %s: %w", id, err)
+	}
+	return s.hydrateContentRow(ctx, r.ID, &contentRow{
+		ID: r.ID, Slug: r.Slug, Title: r.Title, Body: r.Body, Excerpt: r.Excerpt,
+		Type: r.Type, Status: r.Status,
+		SeriesID: r.SeriesID, SeriesOrder: r.SeriesOrder,
+		IsPublic: r.IsPublic, ProjectID: r.ProjectID,
+		ReadingTimeMin: r.ReadingTimeMin, CoverImage: r.CoverImage,
+		CreatedBy: r.CreatedBy, ProposalRationale: r.ProposalRationale,
+		ReviewNote:      r.ReviewNote,
+		SourceVaultPath: r.SourceVaultPath, SourceGitBlobSHA: r.SourceGitBlobSha,
+		PublishedAt: r.PublishedAt, WithdrawnAt: r.WithdrawnAt,
+		WithdrawalReason: r.WithdrawalReason,
+		CreatedAt:        r.CreatedAt, UpdatedAt: r.UpdatedAt,
+	})
+}
+
+// Restore resumes serving the exact withdrawn publication snapshot. The audit
+// trigger captures the prior withdrawal metadata before the current fields are
+// cleared; authored bytes and published_at remain unchanged.
+func (s *Store) Restore(ctx context.Context, id uuid.UUID) (*Content, error) {
+	r, err := s.q.RestoreContent(ctx, id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, s.transitionRejectionReason(ctx, id)
+		}
+		return nil, fmt.Errorf("restoring content %s: %w", id, err)
+	}
+	return s.hydrateContentRow(ctx, r.ID, &contentRow{
+		ID: r.ID, Slug: r.Slug, Title: r.Title, Body: r.Body, Excerpt: r.Excerpt,
+		Type: r.Type, Status: r.Status,
+		SeriesID: r.SeriesID, SeriesOrder: r.SeriesOrder,
+		IsPublic: r.IsPublic, ProjectID: r.ProjectID,
+		ReadingTimeMin: r.ReadingTimeMin, CoverImage: r.CoverImage,
+		CreatedBy: r.CreatedBy, ProposalRationale: r.ProposalRationale,
+		ReviewNote:      r.ReviewNote,
+		SourceVaultPath: r.SourceVaultPath, SourceGitBlobSHA: r.SourceGitBlobSha,
+		PublishedAt: r.PublishedAt, WithdrawnAt: r.WithdrawnAt,
+		WithdrawalReason: r.WithdrawalReason,
+		CreatedAt:        r.CreatedAt, UpdatedAt: r.UpdatedAt,
+	})
 }
 
 // SubmitContentForReview transitions a source-bound draft to review atomically.
@@ -189,8 +253,9 @@ func (s *Store) SubmitContentForReview(ctx context.Context, id uuid.UUID) (*Cont
 		IsPublic: r.IsPublic, ProjectID: r.ProjectID,
 		ReadingTimeMin: r.ReadingTimeMin, CoverImage: r.CoverImage,
 		SourceVaultPath: r.SourceVaultPath, SourceGitBlobSHA: r.SourceGitBlobSha,
-		PublishedAt: r.PublishedAt,
-		CreatedAt:   r.CreatedAt, UpdatedAt: r.UpdatedAt,
+		PublishedAt: r.PublishedAt, WithdrawnAt: r.WithdrawnAt,
+		WithdrawalReason: r.WithdrawalReason,
+		CreatedAt:        r.CreatedAt, UpdatedAt: r.UpdatedAt,
 	})
 }
 
@@ -224,8 +289,9 @@ func (s *Store) RevertContentToDraft(ctx context.Context, id uuid.UUID) (*Conten
 		IsPublic: r.IsPublic, ProjectID: r.ProjectID,
 		ReadingTimeMin: r.ReadingTimeMin, CoverImage: r.CoverImage,
 		SourceVaultPath: r.SourceVaultPath, SourceGitBlobSHA: r.SourceGitBlobSha,
-		PublishedAt: r.PublishedAt,
-		CreatedAt:   r.CreatedAt, UpdatedAt: r.UpdatedAt,
+		PublishedAt: r.PublishedAt, WithdrawnAt: r.WithdrawnAt,
+		WithdrawalReason: r.WithdrawalReason,
+		CreatedAt:        r.CreatedAt, UpdatedAt: r.UpdatedAt,
 	})
 }
 
@@ -236,7 +302,7 @@ func (s *Store) ArchiveContentReturning(ctx context.Context, id uuid.UUID) (*Con
 	r, err := s.q.ArchiveContentReturning(ctx, id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, ErrNotFound
+			return nil, s.transitionRejectionReason(ctx, id)
 		}
 		return nil, fmt.Errorf("archiving content %s: %w", id, err)
 	}
@@ -247,8 +313,9 @@ func (s *Store) ArchiveContentReturning(ctx context.Context, id uuid.UUID) (*Con
 		IsPublic: r.IsPublic, ProjectID: r.ProjectID,
 		ReadingTimeMin: r.ReadingTimeMin, CoverImage: r.CoverImage,
 		SourceVaultPath: r.SourceVaultPath, SourceGitBlobSHA: r.SourceGitBlobSha,
-		PublishedAt: r.PublishedAt,
-		CreatedAt:   r.CreatedAt, UpdatedAt: r.UpdatedAt,
+		PublishedAt: r.PublishedAt, WithdrawnAt: r.WithdrawnAt,
+		WithdrawalReason: r.WithdrawalReason,
+		CreatedAt:        r.CreatedAt, UpdatedAt: r.UpdatedAt,
 	})
 }
 
@@ -288,8 +355,9 @@ func (s *Store) ReviseByCreator(ctx context.Context, p *RevisionParams) (*Conten
 		CreatedBy: r.CreatedBy, ProposalRationale: r.ProposalRationale,
 		ReviewNote:      r.ReviewNote,
 		SourceVaultPath: r.SourceVaultPath, SourceGitBlobSHA: r.SourceGitBlobSha,
-		PublishedAt: r.PublishedAt,
-		CreatedAt:   r.CreatedAt, UpdatedAt: r.UpdatedAt,
+		PublishedAt: r.PublishedAt, WithdrawnAt: r.WithdrawnAt,
+		WithdrawalReason: r.WithdrawalReason,
+		CreatedAt:        r.CreatedAt, UpdatedAt: r.UpdatedAt,
 	})
 }
 
@@ -333,8 +401,9 @@ func (s *Store) SendBackForChanges(ctx context.Context, id uuid.UUID, reviewNote
 		CreatedBy: r.CreatedBy, ProposalRationale: r.ProposalRationale,
 		ReviewNote:      r.ReviewNote,
 		SourceVaultPath: r.SourceVaultPath, SourceGitBlobSHA: r.SourceGitBlobSha,
-		PublishedAt: r.PublishedAt,
-		CreatedAt:   r.CreatedAt, UpdatedAt: r.UpdatedAt,
+		PublishedAt: r.PublishedAt, WithdrawnAt: r.WithdrawnAt,
+		WithdrawalReason: r.WithdrawalReason,
+		CreatedAt:        r.CreatedAt, UpdatedAt: r.UpdatedAt,
 	})
 }
 

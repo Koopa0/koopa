@@ -410,7 +410,7 @@ type Content struct {
 	Excerpt string `json:"excerpt"`
 	// Content format: article, essay, build-log, til, digest. All are public-facing first-party content going through the review lifecycle.
 	Type ContentType `json:"type"`
-	// Editorial lifecycle for source-bound snapshots: review -> published or changes_requested; revise_content returns changes_requested to review with a new source blob SHA. Only Admin HTTP publishes. Legacy unbound rows cannot enter review or publication.
+	// Editorial lifecycle and publication history. published remains true after withdrawal; current exposure is is_public. archived is only for never-published work.
 	Status ContentStatus `json:"status"`
 	// Groups content into a series. Paired with series_order (chk_contents_series).
 	SeriesID *string `json:"series_id"`
@@ -420,7 +420,7 @@ type Content struct {
 	ReadingTimeMin int32 `json:"reading_time_min"`
 	// Cover image URL or path for content cards and social sharing. NULL = no cover image.
 	CoverImage *string `json:"cover_image"`
-	// Whether this content is rendered on the public website. Defaults to false (private-by-default). When true, status MUST be 'published' (chk_content_public_requires_published). Publishing flips status, published_at, and is_public together — publishing makes public in this system.
+	// Current public exposure. For status=published: true=served, false=withdrawn with reason/timestamp. Other statuses are private by chk_content_public_requires_published.
 	IsPublic bool `json:"is_public"`
 	// Associated project. SET NULL on project deletion — content survives independently.
 	ProjectID *uuid.UUID `json:"project_id"`
@@ -443,6 +443,10 @@ type Content struct {
 	SourceVaultPath *string `json:"source_vault_path"`
 	// Declared Git blob object ID for source_vault_path at submission time (40-char SHA-1 or 64-char SHA-256). This is provenance, not proof that Koopa fetched or verified the blob.
 	SourceGitBlobSha *string `json:"source_git_blob_sha"`
+	// When Koopa stopped serving this historically published snapshot. Present exactly when status=published and is_public=false.
+	WithdrawnAt *time.Time `json:"withdrawn_at"`
+	// Owner-supplied reason for the current withdrawal. Admin-only; the trigger copies it into the durable activity receipt before restore clears it.
+	WithdrawalReason *string `json:"withdrawal_reason"`
 }
 
 // Junction: content ↔ topic. Many-to-many. Curated knowledge domain categories.

@@ -127,12 +127,19 @@ export class ContentService {
     );
   }
 
-  /** Admin — toggle is_public flag */
-  setVisibility(id: string, is_public: boolean): Observable<ApiContent> {
-    return this.api.patchData<ApiContent>(
-      `/api/admin/knowledge/content/${id}/is-public`,
-      { is_public },
+  /** Withdraw a public snapshot with the owner's durable reason. */
+  withdraw(id: string, reason: string): Observable<ApiContent> {
+    return this.api.postData<ApiContent>(
+      `/api/admin/knowledge/content/${id}/withdraw`,
+      { reason },
     );
   }
 
+  /** Restore a withdrawn snapshot to the public surface. */
+  restore(id: string): Observable<ApiContent> {
+    return this.api.postData<ApiContent>(
+      `/api/admin/knowledge/content/${id}/restore`,
+      {},
+    );
+  }
 }

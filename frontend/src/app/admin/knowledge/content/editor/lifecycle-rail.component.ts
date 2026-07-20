@@ -13,7 +13,9 @@ export type ContentLifecycleAction =
   | 'publish'
   | 'send-back'
   | 'revert-to-draft'
-  | 'archive';
+  | 'archive'
+  | 'withdraw'
+  | 'restore';
 
 interface RailStep {
   status: ContentStatus;
@@ -49,8 +51,8 @@ const ACTIONS_BY_STATUS: Record<ContentStatus, readonly RailAction[]> = {
     { id: 'revert-to-draft', label: 'Revert to draft', primary: false },
     { id: 'archive', label: 'Archive', primary: false },
   ],
-  published: [{ id: 'archive', label: 'Archive', primary: false }],
-  archived: [{ id: 'revert-to-draft', label: 'Revert to draft', primary: false }],
+  published: [],
+  archived: [],
 };
 
 /**
@@ -72,6 +74,8 @@ export class ContentLifecycleRailComponent {
   readonly status = input.required<ContentStatus>();
   readonly busy = input(false);
   readonly sourceBound = input(true);
+  /** Current exposure for the historically published snapshot. */
+  readonly isPublic = input(true);
   readonly action = output<ContentLifecycleAction>();
 
   protected readonly steps = computed<RailStep[]>(() => {
@@ -83,6 +87,11 @@ export class ContentLifecycleRailComponent {
   });
 
   protected readonly actions = computed<readonly RailAction[]>(() => {
+    if (this.status() === 'published') {
+      return this.isPublic()
+        ? [{ id: 'withdraw', label: 'Withdraw', primary: false }]
+        : [{ id: 'restore', label: 'Restore', primary: true }];
+    }
     const actions = ACTIONS_BY_STATUS[this.status()];
     if (this.sourceBound()) return actions;
     return actions.filter(

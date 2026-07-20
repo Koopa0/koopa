@@ -3,12 +3,9 @@
 package topic
 
 import (
-	"context"
 	"log/slog"
 	"net/http"
-	"time"
 
-	"github.com/dgraph-io/ristretto/v2"
 	"github.com/google/uuid"
 
 	"github.com/Koopa0/koopa/internal/api"
@@ -22,26 +19,16 @@ var storeErrors = []api.ErrMap{
 	{Target: ErrInvalidInput, Status: http.StatusBadRequest, Code: "BAD_REQUEST", Message: "invalid topic input"},
 }
 
-// topicsTTL is the cache duration for the full topics list.
-const topicsTTL = 10 * time.Minute
-
 // Handler handles topic HTTP requests.
 type Handler struct {
-	store      *Store
-	content    ContentByTopicLister
-	logger     *slog.Logger
-	topicCache *ristretto.Cache[string, []Topic]
+	store   *Store
+	content ContentByTopicLister
+	logger  *slog.Logger
 }
 
 // NewHandler returns a topic Handler.
-// The topic cache is created internally — it is an implementation detail of this handler.
 func NewHandler(store *Store, contentReader ContentByTopicLister, logger *slog.Logger) *Handler {
-	topicCache, _ := ristretto.NewCache(&ristretto.Config[string, []Topic]{
-		NumCounters: 10, // 10x expected items (1 key: "topics")
-		MaxCost:     1,  // count-based: 1 item max
-		BufferItems: 64,
-	})
-	return &Handler{store: store, content: contentReader, topicCache: topicCache, logger: logger}
+	return &Handler{store: store, content: contentReader, logger: logger}
 }
 
 func (h *Handler) mustAdminTx(w http.ResponseWriter, r *http.Request) (*Store, bool) {
@@ -56,25 +43,10 @@ func (h *Handler) mustAdminTx(w http.ResponseWriter, r *http.Request) (*Store, b
 	return h.store.WithTx(tx), true
 }
 
-// topics returns the full topic list, served from the cache when warm and
-// loaded from the store otherwise. Both the admin and public list handlers
-// share this so they share one cache entry.
-func (h *Handler) topics(ctx context.Context) ([]Topic, error) {
-	if topics, ok := h.topicCache.Get("topics"); ok {
-		return topics, nil
-	}
-	topics, err := h.store.Topics(ctx)
-	if err != nil {
-		return nil, err
-	}
-	h.topicCache.SetWithTTL("topics", topics, 1, topicsTTL)
-	return topics, nil
-}
-
 // List handles GET /api/admin/knowledge/topics — every topic, including those
 // with no published content, so the admin can manage and assign empty topics.
 func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
-	topics, err := h.topics(r.Context())
+	topics, err := h.store.Topics(r.Context())
 	if err != nil {
 		h.logger.Error("listing topics", "error", err)
 		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to list topics")
@@ -86,7 +58,8 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 // ListPublished handles GET /api/topics — only topics that carry at least one
 // published piece, so the public index never surfaces an empty category.
 func (h *Handler) ListPublished(w http.ResponseWriter, r *http.Request) {
-	all, err := h.topics(r.Context())
+	w.Header().Set("Cache-Control", "no-store")
+	all, err := h.store.Topics(r.Context())
 	if err != nil {
 		h.logger.Error("listing topics", "error", err)
 		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to list topics")
@@ -118,6 +91,7 @@ type topicWithContents struct {
 // BySlug handles GET /api/topics/{slug}.
 // Returns the topic and its published contents (paginated).
 func (h *Handler) BySlug(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
 	slug := r.PathValue("slug")
 	t, err := h.store.TopicBySlug(r.Context(), slug)
 	if err != nil {
@@ -161,7 +135,6 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		api.HandleError(w, h.logger, err, storeErrors...)
 		return
 	}
-	h.topicCache.Del("topics")
 	api.Encode(w, http.StatusCreated, api.Response{Data: t})
 }
 
@@ -192,7 +165,6 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 		api.HandleError(w, h.logger, err, storeErrors...)
 		return
 	}
-	h.topicCache.Del("topics")
 	api.Encode(w, http.StatusOK, api.Response{Data: t})
 }
 
@@ -213,6 +185,5 @@ func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
 		api.Error(w, http.StatusInternalServerError, "INTERNAL", "failed to delete topic")
 		return
 	}
-	h.topicCache.Del("topics")
 	w.WriteHeader(http.StatusNoContent)
 }

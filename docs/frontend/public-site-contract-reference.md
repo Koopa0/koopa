@@ -4,7 +4,8 @@
 > (the Zed-docs-aesthetic "let the work speak" surface). All **already built** —
 > no auth, no admin gate. Verified against source 2026-06-23. Envelope `{ "data": … }`;
 > lists are `[]` never `null`. `body` is **Markdown**. Only `is_public=true`,
-> published content is exposed (detail 404s if not public).
+> published content is fetched by public SQL (detail 404s for drafts and
+> withdrawn snapshots).
 
 ## Content (article render model)
 
@@ -29,7 +30,7 @@
 
 **Endpoints:**
 - `GET /api/contents` → `[Content]` — published list (the index / article cards: title, excerpt, type, tags, topics, reading_time_min, cover_image, published_at).
-- `GET /api/contents/{slug}` → `Content` — the **article page** (full `body` Markdown). 404 if not public.
+- `GET /api/contents/{slug}` → `Content` — the **article page** (full `body` Markdown). 404 unless currently published and public.
 - `GET /api/contents/by-type/{type}` → `[Content]` — by type (article / essay / build-log / til / digest).
 
 ## Topic
@@ -38,7 +39,9 @@
 - `GET /api/topics/{slug}` → `{ "topic": {Topic}, "contents": [Content], "related_tags": [{TagCount}] }` — the **topic page** (a topic + its published content + related tags).
 
 ## Misc public reads
-- `GET /api/feed/rss` (RSS) · `GET /api/feed/sitemap` (sitemap XML).
+- `GET /api/feed/rss` (RSS) · `GET /api/feed/sitemap` (sitemap XML). These and
+  public topic projections use `Cache-Control: no-store`, so a committed
+  withdrawal is not retained by Koopa's own response caches.
 
 ## Design notes (Zed-docs aesthetic — the right home for it)
 - This surface is **the opposite of admin**: generous whitespace, serif long-form body, quiet docs-style left nav (topics), mono code blocks, calm reading. Density is NOT the goal here.

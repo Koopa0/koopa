@@ -38,6 +38,7 @@ import {
 } from './lifecycle-rail.component';
 import { ContentPreviewOverlayComponent } from './preview-overlay.component';
 import { SendBackReasonDialogComponent } from './send-back-reason-dialog.component';
+import { WithdrawalReasonDialogComponent } from './withdrawal-reason-dialog.component';
 import type {
   ApiContent,
   ApiUpdateContentRequest,
@@ -78,10 +79,9 @@ const WORDS_PER_MINUTE = 220;
  * Content Editor for an existing publication snapshot. Markdown authoring
  * happens in Vault; source-bound snapshots are read-only here, while legacy
  * unbound rows remain available for recovery but cannot enter publication.
- * The sidebar
- * carries the lifecycle rail (draft → review → published → archived
- * with the legal transition buttons), the is_public switch (PATCH
- * …/is-public), and the type/topics metadata column. Publishing
+ * The sidebar carries the lifecycle rail (draft → review → published),
+ * dedicated withdrawal/restore actions, and the type/topics metadata column.
+ * Publishing
  * is human-only server-side — a 403 surfaces as a refusal toast.
  *
  * Keyboard:
@@ -98,6 +98,7 @@ const WORDS_PER_MINUTE = 220;
     ContentLifecycleRailComponent,
     ContentPreviewOverlayComponent,
     SendBackReasonDialogComponent,
+    WithdrawalReasonDialogComponent,
   ],
   templateUrl: './content-editor.page.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -134,6 +135,10 @@ export class ContentEditorPageComponent {
   protected readonly isPublishedSnapshot = computed(
     () => this.content()?.status === 'published',
   );
+  protected readonly isWithdrawn = computed(() => {
+    const content = this.content();
+    return content?.status === 'published' && !content.is_public;
+  });
   protected readonly isAuthoredSnapshotReadOnly = computed(
     () => this.isPublishedSnapshot() || this.content()?.source != null,
   );
@@ -165,6 +170,9 @@ export class ContentEditorPageComponent {
 
   /** Send-back reason dialog visibility. */
   protected readonly showSendBackDialog = signal(false);
+
+  /** Withdrawal reason dialog visibility. */
+  protected readonly showWithdrawalDialog = signal(false);
 
   /** Selected topic ids; kept outside the FormGroup so toggling stays a plain signal write. */
   protected readonly selectedTopicIds = signal<string[]>([]);
@@ -328,9 +336,6 @@ export class ContentEditorPageComponent {
       topic_ids: this.selectedTopicIds(),
       cover_image: v.coverImage || undefined,
       reading_time_min: estimateReadingTime(v.body),
-      // Visibility is owned by the PATCH …/is-public switch; echo the
-      // server-known value so the full update does not clobber it.
-      is_public: c.is_public,
     };
 
     this._isActioning.set(true);
@@ -367,6 +372,12 @@ export class ContentEditorPageComponent {
         break;
       case 'archive':
         this.archiveContent();
+        break;
+      case 'withdraw':
+        this.showWithdrawalDialog.set(true);
+        break;
+      case 'restore':
+        this.restore();
         break;
     }
   }
@@ -459,6 +470,36 @@ export class ContentEditorPageComponent {
       });
   }
 
+  protected withdraw(reason: string): void {
+    const c = this.content();
+    if (!c || this._isActioning()) return;
+
+    this._isActioning.set(true);
+    this.contentService
+      .withdraw(c.id, reason)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: () => {
+          this._isActioning.set(false);
+          this.showWithdrawalDialog.set(false);
+          this.notifications.success(`Withdrew "${c.title}" from public view.`);
+          this.contentResource.reload();
+        },
+        error: (err: unknown) => {
+          this._isActioning.set(false);
+          this.handleTransitionError(err, 'withdraw');
+        },
+      });
+  }
+
+  protected restore(): void {
+    this.transition(
+      (id) => this.contentService.restore(id),
+      'Restored to public view.',
+      'restore',
+    );
+  }
+
   /** Shared runner for the non-publish lifecycle POSTs. */
   private transition(
     call: (id: string) => ReturnType<ContentService['archive']>,
@@ -480,28 +521,6 @@ export class ContentEditorPageComponent {
         error: (err: unknown) => {
           this._isActioning.set(false);
           this.handleTransitionError(err, name);
-        },
-      });
-  }
-
-  protected toggleVisibility(): void {
-    const c = this.content();
-    if (!c || this._isActioning()) return;
-
-    const next = !c.is_public;
-    this._isActioning.set(true);
-    this.contentService
-      .setVisibility(c.id, next)
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe({
-        next: () => {
-          this._isActioning.set(false);
-          this.notifications.success(next ? 'Set public.' : 'Set private.');
-          this.contentResource.reload();
-        },
-        error: () => {
-          this._isActioning.set(false);
-          this.notifications.error('Failed to change visibility.');
         },
       });
   }
@@ -574,8 +593,15 @@ export class ContentEditorPageComponent {
     }
   }
 
-  protected statusVariant(status: ContentStatus): BadgeVariant {
-    return STATUS_BADGE_VARIANT[status];
+  protected statusVariant(content: ApiContent): BadgeVariant {
+    if (content.status === 'published' && !content.is_public) return 'warning';
+    return STATUS_BADGE_VARIANT[content.status];
+  }
+
+  protected statusLabel(content: ApiContent): string {
+    return content.status === 'published' && !content.is_public
+      ? 'Withdrawn'
+      : content.status;
   }
 }
 

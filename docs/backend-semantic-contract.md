@@ -49,7 +49,7 @@ It is **all of the following, with explicit boundaries** (§4):
 > draft area/goal/project as inert proposals and push finished content into the
 > review queue. There is no inter-agent coordination layer in the backend. Agent
 > memory is not a backend entity — each agent keeps its own `.md`. The schema is
-> migrations **001 + 002**.
+> migrations **001–004**.
 
 It is **NOT**: a multi-user product, an RBAC system, a public CMS with
 arbitrary authorship, or a generic agent marketplace. The agent set is closed
@@ -73,7 +73,9 @@ and compiled into the binary (`internal/agent/registry.go::BuiltinAgents()`).
    partial unique indexes, and narrow triggers — not application discipline
    alone. The publish CHECKs couple `status='published'` with `published_at`
    (`chk_content_publication`) and gate `is_public` on `published`
-   (`chk_content_public_requires_published`); an inert proposal
+   (`chk_content_public_requires_published`). Migration 004 additionally makes
+   withdrawal metadata a complete pair, preserves published as historical fact,
+   and prevents silent reason/time rewrites; an inert proposal
    carries `status='proposed'`. There is no `tasks` entity, so the task
    state↔timestamp / completion-requires-outputs invariants do not exist.
 
@@ -175,18 +177,18 @@ them wrong is a semantic bug, not a naming quibble.
 
 ### Publication / content
 
-- **content** — first-party publishable artifact (`contents` table). Five types:
-  `article`, `essay`, `build-log`, `til`, `digest` (`content_type`).
-  `content_status`: `draft → review → published → archived`. The owner
-  publishes a **draft directly** (`Store.Publish` promotes draft *or* review →
-  published — the common path for Koopa's own finished work); review is the
-  **agent** handoff, not a step the owner is forced through. Publishing ties
-  `status='published'` to `published_at` (`chk_content_publication`) and gates `is_public` on
-  `published` (`chk_content_public_requires_published`). Content authoring / lifecycle is **admin HTTP** under
-  `/api/admin/knowledge/content` (the `/api/admin/knowledge/content` routes); the one agent
-  path is `propose_content`, which inserts a finished piece at `status='review'`
-  with `is_public=false` for the owner to publish or reject — an agent never
-  publishes. A legacy `embedding vector(1536)` column remains dormant because
+- **content** — an immutable publication snapshot submitted from Vault
+  (`contents` table). Five types: `article`, `essay`, `build-log`, `til`,
+  `digest` (`content_type`). `propose_content` binds the Vault-relative path and
+  Git blob SHA and lands the snapshot at `status='review'`, `is_public=false`;
+  only Admin HTTP publishes it. `status='published'` and `published_at` remain
+  historical facts after publication. Current exposure is separate:
+  `published + is_public=true` is served; the named `withdraw` transition
+  atomically sets `is_public=false` plus a required reason/time and writes a
+  trigger-authored receipt; `restore` exposes that exact snapshot again.
+  Published snapshots cannot be archived or edited in Koopa. `archived` is
+  disposal for never-published legacy/recovery work only. A legacy
+  `embedding vector(1536)` column remains dormant because
   migrations 001/002 are frozen; no runtime path reads or writes it (§6).
 - **source / provenance** — attribution of where a publication row came from.
   Columns: `contents.origin_system`, `feed_entries → feeds`.
@@ -273,7 +275,7 @@ permits. Existence of a table, handler, or doc is not proof of a working path.
 | Capability | Reality | Evidence |
 |---|---|---|
 | Login + refresh-token rotation + token security | implemented, tested | `internal/auth/` (`auth_test.go`, `handler_test.go`) |
-| Content lifecycle (admin HTTP; owner publishes a draft directly via `Store.Publish`, or a review row from the queue; `propose_content` lands an agent piece at `status=review`, `is_public=false`) | implemented; `Store.Publish` gates draft/review→published, publish CHECKs enforce the rest | `internal/content/publish.go`; CHECKs `migrations/001_initial.up.sql` (`chk_content_publication`, `chk_content_public_requires_published`); routes the `/api/admin/knowledge/content` routes |
+| Content publication + withdrawal lifecycle (`propose_content` submits a Vault-bound review snapshot; Admin publishes, withdraws with a reason, or restores the exact snapshot) | implemented; guarded SQL and migration 004 preserve publication history, pair withdrawal state, and write trigger-authored receipts | `internal/content/publish.go`; `migrations/003_content_source_provenance.up.sql`; `migrations/004_content_withdrawal.up.sql`; `/api/admin/knowledge/content/{id}/{publish,withdraw,restore}` |
 | Feed fetch + scheduler cadence + auto-disable on failures | implemented, tested | `internal/feed/scheduler_test.go` (testcontainers) |
 | **Document-embedding write path** | **Retired.** The app has no provider configuration, reconciler, backfill command, vector retrieval query, or graph endpoint. The legacy schema column remains dormant because migrations 001/002 are frozen. | `cmd/app/config_test.go`; `cmd/app/routes_retirement_test.go` |
 | **MCP knowledge search** | **Retired.** `search_knowledge` is absent from the catalog and server registration; MCP has no Gemini configuration or retrieval handler. Knowledge authoring and retrieval belong to Obsidian／Yomihon. | `internal/mcp/ops/catalog.go`; `internal/mcp/server.go` |

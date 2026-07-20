@@ -2,7 +2,7 @@
 
 // admin.go holds the authenticated admin HTTP handlers and the
 // Contents store method they share. All mutation paths —
-// Create / Update / Delete / SetIsPublic — go through adminMid in
+// Create / Update / Delete and named lifecycle transitions go through adminMid in
 // cmd/app/routes.go, so the per-request tx in context carries
 // koopa.actor and audit triggers record the real mutator.
 //
@@ -133,6 +133,8 @@ func (s *Store) Contents(ctx context.Context, f Filter) ([]Content, int, error) 
 			SourceVaultPath:   r.SourceVaultPath,
 			SourceGitBlobSHA:  r.SourceGitBlobSha,
 			PublishedAt:       r.PublishedAt,
+			WithdrawnAt:       r.WithdrawnAt,
+			WithdrawalReason:  r.WithdrawalReason,
 			CreatedAt:         r.CreatedAt,
 			UpdatedAt:         r.UpdatedAt,
 		}
@@ -229,8 +231,6 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", field+" must not contain control characters")
 		return
 	}
-	// IsPublic is a bool pointer — no validation needed beyond JSON decode
-
 	tx, ok := h.mustAdminTx(w, r)
 	if !ok {
 		return
@@ -282,6 +282,70 @@ func (h *Handler) Publish(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	c, err := h.store.WithTx(tx).Publish(r.Context(), id)
+	if err != nil {
+		api.HandleError(w, h.logger, err, storeErrors...)
+		return
+	}
+	api.Encode(w, http.StatusOK, api.Response{Data: adminContent(c)})
+}
+
+type withdrawBody struct {
+	Reason string `json:"reason"`
+}
+
+// Withdraw handles POST /api/admin/knowledge/content/{id}/withdraw. It stops
+// serving a published snapshot without rewriting publication history. A
+// required owner reason is stored in the current admin projection and copied
+// into the trigger-authored durable receipt.
+func (h *Handler) Withdraw(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid content id")
+		return
+	}
+
+	body, err := api.Decode[withdrawBody](w, r)
+	if err != nil {
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid request body")
+		return
+	}
+	reason := strings.TrimSpace(body.Reason)
+	if err := CheckWithdrawalReason(reason); err != nil {
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+		return
+	}
+	if containsProseControlChars(reason) {
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "reason must not contain control characters")
+		return
+	}
+
+	tx, ok := h.mustAdminTx(w, r)
+	if !ok {
+		return
+	}
+	c, err := h.store.WithTx(tx).Withdraw(r.Context(), id, reason)
+	if err != nil {
+		api.HandleError(w, h.logger, err, storeErrors...)
+		return
+	}
+	api.Encode(w, http.StatusOK, api.Response{Data: adminContent(c)})
+}
+
+// Restore handles POST /api/admin/knowledge/content/{id}/restore. It resumes
+// serving the exact previously published snapshot; changing authored bytes
+// requires a new Vault revision and publication snapshot instead.
+func (h *Handler) Restore(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid content id")
+		return
+	}
+
+	tx, ok := h.mustAdminTx(w, r)
+	if !ok {
+		return
+	}
+	c, err := h.store.WithTx(tx).Restore(r.Context(), id)
 	if err != nil {
 		api.HandleError(w, h.logger, err, storeErrors...)
 		return
@@ -473,35 +537,6 @@ func (h *Handler) Archive(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	c, err := h.store.WithTx(tx).ArchiveContentReturning(r.Context(), id)
-	if err != nil {
-		api.HandleError(w, h.logger, err, storeErrors...)
-		return
-	}
-	api.Encode(w, http.StatusOK, api.Response{Data: adminContent(c)})
-}
-
-// SetIsPublic handles PATCH /api/admin/contents/{id}/is-public.
-func (h *Handler) SetIsPublic(w http.ResponseWriter, r *http.Request) {
-	id, err := uuid.Parse(r.PathValue("id"))
-	if err != nil {
-		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid content id")
-		return
-	}
-
-	type isPublicBody struct {
-		IsPublic bool `json:"is_public"`
-	}
-	body, decErr := api.Decode[isPublicBody](w, r)
-	if decErr != nil {
-		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid request body")
-		return
-	}
-
-	tx, ok := h.mustAdminTx(w, r)
-	if !ok {
-		return
-	}
-	c, err := h.store.WithTx(tx).SetContentVisibility(r.Context(), id, body.IsPublic)
 	if err != nil {
 		api.HandleError(w, h.logger, err, storeErrors...)
 		return

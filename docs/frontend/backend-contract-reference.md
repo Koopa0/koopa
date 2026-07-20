@@ -50,7 +50,13 @@ go through `PUT /commitment/goals/{id}/status` `{ "status": "<enum>" }`.
 
 ## Knowledge — Content (enums for the editors)
 
-**Content** type: `article · essay · build-log · til · digest`; status: `draft · review · published · archived` (lifecycle via `submit-for-review / publish / archive / revert-to-draft`); `is_public` toggle via `PATCH …/is-public`.
+**Content** type: `article · essay · build-log · til · digest`; status:
+`draft · review · changes_requested · published · archived`. Published is a
+historical fact; current exposure is projected as `is_public`. Admin uses
+`POST …/{id}/withdraw` with `{ "reason": "…" }` and `POST …/{id}/restore`;
+the generic visibility mutation is retired. A withdrawn admin row remains
+`status="published"`, has `is_public=false`, and includes authenticated-only
+`withdrawal: { withdrawn_at, reason }`. Archive is only for never-published work.
 
 ---
 
