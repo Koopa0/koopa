@@ -11,6 +11,7 @@
     "watch": "ng build --watch --configuration development",
     "test": "ng test",
     "test:watch": "ng test --watch",
+    "test:syndication": "node --test tests/syndication-contract.test.mjs",
     "lint": "ng lint",
     "e2e": "npx playwright test",
     "check:quality": "bash scripts/check-frontend-quality.sh"

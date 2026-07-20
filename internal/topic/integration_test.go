@@ -15,15 +15,46 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/Koopa0/koopa/internal/agent"
+	"github.com/Koopa0/koopa/internal/content"
 	"github.com/Koopa0/koopa/internal/testdb"
 	"github.com/Koopa0/koopa/internal/topic"
 )
+
+func TestIntegration_PublicTopicHandlersAreNoStore(t *testing.T) {
+	if _, err := testPool.Exec(t.Context(), `TRUNCATE topics CASCADE`); err != nil {
+		t.Fatalf("truncate: %v", err)
+	}
+	store := topic.NewStore(testPool)
+	created, err := store.CreateTopic(t.Context(), &topic.CreateParams{
+		Slug: "no-store-topic", Name: "No-store topic",
+	})
+	if err != nil {
+		t.Fatalf("CreateTopic(): %v", err)
+	}
+	handler := topic.NewHandler(store, content.NewStore(testPool), slog.Default())
+
+	listRec := httptest.NewRecorder()
+	handler.ListPublished(listRec, httptest.NewRequest(http.MethodGet, "/api/topics", http.NoBody))
+	if listRec.Code != http.StatusOK || listRec.Header().Get("Cache-Control") != "no-store" {
+		t.Fatalf("ListPublished() = status %d Cache-Control %q, want 200/no-store", listRec.Code, listRec.Header().Get("Cache-Control"))
+	}
+
+	detailRec := httptest.NewRecorder()
+	detailReq := httptest.NewRequest(http.MethodGet, "/api/topics/"+created.Slug, http.NoBody)
+	detailReq.SetPathValue("slug", created.Slug)
+	handler.BySlug(detailRec, detailReq)
+	if detailRec.Code != http.StatusOK || detailRec.Header().Get("Cache-Control") != "no-store" {
+		t.Fatalf("BySlug() = status %d Cache-Control %q, want 200/no-store", detailRec.Code, detailRec.Header().Get("Cache-Control"))
+	}
+}
 
 var testPool *pgxpool.Pool
 

@@ -36,11 +36,11 @@ describe('ContentLifecycleRailComponent', () => {
     });
   });
 
-  it('should render all five stages with the current one marked when status is draft', () => {
-    create('draft');
+  it('should render the publication path without presenting Archive as a future stage', () => {
+	create('draft');
 
-    const steps = el().querySelectorAll('[data-testid^="lifecycle-step-"]');
-    expect(steps.length).toBe(5);
+	const steps = el().querySelectorAll('[data-testid^="lifecycle-step-"]');
+	expect(steps.length).toBe(4);
     expect(
       el()
         .querySelector('[data-testid="lifecycle-step-draft"]')
@@ -50,7 +50,10 @@ describe('ContentLifecycleRailComponent', () => {
       el()
         .querySelector('[data-testid="lifecycle-step-review"]')
         ?.getAttribute('aria-current'),
-    ).toBeNull();
+	).toBeNull();
+	expect(
+	  el().querySelector('[data-testid="lifecycle-step-archived"]'),
+	).toBeNull();
   });
 
   it('should offer Publish and Submit for review when status is draft', () => {
@@ -102,7 +105,7 @@ describe('ContentLifecycleRailComponent', () => {
     create('changes_requested');
 
     const steps = el().querySelectorAll('[data-testid^="lifecycle-step-"]');
-    expect(steps.length).toBe(5);
+	expect(steps.length).toBe(4);
     expect(
       el()
         .querySelector('[data-testid="lifecycle-step-changes_requested"]')
@@ -126,9 +129,12 @@ describe('ContentLifecycleRailComponent', () => {
     expect(
       el().querySelector('[data-testid="lifecycle-action-withdraw"]'),
     ).toBeTruthy();
-    expect(
-      el().querySelector('[data-testid="lifecycle-action-archive"]'),
-    ).toBeNull();
+	expect(
+	  el().querySelector('[data-testid="lifecycle-action-archive"]'),
+	).toBeNull();
+	expect(
+	  el().querySelector('[data-testid="lifecycle-step-archived"]'),
+	).toBeNull();
   });
 
   it('should derive withdrawn from published plus private and offer Restore', () => {
@@ -143,7 +149,17 @@ describe('ContentLifecycleRailComponent', () => {
   });
 
   it('should offer no lifecycle action for archived content', () => {
-    create('archived');
+	create('archived');
+	const steps = el().querySelectorAll('[data-testid^="lifecycle-step-"]');
+	expect(steps.length).toBe(1);
+	expect(
+	  el()
+		.querySelector('[data-testid="lifecycle-step-archived"]')
+		?.getAttribute('aria-current'),
+	).toBe('step');
+	expect(
+	  el().querySelector('[data-testid="lifecycle-step-published"]'),
+	).toBeNull();
 
     expect(
       el().querySelector('[data-testid="lifecycle-action-revert-to-draft"]'),

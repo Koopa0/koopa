@@ -621,6 +621,12 @@ func TestStore_WithdrawalLifecycle(t *testing.T) {
 	originalPublishedAt := *published.PublishedAt
 
 	h := NewHandler(s, "https://example.test", slog.Default())
+	assertNoStore := func(name string, rec *httptest.ResponseRecorder) {
+		t.Helper()
+		if got := rec.Header().Get("Cache-Control"); got != "no-store" {
+			t.Fatalf("%s Cache-Control = %q, want no-store", name, got)
+		}
+	}
 	for _, endpoint := range []struct {
 		name string
 		call http.HandlerFunc
@@ -633,7 +639,16 @@ func TestStore_WithdrawalLifecycle(t *testing.T) {
 		if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "withdrawal-lifecycle") {
 			t.Fatalf("warm %s = status %d body %q, want published slug", endpoint.name, rec.Code, rec.Body.String())
 		}
+		assertNoStore("warm "+endpoint.name, rec)
 	}
+	typeRec := httptest.NewRecorder()
+	typeReq := httptest.NewRequest(http.MethodGet, "/api/contents/by-type/article", http.NoBody)
+	typeReq.SetPathValue("type", "article")
+	h.PublicByType(typeRec, typeReq)
+	if typeRec.Code != http.StatusOK {
+		t.Fatalf("public type before withdraw = %d, want 200", typeRec.Code)
+	}
+	assertNoStore("public type", typeRec)
 
 	actions := requireWithdrawalHandler(t, h)
 	withdraw := api.ActorMiddleware(testPool, "human", slog.Default())(http.HandlerFunc(actions.Withdraw))
@@ -672,6 +687,7 @@ func TestStore_WithdrawalLifecycle(t *testing.T) {
 		if rec.Code != http.StatusOK {
 			t.Fatalf("%s after withdraw = status %d body %q, want 200 without withdrawn content", name, rec.Code, rec.Body.String())
 		}
+		assertNoStore(name+" after withdraw", rec)
 		if strings.Contains(rec.Body.String(), "withdrawal-lifecycle") || strings.Contains(rec.Body.String(), "Contains private contact details") {
 			t.Fatalf("%s leaked withdrawn content: %s", name, rec.Body.String())
 		}
@@ -680,6 +696,7 @@ func TestStore_WithdrawalLifecycle(t *testing.T) {
 	detailReq.SetPathValue("slug", "withdrawal-lifecycle")
 	detailRec := httptest.NewRecorder()
 	h.PublicBySlug(detailRec, detailReq)
+	assertNoStore("public detail after withdraw", detailRec)
 	if detailRec.Code != http.StatusNotFound {
 		t.Fatalf("public detail after withdraw = %d, want 404 (body=%s)", detailRec.Code, detailRec.Body.String())
 	}
@@ -711,11 +728,15 @@ func TestStore_WithdrawalLifecycle(t *testing.T) {
 	}
 	for key, want := range map[string]string{
 		"from": "public", "to": "withdrawn", "reason": "Contains private contact details.",
+		"source_vault_path":   *published.SourceVaultPath,
+		"source_git_blob_sha": *published.SourceGitBlobSHA,
 	} {
 		if got := withdrawMeta[key]; got != want {
 			t.Errorf("withdraw payload[%q] = %v, want %q", key, got, want)
 		}
 	}
+	assertPayloadTime(t, withdrawMeta, "published_at", originalPublishedAt)
+	assertPayloadTime(t, withdrawMeta, "withdrawn_at", *withdrawn.WithdrawnAt)
 
 	window, err := s.PublishedInWindow(ctx, originalPublishedAt.Add(-time.Minute), time.Now().Add(time.Minute))
 	if err != nil {
@@ -753,11 +774,13 @@ func TestStore_WithdrawalLifecycle(t *testing.T) {
 	restoredDetailReq.SetPathValue("slug", "withdrawal-lifecycle")
 	restoredDetail := httptest.NewRecorder()
 	h.PublicBySlug(restoredDetail, restoredDetailReq)
+	assertNoStore("public detail after restore", restoredDetail)
 	if restoredDetail.Code != http.StatusOK || !strings.Contains(restoredDetail.Body.String(), "withdrawal-lifecycle") {
 		t.Fatalf("public detail after restore = status %d body %q, want restored slug", restoredDetail.Code, restoredDetail.Body.String())
 	}
 	restoredList := httptest.NewRecorder()
 	h.PublicList(restoredList, httptest.NewRequest(http.MethodGet, "/api/contents", http.NoBody))
+	assertNoStore("public list after restore", restoredList)
 	if restoredList.Code != http.StatusOK || !strings.Contains(restoredList.Body.String(), "withdrawal-lifecycle") {
 		t.Fatalf("public list after restore = status %d body %q, want restored slug", restoredList.Code, restoredList.Body.String())
 	}
@@ -774,6 +797,7 @@ func TestStore_WithdrawalLifecycle(t *testing.T) {
 		if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "withdrawal-lifecycle") {
 			t.Fatalf("%s after restore = status %d body %q, want restored slug", endpoint.name, rec.Code, rec.Body.String())
 		}
+		assertNoStore(endpoint.name+" after restore", rec)
 	}
 
 	var restorePayload []byte
@@ -801,10 +825,29 @@ func TestStore_WithdrawalLifecycle(t *testing.T) {
 	}
 	for key, want := range map[string]string{
 		"from": "withdrawn", "to": "public", "reason": "Contains private contact details.",
+		"source_vault_path":   *published.SourceVaultPath,
+		"source_git_blob_sha": *published.SourceGitBlobSHA,
 	} {
 		if got := restoreMeta[key]; got != want {
 			t.Errorf("restore payload[%q] = %v, want %q", key, got, want)
 		}
+	}
+	assertPayloadTime(t, restoreMeta, "published_at", originalPublishedAt)
+	assertPayloadTime(t, restoreMeta, "withdrawn_at", *withdrawn.WithdrawnAt)
+}
+
+func assertPayloadTime(t *testing.T, payload map[string]any, key string, want time.Time) {
+	t.Helper()
+	raw, ok := payload[key].(string)
+	if !ok {
+		t.Fatalf("payload[%q] = %T(%v), want RFC3339 timestamp", key, payload[key], payload[key])
+	}
+	got, err := time.Parse(time.RFC3339Nano, raw)
+	if err != nil {
+		t.Fatalf("payload[%q] = %q: %v", key, raw, err)
+	}
+	if !got.Equal(want) {
+		t.Errorf("payload[%q] = %v, want %v", key, got, want)
 	}
 }
 
@@ -850,6 +893,21 @@ func TestSchema_ContentWithdrawalConstraints(t *testing.T) {
 		WHERE id=$1`, id); err == nil {
 		t.Fatal("published_at rewrite was accepted")
 	}
+	immutableSnapshotEdits := []struct {
+		name string
+		sql  string
+	}{
+		{name: "title", sql: `UPDATE contents SET title='rewritten title' WHERE id=$1`},
+		{name: "body", sql: `UPDATE contents SET body='rewritten body' WHERE id=$1`},
+		{name: "source", sql: `UPDATE contents SET source_vault_path='Writing/articles/other.md', source_git_blob_sha='89abcdef0123456789abcdef0123456789abcdef' WHERE id=$1`},
+	}
+	for _, tc := range immutableSnapshotEdits {
+		t.Run("immutable_"+tc.name, func(t *testing.T) {
+			if _, err := testPool.Exec(ctx, tc.sql, id); err == nil {
+				t.Fatalf("published snapshot %s rewrite was accepted", tc.name)
+			}
+		})
+	}
 
 	invalid := []struct {
 		name string
@@ -883,7 +941,7 @@ func TestSchema_ContentWithdrawalConstraints(t *testing.T) {
 	}
 }
 
-func TestMigration004_LegacyPrivateRoundTrip(t *testing.T) {
+func TestMigration004_LegacyPrivateBackfillAndRollbackGuard(t *testing.T) {
 	setup(t)
 	ctx := t.Context()
 	_, thisFile, _, ok := runtime.Caller(0)
@@ -953,21 +1011,32 @@ func TestMigration004_LegacyPrivateRoundTrip(t *testing.T) {
 		t.Fatalf("legacy receipt = count %d actor %q occurred_at %v, want 1 human %v", receiptCount, actor, occurredAt, legacyTime)
 	}
 
-	if _, err := tx.Exec(ctx, string(downSQL)); err != nil {
-		t.Fatalf("second migration 004 down: %v", err)
+	if _, err := tx.Exec(ctx, "SAVEPOINT rollback_guard_probe"); err != nil {
+		t.Fatalf("create rollback guard savepoint: %v", err)
 	}
-	if _, err := tx.Exec(ctx, string(upSQL)); err != nil {
-		t.Fatalf("second migration 004 up: %v", err)
+	if _, err := tx.Exec(ctx, string(downSQL)); err == nil {
+		t.Fatal("migration 004 down erased an active withdrawal instead of failing closed")
+	}
+	if _, err := tx.Exec(ctx, "ROLLBACK TO SAVEPOINT rollback_guard_probe"); err != nil {
+		t.Fatalf("restore after expected rollback rejection: %v", err)
 	}
 	if err := tx.QueryRow(ctx, `
 		SELECT count(*) FROM activity_events
 		WHERE entity_type='content' AND entity_id=$1
 		  AND payload->>'transition'='withdrawn'
 		  AND payload->>'from'='legacy_private'`, contentID).Scan(&receiptCount); err != nil {
-		t.Fatalf("count legacy receipts after down/up: %v", err)
+		t.Fatalf("count legacy receipts after rejected down: %v", err)
 	}
 	if receiptCount != 1 {
-		t.Fatalf("legacy receipt count after down/up = %d, want 1", receiptCount)
+		t.Fatalf("legacy receipt count after rejected down = %d, want 1", receiptCount)
+	}
+	if err := tx.QueryRow(ctx, `
+		SELECT withdrawn_at, withdrawal_reason FROM contents WHERE id=$1`, contentID).
+		Scan(&withdrawnAt, &reason); err != nil {
+		t.Fatalf("read legacy row after rejected down: %v", err)
+	}
+	if !withdrawnAt.Equal(legacyTime) || reason != "Migrated from the retired private-visibility control" {
+		t.Fatalf("rejected down changed legacy withdrawal: at=%v reason=%q", withdrawnAt, reason)
 	}
 }
 

@@ -129,6 +129,9 @@ jobs:
       - name: npm run build
         run: npm run build
 
+      - name: production syndication contract
+        run: npm run test:syndication
+
   # Production deploy. `needs` lists every check job above, so a red check skips
   # the deploy; the `if` restricts it to a push landing on main (a pull_request
   # run never deploys). The condition uses no status check function, which keeps

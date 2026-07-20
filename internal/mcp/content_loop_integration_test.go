@@ -190,6 +190,12 @@ func TestIntegration_ListContent_CallerScoped(t *testing.T) {
 	devCRID := seedContentForCreator(t, "cl-claude-cr", "Agent CR", "claude", "changes_requested", &note)
 	devPubID := seedContentForCreator(t, "cl-claude-pub", "Agent Published", "claude", "published", nil)
 	codexID := seedContentForCreator(t, "cl-codex-review", "Codex Content", "codex", "review", nil)
+	if _, err := testPool.Exec(t.Context(), `
+		UPDATE contents
+		SET is_public=false, withdrawn_at=now(), withdrawal_reason='No longer public'
+		WHERE id=$1`, devPubID); err != nil {
+		t.Fatalf("withdraw published caller-owned fixture: %v", err)
+	}
 
 	_, out, err := callHandlerAs(t, "claude", s.listContent, ListContentInput{})
 	if err != nil {
@@ -216,6 +222,11 @@ func TestIntegration_ListContent_CallerScoped(t *testing.T) {
 	if cr, ok := ids[devCRID.String()]; ok {
 		if cr.ReviewNote == nil || *cr.ReviewNote != "please revise" {
 			t.Errorf("listContent[CR].review_note = %v, want %q", cr.ReviewNote, "please revise")
+		}
+	}
+	if published, ok := ids[devPubID.String()]; ok {
+		if published.Status != "published" || published.IsPublic {
+			t.Errorf("listContent[withdrawn] = status %q is_public=%t, want published/false", published.Status, published.IsPublic)
 		}
 	}
 }
