@@ -45,6 +45,11 @@ export interface ApiContent {
     vault_path: string;
     git_blob_sha: string;
   } | null;
+  /** Authenticated-only metadata for the current withdrawal, when present. */
+  withdrawal?: {
+    reason: string;
+    withdrawn_at: string;
+  } | null;
   published_at: string | null;
   created_at: string;
   updated_at: string;
@@ -139,5 +144,4 @@ export interface ApiUpdateContentRequest {
   series_id?: string;
   series_order?: number;
   reading_time_min?: number;
-  is_public?: boolean;
 }

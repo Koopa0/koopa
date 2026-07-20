@@ -39,8 +39,8 @@
       <div class="flex flex-col gap-2.5 border-b border-border bg-panel px-7 pt-[18px] pb-3.5">
         <div class="flex items-center gap-2.5 font-mono text-[11px] text-fg-subtle">
           @if (content(); as c) {
-            <app-status-badge [variant]="statusVariant(c.status)">
-              {{ c.status }}
+            <app-status-badge [variant]="statusVariant(c)">
+              {{ statusLabel(c) }}
             </app-status-badge>
           }
         </div>
@@ -50,8 +50,13 @@
             class="rounded-xs border border-border-faint bg-elevated/40 px-2.5 py-1.5 text-[11px] leading-relaxed text-fg-muted"
             data-testid="published-snapshot-notice"
           >
-            Published snapshot is read-only. Revise the source in Vault, then submit a new
-            publication snapshot.
+            @if (isWithdrawn()) {
+              Withdrawn snapshot is read-only. Restore this exact publication or revise the
+              source in Vault and submit a new snapshot.
+            } @else {
+              Published snapshot is read-only. Revise the source in Vault, then submit a new
+              publication snapshot.
+            }
           </p>
         }
 
@@ -170,6 +175,7 @@
             [status]="c.status"
             [busy]="isActioning()"
             [sourceBound]="c.source !== null && c.source !== undefined"
+            [isPublic]="c.is_public"
             (action)="runLifecycleAction($event)"
           />
           @if (confirmPublishNoTopic()) {
@@ -203,43 +209,25 @@
           }
         </div>
 
-        <div class="border-b border-border px-5 py-[18px]">
+        <div class="border-b border-border px-5 py-[18px]" data-testid="editor-exposure">
           <h3 class="mb-2 font-mono text-[10px] uppercase tracking-[0.06em] text-fg-faint">
-            Visibility
+            Exposure
           </h3>
-          <div class="flex items-center gap-3">
-            <button
-              type="button"
-              role="switch"
-              [attr.aria-checked]="c.is_public"
-              aria-label="Publicly visible"
-              (click)="toggleVisibility()"
-              [disabled]="isActioning()"
-              class="relative h-5 w-[34px] shrink-0 rounded-full border transition-colors disabled:cursor-not-allowed disabled:opacity-40"
-              [class]="c.is_public ? 'border-brand bg-brand' : 'border-border bg-elevated'"
-              data-testid="editor-is-public"
-            >
-              <span
-                class="absolute top-px left-px size-4 rounded-full transition-transform"
-                [class]="
-                  c.is_public
-                    ? 'translate-x-[14px] bg-[oklch(0.16_0.02_260)]'
-                    : 'bg-fg-muted'
-                "
-                aria-hidden="true"
-              ></span>
-            </button>
-            <span class="text-xs text-fg-muted">
-              {{ c.is_public ? 'Public' : 'Private' }}
-            </span>
-          </div>
-          <p class="mt-2 text-[11px] leading-relaxed text-fg-faint" data-testid="editor-visibility-caption">
-            {{
-              c.is_public
-                ? 'Live on the public site once published.'
-                : 'Hidden from the public site.'
-            }}
+          <p class="text-xs text-fg-muted">
+            {{ isWithdrawn() ? 'Withdrawn from public view' : c.is_public ? 'Public' : 'Not published' }}
           </p>
+          @if (c.withdrawal; as withdrawal) {
+            <dl class="mt-2 space-y-1 text-[11px]" data-testid="editor-withdrawal">
+              <div>
+                <dt class="font-mono text-fg-faint">Reason</dt>
+                <dd class="mt-0.5 whitespace-pre-wrap text-fg-muted">{{ withdrawal.reason }}</dd>
+              </div>
+              <div class="flex items-center justify-between gap-3">
+                <dt class="font-mono text-fg-faint">Withdrawn</dt>
+                <dd class="text-fg-muted">{{ withdrawal.withdrawn_at | date: 'short' }}</dd>
+              </div>
+            </dl>
+          }
         </div>
       }
 
@@ -357,6 +345,14 @@
       [isSubmitting]="isActioning()"
       (confirmed)="sendBack($event)"
       (dismissed)="showSendBackDialog.set(false)"
+    />
+  }
+
+  @if (showWithdrawalDialog()) {
+    <app-withdrawal-reason-dialog
+      [isSubmitting]="isActioning()"
+      (confirmed)="withdraw($event)"
+      (dismissed)="showWithdrawalDialog.set(false)"
     />
   }
 }

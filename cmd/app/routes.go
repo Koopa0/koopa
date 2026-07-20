@@ -140,7 +140,8 @@ func registerRoutes(
 	mux.Handle("POST /api/admin/knowledge/content/{id}/revert-to-draft", adminMid(http.HandlerFunc(h.content.RevertToDraft)))
 	mux.Handle("POST /api/admin/knowledge/content/{id}/send-back", adminMid(http.HandlerFunc(h.content.SendBack)))
 	mux.Handle("POST /api/admin/knowledge/content/{id}/archive", adminMid(http.HandlerFunc(h.content.Archive)))
-	mux.Handle("PATCH /api/admin/knowledge/content/{id}/is-public", adminMid(http.HandlerFunc(h.content.SetIsPublic)))
+	mux.Handle("POST /api/admin/knowledge/content/{id}/withdraw", adminMid(http.HandlerFunc(h.content.Withdraw)))
+	mux.Handle("POST /api/admin/knowledge/content/{id}/restore", adminMid(http.HandlerFunc(h.content.Restore)))
 
 	// --- Admin: Commitment / Projects ---
 	mux.Handle("GET /api/admin/commitment/projects", authMid(http.HandlerFunc(h.project.List)))

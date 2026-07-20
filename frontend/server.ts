@@ -76,7 +76,7 @@ interface ContentItem {
   title: string;
   excerpt: string;
   type: string;
-  tags: string[];
+  topics: Array<{ name: string }> | null;
   published_at: string | null;
   updated_at: string;
 }
@@ -96,40 +96,25 @@ const TYPE_ROUTE_PREFIX: Record<string, string> = {
   digest: '/articles',
 };
 
-/** 從後端取得所有已發布內容，帶快取避免頻繁請求 */
-let contentCache: { items: ContentItem[]; fetchedAt: number } | null = null;
-const CACHE_TTL_MS = 10 * 60 * 1000; // 10 分鐘
-
 async function fetchPublishedContent(): Promise<ContentItem[]> {
-  if (contentCache && Date.now() - contentCache.fetchedAt < CACHE_TTL_MS) {
-    return contentCache.items;
-  }
+  const allItems: ContentItem[] = [];
+  let page = 1;
+  let totalPages = 1;
 
-  try {
-    const allItems: ContentItem[] = [];
-    let page = 1;
-    let totalPages = 1;
-
-    while (page <= totalPages) {
-      const res = await fetch(
-        `${BACKEND_URL}/api/contents?per_page=100&page=${page}`,
-      );
-      if (!res.ok) {
-        throw new Error(`API returned ${res.status}`);
-      }
-      const json = (await res.json()) as ApiListResponse;
-      allItems.push(...json.data);
-      totalPages = json.meta.total_pages;
-      page++;
+  while (page <= totalPages) {
+    const res = await fetch(
+      `${BACKEND_URL}/api/contents?per_page=100&page=${page}`,
+    );
+    if (!res.ok) {
+      throw new Error(`API returned ${res.status}`);
     }
-
-    contentCache = { items: allItems, fetchedAt: Date.now() };
-    return allItems;
-  } catch (err) {
-    console.error('Failed to fetch content for sitemap/feed:', err);
-    // 回傳快取（即使過期）或空陣列
-    return contentCache?.items ?? [];
+    const json = (await res.json()) as ApiListResponse;
+    allItems.push(...json.data);
+    totalPages = json.meta.total_pages;
+    page++;
   }
+
+  return allItems;
 }
 
 function escapeXml(text: string): string {
@@ -143,6 +128,7 @@ function escapeXml(text: string): string {
 
 // Sitemap XML — 靜態頁面 + 從 API 動態取得的已發布內容
 app.get('/sitemap.xml', async (_req, res) => {
+  res.set('Cache-Control', 'no-store');
   const now = new Date().toISOString().split('T')[0];
 
   const staticUrls = STATIC_ROUTES.map(
@@ -183,12 +169,12 @@ ${[...staticUrls, ...contentUrls].join('\n')}
 </urlset>`;
 
   res.set('Content-Type', 'application/xml');
-  res.set('Cache-Control', 'public, max-age=3600');
   res.send(xml);
 });
 
 // RSS Feed — 從 API 動態取得所有已發布內容
 app.get('/feed.xml', async (_req, res) => {
+  res.set('Cache-Control', 'no-store');
   const contents = await fetchPublishedContent();
 
   const feedItems = contents
@@ -211,8 +197,8 @@ app.get('/feed.xml', async (_req, res) => {
       const prefix = TYPE_ROUTE_PREFIX[c.type];
       const link = `${SITE_URL}${prefix}/${c.slug}`;
       const pubDate = new Date(c.published_at ?? c.updated_at).toUTCString();
-      const categories = c.tags
-        .map((tag) => `      <category>${escapeXml(tag)}</category>`)
+      const categories = (c.topics ?? [])
+        .map((topic) => `      <category>${escapeXml(topic.name)}</category>`)
         .join('\n');
       return `    <item>
       <title>${escapeXml(c.title)}</title>
@@ -240,7 +226,6 @@ ${items}
 </rss>`;
 
   res.set('Content-Type', 'application/rss+xml');
-  res.set('Cache-Control', 'public, max-age=3600');
   res.send(xml);
 });
 

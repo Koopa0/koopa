@@ -3,7 +3,7 @@ SELECT id, slug, title, body, excerpt, type, status,
        series_id, series_order, is_public, project_id, reading_time_min,
        cover_image, created_by, proposal_rationale, review_note,
        source_vault_path, source_git_blob_sha,
-       published_at, created_at, updated_at
+       published_at, withdrawn_at, withdrawal_reason, created_at, updated_at
 FROM contents WHERE id = $1;
 
 -- name: PublishedContents :many
@@ -23,11 +23,15 @@ WHERE status = 'published' AND is_public = true
   AND (sqlc.narg('content_type')::content_type IS NULL OR type = sqlc.narg('content_type'))
   AND (sqlc.narg('since')::timestamptz IS NULL OR published_at >= sqlc.narg('since'));
 
--- name: ContentBySlug :one
+-- name: PublicContentBySlug :one
+-- The anonymous detail lookup enforces exposure in SQL, the final data
+-- boundary, rather than fetching a private body and relying only on a later
+-- handler branch to discard it.
 SELECT id, slug, title, body, excerpt, type, status,
        series_id, series_order, is_public, project_id, reading_time_min,
        cover_image, published_at, created_at, updated_at
-FROM contents WHERE slug = $1;
+FROM contents
+WHERE slug = $1 AND status = 'published' AND is_public = true;
 
 -- name: ContentsByTopicID :many
 SELECT c.id, c.slug, c.title, c.body, c.excerpt, c.type, c.status,
@@ -57,7 +61,7 @@ LIMIT $1;
 SELECT id, slug, title, excerpt, type, status, is_public, project_id,
        reading_time_min, created_by, proposal_rationale,
        source_vault_path, source_git_blob_sha,
-       published_at, created_at, updated_at
+       published_at, withdrawn_at, withdrawal_reason, created_at, updated_at
 FROM contents
 WHERE (sqlc.narg('content_type')::content_type IS NULL OR type = sqlc.narg('content_type'))
   AND (sqlc.narg('content_status')::content_status IS NULL OR status = sqlc.narg('content_status'))
@@ -98,7 +102,7 @@ RETURNING id, slug, title, body, excerpt, type, status,
           series_id, series_order, is_public, project_id, reading_time_min,
           cover_image, created_by, proposal_rationale,
           source_vault_path, source_git_blob_sha,
-          published_at, created_at, updated_at;
+          published_at, withdrawn_at, withdrawal_reason, created_at, updated_at;
 
 -- name: UpdateContent :one
 UPDATE contents SET
@@ -109,29 +113,17 @@ UPDATE contents SET
     type = COALESCE(sqlc.narg('content_type')::content_type, type),
     series_id = COALESCE(sqlc.narg('series_id'), series_id),
     series_order = COALESCE(sqlc.narg('series_order'), series_order),
-    is_public = COALESCE(sqlc.narg('is_public'), is_public),
     project_id = COALESCE(sqlc.narg('project_id'), project_id),
     reading_time_min = COALESCE(sqlc.narg('reading_time_min'), reading_time_min),
     cover_image = COALESCE(sqlc.narg('cover_image'), cover_image),
     updated_at = now()
 WHERE id = $1
-  AND status <> 'published'
+  AND published_at IS NULL
   AND source_vault_path IS NULL
 RETURNING id, slug, title, body, excerpt, type, status,
           series_id, series_order, is_public, project_id, reading_time_min,
           cover_image, source_vault_path, source_git_blob_sha,
-          published_at, created_at, updated_at;
-
--- name: SetContentVisibility :one
--- Visibility is an operational exposure control, separate from editing the
--- authored publication snapshot. Durable withdrawal/restore semantics belong
--- to their own lifecycle transition rather than this boolean switch.
-UPDATE contents SET is_public = $2, updated_at = now()
-WHERE id = $1
-RETURNING id, slug, title, body, excerpt, type, status,
-          series_id, series_order, is_public, project_id, reading_time_min,
-          cover_image, source_vault_path, source_git_blob_sha,
-          published_at, created_at, updated_at;
+          published_at, withdrawn_at, withdrawal_reason, created_at, updated_at;
 
 -- name: PublishContent :one
 -- Atomically promotes only a source-bound draft/review snapshot. A missing
@@ -145,18 +137,57 @@ WHERE id = $1
 RETURNING id, slug, title, body, excerpt, type, status,
           series_id, series_order, is_public, project_id, reading_time_min,
           cover_image, source_vault_path, source_git_blob_sha,
-          published_at, created_at, updated_at;
+          published_at, withdrawn_at, withdrawal_reason, created_at, updated_at;
+
+-- name: WithdrawContent :one
+-- Stop serving a historically published snapshot without rewriting its
+-- publication status/date or authored bytes. The reason and timestamp move in
+-- the same guarded statement as visibility; audit_contents writes the receipt.
+UPDATE contents SET
+    is_public = false,
+    withdrawn_at = now(),
+    withdrawal_reason = @withdrawal_reason,
+    updated_at = now()
+WHERE id = @id
+  AND status = 'published'
+  AND is_public = true
+  AND published_at IS NOT NULL
+RETURNING id, slug, title, body, excerpt, type, status,
+          series_id, series_order, is_public, project_id, reading_time_min,
+          cover_image, created_by, proposal_rationale, review_note,
+          source_vault_path, source_git_blob_sha,
+          published_at, withdrawn_at, withdrawal_reason, created_at, updated_at;
+
+-- name: RestoreContent :one
+-- Resume serving exactly the same published snapshot. The trigger captures the
+-- prior withdrawal metadata in the restore receipt before these current-state
+-- fields are cleared.
+UPDATE contents SET
+    is_public = true,
+    withdrawn_at = NULL,
+    withdrawal_reason = NULL,
+    updated_at = now()
+WHERE id = @id
+  AND status = 'published'
+  AND is_public = false
+  AND withdrawn_at IS NOT NULL
+  AND withdrawal_reason IS NOT NULL
+RETURNING id, slug, title, body, excerpt, type, status,
+          series_id, series_order, is_public, project_id, reading_time_min,
+          cover_image, created_by, proposal_rationale, review_note,
+          source_vault_path, source_git_blob_sha,
+          published_at, withdrawn_at, withdrawal_reason, created_at, updated_at;
 
 -- name: ArchiveContentReturning :one
 -- Archive a content row and return the updated row. Both the REST archive
 -- endpoint and DeleteContent use it — the RETURNING row lets a missing id
 -- surface as ErrNotFound (→ 404) instead of a silent no-op.
 UPDATE contents SET status = 'archived', review_note = NULL, updated_at = now()
-WHERE id = $1
+WHERE id = $1 AND published_at IS NULL
 RETURNING id, slug, title, body, excerpt, type, status,
           series_id, series_order, is_public, project_id, reading_time_min,
           cover_image, source_vault_path, source_git_blob_sha,
-          published_at, created_at, updated_at;
+          published_at, withdrawn_at, withdrawal_reason, created_at, updated_at;
 
 -- name: SubmitContentForReview :one
 -- Transition content from draft to review. Returns pgx.ErrNoRows when the
@@ -170,7 +201,7 @@ WHERE id = $1 AND status = 'draft'
 RETURNING id, slug, title, body, excerpt, type, status,
           series_id, series_order, is_public, project_id, reading_time_min,
           cover_image, source_vault_path, source_git_blob_sha,
-          published_at, created_at, updated_at;
+          published_at, withdrawn_at, withdrawal_reason, created_at, updated_at;
 
 -- name: RevertContentToDraft :one
 -- Transition content from review back to draft (reviewer rejection path).
@@ -181,7 +212,7 @@ WHERE id = $1 AND status = 'review'
 RETURNING id, slug, title, body, excerpt, type, status,
           series_id, series_order, is_public, project_id, reading_time_min,
           cover_image, source_vault_path, source_git_blob_sha,
-          published_at, created_at, updated_at;
+          published_at, withdrawn_at, withdrawal_reason, created_at, updated_at;
 
 -- name: PublishedContentsInWindow :many
 -- Content published within a [since, until] window, for
@@ -224,7 +255,7 @@ DELETE FROM content_topics WHERE content_id = $1;
 SELECT id, slug, title, body, excerpt, type, status,
        series_id, series_order, is_public, project_id, reading_time_min,
        cover_image, source_vault_path, source_git_blob_sha,
-       published_at, created_at, updated_at
+       published_at, withdrawn_at, withdrawal_reason, created_at, updated_at
 FROM contents
 WHERE status = @status::content_status
 ORDER BY updated_at DESC
@@ -242,7 +273,7 @@ SELECT id FROM contents WHERE slug = $1;
 -- draft back (status=changes_requested). created_by is the resolved caller
 -- identity (caller-scoped), never a client-supplied filter.
 SELECT id, slug, title, type, status, review_note,
-       source_vault_path, source_git_blob_sha, published_at, created_at
+       is_public, source_vault_path, source_git_blob_sha, published_at, created_at
 FROM contents
 WHERE created_by = @created_by
 ORDER BY created_at DESC;
@@ -267,7 +298,7 @@ RETURNING id, slug, title, body, excerpt, type, status,
           series_id, series_order, is_public, project_id, reading_time_min,
           cover_image, created_by, proposal_rationale, review_note,
           source_vault_path, source_git_blob_sha,
-          published_at, created_at, updated_at;
+          published_at, withdrawn_at, withdrawal_reason, created_at, updated_at;
 
 -- name: RevisableContentSourceByCreator :one
 -- Read-only rejection classifier for revise_content. Caller/status scoping is
@@ -293,4 +324,4 @@ RETURNING id, slug, title, body, excerpt, type, status,
           series_id, series_order, is_public, project_id, reading_time_min,
           cover_image, created_by, proposal_rationale, review_note,
           source_vault_path, source_git_blob_sha,
-          published_at, created_at, updated_at;
+          published_at, withdrawn_at, withdrawal_reason, created_at, updated_at;

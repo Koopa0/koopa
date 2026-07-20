@@ -16,6 +16,7 @@ import (
 
 // PublicList handles GET /api/contents.
 func (h *Handler) PublicList(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
 	f := h.parsePublicFilter(r)
 	contents, total, err := h.store.PublicContents(r.Context(), f)
 	if err != nil {
@@ -28,14 +29,11 @@ func (h *Handler) PublicList(w http.ResponseWriter, r *http.Request) {
 
 // PublicBySlug handles GET /api/contents/{slug}.
 func (h *Handler) PublicBySlug(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
 	slug := r.PathValue("slug")
-	c, err := h.store.ContentBySlug(r.Context(), slug)
+	c, err := h.store.PublicContentBySlug(r.Context(), slug)
 	if err != nil {
 		api.HandleError(w, h.logger, err, storeErrors...)
-		return
-	}
-	if !c.IsPublic {
-		api.Error(w, http.StatusNotFound, "NOT_FOUND", "not found")
 		return
 	}
 	api.Encode(w, http.StatusOK, api.Response{Data: c})
@@ -43,6 +41,7 @@ func (h *Handler) PublicBySlug(w http.ResponseWriter, r *http.Request) {
 
 // PublicByType handles GET /api/contents/by-type/{type}.
 func (h *Handler) PublicByType(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
 	t := Type(r.PathValue("type"))
 	if !t.Valid() {
 		api.Error(w, http.StatusBadRequest, "BAD_REQUEST", "invalid content type")

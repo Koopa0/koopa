@@ -1,10 +1,9 @@
 // Copyright 2026 Koopa. All rights reserved.
 
-// Package content manages the public editorial corpus — articles,
-// essays, build logs, TILs, and digests — through the draft → review →
-// published → archived lifecycle. It owns the contents table end to
-// end: admin CRUD and the anonymous read surface with RSS and sitemap
-// syndication for published rows.
+// Package content manages publication snapshots — articles, essays, build
+// logs, TILs, and digests — through review, publication, withdrawal, and
+// disposal. A published status records historical publication; is_public
+// records whether Koopa is serving that immutable snapshot now.
 package content
 
 import (
@@ -125,11 +124,12 @@ func (s Status) Valid() bool {
 // (Markdown payload size). Enforced at each write boundary via CheckFieldLengths
 // and CheckReviewNoteLength.
 const (
-	MaxTitleLen      = 300
-	MaxExcerptLen    = 1000
-	MaxBodyBytes     = 256 * 1024
-	MaxReviewNoteLen = 4000
-	MaxRationaleLen  = 4000
+	MaxTitleLen            = 300
+	MaxExcerptLen          = 1000
+	MaxBodyBytes           = 256 * 1024
+	MaxReviewNoteLen       = 4000
+	MaxRationaleLen        = 4000
+	MaxWithdrawalReasonLen = 500
 )
 
 // CheckFieldLengths enforces the content field length caps. A nil argument is
@@ -162,6 +162,18 @@ func CheckReviewNoteLength(note string) error {
 func CheckRationaleLength(rationale string) error {
 	if utf8.RuneCountInString(rationale) > MaxRationaleLen {
 		return fmt.Errorf("proposal_rationale too long: %d characters (max %d)", utf8.RuneCountInString(rationale), MaxRationaleLen)
+	}
+	return nil
+}
+
+// CheckWithdrawalReason validates the owner explanation stored with a public
+// withdrawal. Whitespace is normalized by the handler before this check.
+func CheckWithdrawalReason(reason string) error {
+	if reason == "" {
+		return fmt.Errorf("withdrawal reason is required")
+	}
+	if utf8.RuneCountInString(reason) > MaxWithdrawalReasonLen {
+		return fmt.Errorf("withdrawal reason too long: %d characters (max %d)", utf8.RuneCountInString(reason), MaxWithdrawalReasonLen)
 	}
 	return nil
 }
@@ -209,6 +221,8 @@ type Content struct {
 	SourceVaultPath  *string    `json:"-"`
 	SourceGitBlobSHA *string    `json:"-"`
 	PublishedAt      *time.Time `json:"published_at,omitempty"`
+	WithdrawnAt      *time.Time `json:"-"`
+	WithdrawalReason *string    `json:"-"`
 	CreatedAt        time.Time  `json:"created_at"`
 	UpdatedAt        time.Time  `json:"updated_at"`
 }
@@ -230,10 +244,27 @@ func (c *Content) Source() *SourceSnapshot {
 type AdminContent struct {
 	Content
 	SourceSnapshot *SourceSnapshot `json:"source,omitempty"`
+	Withdrawal     *Withdrawal     `json:"withdrawal,omitempty"`
 }
 
 func adminContent(c *Content) AdminContent {
-	return AdminContent{Content: *c, SourceSnapshot: c.Source()}
+	return AdminContent{Content: *c, SourceSnapshot: c.Source(), Withdrawal: c.CurrentWithdrawal()}
+}
+
+// Withdrawal is the admin-only current-state view for a snapshot Koopa has
+// stopped serving. The durable receipt remains in activity_events.
+type Withdrawal struct {
+	WithdrawnAt time.Time `json:"withdrawn_at"`
+	Reason      string    `json:"reason"`
+}
+
+// CurrentWithdrawal returns the complete withdrawal pair or nil. The schema
+// rejects partial pairs, so callers never need to interpret half-state.
+func (c *Content) CurrentWithdrawal() *Withdrawal {
+	if c.WithdrawnAt == nil || c.WithdrawalReason == nil {
+		return nil
+	}
+	return &Withdrawal{WithdrawnAt: *c.WithdrawnAt, Reason: *c.WithdrawalReason}
 }
 
 // Brief is the minimal content projection used when a consumer only needs
@@ -305,7 +336,6 @@ type UpdateParams struct {
 	TopicIDs       []uuid.UUID `json:"topic_ids,omitempty"`
 	SeriesID       *string     `json:"series_id,omitempty"`
 	SeriesOrder    *int        `json:"series_order,omitempty"`
-	IsPublic       *bool       `json:"is_public,omitempty"`
 	ProjectID      *uuid.UUID  `json:"project_id,omitempty"`
 	ReadingTimeMin *int        `json:"reading_time_min,omitempty"`
 	CoverImage     *string     `json:"cover_image,omitempty"`
@@ -327,6 +357,7 @@ type CreatorItem struct {
 	SourceVaultPath  string     `json:"source_vault_path"`
 	SourceGitBlobSHA string     `json:"source_git_blob_sha"`
 	PublishedAt      *time.Time `json:"published_at,omitempty"`
+	IsPublic         bool       `json:"is_public"`
 	CreatedAt        time.Time  `json:"created_at"`
 }
 
@@ -514,8 +545,9 @@ func (s *Store) Content(ctx context.Context, id uuid.UUID) (*Content, error) {
 		CreatedBy: r.CreatedBy, ProposalRationale: r.ProposalRationale,
 		ReviewNote:      r.ReviewNote,
 		SourceVaultPath: r.SourceVaultPath, SourceGitBlobSHA: r.SourceGitBlobSha,
-		PublishedAt: r.PublishedAt,
-		CreatedAt:   r.CreatedAt, UpdatedAt: r.UpdatedAt,
+		PublishedAt: r.PublishedAt, WithdrawnAt: r.WithdrawnAt,
+		WithdrawalReason: r.WithdrawalReason,
+		CreatedAt:        r.CreatedAt, UpdatedAt: r.UpdatedAt,
 	})
 
 	topics, err := s.TopicsForContent(ctx, c.ID)
@@ -551,6 +583,7 @@ func (s *Store) ContentsByCreator(ctx context.Context, createdBy string) ([]Crea
 			SourceVaultPath:  valueOrEmpty(r.SourceVaultPath),
 			SourceGitBlobSHA: valueOrEmpty(r.SourceGitBlobSha),
 			PublishedAt:      r.PublishedAt,
+			IsPublic:         r.IsPublic,
 			CreatedAt:        r.CreatedAt,
 		}
 	}
@@ -603,14 +636,16 @@ func (s *Store) PublicContents(ctx context.Context, f PublicFilter) ([]Content, 
 	return contents, int(countRow), nil
 }
 
-// ContentBySlug returns a single content by slug.
-func (s *Store) ContentBySlug(ctx context.Context, slug string) (*Content, error) {
-	r, err := s.q.ContentBySlug(ctx, slug)
+// PublicContentBySlug returns a snapshot only when it is currently exposed.
+// The SQL predicate is the anonymous-body authority boundary: private drafts
+// and withdrawn publications are never fetched into the public handler.
+func (s *Store) PublicContentBySlug(ctx context.Context, slug string) (*Content, error) {
+	r, err := s.q.PublicContentBySlug(ctx, slug)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrNotFound
 		}
-		return nil, fmt.Errorf("querying content %s: %w", slug, err)
+		return nil, fmt.Errorf("querying public content %s: %w", slug, err)
 	}
 
 	c := rowToContent(contentRow{
@@ -752,8 +787,9 @@ func (s *Store) CreateContent(ctx context.Context, p *CreateParams) (*Content, e
 		ReadingTimeMin: r.ReadingTimeMin, CoverImage: r.CoverImage,
 		CreatedBy: r.CreatedBy, ProposalRationale: r.ProposalRationale,
 		SourceVaultPath: r.SourceVaultPath, SourceGitBlobSHA: r.SourceGitBlobSha,
-		PublishedAt: r.PublishedAt,
-		CreatedAt:   r.CreatedAt, UpdatedAt: r.UpdatedAt,
+		PublishedAt: r.PublishedAt, WithdrawnAt: r.WithdrawnAt,
+		WithdrawalReason: r.WithdrawalReason,
+		CreatedAt:        r.CreatedAt, UpdatedAt: r.UpdatedAt,
 	})
 
 	// Topic fetch runs on the caller's tx; a read failure aborts that tx,
@@ -818,7 +854,6 @@ func (s *Store) UpdateContent(ctx context.Context, id uuid.UUID, p *UpdateParams
 		ContentType:    nullContentType(p.Type),
 		SeriesID:       p.SeriesID,
 		SeriesOrder:    seriesOrder,
-		IsPublic:       p.IsPublic,
 		ProjectID:      p.ProjectID,
 		ReadingTimeMin: readingTimeMin,
 		CoverImage:     p.CoverImage,
@@ -843,8 +878,9 @@ func (s *Store) UpdateContent(ctx context.Context, id uuid.UUID, p *UpdateParams
 		IsPublic: r.IsPublic, ProjectID: r.ProjectID,
 		ReadingTimeMin: r.ReadingTimeMin, CoverImage: r.CoverImage,
 		SourceVaultPath: r.SourceVaultPath, SourceGitBlobSHA: r.SourceGitBlobSha,
-		PublishedAt: r.PublishedAt,
-		CreatedAt:   r.CreatedAt, UpdatedAt: r.UpdatedAt,
+		PublishedAt: r.PublishedAt, WithdrawnAt: r.WithdrawnAt,
+		WithdrawalReason: r.WithdrawalReason,
+		CreatedAt:        r.CreatedAt, UpdatedAt: r.UpdatedAt,
 	})
 
 	// Topic fetch runs on the caller's STILL-OPEN tx (not post-commit); a
@@ -858,33 +894,6 @@ func (s *Store) UpdateContent(ctx context.Context, id uuid.UUID, p *UpdateParams
 	c.Topics = topics
 
 	return &c, nil
-}
-
-// SetContentVisibility changes only the operational public exposure flag. It
-// intentionally bypasses the published-snapshot edit guard without granting a
-// path to alter authored fields. This is not a durable withdrawal receipt.
-func (s *Store) SetContentVisibility(ctx context.Context, id uuid.UUID, isPublic bool) (*Content, error) {
-	r, err := s.q.SetContentVisibility(ctx, db.SetContentVisibilityParams{
-		ID:       id,
-		IsPublic: isPublic,
-	})
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, ErrNotFound
-		}
-		return nil, mapWriteError(err, "", uuid.Nil, fmt.Sprintf("setting content %s visibility", id))
-	}
-
-	return s.hydrateContentRow(ctx, r.ID, &contentRow{
-		ID: r.ID, Slug: r.Slug, Title: r.Title, Body: r.Body, Excerpt: r.Excerpt,
-		Type: r.Type, Status: r.Status,
-		SeriesID: r.SeriesID, SeriesOrder: r.SeriesOrder,
-		IsPublic: r.IsPublic, ProjectID: r.ProjectID,
-		ReadingTimeMin: r.ReadingTimeMin, CoverImage: r.CoverImage,
-		SourceVaultPath: r.SourceVaultPath, SourceGitBlobSHA: r.SourceGitBlobSha,
-		PublishedAt: r.PublishedAt,
-		CreatedAt:   r.CreatedAt, UpdatedAt: r.UpdatedAt,
-	})
 }
 
 // replaceTopics clears id's existing topic associations and re-inserts
@@ -911,7 +920,7 @@ func (s *Store) DeleteContent(ctx context.Context, id uuid.UUID) error {
 	// consistent with the /archive route, instead of a silent no-op → 204.
 	if _, err := s.q.ArchiveContentReturning(ctx, id); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return ErrNotFound
+			return s.transitionRejectionReason(ctx, id)
 		}
 		return fmt.Errorf("archiving content %s: %w", id, err)
 	}
@@ -997,6 +1006,8 @@ type contentRow struct {
 	SourceVaultPath   *string
 	SourceGitBlobSHA  *string
 	PublishedAt       *time.Time
+	WithdrawnAt       *time.Time
+	WithdrawalReason  *string
 	CreatedAt         time.Time
 	UpdatedAt         time.Time
 }
@@ -1020,6 +1031,8 @@ func rowToContent(r contentRow) Content { //nolint:gocritic // hugeParam: struct
 		SourceVaultPath:   r.SourceVaultPath,
 		SourceGitBlobSHA:  r.SourceGitBlobSHA,
 		PublishedAt:       r.PublishedAt,
+		WithdrawnAt:       r.WithdrawnAt,
+		WithdrawalReason:  r.WithdrawalReason,
 		CreatedAt:         r.CreatedAt,
 		UpdatedAt:         r.UpdatedAt,
 	}

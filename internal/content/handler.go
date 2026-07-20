@@ -5,9 +5,7 @@ package content
 import (
 	"log/slog"
 	"net/http"
-	"time"
 
-	"github.com/dgraph-io/ristretto/v2"
 	"github.com/jackc/pgx/v5"
 
 	"github.com/Koopa0/koopa/internal/api"
@@ -37,21 +35,11 @@ type slugConflictDetail struct {
 	ContentID string `json:"content_id"`
 }
 
-// Cache TTLs for pre-serialized feed responses.
-// These caches expire on TTL only — no active invalidation on content writes.
-// This is intentional: content mutations are infrequent and eventual consistency is acceptable.
-const (
-	rssTTL     = 10 * time.Minute
-	sitemapTTL = 30 * time.Minute
-)
-
 // Handler handles content HTTP requests.
 type Handler struct {
 	store   *Store
 	siteURL string
 	logger  *slog.Logger
-
-	feedCache *ristretto.Cache[string, []byte]
 }
 
 // NewHandler returns a content Handler. Admin mutation handlers rely on
@@ -61,16 +49,10 @@ func NewHandler(
 	siteURL string,
 	logger *slog.Logger,
 ) *Handler {
-	feedCache, _ := ristretto.NewCache(&ristretto.Config[string, []byte]{
-		NumCounters: 100,     // 10x expected items (2 keys: "rss", "sitemap")
-		MaxCost:     1 << 20, // 1 MB byte budget
-		BufferItems: 64,
-	})
 	return &Handler{
-		store:     store,
-		siteURL:   siteURL,
-		feedCache: feedCache,
-		logger:    logger,
+		store:   store,
+		siteURL: siteURL,
+		logger:  logger,
 	}
 }
 

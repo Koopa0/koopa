@@ -46,14 +46,16 @@ type ListContentInput struct {
 }
 
 // ContentListItem is one row of list_content: a content piece the calling agent
-// proposed, with its current status so the agent can read the disposition. When
-// the owner sent the draft back, review_note carries the revision reason.
+// proposed, with its current status so the agent can read the disposition.
+// status=published plus is_public=false means the snapshot was withdrawn. When
+// the owner sent a review draft back, review_note carries the revision reason.
 type ContentListItem struct {
 	ID               string  `json:"id"`
 	Slug             string  `json:"slug"`
 	Title            string  `json:"title"`
 	Type             string  `json:"type"`
 	Status           string  `json:"status"`
+	IsPublic         bool    `json:"is_public"`
 	ReviewNote       *string `json:"review_note,omitempty"`
 	SourceVaultPath  string  `json:"source_vault_path"`
 	SourceGitBlobSHA string  `json:"source_git_blob_sha"`
@@ -87,6 +89,7 @@ func (s *Server) listContent(ctx context.Context, _ *mcp.CallToolRequest, _ List
 			Title:            r.Title,
 			Type:             string(r.Type),
 			Status:           string(r.Status),
+			IsPublic:         r.IsPublic,
 			ReviewNote:       r.ReviewNote,
 			SourceVaultPath:  r.SourceVaultPath,
 			SourceGitBlobSHA: r.SourceGitBlobSHA,

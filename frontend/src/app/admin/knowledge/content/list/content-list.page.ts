@@ -26,7 +26,8 @@ import {
 import { DataTableComponent } from '../../../../shared/components/data-table/data-table.component';
 
 type TypeFilter = 'all' | ContentType;
-type StatusFilter = 'all' | ContentStatus;
+type ProjectedContentStatus = ContentStatus | 'withdrawn';
+type StatusFilter = 'all' | ProjectedContentStatus;
 
 /** Shape the router may pass on `data:` for this route. */
 export interface ContentListRouteData extends Data {
@@ -62,22 +63,25 @@ const STATUS_CHIPS: readonly StatusChip[] = [
   { value: 'review', label: 'Review' },
   { value: 'changes_requested', label: 'Changes requested' },
   { value: 'published', label: 'Published' },
+  { value: 'withdrawn', label: 'Withdrawn' },
   { value: 'archived', label: 'Archived' },
 ];
 
-const STATUS_DOT_CLASS: Record<ContentStatus, string> = {
+const STATUS_DOT_CLASS: Record<ProjectedContentStatus, string> = {
   draft: 'bg-fg-subtle',
   review: 'bg-warn',
   changes_requested: 'bg-amber-500',
   published: 'bg-success',
+  withdrawn: 'bg-warn',
   archived: 'bg-fg-faint',
 };
 
-const STATUS_TEXT_CLASS: Record<ContentStatus, string> = {
+const STATUS_TEXT_CLASS: Record<ProjectedContentStatus, string> = {
   draft: 'text-fg-muted',
   review: 'text-warn',
   changes_requested: 'text-amber-400',
   published: 'text-success',
+  withdrawn: 'text-warn',
   archived: 'text-fg-subtle',
 };
 
@@ -140,12 +144,25 @@ export class ContentListPageComponent {
       type: this.typeFilter(),
       status: this.statusFilter(),
     }),
-    stream: ({ params }) =>
-      this.contentService.adminList({
+    stream: ({ params }) => {
+      const publishedProjection = params.status === 'published';
+      const withdrawnProjection = params.status === 'withdrawn';
+      return this.contentService.adminList({
         type: params.type === 'all' ? undefined : params.type,
-        status: params.status === 'all' ? undefined : params.status,
+        status:
+          params.status === 'all'
+            ? undefined
+            : params.status === 'withdrawn'
+              ? 'published'
+              : params.status,
+        is_public: withdrawnProjection
+          ? false
+          : publishedProjection
+            ? true
+            : undefined,
         perPage: 100,
-      }),
+      });
+    },
   });
 
   // Guard the read: rxResource.value() throws while the resource is in an
@@ -236,11 +253,23 @@ export class ContentListPageComponent {
     return CONTENT_TYPE_CONFIG[type]?.label ?? type;
   }
 
-  protected statusDotClass(status: ContentStatus): string {
+  protected projectedStatus(row: ApiContent): ProjectedContentStatus {
+    return row.status === 'published' && !row.is_public
+      ? 'withdrawn'
+      : row.status;
+  }
+
+  protected statusLabel(row: ApiContent): string {
+    return this.projectedStatus(row) === 'withdrawn'
+      ? 'Withdrawn'
+      : row.status;
+  }
+
+  protected statusDotClass(status: ProjectedContentStatus): string {
     return STATUS_DOT_CLASS[status];
   }
 
-  protected statusTextClass(status: ContentStatus): string {
+  protected statusTextClass(status: ProjectedContentStatus): string {
     return STATUS_TEXT_CLASS[status];
   }
 

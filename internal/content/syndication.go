@@ -27,11 +27,7 @@ func (h *Handler) contentURL(typ, slug string) string {
 
 // RSS handles GET /api/feed/rss.
 func (h *Handler) RSS(w http.ResponseWriter, r *http.Request) {
-	if data, ok := h.feedCache.Get("rss"); ok {
-		w.Header().Set("Content-Type", "application/rss+xml; charset=utf-8")
-		_, _ = w.Write(data) // best-effort
-		return
-	}
+	w.Header().Set("Cache-Control", "no-store")
 
 	contents, err := h.store.PublishedForRSS(r.Context(), 20)
 	if err != nil {
@@ -102,21 +98,13 @@ func (h *Handler) RSS(w http.ResponseWriter, r *http.Request) {
 	}
 
 	data := buf.Bytes()
-	if !h.feedCache.SetWithTTL("rss", data, int64(len(data)), rssTTL) {
-		h.logger.Warn("rss cache set rejected", "size", len(data))
-	}
-
 	w.Header().Set("Content-Type", "application/rss+xml; charset=utf-8")
 	_, _ = w.Write(data) // best-effort
 }
 
 // Sitemap handles GET /api/feed/sitemap.
 func (h *Handler) Sitemap(w http.ResponseWriter, r *http.Request) {
-	if data, ok := h.feedCache.Get("sitemap"); ok {
-		w.Header().Set("Content-Type", "application/xml; charset=utf-8")
-		_, _ = w.Write(data) // best-effort
-		return
-	}
+	w.Header().Set("Cache-Control", "no-store")
 
 	contents, err := h.store.AllPublishedSlugs(r.Context())
 	if err != nil {
@@ -162,10 +150,6 @@ func (h *Handler) Sitemap(w http.ResponseWriter, r *http.Request) {
 	}
 
 	data := buf.Bytes()
-	if !h.feedCache.SetWithTTL("sitemap", data, int64(len(data)), sitemapTTL) {
-		h.logger.Warn("sitemap cache set rejected", "size", len(data))
-	}
-
 	w.Header().Set("Content-Type", "application/xml; charset=utf-8")
 	_, _ = w.Write(data) // best-effort
 }

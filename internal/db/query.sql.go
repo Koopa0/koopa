@@ -496,11 +496,11 @@ func (q *Queries) AllRecurringTodoItems(ctx context.Context) ([]Todo, error) {
 
 const archiveContentReturning = `-- name: ArchiveContentReturning :one
 UPDATE contents SET status = 'archived', review_note = NULL, updated_at = now()
-WHERE id = $1
+WHERE id = $1 AND published_at IS NULL
 RETURNING id, slug, title, body, excerpt, type, status,
           series_id, series_order, is_public, project_id, reading_time_min,
           cover_image, source_vault_path, source_git_blob_sha,
-          published_at, created_at, updated_at
+          published_at, withdrawn_at, withdrawal_reason, created_at, updated_at
 `
 
 type ArchiveContentReturningRow struct {
@@ -520,6 +520,8 @@ type ArchiveContentReturningRow struct {
 	SourceVaultPath  *string       `json:"source_vault_path"`
 	SourceGitBlobSha *string       `json:"source_git_blob_sha"`
 	PublishedAt      *time.Time    `json:"published_at"`
+	WithdrawnAt      *time.Time    `json:"withdrawn_at"`
+	WithdrawalReason *string       `json:"withdrawal_reason"`
 	CreatedAt        time.Time     `json:"created_at"`
 	UpdatedAt        time.Time     `json:"updated_at"`
 }
@@ -547,6 +549,8 @@ func (q *Queries) ArchiveContentReturning(ctx context.Context, id uuid.UUID) (Ar
 		&i.SourceVaultPath,
 		&i.SourceGitBlobSha,
 		&i.PublishedAt,
+		&i.WithdrawnAt,
+		&i.WithdrawalReason,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -1225,7 +1229,7 @@ SELECT id, slug, title, body, excerpt, type, status,
        series_id, series_order, is_public, project_id, reading_time_min,
        cover_image, created_by, proposal_rationale, review_note,
        source_vault_path, source_git_blob_sha,
-       published_at, created_at, updated_at
+       published_at, withdrawn_at, withdrawal_reason, created_at, updated_at
 FROM contents WHERE id = $1
 `
 
@@ -1249,6 +1253,8 @@ type ContentByIDRow struct {
 	SourceVaultPath   *string       `json:"source_vault_path"`
 	SourceGitBlobSha  *string       `json:"source_git_blob_sha"`
 	PublishedAt       *time.Time    `json:"published_at"`
+	WithdrawnAt       *time.Time    `json:"withdrawn_at"`
+	WithdrawalReason  *string       `json:"withdrawal_reason"`
 	CreatedAt         time.Time     `json:"created_at"`
 	UpdatedAt         time.Time     `json:"updated_at"`
 }
@@ -1276,56 +1282,8 @@ func (q *Queries) ContentByID(ctx context.Context, id uuid.UUID) (ContentByIDRow
 		&i.SourceVaultPath,
 		&i.SourceGitBlobSha,
 		&i.PublishedAt,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
-const contentBySlug = `-- name: ContentBySlug :one
-SELECT id, slug, title, body, excerpt, type, status,
-       series_id, series_order, is_public, project_id, reading_time_min,
-       cover_image, published_at, created_at, updated_at
-FROM contents WHERE slug = $1
-`
-
-type ContentBySlugRow struct {
-	ID             uuid.UUID     `json:"id"`
-	Slug           string        `json:"slug"`
-	Title          string        `json:"title"`
-	Body           string        `json:"body"`
-	Excerpt        string        `json:"excerpt"`
-	Type           ContentType   `json:"type"`
-	Status         ContentStatus `json:"status"`
-	SeriesID       *string       `json:"series_id"`
-	SeriesOrder    *int32        `json:"series_order"`
-	IsPublic       bool          `json:"is_public"`
-	ProjectID      *uuid.UUID    `json:"project_id"`
-	ReadingTimeMin int32         `json:"reading_time_min"`
-	CoverImage     *string       `json:"cover_image"`
-	PublishedAt    *time.Time    `json:"published_at"`
-	CreatedAt      time.Time     `json:"created_at"`
-	UpdatedAt      time.Time     `json:"updated_at"`
-}
-
-func (q *Queries) ContentBySlug(ctx context.Context, slug string) (ContentBySlugRow, error) {
-	row := q.db.QueryRow(ctx, contentBySlug, slug)
-	var i ContentBySlugRow
-	err := row.Scan(
-		&i.ID,
-		&i.Slug,
-		&i.Title,
-		&i.Body,
-		&i.Excerpt,
-		&i.Type,
-		&i.Status,
-		&i.SeriesID,
-		&i.SeriesOrder,
-		&i.IsPublic,
-		&i.ProjectID,
-		&i.ReadingTimeMin,
-		&i.CoverImage,
-		&i.PublishedAt,
+		&i.WithdrawnAt,
+		&i.WithdrawalReason,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -1347,7 +1305,7 @@ func (q *Queries) ContentIDBySlug(ctx context.Context, slug string) (uuid.UUID, 
 
 const contentsByCreator = `-- name: ContentsByCreator :many
 SELECT id, slug, title, type, status, review_note,
-       source_vault_path, source_git_blob_sha, published_at, created_at
+       is_public, source_vault_path, source_git_blob_sha, published_at, created_at
 FROM contents
 WHERE created_by = $1
 ORDER BY created_at DESC
@@ -1360,6 +1318,7 @@ type ContentsByCreatorRow struct {
 	Type             ContentType   `json:"type"`
 	Status           ContentStatus `json:"status"`
 	ReviewNote       *string       `json:"review_note"`
+	IsPublic         bool          `json:"is_public"`
 	SourceVaultPath  *string       `json:"source_vault_path"`
 	SourceGitBlobSha *string       `json:"source_git_blob_sha"`
 	PublishedAt      *time.Time    `json:"published_at"`
@@ -1387,6 +1346,7 @@ func (q *Queries) ContentsByCreator(ctx context.Context, createdBy *string) ([]C
 			&i.Type,
 			&i.Status,
 			&i.ReviewNote,
+			&i.IsPublic,
 			&i.SourceVaultPath,
 			&i.SourceGitBlobSha,
 			&i.PublishedAt,
@@ -1406,7 +1366,7 @@ const contentsByStatus = `-- name: ContentsByStatus :many
 SELECT id, slug, title, body, excerpt, type, status,
        series_id, series_order, is_public, project_id, reading_time_min,
        cover_image, source_vault_path, source_git_blob_sha,
-       published_at, created_at, updated_at
+       published_at, withdrawn_at, withdrawal_reason, created_at, updated_at
 FROM contents
 WHERE status = $1::content_status
 ORDER BY updated_at DESC
@@ -1435,6 +1395,8 @@ type ContentsByStatusRow struct {
 	SourceVaultPath  *string       `json:"source_vault_path"`
 	SourceGitBlobSha *string       `json:"source_git_blob_sha"`
 	PublishedAt      *time.Time    `json:"published_at"`
+	WithdrawnAt      *time.Time    `json:"withdrawn_at"`
+	WithdrawalReason *string       `json:"withdrawal_reason"`
 	CreatedAt        time.Time     `json:"created_at"`
 	UpdatedAt        time.Time     `json:"updated_at"`
 }
@@ -1466,6 +1428,8 @@ func (q *Queries) ContentsByStatus(ctx context.Context, arg ContentsByStatusPara
 			&i.SourceVaultPath,
 			&i.SourceGitBlobSha,
 			&i.PublishedAt,
+			&i.WithdrawnAt,
+			&i.WithdrawalReason,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -1649,7 +1613,7 @@ RETURNING id, slug, title, body, excerpt, type, status,
           series_id, series_order, is_public, project_id, reading_time_min,
           cover_image, created_by, proposal_rationale,
           source_vault_path, source_git_blob_sha,
-          published_at, created_at, updated_at
+          published_at, withdrawn_at, withdrawal_reason, created_at, updated_at
 `
 
 type CreateContentParams struct {
@@ -1690,6 +1654,8 @@ type CreateContentRow struct {
 	SourceVaultPath   *string       `json:"source_vault_path"`
 	SourceGitBlobSha  *string       `json:"source_git_blob_sha"`
 	PublishedAt       *time.Time    `json:"published_at"`
+	WithdrawnAt       *time.Time    `json:"withdrawn_at"`
+	WithdrawalReason  *string       `json:"withdrawal_reason"`
 	CreatedAt         time.Time     `json:"created_at"`
 	UpdatedAt         time.Time     `json:"updated_at"`
 }
@@ -1733,6 +1699,8 @@ func (q *Queries) CreateContent(ctx context.Context, arg CreateContentParams) (C
 		&i.SourceVaultPath,
 		&i.SourceGitBlobSha,
 		&i.PublishedAt,
+		&i.WithdrawnAt,
+		&i.WithdrawalReason,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -3450,7 +3418,7 @@ const listContents = `-- name: ListContents :many
 SELECT id, slug, title, excerpt, type, status, is_public, project_id,
        reading_time_min, created_by, proposal_rationale,
        source_vault_path, source_git_blob_sha,
-       published_at, created_at, updated_at
+       published_at, withdrawn_at, withdrawal_reason, created_at, updated_at
 FROM contents
 WHERE ($3::content_type IS NULL OR type = $3)
   AND ($4::content_status IS NULL OR status = $4)
@@ -3484,6 +3452,8 @@ type ListContentsRow struct {
 	SourceVaultPath   *string       `json:"source_vault_path"`
 	SourceGitBlobSha  *string       `json:"source_git_blob_sha"`
 	PublishedAt       *time.Time    `json:"published_at"`
+	WithdrawnAt       *time.Time    `json:"withdrawn_at"`
+	WithdrawalReason  *string       `json:"withdrawal_reason"`
 	CreatedAt         time.Time     `json:"created_at"`
 	UpdatedAt         time.Time     `json:"updated_at"`
 }
@@ -3520,6 +3490,8 @@ func (q *Queries) ListContents(ctx context.Context, arg ListContentsParams) ([]L
 			&i.SourceVaultPath,
 			&i.SourceGitBlobSha,
 			&i.PublishedAt,
+			&i.WithdrawnAt,
+			&i.WithdrawalReason,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -4479,6 +4451,60 @@ func (q *Queries) ProposedProjectsCount(ctx context.Context) (int64, error) {
 	return proposed_projects, err
 }
 
+const publicContentBySlug = `-- name: PublicContentBySlug :one
+SELECT id, slug, title, body, excerpt, type, status,
+       series_id, series_order, is_public, project_id, reading_time_min,
+       cover_image, published_at, created_at, updated_at
+FROM contents
+WHERE slug = $1 AND status = 'published' AND is_public = true
+`
+
+type PublicContentBySlugRow struct {
+	ID             uuid.UUID     `json:"id"`
+	Slug           string        `json:"slug"`
+	Title          string        `json:"title"`
+	Body           string        `json:"body"`
+	Excerpt        string        `json:"excerpt"`
+	Type           ContentType   `json:"type"`
+	Status         ContentStatus `json:"status"`
+	SeriesID       *string       `json:"series_id"`
+	SeriesOrder    *int32        `json:"series_order"`
+	IsPublic       bool          `json:"is_public"`
+	ProjectID      *uuid.UUID    `json:"project_id"`
+	ReadingTimeMin int32         `json:"reading_time_min"`
+	CoverImage     *string       `json:"cover_image"`
+	PublishedAt    *time.Time    `json:"published_at"`
+	CreatedAt      time.Time     `json:"created_at"`
+	UpdatedAt      time.Time     `json:"updated_at"`
+}
+
+// The anonymous detail lookup enforces exposure in SQL, the final data
+// boundary, rather than fetching a private body and relying only on a later
+// handler branch to discard it.
+func (q *Queries) PublicContentBySlug(ctx context.Context, slug string) (PublicContentBySlugRow, error) {
+	row := q.db.QueryRow(ctx, publicContentBySlug, slug)
+	var i PublicContentBySlugRow
+	err := row.Scan(
+		&i.ID,
+		&i.Slug,
+		&i.Title,
+		&i.Body,
+		&i.Excerpt,
+		&i.Type,
+		&i.Status,
+		&i.SeriesID,
+		&i.SeriesOrder,
+		&i.IsPublic,
+		&i.ProjectID,
+		&i.ReadingTimeMin,
+		&i.CoverImage,
+		&i.PublishedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const publishContent = `-- name: PublishContent :one
 UPDATE contents SET status = 'published', is_public = true, published_at = now(), review_note = NULL, updated_at = now()
 WHERE id = $1
@@ -4488,7 +4514,7 @@ WHERE id = $1
 RETURNING id, slug, title, body, excerpt, type, status,
           series_id, series_order, is_public, project_id, reading_time_min,
           cover_image, source_vault_path, source_git_blob_sha,
-          published_at, created_at, updated_at
+          published_at, withdrawn_at, withdrawal_reason, created_at, updated_at
 `
 
 type PublishContentRow struct {
@@ -4508,6 +4534,8 @@ type PublishContentRow struct {
 	SourceVaultPath  *string       `json:"source_vault_path"`
 	SourceGitBlobSha *string       `json:"source_git_blob_sha"`
 	PublishedAt      *time.Time    `json:"published_at"`
+	WithdrawnAt      *time.Time    `json:"withdrawn_at"`
+	WithdrawalReason *string       `json:"withdrawal_reason"`
 	CreatedAt        time.Time     `json:"created_at"`
 	UpdatedAt        time.Time     `json:"updated_at"`
 }
@@ -4535,6 +4563,8 @@ func (q *Queries) PublishContent(ctx context.Context, id uuid.UUID) (PublishCont
 		&i.SourceVaultPath,
 		&i.SourceGitBlobSha,
 		&i.PublishedAt,
+		&i.WithdrawnAt,
+		&i.WithdrawalReason,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -4912,6 +4942,84 @@ func (q *Queries) ResolvedTodoDetailSince(ctx context.Context, since *time.Time)
 	return items, nil
 }
 
+const restoreContent = `-- name: RestoreContent :one
+UPDATE contents SET
+    is_public = true,
+    withdrawn_at = NULL,
+    withdrawal_reason = NULL,
+    updated_at = now()
+WHERE id = $1
+  AND status = 'published'
+  AND is_public = false
+  AND withdrawn_at IS NOT NULL
+  AND withdrawal_reason IS NOT NULL
+RETURNING id, slug, title, body, excerpt, type, status,
+          series_id, series_order, is_public, project_id, reading_time_min,
+          cover_image, created_by, proposal_rationale, review_note,
+          source_vault_path, source_git_blob_sha,
+          published_at, withdrawn_at, withdrawal_reason, created_at, updated_at
+`
+
+type RestoreContentRow struct {
+	ID                uuid.UUID     `json:"id"`
+	Slug              string        `json:"slug"`
+	Title             string        `json:"title"`
+	Body              string        `json:"body"`
+	Excerpt           string        `json:"excerpt"`
+	Type              ContentType   `json:"type"`
+	Status            ContentStatus `json:"status"`
+	SeriesID          *string       `json:"series_id"`
+	SeriesOrder       *int32        `json:"series_order"`
+	IsPublic          bool          `json:"is_public"`
+	ProjectID         *uuid.UUID    `json:"project_id"`
+	ReadingTimeMin    int32         `json:"reading_time_min"`
+	CoverImage        *string       `json:"cover_image"`
+	CreatedBy         *string       `json:"created_by"`
+	ProposalRationale *string       `json:"proposal_rationale"`
+	ReviewNote        *string       `json:"review_note"`
+	SourceVaultPath   *string       `json:"source_vault_path"`
+	SourceGitBlobSha  *string       `json:"source_git_blob_sha"`
+	PublishedAt       *time.Time    `json:"published_at"`
+	WithdrawnAt       *time.Time    `json:"withdrawn_at"`
+	WithdrawalReason  *string       `json:"withdrawal_reason"`
+	CreatedAt         time.Time     `json:"created_at"`
+	UpdatedAt         time.Time     `json:"updated_at"`
+}
+
+// Resume serving exactly the same published snapshot. The trigger captures the
+// prior withdrawal metadata in the restore receipt before these current-state
+// fields are cleared.
+func (q *Queries) RestoreContent(ctx context.Context, id uuid.UUID) (RestoreContentRow, error) {
+	row := q.db.QueryRow(ctx, restoreContent, id)
+	var i RestoreContentRow
+	err := row.Scan(
+		&i.ID,
+		&i.Slug,
+		&i.Title,
+		&i.Body,
+		&i.Excerpt,
+		&i.Type,
+		&i.Status,
+		&i.SeriesID,
+		&i.SeriesOrder,
+		&i.IsPublic,
+		&i.ProjectID,
+		&i.ReadingTimeMin,
+		&i.CoverImage,
+		&i.CreatedBy,
+		&i.ProposalRationale,
+		&i.ReviewNote,
+		&i.SourceVaultPath,
+		&i.SourceGitBlobSha,
+		&i.PublishedAt,
+		&i.WithdrawnAt,
+		&i.WithdrawalReason,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const retireAgents = `-- name: RetireAgents :execrows
 UPDATE agents
 SET status     = 'retired',
@@ -4938,7 +5046,7 @@ WHERE id = $1 AND status = 'review'
 RETURNING id, slug, title, body, excerpt, type, status,
           series_id, series_order, is_public, project_id, reading_time_min,
           cover_image, source_vault_path, source_git_blob_sha,
-          published_at, created_at, updated_at
+          published_at, withdrawn_at, withdrawal_reason, created_at, updated_at
 `
 
 type RevertContentToDraftRow struct {
@@ -4958,6 +5066,8 @@ type RevertContentToDraftRow struct {
 	SourceVaultPath  *string       `json:"source_vault_path"`
 	SourceGitBlobSha *string       `json:"source_git_blob_sha"`
 	PublishedAt      *time.Time    `json:"published_at"`
+	WithdrawnAt      *time.Time    `json:"withdrawn_at"`
+	WithdrawalReason *string       `json:"withdrawal_reason"`
 	CreatedAt        time.Time     `json:"created_at"`
 	UpdatedAt        time.Time     `json:"updated_at"`
 }
@@ -4985,6 +5095,8 @@ func (q *Queries) RevertContentToDraft(ctx context.Context, id uuid.UUID) (Rever
 		&i.SourceVaultPath,
 		&i.SourceGitBlobSha,
 		&i.PublishedAt,
+		&i.WithdrawnAt,
+		&i.WithdrawalReason,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -5029,7 +5141,7 @@ RETURNING id, slug, title, body, excerpt, type, status,
           series_id, series_order, is_public, project_id, reading_time_min,
           cover_image, created_by, proposal_rationale, review_note,
           source_vault_path, source_git_blob_sha,
-          published_at, created_at, updated_at
+          published_at, withdrawn_at, withdrawal_reason, created_at, updated_at
 `
 
 type ReviseContentByCreatorParams struct {
@@ -5062,6 +5174,8 @@ type ReviseContentByCreatorRow struct {
 	SourceVaultPath   *string       `json:"source_vault_path"`
 	SourceGitBlobSha  *string       `json:"source_git_blob_sha"`
 	PublishedAt       *time.Time    `json:"published_at"`
+	WithdrawnAt       *time.Time    `json:"withdrawn_at"`
+	WithdrawalReason  *string       `json:"withdrawal_reason"`
 	CreatedAt         time.Time     `json:"created_at"`
 	UpdatedAt         time.Time     `json:"updated_at"`
 }
@@ -5100,6 +5214,8 @@ func (q *Queries) ReviseContentByCreator(ctx context.Context, arg ReviseContentB
 		&i.SourceVaultPath,
 		&i.SourceGitBlobSha,
 		&i.PublishedAt,
+		&i.WithdrawnAt,
+		&i.WithdrawalReason,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -5186,7 +5302,7 @@ RETURNING id, slug, title, body, excerpt, type, status,
           series_id, series_order, is_public, project_id, reading_time_min,
           cover_image, created_by, proposal_rationale, review_note,
           source_vault_path, source_git_blob_sha,
-          published_at, created_at, updated_at
+          published_at, withdrawn_at, withdrawal_reason, created_at, updated_at
 `
 
 type SendContentChangesRequestedParams struct {
@@ -5214,6 +5330,8 @@ type SendContentChangesRequestedRow struct {
 	SourceVaultPath   *string       `json:"source_vault_path"`
 	SourceGitBlobSha  *string       `json:"source_git_blob_sha"`
 	PublishedAt       *time.Time    `json:"published_at"`
+	WithdrawnAt       *time.Time    `json:"withdrawn_at"`
+	WithdrawalReason  *string       `json:"withdrawal_reason"`
 	CreatedAt         time.Time     `json:"created_at"`
 	UpdatedAt         time.Time     `json:"updated_at"`
 }
@@ -5247,70 +5365,8 @@ func (q *Queries) SendContentChangesRequested(ctx context.Context, arg SendConte
 		&i.SourceVaultPath,
 		&i.SourceGitBlobSha,
 		&i.PublishedAt,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
-const setContentVisibility = `-- name: SetContentVisibility :one
-UPDATE contents SET is_public = $2, updated_at = now()
-WHERE id = $1
-RETURNING id, slug, title, body, excerpt, type, status,
-          series_id, series_order, is_public, project_id, reading_time_min,
-          cover_image, source_vault_path, source_git_blob_sha,
-          published_at, created_at, updated_at
-`
-
-type SetContentVisibilityParams struct {
-	ID       uuid.UUID `json:"id"`
-	IsPublic bool      `json:"is_public"`
-}
-
-type SetContentVisibilityRow struct {
-	ID               uuid.UUID     `json:"id"`
-	Slug             string        `json:"slug"`
-	Title            string        `json:"title"`
-	Body             string        `json:"body"`
-	Excerpt          string        `json:"excerpt"`
-	Type             ContentType   `json:"type"`
-	Status           ContentStatus `json:"status"`
-	SeriesID         *string       `json:"series_id"`
-	SeriesOrder      *int32        `json:"series_order"`
-	IsPublic         bool          `json:"is_public"`
-	ProjectID        *uuid.UUID    `json:"project_id"`
-	ReadingTimeMin   int32         `json:"reading_time_min"`
-	CoverImage       *string       `json:"cover_image"`
-	SourceVaultPath  *string       `json:"source_vault_path"`
-	SourceGitBlobSha *string       `json:"source_git_blob_sha"`
-	PublishedAt      *time.Time    `json:"published_at"`
-	CreatedAt        time.Time     `json:"created_at"`
-	UpdatedAt        time.Time     `json:"updated_at"`
-}
-
-// Visibility is an operational exposure control, separate from editing the
-// authored publication snapshot. Durable withdrawal/restore semantics belong
-// to their own lifecycle transition rather than this boolean switch.
-func (q *Queries) SetContentVisibility(ctx context.Context, arg SetContentVisibilityParams) (SetContentVisibilityRow, error) {
-	row := q.db.QueryRow(ctx, setContentVisibility, arg.ID, arg.IsPublic)
-	var i SetContentVisibilityRow
-	err := row.Scan(
-		&i.ID,
-		&i.Slug,
-		&i.Title,
-		&i.Body,
-		&i.Excerpt,
-		&i.Type,
-		&i.Status,
-		&i.SeriesID,
-		&i.SeriesOrder,
-		&i.IsPublic,
-		&i.ProjectID,
-		&i.ReadingTimeMin,
-		&i.CoverImage,
-		&i.SourceVaultPath,
-		&i.SourceGitBlobSha,
-		&i.PublishedAt,
+		&i.WithdrawnAt,
+		&i.WithdrawalReason,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -5904,7 +5960,7 @@ WHERE id = $1 AND status = 'draft'
 RETURNING id, slug, title, body, excerpt, type, status,
           series_id, series_order, is_public, project_id, reading_time_min,
           cover_image, source_vault_path, source_git_blob_sha,
-          published_at, created_at, updated_at
+          published_at, withdrawn_at, withdrawal_reason, created_at, updated_at
 `
 
 type SubmitContentForReviewRow struct {
@@ -5924,6 +5980,8 @@ type SubmitContentForReviewRow struct {
 	SourceVaultPath  *string       `json:"source_vault_path"`
 	SourceGitBlobSha *string       `json:"source_git_blob_sha"`
 	PublishedAt      *time.Time    `json:"published_at"`
+	WithdrawnAt      *time.Time    `json:"withdrawn_at"`
+	WithdrawalReason *string       `json:"withdrawal_reason"`
 	CreatedAt        time.Time     `json:"created_at"`
 	UpdatedAt        time.Time     `json:"updated_at"`
 }
@@ -5952,6 +6010,8 @@ func (q *Queries) SubmitContentForReview(ctx context.Context, id uuid.UUID) (Sub
 		&i.SourceVaultPath,
 		&i.SourceGitBlobSha,
 		&i.PublishedAt,
+		&i.WithdrawnAt,
+		&i.WithdrawalReason,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -6566,18 +6626,17 @@ UPDATE contents SET
     type = COALESCE($6::content_type, type),
     series_id = COALESCE($7, series_id),
     series_order = COALESCE($8, series_order),
-    is_public = COALESCE($9, is_public),
-    project_id = COALESCE($10, project_id),
-    reading_time_min = COALESCE($11, reading_time_min),
-    cover_image = COALESCE($12, cover_image),
+    project_id = COALESCE($9, project_id),
+    reading_time_min = COALESCE($10, reading_time_min),
+    cover_image = COALESCE($11, cover_image),
     updated_at = now()
 WHERE id = $1
-  AND status <> 'published'
+  AND published_at IS NULL
   AND source_vault_path IS NULL
 RETURNING id, slug, title, body, excerpt, type, status,
           series_id, series_order, is_public, project_id, reading_time_min,
           cover_image, source_vault_path, source_git_blob_sha,
-          published_at, created_at, updated_at
+          published_at, withdrawn_at, withdrawal_reason, created_at, updated_at
 `
 
 type UpdateContentParams struct {
@@ -6589,7 +6648,6 @@ type UpdateContentParams struct {
 	ContentType    NullContentType `json:"content_type"`
 	SeriesID       *string         `json:"series_id"`
 	SeriesOrder    *int32          `json:"series_order"`
-	IsPublic       *bool           `json:"is_public"`
 	ProjectID      *uuid.UUID      `json:"project_id"`
 	ReadingTimeMin *int32          `json:"reading_time_min"`
 	CoverImage     *string         `json:"cover_image"`
@@ -6612,6 +6670,8 @@ type UpdateContentRow struct {
 	SourceVaultPath  *string       `json:"source_vault_path"`
 	SourceGitBlobSha *string       `json:"source_git_blob_sha"`
 	PublishedAt      *time.Time    `json:"published_at"`
+	WithdrawnAt      *time.Time    `json:"withdrawn_at"`
+	WithdrawalReason *string       `json:"withdrawal_reason"`
 	CreatedAt        time.Time     `json:"created_at"`
 	UpdatedAt        time.Time     `json:"updated_at"`
 }
@@ -6626,7 +6686,6 @@ func (q *Queries) UpdateContent(ctx context.Context, arg UpdateContentParams) (U
 		arg.ContentType,
 		arg.SeriesID,
 		arg.SeriesOrder,
-		arg.IsPublic,
 		arg.ProjectID,
 		arg.ReadingTimeMin,
 		arg.CoverImage,
@@ -6649,6 +6708,8 @@ func (q *Queries) UpdateContent(ctx context.Context, arg UpdateContentParams) (U
 		&i.SourceVaultPath,
 		&i.SourceGitBlobSha,
 		&i.PublishedAt,
+		&i.WithdrawnAt,
+		&i.WithdrawalReason,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -7179,6 +7240,88 @@ func (q *Queries) UserByID(ctx context.Context, id uuid.UUID) (User, error) {
 	err := row.Scan(
 		&i.ID,
 		&i.Email,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const withdrawContent = `-- name: WithdrawContent :one
+UPDATE contents SET
+    is_public = false,
+    withdrawn_at = now(),
+    withdrawal_reason = $1,
+    updated_at = now()
+WHERE id = $2
+  AND status = 'published'
+  AND is_public = true
+  AND published_at IS NOT NULL
+RETURNING id, slug, title, body, excerpt, type, status,
+          series_id, series_order, is_public, project_id, reading_time_min,
+          cover_image, created_by, proposal_rationale, review_note,
+          source_vault_path, source_git_blob_sha,
+          published_at, withdrawn_at, withdrawal_reason, created_at, updated_at
+`
+
+type WithdrawContentParams struct {
+	WithdrawalReason *string   `json:"withdrawal_reason"`
+	ID               uuid.UUID `json:"id"`
+}
+
+type WithdrawContentRow struct {
+	ID                uuid.UUID     `json:"id"`
+	Slug              string        `json:"slug"`
+	Title             string        `json:"title"`
+	Body              string        `json:"body"`
+	Excerpt           string        `json:"excerpt"`
+	Type              ContentType   `json:"type"`
+	Status            ContentStatus `json:"status"`
+	SeriesID          *string       `json:"series_id"`
+	SeriesOrder       *int32        `json:"series_order"`
+	IsPublic          bool          `json:"is_public"`
+	ProjectID         *uuid.UUID    `json:"project_id"`
+	ReadingTimeMin    int32         `json:"reading_time_min"`
+	CoverImage        *string       `json:"cover_image"`
+	CreatedBy         *string       `json:"created_by"`
+	ProposalRationale *string       `json:"proposal_rationale"`
+	ReviewNote        *string       `json:"review_note"`
+	SourceVaultPath   *string       `json:"source_vault_path"`
+	SourceGitBlobSha  *string       `json:"source_git_blob_sha"`
+	PublishedAt       *time.Time    `json:"published_at"`
+	WithdrawnAt       *time.Time    `json:"withdrawn_at"`
+	WithdrawalReason  *string       `json:"withdrawal_reason"`
+	CreatedAt         time.Time     `json:"created_at"`
+	UpdatedAt         time.Time     `json:"updated_at"`
+}
+
+// Stop serving a historically published snapshot without rewriting its
+// publication status/date or authored bytes. The reason and timestamp move in
+// the same guarded statement as visibility; audit_contents writes the receipt.
+func (q *Queries) WithdrawContent(ctx context.Context, arg WithdrawContentParams) (WithdrawContentRow, error) {
+	row := q.db.QueryRow(ctx, withdrawContent, arg.WithdrawalReason, arg.ID)
+	var i WithdrawContentRow
+	err := row.Scan(
+		&i.ID,
+		&i.Slug,
+		&i.Title,
+		&i.Body,
+		&i.Excerpt,
+		&i.Type,
+		&i.Status,
+		&i.SeriesID,
+		&i.SeriesOrder,
+		&i.IsPublic,
+		&i.ProjectID,
+		&i.ReadingTimeMin,
+		&i.CoverImage,
+		&i.CreatedBy,
+		&i.ProposalRationale,
+		&i.ReviewNote,
+		&i.SourceVaultPath,
+		&i.SourceGitBlobSha,
+		&i.PublishedAt,
+		&i.WithdrawnAt,
+		&i.WithdrawalReason,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)

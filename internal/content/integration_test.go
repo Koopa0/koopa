@@ -13,6 +13,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -26,6 +28,23 @@ import (
 	"github.com/Koopa0/koopa/internal/api"
 	"github.com/Koopa0/koopa/internal/testdb"
 )
+
+// This test-local contract keeps the regression suite buildable on the
+// pre-withdrawal base. The RED is therefore missing behavior, not an unrelated
+// compiler failure. Production remains free of test-only interfaces.
+type withdrawalStore interface {
+	Withdraw(context.Context, uuid.UUID, string) (*Content, error)
+	Restore(context.Context, uuid.UUID) (*Content, error)
+}
+
+func requireWithdrawalStore(t *testing.T, store *Store) withdrawalStore {
+	t.Helper()
+	lifecycle, ok := any(store).(withdrawalStore)
+	if !ok {
+		t.Fatal("Store does not implement dedicated Withdraw and Restore transitions")
+	}
+	return lifecycle
+}
 
 var testPool *pgxpool.Pool
 
@@ -516,7 +535,7 @@ func TestStore_UpdateContent(t *testing.T) {
 // TestStore_UpdateContent_PublishedSnapshotIsImmutable locks the authoring
 // boundary: Vault is the source of a published revision, so the generic admin
 // update path must not silently rewrite the publication snapshot in Koopa.
-// Visibility remains a separate operational control.
+// Withdrawal and restore are separate named operational transitions.
 func TestStore_UpdateContent_PublishedSnapshotIsImmutable(t *testing.T) {
 	s := setup(t)
 	ctx := t.Context()
@@ -529,11 +548,9 @@ func TestStore_UpdateContent_PublishedSnapshotIsImmutable(t *testing.T) {
 
 	newTitle := "Edited only in Koopa"
 	newBody := "this edit did not originate from a new Vault snapshot"
-	notPublic := false
 	_, err = s.UpdateContent(ctx, id, &UpdateParams{
-		Title:    &newTitle,
-		Body:     &newBody,
-		IsPublic: &notPublic,
+		Title: &newTitle,
+		Body:  &newBody,
 	})
 	if !errors.Is(err, ErrInvalidState) {
 		t.Fatalf("UpdateContent(published) = %v, want ErrInvalidState", err)
@@ -586,37 +603,507 @@ func TestStore_PublishRequiresSourceSnapshot(t *testing.T) {
 	}
 }
 
-// TestHandler_SetIsPublic_PublishedOffSwitchRemainsAvailable is the positive
-// control for the snapshot guard. Until durable withdrawal exists, the
-// dedicated visibility endpoint must still be able to take a published row
-// off the public surface without editing its authored snapshot.
-func TestHandler_SetIsPublic_PublishedOffSwitchRemainsAvailable(t *testing.T) {
+// TestStore_WithdrawalLifecycle drives the production handlers through
+// ActorMiddleware. It deliberately warms both syndication responses before
+// withdrawal: a TTL-only cache would keep serving the removed snapshot and
+// make this test fail even if the database transition itself were correct.
+func TestStore_WithdrawalLifecycle(t *testing.T) {
 	s := setup(t)
 	ctx := t.Context()
+	id := createDraftContent(t, s, ctx, "withdrawal-lifecycle")
+	published, err := s.Publish(ctx, id)
+	if err != nil {
+		t.Fatalf("Publish() error: %v", err)
+	}
+	if published.PublishedAt == nil {
+		t.Fatal("Publish() published_at is nil")
+	}
+	originalPublishedAt := *published.PublishedAt
 
-	id := createDraftContent(t, s, ctx, "published-off-switch")
+	h := NewHandler(s, "https://example.test", slog.Default())
+	assertNoStore := func(name string, rec *httptest.ResponseRecorder) {
+		t.Helper()
+		if got := rec.Header().Get("Cache-Control"); got != "no-store" {
+			t.Fatalf("%s Cache-Control = %q, want no-store", name, got)
+		}
+	}
+	for _, endpoint := range []struct {
+		name string
+		call http.HandlerFunc
+	}{
+		{name: "rss", call: h.RSS},
+		{name: "sitemap", call: h.Sitemap},
+	} {
+		rec := httptest.NewRecorder()
+		endpoint.call(rec, httptest.NewRequest(http.MethodGet, "/api/feed/"+endpoint.name, http.NoBody))
+		if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "withdrawal-lifecycle") {
+			t.Fatalf("warm %s = status %d body %q, want published slug", endpoint.name, rec.Code, rec.Body.String())
+		}
+		assertNoStore("warm "+endpoint.name, rec)
+	}
+	typeRec := httptest.NewRecorder()
+	typeReq := httptest.NewRequest(http.MethodGet, "/api/contents/by-type/article", http.NoBody)
+	typeReq.SetPathValue("type", "article")
+	h.PublicByType(typeRec, typeReq)
+	if typeRec.Code != http.StatusOK {
+		t.Fatalf("public type before withdraw = %d, want 200", typeRec.Code)
+	}
+	assertNoStore("public type", typeRec)
+
+	actions := requireWithdrawalHandler(t, h)
+	withdraw := api.ActorMiddleware(testPool, "human", slog.Default())(http.HandlerFunc(actions.Withdraw))
+	withdrawReq := httptest.NewRequest(http.MethodPost,
+		"/api/admin/knowledge/content/"+id.String()+"/withdraw",
+		strings.NewReader(`{"reason":"  Contains private contact details.  "}`))
+	withdrawReq.Header.Set("Content-Type", "application/json")
+	withdrawReq.SetPathValue("id", id.String())
+	withdrawRec := httptest.NewRecorder()
+	withdraw.ServeHTTP(withdrawRec, withdrawReq)
+	if withdrawRec.Code != http.StatusOK {
+		t.Fatalf("Withdraw() status = %d, want 200 (body=%s)", withdrawRec.Code, withdrawRec.Body.String())
+	}
+
+	withdrawn, err := s.Content(ctx, id)
+	if err != nil {
+		t.Fatalf("Content() after withdraw: %v", err)
+	}
+	if withdrawn.Status != StatusPublished || withdrawn.IsPublic {
+		t.Fatalf("withdrawn state = status %q public=%t, want published/private", withdrawn.Status, withdrawn.IsPublic)
+	}
+	if withdrawn.WithdrawnAt == nil || withdrawn.WithdrawalReason == nil || *withdrawn.WithdrawalReason != "Contains private contact details." {
+		t.Fatalf("withdrawal metadata = at %v reason %v, want timestamp and trimmed reason", withdrawn.WithdrawnAt, withdrawn.WithdrawalReason)
+	}
+	if withdrawn.PublishedAt == nil || !withdrawn.PublishedAt.Equal(originalPublishedAt) {
+		t.Fatalf("published_at after withdraw = %v, want %v", withdrawn.PublishedAt, originalPublishedAt)
+	}
+	if withdrawn.Title != published.Title || withdrawn.Body != published.Body || cmp.Diff(published.Source(), withdrawn.Source()) != "" {
+		t.Fatalf("withdraw changed authored snapshot: title=%q body=%q source=%+v", withdrawn.Title, withdrawn.Body, withdrawn.Source())
+	}
+
+	assertNotPublic := func(name string, call http.HandlerFunc, req *http.Request) {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		call(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%s after withdraw = status %d body %q, want 200 without withdrawn content", name, rec.Code, rec.Body.String())
+		}
+		assertNoStore(name+" after withdraw", rec)
+		if strings.Contains(rec.Body.String(), "withdrawal-lifecycle") || strings.Contains(rec.Body.String(), "Contains private contact details") {
+			t.Fatalf("%s leaked withdrawn content: %s", name, rec.Body.String())
+		}
+	}
+	detailReq := httptest.NewRequest(http.MethodGet, "/api/contents/withdrawal-lifecycle", http.NoBody)
+	detailReq.SetPathValue("slug", "withdrawal-lifecycle")
+	detailRec := httptest.NewRecorder()
+	h.PublicBySlug(detailRec, detailReq)
+	assertNoStore("public detail after withdraw", detailRec)
+	if detailRec.Code != http.StatusNotFound {
+		t.Fatalf("public detail after withdraw = %d, want 404 (body=%s)", detailRec.Code, detailRec.Body.String())
+	}
+	if _, err := s.PublicContentBySlug(ctx, "withdrawal-lifecycle"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("PublicContentBySlug(withdrawn) = %v, want ErrNotFound", err)
+	}
+	assertNotPublic("list", h.PublicList, httptest.NewRequest(http.MethodGet, "/api/contents", http.NoBody))
+	assertNotPublic("rss", h.RSS, httptest.NewRequest(http.MethodGet, "/api/feed/rss", http.NoBody))
+	assertNotPublic("sitemap", h.Sitemap, httptest.NewRequest(http.MethodGet, "/api/feed/sitemap", http.NoBody))
+
+	var withdrawEventID uuid.UUID
+	var withdrawActor, withdrawKind string
+	var withdrawPayload []byte
+	err = testPool.QueryRow(ctx, `
+		SELECT id, actor, change_kind, payload
+		FROM activity_events
+		WHERE entity_type = 'content' AND entity_id = $1
+		  AND payload->>'transition' = 'withdrawn'`, id).
+		Scan(&withdrawEventID, &withdrawActor, &withdrawKind, &withdrawPayload)
+	if err != nil {
+		t.Fatalf("query withdrawal receipt: %v", err)
+	}
+	if withdrawEventID == uuid.Nil || withdrawActor != "human" || withdrawKind != "state_changed" {
+		t.Fatalf("withdraw receipt = id %s actor %q kind %q", withdrawEventID, withdrawActor, withdrawKind)
+	}
+	var withdrawMeta map[string]any
+	if err := json.Unmarshal(withdrawPayload, &withdrawMeta); err != nil {
+		t.Fatalf("decode withdrawal receipt: %v", err)
+	}
+	for key, want := range map[string]string{
+		"from": "public", "to": "withdrawn", "reason": "Contains private contact details.",
+		"source_vault_path":   *published.SourceVaultPath,
+		"source_git_blob_sha": *published.SourceGitBlobSHA,
+	} {
+		if got := withdrawMeta[key]; got != want {
+			t.Errorf("withdraw payload[%q] = %v, want %q", key, got, want)
+		}
+	}
+	assertPayloadTime(t, withdrawMeta, "published_at", originalPublishedAt)
+	assertPayloadTime(t, withdrawMeta, "withdrawn_at", *withdrawn.WithdrawnAt)
+
+	window, err := s.PublishedInWindow(ctx, originalPublishedAt.Add(-time.Minute), time.Now().Add(time.Minute))
+	if err != nil {
+		t.Fatalf("PublishedInWindow() after withdraw: %v", err)
+	}
+	if len(window) != 1 || window[0].Title != published.Title {
+		t.Fatalf("PublishedInWindow() after withdraw = %+v, want original publication", window)
+	}
+
+	restore := api.ActorMiddleware(testPool, "human", slog.Default())(http.HandlerFunc(actions.Restore))
+	restoreReq := httptest.NewRequest(http.MethodPost,
+		"/api/admin/knowledge/content/"+id.String()+"/restore", http.NoBody)
+	restoreReq.SetPathValue("id", id.String())
+	restoreRec := httptest.NewRecorder()
+	restore.ServeHTTP(restoreRec, restoreReq)
+	if restoreRec.Code != http.StatusOK {
+		t.Fatalf("Restore() status = %d, want 200 (body=%s)", restoreRec.Code, restoreRec.Body.String())
+	}
+
+	restored, err := s.Content(ctx, id)
+	if err != nil {
+		t.Fatalf("Content() after restore: %v", err)
+	}
+	if restored.Status != StatusPublished || !restored.IsPublic || restored.WithdrawnAt != nil || restored.WithdrawalReason != nil {
+		t.Fatalf("restored state = status %q public=%t at=%v reason=%v", restored.Status, restored.IsPublic, restored.WithdrawnAt, restored.WithdrawalReason)
+	}
+	if restored.PublishedAt == nil || !restored.PublishedAt.Equal(originalPublishedAt) {
+		t.Fatalf("published_at after restore = %v, want %v", restored.PublishedAt, originalPublishedAt)
+	}
+	if restored.Title != published.Title || restored.Body != published.Body || cmp.Diff(published.Source(), restored.Source()) != "" {
+		t.Fatalf("restore changed authored snapshot: title=%q body=%q source=%+v", restored.Title, restored.Body, restored.Source())
+	}
+
+	restoredDetailReq := httptest.NewRequest(http.MethodGet, "/api/contents/withdrawal-lifecycle", http.NoBody)
+	restoredDetailReq.SetPathValue("slug", "withdrawal-lifecycle")
+	restoredDetail := httptest.NewRecorder()
+	h.PublicBySlug(restoredDetail, restoredDetailReq)
+	assertNoStore("public detail after restore", restoredDetail)
+	if restoredDetail.Code != http.StatusOK || !strings.Contains(restoredDetail.Body.String(), "withdrawal-lifecycle") {
+		t.Fatalf("public detail after restore = status %d body %q, want restored slug", restoredDetail.Code, restoredDetail.Body.String())
+	}
+	restoredList := httptest.NewRecorder()
+	h.PublicList(restoredList, httptest.NewRequest(http.MethodGet, "/api/contents", http.NoBody))
+	assertNoStore("public list after restore", restoredList)
+	if restoredList.Code != http.StatusOK || !strings.Contains(restoredList.Body.String(), "withdrawal-lifecycle") {
+		t.Fatalf("public list after restore = status %d body %q, want restored slug", restoredList.Code, restoredList.Body.String())
+	}
+
+	for _, endpoint := range []struct {
+		name string
+		call http.HandlerFunc
+	}{
+		{name: "rss", call: h.RSS},
+		{name: "sitemap", call: h.Sitemap},
+	} {
+		rec := httptest.NewRecorder()
+		endpoint.call(rec, httptest.NewRequest(http.MethodGet, "/api/feed/"+endpoint.name, http.NoBody))
+		if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "withdrawal-lifecycle") {
+			t.Fatalf("%s after restore = status %d body %q, want restored slug", endpoint.name, rec.Code, rec.Body.String())
+		}
+		assertNoStore(endpoint.name+" after restore", rec)
+	}
+
+	var restorePayload []byte
+	err = testPool.QueryRow(ctx, `
+		SELECT payload
+		FROM activity_events
+		WHERE entity_type = 'content' AND entity_id = $1
+		  AND payload->>'transition' = 'restored'`, id).Scan(&restorePayload)
+	if err != nil {
+		t.Fatalf("query restore receipt: %v", err)
+	}
+	var restoreCount int
+	if err := testPool.QueryRow(ctx, `
+		SELECT count(*) FROM activity_events
+		WHERE entity_type = 'content' AND entity_id = $1
+		  AND payload->>'transition' = 'restored'`, id).Scan(&restoreCount); err != nil {
+		t.Fatalf("count restore receipts: %v", err)
+	}
+	if restoreCount != 1 {
+		t.Fatalf("restore receipt count = %d, want 1", restoreCount)
+	}
+	var restoreMeta map[string]any
+	if err := json.Unmarshal(restorePayload, &restoreMeta); err != nil {
+		t.Fatalf("decode restore receipt: %v", err)
+	}
+	for key, want := range map[string]string{
+		"from": "withdrawn", "to": "public", "reason": "Contains private contact details.",
+		"source_vault_path":   *published.SourceVaultPath,
+		"source_git_blob_sha": *published.SourceGitBlobSHA,
+	} {
+		if got := restoreMeta[key]; got != want {
+			t.Errorf("restore payload[%q] = %v, want %q", key, got, want)
+		}
+	}
+	assertPayloadTime(t, restoreMeta, "published_at", originalPublishedAt)
+	assertPayloadTime(t, restoreMeta, "withdrawn_at", *withdrawn.WithdrawnAt)
+}
+
+func assertPayloadTime(t *testing.T, payload map[string]any, key string, want time.Time) {
+	t.Helper()
+	raw, ok := payload[key].(string)
+	if !ok {
+		t.Fatalf("payload[%q] = %T(%v), want RFC3339 timestamp", key, payload[key], payload[key])
+	}
+	got, err := time.Parse(time.RFC3339Nano, raw)
+	if err != nil {
+		t.Fatalf("payload[%q] = %q: %v", key, raw, err)
+	}
+	if !got.Equal(want) {
+		t.Errorf("payload[%q] = %v, want %v", key, got, want)
+	}
+}
+
+func TestSchema_ContentWithdrawalConstraints(t *testing.T) {
+	s := setup(t)
+	ctx := t.Context()
+	id := createDraftContent(t, s, ctx, "withdrawal-constraints")
 	if _, err := s.Publish(ctx, id); err != nil {
 		t.Fatalf("Publish() error: %v", err)
 	}
 
-	h := NewHandler(s, "https://example.test", slog.Default())
-	wrapped := api.ActorMiddleware(testPool, "human", slog.Default())(http.HandlerFunc(h.SetIsPublic))
-	req := httptest.NewRequest(http.MethodPatch,
-		"/api/admin/contents/"+id.String()+"/is-public",
-		strings.NewReader(`{"is_public":false}`))
-	req.SetPathValue("id", id.String())
-	rec := httptest.NewRecorder()
-	wrapped.ServeHTTP(rec, req)
+	if _, err := testPool.Exec(ctx, `
+		UPDATE contents
+		SET is_public = false,
+		    withdrawn_at = now(),
+		    withdrawal_reason = 'Valid migration-level withdrawal'
+		WHERE id = $1`, id); err != nil {
+		t.Fatalf("valid withdrawal tuple rejected: %v", err)
+	}
+	if _, err := testPool.Exec(ctx, `
+		UPDATE contents SET withdrawal_reason = 'silently rewritten reason'
+		WHERE id = $1`, id); err == nil {
+		t.Fatal("same-state withdrawal reason rewrite was accepted")
+	}
+	if _, err := testPool.Exec(ctx, `
+		UPDATE contents SET withdrawn_at = now() + interval '1 hour'
+		WHERE id = $1`, id); err == nil {
+		t.Fatal("same-state withdrawal timestamp rewrite was accepted")
+	}
+	if _, err := testPool.Exec(ctx, `
+		UPDATE contents
+		SET is_public = true, withdrawn_at = NULL, withdrawal_reason = NULL
+		WHERE id = $1`, id); err != nil {
+		t.Fatalf("valid restore tuple rejected: %v", err)
+	}
+	if _, err := testPool.Exec(ctx, `
+		UPDATE contents SET status='archived', is_public=false, published_at=NULL
+		WHERE id=$1`, id); err == nil {
+		t.Fatal("published public history was erasable through archive")
+	}
+	if _, err := testPool.Exec(ctx, `
+		UPDATE contents SET published_at=published_at + interval '1 hour'
+		WHERE id=$1`, id); err == nil {
+		t.Fatal("published_at rewrite was accepted")
+	}
+	immutableSnapshotEdits := []struct {
+		name string
+		sql  string
+	}{
+		{name: "title", sql: `UPDATE contents SET title='rewritten title' WHERE id=$1`},
+		{name: "body", sql: `UPDATE contents SET body='rewritten body' WHERE id=$1`},
+		{name: "source", sql: `UPDATE contents SET source_vault_path='Writing/articles/other.md', source_git_blob_sha='89abcdef0123456789abcdef0123456789abcdef' WHERE id=$1`},
+	}
+	for _, tc := range immutableSnapshotEdits {
+		t.Run("immutable_"+tc.name, func(t *testing.T) {
+			if _, err := testPool.Exec(ctx, tc.sql, id); err == nil {
+				t.Fatalf("published snapshot %s rewrite was accepted", tc.name)
+			}
+		})
+	}
 
-	if rec.Code != http.StatusOK {
-		t.Fatalf("SetIsPublic(false) status = %d, want 200 (body=%s)", rec.Code, rec.Body.String())
+	invalid := []struct {
+		name string
+		sql  string
+	}{
+		{name: "missing reason", sql: `UPDATE contents SET is_public=false, withdrawn_at=now(), withdrawal_reason=NULL WHERE id=$1`},
+		{name: "blank reason", sql: `UPDATE contents SET is_public=false, withdrawn_at=now(), withdrawal_reason='   ' WHERE id=$1`},
+		{name: "missing timestamp", sql: `UPDATE contents SET is_public=false, withdrawn_at=NULL, withdrawal_reason='reason' WHERE id=$1`},
+		{name: "metadata while public", sql: `UPDATE contents SET is_public=true, withdrawn_at=now(), withdrawal_reason='reason' WHERE id=$1`},
+		{name: "oversized reason", sql: `UPDATE contents SET is_public=false, withdrawn_at=now(), withdrawal_reason=repeat('x', 501) WHERE id=$1`},
 	}
-	got, err := s.Content(ctx, id)
+	for _, tc := range invalid {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := testPool.Exec(ctx, tc.sql, id); err == nil {
+				t.Fatalf("invalid withdrawal tuple was accepted")
+			}
+		})
+	}
+	if _, err := testPool.Exec(ctx, `
+		UPDATE contents
+		SET is_public=false, withdrawn_at=now(), withdrawal_reason='withdraw before archive probe'
+		WHERE id=$1`, id); err != nil {
+		t.Fatalf("second valid withdrawal rejected: %v", err)
+	}
+	if _, err := testPool.Exec(ctx, `
+		UPDATE contents
+		SET status='archived', is_public=false, published_at=NULL,
+		    withdrawn_at=NULL, withdrawal_reason=NULL
+		WHERE id=$1`, id); err == nil {
+		t.Fatal("withdrawn publication history was erasable through archive")
+	}
+}
+
+func TestMigration004_LegacyPrivateBackfillAndRollbackGuard(t *testing.T) {
+	setup(t)
+	ctx := t.Context()
+	_, thisFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("locating integration test source")
+	}
+	migrationsDir := filepath.Join(filepath.Dir(thisFile), "..", "..", "migrations")
+	downSQL, err := os.ReadFile(filepath.Join(migrationsDir, "004_content_withdrawal.down.sql"))
 	if err != nil {
-		t.Fatalf("Content() after visibility update: %v", err)
+		t.Fatalf("read migration 004 down: %v", err)
 	}
-	if got.Status != StatusPublished || got.IsPublic {
-		t.Errorf("visibility update = status %q, is_public %t; want published, false", got.Status, got.IsPublic)
+	upSQL, err := os.ReadFile(filepath.Join(migrationsDir, "004_content_withdrawal.up.sql"))
+	if err != nil {
+		t.Fatalf("read migration 004 up: %v", err)
+	}
+
+	tx, err := testPool.Begin(ctx)
+	if err != nil {
+		t.Fatalf("begin migration probe: %v", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	if _, err := tx.Exec(ctx, string(downSQL)); err != nil {
+		t.Fatalf("apply migration 004 down: %v", err)
+	}
+
+	legacyTime := time.Date(2025, time.February, 3, 4, 5, 6, 0, time.UTC)
+	var contentID uuid.UUID
+	err = tx.QueryRow(ctx, `
+		INSERT INTO contents (
+			slug, title, body, excerpt, type, status, is_public,
+			published_at, created_at, updated_at
+		) VALUES (
+			'legacy-private', 'Legacy private', 'body', 'excerpt', 'article',
+			'published', false, $1, $1, $1
+		) RETURNING id`, legacyTime).Scan(&contentID)
+	if err != nil {
+		t.Fatalf("insert pre-004 legacy row: %v", err)
+	}
+	if _, err := tx.Exec(ctx, string(upSQL)); err != nil {
+		t.Fatalf("apply migration 004 up: %v", err)
+	}
+
+	var withdrawnAt time.Time
+	var reason string
+	if err := tx.QueryRow(ctx, `
+		SELECT withdrawn_at, withdrawal_reason FROM contents WHERE id=$1`, contentID).
+		Scan(&withdrawnAt, &reason); err != nil {
+		t.Fatalf("read migrated legacy row: %v", err)
+	}
+	if !withdrawnAt.Equal(legacyTime) || reason != "Migrated from the retired private-visibility control" {
+		t.Fatalf("legacy backfill = at %v reason %q, want at %v and explicit migration reason", withdrawnAt, reason, legacyTime)
+	}
+
+	var receiptCount int
+	var actor string
+	var occurredAt time.Time
+	if err := tx.QueryRow(ctx, `
+		SELECT count(*), min(actor), min(occurred_at)
+		FROM activity_events
+		WHERE entity_type='content' AND entity_id=$1
+		  AND payload->>'transition'='withdrawn'
+		  AND payload->>'from'='legacy_private'`, contentID).
+		Scan(&receiptCount, &actor, &occurredAt); err != nil {
+		t.Fatalf("read legacy withdrawal receipt: %v", err)
+	}
+	if receiptCount != 1 || actor != "human" || !occurredAt.Equal(legacyTime) {
+		t.Fatalf("legacy receipt = count %d actor %q occurred_at %v, want 1 human %v", receiptCount, actor, occurredAt, legacyTime)
+	}
+
+	if _, err := tx.Exec(ctx, "SAVEPOINT rollback_guard_probe"); err != nil {
+		t.Fatalf("create rollback guard savepoint: %v", err)
+	}
+	if _, err := tx.Exec(ctx, string(downSQL)); err == nil {
+		t.Fatal("migration 004 down erased an active withdrawal instead of failing closed")
+	}
+	if _, err := tx.Exec(ctx, "ROLLBACK TO SAVEPOINT rollback_guard_probe"); err != nil {
+		t.Fatalf("restore after expected rollback rejection: %v", err)
+	}
+	if err := tx.QueryRow(ctx, `
+		SELECT count(*) FROM activity_events
+		WHERE entity_type='content' AND entity_id=$1
+		  AND payload->>'transition'='withdrawn'
+		  AND payload->>'from'='legacy_private'`, contentID).Scan(&receiptCount); err != nil {
+		t.Fatalf("count legacy receipts after rejected down: %v", err)
+	}
+	if receiptCount != 1 {
+		t.Fatalf("legacy receipt count after rejected down = %d, want 1", receiptCount)
+	}
+	if err := tx.QueryRow(ctx, `
+		SELECT withdrawn_at, withdrawal_reason FROM contents WHERE id=$1`, contentID).
+		Scan(&withdrawnAt, &reason); err != nil {
+		t.Fatalf("read legacy row after rejected down: %v", err)
+	}
+	if !withdrawnAt.Equal(legacyTime) || reason != "Migrated from the retired private-visibility control" {
+		t.Fatalf("rejected down changed legacy withdrawal: at=%v reason=%q", withdrawnAt, reason)
+	}
+}
+
+func TestStore_WithdrawalGuards(t *testing.T) {
+	s := setup(t)
+	ctx := t.Context()
+	actions := requireWithdrawalStore(t, s)
+
+	draft, err := s.CreateContent(ctx, &CreateParams{
+		Slug: "withdraw-draft", Title: "Draft", Body: "body", Excerpt: "excerpt",
+		Type: TypeArticle, Status: StatusDraft,
+	})
+	if err != nil {
+		t.Fatalf("CreateContent() error: %v", err)
+	}
+	if _, err := actions.Withdraw(ctx, draft.ID, "not published"); !errors.Is(err, ErrInvalidState) {
+		t.Fatalf("Withdraw(draft) = %v, want ErrInvalidState", err)
+	}
+	if _, err := actions.Withdraw(ctx, uuid.New(), "missing"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("Withdraw(missing) = %v, want ErrNotFound", err)
+	}
+	if _, err := actions.Restore(ctx, draft.ID); !errors.Is(err, ErrInvalidState) {
+		t.Fatalf("Restore(draft) = %v, want ErrInvalidState", err)
+	}
+
+	publishedID := createDraftContent(t, s, ctx, "withdraw-once")
+	if _, err := s.Publish(ctx, publishedID); err != nil {
+		t.Fatalf("Publish() error: %v", err)
+	}
+	if _, err := actions.Withdraw(ctx, publishedID, "first reason"); err != nil {
+		t.Fatalf("Withdraw() error: %v", err)
+	}
+	if _, err := actions.Withdraw(ctx, publishedID, "replacement reason"); !errors.Is(err, ErrInvalidState) {
+		t.Fatalf("repeated Withdraw() = %v, want ErrInvalidState", err)
+	}
+	if _, err := s.ArchiveContentReturning(ctx, publishedID); !errors.Is(err, ErrInvalidState) {
+		t.Fatalf("ArchiveContentReturning(withdrawn) = %v, want ErrInvalidState", err)
+	}
+	if err := s.DeleteContent(ctx, publishedID); !errors.Is(err, ErrInvalidState) {
+		t.Fatalf("DeleteContent(withdrawn) = %v, want ErrInvalidState", err)
+	}
+	if _, err := s.Publish(ctx, publishedID); !errors.Is(err, ErrInvalidState) {
+		t.Fatalf("Publish(withdrawn) = %v, want ErrInvalidState", err)
+	}
+	stillWithdrawn, err := s.Content(ctx, publishedID)
+	if err != nil {
+		t.Fatalf("Content() after rejected bypasses: %v", err)
+	}
+	if stillWithdrawn.IsPublic || stillWithdrawn.WithdrawalReason == nil || *stillWithdrawn.WithdrawalReason != "first reason" {
+		t.Fatalf("rejected bypass changed withdrawal: public=%t reason=%v", stillWithdrawn.IsPublic, stillWithdrawn.WithdrawalReason)
+	}
+	if _, err := actions.Restore(ctx, publishedID); err != nil {
+		t.Fatalf("Restore() error: %v", err)
+	}
+	if _, err := actions.Restore(ctx, publishedID); !errors.Is(err, ErrInvalidState) {
+		t.Fatalf("repeated Restore() = %v, want ErrInvalidState", err)
+	}
+
+	var transitionCount int
+	if err := testPool.QueryRow(ctx, `
+		SELECT count(*) FROM activity_events
+		WHERE entity_type='content' AND entity_id=$1
+		  AND payload->>'transition' IN ('withdrawn','restored')`, publishedID).Scan(&transitionCount); err != nil {
+		t.Fatalf("count transition receipts: %v", err)
+	}
+	if transitionCount != 2 {
+		t.Fatalf("transition receipt count = %d, want 2", transitionCount)
 	}
 }
 
@@ -651,21 +1138,17 @@ func TestStore_DeleteContent(t *testing.T) {
 	}
 }
 
-func TestStore_ContentBySlug(t *testing.T) {
+func TestStore_PublicContentBySlug(t *testing.T) {
 	s := setup(t)
 	ctx := t.Context()
 
-	created, err := s.CreateContent(ctx, &CreateParams{
-		Slug:           "find-by-slug",
-		Title:          "Find By Slug",
-		Body:           "body",
-		Excerpt:        "excerpt",
-		Type:           TypeEssay,
-		Status:         StatusDraft,
-		ReadingTimeMin: 3,
-	})
+	id := createDraftContent(t, s, ctx, "find-by-slug")
+	if _, err := s.PublicContentBySlug(ctx, "find-by-slug"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("PublicContentBySlug(draft) = %v, want ErrNotFound", err)
+	}
+	created, err := s.Publish(ctx, id)
 	if err != nil {
-		t.Fatalf("CreateContent() error: %v", err)
+		t.Fatalf("Publish() error: %v", err)
 	}
 
 	tests := []struct {
@@ -679,21 +1162,21 @@ func TestStore_ContentBySlug(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := s.ContentBySlug(ctx, tt.slug)
+			got, err := s.PublicContentBySlug(ctx, tt.slug)
 			if tt.wantErr != nil {
 				if !errors.Is(err, tt.wantErr) {
-					t.Fatalf("ContentBySlug(%q) error = %v, want %v", tt.slug, err, tt.wantErr)
+					t.Fatalf("PublicContentBySlug(%q) error = %v, want %v", tt.slug, err, tt.wantErr)
 				}
 				return
 			}
 			if err != nil {
-				t.Fatalf("ContentBySlug(%q) unexpected error: %v", tt.slug, err)
+				t.Fatalf("PublicContentBySlug(%q) unexpected error: %v", tt.slug, err)
 			}
 			if got.ID != created.ID {
-				t.Errorf("ContentBySlug(%q) ID = %s, want %s", tt.slug, got.ID, created.ID)
+				t.Errorf("PublicContentBySlug(%q) ID = %s, want %s", tt.slug, got.ID, created.ID)
 			}
 			if got.Slug != tt.slug {
-				t.Errorf("ContentBySlug(%q) slug = %q, want %q", tt.slug, got.Slug, tt.slug)
+				t.Errorf("PublicContentBySlug(%q) slug = %q, want %q", tt.slug, got.Slug, tt.slug)
 			}
 		})
 	}
@@ -1020,11 +1503,8 @@ func TestStore_UpdateContent_InvalidInput(t *testing.T) {
 	}
 }
 
-// TestHandler_PublicBySlug_HidesNonPublic locks the only guard that keeps
-// GET /api/contents/{slug} from leaking a private or draft body: the handler's
-// !c.IsPublic → 404 check. ContentBySlug itself has no is_public/status filter,
-// so if this check is inverted or dropped the private body ships to anonymous
-// callers — this test is the regression that would catch it.
+// TestHandler_PublicBySlug_HidesNonPublic locks the final SQL guard that keeps
+// GET /api/contents/{slug} from fetching a private, withdrawn, or draft body.
 func TestHandler_PublicBySlug_HidesNonPublic(t *testing.T) {
 	store := setup(t)
 	h := NewHandler(store, "http://test.local", slog.New(slog.DiscardHandler))
