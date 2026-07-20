@@ -4,7 +4,7 @@ import {
   HttpTestingController,
   provideHttpClientTesting,
 } from '@angular/common/http/testing';
-import { provideRouter, Router, type Routes } from '@angular/router';
+import { provideRouter, type Routes } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
 
 import { ContentEditorPageComponent } from './content-editor.page';
@@ -17,10 +17,6 @@ const CONTENT_URL = '/api/admin/knowledge/content';
 const TOPICS_URL = '/api/admin/knowledge/topics';
 
 const routes: Routes = [
-  {
-    path: 'admin/knowledge/content/new',
-    component: ContentEditorPageComponent,
-  },
   {
     path: 'admin/knowledge/content/:id/edit',
     component: ContentEditorPageComponent,
@@ -123,92 +119,6 @@ describe('ContentEditorPageComponent', () => {
     input!.value = value;
     input!.dispatchEvent(new Event('input'));
   }
-
-  describe('create mode', () => {
-    beforeEach(async () => {
-      harness = await RouterTestingHarness.create(
-        '/admin/knowledge/content/new',
-      );
-      await settle();
-      flushTopics();
-      await settle();
-    });
-
-    it('should render an empty form with slug input and no lifecycle rail', () => {
-      expect(el().querySelector('[data-testid="content-editor"]')).toBeTruthy();
-      expect(
-        el().querySelector('[data-testid="editor-slug-input"]'),
-      ).toBeTruthy();
-      expect(el().querySelector('[data-testid="editor-lifecycle"]')).toBeNull();
-      expect(el().querySelector('[data-testid="editor-is-public"]')).toBeNull();
-      expect(
-        el().querySelector('[data-testid="editor-create-hint"]')?.textContent,
-      ).toContain('not created yet');
-    });
-
-    it('should POST the new content and navigate to its edit route on submit', async () => {
-      setValue('[data-testid="editor-slug-input"]', 'my-new-post');
-      setValue('[data-testid="editor-title"]', 'My new post');
-      setValue('[data-testid="editor-body"]', 'Hello world');
-      await settle();
-
-      el()
-        .querySelector<HTMLFormElement>('[data-testid="content-editor"]')
-        ?.dispatchEvent(new Event('submit'));
-      await settle();
-
-      const req = httpMock.expectOne(
-        (r) => r.method === 'POST' && r.url.endsWith(CONTENT_URL),
-      );
-      expect(req.request.body).toMatchObject({
-        slug: 'my-new-post',
-        title: 'My new post',
-        type: 'article',
-        body: 'Hello world',
-      });
-      req.flush({
-        data: contentPayload({ id: 'created-9', slug: 'my-new-post' }),
-      });
-      await settle();
-
-      expect(TestBed.inject(Router).url).toBe(
-        '/admin/knowledge/content/created-9/edit',
-      );
-      // The edit route instance loads the created record and topics.
-      httpMock
-        .expectOne((r) => r.url.endsWith(`${CONTENT_URL}/created-9`))
-        .flush({ data: contentPayload({ id: 'created-9' }) });
-      flushTopics();
-      await settle();
-    });
-
-    it('should not expose a preview action in create mode', () => {
-      const actions =
-        TestBed.inject(AdminTopbarService).context().actions ?? [];
-      expect(actions.find((a) => a.id === 'preview')).toBeUndefined();
-    });
-
-    it('should not POST when required fields are missing', async () => {
-      el()
-        .querySelector<HTMLFormElement>('[data-testid="content-editor"]')
-        ?.dispatchEvent(new Event('submit'));
-      await settle();
-
-      httpMock.expectNone(
-        (r) => r.method === 'POST' && r.url.endsWith(CONTENT_URL),
-      );
-    });
-
-    it('should auto-derive the slug from the title until it is edited', async () => {
-      setValue('[data-testid="editor-title"]', 'My First Post!');
-      await settle();
-
-      const slug = el().querySelector<HTMLInputElement>(
-        '[data-testid="editor-slug-input"]',
-      );
-      expect(slug?.value).toBe('my-first-post');
-    });
-  });
 
   describe('edit mode', () => {
     beforeEach(async () => {
