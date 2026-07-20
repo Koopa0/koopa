@@ -1663,6 +1663,8 @@ func TestIntegration_ProposeContent_AsHermes(t *testing.T) {
 		Body:              "# Value Semantics\n\nA finished draft body.",
 		Excerpt:           "Why Go copies.",
 		ProposalRationale: "Finished the Obsidian Writing/articles draft; ready for review.",
+		SourceVaultPath:   "Writing/articles/value-semantics-in-go.md",
+		SourceGitBlobSHA:  "0123456789abcdef0123456789abcdef01234567",
 	})
 	if err != nil {
 		t.Fatalf("proposeContent: %v", err)

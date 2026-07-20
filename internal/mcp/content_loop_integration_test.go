@@ -70,6 +70,17 @@ func seedPublishedContentAt(t *testing.T, slug, title string, publishedAt time.T
 	return id
 }
 
+func completeRevisionInput(id uuid.UUID, title, body, excerpt string) ReviseContentInput {
+	return ReviseContentInput{
+		ID:               id.String(),
+		Title:            &title,
+		Body:             &body,
+		Excerpt:          &excerpt,
+		SourceVaultPath:  "Writing/articles/" + id.String() + ".md",
+		SourceGitBlobSHA: "0123456789abcdef0123456789abcdef01234567",
+	}
+}
+
 // completeTodoAsActor opens a transaction, binds koopa.actor to actor, then
 // inserts a todo directly in state='done' (which fires audit_todos with
 // change_kind='completed' and the bound actor). Returns the todo's id.
@@ -244,10 +255,8 @@ func TestIntegration_ReviseContent_ChangesRequestedSucceeds(t *testing.T) {
 	id := seedContentForCreator(t, "rc-cr-happy", "Changes Requested Article", "claude", "changes_requested", &note)
 	newBody := "# Revised\n\nMore examples added."
 
-	_, out, err := callHandlerAs(t, "claude", s.reviseContent, ReviseContentInput{
-		ID:   id.String(),
-		Body: &newBody,
-	})
+	input := completeRevisionInput(id, "Changes Requested Article", newBody, "")
+	_, out, err := callHandlerAs(t, "claude", s.reviseContent, input)
 	if err != nil {
 		t.Fatalf("reviseContent(changes_requested): %v", err)
 	}
@@ -454,10 +463,8 @@ func TestIntegration_ReviseContent_ReviewStatusSucceeds(t *testing.T) {
 	id := seedContentForCreator(t, "rc-review-happy", "Review Article", "claude", "review", nil)
 	newTitle := "Review Article — Revised Title"
 
-	_, out, err := callHandlerAs(t, "claude", s.reviseContent, ReviseContentInput{
-		ID:    id.String(),
-		Title: &newTitle,
-	})
+	input := completeRevisionInput(id, newTitle, "body text", "")
+	_, out, err := callHandlerAs(t, "claude", s.reviseContent, input)
 	if err != nil {
 		t.Fatalf("reviseContent(review): %v", err)
 	}
@@ -476,10 +483,8 @@ func TestIntegration_ReviseContent_PublishedReturnsNotFound(t *testing.T) {
 	id := seedContentForCreator(t, "rc-pub-reject", "Published Article", "claude", "published", nil)
 	newBody := "should not apply"
 
-	_, _, err := callHandlerAs(t, "claude", s.reviseContent, ReviseContentInput{
-		ID:   id.String(),
-		Body: &newBody,
-	})
+	input := completeRevisionInput(id, "Published Article", newBody, "")
+	_, _, err := callHandlerAs(t, "claude", s.reviseContent, input)
 	if err == nil {
 		t.Fatal("reviseContent(published) err = nil, want not-found (published not revisable)")
 	}
@@ -514,10 +519,8 @@ func TestIntegration_ReviseContent_CrossCreatorNotFound(t *testing.T) {
 	}
 
 	newBody := "claude should not be able to write this"
-	_, _, err := callHandlerAs(t, "claude", s.reviseContent, ReviseContentInput{
-		ID:   codexID.String(),
-		Body: &newBody,
-	})
+	input := completeRevisionInput(codexID, "Codex Changes Requested", newBody, "")
+	_, _, err := callHandlerAs(t, "claude", s.reviseContent, input)
 	if err == nil {
 		t.Fatal("reviseContent(claude on codex's row) err = nil, want not-found (cross-creator)")
 	}
@@ -551,8 +554,8 @@ func TestIntegration_ReviseContent_NoFieldsRejected(t *testing.T) {
 	if err == nil {
 		t.Fatal("reviseContent(no fields) err = nil, want validation error")
 	}
-	if !strings.Contains(err.Error(), "at least one") {
-		t.Errorf("error = %q, want containing %q", err, "at least one")
+	if !strings.Contains(err.Error(), "title, body, and excerpt") {
+		t.Errorf("error = %q, want complete snapshot requirement", err)
 	}
 }
 
@@ -1062,6 +1065,7 @@ func TestIntegration_ProposeContent_RequiresActor(t *testing.T) {
 	// fabricated caller: no registry row → the created_by FK rejects the write.
 	if _, _, err := callHandlerAs(t, "fabricated-agent", s.proposeContent, ProposeContentInput{
 		Title: "Fabricated Authored", Type: "article", Body: "finished draft",
+		SourceVaultPath: "Writing/articles/fabricated.md", SourceGitBlobSHA: "0123456789abcdef0123456789abcdef01234567",
 	}); err == nil {
 		t.Error("proposeContent as fabricated-agent = nil, want created_by FK rejection")
 	}
@@ -1070,6 +1074,7 @@ func TestIntegration_ProposeContent_RequiresActor(t *testing.T) {
 	unpinned := NewServer(testPool, slog.Default()) // callerAgent defaults to ""
 	if _, _, err := callHandlerAs(t, "", unpinned.proposeContent, ProposeContentInput{
 		Title: "Actorless", Type: "article", Body: "finished draft",
+		SourceVaultPath: "Writing/articles/actorless.md", SourceGitBlobSHA: "0123456789abcdef0123456789abcdef01234567",
 	}); err == nil {
 		t.Error("proposeContent with no `as` and no pinned caller = nil, want refusal (missing caller identity)")
 	}

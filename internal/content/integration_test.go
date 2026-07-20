@@ -6,6 +6,7 @@ package content
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -356,6 +357,7 @@ func TestStore_Contents_Pagination(t *testing.T) {
 		if err != nil {
 			t.Fatalf("CreateContent(%q) error: %v", slug, err)
 		}
+		bindTestSource(t, created.ID, slug)
 		// Publish so Contents (which queries published) can see them.
 		if _, err := s.PublishContent(ctx, created.ID); err != nil {
 			t.Fatalf("PublishContent(%s) error: %v", created.ID, err)
@@ -433,6 +435,7 @@ func TestStore_Contents_FilterByType(t *testing.T) {
 		if err != nil {
 			t.Fatalf("CreateContent(%q) error: %v", ct.slug, err)
 		}
+		bindTestSource(t, c.ID, ct.slug)
 		if _, err := s.PublishContent(ctx, c.ID); err != nil {
 			t.Fatalf("PublishContent(%s) error: %v", c.ID, err)
 		}
@@ -550,8 +553,15 @@ func TestStore_PublishRequiresSourceSnapshot(t *testing.T) {
 	s := setup(t)
 	ctx := t.Context()
 
-	id := createDraftContent(t, s, ctx, "unbound-publish")
-	_, err := s.Publish(ctx, id)
+	unbound, err := s.CreateContent(ctx, &CreateParams{
+		Slug: "unbound-publish", Title: "Unbound", Body: "body", Excerpt: "excerpt",
+		Type: TypeArticle, Status: StatusDraft,
+	})
+	if err != nil {
+		t.Fatalf("CreateContent(unbound): %v", err)
+	}
+	id := unbound.ID
+	_, err = s.Publish(ctx, id)
 	if err == nil || !strings.Contains(err.Error(), "source snapshot required") {
 		t.Fatalf("Publish(unbound draft) = %v, want source snapshot required", err)
 	}
@@ -709,6 +719,7 @@ func TestStore_PublishContent(t *testing.T) {
 	if created.PublishedAt != nil {
 		t.Fatal("CreateContent() published_at should be nil for draft")
 	}
+	bindTestSource(t, created.ID, "publish-me")
 
 	published, err := s.PublishContent(ctx, created.ID)
 	if err != nil {
@@ -748,7 +759,20 @@ func createDraftContent(t *testing.T, s *Store, ctx context.Context, slug string
 	if err != nil {
 		t.Fatalf("CreateContent(%q) error: %v", slug, err)
 	}
+	bindTestSource(t, c.ID, slug)
 	return c.ID
+}
+
+func bindTestSource(t *testing.T, id uuid.UUID, slug string) {
+	t.Helper()
+	if _, err := testPool.Exec(t.Context(),
+		`UPDATE contents SET source_vault_path = $1, source_git_blob_sha = $2 WHERE id = $3`,
+		"Writing/articles/"+slug+".md",
+		"0123456789abcdef0123456789abcdef01234567",
+		id,
+	); err != nil {
+		t.Fatalf("binding test source for %s: %v", id, err)
+	}
 }
 
 // TestStore_Publish exercises the owner's publish gate: a draft (the owner's
@@ -1013,6 +1037,7 @@ func TestHandler_PublicBySlug_HidesNonPublic(t *testing.T) {
 	if err != nil {
 		t.Fatalf("creating public draft: %v", err)
 	}
+	bindTestSource(t, pub.ID, "public-piece")
 	if _, err := store.PublishContent(ctx, pub.ID); err != nil {
 		t.Fatalf("publishing public content: %v", err)
 	}
@@ -1041,5 +1066,72 @@ func TestHandler_PublicBySlug_HidesNonPublic(t *testing.T) {
 				t.Error("PublicBySlug leaked the private body in the response")
 			}
 		})
+	}
+}
+
+// TestHandler_SourceProvenanceIsAdminOnly pins the final wire boundary. The
+// authenticated detail response exposes a read-only nested source coordinate,
+// while the anonymous content response must not serialize either private Vault
+// field even though both handlers read the same persisted row.
+func TestHandler_SourceProvenanceIsAdminOnly(t *testing.T) {
+	store := setup(t)
+	h := NewHandler(store, "http://test.local", slog.New(slog.DiscardHandler))
+
+	var id uuid.UUID
+	if err := testPool.QueryRow(t.Context(), `
+		INSERT INTO contents (
+			slug, title, body, excerpt, type, status, is_public, published_at,
+			source_vault_path, source_git_blob_sha
+		) VALUES (
+			'provenance-wire', 'Provenance Wire', 'public body', 'excerpt',
+			'article', 'published', true, now(), $1, $2
+		) RETURNING id`,
+		"Writing/articles/provenance-wire.md",
+		"0123456789abcdef0123456789abcdef01234567",
+	).Scan(&id); err != nil {
+		t.Fatalf("seeding source-bound published row: %v", err)
+	}
+
+	adminReq := httptest.NewRequest(http.MethodGet, "/api/admin/knowledge/content/"+id.String(), nil)
+	adminReq.SetPathValue("id", id.String())
+	adminRec := httptest.NewRecorder()
+	h.Get(adminRec, adminReq)
+	if adminRec.Code != http.StatusOK {
+		t.Fatalf("admin Get status = %d, want 200 (body=%s)", adminRec.Code, adminRec.Body.String())
+	}
+	var adminBody struct {
+		Data map[string]json.RawMessage `json:"data"`
+	}
+	if err := json.Unmarshal(adminRec.Body.Bytes(), &adminBody); err != nil {
+		t.Fatalf("decoding admin response: %v", err)
+	}
+	sourceRaw, ok := adminBody.Data["source"]
+	if !ok {
+		t.Fatalf("admin response missing source: %s", adminRec.Body.String())
+	}
+	var source struct {
+		VaultPath  string `json:"vault_path"`
+		GitBlobSHA string `json:"git_blob_sha"`
+	}
+	if err := json.Unmarshal(sourceRaw, &source); err != nil {
+		t.Fatalf("decoding admin source: %v", err)
+	}
+	if source.VaultPath != "Writing/articles/provenance-wire.md" ||
+		source.GitBlobSHA != "0123456789abcdef0123456789abcdef01234567" {
+		t.Fatalf("admin source = %+v, want exact persisted coordinate", source)
+	}
+
+	publicReq := httptest.NewRequest(http.MethodGet, "/api/contents/provenance-wire", nil)
+	publicReq.SetPathValue("slug", "provenance-wire")
+	publicRec := httptest.NewRecorder()
+	h.PublicBySlug(publicRec, publicReq)
+	if publicRec.Code != http.StatusOK {
+		t.Fatalf("public Get status = %d, want 200 (body=%s)", publicRec.Code, publicRec.Body.String())
+	}
+	publicJSON := publicRec.Body.String()
+	for _, forbidden := range []string{"source", "source_vault_path", "source_git_blob_sha", "Writing/articles/provenance-wire.md"} {
+		if strings.Contains(publicJSON, forbidden) {
+			t.Fatalf("public response leaked %q: %s", forbidden, publicJSON)
+		}
 	}
 }
