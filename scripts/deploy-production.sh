@@ -119,9 +119,9 @@ validate_trader_db_endpoints() {
       tw-stock-trader:trader)
         trader_count=$((trader_count + 1))
         if jq -e \
-          '.[0].NetworkSettings.Networks["trader-db"].Aliases // [] | index("postgres") != null' \
+          '.[0].NetworkSettings.Networks["trader-db"].DNSNames // [] | index("postgres") != null' \
           >/dev/null <<<"$endpoint_json"; then
-          echo "ERROR: trader-db postgres alias is claimed by the trader endpoint" >&2
+          echo "ERROR: trader-db postgres DNS name is claimed by the trader endpoint" >&2
           return 1
         fi
         ;;
