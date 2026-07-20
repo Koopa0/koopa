@@ -99,6 +99,49 @@ describe('ContentListPageComponent', () => {
     expect(testid('content-count')?.textContent).toContain('1');
   });
 
+  it('should project a private published snapshot as Withdrawn', async () => {
+    fixture = TestBed.createComponent(ContentListPageComponent);
+    fixture.detectChanges();
+    httpMock
+      .expectOne((r) => r.method === 'GET' && r.url.endsWith(LIST_URL))
+      .flush(
+        envelope([
+          content({ status: 'published', is_public: false }),
+        ]),
+      );
+    await settle();
+
+    expect(testid('content-list-row-0')?.textContent).toContain('Withdrawn');
+    expect(testid('content-list-row-0')?.textContent).not.toContain(
+      'published',
+    );
+  });
+
+  it('should translate the Withdrawn projection filter into published and private query parameters', async () => {
+    fixture = TestBed.createComponent(ContentListPageComponent);
+    fixture.detectChanges();
+    httpMock
+      .expectOne((r) => r.method === 'GET' && r.url.endsWith(LIST_URL))
+      .flush(envelope([]));
+    await settle();
+
+    const withdrawn = testid('content-filter-status-withdrawn');
+    expect(withdrawn).toBeTruthy();
+    withdrawn!.click();
+    await settle();
+
+    const req = httpMock.expectOne(
+      (r) =>
+        r.method === 'GET' &&
+        r.url.endsWith(LIST_URL) &&
+        r.params.get('status') === 'published' &&
+        r.params.get('is_public') === 'false',
+    );
+    expect(req.request.params.has('status')).toBe(true);
+    expect(req.request.params.has('is_public')).toBe(true);
+    req.flush(envelope([]));
+  });
+
   it('should not advertise direct Admin authoring', async () => {
     fixture = TestBed.createComponent(ContentListPageComponent);
     fixture.detectChanges();

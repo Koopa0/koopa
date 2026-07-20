@@ -282,31 +282,10 @@ describe('ContentEditorPageComponent', () => {
       expect(el().querySelector('[data-testid="preview-scrim"]')).toBeNull();
     });
 
-    it('should PATCH is-public when the visibility switch is toggled', async () => {
-      el()
-        .querySelector<HTMLButtonElement>('[data-testid="editor-is-public"]')
-        ?.click();
-      await settle();
-
-      const req = httpMock.expectOne(
-        (r) =>
-          r.method === 'PATCH' &&
-          r.url.endsWith(`${CONTENT_URL}/abc-1/is-public`),
-      );
-      expect(req.request.body).toEqual({ is_public: true });
-      req.flush({ data: contentPayload({ is_public: true }) });
-      await settle();
-
-      httpMock
-        .expectOne((r) => r.url.endsWith(`${CONTENT_URL}/abc-1`))
-        .flush({ data: contentPayload({ is_public: true }) });
-      await settle();
-
+    it('should not expose the generic visibility switch', () => {
       expect(
-        el()
-          .querySelector('[data-testid="editor-is-public"]')
-          ?.getAttribute('aria-checked'),
-      ).toBe('true');
+        el().querySelector('[data-testid="editor-is-public"]'),
+      ).toBeNull();
     });
   });
 
@@ -329,7 +308,7 @@ describe('ContentEditorPageComponent', () => {
       await settle();
     });
 
-    it('should make authored fields read-only while keeping visibility operational', async () => {
+    it('should make authored fields read-only without exposing generic visibility', async () => {
       const saveAction = TestBed.inject(AdminTopbarService)
         .context()
         .actions?.find((a) => a.id === 'save');
@@ -359,10 +338,8 @@ describe('ContentEditorPageComponent', () => {
           ?.textContent,
       ).toContain('Vault');
       expect(
-        el().querySelector<HTMLButtonElement>(
-          '[data-testid="editor-is-public"]',
-        )?.disabled,
-      ).toBe(false);
+        el().querySelector('[data-testid="editor-is-public"]'),
+      ).toBeNull();
 
       el()
         .querySelector<HTMLFormElement>('[data-testid="content-editor"]')
@@ -371,6 +348,123 @@ describe('ContentEditorPageComponent', () => {
       httpMock.expectNone(
         (r) => r.method === 'PUT' && r.url.endsWith(`${CONTENT_URL}/abc-1`),
       );
+    });
+
+    it('should require a reason and POST its exact value before withdrawing', async () => {
+      el()
+        .querySelector<HTMLButtonElement>(
+          '[data-testid="lifecycle-action-withdraw"]',
+        )
+        ?.click();
+      await settle();
+
+      const textarea = el().querySelector<HTMLTextAreaElement>(
+        '[data-testid="withdraw-reason-textarea"]',
+      );
+      const submit = el().querySelector<HTMLButtonElement>(
+        '[data-testid="withdraw-submit"]',
+      );
+      expect(textarea).toBeTruthy();
+      expect(submit?.disabled).toBe(true);
+
+      textarea!.value = 'The source is no longer accurate.';
+      textarea!.dispatchEvent(new Event('input'));
+      await settle();
+      expect(submit?.disabled).toBe(false);
+
+      submit!.click();
+      await settle();
+
+      const req = httpMock.expectOne(
+        (r) =>
+          r.method === 'POST' &&
+          r.url.endsWith(`${CONTENT_URL}/abc-1/withdraw`),
+      );
+      expect(req.request.body).toEqual({
+        reason: 'The source is no longer accurate.',
+      });
+      req.flush({
+        data: contentPayload({
+          status: 'published',
+          is_public: false,
+          published_at: '2026-06-03T00:00:00Z',
+        }),
+      });
+      await settle();
+
+      httpMock
+        .expectOne((r) => r.url.endsWith(`${CONTENT_URL}/abc-1`))
+        .flush({
+          data: contentPayload({
+            status: 'published',
+            is_public: false,
+            published_at: '2026-06-03T00:00:00Z',
+          }),
+        });
+      await settle();
+
+      expect(
+        el().querySelector('[data-testid="withdraw-reason-textarea"]'),
+      ).toBeNull();
+    });
+  });
+
+  describe('withdrawn projection mode', () => {
+    beforeEach(async () => {
+      harness = await RouterTestingHarness.create(
+        '/admin/knowledge/content/abc-1/edit',
+      );
+      await settle();
+      httpMock
+        .expectOne((r) => r.url.endsWith(`${CONTENT_URL}/abc-1`))
+        .flush({
+          data: contentPayload({
+            status: 'published',
+            is_public: false,
+            published_at: '2026-06-03T00:00:00Z',
+          }),
+        });
+      flushTopics();
+      await settle();
+    });
+
+    it('should POST restore without a body and reload the public snapshot', async () => {
+      el()
+        .querySelector<HTMLButtonElement>(
+          '[data-testid="lifecycle-action-restore"]',
+        )
+        ?.click();
+      await settle();
+
+      const req = httpMock.expectOne(
+        (r) =>
+          r.method === 'POST' &&
+          r.url.endsWith(`${CONTENT_URL}/abc-1/restore`),
+      );
+      expect(req.request.body).toEqual({});
+      req.flush({
+        data: contentPayload({
+          status: 'published',
+          is_public: true,
+          published_at: '2026-06-03T00:00:00Z',
+        }),
+      });
+      await settle();
+
+      httpMock
+        .expectOne((r) => r.url.endsWith(`${CONTENT_URL}/abc-1`))
+        .flush({
+          data: contentPayload({
+            status: 'published',
+            is_public: true,
+            published_at: '2026-06-03T00:00:00Z',
+          }),
+        });
+      await settle();
+
+      expect(
+        el().querySelector('[data-testid="lifecycle-action-withdraw"]'),
+      ).toBeTruthy();
     });
   });
 

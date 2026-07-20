@@ -8,12 +8,20 @@ import {
 describe('ContentLifecycleRailComponent', () => {
   let fixture: ComponentFixture<ContentLifecycleRailComponent>;
 
-  function create(status: string, busy = false, sourceBound?: boolean): void {
+  function create(
+    status: string,
+    busy = false,
+    sourceBound?: boolean,
+    isPublic?: boolean,
+  ): void {
     fixture = TestBed.createComponent(ContentLifecycleRailComponent);
     fixture.componentRef.setInput('status', status);
     fixture.componentRef.setInput('busy', busy);
     if (sourceBound !== undefined) {
       fixture.componentRef.setInput('sourceBound', sourceBound);
+    }
+    if (isPublic !== undefined) {
+      fixture.componentRef.setInput('isPublic', isPublic);
     }
     fixture.detectChanges();
   }
@@ -112,16 +120,37 @@ describe('ContentLifecycleRailComponent', () => {
     ).toBeNull();
   });
 
-  it('should offer Archive when published and Revert to draft when archived', () => {
-    create('published');
+  it('should offer Withdraw, not Archive, for a public published snapshot', () => {
+    create('published', false, true, true);
+
+    expect(
+      el().querySelector('[data-testid="lifecycle-action-withdraw"]'),
+    ).toBeTruthy();
     expect(
       el().querySelector('[data-testid="lifecycle-action-archive"]'),
-    ).toBeTruthy();
+    ).toBeNull();
+  });
 
+  it('should derive withdrawn from published plus private and offer Restore', () => {
+    create('published', false, true, false);
+
+    expect(
+      el().querySelector('[data-testid="lifecycle-action-restore"]'),
+    ).toBeTruthy();
+    expect(
+      el().querySelector('[data-testid="lifecycle-action-withdraw"]'),
+    ).toBeNull();
+  });
+
+  it('should offer no lifecycle action for archived content', () => {
     create('archived');
+
     expect(
       el().querySelector('[data-testid="lifecycle-action-revert-to-draft"]'),
-    ).toBeTruthy();
+    ).toBeNull();
+    expect(
+      el().querySelector('[data-testid="lifecycle-actions"]')?.textContent?.trim(),
+    ).toBe('');
   });
 
   it('should emit the action id when a transition button is clicked', () => {

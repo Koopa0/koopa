@@ -214,4 +214,50 @@ describe('ContentService', () => {
       req.flush({ data: mockResponse });
     });
   });
+
+  describe('withdrawal', () => {
+    interface WithdrawalService {
+      withdraw: (
+        id: string,
+        reason: string,
+      ) => ReturnType<ContentService['publish']>;
+      restore: (id: string) => ReturnType<ContentService['publish']>;
+    }
+
+    it('should POST the exact owner reason to the withdraw endpoint', () => {
+      const withdrawal = service as unknown as WithdrawalService;
+      withdrawal
+        .withdraw('content-001', 'The source is no longer accurate.')
+        .subscribe();
+
+      const req = httpMock.expectOne(
+        '/api/admin/knowledge/content/content-001/withdraw',
+      );
+      expect(req.request.method).toBe('POST');
+      expect(req.request.body).toEqual({
+        reason: 'The source is no longer accurate.',
+      });
+      req.flush({
+        data: createMockContent({ status: 'published', is_public: false }),
+      });
+    });
+
+    it('should POST an empty body to the restore endpoint', () => {
+      const withdrawal = service as unknown as WithdrawalService;
+      withdrawal.restore('content-001').subscribe();
+
+      const req = httpMock.expectOne(
+        '/api/admin/knowledge/content/content-001/restore',
+      );
+      expect(req.request.method).toBe('POST');
+      expect(req.request.body).toEqual({});
+      req.flush({ data: createMockContent() });
+    });
+
+    it('should not retain the generic visibility mutation surface', () => {
+      expect(
+        (service as unknown as Record<string, unknown>)['setVisibility'],
+      ).toBeUndefined();
+    });
+  });
 });
