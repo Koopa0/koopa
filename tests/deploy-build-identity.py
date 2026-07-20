@@ -402,17 +402,22 @@ def install_boundary_stubs(bin_dir: Path) -> None:
           driver=bridge
           scope=local
           internal=false
+          enable_ipv4=true
           options='{}'
+          labels='{}'
           case "$mode" in
             wrong-driver) driver=overlay ;;
             wrong-scope) scope=swarm ;;
             internal) internal=true ;;
+            ipv4-disabled) enable_ipv4=false ;;
             unsafe-egress) options='{"com.docker.network.bridge.enable_ip_masquerade":"false"}' ;;
+            inhibit-ipv4) options='{"com.docker.network.bridge.inhibit_ipv4":"true"}' ;;
             routed-gateway) options='{"com.docker.network.bridge.gateway_mode_ipv4":"routed"}' ;;
             isolated-gateway) options='{"com.docker.network.bridge.gateway_mode_ipv4":"isolated"}' ;;
+            compose-owned) labels='{"com.docker.compose.project":"rogue","com.docker.compose.network":"trader-db"}' ;;
           esac
-          printf '[{"Name":"trader-db","Driver":"%s","Scope":"%s","Internal":%s,"Options":%s,"Containers":%s}]\n' \
-            "$driver" "$scope" "$internal" "$options" "$containers"
+          printf '[{"Name":"trader-db","Driver":"%s","Scope":"%s","Internal":%s,"EnableIPv4":%s,"Options":%s,"Labels":%s,"Containers":%s}]\n' \
+            "$driver" "$scope" "$internal" "$enable_ipv4" "$options" "$labels" "$containers"
           exit 0
         fi
 
@@ -1224,9 +1229,12 @@ def check_deploy_script() -> list[str]:
         "wrong-driver",
         "wrong-scope",
         "internal",
+        "ipv4-disabled",
         "unsafe-egress",
+        "inhibit-ipv4",
         "routed-gateway",
         "isolated-gateway",
+        "compose-owned",
         "unexpected-endpoint",
     )
     for mode in network_preflight_cases:
