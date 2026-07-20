@@ -64,9 +64,11 @@ This is a single-admin system by design: one person, several AI agents — no te
 This repository provides PostgreSQL to the stock trader; it does not own the
 shared network. `trader-db` is a **server-owned** external Docker network. Its
 creation, validation, and disaster recovery remain canonical in the server
-repository's [VPS setup](https://github.com/Koopa0/server/blob/main/VPS-SETUP.md)
-and [disaster recovery](https://github.com/Koopa0/server/blob/main/DISASTER-RECOVERY.md)
+repository's [VPS setup](https://github.com/Koopa0/server/blob/d703d7ebf09aef69bc5cc7188e4882ac6f30e4c2/VPS-SETUP.md)
+and [disaster recovery](https://github.com/Koopa0/server/blob/d703d7ebf09aef69bc5cc7188e4882ac6f30e4c2/DISASTER-RECOVERY.md)
 documents. Do not copy or improvise their network lifecycle commands here.
+The independently accepted server revision
+`d703d7ebf09aef69bc5cc7188e4882ac6f30e4c2` must be landed and deployed before this rollout.
 
 The coordinated cutover requires Docker Engine 28 or newer and an Engine API
 whose container-network inspection exposes array-valued `DNSNames`. From an
@@ -78,7 +80,9 @@ bash ~/server/scripts/ensure-trader-db-network.sh
 ```
 
 That command must report `TRADER_DB_NETWORK_READY`. This provider must never
-create, delete, repair, connect, or disconnect the external network.
+create, delete, or repair the external network lifecycle. Its Compose deployment
+legitimately attaches and replaces only its own PostgreSQL endpoint on that
+server-owned network.
 
 The only supported rollout order is **server → provider → consumer**:
 

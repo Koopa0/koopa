@@ -170,6 +170,11 @@ validate_trader_db_endpoints() {
     echo "ERROR: trader-db contains duplicate approved endpoints or DNS names" >&2
     return 1
   fi
+  if [[ "$require_postgres" == "false" ]] &&
+    ((trader_count > 0 && provider_count == 0)); then
+    echo "ERROR: trader-db consumer endpoint exists without provider PostgreSQL" >&2
+    return 1
+  fi
   if [[ "$require_postgres" == "true" ]] &&
     ((provider_count != 1 || postgres_name_count != 1)); then
     echo "ERROR: trader-db PostgreSQL endpoint is missing after deployment" >&2

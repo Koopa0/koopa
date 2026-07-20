@@ -64,8 +64,10 @@ def check_provider_deployment_docs() -> list[str]:
         "server-owned lifecycle contract mismatch",
         "postgres DNS name is claimed by the trader endpoint",
         "trader endpoint joins networks other than trader-db",
-        "Koopa0/server/blob/main/VPS-SETUP.md",
-        "Koopa0/server/blob/main/DISASTER-RECOVERY.md",
+        "d703d7ebf09aef69bc5cc7188e4882ac6f30e4c2",
+        "must be landed and deployed before this rollout",
+        "Koopa0/server/blob/d703d7ebf09aef69bc5cc7188e4882ac6f30e4c2/VPS-SETUP.md",
+        "Koopa0/server/blob/d703d7ebf09aef69bc5cc7188e4882ac6f30e4c2/DISASTER-RECOVERY.md",
     )
     missing = [needle for needle in required if needle not in readme]
     readme_zh_tw = README_ZH_TW.read_text(encoding="utf-8")
@@ -78,6 +80,8 @@ def check_provider_deployment_docs() -> list[str]:
         for needle in zh_tw_required
         if needle not in readme_zh_tw
     )
+    if "Koopa0/server/blob/main/" in readme:
+        missing.append("moving-server-doc-authority")
     if not missing:
         return []
     return [f"caught:provider-deployment-docs-missing needles={missing!r}"]
@@ -1327,6 +1331,10 @@ def check_deploy_script() -> list[str]:
         (
             "compose-owned",
             "ERROR: trader-db server-owned lifecycle contract mismatch",
+        ),
+        (
+            "missing-postgres",
+            "ERROR: trader-db consumer endpoint exists without provider PostgreSQL",
         ),
         ("unexpected-endpoint", "ERROR: trader-db contains an unexpected endpoint"),
     )
