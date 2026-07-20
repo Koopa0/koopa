@@ -400,6 +400,25 @@ describe('ContentEditorPageComponent', () => {
         ),
       ).toBeNull();
     });
+
+    it('should not let the publish shortcut bypass the hidden promotion actions', async () => {
+      document.dispatchEvent(
+        new KeyboardEvent('keydown', {
+          key: 'P',
+          metaKey: true,
+          shiftKey: true,
+          bubbles: true,
+        }),
+      );
+      await settle();
+
+      expect(
+        el().querySelector('[data-testid="publish-no-topic-warn"]'),
+      ).toBeNull();
+      httpMock.expectNone(
+        (r) => r.method === 'POST' && r.url.endsWith('/publish'),
+      );
+    });
   });
 
   describe('source-bound review snapshot mode', () => {
