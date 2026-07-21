@@ -23,17 +23,68 @@ import subprocess
 import sys
 import tempfile
 import textwrap
+from copy import deepcopy
 
 
 ROOT = Path(__file__).resolve().parents[1]
+README = ROOT / "README.md"
+README_ZH_TW = ROOT / "README.zh-TW.md"
 WORKFLOW = ROOT / ".github/workflows/ci.yml"
 COMPOSE = ROOT / "docker-compose.yml"
 DEPLOY_ENTRYPOINT = ROOT / "scripts/deploy-production.sh"
 EXPECTED_SHA = "1111111111111111111111111111111111111111"
+TOPOLOGY_RECEIPT = (
+    "TOPOLOGY_RECEIPT network=trader-db postgres=internal,trader-db "
+    "alias=postgres unexpected_endpoints=none backend_ready=ok mcp_health=ok"
+)
 
 
 class ContractFailure(RuntimeError):
     """A deploy identity invariant was not satisfied."""
+
+
+def check_provider_deployment_docs() -> list[str]:
+    """Require one discoverable provider-side cutover and rollback contract."""
+    readme = README.read_text(encoding="utf-8")
+    required = (
+        "## Provider deployment boundary",
+        "server-owned",
+        "Docker Engine 28",
+        "DNSNames",
+        "bash ~/server/scripts/ensure-trader-db-network.sh",
+        "server → provider → consumer",
+        "`postgres`: exactly `internal` + `trader-db`",
+        "`trader`: exactly `trader-db`",
+        "recreates PostgreSQL",
+        "interrupts existing database connections",
+        "Do not deploy the consumer",
+        "prior binary with the current secure topology",
+        "IPv4 NAT egress contract mismatch",
+        "ICC connectivity contract mismatch",
+        "server-owned lifecycle contract mismatch",
+        "postgres DNS name is claimed by the trader endpoint",
+        "trader endpoint joins networks other than trader-db",
+        "f46ff552fa14d48e7ebf8077bf81db28d026e5bb",
+        "must be landed and deployed before this rollout",
+        "Koopa0/server/blob/f46ff552fa14d48e7ebf8077bf81db28d026e5bb/VPS-SETUP.md",
+        "Koopa0/server/blob/f46ff552fa14d48e7ebf8077bf81db28d026e5bb/DISASTER-RECOVERY.md",
+    )
+    missing = [needle for needle in required if needle not in readme]
+    readme_zh_tw = README_ZH_TW.read_text(encoding="utf-8")
+    zh_tw_required = (
+        "README.md#provider-deployment-boundary",
+        "英文 README 為唯一正式版本",
+    )
+    missing.extend(
+        f"README.zh-TW.md:{needle}"
+        for needle in zh_tw_required
+        if needle not in readme_zh_tw
+    )
+    if "Koopa0/server/blob/main/" in readme:
+        missing.append("moving-server-doc-authority")
+    if not missing:
+        return []
+    return [f"caught:provider-deployment-docs-missing needles={missing!r}"]
 
 
 def extract_ssh_script(path: Path, deploy_sha: str = EXPECTED_SHA) -> str:
@@ -120,7 +171,8 @@ def extract_named_run_script(path: Path, step_name: str) -> str:
     ) + "\n"
 
 
-def check_compose_build_args() -> list[str]:
+def render_compose_config() -> tuple[dict[str, object] | None, list[str]]:
+    """Render the tracked Compose model with a deterministic build identity."""
     env = os.environ.copy()
     env["BUILD_SHA"] = EXPECTED_SHA
     proc = subprocess.run(
@@ -142,7 +194,7 @@ def check_compose_build_args() -> list[str]:
         check=False,
     )
     if proc.returncode != 0:
-        return [
+        return None, [
             "caught:compose-config-failed "
             f"exit={proc.returncode} stderr={proc.stderr.strip()}"
         ]
@@ -150,17 +202,141 @@ def check_compose_build_args() -> list[str]:
     try:
         config = json.loads(proc.stdout)
     except json.JSONDecodeError as err:
-        return [f"caught:compose-config-invalid-json error={err}"]
+        return None, [f"caught:compose-config-invalid-json error={err}"]
+
+    return config, []
+
+
+def check_compose_build_args(config: dict[str, object]) -> list[str]:
+    services = config.get("services", {})
+    if not isinstance(services, dict):
+        return ["caught:compose-services-invalid"]
 
     failures: list[str] = []
     for service in ("backend", "mcp"):
-        build = config.get("services", {}).get(service, {}).get("build") or {}
+        service_config = services.get(service, {})
+        if not isinstance(service_config, dict):
+            failures.append(f"caught:{service}-compose-service-invalid")
+            continue
+        build = service_config.get("build") or {}
+        if not isinstance(build, dict):
+            failures.append(f"caught:{service}-compose-build-invalid")
+            continue
         actual = (build.get("args") or {}).get("BUILD_SHA")
         if actual != EXPECTED_SHA:
             failures.append(
                 f"caught:{service}-build-sha-not-propagated "
                 f"expected={EXPECTED_SHA} actual={actual!r}"
             )
+    return failures
+
+
+def compose_topology_failures(config: dict[str, object]) -> list[str]:
+    """Return named failures for the provider-side trader-db contract."""
+    failures: list[str] = []
+    networks = config.get("networks")
+    services = config.get("services")
+    if not isinstance(networks, dict):
+        return ["caught:compose-networks-invalid"]
+    if not isinstance(services, dict):
+        return ["caught:compose-services-invalid"]
+
+    provider = networks.get("trader-db")
+    if not isinstance(provider, dict):
+        failures.append("caught:compose-trader-db-network-missing")
+    else:
+        if provider.get("name") != "trader-db" or provider.get("external") is not True:
+            failures.append("caught:compose-trader-db-network-not-external")
+
+    postgres = services.get("postgres")
+    if not isinstance(postgres, dict):
+        failures.append("caught:compose-postgres-service-missing")
+        return failures
+    postgres_networks = postgres.get("networks")
+    if not isinstance(postgres_networks, dict):
+        failures.append("caught:compose-postgres-networks-invalid")
+        postgres_networks = {}
+    if set(postgres_networks) != {"internal", "trader-db"}:
+        failures.append("caught:compose-postgres-network-membership-invalid")
+
+    provider_attachment = postgres_networks.get("trader-db")
+    if not isinstance(provider_attachment, dict):
+        failures.append("caught:compose-postgres-alias-missing")
+    elif provider_attachment.get("aliases") != ["postgres"]:
+        failures.append("caught:compose-postgres-alias-not-unique")
+
+    internal_attachment = postgres_networks.get("internal")
+    if isinstance(internal_attachment, dict) and internal_attachment.get("aliases"):
+        failures.append("caught:compose-postgres-alias-leaked-to-internal")
+
+    for service_name, service_config in services.items():
+        if service_name == "postgres" or not isinstance(service_config, dict):
+            continue
+        service_networks = service_config.get("networks") or {}
+        if isinstance(service_networks, dict) and "trader-db" in service_networks:
+            failures.append(
+                f"caught:compose-unexpected-trader-db-member service={service_name}"
+            )
+
+    return failures
+
+
+def check_compose_topology_mutations(config: dict[str, object]) -> list[str]:
+    """Prove the test oracle turns red for each load-bearing topology mutation."""
+    failures: list[str] = []
+    if baseline := compose_topology_failures(config):
+        return baseline
+
+    def require_failure(name: str, mutant: dict[str, object], marker: str) -> None:
+        observed = compose_topology_failures(mutant)
+        if not any(failure.startswith(marker) for failure in observed):
+            failures.append(
+                f"caught:mutation-survived name={name} expected={marker!r} "
+                f"observed={observed!r}"
+            )
+
+    missing_network = deepcopy(config)
+    del missing_network["networks"]["trader-db"]  # type: ignore[index]
+    require_failure(
+        "missing-provider-network",
+        missing_network,
+        "caught:compose-trader-db-network-missing",
+    )
+
+    extra_network = deepcopy(config)
+    extra_network["services"]["postgres"]["networks"]["edge"] = None  # type: ignore[index]
+    require_failure(
+        "extra-postgres-network",
+        extra_network,
+        "caught:compose-postgres-network-membership-invalid",
+    )
+
+    missing_alias = deepcopy(config)
+    missing_alias["services"]["postgres"]["networks"]["trader-db"] = None  # type: ignore[index]
+    require_failure(
+        "missing-postgres-alias",
+        missing_alias,
+        "caught:compose-postgres-alias-missing",
+    )
+
+    colliding_alias = deepcopy(config)
+    colliding_alias["services"]["backend"]["networks"]["trader-db"] = {  # type: ignore[index]
+        "aliases": ["postgres"]
+    }
+    require_failure(
+        "colliding-postgres-alias",
+        colliding_alias,
+        "caught:compose-unexpected-trader-db-member",
+    )
+
+    other_service = deepcopy(config)
+    other_service["services"]["mcp"]["networks"]["trader-db"] = None  # type: ignore[index]
+    require_failure(
+        "other-service-joins-trader-db",
+        other_service,
+        "caught:compose-unexpected-trader-db-member",
+    )
+
     return failures
 
 
@@ -237,6 +413,135 @@ def install_boundary_stubs(bin_dir: Path) -> None:
         fi
         printf 'docker BUILD_SHA=%s %s\n' "${BUILD_SHA:-}" "$*" >> "$HARNESS_LOG"
 
+        if [[ "${1:-}" == "network" && "${2:-}" == "inspect" ]]; then
+          count_file="$HARNESS_STATE_DIR/network-inspect-count"
+          count=0
+          if [[ -f "$count_file" ]]; then
+            count=$(cat "$count_file")
+          fi
+          count=$((count + 1))
+          printf '%s\n' "$count" > "$count_file"
+          if [[ "$count" -eq 1 ]]; then
+            mode="$NETWORK_PRE_MODE"
+          else
+            mode="$NETWORK_POST_MODE"
+          fi
+          printf 'network-inspect phase=%s mode=%s\n' "$count" "$mode" >> "$HARNESS_LOG"
+          case "$mode" in
+            inspect-fail) exit 1 ;;
+            empty)
+              containers='{}'
+              ;;
+            postgres-only)
+              containers='{"provider-postgres-id":{"Name":"koopa0dev-postgres-1"}}'
+              ;;
+            unexpected-endpoint)
+              containers='{"provider-postgres-id":{"Name":"koopa0dev-postgres-1"},"rogue-id":{"Name":"rogue"}}'
+              ;;
+            missing-postgres)
+              containers='{"trader-id":{"Name":"tw-stock-trader-trader-1"}}'
+              ;;
+            *)
+              containers='{"provider-postgres-id":{"Name":"koopa0dev-postgres-1"},"trader-id":{"Name":"tw-stock-trader-trader-1"}}'
+              ;;
+          esac
+          driver=bridge
+          scope=local
+          internal=false
+          enable_ipv4=true
+          options='{}'
+          labels='{}'
+          case "$mode" in
+            wrong-driver) driver=overlay ;;
+            wrong-scope) scope=swarm ;;
+            internal) internal=true ;;
+            ipv4-disabled) enable_ipv4=false ;;
+            unsafe-egress) options='{"com.docker.network.bridge.enable_ip_masquerade":"false"}' ;;
+            icc-disabled) options='{"com.docker.network.bridge.enable_icc":"false"}' ;;
+            inhibit-ipv4) options='{"com.docker.network.bridge.inhibit_ipv4":"true"}' ;;
+            routed-gateway) options='{"com.docker.network.bridge.gateway_mode_ipv4":"routed"}' ;;
+            isolated-gateway) options='{"com.docker.network.bridge.gateway_mode_ipv4":"isolated"}' ;;
+            compose-owned) labels='{"com.docker.compose.project":"rogue","com.docker.compose.network":"trader-db"}' ;;
+          esac
+          printf '[{"Name":"trader-db","Driver":"%s","Scope":"%s","Internal":%s,"EnableIPv4":%s,"Options":%s,"Labels":%s,"Containers":%s}]\n' \
+            "$driver" "$scope" "$internal" "$enable_ipv4" "$options" "$labels" "$containers"
+          exit 0
+        fi
+
+        if [[ "${1:-}" == "inspect" ]]; then
+          container_id="${2:-}"
+          inspect_phase=1
+          if [[ -f "$HARNESS_STATE_DIR/network-inspect-count" ]]; then
+            inspect_phase=$(cat "$HARNESS_STATE_DIR/network-inspect-count")
+          fi
+          case "$container_id" in
+            provider-postgres-id)
+              postgres_mode="$POSTGRES_PRE_MODE"
+              if [[ "$inspect_phase" -gt 1 ]]; then
+                postgres_mode="$POSTGRES_LIVE_MODE"
+              fi
+              case "$postgres_mode" in
+                valid)
+                  networks='{"internal":{"Aliases":["koopa0dev-postgres-1","postgres"],"DNSNames":["postgres","koopa0dev-postgres-1"]},"trader-db":{"Aliases":["koopa0dev-postgres-1","postgres"],"DNSNames":["postgres","koopa0dev-postgres-1"]}}'
+                  ;;
+                missing-internal)
+                  networks='{"trader-db":{"Aliases":["koopa0dev-postgres-1","postgres"],"DNSNames":["postgres","koopa0dev-postgres-1"]}}'
+                  ;;
+                missing-provider)
+                  networks='{"internal":{"Aliases":["koopa0dev-postgres-1","postgres"],"DNSNames":["postgres","koopa0dev-postgres-1"]}}'
+                  ;;
+                missing-alias)
+                  networks='{"internal":{"Aliases":["koopa0dev-postgres-1","postgres"],"DNSNames":["postgres","koopa0dev-postgres-1"]},"trader-db":{"Aliases":["koopa0dev-postgres-1"],"DNSNames":["koopa0dev-postgres-1"]}}'
+                  ;;
+                missing-dns-name)
+                  networks='{"internal":{"Aliases":["koopa0dev-postgres-1","postgres"],"DNSNames":["postgres","koopa0dev-postgres-1"]},"trader-db":{"Aliases":["koopa0dev-postgres-1","postgres"],"DNSNames":["koopa0dev-postgres-1"]}}'
+                  ;;
+                malformed-dns-names)
+                  networks='{"internal":{"Aliases":["koopa0dev-postgres-1","postgres"],"DNSNames":["postgres","koopa0dev-postgres-1"]},"trader-db":{"Aliases":["koopa0dev-postgres-1","postgres"],"DNSNames":"postgres"}}'
+                  ;;
+                extra-network)
+                  networks='{"edge":{"Aliases":["koopa0dev-postgres-1"],"DNSNames":["koopa0dev-postgres-1"]},"internal":{"Aliases":["koopa0dev-postgres-1","postgres"],"DNSNames":["postgres","koopa0dev-postgres-1"]},"trader-db":{"Aliases":["koopa0dev-postgres-1","postgres"],"DNSNames":["postgres","koopa0dev-postgres-1"]}}'
+                  ;;
+                *) printf 'unexpected postgres live mode: %s\n' "$postgres_mode" >&2; exit 67 ;;
+              esac
+              printf '[{"Config":{"Labels":{"com.docker.compose.project":"koopa0dev","com.docker.compose.service":"postgres"}},"NetworkSettings":{"Networks":%s}}]\n' "$networks"
+              ;;
+            trader-id)
+              aliases='["tw-stock-trader-trader-1"]'
+              dns_names='["trader","tw-stock-trader-trader-1"]'
+              dns_names_field=",\"DNSNames\":$dns_names"
+              trader_network_mode="$TRADER_PRE_NETWORK_MODE"
+              trader_dns_mode="$TRADER_PRE_DNS_MODE"
+              if [[ "$inspect_phase" -gt 1 ]]; then
+                trader_network_mode="$TRADER_NETWORK_MODE"
+                trader_dns_mode="$TRADER_DNS_MODE"
+              fi
+              case "$trader_dns_mode" in
+                valid) ;;
+                collision)
+                  dns_names='["postgres","trader","tw-stock-trader-trader-1"]'
+                  dns_names_field=",\"DNSNames\":$dns_names"
+                  ;;
+                missing) dns_names_field= ;;
+                malformed) dns_names_field=',"DNSNames":"trader"' ;;
+                *) printf 'unexpected trader DNS mode: %s\n' "$trader_dns_mode" >&2; exit 71 ;;
+              esac
+              networks=$(printf '{"trader-db":{"Aliases":%s%s}}' "$aliases" "$dns_names_field")
+              case "$trader_network_mode" in
+                valid) ;;
+                extra-internal) networks=$(jq -c '.internal = {"Aliases":["trader"]}' <<<"$networks") ;;
+                *) printf 'unexpected trader network mode: %s\n' "$trader_network_mode" >&2; exit 72 ;;
+              esac
+              printf '[{"Config":{"Labels":{"com.docker.compose.project":"tw-stock-trader","com.docker.compose.service":"trader"}},"NetworkSettings":{"Networks":%s}}]\n' "$networks"
+              ;;
+            rogue-id)
+              printf '[{"Config":{"Labels":{"com.docker.compose.project":"rogue","com.docker.compose.service":"rogue"}},"NetworkSettings":{"Networks":{"trader-db":{"Aliases":["rogue"]}}}}]\n'
+              ;;
+            *) printf 'unexpected inspect id: %s\n' "$container_id" >&2; exit 68 ;;
+          esac
+          exit 0
+        fi
+
         if [[ "${1:-}" == "compose" && "${2:-}" == "up" ]]; then
           exit 0
         fi
@@ -245,8 +550,22 @@ def install_boundary_stubs(bin_dir: Path) -> None:
         fi
         if [[ "${1:-}" == "compose" && "${2:-}" == "config" ]]; then
           config_sha="${COMPOSE_CONFIG_SHA:-${BUILD_SHA:-dev}}"
-          printf '{"services":{"backend":{"build":{"args":{"BUILD_SHA":"%s"}}},"mcp":{"build":{"args":{"BUILD_SHA":"%s"}}}}}\n' \
-            "$config_sha" "$config_sha"
+          config=$(printf '{"networks":{"edge":{"name":"edge","external":true},"internal":{"name":"internal","external":true},"trader-db":{"name":"trader-db","external":true}},"services":{"frontend":{"networks":{"edge":null}},"postgres":{"networks":{"internal":null,"trader-db":{"aliases":["postgres"]}}},"backend":{"build":{"args":{"BUILD_SHA":"%s"}},"networks":{"edge":null,"internal":null}},"mcp":{"build":{"args":{"BUILD_SHA":"%s"}},"networks":{"internal":null}}}}' \
+            "$config_sha" "$config_sha")
+          case "$COMPOSE_TOPOLOGY_MODE" in
+            valid) ;;
+            missing-provider) config=$(jq -c 'del(.networks["trader-db"])' <<<"$config") ;;
+            extra-postgres-network) config=$(jq -c '.services.postgres.networks.edge = null' <<<"$config") ;;
+            missing-alias) config=$(jq -c '.services.postgres.networks["trader-db"] = null' <<<"$config") ;;
+            colliding-alias) config=$(jq -c '.services.backend.networks["trader-db"] = {"aliases":["postgres"]}' <<<"$config") ;;
+            other-service) config=$(jq -c '.services.mcp.networks["trader-db"] = null' <<<"$config") ;;
+            *) printf 'unexpected compose topology mode: %s\n' "$COMPOSE_TOPOLOGY_MODE" >&2; exit 69 ;;
+          esac
+          printf '%s\n' "$config"
+          exit 0
+        fi
+        if [[ "${1:-}" == "compose" && "${2:-}" == "ps" && "${3:-}" == "-q" && "${4:-}" == "postgres" ]]; then
+          printf '%s\n' 'provider-postgres-id'
           exit 0
         fi
         if [[ "${1:-}" == "image" && "${2:-}" == "prune" ]]; then
@@ -257,7 +576,17 @@ def install_boundary_stubs(bin_dir: Path) -> None:
         fi
         if [[ "${1:-}" == "compose" && "${2:-}" == "exec" ]]; then
           service="${4:-}"
-          printf 'probe %s\n' "$service" >> "$HARNESS_LOG"
+          endpoint="${!#}"
+          if [[ "$service" == "backend" && "$endpoint" == *"/readyz" ]]; then
+            printf 'probe backend-ready\n' >> "$HARNESS_LOG"
+            case "$BACKEND_READY_MODE" in
+              valid) printf 'ready\n' ;;
+              http-fail) exit 7 ;;
+              *) printf 'unexpected readiness mode: %s\n' "$BACKEND_READY_MODE" >&2; exit 70 ;;
+            esac
+            exit 0
+          fi
+          printf 'probe %s-health\n' "$service" >> "$HARNESS_LOG"
           case "$service" in
             backend) mode="$BACKEND_HEALTH_MODE"; sha="$BACKEND_HEALTH_SHA" ;;
             mcp) mode="$MCP_HEALTH_MODE"; sha="$MCP_HEALTH_SHA" ;;
@@ -327,6 +656,7 @@ def run_deploy(
     mcp_sha: str = EXPECTED_SHA,
     backend_mode: str = "valid",
     mcp_mode: str = "valid",
+    backend_ready_mode: str = "valid",
     checked_out_sha: str = EXPECTED_SHA,
     grafana_env: str = "GRAFANA_ADMIN_PASSWORD=test-password\n",
     ambient_build_sha: str | None = None,
@@ -334,6 +664,15 @@ def run_deploy(
     ambient_compose_env_files: str | None = None,
     ambient_compose_disable_env_file: str | None = None,
     compose_config_sha: str | None = None,
+    compose_topology_mode: str = "valid",
+    network_pre_mode: str = "valid",
+    network_post_mode: str = "valid",
+    postgres_pre_mode: str = "valid",
+    postgres_live_mode: str = "valid",
+    trader_pre_dns_mode: str = "valid",
+    trader_dns_mode: str = "valid",
+    trader_pre_network_mode: str = "valid",
+    trader_network_mode: str = "valid",
     release_entrypoint_blob_override: str | None = None,
 ) -> tuple[subprocess.CompletedProcess[str], str]:
     with tempfile.TemporaryDirectory(prefix="koopa-deploy-identity-") as raw_tmp:
@@ -343,11 +682,13 @@ def run_deploy(
         observability = home / "server/observability"
         bin_dir = tmp / "bin"
         runtime_tmp = tmp / "runtime-tmp"
+        harness_state = tmp / "harness-state"
         repo.mkdir(parents=True)
         (repo / ".env").write_text("# deploy harness\n", encoding="utf-8")
         observability.mkdir(parents=True)
         bin_dir.mkdir()
         runtime_tmp.mkdir()
+        harness_state.mkdir()
         (observability / ".env").write_text(grafana_env, encoding="utf-8")
         install_boundary_stubs(bin_dir)
         if DEPLOY_ENTRYPOINT.exists():
@@ -371,6 +712,17 @@ def run_deploy(
                 "BACKEND_HEALTH_SHA": backend_sha,
                 "MCP_HEALTH_MODE": mcp_mode,
                 "MCP_HEALTH_SHA": mcp_sha,
+                "BACKEND_READY_MODE": backend_ready_mode,
+                "COMPOSE_TOPOLOGY_MODE": compose_topology_mode,
+                "NETWORK_PRE_MODE": network_pre_mode,
+                "NETWORK_POST_MODE": network_post_mode,
+                "POSTGRES_PRE_MODE": postgres_pre_mode,
+                "POSTGRES_LIVE_MODE": postgres_live_mode,
+                "TRADER_PRE_DNS_MODE": trader_pre_dns_mode,
+                "TRADER_DNS_MODE": trader_dns_mode,
+                "TRADER_PRE_NETWORK_MODE": trader_pre_network_mode,
+                "TRADER_NETWORK_MODE": trader_network_mode,
+                "HARNESS_STATE_DIR": str(harness_state),
                 "DEPLOY_ENTRYPOINT_SOURCE": str(DEPLOY_ENTRYPOINT),
                 "DEPLOY_ENTRYPOINT_BLOB": subprocess.check_output(
                     [shutil.which("git") or "git", "hash-object", str(DEPLOY_ENTRYPOINT)],
@@ -416,6 +768,22 @@ def assert_invoked(log: str, marker: str, case: str) -> list[str]:
     return []
 
 
+def assert_exact_error(
+    proc: subprocess.CompletedProcess[str], expected: str, case: str
+) -> list[str]:
+    """Require one sanitized operator-facing failure and no inspect payload."""
+    lines = proc.stderr.splitlines()
+    failures: list[str] = []
+    if lines != [expected]:
+        failures.append(
+            f"caught:{case}-diagnostic-mismatch expected={expected!r} actual={lines!r}"
+        )
+    forbidden = ("provider-postgres-id", "trader-id", "NetworkSettings", '"Config"')
+    if any(needle in proc.stderr for needle in forbidden):
+        failures.append(f"caught:{case}-diagnostic-leaked-inspect-payload")
+    return failures
+
+
 def run_receipt_verifier(script: str, stdout: str) -> subprocess.CompletedProcess[str]:
     env = os.environ.copy()
     env.update({"DEPLOY_SHA": EXPECTED_SHA, "DEPLOY_STDOUT": stdout})
@@ -451,7 +819,9 @@ def check_deploy_receipt() -> list[str]:
         f"DEPLOY_RECEIPT sha={EXPECTED_SHA} "
         f"backend={EXPECTED_SHA} mcp={EXPECTED_SHA}"
     )
-    positive = run_receipt_verifier(verifier, f"build output\n{expected}\n")
+    positive = run_receipt_verifier(
+        verifier, f"build output\n{TOPOLOGY_RECEIPT}\n{expected}\n"
+    )
     if positive.returncode != 0:
         failures.append(
             "caught:valid-deploy-receipt-rejected "
@@ -463,6 +833,14 @@ def check_deploy_receipt() -> list[str]:
         (
             "stale-deploy-receipt-accepted",
             "DEPLOY_RECEIPT sha=dev backend=dev mcp=dev\n",
+        ),
+        ("missing-topology-receipt-accepted", f"build output\n{expected}\n"),
+        (
+            "forged-topology-receipt-accepted",
+            "TOPOLOGY_RECEIPT network=internal postgres=internal "
+            "alias=missing unexpected_endpoints=unknown "
+            "backend_ready=ok mcp_health=ok\n"
+            f"{expected}\n",
         ),
     )
     for name, stdout in cases:
@@ -674,6 +1052,9 @@ def check_deploy_script() -> list[str]:
             '--project-name "$DEPLOY_COMPOSE_PROJECT"',
             '--file "$DEPLOY_COMPOSE_FILE"',
             '--env-file "$DEPLOY_COMPOSE_ENV_FILE"',
+            'docker network inspect "trader-db"',
+            'http://localhost:8080/readyz',
+            'TOPOLOGY_RECEIPT network=trader-db',
         )
         for needle in required_entrypoint:
             if needle not in deploy_script:
@@ -716,6 +1097,30 @@ def check_deploy_script() -> list[str]:
     )
     failures.extend(assert_invoked(positive_log, "probe backend", "backend-health"))
     failures.extend(assert_invoked(positive_log, "probe mcp", "mcp-health"))
+    failures.extend(
+        assert_invoked(
+            positive_log,
+            "network-inspect phase=1 mode=valid",
+            "trader-db-preflight",
+        )
+    )
+    failures.extend(
+        assert_invoked(
+            positive_log,
+            "network-inspect phase=2 mode=valid",
+            "trader-db-postflight",
+        )
+    )
+    failures.extend(
+        assert_invoked(
+            positive_log,
+            "docker BUILD_SHA=" + EXPECTED_SHA + " compose ps -q postgres",
+            "postgres-container-identity",
+        )
+    )
+    failures.extend(
+        assert_invoked(positive_log, "probe backend-ready", "backend-readiness")
+    )
     if positive.returncode != 0:
         failures.append(
             "caught:matching-runtime-sha-rejected "
@@ -845,15 +1250,32 @@ def check_deploy_script() -> list[str]:
     config_pos = deploy_script.find("compose config --format json")
     build_pos = deploy_script.find("compose build --build-arg")
     health_pos = deploy_script.find("# Post-deploy health check")
+    ready_pos = deploy_script.find("http://localhost:8080/readyz")
+    topology_pos = deploy_script.find("TOPOLOGY_RECEIPT network=trader-db")
     prune_pos = deploy_script.find("docker image prune -f")
     receipt_pos = deploy_script.find("DEPLOY_RECEIPT sha=")
-    if min(config_pos, build_pos, health_pos, prune_pos, receipt_pos) < 0 or not (
-        config_pos < build_pos < health_pos < prune_pos < receipt_pos
+    if min(
+        config_pos,
+        build_pos,
+        health_pos,
+        ready_pos,
+        topology_pos,
+        prune_pos,
+        receipt_pos,
+    ) < 0 or not (
+        config_pos
+        < build_pos
+        < health_pos
+        < ready_pos
+        < prune_pos
+        < topology_pos
+        < receipt_pos
     ):
         failures.append(
             "caught:deploy-receipt-order-invalid "
             f"config={config_pos} build={build_pos} health={health_pos} "
-            f"prune={prune_pos} receipt={receipt_pos}"
+            f"ready={ready_pos} prune={prune_pos} topology={topology_pos} "
+            f"receipt={receipt_pos}"
         )
     if DEPLOY_ENTRYPOINT.is_file() and not deploy_script.rstrip().endswith(
         '"$DEPLOY_SHA" "$backend_receipt_sha" "$mcp_receipt_sha"'
@@ -869,6 +1291,228 @@ def check_deploy_script() -> list[str]:
             "caught:remote-deploy-receipt-missing "
             f"expected={expected_receipt!r} stdout={positive.stdout.strip()!r}"
         )
+    if positive.stdout.splitlines()[-2:] != [TOPOLOGY_RECEIPT, expected_receipt]:
+        failures.append(
+            "caught:topology-and-deploy-receipts-not-terminal "
+            f"tail={positive.stdout.splitlines()[-2:]!r}"
+        )
+
+    compose_preflight_cases = (
+        "missing-provider",
+        "extra-postgres-network",
+        "missing-alias",
+        "colliding-alias",
+        "other-service",
+    )
+    for mode in compose_preflight_cases:
+        proc, log = run_deploy(script, compose_topology_mode=mode)
+        failures.extend(
+            assert_invoked(log, "compose config --format json", f"compose-{mode}")
+        )
+        if proc.returncode == 0:
+            failures.append(f"caught:compose-topology-{mode}-accepted exit=0")
+        if "compose build" in log:
+            failures.append(f"caught:compose-topology-{mode}-reached-build")
+
+    network_preflight_cases = (
+        (
+            "inspect-fail",
+            "ERROR: required trader-db network is missing or unreadable",
+        ),
+        ("wrong-driver", "ERROR: trader-db base bridge contract mismatch"),
+        ("wrong-scope", "ERROR: trader-db base bridge contract mismatch"),
+        ("internal", "ERROR: trader-db base bridge contract mismatch"),
+        ("ipv4-disabled", "ERROR: trader-db IPv4 NAT egress contract mismatch"),
+        ("unsafe-egress", "ERROR: trader-db IPv4 NAT egress contract mismatch"),
+        ("inhibit-ipv4", "ERROR: trader-db IPv4 NAT egress contract mismatch"),
+        ("routed-gateway", "ERROR: trader-db IPv4 NAT egress contract mismatch"),
+        ("isolated-gateway", "ERROR: trader-db IPv4 NAT egress contract mismatch"),
+        ("icc-disabled", "ERROR: trader-db ICC connectivity contract mismatch"),
+        (
+            "compose-owned",
+            "ERROR: trader-db server-owned lifecycle contract mismatch",
+        ),
+        (
+            "missing-postgres",
+            "ERROR: trader-db consumer endpoint exists without provider PostgreSQL",
+        ),
+        ("unexpected-endpoint", "ERROR: trader-db contains an unexpected endpoint"),
+    )
+    for mode, expected_error in network_preflight_cases:
+        proc, log = run_deploy(script, network_pre_mode=mode)
+        failures.extend(
+            assert_invoked(log, "network-inspect phase=1", f"network-{mode}")
+        )
+        failures.extend(assert_exact_error(proc, expected_error, f"network-{mode}"))
+        if proc.returncode == 0:
+            failures.append(f"caught:network-preflight-{mode}-accepted exit=0")
+        if "compose build" in log:
+            failures.append(f"caught:network-preflight-{mode}-reached-build")
+
+    for mode in ("missing-dns-name", "malformed-dns-names"):
+        proc, log = run_deploy(script, postgres_pre_mode=mode)
+        failures.extend(
+            assert_invoked(log, "network-inspect phase=1", f"provider-dns-{mode}")
+        )
+        failures.extend(
+            assert_exact_error(
+                proc,
+                "ERROR: trader-db PostgreSQL endpoint does not own the postgres DNS name",
+                f"provider-dns-{mode}",
+            )
+        )
+        if proc.returncode == 0:
+            failures.append(f"caught:provider-dns-{mode}-accepted exit=0")
+        if "compose build" in log:
+            failures.append(f"caught:provider-dns-{mode}-reached-build")
+
+    dns_collision, dns_collision_log = run_deploy(
+        script, trader_pre_dns_mode="collision"
+    )
+    failures.extend(
+        assert_invoked(
+            dns_collision_log,
+            "network-inspect phase=1",
+            "network-dns-name-collision",
+        )
+    )
+    if dns_collision.returncode == 0:
+        failures.append("caught:network-preflight-dns-name-collision-accepted exit=0")
+    failures.extend(
+        assert_exact_error(
+            dns_collision,
+            "ERROR: trader-db postgres DNS name is claimed by the trader endpoint",
+            "network-dns-name-collision",
+        )
+    )
+    if "compose build" in dns_collision_log:
+        failures.append("caught:network-preflight-dns-name-collision-reached-build")
+
+    for mode in ("missing", "malformed"):
+        proc, log = run_deploy(script, trader_pre_dns_mode=mode)
+        failures.extend(
+            assert_invoked(log, "network-inspect phase=1", f"network-dns-names-{mode}")
+        )
+        if proc.returncode == 0:
+            failures.append(
+                f"caught:network-preflight-dns-names-{mode}-accepted exit=0"
+            )
+        failures.extend(
+            assert_exact_error(
+                proc,
+                "ERROR: trader-db trader endpoint DNS names are missing or unreadable",
+                f"network-dns-names-{mode}",
+            )
+        )
+        if "compose build" in log:
+            failures.append(f"caught:network-preflight-dns-names-{mode}-reached-build")
+
+    extra_trader_network, extra_trader_network_log = run_deploy(
+        script, trader_pre_network_mode="extra-internal"
+    )
+    failures.extend(
+        assert_invoked(
+            extra_trader_network_log,
+            "network-inspect phase=1",
+            "network-trader-extra-internal",
+        )
+    )
+    if extra_trader_network.returncode == 0:
+        failures.append(
+            "caught:network-preflight-trader-extra-internal-accepted exit=0"
+        )
+    failures.extend(
+        assert_exact_error(
+            extra_trader_network,
+            "ERROR: trader-db trader endpoint joins networks other than trader-db",
+            "network-trader-extra-internal",
+        )
+    )
+    if "compose build" in extra_trader_network_log:
+        failures.append("caught:network-preflight-trader-extra-internal-reached-build")
+
+    first_cutover, first_cutover_log = run_deploy(
+        script, network_pre_mode="empty", network_post_mode="postgres-only"
+    )
+    failures.extend(
+        assert_invoked(
+            first_cutover_log,
+            "network-inspect phase=1 mode=empty",
+            "first-cutover-empty-network",
+        )
+    )
+    failures.extend(
+        assert_invoked(
+            first_cutover_log,
+            "network-inspect phase=2 mode=postgres-only",
+            "first-cutover-post-state",
+        )
+    )
+    if first_cutover.returncode != 0:
+        failures.append(
+            "caught:first-cutover-empty-to-postgres-only-rejected "
+            f"exit={first_cutover.returncode} stderr={first_cutover.stderr.strip()!r}"
+        )
+
+    postflight_cases = (
+        (
+            "postgres-missing-internal",
+            {"postgres_live_mode": "missing-internal"},
+        ),
+        (
+            "postgres-missing-provider",
+            {"postgres_live_mode": "missing-provider"},
+        ),
+        (
+            "postgres-missing-alias",
+            {"postgres_live_mode": "missing-alias"},
+        ),
+        (
+            "postgres-missing-dns-name",
+            {"postgres_live_mode": "missing-dns-name"},
+        ),
+        (
+            "postgres-malformed-dns-names",
+            {"postgres_live_mode": "malformed-dns-names"},
+        ),
+        (
+            "postgres-extra-network",
+            {"postgres_live_mode": "extra-network"},
+        ),
+        (
+            "postgres-endpoint-missing",
+            {"network_post_mode": "missing-postgres"},
+        ),
+        (
+            "live-dns-name-collision",
+            {"trader_dns_mode": "collision"},
+        ),
+        (
+            "trader-extra-internal",
+            {"trader_network_mode": "extra-internal"},
+        ),
+    )
+    for name, kwargs in postflight_cases:
+        proc, log = run_deploy(script, **kwargs)
+        failures.extend(
+            assert_invoked(log, "network-inspect phase=2", f"postflight-{name}")
+        )
+        if proc.returncode == 0:
+            failures.append(f"caught:postflight-{name}-accepted exit=0")
+
+    false_ready, false_ready_log = run_deploy(
+        script, backend_ready_mode="http-fail"
+    )
+    failures.extend(
+        assert_invoked(false_ready_log, "probe backend-health", "false-ready-health")
+    )
+    failures.extend(
+        assert_invoked(false_ready_log, "probe backend-ready", "false-ready-readyz")
+    )
+    if false_ready.returncode == 0:
+        failures.append("caught:healthz-success-readyz-failure-accepted exit=0")
+    if TOPOLOGY_RECEIPT in false_ready.stdout:
+        failures.append("caught:false-ready-emitted-topology-receipt")
 
     cases = (
         (
@@ -897,7 +1541,11 @@ def check_deploy_script() -> list[str]:
 
 
 def main() -> int:
-    failures = check_compose_build_args()
+    config, failures = render_compose_config()
+    failures.extend(check_provider_deployment_docs())
+    if config is not None:
+        failures.extend(check_compose_build_args(config))
+        failures.extend(check_compose_topology_mutations(config))
     failures.extend(check_commit_object_entrypoint())
     failures.extend(check_deploy_script())
     failures.extend(check_deploy_receipt())

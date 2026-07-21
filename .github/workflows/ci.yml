@@ -223,6 +223,12 @@ jobs:
           DEPLOY_STDOUT: ${{ steps.deploy_ssh.outputs.stdout }}
         run: |
           set -euo pipefail
+          topology="TOPOLOGY_RECEIPT network=trader-db postgres=internal,trader-db alias=postgres unexpected_endpoints=none backend_ready=ok mcp_health=ok"
+          if [[ $(grep -Fxc "$topology" <<<"$DEPLOY_STDOUT") -ne 1 ]] ||
+            [[ $(grep -c '^TOPOLOGY_RECEIPT ' <<<"$DEPLOY_STDOUT") -ne 1 ]]; then
+            echo "::error::SSH action completed without the exact topology receipt"
+            exit 1
+          fi
           expected="DEPLOY_RECEIPT sha=${DEPLOY_SHA} backend=${DEPLOY_SHA} mcp=${DEPLOY_SHA}"
           if ! grep -Fqx "$expected" <<<"$DEPLOY_STDOUT"; then
             echo "::error::SSH action completed without the exact deployment receipt: $expected"

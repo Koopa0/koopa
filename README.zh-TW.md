@@ -59,6 +59,11 @@
 
 這是設計上的單管理員系統：一個人，多個 AI agent — 沒有團隊帳號、沒有角色、沒有「分享給同事」。管理端是私有的；公開網站只顯示一部分內容（article、build log、TIL），而且只有在你發佈之後。Goal 與私人筆記永遠私有。Koopa 保存規劃狀態並發佈選定的寫作；私人知識庫活在 Obsidian。如果你想要團隊 wiki 或 Notion clone，不是這個。
 
+## Provider 部署邊界
+
+跨 repository 的 `trader-db` cutover、拓撲、停止與 rollback 契約請見
+[Provider deployment boundary](README.md#provider-deployment-boundary)。英文 README 為唯一正式版本；本頁不複製可能產生版本分歧的操作指令。
+
 ---
 
 ## 授權
