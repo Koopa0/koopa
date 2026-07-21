@@ -87,7 +87,7 @@ export class FeedsListPageComponent {
   constructor() {
     this.topbar.set({
       title: 'Feeds',
-      crumbs: ['Knowledge', 'Feeds'],
+      crumbs: ['Input', 'Feeds'],
       actions: [
         {
           id: 'open-triage',

@@ -200,8 +200,8 @@ export class ContentListPageComponent {
     effect(() => {
       const data = this.routeData();
       this.topbar.set({
-        title: data.title ?? 'All content',
-        crumbs: data.crumbs ?? ['Knowledge', 'Content'],
+        title: data.title ?? 'Publications',
+        crumbs: data.crumbs ?? ['Publishing', 'Publications'],
         actions: [],
       });
     });
