@@ -104,6 +104,26 @@ describe('CommandPaletteService', () => {
     httpMock.verify();
   });
 
+  it('should use publication and input language for admin quick navigation', async () => {
+    const { router } = setup(true);
+    await router.navigateByUrl('/admin/daily/today');
+
+    const actions = service.actions();
+    expect(
+      actions.find((action) => action.id === 'admin-content'),
+    ).toMatchObject({ label: 'Publications', group: 'Publishing' });
+    expect(
+      actions.find((action) => action.id === 'admin-review-queue'),
+    ).toMatchObject({ group: 'Publishing' });
+    expect(actions.find((action) => action.id === 'admin-feeds')).toMatchObject(
+      { group: 'Input' },
+    );
+    expect(
+      actions.find((action) => action.id === 'admin-feeds-triage'),
+    ).toMatchObject({ group: 'Input' });
+    expect(actions.some((action) => action.group === 'Knowledge')).toBe(false);
+  });
+
   it('should load goals and projects when opening while authenticated', async () => {
     const { httpMock, router } = setup(true);
     // Admin entity actions only surface in the admin area.

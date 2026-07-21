@@ -302,10 +302,10 @@ export class ContentEditorPageComponent {
     ];
 
     return {
-      title: c ? `Editing · ${c.type}` : 'Content editor',
+      title: c ? `Editing · ${c.type}` : 'Publication snapshot',
       crumbs: c
-        ? ['Knowledge', 'Content', c.id.slice(0, 8)]
-        : ['Knowledge', 'Content'],
+        ? ['Publishing', 'Publications', c.id.slice(0, 8)]
+        : ['Publishing', 'Publications'],
       actions,
     };
   }

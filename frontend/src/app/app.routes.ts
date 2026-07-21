@@ -192,14 +192,17 @@ export const routes: Routes = [
           ),
       },
 
-      // ── Knowledge ────────────────────────────────────────────────
+      // ── Publishing ───────────────────────────────────────────────
       {
         path: 'knowledge/content',
         loadComponent: () =>
           import('./admin/knowledge/content/list/content-list.page').then(
             (m) => m.ContentListPageComponent,
           ),
-        data: { title: 'All content', crumbs: ['Knowledge', 'Content'] },
+        data: {
+          title: 'Publications',
+          crumbs: ['Publishing', 'Publications'],
+        },
       },
       {
         path: 'knowledge/content/:id/edit',
@@ -217,7 +220,7 @@ export const routes: Routes = [
           ),
         data: {
           title: 'Review queue',
-          crumbs: ['Knowledge', 'Review queue'],
+          crumbs: ['Publishing', 'Review queue'],
           initialStatus: 'review',
         },
       },
