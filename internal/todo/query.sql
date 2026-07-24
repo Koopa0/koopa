@@ -416,3 +416,42 @@ ORDER BY
         ELSE 5
     END,
     t.due NULLS LAST, t.created_at DESC;
+
+-- === Owner triage queries (list_inbox / triage_todo MCP tools) ===
+
+-- name: InboxTodos :many
+-- Cross-creator inbox queue for the list_inbox MCP tool: every todo in
+-- state=inbox regardless of created_by. Deliberately unscoped — it reads the
+-- owner's triage queue, not a caller's own rows (the caller-scoped readback
+-- stays TodosByCreator). Oldest first so the longest-waiting capture
+-- surfaces at the top. Uses idx_todos_inbox.
+SELECT id, title, description, created_by, created_at
+FROM todos
+WHERE state = 'inbox'
+ORDER BY created_at ASC;
+
+-- name: TodoStateForUpdate :one
+-- Lock a todo row and read its current state for the triage_todo verdict
+-- gate: the transition is validated in Go between this lock and the update,
+-- inside one transaction, so a concurrent state change cannot slip between
+-- check and write. An unknown id matches no row (pgx.ErrNoRows → not-found).
+SELECT state FROM todos WHERE id = @id FOR UPDATE;
+
+-- name: TriageAcceptTodo :one
+-- Execute the owner's ACCEPT verdict (triage_todo MCP tool): promote a todo
+-- to state=todo, optionally overriding project/due/energy in the same
+-- statement. Deliberately unscoped (no created_by predicate) — it executes
+-- the owner's verdict, not caller self-cleanup. NULL overrides preserve the
+-- captured values; recurrence columns are untouched. The caller validates
+-- the inbox source state under TodoStateForUpdate's row lock in the same
+-- transaction, so no state guard is repeated here.
+UPDATE todos
+SET state      = 'todo',
+    project_id = COALESCE(sqlc.narg('project_id'), project_id),
+    due        = COALESCE(sqlc.narg('due'), due),
+    energy     = COALESCE(sqlc.narg('energy'), energy),
+    updated_at = now()
+WHERE id = @id
+RETURNING id, title, state, due, project_id,
+          completed_at, energy, priority, recur_interval, recur_unit, recur_weekdays, last_completed_on,
+          description, created_by, created_at, updated_at;

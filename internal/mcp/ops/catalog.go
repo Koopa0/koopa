@@ -167,6 +167,36 @@ func SetTodoRecurrence() Meta {
 	}
 }
 
+// ListInbox returns metadata for the read half of the owner triage loop —
+// the cross-creator inbox queue, every capture regardless of creator.
+func ListInbox() Meta {
+	return Meta{
+		Name:        "list_inbox",
+		Domain:      DomainDaily,
+		Writability: ReadOnly,
+		Stability:   StabilityStable,
+		Since:       "1.10.0",
+		Description: "Read-only owner-triage queue: every todo in state=inbox regardless of who captured it — cross-creator BY DESIGN, unlike the caller-scoped list_todos. Each row carries id, title, created_by, age_days (whole days since capture), and description (empty string when absent); ordering is created_at ascending, so the longest-waiting capture comes first. Use it to ground a triage conversation before executing the owner's verdicts with triage_todo. Call it only in conversations the owner is present in — NEVER from scheduled or autonomous runs; the Hermes contract forbids using list_inbox and triage_todo. list_inbox itself writes nothing, and every triage mutation that follows leaves an audit trail.",
+	}
+}
+
+// TriageTodo returns metadata for the write half of the owner triage loop —
+// executing the owner's verdict on an inbox (or mis-triaged) todo.
+func TriageTodo() Meta {
+	return Meta{
+		Name:        "triage_todo",
+		Domain:      DomainDaily,
+		Writability: Destructive,
+		Stability:   StabilityStable,
+		Since:       "1.10.0",
+		Description: "Execute the owner's triage verdict on a todo — cross-creator BY DESIGN: it carries out the owner's decision, not caller self-cleanup, so it reaches any creator's row. Verdicts: 'accept' (inbox → todo), 'someday' (inbox → someday), 'dismiss' (inbox → dismissed) — these three act only on state=inbox; 'restore' (dismissed|someday → inbox) recovers a mis-triaged todo. The optional project, due (YYYY-MM-DD), and energy fields are valid only with accept and are rejected for every other verdict; omitted accept fields preserve the values captured on the row, and recurrence fields are never touched. Call it only in conversations the owner is present in — NEVER from scheduled or autonomous runs; the Hermes contract forbids using list_inbox and triage_todo. Every triage mutation leaves an audit trail attributed to the calling agent.",
+		FieldEnums: map[string][]string{
+			"verdict": {"accept", "someday", "dismiss", "restore"},
+			"energy":  {"high", "medium", "low"},
+		},
+	}
+}
+
 // ProjectProgress returns metadata for the read-only PARA momentum/stalled
 // tool — the owner's project/goal/area progress intelligence, computed live.
 func ProjectProgress() Meta {
@@ -236,6 +266,8 @@ func All() []Meta {
 		ListTodos(),
 		ResolveTodo(),
 		SetTodoRecurrence(),
+		ListInbox(),
+		TriageTodo(),
 		ProjectProgress(),
 		ListContent(),
 		ReviseContent(),

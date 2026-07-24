@@ -5,8 +5,9 @@
 // integration_test.go bundles every testcontainers-backed test for the
 // mcp package: the capture_inbox and actor-fallback cold-start paths,
 // plan_day position bounds, the propose_area / propose_goal /
-// propose_project inert-draft flow, list_todos readback, brief(reflection),
-// and the tools/list enum-advertising probe.
+// propose_project inert-draft flow, list_todos readback, the list_inbox /
+// triage_todo owner-triage loop, brief(reflection), and the tools/list
+// enum-advertising probe.
 //
 // Run with:
 //
@@ -16,6 +17,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"os"
 	"strings"
@@ -1928,5 +1930,358 @@ func TestIntegration_SetTodoRecurrence_ClearAfterOccurrence(t *testing.T) {
 	}
 	if lastCompleted != nil {
 		t.Errorf("after clear: last_completed_on = %v, want nil (invariant)", lastCompleted)
+	}
+}
+
+// ============================================================================
+// Owner triage loop: list_inbox + triage_todo (PR-5)
+// ============================================================================
+
+// setTodoColumn updates a single non-state todos column after seeding. The
+// audit trigger fires on INSERT and UPDATE OF state only, so these tweaks
+// leave the activity log untouched.
+func setTodoColumn(t *testing.T, id uuid.UUID, column, value string) {
+	t.Helper()
+	allowed := map[string]struct{}{"description": {}, "energy": {}, "recur_weekdays": {}}
+	if _, ok := allowed[column]; !ok {
+		t.Fatalf("setTodoColumn: column %q not allowed", column)
+	}
+	sql := "UPDATE todos SET " + column + " = $1 WHERE id = $2"
+	if _, err := testPool.Exec(t.Context(), sql, value, id); err != nil {
+		t.Fatalf("setTodoColumn(%s): %v", column, err)
+	}
+}
+
+// setTodoProject links a seeded todo to a project (nil clears the link).
+func setTodoProject(t *testing.T, id uuid.UUID, projectID *uuid.UUID) {
+	t.Helper()
+	if _, err := testPool.Exec(t.Context(),
+		`UPDATE todos SET project_id = $1 WHERE id = $2`, projectID, id,
+	); err != nil {
+		t.Fatalf("setTodoProject: %v", err)
+	}
+}
+
+// todoTriageRow reads back the columns the triage tests assert on.
+type todoTriageRow struct {
+	State     string
+	ProjectID *uuid.UUID
+	Due       *time.Time
+	Energy    *string
+}
+
+func readTodoTriageRow(t *testing.T, id uuid.UUID) todoTriageRow {
+	t.Helper()
+	var row todoTriageRow
+	if err := testPool.QueryRow(t.Context(),
+		`SELECT state, project_id, due, energy FROM todos WHERE id = $1`, id,
+	).Scan(&row.State, &row.ProjectID, &row.Due, &row.Energy); err != nil {
+		t.Fatalf("reading todo %s: %v", id, err)
+	}
+	return row
+}
+
+// TestIntegration_ListInbox_CrossCreatorQueue pins the owner-triage read
+// surface: EVERY state=inbox todo regardless of creator, oldest first, with
+// created_by, age_days (whole elapsed days), and description carried through;
+// non-inbox rows never appear. This is the deliberate contrast to the
+// caller-scoped list_todos.
+func TestIntegration_ListInbox_CrossCreatorQueue(t *testing.T) {
+	s := setupServer(t)
+
+	now := time.Now()
+	hermesID := seedTodoForCreator(t, "hermes", "hermes capture", "inbox", now.Add(-49*time.Hour))
+	setTodoColumn(t, hermesID, "description", "from the vault sweep")
+	claudeID := seedTodoForCreator(t, "claude", "claude capture", "inbox", now.Add(-25*time.Hour))
+	humanID := seedTodoForCreator(t, "human", "owner note", "inbox", now.Add(-time.Hour))
+	seedTodoForCreator(t, "claude", "already accepted", "todo", now.Add(-3*time.Hour))
+	seedTodoForCreator(t, "codex", "already done", "done", now.Add(-3*time.Hour))
+
+	_, out, err := callHandlerAs(t, "claude", s.listInbox, ListInboxInput{})
+	if err != nil {
+		t.Fatalf("listInbox: %v", err)
+	}
+
+	want := []InboxTodoItem{
+		{ID: hermesID.String(), Title: "hermes capture", CreatedBy: "hermes", AgeDays: 2, Description: "from the vault sweep"},
+		{ID: claudeID.String(), Title: "claude capture", CreatedBy: "claude", AgeDays: 1, Description: ""},
+		{ID: humanID.String(), Title: "owner note", CreatedBy: "human", AgeDays: 0, Description: ""},
+	}
+	if diff := cmp.Diff(want, out.Todos); diff != "" {
+		t.Errorf("listInbox mismatch (-want +got):\n%s", diff)
+	}
+}
+
+// TestIntegration_TriageTodo_Verdicts drives each verdict's legal transition
+// end-to-end and cross-creator (rows seeded as hermes, verdicts executed as
+// claude): accept inbox→todo, someday inbox→someday, dismiss inbox→dismissed,
+// restore dismissed→inbox and someday→inbox.
+func TestIntegration_TriageTodo_Verdicts(t *testing.T) {
+	s := setupServer(t)
+
+	tests := []struct {
+		name      string
+		seedState string
+		verdict   string
+		wantState string
+	}{
+		{name: "accept from inbox", seedState: "inbox", verdict: "accept", wantState: "todo"},
+		{name: "someday from inbox", seedState: "inbox", verdict: "someday", wantState: "someday"},
+		{name: "dismiss from inbox", seedState: "inbox", verdict: "dismiss", wantState: "dismissed"},
+		{name: "restore from dismissed", seedState: "dismissed", verdict: "restore", wantState: "inbox"},
+		{name: "restore from someday", seedState: "someday", verdict: "restore", wantState: "inbox"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			id := seedTodoForCreator(t, "hermes", tt.name, tt.seedState, time.Now())
+
+			_, out, err := callHandlerAs(t, "claude", s.triageTodo, TriageTodoInput{ID: id.String(), Verdict: tt.verdict})
+			if err != nil {
+				t.Fatalf("triageTodo(%s): %v", tt.verdict, err)
+			}
+			wantOut := TriageTodoOutput{ID: id.String(), State: tt.wantState, OK: true}
+			if diff := cmp.Diff(wantOut, out); diff != "" {
+				t.Errorf("triageTodo(%s) output mismatch (-want +got):\n%s", tt.verdict, diff)
+			}
+			if got := readTodoTriageRow(t, id).State; got != tt.wantState {
+				t.Errorf("todo %s state = %q, want %q", id, got, tt.wantState)
+			}
+		})
+	}
+}
+
+// TestIntegration_TriageTodo_AcceptPersistsFields pins accept's optional
+// overrides: project (resolved by exact slug), due, and energy land on the
+// row, and the output echoes the persisted project_id.
+func TestIntegration_TriageTodo_AcceptPersistsFields(t *testing.T) {
+	s := setupServer(t)
+
+	projID := seedNoCadenceProject(t, "triage-target", "Triage Target")
+	id := seedTodoForCreator(t, "hermes", "needs a home", "inbox", time.Now())
+
+	_, out, err := callHandlerAs(t, "claude", s.triageTodo, TriageTodoInput{
+		ID:      id.String(),
+		Verdict: "accept",
+		Project: "triage-target",
+		Due:     new("2026-08-01"),
+		Energy:  new("high"),
+	})
+	if err != nil {
+		t.Fatalf("triageTodo(accept with fields): %v", err)
+	}
+
+	row := readTodoTriageRow(t, id)
+	if row.State != "todo" {
+		t.Errorf("state = %q, want todo", row.State)
+	}
+	if row.ProjectID == nil || *row.ProjectID != projID {
+		t.Errorf("project_id = %v, want %s", row.ProjectID, projID)
+	}
+	if row.Due == nil || row.Due.Format(time.DateOnly) != "2026-08-01" {
+		t.Errorf("due = %v, want 2026-08-01", row.Due)
+	}
+	if row.Energy == nil || *row.Energy != "high" {
+		t.Errorf("energy = %v, want high", row.Energy)
+	}
+
+	wantOut := TriageTodoOutput{
+		ID:        id.String(),
+		State:     "todo",
+		ProjectID: new(projID.String()),
+		Due:       new("2026-08-01"),
+		Energy:    new("high"),
+		OK:        true,
+	}
+	if diff := cmp.Diff(wantOut, out); diff != "" {
+		t.Errorf("accept output mismatch (-want +got):\n%s", diff)
+	}
+}
+
+// TestIntegration_TriageTodo_AcceptPreservesCapturedFields pins the
+// omitted-fields contract: an accept with no overrides keeps the values
+// captured on the row (project, energy) instead of clearing them.
+func TestIntegration_TriageTodo_AcceptPreservesCapturedFields(t *testing.T) {
+	s := setupServer(t)
+
+	projID := seedNoCadenceProject(t, "captured-home", "Captured Home")
+	id := seedTodoForCreator(t, "claude", "already enriched", "inbox", time.Now())
+	setTodoProject(t, id, &projID)
+	setTodoColumn(t, id, "energy", "low")
+
+	_, out, err := callHandlerAs(t, "claude", s.triageTodo, TriageTodoInput{ID: id.String(), Verdict: "accept"})
+	if err != nil {
+		t.Fatalf("triageTodo(bare accept): %v", err)
+	}
+
+	row := readTodoTriageRow(t, id)
+	if row.State != "todo" {
+		t.Errorf("state = %q, want todo", row.State)
+	}
+	if row.ProjectID == nil || *row.ProjectID != projID {
+		t.Errorf("project_id = %v, want preserved %s", row.ProjectID, projID)
+	}
+	if row.Energy == nil || *row.Energy != "low" {
+		t.Errorf("energy = %v, want preserved low", row.Energy)
+	}
+	if out.ProjectID == nil || *out.ProjectID != projID.String() {
+		t.Errorf("output project_id = %v, want echo of %s", out.ProjectID, projID)
+	}
+}
+
+// TestIntegration_TriageTodo_InvalidState pins the transition gate: a row
+// that exists but is in a state the verdict cannot act on returns the
+// invalid-state sentinel naming both, and the row is left untouched.
+func TestIntegration_TriageTodo_InvalidState(t *testing.T) {
+	s := setupServer(t)
+
+	tests := []struct {
+		name      string
+		seedState string
+		verdict   string
+	}{
+		{name: "accept on already-accepted todo", seedState: "todo", verdict: "accept"},
+		{name: "restore on inbox todo", seedState: "inbox", verdict: "restore"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			id := seedTodoForCreator(t, "hermes", tt.name, tt.seedState, time.Now())
+
+			_, _, err := callHandlerAs(t, "claude", s.triageTodo, TriageTodoInput{ID: id.String(), Verdict: tt.verdict})
+			if err == nil {
+				t.Fatalf("triageTodo(%s on %s) err = nil, want invalid-state", tt.verdict, tt.seedState)
+			}
+			if !errors.Is(err, errInvalidTriageState) {
+				t.Errorf("err = %v, want errors.Is errInvalidTriageState", err)
+			}
+			if !strings.Contains(err.Error(), tt.seedState) || !strings.Contains(err.Error(), tt.verdict) {
+				t.Errorf("err = %q, want it to name state %q and verdict %q", err, tt.seedState, tt.verdict)
+			}
+			if got := readTodoTriageRow(t, id).State; got != tt.seedState {
+				t.Errorf("todo %s state = %q after rejected verdict, want unchanged %q", id, got, tt.seedState)
+			}
+		})
+	}
+}
+
+// TestIntegration_TriageTodo_UnknownID pins not-found: an id that matches no
+// row errors without the invalid-state sentinel.
+func TestIntegration_TriageTodo_UnknownID(t *testing.T) {
+	s := setupServer(t)
+
+	_, _, err := callHandlerAs(t, "claude", s.triageTodo, TriageTodoInput{ID: uuid.NewString(), Verdict: "accept"})
+	if err == nil {
+		t.Fatal("triageTodo(unknown id) err = nil, want not-found")
+	}
+	if !strings.Contains(err.Error(), "does not exist") {
+		t.Errorf("err = %q, want a does-not-exist message", err)
+	}
+	if errors.Is(err, errInvalidTriageState) {
+		t.Errorf("err = %v, unknown id must not read as invalid-state", err)
+	}
+}
+
+// TestIntegration_TriageTodo_AuditActor proves a triage mutation runs inside
+// withActorTx: the state-change audit event carries the resolved caller, not
+// the trigger's 'human' fallback — on a row another agent created.
+func TestIntegration_TriageTodo_AuditActor(t *testing.T) {
+	s := setupServer(t)
+
+	id := seedTodoForCreator(t, "hermes", "audited verdict", "inbox", time.Now())
+
+	if _, out, err := callHandlerAs(t, "codex", s.triageTodo, TriageTodoInput{ID: id.String(), Verdict: "dismiss"}); err != nil || !out.OK {
+		t.Fatalf("triageTodo(dismiss) as codex: err=%v out=%+v", err, out)
+	}
+
+	if got := activityActorFor(t, "todo", id); got != "codex" {
+		t.Errorf("activity_events.actor = %q, want codex (withActorTx attribution)", got)
+	}
+}
+
+// TestIntegration_TriageTodo_RecurringAcceptKeepsRecurrence pins that state
+// triage never touches the recurrence columns: a recurring inbox todo accepts
+// cleanly and its schedule survives verbatim.
+func TestIntegration_TriageTodo_RecurringAcceptKeepsRecurrence(t *testing.T) {
+	s := setupServer(t)
+
+	id := seedTodoForCreator(t, "claude", "daily vocab routine", "inbox", time.Now())
+	setTodoColumn(t, id, "recur_weekdays", "127")
+
+	_, out, err := callHandlerAs(t, "claude", s.triageTodo, TriageTodoInput{ID: id.String(), Verdict: "accept"})
+	if err != nil || !out.OK {
+		t.Fatalf("triageTodo(accept recurring): err=%v out=%+v", err, out)
+	}
+
+	var (
+		state         string
+		weekdays      *int16
+		interval      *int32
+		unit          *string
+		lastCompleted *time.Time
+	)
+	if err := testPool.QueryRow(t.Context(),
+		`SELECT state, recur_weekdays, recur_interval, recur_unit, last_completed_on FROM todos WHERE id = $1`, id,
+	).Scan(&state, &weekdays, &interval, &unit, &lastCompleted); err != nil {
+		t.Fatalf("reading back recurring todo: %v", err)
+	}
+	if state != "todo" {
+		t.Errorf("state = %q, want todo", state)
+	}
+	if weekdays == nil || *weekdays != 127 {
+		t.Errorf("recur_weekdays = %v, want 127 (untouched)", weekdays)
+	}
+	if interval != nil || unit != nil || lastCompleted != nil {
+		t.Errorf("recur_interval=%v recur_unit=%v last_completed_on=%v, want all nil (untouched)", interval, unit, lastCompleted)
+	}
+}
+
+// TestIntegration_TriageTodo_UnresolvableProject pins the resolver contract:
+// an unresolvable project reference is ignored — it never invents a project,
+// never clears an existing link, and the output echoes what is persisted
+// (the existing link, or null when the row has none).
+func TestIntegration_TriageTodo_UnresolvableProject(t *testing.T) {
+	s := setupServer(t)
+
+	projID := seedNoCadenceProject(t, "existing-home", "Existing Home")
+	linkedID := seedTodoForCreator(t, "hermes", "linked capture", "inbox", time.Now())
+	setTodoProject(t, linkedID, &projID)
+	bareID := seedTodoForCreator(t, "hermes", "bare capture", "inbox", time.Now())
+
+	var projectsBefore int
+	if err := testPool.QueryRow(t.Context(), `SELECT count(*) FROM projects`).Scan(&projectsBefore); err != nil {
+		t.Fatalf("counting projects: %v", err)
+	}
+
+	_, outLinked, err := callHandlerAs(t, "claude", s.triageTodo, TriageTodoInput{
+		ID: linkedID.String(), Verdict: "accept", Project: "no-such-project-ref",
+	})
+	if err != nil {
+		t.Fatalf("triageTodo(accept, unresolvable project, linked row): %v", err)
+	}
+	if row := readTodoTriageRow(t, linkedID); row.ProjectID == nil || *row.ProjectID != projID {
+		t.Errorf("linked row project_id = %v, want preserved %s", row.ProjectID, projID)
+	}
+	if outLinked.ProjectID == nil || *outLinked.ProjectID != projID.String() {
+		t.Errorf("output project_id = %v, want echo of preserved %s", outLinked.ProjectID, projID)
+	}
+
+	_, outBare, err := callHandlerAs(t, "claude", s.triageTodo, TriageTodoInput{
+		ID: bareID.String(), Verdict: "accept", Project: "no-such-project-ref",
+	})
+	if err != nil {
+		t.Fatalf("triageTodo(accept, unresolvable project, bare row): %v", err)
+	}
+	if row := readTodoTriageRow(t, bareID); row.ProjectID != nil {
+		t.Errorf("bare row project_id = %v, want nil (no link invented)", row.ProjectID)
+	}
+	if outBare.ProjectID != nil {
+		t.Errorf("output project_id = %v, want null when the accepted row has no project", outBare.ProjectID)
+	}
+
+	var projectsAfter int
+	if err := testPool.QueryRow(t.Context(), `SELECT count(*) FROM projects`).Scan(&projectsAfter); err != nil {
+		t.Fatalf("counting projects: %v", err)
+	}
+	if projectsAfter != projectsBefore {
+		t.Errorf("projects count %d → %d, want unchanged (resolver must not create)", projectsBefore, projectsAfter)
 	}
 }
