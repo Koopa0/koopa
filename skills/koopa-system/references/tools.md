@@ -13,14 +13,14 @@ is hand-maintained.
 > Run `go generate ./internal/mcp/ops` after any change to the tool surface;
 > the drift test `TestToolInventoryDocInSync` fails CI if this is stale.
 
-**14 tools** across 3 domains.
+**16 tools** across 3 domains.
 
 | Domain | Count |
 |---|---|
 | `query` | 3 |
-| `daily` | 8 |
+| `daily` | 10 |
 | `content` | 3 |
-| **Total** | **14** |
+| **Total** | **16** |
 
 | Tool | Domain | Writability | Purpose |
 |---|---|---|---|
@@ -28,6 +28,7 @@ is hand-maintained.
 | `project_progress` | `query` | read_only | Read-only PARA momentum/stalled intelligence for Koopa's projects, goals, and areas |
 | `review_period` | `query` | read_only | Read-only windowed retrospective of what KOOPA got done over a date window |
 | `capture_inbox` | `daily` | additive | Quick todo capture to the inbox |
+| `list_inbox` | `daily` | read_only | Read-only owner-triage queue: every todo in state=inbox regardless of who captured it |
 | `list_todos` | `daily` | read_only | Read-only readback of the todos you created (created_by = your resolved caller identity) so you can learn their disposition |
 | `plan_day` | `daily` | idempotent | Set the day's plan as one atomic replacement |
 | `propose_area` | `daily` | additive | Propose a PARA area (ongoing domain of responsibility) as an INERT draft in status=proposed |
@@ -35,6 +36,7 @@ is hand-maintained.
 | `propose_project` | `daily` | additive | Propose a NEW project (a short-term effort with a clear outcome) as an INERT draft in status=proposed |
 | `resolve_todo` | `daily` | destructive | Move a todo YOU created to a terminal state: done (completed), archived (filed away), or dismissed (won't do) |
 | `set_todo_recurrence` | `daily` | destructive | Set or clear the recurrence of a todo YOU created |
+| `triage_todo` | `daily` | destructive | Execute the owner's triage verdict on a todo |
 | `list_content` | `content` | read_only | Read-only readback of content YOU submitted |
 | `propose_content` | `content` | additive | Submit a FINISHED publication snapshot (article, essay, build-log, til, or digest) into the editorial review queue |
 | `revise_content` | `content` | destructive | Replace the complete publication snapshot YOU submitted after changing the Vault source first |

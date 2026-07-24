@@ -3194,6 +3194,54 @@ func (q *Queries) InProgressTodoItems(ctx context.Context) ([]InProgressTodoItem
 	return items, nil
 }
 
+const inboxTodos = `-- name: InboxTodos :many
+
+SELECT id, title, description, created_by, created_at
+FROM todos
+WHERE state = 'inbox'
+ORDER BY created_at ASC
+`
+
+type InboxTodosRow struct {
+	ID          uuid.UUID `json:"id"`
+	Title       string    `json:"title"`
+	Description string    `json:"description"`
+	CreatedBy   string    `json:"created_by"`
+	CreatedAt   time.Time `json:"created_at"`
+}
+
+// === Owner triage queries (list_inbox / triage_todo MCP tools) ===
+// Cross-creator inbox queue for the list_inbox MCP tool: every todo in
+// state=inbox regardless of created_by. Deliberately unscoped — it reads the
+// owner's triage queue, not a caller's own rows (the caller-scoped readback
+// stays TodosByCreator). Oldest first so the longest-waiting capture
+// surfaces at the top. Uses idx_todos_inbox.
+func (q *Queries) InboxTodos(ctx context.Context) ([]InboxTodosRow, error) {
+	rows, err := q.db.Query(ctx, inboxTodos)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []InboxTodosRow{}
+	for rows.Next() {
+		var i InboxTodosRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Title,
+			&i.Description,
+			&i.CreatedBy,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const incrementFeedFailure = `-- name: IncrementFeedFailure :one
 UPDATE feeds SET
     consecutive_failures = consecutive_failures + 1,
@@ -6356,6 +6404,21 @@ func (q *Queries) TodoItemsDueOn(ctx context.Context, targetDate *time.Time) ([]
 	return items, nil
 }
 
+const todoStateForUpdate = `-- name: TodoStateForUpdate :one
+SELECT state FROM todos WHERE id = $1 FOR UPDATE
+`
+
+// Lock a todo row and read its current state for the triage_todo verdict
+// gate: the transition is validated in Go between this lock and the update,
+// inside one transaction, so a concurrent state change cannot slip between
+// check and write. An unknown id matches no row (pgx.ErrNoRows → not-found).
+func (q *Queries) TodoStateForUpdate(ctx context.Context, id uuid.UUID) (TodoState, error) {
+	row := q.db.QueryRow(ctx, todoStateForUpdate, id)
+	var state TodoState
+	err := row.Scan(&state)
+	return state, err
+}
+
 const todosByCreator = `-- name: TodosByCreator :many
 SELECT id, title, state
 FROM todos
@@ -6615,6 +6678,62 @@ func (q *Queries) TopicsForContents(ctx context.Context, dollar_1 []uuid.UUID) (
 		return nil, err
 	}
 	return items, nil
+}
+
+const triageAcceptTodo = `-- name: TriageAcceptTodo :one
+UPDATE todos
+SET state      = 'todo',
+    project_id = COALESCE($1, project_id),
+    due        = COALESCE($2, due),
+    energy     = COALESCE($3, energy),
+    updated_at = now()
+WHERE id = $4
+RETURNING id, title, state, due, project_id,
+          completed_at, energy, priority, recur_interval, recur_unit, recur_weekdays, last_completed_on,
+          description, created_by, created_at, updated_at
+`
+
+type TriageAcceptTodoParams struct {
+	ProjectID *uuid.UUID `json:"project_id"`
+	Due       *time.Time `json:"due"`
+	Energy    *string    `json:"energy"`
+	ID        uuid.UUID  `json:"id"`
+}
+
+// Execute the owner's ACCEPT verdict (triage_todo MCP tool): promote a todo
+// to state=todo, optionally overriding project/due/energy in the same
+// statement. Deliberately unscoped (no created_by predicate) — it executes
+// the owner's verdict, not caller self-cleanup. NULL overrides preserve the
+// captured values; recurrence columns are untouched. The caller validates
+// the inbox source state under TodoStateForUpdate's row lock in the same
+// transaction, so no state guard is repeated here.
+func (q *Queries) TriageAcceptTodo(ctx context.Context, arg TriageAcceptTodoParams) (Todo, error) {
+	row := q.db.QueryRow(ctx, triageAcceptTodo,
+		arg.ProjectID,
+		arg.Due,
+		arg.Energy,
+		arg.ID,
+	)
+	var i Todo
+	err := row.Scan(
+		&i.ID,
+		&i.Title,
+		&i.State,
+		&i.Due,
+		&i.ProjectID,
+		&i.CompletedAt,
+		&i.Energy,
+		&i.Priority,
+		&i.RecurInterval,
+		&i.RecurUnit,
+		&i.RecurWeekdays,
+		&i.LastCompletedOn,
+		&i.Description,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }
 
 const updateContent = `-- name: UpdateContent :one
